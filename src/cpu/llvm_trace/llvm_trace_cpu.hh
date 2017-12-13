@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "cpu/base.hh"
+#include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
 #include "mem/page_table.hh"
 #include "params/LLVMTraceCPU.hh"
 
@@ -84,6 +85,8 @@ class LLVMTraceCPU : public BaseCPU {
 
   EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::processScheduleNextEvent>
       scheduleNextEvent;
+
+  LLVMTraceCPUDriver* driver;
 };
 
 #endif

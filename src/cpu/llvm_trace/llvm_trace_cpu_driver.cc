@@ -5,9 +5,13 @@
 #include "sim/process.hh"
 
 LLVMTraceCPUDriver::LLVMTraceCPUDriver(LLVMTraceCPUDriverParams* p)
-    : EmulatedDriver(p), cpu(nullptr) {}
+    : EmulatedDriver(p), llvm_trace_cpu(nullptr) {}
 
-void LLVMTraceCPUDriver::handshake(LLVMTraceCPU* cpu) { this->cpu = cpu; }
+void LLVMTraceCPUDriver::handshake(LLVMTraceCPU* llvm_trace_cpu) {
+  DPRINTF(LLVMTraceCPU, "driver received handshake from %s\n",
+          llvm_trace_cpu->name().c_str());
+  this->llvm_trace_cpu = llvm_trace_cpu;
+}
 
 int LLVMTraceCPUDriver::open(Process* p, ThreadContext* tc, int mode,
                              int flags) {

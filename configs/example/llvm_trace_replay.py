@@ -87,10 +87,7 @@ multiprocesses, numThreads = get_processes(options)
 (CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(options)
 CPUClass.numThreads = numThreads
 
-system = System(cpu=[CPUClass(cpu_id=i) for i in xrange(options.num_cpus)],
-                mem_mode=test_mem_mode,
-                mem_ranges=[AddrRange(options.mem_size)],
-                cache_line_size=options.cacheline_size)
+cpus = [CPUClass(cpu_id=i) for i in xrange(options.num_cpus)]
 
 # Add the emulated LLVM tracer driver for the process.
 for process in multiprocesses:
@@ -98,7 +95,20 @@ for process in multiprocesses:
     driver.filename = 'llvm_trace_cpu'
     process.drivers = [driver]
 
-# Set the workload for CPU.
+    # For each process, add a LLVMTraceCPU for simulation.
+    llvm_trace_cpu = LLVMTraceCPU(cpu_id=len(cpus))
+    llvm_trace_cpu.cpu_id = len(cpus)
+    llvm_trace_cpu.traceFile = options.llvm_trace_file
+    llvm_trace_cpu.driver = driver
+    cpus.append(llvm_trace_cpu)
+    options.num_cpus = len(cpus)
+
+system = System(cpu=cpus,
+                mem_mode=test_mem_mode,
+                mem_ranges=[AddrRange(options.mem_size)],
+                cache_line_size=options.cacheline_size)
+
+# Set the workload for normal CPUs.
 for i in xrange(options.num_cpus):
     if options.smt:
         system.cpu[i].workload = multiprocesses
@@ -106,7 +116,6 @@ for i in xrange(options.num_cpus):
         system.cpu[i].workload = multiprocesses[0]
     else:
         system.cpu[i].workload = multiprocesses[i]
-
     system.cpu[i].createThreads()
 
 # Create a top-level voltage domain

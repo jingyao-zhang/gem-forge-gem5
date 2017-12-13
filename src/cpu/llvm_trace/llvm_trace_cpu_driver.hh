@@ -9,12 +9,12 @@ class LLVMTraceCPU;
 class LLVMTraceCPUDriver final : public EmulatedDriver {
  public:
   LLVMTraceCPUDriver(LLVMTraceCPUDriverParams *p);
-  void handshake(LLVMTraceCPU *cpu);
+  void handshake(LLVMTraceCPU* llvm_trace_cpu);
   int open(Process *p, ThreadContext *tc, int mode, int flags) override;
   int ioctl(Process *p, ThreadContext *tc, unsigned req) override;
 
  private:
-  LLVMTraceCPU *cpu;
+  LLVMTraceCPU *llvm_trace_cpu;
 };
 
 #endif

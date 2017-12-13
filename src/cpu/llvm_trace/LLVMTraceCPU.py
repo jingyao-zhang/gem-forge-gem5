@@ -6,7 +6,8 @@ class LLVMTraceCPU(BaseCPU):
     type = 'LLVMTraceCPU'
     cxx_header = 'cpu/llvm_trace/llvm_trace_cpu.hh'
 
-    traceFile = Param.String("", "The input llvm trace file.")
+    traceFile = Param.String('', 'The input llvm trace file.')
+    driver = Param.LLVMTraceCPUDriver('The driver to control this cpu.')
 
     @classmethod
     def memory_mode(cls):

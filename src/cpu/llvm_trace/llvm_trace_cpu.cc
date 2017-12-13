@@ -10,11 +10,18 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       dataPort(params->name + ".data_port", this),
       traceFile(params->traceFile),
       currentInstId(0),
-      scheduleNextEvent(*this) {
+      scheduleNextEvent(*this),
+      driver(params->driver) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
   readTraceFile();
-  // Schedule the first event.
-  schedule(this->scheduleNextEvent, curTick() + 1);
+  if (driver != nullptr) {
+    // Handshake with the driver.
+    driver->handshake(this);
+  } else {
+    // No driver, stand alone mode.
+    // Schedule the first event.
+    schedule(this->scheduleNextEvent, curTick() + 1);
+  }
 }
 
 LLVMTraceCPU::~LLVMTraceCPU() {}
