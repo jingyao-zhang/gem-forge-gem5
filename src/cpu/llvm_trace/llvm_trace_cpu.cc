@@ -143,7 +143,7 @@ void LLVMTraceCPU::processScheduleNextEvent() {
         paddr = this->translateTraceToPhysMem(inst.base, inst.offset);
       }
       RequestPtr req = new Request(paddr, inst.size, 0, this->_dataMasterId,
-                                   instId, ContextID(0));
+                                   instId, this->thread_context->contextId());
       PacketPtr pkt;
       uint8_t* pkt_data = new uint8_t[req->getSize()];
       if (inst.type == DynamicInst::Type::LOAD) {
