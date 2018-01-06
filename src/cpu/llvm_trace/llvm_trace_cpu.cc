@@ -15,6 +15,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       process(nullptr),
       thread_context(nullptr),
       scheduleNextEvent(*this),
+      MAX_FETCH_QUEUE_SIZE(params->maxFetchQueueSize),
       driver(params->driver) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
   readTraceFile();
@@ -103,8 +104,17 @@ void LLVMTraceCPU::readTraceFile() {
           this->dynamicInsts.size());
 }
 
+void LLVMTraceCPU::fetch() {
+  while (this->currentInstId < this->dynamicInsts.size() &&
+         this->fetchQueue.size() < this->MAX_FETCH_QUEUE_SIZE) {
+    DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n", this->currentInstId);
+    this->fetchQueue.push(this->currentInstId++);
+  }
+}
+
 void LLVMTraceCPU::processScheduleNextEvent() {
-  if (this->currentInstId == this->dynamicInsts.size()) {
+  fetch();
+  if (this->fetchQueue.empty()) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
     // Write 1 to the finish_tag.
     RequestPtr req =
@@ -119,8 +129,9 @@ void LLVMTraceCPU::processScheduleNextEvent() {
     return;
   }
 
-  const DynamicInst& inst = this->dynamicInsts[this->currentInstId];
-  DynamicInstId instId = this->currentInstId;
+  DynamicInstId instId = this->fetchQueue.front();
+  this->fetchQueue.pop();
+  const DynamicInst& inst = this->dynamicInsts[instId];
   this->currentInstId++;
 
   switch (inst.type) {

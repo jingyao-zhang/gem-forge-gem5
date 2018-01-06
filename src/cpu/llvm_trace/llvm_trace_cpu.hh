@@ -132,6 +132,12 @@ class LLVMTraceCPU : public BaseCPU {
   EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::processScheduleNextEvent>
       scheduleNextEvent;
 
+
+  std::queue<DynamicInstId> fetchQueue;
+  const size_t MAX_FETCH_QUEUE_SIZE;
+
+  void fetch();
+
   LLVMTraceCPUDriver* driver;
 };
 
