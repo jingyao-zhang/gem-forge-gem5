@@ -132,7 +132,6 @@ void LLVMTraceCPU::processScheduleNextEvent() {
   DynamicInstId instId = this->fetchQueue.front();
   this->fetchQueue.pop();
   const DynamicInst& inst = this->dynamicInsts[instId];
-  this->currentInstId++;
 
   switch (inst.type) {
     case DynamicInst::Type::COMPUTE: {
