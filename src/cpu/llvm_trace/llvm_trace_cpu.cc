@@ -14,10 +14,17 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       currentInstId(0),
       process(nullptr),
       thread_context(nullptr),
-      scheduleNextEvent(*this),
+      tickEvent(*this),
       MAX_FETCH_QUEUE_SIZE(params->maxFetchQueueSize),
+      MAX_REORDER_BUFFER_SIZE(params->maxReorderBufferSize),
       driver(params->driver) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
+  // Initialize the rob buffer.
+  this->rob = std::vector<std::pair<DynamicInstId, bool>>(
+      this->MAX_REORDER_BUFFER_SIZE, std::make_pair(0, false));
+  panic_if(this->MAX_REORDER_BUFFER_SIZE != this->rob.size(),
+           "rob size (%d) should be MAX_REORDER_BUFFER_SIZE(%d)\n",
+           this->rob.size(), this->MAX_REORDER_BUFFER_SIZE);
   readTraceFile();
   if (driver != nullptr) {
     // Handshake with the driver.
@@ -25,7 +32,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
   } else {
     // No driver, stand alone mode.
     // Schedule the first event.
-    schedule(this->scheduleNextEvent, curTick() + 1);
+    schedule(this->tickEvent, curTick() + 1);
   }
 }
 
@@ -107,14 +114,177 @@ void LLVMTraceCPU::readTraceFile() {
 void LLVMTraceCPU::fetch() {
   while (this->currentInstId < this->dynamicInsts.size() &&
          this->fetchQueue.size() < this->MAX_FETCH_QUEUE_SIZE) {
-    DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n", this->currentInstId);
+    DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n",
+            this->currentInstId);
+    this->inflyInsts[currentInstId] = InstStatus::FETCHED;
     this->fetchQueue.push(this->currentInstId++);
   }
 }
 
-void LLVMTraceCPU::processScheduleNextEvent() {
+void LLVMTraceCPU::reorder() {
+  for (size_t i = 0; i < this->rob.size(); ++i) {
+    if (!this->rob[i].second) {
+      // This is a free rob entry.
+      if (this->fetchQueue.empty()) {
+        // No more instructions.
+        return;
+      }
+      // Fill in this rob entry.
+      DPRINTF(LLVMTraceCPU, "Fill inst %u into rob entry %u\n",
+              this->fetchQueue.front(), i);
+      this->rob[i].first = this->fetchQueue.front();
+      this->rob[i].second = true;
+      // Pop from fetchQueue.
+      this->fetchQueue.pop();
+    }
+  }
+}
+
+void LLVMTraceCPU::markReadyInst() {
+  // Loop through rob and mark ready instructions.
+  for (size_t i = 0; i < this->rob.size(); ++i) {
+    if (this->rob[i].second) {
+      DynamicInstId instId = this->rob[i].first;
+      panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
+               "Inst %u should be in inflyInsts to check if READY\n", instId);
+      if (this->inflyInsts[instId] != InstStatus::FETCHED) {
+        continue;
+      }
+      // Default set to ready.
+      bool ready = true;
+      for (auto dependentInstId : this->dynamicInsts[instId].dependentInstIds) {
+        if (this->inflyInsts.find(dependentInstId) != this->inflyInsts.end()) {
+          // This inst is still not ready.
+          ready = false;
+          break;
+        }
+      }
+      if (ready) {
+        // Mark the status to ready.
+        DPRINTF(LLVMTraceCPU, "Set inst %u to ready\n", instId);
+        this->inflyInsts[instId] = InstStatus::READY;
+      }
+    }
+  }
+}
+
+void LLVMTraceCPU::issue() {
+  for (size_t i = 0; i < this->rob.size(); ++i) {
+    if (this->rob[i].second) {
+      DynamicInstId instId = this->rob[i].first;
+      panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
+               "Inst %u should be in inflyInsts to check if READY\n", instId);
+
+      // Check if ready.
+      if (this->inflyInsts[instId] != InstStatus::READY) {
+        continue;
+      }
+
+      // Mark it as issued.
+      this->inflyInsts[instId] = InstStatus::ISSUED;
+      DPRINTF(LLVMTraceCPU, "inst %u issued\n", instId);
+
+      const DynamicInst& inst = this->dynamicInsts[instId];
+
+      switch (inst.type) {
+        case DynamicInst::Type::COMPUTE: {
+          // Just do nothing.
+          break;
+        }
+        case DynamicInst::Type::LOAD:
+        case DynamicInst::Type::STORE: {
+          Addr paddr;
+          if (this->driver == nullptr) {
+            // When in stand alone mode, use the trace space address
+            // directly as the virtual address.
+            paddr = this->translateAndAllocatePhysMem(inst.trace_vaddr);
+          } else {
+            // When we have a driver, we have to translate trace space
+            // address into simulation space and then use the process
+            // page table to get physical address.
+            paddr = this->translateTraceToPhysMem(inst.base, inst.offset);
+          }
+          RequestPtr req =
+              new Request(paddr, inst.size, 0, this->_dataMasterId, instId,
+                          this->thread_context->contextId());
+          PacketPtr pkt;
+          uint8_t* pkt_data = new uint8_t[req->getSize()];
+          if (inst.type == DynamicInst::Type::LOAD) {
+            pkt = Packet::createRead(req);
+          } else {
+            pkt = Packet::createWrite(req);
+            // Copy the value to store.
+            memcpy(pkt_data, inst.value, req->getSize());
+          }
+          pkt->dataDynamic(pkt_data);
+          DPRINTF(LLVMTraceCPU, "Send request for inst %d\n", instId);
+          this->dataPort.sendReq(pkt);
+          break;
+        }
+        default: { panic("Unknown dynamic instruction type %u\n", inst.type); }
+      }
+    }
+  }
+}
+
+void LLVMTraceCPU::countDownComputeDelay() {
+  for (size_t i = 0; i < this->rob.size(); ++i) {
+    if (this->rob[i].second) {
+      DynamicInstId instId = this->rob[i].first;
+      // Check if issued.
+      if (this->inflyInsts[instId] != InstStatus::ISSUED) {
+        continue;
+      }
+      // Check if is compute inst.
+      DynamicInst& inst = this->dynamicInsts[instId];
+      if (inst.type != DynamicInst::Type::COMPUTE) {
+        continue;
+      }
+
+      panic_if(inst.computeDelay <= 0,
+               "inst %u has non positive compute delay!", instId);
+      inst.computeDelay--;
+      if (inst.computeDelay == 0) {
+        // Mark this inst as finished.
+        DPRINTF(LLVMTraceCPU, "Inst %u finished\n", instId);
+        this->inflyInsts[instId] = InstStatus::FINISHED;
+      }
+    }
+  }
+}
+
+void LLVMTraceCPU::commit() {
+  for (size_t i = 0; i < this->rob.size(); ++i) {
+    if (this->rob[i].second) {
+      DynamicInstId instId = this->rob[i].first;
+      // Check if finished.
+      if (this->inflyInsts[instId] != InstStatus::FINISHED) {
+        continue;
+      }
+      DPRINTF(LLVMTraceCPU, "Inst %u committed\n", instId);
+      // Mark the rob entry as free again.
+      this->rob[i].second = false;
+      // Erase it from the inflyInsts.
+      this->inflyInsts.erase(instId);
+    }
+  }
+}
+
+void LLVMTraceCPU::tick() {
+  if (curTick() % 1000000 == 0) {
+    DPRINTF(LLVMTraceCPU, "Tick()\n");
+  }
+
   fetch();
-  if (this->fetchQueue.empty()) {
+  reorder();
+  issue();
+  commit();
+  // Mark inst to be ready for next tick.
+  markReadyInst();
+  // Compute down the compute delay.
+  countDownComputeDelay();
+
+  if (this->fetchQueue.empty() && this->inflyInsts.empty()) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
     // Write 1 to the finish_tag.
     RequestPtr req =
@@ -127,49 +297,9 @@ void LLVMTraceCPU::processScheduleNextEvent() {
     pkt->dataDynamic(pkt_data);
     this->dataPort.sendReq(pkt);
     return;
-  }
-
-  DynamicInstId instId = this->fetchQueue.front();
-  this->fetchQueue.pop();
-  const DynamicInst& inst = this->dynamicInsts[instId];
-
-  switch (inst.type) {
-    case DynamicInst::Type::COMPUTE: {
-      // Just schedule for next after delay.
-      schedule(this->scheduleNextEvent, curTick() + inst.computeDelay);
-      break;
-    }
-    case DynamicInst::Type::LOAD:
-    case DynamicInst::Type::STORE: {
-      Addr paddr;
-      if (this->driver == nullptr) {
-        // When in stand alone mode, use the trace space address
-        // directly as the virtual address.
-        paddr = this->translateAndAllocatePhysMem(inst.trace_vaddr);
-      } else {
-        // When we have a driver, we have to translate trace space
-        // address into simulation space and then use the process
-        // page table to get physical address.
-        paddr = this->translateTraceToPhysMem(inst.base, inst.offset);
-      }
-      RequestPtr req = new Request(paddr, inst.size, 0, this->_dataMasterId,
-                                   instId, this->thread_context->contextId());
-      PacketPtr pkt;
-      uint8_t* pkt_data = new uint8_t[req->getSize()];
-      if (inst.type == DynamicInst::Type::LOAD) {
-        pkt = Packet::createRead(req);
-      } else {
-        pkt = Packet::createWrite(req);
-        // Copy the value to store.
-        memcpy(pkt_data, inst.value, req->getSize());
-      }
-      pkt->dataDynamic(pkt_data);
-      this->inflyInstIds.insert(instId);
-      DPRINTF(LLVMTraceCPU, "Send request for inst %d\n", instId);
-      this->dataPort.sendReq(pkt);
-      break;
-    }
-    default: { panic("Unknown dynamic instruction type %u\n", inst.type); }
+  } else {
+    // Schedule next Tick event.
+    schedule(this->tickEvent, curTick() + 1);
   }
 }
 
@@ -179,18 +309,22 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   // Do not schedule next event.
   DynamicInstId instId = pkt->req->getReqInstSeqNum();
   if (instId < this->dynamicInsts.size()) {
-    DynamicInst& inst = this->dynamicInsts[instId];
-    schedule(this->scheduleNextEvent, curTick() + inst.computeDelay);
-    DPRINTF(LLVMTraceCPU,
-            "Get response for inst %u, schedule next inst after %u\n", instId,
-            inst.computeDelay);
-    this->inflyInstIds.erase(instId);
+    DPRINTF(LLVMTraceCPU, "Get response for inst %u, mark it as finished\n",
+            instId);
+    panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
+             "inst %u should be in inflyInsts\n", instId);
+    panic_if(this->inflyInsts[instId] != InstStatus::ISSUED,
+             "inst %u should be issued to be finished\n", instId);
+    this->inflyInsts[instId] = InstStatus::FINISHED;
   } else {
     DPRINTF(LLVMTraceCPU, "Finish writing finish_tag\n");
   }
   // Release the memory.
   delete pkt->req;
   delete pkt;
+
+  // After receive some response, we retry blocked packet.
+  this->dataPort.recvReqRetry();
   return true;
 }
 
@@ -234,6 +368,13 @@ Addr LLVMTraceCPU::translateTraceToPhysMem(const std::string& base,
 }
 
 void LLVMTraceCPU::CPUPort::sendReq(PacketPtr pkt) {
+  // If there is already blocked req, just push to the queue.
+  std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
+  if (!this->blockedPacketPtrs.empty()) {
+    DPRINTF(LLVMTraceCPU, "Blocked packet ptr %p\n", pkt);
+    this->blockedPacketPtrs.push(pkt);
+    return;
+  }
   // Push to blocked ptrs if need retry.
   bool success = MasterPort::sendTimingReq(pkt);
   if (!success) {
@@ -243,6 +384,7 @@ void LLVMTraceCPU::CPUPort::sendReq(PacketPtr pkt) {
 }
 
 void LLVMTraceCPU::CPUPort::recvReqRetry() {
+  std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
   if (!this->blockedPacketPtrs.empty()) {
     // If we have blocked packet, send again.
     PacketPtr pkt = this->blockedPacketPtrs.front();
@@ -278,5 +420,5 @@ void LLVMTraceCPU::handleReplay(Process* p, ThreadContext* tc,
   }
 
   // Schedule the next event.
-  schedule(this->scheduleNextEvent, curTick() + 1);
+  schedule(this->tickEvent, curTick() + 1);
 }

@@ -1,8 +1,10 @@
 #ifndef __CPU_LLVM_TRACE_CPU_HH__
 #define __CPU_LLVM_TRACE_CPU_HH__
 
+#include <mutex>
 #include <queue>
-#include <unordered_set>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "cpu/base.hh"
@@ -56,15 +58,19 @@ class LLVMTraceCPU : public BaseCPU {
     // would be only one infly instructions. Is gem5 single
     // thread?
     std::queue<PacketPtr> blockedPacketPtrs;
+    std::mutex blockedPacketPtrsMutex;
   };
 
   using DynamicInstId = uint64_t;
+
   struct DynamicInst {
     enum Type : uint8_t {
       LOAD,
       STORE,
       COMPUTE,
     } type;
+    // TODO: fill in dependence.
+    std::vector<DynamicInstId> dependentInstIds;
     Tick computeDelay;
     // Used for LOAD/STORE.
     int size;
@@ -90,7 +96,7 @@ class LLVMTraceCPU : public BaseCPU {
    */
   void readTraceFile();
 
-  void processScheduleNextEvent();
+  void tick();
 
   /**
    * Translate the vaddr to paddr.
@@ -116,7 +122,6 @@ class LLVMTraceCPU : public BaseCPU {
 
   DynamicInstId currentInstId;
   std::vector<DynamicInst> dynamicInsts;
-  std::unordered_set<DynamicInstId> inflyInstIds;
 
   //*********************************************************//
   // A map from base name to user space address.
@@ -129,14 +134,41 @@ class LLVMTraceCPU : public BaseCPU {
   Addr finish_tag_paddr;
 
   //********************************************************//
-  EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::processScheduleNextEvent>
-      scheduleNextEvent;
+  EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::tick>
+      tickEvent;
 
+  enum InstStatus {
+    FETCHED,  // In fetchQueue.
+    READY,    // Ready to be issued.
+    ISSUED,
+    FINISHED, // Finished computing.
+  };
+  std::unordered_map<DynamicInstId, InstStatus> inflyInsts;
 
   std::queue<DynamicInstId> fetchQueue;
   const size_t MAX_FETCH_QUEUE_SIZE;
 
   void fetch();
+
+  // reorder buffer.
+  std::vector<std::pair<DynamicInstId, bool>> rob;
+  const size_t MAX_REORDER_BUFFER_SIZE;
+
+  // Fetch instructions from fetchQueue and fill into rob.
+  void reorder();
+
+  // Find instructions ready to be issued in rob (mark them as READY).
+  void markReadyInst();
+
+  // Issue the ready instructions (mark them as ISSUED).
+  void issue();
+
+  // For issued compute insts, count down the their compute delay,
+  // when reaches 0, mark them as FINISHED in inflyInsts.
+  void countDownComputeDelay();
+
+  // Commit the FINISHED inst and remove it from inflyInsts.
+  void commit();
 
   LLVMTraceCPUDriver* driver;
 };

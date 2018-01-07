@@ -9,6 +9,7 @@ class LLVMTraceCPU(BaseCPU):
     traceFile = Param.String('', 'The input llvm trace file.')
     driver = Param.LLVMTraceCPUDriver('The driver to control this cpu.')
     maxFetchQueueSize = Param.UInt64(8, 'Maximum size of the fetch queue.')
+    maxReorderBufferSize = Param.UInt64(8, 'Maximum size of the rob.')
 
     @classmethod
     def memory_mode(cls):
