@@ -318,6 +318,10 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
     this->inflyInsts[instId] = InstStatus::FINISHED;
   } else {
     DPRINTF(LLVMTraceCPU, "Finish writing finish_tag\n");
+    // Activate the thread for normal CPU.
+    this->thread_context->activate();
+    DPRINTF(LLVMTraceCPU, "Activate thread, status = %d\n",
+            this->thread_context->status());
   }
   // Release the memory.
   delete pkt->req;
@@ -412,6 +416,11 @@ void LLVMTraceCPU::handleReplay(Process* p, ThreadContext* tc,
   // Set the process and tc.
   this->process = p;
   this->thread_context = tc;
+
+  // Suspend the thread from normal CPU.
+  this->thread_context->suspend();
+  DPRINTF(LLVMTraceCPU, "Suspend thread, status = %d\n",
+          this->thread_context->status());
 
   if (!this->process->pTable->translate(finish_tag_vaddr,
                                         this->finish_tag_paddr)) {
