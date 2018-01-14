@@ -3,6 +3,7 @@
 
 #include <mutex>
 #include <queue>
+#include <sstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -40,7 +41,7 @@ class LLVMTraceCPU : public BaseCPU {
   class CPUPort : public MasterPort {
    public:
     CPUPort(const std::string& name, LLVMTraceCPU* _owner)
-        : MasterPort(name, _owner), owner(_owner) {}
+        : MasterPort(name, _owner), owner(_owner), blocked(false) {}
 
     bool recvTimingResp(PacketPtr pkt) override {
       return this->owner->handleTimingResp(pkt);
@@ -59,6 +60,7 @@ class LLVMTraceCPU : public BaseCPU {
     // thread?
     std::queue<PacketPtr> blockedPacketPtrs;
     std::mutex blockedPacketPtrsMutex;
+    bool blocked;
   };
 
   using DynamicInstId = uint64_t;
@@ -69,9 +71,8 @@ class LLVMTraceCPU : public BaseCPU {
       STORE,
       COMPUTE,
     } type;
-    // TODO: fill in dependence.
-    std::vector<DynamicInstId> dependentInstIds;
     Tick computeDelay;
+    std::vector<DynamicInstId> dependentInstIds;
     // Used for LOAD/STORE.
     int size;
     std::string base;
@@ -79,16 +80,31 @@ class LLVMTraceCPU : public BaseCPU {
     Addr trace_vaddr;  // Trace space vaddr.
     // Used for STORE.
     void* value;
-    DynamicInst(Type _type, Tick _computeDelay, int _size,
+    DynamicInst(Type _type, Tick _computeDelay,
+                std::vector<DynamicInstId>&& _dependentInstIds, int _size,
                 const std::string& _base, Addr _offset = 0x0,
                 Addr _trace_vaddr = 0x0, void* _value = nullptr)
         : type(_type),
           computeDelay(_computeDelay),
+          dependentInstIds(std::move(_dependentInstIds)),
           size(_size),
           base(_base),
           offset(_offset),
           trace_vaddr(_trace_vaddr),
           value(_value) {}
+    // Print to a one line string (without '\n' ending).
+    std::string toLine() const {
+      std::stringstream ss;
+      ss << this->type << ',' << this->computeDelay << ',';
+      if (this->type == Type::LOAD || this->type == Type::STORE) {
+        ss << this->size << ',' << this->base << ',' << std::hex << this->offset
+           << ',' << this->trace_vaddr << ',' << std::dec;
+      }
+      for (auto id : this->dependentInstIds) {
+        ss << id << ',';
+      }
+      return ss.str();
+    }
   };
 
   /**
@@ -134,14 +150,13 @@ class LLVMTraceCPU : public BaseCPU {
   Addr finish_tag_paddr;
 
   //********************************************************//
-  EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::tick>
-      tickEvent;
+  EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::tick> tickEvent;
 
   enum InstStatus {
     FETCHED,  // In fetchQueue.
     READY,    // Ready to be issued.
     ISSUED,
-    FINISHED, // Finished computing.
+    FINISHED,  // Finished computing.
   };
   std::unordered_map<DynamicInstId, InstStatus> inflyInsts;
 

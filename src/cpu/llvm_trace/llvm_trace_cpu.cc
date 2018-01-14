@@ -66,6 +66,7 @@ void LLVMTraceCPU::readTraceFile() {
     // Default is compute type.
     DynamicInst::Type type = DynamicInst::Type::COMPUTE;
     Tick delay = std::stoul(fields[1]);
+    size_t dependentIdIndex = 2;
     // Fields for LOAD/STORE.
     int size = -1;
     std::string base = "";
@@ -92,20 +93,31 @@ void LLVMTraceCPU::readTraceFile() {
         default:
           fatal("Unsupported type id %d\n", typeId);
       }
+      dependentIdIndex = 8;
     } else if (fields[0] == "l") {
       type = DynamicInst::Type::LOAD;
       base = fields[2];
       offset = stoull(fields[3]);
       trace_vaddr = stoull(fields[4]);
       size = stoi(fields[5]);
+      dependentIdIndex = 6;
     }
-    this->dynamicInsts.emplace_back(type, delay, size, base, offset,
-                                    trace_vaddr, value);
-    DPRINTF(LLVMTraceCPU,
-            "Parsed #%u dynamic inst with type %u, delay %u, size %d, base %s, "
-            "offset 0x%x, trace_vaddr 0x%x\n",
-            this->dynamicInsts.size(), type, delay, size, base, offset,
-            trace_vaddr);
+
+    // Load the tailing dependent inst ids.
+    std::vector<DynamicInstId> dependentInstIds;
+    while (dependentIdIndex < fields.size()) {
+      if (fields[dependentIdIndex] != "") {
+        // Empty string may happen when there is no dependence.
+        dependentInstIds.push_back(std::stoull(fields[dependentIdIndex]));
+      }
+      dependentIdIndex++;
+    }
+
+    this->dynamicInsts.emplace_back(type, delay, std::move(dependentInstIds),
+                                    size, base, offset, trace_vaddr, value);
+    DPRINTF(LLVMTraceCPU, "Parsed #%u dynamic inst with %s\n",
+            this->dynamicInsts.size(),
+            this->dynamicInsts.back().toLine().c_str());
   }
   DPRINTF(LLVMTraceCPU, "Parsed total number of inst: %u\n",
           this->dynamicInsts.size());
@@ -327,8 +339,6 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   delete pkt->req;
   delete pkt;
 
-  // After receive some response, we retry blocked packet.
-  this->dataPort.recvReqRetry();
   return true;
 }
 
@@ -374,29 +384,39 @@ Addr LLVMTraceCPU::translateTraceToPhysMem(const std::string& base,
 void LLVMTraceCPU::CPUPort::sendReq(PacketPtr pkt) {
   // If there is already blocked req, just push to the queue.
   std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
-  if (!this->blockedPacketPtrs.empty()) {
-    DPRINTF(LLVMTraceCPU, "Blocked packet ptr %p\n", pkt);
+  if (this->blocked) {
+    // We are blocked, push to the queue.
+    DPRINTF(LLVMTraceCPU, "Already blocked, queue packet ptr %p\n", pkt);
     this->blockedPacketPtrs.push(pkt);
     return;
   }
-  // Push to blocked ptrs if need retry.
+  // Push to blocked ptrs if need retry, and set blocked flag.
   bool success = MasterPort::sendTimingReq(pkt);
   if (!success) {
     DPRINTF(LLVMTraceCPU, "Blocked packet ptr %p\n", pkt);
+    this->blocked = true;
     this->blockedPacketPtrs.push(pkt);
   }
 }
 
 void LLVMTraceCPU::CPUPort::recvReqRetry() {
   std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
-  if (!this->blockedPacketPtrs.empty()) {
+  if (!this->blocked) {
+    panic("Should be in blocked state when recvReqRetry is called\n");
+  }
+  // Unblock myself.
+  this->blocked = false;
+  // Keep retry until failed or blocked is empty.
+  while (!this->blockedPacketPtrs.empty() && !this->blocked) {
     // If we have blocked packet, send again.
     PacketPtr pkt = this->blockedPacketPtrs.front();
     bool success = MasterPort::sendTimingReq(pkt);
-    DPRINTF(LLVMTraceCPU, "Retry blocked packet ptr %p\n", pkt);
     if (success) {
       DPRINTF(LLVMTraceCPU, "Retry blocked packet ptr %p: Succeed\n", pkt);
       this->blockedPacketPtrs.pop();
+    } else {
+      DPRINTF(LLVMTraceCPU, "Retry blocked packet ptr %p: Failed\n", pkt);
+      this->blocked = true;
     }
   }
 }
