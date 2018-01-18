@@ -11,6 +11,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
       traceFile(params->traceFile),
+      currentStackDepth(0),
       currentInstId(0),
       process(nullptr),
       thread_context(nullptr),
@@ -42,12 +43,12 @@ LLVMTraceCPU* LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
 
 namespace {
 /**
- * Split a string like a,b,c, into [a, b, c].
+ * Split a string like a|b|c| into [a, b, c].
  */
-std::vector<std::string> splitByComma(const std::string& source) {
+std::vector<std::string> splitByChar(const std::string& source, char split) {
   std::vector<std::string> ret;
   for (size_t idx = 0, prev = 0; idx < source.size(); ++idx) {
-    if (source[idx] == ',') {
+    if (source[idx] == split) {
       ret.push_back(source.substr(prev, idx - prev));
       prev = idx + 1;
     }
@@ -62,7 +63,8 @@ void LLVMTraceCPU::readTraceFile() {
     fatal("Failed opening trace file %s\n", this->traceFile.c_str());
   }
   for (std::string line; std::getline(stream, line);) {
-    auto fields = splitByComma(line);
+    DPRINTF(LLVMTraceCPU, "read in %s\n", line.c_str());
+    auto fields = splitByChar(line, '|');
     // Default is compute type.
     DynamicInst::Type type = DynamicInst::Type::COMPUTE;
     Tick delay = std::stoul(fields[1]);
@@ -87,13 +89,26 @@ void LLVMTraceCPU::readTraceFile() {
         case 3: {
           // Double type.
           value = new double;
-          *((double*)value) = stod(fields[7]);
+          *((double*)value) = stod(fields[8]);
+          break;
+        }
+        case 11: {
+          // Arbitrary bit width integer. Check the type name.
+          if (fields[7] == "i32") {
+            value = new uint32_t;
+            *((uint32_t*)value) = stoul(fields[8]);
+          } else if (fields[7] == "i8") {
+            value = new uint8_t;
+            *((uint8_t*)value) = stoul(fields[8]);
+          } else {
+            fatal("Unsupported integer type %s\n", fields[7].c_str());
+          }
           break;
         }
         default:
           fatal("Unsupported type id %d\n", typeId);
       }
-      dependentIdIndex = 8;
+      dependentIdIndex = 9;
     } else if (fields[0] == "l") {
       type = DynamicInst::Type::LOAD;
       base = fields[2];
@@ -101,6 +116,10 @@ void LLVMTraceCPU::readTraceFile() {
       trace_vaddr = stoull(fields[4]);
       size = stoi(fields[5]);
       dependentIdIndex = 6;
+    } else if (fields[0] == "call") {
+      type = DynamicInst::Type::CALL;
+    } else if (fields[0] == "ret") {
+      type = DynamicInst::Type::RET;
     }
 
     // Load the tailing dependent inst ids.
@@ -124,12 +143,27 @@ void LLVMTraceCPU::readTraceFile() {
 }
 
 void LLVMTraceCPU::fetch() {
+  // Only fetch if the stack depth is > 0.
   while (this->currentInstId < this->dynamicInsts.size() &&
-         this->fetchQueue.size() < this->MAX_FETCH_QUEUE_SIZE) {
+         this->fetchQueue.size() < this->MAX_FETCH_QUEUE_SIZE &&
+         this->currentStackDepth > 0) {
     DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n",
             this->currentInstId);
     this->inflyInsts[currentInstId] = InstStatus::FETCHED;
-    this->fetchQueue.push(this->currentInstId++);
+    this->fetchQueue.push(this->currentInstId);
+    // Update the stack depth for call/ret inst.
+    auto instType = this->dynamicInsts[this->currentInstId].type;
+    if (instType == DynamicInst::Type::CALL) {
+      this->currentStackDepth++;
+      DPRINTF(LLVMTraceCPU, "Stack depth ++ to %u\n", this->currentStackDepth);
+    } else if (instType == DynamicInst::Type::RET) {
+      if (this->currentStackDepth == 0) {
+        panic("Current stack depth is already 0, cannot do --\n");
+      }
+      this->currentStackDepth--;
+      DPRINTF(LLVMTraceCPU, "Stack depth -- to %u\n", this->currentStackDepth);
+    }
+    this->currentInstId++;
   }
 }
 
@@ -199,6 +233,8 @@ void LLVMTraceCPU::issue() {
       const DynamicInst& inst = this->dynamicInsts[instId];
 
       switch (inst.type) {
+        case DynamicInst::Type::CALL:
+        case DynamicInst::Type::RET:
         case DynamicInst::Type::COMPUTE: {
           // Just do nothing.
           break;
@@ -249,7 +285,9 @@ void LLVMTraceCPU::countDownComputeDelay() {
       }
       // Check if is compute inst.
       DynamicInst& inst = this->dynamicInsts[instId];
-      if (inst.type != DynamicInst::Type::COMPUTE) {
+      if (inst.type != DynamicInst::Type::COMPUTE &&
+          inst.type != DynamicInst::Type::CALL &&
+          inst.type != DynamicInst::Type::RET) {
         continue;
       }
 
@@ -273,11 +311,12 @@ void LLVMTraceCPU::commit() {
       if (this->inflyInsts[instId] != InstStatus::FINISHED) {
         continue;
       }
-      DPRINTF(LLVMTraceCPU, "Inst %u committed\n", instId);
       // Mark the rob entry as free again.
       this->rob[i].second = false;
       // Erase it from the inflyInsts.
       this->inflyInsts.erase(instId);
+      DPRINTF(LLVMTraceCPU, "Inst %u committed, remaining infly inst #%u\n",
+              instId, this->inflyInsts.size());
     }
   }
 }
@@ -298,16 +337,16 @@ void LLVMTraceCPU::tick() {
 
   if (this->fetchQueue.empty() && this->inflyInsts.empty()) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
-    // Write 1 to the finish_tag.
-    RequestPtr req =
-        new Request(this->finish_tag_paddr, 1, 0, this->_dataMasterId,
-                    this->currentInstId, ContextID(0));
-    PacketPtr pkt;
-    uint8_t* pkt_data = new uint8_t[1];
-    pkt_data[0] = 1;
-    pkt = Packet::createWrite(req);
-    pkt->dataDynamic(pkt_data);
-    this->dataPort.sendReq(pkt);
+    // No more need to write to the finish tag, simply restart the
+    // normal thread.
+    // Check the stack depth should be 0.
+    if (this->currentStackDepth != 0) {
+      panic("The stack depth should be 0 when we finished a replay, but %u\n",
+            this->currentStackDepth);
+    }
+
+    DPRINTF(LLVMTraceCPU, "Activate the normal CPU\n");
+    this->thread_context->activate();
     return;
   } else {
     // Schedule next Tick event.
@@ -329,11 +368,8 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
              "inst %u should be issued to be finished\n", instId);
     this->inflyInsts[instId] = InstStatus::FINISHED;
   } else {
-    DPRINTF(LLVMTraceCPU, "Finish writing finish_tag\n");
-    // Activate the thread for normal CPU.
-    this->thread_context->activate();
-    DPRINTF(LLVMTraceCPU, "Activate thread, status = %d\n",
-            this->thread_context->status());
+    panic("Invalid instId %u, max instId %u\n", instId,
+          this->dynamicInsts.size());
   }
   // Release the memory.
   delete pkt->req;
@@ -447,6 +483,13 @@ void LLVMTraceCPU::handleReplay(Process* p, ThreadContext* tc,
     panic("Failed translating finish_tag_vaddr %p to paddr\n",
           reinterpret_cast<void*>(finish_tag_vaddr));
   }
+
+  // Update the stack depth to 1.
+  if (this->currentStackDepth != 0) {
+    panic("Before replay the stack depth must be 0, now %u\n",
+          this->currentStackDepth);
+  }
+  this->currentStackDepth = 1;
 
   // Schedule the next event.
   schedule(this->tickEvent, curTick() + 1);

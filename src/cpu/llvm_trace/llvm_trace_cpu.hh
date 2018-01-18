@@ -70,6 +70,8 @@ class LLVMTraceCPU : public BaseCPU {
       LOAD,
       STORE,
       COMPUTE,
+      CALL,
+      RET,
     } type;
     Tick computeDelay;
     std::vector<DynamicInstId> dependentInstIds;
@@ -136,6 +138,9 @@ class LLVMTraceCPU : public BaseCPU {
 
   const std::string traceFile;
 
+  // Used to record the current stack depth, so that we can break trace
+  // into multiple function calls.
+  uint32_t currentStackDepth;
   DynamicInstId currentInstId;
   std::vector<DynamicInst> dynamicInsts;
 
