@@ -72,20 +72,29 @@ class LLVMTraceCPU : public BaseCPU {
       COMPUTE,
       CALL,
       RET,
+      ALLOCA,
+      SIN,
+      COS,
     } type;
     Tick computeDelay;
     std::vector<DynamicInstId> dependentInstIds;
     // Used for LOAD/STORE.
+    // The base/size is also used for alloca.
     int size;
     std::string base;
     Addr offset;
     Addr trace_vaddr;  // Trace space vaddr.
     // Used for STORE.
-    void* value;
+    uint8_t* value;
+    // Used for alloc.
+    Addr align;
+    // AdHoc field used for load/store large packet.
+    uint32_t numInflyPackets;
     DynamicInst(Type _type, Tick _computeDelay,
                 std::vector<DynamicInstId>&& _dependentInstIds, int _size,
                 const std::string& _base, Addr _offset = 0x0,
-                Addr _trace_vaddr = 0x0, void* _value = nullptr)
+                Addr _trace_vaddr = 0x0, uint8_t* _value = nullptr,
+                Addr _align = 8)
         : type(_type),
           computeDelay(_computeDelay),
           dependentInstIds(std::move(_dependentInstIds)),
@@ -93,7 +102,9 @@ class LLVMTraceCPU : public BaseCPU {
           base(_base),
           offset(_offset),
           trace_vaddr(_trace_vaddr),
-          value(_value) {}
+          value(_value),
+          align(_align),
+          numInflyPackets(0) {}
     // Print to a one line string (without '\n' ending).
     std::string toLine() const {
       std::stringstream ss;
@@ -145,12 +156,15 @@ class LLVMTraceCPU : public BaseCPU {
   std::vector<DynamicInst> dynamicInsts;
 
   //*********************************************************//
+  // This variables are initialized per replay.
   // A map from base name to user space address.
   std::unordered_map<std::string, Addr> mapBaseToVAddr;
 
   // Process and ThreadContext for the simulation program.
   Process* process;
   ThreadContext* thread_context;
+  // The top of the stack for this replay.
+  Addr stackMin;
 
   Addr finish_tag_paddr;
 

@@ -15,6 +15,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       currentInstId(0),
       process(nullptr),
       thread_context(nullptr),
+      stackMin(0),
       tickEvent(*this),
       MAX_FETCH_QUEUE_SIZE(params->maxFetchQueueSize),
       MAX_REORDER_BUFFER_SIZE(params->maxReorderBufferSize),
@@ -75,7 +76,9 @@ void LLVMTraceCPU::readTraceFile() {
     Addr offset = 0x0;
     Addr trace_vaddr = 0x0;
     // Fields for STORE.
-    void* value = nullptr;
+    uint8_t* value = nullptr;
+    // Hack for align.
+    Addr align = 8;
 
     if (fields[0] == "s") {
       type = DynamicInst::Type::STORE;
@@ -88,14 +91,17 @@ void LLVMTraceCPU::readTraceFile() {
       switch (typeId) {
         case 3: {
           // Double type.
-          value = new double;
+          value = (uint8_t*)(new double);
           *((double*)value) = stod(fields[8]);
           break;
         }
         case 11: {
           // Arbitrary bit width integer. Check the type name.
-          if (fields[7] == "i32") {
-            value = new uint32_t;
+          if (fields[7] == "i64") {
+            value = (uint8_t*)(new uint64_t);
+            *((uint64_t*)value) = stoull(fields[8]);
+          } else if (fields[7] == "i32") {
+            value = (uint8_t*)(new uint32_t);
             *((uint32_t*)value) = stoul(fields[8]);
           } else if (fields[7] == "i8") {
             value = new uint8_t;
@@ -103,6 +109,34 @@ void LLVMTraceCPU::readTraceFile() {
           } else {
             fatal("Unsupported integer type %s\n", fields[7].c_str());
           }
+          break;
+        }
+        case 16: {
+          // Vector.
+          // TODO: Refactor this type extracting code and make it
+          // more safe.
+          // auto x_pos = fields[7].find('x');
+          // if (x_pos == std::string::npos) {
+          //   fatal("Invalud vector type %s\n", fields[7].c_str());
+          // }
+          // size_t num_element = stoul(fields[])
+          uint8_t* buffer = new uint8_t[size];
+          size_t idx = 0;
+          for (auto b : splitByChar(fields[8], ',')) {
+            if (idx >= size) {
+              fatal(
+                  "Number of bytes exceeds the size %u of the vector, content "
+                  "%s\n",
+                  size, fields[8].c_str());
+            }
+            // Parse the vector.
+            buffer[idx++] = (uint8_t)(stoul(b) & 0xFF);
+          }
+          if (idx != size) {
+            fatal("Number of bytes not equal to the size %u, content %s\n",
+                  size, fields[8].c_str());
+          }
+          value = buffer;
           break;
         }
         default:
@@ -116,10 +150,24 @@ void LLVMTraceCPU::readTraceFile() {
       trace_vaddr = stoull(fields[4]);
       size = stoi(fields[5]);
       dependentIdIndex = 6;
+    } else if (fields[0] == "alloca") {
+      // Alloca inst.
+      type = DynamicInst::Type::ALLOCA;
+      base = fields[2];
+      trace_vaddr = stoull(fields[3]);
+      size = stoi(fields[4]);
+      // A hack for the fft-transpose as we know
+      // the alignment is 16.
+      align = 16;
+      dependentIdIndex = 5;
     } else if (fields[0] == "call") {
       type = DynamicInst::Type::CALL;
     } else if (fields[0] == "ret") {
       type = DynamicInst::Type::RET;
+    } else if (fields[0] == "sin") {
+      type = DynamicInst::Type::SIN;
+    } else if (fields[0] == "cos") {
+      type = DynamicInst::Type::COS;
     }
 
     // Load the tailing dependent inst ids.
@@ -133,7 +181,8 @@ void LLVMTraceCPU::readTraceFile() {
     }
 
     this->dynamicInsts.emplace_back(type, delay, std::move(dependentInstIds),
-                                    size, base, offset, trace_vaddr, value);
+                                    size, base, offset, trace_vaddr, value,
+                                    align);
     DPRINTF(LLVMTraceCPU, "Parsed #%u dynamic inst with %s\n",
             this->dynamicInsts.size(),
             this->dynamicInsts.back().toLine().c_str());
@@ -230,43 +279,96 @@ void LLVMTraceCPU::issue() {
       this->inflyInsts[instId] = InstStatus::ISSUED;
       DPRINTF(LLVMTraceCPU, "inst %u issued\n", instId);
 
-      const DynamicInst& inst = this->dynamicInsts[instId];
+      DynamicInst& inst = this->dynamicInsts[instId];
 
       switch (inst.type) {
         case DynamicInst::Type::CALL:
         case DynamicInst::Type::RET:
+        case DynamicInst::Type::SIN:
+        case DynamicInst::Type::COS:
         case DynamicInst::Type::COMPUTE: {
           // Just do nothing.
           break;
         }
+        case DynamicInst::Type::ALLOCA: {
+          // We need to handle stack allocation only
+          // when we have a driver.
+          if (this->driver != nullptr) {
+            // Allocate the stack starting from stackMin.
+            // Note that since we are not acutall modifying the
+            // stack pointer in the thread context, there is no
+            // clean up necessary when we leaving this function.
+            // Compute the bottom of the new stack.
+            // Remember to round down to align.
+            Addr bottom = roundDown(this->stackMin - inst.size, inst.align);
+            // Try to map the bottom to see if there is already
+            // a physical page for it.
+            Addr paddr;
+            if (!this->process->pTable->translate(bottom, paddr)) {
+              // We need to allocate more page for the stack.
+              if (!this->process->fixupStackFault(bottom)) {
+                panic("Failed to allocate stack until %ull\n", bottom);
+              }
+            }
+            // Update the stackMin.
+            this->stackMin = bottom;
+            // Set up the mapping.
+            DPRINTF(LLVMTraceCPU, "Allocate stack for %s at %p\n",
+                    inst.base.c_str(), (void*)bottom);
+            this->mapBaseToVAddr[inst.base] = bottom;
+          }
+          break;
+        }
         case DynamicInst::Type::LOAD:
         case DynamicInst::Type::STORE: {
-          Addr paddr;
-          if (this->driver == nullptr) {
-            // When in stand alone mode, use the trace space address
-            // directly as the virtual address.
-            paddr = this->translateAndAllocatePhysMem(inst.trace_vaddr);
-          } else {
-            // When we have a driver, we have to translate trace space
-            // address into simulation space and then use the process
-            // page table to get physical address.
-            paddr = this->translateTraceToPhysMem(inst.base, inst.offset);
+          // Debug hack, no memory access.
+          // if (instId > 53596) {
+          //   this->inflyInsts[instId] = InstStatus::FINISHED;
+          //   break;
+          // }
+          for (int packetSize, inflyPacketsSize = 0;
+               inflyPacketsSize < inst.size; inflyPacketsSize += packetSize) {
+            Addr paddr, vaddr;
+            if (this->driver == nullptr) {
+              // When in stand alone mode, use the trace space address
+              // directly as the virtual address.
+              vaddr = inst.trace_vaddr + inflyPacketsSize;
+              paddr = this->translateAndAllocatePhysMem(vaddr);
+            } else {
+              // When we have a driver, we have to translate trace space
+              // address into simulation space and then use the process
+              // page table to get physical address.
+              paddr = this->translateTraceToPhysMem(
+                  inst.base, inst.offset + inflyPacketsSize);
+              vaddr = this->mapBaseToVAddr[inst.base] + inst.offset +
+                      inflyPacketsSize;
+            }
+            // For now only support maximum 16 bytes access.
+            packetSize = (inst.size - inflyPacketsSize);
+            if (packetSize > 16) {
+              packetSize = 16;
+            }
+            RequestPtr req =
+                new Request(paddr, packetSize, 0, this->_dataMasterId, instId,
+                            this->thread_context->contextId());
+            PacketPtr pkt;
+            uint8_t* pkt_data = new uint8_t[req->getSize()];
+            if (inst.type == DynamicInst::Type::LOAD) {
+              pkt = Packet::createRead(req);
+            } else {
+              pkt = Packet::createWrite(req);
+              // Copy the value to store.
+              memcpy(pkt_data, inst.value + inflyPacketsSize, req->getSize());
+            }
+            pkt->dataDynamic(pkt_data);
+            DPRINTF(LLVMTraceCPU,
+                    "Send request %d vaddr %p paddr %p size %u for inst %d\n",
+                    inst.numInflyPackets, (void*)vaddr, (void*)paddr,
+                    req->getSize(), instId);
+            this->dataPort.sendReq(pkt);
+            // Update infly packets number.
+            inst.numInflyPackets++;
           }
-          RequestPtr req =
-              new Request(paddr, inst.size, 0, this->_dataMasterId, instId,
-                          this->thread_context->contextId());
-          PacketPtr pkt;
-          uint8_t* pkt_data = new uint8_t[req->getSize()];
-          if (inst.type == DynamicInst::Type::LOAD) {
-            pkt = Packet::createRead(req);
-          } else {
-            pkt = Packet::createWrite(req);
-            // Copy the value to store.
-            memcpy(pkt_data, inst.value, req->getSize());
-          }
-          pkt->dataDynamic(pkt_data);
-          DPRINTF(LLVMTraceCPU, "Send request for inst %d\n", instId);
-          this->dataPort.sendReq(pkt);
           break;
         }
         default: { panic("Unknown dynamic instruction type %u\n", inst.type); }
@@ -284,10 +386,14 @@ void LLVMTraceCPU::countDownComputeDelay() {
         continue;
       }
       // Check if is compute inst.
+      // TODO: Fix this stupid stuff.
       DynamicInst& inst = this->dynamicInsts[instId];
       if (inst.type != DynamicInst::Type::COMPUTE &&
           inst.type != DynamicInst::Type::CALL &&
-          inst.type != DynamicInst::Type::RET) {
+          inst.type != DynamicInst::Type::RET &&
+          inst.type != DynamicInst::Type::SIN &&
+          inst.type != DynamicInst::Type::COS &&
+          inst.type != DynamicInst::Type::ALLOCA) {
         continue;
       }
 
@@ -326,6 +432,14 @@ void LLVMTraceCPU::tick() {
     DPRINTF(LLVMTraceCPU, "Tick()\n");
   }
 
+  // HACK: CHECK 0xf7a352f0.
+  // {
+  //   Addr paddr;
+  //   if (!this->process->pTable->translate(0xf7a352f0, paddr)) {
+  //     panic("Failed to translate 0xf7a352f0\n");
+  //   }
+  // }
+
   fetch();
   reorder();
   issue();
@@ -360,13 +474,17 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   // Do not schedule next event.
   DynamicInstId instId = pkt->req->getReqInstSeqNum();
   if (instId < this->dynamicInsts.size()) {
-    DPRINTF(LLVMTraceCPU, "Get response for inst %u, mark it as finished\n",
-            instId);
+    DynamicInst& inst = this->dynamicInsts[instId];
+    DPRINTF(LLVMTraceCPU, "Get response for inst %u, remain infly packets %d\n",
+            instId, --(inst.numInflyPackets));
     panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
              "inst %u should be in inflyInsts\n", instId);
-    panic_if(this->inflyInsts[instId] != InstStatus::ISSUED,
-             "inst %u should be issued to be finished\n", instId);
-    this->inflyInsts[instId] = InstStatus::FINISHED;
+    if (inst.numInflyPackets == 0) {
+      panic_if(this->inflyInsts[instId] != InstStatus::ISSUED,
+               "inst %u should be issued to be finished\n", instId);
+      this->inflyInsts[instId] = InstStatus::FINISHED;
+      DPRINTF(LLVMTraceCPU, "Finish inst %u\n", instId);
+    }
   } else {
     panic("Invalid instId %u, max instId %u\n", instId,
           this->dynamicInsts.size());
@@ -463,6 +581,7 @@ void LLVMTraceCPU::handleMapVirtualMem(Process* p, ThreadContext* tc,
   DPRINTF(LLVMTraceCPU, "MapVirtualMem base %s to 0x%x\n", base.c_str(), vaddr);
   this->mapBaseToVAddr[base] = vaddr;
 }
+
 void LLVMTraceCPU::handleReplay(Process* p, ThreadContext* tc,
                                 const std::string& trace,
                                 const Addr finish_tag_vaddr) {
@@ -472,6 +591,9 @@ void LLVMTraceCPU::handleReplay(Process* p, ThreadContext* tc,
   // Set the process and tc.
   this->process = p;
   this->thread_context = tc;
+
+  // Get the bottom of the stack.
+  this->stackMin = tc->readIntReg(TheISA::StackPointerReg);
 
   // Suspend the thread from normal CPU.
   this->thread_context->suspend();
