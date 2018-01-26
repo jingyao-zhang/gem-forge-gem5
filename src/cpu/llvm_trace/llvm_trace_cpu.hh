@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "cpu/base.hh"
+#include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
 #include "mem/page_table.hh"
 #include "params/LLVMTraceCPU.hh"
@@ -63,76 +64,12 @@ class LLVMTraceCPU : public BaseCPU {
     bool blocked;
   };
 
-  using DynamicInstId = uint64_t;
-
-  struct DynamicInst {
-    enum Type : uint8_t {
-      LOAD,
-      STORE,
-      COMPUTE,
-      CALL,
-      RET,
-      ALLOCA,
-      SIN,
-      COS,
-    } type;
-    Tick computeDelay;
-    std::vector<DynamicInstId> dependentInstIds;
-    // Used for LOAD/STORE.
-    // The base/size is also used for alloca.
-    int size;
-    std::string base;
-    Addr offset;
-    Addr trace_vaddr;  // Trace space vaddr.
-    // Used for STORE.
-    uint8_t* value;
-    // Used for alloc.
-    Addr align;
-    // AdHoc field used for load/store large packet.
-    uint32_t numInflyPackets;
-    DynamicInst(Type _type, Tick _computeDelay,
-                std::vector<DynamicInstId>&& _dependentInstIds, int _size,
-                const std::string& _base, Addr _offset = 0x0,
-                Addr _trace_vaddr = 0x0, uint8_t* _value = nullptr,
-                Addr _align = 8)
-        : type(_type),
-          computeDelay(_computeDelay),
-          dependentInstIds(std::move(_dependentInstIds)),
-          size(_size),
-          base(_base),
-          offset(_offset),
-          trace_vaddr(_trace_vaddr),
-          value(_value),
-          align(_align),
-          numInflyPackets(0) {}
-    // Print to a one line string (without '\n' ending).
-    std::string toLine() const {
-      std::stringstream ss;
-      ss << this->type << ',' << this->computeDelay << ',';
-      if (this->type == Type::LOAD || this->type == Type::STORE) {
-        ss << this->size << ',' << this->base << ',' << std::hex << this->offset
-           << ',' << this->trace_vaddr << ',' << std::dec;
-      }
-      for (auto id : this->dependentInstIds) {
-        ss << id << ',';
-      }
-      return ss.str();
-    }
-  };
-
   /**
    * Read in the trace file and popluate dynamicInsts vector.
    */
   void readTraceFile();
 
   void tick();
-
-  /**
-   * Translate the vaddr to paddr.
-   * May allocate page if page fault.
-   * Note: only use this in stand alone mode (no driver).
-   */
-  Addr translateAndAllocatePhysMem(Addr vaddr);
 
   /**
    * Translate the trace vaddr to simulation vaddr
@@ -151,9 +88,9 @@ class LLVMTraceCPU : public BaseCPU {
 
   // Used to record the current stack depth, so that we can break trace
   // into multiple function calls.
-  uint32_t currentStackDepth;
-  DynamicInstId currentInstId;
-  std::vector<DynamicInst> dynamicInsts;
+  int currentStackDepth;
+  LLVMDynamicInstId currentInstId;
+  std::vector<std::shared_ptr<LLVMDynamicInst>> dynamicInsts;
 
   //*********************************************************//
   // This variables are initialized per replay.
@@ -177,15 +114,15 @@ class LLVMTraceCPU : public BaseCPU {
     ISSUED,
     FINISHED,  // Finished computing.
   };
-  std::unordered_map<DynamicInstId, InstStatus> inflyInsts;
+  std::unordered_map<LLVMDynamicInstId, InstStatus> inflyInsts;
 
-  std::queue<DynamicInstId> fetchQueue;
+  std::queue<LLVMDynamicInstId> fetchQueue;
   const size_t MAX_FETCH_QUEUE_SIZE;
 
   void fetch();
 
   // reorder buffer.
-  std::vector<std::pair<DynamicInstId, bool>> rob;
+  std::vector<std::pair<LLVMDynamicInstId, bool>> rob;
   const size_t MAX_REORDER_BUFFER_SIZE;
 
   // Fetch instructions from fetchQueue and fill into rob.
@@ -205,6 +142,53 @@ class LLVMTraceCPU : public BaseCPU {
   void commit();
 
   LLVMTraceCPUDriver* driver;
+
+  /**************************************************************/
+  // Interface for the insts.
+ public:
+  // Check if this is running in standalone mode (no normal cpu).
+  bool isStandalone() const { return this->driver == nullptr; }
+
+  // Check if an inst is already finished.
+  bool isInstFinished(LLVMDynamicInstId instId) const {
+    if (instId >= this->currentInstId) {
+      return false;
+    }
+    if (this->inflyInsts.find(instId) != this->inflyInsts.end()) {
+      return false;
+    }
+    return true;
+  }
+
+  // Allocate the stack. Should only be used in non-standalone mode.
+  // Return the virtual address.
+  Addr allocateStack(Addr size, Addr align);
+
+  /**
+   * Translate the vaddr to paddr.
+   * May allocate page if page fault.
+   * Note: only use this in stand alone mode (no driver).
+   */
+  Addr translateAndAllocatePhysMem(Addr vaddr);
+
+  // Map a base name to vaddr;
+  void mapBaseNameToVAddr(const std::string& base, Addr vaddr);
+
+  // Get a vaddr from base.
+  Addr getVAddrFromBase(const std::string& base) {
+    if (this->mapBaseToVAddr.find(base) == this->mapBaseToVAddr.end()) {
+      panic("Failed to look up base %s\n", base.c_str());
+    }
+    return this->mapBaseToVAddr.at(base);
+  }
+
+  // Translate from vaddr to paddr.
+  Addr getPAddrFromVaddr(Addr vaddr);
+
+  // Send a request to memory.
+  // If data is not nullptr, it will be a write.
+  void sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
+                   uint8_t* data);
 };
 
 #endif

@@ -3,5 +3,6 @@ Import('*')
 DebugFlag('LLVMTraceCPU')
 
 SimObject('LLVMTraceCPU.py')
+Source('llvm_insts.cc')
 Source('llvm_trace_cpu.cc')
 Source('llvm_trace_cpu_driver.cc')
