@@ -11,6 +11,7 @@
 #include "cpu/base.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
+#include "cpu/o3/fu_pool.hh"
 #include "mem/page_table.hh"
 #include "params/LLVMTraceCPU.hh"
 
@@ -83,6 +84,8 @@ class LLVMTraceCPU : public BaseCPU {
   FuncPageTable pageTable;
   CPUPort instPort;
   CPUPort dataPort;
+
+  FUPool* fuPool;
 
   const std::string traceFile;
 

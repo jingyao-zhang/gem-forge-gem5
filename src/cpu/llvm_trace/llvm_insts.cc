@@ -1,6 +1,5 @@
 #include "cpu/llvm_trace/llvm_insts.hh"
 
-#include "base/misc.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 

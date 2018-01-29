@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "base/misc.hh"
 #include "base/types.hh"
 
 class LLVMTraceCPU;

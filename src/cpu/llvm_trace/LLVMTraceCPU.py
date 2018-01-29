@@ -1,5 +1,7 @@
 from m5.params import *
+
 from BaseCPU import BaseCPU
+from FUPool import DefaultFUPool
 from Process import EmulatedDriver
 
 class LLVMTraceCPU(BaseCPU):
@@ -10,6 +12,8 @@ class LLVMTraceCPU(BaseCPU):
     driver = Param.LLVMTraceCPUDriver('The driver to control this cpu.')
     maxFetchQueueSize = Param.UInt64(8, 'Maximum size of the fetch queue.')
     maxReorderBufferSize = Param.UInt64(8, 'Maximum size of the rob.')
+
+    fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
 
     @classmethod
     def memory_mode(cls):

@@ -10,6 +10,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
+      fuPool(params->fuPool),
       traceFile(params->traceFile),
       currentStackDepth(0),
       currentInstId(0),
