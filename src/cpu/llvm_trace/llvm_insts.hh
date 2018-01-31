@@ -15,9 +15,11 @@ using LLVMDynamicInstId = uint64_t;
 
 class LLVMDynamicInst {
  public:
-  LLVMDynamicInst(LLVMDynamicInstId _id,
+  LLVMDynamicInst(LLVMDynamicInstId _id, const std::string& _instName,
                   std::vector<LLVMDynamicInstId>&& _dependentInstIds)
-      : id(_id), dependentInstIds(std::move(_dependentInstIds)) {}
+      : id(_id),
+        instName(_instName),
+        dependentInstIds(std::move(_dependentInstIds)) {}
 
   // Interface.
   virtual void execute(LLVMTraceCPU* cpu) = 0;
@@ -41,6 +43,7 @@ class LLVMDynamicInst {
 
  protected:
   LLVMDynamicInstId id;
+  std::string instName;
   std::vector<LLVMDynamicInstId> dependentInstIds;
 };
 
@@ -52,12 +55,12 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
     STORE,
     LOAD,
   };
-  LLVMDynamicInstMem(LLVMDynamicInstId _id,
+  LLVMDynamicInstMem(LLVMDynamicInstId _id, const std::string& _instName,
                      std::vector<LLVMDynamicInstId>&& _dependentInstIds,
                      Addr _size, const std::string& _base, Addr _offset,
                      Addr _trace_vaddr, Addr _align, Type _type,
                      uint8_t* _value)
-      : LLVMDynamicInst(_id, std::move(_dependentInstIds)),
+      : LLVMDynamicInst(_id, _instName, std::move(_dependentInstIds)),
         size(_size),
         base(_base),
         offset(_offset),
@@ -113,10 +116,10 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
     COS,
     OTHER,
   };
-  LLVMDynamicInstCompute(LLVMDynamicInstId _id,
+  LLVMDynamicInstCompute(LLVMDynamicInstId _id, const std::string& _instName,
                          std::vector<LLVMDynamicInstId>&& _dependentInstIds,
                          Tick _computeDelay, Type _type)
-      : LLVMDynamicInst(_id, std::move(_dependentInstIds)),
+      : LLVMDynamicInst(_id, _instName, std::move(_dependentInstIds)),
         computeDelay(_computeDelay),
         type(_type) {}
   void execute(LLVMTraceCPU* cpu) override {
@@ -147,7 +150,7 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
       default:
         return 0;
     }
-   }
+  }
 
  protected:
   Tick computeDelay;

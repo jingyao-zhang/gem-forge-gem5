@@ -92,11 +92,16 @@ namespace {
  */
 std::vector<std::string> splitByChar(const std::string& source, char split) {
   std::vector<std::string> ret;
-  for (size_t idx = 0, prev = 0; idx < source.size(); ++idx) {
+  size_t idx = 0, prev = 0;
+  for (; idx < source.size(); ++idx) {
     if (source[idx] == split) {
       ret.push_back(source.substr(prev, idx - prev));
       prev = idx + 1;
     }
+  }
+  // Don't miss the possible last field.
+  if (prev < idx) {
+    ret.push_back(source.substr(prev, idx - prev));
   }
   return std::move(ret);
 }
@@ -156,14 +161,10 @@ uint8_t* extractStoreValue(int typeId, Addr size, const std::string& typeName,
 }
 
 std::vector<LLVMDynamicInstId> extractDependentInsts(
-    const std::vector<std::string>& fields, int idx) {
+    const std::string deps) {
   std::vector<LLVMDynamicInstId> dependentInstIds;
-  while (idx < fields.size()) {
-    if (fields[idx] != "") {
-      // Empty string may happen when there is no dependence.
-      dependentInstIds.push_back(std::stoull(fields[idx]));
-    }
-    idx++;
+  for (const std::string& dependentIdStr : splitByChar(deps, ',')) {
+    dependentInstIds.push_back(stoull(dependentIdStr));
   }
   return std::move(dependentInstIds);
 }
@@ -172,7 +173,8 @@ std::vector<LLVMDynamicInstId> extractDependentInsts(
 std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
                                                       const std::string& line) {
   auto fields = splitByChar(line, '|');
-  if (fields[0] == "s") {
+  auto dependentInstIds = extractDependentInsts(fields[1]);
+  if (fields[0] == "store") {
     auto type = LLVMDynamicInstMem::Type::STORE;
     auto base = fields[2];
     Addr offset = stoull(fields[3]);
@@ -181,20 +183,18 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     // Handle the value of store operation.
     int typeId = stoi(fields[6]);
     uint8_t* value = extractStoreValue(typeId, size, fields[7], fields[8]);
-    auto dependentInstIds = extractDependentInsts(fields, 9);
     return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, std::move(dependentInstIds), size, base,
+        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size, base,
                                offset, trace_vaddr, 16, type, value));
-  } else if (fields[0] == "l") {
+  } else if (fields[0] == "load") {
     auto type = LLVMDynamicInstMem::Type::LOAD;
     auto base = fields[2];
     Addr offset = stoull(fields[3]);
     Addr trace_vaddr = stoull(fields[4]);
     Addr size = stoull(fields[5]);
     uint8_t* value = nullptr;
-    auto dependentInstIds = extractDependentInsts(fields, 6);
     return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, std::move(dependentInstIds), size, base,
+        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size, base,
                                offset, trace_vaddr, 16, type, value));
   } else if (fields[0] == "alloca") {
     auto type = LLVMDynamicInstMem::Type::ALLOCA;
@@ -203,9 +203,8 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     Addr trace_vaddr = stoull(fields[3]);
     Addr size = stoull(fields[4]);
     uint8_t* value = nullptr;
-    auto dependentInstIds = extractDependentInsts(fields, 6);
     return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, std::move(dependentInstIds), size, base,
+        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size, base,
                                offset, trace_vaddr, 16, type, value));
   } else {
     auto type = LLVMDynamicInstCompute::Type::OTHER;
@@ -218,10 +217,9 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     } else if (fields[0] == "cos") {
       type = LLVMDynamicInstCompute::Type::COS;
     }
-    Tick computeDelay = std::stoul(fields[1]);
-    auto dependentInstIds = extractDependentInsts(fields, 2);
+    Tick computeDelay = std::stoul(fields[2]);
     return std::shared_ptr<LLVMDynamicInst>(new LLVMDynamicInstCompute(
-        id, std::move(dependentInstIds), computeDelay, type));
+        id, fields[0], std::move(dependentInstIds), computeDelay, type));
   }
 
   panic("Unknown type of LLVMDynamicInst %s.\n", fields[0].c_str());
