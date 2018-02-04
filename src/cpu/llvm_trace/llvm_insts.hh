@@ -8,6 +8,7 @@
 
 #include "base/misc.hh"
 #include "base/types.hh"
+#include "cpu/op_class.hh"
 
 class LLVMTraceCPU;
 
@@ -19,7 +20,8 @@ class LLVMDynamicInst {
                   std::vector<LLVMDynamicInstId>&& _dependentInstIds)
       : id(_id),
         instName(_instName),
-        dependentInstIds(std::move(_dependentInstIds)) {}
+        dependentInstIds(std::move(_dependentInstIds)),
+        fuStatus(FUStatus::COMPLETED) {}
 
   // Interface.
   virtual void execute(LLVMTraceCPU* cpu) = 0;
@@ -30,13 +32,35 @@ class LLVMDynamicInst {
   virtual void handlePacketResponse() {
     panic("Calling handlePacketResponse on non-mem inst %u\n", id);
   }
+
+  // Handle a fu completion for next cycle.
+  virtual void handleFUCompletion();
+
   // Handle a tick for inst.
-  virtual void tick() = 0;
+  // This will handle FUCompletion.
+  virtual void tick() {
+    if (this->fuStatus == FUStatus::COMPLETE_NEXT_CYCLE) {
+      this->fuStatus = FUStatus::COMPLETED;
+    }
+  }
 
   virtual bool isCompleted() const = 0;
 
   // Check if all the dependence are ready.
   bool isDependenceReady(LLVMTraceCPU* cpu) const;
+
+  // Get FUs to execute this instruction.
+  // Gem5 will break the inst into micro-ops, each micro-op require
+  // only one FU.
+  // However, some LLVM insts requires more than one FU to execute,
+  // e.g. getelementptr need IntMul and IntAlu.
+  // TODO: Either to support multiple FUs or break LLVM inst into micro-ops.
+  OpClass getOpClass() const;
+
+  // Start the fuStatus state machine.
+  // If we need a fu, it will change to WORKING.
+  // Otherwise, should remain COMPLETED.
+  void startFUStatusFSM();
 
   // Hack, special interface for call stack inc/dec.
   virtual int getCallStackAdjustment() const { return 0; }
@@ -45,6 +69,16 @@ class LLVMDynamicInst {
   LLVMDynamicInstId id;
   std::string instName;
   std::vector<LLVMDynamicInstId> dependentInstIds;
+
+  // A simple state machine to monitor FU status.
+  // We need complete_next_cycle to make sure that latency
+  // of FU is precise, as we can't be sure when an
+  // FUCompletion is executed in one cycle.
+  enum FUStatus {
+    WORKING,
+    COMPLETE_NEXT_CYCLE,
+    COMPLETED,
+  } fuStatus;
 };
 
 // Memory access inst.
@@ -86,12 +120,10 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
   }
 
   void handlePacketResponse() override;
-  // Handle a tick for inst.
-  void tick() override {
-    // Silently ignore tick event.
-  }
 
-  bool isCompleted() const override { return this->numInflyPackets == 0; }
+  bool isCompleted() const override {
+    return this->fuStatus == FUStatus::COMPLETED && this->numInflyPackets == 0;
+  }
 
  protected:
   Addr size;
@@ -124,7 +156,7 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
         type(_type) {}
   void execute(LLVMTraceCPU* cpu) override {
     // For now just set the remainTicks.
-    this->remainTicks = this->computeDelay;
+    // this->remainTicks = this->computeDelay;
   }
   std::string toLine() const override {
     std::stringstream ss;
@@ -136,9 +168,15 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
     return ss.str();
   }
   // Handle a tick for inst.
-  void tick() override { this->remainTicks--; }
+  void tick() override {
+    LLVMDynamicInst::tick();
+    // this->remainTicks--;
+  }
 
-  bool isCompleted() const override { return remainTicks == 0; }
+  // Both the FU FSM and remain Ticks should be finished.
+  bool isCompleted() const override {
+    return this->fuStatus == FUStatus::COMPLETED;
+  }
 
   // Adjust the call stack for call/ret inst.
   int getCallStackAdjustment() const override {
@@ -156,7 +194,7 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
   Tick computeDelay;
   Type type;
   // Runtime fields.
-  Tick remainTicks;
+  // Tick remainTicks;
 };
 
 std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,

@@ -3,6 +3,14 @@
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
+void LLVMDynamicInst::handleFUCompletion() {
+  if (this->fuStatus != FUStatus::WORKING) {
+    panic("fuStatus should be working when a FU completes, instead %d\n",
+          this->fuStatus);
+  }
+  this->fuStatus = FUStatus::COMPLETE_NEXT_CYCLE;
+}
+
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU* cpu) const {
   for (const auto dependentInstId : this->dependentInstIds) {
     if (!cpu->isInstFinished(dependentInstId)) {
@@ -10,6 +18,21 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU* cpu) const {
     }
   }
   return true;
+}
+
+// For now just return IntAlu.
+OpClass LLVMDynamicInst::getOpClass() const { return IntAluOp; }
+
+void LLVMDynamicInst::startFUStatusFSM() {
+  if (this->fuStatus != FUStatus::COMPLETED) {
+    panic(
+        "fuStatus should be initialized in COMPLETED before starting, instead "
+        "of %d\n",
+        this->fuStatus);
+  }
+  if (this->getOpClass() != No_OpClass) {
+    this->fuStatus = FUStatus::WORKING;
+  }
 }
 
 void LLVMDynamicInstMem::execute(LLVMTraceCPU* cpu) {
@@ -160,8 +183,7 @@ uint8_t* extractStoreValue(int typeId, Addr size, const std::string& typeName,
   return value;
 }
 
-std::vector<LLVMDynamicInstId> extractDependentInsts(
-    const std::string deps) {
+std::vector<LLVMDynamicInstId> extractDependentInsts(const std::string deps) {
   std::vector<LLVMDynamicInstId> dependentInstIds;
   for (const std::string& dependentIdStr : splitByChar(deps, ',')) {
     dependentInstIds.push_back(stoull(dependentIdStr));
@@ -184,8 +206,8 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     int typeId = stoi(fields[6]);
     uint8_t* value = extractStoreValue(typeId, size, fields[7], fields[8]);
     return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size, base,
-                               offset, trace_vaddr, 16, type, value));
+        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size,
+                               base, offset, trace_vaddr, 16, type, value));
   } else if (fields[0] == "load") {
     auto type = LLVMDynamicInstMem::Type::LOAD;
     auto base = fields[2];
@@ -194,8 +216,8 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     Addr size = stoull(fields[5]);
     uint8_t* value = nullptr;
     return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size, base,
-                               offset, trace_vaddr, 16, type, value));
+        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size,
+                               base, offset, trace_vaddr, 16, type, value));
   } else if (fields[0] == "alloca") {
     auto type = LLVMDynamicInstMem::Type::ALLOCA;
     auto base = fields[2];
@@ -204,8 +226,8 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     Addr size = stoull(fields[4]);
     uint8_t* value = nullptr;
     return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size, base,
-                               offset, trace_vaddr, 16, type, value));
+        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size,
+                               base, offset, trace_vaddr, 16, type, value));
   } else {
     auto type = LLVMDynamicInstCompute::Type::OTHER;
     if (fields[0] == "call") {

@@ -17,10 +17,11 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       process(nullptr),
       thread_context(nullptr),
       stackMin(0),
-      tickEvent(*this),
       MAX_FETCH_QUEUE_SIZE(params->maxFetchQueueSize),
       MAX_REORDER_BUFFER_SIZE(params->maxReorderBufferSize),
-      driver(params->driver) {
+      MAX_INSTRUCTION_QUEUE_SIZE(params->maxInstructionQueueSize),
+      driver(params->driver),
+      tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
   // Initialize the rob buffer.
   this->rob = std::vector<std::pair<LLVMDynamicInstId, bool>>(
@@ -103,8 +104,12 @@ void LLVMTraceCPU::reorder() {
 }
 
 void LLVMTraceCPU::markReadyInst() {
-  // Loop through rob and mark ready instructions.
-  for (size_t i = 0; i < this->rob.size(); ++i) {
+  // Loop through rob and mark ready instructions, until instruction queue is
+  // full.
+  for (size_t i = 0;
+       i < this->rob.size() &&
+       this->instructionQueue.size() < this->MAX_INSTRUCTION_QUEUE_SIZE;
+       ++i) {
     if (this->rob[i].second) {
       auto instId = this->rob[i].first;
       panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
@@ -115,69 +120,130 @@ void LLVMTraceCPU::markReadyInst() {
       // Default set to ready.
       if (this->dynamicInsts[instId]->isDependenceReady(this)) {
         // Mark the status to ready.
-        DPRINTF(LLVMTraceCPU, "Set inst %u to ready\n", instId);
+        DPRINTF(LLVMTraceCPU,
+                "Set inst %u to ready and send to instruction queue.\n",
+                instId);
         this->inflyInsts[instId] = InstStatus::READY;
+        // Insert to the proper place of the instruction queue.
+        auto iter = this->instructionQueue.cbegin();
+        auto end = this->instructionQueue.cend();
+        while (iter != end) {
+          if (instId < *iter) {
+            break;
+          }
+          iter++;
+        }
+        this->instructionQueue.insert(iter, instId);
+        // Mark this rob entry as free.
+        this->rob[i].second = false;
       }
     }
   }
 }
 
 void LLVMTraceCPU::issue() {
-  for (size_t i = 0; i < this->rob.size(); ++i) {
-    if (this->rob[i].second) {
-      auto instId = this->rob[i].first;
-      panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
-               "Inst %u should be in inflyInsts to check if READY\n", instId);
+  // Free FUs.
+  this->fuPool->processFreeUnits();
+  // Loop through the instruction queue.
+  for (auto iter = this->instructionQueue.begin(),
+            end = this->instructionQueue.end();
+       iter != end; ++iter) {
+    auto instId = *iter;
+    panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
+             "Inst %u should be in inflyInsts to check if READY.\n", instId);
+    if (this->inflyInsts.at(instId) == InstStatus::READY) {
+      bool canIssue = true;
+      auto inst = this->dynamicInsts[instId];
+      auto opClass = inst->getOpClass();
+      auto fuId = FUPool::NoCapableFU;
 
-      // Check if ready.
-      if (this->inflyInsts[instId] != InstStatus::READY) {
-        continue;
+      // Check if there is available FU.
+      if (opClass != No_OpClass) {
+        fuId = this->fuPool->getUnit(opClass);
+        panic_if(fuId == FUPool::NoCapableFU,
+                 "There is no capable FU %s for inst %u.\n",
+                 Enums::OpClassStrings[opClass], instId);
+        if (fuId == FUPool::NoFreeFU) {
+          // We cannot issue for now.
+          canIssue = false;
+        }
       }
 
       // Mark it as issued.
-      this->inflyInsts[instId] = InstStatus::ISSUED;
-      DPRINTF(LLVMTraceCPU, "inst %u issued\n", instId);
-
-      this->dynamicInsts[instId]->execute(this);
+      if (canIssue) {
+        this->inflyInsts[instId] = InstStatus::ISSUED;
+        DPRINTF(LLVMTraceCPU, "inst %u issued\n", instId);
+        inst->execute(this);
+        // Handle the FU completion.
+        if (opClass != No_OpClass) {
+          DPRINTF(LLVMTraceCPU, "Inst %u get FU %s.\n", instId,
+                  Enums::OpClassStrings[opClass]);
+          // Start the FU FSM for this inst.
+          inst->startFUStatusFSM();
+          auto opLatency = this->fuPool->getOpLatency(opClass);
+          // Special case for only one cycle latency, no need for event.
+          if (opLatency == Cycles(1)) {
+            // Mark the FU to be completed next cycle.
+            this->processFUCompletion(instId, fuId);
+          } else {
+            // Check if this FU is pipelined.
+            bool pipelined = this->fuPool->isPipelined(opClass);
+            FUCompletion* fuCompletion =
+                new FUCompletion(instId, fuId, this, !pipelined);
+            // Schedule the event.
+            // Notice for the -1 part so that we can free FU in next cycle.
+            this->schedule(fuCompletion,
+                           this->clockEdge(Cycles(opLatency - 1)));
+            // If pipelined, should the FU be freed immediately.
+            this->fuPool->freeUnitNextCycle(fuId);
+          }
+        }
+      }
     }
   }
 }
 
 void LLVMTraceCPU::countDownComputeDelay() {
-  for (size_t i = 0; i < this->rob.size(); ++i) {
-    if (this->rob[i].second) {
-      auto instId = this->rob[i].first;
-      // Check if issued.
-      if (this->inflyInsts[instId] != InstStatus::ISSUED) {
-        continue;
-      }
-      auto inst = this->dynamicInsts[instId];
-      inst->tick();
+  // Loop through the instruction queue.
+  for (auto iter = this->instructionQueue.begin(),
+            end = this->instructionQueue.end();
+       iter != end; ++iter) {
+    auto instId = *iter;
+    // Check if issued.
+    if (this->inflyInsts.at(instId) != InstStatus::ISSUED) {
+      continue;
+    }
+    // Tick the inst.
+    auto inst = this->dynamicInsts[instId];
+    inst->tick();
 
-      if (inst->isCompleted()) {
-        // Mark this inst as finished.
-        DPRINTF(LLVMTraceCPU, "Inst %u finished\n", instId);
-        this->inflyInsts[instId] = InstStatus::FINISHED;
-      }
+    // Check if the inst is finished.
+    if (inst->isCompleted()) {
+      // Mark it as finished.
+      DPRINTF(LLVMTraceCPU, "Inst %u finished\n", instId);
+      this->inflyInsts[instId] = InstStatus::FINISHED;
     }
   }
 }
 
 void LLVMTraceCPU::commit() {
-  for (size_t i = 0; i < this->rob.size(); ++i) {
-    if (this->rob[i].second) {
-      auto instId = this->rob[i].first;
-      // Check if finished.
-      if (this->inflyInsts[instId] != InstStatus::FINISHED) {
-        continue;
-      }
-      // Mark the rob entry as free again.
-      this->rob[i].second = false;
-      // Erase it from the inflyInsts.
+  // Loop through the instruction queue.
+  // Note that erase will invalidate iter, so we need next.
+  auto iter = this->instructionQueue.begin();
+  auto end = this->instructionQueue.end();
+  while (iter != end) {
+    auto next = iter;
+    next++;
+    auto instId = *iter;
+    if (this->inflyInsts.at(instId) == InstStatus::FINISHED) {
+      // Erase from instruction queue and inflyInsts.
+      this->instructionQueue.erase(iter);
       this->inflyInsts.erase(instId);
       DPRINTF(LLVMTraceCPU, "Inst %u committed, remaining infly inst #%u\n",
               instId, this->inflyInsts.size());
     }
+
+    iter = next;
   }
 }
 
@@ -186,14 +252,21 @@ void LLVMTraceCPU::tick() {
     DPRINTF(LLVMTraceCPU, "Tick()\n");
   }
 
-  fetch();
-  reorder();
-  issue();
+  // Tick infly inst must come before the commit
+  // as some inst will be marked as complete in this cycle.
+  countDownComputeDelay();
+
+  // Remember to tick the FUPool to free FUs.
+
+  // Hack: reverse calling them to make sure that no
+  // inst get passed through more than 1 stage in one cycle.
   commit();
+  issue();
+  reorder();
+  fetch();
+
   // Mark inst to be ready for next tick.
   markReadyInst();
-  // Compute down the compute delay.
-  countDownComputeDelay();
 
   if (this->fetchQueue.empty() && this->inflyInsts.empty()) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
@@ -395,4 +468,44 @@ void LLVMTraceCPU::sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
   }
   pkt->dataDynamic(pkt_data);
   this->dataPort.sendReq(pkt);
+}
+
+LLVMTraceCPU::FUCompletion::FUCompletion(LLVMDynamicInstId _instId, int _fuId,
+                                         LLVMTraceCPU* _cpu, bool _shouldFreeFU)
+    : Event(Stat_Event_Pri, AutoDelete),
+      instId(_instId),
+      fuId(_fuId),
+      cpu(_cpu),
+      shouldFreeFU(_shouldFreeFU) {}
+
+void LLVMTraceCPU::FUCompletion::process() {
+  // Call the process function from cpu.
+  this->cpu->processFUCompletion(this->instId,
+                                 this->shouldFreeFU ? this->fuId : -1);
+}
+
+const char* LLVMTraceCPU::FUCompletion::description() const {
+  return "Function unit completion";
+}
+
+void LLVMTraceCPU::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
+  DPRINTF(LLVMTraceCPU, "FUCompletion for inst %u with fu %s\n", instId,
+          Enums::OpClassStrings[fuId]);
+  // Check if we should free this fu next cycle.
+  if (fuId > -1) {
+    this->fuPool->freeUnitNextCycle(fuId);
+  }
+  // Check that this inst is legal and already be issued.
+  if (instId >= this->dynamicInsts.size()) {
+    panic("processFUCompletion: Illegal inst %u\n", instId);
+  }
+  if (this->inflyInsts.find(instId) == this->inflyInsts.end()) {
+    panic("processFUCompletion: Failed to find the inst %u in inflyInsts\n",
+          instId);
+  }
+  if (this->inflyInsts.at(instId) != InstStatus::ISSUED) {
+    panic("processFUCompletion: Inst %u is not issued\n", instId);
+  }
+  // Inform the inst that it has completed.
+  this->dynamicInsts[instId]->handleFUCompletion();
 }

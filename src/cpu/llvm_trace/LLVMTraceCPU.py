@@ -12,6 +12,7 @@ class LLVMTraceCPU(BaseCPU):
     driver = Param.LLVMTraceCPUDriver('The driver to control this cpu.')
     maxFetchQueueSize = Param.UInt64(8, 'Maximum size of the fetch queue.')
     maxReorderBufferSize = Param.UInt64(8, 'Maximum size of the rob.')
+    maxInstructionQueueSize = Param.UInt64(8, 'Maximum size of the instruction queue.')
 
     fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
 

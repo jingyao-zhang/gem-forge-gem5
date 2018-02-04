@@ -72,15 +72,6 @@ class LLVMTraceCPU : public BaseCPU {
 
   void tick();
 
-  /**
-   * Translate the trace vaddr to simulation vaddr
-   * then to simulation paddr.
-   * In this way we do not model TLB timing information.
-   * TODO: Look into gem5's TLB model and integrate with it.
-   * Note: only use this with driver (so that base is initialized).
-   */
-  Addr translateTraceToPhysMem(const std::string& base, Addr offset);
-
   FuncPageTable pageTable;
   CPUPort instPort;
   CPUPort dataPort;
@@ -108,9 +99,6 @@ class LLVMTraceCPU : public BaseCPU {
 
   Addr finish_tag_paddr;
 
-  //********************************************************//
-  EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::tick> tickEvent;
-
   enum InstStatus {
     FETCHED,  // In fetchQueue.
     READY,    // Ready to be issued.
@@ -130,6 +118,11 @@ class LLVMTraceCPU : public BaseCPU {
 
   // Fetch instructions from fetchQueue and fill into rob.
   void reorder();
+
+  // instruction queue.
+  // Sorted.
+  std::list<LLVMDynamicInstId> instructionQueue;
+  const size_t MAX_INSTRUCTION_QUEUE_SIZE;
 
   // Find instructions ready to be issued in rob (mark them as READY).
   void markReadyInst();
@@ -192,6 +185,33 @@ class LLVMTraceCPU : public BaseCPU {
   // If data is not nullptr, it will be a write.
   void sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
                    uint8_t* data);
+
+  //********************************************************//
+  // Event for this CPU.
+  EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::tick> tickEvent;
+
+  // API for complete a function unit.
+  // @param fuId: if not -1, will free this fu in next cycle.
+  void processFUCompletion(LLVMDynamicInstId instId, int fuId);
+
+  class FUCompletion : public Event {
+   public:
+    FUCompletion(LLVMDynamicInstId _instId, int _fuId, LLVMTraceCPU* _cpu,
+                 bool _shouldFreeFU = false);
+    // From Event.
+    void process() override;
+    const char* description() const override;
+
+   private:
+    LLVMDynamicInstId instId;
+    int fuId;
+    // Pointer back to the CPU.
+    LLVMTraceCPU* cpu;
+    // Should the FU be freed next cycle.
+    // Used for un-pipelined FU.
+    // Default is false.
+    bool shouldFreeFU;
+  };
 };
 
 #endif
