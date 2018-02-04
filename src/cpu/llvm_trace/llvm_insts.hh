@@ -150,18 +150,14 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
   };
   LLVMDynamicInstCompute(LLVMDynamicInstId _id, const std::string& _instName,
                          std::vector<LLVMDynamicInstId>&& _dependentInstIds,
-                         Tick _computeDelay, Type _type)
+                         Type _type)
       : LLVMDynamicInst(_id, _instName, std::move(_dependentInstIds)),
-        computeDelay(_computeDelay),
         type(_type) {}
   void execute(LLVMTraceCPU* cpu) override {
-    // For now just set the remainTicks.
-    // this->remainTicks = this->computeDelay;
   }
   std::string toLine() const override {
     std::stringstream ss;
     ss << "com," << this->type << ',';
-    ss << this->computeDelay << ',';
     for (auto id : this->dependentInstIds) {
       ss << id << ',';
     }
@@ -170,7 +166,6 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
   // Handle a tick for inst.
   void tick() override {
     LLVMDynamicInst::tick();
-    // this->remainTicks--;
   }
 
   // Both the FU FSM and remain Ticks should be finished.
@@ -191,10 +186,7 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
   }
 
  protected:
-  Tick computeDelay;
   Type type;
-  // Runtime fields.
-  // Tick remainTicks;
 };
 
 std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,

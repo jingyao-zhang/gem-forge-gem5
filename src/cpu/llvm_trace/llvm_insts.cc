@@ -239,9 +239,8 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     } else if (fields[0] == "cos") {
       type = LLVMDynamicInstCompute::Type::COS;
     }
-    Tick computeDelay = std::stoul(fields[2]);
     return std::shared_ptr<LLVMDynamicInst>(new LLVMDynamicInstCompute(
-        id, fields[0], std::move(dependentInstIds), computeDelay, type));
+        id, fields[0], std::move(dependentInstIds), type));
   }
 
   panic("Unknown type of LLVMDynamicInst %s.\n", fields[0].c_str());
