@@ -489,8 +489,7 @@ const char* LLVMTraceCPU::FUCompletion::description() const {
 }
 
 void LLVMTraceCPU::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
-  DPRINTF(LLVMTraceCPU, "FUCompletion for inst %u with fu %s\n", instId,
-          Enums::OpClassStrings[fuId]);
+  DPRINTF(LLVMTraceCPU, "FUCompletion for inst %u with fu %d\n", instId, fuId);
   // Check if we should free this fu next cycle.
   if (fuId > -1) {
     this->fuPool->freeUnitNextCycle(fuId);
