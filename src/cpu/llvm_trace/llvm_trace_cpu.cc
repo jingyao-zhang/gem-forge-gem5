@@ -176,8 +176,8 @@ void LLVMTraceCPU::issue() {
         inst->execute(this);
         // Handle the FU completion.
         if (opClass != No_OpClass) {
-          DPRINTF(LLVMTraceCPU, "Inst %u get FU %s.\n", instId,
-                  Enums::OpClassStrings[opClass]);
+          DPRINTF(LLVMTraceCPU, "Inst %u get FU %s with fuId %d.\n", instId,
+                  Enums::OpClassStrings[opClass], fuId);
           // Start the FU FSM for this inst.
           inst->startFUStatusFSM();
           auto opLatency = this->fuPool->getOpLatency(opClass);

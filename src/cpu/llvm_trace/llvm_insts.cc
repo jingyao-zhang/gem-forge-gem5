@@ -4,7 +4,43 @@
 #include "debug/LLVMTraceCPU.hh"
 
 std::unordered_map<std::string, OpClass> LLVMDynamicInst::instToOpClass = {
+    // Binary operator.
     {"add", IntAluOp},
+    {"fadd", FloatAddOp},
+    {"sub", IntAluOp},
+    {"fsub", FloatAddOp},
+    {"mul", IntMultOp},
+    {"fmul", FloatMultOp},
+    {"udiv", IntDivOp},
+    {"sdiv", IntDivOp},
+    {"fdiv", FloatDivOp},
+    {"urem", IntDivOp},
+    {"srem", IntDivOp},
+    {"frem", FloatDivOp},
+    // Bitwise binary operator.
+    {"shl", IntAluOp},
+    {"lshr", IntAluOp},
+    {"ashr", IntAluOp},
+    {"and", IntAluOp},
+    {"or", IntAluOp},
+    {"xor", IntAluOp},
+    // Conversion operator.
+    // Truncation requires no FU.
+    {"trunc", Enums::No_OpClass},
+    {"zext", IntAluOp},
+    {"sext", IntAluOp},
+    {"fptrunc", FloatCvtOp},
+    {"fpext", FloatCvtOp},
+    {"fptoui", FloatCvtOp},
+    {"fptosi", FloatCvtOp},
+    {"uitofp", FloatCvtOp},
+    {"sitofp", FloatCvtOp},
+    {"ptrtoint", Enums::No_OpClass},
+    {"inttoptr", Enums::No_OpClass},
+    {"bitcast", Enums::No_OpClass},
+    // Other insts.
+    {"icmp", IntAluOp},
+    {"fcmp", FloatCmpOp},
 };
 
 void LLVMDynamicInst::handleFUCompletion() {
