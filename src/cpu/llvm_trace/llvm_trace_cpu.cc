@@ -174,6 +174,7 @@ void LLVMTraceCPU::issue() {
         this->inflyInsts[instId] = InstStatus::ISSUED;
         DPRINTF(LLVMTraceCPU, "inst %u issued\n", instId);
         inst->execute(this);
+        this->statIssuedInstType[this->thread_context->threadId()][opClass]++;
         // Handle the FU completion.
         if (opClass != No_OpClass) {
           DPRINTF(LLVMTraceCPU, "Inst %u get FU %s with fuId %d.\n", instId,
@@ -507,4 +508,14 @@ void LLVMTraceCPU::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
   }
   // Inform the inst that it has completed.
   this->dynamicInsts[instId]->handleFUCompletion();
+}
+
+void LLVMTraceCPU::regStats() {
+  BaseCPU::regStats();
+
+  this->statIssuedInstType.init(numThreads, Enums::Num_OpClass)
+      .name(name() + ".FU_type")
+      .desc("Type of FU issued")
+      .flags(Stats::total | Stats::pdf | Stats::dist);
+  this->statIssuedInstType.ysubnames(Enums::OpClassStrings);
 }

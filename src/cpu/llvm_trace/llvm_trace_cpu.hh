@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/statistics.hh"
 #include "cpu/base.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
@@ -212,6 +213,14 @@ class LLVMTraceCPU : public BaseCPU {
     // Default is false.
     bool shouldFreeFU;
   };
+
+ public:
+  /*******************************************************************/
+  // All the statics.
+  /*******************************************************************/
+  void regStats() override;
+  // Stat for total number issued for each instruction type.
+  Stats::Vector2d statIssuedInstType;
 };
 
 #endif
