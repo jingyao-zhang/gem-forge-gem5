@@ -36,7 +36,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
   } else {
     // No driver, stand alone mode.
     // Schedule the first event.
-    schedule(this->tickEvent, curTick() + 1);
+    schedule(this->tickEvent, nextCycle());
   }
 }
 
@@ -283,7 +283,7 @@ void LLVMTraceCPU::tick() {
     return;
   } else {
     // Schedule next Tick event.
-    schedule(this->tickEvent, curTick() + 1);
+    schedule(this->tickEvent, nextCycle());
   }
 }
 
@@ -382,7 +382,7 @@ void LLVMTraceCPU::handleReplay(Process* p, ThreadContext* tc,
   this->currentStackDepth = 1;
 
   // Schedule the next event.
-  schedule(this->tickEvent, curTick() + 1);
+  schedule(this->tickEvent, nextCycle());
 }
 
 Addr LLVMTraceCPU::allocateStack(Addr size, Addr align) {

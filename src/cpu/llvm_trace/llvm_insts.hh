@@ -4,6 +4,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "base/misc.hh"
@@ -79,6 +80,9 @@ class LLVMDynamicInst {
     COMPLETE_NEXT_CYCLE,
     COMPLETED,
   } fuStatus;
+
+  // A static global map from instName to the needed OpClass.
+  static std::unordered_map<std::string, OpClass> instToOpClass;
 };
 
 // Memory access inst.

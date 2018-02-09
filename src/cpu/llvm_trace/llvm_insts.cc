@@ -3,6 +3,10 @@
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
+std::unordered_map<std::string, OpClass> LLVMDynamicInst::instToOpClass = {
+    {"add", IntAluOp},
+};
+
 void LLVMDynamicInst::handleFUCompletion() {
   if (this->fuStatus != FUStatus::WORKING) {
     panic("fuStatus should be working when a FU completes, instead %d\n",
@@ -21,7 +25,14 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU* cpu) const {
 }
 
 // For now just return IntAlu.
-OpClass LLVMDynamicInst::getOpClass() const { return IntAluOp; }
+OpClass LLVMDynamicInst::getOpClass() const {
+  auto iter = LLVMDynamicInst::instToOpClass.find(this->instName);
+  if (iter == LLVMDynamicInst::instToOpClass.end()) {
+    // For unknown, simply return IntAlu.
+    return IntAluOp;
+  }
+  return iter->second;
+}
 
 void LLVMDynamicInst::startFUStatusFSM() {
   if (this->fuStatus != FUStatus::COMPLETED) {
