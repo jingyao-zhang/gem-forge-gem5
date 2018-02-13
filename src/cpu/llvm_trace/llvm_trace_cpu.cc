@@ -10,25 +10,41 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      fuPool(params->fuPool),
       traceFile(params->traceFile),
       currentStackDepth(0),
       currentInstId(0),
       process(nullptr),
       thread_context(nullptr),
       stackMin(0),
-      MAX_FETCH_QUEUE_SIZE(params->maxFetchQueueSize),
-      MAX_REORDER_BUFFER_SIZE(params->maxReorderBufferSize),
-      MAX_INSTRUCTION_QUEUE_SIZE(params->maxInstructionQueueSize),
+      fetchStage(params, this),
+      decodeStage(params, this),
+      renameStage(params, this),
+      iewStage(params, this),
+      commitStage(params, this),
+      fetchToDecode(5, 5),
+      decodeToRename(5, 5),
+      renameToIEW(5, 5),
+      iewToCommit(5, 5),
+      signalBuffer(5, 5),
       driver(params->driver),
       tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
-  // Initialize the rob buffer.
-  this->rob = std::vector<std::pair<LLVMDynamicInstId, bool>>(
-      this->MAX_REORDER_BUFFER_SIZE, std::make_pair(0, false));
-  panic_if(this->MAX_REORDER_BUFFER_SIZE != this->rob.size(),
-           "rob size (%d) should be MAX_REORDER_BUFFER_SIZE(%d)\n",
-           this->rob.size(), this->MAX_REORDER_BUFFER_SIZE);
+  // Set the time buffer between stages.
+  this->fetchStage.setToDecode(&this->fetchToDecode);
+  this->decodeStage.setFromFetch(&this->fetchToDecode);
+  this->decodeStage.setToRename(&this->decodeToRename);
+  this->renameStage.setFromDecode(&this->decodeToRename);
+  this->renameStage.setToIEW(&this->renameToIEW);
+  this->iewStage.setFromRename(&this->renameToIEW);
+  this->iewStage.setToCommit(&this->iewToCommit);
+  this->commitStage.setFromIEW(&this->iewToCommit);
+
+  this->commitStage.setSignal(&this->signalBuffer, 0);
+  this->iewStage.setSignal(&this->signalBuffer, -1);
+  this->renameStage.setSignal(&this->signalBuffer, -2);
+  this->decodeStage.setSignal(&this->signalBuffer, -3);
+  this->fetchStage.setSignal(&this->signalBuffer, -4);
+
   readTraceFile();
   if (driver != nullptr) {
     // Handshake with the driver.
@@ -63,213 +79,26 @@ void LLVMTraceCPU::readTraceFile() {
           this->dynamicInsts.size());
 }
 
-void LLVMTraceCPU::fetch() {
-  // Only fetch if the stack depth is > 0.
-  while (this->currentInstId < this->dynamicInsts.size() &&
-         this->fetchQueue.size() < this->MAX_FETCH_QUEUE_SIZE &&
-         this->currentStackDepth > 0) {
-    DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n",
-            this->currentInstId);
-    this->inflyInsts[currentInstId] = InstStatus::FETCHED;
-    this->fetchQueue.push(this->currentInstId);
-    // Update the stack depth for call/ret inst.
-    this->currentStackDepth +=
-        this->dynamicInsts[currentInstId]->getCallStackAdjustment();
-    DPRINTF(LLVMTraceCPU, "Stack depth updated to %u\n",
-            this->currentStackDepth);
-    if (this->currentStackDepth < 0) {
-      panic("Current stack depth is less than 0\n");
-    }
-    this->currentInstId++;
-  }
-}
-
-void LLVMTraceCPU::reorder() {
-  for (size_t i = 0; i < this->rob.size(); ++i) {
-    if (!this->rob[i].second) {
-      // This is a free rob entry.
-      if (this->fetchQueue.empty()) {
-        // No more instructions.
-        return;
-      }
-      // Fill in this rob entry.
-      DPRINTF(LLVMTraceCPU, "Fill inst %u into rob entry %u\n",
-              this->fetchQueue.front(), i);
-      this->rob[i].first = this->fetchQueue.front();
-      this->rob[i].second = true;
-      // Pop from fetchQueue.
-      this->fetchQueue.pop();
-    }
-  }
-}
-
-void LLVMTraceCPU::markReadyInst() {
-  // Loop through rob and mark ready instructions, until instruction queue is
-  // full.
-  for (size_t i = 0;
-       i < this->rob.size() &&
-       this->instructionQueue.size() < this->MAX_INSTRUCTION_QUEUE_SIZE;
-       ++i) {
-    if (this->rob[i].second) {
-      auto instId = this->rob[i].first;
-      panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
-               "Inst %u should be in inflyInsts to check if READY\n", instId);
-      if (this->inflyInsts[instId] != InstStatus::FETCHED) {
-        continue;
-      }
-      // Default set to ready.
-      if (this->dynamicInsts[instId]->isDependenceReady(this)) {
-        // Mark the status to ready.
-        DPRINTF(LLVMTraceCPU,
-                "Set inst %u to ready and send to instruction queue.\n",
-                instId);
-        this->inflyInsts[instId] = InstStatus::READY;
-        // Insert to the proper place of the instruction queue.
-        auto iter = this->instructionQueue.cbegin();
-        auto end = this->instructionQueue.cend();
-        while (iter != end) {
-          if (instId < *iter) {
-            break;
-          }
-          iter++;
-        }
-        this->instructionQueue.insert(iter, instId);
-        // Mark this rob entry as free.
-        this->rob[i].second = false;
-      }
-    }
-  }
-}
-
-void LLVMTraceCPU::issue() {
-  // Free FUs.
-  this->fuPool->processFreeUnits();
-  // Loop through the instruction queue.
-  for (auto iter = this->instructionQueue.begin(),
-            end = this->instructionQueue.end();
-       iter != end; ++iter) {
-    auto instId = *iter;
-    panic_if(this->inflyInsts.find(instId) == this->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to check if READY.\n", instId);
-    if (this->inflyInsts.at(instId) == InstStatus::READY) {
-      bool canIssue = true;
-      auto inst = this->dynamicInsts[instId];
-      auto opClass = inst->getOpClass();
-      auto fuId = FUPool::NoCapableFU;
-
-      // Check if there is available FU.
-      if (opClass != No_OpClass) {
-        fuId = this->fuPool->getUnit(opClass);
-        panic_if(fuId == FUPool::NoCapableFU,
-                 "There is no capable FU %s for inst %u.\n",
-                 Enums::OpClassStrings[opClass], instId);
-        if (fuId == FUPool::NoFreeFU) {
-          // We cannot issue for now.
-          canIssue = false;
-        }
-      }
-
-      // Mark it as issued.
-      if (canIssue) {
-        this->inflyInsts[instId] = InstStatus::ISSUED;
-        DPRINTF(LLVMTraceCPU, "inst %u issued\n", instId);
-        inst->execute(this);
-        this->statIssuedInstType[this->thread_context->threadId()][opClass]++;
-        // Handle the FU completion.
-        if (opClass != No_OpClass) {
-          DPRINTF(LLVMTraceCPU, "Inst %u get FU %s with fuId %d.\n", instId,
-                  Enums::OpClassStrings[opClass], fuId);
-          // Start the FU FSM for this inst.
-          inst->startFUStatusFSM();
-          auto opLatency = this->fuPool->getOpLatency(opClass);
-          // Special case for only one cycle latency, no need for event.
-          if (opLatency == Cycles(1)) {
-            // Mark the FU to be completed next cycle.
-            this->processFUCompletion(instId, fuId);
-          } else {
-            // Check if this FU is pipelined.
-            bool pipelined = this->fuPool->isPipelined(opClass);
-            FUCompletion* fuCompletion =
-                new FUCompletion(instId, fuId, this, !pipelined);
-            // Schedule the event.
-            // Notice for the -1 part so that we can free FU in next cycle.
-            this->schedule(fuCompletion,
-                           this->clockEdge(Cycles(opLatency - 1)));
-            // If pipelined, should the FU be freed immediately.
-            this->fuPool->freeUnitNextCycle(fuId);
-          }
-        }
-      }
-    }
-  }
-}
-
-void LLVMTraceCPU::countDownComputeDelay() {
-  // Loop through the instruction queue.
-  for (auto iter = this->instructionQueue.begin(),
-            end = this->instructionQueue.end();
-       iter != end; ++iter) {
-    auto instId = *iter;
-    // Check if issued.
-    if (this->inflyInsts.at(instId) != InstStatus::ISSUED) {
-      continue;
-    }
-    // Tick the inst.
-    auto inst = this->dynamicInsts[instId];
-    inst->tick();
-
-    // Check if the inst is finished.
-    if (inst->isCompleted()) {
-      // Mark it as finished.
-      DPRINTF(LLVMTraceCPU, "Inst %u finished\n", instId);
-      this->inflyInsts[instId] = InstStatus::FINISHED;
-    }
-  }
-}
-
-void LLVMTraceCPU::commit() {
-  // Loop through the instruction queue.
-  // Note that erase will invalidate iter, so we need next.
-  auto iter = this->instructionQueue.begin();
-  auto end = this->instructionQueue.end();
-  while (iter != end) {
-    auto next = iter;
-    next++;
-    auto instId = *iter;
-    if (this->inflyInsts.at(instId) == InstStatus::FINISHED) {
-      // Erase from instruction queue and inflyInsts.
-      this->instructionQueue.erase(iter);
-      this->inflyInsts.erase(instId);
-      DPRINTF(LLVMTraceCPU, "Inst %u committed, remaining infly inst #%u\n",
-              instId, this->inflyInsts.size());
-    }
-
-    iter = next;
-  }
-}
-
 void LLVMTraceCPU::tick() {
   if (curTick() % 1000000 == 0) {
     DPRINTF(LLVMTraceCPU, "Tick()\n");
   }
 
-  // Tick infly inst must come before the commit
-  // as some inst will be marked as complete in this cycle.
-  countDownComputeDelay();
+  this->numCycles++;
 
-  // Remember to tick the FUPool to free FUs.
+  this->fetchStage.tick();
+  this->decodeStage.tick();
+  this->renameStage.tick();
+  this->iewStage.tick();
+  this->commitStage.tick();
 
-  // Hack: reverse calling them to make sure that no
-  // inst get passed through more than 1 stage in one cycle.
-  commit();
-  issue();
-  reorder();
-  fetch();
+  this->fetchToDecode.advance();
+  this->decodeToRename.advance();
+  this->renameToIEW.advance();
+  this->iewToCommit.advance();
+  this->signalBuffer.advance();
 
-  // Mark inst to be ready for next tick.
-  markReadyInst();
-
-  if (this->fetchQueue.empty() && this->inflyInsts.empty()) {
+  if (this->inflyInsts.empty()) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
     // No more need to write to the finish tag, simply restart the
     // normal thread.
@@ -471,51 +300,12 @@ void LLVMTraceCPU::sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
   this->dataPort.sendReq(pkt);
 }
 
-LLVMTraceCPU::FUCompletion::FUCompletion(LLVMDynamicInstId _instId, int _fuId,
-                                         LLVMTraceCPU* _cpu, bool _shouldFreeFU)
-    : Event(Stat_Event_Pri, AutoDelete),
-      instId(_instId),
-      fuId(_fuId),
-      cpu(_cpu),
-      shouldFreeFU(_shouldFreeFU) {}
-
-void LLVMTraceCPU::FUCompletion::process() {
-  // Call the process function from cpu.
-  this->cpu->processFUCompletion(this->instId,
-                                 this->shouldFreeFU ? this->fuId : -1);
-}
-
-const char* LLVMTraceCPU::FUCompletion::description() const {
-  return "Function unit completion";
-}
-
-void LLVMTraceCPU::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
-  DPRINTF(LLVMTraceCPU, "FUCompletion for inst %u with fu %d\n", instId, fuId);
-  // Check if we should free this fu next cycle.
-  if (fuId > -1) {
-    this->fuPool->freeUnitNextCycle(fuId);
-  }
-  // Check that this inst is legal and already be issued.
-  if (instId >= this->dynamicInsts.size()) {
-    panic("processFUCompletion: Illegal inst %u\n", instId);
-  }
-  if (this->inflyInsts.find(instId) == this->inflyInsts.end()) {
-    panic("processFUCompletion: Failed to find the inst %u in inflyInsts\n",
-          instId);
-  }
-  if (this->inflyInsts.at(instId) != InstStatus::ISSUED) {
-    panic("processFUCompletion: Inst %u is not issued\n", instId);
-  }
-  // Inform the inst that it has completed.
-  this->dynamicInsts[instId]->handleFUCompletion();
-}
-
 void LLVMTraceCPU::regStats() {
   BaseCPU::regStats();
 
-  this->statIssuedInstType.init(numThreads, Enums::Num_OpClass)
-      .name(name() + ".FU_type")
-      .desc("Type of FU issued")
-      .flags(Stats::total | Stats::pdf | Stats::dist);
-  this->statIssuedInstType.ysubnames(Enums::OpClassStrings);
+  this->fetchStage.regStats();
+  this->decodeStage.regStats();
+  this->renameStage.regStats();
+  this->iewStage.regStats();
+  this->commitStage.regStats();
 }

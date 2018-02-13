@@ -10,7 +10,13 @@
 
 #include "base/statistics.hh"
 #include "cpu/base.hh"
+#include "cpu/llvm_trace/llvm_commit_stage.hh"
+#include "cpu/llvm_trace/llvm_decode_stage.hh"
+#include "cpu/llvm_trace/llvm_fetch_stage.hh"
+#include "cpu/llvm_trace/llvm_iew_stage.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
+#include "cpu/llvm_trace/llvm_rename_stage.hh"
+#include "cpu/llvm_trace/llvm_stage_signal.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
 #include "cpu/o3/fu_pool.hh"
 #include "mem/page_table.hh"
@@ -38,6 +44,14 @@ class LLVMTraceCPU : public BaseCPU {
                            const std::string& base, const Addr vaddr);
   void handleReplay(Process* p, ThreadContext* tc, const std::string& trace,
                     const Addr finish_tag_vaddr);
+
+  enum InstStatus {
+    FETCHED,  // In fetchQueue.
+    DECODED,  // Decoded.
+    READY,    // Ready to be issued.
+    ISSUED,
+    FINISHED,  // Finished computing.
+  };
 
  private:
   // This port will handle retry.
@@ -77,8 +91,6 @@ class LLVMTraceCPU : public BaseCPU {
   CPUPort instPort;
   CPUPort dataPort;
 
-  FUPool* fuPool;
-
   const std::string traceFile;
 
   // Used to record the current stack depth, so that we can break trace
@@ -100,43 +112,25 @@ class LLVMTraceCPU : public BaseCPU {
 
   Addr finish_tag_paddr;
 
-  enum InstStatus {
-    FETCHED,  // In fetchQueue.
-    READY,    // Ready to be issued.
-    ISSUED,
-    FINISHED,  // Finished computing.
-  };
   std::unordered_map<LLVMDynamicInstId, InstStatus> inflyInsts;
 
-  std::queue<LLVMDynamicInstId> fetchQueue;
-  const size_t MAX_FETCH_QUEUE_SIZE;
+  friend class LLVMFetchStage;
+  friend class LLVMDecodeStage;
+  friend class LLVMRenameStage;
+  friend class LLVMIEWStage;
+  friend class LLVMCommitStage;
 
-  void fetch();
+  LLVMFetchStage fetchStage;
+  LLVMDecodeStage decodeStage;
+  LLVMRenameStage renameStage;
+  LLVMIEWStage iewStage;
+  LLVMCommitStage commitStage;
 
-  // reorder buffer.
-  std::vector<std::pair<LLVMDynamicInstId, bool>> rob;
-  const size_t MAX_REORDER_BUFFER_SIZE;
-
-  // Fetch instructions from fetchQueue and fill into rob.
-  void reorder();
-
-  // instruction queue.
-  // Sorted.
-  std::list<LLVMDynamicInstId> instructionQueue;
-  const size_t MAX_INSTRUCTION_QUEUE_SIZE;
-
-  // Find instructions ready to be issued in rob (mark them as READY).
-  void markReadyInst();
-
-  // Issue the ready instructions (mark them as ISSUED).
-  void issue();
-
-  // For issued compute insts, count down the their compute delay,
-  // when reaches 0, mark them as FINISHED in inflyInsts.
-  void countDownComputeDelay();
-
-  // Commit the FINISHED inst and remove it from inflyInsts.
-  void commit();
+  TimeBuffer<LLVMFetchStage::FetchStruct> fetchToDecode;
+  TimeBuffer<LLVMDecodeStage::DecodeStruct> decodeToRename;
+  TimeBuffer<LLVMRenameStage::RenameStruct> renameToIEW;
+  TimeBuffer<LLVMIEWStage::IEWStruct> iewToCommit;
+  TimeBuffer<LLVMStageSignal> signalBuffer;
 
   LLVMTraceCPUDriver* driver;
 
@@ -152,7 +146,7 @@ class LLVMTraceCPU : public BaseCPU {
       return false;
     }
     if (this->inflyInsts.find(instId) != this->inflyInsts.end()) {
-      return false;
+      return this->inflyInsts.at(instId) == InstStatus::FINISHED;
     }
     return true;
   }
@@ -191,36 +185,11 @@ class LLVMTraceCPU : public BaseCPU {
   // Event for this CPU.
   EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::tick> tickEvent;
 
-  // API for complete a function unit.
-  // @param fuId: if not -1, will free this fu in next cycle.
-  void processFUCompletion(LLVMDynamicInstId instId, int fuId);
-
-  class FUCompletion : public Event {
-   public:
-    FUCompletion(LLVMDynamicInstId _instId, int _fuId, LLVMTraceCPU* _cpu,
-                 bool _shouldFreeFU = false);
-    // From Event.
-    void process() override;
-    const char* description() const override;
-
-   private:
-    LLVMDynamicInstId instId;
-    int fuId;
-    // Pointer back to the CPU.
-    LLVMTraceCPU* cpu;
-    // Should the FU be freed next cycle.
-    // Used for un-pipelined FU.
-    // Default is false.
-    bool shouldFreeFU;
-  };
-
  public:
   /*******************************************************************/
   // All the statics.
   /*******************************************************************/
   void regStats() override;
-  // Stat for total number issued for each instruction type.
-  Stats::Vector2d statIssuedInstType;
 };
 
 #endif
