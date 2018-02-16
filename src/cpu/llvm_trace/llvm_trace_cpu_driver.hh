@@ -17,8 +17,7 @@ class LLVMTraceCPUDriver final : public EmulatedDriver {
   LLVMTraceCPU *llvm_trace_cpu;
 
   enum IOCTL_REQUEST_CODE : unsigned long {
-    IOCTL_REQUEST_MAP = 0,
-    IOCTL_REQUEST_REPLAY = 1,
+    IOCTL_REQUEST_REPLAY = 0,
   };
 };
 

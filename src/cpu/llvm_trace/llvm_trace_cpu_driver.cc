@@ -1,8 +1,11 @@
+#include "llvm_trace_cpu_driver.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "cpu/thread_context.hh"
 #include "debug/LLVMTraceCPU.hh"
-#include "llvm_trace_cpu_driver.hh"
 #include "sim/process.hh"
+
+#include <vector>
+#include <utility>
 
 namespace {}  // namespace
 
@@ -31,27 +34,11 @@ int LLVMTraceCPUDriver::ioctl(Process* p, ThreadContext* tc, unsigned req) {
   DPRINTF(LLVMTraceCPU, "ioctl called with req %u\n", req);
   SETranslatingPortProxy& memProxy = tc->getMemProxy();
   switch (req) {
-    case IOCTL_REQUEST_MAP: {
-      int index = 2;
-      Addr args_vaddr = p->getSyscallArg(tc, index);
-      // Deserialize the arguments.
-      const int NUM_ARGS = 2;
-      uint64_t args[NUM_ARGS];
-      memProxy.readBlob(args_vaddr, reinterpret_cast<uint8_t*>(args),
-                        NUM_ARGS * sizeof(args[0]));
-      Addr base_vaddr = reinterpret_cast<Addr>(args[0]);
-      std::string base;
-      memProxy.readString(base, base_vaddr);
-      Addr vaddr = reinterpret_cast<Addr>(args[1]);
-
-      this->llvm_trace_cpu->handleMapVirtualMem(p, tc, base, vaddr);
-      break;
-    }
     case IOCTL_REQUEST_REPLAY: {
       int index = 2;
       Addr args_vaddr = p->getSyscallArg(tc, index);
       // Deserialize the arguments.
-      const int NUM_ARGS = 2;
+      const int NUM_ARGS = 23;
       uint64_t args[NUM_ARGS];
       memProxy.readBlob(args_vaddr, reinterpret_cast<uint8_t*>(args),
                         NUM_ARGS * sizeof(args[0]));
@@ -59,8 +46,18 @@ int LLVMTraceCPUDriver::ioctl(Process* p, ThreadContext* tc, unsigned req) {
       std::string trace;
       memProxy.readString(trace, trace_vaddr);
       Addr finish_tag_vaddr = reinterpret_cast<Addr>(args[1]);
+      uint64_t num_maps = args[2];
+      std::vector<std::pair<std::string, Addr>> maps;
 
-      this->llvm_trace_cpu->handleReplay(p, tc, trace, finish_tag_vaddr);
+      for (uint64_t i = 0; i < num_maps; ++i) {
+        std::string base;
+        Addr base_vaddr = reinterpret_cast<Addr>(args[i * 2 + 3]);
+        memProxy.readString(base, base_vaddr);
+        Addr vaddr = reinterpret_cast<Addr>(args[i * 2 + 4]);
+        maps.emplace_back(base, vaddr);
+      }
+
+      this->llvm_trace_cpu->handleReplay(p, tc, trace, finish_tag_vaddr, std::move(maps));
       break;
     }
     default: { panic("Unknown request code: %u\n", req); }

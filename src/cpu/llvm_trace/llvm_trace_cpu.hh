@@ -40,10 +40,9 @@ class LLVMTraceCPU : public BaseCPU {
   bool handleTimingResp(PacketPtr pkt);
 
   // API interface for driver.
-  void handleMapVirtualMem(Process* p, ThreadContext* tc,
-                           const std::string& base, const Addr vaddr);
   void handleReplay(Process* p, ThreadContext* tc, const std::string& trace,
-                    const Addr finish_tag_vaddr);
+                    const Addr finish_tag_vaddr,
+                    std::vector<std::pair<std::string, Addr>> maps);
 
   enum InstStatus {
     FETCHED,  // In fetchQueue.

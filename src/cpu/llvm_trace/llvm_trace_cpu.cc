@@ -174,17 +174,17 @@ void LLVMTraceCPU::CPUPort::recvReqRetry() {
   }
 }
 
-void LLVMTraceCPU::handleMapVirtualMem(Process* p, ThreadContext* tc,
-                                       const std::string& base,
-                                       const Addr vaddr) {
-  this->mapBaseNameToVAddr(base, vaddr);
-}
+void LLVMTraceCPU::handleReplay(
+    Process* p, ThreadContext* tc, const std::string& trace,
+    const Addr finish_tag_vaddr,
+    std::vector<std::pair<std::string, Addr>> maps) {
+  DPRINTF(LLVMTraceCPU, "Replay trace %s, finish tag at 0x%x, num maps %u\n",
+          trace.c_str(), finish_tag_vaddr, maps.size());
 
-void LLVMTraceCPU::handleReplay(Process* p, ThreadContext* tc,
-                                const std::string& trace,
-                                const Addr finish_tag_vaddr) {
-  DPRINTF(LLVMTraceCPU, "Replay trace %s, finish tag at 0x%x\n", trace.c_str(),
-          finish_tag_vaddr);
+  // Map base to vaddr.
+  for (const auto& pair : maps) {
+    this->mapBaseNameToVAddr(pair.first, pair.second);
+  }
 
   // Set the process and tc.
   this->process = p;
