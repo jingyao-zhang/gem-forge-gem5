@@ -41,6 +41,8 @@ std::unordered_map<std::string, OpClass> LLVMDynamicInst::instToOpClass = {
     // Other insts.
     {"icmp", IntAluOp},
     {"fcmp", FloatCmpOp},
+    // Our special accelerator inst.
+    {"cca", Enums::OpClass::Accelerator},
 };
 
 void LLVMDynamicInst::handleFUCompletion() {

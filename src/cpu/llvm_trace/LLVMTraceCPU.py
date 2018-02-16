@@ -1,8 +1,20 @@
 from m5.params import *
 
 from BaseCPU import BaseCPU
-from FUPool import DefaultFUPool
+from FuncUnit import *
+from FuncUnitConfig import *
+from FUPool import FUPool
 from Process import EmulatedDriver
+
+
+class LLVMAccel(FUDesc):
+    opList = [OpDesc(opClass='Accelerator', opLat=1, pipelined=False)]
+    count = 2
+
+
+class DefaultFUPool(FUPool):
+    FUList = [IntALU(), IntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
+              SIMD_Unit(), WritePort(), RdWrPort(), IprPort(), LLVMAccel()]
 
 
 class LLVMTraceCPU(BaseCPU):

@@ -1,3 +1,5 @@
+
+#include "cpu/llvm_trace/llvm_accelerator.hh"
 #include "cpu/llvm_trace/llvm_iew_stage.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"

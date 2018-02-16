@@ -2,6 +2,7 @@
 #define __CPU_LLVM_IEW_STAGE__
 
 #include <list>
+#include <unordered_map>
 #include <vector>
 
 #include "base/statistics.hh"
@@ -13,6 +14,7 @@
 #include "params/LLVMTraceCPU.hh"
 
 class LLVMTraceCPU;
+class LLVMAccelerator;
 
 class LLVMIEWStage {
  public:
@@ -75,6 +77,8 @@ class LLVMIEWStage {
   std::list<LLVMDynamicInstId> instQueue;
 
   FUPool* fuPool;
+
+  std::unordered_map<int, LLVMAccelerator*> acceleratorMap;
 
   void issue();
   void markReadyInsts();

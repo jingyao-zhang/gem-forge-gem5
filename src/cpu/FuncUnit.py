@@ -41,6 +41,7 @@
 from m5.SimObject import SimObject
 from m5.params import *
 
+
 class OpClass(Enum):
     vals = ['No_OpClass', 'IntAlu', 'IntMult', 'IntDiv', 'FloatAdd',
             'FloatCmp', 'FloatCvt', 'FloatMult', 'FloatMultAcc', 'FloatDiv',
@@ -51,7 +52,8 @@ class OpClass(Enum):
             'SimdFloatCvt', 'SimdFloatDiv', 'SimdFloatMisc', 'SimdFloatMult',
             'SimdFloatMultAcc', 'SimdFloatSqrt',
             'MemRead', 'MemWrite', 'FloatMemRead', 'FloatMemWrite',
-            'IprAccess', 'InstPrefetch']
+            'IprAccess', 'InstPrefetch', 'Accelerator']
+
 
 class OpDesc(SimObject):
     type = 'OpDesc'
@@ -59,7 +61,8 @@ class OpDesc(SimObject):
     opClass = Param.OpClass("type of operation")
     opLat = Param.Cycles(1, "cycles until result is available")
     pipelined = Param.Bool(True, "set to true when the functional unit for"
-        "this op is fully pipelined. False means not pipelined at all.")
+                           "this op is fully pipelined. False means not pipelined at all.")
+
 
 class FUDesc(SimObject):
     type = 'FUDesc'
