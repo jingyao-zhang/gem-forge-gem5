@@ -78,6 +78,9 @@ void LLVMIEWStage::tick() {
     ++iter;
   }
 
+  // Mark ready inst for next cycle.
+  this->markReadyInsts();
+
   // Raise the stall if instQueue is too large.
   this->signal->stall = this->instQueue.size() >= this->instQueueSize;
 }
@@ -137,6 +140,24 @@ void LLVMIEWStage::issue() {
             this->fuPool->freeUnitNextCycle(fuId);
           }
         }
+      }
+    }
+  }
+}
+
+void LLVMIEWStage::markReadyInsts() {
+  for (auto iter = this->instQueue.begin(), end = this->instQueue.end();
+       iter != end; ++iter) {
+    auto instId = *iter;
+    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
+             "Inst %u should be in inflyInsts to check if READY\n", instId);
+    if (cpu->inflyInsts.at(instId) == InstStatus::DECODED) {
+      auto inst = cpu->dynamicInsts[instId];
+      if (inst->isDependenceReady(cpu)) {
+        // Mark the status to ready.
+        DPRINTF(LLVMTraceCPU, "Inst %u is marked ready in instruction queue.\n",
+                instId);
+        cpu->inflyInsts[instId] = InstStatus::READY;
       }
     }
   }

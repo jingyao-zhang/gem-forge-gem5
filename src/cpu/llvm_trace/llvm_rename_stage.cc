@@ -46,28 +46,18 @@ void LLVMRenameStage::tick() {
       panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
                "Inst %u should be in inflyInsts to check if READY\n", instId);
       if (cpu->inflyInsts.at(instId) != InstStatus::DECODED) {
-        panic("Inst %u should be in DECODED status to check if READY\n",
-              instId);
+        panic("Inst %u should be in DECODED status in rob\n", instId);
       }
 
-      // Check if ready.
-      if (inst->isDependenceReady(cpu)) {
-        // Mark the status to ready.
-        DPRINTF(LLVMTraceCPU,
-                "Inst %u is ready and send to instruction queue.\n", instId);
-        cpu->inflyInsts[instId] = InstStatus::READY;
+      DPRINTF(LLVMTraceCPU, "Inst %u is sent to iew.\n", instId);
 
-        // Add toIEW.
-        this->toIEW->push_back(instId);
+      // Add toIEW.
+      this->toIEW->push_back(instId);
 
-        renamedInsts++;
+      renamedInsts++;
 
-        // Remove the inst from rob.
-        robIter = this->rob.erase(robIter);
-        continue;
-      }
-
-      robIter++;
+      // Remove the inst from rob.
+      robIter = this->rob.erase(robIter);
     }
   }
 

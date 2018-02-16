@@ -77,6 +77,7 @@ class LLVMIEWStage {
   FUPool* fuPool;
 
   void issue();
+  void markReadyInsts();
 };
 
 #endif
