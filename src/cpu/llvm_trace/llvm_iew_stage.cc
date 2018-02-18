@@ -1,6 +1,6 @@
 
-#include "cpu/llvm_trace/llvm_accelerator.hh"
 #include "cpu/llvm_trace/llvm_iew_stage.hh"
+#include "cpu/llvm_trace/llvm_accelerator.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
@@ -12,7 +12,32 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
       instQueueSize(params->instQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
       toCommitDelay(params->iewToCommitDelay),
-      fuPool(params->fuPool) {}
+      fuPool(params->fuPool) {
+  // The FU in FUPool is stateless, however, the accelerator may be stateful,
+  // e.g. config time.
+  // To handle this, FUPool is only in charge of monitoring the use/free of
+  // accelerator. The actual context and latency is handled by accelerator
+  // itself.
+  // For every "virtual accelerator" in FUPool, construct the actual one.
+  int acceleratorId = this->fuPool->getUnit(Enums::OpClass::Accelerator);
+  if (acceleratorId != FUPool::NoCapableFU) {
+    // We have accelerator in the system, try to get all accelerator.
+    while (acceleratorId != FUPool::NoFreeFU) {
+      if (this->acceleratorMap.find(acceleratorId) !=
+          this->acceleratorMap.end()) {
+        panic("Accelerator id %d is already occupied.\n", acceleratorId);
+      }
+      DPRINTF(LLVMTraceCPU, "Register accelerator %d.\n", acceleratorId);
+      this->acceleratorMap[acceleratorId] = new LLVMAccelerator();
+      // Add to the free list.
+      this->fuPool->freeUnitNextCycle(acceleratorId);
+      // Get next accelerator.
+      acceleratorId = this->fuPool->getUnit(Enums::OpClass::Accelerator);
+    }
+    // Remember to free all the accelerators.
+    this->fuPool->processFreeUnits();
+  }
+}
 
 void LLVMIEWStage::setFromRename(TimeBuffer<RenameStruct>* fromRenameBuffer) {
   this->fromRename = fromRenameBuffer->getWire(-this->fromRenameDelay);
@@ -127,7 +152,16 @@ void LLVMIEWStage::issue() {
           DPRINTF(LLVMTraceCPU, "Inst %u get FU %s with fuId %d.\n", instId,
                   Enums::OpClassStrings[opClass], fuId);
           inst->startFUStatusFSM();
+
           auto opLatency = this->fuPool->getOpLatency(opClass);
+          // For accelerator, use the latency from the "actual accelerator".
+          if (opClass == Enums::OpClass::Accelerator) {
+            if (this->acceleratorMap.find(fuId) == this->acceleratorMap.end()) {
+              panic("Accelerator id %d has no actual accelerator.\n", fuId);
+            }
+            // For now hack with null context pointer.
+            opLatency = this->acceleratorMap.at(fuId)->getOpLatency(nullptr);
+          }
 
           if (opLatency == Cycles(1)) {
             this->processFUCompletion(instId, fuId);
