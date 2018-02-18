@@ -160,7 +160,8 @@ void LLVMIEWStage::issue() {
               panic("Accelerator id %d has no actual accelerator.\n", fuId);
             }
             // For now hack with null context pointer.
-            opLatency = this->acceleratorMap.at(fuId)->getOpLatency(nullptr);
+            opLatency = this->acceleratorMap.at(fuId)->getOpLatency(
+                inst->getAcceleratorContext());
           }
 
           if (opLatency == Cycles(1)) {

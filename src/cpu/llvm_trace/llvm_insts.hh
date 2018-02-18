@@ -11,6 +11,7 @@
 #include "base/types.hh"
 #include "cpu/op_class.hh"
 
+class LLVMAcceleratorContext;
 class LLVMTraceCPU;
 
 using LLVMDynamicInstId = uint64_t;
@@ -32,6 +33,12 @@ class LLVMDynamicInst {
   // Only for mem insts.
   virtual void handlePacketResponse() {
     panic("Calling handlePacketResponse on non-mem inst %u\n", id);
+  }
+
+  // Hack: get the accelerator context ONLY for Accelerator inst.
+  virtual LLVMAcceleratorContext* getAcceleratorContext() {
+    panic("Calling getAcceleratorContext on non-accelerator inst %u\n", id);
+    return nullptr;
   }
 
   // Handle a fu completion for next cycle.
@@ -150,15 +157,17 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
     RET,
     SIN,
     COS,
+    // Special accelerator inst.
+    ACCELERATOR,
     OTHER,
   };
   LLVMDynamicInstCompute(LLVMDynamicInstId _id, const std::string& _instName,
                          std::vector<LLVMDynamicInstId>&& _dependentInstIds,
-                         Type _type)
+                         Type _type, LLVMAcceleratorContext* _context)
       : LLVMDynamicInst(_id, _instName, std::move(_dependentInstIds)),
-        type(_type) {}
-  void execute(LLVMTraceCPU* cpu) override {
-  }
+        type(_type),
+        context(_context) {}
+  void execute(LLVMTraceCPU* cpu) override {}
   std::string toLine() const override {
     std::stringstream ss;
     ss << "com," << this->type << ',';
@@ -167,12 +176,15 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
     }
     return ss.str();
   }
-  // Handle a tick for inst.
-  void tick() override {
-    LLVMDynamicInst::tick();
+
+  LLVMAcceleratorContext* getAcceleratorContext() override {
+    if (this->type != Type::ACCELERATOR) {
+      return LLVMDynamicInst::getAcceleratorContext();
+    }
+    return this->context;
   }
 
-  // Both the FU FSM and remain Ticks should be finished.
+  // FU FSM should be finished.
   bool isCompleted() const override {
     return this->fuStatus == FUStatus::COMPLETED;
   }
@@ -191,6 +203,9 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
 
  protected:
   Type type;
+
+  // Only used for accelerator inst.
+  LLVMAcceleratorContext* context;
 };
 
 std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,

@@ -287,9 +287,11 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
       type = LLVMDynamicInstCompute::Type::SIN;
     } else if (fields[0] == "cos") {
       type = LLVMDynamicInstCompute::Type::COS;
+    } else if (fields[0] == "cca") {
+      type = LLVMDynamicInstCompute::Type::ACCELERATOR;
     }
     return std::shared_ptr<LLVMDynamicInst>(new LLVMDynamicInstCompute(
-        id, fields[0], std::move(dependentInstIds), type));
+        id, fields[0], std::move(dependentInstIds), type, nullptr));
   }
 
   panic("Unknown type of LLVMDynamicInst %s.\n", fields[0].c_str());
