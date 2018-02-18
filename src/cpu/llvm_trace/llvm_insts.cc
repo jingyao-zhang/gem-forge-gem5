@@ -1,5 +1,5 @@
 #include "cpu/llvm_trace/llvm_insts.hh"
-
+#include "cpu/llvm_trace/llvm_accelerator.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
@@ -279,6 +279,7 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
                                base, offset, trace_vaddr, 16, type, value));
   } else {
     auto type = LLVMDynamicInstCompute::Type::OTHER;
+    LLVMAcceleratorContext* context = nullptr;
     if (fields[0] == "call") {
       type = LLVMDynamicInstCompute::Type::CALL;
     } else if (fields[0] == "ret") {
@@ -289,9 +290,13 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
       type = LLVMDynamicInstCompute::Type::COS;
     } else if (fields[0] == "cca") {
       type = LLVMDynamicInstCompute::Type::ACCELERATOR;
+      if (fields.size() != 3) {
+        panic("Missing context field for accelerator inst %u.\n", id);
+      }
+      context = LLVMAcceleratorContext::parseContext(fields[2]);
     }
     return std::shared_ptr<LLVMDynamicInst>(new LLVMDynamicInstCompute(
-        id, fields[0], std::move(dependentInstIds), type, nullptr));
+        id, fields[0], std::move(dependentInstIds), type, context));
   }
 
   panic("Unknown type of LLVMDynamicInst %s.\n", fields[0].c_str());

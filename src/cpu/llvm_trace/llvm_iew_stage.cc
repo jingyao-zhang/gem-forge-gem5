@@ -174,7 +174,9 @@ void LLVMIEWStage::issue() {
             // Notice for the -1 part so that we can free FU in next cycle.
             cpu->schedule(fuCompletion, cpu->clockEdge(Cycles(opLatency - 1)));
             // If pipelined, mark the FU free immediately for next cycle.
-            this->fuPool->freeUnitNextCycle(fuId);
+            if (pipelined) {
+              this->fuPool->freeUnitNextCycle(fuId);
+            }
           }
         }
       }
