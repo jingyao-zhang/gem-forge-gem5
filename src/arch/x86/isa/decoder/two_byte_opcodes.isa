@@ -231,6 +231,12 @@
                     0x62: m5togglesync({{
                         PseudoInst::togglesync(xc->tcBase());
                     }}, IsNonSpeculative, IsQuiesce);
+                    0x64: m5llvmtracemap({{
+                        PseudoInst::llvmtracemap(xc->tcBase(), Rdi, Rsi);
+                    }}, IsNonSpeculative);
+                    0x65: m5llvmtracereplay({{
+                        PseudoInst::llvmtracereplay(xc->tcBase(), Rdi, Rsi);
+                    }}, IsNonSpeculative);
                     default: Inst::UD2();
                 }
             }

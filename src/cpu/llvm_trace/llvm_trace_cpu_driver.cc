@@ -4,8 +4,8 @@
 #include "debug/LLVMTraceCPU.hh"
 #include "sim/process.hh"
 
-#include <vector>
 #include <utility>
+#include <vector>
 
 namespace {}  // namespace
 
@@ -57,12 +57,32 @@ int LLVMTraceCPUDriver::ioctl(Process* p, ThreadContext* tc, unsigned req) {
         maps.emplace_back(base, vaddr);
       }
 
-      this->llvm_trace_cpu->handleReplay(p, tc, trace, finish_tag_vaddr, std::move(maps));
+      this->llvm_trace_cpu->handleReplay(p, tc, trace, finish_tag_vaddr,
+                                         std::move(maps));
       break;
     }
     default: { panic("Unknown request code: %u\n", req); }
   }
   return 0;
+}
+
+void LLVMTraceCPUDriver::map(Process* p, ThreadContext* tc, Addr base_ptr,
+                             Addr vaddr) {
+  SETranslatingPortProxy& memProxy = tc->getMemProxy();
+  std::string base;
+  memProxy.readString(base, base_ptr);
+  this->llvm_trace_cpu->mapBaseNameToVAddr(base, vaddr);
+}
+
+void LLVMTraceCPUDriver::replay(Process* p, ThreadContext* tc, Addr trace_ptr,
+                                Addr vaddr) {
+  SETranslatingPortProxy& memProxy = tc->getMemProxy();
+  std::string trace;
+  memProxy.readString(trace, trace_ptr);
+  // This is the API for pseudo instructions,
+  // so no mapping here.
+  std::vector<std::pair<std::string, Addr>> empty_maps;
+  this->llvm_trace_cpu->handleReplay(p, tc, trace, vaddr, empty_maps);
 }
 
 LLVMTraceCPUDriver* LLVMTraceCPUDriverParams::create() {

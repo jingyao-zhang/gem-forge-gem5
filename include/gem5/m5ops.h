@@ -67,6 +67,9 @@ void m5_panic(void);
 void m5_work_begin(uint64_t workid, uint64_t threadid);
 void m5_work_end(uint64_t workid, uint64_t threadid);
 
+void m5_llvm_trace_map(const char* base, void* vaddr);
+void m5_llvm_trace_replay(const char* trace, void* vaddr);
+
 // These operations are for critical path annotation
 void m5a_bsm(char *sm, const void *id, int flags);
 void m5a_esm(char *sm);

@@ -89,6 +89,8 @@ void switchcpu(ThreadContext *tc);
 void workbegin(ThreadContext *tc, uint64_t workid, uint64_t threadid);
 void workend(ThreadContext *tc, uint64_t workid, uint64_t threadid);
 void togglesync(ThreadContext *tc);
+void llvmtracemap(ThreadContext *tc, uint64_t base_ptr, uint64_t vaddr);
+void llvmtracereplay(ThreadContext *tc, uint64_t trace_ptr, uint64_t vaddr);
 
 } // namespace PseudoInst
 

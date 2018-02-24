@@ -61,6 +61,7 @@
 #include "base/output.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
+#include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
 #include "cpu/quiesce_event.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Loader.hh"
@@ -212,6 +213,14 @@ pseudoInst(ThreadContext *tc, uint8_t func, uint8_t subfunc)
 
       case M5OP_SE_PAGE_FAULT:
         m5PageFault(tc);
+        break;
+
+      case M5OP_SE_LLVM_TRACE_MAP:
+        llvmtracemap(tc, args[0], args[1]);
+        break;
+
+      case M5OP_SE_LLVM_TRACE_REPLAY:
+        llvmtracereplay(tc, args[0], args[1]);
         break;
 
       /* dist-gem5 functions */
@@ -714,6 +723,52 @@ workend(ThreadContext *tc, uint64_t workid, uint64_t threadid)
             exitSimLoop("work items exit count reached");
         }
     }
+}
+
+void
+llvmtracemap(ThreadContext *tc, uint64_t base_ptr, uint64_t vaddr)
+{
+    DPRINTF(PseudoInst, "PseudoInst::llvmtracemap(%p, %p)\n", (void*)base_ptr, (void*)vaddr);
+    warn("PseudoInst::llvmtracemap(%p, %p)\n", (void*)base_ptr, (void*)vaddr);
+
+    // Find the process's ioctl driver.
+    Process* p = tc->getProcessPtr();
+    std::string driver_name = "llvm_trace_cpu";
+    EmulatedDriver* driver = p->findDriver(driver_name);
+    if (driver == nullptr) {
+        panic("Failed to find the llvm trace cpu driver.\n");
+    }
+    // Invoke the driver directly.
+    LLVMTraceCPUDriver* llvm_trace_cpu_driver = dynamic_cast<LLVMTraceCPUDriver*>(driver);
+    if (llvm_trace_cpu_driver == nullptr) {
+        panic("The driver is not a LLVMTraceCPUDriver!\n");
+    }
+    llvm_trace_cpu_driver->map(p, tc, reinterpret_cast<Addr>(base_ptr),
+        reinterpret_cast<Addr>(vaddr));
+}
+
+void
+llvmtracereplay(ThreadContext *tc, uint64_t trace_ptr, uint64_t vaddr)
+{
+    DPRINTF(PseudoInst, "PseudoInst::llvmtracereplay(%p, %p)\n",
+        reinterpret_cast<void*>(trace_ptr), reinterpret_cast<void*>(vaddr));
+    warn("PseudoInst::llvmtracemap(%p, %p)\n",
+        reinterpret_cast<void*>(trace_ptr), reinterpret_cast<void*>(vaddr));
+
+    // Find the process's ioctl driver.
+    Process* p = tc->getProcessPtr();
+    std::string driver_name = "llvm_trace_cpu";
+    EmulatedDriver* driver = p->findDriver(driver_name);
+    if (driver == nullptr) {
+        panic("Failed to find the llvm trace cpu driver.\n");
+    }
+    // Invoke the driver directly.
+    LLVMTraceCPUDriver* llvm_trace_cpu_driver = dynamic_cast<LLVMTraceCPUDriver*>(driver);
+    if (llvm_trace_cpu_driver == nullptr) {
+        panic("The driver is not a LLVMTraceCPUDriver!\n");
+    }
+    llvm_trace_cpu_driver->replay(p, tc, reinterpret_cast<Addr>(trace_ptr),
+        reinterpret_cast<Addr>(vaddr));
 }
 
 } // namespace PseudoInst

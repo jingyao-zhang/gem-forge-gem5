@@ -84,6 +84,10 @@
 #define M5OP_SE_PAGE_FAULT      0x61
 #define M5OP_DIST_TOGGLE_SYNC   0x62
 
+// llvm trace related pseudo inst.
+#define M5OP_SE_LLVM_TRACE_MAP  0x64
+#define M5OP_SE_LLVM_TRACE_REPLAY 0x65
+
 // These operations are for critical path annotation
 #define M5OP_ANNOTATE           0x55
 #define M5OP_AN_BSM             0x1
