@@ -13,7 +13,8 @@ void LLVMFetchStage::setToDecode(TimeBuffer<FetchStruct>* toDecodeBuffer) {
   this->toDecode = toDecodeBuffer->getWire(0);
 }
 
-void LLVMFetchStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer, int pos) {
+void LLVMFetchStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
+                               int pos) {
   this->signal = signalBuffer->getWire(pos);
 }
 
@@ -32,17 +33,21 @@ void LLVMFetchStage::tick() {
          fetchedInsts < this->fetchWidth && cpu->currentStackDepth > 0) {
     DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n",
             cpu->currentInstId);
-    cpu->inflyInsts[cpu->currentInstId] = InstStatus::FETCHED;
-    this->toDecode->push_back(cpu->currentInstId);
-    // Update the stack depth for call/ret inst.
-    cpu->currentStackDepth +=
-        cpu->dynamicInsts[cpu->currentInstId]->getCallStackAdjustment();
-    DPRINTF(LLVMTraceCPU, "Stack depth updated to %u\n",
-            cpu->currentStackDepth);
-    if (cpu->currentStackDepth < 0) {
-      panic("Current stack depth is less than 0\n");
+    // Speciall rule to skip the phi node.
+    if (this->cpu->dynamicInsts[cpu->currentInstId]->getInstName() != "phi") {
+      cpu->inflyInsts[cpu->currentInstId] = InstStatus::FETCHED;
+      this->toDecode->push_back(cpu->currentInstId);
+      // Update the stack depth for call/ret inst.
+      cpu->currentStackDepth +=
+          cpu->dynamicInsts[cpu->currentInstId]->getCallStackAdjustment();
+      DPRINTF(LLVMTraceCPU, "Stack depth updated to %u\n",
+              cpu->currentStackDepth);
+      if (cpu->currentStackDepth < 0) {
+        panic("Current stack depth is less than 0\n");
+      }
+      fetchedInsts++;
     }
+
     cpu->currentInstId++;
-    fetchedInsts++;
   }
 }

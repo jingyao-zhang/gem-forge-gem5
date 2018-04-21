@@ -73,6 +73,8 @@ class LLVMDynamicInst {
   // Hack, special interface for call stack inc/dec.
   virtual int getCallStackAdjustment() const { return 0; }
 
+  const std::string& getInstName() const { return instName; }
+
  protected:
   LLVMDynamicInstId id;
   std::string instName;
