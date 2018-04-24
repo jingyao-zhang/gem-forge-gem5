@@ -19,9 +19,11 @@ using LLVMDynamicInstId = uint64_t;
 class LLVMDynamicInst {
  public:
   LLVMDynamicInst(LLVMDynamicInstId _id, const std::string& _instName,
+                  uint8_t _numMicroOps,
                   std::vector<LLVMDynamicInstId>&& _dependentInstIds)
       : id(_id),
         instName(_instName),
+        numMicroOps(_numMicroOps),
         dependentInstIds(std::move(_dependentInstIds)),
         fuStatus(FUStatus::COMPLETED) {}
 
@@ -75,9 +77,12 @@ class LLVMDynamicInst {
 
   const std::string& getInstName() const { return instName; }
 
+  uint8_t getNumMicroOps() const { return numMicroOps; }
+
  protected:
   LLVMDynamicInstId id;
   std::string instName;
+  uint8_t numMicroOps;
   std::vector<LLVMDynamicInstId> dependentInstIds;
 
   // A simple state machine to monitor FU status.
@@ -103,11 +108,13 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
     LOAD,
   };
   LLVMDynamicInstMem(LLVMDynamicInstId _id, const std::string& _instName,
+                     uint8_t _numMicroOps,
                      std::vector<LLVMDynamicInstId>&& _dependentInstIds,
                      Addr _size, const std::string& _base, Addr _offset,
                      Addr _trace_vaddr, Addr _align, Type _type,
                      uint8_t* _value)
-      : LLVMDynamicInst(_id, _instName, std::move(_dependentInstIds)),
+      : LLVMDynamicInst(_id, _instName, _numMicroOps,
+                        std::move(_dependentInstIds)),
         size(_size),
         base(_base),
         offset(_offset),
@@ -164,9 +171,11 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
     OTHER,
   };
   LLVMDynamicInstCompute(LLVMDynamicInstId _id, const std::string& _instName,
+                         uint8_t _numMicroOps,
                          std::vector<LLVMDynamicInstId>&& _dependentInstIds,
                          Type _type, LLVMAcceleratorContext* _context)
-      : LLVMDynamicInst(_id, _instName, std::move(_dependentInstIds)),
+      : LLVMDynamicInst(_id, _instName, _numMicroOps,
+                        std::move(_dependentInstIds)),
         type(_type),
         context(_context) {}
   void execute(LLVMTraceCPU* cpu) override {}

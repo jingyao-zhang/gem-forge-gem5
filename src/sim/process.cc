@@ -142,7 +142,7 @@ Process::Process(ProcessParams * params, ObjectFile * obj_file)
      */
     _tgid = params->pid;
 
-    exitGroup = new bool();
+    exitGroup = new bool(params->exitGroup);
     sigchld = new bool();
 
     if (!debugSymbolTable) {

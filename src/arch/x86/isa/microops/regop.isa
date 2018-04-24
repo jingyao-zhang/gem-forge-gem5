@@ -491,6 +491,7 @@ let {{
 
     class RdRegOp(RegOp):
         abstract = True
+        op_class = "No_OpClass"
         def __init__(self, dest, src1=None, dataSize="env.dataSize"):
             if not src1:
                 src1 = dest
@@ -751,6 +752,7 @@ let {{
     class Mov(CondRegOp):
         code = 'DestReg = merge(SrcReg1, op2, dataSize)'
         else_code = 'DestReg = DestReg;'
+        op_class = "No_OpClass"
 
     # Shift instructions
 

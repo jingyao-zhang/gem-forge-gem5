@@ -18,6 +18,14 @@ void LLVMCommitStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
 
 void LLVMCommitStage::regStats() {
   // No stats for now.
+  this->instsCommitted.init(cpu->numThreads)
+      .name(cpu->name() + ".commit.committedInsts")
+      .desc("Number of instructions committed")
+      .flags(Stats::total);
+  this->opsCommitted.init(cpu->numThreads)
+      .name(cpu->name() + ".commit.committedOps")
+      .desc("Number of ops (including micro ops) committed")
+      .flags(Stats::total);
 }
 
 void LLVMCommitStage::tick() {
@@ -35,5 +43,8 @@ void LLVMCommitStage::tick() {
     DPRINTF(LLVMTraceCPU, "Inst %u committed, remaining infly inst #%u\n",
             instId, cpu->inflyInsts.size());
     cpu->inflyInsts.erase(instId);
+    this->instsCommitted[cpu->thread_context->threadId()]++;
+    this->opsCommitted[cpu->thread_context->threadId()] +=
+        cpu->dynamicInsts[instId]->getNumMicroOps();
   }
 }

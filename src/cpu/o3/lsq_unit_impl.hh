@@ -1036,6 +1036,10 @@ LSQUnit<Impl>::squash(const InstSeqNum &squashed_num)
            storeQueue[store_idx].inst->seqNum > squashed_num) {
         // Instructions marked as can WB are already committed.
         if (storeQueue[store_idx].canWB) {
+            DPRINTF(LSQUnit,"Store Instruction PC %s is marked WB, stop squashing, "
+                "idx:%i [sn:%lli]\n",
+                storeQueue[store_idx].inst->pcState(),
+                store_idx, storeQueue[store_idx].inst->seqNum);
             break;
         }
 

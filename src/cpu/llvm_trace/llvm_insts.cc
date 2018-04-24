@@ -41,6 +41,8 @@ std::unordered_map<std::string, OpClass> LLVMDynamicInst::instToOpClass = {
     // Other insts.
     {"icmp", IntAluOp},
     {"fcmp", FloatCmpOp},
+    // We assume the branching requires address computation.
+    {"br", IntAluOp},
     // Our special accelerator inst.
     {"cca", Enums::OpClass::Accelerator},
 };
@@ -183,6 +185,12 @@ uint8_t* extractStoreValue(int typeId, Addr size, const std::string& typeName,
                            const std::string& content) {
   uint8_t* value;
   switch (typeId) {
+    case 2: {
+      // float type.
+      value = (uint8_t*)(new float);
+      *((float*)value) = stof(content);
+      break;
+    }
     case 3: {
       // Double type.
       value = (uint8_t*)(new double);
@@ -243,62 +251,75 @@ std::vector<LLVMDynamicInstId> extractDependentInsts(const std::string deps) {
 
 std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
                                                       const std::string& line) {
+  const size_t NAME_FIELD = 0;
+  const size_t NUM_MICRO_OPS_FIELD = NAME_FIELD + 1;
+  const size_t DEPENDENT_INST_ID_FIELD = NUM_MICRO_OPS_FIELD + 1;
+
   auto fields = splitByChar(line, '|');
-  auto dependentInstIds = extractDependentInsts(fields[1]);
-  if (fields[0] == "store") {
+  const std::string& instName = fields[NAME_FIELD];
+  auto numMicroOps = stoul(fields[NUM_MICRO_OPS_FIELD]);
+  auto dependentInstIds =
+      extractDependentInsts(fields[DEPENDENT_INST_ID_FIELD]);
+
+  if (instName == "store") {
     auto type = LLVMDynamicInstMem::Type::STORE;
-    auto base = fields[2];
-    Addr offset = stoull(fields[3]);
-    Addr trace_vaddr = stoull(fields[4]);
-    Addr size = stoull(fields[5]);
+    auto base = fields[DEPENDENT_INST_ID_FIELD + 1];
+    Addr offset = stoull(fields[DEPENDENT_INST_ID_FIELD + 2]);
+    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 3]);
+    Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 4]);
     // Handle the value of store operation.
-    int typeId = stoi(fields[6]);
-    uint8_t* value = extractStoreValue(typeId, size, fields[7], fields[8]);
-    return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size,
-                               base, offset, trace_vaddr, 16, type, value));
-  } else if (fields[0] == "load") {
+    int typeId = stoi(fields[DEPENDENT_INST_ID_FIELD + 5]);
+    uint8_t* value =
+        extractStoreValue(typeId, size, fields[DEPENDENT_INST_ID_FIELD + 6],
+                          fields[DEPENDENT_INST_ID_FIELD + 7]);
+    return std::make_shared<LLVMDynamicInstMem>(
+        id, instName, numMicroOps, std::move(dependentInstIds), size, base,
+        offset, trace_vaddr, 16, type, value);
+    // return std::shared_ptr<LLVMDynamicInst>(new LLVMDynamicInstMem(
+    //     id, instName, numMicroOps, std::move(dependentInstIds), size, base,
+    //     offset, trace_vaddr, 16, type, value));
+  } else if (instName == "load") {
     auto type = LLVMDynamicInstMem::Type::LOAD;
-    auto base = fields[2];
-    Addr offset = stoull(fields[3]);
-    Addr trace_vaddr = stoull(fields[4]);
-    Addr size = stoull(fields[5]);
+    auto base = fields[DEPENDENT_INST_ID_FIELD + 1];
+    Addr offset = stoull(fields[DEPENDENT_INST_ID_FIELD + 2]);
+    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 3]);
+    Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 4]);
     uint8_t* value = nullptr;
-    return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size,
-                               base, offset, trace_vaddr, 16, type, value));
-  } else if (fields[0] == "alloca") {
+    return std::make_shared<LLVMDynamicInstMem>(
+        id, instName, numMicroOps, std::move(dependentInstIds), size, base,
+        offset, trace_vaddr, 16, type, value);
+  } else if (instName == "alloca") {
     auto type = LLVMDynamicInstMem::Type::ALLOCA;
-    auto base = fields[2];
+    auto base = fields[DEPENDENT_INST_ID_FIELD + 1];
     Addr offset = 0;
-    Addr trace_vaddr = stoull(fields[3]);
-    Addr size = stoull(fields[4]);
+    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 2]);
+    Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 3]);
     uint8_t* value = nullptr;
-    return std::shared_ptr<LLVMDynamicInst>(
-        new LLVMDynamicInstMem(id, fields[0], std::move(dependentInstIds), size,
-                               base, offset, trace_vaddr, 16, type, value));
+    return std::make_shared<LLVMDynamicInstMem>(
+        id, instName, numMicroOps, std::move(dependentInstIds), size, base,
+        offset, trace_vaddr, 16, type, value);
   } else {
     auto type = LLVMDynamicInstCompute::Type::OTHER;
     LLVMAcceleratorContext* context = nullptr;
-    if (fields[0] == "call") {
+    if (instName == "call") {
       type = LLVMDynamicInstCompute::Type::CALL;
-    } else if (fields[0] == "ret") {
+    } else if (instName == "ret") {
       type = LLVMDynamicInstCompute::Type::RET;
-    } else if (fields[0] == "sin") {
+    } else if (instName == "sin") {
       type = LLVMDynamicInstCompute::Type::SIN;
-    } else if (fields[0] == "cos") {
+    } else if (instName == "cos") {
       type = LLVMDynamicInstCompute::Type::COS;
-    } else if (fields[0] == "cca") {
+    } else if (instName == "cca") {
       type = LLVMDynamicInstCompute::Type::ACCELERATOR;
       if (fields.size() != 3) {
         panic("Missing context field for accelerator inst %u.\n", id);
       }
       context = LLVMAcceleratorContext::parseContext(fields[2]);
     }
-    return std::shared_ptr<LLVMDynamicInst>(new LLVMDynamicInstCompute(
-        id, fields[0], std::move(dependentInstIds), type, context));
+    return std::make_shared<LLVMDynamicInstCompute>(
+        id, instName, numMicroOps, std::move(dependentInstIds), type, context);
   }
 
-  panic("Unknown type of LLVMDynamicInst %s.\n", fields[0].c_str());
+  panic("Unknown type of LLVMDynamicInst %s.\n", instName.c_str());
   return std::shared_ptr<LLVMDynamicInst>();
 }

@@ -104,6 +104,7 @@ def template MicroLimmOpConstructor {{
 
 let {{
     class LimmOp(X86Microop):
+        op_class = "No_OpClass"
         def __init__(self, dest, imm, dataSize="env.dataSize"):
             self.className = "Limm"
             self.mnemonic = "limm"
@@ -161,9 +162,9 @@ let {{
 let {{
     # Build up the all register version of this micro op
     iops = [InstObjParams("limm", "Limm", 'X86MicroopBase',
-            {"code" : "DestReg = merge(DestReg, imm, dataSize);"}),
+            {"code" : "DestReg = merge(DestReg, imm, dataSize);"}, ['No_OpClass']),
             InstObjParams("limm", "LimmBig", 'X86MicroopBase',
-            {"code" : "DestReg = imm & mask(dataSize * 8);"})]
+            {"code" : "DestReg = imm & mask(dataSize * 8);"}, ['No_OpClass'])]
     for iop in iops:
         header_output += MicroLimmOpDeclare.subst(iop)
         decoder_output += MicroLimmOpConstructor.subst(iop)
@@ -171,7 +172,7 @@ let {{
         exec_output += MicroLimmOpExecute.subst(iop)
 
     iop = InstObjParams("lfpimm", "Lfpimm", 'X86MicroopBase',
-            {"code" : "FpDestReg_uqw = imm"})
+            {"code" : "FpDestReg_uqw = imm"}, ['No_OpClass'])
     header_output += MicroLimmOpDeclare.subst(iop)
     decoder_output += MicroLimmOpConstructor.subst(iop)
     decoder_output += MicroLimmOpDisassembly.subst(iop)

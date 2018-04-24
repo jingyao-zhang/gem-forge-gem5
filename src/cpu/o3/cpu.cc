@@ -902,7 +902,20 @@ FullO3CPU<Impl>::removeThread(ThreadID tid)
 
 
     assert(iew.instQueue.getCount(tid) == 0);
-    assert(iew.ldstQueue.getCount(tid) == 0);
+
+    /**
+     * I comment the assertion out as in the original implementation,
+     * the only caller of ThreadContext::halt() would be exit syscall,
+     * and therefore it is guaranteed that would not be pending WB
+     * stores.
+     * However, now I am trying to implement exitGroup and need to
+     * halt thread A when another thread in the same thread group
+     * calls exitGroup(). In this case, thread A may be caught in the
+     * middle when it has some pending WB stores and cause problem.
+     * For now I will simply comment out this assertion. We should
+     * probably add some ThreadContext::exit() function in the future.
+     */
+    // assert(iew.ldstQueue.getCount(tid) == 0);
 
     // Reset ROB/IQ/LSQ Entries
 

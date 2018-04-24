@@ -62,6 +62,9 @@ class Process(SimObject):
     simpoint = Param.UInt64(0, 'simulation point at which to start simulation')
     drivers = VectorParam.EmulatedDriver([], 'Available emulated drivers')
 
+    exitGroup = Param.Bool('false', "whether exit thread group when syscall \
+                            exitGroup is called.")
+
     @classmethod
     def export_methods(cls, code):
         code('bool map(Addr vaddr, Addr paddr, int sz, bool cacheable=true);')

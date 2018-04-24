@@ -27,6 +27,9 @@ class LLVMCommitStage {
 
   void regStats();
 
+  Stats::Vector instsCommitted;
+  Stats::Vector opsCommitted;
+
  private:
   LLVMTraceCPU* cpu;
 

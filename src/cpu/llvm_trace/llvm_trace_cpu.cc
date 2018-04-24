@@ -193,6 +193,10 @@ void LLVMTraceCPU::handleReplay(
   // Get the bottom of the stack.
   this->stackMin = tc->readIntReg(TheISA::StackPointerReg);
 
+  // Allocate a special stack slot for register spill.
+  Addr spill = this->allocateStack(8, 8);
+  this->mapBaseNameToVAddr("$sp", spill);
+
   // Suspend the thread from normal CPU.
   this->thread_context->suspend();
   DPRINTF(LLVMTraceCPU, "Suspend thread, status = %d\n",

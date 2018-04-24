@@ -94,6 +94,7 @@ def get_processes(options):
         process = Process(pid = 100 + idx)
         process.executable = wrkld
         process.cwd = os.getcwd()
+        process.exitGroup = True
 
         if options.env:
             with open(options.env, 'r') as f:

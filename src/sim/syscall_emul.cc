@@ -98,6 +98,53 @@ exitImpl(SyscallDesc *desc, int callnum, Process *p, ThreadContext *tc,
 
     System *sys = tc->getSystemPtr();
 
+    /**
+     *  NOTE by seanzw:
+     *  The current exitImpl will actually ignore group option since
+     *  p->exitGroup is not used anywhere, which means that exitGroup syscall
+     *  will actually behave the same as exit syscall and only terminates
+     *  the current thread, not the whole thread group.
+     *  The problem of this approach is that for some multithread benchmark
+     *  I am running, it relies on this behavior to terminate the whole
+     *  program, but gem5 will keep running as there is some worker thread
+     *  waiting for input job.
+     *  A ad-hoc solution is to add options to the Process to specify whether
+     *  it wants the default gem5 "simulate untill all threads exit" behavior
+     *  or our "exitGroup means exit group" behavior.
+     *  The original exitGroup field in Process is used to identify whether
+     *  the thread group has exited, but now I am using it as the behavior
+     *  flag (since it's not used anywhere). When it is set, we will use the
+     *  "exitGroup means exit group" behavior.
+     *  The only thing we have to handle except directly halt other thread in
+     *  the same group is that the childClearTID may wake a waiting futex (I
+     *  believe this is how pthread_join is implemented).
+     */
+    if (group && *p->exitGroup) {
+        // Not sure if we really need to handle the childClearTID since we are
+        // exit the whole group here. But if we want to hanle it, we have to
+        // do it before we actually halt any thread as the futex may accidently
+        // activate a thread after we halt it. We may also want add some sanity
+        // check function in thread's activate and suspend function.
+        // Anyway, Gem5 does't have fork for now and everything program simualted
+        // will have only one process, so I will just ignore it.
+        for (int i = 0; i < sys->numContexts(); i++) {
+            Process *walk;
+            ThreadContext* walkThread = sys->threadContexts[i];
+            if (!(walk = walkThread->getProcessPtr())) {
+                continue;
+            }
+            // Ignore the myself as I will be handled later in normal code.
+            if (walk == p) {
+                continue;
+            }
+            if (walk->tgid() == p->tgid() && walkThread->status() != ThreadContext::Halted) {
+                // Non-halted thread in the same group.
+                warn("Exit group halt thread %d\n", walkThread->threadId());
+                walkThread->halt();
+            }
+        }
+    }
+
     int activeContexts = 0;
     for (auto &system: sys->systemList)
         activeContexts += system->numRunningContexts();
@@ -106,8 +153,9 @@ exitImpl(SyscallDesc *desc, int callnum, Process *p, ThreadContext *tc,
         return status;
     }
 
-    if (group)
-        *p->exitGroup = true;
+    // Uncessary for our new behavior.
+    // if (group)
+    //     *p->exitGroup = true;
 
     if (p->childClearTID)
         exitFutexWake(tc, p->childClearTID, p->tgid());
@@ -151,6 +199,14 @@ exitImpl(SyscallDesc *desc, int callnum, Process *p, ThreadContext *tc,
             if (*p->sigchld && (p->ppid() != 0) && (walk->pid() == p->ppid()))
                 parent = walk;
         }
+    }
+
+    // A sanity check: if we are use exitGroup behavior, then it should be
+    // guaranteed that we are the last group.
+    if (group && *p->exitGroup) {
+        panic_if(!last_thread,
+            "ExitGroup syscall should make [tid:%d] the last thread in the group.",
+            p->pid());
     }
 
     if (last_thread) {
