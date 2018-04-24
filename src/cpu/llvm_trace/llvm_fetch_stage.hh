@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "base/statistics.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
 #include "cpu/timebuf.hh"
@@ -22,6 +23,8 @@ class LLVMFetchStage {
   void setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer, int pos);
   void regStats();
   void tick();
+
+  Stats::Scalar blockedCycles;
 
  private:
   LLVMTraceCPU* cpu;

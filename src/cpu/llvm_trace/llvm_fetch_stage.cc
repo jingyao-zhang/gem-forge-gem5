@@ -18,11 +18,16 @@ void LLVMFetchStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
   this->signal = signalBuffer->getWire(pos);
 }
 
-void LLVMFetchStage::regStats() {}
+void LLVMFetchStage::regStats() {
+  this->blockedCycles.name(cpu->name() + ".fetch.blockedCycles")
+      .desc("Number of cycles blocked")
+      .prereq(this->blockedCycles);
+}
 
 void LLVMFetchStage::tick() {
   // If stall signal is raised, we don't fetch.
   if (this->signal->stall) {
+    this->blockedCycles++;
     return;
   }
   // Only fetch if the stack depth is > 0,
@@ -31,21 +36,28 @@ void LLVMFetchStage::tick() {
   unsigned fetchedInsts = 0;
   while (cpu->currentInstId < cpu->dynamicInsts.size() &&
          fetchedInsts < this->fetchWidth && cpu->currentStackDepth > 0) {
-    DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n",
-            cpu->currentInstId);
+    LLVMDynamicInstId instId = cpu->currentInstId;
+
     // Speciall rule to skip the phi node.
-    if (this->cpu->dynamicInsts[cpu->currentInstId]->getInstName() != "phi") {
-      cpu->inflyInsts[cpu->currentInstId] = InstStatus::FETCHED;
-      this->toDecode->push_back(cpu->currentInstId);
+    if (this->cpu->dynamicInsts[instId]->getInstName() != "phi") {
+      if (fetchedInsts + cpu->dynamicInsts[instId]->getNumMicroOps() >
+          this->fetchWidth) {
+        // Do not fetch if overflow.
+        break;
+      }
+
+      DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n", instId);
+      cpu->inflyInsts[instId] = InstStatus::FETCHED;
+      this->toDecode->push_back(instId);
       // Update the stack depth for call/ret inst.
       cpu->currentStackDepth +=
-          cpu->dynamicInsts[cpu->currentInstId]->getCallStackAdjustment();
+          cpu->dynamicInsts[instId]->getCallStackAdjustment();
       DPRINTF(LLVMTraceCPU, "Stack depth updated to %u\n",
               cpu->currentStackDepth);
       if (cpu->currentStackDepth < 0) {
         panic("Current stack depth is less than 0\n");
       }
-      fetchedInsts++;
+      fetchedInsts += cpu->dynamicInsts[instId]->getNumMicroOps();
     }
 
     cpu->currentInstId++;

@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "base/statistics.hh"
 #include "cpu/llvm_trace/llvm_decode_stage.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
@@ -27,6 +28,8 @@ class LLVMRenameStage {
   void regStats();
 
   void tick();
+
+  Stats::Scalar blockedCycles;
 
  private:
   LLVMTraceCPU* cpu;

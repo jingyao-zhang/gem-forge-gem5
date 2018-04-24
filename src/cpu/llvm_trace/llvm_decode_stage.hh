@@ -4,6 +4,7 @@
 #include <queue>
 #include <vector>
 
+#include "base/statistics.hh"
 #include "cpu/llvm_trace/llvm_fetch_stage.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
@@ -28,6 +29,8 @@ class LLVMDecodeStage {
   void regStats();
 
   void tick();
+
+  Stats::Scalar blockedCycles;
 
  private:
   LLVMTraceCPU* cpu;

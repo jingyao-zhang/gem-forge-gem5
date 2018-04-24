@@ -36,12 +36,13 @@ class LLVMTraceCPU(BaseCPU):
     renameToIEWDelay = Param.Cycles(
         2, "Rename to Issue/Execute/Writeback delay")
     renameWidth = Param.Unsigned(8, "Rename width")
-    robSize = Param.Unsigned(32, "ROB size")
+    robSize = Param.Unsigned(192, "ROB size")
     iewToCommitDelay = Param.Cycles(
         1, "Issue/Execute/Writeback to commit delay")
     issueWidth = Param.Unsigned(8, "Issue width")
     instQueueSize = Param.Unsigned(64, "Inst queue size")
     commitWidth = Param.Unsigned(8, "Commit width")
+    commitQueueSize = Param.Unsigned(32, "Commit queue size")
 
     fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
 

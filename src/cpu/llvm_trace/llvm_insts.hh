@@ -23,9 +23,10 @@ class LLVMDynamicInst {
                   std::vector<LLVMDynamicInstId>&& _dependentInstIds)
       : id(_id),
         instName(_instName),
-        numMicroOps(_numMicroOps),
+        numMicroOps(1),
         dependentInstIds(std::move(_dependentInstIds)),
-        fuStatus(FUStatus::COMPLETED) {}
+        fuStatus(FUStatus::COMPLETED),
+        remainingMicroOps(1 - 1) {}
 
   // Interface.
   virtual void execute(LLVMTraceCPU* cpu) = 0;
@@ -49,6 +50,12 @@ class LLVMDynamicInst {
   // Handle a tick for inst.
   // This will handle FUCompletion.
   virtual void tick() {
+    if (this->fuStatus == FUStatus::COMPLETED) {
+      // The fu is completed.
+      if (this->remainingMicroOps > 0) {
+        this->remainingMicroOps--;
+      }
+    }
     if (this->fuStatus == FUStatus::COMPLETE_NEXT_CYCLE) {
       this->fuStatus = FUStatus::COMPLETED;
     }
@@ -94,6 +101,12 @@ class LLVMDynamicInst {
     COMPLETE_NEXT_CYCLE,
     COMPLETED,
   } fuStatus;
+
+  // Runtime value to simulate depedendence of micro ops
+  // inside an instruction.
+  // For any remaining micro ops, we delay the completion
+  // for 1 tick. This is really coarse-grained.
+  uint8_t remainingMicroOps;
 
   // A static global map from instName to the needed OpClass.
   static std::unordered_map<std::string, OpClass> instToOpClass;
@@ -142,7 +155,8 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
   void handlePacketResponse() override;
 
   bool isCompleted() const override {
-    return this->fuStatus == FUStatus::COMPLETED && this->numInflyPackets == 0;
+    return this->fuStatus == FUStatus::COMPLETED &&
+           this->numInflyPackets == 0 && this->remainingMicroOps == 0;
   }
 
  protected:
@@ -197,7 +211,8 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
 
   // FU FSM should be finished.
   bool isCompleted() const override {
-    return this->fuStatus == FUStatus::COMPLETED;
+    return this->fuStatus == FUStatus::COMPLETED &&
+           this->remainingMicroOps == 0;
   }
 
   // Adjust the call stack for call/ret inst.

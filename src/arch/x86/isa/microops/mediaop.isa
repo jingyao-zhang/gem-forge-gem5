@@ -119,7 +119,7 @@ let {{
             MediaOpExecute)
 
     class MediaOpMeta(type):
-        def buildCppClasses(self, name, Name, suffix, code):
+        def buildCppClasses(self, name, Name, suffix, code, additional_params):
 
             # Globals to stick the output in
             global header_output
@@ -136,9 +136,9 @@ let {{
                     typeQual = match.group("typeQual")
                 src2_name = "%sFpSrcReg2%s" % (match.group("prefix"), typeQual)
                 self.buildCppClasses(name, Name, suffix,
-                        matcher.sub(src2_name, code))
+                        matcher.sub(src2_name, code), additional_params)
                 self.buildCppClasses(name + "i", Name, suffix + "Imm",
-                        matcher.sub("imm8", code))
+                        matcher.sub("imm8", code), additional_params)
                 return
 
             base = "X86ISA::MediaOp"
@@ -154,7 +154,7 @@ let {{
                 templates = regTemplates
 
             # Get everything ready for the substitution
-            iop = InstObjParams(name, Name + suffix, base, {"code" : code})
+            iop = InstObjParams(name, Name + suffix, base, {"code" : code}, additional_params)
 
             # Generate the actual code (finally!)
             header_output += templates[0].subst(iop)
@@ -176,7 +176,10 @@ let {{
                 code = cls.code
 
                 # Set up the C++ classes
-                mcls.buildCppClasses(cls, name, Name, "", code)
+                additional_params = []
+                if hasattr(cls, 'op_class'):
+                    additional_params.append(cls.op_class)
+                mcls.buildCppClasses(cls, name, Name, "", code, additional_params)
 
                 # Hook into the microassembler dict
                 global microopClasses
@@ -821,6 +824,7 @@ let {{
         '''
 
     class Mmulf(MediaOp):
+        op_class = 'FloatMultOp'
         code = '''
             union floatInt
             {
@@ -867,6 +871,7 @@ let {{
         '''
 
     class Mdivf(MediaOp):
+        op_class = 'FloatDivOp'
         code = '''
             union floatInt
             {

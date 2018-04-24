@@ -61,6 +61,10 @@ class LLVMIEWStage {
   // Stat for total number issued for each instruction type.
   Stats::Vector2d statIssuedInstType;
 
+  Stats::Scalar blockedCycles;
+
+  Stats::Distribution numIssuedDist;
+
  private:
   LLVMTraceCPU* cpu;
 
@@ -75,6 +79,7 @@ class LLVMIEWStage {
   TimeBuffer<LLVMStageSignal>::wire signal;
 
   std::list<LLVMDynamicInstId> instQueue;
+  std::list<LLVMDynamicInstId> issuedQueue;
 
   FUPool* fuPool;
 

@@ -29,14 +29,21 @@ class LLVMCommitStage {
 
   Stats::Vector instsCommitted;
   Stats::Vector opsCommitted;
+  Stats::Scalar blockedCycles;
 
  private:
   LLVMTraceCPU* cpu;
+
+  unsigned commitWidth;
+  unsigned commitQueueSize;
 
   Cycles fromIEWDelay;
 
   TimeBuffer<IEWStruct>::wire fromIEW;
   TimeBuffer<LLVMStageSignal>::wire signal;
+
+
+  std::list<LLVMDynamicInstId> commitQueue;
 };
 
 #endif

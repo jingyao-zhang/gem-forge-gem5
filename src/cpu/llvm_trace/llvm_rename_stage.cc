@@ -25,13 +25,21 @@ void LLVMRenameStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
   this->signal = signalBuffer->getWire(pos);
 }
 
-void LLVMRenameStage::regStats() {}
+void LLVMRenameStage::regStats() {
+  this->blockedCycles.name(cpu->name() + ".rename.blockedCycles")
+      .desc("Number of cycles blocked")
+      .prereq(this->blockedCycles);
+}
 
 void LLVMRenameStage::tick() {
   // Get the inst from decode to rob;
   for (auto iter = this->fromDecode->begin(), end = this->fromDecode->end();
        iter != end; ++iter) {
     this->rob.push_back(*iter);
+  }
+
+  if (this->signal->stall) {
+    this->blockedCycles++;
   }
 
   // Check the dependence until either the rob is empty or
@@ -49,12 +57,16 @@ void LLVMRenameStage::tick() {
         panic("Inst %u should be in DECODED status in rob\n", instId);
       }
 
+      if (renamedInsts + inst->getNumMicroOps() > this->renameWidth) {
+        break;
+      }
+
       DPRINTF(LLVMTraceCPU, "Inst %u is sent to iew.\n", instId);
 
       // Add toIEW.
       this->toIEW->push_back(instId);
 
-      renamedInsts++;
+      renamedInsts += inst->getNumMicroOps();
 
       // Remove the inst from rob.
       robIter = this->rob.erase(robIter);

@@ -58,6 +58,15 @@ void LLVMIEWStage::regStats() {
       .desc("Type of FU issued")
       .flags(Stats::total | Stats::pdf | Stats::dist);
   this->statIssuedInstType.ysubnames(Enums::OpClassStrings);
+
+  this->blockedCycles.name(cpu->name() + ".iew.blockedCycles")
+      .desc("Number of cycles blocked")
+      .prereq(this->blockedCycles);
+
+  this->numIssuedDist.init(0, this->issueWidth, 1)
+      .name(cpu->name() + ".iew.issued_per_cycle")
+      .desc("Number of insts issued each cycle")
+      .flags(Stats::pdf);
 }
 
 void LLVMIEWStage::tick() {
@@ -67,46 +76,53 @@ void LLVMIEWStage::tick() {
     this->instQueue.push_back(*iter);
   }
 
-  // Issue inst to execute.
-  this->issue();
+  if (this->signal->stall) {
+    this->blockedCycles++;
+  }
 
-  // Send finished inst to commit stage if not stalled.
-  auto iter = this->instQueue.begin();
-  while (iter != this->instQueue.end()) {
-    auto instId = *iter;
-    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to check if completed.\n",
-             instId);
-    if (cpu->inflyInsts.at(instId) == InstStatus::ISSUED) {
-      // Tick the inst.
-      auto inst = cpu->dynamicInsts[instId];
-      inst->tick();
+  if (!this->signal->stall) {
 
-      // Check if the inst is finished.
-      if (inst->isCompleted()) {
-        // Send it to commit stage.
-        DPRINTF(LLVMTraceCPU, "Inst %u finished, send to commit\n", instId);
-        cpu->inflyInsts[instId] = InstStatus::FINISHED;
+    // Send finished inst to commit stage if not stalled.
+    auto iter = this->issuedQueue.begin();
+    while (iter != this->issuedQueue.end()) {
+      auto instId = *iter;
+      panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
+               "Inst %u should be in inflyInsts to check if completed.\n",
+               instId);
+      if (cpu->inflyInsts.at(instId) == InstStatus::ISSUED) {
+        // Tick the inst.
+        auto inst = cpu->dynamicInsts[instId];
+        inst->tick();
+
+        // Check if the inst is finished.
+        if (inst->isCompleted()) {
+          // Send it to commit stage.
+          DPRINTF(LLVMTraceCPU, "Inst %u finished, send to commit\n", instId);
+          cpu->inflyInsts[instId] = InstStatus::FINISHED;
+          if (!this->signal->stall) {
+            this->toCommit->push_back(instId);
+            iter = this->issuedQueue.erase(iter);
+            continue;
+          }
+        }
+      } else if (cpu->inflyInsts.at(instId) == InstStatus::FINISHED) {
         if (!this->signal->stall) {
           this->toCommit->push_back(instId);
-          iter = this->instQueue.erase(iter);
+          iter = this->issuedQueue.erase(iter);
           continue;
         }
       }
-    } else if (cpu->inflyInsts.at(instId) == InstStatus::FINISHED) {
-      if (!this->signal->stall) {
-        this->toCommit->push_back(instId);
-        iter = this->instQueue.erase(iter);
-        continue;
-      }
+
+      // Otherwise, increase the iter.
+      ++iter;
     }
 
-    // Otherwise, increase the iter.
-    ++iter;
-  }
+    // Mark ready inst for next cycle.
+    this->markReadyInsts();
 
-  // Mark ready inst for next cycle.
-  this->markReadyInsts();
+    // Issue inst to execute.
+    this->issue();
+  }
 
   // Raise the stall if instQueue is too large.
   this->signal->stall = this->instQueue.size() >= this->instQueueSize;
@@ -140,17 +156,25 @@ void LLVMIEWStage::issue() {
         }
       }
 
+      // Check if there is enough issueWidth.
+      if (issuedInsts + inst->getNumMicroOps() > this->issueWidth) {
+        canIssue = false;
+      }
+
       if (canIssue) {
         cpu->inflyInsts[instId] = InstStatus::ISSUED;
-        issuedInsts++;
+        issuedInsts += cpu->dynamicInsts[instId]->getNumMicroOps();
+        // Move it to issuedQueue.
+        iter = this->instQueue.erase(iter);
+        this->issuedQueue.push_back(instId);
         DPRINTF(LLVMTraceCPU, "Inst %u issued\n", instId);
         inst->execute(cpu);
         this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
 
         // Handle the FU completion.
         if (opClass != No_OpClass) {
-          DPRINTF(LLVMTraceCPU, "Inst %u get FU %s with fuId %d.\n", instId,
-                  Enums::OpClassStrings[opClass], fuId);
+          // DPRINTF(LLVMTraceCPU, "Inst %u get FU %s with fuId %d.\n", instId,
+          //         Enums::OpClassStrings[opClass], fuId);
           inst->startFUStatusFSM();
 
           auto opLatency = this->fuPool->getOpLatency(opClass);
@@ -182,6 +206,8 @@ void LLVMIEWStage::issue() {
       }
     }
   }
+
+  this->numIssuedDist.sample(issuedInsts);
 }
 
 void LLVMIEWStage::markReadyInsts() {
@@ -203,7 +229,7 @@ void LLVMIEWStage::markReadyInsts() {
 }
 
 void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
-  DPRINTF(LLVMTraceCPU, "FUCompletion for inst %u with fu %d\n", instId, fuId);
+  // DPRINTF(LLVMTraceCPU, "FUCompletion for inst %u with fu %d\n", instId, fuId);
   // Check if we should free this fu next cycle.
   if (fuId > -1) {
     this->fuPool->freeUnitNextCycle(fuId);
