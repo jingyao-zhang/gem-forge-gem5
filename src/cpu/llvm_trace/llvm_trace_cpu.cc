@@ -80,7 +80,7 @@ void LLVMTraceCPU::readTraceFile() {
 }
 
 void LLVMTraceCPU::tick() {
-  if (curTick() % 1000000 == 0) {
+  if (curTick() % 100000000 == 0) {
     DPRINTF(LLVMTraceCPU, "Tick()\n");
   }
 
@@ -98,7 +98,7 @@ void LLVMTraceCPU::tick() {
   this->iewToCommit.advance();
   this->signalBuffer.advance();
 
-  if (this->inflyInsts.empty()) {
+  if (this->inflyInsts.empty() && this->currentStackDepth == 0) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
     // No more need to write to the finish tag, simply restart the
     // normal thread.

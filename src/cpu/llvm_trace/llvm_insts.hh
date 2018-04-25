@@ -23,10 +23,10 @@ class LLVMDynamicInst {
                   std::vector<LLVMDynamicInstId>&& _dependentInstIds)
       : id(_id),
         instName(_instName),
-        numMicroOps(1),
+        numMicroOps(_numMicroOps),
         dependentInstIds(std::move(_dependentInstIds)),
         fuStatus(FUStatus::COMPLETED),
-        remainingMicroOps(1 - 1) {}
+        remainingMicroOps(_numMicroOps - 1) {}
 
   // Interface.
   virtual void execute(LLVMTraceCPU* cpu) = 0;
@@ -85,6 +85,7 @@ class LLVMDynamicInst {
   const std::string& getInstName() const { return instName; }
 
   uint8_t getNumMicroOps() const { return numMicroOps; }
+  uint8_t getQueueWeight() const { return numMicroOps; }
 
  protected:
   LLVMDynamicInstId id;

@@ -28,6 +28,7 @@ void LLVMFetchStage::tick() {
   // If stall signal is raised, we don't fetch.
   if (this->signal->stall) {
     this->blockedCycles++;
+    DPRINTF(LLVMTraceCPU, "Fetch blocked.\n");
     return;
   }
   // Only fetch if the stack depth is > 0,
@@ -40,13 +41,15 @@ void LLVMFetchStage::tick() {
 
     // Speciall rule to skip the phi node.
     if (this->cpu->dynamicInsts[instId]->getInstName() != "phi") {
-      if (fetchedInsts + cpu->dynamicInsts[instId]->getNumMicroOps() >
+      if (fetchedInsts + cpu->dynamicInsts[instId]->getQueueWeight() >
           this->fetchWidth) {
         // Do not fetch if overflow.
         break;
       }
 
-      DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue\n", instId);
+      DPRINTF(LLVMTraceCPU,
+              "Fetch inst %d into fetchQueue, current inst id %d, total %d\n",
+              instId, cpu->currentInstId, cpu->dynamicInsts.size());
       cpu->inflyInsts[instId] = InstStatus::FETCHED;
       this->toDecode->push_back(instId);
       // Update the stack depth for call/ret inst.
@@ -57,7 +60,7 @@ void LLVMFetchStage::tick() {
       if (cpu->currentStackDepth < 0) {
         panic("Current stack depth is less than 0\n");
       }
-      fetchedInsts += cpu->dynamicInsts[instId]->getNumMicroOps();
+      fetchedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
     }
 
     cpu->currentInstId++;

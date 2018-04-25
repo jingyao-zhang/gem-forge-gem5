@@ -57,7 +57,7 @@ void LLVMRenameStage::tick() {
         panic("Inst %u should be in DECODED status in rob\n", instId);
       }
 
-      if (renamedInsts + inst->getNumMicroOps() > this->renameWidth) {
+      if (renamedInsts + inst->getQueueWeight() > this->renameWidth) {
         break;
       }
 
@@ -66,7 +66,7 @@ void LLVMRenameStage::tick() {
       // Add toIEW.
       this->toIEW->push_back(instId);
 
-      renamedInsts += inst->getNumMicroOps();
+      renamedInsts += inst->getQueueWeight();
 
       // Remove the inst from rob.
       robIter = this->rob.erase(robIter);

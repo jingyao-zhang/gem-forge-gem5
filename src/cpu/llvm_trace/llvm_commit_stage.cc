@@ -48,12 +48,12 @@ void LLVMCommitStage::tick() {
   while (!this->commitQueue.empty() && committedInsts < this->commitWidth) {
     auto instId = this->commitQueue.front();
 
-    if (committedInsts + cpu->dynamicInsts[instId]->getNumMicroOps() >
+    if (committedInsts + cpu->dynamicInsts[instId]->getQueueWeight() >
         this->commitWidth) {
       break;
     }
 
-    committedInsts += cpu->dynamicInsts[instId]->getNumMicroOps();
+    committedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
     this->commitQueue.pop_front();
 
     panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),

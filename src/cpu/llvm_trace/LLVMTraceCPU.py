@@ -11,9 +11,13 @@ class LLVMAccel(FUDesc):
     opList = [OpDesc(opClass='Accelerator', opLat=1, pipelined=False)]
     count = 2
 
+class LLVMIntMultDiv(FUDesc):
+    opList = [ OpDesc(opClass='IntMult', opLat=3),
+               OpDesc(opClass='IntDiv', opLat=12, pipelined=False) ]
+    count=2
 
 class DefaultFUPool(FUPool):
-    FUList = [IntALU(), IntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
+    FUList = [IntALU(), LLVMIntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
               SIMD_Unit(), WritePort(), RdWrPort(), IprPort(), LLVMAccel()]
 
 

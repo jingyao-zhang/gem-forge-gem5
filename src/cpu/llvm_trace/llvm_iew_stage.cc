@@ -126,6 +126,7 @@ void LLVMIEWStage::tick() {
 
   // Raise the stall if instQueue is too large.
   this->signal->stall = this->instQueue.size() >= this->instQueueSize;
+
 }
 
 void LLVMIEWStage::issue() {
@@ -157,13 +158,13 @@ void LLVMIEWStage::issue() {
       }
 
       // Check if there is enough issueWidth.
-      if (issuedInsts + inst->getNumMicroOps() > this->issueWidth) {
+      if (issuedInsts + inst->getQueueWeight() > this->issueWidth) {
         canIssue = false;
       }
 
       if (canIssue) {
         cpu->inflyInsts[instId] = InstStatus::ISSUED;
-        issuedInsts += cpu->dynamicInsts[instId]->getNumMicroOps();
+        issuedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
         // Move it to issuedQueue.
         iter = this->instQueue.erase(iter);
         this->issuedQueue.push_back(instId);

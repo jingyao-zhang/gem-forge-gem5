@@ -48,7 +48,7 @@ void LLVMDecodeStage::tick() {
     while (decodedInsts < this->decodeWidth && !this->decodeQueue.empty()) {
       auto instId = this->decodeQueue.front();
 
-      if (decodedInsts + cpu->dynamicInsts[instId]->getNumMicroOps() >
+      if (decodedInsts + cpu->dynamicInsts[instId]->getQueueWeight() >
           this->decodeWidth) {
         break;
       }
@@ -57,7 +57,7 @@ void LLVMDecodeStage::tick() {
       DPRINTF(LLVMTraceCPU, "Decode inst %d\n", instId);
       cpu->inflyInsts[instId] = InstStatus::DECODED;
       this->toRename->push_back(instId);
-      decodedInsts += cpu->dynamicInsts[instId]->getNumMicroOps();
+      decodedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
     }
   }
 
