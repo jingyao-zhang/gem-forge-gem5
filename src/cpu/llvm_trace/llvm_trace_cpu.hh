@@ -63,7 +63,7 @@ class LLVMTraceCPU : public BaseCPU {
       return this->owner->handleTimingResp(pkt);
     }
     void recvTimingSnoopReq(PacketPtr pkt) override {
-      panic("recvTimingResp not implemented.");
+      // panic("recvTimingResp not implemented.");
     }
     void sendReq(PacketPtr pkt);
     void recvReqRetry() override;

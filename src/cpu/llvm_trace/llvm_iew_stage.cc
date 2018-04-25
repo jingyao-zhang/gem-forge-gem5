@@ -10,6 +10,7 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
     : cpu(_cpu),
       issueWidth(params->issueWidth),
       instQueueSize(params->instQueueSize),
+      loadStoreQueueSize(params->loadStoreQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
       toCommitDelay(params->iewToCommitDelay),
       fuPool(params->fuPool) {
@@ -69,6 +70,43 @@ void LLVMIEWStage::regStats() {
       .flags(Stats::pdf);
 }
 
+void LLVMIEWStage::checkCompleteInsts(std::list<LLVMDynamicInstId>& queue) {
+  // Send finished inst to commit stage if not stalled.
+  auto iter = queue.begin();
+  while (iter != queue.end()) {
+    auto instId = *iter;
+    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
+             "Inst %u should be in inflyInsts to check if completed.\n",
+             instId);
+    if (cpu->inflyInsts.at(instId) == InstStatus::ISSUED) {
+      // Tick the inst.
+      auto inst = cpu->dynamicInsts[instId];
+      inst->tick();
+
+      // Check if the inst is finished.
+      if (inst->isCompleted()) {
+        // Send it to commit stage.
+        DPRINTF(LLVMTraceCPU,
+                "Inst %u finished, send to commit, remaining %d\n", instId,
+                queue.size());
+        cpu->inflyInsts[instId] = InstStatus::FINISHED;
+        this->toCommit->push_back(instId);
+        iter = queue.erase(iter);
+        continue;
+      }
+    } else if (cpu->inflyInsts.at(instId) == InstStatus::FINISHED) {
+      if (!this->signal->stall) {
+        this->toCommit->push_back(instId);
+        iter = queue.erase(iter);
+        continue;
+      }
+    }
+
+    // Otherwise, increase the iter.
+    ++iter;
+  }
+}
+
 void LLVMIEWStage::tick() {
   // Get inst from rename.
   for (auto iter = this->fromRename->begin(), end = this->fromRename->end();
@@ -76,46 +114,16 @@ void LLVMIEWStage::tick() {
     this->instQueue.push_back(*iter);
   }
 
+  // Free FUs.
+  this->fuPool->processFreeUnits();
+
   if (this->signal->stall) {
     this->blockedCycles++;
   }
 
   if (!this->signal->stall) {
-
-    // Send finished inst to commit stage if not stalled.
-    auto iter = this->issuedQueue.begin();
-    while (iter != this->issuedQueue.end()) {
-      auto instId = *iter;
-      panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-               "Inst %u should be in inflyInsts to check if completed.\n",
-               instId);
-      if (cpu->inflyInsts.at(instId) == InstStatus::ISSUED) {
-        // Tick the inst.
-        auto inst = cpu->dynamicInsts[instId];
-        inst->tick();
-
-        // Check if the inst is finished.
-        if (inst->isCompleted()) {
-          // Send it to commit stage.
-          DPRINTF(LLVMTraceCPU, "Inst %u finished, send to commit\n", instId);
-          cpu->inflyInsts[instId] = InstStatus::FINISHED;
-          if (!this->signal->stall) {
-            this->toCommit->push_back(instId);
-            iter = this->issuedQueue.erase(iter);
-            continue;
-          }
-        }
-      } else if (cpu->inflyInsts.at(instId) == InstStatus::FINISHED) {
-        if (!this->signal->stall) {
-          this->toCommit->push_back(instId);
-          iter = this->issuedQueue.erase(iter);
-          continue;
-        }
-      }
-
-      // Otherwise, increase the iter.
-      ++iter;
-    }
+    this->checkCompleteInsts(this->issuedQueue);
+    this->checkCompleteInsts(this->loadStoreQueue);
 
     // Mark ready inst for next cycle.
     this->markReadyInsts();
@@ -126,25 +134,45 @@ void LLVMIEWStage::tick() {
 
   // Raise the stall if instQueue is too large.
   this->signal->stall = this->instQueue.size() >= this->instQueueSize;
-
 }
 
 void LLVMIEWStage::issue() {
-  // Free FUs.
-  this->fuPool->processFreeUnits();
-
   unsigned issuedInsts = 0;
+
+  // static int count = 0;
+  // if (count > 0) {
+  //   count--;
+  //   this->fuPool->dump();
+  // }
 
   for (auto iter = this->instQueue.begin(), end = this->instQueue.end();
        iter != end && issuedInsts < this->issueWidth; ++iter) {
     auto instId = *iter;
     panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
              "Inst %u should be in inflyInsts to check if READY.\n", instId);
+
+    // if (instId == 88) {
+    //   DPRINTF(LLVMTraceCPU, "inst 88 check ready %d\n", 1);
+    // }
     if (cpu->inflyInsts.at(instId) == InstStatus::READY) {
       bool canIssue = true;
       auto inst = cpu->dynamicInsts[instId];
       auto opClass = inst->getOpClass();
       auto fuId = FUPool::NoCapableFU;
+      const auto& instName = inst->getInstName();
+
+      // Check if there is enough issueWidth.
+      if (issuedInsts + inst->getQueueWeight() > this->issueWidth) {
+        continue;
+      }
+
+      if (canIssue) {
+        if (instName == "store" || instName == "load") {
+          if (this->loadStoreQueue.size() == this->loadStoreQueueSize) {
+            continue;
+          }
+        }
+      }
 
       // Check if there is available FU.
       if (opClass != No_OpClass) {
@@ -157,17 +185,21 @@ void LLVMIEWStage::issue() {
         }
       }
 
-      // Check if there is enough issueWidth.
-      if (issuedInsts + inst->getQueueWeight() > this->issueWidth) {
-        canIssue = false;
-      }
+
+      // if (instId == 88) {
+      //   DPRINTF(LLVMTraceCPU, "inst 88 %d\n", canIssue);
+      // }
 
       if (canIssue) {
         cpu->inflyInsts[instId] = InstStatus::ISSUED;
         issuedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
         // Move it to issuedQueue.
         iter = this->instQueue.erase(iter);
-        this->issuedQueue.push_back(instId);
+        if (instName == "store" || instName == "load") {
+          this->loadStoreQueue.push_back(instId);
+        } else {
+          this->issuedQueue.push_back(instId);
+        }
         DPRINTF(LLVMTraceCPU, "Inst %u issued\n", instId);
         inst->execute(cpu);
         this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
@@ -230,7 +262,6 @@ void LLVMIEWStage::markReadyInsts() {
 }
 
 void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
-  // DPRINTF(LLVMTraceCPU, "FUCompletion for inst %u with fu %d\n", instId, fuId);
   // Check if we should free this fu next cycle.
   if (fuId > -1) {
     this->fuPool->freeUnitNextCycle(fuId);

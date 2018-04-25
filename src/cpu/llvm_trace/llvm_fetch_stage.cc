@@ -28,7 +28,7 @@ void LLVMFetchStage::tick() {
   // If stall signal is raised, we don't fetch.
   if (this->signal->stall) {
     this->blockedCycles++;
-    DPRINTF(LLVMTraceCPU, "Fetch blocked.\n");
+    // DPRINTF(LLVMTraceCPU, "Fetch blocked.\n");
     return;
   }
   // Only fetch if the stack depth is > 0,

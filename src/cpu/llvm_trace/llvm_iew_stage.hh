@@ -70,6 +70,7 @@ class LLVMIEWStage {
 
   unsigned issueWidth;
   unsigned instQueueSize;
+  unsigned loadStoreQueueSize;
 
   Cycles fromRenameDelay;
   Cycles toCommitDelay;
@@ -80,6 +81,7 @@ class LLVMIEWStage {
 
   std::list<LLVMDynamicInstId> instQueue;
   std::list<LLVMDynamicInstId> issuedQueue;
+  std::list<LLVMDynamicInstId> loadStoreQueue;
 
   FUPool* fuPool;
 
@@ -87,6 +89,7 @@ class LLVMIEWStage {
 
   void issue();
   void markReadyInsts();
+  void checkCompleteInsts(std::list<LLVMDynamicInstId>& queue);
 };
 
 #endif

@@ -11,10 +11,12 @@ class LLVMAccel(FUDesc):
     opList = [OpDesc(opClass='Accelerator', opLat=1, pipelined=False)]
     count = 2
 
+
 class LLVMIntMultDiv(FUDesc):
-    opList = [ OpDesc(opClass='IntMult', opLat=3),
-               OpDesc(opClass='IntDiv', opLat=12, pipelined=False) ]
-    count=2
+    opList = [OpDesc(opClass='IntMult', opLat=3),
+              OpDesc(opClass='IntDiv', opLat=12, pipelined=False)]
+    count = 2
+
 
 class DefaultFUPool(FUPool):
     FUList = [IntALU(), LLVMIntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
@@ -31,6 +33,8 @@ class LLVMTraceCPU(BaseCPU):
     maxReorderBufferSize = Param.UInt64(8, 'Maximum size of the rob.')
     maxInstructionQueueSize = Param.UInt64(
         8, 'Maximum size of the instruction queue.')
+    loadStoreQueueSize = Param.UInt64(
+        8, 'Maximum number of load store queue.')
 
     fetchToDecodeDelay = Param.Cycles(1, "Fetch to decode delay")
     fetchWidth = Param.Unsigned(8, "Fetch width")
