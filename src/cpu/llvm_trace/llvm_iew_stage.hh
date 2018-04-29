@@ -65,12 +65,18 @@ class LLVMIEWStage {
 
   Stats::Distribution numIssuedDist;
 
+  Stats::Distribution numExecutingDist;
+
  private:
   LLVMTraceCPU* cpu;
 
+  unsigned dispatchWidth;
   unsigned issueWidth;
+  unsigned writeBackWidth;
+  unsigned robSize;
   unsigned instQueueSize;
-  unsigned loadStoreQueueSize;
+  unsigned loadQueueSize;
+  unsigned storeQueueSize;
 
   Cycles fromRenameDelay;
   Cycles toCommitDelay;
@@ -79,17 +85,21 @@ class LLVMIEWStage {
   TimeBuffer<RenameStruct>::wire fromRename;
   TimeBuffer<LLVMStageSignal>::wire signal;
 
+  std::list<LLVMDynamicInstId> rob;
   std::list<LLVMDynamicInstId> instQueue;
-  std::list<LLVMDynamicInstId> issuedQueue;
-  std::list<LLVMDynamicInstId> loadStoreQueue;
+
+  unsigned loadQueueN;
+  unsigned storeQueueN;
 
   FUPool* fuPool;
 
   std::unordered_map<int, LLVMAccelerator*> acceleratorMap;
 
+  void dispatch();
   void issue();
-  void markReadyInsts();
-  void checkCompleteInsts(std::list<LLVMDynamicInstId>& queue);
+  void markReady();
+  void writeback(std::list<LLVMDynamicInstId>& queue, unsigned& writebacked);
+  void commit();
 };
 
 #endif

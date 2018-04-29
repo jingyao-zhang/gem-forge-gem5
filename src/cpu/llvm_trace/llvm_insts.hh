@@ -63,8 +63,16 @@ class LLVMDynamicInst {
 
   virtual bool isCompleted() const = 0;
 
+  bool isBranchInst() const;
+
   // Check if all the dependence are ready.
   bool isDependenceReady(LLVMTraceCPU* cpu) const;
+
+  // Check if this inst can write back. It checks
+  // for control dependence is committed.
+  virtual bool canWriteBack(LLVMTraceCPU* cpu) const;
+
+  void writeback(LLVMTraceCPU* cpu) {}
 
   // Get FUs to execute this instruction.
   // Gem5 will break the inst into micro-ops, each micro-op require
@@ -159,6 +167,8 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
     return this->fuStatus == FUStatus::COMPLETED &&
            this->numInflyPackets == 0 && this->remainingMicroOps == 0;
   }
+
+  // bool canWriteBack(LLVMTraceCPU* cpu) const override;
 
  protected:
   Addr size;

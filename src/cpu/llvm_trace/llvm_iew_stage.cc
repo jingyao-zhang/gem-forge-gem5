@@ -8,11 +8,17 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
     : cpu(_cpu),
+      dispatchWidth(params->dispatchWidth),
       issueWidth(params->issueWidth),
+      writeBackWidth(params->writeBackWidth),
+      robSize(params->robSize),
       instQueueSize(params->instQueueSize),
-      loadStoreQueueSize(params->loadStoreQueueSize),
+      loadQueueSize(params->loadQueueSize),
+      storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
       toCommitDelay(params->iewToCommitDelay),
+      loadQueueN(0),
+      storeQueueN(0),
       fuPool(params->fuPool) {
   // The FU in FUPool is stateless, however, the accelerator may be stateful,
   // e.g. config time.
@@ -68,36 +74,61 @@ void LLVMIEWStage::regStats() {
       .name(cpu->name() + ".iew.issued_per_cycle")
       .desc("Number of insts issued each cycle")
       .flags(Stats::pdf);
+  this->numExecutingDist.init(0, 192, 8)
+      .name(cpu->name() + ".iew.executing_per_cycle")
+      .desc("Number of insts executing each cycle")
+      .flags(Stats::pdf);
 }
 
-void LLVMIEWStage::checkCompleteInsts(std::list<LLVMDynamicInstId>& queue) {
+void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId>& queue,
+                             unsigned& writebacked) {
   // Send finished inst to commit stage if not stalled.
   auto iter = queue.begin();
-  while (iter != queue.end()) {
+  while (iter != queue.end() && writebacked < this->writeBackWidth) {
     auto instId = *iter;
     panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
              "Inst %u should be in inflyInsts to check if completed.\n",
              instId);
+
+    // DPRINTF(LLVMTraceCPU, "Inst %u check if issued in write back\n", instId);
     if (cpu->inflyInsts.at(instId) == InstStatus::ISSUED) {
       // Tick the inst.
+
+      // DPRINTF(LLVMTraceCPU, "Inst %u is labelled issued in write back\n",
+      //         instId);
       auto inst = cpu->dynamicInsts[instId];
       inst->tick();
 
-      // Check if the inst is finished.
-      if (inst->isCompleted()) {
-        // Send it to commit stage.
-        DPRINTF(LLVMTraceCPU,
-                "Inst %u finished, send to commit, remaining %d\n", instId,
-                queue.size());
+      // Check if the inst is finished by FU.
+      if (inst->isCompleted() && inst->canWriteBack(cpu)) {
+        DPRINTF(LLVMTraceCPU, "Inst %u finished by fu, write back, remaining %d\n",
+                instId, queue.size());
+
+        inst->writeback(cpu);
+
         cpu->inflyInsts[instId] = InstStatus::FINISHED;
-        this->toCommit->push_back(instId);
-        iter = queue.erase(iter);
-        continue;
-      }
-    } else if (cpu->inflyInsts.at(instId) == InstStatus::FINISHED) {
-      if (!this->signal->stall) {
-        this->toCommit->push_back(instId);
-        iter = queue.erase(iter);
+
+        // Special case for store, it can be removed from store queue
+        // once write backed.
+        // TODO: optimize this.
+        if (inst->getInstName() == "store") {
+          bool found = false;
+          for (auto instQueueIter = this->instQueue.begin(),
+                    instQueueEnd = this->instQueue.end();
+               instQueueIter != instQueueEnd; ++instQueueIter) {
+            if ((*instQueueIter) == instId) {
+              this->instQueue.erase(instQueueIter);
+              this->storeQueueN--;
+              found = true;
+              break;
+            }
+          }
+          // Panic if not found.
+          panic_if(!found, "Failed to find store inst %u in the inst queue.\n",
+                   instId);
+        }
+
+        writebacked++;
         continue;
       }
     }
@@ -111,7 +142,7 @@ void LLVMIEWStage::tick() {
   // Get inst from rename.
   for (auto iter = this->fromRename->begin(), end = this->fromRename->end();
        iter != end; ++iter) {
-    this->instQueue.push_back(*iter);
+    this->rob.push_back(*iter);
   }
 
   // Free FUs.
@@ -122,38 +153,40 @@ void LLVMIEWStage::tick() {
   }
 
   if (!this->signal->stall) {
-    this->checkCompleteInsts(this->issuedQueue);
-    this->checkCompleteInsts(this->loadStoreQueue);
+    this->dispatch();
+
+    unsigned writebacked = 0;
+    this->writeback(this->rob, writebacked);
+
+    this->commit();
 
     // Mark ready inst for next cycle.
-    this->markReadyInsts();
+    this->markReady();
 
     // Issue inst to execute.
     this->issue();
   }
 
+  this->numExecutingDist.sample(this->rob.size());
+
   // Raise the stall if instQueue is too large.
-  this->signal->stall = this->instQueue.size() >= this->instQueueSize;
+  this->signal->stall = (this->rob.size() >= this->robSize ||
+                         this->instQueue.size() >= this->instQueueSize ||
+                         this->storeQueueN >= this->storeQueueSize ||
+                         this->loadQueueN >= this->loadQueueSize);
 }
 
 void LLVMIEWStage::issue() {
   unsigned issuedInsts = 0;
 
-  // static int count = 0;
-  // if (count > 0) {
-  //   count--;
-  //   this->fuPool->dump();
-  // }
-
-  for (auto iter = this->instQueue.begin(), end = this->instQueue.end();
-       iter != end && issuedInsts < this->issueWidth; ++iter) {
+  auto iter = this->instQueue.begin();
+  while (iter != this->instQueue.end() && issuedInsts < this->issueWidth) {
     auto instId = *iter;
     panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
              "Inst %u should be in inflyInsts to check if READY.\n", instId);
 
-    // if (instId == 88) {
-    //   DPRINTF(LLVMTraceCPU, "inst 88 check ready %d\n", 1);
-    // }
+    bool shouldRemoveFromInstQueue = false;
+
     if (cpu->inflyInsts.at(instId) == InstStatus::READY) {
       bool canIssue = true;
       auto inst = cpu->dynamicInsts[instId];
@@ -164,14 +197,6 @@ void LLVMIEWStage::issue() {
       // Check if there is enough issueWidth.
       if (issuedInsts + inst->getQueueWeight() > this->issueWidth) {
         continue;
-      }
-
-      if (canIssue) {
-        if (instName == "store" || instName == "load") {
-          if (this->loadStoreQueue.size() == this->loadStoreQueueSize) {
-            continue;
-          }
-        }
       }
 
       // Check if there is available FU.
@@ -185,24 +210,17 @@ void LLVMIEWStage::issue() {
         }
       }
 
-
-      // if (instId == 88) {
-      //   DPRINTF(LLVMTraceCPU, "inst 88 %d\n", canIssue);
-      // }
-
       if (canIssue) {
         cpu->inflyInsts[instId] = InstStatus::ISSUED;
         issuedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
-        // Move it to issuedQueue.
-        iter = this->instQueue.erase(iter);
-        if (instName == "store" || instName == "load") {
-          this->loadStoreQueue.push_back(instId);
-        } else {
-          this->issuedQueue.push_back(instId);
-        }
-        DPRINTF(LLVMTraceCPU, "Inst %u issued\n", instId);
+        DPRINTF(LLVMTraceCPU, "Inst %u %s issued\n", instId, instName.c_str());
         inst->execute(cpu);
         this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
+        // After issue, if the inst is not load/store, we can remove them
+        // from the inst queue.
+        if (instName != "store" && instName != "load") {
+          shouldRemoveFromInstQueue = true;
+        }
 
         // Handle the FU completion.
         if (opClass != No_OpClass) {
@@ -238,18 +256,59 @@ void LLVMIEWStage::issue() {
         }
       }
     }
+    if (shouldRemoveFromInstQueue) {
+      iter = this->instQueue.erase(iter);
+    } else {
+      ++iter;
+    }
   }
 
   this->numIssuedDist.sample(issuedInsts);
 }
 
-void LLVMIEWStage::markReadyInsts() {
+void LLVMIEWStage::dispatch() {
+  unsigned dispatchedInst = 0;
+  for (auto iter = this->rob.begin(), end = this->rob.end();
+       iter != end && dispatchedInst < this->dispatchWidth; ++iter) {
+    if (this->instQueue.size() == this->instQueueSize) {
+      break;
+    }
+
+    auto instId = *iter;
+    const auto& instName = cpu->dynamicInsts[instId]->getInstName();
+    if (instName == "store" && this->storeQueueN == this->storeQueueSize) {
+      break;
+    }
+
+    if (instName == "load" && this->loadQueueN == this->loadQueueSize) {
+      break;
+    }
+
+    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
+             "Inst %u should be in inflyInsts to check if READY\n", instId);
+    if (cpu->inflyInsts.at(instId) == InstStatus::DECODED) {
+      cpu->inflyInsts[instId] = InstStatus::DISPATCHED;
+      dispatchedInst++;
+      this->instQueue.push_back(instId);
+      if (instName == "store") {
+        this->storeQueueN++;
+      }
+      if (instName == "load") {
+        this->loadQueueN++;
+      }
+      DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
+              instId);
+    }
+  }
+}
+
+void LLVMIEWStage::markReady() {
   for (auto iter = this->instQueue.begin(), end = this->instQueue.end();
        iter != end; ++iter) {
     auto instId = *iter;
     panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
              "Inst %u should be in inflyInsts to check if READY\n", instId);
-    if (cpu->inflyInsts.at(instId) == InstStatus::DECODED) {
+    if (cpu->inflyInsts.at(instId) == InstStatus::DISPATCHED) {
       auto inst = cpu->dynamicInsts[instId];
       if (inst->isDependenceReady(cpu)) {
         // Mark the status to ready.
@@ -257,6 +316,50 @@ void LLVMIEWStage::markReadyInsts() {
                 instId);
         cpu->inflyInsts[instId] = InstStatus::READY;
       }
+    }
+  }
+}
+
+void LLVMIEWStage::commit() {
+  // Commit must be in order.
+  unsigned committedInst = 0;
+  while (committedInst < 8) {
+    if (this->rob.empty()) {
+      return;
+    }
+    auto head = this->rob.begin();
+    auto instId = *head;
+    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
+             "Inst %u should be in inflyInsts to check if FINISHED.\n", instId);
+    if (cpu->inflyInsts.at(instId) == InstStatus::FINISHED) {
+      this->rob.erase(head);
+      this->toCommit->push_back(instId);
+
+      // Special case for load, it can be removed from load queue
+      // once committed.
+      // TODO: optimize this loop away.
+      if (cpu->dynamicInsts[instId]->getInstName() == "load") {
+        bool found = false;
+        for (auto instQueueIter = this->instQueue.begin(),
+                  instQueueEnd = this->instQueue.end();
+             instQueueIter != instQueueEnd; ++instQueueIter) {
+          if ((*instQueueIter) == instId) {
+            this->instQueue.erase(instQueueIter);
+            this->loadQueueN--;
+            found = true;
+            break;
+          }
+        }
+        // Panic if not found.
+        panic_if(!found,
+                 "Failed to find load inst %u in the inst queue when commit.\n",
+                 instId);
+      }
+
+      committedInst++;
+    } else {
+      // The header is not finished, no need to check others.
+      break;
     }
   }
 }

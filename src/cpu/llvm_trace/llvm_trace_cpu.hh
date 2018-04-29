@@ -45,9 +45,10 @@ class LLVMTraceCPU : public BaseCPU {
                     std::vector<std::pair<std::string, Addr>> maps);
 
   enum InstStatus {
-    FETCHED,  // In fetchQueue.
-    DECODED,  // Decoded.
-    READY,    // Ready to be issued.
+    FETCHED,     // In fetchQueue.
+    DECODED,     // Decoded.
+    DISPATCHED,  // Dispatched to instQueue.
+    READY,       // Ready to be issued.
     ISSUED,
     FINISHED,  // Finished computing.
   };
@@ -67,6 +68,10 @@ class LLVMTraceCPU : public BaseCPU {
     }
     void sendReq(PacketPtr pkt);
     void recvReqRetry() override;
+
+    size_t getPendingPacketsNum() const {
+      return this->blockedPacketPtrs.size();
+    }
 
    private:
     LLVMTraceCPU* owner;
@@ -91,6 +96,9 @@ class LLVMTraceCPU : public BaseCPU {
   CPUPort dataPort;
 
   const std::string traceFile;
+
+  TheISA::TLB* itb;
+  TheISA::TLB* dtb;
 
   // Used to record the current stack depth, so that we can break trace
   // into multiple function calls.
@@ -136,6 +144,8 @@ class LLVMTraceCPU : public BaseCPU {
   /**************************************************************/
   // Interface for the insts.
  public:
+  Stats::Distribution numPendingAccessDist;
+
   // Check if this is running in standalone mode (no normal cpu).
   bool isStandalone() const { return this->driver == nullptr; }
 
@@ -148,6 +158,18 @@ class LLVMTraceCPU : public BaseCPU {
       return this->inflyInsts.at(instId) == InstStatus::FINISHED;
     }
     return true;
+  }
+
+  bool isInstCommitted(LLVMDynamicInstId instId) const {
+    if (instId >= this->currentInstId) {
+      return false;
+    }
+    // If it's out of the infly insts map, we say it committed.
+    return this->inflyInsts.find(instId) == this->inflyInsts.end();
+  }
+
+  std::shared_ptr<LLVMDynamicInst> getDynamicInst(LLVMDynamicInstId instId) {
+    return this->dynamicInsts[instId];
   }
 
   // Allocate the stack. Should only be used in non-standalone mode.

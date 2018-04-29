@@ -918,6 +918,7 @@ let {{
         '''
 
     class Maddi(MediaOp):
+        op_class = 'IntAluOp'
         code = '''
             assert(srcSize == destSize);
             int size = srcSize;
@@ -955,6 +956,7 @@ let {{
         '''
 
     class Msubi(MediaOp):
+        op_class = 'IntAluOp'
         code = '''
             assert(srcSize == destSize);
             int size = srcSize;
@@ -996,6 +998,7 @@ let {{
         '''
 
     class Mmuli(MediaOp):
+        op_class = 'IntMultOp'
         code = '''
             int srcBits = srcSize * 8;
             int destBits = destSize * 8;
@@ -1169,6 +1172,7 @@ let {{
                 size = None, destSize = None, srcSize = None, ext = None):
             super(Cvtf2i, self).__init__(dest, src,\
                     "InstRegIndex(0)", size, destSize, srcSize, ext)
+        op_class = 'FloatCvtOp'
         code = '''
             union floatInt
             {
@@ -1243,6 +1247,7 @@ let {{
                 size = None, destSize = None, srcSize = None, ext = None):
             super(Cvti2f, self).__init__(dest, src,\
                     "InstRegIndex(0)", size, destSize, srcSize, ext)
+        op_class = 'FloatCvtOp'
         code = '''
             union floatInt
             {

@@ -11,6 +11,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
       traceFile(params->traceFile),
+      itb(params->itb),
+      dtb(params->dtb),
       currentStackDepth(0),
       currentInstId(0),
       process(nullptr),
@@ -115,6 +117,8 @@ void LLVMTraceCPU::tick() {
     // Schedule next Tick event.
     schedule(this->tickEvent, nextCycle());
   }
+
+  this->numPendingAccessDist.sample(this->dataPort.getPendingPacketsNum());
 }
 
 bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
@@ -312,4 +316,9 @@ void LLVMTraceCPU::regStats() {
   this->renameStage.regStats();
   this->iewStage.regStats();
   this->commitStage.regStats();
+
+  this->numPendingAccessDist.init(0, 64, 2)
+      .name(this->name() + ".pending_acc_per_cycle")
+      .desc("Number of pending memory access each cycle")
+      .flags(Stats::pdf);
 }

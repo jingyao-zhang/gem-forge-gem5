@@ -35,7 +35,7 @@ class LLVMRenameStage {
   LLVMTraceCPU* cpu;
 
   unsigned renameWidth;
-  unsigned robSize;
+  unsigned renameBufferSize;
 
   Cycles fromDecodeDelay;
   Cycles toIEWDelay;
@@ -44,7 +44,7 @@ class LLVMRenameStage {
   TimeBuffer<DecodeStruct>::wire fromDecode;
   TimeBuffer<LLVMStageSignal>::wire signal;
 
-  std::list<LLVMDynamicInstId> rob;
+  std::list<LLVMDynamicInstId> renameBuffer;
 };
 
 #endif

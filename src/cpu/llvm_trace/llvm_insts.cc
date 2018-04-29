@@ -45,6 +45,8 @@ std::unordered_map<std::string, OpClass> LLVMDynamicInst::instToOpClass = {
     {"br", IntAluOp},
     // Our special accelerator inst.
     {"cca", Enums::OpClass::Accelerator},
+    {"load", Enums::OpClass::MemRead},
+    {"store", Enums::OpClass::MemWrite},
 };
 
 void LLVMDynamicInst::handleFUCompletion() {
@@ -55,10 +57,33 @@ void LLVMDynamicInst::handleFUCompletion() {
   this->fuStatus = FUStatus::COMPLETE_NEXT_CYCLE;
 }
 
+bool LLVMDynamicInst::isBranchInst() const {
+  return this->instName == "br" || this->instName == "ret" ||
+         this->instName == "call";
+}
+
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU* cpu) const {
   for (const auto dependentInstId : this->dependentInstIds) {
-    if (!cpu->isInstFinished(dependentInstId)) {
-      return false;
+    auto DepInst = cpu->getDynamicInst(dependentInstId);
+    // Special case for store, as it should not be speculated.
+    if (DepInst->isBranchInst()) {
+      continue;
+      // // This is control dependence, only used for store.
+      // if (this->instName == "store") {
+      //   // Make sure the control dependence is committed.
+      //   if (!cpu->isInstCommitted(dependentInstId)) {
+      //     return false;
+      //   }
+      // } else {
+      //   // Ignore control dependence for speculation.
+      //   continue;
+      // }
+    } else {
+      // Register or mem dependence, check if
+      // write backed.
+      if (!cpu->isInstFinished(dependentInstId)) {
+        return false;
+      }
     }
   }
   return true;
@@ -69,7 +94,7 @@ OpClass LLVMDynamicInst::getOpClass() const {
   auto iter = LLVMDynamicInst::instToOpClass.find(this->instName);
   if (iter == LLVMDynamicInst::instToOpClass.end()) {
     // For unknown, simply return IntAlu.
-    return IntAluOp;
+    return No_OpClass;
   }
   return iter->second;
 }
@@ -84,6 +109,22 @@ void LLVMDynamicInst::startFUStatusFSM() {
   if (this->getOpClass() != No_OpClass) {
     this->fuStatus = FUStatus::WORKING;
   }
+}
+
+bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU* cpu) const {
+  if (this->instName == "store") {
+    for (const auto dependentInstId : this->dependentInstIds) {
+      auto DepInst = cpu->getDynamicInst(dependentInstId);
+      // Special case for store, as it should not be speculated.
+      if (DepInst->isBranchInst()) {
+        // Make sure the control dependence is committed.
+        if (!cpu->isInstCommitted(dependentInstId)) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
 }
 
 void LLVMDynamicInstMem::execute(LLVMTraceCPU* cpu) {
@@ -107,6 +148,7 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU* cpu) {
         if (cpu->isStandalone()) {
           // When in stand alone mode, use the trace space address
           // directly as the virtual address.
+          // No address translation.
           vaddr = this->trace_vaddr + inflyPacketsSize;
           paddr = cpu->translateAndAllocatePhysMem(vaddr);
         } else {
@@ -117,13 +159,19 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU* cpu) {
                   inflyPacketsSize;
           paddr = cpu->getPAddrFromVaddr(vaddr);
         }
-        // For now only support maximum 16 bytes access.
+        // For now only support maximum 8 bytes access.
         packetSize = this->size - inflyPacketsSize;
-        if (packetSize > 16) {
-          packetSize = 16;
+        if (packetSize > 8) {
+          packetSize = 8;
+        }
+        // Do not span across cache line.
+        auto cacheLineSize = cpu->system->cacheLineSize();
+        if (((paddr % cacheLineSize) + packetSize) > cacheLineSize) {
+          packetSize = cacheLineSize - (paddr % cacheLineSize);
         }
 
         // Send the packet.
+
         if (this->type == Type::LOAD) {
           cpu->sendRequest(paddr, packetSize, this->id, nullptr);
         } else {

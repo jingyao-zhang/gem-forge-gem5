@@ -7,7 +7,7 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 LLVMRenameStage::LLVMRenameStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
     : cpu(_cpu),
       renameWidth(params->renameWidth),
-      robSize(params->robSize),
+      renameBufferSize(params->renameBufferSize),
       fromDecodeDelay(params->decodeToRenameDelay),
       toIEWDelay(params->renameToIEWDelay) {}
 
@@ -35,7 +35,7 @@ void LLVMRenameStage::tick() {
   // Get the inst from decode to rob;
   for (auto iter = this->fromDecode->begin(), end = this->fromDecode->end();
        iter != end; ++iter) {
-    this->rob.push_back(*iter);
+    this->renameBuffer.push_back(*iter);
   }
 
   if (this->signal->stall) {
@@ -46,9 +46,9 @@ void LLVMRenameStage::tick() {
   // we have reached the renameWidth.
   if (!this->signal->stall) {
     unsigned renamedInsts = 0;
-    auto robIter = this->rob.begin();
-    while (renamedInsts < this->renameWidth && robIter != this->rob.end()) {
-      auto instId = *robIter;
+    auto iter = this->renameBuffer.begin();
+    while (renamedInsts < this->renameWidth && iter != this->renameBuffer.end()) {
+      auto instId = *iter;
       auto inst = cpu->dynamicInsts[instId];
       // Sanity check.
       panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
@@ -68,11 +68,11 @@ void LLVMRenameStage::tick() {
 
       renamedInsts += inst->getQueueWeight();
 
-      // Remove the inst from rob.
-      robIter = this->rob.erase(robIter);
+      // Remove the inst from renameBuffer.
+      iter = this->renameBuffer.erase(iter);
     }
   }
 
   // Raise stall signal to decode if rob size has reached limits.
-  this->signal->stall = this->rob.size() >= this->robSize;
+  this->signal->stall = this->renameBuffer.size() >= this->renameBufferSize;
 }

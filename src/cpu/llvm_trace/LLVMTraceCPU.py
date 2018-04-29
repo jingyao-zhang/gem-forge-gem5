@@ -13,7 +13,7 @@ class LLVMAccel(FUDesc):
 
 
 class LLVMIntMultDiv(FUDesc):
-    opList = [OpDesc(opClass='IntMult', opLat=3),
+    opList = [OpDesc(opClass='IntMult', opLat=5),
               OpDesc(opClass='IntDiv', opLat=12, pipelined=False)]
     count = 2
 
@@ -44,11 +44,16 @@ class LLVMTraceCPU(BaseCPU):
     renameToIEWDelay = Param.Cycles(
         2, "Rename to Issue/Execute/Writeback delay")
     renameWidth = Param.Unsigned(8, "Rename width")
+    renameBufferSize = Param.Unsigned(32, "Rename buffer size")
     robSize = Param.Unsigned(192, "ROB size")
     iewToCommitDelay = Param.Cycles(
         1, "Issue/Execute/Writeback to commit delay")
+    dispatchWidth = Param.Unsigned(8, "dispatch width")
     issueWidth = Param.Unsigned(8, "Issue width")
-    instQueueSize = Param.Unsigned(64, "Inst queue size")
+    writeBackWidth = Param.Unsigned(8, "Write back width")
+    instQueueSize = Param.Unsigned(32, "Inst queue size")
+    loadQueueSize = Param.Unsigned(32, "Load queue size")
+    storeQueueSize = Param.Unsigned(32, "Store queue size")
     commitWidth = Param.Unsigned(8, "Commit width")
     commitQueueSize = Param.Unsigned(32, "Commit queue size")
 
