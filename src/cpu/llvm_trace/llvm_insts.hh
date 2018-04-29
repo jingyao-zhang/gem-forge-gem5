@@ -30,6 +30,9 @@ class LLVMDynamicInst {
 
   // Interface.
   virtual void execute(LLVMTraceCPU* cpu) = 0;
+  virtual void writeback(LLVMTraceCPU* cpu) {
+    panic("Calling write back on non-store inst %u.\n", this->id);
+  }
   virtual std::string toLine() const = 0;
 
   // Handle a packet response. Default will panic.
@@ -62,8 +65,14 @@ class LLVMDynamicInst {
   }
 
   virtual bool isCompleted() const = 0;
+  virtual bool isWritebacked() const {
+    panic("Calling isWritebacked on non-store inst %u.\n", id);
+    return false;
+  }
 
   bool isBranchInst() const;
+  bool isStoreInst() const;
+  bool isLoadInst() const;
 
   // Check if all the dependence are ready.
   bool isDependenceReady(LLVMTraceCPU* cpu) const;
@@ -71,8 +80,6 @@ class LLVMDynamicInst {
   // Check if this inst can write back. It checks
   // for control dependence is committed.
   virtual bool canWriteBack(LLVMTraceCPU* cpu) const;
-
-  void writeback(LLVMTraceCPU* cpu) {}
 
   // Get FUs to execute this instruction.
   // Gem5 will break the inst into micro-ops, each micro-op require
@@ -163,10 +170,10 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
 
   void handlePacketResponse() override;
 
-  bool isCompleted() const override {
-    return this->fuStatus == FUStatus::COMPLETED &&
-           this->numInflyPackets == 0 && this->remainingMicroOps == 0;
-  }
+  bool isCompleted() const override;
+
+  bool isWritebacked() const override;
+  void writeback(LLVMTraceCPU* cpu) override;
 
   // bool canWriteBack(LLVMTraceCPU* cpu) const override;
 
@@ -181,7 +188,17 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
   uint8_t* value;
 
   // Runtime fields for load/store.
-  uint32_t numInflyPackets;
+  struct PacketParam {
+   public:
+    Addr paddr;
+    int size;
+    uint8_t* data;
+    PacketParam(Addr _paddr, int _size, uint8_t* _data)
+        : paddr(_paddr), size(_size), data(_data) {}
+  };
+  std::list<PacketParam> packets;
+
+  void constructPackets(LLVMTraceCPU* cpu);
 };
 
 class LLVMDynamicInstCompute : public LLVMDynamicInst {

@@ -18,7 +18,6 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
       fromRenameDelay(params->renameToIEWDelay),
       toCommitDelay(params->iewToCommitDelay),
       loadQueueN(0),
-      storeQueueN(0),
       fuPool(params->fuPool) {
   // The FU in FUPool is stateless, however, the accelerator may be stateful,
   // e.g. config time.
@@ -101,31 +100,16 @@ void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId>& queue,
 
       // Check if the inst is finished by FU.
       if (inst->isCompleted() && inst->canWriteBack(cpu)) {
-        DPRINTF(LLVMTraceCPU, "Inst %u finished by fu, write back, remaining %d\n",
-                instId, queue.size());
-
-        inst->writeback(cpu);
+        DPRINTF(LLVMTraceCPU,
+                "Inst %u finished by fu, write back, remaining %d\n", instId,
+                queue.size());
 
         cpu->inflyInsts[instId] = InstStatus::FINISHED;
 
-        // Special case for store, it can be removed from store queue
-        // once write backed.
-        // TODO: optimize this.
-        if (inst->getInstName() == "store") {
-          bool found = false;
-          for (auto instQueueIter = this->instQueue.begin(),
-                    instQueueEnd = this->instQueue.end();
-               instQueueIter != instQueueEnd; ++instQueueIter) {
-            if ((*instQueueIter) == instId) {
-              this->instQueue.erase(instQueueIter);
-              this->storeQueueN--;
-              found = true;
-              break;
-            }
-          }
-          // Panic if not found.
-          panic_if(!found, "Failed to find store inst %u in the inst queue.\n",
-                   instId);
+        // If this is not store, we can immediately say this
+        // inst is write backed.
+        if (!inst->isStoreInst()) {
+          cpu->inflyInsts[instId] = InstStatus::WRITEBACKED;
         }
 
         writebacked++;
@@ -135,6 +119,58 @@ void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId>& queue,
 
     // Otherwise, increase the iter.
     ++iter;
+  }
+}
+
+void LLVMIEWStage::writebackStoreQueue() {
+  // Check the head of the store queue.
+  auto iter = this->storeQueue.begin();
+  while (iter != this->storeQueue.end()) {
+    auto instId = *iter;
+    auto inst = cpu->dynamicInsts[instId];
+
+    panic_if(!inst->isStoreInst(), "Non-store inst %u in store queue.\n",
+             instId);
+    // Check if write backed.
+    if (cpu->inflyInsts.find(instId) == cpu->inflyInsts.end()) {
+      panic("Inst %u should be in inflyInsts to check status.\n", instId);
+    }
+    auto status = cpu->inflyInsts.at(instId);
+    if (status == InstStatus::WRITEBACKING) {
+      // This inst is already been writing back.
+      // Check if it's done.
+      if (inst->isWritebacked()) {
+        // If so, update it to writebacked and remove from the store queue.
+        // Continue to try to write back the next store in queue.
+        DPRINTF(LLVMTraceCPU, "Store inst %u is writebacked.\n", instId);
+        cpu->inflyInsts[instId] = InstStatus::WRITEBACKED;
+        iter = this->storeQueue.erase(iter);
+        // Uppon erase from the store queue, we must also remove from
+        // the inst queue.
+        // TODO: optimize this.
+        auto instQueueIter =
+            std::find(this->instQueue.begin(), this->instQueue.end(), instId);
+        if (instQueueIter == this->instQueue.end()) {
+          panic("Failed to find store inst %u in inst queue.\n", instId);
+        }
+        this->instQueue.erase(instQueueIter);
+        continue;
+      } else {
+        // The head of the store queue is not done.
+        // break.
+        break;
+      }
+    } else if (status == InstStatus::FINISHED) {
+      // The inst is still waiting to be written back.
+      // This cycle is done.
+      DPRINTF(LLVMTraceCPU, "Store inst %u is started to writeback.\n", instId);
+      cpu->inflyInsts[instId] = InstStatus::WRITEBACKING;
+      inst->writeback(cpu);
+      break;
+    } else {
+      // This inst is not issued/finished, break.
+      break;
+    }
   }
 }
 
@@ -157,6 +193,7 @@ void LLVMIEWStage::tick() {
 
     unsigned writebacked = 0;
     this->writeback(this->rob, writebacked);
+    this->writebackStoreQueue();
 
     this->commit();
 
@@ -172,7 +209,7 @@ void LLVMIEWStage::tick() {
   // Raise the stall if instQueue is too large.
   this->signal->stall = (this->rob.size() >= this->robSize ||
                          this->instQueue.size() >= this->instQueueSize ||
-                         this->storeQueueN >= this->storeQueueSize ||
+                         this->storeQueue.size() >= this->storeQueueSize ||
                          this->loadQueueN >= this->loadQueueSize);
 }
 
@@ -218,7 +255,7 @@ void LLVMIEWStage::issue() {
         this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
         // After issue, if the inst is not load/store, we can remove them
         // from the inst queue.
-        if (instName != "store" && instName != "load") {
+        if (!inst->isStoreInst() && !inst->isLoadInst()) {
           shouldRemoveFromInstQueue = true;
         }
 
@@ -275,12 +312,13 @@ void LLVMIEWStage::dispatch() {
     }
 
     auto instId = *iter;
-    const auto& instName = cpu->dynamicInsts[instId]->getInstName();
-    if (instName == "store" && this->storeQueueN == this->storeQueueSize) {
+    auto inst = cpu->dynamicInsts[instId];
+    if (inst->isStoreInst() &&
+        this->storeQueue.size() == this->storeQueueSize) {
       break;
     }
 
-    if (instName == "load" && this->loadQueueN == this->loadQueueSize) {
+    if (inst->isLoadInst() && this->loadQueueN == this->loadQueueSize) {
       break;
     }
 
@@ -290,10 +328,10 @@ void LLVMIEWStage::dispatch() {
       cpu->inflyInsts[instId] = InstStatus::DISPATCHED;
       dispatchedInst++;
       this->instQueue.push_back(instId);
-      if (instName == "store") {
-        this->storeQueueN++;
+      if (inst->isStoreInst()) {
+        this->storeQueue.push_back(instId);
       }
-      if (instName == "load") {
+      if (inst->isLoadInst()) {
         this->loadQueueN++;
       }
       DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
@@ -330,32 +368,26 @@ void LLVMIEWStage::commit() {
     auto head = this->rob.begin();
     auto instId = *head;
     panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to check if FINISHED.\n", instId);
-    if (cpu->inflyInsts.at(instId) == InstStatus::FINISHED) {
+             "Inst %u should be in inflyInsts to check if writebacked.\n",
+             instId);
+    if (cpu->inflyInsts.at(instId) == InstStatus::WRITEBACKED) {
       this->rob.erase(head);
       this->toCommit->push_back(instId);
 
       // Special case for load, it can be removed from load queue
       // once committed.
-      // TODO: optimize this loop away.
-      if (cpu->dynamicInsts[instId]->getInstName() == "load") {
-        bool found = false;
-        for (auto instQueueIter = this->instQueue.begin(),
-                  instQueueEnd = this->instQueue.end();
-             instQueueIter != instQueueEnd; ++instQueueIter) {
-          if ((*instQueueIter) == instId) {
-            this->instQueue.erase(instQueueIter);
-            this->loadQueueN--;
-            found = true;
-            break;
-          }
+      if (cpu->dynamicInsts[instId]->isLoadInst()) {
+        auto instQueueIter =
+            std::find(this->instQueue.begin(), this->instQueue.end(), instId);
+        if (instQueueIter == this->instQueue.end()) {
+          panic("Failed to find load inst %u in inst queue.\n", instId);
         }
-        // Panic if not found.
-        panic_if(!found,
-                 "Failed to find load inst %u in the inst queue when commit.\n",
-                 instId);
+        this->instQueue.erase(instQueueIter);
+        this->loadQueueN--;
       }
 
+      DPRINTF(LLVMTraceCPU, "Inst %u %s is sent to commit.\n", instId,
+              cpu->dynamicInsts[instId]->getInstName().c_str());
       committedInst++;
     } else {
       // The header is not finished, no need to check others.

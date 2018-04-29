@@ -17,6 +17,10 @@ Options.addSEOptions(parser)
 
 parser.add_option("--llvm-trace-file", action="store", type="string",
                   help="""llvm trace file input LLVMTraceCPU""", default="")
+parser.add_option("--llvm-issue-width", action="store", type="int",
+                  help="""llvm issue width""", default="8")
+parser.add_option("--llvm-store-queue-size", action="store",
+                  type="int", help="""store queue size""", default="32")
 
 (options, args) = parser.parse_args()
 
@@ -24,6 +28,8 @@ if args:
     fatal("Error: script doesn't take any positional arguments")
 
 # Copy from se.py
+
+
 def get_processes(options):
     """Interprets provided options and returns a list of processes"""
 
@@ -70,6 +76,7 @@ def get_processes(options):
     else:
         return multiprocesses, 1
 
+
 if options.ruby:
     fatal("This script does not support Ruby configuration, mainly"
           " because Trace CPU has been tested only with classic memory system")
@@ -89,19 +96,23 @@ CPUClass.numThreads = numThreads
 
 cpus = [CPUClass(cpu_id=i) for i in xrange(options.num_cpus)]
 
-# Add the emulated LLVM tracer driver for the process.
-for process in multiprocesses:
-    driver = LLVMTraceCPUDriver()
-    driver.filename = 'llvm_trace_cpu'
-    process.drivers = [driver]
+# Add the emulated LLVM tracer driver for the process
+if options.llvm_trace_file != '':
 
-    # For each process, add a LLVMTraceCPU for simulation.
-    llvm_trace_cpu = LLVMTraceCPU(cpu_id=len(cpus))
-    llvm_trace_cpu.cpu_id = len(cpus)
-    llvm_trace_cpu.traceFile = options.llvm_trace_file
-    llvm_trace_cpu.driver = driver
-    cpus.append(llvm_trace_cpu)
-    options.num_cpus = len(cpus)
+    for process in multiprocesses:
+        driver = LLVMTraceCPUDriver()
+        driver.filename = 'llvm_trace_cpu'
+        process.drivers = [driver]
+
+        # For each process, add a LLVMTraceCPU for simulation.
+        llvm_trace_cpu = LLVMTraceCPU(cpu_id=len(cpus))
+        llvm_trace_cpu.issueWidth = options.llvm_issue_width
+        llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
+        llvm_trace_cpu.cpu_id = len(cpus)
+        llvm_trace_cpu.traceFile = options.llvm_trace_file
+        llvm_trace_cpu.driver = driver
+        cpus.append(llvm_trace_cpu)
+        options.num_cpus = len(cpus)
 
 system = System(cpu=cpus,
                 mem_mode=test_mem_mode,
@@ -138,6 +149,9 @@ system.cpu_clk_domain = SrcClockDomain(clock=options.cpu_clock,
 # frequency.
 for cpu in system.cpu:
     cpu.clk_domain = system.cpu_clk_domain
+    if isinstance(cpu, DerivO3CPU):
+        cpu.issueWidth = options.llvm_issue_width
+        cpu.SQEntries = options.llvm_store_queue_size
 
 # Assign input trace files to the Trace CPU
 # system.cpu.traceFile = options.llvm_trace_file

@@ -45,12 +45,14 @@ class LLVMTraceCPU : public BaseCPU {
                     std::vector<std::pair<std::string, Addr>> maps);
 
   enum InstStatus {
-    FETCHED,     // In fetchQueue.
-    DECODED,     // Decoded.
-    DISPATCHED,  // Dispatched to instQueue.
-    READY,       // Ready to be issued.
+    FETCHED,      // In fetchQueue.
+    DECODED,      // Decoded.
+    DISPATCHED,   // Dispatched to instQueue.
+    READY,        // Ready to be issued.
     ISSUED,
-    FINISHED,  // Finished computing.
+    FINISHED,     // Finished computing.
+    WRITEBACKING, // Writing back.
+    WRITEBACKED,  // Write backed.
   };
 
  private:
@@ -155,7 +157,7 @@ class LLVMTraceCPU : public BaseCPU {
       return false;
     }
     if (this->inflyInsts.find(instId) != this->inflyInsts.end()) {
-      return this->inflyInsts.at(instId) == InstStatus::FINISHED;
+      return this->inflyInsts.at(instId) >= InstStatus::FINISHED;
     }
     return true;
   }

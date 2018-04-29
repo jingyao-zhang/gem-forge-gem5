@@ -58,8 +58,8 @@ void LLVMCommitStage::tick() {
 
     panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
              "Inst %u should be in inflyInsts to be commited\n", instId);
-    panic_if(cpu->inflyInsts.at(instId) != InstStatus::FINISHED,
-             "Inst %u should be finished to be commited, not %d\n", instId,
+    panic_if(cpu->inflyInsts.at(instId) != InstStatus::WRITEBACKED,
+             "Inst %u should be writebacked to be commited, not %d\n", instId,
              cpu->inflyInsts.at(instId));
 
     DPRINTF(LLVMTraceCPU, "Inst %u committed, remaining infly inst #%u\n",

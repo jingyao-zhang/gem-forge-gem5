@@ -87,9 +87,9 @@ class LLVMIEWStage {
 
   std::list<LLVMDynamicInstId> rob;
   std::list<LLVMDynamicInstId> instQueue;
+  std::list<LLVMDynamicInstId> storeQueue;
 
   unsigned loadQueueN;
-  unsigned storeQueueN;
 
   FUPool* fuPool;
 
@@ -99,6 +99,7 @@ class LLVMIEWStage {
   void issue();
   void markReady();
   void writeback(std::list<LLVMDynamicInstId>& queue, unsigned& writebacked);
+  void writebackStoreQueue();
   void commit();
 };
 
