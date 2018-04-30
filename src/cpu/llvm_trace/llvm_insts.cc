@@ -231,13 +231,21 @@ bool LLVMDynamicInstMem::isWritebacked() const {
   return this->packets.size() == 0;
 }
 
-void LLVMDynamicInstMem::handlePacketResponse() {
+void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU* cpu,
+                                              PacketPtr packet) {
   if (this->type != Type::STORE && this->type != Type::LOAD) {
     panic(
         "LLVMDynamicInstMem::handlePacketResponse called for non store/load "
         "inst %d, but type %d.\n",
         this->id, this->type);
   }
+
+  // Check if the load will produce a new base.
+  if (this->type == Type::LOAD && this->new_base != "") {
+    uint64_t vaddr = packet->get<uint64_t>();
+    cpu->mapBaseNameToVAddr(this->new_base, vaddr);
+  }
+
   // We don't care about which packet for now, just mark one completed.
   this->packets.pop_front();
   DPRINTF(LLVMTraceCPU, "Get response for inst %u, remain infly packets %d\n",
@@ -356,9 +364,10 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     uint8_t* value =
         extractStoreValue(typeId, size, fields[DEPENDENT_INST_ID_FIELD + 6],
                           fields[DEPENDENT_INST_ID_FIELD + 7]);
+    std::string new_base = "";
     return std::make_shared<LLVMDynamicInstMem>(
         id, instName, numMicroOps, std::move(dependentInstIds), size, base,
-        offset, trace_vaddr, 16, type, value);
+        offset, trace_vaddr, 16, type, value, new_base);
     // return std::shared_ptr<LLVMDynamicInst>(new LLVMDynamicInstMem(
     //     id, instName, numMicroOps, std::move(dependentInstIds), size, base,
     //     offset, trace_vaddr, 16, type, value));
@@ -369,9 +378,10 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 3]);
     Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 4]);
     uint8_t* value = nullptr;
+    std::string new_base = fields[DEPENDENT_INST_ID_FIELD + 5];
     return std::make_shared<LLVMDynamicInstMem>(
         id, instName, numMicroOps, std::move(dependentInstIds), size, base,
-        offset, trace_vaddr, 16, type, value);
+        offset, trace_vaddr, 16, type, value, new_base);
   } else if (instName == "alloca") {
     auto type = LLVMDynamicInstMem::Type::ALLOCA;
     auto base = fields[DEPENDENT_INST_ID_FIELD + 1];
@@ -379,9 +389,10 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
     Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 2]);
     Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 3]);
     uint8_t* value = nullptr;
+    std::string new_base = "";
     return std::make_shared<LLVMDynamicInstMem>(
         id, instName, numMicroOps, std::move(dependentInstIds), size, base,
-        offset, trace_vaddr, 16, type, value);
+        offset, trace_vaddr, 16, type, value, new_base);
   } else {
     auto type = LLVMDynamicInstCompute::Type::OTHER;
     LLVMAcceleratorContext* context = nullptr;

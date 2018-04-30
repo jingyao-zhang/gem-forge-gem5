@@ -126,7 +126,7 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   LLVMDynamicInstId instId =
       static_cast<LLVMDynamicInstId>(pkt->req->getReqInstSeqNum());
   if (instId < this->dynamicInsts.size()) {
-    this->dynamicInsts[instId]->handlePacketResponse();
+    this->dynamicInsts[instId]->handlePacketResponse(this, pkt);
   } else {
     panic("Invalid instId %u, max instId %u\n", instId,
           this->dynamicInsts.size());

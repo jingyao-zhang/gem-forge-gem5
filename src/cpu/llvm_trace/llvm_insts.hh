@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "mem/packet.hh"
 #include "base/misc.hh"
 #include "base/types.hh"
 #include "cpu/op_class.hh"
@@ -37,7 +38,7 @@ class LLVMDynamicInst {
 
   // Handle a packet response. Default will panic.
   // Only for mem insts.
-  virtual void handlePacketResponse() {
+  virtual void handlePacketResponse(LLVMTraceCPU* cpu, PacketPtr packet) {
     panic("Calling handlePacketResponse on non-mem inst %u\n", id);
   }
 
@@ -141,7 +142,7 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
                      std::vector<LLVMDynamicInstId>&& _dependentInstIds,
                      Addr _size, const std::string& _base, Addr _offset,
                      Addr _trace_vaddr, Addr _align, Type _type,
-                     uint8_t* _value)
+                     uint8_t* _value, const std::string& _new_base)
       : LLVMDynamicInst(_id, _instName, _numMicroOps,
                         std::move(_dependentInstIds)),
         size(_size),
@@ -150,7 +151,8 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
         trace_vaddr(_trace_vaddr),
         align(_align),
         type(_type),
-        value(_value) {}
+        value(_value),
+        new_base(_new_base) {}
 
   void execute(LLVMTraceCPU* cpu) override;
 
@@ -168,7 +170,7 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
     return ss.str();
   }
 
-  void handlePacketResponse() override;
+  void handlePacketResponse(LLVMTraceCPU* cpu, PacketPtr packet) override;
 
   bool isCompleted() const override;
 
@@ -186,6 +188,8 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
   Type type;
   // Used for store.
   uint8_t* value;
+  // Used for load.
+  std::string new_base;
 
   // Runtime fields for load/store.
   struct PacketParam {
