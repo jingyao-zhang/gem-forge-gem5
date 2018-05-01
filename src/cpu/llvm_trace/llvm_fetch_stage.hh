@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "base/statistics.hh"
+#include "cpu/llvm_trace/llvm_branch_predictor.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
 #include "cpu/timebuf.hh"
@@ -18,6 +19,8 @@ class LLVMFetchStage {
   LLVMFetchStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu);
   LLVMFetchStage(const LLVMFetchStage& fs) = delete;
   LLVMFetchStage(LLVMFetchStage&& fs) = delete;
+
+  ~LLVMFetchStage();
 
   void setToDecode(TimeBuffer<FetchStruct>* toDecodeBuffer);
   void setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer, int pos);
@@ -34,6 +37,10 @@ class LLVMFetchStage {
   Cycles toDecodeDelay;
   TimeBuffer<FetchStruct>::wire toDecode;
   TimeBuffer<LLVMStageSignal>::wire signal;
+
+  LLVMBranchPredictor* predictor;
+  uint8_t branchPreictPenalityCycles;
+  LLVMDynamicInstId blockedInstId;
 };
 
 #endif

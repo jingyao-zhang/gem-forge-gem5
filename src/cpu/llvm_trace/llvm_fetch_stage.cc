@@ -7,7 +7,14 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
     : cpu(_cpu),
       fetchWidth(params->fetchWidth),
-      toDecodeDelay(params->fetchToDecodeDelay) {}
+      toDecodeDelay(params->fetchToDecodeDelay),
+      predictor(new LLVMBranchPredictor()),
+      branchPreictPenalityCycles(0) {}
+
+LLVMFetchStage::~LLVMFetchStage() {
+  delete this->predictor;
+  this->predictor = nullptr;
+}
 
 void LLVMFetchStage::setToDecode(TimeBuffer<FetchStruct>* toDecodeBuffer) {
   this->toDecode = toDecodeBuffer->getWire(0);
@@ -31,6 +38,18 @@ void LLVMFetchStage::tick() {
     // DPRINTF(LLVMTraceCPU, "Fetch blocked.\n");
     return;
   }
+
+  // If we are blocked by a wrong branch prediction,
+  // we don't fetch but try to check if the conditiona branch
+  // is computed out.
+  if (this->branchPreictPenalityCycles > 0) {
+    this->blockedCycles++;
+    if (cpu->isInstFinished(this->blockedInstId)) {
+      this->branchPreictPenalityCycles--;
+    }
+    return;
+  }
+
   // Only fetch if the stack depth is > 0,
   // and we haven't reach fetch width,
   // and when we have more dynamic inst to fetch.
@@ -38,9 +57,10 @@ void LLVMFetchStage::tick() {
   while (cpu->currentInstId < cpu->dynamicInsts.size() &&
          fetchedInsts < this->fetchWidth && cpu->currentStackDepth > 0) {
     LLVMDynamicInstId instId = cpu->currentInstId;
+    auto inst = cpu->dynamicInsts[instId];
 
     // Speciall rule to skip the phi node.
-    if (this->cpu->dynamicInsts[instId]->getInstName() != "phi") {
+    if (inst->getInstName() != "phi") {
       if (fetchedInsts + cpu->dynamicInsts[instId]->getQueueWeight() >
           this->fetchWidth) {
         // Do not fetch if overflow.
@@ -64,5 +84,19 @@ void LLVMFetchStage::tick() {
     }
 
     cpu->currentInstId++;
+
+    // Check if this is a conditional branch.
+    if (inst->isConditionalBranchInst()) {
+      bool predictionRight = this->predictor->predictAndUpdate(inst);
+      if (!predictionRight) {
+        DPRINTF(LLVMTraceCPU,
+                "Fetch blocked due to failed branch predictor for %s.\n",
+                inst->getInstName().c_str());
+        this->branchPreictPenalityCycles = 8;
+        this->blockedInstId = instId;
+        // Do not fetch next one.
+        break;
+      }
+    }
   }
 }

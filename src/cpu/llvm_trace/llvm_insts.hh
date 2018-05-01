@@ -7,10 +7,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "mem/packet.hh"
 #include "base/misc.hh"
 #include "base/types.hh"
 #include "cpu/op_class.hh"
+#include "mem/packet.hh"
 
 class LLVMAcceleratorContext;
 class LLVMTraceCPU;
@@ -26,6 +26,8 @@ class LLVMDynamicInst {
         instName(_instName),
         numMicroOps(_numMicroOps),
         dependentInstIds(std::move(_dependentInstIds)),
+        staticInstAddress(0x0),
+        nextBBName(""),
         fuStatus(FUStatus::COMPLETED),
         remainingMicroOps(_numMicroOps - 1) {}
 
@@ -72,6 +74,7 @@ class LLVMDynamicInst {
   }
 
   bool isBranchInst() const;
+  bool isConditionalBranchInst() const;
   bool isStoreInst() const;
   bool isLoadInst() const;
 
@@ -103,11 +106,25 @@ class LLVMDynamicInst {
   uint8_t getNumMicroOps() const { return numMicroOps; }
   uint8_t getQueueWeight() const { return numMicroOps; }
 
+  uint64_t getStaticInstAddress() const { return staticInstAddress; }
+  void setStaticInstAddress(uint64_t staticInstAddress) {
+    this->staticInstAddress = staticInstAddress;
+  }
+
+  const std::string& getNextBBName() const { return nextBBName; }
+  void setNextBBName(const std::string& nextBBName) {
+    this->nextBBName = nextBBName;
+  }
+
  protected:
   LLVMDynamicInstId id;
   std::string instName;
   uint8_t numMicroOps;
   std::vector<LLVMDynamicInstId> dependentInstIds;
+
+  // Used only for conditional branch.
+  uint64_t staticInstAddress;
+  std::string nextBBName;
 
   // A simple state machine to monitor FU status.
   // We need complete_next_cycle to make sure that latency

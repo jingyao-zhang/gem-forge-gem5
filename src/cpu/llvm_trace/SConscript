@@ -1,6 +1,7 @@
 Import('*')
 
 DebugFlag('LLVMTraceCPU')
+DebugFlag('LLVMBranchPredictor')
 
 SimObject('LLVMTraceCPU.py')
 Source('llvm_insts.cc')
@@ -12,3 +13,4 @@ Source('llvm_rename_stage.cc')
 Source('llvm_iew_stage.cc')
 Source('llvm_commit_stage.cc')
 Source('llvm_accelerator.cc')
+Source('llvm_branch_predictor.cc')

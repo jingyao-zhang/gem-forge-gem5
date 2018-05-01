@@ -152,6 +152,7 @@ for cpu in system.cpu:
     if isinstance(cpu, DerivO3CPU):
         cpu.issueWidth = options.llvm_issue_width
         cpu.SQEntries = options.llvm_store_queue_size
+        cpu.branchPred = LocalBP(numThreads=1)
 
 # Assign input trace files to the Trace CPU
 # system.cpu.traceFile = options.llvm_trace_file

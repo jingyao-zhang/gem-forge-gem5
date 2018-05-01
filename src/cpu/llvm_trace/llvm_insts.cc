@@ -57,9 +57,14 @@ void LLVMDynamicInst::handleFUCompletion() {
   this->fuStatus = FUStatus::COMPLETE_NEXT_CYCLE;
 }
 
+bool LLVMDynamicInst::isConditionalBranchInst() const {
+  return (this->instName == "br" || this->instName == "switch") &&
+         this->staticInstAddress != 0x0 && this->nextBBName != "";
+}
+
 bool LLVMDynamicInst::isBranchInst() const {
-  return this->instName == "br" || this->instName == "ret" ||
-         this->instName == "call";
+  return this->instName == "br" || this->instName == "switch" ||
+         this->instName == "ret" || this->instName == "call";
 }
 
 bool LLVMDynamicInst::isStoreInst() const { return this->instName == "store"; }
@@ -406,10 +411,24 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
       type = LLVMDynamicInstCompute::Type::COS;
     } else if (instName == "cca") {
       type = LLVMDynamicInstCompute::Type::ACCELERATOR;
-      if (fields.size() != 3) {
+      if (fields.size() != 4) {
         panic("Missing context field for accelerator inst %u.\n", id);
       }
       context = LLVMAcceleratorContext::parseContext(fields[2]);
+    } else if ((instName == "br" || instName == "switch") &&
+               fields.size() == 5) {
+      // This is a conditional branch.
+      uint64_t staticInstAddress = stoull(fields[DEPENDENT_INST_ID_FIELD + 1], 0, 16);
+      auto dynamicInst = std::make_shared<LLVMDynamicInstCompute>(
+          id, instName, numMicroOps, std::move(dependentInstIds), type,
+          context);
+      // Set the inst address and target basic block.
+      dynamicInst->setStaticInstAddress(staticInstAddress);
+      dynamicInst->setNextBBName(fields[DEPENDENT_INST_ID_FIELD + 2]);
+      DPRINTF(LLVMTraceCPU, "Parsed a conditional branch %p, %s.\n",
+              reinterpret_cast<void*>(staticInstAddress),
+              dynamicInst->getNextBBName().c_str());
+      return dynamicInst;
     }
     return std::make_shared<LLVMDynamicInstCompute>(
         id, instName, numMicroOps, std::move(dependentInstIds), type, context);
