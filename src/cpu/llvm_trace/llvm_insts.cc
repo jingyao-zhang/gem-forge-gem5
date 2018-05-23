@@ -73,16 +73,13 @@ bool LLVMDynamicInst::isLoadInst() const { return this->instName == "load"; }
 
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU* cpu) const {
   for (const auto dependentInstId : this->dependentInstIds) {
-    auto DepInst = cpu->getDynamicInst(dependentInstId);
-    // Special case for store, as it should not be speculated.
-    if (DepInst->isBranchInst()) {
-      continue;
-    } else {
-      // Register or mem dependence, check if
-      // write backed.
-      if (!cpu->isInstFinished(dependentInstId)) {
-        return false;
+    if (!cpu->isInstFinished(dependentInstId)) {
+      // We should not be blocked by control dependence here.
+      auto DepInst = cpu->getInflyInst(dependentInstId);
+      if (DepInst->isBranchInst()) {
+        continue;
       }
+      return false;
     }
   }
   return true;
@@ -113,11 +110,10 @@ void LLVMDynamicInst::startFUStatusFSM() {
 bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU* cpu) const {
   if (this->instName == "store") {
     for (const auto dependentInstId : this->dependentInstIds) {
-      auto DepInst = cpu->getDynamicInst(dependentInstId);
-      // Special case for store, as it should not be speculated.
-      if (DepInst->isBranchInst()) {
-        // Make sure the control dependence is committed.
-        if (!cpu->isInstCommitted(dependentInstId)) {
+      if (!cpu->isInstCommitted(dependentInstId)) {
+        // If the dependent inst is not committed, check if it's a branch.
+        auto DepInst = cpu->getInflyInst(dependentInstId);
+        if (DepInst->isBranchInst()) {
           return false;
         }
       }
@@ -346,15 +342,16 @@ std::vector<LLVMDynamicInstId> extractDependentInsts(const std::string deps) {
 }
 }  // namespace
 
-std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
-                                                      const std::string& line) {
+std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(const std::string& line) {
   const size_t NAME_FIELD = 0;
+  const size_t ID_FIELD = NAME_FIELD + 1;
   const size_t NUM_MICRO_OPS_FIELD = NAME_FIELD + 1;
   const size_t DEPENDENT_INST_ID_FIELD = NUM_MICRO_OPS_FIELD + 1;
 
   auto fields = splitByChar(line, '|');
   const std::string& instName = fields[NAME_FIELD];
-  auto numMicroOps = stoul(fields[NUM_MICRO_OPS_FIELD]);
+  int numMicroOps = 1;
+  LLVMDynamicInstId id = stoul(fields[ID_FIELD]);
   auto dependentInstIds =
       extractDependentInsts(fields[DEPENDENT_INST_ID_FIELD]);
 
@@ -411,14 +408,17 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
       type = LLVMDynamicInstCompute::Type::COS;
     } else if (instName == "cca") {
       type = LLVMDynamicInstCompute::Type::ACCELERATOR;
-      if (fields.size() != 4) {
-        panic("Missing context field for accelerator inst %u.\n", id);
-      }
-      context = LLVMAcceleratorContext::parseContext(fields[2]);
+      // For now just use one cycle latency for cca.
+      context = LLVMAcceleratorContext::parseContext("1");
+      // if (fields.size() != 4) {
+      //   panic("Missing context field for accelerator inst %u.\n", id);
+      // }
+      // context = LLVMAcceleratorContext::parseContext(fields[3]);
     } else if ((instName == "br" || instName == "switch") &&
                fields.size() == 5) {
       // This is a conditional branch.
-      uint64_t staticInstAddress = stoull(fields[DEPENDENT_INST_ID_FIELD + 1], 0, 16);
+      uint64_t staticInstAddress =
+          stoull(fields[DEPENDENT_INST_ID_FIELD + 1], 0, 16);
       auto dynamicInst = std::make_shared<LLVMDynamicInstCompute>(
           id, instName, numMicroOps, std::move(dependentInstIds), type,
           context);

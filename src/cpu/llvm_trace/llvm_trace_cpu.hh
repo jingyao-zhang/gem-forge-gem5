@@ -45,14 +45,14 @@ class LLVMTraceCPU : public BaseCPU {
                     std::vector<std::pair<std::string, Addr>> maps);
 
   enum InstStatus {
-    FETCHED,      // In fetchQueue.
-    DECODED,      // Decoded.
-    DISPATCHED,   // Dispatched to instQueue.
-    READY,        // Ready to be issued.
+    FETCHED,     // In fetchQueue.
+    DECODED,     // Decoded.
+    DISPATCHED,  // Dispatched to instQueue.
+    READY,       // Ready to be issued.
     ISSUED,
-    FINISHED,     // Finished computing.
-    WRITEBACKING, // Writing back.
-    WRITEBACKED,  // Write backed.
+    FINISHED,      // Finished computing.
+    WRITEBACKING,  // Writing back.
+    WRITEBACKED,   // Write backed.
   };
 
  private:
@@ -105,8 +105,16 @@ class LLVMTraceCPU : public BaseCPU {
   // Used to record the current stack depth, so that we can break trace
   // into multiple function calls.
   int currentStackDepth;
-  LLVMDynamicInstId currentInstId;
-  std::vector<std::shared_ptr<LLVMDynamicInst>> dynamicInsts;
+
+  // The list of loaded dynamic instructions, but not feteched.
+  std::list<std::shared_ptr<LLVMDynamicInst>> loadedDynamicInsts;
+
+  // In fly instructions.
+  std::unordered_map<LLVMDynamicInstId, std::shared_ptr<LLVMDynamicInst>>
+      inflyInstMap;
+
+  // The status of infly instructions.
+  std::unordered_map<LLVMDynamicInstId, InstStatus> inflyInstStatus;
 
   //*********************************************************//
   // This variables are initialized per replay.
@@ -120,8 +128,6 @@ class LLVMTraceCPU : public BaseCPU {
   Addr stackMin;
 
   Addr finish_tag_paddr;
-
-  std::unordered_map<LLVMDynamicInstId, InstStatus> inflyInsts;
 
   friend class LLVMFetchStage;
   friend class LLVMDecodeStage;
@@ -152,27 +158,24 @@ class LLVMTraceCPU : public BaseCPU {
   bool isStandalone() const { return this->driver == nullptr; }
 
   // Check if an inst is already finished.
+  // We assume the instruction stream is always a feasible one.
+  // So the dependent inst is guaranteed to be fetched.
+  // So if it is missing from the infly status map, we assume it
+  // has already been committed.
   bool isInstFinished(LLVMDynamicInstId instId) const {
-    if (instId >= this->currentInstId) {
-      return false;
-    }
-    if (this->inflyInsts.find(instId) != this->inflyInsts.end()) {
-      return this->inflyInsts.at(instId) >= InstStatus::FINISHED;
+    auto iter = this->inflyInstStatus.find(instId);
+    if (iter != this->inflyInstStatus.end()) {
+      return iter->second >= InstStatus::FINISHED;
     }
     return true;
   }
 
   bool isInstCommitted(LLVMDynamicInstId instId) const {
-    if (instId >= this->currentInstId) {
-      return false;
-    }
     // If it's out of the infly insts map, we say it committed.
-    return this->inflyInsts.find(instId) == this->inflyInsts.end();
+    return this->inflyInstStatus.find(instId) == this->inflyInstStatus.end();
   }
 
-  std::shared_ptr<LLVMDynamicInst> getDynamicInst(LLVMDynamicInstId instId) {
-    return this->dynamicInsts[instId];
-  }
+  std::shared_ptr<LLVMDynamicInst> getInflyInst(LLVMDynamicInstId id);
 
   // Allocate the stack. Should only be used in non-standalone mode.
   // Return the virtual address.

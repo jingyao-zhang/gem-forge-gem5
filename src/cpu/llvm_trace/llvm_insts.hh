@@ -102,6 +102,7 @@ class LLVMDynamicInst {
   virtual int getCallStackAdjustment() const { return 0; }
 
   const std::string& getInstName() const { return instName; }
+  LLVMDynamicInstId getId() const { return id; }
 
   uint8_t getNumMicroOps() const { return numMicroOps; }
   uint8_t getQueueWeight() const { return numMicroOps; }
@@ -283,7 +284,6 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
   LLVMAcceleratorContext* context;
 };
 
-std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(LLVMDynamicInstId id,
-                                                      const std::string& line);
+std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(const std::string& line);
 
 #endif

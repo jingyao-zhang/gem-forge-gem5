@@ -47,27 +47,31 @@ void LLVMCommitStage::tick() {
   unsigned committedInsts = 0;
   while (!this->commitQueue.empty() && committedInsts < this->commitWidth) {
     auto instId = this->commitQueue.front();
+    auto& inst = cpu->inflyInstMap.at(instId);
 
-    if (committedInsts + cpu->dynamicInsts[instId]->getQueueWeight() >
-        this->commitWidth) {
+    if (committedInsts + inst->getQueueWeight() > this->commitWidth) {
       break;
     }
 
-    committedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
+    committedInsts += inst->getQueueWeight();
     this->commitQueue.pop_front();
 
-    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to be commited\n", instId);
-    panic_if(cpu->inflyInsts.at(instId) != InstStatus::WRITEBACKED,
+    panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+             "Inst %u should be in inflyInstStatus to be commited\n", instId);
+    panic_if(cpu->inflyInstStatus.at(instId) != InstStatus::WRITEBACKED,
              "Inst %u should be writebacked to be commited, not %d\n", instId,
-             cpu->inflyInsts.at(instId));
+             cpu->inflyInstStatus.at(instId));
 
     DPRINTF(LLVMTraceCPU, "Inst %u committed, remaining infly inst #%u\n",
-            instId, cpu->inflyInsts.size());
-    cpu->inflyInsts.erase(instId);
+            instId, cpu->inflyInstStatus.size());
+
     this->instsCommitted[cpu->thread_context->threadId()]++;
     this->opsCommitted[cpu->thread_context->threadId()] +=
-        cpu->dynamicInsts[instId]->getNumMicroOps();
+        inst->getNumMicroOps();
+
+    // After this point, inst is released!
+    cpu->inflyInstMap.erase(instId);
+    cpu->inflyInstStatus.erase(instId);
   }
 
   this->signal->stall = this->commitQueue.size() >= this->commitQueueSize;

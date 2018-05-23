@@ -47,13 +47,15 @@ void LLVMRenameStage::tick() {
   if (!this->signal->stall) {
     unsigned renamedInsts = 0;
     auto iter = this->renameBuffer.begin();
-    while (renamedInsts < this->renameWidth && iter != this->renameBuffer.end()) {
+    while (renamedInsts < this->renameWidth &&
+           iter != this->renameBuffer.end()) {
       auto instId = *iter;
-      auto inst = cpu->dynamicInsts[instId];
+      auto& inst = cpu->inflyInstMap.at(instId);
       // Sanity check.
-      panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-               "Inst %u should be in inflyInsts to check if READY\n", instId);
-      if (cpu->inflyInsts.at(instId) != InstStatus::DECODED) {
+      panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+               "Inst %u should be in inflyInstStatus to check if READY\n",
+               instId);
+      if (cpu->inflyInstStatus.at(instId) != InstStatus::DECODED) {
         panic("Inst %u should be in DECODED status in rob\n", instId);
       }
 

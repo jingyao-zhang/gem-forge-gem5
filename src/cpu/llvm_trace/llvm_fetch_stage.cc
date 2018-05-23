@@ -54,36 +54,40 @@ void LLVMFetchStage::tick() {
   // and we haven't reach fetch width,
   // and when we have more dynamic inst to fetch.
   unsigned fetchedInsts = 0;
-  while (cpu->currentInstId < cpu->dynamicInsts.size() &&
+  while ((!cpu->loadedDynamicInsts.empty()) &&
          fetchedInsts < this->fetchWidth && cpu->currentStackDepth > 0) {
-    LLVMDynamicInstId instId = cpu->currentInstId;
-    auto inst = cpu->dynamicInsts[instId];
+    // Make a copy of inst. This is important to make inst available after we
+    // pop it from the loaded list.
+    auto inst = cpu->loadedDynamicInsts.front();
+    auto instId = inst->getId();
 
     // Speciall rule to skip the phi node.
     if (inst->getInstName() != "phi") {
-      if (fetchedInsts + cpu->dynamicInsts[instId]->getQueueWeight() >
-          this->fetchWidth) {
+      if (fetchedInsts + inst->getQueueWeight() > this->fetchWidth) {
         // Do not fetch if overflow.
         break;
       }
 
-      DPRINTF(LLVMTraceCPU,
-              "Fetch inst %d into fetchQueue, current inst id %d, total %d\n",
-              instId, cpu->currentInstId, cpu->dynamicInsts.size());
-      cpu->inflyInsts[instId] = InstStatus::FETCHED;
+      DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue, remaining %d\n",
+              instId, cpu->loadedDynamicInsts.size());
+      // Update the infly.
+      cpu->inflyInstStatus[instId] = InstStatus::FETCHED;
+      cpu->inflyInstMap.emplace(instId, inst);
+      // Send to decode.
       this->toDecode->push_back(instId);
       // Update the stack depth for call/ret inst.
-      cpu->currentStackDepth +=
-          cpu->dynamicInsts[instId]->getCallStackAdjustment();
+      cpu->currentStackDepth += inst->getCallStackAdjustment();
       DPRINTF(LLVMTraceCPU, "Stack depth updated to %u\n",
               cpu->currentStackDepth);
       if (cpu->currentStackDepth < 0) {
         panic("Current stack depth is less than 0\n");
       }
-      fetchedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
+      fetchedInsts += inst->getQueueWeight();
     }
 
-    cpu->currentInstId++;
+
+    // Pop from the loaded list.
+    cpu->loadedDynamicInsts.pop_front();
 
     // Check if this is a conditional branch.
     if (inst->isConditionalBranchInst()) {
@@ -98,5 +102,6 @@ void LLVMFetchStage::tick() {
         break;
       }
     }
+
   }
 }

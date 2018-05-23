@@ -14,7 +14,6 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       itb(params->itb),
       dtb(params->dtb),
       currentStackDepth(0),
-      currentInstId(0),
       process(nullptr),
       thread_context(nullptr),
       stackMin(0),
@@ -70,15 +69,15 @@ void LLVMTraceCPU::readTraceFile() {
   for (std::string line; std::getline(stream, line);) {
     DPRINTF(LLVMTraceCPU, "read in %s\n", line.c_str());
 
-    auto inst = parseLLVMDynamicInst(this->dynamicInsts.size(), line);
-    this->dynamicInsts.push_back(inst);
+    auto inst = parseLLVMDynamicInst(line);
+    this->loadedDynamicInsts.emplace_back(std::move(inst));
 
     DPRINTF(LLVMTraceCPU, "Parsed #%u dynamic inst with %s\n",
-            this->dynamicInsts.size(),
-            this->dynamicInsts.back()->toLine().c_str());
+            this->loadedDynamicInsts.size(),
+            this->loadedDynamicInsts.back()->toLine().c_str());
   }
   DPRINTF(LLVMTraceCPU, "Parsed total number of inst: %u\n",
-          this->dynamicInsts.size());
+          this->loadedDynamicInsts.size());
 }
 
 void LLVMTraceCPU::tick() {
@@ -100,7 +99,7 @@ void LLVMTraceCPU::tick() {
   this->iewToCommit.advance();
   this->signalBuffer.advance();
 
-  if (this->inflyInsts.empty() && this->currentStackDepth == 0) {
+  if (this->inflyInstStatus.empty() && this->currentStackDepth == 0) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
     // No more need to write to the finish tag, simply restart the
     // normal thread.
@@ -125,12 +124,10 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   // Receive the response from port.
   LLVMDynamicInstId instId =
       static_cast<LLVMDynamicInstId>(pkt->req->getReqInstSeqNum());
-  if (instId < this->dynamicInsts.size()) {
-    this->dynamicInsts[instId]->handlePacketResponse(this, pkt);
-  } else {
-    panic("Invalid instId %u, max instId %u\n", instId,
-          this->dynamicInsts.size());
-  }
+  auto iter = this->inflyInstMap.find(instId);
+  panic_if(iter == this->inflyInstMap.end(),
+           "Invalid instId %u. Not in infly map.\n", instId);
+  iter->second->handlePacketResponse(this, pkt);
   // Release the memory.
   delete pkt->req;
   delete pkt;
@@ -221,6 +218,14 @@ void LLVMTraceCPU::handleReplay(
 
   // Schedule the next event.
   schedule(this->tickEvent, nextCycle());
+}
+
+std::shared_ptr<LLVMDynamicInst> LLVMTraceCPU::getInflyInst(
+    LLVMDynamicInstId id) {
+  auto iter = this->inflyInstMap.find(id);
+  panic_if(iter == this->inflyInstMap.end(), "Failed to find infly inst %u.\n",
+           id);
+  return iter->second;
 }
 
 Addr LLVMTraceCPU::allocateStack(Addr size, Addr align) {

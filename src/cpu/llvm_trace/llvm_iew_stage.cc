@@ -85,17 +85,17 @@ void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId>& queue,
   auto iter = queue.begin();
   while (iter != queue.end() && writebacked < this->writeBackWidth) {
     auto instId = *iter;
-    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to check if completed.\n",
+    panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+             "Inst %u should be in inflyInstStatus to check if completed.\n",
              instId);
 
     // DPRINTF(LLVMTraceCPU, "Inst %u check if issued in write back\n", instId);
-    if (cpu->inflyInsts.at(instId) == InstStatus::ISSUED) {
+    if (cpu->inflyInstStatus.at(instId) == InstStatus::ISSUED) {
       // Tick the inst.
 
       // DPRINTF(LLVMTraceCPU, "Inst %u is labelled issued in write back\n",
       //         instId);
-      auto inst = cpu->dynamicInsts[instId];
+      auto& inst = cpu->inflyInstMap.at(instId);
       inst->tick();
 
       // Check if the inst is finished by FU.
@@ -104,12 +104,12 @@ void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId>& queue,
                 "Inst %u finished by fu, write back, remaining %d\n", instId,
                 queue.size());
 
-        cpu->inflyInsts[instId] = InstStatus::FINISHED;
+        cpu->inflyInstStatus.at(instId) = InstStatus::FINISHED;
 
         // If this is not store, we can immediately say this
         // inst is write backed.
         if (!inst->isStoreInst()) {
-          cpu->inflyInsts[instId] = InstStatus::WRITEBACKED;
+          cpu->inflyInstStatus.at(instId) = InstStatus::WRITEBACKED;
         }
 
         writebacked++;
@@ -127,15 +127,15 @@ void LLVMIEWStage::writebackStoreQueue() {
   auto iter = this->storeQueue.begin();
   while (iter != this->storeQueue.end()) {
     auto instId = *iter;
-    auto inst = cpu->dynamicInsts[instId];
+    auto& inst = cpu->inflyInstMap.at(instId);
 
     panic_if(!inst->isStoreInst(), "Non-store inst %u in store queue.\n",
              instId);
     // Check if write backed.
-    if (cpu->inflyInsts.find(instId) == cpu->inflyInsts.end()) {
-      panic("Inst %u should be in inflyInsts to check status.\n", instId);
+    if (cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end()) {
+      panic("Inst %u should be in inflyInstStatus to check status.\n", instId);
     }
-    auto status = cpu->inflyInsts.at(instId);
+    auto status = cpu->inflyInstStatus.at(instId);
     if (status == InstStatus::WRITEBACKING) {
       // This inst is already been writing back.
       // Check if it's done.
@@ -143,7 +143,7 @@ void LLVMIEWStage::writebackStoreQueue() {
         // If so, update it to writebacked and remove from the store queue.
         // Continue to try to write back the next store in queue.
         DPRINTF(LLVMTraceCPU, "Store inst %u is writebacked.\n", instId);
-        cpu->inflyInsts[instId] = InstStatus::WRITEBACKED;
+        cpu->inflyInstStatus.at(instId) = InstStatus::WRITEBACKED;
         iter = this->storeQueue.erase(iter);
         // Uppon erase from the store queue, we must also remove from
         // the inst queue.
@@ -164,7 +164,7 @@ void LLVMIEWStage::writebackStoreQueue() {
       // The inst is still waiting to be written back.
       // This cycle is done.
       DPRINTF(LLVMTraceCPU, "Store inst %u is started to writeback.\n", instId);
-      cpu->inflyInsts[instId] = InstStatus::WRITEBACKING;
+      cpu->inflyInstStatus.at(instId) = InstStatus::WRITEBACKING;
       inst->writeback(cpu);
       break;
     } else {
@@ -219,14 +219,15 @@ void LLVMIEWStage::issue() {
   auto iter = this->instQueue.begin();
   while (iter != this->instQueue.end() && issuedInsts < this->issueWidth) {
     auto instId = *iter;
-    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to check if READY.\n", instId);
+    panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+             "Inst %u should be in inflyInstStatus to check if READY.\n",
+             instId);
 
     bool shouldRemoveFromInstQueue = false;
 
-    if (cpu->inflyInsts.at(instId) == InstStatus::READY) {
+    if (cpu->inflyInstStatus.at(instId) == InstStatus::READY) {
       bool canIssue = true;
-      auto inst = cpu->dynamicInsts[instId];
+      auto& inst = cpu->inflyInstMap.at(instId);
       auto opClass = inst->getOpClass();
       auto fuId = FUPool::NoCapableFU;
       const auto& instName = inst->getInstName();
@@ -248,8 +249,8 @@ void LLVMIEWStage::issue() {
       }
 
       if (canIssue) {
-        cpu->inflyInsts[instId] = InstStatus::ISSUED;
-        issuedInsts += cpu->dynamicInsts[instId]->getQueueWeight();
+        cpu->inflyInstStatus.at(instId) = InstStatus::ISSUED;
+        issuedInsts += cpu->inflyInstMap.at(instId)->getQueueWeight();
         DPRINTF(LLVMTraceCPU, "Inst %u %s issued\n", instId, instName.c_str());
         inst->execute(cpu);
         this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
@@ -312,7 +313,7 @@ void LLVMIEWStage::dispatch() {
     }
 
     auto instId = *iter;
-    auto inst = cpu->dynamicInsts[instId];
+    auto& inst = cpu->inflyInstMap.at(instId);
     if (inst->isStoreInst() &&
         this->storeQueue.size() == this->storeQueueSize) {
       break;
@@ -322,10 +323,11 @@ void LLVMIEWStage::dispatch() {
       break;
     }
 
-    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to check if READY\n", instId);
-    if (cpu->inflyInsts.at(instId) == InstStatus::DECODED) {
-      cpu->inflyInsts[instId] = InstStatus::DISPATCHED;
+    panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+             "Inst %u should be in inflyInstStatus to check if READY\n",
+             instId);
+    if (cpu->inflyInstStatus.at(instId) == InstStatus::DECODED) {
+      cpu->inflyInstStatus.at(instId) = InstStatus::DISPATCHED;
       dispatchedInst++;
       this->instQueue.push_back(instId);
       if (inst->isStoreInst()) {
@@ -344,15 +346,16 @@ void LLVMIEWStage::markReady() {
   for (auto iter = this->instQueue.begin(), end = this->instQueue.end();
        iter != end; ++iter) {
     auto instId = *iter;
-    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to check if READY\n", instId);
-    if (cpu->inflyInsts.at(instId) == InstStatus::DISPATCHED) {
-      auto inst = cpu->dynamicInsts[instId];
+    panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+             "Inst %u should be in inflyInstStatus to check if READY\n",
+             instId);
+    if (cpu->inflyInstStatus.at(instId) == InstStatus::DISPATCHED) {
+      auto& inst = cpu->inflyInstMap.at(instId);
       if (inst->isDependenceReady(cpu)) {
         // Mark the status to ready.
         DPRINTF(LLVMTraceCPU, "Inst %u is marked ready in instruction queue.\n",
                 instId);
-        cpu->inflyInsts[instId] = InstStatus::READY;
+        cpu->inflyInstStatus.at(instId) = InstStatus::READY;
       }
     }
   }
@@ -367,16 +370,18 @@ void LLVMIEWStage::commit() {
     }
     auto head = this->rob.begin();
     auto instId = *head;
-    panic_if(cpu->inflyInsts.find(instId) == cpu->inflyInsts.end(),
-             "Inst %u should be in inflyInsts to check if writebacked.\n",
+    panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+             "Inst %u should be in inflyInstStatus to check if writebacked.\n",
              instId);
-    if (cpu->inflyInsts.at(instId) == InstStatus::WRITEBACKED) {
+    if (cpu->inflyInstStatus.at(instId) == InstStatus::WRITEBACKED) {
       this->rob.erase(head);
       this->toCommit->push_back(instId);
 
+      auto& inst = cpu->inflyInstMap.at(instId);
+
       // Special case for load, it can be removed from load queue
       // once committed.
-      if (cpu->dynamicInsts[instId]->isLoadInst()) {
+      if (inst->isLoadInst()) {
         auto instQueueIter =
             std::find(this->instQueue.begin(), this->instQueue.end(), instId);
         if (instQueueIter == this->instQueue.end()) {
@@ -387,7 +392,7 @@ void LLVMIEWStage::commit() {
       }
 
       DPRINTF(LLVMTraceCPU, "Inst %u %s is sent to commit.\n", instId,
-              cpu->dynamicInsts[instId]->getInstName().c_str());
+              inst->getInstName().c_str());
       committedInst++;
     } else {
       // The header is not finished, no need to check others.
@@ -402,18 +407,16 @@ void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
     this->fuPool->freeUnitNextCycle(fuId);
   }
   // Check that this inst is legal and already be issued.
-  if (instId >= cpu->dynamicInsts.size()) {
-    panic("processFUCompletion: Illegal inst %u\n", instId);
+  if (cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end()) {
+    panic(
+        "processFUCompletion: Failed to find the inst %u in inflyInstStatus\n",
+        instId);
   }
-  if (cpu->inflyInsts.find(instId) == cpu->inflyInsts.end()) {
-    panic("processFUCompletion: Failed to find the inst %u in inflyInsts\n",
-          instId);
-  }
-  if (cpu->inflyInsts.at(instId) != InstStatus::ISSUED) {
+  if (cpu->inflyInstStatus.at(instId) != InstStatus::ISSUED) {
     panic("processFUCompletion: Inst %u is not issued\n", instId);
   }
   // Inform the inst that it has completed.
-  cpu->dynamicInsts[instId]->handleFUCompletion();
+  cpu->inflyInstMap.at(instId)->handleFUCompletion();
 }
 
 LLVMIEWStage::FUCompletion::FUCompletion(LLVMDynamicInstId _instId, int _fuId,
