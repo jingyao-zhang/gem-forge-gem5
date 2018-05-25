@@ -1,9 +1,9 @@
 #ifndef __CPU_LLVM_TRACE_CPU_HH__
 #define __CPU_LLVM_TRACE_CPU_HH__
 
+#include <fstream>
 #include <mutex>
 #include <queue>
-#include <sstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -86,18 +86,14 @@ class LLVMTraceCPU : public BaseCPU {
     bool blocked;
   };
 
-  /**
-   * Read in the trace file and popluate dynamicInsts vector.
-   */
-  void readTraceFile();
-
   void tick();
 
   FuncPageTable pageTable;
   CPUPort instPort;
   CPUPort dataPort;
 
-  const std::string traceFile;
+  const std::string traceFileName;
+  std::ifstream traceFileStream;
 
   TheISA::TLB* itb;
   TheISA::TLB* dtb;
@@ -108,6 +104,9 @@ class LLVMTraceCPU : public BaseCPU {
 
   // The list of loaded dynamic instructions, but not feteched.
   std::list<std::shared_ptr<LLVMDynamicInst>> loadedDynamicInsts;
+
+  // Load more dynamic instructions if needed.
+  void loadDynamicInstsIfNecessary();
 
   // In fly instructions.
   std::unordered_map<LLVMDynamicInstId, std::shared_ptr<LLVMDynamicInst>>

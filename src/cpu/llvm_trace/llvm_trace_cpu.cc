@@ -1,8 +1,6 @@
-#include <fstream>
-
+#include "llvm_trace_cpu.hh"
 #include "cpu/thread_context.hh"
 #include "debug/LLVMTraceCPU.hh"
-#include "llvm_trace_cpu.hh"
 #include "sim/process.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
@@ -10,7 +8,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
       pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFile(params->traceFile),
+      traceFileName(params->traceFile),
       itb(params->itb),
       dtb(params->dtb),
       currentStackDepth(0),
@@ -46,7 +44,12 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
   this->decodeStage.setSignal(&this->signalBuffer, -3);
   this->fetchStage.setSignal(&this->signalBuffer, -4);
 
-  readTraceFile();
+  // Open the trace file.
+  this->traceFileStream.open(this->traceFileName, std::ios::in);
+  if (!this->traceFileStream.is_open()) {
+    fatal("Failed opening trace file %s\n", this->traceFileName.c_str());
+  }
+
   if (driver != nullptr) {
     // Handshake with the driver.
     driver->handshake(this);
@@ -57,28 +60,9 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
   }
 }
 
-LLVMTraceCPU::~LLVMTraceCPU() {}
+LLVMTraceCPU::~LLVMTraceCPU() { this->traceFileStream.close(); }
 
 LLVMTraceCPU* LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
-
-void LLVMTraceCPU::readTraceFile() {
-  std::ifstream stream(this->traceFile);
-  if (!stream.is_open()) {
-    fatal("Failed opening trace file %s\n", this->traceFile.c_str());
-  }
-  for (std::string line; std::getline(stream, line);) {
-    DPRINTF(LLVMTraceCPU, "read in %s\n", line.c_str());
-
-    auto inst = parseLLVMDynamicInst(line);
-    this->loadedDynamicInsts.emplace_back(std::move(inst));
-
-    DPRINTF(LLVMTraceCPU, "Parsed #%u dynamic inst with %s\n",
-            this->loadedDynamicInsts.size(),
-            this->loadedDynamicInsts.back()->toLine().c_str());
-  }
-  DPRINTF(LLVMTraceCPU, "Parsed total number of inst: %u\n",
-          this->loadedDynamicInsts.size());
-}
 
 void LLVMTraceCPU::tick() {
   if (curTick() % 100000000 == 0) {
@@ -218,6 +202,36 @@ void LLVMTraceCPU::handleReplay(
 
   // Schedule the next event.
   schedule(this->tickEvent, nextCycle());
+}
+
+void LLVMTraceCPU::loadDynamicInstsIfNecessary() {
+  const size_t LOADED_WINDOW_SIZE = 100000;
+
+  panic_if(!this->traceFileStream.is_open(),
+           "The trace file stream is not opened.");
+
+  if (this->loadedDynamicInsts.size() > LOADED_WINDOW_SIZE) {
+    return;
+  }
+
+  size_t count = 0;
+  for (std::string line; std::getline(this->traceFileStream, line);) {
+    DPRINTF(LLVMTraceCPU, "read in %s\n", line.c_str());
+
+    auto inst = parseLLVMDynamicInst(line);
+    this->loadedDynamicInsts.emplace_back(std::move(inst));
+
+    DPRINTF(LLVMTraceCPU, "Parsed dynamic inst %s\n",
+            this->loadedDynamicInsts.back()->toLine().c_str());
+    count++;
+
+    if (this->loadedDynamicInsts.size() > LOADED_WINDOW_SIZE) {
+      break;
+    }
+  }
+  DPRINTF(LLVMTraceCPU,
+          "Incrementally parsed number of inst: %u, current loaded: %u\n",
+          count, this->loadedDynamicInsts.size());
 }
 
 std::shared_ptr<LLVMDynamicInst> LLVMTraceCPU::getInflyInst(

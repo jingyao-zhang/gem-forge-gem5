@@ -50,6 +50,9 @@ void LLVMFetchStage::tick() {
     return;
   }
 
+  // Load more instruction if necessary.
+  cpu->loadDynamicInstsIfNecessary();
+
   // Only fetch if the stack depth is > 0,
   // and we haven't reach fetch width,
   // and when we have more dynamic inst to fetch.
@@ -85,7 +88,6 @@ void LLVMFetchStage::tick() {
       fetchedInsts += inst->getQueueWeight();
     }
 
-
     // Pop from the loaded list.
     cpu->loadedDynamicInsts.pop_front();
 
@@ -102,6 +104,5 @@ void LLVMFetchStage::tick() {
         break;
       }
     }
-
   }
 }
