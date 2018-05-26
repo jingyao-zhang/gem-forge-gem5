@@ -101,6 +101,9 @@ class LLVMTraceCPU : public BaseCPU {
   // Used to record the current stack depth, so that we can break trace
   // into multiple function calls.
   int currentStackDepth;
+  std::list<Addr> framePointerStack;
+  void stackPop();
+  void stackPush();
 
   // The list of loaded dynamic instructions, but not feteched.
   std::list<std::shared_ptr<LLVMDynamicInst>> loadedDynamicInsts;

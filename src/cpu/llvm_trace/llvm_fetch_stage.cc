@@ -79,12 +79,25 @@ void LLVMFetchStage::tick() {
       // Send to decode.
       this->toDecode->push_back(instId);
       // Update the stack depth for call/ret inst.
-      cpu->currentStackDepth += inst->getCallStackAdjustment();
+      int stackAdjustment = inst->getCallStackAdjustment();
+      switch (stackAdjustment) {
+        case 1: {
+          cpu->stackPush();
+          break;
+        }
+        case -1: {
+          cpu->stackPop();
+          break;
+        }
+        case 0: {
+          break;
+        }
+        default: {
+          panic("Illegal call stack adjustment &d.\n", stackAdjustment);
+        }
+      }
       DPRINTF(LLVMTraceCPU, "Stack depth updated to %u\n",
               cpu->currentStackDepth);
-      if (cpu->currentStackDepth < 0) {
-        panic("Current stack depth is less than 0\n");
-      }
       fetchedInsts += inst->getQueueWeight();
     }
 

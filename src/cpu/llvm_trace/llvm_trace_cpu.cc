@@ -198,7 +198,7 @@ void LLVMTraceCPU::handleReplay(
     panic("Before replay the stack depth must be 0, now %u\n",
           this->currentStackDepth);
   }
-  this->currentStackDepth = 1;
+  this->stackPush();
 
   // Schedule the next event.
   schedule(this->tickEvent, nextCycle());
@@ -240,6 +240,20 @@ std::shared_ptr<LLVMDynamicInst> LLVMTraceCPU::getInflyInst(
   panic_if(iter == this->inflyInstMap.end(), "Failed to find infly inst %u.\n",
            id);
   return iter->second;
+}
+
+void LLVMTraceCPU::stackPush() {
+  this->currentStackDepth++;
+  this->framePointerStack.push_back(this->stackMin);
+}
+
+void LLVMTraceCPU::stackPop() {
+  this->currentStackDepth--;
+  if (this->currentStackDepth < 0) {
+    panic("Current stack depth is less than 0\n");
+  }
+  this->stackMin = this->framePointerStack.back();
+  this->framePointerStack.pop_back();
 }
 
 Addr LLVMTraceCPU::allocateStack(Addr size, Addr align) {
