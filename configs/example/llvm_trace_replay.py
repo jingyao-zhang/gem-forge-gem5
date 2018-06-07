@@ -21,6 +21,8 @@ parser.add_option("--llvm-issue-width", action="store", type="int",
                   help="""llvm issue width""", default="8")
 parser.add_option("--llvm-store-queue-size", action="store",
                   type="int", help="""store queue size""", default="32")
+parser.add_option("--llvm-standalone", action="store",
+                  type="int", help="""replay in stand alone mode""", default="0")
 
 (options, args) = parser.parse_args()
 
@@ -89,16 +91,48 @@ if options.num_cpus > 1:
 
 multiprocesses, numThreads = get_processes(options)
 
-# In this case FutureClass will be None as there is not fast forwarding or
-# switching
-(CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(options)
-CPUClass.numThreads = numThreads
+if options.llvm_standalone == 0:
+    # Non-standalone mode, intialize the driver and normal cpu.
 
-cpus = [CPUClass(cpu_id=i) for i in xrange(options.num_cpus)]
+    # In this case FutureClass will be None as there is not fast forwarding or
+    # switching
+    (CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(options)
+    CPUClass.numThreads = numThreads
 
-# Add the emulated LLVM tracer driver for the process
-if options.llvm_trace_file != '':
+    cpus = [CPUClass(cpu_id=i) for i in xrange(options.num_cpus)]
 
+    # Set the workload for normal CPUs.
+    for i in xrange(options.num_cpus):
+        if options.smt:
+            cpus[i].workload = multiprocesses
+        elif len(multiprocesses) == 1:
+            cpus[i].workload = multiprocesses[0]
+        else:
+            cpus[i].workload = multiprocesses[i]
+        cpus[i].createThreads()
+
+    # Add the emulated LLVM tracer driver for the process
+    if options.llvm_trace_file != '':
+        for process in multiprocesses:
+            driver = LLVMTraceCPUDriver()
+            driver.filename = 'llvm_trace_cpu'
+            process.drivers = [driver]
+
+            # For each process, add a LLVMTraceCPU for simulation.
+            llvm_trace_cpu = LLVMTraceCPU(cpu_id=len(cpus))
+            llvm_trace_cpu.issueWidth = options.llvm_issue_width
+            llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
+            llvm_trace_cpu.cpu_id = len(cpus)
+            llvm_trace_cpu.traceFile = options.llvm_trace_file
+            llvm_trace_cpu.driver = driver
+            cpus.append(llvm_trace_cpu)
+            options.num_cpus = len(cpus)
+else:
+    # Standalone mode, just the replay cpu.
+    # There should be a trace file for replay.
+    assert options.llvm_trace_file != ''
+    cpus = list()
+    # No need to worry about the process.
     for process in multiprocesses:
         driver = LLVMTraceCPUDriver()
         driver.filename = 'llvm_trace_cpu'
@@ -110,24 +144,14 @@ if options.llvm_trace_file != '':
         llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
         llvm_trace_cpu.cpu_id = len(cpus)
         llvm_trace_cpu.traceFile = options.llvm_trace_file
-        llvm_trace_cpu.driver = driver
         cpus.append(llvm_trace_cpu)
-        options.num_cpus = len(cpus)
 
 system = System(cpu=cpus,
                 mem_mode=test_mem_mode,
                 mem_ranges=[AddrRange(options.mem_size)],
                 cache_line_size=options.cacheline_size)
 
-# Set the workload for normal CPUs.
-for i in xrange(options.num_cpus):
-    if options.smt:
-        system.cpu[i].workload = multiprocesses
-    elif len(multiprocesses) == 1:
-        system.cpu[i].workload = multiprocesses[0]
-    else:
-        system.cpu[i].workload = multiprocesses[i]
-    system.cpu[i].createThreads()
+Simulation.setWorkCountOptions(system, options)
 
 # Create a top-level voltage domain
 system.voltage_domain = VoltageDomain(voltage=options.sys_voltage)
