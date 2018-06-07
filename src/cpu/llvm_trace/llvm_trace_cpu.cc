@@ -1,7 +1,10 @@
 #include "llvm_trace_cpu.hh"
+
+#include "base/loader/object_file.hh"
 #include "cpu/thread_context.hh"
 #include "debug/LLVMTraceCPU.hh"
 #include "sim/process.hh"
+#include "sim/sim_exit.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
     : BaseCPU(params),
@@ -93,8 +96,13 @@ void LLVMTraceCPU::tick() {
             this->currentStackDepth);
     }
 
-    DPRINTF(LLVMTraceCPU, "Activate the normal CPU\n");
-    this->thread_context->activate();
+    // If in standalone mode, we can exit.
+    if (this->isStandalone()) {
+      exitSimLoop("Datagraph finished.\n");
+    } else {
+      DPRINTF(LLVMTraceCPU, "Activate the normal CPU\n");
+      this->thread_context->activate();
+    }
     return;
   } else {
     // Schedule next Tick event.
@@ -163,6 +171,8 @@ void LLVMTraceCPU::handleReplay(
     Process* p, ThreadContext* tc, const std::string& trace,
     const Addr finish_tag_vaddr,
     std::vector<std::pair<std::string, Addr>> maps) {
+  panic_if(this->isStandalone(), "handleReplay called in standalone mode.");
+
   DPRINTF(LLVMTraceCPU, "Replay trace %s, finish tag at 0x%x, num maps %u\n",
           trace.c_str(), finish_tag_vaddr, maps.size());
 
@@ -174,6 +184,9 @@ void LLVMTraceCPU::handleReplay(
   // Set the process and tc.
   this->process = p;
   this->thread_context = tc;
+
+  // Load the global symbols for global variables.
+  this->process->objFile->loadAllSymbols(&this->symbol_table);
 
   // Get the bottom of the stack.
   this->stackMin = tc->readIntReg(TheISA::StackPointerReg);
@@ -309,6 +322,18 @@ void LLVMTraceCPU::mapBaseNameToVAddr(const std::string& base, Addr vaddr) {
   DPRINTF(LLVMTraceCPU, "map base %s to vaddr %p.\n", base.c_str(),
           reinterpret_cast<void*>(vaddr));
   this->mapBaseToVAddr[base] = vaddr;
+}
+
+Addr LLVMTraceCPU::getVAddrFromBase(const std::string& base) {
+  if (this->mapBaseToVAddr.find(base) != this->mapBaseToVAddr.end()) {
+    return this->mapBaseToVAddr.at(base);
+  }
+  // Try to look at the global symbol table of the process.
+  Addr vaddr;
+  if (this->symbol_table.findAddress(base, vaddr)) {
+    return vaddr;
+  }
+  panic("Failed to look up base %s\n", base.c_str());
 }
 
 // Translate from vaddr to paddr.

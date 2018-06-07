@@ -177,6 +177,11 @@ void LLVMDynamicInstMem::constructPackets(LLVMTraceCPU* cpu) {
       vaddr =
           cpu->getVAddrFromBase(this->base) + this->offset + inflyPacketsSize;
       paddr = cpu->getPAddrFromVaddr(vaddr);
+      DPRINTF(LLVMTraceCPU,
+              "vaddr %llu = base %llu + offset %llu + infly %llu, paddr %llu, "
+              "reintered %p\n",
+              vaddr, cpu->getVAddrFromBase(this->base), this->offset,
+              inflyPacketsSize, paddr, reinterpret_cast<void*>(paddr));
     }
     // For now only support maximum 8 bytes access.
     packetSize = this->size - inflyPacketsSize;
@@ -210,6 +215,10 @@ void LLVMDynamicInstMem::writeback(LLVMTraceCPU* cpu) {
   }
   // Start to send the packets to cpu for store.
   for (const auto& packet : this->packets) {
+    if (packet.size == 8) {
+      DPRINTF(LLVMTraceCPU, "Store data %f for inst %u to paddr %p\n",
+              *(double*)(packet.data), this->id, packet.paddr);
+    }
     cpu->sendRequest(packet.paddr, packet.size, this->id, packet.data);
   }
 }
@@ -359,7 +368,9 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(const std::string& line) {
     auto type = LLVMDynamicInstMem::Type::STORE;
     auto base = fields[DEPENDENT_INST_ID_FIELD + 1];
     Addr offset = stoull(fields[DEPENDENT_INST_ID_FIELD + 2]);
-    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 3]);
+    DPRINTF(LLVMTraceCPU, "OFFSET %s %llu\n",
+            fields[DEPENDENT_INST_ID_FIELD + 2].c_str(), offset);
+    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 3], 0, 16);
     Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 4]);
     // Handle the value of store operation.
     int typeId = stoi(fields[DEPENDENT_INST_ID_FIELD + 5]);
@@ -370,14 +381,11 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(const std::string& line) {
     return std::make_shared<LLVMDynamicInstMem>(
         id, instName, numMicroOps, std::move(dependentInstIds), size, base,
         offset, trace_vaddr, 16, type, value, new_base);
-    // return std::shared_ptr<LLVMDynamicInst>(new LLVMDynamicInstMem(
-    //     id, instName, numMicroOps, std::move(dependentInstIds), size, base,
-    //     offset, trace_vaddr, 16, type, value));
   } else if (instName == "load") {
     auto type = LLVMDynamicInstMem::Type::LOAD;
     auto base = fields[DEPENDENT_INST_ID_FIELD + 1];
     Addr offset = stoull(fields[DEPENDENT_INST_ID_FIELD + 2]);
-    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 3]);
+    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 3], 0, 16);
     Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 4]);
     uint8_t* value = nullptr;
     std::string new_base = fields[DEPENDENT_INST_ID_FIELD + 5];
@@ -388,12 +396,28 @@ std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(const std::string& line) {
     auto type = LLVMDynamicInstMem::Type::ALLOCA;
     auto base = fields[DEPENDENT_INST_ID_FIELD + 1];
     Addr offset = 0;
-    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 2]);
+    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 2], 0, 16);
     Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 3]);
     uint8_t* value = nullptr;
     std::string new_base = "";
     return std::make_shared<LLVMDynamicInstMem>(
         id, instName, numMicroOps, std::move(dependentInstIds), size, base,
+        offset, trace_vaddr, 16, type, value, new_base);
+  } else if (instName == "memset") {
+    // Translate this into a big store.
+    auto type = LLVMDynamicInstMem::Type::STORE;
+    auto base = fields[DEPENDENT_INST_ID_FIELD + 1];
+    Addr offset = stoull(fields[DEPENDENT_INST_ID_FIELD + 2]);
+    DPRINTF(LLVMTraceCPU, "OFFSET %s %llu\n",
+            fields[DEPENDENT_INST_ID_FIELD + 2].c_str(), offset);
+    Addr trace_vaddr = stoull(fields[DEPENDENT_INST_ID_FIELD + 3], 0, 16);
+    Addr size = stoull(fields[DEPENDENT_INST_ID_FIELD + 4]);
+    uint8_t* value = new uint8_t[size];
+    uint8_t ch = stoul(fields[DEPENDENT_INST_ID_FIELD + 5]);
+    std::memset(value, ch, size);
+    std::string new_base = "";
+    return std::make_shared<LLVMDynamicInstMem>(
+        id, "store", numMicroOps, std::move(dependentInstIds), size, base,
         offset, trace_vaddr, 16, type, value, new_base);
   } else {
     auto type = LLVMDynamicInstCompute::Type::OTHER;

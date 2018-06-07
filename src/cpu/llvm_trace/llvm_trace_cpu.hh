@@ -126,6 +126,7 @@ class LLVMTraceCPU : public BaseCPU {
   // Process and ThreadContext for the simulation program.
   Process* process;
   ThreadContext* thread_context;
+  SymbolTable symbol_table;
   // The top of the stack for this replay.
   Addr stackMin;
 
@@ -194,12 +195,7 @@ class LLVMTraceCPU : public BaseCPU {
   void mapBaseNameToVAddr(const std::string& base, Addr vaddr);
 
   // Get a vaddr from base.
-  Addr getVAddrFromBase(const std::string& base) {
-    if (this->mapBaseToVAddr.find(base) == this->mapBaseToVAddr.end()) {
-      panic("Failed to look up base %s\n", base.c_str());
-    }
-    return this->mapBaseToVAddr.at(base);
-  }
+  Addr getVAddrFromBase(const std::string& base);
 
   // Translate from vaddr to paddr.
   Addr getPAddrFromVaddr(Addr vaddr);
