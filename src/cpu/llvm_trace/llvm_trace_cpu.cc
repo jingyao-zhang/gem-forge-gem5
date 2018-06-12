@@ -6,30 +6,17 @@
 #include "sim/process.hh"
 #include "sim/sim_exit.hh"
 
-LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
-    : BaseCPU(params),
-      pageTable(params->name + ".page_table", 0),
+LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
+    : BaseCPU(params), pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile),
-      itb(params->itb),
-      dtb(params->dtb),
-      currentStackDepth(0),
-      process(nullptr),
-      thread_context(nullptr),
-      stackMin(0),
-      fetchStage(params, this),
-      decodeStage(params, this),
-      renameStage(params, this),
-      iewStage(params, this),
-      commitStage(params, this),
-      fetchToDecode(5, 5),
-      decodeToRename(5, 5),
-      renameToIEW(5, 5),
-      iewToCommit(5, 5),
-      signalBuffer(5, 5),
-      driver(params->driver),
-      tickEvent(*this) {
+      traceFileName(params->traceFile), itb(params->itb), dtb(params->dtb),
+      currentStackDepth(0), process(nullptr), thread_context(nullptr),
+      stackMin(0), fetchStage(params, this), decodeStage(params, this),
+      renameStage(params, this), iewStage(params, this),
+      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
+      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
+      driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
   // Set the time buffer between stages.
   this->fetchStage.setToDecode(&this->fetchToDecode);
@@ -59,18 +46,23 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams* params)
   } else {
     // No driver, stand alone mode.
     // Schedule the first event.
+    // And remember to initialize the stack depth to 1.
+    this->currentStackDepth = 1;
     schedule(this->tickEvent, nextCycle());
   }
 }
 
 LLVMTraceCPU::~LLVMTraceCPU() { this->traceFileStream.close(); }
 
-LLVMTraceCPU* LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
+LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
 
 void LLVMTraceCPU::tick() {
   if (curTick() % 100000000 == 0) {
     DPRINTF(LLVMTraceCPU, "Tick()\n");
   }
+
+  // Make sure there is always instructions for simulation.
+  this->loadDynamicInstsIfNecessary();
 
   this->numCycles++;
 
@@ -86,16 +78,19 @@ void LLVMTraceCPU::tick() {
   this->iewToCommit.advance();
   this->signalBuffer.advance();
 
-  if (this->inflyInstStatus.empty() && this->currentStackDepth == 0) {
+  // Exit condition.
+  // 1. In standalone mode, we will exit when there is no infly instructions and
+  //    the loaded instruction list is empty.
+  // 2. In integrated mode, we will exit when there is no infly instructions and
+  //    the stack depth is 0.
+  bool done = false;
+  if (this->isStandalone()) {
+    done = this->inflyInstStatus.empty() && this->loadedDynamicInsts.empty();
+  } else {
+    done = this->inflyInstStatus.empty() && this->currentStackDepth == 0;
+  }
+  if (done) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
-    // No more need to write to the finish tag, simply restart the
-    // normal thread.
-    // Check the stack depth should be 0.
-    if (this->currentStackDepth != 0) {
-      panic("The stack depth should be 0 when we finished a replay, but %u\n",
-            this->currentStackDepth);
-    }
-
     // If in standalone mode, we can exit.
     if (this->isStandalone()) {
       exitSimLoop("Datagraph finished.\n");
@@ -108,6 +103,8 @@ void LLVMTraceCPU::tick() {
     // Schedule next Tick event.
     schedule(this->tickEvent, nextCycle());
   }
+
+  this->numPendingAccessDist.sample(this->dataPort.getPendingPacketsNum());
 
   this->numPendingAccessDist.sample(this->dataPort.getPendingPacketsNum());
 }
@@ -168,7 +165,7 @@ void LLVMTraceCPU::CPUPort::recvReqRetry() {
 }
 
 void LLVMTraceCPU::handleReplay(
-    Process* p, ThreadContext* tc, const std::string& trace,
+    Process *p, ThreadContext *tc, const std::string &trace,
     const Addr finish_tag_vaddr,
     std::vector<std::pair<std::string, Addr>> maps) {
   panic_if(this->isStandalone(), "handleReplay called in standalone mode.");
@@ -177,7 +174,7 @@ void LLVMTraceCPU::handleReplay(
           trace.c_str(), finish_tag_vaddr, maps.size());
 
   // Map base to vaddr.
-  for (const auto& pair : maps) {
+  for (const auto &pair : maps) {
     this->mapBaseNameToVAddr(pair.first, pair.second);
   }
 
@@ -203,7 +200,7 @@ void LLVMTraceCPU::handleReplay(
   if (!this->process->pTable->translate(finish_tag_vaddr,
                                         this->finish_tag_paddr)) {
     panic("Failed translating finish_tag_vaddr %p to paddr\n",
-          reinterpret_cast<void*>(finish_tag_vaddr));
+          reinterpret_cast<void *>(finish_tag_vaddr));
   }
 
   // Update the stack depth to 1.
@@ -247,8 +244,8 @@ void LLVMTraceCPU::loadDynamicInstsIfNecessary() {
           count, this->loadedDynamicInsts.size());
 }
 
-std::shared_ptr<LLVMDynamicInst> LLVMTraceCPU::getInflyInst(
-    LLVMDynamicInstId id) {
+std::shared_ptr<LLVMDynamicInst>
+LLVMTraceCPU::getInflyInst(LLVMDynamicInstId id) {
   auto iter = this->inflyInstMap.find(id);
   panic_if(iter == this->inflyInstMap.end(), "Failed to find infly inst %u.\n",
            id);
@@ -318,13 +315,13 @@ Addr LLVMTraceCPU::translateAndAllocatePhysMem(Addr vaddr) {
   return paddr;
 }
 
-void LLVMTraceCPU::mapBaseNameToVAddr(const std::string& base, Addr vaddr) {
+void LLVMTraceCPU::mapBaseNameToVAddr(const std::string &base, Addr vaddr) {
   DPRINTF(LLVMTraceCPU, "map base %s to vaddr %p.\n", base.c_str(),
-          reinterpret_cast<void*>(vaddr));
+          reinterpret_cast<void *>(vaddr));
   this->mapBaseToVAddr[base] = vaddr;
 }
 
-Addr LLVMTraceCPU::getVAddrFromBase(const std::string& base) {
+Addr LLVMTraceCPU::getVAddrFromBase(const std::string &base) {
   if (this->mapBaseToVAddr.find(base) != this->mapBaseToVAddr.end()) {
     return this->mapBaseToVAddr.at(base);
   }
@@ -344,17 +341,21 @@ Addr LLVMTraceCPU::getPAddrFromVaddr(Addr vaddr) {
     // Something goes wrong. The simulation process should
     // allocate this address.
     panic("Failed translating vaddr %p to paddr\n",
-          reinterpret_cast<void*>(vaddr));
+          reinterpret_cast<void *>(vaddr));
   }
   return paddr;
 }
 
 void LLVMTraceCPU::sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
-                               uint8_t* data) {
-  RequestPtr req = new Request(paddr, size, 0, this->_dataMasterId, instId,
-                               this->thread_context->contextId());
+                               uint8_t *data) {
+  int contextId = 0;
+  if (!this->isStandalone()) {
+    contextId = this->thread_context->contextId();
+  }
+  RequestPtr req =
+      new Request(paddr, size, 0, this->_dataMasterId, instId, contextId);
   PacketPtr pkt;
-  uint8_t* pkt_data = new uint8_t[req->getSize()];
+  uint8_t *pkt_data = new uint8_t[req->getSize()];
   if (data == nullptr) {
     pkt = Packet::createRead(req);
   } else {

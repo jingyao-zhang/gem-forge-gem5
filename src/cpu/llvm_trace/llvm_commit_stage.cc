@@ -21,11 +21,15 @@ void LLVMCommitStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
 
 void LLVMCommitStage::regStats() {
   // No stats for now.
-  this->instsCommitted.init(cpu->numThreads)
+  int nThreads = cpu->numThreads;
+  if (cpu->isStandalone()) {
+    nThreads = 1;
+  }
+  this->instsCommitted.init(nThreads)
       .name(cpu->name() + ".commit.committedInsts")
       .desc("Number of instructions committed")
       .flags(Stats::total);
-  this->opsCommitted.init(cpu->numThreads)
+  this->opsCommitted.init(nThreads)
       .name(cpu->name() + ".commit.committedOps")
       .desc("Number of ops (including micro ops) committed")
       .flags(Stats::total);
@@ -65,9 +69,14 @@ void LLVMCommitStage::tick() {
     DPRINTF(LLVMTraceCPU, "Inst %u committed, remaining infly inst #%u\n",
             instId, cpu->inflyInstStatus.size());
 
-    this->instsCommitted[cpu->thread_context->threadId()]++;
-    this->opsCommitted[cpu->thread_context->threadId()] +=
+    if (!cpu->isStandalone()) {
+      this->instsCommitted[cpu->thread_context->threadId()]++;
+      this->opsCommitted[cpu->thread_context->threadId()] +=
         inst->getNumMicroOps();
+    } else {
+      this->instsCommitted[0]++;
+      this->opsCommitted[0] += inst->getNumMicroOps();
+    }
 
     // After this point, inst is released!
     cpu->inflyInstMap.erase(instId);

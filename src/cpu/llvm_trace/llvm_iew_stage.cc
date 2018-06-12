@@ -253,7 +253,11 @@ void LLVMIEWStage::issue() {
         issuedInsts += cpu->inflyInstMap.at(instId)->getQueueWeight();
         DPRINTF(LLVMTraceCPU, "Inst %u %s issued\n", instId, instName.c_str());
         inst->execute(cpu);
-        this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
+        if (!cpu->isStandalone()) {
+          this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
+        } else {
+          this->statIssuedInstType[0][opClass]++;
+        }
         // After issue, if the inst is not load/store, we can remove them
         // from the inst queue.
         if (!inst->isStoreInst() && !inst->isLoadInst()) {

@@ -90,15 +90,14 @@ if options.num_cpus > 1:
     fatal("This script does not support multi-processor trace replay.\n")
 
 multiprocesses, numThreads = get_processes(options)
+(CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(options)
+CPUClass.numThreads = numThreads
 
 if options.llvm_standalone == 0:
     # Non-standalone mode, intialize the driver and normal cpu.
 
     # In this case FutureClass will be None as there is not fast forwarding or
     # switching
-    (CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(options)
-    CPUClass.numThreads = numThreads
-
     cpus = [CPUClass(cpu_id=i) for i in xrange(options.num_cpus)]
 
     # Set the workload for normal CPUs.
@@ -144,6 +143,8 @@ else:
         llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
         llvm_trace_cpu.cpu_id = len(cpus)
         llvm_trace_cpu.traceFile = options.llvm_trace_file
+        # A dummy driver to make the python script happy.
+        llvm_trace_cpu.driver = NULL
         cpus.append(llvm_trace_cpu)
 
 system = System(cpu=cpus,
