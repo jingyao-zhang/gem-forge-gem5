@@ -36,14 +36,12 @@
 /* Use the memory mapped m5op interface */
 #define TWO_BYTE_OP(name, number)         \
         .globl name;                      \
-        .func name;                       \
 name:                                     \
         mov m5_mem, %r11;                 \
         mov $number, %rax;                \
         shl $8, %rax;                     \
         mov 0(%r11, %rax, 1), %rax;       \
-        ret;                              \
-        .endfunc;
+        ret;
 
 #else
 /* Use the magic instruction based m5op interface. This does not work
@@ -52,12 +50,10 @@ name:                                     \
 
 #define TWO_BYTE_OP(name, number)         \
         .globl name;                      \
-        .func name;                       \
 name:                                     \
         .byte 0x0F, 0x04;                 \
         .word number;                     \
-        ret;                              \
-        .endfunc;
+        ret;
 
 #endif
 
