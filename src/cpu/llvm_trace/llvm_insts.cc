@@ -130,7 +130,7 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU* cpu) {
       if (!cpu->isStandalone()) {
         Addr vaddr = cpu->allocateStack(this->size, this->align);
         // Set up the mapping.
-        cpu->mapBaseNameToVAddr(this->base, vaddr);
+        cpu->mapBaseNameToVAddr(this->new_base, vaddr);
       }
       break;
     }

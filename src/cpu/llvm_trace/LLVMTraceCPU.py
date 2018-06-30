@@ -6,7 +6,6 @@ from FuncUnitConfig import *
 from FUPool import FUPool
 from Process import EmulatedDriver
 
-
 class LLVMAccel(FUDesc):
     opList = [OpDesc(opClass='Accelerator', opLat=1, pipelined=False)]
     count = 2

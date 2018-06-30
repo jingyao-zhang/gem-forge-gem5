@@ -14,6 +14,7 @@
 #include "cpu/llvm_trace/llvm_decode_stage.hh"
 #include "cpu/llvm_trace/llvm_fetch_stage.hh"
 #include "cpu/llvm_trace/llvm_iew_stage.hh"
+#include "cpu/llvm_trace/llvm_inst_parser.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_rename_stage.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
@@ -23,13 +24,13 @@
 #include "params/LLVMTraceCPU.hh"
 
 class LLVMTraceCPU : public BaseCPU {
- public:
-  LLVMTraceCPU(LLVMTraceCPUParams* params);
+public:
+  LLVMTraceCPU(LLVMTraceCPUParams *params);
   ~LLVMTraceCPU();
 
-  MasterPort& getDataPort() override { return this->dataPort; }
+  MasterPort &getDataPort() override { return this->dataPort; }
 
-  MasterPort& getInstPort() override { return this->instPort; }
+  MasterPort &getInstPort() override { return this->instPort; }
 
   Counter totalInsts() const override { return 0; }
 
@@ -40,26 +41,26 @@ class LLVMTraceCPU : public BaseCPU {
   bool handleTimingResp(PacketPtr pkt);
 
   // API interface for driver.
-  void handleReplay(Process* p, ThreadContext* tc, const std::string& trace,
+  void handleReplay(Process *p, ThreadContext *tc, const std::string &trace,
                     const Addr finish_tag_vaddr,
                     std::vector<std::pair<std::string, Addr>> maps);
 
   enum InstStatus {
-    FETCHED,     // In fetchQueue.
-    DECODED,     // Decoded.
-    DISPATCHED,  // Dispatched to instQueue.
-    READY,       // Ready to be issued.
+    FETCHED,    // In fetchQueue.
+    DECODED,    // Decoded.
+    DISPATCHED, // Dispatched to instQueue.
+    READY,      // Ready to be issued.
     ISSUED,
-    FINISHED,      // Finished computing.
-    WRITEBACKING,  // Writing back.
-    WRITEBACKED,   // Write backed.
+    FINISHED,     // Finished computing.
+    WRITEBACKING, // Writing back.
+    WRITEBACKED,  // Write backed.
   };
 
- private:
+private:
   // This port will handle retry.
   class CPUPort : public MasterPort {
-   public:
-    CPUPort(const std::string& name, LLVMTraceCPU* _owner)
+  public:
+    CPUPort(const std::string &name, LLVMTraceCPU *_owner)
         : MasterPort(name, _owner), owner(_owner), blocked(false) {}
 
     bool recvTimingResp(PacketPtr pkt) override {
@@ -75,8 +76,8 @@ class LLVMTraceCPU : public BaseCPU {
       return this->blockedPacketPtrs.size();
     }
 
-   private:
-    LLVMTraceCPU* owner;
+  private:
+    LLVMTraceCPU *owner;
     // Blocked packets for flow control.
     // Note: for now I don't handle thread safety as there
     // would be only one infly instructions. Is gem5 single
@@ -93,10 +94,10 @@ class LLVMTraceCPU : public BaseCPU {
   CPUPort dataPort;
 
   const std::string traceFileName;
-  std::ifstream traceFileStream;
+  LLVMInstParser *parser;
 
-  TheISA::TLB* itb;
-  TheISA::TLB* dtb;
+  TheISA::TLB *itb;
+  TheISA::TLB *dtb;
 
   // Used to record the current stack depth, so that we can break trace
   // into multiple function calls.
@@ -124,8 +125,8 @@ class LLVMTraceCPU : public BaseCPU {
   std::unordered_map<std::string, Addr> mapBaseToVAddr;
 
   // Process and ThreadContext for the simulation program.
-  Process* process;
-  ThreadContext* thread_context;
+  Process *process;
+  ThreadContext *thread_context;
   SymbolTable symbol_table;
   // The top of the stack for this replay.
   Addr stackMin;
@@ -150,11 +151,11 @@ class LLVMTraceCPU : public BaseCPU {
   TimeBuffer<LLVMIEWStage::IEWStruct> iewToCommit;
   TimeBuffer<LLVMStageSignal> signalBuffer;
 
-  LLVMTraceCPUDriver* driver;
+  LLVMTraceCPUDriver *driver;
 
   /**************************************************************/
   // Interface for the insts.
- public:
+public:
   Stats::Distribution numPendingAccessDist;
 
   // Check if this is running in standalone mode (no normal cpu).
@@ -192,10 +193,10 @@ class LLVMTraceCPU : public BaseCPU {
   Addr translateAndAllocatePhysMem(Addr vaddr);
 
   // Map a base name to vaddr;
-  void mapBaseNameToVAddr(const std::string& base, Addr vaddr);
+  void mapBaseNameToVAddr(const std::string &base, Addr vaddr);
 
   // Get a vaddr from base.
-  Addr getVAddrFromBase(const std::string& base);
+  Addr getVAddrFromBase(const std::string &base);
 
   // Translate from vaddr to paddr.
   Addr getPAddrFromVaddr(Addr vaddr);
@@ -203,13 +204,13 @@ class LLVMTraceCPU : public BaseCPU {
   // Send a request to memory.
   // If data is not nullptr, it will be a write.
   void sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
-                   uint8_t* data);
+                   uint8_t *data);
 
   //********************************************************//
   // Event for this CPU.
   EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::tick> tickEvent;
 
- public:
+public:
   /*******************************************************************/
   // All the statics.
   /*******************************************************************/

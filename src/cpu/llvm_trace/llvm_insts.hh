@@ -18,34 +18,30 @@ class LLVMTraceCPU;
 using LLVMDynamicInstId = uint64_t;
 
 class LLVMDynamicInst {
- public:
-  LLVMDynamicInst(LLVMDynamicInstId _id, const std::string& _instName,
+public:
+  LLVMDynamicInst(LLVMDynamicInstId _id, const std::string &_instName,
                   uint8_t _numMicroOps,
-                  std::vector<LLVMDynamicInstId>&& _dependentInstIds)
-      : id(_id),
-        instName(_instName),
-        numMicroOps(_numMicroOps),
-        dependentInstIds(std::move(_dependentInstIds)),
-        staticInstAddress(0x0),
-        nextBBName(""),
-        fuStatus(FUStatus::COMPLETED),
+                  std::vector<LLVMDynamicInstId> &&_dependentInstIds)
+      : id(_id), instName(_instName), numMicroOps(_numMicroOps),
+        dependentInstIds(std::move(_dependentInstIds)), staticInstAddress(0x0),
+        nextBBName(""), fuStatus(FUStatus::COMPLETED),
         remainingMicroOps(_numMicroOps - 1) {}
 
   // Interface.
-  virtual void execute(LLVMTraceCPU* cpu) = 0;
-  virtual void writeback(LLVMTraceCPU* cpu) {
+  virtual void execute(LLVMTraceCPU *cpu) = 0;
+  virtual void writeback(LLVMTraceCPU *cpu) {
     panic("Calling write back on non-store inst %u.\n", this->id);
   }
   virtual std::string toLine() const = 0;
 
   // Handle a packet response. Default will panic.
   // Only for mem insts.
-  virtual void handlePacketResponse(LLVMTraceCPU* cpu, PacketPtr packet) {
+  virtual void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) {
     panic("Calling handlePacketResponse on non-mem inst %u\n", id);
   }
 
   // Hack: get the accelerator context ONLY for Accelerator inst.
-  virtual LLVMAcceleratorContext* getAcceleratorContext() {
+  virtual LLVMAcceleratorContext *getAcceleratorContext() {
     panic("Calling getAcceleratorContext on non-accelerator inst %u\n", id);
     return nullptr;
   }
@@ -79,11 +75,11 @@ class LLVMDynamicInst {
   bool isLoadInst() const;
 
   // Check if all the dependence are ready.
-  bool isDependenceReady(LLVMTraceCPU* cpu) const;
+  bool isDependenceReady(LLVMTraceCPU *cpu) const;
 
   // Check if this inst can write back. It checks
   // for control dependence is committed.
-  virtual bool canWriteBack(LLVMTraceCPU* cpu) const;
+  virtual bool canWriteBack(LLVMTraceCPU *cpu) const;
 
   // Get FUs to execute this instruction.
   // Gem5 will break the inst into micro-ops, each micro-op require
@@ -101,7 +97,7 @@ class LLVMDynamicInst {
   // Hack, special interface for call stack inc/dec.
   virtual int getCallStackAdjustment() const { return 0; }
 
-  const std::string& getInstName() const { return instName; }
+  const std::string &getInstName() const { return instName; }
   LLVMDynamicInstId getId() const { return id; }
 
   uint8_t getNumMicroOps() const { return numMicroOps; }
@@ -112,12 +108,12 @@ class LLVMDynamicInst {
     this->staticInstAddress = staticInstAddress;
   }
 
-  const std::string& getNextBBName() const { return nextBBName; }
-  void setNextBBName(const std::string& nextBBName) {
+  const std::string &getNextBBName() const { return nextBBName; }
+  void setNextBBName(const std::string &nextBBName) {
     this->nextBBName = nextBBName;
   }
 
- protected:
+protected:
   LLVMDynamicInstId id;
   std::string instName;
   uint8_t numMicroOps;
@@ -149,30 +145,30 @@ class LLVMDynamicInst {
 
 // Memory access inst.
 class LLVMDynamicInstMem : public LLVMDynamicInst {
- public:
+public:
   enum Type {
     ALLOCA,
     STORE,
     LOAD,
   };
-  LLVMDynamicInstMem(LLVMDynamicInstId _id, const std::string& _instName,
+  LLVMDynamicInstMem(LLVMDynamicInstId _id, const std::string &_instName,
                      uint8_t _numMicroOps,
-                     std::vector<LLVMDynamicInstId>&& _dependentInstIds,
-                     Addr _size, const std::string& _base, Addr _offset,
+                     std::vector<LLVMDynamicInstId> &&_dependentInstIds,
+                     Addr _size, const std::string &_base, Addr _offset,
                      Addr _trace_vaddr, Addr _align, Type _type,
-                     uint8_t* _value, const std::string& _new_base)
+                     uint8_t *_value, const std::string &_new_base)
       : LLVMDynamicInst(_id, _instName, _numMicroOps,
                         std::move(_dependentInstIds)),
-        size(_size),
-        base(_base),
-        offset(_offset),
-        trace_vaddr(_trace_vaddr),
-        align(_align),
-        type(_type),
-        value(_value),
-        new_base(_new_base) {}
+        size(_size), base(_base), offset(_offset), trace_vaddr(_trace_vaddr),
+        align(_align), type(_type), value(_value), new_base(_new_base) {
+    if (this->type == ALLOCA) {
+      if (this->new_base == "") {
+        panic("Alloc with empty new base.\n");
+      }
+    }
+  }
 
-  void execute(LLVMTraceCPU* cpu) override;
+  void execute(LLVMTraceCPU *cpu) override;
 
   std::string toLine() const override {
     std::stringstream ss;
@@ -188,16 +184,16 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
     return ss.str();
   }
 
-  void handlePacketResponse(LLVMTraceCPU* cpu, PacketPtr packet) override;
+  void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
 
   bool isCompleted() const override;
 
   bool isWritebacked() const override;
-  void writeback(LLVMTraceCPU* cpu) override;
+  void writeback(LLVMTraceCPU *cpu) override;
 
   // bool canWriteBack(LLVMTraceCPU* cpu) const override;
 
- protected:
+protected:
   Addr size;
   std::string base;
   Addr offset;
@@ -205,26 +201,26 @@ class LLVMDynamicInstMem : public LLVMDynamicInst {
   Addr align;
   Type type;
   // Used for store.
-  uint8_t* value;
+  uint8_t *value;
   // Used for load.
   std::string new_base;
 
   // Runtime fields for load/store.
   struct PacketParam {
-   public:
+  public:
     Addr paddr;
     int size;
-    uint8_t* data;
-    PacketParam(Addr _paddr, int _size, uint8_t* _data)
+    uint8_t *data;
+    PacketParam(Addr _paddr, int _size, uint8_t *_data)
         : paddr(_paddr), size(_size), data(_data) {}
   };
   std::list<PacketParam> packets;
 
-  void constructPackets(LLVMTraceCPU* cpu);
+  void constructPackets(LLVMTraceCPU *cpu);
 };
 
 class LLVMDynamicInstCompute : public LLVMDynamicInst {
- public:
+public:
   enum Type {
     CALL,
     RET,
@@ -234,15 +230,14 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
     ACCELERATOR,
     OTHER,
   };
-  LLVMDynamicInstCompute(LLVMDynamicInstId _id, const std::string& _instName,
+  LLVMDynamicInstCompute(LLVMDynamicInstId _id, const std::string &_instName,
                          uint8_t _numMicroOps,
-                         std::vector<LLVMDynamicInstId>&& _dependentInstIds,
-                         Type _type, LLVMAcceleratorContext* _context)
+                         std::vector<LLVMDynamicInstId> &&_dependentInstIds,
+                         Type _type, LLVMAcceleratorContext *_context)
       : LLVMDynamicInst(_id, _instName, _numMicroOps,
                         std::move(_dependentInstIds)),
-        type(_type),
-        context(_context) {}
-  void execute(LLVMTraceCPU* cpu) override {}
+        type(_type), context(_context) {}
+  void execute(LLVMTraceCPU *cpu) override {}
   std::string toLine() const override {
     std::stringstream ss;
     ss << "com," << this->type << ',';
@@ -252,7 +247,7 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
     return ss.str();
   }
 
-  LLVMAcceleratorContext* getAcceleratorContext() override {
+  LLVMAcceleratorContext *getAcceleratorContext() override {
     if (this->type != Type::ACCELERATOR) {
       return LLVMDynamicInst::getAcceleratorContext();
     }
@@ -268,22 +263,22 @@ class LLVMDynamicInstCompute : public LLVMDynamicInst {
   // Adjust the call stack for call/ret inst.
   int getCallStackAdjustment() const override {
     switch (this->type) {
-      case Type::CALL:
-        return 1;
-      case Type::RET:
-        return -1;
-      default:
-        return 0;
+    case Type::CALL:
+      return 1;
+    case Type::RET:
+      return -1;
+    default:
+      return 0;
     }
   }
 
- protected:
+protected:
   Type type;
 
   // Only used for accelerator inst.
-  LLVMAcceleratorContext* context;
+  LLVMAcceleratorContext *context;
 };
 
-std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(const std::string& line);
+std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(const std::string &line);
 
 #endif

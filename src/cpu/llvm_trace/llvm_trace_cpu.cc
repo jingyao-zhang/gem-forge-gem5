@@ -35,10 +35,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->fetchStage.setSignal(&this->signalBuffer, -4);
 
   // Open the trace file.
-  this->traceFileStream.open(this->traceFileName, std::ios::in);
-  if (!this->traceFileStream.is_open()) {
-    fatal("Failed opening trace file %s\n", this->traceFileName.c_str());
-  }
+  this->parser = new LLVMInstParser(this->traceFileName);
 
   if (driver != nullptr) {
     // Handshake with the driver.
@@ -52,7 +49,10 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   }
 }
 
-LLVMTraceCPU::~LLVMTraceCPU() { this->traceFileStream.close(); }
+LLVMTraceCPU::~LLVMTraceCPU() {
+  delete this->parser;
+  this->parser = nullptr;
+}
 
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
 
@@ -217,28 +217,31 @@ void LLVMTraceCPU::handleReplay(
 void LLVMTraceCPU::loadDynamicInstsIfNecessary() {
   const size_t LOADED_WINDOW_SIZE = 100000;
 
-  panic_if(!this->traceFileStream.is_open(),
-           "The trace file stream is not opened.");
+  // panic_if(!this->traceFileStream.is_open(),
+  //          "The trace file stream is not opened.");
 
   if (this->loadedDynamicInsts.size() > LOADED_WINDOW_SIZE) {
     return;
   }
 
-  size_t count = 0;
-  for (std::string line; std::getline(this->traceFileStream, line);) {
-    DPRINTF(LLVMTraceCPU, "read in %s\n", line.c_str());
+  // Load using the parser.
+  size_t count = this->parser->parse(this->loadedDynamicInsts);
 
-    auto inst = parseLLVMDynamicInst(line);
-    this->loadedDynamicInsts.emplace_back(std::move(inst));
+  // size_t count = 0;
+  // for (std::string line; std::getline(this->traceFileStream, line);) {
+  //   DPRINTF(LLVMTraceCPU, "read in %s\n", line.c_str());
 
-    DPRINTF(LLVMTraceCPU, "Parsed dynamic inst %s\n",
-            this->loadedDynamicInsts.back()->toLine().c_str());
-    count++;
+  //   auto inst = parseLLVMDynamicInst(line);
+  //   this->loadedDynamicInsts.emplace_back(std::move(inst));
 
-    if (this->loadedDynamicInsts.size() > LOADED_WINDOW_SIZE) {
-      break;
-    }
-  }
+  //   DPRINTF(LLVMTraceCPU, "Parsed dynamic inst %s\n",
+  //           this->loadedDynamicInsts.back()->toLine().c_str());
+  //   count++;
+
+  //   if (this->loadedDynamicInsts.size() > LOADED_WINDOW_SIZE) {
+  //     break;
+  //   }
+  // }
   DPRINTF(LLVMTraceCPU,
           "Incrementally parsed number of inst: %u, current loaded: %u\n",
           count, this->loadedDynamicInsts.size());

@@ -3,8 +3,15 @@ Import('*')
 DebugFlag('LLVMTraceCPU')
 DebugFlag('LLVMBranchPredictor')
 
+if not env['HAVE_PROTOBUF']:
+    print('Require protobuf')
+    assert False
+
+ProtoBuf('TDGInstruction.proto')
+
 SimObject('LLVMTraceCPU.py')
 Source('llvm_insts.cc')
+Source('llvm_inst_parser.cc')
 Source('llvm_trace_cpu.cc')
 Source('llvm_trace_cpu_driver.cc')
 Source('llvm_fetch_stage.cc')
