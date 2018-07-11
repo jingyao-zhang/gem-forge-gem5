@@ -3,7 +3,7 @@
 #include "debug/LLVMBranchPredictor.hh"
 
 bool LLVMBranchPredictor::predictAndUpdate(
-    const std::shared_ptr<LLVMDynamicInst>& inst) {
+    const  LLVMDynamicInst* inst) {
   if (!inst->isConditionalBranchInst()) {
     panic("This is not a conditional branch inst %s.\n",
           inst->getInstName().c_str());
@@ -18,7 +18,7 @@ bool LLVMBranchPredictor::predictAndUpdate(
 }
 
 bool LLVMBranchPredictor::predict(
-    const std::shared_ptr<LLVMDynamicInst>& inst) const {
+    const  LLVMDynamicInst* inst) const {
   uint64_t staticInstAddress = inst->getStaticInstAddress();
   const std::string& nextBBName = inst->getNextBBName();
   auto iter = this->records.find(staticInstAddress);
@@ -31,7 +31,7 @@ bool LLVMBranchPredictor::predict(
   }
 }
 
-void LLVMBranchPredictor::update(const std::shared_ptr<LLVMDynamicInst>& inst) {
+void LLVMBranchPredictor::update(const  LLVMDynamicInst* inst) {
   uint64_t staticInstAddress = inst->getStaticInstAddress();
   const std::string& nextBBName = inst->getNextBBName();
   auto iter = this->records.find(staticInstAddress);

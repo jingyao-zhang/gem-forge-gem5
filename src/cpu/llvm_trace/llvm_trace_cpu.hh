@@ -10,11 +10,11 @@
 
 #include "base/statistics.hh"
 #include "cpu/base.hh"
+#include "cpu/llvm_trace/dyn_inst_stream.hh"
 #include "cpu/llvm_trace/llvm_commit_stage.hh"
 #include "cpu/llvm_trace/llvm_decode_stage.hh"
 #include "cpu/llvm_trace/llvm_fetch_stage.hh"
 #include "cpu/llvm_trace/llvm_iew_stage.hh"
-#include "cpu/llvm_trace/llvm_inst_parser.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_rename_stage.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
@@ -94,7 +94,7 @@ private:
   CPUPort dataPort;
 
   const std::string traceFileName;
-  LLVMInstParser *parser;
+  DynamicInstructionStream *dynInstStream;
 
   TheISA::TLB *itb;
   TheISA::TLB *dtb;
@@ -106,15 +106,11 @@ private:
   void stackPop();
   void stackPush();
 
-  // The list of loaded dynamic instructions, but not feteched.
-  std::list<std::shared_ptr<LLVMDynamicInst>> loadedDynamicInsts;
-
   // Load more dynamic instructions if needed.
   void loadDynamicInstsIfNecessary();
 
   // In fly instructions.
-  std::unordered_map<LLVMDynamicInstId, std::shared_ptr<LLVMDynamicInst>>
-      inflyInstMap;
+  std::unordered_map<LLVMDynamicInstId, LLVMDynamicInst *> inflyInstMap;
 
   // The status of infly instructions.
   std::unordered_map<LLVMDynamicInstId, InstStatus> inflyInstStatus;
@@ -179,7 +175,7 @@ public:
     return this->inflyInstStatus.find(instId) == this->inflyInstStatus.end();
   }
 
-  std::shared_ptr<LLVMDynamicInst> getInflyInst(LLVMDynamicInstId id);
+  LLVMDynamicInst *getInflyInst(LLVMDynamicInstId id);
 
   // Allocate the stack. Should only be used in non-standalone mode.
   // Return the virtual address.

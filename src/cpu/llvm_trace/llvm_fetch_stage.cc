@@ -4,23 +4,21 @@
 
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
-    : cpu(_cpu),
-      fetchWidth(params->fetchWidth),
+LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+    : cpu(_cpu), fetchWidth(params->fetchWidth),
       toDecodeDelay(params->fetchToDecodeDelay),
-      predictor(new LLVMBranchPredictor()),
-      branchPreictPenalityCycles(0) {}
+      predictor(new LLVMBranchPredictor()), branchPreictPenalityCycles(0) {}
 
 LLVMFetchStage::~LLVMFetchStage() {
   delete this->predictor;
   this->predictor = nullptr;
 }
 
-void LLVMFetchStage::setToDecode(TimeBuffer<FetchStruct>* toDecodeBuffer) {
+void LLVMFetchStage::setToDecode(TimeBuffer<FetchStruct> *toDecodeBuffer) {
   this->toDecode = toDecodeBuffer->getWire(0);
 }
 
-void LLVMFetchStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
+void LLVMFetchStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
                                int pos) {
   this->signal = signalBuffer->getWire(pos);
 }
@@ -54,11 +52,9 @@ void LLVMFetchStage::tick() {
   // and we haven't reach fetch width,
   // and when we have more dynamic inst to fetch.
   unsigned fetchedInsts = 0;
-  while ((!cpu->loadedDynamicInsts.empty()) &&
+  while ((!cpu->dynInstStream->fetchEmpty()) &&
          fetchedInsts < this->fetchWidth && cpu->currentStackDepth > 0) {
-    // Make a copy of inst. This is important to make inst available after we
-    // pop it from the loaded list.
-    auto inst = cpu->loadedDynamicInsts.front();
+    auto inst = cpu->dynInstStream->fetch();
     auto instId = inst->getId();
 
     // Speciall rule to skip the phi node.
@@ -69,7 +65,7 @@ void LLVMFetchStage::tick() {
       }
 
       DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue, remaining %d\n",
-              instId, cpu->loadedDynamicInsts.size());
+              instId, cpu->dynInstStream->fetchSize());
       // Update the infly.
       cpu->inflyInstStatus[instId] = InstStatus::FETCHED;
       cpu->inflyInstMap.emplace(instId, inst);
@@ -78,28 +74,25 @@ void LLVMFetchStage::tick() {
       // Update the stack depth for call/ret inst.
       int stackAdjustment = inst->getCallStackAdjustment();
       switch (stackAdjustment) {
-        case 1: {
-          cpu->stackPush();
-          break;
-        }
-        case -1: {
-          cpu->stackPop();
-          break;
-        }
-        case 0: {
-          break;
-        }
-        default: {
-          panic("Illegal call stack adjustment &d.\n", stackAdjustment);
-        }
+      case 1: {
+        cpu->stackPush();
+        break;
+      }
+      case -1: {
+        cpu->stackPop();
+        break;
+      }
+      case 0: {
+        break;
+      }
+      default: {
+        panic("Illegal call stack adjustment &d.\n", stackAdjustment);
+      }
       }
       DPRINTF(LLVMTraceCPU, "Stack depth updated to %u\n",
               cpu->currentStackDepth);
       fetchedInsts += inst->getQueueWeight();
     }
-
-    // Pop from the loaded list.
-    cpu->loadedDynamicInsts.pop_front();
 
     // Check if this is a conditional branch.
     if (inst->isConditionalBranchInst()) {

@@ -4,17 +4,16 @@
 
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMCommitStage::LLVMCommitStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
-    : cpu(_cpu),
-      commitWidth(params->commitWidth),
+LLVMCommitStage::LLVMCommitStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+    : cpu(_cpu), commitWidth(params->commitWidth),
       commitQueueSize(params->commitQueueSize),
       fromIEWDelay(params->iewToCommitDelay) {}
 
-void LLVMCommitStage::setFromIEW(TimeBuffer<IEWStruct>* fromIEWBuffer) {
+void LLVMCommitStage::setFromIEW(TimeBuffer<IEWStruct> *fromIEWBuffer) {
   this->fromIEW = fromIEWBuffer->getWire(-this->fromIEWDelay);
 }
 
-void LLVMCommitStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
+void LLVMCommitStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
                                 int pos) {
   this->signal = signalBuffer->getWire(pos);
 }
@@ -51,7 +50,7 @@ void LLVMCommitStage::tick() {
   unsigned committedInsts = 0;
   while (!this->commitQueue.empty() && committedInsts < this->commitWidth) {
     auto instId = this->commitQueue.front();
-    auto& inst = cpu->inflyInstMap.at(instId);
+    auto inst = cpu->inflyInstMap.at(instId);
 
     if (committedInsts + inst->getQueueWeight() > this->commitWidth) {
       break;
@@ -72,7 +71,7 @@ void LLVMCommitStage::tick() {
     if (!cpu->isStandalone()) {
       this->instsCommitted[cpu->thread_context->threadId()]++;
       this->opsCommitted[cpu->thread_context->threadId()] +=
-        inst->getNumMicroOps();
+          inst->getNumMicroOps();
     } else {
       this->instsCommitted[0]++;
       this->opsCommitted[0] += inst->getNumMicroOps();
@@ -81,6 +80,7 @@ void LLVMCommitStage::tick() {
     // After this point, inst is released!
     cpu->inflyInstMap.erase(instId);
     cpu->inflyInstStatus.erase(instId);
+    cpu->dynInstStream->commit(inst);
   }
 
   this->signal->stall = this->commitQueue.size() >= this->commitQueueSize;

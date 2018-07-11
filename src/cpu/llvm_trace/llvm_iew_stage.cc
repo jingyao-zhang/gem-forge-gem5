@@ -6,18 +6,14 @@
 
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
-    : cpu(_cpu),
-      dispatchWidth(params->dispatchWidth),
-      issueWidth(params->issueWidth),
-      writeBackWidth(params->writeBackWidth),
-      robSize(params->robSize),
-      instQueueSize(params->instQueueSize),
+LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+    : cpu(_cpu), dispatchWidth(params->dispatchWidth),
+      issueWidth(params->issueWidth), writeBackWidth(params->writeBackWidth),
+      robSize(params->robSize), instQueueSize(params->instQueueSize),
       loadQueueSize(params->loadQueueSize),
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
-      toCommitDelay(params->iewToCommitDelay),
-      loadQueueN(0),
+      toCommitDelay(params->iewToCommitDelay), loadQueueN(0),
       fuPool(params->fuPool) {
   // The FU in FUPool is stateless, however, the accelerator may be stateful,
   // e.g. config time.
@@ -45,15 +41,15 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
   }
 }
 
-void LLVMIEWStage::setFromRename(TimeBuffer<RenameStruct>* fromRenameBuffer) {
+void LLVMIEWStage::setFromRename(TimeBuffer<RenameStruct> *fromRenameBuffer) {
   this->fromRename = fromRenameBuffer->getWire(-this->fromRenameDelay);
 }
 
-void LLVMIEWStage::setToCommit(TimeBuffer<IEWStruct>* toCommitBuffer) {
+void LLVMIEWStage::setToCommit(TimeBuffer<IEWStruct> *toCommitBuffer) {
   this->toCommit = toCommitBuffer->getWire(0);
 }
 
-void LLVMIEWStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
+void LLVMIEWStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
                              int pos) {
   this->signal = signalBuffer->getWire(pos);
 }
@@ -79,8 +75,8 @@ void LLVMIEWStage::regStats() {
       .flags(Stats::pdf);
 }
 
-void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId>& queue,
-                             unsigned& writebacked) {
+void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId> &queue,
+                             unsigned &writebacked) {
   // Send finished inst to commit stage if not stalled.
   auto iter = queue.begin();
   while (iter != queue.end() && writebacked < this->writeBackWidth) {
@@ -95,7 +91,7 @@ void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId>& queue,
 
       // DPRINTF(LLVMTraceCPU, "Inst %u is labelled issued in write back\n",
       //         instId);
-      auto& inst = cpu->inflyInstMap.at(instId);
+      auto inst = cpu->inflyInstMap.at(instId);
       inst->tick();
 
       // Check if the inst is finished by FU.
@@ -127,7 +123,7 @@ void LLVMIEWStage::writebackStoreQueue() {
   auto iter = this->storeQueue.begin();
   while (iter != this->storeQueue.end()) {
     auto instId = *iter;
-    auto& inst = cpu->inflyInstMap.at(instId);
+    auto inst = cpu->inflyInstMap.at(instId);
 
     panic_if(!inst->isStoreInst(), "Non-store inst %u in store queue.\n",
              instId);
@@ -227,10 +223,10 @@ void LLVMIEWStage::issue() {
 
     if (cpu->inflyInstStatus.at(instId) == InstStatus::READY) {
       bool canIssue = true;
-      auto& inst = cpu->inflyInstMap.at(instId);
+      auto inst = cpu->inflyInstMap.at(instId);
       auto opClass = inst->getOpClass();
       auto fuId = FUPool::NoCapableFU;
-      const auto& instName = inst->getInstName();
+      const auto &instName = inst->getInstName();
 
       // Check if there is enough issueWidth.
       if (issuedInsts + inst->getQueueWeight() > this->issueWidth) {
@@ -285,7 +281,7 @@ void LLVMIEWStage::issue() {
             this->processFUCompletion(instId, fuId);
           } else {
             bool pipelined = this->fuPool->isPipelined(opClass);
-            FUCompletion* fuCompletion =
+            FUCompletion *fuCompletion =
                 new FUCompletion(instId, fuId, this, !pipelined);
             // Schedule the event.
             // Notice for the -1 part so that we can free FU in next cycle.
@@ -317,7 +313,7 @@ void LLVMIEWStage::dispatch() {
     }
 
     auto instId = *iter;
-    auto& inst = cpu->inflyInstMap.at(instId);
+    auto inst = cpu->inflyInstMap.at(instId);
     if (inst->isStoreInst() &&
         this->storeQueue.size() == this->storeQueueSize) {
       break;
@@ -354,7 +350,7 @@ void LLVMIEWStage::markReady() {
              "Inst %u should be in inflyInstStatus to check if READY\n",
              instId);
     if (cpu->inflyInstStatus.at(instId) == InstStatus::DISPATCHED) {
-      auto& inst = cpu->inflyInstMap.at(instId);
+      auto &inst = cpu->inflyInstMap.at(instId);
       if (inst->isDependenceReady(cpu)) {
         // Mark the status to ready.
         DPRINTF(LLVMTraceCPU, "Inst %u is marked ready in instruction queue.\n",
@@ -381,7 +377,7 @@ void LLVMIEWStage::commit() {
       this->rob.erase(head);
       this->toCommit->push_back(instId);
 
-      auto& inst = cpu->inflyInstMap.at(instId);
+      auto inst = cpu->inflyInstMap.at(instId);
 
       // Special case for load, it can be removed from load queue
       // once committed.
@@ -424,12 +420,9 @@ void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
 }
 
 LLVMIEWStage::FUCompletion::FUCompletion(LLVMDynamicInstId _instId, int _fuId,
-                                         LLVMIEWStage* _iew, bool _shouldFreeFU)
-    : Event(Stat_Event_Pri, AutoDelete),
-      instId(_instId),
-      fuId(_fuId),
-      iew(_iew),
-      shouldFreeFU(_shouldFreeFU) {}
+                                         LLVMIEWStage *_iew, bool _shouldFreeFU)
+    : Event(Stat_Event_Pri, AutoDelete), instId(_instId), fuId(_fuId),
+      iew(_iew), shouldFreeFU(_shouldFreeFU) {}
 
 void LLVMIEWStage::FUCompletion::process() {
   // Call the process function from cpu.
@@ -437,6 +430,6 @@ void LLVMIEWStage::FUCompletion::process() {
                                  this->shouldFreeFU ? this->fuId : -1);
 }
 
-const char* LLVMIEWStage::FUCompletion::description() const {
+const char *LLVMIEWStage::FUCompletion::description() const {
   return "Function unit completion";
 }

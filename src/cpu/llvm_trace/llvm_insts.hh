@@ -27,6 +27,8 @@ public:
         nextBBName(""), fuStatus(FUStatus::COMPLETED),
         remainingMicroOps(_numMicroOps - 1) {}
 
+  virtual ~LLVMDynamicInst() {}
+
   // Interface.
   virtual void execute(LLVMTraceCPU *cpu) = 0;
   virtual void writeback(LLVMTraceCPU *cpu) {
@@ -168,6 +170,8 @@ public:
     }
   }
 
+  ~LLVMDynamicInstMem() override;
+
   void execute(LLVMTraceCPU *cpu) override;
 
   std::string toLine() const override {
@@ -278,7 +282,5 @@ protected:
   // Only used for accelerator inst.
   LLVMAcceleratorContext *context;
 };
-
-std::shared_ptr<LLVMDynamicInst> parseLLVMDynamicInst(const std::string &line);
 
 #endif

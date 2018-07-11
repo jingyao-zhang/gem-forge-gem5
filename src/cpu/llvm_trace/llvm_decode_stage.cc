@@ -47,7 +47,7 @@ void LLVMDecodeStage::tick() {
     unsigned decodedInsts = 0;
     while (decodedInsts < this->decodeWidth && !this->decodeQueue.empty()) {
       auto instId = this->decodeQueue.front();
-      auto& inst = cpu->inflyInstMap.at(instId);
+      auto inst = cpu->inflyInstMap.at(instId);
 
       if (decodedInsts + inst->getQueueWeight() > this->decodeWidth) {
         break;

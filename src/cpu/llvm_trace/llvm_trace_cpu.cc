@@ -35,7 +35,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->fetchStage.setSignal(&this->signalBuffer, -4);
 
   // Open the trace file.
-  this->parser = new LLVMInstParser(this->traceFileName);
+  this->dynInstStream = new DynamicInstructionStream(this->traceFileName);
 
   if (driver != nullptr) {
     // Handshake with the driver.
@@ -50,8 +50,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
 }
 
 LLVMTraceCPU::~LLVMTraceCPU() {
-  delete this->parser;
-  this->parser = nullptr;
+  delete this->dynInstStream;
+  this->dynInstStream = nullptr;
 }
 
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
@@ -85,7 +85,7 @@ void LLVMTraceCPU::tick() {
   //    the stack depth is 0.
   bool done = false;
   if (this->isStandalone()) {
-    done = this->inflyInstStatus.empty() && this->loadedDynamicInsts.empty();
+    done = this->inflyInstStatus.empty() && this->dynInstStream->empty();
   } else {
     done = this->inflyInstStatus.empty() && this->currentStackDepth == 0;
   }
@@ -220,35 +220,19 @@ void LLVMTraceCPU::loadDynamicInstsIfNecessary() {
   // panic_if(!this->traceFileStream.is_open(),
   //          "The trace file stream is not opened.");
 
-  if (this->loadedDynamicInsts.size() > LOADED_WINDOW_SIZE) {
+  if (this->dynInstStream->size() > LOADED_WINDOW_SIZE) {
     return;
   }
 
   // Load using the parser.
-  size_t count = this->parser->parse(this->loadedDynamicInsts);
+  size_t count = this->dynInstStream->parse();
 
-  // size_t count = 0;
-  // for (std::string line; std::getline(this->traceFileStream, line);) {
-  //   DPRINTF(LLVMTraceCPU, "read in %s\n", line.c_str());
-
-  //   auto inst = parseLLVMDynamicInst(line);
-  //   this->loadedDynamicInsts.emplace_back(std::move(inst));
-
-  //   DPRINTF(LLVMTraceCPU, "Parsed dynamic inst %s\n",
-  //           this->loadedDynamicInsts.back()->toLine().c_str());
-  //   count++;
-
-  //   if (this->loadedDynamicInsts.size() > LOADED_WINDOW_SIZE) {
-  //     break;
-  //   }
-  // }
   DPRINTF(LLVMTraceCPU,
           "Incrementally parsed number of inst: %u, current loaded: %u\n",
-          count, this->loadedDynamicInsts.size());
+          count, this->dynInstStream->size());
 }
 
-std::shared_ptr<LLVMDynamicInst>
-LLVMTraceCPU::getInflyInst(LLVMDynamicInstId id) {
+LLVMDynamicInst *LLVMTraceCPU::getInflyInst(LLVMDynamicInstId id) {
   auto iter = this->inflyInstMap.find(id);
   panic_if(iter == this->inflyInstMap.end(), "Failed to find infly inst %u.\n",
            id);
