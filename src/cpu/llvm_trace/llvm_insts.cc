@@ -57,22 +57,41 @@ void LLVMDynamicInst::handleFUCompletion() {
   this->fuStatus = FUStatus::COMPLETE_NEXT_CYCLE;
 }
 
+uint64_t LLVMDynamicInst::getStaticInstAddress() const {
+  if (!this->isConditionalBranchInst()) {
+    panic("getNextBBName called on non conditional branch instructions.");
+  }
+  return this->TDG.branch().static_id();
+}
+
+const std::string &LLVMDynamicInst::getNextBBName() const {
+  if (!this->isConditionalBranchInst()) {
+    panic("getNextBBName called on non conditional branch instructions.");
+  }
+  return this->TDG.branch().next_bb();
+}
+
 bool LLVMDynamicInst::isConditionalBranchInst() const {
-  return (this->instName == "br" || this->instName == "switch") &&
-         this->staticInstAddress != 0x0 && this->nextBBName != "";
+  const auto &op = this->getInstName();
+  return (op == "br" || op == "switch") && this->TDG.has_branch();
 }
 
 bool LLVMDynamicInst::isBranchInst() const {
-  return this->instName == "br" || this->instName == "switch" ||
-         this->instName == "ret" || this->instName == "call";
+  const auto &op = this->getInstName();
+  return op == "br" || op == "switch" || op == "ret" || op == "call";
 }
 
-bool LLVMDynamicInst::isStoreInst() const { return this->instName == "store"; }
+bool LLVMDynamicInst::isStoreInst() const {
+  const auto &op = this->getInstName();
+  return op == "store" || op == "memset";
+}
 
-bool LLVMDynamicInst::isLoadInst() const { return this->instName == "load"; }
+bool LLVMDynamicInst::isLoadInst() const {
+  return this->getInstName() == "load";
+}
 
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
-  for (const auto dependentInstId : this->dependentInstIds) {
+  for (const auto dependentInstId : this->TDG.deps()) {
     if (!cpu->isInstFinished(dependentInstId)) {
       // We should not be blocked by control dependence here.
       auto DepInst = cpu->getInflyInst(dependentInstId);
@@ -87,7 +106,7 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 
 // For now just return IntAlu.
 OpClass LLVMDynamicInst::getOpClass() const {
-  auto iter = LLVMDynamicInst::instToOpClass.find(this->instName);
+  auto iter = LLVMDynamicInst::instToOpClass.find(this->getInstName());
   if (iter == LLVMDynamicInst::instToOpClass.end()) {
     // For unknown, simply return IntAlu.
     return No_OpClass;
@@ -108,8 +127,8 @@ void LLVMDynamicInst::startFUStatusFSM() {
 }
 
 bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU *cpu) const {
-  if (this->instName == "store") {
-    for (const auto dependentInstId : this->dependentInstIds) {
+  if (this->isStoreInst()) {
+    for (const auto dependentInstId : this->TDG.deps()) {
       if (!cpu->isInstCommitted(dependentInstId)) {
         // If the dependent inst is not committed, check if it's a branch.
         auto DepInst = cpu->getInflyInst(dependentInstId);
@@ -120,6 +139,43 @@ bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU *cpu) const {
     }
   }
   return true;
+}
+
+LLVMDynamicInstMem::LLVMDynamicInstMem(const LLVM::TDG::TDGInstruction &_TDG,
+                                       uint8_t _numMicroOps, Addr _align,
+                                       Type _type)
+    : LLVMDynamicInst(_TDG, _numMicroOps), align(_align), type(_type),
+      value(nullptr) {
+  if (this->type == ALLOCA) {
+    if (!this->TDG.has_alloc()) {
+      panic("Alloc without extra alloc information from TDG.");
+    }
+    if (this->TDG.alloc().new_base() == "") {
+      panic("Alloc with empty new base.\n");
+    }
+  } else if (this->type == LOAD) {
+    panic_if(!this->TDG.has_load(), "Load without extra information from TDG.");
+  } else if (this->type == STORE) {
+    panic_if(!this->TDG.has_store(),
+             "Store without extra information from TDG.");
+    const auto &storeExtra = this->TDG.store();
+    // Get the stored value.
+    // Special case for memset: transform into a huge store.
+    // TODO: handle this more gracefully.
+    this->value = new uint8_t[storeExtra.size()];
+    if (this->getInstName() == "store") {
+      if (storeExtra.size() != storeExtra.value().size()) {
+        panic("Unmatched stored value size, size %ul, value.size %ul.\n",
+              storeExtra.size(), storeExtra.value().size());
+      }
+      memcpy(value, storeExtra.value().data(), storeExtra.value().size());
+    } else if (this->getInstName() == "memset") {
+      if (storeExtra.value().size() != 1) {
+        panic("Memset with value.size %ul.\n", storeExtra.value().size());
+      }
+      memset(value, storeExtra.value().front(), storeExtra.size());
+    }
+  }
 }
 
 LLVMDynamicInstMem::~LLVMDynamicInstMem() {
@@ -135,23 +191,25 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
     // We need to handle stack allocation only
     // when we have a driver.
     if (!cpu->isStandalone()) {
-      Addr vaddr = cpu->allocateStack(this->size, this->align);
+      Addr vaddr = cpu->allocateStack(this->TDG.alloc().size(), this->align);
       // Set up the mapping.
-      cpu->mapBaseNameToVAddr(this->new_base, vaddr);
+      cpu->mapBaseNameToVAddr(this->TDG.alloc().new_base(), vaddr);
     }
     break;
   }
   case Type::STORE: {
     // Just construct the packets.
+    // Only sent these packets at writeback.
     this->constructPackets(cpu);
     break;
   }
   case Type::LOAD: {
     this->constructPackets(cpu);
     for (const auto &packet : this->packets) {
-      cpu->sendRequest(packet.paddr, packet.size, this->id, packet.data);
+      cpu->sendRequest(packet.paddr, packet.size, this->getId(), packet.data);
       DPRINTF(LLVMTraceCPU, "Send request paddr %p size %u for inst %d\n",
-              reinterpret_cast<void *>(packet.paddr), packet.size, this->id);
+              reinterpret_cast<void *>(packet.paddr), packet.size,
+              this->getId());
     }
     break;
   }
@@ -165,33 +223,48 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
 
 void LLVMDynamicInstMem::constructPackets(LLVMTraceCPU *cpu) {
   if (this->type != Type::STORE && this->type != Type::LOAD) {
-    panic("Calling writeback on non-store/load inst %u.\n", this->id);
+    panic("Calling writeback on non-store/load inst %u.\n", this->getId());
   }
 
-  for (int packetSize, inflyPacketsSize = 0; inflyPacketsSize < this->size;
+  uint64_t size;
+  if (this->type == Type::STORE) {
+    size = this->TDG.store().size();
+  } else {
+    size = this->TDG.load().size();
+  }
+
+  for (int packetSize, inflyPacketsSize = 0; inflyPacketsSize < size;
        inflyPacketsSize += packetSize) {
     Addr paddr, vaddr;
     if (cpu->isStandalone()) {
       // When in stand alone mode, use the trace space address
       // directly as the virtual address.
       // No address translation.
-      vaddr = this->trace_vaddr + inflyPacketsSize;
+      if (this->type == Type::STORE) {
+        vaddr = this->TDG.store().addr() + inflyPacketsSize;
+      } else {
+        vaddr = this->TDG.load().addr() + inflyPacketsSize;
+      }
       paddr = cpu->translateAndAllocatePhysMem(vaddr);
     } else {
       // When we have a driver, we have to translate trace space
       // address into simulation space and then use the process
       // page table to get physical address.
-      vaddr =
-          cpu->getVAddrFromBase(this->base) + this->offset + inflyPacketsSize;
+      if (this->type == Type::STORE) {
+        vaddr = cpu->getVAddrFromBase(this->TDG.store().base()) +
+                this->TDG.store().offset() + inflyPacketsSize;
+      } else {
+        vaddr = cpu->getVAddrFromBase(this->TDG.load().base()) +
+                this->TDG.load().offset() + inflyPacketsSize;
+      }
       paddr = cpu->getPAddrFromVaddr(vaddr);
       DPRINTF(LLVMTraceCPU,
-              "vaddr %llu = base %llu + offset %llu + infly %llu, paddr %llu, "
+              "vaddr %llu, infly %llu, paddr %llu, "
               "reintered %p\n",
-              vaddr, cpu->getVAddrFromBase(this->base), this->offset,
-              inflyPacketsSize, paddr, reinterpret_cast<void *>(paddr));
+              vaddr, inflyPacketsSize, paddr, reinterpret_cast<void *>(paddr));
     }
     // For now only support maximum 8 bytes access.
-    packetSize = this->size - inflyPacketsSize;
+    packetSize = size - inflyPacketsSize;
     if (packetSize > 8) {
       packetSize = 8;
     }
@@ -205,6 +278,7 @@ void LLVMDynamicInstMem::constructPackets(LLVMTraceCPU *cpu) {
     if (this->type == Type::LOAD) {
       this->packets.emplace_back(paddr, packetSize, nullptr);
     } else {
+
       this->packets.emplace_back(paddr, packetSize,
                                  this->value + inflyPacketsSize);
     }
@@ -212,21 +286,21 @@ void LLVMDynamicInstMem::constructPackets(LLVMTraceCPU *cpu) {
     DPRINTF(LLVMTraceCPU,
             "Construct request %d vaddr %p paddr %p size %u for inst %d\n",
             this->packets.size(), reinterpret_cast<void *>(vaddr),
-            reinterpret_cast<void *>(paddr), packetSize, this->id);
+            reinterpret_cast<void *>(paddr), packetSize, this->getId());
   }
 }
 
 void LLVMDynamicInstMem::writeback(LLVMTraceCPU *cpu) {
   if (this->type != Type::STORE) {
-    panic("Calling writeback on non-store inst %u.\n", this->id);
+    panic("Calling writeback on non-store inst %u.\n", this->getId());
   }
   // Start to send the packets to cpu for store.
   for (const auto &packet : this->packets) {
     if (packet.size == 8) {
       DPRINTF(LLVMTraceCPU, "Store data %f for inst %u to paddr %p\n",
-              *(double *)(packet.data), this->id, packet.paddr);
+              *(double *)(packet.data), this->getId(), packet.paddr);
     }
-    cpu->sendRequest(packet.paddr, packet.size, this->id, packet.data);
+    cpu->sendRequest(packet.paddr, packet.size, this->getId(), packet.data);
   }
 }
 
@@ -243,7 +317,7 @@ bool LLVMDynamicInstMem::isCompleted() const {
 
 bool LLVMDynamicInstMem::isWritebacked() const {
   if (this->type != Type::STORE) {
-    panic("Calling isWritebacked on non-store inst %u.\n", this->id);
+    panic("Calling isWritebacked on non-store inst %u.\n", this->getId());
   }
   return this->packets.size() == 0;
 }
@@ -253,17 +327,17 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
   if (this->type != Type::STORE && this->type != Type::LOAD) {
     panic("LLVMDynamicInstMem::handlePacketResponse called for non store/load "
           "inst %d, but type %d.\n",
-          this->id, this->type);
+          this->getId(), this->type);
   }
 
   // Check if the load will produce a new base.
-  if (this->type == Type::LOAD && this->new_base != "") {
+  if (this->type == Type::LOAD && this->TDG.load().new_base() != "") {
     uint64_t vaddr = packet->get<uint64_t>();
-    cpu->mapBaseNameToVAddr(this->new_base, vaddr);
+    cpu->mapBaseNameToVAddr(this->TDG.load().new_base(), vaddr);
   }
 
   // We don't care about which packet for now, just mark one completed.
   this->packets.pop_front();
   DPRINTF(LLVMTraceCPU, "Get response for inst %u, remain infly packets %d\n",
-          this->id, this->packets.size());
+          this->getId(), this->packets.size());
 }

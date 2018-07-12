@@ -24,7 +24,10 @@
  */
 template <typename T> class QueueBuffer {
 public:
-  explicit QueueBuffer() : size(0) { this->_end = this->list.end(); }
+  explicit QueueBuffer() : size(0) {
+    this->list.push_back(new T());
+    this->_end = this->list.begin();
+  }
 
   ~QueueBuffer() {
     for (auto &allocated : this->list) {
@@ -46,18 +49,40 @@ public:
 
   bool empty() const { return this->size == 0; }
 
-  void release_front() {
+  void release_front(const T *allocated) {
     if (this->empty()) {
-      panic("Pop from empty circular list.");
+      panic("Release from empty queue buffer.");
     }
+
     // Move the allocated one to the back for reuse.
-    auto popped = this->list.front();
+    auto released = this->list.front();
+    if (allocated != released) {
+      panic("Release not in order.");
+    }
     this->list.pop_front();
-    this->list.push_back(popped);
+    this->list.push_back(released);
     this->size--;
   }
 
+  // Get an allocated element, but without moving _end iterator.
+  // If there is no following alloc_back() call, this element is essentially not
+  // used by the user.
+  T *peek_back() { return *this->_end; }
+
   T *alloc_back() {
+    auto allocated = *this->_end;
+    this->_end++;
+    this->size++;
+    this->expand();
+    return allocated;
+  }
+
+private:
+  std::list<T *> list;
+  iterator _end;
+  size_t size;
+
+  void expand() {
     if (this->_end == this->list.end()) {
       // We ran out of space.
       // Really allocate one element.
@@ -66,16 +91,7 @@ public:
     if (this->_end == this->list.end()) {
       panic("Run out of space for allocation.");
     }
-    auto allocated = *this->_end;
-    this->_end++;
-    this->size++;
-    return allocated;
   }
-
-private:
-  std::list<T *> list;
-  iterator _end;
-  size_t size;
 };
 
 /**
@@ -86,6 +102,8 @@ private:
 class DynamicInstructionStream {
 public:
   DynamicInstructionStream(const std::string &_fn);
+  ~DynamicInstructionStream();
+
   DynamicInstructionStream(const DynamicInstructionStream &other) = delete;
   DynamicInstructionStream(DynamicInstructionStream &&other) = delete;
   DynamicInstructionStream &

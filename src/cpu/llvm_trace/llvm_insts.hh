@@ -1,16 +1,23 @@
 #ifndef __CPU_LLVM_INST_HH__
 #define __CPU_LLVM_INST_HH__
 
-#include <memory>
-#include <sstream>
-#include <string>
-#include <unordered_map>
-#include <vector>
+// Parse the instructions from a protobuf.
+#include "config/have_protobuf.hh"
+#ifndef HAVE_PROTOBUF
+#error "Require protobuf to parse llvm instructions."
+#endif
+
+#include "TDGInstruction.pb.h"
 
 #include "base/misc.hh"
 #include "base/types.hh"
 #include "cpu/op_class.hh"
 #include "mem/packet.hh"
+
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 class LLVMAcceleratorContext;
 class LLVMTraceCPU;
@@ -19,12 +26,8 @@ using LLVMDynamicInstId = uint64_t;
 
 class LLVMDynamicInst {
 public:
-  LLVMDynamicInst(LLVMDynamicInstId _id, const std::string &_instName,
-                  uint8_t _numMicroOps,
-                  std::vector<LLVMDynamicInstId> &&_dependentInstIds)
-      : id(_id), instName(_instName), numMicroOps(_numMicroOps),
-        dependentInstIds(std::move(_dependentInstIds)), staticInstAddress(0x0),
-        nextBBName(""), fuStatus(FUStatus::COMPLETED),
+  LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
+      : TDG(_TDG), numMicroOps(_numMicroOps), fuStatus(FUStatus::COMPLETED),
         remainingMicroOps(_numMicroOps - 1) {}
 
   virtual ~LLVMDynamicInst() {}
@@ -32,19 +35,19 @@ public:
   // Interface.
   virtual void execute(LLVMTraceCPU *cpu) = 0;
   virtual void writeback(LLVMTraceCPU *cpu) {
-    panic("Calling write back on non-store inst %u.\n", this->id);
+    panic("Calling write back on non-store inst %u.\n", this->getId());
   }
-  virtual std::string toLine() const = 0;
 
   // Handle a packet response. Default will panic.
   // Only for mem insts.
   virtual void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) {
-    panic("Calling handlePacketResponse on non-mem inst %u\n", id);
+    panic("Calling handlePacketResponse on non-mem inst %u\n", this->getId());
   }
 
   // Hack: get the accelerator context ONLY for Accelerator inst.
   virtual LLVMAcceleratorContext *getAcceleratorContext() {
-    panic("Calling getAcceleratorContext on non-accelerator inst %u\n", id);
+    panic("Calling getAcceleratorContext on non-accelerator inst %u\n",
+          this->getId());
     return nullptr;
   }
 
@@ -67,7 +70,7 @@ public:
 
   virtual bool isCompleted() const = 0;
   virtual bool isWritebacked() const {
-    panic("Calling isWritebacked on non-store inst %u.\n", id);
+    panic("Calling isWritebacked on non-store inst %u.\n", this->getId());
     return false;
   }
 
@@ -99,31 +102,24 @@ public:
   // Hack, special interface for call stack inc/dec.
   virtual int getCallStackAdjustment() const { return 0; }
 
-  const std::string &getInstName() const { return instName; }
-  LLVMDynamicInstId getId() const { return id; }
+  /**
+   * Getters.
+   */
+  const LLVM::TDG::TDGInstruction &getTDG() const { return this->TDG; }
+
+  const std::string &getInstName() const { return this->TDG.op(); }
+  LLVMDynamicInstId getId() const { return this->TDG.id(); }
 
   uint8_t getNumMicroOps() const { return numMicroOps; }
   uint8_t getQueueWeight() const { return numMicroOps; }
 
-  uint64_t getStaticInstAddress() const { return staticInstAddress; }
-  void setStaticInstAddress(uint64_t staticInstAddress) {
-    this->staticInstAddress = staticInstAddress;
-  }
-
-  const std::string &getNextBBName() const { return nextBBName; }
-  void setNextBBName(const std::string &nextBBName) {
-    this->nextBBName = nextBBName;
-  }
+  uint64_t getStaticInstAddress() const;
+  const std::string &getNextBBName() const;
 
 protected:
-  LLVMDynamicInstId id;
-  std::string instName;
-  uint8_t numMicroOps;
-  std::vector<LLVMDynamicInstId> dependentInstIds;
+  const LLVM::TDG::TDGInstruction &TDG;
 
-  // Used only for conditional branch.
-  uint64_t staticInstAddress;
-  std::string nextBBName;
+  uint8_t numMicroOps;
 
   // A simple state machine to monitor FU status.
   // We need complete_next_cycle to make sure that latency
@@ -153,40 +149,12 @@ public:
     STORE,
     LOAD,
   };
-  LLVMDynamicInstMem(LLVMDynamicInstId _id, const std::string &_instName,
-                     uint8_t _numMicroOps,
-                     std::vector<LLVMDynamicInstId> &&_dependentInstIds,
-                     Addr _size, const std::string &_base, Addr _offset,
-                     Addr _trace_vaddr, Addr _align, Type _type,
-                     uint8_t *_value, const std::string &_new_base)
-      : LLVMDynamicInst(_id, _instName, _numMicroOps,
-                        std::move(_dependentInstIds)),
-        size(_size), base(_base), offset(_offset), trace_vaddr(_trace_vaddr),
-        align(_align), type(_type), value(_value), new_base(_new_base) {
-    if (this->type == ALLOCA) {
-      if (this->new_base == "") {
-        panic("Alloc with empty new base.\n");
-      }
-    }
-  }
+  LLVMDynamicInstMem(const LLVM::TDG::TDGInstruction &_TDG,
+                     uint8_t _numMicroOps, Addr _align, Type _type);
 
   ~LLVMDynamicInstMem() override;
 
   void execute(LLVMTraceCPU *cpu) override;
-
-  std::string toLine() const override {
-    std::stringstream ss;
-    ss << "mem," << this->type << ',';
-    ss << this->size << ',';
-    ss << this->base << ',';
-    ss << std::hex << this->offset << ',';
-    ss << this->trace_vaddr << ',';
-    ss << std::dec << this->align << ',';
-    for (auto id : this->dependentInstIds) {
-      ss << id << ',';
-    }
-    return ss.str();
-  }
 
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
 
@@ -198,16 +166,10 @@ public:
   // bool canWriteBack(LLVMTraceCPU* cpu) const override;
 
 protected:
-  Addr size;
-  std::string base;
-  Addr offset;
-  Addr trace_vaddr;
   Addr align;
   Type type;
-  // Used for store.
+  // For store only.
   uint8_t *value;
-  // Used for load.
-  std::string new_base;
 
   // Runtime fields for load/store.
   struct PacketParam {
@@ -234,22 +196,11 @@ public:
     ACCELERATOR,
     OTHER,
   };
-  LLVMDynamicInstCompute(LLVMDynamicInstId _id, const std::string &_instName,
-                         uint8_t _numMicroOps,
-                         std::vector<LLVMDynamicInstId> &&_dependentInstIds,
-                         Type _type, LLVMAcceleratorContext *_context)
-      : LLVMDynamicInst(_id, _instName, _numMicroOps,
-                        std::move(_dependentInstIds)),
-        type(_type), context(_context) {}
+  LLVMDynamicInstCompute(const LLVM::TDG::TDGInstruction &_TDG,
+                         uint8_t _numMicroOps, Type _type,
+                         LLVMAcceleratorContext *_context)
+      : LLVMDynamicInst(_TDG, _numMicroOps), type(_type), context(_context) {}
   void execute(LLVMTraceCPU *cpu) override {}
-  std::string toLine() const override {
-    std::stringstream ss;
-    ss << "com," << this->type << ',';
-    for (auto id : this->dependentInstIds) {
-      ss << id << ',';
-    }
-    return ss.str();
-  }
 
   LLVMAcceleratorContext *getAcceleratorContext() override {
     if (this->type != Type::ACCELERATOR) {

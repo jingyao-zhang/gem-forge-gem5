@@ -10,92 +10,61 @@ DynamicInstructionStream::DynamicInstructionStream(const std::string &_fn)
   this->_fetchSize = 0;
 }
 
+DynamicInstructionStream::~DynamicInstructionStream() {
+  delete this->input;
+  this->input = nullptr;
+}
+
 size_t DynamicInstructionStream::parse() {
   size_t count = 0;
 
-  auto &inst = *(this->buffer.alloc_back());
+  while (true) {
 
-  while (this->input->read(inst)) {
+    // Try parse the next instruction, if failed, peek_back() won't truly
+    // allocate the buffer.
+    auto &inst = *(this->buffer.peek_back());
+    if (!this->input->read(inst)) {
+      // Reached the end.
+      break;
+    }
+
+    // Consume this one. This one should return exactly the same as the
+    // previous peek_back().
+    this->buffer.alloc_back();
+
     LLVMDynamicInst *llvmInst;
 
     // Hack for numMicroOps, which is not actually used now.
     int numMicroOps = 1;
 
-    std::vector<LLVMDynamicInstId> dependentInstIds;
-    for (size_t depI = 0; depI < inst.deps_size(); ++depI) {
-      dependentInstIds.push_back(inst.deps(depI));
-    }
-
     // Handle the extra fields.
     switch (inst.extra_case()) {
     case LLVM::TDG::TDGInstruction::ExtraCase::kStore: {
       // Store.
-      const auto &storeExtra = inst.store();
-      // Get the stored value.
-      // Special case for memset: transform into a huge store.
-      // TODO: handle this more gracefully.
-      uint8_t *value = new uint8_t[storeExtra.size()];
-      if (inst.op() == "store") {
-        if (storeExtra.size() != storeExtra.value().size()) {
-          panic("Unmatched stored value size, size %ul, value.size %ul.\n",
-                storeExtra.size(), storeExtra.value().size());
-        }
-        memcpy(value, storeExtra.value().data(), storeExtra.value().size());
-      } else if (inst.op() == "memset") {
-        if (storeExtra.value().size() != 1) {
-          panic("Memset with value.size %ul.\n", storeExtra.value().size());
-        }
-        memset(value, storeExtra.value().front(), storeExtra.size());
-      }
-
-      llvmInst = new LLVMDynamicInstMem(
-          inst.id(), inst.op(), numMicroOps, std::move(dependentInstIds),
-          storeExtra.size(), storeExtra.base(), storeExtra.offset(),
-          storeExtra.addr(), 16, LLVMDynamicInstMem::Type::STORE, value,
-          "" /* new_base */
-      );
+      llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                        LLVMDynamicInstMem::Type::STORE);
       break;
     }
 
     case LLVM::TDG::TDGInstruction::ExtraCase::kLoad: {
       // Load.
-      const auto &loadExtra = inst.load();
-      llvmInst = new LLVMDynamicInstMem(
-          inst.id(), inst.op(), numMicroOps, std::move(dependentInstIds),
-          loadExtra.size(), loadExtra.base(), loadExtra.offset(),
-          loadExtra.addr(), 16, LLVMDynamicInstMem::LOAD,
-          /* value */ nullptr, loadExtra.new_base());
+      llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                        LLVMDynamicInstMem::LOAD);
       break;
     }
 
     case LLVM::TDG::TDGInstruction::ExtraCase::kAlloc: {
       // Alloc.
-      const auto &allocExtra = inst.alloc();
-      llvmInst = new LLVMDynamicInstMem(
-          inst.id(), inst.op(), numMicroOps, std::move(dependentInstIds),
-          allocExtra.size(), "" /*base*/, 0 /*offset*/, allocExtra.addr(), 16,
-          LLVMDynamicInstMem::Type::ALLOCA, nullptr /*value*/,
-          allocExtra.new_base());
-      if (allocExtra.new_base() == "") {
-        panic("Alloc without valid new base.\n");
-      }
-      DPRINTF(LLVMTraceCPU, "Alloc with new base %s\n",
-              allocExtra.new_base().c_str());
-
+      llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                        LLVMDynamicInstMem::Type::ALLOCA);
       break;
     }
 
     case LLVM::TDG::TDGInstruction::ExtraCase::kBranch: {
       // Branch.
-      const auto &branchExtra = inst.branch();
-
-      llvmInst = new LLVMDynamicInstCompute(
-          inst.id(), inst.op(), numMicroOps, std::move(dependentInstIds),
-          LLVMDynamicInstCompute::Type::OTHER, nullptr /*context*/);
-
-      llvmInst->setStaticInstAddress(branchExtra.static_id());
-      llvmInst->setNextBBName(branchExtra.next_bb());
-
+      llvmInst = new LLVMDynamicInstCompute(inst, numMicroOps,
+                                            LLVMDynamicInstCompute::Type::OTHER,
+                                            nullptr /*context*/);
       break;
     }
 
@@ -118,9 +87,7 @@ size_t DynamicInstructionStream::parse() {
         context = LLVMAcceleratorContext::parseContext("1");
       }
 
-      llvmInst = new LLVMDynamicInstCompute(inst.id(), inst.op(), numMicroOps,
-                                            std::move(dependentInstIds), type,
-                                            context);
+      llvmInst = new LLVMDynamicInstCompute(inst, numMicroOps, type, context);
 
       break;
     }
@@ -145,8 +112,6 @@ size_t DynamicInstructionStream::parse() {
     }
   }
 
-  this->buffer.release_front();
-
   return count;
 }
 
@@ -168,5 +133,6 @@ void DynamicInstructionStream::commit(LLVMDynamicInst *inst) {
     panic("Commit called out of order.");
   }
   this->insts.pop_front();
+  this->buffer.release_front(&inst->getTDG());
   delete inst;
 }
