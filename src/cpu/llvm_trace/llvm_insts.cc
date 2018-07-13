@@ -1,5 +1,4 @@
 #include "cpu/llvm_trace/llvm_insts.hh"
-#include "cpu/llvm_trace/llvm_accelerator.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
@@ -48,14 +47,6 @@ std::unordered_map<std::string, OpClass> LLVMDynamicInst::instToOpClass = {
     {"load", Enums::OpClass::MemRead},
     {"store", Enums::OpClass::MemWrite},
 };
-
-void LLVMDynamicInst::handleFUCompletion() {
-  if (this->fuStatus != FUStatus::WORKING) {
-    panic("fuStatus should be working when a FU completes, instead %d\n",
-          this->fuStatus);
-  }
-  this->fuStatus = FUStatus::COMPLETE_NEXT_CYCLE;
-}
 
 uint64_t LLVMDynamicInst::getStaticInstAddress() const {
   if (!this->isConditionalBranchInst()) {
@@ -112,18 +103,6 @@ OpClass LLVMDynamicInst::getOpClass() const {
     return No_OpClass;
   }
   return iter->second;
-}
-
-void LLVMDynamicInst::startFUStatusFSM() {
-  if (this->fuStatus != FUStatus::COMPLETED) {
-    panic(
-        "fuStatus should be initialized in COMPLETED before starting, instead "
-        "of %d\n",
-        this->fuStatus);
-  }
-  if (this->getOpClass() != No_OpClass) {
-    this->fuStatus = FUStatus::WORKING;
-  }
 }
 
 bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU *cpu) const {
@@ -206,7 +185,7 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
   case Type::LOAD: {
     this->constructPackets(cpu);
     for (const auto &packet : this->packets) {
-      cpu->sendRequest(packet.paddr, packet.size, this->getId(), packet.data);
+      cpu->sendRequest(packet.paddr, packet.size, this, packet.data);
       DPRINTF(LLVMTraceCPU, "Send request paddr %p size %u for inst %d\n",
               reinterpret_cast<void *>(packet.paddr), packet.size,
               this->getId());
@@ -300,18 +279,16 @@ void LLVMDynamicInstMem::writeback(LLVMTraceCPU *cpu) {
       DPRINTF(LLVMTraceCPU, "Store data %f for inst %u to paddr %p\n",
               *(double *)(packet.data), this->getId(), packet.paddr);
     }
-    cpu->sendRequest(packet.paddr, packet.size, this->getId(), packet.data);
+    cpu->sendRequest(packet.paddr, packet.size, this, packet.data);
   }
 }
 
 bool LLVMDynamicInstMem::isCompleted() const {
   if (this->type != Type::STORE) {
-    return this->fuStatus == FUStatus::COMPLETED && this->packets.size() == 0 &&
-           this->remainingMicroOps == 0;
+    return this->packets.size() == 0 && this->remainingMicroOps == 0;
   } else {
     // For store, the infly packets doesn't control completeness.
-    return this->fuStatus == FUStatus::COMPLETED &&
-           this->remainingMicroOps == 0;
+    return this->remainingMicroOps == 0;
   }
 }
 
@@ -340,4 +317,8 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
   this->packets.pop_front();
   DPRINTF(LLVMTraceCPU, "Get response for inst %u, remain infly packets %d\n",
           this->getId(), this->packets.size());
+}
+
+void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
+  this->fuLatency = cpu->getOpLatency(this->getOpClass());
 }

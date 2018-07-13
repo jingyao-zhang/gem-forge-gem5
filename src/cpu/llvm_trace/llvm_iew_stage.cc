@@ -1,6 +1,5 @@
 
 #include "cpu/llvm_trace/llvm_iew_stage.hh"
-#include "cpu/llvm_trace/llvm_accelerator.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
@@ -13,33 +12,7 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       loadQueueSize(params->loadQueueSize),
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
-      toCommitDelay(params->iewToCommitDelay), loadQueueN(0),
-      fuPool(params->fuPool) {
-  // The FU in FUPool is stateless, however, the accelerator may be stateful,
-  // e.g. config time.
-  // To handle this, FUPool is only in charge of monitoring the use/free of
-  // accelerator. The actual context and latency is handled by accelerator
-  // itself.
-  // For every "virtual accelerator" in FUPool, construct the actual one.
-  int acceleratorId = this->fuPool->getUnit(Enums::OpClass::Accelerator);
-  if (acceleratorId != FUPool::NoCapableFU) {
-    // We have accelerator in the system, try to get all accelerator.
-    while (acceleratorId != FUPool::NoFreeFU) {
-      if (this->acceleratorMap.find(acceleratorId) !=
-          this->acceleratorMap.end()) {
-        panic("Accelerator id %d is already occupied.\n", acceleratorId);
-      }
-      DPRINTF(LLVMTraceCPU, "Register accelerator %d.\n", acceleratorId);
-      this->acceleratorMap[acceleratorId] = new LLVMAccelerator();
-      // Add to the free list.
-      this->fuPool->freeUnitNextCycle(acceleratorId);
-      // Get next accelerator.
-      acceleratorId = this->fuPool->getUnit(Enums::OpClass::Accelerator);
-    }
-    // Remember to free all the accelerators.
-    this->fuPool->processFreeUnits();
-  }
-}
+      toCommitDelay(params->iewToCommitDelay), loadQueueN(0) {}
 
 void LLVMIEWStage::setFromRename(TimeBuffer<RenameStruct> *fromRenameBuffer) {
   this->fromRename = fromRenameBuffer->getWire(-this->fromRenameDelay);
@@ -178,7 +151,7 @@ void LLVMIEWStage::tick() {
   }
 
   // Free FUs.
-  this->fuPool->processFreeUnits();
+  cpu->fuPool->processFreeUnits();
 
   if (this->signal->stall) {
     this->blockedCycles++;
@@ -235,7 +208,7 @@ void LLVMIEWStage::issue() {
 
       // Check if there is available FU.
       if (opClass != No_OpClass) {
-        fuId = this->fuPool->getUnit(opClass);
+        fuId = cpu->fuPool->getUnit(opClass);
         panic_if(fuId == FUPool::NoCapableFU,
                  "There is no capable FU %s for inst %u.\n",
                  Enums::OpClassStrings[opClass], instId);
@@ -264,23 +237,17 @@ void LLVMIEWStage::issue() {
         if (opClass != No_OpClass) {
           // DPRINTF(LLVMTraceCPU, "Inst %u get FU %s with fuId %d.\n", instId,
           //         Enums::OpClassStrings[opClass], fuId);
-          inst->startFUStatusFSM();
 
-          auto opLatency = this->fuPool->getOpLatency(opClass);
+          auto opLatency = cpu->getOpLatency(opClass);
           // For accelerator, use the latency from the "actual accelerator".
           if (opClass == Enums::OpClass::Accelerator) {
-            if (this->acceleratorMap.find(fuId) == this->acceleratorMap.end()) {
-              panic("Accelerator id %d has no actual accelerator.\n", fuId);
-            }
-            // For now hack with null context pointer.
-            opLatency = this->acceleratorMap.at(fuId)->getOpLatency(
-                inst->getAcceleratorContext());
+            panic("Accelerator is deprecated now.");
           }
 
           if (opLatency == Cycles(1)) {
             this->processFUCompletion(instId, fuId);
           } else {
-            bool pipelined = this->fuPool->isPipelined(opClass);
+            bool pipelined = cpu->fuPool->isPipelined(opClass);
             FUCompletion *fuCompletion =
                 new FUCompletion(instId, fuId, this, !pipelined);
             // Schedule the event.
@@ -288,7 +255,7 @@ void LLVMIEWStage::issue() {
             cpu->schedule(fuCompletion, cpu->clockEdge(Cycles(opLatency - 1)));
             // If pipelined, mark the FU free immediately for next cycle.
             if (pipelined) {
-              this->fuPool->freeUnitNextCycle(fuId);
+              cpu->fuPool->freeUnitNextCycle(fuId);
             }
           }
         }
@@ -306,6 +273,9 @@ void LLVMIEWStage::issue() {
 
 void LLVMIEWStage::dispatch() {
   unsigned dispatchedInst = 0;
+  /**
+   * Dispatch is always in order.
+   */
   for (auto iter = this->rob.begin(), end = this->rob.end();
        iter != end && dispatchedInst < this->dispatchWidth; ++iter) {
     if (this->instQueue.size() == this->instQueueSize) {
@@ -314,6 +284,7 @@ void LLVMIEWStage::dispatch() {
 
     auto instId = *iter;
     auto inst = cpu->inflyInstMap.at(instId);
+
     if (inst->isStoreInst() &&
         this->storeQueue.size() == this->storeQueueSize) {
       break;
@@ -324,21 +295,55 @@ void LLVMIEWStage::dispatch() {
     }
 
     panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
-             "Inst %u should be in inflyInstStatus to check if READY\n",
+             "Inst %u should be in inflyInstStatus to check if DECODED\n",
              instId);
-    if (cpu->inflyInstStatus.at(instId) == InstStatus::DECODED) {
-      cpu->inflyInstStatus.at(instId) = InstStatus::DISPATCHED;
-      dispatchedInst++;
-      this->instQueue.push_back(instId);
-      if (inst->isStoreInst()) {
-        this->storeQueue.push_back(instId);
-      }
-      if (inst->isLoadInst()) {
-        this->loadQueueN++;
-      }
-      DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
-              instId);
+
+    if (cpu->inflyInstStatus.at(instId) != InstStatus::DECODED) {
+      continue;
     }
+
+    /**
+     * We can actually dispatch this instruction now, but we
+     * have to handle serialization instruction.
+     * A SerializeAfter instruction will mark the next instruction
+     * SerializeBefore.
+     *
+     * A SerializeBefore instruction will not be dispatched until it reaches the
+     * head of rob.
+     */
+    if (inst->isSerializeAfter()) {
+      auto nextInstIter = iter;
+      nextInstIter++;
+      if (nextInstIter == end) {
+        warn("Reached the end of rob, can not mark next instruction "
+             "SerializeBefore for SerializeAfter inst %u.",
+             inst->getId());
+        // Hack: in this case, we bail out (we really shouldn't).
+        break;
+      }
+      auto nextInst = cpu->inflyInstMap.at(*nextInstIter);
+      nextInst->markSerializeBefore();
+    }
+
+    if (inst->isSerializeBefore()) {
+      if (iter != this->rob.begin()) {
+        // Do not dispatch until we reached the head of rob for SerializeBefore
+        // instruction.
+        break;
+      }
+    }
+
+    cpu->inflyInstStatus.at(instId) = InstStatus::DISPATCHED;
+    dispatchedInst++;
+    this->instQueue.push_back(instId);
+    if (inst->isStoreInst()) {
+      this->storeQueue.push_back(instId);
+    }
+    if (inst->isLoadInst()) {
+      this->loadQueueN++;
+    }
+    DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
+            instId);
   }
 }
 
@@ -350,7 +355,7 @@ void LLVMIEWStage::markReady() {
              "Inst %u should be in inflyInstStatus to check if READY\n",
              instId);
     if (cpu->inflyInstStatus.at(instId) == InstStatus::DISPATCHED) {
-      auto &inst = cpu->inflyInstMap.at(instId);
+      auto inst = cpu->inflyInstMap.at(instId);
       if (inst->isDependenceReady(cpu)) {
         // Mark the status to ready.
         DPRINTF(LLVMTraceCPU, "Inst %u is marked ready in instruction queue.\n",
@@ -404,7 +409,7 @@ void LLVMIEWStage::commit() {
 void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
   // Check if we should free this fu next cycle.
   if (fuId > -1) {
-    this->fuPool->freeUnitNextCycle(fuId);
+    cpu->fuPool->freeUnitNextCycle(fuId);
   }
   // Check that this inst is legal and already be issued.
   if (cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end()) {
@@ -415,8 +420,6 @@ void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
   if (cpu->inflyInstStatus.at(instId) != InstStatus::ISSUED) {
     panic("processFUCompletion: Inst %u is not issued\n", instId);
   }
-  // Inform the inst that it has completed.
-  cpu->inflyInstMap.at(instId)->handleFUCompletion();
 }
 
 LLVMIEWStage::FUCompletion::FUCompletion(LLVMDynamicInstId _instId, int _fuId,

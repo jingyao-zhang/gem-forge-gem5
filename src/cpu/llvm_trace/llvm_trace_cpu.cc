@@ -11,12 +11,12 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
       traceFileName(params->traceFile), itb(params->itb), dtb(params->dtb),
-      currentStackDepth(0), process(nullptr), thread_context(nullptr),
-      stackMin(0), fetchStage(params, this), decodeStage(params, this),
-      renameStage(params, this), iewStage(params, this),
-      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
-      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
-      driver(params->driver), tickEvent(*this) {
+      fuPool(params->fuPool), currentStackDepth(0), process(nullptr),
+      thread_context(nullptr), stackMin(0), fetchStage(params, this),
+      decodeStage(params, this), renameStage(params, this),
+      iewStage(params, this), commitStage(params, this), fetchToDecode(5, 5),
+      decodeToRename(5, 5), renameToIEW(5, 5), iewToCommit(5, 5),
+      signalBuffer(5, 5), driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
   // Set the time buffer between stages.
   this->fetchStage.setToDecode(&this->fetchToDecode);
@@ -37,6 +37,10 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   // Open the trace file.
   this->dynInstStream = new DynamicInstructionStream(this->traceFileName);
 
+  // Initialize the accelerators.
+  this->accelManager = new TDGAcceleratorManager();
+  this->accelManager->handshake(this);
+
   if (driver != nullptr) {
     // Handshake with the driver.
     driver->handshake(this);
@@ -52,6 +56,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
 LLVMTraceCPU::~LLVMTraceCPU() {
   delete this->dynInstStream;
   this->dynInstStream = nullptr;
+  delete this->accelManager;
+  this->accelManager = nullptr;
 }
 
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
@@ -70,6 +76,7 @@ void LLVMTraceCPU::tick() {
   this->decodeStage.tick();
   this->renameStage.tick();
   this->iewStage.tick();
+  this->accelManager->tick();
   this->commitStage.tick();
 
   this->fetchToDecode.advance();
@@ -111,12 +118,9 @@ void LLVMTraceCPU::tick() {
 
 bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   // Receive the response from port.
-  LLVMDynamicInstId instId =
-      static_cast<LLVMDynamicInstId>(pkt->req->getReqInstSeqNum());
-  auto iter = this->inflyInstMap.find(instId);
-  panic_if(iter == this->inflyInstMap.end(),
-           "Invalid instId %u. Not in infly map.\n", instId);
-  iter->second->handlePacketResponse(this, pkt);
+  LLVMDynamicInst *inst =
+      reinterpret_cast<LLVMDynamicInst *>(pkt->req->getReqInstSeqNum());
+  inst->handlePacketResponse(this, pkt);
   // Release the memory.
   delete pkt->req;
   delete pkt;
@@ -333,14 +337,14 @@ Addr LLVMTraceCPU::getPAddrFromVaddr(Addr vaddr) {
   return paddr;
 }
 
-void LLVMTraceCPU::sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
+void LLVMTraceCPU::sendRequest(Addr paddr, int size, LLVMDynamicInst *inst,
                                uint8_t *data) {
   int contextId = 0;
   if (!this->isStandalone()) {
     contextId = this->thread_context->contextId();
   }
-  RequestPtr req =
-      new Request(paddr, size, 0, this->_dataMasterId, instId, contextId);
+  RequestPtr req = new Request(paddr, size, 0, this->_dataMasterId,
+                               reinterpret_cast<InstSeqNum>(inst), contextId);
   PacketPtr pkt;
   uint8_t *pkt_data = new uint8_t[req->getSize()];
   if (data == nullptr) {
@@ -352,6 +356,13 @@ void LLVMTraceCPU::sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
   }
   pkt->dataDynamic(pkt_data);
   this->dataPort.sendReq(pkt);
+}
+
+Cycles LLVMTraceCPU::getOpLatency(OpClass opClass) {
+  if (opClass == No_OpClass) {
+    return Cycles(1);
+  }
+  return this->fuPool->getOpLatency(opClass);
 }
 
 void LLVMTraceCPU::regStats() {

@@ -19,7 +19,6 @@
 #include <unordered_map>
 #include <vector>
 
-class LLVMAcceleratorContext;
 class LLVMTraceCPU;
 
 using LLVMDynamicInstId = uint64_t;
@@ -27,8 +26,8 @@ using LLVMDynamicInstId = uint64_t;
 class LLVMDynamicInst {
 public:
   LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
-      : TDG(_TDG), numMicroOps(_numMicroOps), fuStatus(FUStatus::COMPLETED),
-        remainingMicroOps(_numMicroOps - 1) {}
+      : TDG(_TDG), numMicroOps(_numMicroOps),
+        remainingMicroOps(_numMicroOps - 1), serializeBefore(false) {}
 
   virtual ~LLVMDynamicInst() {}
 
@@ -44,29 +43,8 @@ public:
     panic("Calling handlePacketResponse on non-mem inst %u\n", this->getId());
   }
 
-  // Hack: get the accelerator context ONLY for Accelerator inst.
-  virtual LLVMAcceleratorContext *getAcceleratorContext() {
-    panic("Calling getAcceleratorContext on non-accelerator inst %u\n",
-          this->getId());
-    return nullptr;
-  }
-
-  // Handle a fu completion for next cycle.
-  virtual void handleFUCompletion();
-
-  // Handle a tick for inst.
-  // This will handle FUCompletion.
-  virtual void tick() {
-    if (this->fuStatus == FUStatus::COMPLETED) {
-      // The fu is completed.
-      if (this->remainingMicroOps > 0) {
-        this->remainingMicroOps--;
-      }
-    }
-    if (this->fuStatus == FUStatus::COMPLETE_NEXT_CYCLE) {
-      this->fuStatus = FUStatus::COMPLETED;
-    }
-  }
+  // Handle a tick for inst. By default do nothing.
+  virtual void tick() {}
 
   virtual bool isCompleted() const = 0;
   virtual bool isWritebacked() const {
@@ -78,6 +56,18 @@ public:
   bool isConditionalBranchInst() const;
   bool isStoreInst() const;
   bool isLoadInst() const;
+
+  /**
+   * Handle serialization instructions.
+   * A SerializeAfter instruction will mark the next instruction
+   * SerializeBefore.
+   *
+   * A SerializeBefore instruction will not be dispatched until
+   * it reaches the head of rob.
+   */
+  virtual bool isSerializeAfter() const { return false; }
+  virtual bool isSerializeBefore() const { return this->serializeBefore; }
+  void markSerializeBefore() { this->serializeBefore = true; }
 
   // Check if all the dependence are ready.
   bool isDependenceReady(LLVMTraceCPU *cpu) const;
@@ -93,11 +83,6 @@ public:
   // e.g. getelementptr need IntMul and IntAlu.
   // TODO: Either to support multiple FUs or break LLVM inst into micro-ops.
   OpClass getOpClass() const;
-
-  // Start the fuStatus state machine.
-  // If we need a fu, it will change to WORKING.
-  // Otherwise, should remain COMPLETED.
-  void startFUStatusFSM();
 
   // Hack, special interface for call stack inc/dec.
   virtual int getCallStackAdjustment() const { return 0; }
@@ -121,21 +106,13 @@ protected:
 
   uint8_t numMicroOps;
 
-  // A simple state machine to monitor FU status.
-  // We need complete_next_cycle to make sure that latency
-  // of FU is precise, as we can't be sure when an
-  // FUCompletion is executed in one cycle.
-  enum FUStatus {
-    WORKING,
-    COMPLETE_NEXT_CYCLE,
-    COMPLETED,
-  } fuStatus;
-
   // Runtime value to simulate depedendence of micro ops
   // inside an instruction.
   // For any remaining micro ops, we delay the completion
   // for 1 tick. This is really coarse-grained.
   uint8_t remainingMicroOps;
+
+  bool serializeBefore;
 
   // A static global map from instName to the needed OpClass.
   static std::unordered_map<std::string, OpClass> instToOpClass;
@@ -197,22 +174,19 @@ public:
     OTHER,
   };
   LLVMDynamicInstCompute(const LLVM::TDG::TDGInstruction &_TDG,
-                         uint8_t _numMicroOps, Type _type,
-                         LLVMAcceleratorContext *_context)
-      : LLVMDynamicInst(_TDG, _numMicroOps), type(_type), context(_context) {}
-  void execute(LLVMTraceCPU *cpu) override {}
+                         uint8_t _numMicroOps, Type _type)
+      : LLVMDynamicInst(_TDG, _numMicroOps), type(_type) {}
+  void execute(LLVMTraceCPU *cpu) override;
 
-  LLVMAcceleratorContext *getAcceleratorContext() override {
-    if (this->type != Type::ACCELERATOR) {
-      return LLVMDynamicInst::getAcceleratorContext();
+  void tick() override {
+    if (this->fuLatency > Cycles(0)) {
+      --this->fuLatency;
     }
-    return this->context;
   }
 
   // FU FSM should be finished.
   bool isCompleted() const override {
-    return this->fuStatus == FUStatus::COMPLETED &&
-           this->remainingMicroOps == 0;
+    return this->fuLatency == Cycles(0) && this->remainingMicroOps == 0;
   }
 
   // Adjust the call stack for call/ret inst.
@@ -229,9 +203,7 @@ public:
 
 protected:
   Type type;
-
-  // Only used for accelerator inst.
-  LLVMAcceleratorContext *context;
+  Cycles fuLatency;
 };
 
 #endif

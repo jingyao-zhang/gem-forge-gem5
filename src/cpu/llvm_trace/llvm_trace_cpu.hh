@@ -10,6 +10,7 @@
 
 #include "base/statistics.hh"
 #include "cpu/base.hh"
+#include "cpu/llvm_trace/accelerator/tdg_accelerator.hh"
 #include "cpu/llvm_trace/dyn_inst_stream.hh"
 #include "cpu/llvm_trace/llvm_commit_stage.hh"
 #include "cpu/llvm_trace/llvm_decode_stage.hh"
@@ -99,6 +100,8 @@ private:
   TheISA::TLB *itb;
   TheISA::TLB *dtb;
 
+  FUPool *fuPool;
+
   // Used to record the current stack depth, so that we can break trace
   // into multiple function calls.
   int currentStackDepth;
@@ -148,6 +151,7 @@ private:
   TimeBuffer<LLVMStageSignal> signalBuffer;
 
   LLVMTraceCPUDriver *driver;
+  TDGAcceleratorManager *accelManager;
 
   /**************************************************************/
   // Interface for the insts.
@@ -199,8 +203,11 @@ public:
 
   // Send a request to memory.
   // If data is not nullptr, it will be a write.
-  void sendRequest(Addr paddr, int size, LLVMDynamicInstId instId,
-                   uint8_t *data);
+  void sendRequest(Addr paddr, int size, LLVMDynamicInst *inst, uint8_t *data);
+
+  Cycles getOpLatency(OpClass opClass);
+
+  TDGAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
 
   //********************************************************//
   // Event for this CPU.

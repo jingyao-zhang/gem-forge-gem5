@@ -9,12 +9,10 @@
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_rename_stage.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
-#include "cpu/o3/fu_pool.hh"
 #include "cpu/timebuf.hh"
 #include "params/LLVMTraceCPU.hh"
 
 class LLVMTraceCPU;
-class LLVMAccelerator;
 
 class LLVMIEWStage {
  public:
@@ -90,10 +88,6 @@ class LLVMIEWStage {
   std::list<LLVMDynamicInstId> storeQueue;
 
   unsigned loadQueueN;
-
-  FUPool* fuPool;
-
-  std::unordered_map<int, LLVMAccelerator*> acceleratorMap;
 
   void dispatch();
   void issue();

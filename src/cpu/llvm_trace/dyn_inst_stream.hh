@@ -10,7 +10,6 @@
 #endif
 
 #include "TDGInstruction.pb.h"
-#include "llvm_accelerator.hh"
 #include "llvm_insts.hh"
 
 #include "proto/protoio.hh"
