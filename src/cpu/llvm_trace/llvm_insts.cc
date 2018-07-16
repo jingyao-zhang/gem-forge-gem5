@@ -129,9 +129,6 @@ LLVMDynamicInstMem::LLVMDynamicInstMem(const LLVM::TDG::TDGInstruction &_TDG,
     if (!this->TDG.has_alloc()) {
       panic("Alloc without extra alloc information from TDG.");
     }
-    if (this->TDG.alloc().new_base() == "") {
-      panic("Alloc with empty new base.\n");
-    }
   } else if (this->type == LOAD) {
     panic_if(!this->TDG.has_load(), "Load without extra information from TDG.");
   } else if (this->type == STORE) {
@@ -170,6 +167,9 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
     // We need to handle stack allocation only
     // when we have a driver.
     if (!cpu->isStandalone()) {
+      if (this->TDG.alloc().new_base() == "") {
+        panic("Alloc with empty new base for integrated mode.\n");
+      }
       Addr vaddr = cpu->allocateStack(this->TDG.alloc().size(), this->align);
       // Set up the mapping.
       cpu->mapBaseNameToVAddr(this->TDG.alloc().new_base(), vaddr);

@@ -38,7 +38,10 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->dynInstStream = new DynamicInstructionStream(this->traceFileName);
 
   // Initialize the accelerators.
-  this->accelManager = new TDGAcceleratorManager();
+  auto accelManagerParams = new TDGAcceleratorManagerParams();
+  accelManagerParams->name.assign("tdg.accs");
+  this->accelManager = accelManagerParams->create();
+  delete accelManagerParams;
   this->accelManager->handshake(this);
 
   if (driver != nullptr) {
@@ -373,6 +376,8 @@ void LLVMTraceCPU::regStats() {
   this->renameStage.regStats();
   this->iewStage.regStats();
   this->commitStage.regStats();
+
+  this->accelManager->regStats();
 
   this->numPendingAccessDist.init(0, 64, 2)
       .name(this->name() + ".pending_acc_per_cycle")

@@ -5,7 +5,7 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
-    : cpu(_cpu), fetchWidth(params->fetchWidth),
+    : cpu(_cpu), fetchWidth(params->fetchWidth), serializeAfter(false),
       toDecodeDelay(params->fetchToDecodeDelay),
       predictor(new LLVMBranchPredictor()), branchPreictPenalityCycles(0) {}
 
@@ -27,6 +27,12 @@ void LLVMFetchStage::regStats() {
   this->blockedCycles.name(cpu->name() + ".fetch.blockedCycles")
       .desc("Number of cycles blocked")
       .prereq(this->blockedCycles);
+  this->branchInsts.name(cpu->name() + ".fetch.branchInsts")
+      .desc("Number of branches")
+      .prereq(this->branchInsts);
+  this->branchPredMisses.name(cpu->name() + ".fetch.branchPredMisses")
+      .desc("Number of branch prediction misses")
+      .prereq(this->branchPredMisses);
 }
 
 void LLVMFetchStage::tick() {
@@ -71,6 +77,16 @@ void LLVMFetchStage::tick() {
       cpu->inflyInstMap.emplace(instId, inst);
       // Send to decode.
       this->toDecode->push_back(instId);
+
+      // Update the serializeAfter flag.
+      if (this->serializeAfter) {
+        inst->markSerializeBefore();
+        this->serializeAfter = false;
+      }
+      if (inst->isSerializeAfter()) {
+        this->serializeAfter = true;
+      }
+
       // Update the stack depth for call/ret inst.
       int stackAdjustment = inst->getCallStackAdjustment();
       switch (stackAdjustment) {
@@ -96,8 +112,10 @@ void LLVMFetchStage::tick() {
 
     // Check if this is a conditional branch.
     if (inst->isConditionalBranchInst()) {
+      this->branchInsts++;
       bool predictionRight = this->predictor->predictAndUpdate(inst);
       if (!predictionRight) {
+        this->branchPredMisses++;
         DPRINTF(LLVMTraceCPU,
                 "Fetch blocked due to failed branch predictor for %s.\n",
                 inst->getInstName().c_str());

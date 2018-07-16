@@ -311,20 +311,6 @@ void LLVMIEWStage::dispatch() {
      * A SerializeBefore instruction will not be dispatched until it reaches the
      * head of rob.
      */
-    if (inst->isSerializeAfter()) {
-      auto nextInstIter = iter;
-      nextInstIter++;
-      if (nextInstIter == end) {
-        warn("Reached the end of rob, can not mark next instruction "
-             "SerializeBefore for SerializeAfter inst %u.",
-             inst->getId());
-        // Hack: in this case, we bail out (we really shouldn't).
-        break;
-      }
-      auto nextInst = cpu->inflyInstMap.at(*nextInstIter);
-      nextInst->markSerializeBefore();
-    }
-
     if (inst->isSerializeBefore()) {
       if (iter != this->rob.begin()) {
         // Do not dispatch until we reached the head of rob for SerializeBefore

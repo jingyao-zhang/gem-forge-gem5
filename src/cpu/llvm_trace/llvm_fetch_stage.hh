@@ -28,11 +28,19 @@ class LLVMFetchStage {
   void tick();
 
   Stats::Scalar blockedCycles;
+  Stats::Scalar branchInsts;
+  Stats::Scalar branchPredMisses;
 
  private:
   LLVMTraceCPU* cpu;
 
   unsigned fetchWidth;
+
+  /**
+   * Flag to tell if we have just fetched an SerializeAfter instruction.
+   * If yes, the next fetched instruction is marked SerializeBefore.
+   */
+  bool serializeAfter;
 
   Cycles toDecodeDelay;
   TimeBuffer<FetchStruct>::wire toDecode;

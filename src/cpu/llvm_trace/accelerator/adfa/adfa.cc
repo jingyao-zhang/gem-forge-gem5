@@ -6,12 +6,36 @@
 #include "debug/AbstractDataFlowAccelerator.hh"
 
 AbstractDataFlowAccelerator::AbstractDataFlowAccelerator()
-    : TDGAccelerator(), dataFlow(nullptr) {}
+    : TDGAccelerator(), issueWidth(16), robSize(512), dataFlow(nullptr) {}
 AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
   if (this->dataFlow != nullptr) {
     delete this->dataFlow;
     this->dataFlow = nullptr;
   }
+}
+
+void AbstractDataFlowAccelerator::regStats() {
+  DPRINTF(AbstractDataFlowAccelerator, "ADFA: CALLED REGSTATS\n");
+  this->numIssuedDist.init(0, this->issueWidth, 1)
+      .name(this->manager->name() + ".adfa.issued_per_cycle")
+      .desc("Number of inst issued each cycle")
+      .flags(Stats::pdf);
+  this->numCommittedDist.init(0, 8, 1)
+      .name(this->manager->name() + ".adfa.committed_per_cycle")
+      .desc("Number of insts committed each cycle")
+      .flags(Stats::pdf);
+  this->numConfigured.name(this->manager->name() + ".adfa.numConfigured")
+      .desc("Number of times ADFA get configured")
+      .prereq(this->numConfigured);
+  this->numExecution.name(this->manager->name() + ".adfa.numExecution")
+      .desc("Number of times ADFA get executed")
+      .prereq(this->numExecution);
+  this->numCycles.name(this->manager->name() + ".adfa.numCycles")
+      .desc("Number of cycles ADFA is running")
+      .prereq(this->numCycles);
+  this->numCommittedInst.name(this->manager->name() + ".adfa.numCommittedInst")
+      .desc("Number of insts ADFA committed")
+      .prereq(this->numCommittedInst);
 }
 
 bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
@@ -23,8 +47,11 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     this->currentInst.config = ConfigInst;
     this->configOverheadInCycles = 10;
     // Simply open the data flow stream.
-    this->dataFlow =
-        new DynamicInstructionStream(inst->getTDG().adfa_config().data_flow());
+    if (this->dataFlow == nullptr) {
+      this->dataFlow = new DynamicInstructionStream(
+          inst->getTDG().adfa_config().data_flow());
+    }
+    this->numConfigured++;
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: start configure.\n");
     return true;
   } else if (auto StartInst = dynamic_cast<ADFAStartInst *>(inst)) {
@@ -37,6 +64,7 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     this->inflyInstMap.clear();
     this->rob.clear();
     this->readyInsts.clear();
+    this->numExecution++;
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: start execution.\n");
     return true;
   }
@@ -49,10 +77,12 @@ void AbstractDataFlowAccelerator::tick() {
     return;
   }
   case CONFIG: {
+    this->numCycles++;
     this->tickConfig();
     break;
   }
   case START: {
+    this->numCycles++;
     this->tickStart();
     break;
   }
@@ -98,13 +128,13 @@ void AbstractDataFlowAccelerator::fetch() {
   }
 
   // We maintain a crazy huge rob size.
-  if (this->rob.size() >= 512) {
+  if (this->rob.size() >= this->robSize) {
     return;
   }
 
   // Let's fetch more instructions.
   this->dataFlow->parse();
-  while (this->dataFlow->fetchSize() > 0 && this->rob.size() < 512) {
+  while (this->dataFlow->fetchSize() > 0 && this->rob.size() < this->robSize) {
     auto inst = this->dataFlow->fetch();
     if (inst->getInstName() == "df-end") {
       // We have encountered the end token.
@@ -176,7 +206,7 @@ void AbstractDataFlowAccelerator::issue() {
   size_t issued = 0;
   for (auto id : this->readyInsts) {
     // Some issue width.
-    if (issued > 8) {
+    if (issued > this->issueWidth) {
       break;
     }
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: issue inst %u.\n", id);
@@ -193,6 +223,7 @@ void AbstractDataFlowAccelerator::issue() {
   for (size_t i = 0; i < issued; ++i) {
     this->readyInsts.pop_front();
   }
+  this->numIssuedDist.sample(issued);
 }
 
 void AbstractDataFlowAccelerator::commit() {
@@ -213,11 +244,13 @@ void AbstractDataFlowAccelerator::commit() {
 
 void AbstractDataFlowAccelerator::release() {
   // release in order.
+  unsigned committed = 0;
   for (auto iter = this->rob.begin(), end = this->rob.end(); iter != end;) {
     auto id = *iter;
     if (this->inflyInstStatus.at(id) != InstStatus::FINISHED) {
       break;
     }
+    ++committed;
     iter = this->rob.erase(iter);
     auto inst = this->inflyInstMap.at(id);
     this->dataFlow->commit(inst);
@@ -225,4 +258,6 @@ void AbstractDataFlowAccelerator::release() {
     this->inflyInstAge.erase(id);
     this->inflyInstMap.erase(id);
   }
+  this->numCommittedInst += committed;
+  this->numCommittedDist.sample(committed);
 }

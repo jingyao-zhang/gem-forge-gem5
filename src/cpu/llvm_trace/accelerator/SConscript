@@ -1,0 +1,4 @@
+Import('*')
+
+SimObject('TDGAccelerator.py')
+Source('tdg_accelerator.cc')

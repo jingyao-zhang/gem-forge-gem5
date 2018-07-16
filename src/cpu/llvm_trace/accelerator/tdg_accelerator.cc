@@ -10,9 +10,15 @@
 // Include the accelerators.
 #include "adfa/adfa.hh"
 
-void TDGAccelerator::handshake(LLVMTraceCPU *_cpu) { this->cpu = _cpu; }
+void TDGAccelerator::handshake(LLVMTraceCPU *_cpu,
+                               TDGAcceleratorManager *_manager) {
+  this->cpu = _cpu;
+  this->manager = _manager;
+}
 
-TDGAcceleratorManager::TDGAcceleratorManager() {
+TDGAcceleratorManager::TDGAcceleratorManager(
+    TDGAcceleratorManagerParams *params)
+    : SimObject(params) {
   this->addAccelerator(new AbstractDataFlowAccelerator());
 }
 
@@ -28,7 +34,7 @@ void TDGAcceleratorManager::addAccelerator(TDGAccelerator *accelerator) {
 
 void TDGAcceleratorManager::handshake(LLVMTraceCPU *_cpu) {
   for (auto accelerator : this->accelerators) {
-    accelerator->handshake(_cpu);
+    accelerator->handshake(_cpu, this);
   }
 }
 
@@ -45,4 +51,15 @@ void TDGAcceleratorManager::tick() {
   for (auto accelerator : this->accelerators) {
     accelerator->tick();
   }
+}
+
+void TDGAcceleratorManager::regStats() {
+  SimObject::regStats();
+  for (auto accelerator : this->accelerators) {
+    accelerator->regStats();
+  }
+}
+
+TDGAcceleratorManager *TDGAcceleratorManagerParams::create() {
+  return new TDGAcceleratorManager(this);
 }

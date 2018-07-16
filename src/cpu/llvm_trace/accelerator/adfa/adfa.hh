@@ -3,6 +3,7 @@
 
 #include "insts.hh"
 
+#include "base/statistics.hh"
 #include "cpu/llvm_trace/accelerator/tdg_accelerator.hh"
 
 #include <list>
@@ -21,6 +22,18 @@ public:
 
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
+  void regStats() override;
+
+  /**
+   * Stats
+   */
+
+  Stats::Distribution numIssuedDist;
+  Stats::Distribution numCommittedDist;
+  Stats::Scalar numConfigured;
+  Stats::Scalar numExecution;
+  Stats::Scalar numCycles;
+  Stats::Scalar numCommittedInst;
 
 private:
   union {
@@ -32,6 +45,9 @@ private:
     CONFIG,
     START,
   } handling;
+
+  unsigned issueWidth;
+  unsigned robSize;
 
   // Configure overhead;
   int configOverheadInCycles;
