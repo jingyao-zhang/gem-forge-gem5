@@ -3,6 +3,7 @@
 #include "base/misc.hh"
 #include "base/trace.hh"
 #include "cpu/llvm_trace/dyn_inst_stream.hh"
+#include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 
 AbstractDataFlowAccelerator::AbstractDataFlowAccelerator()
@@ -145,6 +146,13 @@ void AbstractDataFlowAccelerator::fetch() {
       break;
     }
     // This is a normal instruction, insert into rob.
+
+    // We update RegionStats here.
+    const auto &TDG = inst->getTDG();
+    if (TDG.bb() != 0) {
+      cpu->updateBasicBlock(TDG.bb());
+    }
+
     auto id = inst->getId();
     this->rob.push_back(id);
     this->inflyInstAge.emplace(id, this->currentAge++);
@@ -253,10 +261,10 @@ void AbstractDataFlowAccelerator::release() {
     ++committed;
     iter = this->rob.erase(iter);
     auto inst = this->inflyInstMap.at(id);
-    this->dataFlow->commit(inst);
     this->inflyInstStatus.erase(id);
     this->inflyInstAge.erase(id);
     this->inflyInstMap.erase(id);
+    this->dataFlow->commit(inst);
   }
   this->numCommittedInst += committed;
   this->numCommittedDist.sample(committed);

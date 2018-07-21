@@ -111,6 +111,11 @@ public:
   operator=(DynamicInstructionStream &&other) = delete;
 
   /**
+   * Get the static info at the header of the stream.
+   */
+  const LLVM::TDG::StaticInformation &getStaticInfo() const;
+
+  /**
    * Parse more instructions from the file.
    * Returns the number of instructions parsed.
    */
@@ -135,6 +140,8 @@ private:
   std::string fn;
   ProtoInputStream *input;
   QueueBuffer<LLVM::TDG::TDGInstruction> buffer;
+
+  LLVM::TDG::StaticInformation staticInfo;
 
   std::list<LLVMDynamicInst *>::iterator fetchPos;
   size_t _fetchSize;

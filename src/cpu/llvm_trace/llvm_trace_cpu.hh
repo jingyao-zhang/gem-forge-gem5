@@ -20,6 +20,7 @@
 #include "cpu/llvm_trace/llvm_rename_stage.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
+#include "cpu/llvm_trace/region_stats.hh"
 #include "cpu/o3/fu_pool.hh"
 #include "mem/page_table.hh"
 #include "params/LLVMTraceCPU.hh"
@@ -102,6 +103,8 @@ private:
 
   FUPool *fuPool;
 
+  RegionStats *regionStats;
+
   // Used to record the current stack depth, so that we can break trace
   // into multiple function calls.
   int currentStackDepth;
@@ -152,6 +155,7 @@ private:
 
   LLVMTraceCPUDriver *driver;
   TDGAcceleratorManager *accelManager;
+  TDGAcceleratorManagerParams *accelManagerParams;
 
   /**************************************************************/
   // Interface for the insts.
@@ -208,6 +212,10 @@ public:
   Cycles getOpLatency(OpClass opClass);
 
   TDGAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
+
+  void updateBasicBlock(const RegionStats::BasicBlockId &bb) {
+    this->regionStats->update(bb);
+  }
 
   //********************************************************//
   // Event for this CPU.

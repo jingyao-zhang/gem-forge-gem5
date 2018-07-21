@@ -319,6 +319,12 @@ void LLVMIEWStage::dispatch() {
       }
     }
 
+    // Before we dispatch, we update the region stats.
+    const auto &TDG = inst->getTDG();
+    if (TDG.bb() != 0) {
+      cpu->updateBasicBlock(TDG.bb());
+    }
+
     cpu->inflyInstStatus.at(instId) = InstStatus::DISPATCHED;
     dispatchedInst++;
     this->instQueue.push_back(instId);

@@ -11,12 +11,13 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
       traceFileName(params->traceFile), itb(params->itb), dtb(params->dtb),
-      fuPool(params->fuPool), currentStackDepth(0), process(nullptr),
-      thread_context(nullptr), stackMin(0), fetchStage(params, this),
-      decodeStage(params, this), renameStage(params, this),
-      iewStage(params, this), commitStage(params, this), fetchToDecode(5, 5),
-      decodeToRename(5, 5), renameToIEW(5, 5), iewToCommit(5, 5),
-      signalBuffer(5, 5), driver(params->driver), tickEvent(*this) {
+      fuPool(params->fuPool), regionStats(nullptr), currentStackDepth(0),
+      process(nullptr), thread_context(nullptr), stackMin(0),
+      fetchStage(params, this), decodeStage(params, this),
+      renameStage(params, this), iewStage(params, this),
+      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
+      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
+      driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
   // Set the time buffer between stages.
   this->fetchStage.setToDecode(&this->fetchToDecode);
@@ -38,15 +39,41 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->dynInstStream = new DynamicInstructionStream(this->traceFileName);
 
   // Initialize the accelerators.
-  auto accelManagerParams = new TDGAcceleratorManagerParams();
-  accelManagerParams->name.assign("tdg.accs");
+  // We need to keep the params as the sim object will store its address.
+  this->accelManagerParams = new TDGAcceleratorManagerParams();
+  accelManagerParams->name = "tdg.accs";
   this->accelManager = accelManagerParams->create();
-  delete accelManagerParams;
   this->accelManager->handshake(this);
+
+  DPRINTF(LLVMTraceCPU, "Accelerator manager name %s.\n",
+          this->accelManager->name().c_str());
+
+  // Initialize the region stats.
+  const auto &staticInfo = this->dynInstStream->getStaticInfo();
+  RegionStats::RegionMap regions;
+  for (const auto &region : staticInfo.regions()) {
+    const auto &regionId = region.name();
+    DPRINTF(LLVMTraceCPU, "Found region %s.\n", regionId.c_str());
+    if (regions.find(regionId) != regions.end()) {
+      panic("Multiple defined region %s.\n", regionId.c_str());
+    }
+    auto &bbs =
+        regions
+            .emplace(regionId, std::unordered_set<RegionStats::BasicBlockId>())
+            .first->second;
+    for (const auto &bb : region.bbs()) {
+      bbs.insert(bb);
+    }
+  }
+  this->regionStats = new RegionStats(std::move(regions), "region.stats.txt");
 
   if (driver != nullptr) {
     // Handshake with the driver.
     driver->handshake(this);
+    // Add the dump handler to dump region stats at the end.
+    Stats::registerDumpCallback(
+        new MakeCallback<RegionStats, &RegionStats::dump>(this->regionStats,
+                                                          true));
   } else {
     // No driver, stand alone mode.
     // Schedule the first event.
@@ -61,6 +88,12 @@ LLVMTraceCPU::~LLVMTraceCPU() {
   this->dynInstStream = nullptr;
   delete this->accelManager;
   this->accelManager = nullptr;
+  delete this->accelManagerParams;
+  this->accelManagerParams = nullptr;
+  if (this->regionStats != nullptr) {
+    delete this->regionStats;
+    this->regionStats = nullptr;
+  }
 }
 
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
@@ -101,8 +134,11 @@ void LLVMTraceCPU::tick() {
   }
   if (done) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
+    // Wraps up the region stats by sending in the invalid bb.
+    this->regionStats->update(RegionStats::InvalidBB);
     // If in standalone mode, we can exit.
     if (this->isStandalone()) {
+      this->regionStats->dump();
       exitSimLoop("Datagraph finished.\n");
     } else {
       DPRINTF(LLVMTraceCPU, "Activate the normal CPU\n");
@@ -377,6 +413,8 @@ void LLVMTraceCPU::regStats() {
   this->iewStage.regStats();
   this->commitStage.regStats();
 
+  DPRINTF(LLVMTraceCPU, "Accelerator manager name %s.\n",
+          this->accelManager->name().c_str());
   this->accelManager->regStats();
 
   this->numPendingAccessDist.init(0, 64, 2)

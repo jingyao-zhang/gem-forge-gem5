@@ -13,11 +13,19 @@ DynamicInstructionStream::DynamicInstructionStream(const std::string &_fn)
     : fn(_fn) {
   this->input = new ProtoInputStream(this->fn);
   this->_fetchSize = 0;
+
+  // Parse the static information.
+  this->input->read(this->staticInfo);
 }
 
 DynamicInstructionStream::~DynamicInstructionStream() {
   delete this->input;
   this->input = nullptr;
+}
+
+const LLVM::TDG::StaticInformation &
+DynamicInstructionStream::getStaticInfo() const {
+  return this->staticInfo;
 }
 
 size_t DynamicInstructionStream::parse() {
