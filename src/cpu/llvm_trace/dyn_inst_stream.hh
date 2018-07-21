@@ -116,8 +116,11 @@ public:
   const LLVM::TDG::StaticInformation &getStaticInfo() const;
 
   /**
-   * Parse more instructions from the file.
+   * Parse more instructions from the file (currently at most 1000).
    * Returns the number of instructions parsed.
+   *
+   * NOTE: user should do some flow control based on the size(), otherwise the
+   * memory usage will blow up.
    */
   size_t parse();
 

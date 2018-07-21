@@ -133,8 +133,10 @@ void AbstractDataFlowAccelerator::fetch() {
     return;
   }
 
-  // Let's fetch more instructions.
-  this->dataFlow->parse();
+  // Let's parse more instructions if the number of parsed is below a threshold.
+  if (this->dataFlow->size() < 10000) {
+    this->dataFlow->parse();
+  }
   while (this->dataFlow->fetchSize() > 0 && this->rob.size() < this->robSize) {
     auto inst = this->dataFlow->fetch();
     if (inst->getInstName() == "df-end") {
@@ -179,8 +181,7 @@ void AbstractDataFlowAccelerator::markReady() {
       auto statusIter = this->inflyInstStatus.find(depId);
       if (statusIter != this->inflyInstStatus.end() &&
           statusIter->second != InstStatus::FINISHED) {
-        // The dependent instruction has not fall out of our rob, we believe it
-        // has not finished.
+        // The dependent instruction has not finished.
         ready = false;
         break;
       }
