@@ -7,7 +7,8 @@
 #include "debug/AbstractDataFlowAccelerator.hh"
 
 AbstractDataFlowAccelerator::AbstractDataFlowAccelerator()
-    : TDGAccelerator(), issueWidth(16), robSize(512), dataFlow(nullptr) {}
+    : TDGAccelerator(), handling(NONE), issueWidth(16), robSize(512),
+      dataFlow(nullptr) {}
 AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
   if (this->dataFlow != nullptr) {
     delete this->dataFlow;

@@ -63,15 +63,15 @@ private:
   class CPUPort : public MasterPort {
   public:
     CPUPort(const std::string &name, LLVMTraceCPU *_owner)
-        : MasterPort(name, _owner), owner(_owner), blocked(false) {}
+        : MasterPort(name, _owner), owner(_owner), inflyNumPackets(0),
+          blocked(false) {}
 
-    bool recvTimingResp(PacketPtr pkt) override {
-      return this->owner->handleTimingResp(pkt);
-    }
+    bool recvTimingResp(PacketPtr pkt) override;
     void recvTimingSnoopReq(PacketPtr pkt) override {
       // panic("recvTimingResp not implemented.");
     }
-    void sendReq(PacketPtr pkt);
+    void sendReq();
+    void addReq(PacketPtr pkt);
     void recvReqRetry() override;
 
     size_t getPendingPacketsNum() const {
@@ -86,6 +86,7 @@ private:
     // thread?
     std::queue<PacketPtr> blockedPacketPtrs;
     std::mutex blockedPacketPtrsMutex;
+    int inflyNumPackets;
     bool blocked;
   };
 

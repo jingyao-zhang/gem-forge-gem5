@@ -57,12 +57,13 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
     if (regions.find(regionId) != regions.end()) {
       panic("Multiple defined region %s.\n", regionId.c_str());
     }
-    auto &bbs =
-        regions
-            .emplace(regionId, std::unordered_set<RegionStats::BasicBlockId>())
-            .first->second;
+
+    auto &regionStruct =
+        regions.emplace(regionId, RegionStats::Region()).first->second;
+    regionStruct.name = regionId;
+    regionStruct.parent = region.parent();
     for (const auto &bb : region.bbs()) {
-      bbs.insert(bb);
+      regionStruct.bbs.insert(bb);
     }
   }
   this->regionStats = new RegionStats(std::move(regions), "region.stats.txt");
@@ -114,6 +115,9 @@ void LLVMTraceCPU::tick() {
   this->iewStage.tick();
   this->accelManager->tick();
   this->commitStage.tick();
+
+  // Send the packets.
+  this->dataPort.sendReq();
 
   this->fetchToDecode.advance();
   this->decodeToRename.advance();
@@ -167,44 +171,47 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   return true;
 }
 
-void LLVMTraceCPU::CPUPort::sendReq(PacketPtr pkt) {
-  // If there is already blocked req, just push to the queue.
-  std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
-  if (this->blocked) {
-    // We are blocked, push to the queue.
-    DPRINTF(LLVMTraceCPU, "Already blocked, queue packet ptr %p\n", pkt);
-    this->blockedPacketPtrs.push(pkt);
-    return;
+bool LLVMTraceCPU::CPUPort::recvTimingResp(PacketPtr pkt) {
+  if (this->inflyNumPackets == 0) {
+    panic("Received timing response when there is no infly packets.");
   }
-  // Push to blocked ptrs if need retry, and set blocked flag.
-  bool success = MasterPort::sendTimingReq(pkt);
-  if (!success) {
-    DPRINTF(LLVMTraceCPU, "Blocked packet ptr %p\n", pkt);
-    this->blocked = true;
-    this->blockedPacketPtrs.push(pkt);
+  this->inflyNumPackets--;
+  return this->owner->handleTimingResp(pkt);
+}
+
+void LLVMTraceCPU::CPUPort::addReq(PacketPtr pkt) {
+  DPRINTF(LLVMTraceCPU, "Add pkt at %p\n", pkt);
+  this->blockedPacketPtrs.push(pkt);
+}
+
+void LLVMTraceCPU::CPUPort::sendReq() {
+  // If there is already blocked req, just push to the queue.
+  DPRINTF(LLVMTraceCPU, "Try sending pkt\n");
+  // std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
+  while (!this->blocked && !this->blockedPacketPtrs.empty() &&
+         this->inflyNumPackets < 80) {
+    PacketPtr pkt = this->blockedPacketPtrs.front();
+    DPRINTF(LLVMTraceCPU, "Try sending pkt at %p\n", pkt);
+    bool success = MasterPort::sendTimingReq(pkt);
+    if (!success) {
+      DPRINTF(LLVMTraceCPU, "Blocked packet ptr %p\n", pkt);
+      this->blocked = true;
+    } else {
+      this->inflyNumPackets++;
+      this->blockedPacketPtrs.pop();
+    }
   }
 }
 
 void LLVMTraceCPU::CPUPort::recvReqRetry() {
-  std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
+  // std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
   if (!this->blocked) {
     panic("Should be in blocked state when recvReqRetry is called\n");
   }
   // Unblock myself.
   this->blocked = false;
   // Keep retry until failed or blocked is empty.
-  while (!this->blockedPacketPtrs.empty() && !this->blocked) {
-    // If we have blocked packet, send again.
-    PacketPtr pkt = this->blockedPacketPtrs.front();
-    bool success = MasterPort::sendTimingReq(pkt);
-    if (success) {
-      DPRINTF(LLVMTraceCPU, "Retry blocked packet ptr %p: Succeed\n", pkt);
-      this->blockedPacketPtrs.pop();
-    } else {
-      DPRINTF(LLVMTraceCPU, "Retry blocked packet ptr %p: Failed\n", pkt);
-      this->blocked = true;
-    }
-  }
+  this->sendReq();
 }
 
 void LLVMTraceCPU::handleReplay(
@@ -394,7 +401,7 @@ void LLVMTraceCPU::sendRequest(Addr paddr, int size, LLVMDynamicInst *inst,
     memcpy(pkt_data, data, req->getSize());
   }
   pkt->dataDynamic(pkt_data);
-  this->dataPort.sendReq(pkt);
+  this->dataPort.addReq(pkt);
 }
 
 Cycles LLVMTraceCPU::getOpLatency(OpClass opClass) {

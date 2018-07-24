@@ -11,7 +11,7 @@ RegionStats::RegionStats(RegionMap &&_regions, const std::string &_fileName)
   // Compute the reverse basic block to region map.
   for (const auto &entry : this->regions) {
     const auto &region = entry.first;
-    for (const auto &bb : entry.second) {
+    for (const auto &bb : entry.second.bbs) {
       auto iter = this->bbToRegionMap.find(bb);
       if (iter == this->bbToRegionMap.end()) {
         iter = this->bbToRegionMap
@@ -79,7 +79,7 @@ void RegionStats::update(const BasicBlockId &bb) {
 
 bool RegionStats::contains(const RegionId &region,
                            const BasicBlockId &bb) const {
-  const auto &bbs = this->regions.at(region);
+  const auto &bbs = this->regions.at(region).bbs;
   return bbs.find(bb) != bbs.end();
 }
 
@@ -127,6 +127,13 @@ void RegionStats::updateStats(const Snapshot &enterSnapshot,
     } else {
       updateIter->second = updateIter->second + diffValue;
     }
+  }
+  // Add our own region entered statistics.
+  auto updateIter = updatingMap.find("region.entered");
+  if (updateIter == updatingMap.end()) {
+    updatingMap.emplace("region.entered", 1.0);
+  } else {
+    updateIter->second += 1.0;
   }
 }
 
@@ -296,10 +303,22 @@ void RegionStats::dump(std::ostream &stream) {
 
   // Whenever dump, we add an "all" region.
   auto snapshot = this->takeSnapshot();
+  // Add our own hack of region entered statistic.
   this->regionStats["all"] = *snapshot;
+  this->regionStats["all"].emplace("region.entered", 1.0);
 
   for (const auto &regionStat : this->regionStats) {
-    ccprintf(stream, "---- %s\n", regionStat.first);
+    const auto &name = regionStat.first;
+    ccprintf(stream, "---- %s\n", name);
+    // As additional information, we also print region's parent.
+    if (name != "all") {
+      const auto &region = this->regions.at(name);
+      ccprintf(stream, "-parent %s\n", region.parent);
+    } else {
+      // As a special region, all is not in our regions map.
+      // Generate an empty parent for "all" region.
+      ccprintf(stream, "-parent \n");
+    }
     // We have to sort this.
     std::map<std::string, Stats::Result> sorted;
     for (const auto &stat : regionStat.second) {

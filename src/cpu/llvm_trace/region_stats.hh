@@ -33,8 +33,15 @@ class RegionStats {
 public:
   using RegionId = std::string;
   using BasicBlockId = uint64_t;
-  using RegionMap =
-      std::unordered_map<RegionId, std::unordered_set<BasicBlockId>>;
+
+  struct Region {
+    RegionId name;
+    // Optional parent region id.
+    RegionId parent;
+    std::unordered_set<BasicBlockId> bbs;
+  };
+
+  using RegionMap = std::unordered_map<RegionId, Region>;
 
   using StatsMap = std::unordered_map<std::string, Stats::Result>;
   using Snapshot = std::shared_ptr<const StatsMap>;
