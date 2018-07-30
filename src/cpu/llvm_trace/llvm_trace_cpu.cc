@@ -290,11 +290,18 @@ LLVMDynamicInst *LLVMTraceCPU::getInflyInst(LLVMDynamicInstId id) {
 }
 
 void LLVMTraceCPU::stackPush() {
+  // Ignore the stack adjustment if we are in standalone mode.
+  if (this->isStandalone()) {
+    return;
+  }
   this->currentStackDepth++;
   this->framePointerStack.push_back(this->stackMin);
 }
 
 void LLVMTraceCPU::stackPop() {
+  if (this->isStandalone()) {
+    return;
+  }
   this->currentStackDepth--;
   if (this->currentStackDepth < 0) {
     panic("Current stack depth is less than 0\n");

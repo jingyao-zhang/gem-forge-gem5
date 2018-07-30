@@ -11,7 +11,10 @@ RegionStats::RegionStats(RegionMap &&_regions, const std::string &_fileName)
   // Compute the reverse basic block to region map.
   for (const auto &entry : this->regions) {
     const auto &region = entry.first;
+    DPRINTF(RegionStats, "Compute reverse map for region %s.\n",
+            region.c_str());
     for (const auto &bb : entry.second.bbs) {
+      DPRINTF(RegionStats, "Regions has bb %u.\n", bb);
       auto iter = this->bbToRegionMap.find(bb);
       if (iter == this->bbToRegionMap.end()) {
         iter = this->bbToRegionMap
@@ -25,12 +28,16 @@ RegionStats::RegionStats(RegionMap &&_regions, const std::string &_fileName)
 }
 
 void RegionStats::update(const BasicBlockId &bb) {
+
   if (bb == this->previousBB) {
     // If we are still in the same block, just return.
     return;
   }
 
   Snapshot snapshot = nullptr;
+
+  // DPRINTF(RegionStats, "Entered bb %u.\n", bb);
+  this->previousBB = bb;
 
   /**
    * Check if we have exited any active regions.
@@ -44,6 +51,7 @@ void RegionStats::update(const BasicBlockId &bb) {
       if (!snapshot) {
         snapshot = this->takeSnapshot();
       }
+      DPRINTF(RegionStats, "Exit region %s.\n", region.c_str());
       auto statsIter = this->regionStats.find(region);
       if (statsIter == this->regionStats.end()) {
         statsIter =
@@ -69,6 +77,7 @@ void RegionStats::update(const BasicBlockId &bb) {
   for (const auto &newRegion : bbToRegionMapIter->second) {
     if (this->activeRegions.find(newRegion) == this->activeRegions.end()) {
       // This is a new region.
+      DPRINTF(RegionStats, "Enter region %s.\n", newRegion.c_str());
       if (!snapshot) {
         snapshot = this->takeSnapshot();
       }
@@ -101,7 +110,7 @@ RegionStats::Snapshot RegionStats::takeSnapshot() {
       // We only care about scalar statistics.
       snapshot->emplace(scalar->name, scalar->result());
     } else if (vector) {
-      DPRINTF(RegionStats, "Get stats %f\n", vector->total());
+      // DPRINTF(RegionStats, "Get stats %f\n", vector->total());
       snapshot->emplace(vector->name, vector->total());
     }
   }
@@ -112,18 +121,18 @@ void RegionStats::updateStats(const Snapshot &enterSnapshot,
                               const Snapshot &exitSnapshot,
                               StatsMap &updatingMap) {
   for (const auto &stat : *enterSnapshot) {
-    const auto &name = stat.first;
-    auto exitIter = exitSnapshot->find(name);
+    const auto &statName = stat.first;
+    auto exitIter = exitSnapshot->find(statName);
     if (exitIter == exitSnapshot->end()) {
-      panic("Missing stat %s in exit snapshot.\n", name.c_str());
+      panic("Missing stat %s in exit snapshot.\n", statName.c_str());
     }
     auto enterValue = stat.second;
     auto exitValue = exitIter->second;
     auto diffValue = exitValue - enterValue;
-    auto updateIter = updatingMap.find(name);
+    auto updateIter = updatingMap.find(statName);
     // Updating the map.
     if (updateIter == updatingMap.end()) {
-      updatingMap.emplace(name, diffValue);
+      updatingMap.emplace(statName, diffValue);
     } else {
       updateIter->second = updateIter->second + diffValue;
     }
