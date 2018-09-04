@@ -107,6 +107,11 @@ void LLVMTraceCPU::tick() {
   // Make sure there is always instructions for simulation.
   this->loadDynamicInstsIfNecessary();
 
+  // Warm up the cache.
+  // AdHoc for the cache warm up file name.
+  if (this->numCycles.value() == 0 && this->isStandalone()) {
+    this->warmUpCache(this->traceFileName + ".cache");
+  }
   this->numCycles++;
 
   this->fetchStage.tick();
@@ -157,6 +162,21 @@ void LLVMTraceCPU::tick() {
   this->numPendingAccessDist.sample(this->dataPort.getPendingPacketsNum());
 
   this->numPendingAccessDist.sample(this->dataPort.getPendingPacketsNum());
+}
+
+void LLVMTraceCPU::warmUpCache(const std::string &fileName) {
+  std::ifstream cacheFile(fileName);
+  if (!cacheFile.is_open()) {
+    panic("Failed to open cache warm up file %s.\n", fileName.c_str());
+  }
+  PortProxy proxy(this->dataPort, 64);
+  Addr vaddr;
+  uint8_t data[4];
+  while (cacheFile >> std::hex >> vaddr) {
+    auto paddr = this->translateAndAllocatePhysMem(vaddr);
+    proxy.readBlob(paddr, data, 4);
+  }
+  cacheFile.close();
 }
 
 bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {

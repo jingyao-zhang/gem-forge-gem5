@@ -113,6 +113,9 @@ private:
   void stackPop();
   void stackPush();
 
+  // Cache warm up in standalone mode.
+  void warmUpCache(const std::string &FileName);
+
   // Load more dynamic instructions if needed.
   void loadDynamicInstsIfNecessary();
 
