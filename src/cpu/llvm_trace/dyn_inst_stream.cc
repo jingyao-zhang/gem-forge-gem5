@@ -8,6 +8,7 @@
  * All the other instructions.
  */
 #include "accelerator/adfa/insts.hh"
+#include "accelerator/stream/insts.hh"
 
 DynamicInstructionStream::DynamicInstructionStream(const std::string &_fn)
     : fn(_fn) {
@@ -49,6 +50,10 @@ size_t DynamicInstructionStream::parse() {
 
     // Parse use-specified instruction.
     llvmInst = parseADFAInst(inst);
+
+    if (llvmInst == nullptr) {
+      llvmInst = parseStreamInst(inst);
+    }
 
     if (llvmInst == nullptr) {
       // Hack for numMicroOps, which is not actually used now.

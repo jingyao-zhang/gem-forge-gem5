@@ -9,6 +9,7 @@
 
 // Include the accelerators.
 #include "adfa/adfa.hh"
+#include "stream/stream_engine.hh"
 
 void TDGAccelerator::handshake(LLVMTraceCPU *_cpu,
                                TDGAcceleratorManager *_manager) {
@@ -20,6 +21,7 @@ TDGAcceleratorManager::TDGAcceleratorManager(
     TDGAcceleratorManagerParams *params)
     : SimObject(params) {
   this->addAccelerator(new AbstractDataFlowAccelerator());
+  this->addAccelerator(new StreamEngine());
 }
 
 TDGAcceleratorManager::~TDGAcceleratorManager() {

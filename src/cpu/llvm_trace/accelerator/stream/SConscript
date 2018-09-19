@@ -1,0 +1,9 @@
+Import('*')
+
+DebugFlag('StreamEngine')
+
+ProtoBuf('StreamMessage.proto')
+
+Source('stream_engine.cc')
+Source('stream.cc')
+Source('insts.cc')
