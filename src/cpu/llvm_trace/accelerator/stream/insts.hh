@@ -21,8 +21,16 @@ private:
 class StreamStepInst : public LLVMDynamicInst {
 public:
   StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG);
+
+  bool isDependenceReady(LLVMTraceCPU *cpu) const override;
+
   void execute(LLVMTraceCPU *cpu) override;
   bool isCompleted() const override { return this->finished; }
+
+  /**
+   * Stream step instruction has a special commit semantic.
+   */
+  void commit(LLVMTraceCPU *cpu) override;
 
   /**
    * Interface for stream engine.

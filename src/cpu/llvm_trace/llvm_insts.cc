@@ -48,6 +48,12 @@ std::unordered_map<std::string, OpClass> LLVMDynamicInst::instToOpClass = {
     {"store", Enums::OpClass::MemWrite},
 };
 
+uint64_t LLVMDynamicInst::currentSeqNum = 0;
+uint64_t LLVMDynamicInst::allocateSeqNum() {
+  // 0 is reserved for invalid seq num.
+  return ++LLVMDynamicInst::currentSeqNum;
+}
+
 uint64_t LLVMDynamicInst::getStaticInstAddress() const {
   if (!this->isConditionalBranchInst()) {
     panic("getNextBBName called on non conditional branch instructions.");
@@ -89,6 +95,13 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
       if (DepInst->isBranchInst()) {
         continue;
       }
+      return false;
+    }
+  }
+
+  // Check the stream engine.
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    if (!cpu->isStreamReady(streamId, seqNum)) {
       return false;
     }
   }

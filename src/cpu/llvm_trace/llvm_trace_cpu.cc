@@ -302,6 +302,10 @@ void LLVMTraceCPU::loadDynamicInstsIfNecessary() {
           count, this->dynInstStream->size());
 }
 
+bool LLVMTraceCPU::isStreamReady(uint64_t streamId, uint64_t userSeqNum) const {
+  return this->accelManager->isStreamReady(streamId, userSeqNum);
+}
+
 LLVMDynamicInst *LLVMTraceCPU::getInflyInst(LLVMDynamicInstId id) {
   auto iter = this->inflyInstMap.find(id);
   panic_if(iter == this->inflyInstMap.end(), "Failed to find infly inst %u.\n",

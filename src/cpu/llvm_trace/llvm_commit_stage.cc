@@ -76,6 +76,8 @@ void LLVMCommitStage::tick() {
       this->instsCommitted[0]++;
       this->opsCommitted[0] += inst->getNumMicroOps();
     }
+    // Any instruction specific operation when committed.
+    inst->commit(cpu);
 
     // After this point, inst is released!
     cpu->inflyInstMap.erase(instId);

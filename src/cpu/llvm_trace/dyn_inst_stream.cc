@@ -46,7 +46,7 @@ size_t DynamicInstructionStream::parse() {
     // previous peek_back().
     this->buffer.alloc_back();
 
-    LLVMDynamicInst *llvmInst;
+    LLVMDynamicInst *llvmInst = nullptr;
 
     // Parse use-specified instruction.
     llvmInst = parseADFAInst(inst);

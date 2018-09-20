@@ -33,8 +33,22 @@ StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
           this->TDG.stream_step().stream_id());
 }
 
+bool StreamStepInst::isDependenceReady(LLVMTraceCPU *cpu) const {
+  if (!this->LLVMDynamicInst::isDependenceReady(cpu)) {
+    return false;
+  }
+  // For step instruction we also have to check if the stream can be stepped.
+  return cpu->getAcceleratorManager()->canStreamStep(
+      this->TDG.stream_step().stream_id());
+}
+
 void StreamStepInst::execute(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->handle(this);
+}
+
+void StreamStepInst::commit(LLVMTraceCPU *cpu) {
+  cpu->getAcceleratorManager()->commitStreamStep(
+      this->TDG.stream_step().stream_id(), this->getSeqNum());
 }
 
 void StreamStepInst::markFinished() {

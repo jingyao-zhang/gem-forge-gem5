@@ -6,4 +6,5 @@ ProtoBuf('StreamMessage.proto')
 
 Source('stream_engine.cc')
 Source('stream.cc')
+Source('stream_pattern.cc')
 Source('insts.cc')

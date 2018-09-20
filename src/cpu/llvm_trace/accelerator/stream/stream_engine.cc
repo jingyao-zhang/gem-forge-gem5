@@ -12,38 +12,98 @@ void StreamEngine::regStats() {
   this->numConfigured.name(this->manager->name() + ".stream.numConfigured")
       .desc("Number of streams configured.")
       .prereq(this->numConfigured);
+  this->numStepped.name(this->manager->name() + ".stream.numStepped")
+      .desc("Number of streams stepped.")
+      .prereq(this->numStepped);
 }
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) {
   if (auto configInst = dynamic_cast<StreamConfigInst *>(inst)) {
     this->numConfigured++;
-    this->initializeStreamForFirstTime(configInst->getTDG());
+    auto S = this->getOrInitializeStream(configInst->getTDG().stream_config());
+    S->configure();
     configInst->markFinished();
     return true;
   }
   if (auto stepInst = dynamic_cast<StreamStepInst *>(inst)) {
+    this->numStepped++;
+    auto stream =
+        this->getStreamNullable(stepInst->getTDG().stream_step().stream_id());
+    if (stream != nullptr) {
+      stream->step(stepInst->getSeqNum());
+    }
     stepInst->markFinished();
     return true;
   }
   if (auto storeInst = dynamic_cast<StreamStoreInst *>(inst)) {
+    auto stream =
+        this->getStreamNullable(storeInst->getTDG().stream_store().stream_id());
+    if (stream != nullptr) {
+      stream->store(storeInst->getSeqNum());
+    }
     storeInst->markFinished();
     return true;
   }
   return false;
 }
 
-void StreamEngine::initializeStreamForFirstTime(
-    const LLVM::TDG::TDGInstruction &configInst) {
-  if (!configInst.has_stream_config()) {
-    panic("initialize stream for non stream-config instruction.");
+bool StreamEngine::isStreamReady(uint64_t streamId, uint64_t userSeqNum) const {
+  auto stream = this->getStreamNullable(streamId);
+  if (stream == nullptr) {
+    // This is possible in partial datagraph that contains an incomplete loop.
+    // For this rare case, we just assume the stream is ready.
+    return true;
   }
-  const auto &streamId = configInst.stream_config().stream_id();
+  return stream->isReady(userSeqNum);
+}
+
+bool StreamEngine::canStreamStep(uint64_t streamId) const {
+  auto stream = this->getStreamNullable(streamId);
+  if (stream == nullptr) {
+    // This is possible in partial datagraph that contains an incomplete loop.
+    // For this rare case, we just assume the stream is ready.
+    return true;
+  }
+  return stream->canStep();
+}
+
+void StreamEngine::commitStreamStep(uint64_t streamId, uint64_t stepSeqNum) {
+  auto stream = this->getStreamNullable(streamId);
+  if (stream == nullptr) {
+    // This is possible in partial datagraph that contains an incomplete loop.
+    return;
+  }
+  stream->commitStep(stepSeqNum);
+}
+
+Stream *StreamEngine::getOrInitializeStream(
+    const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst) {
+  const auto &streamId = configInst.stream_id();
   auto iter = this->streamMap.find(streamId);
   if (iter == this->streamMap.end()) {
-    this->streamMap.emplace(std::piecewise_construct,
-                            std::forward_as_tuple(streamId),
-                            std::forward_as_tuple(configInst));
+    iter =
+        this->streamMap
+            .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
+                     std::forward_as_tuple(configInst, cpu, this))
+            .first;
   }
+  return &(iter->second);
+}
+
+const Stream *StreamEngine::getStreamNullable(uint64_t streamId) const {
+  auto iter = this->streamMap.find(streamId);
+  if (iter == this->streamMap.end()) {
+    return nullptr;
+  }
+  return &(iter->second);
+}
+
+Stream *StreamEngine::getStreamNullable(uint64_t streamId) {
+  auto iter = this->streamMap.find(streamId);
+  if (iter == this->streamMap.end()) {
+    return nullptr;
+  }
+  return &(iter->second);
 }
 
 void StreamEngine::tick() {}

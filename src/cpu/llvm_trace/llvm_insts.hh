@@ -26,7 +26,7 @@ using LLVMDynamicInstId = uint64_t;
 class LLVMDynamicInst {
 public:
   LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
-      : TDG(_TDG), numMicroOps(_numMicroOps),
+      : seqNum(allocateSeqNum()), TDG(_TDG), numMicroOps(_numMicroOps),
         remainingMicroOps(_numMicroOps - 1), serializeBefore(false) {}
 
   virtual ~LLVMDynamicInst() {}
@@ -35,6 +35,9 @@ public:
   virtual void execute(LLVMTraceCPU *cpu) = 0;
   virtual void writeback(LLVMTraceCPU *cpu) {
     panic("Calling write back on non-store inst %u.\n", this->getId());
+  }
+  virtual void commit(LLVMTraceCPU *cpu) {
+    // Default implementation will do nothing.
   }
 
   // Handle a packet response. Default will panic.
@@ -70,7 +73,7 @@ public:
   void markSerializeBefore() { this->serializeBefore = true; }
 
   // Check if all the dependence are ready.
-  bool isDependenceReady(LLVMTraceCPU *cpu) const;
+  virtual bool isDependenceReady(LLVMTraceCPU *cpu) const;
 
   // Check if this inst can write back. It checks
   // for control dependence is committed.
@@ -90,6 +93,8 @@ public:
   /**
    * Getters.
    */
+  static constexpr uint64_t INVALID_SEQ_NUM = 0;
+  uint64_t getSeqNum() const { return this->seqNum; }
   const LLVM::TDG::TDGInstruction &getTDG() const { return this->TDG; }
 
   const std::string &getInstName() const { return this->TDG.op(); }
@@ -102,6 +107,10 @@ public:
   const std::string &getNextBBName() const;
 
 protected:
+  /**
+   * An incontinuous sequence number.
+   */
+  const uint64_t seqNum;
   const LLVM::TDG::TDGInstruction &TDG;
 
   uint8_t numMicroOps;
@@ -116,6 +125,9 @@ protected:
 
   // A static global map from instName to the needed OpClass.
   static std::unordered_map<std::string, OpClass> instToOpClass;
+
+  static uint64_t currentSeqNum;
+  static uint64_t allocateSeqNum();
 };
 
 // Memory access inst.

@@ -182,6 +182,9 @@ public:
     return true;
   }
 
+  // Check if a stream is ready.
+  bool isStreamReady(uint64_t streamId, uint64_t userSeqNum) const;
+
   bool isInstCommitted(LLVMDynamicInstId instId) const {
     // If it's out of the infly insts map, we say it committed.
     return this->inflyInstStatus.find(instId) == this->inflyInstStatus.end();

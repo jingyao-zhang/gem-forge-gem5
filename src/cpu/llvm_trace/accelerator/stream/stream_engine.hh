@@ -18,16 +18,23 @@ public:
   void tick() override;
   void regStats() override;
 
+  bool isStreamReady(uint64_t streamId, uint64_t userSeqNum) const;
+  bool canStreamStep(uint64_t streamId) const;
+  void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);
+
+  const Stream *getStreamNullable(uint64_t streamId) const;
+  Stream *getStreamNullable(uint64_t streamId);
   /**
    * Stats
    */
   Stats::Scalar numConfigured;
+  Stats::Scalar numStepped;
 
 private:
   std::unordered_map<uint64_t, Stream> streamMap;
 
-  void
-  initializeStreamForFirstTime(const LLVM::TDG::TDGInstruction &configInst);
+  Stream *getOrInitializeStream(
+      const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);
 };
 
 #endif
