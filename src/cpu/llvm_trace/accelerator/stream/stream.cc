@@ -18,7 +18,8 @@
 Stream::Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
                LLVMTraceCPU *_cpu, StreamEngine *_se)
     : cpu(_cpu), se(_se), pattern(configInst.pattern_path()),
-      storedData(nullptr), RUN_AHEAD_FIFO_ENTRIES(10) {
+      configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),
+      RUN_AHEAD_FIFO_ENTRIES(10) {
 
   const auto &streamName = configInst.stream_name();
   const auto &streamId = configInst.stream_id();
@@ -80,9 +81,10 @@ void Stream::addBaseStream(Stream *baseStream) {
   baseStream->dependentStreams.insert(this);
 }
 
-void Stream::configure() {
-  STREAM_DPRINTF("Configured.\n");
+void Stream::configure(uint64_t configSeqNum) {
+  STREAM_DPRINTF("Configured at set num %lu.\n", configSeqNum);
   this->pattern.configure();
+  this->configSeqNum = configSeqNum;
 
   this->FIFO.clear();
   this->FIFOIdx = 0;

@@ -31,8 +31,9 @@ public:
 
   uint64_t getStreamId() const { return this->info.id(); }
   const std::string &getStreamName() const { return this->info.name(); }
+  uint64_t getConfigSeqNum() const { return this->configSeqNum; }
 
-  void configure();
+  void configure(uint64_t configSeqNum);
   void step(uint64_t stepSeqNum);
   void commitStep(uint64_t stepSeqNum);
   void store(uint64_t userSeqNum);
@@ -100,6 +101,7 @@ private:
   };
 
   bool active;
+  uint64_t configSeqNum;
 
   uint8_t *storedData;
 

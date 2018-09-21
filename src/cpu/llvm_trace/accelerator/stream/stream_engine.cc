@@ -21,7 +21,7 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
   if (auto configInst = dynamic_cast<StreamConfigInst *>(inst)) {
     this->numConfigured++;
     auto S = this->getOrInitializeStream(configInst->getTDG().stream_config());
-    S->configure();
+    S->configure(configInst->getSeqNum());
     configInst->markFinished();
     return true;
   }
@@ -29,8 +29,9 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
     this->numStepped++;
     auto stream =
         this->getStreamNullable(stepInst->getTDG().stream_step().stream_id());
-    if (stream != nullptr) {
-      stream->step(stepInst->getSeqNum());
+    auto stepSeqNum = stepInst->getSeqNum();
+    if (stream != nullptr && stream->getConfigSeqNum() < stepSeqNum) {
+      stream->step(stepSeqNum);
     }
     stepInst->markFinished();
     return true;
@@ -38,8 +39,9 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
   if (auto storeInst = dynamic_cast<StreamStoreInst *>(inst)) {
     auto stream =
         this->getStreamNullable(storeInst->getTDG().stream_store().stream_id());
-    if (stream != nullptr) {
-      stream->store(storeInst->getSeqNum());
+    auto storeSeqNum = storeInst->getSeqNum();
+    if (stream != nullptr && stream->getConfigSeqNum() < storeSeqNum) {
+      stream->store(storeSeqNum);
     }
     storeInst->markFinished();
     return true;
@@ -69,7 +71,7 @@ bool StreamEngine::canStreamStep(uint64_t streamId) const {
 
 void StreamEngine::commitStreamStep(uint64_t streamId, uint64_t stepSeqNum) {
   auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr) {
+  if (stream == nullptr || stream->getConfigSeqNum() > stepSeqNum) {
     // This is possible in partial datagraph that contains an incomplete loop.
     return;
   }
