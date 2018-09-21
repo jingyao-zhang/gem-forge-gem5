@@ -23,13 +23,13 @@ parser.add_option("--llvm-store-queue-size", action="store",
                   type="int", help="""store queue size""", default="32")
 parser.add_option("--llvm-standalone", action="store",
                   type="int", help="""replay in stand alone mode""", default="0")
+parser.add_option("--llvm-prefetch", action="store", type="int",
+                  help="""whether to use a prefetcher""", default="0")
 
 (options, args) = parser.parse_args()
 
 if args:
     fatal("Error: script doesn't take any positional arguments")
-
-# Copy from se.py
 
 
 def get_processes(options):
@@ -188,6 +188,11 @@ system.membus = SystemXBar()
 system.system_port = system.membus.slave
 CacheConfig.config_cache(options, system)
 MemConfig.config_mem(options, system)
+
+if options.llvm_prefetch == 1:
+    for cpu in system.cpu:
+        cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
+    system.l2.prefetcher = StridePrefetcher(degree=8, latency=1)
 
 root = Root(full_system=False, system=system)
 Simulation.run(options, root, system, FutureClass)
