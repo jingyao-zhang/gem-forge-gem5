@@ -54,6 +54,19 @@ Stream::Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
     this->addBaseStream(baseStream);
   }
 
+  for (const auto &baseStepStreamId : this->info.chosen_base_step_ids()) {
+    auto baseStepStream = this->se->getStreamNullable(baseStepStreamId);
+    if (baseStepStream == nullptr) {
+      STREAM_PANIC(
+          "Failed to get base step stream, is it not initialized yet.");
+    }
+    this->addBaseStepStream(baseStepStream);
+  }
+  if (this->baseStepStreams.size() > 1) {
+    STREAM_PANIC("More than one base step stream detected, which is not yet "
+                 "supported by the semantics of step instructions.");
+  }
+
   if (this->info.type() == "store") {
     this->storedData = new uint8_t[this->info.element_size()];
   }
@@ -81,6 +94,14 @@ void Stream::addBaseStream(Stream *baseStream) {
   }
   this->baseStreams.insert(baseStream);
   baseStream->dependentStreams.insert(this);
+}
+
+void Stream::addBaseStepStream(Stream *baseStepStream) {
+  if (baseStepStream == this) {
+    STREAM_PANIC("Base stream should not be self.");
+  }
+  this->baseStepStreams.insert(baseStepStream);
+  baseStepStream->dependentStepStreams.insert(this);
 }
 
 void Stream::configure(uint64_t configSeqNum) {
@@ -294,18 +315,18 @@ void Stream::step(uint64_t stepSeqNum) {
 }
 
 void Stream::triggerStep(uint64_t stepSeqNum, Stream *rootStream) {
-  for (auto &dependentStream : this->dependentStreams) {
+  for (auto &dependentStepStream : this->dependentStepStreams) {
     STREAM_DPRINTF("Trigger step root %s stream %s.\n",
                    rootStream->getStreamName().c_str(),
-                   dependentStream->getStreamName().c_str());
-    dependentStream->receiveStep(stepSeqNum, rootStream, this);
+                   dependentStepStream->getStreamName().c_str());
+    dependentStepStream->receiveStep(stepSeqNum, rootStream, this);
   }
 }
 
 void Stream::receiveStep(uint64_t stepSeqNum, Stream *rootStream,
                          Stream *baseStream) {
-  if (this->baseStreams.count(baseStream) == 0) {
-    STREAM_PANIC("Received step signal from illegal base stream.");
+  if (this->baseStepStreams.count(baseStream) == 0) {
+    STREAM_PANIC("Received step signal from illegal base step stream.");
   }
   if (rootStream == this) {
     STREAM_PANIC("Dependence cycle detected.");
@@ -342,23 +363,23 @@ void Stream::commitStep(uint64_t stepSeqNum) {
 }
 
 void Stream::triggerCommitStep(uint64_t stepSeqNum, Stream *rootStream) {
-  for (auto &dependentStream : this->dependentStreams) {
+  for (auto &dependentStepStream : this->dependentStepStreams) {
     STREAM_DPRINTF("Trigger commit step root %s stream %s.\n",
                    rootStream->getStreamName().c_str(),
-                   dependentStream->getStreamName().c_str());
-    dependentStream->receiveCommitStep(stepSeqNum, rootStream, this);
+                   dependentStepStream->getStreamName().c_str());
+    dependentStepStream->receiveCommitStep(stepSeqNum, rootStream, this);
   }
 }
 
 void Stream::receiveCommitStep(uint64_t stepSeqNum, Stream *rootStream,
                                Stream *baseStream) {
-  if (this->baseStreams.count(baseStream) == 0) {
+  if (this->baseStepStreams.count(baseStream) == 0) {
     STREAM_PANIC("Received commit step signal from illegal base stream.");
   }
   if (rootStream == this) {
     STREAM_PANIC("Dependence cycle detected.");
   }
-  STREAM_DPRINTF("Received commit step signal for entry %lu from stream %s.\n",
+  STREAM_DPRINTF("Received commit step signal from stream %s.\n",
                  baseStream->getStreamName().c_str());
   this->commitStepImpl(stepSeqNum);
   this->triggerCommitStep(stepSeqNum, rootStream);

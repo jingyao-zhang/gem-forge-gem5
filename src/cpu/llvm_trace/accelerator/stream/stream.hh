@@ -28,6 +28,7 @@ public:
   ~Stream();
 
   void addBaseStream(Stream *baseStream);
+  void addBaseStepStream(Stream *baseStepStream);
 
   uint64_t getStreamId() const { return this->info.id(); }
   const std::string &getStreamName() const { return this->info.name(); }
@@ -49,7 +50,9 @@ private:
   std::unique_ptr<StreamHistory> history;
 
   std::unordered_set<Stream *> baseStreams;
+  std::unordered_set<Stream *> baseStepStreams;
   std::unordered_set<Stream *> dependentStreams;
+  std::unordered_set<Stream *> dependentStepStreams;
 
   struct FIFOEntry {
     const uint64_t idx;
