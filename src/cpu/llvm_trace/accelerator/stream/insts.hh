@@ -48,6 +48,11 @@ public:
   bool isCompleted() const override { return this->finished; }
 
   /**
+   * Stream store instruction has a special commit semantic.
+   */
+  void commit(LLVMTraceCPU *cpu) override;
+
+  /**
    * Interface for stream engine.
    */
   void markFinished();

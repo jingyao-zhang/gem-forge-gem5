@@ -37,7 +37,8 @@ public:
   void configure(uint64_t configSeqNum);
   void step(uint64_t stepSeqNum);
   void commitStep(uint64_t stepSeqNum);
-  void store(uint64_t userSeqNum);
+  void store(uint64_t storeSeqNum);
+  void commitStore(uint64_t storeSeqNum);
   void tick();
 
   bool isReady(uint64_t userSeqNum) const;
@@ -58,25 +59,28 @@ private:
     const uint64_t idx;
     const uint64_t value;
     bool valid;
-    bool stored;
     /**
      * The sequence number of the step instruction.
      */
     uint64_t stepSeqNum;
+    uint64_t storeSeqNum;
     Cycles readyCycles;
     Cycles firstUseCycles;
 
     FIFOEntry(uint64_t _idx, const uint64_t _value)
-        : idx(_idx), value(_value), valid(false), stored(false),
-          stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {}
+        : idx(_idx), value(_value), valid(false),
+          stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+          storeSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {}
 
     void markReady(Cycles _readyCycles) {
       this->valid = true;
       this->readyCycles = _readyCycles;
     }
 
-    void store();
-
+    bool stored() const {
+      return this->storeSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM;
+    }
+    void store(uint64_t storeSeqNum);
     void step(uint64_t stepSeqNum);
   };
 

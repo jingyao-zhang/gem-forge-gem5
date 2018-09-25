@@ -116,7 +116,7 @@ void Stream::configure(uint64_t configSeqNum) {
   }
 }
 
-void Stream::store(uint64_t userSeqNum) {
+void Stream::store(uint64_t storeSeqNum) {
   STREAM_DPRINTF("Stored.\n");
   if (this->FIFO.empty()) {
     STREAM_PANIC("Store when the fifo is empty for stream %s.",
@@ -127,26 +127,61 @@ void Stream::store(uint64_t userSeqNum) {
     STREAM_PANIC("StoredData is nullptr for store stream.");
   }
 
-  auto entry = this->findCorrectUsedEntry(userSeqNum);
+  auto entry = this->findCorrectUsedEntry(storeSeqNum);
   if (entry == nullptr) {
     STREAM_PANIC("Try to store when there is no available entry. Something "
                  "wrong in isReady.");
   }
 
+  if (entry->stored()) {
+    STREAM_PANIC("entry %lu is already stored.", entry->idx);
+  }
+  entry->store(storeSeqNum);
+
+  /**
+   * For store stream, if there is no base step stream, which means this is a
+   * constant store or somehow, we can step it now.
+   */
+  if (this->baseStepStreams.empty()) {
+    // Implicitly step the stream.
+    this->step(storeSeqNum);
+  }
+}
+
+void Stream::commitStore(uint64_t storeSeqNum) {
+  STREAM_DPRINTF("Store committed with seq %lu.\n", storeSeqNum);
+  if (this->FIFO.empty()) {
+    STREAM_PANIC("Commit store when the FIFO is empty.");
+  }
+  auto &entry = this->FIFO.front();
+  if (entry.storeSeqNum != storeSeqNum) {
+    STREAM_PANIC("Mismatch between the store seq num %lu with entry (%lu).",
+                 storeSeqNum, entry.storeSeqNum);
+  }
+  // Now actually send the committed data.
+  if (this->storedData == nullptr) {
+    STREAM_PANIC("StoredData is nullptr for store stream.");
+  }
+
   /**
    * Send the write packet with random data.
    */
-  if (entry->value != 0) {
-    auto memInst = new StreamMemAccessInst(this, entry->idx);
+  if (entry.value != 0) {
+    auto memInst = new StreamMemAccessInst(this, entry.idx);
     this->memInsts.insert(memInst);
-    auto paddr = cpu->translateAndAllocatePhysMem(entry->value);
+    auto paddr = cpu->translateAndAllocatePhysMem(entry.value);
     STREAM_DPRINTF("Send stream store packet at %p size %d.\n",
-                   reinterpret_cast<void *>(entry->value),
+                   reinterpret_cast<void *>(entry.value),
                    this->info.element_size());
     cpu->sendRequest(paddr, this->info.element_size(), memInst, storedData);
   }
 
-  entry->store();
+  /**
+   * Implicitly commit the step if we have no base stream.
+   */
+  if (this->baseStepStreams.empty()) {
+    this->commitStep(storeSeqNum);
+  }
 }
 
 Stream::FIFOEntry *Stream::findCorrectUsedEntry(uint64_t userSeqNum) {
@@ -305,7 +340,7 @@ void Stream::receiveReady(Stream *rootStream, Stream *baseStream,
 }
 
 void Stream::step(uint64_t stepSeqNum) {
-  if (!this->baseStreams.empty()) {
+  if (!this->baseStepStreams.empty()) {
     STREAM_PANIC(
         "Receive step signal from nowhere for a stream with base streams.");
   }
@@ -353,9 +388,9 @@ void Stream::stepImpl(uint64_t stepSeqNum) {
 }
 
 void Stream::commitStep(uint64_t stepSeqNum) {
-  if (!this->baseStreams.empty()) {
+  if (!this->baseStepStreams.empty()) {
     STREAM_PANIC("Receive commit step signal from nowhere for a stream with "
-                 "base streams.");
+                 "base step streams.");
   }
   this->commitStepImpl(stepSeqNum);
   // Send out the step signal as the root stream.
@@ -409,11 +444,11 @@ void Stream::StreamMemAccessInst::handlePacketResponse(LLVMTraceCPU *cpu,
   this->stream->handlePacketResponse(this->entryId, packet, this);
 }
 
-void Stream::FIFOEntry::store() {
-  if (this->stored) {
+void Stream::FIFOEntry::store(uint64_t storeSeqNum) {
+  if (this->storeSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM) {
     panic("This entry %lu has already been stored before.", this->idx);
   }
-  this->stored = true;
+  this->storeSeqNum = storeSeqNum;
 }
 
 void Stream::FIFOEntry::step(uint64_t stepSeqNum) {

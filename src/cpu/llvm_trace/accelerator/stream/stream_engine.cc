@@ -78,6 +78,15 @@ void StreamEngine::commitStreamStep(uint64_t streamId, uint64_t stepSeqNum) {
   stream->commitStep(stepSeqNum);
 }
 
+void StreamEngine::commitStreamStore(uint64_t streamId, uint64_t storeSeqNum) {
+  auto stream = this->getStreamNullable(streamId);
+  if (stream == nullptr || stream->getConfigSeqNum() > storeSeqNum) {
+    // This is possible in partial datagraph that contains an incomplete loop.
+    return;
+  }
+  stream->commitStore(storeSeqNum);
+}
+
 Stream *StreamEngine::getOrInitializeStream(
     const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst) {
   const auto &streamId = configInst.stream_id();

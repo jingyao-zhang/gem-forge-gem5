@@ -69,6 +69,11 @@ void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->handle(this);
 }
 
+void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
+  cpu->getAcceleratorManager()->commitStreamStore(
+      this->TDG.stream_step().stream_id(), this->getSeqNum());
+}
+
 void StreamStoreInst::markFinished() {
   DPRINTF(StreamEngine, "Mark StreamStoreInst completed.\n");
   this->finished = true;

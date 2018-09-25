@@ -21,6 +21,7 @@ public:
   bool isStreamReady(uint64_t streamId, uint64_t userSeqNum) const;
   bool canStreamStep(uint64_t streamId) const;
   void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);
+  void commitStreamStore(uint64_t streamId, uint64_t storeSeqNum);
 
   const Stream *getStreamNullable(uint64_t streamId) const;
   Stream *getStreamNullable(uint64_t streamId);
