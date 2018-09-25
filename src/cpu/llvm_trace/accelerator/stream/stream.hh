@@ -1,7 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_HH__
 #define __CPU_TDG_ACCELERATOR_STREAM_HH__
 
-#include "stream_pattern.hh"
+#include "stream_history.hh"
 
 // Parse the instructions from a protobuf.
 #include "config/have_protobuf.hh"
@@ -46,7 +46,7 @@ private:
   LLVMTraceCPU *cpu;
   StreamEngine *se;
   LLVM::TDG::StreamInfo info;
-  StreamPattern pattern;
+  std::unique_ptr<StreamHistory> history;
 
   std::unordered_set<Stream *> baseStreams;
   std::unordered_set<Stream *> dependentStreams;
@@ -129,9 +129,11 @@ private:
   /**
    * Find the correct used entry by comparing the userSeqNum and stepSeqNum of
    * the entry.
+   * Returns nullptr if failed. This can happen when the last element is
+   * stepped, but the FIFO is full and the next element is not allocated yet.
    */
-  FIFOEntry &findCorrectUsedEntry(uint64_t userSeqNum);
-  const FIFOEntry &findCorrectUsedEntry(uint64_t userSeqNum) const;
+  FIFOEntry *findCorrectUsedEntry(uint64_t userSeqNum);
+  const FIFOEntry *findCorrectUsedEntry(uint64_t userSeqNum) const;
 };
 
 #endif

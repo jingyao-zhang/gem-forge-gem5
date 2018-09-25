@@ -17,9 +17,8 @@
 
 Stream::Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
                LLVMTraceCPU *_cpu, StreamEngine *_se)
-    : cpu(_cpu), se(_se), pattern(configInst.pattern_path()),
-      configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),
-      RUN_AHEAD_FIFO_ENTRIES(10) {
+    : cpu(_cpu), se(_se), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+      storedData(nullptr), RUN_AHEAD_FIFO_ENTRIES(10) {
 
   const auto &streamName = configInst.stream_name();
   const auto &streamId = configInst.stream_id();
@@ -43,6 +42,9 @@ Stream::Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
         "info file (%lu).",
         streamId, this->info.id());
   }
+
+  this->history = std::unique_ptr<StreamHistory>(
+      new StreamHistory(this->info.history_path()));
 
   for (const auto &baseStreamId : this->info.chosen_base_ids()) {
     auto baseStream = this->se->getStreamNullable(baseStreamId);
@@ -83,7 +85,7 @@ void Stream::addBaseStream(Stream *baseStream) {
 
 void Stream::configure(uint64_t configSeqNum) {
   STREAM_DPRINTF("Configured at set num %lu.\n", configSeqNum);
-  this->pattern.configure();
+  this->history->configure();
   this->configSeqNum = configSeqNum;
 
   this->FIFO.clear();
@@ -104,54 +106,63 @@ void Stream::store(uint64_t userSeqNum) {
     STREAM_PANIC("StoredData is nullptr for store stream.");
   }
 
-  auto &entry = this->findCorrectUsedEntry(userSeqNum);
+  auto entry = this->findCorrectUsedEntry(userSeqNum);
+  if (entry == nullptr) {
+    STREAM_PANIC("Try to store when there is no available entry. Something "
+                 "wrong in isReady.");
+  }
 
   /**
    * Send the write packet with random data.
    */
-  auto memInst = new StreamMemAccessInst(this, entry.idx);
-  this->memInsts.insert(memInst);
-  auto paddr = cpu->translateAndAllocatePhysMem(entry.value);
-  cpu->sendRequest(paddr, this->info.element_size(), memInst, storedData);
+  if (entry->value != 0) {
+    auto memInst = new StreamMemAccessInst(this, entry->idx);
+    this->memInsts.insert(memInst);
+    auto paddr = cpu->translateAndAllocatePhysMem(entry->value);
+    STREAM_DPRINTF("Send stream store packet at %p size %d.\n",
+                   reinterpret_cast<void *>(entry->value),
+                   this->info.element_size());
+    cpu->sendRequest(paddr, this->info.element_size(), memInst, storedData);
+  }
 
-  entry.store();
+  entry->store();
 }
 
-Stream::FIFOEntry &Stream::findCorrectUsedEntry(uint64_t userSeqNum) {
+Stream::FIFOEntry *Stream::findCorrectUsedEntry(uint64_t userSeqNum) {
   for (auto &entry : this->FIFO) {
     if (entry.stepSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
       // This entry has not been stepped.
-      return entry;
+      return &entry;
     } else if (entry.stepSeqNum > userSeqNum) {
       // This entry is already stepped, but the stepped inst is younger than the
       // user, so the user should use this entry.
-      return entry;
+      return &entry;
     }
   }
-  STREAM_PANIC("Failed to find the correct used entry.");
+  return nullptr;
 }
 
-const Stream::FIFOEntry &
+const Stream::FIFOEntry *
 Stream::findCorrectUsedEntry(uint64_t userSeqNum) const {
   for (const auto &entry : this->FIFO) {
     if (entry.stepSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
       // This entry has not been stepped.
-      return entry;
+      return &entry;
     } else if (entry.stepSeqNum > userSeqNum) {
       // This entry is already stepped, but the stepped inst is younger than the
       // user, so the user should use this entry.
-      return entry;
+      return &entry;
     }
   }
-  STREAM_PANIC("Failed to find the correct used entry.");
+  return nullptr;
 }
 
 bool Stream::isReady(uint64_t userSeqNum) const {
   if (this->FIFO.empty()) {
     return false;
   }
-  const auto &entry = this->findCorrectUsedEntry(userSeqNum);
-  return entry.valid;
+  const auto *entry = this->findCorrectUsedEntry(userSeqNum);
+  return (entry != nullptr) && (entry->valid);
 }
 
 bool Stream::canStep() const {
@@ -164,7 +175,7 @@ bool Stream::canStep() const {
 }
 
 void Stream::enqueueFIFO() {
-  auto nextValuePair = this->pattern.getNextValue();
+  auto nextValuePair = this->history->getNextAddr();
   STREAM_DPRINTF("Enqueue with idx %lu value (%s, %lu), fifo size %lu.\n",
                  this->FIFOIdx, (nextValuePair.first ? "valid" : "invalid"),
                  nextValuePair.second, this->FIFO.size());
@@ -187,8 +198,9 @@ void Stream::enqueueFIFO() {
       /**
        * This is a load stream, create the mem inst.
        */
-      STREAM_DPRINTF("Send packet for entry %lu with addr %p.\n", entry.idx,
-                     reinterpret_cast<void *>(entry.value));
+      STREAM_DPRINTF("Send load packet for entry %lu with addr %p, size %d.\n",
+                     entry.idx, reinterpret_cast<void *>(entry.value),
+                     this->info.element_size());
       auto memInst = new StreamMemAccessInst(this, entry.idx);
       this->memInsts.insert(memInst);
       auto paddr = cpu->translateAndAllocatePhysMem(entry.value);
@@ -200,6 +212,10 @@ void Stream::enqueueFIFO() {
        * cache line.
        * Store stream is always ready.
        */
+      STREAM_DPRINTF(
+          "Send store fetch packet for entry %lu with addr %p, size %d.\n",
+          entry.idx, reinterpret_cast<void *>(entry.value),
+          this->info.element_size());
       entry.markReady(cpu->curCycle());
 
       auto memInst = new StreamMemAccessInst(this, entry.idx);
@@ -294,14 +310,13 @@ void Stream::receiveStep(uint64_t stepSeqNum, Stream *rootStream,
   if (rootStream == this) {
     STREAM_PANIC("Dependence cycle detected.");
   }
-  STREAM_DPRINTF("Received step signal for entry %lu from stream %s.\n",
+  STREAM_DPRINTF("Received step signal from stream %s.\n",
                  baseStream->getStreamName().c_str());
   this->stepImpl(stepSeqNum);
   this->triggerStep(stepSeqNum, rootStream);
 }
 
 void Stream::stepImpl(uint64_t stepSeqNum) {
-  STREAM_DPRINTF("Stepped.\n");
   if (this->FIFO.empty()) {
     STREAM_PANIC("Step when the fifo is empty for stream %s.",
                  this->getStreamName().c_str());
@@ -309,6 +324,7 @@ void Stream::stepImpl(uint64_t stepSeqNum) {
   for (auto &entry : this->FIFO) {
     if (entry.stepSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
       entry.step(stepSeqNum);
+      STREAM_DPRINTF("Stepped entry %lu.\n", entry.idx);
       return;
     }
   }
