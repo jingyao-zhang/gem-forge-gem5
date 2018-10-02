@@ -62,6 +62,15 @@ void TDGAcceleratorManager::regStats() {
   }
 }
 
+void TDGAcceleratorManager::useStream(uint64_t streamId, uint64_t userSeqNum) {
+  for (auto accelerator : this->accelerators) {
+    if (auto se = dynamic_cast<StreamEngine *>(accelerator)) {
+      return se->useStream(streamId, userSeqNum);
+    }
+  }
+  panic("Failed to find the stream manager to handle useStream.");
+}
+
 bool TDGAcceleratorManager::isStreamReady(uint64_t streamId,
                                           uint64_t userSeqNum) const {
   for (auto accelerator : this->accelerators) {

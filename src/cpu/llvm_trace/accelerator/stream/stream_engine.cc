@@ -15,6 +15,12 @@ void StreamEngine::regStats() {
   this->numStepped.name(this->manager->name() + ".stream.numStepped")
       .desc("Number of streams stepped.")
       .prereq(this->numStepped);
+  this->numElements.name(this->manager->name() + ".stream.numElements")
+      .desc("Number of stream elements created.")
+      .prereq(this->numElements);
+  this->numElementsUsed.name(this->manager->name() + ".stream.numElementsUsed")
+      .desc("Number of stream elements used.")
+      .prereq(this->numElementsUsed);
 }
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) {
@@ -30,7 +36,7 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
     auto stream =
         this->getStreamNullable(stepInst->getTDG().stream_step().stream_id());
     auto stepSeqNum = stepInst->getSeqNum();
-    if (stream != nullptr && stream->getConfigSeqNum() < stepSeqNum) {
+    if (stream != nullptr && (!stream->isBeforeFirstConfigInst(stepSeqNum))) {
       stream->step(stepSeqNum);
     }
     stepInst->markFinished();
@@ -40,7 +46,7 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
     auto stream =
         this->getStreamNullable(storeInst->getTDG().stream_store().stream_id());
     auto storeSeqNum = storeInst->getSeqNum();
-    if (stream != nullptr && stream->getConfigSeqNum() < storeSeqNum) {
+    if (stream != nullptr && (!stream->isBeforeFirstConfigInst(storeSeqNum))) {
       stream->store(storeSeqNum);
     }
     storeInst->markFinished();
@@ -59,6 +65,16 @@ bool StreamEngine::isStreamReady(uint64_t streamId, uint64_t userSeqNum) const {
   return stream->isReady(userSeqNum);
 }
 
+void StreamEngine::useStream(uint64_t streamId, uint64_t userSeqNum) {
+  auto stream = this->getStreamNullable(streamId);
+  if (stream == nullptr) {
+    // This is possible in partial datagraph that contains an incomplete loop.
+    // For this rare case, we just assume the stream is ready.
+    return;
+  }
+  return stream->use(userSeqNum);
+}
+
 bool StreamEngine::canStreamStep(uint64_t streamId) const {
   auto stream = this->getStreamNullable(streamId);
   if (stream == nullptr) {
@@ -71,7 +87,7 @@ bool StreamEngine::canStreamStep(uint64_t streamId) const {
 
 void StreamEngine::commitStreamStep(uint64_t streamId, uint64_t stepSeqNum) {
   auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->getConfigSeqNum() > stepSeqNum) {
+  if (stream == nullptr || stream->isBeforeFirstConfigInst(stepSeqNum)) {
     // This is possible in partial datagraph that contains an incomplete loop.
     return;
   }
@@ -80,10 +96,16 @@ void StreamEngine::commitStreamStep(uint64_t streamId, uint64_t stepSeqNum) {
 
 void StreamEngine::commitStreamStore(uint64_t streamId, uint64_t storeSeqNum) {
   auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->getConfigSeqNum() > storeSeqNum) {
+  if (stream == nullptr || stream->isBeforeFirstConfigInst(storeSeqNum)) {
     // This is possible in partial datagraph that contains an incomplete loop.
+    // if (storeSeqNum == 5742) {
+    //   panic("chhhh %d.", stream->getFirstConfigSeqNum());
+    // }
     return;
   }
+  // if (storeSeqNum == 5742) {
+  //   panic("christ jesus.");
+  // }
   stream->commitStore(storeSeqNum);
 }
 

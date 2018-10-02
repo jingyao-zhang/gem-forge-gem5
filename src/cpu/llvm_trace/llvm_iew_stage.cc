@@ -227,6 +227,7 @@ void LLVMIEWStage::issue() {
         } else {
           this->statIssuedInstType[0][opClass]++;
         }
+
         // After issue, if the inst is not load/store, we can remove them
         // from the inst queue.
         if (!inst->isStoreInst() && !inst->isLoadInst()) {

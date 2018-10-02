@@ -18,6 +18,7 @@ public:
   void tick() override;
   void regStats() override;
 
+  void useStream(uint64_t streamId, uint64_t userSeqNum);
   bool isStreamReady(uint64_t streamId, uint64_t userSeqNum) const;
   bool canStreamStep(uint64_t streamId) const;
   void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);
@@ -30,6 +31,8 @@ public:
    */
   Stats::Scalar numConfigured;
   Stats::Scalar numStepped;
+  Stats::Scalar numElements;
+  Stats::Scalar numElementsUsed;
 
 private:
   std::unordered_map<uint64_t, Stream> streamMap;

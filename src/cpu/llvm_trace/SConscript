@@ -1,6 +1,8 @@
 Import('*')
 
 DebugFlag('LLVMTraceCPU')
+DebugFlag('LLVMTraceCPUFetch')
+DebugFlag('LLVMTraceCPUCommit')
 DebugFlag('LLVMBranchPredictor')
 DebugFlag('RegionStats')
 

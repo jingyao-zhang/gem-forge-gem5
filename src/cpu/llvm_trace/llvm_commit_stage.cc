@@ -1,6 +1,6 @@
 #include "cpu/llvm_trace/llvm_commit_stage.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
-#include "debug/LLVMTraceCPU.hh"
+#include "debug/LLVMTraceCPUCommit.hh"
 
 using InstStatus = LLVMTraceCPU::InstStatus;
 
@@ -65,8 +65,9 @@ void LLVMCommitStage::tick() {
              "Inst %u should be writebacked to be commited, not %d\n", instId,
              cpu->inflyInstStatus.at(instId));
 
-    DPRINTF(LLVMTraceCPU, "Inst %u committed, remaining infly inst #%u\n",
-            instId, cpu->inflyInstStatus.size());
+    DPRINTF(LLVMTraceCPUCommit,
+            "Inst %lu committed, remaining infly inst #%u\n", inst->getSeqNum(),
+            cpu->inflyInstStatus.size());
 
     if (!cpu->isStandalone()) {
       this->instsCommitted[cpu->thread_context->threadId()]++;

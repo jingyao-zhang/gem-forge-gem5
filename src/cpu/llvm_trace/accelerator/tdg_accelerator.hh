@@ -53,6 +53,7 @@ public:
   void handle(LLVMDynamicInst *inst);
   void tick();
 
+  void useStream(uint64_t streamId, uint64_t userSeqNum);
   bool isStreamReady(uint64_t streamId, uint64_t userSeqNum) const;
   bool canStreamStep(uint64_t streamId) const;
   void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);

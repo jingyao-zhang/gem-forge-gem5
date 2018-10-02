@@ -47,6 +47,7 @@ void StreamStepInst::execute(LLVMTraceCPU *cpu) {
 }
 
 void StreamStepInst::commit(LLVMTraceCPU *cpu) {
+  DPRINTF(StreamEngine, "Commit stream step %lu\n", this->getSeqNum());
   cpu->getAcceleratorManager()->commitStreamStep(
       this->TDG.stream_step().stream_id(), this->getSeqNum());
 }
@@ -66,12 +67,16 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
 }
 
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
+  // Notify the stream engine.
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    cpu->getAcceleratorManager()->useStream(streamId, this->seqNum);
+  }
   cpu->getAcceleratorManager()->handle(this);
 }
 
 void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->commitStreamStore(
-      this->TDG.stream_step().stream_id(), this->getSeqNum());
+      this->TDG.stream_store().stream_id(), this->getSeqNum());
 }
 
 void StreamStoreInst::markFinished() {

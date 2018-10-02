@@ -1,6 +1,6 @@
 #include "cpu/llvm_trace/llvm_fetch_stage.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
-#include "debug/LLVMTraceCPU.hh"
+#include "debug/LLVMTraceCPUFetch.hh"
 
 using InstStatus = LLVMTraceCPU::InstStatus;
 
@@ -70,8 +70,11 @@ void LLVMFetchStage::tick() {
         break;
       }
 
-      DPRINTF(LLVMTraceCPU, "Fetch inst %d into fetchQueue, remaining %d\n",
-              instId, cpu->dynInstStream->fetchSize());
+      DPRINTF(
+          LLVMTraceCPUFetch,
+          "Fetch inst %lu %s into fetchQueue, infly insts %lu,  remaining %d\n",
+          inst->getSeqNum(), inst->getTDG().op().c_str(),
+          cpu->inflyInstMap.size(), cpu->dynInstStream->fetchSize());
       // Update the infly.
       cpu->inflyInstStatus[instId] = InstStatus::FETCHED;
       cpu->inflyInstMap.emplace(instId, inst);
@@ -92,10 +95,14 @@ void LLVMFetchStage::tick() {
       switch (stackAdjustment) {
       case 1: {
         cpu->stackPush();
+        DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
+                cpu->currentStackDepth);
         break;
       }
       case -1: {
         cpu->stackPop();
+        DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
+                cpu->currentStackDepth);
         break;
       }
       case 0: {
@@ -105,8 +112,6 @@ void LLVMFetchStage::tick() {
         panic("Illegal call stack adjustment &d.\n", stackAdjustment);
       }
       }
-      DPRINTF(LLVMTraceCPU, "Stack depth updated to %u\n",
-              cpu->currentStackDepth);
       fetchedInsts += inst->getQueueWeight();
     }
 
@@ -116,7 +121,7 @@ void LLVMFetchStage::tick() {
       bool predictionRight = this->predictor->predictAndUpdate(inst);
       if (!predictionRight) {
         this->branchPredMisses++;
-        DPRINTF(LLVMTraceCPU,
+        DPRINTF(LLVMTraceCPUFetch,
                 "Fetch blocked due to failed branch predictor for %s.\n",
                 inst->getInstName().c_str());
         this->branchPreictPenalityCycles = 8;

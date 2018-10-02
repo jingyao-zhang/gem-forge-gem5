@@ -175,6 +175,12 @@ LLVMDynamicInstMem::~LLVMDynamicInstMem() {
 }
 
 void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
+
+  // Notify the stream engine.
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    cpu->getAcceleratorManager()->useStream(streamId, this->seqNum);
+  }
+
   switch (this->type) {
   case Type::ALLOCA: {
     // We need to handle stack allocation only
@@ -333,5 +339,9 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
 }
 
 void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
+  // Notify the stream engine.
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    cpu->getAcceleratorManager()->useStream(streamId, this->seqNum);
+  }
   this->fuLatency = cpu->getOpLatency(this->getOpClass());
 }
