@@ -18,9 +18,10 @@ public:
   void tick() override;
   void regStats() override;
 
-  void useStream(uint64_t streamId, uint64_t userSeqNum);
-  bool isStreamReady(uint64_t streamId, uint64_t userSeqNum) const;
+  void useStream(uint64_t streamId, const LLVMDynamicInst *user);
+  bool isStreamReady(uint64_t streamId, const LLVMDynamicInst *user) const;
   bool canStreamStep(uint64_t streamId) const;
+  void commitStreamConfigure(uint64_t streamId, uint64_t configSeqNum);
   void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);
   void commitStreamStore(uint64_t streamId, uint64_t storeSeqNum);
 
@@ -33,6 +34,10 @@ public:
   Stats::Scalar numStepped;
   Stats::Scalar numElements;
   Stats::Scalar numElementsUsed;
+  Stats::Scalar entryWaitCycles;
+  Stats::Scalar numMemElements;
+  Stats::Scalar numMemElementsUsed;
+  Stats::Scalar memEntryWaitCycles;
 
 private:
   std::unordered_map<uint64_t, Stream> streamMap;

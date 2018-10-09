@@ -21,6 +21,21 @@ void StreamEngine::regStats() {
   this->numElementsUsed.name(this->manager->name() + ".stream.numElementsUsed")
       .desc("Number of stream elements used.")
       .prereq(this->numElementsUsed);
+  this->entryWaitCycles.name(this->manager->name() + ".stream.entryWaitCycles")
+      .desc("Number of cycles from first checked ifReady to ready.")
+      .prereq(this->entryWaitCycles);
+  this->numMemElements.name(this->manager->name() + ".stream.numMemElements")
+      .desc("Number of mem stream elements created.")
+      .prereq(this->numMemElements);
+  this->numMemElementsUsed
+      .name(this->manager->name() + ".stream.numMemElementsUsed")
+      .desc("Number of mem stream elements used.")
+      .prereq(this->numMemElementsUsed);
+  this->memEntryWaitCycles
+      .name(this->manager->name() + ".stream.memEntryWaitCycles")
+      .desc("Number of cycles of a mem entry from first checked ifReady to "
+            "ready.")
+      .prereq(this->memEntryWaitCycles);
 }
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) {
@@ -55,24 +70,25 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
   return false;
 }
 
-bool StreamEngine::isStreamReady(uint64_t streamId, uint64_t userSeqNum) const {
+bool StreamEngine::isStreamReady(uint64_t streamId,
+                                 const LLVMDynamicInst *user) const {
   auto stream = this->getStreamNullable(streamId);
   if (stream == nullptr) {
     // This is possible in partial datagraph that contains an incomplete loop.
     // For this rare case, we just assume the stream is ready.
     return true;
   }
-  return stream->isReady(userSeqNum);
+  return stream->isReady(user);
 }
 
-void StreamEngine::useStream(uint64_t streamId, uint64_t userSeqNum) {
+void StreamEngine::useStream(uint64_t streamId, const LLVMDynamicInst *user) {
   auto stream = this->getStreamNullable(streamId);
   if (stream == nullptr) {
     // This is possible in partial datagraph that contains an incomplete loop.
     // For this rare case, we just assume the stream is ready.
     return;
   }
-  return stream->use(userSeqNum);
+  return stream->use(user);
 }
 
 bool StreamEngine::canStreamStep(uint64_t streamId) const {
@@ -83,6 +99,16 @@ bool StreamEngine::canStreamStep(uint64_t streamId) const {
     return true;
   }
   return stream->canStep();
+}
+
+void StreamEngine::commitStreamConfigure(uint64_t streamId,
+                                         uint64_t configSeqNum) {
+  auto stream = this->getStreamNullable(streamId);
+  if (stream == nullptr || stream->isBeforeFirstConfigInst(configSeqNum)) {
+    // This is possible in partial datagraph that contains an incomplete loop.
+    return;
+  }
+  stream->commitConfigure(configSeqNum);
 }
 
 void StreamEngine::commitStreamStep(uint64_t streamId, uint64_t stepSeqNum) {

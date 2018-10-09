@@ -91,8 +91,8 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
   for (const auto dependentInstId : this->TDG.deps()) {
     if (!cpu->isInstFinished(dependentInstId)) {
       // We should not be blocked by control dependence here.
-      auto DepInst = cpu->getInflyInst(dependentInstId);
-      if (DepInst->isBranchInst()) {
+      auto depInst = cpu->getInflyInst(dependentInstId);
+      if (depInst->isBranchInst()) {
         continue;
       }
       return false;
@@ -101,11 +101,30 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 
   // Check the stream engine.
   for (const auto &streamId : this->TDG.used_stream_ids()) {
-    if (!cpu->isStreamReady(streamId, seqNum)) {
+    if (!cpu->getAcceleratorManager()->isStreamReady(streamId, this)) {
       return false;
     }
   }
   return true;
+}
+
+void LLVMDynamicInst::dumpBasic() const {
+  inform("Dump Inst seq %lu, id %lu, op %s.\n", this->seqNum, this->getId(),
+         this->getInstName().c_str());
+}
+
+void LLVMDynamicInst::dumpDeps(LLVMTraceCPU *cpu) const {
+  this->dumpBasic();
+  inform("Deps Begin ===========================\n");
+  for (const auto dependentInstId : this->TDG.deps()) {
+    auto depInst = cpu->getInflyInstNullable(dependentInstId);
+    if (depInst == nullptr) {
+      inform("Dep id %lu nullptr\n", dependentInstId);
+    } else {
+      depInst->dumpBasic();
+    }
+  }
+  inform("Deps End   ===========================\n");
 }
 
 // For now just return IntAlu.
@@ -178,7 +197,7 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
 
   // Notify the stream engine.
   for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->useStream(streamId, this->seqNum);
+    cpu->getAcceleratorManager()->useStream(streamId, this);
   }
 
   switch (this->type) {
@@ -341,7 +360,7 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
 void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
   for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->useStream(streamId, this->seqNum);
+    cpu->getAcceleratorManager()->useStream(streamId, this);
   }
   this->fuLatency = cpu->getOpLatency(this->getOpClass());
 }

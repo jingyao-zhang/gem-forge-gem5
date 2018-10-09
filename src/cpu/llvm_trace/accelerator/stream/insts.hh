@@ -8,6 +8,7 @@ public:
   StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG);
   void execute(LLVMTraceCPU *cpu) override;
   bool isCompleted() const override { return this->finished; }
+  void commit(LLVMTraceCPU *cpu) override;
 
   /**
    * Interface for stream engine.

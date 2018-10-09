@@ -19,6 +19,12 @@ void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->handle(this);
 }
 
+void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
+  DPRINTF(StreamEngine, "Commit stream configure %lu\n", this->getSeqNum());
+  cpu->getAcceleratorManager()->commitStreamConfigure(
+      this->TDG.stream_config().stream_id(), this->getSeqNum());
+}
+
 void StreamConfigInst::markFinished() {
   DPRINTF(StreamEngine, "Mark StreamConfigInst completed.\n");
   this->finished = true;
@@ -69,7 +75,7 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
   for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->useStream(streamId, this->seqNum);
+    cpu->getAcceleratorManager()->useStream(streamId, this);
   }
   cpu->getAcceleratorManager()->handle(this);
 }

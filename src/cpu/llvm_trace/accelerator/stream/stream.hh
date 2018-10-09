@@ -40,14 +40,15 @@ public:
   }
 
   void configure(uint64_t configSeqNum);
+  void commitConfigure(uint64_t configSeqNum);
   void step(uint64_t stepSeqNum);
   void commitStep(uint64_t stepSeqNum);
   void store(uint64_t storeSeqNum);
   void commitStore(uint64_t storeSeqNum);
   void tick();
 
-  bool isReady(uint64_t userSeqNum) const;
-  void use(uint64_t userSeqNum);
+  bool isReady(const LLVMDynamicInst *user) const;
+  void use(const LLVMDynamicInst *user);
   bool canStep() const;
 
 private:
@@ -108,6 +109,7 @@ private:
     const uint64_t value;
     bool isAddressValid;
     bool isValueValid;
+    bool used;
     int inflyLoadPackets;
     /**
      * The sequence number of the step instruction.
@@ -117,13 +119,14 @@ private:
     uint64_t storeSeqNum;
     Cycles addressReadyCycles;
     Cycles valueReadyCycles;
-    Cycles firstUseCycles;
+    mutable Cycles firstCheckIfReadyCycles;
+    mutable std::unordered_set<uint64_t> users;
 
     FIFOEntry(const FIFOEntryIdx &_idx, const uint64_t _address,
               const uint64_t _prevSeqNum)
         : idx(_idx), address(_address), value(0), isAddressValid(false),
-          isValueValid(false), inflyLoadPackets(0), prevSeqNum(_prevSeqNum),
-          stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+          isValueValid(false), used(false), inflyLoadPackets(0),
+          prevSeqNum(_prevSeqNum), stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
           storeSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {}
 
     void markAddressReady(Cycles readyCycles);
@@ -137,6 +140,7 @@ private:
     }
     void store(uint64_t storeSeqNum);
     void step(uint64_t stepSeqNum);
+    void dump() const;
   };
 
   /**
@@ -174,6 +178,12 @@ private:
 
   std::unordered_set<StreamMemAccessInst *> memInsts;
 
+  mutable std::unordered_map<uint64_t, const FIFOEntry *> userToEntryMap;
+
+  bool isMemStream() const {
+    return this->info.type() == "load" || this->info.type() == "store";
+  }
+
   void enqueueFIFO();
 
   bool checkIfEntryBaseValuesValid(const FIFOEntry &entry) const;
@@ -201,6 +211,11 @@ private:
    */
   FIFOEntry *findCorrectUsedEntry(uint64_t userSeqNum);
   const FIFOEntry *findCorrectUsedEntry(uint64_t userSeqNum) const;
+
+  /**
+   * For debug.
+   */
+  void dump() const;
 };
 
 #endif

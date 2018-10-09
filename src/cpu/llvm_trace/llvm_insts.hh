@@ -106,6 +106,9 @@ public:
   uint64_t getStaticInstAddress() const;
   const std::string &getNextBBName() const;
 
+  void dumpBasic() const;
+  void dumpDeps(LLVMTraceCPU *cpu) const;
+
 protected:
   /**
    * An incontinuous sequence number.

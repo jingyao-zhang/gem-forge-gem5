@@ -62,20 +62,21 @@ void TDGAcceleratorManager::regStats() {
   }
 }
 
-void TDGAcceleratorManager::useStream(uint64_t streamId, uint64_t userSeqNum) {
+void TDGAcceleratorManager::useStream(uint64_t streamId,
+                                      const LLVMDynamicInst *user) {
   for (auto accelerator : this->accelerators) {
     if (auto se = dynamic_cast<StreamEngine *>(accelerator)) {
-      return se->useStream(streamId, userSeqNum);
+      return se->useStream(streamId, user);
     }
   }
   panic("Failed to find the stream manager to handle useStream.");
 }
 
 bool TDGAcceleratorManager::isStreamReady(uint64_t streamId,
-                                          uint64_t userSeqNum) const {
+                                          const LLVMDynamicInst *user) const {
   for (auto accelerator : this->accelerators) {
     if (auto se = dynamic_cast<StreamEngine *>(accelerator)) {
-      return se->isStreamReady(streamId, userSeqNum);
+      return se->isStreamReady(streamId, user);
     }
   }
   panic("Failed to find the stream manager to handle isStreamReady.");
@@ -98,6 +99,16 @@ void TDGAcceleratorManager::commitStreamStep(uint64_t streamId,
     }
   }
   panic("Failed to find the stream manager to handle commitStreamStep.");
+}
+
+void TDGAcceleratorManager::commitStreamConfigure(uint64_t streamId,
+                                                  uint64_t configSeqNum) {
+  for (auto accelerator : this->accelerators) {
+    if (auto se = dynamic_cast<StreamEngine *>(accelerator)) {
+      return se->commitStreamConfigure(streamId, configSeqNum);
+    }
+  }
+  panic("Failed to find the stream manager to handle commitStreamConfigure.");
 }
 
 void TDGAcceleratorManager::commitStreamStore(uint64_t streamId,

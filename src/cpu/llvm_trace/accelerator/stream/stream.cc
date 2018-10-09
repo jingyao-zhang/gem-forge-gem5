@@ -16,8 +16,18 @@
   STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
                  (entry).idx.entryIdx, ##args)
 
+#define STREAM_HACK(format, args...)                                           \
+  hack("Stream %s: " format, this->getStreamName().c_str(), ##args)
+
+#define STREAM_ENTRY_HACK(entry, format, args...)                              \
+  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance,         \
+              (entry).idx.entryIdx, ##args)
+
 #define STREAM_PANIC(format, args...)                                          \
-  panic("Stream %s: " format, this->getStreamName().c_str(), ##args)
+  {                                                                            \
+    this->dump();                                                              \
+    panic("Stream %s: " format, this->getStreamName().c_str(), ##args);        \
+  }
 
 #define STREAM_ENTRY_PANIC(entry, format, args...)                             \
   STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
@@ -140,24 +150,39 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
 }
 
 void Stream::configure(uint64_t configSeqNum) {
-  STREAM_DPRINTF("Configured at set num %lu.\n", configSeqNum);
+  STREAM_DPRINTF("Configured at seq num %lu.\n", configSeqNum);
   this->history->configure();
   this->configSeqNum = configSeqNum;
   if (this->firstConfigSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
     this->firstConfigSeqNum = configSeqNum;
   }
-
-  // For all the entries without stepSeqNum, this means that these entries are
-  // speculative run ahead. Clear them out.
+  /**
+   * For all the entries without stepSeqNum, this means that these entries are
+   * speculative run ahead. Clear them out.
+   * NOTE: The only exception is the first entry without stepSeqNum, which may
+   * be the last element in the stream. To handle this, we use the configure
+   * inst as its step inst.
+   */
+  bool foundLastElement = false;
   auto FIFOIter = this->FIFO.begin();
   while (FIFOIter != this->FIFO.end()) {
     if (FIFOIter->stepped()) {
       // This one has already stepped.
       ++FIFOIter;
     } else {
-      // This one should be cleared.
-      STREAM_ENTRY_DPRINTF(*FIFOIter, "Clear run-ahead entry.\n");
-      FIFOIter = this->FIFO.erase(FIFOIter);
+      if (!foundLastElement && this->isStepRoot()) {
+        /**
+         * Only the step root stream can decide to keep the last element.
+         */
+        foundLastElement = true;
+        this->stepImpl(configSeqNum);
+        this->triggerStep(configSeqNum, this);
+        FIFOIter++;
+      } else {
+        // This one should be cleared.
+        STREAM_ENTRY_DPRINTF(*FIFOIter, "Clear run-ahead entry.\n");
+        FIFOIter = this->FIFO.erase(FIFOIter);
+      }
     }
   }
 
@@ -166,6 +191,27 @@ void Stream::configure(uint64_t configSeqNum) {
   while (this->FIFO.size() < this->RUN_AHEAD_FIFO_ENTRIES) {
     this->enqueueFIFO();
   }
+}
+
+void Stream::commitConfigure(uint64_t configSeqNum) {
+  if (!this->isStepRoot()) {
+    return;
+  }
+  if (this->FIFO.empty()) {
+    return;
+  }
+  {
+    auto &entry = this->FIFO.front();
+    if (entry.stepSeqNum != configSeqNum) {
+      // Nothing to step.
+      return;
+    }
+    STREAM_ENTRY_DPRINTF(entry, "Commit configure with seqNum %lu.\n",
+                         configSeqNum);
+  }
+  this->commitStepImpl(configSeqNum);
+  // Send out the step signal as the root stream.
+  this->triggerCommitStep(configSeqNum, this);
 }
 
 void Stream::store(uint64_t storeSeqNum) {
@@ -269,39 +315,65 @@ Stream::findCorrectUsedEntry(uint64_t userSeqNum) const {
   return nullptr;
 }
 
-bool Stream::isReady(uint64_t userSeqNum) const {
+bool Stream::isReady(const LLVMDynamicInst *user) const {
+  auto userSeqNum = user->getSeqNum();
   if (this->FIFO.empty()) {
     return false;
   }
-  if (userSeqNum == 27250) {
-    STREAM_DPRINTF("Check is ready for 27250.\n");
-    for (const auto &entry : this->FIFO) {
-      STREAM_ENTRY_DPRINTF(entry, "stepSeq %lu, addrValid %d, valValid %d\n",
-                           entry.stepSeqNum, entry.isAddressValid,
-                           entry.isValueValid);
-    }
-  }
   // STREAM_DPRINTF("Check if stream is ready for inst %lu.\n", userSeqNum);
   const auto *entry = this->findCorrectUsedEntry(userSeqNum);
-  // if (entry != nullptr) {
-  //   STREAM_ENTRY_DPRINTF(*entry, "Check if entry is ready %d.\n",
-  //                        entry->isValueValid);
-  // } else {
-  //   STREAM_DPRINTF("Failed to find the entry.\n");
-  // }
+  {
+    auto debugUserSeqNum = 3804373;
+    if (userSeqNum == debugUserSeqNum) {
+      hack("Check is ready for %lu.\n", debugUserSeqNum);
+      user->dumpDeps(cpu);
+      this->dump();
+      if (entry != nullptr) {
+        hack("Find entry \n");
+        entry->dump();
+      } else {
+        hack("Failed to find entry.\n");
+      }
+    }
+  }
+  if (entry != nullptr) {
+    bool emplaced = this->userToEntryMap.emplace(userSeqNum, entry).second;
+    if (!emplaced) {
+      // This means that this is not the first time for the user to check
+      // isReady.
+      const auto &previousEntry = this->userToEntryMap.at(userSeqNum);
+      if (previousEntry != entry) {
+        // They are different entry.
+        // Should panic here.
+      }
+    }
+    if (entry->users.empty()) {
+      // This is the first time some instructions check if this entry is ready.
+      entry->firstCheckIfReadyCycles = cpu->curCycle();
+    }
+    entry->users.insert(userSeqNum);
+  }
   return (entry != nullptr) && (entry->isValueValid);
 }
 
-void Stream::use(uint64_t userSeqNum) {
-  if (!this->isReady(userSeqNum)) {
-    STREAM_PANIC("Try to use stream when the we are not ready.");
+void Stream::use(const LLVMDynamicInst *user) {
+  auto userSeqNum = user->getSeqNum();
+  // if (userSeqNum == 3804373) {
+  //   panic("Panic for debug.\n");
+  // }
+  if (!this->isReady(user)) {
+    STREAM_PANIC("User %lu tries to use stream when the we are not ready.",
+                 userSeqNum);
   }
   auto *entry = this->findCorrectUsedEntry(userSeqNum);
   STREAM_ENTRY_DPRINTF(*entry, "Used by %lu.\n", userSeqNum);
-  if (entry->firstUseCycles == LLVMDynamicInst::INVALID_SEQ_NUM) {
+  if (!entry->used) {
     // Update the stats.
-    entry->firstUseCycles = cpu->curCycle();
+    entry->used = true;
     this->se->numElementsUsed++;
+    if (this->isMemStream()) {
+      this->se->numMemElementsUsed++;
+    }
   }
 }
 
@@ -329,6 +401,9 @@ void Stream::enqueueFIFO() {
    * Update the stats.
    */
   this->se->numElements++;
+  if (this->isMemStream()) {
+    this->se->numMemElements++;
+  }
 
   auto &entry = this->FIFO.back();
 
@@ -500,6 +575,16 @@ void Stream::markValueReady(FIFOEntry &entry) {
   }
   STREAM_ENTRY_DPRINTF(entry, "Mark value ready.\n");
   entry.markValueReady(cpu->curCycle());
+
+  // Check if there is already some user waiting for this entry.
+  if (!entry.users.empty()) {
+    auto waitCycles = entry.valueReadyCycles - entry.firstCheckIfReadyCycles;
+    se->entryWaitCycles += waitCycles;
+    if (this->isMemStream()) {
+      se->memEntryWaitCycles += waitCycles;
+    }
+  }
+
   this->triggerReady(this, entry.idx);
 }
 
@@ -570,7 +655,11 @@ void Stream::stepImpl(uint64_t stepSeqNum) {
       return;
     }
   }
-  STREAM_PANIC("Failed to find available entry to step.");
+  if (!this->baseStepRootStreams.empty()) {
+    auto stepRootStream = *(this->baseStepRootStreams.begin());
+    stepRootStream->dump();
+  }
+  STREAM_PANIC("Failed to find available entry to step for %lu.", stepSeqNum);
 }
 
 void Stream::commitStep(uint64_t stepSeqNum) {
@@ -604,6 +693,10 @@ void Stream::commitStepImpl(uint64_t stepSeqNum) {
   if (entry.stepSeqNum != stepSeqNum) {
     STREAM_ENTRY_PANIC(entry, "Unmatched stepSeqNum for entry %lu with %lu.",
                        entry.stepSeqNum, stepSeqNum);
+  }
+  // Release the userToEntryMap.
+  for (const auto &user : entry.users) {
+    this->userToEntryMap.erase(user);
   }
   this->FIFO.pop_front();
   while (this->FIFO.size() < this->RUN_AHEAD_FIFO_ENTRIES) {
@@ -644,4 +737,28 @@ void Stream::FIFOEntry::step(uint64_t stepSeqNum) {
           this->idx.streamInstance, this->idx.entryIdx);
   }
   this->stepSeqNum = stepSeqNum;
+}
+
+void Stream::dump() const {
+  inform("Dump for stream %s.\n======================",
+         this->getStreamName().c_str());
+  for (const auto &entry : this->FIFO) {
+    entry.dump();
+  }
+  for (const auto &userEntryPair : this->userToEntryMap) {
+    inform("user %lu entry (%lu, %lu)\n", userEntryPair.first,
+           userEntryPair.second->idx.streamInstance,
+           userEntryPair.second->idx.entryIdx);
+  }
+  inform("=========================\n");
+}
+
+void Stream::FIFOEntry::dump() const {
+  std::stringstream ss;
+  for (const auto &user : this->users) {
+    ss << user << ' ';
+  }
+  inform("entry (%lu, %lu) step %lu address %d value %d users %s\n",
+         this->idx.streamInstance, this->idx.entryIdx, this->stepSeqNum,
+         this->isAddressValid, this->isValueValid, ss.str());
 }
