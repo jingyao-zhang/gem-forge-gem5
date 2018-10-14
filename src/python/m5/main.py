@@ -110,6 +110,8 @@ def parse_options():
         help="Dump configuration output file [Default: %default]")
     option("--json-config", metavar="FILE", default="config.json",
         help="Create JSON output of the configuration [Default: %default]")
+    option("--mcpat-config", metavar="FILE", default="mcpat.xml",
+        help="Create McPAT output of the configuration [Default: %default]")
     option("--dot-config", metavar="FILE", default="config.dot",
         help="Create DOT & pdf outputs of the configuration [Default: %default]")
     option("--dot-dvfs-config", metavar="FILE", default=None,

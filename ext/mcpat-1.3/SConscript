@@ -1,0 +1,77 @@
+Import('main')
+
+mcpat_files = list()
+def McPATFile(filename):
+    mcpat_files.append(File(filename))
+
+McPATFile('cacti/arbiter.cc')
+McPATFile('cacti/area.cc')
+McPATFile('cacti/bank.cc')
+McPATFile('cacti/basic_circuit.cc')
+McPATFile('cacti/cacti_interface.cc')
+McPATFile('cacti/component.cc')
+McPATFile('cacti/crossbar.cc')
+McPATFile('cacti/decoder.cc')
+McPATFile('cacti/htree2.cc')
+McPATFile('cacti/io.cc')
+McPATFile('cacti/mat.cc')
+McPATFile('cacti/nuca.cc')
+McPATFile('cacti/parameter.cc')
+McPATFile('cacti/powergating.cc')
+McPATFile('cacti/router.cc')
+McPATFile('cacti/subarray.cc')
+McPATFile('cacti/technology.cc')
+McPATFile('cacti/uca.cc')
+McPATFile('cacti/wire.cc')
+McPATFile('cacti/Ucache.cc')
+
+McPATFile('array.cc')
+McPATFile('basic_components.cc')
+McPATFile('core.cc')
+McPATFile('interconnect.cc')
+McPATFile('iocontrollers.cc')
+McPATFile('logic.cc')
+McPATFile('memoryctrl.cc')
+McPATFile('noc.cc')
+McPATFile('processor.cc')
+McPATFile('sharedcache.cc')
+McPATFile('XML_Parse.cc')
+McPATFile('xmlParser.cc')
+
+mcpat_env = main.Clone()
+
+# Set the include path.
+mcpat_env.Replace(CPPPATH=Dir('./cacti'))
+
+NTHREADS = 1
+mcpat_env.AppendUnique(CPPDEFINES=[('NTHREADS', NTHREADS)])
+
+# mcpat relies on the fact that undefined preprocessor symbols are
+# explanded to 0 but since we use -Wundef they end up generating
+# warnings. Here we remove -Wundef.
+print mcpat_env['CCFLAGS']
+
+def remove_flag(env, variable, flag):
+    if flag in env[variable]:
+        new_variable = list(env[variable])
+        new_variable.remove(flag)
+        env.Replace(**{variable: new_variable})
+
+remove_flag(mcpat_env, 'CCFLAGS', '-Wundef')
+
+# Disable these two annoying warnings.
+mcpat_env.Append(CPPFLAGS=['-Wno-unused-variable', '-Wno-unused-but-set-variable'])
+
+# Use SSE2.
+mcpat_env.Append(CPPFLAGS=['-msse2', '-mfpmath=sse'])
+
+print mcpat_env['CCFLAGS']
+
+# Build McPAT as a static library with PIC code so it can be linked.
+mcpat_objects = [mcpat_env.SharedObject(f) for f in mcpat_files]
+mcpat_env.StaticLibrary('mcpat', mcpat_objects)
+
+# Make the main environment be able to find here.
+main.Prepend(CPPPATH=[Dir('.'), Dir('./cacti')])
+main.Append(LIBS=['mcpat'])
+main.Prepend(LIBPATH=[Dir('.')])

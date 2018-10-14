@@ -47,9 +47,11 @@ import sys
 # import the wrapped C++ functions
 import _m5.drain
 import _m5.core
+
 from _m5.stats import updateEvents as updateStatEvents
 
 import stats
+import mcpat
 import SimObject
 import ticks
 import objects
@@ -164,6 +166,9 @@ def simulate(*args, **kwargs):
 
         # register our C++ exit callback function with Python
         atexit.register(_m5.core.doExitCleanup)
+
+        # register mcpat dump.
+        atexit.register(mcpat.dump)
 
         # Reset to put the stats in a consistent state.
         stats.reset()

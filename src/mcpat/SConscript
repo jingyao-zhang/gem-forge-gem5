@@ -1,0 +1,7 @@
+Import ('*')
+
+SimObject('McPATManager.py')
+
+Source('mcpat_manager.cc')
+
+DebugFlag('McPATManager')

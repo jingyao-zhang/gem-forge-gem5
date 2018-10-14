@@ -25,6 +25,8 @@ parser.add_option("--llvm-standalone", action="store",
                   type="int", help="""replay in stand alone mode""", default="0")
 parser.add_option("--llvm-prefetch", action="store", type="int",
                   help="""whether to use a prefetcher""", default="0")
+parser.add_option("--llvm-mcpat", action="store", type="int", 
+                  help="""whether to use mcpat to estimate power""", default="0")
 
 (options, args) = parser.parse_args()
 
@@ -193,6 +195,9 @@ if options.llvm_prefetch == 1:
     for cpu in system.cpu:
         cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
     system.l2.prefetcher = StridePrefetcher(degree=8, latency=1)
+
+if options.llvm_mcpat == 1:
+    system.mcpat_manager = McPATManager()
 
 root = Root(full_system=False, system=system)
 Simulation.run(options, root, system, FutureClass)

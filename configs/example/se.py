@@ -125,6 +125,8 @@ def get_processes(options):
 parser = optparse.OptionParser()
 Options.addCommonOptions(parser)
 Options.addSEOptions(parser)
+parser.add_option("--llvm-mcpat", action="store", type="int", 
+                  help="""whether to use mcpat to estimate power""", default="0")
 
 if '--ruby' in sys.argv:
     Ruby.define_options(parser)
@@ -283,6 +285,9 @@ else:
     system.system_port = system.membus.slave
     CacheConfig.config_cache(options, system)
     MemConfig.config_mem(options, system)
+
+if options.llvm_mcpat == 1:
+    system.mcpat_manager = McPATManager()
 
 root = Root(full_system = False, system = system)
 Simulation.run(options, root, system, FutureClass)
