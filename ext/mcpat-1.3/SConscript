@@ -43,8 +43,12 @@ mcpat_env = main.Clone()
 # Set the include path.
 mcpat_env.Replace(CPPPATH=Dir('./cacti'))
 
+# For Hoffman2 Cluster, disable pthread.
 NTHREADS = 1
 mcpat_env.AppendUnique(CPPDEFINES=[('NTHREADS', NTHREADS)])
+hoffman2 = ARGUMENTS.get('hoffman2', 0)
+if int(hoffman2):
+    mcpat_env.AppendUnique(CPPDEFINES=['DISABLE_PTHREAD'])
 
 # mcpat relies on the fact that undefined preprocessor symbols are
 # explanded to 0 but since we use -Wundef they end up generating
