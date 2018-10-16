@@ -777,7 +777,7 @@ void solve(uca_org_t *fin_res) {
       pthread_create(&threads[t], NULL, calc_time_mt_wrapper,
                      (void *)(&(calc_array[t])));
 #else
-      calc_time_mt_wrappter(&(calc_array[t]));
+      calc_time_mt_wrapper(&(calc_array[t]));
 #endif
     }
 
