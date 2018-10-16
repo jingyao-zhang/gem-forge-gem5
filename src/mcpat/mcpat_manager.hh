@@ -59,6 +59,7 @@ private:
   void configureBranchPredictor(const BPredUnit *predictor,
                                 predictor_systemcore &mcpatPredictor);
 
+  void setStatsSystem();
   void setStatsMemoryControl();
   void setStatsL2Cache();
   // void setStatsL2Directories(const Cache *cache);

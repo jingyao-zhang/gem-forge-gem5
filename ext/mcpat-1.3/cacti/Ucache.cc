@@ -46,7 +46,10 @@
 #include <algorithm>
 #include <iostream>
 #include <list>
+
+#if !defined(DISABLE_PTHREAD)
 #include <pthread.h>
+#endif
 
 using namespace std;
 
@@ -216,7 +219,9 @@ void *calc_time_mt_wrapper(void *void_obj) {
   data_arr.pop_back();
   tag_arr.pop_back();
 
+#if !defined(DISABLE_PTHREAD)
   pthread_exit(NULL);
+#endif
 }
 
 bool calculate_time(bool is_tag, int pure_ram, bool pure_cam, double Nspd,
@@ -747,7 +752,10 @@ void solve(uca_org_t *fin_res) {
   // distribute calculate_time() execution to multiple threads
   calc_time_mt_wrapper_struct *calc_array =
       new calc_time_mt_wrapper_struct[nthreads];
+
+#if !defined(DISABLE_PTHREAD)
   pthread_t threads[nthreads];
+#endif
 
   for (uint32_t t = 0; t < nthreads; t++) {
     calc_array[t].tid = t;

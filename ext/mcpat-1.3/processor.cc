@@ -146,9 +146,17 @@ Processor::Processor(ParseXML *XML_interface)
                            l2array[i]->area.get_area() * procdynp.numL2);
           set_pppm(pppm_t, l2array[i]->cachep.clockRate * procdynp.numL2,
                    procdynp.numL2, procdynp.numL2, procdynp.numL2);
+          for (int ppi = 0; ppi < 4; ++ppi) {
+            std::cout << "pppm " << ppi << ' ' << pppm_t[ppi] << std::endl;
+          }
           l2.power = l2.power + l2array[i]->power * pppm_t;
           set_pppm(pppm_t, 1 / l2array[i]->cachep.executionTime, procdynp.numL2,
                    procdynp.numL2, procdynp.numL2);
+          for (int ppi = 0; ppi < 4; ++ppi) {
+            std::cout << "pppm " << ppi << ' ' << pppm_t[ppi] << std::endl;
+          }
+          std::cout << "Homo L2 total prev Runtime Dynamic "
+                    << l2.rt_power.readOp.dynamic << " W\n";
           l2.rt_power = l2.rt_power + l2array[i]->rt_power * pppm_t;
           area.set_area(
               area.get_area() +
@@ -156,6 +164,10 @@ Processor::Processor(ParseXML *XML_interface)
                                    // scales worse than cache 40% is accumulated
                                    // from 90 to 22nm
           power = power + l2.power;
+          std::cout << "Homo L2 " << i << " Runtime Dynamic "
+                    << l2array[i]->rt_power.readOp.dynamic << " W\n";
+          std::cout << "Homo L2 total Runtime Dynamic "
+                    << l2.rt_power.readOp.dynamic << " W\n";
           rt_power = rt_power + l2.rt_power;
         } else {
           l2.area.set_area(l2.area.get_area() + l2array[i]->area.get_area());
@@ -171,8 +183,12 @@ Processor::Processor(ParseXML *XML_interface)
           power = power + l2array[i]->power * pppm_t;
           ;
           set_pppm(pppm_t, 1 / l2array[i]->cachep.executionTime, 1, 1, 1);
+          std::cout << "Hetero L2 " << i << " Runtime Dynamic "
+                    << l2array[i]->rt_power.readOp.dynamic << " W\n";
           l2.rt_power = l2.rt_power + l2array[i]->rt_power * pppm_t;
           rt_power = rt_power + l2array[i]->rt_power * pppm_t;
+          std::cout << "Homo L2 total Runtime Dynamic "
+                    << l2.rt_power.readOp.dynamic << " W\n";
         }
       }
   }

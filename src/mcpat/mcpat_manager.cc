@@ -290,21 +290,20 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
   core.fetch_width = params->fetchWidth;
   core.decode_width = params->decodeWidth;
   /**
-   * ASK TONY: Does this make sense?
-   * Should the issue_width be dispatch_width.
+   * Make the peak issueWidth the same as issueWidth;
    */
-  core.issue_width = params->decodeWidth;
+  core.issue_width = params->issueWidth;
   core.peak_issue_width = params->issueWidth;
   core.commit_width = params->commitWidth;
+
   /**
-   * ASK TONY: what is the fp issue width for gem5?
-   * The pipeline seems to be shared.
+   * There is no float issue width in gem5.
+   * Make it min(issueWidth, numFPU).
    */
-  core.fp_issue_width = params->issueWidth;
+  core.fp_issue_width = std::min(params->issueWidth, 6u);
 
   /**
    * Integer pipeline and float pipeline depth.
-   * ASK TONY: What is this?
    */
   int intExe = 3;
   int fpExe = 6;
@@ -327,10 +326,10 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
   core.instruction_buffer_size = params->fetchBufferSize;
 
   /**
-   * ASK TONY: Do we split it into int and fp?
+   * Again gem5 does not distinguish int/fp instruction window.
    */
-  core.instruction_window_size = params->numIQEntries / 2;
-  core.fp_instruction_window_size = params->numIQEntries / 2;
+  core.instruction_window_size = params->numIQEntries;
+  core.fp_instruction_window_size = params->numIQEntries;
 
   core.ROB_size = params->numROBEntries;
   core.phy_Regs_IRF_size = params->numPhysIntRegs;
@@ -545,6 +544,7 @@ void McPATManager::computeEnergy() {
     }
   }
 
+  this->setStatsSystem();
   this->setStatsMemoryControl();
   this->setStatsL2Cache();
   for (int idx = 0; idx < this->idToCPUMap.size(); ++idx) {
@@ -561,6 +561,18 @@ void McPATManager::computeEnergy() {
   auto &stream = *simout.findOrCreate("mcpat.txt")->stream();
   processor.dumpToFile(stream);
   // processor.displayEnergy(2);
+}
+
+void McPATManager::setStatsSystem() {
+  auto &sys = this->xml->sys;
+  auto ticks = this->getScalarStats("sim_ticks");
+  if (!this->idToCPUMap.empty()) {
+    auto cycles = ticks / sys.core[0].clock_rate;
+    sys.total_cycles = cycles;
+  } else {
+    // What should I do here?
+    panic("Must have at least one cpu.");
+  }
 }
 
 void McPATManager::setStatsMemoryControl() {
@@ -615,11 +627,13 @@ void McPATManager::setStatsDerivO3CPU(int idx) {
   auto robWrites = scalar("rob.rob_writes");
 
   /**
-   * ASK TONY: Gem5 seems not distinguish rename int/fp operands.
+   * Gem5 seems not distinguish rename int/fp operands.
+   * Just make rename float writes 0.
    */
   auto renameWrites = scalar("rename.RenamedOperands");
   auto renameReads = scalar("rename.int_rename_lookups");
   auto renameFpReads = scalar("rename.fp_rename_lookups");
+  auto renameFpWrites = 0;
 
   auto instWinReads = scalar("iq.int_inst_queue_reads");
   auto instWinWrites = scalar("iq.int_inst_queue_writes");
@@ -660,12 +674,14 @@ void McPATManager::setStatsDerivO3CPU(int idx) {
   core.instruction_buffer_write = 0;
   core.ROB_reads = robReads;
   core.ROB_writes = robWrites;
-  core.rename_accesses = renameReads;
-  core.fp_rename_accesses = renameFpReads;
+
+  core.rename_accesses = renameReads + renameWrites;
   core.rename_reads = renameReads;
   core.rename_writes = renameWrites;
+  core.fp_rename_accesses = renameFpReads + renameFpWrites;
   core.fp_rename_reads = renameFpReads;
-  core.fp_rename_writes = 0;
+  core.fp_rename_writes = renameFpWrites;
+
   core.inst_window_reads = instWinReads;
   core.inst_window_writes = instWinWrites;
   core.inst_window_wakeup_accesses = instWinWakeUpAccesses;
