@@ -224,9 +224,9 @@ typedef struct {
   double ROB_reads;
   double ROB_writes;
   double rename_accesses;
-  double fp_rename_accesses;
   double rename_reads;
   double rename_writes;
+  double fp_rename_accesses;
   double fp_rename_reads;
   double fp_rename_writes;
   double inst_window_reads;

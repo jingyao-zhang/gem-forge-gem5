@@ -13,26 +13,34 @@
 class LLVMTraceCPU;
 
 class LLVMFetchStage {
- public:
+public:
   using FetchStruct = std::vector<LLVMDynamicInstId>;
 
-  LLVMFetchStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu);
-  LLVMFetchStage(const LLVMFetchStage& fs) = delete;
-  LLVMFetchStage(LLVMFetchStage&& fs) = delete;
+  LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMFetchStage(const LLVMFetchStage &fs) = delete;
+  LLVMFetchStage(LLVMFetchStage &&fs) = delete;
 
   ~LLVMFetchStage();
 
-  void setToDecode(TimeBuffer<FetchStruct>* toDecodeBuffer);
-  void setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer, int pos);
+  void setToDecode(TimeBuffer<FetchStruct> *toDecodeBuffer);
+  void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
   void regStats();
   void tick();
+
+  std::string name();
 
   Stats::Scalar blockedCycles;
   Stats::Scalar branchInsts;
   Stats::Scalar branchPredMisses;
+  /** Stat for total number of fetched instructions. */
+  Stats::Scalar fetchedInsts;
+  /** Total number of fetched branches. */
+  Stats::Scalar fetchedBranches;
+  /** Stat for total number of predicted branches. */
+  Stats::Scalar predictedBranches;
 
- private:
-  LLVMTraceCPU* cpu;
+private:
+  LLVMTraceCPU *cpu;
 
   unsigned fetchWidth;
 
@@ -46,7 +54,7 @@ class LLVMFetchStage {
   TimeBuffer<FetchStruct>::wire toDecode;
   TimeBuffer<LLVMStageSignal>::wire signal;
 
-  LLVMBranchPredictor* predictor;
+  LLVMBranchPredictor *predictor;
   uint8_t branchPreictPenalityCycles;
   LLVMDynamicInstId blockedInstId;
 };

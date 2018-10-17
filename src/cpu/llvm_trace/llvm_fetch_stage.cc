@@ -14,6 +14,8 @@ LLVMFetchStage::~LLVMFetchStage() {
   this->predictor = nullptr;
 }
 
+std::string LLVMFetchStage::name() { return cpu->name() + ".fetch"; }
+
 void LLVMFetchStage::setToDecode(TimeBuffer<FetchStruct> *toDecodeBuffer) {
   this->toDecode = toDecodeBuffer->getWire(0);
 }
@@ -24,15 +26,27 @@ void LLVMFetchStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
 }
 
 void LLVMFetchStage::regStats() {
-  this->blockedCycles.name(cpu->name() + ".fetch.blockedCycles")
+  this->blockedCycles.name(name() + ".blockedCycles")
       .desc("Number of cycles blocked")
       .prereq(this->blockedCycles);
-  this->branchInsts.name(cpu->name() + ".fetch.branchInsts")
+  this->branchInsts.name(name() + ".branchInsts")
       .desc("Number of branches")
       .prereq(this->branchInsts);
-  this->branchPredMisses.name(cpu->name() + ".fetch.branchPredMisses")
+  this->branchPredMisses.name(name() + ".branchPredMisses")
       .desc("Number of branch prediction misses")
       .prereq(this->branchPredMisses);
+
+  this->fetchedInsts.name(name() + ".Insts")
+      .desc("Number of instructions fetch has processed")
+      .prereq(fetchedInsts);
+
+  this->fetchedBranches.name(name() + ".Branches")
+      .desc("Number of branches that fetch encountered")
+      .prereq(fetchedBranches);
+
+  this->predictedBranches.name(name() + ".predictedBranches")
+      .desc("Number of branches that fetch has predicted taken")
+      .prereq(predictedBranches);
 }
 
 void LLVMFetchStage::tick() {
@@ -118,6 +132,7 @@ void LLVMFetchStage::tick() {
     // Check if this is a conditional branch.
     if (inst->isConditionalBranchInst()) {
       this->branchInsts++;
+      this->fetchedBranches++;
       bool predictionRight = this->predictor->predictAndUpdate(inst);
       if (!predictionRight) {
         this->branchPredMisses++;
@@ -131,4 +146,6 @@ void LLVMFetchStage::tick() {
       }
     }
   }
+
+  this->fetchedInsts += fetchedInsts;
 }

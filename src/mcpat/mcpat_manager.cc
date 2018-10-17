@@ -10,6 +10,7 @@
 
 #include "arch/x86/tlb.hh"
 #include "base/output.hh"
+#include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "cpu/o3/deriv.hh"
 #include "mem/cache/cache.hh"
 #include "mem/cache/tags/base.hh"
@@ -127,6 +128,10 @@ void McPATManager::init() {
     auto cpu = this->idToCPUMap.at(i);
     if (auto o3 = dynamic_cast<const DerivO3CPU *>(cpu)) {
       this->configureDerivO3CPU(o3);
+    }
+
+    else if (auto llvmTraceCPU = dynamic_cast<const LLVMTraceCPU *>(cpu)) {
+      this->configureLLVMTraceCPU(llvmTraceCPU);
     }
 
     else {
@@ -278,11 +283,11 @@ void McPATManager::configureL2Cache(const Cache *cache) {
 
 void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
   auto idx = cpu->cpuId();
-  auto params = dynamic_cast<const DerivO3CPUParams *>(cpu->params());
-  panic_if(params == nullptr, "Failed to get the params for O3 cpu.");
-  panic_if(idx >= this->xml->sys.number_of_cores, "CPU idx overflows.");
+  auto params = McPATManager::getParams<DerivO3CPUParams>(cpu);
+  panic_if(params == nullptr, "failed to get the params for o3 cpu.");
+  panic_if(idx >= this->xml->sys.number_of_cores, "cpu idx overflows.");
 
-  DPRINTF(McPATManager, "Configure McPAT O3 cpu %d.\n", idx);
+  DPRINTF(McPATManager, "configure mcpat o3 cpu %d.\n", idx);
 
   auto &core = this->xml->sys.core[idx];
   core.clock_rate = params->clk_domain->clockPeriod();
@@ -552,6 +557,10 @@ void McPATManager::computeEnergy() {
       this->setStatsDerivO3CPU(idx);
     }
 
+    else if (dynamic_cast<const LLVMTraceCPU *>(this->idToCPUMap.at(idx))) {
+      this->setStatsLLVMTraceCPU(idx);
+    }
+
     else {
       panic("Unsupported type of cpu to set stats.");
     }
@@ -631,7 +640,7 @@ void McPATManager::setStatsDerivO3CPU(int idx) {
    * Just make rename float writes 0.
    */
   auto renameWrites = scalar("rename.RenamedOperands");
-  auto renameReads = scalar("rename.int_rename_lookups");
+  auto renameReads = scalar("rename.RenamedLookups");
   auto renameFpReads = scalar("rename.fp_rename_lookups");
   auto renameFpWrites = 0;
 
@@ -675,10 +684,8 @@ void McPATManager::setStatsDerivO3CPU(int idx) {
   core.ROB_reads = robReads;
   core.ROB_writes = robWrites;
 
-  core.rename_accesses = renameReads + renameWrites;
   core.rename_reads = renameReads;
   core.rename_writes = renameWrites;
-  core.fp_rename_accesses = renameFpReads + renameFpWrites;
   core.fp_rename_reads = renameFpReads;
   core.fp_rename_writes = renameFpWrites;
 
@@ -710,8 +717,8 @@ void McPATManager::setStatsDerivO3CPU(int idx) {
   core.fpu_accesses = fpALU;
   core.mul_accesses = multiAndDiv;
   core.cdb_alu_accesses = intALU;
-  core.cdb_mul_accesses = fpALU;
-  core.cdb_fpu_accesses = multiAndDiv;
+  core.cdb_mul_accesses = multiAndDiv;
+  core.cdb_fpu_accesses = fpALU;
   core.load_buffer_reads = 0;
   core.load_buffer_writes = 0;
   core.load_buffer_cams = 0;

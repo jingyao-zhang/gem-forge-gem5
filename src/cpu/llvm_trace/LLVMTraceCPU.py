@@ -28,10 +28,10 @@ class LLVMTraceCPU(BaseCPU):
 
     traceFile = Param.String('', 'The input llvm trace file.')
     driver = Param.LLVMTraceCPUDriver('The driver to control this cpu.')
-    maxFetchQueueSize = Param.UInt64(32, 'Maximum size of the fetch queue.')
-    maxReorderBufferSize = Param.UInt64(8, 'Maximum size of the rob.')
+    maxFetchQueueSize = Param.UInt64(64, 'Maximum size of the fetch queue.')
+    maxReorderBufferSize = Param.UInt64(192, 'Maximum size of the rob.')
     maxInstructionQueueSize = Param.UInt64(
-        8, 'Maximum size of the instruction queue.')
+        64, 'Maximum size of the instruction queue.')
     loadStoreQueueSize = Param.UInt64(
         8, 'Maximum number of load store queue.')
 

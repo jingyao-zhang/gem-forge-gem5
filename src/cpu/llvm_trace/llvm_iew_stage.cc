@@ -27,23 +27,51 @@ void LLVMIEWStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
   this->signal = signalBuffer->getWire(pos);
 }
 
+std::string LLVMIEWStage::name() { return cpu->name() + ".iew"; }
+
 void LLVMIEWStage::regStats() {
   this->statIssuedInstType.init(cpu->numThreads, Enums::Num_OpClass)
-      .name(cpu->name() + ".iew.FU_type")
+      .name(name() + ".FU_type")
       .desc("Type of FU issued")
       .flags(Stats::total | Stats::pdf | Stats::dist);
   this->statIssuedInstType.ysubnames(Enums::OpClassStrings);
 
-  this->blockedCycles.name(cpu->name() + ".iew.blockedCycles")
-      .desc("Number of cycles blocked")
-      .prereq(this->blockedCycles);
+#define scalar(stat, describe)                                                 \
+  this->stat.name(name() + ("." #stat)).desc(describe).prereq(this->stat)
+  scalar(blockedCycles, "Number of cycles blocked");
+  scalar(robReads, "Number of rob reads");
+  scalar(robWrites, "Number of rob writes");
+  scalar(intInstQueueReads, "Number of int inst queue reads");
+  scalar(intInstQueueWrites, "Number of int inst queue writes");
+  scalar(intInstQueueWakeups, "Number of int inst queue wakeups");
+  scalar(fpInstQueueReads, "Number of fp inst queue reads");
+  scalar(fpInstQueueWrites, "Number of fp inst queue writes");
+  scalar(fpInstQueueWakeups, "Number of fp inst queue wakeups");
+
+  scalar(intRegReads, "Number of int regfile reads");
+  scalar(intRegWrites, "Number of int regfile writes");
+  scalar(fpRegReads, "Number of fp regfile reads");
+  scalar(fpRegWrites, "Number of fp regfile writes");
+
+  scalar(ALUAccesses, "Number of ALU used");
+  scalar(MultAccesses, "Number of multiplier used");
+  scalar(FPUAccesses, "Number of FPU used");
+
+  scalar(ALUAccessesCycles, "Total used cycles of ALU");
+  scalar(MultAccessesCycles, "Total used cycles of multiplier");
+  scalar(FPUAccessesCycles, "Total used cycles of FPU");
+
+  scalar(execLoadInsts, "Number of executed load insts");
+  scalar(execStoreInsts, "Number of executed store insts");
+
+#undef scalar
 
   this->numIssuedDist.init(0, this->issueWidth, 1)
-      .name(cpu->name() + ".iew.issued_per_cycle")
+      .name(name() + ".issued_per_cycle")
       .desc("Number of insts issued each cycle")
       .flags(Stats::pdf);
   this->numExecutingDist.init(0, 192, 8)
-      .name(cpu->name() + ".iew.executing_per_cycle")
+      .name(name() + ".executing_per_cycle")
       .desc("Number of insts executing each cycle")
       .flags(Stats::pdf);
 }
@@ -82,6 +110,13 @@ void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId> &queue,
         }
 
         writebacked++;
+        if (inst->isFloatInst()) {
+          this->fpInstQueueWakeups++;
+          this->fpRegWrites += inst->getNumResults();
+        } else {
+          this->intInstQueueWakeups++;
+          this->intRegWrites += inst->getNumResults();
+        }
         continue;
       }
     }
@@ -148,6 +183,7 @@ void LLVMIEWStage::tick() {
   for (auto iter = this->fromRename->begin(), end = this->fromRename->end();
        iter != end; ++iter) {
     this->rob.push_back(*iter);
+    this->robWrites++;
   }
 
   // Free FUs.
@@ -220,6 +256,48 @@ void LLVMIEWStage::issue() {
       if (canIssue) {
         cpu->inflyInstStatus.at(instId) = InstStatus::ISSUED;
         issuedInsts += cpu->inflyInstMap.at(instId)->getQueueWeight();
+        /**
+         * Update statisitcs.
+         */
+        if (inst->isFloatInst()) {
+          this->fpInstQueueReads++;
+          this->fpRegReads += inst->getNumOperands();
+        } else {
+          this->intInstQueueReads++;
+          this->intRegReads += inst->getNumOperands();
+        }
+        if (inst->getInstName() == "load") {
+          this->execLoadInsts++;
+        } else if (inst->getInstName() == "store") {
+          this->execStoreInsts++;
+        }
+        if (opClass != No_OpClass) {
+          auto opLatency = cpu->getOpLatency(opClass);
+          switch (opClass) {
+          case IntAluOp : {
+            this->ALUAccesses++;
+            this->ALUAccessesCycles += opLatency;
+            break;
+          }
+          case IntMultOp:
+          case IntDivOp : {
+            this->MultAccesses++;
+            this->MultAccessesCycles += opLatency;
+            break;
+          }
+          case FloatAddOp:
+          case FloatMultOp:
+          case FloatDivOp:
+          case FloatCvtOp:
+          case FloatCmpOp : {
+            this->FPUAccesses++;
+            this->FPUAccessesCycles += opLatency;
+            break;
+          }
+          default: { break; }
+          }
+        }
+
         DPRINTF(LLVMTraceCPU, "Inst %u %s issued\n", instId, instName.c_str());
         inst->execute(cpu);
         if (!cpu->isStandalone()) {
@@ -328,6 +406,12 @@ void LLVMIEWStage::dispatch() {
 
     cpu->inflyInstStatus.at(instId) = InstStatus::DISPATCHED;
     dispatchedInst++;
+    if (inst->isFloatInst()) {
+      this->fpInstQueueWrites++;
+    } else {
+      this->intInstQueueWrites++;
+    }
+
     this->instQueue.push_back(instId);
     if (inst->isStoreInst()) {
       this->storeQueue.push_back(instId);
@@ -368,6 +452,10 @@ void LLVMIEWStage::commit() {
     }
     auto head = this->rob.begin();
     auto instId = *head;
+    /**
+     * Simply checking if the header of the rob is ready to commit is one read.
+     */
+    this->robReads++;
     panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
              "Inst %u should be in inflyInstStatus to check if writebacked.\n",
              instId);

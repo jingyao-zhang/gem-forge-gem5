@@ -19,6 +19,7 @@ class DRAMCtrlParams;
 class Cache;
 class BaseCPU;
 class DerivO3CPU;
+class LLVMTraceCPU;
 
 namespace TheISA {
 class TLB;
@@ -56,6 +57,7 @@ private:
   void configureL2Cache(const Cache *cache);
   void configureL2Directories(const Cache *cache);
   void configureDerivO3CPU(const DerivO3CPU *cpu);
+  void configureLLVMTraceCPU(const LLVMTraceCPU* cpu);
   void configureBranchPredictor(const BPredUnit *predictor,
                                 predictor_systemcore &mcpatPredictor);
 
@@ -64,6 +66,7 @@ private:
   void setStatsL2Cache();
   // void setStatsL2Directories(const Cache *cache);
   void setStatsDerivO3CPU(int idx);
+  void setStatsLLVMTraceCPU(int idx);
 
   Stats::Info *getStat(const std::string &stat);
   std::string getStatName(const std::string &stat, int cpu);

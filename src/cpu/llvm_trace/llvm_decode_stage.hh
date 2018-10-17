@@ -14,17 +14,19 @@
 class LLVMTraceCPU;
 
 class LLVMDecodeStage {
- public:
+public:
   using FetchStruct = LLVMFetchStage::FetchStruct;
   using DecodeStruct = std::vector<LLVMDynamicInstId>;
 
-  LLVMDecodeStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu);
-  LLVMDecodeStage(const LLVMDecodeStage& ds) = delete;
-  LLVMDecodeStage(LLVMDecodeStage&& ds) = delete;
+  LLVMDecodeStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMDecodeStage(const LLVMDecodeStage &ds) = delete;
+  LLVMDecodeStage(LLVMDecodeStage &&ds) = delete;
 
-  void setToRename(TimeBuffer<DecodeStruct>* toRenameBuffer);
-  void setFromFetch(TimeBuffer<FetchStruct>* fromFetchBuffer);
-  void setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer, int pos);
+  std::string name();
+
+  void setToRename(TimeBuffer<DecodeStruct> *toRenameBuffer);
+  void setFromFetch(TimeBuffer<FetchStruct> *fromFetchBuffer);
+  void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
 
   void regStats();
 
@@ -32,8 +34,11 @@ class LLVMDecodeStage {
 
   Stats::Scalar blockedCycles;
 
- private:
-  LLVMTraceCPU* cpu;
+  /** Stat for total number of decoded instructions. */
+  Stats::Scalar decodeDecodedInsts;
+
+private:
+  LLVMTraceCPU *cpu;
 
   unsigned decodeWidth;
   unsigned decodeQueueSize;

@@ -18,6 +18,8 @@ void LLVMCommitStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
   this->signal = signalBuffer->getWire(pos);
 }
 
+std::string LLVMCommitStage::name() { return cpu->name() + ".commit"; }
+
 void LLVMCommitStage::regStats() {
   // No stats for now.
   int nThreads = cpu->numThreads;
@@ -25,14 +27,27 @@ void LLVMCommitStage::regStats() {
     nThreads = 1;
   }
   this->instsCommitted.init(nThreads)
-      .name(cpu->name() + ".commit.committedInsts")
+      .name(name() + ".committedInsts")
       .desc("Number of instructions committed")
       .flags(Stats::total);
   this->opsCommitted.init(nThreads)
-      .name(cpu->name() + ".commit.committedOps")
+      .name(name() + ".committedOps")
       .desc("Number of ops (including micro ops) committed")
       .flags(Stats::total);
-  this->blockedCycles.name(cpu->name() + ".commit.blockedCycles")
+  this->intInstsCommitted.init(nThreads)
+      .name(name() + ".committedIntInsts")
+      .desc("Number of integer instructions committed")
+      .flags(Stats::total);
+  this->fpInstsCommitted.init(nThreads)
+      .name(name() + ".committedFpInsts")
+      .desc("Number of float instructions committed")
+      .flags(Stats::total);
+  this->callInstsCommitted.init(nThreads)
+      .name(name() + ".committedCallInsts")
+      .desc("Number of call instructions committed")
+      .flags(Stats::total);
+
+  this->blockedCycles.name(name() + ".blockedCycles")
       .desc("Number of cycles blocked")
       .prereq(this->blockedCycles);
 }
@@ -69,13 +84,19 @@ void LLVMCommitStage::tick() {
             "Inst %lu committed, remaining infly inst #%u\n", inst->getSeqNum(),
             cpu->inflyInstStatus.size());
 
+    int threadId = 0;
     if (!cpu->isStandalone()) {
-      this->instsCommitted[cpu->thread_context->threadId()]++;
-      this->opsCommitted[cpu->thread_context->threadId()] +=
-          inst->getNumMicroOps();
+      threadId = cpu->thread_context->threadId();
+    }
+    this->instsCommitted[threadId]++;
+    this->opsCommitted[threadId] += inst->getNumMicroOps();
+    if (inst->isFloatInst()) {
+      this->fpInstsCommitted[threadId]++;
     } else {
-      this->instsCommitted[0]++;
-      this->opsCommitted[0] += inst->getNumMicroOps();
+      this->intInstsCommitted[threadId]++;
+    }
+    if (inst->isCallInst()) {
+      this->callInstsCommitted[threadId]++;
     }
     // Any instruction specific operation when committed.
     inst->commit(cpu);

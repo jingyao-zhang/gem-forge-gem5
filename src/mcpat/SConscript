@@ -3,5 +3,6 @@ Import ('*')
 SimObject('McPATManager.py')
 
 Source('mcpat_manager.cc')
+Source('mcpat_manager_llvm_trace_cpu.cc')
 
 DebugFlag('McPATManager')

@@ -13,26 +13,37 @@
 class LLVMTraceCPU;
 
 class LLVMRenameStage {
- public:
+public:
   using DecodeStruct = LLVMDecodeStage::DecodeStruct;
   using RenameStruct = std::vector<LLVMDynamicInstId>;
 
-  LLVMRenameStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu);
-  LLVMRenameStage(const LLVMRenameStage& rs) = delete;
-  LLVMRenameStage(LLVMRenameStage&& rs) = delete;
+  LLVMRenameStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMRenameStage(const LLVMRenameStage &rs) = delete;
+  LLVMRenameStage(LLVMRenameStage &&rs) = delete;
 
-  void setToIEW(TimeBuffer<RenameStruct>* toIEWBuffer);
-  void setFromDecode(TimeBuffer<DecodeStruct>* fromDecodeBuffer);
-  void setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer, int pos);
+  void setToIEW(TimeBuffer<RenameStruct> *toIEWBuffer);
+  void setFromDecode(TimeBuffer<DecodeStruct> *fromDecodeBuffer);
+  void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
+
+  std::string name();
 
   void regStats();
 
   void tick();
 
   Stats::Scalar blockedCycles;
+  /** Stat for total number of renamed instructions. */
+  Stats::Scalar renameRenamedInsts;
+  /** Stat for total number of renamed destination registers. */
+  Stats::Scalar renameRenamedOperands;
+  /** Stat for total number of source register rename lookups. */
+  Stats::Scalar renameRenameLookups;
+  Stats::Scalar intRenameLookups;
+  Stats::Scalar fpRenameLookups;
+  Stats::Scalar vecRenameLookups;
 
- private:
-  LLVMTraceCPU* cpu;
+private:
+  LLVMTraceCPU *cpu;
 
   unsigned renameWidth;
   unsigned renameBufferSize;

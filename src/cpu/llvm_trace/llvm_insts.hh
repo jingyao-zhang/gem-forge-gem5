@@ -23,6 +23,13 @@ class LLVMTraceCPU;
 
 using LLVMDynamicInstId = uint64_t;
 
+struct LLVMInstInfo {
+public:
+  OpClass opClass;
+  int numOperands;
+  int numResults;
+};
+
 class LLVMDynamicInst {
 public:
   LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
@@ -87,6 +94,11 @@ public:
   // TODO: Either to support multiple FUs or break LLVM inst into micro-ops.
   OpClass getOpClass() const;
 
+  int getNumOperands() const;
+  int getNumResults() const;
+  bool isFloatInst() const;
+  bool isCallInst() const;
+
   // Hack, special interface for call stack inc/dec.
   virtual int getCallStackAdjustment() const { return 0; }
 
@@ -127,7 +139,7 @@ protected:
   bool serializeBefore;
 
   // A static global map from instName to the needed OpClass.
-  static std::unordered_map<std::string, OpClass> instToOpClass;
+  static std::unordered_map<std::string, LLVMInstInfo> instInfo;
 
   static uint64_t currentSeqNum;
   static uint64_t allocateSeqNum();

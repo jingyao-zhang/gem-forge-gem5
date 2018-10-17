@@ -2,50 +2,59 @@
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/LLVMTraceCPU.hh"
 
-std::unordered_map<std::string, OpClass> LLVMDynamicInst::instToOpClass = {
+std::unordered_map<std::string, LLVMInstInfo> LLVMDynamicInst::instInfo = {
     // Binary operator.
-    {"add", IntAluOp},
-    {"fadd", FloatAddOp},
-    {"sub", IntAluOp},
-    {"fsub", FloatAddOp},
-    {"mul", IntMultOp},
-    {"fmul", FloatMultOp},
-    {"udiv", IntDivOp},
-    {"sdiv", IntDivOp},
-    {"fdiv", FloatDivOp},
-    {"urem", IntDivOp},
-    {"srem", IntDivOp},
-    {"frem", FloatDivOp},
+    {"add", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
+    {"fadd", {.opClass = FloatAddOp, .numOperands = 2, .numResults = 1}},
+    {"sub", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
+    {"fsub", {.opClass = FloatAddOp, .numOperands = 2, .numResults = 1}},
+    {"mul", {.opClass = IntMultOp, .numOperands = 2, .numResults = 1}},
+    {"fmul", {.opClass = FloatMultOp, .numOperands = 2, .numResults = 1}},
+    {"udiv", {.opClass = IntDivOp, .numOperands = 2, .numResults = 1}},
+    {"sdiv", {.opClass = IntDivOp, .numOperands = 2, .numResults = 1}},
+    {"fdiv", {.opClass = FloatDivOp, .numOperands = 2, .numResults = 1}},
+    {"urem", {.opClass = IntDivOp, .numOperands = 2, .numResults = 1}},
+    {"srem", {.opClass = IntDivOp, .numOperands = 2, .numResults = 1}},
+    {"frem", {.opClass = FloatDivOp, .numOperands = 2, .numResults = 1}},
     // Bitwise binary operator.
-    {"shl", IntAluOp},
-    {"lshr", IntAluOp},
-    {"ashr", IntAluOp},
-    {"and", IntAluOp},
-    {"or", IntAluOp},
-    {"xor", IntAluOp},
+    {"shl", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
+    {"lshr", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
+    {"ashr", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
+    {"and", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
+    {"or", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
+    {"xor", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
     // Conversion operator.
     // Truncation requires no FU.
-    {"trunc", Enums::No_OpClass},
-    {"zext", IntAluOp},
-    {"sext", IntAluOp},
-    {"fptrunc", FloatCvtOp},
-    {"fpext", FloatCvtOp},
-    {"fptoui", FloatCvtOp},
-    {"fptosi", FloatCvtOp},
-    {"uitofp", FloatCvtOp},
-    {"sitofp", FloatCvtOp},
-    {"ptrtoint", Enums::No_OpClass},
-    {"inttoptr", Enums::No_OpClass},
-    {"bitcast", Enums::No_OpClass},
+    {"trunc",
+     {.opClass = Enums::No_OpClass, .numOperands = 1, .numResults = 1}},
+    {"zext", {.opClass = IntAluOp, .numOperands = 1, .numResults = 1}},
+    {"sext", {.opClass = IntAluOp, .numOperands = 1, .numResults = 1}},
+    {"fptrunc", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
+    {"fpext", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
+    {"fptoui", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
+    {"fptosi", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
+    {"uitofp", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
+    {"sitofp", {.opClass = FloatCvtOp, .numOperands = 1, .numResults = 1}},
+    {"ptrtoint",
+     {.opClass = Enums::No_OpClass, .numOperands = 1, .numResults = 1}},
+    {"inttoptr",
+     {.opClass = Enums::No_OpClass, .numOperands = 1, .numResults = 1}},
+    {"bitcast",
+     {.opClass = Enums::No_OpClass, .numOperands = 1, .numResults = 1}},
     // Other insts.
-    {"icmp", IntAluOp},
-    {"fcmp", FloatCmpOp},
+    {"icmp", {.opClass = IntAluOp, .numOperands = 2, .numResults = 1}},
+    {"fcmp", {.opClass = FloatCmpOp, .numOperands = 2, .numResults = 1}},
     // We assume the branching requires address computation.
-    {"br", IntAluOp},
+    {"br", {.opClass = IntAluOp, .numOperands = 1, .numResults = 0}},
     // Our special accelerator inst.
-    {"cca", Enums::OpClass::Accelerator},
-    {"load", Enums::OpClass::MemRead},
-    {"store", Enums::OpClass::MemWrite},
+    {"cca",
+     {.opClass = Enums::OpClass::Accelerator,
+      .numOperands = 2,
+      .numResults = 1}},
+    {"load",
+     {.opClass = Enums::OpClass::MemRead, .numOperands = 1, .numResults = 1}},
+    {"store",
+     {.opClass = Enums::OpClass::MemWrite, .numOperands = 2, .numResults = 0}},
 };
 
 uint64_t LLVMDynamicInst::currentSeqNum = 0;
@@ -129,12 +138,48 @@ void LLVMDynamicInst::dumpDeps(LLVMTraceCPU *cpu) const {
 
 // For now just return IntAlu.
 OpClass LLVMDynamicInst::getOpClass() const {
-  auto iter = LLVMDynamicInst::instToOpClass.find(this->getInstName());
-  if (iter == LLVMDynamicInst::instToOpClass.end()) {
+  auto iter = LLVMDynamicInst::instInfo.find(this->getInstName());
+  if (iter == LLVMDynamicInst::instInfo.end()) {
     // For unknown, simply return IntAlu.
     return No_OpClass;
   }
-  return iter->second;
+  return iter->second.opClass;
+}
+
+int LLVMDynamicInst::getNumOperands() const {
+  auto iter = LLVMDynamicInst::instInfo.find(this->getInstName());
+  if (iter == LLVMDynamicInst::instInfo.end()) {
+    // For unknown, simply return 2.
+    return 2;
+  }
+  return iter->second.numOperands;
+}
+
+int LLVMDynamicInst::getNumResults() const {
+  auto iter = LLVMDynamicInst::instInfo.find(this->getInstName());
+  if (iter == LLVMDynamicInst::instInfo.end()) {
+    // For unknown, simply return 1.
+    return 1;
+  }
+  return iter->second.numResults;
+}
+
+bool LLVMDynamicInst::isFloatInst() const {
+  switch (this->getOpClass()) {
+  case FloatAddOp:
+  case FloatMultOp:
+  case FloatMultAccOp:
+  case FloatDivOp:
+  case FloatCvtOp:
+  case FloatCmpOp: {
+    return true;
+  }
+  default: { return false; }
+  }
+}
+
+bool LLVMDynamicInst::isCallInst() const {
+  return this->getInstName() == "call" || this->getInstName() == "invoke";
 }
 
 bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU *cpu) const {

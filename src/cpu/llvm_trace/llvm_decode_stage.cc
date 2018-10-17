@@ -4,30 +4,34 @@
 
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMDecodeStage::LLVMDecodeStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
-    : cpu(_cpu),
-      decodeWidth(params->decodeWidth),
+LLVMDecodeStage::LLVMDecodeStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+    : cpu(_cpu), decodeWidth(params->decodeWidth),
       decodeQueueSize(params->decodeQueueSize),
       fromFetchDelay(params->fetchToDecodeDelay),
       toRenameDelay(params->decodeToRenameDelay) {}
 
-void LLVMDecodeStage::setToRename(TimeBuffer<FetchStruct>* toRenameBuffer) {
+void LLVMDecodeStage::setToRename(TimeBuffer<FetchStruct> *toRenameBuffer) {
   this->toRename = toRenameBuffer->getWire(0);
 }
 
-void LLVMDecodeStage::setFromFetch(TimeBuffer<FetchStruct>* fromFetchBuffer) {
+void LLVMDecodeStage::setFromFetch(TimeBuffer<FetchStruct> *fromFetchBuffer) {
   this->fromFetch = fromFetchBuffer->getWire(-this->fromFetchDelay);
 }
 
-void LLVMDecodeStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
+void LLVMDecodeStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
                                 int pos) {
   this->signal = signalBuffer->getWire(pos);
 }
 
+std::string LLVMDecodeStage::name() { return cpu->name() + ".decode"; }
+
 void LLVMDecodeStage::regStats() {
-  this->blockedCycles.name(cpu->name() + ".decode.blockedCycles")
+  this->blockedCycles.name(name() + ".blockedCycles")
       .desc("Number of cycles blocked")
       .prereq(this->blockedCycles);
+  decodeDecodedInsts.name(name() + ".DecodedInsts")
+      .desc("Number of instructions handled by decode")
+      .prereq(this->decodeDecodedInsts);
 }
 
 void LLVMDecodeStage::tick() {
@@ -59,6 +63,8 @@ void LLVMDecodeStage::tick() {
       this->toRename->push_back(instId);
       decodedInsts += inst->getQueueWeight();
     }
+
+    this->decodeDecodedInsts += decodedInsts;
   }
 
   // Raise stall if our decodeQueue reaches limits.

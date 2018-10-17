@@ -4,31 +4,50 @@
 
 using InstStatus = LLVMTraceCPU::InstStatus;
 
-LLVMRenameStage::LLVMRenameStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu)
-    : cpu(_cpu),
-      renameWidth(params->renameWidth),
+LLVMRenameStage::LLVMRenameStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
+    : cpu(_cpu), renameWidth(params->renameWidth),
       renameBufferSize(params->renameBufferSize),
       fromDecodeDelay(params->decodeToRenameDelay),
       toIEWDelay(params->renameToIEWDelay) {}
 
-void LLVMRenameStage::setToIEW(TimeBuffer<RenameStruct>* toIEWBuffer) {
+void LLVMRenameStage::setToIEW(TimeBuffer<RenameStruct> *toIEWBuffer) {
   this->toIEW = toIEWBuffer->getWire(0);
 }
 
 void LLVMRenameStage::setFromDecode(
-    TimeBuffer<DecodeStruct>* fromDecodeBuffer) {
+    TimeBuffer<DecodeStruct> *fromDecodeBuffer) {
   this->fromDecode = fromDecodeBuffer->getWire(-this->fromDecodeDelay);
 }
 
-void LLVMRenameStage::setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer,
+void LLVMRenameStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
                                 int pos) {
   this->signal = signalBuffer->getWire(pos);
 }
 
+std::string LLVMRenameStage::name() { return cpu->name() + ".rename"; }
+
 void LLVMRenameStage::regStats() {
-  this->blockedCycles.name(cpu->name() + ".rename.blockedCycles")
+  this->blockedCycles.name(name() + ".blockedCycles")
       .desc("Number of cycles blocked")
       .prereq(this->blockedCycles);
+  renameRenamedInsts.name(name() + ".RenamedInsts")
+      .desc("Number of instructions processed by rename")
+      .prereq(renameRenamedInsts);
+  renameRenamedOperands.name(name() + ".RenamedOperands")
+      .desc("Number of destination operands rename has renamed")
+      .prereq(renameRenamedOperands);
+  renameRenameLookups.name(name() + ".RenameLookups")
+      .desc("Number of register rename lookups that rename has made")
+      .prereq(renameRenameLookups);
+  intRenameLookups.name(name() + ".int_rename_lookups")
+      .desc("Number of integer rename lookups")
+      .prereq(intRenameLookups);
+  fpRenameLookups.name(name() + ".fp_rename_lookups")
+      .desc("Number of floating rename lookups")
+      .prereq(fpRenameLookups);
+  vecRenameLookups.name(name() + ".vec_rename_lookups")
+      .desc("Number of vector rename lookups")
+      .prereq(vecRenameLookups);
 }
 
 void LLVMRenameStage::tick() {
@@ -46,11 +65,15 @@ void LLVMRenameStage::tick() {
   // we have reached the renameWidth.
   if (!this->signal->stall) {
     unsigned renamedInsts = 0;
+    unsigned renamedIntDest = 0;
+    unsigned renamedFpDest = 0;
+    unsigned renamedIntLookUp = 0;
+    unsigned renamedFpLookUp = 0;
     auto iter = this->renameBuffer.begin();
     while (renamedInsts < this->renameWidth &&
            iter != this->renameBuffer.end()) {
       auto instId = *iter;
-      auto& inst = cpu->inflyInstMap.at(instId);
+      auto &inst = cpu->inflyInstMap.at(instId);
       // Sanity check.
       panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
                "Inst %u should be in inflyInstStatus to check if READY\n",
@@ -70,9 +93,23 @@ void LLVMRenameStage::tick() {
 
       renamedInsts += inst->getQueueWeight();
 
+      if (inst->isFloatInst()) {
+        renamedFpDest += inst->getNumResults();
+        renamedFpLookUp += inst->getNumOperands();
+      } else {
+        renamedIntDest += inst->getNumResults();
+        renamedIntLookUp += inst->getNumOperands();
+      }
+
       // Remove the inst from renameBuffer.
       iter = this->renameBuffer.erase(iter);
     }
+
+    this->renameRenamedInsts += renamedInsts;
+    this->renameRenamedOperands += renamedIntDest + renamedFpDest;
+    this->renameRenameLookups += renamedIntLookUp + renamedFpLookUp;
+    this->intRenameLookups += renamedIntLookUp;
+    this->fpRenameLookups += renamedFpLookUp;
   }
 
   // Raise stall signal to decode if rob size has reached limits.

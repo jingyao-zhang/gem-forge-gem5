@@ -25,10 +25,15 @@ class LLVMCommitStage {
 
   void tick();
 
+  std::string name();
+
   void regStats();
 
   Stats::Vector instsCommitted;
   Stats::Vector opsCommitted;
+  Stats::Vector intInstsCommitted;
+  Stats::Vector fpInstsCommitted;
+  Stats::Vector callInstsCommitted;
   Stats::Scalar blockedCycles;
 
  private:
