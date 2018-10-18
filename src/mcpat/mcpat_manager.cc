@@ -567,6 +567,7 @@ void McPATManager::computeEnergy() {
   }
 
   Processor processor(this->xml);
+
   auto &stream = *simout.findOrCreate("mcpat.txt")->stream();
   processor.dumpToFile(stream);
   // processor.displayEnergy(2);
@@ -640,7 +641,7 @@ void McPATManager::setStatsDerivO3CPU(int idx) {
    * Just make rename float writes 0.
    */
   auto renameWrites = scalar("rename.RenamedOperands");
-  auto renameReads = scalar("rename.RenamedLookups");
+  auto renameReads = scalar("rename.RenameLookups");
   auto renameFpReads = scalar("rename.fp_rename_lookups");
   auto renameFpWrites = 0;
 

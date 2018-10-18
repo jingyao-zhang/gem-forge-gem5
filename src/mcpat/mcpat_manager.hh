@@ -1,6 +1,7 @@
 #ifndef __MCPAT_MCAPT_MANAGER_HH__
 #define __MCPAT_MCAPT_MANAGER_HH__
 
+
 #include "base/misc.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
@@ -32,6 +33,7 @@ public:
 
   void init() override;
   void startup() override;
+  // void regStats() override { this->mcpatStats.regStats(); }
 
   void computeEnergy();
   static void dump();
@@ -57,7 +59,7 @@ private:
   void configureL2Cache(const Cache *cache);
   void configureL2Directories(const Cache *cache);
   void configureDerivO3CPU(const DerivO3CPU *cpu);
-  void configureLLVMTraceCPU(const LLVMTraceCPU* cpu);
+  void configureLLVMTraceCPU(const LLVMTraceCPU *cpu);
   void configureBranchPredictor(const BPredUnit *predictor,
                                 predictor_systemcore &mcpatPredictor);
 
