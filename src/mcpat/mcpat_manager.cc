@@ -496,25 +496,61 @@ void McPATManager::configureBranchPredictor(
 bool McPATManager::isCPU(const SimObject *so, const std::string &suffix,
                          int &cpuId) {
   const auto &name = so->name();
-  auto expression = "system.cpu([0-9]*)" + suffix;
-  std::regex regex(expression);
-  std::smatch matches;
-  if (std::regex_match(name, matches, regex)) {
-    // The first sub_match is the whole string.
-    // The next sub_match is the first parenthesized expression.
-    if (matches.size() == 2) {
-      auto cpuIdMatch = matches[1].str();
-      if (!cpuIdMatch.empty()) {
-        cpuId = std::stoi(cpuIdMatch);
-      } else {
-        // There is only one cpu.
-        cpuId = 0;
-      }
-      inform("%s belongs to cpu %s.\n", name.c_str(), cpuId);
-    }
-    return true;
+#if defined(__GNUC__) && __GNUC__ < 5
+  /**
+   * GCC 4.9 implements regex. Manually do the checking for GCC < 5.0.
+   */
+  const std::string prefix = "system.cpu";
+  auto prefixPos = name.find("system.cpu");
+  if (prefixPos == std::string::npos) {
+    return false;
   }
-  return false;
+
+  auto idxStartPos = prefixPos + prefix.size();
+  auto idxStopPos = idxStartPos;
+  while (idxStopPos < name.size() && std::isdigit(name[idxStopPos])) {
+    idxStopPos++;
+  }
+
+  if (name.substr(idxStopPos) != suffix) {
+    return false;
+  }
+
+  auto idSize = idxStopPos - idxStartPos;
+  if (idSize > 0) {
+    // There is a number.
+    cpuId = std::stoi(name.substr(idxStartPos, idSize));
+  } else {
+    cpuId = 0;
+  }
+  inform("%s belongs to cpu %s.\n", name.c_str(), cpuId);
+  return true;
+
+#else
+  auto expression = "system.cpu([0-9]*)" + suffix;
+  try {
+    std::regex regex(expression);
+    std::smatch matches;
+    if (std::regex_match(name, matches, regex)) {
+      // The first sub_match is the whole string.
+      // The next sub_match is the first parenthesized expression.
+      if (matches.size() == 2) {
+        auto cpuIdMatch = matches[1].str();
+        if (!cpuIdMatch.empty()) {
+          cpuId = std::stoi(cpuIdMatch);
+        } else {
+          // There is only one cpu.
+          cpuId = 0;
+        }
+        inform("%s belongs to cpu %s.\n", name.c_str(), cpuId);
+      }
+      return true;
+    }
+    return false;
+  } catch (const std::regex_error &e) {
+    fatal("regex caught: %s.", e.what());
+  }
+#endif
 }
 
 int McPATManager::getTLBSize(const TheISA::TLB *tlb) {
