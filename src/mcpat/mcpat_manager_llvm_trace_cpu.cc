@@ -26,7 +26,7 @@ void McPATManager::configureLLVMTraceCPU(const LLVMTraceCPU *cpu) {
   DPRINTF(McPATManager, "configure mcpat LLVMTraceCPU %d.\n", idx);
 
   auto &core = this->xml->sys.core[idx];
-  core.clock_rate = params->clk_domain->clockPeriod();
+  core.clock_rate = 1e6 / params->clk_domain->clockPeriod();
   core.x86 = static_cast<Arch>(THE_ISA) == Arch::X86ISA;
   core.fetch_width = params->fetchWidth;
   core.decode_width = params->decodeWidth;
@@ -181,7 +181,7 @@ void McPATManager::configureLLVMTraceCPU(const LLVMTraceCPU *cpu) {
    * L1 directory.
    */
   auto &L1Directory = this->xml->sys.L1Directory[idx];
-  L1Directory.clockrate = params->clk_domain->clockPeriod();
+  L1Directory.clockrate = 1e6 / params->clk_domain->clockPeriod();
 }
 
 void McPATManager::setStatsLLVMTraceCPU(int idx) {

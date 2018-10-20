@@ -152,7 +152,7 @@ void McPATManager::configureMemoryControl(const DRAMCtrlParams *params) {
 
   auto &mc = this->xml->sys.mc;
 
-  mc.mc_clock = params->clk_domain->clockPeriod();
+  mc.mc_clock = 1e6 / params->clk_domain->clockPeriod();
   mc.memory_channels_per_mc = params->channels;
   mc.number_ranks = params->ranks_per_channel;
 
@@ -177,7 +177,7 @@ void McPATManager::configureL2Directories(const Cache *cache) {
 
   auto &L2D = this->xml->sys.L2Directory[L2DIdx];
 
-  L2D.clockrate = params->clk_domain->clockPeriod();
+  L2D.clockrate = 1e6 / params->clk_domain->clockPeriod();
 }
 
 void McPATManager::configureL2Cache(const Cache *cache) {
@@ -243,7 +243,7 @@ void McPATManager::configureL2Cache(const Cache *cache) {
   }
 
   L2.clockrate =
-      params->clk_domain->clockPeriod(); // clock_rate (what is the unit)?
+      1e6 / params->clk_domain->clockPeriod(); // clock_rate (what is the unit)?
 
   /*************************************************************
    * The following fields are not set in the gem5-mcpat-parser.
@@ -290,7 +290,7 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
   DPRINTF(McPATManager, "configure mcpat o3 cpu %d.\n", idx);
 
   auto &core = this->xml->sys.core[idx];
-  core.clock_rate = params->clk_domain->clockPeriod();
+  core.clock_rate = 1e6 / params->clk_domain->clockPeriod();
   core.x86 = static_cast<Arch>(THE_ISA) == Arch::X86ISA;
   core.fetch_width = params->fetchWidth;
   core.decode_width = params->decodeWidth;
@@ -458,7 +458,7 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
    * L1 directory.
    */
   auto &L1Directory = this->xml->sys.L1Directory[idx];
-  L1Directory.clockrate = params->clk_domain->clockPeriod();
+  L1Directory.clockrate = 1e6 / params->clk_domain->clockPeriod();
 }
 
 void McPATManager::configureBranchPredictor(
