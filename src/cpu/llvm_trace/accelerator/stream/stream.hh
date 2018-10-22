@@ -77,16 +77,23 @@ private:
 
   struct FIFOEntryIdx {
     uint64_t streamInstance;
+    uint64_t configSeqNum;
     uint64_t entryIdx;
-    FIFOEntryIdx() : streamInstance(0), entryIdx(0) {}
-    FIFOEntryIdx(uint64_t _streamInstance, uint64_t _entryIdx)
-        : streamInstance(_streamInstance), entryIdx(_entryIdx) {}
+    FIFOEntryIdx()
+        : streamInstance(0), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+          entryIdx(0) {}
+    FIFOEntryIdx(uint64_t _streamInstance, uint64_t _configSeqNum,
+                 uint64_t _entryIdx)
+        : streamInstance(_streamInstance), configSeqNum(_configSeqNum),
+          entryIdx(_entryIdx) {}
     FIFOEntryIdx(const FIFOEntryIdx &other)
-        : streamInstance(other.streamInstance), entryIdx(other.entryIdx) {}
+        : streamInstance(other.streamInstance),
+          configSeqNum(other.configSeqNum), entryIdx(other.entryIdx) {}
     void next() { this->entryIdx++; }
-    void newInstance() {
+    void newInstance(uint64_t configSeqNum) {
       this->entryIdx = 0;
       this->streamInstance++;
+      this->configSeqNum = configSeqNum;
     }
 
     bool operator==(const FIFOEntryIdx &other) const {

@@ -298,6 +298,10 @@ void LLVMTraceCPU::loadDynamicInstsIfNecessary() {
   // Load using the parser.
   size_t count = this->dynInstStream->parse();
 
+  do {
+    (void)count;
+  } while (0);
+
   DPRINTF(LLVMTraceCPU,
           "Incrementally parsed number of inst: %u, current loaded: %u\n",
           count, this->dynInstStream->size());

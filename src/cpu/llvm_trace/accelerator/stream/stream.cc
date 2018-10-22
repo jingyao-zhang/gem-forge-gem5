@@ -156,6 +156,7 @@ void Stream::configure(uint64_t configSeqNum) {
   if (this->firstConfigSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
     this->firstConfigSeqNum = configSeqNum;
   }
+
   /**
    * For all the entries without stepSeqNum, this means that these entries are
    * speculative run ahead. Clear them out.
@@ -187,7 +188,7 @@ void Stream::configure(uint64_t configSeqNum) {
   }
 
   // Reset the FIFOIdx.
-  this->FIFOIdx.newInstance();
+  this->FIFOIdx.newInstance(configSeqNum);
   while (this->FIFO.size() < this->RUN_AHEAD_FIFO_ENTRIES) {
     this->enqueueFIFO();
   }
@@ -648,10 +649,19 @@ void Stream::stepImpl(uint64_t stepSeqNum) {
     STREAM_PANIC("Step when the fifo is empty for stream %s.",
                  this->getStreamName().c_str());
   }
+  if (stepSeqNum == 31686 || stepSeqNum == 31644) {
+    STREAM_HACK("Step for %lu step inst.", stepSeqNum);
+    STREAM_HACK("Config seq num %lu.\n", this->configSeqNum);
+    this->dump();
+  }
   for (auto &entry : this->FIFO) {
     if (entry.stepSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
       entry.step(stepSeqNum);
       STREAM_ENTRY_DPRINTF(entry, "Stepped with seqNum %lu.\n", stepSeqNum);
+      if (stepSeqNum == 31686 || stepSeqNum == 31644) {
+        STREAM_HACK("After step for %lu step inst.", stepSeqNum);
+        this->dump();
+      }
       return;
     }
   }
@@ -690,6 +700,10 @@ void Stream::commitStepImpl(uint64_t stepSeqNum) {
   }
   auto &entry = this->FIFO.front();
   STREAM_ENTRY_DPRINTF(entry, "Commit stepped with seqNum %lu.\n", stepSeqNum);
+  if (stepSeqNum < entry.idx.configSeqNum) {
+    STREAM_ENTRY_DPRINTF(entry, "Ignore step signal before our configuration.\n");
+    return;
+  }
   if (entry.stepSeqNum != stepSeqNum) {
     STREAM_ENTRY_PANIC(entry, "Unmatched stepSeqNum for entry %lu with %lu.",
                        entry.stepSeqNum, stepSeqNum);
