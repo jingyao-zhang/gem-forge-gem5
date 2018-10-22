@@ -9,6 +9,8 @@
 
 #include "TDGInstruction.pb.h"
 
+#include "tdg_packet_handler.hh"
+
 #include "base/misc.hh"
 #include "base/types.hh"
 #include "cpu/op_class.hh"
@@ -30,7 +32,7 @@ public:
   int numResults;
 };
 
-class LLVMDynamicInst {
+class LLVMDynamicInst : public TDGPacketHandler {
 public:
   LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
       : seqNum(allocateSeqNum()), TDG(_TDG), numMicroOps(_numMicroOps),
@@ -49,7 +51,8 @@ public:
 
   // Handle a packet response. Default will panic.
   // Only for mem insts.
-  virtual void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) {
+  virtual void handlePacketResponse(LLVMTraceCPU *cpu,
+                                    PacketPtr packet) override {
     panic("Calling handlePacketResponse on non-mem inst %u\n", this->getId());
   }
 

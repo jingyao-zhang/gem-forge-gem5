@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 
+#include "tdg_packet_handler.hh"
+
 #include "base/statistics.hh"
 #include "cpu/base.hh"
 #include "cpu/llvm_trace/accelerator/tdg_accelerator.hh"
@@ -212,7 +214,8 @@ public:
 
   // Send a request to memory.
   // If data is not nullptr, it will be a write.
-  void sendRequest(Addr paddr, int size, LLVMDynamicInst *inst, uint8_t *data);
+  void sendRequest(Addr paddr, int size, TDGPacketHandler *handler,
+                   uint8_t *data);
 
   Cycles getOpLatency(OpClass opClass);
 

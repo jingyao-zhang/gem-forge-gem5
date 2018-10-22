@@ -107,10 +107,10 @@ Stream::~Stream() {
     this->storedData = nullptr;
   }
 
-  for (auto memInst : this->memInsts) {
-    delete memInst;
+  for (auto memAccess : this->memAccesses) {
+    delete memAccess;
   }
-  this->memInsts.clear();
+  this->memAccesses.clear();
 }
 
 void Stream::addBaseStream(Stream *baseStream) {
@@ -267,13 +267,13 @@ void Stream::commitStore(uint64_t storeSeqNum) {
    * Send the write packet with random data.
    */
   if (entry.value != 0) {
-    auto memInst = new StreamMemAccessInst(this, entry.idx);
-    this->memInsts.insert(memInst);
+    auto memAccess = new StreamMemAccess(this, entry.idx);
+    this->memAccesses.insert(memAccess);
     auto paddr = cpu->translateAndAllocatePhysMem(entry.value);
     STREAM_DPRINTF("Send stream store packet at %p size %d.\n",
                    reinterpret_cast<void *>(entry.value),
                    this->info.element_size());
-    cpu->sendRequest(paddr, this->info.element_size(), memInst, storedData);
+    cpu->sendRequest(paddr, this->info.element_size(), memAccess, storedData);
   }
 
   /**
@@ -462,8 +462,8 @@ bool Stream::checkIfEntryBaseValuesValid(const FIFOEntry &entry) const {
 }
 
 void Stream::handlePacketResponse(const FIFOEntryIdx &entryId, PacketPtr packet,
-                                  StreamMemAccessInst *memInst) {
-  if (this->memInsts.count(memInst) == 0) {
+                                  StreamMemAccess *memAccess) {
+  if (this->memAccesses.count(memAccess) == 0) {
     STREAM_PANIC("Failed looking up the stream memory access inst in our set.");
   }
 
@@ -495,8 +495,8 @@ void Stream::handlePacketResponse(const FIFOEntryIdx &entryId, PacketPtr packet,
                  this->info.type().c_str());
   }
 
-  this->memInsts.erase(memInst);
-  delete memInst;
+  this->memAccesses.erase(memAccess);
+  delete memAccess;
 }
 
 void Stream::markAddressReady(FIFOEntry &entry) {
@@ -544,9 +544,9 @@ void Stream::markAddressReady(FIFOEntry &entry) {
       STREAM_ENTRY_DPRINTF(
           entry, "Send load packet #%d with addr %p, size %d.\n", packetIdx,
           reinterpret_cast<void *>(vaddr), packetSize);
-      auto memInst = new StreamMemAccessInst(this, entry.idx);
-      this->memInsts.insert(memInst);
-      cpu->sendRequest(paddr, packetSize, memInst, nullptr);
+      auto memAccess = new StreamMemAccess(this, entry.idx);
+      this->memAccesses.insert(memAccess);
+      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
 
       entry.inflyLoadPackets++;
 
@@ -558,9 +558,9 @@ void Stream::markAddressReady(FIFOEntry &entry) {
       STREAM_ENTRY_DPRINTF(
           entry, "Send store fetch packet #d with addr %p, size %d.\n",
           packetIdx, reinterpret_cast<void *>(vaddr), packetSize);
-      auto memInst = new StreamMemAccessInst(this, entry.idx);
-      this->memInsts.insert(memInst);
-      cpu->sendRequest(paddr, packetSize, memInst, nullptr);
+      auto memAccess = new StreamMemAccess(this, entry.idx);
+      this->memAccesses.insert(memAccess);
+      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
     }
   }
 
@@ -701,7 +701,8 @@ void Stream::commitStepImpl(uint64_t stepSeqNum) {
   auto &entry = this->FIFO.front();
   STREAM_ENTRY_DPRINTF(entry, "Commit stepped with seqNum %lu.\n", stepSeqNum);
   if (stepSeqNum < entry.idx.configSeqNum) {
-    STREAM_ENTRY_DPRINTF(entry, "Ignore step signal before our configuration.\n");
+    STREAM_ENTRY_DPRINTF(entry,
+                         "Ignore step signal before our configuration.\n");
     return;
   }
   if (entry.stepSeqNum != stepSeqNum) {
@@ -718,12 +719,11 @@ void Stream::commitStepImpl(uint64_t stepSeqNum) {
   }
 }
 
-LLVM::TDG::TDGInstruction Stream::StreamMemAccessInst::dummyTDGInstruction;
-
-void Stream::StreamMemAccessInst::handlePacketResponse(LLVMTraceCPU *cpu,
-                                                       PacketPtr packet) {
+void Stream::StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
+                                                   PacketPtr packet) {
   this->stream->handlePacketResponse(this->entryId, packet, this);
 }
+
 void Stream::FIFOEntry::markAddressReady(Cycles readyCycles) {
   this->isAddressValid = true;
   this->addressReadyCycles = readyCycles;

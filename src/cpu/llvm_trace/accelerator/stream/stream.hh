@@ -151,26 +151,19 @@ private:
   };
 
   /**
-   * This is used as a dummy dynamic instruction to send/receive packet from
+   * This is used as a handler to send/receive packet from
    * cpu.
    */
-  class StreamMemAccessInst : public LLVMDynamicInst {
+  class StreamMemAccess final : public TDGPacketHandler {
   public:
-    StreamMemAccessInst(Stream *_stream, const FIFOEntryIdx _entryId)
-        : LLVMDynamicInst(dummyTDGInstruction, 1), stream(_stream),
-          entryId(_entryId) {}
+    StreamMemAccess(Stream *_stream, const FIFOEntryIdx _entryId)
+        : stream(_stream), entryId(_entryId) {}
+    virtual ~StreamMemAccess() {}
     void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
-    void execute(LLVMTraceCPU *cpu) override {
-      panic("Calling execute() on StreamMemAccessInst.\n");
-    }
-    bool isCompleted() const override {
-      panic("Calling isCompleted() on StreamMemAccessInst.\n");
-    }
 
   private:
     Stream *stream;
     FIFOEntryIdx entryId;
-    static LLVM::TDG::TDGInstruction dummyTDGInstruction;
   };
 
   bool active;
@@ -183,7 +176,7 @@ private:
   FIFOEntryIdx FIFOIdx;
   std::list<FIFOEntry> FIFO;
 
-  std::unordered_set<StreamMemAccessInst *> memInsts;
+  std::unordered_set<StreamMemAccess *> memAccesses;
 
   mutable std::unordered_map<uint64_t, const FIFOEntry *> userToEntryMap;
 
@@ -196,7 +189,7 @@ private:
   bool checkIfEntryBaseValuesValid(const FIFOEntry &entry) const;
 
   void handlePacketResponse(const FIFOEntryIdx &entryId, PacketPtr packet,
-                            StreamMemAccessInst *memInst);
+                            StreamMemAccess *memAccess);
   void triggerReady(Stream *rootStream, const FIFOEntryIdx &entryId);
   void receiveReady(Stream *rootStream, Stream *baseStream,
                     const FIFOEntryIdx &entryId);
