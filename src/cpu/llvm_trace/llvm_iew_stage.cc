@@ -99,18 +99,18 @@ void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId> &queue,
       inst->tick();
 
       // Check if the inst is finished by FU.
-      if (inst->isCompleted() && inst->canWriteBack(cpu)) {
+      if (inst->isCompleted() /*&& inst->canWriteBack(cpu)*/) {
         DPRINTF(LLVMTraceCPU,
                 "Inst %u finished by fu, write back, remaining %d\n", instId,
                 queue.size());
 
         cpu->inflyInstStatus.at(instId) = InstStatus::FINISHED;
 
-        // If this is not store, we can immediately say this
-        // inst is write backed.
-        if (!inst->isStoreInst()) {
-          cpu->inflyInstStatus.at(instId) = InstStatus::WRITEBACKED;
-        }
+        // // If this is not store, we can immediately say this
+        // // inst is write backed.
+        // if (!inst->isStoreInst()) {
+        //   cpu->inflyInstStatus.at(instId) = InstStatus::WRITEBACKED;
+        // }
 
         writebacked++;
         if (inst->isFloatInst()) {
@@ -129,58 +129,6 @@ void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId> &queue,
   }
 }
 
-void LLVMIEWStage::writebackStoreQueue() {
-  // Check the head of the store queue.
-  auto iter = this->storeQueue.begin();
-  while (iter != this->storeQueue.end()) {
-    auto instId = *iter;
-    auto inst = cpu->inflyInstMap.at(instId);
-
-    panic_if(!inst->isStoreInst(), "Non-store inst %u in store queue.\n",
-             instId);
-    // Check if write backed.
-    if (cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end()) {
-      panic("Inst %u should be in inflyInstStatus to check status.\n", instId);
-    }
-    auto status = cpu->inflyInstStatus.at(instId);
-    if (status == InstStatus::WRITEBACKING) {
-      // This inst is already been writing back.
-      // Check if it's done.
-      if (inst->isWritebacked()) {
-        // If so, update it to writebacked and remove from the store queue.
-        // Continue to try to write back the next store in queue.
-        DPRINTF(LLVMTraceCPU, "Store inst %u is writebacked.\n", instId);
-        cpu->inflyInstStatus.at(instId) = InstStatus::WRITEBACKED;
-        iter = this->storeQueue.erase(iter);
-        // Uppon erase from the store queue, we must also remove from
-        // the inst queue.
-        // TODO: optimize this.
-        auto instQueueIter =
-            std::find(this->instQueue.begin(), this->instQueue.end(), instId);
-        if (instQueueIter == this->instQueue.end()) {
-          panic("Failed to find store inst %u in inst queue.\n", instId);
-        }
-        this->instQueue.erase(instQueueIter);
-        continue;
-      } else {
-        // The head of the store queue is not done.
-        // break.
-        break;
-      }
-    } else if (status == InstStatus::FINISHED) {
-      // The inst is still waiting to be written back.
-      // This cycle is done.
-      DPRINTF(LLVMTraceCPU, "Store inst %u is started to writeback.\n", instId);
-      cpu->inflyInstStatus.at(instId) = InstStatus::WRITEBACKING;
-      inst->writeback(cpu);
-      break;
-    } else {
-      // This inst is not issued/finished, break.
-      break;
-    }
-  }
-}
-
 void LLVMIEWStage::tick() {
   // Get inst from rename.
   for (auto iter = this->fromRename->begin(), end = this->fromRename->end();
@@ -192,6 +140,9 @@ void LLVMIEWStage::tick() {
   // Free FUs.
   cpu->fuPool->processFreeUnits();
 
+  // Keep writing back stores.
+  this->lsq->writebackStore();
+
   if (this->signal->stall) {
     this->blockedCycles++;
   }
@@ -201,9 +152,8 @@ void LLVMIEWStage::tick() {
 
     unsigned writebacked = 0;
     this->writeback(this->rob, writebacked);
-    this->writebackStoreQueue();
 
-    this->commit();
+    this->sendToCommit();
 
     // Mark ready inst for next cycle.
     this->markReady();
@@ -217,7 +167,7 @@ void LLVMIEWStage::tick() {
   // Raise the stall if instQueue is too large.
   this->signal->stall = (this->rob.size() >= this->robSize ||
                          this->instQueue.size() >= this->instQueueSize ||
-                         this->storeQueue.size() >= this->storeQueueSize ||
+                         this->lsq->stores() >= this->storeQueueSize ||
                          this->lsq->loads() >= this->loadQueueSize);
 }
 
@@ -374,11 +324,6 @@ void LLVMIEWStage::dispatch() {
     auto instId = *iter;
     auto inst = cpu->inflyInstMap.at(instId);
 
-    if (inst->isStoreInst() &&
-        this->storeQueue.size() == this->storeQueueSize) {
-      break;
-    }
-
     // Store queue full.
     if (inst->isStoreInst() && this->lsq->stores() == this->storeQueueSize) {
       break;
@@ -430,7 +375,6 @@ void LLVMIEWStage::dispatch() {
 
     this->instQueue.push_back(instId);
     if (inst->isStoreInst()) {
-      this->storeQueue.push_back(instId);
       this->lsq->insertStore(instId);
     }
     if (inst->isLoadInst()) {
@@ -460,15 +404,61 @@ void LLVMIEWStage::markReady() {
   }
 }
 
-void LLVMIEWStage::commit() {
+void LLVMIEWStage::commitInst(LLVMDynamicInstId instId) {
+  panic_if(this->rob.empty(), "ROB empty when commitInst for %lu.", instId);
+  panic_if(this->rob.front() != instId, "Unmatchted rob header inst.");
+  panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+           "Inst %u should be in inflyInstStatus to check if writebacked.\n",
+           instId);
+
+  auto &instStatus = cpu->inflyInstStatus.at(instId);
+  panic_if(instStatus != InstStatus::COMMIT, "Inst is not in COMMIT status.");
+
+  auto inst = cpu->inflyInstMap.at(instId);
+  if (inst->isStoreInst()) {
+    instStatus = InstStatus::COMMITTING;
+    this->lsq->commitStore(instId);
+  } else {
+    // For other cases, the instruction is automatically committed.
+    instStatus = InstStatus::COMMITTED;
+  }
+}
+
+void LLVMIEWStage::postCommitInst(LLVMDynamicInstId instId) {
+  panic_if(this->rob.empty(), "ROB empty when commitInst for %lu.", instId);
+  panic_if(this->rob.front() != instId, "Unmatchted rob header inst.");
+  panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+           "Inst %u should be in inflyInstStatus to check if committed.\n",
+           instId);
+
+  auto &instStatus = cpu->inflyInstStatus.at(instId);
+  panic_if(instStatus != InstStatus::COMMITTED,
+           "Inst is not in committed status.");
+  this->rob.pop_front();
+
+  // Memory instruction can not be removed from the instruction queue
+  // until committed.
+  auto inst = cpu->inflyInstMap.at(instId);
+  if (inst->isLoadInst() || inst->isStoreInst()) {
+    auto instQueueIter =
+        std::find(this->instQueue.begin(), this->instQueue.end(), instId);
+    if (instQueueIter == this->instQueue.end()) {
+      panic("Failed to find mem inst %u in inst queue.\n", instId);
+    }
+    this->instQueue.erase(instQueueIter);
+  }
+
+  if (inst->isLoadInst()) {
+    this->lsq->postCommitLoad(instId);
+  }
+}
+
+void LLVMIEWStage::sendToCommit() {
   // Commit must be in order.
   unsigned committedInst = 0;
-  while (committedInst < 8) {
-    if (this->rob.empty()) {
-      return;
-    }
-    auto head = this->rob.begin();
-    auto instId = *head;
+  auto commitIter = this->rob.begin();
+  while (committedInst < 8 && commitIter != this->rob.end()) {
+    auto instId = *commitIter;
     /**
      * Simply checking if the header of the rob is ready to commit is one read.
      */
@@ -476,32 +466,21 @@ void LLVMIEWStage::commit() {
     panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
              "Inst %u should be in inflyInstStatus to check if writebacked.\n",
              instId);
-    if (cpu->inflyInstStatus.at(instId) == InstStatus::WRITEBACKED) {
-      this->rob.erase(head);
+
+    bool canCommit = false;
+    auto &instStatus = cpu->inflyInstStatus.at(instId);
+    canCommit = (instStatus == InstStatus::FINISHED);
+
+    if (canCommit) {
+      instStatus = InstStatus::COMMIT;
       this->toCommit->push_back(instId);
 
-      auto inst = cpu->inflyInstMap.at(instId);
-
-      if (inst->isLoadInst()) {
-        this->lsq->commitLoad(instId);
-      } else if (inst->isStoreInst()) {
-        this->lsq->commitStore(instId);
-      }
-
-      // Special case for load, it can be removed from load queue
-      // once committed.
-      if (inst->isLoadInst()) {
-        auto instQueueIter =
-            std::find(this->instQueue.begin(), this->instQueue.end(), instId);
-        if (instQueueIter == this->instQueue.end()) {
-          panic("Failed to find load inst %u in inst queue.\n", instId);
-        }
-        this->instQueue.erase(instQueueIter);
-      }
-
       DPRINTF(LLVMTraceCPU, "Inst %u %s is sent to commit.\n", instId,
-              inst->getInstName().c_str());
+              cpu->inflyInstMap.at(instId)->getInstName().c_str());
       committedInst++;
+
+      commitIter++;
+
     } else {
       // The header is not finished, no need to check others.
       break;

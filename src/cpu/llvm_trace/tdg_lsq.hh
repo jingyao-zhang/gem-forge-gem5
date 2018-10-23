@@ -20,19 +20,32 @@ public:
 
   void commitLoad(LLVMDynamicInstId instId);
   void commitStore(LLVMDynamicInstId instId);
+  void postCommitLoad(LLVMDynamicInstId instId);
+  void postCommitStore(LLVMDynamicInstId instId);
+
+  void writebackStore();
 
   size_t loads() const { return this->loadQueue.size(); }
   size_t stores() const { return this->storeQueue.size(); }
 
 private:
+
   LLVMTraceCPU *cpu;
   LLVMIEWStage *iew;
 
   const int loadQueueSize;
   const int storeQueueSize;
 
+  struct StoreQueueEntry {
+  public:
+    LLVMDynamicInstId id;
+    bool committed;
+    bool writebacking;
+    StoreQueueEntry(LLVMDynamicInstId _id);
+  };
+
   std::list<LLVMDynamicInstId> loadQueue;
-  std::list<LLVMDynamicInstId> storeQueue;
+  std::list<StoreQueueEntry> storeQueue;
 };
 
 #endif

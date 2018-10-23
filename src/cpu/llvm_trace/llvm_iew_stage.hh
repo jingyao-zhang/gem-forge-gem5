@@ -29,6 +29,8 @@ public:
   void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
 
   void tick();
+  void commitInst(LLVMDynamicInstId instId);
+  void postCommitInst(LLVMDynamicInstId instId);
   std::string name();
 
   // API for complete a function unit.
@@ -125,17 +127,14 @@ private:
 
   std::list<LLVMDynamicInstId> rob;
   std::list<LLVMDynamicInstId> instQueue;
-  std::list<LLVMDynamicInstId> storeQueue;
 
   TDGLoadStoreQueue *lsq;
-
 
   void dispatch();
   void issue();
   void markReady();
   void writeback(std::list<LLVMDynamicInstId> &queue, unsigned &writebacked);
-  void writebackStoreQueue();
-  void commit();
+  void sendToCommit();
 };
 
 #endif

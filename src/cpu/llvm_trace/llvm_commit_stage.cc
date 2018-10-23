@@ -71,14 +71,34 @@ void LLVMCommitStage::tick() {
       break;
     }
 
-    committedInsts += inst->getQueueWeight();
-    this->commitQueue.pop_front();
-
     panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
              "Inst %u should be in inflyInstStatus to be commited\n", instId);
-    panic_if(cpu->inflyInstStatus.at(instId) != InstStatus::WRITEBACKED,
-             "Inst %u should be writebacked to be commited, not %d\n", instId,
-             cpu->inflyInstStatus.at(instId));
+
+    auto instStatus = cpu->inflyInstStatus.at(instId);
+    if (instStatus == InstStatus::COMMIT) {
+      // First time, commit this instruction.
+      cpu->iewStage.commitInst(instId);
+    }
+
+    // Get the updated status.
+    instStatus = cpu->inflyInstStatus.at(instId);
+    if (instStatus == InstStatus::COMMITTING) {
+      // Still working, break.
+      break;
+    } else if (instStatus == InstStatus::COMMITTED) {
+      // Done, we can move forward.
+
+    } else {
+      panic("Illegal commit status here %d for inst %lu.\n", instStatus,
+            instId);
+    }
+
+    // Any instruction specific operation when committed.
+    cpu->iewStage.postCommitInst(instId);
+    inst->commit(cpu);
+
+    committedInsts += inst->getQueueWeight();
+    this->commitQueue.pop_front();
 
     DPRINTF(LLVMTraceCPUCommit,
             "Inst %lu committed, remaining infly inst #%u\n", inst->getSeqNum(),
@@ -98,8 +118,6 @@ void LLVMCommitStage::tick() {
     if (inst->isCallInst()) {
       this->callInstsCommitted[threadId]++;
     }
-    // Any instruction specific operation when committed.
-    inst->commit(cpu);
 
     // After this point, inst is released!
     cpu->inflyInstMap.erase(instId);

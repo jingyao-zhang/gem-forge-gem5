@@ -183,17 +183,17 @@ bool LLVMDynamicInst::isCallInst() const {
 }
 
 bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU *cpu) const {
-  if (this->isStoreInst()) {
-    for (const auto dependentInstId : this->TDG.deps()) {
-      if (!cpu->isInstCommitted(dependentInstId)) {
-        // If the dependent inst is not committed, check if it's a branch.
-        auto DepInst = cpu->getInflyInst(dependentInstId);
-        if (DepInst->isBranchInst()) {
-          return false;
-        }
-      }
-    }
-  }
+  // if (this->isStoreInst()) {
+  //   for (const auto dependentInstId : this->TDG.deps()) {
+  //     if (!cpu->isInstCommitted(dependentInstId)) {
+  //       // If the dependent inst is not committed, check if it's a branch.
+  //       auto DepInst = cpu->getInflyInst(dependentInstId);
+  //       if (DepInst->isBranchInst()) {
+  //         return false;
+  //       }
+  //     }
+  //   }
+  // }
   return true;
 }
 

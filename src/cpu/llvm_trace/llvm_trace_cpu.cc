@@ -206,8 +206,8 @@ void LLVMTraceCPU::CPUPort::addReq(PacketPtr pkt) {
 
 void LLVMTraceCPU::CPUPort::sendReq() {
   // If there is already blocked req, just push to the queue.
-  DPRINTF(LLVMTraceCPU, "Try sending pkt, remaining packets %lu\n",
-          this->blockedPacketPtrs.size());
+  // DPRINTF(LLVMTraceCPU, "Try sending pkt, remaining packets %lu\n",
+  //         this->blockedPacketPtrs.size());
   // std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
   while (!this->blocked && !this->blockedPacketPtrs.empty() &&
          this->inflyNumPackets < 80) {

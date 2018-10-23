@@ -56,6 +56,9 @@ public:
     READY,      // Ready to be issued.
     ISSUED,
     FINISHED,     // Finished computing.
+    COMMIT,       // Sent to commit stage.
+    COMMITTING,   // Committing.
+    COMMITTED,    // Committed.
     WRITEBACKING, // Writing back.
     WRITEBACKED,  // Write backed.
   };
