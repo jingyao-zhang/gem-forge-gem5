@@ -4,6 +4,7 @@ DebugFlag('LLVMTraceCPU')
 DebugFlag('LLVMTraceCPUFetch')
 DebugFlag('LLVMTraceCPUCommit')
 DebugFlag('LLVMBranchPredictor')
+DebugFlag('TDGLoadStoreQueue')
 DebugFlag('RegionStats')
 
 if not env['HAVE_PROTOBUF']:

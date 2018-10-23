@@ -129,7 +129,6 @@ private:
 
   TDGLoadStoreQueue *lsq;
 
-  unsigned loadQueueN;
 
   void dispatch();
   void issue();

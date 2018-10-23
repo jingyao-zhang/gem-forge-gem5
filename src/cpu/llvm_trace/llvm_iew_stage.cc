@@ -12,7 +12,7 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       loadQueueSize(params->loadQueueSize),
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
-      toCommitDelay(params->iewToCommitDelay), lsq(nullptr), loadQueueN(0) {
+      toCommitDelay(params->iewToCommitDelay), lsq(nullptr) {
   this->lsq = new TDGLoadStoreQueue(this->cpu, this, this->loadQueueSize,
                                     this->storeQueueSize);
 }
@@ -218,7 +218,7 @@ void LLVMIEWStage::tick() {
   this->signal->stall = (this->rob.size() >= this->robSize ||
                          this->instQueue.size() >= this->instQueueSize ||
                          this->storeQueue.size() >= this->storeQueueSize ||
-                         this->loadQueueN >= this->loadQueueSize);
+                         this->lsq->loads() >= this->loadQueueSize);
 }
 
 void LLVMIEWStage::issue() {
@@ -310,7 +310,6 @@ void LLVMIEWStage::issue() {
         } else {
           inst->execute(cpu);
         }
-        inst->execute(cpu);
         if (!cpu->isStandalone()) {
           this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
         } else {
@@ -385,10 +384,6 @@ void LLVMIEWStage::dispatch() {
       break;
     }
 
-    if (inst->isLoadInst() && this->loadQueueN == this->loadQueueSize) {
-      break;
-    }
-
     // Load queue full.
     if (inst->isLoadInst() && this->lsq->loads() == this->loadQueueSize) {
       break;
@@ -439,7 +434,6 @@ void LLVMIEWStage::dispatch() {
       this->lsq->insertStore(instId);
     }
     if (inst->isLoadInst()) {
-      this->loadQueueN++;
       this->lsq->insertLoad(instId);
     }
     DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
@@ -503,7 +497,6 @@ void LLVMIEWStage::commit() {
           panic("Failed to find load inst %u in inst queue.\n", instId);
         }
         this->instQueue.erase(instQueueIter);
-        this->loadQueueN--;
       }
 
       DPRINTF(LLVMTraceCPU, "Inst %u %s is sent to commit.\n", instId,

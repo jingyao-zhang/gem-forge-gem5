@@ -146,6 +146,7 @@ private:
   friend class LLVMRenameStage;
   friend class LLVMIEWStage;
   friend class LLVMCommitStage;
+  friend class TDGLoadStoreQueue;
 
   LLVMFetchStage fetchStage;
   LLVMDecodeStage decodeStage;
