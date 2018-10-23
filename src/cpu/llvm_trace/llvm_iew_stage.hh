@@ -11,6 +11,7 @@
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
 #include "cpu/timebuf.hh"
 #include "params/LLVMTraceCPU.hh"
+#include "tdg_lsq.hh"
 
 class LLVMTraceCPU;
 
@@ -125,6 +126,8 @@ private:
   std::list<LLVMDynamicInstId> rob;
   std::list<LLVMDynamicInstId> instQueue;
   std::list<LLVMDynamicInstId> storeQueue;
+
+  TDGLoadStoreQueue *lsq;
 
   unsigned loadQueueN;
 

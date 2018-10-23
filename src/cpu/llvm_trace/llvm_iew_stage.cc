@@ -12,7 +12,10 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       loadQueueSize(params->loadQueueSize),
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
-      toCommitDelay(params->iewToCommitDelay), loadQueueN(0) {}
+      toCommitDelay(params->iewToCommitDelay), lsq(nullptr), loadQueueN(0) {
+  this->lsq = new TDGLoadStoreQueue(this->cpu, this, this->loadQueueSize,
+                                    this->storeQueueSize);
+}
 
 void LLVMIEWStage::setFromRename(TimeBuffer<RenameStruct> *fromRenameBuffer) {
   this->fromRename = fromRenameBuffer->getWire(-this->fromRenameDelay);
@@ -274,13 +277,13 @@ void LLVMIEWStage::issue() {
         if (opClass != No_OpClass) {
           auto opLatency = cpu->getOpLatency(opClass);
           switch (opClass) {
-          case IntAluOp : {
+          case IntAluOp: {
             this->ALUAccesses++;
             this->ALUAccessesCycles += opLatency;
             break;
           }
           case IntMultOp:
-          case IntDivOp : {
+          case IntDivOp: {
             this->MultAccesses++;
             this->MultAccessesCycles += opLatency;
             break;
@@ -289,7 +292,7 @@ void LLVMIEWStage::issue() {
           case FloatMultOp:
           case FloatDivOp:
           case FloatCvtOp:
-          case FloatCmpOp : {
+          case FloatCmpOp: {
             this->FPUAccesses++;
             this->FPUAccessesCycles += opLatency;
             break;
@@ -299,6 +302,14 @@ void LLVMIEWStage::issue() {
         }
 
         DPRINTF(LLVMTraceCPU, "Inst %u %s issued\n", instId, instName.c_str());
+        // Special case for load/store.
+        if (inst->isLoadInst()) {
+          this->lsq->executeLoad(instId);
+        } else if (inst->isStoreInst()) {
+          this->lsq->executeStore(instId);
+        } else {
+          inst->execute(cpu);
+        }
         inst->execute(cpu);
         if (!cpu->isStandalone()) {
           this->statIssuedInstType[cpu->thread_context->threadId()][opClass]++;
@@ -369,7 +380,17 @@ void LLVMIEWStage::dispatch() {
       break;
     }
 
+    // Store queue full.
+    if (inst->isStoreInst() && this->lsq->stores() == this->storeQueueSize) {
+      break;
+    }
+
     if (inst->isLoadInst() && this->loadQueueN == this->loadQueueSize) {
+      break;
+    }
+
+    // Load queue full.
+    if (inst->isLoadInst() && this->lsq->loads() == this->loadQueueSize) {
       break;
     }
 
@@ -415,9 +436,11 @@ void LLVMIEWStage::dispatch() {
     this->instQueue.push_back(instId);
     if (inst->isStoreInst()) {
       this->storeQueue.push_back(instId);
+      this->lsq->insertStore(instId);
     }
     if (inst->isLoadInst()) {
       this->loadQueueN++;
+      this->lsq->insertLoad(instId);
     }
     DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
             instId);
@@ -464,6 +487,12 @@ void LLVMIEWStage::commit() {
       this->toCommit->push_back(instId);
 
       auto inst = cpu->inflyInstMap.at(instId);
+
+      if (inst->isLoadInst()) {
+        this->lsq->commitLoad(instId);
+      } else if (inst->isStoreInst()) {
+        this->lsq->commitStore(instId);
+      }
 
       // Special case for load, it can be removed from load queue
       // once committed.

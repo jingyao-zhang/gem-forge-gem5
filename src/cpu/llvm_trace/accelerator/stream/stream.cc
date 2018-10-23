@@ -525,11 +525,7 @@ void Stream::markAddressReady(FIFOEntry &entry) {
     } else {
       STREAM_PANIC("Stream so far can only work in standalone mode.");
     }
-    // For now only support maximum 8 bytes access.
     packetSize = size - inflyPacketsSize;
-    // if (packetSize > 8) {
-    //   packetSize = 8;
-    // }
     // Do not span across cache line.
     auto cacheLineSize = cpu->system->cacheLineSize();
     if (((paddr % cacheLineSize) + packetSize) > cacheLineSize) {
