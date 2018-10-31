@@ -50,11 +50,12 @@ public:
                     std::vector<std::pair<std::string, Addr>> maps);
 
   enum InstStatus {
-    FETCHED,    // In fetchQueue.
-    DECODED,    // Decoded.
-    DISPATCHED, // Dispatched to instQueue.
-    READY,      // Ready to be issued.
-    ISSUED,
+    FETCHED,      // In fetchQueue.
+    DECODED,      // Decoded.
+    DISPATCHED,   // Dispatched to instQueue.
+    BLOCKED,      // Blocked by memory, should not check ready unless unblock.
+    READY,        // Ready to be issued.
+    ISSUED,       // Issue to FU.
     FINISHED,     // Finished computing.
     COMMIT,       // Sent to commit stage.
     COMMITTING,   // Committing.
@@ -82,6 +83,8 @@ private:
     size_t getPendingPacketsNum() const {
       return this->blockedPacketPtrs.size();
     }
+
+    bool isBlocked() const;
 
   private:
     LLVMTraceCPU *owner;

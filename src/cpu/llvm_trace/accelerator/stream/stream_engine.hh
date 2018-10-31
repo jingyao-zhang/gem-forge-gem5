@@ -36,6 +36,7 @@ public:
   Stats::Scalar numElementsUsed;
   Stats::Scalar entryWaitCycles;
   Stats::Scalar numMemElements;
+  Stats::Scalar numMemElementsFetched;
   Stats::Scalar numMemElementsUsed;
   Stats::Scalar memEntryWaitCycles;
 

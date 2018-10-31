@@ -10,7 +10,7 @@ class LLVMIEWStage;
 class TDGLoadStoreQueue {
 public:
   TDGLoadStoreQueue(LLVMTraceCPU *_cpu, LLVMIEWStage *_iew, int _loadQueueSize,
-                    int _storeQueueSize);
+                    int _storeQueueSize, int _cacheStorePorts);
 
   void insertLoad(LLVMDynamicInstId instId);
   void insertStore(LLVMDynamicInstId instId);
@@ -29,12 +29,12 @@ public:
   size_t stores() const { return this->storeQueue.size(); }
 
 private:
-
   LLVMTraceCPU *cpu;
   LLVMIEWStage *iew;
 
   const int loadQueueSize;
   const int storeQueueSize;
+  const int cacheStorePorts;
 
   struct StoreQueueEntry {
   public:

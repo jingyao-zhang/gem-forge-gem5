@@ -13,8 +13,9 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
       toCommitDelay(params->iewToCommitDelay), lsq(nullptr) {
-  this->lsq = new TDGLoadStoreQueue(this->cpu, this, this->loadQueueSize,
-                                    this->storeQueueSize);
+  this->lsq =
+      new TDGLoadStoreQueue(this->cpu, this, this->loadQueueSize,
+                            this->storeQueueSize, params->cacheStorePorts);
 }
 
 void LLVMIEWStage::setFromRename(TimeBuffer<RenameStruct> *fromRenameBuffer) {
@@ -404,6 +405,30 @@ void LLVMIEWStage::markReady() {
   }
 }
 
+void LLVMIEWStage::blockMemInst(LLVMDynamicInstId instId) {
+  // hack("Block memory instructions %lu.\n", instId);
+  auto statusIter = cpu->inflyInstStatus.find(instId);
+  panic_if(statusIter == cpu->inflyInstStatus.end(),
+           "Inst %u should be in inflyInstStatus to be blocked.", instId);
+  panic_if(statusIter->second != InstStatus::ISSUED,
+           "Inst should be in issued state to be blocked.");
+  statusIter->second = InstStatus::BLOCKED;
+}
+
+void LLVMIEWStage::unblockMemoryInsts() {
+  // hack("Unblock memory instructions.\n");
+  for (auto instId : this->instQueue) {
+    auto statusIter = cpu->inflyInstStatus.find(instId);
+    panic_if(statusIter == cpu->inflyInstStatus.end(),
+             "Inst %u should be in inflyInstStatus to be unblocked.", instId);
+    if (statusIter->second != InstStatus::BLOCKED) {
+      continue;
+    }
+    // hack("Unblock memory instructions %lu.\n", instId);
+    statusIter->second = InstStatus::READY;
+  }
+}
+
 void LLVMIEWStage::commitInst(LLVMDynamicInstId instId) {
   panic_if(this->rob.empty(), "ROB empty when commitInst for %lu.", instId);
   panic_if(this->rob.front() != instId, "Unmatchted rob header inst.");
@@ -499,7 +524,12 @@ void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
         "processFUCompletion: Failed to find the inst %u in inflyInstStatus\n",
         instId);
   }
-  if (cpu->inflyInstStatus.at(instId) != InstStatus::ISSUED) {
+  auto instStatus = cpu->inflyInstStatus.at(instId);
+  if (instStatus == InstStatus::BLOCKED) {
+    // Blocked instruction is ignored.
+    return;
+  }
+  if (instStatus != InstStatus::ISSUED) {
     panic("processFUCompletion: Inst %u is not issued\n", instId);
   }
 }

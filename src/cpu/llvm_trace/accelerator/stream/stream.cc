@@ -34,8 +34,9 @@
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
-               LLVMTraceCPU *_cpu, StreamEngine *_se)
-    : cpu(_cpu), se(_se), firstConfigSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+               LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle)
+    : cpu(_cpu), se(_se), isOracle(_isOracle),
+      firstConfigSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
       configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),
       RUN_AHEAD_FIFO_ENTRIES(10) {
 
@@ -388,13 +389,14 @@ bool Stream::canStep() const {
 }
 
 void Stream::enqueueFIFO() {
-  auto nextValuePair = this->history->getNextAddr();
+  bool oracleUsed = false;
+  auto nextValuePair = this->history->getNextAddr(oracleUsed);
   STREAM_DPRINTF(
       "Enqueue with idx (%lu, %lu) value (%s, %lu), fifo size %lu.\n",
       this->FIFOIdx.streamInstance, this->FIFOIdx.entryIdx,
       (nextValuePair.first ? "valid" : "invalid"), nextValuePair.second,
       this->FIFO.size());
-  this->FIFO.emplace_back(this->FIFOIdx, nextValuePair.second,
+  this->FIFO.emplace_back(this->FIFOIdx, oracleUsed, nextValuePair.second,
                           LLVMDynamicInst::INVALID_SEQ_NUM);
   this->FIFOIdx.next();
 
@@ -513,6 +515,20 @@ void Stream::markAddressReady(FIFOEntry &entry) {
     this->markValueReady(entry);
     return;
   }
+
+  if (this->isOracle) {
+    // If we are oracle, and the entry is unused, immediately mark it value
+    // ready without sending the packet.
+    // if (!entry.oracleUsed) {
+    //   this->markValueReady(entry);
+    //   return;
+    // }
+    this->markValueReady(entry);
+    return;
+  }
+
+  // After this point, we are going to fetch the data from cache.
+  se->numMemElementsFetched++;
 
   // Start to construct the packets.
   auto size = this->info.element_size();

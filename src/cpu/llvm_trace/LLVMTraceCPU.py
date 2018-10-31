@@ -58,6 +58,9 @@ class LLVMTraceCPU(BaseCPU):
 
     fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
 
+    cacheStorePorts = Param.Unsigned(8, "Cache Store Ports. "
+          "Constrains stores only. Loads are constrained by load FUs.")
+
     @classmethod
     def memory_mode(cls):
         return 'timing'

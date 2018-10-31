@@ -16,14 +16,17 @@ void StreamHistory::configure() {
   this->previousAddr = 0;
 }
 
-std::pair<bool, uint64_t> StreamHistory::getNextAddr() {
+std::pair<bool, uint64_t> StreamHistory::getNextAddr(bool& used) {
   if (this->currentIdx < this->history.history_size()) {
     const auto &entry = this->history.history(this->currentIdx);
     this->currentIdx++;
     this->previousAddr = entry.addr();
+    // AdHoc.
+    used = entry.used();
     return std::make_pair(entry.valid(), entry.addr());
   } else {
     this->currentIdx++;
+    used = false;
     return std::make_pair(false, this->previousAddr);
   }
 }

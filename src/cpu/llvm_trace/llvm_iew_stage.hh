@@ -29,8 +29,15 @@ public:
   void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
 
   void tick();
+
+  /**
+   * API for other stages and units.
+   */
   void commitInst(LLVMDynamicInstId instId);
   void postCommitInst(LLVMDynamicInstId instId);
+  void blockMemInst(LLVMDynamicInstId instId);
+  void unblockMemoryInsts();
+
   std::string name();
 
   // API for complete a function unit.

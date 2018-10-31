@@ -27,6 +27,10 @@ void StreamEngine::regStats() {
   this->numMemElements.name(this->manager->name() + ".stream.numMemElements")
       .desc("Number of mem stream elements created.")
       .prereq(this->numMemElements);
+  this->numMemElementsFetched
+      .name(this->manager->name() + ".stream.numMemElementsFetched")
+      .desc("Number of mem stream elements fetched from cache.")
+      .prereq(this->numMemElementsFetched);
   this->numMemElementsUsed
       .name(this->manager->name() + ".stream.numMemElementsUsed")
       .desc("Number of mem stream elements used.")
@@ -139,11 +143,12 @@ Stream *StreamEngine::getOrInitializeStream(
     const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst) {
   const auto &streamId = configInst.stream_id();
   auto iter = this->streamMap.find(streamId);
+  bool isOracle = true;
   if (iter == this->streamMap.end()) {
     iter =
         this->streamMap
             .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
-                     std::forward_as_tuple(configInst, cpu, this))
+                     std::forward_as_tuple(configInst, cpu, this, isOracle))
             .first;
   }
   return &(iter->second);

@@ -114,6 +114,11 @@ void LLVMTraceCPU::tick() {
   }
   this->numCycles++;
 
+  // Unblock the memory instructions.
+  if (!this->dataPort.isBlocked()) {
+    this->iewStage.unblockMemoryInsts();
+  }
+
   this->fetchStage.tick();
   this->decodeStage.tick();
   this->renameStage.tick();
@@ -202,6 +207,10 @@ bool LLVMTraceCPU::CPUPort::recvTimingResp(PacketPtr pkt) {
 void LLVMTraceCPU::CPUPort::addReq(PacketPtr pkt) {
   DPRINTF(LLVMTraceCPU, "Add pkt at %p\n", pkt);
   this->blockedPacketPtrs.push(pkt);
+}
+
+bool LLVMTraceCPU::CPUPort::isBlocked() const {
+  return this->blocked || (!this->blockedPacketPtrs.empty());
 }
 
 void LLVMTraceCPU::CPUPort::sendReq() {

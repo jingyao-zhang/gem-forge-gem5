@@ -26,7 +26,7 @@ public:
    * Return the next value of the history.
    * The first boolean indicating the value is valid.
    */
-  std::pair<bool, uint64_t> getNextAddr();
+  std::pair<bool, uint64_t> getNextAddr(bool& used);
 
 private:
   std::string historyPath;

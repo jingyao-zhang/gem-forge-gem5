@@ -8,9 +8,10 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 TDGLoadStoreQueue::TDGLoadStoreQueue(LLVMTraceCPU *_cpu, LLVMIEWStage *_iew,
-                                     int _loadQueueSize, int _storeQueueSize)
+                                     int _loadQueueSize, int _storeQueueSize,
+                                     int _cacheStorePorts)
     : cpu(_cpu), iew(_iew), loadQueueSize(_loadQueueSize),
-      storeQueueSize(_storeQueueSize) {}
+      storeQueueSize(_storeQueueSize), cacheStorePorts(_cacheStorePorts) {}
 
 void TDGLoadStoreQueue::insertLoad(LLVMDynamicInstId instId) {
   panic_if(this->loadQueue.size() > this->loadQueueSize,
@@ -37,6 +38,14 @@ void TDGLoadStoreQueue::executeLoad(LLVMDynamicInstId instId) {
     if (!found) {
       panic("Failed to find the load inst %d in the load queue.", instId);
     }
+  }
+  auto instStatus = cpu->inflyInstStatus.at(instId);
+  panic_if(instStatus != InstStatus::ISSUED,
+           "Should be issued to execute the load.");
+  if (cpu->dataPort.isBlocked()) {
+    // We are blocked.
+    iew->blockMemInst(instId);
+    return;
   }
   auto inst = cpu->inflyInstMap.at(instId);
   inst->execute(cpu);
@@ -106,7 +115,7 @@ void TDGLoadStoreQueue::writebackStore() {
       writebackIter->writebacking = true;
       inst->writeback(cpu);
       usedStorePorts++;
-      if (usedStorePorts >= 200) {
+      if (usedStorePorts >= this->cacheStorePorts) {
         // We are done for this cycle.
         break;
       }

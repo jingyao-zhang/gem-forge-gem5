@@ -24,7 +24,7 @@ class StreamEngine;
 class Stream {
 public:
   Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
-         LLVMTraceCPU *_cpu, StreamEngine *_se);
+         LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle);
 
   ~Stream();
 
@@ -54,6 +54,7 @@ public:
 private:
   LLVMTraceCPU *cpu;
   StreamEngine *se;
+  bool isOracle;
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
 
@@ -109,6 +110,11 @@ private:
     const FIFOEntryIdx idx;
 
     /**
+     * Oracle information about whether this entry will be used eventually.
+     */
+    const bool oracleUsed;
+
+    /**
      * For iv stream, address is the same as value.
      * TODO: Remove value, which is unused in the simulator.
      */
@@ -129,11 +135,12 @@ private:
     mutable Cycles firstCheckIfReadyCycles;
     mutable std::unordered_set<uint64_t> users;
 
-    FIFOEntry(const FIFOEntryIdx &_idx, const uint64_t _address,
-              const uint64_t _prevSeqNum)
-        : idx(_idx), address(_address), value(0), isAddressValid(false),
-          isValueValid(false), used(false), inflyLoadPackets(0),
-          prevSeqNum(_prevSeqNum), stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+    FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
+              const uint64_t _address, const uint64_t _prevSeqNum)
+        : idx(_idx), oracleUsed(_oracleUsed), address(_address), value(0),
+          isAddressValid(false), isValueValid(false), used(false),
+          inflyLoadPackets(0), prevSeqNum(_prevSeqNum),
+          stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
           storeSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {}
 
     void markAddressReady(Cycles readyCycles);
