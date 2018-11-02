@@ -102,6 +102,7 @@ LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
 void LLVMTraceCPU::tick() {
   if (curTick() % 100000000 == 0) {
     DPRINTF(LLVMTraceCPU, "Tick()\n");
+    this->iewStage.dumpROB();
   }
 
   // Make sure there is always instructions for simulation.

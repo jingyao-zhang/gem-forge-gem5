@@ -80,6 +80,15 @@ void LLVMIEWStage::regStats() {
       .flags(Stats::pdf);
 }
 
+void LLVMIEWStage::dumpROB() const {
+  inform("ROB ======================================\n");
+  for (const auto &instId : this->rob) {
+    const auto inst = cpu->getInflyInst(instId);
+    inst->dumpDeps(cpu);
+  }
+  inform("ROB End ==================================\n");
+}
+
 void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId> &queue,
                              unsigned &writebacked) {
   // Send finished inst to commit stage if not stalled.

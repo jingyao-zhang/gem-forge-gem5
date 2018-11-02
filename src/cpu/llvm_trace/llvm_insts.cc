@@ -97,13 +97,13 @@ bool LLVMDynamicInst::isLoadInst() const {
 }
 
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
-  for (const auto dependentInstId : this->TDG.deps()) {
+  for (const auto dependentInstId : this->TDG.reg_deps()) {
     if (!cpu->isInstFinished(dependentInstId)) {
-      // We should not be blocked by control dependence here.
-      auto depInst = cpu->getInflyInst(dependentInstId);
-      if (depInst->isBranchInst()) {
-        continue;
-      }
+      return false;
+    }
+  }
+  for (const auto dependentInstId : this->TDG.mem_deps()) {
+    if (!cpu->isInstFinished(dependentInstId)) {
       return false;
     }
   }
@@ -118,14 +118,23 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 }
 
 void LLVMDynamicInst::dumpBasic() const {
-  inform("Dump Inst seq %lu, id %lu, op %s.\n", this->seqNum, this->getId(),
+  inform("Inst seq %lu, id %lu, op %s.\n", this->seqNum, this->getId(),
          this->getInstName().c_str());
 }
 
 void LLVMDynamicInst::dumpDeps(LLVMTraceCPU *cpu) const {
   this->dumpBasic();
-  inform("Deps Begin ===========================\n");
-  for (const auto dependentInstId : this->TDG.deps()) {
+  inform("Reg Deps Begin ===========================\n");
+  for (const auto dependentInstId : this->TDG.reg_deps()) {
+    auto depInst = cpu->getInflyInstNullable(dependentInstId);
+    if (depInst == nullptr) {
+      inform("Dep id %lu nullptr\n", dependentInstId);
+    } else {
+      depInst->dumpBasic();
+    }
+  }
+  inform("Mem Deps Begin ===========================\n");
+  for (const auto dependentInstId : this->TDG.mem_deps()) {
     auto depInst = cpu->getInflyInstNullable(dependentInstId);
     if (depInst == nullptr) {
       inform("Dep id %lu nullptr\n", dependentInstId);

@@ -178,7 +178,25 @@ void AbstractDataFlowAccelerator::markReady() {
     // function.
     bool ready = true;
     auto inst = this->inflyInstMap.at(id);
-    for (auto depId : inst->getTDG().deps()) {
+    for (auto depId : inst->getTDG().reg_deps()) {
+      auto statusIter = this->inflyInstStatus.find(depId);
+      if (statusIter != this->inflyInstStatus.end() &&
+          statusIter->second != InstStatus::FINISHED) {
+        // The dependent instruction has not finished.
+        ready = false;
+        break;
+      }
+    }
+    for (auto depId : inst->getTDG().mem_deps()) {
+      auto statusIter = this->inflyInstStatus.find(depId);
+      if (statusIter != this->inflyInstStatus.end() &&
+          statusIter->second != InstStatus::FINISHED) {
+        // The dependent instruction has not finished.
+        ready = false;
+        break;
+      }
+    }
+    for (auto depId : inst->getTDG().ctr_deps()) {
       auto statusIter = this->inflyInstStatus.find(depId);
       if (statusIter != this->inflyInstStatus.end() &&
           statusIter->second != InstStatus::FINISHED) {

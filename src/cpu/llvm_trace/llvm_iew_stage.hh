@@ -30,6 +30,8 @@ public:
 
   void tick();
 
+  void dumpROB() const;
+
   /**
    * API for other stages and units.
    */
@@ -37,6 +39,7 @@ public:
   void postCommitInst(LLVMDynamicInstId instId);
   void blockMemInst(LLVMDynamicInstId instId);
   void unblockMemoryInsts();
+
 
   std::string name();
 
