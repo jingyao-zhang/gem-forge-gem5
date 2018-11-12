@@ -62,6 +62,26 @@ private:
   bool finished;
 };
 
+class StreamEndInst : public LLVMDynamicInst {
+public:
+  StreamEndInst(const LLVM::TDG::TDGInstruction &_TDG);
+  void execute(LLVMTraceCPU *cpu) override;
+  bool isCompleted() const override { return this->finished; }
+
+  /**
+   * Stream end instruction has a special commit semantic.
+   */
+  void commit(LLVMTraceCPU *cpu) override;
+
+  /**
+   * Interface for stream engine.
+   */
+  void markFinished();
+
+private:
+  bool finished;
+};
+
 /**
  * Helper function used by DynamicInstructionStream to parse the TDGInstruction.
  * Returns nullptr if this is not stream instruction.

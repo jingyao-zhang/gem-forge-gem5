@@ -362,6 +362,12 @@ void McPATManager::setStatsLLVMTraceCPU(int idx) {
     auto &mcpatInstL1 = core.icache;
     mcpatInstL1.read_accesses = reads;
     mcpatInstL1.read_misses = readMisses;
+
+    // For LLVMTraceCPU, there is no instruction cache simulated,
+    // we added the number of instructions as an approximation.
+    auto fetchedInsts = scalar("fetch.Insts");
+    mcpatInstL1.read_accesses = fetchedInsts / 9;
+    mcpatInstL1.read_misses = fetchedInsts / 1000;
   }
 
 #undef scalar

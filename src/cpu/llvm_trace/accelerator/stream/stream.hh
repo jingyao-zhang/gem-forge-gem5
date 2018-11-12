@@ -24,12 +24,17 @@ class StreamEngine;
 class Stream {
 public:
   Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
-         LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle);
+         LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
+         size_t _maxRunAHeadLength, const std::string &_throttling);
 
   ~Stream();
 
   uint64_t getStreamId() const { return this->info.id(); }
   const std::string &getStreamName() const { return this->info.name(); }
+
+  bool isMemStream() const {
+    return this->info.type() == "load" || this->info.type() == "store";
+  }
 
   uint64_t getFirstConfigSeqNum() const { return this->firstConfigSeqNum; }
   bool isBeforeFirstConfigInst(uint64_t seqNum) const {
@@ -39,12 +44,31 @@ public:
     return seqNum < this->firstConfigSeqNum;
   }
 
+  int getAliveElements() const { return this->FIFO.size(); }
+  int getRunAheadLength() const { return this->runAHeadLength; }
+
+  const std::unordered_map<uint64_t, int> &getAliveCacheBlocks() const {
+    return this->aliveCacheBlocks;
+  }
+
+  bool isConfigured() const {
+    if (this->configSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
+      return false;
+    }
+    if (this->endSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
+      return true;
+    }
+    return this->configSeqNum > this->endSeqNum;
+  }
+
   void configure(uint64_t configSeqNum);
   void commitConfigure(uint64_t configSeqNum);
   void step(uint64_t stepSeqNum);
   void commitStep(uint64_t stepSeqNum);
   void store(uint64_t storeSeqNum);
   void commitStore(uint64_t storeSeqNum);
+  void end(uint64_t endSeqNum);
+  void commitEnd(uint64_t endSeqNum);
   void tick();
 
   bool isReady(const LLVMDynamicInst *user) const;
@@ -176,10 +200,13 @@ private:
   bool active;
   uint64_t firstConfigSeqNum;
   uint64_t configSeqNum;
+  uint64_t endSeqNum;
 
   uint8_t *storedData;
 
-  const size_t RUN_AHEAD_FIFO_ENTRIES;
+  size_t maxRunAHeadLength;
+  size_t runAHeadLength;
+  std::string throttling;
   FIFOEntryIdx FIFOIdx;
   std::list<FIFOEntry> FIFO;
 
@@ -187,9 +214,11 @@ private:
 
   mutable std::unordered_map<uint64_t, const FIFOEntry *> userToEntryMap;
 
-  bool isMemStream() const {
-    return this->info.type() == "load" || this->info.type() == "store";
-  }
+  mutable std::unordered_map<uint64_t, int> aliveCacheBlocks;
+  void addAliveCacheBlock(uint64_t addr) const;
+  void removeAliveCacheBlock(uint64_t addr) const;
+
+  void updateRunAHeadLength(size_t newRunAHeadLength);
 
   void enqueueFIFO();
 
@@ -218,6 +247,13 @@ private:
    */
   FIFOEntry *findCorrectUsedEntry(uint64_t userSeqNum);
   const FIFOEntry *findCorrectUsedEntry(uint64_t userSeqNum) const;
+
+  /**
+   * For throttler.
+   * TODO: extract to another class.
+   */
+  int lateFetchCount;
+  void throttleLate();
 
   /**
    * For debug.

@@ -121,6 +121,16 @@ void TDGAcceleratorManager::commitStreamStore(uint64_t streamId,
   panic("Failed to find the stream engine to handle commitStreamStore.");
 }
 
+void TDGAcceleratorManager::commitStreamEnd(uint64_t streamId,
+                                            uint64_t storeSeqNum) {
+  for (auto accelerator : this->accelerators) {
+    if (auto se = dynamic_cast<StreamEngine *>(accelerator)) {
+      return se->commitStreamEnd(streamId, storeSeqNum);
+    }
+  }
+  panic("Failed to find the stream engine to handle commitStreamStore.");
+}
+
 TDGAcceleratorManager *TDGAcceleratorManagerParams::create() {
   return new TDGAcceleratorManager(this);
 }

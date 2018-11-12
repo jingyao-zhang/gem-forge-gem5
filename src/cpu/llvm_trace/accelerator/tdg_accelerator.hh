@@ -21,7 +21,7 @@ public:
   TDGAccelerator &operator=(const TDGAccelerator &other) = delete;
   TDGAccelerator &operator=(TDGAccelerator &&other) = delete;
 
-  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager);
+  virtual void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager);
 
   virtual bool handle(LLVMDynamicInst *inst) = 0;
   virtual void tick() = 0;
@@ -59,6 +59,7 @@ public:
   void commitStreamConfigure(uint64_t streamId, uint64_t configSeqNum);
   void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);
   void commitStreamStore(uint64_t streamId, uint64_t storeSeqNum);
+  void commitStreamEnd(uint64_t streamId, uint64_t storeSeqNum);
 
   void regStats() override;
 

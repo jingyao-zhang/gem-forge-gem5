@@ -1,12 +1,23 @@
 #include "stream_engine.hh"
+#include "cpu/llvm_trace/llvm_trace_cpu.hh"
 
 #include "base/misc.hh"
 #include "base/trace.hh"
 #include "debug/StreamEngine.hh"
 
-StreamEngine::StreamEngine() : TDGAccelerator() {}
+StreamEngine::StreamEngine() : TDGAccelerator(), isOracle(false) {}
 
 StreamEngine::~StreamEngine() {}
+
+void StreamEngine::handshake(LLVMTraceCPU *_cpu,
+                             TDGAcceleratorManager *_manager) {
+  TDGAccelerator::handshake(_cpu, _manager);
+
+  auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
+  this->setIsOracle(cpuParams->streamEngineIsOracle);
+  this->maxRunAHeadLength = cpuParams->streamEngineMaxRunAHeadLength;
+  this->throttling = cpuParams->streamEngineThrottling;
+}
 
 void StreamEngine::regStats() {
   this->numConfigured.name(this->manager->name() + ".stream.numConfigured")
@@ -40,6 +51,23 @@ void StreamEngine::regStats() {
       .desc("Number of cycles of a mem entry from first checked ifReady to "
             "ready.")
       .prereq(this->memEntryWaitCycles);
+
+  this->numTotalAliveElements.init(0, 1000, 50)
+      .name(this->manager->name() + ".stream.numTotalAliveElements")
+      .desc("Number of alive stream elements in each cycle.")
+      .flags(Stats::pdf);
+  this->numTotalAliveCacheBlocks.init(0, 1000, 50)
+      .name(this->manager->name() + ".stream.numTotalAliveCacheBlocks")
+      .desc("Number of alive cache blocks in each cycle.")
+      .flags(Stats::pdf);
+  this->numRunAHeadLengthDist.init(0, 15, 1)
+      .name(this->manager->name() + ".stream.numRunAHeadLengthDist")
+      .desc("Number of run ahead length for streams.")
+      .flags(Stats::pdf);
+  this->numTotalAliveMemStreams.init(0, 15, 1)
+      .name(this->manager->name() + ".stream.numTotalAliveMemStreams")
+      .desc("Number of alive memory stream.")
+      .flags(Stats::pdf);
 }
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) {
@@ -69,6 +97,16 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
       stream->store(storeSeqNum);
     }
     storeInst->markFinished();
+    return true;
+  }
+  if (auto endInst = dynamic_cast<StreamEndInst *>(inst)) {
+    auto stream =
+        this->getStreamNullable(endInst->getTDG().stream_end().stream_id());
+    auto endSeqNum = endInst->getSeqNum();
+    if (stream != nullptr && (!stream->isBeforeFirstConfigInst(endSeqNum))) {
+      stream->end(endSeqNum);
+    }
+    endInst->markFinished();
     return true;
   }
   return false;
@@ -139,16 +177,25 @@ void StreamEngine::commitStreamStore(uint64_t streamId, uint64_t storeSeqNum) {
   stream->commitStore(storeSeqNum);
 }
 
+void StreamEngine::commitStreamEnd(uint64_t streamId, uint64_t endSeqNum) {
+  auto stream = this->getStreamNullable(streamId);
+  if (stream == nullptr || stream->isBeforeFirstConfigInst(endSeqNum)) {
+    return;
+  }
+  stream->commitEnd(endSeqNum);
+}
+
 Stream *StreamEngine::getOrInitializeStream(
     const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst) {
   const auto &streamId = configInst.stream_id();
   auto iter = this->streamMap.find(streamId);
-  bool isOracle = true;
   if (iter == this->streamMap.end()) {
     iter =
         this->streamMap
             .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
-                     std::forward_as_tuple(configInst, cpu, this, isOracle))
+                     std::forward_as_tuple(
+                         configInst, cpu, this, this->isOracle,
+                         this->maxRunAHeadLength, this->throttling))
             .first;
   }
   return &(iter->second);
@@ -170,4 +217,34 @@ Stream *StreamEngine::getStreamNullable(uint64_t streamId) {
   return &(iter->second);
 }
 
-void StreamEngine::tick() {}
+void StreamEngine::tick() {
+  if (curTick() % 10000 == 0) {
+    this->updateAliveStatistics();
+  }
+}
+
+void StreamEngine::updateAliveStatistics() {
+  int totalAliveElements = 0;
+  int totalAliveMemStreams = 0;
+  std::unordered_set<Addr> totalAliveCacheBlocks;
+  this->numRunAHeadLengthDist.reset();
+  for (const auto &streamPair : this->streamMap) {
+    const auto &stream = streamPair.second;
+    if (stream.isMemStream()) {
+      this->numRunAHeadLengthDist.sample(stream.getRunAheadLength());
+    }
+    if (!stream.isConfigured()) {
+      continue;
+    }
+    if (stream.isMemStream()) {
+      totalAliveElements += stream.getAliveElements();
+      totalAliveMemStreams++;
+      for (const auto &cacheBlockAddrPair : stream.getAliveCacheBlocks()) {
+        totalAliveCacheBlocks.insert(cacheBlockAddrPair.first);
+      }
+    }
+  }
+  this->numTotalAliveElements.sample(totalAliveElements);
+  this->numTotalAliveCacheBlocks.sample(totalAliveCacheBlocks.size());
+  this->numTotalAliveMemStreams.sample(totalAliveMemStreams);
+}

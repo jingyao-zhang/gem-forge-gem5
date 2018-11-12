@@ -27,6 +27,12 @@ parser.add_option("--llvm-prefetch", action="store", type="int",
                   help="""whether to use a prefetcher""", default="0")
 parser.add_option("--llvm-mcpat", action="store", type="int", 
                   help="""whether to use mcpat to estimate power""", default="0")
+parser.add_option("--gem-forge-stream-engine-max-run-ahead-length", action="store", type="int",
+                  help="""How many element can a stream run ahead""", default="10")
+parser.add_option("--gem-forge-stream-engine-is-oracle", action="store", type="int",
+                  help="""whether make the stream engine oracle""", default="0")
+parser.add_option("--gem-forge-stream-engine-throttling", action="store", type="string",
+                  help="""Throttling tenchique used by stream engine.""", default="static")
 
 (options, args) = parser.parse_args()
 
@@ -126,6 +132,7 @@ if options.llvm_standalone == 0:
             llvm_trace_cpu.cpu_id = len(cpus)
             llvm_trace_cpu.traceFile = options.llvm_trace_file
             llvm_trace_cpu.driver = driver
+
             cpus.append(llvm_trace_cpu)
             options.num_cpus = len(cpus)
 else:
@@ -145,6 +152,12 @@ else:
         llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
         llvm_trace_cpu.cpu_id = len(cpus)
         llvm_trace_cpu.traceFile = options.llvm_trace_file
+        llvm_trace_cpu.streamEngineIsOracle = (
+            options.gem_forge_stream_engine_is_oracle != 0)
+        llvm_trace_cpu.streamEngineMaxRunAHeadLength = (
+            options.gem_forge_stream_engine_max_run_ahead_length
+        )
+        llvm_trace_cpu.streamEngineThrottling = options.gem_forge_stream_engine_throttling
         # A dummy driver to make the python script happy.
         llvm_trace_cpu.driver = NULL
         cpus.append(llvm_trace_cpu)

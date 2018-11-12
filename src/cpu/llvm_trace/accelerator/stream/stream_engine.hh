@@ -14,6 +14,9 @@ public:
   StreamEngine();
   ~StreamEngine() override;
 
+  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
+  void setIsOracle(bool isOracle) { this->isOracle = isOracle; }
+
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
   void regStats() override;
@@ -24,6 +27,7 @@ public:
   void commitStreamConfigure(uint64_t streamId, uint64_t configSeqNum);
   void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);
   void commitStreamStore(uint64_t streamId, uint64_t storeSeqNum);
+  void commitStreamEnd(uint64_t streamId, uint64_t endSeqNum);
 
   const Stream *getStreamNullable(uint64_t streamId) const;
   Stream *getStreamNullable(uint64_t streamId);
@@ -40,11 +44,22 @@ public:
   Stats::Scalar numMemElementsUsed;
   Stats::Scalar memEntryWaitCycles;
 
+  Stats::Distribution numTotalAliveElements;
+  Stats::Distribution numTotalAliveCacheBlocks;
+  Stats::Distribution numRunAHeadLengthDist;
+  Stats::Distribution numTotalAliveMemStreams;
+
 private:
   std::unordered_map<uint64_t, Stream> streamMap;
 
+  bool isOracle;
+  unsigned maxRunAHeadLength;
+  std::string throttling;
+
   Stream *getOrInitializeStream(
       const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);
+
+  void updateAliveStatistics();
 };
 
 #endif

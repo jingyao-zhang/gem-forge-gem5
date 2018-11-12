@@ -61,6 +61,11 @@ class LLVMTraceCPU(BaseCPU):
     cacheStorePorts = Param.Unsigned(8, "Cache Store Ports. "
           "Constrains stores only. Loads are constrained by load FUs.")
 
+    # Adhoc parameters for stream engine.
+    streamEngineIsOracle = Param.Bool(False, "Whether the stream engine is oracle.")
+    streamEngineMaxRunAHeadLength = Param.Unsigned(10, "How many elements can a stream run ahead.")
+    streamEngineThrottling = Param.String("Static", "Which throttling technique to use.")
+
     @classmethod
     def memory_mode(cls):
         return 'timing'

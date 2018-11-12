@@ -90,6 +90,26 @@ void StreamStoreInst::markFinished() {
   this->finished = true;
 }
 
+StreamEndInst::StreamEndInst(const LLVM::TDG::TDGInstruction &_TDG)
+    : LLVMDynamicInst(_TDG, 1), finished(false) {
+  if (!this->TDG.has_stream_end()) {
+    panic("StreamEndInst with missing protobuf field.");
+  }
+  DPRINTF(StreamEngine, "Parsed StreamEndInst to stream %lu.\n",
+          this->TDG.stream_end().stream_id());
+}
+
+void StreamEndInst::execute(LLVMTraceCPU *cpu) {
+  cpu->getAcceleratorManager()->handle(this);
+}
+
+void StreamEndInst::commit(LLVMTraceCPU *cpu) {
+  cpu->getAcceleratorManager()->commitStreamEnd(
+      this->TDG.stream_end().stream_id(), this->getSeqNum());
+}
+
+void StreamEndInst::markFinished() { this->finished = true; }
+
 LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst) {
 
   switch (TDGInst.extra_case()) {
@@ -101,6 +121,9 @@ LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst) {
   }
   case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStore: {
     return new StreamStoreInst(TDGInst);
+  }
+  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamEnd: {
+    return new StreamEndInst(TDGInst);
   }
   default: { break; }
   }

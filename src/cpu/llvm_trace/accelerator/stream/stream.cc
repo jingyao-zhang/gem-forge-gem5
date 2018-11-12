@@ -34,11 +34,14 @@
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
-               LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle)
+               LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
+               size_t _maxRunAHeadLength, const std::string &_throttling)
     : cpu(_cpu), se(_se), isOracle(_isOracle),
       firstConfigSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),
-      RUN_AHEAD_FIFO_ENTRIES(10) {
+      configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+      endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),
+      maxRunAHeadLength(_maxRunAHeadLength), runAHeadLength(_maxRunAHeadLength),
+      throttling(_throttling) {
 
   const auto &streamName = configInst.stream_name();
   const auto &streamId = configInst.stream_id();
@@ -97,6 +100,16 @@ Stream::Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
     this->storedData = new uint8_t[this->info.element_size()];
   }
 
+  /**
+   * Throttling information initialization.
+   */
+  this->lateFetchCount = 0;
+  if (this->throttling != "static") {
+    // We are doing dynamic throttling, we should start with a small
+    // runAHeadLength and slowly increasing.
+    this->runAHeadLength = 2;
+  }
+
   STREAM_DPRINTF("Initialized.\n");
 }
 
@@ -150,6 +163,54 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
   this->stepStreamList.emplace_back(newStepDependentStream);
 }
 
+void Stream::addAliveCacheBlock(uint64_t addr) const {
+  if (this->info.type() == "phi") {
+    return;
+  }
+  auto cacheBlockAddr = addr & (~(cpu->system->cacheLineSize() - 1));
+  if (this->aliveCacheBlocks.count(cacheBlockAddr) == 0) {
+    this->aliveCacheBlocks.emplace(cacheBlockAddr, 1);
+  } else {
+    this->aliveCacheBlocks.at(cacheBlockAddr)++;
+  }
+}
+
+void Stream::removeAliveCacheBlock(uint64_t addr) const {
+  if (this->info.type() == "phi") {
+    return;
+  }
+  auto cacheBlockAddr = addr & (~(cpu->system->cacheLineSize() - 1));
+  auto aliveMapIter = this->aliveCacheBlocks.find(cacheBlockAddr);
+  if (aliveMapIter == this->aliveCacheBlocks.end()) {
+    STREAM_PANIC("Missing alive cache block.");
+  } else {
+    if (aliveMapIter->second == 1) {
+      this->aliveCacheBlocks.erase(aliveMapIter);
+    } else {
+      aliveMapIter->second--;
+    }
+  }
+}
+
+void Stream::updateRunAHeadLength(size_t newRunAHeadLength) {
+  // So far we only increase run ahead length.
+  if (newRunAHeadLength <= this->runAHeadLength) {
+    return;
+  }
+  if (newRunAHeadLength > this->maxRunAHeadLength) {
+    return;
+  }
+  this->runAHeadLength = newRunAHeadLength;
+  // Back pressure to base step streams.
+  for (auto S : this->baseStepStreams) {
+    S->updateRunAHeadLength(this->runAHeadLength);
+  }
+  // We also have to sync with dependent step streams.
+  for (auto S : this->dependentStepStreams) {
+    S->updateRunAHeadLength(this->runAHeadLength);
+  }
+}
+
 void Stream::configure(uint64_t configSeqNum) {
   STREAM_DPRINTF("Configured at seq num %lu.\n", configSeqNum);
   this->history->configure();
@@ -162,9 +223,10 @@ void Stream::configure(uint64_t configSeqNum) {
    * For all the entries without stepSeqNum, this means that these entries are
    * speculative run ahead. Clear them out.
    * NOTE: The only exception is the first entry without stepSeqNum, which may
-   * be the last element in the stream. To handle this, we use the configure
+   * be the last element in the stream. To handle this, we use the end
    * inst as its step inst.
    */
+
   bool foundLastElement = false;
   auto FIFOIter = this->FIFO.begin();
   while (FIFOIter != this->FIFO.end()) {
@@ -183,6 +245,11 @@ void Stream::configure(uint64_t configSeqNum) {
       } else {
         // This one should be cleared.
         STREAM_ENTRY_DPRINTF(*FIFOIter, "Clear run-ahead entry.\n");
+        // Release the userToEntryMap.
+        for (const auto &user : FIFOIter->users) {
+          this->userToEntryMap.erase(user);
+        }
+        this->removeAliveCacheBlock(FIFOIter->address);
         FIFOIter = this->FIFO.erase(FIFOIter);
       }
     }
@@ -190,7 +257,12 @@ void Stream::configure(uint64_t configSeqNum) {
 
   // Reset the FIFOIdx.
   this->FIFOIdx.newInstance(configSeqNum);
-  while (this->FIFO.size() < this->RUN_AHEAD_FIFO_ENTRIES) {
+  if (!this->isConfigured()) {
+    STREAM_PANIC("After configure we should immediately be configured with "
+                 "config seq %lu, end seq %lu.",
+                 this->configSeqNum, this->endSeqNum);
+  }
+  while (this->FIFO.size() < this->runAHeadLength) {
     this->enqueueFIFO();
   }
 }
@@ -208,7 +280,7 @@ void Stream::commitConfigure(uint64_t configSeqNum) {
       // Nothing to step.
       return;
     }
-    STREAM_ENTRY_DPRINTF(entry, "Commit configure with seqNum %lu.\n",
+    STREAM_ENTRY_DPRINTF(entry, "Commit config with seqNum %lu.\n",
                          configSeqNum);
   }
   this->commitStepImpl(configSeqNum);
@@ -288,6 +360,77 @@ void Stream::commitStore(uint64_t storeSeqNum) {
   }
 }
 
+void Stream::end(uint64_t endSeqNum) {
+  this->endSeqNum = endSeqNum;
+  // /**
+  //  * For all the entries without stepSeqNum, this means that these entries
+  //  are
+  //  * speculative run ahead. Clear them out.
+  //  * NOTE: The only exception is the first entry without stepSeqNum, which
+  //  may
+  //  * be the last element in the stream. To handle this, we use the end
+  //  * inst as its step inst.
+  //  */
+  // if (this->configSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
+  //   STREAM_PANIC("Stream end for unconfigured stream with end seq %lu.",
+  //                endSeqNum);
+  // }
+
+  // if (this->configSeqNum > endSeqNum) {
+  //   STREAM_PANIC("Stream end for future configured stream with end seq %lu "
+  //                "config seq %lu.",
+  //                endSeqNum, this->configSeqNum);
+  // }
+
+  // bool foundLastElement = false;
+  // auto FIFOIter = this->FIFO.begin();
+  // while (FIFOIter != this->FIFO.end()) {
+  //   if (FIFOIter->stepped()) {
+  //     // This one has already stepped.
+  //     ++FIFOIter;
+  //   } else {
+  //     if (!foundLastElement && this->isStepRoot()) {
+  //       /**
+  //        * Only the step root stream can decide to keep the last element.
+  //        */
+  //       foundLastElement = true;
+  //       this->stepImpl(endSeqNum);
+  //       this->triggerStep(endSeqNum, this);
+  //       FIFOIter++;
+  //     } else {
+  //       // This one should be cleared.
+  //       STREAM_ENTRY_DPRINTF(*FIFOIter, "Clear run-ahead entry.\n");
+  //       // Release the userToEntryMap.
+  //       for (const auto &user : FIFOIter->users) {
+  //         this->userToEntryMap.erase(user);
+  //       }
+  //       this->removeAliveCacheBlock(FIFOIter->address);
+  //       FIFOIter = this->FIFO.erase(FIFOIter);
+  //     }
+  //   }
+  // }
+}
+
+void Stream::commitEnd(uint64_t endSeqNum) {
+  // if (!this->isStepRoot()) {
+  //   return;
+  // }
+  // if (this->FIFO.empty()) {
+  //   return;
+  // }
+  // {
+  //   auto &entry = this->FIFO.front();
+  //   if (entry.stepSeqNum != endSeqNum) {
+  //     // Nothing to step.
+  //     return;
+  //   }
+  //   STREAM_ENTRY_DPRINTF(entry, "Commit end with seqNum %lu.\n", endSeqNum);
+  // }
+  // this->commitStepImpl(endSeqNum);
+  // // Send out the step signal as the root stream.
+  // this->triggerCommitStep(endSeqNum, this);
+}
+
 Stream::FIFOEntry *Stream::findCorrectUsedEntry(uint64_t userSeqNum) {
   for (auto &entry : this->FIFO) {
     if (entry.stepSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
@@ -325,11 +468,12 @@ bool Stream::isReady(const LLVMDynamicInst *user) const {
   // STREAM_DPRINTF("Check if stream is ready for inst %lu.\n", userSeqNum);
   const auto *entry = this->findCorrectUsedEntry(userSeqNum);
   {
-    auto debugUserSeqNum = 3804373;
+    auto debugUserSeqNum = 1287100;
     if (userSeqNum == debugUserSeqNum) {
       hack("Check is ready for %lu.\n", debugUserSeqNum);
       user->dumpDeps(cpu);
       this->dump();
+      // (*this->baseStepRootStreams.begin())->dump();
       if (entry != nullptr) {
         hack("Find entry \n");
         entry->dump();
@@ -389,6 +533,7 @@ bool Stream::canStep() const {
 }
 
 void Stream::enqueueFIFO() {
+
   bool oracleUsed = false;
   auto nextValuePair = this->history->getNextAddr(oracleUsed);
   STREAM_DPRINTF(
@@ -409,6 +554,8 @@ void Stream::enqueueFIFO() {
   }
 
   auto &entry = this->FIFO.back();
+
+  this->addAliveCacheBlock(entry.address);
 
   /**
    * Check if the base values are valid, which determins if our current entry is
@@ -721,12 +868,19 @@ void Stream::commitStepImpl(uint64_t stepSeqNum) {
     STREAM_ENTRY_PANIC(entry, "Unmatched stepSeqNum for entry %lu with %lu.",
                        entry.stepSeqNum, stepSeqNum);
   }
+  // Check for late fetch signal.
+  if (entry.used && entry.firstCheckIfReadyCycles < entry.valueReadyCycles) {
+    this->throttleLate();
+  }
+
   // Release the userToEntryMap.
   for (const auto &user : entry.users) {
     this->userToEntryMap.erase(user);
   }
+  this->removeAliveCacheBlock(entry.address);
   this->FIFO.pop_front();
-  while (this->FIFO.size() < this->RUN_AHEAD_FIFO_ENTRIES) {
+
+  while (this->FIFO.size() < this->runAHeadLength) {
     this->enqueueFIFO();
   }
 }
@@ -757,6 +911,19 @@ void Stream::FIFOEntry::store(uint64_t storeSeqNum) {
   this->storeSeqNum = storeSeqNum;
 }
 
+void Stream::throttleLate() {
+  if (this->throttling != "late") {
+    return;
+  }
+  this->lateFetchCount++;
+  if (this->lateFetchCount == 10 && !cpu->dataPort.isBlocked()) {
+    // Step by 2.
+    this->updateRunAHeadLength(this->runAHeadLength + 2);
+    // Clear the late FetchCount
+    this->lateFetchCount = 0;
+  }
+}
+
 void Stream::FIFOEntry::step(uint64_t stepSeqNum) {
   if (this->stepSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM) {
     panic("This entry (%lu, %lu) has already been stepped before.",
@@ -768,6 +935,7 @@ void Stream::FIFOEntry::step(uint64_t stepSeqNum) {
 void Stream::dump() const {
   inform("Dump for stream %s.\n======================",
          this->getStreamName().c_str());
+  inform("ConfigSeq %lu, EndSeq %lu.\n", this->configSeqNum, this->endSeqNum);
   for (const auto &entry : this->FIFO) {
     entry.dump();
   }

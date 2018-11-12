@@ -100,10 +100,12 @@ private:
 
   void tick();
 
+public:
   FuncPageTable pageTable;
   CPUPort instPort;
   CPUPort dataPort;
 
+private:
   const std::string traceFileName;
   DynamicInstructionStream *dynInstStream;
 
