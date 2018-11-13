@@ -1,5 +1,8 @@
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
+
+#include "cpu/llvm_trace/accelerator/stream/stream_engine.hh"
+
 #include "debug/LLVMTraceCPU.hh"
 
 std::unordered_map<std::string, LLVMInstInfo> LLVMDynamicInst::instInfo = {
@@ -110,7 +113,8 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 
   // Check the stream engine.
   for (const auto &streamId : this->TDG.used_stream_ids()) {
-    if (!cpu->getAcceleratorManager()->isStreamReady(streamId, this)) {
+    if (!cpu->getAcceleratorManager()->getStreamEngine()->isStreamReady(
+            streamId, this)) {
       return false;
     }
   }
@@ -251,7 +255,7 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
 
   // Notify the stream engine.
   for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->useStream(streamId, this);
+    cpu->getAcceleratorManager()->getStreamEngine()->useStream(streamId, this);
   }
 
   switch (this->type) {
@@ -414,7 +418,7 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
 void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
   for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->useStream(streamId, this);
+    cpu->getAcceleratorManager()->getStreamEngine()->useStream(streamId, this);
   }
   this->fuLatency = cpu->getOpLatency(this->getOpClass());
 }

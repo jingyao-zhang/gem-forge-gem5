@@ -24,10 +24,10 @@ public:
   void useStream(uint64_t streamId, const LLVMDynamicInst *user);
   bool isStreamReady(uint64_t streamId, const LLVMDynamicInst *user) const;
   bool canStreamStep(uint64_t streamId) const;
-  void commitStreamConfigure(uint64_t streamId, uint64_t configSeqNum);
-  void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);
-  void commitStreamStore(uint64_t streamId, uint64_t storeSeqNum);
-  void commitStreamEnd(uint64_t streamId, uint64_t endSeqNum);
+  void commitStreamConfigure(StreamConfigInst *inst);
+  void commitStreamStep(StreamStepInst *inst);
+  void commitStreamStore(StreamStoreInst *inst);
+  void commitStreamEnd(StreamEndInst *inst);
 
   const Stream *getStreamNullable(uint64_t streamId) const;
   Stream *getStreamNullable(uint64_t streamId);
@@ -53,9 +53,13 @@ public:
 private:
   std::unordered_map<uint64_t, Stream *> streamMap;
 
+  /**
+   * Flags.
+   */
   bool isOracle;
   unsigned maxRunAHeadLength;
   std::string throttling;
+  bool enableCoalesce;
 
   Stream *getOrInitializeStream(
       const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);

@@ -63,8 +63,11 @@ class LLVMTraceCPU(BaseCPU):
 
     # Adhoc parameters for stream engine.
     streamEngineIsOracle = Param.Bool(False, "Whether the stream engine is oracle.")
-    streamEngineMaxRunAHeadLength = Param.Unsigned(10, "How many elements can a stream run ahead.")
+    streamEngineMaxRunAHeadLength = Param.Unsigned(
+        10, "How many elements can a stream run ahead.")
     streamEngineThrottling = Param.String("Static", "Which throttling technique to use.")
+    streamEngineEnableCoalesce = Param.Bool(
+        False, "Whether the steam engine enable coalesced streams.")
 
     @classmethod
     def memory_mode(cls):

@@ -11,6 +11,11 @@
 class LLVMTraceCPU;
 
 class StreamEngine;
+class StreamConfigInst;
+class StreamStepInst;
+class StreamStoreInst;
+class StreamEndInst;
+
 class Stream {
 public:
   Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
@@ -20,19 +25,19 @@ public:
 
   virtual const std::string &getStreamName() const = 0;
   virtual const std::string &getStreamType() const = 0;
-  virtual bool isMemStream() const = 0;
+  bool isMemStream() const;
   virtual uint32_t getLoopLevel() const = 0;
   virtual uint32_t getConfigLoopLevel() const = 0;
   virtual int32_t getElementSize() const = 0;
 
-  virtual void configure(uint64_t configSeqNum);
-  void commitConfigure(uint64_t configSeqNum);
-  void step(uint64_t stepSeqNum);
-  void commitStep(uint64_t stepSeqNum);
-  void store(uint64_t storeSeqNum);
-  void commitStore(uint64_t storeSeqNum);
-  void end(uint64_t endSeqNum);
-  void commitEnd(uint64_t endSeqNum);
+  virtual void configure(StreamConfigInst *inst);
+  void commitConfigure(StreamConfigInst *inst);
+  void step(StreamStepInst *inst);
+  void commitStep(StreamStepInst *inst);
+  void store(StreamStoreInst *inst);
+  void commitStore(StreamStoreInst *inst);
+  void end(StreamEndInst *inst);
+  void commitEnd(StreamEndInst *inst);
   void tick();
 
   void addBaseStream(Stream *baseStream);
@@ -220,6 +225,11 @@ protected:
   void receiveReady(Stream *rootStream, Stream *baseStream,
                     const FIFOEntryIdx &entryId);
 
+  /**
+   * An overload step for other instructions with step semantics,
+   * e.g. config/store
+   */
+  void step(uint64_t stepSeqNum);
   void triggerStep(uint64_t stepSeqNum, Stream *rootStream);
   void stepImpl(uint64_t stepSeqNum);
 

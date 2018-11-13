@@ -1,4 +1,5 @@
 #include "single_stream.hh"
+#include "insts.hh"
 #include "stream_engine.hh"
 
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
@@ -109,10 +110,6 @@ const std::string &SingleStream::getStreamType() const {
   return this->info.type();
 }
 
-bool SingleStream::isMemStream() const {
-  return this->getStreamType() == "load" || this->getStreamType() == "store";
-}
-
 uint32_t SingleStream::getLoopLevel() const { return this->info.loop_level(); }
 
 uint32_t SingleStream::getConfigLoopLevel() const {
@@ -123,9 +120,9 @@ int32_t SingleStream::getElementSize() const {
   return this->info.element_size();
 }
 
-void SingleStream::configure(uint64_t configSeqNum) {
+void SingleStream::configure(StreamConfigInst *inst) {
   this->history->configure();
-  Stream::configure(configSeqNum);
+  Stream::configure(inst);
 }
 
 void SingleStream::enqueueFIFO() {

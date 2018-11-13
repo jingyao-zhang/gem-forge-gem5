@@ -1,4 +1,5 @@
 #include "stream.hh"
+#include "insts.hh"
 #include "stream_engine.hh"
 
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
@@ -65,6 +66,10 @@ Stream::~Stream() {
     delete memAccess;
   }
   this->memAccesses.clear();
+}
+
+bool Stream::isMemStream() const {
+  return this->getStreamType() == "load" || this->getStreamType() == "store";
 }
 
 void Stream::addBaseStream(Stream *baseStream) {
@@ -151,7 +156,8 @@ void Stream::updateRunAHeadLength(size_t newRunAHeadLength) {
   }
 }
 
-void Stream::configure(uint64_t configSeqNum) {
+void Stream::configure(StreamConfigInst *inst) {
+  auto configSeqNum = inst->getSeqNum();
   STREAM_DPRINTF("Configured at seq num %lu.\n", configSeqNum);
   this->configSeqNum = configSeqNum;
   if (this->firstConfigSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
@@ -206,7 +212,8 @@ void Stream::configure(uint64_t configSeqNum) {
   }
 }
 
-void Stream::commitConfigure(uint64_t configSeqNum) {
+void Stream::commitConfigure(StreamConfigInst *inst) {
+  auto configSeqNum = inst->getSeqNum();
   if (!this->isStepRoot()) {
     return;
   }
@@ -227,7 +234,8 @@ void Stream::commitConfigure(uint64_t configSeqNum) {
   this->triggerCommitStep(configSeqNum, this);
 }
 
-void Stream::store(uint64_t storeSeqNum) {
+void Stream::store(StreamStoreInst *inst) {
+  auto storeSeqNum = inst->getSeqNum();
   STREAM_DPRINTF("Stored with seqNum %lu.\n", storeSeqNum);
   if (this->FIFO.empty()) {
     STREAM_PANIC("Store when the fifo is empty for stream %s.",
@@ -259,7 +267,8 @@ void Stream::store(uint64_t storeSeqNum) {
   }
 }
 
-void Stream::commitStore(uint64_t storeSeqNum) {
+void Stream::commitStore(StreamStoreInst *inst) {
+  auto storeSeqNum = inst->getSeqNum();
   STREAM_DPRINTF("Store committed with seq %lu.\n", storeSeqNum);
   if (this->FIFO.empty()) {
     STREAM_PANIC("Commit store when the FIFO is empty.");
@@ -295,11 +304,12 @@ void Stream::commitStore(uint64_t storeSeqNum) {
   //   STREAM_PANIC("Jesus found.\n");
   // }
   if (this->isStepRoot()) {
-    this->commitStep(storeSeqNum);
+    this->commitStepImpl(storeSeqNum);
   }
 }
 
-void Stream::end(uint64_t endSeqNum) {
+void Stream::end(StreamEndInst *inst) {
+  auto endSeqNum = inst->getSeqNum();
   this->endSeqNum = endSeqNum;
   // /**
   //  * For all the entries without stepSeqNum, this means that these entries
@@ -350,7 +360,7 @@ void Stream::end(uint64_t endSeqNum) {
   // }
 }
 
-void Stream::commitEnd(uint64_t endSeqNum) {
+void Stream::commitEnd(StreamEndInst *inst) {
   // if (!this->isStepRoot()) {
   //   return;
   // }
@@ -552,6 +562,11 @@ void Stream::receiveReady(Stream *rootStream, Stream *baseStream,
   }
 }
 
+void Stream::step(StreamStepInst *inst) {
+  auto stepSeqNum = inst->getSeqNum();
+  this->step(stepSeqNum);
+}
+
 void Stream::step(uint64_t stepSeqNum) {
   if (!this->isStepRoot()) {
     STREAM_PANIC("Receive step signal from nowhere for a non-root stream.");
@@ -600,7 +615,8 @@ void Stream::stepImpl(uint64_t stepSeqNum) {
   STREAM_PANIC("Failed to find available entry to step for %lu.", stepSeqNum);
 }
 
-void Stream::commitStep(uint64_t stepSeqNum) {
+void Stream::commitStep(StreamStepInst *inst) {
+  auto stepSeqNum = inst->getSeqNum();
   if (!this->isStepRoot()) {
     STREAM_PANIC(
         "Receive commit step signal from nowhere for a non-root stream");

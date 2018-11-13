@@ -3,6 +3,8 @@
 #include "base/misc.hh"
 #include "base/trace.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
+#include "stream_engine.hh"
+
 #include "debug/StreamEngine.hh"
 
 StreamConfigInst::StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
@@ -21,8 +23,7 @@ void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
 
 void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream configure %lu\n", this->getSeqNum());
-  cpu->getAcceleratorManager()->commitStreamConfigure(
-      this->TDG.stream_config().stream_id(), this->getSeqNum());
+  cpu->getAcceleratorManager()->getStreamEngine()->commitStreamConfigure(this);
 }
 
 void StreamConfigInst::markFinished() {
@@ -44,7 +45,7 @@ bool StreamStepInst::isDependenceReady(LLVMTraceCPU *cpu) const {
     return false;
   }
   // For step instruction we also have to check if the stream can be stepped.
-  return cpu->getAcceleratorManager()->canStreamStep(
+  return cpu->getAcceleratorManager()->getStreamEngine()->canStreamStep(
       this->TDG.stream_step().stream_id());
 }
 
@@ -54,8 +55,7 @@ void StreamStepInst::execute(LLVMTraceCPU *cpu) {
 
 void StreamStepInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream step %lu\n", this->getSeqNum());
-  cpu->getAcceleratorManager()->commitStreamStep(
-      this->TDG.stream_step().stream_id(), this->getSeqNum());
+  cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStep(this);
 }
 
 void StreamStepInst::markFinished() {
@@ -75,14 +75,13 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
   for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->useStream(streamId, this);
+    cpu->getAcceleratorManager()->getStreamEngine()->useStream(streamId, this);
   }
   cpu->getAcceleratorManager()->handle(this);
 }
 
 void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
-  cpu->getAcceleratorManager()->commitStreamStore(
-      this->TDG.stream_store().stream_id(), this->getSeqNum());
+  cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStore(this);
 }
 
 void StreamStoreInst::markFinished() {
@@ -104,8 +103,7 @@ void StreamEndInst::execute(LLVMTraceCPU *cpu) {
 }
 
 void StreamEndInst::commit(LLVMTraceCPU *cpu) {
-  cpu->getAcceleratorManager()->commitStreamEnd(
-      this->TDG.stream_end().stream_id(), this->getSeqNum());
+  cpu->getAcceleratorManager()->getStreamEngine()->commitStreamEnd(this);
 }
 
 void StreamEndInst::markFinished() { this->finished = true; }

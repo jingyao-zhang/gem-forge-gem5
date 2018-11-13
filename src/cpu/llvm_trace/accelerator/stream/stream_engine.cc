@@ -24,6 +24,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->setIsOracle(cpuParams->streamEngineIsOracle);
   this->maxRunAHeadLength = cpuParams->streamEngineMaxRunAHeadLength;
   this->throttling = cpuParams->streamEngineThrottling;
+  this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
 }
 
 void StreamEngine::regStats() {
@@ -85,7 +86,7 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
   if (auto configInst = dynamic_cast<StreamConfigInst *>(inst)) {
     this->numConfigured++;
     auto S = this->getOrInitializeStream(configInst->getTDG().stream_config());
-    S->configure(configInst->getSeqNum());
+    S->configure(configInst);
     configInst->markFinished();
     return true;
   }
@@ -95,7 +96,7 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
         this->getStreamNullable(stepInst->getTDG().stream_step().stream_id());
     auto stepSeqNum = stepInst->getSeqNum();
     if (stream != nullptr && (!stream->isBeforeFirstConfigInst(stepSeqNum))) {
-      stream->step(stepSeqNum);
+      stream->step(stepInst);
     }
     stepInst->markFinished();
     return true;
@@ -105,7 +106,7 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
         this->getStreamNullable(storeInst->getTDG().stream_store().stream_id());
     auto storeSeqNum = storeInst->getSeqNum();
     if (stream != nullptr && (!stream->isBeforeFirstConfigInst(storeSeqNum))) {
-      stream->store(storeSeqNum);
+      stream->store(storeInst);
     }
     storeInst->markFinished();
     return true;
@@ -115,7 +116,7 @@ bool StreamEngine::handle(LLVMDynamicInst *inst) {
         this->getStreamNullable(endInst->getTDG().stream_end().stream_id());
     auto endSeqNum = endInst->getSeqNum();
     if (stream != nullptr && (!stream->isBeforeFirstConfigInst(endSeqNum))) {
-      stream->end(endSeqNum);
+      stream->end(endInst);
     }
     endInst->markFinished();
     return true;
@@ -154,28 +155,33 @@ bool StreamEngine::canStreamStep(uint64_t streamId) const {
   return stream->canStep();
 }
 
-void StreamEngine::commitStreamConfigure(uint64_t streamId,
-                                         uint64_t configSeqNum) {
+void StreamEngine::commitStreamConfigure(StreamConfigInst *inst) {
+  auto streamId = inst->getTDG().stream_config().stream_id();
+  auto seqNum = inst->getSeqNum();
   auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->isBeforeFirstConfigInst(configSeqNum)) {
+  if (stream == nullptr || stream->isBeforeFirstConfigInst(seqNum)) {
     // This is possible in partial datagraph that contains an incomplete loop.
     return;
   }
-  stream->commitConfigure(configSeqNum);
+  stream->commitConfigure(inst);
 }
 
-void StreamEngine::commitStreamStep(uint64_t streamId, uint64_t stepSeqNum) {
+void StreamEngine::commitStreamStep(StreamStepInst *inst) {
+  auto streamId = inst->getTDG().stream_step().stream_id();
+  auto seqNum = inst->getSeqNum();
   auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->isBeforeFirstConfigInst(stepSeqNum)) {
+  if (stream == nullptr || stream->isBeforeFirstConfigInst(seqNum)) {
     // This is possible in partial datagraph that contains an incomplete loop.
     return;
   }
-  stream->commitStep(stepSeqNum);
+  stream->commitStep(inst);
 }
 
-void StreamEngine::commitStreamStore(uint64_t streamId, uint64_t storeSeqNum) {
+void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
+  auto streamId = inst->getTDG().stream_store().stream_id();
+  auto seqNum = inst->getSeqNum();
   auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->isBeforeFirstConfigInst(storeSeqNum)) {
+  if (stream == nullptr || stream->isBeforeFirstConfigInst(seqNum)) {
     // This is possible in partial datagraph that contains an incomplete loop.
     // if (storeSeqNum == 5742) {
     //   panic("chhhh %d.", stream->getFirstConfigSeqNum());
@@ -185,15 +191,17 @@ void StreamEngine::commitStreamStore(uint64_t streamId, uint64_t storeSeqNum) {
   // if (storeSeqNum == 5742) {
   //   panic("christ jesus.");
   // }
-  stream->commitStore(storeSeqNum);
+  stream->commitStore(inst);
 }
 
-void StreamEngine::commitStreamEnd(uint64_t streamId, uint64_t endSeqNum) {
+void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
+  auto streamId = inst->getTDG().stream_end().stream_id();
+  auto seqNum = inst->getSeqNum();
   auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->isBeforeFirstConfigInst(endSeqNum)) {
+  if (stream == nullptr || stream->isBeforeFirstConfigInst(seqNum)) {
     return;
   }
-  stream->commitEnd(endSeqNum);
+  stream->commitEnd(inst);
 }
 
 Stream *StreamEngine::getOrInitializeStream(

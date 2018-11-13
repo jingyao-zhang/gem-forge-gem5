@@ -11,11 +11,8 @@
 #endif
 
 #include "cpu/llvm_trace/accelerator/stream/StreamMessage.pb.h"
-#include "cpu/llvm_trace/accelerator/stream/stream.hh"
+#include "stream.hh"
 
-class LLVMTraceCPU;
-
-class StreamEngine;
 class SingleStream : public Stream {
 public:
   SingleStream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
@@ -26,12 +23,11 @@ public:
 
   const std::string &getStreamName() const override;
   const std::string &getStreamType() const override;
-  bool isMemStream() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;
   int32_t getElementSize() const override;
 
-  void configure(uint64_t configSeqNum) override;
+  void configure(StreamConfigInst *inst) override;
 
 private:
   LLVM::TDG::StreamInfo info;
