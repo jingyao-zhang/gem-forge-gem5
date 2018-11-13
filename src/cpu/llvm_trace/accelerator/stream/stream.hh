@@ -1,16 +1,6 @@
-
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_HH__
 #define __CPU_TDG_ACCELERATOR_STREAM_HH__
 
-#include "stream_history.hh"
-
-// Parse the instructions from a protobuf.
-#include "config/have_protobuf.hh"
-#ifndef HAVE_PROTOBUF
-#error "Require protobuf to parse stream info."
-#endif
-
-#include "cpu/llvm_trace/accelerator/stream/StreamMessage.pb.h"
 #include "cpu/llvm_trace/llvm_insts.hh"
 
 #include "base/types.hh"
@@ -23,18 +13,31 @@ class LLVMTraceCPU;
 class StreamEngine;
 class Stream {
 public:
-  Stream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
-         LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
+  Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
          size_t _maxRunAHeadLength, const std::string &_throttling);
 
-  ~Stream();
+  virtual ~Stream();
 
-  uint64_t getStreamId() const { return this->info.id(); }
-  const std::string &getStreamName() const { return this->info.name(); }
+  virtual const std::string &getStreamName() const = 0;
+  virtual const std::string &getStreamType() const = 0;
+  virtual bool isMemStream() const = 0;
+  virtual uint32_t getLoopLevel() const = 0;
+  virtual uint32_t getConfigLoopLevel() const = 0;
+  virtual int32_t getElementSize() const = 0;
 
-  bool isMemStream() const {
-    return this->info.type() == "load" || this->info.type() == "store";
-  }
+  virtual void configure(uint64_t configSeqNum);
+  void commitConfigure(uint64_t configSeqNum);
+  void step(uint64_t stepSeqNum);
+  void commitStep(uint64_t stepSeqNum);
+  void store(uint64_t storeSeqNum);
+  void commitStore(uint64_t storeSeqNum);
+  void end(uint64_t endSeqNum);
+  void commitEnd(uint64_t endSeqNum);
+  void tick();
+
+  void addBaseStream(Stream *baseStream);
+  void addBaseStepStream(Stream *baseStepStream);
+  void registerStepDependentStreamToRoot(Stream *newDependentStream);
 
   uint64_t getFirstConfigSeqNum() const { return this->firstConfigSeqNum; }
   bool isBeforeFirstConfigInst(uint64_t seqNum) const {
@@ -61,26 +64,14 @@ public:
     return this->configSeqNum > this->endSeqNum;
   }
 
-  void configure(uint64_t configSeqNum);
-  void commitConfigure(uint64_t configSeqNum);
-  void step(uint64_t stepSeqNum);
-  void commitStep(uint64_t stepSeqNum);
-  void store(uint64_t storeSeqNum);
-  void commitStore(uint64_t storeSeqNum);
-  void end(uint64_t endSeqNum);
-  void commitEnd(uint64_t endSeqNum);
-  void tick();
-
   bool isReady(const LLVMDynamicInst *user) const;
   void use(const LLVMDynamicInst *user);
   bool canStep() const;
 
-private:
+protected:
   LLVMTraceCPU *cpu;
   StreamEngine *se;
   bool isOracle;
-  LLVM::TDG::StreamInfo info;
-  std::unique_ptr<StreamHistory> history;
 
   std::unordered_set<Stream *> baseStreams;
   std::unordered_set<Stream *> baseStepStreams;
@@ -92,12 +83,9 @@ private:
    */
   std::list<Stream *> stepStreamList;
 
-  void addBaseStream(Stream *baseStream);
-  void addBaseStepStream(Stream *baseStepStream);
-  void registerStepDependentStreamToRoot(Stream *newDependentStream);
   bool isStepRoot() const {
-    return this->baseStepStreams.empty() &&
-           (this->info.type() == "phi" || this->info.type() == "store");
+    const auto &type = this->getStreamType();
+    return this->baseStepStreams.empty() && (type == "phi" || type == "store");
   }
 
   struct FIFOEntryIdx {
@@ -197,7 +185,6 @@ private:
     FIFOEntryIdx entryId;
   };
 
-  bool active;
   uint64_t firstConfigSeqNum;
   uint64_t configSeqNum;
   uint64_t endSeqNum;
@@ -220,12 +207,15 @@ private:
 
   void updateRunAHeadLength(size_t newRunAHeadLength);
 
-  void enqueueFIFO();
+  virtual void enqueueFIFO() = 0;
+  virtual void markAddressReady(FIFOEntry &entry) = 0;
+  virtual void markValueReady(FIFOEntry &entry) = 0;
 
   bool checkIfEntryBaseValuesValid(const FIFOEntry &entry) const;
 
-  void handlePacketResponse(const FIFOEntryIdx &entryId, PacketPtr packet,
-                            StreamMemAccess *memAccess);
+  virtual void handlePacketResponse(const FIFOEntryIdx &entryId,
+                                    PacketPtr packet,
+                                    StreamMemAccess *memAccess) = 0;
   void triggerReady(Stream *rootStream, const FIFOEntryIdx &entryId);
   void receiveReady(Stream *rootStream, Stream *baseStream,
                     const FIFOEntryIdx &entryId);
@@ -235,9 +225,6 @@ private:
 
   void triggerCommitStep(uint64_t stepSeqNum, Stream *rootStream);
   void commitStepImpl(uint64_t stepSeqNum);
-
-  void markAddressReady(FIFOEntry &entry);
-  void markValueReady(FIFOEntry &entry);
 
   /**
    * Find the correct used entry by comparing the userSeqNum and stepSeqNum of
@@ -258,7 +245,7 @@ private:
   /**
    * For debug.
    */
-  void dump() const;
+  virtual void dump() const = 0;
 };
 
 #endif

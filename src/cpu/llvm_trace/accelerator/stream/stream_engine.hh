@@ -2,7 +2,7 @@
 #define __CPU_TDG_ACCELERATOR_STREAM_ENGINE_H__
 
 #include "insts.hh"
-#include "stream.hh"
+#include "single_stream.hh"
 
 #include "base/statistics.hh"
 #include "cpu/llvm_trace/accelerator/tdg_accelerator.hh"
@@ -36,6 +36,7 @@ public:
    */
   Stats::Scalar numConfigured;
   Stats::Scalar numStepped;
+  Stats::Scalar numStreamMemRequests;
   Stats::Scalar numElements;
   Stats::Scalar numElementsUsed;
   Stats::Scalar entryWaitCycles;
@@ -50,7 +51,7 @@ public:
   Stats::Distribution numTotalAliveMemStreams;
 
 private:
-  std::unordered_map<uint64_t, Stream> streamMap;
+  std::unordered_map<uint64_t, Stream *> streamMap;
 
   bool isOracle;
   unsigned maxRunAHeadLength;

@@ -7,7 +7,14 @@
 
 StreamEngine::StreamEngine() : TDGAccelerator(), isOracle(false) {}
 
-StreamEngine::~StreamEngine() {}
+StreamEngine::~StreamEngine() {
+  // Clear all the allocated streams.
+  for (auto &streamIdStreamPair : this->streamMap) {
+    delete streamIdStreamPair.second;
+    streamIdStreamPair.second = nullptr;
+  }
+  this->streamMap.clear();
+}
 
 void StreamEngine::handshake(LLVMTraceCPU *_cpu,
                              TDGAcceleratorManager *_manager) {
@@ -26,6 +33,10 @@ void StreamEngine::regStats() {
   this->numStepped.name(this->manager->name() + ".stream.numStepped")
       .desc("Number of streams stepped.")
       .prereq(this->numStepped);
+  this->numStreamMemRequests
+      .name(this->manager->name() + ".stream.numStreamMemRequests")
+      .desc("Number of stream memory requests.")
+      .prereq(this->numStreamMemRequests);
   this->numElements.name(this->manager->name() + ".stream.numElements")
       .desc("Number of stream elements created.")
       .prereq(this->numElements);
@@ -190,15 +201,17 @@ Stream *StreamEngine::getOrInitializeStream(
   const auto &streamId = configInst.stream_id();
   auto iter = this->streamMap.find(streamId);
   if (iter == this->streamMap.end()) {
+    Stream *NewStream =
+        new SingleStream(configInst, cpu, this, this->isOracle,
+                         this->maxRunAHeadLength, this->throttling);
+
     iter =
         this->streamMap
             .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
-                     std::forward_as_tuple(
-                         configInst, cpu, this, this->isOracle,
-                         this->maxRunAHeadLength, this->throttling))
+                     std::forward_as_tuple(NewStream))
             .first;
   }
-  return &(iter->second);
+  return iter->second;
 }
 
 const Stream *StreamEngine::getStreamNullable(uint64_t streamId) const {
@@ -206,7 +219,7 @@ const Stream *StreamEngine::getStreamNullable(uint64_t streamId) const {
   if (iter == this->streamMap.end()) {
     return nullptr;
   }
-  return &(iter->second);
+  return iter->second;
 }
 
 Stream *StreamEngine::getStreamNullable(uint64_t streamId) {
@@ -214,7 +227,7 @@ Stream *StreamEngine::getStreamNullable(uint64_t streamId) {
   if (iter == this->streamMap.end()) {
     return nullptr;
   }
-  return &(iter->second);
+  return iter->second;
 }
 
 void StreamEngine::tick() {
@@ -230,16 +243,16 @@ void StreamEngine::updateAliveStatistics() {
   this->numRunAHeadLengthDist.reset();
   for (const auto &streamPair : this->streamMap) {
     const auto &stream = streamPair.second;
-    if (stream.isMemStream()) {
-      this->numRunAHeadLengthDist.sample(stream.getRunAheadLength());
+    if (stream->isMemStream()) {
+      this->numRunAHeadLengthDist.sample(stream->getRunAheadLength());
     }
-    if (!stream.isConfigured()) {
+    if (!stream->isConfigured()) {
       continue;
     }
-    if (stream.isMemStream()) {
-      totalAliveElements += stream.getAliveElements();
+    if (stream->isMemStream()) {
+      totalAliveElements += stream->getAliveElements();
       totalAliveMemStreams++;
-      for (const auto &cacheBlockAddrPair : stream.getAliveCacheBlocks()) {
+      for (const auto &cacheBlockAddrPair : stream->getAliveCacheBlocks()) {
         totalAliveCacheBlocks.insert(cacheBlockAddrPair.first);
       }
     }
