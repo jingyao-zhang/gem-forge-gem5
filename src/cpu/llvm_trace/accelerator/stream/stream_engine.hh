@@ -1,6 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_ENGINE_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_ENGINE_H__
 
+#include "coalesced_stream.hh"
 #include "insts.hh"
 #include "single_stream.hh"
 
@@ -31,6 +32,9 @@ public:
 
   const Stream *getStreamNullable(uint64_t streamId) const;
   Stream *getStreamNullable(uint64_t streamId);
+
+  bool isMergeEnabled() const { return this->enableMerge; }
+
   /**
    * Stats
    */
@@ -54,17 +58,32 @@ private:
   std::unordered_map<uint64_t, Stream *> streamMap;
 
   /**
+   * Map of the CoalescedStream.
+   * Indexed by the <StepRootStreamId, CoalescedGroupId>
+   */
+  std::unordered_map<uint64_t, std::unordered_map<uint64_t, CoalescedStream>>
+      coalescedStreamMap;
+
+  /**
    * Flags.
    */
   bool isOracle;
   unsigned maxRunAHeadLength;
   std::string throttling;
   bool enableCoalesce;
+  bool enableMerge;
 
   Stream *getOrInitializeStream(
       const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);
 
+  CoalescedStream *getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
+                                                  int32_t coalesceGroup);
+
   void updateAliveStatistics();
+
+  // A helper function to load a stream info protobuf file.
+  static LLVM::TDG::StreamInfo
+  parseStreamInfoFromFile(const std::string &infoPath);
 };
 
 #endif

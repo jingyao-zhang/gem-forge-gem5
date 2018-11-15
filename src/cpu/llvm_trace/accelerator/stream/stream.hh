@@ -31,13 +31,14 @@ public:
   virtual int32_t getElementSize() const = 0;
 
   virtual void configure(StreamConfigInst *inst);
-  void commitConfigure(StreamConfigInst *inst);
-  void step(StreamStepInst *inst);
-  void commitStep(StreamStepInst *inst);
-  void store(StreamStoreInst *inst);
-  void commitStore(StreamStoreInst *inst);
-  void end(StreamEndInst *inst);
-  void commitEnd(StreamEndInst *inst);
+  virtual void commitConfigure(StreamConfigInst *inst);
+  virtual void step(StreamStepInst *inst);
+  virtual void commitStep(StreamStepInst *inst);
+  virtual void store(StreamStoreInst *inst);
+  virtual void commitStore(StreamStoreInst *inst);
+  virtual void end(StreamEndInst *inst);
+  virtual void commitEnd(StreamEndInst *inst);
+
   void tick();
 
   void addBaseStream(Stream *baseStream);
@@ -136,7 +137,7 @@ protected:
      * TODO: Remove value, which is unused in the simulator.
      */
     const uint64_t address;
-    const uint64_t value;
+    const uint64_t size;
     bool isAddressValid;
     bool isValueValid;
     bool used;
@@ -153,8 +154,9 @@ protected:
     mutable std::unordered_set<uint64_t> users;
 
     FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
-              const uint64_t _address, const uint64_t _prevSeqNum)
-        : idx(_idx), oracleUsed(_oracleUsed), address(_address), value(0),
+              const uint64_t _address, uint64_t _size,
+              const uint64_t _prevSeqNum)
+        : idx(_idx), oracleUsed(_oracleUsed), address(_address), size(_size),
           isAddressValid(false), isValueValid(false), used(false),
           inflyLoadPackets(0), prevSeqNum(_prevSeqNum),
           stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
@@ -209,6 +211,8 @@ protected:
   mutable std::unordered_map<uint64_t, int> aliveCacheBlocks;
   void addAliveCacheBlock(uint64_t addr) const;
   void removeAliveCacheBlock(uint64_t addr) const;
+  bool isCacheBlockAlive(uint64_t addr) const;
+  uint64_t getCacheBlockAddr(uint64_t addr) const;
 
   void updateRunAHeadLength(size_t newRunAHeadLength);
 

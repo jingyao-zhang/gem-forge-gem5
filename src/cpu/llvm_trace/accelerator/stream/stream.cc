@@ -108,11 +108,15 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
   this->stepStreamList.emplace_back(newStepDependentStream);
 }
 
+uint64_t Stream::getCacheBlockAddr(uint64_t addr) const {
+  return addr & (~(cpu->system->cacheLineSize() - 1));
+}
+
 void Stream::addAliveCacheBlock(uint64_t addr) const {
   if (this->getStreamType() == "phi") {
     return;
   }
-  auto cacheBlockAddr = addr & (~(cpu->system->cacheLineSize() - 1));
+  auto cacheBlockAddr = this->getCacheBlockAddr(addr);
   if (this->aliveCacheBlocks.count(cacheBlockAddr) == 0) {
     this->aliveCacheBlocks.emplace(cacheBlockAddr, 1);
   } else {
@@ -120,11 +124,19 @@ void Stream::addAliveCacheBlock(uint64_t addr) const {
   }
 }
 
+bool Stream::isCacheBlockAlive(uint64_t addr) const {
+  if (this->getStreamType() == "phi") {
+    return false;
+  }
+  auto cacheBlockAddr = this->getCacheBlockAddr(addr);
+  return this->aliveCacheBlocks.count(cacheBlockAddr) != 0;
+}
+
 void Stream::removeAliveCacheBlock(uint64_t addr) const {
   if (this->getStreamType() == "phi") {
     return;
   }
-  auto cacheBlockAddr = addr & (~(cpu->system->cacheLineSize() - 1));
+  auto cacheBlockAddr = this->getCacheBlockAddr(addr);
   auto aliveMapIter = this->aliveCacheBlocks.find(cacheBlockAddr);
   if (aliveMapIter == this->aliveCacheBlocks.end()) {
     STREAM_PANIC("Missing alive cache block.");
@@ -194,7 +206,9 @@ void Stream::configure(StreamConfigInst *inst) {
         for (const auto &user : FIFOIter->users) {
           this->userToEntryMap.erase(user);
         }
-        this->removeAliveCacheBlock(FIFOIter->address);
+        if (FIFOIter->isValueValid) {
+          this->removeAliveCacheBlock(FIFOIter->address);
+        }
         FIFOIter = this->FIFO.erase(FIFOIter);
       }
     }
@@ -287,13 +301,13 @@ void Stream::commitStore(StreamStoreInst *inst) {
   /**
    * Send the write packet with random data.
    */
-  if (entry.value != 0) {
+  if (entry.address != 0) {
     auto memAccess = new StreamMemAccess(this, entry.idx);
     this->memAccesses.insert(memAccess);
-    auto paddr = cpu->translateAndAllocatePhysMem(entry.value);
+    auto paddr = cpu->translateAndAllocatePhysMem(entry.address);
     const auto elementSize = this->getElementSize();
     STREAM_DPRINTF("Send stream store packet at %p size %d.\n",
-                   reinterpret_cast<void *>(entry.value), elementSize);
+                   reinterpret_cast<void *>(entry.address), elementSize);
     cpu->sendRequest(paddr, elementSize, memAccess, storedData);
   }
 
@@ -662,7 +676,9 @@ void Stream::commitStepImpl(uint64_t stepSeqNum) {
   for (const auto &user : entry.users) {
     this->userToEntryMap.erase(user);
   }
-  this->removeAliveCacheBlock(entry.address);
+  if (entry.isValueValid) {
+    this->removeAliveCacheBlock(entry.address);
+  }
   this->FIFO.pop_front();
 
   while (this->FIFO.size() < this->runAHeadLength) {

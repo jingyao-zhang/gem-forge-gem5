@@ -10,6 +10,14 @@ StreamEngine::StreamEngine() : TDGAccelerator(), isOracle(false) {}
 StreamEngine::~StreamEngine() {
   // Clear all the allocated streams.
   for (auto &streamIdStreamPair : this->streamMap) {
+
+    /**
+     * Be careful here as CoalescedStream are not newed, no need to delete them.
+     */
+    if (dynamic_cast<CoalescedStream *>(streamIdStreamPair.second) != nullptr) {
+      continue;
+    }
+
     delete streamIdStreamPair.second;
     streamIdStreamPair.second = nullptr;
   }
@@ -25,6 +33,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->maxRunAHeadLength = cpuParams->streamEngineMaxRunAHeadLength;
   this->throttling = cpuParams->streamEngineThrottling;
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
+  this->enableMerge = cpuParams->streamEngineEnableMerge;
 }
 
 void StreamEngine::regStats() {
@@ -204,19 +213,78 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
   stream->commitEnd(inst);
 }
 
+CoalescedStream *
+StreamEngine::getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
+                                             int32_t coalesceGroup) {
+  auto stepRootIter = this->coalescedStreamMap.find(stepRootStreamId);
+  if (stepRootIter == this->coalescedStreamMap.end()) {
+    stepRootIter = this->coalescedStreamMap
+                       .emplace(std::piecewise_construct,
+                                std::forward_as_tuple(stepRootStreamId),
+                                std::forward_as_tuple())
+                       .first;
+  }
+
+  auto coalesceGroupIter = stepRootIter->second.find(coalesceGroup);
+  if (coalesceGroupIter == stepRootIter->second.end()) {
+    coalesceGroupIter =
+        stepRootIter->second
+            .emplace(std::piecewise_construct,
+                     std::forward_as_tuple(coalesceGroup),
+                     std::forward_as_tuple(cpu, this, this->isOracle,
+                                           this->maxRunAHeadLength,
+                                           this->throttling))
+            .first;
+  }
+
+  return &(coalesceGroupIter->second);
+}
+
 Stream *StreamEngine::getOrInitializeStream(
     const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst) {
   const auto &streamId = configInst.stream_id();
   auto iter = this->streamMap.find(streamId);
   if (iter == this->streamMap.end()) {
-    Stream *NewStream =
-        new SingleStream(configInst, cpu, this, this->isOracle,
-                         this->maxRunAHeadLength, this->throttling);
+
+    /**
+     * The configInst does not contain much information,
+     * we need to load the info protobuf file.
+     * Luckily, this would only happen once for every stream.
+     */
+    auto streamInfo =
+        StreamEngine::parseStreamInfoFromFile(configInst.info_path());
+    auto coalesceGroup = streamInfo.coalesce_group();
+
+    Stream *newStream = nullptr;
+    if (coalesceGroup != -1 && this->enableCoalesce) {
+      // We should handle it as a coalesced stream.
+
+      // Get the step root stream id.
+      uint64_t stepRootStreamId = streamInfo.id();
+      if (streamInfo.chosen_base_step_root_ids_size() > 1) {
+        panic("More than one step root stream for coalesced streams.");
+      } else if (streamInfo.chosen_base_step_root_ids_size() == 1) {
+        // We have one step root stream.
+        stepRootStreamId = streamInfo.chosen_base_step_root_ids(0);
+      }
+
+      auto coalescedStream =
+          getOrInitializeCoalescedStream(stepRootStreamId, coalesceGroup);
+
+      // Add the logical stream to the coalesced stream.
+      coalescedStream->addLogicalStreamIfNecessary(configInst);
+
+      newStream = coalescedStream;
+
+    } else {
+      newStream = new SingleStream(configInst, cpu, this, this->isOracle,
+                                   this->maxRunAHeadLength, this->throttling);
+    }
 
     iter =
         this->streamMap
             .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
-                     std::forward_as_tuple(NewStream))
+                     std::forward_as_tuple(newStream))
             .first;
   }
   return iter->second;
@@ -268,4 +336,14 @@ void StreamEngine::updateAliveStatistics() {
   this->numTotalAliveElements.sample(totalAliveElements);
   this->numTotalAliveCacheBlocks.sample(totalAliveCacheBlocks.size());
   this->numTotalAliveMemStreams.sample(totalAliveMemStreams);
+}
+
+LLVM::TDG::StreamInfo
+StreamEngine::parseStreamInfoFromFile(const std::string &infoPath) {
+  ProtoInputStream infoIStream(infoPath);
+  LLVM::TDG::StreamInfo info;
+  if (!infoIStream.read(info)) {
+    panic("Failed to read in the stream info from file %s.", infoPath.c_str());
+  }
+  return info;
 }

@@ -7,8 +7,16 @@
 
 #include "debug/StreamEngine.hh"
 
+StreamInst::StreamInst(const LLVM::TDG::TDGInstruction &_TDG)
+    : LLVMDynamicInst(_TDG, 1), finished(false) {}
+
+void StreamInst::markFinished() {
+  DPRINTF(StreamEngine, "Mark StreamInst completed.\n");
+  this->finished = true;
+}
+
 StreamConfigInst::StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
-    : LLVMDynamicInst(_TDG, 1), finished(false) {
+    : StreamInst(_TDG) {
   if (!this->TDG.has_stream_config()) {
     panic("StreamConfigInst with missing protobuf field.");
   }
@@ -26,13 +34,12 @@ void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamConfigure(this);
 }
 
-void StreamConfigInst::markFinished() {
-  DPRINTF(StreamEngine, "Mark StreamConfigInst completed.\n");
-  this->finished = true;
+uint64_t StreamConfigInst::getStreamId() const {
+  return this->TDG.stream_config().stream_id();
 }
 
 StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
-    : LLVMDynamicInst(_TDG, 1), finished(false) {
+    : StreamInst(_TDG) {
   if (!this->TDG.has_stream_step()) {
     panic("StreamStepInst with missing protobuf field.");
   }
@@ -58,13 +65,12 @@ void StreamStepInst::commit(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStep(this);
 }
 
-void StreamStepInst::markFinished() {
-  DPRINTF(StreamEngine, "Mark StreamStepInst completed.\n");
-  this->finished = true;
+uint64_t StreamStepInst::getStreamId() const {
+  return this->TDG.stream_step().stream_id();
 }
 
 StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
-    : LLVMDynamicInst(_TDG, 1), finished(false) {
+    : StreamInst(_TDG) {
   if (!this->TDG.has_stream_store()) {
     panic("StreamStoreInst with missing protobuf field.");
   }
@@ -84,13 +90,12 @@ void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStore(this);
 }
 
-void StreamStoreInst::markFinished() {
-  DPRINTF(StreamEngine, "Mark StreamStoreInst completed.\n");
-  this->finished = true;
+uint64_t StreamStoreInst::getStreamId() const {
+  return this->TDG.stream_store().stream_id();
 }
 
 StreamEndInst::StreamEndInst(const LLVM::TDG::TDGInstruction &_TDG)
-    : LLVMDynamicInst(_TDG, 1), finished(false) {
+    : StreamInst(_TDG) {
   if (!this->TDG.has_stream_end()) {
     panic("StreamEndInst with missing protobuf field.");
   }
@@ -106,7 +111,9 @@ void StreamEndInst::commit(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamEnd(this);
 }
 
-void StreamEndInst::markFinished() { this->finished = true; }
+uint64_t StreamEndInst::getStreamId() const {
+  return this->TDG.stream_end().stream_id();
+}
 
 LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst) {
 

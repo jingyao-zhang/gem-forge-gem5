@@ -68,6 +68,8 @@ class LLVMTraceCPU(BaseCPU):
     streamEngineThrottling = Param.String("Static", "Which throttling technique to use.")
     streamEngineEnableCoalesce = Param.Bool(
         False, "Whether the steam engine enable coalesced streams.")
+    streamEngineEnableMerge = Param.Bool(
+        False, "Whether the steam engine enable stream merging.")
 
     @classmethod
     def memory_mode(cls):

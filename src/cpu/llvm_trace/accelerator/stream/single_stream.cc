@@ -135,6 +135,7 @@ void SingleStream::enqueueFIFO() {
       (nextValuePair.first ? "valid" : "invalid"), nextValuePair.second,
       this->FIFO.size());
   this->FIFO.emplace_back(this->FIFOIdx, oracleUsed, nextValuePair.second,
+                          this->info.element_size(),
                           LLVMDynamicInst::INVALID_SEQ_NUM);
   this->FIFOIdx.next();
 
@@ -147,8 +148,6 @@ void SingleStream::enqueueFIFO() {
   }
 
   auto &entry = this->FIFO.back();
-
-  this->addAliveCacheBlock(entry.address);
 
   /**
    * Check if the base values are valid, which determins if our current entry is
@@ -230,7 +229,7 @@ void SingleStream::markAddressReady(FIFOEntry &entry) {
   se->numMemElementsFetched++;
 
   // Start to construct the packets.
-  auto size = this->info.element_size();
+  auto size = entry.size;
   for (int packetSize, inflyPacketsSize = 0, packetIdx = 0;
        inflyPacketsSize < size; inflyPacketsSize += packetSize, packetIdx++) {
     Addr paddr, vaddr;
@@ -286,6 +285,7 @@ void SingleStream::markValueReady(FIFOEntry &entry) {
     STREAM_ENTRY_PANIC(entry, "The entry is already value ready.");
   }
   STREAM_ENTRY_DPRINTF(entry, "Mark value ready.\n");
+  this->addAliveCacheBlock(entry.address);
   entry.markValueReady(cpu->curCycle());
 
   // Check if there is already some user waiting for this entry.

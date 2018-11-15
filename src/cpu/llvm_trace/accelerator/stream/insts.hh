@@ -3,83 +3,50 @@
 
 #include "cpu/llvm_trace/llvm_insts.hh"
 
-class StreamConfigInst : public LLVMDynamicInst {
+class StreamInst : public LLVMDynamicInst {
 public:
-  StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG);
-  void execute(LLVMTraceCPU *cpu) override;
+  StreamInst(const LLVM::TDG::TDGInstruction &_TDG);
   bool isCompleted() const override { return this->finished; }
-  void commit(LLVMTraceCPU *cpu) override;
-
-  /**
-   * Interface for stream engine.
-   */
   void markFinished();
 
-private:
+  virtual uint64_t getStreamId() const = 0;
+
+protected:
   bool finished;
 };
 
-class StreamStepInst : public LLVMDynamicInst {
+class StreamConfigInst : public StreamInst {
+public:
+  StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG);
+  void execute(LLVMTraceCPU *cpu) override;
+  void commit(LLVMTraceCPU *cpu) override;
+  uint64_t getStreamId() const override;
+};
+
+class StreamStepInst : public StreamInst {
 public:
   StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG);
 
   bool isDependenceReady(LLVMTraceCPU *cpu) const override;
-
   void execute(LLVMTraceCPU *cpu) override;
-  bool isCompleted() const override { return this->finished; }
-
-  /**
-   * Stream step instruction has a special commit semantic.
-   */
   void commit(LLVMTraceCPU *cpu) override;
-
-  /**
-   * Interface for stream engine.
-   */
-  void markFinished();
-
-private:
-  bool finished;
+  uint64_t getStreamId() const override;
 };
 
-class StreamStoreInst : public LLVMDynamicInst {
+class StreamStoreInst : public StreamInst {
 public:
   StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG);
   void execute(LLVMTraceCPU *cpu) override;
-  bool isCompleted() const override { return this->finished; }
-
-  /**
-   * Stream store instruction has a special commit semantic.
-   */
   void commit(LLVMTraceCPU *cpu) override;
-
-  /**
-   * Interface for stream engine.
-   */
-  void markFinished();
-
-private:
-  bool finished;
+  uint64_t getStreamId() const override;
 };
 
-class StreamEndInst : public LLVMDynamicInst {
+class StreamEndInst : public StreamInst {
 public:
   StreamEndInst(const LLVM::TDG::TDGInstruction &_TDG);
   void execute(LLVMTraceCPU *cpu) override;
-  bool isCompleted() const override { return this->finished; }
-
-  /**
-   * Stream end instruction has a special commit semantic.
-   */
   void commit(LLVMTraceCPU *cpu) override;
-
-  /**
-   * Interface for stream engine.
-   */
-  void markFinished();
-
-private:
-  bool finished;
+  uint64_t getStreamId() const override;
 };
 
 /**
