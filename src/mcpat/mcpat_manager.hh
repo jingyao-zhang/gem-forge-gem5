@@ -17,6 +17,7 @@
 class BPredUnit;
 class BaseTagsParams;
 class DRAMCtrlParams;
+class BaseCache;
 class Cache;
 class BaseCPU;
 class DerivO3CPU;
@@ -42,7 +43,7 @@ private:
   ParseXML *xml;
 
   std::unordered_map<int, const BaseCPU *> idToCPUMap;
-  std::unordered_map<int, const Cache *> idToCPUL1DMap;
+  std::unordered_map<int, const BaseCache *> idToCPUL1DMap;
   std::unordered_map<int, const TheISA::TLB *> idToCPUL1DTBMap;
   std::unordered_map<int, const Cache *> idToCPUL1IMap;
   std::unordered_map<int, const TheISA::TLB *> idToCPUL1ITBMap;

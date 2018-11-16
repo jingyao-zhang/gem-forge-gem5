@@ -140,7 +140,7 @@ WriteQueueEntry::checkFunctional(PacketPtr pkt)
 }
 
 bool
-WriteQueueEntry::sendPacket(Cache &cache)
+WriteQueueEntry::sendPacket(BaseCache &cache)
 {
     return cache.sendWriteQueuePacket(this);
 }

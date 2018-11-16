@@ -64,7 +64,7 @@ void McPATManager::init() {
       if (this->idToCPUL1DMap.count(cpuId) != 0) {
         panic("CPU L1D %d is already added to the map.", cpuId);
       }
-      this->idToCPUL1DMap.emplace(cpuId, dynamic_cast<const Cache *>(so));
+      this->idToCPUL1DMap.emplace(cpuId, dynamic_cast<const BaseCache *>(so));
     }
 
     else if (McPATManager::isCPU(so, ".dtb", cpuId)) {

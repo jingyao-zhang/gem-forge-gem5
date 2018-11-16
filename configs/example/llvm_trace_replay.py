@@ -37,6 +37,7 @@ parser.add_option("--gem-forge-stream-engine-enable-coalesce", action="store", t
                   help="""Enable stream coalesce in the stream engine.""", default="0")
 parser.add_option("--gem-forge-stream-engine-enable-merge", action="store", type="int",
                   help="""Enable stream merge in the stream engine.""", default="0")
+parser.add_option("--gem-forge-stream-engine-l1d", type="string", default="original")
 
 (options, args) = parser.parse_args()
 

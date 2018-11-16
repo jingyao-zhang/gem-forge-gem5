@@ -138,6 +138,14 @@ protected:
      */
     const uint64_t address;
     const uint64_t size;
+
+    /**
+     * Small vector stores the cache blocks this element touched.
+     */
+    static constexpr int MAX_CACHE_BLOCKS = 4;
+    uint64_t cacheBlockAddrs[MAX_CACHE_BLOCKS];
+    int cacheBlocks;
+
     bool isAddressValid;
     bool isValueValid;
     bool used;
@@ -155,12 +163,7 @@ protected:
 
     FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
               const uint64_t _address, uint64_t _size,
-              const uint64_t _prevSeqNum)
-        : idx(_idx), oracleUsed(_oracleUsed), address(_address), size(_size),
-          isAddressValid(false), isValueValid(false), used(false),
-          inflyLoadPackets(0), prevSeqNum(_prevSeqNum),
-          stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-          storeSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {}
+              const uint64_t _prevSeqNum);
 
     void markAddressReady(Cycles readyCycles);
     void markValueReady(Cycles readyCycles);
@@ -196,6 +199,11 @@ protected:
   uint64_t configSeqNum;
   uint64_t endSeqNum;
 
+  /**
+   * Dummy stored data used for store stream.
+   * For simplicity, we just allocate one cache block here and let the packet
+   * size tailor it as needed, as maximum size of a packet is a cache block.
+   */
   uint8_t *storedData;
 
   size_t maxRunAHeadLength;

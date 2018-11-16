@@ -548,7 +548,7 @@ class Cache : public BaseCache
      * @param mshr The MSHR to turn into a packet and send
      * @return True if the port is waiting for a retry
      */
-    bool sendMSHRQueuePacket(MSHR* mshr);
+    bool sendMSHRQueuePacket(MSHR* mshr) override;
 
     /**
      * Similar to sendMSHR, but for a write-queue entry
@@ -558,7 +558,7 @@ class Cache : public BaseCache
      * @param wq_entry The write-queue entry to turn into a packet and send
      * @return True if the port is waiting for a retry
      */
-    bool sendWriteQueuePacket(WriteQueueEntry* wq_entry);
+    bool sendWriteQueuePacket(WriteQueueEntry* wq_entry) override;
 
     /** serialize the state of the caches
      * We currently don't support checkpointing cache state, so this panics.

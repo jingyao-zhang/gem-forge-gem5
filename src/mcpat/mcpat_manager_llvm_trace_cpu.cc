@@ -151,7 +151,7 @@ void McPATManager::configureLLVMTraceCPU(const LLVMTraceCPU *cpu) {
      * L1 data cache.
      */
     auto dataL1 = this->idToCPUL1DMap.at(idx);
-    auto dataL1Params = McPATManager::getParams<CacheParams>(dataL1);
+    auto dataL1Params = McPATManager::getParams<BaseCacheParams>(dataL1);
     auto dataL1TagParams =
         McPATManager::getParams<BaseTagsParams>(dataL1Params->tags);
     auto accessLatency =

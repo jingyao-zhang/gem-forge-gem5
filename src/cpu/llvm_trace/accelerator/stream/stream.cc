@@ -52,6 +52,8 @@ Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
     // runAHeadLength and slowly increasing.
     this->runAHeadLength = 2;
   }
+
+  this->storedData = new uint8_t[cpu->system->cacheLineSize()];
 }
 
 Stream::~Stream() {
@@ -207,7 +209,9 @@ void Stream::configure(StreamConfigInst *inst) {
           this->userToEntryMap.erase(user);
         }
         if (FIFOIter->isValueValid) {
-          this->removeAliveCacheBlock(FIFOIter->address);
+          for (int i = 0; i < FIFOIter->cacheBlocks; ++i) {
+            this->removeAliveCacheBlock(FIFOIter->cacheBlockAddrs[i]);
+          }
         }
         FIFOIter = this->FIFO.erase(FIFOIter);
       }
@@ -308,7 +312,15 @@ void Stream::commitStore(StreamStoreInst *inst) {
     const auto elementSize = this->getElementSize();
     STREAM_DPRINTF("Send stream store packet at %p size %d.\n",
                    reinterpret_cast<void *>(entry.address), elementSize);
-    cpu->sendRequest(paddr, elementSize, memAccess, storedData);
+    // Be careful to not cross cache line.
+    const auto cacheBlockSize = cpu->system->cacheLineSize();
+    auto offset = paddr % cacheBlockSize;
+    auto size = elementSize;
+    if (size + offset > cacheBlockSize) {
+      // Hack here, we should really break the store into multiple packets.
+      size = cacheBlockSize - offset;
+    }
+    cpu->sendRequest(paddr, size, memAccess, storedData);
   }
 
   /**
@@ -677,7 +689,9 @@ void Stream::commitStepImpl(uint64_t stepSeqNum) {
     this->userToEntryMap.erase(user);
   }
   if (entry.isValueValid) {
-    this->removeAliveCacheBlock(entry.address);
+    for (int i = 0; i < entry.cacheBlocks; ++i) {
+      this->removeAliveCacheBlock(entry.cacheBlockAddrs[i]);
+    }
   }
   this->FIFO.pop_front();
 
@@ -722,6 +736,30 @@ void Stream::throttleLate() {
     this->updateRunAHeadLength(this->runAHeadLength + 2);
     // Clear the late FetchCount
     this->lateFetchCount = 0;
+  }
+}
+Stream::FIFOEntry::FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
+                             const uint64_t _address, uint64_t _size,
+                             const uint64_t _prevSeqNum)
+    : idx(_idx), oracleUsed(_oracleUsed), address(_address), size(_size),
+      cacheBlocks(0), isAddressValid(false), isValueValid(false), used(false),
+      inflyLoadPackets(0), prevSeqNum(_prevSeqNum),
+      stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+      storeSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {
+
+  // Initialize the cache blocks it touched.
+  constexpr int cacheBlockSize = 64;
+  auto lhsCacheBlock = this->address & (~(cacheBlockSize - 1));
+  auto rhsCacheBlock = (this->address + this->size) & (~(cacheBlockSize - 1));
+  while (lhsCacheBlock <= rhsCacheBlock) {
+    if (this->cacheBlocks >= FIFOEntry::MAX_CACHE_BLOCKS) {
+      panic("More than %d cache blocks for one stream element, address %lu "
+            "size %lu.",
+            this->cacheBlocks, this->address, this->size);
+    }
+    this->cacheBlockAddrs[this->cacheBlocks] = lhsCacheBlock;
+    lhsCacheBlock += cacheBlockSize;
+    this->cacheBlocks++;
   }
 }
 

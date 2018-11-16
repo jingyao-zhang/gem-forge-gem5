@@ -93,10 +93,6 @@ SingleStream::SingleStream(
     }
   }
 
-  if (this->info.type() == "store") {
-    this->storedData = new uint8_t[this->info.element_size()];
-  }
-
   STREAM_DPRINTF("Initialized.\n");
 }
 
@@ -234,7 +230,7 @@ void SingleStream::markAddressReady(FIFOEntry &entry) {
        inflyPacketsSize < size; inflyPacketsSize += packetSize, packetIdx++) {
     Addr paddr, vaddr;
     if (cpu->isStandalone()) {
-      vaddr = entry.address;
+      vaddr = entry.address + inflyPacketsSize;
       paddr = cpu->translateAndAllocatePhysMem(vaddr);
     } else {
       STREAM_PANIC("Stream so far can only work in standalone mode.");
@@ -259,7 +255,6 @@ void SingleStream::markAddressReady(FIFOEntry &entry) {
       cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
 
       entry.inflyLoadPackets++;
-
     } else if (this->info.type() == "store") {
       /**
        * This is a store stream. Also send the load request to bring up the
@@ -285,7 +280,9 @@ void SingleStream::markValueReady(FIFOEntry &entry) {
     STREAM_ENTRY_PANIC(entry, "The entry is already value ready.");
   }
   STREAM_ENTRY_DPRINTF(entry, "Mark value ready.\n");
-  this->addAliveCacheBlock(entry.address);
+  for (int i = 0; i < entry.cacheBlocks; ++i) {
+    this->addAliveCacheBlock(entry.cacheBlockAddrs[i]);
+  }
   entry.markValueReady(cpu->curCycle());
 
   // Check if there is already some user waiting for this entry.

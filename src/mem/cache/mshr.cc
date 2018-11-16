@@ -555,7 +555,7 @@ MSHR::checkFunctional(PacketPtr pkt)
 }
 
 bool
-MSHR::sendPacket(Cache &cache)
+MSHR::sendPacket(BaseCache &cache)
 {
     return cache.sendMSHRQueuePacket(this);
 }

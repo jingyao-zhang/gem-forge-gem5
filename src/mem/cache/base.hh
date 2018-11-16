@@ -73,6 +73,9 @@
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
 
+class MSHR;
+class WriteQueueEntry;
+
 /**
  * A basic cache interface. Implements some common functions for speed.
  */
@@ -585,6 +588,26 @@ class BaseCache : public MemObject
     virtual bool inCache(Addr addr, bool is_secure) const = 0;
 
     virtual bool inMissQueue(Addr addr, bool is_secure) const = 0;
+
+    /**
+     * Take an MSHR, turn it into a suitable downstream packet, and
+     * send it out. This construct allows a queue entry to choose a suitable
+     * approach based on its type.
+     *
+     * @param mshr The MSHR to turn into a packet and send
+     * @return True if the port is waiting for a retry
+     */
+    virtual bool sendMSHRQueuePacket(MSHR* mshr) = 0;
+
+    /**
+     * Similar to sendMSHR, but for a write-queue entry
+     * instead. Create the packet, and send it, and if successful also
+     * mark the entry in service.
+     *
+     * @param wq_entry The write-queue entry to turn into a packet and send
+     * @return True if the port is waiting for a retry
+     */
+    virtual bool sendWriteQueuePacket(WriteQueueEntry* wq_entry) = 0;
 
     void incMissCount(PacketPtr pkt)
     {

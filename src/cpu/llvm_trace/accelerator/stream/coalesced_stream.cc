@@ -106,8 +106,6 @@ void CoalescedStream::addLogicalStreamIfNecessary(
       }
     }
 
-    this->storedData = new uint8_t[this->getElementSize()];
-
   } else {
 
     // if (baseStepStreamId !=
@@ -321,7 +319,7 @@ void CoalescedStream::markAddressReady(FIFOEntry &entry) {
        inflyPacketsSize < size; inflyPacketsSize += packetSize, packetIdx++) {
     Addr paddr, vaddr;
     if (cpu->isStandalone()) {
-      vaddr = entry.address;
+      vaddr = entry.address + inflyPacketsSize;
       paddr = cpu->translateAndAllocatePhysMem(vaddr);
     } else {
       panic("Stream so far can only work in standalone mode.");
@@ -373,7 +371,9 @@ void CoalescedStream::markValueReady(FIFOEntry &entry) {
     panic("The entry is already value ready.");
   }
   // STREAM_ENTRY_DPRINTF(entry, "Mark value ready.\n");
-  this->addAliveCacheBlock(entry.address);
+  for (int i = 0; i < entry.cacheBlocks; ++i) {
+    this->addAliveCacheBlock(entry.cacheBlockAddrs[i]);
+  }
   entry.markValueReady(cpu->curCycle());
 
   // Check if there is already some user waiting for this entry.

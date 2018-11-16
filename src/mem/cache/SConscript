@@ -34,6 +34,7 @@ SimObject('Cache.py')
 
 Source('base.cc')
 Source('cache.cc')
+Source('stream_aware_cache.cc')
 Source('blk.cc')
 Source('mshr.cc')
 Source('mshr_queue.cc')
