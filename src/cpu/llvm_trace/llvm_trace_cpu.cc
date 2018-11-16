@@ -187,9 +187,9 @@ void LLVMTraceCPU::warmUpCache(const std::string &fileName) {
 
 bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   // Receive the response from port.
-  LLVMDynamicInst *inst =
-      reinterpret_cast<LLVMDynamicInst *>(pkt->req->getReqInstSeqNum());
-  inst->handlePacketResponse(this, pkt);
+  TDGPacketHandler *handler =
+      reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
+  handler->handlePacketResponse(this, pkt);
   // Release the memory.
   delete pkt->req;
   delete pkt;

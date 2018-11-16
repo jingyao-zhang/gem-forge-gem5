@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 #include "base/misc.hh"
+#include "cpu/llvm_trace/accelerator/stream/coalesced_stream.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/base.hh"
 #include "mem/cache/blk.hh"
@@ -490,6 +491,25 @@ public:
    */
   void serialize(CheckpointOut &cp) const override;
   void unserialize(CheckpointIn &cp) override;
+
+  bool isCoalescedStreamPacket(PacketPtr pkt) const;
+
+  void incCoalescedStreamMissCount(PacketPtr pkt);
+  void incCoalescedStreamHitCount(PacketPtr pkt);
+
+  /**
+   * Stats
+   */
+  Stats::Vector coalescedStreamMisses[MemCmd::NUM_MEM_CMDS];
+  Stats::Vector coalescedStreamHits[MemCmd::NUM_MEM_CMDS];
+  Stats::Formula coalescedStreamDemandHits;
+  Stats::Formula coalescedStreamOverallHits;
+  Stats::Formula coalescedStreamDemandMisses;
+  Stats::Formula coalescedStreamOverallMisses;
+
+  Stats::Distribution numUsedBeforeEvicted;
+
+  std::unordered_map<Addr, uint64_t> blockUsedCountMap;
 };
 
 /**

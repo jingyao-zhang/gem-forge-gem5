@@ -39,7 +39,79 @@ StreamAwareCache::~StreamAwareCache() {
   delete memSidePort;
 }
 
-void StreamAwareCache::regStats() { BaseCache::regStats(); }
+void StreamAwareCache::regStats() {
+  BaseCache::regStats();
+
+  // Hit statistics for coalesced streams.
+  for (int access_idx = 0; access_idx < MemCmd::NUM_MEM_CMDS; ++access_idx) {
+    MemCmd cmd(access_idx);
+    const std::string &cstr = cmd.toString();
+
+    this->coalescedStreamHits[access_idx]
+        .init(system->maxMasters())
+        .name(name() + ".coalesced_" + cstr + "_hits")
+        .desc("number of " + cstr + " hits for coalesced streams")
+        .flags(Stats::total | Stats::nozero | Stats::nonan);
+
+    this->coalescedStreamMisses[access_idx]
+        .init(system->maxMasters())
+        .name(name() + ".coalesced_" + cstr + "_misses")
+        .desc("number of " + cstr + " misses for coalesced streams")
+        .flags(Stats::total | Stats::nozero | Stats::nonan);
+
+    for (int i = 0; i < system->maxMasters(); i++) {
+      this->coalescedStreamHits[access_idx].subname(i,
+                                                    system->getMasterName(i));
+      this->coalescedStreamMisses[access_idx].subname(i,
+                                                      system->getMasterName(i));
+    }
+  }
+
+#define SUM_DEMAND(s)                                                          \
+  (s[MemCmd::ReadReq] + s[MemCmd::WriteReq] + s[MemCmd::WriteLineReq] +        \
+   s[MemCmd::ReadExReq] + s[MemCmd::ReadCleanReq] + s[MemCmd::ReadSharedReq])
+
+// should writebacks be included here?  prior code was inconsistent...
+#define SUM_NON_DEMAND(s) (s[MemCmd::SoftPFReq] + s[MemCmd::HardPFReq])
+
+  this->coalescedStreamDemandHits.name(name() + ".coalesced_demand_hits")
+      .desc("number of demand (read+write) hits for coalesced streams")
+      .flags(Stats::total | Stats::nozero | Stats::nonan);
+  this->coalescedStreamDemandHits = SUM_DEMAND(this->coalescedStreamHits);
+
+  this->coalescedStreamOverallHits.name(name() + ".coalesced_overall_hits")
+      .desc("number of overall hits for coalesced streams")
+      .flags(Stats::total | Stats::nozero | Stats::nonan);
+  this->coalescedStreamOverallHits = this->coalescedStreamDemandHits +
+                                     SUM_NON_DEMAND(this->coalescedStreamHits);
+
+  this->coalescedStreamDemandMisses.name(name() + ".coalesced_demand_misses")
+      .desc("number of demand (read+write) misses for coalesced streams")
+      .flags(Stats::total | Stats::nozero | Stats::nonan);
+  this->coalescedStreamDemandMisses = SUM_DEMAND(this->coalescedStreamMisses);
+
+  this->coalescedStreamOverallMisses.name(name() + ".coalesced_overall_misses")
+      .desc("number of overall misses for coalesced streams")
+      .flags(Stats::total | Stats::nozero | Stats::nonan);
+  this->coalescedStreamOverallMisses =
+      this->coalescedStreamDemandMisses +
+      SUM_NON_DEMAND(this->coalescedStreamMisses);
+
+  for (int i = 0; i < system->maxMasters(); i++) {
+    this->coalescedStreamDemandHits.subname(i, system->getMasterName(i));
+    this->coalescedStreamOverallHits.subname(i, system->getMasterName(i));
+    this->coalescedStreamDemandMisses.subname(i, system->getMasterName(i));
+    this->coalescedStreamOverallMisses.subname(i, system->getMasterName(i));
+  }
+
+#undef SUM_DEMAND
+#undef SUM_NON_DEMAND
+
+  this->numUsedBeforeEvicted.init(0, 10, 1)
+      .name(this->name() + ".numUsedBeforeEvicted")
+      .desc("Number of the block used before get evicted.")
+      .flags(Stats::pdf);
+}
 
 void StreamAwareCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt) {
   assert(pkt->isRequest());
@@ -310,6 +382,7 @@ bool StreamAwareCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
       if (blk == nullptr) {
         // no replaceable block available: give up, fwd to next level.
         incMissCount(pkt);
+        this->incCoalescedStreamMissCount(pkt);
         return false;
       }
       tags->insertBlock(pkt, blk);
@@ -335,6 +408,7 @@ bool StreamAwareCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     std::memcpy(blk->data, pkt->getConstPtr<uint8_t>(), blkSize);
     DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
     incHitCount(pkt);
+    this->incCoalescedStreamHitCount(pkt);
     return true;
   } else if (pkt->cmd == MemCmd::CleanEvict) {
     if (blk != nullptr) {
@@ -353,6 +427,7 @@ bool StreamAwareCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
              (pkt->needsWritable() ? blk->isWritable() : blk->isReadable())) {
     // OK to satisfy access
     incHitCount(pkt);
+    this->incCoalescedStreamHitCount(pkt);
     satisfyRequest(pkt, blk);
     maintainClusivity(pkt->fromCache(), blk);
 
@@ -363,6 +438,7 @@ bool StreamAwareCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
   // or have block but need writable
 
   incMissCount(pkt);
+  this->incCoalescedStreamMissCount(pkt);
 
   if (blk == nullptr && pkt->isLLSC() && pkt->isWrite()) {
     // complete miss on store conditional... just give up now
@@ -2500,3 +2576,34 @@ StreamAwareCache::MemSidePort::MemSidePort(const std::string &_name,
     : BaseCache::CacheMasterPort(_name, _cache, _reqQueue, _snoopRespQueue),
       _reqQueue(*_cache, *this, _snoopRespQueue, _label),
       _snoopRespQueue(*_cache, *this, _label), cache(_cache) {}
+
+bool StreamAwareCache::isCoalescedStreamPacket(PacketPtr pkt) const {
+  /**
+   * Dangerous pointer casting! Only use stream aware cache with LLVMTraceCPU.
+   */
+  TDGPacketHandler *handler =
+      reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
+
+  if (auto streamMemAccess = dynamic_cast<Stream::StreamMemAccess *>(handler)) {
+    auto stream = streamMemAccess->getStream();
+    if (auto coalescedStream = dynamic_cast<CoalescedStream *>(stream)) {
+      return coalescedStream != nullptr;
+    }
+  }
+  return false;
+}
+
+void StreamAwareCache::incCoalescedStreamMissCount(PacketPtr pkt) {
+  assert(pkt->req->masterId() < system->maxMasters());
+  if (!this->isCoalescedStreamPacket(pkt)) {
+    return;
+  }
+  this->coalescedStreamMisses[pkt->cmdToIndex()][pkt->req->masterId()]++;
+}
+void StreamAwareCache::incCoalescedStreamHitCount(PacketPtr pkt) {
+  assert(pkt->req->masterId() < system->maxMasters());
+  if (!this->isCoalescedStreamPacket(pkt)) {
+    return;
+  }
+  this->coalescedStreamHits[pkt->cmdToIndex()][pkt->req->masterId()]++;
+}

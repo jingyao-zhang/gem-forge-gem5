@@ -74,26 +74,6 @@ public:
   void use(const LLVMDynamicInst *user);
   bool canStep() const;
 
-protected:
-  LLVMTraceCPU *cpu;
-  StreamEngine *se;
-  bool isOracle;
-
-  std::unordered_set<Stream *> baseStreams;
-  std::unordered_set<Stream *> baseStepStreams;
-  std::unordered_set<Stream *> baseStepRootStreams;
-  std::unordered_set<Stream *> dependentStreams;
-  std::unordered_set<Stream *> dependentStepStreams;
-  /**
-   * Step the dependent streams in this order.
-   */
-  std::list<Stream *> stepStreamList;
-
-  bool isStepRoot() const {
-    const auto &type = this->getStreamType();
-    return this->baseStepStreams.empty() && (type == "phi" || type == "store");
-  }
-
   struct FIFOEntryIdx {
     uint64_t streamInstance;
     uint64_t configSeqNum;
@@ -180,8 +160,9 @@ protected:
   };
 
   /**
-   * This is used as a handler to send/receive packet from
-   * cpu.
+   * This is used as a handler to the response packet.
+   * The stream aware cache also use this to find the stream the packet belongs
+   * to.
    */
   class StreamMemAccess final : public TDGPacketHandler {
   public:
@@ -190,10 +171,32 @@ protected:
     virtual ~StreamMemAccess() {}
     void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
 
+    Stream *getStream() const { return this->stream; }
+
   private:
     Stream *stream;
     FIFOEntryIdx entryId;
   };
+
+protected:
+  LLVMTraceCPU *cpu;
+  StreamEngine *se;
+  bool isOracle;
+
+  std::unordered_set<Stream *> baseStreams;
+  std::unordered_set<Stream *> baseStepStreams;
+  std::unordered_set<Stream *> baseStepRootStreams;
+  std::unordered_set<Stream *> dependentStreams;
+  std::unordered_set<Stream *> dependentStepStreams;
+  /**
+   * Step the dependent streams in this order.
+   */
+  std::list<Stream *> stepStreamList;
+
+  bool isStepRoot() const {
+    const auto &type = this->getStreamType();
+    return this->baseStepStreams.empty() && (type == "phi" || type == "store");
+  }
 
   uint64_t firstConfigSeqNum;
   uint64_t configSeqNum;

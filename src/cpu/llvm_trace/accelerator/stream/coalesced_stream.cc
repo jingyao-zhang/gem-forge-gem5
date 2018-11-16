@@ -132,7 +132,9 @@ uint32_t CoalescedStream::getConfigLoopLevel() const {
   return this->primaryLogicalStream->info.config_loop_level();
 }
 
-int32_t CoalescedStream::getElementSize() const { return 64; }
+int32_t CoalescedStream::getElementSize() const {
+  return this->primaryLogicalStream->info.element_size();
+}
 
 bool CoalescedStream::shouldHandleStreamInst(StreamInst *inst) const {
   auto streamId = inst->getStreamId();
