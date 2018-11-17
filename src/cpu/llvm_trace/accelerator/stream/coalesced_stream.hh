@@ -4,6 +4,7 @@
 #include "stream.hh"
 
 #include "stream_history.hh"
+#include "stream_pattern.hh"
 
 // Parse the instructions from a protobuf.
 #include "config/have_protobuf.hh"
@@ -31,6 +32,7 @@ public:
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
+  std::unique_ptr<StreamPattern> patternStream;
 };
 
 class CoalescedStream : public Stream {
@@ -57,6 +59,12 @@ public:
   void commitStore(StreamStoreInst *inst) override;
   void end(StreamEndInst *inst) override;
   void commitEnd(StreamEndInst *inst) override;
+
+  /**
+   * Get the number of unique cache blocks the stream touches.
+   * Used for stream aware cache to determine if it should cache the stream.
+   */
+  uint64_t getFootprint(unsigned cacheBlockSize) const;
 
 protected:
   std::unordered_map<uint64_t, LogicalStream> logicalStreamMap;

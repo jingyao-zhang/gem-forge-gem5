@@ -36,6 +36,8 @@ LogicalStream::LogicalStream(
 
   this->history = std::unique_ptr<StreamHistory>(
       new StreamHistory(this->info.history_path()));
+  this->patternStream = std::unique_ptr<StreamPattern>(
+      new StreamPattern(this->info.pattern_path()));
 }
 
 LogicalStream::~LogicalStream() {}
@@ -158,6 +160,7 @@ void CoalescedStream::configure(StreamConfigInst *inst) {
   for (auto &logicalStreamPair : this->logicalStreamMap) {
     auto &logicalStream = logicalStreamPair.second;
     logicalStream.history->configure();
+    logicalStream.patternStream->configure();
   }
   Stream::configure(inst);
 }
@@ -414,6 +417,10 @@ void CoalescedStream::markValueReady(FIFOEntry &entry) {
 //     }
 //     }
 // }
+
+uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
+  return 1;
+}
 
 void CoalescedStream::dump() const {
   inform("Dump for coalesced stream %s.\n======================",

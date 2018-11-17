@@ -1,13 +1,13 @@
-#ifndef __CPU_TDG_ACCELERATOR_STREAM_PATTERN_H__
-#define __CPU_TDG_ACCELERATOR_STREAM_PATTERN_H__
+#ifndef __CPU_TDG_ACCELERATOR_STREAM_HISTORY_H__
+#define __CPU_TDG_ACCELERATOR_STREAM_HISTORY_H__
 
 // Parse the instructions from a protobuf.
 #include "config/have_protobuf.hh"
 #ifndef HAVE_PROTOBUF
-#error "Require protobuf to parse stream pattern."
+#error "Require protobuf to parse stream history."
 #endif
 
-#include "cpu/llvm_trace/accelerator/stream/StreamMessage.pb.h"
+#include "StreamMessage.pb.h"
 
 #include "proto/protoio.hh"
 
