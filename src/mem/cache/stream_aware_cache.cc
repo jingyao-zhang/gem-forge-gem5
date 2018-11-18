@@ -123,6 +123,18 @@ void StreamAwareCache::regStats() {
       .name(this->name() + ".numUncachedStreamAccesses")
       .desc("Number of uncached stream access")
       .prereq(this->numUncachedStreamAccesses);
+
+  this->numCoalescedStreamPredictedMissWrong
+      .name(this->name() + ".numCoalescedStreamPredictedMissWrong")
+      .desc("Number of times a request from coalesced stream is predicted to "
+            "be miss but hit.")
+      .prereq(this->numCoalescedStreamPredictedMissWrong);
+
+  this->numCoalescedStreamPredictedMiss
+      .name(this->name() + ".numCoalescedStreamPredictedMiss")
+      .desc("Number of times a request from coalesced stream is predicted to "
+            "be miss.")
+      .prereq(this->numCoalescedStreamPredictedMiss);
 }
 
 void StreamAwareCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt) {
@@ -587,6 +599,11 @@ void StreamAwareCache::promoteWholeLineWrites(PacketPtr pkt) {
 }
 
 bool StreamAwareCache::recvTimingReq(PacketPtr pkt) {
+
+  if (this->shouldUseStreamAwareMissPredictionPolicy(pkt)) {
+    return this->recvTimingReqForStream(pkt);
+  }
+
   DPRINTF(CacheTags, "%s tags:\n%s\n", __func__, tags->print());
 
   assert(pkt->isRequest());
@@ -2737,4 +2754,347 @@ void StreamAwareCache::recvTimingRespForStream(PacketPtr pkt, MSHR *mshr,
   }
 
   delete pkt;
+}
+
+bool StreamAwareCache::shouldUseStreamAwareMissPredictionPolicy(PacketPtr pkt) {
+  auto stream = this->getCoalescedStreamFromPacket(pkt);
+  if (stream != nullptr) {
+    return true;
+  }
+  return false;
+}
+
+bool StreamAwareCache::predictCoalescedStreamRequest(PacketPtr pkt) {
+
+  auto stream = this->getCoalescedStreamFromPacket(pkt);
+  if (stream == nullptr) {
+    panic("Failed to get coalesced stream to predict if miss.");
+  }
+
+  auto footprint = stream->getFootprint(this->blkSize);
+  if (footprint > this->size / this->blkSize) {
+    // We believe this is not cacheable, thus predict to be miss.
+    this->numCoalescedStreamPredictedMiss++;
+    return true;
+  }
+
+  return false;
+}
+
+bool StreamAwareCache::recvTimingReqForStream(PacketPtr pkt) {
+  DPRINTF(CacheTags, "%s tags:\n%s\n", __func__, tags->print());
+
+  assert(pkt->isRequest());
+
+  bool predictedMiss = this->predictCoalescedStreamRequest(pkt);
+
+  // Just forward the packet if caches are disabled.
+  if (system->bypassCaches()) {
+    // @todo This should really enqueue the packet rather
+    bool M5_VAR_USED success = memSidePort->sendTimingReq(pkt);
+    assert(success);
+    return true;
+  }
+
+  promoteWholeLineWrites(pkt);
+
+  if (pkt->cacheResponding()) {
+    // a cache above us (but not where the packet came from) is
+    // responding to the request, in other words it has the line
+    // in Modified or Owned state
+    DPRINTF(Cache, "Cache above responding to %s: not responding\n",
+            pkt->print());
+
+    // if the packet needs the block to be writable, and the cache
+    // that has promised to respond (setting the cache responding
+    // flag) is not providing writable (it is in Owned rather than
+    // the Modified state), we know that there may be other Shared
+    // copies in the system; go out and invalidate them all
+    assert(pkt->needsWritable() && !pkt->responderHadWritable());
+
+    // an upstream cache that had the line in Owned state
+    // (dirty, but not writable), is responding and thus
+    // transferring the dirty line from one branch of the
+    // cache hierarchy to another
+
+    // send out an express snoop and invalidate all other
+    // copies (snooping a packet that needs writable is the
+    // same as an invalidation), thus turning the Owned line
+    // into a Modified line, note that we don't invalidate the
+    // block in the current cache or any other cache on the
+    // path to memory
+
+    // create a downstream express snoop with cleared packet
+    // flags, there is no need to allocate any data as the
+    // packet is merely used to co-ordinate state transitions
+    Packet *snoop_pkt = new Packet(pkt, true, false);
+
+    // also reset the bus time that the original packet has
+    // not yet paid for
+    snoop_pkt->headerDelay = snoop_pkt->payloadDelay = 0;
+
+    // make this an instantaneous express snoop, and let the
+    // other caches in the system know that the another cache
+    // is responding, because we have found the authorative
+    // copy (Modified or Owned) that will supply the right
+    // data
+    snoop_pkt->setExpressSnoop();
+    snoop_pkt->setCacheResponding();
+
+    // this express snoop travels towards the memory, and at
+    // every crossbar it is snooped upwards thus reaching
+    // every cache in the system
+    bool M5_VAR_USED success = memSidePort->sendTimingReq(snoop_pkt);
+    // express snoops always succeed
+    assert(success);
+
+    // main memory will delete the snoop packet
+
+    // queue for deletion, as opposed to immediate deletion, as
+    // the sending cache is still relying on the packet
+    pendingDelete.reset(pkt);
+
+    // no need to take any further action in this particular cache
+    // as an upstram cache has already committed to responding,
+    // and we have already sent out any express snoops in the
+    // section above to ensure all other copies in the system are
+    // invalidated
+    return true;
+  }
+
+  // anything that is merely forwarded pays for the forward latency and
+  // the delay provided by the crossbar
+  Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
+
+  // We use lookupLatency here because it is used to specify the latency
+  // to access.
+  Cycles lat = lookupLatency;
+  CacheBlk *blk = nullptr;
+  bool satisfied = false;
+  {
+    PacketList writebacks;
+    // Note that lat is passed by reference here. The function
+    // access() calls accessBlock() which can modify lat value.
+    satisfied = access(pkt, blk, lat, writebacks);
+
+    if (satisfied && predictedMiss) {
+      this->numCoalescedStreamPredictedMissWrong++;
+    }
+
+    // copy writebacks to write buffer here to ensure they logically
+    // proceed anything happening below
+    doWritebacks(writebacks, forward_time);
+  }
+
+  // Here we charge the headerDelay that takes into account the latencies
+  // of the bus, if the packet comes from it.
+  // The latency charged it is just lat that is the value of lookupLatency
+  // modified by access() function, or if not just lookupLatency.
+  // In case of a hit we are neglecting response latency.
+  // In case of a miss we are neglecting forward latency.
+  Tick request_time = clockEdge(lat) + pkt->headerDelay;
+  // Here we reset the timing of the packet.
+  pkt->headerDelay = pkt->payloadDelay = 0;
+
+  // track time of availability of next prefetch, if any
+  Tick next_pf_time = MaxTick;
+
+  bool needsResponse = pkt->needsResponse();
+
+  if (satisfied) {
+    // should never be satisfying an uncacheable access as we
+    // flush and invalidate any existing block as part of the
+    // lookup
+    assert(!pkt->req->isUncacheable());
+
+    // hit (for all other request types)
+
+    if (prefetcher && (prefetchOnAccess || (blk && blk->wasPrefetched()))) {
+      if (blk)
+        blk->status &= ~BlkHWPrefetched;
+
+      // Don't notify on SWPrefetch
+      if (!pkt->cmd.isSWPrefetch())
+        next_pf_time = prefetcher->notify(pkt);
+    }
+
+    if (needsResponse) {
+      pkt->makeTimingResponse();
+      // @todo: Make someone pay for this
+      pkt->headerDelay = pkt->payloadDelay = 0;
+
+      // In this case we are considering request_time that takes
+      // into account the delay of the xbar, if any, and just
+      // lat, neglecting responseLatency, modelling hit latency
+      // just as lookupLatency or or the value of lat overriden
+      // by access(), that calls accessBlock() function.
+      cpuSidePort->schedTimingResp(pkt, request_time, true);
+    } else {
+      DPRINTF(Cache, "%s satisfied %s, no response needed\n", __func__,
+              pkt->print());
+
+      // queue the packet for deletion, as the sending cache is
+      // still relying on it; if the block is found in access(),
+      // CleanEvict and Writeback messages will be deleted
+      // here as well
+      pendingDelete.reset(pkt);
+    }
+  } else {
+    // miss
+
+    Addr blk_addr = pkt->getBlockAddr(blkSize);
+
+    // ignore any existing MSHR if we are dealing with an
+    // uncacheable request
+    MSHR *mshr = pkt->req->isUncacheable()
+                     ? nullptr
+                     : mshrQueue.findMatch(blk_addr, pkt->isSecure());
+
+    // Software prefetch handling:
+    // To keep the core from waiting on data it won't look at
+    // anyway, send back a response with dummy data. Miss handling
+    // will continue asynchronously. Unfortunately, the core will
+    // insist upon freeing original Packet/Request, so we have to
+    // create a new pair with a different lifecycle. Note that this
+    // processing happens before any MSHR munging on the behalf of
+    // this request because this new Request will be the one stored
+    // into the MSHRs, not the original.
+    if (pkt->cmd.isSWPrefetch()) {
+      assert(needsResponse);
+      assert(pkt->req->hasPaddr());
+      assert(!pkt->req->isUncacheable());
+
+      // There's no reason to add a prefetch as an additional target
+      // to an existing MSHR. If an outstanding request is already
+      // in progress, there is nothing for the prefetch to do.
+      // If this is the case, we don't even create a request at all.
+      PacketPtr pf = nullptr;
+
+      if (!mshr) {
+        // copy the request and create a new SoftPFReq packet
+        RequestPtr req =
+            new Request(pkt->req->getPaddr(), pkt->req->getSize(),
+                        pkt->req->getFlags(), pkt->req->masterId());
+        pf = new Packet(req, pkt->cmd);
+        pf->allocate();
+        assert(pf->getAddr() == pkt->getAddr());
+        assert(pf->getSize() == pkt->getSize());
+      }
+
+      pkt->makeTimingResponse();
+
+      // request_time is used here, taking into account lat and the delay
+      // charged if the packet comes from the xbar.
+      cpuSidePort->schedTimingResp(pkt, request_time, true);
+
+      // If an outstanding request is in progress (we found an
+      // MSHR) this is set to null
+      pkt = pf;
+    }
+
+    if (mshr) {
+      /// MSHR hit
+      /// @note writebacks will be checked in getNextMSHR()
+      /// for any conflicting requests to the same block
+
+      //@todo remove hw_pf here
+
+      // Coalesce unless it was a software prefetch (see above).
+      if (pkt) {
+        assert(!pkt->isWriteback());
+        // CleanEvicts corresponding to blocks which have
+        // outstanding requests in MSHRs are simply sunk here
+        if (pkt->cmd == MemCmd::CleanEvict) {
+          pendingDelete.reset(pkt);
+        } else {
+          DPRINTF(Cache, "%s coalescing MSHR for %s\n", __func__, pkt->print());
+
+          assert(pkt->req->masterId() < system->maxMasters());
+          mshr_hits[pkt->cmdToIndex()][pkt->req->masterId()]++;
+          // We use forward_time here because it is the same
+          // considering new targets. We have multiple
+          // requests for the same address here. It
+          // specifies the latency to allocate an internal
+          // buffer and to schedule an event to the queued
+          // port and also takes into account the additional
+          // delay of the xbar.
+          mshr->allocateTarget(pkt, forward_time, order++,
+                               allocOnFill(pkt->cmd));
+          if (mshr->getNumTargets() == numTarget) {
+            noTargetMSHR = mshr;
+            setBlocked(Blocked_NoTargets);
+            // need to be careful with this... if this mshr isn't
+            // ready yet (i.e. time > curTick()), we don't want to
+            // move it ahead of mshrs that are ready
+            // mshrQueue.moveToFront(mshr);
+          }
+        }
+        // We should call the prefetcher reguardless if the request is
+        // satisfied or not, reguardless if the request is in the MSHR
+        // or not.  The request could be a ReadReq hit, but still not
+        // satisfied (potentially because of a prior write to the same
+        // cache line.  So, even when not satisfied, tehre is an MSHR
+        // already allocated for this, we need to let the prefetcher
+        // know about the request
+        if (prefetcher) {
+          // Don't notify on SWPrefetch
+          if (!pkt->cmd.isSWPrefetch())
+            next_pf_time = prefetcher->notify(pkt);
+        }
+      }
+    } else {
+      // no MSHR
+      assert(pkt->req->masterId() < system->maxMasters());
+      if (pkt->req->isUncacheable()) {
+        mshr_uncacheable[pkt->cmdToIndex()][pkt->req->masterId()]++;
+      } else {
+        mshr_misses[pkt->cmdToIndex()][pkt->req->masterId()]++;
+      }
+
+      if (pkt->isEviction() || (pkt->req->isUncacheable() && pkt->isWrite())) {
+        // We use forward_time here because there is an
+        // uncached memory write, forwarded to WriteBuffer.
+        allocateWriteBuffer(pkt, forward_time);
+      } else {
+        if (blk && blk->isValid()) {
+          // should have flushed and have no valid block
+          assert(!pkt->req->isUncacheable());
+
+          // If we have a write miss to a valid block, we
+          // need to mark the block non-readable.  Otherwise
+          // if we allow reads while there's an outstanding
+          // write miss, the read could return stale data
+          // out of the cache block... a more aggressive
+          // system could detect the overlap (if any) and
+          // forward data out of the MSHRs, but we don't do
+          // that yet.  Note that we do need to leave the
+          // block valid so that it stays in the cache, in
+          // case we get an upgrade response (and hence no
+          // new data) when the write miss completes.
+          // As long as CPUs do proper store/load forwarding
+          // internally, and have a sufficiently weak memory
+          // model, this is probably unnecessary, but at some
+          // point it must have seemed like we needed it...
+          assert(pkt->needsWritable());
+          assert(!blk->isWritable());
+          blk->status &= ~BlkReadable;
+        }
+        // Here we are using forward_time, modelling the latency of
+        // a miss (outbound) just as forwardLatency, neglecting the
+        // lookupLatency component.
+        allocateMissBuffer(pkt, forward_time);
+      }
+
+      if (prefetcher) {
+        // Don't notify on SWPrefetch
+        if (!pkt->cmd.isSWPrefetch())
+          next_pf_time = prefetcher->notify(pkt);
+      }
+    }
+  }
+
+  if (next_pf_time != MaxTick)
+    schedMemSideSendEvent(next_pf_time);
+
+  return true;
 }

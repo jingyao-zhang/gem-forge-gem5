@@ -498,6 +498,10 @@ public:
 
   CoalescedStream *getCoalescedStreamFromPacket(PacketPtr pkt) const;
 
+  bool shouldUseStreamAwareMissPredictionPolicy(PacketPtr pkt);
+  bool predictCoalescedStreamRequest(PacketPtr pkt);
+  bool recvTimingReqForStream(PacketPtr pkt);
+
   bool shouldUseStreamAwareReplacementPolicy(MSHR *mshr);
   void recvTimingRespForStream(PacketPtr pkt, MSHR *mshr, CacheBlk *blk);
 
@@ -517,6 +521,16 @@ public:
   Stats::Distribution numUsedBeforeEvicted;
 
   Stats::Distribution coalescedStreamMemFootprint;
+
+  /**
+   * For stream-aware miss prediction.
+   */
+  Stats::Scalar numCoalescedStreamPredictedMiss;
+  Stats::Scalar numCoalescedStreamPredictedMissWrong;
+
+  /**
+   * For stream-aware replacement.
+   */
   Stats::Scalar numUncachedStreamAccesses;
 
   std::unordered_map<Addr, uint64_t> blockUsedCountMap;
