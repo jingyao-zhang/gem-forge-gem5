@@ -14,9 +14,11 @@
 
 StreamAwareCache::StreamAwareCache(const StreamAwareCacheParams *p)
     : BaseCache(p, p->system->cacheLineSize()), tags(p->tags),
-      prefetcher(p->prefetcher), doFastWrites(true),
-      prefetchOnAccess(p->prefetch_on_access), clusivity(p->clusivity),
-      writebackClean(p->writeback_clean), tempBlockWriteback(nullptr),
+      prefetcher(p->prefetcher), size(p->size),
+      enableStreamAwareReplacement(p->stream_aware_replacement),
+      doFastWrites(true), prefetchOnAccess(p->prefetch_on_access),
+      clusivity(p->clusivity), writebackClean(p->writeback_clean),
+      tempBlockWriteback(nullptr),
       writebackTempBlockAtomicEvent([this] { writebackTempBlockAtomic(); },
                                     name(), false,
                                     EventBase::Delayed_Writeback_Pri) {
@@ -111,6 +113,16 @@ void StreamAwareCache::regStats() {
       .name(this->name() + ".numUsedBeforeEvicted")
       .desc("Number of the block used before get evicted.")
       .flags(Stats::pdf);
+
+  this->coalescedStreamMemFootprint.init(0, 1024, 128)
+      .name(this->name() + ".coalescedStreamMemFootprint")
+      .desc("Memory footprint of coalesced streams in cache blocks.")
+      .flags(Stats::pdf);
+
+  this->numUncachedStreamAccesses
+      .name(this->name() + ".numUncachedStreamAccesses")
+      .desc("Number of uncached stream access")
+      .prereq(this->numUncachedStreamAccesses);
 }
 
 void StreamAwareCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt) {
@@ -1260,6 +1272,11 @@ void StreamAwareCache::recvTimingResp(PacketPtr pkt) {
       !mshr->isForward && (pkt->isRead() || pkt->cmd == MemCmd::UpgradeResp);
 
   CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+
+  if (this->shouldUseStreamAwareReplacementPolicy(mshr)) {
+    this->recvTimingRespForStream(pkt, mshr, blk);
+    return;
+  }
 
   if (is_fill && !is_error) {
     DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
@@ -2577,7 +2594,8 @@ StreamAwareCache::MemSidePort::MemSidePort(const std::string &_name,
       _reqQueue(*_cache, *this, _snoopRespQueue, _label),
       _snoopRespQueue(*_cache, *this, _label), cache(_cache) {}
 
-bool StreamAwareCache::isCoalescedStreamPacket(PacketPtr pkt) const {
+CoalescedStream *
+StreamAwareCache::getCoalescedStreamFromPacket(PacketPtr pkt) const {
   /**
    * Dangerous pointer casting! Only use stream aware cache with LLVMTraceCPU.
    */
@@ -2587,23 +2605,136 @@ bool StreamAwareCache::isCoalescedStreamPacket(PacketPtr pkt) const {
   if (auto streamMemAccess = dynamic_cast<Stream::StreamMemAccess *>(handler)) {
     auto stream = streamMemAccess->getStream();
     if (auto coalescedStream = dynamic_cast<CoalescedStream *>(stream)) {
-      return coalescedStream != nullptr;
+      return coalescedStream;
     }
   }
-  return false;
+  return nullptr;
 }
 
 void StreamAwareCache::incCoalescedStreamMissCount(PacketPtr pkt) {
   assert(pkt->req->masterId() < system->maxMasters());
-  if (!this->isCoalescedStreamPacket(pkt)) {
+  if (this->getCoalescedStreamFromPacket(pkt) == nullptr) {
     return;
   }
   this->coalescedStreamMisses[pkt->cmdToIndex()][pkt->req->masterId()]++;
 }
+
 void StreamAwareCache::incCoalescedStreamHitCount(PacketPtr pkt) {
   assert(pkt->req->masterId() < system->maxMasters());
-  if (!this->isCoalescedStreamPacket(pkt)) {
+  if (this->getCoalescedStreamFromPacket(pkt) == nullptr) {
     return;
   }
   this->coalescedStreamHits[pkt->cmdToIndex()][pkt->req->masterId()]++;
+}
+
+bool StreamAwareCache::shouldUseStreamAwareReplacementPolicy(MSHR *mshr) {
+
+  if (!this->enableStreamAwareReplacement) {
+    return false;
+  }
+
+  auto initTarget = mshr->getTarget();
+  auto coalescedStream = this->getCoalescedStreamFromPacket(initTarget->pkt);
+  if (coalescedStream == nullptr) {
+    // This is not a coalesced stream.
+    return false;
+  }
+
+  // Get the memory footprint of the coalesced stream and decide if we
+  // should use stream aware replacement policy for it.
+  auto footprint = coalescedStream->getFootprint(this->blkSize);
+  this->coalescedStreamMemFootprint.sample(footprint);
+  if (footprint > this->size / this->blkSize) {
+    // We believe this is not cacheable.
+    return true;
+  }
+
+  return false;
+}
+
+void StreamAwareCache::recvTimingRespForStream(PacketPtr pkt, MSHR *mshr,
+                                               CacheBlk *blk) {
+
+  assert(pkt->isRead());
+
+  auto initTarget = mshr->getTarget();
+  auto coalescedStream = this->getCoalescedStreamFromPacket(initTarget->pkt);
+
+  if (coalescedStream == nullptr) {
+    panic("Failed to get coalesced stream for response.");
+  }
+
+  /**
+   * Do not fill.
+   */
+  auto targets = mshr->extractServiceableTargets(pkt);
+  for (auto &target : targets) {
+    auto targetPacket = target.pkt;
+
+    switch (target.source) {
+    case MSHR::Target::Source::FromCPU: {
+
+      Tick completionTime = pkt->headerDelay;
+
+      if (targetPacket->cmd.isSWPrefetch()) {
+        panic("SWPrefetch packet found for stream mshr.");
+      }
+
+      if (targetPacket->fromCache()) {
+        panic("FromCache packet found for stream mshr.");
+      }
+
+      if (targetPacket->cmd == MemCmd::WriteLineReq) {
+        panic("WriteLineReq packet found for stream mshr.");
+      }
+
+      completionTime += clockEdge(this->responseLatency) + pkt->payloadDelay;
+      if (pkt->isRead()) {
+        // assert(pkt->getAddr() == targetPacket->getAddr());
+        // assert(pkt->getSize() >= targetPacket->getSize());
+        targetPacket->setData(pkt->getConstPtr<uint8_t>());
+      }
+
+      targetPacket->makeTimingResponse();
+      if (pkt->isError()) {
+        targetPacket->copyError(pkt);
+      }
+
+      targetPacket->headerDelay = targetPacket->payloadDelay = 0;
+      cpuSidePort->schedTimingResp(targetPacket, completionTime, true);
+
+      this->numUncachedStreamAccesses++;
+
+      break;
+    }
+    case MSHR::Target::Source::FromPrefetcher: {
+      panic("FromPrefetcher target found for the stream mshr.");
+    }
+    case MSHR::Target::Source::FromSnoop: {
+      panic("FromSnoop target found in the stream mshr.");
+    }
+    default: { panic("Illegal target->source enum %d\n", target.source); }
+    }
+  }
+
+  // Do not invalidate any block.
+  if (mshr->promoteDeferredTargets()) {
+    panic("There should be no deferred targets for stream mshr.");
+  } else {
+    bool wasFull = this->mshrQueue.isFull();
+    this->mshrQueue.deallocate(mshr);
+    if (wasFull && !this->mshrQueue.isFull()) {
+      this->clearBlocked(Blocked_NoMSHRs);
+    }
+  }
+
+  pkt->headerDelay = pkt->payloadDelay = 0;
+
+  // No writebackes as we do not evict any packets.
+
+  if (blk == tempBlock && tempBlock->isValid()) {
+    panic("Temp block used for stream mshr.");
+  }
+
+  delete pkt;
 }

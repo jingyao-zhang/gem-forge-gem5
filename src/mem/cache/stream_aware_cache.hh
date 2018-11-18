@@ -128,6 +128,10 @@ protected:
   /** Temporary cache block for occasional transitory use */
   CacheBlk *tempBlock;
 
+  const unsigned size;
+
+  const bool enableStreamAwareReplacement;
+
   /**
    * This cache should allocate a block on a line-sized write miss.
    */
@@ -492,7 +496,10 @@ public:
   void serialize(CheckpointOut &cp) const override;
   void unserialize(CheckpointIn &cp) override;
 
-  bool isCoalescedStreamPacket(PacketPtr pkt) const;
+  CoalescedStream *getCoalescedStreamFromPacket(PacketPtr pkt) const;
+
+  bool shouldUseStreamAwareReplacementPolicy(MSHR *mshr);
+  void recvTimingRespForStream(PacketPtr pkt, MSHR *mshr, CacheBlk *blk);
 
   void incCoalescedStreamMissCount(PacketPtr pkt);
   void incCoalescedStreamHitCount(PacketPtr pkt);
@@ -508,6 +515,9 @@ public:
   Stats::Formula coalescedStreamOverallMisses;
 
   Stats::Distribution numUsedBeforeEvicted;
+
+  Stats::Distribution coalescedStreamMemFootprint;
+  Stats::Scalar numUncachedStreamAccesses;
 
   std::unordered_map<Addr, uint64_t> blockUsedCountMap;
 };

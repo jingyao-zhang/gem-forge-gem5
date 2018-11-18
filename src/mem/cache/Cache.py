@@ -134,3 +134,8 @@ class StreamAwareCache(BaseCache):
     # this should be set to True for anything but the last-level
     # cache.
     writeback_clean = Param.Bool(False, "Writeback clean lines")
+
+
+    # Enable stream aware cache replacement.
+    stream_aware_replacement = Param.Bool(False,
+        "Enable stream aware cache replacement")

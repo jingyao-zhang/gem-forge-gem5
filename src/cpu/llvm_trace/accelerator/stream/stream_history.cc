@@ -16,7 +16,7 @@ void StreamHistory::configure() {
   this->previousAddr = 0;
 }
 
-std::pair<bool, uint64_t> StreamHistory::getNextAddr(bool& used) {
+std::pair<bool, uint64_t> StreamHistory::getNextAddr(bool &used) {
   if (this->currentIdx < this->history.history_size()) {
     const auto &entry = this->history.history(this->currentIdx);
     this->currentIdx++;
@@ -29,4 +29,8 @@ std::pair<bool, uint64_t> StreamHistory::getNextAddr(bool& used) {
     used = false;
     return std::make_pair(false, this->previousAddr);
   }
+}
+
+uint64_t StreamHistory::getCurrentStreamLength() const {
+  return this->history.history_size();
 }

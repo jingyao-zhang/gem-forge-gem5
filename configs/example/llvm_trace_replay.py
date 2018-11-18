@@ -223,5 +223,12 @@ if options.llvm_prefetch == 1:
 if options.llvm_mcpat == 1:
     system.mcpat_manager = McPATManager()
 
+for cpu in system.cpu:
+    if options.gem_forge_stream_engine_l1d == 'aware-replace':
+        # stream-aware cache must be used with stream merge.
+        assert(options.gem_forge_stream_engine_enable_merge == 1)
+        cpu.dcache.stream_aware_replacement = True
+
+
 root = Root(full_system=False, system=system)
 Simulation.run(options, root, system, FutureClass)

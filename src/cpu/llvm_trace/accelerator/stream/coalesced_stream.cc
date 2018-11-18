@@ -419,7 +419,38 @@ void CoalescedStream::markValueReady(FIFOEntry &entry) {
 // }
 
 uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
-  return 1;
+
+  /**
+   * Estimate the memory footprint for this stream in number of unqiue cache
+   * blocks. It is OK for us to under-estimate the footprint, as the cache will
+   * try to cache a stream with low-memory footprint.
+   */
+  const auto &pattern = this->primaryLogicalStream->patternStream->getPattern();
+  const auto totalElements =
+      this->primaryLogicalStream->history->getCurrentStreamLength();
+  if (pattern.val_pattern() == "LINEAR") {
+    // One dimension linear stream.
+    return totalElements * this->getElementSize() / cacheBlockSize;
+  } else if (pattern.val_pattern() == "QUARDRIC") {
+    // For 2 dimention linear stream, first compute footprint of one row.
+    auto rowFootprint = pattern.ni() * this->getElementSize() / cacheBlockSize;
+    /**
+     * Now we check if there is any chance that the next row will overlap with
+     * the previous row.
+     */
+    auto rowRange = std::abs(pattern.stride_i()) * totalElements;
+    if (std::abs(pattern.stride_j()) < rowRange) {
+      // There is a chance that the next row will overlap with the previous one.
+      // Return one row footprint as an under-estimation.
+      return rowFootprint;
+    } else {
+      // No chance of overlapping.
+      return rowFootprint * (totalElements / pattern.ni());
+    }
+  } else {
+    // For all other patterns, underestimate.
+    return 1;
+  }
 }
 
 void CoalescedStream::dump() const {

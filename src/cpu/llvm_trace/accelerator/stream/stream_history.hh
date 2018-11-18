@@ -26,7 +26,9 @@ public:
    * Return the next value of the history.
    * The first boolean indicating the value is valid.
    */
-  std::pair<bool, uint64_t> getNextAddr(bool& used);
+  std::pair<bool, uint64_t> getNextAddr(bool &used);
+
+  uint64_t getCurrentStreamLength() const;
 
 private:
   std::string historyPath;

@@ -67,7 +67,7 @@ def config_cache(options, system):
         dcache_class, icache_class, l2_cache_class, walk_cache_class = \
             L1_DCache, L1_ICache, L2Cache, None
 
-        if options.gem_forge_stream_engine_l1d == 'aware':
+        if options.gem_forge_stream_engine_l1d.startswith('aware'):
             dcache_class = L1StreamAwareDataCache
 
         if buildEnv['TARGET_ISA'] == 'x86':

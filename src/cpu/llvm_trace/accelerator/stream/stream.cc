@@ -271,9 +271,16 @@ void Stream::store(StreamStoreInst *inst) {
   }
 
   if (entry->stored()) {
-    STREAM_ENTRY_PANIC(*entry, "entry is already stored.");
+    // if (!this->enableCoalesce && !this->enableMerge) {
+    //   // For merge and coalesce, it allows multiple stores to the same entry.
+    inst->dumpDeps(cpu);
+    STREAM_ENTRY_PANIC(*entry,
+                       "entry is already stored by %lu, now stored by %lu.",
+                       entry->storeSeqNum, storeSeqNum);
+    // }
+  } else {
+    entry->store(storeSeqNum);
   }
-  entry->store(storeSeqNum);
 
   /**
    * For store stream, if there is no base step stream, which means this is a
@@ -471,6 +478,15 @@ bool Stream::isReady(const LLVMDynamicInst *user) const {
     if (entry->users.empty()) {
       // This is the first time some instructions check if this entry is ready.
       entry->firstCheckIfReadyCycles = cpu->curCycle();
+    } else {
+      // // This entry already has an user, if this is a store stream this
+      // should
+      // // never happen (two stores to one entry.)
+      // if (this->getStreamType() == "store") {
+      //   STREAM_ENTRY_PANIC(*entry, "Double user to store stream: %lu.\n",
+      //                      userSeqNum);
+      //   user->dumpBasic();
+      // }
     }
     entry->users.insert(userSeqNum);
   }
