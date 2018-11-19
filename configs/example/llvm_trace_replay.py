@@ -228,6 +228,11 @@ for cpu in system.cpu:
         # stream-aware cache must be used with stream merge.
         assert(options.gem_forge_stream_engine_enable_merge == 1)
         cpu.dcache.stream_aware_replacement = True
+    elif options.gem_forge_stream_engine_l1d == 'aware-miss-spec':
+        assert(options.gem_forge_stream_engine_enable_merge == 1)
+        cpu.dcache.stream_aware_miss_speculation = True
+        cpu.dcache.stream_aware_replacement = True
+
 
 
 root = Root(full_system=False, system=system)

@@ -131,6 +131,7 @@ protected:
   const unsigned size;
 
   const bool enableStreamAwareReplacement;
+  const bool enableStreamMissSpeculation;
 
   /**
    * This cache should allocate a block on a line-sized write miss.

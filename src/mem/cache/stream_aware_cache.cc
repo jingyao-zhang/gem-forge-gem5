@@ -16,6 +16,7 @@ StreamAwareCache::StreamAwareCache(const StreamAwareCacheParams *p)
     : BaseCache(p, p->system->cacheLineSize()), tags(p->tags),
       prefetcher(p->prefetcher), size(p->size),
       enableStreamAwareReplacement(p->stream_aware_replacement),
+      enableStreamMissSpeculation(p->stream_aware_miss_speculation),
       doFastWrites(true), prefetchOnAccess(p->prefetch_on_access),
       clusivity(p->clusivity), writebackClean(p->writeback_clean),
       tempBlockWriteback(nullptr),
@@ -2771,6 +2772,10 @@ bool StreamAwareCache::predictCoalescedStreamRequest(PacketPtr pkt) {
     panic("Failed to get coalesced stream to predict if miss.");
   }
 
+  if (!this->enableStreamMissSpeculation) {
+    return false;
+  }
+
   auto footprint = stream->getFootprint(this->blkSize);
   if (footprint > this->size / this->blkSize) {
     // We believe this is not cacheable, thus predict to be miss.
@@ -3082,6 +3087,10 @@ bool StreamAwareCache::recvTimingReqForStream(PacketPtr pkt) {
         // Here we are using forward_time, modelling the latency of
         // a miss (outbound) just as forwardLatency, neglecting the
         // lookupLatency component.
+        if (predictedMiss) {
+          forward_time =
+              clockEdge(this->forwardLatency - Cycles(1)) + pkt->headerDelay;
+        }
         allocateMissBuffer(pkt, forward_time);
       }
 

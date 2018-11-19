@@ -139,3 +139,5 @@ class StreamAwareCache(BaseCache):
     # Enable stream aware cache replacement.
     stream_aware_replacement = Param.Bool(False,
         "Enable stream aware cache replacement")
+    stream_aware_miss_speculation = Param.Bool(False,
+        "Enable stream aware cache miss speculation")
