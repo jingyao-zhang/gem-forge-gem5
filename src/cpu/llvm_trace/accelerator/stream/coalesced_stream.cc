@@ -337,30 +337,24 @@ void CoalescedStream::markAddressReady(FIFOEntry &entry) {
     }
 
     // Construct the packet.
+    auto memAccess = new StreamMemAccess(this, entry.idx);
+    this->memAccesses.insert(memAccess);
+
+    auto streamPlacementManager = this->se->getStreamPlacementManager();
+    if (streamPlacementManager != nullptr &&
+        streamPlacementManager->access(this, paddr, packetSize, memAccess)) {
+      // The StreamPlacementManager handled this packet.
+    } else {
+      // Else we sent out the packet.
+      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+    }
+
     if (this->primaryLogicalStream->info.type() == "load") {
-      /**
-       * This is a load stream, create the mem inst.
-       */
-      // STREAM_ENTRY_DPRINTF(
-      //     entry, "Send load packet #%d with addr %p, size %d.\n", packetIdx,
-      //     reinterpret_cast<void *>(vaddr), packetSize);
-      auto memAccess = new StreamMemAccess(this, entry.idx);
-      this->memAccesses.insert(memAccess);
-      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
-
       entry.inflyLoadPackets++;
-
     } else if (this->primaryLogicalStream->info.type() == "store") {
-      /**
-       * This is a store stream. Also send the load request to bring up the
-       * cache line.
-       */
-      // STREAM_ENTRY_DPRINTF(
-      //     entry, "Send store fetch packet #d with addr %p, size %d.\n",
-      //     packetIdx, reinterpret_cast<void *>(vaddr), packetSize);
-      auto memAccess = new StreamMemAccess(this, entry.idx);
-      this->memAccesses.insert(memAccess);
-      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+    } else {
+      // Not possible for this case.
+      panic("Invalid stream type here.");
     }
   }
 

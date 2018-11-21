@@ -327,7 +327,15 @@ void Stream::commitStore(StreamStoreInst *inst) {
       // Hack here, we should really break the store into multiple packets.
       size = cacheBlockSize - offset;
     }
-    cpu->sendRequest(paddr, size, memAccess, storedData);
+
+    auto streamPlacementManager = this->se->getStreamPlacementManager();
+    if (streamPlacementManager != nullptr &&
+        streamPlacementManager->access(this, paddr, size, memAccess)) {
+      // The StreamPlacementManager handled this packet.
+    } else {
+      // Else we sent out the packet.
+      cpu->sendRequest(paddr, size, memAccess, storedData);
+    }
   }
 
   /**

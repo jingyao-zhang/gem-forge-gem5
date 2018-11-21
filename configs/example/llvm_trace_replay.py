@@ -226,13 +226,25 @@ if options.llvm_mcpat == 1:
 for cpu in system.cpu:
     if options.gem_forge_stream_engine_l1d == 'aware-replace':
         # stream-aware cache must be used with stream merge.
-        assert(options.gem_forge_stream_engine_enable_merge == 1)
+        # assert(options.gem_forge_stream_engine_enable_merge == 1)
         cpu.dcache.stream_aware_replacement = True
     elif options.gem_forge_stream_engine_l1d == 'aware-miss-spec':
         assert(options.gem_forge_stream_engine_enable_merge == 1)
         cpu.dcache.stream_aware_miss_speculation = True
         cpu.dcache.stream_aware_replacement = True
+    elif options.gem_forge_stream_engine_l1d == 'placement':
+        cpu.streamEngineEnablePlacement = True
 
+    if options.l1_5dcache:
+        # Add the L1.5 dcache.
+        cpu.l1_5dcache = L1_5_DCache(
+            assoc=options.l1_5d_assoc,
+            mshrs=options.l1_5d_mshrs,
+            size=options.l1_5d_size,
+        )
+        # Connect them
+        cpu.dcache.mem_side = cpu.l1_5dcache.cpu_side
+        cpu.l1_5dcache.mem_side = system.tol2bus.slave
 
 
 root = Root(full_system=False, system=system)

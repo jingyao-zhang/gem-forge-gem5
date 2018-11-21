@@ -101,14 +101,24 @@ def addNoISAOptions(parser):
     parser.add_option("--num-dirs", type="int", default=1)
     parser.add_option("--num-l2caches", type="int", default=1)
     parser.add_option("--num-l3caches", type="int", default=1)
-    parser.add_option("--l1d_size", type="string", default="64kB")
     parser.add_option("--l1i_size", type="string", default="32kB")
-    parser.add_option("--l2_size", type="string", default="2MB")
-    parser.add_option("--l3_size", type="string", default="16MB")
-    parser.add_option("--l1d_assoc", type="int", default=2)
     parser.add_option("--l1i_assoc", type="int", default=2)
+
+    parser.add_option("--l1d_size", type="string", default="64kB")
+    parser.add_option("--l1d_assoc", type="int", default=2)
+    parser.add_option("--l1d_mshrs", type="int", default=4)
+
+    # Gem5 se.py removed L3 cache, so I hack with a L1.5 cache.
+    parser.add_option("--l1_5dcache", action="store_true")
+    parser.add_option("--l1_5d_size", type="string", default="256kB")
+    parser.add_option("--l1_5d_assoc", type="int", default=16)
+    parser.add_option("--l1_5d_mshrs", type="int", default=16)
+
     parser.add_option("--l2_assoc", type="int", default=8)
+    parser.add_option("--l2_size", type="string", default="2MB")
+    parser.add_option("--l2_tag_lat", type="int", default=20)
     parser.add_option("--l3_assoc", type="int", default=16)
+    parser.add_option("--l3_size", type="string", default="16MB")
     parser.add_option("--cacheline_size", type="int", default=64)
 
     # Enable Ruby

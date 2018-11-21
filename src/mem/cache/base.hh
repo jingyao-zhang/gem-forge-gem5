@@ -260,6 +260,8 @@ class BaseCache : public MemObject
     /** Block size of this cache */
     const unsigned blkSize;
 
+    const unsigned size;
+
     /**
      * The latency of tag lookup of a cache. It occurs when there is
      * an access to the cache.
@@ -484,6 +486,15 @@ class BaseCache : public MemObject
     getBlockSize() const
     {
         return blkSize;
+    }
+
+
+    unsigned getCacheSize() const {
+        return this->size;
+    }
+
+    Cycles getLookupLatency() const {
+        return this->lookupLatency;
     }
 
     const AddrRangeList &getAddrRanges() const { return addrRanges; }

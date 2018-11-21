@@ -73,7 +73,7 @@ class BasePrefetcher;
  */
 class Cache : public BaseCache
 {
-  protected:
+  public:
 
     /**
      * The CPU-side port extends the base cache slave port with access
@@ -518,9 +518,6 @@ class Cache : public BaseCache
         return tags->findBlock(addr, is_secure);
     }
 
-    bool inCache(Addr addr, bool is_secure) const override {
-        return (tags->findBlock(addr, is_secure) != 0);
-    }
 
     bool inMissQueue(Addr addr, bool is_secure) const override {
         return (mshrQueue.findMatch(addr, is_secure) != 0);
@@ -539,6 +536,10 @@ class Cache : public BaseCache
     virtual ~Cache();
 
     void regStats() override;
+
+    bool inCache(Addr addr, bool is_secure) const override {
+        return (tags->findBlock(addr, is_secure) != 0);
+    }
 
     /**
      * Take an MSHR, turn it into a suitable downstream packet, and

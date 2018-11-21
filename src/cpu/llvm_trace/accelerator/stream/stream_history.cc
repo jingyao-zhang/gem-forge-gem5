@@ -34,3 +34,7 @@ std::pair<bool, uint64_t> StreamHistory::getNextAddr(bool &used) {
 uint64_t StreamHistory::getCurrentStreamLength() const {
   return this->history.history_size();
 }
+
+uint64_t StreamHistory::getNumCacheLines() const {
+  return this->history.num_cache_lines();
+}

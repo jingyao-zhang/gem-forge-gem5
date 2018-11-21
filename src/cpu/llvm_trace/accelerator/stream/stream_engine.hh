@@ -5,6 +5,8 @@
 #include "insts.hh"
 #include "single_stream.hh"
 
+#include "stream_placement_manager.hh"
+
 #include "base/statistics.hh"
 #include "cpu/llvm_trace/accelerator/tdg_accelerator.hh"
 
@@ -33,6 +35,10 @@ public:
   const Stream *getStreamNullable(uint64_t streamId) const;
   Stream *getStreamNullable(uint64_t streamId);
 
+  StreamPlacementManager *getStreamPlacementManager() {
+    return this->streamPlacementManager;
+  }
+
   bool isMergeEnabled() const { return this->enableMerge; }
 
   /**
@@ -55,6 +61,8 @@ public:
   Stats::Distribution numTotalAliveMemStreams;
 
 private:
+  StreamPlacementManager *streamPlacementManager;
+
   std::unordered_map<uint64_t, Stream *> streamMap;
 
   /**
@@ -72,6 +80,7 @@ private:
   std::string throttling;
   bool enableCoalesce;
   bool enableMerge;
+  bool enableStreamPlacement;
 
   Stream *getOrInitializeStream(
       const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);

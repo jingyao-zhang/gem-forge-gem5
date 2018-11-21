@@ -44,6 +44,10 @@ public:
 
   bool handleTimingResp(PacketPtr pkt);
 
+  std::vector<SimObject *> &getSimObjectList() {
+    return SimObject::getSimObjectList();
+  }
+
   // API interface for driver.
   void handleReplay(Process *p, ThreadContext *tc, const std::string &trace,
                     const Addr finish_tag_vaddr,

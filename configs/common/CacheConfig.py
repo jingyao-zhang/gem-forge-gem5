@@ -89,7 +89,8 @@ def config_cache(options, system):
         # same clock as the CPUs.
         system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
                                    size=options.l2_size,
-                                   assoc=options.l2_assoc)
+                                   assoc=options.l2_assoc,
+                                   tag_latency=options.l2_tag_lat)
 
         system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
         system.l2.cpu_side = system.tol2bus.master
@@ -103,7 +104,8 @@ def config_cache(options, system):
             icache = icache_class(size=options.l1i_size,
                                   assoc=options.l1i_assoc)
             dcache = dcache_class(size=options.l1d_size,
-                                  assoc=options.l1d_assoc)
+                                  assoc=options.l1d_assoc,
+                                  mshrs=options.l1d_mshrs)
 
             # If we have a walker cache specified, instantiate two
             # instances here
@@ -159,7 +161,11 @@ def config_cache(options, system):
 
         system.cpu[i].createInterruptController()
         if options.l2cache:
-            system.cpu[i].connectAllPorts(system.tol2bus, system.membus)
+            skip_l1d = options.l1_5dcache
+            system.cpu[i].connectAllPorts(
+                system.tol2bus,
+                system.membus,
+                skip_l1d)
         elif options.external_memory_system:
             system.cpu[i].connectUncachedPorts(system.membus)
         else:

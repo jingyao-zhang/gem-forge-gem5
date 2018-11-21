@@ -30,6 +30,8 @@ public:
 
   uint64_t getCurrentStreamLength() const;
 
+  uint64_t getNumCacheLines() const;
+
 private:
   std::string historyPath;
   ProtoInputStream historyStream;

@@ -71,6 +71,16 @@ class L1_ICache(L1Cache):
 class L1_DCache(L1Cache):
     pass
 
+
+class L1_5_DCache(Cache):
+    assoc = 8
+    tag_latency = 15
+    data_latency = 15
+    response_latency = 15
+    mshrs = 8
+    tgts_per_mshr = 20
+    write_buffers = 8
+
 class L2Cache(Cache):
     assoc = 8
     tag_latency = 20

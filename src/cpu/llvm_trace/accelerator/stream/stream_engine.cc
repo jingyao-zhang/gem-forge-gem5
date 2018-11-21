@@ -5,9 +5,15 @@
 #include "base/trace.hh"
 #include "debug/StreamEngine.hh"
 
-StreamEngine::StreamEngine() : TDGAccelerator(), isOracle(false) {}
+StreamEngine::StreamEngine()
+    : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false) {}
 
 StreamEngine::~StreamEngine() {
+
+  if (this->streamPlacementManager != nullptr) {
+    delete this->streamPlacementManager;
+  }
+
   // Clear all the allocated streams.
   for (auto &streamIdStreamPair : this->streamMap) {
 
@@ -34,6 +40,11 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->throttling = cpuParams->streamEngineThrottling;
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
   this->enableMerge = cpuParams->streamEngineEnableMerge;
+  this->enableStreamPlacement = cpuParams->streamEngineEnablePlacement;
+
+  if (this->enableStreamPlacement) {
+    this->streamPlacementManager = new StreamPlacementManager(cpu, this);
+  }
 }
 
 void StreamEngine::regStats() {
