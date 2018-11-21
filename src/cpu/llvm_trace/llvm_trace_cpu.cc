@@ -434,7 +434,7 @@ Addr LLVMTraceCPU::getPAddrFromVaddr(Addr vaddr) {
 }
 
 void LLVMTraceCPU::sendRequest(Addr paddr, int size, TDGPacketHandler *handler,
-                               uint8_t *data) {
+                               uint8_t *data, Addr pc) {
   int contextId = 0;
   if (!this->isStandalone()) {
     contextId = this->thread_context->contextId();
@@ -442,6 +442,9 @@ void LLVMTraceCPU::sendRequest(Addr paddr, int size, TDGPacketHandler *handler,
   RequestPtr req =
       new Request(paddr, size, 0, this->_dataMasterId,
                   reinterpret_cast<InstSeqNum>(handler), contextId);
+  if (pc != 0) {
+    req->setPC(pc);
+  }
   PacketPtr pkt;
   uint8_t *pkt_data = new uint8_t[req->getSize()];
   if (data == nullptr) {

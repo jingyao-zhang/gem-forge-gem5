@@ -215,11 +215,6 @@ system.system_port = system.membus.slave
 CacheConfig.config_cache(options, system)
 MemConfig.config_mem(options, system)
 
-if options.llvm_prefetch == 1:
-    for cpu in system.cpu:
-        cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
-    system.l2.prefetcher = StridePrefetcher(degree=8, latency=1)
-
 if options.llvm_mcpat == 1:
     system.mcpat_manager = McPATManager()
 
@@ -245,6 +240,13 @@ for cpu in system.cpu:
         # Connect them
         cpu.dcache.mem_side = cpu.l1_5dcache.cpu_side
         cpu.l1_5dcache.mem_side = system.tol2bus.slave
+
+if options.llvm_prefetch == 1:
+    for cpu in system.cpu:
+        cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
+        if options.l1_5dcache:
+            cpu.l1_5dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
+    system.l2.prefetcher = StridePrefetcher(degree=8, latency=1)
 
 
 root = Root(full_system=False, system=system)

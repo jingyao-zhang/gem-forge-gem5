@@ -228,7 +228,7 @@ public:
   // Send a request to memory.
   // If data is not nullptr, it will be a write.
   void sendRequest(Addr paddr, int size, TDGPacketHandler *handler,
-                   uint8_t *data);
+                   uint8_t *data, Addr pc = 0);
 
   Cycles getOpLatency(OpClass opClass);
 

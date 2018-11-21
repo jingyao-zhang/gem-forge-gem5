@@ -281,7 +281,8 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
   case Type::LOAD: {
     this->constructPackets(cpu);
     for (const auto &packet : this->packets) {
-      cpu->sendRequest(packet.paddr, packet.size, this, packet.data);
+      cpu->sendRequest(packet.paddr, packet.size, this, packet.data,
+                       this->TDG.pc());
       DPRINTF(LLVMTraceCPU, "Send request paddr %p size %u for inst %d\n",
               reinterpret_cast<void *>(packet.paddr), packet.size,
               this->getId());
@@ -353,7 +354,6 @@ void LLVMDynamicInstMem::constructPackets(LLVMTraceCPU *cpu) {
     if (this->type == Type::LOAD) {
       this->packets.emplace_back(paddr, packetSize, nullptr);
     } else {
-
       this->packets.emplace_back(paddr, packetSize,
                                  this->value + inflyPacketsSize);
     }
@@ -375,7 +375,8 @@ void LLVMDynamicInstMem::writeback(LLVMTraceCPU *cpu) {
       DPRINTF(LLVMTraceCPU, "Store data %f for inst %u to paddr %p\n",
               *(double *)(packet.data), this->getId(), packet.paddr);
     }
-    cpu->sendRequest(packet.paddr, packet.size, this, packet.data);
+    cpu->sendRequest(packet.paddr, packet.size, this, packet.data,
+                     this->TDG.pc());
   }
 }
 
