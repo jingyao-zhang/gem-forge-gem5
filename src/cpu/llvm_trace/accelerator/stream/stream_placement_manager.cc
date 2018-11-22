@@ -1,6 +1,7 @@
 #include "stream_placement_manager.hh"
 
 #include "coalesced_stream.hh"
+#include "stream_engine.hh"
 
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "mem/cache/cache.hh"
@@ -9,23 +10,38 @@ StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
                                                StreamEngine *_se)
     : cpu(_cpu), se(_se) {
 
-  Cache *L2, *L1D;
+  Cache *L2 = nullptr;
+  Cache *L1D = nullptr;
+  Cache *L1_5D = nullptr;
   for (auto so : this->cpu->getSimObjectList()) {
+    // inform("so name %s.n", so->name().c_str());
     if (so->name() == "system.l2") {
       // L2 cache.
       L2 = dynamic_cast<Cache *>(so);
     } else if (so->name() == "system.cpu.dcache") {
       // L1 data cache.
       L1D = dynamic_cast<Cache *>(so);
+    } else if (so->name() == "system.cpu.l1_5dcache") {
+      // L1.5 data cache.
+      L1_5D = dynamic_cast<Cache *>(so);
     }
   }
 
   assert(L1D != nullptr);
-  assert(L2 != nullptr);
   this->caches.push_back(L1D);
-  this->caches.push_back(L2);
   this->lookupLatency.push_back(L1D->getLookupLatency());
+
+  if (L1_5D != nullptr) {
+    // If we have this L1.5 data cache.
+    this->caches.push_back(L1_5D);
+    this->lookupLatency.push_back(L1_5D->getLookupLatency());
+  }
+
+  assert(L2 != nullptr);
+  this->caches.push_back(L2);
   this->lookupLatency.push_back(L2->getLookupLatency());
+
+  this->se->numCacheLevel = this->caches.size();
 }
 
 bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
@@ -38,6 +54,16 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
   }
 
   auto placeCacheLevel = this->whichCacheLevelToPlace(coalescedStream);
+
+  this->se->numAccessPlacedInCacheLevel.sample(placeCacheLevel);
+  auto footprint = coalescedStream->getFootprint(cpu->system->cacheLineSize());
+  if (placeCacheLevel == 0) {
+    this->se->numAccessFootprintL1.sample(footprint);
+  } else if (placeCacheLevel == 1) {
+    this->se->numAccessFootprintL2.sample(footprint);
+  } else {
+    this->se->numAccessFootprintL3.sample(footprint);
+  }
 
   if (placeCacheLevel == 0) {
     // L1 cache is not handled by us.
@@ -119,8 +145,7 @@ PacketPtr StreamPlacementManager::createPacket(Addr paddr, int size) const {
 void StreamPlacementManager::scheduleResponse(
     Cycles latency, Stream::StreamMemAccess *memAccess, PacketPtr pkt) {
 
-  EventWrapper<ResponseEvent, &ResponseEvent::recvResponse> responseEvent(
-      new ResponseEvent(cpu, memAccess, pkt));
+  auto responseEvent = new ResponseEvent(cpu, memAccess, pkt);
   cpu->schedule(responseEvent, cpu->clockEdge(latency));
 }
 
@@ -129,7 +154,10 @@ StreamPlacementManager::whichCacheLevelToPlace(CoalescedStream *stream) const {
   auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
   for (size_t cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     auto cache = this->caches[cacheLevel];
-    if (footprint < (cache->getCacheSize() / cpu->system->cacheLineSize())) {
+    auto cacheCapacity = cache->getCacheSize() / cpu->system->cacheLineSize();
+    // inform("Cache %d size %lu capacity %lu.\n", cacheLevel,
+    //        cache->getCacheSize(), cacheCapacity);
+    if (footprint < cacheCapacity) {
       return cacheLevel;
     }
   }

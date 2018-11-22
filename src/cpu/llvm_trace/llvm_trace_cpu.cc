@@ -43,7 +43,6 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->accelManagerParams = new TDGAcceleratorManagerParams();
   accelManagerParams->name = "tdg.accs";
   this->accelManager = accelManagerParams->create();
-  this->accelManager->handshake(this);
 
   DPRINTF(LLVMTraceCPU, "Accelerator manager name %s.\n",
           this->accelManager->name().c_str());
@@ -98,6 +97,11 @@ LLVMTraceCPU::~LLVMTraceCPU() {
 }
 
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
+
+void LLVMTraceCPU::init() {
+  // This can only happen here.
+  this->accelManager->handshake(this);
+}
 
 void LLVMTraceCPU::tick() {
   if (curTick() % 100000000 == 0) {

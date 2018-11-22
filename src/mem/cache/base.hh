@@ -260,7 +260,7 @@ class BaseCache : public MemObject
     /** Block size of this cache */
     const unsigned blkSize;
 
-    const unsigned size;
+    const uint64_t size;
 
     /**
      * The latency of tag lookup of a cache. It occurs when there is
@@ -489,7 +489,7 @@ class BaseCache : public MemObject
     }
 
 
-    unsigned getCacheSize() const {
+    uint64_t getCacheSize() const {
         return this->size;
     }
 

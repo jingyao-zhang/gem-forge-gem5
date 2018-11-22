@@ -13,7 +13,7 @@ public:
   bool access(Stream *stream, Addr paddr, int packetSize,
               Stream::StreamMemAccess *memAccess);
 
-  struct ResponseEvent {
+  struct ResponseEvent : public Event {
   public:
     LLVMTraceCPU *cpu;
     Stream::StreamMemAccess *memAccess;
@@ -23,9 +23,12 @@ public:
                   PacketPtr _pkt)
         : cpu(_cpu), memAccess(_memAccess), pkt(_pkt),
           n("StreamPlacementResponseEvent") {}
-    void recvResponse() {
+    void process() override {
       this->memAccess->handlePacketResponse(this->cpu, this->pkt);
-      delete this;
+    }
+
+    const char* description() const {
+      return "StreamPlacementResponseEvent";
     }
 
     const std::string name() const { return this->n; }

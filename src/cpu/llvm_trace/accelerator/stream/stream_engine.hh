@@ -60,6 +60,15 @@ public:
   Stats::Distribution numRunAHeadLengthDist;
   Stats::Distribution numTotalAliveMemStreams;
 
+  /**
+   * Statistics for stream placement manager.
+   */
+  Stats::Scalar numCacheLevel;
+  Stats::Distribution numAccessPlacedInCacheLevel;
+  Stats::Distribution numAccessFootprintL1;
+  Stats::Distribution numAccessFootprintL2;
+  Stats::Distribution numAccessFootprintL3;
+
 private:
   StreamPlacementManager *streamPlacementManager;
 

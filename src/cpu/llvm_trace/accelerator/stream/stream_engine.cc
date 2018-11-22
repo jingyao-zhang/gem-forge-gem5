@@ -100,6 +100,26 @@ void StreamEngine::regStats() {
       .name(this->manager->name() + ".stream.numTotalAliveMemStreams")
       .desc("Number of alive memory stream.")
       .flags(Stats::pdf);
+
+  this->numAccessPlacedInCacheLevel.init(0, 5, 1)
+      .name(this->manager->name() + ".stream.numAccessPlacedInCacheLevel")
+      .desc("Number of accesses placed in different cache level.")
+      .flags(Stats::pdf);
+  this->numAccessFootprintL1.init(0, 500, 100)
+      .name(this->manager->name() + ".stream.numAccessFootprintL1")
+      .desc("Number of accesses with footprint at L1.")
+      .flags(Stats::pdf);
+  this->numAccessFootprintL2.init(0, 4096, 1024)
+      .name(this->manager->name() + ".stream.numAccessFootprintL2")
+      .desc("Number of accesses with footprint at L2.")
+      .flags(Stats::pdf);
+  this->numAccessFootprintL3.init(0, 131072, 26214)
+      .name(this->manager->name() + ".stream.numAccessFootprintL3")
+      .desc("Number of accesses with footprint at L3.")
+      .flags(Stats::pdf);
+  this->numCacheLevel.name(this->manager->name() + ".stream.numCacheLevel")
+      .desc("Number of cache levels")
+      .prereq(this->numCacheLevel);
 }
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) {

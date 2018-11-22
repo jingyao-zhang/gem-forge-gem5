@@ -42,6 +42,8 @@ public:
 
   void wakeup(ThreadID tid) override {}
 
+  void init() override;
+
   bool handleTimingResp(PacketPtr pkt);
 
   std::vector<SimObject *> &getSimObjectList() {
