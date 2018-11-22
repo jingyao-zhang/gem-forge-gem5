@@ -31,6 +31,7 @@ public:
   void commitStreamStep(StreamStepInst *inst);
   void commitStreamStore(StreamStoreInst *inst);
   void commitStreamEnd(StreamEndInst *inst);
+  void commitStreamUser(uint64_t streamId, const LLVMDynamicInst *user);
 
   const Stream *getStreamNullable(uint64_t streamId) const;
   Stream *getStreamNullable(uint64_t streamId);

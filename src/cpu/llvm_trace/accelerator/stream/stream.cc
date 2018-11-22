@@ -724,6 +724,15 @@ void Stream::commitStepImpl(uint64_t stepSeqNum) {
   }
 }
 
+void Stream::commitUser(const LLVMDynamicInst *inst) {
+  auto userSeqNum = inst->getSeqNum();
+  // So far just do a thorough search.
+  for (const auto &entry : this->FIFO) {
+    entry.users.erase(userSeqNum);
+  }
+  this->userToEntryMap.erase(userSeqNum);
+}
+
 void Stream::StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
                                                    PacketPtr packet) {
   this->stream->handlePacketResponse(this->entryId, packet, this);

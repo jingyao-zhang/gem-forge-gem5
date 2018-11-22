@@ -121,6 +121,14 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
   return true;
 }
 
+void LLVMDynamicInst::commit(LLVMTraceCPU *cpu) {
+  // Default implementation will commit stream users, if any.
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
+                                                                      this);
+  }
+}
+
 void LLVMDynamicInst::dumpBasic() const {
   inform("Inst seq %lu, id %lu, op %s.\n", this->seqNum, this->getId(),
          this->getInstName().c_str());

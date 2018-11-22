@@ -38,6 +38,7 @@ public:
   virtual void commitStore(StreamStoreInst *inst);
   virtual void end(StreamEndInst *inst);
   virtual void commitEnd(StreamEndInst *inst);
+  virtual void commitUser(const LLVMDynamicInst *inst);
 
   void tick();
 

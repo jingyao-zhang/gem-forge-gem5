@@ -45,9 +45,7 @@ public:
   virtual void writeback(LLVMTraceCPU *cpu) {
     panic("Calling write back on non-store inst %u.\n", this->getId());
   }
-  virtual void commit(LLVMTraceCPU *cpu) {
-    // Default implementation will do nothing.
-  }
+  virtual void commit(LLVMTraceCPU *cpu);
 
   // Handle a packet response. Default will panic.
   // Only for mem insts.

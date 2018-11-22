@@ -31,6 +31,10 @@ void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
 
 void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream configure %lu\n", this->getSeqNum());
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
+                                                                      this);
+  }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamConfigure(this);
 }
 
@@ -62,6 +66,10 @@ void StreamStepInst::execute(LLVMTraceCPU *cpu) {
 
 void StreamStepInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream step %lu\n", this->getSeqNum());
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
+                                                                      this);
+  }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStep(this);
 }
 
@@ -87,6 +95,10 @@ void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
 }
 
 void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
+                                                                      this);
+  }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStore(this);
 }
 
@@ -108,6 +120,10 @@ void StreamEndInst::execute(LLVMTraceCPU *cpu) {
 }
 
 void StreamEndInst::commit(LLVMTraceCPU *cpu) {
+  for (const auto &streamId : this->TDG.used_stream_ids()) {
+    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
+                                                                      this);
+  }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamEnd(this);
 }
 

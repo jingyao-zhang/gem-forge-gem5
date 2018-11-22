@@ -185,6 +185,17 @@ void StreamEngine::useStream(uint64_t streamId, const LLVMDynamicInst *user) {
   return stream->use(user);
 }
 
+void StreamEngine::commitStreamUser(uint64_t streamId,
+                                    const LLVMDynamicInst *user) {
+  auto stream = this->getStreamNullable(streamId);
+  if (stream == nullptr) {
+    // This is possible in partial datagraph that contains an incomplete loop.
+    // For this rare case, we just assume the stream is ready.
+    return;
+  }
+  return stream->commitUser(user);
+}
+
 bool StreamEngine::canStreamStep(uint64_t streamId) const {
   auto stream = this->getStreamNullable(streamId);
   if (stream == nullptr) {
