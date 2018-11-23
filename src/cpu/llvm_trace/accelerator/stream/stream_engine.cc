@@ -354,6 +354,12 @@ void StreamEngine::tick() {
   }
 }
 
+void StreamEngine::dump() {
+  if (this->streamPlacementManager != nullptr) {
+    this->streamPlacementManager->dumpCacheStreamAwarePortStatus();
+  }
+}
+
 void StreamEngine::updateAliveStatistics() {
   int totalAliveElements = 0;
   int totalAliveMemStreams = 0;

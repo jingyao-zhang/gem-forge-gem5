@@ -374,7 +374,7 @@ class SlavePort : public BaseSlavePort
      *
      * @return If the send was succesful or not.
     */
-    bool sendTimingResp(PacketPtr pkt);
+    virtual bool sendTimingResp(PacketPtr pkt);
 
     /**
      * Attempt to send a timing snoop request packet to the master port

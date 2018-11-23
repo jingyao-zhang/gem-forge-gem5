@@ -738,6 +738,10 @@ void Stream::StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
   this->stream->handlePacketResponse(this->entryId, packet, this);
 }
 
+void Stream::StreamMemAccess::handlePacketResponse(PacketPtr packet) {
+  this->stream->handlePacketResponse(this->entryId, packet, this);
+}
+
 void Stream::FIFOEntry::markAddressReady(Cycles readyCycles) {
   this->isAddressValid = true;
   this->addressReadyCycles = readyCycles;

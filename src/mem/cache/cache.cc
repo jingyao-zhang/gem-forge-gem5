@@ -55,6 +55,7 @@
 
 #include "base/misc.hh"
 #include "base/types.hh"
+#include "cpu/llvm_trace/accelerator/stream/stream.hh"
 #include "debug/Cache.hh"
 #include "debug/CachePort.hh"
 #include "debug/CacheTags.hh"
@@ -75,7 +76,10 @@ Cache::Cache(const CacheParams *p)
   tempBlock = new CacheBlk();
   tempBlock->data = new uint8_t[blkSize];
 
-  cpuSidePort = new CpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
+  // cpuSidePort = new CpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
+  cpuSidePort =
+      new StreamAwareCpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
+
   memSidePort = new MemSidePort(p->name + ".mem_side", this, "MemSidePort");
 
   tags->setCache(this);
@@ -2471,6 +2475,143 @@ void Cache::CpuSidePort::recvFunctional(PacketPtr pkt) {
 Cache::CpuSidePort::CpuSidePort(const std::string &_name, Cache *_cache,
                                 const std::string &_label)
     : BaseCache::CacheSlavePort(_name, _cache, _label), cache(_cache) {}
+
+Cache::StreamAwareCpuSidePort::StreamAwareCpuSidePort(const std::string &_name,
+                                                      Cache *_cache,
+                                                      const std::string &_label)
+    : CpuSidePort(_name, _cache, _label),
+      processEvent([this] { this->process(); }, _name) {
+
+  // Disable sanity check for the response queue.
+  this->respQueue.disableSanityCheck();
+}
+
+bool Cache::StreamAwareCpuSidePort::recvTimingReq(PacketPtr pkt) {
+  this->blockedPkts.emplace_back(pkt);
+  if (!this->processEvent.scheduled()) {
+    this->owner.schedule(this->processEvent, curTick() + 1);
+  }
+  // this->process();
+  return true;
+}
+
+void Cache::StreamAwareCpuSidePort::recvTimingReqForStream(PacketPtr pkt) {
+  this->blockedPkts.emplace_back(pkt);
+  this->handlingStreamPkts.insert(pkt);
+  if (!this->processEvent.scheduled()) {
+    this->owner.schedule(this->processEvent, curTick() + 1);
+  }
+  // this->process();
+}
+
+// void Cache::StreamAwareCpuSidePort::clearBlocked() {
+//   assert(this->blocked);
+//   this->blocked = false;
+//   this->process();
+//   if (!this->blocked) {
+//     // if (!this->blockedStreamPkts.empty()) {
+//     //   inform("mustSentRetry %d", this->mustSendRetry);
+//     //   assert(this->blockedStreamPkts.empty());
+//     // }
+//     // After processing the stream request we are still not blocked.
+//     if (this->mustSendRetry) {
+//       owner.schedule(sendRetryEvent, curTick() + 1);
+//     }
+//   }
+// }
+
+void Cache::StreamAwareCpuSidePort::processSendRetry() {
+  // CacheSlavePort::processSendRetry();
+  this->mustSendRetry = false;
+  if (!this->processEvent.scheduled()) {
+    this->owner.schedule(this->processEvent, curTick() + 1);
+  }
+  // this->process();
+}
+
+bool Cache::StreamAwareCpuSidePort::sendTimingResp(PacketPtr pkt) {
+  if (this->handlingStreamPkts.count(pkt) == 0) {
+    // Normal packets.
+    return SlavePort::sendTimingResp(pkt);
+  } else {
+    // Stream packets.
+    this->handlingStreamPkts.erase(pkt);
+
+    // Receive the response from port.
+    auto streamMemAccess = reinterpret_cast<Stream::StreamMemAccess *>(
+        pkt->req->getReqInstSeqNum());
+    streamMemAccess->handlePacketResponse(pkt);
+    // Release the memory.
+    delete pkt->req;
+    delete pkt;
+
+    return true;
+  }
+}
+
+void Cache::StreamAwareCpuSidePort::process() {
+  if (this->blockedPkts.empty()) {
+    return;
+  }
+
+  // // Remember if we must send retry to the master port.
+  // auto oldMustSendRetry = this->mustSendRetry;
+  // auto oldHasScheduledRetryEvent = this->sendRetryEvent.scheduled();
+
+  static size_t count = 0;
+  if (count % 10000000 == 1) {
+    count = 0;
+    // inform("StreamAwarePort::process called with blocked pkts %lu front %p "
+    //        "stream %d.\n",
+    //        this->blockedPkts.size(), this->blockedPkts.front(),
+    //        this->handlingStreamPkts.count(this->blockedPkts.front()));
+    // inform("StreamAwarePort::process called when blocked ? %d mustSendRetry ?
+    // "
+    //        "%d.\n",
+    //        this->blocked, this->mustSendRetry);
+  }
+  count++;
+
+  if (this->blocked || this->mustSendRetry) {
+    this->owner.schedule(this->processEvent, this->owner.nextCycle());
+    return;
+  }
+
+  while (!this->blockedPkts.empty()) {
+    auto pkt = this->blockedPkts.front();
+    auto success = CpuSidePort::recvTimingReq(pkt);
+    if (!success) {
+      // // We are blocked again.
+      // // For stream packet, we do not have to sendRetry.
+      // assert(this->blocked || this->mustSendRetry);
+      // auto hasScheduledRetryEvent = this->sendRetryEvent.scheduled();
+      // if (!oldHasScheduledRetryEvent) {
+      //   this->mustSendRetry = oldMustSendRetry;
+      // } else {
+      //   if (!hasScheduledRetryEvent) {
+      //     // We cancelled a retry event.
+      //     assert(!oldMustSendRetry);
+      //     assert(this->mustSendRetry);
+      //     this->mustSendRetry = true;
+      //   } else {
+      //     // We should really cacneled.
+      //     // assert(false);
+      //   }
+      // }
+      break;
+    } else {
+      // Succeed.
+      this->blockedPkts.pop_front();
+    }
+  }
+
+  // If there is still packets, schedule next process event.
+  if (!this->blockedPkts.empty()) {
+    this->owner.schedule(this->processEvent, this->owner.nextCycle());
+  }
+
+  return;
+}
 
 Cache *CacheParams::create() {
   assert(tags);

@@ -99,6 +99,33 @@ public:
   };
 
   /**
+   * A hacky CPU-side port for stream-aware cache.
+   */
+  class StreamAwareCpuSidePort : public CpuSidePort {
+  public:
+    StreamAwareCpuSidePort(const std::string &_name, Cache *_cache,
+                           const std::string &_label);
+
+    bool recvTimingReq(PacketPtr pkt) override;
+    void recvTimingReqForStream(PacketPtr pkt);
+    // void clearBlocked() override;
+    void processSendRetry() override;
+    bool sendTimingResp(PacketPtr pkt) override;
+
+    std::list<PacketPtr> blockedPkts;
+    std::unordered_set<PacketPtr> handlingStreamPkts;
+    bool mustSendRetryToHigherLevelCache;
+
+    /**
+     * Process the blockedStreamPkts.
+     * @return: If the port is blocked.
+     */
+    void process();
+
+    EventFunctionWrapper processEvent;
+  };
+
+  /**
    * Override the default behaviour of sendDeferredPacket to enable
    * the memory-side cache port to also send requests based on the
    * current MSHR status. This queue has a pointer to our specific

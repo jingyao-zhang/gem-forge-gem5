@@ -13,6 +13,8 @@ public:
   bool access(Stream *stream, Addr paddr, int packetSize,
               Stream::StreamMemAccess *memAccess);
 
+  void dumpCacheStreamAwarePortStatus();
+
   struct ResponseEvent : public Event {
   public:
     LLVMTraceCPU *cpu;
@@ -27,9 +29,7 @@ public:
       this->memAccess->handlePacketResponse(this->cpu, this->pkt);
     }
 
-    const char* description() const {
-      return "StreamPlacementResponseEvent";
-    }
+    const char *description() const { return "StreamPlacementResponseEvent"; }
 
     const std::string name() const { return this->n; }
   };
@@ -43,11 +43,13 @@ private:
 
   size_t whichCacheLevelToPlace(CoalescedStream *stream) const;
 
-  PacketPtr createPacket(Addr paddr, int size) const;
+  PacketPtr createPacket(Addr paddr, int size,
+                         Stream::StreamMemAccess *memAccess) const;
 
   bool isHit(Cache *cache, Addr paddr) const;
   void scheduleResponse(Cycles latency, Stream::StreamMemAccess *memAccess,
                         PacketPtr pkt);
+  void sendTimingRequest(PacketPtr pkt, Cache *cache);
 };
 
 #endif

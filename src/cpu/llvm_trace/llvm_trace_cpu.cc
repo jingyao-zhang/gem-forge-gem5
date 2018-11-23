@@ -107,6 +107,7 @@ void LLVMTraceCPU::tick() {
   if (curTick() % 100000000 == 0) {
     DPRINTF(LLVMTraceCPU, "Tick()\n");
     this->iewStage.dumpROB();
+    this->accelManager->dump();
   }
 
   // Make sure there is always instructions for simulation.

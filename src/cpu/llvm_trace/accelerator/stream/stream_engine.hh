@@ -22,6 +22,7 @@ public:
 
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
+  void dump() override;
   void regStats() override;
 
   void useStream(uint64_t streamId, const LLVMDynamicInst *user);

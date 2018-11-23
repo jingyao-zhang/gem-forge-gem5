@@ -171,6 +171,7 @@ public:
         : stream(_stream), entryId(_entryId) {}
     virtual ~StreamMemAccess() {}
     void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
+    void handlePacketResponse(PacketPtr packet);
 
     Stream *getStream() const { return this->stream; }
 

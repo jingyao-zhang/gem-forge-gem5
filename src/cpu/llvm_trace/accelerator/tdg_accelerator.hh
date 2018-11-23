@@ -26,6 +26,8 @@ public:
   virtual bool handle(LLVMDynamicInst *inst) = 0;
   virtual void tick() = 0;
 
+  virtual void dump() {}
+
   /**
    * Called by the manager to register stats.
    * Default does nothing.
@@ -53,6 +55,7 @@ public:
   void handshake(LLVMTraceCPU *_cpu);
   void handle(LLVMDynamicInst *inst);
   void tick();
+  void dump();
 
   StreamEngine *getStreamEngine();
 

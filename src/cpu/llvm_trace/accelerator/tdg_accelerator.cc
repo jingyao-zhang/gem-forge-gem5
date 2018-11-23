@@ -55,6 +55,12 @@ void TDGAcceleratorManager::tick() {
   }
 }
 
+void TDGAcceleratorManager::dump() {
+  for (auto accelerator : this->accelerators) {
+    accelerator->dump();
+  }
+}
+
 void TDGAcceleratorManager::regStats() {
   SimObject::regStats();
   for (auto accelerator : this->accelerators) {

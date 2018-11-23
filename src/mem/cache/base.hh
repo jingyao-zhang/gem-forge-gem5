@@ -160,7 +160,7 @@ class BaseCache : public MemObject
         void setBlocked();
 
         /** Return to normal operation and accept new requests. */
-        void clearBlocked();
+        virtual void clearBlocked();
 
         bool isBlocked() const { return blocked; }
 
@@ -176,9 +176,9 @@ class BaseCache : public MemObject
 
         bool mustSendRetry;
 
-      private:
+      protected:
 
-        void processSendRetry();
+        virtual void processSendRetry();
 
         EventFunctionWrapper sendRetryEvent;
 
