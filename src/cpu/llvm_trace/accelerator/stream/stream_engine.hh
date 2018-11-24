@@ -43,6 +43,11 @@ public:
 
   bool isMergeEnabled() const { return this->enableMerge; }
 
+  bool isOracleEnabled() const { return this->isOracle; }
+  bool isOraclePlacementEnabled() const {
+    return this->enableStreamPlacementOracle;
+  }
+
   /**
    * Stats
    */
@@ -51,6 +56,8 @@ public:
   Stats::Scalar numStreamMemRequests;
   Stats::Scalar numElements;
   Stats::Scalar numElementsUsed;
+  Stats::Scalar numUnconfiguredStreamUse;
+  Stats::Scalar numConfiguredStreamUse;
   Stats::Scalar entryWaitCycles;
   Stats::Scalar numMemElements;
   Stats::Scalar numMemElementsFetched;
@@ -67,6 +74,9 @@ public:
    */
   Stats::Scalar numCacheLevel;
   Stats::Distribution numAccessPlacedInCacheLevel;
+  Stats::Distribution numAccessHitHigherThanPlacedCacheLevel;
+  Stats::Distribution numAccessHitLowerThanPlacedCacheLevel;
+
   Stats::Distribution numAccessFootprintL1;
   Stats::Distribution numAccessFootprintL2;
   Stats::Distribution numAccessFootprintL3;
@@ -92,6 +102,7 @@ private:
   bool enableCoalesce;
   bool enableMerge;
   bool enableStreamPlacement;
+  bool enableStreamPlacementOracle;
 
   Stream *getOrInitializeStream(
       const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);

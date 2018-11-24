@@ -72,6 +72,8 @@ class LLVMTraceCPU(BaseCPU):
         False, "Whether the steam engine enable stream merging.")
     streamEngineEnablePlacement = Param.Bool(
         False, "Whether the stream engine enable stream placement.")
+    streamEngineEnablePlacementOracle = Param.Bool(
+        False, "Whether the stream engine enable stream placement oracle.")
 
     @classmethod
     def memory_mode(cls):

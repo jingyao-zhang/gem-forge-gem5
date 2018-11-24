@@ -41,6 +41,8 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
   this->enableMerge = cpuParams->streamEngineEnableMerge;
   this->enableStreamPlacement = cpuParams->streamEngineEnablePlacement;
+  this->enableStreamPlacementOracle =
+      cpuParams->streamEngineEnablePlacementOracle;
 
   if (this->enableStreamPlacement) {
     this->streamPlacementManager = new StreamPlacementManager(cpu, this);
@@ -64,6 +66,14 @@ void StreamEngine::regStats() {
   this->numElementsUsed.name(this->manager->name() + ".stream.numElementsUsed")
       .desc("Number of stream elements used.")
       .prereq(this->numElementsUsed);
+  this->numUnconfiguredStreamUse
+      .name(this->manager->name() + ".stream.numUnconfiguredStreamUse")
+      .desc("Number of unconfigured stream use request.")
+      .prereq(this->numUnconfiguredStreamUse);
+  this->numConfiguredStreamUse
+      .name(this->manager->name() + ".stream.numConfiguredStreamUse")
+      .desc("Number of Configured stream use request.")
+      .prereq(this->numConfiguredStreamUse);
   this->entryWaitCycles.name(this->manager->name() + ".stream.entryWaitCycles")
       .desc("Number of cycles from first checked ifReady to ready.")
       .prereq(this->entryWaitCycles);
@@ -105,6 +115,17 @@ void StreamEngine::regStats() {
       .name(this->manager->name() + ".stream.numAccessPlacedInCacheLevel")
       .desc("Number of accesses placed in different cache level.")
       .flags(Stats::pdf);
+  this->numAccessHitHigherThanPlacedCacheLevel.init(0, 5, 1)
+      .name(this->manager->name() +
+            ".stream.numAccessHitHigherThanPlacedCacheLevel")
+      .desc("Number of accesses hit in higher level than placed cache.")
+      .flags(Stats::pdf);
+  this->numAccessHitLowerThanPlacedCacheLevel.init(0, 5, 1)
+      .name(this->manager->name() +
+            ".stream.numAccessHitLowerThanPlacedCacheLevel")
+      .desc("Number of accesses hit in lower level than placed cache.")
+      .flags(Stats::pdf);
+
   this->numAccessFootprintL1.init(0, 500, 100)
       .name(this->manager->name() + ".stream.numAccessFootprintL1")
       .desc("Number of accesses with footprint at L1.")
@@ -180,8 +201,10 @@ void StreamEngine::useStream(uint64_t streamId, const LLVMDynamicInst *user) {
   if (stream == nullptr) {
     // This is possible in partial datagraph that contains an incomplete loop.
     // For this rare case, we just assume the stream is ready.
+    this->numUnconfiguredStreamUse++;
     return;
   }
+  this->numConfiguredStreamUse++;
   return stream->use(user);
 }
 

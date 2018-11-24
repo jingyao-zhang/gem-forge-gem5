@@ -229,6 +229,10 @@ for cpu in system.cpu:
         cpu.dcache.stream_aware_replacement = True
     elif options.gem_forge_stream_engine_l1d == 'placement':
         cpu.streamEngineEnablePlacement = True
+    elif options.gem_forge_stream_engine_l1d == 'placement-oracle':
+        cpu.streamEngineEnablePlacement = True
+        cpu.streamEngineEnablePlacementOracle = True
+
 
     if options.l1_5dcache:
         # Add the L1.5 dcache.

@@ -787,7 +787,8 @@ Stream::FIFOEntry::FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
   // Initialize the cache blocks it touched.
   constexpr int cacheBlockSize = 64;
   auto lhsCacheBlock = this->address & (~(cacheBlockSize - 1));
-  auto rhsCacheBlock = (this->address + this->size) & (~(cacheBlockSize - 1));
+  auto rhsCacheBlock =
+      (this->address + this->size - 1) & (~(cacheBlockSize - 1));
   while (lhsCacheBlock <= rhsCacheBlock) {
     if (this->cacheBlocks >= FIFOEntry::MAX_CACHE_BLOCKS) {
       panic("More than %d cache blocks for one stream element, address %lu "

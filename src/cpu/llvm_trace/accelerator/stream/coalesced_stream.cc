@@ -307,60 +307,117 @@ void CoalescedStream::markAddressReady(FIFOEntry &entry) {
     return;
   }
 
-  if (this->se->isMergeEnabled()) {
-    // Merge the request to the alive cache line.
-    if (this->isCacheBlockAlive(entry.address)) {
-      this->markValueReady(entry);
-      return;
-    }
-  }
+  bool useNewMerge = true;
 
-  // After this point, we are going to fetch the data from cache.
-  se->numMemElementsFetched++;
+  if (useNewMerge) {
+    // Start to construct the packets for all cache blocks.
+    for (const auto cacheBlockAddr : entry.cacheBlockAddrs) {
+      Addr paddr;
+      if (cpu->isStandalone()) {
+        paddr = cpu->translateAndAllocatePhysMem(cacheBlockAddr);
+      } else {
+        panic("Stream so far can only work in standalone mode.");
+      }
 
-  // Start to construct the packets.
-  auto size = entry.size;
-  for (int packetSize, inflyPacketsSize = 0, packetIdx = 0;
-       inflyPacketsSize < size; inflyPacketsSize += packetSize, packetIdx++) {
-    Addr paddr, vaddr;
-    if (cpu->isStandalone()) {
-      vaddr = entry.address + inflyPacketsSize;
-      paddr = cpu->translateAndAllocatePhysMem(vaddr);
-    } else {
-      panic("Stream so far can only work in standalone mode.");
-    }
-    packetSize = size - inflyPacketsSize;
-    // Do not span across cache line.
-    auto cacheLineSize = cpu->system->cacheLineSize();
-    if (((paddr % cacheLineSize) + packetSize) > cacheLineSize) {
-      packetSize = cacheLineSize - (paddr % cacheLineSize);
-    }
+      // Check if we enabled the merge.
+      if (this->se->isMergeEnabled()) {
+        if (this->isCacheBlockAlive(cacheBlockAddr)) {
+          continue;
+        }
+      }
 
-    // Construct the packet.
-    auto memAccess = new StreamMemAccess(this, entry.idx);
-    this->memAccesses.insert(memAccess);
+      // Bring in the whole cache block.
+      auto packetSize = cpu->system->cacheLineSize();
+      // Construct the packet.
+      auto memAccess = new StreamMemAccess(this, entry.idx);
+      this->memAccesses.insert(memAccess);
 
-    auto streamPlacementManager = this->se->getStreamPlacementManager();
-    if (streamPlacementManager != nullptr &&
-        streamPlacementManager->access(this, paddr, packetSize, memAccess)) {
-      // The StreamPlacementManager handled this packet.
-    } else {
-      // Else we sent out the packet.
-      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+      auto streamPlacementManager = this->se->getStreamPlacementManager();
+      if (streamPlacementManager != nullptr &&
+          streamPlacementManager->access(this, paddr, packetSize, memAccess)) {
+        // The StreamPlacementManager handled this packet.
+      } else {
+        // Else we sent out the packet.
+        cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+      }
+
+      if (this->primaryLogicalStream->info.type() == "load") {
+        entry.inflyLoadPackets++;
+      } else if (this->primaryLogicalStream->info.type() == "store") {
+      } else {
+        // Not possible for this case.
+        panic("Invalid stream type here.");
+      }
     }
 
     if (this->primaryLogicalStream->info.type() == "load") {
-      entry.inflyLoadPackets++;
+      if (entry.inflyLoadPackets == 0) {
+        // Successfully found all cache blocks alive.
+        this->markValueReady(entry);
+      } else {
+        this->se->numMemElementsFetched++;
+      }
     } else if (this->primaryLogicalStream->info.type() == "store") {
+      this->se->numMemElementsFetched++;
+      this->markValueReady(entry);
     } else {
       // Not possible for this case.
       panic("Invalid stream type here.");
     }
-  }
 
-  if (this->primaryLogicalStream->info.type() == "store") {
-    // Store stream is always value ready.
-    this->markValueReady(entry);
+  } else {
+    if (this->se->isMergeEnabled()) {
+      // Merge the request to the alive cache line.
+      if (this->isCacheBlockAlive(entry.address)) {
+        this->markValueReady(entry);
+        return;
+      }
+    }
+
+    // After this point, we are going to fetch the data from cache.
+    se->numMemElementsFetched++;
+    auto size = entry.size;
+    for (int packetSize, inflyPacketsSize = 0, packetIdx = 0;
+         inflyPacketsSize < size; inflyPacketsSize += packetSize, packetIdx++) {
+      Addr paddr, vaddr;
+      if (cpu->isStandalone()) {
+        vaddr = entry.address + inflyPacketsSize;
+        paddr = cpu->translateAndAllocatePhysMem(vaddr);
+      } else {
+        panic("Stream so far can only work in standalone mode.");
+      }
+      packetSize = size - inflyPacketsSize;
+      // Do not span across cache line.
+      auto cacheLineSize = cpu->system->cacheLineSize();
+      if (((paddr % cacheLineSize) + packetSize) > cacheLineSize) {
+        packetSize = cacheLineSize - (paddr % cacheLineSize);
+      }
+
+      // Construct the packet.
+      auto memAccess = new StreamMemAccess(this, entry.idx);
+      this->memAccesses.insert(memAccess);
+
+      auto streamPlacementManager = this->se->getStreamPlacementManager();
+      if (streamPlacementManager != nullptr &&
+          streamPlacementManager->access(this, paddr, packetSize, memAccess)) {
+        // The StreamPlacementManager handled this packet.
+      } else {
+        // Else we sent out the packet.
+        cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+      }
+
+      if (this->primaryLogicalStream->info.type() == "load") {
+        entry.inflyLoadPackets++;
+      } else if (this->primaryLogicalStream->info.type() == "store") {
+      } else {
+        // Not possible for this case.
+        panic("Invalid stream type here.");
+      }
+    }
+    if (this->primaryLogicalStream->info.type() == "store") {
+      // Store stream is always value ready.
+      this->markValueReady(entry);
+    }
   }
 }
 
@@ -432,7 +489,7 @@ uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
      * Now we check if there is any chance that the next row will overlap with
      * the previous row.
      */
-    auto rowRange = std::abs(pattern.stride_i()) * totalElements;
+    auto rowRange = std::abs(pattern.stride_i()) * pattern.ni();
     if (std::abs(pattern.stride_j()) < rowRange) {
       // There is a chance that the next row will overlap with the previous one.
       // Return one row footprint as an under-estimation.

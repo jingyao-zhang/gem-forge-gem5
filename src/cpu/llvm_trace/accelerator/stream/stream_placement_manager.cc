@@ -65,11 +65,6 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
     this->se->numAccessFootprintL3.sample(footprint);
   }
 
-  if (placeCacheLevel == 0) {
-    // L1 cache is not handled by us.
-    return false;
-  }
-
   bool hasHit = false;
   size_t hitLevel = this->caches.size();
   Cycles latency = Cycles(1);
@@ -116,6 +111,17 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
     }
   }
 
+  if (hitLevel < placeCacheLevel) {
+    this->se->numAccessHitHigherThanPlacedCacheLevel.sample(placeCacheLevel);
+  } else if (hitLevel > placeCacheLevel) {
+    this->se->numAccessHitLowerThanPlacedCacheLevel.sample(placeCacheLevel);
+  }
+
+  if (placeCacheLevel == 0) {
+    // L1 cache is not handled by us.
+    return false;
+  }
+
   /**
    * 1. If hit above the place cache level, we schedule a response according
    *    to its tag lookup latency and issue a functional access to the place
@@ -124,12 +130,30 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
    */
   auto pkt = this->createPacket(paddr, packetSize, memAccess);
   auto placeCache = this->caches[placeCacheLevel];
+  if (this->se->isOraclePlacementEnabled()) {
+    placeCache->functionalAccess(pkt, true);
+    if (hitLevel == this->caches.size()) {
+      latency += Cycles(10);
+    }
+    this->scheduleResponse(latency, memAccess, pkt);
+    return true;
+  }
+
   if (hitLevel < placeCacheLevel) {
     placeCache->functionalAccess(pkt, true);
     this->scheduleResponse(latency, memAccess, pkt);
   } else {
     // Do a real cache access and allow.
-    this->sendTimingRequest(pkt, placeCache);
+    if (this->se->isOraclePlacementEnabled()) {
+      auto sentLevel = hitLevel;
+      if (sentLevel == this->caches.size()) {
+        sentLevel -= 1;
+      }
+      auto sentCache = this->caches[sentLevel];
+      this->sendTimingRequest(pkt, sentCache);
+    } else {
+      this->sendTimingRequest(pkt, placeCache);
+    }
   }
 
   return true;
