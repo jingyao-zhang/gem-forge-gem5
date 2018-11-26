@@ -55,6 +55,7 @@
 #include <unordered_set>
 
 #include "base/misc.hh" // fatal, panic, and warn
+#include "cpu/llvm_trace/accelerator/stream/coalesced_stream.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/base.hh"
 #include "mem/cache/blk.hh"
@@ -569,6 +570,41 @@ public:
    */
   void serialize(CheckpointOut &cp) const override;
   void unserialize(CheckpointIn &cp) override;
+
+  std::unordered_map<CacheBlk *, std::unordered_set<Stream *>> blkToStreamMap;
+
+  struct StreamStats {
+    Stream *stream;
+    uint64_t bypasses;
+    uint64_t accesses;
+    uint64_t misses;
+    uint64_t reuses;
+    uint64_t currentAccesses;
+    uint64_t currentBypasses;
+    uint64_t currentMisses;
+    uint64_t currentReuses;
+
+    StreamStats(Stream *_stream)
+        : stream(_stream), bypasses(0), accesses(0), misses(0), reuses(0),
+          currentAccesses(0), currentBypasses(0), currentMisses(0),
+          currentReuses(0) {}
+    void clear() {
+      this->currentAccesses = 0;
+      this->currentBypasses = 0;
+      this->currentMisses = 0;
+      this->currentReuses = 0;
+    }
+  };
+
+  std::unordered_map<Stream *, StreamStats> streamStatsMap;
+
+  StreamStats &getOrInitializeStreamStats(Stream *stream);
+
+  void dumpStreamStats(std::ostream &os) const;
+  Stream *getStreamFromPacket(PacketPtr pkt) const;
+  CoalescedStream *getCoalescedStreamFromPacket(PacketPtr pkt) const;
+  void incMissCountStream(PacketPtr pkt);
+  void incHitCountStream(PacketPtr pkt, CacheBlk *blk);
 };
 
 /**

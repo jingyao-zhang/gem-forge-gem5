@@ -106,6 +106,8 @@ def config_cache(options, system):
             dcache = dcache_class(size=options.l1d_size,
                                   assoc=options.l1d_assoc,
                                   mshrs=options.l1d_mshrs)
+            if options.gem_forge_stream_engine_l1d == 'aware-lru':
+                dcache.tags = StreamLRU()
 
             # If we have a walker cache specified, instantiate two
             # instances here

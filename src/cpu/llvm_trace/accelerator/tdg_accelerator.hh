@@ -57,6 +57,8 @@ public:
   void tick();
   void dump();
 
+  void exitDump();
+
   StreamEngine *getStreamEngine();
 
   // void useStream(uint64_t streamId, const LLVMDynamicInst *user);

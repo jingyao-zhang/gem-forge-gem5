@@ -10,6 +10,7 @@
 #include "mem/cache/blk.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/base.hh"
+#include "mem/cache/tags/stream_lru.hh"
 #include "sim/sim_exit.hh"
 
 StreamAwareCache::StreamAwareCache(const StreamAwareCacheParams *p)
@@ -189,6 +190,10 @@ void StreamAwareCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
   // Read requester(s) to have buffered the ReadEx snoop and to
   // invalidate their blocks after receiving them.
   // assert(!pkt->needsWritable() || blk->isWritable());
+  if (pkt->getOffset(blkSize) + pkt->getSize() > blkSize) {
+    inform("Blocke size %lu, pkt offset %lu, size %lu.\n", blkSize,
+           pkt->getOffset(blkSize), pkt->getSize());
+  }
   assert(pkt->getOffset(blkSize) + pkt->getSize() <= blkSize);
 
   // Check RMW operations first since both isRead() and
@@ -1738,7 +1743,22 @@ CacheBlk *StreamAwareCache::handleFill(PacketPtr pkt, CacheBlk *blk,
       DPRINTF(Cache, "using temp block for %#llx (%s)\n", addr,
               is_secure ? "s" : "ns");
     } else {
-      tags->insertBlock(pkt, blk);
+
+      bool inserted = false;
+      if (auto coalescedStream = this->getCoalescedStreamFromPacket(pkt)) {
+        auto footprint = coalescedStream->getFootprint(this->blkSize);
+        if (footprint > (this->size / this->blkSize) * 0.01) {
+          // We believe this is not cacheable, thus predict to be miss.
+          if (auto streamLRUTag = dynamic_cast<StreamLRU *>(this->tags)) {
+            inserted = true;
+            streamLRUTag->insertBlockLRU(pkt, blk);
+          }
+        }
+      }
+
+      if (!inserted) {
+        tags->insertBlock(pkt, blk);
+      }
     }
 
     // we should never be overwriting a valid block

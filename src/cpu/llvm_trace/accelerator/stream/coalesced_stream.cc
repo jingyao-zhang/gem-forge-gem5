@@ -215,6 +215,9 @@ void CoalescedStream::enqueueFIFO() {
   this->FIFO.emplace_back(this->FIFOIdx, oracleUsed, nextValuePair.second,
                           this->getElementSize(),
                           LLVMDynamicInst::INVALID_SEQ_NUM);
+  // if (this->FIFO.back().cacheBlocks > 1) {
+  //   inform("%s.\n", this->getStreamName().c_str());
+  // }
   this->FIFOIdx.next();
 
   /**
@@ -311,7 +314,8 @@ void CoalescedStream::markAddressReady(FIFOEntry &entry) {
 
   if (useNewMerge) {
     // Start to construct the packets for all cache blocks.
-    for (const auto cacheBlockAddr : entry.cacheBlockAddrs) {
+    for (int i = 0; i < entry.cacheBlocks; ++i) {
+      const auto cacheBlockAddr = entry.cacheBlockAddrs[i];
       Addr paddr;
       if (cpu->isStandalone()) {
         paddr = cpu->translateAndAllocatePhysMem(cacheBlockAddr);
@@ -327,7 +331,8 @@ void CoalescedStream::markAddressReady(FIFOEntry &entry) {
       }
 
       // Bring in the whole cache block.
-      auto packetSize = cpu->system->cacheLineSize();
+      // auto packetSize = cpu->system->cacheLineSize();
+      auto packetSize = 8;
       // Construct the packet.
       auto memAccess = new StreamMemAccess(this, entry.idx);
       this->memAccesses.insert(memAccess);
@@ -403,7 +408,8 @@ void CoalescedStream::markAddressReady(FIFOEntry &entry) {
         // The StreamPlacementManager handled this packet.
       } else {
         // Else we sent out the packet.
-        cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+        cpu->sendRequest(paddr, packetSize, memAccess, nullptr,
+                         reinterpret_cast<Addr>(this));
       }
 
       if (this->primaryLogicalStream->info.type() == "load") {
@@ -485,6 +491,9 @@ uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
   } else if (pattern.val_pattern() == "QUARDRIC") {
     // For 2 dimention linear stream, first compute footprint of one row.
     auto rowFootprint = pattern.ni() * this->getElementSize() / cacheBlockSize;
+    if (pattern.stride_i() > cacheBlockSize) {
+      rowFootprint = pattern.ni();
+    }
     /**
      * Now we check if there is any chance that the next row will overlap with
      * the previous row.
@@ -502,6 +511,10 @@ uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
     // For all other patterns, underestimate.
     return 1;
   }
+}
+
+uint64_t CoalescedStream::getTrueFootprint() const {
+  return this->primaryLogicalStream->history->getNumCacheLines();
 }
 
 void CoalescedStream::dump() const {

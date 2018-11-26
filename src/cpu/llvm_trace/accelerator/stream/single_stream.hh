@@ -29,6 +29,8 @@ public:
 
   void configure(StreamConfigInst *inst) override;
 
+  uint64_t getTrueFootprint() const override;
+
 private:
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;

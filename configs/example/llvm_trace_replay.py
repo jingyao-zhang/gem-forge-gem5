@@ -229,9 +229,17 @@ for cpu in system.cpu:
         cpu.dcache.stream_aware_replacement = True
     elif options.gem_forge_stream_engine_l1d == 'placement':
         cpu.streamEngineEnablePlacement = True
+        cpu.streamEnginePlacement = options.gem_forge_stream_engine_l1d
     elif options.gem_forge_stream_engine_l1d == 'placement-oracle':
         cpu.streamEngineEnablePlacement = True
         cpu.streamEngineEnablePlacementOracle = True
+        cpu.streamEnginePlacement = options.gem_forge_stream_engine_l1d
+    elif options.gem_forge_stream_engine_l1d == 'placement-expr':
+        cpu.streamEngineEnablePlacement = True
+        cpu.streamEnginePlacement = options.gem_forge_stream_engine_l1d
+    elif options.gem_forge_stream_engine_l1d == 'placement-footprint':
+        cpu.streamEngineEnablePlacement = True
+        cpu.streamEnginePlacement = options.gem_forge_stream_engine_l1d
 
 
     if options.l1_5dcache:
@@ -244,6 +252,8 @@ for cpu in system.cpu:
         # Connect them
         cpu.dcache.mem_side = cpu.l1_5dcache.cpu_side
         cpu.l1_5dcache.mem_side = system.tol2bus.slave
+        if (options.gem_forge_stream_engine_l1d == 'aware-l15-lru'):
+            cpu.l1_5dcache.tags = StreamLRU()
 
 if options.llvm_prefetch == 1:
     for cpu in system.cpu:

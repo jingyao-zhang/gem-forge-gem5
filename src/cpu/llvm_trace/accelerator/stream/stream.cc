@@ -799,6 +799,11 @@ Stream::FIFOEntry::FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
     lhsCacheBlock += cacheBlockSize;
     this->cacheBlocks++;
   }
+  // if (this->cacheBlocks > 1) {
+  //   inform("addr %x size %x lhs %x rhs %x blocks %d.\n", this->address,
+  //          this->size, this->address & (~(cacheBlockSize - 1)), rhsCacheBlock,
+  //          this->cacheBlocks);
+  // }
 }
 
 void Stream::FIFOEntry::step(uint64_t stepSeqNum) {

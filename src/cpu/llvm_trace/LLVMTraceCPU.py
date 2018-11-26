@@ -74,6 +74,7 @@ class LLVMTraceCPU(BaseCPU):
         False, "Whether the stream engine enable stream placement.")
     streamEngineEnablePlacementOracle = Param.Bool(
         False, "Whether the stream engine enable stream placement oracle.")
+    streamEnginePlacement = Param.String("placement", "Which placement techinque to use.")
 
     @classmethod
     def memory_mode(cls):

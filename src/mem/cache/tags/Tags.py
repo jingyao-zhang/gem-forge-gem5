@@ -71,6 +71,11 @@ class LRU(BaseSetAssoc):
     cxx_class = 'LRU'
     cxx_header = "mem/cache/tags/lru.hh"
 
+class StreamLRU(BaseSetAssoc):
+    type = 'StreamLRU'
+    cxx_class = 'StreamLRU'
+    cxx_header = "mem/cache/tags/stream_lru.hh"
+
 class RandomRepl(BaseSetAssoc):
     type = 'RandomRepl'
     cxx_class = 'RandomRepl'

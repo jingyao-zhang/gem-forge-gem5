@@ -232,6 +232,7 @@ protected:
   virtual void enqueueFIFO() = 0;
   virtual void markAddressReady(FIFOEntry &entry) = 0;
   virtual void markValueReady(FIFOEntry &entry) = 0;
+  virtual uint64_t getTrueFootprint() const = 0;
 
   bool checkIfEntryBaseValuesValid(const FIFOEntry &entry) const;
 

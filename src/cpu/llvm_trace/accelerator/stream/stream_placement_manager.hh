@@ -15,6 +15,8 @@ public:
 
   void dumpCacheStreamAwarePortStatus();
 
+  void dumpStreamCacheStats();
+
   struct ResponseEvent : public Event {
   public:
     LLVMTraceCPU *cpu;
@@ -40,6 +42,12 @@ private:
 
   std::vector<Cache *> caches;
   std::vector<Cycles> lookupLatency;
+
+  bool accessNoMSHR(Stream *stream, Addr paddr, int packetSize,
+                    Stream::StreamMemAccess *memAccess);
+
+  bool accessExpress(Stream *stream, Addr paddr, int packetSize,
+                     Stream::StreamMemAccess *memAccess);
 
   size_t whichCacheLevelToPlace(CoalescedStream *stream) const;
 

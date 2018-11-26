@@ -44,8 +44,17 @@ public:
   bool isMergeEnabled() const { return this->enableMerge; }
 
   bool isOracleEnabled() const { return this->isOracle; }
+
+  bool isPlacementEnabled() const { return this->enableStreamPlacement; }
   bool isOraclePlacementEnabled() const {
     return this->enableStreamPlacementOracle;
+  }
+  const std::string &getPlacement() const { return this->placement; }
+
+  void exitDump() const {
+    if (streamPlacementManager != nullptr) {
+      this->streamPlacementManager->dumpStreamCacheStats();
+    }
   }
 
   /**
@@ -103,6 +112,7 @@ private:
   bool enableMerge;
   bool enableStreamPlacement;
   bool enableStreamPlacementOracle;
+  std::string placement;
 
   Stream *getOrInitializeStream(
       const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);

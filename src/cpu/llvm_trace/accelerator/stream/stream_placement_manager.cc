@@ -3,6 +3,7 @@
 #include "coalesced_stream.hh"
 #include "stream_engine.hh"
 
+#include "base/output.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "mem/cache/cache.hh"
 
@@ -47,6 +48,23 @@ StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
 bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
                                     Stream::StreamMemAccess *memAccess) {
 
+  if (!this->se->isPlacementEnabled()) {
+    return false;
+  }
+
+  if (this->se->getPlacement() == "placement") {
+    // Raw case.
+    return false;
+  }
+
+  if (this->se->getPlacement() == "placement-no-mshr") {
+    return this->accessNoMSHR(stream, paddr, packetSize, memAccess);
+  }
+
+  if (this->se->getPlacement() == "placement-expr") {
+    return this->accessExpress(stream, paddr, packetSize, memAccess);
+  }
+
   auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
   if (coalescedStream == nullptr) {
     // So far we only consider coalesced streams.
@@ -56,14 +74,6 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
   auto placeCacheLevel = this->whichCacheLevelToPlace(coalescedStream);
 
   this->se->numAccessPlacedInCacheLevel.sample(placeCacheLevel);
-  auto footprint = coalescedStream->getFootprint(cpu->system->cacheLineSize());
-  if (placeCacheLevel == 0) {
-    this->se->numAccessFootprintL1.sample(footprint);
-  } else if (placeCacheLevel == 1) {
-    this->se->numAccessFootprintL2.sample(footprint);
-  } else {
-    this->se->numAccessFootprintL3.sample(footprint);
-  }
 
   bool hasHit = false;
   size_t hitLevel = this->caches.size();
@@ -117,11 +127,6 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
     this->se->numAccessHitLowerThanPlacedCacheLevel.sample(placeCacheLevel);
   }
 
-  if (placeCacheLevel == 0) {
-    // L1 cache is not handled by us.
-    return false;
-  }
-
   /**
    * 1. If hit above the place cache level, we schedule a response according
    *    to its tag lookup latency and issue a functional access to the place
@@ -131,7 +136,7 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
   auto pkt = this->createPacket(paddr, packetSize, memAccess);
   auto placeCache = this->caches[placeCacheLevel];
   if (this->se->isOraclePlacementEnabled()) {
-    placeCache->functionalAccess(pkt, true);
+    placeCache->recvAtomic(pkt);
     if (hitLevel == this->caches.size()) {
       latency += Cycles(10);
     }
@@ -139,8 +144,13 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
     return true;
   }
 
-  if (hitLevel < placeCacheLevel) {
-    placeCache->functionalAccess(pkt, true);
+  if (placeCacheLevel == 0) {
+    // L1 cache is not handled by us.
+    return false;
+  }
+
+  if (hitLevel <= placeCacheLevel) {
+    placeCache->recvAtomic(pkt);
     this->scheduleResponse(latency, memAccess, pkt);
   } else {
     // Do a real cache access and allow.
@@ -157,6 +167,96 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
   }
 
   return true;
+}
+
+bool StreamPlacementManager::accessNoMSHR(Stream *stream, Addr paddr,
+                                          int packetSize,
+                                          Stream::StreamMemAccess *memAccess) {
+
+  auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
+  if (coalescedStream == nullptr) {
+    // So far we only consider coalesced streams.
+    return false;
+  }
+
+  // bool hasHit = false;
+  // size_t hitLevel = this->caches.size();
+  Cycles latency = Cycles(0);
+
+  for (int cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
+    // latency += this->lookupLatency[cacheLevel];
+    latency += Cycles(2);
+    auto cache = this->caches[cacheLevel];
+    auto isHitThisLevel = this->isHit(cache, paddr);
+    if (isHitThisLevel) {
+      // hasHit = true;
+      // hitLevel = cacheLevel;
+      break;
+    }
+  }
+
+  /**
+   * Schedule the response.
+   */
+  auto pkt = this->createPacket(paddr, packetSize, memAccess);
+  this->caches[0]->recvAtomic(pkt);
+  this->scheduleResponse(latency, memAccess, pkt);
+
+  return true;
+}
+
+bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
+                                           int packetSize,
+                                           Stream::StreamMemAccess *memAccess) {
+  Cycles latency(0);
+  auto L1 = this->caches[0];
+  auto &L1Stats = L1->getOrInitializeStreamStats(stream);
+  if (L1Stats.accesses <= 100) {
+    return false;
+  }
+  if (L1Stats.misses > L1Stats.accesses * 0.95f &&
+      L1Stats.reuses < L1Stats.accesses * 0.1f) {
+
+    // Hack to hit in L2.
+    latency += Cycles(1);
+    auto pkt = this->createPacket(paddr, packetSize, memAccess);
+    // this->caches[1]->recvAtomic(pkt);
+
+    // We decide to bypass L1.
+    L1Stats.bypasses++;
+    L1Stats.currentBypasses++;
+    // Periodically clear the stats if we reaches a large number of bypasses.
+    if (L1Stats.currentBypasses == 10000) {
+      L1Stats.clear();
+    }
+
+    // Check if we want to bypass L2.
+    auto L2 = this->caches[0];
+    auto &L2Stats = L1->getOrInitializeStreamStats(stream);
+    if (L2Stats.accesses > 100 && L2Stats.misses > L2Stats.accesses * 0.95f &&
+        L2Stats.reuses < L2Stats.accesses * 0.1f) {
+      // Bypassing L2.
+
+      // Send request to L3.
+      auto L3 = this->caches[2];
+      this->sendTimingRequest(pkt, L3);
+
+      L2Stats.bypasses++;
+      L2Stats.currentBypasses++;
+      if (L2Stats.currentBypasses == 1000) {
+        L2Stats.clear();
+      }
+
+      return true;
+    } else {
+      // Not bypassing L2.
+      this->sendTimingRequest(pkt, L2);
+      return true;
+    }
+
+    // this->scheduleResponse(latency, memAccess, pkt);
+  }
+  return false;
 }
 
 bool StreamPlacementManager::isHit(Cache *cache, Addr paddr) const {
@@ -214,15 +314,45 @@ void StreamPlacementManager::dumpCacheStreamAwarePortStatus() {
 size_t
 StreamPlacementManager::whichCacheLevelToPlace(CoalescedStream *stream) const {
   auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
+  if (this->se->getPlacement() == "placement-footprint") {
+    footprint = stream->getTrueFootprint();
+  }
+  auto placeCacheLevel = this->caches.size() - 1;
   for (size_t cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     auto cache = this->caches[cacheLevel];
     auto cacheCapacity = cache->getCacheSize() / cpu->system->cacheLineSize();
     // inform("Cache %d size %lu capacity %lu.\n", cacheLevel,
     //        cache->getCacheSize(), cacheCapacity);
     if (footprint < cacheCapacity) {
-      return cacheLevel;
+      placeCacheLevel = cacheLevel;
+      break;
     }
   }
+  if (placeCacheLevel == 0) {
+    this->se->numAccessFootprintL1.sample(footprint);
+  } else if (placeCacheLevel == 1) {
+    this->se->numAccessFootprintL2.sample(footprint);
+  } else {
+    this->se->numAccessFootprintL3.sample(footprint);
+  }
   assert(!this->caches.empty());
-  return this->caches.size() - 1;
+  return placeCacheLevel;
+}
+
+void StreamPlacementManager::dumpStreamCacheStats() {
+  {
+    auto L1 = this->caches[0];
+    auto &o = *simout.findOrCreate("L1Stream.txt")->stream();
+    L1->dumpStreamStats(o);
+  }
+  {
+    auto L2 = this->caches[1];
+    auto &o = *simout.findOrCreate("L2Stream.txt")->stream();
+    L2->dumpStreamStats(o);
+  }
+  {
+    auto L3 = this->caches[2];
+    auto &o = *simout.findOrCreate("L3Stream.txt")->stream();
+    L3->dumpStreamStats(o);
+  }
 }

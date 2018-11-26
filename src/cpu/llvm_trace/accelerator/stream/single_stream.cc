@@ -133,6 +133,9 @@ void SingleStream::enqueueFIFO() {
   this->FIFO.emplace_back(this->FIFOIdx, oracleUsed, nextValuePair.second,
                           this->info.element_size(),
                           LLVMDynamicInst::INVALID_SEQ_NUM);
+  // if (this->FIFO.back().cacheBlocks > 1) {
+  //   inform("%s.\n", this->getStreamName().c_str());
+  // }
   this->FIFOIdx.next();
 
   /**
@@ -221,57 +224,120 @@ void SingleStream::markAddressReady(FIFOEntry &entry) {
     return;
   }
 
-  // After this point, we are going to fetch the data from cache.
-  se->numMemElementsFetched++;
-
   // Start to construct the packets.
-  auto size = entry.size;
-  for (int packetSize, inflyPacketsSize = 0, packetIdx = 0;
-       inflyPacketsSize < size; inflyPacketsSize += packetSize, packetIdx++) {
-    Addr paddr, vaddr;
-    if (cpu->isStandalone()) {
-      vaddr = entry.address + inflyPacketsSize;
-      paddr = cpu->translateAndAllocatePhysMem(vaddr);
-    } else {
-      STREAM_PANIC("Stream so far can only work in standalone mode.");
-    }
-    packetSize = size - inflyPacketsSize;
-    // Do not span across cache line.
-    auto cacheLineSize = cpu->system->cacheLineSize();
-    if (((paddr % cacheLineSize) + packetSize) > cacheLineSize) {
-      packetSize = cacheLineSize - (paddr % cacheLineSize);
+  bool useNewMerge = true;
+
+  if (useNewMerge) {
+
+    for (int i = 0; i < entry.cacheBlocks; ++i) {
+      const auto cacheBlockAddr = entry.cacheBlockAddrs[i];
+      Addr paddr;
+      if (cpu->isStandalone()) {
+        paddr = cpu->translateAndAllocatePhysMem(cacheBlockAddr);
+      } else {
+        panic("Stream so far can only work in standalone mode.");
+      }
+
+      // Check if we enabled the merge.
+      if (this->se->isMergeEnabled()) {
+        if (this->isCacheBlockAlive(cacheBlockAddr)) {
+          continue;
+        }
+      }
+
+      // Bring in the whole cache block.
+      // auto packetSize = cpu->system->cacheLineSize();
+      auto packetSize = 8;
+      // Construct the packet.
+      auto memAccess = new StreamMemAccess(this, entry.idx);
+      this->memAccesses.insert(memAccess);
+
+      auto streamPlacementManager = this->se->getStreamPlacementManager();
+      if (streamPlacementManager != nullptr &&
+          streamPlacementManager->access(this, paddr, packetSize, memAccess)) {
+        // The StreamPlacementManager handled this packet.
+      } else {
+        // Else we sent out the packet.
+        cpu->sendRequest(paddr, packetSize, memAccess, nullptr,
+                         reinterpret_cast<Addr>(this));
+      }
+
+      if (this->info.type() == "load") {
+        entry.inflyLoadPackets++;
+      } else if (this->info.type() == "store") {
+      } else {
+        // Not possible for this case.
+        panic("Invalid stream type here.");
+      }
     }
 
-    // Construct the packet.
     if (this->info.type() == "load") {
-      /**
-       * This is a load stream, create the mem inst.
-       */
-      STREAM_ENTRY_DPRINTF(
-          entry, "Send load packet #%d with addr %p, size %d.\n", packetIdx,
-          reinterpret_cast<void *>(vaddr), packetSize);
-      auto memAccess = new StreamMemAccess(this, entry.idx);
-      this->memAccesses.insert(memAccess);
-      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
-
-      entry.inflyLoadPackets++;
+      if (entry.inflyLoadPackets == 0) {
+        // Successfully found all cache blocks alive.
+        this->markValueReady(entry);
+      } else {
+        this->se->numMemElementsFetched++;
+      }
     } else if (this->info.type() == "store") {
-      /**
-       * This is a store stream. Also send the load request to bring up the
-       * cache line.
-       */
-      STREAM_ENTRY_DPRINTF(
-          entry, "Send store fetch packet #d with addr %p, size %d.\n",
-          packetIdx, reinterpret_cast<void *>(vaddr), packetSize);
-      auto memAccess = new StreamMemAccess(this, entry.idx);
-      this->memAccesses.insert(memAccess);
-      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+      this->se->numMemElementsFetched++;
+      this->markValueReady(entry);
+    } else {
+      // Not possible for this case.
+      panic("Invalid stream type here.");
     }
-  }
 
-  if (this->info.type() == "store") {
-    // Store stream is always value ready.
-    this->markValueReady(entry);
+  } else {
+    // After this point, we are going to fetch the data from cache.
+    se->numMemElementsFetched++;
+
+    auto size = entry.size;
+    for (int packetSize, inflyPacketsSize = 0, packetIdx = 0;
+         inflyPacketsSize < size; inflyPacketsSize += packetSize, packetIdx++) {
+      Addr paddr, vaddr;
+      if (cpu->isStandalone()) {
+        vaddr = entry.address + inflyPacketsSize;
+        paddr = cpu->translateAndAllocatePhysMem(vaddr);
+      } else {
+        STREAM_PANIC("Stream so far can only work in standalone mode.");
+      }
+      packetSize = size - inflyPacketsSize;
+      // Do not span across cache line.
+      auto cacheLineSize = cpu->system->cacheLineSize();
+      if (((paddr % cacheLineSize) + packetSize) > cacheLineSize) {
+        packetSize = cacheLineSize - (paddr % cacheLineSize);
+      }
+
+      // Construct the packet.
+      if (this->info.type() == "load") {
+        /**
+         * This is a load stream, create the mem inst.
+         */
+        STREAM_ENTRY_DPRINTF(
+            entry, "Send load packet #%d with addr %p, size %d.\n", packetIdx,
+            reinterpret_cast<void *>(vaddr), packetSize);
+        auto memAccess = new StreamMemAccess(this, entry.idx);
+        this->memAccesses.insert(memAccess);
+        cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+
+        entry.inflyLoadPackets++;
+      } else if (this->info.type() == "store") {
+        /**
+         * This is a store stream. Also send the load request to bring up the
+         * cache line.
+         */
+        STREAM_ENTRY_DPRINTF(
+            entry, "Send store fetch packet #d with addr %p, size %d.\n",
+            packetIdx, reinterpret_cast<void *>(vaddr), packetSize);
+        auto memAccess = new StreamMemAccess(this, entry.idx);
+        this->memAccesses.insert(memAccess);
+        cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+      }
+    }
+
+    if (this->info.type() == "store") {
+      // Store stream is always value ready.
+      this->markValueReady(entry);
+    }
   }
 }
 
@@ -295,6 +361,10 @@ void SingleStream::markValueReady(FIFOEntry &entry) {
   }
 
   this->triggerReady(this, entry.idx);
+}
+
+uint64_t SingleStream::getTrueFootprint() const {
+  return this->history->getNumCacheLines();
 }
 
 void SingleStream::dump() const {

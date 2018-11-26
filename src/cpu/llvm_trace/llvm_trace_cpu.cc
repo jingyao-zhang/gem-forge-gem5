@@ -159,6 +159,7 @@ void LLVMTraceCPU::tick() {
     // If in standalone mode, we can exit.
     if (this->isStandalone()) {
       this->regionStats->dump();
+      this->accelManager->exitDump();
       exitSimLoop("Datagraph finished.\n");
     } else {
       DPRINTF(LLVMTraceCPU, "Activate the normal CPU\n");
@@ -176,16 +177,34 @@ void LLVMTraceCPU::tick() {
 }
 
 void LLVMTraceCPU::warmUpCache(const std::string &fileName) {
+
+  if (!this->isStandalone()) {
+    // Only warm up cache in standalone mode.
+    return;
+  }
+
   std::ifstream cacheFile(fileName);
   if (!cacheFile.is_open()) {
     panic("Failed to open cache warm up file %s.\n", fileName.c_str());
   }
-  PortProxy proxy(this->dataPort, 64);
+  // PortProxy proxy(this->dataPort, 64);
   Addr vaddr;
-  uint8_t data[4];
+  constexpr auto size = 4;
+  uint8_t data[size];
   while (cacheFile >> std::hex >> vaddr) {
     auto paddr = this->translateAndAllocatePhysMem(vaddr);
-    proxy.readBlob(paddr, data, 4);
+    // proxy.readBlob(paddr, data, 4);
+
+    int contextId = 0;
+    RequestPtr req = new Request(paddr, size, 0, this->_dataMasterId,
+                                 static_cast<InstSeqNum>(0), contextId);
+    PacketPtr pkt;
+    pkt = Packet::createRead(req);
+    pkt->dataStatic(data);
+    this->dataPort.sendAtomic(pkt);
+
+    delete pkt->req;
+    delete pkt;
   }
   cacheFile.close();
 }

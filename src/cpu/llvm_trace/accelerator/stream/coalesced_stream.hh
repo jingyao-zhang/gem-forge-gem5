@@ -65,6 +65,7 @@ public:
    * Used for stream aware cache to determine if it should cache the stream.
    */
   uint64_t getFootprint(unsigned cacheBlockSize) const;
+  uint64_t getTrueFootprint() const override;
 
 protected:
   std::unordered_map<uint64_t, LogicalStream> logicalStreamMap;

@@ -63,6 +63,7 @@
 #include "mem/cache/blk.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/base.hh"
+#include "mem/cache/tags/stream_lru.hh"
 #include "sim/sim_exit.hh"
 
 Cache::Cache(const CacheParams *p)
@@ -365,6 +366,7 @@ bool Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
       if (blk == nullptr) {
         // no replaceable block available: give up, fwd to next level.
         incMissCount(pkt);
+        incMissCountStream(pkt);
         return false;
       }
       tags->insertBlock(pkt, blk);
@@ -390,6 +392,7 @@ bool Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     std::memcpy(blk->data, pkt->getConstPtr<uint8_t>(), blkSize);
     DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
     incHitCount(pkt);
+    incHitCountStream(pkt, blk);
     return true;
   } else if (pkt->cmd == MemCmd::CleanEvict) {
     if (blk != nullptr) {
@@ -408,6 +411,7 @@ bool Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
              (pkt->needsWritable() ? blk->isWritable() : blk->isReadable())) {
     // OK to satisfy access
     incHitCount(pkt);
+    incHitCountStream(pkt, blk);
     satisfyRequest(pkt, blk);
     maintainClusivity(pkt->fromCache(), blk);
 
@@ -418,6 +422,7 @@ bool Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
   // or have block but need writable
 
   incMissCount(pkt);
+  incMissCountStream(pkt);
 
   if (blk == nullptr && pkt->isLLSC() && pkt->isWrite()) {
     // complete miss on store conditional... just give up now
@@ -564,6 +569,16 @@ bool Cache::recvTimingReq(PacketPtr pkt) {
     bool M5_VAR_USED success = memSidePort->sendTimingReq(pkt);
     assert(success);
     return true;
+  }
+
+  {
+    // Add statistics for stream.
+    auto stream = this->getStreamFromPacket(pkt);
+    if (stream != nullptr) {
+      auto &streamStats = this->getOrInitializeStreamStats(stream);
+      streamStats.accesses++;
+      streamStats.currentAccesses++;
+    }
   }
 
   promoteWholeLineWrites(pkt);
@@ -1632,6 +1647,7 @@ CacheBlk *Cache::allocateBlock(Addr addr, bool is_secure,
 }
 
 void Cache::invalidateBlock(CacheBlk *blk) {
+
   if (blk != tempBlock)
     tags->invalidate(blk);
   blk->invalidate();
@@ -1680,7 +1696,34 @@ CacheBlk *Cache::handleFill(PacketPtr pkt, CacheBlk *blk,
       DPRINTF(Cache, "using temp block for %#llx (%s)\n", addr,
               is_secure ? "s" : "ns");
     } else {
-      tags->insertBlock(pkt, blk);
+
+      auto iter = this->blkToStreamMap.find(blk);
+      if (iter != this->blkToStreamMap.end()) {
+        this->blkToStreamMap.erase(iter);
+      }
+
+      if (auto stream = this->getStreamFromPacket(pkt)) {
+        this->blkToStreamMap
+            .emplace(std::piecewise_construct, std::forward_as_tuple(blk),
+                     std::forward_as_tuple())
+            .first->second.insert(stream);
+      }
+
+      bool inserted = false;
+      if (auto coalescedStream = this->getCoalescedStreamFromPacket(pkt)) {
+        auto footprint = coalescedStream->getFootprint(this->blkSize);
+        if (footprint > (this->size / this->blkSize) * 0.5) {
+          // We believe this is not cacheable, thus predict to be miss.
+          if (auto streamLRUTag = dynamic_cast<StreamLRU *>(this->tags)) {
+            inserted = true;
+            streamLRUTag->insertBlockLRU(pkt, blk);
+          }
+        }
+      }
+
+      if (!inserted) {
+        tags->insertBlock(pkt, blk);
+      }
     }
 
     // we should never be overwriting a valid block
@@ -2428,6 +2471,73 @@ void Cache::unserialize(CheckpointIn &cp) {
   }
 }
 
+Stream *Cache::getStreamFromPacket(PacketPtr pkt) const {
+  /**
+   * Dangerous pointer casting! Only use stream aware cache with LLVMTraceCPU.
+   */
+  if (!pkt->req->hasInstSeqNum()) {
+    return nullptr;
+  }
+  TDGPacketHandler *handler =
+      reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
+
+  if (auto streamMemAccess = dynamic_cast<Stream::StreamMemAccess *>(handler)) {
+    auto stream = streamMemAccess->getStream();
+    return stream;
+  }
+  return nullptr;
+}
+
+CoalescedStream *Cache::getCoalescedStreamFromPacket(PacketPtr pkt) const {
+  /**
+   * Dangerous pointer casting! Only use stream aware cache with LLVMTraceCPU.
+   */
+  if (!pkt->req->hasInstSeqNum()) {
+    return nullptr;
+  }
+  TDGPacketHandler *handler =
+      reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
+
+  if (auto streamMemAccess = dynamic_cast<Stream::StreamMemAccess *>(handler)) {
+    auto stream = streamMemAccess->getStream();
+    if (auto coalescedStream = dynamic_cast<CoalescedStream *>(stream)) {
+      return coalescedStream;
+    }
+  }
+  return nullptr;
+}
+
+Cache::StreamStats &Cache::getOrInitializeStreamStats(Stream *stream) {
+  return this->streamStatsMap.emplace(stream, stream).first->second;
+}
+
+void Cache::incMissCountStream(PacketPtr pkt) {
+  if (auto stream = this->getStreamFromPacket(pkt)) {
+    auto &stat = this->getOrInitializeStreamStats(stream);
+    stat.misses++;
+    stat.currentMisses++;
+  }
+}
+
+void Cache::incHitCountStream(PacketPtr pkt, CacheBlk *blk) {
+  auto iter = this->blkToStreamMap.find(blk);
+  if (iter != this->blkToStreamMap.end()) {
+    for (auto stream : iter->second) {
+      auto &stat = this->getOrInitializeStreamStats(stream);
+      stat.reuses++;
+      stat.currentReuses++;
+    }
+  }
+}
+
+void Cache::dumpStreamStats(std::ostream &os) const {
+  for (const auto &ss : this->streamStatsMap) {
+    const auto &s = ss.second;
+    os << s.stream->getStreamName() << " b " << s.bypasses << " a "
+       << s.accesses << " m " << s.misses << " r " << s.reuses << std::endl;
+  }
+}
+
 ///////////////
 //
 // CpuSidePort
@@ -2501,24 +2611,7 @@ void Cache::StreamAwareCpuSidePort::recvTimingReqForStream(PacketPtr pkt) {
   if (!this->processEvent.scheduled()) {
     this->owner.schedule(this->processEvent, curTick() + 1);
   }
-  // this->process();
 }
-
-// void Cache::StreamAwareCpuSidePort::clearBlocked() {
-//   assert(this->blocked);
-//   this->blocked = false;
-//   this->process();
-//   if (!this->blocked) {
-//     // if (!this->blockedStreamPkts.empty()) {
-//     //   inform("mustSentRetry %d", this->mustSendRetry);
-//     //   assert(this->blockedStreamPkts.empty());
-//     // }
-//     // After processing the stream request we are still not blocked.
-//     if (this->mustSendRetry) {
-//       owner.schedule(sendRetryEvent, curTick() + 1);
-//     }
-//   }
-// }
 
 void Cache::StreamAwareCpuSidePort::processSendRetry() {
   // CacheSlavePort::processSendRetry();
@@ -2581,23 +2674,6 @@ void Cache::StreamAwareCpuSidePort::process() {
     auto pkt = this->blockedPkts.front();
     auto success = CpuSidePort::recvTimingReq(pkt);
     if (!success) {
-      // // We are blocked again.
-      // // For stream packet, we do not have to sendRetry.
-      // assert(this->blocked || this->mustSendRetry);
-      // auto hasScheduledRetryEvent = this->sendRetryEvent.scheduled();
-      // if (!oldHasScheduledRetryEvent) {
-      //   this->mustSendRetry = oldMustSendRetry;
-      // } else {
-      //   if (!hasScheduledRetryEvent) {
-      //     // We cancelled a retry event.
-      //     assert(!oldMustSendRetry);
-      //     assert(this->mustSendRetry);
-      //     this->mustSendRetry = true;
-      //   } else {
-      //     // We should really cacneled.
-      //     // assert(false);
-      //   }
-      // }
       break;
     } else {
       // Succeed.

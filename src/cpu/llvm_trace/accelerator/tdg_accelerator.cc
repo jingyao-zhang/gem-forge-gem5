@@ -79,7 +79,8 @@ void TDGAcceleratorManager::regStats() {
 // }
 
 // bool TDGAcceleratorManager::isStreamReady(uint64_t streamId,
-//                                           const LLVMDynamicInst *user) const {
+//                                           const LLVMDynamicInst *user) const
+//                                           {
 //   for (auto accelerator : this->accelerators) {
 //     if (auto se = dynamic_cast<StreamEngine *>(accelerator)) {
 //       return se->isStreamReady(streamId, user);
@@ -114,7 +115,8 @@ void TDGAcceleratorManager::regStats() {
 //       return se->commitStreamConfigure(streamId, configSeqNum);
 //     }
 //   }
-//   panic("Failed to find the stream manager to handle commitStreamConfigure.");
+//   panic("Failed to find the stream manager to handle
+//   commitStreamConfigure.");
 // }
 
 // void TDGAcceleratorManager::commitStreamStore(uint64_t streamId,
@@ -148,4 +150,10 @@ StreamEngine *TDGAcceleratorManager::getStreamEngine() {
 
 TDGAcceleratorManager *TDGAcceleratorManagerParams::create() {
   return new TDGAcceleratorManager(this);
+}
+
+void TDGAcceleratorManager::exitDump() {
+  if (auto se = this->getStreamEngine()) {
+    se->exitDump();
+  }
 }
