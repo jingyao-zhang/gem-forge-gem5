@@ -45,6 +45,7 @@ public:
   bool isOracleEnabled() const { return this->isOracle; }
 
   bool isPlacementEnabled() const { return this->enableStreamPlacement; }
+  bool isPlacementBusEnabled() const { return this->enableStreamPlacementBus; }
   bool isOraclePlacementEnabled() const {
     return this->enableStreamPlacementOracle;
   }
@@ -112,6 +113,7 @@ private:
   bool enableMerge;
   bool enableStreamPlacement;
   bool enableStreamPlacementOracle;
+  bool enableStreamPlacementBus;
   std::string placementLat;
   std::string placement;
 

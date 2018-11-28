@@ -71,7 +71,7 @@
 class CoherentXBar : public BaseXBar
 {
 
-  protected:
+  public:
 
     /**
      * Declare the layers of this crossbar, one vector for requests,
@@ -89,7 +89,7 @@ class CoherentXBar : public BaseXBar
     class CoherentXBarSlavePort : public QueuedSlavePort
     {
 
-      private:
+      protected:
 
         /** A reference to the crossbar to which this port belongs. */
         CoherentXBar &xbar;
@@ -137,6 +137,25 @@ class CoherentXBar : public BaseXBar
         virtual AddrRangeList getAddrRanges() const
         { return xbar.getAddrRanges(); }
 
+    };
+
+    class StreamAwareCoherentXBarSlavePort : public CoherentXBarSlavePort {
+      public:
+      StreamAwareCoherentXBarSlavePort(const std::string& _name,
+        CoherentXBar &_xbar, PortID _id);
+
+      bool recvTimingReq(PacketPtr pkt) override;
+      bool recvTimingReqForStream(PacketPtr pkt);
+
+      void sendRetryReq() override;
+      bool sendTimingResp(PacketPtr pkt) override;
+
+      std::list<PacketPtr> blockedPkts;
+      std::unordered_set<PacketPtr> handlingStreamPkts;
+      bool blocked;
+
+      void process();
+      EventFunctionWrapper processEvent;
     };
 
     /**
@@ -408,6 +427,8 @@ class CoherentXBar : public BaseXBar
     virtual ~CoherentXBar();
 
     virtual void regStats();
+
+    QueuedSlavePort *getSlavePort(int i);
 };
 
 #endif //__MEM_COHERENT_XBAR_HH__

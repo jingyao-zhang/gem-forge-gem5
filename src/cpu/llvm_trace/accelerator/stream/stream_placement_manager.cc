@@ -6,15 +6,16 @@
 #include "base/output.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "mem/cache/cache.hh"
-#include "mem/xbar.hh"
+#include "mem/coherent_xbar.hh"
 
 StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
                                                StreamEngine *_se)
-    : cpu(_cpu), se(_se), L2BusWidth(0) {
+    : cpu(_cpu), se(_se), L2Bus(nullptr), L2BusWidth(0) {
 
   Cache *L2 = nullptr;
   Cache *L1D = nullptr;
   Cache *L1_5D = nullptr;
+
   for (auto so : this->cpu->getSimObjectList()) {
     // inform("so name %s.n", so->name().c_str());
     if (so->name() == "system.l2") {
@@ -28,12 +29,15 @@ StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
       L1_5D = dynamic_cast<Cache *>(so);
     } else if (so->name() == "system.tol2bus") {
       // L2 bus.
-      const auto *XBarParam = dynamic_cast<const BaseXBarParams *>(so->params());
+      this->L2Bus = dynamic_cast<CoherentXBar *>(so);
+      const auto *XBarParam =
+          dynamic_cast<const BaseXBarParams *>(so->params());
       this->L2BusWidth = XBarParam->width;
     }
   }
 
   assert(this->L2BusWidth != 0);
+  assert(this->L2Bus != nullptr);
 
   assert(L1D != nullptr);
   this->caches.push_back(L1D);
@@ -230,7 +234,6 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
 
     // Hack to hit in L2.
     latency++;
-    auto pkt = this->createPacket(paddr, packetSize, memAccess);
 
     // We decide to bypass L1.
     L1Stats.bypasses++;
@@ -249,18 +252,34 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
       latency++;
 
       // Check if we want model the benefit of only transmitting a subblock.
-      if (this->se->getPlacementLat() == "sub") {
-        latency += divCeil(packetSize, this->L2BusWidth);
+      if (this->se->isPlacementBusEnabled()) {
+        // We model the bus.
+        if (this->se->getPlacementLat() == "sub") {
+          // Packet size is not modified.
+        } else {
+          // Packet size is charged to 64.
+          paddr = paddr & (~(64 - 1));
+          packetSize = 64;
+        }
+        if (this->se->getPlacementLat() != "imm") {
+          memAccess->setAdditionalDelay(latency);
+        }
+        auto pkt = this->createPacket(paddr, packetSize, memAccess);
+        this->sendTimingRequestToL2Bus(pkt);
       } else {
-        latency += 64 / this->L2BusWidth;
+        if (this->se->getPlacementLat() == "sub") {
+          latency += divCeil(packetSize, this->L2BusWidth);
+        } else {
+          latency += 64 / this->L2BusWidth;
+        }
+        // Send request to L3.
+        auto L3 = this->caches[2];
+        if (this->se->getPlacementLat() != "imm") {
+          memAccess->setAdditionalDelay(latency);
+        }
+        auto pkt = this->createPacket(paddr, packetSize, memAccess);
+        this->sendTimingRequest(pkt, L3);
       }
-
-      // Send request to L3.
-      auto L3 = this->caches[2];
-      if (this->se->getPlacementLat() != "imm") {
-        memAccess->setAdditionalDelay(latency);
-      }
-      this->sendTimingRequest(pkt, L3);
 
       L2Stats.bypasses++;
       L2Stats.currentBypasses++;
@@ -274,6 +293,7 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
       if (this->se->getPlacementLat() != "imm") {
         memAccess->setAdditionalDelay(latency);
       }
+      auto pkt = this->createPacket(paddr, packetSize, memAccess);
       this->sendTimingRequest(pkt, L2);
       return true;
     }
@@ -402,6 +422,17 @@ void StreamPlacementManager::sendTimingRequest(PacketPtr pkt, Cache *cache) {
   }
 
   streamAwareCpuSidePort->recvTimingReqForStream(pkt);
+}
+
+void StreamPlacementManager::sendTimingRequestToL2Bus(PacketPtr pkt) {
+  assert(this->L2Bus != nullptr);
+  auto slavePort = this->L2Bus->getSlavePort(3);
+  auto streamAwareSlavePort =
+      dynamic_cast<CoherentXBar::StreamAwareCoherentXBarSlavePort *>(slavePort);
+  if (streamAwareSlavePort == nullptr) {
+    panic("Failed to get the stream aware slave port from L2 bus.");
+  }
+  streamAwareSlavePort->recvTimingReqForStream(pkt);
 }
 
 void StreamPlacementManager::dumpCacheStreamAwarePortStatus() {

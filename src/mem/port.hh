@@ -389,7 +389,7 @@ class SlavePort : public BaseSlavePort
      * Send a retry to the master port that previously attempted a
      * sendTimingReq to this slave port and failed.
      */
-    void sendRetryReq();
+    virtual void sendRetryReq();
 
     /**
      * Send a retry to the master port that previously attempted a

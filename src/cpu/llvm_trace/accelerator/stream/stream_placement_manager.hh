@@ -4,6 +4,7 @@
 #include "stream.hh"
 
 class Cache;
+class CoherentXBar;
 class CoalescedStream;
 
 class StreamPlacementManager {
@@ -44,6 +45,7 @@ private:
 
   std::vector<Cache *> caches;
   std::vector<Cycles> lookupLatency;
+  CoherentXBar *L2Bus;
 
   uint32_t L2BusWidth;
 
@@ -65,6 +67,7 @@ private:
   void scheduleResponse(Cycles latency, Stream::StreamMemAccess *memAccess,
                         PacketPtr pkt);
   void sendTimingRequest(PacketPtr pkt, Cache *cache);
+  void sendTimingRequestToL2Bus(PacketPtr pkt);
 };
 
 #endif

@@ -218,6 +218,8 @@ MemConfig.config_mem(options, system)
 if options.llvm_mcpat == 1:
     system.mcpat_manager = McPATManager()
 
+system.tol2bus.snoop_filter = NULL
+
 for cpu in system.cpu:
     if options.l1_5dcache:
         # Add the L1.5 dcache.
@@ -260,6 +262,8 @@ for cpu in system.cpu:
             cpu.streamEnginePlacementLat = 'sub'
         elif 'imm' in y:
             cpu.streamEnginePlacementLat = 'imm'
+        if 'bus' in y:
+            cpu.streamEngineEnablePlacementBus = True
 
 
 if options.llvm_prefetch == 1:
