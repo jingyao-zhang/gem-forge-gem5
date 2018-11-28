@@ -367,6 +367,8 @@ uint64_t SingleStream::getTrueFootprint() const {
   return this->history->getNumCacheLines();
 }
 
+uint64_t SingleStream::getFootprint(unsigned cacheBlockSize) const { return 1; }
+
 void SingleStream::dump() const {
   inform("Dump for stream %s.\n======================",
          this->getStreamName().c_str());

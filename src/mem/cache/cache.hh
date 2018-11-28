@@ -123,7 +123,9 @@ public:
      */
     void process();
 
+    bool blockedUpper;
     EventFunctionWrapper processEvent;
+
   };
 
   /**

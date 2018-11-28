@@ -219,29 +219,6 @@ if options.llvm_mcpat == 1:
     system.mcpat_manager = McPATManager()
 
 for cpu in system.cpu:
-    if options.gem_forge_stream_engine_l1d == 'aware-replace':
-        # stream-aware cache must be used with stream merge.
-        # assert(options.gem_forge_stream_engine_enable_merge == 1)
-        cpu.dcache.stream_aware_replacement = True
-    elif options.gem_forge_stream_engine_l1d == 'aware-miss-spec':
-        assert(options.gem_forge_stream_engine_enable_merge == 1)
-        cpu.dcache.stream_aware_miss_speculation = True
-        cpu.dcache.stream_aware_replacement = True
-    elif options.gem_forge_stream_engine_l1d == 'placement':
-        cpu.streamEngineEnablePlacement = True
-        cpu.streamEnginePlacement = options.gem_forge_stream_engine_l1d
-    elif options.gem_forge_stream_engine_l1d == 'placement-oracle':
-        cpu.streamEngineEnablePlacement = True
-        cpu.streamEngineEnablePlacementOracle = True
-        cpu.streamEnginePlacement = options.gem_forge_stream_engine_l1d
-    elif options.gem_forge_stream_engine_l1d == 'placement-expr':
-        cpu.streamEngineEnablePlacement = True
-        cpu.streamEnginePlacement = options.gem_forge_stream_engine_l1d
-    elif options.gem_forge_stream_engine_l1d == 'placement-footprint':
-        cpu.streamEngineEnablePlacement = True
-        cpu.streamEnginePlacement = options.gem_forge_stream_engine_l1d
-
-
     if options.l1_5dcache:
         # Add the L1.5 dcache.
         cpu.l1_5dcache = L1_5_DCache(
@@ -254,6 +231,36 @@ for cpu in system.cpu:
         cpu.l1_5dcache.mem_side = system.tol2bus.slave
         if (options.gem_forge_stream_engine_l1d == 'aware-l15-lru'):
             cpu.l1_5dcache.tags = StreamLRU()
+
+    if options.gem_forge_stream_engine_l1d == 'aware-replace':
+        # stream-aware cache must be used with stream merge.
+        # assert(options.gem_forge_stream_engine_enable_merge == 1)
+        cpu.dcache.stream_aware_replacement = True
+    elif options.gem_forge_stream_engine_l1d == 'aware-lru':
+        cpu.dcache.tags = StreamLRU()
+        # if options.l1_5dcache:
+        #     cpuel1_5dcache.tags = StreamLRU()
+    elif options.gem_forge_stream_engine_l1d == 'aware-miss-spec':
+        assert(options.gem_forge_stream_engine_enable_merge == 1)
+        cpu.dcache.stream_aware_miss_speculation = True
+        cpu.dcache.stream_aware_replacement = True
+    elif options.gem_forge_stream_engine_l1d.startswith('placement'):
+        cpu.streamEngineEnablePlacement = True
+        if '#' in options.gem_forge_stream_engine_l1d:
+            x, y = options.gem_forge_stream_engine_l1d.split('#')
+        else:
+            x = options.gem_forge_stream_engine_l1d
+            y = ''
+        cpu.streamEnginePlacement = x
+        if x == 'placement-oracle':
+            cpu.streamEngineEnablePlacementOracle = True
+        if 'lru' in y:
+            cpu.dcache.tags = StreamLRU()
+        if 'sub' in y:
+            cpu.streamEnginePlacementLat = 'sub'
+        elif 'imm' in y:
+            cpu.streamEnginePlacementLat = 'imm'
+
 
 if options.llvm_prefetch == 1:
     for cpu in system.cpu:

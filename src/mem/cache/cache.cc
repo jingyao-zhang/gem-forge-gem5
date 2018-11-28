@@ -1711,10 +1711,10 @@ CacheBlk *Cache::handleFill(PacketPtr pkt, CacheBlk *blk,
 
       bool inserted = false;
       if (auto coalescedStream = this->getCoalescedStreamFromPacket(pkt)) {
-        auto footprint = coalescedStream->getFootprint(this->blkSize);
-        if (footprint > (this->size / this->blkSize) * 0.5) {
-          // We believe this is not cacheable, thus predict to be miss.
-          if (auto streamLRUTag = dynamic_cast<StreamLRU *>(this->tags)) {
+        if (auto streamLRUTag = dynamic_cast<StreamLRU *>(this->tags)) {
+          auto footprint = coalescedStream->getFootprint(this->blkSize);
+          if (footprint > (this->size / this->blkSize) * 0.5) {
+            // We believe this is not cacheable, thus predict to be miss.
             inserted = true;
             streamLRUTag->insertBlockLRU(pkt, blk);
           }
@@ -2589,7 +2589,7 @@ Cache::CpuSidePort::CpuSidePort(const std::string &_name, Cache *_cache,
 Cache::StreamAwareCpuSidePort::StreamAwareCpuSidePort(const std::string &_name,
                                                       Cache *_cache,
                                                       const std::string &_label)
-    : CpuSidePort(_name, _cache, _label),
+    : CpuSidePort(_name, _cache, _label), blockedUpper(false),
       processEvent([this] { this->process(); }, _name) {
 
   // Disable sanity check for the response queue.
@@ -2597,11 +2597,14 @@ Cache::StreamAwareCpuSidePort::StreamAwareCpuSidePort(const std::string &_name,
 }
 
 bool Cache::StreamAwareCpuSidePort::recvTimingReq(PacketPtr pkt) {
+  // if (this->blockedPkts.size() > 5) {
+  //   this->blockedUpper = true;
+  //   return false;
+  // }
   this->blockedPkts.emplace_back(pkt);
   if (!this->processEvent.scheduled()) {
     this->owner.schedule(this->processEvent, curTick() + 1);
   }
-  // this->process();
   return true;
 }
 
@@ -2616,10 +2619,13 @@ void Cache::StreamAwareCpuSidePort::recvTimingReqForStream(PacketPtr pkt) {
 void Cache::StreamAwareCpuSidePort::processSendRetry() {
   // CacheSlavePort::processSendRetry();
   this->mustSendRetry = false;
-  if (!this->processEvent.scheduled()) {
-    this->owner.schedule(this->processEvent, curTick() + 1);
+  if (this->processEvent.scheduled()) {
+    this->owner.deschedule(this->processEvent);
   }
-  // this->process();
+  this->owner.schedule(this->processEvent, curTick() + 1);
+  // if (!this->processEvent.scheduled()) {
+  //   this->owner.schedule(this->processEvent, curTick() + 1);
+  // }
 }
 
 bool Cache::StreamAwareCpuSidePort::sendTimingResp(PacketPtr pkt) {
@@ -2643,25 +2649,14 @@ bool Cache::StreamAwareCpuSidePort::sendTimingResp(PacketPtr pkt) {
 }
 
 void Cache::StreamAwareCpuSidePort::process() {
+
   if (this->blockedPkts.empty()) {
     return;
   }
 
-  // // Remember if we must send retry to the master port.
-  // auto oldMustSendRetry = this->mustSendRetry;
-  // auto oldHasScheduledRetryEvent = this->sendRetryEvent.scheduled();
-
   static size_t count = 0;
   if (count % 10000000 == 1) {
     count = 0;
-    // inform("StreamAwarePort::process called with blocked pkts %lu front %p "
-    //        "stream %d.\n",
-    //        this->blockedPkts.size(), this->blockedPkts.front(),
-    //        this->handlingStreamPkts.count(this->blockedPkts.front()));
-    // inform("StreamAwarePort::process called when blocked ? %d mustSendRetry ?
-    // "
-    //        "%d.\n",
-    //        this->blocked, this->mustSendRetry);
   }
   count++;
 

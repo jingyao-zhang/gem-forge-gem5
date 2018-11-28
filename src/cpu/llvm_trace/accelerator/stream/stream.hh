@@ -57,6 +57,10 @@ public:
   int getAliveElements() const { return this->FIFO.size(); }
   int getRunAheadLength() const { return this->runAHeadLength; }
 
+  virtual uint64_t getTrueFootprint() const = 0;
+  virtual uint64_t getFootprint(unsigned cacheBlockSize) const = 0;
+  LLVMTraceCPU *getCPU() { return this->cpu; }
+
   const std::unordered_map<uint64_t, int> &getAliveCacheBlocks() const {
     return this->aliveCacheBlocks;
   }
@@ -167,17 +171,46 @@ public:
    */
   class StreamMemAccess final : public TDGPacketHandler {
   public:
-    StreamMemAccess(Stream *_stream, const FIFOEntryIdx _entryId)
-        : stream(_stream), entryId(_entryId) {}
+    StreamMemAccess(Stream *_stream, const FIFOEntryIdx _entryId,
+                    int _additionalDelay = 0)
+        : stream(_stream), entryId(_entryId),
+          additionalDelay(_additionalDelay) {}
     virtual ~StreamMemAccess() {}
     void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
     void handlePacketResponse(PacketPtr packet);
 
     Stream *getStream() const { return this->stream; }
 
+    void setAdditionalDelay(int additionalDelay) {
+      this->additionalDelay = additionalDelay;
+    }
+
+    struct ResponseEvent : public Event {
+    public:
+      LLVMTraceCPU *cpu;
+      Stream::StreamMemAccess *memAccess;
+      PacketPtr pkt;
+      std::string n;
+      ResponseEvent(LLVMTraceCPU *_cpu, Stream::StreamMemAccess *_memAccess,
+                    PacketPtr _pkt)
+          : cpu(_cpu), memAccess(_memAccess), pkt(_pkt),
+            n("StreamMemAccessResponseEvent") {}
+      void process() override {
+        this->memAccess->handlePacketResponse(this->cpu, this->pkt);
+      }
+
+      const char *description() const { return "StreamMemAccessResponseEvent"; }
+
+      const std::string name() const { return this->n; }
+    };
+
   private:
     Stream *stream;
     FIFOEntryIdx entryId;
+    /**
+     * Additional delay we want to add after we get the response.
+     */
+    int additionalDelay;
   };
 
 protected:
@@ -232,7 +265,6 @@ protected:
   virtual void enqueueFIFO() = 0;
   virtual void markAddressReady(FIFOEntry &entry) = 0;
   virtual void markValueReady(FIFOEntry &entry) = 0;
-  virtual uint64_t getTrueFootprint() const = 0;
 
   bool checkIfEntryBaseValuesValid(const FIFOEntry &entry) const;
 

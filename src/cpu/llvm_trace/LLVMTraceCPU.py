@@ -74,6 +74,8 @@ class LLVMTraceCPU(BaseCPU):
         False, "Whether the stream engine enable stream placement.")
     streamEngineEnablePlacementOracle = Param.Bool(
         False, "Whether the stream engine enable stream placement oracle.")
+    streamEnginePlacementLat = Param.String(
+        "", "The latency modeling of bypassing.")
     streamEnginePlacement = Param.String("placement", "Which placement techinque to use.")
 
     @classmethod

@@ -40,8 +40,12 @@ private:
   LLVMTraceCPU *cpu;
   StreamEngine *se;
 
+  std::unordered_map<Stream *, int> streamCacheLevelMap;
+
   std::vector<Cache *> caches;
   std::vector<Cycles> lookupLatency;
+
+  uint32_t L2BusWidth;
 
   bool accessNoMSHR(Stream *stream, Addr paddr, int packetSize,
                     Stream::StreamMemAccess *memAccess);
@@ -49,7 +53,10 @@ private:
   bool accessExpress(Stream *stream, Addr paddr, int packetSize,
                      Stream::StreamMemAccess *memAccess);
 
-  size_t whichCacheLevelToPlace(CoalescedStream *stream) const;
+  bool accessExpressFootprint(Stream *stream, Addr paddr, int packetSize,
+                              Stream::StreamMemAccess *memAccess);
+
+  size_t whichCacheLevelToPlace(Stream *stream) const;
 
   PacketPtr createPacket(Addr paddr, int size,
                          Stream::StreamMemAccess *memAccess) const;

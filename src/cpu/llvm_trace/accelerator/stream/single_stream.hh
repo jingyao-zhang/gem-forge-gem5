@@ -30,6 +30,7 @@ public:
   void configure(StreamConfigInst *inst) override;
 
   uint64_t getTrueFootprint() const override;
+  uint64_t getFootprint(unsigned cacheBlockSize) const override;
 
 private:
   LLVM::TDG::StreamInfo info;

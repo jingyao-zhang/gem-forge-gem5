@@ -735,11 +735,30 @@ void Stream::commitUser(const LLVMDynamicInst *inst) {
 
 void Stream::StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
                                                    PacketPtr packet) {
-  this->stream->handlePacketResponse(this->entryId, packet, this);
+  if (this->additionalDelay == 0) {
+    this->stream->handlePacketResponse(this->entryId, packet, this);
+  } else {
+    // Schedule the event and clear the result.
+    Cycles delay(this->additionalDelay);
+    // Remember to clear this additional delay as we have already paid it.
+    this->additionalDelay = 0;
+    auto responseEvent = new ResponseEvent(cpu, this, packet);
+    cpu->schedule(responseEvent, cpu->clockEdge(delay));
+  }
 }
 
 void Stream::StreamMemAccess::handlePacketResponse(PacketPtr packet) {
-  this->stream->handlePacketResponse(this->entryId, packet, this);
+  if (this->additionalDelay == 0) {
+    this->stream->handlePacketResponse(this->entryId, packet, this);
+  } else {
+    // Schedule the event and clear the result.
+    auto cpu = this->stream->getCPU();
+    Cycles delay(this->additionalDelay);
+    // Remember to clear this additional delay as we have already paid it.
+    this->additionalDelay = 0;
+    auto responseEvent = new ResponseEvent(cpu, this, packet);
+    cpu->schedule(responseEvent, cpu->clockEdge(delay));
+  }
 }
 
 void Stream::FIFOEntry::markAddressReady(Cycles readyCycles) {
@@ -801,8 +820,8 @@ Stream::FIFOEntry::FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
   }
   // if (this->cacheBlocks > 1) {
   //   inform("addr %x size %x lhs %x rhs %x blocks %d.\n", this->address,
-  //          this->size, this->address & (~(cacheBlockSize - 1)), rhsCacheBlock,
-  //          this->cacheBlocks);
+  //          this->size, this->address & (~(cacheBlockSize - 1)),
+  //          rhsCacheBlock, this->cacheBlocks);
   // }
 }
 

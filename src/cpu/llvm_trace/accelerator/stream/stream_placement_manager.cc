@@ -6,10 +6,11 @@
 #include "base/output.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "mem/cache/cache.hh"
+#include "mem/xbar.hh"
 
 StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
                                                StreamEngine *_se)
-    : cpu(_cpu), se(_se) {
+    : cpu(_cpu), se(_se), L2BusWidth(0) {
 
   Cache *L2 = nullptr;
   Cache *L1D = nullptr;
@@ -25,8 +26,14 @@ StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
     } else if (so->name() == "system.cpu.l1_5dcache") {
       // L1.5 data cache.
       L1_5D = dynamic_cast<Cache *>(so);
+    } else if (so->name() == "system.tol2bus") {
+      // L2 bus.
+      const auto *XBarParam = dynamic_cast<const BaseXBarParams *>(so->params());
+      this->L2BusWidth = XBarParam->width;
     }
   }
+
+  assert(this->L2BusWidth != 0);
 
   assert(L1D != nullptr);
   this->caches.push_back(L1D);
@@ -63,6 +70,10 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
 
   if (this->se->getPlacement() == "placement-expr") {
     return this->accessExpress(stream, paddr, packetSize, memAccess);
+  }
+
+  if (this->se->getPlacement() == "placement-expr-fp") {
+    return this->accessExpressFootprint(stream, paddr, packetSize, memAccess);
   }
 
   auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
@@ -208,7 +219,7 @@ bool StreamPlacementManager::accessNoMSHR(Stream *stream, Addr paddr,
 bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
                                            int packetSize,
                                            Stream::StreamMemAccess *memAccess) {
-  Cycles latency(0);
+  int latency = 0;
   auto L1 = this->caches[0];
   auto &L1Stats = L1->getOrInitializeStreamStats(stream);
   if (L1Stats.accesses <= 100) {
@@ -218,9 +229,8 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
       L1Stats.reuses < L1Stats.accesses * 0.1f) {
 
     // Hack to hit in L2.
-    latency += Cycles(1);
+    latency++;
     auto pkt = this->createPacket(paddr, packetSize, memAccess);
-    // this->caches[1]->recvAtomic(pkt);
 
     // We decide to bypass L1.
     L1Stats.bypasses++;
@@ -236,9 +246,20 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
     if (L2Stats.accesses > 100 && L2Stats.misses > L2Stats.accesses * 0.95f &&
         L2Stats.reuses < L2Stats.accesses * 0.1f) {
       // Bypassing L2.
+      latency++;
+
+      // Check if we want model the benefit of only transmitting a subblock.
+      if (this->se->getPlacementLat() == "sub") {
+        latency += divCeil(packetSize, this->L2BusWidth);
+      } else {
+        latency += 64 / this->L2BusWidth;
+      }
 
       // Send request to L3.
       auto L3 = this->caches[2];
+      if (this->se->getPlacementLat() != "imm") {
+        memAccess->setAdditionalDelay(latency);
+      }
       this->sendTimingRequest(pkt, L3);
 
       L2Stats.bypasses++;
@@ -250,6 +271,9 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
       return true;
     } else {
       // Not bypassing L2.
+      if (this->se->getPlacementLat() != "imm") {
+        memAccess->setAdditionalDelay(latency);
+      }
       this->sendTimingRequest(pkt, L2);
       return true;
     }
@@ -257,6 +281,92 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
     // this->scheduleResponse(latency, memAccess, pkt);
   }
   return false;
+}
+
+bool StreamPlacementManager::accessExpressFootprint(
+    Stream *stream, Addr paddr, int packetSize,
+    Stream::StreamMemAccess *memAccess) {
+  // Check the current cache level.
+  auto cacheLevelIter = this->streamCacheLevelMap.find(stream);
+  if (cacheLevelIter == this->streamCacheLevelMap.end()) {
+    auto initCacheLevel = this->whichCacheLevelToPlace(stream);
+    initCacheLevel = 0;
+    cacheLevelIter =
+        this->streamCacheLevelMap.emplace(stream, initCacheLevel).first;
+  }
+
+  int latency = 0;
+  auto bypassed = false;
+  auto &cacheLevel = cacheLevelIter->second;
+  if (cacheLevel > 0) {
+    bypassed = true;
+    // Bypassing L1.
+    latency++;
+    auto L1 = this->caches[0];
+    auto &L1Stats = L1->getOrInitializeStreamStats(stream);
+    L1Stats.bypasses++;
+    L1Stats.currentBypasses++;
+
+    auto pkt = this->createPacket(paddr, packetSize, memAccess);
+
+    auto L2 = this->caches[1];
+    auto &L2Stats = L2->getOrInitializeStreamStats(stream);
+    if (cacheLevel > 1) {
+      // Bypassing L2.
+      latency++;
+
+      // Check if we want model the benefit of only transmitting a subblock.
+      if (this->se->getPlacementLat() == "sub") {
+        latency += divCeil(packetSize, this->L2BusWidth);
+      } else {
+        latency += 64 / this->L2BusWidth;
+      }
+
+      L2Stats.bypasses++;
+      L2Stats.currentBypasses++;
+
+      auto L3 = this->caches[2];
+      if (this->se->getPlacementLat() != "imm") {
+        memAccess->setAdditionalDelay(latency);
+      }
+      this->sendTimingRequest(pkt, L3);
+    } else {
+      // Do not bypassing L2.
+      if (this->se->getPlacementLat() != "imm") {
+        memAccess->setAdditionalDelay(latency);
+      }
+      this->sendTimingRequest(pkt, L2);
+    }
+  }
+  // Adjust our cache level based on the statistics.
+  auto placedCache = this->caches[cacheLevel];
+  auto &placedCacheStats = placedCache->getOrInitializeStreamStats(stream);
+
+  // Check if we have enough access to decide which level of cache.
+  if (placedCacheStats.currentAccesses > 100 &&
+      placedCacheStats.currentMisses >
+          placedCacheStats.currentAccesses * 0.95f &&
+      placedCacheStats.currentReuses <
+          placedCacheStats.currentAccesses * 0.1f) {
+    // There are still a lot of miss and little reuse at this level of cache,
+    // we should try to lower the cache level.
+    if (cacheLevel < 2) {
+      cacheLevel++;
+      placedCacheStats.clear();
+    }
+  } else if (placedCacheStats.currentAccesses > 1000 &&
+             placedCacheStats.currentReuses >
+                 placedCacheStats.currentAccesses * 0.8f) {
+    // There is a lot of reuse here, try to promote the stream to higher
+    // level.
+    if (cacheLevel > 0) {
+      cacheLevel--;
+      placedCacheStats.clear();
+    }
+  }
+
+  // Do not bypass L1.
+  return bypassed;
 }
 
 bool StreamPlacementManager::isHit(Cache *cache, Addr paddr) const {
@@ -278,7 +388,6 @@ StreamPlacementManager::createPacket(Addr paddr, int size,
 
 void StreamPlacementManager::scheduleResponse(
     Cycles latency, Stream::StreamMemAccess *memAccess, PacketPtr pkt) {
-
   auto responseEvent = new ResponseEvent(cpu, memAccess, pkt);
   cpu->schedule(responseEvent, cpu->clockEdge(latency));
 }
@@ -311,8 +420,7 @@ void StreamPlacementManager::dumpCacheStreamAwarePortStatus() {
   }
 }
 
-size_t
-StreamPlacementManager::whichCacheLevelToPlace(CoalescedStream *stream) const {
+size_t StreamPlacementManager::whichCacheLevelToPlace(Stream *stream) const {
   auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
   if (this->se->getPlacement() == "placement-footprint") {
     footprint = stream->getTrueFootprint();

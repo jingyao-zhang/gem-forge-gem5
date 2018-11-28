@@ -42,13 +42,13 @@ public:
   }
 
   bool isMergeEnabled() const { return this->enableMerge; }
-
   bool isOracleEnabled() const { return this->isOracle; }
 
   bool isPlacementEnabled() const { return this->enableStreamPlacement; }
   bool isOraclePlacementEnabled() const {
     return this->enableStreamPlacementOracle;
   }
+  const std::string &getPlacementLat() const { return this->placementLat; }
   const std::string &getPlacement() const { return this->placement; }
 
   void exitDump() const {
@@ -112,6 +112,7 @@ private:
   bool enableMerge;
   bool enableStreamPlacement;
   bool enableStreamPlacementOracle;
+  std::string placementLat;
   std::string placement;
 
   Stream *getOrInitializeStream(

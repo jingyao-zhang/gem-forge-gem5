@@ -64,7 +64,7 @@ public:
    * Get the number of unique cache blocks the stream touches.
    * Used for stream aware cache to determine if it should cache the stream.
    */
-  uint64_t getFootprint(unsigned cacheBlockSize) const;
+  uint64_t getFootprint(unsigned cacheBlockSize) const override;
   uint64_t getTrueFootprint() const override;
 
 protected:

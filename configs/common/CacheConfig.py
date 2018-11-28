@@ -92,7 +92,9 @@ def config_cache(options, system):
                                    assoc=options.l2_assoc,
                                    tag_latency=options.l2_tag_lat)
 
-        system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain)
+        system.tol2bus = L2XBar(
+            clk_domain=system.cpu_clk_domain,
+            width=options.l2bus_width)
         system.l2.cpu_side = system.tol2bus.master
         system.l2.mem_side = system.membus.slave
 
@@ -106,8 +108,6 @@ def config_cache(options, system):
             dcache = dcache_class(size=options.l1d_size,
                                   assoc=options.l1d_assoc,
                                   mshrs=options.l1d_mshrs)
-            if options.gem_forge_stream_engine_l1d == 'aware-lru':
-                dcache.tags = StreamLRU()
 
             # If we have a walker cache specified, instantiate two
             # instances here

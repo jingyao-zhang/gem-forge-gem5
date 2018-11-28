@@ -28,6 +28,8 @@ public:
 
   virtual void dump() {}
 
+  LLVMTraceCPU *getCPU() { return this->cpu; }
+
   /**
    * Called by the manager to register stats.
    * Default does nothing.
