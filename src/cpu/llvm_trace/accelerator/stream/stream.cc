@@ -312,7 +312,28 @@ void Stream::commitStore(StreamStoreInst *inst) {
   /**
    * Send the write packet with random data.
    */
+  bool shouldSend = false;
+  bool cacheLineStore = false;
   if (entry.address != 0) {
+    if (this->se->isContinuousStoreOptimized()) {
+      if (this->isContinuous()) {
+        auto N = cpu->system->cacheLineSize() / this->getElementSize();
+        if (N == 0) {
+          N = 1;
+        }
+        if (entry.idx.entryIdx % N == (N - 1)) {
+          // We think we have buffered enough for a continuous store.
+          shouldSend = true;
+          cacheLineStore = true;
+        }
+      } else {
+        shouldSend = true;
+      }
+    } else {
+      shouldSend = true;
+    }
+  }
+  if (shouldSend) {
     auto memAccess = new StreamMemAccess(this, entry.idx);
     this->memAccesses.insert(memAccess);
     auto paddr = cpu->translateAndAllocatePhysMem(entry.address);
@@ -328,6 +349,11 @@ void Stream::commitStore(StreamStoreInst *inst) {
       size = cacheBlockSize - offset;
     }
 
+    if (cacheLineStore) {
+      paddr &= (~(cacheBlockSize - 1));
+      size = cacheBlockSize;
+    }
+
     auto streamPlacementManager = this->se->getStreamPlacementManager();
     if (streamPlacementManager != nullptr &&
         streamPlacementManager->access(this, paddr, size, memAccess)) {
@@ -341,9 +367,6 @@ void Stream::commitStore(StreamStoreInst *inst) {
   /**
    * Implicitly commit the step if we have no base stream.
    */
-  // if (storeSeqNum == 5742) {
-  //   STREAM_PANIC("Jesus found.\n");
-  // }
   if (this->isStepRoot()) {
     this->commitStepImpl(storeSeqNum);
   }

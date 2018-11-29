@@ -29,6 +29,8 @@ public:
 
   void configure(StreamConfigInst *inst) override;
 
+  bool isContinuous() const override;
+
   uint64_t getTrueFootprint() const override;
   uint64_t getFootprint(unsigned cacheBlockSize) const override;
 

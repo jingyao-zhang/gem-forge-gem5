@@ -47,6 +47,10 @@ public:
   bool isPlacementEnabled() const { return this->enableStreamPlacement; }
   bool isPlacementBusEnabled() const { return this->enableStreamPlacementBus; }
   bool isPlacementNoBypassingStore() const { return this->noBypassingStore; }
+  bool isContinuousStoreOptimized() const { return this->continuousStore; }
+  bool isPlacementPeriodReset() const {
+    return this->enablePlacementPeriodReset;
+  }
   bool isOraclePlacementEnabled() const {
     return this->enableStreamPlacementOracle;
   }
@@ -115,7 +119,9 @@ private:
   bool enableStreamPlacement;
   bool enableStreamPlacementOracle;
   bool enableStreamPlacementBus;
+  bool enablePlacementPeriodReset;
   bool noBypassingStore;
+  bool continuousStore;
   std::string placementLat;
   std::string placement;
 

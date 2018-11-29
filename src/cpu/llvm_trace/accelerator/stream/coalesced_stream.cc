@@ -310,120 +310,68 @@ void CoalescedStream::markAddressReady(FIFOEntry &entry) {
     return;
   }
 
-  bool useNewMerge = true;
+  if (this->primaryLogicalStream->info.type() == "store" &&
+      this->isContinuous()) {
+    // Continuous store does not prefetch for the cache line.
+    this->markValueReady(entry);
+    return;
+  }
 
-  if (useNewMerge) {
-    // Start to construct the packets for all cache blocks.
-    for (int i = 0; i < entry.cacheBlocks; ++i) {
-      const auto cacheBlockAddr = entry.cacheBlockAddrs[i];
-      Addr paddr;
-      if (cpu->isStandalone()) {
-        paddr = cpu->translateAndAllocatePhysMem(cacheBlockAddr);
-      } else {
-        panic("Stream so far can only work in standalone mode.");
-      }
+  // Start to construct the packets for all cache blocks.
+  for (int i = 0; i < entry.cacheBlocks; ++i) {
+    const auto cacheBlockAddr = entry.cacheBlockAddrs[i];
+    Addr paddr;
+    if (cpu->isStandalone()) {
+      paddr = cpu->translateAndAllocatePhysMem(cacheBlockAddr);
+    } else {
+      panic("Stream so far can only work in standalone mode.");
+    }
 
-      // Check if we enabled the merge.
-      if (this->se->isMergeEnabled()) {
-        if (this->isCacheBlockAlive(cacheBlockAddr)) {
-          continue;
-        }
-      }
-
-      // Bring in the whole cache block.
-      // auto packetSize = cpu->system->cacheLineSize();
-      auto packetSize = 8;
-      // Construct the packet.
-      auto memAccess = new StreamMemAccess(this, entry.idx);
-      this->memAccesses.insert(memAccess);
-
-      auto streamPlacementManager = this->se->getStreamPlacementManager();
-      if (streamPlacementManager != nullptr &&
-          streamPlacementManager->access(this, paddr, packetSize, memAccess)) {
-        // The StreamPlacementManager handled this packet.
-      } else {
-        // Else we sent out the packet.
-        cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
-      }
-
-      if (this->primaryLogicalStream->info.type() == "load") {
-        entry.inflyLoadPackets++;
-      } else if (this->primaryLogicalStream->info.type() == "store") {
-      } else {
-        // Not possible for this case.
-        panic("Invalid stream type here.");
+    // Check if we enabled the merge.
+    if (this->se->isMergeEnabled()) {
+      if (this->isCacheBlockAlive(cacheBlockAddr)) {
+        continue;
       }
     }
 
+    // Bring in the whole cache block.
+    // auto packetSize = cpu->system->cacheLineSize();
+    auto packetSize = 8;
+    // Construct the packet.
+    auto memAccess = new StreamMemAccess(this, entry.idx);
+    this->memAccesses.insert(memAccess);
+
+    auto streamPlacementManager = this->se->getStreamPlacementManager();
+    if (streamPlacementManager != nullptr &&
+        streamPlacementManager->access(this, paddr, packetSize, memAccess)) {
+      // The StreamPlacementManager handled this packet.
+    } else {
+      // Else we sent out the packet.
+      cpu->sendRequest(paddr, packetSize, memAccess, nullptr);
+    }
+
     if (this->primaryLogicalStream->info.type() == "load") {
-      if (entry.inflyLoadPackets == 0) {
-        // Successfully found all cache blocks alive.
-        this->markValueReady(entry);
-      } else {
-        this->se->numMemElementsFetched++;
-      }
+      entry.inflyLoadPackets++;
     } else if (this->primaryLogicalStream->info.type() == "store") {
-      this->se->numMemElementsFetched++;
-      this->markValueReady(entry);
     } else {
       // Not possible for this case.
       panic("Invalid stream type here.");
     }
+  }
 
-  } else {
-    if (this->se->isMergeEnabled()) {
-      // Merge the request to the alive cache line.
-      if (this->isCacheBlockAlive(entry.address)) {
-        this->markValueReady(entry);
-        return;
-      }
-    }
-
-    // After this point, we are going to fetch the data from cache.
-    se->numMemElementsFetched++;
-    auto size = entry.size;
-    for (int packetSize, inflyPacketsSize = 0, packetIdx = 0;
-         inflyPacketsSize < size; inflyPacketsSize += packetSize, packetIdx++) {
-      Addr paddr, vaddr;
-      if (cpu->isStandalone()) {
-        vaddr = entry.address + inflyPacketsSize;
-        paddr = cpu->translateAndAllocatePhysMem(vaddr);
-      } else {
-        panic("Stream so far can only work in standalone mode.");
-      }
-      packetSize = size - inflyPacketsSize;
-      // Do not span across cache line.
-      auto cacheLineSize = cpu->system->cacheLineSize();
-      if (((paddr % cacheLineSize) + packetSize) > cacheLineSize) {
-        packetSize = cacheLineSize - (paddr % cacheLineSize);
-      }
-
-      // Construct the packet.
-      auto memAccess = new StreamMemAccess(this, entry.idx);
-      this->memAccesses.insert(memAccess);
-
-      auto streamPlacementManager = this->se->getStreamPlacementManager();
-      if (streamPlacementManager != nullptr &&
-          streamPlacementManager->access(this, paddr, packetSize, memAccess)) {
-        // The StreamPlacementManager handled this packet.
-      } else {
-        // Else we sent out the packet.
-        cpu->sendRequest(paddr, packetSize, memAccess, nullptr,
-                         reinterpret_cast<Addr>(this));
-      }
-
-      if (this->primaryLogicalStream->info.type() == "load") {
-        entry.inflyLoadPackets++;
-      } else if (this->primaryLogicalStream->info.type() == "store") {
-      } else {
-        // Not possible for this case.
-        panic("Invalid stream type here.");
-      }
-    }
-    if (this->primaryLogicalStream->info.type() == "store") {
-      // Store stream is always value ready.
+  if (this->primaryLogicalStream->info.type() == "load") {
+    if (entry.inflyLoadPackets == 0) {
+      // Successfully found all cache blocks alive.
       this->markValueReady(entry);
+    } else {
+      this->se->numMemElementsFetched++;
     }
+  } else if (this->primaryLogicalStream->info.type() == "store") {
+    this->se->numMemElementsFetched++;
+    this->markValueReady(entry);
+  } else {
+    // Not possible for this case.
+    panic("Invalid stream type here.");
   }
 }
 
@@ -474,6 +422,14 @@ void CoalescedStream::markValueReady(FIFOEntry &entry) {
 //     }
 //     }
 // }
+
+bool CoalescedStream::isContinuous() const {
+  const auto &pattern = this->primaryLogicalStream->patternStream->getPattern();
+  if (pattern.val_pattern() != "LINEAR") {
+    return false;
+  }
+  return this->getElementSize() == pattern.stride_i();
+}
 
 uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
 

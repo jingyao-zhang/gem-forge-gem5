@@ -78,6 +78,10 @@ class LLVMTraceCPU(BaseCPU):
         False, "Whether the stream engine should consider the bus when bypassing.")
     streamEngineNoBypassingStore = Param.Bool(
         False, "Whether the stream engine should bypass store.")
+    streamEngineContinuousStore = Param.Bool(
+        False, "Whether the stream engine should optimize the continuous store.")
+    streamEnginePeriodReset = Param.Bool(
+        False, "Whether the stream engine should periodly reset the placement decision.")
     streamEnginePlacementLat = Param.String(
         "", "The latency modeling of bypassing.")
     streamEnginePlacement = Param.String("placement", "Which placement techinque to use.")

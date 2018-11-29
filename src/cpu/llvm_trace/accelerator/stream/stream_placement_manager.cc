@@ -363,6 +363,8 @@ bool StreamPlacementManager::accessExpressFootprint(
     if (cacheLevel > 1) {
       // Bypassing L2.
       latency++;
+      L2Stats.bypasses++;
+      L2Stats.currentBypasses++;
 
       // Check if we want model the benefit of only transmitting a subblock.
       if (this->se->isPlacementBusEnabled()) {
@@ -385,9 +387,6 @@ bool StreamPlacementManager::accessExpressFootprint(
         } else {
           latency += 64 / this->L2BusWidth;
         }
-
-        L2Stats.bypasses++;
-        L2Stats.currentBypasses++;
 
         auto L3 = this->caches[2];
         if (this->se->getPlacementLat() != "imm") {
@@ -417,17 +416,10 @@ bool StreamPlacementManager::accessExpressFootprint(
           placedCacheStats.currentAccesses * 0.1f) {
     // There are still a lot of miss and little reuse at this level of cache,
     // we should try to lower the cache level.
-    // auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
-    // auto placedCacheCapacity =
-    //     placedCache->getCacheSize() / cpu->system->cacheLineSize();
-    // // Only try to lower the cache level if the footprint is large to hurt
-    // // the performance.
-    // if (footprint > placedCacheCapacity * 0.5) {
     if (cacheLevel < 2) {
       cacheLevel++;
       placedCacheStats.clear();
     }
-    // }
   } else if (placedCacheStats.currentAccesses > 1000 &&
              placedCacheStats.currentReuses >
                  placedCacheStats.currentAccesses * 0.8f) {
@@ -437,9 +429,17 @@ bool StreamPlacementManager::accessExpressFootprint(
       cacheLevel--;
       placedCacheStats.clear();
     }
+  } else {
+    if (this->se->isPlacementPeriodReset()) {
+      auto &L1Stats = this->caches[0]->getOrInitializeStreamStats(stream);
+      if (L1Stats.currentBypasses == 10000) {
+        L1Stats.clear();
+        cacheLevel = 0;
+        placedCacheStats.clear();
+      }
+    }
   }
 
-  // Do not bypass L1.
   return bypassed;
 }
 

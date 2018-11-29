@@ -59,6 +59,8 @@ public:
 
   virtual uint64_t getTrueFootprint() const = 0;
   virtual uint64_t getFootprint(unsigned cacheBlockSize) const = 0;
+  virtual bool isContinuous() const = 0;
+
   LLVMTraceCPU *getCPU() { return this->cpu; }
 
   const std::unordered_map<uint64_t, int> &getAliveCacheBlocks() const {

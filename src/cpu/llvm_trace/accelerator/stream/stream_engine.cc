@@ -45,6 +45,8 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
       cpuParams->streamEngineEnablePlacementOracle;
   this->enableStreamPlacementBus = cpuParams->streamEngineEnablePlacementBus;
   this->noBypassingStore = cpuParams->streamEngineNoBypassingStore;
+  this->continuousStore = cpuParams->streamEngineContinuousStore;
+  this->enablePlacementPeriodReset = cpuParams->streamEnginePeriodReset;
   this->placementLat = cpuParams->streamEnginePlacementLat;
   this->placement = cpuParams->streamEnginePlacement;
 

@@ -266,6 +266,10 @@ for cpu in system.cpu:
             cpu.streamEngineEnablePlacementBus = True
         if 'nst' in y:
             cpu.streamEngineNoBypassingStore = True
+        if 'cst' in y:
+            cpu.streamEngineContinuousStore = True
+        if 'rst' in y:
+            cpu.streamEnginePeriodReset = True
 
 
 if options.llvm_prefetch == 1:

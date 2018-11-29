@@ -369,6 +369,10 @@ uint64_t SingleStream::getTrueFootprint() const {
 
 uint64_t SingleStream::getFootprint(unsigned cacheBlockSize) const { return 1; }
 
+bool SingleStream::isContinuous() const {
+  return false;
+}
+
 void SingleStream::dump() const {
   inform("Dump for stream %s.\n======================",
          this->getStreamName().c_str());

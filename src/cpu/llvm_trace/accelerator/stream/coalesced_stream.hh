@@ -67,6 +67,8 @@ public:
   uint64_t getFootprint(unsigned cacheBlockSize) const override;
   uint64_t getTrueFootprint() const override;
 
+  bool isContinuous() const override;
+
 protected:
   std::unordered_map<uint64_t, LogicalStream> logicalStreamMap;
 
