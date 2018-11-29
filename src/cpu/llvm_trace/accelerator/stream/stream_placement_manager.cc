@@ -306,6 +306,21 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
 bool StreamPlacementManager::accessExpressFootprint(
     Stream *stream, Addr paddr, int packetSize,
     Stream::StreamMemAccess *memAccess) {
+
+  // if (stream->getStreamName() == "(MEM train bb138 bb146::5(store))") {
+  //   return false;
+  // }
+
+  // if (stream->getStreamName() == "(MEM train bb63 bb69::5(store))") {
+  //   return false;
+  // }
+
+  if (this->se->isPlacementNoBypassingStore()) {
+    if (stream->getStreamType() == "store") {
+      return false;
+    }
+  }
+
   // Check the current cache level.
   auto cacheLevelIter = this->streamCacheLevelMap.find(stream);
   if (cacheLevelIter == this->streamCacheLevelMap.end()) {
@@ -318,6 +333,22 @@ bool StreamPlacementManager::accessExpressFootprint(
   int latency = 0;
   auto bypassed = false;
   auto &cacheLevel = cacheLevelIter->second;
+
+  // Try to fix them at L2.
+  // if (stream->getStreamName() == "(MEM train bb25 bb33::tmp36(load))") {
+  //   cacheLevel = 0;
+  // }
+  // if (stream->getStreamName() == "(MEM train bb158 bb160::tmp163(load))") {
+  //   if (cacheLevel == 2) {
+  //     panic("footprint %lu, true footprint \n",
+  //           stream->getFootprint(cpu->system->cacheLineSize()));
+  //   }
+  // }
+
+  // if (stream->getStreamName() == "(MEM train bb81 bb83::tmp90(load))") {
+  //   cacheLevel = 1;
+  // }
+
   if (cacheLevel > 0) {
     bypassed = true;
     // Bypassing L1.
@@ -386,10 +417,17 @@ bool StreamPlacementManager::accessExpressFootprint(
           placedCacheStats.currentAccesses * 0.1f) {
     // There are still a lot of miss and little reuse at this level of cache,
     // we should try to lower the cache level.
+    // auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
+    // auto placedCacheCapacity =
+    //     placedCache->getCacheSize() / cpu->system->cacheLineSize();
+    // // Only try to lower the cache level if the footprint is large to hurt
+    // // the performance.
+    // if (footprint > placedCacheCapacity * 0.5) {
     if (cacheLevel < 2) {
       cacheLevel++;
       placedCacheStats.clear();
     }
+    // }
   } else if (placedCacheStats.currentAccesses > 1000 &&
              placedCacheStats.currentReuses >
                  placedCacheStats.currentAccesses * 0.8f) {

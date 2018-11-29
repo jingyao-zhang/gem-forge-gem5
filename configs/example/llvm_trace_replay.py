@@ -264,6 +264,8 @@ for cpu in system.cpu:
             cpu.streamEnginePlacementLat = 'imm'
         if 'bus' in y:
             cpu.streamEngineEnablePlacementBus = True
+        if 'nst' in y:
+            cpu.streamEngineNoBypassingStore = True
 
 
 if options.llvm_prefetch == 1:
