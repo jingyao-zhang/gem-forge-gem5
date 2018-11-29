@@ -289,8 +289,8 @@ bool CoherentXBar::recvTimingReq(PacketPtr pkt, PortID slave_port_id) {
         outstandingSnoop.insert(pkt->req);
 
         // basic sanity check on the outstanding snoops
-        panic_if(outstandingSnoop.size() > 512,
-                 "Outstanding snoop requests exceeded 512\n");
+        // panic_if(outstandingSnoop.size() > 512,
+        //          "Outstanding snoop requests exceeded 512\n");
       }
 
       // remember where to route the normal response to
@@ -298,7 +298,7 @@ bool CoherentXBar::recvTimingReq(PacketPtr pkt, PortID slave_port_id) {
         assert(routeTo.find(pkt->req) == routeTo.end());
         routeTo[pkt->req] = slave_port_id;
 
-        panic_if(routeTo.size() > 512, "Routing table exceeds 512 packets\n");
+        // panic_if(routeTo.size() > 512, "Routing table exceeds 512 packets\n");
       }
 
       // update the layer state and schedule an idle event

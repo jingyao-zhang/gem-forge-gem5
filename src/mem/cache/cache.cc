@@ -318,7 +318,7 @@ bool Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     if (wb_entry) {
       assert(wb_entry->getNumTargets() == 1);
       PacketPtr wbPkt = wb_entry->getTarget()->pkt;
-      assert(wbPkt->isWriteback());
+      // assert(wbPkt->isWriteback());
 
       if (pkt->isCleanEviction()) {
         // The CleanEvict and WritebackClean snoops into other
