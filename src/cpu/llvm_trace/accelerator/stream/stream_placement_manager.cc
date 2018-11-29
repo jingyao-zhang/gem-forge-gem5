@@ -310,7 +310,7 @@ bool StreamPlacementManager::accessExpressFootprint(
   auto cacheLevelIter = this->streamCacheLevelMap.find(stream);
   if (cacheLevelIter == this->streamCacheLevelMap.end()) {
     auto initCacheLevel = this->whichCacheLevelToPlace(stream);
-    initCacheLevel = 0;
+    // initCacheLevel = 0;
     cacheLevelIter =
         this->streamCacheLevelMap.emplace(stream, initCacheLevel).first;
   }
@@ -327,8 +327,6 @@ bool StreamPlacementManager::accessExpressFootprint(
     L1Stats.bypasses++;
     L1Stats.currentBypasses++;
 
-    auto pkt = this->createPacket(paddr, packetSize, memAccess);
-
     auto L2 = this->caches[1];
     auto &L2Stats = L2->getOrInitializeStreamStats(stream);
     if (cacheLevel > 1) {
@@ -336,25 +334,43 @@ bool StreamPlacementManager::accessExpressFootprint(
       latency++;
 
       // Check if we want model the benefit of only transmitting a subblock.
-      if (this->se->getPlacementLat() == "sub") {
-        latency += divCeil(packetSize, this->L2BusWidth);
+      if (this->se->isPlacementBusEnabled()) {
+        // We model the bus.
+        if (this->se->getPlacementLat() == "sub") {
+          // Packet size is not modified.
+        } else {
+          // Packet size is charged to 64.
+          paddr = paddr & (~(64 - 1));
+          packetSize = 64;
+        }
+        if (this->se->getPlacementLat() != "imm") {
+          memAccess->setAdditionalDelay(latency);
+        }
+        auto pkt = this->createPacket(paddr, packetSize, memAccess);
+        this->sendTimingRequestToL2Bus(pkt);
       } else {
-        latency += 64 / this->L2BusWidth;
-      }
+        if (this->se->getPlacementLat() == "sub") {
+          latency += divCeil(packetSize, this->L2BusWidth);
+        } else {
+          latency += 64 / this->L2BusWidth;
+        }
 
-      L2Stats.bypasses++;
-      L2Stats.currentBypasses++;
+        L2Stats.bypasses++;
+        L2Stats.currentBypasses++;
 
-      auto L3 = this->caches[2];
-      if (this->se->getPlacementLat() != "imm") {
-        memAccess->setAdditionalDelay(latency);
+        auto L3 = this->caches[2];
+        if (this->se->getPlacementLat() != "imm") {
+          memAccess->setAdditionalDelay(latency);
+        }
+        auto pkt = this->createPacket(paddr, packetSize, memAccess);
+        this->sendTimingRequest(pkt, L3);
       }
-      this->sendTimingRequest(pkt, L3);
     } else {
       // Do not bypassing L2.
       if (this->se->getPlacementLat() != "imm") {
         memAccess->setAdditionalDelay(latency);
       }
+      auto pkt = this->createPacket(paddr, packetSize, memAccess);
       this->sendTimingRequest(pkt, L2);
     }
   }
