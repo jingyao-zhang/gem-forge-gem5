@@ -44,8 +44,6 @@ void McPATManager::init() {
     if (so->name() == "system.l2") {
       auto cache = dynamic_cast<const Cache *>(so);
       this->L2Cache = cache;
-      this->configureL2Cache(cache);
-      this->configureL2Directories(cache);
     }
 
     else if (so->name() == "system.mem_ctrls") {
@@ -65,6 +63,13 @@ void McPATManager::init() {
         panic("CPU L1D %d is already added to the map.", cpuId);
       }
       this->idToCPUL1DMap.emplace(cpuId, dynamic_cast<const BaseCache *>(so));
+    }
+
+    else if (McPATManager::isCPU(so, ".l1_5dcache", cpuId)) {
+      if (this->idToCPUL1_5DMap.count(cpuId) != 0) {
+        panic("CPU L1_5 cache %d is already added to the map.", cpuId);
+      }
+      this->idToCPUL1_5DMap.emplace(cpuId, dynamic_cast<const BaseCache *>(so));
     }
 
     else if (McPATManager::isCPU(so, ".dtb", cpuId)) {
@@ -91,14 +96,31 @@ void McPATManager::init() {
     }
   }
 
+  // Configure the LLC.
   int numCPU = this->idToCPUMap.size();
   auto &mcpatSys = this->xml->sys;
+  if (this->idToCPUL1_5DMap.empty()) {
+    // There is no L1.5
+    if (this->L2Cache != nullptr) {
+      this->configureL2Cache(this->L2Cache);
+      this->configureL2Directories(this->L2Cache);
+      mcpatSys.number_of_L2s = 1;
+    } else {
+      mcpatSys.number_of_L2s = 0;
+    }
+    mcpatSys.Private_L2 = false;
+    mcpatSys.number_of_L3s = 0;
+  } else {
+    // There is L1.5, use L2 as L3.
+    if (this->L2Cache != nullptr) {
+      this->configureL3Cache(this->L2Cache);
+    }
+    mcpatSys.Private_L2 = true;
+  }
+
   mcpatSys.number_of_cores = numCPU;
   mcpatSys.number_of_L1Directories = 0;
   mcpatSys.number_of_L2Directories = 0;
-  mcpatSys.number_of_L2s = (this->L2Cache != nullptr) ? 1 : 0;
-  mcpatSys.Private_L2 = false;
-  mcpatSys.number_of_L3s = 0;
   mcpatSys.number_of_NoCs = 0;
   mcpatSys.homogeneous_cores = 1;
   mcpatSys.core_tech_node = 65;
@@ -162,8 +184,8 @@ void McPATManager::configureMemoryControl(const DRAMCtrlParams *params) {
   mc.llc_line_length = params->write_buffer_size;
 }
 
-void McPATManager::configureL2Directories(const Cache *cache) {
-  auto params = dynamic_cast<const CacheParams *>(cache->params());
+void McPATManager::configureL2Directories(const BaseCache *cache) {
+  auto params = dynamic_cast<const BaseCacheParams *>(cache->params());
   panic_if(params == nullptr, "nullptr for configureL2Directory.");
   DPRINTF(McPATManager, "Configure McPAT l2 directory.\n");
 
@@ -180,8 +202,8 @@ void McPATManager::configureL2Directories(const Cache *cache) {
   L2D.clockrate = 1e6 / params->clk_domain->clockPeriod();
 }
 
-void McPATManager::configureL2Cache(const Cache *cache) {
-  auto params = dynamic_cast<const CacheParams *>(cache->params());
+void McPATManager::configureL2Cache(const BaseCache *cache) {
+  auto params = dynamic_cast<const BaseCacheParams *>(cache->params());
   panic_if(params == nullptr, "nullptr for configureL2Cache.");
   DPRINTF(McPATManager, "Configure McPAT l2 cache.\n");
 
@@ -281,6 +303,51 @@ void McPATManager::configureL2Cache(const Cache *cache) {
 #endif
 }
 
+void McPATManager::configureL3Cache(const BaseCache *cache) {
+  auto params = dynamic_cast<const BaseCacheParams *>(cache->params());
+  panic_if(params == nullptr, "nullptr for configureL2Cache.");
+  DPRINTF(McPATManager, "Configure McPAT l2 cache.\n");
+
+  auto L3Idx = this->xml->sys.number_of_L3s;
+  const auto maxNumL3Caches =
+      sizeof(this->xml->sys.L3) / sizeof(this->xml->sys.L3[0]);
+  if (L3Idx == maxNumL3Caches) {
+    panic("Too many L3 caches, maximum %d.", maxNumL3Caches);
+  }
+  this->xml->sys.number_of_L3s++;
+
+  auto &L3 = this->xml->sys.L3[L3Idx];
+
+  auto tagsParams =
+      dynamic_cast<const BaseTagsParams *>(params->tags->params());
+  panic_if(tagsParams == nullptr, "Failed to get BaseTagsParams.");
+
+  L3.L3_config[0] = params->size;           // size.
+  L3.L3_config[1] = tagsParams->block_size; // block_size.
+  L3.L3_config[2] = params->assoc;          // associativity.
+  L3.L3_config[3] = 1;                      // bank.
+
+  auto accessLatency = McPATManager::getCacheTagAccessLatency(tagsParams);
+  L3.L3_config[4] = accessLatency; // throughput w.r.t. core clock.
+  /**
+   * Latency w.r.t. core clock.
+   * How to compute this?
+   */
+  L3.L3_config[5] = accessLatency;
+  L3.L3_config[6] = 32; // output_width.
+  L3.L3_config[7] = 1;  // cache policy.
+
+  L3.buffer_sizes[0] = params->mshrs;         // miss_buffer_size (MSHR).
+  L3.buffer_sizes[1] = params->mshrs;         // fill_buffer_size.
+  L3.buffer_sizes[2] = params->mshrs;         // prefetch_buffer_size.
+  L3.buffer_sizes[3] = params->write_buffers; // write_back_buffer_size.
+  for (int i = 0; i < 8; ++i) {
+    DPRINTF(McPATManager, "L3_config[%d] = %d\n", i, L3.L3_config[i]);
+  }
+
+  L3.clockrate =
+      1e6 / params->clk_domain->clockPeriod(); // clock_rate (what is the unit)?
+}
 void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
   auto idx = cpu->cpuId();
   auto params = McPATManager::getParams<DerivO3CPUParams>(cpu);
@@ -421,6 +488,15 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
       DPRINTF(McPATManager, "icache_buffer_sizes[%d] = %d\n", i,
               mcpatInstL1.buffer_sizes[i]);
     }
+  }
+
+  if (this->idToCPUL1_5DMap.count(idx) != 0) {
+    /**
+     * Private L2 cache.
+     */
+    auto L1_5Cache = this->idToCPUL1_5DMap.at(idx);
+    this->configureL2Cache(L1_5Cache);
+    this->configureL2Directories(L1_5Cache);
   }
 
   if (this->idToCPUL1DMap.count(idx) != 0) {
@@ -641,14 +717,30 @@ void McPATManager::setStatsL2Cache() {
 
   auto total = this->getVecStatsTotal("system.l2.overall_accesses");
   auto totalMisses = this->getVecStatsTotal("system.l2.overall_misses");
-  auto writes = this->getVecStatsTotal("system.l2.WritebackClean_accesses");
-  auto writeMisses = this->getVecStatsTotal("system.l2.WritebackClean_misses");
+  auto writes = this->getVecStatsTotal("system.l2.WritebackClean_accesses") +
+                this->getVecStatsTotal("system.l2.WritebackDirty_accesses");
+  auto writeMisses = this->getVecStatsTotal("system.l2.WritebackClean_misses") +
+                     this->getVecStatsTotal("system.l2.WritebackDirty_misses");
 
-  auto &L2 = this->xml->sys.L2[0];
-  L2.read_accesses = total - writes;
-  L2.write_accesses = writes;
-  L2.read_misses = totalMisses - writeMisses;
-  L2.write_misses = writeMisses;
+  if (this->idToCPUL1_5DMap.empty()) {
+    /**
+     * No L1.5 cache.
+     */
+    auto &L2 = this->xml->sys.L2[0];
+    L2.read_accesses = total - writes;
+    L2.write_accesses = writes;
+    L2.read_misses = totalMisses - writeMisses;
+    L2.write_misses = writeMisses;
+  } else {
+    /**
+     * Use L2 cache as L3 cace.
+     */
+    auto &L3 = this->xml->sys.L3[0];
+    L3.read_accesses = total - writes;
+    L3.write_accesses = writes;
+    L3.read_misses = totalMisses - writeMisses;
+    L3.write_misses = writeMisses;
+  }
 }
 
 void McPATManager::setStatsDerivO3CPU(int idx) {
@@ -820,6 +912,25 @@ void McPATManager::setStatsDerivO3CPU(int idx) {
     mcpatDataL1.write_accesses = writes;
     mcpatDataL1.read_misses = readMisses;
     mcpatDataL1.write_misses = writeMisses;
+  }
+
+  if (this->idToCPUL1_5DMap.count(idx) != 0) {
+    auto writes = vector("l1_5dcache.WritebackDirty_accesses") +
+                  vector("l1_5dcache.WritebackClean_accesses");
+    auto writeHits = vector("l1_5dcache.WritebackDirty_hits") +
+                     vector("l1_5dcache.WritebackClean_hits");
+    auto writeMisses = writes - writeHits;
+    auto reads = vector("l1_5dcache.ReadReq_accesses") +
+                 vector("l1_5dcache.ReadExReq_accesses") +
+                 vector("l1_5dcache.ReadSharedReq_accesses");
+    auto readMisses = vector("l1_5dcache.ReadReq_misses") +
+                      vector("l1_5dcache.ReadExReq_misses") +
+                      vector("l1_5dcache.ReadSharedReq_misses");
+    auto &L2 = this->xml->sys.L2[idx];
+    L2.read_accesses = reads;
+    L2.write_accesses = writes;
+    L2.read_misses = readMisses;
+    L2.write_misses = writeMisses;
   }
 
   if (this->idToCPUL1IMap.count(idx) != 0) {

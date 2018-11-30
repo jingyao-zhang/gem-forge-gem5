@@ -232,12 +232,12 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
   if (L1Stats.misses > L1Stats.accesses * 0.95f &&
       L1Stats.reuses < L1Stats.accesses * 0.1f) {
 
-    // Hack to hit in L2.
     latency++;
 
     // We decide to bypass L1.
     L1Stats.bypasses++;
     L1Stats.currentBypasses++;
+
     // Periodically clear the stats if we reaches a large number of bypasses.
     if (L1Stats.currentBypasses == 10000) {
       L1Stats.clear();
@@ -265,6 +265,8 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
           memAccess->setAdditionalDelay(latency);
         }
         auto pkt = this->createPacket(paddr, packetSize, memAccess);
+        this->caches[0]->incHitCount(pkt);
+        this->caches[1]->incHitCount(pkt);
         this->sendTimingRequestToL2Bus(pkt);
       } else {
         if (this->se->getPlacementLat() == "sub") {
@@ -278,6 +280,8 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
           memAccess->setAdditionalDelay(latency);
         }
         auto pkt = this->createPacket(paddr, packetSize, memAccess);
+        this->caches[0]->incHitCount(pkt);
+        this->caches[1]->incHitCount(pkt);
         this->sendTimingRequest(pkt, L3);
       }
 
@@ -294,6 +298,7 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
         memAccess->setAdditionalDelay(latency);
       }
       auto pkt = this->createPacket(paddr, packetSize, memAccess);
+      this->caches[0]->incHitCount(pkt);
       this->sendTimingRequest(pkt, L2);
       return true;
     }
@@ -380,6 +385,8 @@ bool StreamPlacementManager::accessExpressFootprint(
           memAccess->setAdditionalDelay(latency);
         }
         auto pkt = this->createPacket(paddr, packetSize, memAccess);
+        this->caches[0]->incHitCount(pkt);
+        this->caches[1]->incHitCount(pkt);
         this->sendTimingRequestToL2Bus(pkt);
       } else {
         if (this->se->getPlacementLat() == "sub") {
@@ -393,6 +400,8 @@ bool StreamPlacementManager::accessExpressFootprint(
           memAccess->setAdditionalDelay(latency);
         }
         auto pkt = this->createPacket(paddr, packetSize, memAccess);
+        this->caches[0]->incHitCount(pkt);
+        this->caches[1]->incHitCount(pkt);
         this->sendTimingRequest(pkt, L3);
       }
     } else {
@@ -401,6 +410,7 @@ bool StreamPlacementManager::accessExpressFootprint(
         memAccess->setAdditionalDelay(latency);
       }
       auto pkt = this->createPacket(paddr, packetSize, memAccess);
+      this->caches[0]->incHitCount(pkt);
       this->sendTimingRequest(pkt, L2);
     }
   }

@@ -1,7 +1,6 @@
 #ifndef __MCPAT_MCAPT_MANAGER_HH__
 #define __MCPAT_MCAPT_MANAGER_HH__
 
-
 #include "base/misc.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
@@ -45,6 +44,7 @@ private:
   std::unordered_map<int, const BaseCPU *> idToCPUMap;
   std::unordered_map<int, const BaseCache *> idToCPUL1DMap;
   std::unordered_map<int, const TheISA::TLB *> idToCPUL1DTBMap;
+  std::unordered_map<int, const BaseCache *> idToCPUL1_5DMap;
   std::unordered_map<int, const Cache *> idToCPUL1IMap;
   std::unordered_map<int, const TheISA::TLB *> idToCPUL1ITBMap;
 
@@ -57,8 +57,9 @@ private:
    * modification scatters in the source tree.
    */
   void configureMemoryControl(const DRAMCtrlParams *params);
-  void configureL2Cache(const Cache *cache);
-  void configureL2Directories(const Cache *cache);
+  void configureL2Cache(const BaseCache *cache);
+  void configureL2Directories(const BaseCache *cache);
+  void configureL3Cache(const BaseCache *cache);
   void configureDerivO3CPU(const DerivO3CPU *cpu);
   void configureLLVMTraceCPU(const LLVMTraceCPU *cpu);
   void configureBranchPredictor(const BPredUnit *predictor,

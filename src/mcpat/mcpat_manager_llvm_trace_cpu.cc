@@ -177,6 +177,15 @@ void McPATManager::configureLLVMTraceCPU(const LLVMTraceCPU *cpu) {
     mcpatDataL1.buffer_sizes[3] = 0;                   // wb_buffer_size
   }
 
+  if (this->idToCPUL1_5DMap.count(idx) != 0) {
+    /**
+     * Private L2 cache.
+     */
+    auto L1_5 = this->idToCPUL1_5DMap.at(idx);
+    this->configureL2Cache(L1_5);
+    this->configureL2Directories(L1_5);
+  }
+
   /**
    * L1 directory.
    */
@@ -353,6 +362,25 @@ void McPATManager::setStatsLLVMTraceCPU(int idx) {
     mcpatDataL1.write_accesses = writes;
     mcpatDataL1.read_misses = readMisses;
     mcpatDataL1.write_misses = writeMisses;
+  }
+
+  if (this->idToCPUL1_5DMap.count(idx) != 0) {
+    auto writes = vector("l1_5dcache.WritebackDirty_accesses") +
+                  vector("l1_5dcache.WritebackClean_accesses");
+    auto writeHits = vector("l1_5dcache.WritebackDirty_hits") +
+                     vector("l1_5dcache.WritebackClean_hits");
+    auto writeMisses = writes - writeHits;
+    auto reads = vector("l1_5dcache.ReadReq_accesses") +
+                 vector("l1_5dcache.ReadExReq_accesses") +
+                 vector("l1_5dcache.ReadSharedReq_accesses");
+    auto readMisses = vector("l1_5dcache.ReadReq_misses") +
+                      vector("l1_5dcache.ReadExReq_misses") +
+                      vector("l1_5dcache.ReadSharedReq_misses");
+    auto &L2 = this->xml->sys.L2[idx];
+    L2.read_accesses = reads;
+    L2.write_accesses = writes;
+    L2.read_misses = readMisses;
+    L2.write_misses = writeMisses;
   }
 
   if (this->idToCPUL1IMap.count(idx) != 0) {

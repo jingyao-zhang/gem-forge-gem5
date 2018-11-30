@@ -838,8 +838,13 @@ Stream::FIFOEntry::FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
             this->cacheBlocks, this->address, this->size);
     }
     this->cacheBlockAddrs[this->cacheBlocks] = lhsCacheBlock;
-    lhsCacheBlock += cacheBlockSize;
     this->cacheBlocks++;
+    if (lhsCacheBlock == 0xFFFFFFFFFFFFFFC0) {
+      // This is the last block in the address space.
+      // Something wrong here.
+      break;
+    }
+    lhsCacheBlock += cacheBlockSize;
   }
   // if (this->cacheBlocks > 1) {
   //   inform("addr %x size %x lhs %x rhs %x blocks %d.\n", this->address,

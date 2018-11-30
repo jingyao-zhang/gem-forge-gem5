@@ -635,7 +635,6 @@ class BaseCache : public MemObject
     {
         assert(pkt->req->masterId() < system->maxMasters());
         hits[pkt->cmdToIndex()][pkt->req->masterId()]++;
-
     }
 
 };
