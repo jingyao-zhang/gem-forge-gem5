@@ -298,7 +298,8 @@ bool CoherentXBar::recvTimingReq(PacketPtr pkt, PortID slave_port_id) {
         assert(routeTo.find(pkt->req) == routeTo.end());
         routeTo[pkt->req] = slave_port_id;
 
-        // panic_if(routeTo.size() > 512, "Routing table exceeds 512 packets\n");
+        // panic_if(routeTo.size() > 512, "Routing table exceeds 512
+        // packets\n");
       }
 
       // update the layer state and schedule an idle event
@@ -1000,6 +1001,7 @@ void CoherentXBar::StreamAwareCoherentXBarSlavePort::process() {
     return;
   }
 
+  int processed = 0;
   while (!this->blockedPkts.empty()) {
     auto pkt = this->blockedPkts.front();
     auto success = CoherentXBarSlavePort::recvTimingReq(pkt);
@@ -1008,6 +1010,10 @@ void CoherentXBar::StreamAwareCoherentXBarSlavePort::process() {
       break;
     } else {
       this->blockedPkts.pop_front();
+      processed++;
+      if (processed == 2) {
+        break;
+      }
     }
   }
 

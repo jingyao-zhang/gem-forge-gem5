@@ -2665,6 +2665,7 @@ void Cache::StreamAwareCpuSidePort::process() {
     return;
   }
 
+  int processed = 0;
   while (!this->blockedPkts.empty()) {
     auto pkt = this->blockedPkts.front();
     auto success = CpuSidePort::recvTimingReq(pkt);
@@ -2673,6 +2674,10 @@ void Cache::StreamAwareCpuSidePort::process() {
     } else {
       // Succeed.
       this->blockedPkts.pop_front();
+      processed++;
+      if (processed == 2) {
+        break;
+      }
     }
   }
 
