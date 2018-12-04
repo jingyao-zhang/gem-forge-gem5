@@ -65,6 +65,8 @@ class LLVMTraceCPU(BaseCPU):
     streamEngineIsOracle = Param.Bool(False, "Whether the stream engine is oracle.")
     streamEngineMaxRunAHeadLength = Param.Unsigned(
         10, "How many elements can a stream run ahead.")
+    streamEngineMaxTotalRunAHeadLength = Param.Unsigned(
+        1000, "How many total elements to run ahead.")
     streamEngineThrottling = Param.String("Static", "Which throttling technique to use.")
     streamEngineEnableCoalesce = Param.Bool(
         False, "Whether the steam engine enable coalesced streams.")
@@ -85,6 +87,7 @@ class LLVMTraceCPU(BaseCPU):
     streamEnginePlacementLat = Param.String(
         "", "The latency modeling of bypassing.")
     streamEnginePlacement = Param.String("placement", "Which placement techinque to use.")
+
 
     @classmethod
     def memory_mode(cls):

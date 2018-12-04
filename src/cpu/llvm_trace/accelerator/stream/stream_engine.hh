@@ -63,6 +63,9 @@ public:
     }
   }
 
+  int currentTotalRunAheadLength;
+  int maxTotalRunAheadLength;
+
   /**
    * Stats
    */

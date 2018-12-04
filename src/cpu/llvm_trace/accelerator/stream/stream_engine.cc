@@ -37,6 +37,10 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
   this->setIsOracle(cpuParams->streamEngineIsOracle);
   this->maxRunAHeadLength = cpuParams->streamEngineMaxRunAHeadLength;
+  this->currentTotalRunAheadLength = 0;
+  // this->maxTotalRunAheadLength =
+  // cpuParams->streamEngineMaxTotalRunAHeadLength;
+  this->maxTotalRunAheadLength = this->maxRunAHeadLength * 24;
   this->throttling = cpuParams->streamEngineThrottling;
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
   this->enableMerge = cpuParams->streamEngineEnableMerge;

@@ -156,9 +156,11 @@ void Stream::updateRunAHeadLength(size_t newRunAHeadLength) {
   if (newRunAHeadLength <= this->runAHeadLength) {
     return;
   }
-  if (newRunAHeadLength > this->maxRunAHeadLength) {
-    return;
-  }
+  // if (newRunAHeadLength > this->maxRunAHeadLength) {
+  //   return;
+  // }
+  auto delta = newRunAHeadLength - this->runAHeadLength;
+  this->se->currentTotalRunAheadLength += delta;
   this->runAHeadLength = newRunAHeadLength;
   // Back pressure to base step streams.
   for (auto S : this->baseStepStreams) {
@@ -228,6 +230,8 @@ void Stream::configure(StreamConfigInst *inst) {
   while (this->FIFO.size() < this->runAHeadLength) {
     this->enqueueFIFO();
   }
+
+  this->se->currentTotalRunAheadLength += this->runAHeadLength;
 }
 
 void Stream::commitConfigure(StreamConfigInst *inst) {
@@ -375,6 +379,7 @@ void Stream::commitStore(StreamStoreInst *inst) {
 void Stream::end(StreamEndInst *inst) {
   auto endSeqNum = inst->getSeqNum();
   this->endSeqNum = endSeqNum;
+  this->se->currentTotalRunAheadLength -= this->runAHeadLength;
   // /**
   //  * For all the entries without stepSeqNum, this means that these entries
   //  are
@@ -810,11 +815,17 @@ void Stream::throttleLate() {
     return;
   }
   this->lateFetchCount++;
-  if (this->lateFetchCount == 10 && !cpu->dataPort.isBlocked()) {
-    // Step by 2.
-    this->updateRunAHeadLength(this->runAHeadLength + 2);
-    // Clear the late FetchCount
-    this->lateFetchCount = 0;
+  if (this->lateFetchCount == 10) {
+    // Check if we still have room to increase.
+    inform("Late fetche! %d %d", this->se->currentTotalRunAheadLength,
+           this->se->maxTotalRunAheadLength);
+    if (this->se->currentTotalRunAheadLength <
+        this->se->maxTotalRunAheadLength) {
+      // Step by 2.
+      this->updateRunAHeadLength(this->runAHeadLength + 2);
+      // Clear the late FetchCount
+      this->lateFetchCount = 0;
+    }
   }
 }
 Stream::FIFOEntry::FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
