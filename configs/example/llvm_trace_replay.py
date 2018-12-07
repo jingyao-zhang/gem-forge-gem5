@@ -132,8 +132,33 @@ if options.llvm_standalone == 0:
 
             # For each process, add a LLVMTraceCPU for simulation.
             llvm_trace_cpu = LLVMTraceCPU(cpu_id=len(cpus))
+            llvm_trace_cpu.fetchWidth = options.llvm_issue_width
+            llvm_trace_cpu.decodeWidth = options.llvm_issue_width
+            llvm_trace_cpu.renameWidth = options.llvm_issue_width
+            llvm_trace_cpu.dispatchWidth = options.llvm_issue_width
             llvm_trace_cpu.issueWidth = options.llvm_issue_width
+            llvm_trace_cpu.writeBackWidth = options.llvm_issue_width
+            llvm_trace_cpu.commitWidth = options.llvm_issue_width
+
+
             llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
+            if options.llvm_issue_width == 2:
+                llvm_trace_cpu.robSize = 64
+                llvm_trace_cpu.instQueueSize = 16
+                llvm_trace_cpu.loadQueueSize = 16
+                llvm_trace_cpu.storeQueueSize = 20
+            elif options.llvm_issue_width == 4:
+                llvm_trace_cpu.robSize = 168
+                llvm_trace_cpu.instQueueSize = 24
+                llvm_trace_cpu.loadQueueSize = 64
+                llvm_trace_cpu.storeQueueSize = 36
+            elif options.llvm_issue_width == 6:
+                llvm_trace_cpu.robSize = 192
+                llvm_trace_cpu.instQueueSize = 28
+                llvm_trace_cpu.loadQueueSize = 42
+                llvm_trace_cpu.storeQueueSize = 36
+
+
             llvm_trace_cpu.cpu_id = len(cpus)
             llvm_trace_cpu.traceFile = options.llvm_trace_file
             llvm_trace_cpu.driver = driver
@@ -153,8 +178,32 @@ else:
 
         # For each process, add a LLVMTraceCPU for simulation.
         llvm_trace_cpu = LLVMTraceCPU(cpu_id=len(cpus))
+
+        llvm_trace_cpu.fetchWidth = options.llvm_issue_width
+        llvm_trace_cpu.decodeWidth = options.llvm_issue_width
+        llvm_trace_cpu.renameWidth = options.llvm_issue_width
+        llvm_trace_cpu.dispatchWidth = options.llvm_issue_width
         llvm_trace_cpu.issueWidth = options.llvm_issue_width
+        llvm_trace_cpu.writeBackWidth = options.llvm_issue_width
+        llvm_trace_cpu.commitWidth = options.llvm_issue_width
+
         llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
+        if options.llvm_issue_width == 2:
+            llvm_trace_cpu.robSize = 64
+            llvm_trace_cpu.instQueueSize = 16
+            llvm_trace_cpu.loadQueueSize = 16
+            llvm_trace_cpu.storeQueueSize = 20
+        elif options.llvm_issue_width == 4:
+            llvm_trace_cpu.robSize = 168
+            llvm_trace_cpu.instQueueSize = 24
+            llvm_trace_cpu.loadQueueSize = 64
+            llvm_trace_cpu.storeQueueSize = 36
+        elif options.llvm_issue_width == 6:
+            llvm_trace_cpu.robSize = 192
+            llvm_trace_cpu.instQueueSize = 28
+            llvm_trace_cpu.loadQueueSize = 42
+            llvm_trace_cpu.storeQueueSize = 36
+
         llvm_trace_cpu.cpu_id = len(cpus)
         llvm_trace_cpu.traceFile = options.llvm_trace_file
         llvm_trace_cpu.streamEngineIsOracle = (
