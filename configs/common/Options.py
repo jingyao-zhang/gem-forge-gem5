@@ -104,6 +104,7 @@ def addNoISAOptions(parser):
     parser.add_option("--l1i_size", type="string", default="32kB")
     parser.add_option("--l1i_assoc", type="int", default=2)
 
+    parser.add_option("--l1d_lat", type="int", default=2)
     parser.add_option("--l1d_size", type="string", default="64kB")
     parser.add_option("--l1d_assoc", type="int", default=2)
     parser.add_option("--l1d_mshrs", type="int", default=4)
@@ -115,9 +116,12 @@ def addNoISAOptions(parser):
     parser.add_option("--l1_5d_mshrs", type="int", default=16)
 
     parser.add_option("--l2bus_width", type="int", default=32)
+
+    parser.add_option("--l2_mshrs", type="int", default=20)
     parser.add_option("--l2_assoc", type="int", default=8)
     parser.add_option("--l2_size", type="string", default="2MB")
-    parser.add_option("--l2_tag_lat", type="int", default=20)
+    parser.add_option("--l2_lat", type="int", default=20)
+
     parser.add_option("--l3_assoc", type="int", default=16)
     parser.add_option("--l3_size", type="string", default="16MB")
     parser.add_option("--cacheline_size", type="int", default=64)

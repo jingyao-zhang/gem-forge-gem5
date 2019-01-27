@@ -90,7 +90,11 @@ def config_cache(options, system):
         system.l2 = l2_cache_class(clk_domain=system.cpu_clk_domain,
                                    size=options.l2_size,
                                    assoc=options.l2_assoc,
-                                   tag_latency=options.l2_tag_lat)
+                                   mshrs=options.l2_mshrs,
+                                   tag_latency=options.l2_lat,
+                                   data_latency=options.l2_lat,
+                                   response_latency=options.l2_lat
+                                   )
 
         system.tol2bus = L2XBar(
             clk_domain=system.cpu_clk_domain,
@@ -107,7 +111,11 @@ def config_cache(options, system):
                                   assoc=options.l1i_assoc)
             dcache = dcache_class(size=options.l1d_size,
                                   assoc=options.l1d_assoc,
-                                  mshrs=options.l1d_mshrs)
+                                  mshrs=options.l1d_mshrs,
+                                  tag_latency=options.l1d_lat,
+                                  data_latency=options.l1d_lat,
+                                  response_latency=options.l1d_lat,
+                                  )
 
             # If we have a walker cache specified, instantiate two
             # instances here
