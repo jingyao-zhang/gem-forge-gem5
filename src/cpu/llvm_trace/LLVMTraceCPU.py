@@ -6,6 +6,7 @@ from FuncUnitConfig import *
 from FUPool import FUPool
 from Process import EmulatedDriver
 
+
 class LLVMAccel(FUDesc):
     opList = [OpDesc(opClass='Accelerator', opLat=1, pipelined=False)]
     count = 2
@@ -59,15 +60,25 @@ class LLVMTraceCPU(BaseCPU):
     fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
 
     cacheStorePorts = Param.Unsigned(8, "Cache Store Ports. "
-          "Constrains stores only. Loads are constrained by load FUs.")
+                                     "Constrains stores only. Loads are constrained by load FUs.")
+
+    # Parameters for ADFA.
+    adfaEnableSpeculation = Param.Bool(
+        False, "Whether the adfa can speculate.")
+    adfaBreakIVDep = Param.Bool(
+        False, "Whether the adfa can break induction variable dependence.")
+    adfaBreakRVDep = Param.Bool(
+        False, "Whether the adfa can break reduction variable dependence.")
 
     # Adhoc parameters for stream engine.
-    streamEngineIsOracle = Param.Bool(False, "Whether the stream engine is oracle.")
+    streamEngineIsOracle = Param.Bool(
+        False, "Whether the stream engine is oracle.")
     streamEngineMaxRunAHeadLength = Param.Unsigned(
         10, "How many elements can a stream run ahead.")
     streamEngineMaxTotalRunAHeadLength = Param.Unsigned(
         1000, "How many total elements to run ahead.")
-    streamEngineThrottling = Param.String("Static", "Which throttling technique to use.")
+    streamEngineThrottling = Param.String(
+        "Static", "Which throttling technique to use.")
     streamEngineEnableCoalesce = Param.Bool(
         False, "Whether the steam engine enable coalesced streams.")
     streamEngineEnableMerge = Param.Bool(
@@ -86,8 +97,8 @@ class LLVMTraceCPU(BaseCPU):
         False, "Whether the stream engine should periodly reset the placement decision.")
     streamEnginePlacementLat = Param.String(
         "", "The latency modeling of bypassing.")
-    streamEnginePlacement = Param.String("placement", "Which placement techinque to use.")
-
+    streamEnginePlacement = Param.String(
+        "placement", "Which placement techinque to use.")
 
     @classmethod
     def memory_mode(cls):

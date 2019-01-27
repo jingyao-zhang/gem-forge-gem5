@@ -7,13 +7,26 @@
 #include "debug/AbstractDataFlowAccelerator.hh"
 
 AbstractDataFlowAccelerator::AbstractDataFlowAccelerator()
-    : TDGAccelerator(), handling(NONE), issueWidth(16), robSize(512),
+    : TDGAccelerator(),
+      handling(NONE),
+      issueWidth(16),
+      robSize(512),
       dataFlow(nullptr) {}
 AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
   if (this->dataFlow != nullptr) {
     delete this->dataFlow;
     this->dataFlow = nullptr;
   }
+}
+
+void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
+                                            TDGAcceleratorManager *_manager) {
+  TDGAccelerator::handshake(_cpu, _manager);
+
+  auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
+  this->enableSpeculation = cpuParams->adfaEnableSpeculation;
+  this->breakIVDep = cpuParams->adfaBreakIVDep;
+  this->breakRVDep = cpuParams->adfaBreakRVDep;
 }
 
 void AbstractDataFlowAccelerator::regStats() {
@@ -75,20 +88,20 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
 
 void AbstractDataFlowAccelerator::tick() {
   switch (this->handling) {
-  case NONE: {
-    return;
-  }
-  case CONFIG: {
-    this->numCycles++;
-    this->tickConfig();
-    break;
-  }
-  case START: {
-    this->numCycles++;
-    this->tickStart();
-    break;
-  }
-  default: { panic("Unknown handling instruction."); }
+    case NONE: {
+      return;
+    }
+    case CONFIG: {
+      this->numCycles++;
+      this->tickConfig();
+      break;
+    }
+    case START: {
+      this->numCycles++;
+      this->tickStart();
+      break;
+    }
+    default: { panic("Unknown handling instruction."); }
   }
 }
 
@@ -103,7 +116,6 @@ void AbstractDataFlowAccelerator::tickConfig() {
 }
 
 void AbstractDataFlowAccelerator::tickStart() {
-
   this->fetch();
   this->markReady();
   this->issue();
@@ -111,7 +123,6 @@ void AbstractDataFlowAccelerator::tickStart() {
   this->release();
 
   if (this->endToken != nullptr && this->rob.empty()) {
-
     this->dataFlow->commit(this->endToken);
     this->endToken = nullptr;
 
@@ -124,7 +135,6 @@ void AbstractDataFlowAccelerator::tickStart() {
 }
 
 void AbstractDataFlowAccelerator::fetch() {
-
   if (this->endToken != nullptr) {
     return;
   }
@@ -178,31 +188,34 @@ void AbstractDataFlowAccelerator::markReady() {
     // function.
     bool ready = true;
     auto inst = this->inflyInstMap.at(id);
-    for (auto depId : inst->getTDG().reg_deps()) {
-      auto statusIter = this->inflyInstStatus.find(depId);
-      if (statusIter != this->inflyInstStatus.end() &&
-          statusIter->second != InstStatus::FINISHED) {
-        // The dependent instruction has not finished.
-        ready = false;
-        break;
+    for (const auto &dep : inst->getTDG().deps()) {
+      bool shouldCheck = true;
+      if (dep.type() ==
+          ::LLVM::TDG::TDGInstructionDependence::POST_DOMINANCE_FRONTIER) {
+        if (this->enableSpeculation) {
+          continue;
+        }
       }
-    }
-    for (auto depId : inst->getTDG().mem_deps()) {
-      auto statusIter = this->inflyInstStatus.find(depId);
-      if (statusIter != this->inflyInstStatus.end() &&
-          statusIter->second != InstStatus::FINISHED) {
-        // The dependent instruction has not finished.
-        ready = false;
-        break;
+      if (dep.type() ==
+          ::LLVM::TDG::TDGInstructionDependence::INDUCTION_VARIABLE) {
+        if (this->breakIVDep) {
+          continue;
+        }
       }
-    }
-    for (auto depId : inst->getTDG().ctr_deps()) {
-      auto statusIter = this->inflyInstStatus.find(depId);
-      if (statusIter != this->inflyInstStatus.end() &&
-          statusIter->second != InstStatus::FINISHED) {
-        // The dependent instruction has not finished.
-        ready = false;
-        break;
+      if (dep.type() ==
+          ::LLVM::TDG::TDGInstructionDependence::REDUCTION_VARIABLE) {
+        if (this->breakRVDep) {
+          continue;
+        }
+      }
+      if (shouldCheck) {
+        const auto depId = dep.dependent_id();
+        auto statusIter = this->inflyInstStatus.find(depId);
+        if (statusIter != this->inflyInstStatus.end() &&
+            statusIter->second != InstStatus::FINISHED) {
+          ready = false;
+          break;
+        }
       }
     }
     if (ready) {

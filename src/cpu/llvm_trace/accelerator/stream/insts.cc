@@ -31,9 +31,12 @@ void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
 
 void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream configure %lu\n", this->getSeqNum());
-  for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
-                                                                      this);
+  for (const auto &dep : this->TDG.deps()) {
+    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      auto streamId = dep.dependent_id();
+      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
+          streamId, this);
+    }
   }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamConfigure(this);
 }
@@ -66,9 +69,12 @@ void StreamStepInst::execute(LLVMTraceCPU *cpu) {
 
 void StreamStepInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream step %lu\n", this->getSeqNum());
-  for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
-                                                                      this);
+  for (const auto &dep : this->TDG.deps()) {
+    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      auto streamId = dep.dependent_id();
+      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
+          streamId, this);
+    }
   }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStep(this);
 }
@@ -88,16 +94,23 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
 
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
-  for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->getStreamEngine()->useStream(streamId, this);
+  for (const auto &dep : this->TDG.deps()) {
+    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      auto streamId = dep.dependent_id();
+      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
+          streamId, this);
+    }
   }
   cpu->getAcceleratorManager()->handle(this);
 }
 
 void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
-  for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
-                                                                      this);
+  for (const auto &dep : this->TDG.deps()) {
+    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      auto streamId = dep.dependent_id();
+      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
+          streamId, this);
+    }
   }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStore(this);
 }
@@ -120,9 +133,12 @@ void StreamEndInst::execute(LLVMTraceCPU *cpu) {
 }
 
 void StreamEndInst::commit(LLVMTraceCPU *cpu) {
-  for (const auto &streamId : this->TDG.used_stream_ids()) {
-    cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(streamId,
-                                                                      this);
+  for (const auto &dep : this->TDG.deps()) {
+    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      auto streamId = dep.dependent_id();
+      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
+          streamId, this);
+    }
   }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamEnd(this);
 }
@@ -132,21 +148,20 @@ uint64_t StreamEndInst::getStreamId() const {
 }
 
 LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst) {
-
   switch (TDGInst.extra_case()) {
-  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamConfig: {
-    return new StreamConfigInst(TDGInst);
-  }
-  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStep: {
-    return new StreamStepInst(TDGInst);
-  }
-  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStore: {
-    return new StreamStoreInst(TDGInst);
-  }
-  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamEnd: {
-    return new StreamEndInst(TDGInst);
-  }
-  default: { break; }
+    case LLVM::TDG::TDGInstruction::ExtraCase::kStreamConfig: {
+      return new StreamConfigInst(TDGInst);
+    }
+    case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStep: {
+      return new StreamStepInst(TDGInst);
+    }
+    case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStore: {
+      return new StreamStoreInst(TDGInst);
+    }
+    case LLVM::TDG::TDGInstruction::ExtraCase::kStreamEnd: {
+      return new StreamEndInst(TDGInst);
+    }
+    default: { break; }
   }
 
   return nullptr;

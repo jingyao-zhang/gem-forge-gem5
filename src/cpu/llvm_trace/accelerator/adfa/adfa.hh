@@ -16,10 +16,11 @@
 class DynamicInstructionStream;
 
 class AbstractDataFlowAccelerator : public TDGAccelerator {
-public:
+ public:
   AbstractDataFlowAccelerator();
   ~AbstractDataFlowAccelerator() override;
 
+  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
   void regStats() override;
@@ -35,7 +36,7 @@ public:
   Stats::Scalar numCycles;
   Stats::Scalar numCommittedInst;
 
-private:
+ private:
   union {
     ADFAConfigInst *config;
     ADFAStartInst *start;
@@ -56,6 +57,10 @@ private:
   void tickStart();
 
   DynamicInstructionStream *dataFlow;
+
+  bool enableSpeculation;
+  bool breakIVDep;
+  bool breakRVDep;
 
   /**
    * Execution Model:
