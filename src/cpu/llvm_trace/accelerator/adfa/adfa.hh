@@ -5,6 +5,7 @@
 
 #include "base/statistics.hh"
 #include "cpu/llvm_trace/accelerator/tdg_accelerator.hh"
+#include "cpu/llvm_trace/bank_manager.hh"
 
 #include <list>
 #include <unordered_map>
@@ -23,6 +24,7 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
   void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
+  void dump() override;
   void regStats() override;
 
   /**
@@ -61,6 +63,8 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
   bool enableSpeculation;
   bool breakIVDep;
   bool breakRVDep;
+  unsigned numBanks;
+  unsigned numPortsPerBank;
 
   /**
    * Execution Model:
@@ -102,6 +106,8 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
   std::unordered_map<LLVMDynamicInstId, Age> inflyInstAge;
   std::unordered_map<LLVMDynamicInstId, InstStatus> inflyInstStatus;
   std::unordered_map<LLVMDynamicInstId, LLVMDynamicInst *> inflyInstMap;
+
+  BankManager *bankManager;
 
   // Huge ROB.
   std::list<LLVMDynamicInstId> rob;

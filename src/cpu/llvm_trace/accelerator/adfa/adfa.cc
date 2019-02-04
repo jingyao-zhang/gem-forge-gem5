@@ -17,6 +17,11 @@ AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
     delete this->dataFlow;
     this->dataFlow = nullptr;
   }
+
+  if (this->bankManager != nullptr) {
+    delete this->bankManager;
+    this->bankManager = nullptr;
+  }
 }
 
 void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
@@ -27,6 +32,11 @@ void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
   this->enableSpeculation = cpuParams->adfaEnableSpeculation;
   this->breakIVDep = cpuParams->adfaBreakIVDep;
   this->breakRVDep = cpuParams->adfaBreakRVDep;
+  this->numBanks = cpuParams->adfaNumBanks;
+  this->numPortsPerBank = cpuParams->adfaNumPortsPerBank;
+
+  this->bankManager = new BankManager(this->cpu->system->cacheLineSize(),
+                                      this->numBanks, this->numPortsPerBank);
 }
 
 void AbstractDataFlowAccelerator::regStats() {
@@ -84,6 +94,10 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     return true;
   }
   return false;
+}
+
+void AbstractDataFlowAccelerator::dump() {
+  inform("ADFA: Committed insts %f.\n", this->numCommittedInst.value());
 }
 
 void AbstractDataFlowAccelerator::tick() {
@@ -245,13 +259,40 @@ void AbstractDataFlowAccelerator::markReady() {
 
 void AbstractDataFlowAccelerator::issue() {
   size_t issued = 0;
-  for (auto id : this->readyInsts) {
+
+  // Clear the bank manager for this cycle.
+  this->bankManager->clear();
+
+  auto readyIter = this->readyInsts.begin();
+  auto readyEnd = this->readyInsts.end();
+  while (readyIter != readyEnd) {
     // Some issue width.
     if (issued > this->issueWidth) {
       break;
     }
-    DPRINTF(AbstractDataFlowAccelerator, "ADFA: issue inst %u.\n", id);
+    // Enforce banked cache confliction.
+    auto id = *readyIter;
     auto inst = this->inflyInstMap.at(id);
+
+    const auto &TDG = inst->getTDG();
+    if (TDG.has_load() || TDG.has_store()) {
+      auto addr = TDG.has_load() ? TDG.load().addr() : TDG.store().addr();
+      auto size = TDG.has_load() ? TDG.load().size() : TDG.store().size();
+      // For now just look at the first cache line.
+      auto cacheLineSize = this->cpu->system->cacheLineSize();
+      size = std::min(size, cacheLineSize - (addr % cacheLineSize));
+      if (!this->bankManager->isNonConflict(addr, size)) {
+        // Has conflict, not issue this one.
+        readyIter++;
+        continue;
+      } else {
+        // No conflict happen, good to go.
+        this->bankManager->access(addr, size);
+      }
+    }
+
+    // Ready to go.
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: issue inst %u.\n", id);
     inst->execute(cpu);
     // For store instruction, we write back immediately as we have all the
     // memory/control dependence resolved.
@@ -260,10 +301,28 @@ void AbstractDataFlowAccelerator::issue() {
     }
     ++issued;
     this->inflyInstStatus.at(id) = InstStatus::ISSUED;
+    readyIter = this->readyInsts.erase(readyIter);
   }
-  for (size_t i = 0; i < issued; ++i) {
-    this->readyInsts.pop_front();
-  }
+
+  // for (auto id : this->readyInsts) {
+  //   // Some issue width.
+  //   if (issued > this->issueWidth) {
+  //     break;
+  //   }
+  //   DPRINTF(AbstractDataFlowAccelerator, "ADFA: issue inst %u.\n", id);
+  //   auto inst = this->inflyInstMap.at(id);
+  //   inst->execute(cpu);
+  //   // For store instruction, we write back immediately as we have all the
+  //   // memory/control dependence resolved.
+  //   if (inst->isStoreInst()) {
+  //     inst->writeback(cpu);
+  //   }
+  //   ++issued;
+  //   this->inflyInstStatus.at(id) = InstStatus::ISSUED;
+  // }
+  // for (size_t i = 0; i < issued; ++i) {
+  //   this->readyInsts.pop_front();
+  // }
   this->numIssuedDist.sample(issued);
 }
 

@@ -16,7 +16,7 @@
 class LLVMTraceCPU;
 
 class LLVMIEWStage {
-public:
+ public:
   using RenameStruct = LLVMRenameStage::RenameStruct;
   using IEWStruct = std::vector<LLVMDynamicInstId>;
 
@@ -40,7 +40,6 @@ public:
   void blockMemInst(LLVMDynamicInstId instId);
   void unblockMemoryInsts();
 
-
   std::string name();
 
   // API for complete a function unit.
@@ -48,14 +47,14 @@ public:
   void processFUCompletion(LLVMDynamicInstId instId, int fuId);
 
   class FUCompletion : public Event {
-  public:
+   public:
     FUCompletion(LLVMDynamicInstId _instId, int _fuId, LLVMIEWStage *_iew,
                  bool _shouldFreeFU = false);
     // From Event.
     void process() override;
     const char *description() const override;
 
-  private:
+   private:
     LLVMDynamicInstId instId;
     int fuId;
     // Pointer back to the CPU.
@@ -117,13 +116,14 @@ public:
 
   Stats::Distribution numExecutingDist;
 
-private:
+ private:
   LLVMTraceCPU *cpu;
 
   unsigned dispatchWidth;
   unsigned issueWidth;
   unsigned writeBackWidth;
   unsigned robSize;
+  unsigned cacheLoadPorts;
   unsigned instQueueSize;
   unsigned loadQueueSize;
   unsigned storeQueueSize;

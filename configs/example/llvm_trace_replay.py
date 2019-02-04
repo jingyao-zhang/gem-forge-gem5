@@ -25,7 +25,12 @@ parser.add_option("--llvm-standalone", action="store",
                   type="int", help="""replay in stand alone mode""", default="0")
 parser.add_option("--llvm-prefetch", action="store", type="int",
                   help="""whether to use a prefetcher""", default="0")
-parser.add_option("--llvm-mcpat", action="store", type="int", 
+parser.add_option("--gem-forge-cache-load-ports", action="store", type="int",
+                  help="""How many loads can be issued in one cycle""", default="4")
+parser.add_option("--gem-forge-cache-store-ports", action="store", type="int",
+                  help="""How many stores can be written-back in one cycle""", default="4")
+
+parser.add_option("--llvm-mcpat", action="store", type="int",
                   help="""whether to use mcpat to estimate power""", default="0")
 parser.add_option("--gem-forge-stream-engine-max-run-ahead-length", action="store", type="int",
                   help="""How many element can a stream run ahead""", default="10")
@@ -37,10 +42,18 @@ parser.add_option("--gem-forge-stream-engine-enable-coalesce", action="store", t
                   help="""Enable stream coalesce in the stream engine.""", default="0")
 parser.add_option("--gem-forge-stream-engine-enable-merge", action="store", type="int",
                   help="""Enable stream merge in the stream engine.""", default="0")
-parser.add_option("--gem-forge-stream-engine-l1d", type="string", default="original")
-parser.add_option("--gem-forge-adfa-enable-speculation", action="store", type="int", default="0")
-parser.add_option("--gem-forge-adfa-break-iv-dep", action="store", type="int", default="0")
-parser.add_option("--gem-forge-adfa-break-rv-dep", action="store", type="int", default="0")
+parser.add_option("--gem-forge-stream-engine-l1d",
+                  type="string", default="original")
+parser.add_option("--gem-forge-adfa-enable-speculation",
+                  action="store", type="int", default="0")
+parser.add_option("--gem-forge-adfa-break-iv-dep",
+                  action="store", type="int", default="0")
+parser.add_option("--gem-forge-adfa-break-rv-dep",
+                  action="store", type="int", default="0")
+parser.add_option("--gem-forge-adfa-num-banks",
+                  action="store", type="int", default="1")
+parser.add_option("--gem-forge-adfa-num-ports-per-bank",
+                  action="store", type="int", default="1")
 
 (options, args) = parser.parse_args()
 
@@ -142,7 +155,8 @@ if options.llvm_standalone == 0:
             llvm_trace_cpu.issueWidth = options.llvm_issue_width
             llvm_trace_cpu.writeBackWidth = options.llvm_issue_width
             llvm_trace_cpu.commitWidth = options.llvm_issue_width
-
+            llvm_trace_cpu.cacheLoadPorts = options.gem_forge_cache_load_ports
+            llvm_trace_cpu.cacheStorePorts = options.gem_forge_cache_store_ports
 
             llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
             if options.llvm_issue_width == 2:
@@ -160,7 +174,6 @@ if options.llvm_standalone == 0:
                 llvm_trace_cpu.instQueueSize = 28
                 llvm_trace_cpu.loadQueueSize = 42
                 llvm_trace_cpu.storeQueueSize = 36
-
 
             llvm_trace_cpu.cpu_id = len(cpus)
             llvm_trace_cpu.traceFile = options.llvm_trace_file
@@ -194,7 +207,8 @@ else:
         llvm_trace_cpu.adfaEnableSpeculation = options.gem_forge_adfa_enable_speculation
         llvm_trace_cpu.adfaBreakIVDep = options.gem_forge_adfa_break_iv_dep
         llvm_trace_cpu.adfaBreakRVDep = options.gem_forge_adfa_break_rv_dep
-
+        llvm_trace_cpu.adfaNumBanks = options.gem_forge_adfa_num_banks
+        llvm_trace_cpu.adfaNumPortsPerBank = options.gem_forge_adfa_num_ports_per_bank
 
         llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
         if options.llvm_issue_width == 2:

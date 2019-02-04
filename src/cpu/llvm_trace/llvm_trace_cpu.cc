@@ -7,17 +7,31 @@
 #include "sim/sim_exit.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
-    : BaseCPU(params), pageTable(params->name + ".page_table", 0),
+    : BaseCPU(params),
+      pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile), itb(params->itb), dtb(params->dtb),
-      fuPool(params->fuPool), regionStats(nullptr), currentStackDepth(0),
-      process(nullptr), thread_context(nullptr), stackMin(0),
-      fetchStage(params, this), decodeStage(params, this),
-      renameStage(params, this), iewStage(params, this),
-      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
-      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
-      driver(params->driver), tickEvent(*this) {
+      traceFileName(params->traceFile),
+      itb(params->itb),
+      dtb(params->dtb),
+      fuPool(params->fuPool),
+      regionStats(nullptr),
+      currentStackDepth(0),
+      process(nullptr),
+      thread_context(nullptr),
+      stackMin(0),
+      fetchStage(params, this),
+      decodeStage(params, this),
+      renameStage(params, this),
+      iewStage(params, this),
+      commitStage(params, this),
+      fetchToDecode(5, 5),
+      decodeToRename(5, 5),
+      renameToIEW(5, 5),
+      iewToCommit(5, 5),
+      signalBuffer(5, 5),
+      driver(params->driver),
+      tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
   // Set the time buffer between stages.
   this->fetchStage.setToDecode(&this->fetchToDecode);
@@ -177,7 +191,6 @@ void LLVMTraceCPU::tick() {
 }
 
 void LLVMTraceCPU::warmUpCache(const std::string &fileName) {
-
   if (!this->isStandalone()) {
     // Only warm up cache in standalone mode.
     return;
@@ -243,6 +256,7 @@ void LLVMTraceCPU::CPUPort::sendReq() {
   // DPRINTF(LLVMTraceCPU, "Try sending pkt, remaining packets %lu\n",
   //         this->blockedPacketPtrs.size());
   // std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
+  unsigned usedPorts = 0;
   while (!this->blocked && !this->blockedPacketPtrs.empty() &&
          this->inflyNumPackets < 80) {
     PacketPtr pkt = this->blockedPacketPtrs.front();
@@ -254,6 +268,7 @@ void LLVMTraceCPU::CPUPort::sendReq() {
     } else {
       this->inflyNumPackets++;
       this->blockedPacketPtrs.pop();
+      usedPorts++;
     }
   }
 }

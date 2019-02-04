@@ -59,8 +59,11 @@ class LLVMTraceCPU(BaseCPU):
 
     fuPool = Param.FUPool(DefaultFUPool(), "Functional Unit pool")
 
+    # This controls how many store instructions can be written back in one cycle.
     cacheStorePorts = Param.Unsigned(8, "Cache Store Ports. "
                                      "Constrains stores only. Loads are constrained by load FUs.")
+    # This controls how many load instructions can be issued in one cycle.
+    cacheLoadPorts = Param.Unsigned(4, "Cache Load Ports.")
 
     # Parameters for ADFA.
     adfaEnableSpeculation = Param.Bool(
@@ -69,6 +72,9 @@ class LLVMTraceCPU(BaseCPU):
         False, "Whether the adfa can break induction variable dependence.")
     adfaBreakRVDep = Param.Bool(
         False, "Whether the adfa can break reduction variable dependence.")
+    adfaNumBanks = Param.Unsigned(1, "Adfa number of banks to cache.")
+    adfaNumPortsPerBank = Param.Unsigned(
+        1, "Adfa number of ports per bank to cache.")
 
     # Adhoc parameters for stream engine.
     streamEngineIsOracle = Param.Bool(
