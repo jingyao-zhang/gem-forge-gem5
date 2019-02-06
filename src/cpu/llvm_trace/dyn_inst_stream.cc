@@ -27,8 +27,8 @@ DynamicInstructionStream::~DynamicInstructionStream() {
   this->input = nullptr;
 }
 
-const LLVM::TDG::StaticInformation &DynamicInstructionStream::getStaticInfo()
-    const {
+const LLVM::TDG::StaticInformation &
+DynamicInstructionStream::getStaticInfo() const {
   return this->staticInfo;
 }
 
@@ -63,58 +63,58 @@ size_t DynamicInstructionStream::parse() {
 
       // Handle the extra fields.
       switch (inst.extra_case()) {
-        case LLVM::TDG::TDGInstruction::ExtraCase::kStore: {
-          // Store.
-          llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
-                                            LLVMDynamicInstMem::Type::STORE);
-          break;
+      case LLVM::TDG::TDGInstruction::ExtraCase::kStore: {
+        // Store.
+        llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                          LLVMDynamicInstMem::Type::STORE);
+        break;
+      }
+
+      case LLVM::TDG::TDGInstruction::ExtraCase::kLoad: {
+        // Load.
+        llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                          LLVMDynamicInstMem::LOAD);
+        break;
+      }
+
+      case LLVM::TDG::TDGInstruction::ExtraCase::kAlloc: {
+        // Alloc.
+        llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                          LLVMDynamicInstMem::Type::ALLOCA);
+        break;
+      }
+
+      case LLVM::TDG::TDGInstruction::ExtraCase::kBranch: {
+        // Branch.
+        llvmInst = new LLVMDynamicInstCompute(
+            inst, numMicroOps, LLVMDynamicInstCompute::Type::OTHER);
+        break;
+      }
+
+      case LLVM::TDG::TDGInstruction::ExtraCase::EXTRA_NOT_SET: {
+        // Default instructions.
+        auto type = LLVMDynamicInstCompute::Type::OTHER;
+
+        if (inst.op() == "call") {
+          type = LLVMDynamicInstCompute::Type::CALL;
+        } else if (inst.op() == "ret") {
+          type = LLVMDynamicInstCompute::Type::RET;
+        } else if (inst.op() == "sin") {
+          type = LLVMDynamicInstCompute::Type::SIN;
+        } else if (inst.op() == "cos") {
+          type = LLVMDynamicInstCompute::Type::COS;
+        } else if (inst.op() == "cca") {
+          type = LLVMDynamicInstCompute::Type::ACCELERATOR;
         }
 
-        case LLVM::TDG::TDGInstruction::ExtraCase::kLoad: {
-          // Load.
-          llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
-                                            LLVMDynamicInstMem::LOAD);
-          break;
-        }
+        llvmInst = new LLVMDynamicInstCompute(inst, numMicroOps, type);
+        break;
+      }
 
-        case LLVM::TDG::TDGInstruction::ExtraCase::kAlloc: {
-          // Alloc.
-          llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
-                                            LLVMDynamicInstMem::Type::ALLOCA);
-          break;
-        }
-
-        case LLVM::TDG::TDGInstruction::ExtraCase::kBranch: {
-          // Branch.
-          llvmInst = new LLVMDynamicInstCompute(
-              inst, numMicroOps, LLVMDynamicInstCompute::Type::OTHER);
-          break;
-        }
-
-        case LLVM::TDG::TDGInstruction::ExtraCase::EXTRA_NOT_SET: {
-          // Default instructions.
-          auto type = LLVMDynamicInstCompute::Type::OTHER;
-
-          if (inst.op() == "call") {
-            type = LLVMDynamicInstCompute::Type::CALL;
-          } else if (inst.op() == "ret") {
-            type = LLVMDynamicInstCompute::Type::RET;
-          } else if (inst.op() == "sin") {
-            type = LLVMDynamicInstCompute::Type::SIN;
-          } else if (inst.op() == "cos") {
-            type = LLVMDynamicInstCompute::Type::COS;
-          } else if (inst.op() == "cca") {
-            type = LLVMDynamicInstCompute::Type::ACCELERATOR;
-          }
-
-          llvmInst = new LLVMDynamicInstCompute(inst, numMicroOps, type);
-          break;
-        }
-
-        default: {
-          panic("Unrecognized oneof name case.\n");
-          break;
-        }
+      default: {
+        panic("Unrecognized oneof name case.\n");
+        break;
+      }
       }
     }
 
@@ -191,4 +191,64 @@ void DynamicInstructionStream::release() {
     this->buffer.release_front(&inst->getTDG());
     delete inst;
   }
+}
+
+DynamicInstructionStreamInterfaceConditionalEnd::
+    DynamicInstructionStreamInterfaceConditionalEnd(
+        DynamicInstructionStream *_stream, EndFunc _endFunc)
+    : stream(_stream), endFunc(_endFunc), endToken(nullptr), fetchedSize(0),
+      ended(false) {}
+
+DynamicInstructionStreamInterfaceConditionalEnd::
+    ~DynamicInstructionStreamInterfaceConditionalEnd() {
+  // Remember to commit the endToken if there is one.
+  if (this->endToken != nullptr) {
+    this->commit(this->endToken);
+    this->endToken = nullptr;
+  }
+  if (this->fetchedSize != 0) {
+    panic("Not all fetched instructions are committed before releasing this "
+          "conditional end stream interface.");
+  }
+}
+
+LLVMDynamicInst *DynamicInstructionStreamInterfaceConditionalEnd::fetch() {
+  if (this->ended) {
+    return nullptr;
+  }
+  if (this->stream->fetchEmpty()) {
+    // We have reached the end of the underneath stream.
+    this->ended = true;
+    return nullptr;
+  }
+  auto Iter = this->stream->fetchIter();
+  if (this->fetchedSize == 0) {
+    this->headIter = Iter;
+  }
+  this->fetchedSize++;
+  // Check for endToken.
+  if (this->endFunc(Iter->first)) {
+    if (this->endToken != nullptr) {
+      panic("We have already fetched the end token.");
+    }
+    this->endToken = Iter->first;
+    this->ended = true;
+    // We have reached the end.
+    return nullptr;
+  }
+  return Iter->first;
+}
+
+void DynamicInstructionStreamInterfaceConditionalEnd::commit(
+    LLVMDynamicInst *inst) {
+  if (this->fetchedSize == 0) {
+    panic("Try to commit when we have fetched nothing.");
+  }
+  if (this->headIter->first != inst) {
+    panic("Instruction is not committed in order.");
+  }
+  auto committedIter = this->headIter;
+  ++this->headIter;
+  this->stream->commit(committedIter);
+  --this->fetchedSize;
 }

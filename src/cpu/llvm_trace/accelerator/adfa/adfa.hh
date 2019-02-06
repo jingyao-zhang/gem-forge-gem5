@@ -15,9 +15,10 @@
  */
 
 class DynamicInstructionStream;
+class DynamicInstructionStreamInterface;
 
 class AbstractDataFlowCore {
- public:
+public:
   AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu);
   ~AbstractDataFlowCore();
 
@@ -29,7 +30,7 @@ class AbstractDataFlowCore {
 
   bool isBusy() const { return this->busy; }
 
-  void start(DynamicInstructionStream *dataFlow);
+  void start(DynamicInstructionStreamInterface *dataFlow);
 
   /**
    * Stats
@@ -41,12 +42,12 @@ class AbstractDataFlowCore {
   Stats::Scalar numCycles;
   Stats::Scalar numCommittedInst;
 
- private:
+private:
   std::string id;
   LLVMTraceCPU *cpu;
 
   bool busy;
-  DynamicInstructionStream *dataFlow;
+  DynamicInstructionStreamInterface *dataFlow;
 
   bool enableSpeculation;
   bool breakIVDep;
@@ -104,9 +105,6 @@ class AbstractDataFlowCore {
   std::list<LLVMDynamicInstId> rob;
   std::list<LLVMDynamicInstId> readyInsts;
 
-  // Flag indicating whether we have encountered the end token.
-  LLVMDynamicInst *endToken;
-
   void fetch();
   void markReady();
   void issue();
@@ -115,7 +113,7 @@ class AbstractDataFlowCore {
 };
 
 class AbstractDataFlowAccelerator : public TDGAccelerator {
- public:
+public:
   AbstractDataFlowAccelerator();
   ~AbstractDataFlowAccelerator() override;
 
@@ -134,7 +132,7 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
   Stats::Scalar numCycles;
   Stats::Scalar numCommittedInst;
 
- private:
+private:
   union {
     ADFAConfigInst *config;
     ADFAStartInst *start;
@@ -144,6 +142,19 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
     CONFIG,
     START,
   } handling;
+
+  /**
+   * A simple class holding the execution jobs for the cores.
+   */
+  struct Job {
+    DynamicInstructionStreamInterface *dataFlow;
+    AbstractDataFlowCore *core;
+    bool shouldSerialize;
+    Job() : dataFlow(nullptr), core(nullptr), shouldSerialize(false) {}
+  };
+
+  std::list<Job> pendingJobs;
+  std::list<Job> workingJobs;
 
   // Configure overhead;
   int configOverheadInCycles;

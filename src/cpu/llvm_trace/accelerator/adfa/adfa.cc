@@ -8,11 +8,7 @@
 
 AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
                                            LLVMTraceCPU *_cpu)
-    : id(_id),
-      cpu(_cpu),
-      busy(false),
-      dataFlow(nullptr),
-      issueWidth(16),
+    : id(_id), cpu(_cpu), busy(false), dataFlow(nullptr), issueWidth(16),
       robSize(512) {
   auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
   this->enableSpeculation = cpuParams->adfaEnableSpeculation;
@@ -60,14 +56,13 @@ void AbstractDataFlowCore::regStats() {
       .prereq(this->numCommittedInst);
 }
 
-void AbstractDataFlowCore::start(DynamicInstructionStream *dataFlow) {
+void AbstractDataFlowCore::start(DynamicInstructionStreamInterface *dataFlow) {
   if (this->isBusy()) {
     panic("Start the core while it's still busy.");
   }
   this->busy = true;
   this->dataFlow = dataFlow;
 
-  this->endToken = nullptr;
   this->currentAge = 0;
   this->inflyInstAge.clear();
   this->inflyInstStatus.clear();
@@ -89,17 +84,14 @@ void AbstractDataFlowCore::tick() {
   this->commit();
   this->release();
 
-  if (this->endToken != nullptr && this->rob.empty()) {
-    this->dataFlow->commit(this->endToken);
-    this->endToken = nullptr;
-
+  if (this->dataFlow->hasEnded() && this->rob.empty()) {
     // Mark that we are done.
     this->busy = false;
   }
 }
 
 void AbstractDataFlowCore::fetch() {
-  if (this->endToken != nullptr) {
+  if (this->dataFlow->hasEnded()) {
     return;
   }
 
@@ -108,16 +100,20 @@ void AbstractDataFlowCore::fetch() {
     return;
   }
 
-  while (this->dataFlow->fetchSize() > 0 && this->rob.size() < this->robSize) {
+  while (this->rob.size() < this->robSize) {
     auto inst = this->dataFlow->fetch();
-    if (inst->getInstName() == "df-end") {
-      // We have encountered the end token.
-      this->endToken = inst;
-
-      DPRINTF(AbstractDataFlowAccelerator, "ADFA: fetched end token %u.\n",
-              inst->getId());
+    if (inst == nullptr) {
+      // We have just reached the end of the data flow.
       break;
     }
+    // if (inst->getInstName() == "df-end") {
+    //   // We have encountered the end token.
+    //   this->endToken = inst;
+
+    //   DPRINTF(AbstractDataFlowAccelerator, "ADFA: fetched end token %u.\n",
+    //           inst->getId());
+    //   break;
+    // }
     // This is a normal instruction, insert into rob.
 
     // We update RegionStats here.
@@ -352,7 +348,15 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     this->handling = START;
     this->currentInst.start = StartInst;
     this->numExecution++;
-    this->cores[0].start(this->dataFlow);
+
+    // Create a new job in the queue.
+    this->pendingJobs.emplace_back();
+    auto &newJob = this->pendingJobs.back();
+    newJob.dataFlow = new DynamicInstructionStreamInterfaceConditionalEnd(
+        this->dataFlow, [](LLVMDynamicInst *inst) -> bool {
+          return inst->getInstName() == "df-end";
+        });
+
     return true;
   }
   return false;
@@ -366,20 +370,20 @@ void AbstractDataFlowAccelerator::dump() {
 
 void AbstractDataFlowAccelerator::tick() {
   switch (this->handling) {
-    case NONE: {
-      return;
-    }
-    case CONFIG: {
-      this->numCycles++;
-      this->tickConfig();
-      break;
-    }
-    case START: {
-      this->numCycles++;
-      this->tickStart();
-      break;
-    }
-    default: { panic("Unknown handling instruction."); }
+  case NONE: {
+    return;
+  }
+  case CONFIG: {
+    this->numCycles++;
+    this->tickConfig();
+    break;
+  }
+  case START: {
+    this->numCycles++;
+    this->tickStart();
+    break;
+  }
+  default: { panic("Unknown handling instruction."); }
   }
 }
 
@@ -394,14 +398,44 @@ void AbstractDataFlowAccelerator::tickConfig() {
 }
 
 void AbstractDataFlowAccelerator::tickStart() {
-  bool busy = false;
+
+  // Try to schedule new jobs.
   for (auto &core : this->cores) {
-    core.tick();
-    busy = busy || core.isBusy();
+    if (this->pendingJobs.empty()) {
+      break;
+    }
+    if (core.isBusy()) {
+      continue;
+    }
+
+    auto &pendingJob = this->pendingJobs.front();
+    pendingJob.core = &core;
+    core.start(pendingJob.dataFlow);
+    this->workingJobs.push_back(pendingJob);
+    this->pendingJobs.pop_front();
   }
 
-  if (!busy) {
-    // Simply mark the instruction finished for now.
+  // Tick.
+  for (auto &core : this->cores) {
+    core.tick();
+  }
+
+  // Try to collect finished jobs.
+  while (!this->workingJobs.empty()) {
+    auto &workingJob = this->workingJobs.front();
+    if (workingJob.core->isBusy()) {
+      // Still busy.
+      break;
+    }
+    // The core is done with the job.
+    workingJob.core = nullptr;
+    delete workingJob.dataFlow;
+    workingJob.dataFlow = nullptr;
+    this->workingJobs.pop_front();
+  }
+
+  if (this->workingJobs.empty() && this->pendingJobs.empty()) {
+    // We are done for all jobs. Simply mark the instruction finished for now.
     this->currentInst.start->markFinished();
     this->currentInst.start = nullptr;
     this->handling = NONE;
