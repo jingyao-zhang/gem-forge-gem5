@@ -16,21 +16,24 @@
 
 class DynamicInstructionStream;
 
-class AbstractDataFlowAccelerator : public TDGAccelerator {
+class AbstractDataFlowCore {
  public:
-  AbstractDataFlowAccelerator();
-  ~AbstractDataFlowAccelerator() override;
+  AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu);
+  ~AbstractDataFlowCore();
 
-  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
-  bool handle(LLVMDynamicInst *inst) override;
-  void tick() override;
-  void dump() override;
-  void regStats() override;
+  const char *name() const { return this->id.c_str(); }
+
+  void tick();
+  void dump();
+  void regStats();
+
+  bool isBusy() const { return this->busy; }
+
+  void start(DynamicInstructionStream *dataFlow);
 
   /**
    * Stats
    */
-
   Stats::Distribution numIssuedDist;
   Stats::Distribution numCommittedDist;
   Stats::Scalar numConfigured;
@@ -39,25 +42,10 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
   Stats::Scalar numCommittedInst;
 
  private:
-  union {
-    ADFAConfigInst *config;
-    ADFAStartInst *start;
-  } currentInst;
-  enum {
-    NONE,
-    CONFIG,
-    START,
-  } handling;
+  std::string id;
+  LLVMTraceCPU *cpu;
 
-  unsigned issueWidth;
-  unsigned robSize;
-
-  // Configure overhead;
-  int configOverheadInCycles;
-
-  void tickConfig();
-  void tickStart();
-
+  bool busy;
   DynamicInstructionStream *dataFlow;
 
   bool enableSpeculation;
@@ -65,6 +53,9 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
   bool breakRVDep;
   unsigned numBanks;
   unsigned numPortsPerBank;
+
+  unsigned issueWidth;
+  unsigned robSize;
 
   /**
    * Execution Model:
@@ -121,6 +112,51 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
   void issue();
   void commit();
   void release();
+};
+
+class AbstractDataFlowAccelerator : public TDGAccelerator {
+ public:
+  AbstractDataFlowAccelerator();
+  ~AbstractDataFlowAccelerator() override;
+
+  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
+  bool handle(LLVMDynamicInst *inst) override;
+  void tick() override;
+  void dump() override;
+  void regStats() override;
+
+  /**
+   * Stats
+   */
+
+  Stats::Scalar numConfigured;
+  Stats::Scalar numExecution;
+  Stats::Scalar numCycles;
+  Stats::Scalar numCommittedInst;
+
+ private:
+  union {
+    ADFAConfigInst *config;
+    ADFAStartInst *start;
+  } currentInst;
+  enum {
+    NONE,
+    CONFIG,
+    START,
+  } handling;
+
+  // Configure overhead;
+  int configOverheadInCycles;
+
+  int numCores;
+  bool enableTLS;
+
+  void tickConfig();
+  void tickStart();
+
+  DynamicInstructionStream *dataFlow;
+
+  std::vector<AbstractDataFlowCore> cores;
 };
 
 #endif

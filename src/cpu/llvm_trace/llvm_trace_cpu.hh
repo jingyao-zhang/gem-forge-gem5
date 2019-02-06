@@ -132,9 +132,6 @@ private:
   // Cache warm up in standalone mode.
   void warmUpCache(const std::string &FileName);
 
-  // Load more dynamic instructions if needed.
-  void loadDynamicInstsIfNecessary();
-
   // In fly instructions.
   std::unordered_map<LLVMDynamicInstId, LLVMDynamicInst *> inflyInstMap;
 

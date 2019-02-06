@@ -124,9 +124,6 @@ void LLVMTraceCPU::tick() {
     this->accelManager->dump();
   }
 
-  // Make sure there is always instructions for simulation.
-  this->loadDynamicInstsIfNecessary();
-
   // Warm up the cache.
   // AdHoc for the cache warm up file name.
   if (this->numCycles.value() == 0 && this->isStandalone()) {
@@ -332,28 +329,6 @@ void LLVMTraceCPU::handleReplay(
 
   // Schedule the next event.
   schedule(this->tickEvent, nextCycle());
-}
-
-void LLVMTraceCPU::loadDynamicInstsIfNecessary() {
-  const size_t LOADED_WINDOW_SIZE = 100000;
-
-  // panic_if(!this->traceFileStream.is_open(),
-  //          "The trace file stream is not opened.");
-
-  if (this->dynInstStream->size() > LOADED_WINDOW_SIZE) {
-    return;
-  }
-
-  // Load using the parser.
-  size_t count = this->dynInstStream->parse();
-
-  do {
-    (void)count;
-  } while (0);
-
-  DPRINTF(LLVMTraceCPU,
-          "Incrementally parsed number of inst: %u, current loaded: %u\n",
-          count, this->dynInstStream->size());
 }
 
 LLVMDynamicInst *LLVMTraceCPU::getInflyInst(LLVMDynamicInstId id) {

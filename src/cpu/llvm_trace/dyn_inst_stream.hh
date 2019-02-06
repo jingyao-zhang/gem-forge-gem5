@@ -15,14 +15,16 @@
 #include "proto/protoio.hh"
 
 #include <list>
+#include <utility>
 
 /**
  * This class represents a buffer, where elements are allocated and deallocated
  * in a FIFO order.
  * The "deallocated" elements are reused for later allocation.
  */
-template <typename T> class QueueBuffer {
-public:
+template <typename T>
+class QueueBuffer {
+ public:
   explicit QueueBuffer() : size(0) {
     this->list.push_back(new T());
     this->_end = this->list.begin();
@@ -76,7 +78,7 @@ public:
     return allocated;
   }
 
-private:
+ private:
   std::list<T *> list;
   iterator _end;
   size_t size;
@@ -93,22 +95,26 @@ private:
   }
 };
 
+
 /**
  * Represent a instruction stream from a file.
  * The instructions are read by fetch stage, and are only released when
  * committed. Instructions must be committed in order.
  */
 class DynamicInstructionStream {
-public:
+ public:
   DynamicInstructionStream(const std::string &_fn);
   ~DynamicInstructionStream();
 
   DynamicInstructionStream(const DynamicInstructionStream &other) = delete;
   DynamicInstructionStream(DynamicInstructionStream &&other) = delete;
-  DynamicInstructionStream &
-  operator=(const DynamicInstructionStream &other) = delete;
-  DynamicInstructionStream &
-  operator=(DynamicInstructionStream &&other) = delete;
+  DynamicInstructionStream &operator=(const DynamicInstructionStream &other) =
+      delete;
+  DynamicInstructionStream &operator=(DynamicInstructionStream &&other) =
+      delete;
+
+  using ListContainer = std::list<std::pair<LLVMDynamicInst*, bool>>;
+  using Iterator = ListContainer::iterator;
 
   /**
    * Get the static info at the header of the stream.
@@ -122,7 +128,6 @@ public:
    * NOTE: user should do some flow control based on the size(), otherwise the
    * memory usage will blow up.
    */
-  size_t parse();
 
   size_t size() const { return this->insts.size(); }
   bool empty() const { return this->size() == 0; }
@@ -135,21 +140,46 @@ public:
   LLVMDynamicInst *fetch();
 
   /**
+   * Fetch the iterator.
+   */
+  Iterator fetchIter();
+
+  /**
    * Interface for commit stage.
    */
   void commit(LLVMDynamicInst *inst);
 
-private:
+  /**
+   * Special case for out-of-order release.
+   */
+  void commit(Iterator instIter);
+
+ private:
   std::string fn;
   ProtoInputStream *input;
   QueueBuffer<LLVM::TDG::TDGInstruction> buffer;
 
   LLVM::TDG::StaticInformation staticInfo;
 
-  std::list<LLVMDynamicInst *>::iterator fetchPos;
+  Iterator fetchPos;
   size_t _fetchSize;
 
-  std::list<LLVMDynamicInst *> insts;
+  ListContainer insts;
+
+  void release();
+  size_t parse();
+};
+
+class DynamicInstructionStreamInterface {
+ public:
+  virtual size_t size() const = 0;
+  virtual bool empty() const = 0;
+  virtual size_t fetchSize() const = 0;
+  virtual bool fetchEmpty() const = 0;
+
+  virtual LLVMDynamicInst *fetch() = 0;
+
+  virtual void commit(LLVMDynamicInst *inst) = 0;
 };
 
 #endif

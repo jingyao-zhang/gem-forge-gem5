@@ -54,6 +54,10 @@ parser.add_option("--gem-forge-adfa-num-banks",
                   action="store", type="int", default="1")
 parser.add_option("--gem-forge-adfa-num-ports-per-bank",
                   action="store", type="int", default="1")
+parser.add_option("--gem-forge-adfa-num-cores",
+                  action="store", type="int", default="1")
+parser.add_option("--gem-forge-adfa-enable-tls",
+                  action="store", type="int", default="0")
 
 (options, args) = parser.parse_args()
 
@@ -209,6 +213,8 @@ else:
         llvm_trace_cpu.adfaBreakRVDep = options.gem_forge_adfa_break_rv_dep
         llvm_trace_cpu.adfaNumBanks = options.gem_forge_adfa_num_banks
         llvm_trace_cpu.adfaNumPortsPerBank = options.gem_forge_adfa_num_ports_per_bank
+        llvm_trace_cpu.adfaNumCores = options.gem_forge_adfa_num_cores
+        llvm_trace_cpu.adfaEnableTLS = (options.gem_forge_adfa_enable_tls == 1)
 
         llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
         if options.llvm_issue_width == 2:

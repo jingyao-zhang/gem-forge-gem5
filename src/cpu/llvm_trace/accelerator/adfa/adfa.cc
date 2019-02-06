@@ -6,28 +6,14 @@
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 
-AbstractDataFlowAccelerator::AbstractDataFlowAccelerator()
-    : TDGAccelerator(),
-      handling(NONE),
+AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
+                                           LLVMTraceCPU *_cpu)
+    : id(_id),
+      cpu(_cpu),
+      busy(false),
+      dataFlow(nullptr),
       issueWidth(16),
-      robSize(512),
-      dataFlow(nullptr) {}
-AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
-  if (this->dataFlow != nullptr) {
-    delete this->dataFlow;
-    this->dataFlow = nullptr;
-  }
-
-  if (this->bankManager != nullptr) {
-    delete this->bankManager;
-    this->bankManager = nullptr;
-  }
-}
-
-void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
-                                            TDGAcceleratorManager *_manager) {
-  TDGAccelerator::handshake(_cpu, _manager);
-
+      robSize(512) {
   auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
   this->enableSpeculation = cpuParams->adfaEnableSpeculation;
   this->breakIVDep = cpuParams->adfaBreakIVDep;
@@ -39,97 +25,64 @@ void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
                                       this->numBanks, this->numPortsPerBank);
 }
 
-void AbstractDataFlowAccelerator::regStats() {
-  DPRINTF(AbstractDataFlowAccelerator, "ADFA: CALLED REGSTATS\n");
+AbstractDataFlowCore::~AbstractDataFlowCore() {
+  if (this->bankManager != nullptr) {
+    delete this->bankManager;
+    this->bankManager = nullptr;
+  }
+}
+
+void AbstractDataFlowCore::dump() {
+  inform("ADFCore %s: Committed insts %f.\n", this->name(),
+         this->numCommittedInst.value());
+}
+
+void AbstractDataFlowCore::regStats() {
   this->numIssuedDist.init(0, this->issueWidth, 1)
-      .name(this->manager->name() + ".adfa.issued_per_cycle")
+      .name(this->id + ".issued_per_cycle")
       .desc("Number of inst issued each cycle")
       .flags(Stats::pdf);
   this->numCommittedDist.init(0, 8, 1)
-      .name(this->manager->name() + ".adfa.committed_per_cycle")
+      .name(this->id + ".adfa.committed_per_cycle")
       .desc("Number of insts committed each cycle")
       .flags(Stats::pdf);
-  this->numConfigured.name(this->manager->name() + ".adfa.numConfigured")
+  this->numConfigured.name(this->id + ".numConfigured")
       .desc("Number of times ADFA get configured")
       .prereq(this->numConfigured);
-  this->numExecution.name(this->manager->name() + ".adfa.numExecution")
+  this->numExecution.name(this->id + ".numExecution")
       .desc("Number of times ADFA get executed")
       .prereq(this->numExecution);
-  this->numCycles.name(this->manager->name() + ".adfa.numCycles")
+  this->numCycles.name(this->id + ".numCycles")
       .desc("Number of cycles ADFA is running")
       .prereq(this->numCycles);
-  this->numCommittedInst.name(this->manager->name() + ".adfa.numCommittedInst")
+  this->numCommittedInst.name(this->id + ".numCommittedInst")
       .desc("Number of insts ADFA committed")
       .prereq(this->numCommittedInst);
 }
 
-bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
-  if (this->handling != NONE) {
-    panic("ADFA is already busy, can not handle other adfa instruction.");
+void AbstractDataFlowCore::start(DynamicInstructionStream *dataFlow) {
+  if (this->isBusy()) {
+    panic("Start the core while it's still busy.");
   }
-  if (auto ConfigInst = dynamic_cast<ADFAConfigInst *>(inst)) {
-    this->handling = CONFIG;
-    this->currentInst.config = ConfigInst;
-    this->configOverheadInCycles = 10;
-    // Simply open the data flow stream.
-    if (this->dataFlow == nullptr) {
-      this->dataFlow = new DynamicInstructionStream(
-          inst->getTDG().adfa_config().data_flow());
-    }
-    this->numConfigured++;
-    DPRINTF(AbstractDataFlowAccelerator, "ADFA: start configure.\n");
-    return true;
-  } else if (auto StartInst = dynamic_cast<ADFAStartInst *>(inst)) {
-    this->handling = START;
-    this->currentInst.start = StartInst;
-    this->endToken = nullptr;
-    this->currentAge = 0;
-    this->inflyInstAge.clear();
-    this->inflyInstStatus.clear();
-    this->inflyInstMap.clear();
-    this->rob.clear();
-    this->readyInsts.clear();
-    this->numExecution++;
-    DPRINTF(AbstractDataFlowAccelerator, "ADFA: start execution.\n");
-    return true;
-  }
-  return false;
+  this->busy = true;
+  this->dataFlow = dataFlow;
+
+  this->endToken = nullptr;
+  this->currentAge = 0;
+  this->inflyInstAge.clear();
+  this->inflyInstStatus.clear();
+  this->inflyInstMap.clear();
+  this->rob.clear();
+  this->readyInsts.clear();
+  this->numExecution++;
+
+  DPRINTF(AbstractDataFlowAccelerator, "ADFA: start execution.\n");
 }
 
-void AbstractDataFlowAccelerator::dump() {
-  inform("ADFA: Committed insts %f.\n", this->numCommittedInst.value());
-}
-
-void AbstractDataFlowAccelerator::tick() {
-  switch (this->handling) {
-    case NONE: {
-      return;
-    }
-    case CONFIG: {
-      this->numCycles++;
-      this->tickConfig();
-      break;
-    }
-    case START: {
-      this->numCycles++;
-      this->tickStart();
-      break;
-    }
-    default: { panic("Unknown handling instruction."); }
+void AbstractDataFlowCore::tick() {
+  if (!this->isBusy()) {
+    return;
   }
-}
-
-void AbstractDataFlowAccelerator::tickConfig() {
-  this->configOverheadInCycles--;
-  if (this->configOverheadInCycles == 0) {
-    this->currentInst.config->markFinished();
-    this->currentInst.config = nullptr;
-    this->handling = NONE;
-    DPRINTF(AbstractDataFlowAccelerator, "ADFA: start configure: DONE.\n");
-  }
-}
-
-void AbstractDataFlowAccelerator::tickStart() {
   this->fetch();
   this->markReady();
   this->issue();
@@ -140,15 +93,12 @@ void AbstractDataFlowAccelerator::tickStart() {
     this->dataFlow->commit(this->endToken);
     this->endToken = nullptr;
 
-    // Simply mark the instruction finished for now.
-    this->currentInst.start->markFinished();
-    this->currentInst.start = nullptr;
-    this->handling = NONE;
-    DPRINTF(AbstractDataFlowAccelerator, "ADFA: start execution: DONE.\n");
+    // Mark that we are done.
+    this->busy = false;
   }
 }
 
-void AbstractDataFlowAccelerator::fetch() {
+void AbstractDataFlowCore::fetch() {
   if (this->endToken != nullptr) {
     return;
   }
@@ -158,10 +108,6 @@ void AbstractDataFlowAccelerator::fetch() {
     return;
   }
 
-  // Let's parse more instructions if the number of parsed is below a threshold.
-  if (this->dataFlow->size() < 10000) {
-    this->dataFlow->parse();
-  }
   while (this->dataFlow->fetchSize() > 0 && this->rob.size() < this->robSize) {
     auto inst = this->dataFlow->fetch();
     if (inst->getInstName() == "df-end") {
@@ -189,7 +135,7 @@ void AbstractDataFlowAccelerator::fetch() {
   }
 }
 
-void AbstractDataFlowAccelerator::markReady() {
+void AbstractDataFlowCore::markReady() {
   /**
    * This is quite inefficient as we loop through all the rob.
    */
@@ -257,7 +203,7 @@ void AbstractDataFlowAccelerator::markReady() {
   }
 }
 
-void AbstractDataFlowAccelerator::issue() {
+void AbstractDataFlowCore::issue() {
   size_t issued = 0;
 
   // Clear the bank manager for this cycle.
@@ -304,29 +250,10 @@ void AbstractDataFlowAccelerator::issue() {
     readyIter = this->readyInsts.erase(readyIter);
   }
 
-  // for (auto id : this->readyInsts) {
-  //   // Some issue width.
-  //   if (issued > this->issueWidth) {
-  //     break;
-  //   }
-  //   DPRINTF(AbstractDataFlowAccelerator, "ADFA: issue inst %u.\n", id);
-  //   auto inst = this->inflyInstMap.at(id);
-  //   inst->execute(cpu);
-  //   // For store instruction, we write back immediately as we have all the
-  //   // memory/control dependence resolved.
-  //   if (inst->isStoreInst()) {
-  //     inst->writeback(cpu);
-  //   }
-  //   ++issued;
-  //   this->inflyInstStatus.at(id) = InstStatus::ISSUED;
-  // }
-  // for (size_t i = 0; i < issued; ++i) {
-  //   this->readyInsts.pop_front();
-  // }
   this->numIssuedDist.sample(issued);
 }
 
-void AbstractDataFlowAccelerator::commit() {
+void AbstractDataFlowCore::commit() {
   for (auto id : this->rob) {
     auto inst = this->inflyInstMap.at(id);
     inst->tick();
@@ -342,7 +269,7 @@ void AbstractDataFlowAccelerator::commit() {
   }
 }
 
-void AbstractDataFlowAccelerator::release() {
+void AbstractDataFlowCore::release() {
   // release in order.
   unsigned committed = 0;
   for (auto iter = this->rob.begin(), end = this->rob.end(); iter != end;) {
@@ -360,4 +287,124 @@ void AbstractDataFlowAccelerator::release() {
   }
   this->numCommittedInst += committed;
   this->numCommittedDist.sample(committed);
+}
+
+AbstractDataFlowAccelerator::AbstractDataFlowAccelerator()
+    : TDGAccelerator(), handling(NONE), dataFlow(nullptr) {}
+AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
+  if (this->dataFlow != nullptr) {
+    delete this->dataFlow;
+    this->dataFlow = nullptr;
+  }
+}
+
+void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
+                                            TDGAcceleratorManager *_manager) {
+  TDGAccelerator::handshake(_cpu, _manager);
+
+  auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
+  this->numCores = cpuParams->adfaNumCores;
+  this->enableTLS = cpuParams->adfaEnableTLS;
+
+  for (int i = 0; i < this->numCores; ++i) {
+    auto id = this->manager->name() + ".adfa.core" + std::to_string(i);
+    this->cores.emplace_back(id, _cpu);
+  }
+}
+
+void AbstractDataFlowAccelerator::regStats() {
+  DPRINTF(AbstractDataFlowAccelerator, "ADFA: CALLED REGSTATS\n");
+  this->numConfigured.name(this->manager->name() + ".adfa.numConfigured")
+      .desc("Number of times ADFA get configured")
+      .prereq(this->numConfigured);
+  this->numExecution.name(this->manager->name() + ".adfa.numExecution")
+      .desc("Number of times ADFA get executed")
+      .prereq(this->numExecution);
+  this->numCycles.name(this->manager->name() + ".adfa.numCycles")
+      .desc("Number of cycles ADFA is running")
+      .prereq(this->numCycles);
+  this->numCommittedInst.name(this->manager->name() + ".adfa.numCommittedInst")
+      .desc("Number of insts ADFA committed")
+      .prereq(this->numCommittedInst);
+
+  for (auto &core : this->cores) {
+    core.regStats();
+  }
+}
+
+bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
+  if (this->handling != NONE) {
+    panic("ADFA is already busy, can not handle other adfa instruction.");
+  }
+  if (auto ConfigInst = dynamic_cast<ADFAConfigInst *>(inst)) {
+    this->handling = CONFIG;
+    this->currentInst.config = ConfigInst;
+    this->configOverheadInCycles = 10;
+    // Simply open the data flow stream.
+    if (this->dataFlow == nullptr) {
+      this->dataFlow = new DynamicInstructionStream(
+          inst->getTDG().adfa_config().data_flow());
+    }
+    this->numConfigured++;
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: start configure.\n");
+    return true;
+  } else if (auto StartInst = dynamic_cast<ADFAStartInst *>(inst)) {
+    this->handling = START;
+    this->currentInst.start = StartInst;
+    this->numExecution++;
+    this->cores[0].start(this->dataFlow);
+    return true;
+  }
+  return false;
+}
+
+void AbstractDataFlowAccelerator::dump() {
+  for (auto &core : this->cores) {
+    core.dump();
+  }
+}
+
+void AbstractDataFlowAccelerator::tick() {
+  switch (this->handling) {
+    case NONE: {
+      return;
+    }
+    case CONFIG: {
+      this->numCycles++;
+      this->tickConfig();
+      break;
+    }
+    case START: {
+      this->numCycles++;
+      this->tickStart();
+      break;
+    }
+    default: { panic("Unknown handling instruction."); }
+  }
+}
+
+void AbstractDataFlowAccelerator::tickConfig() {
+  this->configOverheadInCycles--;
+  if (this->configOverheadInCycles == 0) {
+    this->currentInst.config->markFinished();
+    this->currentInst.config = nullptr;
+    this->handling = NONE;
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: start configure: DONE.\n");
+  }
+}
+
+void AbstractDataFlowAccelerator::tickStart() {
+  bool busy = false;
+  for (auto &core : this->cores) {
+    core.tick();
+    busy = busy || core.isBusy();
+  }
+
+  if (!busy) {
+    // Simply mark the instruction finished for now.
+    this->currentInst.start->markFinished();
+    this->currentInst.start = nullptr;
+    this->handling = NONE;
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: start execution: DONE.\n");
+  }
 }

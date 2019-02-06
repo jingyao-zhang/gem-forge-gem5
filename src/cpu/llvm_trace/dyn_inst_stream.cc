@@ -17,6 +17,9 @@ DynamicInstructionStream::DynamicInstructionStream(const std::string &_fn)
 
   // Parse the static information.
   this->input->read(this->staticInfo);
+
+  // Read in the first few instructions.
+  this->parse();
 }
 
 DynamicInstructionStream::~DynamicInstructionStream() {
@@ -24,8 +27,8 @@ DynamicInstructionStream::~DynamicInstructionStream() {
   this->input = nullptr;
 }
 
-const LLVM::TDG::StaticInformation &
-DynamicInstructionStream::getStaticInfo() const {
+const LLVM::TDG::StaticInformation &DynamicInstructionStream::getStaticInfo()
+    const {
   return this->staticInfo;
 }
 
@@ -33,7 +36,6 @@ size_t DynamicInstructionStream::parse() {
   size_t count = 0;
 
   while (true) {
-
     // Try parse the next instruction, if failed, peek_back() won't truly
     // allocate the buffer.
     auto &inst = *(this->buffer.peek_back());
@@ -61,62 +63,62 @@ size_t DynamicInstructionStream::parse() {
 
       // Handle the extra fields.
       switch (inst.extra_case()) {
-      case LLVM::TDG::TDGInstruction::ExtraCase::kStore: {
-        // Store.
-        llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
-                                          LLVMDynamicInstMem::Type::STORE);
-        break;
-      }
-
-      case LLVM::TDG::TDGInstruction::ExtraCase::kLoad: {
-        // Load.
-        llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
-                                          LLVMDynamicInstMem::LOAD);
-        break;
-      }
-
-      case LLVM::TDG::TDGInstruction::ExtraCase::kAlloc: {
-        // Alloc.
-        llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
-                                          LLVMDynamicInstMem::Type::ALLOCA);
-        break;
-      }
-
-      case LLVM::TDG::TDGInstruction::ExtraCase::kBranch: {
-        // Branch.
-        llvmInst = new LLVMDynamicInstCompute(
-            inst, numMicroOps, LLVMDynamicInstCompute::Type::OTHER);
-        break;
-      }
-
-      case LLVM::TDG::TDGInstruction::ExtraCase::EXTRA_NOT_SET: {
-        // Default instructions.
-        auto type = LLVMDynamicInstCompute::Type::OTHER;
-
-        if (inst.op() == "call") {
-          type = LLVMDynamicInstCompute::Type::CALL;
-        } else if (inst.op() == "ret") {
-          type = LLVMDynamicInstCompute::Type::RET;
-        } else if (inst.op() == "sin") {
-          type = LLVMDynamicInstCompute::Type::SIN;
-        } else if (inst.op() == "cos") {
-          type = LLVMDynamicInstCompute::Type::COS;
-        } else if (inst.op() == "cca") {
-          type = LLVMDynamicInstCompute::Type::ACCELERATOR;
+        case LLVM::TDG::TDGInstruction::ExtraCase::kStore: {
+          // Store.
+          llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                            LLVMDynamicInstMem::Type::STORE);
+          break;
         }
 
-        llvmInst = new LLVMDynamicInstCompute(inst, numMicroOps, type);
-        break;
-      }
+        case LLVM::TDG::TDGInstruction::ExtraCase::kLoad: {
+          // Load.
+          llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                            LLVMDynamicInstMem::LOAD);
+          break;
+        }
 
-      default: {
-        panic("Unrecognized oneof name case.\n");
-        break;
-      }
+        case LLVM::TDG::TDGInstruction::ExtraCase::kAlloc: {
+          // Alloc.
+          llvmInst = new LLVMDynamicInstMem(inst, numMicroOps, 16,
+                                            LLVMDynamicInstMem::Type::ALLOCA);
+          break;
+        }
+
+        case LLVM::TDG::TDGInstruction::ExtraCase::kBranch: {
+          // Branch.
+          llvmInst = new LLVMDynamicInstCompute(
+              inst, numMicroOps, LLVMDynamicInstCompute::Type::OTHER);
+          break;
+        }
+
+        case LLVM::TDG::TDGInstruction::ExtraCase::EXTRA_NOT_SET: {
+          // Default instructions.
+          auto type = LLVMDynamicInstCompute::Type::OTHER;
+
+          if (inst.op() == "call") {
+            type = LLVMDynamicInstCompute::Type::CALL;
+          } else if (inst.op() == "ret") {
+            type = LLVMDynamicInstCompute::Type::RET;
+          } else if (inst.op() == "sin") {
+            type = LLVMDynamicInstCompute::Type::SIN;
+          } else if (inst.op() == "cos") {
+            type = LLVMDynamicInstCompute::Type::COS;
+          } else if (inst.op() == "cca") {
+            type = LLVMDynamicInstCompute::Type::ACCELERATOR;
+          }
+
+          llvmInst = new LLVMDynamicInstCompute(inst, numMicroOps, type);
+          break;
+        }
+
+        default: {
+          panic("Unrecognized oneof name case.\n");
+          break;
+        }
       }
     }
 
-    this->insts.push_back(llvmInst);
+    this->insts.emplace_back(llvmInst, false);
     if (this->fetchSize() == 0) {
       // First time, intialize the fetch pos.
       this->fetchPos = this->insts.end();
@@ -138,9 +140,25 @@ LLVMDynamicInst *DynamicInstructionStream::fetch() {
   if (this->fetchEmpty()) {
     panic("Fetch from empty instruction stream.");
   }
-  auto fetched = *this->fetchPos;
+  auto fetched = this->fetchPos->first;
   this->fetchPos++;
   this->_fetchSize--;
+  if (this->fetchSize() < 1000) {
+    this->parse();
+  }
+  return fetched;
+}
+
+DynamicInstructionStream::Iterator DynamicInstructionStream::fetchIter() {
+  if (this->fetchEmpty()) {
+    panic("Fetch from empty instruction stream.");
+  }
+  auto fetched = this->fetchPos;
+  this->fetchPos++;
+  this->_fetchSize--;
+  if (this->fetchSize() < 1000) {
+    this->parse();
+  }
   return fetched;
 }
 
@@ -148,10 +166,29 @@ void DynamicInstructionStream::commit(LLVMDynamicInst *inst) {
   if (this->empty()) {
     panic("Commit called for empty instruction stream.");
   }
-  if (this->insts.front() != inst) {
+  if (this->insts.front().first != inst) {
     panic("Commit called out of order.");
   }
-  this->insts.pop_front();
-  this->buffer.release_front(&inst->getTDG());
-  delete inst;
+  if (this->insts.front().second) {
+    panic("Double commit an instruction.");
+  }
+  this->insts.front().second = true;
+  this->release();
+}
+
+void DynamicInstructionStream::commit(Iterator instIter) {
+  if (this->empty()) {
+    panic("Commit called for empty instruction stream.");
+  }
+  instIter->second = true;
+  this->release();
+}
+
+void DynamicInstructionStream::release() {
+  while (!this->empty() && this->insts.front().second) {
+    auto inst = this->insts.front().first;
+    this->insts.pop_front();
+    this->buffer.release_front(&inst->getTDG());
+    delete inst;
+  }
 }
