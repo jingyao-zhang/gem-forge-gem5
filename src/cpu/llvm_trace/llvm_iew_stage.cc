@@ -208,10 +208,12 @@ void LLVMIEWStage::issue() {
 
       // Check if there is enough issueWidth.
       if (issuedInsts + inst->getQueueWeight() > this->issueWidth) {
+        ++iter;
         continue;
       }
 
       if (inst->isLoadInst() && usedCacheLoadPorts == this->cacheLoadPorts) {
+        ++iter;
         continue;
       }
 

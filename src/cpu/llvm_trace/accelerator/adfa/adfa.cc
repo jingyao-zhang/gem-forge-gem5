@@ -7,11 +7,7 @@
 
 AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
                                            LLVMTraceCPU *_cpu)
-    : id(_id),
-      cpu(_cpu),
-      busy(false),
-      dataFlow(nullptr),
-      issueWidth(16),
+    : id(_id), cpu(_cpu), busy(false), dataFlow(nullptr), issueWidth(16),
       robSize(512) {
   auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
   this->issueWidth = cpuParams->adfaCoreIssueWidth;
@@ -360,8 +356,10 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     this->currentInst.start = StartInst;
     this->numExecution++;
 
+    inform("ADFA: start region %s.\n", this->configuredLoopName.c_str());
+
     // Take a checkpoints.
-    cpu->getRegionStats()->checkpoint(this->configuredLoopName);
+    // cpu->getRegionStats()->checkpoint(this->configuredLoopName);
 
     if (this->enableTLS) {
       // TLS mode.
@@ -392,20 +390,20 @@ void AbstractDataFlowAccelerator::dump() {
 
 void AbstractDataFlowAccelerator::tick() {
   switch (this->handling) {
-    case NONE: {
-      return;
-    }
-    case CONFIG: {
-      this->numCycles++;
-      this->tickConfig();
-      break;
-    }
-    case START: {
-      this->numCycles++;
-      this->tickStart();
-      break;
-    }
-    default: { panic("Unknown handling instruction."); }
+  case NONE: {
+    return;
+  }
+  case CONFIG: {
+    this->numCycles++;
+    this->tickConfig();
+    break;
+  }
+  case START: {
+    this->numCycles++;
+    this->tickStart();
+    break;
+  }
+  default: { panic("Unknown handling instruction."); }
   }
 }
 
@@ -476,6 +474,7 @@ void AbstractDataFlowAccelerator::tickStart() {
     this->currentInst.start = nullptr;
     this->handling = NONE;
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: start execution: DONE.\n");
+    inform("ADFA: end region %s.\n", this->configuredLoopName.c_str());
 
     // For TLS mode, remember to release the endToken.
     if (this->enableTLS) {
@@ -486,7 +485,7 @@ void AbstractDataFlowAccelerator::tickStart() {
     }
 
     // Take a checkpoint.
-    cpu->getRegionStats()->checkpoint(this->configuredLoopName);
+    // cpu->getRegionStats()->checkpoint(this->configuredLoopName);
   }
 }
 
