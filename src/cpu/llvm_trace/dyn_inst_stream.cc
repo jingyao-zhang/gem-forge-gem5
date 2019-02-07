@@ -252,3 +252,41 @@ void DynamicInstructionStreamInterfaceConditionalEnd::commit(
   this->stream->commit(committedIter);
   --this->fetchedSize;
 }
+
+DynamicInstructionStreamInterfaceFixedEnd::
+    DynamicInstructionStreamInterfaceFixedEnd(DynamicInstructionStream *_stream,
+                                              Iterator _lhs, Iterator _rhs)
+    : stream(_stream), lhs(_lhs), rhs(_rhs), fetchIter(_lhs), fetchedSize(0) {}
+
+DynamicInstructionStreamInterfaceFixedEnd::
+    ~DynamicInstructionStreamInterfaceFixedEnd() {
+  if (this->fetchedSize != 0) {
+    panic("StreamInterfaceFixed released when there are still committed "
+          "instructions.");
+  }
+}
+
+LLVMDynamicInst *DynamicInstructionStreamInterfaceFixedEnd::fetch() {
+  if (this->fetchIter == this->rhs) {
+    return nullptr;
+  }
+
+  auto inst = this->fetchIter->first;
+  this->fetchedSize++;
+  ++this->fetchIter;
+
+  return inst;
+}
+
+void DynamicInstructionStreamInterfaceFixedEnd::commit(LLVMDynamicInst *inst) {
+  if (this->fetchedSize == 0) {
+    panic("Try to commit when we have fetched nothing.");
+  }
+  if (this->lhs->first != inst) {
+    panic("Instruction is not committed in order.");
+  }
+  auto committedIter = this->lhs;
+  ++this->lhs;
+  this->stream->commit(committedIter);
+  --this->fetchedSize;
+}

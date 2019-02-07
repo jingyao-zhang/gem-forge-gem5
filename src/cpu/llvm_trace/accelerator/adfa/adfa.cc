@@ -2,7 +2,6 @@
 
 #include "base/misc.hh"
 #include "base/trace.hh"
-#include "cpu/llvm_trace/dyn_inst_stream.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 
@@ -11,6 +10,7 @@ AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
     : id(_id), cpu(_cpu), busy(false), dataFlow(nullptr), issueWidth(16),
       robSize(512) {
   auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
+  this->issueWidth = cpuParams->adfaCoreIssueWidth;
   this->enableSpeculation = cpuParams->adfaEnableSpeculation;
   this->breakIVDep = cpuParams->adfaBreakIVDep;
   this->breakRVDep = cpuParams->adfaBreakRVDep;
@@ -42,9 +42,6 @@ void AbstractDataFlowCore::regStats() {
       .name(this->id + ".adfa.committed_per_cycle")
       .desc("Number of insts committed each cycle")
       .flags(Stats::pdf);
-  this->numConfigured.name(this->id + ".numConfigured")
-      .desc("Number of times ADFA get configured")
-      .prereq(this->numConfigured);
   this->numExecution.name(this->id + ".numExecution")
       .desc("Number of times ADFA get executed")
       .prereq(this->numExecution);
@@ -83,10 +80,12 @@ void AbstractDataFlowCore::tick() {
   this->issue();
   this->commit();
   this->release();
+  this->numCycles++;
 
   if (this->dataFlow->hasEnded() && this->rob.empty()) {
     // Mark that we are done.
     this->busy = false;
+    DPRINTF(AbstractDataFlowAccelerator, "Work done.\n");
   }
 }
 
@@ -106,15 +105,6 @@ void AbstractDataFlowCore::fetch() {
       // We have just reached the end of the data flow.
       break;
     }
-    // if (inst->getInstName() == "df-end") {
-    //   // We have encountered the end token.
-    //   this->endToken = inst;
-
-    //   DPRINTF(AbstractDataFlowAccelerator, "ADFA: fetched end token %u.\n",
-    //           inst->getId());
-    //   break;
-    // }
-    // This is a normal instruction, insert into rob.
 
     // We update RegionStats here.
     const auto &TDG = inst->getTDG();
@@ -292,6 +282,10 @@ AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
     delete this->dataFlow;
     this->dataFlow = nullptr;
   }
+  for (auto &core : this->cores) {
+    delete core;
+    core = nullptr;
+  }
 }
 
 void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
@@ -302,9 +296,13 @@ void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
   this->numCores = cpuParams->adfaNumCores;
   this->enableTLS = cpuParams->adfaEnableTLS;
 
+  /**
+   * Be careful to reserve space so that core is not moved.
+   * It can not be moved as it contains stats.
+   */
   for (int i = 0; i < this->numCores; ++i) {
     auto id = this->manager->name() + ".adfa.core" + std::to_string(i);
-    this->cores.emplace_back(id, _cpu);
+    this->cores.push_back(new AbstractDataFlowCore(id, _cpu));
   }
 }
 
@@ -319,12 +317,16 @@ void AbstractDataFlowAccelerator::regStats() {
   this->numCycles.name(this->manager->name() + ".adfa.numCycles")
       .desc("Number of cycles ADFA is running")
       .prereq(this->numCycles);
-  this->numCommittedInst.name(this->manager->name() + ".adfa.numCommittedInst")
-      .desc("Number of insts ADFA committed")
-      .prereq(this->numCommittedInst);
+  this->numTLSJobs.name(this->manager->name() + ".adfa.numTLSJobs")
+      .desc("Number of TLS jobs ADFA run")
+      .prereq(this->numTLSJobs);
+  this->numTLSJobsSerialized
+      .name(this->manager->name() + ".adfa.numTLSJobsSerialized")
+      .desc("Number of TLS jobs ADFA serialized")
+      .prereq(this->numTLSJobsSerialized);
 
   for (auto &core : this->cores) {
-    core.regStats();
+    core->regStats();
   }
 }
 
@@ -336,6 +338,10 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     this->handling = CONFIG;
     this->currentInst.config = ConfigInst;
     this->configOverheadInCycles = 10;
+
+    // Store the loop start pc.
+    this->configuredLoopStartPC = inst->getTDG().adfa_config().start_pc();
+
     // Simply open the data flow stream.
     if (this->dataFlow == nullptr) {
       this->dataFlow = new DynamicInstructionStream(
@@ -349,13 +355,21 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     this->currentInst.start = StartInst;
     this->numExecution++;
 
-    // Create a new job in the queue.
-    this->pendingJobs.emplace_back();
-    auto &newJob = this->pendingJobs.back();
-    newJob.dataFlow = new DynamicInstructionStreamInterfaceConditionalEnd(
-        this->dataFlow, [](LLVMDynamicInst *inst) -> bool {
-          return inst->getInstName() == "df-end";
-        });
+    if (this->enableTLS) {
+      // TLS mode.
+      this->TLSLHSIter = this->dataFlow->fetchIter();
+      this->TLSJobId = 0;
+      this->createTLSJobs();
+    } else {
+      // Non-TLS mode.
+      // Create a new job in the queue
+      this->pendingJobs.emplace_back();
+      auto &newJob = this->pendingJobs.back();
+      newJob.dataFlow = new DynamicInstructionStreamInterfaceConditionalEnd(
+          this->dataFlow, [](LLVMDynamicInst *inst) -> bool {
+            return inst->getInstName() == "df-end";
+          });
+    }
 
     return true;
   }
@@ -364,7 +378,7 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
 
 void AbstractDataFlowAccelerator::dump() {
   for (auto &core : this->cores) {
-    core.dump();
+    core->dump();
   }
 }
 
@@ -399,25 +413,37 @@ void AbstractDataFlowAccelerator::tickConfig() {
 
 void AbstractDataFlowAccelerator::tickStart() {
 
+  // Try to get new jobs.
+  if (this->enableTLS) {
+    this->createTLSJobs();
+  }
+
   // Try to schedule new jobs.
   for (auto &core : this->cores) {
     if (this->pendingJobs.empty()) {
       break;
     }
-    if (core.isBusy()) {
+    if (core->isBusy()) {
       continue;
     }
 
     auto &pendingJob = this->pendingJobs.front();
-    pendingJob.core = &core;
-    core.start(pendingJob.dataFlow);
+    if (pendingJob.shouldSerialize && !this->workingJobs.empty()) {
+      // Can not issue this job as we have to serialize.
+      break;
+    }
+
+    pendingJob.core = core;
+    core->start(pendingJob.dataFlow);
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: Start pending job %lu.\n",
+            pendingJob.jobId);
     this->workingJobs.push_back(pendingJob);
     this->pendingJobs.pop_front();
   }
 
   // Tick.
   for (auto &core : this->cores) {
-    core.tick();
+    core->tick();
   }
 
   // Try to collect finished jobs.
@@ -428,6 +454,9 @@ void AbstractDataFlowAccelerator::tickStart() {
       break;
     }
     // The core is done with the job.
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: Finish working job %lu.\n",
+            workingJob.jobId);
+
     workingJob.core = nullptr;
     delete workingJob.dataFlow;
     workingJob.dataFlow = nullptr;
@@ -440,5 +469,101 @@ void AbstractDataFlowAccelerator::tickStart() {
     this->currentInst.start = nullptr;
     this->handling = NONE;
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: start execution: DONE.\n");
+
+    // For TLS mode, remember to release the endToken.
+    if (this->enableTLS) {
+      if (this->TLSLHSIter->first->getInstName() != "df-end") {
+        panic("The last token should be endToken for tls mode.");
+      }
+      this->dataFlow->commit(this->TLSLHSIter);
+    }
   }
+}
+
+void AbstractDataFlowAccelerator::createTLSJobs() {
+  while (this->pendingJobs.size() <= this->cores.size()) {
+    if (this->TLSLHSIter->first->getInstName() == "df-end") {
+      // We have reached the end of the stream.
+      return;
+    }
+    Job newJob;
+    newJob.jobId = this->TLSJobId++;
+    newJob.instIds = std::make_shared<std::unordered_set<LLVMDynamicInstId>>();
+
+    auto TLSRHSIter = this->TLSLHSIter;
+
+    do {
+      // Try to detect inter-iteration dependences.
+      if (!newJob.shouldSerialize) {
+        newJob.shouldSerialize = this->hasTLSDependence(TLSRHSIter->first);
+      }
+
+      // Add to our instIds set.
+      newJob.instIds->insert(TLSRHSIter->first->getId());
+
+      TLSRHSIter = this->dataFlow->fetchIter();
+
+    } while (!this->isTLSBoundary(TLSRHSIter->first));
+
+    // Creating the dataFlow.
+    newJob.dataFlow = new DynamicInstructionStreamInterfaceFixedEnd(
+        this->dataFlow, this->TLSLHSIter, TLSRHSIter);
+
+    DPRINTF(AbstractDataFlowAccelerator,
+            "ADFA: Create TLS job %lu, insts %lu.\n", newJob.jobId,
+            newJob.instIds->size());
+    this->numTLSJobs++;
+    if (newJob.shouldSerialize) {
+      this->numTLSJobsSerialized++;
+    }
+
+    this->pendingJobs.push_back(newJob);
+    // Update our LHSIter to detect next iteration.
+    this->TLSLHSIter = TLSRHSIter;
+  }
+}
+
+bool AbstractDataFlowAccelerator::isTLSBoundary(LLVMDynamicInst *inst) const {
+  if (inst->getInstName() == "df-end") {
+    return true;
+  }
+  if (inst->getTDG().pc() == this->configuredLoopStartPC) {
+    return true;
+  }
+  return false;
+}
+
+bool AbstractDataFlowAccelerator::hasTLSDependence(
+    LLVMDynamicInst *inst) const {
+  // First check the working jobs.
+  for (const auto &job : this->workingJobs) {
+    if (job.instIds == nullptr) {
+      panic("Job should have instIds for TLS job.");
+    }
+    for (const auto &dep : inst->getTDG().deps()) {
+      // We only check for memory dependence.
+      if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::MEMORY) {
+        const auto depId = dep.dependent_id();
+        if (job.instIds->count(depId) != 0) {
+          return true;
+        }
+      }
+    }
+  }
+  // Do the same for pending jobs.
+  for (const auto &job : this->pendingJobs) {
+    if (job.instIds == nullptr) {
+      panic("Job should have instIds for TLS job.");
+    }
+    for (const auto &dep : inst->getTDG().deps()) {
+      // We only check for memory dependence.
+      if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::MEMORY) {
+        const auto depId = dep.dependent_id();
+        if (job.instIds->count(depId) != 0) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }

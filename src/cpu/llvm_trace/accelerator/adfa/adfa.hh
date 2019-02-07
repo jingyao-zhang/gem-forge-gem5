@@ -6,6 +6,7 @@
 #include "base/statistics.hh"
 #include "cpu/llvm_trace/accelerator/tdg_accelerator.hh"
 #include "cpu/llvm_trace/bank_manager.hh"
+#include "cpu/llvm_trace/dyn_inst_stream.hh"
 
 #include <list>
 #include <unordered_map>
@@ -14,12 +15,16 @@
  * Implement the abstract data flow accelerator.
  */
 
-class DynamicInstructionStream;
-class DynamicInstructionStreamInterface;
-
 class AbstractDataFlowCore {
 public:
   AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu);
+
+  AbstractDataFlowCore(const AbstractDataFlowCore &other) = delete;
+  AbstractDataFlowCore(AbstractDataFlowCore &&other) = delete;
+
+  AbstractDataFlowCore &operator=(const AbstractDataFlowCore &other) = delete;
+  AbstractDataFlowCore &operator=(AbstractDataFlowCore &&other) = delete;
+
   ~AbstractDataFlowCore();
 
   const char *name() const { return this->id.c_str(); }
@@ -37,7 +42,6 @@ public:
    */
   Stats::Distribution numIssuedDist;
   Stats::Distribution numCommittedDist;
-  Stats::Scalar numConfigured;
   Stats::Scalar numExecution;
   Stats::Scalar numCycles;
   Stats::Scalar numCommittedInst;
@@ -130,7 +134,8 @@ public:
   Stats::Scalar numConfigured;
   Stats::Scalar numExecution;
   Stats::Scalar numCycles;
-  Stats::Scalar numCommittedInst;
+  Stats::Scalar numTLSJobs;
+  Stats::Scalar numTLSJobsSerialized;
 
 private:
   union {
@@ -149,8 +154,11 @@ private:
   struct Job {
     DynamicInstructionStreamInterface *dataFlow;
     AbstractDataFlowCore *core;
+    std::shared_ptr<std::unordered_set<LLVMDynamicInstId>> instIds;
     bool shouldSerialize;
-    Job() : dataFlow(nullptr), core(nullptr), shouldSerialize(false) {}
+    uint64_t jobId;
+    Job()
+        : dataFlow(nullptr), core(nullptr), shouldSerialize(false), jobId(0) {}
   };
 
   std::list<Job> pendingJobs;
@@ -159,15 +167,29 @@ private:
   // Configure overhead;
   int configOverheadInCycles;
 
+  // Configured loop iteration start boundary.
+  uint64_t configuredLoopStartPC;
+
+  DynamicInstructionStream::Iterator TLSLHSIter;
+  uint64_t TLSJobId;
+
   int numCores;
   bool enableTLS;
+
+  DynamicInstructionStream *dataFlow;
+
+  std::vector<AbstractDataFlowCore *> cores;
 
   void tickConfig();
   void tickStart();
 
-  DynamicInstructionStream *dataFlow;
+  /**
+   * Create one TLS job per loop iteration.
+   */
+  void createTLSJobs();
 
-  std::vector<AbstractDataFlowCore> cores;
+  bool isTLSBoundary(LLVMDynamicInst *inst) const;
+  bool hasTLSDependence(LLVMDynamicInst *inst) const;
 };
 
 #endif

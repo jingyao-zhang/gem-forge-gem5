@@ -44,6 +44,7 @@ parser.add_option("--gem-forge-stream-engine-enable-merge", action="store", type
                   help="""Enable stream merge in the stream engine.""", default="0")
 parser.add_option("--gem-forge-stream-engine-l1d",
                   type="string", default="original")
+parser.add_option("--gem-forge-adfa-core-issue-width", action="store", type="int", default="16")
 parser.add_option("--gem-forge-adfa-enable-speculation",
                   action="store", type="int", default="0")
 parser.add_option("--gem-forge-adfa-break-iv-dep",
@@ -208,6 +209,7 @@ else:
         llvm_trace_cpu.commitWidth = options.llvm_issue_width
 
         # ADFA options.
+        llvm_trace_cpu.adfaCoreIssueWidth = options.gem_forge_adfa_core_issue_width
         llvm_trace_cpu.adfaEnableSpeculation = options.gem_forge_adfa_enable_speculation
         llvm_trace_cpu.adfaBreakIVDep = options.gem_forge_adfa_break_iv_dep
         llvm_trace_cpu.adfaBreakRVDep = options.gem_forge_adfa_break_rv_dep

@@ -66,6 +66,7 @@ class LLVMTraceCPU(BaseCPU):
     cacheLoadPorts = Param.Unsigned(4, "Cache Load Ports.")
 
     # Parameters for ADFA.
+    adfaCoreIssueWidth = Param.Unsigned(16, "Issue width for each abstract dataflow core.")
     adfaEnableSpeculation = Param.Bool(
         False, "Whether the adfa can speculate.")
     adfaBreakIVDep = Param.Bool(

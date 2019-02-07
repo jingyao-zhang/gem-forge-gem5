@@ -195,7 +195,7 @@ public:
   DynamicInstructionStreamInterfaceConditionalEnd(
       DynamicInstructionStream *_stream, EndFunc _endFunc);
 
-  ~DynamicInstructionStreamInterfaceConditionalEnd();
+  ~DynamicInstructionStreamInterfaceConditionalEnd() override;
 
   LLVMDynamicInst *fetch() override;
   bool hasEnded() const override { return this->ended; }
@@ -209,6 +209,30 @@ private:
   LLVMDynamicInst *endToken;
   size_t fetchedSize;
   bool ended;
+};
+
+/**
+ * Implment a fixed end strean interface.
+ */
+class DynamicInstructionStreamInterfaceFixedEnd
+    : public DynamicInstructionStreamInterface {
+public:
+  using Iterator = DynamicInstructionStream::Iterator;
+  DynamicInstructionStreamInterfaceFixedEnd(DynamicInstructionStream *_stream,
+                                            Iterator _lhs, Iterator _rhs);
+
+  ~DynamicInstructionStreamInterfaceFixedEnd() override;
+
+  LLVMDynamicInst *fetch() override;
+  bool hasEnded() const override { return this->fetchIter == this->rhs; }
+  void commit(LLVMDynamicInst *inst) override;
+
+private:
+  DynamicInstructionStream *stream;
+  Iterator lhs, rhs;
+
+  Iterator fetchIter;
+  size_t fetchedSize;
 };
 
 #endif
