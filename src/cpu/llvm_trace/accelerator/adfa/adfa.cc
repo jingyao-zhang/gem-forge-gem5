@@ -7,7 +7,11 @@
 
 AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
                                            LLVMTraceCPU *_cpu)
-    : id(_id), cpu(_cpu), busy(false), dataFlow(nullptr), issueWidth(16),
+    : id(_id),
+      cpu(_cpu),
+      busy(false),
+      dataFlow(nullptr),
+      issueWidth(16),
       robSize(512) {
   auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
   this->issueWidth = cpuParams->adfaCoreIssueWidth;
@@ -109,7 +113,7 @@ void AbstractDataFlowCore::fetch() {
     // We update RegionStats here.
     const auto &TDG = inst->getTDG();
     if (TDG.bb() != 0) {
-      cpu->updateBasicBlock(TDG.bb());
+      cpu->getRegionStats()->update(TDG.bb());
     }
 
     auto id = inst->getId();
@@ -341,6 +345,7 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
 
     // Store the loop start pc.
     this->configuredLoopStartPC = inst->getTDG().adfa_config().start_pc();
+    this->configuredLoopName = inst->getTDG().adfa_config().region();
 
     // Simply open the data flow stream.
     if (this->dataFlow == nullptr) {
@@ -354,6 +359,9 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     this->handling = START;
     this->currentInst.start = StartInst;
     this->numExecution++;
+
+    // Take a checkpoints.
+    cpu->getRegionStats()->checkpoint(this->configuredLoopName);
 
     if (this->enableTLS) {
       // TLS mode.
@@ -384,20 +392,20 @@ void AbstractDataFlowAccelerator::dump() {
 
 void AbstractDataFlowAccelerator::tick() {
   switch (this->handling) {
-  case NONE: {
-    return;
-  }
-  case CONFIG: {
-    this->numCycles++;
-    this->tickConfig();
-    break;
-  }
-  case START: {
-    this->numCycles++;
-    this->tickStart();
-    break;
-  }
-  default: { panic("Unknown handling instruction."); }
+    case NONE: {
+      return;
+    }
+    case CONFIG: {
+      this->numCycles++;
+      this->tickConfig();
+      break;
+    }
+    case START: {
+      this->numCycles++;
+      this->tickStart();
+      break;
+    }
+    default: { panic("Unknown handling instruction."); }
   }
 }
 
@@ -412,7 +420,6 @@ void AbstractDataFlowAccelerator::tickConfig() {
 }
 
 void AbstractDataFlowAccelerator::tickStart() {
-
   // Try to get new jobs.
   if (this->enableTLS) {
     this->createTLSJobs();
@@ -477,6 +484,9 @@ void AbstractDataFlowAccelerator::tickStart() {
       }
       this->dataFlow->commit(this->TLSLHSIter);
     }
+
+    // Take a checkpoint.
+    cpu->getRegionStats()->checkpoint(this->configuredLoopName);
   }
 }
 

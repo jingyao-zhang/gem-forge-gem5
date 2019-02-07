@@ -7,7 +7,11 @@
 const RegionStats::BasicBlockId RegionStats::InvalidBB = 0;
 
 RegionStats::RegionStats(RegionMap &&_regions, const std::string &_fileName)
-    : regions(std::move(_regions)), fileName(_fileName), previousBB(InvalidBB) {
+    : regions(std::move(_regions)),
+      fileName(_fileName),
+      checkpointsDirectory(nullptr),
+      checkpointsTaken(0),
+      previousBB(InvalidBB) {
   // Compute the reverse basic block to region map.
   for (const auto &entry : this->regions) {
     const auto &region = entry.first;
@@ -25,10 +29,12 @@ RegionStats::RegionStats(RegionMap &&_regions, const std::string &_fileName)
       iter->second.insert(region);
     }
   }
+
+  // Create the checkpoints directory.
+  this->checkpointsDirectory = simout.createSubdirectory("checkpoints");
 }
 
 void RegionStats::update(const BasicBlockId &bb) {
-
   if (bb == this->previousBB) {
     // If we are still in the same block, just return.
     return;
@@ -84,6 +90,15 @@ void RegionStats::update(const BasicBlockId &bb) {
       this->activeRegions.emplace(newRegion, snapshot);
     }
   }
+}
+
+void RegionStats::checkpoint(const std::string &suffix) {
+  auto fn = std::string("ck.") + std::to_string(this->checkpointsTaken++) +
+            "." + suffix + ".txt";
+  auto outputStream = this->checkpointsDirectory->findOrCreate(fn);
+  auto snapshot = this->takeSnapshot();
+  this->dumpStatsMap(*snapshot, *outputStream->stream());
+  this->checkpointsDirectory->close(outputStream);
 }
 
 bool RegionStats::contains(const RegionId &region,
@@ -146,170 +161,7 @@ void RegionStats::updateStats(const Snapshot &enterSnapshot,
   }
 }
 
-/***********************************************************************************
- * Copy from text.cc
- */
-
-// namespace {
-// using namespace Stats;
-// string ValueToString(Result value, int precision) {
-//   stringstream val;
-
-//   if (!std::isnan(value)) {
-//     if (precision != -1)
-//       val.precision(precision);
-//     else if (value == rint(value))
-//       val.precision(0);
-
-//     val.unsetf(ios::showpoint);
-//     val.setf(ios::fixed);
-//     val << value;
-//   } else {
-//     val << "nan";
-//   }
-
-//   return val.str();
-// }
-
-// struct ScalarPrint {
-//   Result value;
-//   string name;
-//   string desc;
-//   Flags flags;
-//   bool descriptions;
-//   int precision;
-//   Result pdf;
-//   Result cdf;
-
-//   void update(Result val, Result total);
-//   void operator()(ostream &stream, bool oneLine = false) const;
-// };
-
-// void ScalarPrint::update(Result val, Result total) {
-//   value = val;
-//   if (total) {
-//     pdf = val / total;
-//     cdf += pdf;
-//   }
-// }
-
-// void ScalarPrint::operator()(ostream &stream, bool oneLine) const {
-//   if ((flags.isSet(nozero) && (!oneLine) && value == 0.0) ||
-//       (flags.isSet(nonan) && std::isnan(value)))
-//     return;
-
-//   stringstream pdfstr, cdfstr;
-
-//   if (!std::isnan(pdf))
-//     ccprintf(pdfstr, "%.2f%%", pdf * 100.0);
-
-//   if (!std::isnan(cdf))
-//     ccprintf(cdfstr, "%.2f%%", cdf * 100.0);
-
-//   if (oneLine) {
-//     ccprintf(stream, " |%12s %10s %10s", ValueToString(value, precision),
-//              pdfstr.str(), cdfstr.str());
-//   } else {
-//     ccprintf(stream, "%-40s %12s %10s %10s", name,
-//              ValueToString(value, precision), pdfstr.str(), cdfstr.str());
-
-//     if (descriptions) {
-//       if (!desc.empty())
-//         ccprintf(stream, " # %s", desc);
-//     }
-//     stream << endl;
-//   }
-// }
-
-// struct VectorPrint {
-//   string name;
-//   string separatorString;
-//   string desc;
-//   vector<string> subnames;
-//   vector<string> subdescs;
-//   Flags flags;
-//   bool descriptions;
-//   int precision;
-//   VResult vec;
-//   Result total;
-//   bool forceSubnames;
-
-//   void operator()(ostream &stream) const;
-// };
-
-// void VectorPrint::operator()(std::ostream &stream) const {
-//   size_type _size = vec.size();
-//   Result _total = 0.0;
-
-//   if (flags.isSet(pdf | cdf)) {
-//     for (off_type i = 0; i < _size; ++i) {
-//       _total += vec[i];
-//     }
-//   }
-
-//   string base = name + separatorString;
-
-//   ScalarPrint print;
-//   print.name = name;
-//   print.desc = desc;
-//   print.precision = precision;
-//   print.descriptions = descriptions;
-//   print.flags = flags;
-//   print.pdf = _total ? 0.0 : NAN;
-//   print.cdf = _total ? 0.0 : NAN;
-
-//   bool havesub = !subnames.empty();
-
-//   if (_size == 1) {
-//     // If forceSubnames is set, get the first subname (or index in
-//     // the case where there are no subnames) and append it to the
-//     // base name.
-//     if (forceSubnames)
-//       print.name = base + (havesub ? subnames[0] : std::to_string(0));
-//     print.value = vec[0];
-//     print(stream);
-//     return;
-//   }
-
-//   if ((!flags.isSet(nozero)) || (total != 0)) {
-//     if (flags.isSet(oneline)) {
-//       ccprintf(stream, "%-40s", name);
-//       print.flags = print.flags & (~nozero);
-//     }
-
-//     for (off_type i = 0; i < _size; ++i) {
-//       if (havesub && (i >= subnames.size() || subnames[i].empty()))
-//         continue;
-
-//       print.name = base + (havesub ? subnames[i] : std::to_string(i));
-//       print.desc = subdescs.empty() ? desc : subdescs[i];
-
-//       print.update(vec[i], _total);
-//       print(stream, flags.isSet(oneline));
-//     }
-
-//     if (flags.isSet(oneline)) {
-//       if (descriptions) {
-//         if (!desc.empty())
-//           ccprintf(stream, " # %s", desc);
-//       }
-//       stream << endl;
-//     }
-//   }
-
-//   if (flags.isSet(::Stats::total)) {
-//     print.pdf = NAN;
-//     print.cdf = NAN;
-//     print.name = base + "total";
-//     print.desc = desc;
-//     print.value = total;
-//     print(stream);
-//   }
-// }
-// } // namespace
-
 void RegionStats::dump(std::ostream &stream) {
-
   // Whenever dump, we add an "all" region.
   auto snapshot = this->takeSnapshot();
   // Add our own hack of region entered statistic.
@@ -328,23 +180,31 @@ void RegionStats::dump(std::ostream &stream) {
       // Generate an empty parent for "all" region.
       ccprintf(stream, "-parent \n");
     }
-    // We have to sort this.
-    std::map<std::string, Stats::Result> sorted;
-    for (const auto &stat : regionStat.second) {
-      sorted.emplace(stat.first, stat.second);
-    }
-    for (const auto &stat : sorted) {
-      // When dump we ignore nan.
-      if (!std::isnan(stat.second)) {
-        ccprintf(stream, "%-40s %12f\n", stat.first, stat.second);
-      }
-    }
+
+    this->dumpStatsMap(regionStat.second, stream);
   }
 
   this->regionStats.erase("all");
 }
 
 void RegionStats::dump() {
-  auto &stream = *simout.findOrCreate(this->fileName)->stream();
+  auto outputStream = simout.findOrCreate(this->fileName);
+  auto &stream = *outputStream->stream();
   this->dump(stream);
+  simout.close(outputStream);
+}
+
+void RegionStats::dumpStatsMap(const StatsMap &stats,
+                               std::ostream &stream) const {
+  // We have to sort this.
+  std::map<std::string, Stats::Result> sorted;
+  for (const auto &stat : stats) {
+    sorted.emplace(stat.first, stat.second);
+  }
+  for (const auto &stat : sorted) {
+    // When dump we ignore nan.
+    if (!std::isnan(stat.second)) {
+      ccprintf(stream, "%-40s %12f\n", stat.first, stat.second);
+    }
+  }
 }

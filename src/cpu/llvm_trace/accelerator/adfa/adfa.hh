@@ -16,7 +16,7 @@
  */
 
 class AbstractDataFlowCore {
-public:
+ public:
   AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu);
 
   AbstractDataFlowCore(const AbstractDataFlowCore &other) = delete;
@@ -46,7 +46,7 @@ public:
   Stats::Scalar numCycles;
   Stats::Scalar numCommittedInst;
 
-private:
+ private:
   std::string id;
   LLVMTraceCPU *cpu;
 
@@ -117,7 +117,7 @@ private:
 };
 
 class AbstractDataFlowAccelerator : public TDGAccelerator {
-public:
+ public:
   AbstractDataFlowAccelerator();
   ~AbstractDataFlowAccelerator() override;
 
@@ -137,7 +137,7 @@ public:
   Stats::Scalar numTLSJobs;
   Stats::Scalar numTLSJobsSerialized;
 
-private:
+ private:
   union {
     ADFAConfigInst *config;
     ADFAStartInst *start;
@@ -169,6 +169,7 @@ private:
 
   // Configured loop iteration start boundary.
   uint64_t configuredLoopStartPC;
+  std::string configuredLoopName;
 
   DynamicInstructionStream::Iterator TLSLHSIter;
   uint64_t TLSJobId;

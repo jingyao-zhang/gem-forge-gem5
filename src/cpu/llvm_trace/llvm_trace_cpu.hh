@@ -233,8 +233,8 @@ public:
 
   TDGAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
 
-  void updateBasicBlock(const RegionStats::BasicBlockId &bb) {
-    this->regionStats->update(bb);
+  RegionStats* getRegionStats() {
+    return this->regionStats;
   }
 
   //********************************************************//

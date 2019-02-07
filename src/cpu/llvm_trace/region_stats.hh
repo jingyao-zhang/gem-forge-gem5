@@ -30,7 +30,7 @@
  * cleaner.
  */
 class RegionStats {
-public:
+ public:
   using RegionId = std::string;
   using BasicBlockId = uint64_t;
 
@@ -64,12 +64,17 @@ public:
   void update(const BasicBlockId &bb);
   static const BasicBlockId InvalidBB;
 
+  void checkpoint(const std::string &suffix);
+
   void dump(std::ostream &stream);
   void dump();
 
-private:
+ private:
   RegionMap regions;
   std::string fileName;
+
+  OutputDirectory *checkpointsDirectory;
+  uint64_t checkpointsTaken;
 
   // Reverse map from basic block to regions to speed up the look up.
   std::unordered_map<BasicBlockId, std::unordered_set<RegionId>> bbToRegionMap;
@@ -110,6 +115,8 @@ private:
    */
   void updateStats(const Snapshot &enterSnapshot, const Snapshot &exitSnapshot,
                    StatsMap &updatingMap);
+
+  void dumpStatsMap(const StatsMap &stats, std::ostream &stream) const;
 };
 
 #endif
