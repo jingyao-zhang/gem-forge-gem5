@@ -78,6 +78,7 @@ class LLVMTraceCPU(BaseCPU):
         1, "Adfa number of ports per bank to cache.")
     adfaNumCores = Param.Unsigned(1, "Adfa number of cores.")
     adfaEnableTLS = Param.Bool(False, "Whether we enable TLS for adfa.")
+    adfaIdealMem = Param.Bool(False, "Whether we use an ideal memory.")
 
     # Adhoc parameters for stream engine.
     streamEngineIsOracle = Param.Bool(

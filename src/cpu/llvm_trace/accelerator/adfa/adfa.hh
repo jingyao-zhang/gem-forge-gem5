@@ -16,7 +16,7 @@
  */
 
 class AbstractDataFlowCore {
- public:
+public:
   AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu);
 
   AbstractDataFlowCore(const AbstractDataFlowCore &other) = delete;
@@ -46,7 +46,7 @@ class AbstractDataFlowCore {
   Stats::Scalar numCycles;
   Stats::Scalar numCommittedInst;
 
- private:
+private:
   std::string id;
   LLVMTraceCPU *cpu;
 
@@ -56,6 +56,8 @@ class AbstractDataFlowCore {
   bool enableSpeculation;
   bool breakIVDep;
   bool breakRVDep;
+  bool idealMem;
+  const int idealMemLatency = 2;
   unsigned numBanks;
   unsigned numPortsPerBank;
 
@@ -109,6 +111,11 @@ class AbstractDataFlowCore {
   std::list<LLVMDynamicInstId> rob;
   std::list<LLVMDynamicInstId> readyInsts;
 
+  // This is used to model one-cycle latency ideal memory.
+  // Memory instructions will be sent into this queue, and marked finished one
+  // cycle later.
+  std::list<std::pair<Tick, LLVMDynamicInstId>> idealMemCompleteQueue;
+
   void fetch();
   void markReady();
   void issue();
@@ -117,7 +124,7 @@ class AbstractDataFlowCore {
 };
 
 class AbstractDataFlowAccelerator : public TDGAccelerator {
- public:
+public:
   AbstractDataFlowAccelerator();
   ~AbstractDataFlowAccelerator() override;
 
@@ -137,7 +144,7 @@ class AbstractDataFlowAccelerator : public TDGAccelerator {
   Stats::Scalar numTLSJobs;
   Stats::Scalar numTLSJobsSerialized;
 
- private:
+private:
   union {
     ADFAConfigInst *config;
     ADFAStartInst *start;

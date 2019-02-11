@@ -100,16 +100,6 @@ bool LLVMDynamicInst::isLoadInst() const {
 }
 
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
-  // for (const auto dependentInstId : this->TDG.reg_deps()) {
-  //   if (!cpu->isInstFinished(dependentInstId)) {
-  //     return false;
-  //   }
-  // }
-  // for (const auto dependentInstId : this->TDG.mem_deps()) {
-  //   if (!cpu->isInstFinished(dependentInstId)) {
-  //     return false;
-  //   }
-  // }
 
   for (const auto &dep : this->TDG.deps()) {
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::REGISTER) {
@@ -130,13 +120,6 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
     }
   }
 
-  // // Check the stream engine.
-  // for (const auto &streamId : this->TDG.used_stream_ids()) {
-  //   if (!cpu->getAcceleratorManager()->getStreamEngine()->isStreamReady(
-  //           streamId, this)) {
-  //     return false;
-  //   }
-  // }
   return true;
 }
 

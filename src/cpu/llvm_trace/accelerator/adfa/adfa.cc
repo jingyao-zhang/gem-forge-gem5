@@ -14,6 +14,7 @@ AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
   this->enableSpeculation = cpuParams->adfaEnableSpeculation;
   this->breakIVDep = cpuParams->adfaBreakIVDep;
   this->breakRVDep = cpuParams->adfaBreakRVDep;
+  this->idealMem = cpuParams->adfaIdealMem;
   this->numBanks = cpuParams->adfaNumBanks;
   this->numPortsPerBank = cpuParams->adfaNumPortsPerBank;
 
@@ -75,6 +76,7 @@ void AbstractDataFlowCore::tick() {
   if (!this->isBusy()) {
     return;
   }
+
   this->fetch();
   this->markReady();
   this->issue();
@@ -225,11 +227,23 @@ void AbstractDataFlowCore::issue() {
 
     // Ready to go.
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: issue inst %u.\n", id);
-    inst->execute(cpu);
-    // For store instruction, we write back immediately as we have all the
-    // memory/control dependence resolved.
-    if (inst->isStoreInst()) {
-      inst->writeback(cpu);
+
+    if (TDG.has_load() || TDG.has_store()) {
+      if (this->idealMem) {
+        // Special case for ideal memory: add to the completion queue.
+        auto completeTick = cpu->clockEdge(Cycles(this->idealMemLatency));
+        this->idealMemCompleteQueue.emplace_back(completeTick, id);
+      } else {
+        inst->execute(cpu);
+        // For store instruction, we write back immediately as we have all the
+        // memory/control dependence resolved.
+        if (inst->isStoreInst()) {
+          inst->writeback(cpu);
+        }
+      }
+    } else {
+      // Non-memory instructions.
+      inst->execute(cpu);
     }
     ++issued;
     this->inflyInstStatus.at(id) = InstStatus::ISSUED;
@@ -240,18 +254,43 @@ void AbstractDataFlowCore::issue() {
 }
 
 void AbstractDataFlowCore::commit() {
+
+  // First we check the idealMemCompleteQueue.
+  if (this->idealMem) {
+    auto iter = this->idealMemCompleteQueue.begin();
+    auto end = this->idealMemCompleteQueue.end();
+    auto currentTick = cpu->cyclesToTicks(cpu->curCycle());
+    while (iter != end) {
+      if (iter->first > currentTick) {
+        break;
+      }
+      // Time to mark it complete.
+      auto id = iter->second;
+      assert(this->inflyInstStatus.at(id) == InstStatus::ISSUED);
+      this->inflyInstStatus.at(id) = InstStatus::FINISHED;
+      iter = this->idealMemCompleteQueue.erase(iter);
+    }
+  }
+
   for (auto id : this->rob) {
     auto inst = this->inflyInstMap.at(id);
-    inst->tick();
     if (this->inflyInstStatus.at(id) == InstStatus::ISSUED) {
+
+      // Ideal memory mode, memory instructions are handled above.
+      if (this->idealMem && (inst->isLoadInst() || inst->isStoreInst())) {
+        continue;
+      }
+
       bool done = inst->isCompleted();
       if (inst->isStoreInst()) {
         done &= inst->isWritebacked();
       }
       if (done) {
         this->inflyInstStatus.at(id) = InstStatus::FINISHED;
+        continue;
       }
     }
+    inst->tick();
   }
 }
 
