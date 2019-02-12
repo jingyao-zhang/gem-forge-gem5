@@ -41,10 +41,12 @@ public:
    * Stats
    */
   Stats::Distribution numIssuedDist;
+  Stats::Distribution numIssuedLoadDist;
   Stats::Distribution numCommittedDist;
   Stats::Scalar numExecution;
   Stats::Scalar numCycles;
   Stats::Scalar numCommittedInst;
+  Stats::Scalar numBankConflicts;
 
 private:
   std::string id;

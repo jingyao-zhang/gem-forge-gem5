@@ -39,6 +39,10 @@ void AbstractDataFlowCore::regStats() {
       .name(this->id + ".issued_per_cycle")
       .desc("Number of inst issued each cycle")
       .flags(Stats::pdf);
+  this->numIssuedLoadDist.init(0, this->numBanks * this->numPortsPerBank, 1)
+      .name(this->id + ".issued_load_per_cycle")
+      .desc("Number of inst issued loads each cycle")
+      .flags(Stats::pdf);
   this->numCommittedDist.init(0, 8, 1)
       .name(this->id + ".adfa.committed_per_cycle")
       .desc("Number of insts committed each cycle")
@@ -52,6 +56,9 @@ void AbstractDataFlowCore::regStats() {
   this->numCommittedInst.name(this->id + ".numCommittedInst")
       .desc("Number of insts ADFA committed")
       .prereq(this->numCommittedInst);
+  this->numBankConflicts.name(this->id + ".numBankConflicts")
+      .desc("Number of insts ADFA causing bank conflicts")
+      .prereq(this->numBankConflicts);
 }
 
 void AbstractDataFlowCore::start(DynamicInstructionStreamInterface *dataFlow) {
@@ -193,6 +200,7 @@ void AbstractDataFlowCore::markReady() {
 
 void AbstractDataFlowCore::issue() {
   size_t issued = 0;
+  size_t issuedLoad = 0;
 
   // Clear the bank manager for this cycle.
   this->bankManager->clear();
@@ -210,6 +218,15 @@ void AbstractDataFlowCore::issue() {
 
     const auto &TDG = inst->getTDG();
     if (TDG.has_load() || TDG.has_store()) {
+
+      // Never issue memory request if the port is already blocked.
+      if (cpu->dataPort.isBlocked()) {
+        readyIter++;
+        DPRINTF(AbstractDataFlowAccelerator, "ADFA: Blocked mem inst %u.\n",
+                id);
+        continue;
+      }
+
       auto addr = TDG.has_load() ? TDG.load().addr() : TDG.store().addr();
       auto size = TDG.has_load() ? TDG.load().size() : TDG.store().size();
       // For now just look at the first cache line.
@@ -218,6 +235,7 @@ void AbstractDataFlowCore::issue() {
       if (!this->bankManager->isNonConflict(addr, size)) {
         // Has conflict, not issue this one.
         readyIter++;
+        this->numBankConflicts++;
         continue;
       } else {
         // No conflict happen, good to go.
@@ -246,11 +264,15 @@ void AbstractDataFlowCore::issue() {
       inst->execute(cpu);
     }
     ++issued;
+    if (TDG.has_load()) {
+      ++issuedLoad;
+    }
     this->inflyInstStatus.at(id) = InstStatus::ISSUED;
     readyIter = this->readyInsts.erase(readyIter);
   }
 
   this->numIssuedDist.sample(issued);
+  this->numIssuedLoadDist.sample(issuedLoad);
 }
 
 void AbstractDataFlowCore::commit() {
@@ -266,6 +288,7 @@ void AbstractDataFlowCore::commit() {
       }
       // Time to mark it complete.
       auto id = iter->second;
+      DPRINTF(AbstractDataFlowAccelerator, "ADFA: inst %lu finished.\n", id);
       assert(this->inflyInstStatus.at(id) == InstStatus::ISSUED);
       this->inflyInstStatus.at(id) = InstStatus::FINISHED;
       iter = this->idealMemCompleteQueue.erase(iter);
@@ -286,6 +309,7 @@ void AbstractDataFlowCore::commit() {
         done &= inst->isWritebacked();
       }
       if (done) {
+        DPRINTF(AbstractDataFlowAccelerator, "ADFA: inst %lu finished.\n", id);
         this->inflyInstStatus.at(id) = InstStatus::FINISHED;
         continue;
       }

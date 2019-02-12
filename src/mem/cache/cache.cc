@@ -77,9 +77,9 @@ Cache::Cache(const CacheParams *p)
   tempBlock = new CacheBlk();
   tempBlock->data = new uint8_t[blkSize];
 
-  // cpuSidePort = new CpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
-  cpuSidePort =
-      new StreamAwareCpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
+  cpuSidePort = new CpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
+  // cpuSidePort =
+  //     new StreamAwareCpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
 
   memSidePort = new MemSidePort(p->name + ".mem_side", this, "MemSidePort");
 
@@ -561,6 +561,9 @@ void Cache::promoteWholeLineWrites(PacketPtr pkt) {
 bool Cache::recvTimingReq(PacketPtr pkt) {
   DPRINTF(CacheTags, "%s tags:\n%s\n", __func__, tags->print());
 
+  // inform("[%u %s]: Pkt received.\n", this->cyclesToTicks(this->curCycle()),
+  //        this->name().c_str());
+
   assert(pkt->isRequest());
 
   // Just forward the packet if caches are disabled.
@@ -709,6 +712,9 @@ bool Cache::recvTimingReq(PacketPtr pkt) {
       // lat, neglecting responseLatency, modelling hit latency
       // just as lookupLatency or or the value of lat overriden
       // by access(), that calls accessBlock() function.
+      // inform("[%u %s]: Pkt hit lat %u with request time %u.\n",
+      //        this->cyclesToTicks(this->curCycle()), this->name().c_str(),
+      //        uint64_t(lat), request_time);
       cpuSidePort->schedTimingResp(pkt, request_time, true);
     } else {
       DPRINTF(Cache, "%s satisfied %s, no response needed\n", __func__,
@@ -825,6 +831,7 @@ bool Cache::recvTimingReq(PacketPtr pkt) {
       }
     } else {
       // no MSHR
+      // hack("Pkt miss.\n");
       assert(pkt->req->masterId() < system->maxMasters());
       if (pkt->req->isUncacheable()) {
         mshr_uncacheable[pkt->cmdToIndex()][pkt->req->masterId()]++;

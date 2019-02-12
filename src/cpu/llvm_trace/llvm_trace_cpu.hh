@@ -82,6 +82,7 @@ private:
     void recvTimingSnoopReq(PacketPtr pkt) override {
       // panic("recvTimingResp not implemented.");
     }
+    // void regStats();
     void sendReq();
     void addReq(PacketPtr pkt);
     void recvReqRetry() override;
@@ -102,6 +103,8 @@ private:
     std::mutex blockedPacketPtrsMutex;
     int inflyNumPackets;
     bool blocked;
+
+    // Stats::Distribution numIssuedPackets;
   };
 
   void tick();
@@ -130,7 +133,8 @@ private:
   void stackPush();
 
   // Cache warm up in standalone mode.
-  void warmUpCache(const std::string &FileName);
+  Tick warmUpTick;
+  Tick warmUpCache(const std::string &FileName);
 
   // In fly instructions.
   std::unordered_map<LLVMDynamicInstId, LLVMDynamicInst *> inflyInstMap;
@@ -233,9 +237,7 @@ public:
 
   TDGAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
 
-  RegionStats* getRegionStats() {
-    return this->regionStats;
-  }
+  RegionStats *getRegionStats() { return this->regionStats; }
 
   //********************************************************//
   // Event for this CPU.
