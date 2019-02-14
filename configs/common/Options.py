@@ -115,7 +115,9 @@ def addNoISAOptions(parser):
     parser.add_option("--l1_5d_assoc", type="int", default=16)
     parser.add_option("--l1_5d_mshrs", type="int", default=16)
 
+    parser.add_option("--no-l2bus", action="store_true")
     parser.add_option("--l2bus_width", type="int", default=32)
+
 
     parser.add_option("--l2_mshrs", type="int", default=20)
     parser.add_option("--l2_assoc", type="int", default=8)

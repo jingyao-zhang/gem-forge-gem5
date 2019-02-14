@@ -96,10 +96,13 @@ def config_cache(options, system):
                                    response_latency=options.l2_lat
                                    )
 
-        system.tol2bus = L2XBar(
-            clk_domain=system.cpu_clk_domain,
-            width=options.l2bus_width)
-        system.l2.cpu_side = system.tol2bus.master
+        if options.no_l2bus:
+            assert(options.num_cpus == 1)
+        else:
+            system.tol2bus = L2XBar(
+                clk_domain=system.cpu_clk_domain,
+                width=options.l2bus_width)
+            system.l2.cpu_side = system.tol2bus.master
         system.l2.mem_side = system.membus.slave
 
     if options.memchecker:
@@ -172,10 +175,17 @@ def config_cache(options, system):
         system.cpu[i].createInterruptController()
         if options.l2cache:
             skip_l1d = options.l1_5dcache
-            system.cpu[i].connectAllPorts(
-                system.tol2bus,
-                system.membus,
-                skip_l1d)
+            if options.no_l2bus:
+                system.cpu[i].connectAllPortsNoL2Bus(
+                    system.l2.cpu_side,
+                    system.membus,
+                    skip_l1d
+                )
+            else:
+                system.cpu[i].connectAllPorts(
+                    system.tol2bus.slave,
+                    system.membus,
+                    skip_l1d)
         elif options.external_memory_system:
             system.cpu[i].connectUncachedPorts(system.membus)
         else:

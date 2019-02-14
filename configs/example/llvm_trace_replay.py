@@ -300,7 +300,9 @@ MemConfig.config_mem(options, system)
 if options.llvm_mcpat == 1:
     system.mcpat_manager = McPATManager()
 
-system.tol2bus.snoop_filter = NULL
+# Disable snoop filter
+if not options.no_l2bus:
+    system.tol2bus.snoop_filter = NULL
 
 for cpu in system.cpu:
     if options.l1_5dcache:

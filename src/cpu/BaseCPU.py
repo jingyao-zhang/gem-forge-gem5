@@ -269,7 +269,7 @@ class BaseCPU(MemObject):
         for p in self._cached_ports:
             if skip_l1d and p == 'dcache.mem_side':
                 continue
-            exec('self.%s = bus.slave' % p)
+            exec('self.%s = bus' % p)
 
     def connectUncachedPorts(self, bus):
         for p in self._uncached_slave_ports:
@@ -282,6 +282,21 @@ class BaseCPU(MemObject):
         if not uncached_bus:
             uncached_bus = cached_bus
         self.connectUncachedPorts(uncached_bus)
+
+    def connectAllPortsNoL2Bus(self, l2, mem_bus, skip_l1d = False):
+        # Hack, no l2 bus, so icache will be connected directly to membus.
+
+        toL2Master = 'l1_5d.mem_side' if skip_l1d else 'dcache.mem_side'
+        exec('self.%s = l2' % toL2Master)
+
+        for p in self._cached_ports:
+            if p == toL2Master:
+                continue
+            if skip_l1d and p == 'dcache.mem_side':
+                continue
+            # Connect all other ports to mem_bus.
+            exec('self.%s = mem_bus.slave' % p)
+        self.connectUncachedPorts(mem_bus)
 
     def addPrivateSplitL1Caches(self, ic, dc, iwc = None, dwc = None):
         self.icache = ic
