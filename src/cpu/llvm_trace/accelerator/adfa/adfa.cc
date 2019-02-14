@@ -209,7 +209,7 @@ void AbstractDataFlowCore::issue() {
   auto readyEnd = this->readyInsts.end();
   while (readyIter != readyEnd) {
     // Some issue width.
-    if (issued > this->issueWidth) {
+    if (issued >= this->issueWidth) {
       break;
     }
     // Enforce banked cache confliction.
