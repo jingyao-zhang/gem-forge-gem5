@@ -73,6 +73,8 @@ class LLVMTraceCPU(BaseCPU):
         False, "Whether the adfa can break induction variable dependence.")
     adfaBreakRVDep = Param.Bool(
         False, "Whether the adfa can break reduction variable dependence.")
+    adfaBreakUnrollableControlDep = Param.Bool(
+        False, "Whether the adfa can break unrollable control dependence.")
     adfaNumBanks = Param.Unsigned(1, "Adfa number of banks to cache.")
     adfaNumPortsPerBank = Param.Unsigned(
         1, "Adfa number of ports per bank to cache.")

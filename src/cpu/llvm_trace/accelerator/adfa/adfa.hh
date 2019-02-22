@@ -58,6 +58,7 @@ private:
   bool enableSpeculation;
   bool breakIVDep;
   bool breakRVDep;
+  bool breakUnrollableControlDep;
   bool idealMem;
   const int idealMemLatency = 2;
   unsigned numBanks;

@@ -14,6 +14,7 @@ AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
   this->enableSpeculation = cpuParams->adfaEnableSpeculation;
   this->breakIVDep = cpuParams->adfaBreakIVDep;
   this->breakRVDep = cpuParams->adfaBreakRVDep;
+  this->breakUnrollableControlDep = cpuParams->adfaBreakUnrollableControlDep;
   this->idealMem = cpuParams->adfaIdealMem;
   this->numBanks = cpuParams->adfaNumBanks;
   this->numPortsPerBank = cpuParams->adfaNumPortsPerBank;
@@ -148,6 +149,12 @@ void AbstractDataFlowCore::markReady() {
       if (dep.type() ==
           ::LLVM::TDG::TDGInstructionDependence::POST_DOMINANCE_FRONTIER) {
         if (this->enableSpeculation) {
+          continue;
+        }
+      }
+      if (dep.type() ==
+          ::LLVM::TDG::TDGInstructionDependence::UNROLLABLE_CONTROL) {
+        if (this->enableSpeculation || this->breakUnrollableControlDep) {
           continue;
         }
       }

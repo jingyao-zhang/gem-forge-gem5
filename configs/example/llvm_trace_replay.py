@@ -51,6 +51,8 @@ parser.add_option("--gem-forge-adfa-break-iv-dep",
                   action="store", type="int", default="0")
 parser.add_option("--gem-forge-adfa-break-rv-dep",
                   action="store", type="int", default="0")
+parser.add_option("--gem-forge-adfa-break-unrollable-ctr-dep",
+                  action="store", type="int", default="0")
 parser.add_option("--gem-forge-adfa-num-banks",
                   action="store", type="int", default="1")
 parser.add_option("--gem-forge-adfa-num-ports-per-bank",
@@ -214,6 +216,8 @@ else:
         llvm_trace_cpu.adfaEnableSpeculation = options.gem_forge_adfa_enable_speculation
         llvm_trace_cpu.adfaBreakIVDep = options.gem_forge_adfa_break_iv_dep
         llvm_trace_cpu.adfaBreakRVDep = options.gem_forge_adfa_break_rv_dep
+        llvm_trace_cpu.adfaBreakUnrollableControlDep = \
+            options.gem_forge_adfa_break_unrollable_ctr_dep
         llvm_trace_cpu.adfaNumBanks = options.gem_forge_adfa_num_banks
         llvm_trace_cpu.adfaNumPortsPerBank = options.gem_forge_adfa_num_ports_per_bank
         llvm_trace_cpu.adfaNumCores = options.gem_forge_adfa_num_cores
