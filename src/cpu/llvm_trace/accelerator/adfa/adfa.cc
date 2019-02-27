@@ -415,8 +415,9 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
 
     // Simply open the data flow stream.
     if (this->dataFlow == nullptr) {
-      this->dataFlow = new DynamicInstructionStream(
-          inst->getTDG().adfa_config().data_flow());
+      auto dataFlowFileName = cpu->getTraceFolder() + "/" +
+                              inst->getTDG().adfa_config().data_flow();
+      this->dataFlow = new DynamicInstructionStream(dataFlowFileName);
     }
     this->numConfigured++;
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: start configure.\n");

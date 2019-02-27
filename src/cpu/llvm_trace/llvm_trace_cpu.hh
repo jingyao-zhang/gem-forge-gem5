@@ -114,8 +114,11 @@ public:
   CPUPort instPort;
   CPUPort dataPort;
 
+  const std::string &getTraceFolder() const { return this->traceFolder; }
+
 private:
   const std::string traceFileName;
+  std::string traceFolder;
   DynamicInstructionStream *dynInstStream;
 
   TheISA::TLB *itb;

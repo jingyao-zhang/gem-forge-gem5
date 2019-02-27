@@ -15,8 +15,14 @@ parser = optparse.OptionParser()
 Options.addCommonOptions(parser)
 Options.addSEOptions(parser)
 
-parser.add_option("--llvm-trace-file", action="store", type="string",
-                  help="""llvm trace file input LLVMTraceCPU""", default="")
+def parse_tdg_files(option, opt, value, parser):
+    vs = value.split(',')
+    setattr(parser.values, option.dest, vs)
+
+
+parser.add_option("--llvm-trace-file", action="callback", type="string",
+                  help="""llvm trace file input LLVMTraceCPU""", default="",
+                  callback=parse_tdg_files)
 parser.add_option("--llvm-issue-width", action="store", type="int",
                   help="""llvm issue width""", default="8")
 parser.add_option("--llvm-store-queue-size", action="store",
@@ -126,11 +132,11 @@ if options.cpu_type == "LLVMTraceCPU":
 if options.num_cpus > 1:
     fatal("This script does not support multi-processor trace replay.\n")
 
-multiprocesses, numThreads = get_processes(options)
 (CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(options)
-CPUClass.numThreads = numThreads
 
 if options.llvm_standalone == 0:
+    multiprocesses, numThreads = get_processes(options)
+    CPUClass.numThreads = numThreads
     # Non-standalone mode, intialize the driver and normal cpu.
 
     # In this case FutureClass will be None as there is not fast forwarding or
@@ -195,10 +201,10 @@ else:
     assert options.llvm_trace_file != ''
     cpus = list()
     # No need to worry about the process.
-    for process in multiprocesses:
-        driver = LLVMTraceCPUDriver()
-        driver.filename = 'llvm_trace_cpu'
-        process.drivers = [driver]
+    for tdg_fn in options.llvm_trace_file:
+        # driver = LLVMTraceCPUDriver()
+        # driver.filename = 'llvm_trace_cpu'
+        # process.drivers = [driver]
 
         # For each process, add a LLVMTraceCPU for simulation.
         llvm_trace_cpu = LLVMTraceCPU(cpu_id=len(cpus))
@@ -242,7 +248,7 @@ else:
             llvm_trace_cpu.storeQueueSize = 36
 
         llvm_trace_cpu.cpu_id = len(cpus)
-        llvm_trace_cpu.traceFile = options.llvm_trace_file
+        llvm_trace_cpu.traceFile = tdg_fn
         llvm_trace_cpu.streamEngineIsOracle = (
             options.gem_forge_stream_engine_is_oracle != 0)
         llvm_trace_cpu.streamEngineMaxRunAHeadLength = (
@@ -255,9 +261,10 @@ else:
         llvm_trace_cpu.streamEngineEnableMerge = (
             options.gem_forge_stream_engine_enable_merge != 0
         )
-        # A dummy driver to make the python script happy.
+        # A dummy null driver to make the python script happy.
         llvm_trace_cpu.driver = NULL
         cpus.append(llvm_trace_cpu)
+        options.num_cpus = len(cpus)
 
 system = System(cpu=cpus,
                 mem_mode=test_mem_mode,

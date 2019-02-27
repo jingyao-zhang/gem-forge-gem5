@@ -19,6 +19,15 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
       renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
       driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
+
+  // Set the trace folder.
+  auto slashPos = this->traceFileName.rfind('/');
+  if (slashPos == std::string::npos) {
+    this->traceFolder = "";
+  } else {
+    this->traceFolder = this->traceFileName.substr(0, slashPos);
+  }
+
   // Set the time buffer between stages.
   this->fetchStage.setToDecode(&this->fetchToDecode);
   this->decodeStage.setFromFetch(&this->fetchToDecode);
@@ -41,7 +50,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   // Initialize the accelerators.
   // We need to keep the params as the sim object will store its address.
   this->accelManagerParams = new TDGAcceleratorManagerParams();
-  accelManagerParams->name = "tdg.accs";
+  accelManagerParams->name = this->name() + ".accs";
   this->accelManager = accelManagerParams->create();
 
   DPRINTF(LLVMTraceCPU, "Accelerator manager name %s.\n",
