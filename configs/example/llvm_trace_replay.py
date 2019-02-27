@@ -192,9 +192,10 @@ if options.llvm_standalone == 0:
             llvm_trace_cpu.cpu_id = len(cpus)
             llvm_trace_cpu.traceFile = options.llvm_trace_file
             llvm_trace_cpu.driver = driver
+            llvm_trace_cpu.totalCPUs = len(multiprocesses)
 
             cpus.append(llvm_trace_cpu)
-            options.num_cpus = len(cpus)
+    options.num_cpus = len(cpus)
 else:
     # Standalone mode, just the replay cpu.
     # There should be a trace file for replay.
@@ -263,8 +264,9 @@ else:
         )
         # A dummy null driver to make the python script happy.
         llvm_trace_cpu.driver = NULL
+        llvm_trace_cpu.totalCPUs = len(options.llvm_trace_file)
         cpus.append(llvm_trace_cpu)
-        options.num_cpus = len(cpus)
+    options.num_cpus = len(cpus)
 
 system = System(cpu=cpus,
                 mem_mode=test_mem_mode,

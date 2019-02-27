@@ -28,6 +28,10 @@ class LLVMTraceCPU(BaseCPU):
     cxx_header = 'cpu/llvm_trace/llvm_trace_cpu.hh'
 
     traceFile = Param.String('', 'The input llvm trace file.')
+
+    # Hack information of total cpus.
+    totalCPUs = Param.Unsigned(1, "Total number of CPUs.")
+
     driver = Param.LLVMTraceCPUDriver('The driver to control this cpu.')
     maxFetchQueueSize = Param.UInt64(64, 'Maximum size of the fetch queue.')
     maxReorderBufferSize = Param.UInt64(192, 'Maximum size of the rob.')

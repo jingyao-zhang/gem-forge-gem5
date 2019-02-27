@@ -7,17 +7,33 @@
 #include "sim/sim_exit.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
-    : BaseCPU(params), pageTable(params->name + ".page_table", 0),
+    : BaseCPU(params),
+      pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile), itb(params->itb), dtb(params->dtb),
-      fuPool(params->fuPool), regionStats(nullptr), currentStackDepth(0),
-      warmUpTick(0), process(nullptr), thread_context(nullptr), stackMin(0),
-      fetchStage(params, this), decodeStage(params, this),
-      renameStage(params, this), iewStage(params, this),
-      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
-      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
-      driver(params->driver), tickEvent(*this) {
+      traceFileName(params->traceFile),
+      totalCPUs(params->totalCPUs),
+      itb(params->itb),
+      dtb(params->dtb),
+      fuPool(params->fuPool),
+      regionStats(nullptr),
+      currentStackDepth(0),
+      warmUpTick(0),
+      process(nullptr),
+      thread_context(nullptr),
+      stackMin(0),
+      fetchStage(params, this),
+      decodeStage(params, this),
+      renameStage(params, this),
+      iewStage(params, this),
+      commitStage(params, this),
+      fetchToDecode(5, 5),
+      decodeToRename(5, 5),
+      renameToIEW(5, 5),
+      iewToCommit(5, 5),
+      signalBuffer(5, 5),
+      driver(params->driver),
+      tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   // Set the trace folder.
@@ -170,13 +186,21 @@ void LLVMTraceCPU::tick() {
     this->regionStats->update(RegionStats::InvalidBB);
     // If in standalone mode, we can exit.
     if (this->isStandalone()) {
-      this->regionStats->dump();
-      this->accelManager->exitDump();
-      exitSimLoop("Datagraph finished.\n");
+      // Decrease the workitem count.
+      auto workItemsEnd = this->system->incWorkItemsEnd();
+      if (workItemsEnd == this->totalCPUs) {
+        this->regionStats->dump();
+        this->accelManager->exitDump();
+        exitSimLoop("All datagraphs finished.\n");
+      } else {
+        DPRINTF(LLVMTraceCPU, "CPU %d done.\n", this->_cpuId);
+      }
+
     } else {
       DPRINTF(LLVMTraceCPU, "Activate the normal CPU\n");
       this->thread_context->activate();
     }
+    // Do not schedule next tick.
     return;
   } else {
     // Schedule next Tick event.

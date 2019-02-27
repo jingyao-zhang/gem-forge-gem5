@@ -118,6 +118,9 @@ public:
 
 private:
   const std::string traceFileName;
+
+  const unsigned totalCPUs;
+
   std::string traceFolder;
   DynamicInstructionStream *dynInstStream;
 
