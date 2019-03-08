@@ -6,18 +6,14 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
-    : cpu(_cpu),
-      dispatchWidth(params->dispatchWidth),
-      issueWidth(params->issueWidth),
-      writeBackWidth(params->writeBackWidth),
-      robSize(params->robSize),
-      cacheLoadPorts(params->cacheLoadPorts),
+    : cpu(_cpu), dispatchWidth(params->dispatchWidth),
+      issueWidth(params->issueWidth), writeBackWidth(params->writeBackWidth),
+      robSize(params->robSize), cacheLoadPorts(params->cacheLoadPorts),
       instQueueSize(params->instQueueSize),
       loadQueueSize(params->loadQueueSize),
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
-      toCommitDelay(params->iewToCommitDelay),
-      lsq(nullptr) {
+      toCommitDelay(params->iewToCommitDelay), lsq(nullptr) {
   this->lsq =
       new TDGLoadStoreQueue(this->cpu, this, this->loadQueueSize,
                             this->storeQueueSize, params->cacheStorePorts);
@@ -45,7 +41,7 @@ void LLVMIEWStage::regStats() {
       .flags(Stats::total | Stats::pdf | Stats::dist);
   this->statIssuedInstType.ysubnames(Enums::OpClassStrings);
 
-#define scalar(stat, describe) \
+#define scalar(stat, describe)                                                 \
   this->stat.name(name() + ("." #stat)).desc(describe).prereq(this->stat)
   scalar(blockedCycles, "Number of cycles blocked");
   scalar(robReads, "Number of rob reads");
@@ -249,27 +245,27 @@ void LLVMIEWStage::issue() {
         if (opClass != No_OpClass) {
           auto opLatency = cpu->getOpLatency(opClass);
           switch (opClass) {
-            case IntAluOp: {
-              this->ALUAccesses++;
-              this->ALUAccessesCycles += opLatency;
-              break;
-            }
-            case IntMultOp:
-            case IntDivOp: {
-              this->MultAccesses++;
-              this->MultAccessesCycles += opLatency;
-              break;
-            }
-            case FloatAddOp:
-            case FloatMultOp:
-            case FloatDivOp:
-            case FloatCvtOp:
-            case FloatCmpOp: {
-              this->FPUAccesses++;
-              this->FPUAccessesCycles += opLatency;
-              break;
-            }
-            default: { break; }
+          case IntAluOp: {
+            this->ALUAccesses++;
+            this->ALUAccessesCycles += opLatency;
+            break;
+          }
+          case IntMultOp:
+          case IntDivOp: {
+            this->MultAccesses++;
+            this->MultAccessesCycles += opLatency;
+            break;
+          }
+          case FloatAddOp:
+          case FloatMultOp:
+          case FloatDivOp:
+          case FloatCvtOp:
+          case FloatCmpOp: {
+            this->FPUAccesses++;
+            this->FPUAccessesCycles += opLatency;
+            break;
+          }
+          default: { break; }
           }
         }
 
@@ -347,6 +343,13 @@ void LLVMIEWStage::dispatch() {
     auto instId = *iter;
     auto inst = cpu->inflyInstMap.at(instId);
 
+    panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
+             "Inst %u should be in inflyInstStatus to check if DECODED\n",
+             instId);
+
+    if (cpu->inflyInstStatus.at(instId) != InstStatus::DECODED) {
+      continue;
+    }
     // Store queue full.
     if (inst->isStoreInst() && this->lsq->stores() == this->storeQueueSize) {
       break;
@@ -357,12 +360,9 @@ void LLVMIEWStage::dispatch() {
       break;
     }
 
-    panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
-             "Inst %u should be in inflyInstStatus to check if DECODED\n",
-             instId);
-
-    if (cpu->inflyInstStatus.at(instId) != InstStatus::DECODED) {
-      continue;
+    // Some other instruction specific reason.
+    if (!inst->canDispatch(cpu)) {
+      break;
     }
 
     /**
@@ -388,6 +388,7 @@ void LLVMIEWStage::dispatch() {
       cpu->getRegionStats()->update(TDG.bb());
     }
 
+    inst->dispatch(cpu);
     cpu->inflyInstStatus.at(instId) = InstStatus::DISPATCHED;
     dispatchedInst++;
     if (inst->isFloatInst()) {
@@ -558,11 +559,8 @@ void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
 
 LLVMIEWStage::FUCompletion::FUCompletion(LLVMDynamicInstId _instId, int _fuId,
                                          LLVMIEWStage *_iew, bool _shouldFreeFU)
-    : Event(Stat_Event_Pri, AutoDelete),
-      instId(_instId),
-      fuId(_fuId),
-      iew(_iew),
-      shouldFreeFU(_shouldFreeFU) {}
+    : Event(Stat_Event_Pri, AutoDelete), instId(_instId), fuId(_fuId),
+      iew(_iew), shouldFreeFU(_shouldFreeFU) {}
 
 void LLVMIEWStage::FUCompletion::process() {
   // Call the process function from cpu.

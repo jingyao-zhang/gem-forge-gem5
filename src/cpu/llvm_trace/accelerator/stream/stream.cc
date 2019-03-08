@@ -54,6 +54,15 @@ Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
   }
 
   this->storedData = new uint8_t[cpu->system->cacheLineSize()];
+
+  this->configured = false;
+  this->head = &this->nilTail;
+  this->stepped = &this->nilTail;
+  this->tail = &this->nilTail;
+  this->allocSize = 0;
+  this->stepSize = 0;
+  this->maxSize = _maxRunAHeadLength;
+  this->stepRootStream = nullptr;
 }
 
 Stream::~Stream() {

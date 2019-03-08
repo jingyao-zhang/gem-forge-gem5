@@ -27,6 +27,8 @@ public:
   uint32_t getConfigLoopLevel() const override;
   int32_t getElementSize() const override;
 
+  void prepareNewElement(StreamElement* element) override;
+
   void configure(StreamConfigInst *inst) override;
 
   bool isContinuous() const override;

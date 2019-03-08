@@ -7,33 +7,18 @@
 #include "sim/sim_exit.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
-    : BaseCPU(params),
-      pageTable(params->name + ".page_table", 0),
+    : BaseCPU(params), pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile),
-      totalCPUs(params->totalCPUs),
-      itb(params->itb),
-      dtb(params->dtb),
-      fuPool(params->fuPool),
-      regionStats(nullptr),
-      currentStackDepth(0),
-      warmUpTick(0),
-      process(nullptr),
-      thread_context(nullptr),
-      stackMin(0),
-      fetchStage(params, this),
-      decodeStage(params, this),
-      renameStage(params, this),
-      iewStage(params, this),
-      commitStage(params, this),
-      fetchToDecode(5, 5),
-      decodeToRename(5, 5),
-      renameToIEW(5, 5),
-      iewToCommit(5, 5),
-      signalBuffer(5, 5),
-      driver(params->driver),
-      tickEvent(*this) {
+      traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
+      itb(params->itb), dtb(params->dtb), fuPool(params->fuPool),
+      regionStats(nullptr), currentStackDepth(0), warmUpTick(0),
+      process(nullptr), thread_context(nullptr), stackMin(0),
+      fetchStage(params, this), decodeStage(params, this),
+      renameStage(params, this), iewStage(params, this),
+      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
+      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
+      driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   // Set the trace folder.
@@ -479,8 +464,9 @@ Addr LLVMTraceCPU::getPAddrFromVaddr(Addr vaddr) {
   return paddr;
 }
 
-void LLVMTraceCPU::sendRequest(Addr paddr, int size, TDGPacketHandler *handler,
-                               uint8_t *data, Addr pc) {
+PacketPtr LLVMTraceCPU::sendRequest(Addr paddr, int size,
+                                    TDGPacketHandler *handler, uint8_t *data,
+                                    Addr pc) {
   int contextId = 0;
   if (!this->isStandalone()) {
     contextId = this->thread_context->contextId();
@@ -502,6 +488,7 @@ void LLVMTraceCPU::sendRequest(Addr paddr, int size, TDGPacketHandler *handler,
   }
   pkt->dataDynamic(pkt_data);
   this->dataPort.addReq(pkt);
+  return pkt;
 }
 
 Cycles LLVMTraceCPU::getOpLatency(OpClass opClass) {

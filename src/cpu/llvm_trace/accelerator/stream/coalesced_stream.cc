@@ -53,69 +53,69 @@ CoalescedStream::~CoalescedStream() {}
 void CoalescedStream::addLogicalStreamIfNecessary(
     const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst) {
 
-  const auto &streamId = configInst.stream_id();
-  auto logicalStreamMapIter = this->logicalStreamMap.find(streamId);
-  if (logicalStreamMapIter != this->logicalStreamMap.end()) {
-    // This logical stream has already been added.
-    return;
-  }
+  // const auto &streamId = configInst.stream_id();
+  // auto logicalStreamMapIter = this->logicalStreamMap.find(streamId);
+  // if (logicalStreamMapIter != this->logicalStreamMap.end()) {
+  //   // This logical stream has already been added.
+  //   return;
+  // }
 
-  logicalStreamMapIter =
-      this->logicalStreamMap
-          .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
-                   std::forward_as_tuple(configInst))
-          .first;
+  // logicalStreamMapIter =
+  //     this->logicalStreamMap
+  //         .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
+  //                  std::forward_as_tuple(configInst))
+  //         .first;
 
-  auto &logicalStream = logicalStreamMapIter->second;
+  // auto &logicalStream = logicalStreamMapIter->second;
 
   /**
    * TODO: Add sanity check.
    */
-  if (logicalStream.info.chosen_base_step_root_ids_size() > 1) {
-    LOGICAL_STREAM_PANIC(
-        &logicalStream,
-        "Coalesced logical stream should have less than 2 base step streams.");
-  }
+  // if (logicalStream.info.chosen_base_step_root_ids_size() > 1) {
+  //   LOGICAL_STREAM_PANIC(
+  //       &logicalStream,
+  //       "Coalesced logical stream should have less than 2 base step streams.");
+  // }
 
-  if (logicalStream.info.type() == "phi") {
-    panic("Only support coalesced memory stream.");
-  }
+  // if (logicalStream.info.type() == "phi") {
+  //   panic("Only support coalesced memory stream.");
+  // }
 
-  if (this->primaryLogicalStream == nullptr) {
-    // First logical stream.
-    this->primaryLogicalStream = &logicalStream;
+  // if (this->primaryLogicalStream == nullptr) {
+  //   // First logical stream.
+  //   this->primaryLogicalStream = &logicalStream;
 
-    // Register the base step root streams.
-    if (this->primaryLogicalStream->info.chosen_base_step_root_ids_size() ==
-        1) {
+  //   // Register the base step root streams.
+  //   if (this->primaryLogicalStream->info.chosen_base_step_root_ids_size() ==
+  //       1) {
 
-      const auto &baseStepRootStreamId =
-          logicalStream.info.chosen_base_step_root_ids(0);
-      auto baseStepRootStream =
-          this->se->getStreamNullable(baseStepRootStreamId);
+  //     const auto &baseStepRootStreamId =
+  //         logicalStream.info.chosen_base_step_root_ids(0);
+  //     auto baseStepRootStream =
+  //         this->se->getStreamNullable(baseStepRootStreamId);
 
-      if (baseStepRootStream == nullptr) {
-        panic("Failed to get base step stream, is it not initialized yet?");
-      }
-      this->addBaseStepStream(baseStepRootStream);
+  //     if (baseStepRootStream == nullptr) {
+  //       panic("Failed to get base step stream, is it not initialized yet?");
+  //     }
+  //     this->addBaseStepStream(baseStepRootStream);
 
-      if (this->baseStepRootStreams.size() != 1) {
-        panic("Coalesced stream should have exactly one root step stream.");
-      }
+  //     if (this->baseStepRootStreams.size() != 1) {
+  //       panic("Coalesced stream should have exactly one root step stream.");
+  //     }
 
-      for (auto &stepRootStream : this->baseStepRootStreams) {
-        stepRootStream->registerStepDependentStreamToRoot(this);
-      }
-    }
+  //     for (auto &stepRootStream : this->baseStepRootStreams) {
+  //       stepRootStream->registerStepDependentStreamToRoot(this);
+  //     }
+  //   }
 
-  } else {
+  // } else {
 
-    // if (baseStepStreamId !=
-    //     this->primaryLogicalStream->info.chosen_base_step_ids(0)) {
-    //   panic("All coalesced logical streams should have the same base step "
-    //         "stream.");
-    // }
-  }
+  //   // if (baseStepStreamId !=
+  //   //     this->primaryLogicalStream->info.chosen_base_step_ids(0)) {
+  //   //   panic("All coalesced logical streams should have the same base step "
+  //   //         "stream.");
+  //   // }
+  // }
 }
 
 const std::string &CoalescedStream::getStreamName() const {

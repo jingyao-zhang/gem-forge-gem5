@@ -1,15 +1,9 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_PATTERN_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_PATTERN_H__
 
-#include "config/have_protobuf.hh"
-#ifndef HAVE_PROTOBUF
-#error "Require protobuf to parse stream pattern"
-#endif
-
 #include "StreamMessage.pb.h"
 
-#include "proto/protoio.hh"
-
+#include <list>
 #include <string>
 
 class StreamPattern {
@@ -18,12 +12,16 @@ public:
 
   void configure();
 
-  const LLVM::TDG::StreamPattern &getPattern() const { return this->pattern; }
+  const LLVM::TDG::StreamPattern &getPattern() const {
+    return *this->currentPattern;
+  }
 
 private:
-  std::string patternPath;
-  ProtoInputStream patternStream;
-  LLVM::TDG::StreamPattern pattern;
+  using PatternList = std::list<LLVM::TDG::StreamPattern>;
+  PatternList patterns;
+
+  PatternList::const_iterator nextPattern;
+  PatternList::const_iterator currentPattern;
 };
 
 #endif

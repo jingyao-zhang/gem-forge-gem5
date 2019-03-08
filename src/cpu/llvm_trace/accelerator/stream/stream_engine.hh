@@ -4,6 +4,7 @@
 #include "coalesced_stream.hh"
 #include "insts.hh"
 #include "single_stream.hh"
+#include "stream_element.hh"
 
 #include "stream_placement_manager.hh"
 
@@ -25,17 +26,25 @@ public:
   void dump() override;
   void regStats() override;
 
-  void useStream(uint64_t streamId, const LLVMDynamicInst *user);
-  bool isStreamReady(uint64_t streamId, const LLVMDynamicInst *user) const;
-  bool canStreamStep(uint64_t streamId) const;
+  void dispatchStreamConfigure(StreamConfigInst *inst);
   void commitStreamConfigure(StreamConfigInst *inst);
-  void commitStreamStep(StreamStepInst *inst);
-  void commitStreamStore(StreamStoreInst *inst);
-  void commitStreamEnd(StreamEndInst *inst);
-  void commitStreamUser(uint64_t streamId, const LLVMDynamicInst *user);
 
-  const Stream *getStreamNullable(uint64_t streamId) const;
-  Stream *getStreamNullable(uint64_t streamId);
+  bool canStreamStep(const StreamStepInst *inst) const;
+  void dispatchStreamStep(StreamStepInst *inst);
+  void commitStreamStep(StreamStepInst *inst);
+
+  void dispatchStreamUser(LLVMDynamicInst *inst);
+  bool areUsedStreamsReady(const LLVMDynamicInst *inst);
+  void executeStreamUser(LLVMDynamicInst *inst);
+  void commitStreamUser(LLVMDynamicInst *inst);
+
+  void dispatchStreamEnd(StreamEndInst *inst);
+  void commitStreamEnd(StreamEndInst *inst);
+
+  void executeStreamStore(StreamStoreInst *inst);
+  void commitStreamStore(StreamStoreInst *inst);
+
+  Stream *getStream(uint64_t streamId) const;
 
   StreamPlacementManager *getStreamPlacementManager() {
     return this->streamPlacementManager;
@@ -102,6 +111,17 @@ public:
 private:
   StreamPlacementManager *streamPlacementManager;
 
+  std::vector<StreamElement> FIFOArray;
+  StreamElement *FIFOFreeListHead;
+
+  /**
+   * Map from the user instruction to all the actual element to use.
+   * Update at dispatchStreamUser and commitStreamUser.
+   */
+  std::unordered_map<const LLVMDynamicInst *,
+                     std::unordered_set<StreamElement *>>
+      userElementMap;
+
   std::unordered_map<uint64_t, Stream *> streamMap;
 
   /**
@@ -139,6 +159,21 @@ private:
   // A helper function to load a stream info protobuf file.
   static LLVM::TDG::StreamInfo
   parseStreamInfoFromFile(const std::string &infoPath);
+
+  void initializeFIFO(size_t totalElements);
+
+  // Memorize the step stream list.
+  mutable std::unordered_map<Stream *, std::list<Stream *>>
+      memorizedStreamStepListMap;
+  const std::list<Stream *> &getStepStreamList(Stream *stepS) const;
+
+  // Allocate one element to stream.
+  void allocateElement(Stream *S);
+  void releaseElement(Stream *S);
+  void issueElements();
+  void issueElement(StreamElement *element);
+
+  void dumpFIFO() const;
 };
 
 #endif

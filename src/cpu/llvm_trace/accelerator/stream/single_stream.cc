@@ -66,30 +66,29 @@ SingleStream::SingleStream(
   this->history = std::unique_ptr<StreamHistory>(
       new StreamHistory(this->info.history_path()));
 
-  for (const auto &baseStreamId : this->info.chosen_base_ids()) {
-    auto baseStream = this->se->getStreamNullable(baseStreamId);
+  for (const auto &baseStreamId : this->info.chosen_base_streams()) {
+    auto baseStream = this->se->getStream(baseStreamId.id());
     if (baseStream == nullptr) {
       STREAM_PANIC("Failed to get base stream, is it not initialized yet.");
     }
     this->addBaseStream(baseStream);
   }
 
-  for (const auto &baseStepStreamId : this->info.chosen_base_step_ids()) {
-    auto baseStepStream = this->se->getStreamNullable(baseStepStreamId);
-    if (baseStepStream == nullptr) {
-      STREAM_PANIC(
-          "Failed to get base step stream, is it not initialized yet.");
+  if (this->baseStreams.empty() && this->info.type() == "phi") {
+    this->stepRootStream = this;
+  }
+
+  // Try to find the step root stream.
+  for (auto &baseS : this->baseStreams) {
+    if (baseS->getLoopLevel() != this->getLoopLevel()) {
+      continue;
     }
-    this->addBaseStepStream(baseStepStream);
-  }
-  if (this->baseStepRootStreams.size() > 1) {
-    STREAM_PANIC(
-        "More than one base step root stream detected, which is not yet "
-        "supported by the semantics of step instructions.");
-  }
-  if (!this->isStepRoot()) {
-    for (auto &stepRootStream : this->baseStepRootStreams) {
-      stepRootStream->registerStepDependentStreamToRoot(this);
+    if (baseS->stepRootStream != nullptr) {
+      if (this->stepRootStream != nullptr &&
+          this->stepRootStream != baseS->stepRootStream) {
+        panic("Double step root stream found.\n");
+      }
+      this->stepRootStream = baseS->stepRootStream;
     }
   }
 
@@ -118,7 +117,13 @@ int32_t SingleStream::getElementSize() const {
 
 void SingleStream::configure(StreamConfigInst *inst) {
   this->history->configure();
-  Stream::configure(inst);
+}
+
+void SingleStream::prepareNewElement(StreamElement *element) {
+  bool oracleUsed = false;
+  auto nextValuePair = this->history->getNextAddr(oracleUsed);
+  element->addr = nextValuePair.second;
+  element->size = this->getElementSize();
 }
 
 void SingleStream::enqueueFIFO() {
@@ -369,9 +374,7 @@ uint64_t SingleStream::getTrueFootprint() const {
 
 uint64_t SingleStream::getFootprint(unsigned cacheBlockSize) const { return 1; }
 
-bool SingleStream::isContinuous() const {
-  return false;
-}
+bool SingleStream::isContinuous() const { return false; }
 
 void SingleStream::dump() const {
   inform("Dump for stream %s.\n======================",

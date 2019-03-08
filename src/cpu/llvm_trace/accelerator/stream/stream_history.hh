@@ -1,16 +1,9 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_HISTORY_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_HISTORY_H__
 
-// Parse the instructions from a protobuf.
-#include "config/have_protobuf.hh"
-#ifndef HAVE_PROTOBUF
-#error "Require protobuf to parse stream history."
-#endif
-
 #include "StreamMessage.pb.h"
 
-#include "proto/protoio.hh"
-
+#include <list>
 #include <string>
 
 class StreamHistory {
@@ -33,9 +26,11 @@ public:
   uint64_t getNumCacheLines() const;
 
 private:
-  std::string historyPath;
-  ProtoInputStream historyStream;
-  LLVM::TDG::StreamHistory history;
+  using HistoryList = std::list<LLVM::TDG::StreamHistory>;
+  HistoryList histories;
+
+  HistoryList::const_iterator nextConfig;
+  HistoryList::const_iterator currentConfig;
 
   size_t currentIdx;
   uint64_t previousAddr;

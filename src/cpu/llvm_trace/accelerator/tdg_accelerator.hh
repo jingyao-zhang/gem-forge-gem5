@@ -63,14 +63,6 @@ public:
 
   StreamEngine *getStreamEngine();
 
-  // void useStream(uint64_t streamId, const LLVMDynamicInst *user);
-  // bool isStreamReady(uint64_t streamId, const LLVMDynamicInst *user) const;
-  // bool canStreamStep(uint64_t streamId) const;
-  // void commitStreamConfigure(uint64_t streamId, uint64_t configSeqNum);
-  // void commitStreamStep(uint64_t streamId, uint64_t stepSeqNum);
-  // void commitStreamStore(uint64_t streamId, uint64_t storeSeqNum);
-  // void commitStreamEnd(uint64_t streamId, uint64_t storeSeqNum);
-
   void regStats() override;
 
 private:

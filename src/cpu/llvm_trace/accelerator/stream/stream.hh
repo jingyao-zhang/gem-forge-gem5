@@ -2,6 +2,7 @@
 #define __CPU_TDG_ACCELERATOR_STREAM_HH__
 
 #include "cpu/llvm_trace/llvm_insts.hh"
+#include "stream_element.hh"
 
 #include "base/types.hh"
 #include "mem/packet.hh"
@@ -15,6 +16,37 @@ class StreamConfigInst;
 class StreamStepInst;
 class StreamStoreInst;
 class StreamEndInst;
+class StreamElement;
+
+struct FIFOEntryIdx {
+  uint64_t streamInstance;
+  uint64_t configSeqNum;
+  uint64_t entryIdx;
+  FIFOEntryIdx()
+      : streamInstance(0), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+        entryIdx(0) {}
+  FIFOEntryIdx(uint64_t _streamInstance, uint64_t _configSeqNum,
+               uint64_t _entryIdx)
+      : streamInstance(_streamInstance), configSeqNum(_configSeqNum),
+        entryIdx(_entryIdx) {}
+  FIFOEntryIdx(const FIFOEntryIdx &other)
+      : streamInstance(other.streamInstance), configSeqNum(other.configSeqNum),
+        entryIdx(other.entryIdx) {}
+  void next() { this->entryIdx++; }
+  void newInstance(uint64_t configSeqNum) {
+    this->entryIdx = 0;
+    this->streamInstance++;
+    this->configSeqNum = configSeqNum;
+  }
+
+  bool operator==(const FIFOEntryIdx &other) const {
+    return this->streamInstance == other.streamInstance &&
+           this->entryIdx == other.entryIdx;
+  }
+  bool operator!=(const FIFOEntryIdx &other) const {
+    return !(this->operator==(other));
+  }
+};
 
 class Stream {
 public:
@@ -29,6 +61,24 @@ public:
   virtual uint32_t getLoopLevel() const = 0;
   virtual uint32_t getConfigLoopLevel() const = 0;
   virtual int32_t getElementSize() const = 0;
+
+  virtual void prepareNewElement(StreamElement *element) {}
+
+  /**
+   * Simple bookkeeping information for the stream engine.
+   */
+  bool configured;
+  StreamElement *head;
+  StreamElement *stepped;
+  StreamElement *tail;
+  size_t allocSize;
+  size_t stepSize;
+  size_t maxSize;
+  FIFOEntryIdx FIFOIdx;
+
+  Stream *stepRootStream;
+  std::unordered_set<Stream *> baseStreams;
+  std::unordered_set<Stream *> dependentStreams;
 
   virtual void configure(StreamConfigInst *inst);
   virtual void commitConfigure(StreamConfigInst *inst);
@@ -80,36 +130,6 @@ public:
   bool isReady(const LLVMDynamicInst *user) const;
   void use(const LLVMDynamicInst *user);
   bool canStep() const;
-
-  struct FIFOEntryIdx {
-    uint64_t streamInstance;
-    uint64_t configSeqNum;
-    uint64_t entryIdx;
-    FIFOEntryIdx()
-        : streamInstance(0), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-          entryIdx(0) {}
-    FIFOEntryIdx(uint64_t _streamInstance, uint64_t _configSeqNum,
-                 uint64_t _entryIdx)
-        : streamInstance(_streamInstance), configSeqNum(_configSeqNum),
-          entryIdx(_entryIdx) {}
-    FIFOEntryIdx(const FIFOEntryIdx &other)
-        : streamInstance(other.streamInstance),
-          configSeqNum(other.configSeqNum), entryIdx(other.entryIdx) {}
-    void next() { this->entryIdx++; }
-    void newInstance(uint64_t configSeqNum) {
-      this->entryIdx = 0;
-      this->streamInstance++;
-      this->configSeqNum = configSeqNum;
-    }
-
-    bool operator==(const FIFOEntryIdx &other) const {
-      return this->streamInstance == other.streamInstance &&
-             this->entryIdx == other.entryIdx;
-    }
-    bool operator!=(const FIFOEntryIdx &other) const {
-      return !(this->operator==(other));
-    }
-  };
 
   struct FIFOEntry {
     const FIFOEntryIdx idx;
@@ -220,11 +240,12 @@ protected:
   StreamEngine *se;
   bool isOracle;
 
-  std::unordered_set<Stream *> baseStreams;
   std::unordered_set<Stream *> baseStepStreams;
   std::unordered_set<Stream *> baseStepRootStreams;
-  std::unordered_set<Stream *> dependentStreams;
   std::unordered_set<Stream *> dependentStepStreams;
+
+  StreamElement nilTail;
+
   /**
    * Step the dependent streams in this order.
    */
@@ -249,7 +270,6 @@ protected:
   size_t maxRunAHeadLength;
   size_t runAHeadLength;
   std::string throttling;
-  FIFOEntryIdx FIFOIdx;
   std::list<FIFOEntry> FIFO;
 
   std::unordered_set<StreamMemAccess *> memAccesses;

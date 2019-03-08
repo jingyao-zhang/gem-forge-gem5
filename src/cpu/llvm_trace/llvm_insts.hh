@@ -41,6 +41,8 @@ public:
   virtual ~LLVMDynamicInst() {}
 
   // Interface.
+  virtual bool canDispatch(LLVMTraceCPU *cpu) const { return true; }
+  virtual void dispatch(LLVMTraceCPU *cpu);
   virtual void execute(LLVMTraceCPU *cpu) = 0;
   virtual void writeback(LLVMTraceCPU *cpu) {
     panic("Calling write back on non-store inst %u.\n", this->getId());

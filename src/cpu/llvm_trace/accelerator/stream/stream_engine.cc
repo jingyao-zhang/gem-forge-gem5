@@ -54,6 +54,8 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->placementLat = cpuParams->streamEnginePlacementLat;
   this->placement = cpuParams->streamEnginePlacement;
 
+  this->initializeFIFO(this->maxTotalRunAheadLength);
+
   if (this->enableStreamPlacement) {
     this->streamPlacementManager = new StreamPlacementManager(cpu, this);
   }
@@ -153,140 +155,245 @@ void StreamEngine::regStats() {
       .prereq(this->numCacheLevel);
 }
 
-bool StreamEngine::handle(LLVMDynamicInst *inst) {
-  if (auto configInst = dynamic_cast<StreamConfigInst *>(inst)) {
-    this->numConfigured++;
-    auto S = this->getOrInitializeStream(configInst->getTDG().stream_config());
-    S->configure(configInst);
-    configInst->markFinished();
-    return true;
-  }
-  if (auto stepInst = dynamic_cast<StreamStepInst *>(inst)) {
-    this->numStepped++;
-    auto stream =
-        this->getStreamNullable(stepInst->getTDG().stream_step().stream_id());
-    auto stepSeqNum = stepInst->getSeqNum();
-    if (stream != nullptr && (!stream->isBeforeFirstConfigInst(stepSeqNum))) {
-      stream->step(stepInst);
+void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
+  this->numConfigured++;
+  hack("Configure stream %s %lu.\n",
+       inst->getTDG().stream_config().stream_name().c_str(),
+       inst->getTDG().stream_config().stream_id());
+  auto S = this->getOrInitializeStream(inst->getTDG().stream_config());
+
+  assert(!S->configured && "The stream should not be configured.");
+  S->configured = true;
+
+  hack("Configure stream %s %lu.\n", S->getStreamName().c_str(),
+       inst->getTDG().stream_config().stream_id());
+
+  /**
+   * 1. Clear all elements between stepHead and allocHead.
+   * 2. Create the new index.
+   * 3. Allocate more entries.
+   */
+
+  // 1. Release elements.
+  while (S->allocSize > S->stepSize) {
+    assert(S->stepped->next != nullptr && "Missing next element.");
+    auto releaseElement = S->stepped->next;
+    S->stepped->next = releaseElement->next;
+    S->allocSize--;
+    if (S->head == releaseElement) {
+      S->head = S->stepped;
     }
-    stepInst->markFinished();
-    return true;
+    releaseElement->clear();
+    releaseElement->next = this->FIFOFreeListHead;
+    this->FIFOFreeListHead = releaseElement;
   }
-  if (auto storeInst = dynamic_cast<StreamStoreInst *>(inst)) {
-    auto stream =
-        this->getStreamNullable(storeInst->getTDG().stream_store().stream_id());
-    auto storeSeqNum = storeInst->getSeqNum();
-    if (stream != nullptr && (!stream->isBeforeFirstConfigInst(storeSeqNum))) {
-      stream->store(storeInst);
-    }
-    storeInst->markFinished();
-    return true;
-  }
-  if (auto endInst = dynamic_cast<StreamEndInst *>(inst)) {
-    auto stream =
-        this->getStreamNullable(endInst->getTDG().stream_end().stream_id());
-    auto endSeqNum = endInst->getSeqNum();
-    if (stream != nullptr && (!stream->isBeforeFirstConfigInst(endSeqNum))) {
-      stream->end(endInst);
-    }
-    endInst->markFinished();
-    return true;
-  }
-  return false;
-}
 
-bool StreamEngine::isStreamReady(uint64_t streamId,
-                                 const LLVMDynamicInst *user) const {
-  auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr) {
-    // This is possible in partial datagraph that contains an incomplete loop.
-    // For this rare case, we just assume the stream is ready.
-    return true;
-  }
-  return stream->isReady(user);
-}
+  // Only to configure the history for single stream.
+  S->configure(inst);
 
-void StreamEngine::useStream(uint64_t streamId, const LLVMDynamicInst *user) {
-  auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr) {
-    // This is possible in partial datagraph that contains an incomplete loop.
-    // For this rare case, we just assume the stream is ready.
-    this->numUnconfiguredStreamUse++;
-    return;
-  }
-  this->numConfiguredStreamUse++;
-  return stream->use(user);
-}
+  // 2. Create new index.
+  S->FIFOIdx.newInstance(inst->getSeqNum());
 
-void StreamEngine::commitStreamUser(uint64_t streamId,
-                                    const LLVMDynamicInst *user) {
-  auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr) {
-    // This is possible in partial datagraph that contains an incomplete loop.
-    // For this rare case, we just assume the stream is ready.
-    return;
+  // 3. Allocate new entries.
+  // So far let's take a simple approach: fixed run ahead length for each
+  // stream.
+  while (S->allocSize < S->maxSize && this->FIFOFreeListHead != nullptr) {
+    this->allocateElement(S);
   }
-  return stream->commitUser(user);
-}
-
-bool StreamEngine::canStreamStep(uint64_t streamId) const {
-  auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr) {
-    // This is possible in partial datagraph that contains an incomplete loop.
-    // For this rare case, we just assume the stream is ready.
-    return true;
-  }
-  return stream->canStep();
 }
 
 void StreamEngine::commitStreamConfigure(StreamConfigInst *inst) {
-  auto streamId = inst->getTDG().stream_config().stream_id();
-  auto seqNum = inst->getSeqNum();
-  auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->isBeforeFirstConfigInst(seqNum)) {
-    // This is possible in partial datagraph that contains an incomplete loop.
-    return;
+  // So far we don't need to do anything.
+}
+
+bool StreamEngine::canStreamStep(const StreamStepInst *inst) const {
+  /**
+   * For all the streams get stepped, make sure that
+   * allocSize - stepSize >= 2.
+   */
+  auto stepStreamId = inst->getTDG().stream_step().stream_id();
+  auto stepStream = this->getStream(stepStreamId);
+
+  bool canStep = true;
+  for (auto S : this->getStepStreamList(stepStream)) {
+    if (S->allocSize - S->stepSize < 2) {
+      canStep = false;
+      break;
+    }
   }
-  stream->commitConfigure(inst);
+  // hack("Check if can step stream %s: %d.\n",
+  //      stepStream->getStreamName().c_str(), canStep);
+  return canStep;
+}
+
+void StreamEngine::dispatchStreamStep(StreamStepInst *inst) {
+
+  /**
+   * For all the streams get stepped, increase the stepped pointer.
+   */
+
+  assert(this->canStreamStep(inst) && "canStreamStep assertion failed.");
+  this->numStepped++;
+
+  auto stepStreamId = inst->getTDG().stream_step().stream_id();
+  auto stepStream = this->getStream(stepStreamId);
+
+  // hack("Step stream %s.\n", stepStream->getStreamName().c_str());
+
+  for (auto S : this->getStepStreamList(stepStream)) {
+    assert(S->configured && "Stream should be configured to be stepped.");
+    S->stepped = S->stepped->next;
+    S->stepSize++;
+  }
 }
 
 void StreamEngine::commitStreamStep(StreamStepInst *inst) {
-  auto streamId = inst->getTDG().stream_step().stream_id();
-  auto seqNum = inst->getSeqNum();
-  auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->isBeforeFirstConfigInst(seqNum)) {
-    // This is possible in partial datagraph that contains an incomplete loop.
-    return;
+  auto stepStreamId = inst->getTDG().stream_step().stream_id();
+  auto stepStream = this->getStream(stepStreamId);
+
+  const auto &stepStreams = this->getStepStreamList(stepStream);
+
+  for (auto S : stepStreams) {
+    this->releaseElement(S);
   }
-  stream->commitStep(inst);
+
+  /**
+   * Try to allocate more elements.
+   * Set a target, try to make sure all streams reach this target.
+   * Then increment the target.
+   */
+  for (size_t targetSize = 1;
+       targetSize <= stepStream->maxSize && this->FIFOFreeListHead != nullptr;
+       ++targetSize) {
+    for (auto S : stepStreams) {
+      if (this->FIFOFreeListHead == nullptr) {
+        break;
+      }
+      if (!S->configured) {
+        continue;
+      }
+      if (S->allocSize >= targetSize) {
+        continue;
+      }
+      if (S->allocSize > stepStream->allocSize) {
+        // It doesn't make sense to allocate before the step root.
+        continue;
+      }
+      this->allocateElement(S);
+    }
+  }
 }
 
-void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
-  auto streamId = inst->getTDG().stream_store().stream_id();
-  auto seqNum = inst->getSeqNum();
-  auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->isBeforeFirstConfigInst(seqNum)) {
-    // This is possible in partial datagraph that contains an incomplete loop.
-    // if (storeSeqNum == 5742) {
-    //   panic("chhhh %d.", stream->getFirstConfigSeqNum());
-    // }
-    return;
+void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
+
+  assert(this->userElementMap.count(inst) == 0);
+
+  auto &elementSet =
+      this->userElementMap
+          .emplace(std::piecewise_construct, std::forward_as_tuple(inst),
+                   std::forward_as_tuple())
+          .first->second;
+
+  for (const auto &dep : inst->getTDG().deps()) {
+    if (dep.type() != ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      continue;
+    }
+    auto streamId = dep.dependent_id();
+    auto S = this->getStream(streamId);
+
+    if (S->allocSize <= S->stepSize) {
+      inst->dumpBasic();
+      this->dumpFIFO();
+      panic("No allocated element to use for stream %s.",
+            S->getStreamName().c_str());
+    }
+
+    elementSet.insert(S->stepped->next);
   }
-  // if (storeSeqNum == 5742) {
-  //   panic("christ jesus.");
-  // }
-  stream->commitStore(inst);
+}
+
+bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
+  assert(this->userElementMap.count(inst) != 0);
+
+  for (auto &element : this->userElementMap.at(inst)) {
+    if (!element->isValueReady) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+void StreamEngine::executeStreamUser(LLVMDynamicInst *inst) {
+  assert(this->userElementMap.count(inst) != 0);
+}
+
+void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
+  assert(this->userElementMap.count(inst) != 0);
+  // Simply release the entry.
+  this->userElementMap.erase(inst);
+}
+
+void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
+
+  auto S = this->getStream(inst->getTDG().stream_end().stream_id());
+
+  assert(S->configured && "Stream should be configured.");
+
+  /**
+   * 1. Step one element (retain one last element).
+   * 2. Release all unstepped allocated element.
+   * 3. Mark the stream to be unconfigured.
+   */
+
+  // 1. Step one element.
+  assert(S->allocSize > S->stepSize &&
+         "Should have at least one unstepped allocate element.");
+  S->stepped = S->stepped->next;
+  S->stepSize++;
+
+  // 2. Release allocated but unstepped elements.
+  while (S->allocSize > S->stepSize) {
+    assert(S->stepped->next != nullptr && "Missing next element.");
+    auto releaseElement = S->stepped->next;
+    S->stepped->next = releaseElement->next;
+    S->allocSize--;
+    if (S->head == releaseElement) {
+      S->head = S->stepped;
+    }
+    releaseElement->clear();
+    releaseElement->next = this->FIFOFreeListHead;
+    this->FIFOFreeListHead = releaseElement;
+  }
+
+  // 3. Makr the stream to be unconfigured.
+  S->configured = false;
 }
 
 void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
-  auto streamId = inst->getTDG().stream_end().stream_id();
-  auto seqNum = inst->getSeqNum();
-  auto stream = this->getStreamNullable(streamId);
-  if (stream == nullptr || stream->isBeforeFirstConfigInst(seqNum)) {
-    return;
-  }
-  stream->commitEnd(inst);
+  /**
+   * Release the last element we stepped at dispatch.
+   */
+  auto S = this->getStream(inst->getTDG().stream_end().stream_id());
+  this->releaseElement(S);
 }
+
+void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
+  assert(this->userElementMap.count(inst) != 0);
+  // Check my element.
+  auto storeStream = this->getStream(inst->getTDG().stream_store().stream_id());
+  for (auto element : this->userElementMap.at(inst)) {
+    if (element->stream == storeStream) {
+      // Found it.
+      element->stored = true;
+      break;
+    }
+  }
+}
+
+void StreamEngine::commitStreamStore(StreamStoreInst *inst) {}
+
+bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
 
 CoalescedStream *
 StreamEngine::getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
@@ -332,24 +439,25 @@ Stream *StreamEngine::getOrInitializeStream(
 
     Stream *newStream = nullptr;
     if (coalesceGroup != -1 && this->enableCoalesce) {
-      // We should handle it as a coalesced stream.
+      // // We should handle it as a coalesced stream.
 
-      // Get the step root stream id.
-      uint64_t stepRootStreamId = streamInfo.id();
-      if (streamInfo.chosen_base_step_root_ids_size() > 1) {
-        panic("More than one step root stream for coalesced streams.");
-      } else if (streamInfo.chosen_base_step_root_ids_size() == 1) {
-        // We have one step root stream.
-        stepRootStreamId = streamInfo.chosen_base_step_root_ids(0);
-      }
+      // // Get the step root stream id.
+      // uint64_t stepRootStreamId = streamInfo.id();
+      // if (streamInfo.chosen_base_step_root_ids_size() > 1) {
+      //   panic("More than one step root stream for coalesced streams.");
+      // } else if (streamInfo.chosen_base_step_root_ids_size() == 1) {
+      //   // We have one step root stream.
+      //   stepRootStreamId = streamInfo.chosen_base_step_root_ids(0);
+      // }
 
-      auto coalescedStream =
-          getOrInitializeCoalescedStream(stepRootStreamId, coalesceGroup);
+      // auto coalescedStream =
+      //     getOrInitializeCoalescedStream(stepRootStreamId, coalesceGroup);
 
-      // Add the logical stream to the coalesced stream.
-      coalescedStream->addLogicalStreamIfNecessary(configInst);
+      // // Add the logical stream to the coalesced stream.
+      // coalescedStream->addLogicalStreamIfNecessary(configInst);
 
-      newStream = coalescedStream;
+      // newStream = coalescedStream;
+      panic("Disabled stream coalesce so far.");
 
     } else {
       newStream = new SingleStream(configInst, cpu, this, this->isOracle,
@@ -365,23 +473,16 @@ Stream *StreamEngine::getOrInitializeStream(
   return iter->second;
 }
 
-const Stream *StreamEngine::getStreamNullable(uint64_t streamId) const {
+Stream *StreamEngine::getStream(uint64_t streamId) const {
   auto iter = this->streamMap.find(streamId);
   if (iter == this->streamMap.end()) {
-    return nullptr;
-  }
-  return iter->second;
-}
-
-Stream *StreamEngine::getStreamNullable(uint64_t streamId) {
-  auto iter = this->streamMap.find(streamId);
-  if (iter == this->streamMap.end()) {
-    return nullptr;
+    panic("Failed to find stream %lu.\n", streamId);
   }
   return iter->second;
 }
 
 void StreamEngine::tick() {
+  this->issueElements();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
@@ -427,4 +528,253 @@ StreamEngine::parseStreamInfoFromFile(const std::string &infoPath) {
     panic("Failed to read in the stream info from file %s.", infoPath.c_str());
   }
   return info;
+}
+
+void StreamEngine::initializeFIFO(size_t totalElements) {
+  panic_if(!this->FIFOArray.empty(), "FIFOArray has already been initialized.");
+
+  this->FIFOArray.reserve(totalElements);
+  while (this->FIFOArray.size() < totalElements) {
+    this->FIFOArray.emplace_back();
+  }
+  this->FIFOFreeListHead = nullptr;
+  for (auto &element : this->FIFOArray) {
+    element.next = this->FIFOFreeListHead;
+    this->FIFOFreeListHead = &element;
+  }
+}
+
+const std::list<Stream *> &
+StreamEngine::getStepStreamList(Stream *stepS) const {
+  if (this->memorizedStreamStepListMap.count(stepS) != 0) {
+    return this->memorizedStreamStepListMap.at(stepS);
+  }
+  // Create the list.
+  std::list<Stream *> stepList;
+  std::list<Stream *> stack;
+  std::unordered_map<Stream *, int> stackStatusMap;
+  stack.emplace_back(stepS);
+  stackStatusMap.emplace(stepS, 0);
+  while (!stack.empty()) {
+    auto S = stack.back();
+    if (stackStatusMap.at(S) == 0) {
+      // First time.
+      for (auto depS : stepS->dependentStreams) {
+        if (depS->getLoopLevel() != stepS->getLoopLevel()) {
+          continue;
+        }
+        if (stackStatusMap.count(depS) != 0) {
+          // Cycle dependence found.
+          if (stackStatusMap.at(depS) == 1) {
+            panic("Cycle dependence found %s.", depS->getStreamName().c_str());
+          } else if (stackStatusMap.at(depS) == 2) {
+            // This one has already dumped.
+            continue;
+          }
+        }
+        stack.emplace_back(depS);
+        stackStatusMap.emplace(depS, 0);
+      }
+      stackStatusMap.at(S) = 1;
+    } else if (stackStatusMap.at(S) == 1) {
+      // Second time.
+      stepList.emplace_front(S);
+      stack.pop_back();
+      stackStatusMap.at(S) = 2;
+    } else {
+      // Third time, ignore it as the stream is already in the list.
+      stack.pop_back();
+    }
+  }
+
+  return this->memorizedStreamStepListMap
+      .emplace(std::piecewise_construct, std::forward_as_tuple(stepS),
+               std::forward_as_tuple(stepList))
+      .first->second;
+}
+
+void StreamEngine::allocateElement(Stream *S) {
+  assert(this->FIFOFreeListHead != nullptr);
+  assert(S->configured && "Stream should be configured to allocate element.");
+  auto newElement = this->FIFOFreeListHead;
+  this->FIFOFreeListHead = this->FIFOFreeListHead->next;
+
+  newElement->clear();
+
+  newElement->stream = S;
+
+  // Find the base element.
+  for (auto baseS : S->baseStreams) {
+    if (baseS->getLoopLevel() != S->getLoopLevel()) {
+      continue;
+    }
+
+    if (baseS->stepRootStream == S->stepRootStream) {
+      panic_if(baseS->allocSize - baseS->stepSize <= S->allocSize - S->stepSize,
+               "Base %s has not enough allocated element for %s.",
+               baseS->getStreamName().c_str(), S->getStreamName().c_str());
+
+      auto baseElement = baseS->stepped;
+      auto element = S->stepped;
+      while (element != nullptr) {
+        assert(baseElement != nullptr && "Failed to find base element.");
+        element = element->next;
+        baseElement = baseElement->next;
+      }
+      assert(baseElement != nullptr && "Failed to find base element.");
+      newElement->baseElements.insert(baseElement);
+    } else {
+      // The other one must be a constant stream.
+      assert(baseS->stepRootStream == nullptr &&
+             "Should be a constant stream.");
+      assert(baseS->stepped->next != nullptr && "Missing base element.");
+      newElement->baseElements.insert(baseS->stepped->next);
+    }
+  }
+
+  newElement->allocateCycle = cpu->curCycle();
+
+  // Create all the cache line this element will touch.
+  if (S->isMemStream()) {
+    S->prepareNewElement(newElement);
+    const int cacheBlockSize = cpu->system->cacheLineSize();
+    auto lhsCacheBlock = newElement->addr & (~(cacheBlockSize - 1));
+    auto rhsCacheBlock =
+        (newElement->addr + newElement->size - 1) & (~(cacheBlockSize - 1));
+    while (lhsCacheBlock <= rhsCacheBlock) {
+      if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
+        panic("More than %d cache blocks for one stream element, address %lu "
+              "size %lu.",
+              newElement->cacheBlocks, newElement->addr, newElement->size);
+      }
+      newElement->cacheBlockAddrs[newElement->cacheBlocks] = lhsCacheBlock;
+      newElement->cacheBlocks++;
+      if (lhsCacheBlock == 0xFFFFFFFFFFFFFFC0) {
+        // This is the last block in the address space.
+        // Something wrong here.
+        break;
+      }
+      lhsCacheBlock += cacheBlockSize;
+    }
+  } else {
+    // IV stream already ready.
+    newElement->isAddrReady = true;
+    newElement->isValueReady = true;
+  }
+
+  // Append to the list.
+  S->head->next = newElement;
+  S->allocSize++;
+  S->head = newElement;
+}
+
+void StreamEngine::releaseElement(Stream *S) {
+  assert(S->stepSize > 0 && "No element to release.");
+  auto releaseElement = S->tail->next;
+
+  // If the element is stored, we reissue the store request.
+  if (releaseElement->stored) {
+    this->issueElement(releaseElement);
+  }
+
+  S->tail->next = releaseElement->next;
+  if (S->stepped == releaseElement) {
+    S->stepped = S->tail;
+  }
+  if (S->head == releaseElement) {
+    S->head = S->tail;
+  }
+  S->stepSize--;
+  S->allocSize--;
+
+  releaseElement->clear();
+  releaseElement->next = this->FIFOFreeListHead;
+  this->FIFOFreeListHead = releaseElement;
+}
+
+void StreamEngine::issueElements() {
+  // Find all ready elements.
+  std::vector<StreamElement *> readyElements;
+  for (auto &element : this->FIFOArray) {
+    if (element.stream == nullptr) {
+      // Not allocated, ignore.
+      continue;
+    }
+    if (element.isAddrReady) {
+      // We already issued request for this element.
+      continue;
+    }
+    // Check if all the base element are value ready.
+    bool ready = true;
+    for (const auto &baseElement : element.baseElements) {
+      if (!baseElement->isValueReady) {
+        ready = false;
+        break;
+      }
+    }
+    if (ready) {
+      readyElements.emplace_back(&element);
+    }
+  }
+
+  // Sort the ready elements, by their create cycle.
+  std::sort(readyElements.begin(), readyElements.end(),
+            [](const StreamElement *A, const StreamElement *B) -> bool {
+              return B->allocateCycle > A->allocateCycle;
+            });
+  for (auto &element : readyElements) {
+    element->isAddrReady = true;
+    this->issueElement(element);
+  }
+}
+
+void StreamEngine::issueElement(StreamElement *element) {
+
+  assert(element->isAddrReady && "Address should be ready.");
+
+  assert(element->stream->isMemStream() &&
+         "Should never issue element for IVStream.");
+
+  auto S = element->stream;
+  // hack("Send packt for stream %s.\n", S->getStreamName().c_str());
+
+  for (size_t i = 0; i < element->cacheBlocks; ++i) {
+    const auto cacheBlockAddr = element->cacheBlockAddrs[i];
+    Addr paddr;
+    if (cpu->isStandalone()) {
+      paddr = cpu->translateAndAllocatePhysMem(cacheBlockAddr);
+    } else {
+      panic("Stream so far can only work in standalone mode.");
+    }
+
+    // Bring in the whole cache block.
+    auto packetSize = cpu->system->cacheLineSize();
+
+    auto pkt = cpu->sendRequest(paddr, packetSize, element, nullptr,
+                                reinterpret_cast<Addr>(element));
+
+    if (S->getStreamType() == "load") {
+      element->inflyLoadPackets.insert(pkt);
+    } else if (S->getStreamType() == "store") {
+      // Store can be directly value ready.
+      element->isValueReady = true;
+    }
+  }
+}
+
+void StreamEngine::dumpFIFO() const {
+  size_t freeElements = 0;
+  auto freeIter = this->FIFOFreeListHead;
+  while (freeIter != nullptr) {
+    freeIter = freeIter->next;
+    freeElements++;
+  }
+  inform("Total elements %d, free %d\n", this->FIFOArray.size(), freeElements);
+
+  for (const auto &IdStream : this->streamMap) {
+    auto S = IdStream.second;
+    inform("Stream %s configured %d step %d allocated %d.\n",
+           S->getStreamName().c_str(), S->configured, S->stepSize,
+           S->allocSize);
+  }
 }

@@ -101,6 +101,7 @@ bool LLVMDynamicInst::isLoadInst() const {
 
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 
+  bool hasStreamUse = false;
   for (const auto &dep : this->TDG.deps()) {
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::REGISTER) {
       if (!cpu->isInstFinished(dep.dependent_id())) {
@@ -113,24 +114,47 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
       }
     }
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      if (!cpu->getAcceleratorManager()->getStreamEngine()->isStreamReady(
-              dep.dependent_id(), this)) {
-        return false;
-      }
+      hasStreamUse = true;
+      break;
+    }
+  }
+  if (hasStreamUse) {
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    if (!SE->areUsedStreamsReady(this)) {
+      return false;
     }
   }
 
   return true;
 }
 
-void LLVMDynamicInst::commit(LLVMTraceCPU *cpu) {
-  // Default implementation will commit stream users, if any.
+void LLVMDynamicInst::dispatch(LLVMTraceCPU *cpu) {
+  // Inform the the stream engine.
+  bool hasStreamUse = false;
   for (const auto &dep : this->TDG.deps()) {
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      auto streamId = dep.dependent_id();
-      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
-          streamId, this);
+      hasStreamUse = true;
+      break;
     }
+  }
+  if (hasStreamUse) {
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    SE->dispatchStreamUser(this);
+  }
+}
+
+void LLVMDynamicInst::commit(LLVMTraceCPU *cpu) {
+  // Default implementation will commit stream users, if any.
+  bool hasStreamUse = false;
+  for (const auto &dep : this->TDG.deps()) {
+    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      hasStreamUse = true;
+      break;
+    }
+  }
+  if (hasStreamUse) {
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    SE->commitStreamUser(this);
   }
 }
 
@@ -200,15 +224,15 @@ int LLVMDynamicInst::getNumResults() const {
 
 bool LLVMDynamicInst::isFloatInst() const {
   switch (this->getOpClass()) {
-    case FloatAddOp:
-    case FloatMultOp:
-    case FloatMultAccOp:
-    case FloatDivOp:
-    case FloatCvtOp:
-    case FloatCmpOp: {
-      return true;
-    }
-    default: { return false; }
+  case FloatAddOp:
+  case FloatMultOp:
+  case FloatMultAccOp:
+  case FloatDivOp:
+  case FloatCvtOp:
+  case FloatCmpOp: {
+    return true;
+  }
+  default: { return false; }
   }
 }
 
@@ -234,9 +258,7 @@ bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU *cpu) const {
 LLVMDynamicInstMem::LLVMDynamicInstMem(const LLVM::TDG::TDGInstruction &_TDG,
                                        uint8_t _numMicroOps, Addr _align,
                                        Type _type)
-    : LLVMDynamicInst(_TDG, _numMicroOps),
-      align(_align),
-      type(_type),
+    : LLVMDynamicInst(_TDG, _numMicroOps), align(_align), type(_type),
       value(nullptr) {
   if (this->type == ALLOCA) {
     if (!this->TDG.has_alloc()) {
@@ -276,50 +298,54 @@ LLVMDynamicInstMem::~LLVMDynamicInstMem() {
 
 void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
+  bool hasStreamUse = false;
   for (const auto &dep : this->TDG.deps()) {
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      auto streamId = dep.dependent_id();
-      cpu->getAcceleratorManager()->getStreamEngine()->useStream(streamId,
-                                                                 this);
+      hasStreamUse = true;
+      break;
     }
+  }
+  if (hasStreamUse) {
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    SE->executeStreamUser(this);
   }
 
   switch (this->type) {
-    case Type::ALLOCA: {
-      // We need to handle stack allocation only
-      // when we have a driver.
-      if (!cpu->isStandalone()) {
-        if (this->TDG.alloc().new_base() == "") {
-          panic("Alloc with empty new base for integrated mode.\n");
-        }
-        Addr vaddr = cpu->allocateStack(this->TDG.alloc().size(), this->align);
-        // Set up the mapping.
-        cpu->mapBaseNameToVAddr(this->TDG.alloc().new_base(), vaddr);
+  case Type::ALLOCA: {
+    // We need to handle stack allocation only
+    // when we have a driver.
+    if (!cpu->isStandalone()) {
+      if (this->TDG.alloc().new_base() == "") {
+        panic("Alloc with empty new base for integrated mode.\n");
       }
-      break;
+      Addr vaddr = cpu->allocateStack(this->TDG.alloc().size(), this->align);
+      // Set up the mapping.
+      cpu->mapBaseNameToVAddr(this->TDG.alloc().new_base(), vaddr);
     }
-    case Type::STORE: {
-      // Just construct the packets.
-      // Only sent these packets at writeback.
-      this->constructPackets(cpu);
-      break;
+    break;
+  }
+  case Type::STORE: {
+    // Just construct the packets.
+    // Only sent these packets at writeback.
+    this->constructPackets(cpu);
+    break;
+  }
+  case Type::LOAD: {
+    this->constructPackets(cpu);
+    for (const auto &packet : this->packets) {
+      cpu->sendRequest(packet.paddr, packet.size, this, packet.data,
+                       this->TDG.pc());
+      DPRINTF(LLVMTraceCPU, "Send request paddr %p size %u for inst %d\n",
+              reinterpret_cast<void *>(packet.paddr), packet.size,
+              this->getId());
     }
-    case Type::LOAD: {
-      this->constructPackets(cpu);
-      for (const auto &packet : this->packets) {
-        cpu->sendRequest(packet.paddr, packet.size, this, packet.data,
-                         this->TDG.pc());
-        DPRINTF(LLVMTraceCPU, "Send request paddr %p size %u for inst %d\n",
-                reinterpret_cast<void *>(packet.paddr), packet.size,
-                this->getId());
-      }
-      break;
-    }
+    break;
+  }
 
-    default: {
-      panic("Unknown LLVMDynamicInstMem type %u\n", this->type);
-      break;
-    }
+  default: {
+    panic("Unknown LLVMDynamicInstMem type %u\n", this->type);
+    break;
+  }
   }
 }
 
@@ -425,10 +451,9 @@ bool LLVMDynamicInstMem::isWritebacked() const {
 void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
                                               PacketPtr packet) {
   if (this->type != Type::STORE && this->type != Type::LOAD) {
-    panic(
-        "LLVMDynamicInstMem::handlePacketResponse called for non store/load "
-        "inst %d, but type %d.\n",
-        this->getId(), this->type);
+    panic("LLVMDynamicInstMem::handlePacketResponse called for non store/load "
+          "inst %d, but type %d.\n",
+          this->getId(), this->type);
   }
 
   // Check if the load will produce a new base.
@@ -445,12 +470,16 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
 
 void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
+  bool hasStreamUse = false;
   for (const auto &dep : this->TDG.deps()) {
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      auto streamId = dep.dependent_id();
-      cpu->getAcceleratorManager()->getStreamEngine()->useStream(streamId,
-                                                                 this);
+      hasStreamUse = true;
+      break;
     }
+  }
+  if (hasStreamUse) {
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    SE->executeStreamUser(this);
   }
   this->fuLatency = cpu->getOpLatency(this->getOpClass());
 }

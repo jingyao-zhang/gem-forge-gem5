@@ -25,20 +25,20 @@ StreamConfigInst::StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
           this->TDG.stream_config().stream_id());
 }
 
+void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  SE->dispatchStreamConfigure(this);
+}
+
 void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
-  cpu->getAcceleratorManager()->handle(this);
+  // Automatically finished.
+  this->markFinished();
 }
 
 void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream configure %lu\n", this->getSeqNum());
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      auto streamId = dep.dependent_id();
-      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
-          streamId, this);
-    }
-  }
-  cpu->getAcceleratorManager()->getStreamEngine()->commitStreamConfigure(this);
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  SE->commitStreamConfigure(this);
 }
 
 uint64_t StreamConfigInst::getStreamId() const {
@@ -54,28 +54,19 @@ StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
           this->TDG.stream_step().stream_id());
 }
 
-bool StreamStepInst::isDependenceReady(LLVMTraceCPU *cpu) const {
-  if (!this->LLVMDynamicInst::isDependenceReady(cpu)) {
-    return false;
-  }
-  // For step instruction we also have to check if the stream can be stepped.
-  return cpu->getAcceleratorManager()->getStreamEngine()->canStreamStep(
-      this->TDG.stream_step().stream_id());
+bool StreamStepInst::canDispatch(LLVMTraceCPU *cpu) const {
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  return SE->canStreamStep(this);
 }
 
-void StreamStepInst::execute(LLVMTraceCPU *cpu) {
-  cpu->getAcceleratorManager()->handle(this);
+void StreamStepInst::dispatch(LLVMTraceCPU *cpu) {
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  SE->dispatchStreamStep(this);
 }
+
+void StreamStepInst::execute(LLVMTraceCPU *cpu) { this->markFinished(); }
 
 void StreamStepInst::commit(LLVMTraceCPU *cpu) {
-  DPRINTF(StreamEngine, "Commit stream step %lu\n", this->getSeqNum());
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      auto streamId = dep.dependent_id();
-      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
-          streamId, this);
-    }
-  }
   cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStep(this);
 }
 
@@ -94,25 +85,34 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
 
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
+  auto hasStreamUse = false;
   for (const auto &dep : this->TDG.deps()) {
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      auto streamId = dep.dependent_id();
-      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
-          streamId, this);
+      hasStreamUse = true;
+      break;
     }
   }
-  cpu->getAcceleratorManager()->handle(this);
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  if (hasStreamUse) {
+    SE->executeStreamUser(this);
+  }
+  SE->executeStreamStore(this);
+  this->markFinished();
 }
 
 void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
+  auto hasStreamUse = false;
   for (const auto &dep : this->TDG.deps()) {
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      auto streamId = dep.dependent_id();
-      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
-          streamId, this);
+      hasStreamUse = true;
+      break;
     }
   }
-  cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStore(this);
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  if (hasStreamUse) {
+    SE->commitStreamUser(this);
+  }
+  SE->commitStreamStore(this);
 }
 
 uint64_t StreamStoreInst::getStreamId() const {
@@ -128,19 +128,16 @@ StreamEndInst::StreamEndInst(const LLVM::TDG::TDGInstruction &_TDG)
           this->TDG.stream_end().stream_id());
 }
 
-void StreamEndInst::execute(LLVMTraceCPU *cpu) {
-  cpu->getAcceleratorManager()->handle(this);
+void StreamEndInst::dispatch(LLVMTraceCPU *cpu) {
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  SE->dispatchStreamEnd(this);
 }
 
+void StreamEndInst::execute(LLVMTraceCPU *cpu) { this->markFinished(); }
+
 void StreamEndInst::commit(LLVMTraceCPU *cpu) {
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      auto streamId = dep.dependent_id();
-      cpu->getAcceleratorManager()->getStreamEngine()->commitStreamUser(
-          streamId, this);
-    }
-  }
-  cpu->getAcceleratorManager()->getStreamEngine()->commitStreamEnd(this);
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  SE->commitStreamEnd(this);
 }
 
 uint64_t StreamEndInst::getStreamId() const {
@@ -149,19 +146,19 @@ uint64_t StreamEndInst::getStreamId() const {
 
 LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst) {
   switch (TDGInst.extra_case()) {
-    case LLVM::TDG::TDGInstruction::ExtraCase::kStreamConfig: {
-      return new StreamConfigInst(TDGInst);
-    }
-    case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStep: {
-      return new StreamStepInst(TDGInst);
-    }
-    case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStore: {
-      return new StreamStoreInst(TDGInst);
-    }
-    case LLVM::TDG::TDGInstruction::ExtraCase::kStreamEnd: {
-      return new StreamEndInst(TDGInst);
-    }
-    default: { break; }
+  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamConfig: {
+    return new StreamConfigInst(TDGInst);
+  }
+  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStep: {
+    return new StreamStepInst(TDGInst);
+  }
+  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamStore: {
+    return new StreamStoreInst(TDGInst);
+  }
+  case LLVM::TDG::TDGInstruction::ExtraCase::kStreamEnd: {
+    return new StreamEndInst(TDGInst);
+  }
+  default: { break; }
   }
 
   return nullptr;

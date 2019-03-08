@@ -18,6 +18,7 @@ protected:
 class StreamConfigInst : public StreamInst {
 public:
   StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG);
+  void dispatch(LLVMTraceCPU *cpu) override;
   void execute(LLVMTraceCPU *cpu) override;
   void commit(LLVMTraceCPU *cpu) override;
   uint64_t getStreamId() const override;
@@ -27,7 +28,8 @@ class StreamStepInst : public StreamInst {
 public:
   StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG);
 
-  bool isDependenceReady(LLVMTraceCPU *cpu) const override;
+  bool canDispatch(LLVMTraceCPU *cpu) const override;
+  void dispatch(LLVMTraceCPU *cpu) override;
   void execute(LLVMTraceCPU *cpu) override;
   void commit(LLVMTraceCPU *cpu) override;
   uint64_t getStreamId() const override;
@@ -44,6 +46,7 @@ public:
 class StreamEndInst : public StreamInst {
 public:
   StreamEndInst(const LLVM::TDG::TDGInstruction &_TDG);
+  void dispatch(LLVMTraceCPU *cpu) override;
   void execute(LLVMTraceCPU *cpu) override;
   void commit(LLVMTraceCPU *cpu) override;
   uint64_t getStreamId() const override;
