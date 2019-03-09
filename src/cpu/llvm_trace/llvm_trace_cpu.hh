@@ -22,6 +22,7 @@
 #include "cpu/llvm_trace/llvm_rename_stage.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
+#include "cpu/llvm_trace/profiler/run_time_profiler.hh"
 #include "cpu/llvm_trace/region_stats.hh"
 #include "cpu/o3/fu_pool.hh"
 #include "mem/page_table.hh"
@@ -130,6 +131,10 @@ private:
   FUPool *fuPool;
 
   RegionStats *regionStats;
+  /**
+   * Should be part of process instead.
+   */
+  RunTimeProfiler *runTimeProfiler;
 
   // Used to record the current stack depth, so that we can break trace
   // into multiple function calls.
@@ -244,6 +249,8 @@ public:
   TDGAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
 
   RegionStats *getRegionStats() { return this->regionStats; }
+
+  RunTimeProfiler *getRunTimeProfiler() { return this->runTimeProfiler; }
 
   //********************************************************//
   // Event for this CPU.

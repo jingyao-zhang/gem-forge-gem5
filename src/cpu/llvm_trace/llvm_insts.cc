@@ -259,7 +259,7 @@ LLVMDynamicInstMem::LLVMDynamicInstMem(const LLVM::TDG::TDGInstruction &_TDG,
                                        uint8_t _numMicroOps, Addr _align,
                                        Type _type)
     : LLVMDynamicInst(_TDG, _numMicroOps), align(_align), type(_type),
-      value(nullptr) {
+      value(nullptr), loadStartCycle(0), loadEndCycle(0) {
   if (this->type == ALLOCA) {
     if (!this->TDG.has_alloc()) {
       panic("Alloc without extra alloc information from TDG.");
@@ -332,6 +332,7 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
   }
   case Type::LOAD: {
     this->constructPackets(cpu);
+    this->loadStartCycle = cpu->curCycle();
     for (const auto &packet : this->packets) {
       cpu->sendRequest(packet.paddr, packet.size, this, packet.data,
                        this->TDG.pc());
@@ -466,6 +467,14 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
   this->packets.pop_front();
   DPRINTF(LLVMTraceCPU, "Get response for inst %u, remain infly packets %d\n",
           this->getId(), this->packets.size());
+
+  // Check if we completed.
+  if (this->type == Type::LOAD && this->isCompleted()) {
+    assert(this->loadEndCycle == 0 && "We already complemte.");
+    this->loadEndCycle = cpu->curCycle();
+    cpu->getRunTimeProfiler()->profileLoadLatency(
+        this->getTDG().pc(), this->loadEndCycle - this->loadStartCycle);
+  }
 }
 
 void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {

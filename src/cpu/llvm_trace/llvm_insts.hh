@@ -178,6 +178,10 @@ protected:
   // For store only.
   uint8_t *value;
 
+  // For load profile.
+  uint64_t loadStartCycle;
+  uint64_t loadEndCycle;
+
   // Runtime fields for load/store.
   struct PacketParam {
   public:

@@ -77,6 +77,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   }
   this->regionStats = new RegionStats(std::move(regions), "region.stats.txt");
 
+  this->runTimeProfiler = new RunTimeProfiler();
+
   if (driver != nullptr) {
     // Handshake with the driver.
     driver->handshake(this);
@@ -104,6 +106,8 @@ LLVMTraceCPU::~LLVMTraceCPU() {
     delete this->regionStats;
     this->regionStats = nullptr;
   }
+  delete this->runTimeProfiler;
+  this->runTimeProfiler = nullptr;
 }
 
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
@@ -175,6 +179,7 @@ void LLVMTraceCPU::tick() {
       auto workItemsEnd = this->system->incWorkItemsEnd();
       if (workItemsEnd == this->totalCPUs) {
         this->regionStats->dump();
+        this->runTimeProfiler->dump("profile.txt");
         this->accelManager->exitDump();
         exitSimLoop("All datagraphs finished.\n");
       } else {
