@@ -40,7 +40,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->currentTotalRunAheadLength = 0;
   // this->maxTotalRunAheadLength =
   // cpuParams->streamEngineMaxTotalRunAHeadLength;
-  this->maxTotalRunAheadLength = this->maxRunAHeadLength * 24;
+  this->maxTotalRunAheadLength = this->maxRunAHeadLength * 48;
   this->throttling = cpuParams->streamEngineThrottling;
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
   this->enableMerge = cpuParams->streamEngineEnableMerge;
@@ -157,16 +157,10 @@ void StreamEngine::regStats() {
 
 void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   this->numConfigured++;
-  hack("Configure stream %s %lu.\n",
-       inst->getTDG().stream_config().stream_name().c_str(),
-       inst->getTDG().stream_config().stream_id());
   auto S = this->getOrInitializeStream(inst->getTDG().stream_config());
 
   assert(!S->configured && "The stream should not be configured.");
   S->configured = true;
-
-  hack("Configure stream %s %lu.\n", S->getStreamName().c_str(),
-       inst->getTDG().stream_config().stream_id());
 
   /**
    * 1. Clear all elements between stepHead and allocHead.
@@ -198,8 +192,14 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   // So far let's take a simple approach: fixed run ahead length for each
   // stream.
   while (S->allocSize < S->maxSize && this->FIFOFreeListHead != nullptr) {
+    if (!this->areBaseElementAllocated(S)) {
+      break;
+    }
     this->allocateElement(S);
   }
+  // hack("Configure stream %s %lu alloc %d step %d.\n",
+  //      inst->getTDG().stream_config().stream_name().c_str(),
+  //      inst->getTDG().stream_config().stream_id(), S->allocSize, S->stepSize);
 }
 
 void StreamEngine::commitStreamConfigure(StreamConfigInst *inst) {
@@ -245,6 +245,12 @@ void StreamEngine::dispatchStreamStep(StreamStepInst *inst) {
     S->stepped = S->stepped->next;
     S->stepSize++;
   }
+  // if (stepStreamId == 758694624) {
+  //   for (auto S : this->getStepStreamList(stepStream)) {
+  //     // hack("Step stream %s step %d alloc %d.\n", S->getStreamName().c_str(),
+  //     //      S->stepSize, S->allocSize);
+  //   }
+  // }
 }
 
 void StreamEngine::commitStreamStep(StreamStepInst *inst) {
@@ -282,6 +288,15 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
       this->allocateElement(S);
     }
   }
+  // if (stepStreamId == 758694624) {
+  //   for (auto S : stepStreams) {
+  //     hack("Commit step stream %s step %d alloc %d.\n",
+  //          S->getStreamName().c_str(), S->stepSize, S->allocSize);
+  //   }
+  //   auto ss = this->getStream(758694624);
+  //   hack("stream %s step root %s.\n", ss->getStreamName().c_str(),
+  //        ss->stepRootStream->getStreamName().c_str());
+  // }
 }
 
 void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
@@ -301,14 +316,23 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
     auto streamId = dep.dependent_id();
     auto S = this->getStream(streamId);
 
-    if (S->allocSize <= S->stepSize) {
-      inst->dumpBasic();
-      this->dumpFIFO();
-      panic("No allocated element to use for stream %s.",
-            S->getStreamName().c_str());
-    }
+    /**
+     * It is possible that the stream is unconfigured (out-loop use).
+     * In such case we assume it's ready and use a nullptr as a special element
+     */
+    if (!S->configured) {
+      elementSet.insert(nullptr);
+    } else {
 
-    elementSet.insert(S->stepped->next);
+      if (S->allocSize <= S->stepSize) {
+        inst->dumpBasic();
+        this->dumpFIFO();
+        panic("No allocated element to use for stream %s.",
+              S->getStreamName().c_str());
+      }
+
+      elementSet.insert(S->stepped->next);
+    }
   }
 }
 
@@ -316,6 +340,10 @@ bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) != 0);
 
   for (auto &element : this->userElementMap.at(inst)) {
+    if (element == nullptr) {
+      // Use after stream end.
+      continue;
+    }
     if (!element->isValueReady) {
       return false;
     }
@@ -383,6 +411,9 @@ void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
   // Check my element.
   auto storeStream = this->getStream(inst->getTDG().stream_store().stream_id());
   for (auto element : this->userElementMap.at(inst)) {
+    if (element == nullptr) {
+      continue;
+    }
     if (element->stream == storeStream) {
       // Found it.
       element->stored = true;
@@ -559,7 +590,7 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
     auto S = stack.back();
     if (stackStatusMap.at(S) == 0) {
       // First time.
-      for (auto depS : stepS->dependentStreams) {
+      for (auto depS : S->dependentStreams) {
         if (depS->getLoopLevel() != stepS->getLoopLevel()) {
           continue;
         }
@@ -593,6 +624,30 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
       .first->second;
 }
 
+bool StreamEngine::areBaseElementAllocated(Stream *S) {
+  // Find the base element.
+  for (auto baseS : S->baseStreams) {
+    if (baseS->getLoopLevel() != S->getLoopLevel()) {
+      continue;
+    }
+
+    if (baseS->stepRootStream == S->stepRootStream) {
+      if (baseS->allocSize - baseS->stepSize <= S->allocSize - S->stepSize) {
+        // The base stream has not allocate the element we want.
+        return false;
+      }
+    } else {
+      // The other one must be a constant stream.
+      assert(baseS->stepRootStream == nullptr &&
+             "Should be a constant stream.");
+      if (baseS->stepped->next == nullptr) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 void StreamEngine::allocateElement(Stream *S) {
   assert(this->FIFOFreeListHead != nullptr);
   assert(S->configured && "Stream should be configured to allocate element.");
@@ -610,9 +665,12 @@ void StreamEngine::allocateElement(Stream *S) {
     }
 
     if (baseS->stepRootStream == S->stepRootStream) {
-      panic_if(baseS->allocSize - baseS->stepSize <= S->allocSize - S->stepSize,
-               "Base %s has not enough allocated element for %s.",
-               baseS->getStreamName().c_str(), S->getStreamName().c_str());
+
+      if (baseS->allocSize - baseS->stepSize <= S->allocSize - S->stepSize) {
+        this->dumpFIFO();
+        panic("Base %s has not enough allocated element for %s.",
+              baseS->getStreamName().c_str(), S->getStreamName().c_str());
+      }
 
       auto baseElement = baseS->stepped;
       auto element = S->stepped;

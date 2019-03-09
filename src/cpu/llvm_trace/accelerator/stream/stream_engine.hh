@@ -168,6 +168,7 @@ private:
   const std::list<Stream *> &getStepStreamList(Stream *stepS) const;
 
   // Allocate one element to stream.
+  bool areBaseElementAllocated(Stream *S);
   void allocateElement(Stream *S);
   void releaseElement(Stream *S);
   void issueElements();
