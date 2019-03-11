@@ -40,7 +40,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->currentTotalRunAheadLength = 0;
   // this->maxTotalRunAheadLength =
   // cpuParams->streamEngineMaxTotalRunAHeadLength;
-  this->maxTotalRunAheadLength = this->maxRunAHeadLength * 48;
+  this->maxTotalRunAheadLength = this->maxRunAHeadLength * 512;
   this->throttling = cpuParams->streamEngineThrottling;
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
   this->enableMerge = cpuParams->streamEngineEnableMerge;
@@ -199,7 +199,8 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   }
   // hack("Configure stream %s %lu alloc %d step %d.\n",
   //      inst->getTDG().stream_config().stream_name().c_str(),
-  //      inst->getTDG().stream_config().stream_id(), S->allocSize, S->stepSize);
+  //      inst->getTDG().stream_config().stream_id(), S->allocSize,
+  //      S->stepSize);
 }
 
 void StreamEngine::commitStreamConfigure(StreamConfigInst *inst) {
@@ -247,7 +248,8 @@ void StreamEngine::dispatchStreamStep(StreamStepInst *inst) {
   }
   // if (stepStreamId == 758694624) {
   //   for (auto S : this->getStepStreamList(stepStream)) {
-  //     // hack("Step stream %s step %d alloc %d.\n", S->getStreamName().c_str(),
+  //     // hack("Step stream %s step %d alloc %d.\n",
+  //     S->getStreamName().c_str(),
   //     //      S->stepSize, S->allocSize);
   //   }
   // }
