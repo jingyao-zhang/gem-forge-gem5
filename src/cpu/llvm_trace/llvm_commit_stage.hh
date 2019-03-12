@@ -13,17 +13,18 @@
 class LLVMTraceCPU;
 
 class LLVMCommitStage {
- public:
+public:
   using IEWStruct = LLVMIEWStage::IEWStruct;
 
-  LLVMCommitStage(LLVMTraceCPUParams* params, LLVMTraceCPU* _cpu);
-  LLVMCommitStage(const LLVMCommitStage& other) = delete;
-  LLVMCommitStage(LLVMCommitStage&& other) = delete;
+  LLVMCommitStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
+  LLVMCommitStage(const LLVMCommitStage &other) = delete;
+  LLVMCommitStage(LLVMCommitStage &&other) = delete;
 
-  void setFromIEW(TimeBuffer<IEWStruct>* fromIEWBuffer);
-  void setSignal(TimeBuffer<LLVMStageSignal>* signalBuffer, int pos);
+  void setFromIEW(TimeBuffer<IEWStruct> *fromIEWBuffer);
+  void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
 
   void tick();
+  void clearContext(ThreadID contextId);
 
   std::string name();
 
@@ -36,19 +37,29 @@ class LLVMCommitStage {
   Stats::Vector callInstsCommitted;
   Stats::Scalar blockedCycles;
 
- private:
-  LLVMTraceCPU* cpu;
+private:
+  LLVMTraceCPU *cpu;
 
   unsigned commitWidth;
-  unsigned commitQueueSize;
+  unsigned maxCommitQueueSize;
 
   Cycles fromIEWDelay;
 
   TimeBuffer<IEWStruct>::wire fromIEW;
   TimeBuffer<LLVMStageSignal>::wire signal;
 
-
   std::list<LLVMDynamicInstId> commitQueue;
+
+  /**
+   * Store all the per-context commit states.
+   */
+  struct CommitState {
+    size_t commitQueueSize;
+    void clear() { this->commitQueueSize = 0; }
+    CommitState() { this->clear(); }
+  };
+
+  std::vector<CommitState> commitStates;
 };
 
 #endif

@@ -6,9 +6,11 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMDecodeStage::LLVMDecodeStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), decodeWidth(params->decodeWidth),
-      decodeQueueSize(params->decodeQueueSize),
+      maxDecodeQueueSize(params->decodeQueueSize),
       fromFetchDelay(params->fetchToDecodeDelay),
-      toRenameDelay(params->decodeToRenameDelay) {}
+      toRenameDelay(params->decodeToRenameDelay),
+      decodeStates(params->numThreads), totalDecodeQueueSize(0),
+      lastDecodedContextId(0) {}
 
 void LLVMDecodeStage::setToRename(TimeBuffer<FetchStruct> *toRenameBuffer) {
   this->toRename = toRenameBuffer->getWire(0);
@@ -38,35 +40,91 @@ void LLVMDecodeStage::tick() {
   // Get fetched inst from fetch.
   for (auto iter = this->fromFetch->begin(), end = this->fromFetch->end();
        iter != end; iter++) {
-    this->decodeQueue.push(*iter);
+    auto instId = *iter;
+    auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
+    this->decodeStates.at(contextId).decodeQueue.push(instId);
+    this->totalDecodeQueueSize++;
   }
 
-  if (this->signal->stall) {
+  // Round-robin to find next non-blocking thread to decode.
+  LLVMTraceThreadContext *chosenThread = nullptr;
+  ThreadID chosenContextId = 0;
+  for (auto offset = 1; offset <= this->decodeStates.size() + 1; ++offset) {
+    auto contextId =
+        (this->lastDecodedContextId + offset) % this->decodeStates.size();
+    auto thread = cpu->activeThreads[contextId];
+    if (thread == nullptr) {
+      // This context id is not allocated.
+      continue;
+    }
+    if (this->signal->contextStall[contextId]) {
+      // The next stage require this context to be stalled.
+      continue;
+    }
+    chosenContextId = contextId;
+    chosenThread = thread;
+    break;
+  }
+
+  if (chosenThread == nullptr) {
     this->blockedCycles++;
+    return;
   }
 
+  this->lastDecodedContextId = chosenContextId;
+
+  // Decode from the queue for the chosen context.
   // Only decode if we haven't reach decode width and we have more inst to
   // decode.
-  if (!this->signal->stall) {
-    unsigned decodedInsts = 0;
-    while (decodedInsts < this->decodeWidth && !this->decodeQueue.empty()) {
-      auto instId = this->decodeQueue.front();
-      auto inst = cpu->inflyInstMap.at(instId);
+  unsigned decodedInsts = 0;
+  auto &decodeQueue = this->decodeStates.at(chosenContextId).decodeQueue;
+  while (decodedInsts < this->decodeWidth && !decodeQueue.empty()) {
+    auto instId = decodeQueue.front();
 
-      if (decodedInsts + inst->getQueueWeight() > this->decodeWidth) {
-        break;
-      }
+    auto inst = cpu->inflyInstMap.at(instId);
 
-      this->decodeQueue.pop();
-      DPRINTF(LLVMTraceCPU, "Decode inst %d\n", instId);
-      cpu->inflyInstStatus.at(instId) = InstStatus::DECODED;
-      this->toRename->push_back(instId);
-      decodedInsts += inst->getQueueWeight();
+    if (decodedInsts + inst->getQueueWeight() > this->decodeWidth) {
+      break;
     }
 
-    this->decodeDecodedInsts += decodedInsts;
+    decodeQueue.pop();
+    this->totalDecodeQueueSize--;
+    DPRINTF(LLVMTraceCPU, "Decode inst %d\n", instId);
+    cpu->inflyInstStatus.at(instId) = InstStatus::DECODED;
+    this->toRename->push_back(instId);
+    decodedInsts += inst->getQueueWeight();
   }
 
-  // Raise stall if our decodeQueue reaches limits.
-  this->signal->stall = this->decodeQueue.size() >= this->decodeQueueSize;
+  this->decodeDecodedInsts += decodedInsts;
+
+  // Clear and then set the stall signal.
+  for (auto &stall : this->signal->contextStall) {
+    stall = false;
+  }
+  auto numActiveThreads = cpu->getNumActivateThreads();
+  if (numActiveThreads == 0) {
+    return;
+  }
+  auto perContextDecodeQueueLimit = this->maxDecodeQueueSize / numActiveThreads;
+  for (ThreadID contextId = 0; contextId < this->decodeStates.size();
+       ++contextId) {
+    bool stalled = false;
+    auto thread = cpu->activeThreads.at(contextId);
+    if (thread == nullptr) {
+      // This context is not active.
+      stalled = false;
+    } else {
+      // Check the per-context limit.
+      auto decodeQueueSize =
+          this->decodeStates.at(contextId).decodeQueue.size();
+      if (decodeQueueSize >= perContextDecodeQueueLimit) {
+        stalled = true;
+      }
+      // Check the total limit.
+      if (this->totalDecodeQueueSize >= this->maxDecodeQueueSize) {
+        stalled = true;
+      }
+    }
+    this->signal->contextStall[contextId] = stalled;
+  }
 }

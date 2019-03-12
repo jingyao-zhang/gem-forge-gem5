@@ -5,12 +5,10 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
-    : cpu(_cpu),
-      fetchWidth(params->fetchWidth),
+    : cpu(_cpu), fetchWidth(params->fetchWidth),
       fetchStates(params->numThreads),
       toDecodeDelay(params->fetchToDecodeDelay),
-      predictor(new LLVMBranchPredictor()),
-      lastFetchedContextId(0) {}
+      predictor(new LLVMBranchPredictor()), lastFetchedContextId(0) {}
 
 LLVMFetchStage::~LLVMFetchStage() {
   delete this->predictor;
@@ -57,13 +55,6 @@ void LLVMFetchStage::clearContext(ThreadID contextId) {
 }
 
 void LLVMFetchStage::tick() {
-  // If stall signal is raised, we don't fetch.
-  // TODO: extend the stall signal to stall active threads.
-  if (this->signal->stall) {
-    this->blockedCycles++;
-    // DPRINTF(LLVMTraceCPU, "Fetch blocked.\n");
-    return;
-  }
 
   // Check all active threads.
   LLVMTraceThreadContext *chosenThread = nullptr;
@@ -76,11 +67,16 @@ void LLVMFetchStage::tick() {
       // This context id is not allocated.
       continue;
     }
-    if (thread->canFetch()) {
-      chosenContextId = contextId;
-      chosenThread = thread;
-      break;
+    if (!thread->canFetch()) {
+      continue;
     }
+    if (this->signal->contextStall[contextId]) {
+      // The next stage require this context to be stalled.
+      continue;
+    }
+    chosenContextId = contextId;
+    chosenThread = thread;
+    break;
   }
 
   if (chosenThread == nullptr) {
@@ -88,9 +84,11 @@ void LLVMFetchStage::tick() {
     return;
   }
 
+  this->lastFetchedContextId = chosenContextId;
+
   auto &fetchState = this->fetchStates[chosenContextId];
   // If we are blocked by a wrong branch prediction,
-  // we don't fetch but try to check if the conditiona branch
+  // we don't fetch but try to check if the conditional branch
   // is computed out.
   if (fetchState.branchPredictPenalityCycles > 0) {
     this->blockedCycles++;
@@ -139,24 +137,24 @@ void LLVMFetchStage::tick() {
       // Update the stack depth for call/ret inst.
       int stackAdjustment = inst->getCallStackAdjustment();
       switch (stackAdjustment) {
-        case 1: {
-          cpu->stackPush();
-          DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
-                  cpu->currentStackDepth);
-          break;
-        }
-        case -1: {
-          cpu->stackPop();
-          DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
-                  cpu->currentStackDepth);
-          break;
-        }
-        case 0: {
-          break;
-        }
-        default: {
-          panic("Illegal call stack adjustment &d.\n", stackAdjustment);
-        }
+      case 1: {
+        cpu->stackPush();
+        DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
+                cpu->currentStackDepth);
+        break;
+      }
+      case -1: {
+        cpu->stackPop();
+        DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
+                cpu->currentStackDepth);
+        break;
+      }
+      case 0: {
+        break;
+      }
+      default: {
+        panic("Illegal call stack adjustment &d.\n", stackAdjustment);
+      }
       }
       fetchedInsts += inst->getQueueWeight();
     }

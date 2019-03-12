@@ -5,10 +5,10 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMCommitStage::LLVMCommitStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
-    : cpu(_cpu),
-      commitWidth(params->commitWidth),
-      commitQueueSize(params->commitQueueSize),
-      fromIEWDelay(params->iewToCommitDelay) {}
+    : cpu(_cpu), commitWidth(params->commitWidth),
+      maxCommitQueueSize(params->commitQueueSize),
+      fromIEWDelay(params->iewToCommitDelay), commitStates(params->numThreads) {
+}
 
 void LLVMCommitStage::setFromIEW(TimeBuffer<IEWStruct> *fromIEWBuffer) {
   this->fromIEW = fromIEWBuffer->getWire(-this->fromIEWDelay);
@@ -55,12 +55,16 @@ void LLVMCommitStage::regStats() {
 
 void LLVMCommitStage::tick() {
   // Read fromIEW.
-  // NOTE: For now commit stage will never raise stall signal.
   for (auto iter = this->fromIEW->begin(), end = this->fromIEW->end();
        iter != end; ++iter) {
     auto instId = *iter;
 
     this->commitQueue.push_back(instId);
+
+    // Update the context.
+    auto thread = cpu->inflyInstThread.at(instId);
+    auto contextId = thread->getContextId();
+    this->commitStates.at(contextId).commitQueueSize++;
   }
 
   unsigned committedInsts = 0;
@@ -94,13 +98,6 @@ void LLVMCommitStage::tick() {
             instId);
     }
 
-    // Any instruction specific operation when committed.
-    cpu->iewStage.postCommitInst(instId);
-    inst->commit(cpu);
-
-    committedInsts += inst->getQueueWeight();
-    this->commitQueue.pop_front();
-
     DPRINTF(LLVMTraceCPUCommit,
             "Inst %lu committed, remaining infly inst #%u\n", inst->getSeqNum(),
             cpu->inflyInstStatus.size());
@@ -126,22 +123,63 @@ void LLVMCommitStage::tick() {
      *
      * TODO: May be commit in the order of each thread.
      */
+    // Any instruction specific operation when committed.
+    cpu->iewStage.postCommitInst(instId);
+    inst->commit(cpu);
+
+    committedInsts += inst->getQueueWeight();
+    this->commitQueue.pop_front();
+    // Update the context.
+    auto commitThread = cpu->inflyInstThread.at(instId);
+    auto commitContextId = commitThread->getContextId();
+    this->commitStates.at(commitContextId).commitQueueSize--;
 
     // After this point, inst is released!
-    auto thread = cpu->inflyInstThread.at(instId);
     cpu->inflyInstMap.erase(instId);
     cpu->inflyInstStatus.erase(instId);
     cpu->inflyInstThread.erase(instId);
-    thread->commit(inst);
+    commitThread->commit(inst);
 
     // If the thread is done, deactivate it.
-    if (thread->isDone()) {
-      cpu->deactivateThread(thread);
+    if (commitThread->isDone()) {
+      cpu->deactivateThread(commitThread);
     }
   }
 
-  this->signal->stall = this->commitQueue.size() >= this->commitQueueSize;
-  if (this->signal->stall) {
-    this->blockedCycles++;
+  /**
+   * Set the stall signal.
+   * First Clear it.
+   */
+  for (auto &stall : this->signal->contextStall) {
+    stall = false;
   }
+  auto numActiveThreads = cpu->getNumActivateThreads();
+  if (numActiveThreads == 0) {
+    return;
+  }
+  auto perContextCommitQueueLimit = this->maxCommitQueueSize / numActiveThreads;
+  for (ThreadID contextId = 0; contextId < this->commitStates.size();
+       ++contextId) {
+    bool stalled = false;
+    auto thread = cpu->activeThreads.at(contextId);
+    if (thread == nullptr) {
+      // This context is not active.
+      stalled = false;
+    } else {
+      // Check the per-context limit.
+      auto commitQueueSize = this->commitStates.at(contextId).commitQueueSize;
+      if (commitQueueSize >= perContextCommitQueueLimit) {
+        stalled = true;
+      }
+      // Check the total limit.
+      if (this->commitQueue.size() >= this->maxCommitQueueSize) {
+        stalled = true;
+      }
+    }
+    this->signal->contextStall[contextId] = stalled;
+  }
+}
+
+void LLVMCommitStage::clearContext(ThreadID contextId) {
+  this->commitStates.at(contextId).clear();
 }

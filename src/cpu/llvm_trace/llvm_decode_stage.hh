@@ -31,6 +31,9 @@ public:
   void regStats();
 
   void tick();
+  void clearContext(ThreadID contextId) {
+    this->decodeStates.at(contextId).clear();
+  }
 
   Stats::Scalar blockedCycles;
 
@@ -41,7 +44,7 @@ private:
   LLVMTraceCPU *cpu;
 
   unsigned decodeWidth;
-  unsigned decodeQueueSize;
+  unsigned maxDecodeQueueSize;
 
   Cycles fromFetchDelay;
   Cycles toRenameDelay;
@@ -50,7 +53,22 @@ private:
   TimeBuffer<FetchStruct>::wire fromFetch;
   TimeBuffer<LLVMStageSignal>::wire signal;
 
-  std::queue<LLVMDynamicInstId> decodeQueue;
+  /**
+   * Store all the per-context decode states.
+   * Basically a per-context queue.
+   */
+  struct DecodeState {
+    std::queue<LLVMDynamicInstId> decodeQueue;
+    void clear() {
+      assert(this->decodeQueue.empty() &&
+             "DecodeQueue not empty when clearing context.");
+    }
+    DecodeState() { this->clear(); }
+  };
+
+  std::vector<DecodeState> decodeStates;
+  size_t totalDecodeQueueSize;
+  ThreadID lastDecodedContextId;
 };
 
 #endif

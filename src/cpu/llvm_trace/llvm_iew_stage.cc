@@ -8,12 +8,13 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), dispatchWidth(params->dispatchWidth),
       issueWidth(params->issueWidth), writeBackWidth(params->writeBackWidth),
-      robSize(params->robSize), cacheLoadPorts(params->cacheLoadPorts),
+      maxRobSize(params->robSize), cacheLoadPorts(params->cacheLoadPorts),
       instQueueSize(params->instQueueSize),
       loadQueueSize(params->loadQueueSize),
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
-      toCommitDelay(params->iewToCommitDelay), lsq(nullptr) {
+      toCommitDelay(params->iewToCommitDelay), lsq(nullptr),
+      iewStates(params->numThreads) {
   this->lsq =
       new TDGLoadStoreQueue(this->cpu, this, this->loadQueueSize,
                             this->storeQueueSize, params->cacheStorePorts);
@@ -92,7 +93,6 @@ void LLVMIEWStage::dumpROB() const {
 
 void LLVMIEWStage::writeback(std::list<LLVMDynamicInstId> &queue,
                              unsigned &writebacked) {
-  // Send finished inst to commit stage if not stalled.
   auto iter = queue.begin();
   while (iter != queue.end() && writebacked < this->writeBackWidth) {
     auto instId = *iter;
@@ -144,8 +144,11 @@ void LLVMIEWStage::tick() {
   // Get inst from rename.
   for (auto iter = this->fromRename->begin(), end = this->fromRename->end();
        iter != end; ++iter) {
-    this->rob.push_back(*iter);
+    auto instId = *iter;
+    this->rob.push_back(instId);
     this->robWrites++;
+    auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
+    this->iewStates.at(contextId).robSize++;
   }
 
   // Free FUs.
@@ -154,32 +157,53 @@ void LLVMIEWStage::tick() {
   // Keep writing back stores.
   this->lsq->writebackStore();
 
-  if (this->signal->stall) {
-    this->blockedCycles++;
-  }
+  this->dispatch();
 
-  if (!this->signal->stall) {
-    this->dispatch();
+  unsigned writebacked = 0;
+  this->writeback(this->rob, writebacked);
 
-    unsigned writebacked = 0;
-    this->writeback(this->rob, writebacked);
+  this->sendToCommit();
 
-    this->sendToCommit();
+  // Mark ready inst for next cycle.
+  this->markReady();
 
-    // Mark ready inst for next cycle.
-    this->markReady();
-
-    // Issue inst to execute.
-    this->issue();
-  }
+  // Issue inst to execute.
+  this->issue();
 
   this->numExecutingDist.sample(this->rob.size());
 
-  // Raise the stall if instQueue is too large.
-  this->signal->stall = (this->rob.size() >= this->robSize ||
-                         this->instQueue.size() >= this->instQueueSize ||
-                         this->lsq->stores() >= this->storeQueueSize ||
-                         this->lsq->loads() >= this->loadQueueSize);
+  // Raise the stall if any buffer is too large.
+  for (auto &stall : this->signal->contextStall) {
+    stall = false;
+  }
+  auto numActiveThreads = cpu->getNumActivateThreads();
+  if (numActiveThreads == 0) {
+    return;
+  }
+  auto isTotalLimitExceeded = (this->rob.size() >= this->maxRobSize ||
+                               this->instQueue.size() >= this->instQueueSize ||
+                               this->lsq->stores() >= this->storeQueueSize ||
+                               this->lsq->loads() >= this->loadQueueSize);
+  for (ThreadID contextId = 0; contextId < this->iewStates.size();
+       ++contextId) {
+    bool stalled = false;
+    auto thread = cpu->activeThreads.at(contextId);
+    if (thread == nullptr) {
+      // This context is not active.
+      stalled = false;
+    } else {
+      // Check the per-context limit.
+      const auto &state = this->iewStates.at(contextId);
+      if (state.robSize >= this->maxRobSize / numActiveThreads) {
+        stalled = true;
+      }
+      // Check the total limit.
+      if (isTotalLimitExceeded) {
+        stalled = true;
+      }
+    }
+    this->signal->contextStall[contextId] = stalled;
+  }
 }
 
 void LLVMIEWStage::issue() {
@@ -482,6 +506,8 @@ void LLVMIEWStage::postCommitInst(LLVMDynamicInstId instId) {
   auto &instStatus = cpu->inflyInstStatus.at(instId);
   panic_if(instStatus != InstStatus::COMMITTED,
            "Inst is not in committed status.");
+  auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
+  this->iewStates.at(contextId).robSize--;
   this->rob.pop_front();
 
   // Memory instruction can not be removed from the instruction queue
@@ -518,6 +544,13 @@ void LLVMIEWStage::sendToCommit() {
     bool canCommit = false;
     auto &instStatus = cpu->inflyInstStatus.at(instId);
     canCommit = (instStatus == InstStatus::FINISHED);
+
+    // Check if we are stalled by the commit stage.
+    auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
+    if (this->signal->contextStall[contextId]) {
+      canCommit = false;
+      this->blockedCycles++;
+    }
 
     if (canCommit) {
       instStatus = InstStatus::COMMIT;

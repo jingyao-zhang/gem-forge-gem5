@@ -7,34 +7,22 @@
 #include "sim/sim_exit.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
-    : BaseCPU(params),
-      pageTable(params->name + ".page_table", 0),
+    : BaseCPU(params), pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile),
-      totalCPUs(params->totalCPUs),
-      itb(params->itb),
-      dtb(params->dtb),
-      fuPool(params->fuPool),
-      regionStats(nullptr),
-      currentStackDepth(0),
-      warmUpTick(0),
-      process(nullptr),
-      thread_context(nullptr),
-      stackMin(0),
-      fetchStage(params, this),
-      decodeStage(params, this),
-      renameStage(params, this),
-      iewStage(params, this),
-      commitStage(params, this),
-      fetchToDecode(5, 5),
-      decodeToRename(5, 5),
-      renameToIEW(5, 5),
-      iewToCommit(5, 5),
-      signalBuffer(5, 5),
-      driver(params->driver),
-      tickEvent(*this) {
+      traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
+      itb(params->itb), dtb(params->dtb), fuPool(params->fuPool),
+      regionStats(nullptr), currentStackDepth(0), warmUpTick(0),
+      process(nullptr), thread_context(nullptr), stackMin(0),
+      fetchStage(params, this), decodeStage(params, this),
+      renameStage(params, this), iewStage(params, this),
+      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
+      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
+      driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
+
+  assert(this->numThreads < LLVMTraceCPUConstants::MaxContexts &&
+         "Number of thread context exceed the maximum.");
 
   // Set the trace folder.
   auto slashPos = this->traceFileName.rfind('/');
@@ -66,9 +54,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   // Initialize the main thread.
   {
     auto mainThreadId = LLVMTraceCPU::allocateThreadID();
-    auto mainThread =
+    this->mainThread =
         new LLVMTraceThreadContext(mainThreadId, this->traceFileName);
-    this->addThread(mainThread);
     this->activateThread(mainThread);
   }
 
@@ -82,7 +69,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
           this->accelManager->name().c_str());
 
   // Initialize the region stats from the main thread.
-  const auto &staticInfo = this->threads.front()->getStaticInfo();
+  const auto &staticInfo = this->mainThread->getStaticInfo();
   RegionStats::RegionMap regions;
   for (const auto &region : staticInfo.regions()) {
     const auto &regionId = region.name();
@@ -130,6 +117,8 @@ LLVMTraceCPU::~LLVMTraceCPU() {
   }
   delete this->runTimeProfiler;
   this->runTimeProfiler = nullptr;
+  delete this->mainThread;
+  this->mainThread = nullptr;
 }
 
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
@@ -187,13 +176,7 @@ void LLVMTraceCPU::tick() {
   //    the stack depth is 0.
   bool done = false;
   if (this->isStandalone()) {
-    done = true;
-    for (auto &thread : this->activeThreads) {
-      if (thread != nullptr) {
-        done = false;
-        break;
-      }
-    }
+    done = (this->getNumActivateThreads() == 0);
     if (done) {
       assert(this->inflyInstStatus.empty() &&
              "Infly instruction status map is not empty when done.");
@@ -559,10 +542,6 @@ ThreadID LLVMTraceCPU::allocateThreadID() {
   return threadId++;
 }
 
-void LLVMTraceCPU::addThread(LLVMTraceThreadContext *thread) {
-  this->threads.push_back(thread);
-}
-
 void LLVMTraceCPU::activateThread(LLVMTraceThreadContext *thread) {
   auto freeContextId = -1;
   for (auto idx = 0; idx < this->activeThreads.size(); ++idx) {
@@ -586,4 +565,18 @@ void LLVMTraceCPU::deactivateThread(LLVMTraceThreadContext *thread) {
   thread->deactivate();
   this->activeThreads[contextId] = nullptr;
   this->fetchStage.clearContext(contextId);
+  this->decodeStage.clearContext(contextId);
+  this->renameStage.clearContext(contextId);
+  this->iewStage.clearContext(contextId);
+  this->commitStage.clearContext(contextId);
+}
+
+size_t LLVMTraceCPU::getNumActivateThreads() const {
+  size_t activeThreads = 0;
+  for (const auto &thread : this->activeThreads) {
+    if (thread != nullptr) {
+      activeThreads++;
+    }
+  }
+  return activeThreads;
 }

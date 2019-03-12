@@ -30,6 +30,9 @@ public:
   void regStats();
 
   void tick();
+  void clearContext(ThreadID contextId) {
+    this->renameStates.at(contextId).clear();
+  }
 
   Stats::Scalar blockedCycles;
   /** Stat for total number of renamed instructions. */
@@ -46,7 +49,7 @@ private:
   LLVMTraceCPU *cpu;
 
   unsigned renameWidth;
-  unsigned renameBufferSize;
+  unsigned maxRenameQueueSize;
 
   Cycles fromDecodeDelay;
   Cycles toIEWDelay;
@@ -55,7 +58,22 @@ private:
   TimeBuffer<DecodeStruct>::wire fromDecode;
   TimeBuffer<LLVMStageSignal>::wire signal;
 
-  std::list<LLVMDynamicInstId> renameBuffer;
+  /**
+   * Store all the per-context rename states.
+   * Basically a per-context queue.
+   */
+  struct RenameState {
+    std::queue<LLVMDynamicInstId> renameQueue;
+    void clear() {
+      assert(this->renameQueue.empty() &&
+             "RenameQueue not empty when clearing context.");
+    }
+    RenameState() { this->clear(); }
+  };
+
+  std::vector<RenameState> renameStates;
+  size_t totalRenameQueueSize;
+  ThreadID lastRenamedContextId;
 };
 
 #endif

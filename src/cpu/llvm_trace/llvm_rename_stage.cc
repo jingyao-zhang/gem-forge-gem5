@@ -6,9 +6,10 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMRenameStage::LLVMRenameStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), renameWidth(params->renameWidth),
-      renameBufferSize(params->renameBufferSize),
+      maxRenameQueueSize(params->renameBufferSize),
       fromDecodeDelay(params->decodeToRenameDelay),
-      toIEWDelay(params->renameToIEWDelay) {}
+      toIEWDelay(params->renameToIEWDelay), renameStates(params->numThreads),
+      totalRenameQueueSize(0), lastRenamedContextId(0) {}
 
 void LLVMRenameStage::setToIEW(TimeBuffer<RenameStruct> *toIEWBuffer) {
   this->toIEW = toIEWBuffer->getWire(0);
@@ -51,67 +52,114 @@ void LLVMRenameStage::regStats() {
 }
 
 void LLVMRenameStage::tick() {
-  // Get the inst from decode to rob;
+  // Get the inst from decode to rename queue;
   for (auto iter = this->fromDecode->begin(), end = this->fromDecode->end();
        iter != end; ++iter) {
-    this->renameBuffer.push_back(*iter);
+    auto instId = *iter;
+    auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
+    this->renameStates.at(contextId).renameQueue.push(instId);
+    this->totalRenameQueueSize++;
   }
 
-  if (this->signal->stall) {
+  // Round-robin to find next non-blocking thread to rename.
+  LLVMTraceThreadContext *chosenThread = nullptr;
+  ThreadID chosenContextId = 0;
+  for (auto offset = 1; offset <= this->renameStates.size(); ++offset) {
+    auto contextId =
+        (this->lastRenamedContextId + offset) % this->renameStates.size();
+    auto thread = cpu->activeThreads[contextId];
+    if (thread == nullptr) {
+      // This context id is not allocated.
+      continue;
+    }
+    if (this->signal->contextStall[contextId]) {
+      // The next stage require this context to be stalled.
+      continue;
+    }
+    chosenContextId = contextId;
+    chosenThread = thread;
+    break;
+  }
+
+  if (chosenThread == nullptr) {
     this->blockedCycles++;
+    return;
   }
 
-  // Check the dependence until either the rob is empty or
-  // we have reached the renameWidth.
-  if (!this->signal->stall) {
-    unsigned renamedInsts = 0;
-    unsigned renamedIntDest = 0;
-    unsigned renamedFpDest = 0;
-    unsigned renamedIntLookUp = 0;
-    unsigned renamedFpLookUp = 0;
-    auto iter = this->renameBuffer.begin();
-    while (renamedInsts < this->renameWidth &&
-           iter != this->renameBuffer.end()) {
-      auto instId = *iter;
-      auto &inst = cpu->inflyInstMap.at(instId);
-      // Sanity check.
-      panic_if(cpu->inflyInstStatus.find(instId) == cpu->inflyInstStatus.end(),
-               "Inst %u should be in inflyInstStatus to check if READY\n",
-               instId);
-      if (cpu->inflyInstStatus.at(instId) != InstStatus::DECODED) {
-        panic("Inst %u should be in DECODED status in rob\n", instId);
-      }
+  this->lastRenamedContextId = chosenContextId;
 
-      if (renamedInsts + inst->getQueueWeight() > this->renameWidth) {
-        break;
-      }
-
-      DPRINTF(LLVMTraceCPU, "Inst %u is sent to iew.\n", instId);
-
-      // Add toIEW.
-      this->toIEW->push_back(instId);
-
-      renamedInsts += inst->getQueueWeight();
-
-      if (inst->isFloatInst()) {
-        renamedFpDest += inst->getNumResults();
-        renamedFpLookUp += inst->getNumOperands();
-      } else {
-        renamedIntDest += inst->getNumResults();
-        renamedIntLookUp += inst->getNumOperands();
-      }
-
-      // Remove the inst from renameBuffer.
-      iter = this->renameBuffer.erase(iter);
+  unsigned renamedInsts = 0;
+  unsigned renamedIntDest = 0;
+  unsigned renamedFpDest = 0;
+  unsigned renamedIntLookUp = 0;
+  unsigned renamedFpLookUp = 0;
+  auto &renameQueue = this->renameStates.at(chosenContextId).renameQueue;
+  while (renamedInsts < this->renameWidth && !renameQueue.empty()) {
+    auto instId = renameQueue.front();
+    auto &inst = cpu->inflyInstMap.at(instId);
+    // Sanity check.
+    if (cpu->inflyInstStatus.at(instId) != InstStatus::DECODED) {
+      panic("Inst %u should be in DECODED status in rename queue\n", instId);
     }
 
-    this->renameRenamedInsts += renamedInsts;
-    this->renameRenamedOperands += renamedIntDest + renamedFpDest;
-    this->renameRenameLookups += renamedIntLookUp + renamedFpLookUp;
-    this->intRenameLookups += renamedIntLookUp;
-    this->fpRenameLookups += renamedFpLookUp;
+    if (renamedInsts + inst->getQueueWeight() > this->renameWidth) {
+      break;
+    }
+
+    DPRINTF(LLVMTraceCPU, "Inst %u is sent to iew.\n", instId);
+
+    // Add toIEW.
+    this->toIEW->push_back(instId);
+
+    renamedInsts += inst->getQueueWeight();
+
+    if (inst->isFloatInst()) {
+      renamedFpDest += inst->getNumResults();
+      renamedFpLookUp += inst->getNumOperands();
+    } else {
+      renamedIntDest += inst->getNumResults();
+      renamedIntLookUp += inst->getNumOperands();
+    }
+
+    // Remove the inst from renameQueue
+    renameQueue.pop();
+    this->totalRenameQueueSize--;
   }
 
-  // Raise stall signal to decode if rob size has reached limits.
-  this->signal->stall = this->renameBuffer.size() >= this->renameBufferSize;
+  this->renameRenamedInsts += renamedInsts;
+  this->renameRenamedOperands += renamedIntDest + renamedFpDest;
+  this->renameRenameLookups += renamedIntLookUp + renamedFpLookUp;
+  this->intRenameLookups += renamedIntLookUp;
+  this->fpRenameLookups += renamedFpLookUp;
+
+  // Clear and then set the stall signal.
+  for (auto &stall : this->signal->contextStall) {
+    stall = false;
+  }
+  auto numActiveThreads = cpu->getNumActivateThreads();
+  if (numActiveThreads == 0) {
+    return;
+  }
+  auto perContextRenameQueueLimit = this->maxRenameQueueSize / numActiveThreads;
+  for (ThreadID contextId = 0; contextId < this->renameStates.size();
+       ++contextId) {
+    bool stalled = false;
+    auto thread = cpu->activeThreads.at(contextId);
+    if (thread == nullptr) {
+      // This context is not active.
+      stalled = false;
+    } else {
+      // Check the per-context limit.
+      auto renameQueueSize =
+          this->renameStates.at(contextId).renameQueue.size();
+      if (renameQueueSize >= perContextRenameQueueLimit) {
+        stalled = true;
+      }
+      // Check the total limit.
+      if (this->totalRenameQueueSize >= this->maxRenameQueueSize) {
+        stalled = true;
+      }
+    }
+    this->signal->contextStall[contextId] = stalled;
+  }
 }

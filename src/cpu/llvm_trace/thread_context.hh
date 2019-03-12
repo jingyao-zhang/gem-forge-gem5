@@ -12,7 +12,7 @@ class LLVMTraceCPU;
 class LLVMTraceThreadContext {
  public:
   LLVMTraceThreadContext(ThreadID _threadId, const std::string &_traceFileName);
-  ~LLVMTraceThreadContext();
+  virtual ~LLVMTraceThreadContext();
 
   virtual void activate(LLVMTraceCPU *cpu, ThreadID contextId);
   virtual void deactivate();
