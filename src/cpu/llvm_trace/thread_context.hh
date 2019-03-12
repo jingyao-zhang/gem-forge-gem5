@@ -7,10 +7,15 @@
  * A basic thread context.
  */
 
+class LLVMTraceCPU;
+
 class LLVMTraceThreadContext {
-public:
+ public:
   LLVMTraceThreadContext(ThreadID _threadId, const std::string &_traceFileName);
   ~LLVMTraceThreadContext();
+
+  virtual void activate(LLVMTraceCPU *cpu, ThreadID contextId);
+  virtual void deactivate();
 
   virtual bool isDone() const;
 
@@ -22,10 +27,22 @@ public:
     return this->dynInstStream->getStaticInfo();
   }
 
-private:
+  ThreadID getContextId() const {
+    assert(this->cpu != nullptr &&
+           "This thread is not allocated hardware context.");
+    return this->contextId;
+  }
+
+ private:
   ThreadID threadId;
   DynamicInstructionStream *dynInstStream;
   size_t inflyInsts;
+
+  /**
+   * States for active threads.
+   */
+  LLVMTraceCPU *cpu;
+  ThreadID contextId;
 };
 
 #endif

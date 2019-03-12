@@ -7,18 +7,33 @@
 #include "sim/sim_exit.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
-    : BaseCPU(params), pageTable(params->name + ".page_table", 0),
+    : BaseCPU(params),
+      pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
-      itb(params->itb), dtb(params->dtb), fuPool(params->fuPool),
-      regionStats(nullptr), currentStackDepth(0), warmUpTick(0),
-      process(nullptr), thread_context(nullptr), stackMin(0),
-      fetchStage(params, this), decodeStage(params, this),
-      renameStage(params, this), iewStage(params, this),
-      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
-      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
-      driver(params->driver), tickEvent(*this) {
+      traceFileName(params->traceFile),
+      totalCPUs(params->totalCPUs),
+      itb(params->itb),
+      dtb(params->dtb),
+      fuPool(params->fuPool),
+      regionStats(nullptr),
+      currentStackDepth(0),
+      warmUpTick(0),
+      process(nullptr),
+      thread_context(nullptr),
+      stackMin(0),
+      fetchStage(params, this),
+      decodeStage(params, this),
+      renameStage(params, this),
+      iewStage(params, this),
+      commitStage(params, this),
+      fetchToDecode(5, 5),
+      decodeToRename(5, 5),
+      renameToIEW(5, 5),
+      iewToCommit(5, 5),
+      signalBuffer(5, 5),
+      driver(params->driver),
+      tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   // Set the trace folder.
@@ -44,6 +59,9 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->renameStage.setSignal(&this->signalBuffer, -2);
   this->decodeStage.setSignal(&this->signalBuffer, -3);
   this->fetchStage.setSignal(&this->signalBuffer, -4);
+
+  // Initialize the active threads.
+  this->activeThreads.resize(this->numThreads, nullptr);
 
   // Initialize the main thread.
   {
@@ -170,8 +188,8 @@ void LLVMTraceCPU::tick() {
   bool done = false;
   if (this->isStandalone()) {
     done = true;
-    for (auto &thread : this->threads) {
-      if (!thread->isDone()) {
+    for (auto &thread : this->activeThreads) {
+      if (thread != nullptr) {
         done = false;
         break;
       }
@@ -546,6 +564,26 @@ void LLVMTraceCPU::addThread(LLVMTraceThreadContext *thread) {
 }
 
 void LLVMTraceCPU::activateThread(LLVMTraceThreadContext *thread) {
-  assert(this->activeThreads.size() < 4 && "Exceeding SMT limit.");
-  this->activeThreads.push_back(thread);
+  auto freeContextId = -1;
+  for (auto idx = 0; idx < this->activeThreads.size(); ++idx) {
+    if (this->activeThreads[idx] == nullptr) {
+      freeContextId = idx;
+      break;
+    }
+  }
+  assert(freeContextId != -1 &&
+         "Failed to find free hardware context to activate thread.");
+  this->activeThreads[freeContextId] = thread;
+  thread->activate(this, freeContextId);
+}
+
+void LLVMTraceCPU::deactivateThread(LLVMTraceThreadContext *thread) {
+  auto contextId = thread->getContextId();
+  assert(contextId >= 0 && contextId < this->activeThreads.size() &&
+         "Invalid context id.");
+  assert(this->activeThreads[contextId] == thread &&
+         "Unmatched thread at the context.");
+  thread->deactivate();
+  this->activeThreads[contextId] = nullptr;
+  this->fetchStage.clearContext(contextId);
 }

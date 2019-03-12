@@ -5,7 +5,8 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMCommitStage::LLVMCommitStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
-    : cpu(_cpu), commitWidth(params->commitWidth),
+    : cpu(_cpu),
+      commitWidth(params->commitWidth),
       commitQueueSize(params->commitQueueSize),
       fromIEWDelay(params->iewToCommitDelay) {}
 
@@ -132,6 +133,11 @@ void LLVMCommitStage::tick() {
     cpu->inflyInstStatus.erase(instId);
     cpu->inflyInstThread.erase(instId);
     thread->commit(inst);
+
+    // If the thread is done, deactivate it.
+    if (thread->isDone()) {
+      cpu->deactivateThread(thread);
+    }
   }
 
   this->signal->stall = this->commitQueue.size() >= this->commitQueueSize;

@@ -14,7 +14,7 @@ class LLVMTraceCPU;
 class LLVMTraceThreadContext;
 
 class LLVMFetchStage {
-public:
+ public:
   using FetchStruct = std::vector<LLVMDynamicInstId>;
 
   LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
@@ -27,6 +27,7 @@ public:
   void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
   void regStats();
   void tick();
+  void clearContext(ThreadID contextId);
 
   std::string name();
 
@@ -40,16 +41,15 @@ public:
   /** Stat for total number of predicted branches. */
   Stats::Scalar predictedBranches;
 
-private:
+ private:
   LLVMTraceCPU *cpu;
 
   unsigned fetchWidth;
 
   /**
-   * Stores all the per-thread fetch states.
-   * Note that threads are never deallocated.
+   * Stores all the per-context fetch states.
    */
-  struct ThreadFetchStates {
+  struct FetchState {
     /**
      * Flag to tell if we have just fetched an SerializeAfter instruction.
      * If yes, the next fetched instruction is marked SerializeBefore.
@@ -59,9 +59,8 @@ private:
     uint8_t branchPredictPenalityCycles;
     // Branch missed instruction id.
     LLVMDynamicInstId blockedInstId;
-    // TODO: Make the predictor also thread-base.
-    ThreadFetchStates()
-        : serializeAfter(false), branchPredictPenalityCycles(0) {}
+    // TODO: Make the predictor also context-base.
+    FetchState() : serializeAfter(false), branchPredictPenalityCycles(0) {}
 
     void clear() {
       this->serializeAfter = false;
@@ -69,8 +68,7 @@ private:
     }
   };
 
-  std::vector<ThreadFetchStates> threadStates;
-  size_t SMTLimit;
+  std::vector<FetchState> fetchStates;
 
   Cycles toDecodeDelay;
   TimeBuffer<FetchStruct>::wire toDecode;
@@ -78,7 +76,7 @@ private:
 
   LLVMBranchPredictor *predictor;
 
-  int lastFetchedHWTD;
+  int lastFetchedContextId;
 };
 
 #endif

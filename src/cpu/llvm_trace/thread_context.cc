@@ -15,7 +15,7 @@ bool LLVMTraceThreadContext::canFetch() const {
   return !this->dynInstStream->fetchEmpty();
 }
 
-void LLVMDynamicInst *LLVMTraceThreadContext::fetch() {
+LLVMDynamicInst *LLVMTraceThreadContext::fetch() {
   assert(this->canFetch() && "Illega fetch.");
   this->inflyInsts++;
   return this->dynInstStream->fetch();
@@ -28,4 +28,14 @@ void LLVMTraceThreadContext::commit(LLVMDynamicInst *inst) {
 
 bool LLVMTraceThreadContext::isDone() const {
   return this->dynInstStream->fetchEmpty() && this->inflyInsts == 0;
+}
+
+void LLVMTraceThreadContext::activate(LLVMTraceCPU *cpu, ThreadID contextId) {
+  this->cpu = cpu;
+  this->contextId = contextId;
+}
+
+void LLVMTraceThreadContext::deactivate() {
+  this->cpu = nullptr;
+  this->contextId = -1;
 }

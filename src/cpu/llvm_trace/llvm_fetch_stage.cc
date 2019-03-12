@@ -5,9 +5,12 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
-    : cpu(_cpu), fetchWidth(params->fetchWidth), threadStates(4), SMTLimit(4),
+    : cpu(_cpu),
+      fetchWidth(params->fetchWidth),
+      fetchStates(params->numThreads),
       toDecodeDelay(params->fetchToDecodeDelay),
-      predictor(new LLVMBranchPredictor()), lastFetchedHWTD(3) {}
+      predictor(new LLVMBranchPredictor()),
+      lastFetchedContextId(0) {}
 
 LLVMFetchStage::~LLVMFetchStage() {
   delete this->predictor;
@@ -49,6 +52,10 @@ void LLVMFetchStage::regStats() {
       .prereq(predictedBranches);
 }
 
+void LLVMFetchStage::clearContext(ThreadID contextId) {
+  this->fetchStates[contextId].clear();
+}
+
 void LLVMFetchStage::tick() {
   // If stall signal is raised, we don't fetch.
   // TODO: extend the stall signal to stall active threads.
@@ -60,16 +67,19 @@ void LLVMFetchStage::tick() {
 
   // Check all active threads.
   LLVMTraceThreadContext *chosenThread = nullptr;
-  int chosenIdx = 0;
-  for (auto offset = 1; offset <= this->SMTLimit + 1; ++offset) {
-    auto idx = (this->lastFetchedHWTD + offset) % this->SMTLimit;
-    if (idx > cpu->activeThreads.size()) {
+  int chosenContextId = 0;
+  for (auto offset = 1; offset <= this->fetchStates.size() + 1; ++offset) {
+    auto contextId =
+        (this->lastFetchedContextId + offset) % this->fetchStates.size();
+    auto thread = cpu->activeThreads[contextId];
+    if (thread == nullptr) {
+      // This context id is not allocated.
       continue;
     }
-    auto thread = cpu->activeThreads[idx];
     if (thread->canFetch()) {
-      chosenIdx = 0;
+      chosenContextId = contextId;
       chosenThread = thread;
+      break;
     }
   }
 
@@ -78,14 +88,14 @@ void LLVMFetchStage::tick() {
     return;
   }
 
-  auto &states = this->threadStates[chosenIdx];
+  auto &fetchState = this->fetchStates[chosenContextId];
   // If we are blocked by a wrong branch prediction,
   // we don't fetch but try to check if the conditiona branch
   // is computed out.
-  if (states.branchPreictPenalityCycles > 0) {
+  if (fetchState.branchPredictPenalityCycles > 0) {
     this->blockedCycles++;
-    if (cpu->isInstFinished(states.blockedInstId)) {
-      states.branchPreictPenalityCycles--;
+    if (cpu->isInstFinished(fetchState.blockedInstId)) {
+      fetchState.branchPredictPenalityCycles--;
     }
     return;
   }
@@ -106,11 +116,10 @@ void LLVMFetchStage::tick() {
         break;
       }
 
-      DPRINTF(
-          LLVMTraceCPUFetch,
-          "Fetch inst %lu %s into fetchQueue, infly insts %lu,  remaining %d\n",
-          inst->getSeqNum(), inst->getTDG().op().c_str(),
-          cpu->inflyInstMap.size(), cpu->dynInstStream->fetchSize());
+      DPRINTF(LLVMTraceCPUFetch,
+              "Fetch inst %lu %s into fetchQueue, infly insts %lu.\n",
+              inst->getSeqNum(), inst->getTDG().op().c_str(),
+              cpu->inflyInstMap.size());
       // Update the infly.
       cpu->inflyInstStatus[instId] = InstStatus::FETCHED;
       cpu->inflyInstMap.emplace(instId, inst);
@@ -119,35 +128,35 @@ void LLVMFetchStage::tick() {
       this->toDecode->push_back(instId);
 
       // Update the serializeAfter flag.
-      if (states.serializeAfter) {
+      if (fetchState.serializeAfter) {
         inst->markSerializeBefore();
-        states.serializeAfter = false;
+        fetchState.serializeAfter = false;
       }
       if (inst->isSerializeAfter()) {
-        states.serializeAfter = true;
+        fetchState.serializeAfter = true;
       }
 
       // Update the stack depth for call/ret inst.
       int stackAdjustment = inst->getCallStackAdjustment();
       switch (stackAdjustment) {
-      case 1: {
-        cpu->stackPush();
-        DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
-                cpu->currentStackDepth);
-        break;
-      }
-      case -1: {
-        cpu->stackPop();
-        DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
-                cpu->currentStackDepth);
-        break;
-      }
-      case 0: {
-        break;
-      }
-      default: {
-        panic("Illegal call stack adjustment &d.\n", stackAdjustment);
-      }
+        case 1: {
+          cpu->stackPush();
+          DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
+                  cpu->currentStackDepth);
+          break;
+        }
+        case -1: {
+          cpu->stackPop();
+          DPRINTF(LLVMTraceCPUFetch, "Stack depth updated to %u\n",
+                  cpu->currentStackDepth);
+          break;
+        }
+        case 0: {
+          break;
+        }
+        default: {
+          panic("Illegal call stack adjustment &d.\n", stackAdjustment);
+        }
       }
       fetchedInsts += inst->getQueueWeight();
     }
@@ -162,8 +171,8 @@ void LLVMFetchStage::tick() {
         DPRINTF(LLVMTraceCPUFetch,
                 "Fetch blocked due to failed branch predictor for %s.\n",
                 inst->getInstName().c_str());
-        states.branchPreictPenalityCycles = 8;
-        states.blockedInstId = instId;
+        fetchState.branchPredictPenalityCycles = 8;
+        fetchState.blockedInstId = instId;
         // Do not fetch next one.
         break;
       }
