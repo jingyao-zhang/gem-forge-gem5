@@ -45,8 +45,14 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->decodeStage.setSignal(&this->signalBuffer, -3);
   this->fetchStage.setSignal(&this->signalBuffer, -4);
 
-  // Open the trace file.
-  this->dynInstStream = new DynamicInstructionStream(this->traceFileName);
+  // Initialize the main thread.
+  {
+    auto mainThreadId = LLVMTraceCPU::allocateThreadID();
+    auto mainThread =
+        new LLVMTraceThreadContext(mainThreadId, this->traceFileName);
+    this->addThread(mainThread);
+    this->activateThread(mainThread);
+  }
 
   // Initialize the accelerators.
   // We need to keep the params as the sim object will store its address.
@@ -57,8 +63,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   DPRINTF(LLVMTraceCPU, "Accelerator manager name %s.\n",
           this->accelManager->name().c_str());
 
-  // Initialize the region stats.
-  const auto &staticInfo = this->dynInstStream->getStaticInfo();
+  // Initialize the region stats from the main thread.
+  const auto &staticInfo = this->threads.front()->getStaticInfo();
   RegionStats::RegionMap regions;
   for (const auto &region : staticInfo.regions()) {
     const auto &regionId = region.name();
@@ -96,8 +102,6 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
 }
 
 LLVMTraceCPU::~LLVMTraceCPU() {
-  delete this->dynInstStream;
-  this->dynInstStream = nullptr;
   delete this->accelManager;
   this->accelManager = nullptr;
   delete this->accelManagerParams;
@@ -165,7 +169,17 @@ void LLVMTraceCPU::tick() {
   //    the stack depth is 0.
   bool done = false;
   if (this->isStandalone()) {
-    done = this->inflyInstStatus.empty() && this->dynInstStream->empty();
+    done = true;
+    for (auto &thread : this->threads) {
+      if (!thread->isDone()) {
+        done = false;
+        break;
+      }
+    }
+    if (done) {
+      assert(this->inflyInstStatus.empty() &&
+             "Infly instruction status map is not empty when done.");
+    }
   } else {
     done = this->inflyInstStatus.empty() && this->currentStackDepth == 0;
   }
@@ -520,4 +534,18 @@ void LLVMTraceCPU::regStats() {
       .name(this->name() + ".pending_acc_per_cycle")
       .desc("Number of pending memory access each cycle")
       .flags(Stats::pdf);
+}
+
+ThreadID LLVMTraceCPU::allocateThreadID() {
+  static ThreadID threadId = 0;
+  return threadId++;
+}
+
+void LLVMTraceCPU::addThread(LLVMTraceThreadContext *thread) {
+  this->threads.push_back(thread);
+}
+
+void LLVMTraceCPU::activateThread(LLVMTraceThreadContext *thread) {
+  assert(this->activeThreads.size() < 4 && "Exceeding SMT limit.");
+  this->activeThreads.push_back(thread);
 }

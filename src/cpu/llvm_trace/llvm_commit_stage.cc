@@ -119,10 +119,19 @@ void LLVMCommitStage::tick() {
       this->callInstsCommitted[threadId]++;
     }
 
+    /**
+     * For the SMT support, so far we allow it to commit from
+     * any thread, but in the total order of the ROB.
+     *
+     * TODO: May be commit in the order of each thread.
+     */
+
     // After this point, inst is released!
+    auto thread = cpu->inflyInstThread.at(instId);
     cpu->inflyInstMap.erase(instId);
     cpu->inflyInstStatus.erase(instId);
-    cpu->dynInstStream->commit(inst);
+    cpu->inflyInstThread.erase(instId);
+    thread->commit(inst);
   }
 
   this->signal->stall = this->commitQueue.size() >= this->commitQueueSize;

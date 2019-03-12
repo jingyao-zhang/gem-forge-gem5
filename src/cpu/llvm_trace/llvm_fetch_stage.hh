@@ -11,6 +11,7 @@
 #include "params/LLVMTraceCPU.hh"
 
 class LLVMTraceCPU;
+class LLVMTraceThreadContext;
 
 class LLVMFetchStage {
 public:
@@ -45,18 +46,39 @@ private:
   unsigned fetchWidth;
 
   /**
-   * Flag to tell if we have just fetched an SerializeAfter instruction.
-   * If yes, the next fetched instruction is marked SerializeBefore.
+   * Stores all the per-thread fetch states.
+   * Note that threads are never deallocated.
    */
-  bool serializeAfter;
+  struct ThreadFetchStates {
+    /**
+     * Flag to tell if we have just fetched an SerializeAfter instruction.
+     * If yes, the next fetched instruction is marked SerializeBefore.
+     */
+    bool serializeAfter;
+    // Penality cycles after the branch instruction is committed.
+    uint8_t branchPredictPenalityCycles;
+    // Branch missed instruction id.
+    LLVMDynamicInstId blockedInstId;
+    // TODO: Make the predictor also thread-base.
+    ThreadFetchStates()
+        : serializeAfter(false), branchPredictPenalityCycles(0) {}
+
+    void clear() {
+      this->serializeAfter = false;
+      this->branchPredictPenalityCycles = 0;
+    }
+  };
+
+  std::vector<ThreadFetchStates> threadStates;
+  size_t SMTLimit;
 
   Cycles toDecodeDelay;
   TimeBuffer<FetchStruct>::wire toDecode;
   TimeBuffer<LLVMStageSignal>::wire signal;
 
   LLVMBranchPredictor *predictor;
-  uint8_t branchPreictPenalityCycles;
-  LLVMDynamicInstId blockedInstId;
+
+  int lastFetchedHWTD;
 };
 
 #endif

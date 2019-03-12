@@ -13,7 +13,6 @@
 #include "base/statistics.hh"
 #include "cpu/base.hh"
 #include "cpu/llvm_trace/accelerator/tdg_accelerator.hh"
-#include "cpu/llvm_trace/dyn_inst_stream.hh"
 #include "cpu/llvm_trace/llvm_commit_stage.hh"
 #include "cpu/llvm_trace/llvm_decode_stage.hh"
 #include "cpu/llvm_trace/llvm_fetch_stage.hh"
@@ -24,6 +23,7 @@
 #include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
 #include "cpu/llvm_trace/profiler/run_time_profiler.hh"
 #include "cpu/llvm_trace/region_stats.hh"
+#include "cpu/llvm_trace/thread_context.hh"
 #include "cpu/o3/fu_pool.hh"
 #include "mem/page_table.hh"
 #include "params/LLVMTraceCPU.hh"
@@ -123,7 +123,12 @@ private:
   const unsigned totalCPUs;
 
   std::string traceFolder;
-  DynamicInstructionStream *dynInstStream;
+
+  /**
+   * Store all the threads. Threads are allocated but never deallocated.
+   */
+  std::vector<LLVMTraceThreadContext *> threads;
+  std::vector<LLVMTraceThreadContext *> activeThreads;
 
   TheISA::TLB *itb;
   TheISA::TLB *dtb;
@@ -152,6 +157,10 @@ private:
 
   // The status of infly instructions.
   std::unordered_map<LLVMDynamicInstId, InstStatus> inflyInstStatus;
+
+  // Which thread does this instruction belongs to.
+  std::unordered_map<LLVMDynamicInstId, LLVMTraceThreadContext *>
+      inflyInstThread;
 
   //*********************************************************//
   // This variables are initialized per replay.
@@ -223,6 +232,13 @@ public:
   // Return the virtual address.
   Addr allocateStack(Addr size, Addr align);
 
+  // Allocate a new thread Id.
+  static ThreadID allocateThreadID();
+
+  // Add the thread to our threads.
+  void addThread(LLVMTraceThreadContext *thread);
+  void activateThread(LLVMTraceThreadContext *thread);
+
   /**
    * Translate the vaddr to paddr.
    * May allocate page if page fault.
@@ -256,7 +272,6 @@ public:
   // Event for this CPU.
   EventWrapper<LLVMTraceCPU, &LLVMTraceCPU::tick> tickEvent;
 
-public:
   /*******************************************************************/
   // All the statics.
   /*******************************************************************/
