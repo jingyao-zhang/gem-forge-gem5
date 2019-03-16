@@ -121,8 +121,8 @@ public:
   uint64_t getStaticInstAddress() const;
   const std::string &getNextBBName() const;
 
-  void dumpBasic() const;
-  void dumpDeps(LLVMTraceCPU *cpu) const;
+  virtual void dumpBasic() const;
+  virtual void dumpDeps(LLVMTraceCPU *cpu) const;
 
 protected:
   /**
@@ -169,6 +169,8 @@ public:
 
   bool isWritebacked() const override;
   void writeback(LLVMTraceCPU *cpu) override;
+
+  void dumpBasic() const override;
 
   // bool canWriteBack(LLVMTraceCPU* cpu) const override;
 

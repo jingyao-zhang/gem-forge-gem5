@@ -25,6 +25,11 @@ StreamConfigInst::StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
           this->TDG.stream_config().stream_id());
 }
 
+bool StreamConfigInst::canDispatch(LLVMTraceCPU *cpu) const {
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  return SE->canStreamConfig(this);
+}
+
 void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   SE->dispatchStreamConfigure(this);

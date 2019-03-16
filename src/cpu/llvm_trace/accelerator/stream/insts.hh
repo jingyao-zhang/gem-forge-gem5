@@ -18,6 +18,7 @@ protected:
 class StreamConfigInst : public StreamInst {
 public:
   StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG);
+  bool canDispatch(LLVMTraceCPU *cpu) const override;
   void dispatch(LLVMTraceCPU *cpu) override;
   void execute(LLVMTraceCPU *cpu) override;
   void commit(LLVMTraceCPU *cpu) override;

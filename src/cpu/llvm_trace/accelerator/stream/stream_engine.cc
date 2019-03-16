@@ -5,6 +5,21 @@
 #include "base/trace.hh"
 #include "debug/StreamEngine.hh"
 
+namespace {
+static std::string DEBUG_STREAM_NAME =
+    "(IV solve_l2r_l1l2_svc bb152 bb152::tmp154(phi))";
+
+bool isDebugStream(Stream *S) {
+  return S->getStreamName() == DEBUG_STREAM_NAME;
+}
+
+void debugStream(Stream *S, const char *message) {
+  inform("%20s: Stream %50s config %1d step %3d allocated %3d.\n", message,
+         S->getStreamName().c_str(), S->configured, S->stepSize, S->allocSize);
+}
+
+} // namespace
+
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false) {}
 
@@ -155,7 +170,34 @@ void StreamEngine::regStats() {
       .prereq(this->numCacheLevel);
 }
 
+bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
+  /**
+   * A stream can be configured iff. we can guarantee that it will be allocate
+   * one entry when configured.
+   *
+   * If this this the first time we encounter the stream, we check the number of
+   * free entries. Otherwise, we ALSO ensure that allocSize < maxSize.
+   */
+  if (this->FIFOFreeListHead == nullptr) {
+    // No more free entries.
+    return false;
+  }
+  auto iter = this->streamMap.find(inst->getTDG().stream_config().stream_id());
+  if (iter != this->streamMap.end()) {
+    // Check if we have quota for this stream.
+    auto S = iter->second;
+    if (S->allocSize == S->maxSize) {
+      // No more quota.
+      return false;
+    }
+  }
+  return true;
+}
+
 void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
+
+  assert(this->canStreamConfig(inst) && "Cannot configure stream.");
+
   this->numConfigured++;
   auto S = this->getOrInitializeStream(inst->getTDG().stream_config());
 
@@ -197,10 +239,9 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
     }
     this->allocateElement(S);
   }
-  // hack("Configure stream %s %lu alloc %d step %d.\n",
-  //      inst->getTDG().stream_config().stream_name().c_str(),
-  //      inst->getTDG().stream_config().stream_id(), S->allocSize,
-  //      S->stepSize);
+  if (isDebugStream(S)) {
+    debugStream(S, "Dispatch Config");
+  }
 }
 
 void StreamEngine::commitStreamConfigure(StreamConfigInst *inst) {
@@ -246,13 +287,9 @@ void StreamEngine::dispatchStreamStep(StreamStepInst *inst) {
     S->stepped = S->stepped->next;
     S->stepSize++;
   }
-  // if (stepStreamId == 758694624) {
-  //   for (auto S : this->getStepStreamList(stepStream)) {
-  //     // hack("Step stream %s step %d alloc %d.\n",
-  //     S->getStreamName().c_str(),
-  //     //      S->stepSize, S->allocSize);
-  //   }
-  // }
+  if (isDebugStream(stepStream)) {
+    debugStream(stepStream, "Dispatch Step");
+  }
 }
 
 void StreamEngine::commitStreamStep(StreamStepInst *inst) {
@@ -290,15 +327,9 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
       this->allocateElement(S);
     }
   }
-  // if (stepStreamId == 758694624) {
-  //   for (auto S : stepStreams) {
-  //     hack("Commit step stream %s step %d alloc %d.\n",
-  //          S->getStreamName().c_str(), S->stepSize, S->allocSize);
-  //   }
-  //   auto ss = this->getStream(758694624);
-  //   hack("stream %s step root %s.\n", ss->getStreamName().c_str(),
-  //        ss->stepRootStream->getStreamName().c_str());
-  // }
+  if (isDebugStream(stepStream)) {
+    debugStream(stepStream, "Commit Step");
+  }
 }
 
 void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
@@ -398,6 +429,9 @@ void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
 
   // 3. Makr the stream to be unconfigured.
   S->configured = false;
+  if (isDebugStream(S)) {
+    debugStream(S, "Dispatch End");
+  }
 }
 
 void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
@@ -406,6 +440,9 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
    */
   auto S = this->getStream(inst->getTDG().stream_end().stream_id());
   this->releaseElement(S);
+  if (isDebugStream(S)) {
+    debugStream(S, "Commit End");
+  }
 }
 
 void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
@@ -833,8 +870,6 @@ void StreamEngine::dumpFIFO() const {
 
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
-    inform("Stream %s configured %d step %d allocated %d.\n",
-           S->getStreamName().c_str(), S->configured, S->stepSize,
-           S->allocSize);
+    debugStream(S, "");
   }
 }

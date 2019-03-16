@@ -26,6 +26,7 @@ public:
   void dump() override;
   void regStats() override;
 
+  bool canStreamConfig(const StreamConfigInst *inst) const;
   void dispatchStreamConfigure(StreamConfigInst *inst);
   void commitStreamConfigure(StreamConfigInst *inst);
 

@@ -102,6 +102,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
     // Schedule the first event.
     // And remember to initialize the stack depth to 1.
     this->currentStackDepth = 1;
+    DPRINTF(LLVMTraceCPU, "Schedule initial tick event.\n");
     schedule(this->tickEvent, nextCycle());
   }
 }
@@ -286,13 +287,15 @@ bool LLVMTraceCPU::CPUPort::isBlocked() const {
 }
 
 void LLVMTraceCPU::CPUPort::sendReq() {
-  // If there is already blocked req, just push to the queue.
-  // DPRINTF(LLVMTraceCPU, "Try sending pkt, remaining packets %lu\n",
-  //         this->blockedPacketPtrs.size());
-  // std::lock_guard<std::mutex> guard(this->blockedPacketPtrsMutex);
+  /**
+   * At this level, we do not distinguish the load/store ports,
+   * but only enfore the limit on the total number of ports.
+   */
   unsigned usedPorts = 0;
+  const auto cpuParams = this->owner->getLLVMTraceCPUParams();
+  unsigned totalPorts = cpuParams->cacheLoadPorts + cpuParams->cacheStorePorts;
   while (!this->blocked && !this->blockedPacketPtrs.empty() &&
-         this->inflyNumPackets < 80) {
+         usedPorts < totalPorts && this->inflyNumPackets < 80) {
     PacketPtr pkt = this->blockedPacketPtrs.front();
     DPRINTF(LLVMTraceCPU, "Try sending pkt at %p\n", pkt);
     bool success = MasterPort::sendTimingReq(pkt);

@@ -449,6 +449,11 @@ bool LLVMDynamicInstMem::isWritebacked() const {
   return this->packets.size() == 0;
 }
 
+void LLVMDynamicInstMem::dumpBasic() const {
+  inform("Inst seq %lu, id %lu, op %s, infly pkts %d.\n", this->seqNum,
+         this->getId(), this->getInstName().c_str(), this->packets.size());
+}
+
 void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
                                               PacketPtr packet) {
   if (this->type != Type::STORE && this->type != Type::LOAD) {

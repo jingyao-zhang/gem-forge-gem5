@@ -56,6 +56,10 @@ public:
                     const Addr finish_tag_vaddr,
                     std::vector<std::pair<std::string, Addr>> maps);
 
+  const LLVMTraceCPUParams *getLLVMTraceCPUParams() const {
+    return dynamic_cast<const LLVMTraceCPUParams *>(this->params());
+  }
+
   enum InstStatus {
     FETCHED,      // In fetchQueue.
     DECODED,      // Decoded.
