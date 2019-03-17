@@ -23,6 +23,7 @@ public:
   void execute(LLVMTraceCPU *cpu) override;
   void commit(LLVMTraceCPU *cpu) override;
   uint64_t getStreamId() const override;
+  void dumpBasic() const override;
 };
 
 class StreamStepInst : public StreamInst {

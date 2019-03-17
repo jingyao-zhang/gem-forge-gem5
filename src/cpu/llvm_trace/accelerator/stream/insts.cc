@@ -50,6 +50,12 @@ uint64_t StreamConfigInst::getStreamId() const {
   return this->TDG.stream_config().stream_id();
 }
 
+void StreamConfigInst::dumpBasic() const {
+  inform("Inst seq %lu, id %lu, op %s, stream %s.\n", this->seqNum,
+         this->getId(), this->getInstName().c_str(),
+         this->TDG.stream_config().stream_name());
+}
+
 StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
     : StreamInst(_TDG) {
   if (!this->TDG.has_stream_step()) {

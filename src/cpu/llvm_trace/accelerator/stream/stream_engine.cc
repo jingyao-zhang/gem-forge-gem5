@@ -300,6 +300,30 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
   const auto &stepStreams = this->getStepStreamList(stepStream);
 
   for (auto S : stepStreams) {
+    /**
+     * 1. Why only throttle for streamStep?
+     * Normally you want to throttling when you release the element.
+     * However, so far the throttling is constrainted by the
+     * totalRunAheadLength, which only considers configured streams. Therefore,
+     * we can not throttle for the last element (streamEnd), as some base
+     * streams may already be cleared, and we get an inaccurate
+     * totalRunAheadLength, causing the throttling to exceed the limit and
+     * deadlock.
+     *
+     * To solve this, we only do throttling for streamStep.
+     *
+     * 2. How to handle short streams?
+     * There is a pathological case when the streams are short, and increasing
+     * the run ahead length beyond the stream length does not make sense.
+     * We do not throttle if the element is within the run ahead length.
+     */
+    auto releaseElement = S->tail->next;
+    assert(releaseElement->FIFOIdx.configSeqNum !=
+               LLVMDynamicInst::INVALID_SEQ_NUM &&
+           "This element does not have valid config sequence number.");
+    if (releaseElement->FIFOIdx.entryIdx > S->maxSize) {
+      this->throttleStream(S, releaseElement);
+    }
     this->releaseElement(S);
   }
 
@@ -695,7 +719,9 @@ void StreamEngine::allocateElement(Stream *S) {
 
   newElement->clear();
 
+  S->FIFOIdx.next();
   newElement->stream = S;
+  newElement->FIFOIdx = S->FIFOIdx;
 
   // Find the base element.
   for (auto baseS : S->baseStreams) {
@@ -773,9 +799,6 @@ void StreamEngine::releaseElement(Stream *S) {
   if (releaseElement->stored) {
     this->issueElement(releaseElement);
   }
-
-  // Throttling.
-  this->throttleStream(S, releaseElement);
 
   S->tail->next = releaseElement->next;
   if (S->stepped == releaseElement) {
@@ -917,10 +940,14 @@ void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
       auto totalRunAheadLength = this->getTotalRunAheadLength();
       // Only increase the run ahead length if the totalRunAheadLength is within
       // the 90% of the total FIFO entries. Need better solution here.
-      if (totalRunAheadLength < 0.9 * this->FIFOArray.size()) {
+      const auto incrementStep = 2;
+      // auto newTotalRunAheadLength =
+      //     totalRunAheadLength + streamList.size() * incrementStep;
+      if (static_cast<float>(totalRunAheadLength) <
+          0.9f * static_cast<float>(this->FIFOArray.size())) {
         for (auto stepS : streamList) {
           // Increase the run ahead length by 2.
-          stepS->maxSize += 2;
+          stepS->maxSize += incrementStep;
         }
         assert(S->maxSize == oldRunAheadSize + 2 &&
                "RunAheadLength is not increased.");
