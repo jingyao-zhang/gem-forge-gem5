@@ -9,29 +9,29 @@
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define STREAM_DPRINTF(format, args...)                                      \
-  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(), \
+#define STREAM_DPRINTF(format, args...)                                        \
+  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(),   \
           ##args)
 
-#define STREAM_ENTRY_DPRINTF(entry, format, args...)                      \
-  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_DPRINTF(entry, format, args...)                           \
+  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
                  (entry).idx.entryIdx, ##args)
 
-#define STREAM_HACK(format, args...) \
+#define STREAM_HACK(format, args...)                                           \
   hack("Stream %s: " format, this->getStreamName().c_str(), ##args)
 
-#define STREAM_ENTRY_HACK(entry, format, args...)                      \
-  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_HACK(entry, format, args...)                              \
+  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance,         \
               (entry).idx.entryIdx, ##args)
 
-#define STREAM_PANIC(format, args...)                                   \
-  {                                                                     \
-    this->dump();                                                       \
-    panic("Stream %s: " format, this->getStreamName().c_str(), ##args); \
+#define STREAM_PANIC(format, args...)                                          \
+  {                                                                            \
+    this->dump();                                                              \
+    panic("Stream %s: " format, this->getStreamName().c_str(), ##args);        \
   }
 
-#define STREAM_ENTRY_PANIC(entry, format, args...)                      \
-  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_PANIC(entry, format, args...)                             \
+  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
                (entry).idx.entryIdx, ##args)
 
 SingleStream::SingleStream(
@@ -185,9 +185,8 @@ void SingleStream::handlePacketResponse(const FIFOEntryIdx &entryId,
         // We actually ingore the data here.
         STREAM_ENTRY_DPRINTF(entry, "Received load stream packet.\n");
         if (entry.inflyLoadPackets == 0) {
-          STREAM_ENTRY_PANIC(entry,
-                             "Received load stream packet when there is "
-                             "no infly load packets.");
+          STREAM_ENTRY_PANIC(entry, "Received load stream packet when there is "
+                                    "no infly load packets.");
         }
         entry.inflyLoadPackets--;
         if (entry.inflyLoadPackets == 0) {

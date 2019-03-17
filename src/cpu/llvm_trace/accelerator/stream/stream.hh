@@ -77,6 +77,12 @@ public:
   FIFOEntryIdx FIFOIdx;
   int lateFetchCount;
 
+  /**
+   * Step root stream, three possible cases:
+   * 1. this: I am the step root.
+   * 2. other: I am controlled by other step stream.
+   * 3. nullptr: I am a constant stream.
+   */
   Stream *stepRootStream;
   std::unordered_set<Stream *> baseStreams;
   std::unordered_set<Stream *> dependentStreams;

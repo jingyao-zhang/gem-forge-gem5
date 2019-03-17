@@ -14,7 +14,7 @@
 #include <unordered_map>
 
 class StreamEngine : public TDGAccelerator {
- public:
+public:
   StreamEngine();
   ~StreamEngine() override;
 
@@ -109,7 +109,7 @@ class StreamEngine : public TDGAccelerator {
   Stats::Distribution numAccessFootprintL2;
   Stats::Distribution numAccessFootprintL3;
 
- private:
+private:
   StreamPlacementManager *streamPlacementManager;
 
   std::vector<StreamElement> FIFOArray;
@@ -162,8 +162,8 @@ class StreamEngine : public TDGAccelerator {
   void updateAliveStatistics();
 
   // A helper function to load a stream info protobuf file.
-  static LLVM::TDG::StreamInfo parseStreamInfoFromFile(
-      const std::string &infoPath);
+  static LLVM::TDG::StreamInfo
+  parseStreamInfoFromFile(const std::string &infoPath);
 
   void initializeFIFO(size_t totalElements);
 
@@ -179,6 +179,8 @@ class StreamEngine : public TDGAccelerator {
   void issueElements();
   void issueElement(StreamElement *element);
   void throttleStream(Stream *S, StreamElement *element);
+
+  size_t getTotalRunAheadLength() const;
 
   void dumpFIFO() const;
 };
