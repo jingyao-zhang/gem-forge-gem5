@@ -29,7 +29,7 @@
 #include "params/LLVMTraceCPU.hh"
 
 class LLVMTraceCPU : public BaseCPU {
-public:
+ public:
   LLVMTraceCPU(LLVMTraceCPUParams *params);
   ~LLVMTraceCPU();
 
@@ -61,26 +61,28 @@ public:
   }
 
   enum InstStatus {
-    FETCHED,      // In fetchQueue.
-    DECODED,      // Decoded.
-    DISPATCHED,   // Dispatched to instQueue.
-    BLOCKED,      // Blocked by memory, should not check ready unless unblock.
-    READY,        // Ready to be issued.
-    ISSUED,       // Issue to FU.
-    FINISHED,     // Finished computing.
-    COMMIT,       // Sent to commit stage.
-    COMMITTING,   // Committing.
-    COMMITTED,    // Committed.
-    WRITEBACKING, // Writing back.
-    WRITEBACKED,  // Write backed.
+    FETCHED,       // In fetchQueue.
+    DECODED,       // Decoded.
+    DISPATCHED,    // Dispatched to instQueue.
+    BLOCKED,       // Blocked by memory, should not check ready unless unblock.
+    READY,         // Ready to be issued.
+    ISSUED,        // Issue to FU.
+    FINISHED,      // Finished computing.
+    COMMIT,        // Sent to commit stage.
+    COMMITTING,    // Committing.
+    COMMITTED,     // Committed.
+    WRITEBACKING,  // Writing back.
+    WRITEBACKED,   // Write backed.
   };
 
-private:
+ private:
   // This port will handle retry.
   class CPUPort : public MasterPort {
-  public:
+   public:
     CPUPort(const std::string &name, LLVMTraceCPU *_owner)
-        : MasterPort(name, _owner), owner(_owner), inflyNumPackets(0),
+        : MasterPort(name, _owner),
+          owner(_owner),
+          inflyNumPackets(0),
           blocked(false) {}
 
     bool recvTimingResp(PacketPtr pkt) override;
@@ -98,7 +100,7 @@ private:
 
     bool isBlocked() const;
 
-  private:
+   private:
     LLVMTraceCPU *owner;
     // Blocked packets for flow control.
     // Note: for now I don't handle thread safety as there
@@ -114,19 +116,23 @@ private:
 
   void tick();
 
-public:
+ public:
   FuncPageTable pageTable;
   CPUPort instPort;
   CPUPort dataPort;
 
   const std::string &getTraceFolder() const { return this->traceFolder; }
+  const std::string &getTraceExtraFolder() const {
+    return this->traceExtraFolder;
+  }
 
-private:
+ private:
   const std::string traceFileName;
 
   const unsigned totalCPUs;
 
   std::string traceFolder;
+  std::string traceExtraFolder;
 
   /**
    * This is the current main thread executed.
@@ -209,7 +215,7 @@ private:
 
   /**************************************************************/
   // Interface for the insts.
-public:
+ public:
   Stats::Distribution numPendingAccessDist;
 
   // Check if this is running in standalone mode (no normal cpu).
@@ -247,6 +253,7 @@ public:
   void activateThread(LLVMTraceThreadContext *thread);
   void deactivateThread(LLVMTraceThreadContext *thread);
   size_t getNumActivateThreads() const;
+  size_t getNumContexts() const { return this->activeThreads.size(); }
 
   /**
    * Translate the vaddr to paddr.

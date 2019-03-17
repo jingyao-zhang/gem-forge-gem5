@@ -17,8 +17,8 @@ class LLVMTraceThreadContext {
   virtual void activate(LLVMTraceCPU *cpu, ThreadID contextId);
   virtual void deactivate();
 
+  bool isActive() const { return this->cpu != nullptr; }
   virtual bool isDone() const;
-
   virtual bool canFetch() const;
   virtual LLVMDynamicInst *fetch();
   virtual void commit(LLVMDynamicInst *inst);
@@ -28,12 +28,12 @@ class LLVMTraceThreadContext {
   }
 
   ThreadID getContextId() const {
-    assert(this->cpu != nullptr &&
+    assert(this->isActive() &&
            "This thread is not allocated hardware context.");
     return this->contextId;
   }
 
- private:
+ protected:
   ThreadID threadId;
   DynamicInstructionStream *dynInstStream;
   size_t inflyInsts;

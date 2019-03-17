@@ -7,18 +7,33 @@
 #include "sim/sim_exit.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
-    : BaseCPU(params), pageTable(params->name + ".page_table", 0),
+    : BaseCPU(params),
+      pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
-      itb(params->itb), dtb(params->dtb), fuPool(params->fuPool),
-      regionStats(nullptr), currentStackDepth(0), warmUpTick(0),
-      process(nullptr), thread_context(nullptr), stackMin(0),
-      fetchStage(params, this), decodeStage(params, this),
-      renameStage(params, this), iewStage(params, this),
-      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
-      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
-      driver(params->driver), tickEvent(*this) {
+      traceFileName(params->traceFile),
+      totalCPUs(params->totalCPUs),
+      itb(params->itb),
+      dtb(params->dtb),
+      fuPool(params->fuPool),
+      regionStats(nullptr),
+      currentStackDepth(0),
+      warmUpTick(0),
+      process(nullptr),
+      thread_context(nullptr),
+      stackMin(0),
+      fetchStage(params, this),
+      decodeStage(params, this),
+      renameStage(params, this),
+      iewStage(params, this),
+      commitStage(params, this),
+      fetchToDecode(5, 5),
+      decodeToRename(5, 5),
+      renameToIEW(5, 5),
+      iewToCommit(5, 5),
+      signalBuffer(5, 5),
+      driver(params->driver),
+      tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   assert(this->numThreads < LLVMTraceCPUConstants::MaxContexts &&
@@ -31,6 +46,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   } else {
     this->traceFolder = this->traceFileName.substr(0, slashPos);
   }
+  this->traceExtraFolder = this->traceFileName + ".extra";
 
   // Set the time buffer between stages.
   this->fetchStage.setToDecode(&this->fetchToDecode);

@@ -12,7 +12,7 @@ class LLVMTraceCPU;
 class TDGAcceleratorManager;
 
 class TDGAccelerator {
-public:
+ public:
   TDGAccelerator() {}
   virtual ~TDGAccelerator() {}
 
@@ -36,14 +36,15 @@ public:
    */
   virtual void regStats() {}
 
-protected:
+ protected:
   LLVMTraceCPU *cpu;
   TDGAcceleratorManager *manager;
 };
 
 class StreamEngine;
+class SpeculativePrecomputationManager;
 class TDGAcceleratorManager : public SimObject {
-public:
+ public:
   TDGAcceleratorManager(TDGAcceleratorManagerParams *params);
   ~TDGAcceleratorManager();
 
@@ -62,10 +63,11 @@ public:
   void exitDump();
 
   StreamEngine *getStreamEngine();
+  SpeculativePrecomputationManager *getSpeculativePrecomputationManager();
 
   void regStats() override;
 
-private:
+ private:
   std::list<TDGAccelerator *> accelerators;
 };
 

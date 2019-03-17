@@ -1,0 +1,6 @@
+Import('*')
+
+DebugFlag('SpeculativePrecomputation')
+
+Source('insts.cc')
+Source('speculative_precomputation_manager.cc')

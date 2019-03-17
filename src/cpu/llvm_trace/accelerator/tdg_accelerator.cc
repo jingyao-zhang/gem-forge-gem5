@@ -9,6 +9,7 @@
 
 // Include the accelerators.
 #include "adfa/adfa.hh"
+#include "speculative_precomputation/speculative_precomputation_manager.hh"
 #include "stream/stream_engine.hh"
 
 void TDGAccelerator::handshake(LLVMTraceCPU *_cpu,
@@ -22,12 +23,15 @@ TDGAcceleratorManager::TDGAcceleratorManager(
     : SimObject(params) {
   this->addAccelerator(new AbstractDataFlowAccelerator());
   this->addAccelerator(new StreamEngine());
+  this->addAccelerator(new SpeculativePrecomputationManager());
 }
 
 TDGAcceleratorManager::~TDGAcceleratorManager() {
-  for (auto accelerator : this->accelerators) {
+  for (auto &accelerator : this->accelerators) {
     delete accelerator;
+    accelerator = nullptr;
   }
+  this->accelerators.clear();
 }
 
 void TDGAcceleratorManager::addAccelerator(TDGAccelerator *accelerator) {
@@ -72,6 +76,17 @@ StreamEngine *TDGAcceleratorManager::getStreamEngine() {
   for (auto accelerator : this->accelerators) {
     if (auto se = dynamic_cast<StreamEngine *>(accelerator)) {
       return se;
+    }
+  }
+  panic("Failed to find the stream engine to handle commitStreamStore.");
+}
+
+SpeculativePrecomputationManager *
+TDGAcceleratorManager::getSpeculativePrecomputationManager() {
+  for (auto accelerator : this->accelerators) {
+    if (auto spm =
+            dynamic_cast<SpeculativePrecomputationManager *>(accelerator)) {
+      return spm;
     }
   }
   panic("Failed to find the stream engine to handle commitStreamStore.");
