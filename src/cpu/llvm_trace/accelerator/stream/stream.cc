@@ -9,44 +9,46 @@
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define STREAM_DPRINTF(format, args...)                                        \
-  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(),   \
+#define STREAM_DPRINTF(format, args...)                                      \
+  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(), \
           ##args)
 
-#define STREAM_ENTRY_DPRINTF(entry, format, args...)                           \
-  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
+#define STREAM_ENTRY_DPRINTF(entry, format, args...)                      \
+  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
                  (entry).idx.entryIdx, ##args)
 
-#define STREAM_HACK(format, args...)                                           \
+#define STREAM_HACK(format, args...) \
   hack("Stream %s: " format, this->getStreamName().c_str(), ##args)
 
-#define STREAM_ENTRY_HACK(entry, format, args...)                              \
-  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance,         \
+#define STREAM_ENTRY_HACK(entry, format, args...)                      \
+  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
               (entry).idx.entryIdx, ##args)
 
-#define STREAM_PANIC(format, args...)                                          \
-  {                                                                            \
-    this->dump();                                                              \
-    panic("Stream %s: " format, this->getStreamName().c_str(), ##args);        \
+#define STREAM_PANIC(format, args...)                                   \
+  {                                                                     \
+    this->dump();                                                       \
+    panic("Stream %s: " format, this->getStreamName().c_str(), ##args); \
   }
 
-#define STREAM_ENTRY_PANIC(entry, format, args...)                             \
-  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
+#define STREAM_ENTRY_PANIC(entry, format, args...)                      \
+  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
                size_t _maxRunAHeadLength, const std::string &_throttling)
-    : cpu(_cpu), se(_se), isOracle(_isOracle),
+    : cpu(_cpu),
+      se(_se),
+      isOracle(_isOracle),
       firstConfigSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
       configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),
-      maxRunAHeadLength(_maxRunAHeadLength), runAHeadLength(_maxRunAHeadLength),
+      endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+      storedData(nullptr),
+      maxRunAHeadLength(_maxRunAHeadLength),
+      runAHeadLength(_maxRunAHeadLength),
       throttling(_throttling) {
-
   /**
    * Throttling information initialization.
    */
-  this->lateFetchCount = 0;
   if (this->throttling != "static") {
     // We are doing dynamic throttling, we should start with a small
     // runAHeadLength and slowly increasing.
@@ -63,6 +65,7 @@ Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
   this->stepSize = 0;
   this->maxSize = _maxRunAHeadLength;
   this->stepRootStream = nullptr;
+  this->lateFetchCount = 0;
 }
 
 Stream::~Stream() {
@@ -232,9 +235,10 @@ void Stream::configure(StreamConfigInst *inst) {
   // Reset the FIFOIdx.
   this->FIFOIdx.newInstance(configSeqNum);
   if (!this->isConfigured()) {
-    STREAM_PANIC("After configure we should immediately be configured with "
-                 "config seq %lu, end seq %lu.",
-                 this->configSeqNum, this->endSeqNum);
+    STREAM_PANIC(
+        "After configure we should immediately be configured with "
+        "config seq %lu, end seq %lu.",
+        this->configSeqNum, this->endSeqNum);
   }
   while (this->FIFO.size() < this->runAHeadLength) {
     this->enqueueFIFO();
@@ -279,8 +283,9 @@ void Stream::store(StreamStoreInst *inst) {
 
   auto entry = this->findCorrectUsedEntry(storeSeqNum);
   if (entry == nullptr) {
-    STREAM_PANIC("Try to store when there is no available entry. Something "
-                 "wrong in isReady.");
+    STREAM_PANIC(
+        "Try to store when there is no available entry. Something "
+        "wrong in isReady.");
   }
 
   if (entry->stored()) {
@@ -472,8 +477,8 @@ Stream::FIFOEntry *Stream::findCorrectUsedEntry(uint64_t userSeqNum) {
   return nullptr;
 }
 
-const Stream::FIFOEntry *
-Stream::findCorrectUsedEntry(uint64_t userSeqNum) const {
+const Stream::FIFOEntry *Stream::findCorrectUsedEntry(
+    uint64_t userSeqNum) const {
   for (const auto &entry : this->FIFO) {
     if (entry.stepSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
       // This entry has not been stepped.
@@ -840,12 +845,18 @@ void Stream::throttleLate() {
 Stream::FIFOEntry::FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
                              const uint64_t _address, uint64_t _size,
                              const uint64_t _prevSeqNum)
-    : idx(_idx), oracleUsed(_oracleUsed), address(_address), size(_size),
-      cacheBlocks(0), isAddressValid(false), isValueValid(false), used(false),
-      inflyLoadPackets(0), prevSeqNum(_prevSeqNum),
+    : idx(_idx),
+      oracleUsed(_oracleUsed),
+      address(_address),
+      size(_size),
+      cacheBlocks(0),
+      isAddressValid(false),
+      isValueValid(false),
+      used(false),
+      inflyLoadPackets(0),
+      prevSeqNum(_prevSeqNum),
       stepSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
       storeSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {
-
   // Initialize the cache blocks it touched.
   constexpr int cacheBlockSize = 64;
   auto lhsCacheBlock = this->address & (~(cacheBlockSize - 1));
@@ -853,9 +864,10 @@ Stream::FIFOEntry::FIFOEntry(const FIFOEntryIdx &_idx, const bool _oracleUsed,
       (this->address + this->size - 1) & (~(cacheBlockSize - 1));
   while (lhsCacheBlock <= rhsCacheBlock) {
     if (this->cacheBlocks >= FIFOEntry::MAX_CACHE_BLOCKS) {
-      panic("More than %d cache blocks for one stream element, address %lu "
-            "size %lu.",
-            this->cacheBlocks, this->address, this->size);
+      panic(
+          "More than %d cache blocks for one stream element, address %lu "
+          "size %lu.",
+          this->cacheBlocks, this->address, this->size);
     }
     this->cacheBlockAddrs[this->cacheBlocks] = lhsCacheBlock;
     this->cacheBlocks++;

@@ -16,6 +16,8 @@ struct StreamElement : public TDGPacketHandler {
   bool isValueReady;
 
   Cycles allocateCycle;
+  Cycles valueReadyCycle;
+  Cycles firstCheckCycle;
 
   /**
    * Small vector stores the cache blocks this element touched.

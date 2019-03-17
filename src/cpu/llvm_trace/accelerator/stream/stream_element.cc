@@ -1,5 +1,7 @@
 #include "stream_element.hh"
 
+#include "cpu/llvm_trace/llvm_trace_cpu.hh"
+
 StreamElement::StreamElement() { this->clear(); }
 
 void StreamElement::clear() {
@@ -10,6 +12,8 @@ void StreamElement::clear() {
   this->isValueReady = false;
 
   this->allocateCycle = Cycles(0);
+  this->valueReadyCycle = Cycles(0);
+  this->firstCheckCycle = Cycles(0);
 
   this->cacheBlocks = 0;
   this->size = 0;
@@ -25,6 +29,7 @@ void StreamElement::handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) {
   this->inflyLoadPackets.erase(packet);
   if (this->inflyLoadPackets.size() == 0) {
     this->isValueReady = true;
+    this->valueReadyCycle = cpu->curCycle();
   }
 }
 

@@ -9,29 +9,29 @@
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define STREAM_DPRINTF(format, args...)                                        \
-  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(),   \
+#define STREAM_DPRINTF(format, args...)                                      \
+  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(), \
           ##args)
 
-#define STREAM_ENTRY_DPRINTF(entry, format, args...)                           \
-  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
+#define STREAM_ENTRY_DPRINTF(entry, format, args...)                      \
+  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
                  (entry).idx.entryIdx, ##args)
 
-#define STREAM_HACK(format, args...)                                           \
+#define STREAM_HACK(format, args...) \
   hack("Stream %s: " format, this->getStreamName().c_str(), ##args)
 
-#define STREAM_ENTRY_HACK(entry, format, args...)                              \
-  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance,         \
+#define STREAM_ENTRY_HACK(entry, format, args...)                      \
+  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
               (entry).idx.entryIdx, ##args)
 
-#define STREAM_PANIC(format, args...)                                          \
-  {                                                                            \
-    this->dump();                                                              \
-    panic("Stream %s: " format, this->getStreamName().c_str(), ##args);        \
+#define STREAM_PANIC(format, args...)                                   \
+  {                                                                     \
+    this->dump();                                                       \
+    panic("Stream %s: " format, this->getStreamName().c_str(), ##args); \
   }
 
-#define STREAM_ENTRY_PANIC(entry, format, args...)                             \
-  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
+#define STREAM_ENTRY_PANIC(entry, format, args...)                      \
+  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
                (entry).idx.entryIdx, ##args)
 
 SingleStream::SingleStream(
@@ -39,10 +39,10 @@ SingleStream::SingleStream(
     LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
     size_t _maxRunAHeadLength, const std::string &_throttling)
     : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength, _throttling) {
-
   const auto &streamName = configInst.stream_name();
   const auto &streamId = configInst.stream_id();
-  const auto &infoPath = configInst.info_path();
+  const auto &relativeInfoPath = configInst.info_path();
+  auto infoPath = cpu->getTraceExtraFolder() + "/" + relativeInfoPath;
   ProtoInputStream infoIStream(infoPath);
   if (!infoIStream.read(this->info)) {
     STREAM_PANIC(
@@ -63,8 +63,10 @@ SingleStream::SingleStream(
         streamId, this->info.id());
   }
 
-  this->history = std::unique_ptr<StreamHistory>(
-      new StreamHistory(this->info.history_path()));
+  const auto &relativeHistoryPath = this->info.history_path();
+  auto historyPath = cpu->getTraceExtraFolder() + "/" + relativeHistoryPath;
+  this->history =
+      std::unique_ptr<StreamHistory>(new StreamHistory(historyPath));
 
   for (const auto &baseStreamId : this->info.chosen_base_streams()) {
     auto baseStream = this->se->getStream(baseStreamId.id());
@@ -127,7 +129,6 @@ void SingleStream::prepareNewElement(StreamElement *element) {
 }
 
 void SingleStream::enqueueFIFO() {
-
   bool oracleUsed = false;
   auto nextValuePair = this->history->getNextAddr(oracleUsed);
   STREAM_DPRINTF(
@@ -184,8 +185,9 @@ void SingleStream::handlePacketResponse(const FIFOEntryIdx &entryId,
         // We actually ingore the data here.
         STREAM_ENTRY_DPRINTF(entry, "Received load stream packet.\n");
         if (entry.inflyLoadPackets == 0) {
-          STREAM_ENTRY_PANIC(entry, "Received load stream packet when there is "
-                                    "no infly load packets.");
+          STREAM_ENTRY_PANIC(entry,
+                             "Received load stream packet when there is "
+                             "no infly load packets.");
         }
         entry.inflyLoadPackets--;
         if (entry.inflyLoadPackets == 0) {
@@ -204,7 +206,6 @@ void SingleStream::handlePacketResponse(const FIFOEntryIdx &entryId,
 }
 
 void SingleStream::markAddressReady(FIFOEntry &entry) {
-
   if (entry.isAddressValid) {
     STREAM_ENTRY_PANIC(entry, "The entry is already address ready.");
   }
@@ -233,7 +234,6 @@ void SingleStream::markAddressReady(FIFOEntry &entry) {
   bool useNewMerge = true;
 
   if (useNewMerge) {
-
     for (int i = 0; i < entry.cacheBlocks; ++i) {
       const auto cacheBlockAddr = entry.cacheBlockAddrs[i];
       Addr paddr;

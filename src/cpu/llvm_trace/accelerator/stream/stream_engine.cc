@@ -18,20 +18,18 @@ void debugStream(Stream *S, const char *message) {
          S->getStreamName().c_str(), S->configured, S->stepSize, S->allocSize);
 }
 
-} // namespace
+}  // namespace
 
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false) {}
 
 StreamEngine::~StreamEngine() {
-
   if (this->streamPlacementManager != nullptr) {
     delete this->streamPlacementManager;
   }
 
   // Clear all the allocated streams.
   for (auto &streamIdStreamPair : this->streamMap) {
-
     /**
      * Be careful here as CoalescedStream are not newed, no need to delete them.
      */
@@ -56,7 +54,11 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   // this->maxTotalRunAheadLength =
   // cpuParams->streamEngineMaxTotalRunAHeadLength;
   this->maxTotalRunAheadLength = this->maxRunAHeadLength * 512;
-  this->throttling = cpuParams->streamEngineThrottling;
+  if (cpuParams->streamEngineThrottling == "static") {
+    this->throttling = ThrottlingE::STATIC;
+  } else {
+    this->throttling = ThrottlingE::DYNAMIC;
+  }
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
   this->enableMerge = cpuParams->streamEngineEnableMerge;
   this->enableStreamPlacement = cpuParams->streamEngineEnablePlacement;
@@ -117,8 +119,9 @@ void StreamEngine::regStats() {
       .prereq(this->numMemElementsUsed);
   this->memEntryWaitCycles
       .name(this->manager->name() + ".stream.memEntryWaitCycles")
-      .desc("Number of cycles of a mem entry from first checked ifReady to "
-            "ready.")
+      .desc(
+          "Number of cycles of a mem entry from first checked ifReady to "
+          "ready.")
       .prereq(this->memEntryWaitCycles);
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -195,7 +198,6 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
 }
 
 void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
-
   assert(this->canStreamConfig(inst) && "Cannot configure stream.");
 
   this->numConfigured++;
@@ -269,7 +271,6 @@ bool StreamEngine::canStreamStep(const StreamStepInst *inst) const {
 }
 
 void StreamEngine::dispatchStreamStep(StreamStepInst *inst) {
-
   /**
    * For all the streams get stepped, increase the stepped pointer.
    */
@@ -333,7 +334,6 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
 }
 
 void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
-
   assert(this->userElementMap.count(inst) == 0);
 
   auto &elementSet =
@@ -356,7 +356,6 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
     if (!S->configured) {
       elementSet.insert(nullptr);
     } else {
-
       if (S->allocSize <= S->stepSize) {
         inst->dumpBasic();
         this->dumpFIFO();
@@ -372,17 +371,26 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
 bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) != 0);
 
+  bool ready = true;
   for (auto &element : this->userElementMap.at(inst)) {
     if (element == nullptr) {
-      // Use after stream end.
+      /**
+       * Sometimes thiere is use after stream end,
+       * in such case we assume the element is copied to register and
+       * is ready.
+       */
       continue;
     }
+    // Mark the first check cycle.
+    if (element->firstCheckCycle == 0) {
+      element->firstCheckCycle = cpu->curCycle();
+    }
     if (!element->isValueReady) {
-      return false;
+      ready = false;
     }
   }
 
-  return true;
+  return ready;
 }
 
 void StreamEngine::executeStreamUser(LLVMDynamicInst *inst) {
@@ -396,7 +404,6 @@ void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
 }
 
 void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
-
   auto S = this->getStream(inst->getTDG().stream_end().stream_id());
 
   assert(S->configured && "Stream should be configured.");
@@ -465,9 +472,8 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {}
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
 
-CoalescedStream *
-StreamEngine::getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
-                                             int32_t coalesceGroup) {
+CoalescedStream *StreamEngine::getOrInitializeCoalescedStream(
+    uint64_t stepRootStreamId, int32_t coalesceGroup) {
   auto stepRootIter = this->coalescedStreamMap.find(stepRootStreamId);
   if (stepRootIter == this->coalescedStreamMap.end()) {
     stepRootIter = this->coalescedStreamMap
@@ -484,8 +490,7 @@ StreamEngine::getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
             .emplace(std::piecewise_construct,
                      std::forward_as_tuple(coalesceGroup),
                      std::forward_as_tuple(cpu, this, this->isOracle,
-                                           this->maxRunAHeadLength,
-                                           this->throttling))
+                                           this->maxRunAHeadLength, "static"))
             .first;
   }
 
@@ -497,14 +502,13 @@ Stream *StreamEngine::getOrInitializeStream(
   const auto &streamId = configInst.stream_id();
   auto iter = this->streamMap.find(streamId);
   if (iter == this->streamMap.end()) {
-
     /**
      * The configInst does not contain much information,
      * we need to load the info protobuf file.
      * Luckily, this would only happen once for every stream.
      */
-    auto streamInfo =
-        StreamEngine::parseStreamInfoFromFile(configInst.info_path());
+    auto infoPath = cpu->getTraceExtraFolder() + "/" + configInst.info_path();
+    auto streamInfo = StreamEngine::parseStreamInfoFromFile(infoPath);
     auto coalesceGroup = streamInfo.coalesce_group();
 
     Stream *newStream = nullptr;
@@ -531,7 +535,7 @@ Stream *StreamEngine::getOrInitializeStream(
 
     } else {
       newStream = new SingleStream(configInst, cpu, this, this->isOracle,
-                                   this->maxRunAHeadLength, this->throttling);
+                                   this->maxRunAHeadLength, "static");
     }
 
     iter =
@@ -590,8 +594,8 @@ void StreamEngine::updateAliveStatistics() {
   this->numTotalAliveMemStreams.sample(totalAliveMemStreams);
 }
 
-LLVM::TDG::StreamInfo
-StreamEngine::parseStreamInfoFromFile(const std::string &infoPath) {
+LLVM::TDG::StreamInfo StreamEngine::parseStreamInfoFromFile(
+    const std::string &infoPath) {
   ProtoInputStream infoIStream(infoPath);
   LLVM::TDG::StreamInfo info;
   if (!infoIStream.read(info)) {
@@ -614,8 +618,8 @@ void StreamEngine::initializeFIFO(size_t totalElements) {
   }
 }
 
-const std::list<Stream *> &
-StreamEngine::getStepStreamList(Stream *stepS) const {
+const std::list<Stream *> &StreamEngine::getStepStreamList(
+    Stream *stepS) const {
   if (this->memorizedStreamStepListMap.count(stepS) != 0) {
     return this->memorizedStreamStepListMap.at(stepS);
   }
@@ -704,7 +708,6 @@ void StreamEngine::allocateElement(Stream *S) {
     }
 
     if (baseS->stepRootStream == S->stepRootStream) {
-
       if (baseS->allocSize - baseS->stepSize <= S->allocSize - S->stepSize) {
         this->dumpFIFO();
         panic("Base %s has not enough allocated element for %s.",
@@ -740,9 +743,10 @@ void StreamEngine::allocateElement(Stream *S) {
         (newElement->addr + newElement->size - 1) & (~(cacheBlockSize - 1));
     while (lhsCacheBlock <= rhsCacheBlock) {
       if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic("More than %d cache blocks for one stream element, address %lu "
-              "size %lu.",
-              newElement->cacheBlocks, newElement->addr, newElement->size);
+        panic(
+            "More than %d cache blocks for one stream element, address %lu "
+            "size %lu.",
+            newElement->cacheBlocks, newElement->addr, newElement->size);
       }
       newElement->cacheBlockAddrs[newElement->cacheBlocks] = lhsCacheBlock;
       newElement->cacheBlocks++;
@@ -757,6 +761,7 @@ void StreamEngine::allocateElement(Stream *S) {
     // IV stream already ready.
     newElement->isAddrReady = true;
     newElement->isValueReady = true;
+    newElement->valueReadyCycle = cpu->curCycle();
   }
 
   // Append to the list.
@@ -773,6 +778,9 @@ void StreamEngine::releaseElement(Stream *S) {
   if (releaseElement->stored) {
     this->issueElement(releaseElement);
   }
+
+  // Throttling.
+  this->throttleStream(S, releaseElement);
 
   S->tail->next = releaseElement->next;
   if (S->stepped == releaseElement) {
@@ -826,7 +834,6 @@ void StreamEngine::issueElements() {
 }
 
 void StreamEngine::issueElement(StreamElement *element) {
-
   assert(element->isAddrReady && "Address should be ready.");
 
   assert(element->stream->isMemStream() &&
@@ -855,6 +862,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     } else if (S->getStreamType() == "store") {
       // Store can be directly value ready.
       element->isValueReady = true;
+      element->valueReadyCycle = cpu->curCycle();
     }
   }
 }
@@ -871,5 +879,46 @@ void StreamEngine::dumpFIFO() const {
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
     debugStream(S, "");
+  }
+}
+
+void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
+  if (this->throttling == ThrottlingE::STATIC) {
+    // Static means no throttling.
+    return;
+  }
+  if (element->valueReadyCycle == 0 || element->firstCheckCycle == 0) {
+    // No valid cycle record, do nothing.
+    return;
+  }
+  if (element->valueReadyCycle < element->firstCheckCycle) {
+    // The element is ready earlier than user, do nothing.
+    return;
+  }
+  // This is a late fetch, increase the counter.
+  S->lateFetchCount++;
+  if (S->lateFetchCount == 10) {
+    // We have reached the threshold to allow the stream to run further ahead.
+    auto oldRunAheadSize = S->maxSize;
+    // Get the step root stream.
+    auto stepRootStream = S->stepRootStream;
+    // All streams with the same stepRootStream must have the same run ahead
+    // length.
+    const auto &streamList = this->getStepStreamList(stepRootStream);
+    auto totalRunAheadLength = streamList.size() * stepRootStream->maxSize;
+    // Only increase the run ahead length if the totalRunAheadLength is within
+    // the 90% of the total FIFO entries. Need better solution here.
+    if (totalRunAheadLength < 0.9 * this->FIFOArray.size()) {
+      for (auto S : streamList) {
+        // Increase the run ahead length by 2.
+        S->maxSize += 2;
+      }
+      assert(S->maxSize == oldRunAheadSize + 2 &&
+             "RunAheadLength is not increased.");
+    }
+    // No matter what, clear the lateFetchCount for all streams.
+    for (auto S : streamList) {
+      S->lateFetchCount = 0;
+    }
   }
 }

@@ -75,6 +75,7 @@ public:
   size_t stepSize;
   size_t maxSize;
   FIFOEntryIdx FIFOIdx;
+  int lateFetchCount;
 
   Stream *stepRootStream;
   std::unordered_set<Stream *> baseStreams;
@@ -321,7 +322,6 @@ protected:
    * For throttler.
    * TODO: extract to another class.
    */
-  int lateFetchCount;
   void throttleLate();
 
   /**
