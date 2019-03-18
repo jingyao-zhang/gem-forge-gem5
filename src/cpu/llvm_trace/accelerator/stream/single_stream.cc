@@ -35,13 +35,13 @@
                (entry).idx.entryIdx, ##args)
 
 SingleStream::SingleStream(
-    const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
+    const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig &config,
     LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
     size_t _maxRunAHeadLength, const std::string &_throttling)
     : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength, _throttling) {
-  const auto &streamName = configInst.stream_name();
-  const auto &streamId = configInst.stream_id();
-  const auto &relativeInfoPath = configInst.info_path();
+  const auto &streamName = config.stream_name();
+  const auto &streamId = config.stream_id();
+  const auto &relativeInfoPath = config.info_path();
   auto infoPath = cpu->getTraceExtraFolder() + "/" + relativeInfoPath;
   ProtoInputStream infoIStream(infoPath);
   if (!infoIStream.read(this->info)) {

@@ -20,9 +20,8 @@ StreamConfigInst::StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
   if (!this->TDG.has_stream_config()) {
     panic("StreamConfigInst with missing protobuf field.");
   }
-  DPRINTF(StreamEngine, "Parsed StreamConfigInst to configure stream %lu, %s\n",
-          this->TDG.stream_config().stream_name().c_str(),
-          this->TDG.stream_config().stream_id());
+  DPRINTF(StreamEngine, "Parsed StreamConfigInst to configure loop %s\n",
+          this->TDG.stream_config().loop().c_str());
 }
 
 bool StreamConfigInst::canDispatch(LLVMTraceCPU *cpu) const {
@@ -47,13 +46,13 @@ void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
 }
 
 uint64_t StreamConfigInst::getStreamId() const {
-  return this->TDG.stream_config().stream_id();
+  panic("no more stream id for config.");
+  return 0;
 }
 
 void StreamConfigInst::dumpBasic() const {
-  inform("Inst seq %lu, id %lu, op %s, stream %s.\n", this->seqNum,
-         this->getId(), this->getInstName().c_str(),
-         this->TDG.stream_config().stream_name());
+  inform("Inst seq %lu, id %lu, op %s, loop %s.\n", this->seqNum, this->getId(),
+         this->getInstName().c_str(), this->TDG.stream_config().loop());
 }
 
 StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
@@ -141,8 +140,8 @@ StreamEndInst::StreamEndInst(const LLVM::TDG::TDGInstruction &_TDG)
   if (!this->TDG.has_stream_end()) {
     panic("StreamEndInst with missing protobuf field.");
   }
-  DPRINTF(StreamEngine, "Parsed StreamEndInst to stream %lu.\n",
-          this->TDG.stream_end().stream_id());
+  DPRINTF(StreamEngine, "Parsed StreamEndInst to loop %s.\n",
+          this->TDG.stream_end().loop().c_str());
 }
 
 void StreamEndInst::dispatch(LLVMTraceCPU *cpu) {
@@ -158,7 +157,8 @@ void StreamEndInst::commit(LLVMTraceCPU *cpu) {
 }
 
 uint64_t StreamEndInst::getStreamId() const {
-  return this->TDG.stream_end().stream_id();
+  panic("no more stream id for end.");
+  return 0;
 }
 
 LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst) {

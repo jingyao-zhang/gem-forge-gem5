@@ -21,7 +21,8 @@ class StreamInst;
  */
 class LogicalStream {
 public:
-  LogicalStream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);
+  LogicalStream(const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig
+                    &configInst);
 
   LogicalStream(const LogicalStream &Other) = delete;
   LogicalStream(LogicalStream &&Other) = delete;

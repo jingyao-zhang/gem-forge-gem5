@@ -15,9 +15,10 @@
 
 class SingleStream : public Stream {
 public:
-  SingleStream(const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst,
-               LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
-               size_t _maxRunAHeadLength, const std::string &_throttling);
+  SingleStream(
+      const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig &config,
+      LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
+      size_t _maxRunAHeadLength, const std::string &_throttling);
 
   ~SingleStream();
 
@@ -27,7 +28,7 @@ public:
   uint32_t getConfigLoopLevel() const override;
   int32_t getElementSize() const override;
 
-  void prepareNewElement(StreamElement* element) override;
+  void prepareNewElement(StreamElement *element) override;
 
   void configure(StreamConfigInst *inst) override;
 

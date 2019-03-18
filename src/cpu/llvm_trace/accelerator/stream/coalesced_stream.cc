@@ -12,7 +12,7 @@
   panic("Logical Stream %s: " format, (S)->info.name().c_str(), ##args)
 
 LogicalStream::LogicalStream(
-    const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst) {
+    const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig &configInst) {
 
   const auto &streamName = configInst.stream_name();
   const auto &streamId = configInst.stream_id();

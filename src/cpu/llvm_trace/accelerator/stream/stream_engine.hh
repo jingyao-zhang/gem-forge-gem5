@@ -114,6 +114,7 @@ private:
 
   std::vector<StreamElement> FIFOArray;
   StreamElement *FIFOFreeListHead;
+  size_t numFreeFIFOEntries;
 
   /**
    * Map from the user instruction to all the actual element to use.
@@ -154,7 +155,7 @@ private:
   std::string placement;
 
   Stream *getOrInitializeStream(
-      const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst);
+      const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig &config);
 
   CoalescedStream *getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
                                                   int32_t coalesceGroup);
@@ -166,6 +167,9 @@ private:
   parseStreamInfoFromFile(const std::string &infoPath);
 
   void initializeFIFO(size_t totalElements);
+  void addFreeElement(StreamElement *S);
+  StreamElement *removeFreeElement();
+  bool hasFreeElement() const;
 
   // Memorize the step stream list.
   mutable std::unordered_map<Stream *, std::list<Stream *>>

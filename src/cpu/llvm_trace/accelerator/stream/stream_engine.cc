@@ -181,17 +181,24 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
    * If this this the first time we encounter the stream, we check the number of
    * free entries. Otherwise, we ALSO ensure that allocSize < maxSize.
    */
-  if (this->FIFOFreeListHead == nullptr) {
-    // No more free entries.
+
+  if (this->numFreeFIFOEntries <
+      inst->getTDG().stream_config().configs_size()) {
+    // Not enough free entries for each stream.
     return false;
   }
-  auto iter = this->streamMap.find(inst->getTDG().stream_config().stream_id());
-  if (iter != this->streamMap.end()) {
-    // Check if we have quota for this stream.
-    auto S = iter->second;
-    if (S->allocSize == S->maxSize) {
-      // No more quota.
-      return false;
+  const auto &configs = inst->getTDG().stream_config().configs();
+
+  for (const auto &config : configs) {
+    auto stream_id = config.stream_id();
+    auto iter = this->streamMap.find(stream_id);
+    if (iter != this->streamMap.end()) {
+      // Check if we have quota for this stream.
+      auto S = iter->second;
+      if (S->allocSize == S->maxSize) {
+        // No more quota.
+        return false;
+      }
     }
   }
   return true;
@@ -201,48 +208,73 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   assert(this->canStreamConfig(inst) && "Cannot configure stream.");
 
   this->numConfigured++;
-  auto S = this->getOrInitializeStream(inst->getTDG().stream_config());
 
-  assert(!S->configured && "The stream should not be configured.");
-  S->configured = true;
+  const auto &configs = inst->getTDG().stream_config().configs();
+  std::list<Stream *> configStreams;
+  for (const auto &config : configs) {
+    auto S = this->getOrInitializeStream(config);
+    assert(!S->configured && "The stream should not be configured.");
+    S->configured = true;
 
-  /**
-   * 1. Clear all elements between stepHead and allocHead.
-   * 2. Create the new index.
-   * 3. Allocate more entries.
-   */
+    /**
+     * 1. Clear all elements between stepHead and allocHead.
+     * 2. Create the new index.
+     * 3. Allocate more entries.
+     */
 
-  // 1. Release elements.
-  while (S->allocSize > S->stepSize) {
-    assert(S->stepped->next != nullptr && "Missing next element.");
-    auto releaseElement = S->stepped->next;
-    S->stepped->next = releaseElement->next;
-    S->allocSize--;
-    if (S->head == releaseElement) {
-      S->head = S->stepped;
+    // 1. Release elements.
+    while (S->allocSize > S->stepSize) {
+      assert(S->stepped->next != nullptr && "Missing next element.");
+      auto releaseElement = S->stepped->next;
+      S->stepped->next = releaseElement->next;
+      S->allocSize--;
+      if (S->head == releaseElement) {
+        S->head = S->stepped;
+      }
+      this->addFreeElement(releaseElement);
     }
-    releaseElement->clear();
-    releaseElement->next = this->FIFOFreeListHead;
-    this->FIFOFreeListHead = releaseElement;
+
+    // Only to configure the history for single stream.
+    S->configure(inst);
+
+    // 2. Create new index.
+    S->FIFOIdx.newInstance(inst->getSeqNum());
+
+    configStreams.push_back(S);
   }
 
-  // Only to configure the history for single stream.
-  S->configure(inst);
-
-  // 2. Create new index.
-  S->FIFOIdx.newInstance(inst->getSeqNum());
-
-  // 3. Allocate new entries.
-  // So far let's take a simple approach: fixed run ahead length for each
-  // stream.
-  while (S->allocSize < S->maxSize && this->FIFOFreeListHead != nullptr) {
-    if (!this->areBaseElementAllocated(S)) {
-      break;
-    }
+  // 3. Allocate new entries one by one for all streams.
+  // The first element is guaranteed to be allocated.
+  for (auto S : configStreams) {
+    assert(this->hasFreeElement());
+    assert(S->allocSize < S->maxSize);
+    assert(this->areBaseElementAllocated(S));
     this->allocateElement(S);
   }
-  if (isDebugStream(S)) {
-    debugStream(S, "Dispatch Config");
+  // Allocate the remaining free entries.
+  while (this->hasFreeElement()) {
+    bool allocated = false;
+    for (auto S : configStreams) {
+      if (S->allocSize == S->maxSize) {
+        // This stream has already reached the run ahead limit.
+        continue;
+      }
+      if (!this->areBaseElementAllocated(S)) {
+        // The base element is not yet allocated.
+        continue;
+      }
+      this->allocateElement(S);
+      allocated = true;
+    }
+    if (!allocated) {
+      // No more streams can be allocate more entries.
+      break;
+    }
+  }
+  for (auto S : configStreams) {
+    if (isDebugStream(S)) {
+      debugStream(S, "Dispatch Config");
+    }
   }
 }
 
@@ -333,10 +365,10 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
    * Then increment the target.
    */
   for (size_t targetSize = 1;
-       targetSize <= stepStream->maxSize && this->FIFOFreeListHead != nullptr;
+       targetSize <= stepStream->maxSize && this->hasFreeElement();
        ++targetSize) {
     for (auto S : stepStreams) {
-      if (this->FIFOFreeListHead == nullptr) {
+      if (!this->hasFreeElement()) {
         break;
       }
       if (!S->configured) {
@@ -428,51 +460,64 @@ void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
 }
 
 void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
-  auto S = this->getStream(inst->getTDG().stream_end().stream_id());
 
-  assert(S->configured && "Stream should be configured.");
+  const auto &endStreamIds = inst->getTDG().stream_end().stream_ids();
 
-  /**
-   * 1. Step one element (retain one last element).
-   * 2. Release all unstepped allocated element.
-   * 3. Mark the stream to be unconfigured.
-   */
+  for (auto iter = endStreamIds.rbegin(), end = endStreamIds.rend();
+       iter != end; ++iter) {
+    // Release in reverse order.
+    auto streamId = *iter;
+    auto S = this->getStream(streamId);
 
-  // 1. Step one element.
-  assert(S->allocSize > S->stepSize &&
-         "Should have at least one unstepped allocate element.");
-  S->stepped = S->stepped->next;
-  S->stepSize++;
+    assert(S->configured && "Stream should be configured.");
 
-  // 2. Release allocated but unstepped elements.
-  while (S->allocSize > S->stepSize) {
-    assert(S->stepped->next != nullptr && "Missing next element.");
-    auto releaseElement = S->stepped->next;
-    S->stepped->next = releaseElement->next;
-    S->allocSize--;
-    if (S->head == releaseElement) {
-      S->head = S->stepped;
+    /**
+     * 1. Step one element (retain one last element).
+     * 2. Release all unstepped allocated element.
+     * 3. Mark the stream to be unconfigured.
+     */
+
+    // 1. Step one element.
+    assert(S->allocSize > S->stepSize &&
+           "Should have at least one unstepped allocate element.");
+    S->stepped = S->stepped->next;
+    S->stepSize++;
+
+    // 2. Release allocated but unstepped elements.
+    while (S->allocSize > S->stepSize) {
+      assert(S->stepped->next != nullptr && "Missing next element.");
+      auto releaseElement = S->stepped->next;
+      S->stepped->next = releaseElement->next;
+      S->allocSize--;
+      if (S->head == releaseElement) {
+        S->head = S->stepped;
+      }
+      this->addFreeElement(releaseElement);
     }
-    releaseElement->clear();
-    releaseElement->next = this->FIFOFreeListHead;
-    this->FIFOFreeListHead = releaseElement;
-  }
 
-  // 3. Makr the stream to be unconfigured.
-  S->configured = false;
-  if (isDebugStream(S)) {
-    debugStream(S, "Dispatch End");
+    // 3. Mark the stream to be unconfigured.
+    S->configured = false;
+    if (isDebugStream(S)) {
+      debugStream(S, "Dispatch End");
+    }
   }
 }
 
 void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
-  /**
-   * Release the last element we stepped at dispatch.
-   */
-  auto S = this->getStream(inst->getTDG().stream_end().stream_id());
-  this->releaseElement(S);
-  if (isDebugStream(S)) {
-    debugStream(S, "Commit End");
+  const auto &endStreamIds = inst->getTDG().stream_end().stream_ids();
+
+  for (auto iter = endStreamIds.rbegin(), end = endStreamIds.rend();
+       iter != end; ++iter) {
+    // Release in reverse order.
+    auto streamId = *iter;
+    auto S = this->getStream(streamId);
+    /**
+     * Release the last element we stepped at dispatch.
+     */
+    this->releaseElement(S);
+    if (isDebugStream(S)) {
+      debugStream(S, "Commit End");
+    }
   }
 }
 
@@ -523,8 +568,8 @@ StreamEngine::getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
 }
 
 Stream *StreamEngine::getOrInitializeStream(
-    const LLVM::TDG::TDGInstruction_StreamConfigExtra &configInst) {
-  const auto &streamId = configInst.stream_id();
+    const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig &config) {
+  const auto &streamId = config.stream_id();
   auto iter = this->streamMap.find(streamId);
   if (iter == this->streamMap.end()) {
     /**
@@ -532,7 +577,7 @@ Stream *StreamEngine::getOrInitializeStream(
      * we need to load the info protobuf file.
      * Luckily, this would only happen once for every stream.
      */
-    auto infoPath = cpu->getTraceExtraFolder() + "/" + configInst.info_path();
+    auto infoPath = cpu->getTraceExtraFolder() + "/" + config.info_path();
     auto streamInfo = StreamEngine::parseStreamInfoFromFile(infoPath);
     auto coalesceGroup = streamInfo.coalesce_group();
 
@@ -559,7 +604,7 @@ Stream *StreamEngine::getOrInitializeStream(
       panic("Disabled stream coalesce so far.");
 
     } else {
-      newStream = new SingleStream(configInst, cpu, this, this->isOracle,
+      newStream = new SingleStream(config, cpu, this, this->isOracle,
                                    this->maxRunAHeadLength, "static");
     }
 
@@ -631,10 +676,30 @@ void StreamEngine::initializeFIFO(size_t totalElements) {
     this->FIFOArray.emplace_back();
   }
   this->FIFOFreeListHead = nullptr;
+  this->numFreeFIFOEntries = 0;
   for (auto &element : this->FIFOArray) {
-    element.next = this->FIFOFreeListHead;
-    this->FIFOFreeListHead = &element;
+    this->addFreeElement(&element);
   }
+}
+
+void StreamEngine::addFreeElement(StreamElement *element) {
+  element->clear();
+  element->next = this->FIFOFreeListHead;
+  this->FIFOFreeListHead = element;
+  this->numFreeFIFOEntries++;
+}
+
+StreamElement *StreamEngine::removeFreeElement() {
+  assert(this->hasFreeElement() && "No free element to remove.");
+  auto newElement = this->FIFOFreeListHead;
+  this->FIFOFreeListHead = this->FIFOFreeListHead->next;
+  this->numFreeFIFOEntries--;
+  newElement->clear();
+  return newElement;
+}
+
+bool StreamEngine::hasFreeElement() const {
+  return this->numFreeFIFOEntries > 0;
 }
 
 const std::list<Stream *> &
@@ -712,12 +777,9 @@ bool StreamEngine::areBaseElementAllocated(Stream *S) {
 }
 
 void StreamEngine::allocateElement(Stream *S) {
-  assert(this->FIFOFreeListHead != nullptr);
+  assert(this->hasFreeElement());
   assert(S->configured && "Stream should be configured to allocate element.");
-  auto newElement = this->FIFOFreeListHead;
-  this->FIFOFreeListHead = this->FIFOFreeListHead->next;
-
-  newElement->clear();
+  auto newElement = this->removeFreeElement();
 
   S->FIFOIdx.next();
   newElement->stream = S;
@@ -810,9 +872,7 @@ void StreamEngine::releaseElement(Stream *S) {
   S->stepSize--;
   S->allocSize--;
 
-  releaseElement->clear();
-  releaseElement->next = this->FIFOFreeListHead;
-  this->FIFOFreeListHead = releaseElement;
+  this->addFreeElement(releaseElement);
 }
 
 void StreamEngine::issueElements() {
@@ -886,14 +946,9 @@ void StreamEngine::issueElement(StreamElement *element) {
 }
 
 void StreamEngine::dumpFIFO() const {
-  size_t freeElements = 0;
-  auto freeIter = this->FIFOFreeListHead;
-  while (freeIter != nullptr) {
-    freeIter = freeIter->next;
-    freeElements++;
-  }
   inform("Total elements %d, free %d, totalRunAhead %d\n",
-         this->FIFOArray.size(), freeElements, this->getTotalRunAheadLength());
+         this->FIFOArray.size(), this->numFreeFIFOEntries,
+         this->getTotalRunAheadLength());
 
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
