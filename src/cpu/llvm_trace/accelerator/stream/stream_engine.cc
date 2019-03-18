@@ -19,7 +19,7 @@ void debugStream(Stream *S, const char *message) {
          S->allocSize, S->maxSize);
 }
 
-} // namespace
+}  // namespace
 
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false) {}
@@ -120,8 +120,9 @@ void StreamEngine::regStats() {
       .prereq(this->numMemElementsUsed);
   this->memEntryWaitCycles
       .name(this->manager->name() + ".stream.memEntryWaitCycles")
-      .desc("Number of cycles of a mem entry from first checked ifReady to "
-            "ready.")
+      .desc(
+          "Number of cycles of a mem entry from first checked ifReady to "
+          "ready.")
       .prereq(this->memEntryWaitCycles);
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -262,6 +263,9 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
       if (!this->areBaseElementAllocated(S)) {
         // The base element is not yet allocated.
         continue;
+      }
+      if (!this->hasFreeElement()) {
+        break;
       }
       this->allocateElement(S);
       allocated = true;
@@ -460,7 +464,6 @@ void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
 }
 
 void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
-
   const auto &endStreamIds = inst->getTDG().stream_end().stream_ids();
 
   for (auto iter = endStreamIds.rbegin(), end = endStreamIds.rend();
@@ -541,9 +544,8 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {}
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
 
-CoalescedStream *
-StreamEngine::getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
-                                             int32_t coalesceGroup) {
+CoalescedStream *StreamEngine::getOrInitializeCoalescedStream(
+    uint64_t stepRootStreamId, int32_t coalesceGroup) {
   auto stepRootIter = this->coalescedStreamMap.find(stepRootStreamId);
   if (stepRootIter == this->coalescedStreamMap.end()) {
     stepRootIter = this->coalescedStreamMap
@@ -658,8 +660,8 @@ void StreamEngine::updateAliveStatistics() {
   this->numTotalAliveMemStreams.sample(totalAliveMemStreams);
 }
 
-LLVM::TDG::StreamInfo
-StreamEngine::parseStreamInfoFromFile(const std::string &infoPath) {
+LLVM::TDG::StreamInfo StreamEngine::parseStreamInfoFromFile(
+    const std::string &infoPath) {
   ProtoInputStream infoIStream(infoPath);
   LLVM::TDG::StreamInfo info;
   if (!infoIStream.read(info)) {
@@ -702,8 +704,8 @@ bool StreamEngine::hasFreeElement() const {
   return this->numFreeFIFOEntries > 0;
 }
 
-const std::list<Stream *> &
-StreamEngine::getStepStreamList(Stream *stepS) const {
+const std::list<Stream *> &StreamEngine::getStepStreamList(
+    Stream *stepS) const {
   assert(stepS != nullptr && "stepS is nullptr.");
   if (this->memorizedStreamStepListMap.count(stepS) != 0) {
     return this->memorizedStreamStepListMap.at(stepS);
@@ -827,9 +829,10 @@ void StreamEngine::allocateElement(Stream *S) {
         (newElement->addr + newElement->size - 1) & (~(cacheBlockSize - 1));
     while (lhsCacheBlock <= rhsCacheBlock) {
       if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic("More than %d cache blocks for one stream element, address %lu "
-              "size %lu.",
-              newElement->cacheBlocks, newElement->addr, newElement->size);
+        panic(
+            "More than %d cache blocks for one stream element, address %lu "
+            "size %lu.",
+            newElement->cacheBlocks, newElement->addr, newElement->size);
       }
       newElement->cacheBlockAddrs[newElement->cacheBlocks] = lhsCacheBlock;
       newElement->cacheBlocks++;
