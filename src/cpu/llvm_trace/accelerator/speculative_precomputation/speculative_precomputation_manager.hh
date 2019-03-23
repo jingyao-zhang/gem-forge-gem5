@@ -10,7 +10,7 @@ class SpeculativePrecomputationTriggerInst;
 #include <unordered_map>
 
 class SpeculativePrecomputationThread : public LLVMTraceThreadContext {
- public:
+public:
   SpeculativePrecomputationThread(ThreadID _threadId,
                                   const std::string &_traceFileName,
                                   Addr _criticalPC);
@@ -28,15 +28,21 @@ class SpeculativePrecomputationThread : public LLVMTraceThreadContext {
   /**
    * Increase the number of tokens.
    */
-  void addToken() { this->tokens++; }
+  void addToken() {
+    this->tokens++;
+    this->numTriggeredSlices++;
+    this->numSlices++;
+  }
 
- private:
+private:
   Addr criticalPC;
   size_t tokens;
+  size_t numTriggeredSlices;
+  size_t numSlices;
 };
 
 class SpeculativePrecomputationManager : public TDGAccelerator {
- public:
+public:
   SpeculativePrecomputationManager();
   ~SpeculativePrecomputationManager() override;
 
@@ -48,7 +54,11 @@ class SpeculativePrecomputationManager : public TDGAccelerator {
 
   void regStats() override;
 
- private:
+  Stats::Scalar numTriggeredSlices;
+  Stats::Scalar numSkippedSlices;
+  Stats::Scalar numTriggeredChainSlices;
+
+private:
   std::unordered_map<Addr, SpeculativePrecomputationThread *>
       criticalPCThreadMap;
 };

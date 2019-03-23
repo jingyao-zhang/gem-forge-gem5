@@ -9,7 +9,7 @@ LLVMDecodeStage::LLVMDecodeStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       maxDecodeQueueSize(params->decodeQueueSize),
       fromFetchDelay(params->fetchToDecodeDelay),
       toRenameDelay(params->decodeToRenameDelay),
-      decodeStates(params->numThreads), totalDecodeQueueSize(0),
+      decodeStates(params->hardwareContexts), totalDecodeQueueSize(0),
       lastDecodedContextId(0) {}
 
 void LLVMDecodeStage::setToRename(TimeBuffer<FetchStruct> *toRenameBuffer) {

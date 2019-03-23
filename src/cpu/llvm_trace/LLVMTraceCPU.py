@@ -30,7 +30,9 @@ class LLVMTraceCPU(BaseCPU):
     traceFile = Param.String('', 'The input llvm trace file.')
 
     # Hack information of total cpus.
-    totalCPUs = Param.Unsigned(1, "Total number of CPUs.")
+    totalCPUs = Param.Unsigned(1, 'Total number of CPUs.')
+
+    warmCache = Param.Bool(True, 'Should we warm up the cache.')
 
     driver = Param.LLVMTraceCPUDriver('The driver to control this cpu.')
     maxFetchQueueSize = Param.UInt64(64, 'Maximum size of the fetch queue.')
@@ -68,6 +70,8 @@ class LLVMTraceCPU(BaseCPU):
                                      "Constrains stores only. Loads are constrained by load FUs.")
     # This controls how many load instructions can be issued in one cycle.
     cacheLoadPorts = Param.Unsigned(4, "Cache Load Ports.")
+    # Number of hardware contexts.
+    hardwareContexts = Param.Unsigned(1, "Number of hardware contexts.")
 
     # Parameters for ADFA.
     adfaCoreIssueWidth = Param.Unsigned(16, "Issue width for each abstract dataflow core.")

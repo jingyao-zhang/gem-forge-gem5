@@ -7,33 +7,19 @@
 #include "sim/sim_exit.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
-    : BaseCPU(params),
+    : BaseCPU(params), cpuParams(params),
       pageTable(params->name + ".page_table", 0),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile),
-      totalCPUs(params->totalCPUs),
-      itb(params->itb),
-      dtb(params->dtb),
-      fuPool(params->fuPool),
-      regionStats(nullptr),
-      currentStackDepth(0),
-      warmUpTick(0),
-      process(nullptr),
-      thread_context(nullptr),
-      stackMin(0),
-      fetchStage(params, this),
-      decodeStage(params, this),
-      renameStage(params, this),
-      iewStage(params, this),
-      commitStage(params, this),
-      fetchToDecode(5, 5),
-      decodeToRename(5, 5),
-      renameToIEW(5, 5),
-      iewToCommit(5, 5),
-      signalBuffer(5, 5),
-      driver(params->driver),
-      tickEvent(*this) {
+      traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
+      itb(params->itb), dtb(params->dtb), fuPool(params->fuPool),
+      regionStats(nullptr), currentStackDepth(0), warmUpTick(0),
+      process(nullptr), thread_context(nullptr), stackMin(0),
+      fetchStage(params, this), decodeStage(params, this),
+      renameStage(params, this), iewStage(params, this),
+      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
+      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
+      driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   assert(this->numThreads < LLVMTraceCPUConstants::MaxContexts &&
@@ -64,8 +50,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->decodeStage.setSignal(&this->signalBuffer, -3);
   this->fetchStage.setSignal(&this->signalBuffer, -4);
 
-  // Initialize the active threads.
-  this->activeThreads.resize(this->numThreads, nullptr);
+  // Initialize the hardware contexts.
+  this->activeThreads.resize(params->hardwareContexts, nullptr);
 
   // Initialize the main thread.
   {
@@ -152,10 +138,15 @@ void LLVMTraceCPU::tick() {
     this->accelManager->dump();
   }
 
-  // Warm up the cache.
-  // AdHoc for the cache warm up file name.
+  // First time.
   if (this->numCycles.value() == 0 && this->isStandalone()) {
-    this->warmUpTick = this->warmUpCache(this->traceFileName + ".cache");
+    // Warm up the cache.
+    // AdHoc for the cache warm up file name.
+    if (this->cpuParams->warmCache) {
+      this->warmUpTick = this->warmUpCache(this->traceFileName + ".cache");
+    } else {
+      this->warmUpTick = this->curCycle();
+    }
   }
 
   this->numCycles++;

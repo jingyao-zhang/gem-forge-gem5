@@ -14,7 +14,7 @@ LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
       toCommitDelay(params->iewToCommitDelay), lsq(nullptr),
-      iewStates(params->numThreads) {
+      iewStates(params->hardwareContexts) {
   this->lsq =
       new TDGLoadStoreQueue(this->cpu, this, this->loadQueueSize,
                             this->storeQueueSize, params->cacheStorePorts);

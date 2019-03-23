@@ -2,7 +2,7 @@
 
 LLVMTraceThreadContext::LLVMTraceThreadContext(
     ThreadID _threadId, const std::string &_traceFileName)
-    : threadId(_threadId),
+    : threadId(_threadId), traceFileName(_traceFileName),
       dynInstStream(new DynamicInstructionStream(_traceFileName)),
       inflyInsts(0) {}
 

@@ -8,7 +8,7 @@ LLVMRenameStage::LLVMRenameStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), renameWidth(params->renameWidth),
       maxRenameQueueSize(params->renameBufferSize),
       fromDecodeDelay(params->decodeToRenameDelay),
-      toIEWDelay(params->renameToIEWDelay), renameStates(params->numThreads),
+      toIEWDelay(params->renameToIEWDelay), renameStates(params->hardwareContexts),
       totalRenameQueueSize(0), lastRenamedContextId(0) {}
 
 void LLVMRenameStage::setToIEW(TimeBuffer<RenameStruct> *toIEWBuffer) {

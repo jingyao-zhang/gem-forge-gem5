@@ -66,18 +66,11 @@ uint64_t LLVMDynamicInst::allocateSeqNum() {
   return ++LLVMDynamicInst::currentSeqNum;
 }
 
-uint64_t LLVMDynamicInst::getStaticInstAddress() const {
+uint64_t LLVMDynamicInst::getDynamicNextPC() const {
   if (!this->isConditionalBranchInst()) {
     panic("getNextBBName called on non conditional branch instructions.");
   }
-  return this->TDG.branch().static_id();
-}
-
-const std::string &LLVMDynamicInst::getNextBBName() const {
-  if (!this->isConditionalBranchInst()) {
-    panic("getNextBBName called on non conditional branch instructions.");
-  }
-  return this->TDG.branch().next_bb();
+  return this->TDG.branch().dynamic_next_pc();
 }
 
 bool LLVMDynamicInst::isConditionalBranchInst() const {

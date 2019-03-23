@@ -7,7 +7,7 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 LLVMCommitStage::LLVMCommitStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), commitWidth(params->commitWidth),
       maxCommitQueueSize(params->commitQueueSize),
-      fromIEWDelay(params->iewToCommitDelay), commitStates(params->numThreads) {
+      fromIEWDelay(params->iewToCommitDelay), commitStates(params->hardwareContexts) {
 }
 
 void LLVMCommitStage::setFromIEW(TimeBuffer<IEWStruct> *fromIEWBuffer) {

@@ -114,12 +114,12 @@ public:
 
   const std::string &getInstName() const { return this->TDG.op(); }
   LLVMDynamicInstId getId() const { return this->TDG.id(); }
+  uint64_t getPC() const { return this->TDG.pc(); }
 
   uint8_t getNumMicroOps() const { return numMicroOps; }
   uint8_t getQueueWeight() const { return numMicroOps; }
 
-  uint64_t getStaticInstAddress() const;
-  const std::string &getNextBBName() const;
+  uint64_t getDynamicNextPC() const;
 
   virtual void dumpBasic() const;
   virtual void dumpDeps(LLVMTraceCPU *cpu) const;

@@ -6,8 +6,10 @@
 SpeculativePrecomputationThread::SpeculativePrecomputationThread(
     ThreadID _threadId, const std::string &_traceFileName, Addr _criticalPC)
     : LLVMTraceThreadContext(_threadId, _traceFileName),
-      criticalPC(_criticalPC),
-      tokens(0) {}
+      criticalPC(_criticalPC), tokens(0), numTriggeredSlices(0), numSlices(0) {
+  const auto &staticInfo = this->getStaticInfo();
+  assert(staticInfo.module() == "specpre" && "Unmatched module name.");
+}
 
 bool SpeculativePrecomputationThread::canFetch() const {
   return !this->dynInstStream->fetchEmpty() && this->tokens > 0;
@@ -33,10 +35,13 @@ void SpeculativePrecomputationThread::skipOneSlice() {
   assert(!this->isActive() && "Only skip when we are not active.");
   assert(this->tokens == 0 && "Only skip when we have no tokens.");
   this->tokens = 1;
+  this->numSlices++;
+  assert(this->canFetch() && "There should be a slice to skip.");
   while (this->canFetch()) {
     auto inst = this->fetch();
     this->commit(inst);
   }
+  assert(this->tokens == 0 && "After skipping we should still have no token.");
   this->tokens = 0;
 }
 
@@ -56,7 +61,20 @@ void SpeculativePrecomputationManager::handshake(
   TDGAccelerator::handshake(_cpu, _manager);
 }
 
-void SpeculativePrecomputationManager::regStats() {}
+void SpeculativePrecomputationManager::regStats() {
+  this->numTriggeredSlices
+      .name(this->manager->name() + ".specpre.numTriggeredSlices")
+      .desc("Number of slices triggered.")
+      .prereq(this->numTriggeredSlices);
+  this->numSkippedSlices
+      .name(this->manager->name() + ".specpre.numSkippedSlices")
+      .desc("Number of slices skipped.")
+      .prereq(this->numSkippedSlices);
+  this->numTriggeredChainSlices
+      .name(this->manager->name() + ".specpre.numTriggeredChainSlices")
+      .desc("Number of slices chaining triggered.")
+      .prereq(this->numTriggeredChainSlices);
+}
 
 void SpeculativePrecomputationManager::tick() {}
 bool SpeculativePrecomputationManager::handle(LLVMDynamicInst *inst) {
@@ -76,18 +94,23 @@ void SpeculativePrecomputationManager::handleTrigger(
             cpu->allocateThreadID(), sliceStreamFileName, criticalPC)));
   }
   auto thread = this->criticalPCThreadMap.at(criticalPC);
+
   if (thread->isActive()) {
     // Simply increase the token.
     thread->addToken();
+    this->numTriggeredSlices++;
+    this->numTriggeredChainSlices++;
   } else {
     // Check if the cpu still has available hardware context.
     if (cpu->getNumContexts() == cpu->getNumActivateThreads()) {
       // No free context. Skip it.
       thread->skipOneSlice();
+      this->numSkippedSlices++;
     } else {
       // Activate the thread.
       thread->addToken();
       cpu->activateThread(thread);
+      this->numTriggeredSlices++;
     }
   }
 }

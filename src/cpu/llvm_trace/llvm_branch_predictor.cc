@@ -2,8 +2,7 @@
 #include "base/trace.hh"
 #include "debug/LLVMBranchPredictor.hh"
 
-bool LLVMBranchPredictor::predictAndUpdate(
-    const  LLVMDynamicInst* inst) {
+bool LLVMBranchPredictor::predictAndUpdate(const LLVMDynamicInst *inst) {
   if (!inst->isConditionalBranchInst()) {
     panic("This is not a conditional branch inst %s.\n",
           inst->getInstName().c_str());
@@ -12,47 +11,46 @@ bool LLVMBranchPredictor::predictAndUpdate(
   this->update(inst);
 
   DPRINTF(LLVMBranchPredictor, "Predict to inst %p, %s, result %d.\n",
-          reinterpret_cast<void*>(inst->getStaticInstAddress()),
-          inst->getInstName().c_str(), result);
+          reinterpret_cast<void *>(inst->getPC()), inst->getInstName().c_str(),
+          result);
   return result;
 }
 
-bool LLVMBranchPredictor::predict(
-    const  LLVMDynamicInst* inst) const {
-  uint64_t staticInstAddress = inst->getStaticInstAddress();
-  const std::string& nextBBName = inst->getNextBBName();
-  auto iter = this->records.find(staticInstAddress);
+bool LLVMBranchPredictor::predict(const LLVMDynamicInst *inst) const {
+  auto pc = inst->getPC();
+  auto dynamicNextPC = inst->getDynamicNextPC();
+  auto iter = this->records.find(pc);
   if (iter == this->records.end()) {
     // This is a new inst, always predict wrong?
     return false;
   } else {
     // Check if we predict it right.
-    return nextBBName == iter->second[1];
+    return dynamicNextPC == iter->second[1];
   }
 }
 
-void LLVMBranchPredictor::update(const  LLVMDynamicInst* inst) {
-  uint64_t staticInstAddress = inst->getStaticInstAddress();
-  const std::string& nextBBName = inst->getNextBBName();
-  auto iter = this->records.find(staticInstAddress);
+void LLVMBranchPredictor::update(const LLVMDynamicInst *inst) {
+  auto pc = inst->getPC();
+  auto dynamicNextPC = inst->getDynamicNextPC();
+  auto iter = this->records.find(pc);
   if (iter == this->records.end()) {
     // This is a new inst.
-    this->records[staticInstAddress] =
-        std::array<std::string, 2>{nextBBName, nextBBName};
+    this->records.emplace(
+        pc, std::array<uint64_t, 2>{dynamicNextPC, dynamicNextPC});
     return;
   } else {
-    if (nextBBName == iter->second[0]) {
+    if (dynamicNextPC == iter->second[0]) {
       // We have two consecutive same target, update.
       iter->second[1] = iter->second[0];
     } else {
       // The target is different than previous one,
-      // just update the previous one but not update the result.
-      if (nextBBName != iter->second[1] && iter->second[0] != iter->second[1]) {
-        // We predict wrong twice.
-        // Clear the prediction.
-        iter->second[1] = "";
+      if (dynamicNextPC != iter->second[1] &&
+          iter->second[0] != iter->second[1]) {
+        // We predict wrong twice, clear the prediction.
+        iter->second[1] = 0;
       }
-      iter->second[0] = nextBBName;
+      // Update the previous one.
+      iter->second[0] = dynamicNextPC;
     }
   }
 }

@@ -18,7 +18,7 @@ public:
   virtual bool predictAndUpdate(const LLVMDynamicInst *inst);
 
 protected:
-  std::unordered_map<uint64_t, std::array<std::string, 2>> records;
+  std::unordered_map<uint64_t, std::array<uint64_t, 2>> records;
 
   bool predict(const LLVMDynamicInst *inst) const;
   void update(const LLVMDynamicInst *inst);

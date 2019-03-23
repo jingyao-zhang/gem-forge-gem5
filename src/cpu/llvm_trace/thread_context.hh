@@ -10,7 +10,7 @@
 class LLVMTraceCPU;
 
 class LLVMTraceThreadContext {
- public:
+public:
   LLVMTraceThreadContext(ThreadID _threadId, const std::string &_traceFileName);
   virtual ~LLVMTraceThreadContext();
 
@@ -33,8 +33,9 @@ class LLVMTraceThreadContext {
     return this->contextId;
   }
 
- protected:
+protected:
   ThreadID threadId;
+  const std::string traceFileName;
   DynamicInstructionStream *dynInstStream;
   size_t inflyInsts;
 

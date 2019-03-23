@@ -6,7 +6,7 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), fetchWidth(params->fetchWidth),
-      fetchStates(params->numThreads),
+      fetchStates(params->hardwareContexts),
       toDecodeDelay(params->fetchToDecodeDelay),
       predictor(new LLVMBranchPredictor()), lastFetchedContextId(0) {}
 
