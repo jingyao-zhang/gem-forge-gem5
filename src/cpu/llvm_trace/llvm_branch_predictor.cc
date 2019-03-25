@@ -3,9 +3,8 @@
 #include "debug/LLVMBranchPredictor.hh"
 
 bool LLVMBranchPredictor::predictAndUpdate(const LLVMDynamicInst *inst) {
-  if (!inst->isConditionalBranchInst()) {
-    panic("This is not a conditional branch inst %s.\n",
-          inst->getInstName().c_str());
+  if (!inst->isBranchInst()) {
+    panic("This is not a branch inst %s.\n", inst->getInstName().c_str());
   }
   bool result = this->predict(inst);
   this->update(inst);

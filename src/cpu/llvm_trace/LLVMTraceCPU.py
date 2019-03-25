@@ -1,9 +1,11 @@
 from m5.params import *
+from m5.proxy import *
 
 from BaseCPU import BaseCPU
 from FuncUnit import *
 from FuncUnitConfig import *
 from FUPool import FUPool
+from BranchPredictor import *
 from Process import EmulatedDriver
 
 
@@ -72,6 +74,9 @@ class LLVMTraceCPU(BaseCPU):
     cacheLoadPorts = Param.Unsigned(4, "Cache Load Ports.")
     # Number of hardware contexts.
     hardwareContexts = Param.Unsigned(1, "Number of hardware contexts.")
+
+    branchPred = Param.BranchPredictor(TournamentBP(numThreads=Parent.hardwareContexts),
+                                       "Branch Predictor")
 
     # Parameters for ADFA.
     adfaCoreIssueWidth = Param.Unsigned(16, "Issue width for each abstract dataflow core.")

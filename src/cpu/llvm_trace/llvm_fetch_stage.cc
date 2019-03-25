@@ -8,7 +8,8 @@ LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), fetchWidth(params->fetchWidth),
       fetchStates(params->hardwareContexts),
       toDecodeDelay(params->fetchToDecodeDelay),
-      predictor(new LLVMBranchPredictor()), lastFetchedContextId(0) {}
+      predictor(new LLVMBranchPredictor()), branchPredictor(params->branchPred),
+      lastFetchedContextId(0) {}
 
 LLVMFetchStage::~LLVMFetchStage() {
   delete this->predictor;
@@ -159,22 +160,77 @@ void LLVMFetchStage::tick() {
       fetchedInsts += inst->getQueueWeight();
     }
 
-    // Check if this is a conditional branch.
-    if (inst->isConditionalBranchInst()) {
-      this->branchInsts++;
-      this->fetchedBranches++;
-      bool predictionRight = this->predictor->predictAndUpdate(inst);
-      if (!predictionRight) {
-        this->branchPredMisses++;
-        DPRINTF(LLVMTraceCPUFetch,
-                "Fetch blocked due to failed branch predictor for %s.\n",
-                inst->getInstName().c_str());
-        fetchState.branchPredictPenalityCycles = 8;
-        fetchState.blockedInstId = instId;
-        // Do not fetch next one.
-        break;
+    {
+      // Branch prediction.
+      if (inst->isBranchInst()) {
+        this->branchInsts++;
+        this->fetchedBranches++;
+
+        /**
+         * In order to use gem5's branch prediction, we create the
+         * data structure it requires.
+         */
+        auto instSeqNum = inst->getSeqNum();
+        auto contextId = chosenThread->getContextId();
+        auto staticInst = inst->getStaticInst();
+        TheISA::PCState targetPCState(inst->getPC());
+        auto predictTaken = this->branchPredictor->predict(
+            staticInst, instSeqNum, targetPCState, contextId);
+
+        /**
+         * Validate the prediction result.
+         *
+         * Notice that for ret, it relies on the RAS to predict the target,
+         * which essentially boils down to advance the caller's pc.
+         * However, so far our fake PCState does not now how to advance the pc,
+         * which makes all the prediction result for ret wrong.
+         *
+         * Since RAS is very accurate, for ret we ignore the result from branch
+         * prediction and simply assume it's always correct.
+         */
+        TheISA::PCState dynamicNextPCState(inst->getDynamicNextPC());
+
+        bool predictWrong = dynamicNextPCState.pc() != targetPCState.pc() &&
+                            inst->getInstName() != "ret";
+
+        if (predictWrong) {
+          // Prediction wrong.
+          this->branchPredMisses++;
+          DPRINTF(LLVMTraceCPUFetch,
+                  "Fetch blocked due to failed branch predictor for %s.\n",
+                  inst->getInstName().c_str());
+          fetchState.branchPredictPenalityCycles = 8;
+          fetchState.blockedInstId = instId;
+          // Notify the predictor via squashing.
+          this->branchPredictor->squash(instSeqNum, dynamicNextPCState,
+                                        !predictTaken, contextId);
+        }
+        // For simplicity, we always commit immediately.
+        this->branchPredictor->update(instSeqNum, contextId);
+
+        if (predictWrong) {
+          // Do not fetch next one.
+          break;
+        }
       }
     }
+
+    // // Check if this is a branch.
+    // if (inst->isBranchInst()) {
+    //   this->branchInsts++;
+    //   this->fetchedBranches++;
+    //   bool predictionRight = this->predictor->predictAndUpdate(inst);
+    //   if (!predictionRight) {
+    //     this->branchPredMisses++;
+    //     DPRINTF(LLVMTraceCPUFetch,
+    //             "Fetch blocked due to failed branch predictor for %s.\n",
+    //             inst->getInstName().c_str());
+    //     fetchState.branchPredictPenalityCycles = 8;
+    //     fetchState.blockedInstId = instId;
+    //     // Do not fetch next one.
+    //     break;
+    //   }
+    // }
   }
 
   this->fetchedInsts += fetchedInsts;

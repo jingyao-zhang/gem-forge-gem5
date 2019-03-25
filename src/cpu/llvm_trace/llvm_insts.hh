@@ -14,6 +14,7 @@
 #include "base/misc.hh"
 #include "base/types.hh"
 #include "cpu/op_class.hh"
+#include "cpu/static_inst_fwd.hh"
 #include "mem/packet.hh"
 
 #include <memory>
@@ -22,6 +23,7 @@
 #include <vector>
 
 class LLVMTraceCPU;
+class LLVMStaticInst;
 
 using LLVMDynamicInstId = uint64_t;
 
@@ -66,7 +68,6 @@ public:
   }
 
   bool isBranchInst() const;
-  bool isConditionalBranchInst() const;
   bool isStoreInst() const;
   bool isLoadInst() const;
 
@@ -114,12 +115,15 @@ public:
 
   const std::string &getInstName() const { return this->TDG.op(); }
   LLVMDynamicInstId getId() const { return this->TDG.id(); }
-  uint64_t getPC() const { return this->TDG.pc(); }
 
   uint8_t getNumMicroOps() const { return numMicroOps; }
   uint8_t getQueueWeight() const { return numMicroOps; }
 
+  uint64_t getPC() const { return this->TDG.pc(); }
   uint64_t getDynamicNextPC() const;
+  uint64_t getStaticNextPC() const;
+
+  StaticInstPtr getStaticInst() const;
 
   virtual void dumpBasic() const;
   virtual void dumpDeps(LLVMTraceCPU *cpu) const;
@@ -221,9 +225,7 @@ public:
   }
 
   // FU FSM should be finished.
-  bool isCompleted() const override {
-    return this->fuLatency == Cycles(0) && this->remainingMicroOps == 0;
-  }
+  bool isCompleted() const override { return this->fuLatency == Cycles(0); }
 
   // Adjust the call stack for call/ret inst.
   int getCallStackAdjustment() const override {

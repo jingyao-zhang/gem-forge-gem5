@@ -7,6 +7,7 @@
 #include "cpu/llvm_trace/llvm_branch_predictor.hh"
 #include "cpu/llvm_trace/llvm_insts.hh"
 #include "cpu/llvm_trace/llvm_stage_signal.hh"
+#include "cpu/pred/bpred_unit.hh"
 #include "cpu/timebuf.hh"
 #include "params/LLVMTraceCPU.hh"
 
@@ -14,7 +15,7 @@ class LLVMTraceCPU;
 class LLVMTraceThreadContext;
 
 class LLVMFetchStage {
- public:
+public:
   using FetchStruct = std::vector<LLVMDynamicInstId>;
 
   LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu);
@@ -41,7 +42,7 @@ class LLVMFetchStage {
   /** Stat for total number of predicted branches. */
   Stats::Scalar predictedBranches;
 
- private:
+private:
   LLVMTraceCPU *cpu;
 
   unsigned fetchWidth;
@@ -75,6 +76,8 @@ class LLVMFetchStage {
   TimeBuffer<LLVMStageSignal>::wire signal;
 
   LLVMBranchPredictor *predictor;
+
+  BPredUnit *branchPredictor;
 
   int lastFetchedContextId;
 };

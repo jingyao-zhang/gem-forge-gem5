@@ -1,4 +1,5 @@
 #include "cpu/llvm_trace/llvm_insts.hh"
+#include "cpu/llvm_trace/llvm_static_insts.hh"
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 
 #include "cpu/llvm_trace/accelerator/stream/stream_engine.hh"
@@ -67,21 +68,27 @@ uint64_t LLVMDynamicInst::allocateSeqNum() {
 }
 
 uint64_t LLVMDynamicInst::getDynamicNextPC() const {
-  if (!this->isConditionalBranchInst()) {
-    panic("getNextBBName called on non conditional branch instructions.");
+  if (!this->isBranchInst()) {
+    panic("getDynamicNextPC called on non conditional branch instructions.");
   }
   return this->TDG.branch().dynamic_next_pc();
 }
 
-bool LLVMDynamicInst::isConditionalBranchInst() const {
-  const auto &op = this->getInstName();
-  return (op == "br" || op == "switch") && this->TDG.has_branch();
+uint64_t LLVMDynamicInst::getStaticNextPC() const {
+  if (!this->isBranchInst()) {
+    panic("getStaticNextPC called on non conditional branch instructions.");
+  }
+  return this->TDG.branch().static_next_pc();
 }
 
-bool LLVMDynamicInst::isBranchInst() const {
-  const auto &op = this->getInstName();
-  return op == "br" || op == "switch" || op == "ret" || op == "call";
+StaticInstPtr LLVMDynamicInst::getStaticInst() const {
+  if (!this->isBranchInst()) {
+    panic("getStaticInst called on non conditional branch instructions.");
+  }
+  return StaticInstPtr(new LLVMStaticInst(this));
 }
+
+bool LLVMDynamicInst::isBranchInst() const { return this->TDG.has_branch(); }
 
 bool LLVMDynamicInst::isStoreInst() const {
   const auto &op = this->getInstName();
@@ -233,20 +240,7 @@ bool LLVMDynamicInst::isCallInst() const {
   return this->getInstName() == "call" || this->getInstName() == "invoke";
 }
 
-bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU *cpu) const {
-  // if (this->isStoreInst()) {
-  //   for (const auto dependentInstId : this->TDG.deps()) {
-  //     if (!cpu->isInstCommitted(dependentInstId)) {
-  //       // If the dependent inst is not committed, check if it's a branch.
-  //       auto DepInst = cpu->getInflyInst(dependentInstId);
-  //       if (DepInst->isBranchInst()) {
-  //         return false;
-  //       }
-  //     }
-  //   }
-  // }
-  return true;
-}
+bool LLVMDynamicInst::canWriteBack(LLVMTraceCPU *cpu) const { return true; }
 
 LLVMDynamicInstMem::LLVMDynamicInstMem(const LLVM::TDG::TDGInstruction &_TDG,
                                        uint8_t _numMicroOps, Addr _align,
@@ -489,4 +483,13 @@ void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
     SE->executeStreamUser(this);
   }
   this->fuLatency = cpu->getOpLatency(this->getOpClass());
+  /**
+   * Hack here: for branching instructions, add one more cycle of latency.
+   * As gem5 generally translates branch to multiple microops like:
+   * rdip
+   * wrip
+   */
+  if (this->isBranchInst()) {
+    ++this->fuLatency;
+  }
 }

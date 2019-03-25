@@ -40,6 +40,9 @@ parser.add_option("--gem-forge-cache-store-ports", action="store", type="int",
                   help="""How many stores can be written-back in one cycle""", default="4")
 parser.add_option("--gem-forge-hardware-contexts-per-core", action="store", type="int",
                   help="""How many thread context""", default="1")
+parser.add_option("--branch-predictor", type="choice", default="ltage",
+                  choices=['2bit', 'tournament', 'bimode', 'ltage'],
+                  help = "type of branch predictor to use")
 
 parser.add_option("--llvm-mcpat", action="store", type="int",
                   help="""whether to use mcpat to estimate power""", default="0")
@@ -149,6 +152,20 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
     llvm_trace_cpu.commitWidth = options.llvm_issue_width
     llvm_trace_cpu.hardwareContexts = options.gem_forge_hardware_contexts_per_core
 
+    if options.branch_predictor == '2bit':
+        llvm_trace_cpu.branchPred = LocalBP(
+            numThreads=options.gem_forge_hardware_contexts_per_core)
+    elif options.branch_predictor == 'tournament':
+        llvm_trace_cpu.branchPred = TournamentBP(
+            numThreads=options.gem_forge_hardware_contexts_per_core)
+    elif options.branch_predictor == 'bimode':
+        llvm_trace_cpu.branchPred = BiModeBP(
+            numThreads=options.gem_forge_hardware_contexts_per_core)
+    elif options.branch_predictor == 'ltage':
+        llvm_trace_cpu.branchPred = LTAGE(
+            numThreads=options.gem_forge_hardware_contexts_per_core)
+
+
     llvm_trace_cpu.warmCache = not options.gem_forge_cold_cache
 
     # ADFA options.
@@ -203,7 +220,18 @@ def setDerivO3CPUCommomParams(o3cpu):
     o3cpu.issueWidth = options.llvm_issue_width
     o3cpu.wbWidth = options.llvm_issue_width
     o3cpu.commitWidth = options.llvm_issue_width
-    # o3cpu.hardwareContexts = options.gem_forge_hardware_contexts_per_core
+    if options.branch_predictor == '2bit':
+        o3cpu.branchPred = LocalBP(
+            numThreads=options.gem_forge_hardware_contexts_per_core)
+    elif options.branch_predictor == 'tournament':
+        o3cpu.branchPred = TournamentBP(
+            numThreads=options.gem_forge_hardware_contexts_per_core)
+    elif options.branch_predictor == 'bimode':
+        o3cpu.branchPred = BiModeBP(
+            numThreads=options.gem_forge_hardware_contexts_per_core)
+    elif options.branch_predictor == 'ltage':
+        o3cpu.branchPred = LTAGE(
+            numThreads=options.gem_forge_hardware_contexts_per_core)
 
     o3cpu.SQEntries = options.llvm_store_queue_size
     o3cpu.LQEntries = options.llvm_load_queue_size
