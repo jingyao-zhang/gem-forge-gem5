@@ -77,6 +77,7 @@ class LLVMTraceCPU(BaseCPU):
 
     branchPred = Param.BranchPredictor(TournamentBP(numThreads=Parent.hardwareContexts),
                                        "Branch Predictor")
+    useGem5BranchPredictor = Param.Bool(True, "Whether to use branch predictor from gem5.")
 
     # Parameters for ADFA.
     adfaCoreIssueWidth = Param.Unsigned(16, "Issue width for each abstract dataflow core.")

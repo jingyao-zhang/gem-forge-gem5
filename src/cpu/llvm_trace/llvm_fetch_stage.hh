@@ -41,6 +41,10 @@ public:
   Stats::Scalar fetchedBranches;
   /** Stat for total number of predicted branches. */
   Stats::Scalar predictedBranches;
+  /** Total number of our original 2-bit prediction miss. */
+  Stats::Scalar branchPredMissesLLVM;
+  /** Total number of gem5 prediction miss. */
+  Stats::Scalar branchPredMissesGem5;
 
 private:
   LLVMTraceCPU *cpu;
@@ -72,6 +76,7 @@ private:
   std::vector<FetchState> fetchStates;
 
   Cycles toDecodeDelay;
+  bool useGem5BranchPredictor;
   TimeBuffer<FetchStruct>::wire toDecode;
   TimeBuffer<LLVMStageSignal>::wire signal;
 

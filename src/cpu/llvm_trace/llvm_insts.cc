@@ -489,7 +489,7 @@ void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
    * rdip
    * wrip
    */
-  if (this->isBranchInst()) {
-    ++this->fuLatency;
-  }
+  // if (this->isBranchInst()) {
+  //   ++this->fuLatency;
+  // }
 }

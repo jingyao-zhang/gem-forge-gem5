@@ -43,6 +43,8 @@ parser.add_option("--gem-forge-hardware-contexts-per-core", action="store", type
 parser.add_option("--branch-predictor", type="choice", default="ltage",
                   choices=['2bit', 'tournament', 'bimode', 'ltage'],
                   help = "type of branch predictor to use")
+parser.add_option("--gem-forge-no-gem5-branch-predictor", action="store_true",
+                  help="""Disable gem5 branch predictor and use our simple one""", default=False)
 
 parser.add_option("--llvm-mcpat", action="store", type="int",
                   help="""whether to use mcpat to estimate power""", default="0")
@@ -151,6 +153,7 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
     llvm_trace_cpu.writeBackWidth = options.llvm_issue_width
     llvm_trace_cpu.commitWidth = options.llvm_issue_width
     llvm_trace_cpu.hardwareContexts = options.gem_forge_hardware_contexts_per_core
+    llvm_trace_cpu.useGem5BranchPredictor = not options.gem_forge_no_gem5_branch_predictor
 
     if options.branch_predictor == '2bit':
         llvm_trace_cpu.branchPred = LocalBP(

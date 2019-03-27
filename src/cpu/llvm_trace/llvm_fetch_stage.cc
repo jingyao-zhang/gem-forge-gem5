@@ -8,6 +8,7 @@ LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), fetchWidth(params->fetchWidth),
       fetchStates(params->hardwareContexts),
       toDecodeDelay(params->fetchToDecodeDelay),
+      useGem5BranchPredictor(params->useGem5BranchPredictor),
       predictor(new LLVMBranchPredictor()), branchPredictor(params->branchPred),
       lastFetchedContextId(0) {}
 
@@ -37,6 +38,12 @@ void LLVMFetchStage::regStats() {
   this->branchPredMisses.name(name() + ".branchPredMisses")
       .desc("Number of branch prediction misses")
       .prereq(this->branchPredMisses);
+  this->branchPredMissesLLVM.name(name() + ".branchPredMissesLLVM")
+      .desc("Number of branch prediction misses by our simple LLVM BP.")
+      .prereq(this->branchPredMissesLLVM);
+  this->branchPredMissesGem5.name(name() + ".branchPredMissesGem5")
+      .desc("Number of branch prediction misses by Gem5 BP.")
+      .prereq(this->branchPredMissesGem5);
 
   this->fetchedInsts.name(name() + ".Insts")
       .desc("Number of instructions fetch has processed")
@@ -166,6 +173,12 @@ void LLVMFetchStage::tick() {
         this->branchInsts++;
         this->fetchedBranches++;
 
+        // Check if this is a branch.
+        bool predictionWrongLLVM = !this->predictor->predictAndUpdate(inst);
+        if (predictionWrongLLVM) {
+          this->branchPredMissesLLVM++;
+        }
+
         /**
          * In order to use gem5's branch prediction, we create the
          * data structure it requires.
@@ -190,17 +203,12 @@ void LLVMFetchStage::tick() {
          */
         TheISA::PCState dynamicNextPCState(inst->getDynamicNextPC());
 
-        bool predictWrong = dynamicNextPCState.pc() != targetPCState.pc() &&
+        bool predictWrongGem5 = dynamicNextPCState.pc() != targetPCState.pc() &&
                             inst->getInstName() != "ret";
 
-        if (predictWrong) {
+        if (predictWrongGem5) {
           // Prediction wrong.
-          this->branchPredMisses++;
-          DPRINTF(LLVMTraceCPUFetch,
-                  "Fetch blocked due to failed branch predictor for %s.\n",
-                  inst->getInstName().c_str());
-          fetchState.branchPredictPenalityCycles = 8;
-          fetchState.blockedInstId = instId;
+          this->branchPredMissesGem5++;
           // Notify the predictor via squashing.
           this->branchPredictor->squash(instSeqNum, dynamicNextPCState,
                                         !predictTaken, contextId);
@@ -208,29 +216,19 @@ void LLVMFetchStage::tick() {
         // For simplicity, we always commit immediately.
         this->branchPredictor->update(instSeqNum, contextId);
 
+        auto predictWrong = this->useGem5BranchPredictor ? predictWrongGem5 : predictionWrongLLVM;
         if (predictWrong) {
+          DPRINTF(LLVMTraceCPUFetch,
+                  "Fetch blocked due to failed branch predictor for %s.\n",
+                  inst->getInstName().c_str());
+          fetchState.branchPredictPenalityCycles = 8;
+          fetchState.blockedInstId = instId;
+          this->branchPredMisses++;
           // Do not fetch next one.
           break;
         }
       }
     }
-
-    // // Check if this is a branch.
-    // if (inst->isBranchInst()) {
-    //   this->branchInsts++;
-    //   this->fetchedBranches++;
-    //   bool predictionRight = this->predictor->predictAndUpdate(inst);
-    //   if (!predictionRight) {
-    //     this->branchPredMisses++;
-    //     DPRINTF(LLVMTraceCPUFetch,
-    //             "Fetch blocked due to failed branch predictor for %s.\n",
-    //             inst->getInstName().c_str());
-    //     fetchState.branchPredictPenalityCycles = 8;
-    //     fetchState.blockedInstId = instId;
-    //     // Do not fetch next one.
-    //     break;
-    //   }
-    // }
   }
 
   this->fetchedInsts += fetchedInsts;
