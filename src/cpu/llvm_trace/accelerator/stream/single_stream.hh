@@ -14,11 +14,10 @@
 #include "stream.hh"
 
 class SingleStream : public Stream {
-public:
-  SingleStream(
-      const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig &config,
-      LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
-      size_t _maxRunAHeadLength, const std::string &_throttling);
+ public:
+  SingleStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
+               const LLVM::TDG::StreamInfo &_info, bool _isOracle,
+               size_t _maxRunAHeadLength, const std::string &_throttling);
 
   ~SingleStream();
 
@@ -30,21 +29,15 @@ public:
 
   void prepareNewElement(StreamElement *element) override;
 
-  void configure(StreamConfigInst *inst) override;
-
   bool isContinuous() const override;
+  void configure(StreamConfigInst *inst) override;
 
   uint64_t getTrueFootprint() const override;
   uint64_t getFootprint(unsigned cacheBlockSize) const override;
 
-private:
+ private:
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
-
-  void enqueueFIFO() override;
-  void markAddressReady(FIFOEntry &entry) override;
-  void markValueReady(FIFOEntry &entry) override;
-
   void handlePacketResponse(const FIFOEntryIdx &entryId, PacketPtr packet,
                             StreamMemAccess *memAccess) override;
 

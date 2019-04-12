@@ -211,9 +211,31 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   this->numConfigured++;
 
   const auto &configs = inst->getTDG().stream_config().configs();
-  std::list<Stream *> configStreams;
+
+  // Initialize all the streams if this is the first time we encounter the loop.
   for (const auto &config : configs) {
-    auto S = this->getOrInitializeStream(config);
+    const auto &streamId = config.stream_id();
+    if (this->streamMap.count(streamId) == 0) {
+      // We haven't initialize streams in this loop.
+      this->initializeStreams(inst->getTDG().stream_config());
+      break;
+    }
+  }
+
+  // Get all the configured streams.
+  std::list<Stream *> configStreams;
+  std::unordered_set<Stream *> dedupSet;
+  for (const auto &config : configs) {
+    // Deduplicate the streams due to coalescing.
+    const auto &streamId = config.stream_id();
+    auto stream = this->getStream(streamId);
+    if (dedupSet.count(stream) == 0) {
+      configStreams.push_back(stream);
+      dedupSet.insert(stream);
+    }
+  }
+
+  for (auto &S : configStreams) {
     assert(!S->configured && "The stream should not be configured.");
     S->configured = true;
 
@@ -240,8 +262,6 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
 
     // 2. Create new index.
     S->FIFOIdx.newInstance(inst->getSeqNum());
-
-    configStreams.push_back(S);
   }
 
   // 3. Allocate new entries one by one for all streams.
@@ -466,11 +486,19 @@ void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
 void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
   const auto &endStreamIds = inst->getTDG().stream_end().stream_ids();
 
+  /**
+   * Dedup the coalesced stream ids.
+   */
+  std::unordered_set<Stream *> endedStreams;
   for (auto iter = endStreamIds.rbegin(), end = endStreamIds.rend();
        iter != end; ++iter) {
     // Release in reverse order.
     auto streamId = *iter;
     auto S = this->getStream(streamId);
+    if (endedStreams.count(S) != 0) {
+      continue;
+    }
+    endedStreams.insert(S);
 
     assert(S->configured && "Stream should be configured.");
 
@@ -509,11 +537,19 @@ void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
 void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
   const auto &endStreamIds = inst->getTDG().stream_end().stream_ids();
 
+  /**
+   * Deduplicate the streams due to coalescing.
+   */
+  std::unordered_set<Stream *> endedStreams;
   for (auto iter = endStreamIds.rbegin(), end = endStreamIds.rend();
        iter != end; ++iter) {
     // Release in reverse order.
     auto streamId = *iter;
     auto S = this->getStream(streamId);
+    if (endedStreams.count(S) != 0) {
+      continue;
+    }
+    endedStreams.insert(S);
     /**
      * Release the last element we stepped at dispatch.
      */
@@ -544,36 +580,16 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {}
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
 
-CoalescedStream *StreamEngine::getOrInitializeCoalescedStream(
-    uint64_t stepRootStreamId, int32_t coalesceGroup) {
-  auto stepRootIter = this->coalescedStreamMap.find(stepRootStreamId);
-  if (stepRootIter == this->coalescedStreamMap.end()) {
-    stepRootIter = this->coalescedStreamMap
-                       .emplace(std::piecewise_construct,
-                                std::forward_as_tuple(stepRootStreamId),
-                                std::forward_as_tuple())
-                       .first;
-  }
+void StreamEngine::initializeStreams(
+    const LLVM::TDG::TDGInstruction::StreamConfigExtra &configExtra) {
+  // Coalesced streams.
+  std::unordered_map<int, CoalescedStream *> coalescedGroupToStreamMap;
 
-  auto coalesceGroupIter = stepRootIter->second.find(coalesceGroup);
-  if (coalesceGroupIter == stepRootIter->second.end()) {
-    coalesceGroupIter =
-        stepRootIter->second
-            .emplace(std::piecewise_construct,
-                     std::forward_as_tuple(coalesceGroup),
-                     std::forward_as_tuple(cpu, this, this->isOracle,
-                                           this->maxRunAHeadLength, "static"))
-            .first;
-  }
-
-  return &(coalesceGroupIter->second);
-}
-
-Stream *StreamEngine::getOrInitializeStream(
-    const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig &config) {
-  const auto &streamId = config.stream_id();
-  auto iter = this->streamMap.find(streamId);
-  if (iter == this->streamMap.end()) {
+  const auto &configs = configExtra.configs();
+  for (const auto &config : configs) {
+    const auto &streamId = config.stream_id();
+    assert(this->streamMap.count(streamId) == 0 &&
+           "Stream is already initialized.");
     /**
      * The configInst does not contain much information,
      * we need to load the info protobuf file.
@@ -583,43 +599,39 @@ Stream *StreamEngine::getOrInitializeStream(
     auto streamInfo = StreamEngine::parseStreamInfoFromFile(infoPath);
     auto coalesceGroup = streamInfo.coalesce_group();
 
-    Stream *newStream = nullptr;
     if (coalesceGroup != -1 && this->enableCoalesce) {
-      // // We should handle it as a coalesced stream.
+      // First check if we have created the coalesced stream for the group.
+      if (coalescedGroupToStreamMap.count(coalesceGroup) == 0) {
+        auto newCoalescedStream =
+            new CoalescedStream(cpu, this, streamInfo, this->isOracle,
+                                this->maxRunAHeadLength, "static");
+        this->streamMap.emplace(streamId, newCoalescedStream);
+        this->coalescedStreamIdMap.emplace(streamId, streamId);
+        coalescedGroupToStreamMap.emplace(coalesceGroup, newCoalescedStream);
+      } else {
+        // This is not the first time we encounter this coalesce group.
+        // Add the config to the coalesced stream.
+        auto coalescedStream = coalescedGroupToStreamMap.at(coalesceGroup);
+        auto coalescedStreamId = coalescedStream->getCoalesceStreamId();
+        coalescedStream->addStreamInfo(streamInfo);
+        this->coalescedStreamIdMap.emplace(streamId, coalescedStreamId);
+      }
 
-      // // Get the step root stream id.
-      // uint64_t stepRootStreamId = streamInfo.id();
-      // if (streamInfo.chosen_base_step_root_ids_size() > 1) {
-      //   panic("More than one step root stream for coalesced streams.");
-      // } else if (streamInfo.chosen_base_step_root_ids_size() == 1) {
-      //   // We have one step root stream.
-      //   stepRootStreamId = streamInfo.chosen_base_step_root_ids(0);
-      // }
-
-      // auto coalescedStream =
-      //     getOrInitializeCoalescedStream(stepRootStreamId, coalesceGroup);
-
-      // // Add the logical stream to the coalesced stream.
-      // coalescedStream->addLogicalStreamIfNecessary(configInst);
-
-      // newStream = coalescedStream;
-      panic("Disabled stream coalesce so far.");
+      // panic("Disabled stream coalesce so far.");
 
     } else {
-      newStream = new SingleStream(config, cpu, this, this->isOracle,
-                                   this->maxRunAHeadLength, "static");
+      // Single stream can be immediately constructed and inserted into the map.
+      auto newStream = new SingleStream(cpu, this, streamInfo, this->isOracle,
+                                        this->maxRunAHeadLength, "static");
+      this->streamMap.emplace(streamId, newStream);
     }
-
-    iter =
-        this->streamMap
-            .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
-                     std::forward_as_tuple(newStream))
-            .first;
   }
-  return iter->second;
 }
 
 Stream *StreamEngine::getStream(uint64_t streamId) const {
+  if (this->coalescedStreamIdMap.count(streamId)) {
+    streamId = this->coalescedStreamIdMap.at(streamId);
+  }
   auto iter = this->streamMap.find(streamId);
   if (iter == this->streamMap.end()) {
     panic("Failed to find stream %lu.\n", streamId);
@@ -648,7 +660,7 @@ void StreamEngine::updateAliveStatistics() {
       continue;
     }
     if (stream->isMemStream()) {
-      totalAliveElements += stream->getAliveElements();
+      // totalAliveElements += stream->getAliveElements();
       totalAliveMemStreams++;
       for (const auto &cacheBlockAddrPair : stream->getAliveCacheBlocks()) {
         totalAliveCacheBlocks.insert(cacheBlockAddrPair.first);
@@ -725,8 +737,8 @@ const std::list<Stream *> &StreamEngine::getStepStreamList(
           continue;
         }
         if (stackStatusMap.count(depS) != 0) {
-          // Cycle dependence found.
           if (stackStatusMap.at(depS) == 1) {
+            // Cycle dependence found.
             panic("Cycle dependence found %s.", depS->getStreamName().c_str());
           } else if (stackStatusMap.at(depS) == 2) {
             // This one has already dumped.

@@ -14,7 +14,7 @@
 #include <unordered_map>
 
 class StreamEngine : public TDGAccelerator {
-public:
+ public:
   StreamEngine();
   ~StreamEngine() override;
 
@@ -109,7 +109,7 @@ public:
   Stats::Distribution numAccessFootprintL2;
   Stats::Distribution numAccessFootprintL3;
 
-private:
+ private:
   StreamPlacementManager *streamPlacementManager;
 
   std::vector<StreamElement> FIFOArray;
@@ -124,14 +124,17 @@ private:
                      std::unordered_set<StreamElement *>>
       userElementMap;
 
-  std::unordered_map<uint64_t, Stream *> streamMap;
+  using StreamId = uint64_t;
+  std::unordered_map<StreamId, Stream *> streamMap;
 
   /**
-   * Map of the CoalescedStream.
-   * Indexed by the <StepRootStreamId, CoalescedGroupId>
+   * One level indirection for from the original stream id to coalesced stream
+   * id. This is to make sure that streamMap always maintains an one-to-one
+   * mapping.
    */
-  std::unordered_map<uint64_t, std::unordered_map<uint64_t, CoalescedStream>>
-      coalescedStreamMap;
+  std::unordered_map<StreamId, StreamId> coalescedStreamIdMap;
+  // std::unordered_map<uint64_t, std::unordered_map<uint64_t, CoalescedStream>>
+  // coalescedStreamMap;
 
   /**
    * Flags.
@@ -154,8 +157,8 @@ private:
   std::string placementLat;
   std::string placement;
 
-  Stream *getOrInitializeStream(
-      const LLVM::TDG::TDGInstruction_StreamConfigExtra_SingleConfig &config);
+  void initializeStreams(
+      const LLVM::TDG::TDGInstruction::StreamConfigExtra &configExtra);
 
   CoalescedStream *getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
                                                   int32_t coalesceGroup);
@@ -163,8 +166,8 @@ private:
   void updateAliveStatistics();
 
   // A helper function to load a stream info protobuf file.
-  static LLVM::TDG::StreamInfo
-  parseStreamInfoFromFile(const std::string &infoPath);
+  static LLVM::TDG::StreamInfo parseStreamInfoFromFile(
+      const std::string &infoPath);
 
   void initializeFIFO(size_t totalElements);
   void addFreeElement(StreamElement *S);

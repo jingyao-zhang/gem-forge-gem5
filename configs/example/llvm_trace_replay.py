@@ -54,8 +54,8 @@ parser.add_option("--gem-forge-stream-engine-is-oracle", action="store", type="i
                   help="""whether make the stream engine oracle""", default="0")
 parser.add_option("--gem-forge-stream-engine-throttling", action="store", type="string",
                   help="""Throttling tenchique used by stream engine.""", default="static")
-parser.add_option("--gem-forge-stream-engine-enable-coalesce", action="store", type="int",
-                  help="""Enable stream coalesce in the stream engine.""", default="0")
+parser.add_option("--gem-forge-stream-engine-enable-coalesce", action="store_true",
+                  help="""Enable stream coalesce in the stream engine.""", default=False)
 parser.add_option("--gem-forge-stream-engine-enable-merge", action="store", type="int",
                   help="""Enable stream merge in the stream engine.""", default="0")
 parser.add_option("--gem-forge-stream-engine-l1d",
@@ -208,9 +208,7 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
         options.gem_forge_stream_engine_max_run_ahead_length
     )
     llvm_trace_cpu.streamEngineThrottling = options.gem_forge_stream_engine_throttling
-    llvm_trace_cpu.streamEngineEnableCoalesce = (
-        options.gem_forge_stream_engine_enable_coalesce != 0
-    )
+    llvm_trace_cpu.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
     llvm_trace_cpu.streamEngineEnableMerge = (
         options.gem_forge_stream_engine_enable_merge != 0
     )
