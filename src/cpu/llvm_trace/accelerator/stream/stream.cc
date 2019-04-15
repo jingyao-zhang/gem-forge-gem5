@@ -9,51 +9,39 @@
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define STREAM_DPRINTF(format, args...)                                      \
-  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(), \
+#define STREAM_DPRINTF(format, args...)                                        \
+  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(),   \
           ##args)
 
-#define STREAM_ENTRY_DPRINTF(entry, format, args...)                      \
-  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_DPRINTF(entry, format, args...)                           \
+  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
                  (entry).idx.entryIdx, ##args)
 
-#define STREAM_HACK(format, args...) \
+#define STREAM_HACK(format, args...)                                           \
   hack("Stream %s: " format, this->getStreamName().c_str(), ##args)
 
-#define STREAM_ENTRY_HACK(entry, format, args...)                      \
-  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_HACK(entry, format, args...)                              \
+  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance,         \
               (entry).idx.entryIdx, ##args)
 
-#define STREAM_PANIC(format, args...)                                   \
-  {                                                                     \
-    this->dump();                                                       \
-    panic("Stream %s: " format, this->getStreamName().c_str(), ##args); \
+#define STREAM_PANIC(format, args...)                                          \
+  {                                                                            \
+    this->dump();                                                              \
+    panic("Stream %s: " format, this->getStreamName().c_str(), ##args);        \
   }
 
-#define STREAM_ENTRY_PANIC(entry, format, args...)                      \
-  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_PANIC(entry, format, args...)                             \
+  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
-               size_t _maxRunAHeadLength, const std::string &_throttling)
-    : cpu(_cpu),
-      se(_se),
-      isOracle(_isOracle),
+               size_t _maxRunAHeadLength)
+    : cpu(_cpu), se(_se), isOracle(_isOracle),
       firstConfigSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
       configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      storedData(nullptr),
+      endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),
       maxRunAHeadLength(_maxRunAHeadLength),
-      runAHeadLength(_maxRunAHeadLength),
-      throttling(_throttling) {
-  /**
-   * Throttling information initialization.
-   */
-  if (this->throttling != "static") {
-    // We are doing dynamic throttling, we should start with a small
-    // runAHeadLength and slowly increasing.
-    this->runAHeadLength = 2;
-  }
+      runAHeadLength(_maxRunAHeadLength) {
 
   this->storedData = new uint8_t[cpu->system->cacheLineSize()];
 
@@ -162,27 +150,6 @@ void Stream::removeAliveCacheBlock(uint64_t addr) const {
     }
   }
 }
-
-void Stream::updateRunAHeadLength(size_t newRunAHeadLength) {
-  // So far we only increase run ahead length.
-  if (newRunAHeadLength <= this->runAHeadLength) {
-    return;
-  }
-  // if (newRunAHeadLength > this->maxRunAHeadLength) {
-  //   return;
-  // }
-  auto delta = newRunAHeadLength - this->runAHeadLength;
-  this->se->currentTotalRunAheadLength += delta;
-  this->runAHeadLength = newRunAHeadLength;
-  // Back pressure to base step streams.
-  for (auto S : this->baseStepStreams) {
-    S->updateRunAHeadLength(this->runAHeadLength);
-  }
-  // We also have to sync with dependent step streams.
-  for (auto S : this->dependentStepStreams) {
-    S->updateRunAHeadLength(this->runAHeadLength);
-  }
-}
 void Stream::StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
                                                    PacketPtr packet) {
   if (this->additionalDelay == 0) {
@@ -208,25 +175,5 @@ void Stream::StreamMemAccess::handlePacketResponse(PacketPtr packet) {
     this->additionalDelay = 0;
     auto responseEvent = new ResponseEvent(cpu, this, packet);
     cpu->schedule(responseEvent, cpu->clockEdge(delay));
-  }
-}
-
-
-void Stream::throttleLate() {
-  if (this->throttling != "late") {
-    return;
-  }
-  this->lateFetchCount++;
-  if (this->lateFetchCount == 10) {
-    // Check if we still have room to increase.
-    inform("Late fetche! %d %d", this->se->currentTotalRunAheadLength,
-           this->se->maxTotalRunAheadLength);
-    if (this->se->currentTotalRunAheadLength <
-        this->se->maxTotalRunAheadLength) {
-      // Step by 2.
-      this->updateRunAHeadLength(this->runAHeadLength + 2);
-      // Clear the late FetchCount
-      this->lateFetchCount = 0;
-    }
   }
 }

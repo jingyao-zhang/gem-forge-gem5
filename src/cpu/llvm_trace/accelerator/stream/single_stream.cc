@@ -36,9 +36,8 @@
 
 SingleStream::SingleStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
                            const LLVM::TDG::StreamInfo &_info, bool _isOracle,
-                           size_t _maxRunAHeadLength,
-                           const std::string &_throttling)
-    : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength, _throttling),
+                           size_t _maxRunAHeadLength)
+    : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength),
       info(_info) {
   const auto &relativeHistoryPath = this->info.history_path();
   auto historyPath = cpu->getTraceExtraFolder() + "/" + relativeHistoryPath;

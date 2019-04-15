@@ -20,7 +20,7 @@ class StreamInst;
  * A simple logical stream managed by the coalesced stream.
  */
 class LogicalStream {
- public:
+public:
   LogicalStream(const std::string &_traceExtraFolder,
                 const LLVM::TDG::StreamInfo &_info);
 
@@ -37,10 +37,10 @@ class LogicalStream {
 };
 
 class CoalescedStream : public Stream {
- public:
+public:
   CoalescedStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
                   const LLVM::TDG::StreamInfo &_primaryInfo, bool _isOracle,
-                  size_t _maxRunAHeadLength, const std::string &_throttling);
+                  size_t _maxRunAHeadLength);
 
   ~CoalescedStream();
 
@@ -71,7 +71,7 @@ class CoalescedStream : public Stream {
 
   bool isContinuous() const override;
 
- protected:
+protected:
   /**
    * Represented all the streams coalesced within this one.
    * The first one is "primary stream", whose stream id is used to represent
@@ -79,6 +79,9 @@ class CoalescedStream : public Stream {
    */
   std::list<LogicalStream> coalescedStreams;
   LogicalStream *primaryLogicalStream;
+
+  std::string streamName;
+  void generateStreamName();
 
   // bool shouldHandleStreamInst(StreamInst *inst) const;
 

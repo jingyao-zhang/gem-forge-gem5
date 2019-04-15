@@ -17,7 +17,7 @@ class SingleStream : public Stream {
  public:
   SingleStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
                const LLVM::TDG::StreamInfo &_info, bool _isOracle,
-               size_t _maxRunAHeadLength, const std::string &_throttling);
+               size_t _maxRunAHeadLength);
 
   ~SingleStream();
 

@@ -19,7 +19,7 @@ void debugStream(Stream *S, const char *message) {
          S->allocSize, S->maxSize);
 }
 
-}  // namespace
+} // namespace
 
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false) {}
@@ -120,9 +120,8 @@ void StreamEngine::regStats() {
       .prereq(this->numMemElementsUsed);
   this->memEntryWaitCycles
       .name(this->manager->name() + ".stream.memEntryWaitCycles")
-      .desc(
-          "Number of cycles of a mem entry from first checked ifReady to "
-          "ready.")
+      .desc("Number of cycles of a mem entry from first checked ifReady to "
+            "ready.")
       .prereq(this->memEntryWaitCycles);
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -215,22 +214,31 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   // Initialize all the streams if this is the first time we encounter the loop.
   for (const auto &config : configs) {
     const auto &streamId = config.stream_id();
-    if (this->streamMap.count(streamId) == 0) {
+    // Remember to also check the coalesced id map.
+    if (this->streamMap.count(streamId) == 0 &&
+        this->coalescedStreamIdMap.count(streamId) == 0) {
       // We haven't initialize streams in this loop.
+      hack("Initialize due to stream %lu.\n", streamId);
       this->initializeStreams(inst->getTDG().stream_config());
       break;
     }
   }
 
-  // Get all the configured streams.
+  /**
+   * Get all the configured streams.
+   * A very subtle thing is that to make sure all the streams
+   * are configured after their base streams in the case of coalesced streams,
+   * we do this in the reverse order.
+   */
   std::list<Stream *> configStreams;
   std::unordered_set<Stream *> dedupSet;
-  for (const auto &config : configs) {
+  for (auto configIter = configs.rbegin(), configEnd = configs.rend();
+       configIter != configEnd; ++configIter) {
     // Deduplicate the streams due to coalescing.
-    const auto &streamId = config.stream_id();
+    const auto &streamId = configIter->stream_id();
     auto stream = this->getStream(streamId);
     if (dedupSet.count(stream) == 0) {
-      configStreams.push_back(stream);
+      configStreams.push_front(stream);
       dedupSet.insert(stream);
     }
   }
@@ -267,6 +275,7 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   // 3. Allocate new entries one by one for all streams.
   // The first element is guaranteed to be allocated.
   for (auto S : configStreams) {
+    // hack("Allocate element for stream %s.\n", S->getStreamName().c_str());
     assert(this->hasFreeElement());
     assert(S->allocSize < S->maxSize);
     assert(this->areBaseElementAllocated(S));
@@ -602,12 +611,13 @@ void StreamEngine::initializeStreams(
     if (coalesceGroup != -1 && this->enableCoalesce) {
       // First check if we have created the coalesced stream for the group.
       if (coalescedGroupToStreamMap.count(coalesceGroup) == 0) {
-        auto newCoalescedStream =
-            new CoalescedStream(cpu, this, streamInfo, this->isOracle,
-                                this->maxRunAHeadLength, "static");
+        auto newCoalescedStream = new CoalescedStream(
+            cpu, this, streamInfo, this->isOracle, this->maxRunAHeadLength);
         this->streamMap.emplace(streamId, newCoalescedStream);
         this->coalescedStreamIdMap.emplace(streamId, streamId);
         coalescedGroupToStreamMap.emplace(coalesceGroup, newCoalescedStream);
+        hack("Initialized stream %lu %s.\n", streamId,
+             newCoalescedStream->getStreamName().c_str());
       } else {
         // This is not the first time we encounter this coalesce group.
         // Add the config to the coalesced stream.
@@ -615,6 +625,8 @@ void StreamEngine::initializeStreams(
         auto coalescedStreamId = coalescedStream->getCoalesceStreamId();
         coalescedStream->addStreamInfo(streamInfo);
         this->coalescedStreamIdMap.emplace(streamId, coalescedStreamId);
+        hack("Add coalesced stream %lu %lu %s.\n", streamId, coalescedStreamId,
+             coalescedStream->getStreamName().c_str());
       }
 
       // panic("Disabled stream coalesce so far.");
@@ -622,8 +634,10 @@ void StreamEngine::initializeStreams(
     } else {
       // Single stream can be immediately constructed and inserted into the map.
       auto newStream = new SingleStream(cpu, this, streamInfo, this->isOracle,
-                                        this->maxRunAHeadLength, "static");
+                                        this->maxRunAHeadLength);
       this->streamMap.emplace(streamId, newStream);
+      hack("Initialized stream %lu %s.\n", streamId,
+           newStream->getStreamName().c_str());
     }
   }
 }
@@ -672,8 +686,8 @@ void StreamEngine::updateAliveStatistics() {
   this->numTotalAliveMemStreams.sample(totalAliveMemStreams);
 }
 
-LLVM::TDG::StreamInfo StreamEngine::parseStreamInfoFromFile(
-    const std::string &infoPath) {
+LLVM::TDG::StreamInfo
+StreamEngine::parseStreamInfoFromFile(const std::string &infoPath) {
   ProtoInputStream infoIStream(infoPath);
   LLVM::TDG::StreamInfo info;
   if (!infoIStream.read(info)) {
@@ -716,8 +730,8 @@ bool StreamEngine::hasFreeElement() const {
   return this->numFreeFIFOEntries > 0;
 }
 
-const std::list<Stream *> &StreamEngine::getStepStreamList(
-    Stream *stepS) const {
+const std::list<Stream *> &
+StreamEngine::getStepStreamList(Stream *stepS) const {
   assert(stepS != nullptr && "stepS is nullptr.");
   if (this->memorizedStreamStepListMap.count(stepS) != 0) {
     return this->memorizedStreamStepListMap.at(stepS);
@@ -773,18 +787,24 @@ bool StreamEngine::areBaseElementAllocated(Stream *S) {
       continue;
     }
 
+    auto allocated = true;
     if (baseS->stepRootStream == S->stepRootStream) {
       if (baseS->allocSize - baseS->stepSize <= S->allocSize - S->stepSize) {
         // The base stream has not allocate the element we want.
-        return false;
+        allocated = false;
       }
     } else {
       // The other one must be a constant stream.
       assert(baseS->stepRootStream == nullptr &&
              "Should be a constant stream.");
       if (baseS->stepped->next == nullptr) {
-        return false;
+        allocated = false;
       }
+    }
+    // hack("Check base element from stream %s for stream %s allocated %d.\n",
+    //      baseS->getStreamName().c_str(), S->getStreamName().c_str(), allocated);
+    if (!allocated) {
+      return false;
     }
   }
   return true;
@@ -841,10 +861,9 @@ void StreamEngine::allocateElement(Stream *S) {
         (newElement->addr + newElement->size - 1) & (~(cacheBlockSize - 1));
     while (lhsCacheBlock <= rhsCacheBlock) {
       if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic(
-            "More than %d cache blocks for one stream element, address %lu "
-            "size %lu.",
-            newElement->cacheBlocks, newElement->addr, newElement->size);
+        panic("More than %d cache blocks for one stream element, address %lu "
+              "size %lu.",
+              newElement->cacheBlocks, newElement->addr, newElement->size);
       }
       newElement->cacheBlockAddrs[newElement->cacheBlocks] = lhsCacheBlock;
       newElement->cacheBlocks++;

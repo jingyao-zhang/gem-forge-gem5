@@ -20,7 +20,7 @@ class StreamEndInst;
 class Stream {
  public:
   Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
-         size_t _maxRunAHeadLength, const std::string &_throttling);
+         size_t _maxRunAHeadLength);
 
   virtual ~Stream();
 
@@ -180,7 +180,7 @@ class Stream {
 
   size_t maxRunAHeadLength;
   size_t runAHeadLength;
-  std::string throttling;
+  // std::string throttling;
 
   std::unordered_set<StreamMemAccess *> memAccesses;
 
@@ -190,16 +190,16 @@ class Stream {
   bool isCacheBlockAlive(uint64_t addr) const;
   uint64_t getCacheBlockAddr(uint64_t addr) const;
 
-  void updateRunAHeadLength(size_t newRunAHeadLength);
+  // void updateRunAHeadLength(size_t newRunAHeadLength);
 
   virtual void handlePacketResponse(const FIFOEntryIdx &entryId,
                                     PacketPtr packet,
                                     StreamMemAccess *memAccess) = 0;
-  /**
-   * For throttler.
-   * TODO: extract to another class.
-   */
-  void throttleLate();
+  // /**
+  //  * For throttler.
+  //  * TODO: extract to another class.
+  //  */
+  // void throttleLate();
 
   /**
    * For debug.

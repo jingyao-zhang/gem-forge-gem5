@@ -8,7 +8,9 @@
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define LOGICAL_STREAM_PANIC(S, format, args...) \
+#include <sstream>
+
+#define LOGICAL_STREAM_PANIC(S, format, args...)                               \
   panic("Logical Stream %s: " format, (S)->info.name().c_str(), ##args)
 
 LogicalStream::LogicalStream(const std::string &_traceExtraFolder,
@@ -24,9 +26,8 @@ LogicalStream::~LogicalStream() {}
 
 CoalescedStream::CoalescedStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
                                  const LLVM::TDG::StreamInfo &_primaryInfo,
-                                 bool _isOracle, size_t _maxRunAHeadLength,
-                                 const std::string &_throttling)
-    : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength, _throttling) {
+                                 bool _isOracle, size_t _maxRunAHeadLength)
+    : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength) {
   // Create the primary logical stream.
   this->addStreamInfo(_primaryInfo);
   // Set the primaryLogicalStream to the newly created one.
@@ -40,6 +41,7 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
    * Note: At this point the primary logical stream may not be created yet!
    */
   this->coalescedStreams.emplace_back(cpu->getTraceExtraFolder(), info);
+  this->generateStreamName();
   // Update the dependence information.
   for (const auto &baseStreamId : info.chosen_base_streams()) {
     auto baseStream = this->se->getStream(baseStreamId.id());
@@ -86,10 +88,9 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
         (addr + S.info.element_size() - 1) & (~(cacheBlockSize - 1));
     while (lhsCacheBlock <= rhsCacheBlock) {
       if (cacheBlocks.size() >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic(
-            "More than %d cache blocks for one stream element, address %lu "
-            "size %lu.",
-            cacheBlocks.size(), addr, S.info.element_size());
+        panic("More than %d cache blocks for one stream element, address %lu "
+              "size %lu.",
+              cacheBlocks.size(), addr, S.info.element_size());
       }
 
       // Insert into the list.
@@ -121,8 +122,8 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
     }
   }
 
-  if (cacheBlocks.size() > 2) {
-    panic("Really? More than 2 cache blocks for a coalesced stream?");
+  if (cacheBlocks.size() > 4) {
+    panic("Really? More than 4 cache blocks for a coalesced stream?");
   }
   // Check if all the cache blocks are continuous.
   if (cacheBlocks.size() > 1) {
@@ -130,8 +131,13 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
     auto idx = 0;
     for (auto cacheBlock : cacheBlocks) {
       if (cacheBlock != initCacheBlock + idx * cpu->system->cacheLineSize()) {
-        panic("Uncontinuous address for coalesced stream.");
+        for (auto c : cacheBlocks) {
+          hack("Uncontinuous address for coalesced stream %lx\n", c);
+        }
+        panic("Uncontinuous address for coalesced stream %s.",
+              this->getStreamName().c_str());
       }
+      ++idx;
     }
   }
   // Add the stream.
@@ -144,7 +150,25 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
   }
 }
 
+void CoalescedStream::generateStreamName() {
+  std::stringstream ss;
+  ss << "(CLS ";
+  const auto &primaryName = this->coalescedStreams.front().info.name();
+  auto lhs = primaryName.find(' ');
+  auto rhs = primaryName.rfind(' ');
+  ss << primaryName.substr(lhs + 1, rhs - lhs - 1);
+
+  for (const auto &S : this->coalescedStreams) {
+    const auto &name = S.info.name();
+    auto pos = name.rfind(' ');
+    ss << ' ' << name.substr(pos + 1, name.size() - pos - 2);
+  }
+  ss << ")";
+  this->streamName = ss.str();
+}
+
 const std::string &CoalescedStream::getStreamName() const {
+  return this->streamName;
   return this->primaryLogicalStream->info.name();
 }
 
