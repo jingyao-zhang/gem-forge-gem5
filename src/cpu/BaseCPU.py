@@ -265,11 +265,17 @@ class BaseCPU(MemObject):
                 buildEnv['TARGET_ISA']
             sys.exit(1)
 
-    def connectCachedPorts(self, bus, skip_l1d = False):
+    def connectCachedPorts(self, bus):
+        print("Do we have L1_5DCache?")
+        print(hasattr(self, 'l1_5dcache'))
+        has_l1_5dcache = hasattr(self, 'l1_5dcache')
         for p in self._cached_ports:
-            if skip_l1d and p == 'dcache.mem_side':
+            if has_l1_5dcache and p == 'dcache.mem_side':
                 continue
             exec('self.%s = bus' % p)
+        if has_l1_5dcache:
+            # Connect the L1 to L1_5.
+            self.dcache.mem_side = self.l1_5dcache.cpu_side
 
     def connectUncachedPorts(self, bus):
         for p in self._uncached_slave_ports:
@@ -277,33 +283,40 @@ class BaseCPU(MemObject):
         for p in self._uncached_master_ports:
             exec('self.%s = bus.slave' % p)
 
-    def connectAllPorts(self, cached_bus, uncached_bus = None, skip_l1d = False):
-        self.connectCachedPorts(cached_bus, skip_l1d)
+    def connectAllPorts(self, cached_bus, uncached_bus = None):
+        self.connectCachedPorts(cached_bus)
         if not uncached_bus:
             uncached_bus = cached_bus
         self.connectUncachedPorts(uncached_bus)
 
-    def connectAllPortsNoL2Bus(self, l2, mem_bus, skip_l1d = False):
+    def connectAllPortsNoL2Bus(self, l2, mem_bus):
         # Hack, no l2 bus, so icache will be connected directly to membus.
 
-        toL2Master = 'l1_5d.mem_side' if skip_l1d else 'dcache.mem_side'
-        exec('self.%s = l2' % toL2Master)
+        has_l1_5dcache = hasattr(self, 'l1_5dcache')
+        if has_l1_5dcache:
+            self.l1_5dcache.mem_side = l2
+            self.dcache.mem_side = self.l1_5dcache.cpu_side
+        else:
+            self.dcache.mem_side = l2
 
         for p in self._cached_ports:
-            if p == toL2Master:
+            if p == 'dcache.mem_side':
                 continue
-            if skip_l1d and p == 'dcache.mem_side':
+            if p == 'l1_5dcache.mem_side':
                 continue
             # Connect all other ports to mem_bus.
             exec('self.%s = mem_bus.slave' % p)
         self.connectUncachedPorts(mem_bus)
 
-    def addPrivateSplitL1Caches(self, ic, dc, iwc = None, dwc = None):
+    def addPrivateSplitL1Caches(self, ic, dc, iwc=None, dwc=None, l1_5dc=None):
         self.icache = ic
         self.dcache = dc
         self.icache_port = ic.cpu_side
         self.dcache_port = dc.cpu_side
         self._cached_ports = ['icache.mem_side', 'dcache.mem_side']
+        if l1_5dc is not None:
+            self.l1_5dcache = l1_5dc
+            self._cached_ports.append('l1_5dcache.mem_side')
         if buildEnv['TARGET_ISA'] in ['x86', 'arm']:
             if iwc and dwc:
                 self.itb_walker_cache = iwc

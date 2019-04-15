@@ -144,16 +144,29 @@ def config_cache(options, system):
                 # Let CPU connect to monitors
                 dcache = dcache_mon
 
+            # Create the L1_5DCache.
+            if options.l1_5dcache:
+                l1_5dcache = L1_5DCache(
+                    assoc=options.l1_5d_assoc,
+                    mshrs=options.l1_5d_mshrs,
+                    size=options.l1_5d_size,
+                )
+            else:
+                l1_5dcache = None
+
             # When connecting the caches, the clock is also inherited
             # from the CPU in question
-            system.cpu[i].addPrivateSplitL1Caches(icache, dcache,
-                                                  iwalkcache, dwalkcache)
+            system.cpu[i].addPrivateSplitL1Caches(
+                icache, dcache,
+                iwalkcache, dwalkcache,
+                l1_5dcache)
 
             if options.memchecker:
                 # The mem_side ports of the caches haven't been connected yet.
                 # Make sure connectAllPorts connects the right objects.
                 system.cpu[i].dcache = dcache_real
                 system.cpu[i].dcache_mon = dcache_mon
+
 
         elif options.external_memory_system:
             # These port names are presented to whatever 'external' system
@@ -174,18 +187,16 @@ def config_cache(options, system):
 
         system.cpu[i].createInterruptController()
         if options.l2cache:
-            skip_l1d = options.l1_5dcache
             if options.no_l2bus:
                 system.cpu[i].connectAllPortsNoL2Bus(
                     system.l2.cpu_side,
                     system.membus,
-                    skip_l1d
                 )
             else:
                 system.cpu[i].connectAllPorts(
                     system.tol2bus.slave,
                     system.membus,
-                    skip_l1d)
+                )
         elif options.external_memory_system:
             system.cpu[i].connectUncachedPorts(system.membus)
         else:

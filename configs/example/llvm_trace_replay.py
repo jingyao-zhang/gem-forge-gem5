@@ -372,18 +372,18 @@ if not options.no_l2bus:
     system.tol2bus.snoop_filter = NULL
 
 for cpu in system.cpu:
-    if options.l1_5dcache:
-        # Add the L1.5 dcache.
-        cpu.l1_5dcache = L1_5_DCache(
-            assoc=options.l1_5d_assoc,
-            mshrs=options.l1_5d_mshrs,
-            size=options.l1_5d_size,
-        )
-        # Connect them
-        cpu.dcache.mem_side = cpu.l1_5dcache.cpu_side
-        cpu.l1_5dcache.mem_side = system.tol2bus.slave
-        if (options.gem_forge_stream_engine_l1d == 'aware-l15-lru'):
-            cpu.l1_5dcache.tags = StreamLRU()
+    # if options.l1_5dcache:
+    #     # Add the L1.5 dcache.
+    #     cpu.l1_5dcache = L1_5DCache(
+    #         assoc=options.l1_5d_assoc,
+    #         mshrs=options.l1_5d_mshrs,
+    #         size=options.l1_5d_size,
+    #     )
+    #     # Connect them
+    #     cpu.dcache.mem_side = cpu.l1_5dcache.cpu_side
+    #     cpu.l1_5dcache.mem_side = system.tol2bus.slave
+    #     if (options.gem_forge_stream_engine_l1d == 'aware-l15-lru'):
+    #         cpu.l1_5dcache.tags = StreamLRU()
 
     if options.gem_forge_stream_engine_l1d == 'aware-replace':
         # stream-aware cache must be used with stream merge.

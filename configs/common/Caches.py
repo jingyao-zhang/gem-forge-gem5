@@ -72,7 +72,7 @@ class L1_DCache(L1Cache):
     pass
 
 
-class L1_5_DCache(Cache):
+class L1_5DCache(Cache):
     assoc = 8
     tag_latency = 15
     data_latency = 15
