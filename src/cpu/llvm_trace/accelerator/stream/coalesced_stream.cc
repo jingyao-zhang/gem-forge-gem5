@@ -87,10 +87,12 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
     auto rhsCacheBlock =
         (addr + S.info.element_size() - 1) & (~(cacheBlockSize - 1));
     while (lhsCacheBlock <= rhsCacheBlock) {
-      if (cacheBlocks.size() >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic("More than %d cache blocks for one stream element, address %lu "
-              "size %lu.",
-              cacheBlocks.size(), addr, S.info.element_size());
+      if (cacheBlocks.size() > StreamElement::MAX_CACHE_BLOCKS) {
+        panic(
+            "%s: More than %d cache blocks for one stream element, address %lu "
+            "size %lu.",
+            this->getStreamName().c_str(), cacheBlocks.size(), addr,
+            S.info.element_size());
       }
 
       // Insert into the list.
@@ -122,9 +124,11 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
     }
   }
 
-  if (cacheBlocks.size() > 4) {
-    panic("Really? More than 4 cache blocks for a coalesced stream?");
+  if (cacheBlocks.size() > StreamElement::MAX_CACHE_BLOCKS) {
+    panic("%s: More than %d cache blocks for one stream element",
+          this->getStreamName().c_str(), cacheBlocks.size());
   }
+
   // Check if all the cache blocks are continuous.
   if (cacheBlocks.size() > 1) {
     auto initCacheBlock = cacheBlocks.front();
