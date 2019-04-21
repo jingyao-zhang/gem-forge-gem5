@@ -267,9 +267,6 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   TDGPacketHandler *handler =
       reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
   handler->handlePacketResponse(this, pkt);
-  // Release the memory.
-  delete pkt->req;
-  delete pkt;
 
   return true;
 }

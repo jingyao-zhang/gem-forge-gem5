@@ -88,7 +88,7 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
         (addr + S.info.element_size() - 1) & (~(cacheBlockSize - 1));
     while (lhsCacheBlock <= rhsCacheBlock) {
       if (cacheBlocks.size() > StreamElement::MAX_CACHE_BLOCKS) {
-        panic(
+        inform(
             "%s: More than %d cache blocks for one stream element, address %lu "
             "size %lu.",
             this->getStreamName().c_str(), cacheBlocks.size(), addr,

@@ -6,8 +6,13 @@
 class LLVMTraceCPU;
 class TDGPacketHandler {
 public:
-  // Handle a packet response. Default will panic.
-  // Only for mem insts.
+  /**
+   * Handle a packet response.
+   * Remember to release the packet at the end of this function.
+   *
+   * delete packet->req;
+   * delete packet;
+   */
   virtual void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) = 0;
   virtual ~TDGPacketHandler() {}
 };

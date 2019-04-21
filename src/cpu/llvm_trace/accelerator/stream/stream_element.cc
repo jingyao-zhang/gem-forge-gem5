@@ -33,14 +33,17 @@ void StreamElement::clear() {
 }
 
 void StreamElement::handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) {
-  if (this->inflyLoadPackets.count(packet) == 0) {
-    return;
+  if (this->inflyLoadPackets.count(packet) != 0) {
+    this->inflyLoadPackets.erase(packet);
+    if (this->inflyLoadPackets.size() == 0) {
+      this->isValueReady = true;
+      this->valueReadyCycle = cpu->curCycle();
+    }
   }
-  this->inflyLoadPackets.erase(packet);
-  if (this->inflyLoadPackets.size() == 0) {
-    this->isValueReady = true;
-    this->valueReadyCycle = cpu->curCycle();
-  }
+  // Remember to release the packet.
+  delete packet->req;
+  delete packet;
+  return;
 }
 
 void StreamElement::dump() const {}

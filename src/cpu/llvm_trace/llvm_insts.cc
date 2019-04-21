@@ -467,6 +467,9 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
     cpu->getRunTimeProfiler()->profileLoadLatency(
         this->getTDG().pc(), this->loadEndCycle - this->loadStartCycle);
   }
+  // Remember to release the packet.
+  delete packet->req;
+  delete packet;
 }
 
 void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {

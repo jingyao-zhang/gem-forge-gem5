@@ -48,7 +48,7 @@ struct StreamElement : public TDGPacketHandler {
    */
   uint64_t addr;
   uint64_t size;
-  static constexpr int MAX_CACHE_BLOCKS = 5;
+  static constexpr int MAX_CACHE_BLOCKS = 10;
   uint64_t cacheBlockAddrs[MAX_CACHE_BLOCKS];
   int cacheBlocks;
 
