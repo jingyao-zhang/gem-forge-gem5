@@ -108,6 +108,9 @@ class CoherentXBar(BaseXBar):
 
     system = Param.System(Parent.any, "System that the crossbar belongs to.")
 
+    use_stream_aware_cpu_port = Param.Bool(False,
+        "Whether it should use stream aware cpu side port.")
+
 class SnoopFilter(SimObject):
     type = 'SnoopFilter'
     cxx_header = "mem/snoop_filter.hh"

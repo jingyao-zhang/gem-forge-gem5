@@ -3,6 +3,7 @@
 #define __CPU_TDG_ACCELERATOR_SINGLE_STREAM_HH__
 
 #include "stream_history.hh"
+#include "stream_pattern.hh"
 
 // Parse the instructions from a protobuf.
 #include "config/have_protobuf.hh"
@@ -14,7 +15,7 @@
 #include "stream.hh"
 
 class SingleStream : public Stream {
- public:
+public:
   SingleStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
                const LLVM::TDG::StreamInfo &_info, bool _isOracle,
                size_t _maxRunAHeadLength);
@@ -35,9 +36,10 @@ class SingleStream : public Stream {
   uint64_t getTrueFootprint() const override;
   uint64_t getFootprint(unsigned cacheBlockSize) const override;
 
- private:
+private:
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
+  std::unique_ptr<StreamPattern> patternStream;
   void handlePacketResponse(const FIFOEntryIdx &entryId, PacketPtr packet,
                             StreamMemAccess *memAccess) override;
 

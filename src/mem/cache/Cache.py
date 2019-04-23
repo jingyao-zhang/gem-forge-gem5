@@ -83,6 +83,9 @@ class BaseCache(MemObject):
 
     system = Param.System(Parent.any, "System we belong to")
 
+    use_stream_aware_cpu_port = Param.Bool(False,
+        "Whether it should use stream aware cpu side port.")
+
 # Enum for cache clusivity, currently mostly inclusive or mostly
 # exclusive.
 class Clusivity(Enum): vals = ['mostly_incl', 'mostly_excl']

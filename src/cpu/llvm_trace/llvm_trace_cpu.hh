@@ -271,9 +271,8 @@ public:
   Addr getPAddrFromVaddr(Addr vaddr);
 
   // Send a request to memory.
-  // If data is not nullptr, it will be a write.
-  PacketPtr sendRequest(Addr paddr, int size, TDGPacketHandler *handler,
-                        uint8_t *data, Addr pc = 0);
+  void sendRequest(PacketPtr pkt);
+  MasterID getDataMasterID() const { return this->_dataMasterId; }
 
   Cycles getOpLatency(OpClass opClass);
 

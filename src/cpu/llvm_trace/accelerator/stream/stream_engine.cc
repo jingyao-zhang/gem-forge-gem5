@@ -18,8 +18,16 @@ void debugStream(Stream *S, const char *message) {
          message, S->getStreamName().c_str(), S->configured, S->stepSize,
          S->allocSize, S->maxSize);
 }
-
 } // namespace
+
+#define STREAM_DPRINTF(stream, format, args...)                                \
+  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
+          ##args)
+
+#define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
+  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
+                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
+                 ##args)
 
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false) {}
@@ -802,7 +810,8 @@ bool StreamEngine::areBaseElementAllocated(Stream *S) {
       }
     }
     // hack("Check base element from stream %s for stream %s allocated %d.\n",
-    //      baseS->getStreamName().c_str(), S->getStreamName().c_str(), allocated);
+    //      baseS->getStreamName().c_str(), S->getStreamName().c_str(),
+    //      allocated);
     if (!allocated) {
       return false;
     }
@@ -852,33 +861,38 @@ void StreamEngine::allocateElement(Stream *S) {
 
   newElement->allocateCycle = cpu->curCycle();
 
-  // Create all the cache line this element will touch.
+  // Create all the cache lines this element will touch.
   if (S->isMemStream()) {
     S->prepareNewElement(newElement);
     const int cacheBlockSize = cpu->system->cacheLineSize();
-    auto lhsCacheBlock = newElement->addr & (~(cacheBlockSize - 1));
-    auto rhsCacheBlock =
-        (newElement->addr + newElement->size - 1) & (~(cacheBlockSize - 1));
-    while (lhsCacheBlock <= rhsCacheBlock) {
+
+    for (int currentSize, totalSize = 0; totalSize < newElement->size;
+         totalSize += currentSize) {
       if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
         panic("More than %d cache blocks for one stream element, address %lu "
               "size %lu.",
               newElement->cacheBlocks, newElement->addr, newElement->size);
       }
-      newElement->cacheBlockAddrs[newElement->cacheBlocks] = lhsCacheBlock;
-      newElement->cacheBlocks++;
-      if (lhsCacheBlock == 0xFFFFFFFFFFFFFFC0) {
-        // This is the last block in the address space.
-        // Something wrong here.
-        break;
+      auto currentAddr = newElement->addr + totalSize;
+      currentSize = newElement->size - totalSize;
+      // Make sure we don't span across multiple cache blocks.
+      if (((currentAddr % cacheBlockSize) + currentSize) > cacheBlockSize) {
+        currentSize = cacheBlockSize - (currentAddr % cacheBlockSize);
       }
-      lhsCacheBlock += cacheBlockSize;
+      // Create the breakdown.
+      auto cacheBlockAddr = currentAddr & (~(cacheBlockSize - 1));
+      auto &newCacheBlockBreakdown =
+          newElement->cacheBlockBreakdownAccesses[newElement->cacheBlocks];
+      newCacheBlockBreakdown.cacheBlockVirtualAddr = cacheBlockAddr;
+      newCacheBlockBreakdown.virtualAddr = currentAddr;
+      newCacheBlockBreakdown.size = currentSize;
+      newElement->cacheBlocks++;
     }
+
   } else {
     // IV stream already ready.
     newElement->isAddrReady = true;
-    newElement->isValueReady = true;
-    newElement->valueReadyCycle = cpu->curCycle();
+    newElement->markValueReady();
   }
 
   // Append to the list.
@@ -951,31 +965,45 @@ void StreamEngine::issueElement(StreamElement *element) {
   assert(element->stream->isMemStream() &&
          "Should never issue element for IVStream.");
 
+  STREAM_ELEMENT_DPRINTF(element, "Issue.\n");
+
   auto S = element->stream;
   // hack("Send packt for stream %s.\n", S->getStreamName().c_str());
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
-    const auto cacheBlockAddr = element->cacheBlockAddrs[i];
+    const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+    auto vaddr = cacheBlockBreakdown.virtualAddr;
+    auto packetSize = cacheBlockBreakdown.size;
     Addr paddr;
     if (cpu->isStandalone()) {
-      paddr = cpu->translateAndAllocatePhysMem(cacheBlockAddr);
+      paddr = cpu->translateAndAllocatePhysMem(vaddr);
     } else {
       panic("Stream so far can only work in standalone mode.");
     }
 
-    // Bring in the whole cache block.
-    auto packetSize = cpu->system->cacheLineSize();
+    if (this->streamPlacementManager != nullptr) {
+      // This means we have the placement manager.
+      if (this->streamPlacementManager->access(paddr, packetSize, element)) {
+        // Stream placement manager handles this packet.
+        continue;
+      }
+    }
 
-    auto pkt = cpu->sendRequest(paddr, packetSize, element, nullptr,
-                                reinterpret_cast<Addr>(element));
+    // Allocate the book-keeping StreamMemAccess.
+    auto memAccess = element->allocateStreamMemAccess();
+    auto pkt = TDGPacketHandler::createTDGPacket(
+        paddr, packetSize, memAccess, nullptr, cpu->getDataMasterID(), 0, 0);
+    cpu->sendRequest(pkt);
 
     if (S->getStreamType() == "load") {
-      element->inflyLoadPackets.insert(pkt);
-    } else if (S->getStreamType() == "store") {
-      // Store can be directly value ready.
-      element->isValueReady = true;
-      element->valueReadyCycle = cpu->curCycle();
+      element->inflyMemAccess.insert(memAccess);
     }
+  }
+
+  if (S->getStreamType() == "store") {
+    // Store can be directly value ready.
+    // We do not track the infly packet for store stream.
+    element->markValueReady();
   }
 }
 

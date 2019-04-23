@@ -11,8 +11,7 @@ class StreamPlacementManager {
 public:
   StreamPlacementManager(LLVMTraceCPU *_cpu, StreamEngine *_se);
 
-  bool access(Stream *stream, Addr paddr, int packetSize,
-              Stream::StreamMemAccess *memAccess);
+  bool access(Addr paddr, int packetSize, StreamElement *element);
 
   void dumpCacheStreamAwarePortStatus();
 
@@ -21,10 +20,10 @@ public:
   struct ResponseEvent : public Event {
   public:
     LLVMTraceCPU *cpu;
-    Stream::StreamMemAccess *memAccess;
+    StreamMemAccess *memAccess;
     PacketPtr pkt;
     std::string n;
-    ResponseEvent(LLVMTraceCPU *_cpu, Stream::StreamMemAccess *_memAccess,
+    ResponseEvent(LLVMTraceCPU *_cpu, StreamMemAccess *_memAccess,
                   PacketPtr _pkt)
         : cpu(_cpu), memAccess(_memAccess), pkt(_pkt),
           n("StreamPlacementResponseEvent") {}
@@ -50,22 +49,20 @@ private:
   uint32_t L2BusWidth;
 
   bool accessNoMSHR(Stream *stream, Addr paddr, int packetSize,
-                    Stream::StreamMemAccess *memAccess);
+                    StreamElement *element);
 
   bool accessExpress(Stream *stream, Addr paddr, int packetSize,
-                     Stream::StreamMemAccess *memAccess);
+                     StreamElement *element);
 
   bool accessExpressFootprint(Stream *stream, Addr paddr, int packetSize,
-                              Stream::StreamMemAccess *memAccess);
+                              StreamElement *element);
 
   size_t whichCacheLevelToPlace(Stream *stream) const;
 
-  PacketPtr createPacket(Addr paddr, int size,
-                         Stream::StreamMemAccess *memAccess) const;
+  PacketPtr createPacket(Addr paddr, int size, StreamElement *element) const;
 
   bool isHit(Cache *cache, Addr paddr) const;
-  void scheduleResponse(Cycles latency, Stream::StreamMemAccess *memAccess,
-                        PacketPtr pkt);
+  void scheduleResponse(Cycles latency, StreamElement *element, PacketPtr pkt);
   void sendTimingRequest(PacketPtr pkt, Cache *cache);
   void sendTimingRequestToL2Bus(PacketPtr pkt);
 };

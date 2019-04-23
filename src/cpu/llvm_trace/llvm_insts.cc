@@ -321,8 +321,10 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
     this->constructPackets(cpu);
     this->loadStartCycle = cpu->curCycle();
     for (const auto &packet : this->packets) {
-      cpu->sendRequest(packet.paddr, packet.size, this, packet.data,
-                       this->TDG.pc());
+      auto pkt = TDGPacketHandler::createTDGPacket(
+          packet.paddr, packet.size, this, packet.data, cpu->getDataMasterID(),
+          0, this->TDG.pc());
+      cpu->sendRequest(pkt);
       DPRINTF(LLVMTraceCPU, "Send request paddr %p size %u for inst %d\n",
               reinterpret_cast<void *>(packet.paddr), packet.size,
               this->getId());
@@ -415,8 +417,10 @@ void LLVMDynamicInstMem::writeback(LLVMTraceCPU *cpu) {
       DPRINTF(LLVMTraceCPU, "Store data %f for inst %u to paddr %p\n",
               *(double *)(packet.data), this->getId(), packet.paddr);
     }
-    cpu->sendRequest(packet.paddr, packet.size, this, packet.data,
-                     this->TDG.pc());
+    auto pkt = TDGPacketHandler::createTDGPacket(
+        packet.paddr, packet.size, this, packet.data, cpu->getDataMasterID(), 0,
+        this->TDG.pc());
+    cpu->sendRequest(pkt);
   }
 }
 

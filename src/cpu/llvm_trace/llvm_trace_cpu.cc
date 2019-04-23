@@ -264,10 +264,7 @@ Tick LLVMTraceCPU::warmUpCache(const std::string &fileName) {
 
 bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   // Receive the response from port.
-  TDGPacketHandler *handler =
-      reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
-  handler->handlePacketResponse(this, pkt);
-
+  TDGPacketHandler::handleTDGPacketResponse(this, pkt);
   return true;
 }
 
@@ -491,31 +488,12 @@ Addr LLVMTraceCPU::getPAddrFromVaddr(Addr vaddr) {
   return paddr;
 }
 
-PacketPtr LLVMTraceCPU::sendRequest(Addr paddr, int size,
-                                    TDGPacketHandler *handler, uint8_t *data,
-                                    Addr pc) {
-  int contextId = 0;
-  if (!this->isStandalone()) {
-    contextId = this->thread_context->contextId();
-  }
-  RequestPtr req =
-      new Request(paddr, size, 0, this->_dataMasterId,
-                  reinterpret_cast<InstSeqNum>(handler), contextId);
-  if (pc != 0) {
-    req->setPC(pc);
-  }
-  PacketPtr pkt;
-  uint8_t *pkt_data = new uint8_t[req->getSize()];
-  if (data == nullptr) {
-    pkt = Packet::createRead(req);
-  } else {
-    pkt = Packet::createWrite(req);
-    // Copy the value to store.
-    memcpy(pkt_data, data, req->getSize());
-  }
-  pkt->dataDynamic(pkt_data);
+void LLVMTraceCPU::sendRequest(PacketPtr pkt) {
+  // int contextId = 0;
+  // if (!this->isStandalone()) {
+  //   contextId = this->thread_context->contextId();
+  // }
   this->dataPort.addReq(pkt);
-  return pkt;
 }
 
 Cycles LLVMTraceCPU::getOpLatency(OpClass opClass) {

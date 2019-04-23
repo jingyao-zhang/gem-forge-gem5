@@ -60,11 +60,21 @@
 #include "debug/CachePort.hh"
 #include "debug/CacheTags.hh"
 #include "debug/CacheVerbose.hh"
+#include "debug/StreamEngine.hh"
 #include "mem/cache/blk.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/tags/stream_lru.hh"
 #include "sim/sim_exit.hh"
+
+#define STREAM_DPRINTF(stream, format, args...)                                \
+  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
+          ##args)
+
+#define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
+  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
+                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
+                 ##args)
 
 Cache::Cache(const CacheParams *p)
     : BaseCache(p, p->system->cacheLineSize()), tags(p->tags),
@@ -77,9 +87,12 @@ Cache::Cache(const CacheParams *p)
   tempBlock = new CacheBlk();
   tempBlock->data = new uint8_t[blkSize];
 
-  cpuSidePort = new CpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
-  // cpuSidePort =
-  //     new StreamAwareCpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
+  if (p->use_stream_aware_cpu_port) {
+    cpuSidePort =
+        new StreamAwareCpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
+  } else {
+    cpuSidePort = new CpuSidePort(p->name + ".cpu_side", this, "CpuSidePort");
+  }
 
   memSidePort = new MemSidePort(p->name + ".mem_side", this, "MemSidePort");
 
@@ -935,6 +948,15 @@ PacketPtr Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
               : (isReadOnly ? MemCmd::ReadCleanReq : MemCmd::ReadSharedReq);
   }
   PacketPtr pkt = new Packet(cpu_pkt->req, cmd, blkSize);
+  /**
+   * Sean: A pure evil hack to pass the StreamMemAccess along the hierarchy.
+   * Note: All the cache hierarchy is relying on this to detect packets from a
+   * stream, do not change this unless we have another way to do this!
+   */
+  auto memAccess = cpu_pkt->findNextSenderState<StreamMemAccess>();
+  if (memAccess != NULL) {
+    pkt->pushSenderState(memAccess);
+  }
 
   // if there are upstream caches that have already marked the
   // packet as having sharers (not passing writable), pass that info
@@ -2488,8 +2510,8 @@ Stream *Cache::getStreamFromPacket(PacketPtr pkt) const {
   TDGPacketHandler *handler =
       reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
 
-  if (auto streamMemAccess = dynamic_cast<Stream::StreamMemAccess *>(handler)) {
-    auto stream = streamMemAccess->getStream();
+  if (auto memAccess = dynamic_cast<StreamMemAccess *>(handler)) {
+    auto stream = memAccess->getStream();
     return stream;
   }
   return nullptr;
@@ -2505,8 +2527,8 @@ CoalescedStream *Cache::getCoalescedStreamFromPacket(PacketPtr pkt) const {
   TDGPacketHandler *handler =
       reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
 
-  if (auto streamMemAccess = dynamic_cast<Stream::StreamMemAccess *>(handler)) {
-    auto stream = streamMemAccess->getStream();
+  if (auto memAccess = dynamic_cast<StreamMemAccess *>(handler)) {
+    auto stream = memAccess->getStream();
     if (auto coalescedStream = dynamic_cast<CoalescedStream *>(stream)) {
       return coalescedStream;
     }
@@ -2558,6 +2580,11 @@ AddrRangeList Cache::CpuSidePort::getAddrRanges() const {
 bool Cache::CpuSidePort::recvTimingReq(PacketPtr pkt) {
   assert(!cache->system->bypassCaches());
 
+  auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+  if (memAccess != NULL) {
+    STREAM_ELEMENT_DPRINTF(memAccess->element, "Received packet.\n");
+  }
+
   bool success = false;
 
   // always let express snoop packets through if even if blocked
@@ -2576,8 +2603,22 @@ bool Cache::CpuSidePort::recvTimingReq(PacketPtr pkt) {
   }
 
   // remember if we have to retry
+  if (success) {
+    auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+    if (memAccess != NULL) {
+      STREAM_ELEMENT_DPRINTF(memAccess->element, "Accepted packet.\n");
+    }
+  }
   mustSendRetry = !success;
   return success;
+}
+
+bool Cache::CpuSidePort::sendTimingResp(PacketPtr pkt) {
+  auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+  if (memAccess != NULL) {
+    STREAM_ELEMENT_DPRINTF(memAccess->element, "Send response.\n");
+  }
+  return SlavePort::sendTimingResp(pkt);
 }
 
 Tick Cache::CpuSidePort::recvAtomic(PacketPtr pkt) {
@@ -2608,19 +2649,28 @@ bool Cache::StreamAwareCpuSidePort::recvTimingReq(PacketPtr pkt) {
   //   this->blockedUpper = true;
   //   return false;
   // }
-  this->blockedPkts.emplace_back(pkt);
-  if (!this->processEvent.scheduled()) {
-    this->owner.schedule(this->processEvent, curTick() + 1);
+  auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+  if (memAccess != NULL) {
+    STREAM_ELEMENT_DPRINTF(memAccess->element, "StreamPort received packet.\n");
   }
+  this->blockedPkts.emplace_back(pkt);
+  this->process();
+  // if (!this->processEvent.scheduled()) {
+  //   this->owner.schedule(this->processEvent, curTick() + 1);
+  // }
   return true;
 }
 
 void Cache::StreamAwareCpuSidePort::recvTimingReqForStream(PacketPtr pkt) {
+  auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+  STREAM_ELEMENT_DPRINTF(memAccess->element, "StreamPort received packet.\n");
+
   this->blockedPkts.emplace_back(pkt);
   this->handlingStreamPkts.insert(pkt);
-  if (!this->processEvent.scheduled()) {
-    this->owner.schedule(this->processEvent, curTick() + 1);
-  }
+  // if (!this->processEvent.scheduled()) {
+  //   this->owner.schedule(this->processEvent, curTick() + 1);
+  // }
+  this->process();
 }
 
 void Cache::StreamAwareCpuSidePort::processSendRetry() {
@@ -2638,18 +2688,15 @@ void Cache::StreamAwareCpuSidePort::processSendRetry() {
 bool Cache::StreamAwareCpuSidePort::sendTimingResp(PacketPtr pkt) {
   if (this->handlingStreamPkts.count(pkt) == 0) {
     // Normal packets.
-    return SlavePort::sendTimingResp(pkt);
+    return Cache::CpuSidePort::sendTimingResp(pkt);
   } else {
     // Stream packets.
     this->handlingStreamPkts.erase(pkt);
 
     // Receive the response from port.
-    auto streamMemAccess = reinterpret_cast<Stream::StreamMemAccess *>(
-        pkt->req->getReqInstSeqNum());
-    streamMemAccess->handlePacketResponse(pkt);
-    // Release the memory.
-    delete pkt->req;
-    delete pkt;
+    auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+    assert(memAccess != NULL && "Missing StreamMemAccess.");
+    memAccess->handlePacketResponse(pkt);
 
     return true;
   }
@@ -2667,7 +2714,7 @@ void Cache::StreamAwareCpuSidePort::process() {
   }
   count++;
 
-  if (this->blocked || this->mustSendRetry) {
+  if ((this->blocked || this->mustSendRetry) && !this->processEvent.scheduled()) {
     this->owner.schedule(this->processEvent, this->owner.nextCycle());
     return;
   }
@@ -2689,7 +2736,7 @@ void Cache::StreamAwareCpuSidePort::process() {
   }
 
   // If there is still packets, schedule next process event.
-  if (!this->blockedPkts.empty()) {
+  if (!this->blockedPkts.empty() && !this->processEvent.scheduled()) {
     this->owner.schedule(this->processEvent, this->owner.nextCycle());
   }
 

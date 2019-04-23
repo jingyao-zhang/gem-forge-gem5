@@ -54,7 +54,17 @@
 #include "cpu/llvm_trace/accelerator/stream/stream.hh"
 #include "debug/AddrRanges.hh"
 #include "debug/CoherentXBar.hh"
+#include "debug/StreamEngine.hh"
 #include "sim/system.hh"
+
+#define STREAM_DPRINTF(stream, format, args...)                                \
+  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
+          ##args)
+
+#define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
+  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
+                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
+                 ##args)
 
 CoherentXBar::CoherentXBar(const CoherentXBarParams *p)
     : BaseXBar(p), system(p->system), snoopFilter(p->snoop_filter),
@@ -88,9 +98,12 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams *p)
   // create the slave ports, once again starting at zero
   for (int i = 0; i < p->port_slave_connection_count; ++i) {
     std::string portName = csprintf("%s.slave[%d]", name(), i);
-    QueuedSlavePort *bp = new CoherentXBarSlavePort(portName, *this, i);
-    // QueuedSlavePort *bp =
-    //     new StreamAwareCoherentXBarSlavePort(portName, *this, i);
+    QueuedSlavePort *bp;
+    if (p->use_stream_aware_cpu_port) {
+      bp = new StreamAwareCoherentXBarSlavePort(portName, *this, i);
+    } else {
+      bp = new CoherentXBarSlavePort(portName, *this, i);
+    }
     slavePorts.push_back(bp);
     respLayers.push_back(
         new RespLayer(*bp, *this, csprintf(".respLayer%d", i)));
@@ -951,10 +964,12 @@ CoherentXBar::StreamAwareCoherentXBarSlavePort::
 
 bool CoherentXBar::StreamAwareCoherentXBarSlavePort::recvTimingReq(
     PacketPtr pkt) {
-  this->blockedPkts.emplace_back(pkt);
-  if (!this->processEvent.scheduled()) {
-    this->xbar.schedule(this->processEvent, curTick() + 1);
+  auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+  if (memAccess != NULL) {
+    STREAM_ELEMENT_DPRINTF(memAccess->element, "Received packet.\n");
   }
+  this->blockedPkts.emplace_back(pkt);
+  this->process();
   return true;
 }
 
@@ -962,23 +977,22 @@ bool CoherentXBar::StreamAwareCoherentXBarSlavePort::recvTimingReqForStream(
     PacketPtr pkt) {
   this->blockedPkts.emplace_back(pkt);
   this->handlingStreamPkts.insert(pkt);
-  if (!this->processEvent.scheduled()) {
-    this->xbar.schedule(this->processEvent, curTick() + 1);
-  }
+  this->process();
   return true;
 }
 
 bool CoherentXBar::StreamAwareCoherentXBarSlavePort::sendTimingResp(
     PacketPtr pkt) {
+  auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+  if (memAccess != NULL) {
+    STREAM_ELEMENT_DPRINTF(memAccess->element, "Send response.\n");
+  }
   if (this->handlingStreamPkts.count(pkt) == 0) {
     return SlavePort::sendTimingResp(pkt);
   } else {
     this->handlingStreamPkts.erase(pkt);
-    auto streamMemAccess = reinterpret_cast<Stream::StreamMemAccess *>(
-        pkt->req->getReqInstSeqNum());
-    streamMemAccess->handlePacketResponse(pkt);
-    delete pkt->req;
-    delete pkt;
+    assert(memAccess != NULL && "Missing StreamMemAccess.");
+    memAccess->handlePacketResponse(pkt);
     return true;
   }
 }
@@ -1009,6 +1023,10 @@ void CoherentXBar::StreamAwareCoherentXBarSlavePort::process() {
       this->blocked = true;
       break;
     } else {
+      auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
+      if (memAccess != NULL) {
+        STREAM_ELEMENT_DPRINTF(memAccess->element, "Accepted packet.\n");
+      }
       this->blockedPkts.pop_front();
       processed++;
       if (processed == 2) {
@@ -1017,7 +1035,7 @@ void CoherentXBar::StreamAwareCoherentXBarSlavePort::process() {
     }
   }
 
-  if (!this->blockedPkts.empty()) {
+  if (!this->blockedPkts.empty() && !this->processEvent.scheduled()) {
     this->xbar.schedule(this->processEvent, this->xbar.nextCycle());
   }
 

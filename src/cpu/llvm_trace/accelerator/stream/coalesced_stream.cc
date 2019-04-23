@@ -69,6 +69,7 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
 void CoalescedStream::configure(StreamConfigInst *inst) {
   for (auto &S : this->coalescedStreams) {
     S.history->configure();
+    S.patternStream->configure();
   }
 }
 

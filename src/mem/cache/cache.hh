@@ -92,6 +92,8 @@ public:
 
     virtual void recvFunctional(PacketPtr pkt);
 
+    bool sendTimingResp(PacketPtr pkt) override;
+
     virtual AddrRangeList getAddrRanges() const;
 
   public:

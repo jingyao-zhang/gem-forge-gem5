@@ -4,7 +4,12 @@
 #include "mem/packet.hh"
 
 class LLVMTraceCPU;
-class TDGPacketHandler {
+
+/**
+ * Drived from SenderState so that it's able to distinguish a TDGPacket
+ * from other normal packet.
+ */
+class TDGPacketHandler : public Packet::SenderState {
 public:
   /**
    * Handle a packet response.
@@ -15,6 +20,10 @@ public:
    */
   virtual void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) = 0;
   virtual ~TDGPacketHandler() {}
+  static PacketPtr createTDGPacket(Addr paddr, int size,
+                                   TDGPacketHandler *handler, uint8_t *data,
+                                   MasterID masterID, int contextId, Addr pc);
+  static void handleTDGPacketResponse(LLVMTraceCPU *cpu, PacketPtr pkt);
 };
 
 #endif

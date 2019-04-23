@@ -54,10 +54,12 @@ StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
   this->lookupLatency.push_back(L2->getLookupLatency());
 
   this->se->numCacheLevel = this->caches.size();
+  assert(this->caches.size() == 3 &&
+         "So far we only support 3 level of cache for stream placement.");
 }
 
-bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
-                                    Stream::StreamMemAccess *memAccess) {
+bool StreamPlacementManager::access(Addr paddr, int packetSize,
+                                    StreamElement *element) {
 
   if (!this->se->isPlacementEnabled()) {
     return false;
@@ -68,16 +70,19 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
     return false;
   }
 
+  auto stream = element->getStream();
+  assert(stream != nullptr && "Missing stream in StreamElement.");
+
   if (this->se->getPlacement() == "placement-no-mshr") {
-    return this->accessNoMSHR(stream, paddr, packetSize, memAccess);
+    return this->accessNoMSHR(stream, paddr, packetSize, element);
   }
 
   if (this->se->getPlacement() == "placement-expr") {
-    return this->accessExpress(stream, paddr, packetSize, memAccess);
+    return this->accessExpress(stream, paddr, packetSize, element);
   }
 
   if (this->se->getPlacement() == "placement-expr-fp") {
-    return this->accessExpressFootprint(stream, paddr, packetSize, memAccess);
+    return this->accessExpressFootprint(stream, paddr, packetSize, element);
   }
 
   auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
@@ -148,14 +153,14 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
    *    cache.
    * 2. Otherwise, we issue a real packet to the place cache.
    */
-  auto pkt = this->createPacket(paddr, packetSize, memAccess);
+  auto pkt = this->createPacket(paddr, packetSize, element);
   auto placeCache = this->caches[placeCacheLevel];
   if (this->se->isOraclePlacementEnabled()) {
     placeCache->recvAtomic(pkt);
     if (hitLevel == this->caches.size()) {
       latency += Cycles(10);
     }
-    this->scheduleResponse(latency, memAccess, pkt);
+    this->scheduleResponse(latency, element, pkt);
     return true;
   }
 
@@ -166,7 +171,7 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
 
   if (hitLevel <= placeCacheLevel) {
     placeCache->recvAtomic(pkt);
-    this->scheduleResponse(latency, memAccess, pkt);
+    this->scheduleResponse(latency, element, pkt);
   } else {
     // Do a real cache access and allow.
     if (this->se->isOraclePlacementEnabled()) {
@@ -186,7 +191,7 @@ bool StreamPlacementManager::access(Stream *stream, Addr paddr, int packetSize,
 
 bool StreamPlacementManager::accessNoMSHR(Stream *stream, Addr paddr,
                                           int packetSize,
-                                          Stream::StreamMemAccess *memAccess) {
+                                          StreamElement *element) {
 
   auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
   if (coalescedStream == nullptr) {
@@ -213,16 +218,16 @@ bool StreamPlacementManager::accessNoMSHR(Stream *stream, Addr paddr,
   /**
    * Schedule the response.
    */
-  auto pkt = this->createPacket(paddr, packetSize, memAccess);
+  auto pkt = this->createPacket(paddr, packetSize, element);
   this->caches[0]->recvAtomic(pkt);
-  this->scheduleResponse(latency, memAccess, pkt);
+  this->scheduleResponse(latency, element, pkt);
 
   return true;
 }
 
 bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
                                            int packetSize,
-                                           Stream::StreamMemAccess *memAccess) {
+                                           StreamElement *element) {
   int latency = 0;
   auto L1 = this->caches[0];
   auto &L1Stats = L1->getOrInitializeStreamStats(stream);
@@ -244,8 +249,8 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
     }
 
     // Check if we want to bypass L2.
-    auto L2 = this->caches[0];
-    auto &L2Stats = L1->getOrInitializeStreamStats(stream);
+    auto L2 = this->caches[1];
+    auto &L2Stats = L2->getOrInitializeStreamStats(stream);
     if (L2Stats.accesses > 100 && L2Stats.misses > L2Stats.accesses * 0.95f &&
         L2Stats.reuses < L2Stats.accesses * 0.1f) {
       // Bypassing L2.
@@ -261,10 +266,12 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
           paddr = paddr & (~(64 - 1));
           packetSize = 64;
         }
+        auto pkt = this->createPacket(paddr, packetSize, element);
         if (this->se->getPlacementLat() != "imm") {
+          auto memAccess =
+              reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
           memAccess->setAdditionalDelay(latency);
         }
-        auto pkt = this->createPacket(paddr, packetSize, memAccess);
         this->caches[0]->incHitCount(pkt);
         this->caches[1]->incHitCount(pkt);
         this->sendTimingRequestToL2Bus(pkt);
@@ -276,10 +283,12 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
         }
         // Send request to L3.
         auto L3 = this->caches[2];
+        auto pkt = this->createPacket(paddr, packetSize, element);
         if (this->se->getPlacementLat() != "imm") {
+          auto memAccess =
+              reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
           memAccess->setAdditionalDelay(latency);
         }
-        auto pkt = this->createPacket(paddr, packetSize, memAccess);
         this->caches[0]->incHitCount(pkt);
         this->caches[1]->incHitCount(pkt);
         this->sendTimingRequest(pkt, L3);
@@ -294,10 +303,12 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
       return true;
     } else {
       // Not bypassing L2.
+      auto pkt = this->createPacket(paddr, packetSize, element);
       if (this->se->getPlacementLat() != "imm") {
+        auto memAccess =
+            reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
         memAccess->setAdditionalDelay(latency);
       }
-      auto pkt = this->createPacket(paddr, packetSize, memAccess);
       this->caches[0]->incHitCount(pkt);
       this->sendTimingRequest(pkt, L2);
       return true;
@@ -308,9 +319,9 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
   return false;
 }
 
-bool StreamPlacementManager::accessExpressFootprint(
-    Stream *stream, Addr paddr, int packetSize,
-    Stream::StreamMemAccess *memAccess) {
+bool StreamPlacementManager::accessExpressFootprint(Stream *stream, Addr paddr,
+                                                    int packetSize,
+                                                    StreamElement *element) {
 
   // if (stream->getStreamName() == "(MEM train bb138 bb146::5(store))") {
   //   return false;
@@ -381,10 +392,12 @@ bool StreamPlacementManager::accessExpressFootprint(
           paddr = paddr & (~(64 - 1));
           packetSize = 64;
         }
+        auto pkt = this->createPacket(paddr, packetSize, element);
         if (this->se->getPlacementLat() != "imm") {
+          auto memAccess =
+              reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
           memAccess->setAdditionalDelay(latency);
         }
-        auto pkt = this->createPacket(paddr, packetSize, memAccess);
         this->caches[0]->incHitCount(pkt);
         this->caches[1]->incHitCount(pkt);
         this->sendTimingRequestToL2Bus(pkt);
@@ -396,20 +409,24 @@ bool StreamPlacementManager::accessExpressFootprint(
         }
 
         auto L3 = this->caches[2];
+        auto pkt = this->createPacket(paddr, packetSize, element);
         if (this->se->getPlacementLat() != "imm") {
+          auto memAccess =
+              reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
           memAccess->setAdditionalDelay(latency);
         }
-        auto pkt = this->createPacket(paddr, packetSize, memAccess);
         this->caches[0]->incHitCount(pkt);
         this->caches[1]->incHitCount(pkt);
         this->sendTimingRequest(pkt, L3);
       }
     } else {
       // Do not bypassing L2.
+      auto pkt = this->createPacket(paddr, packetSize, element);
       if (this->se->getPlacementLat() != "imm") {
+        auto memAccess =
+            reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
         memAccess->setAdditionalDelay(latency);
       }
-      auto pkt = this->createPacket(paddr, packetSize, memAccess);
       this->caches[0]->incHitCount(pkt);
       this->sendTimingRequest(pkt, L2);
     }
@@ -457,22 +474,24 @@ bool StreamPlacementManager::isHit(Cache *cache, Addr paddr) const {
   return cache->inCache(paddr, false);
 }
 
-PacketPtr
-StreamPlacementManager::createPacket(Addr paddr, int size,
-                                     Stream::StreamMemAccess *memAccess) const {
-  RequestPtr req =
-      new Request(paddr, size, 0, Request::funcMasterId,
-                  reinterpret_cast<InstSeqNum>(memAccess), 0 /*Context id*/);
-  PacketPtr pkt;
-  uint8_t *pkt_data = new uint8_t[req->getSize()];
-  pkt = Packet::createRead(req);
-  pkt->dataDynamic(pkt_data);
+PacketPtr StreamPlacementManager::createPacket(Addr paddr, int size,
+                                               StreamElement *element) const {
+  auto memAccess = element->allocateStreamMemAccess();
+  auto pkt = TDGPacketHandler::createTDGPacket(paddr, size, memAccess, nullptr,
+                                               Request::funcMasterId, 0, 0);
+  /**
+   * Remember to add this to the element infly memAccess set.
+   */
+  element->inflyMemAccess.insert(memAccess);
   return pkt;
 }
 
-void StreamPlacementManager::scheduleResponse(
-    Cycles latency, Stream::StreamMemAccess *memAccess, PacketPtr pkt) {
-  auto responseEvent = new ResponseEvent(cpu, memAccess, pkt);
+void StreamPlacementManager::scheduleResponse(Cycles latency,
+                                              StreamElement *element,
+                                              PacketPtr pkt) {
+  auto responseEvent = new ResponseEvent(
+      cpu, reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum()),
+      pkt);
   cpu->schedule(responseEvent, cpu->clockEdge(latency));
 }
 
@@ -543,19 +562,10 @@ size_t StreamPlacementManager::whichCacheLevelToPlace(Stream *stream) const {
 }
 
 void StreamPlacementManager::dumpStreamCacheStats() {
-  {
-    auto L1 = this->caches[0];
-    auto &o = *simout.findOrCreate("L1Stream.txt")->stream();
-    L1->dumpStreamStats(o);
-  }
-  {
-    auto L2 = this->caches[1];
-    auto &o = *simout.findOrCreate("L2Stream.txt")->stream();
-    L2->dumpStreamStats(o);
-  }
-  {
-    auto L3 = this->caches[2];
-    auto &o = *simout.findOrCreate("L3Stream.txt")->stream();
-    L3->dumpStreamStats(o);
+  for (int cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
+    auto cache = this->caches[cacheLevel];
+    auto &o =
+        *simout.findOrCreate("StreamCache." + cache->name() + ".txt")->stream();
+    cache->dumpStreamStats(o);
   }
 }

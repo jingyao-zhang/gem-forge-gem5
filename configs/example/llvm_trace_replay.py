@@ -58,7 +58,7 @@ parser.add_option("--gem-forge-stream-engine-enable-coalesce", action="store_tru
                   help="""Enable stream coalesce in the stream engine.""", default=False)
 parser.add_option("--gem-forge-stream-engine-enable-merge", action="store", type="int",
                   help="""Enable stream merge in the stream engine.""", default="0")
-parser.add_option("--gem-forge-stream-engine-l1d",
+parser.add_option("--gem-forge-stream-engine-placement",
                   type="string", default="original")
 parser.add_option("--gem-forge-adfa-core-issue-width", action="store", type="int", default="16")
 parser.add_option("--gem-forge-adfa-enable-speculation",
@@ -372,37 +372,31 @@ if not options.no_l2bus:
     system.tol2bus.snoop_filter = NULL
 
 for cpu in system.cpu:
-    # if options.l1_5dcache:
-    #     # Add the L1.5 dcache.
-    #     cpu.l1_5dcache = L1_5DCache(
-    #         assoc=options.l1_5d_assoc,
-    #         mshrs=options.l1_5d_mshrs,
-    #         size=options.l1_5d_size,
-    #     )
-    #     # Connect them
-    #     cpu.dcache.mem_side = cpu.l1_5dcache.cpu_side
-    #     cpu.l1_5dcache.mem_side = system.tol2bus.slave
-    #     if (options.gem_forge_stream_engine_l1d == 'aware-l15-lru'):
-    #         cpu.l1_5dcache.tags = StreamLRU()
-
-    if options.gem_forge_stream_engine_l1d == 'aware-replace':
+    if options.gem_forge_stream_engine_placement == 'aware-replace':
         # stream-aware cache must be used with stream merge.
         # assert(options.gem_forge_stream_engine_enable_merge == 1)
         cpu.dcache.stream_aware_replacement = True
-    elif options.gem_forge_stream_engine_l1d == 'aware-lru':
+    elif options.gem_forge_stream_engine_placement == 'aware-lru':
         cpu.dcache.tags = StreamLRU()
         # if options.l1_5dcache:
         #     cpuel1_5dcache.tags = StreamLRU()
-    elif options.gem_forge_stream_engine_l1d == 'aware-miss-spec':
+    elif options.gem_forge_stream_engine_placement == 'aware-miss-spec':
         assert(options.gem_forge_stream_engine_enable_merge == 1)
         cpu.dcache.stream_aware_miss_speculation = True
         cpu.dcache.stream_aware_replacement = True
-    elif options.gem_forge_stream_engine_l1d.startswith('placement'):
+    elif options.gem_forge_stream_engine_placement.startswith('placement'):
+        # Enable the stream-aware port for all caches and l2bus.
+        cpu.dcache.use_stream_aware_cpu_port = True
+        if hasattr(cpu, 'l1_5dcache'):
+            cpu.l1_5dcache.use_stream_aware_cpu_port = True
+        system.tol2bus.use_stream_aware_cpu_port = True
+        system.l2.use_stream_aware_cpu_port = True
+
         cpu.streamEngineEnablePlacement = True
-        if '#' in options.gem_forge_stream_engine_l1d:
-            x, y = options.gem_forge_stream_engine_l1d.split('#')
+        if '#' in options.gem_forge_stream_engine_placement:
+            x, y = options.gem_forge_stream_engine_placement.split('#')
         else:
-            x = options.gem_forge_stream_engine_l1d
+            x = options.gem_forge_stream_engine_placement
             y = ''
         cpu.streamEnginePlacement = x
         if x == 'placement-oracle':

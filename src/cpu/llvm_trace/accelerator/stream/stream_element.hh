@@ -4,6 +4,7 @@
 #include "base/types.hh"
 #include "cpu/llvm_trace/tdg_packet_handler.hh"
 
+#include <unordered_map>
 #include <unordered_set>
 
 class Stream;
@@ -31,7 +32,55 @@ struct FIFOEntryIdx {
   }
 };
 
-struct StreamElement : public TDGPacketHandler {
+class StreamElement;
+/**
+ * This is used as a handler to the response packet.
+ * The stream aware cache also use this to find the stream the packet belongs
+ * to.
+ */
+class StreamMemAccess final : public TDGPacketHandler {
+public:
+  StreamMemAccess(Stream *_stream, StreamElement *_element,
+                  int _additionalDelay = 0)
+      : stream(_stream), element(_element), additionalDelay(_additionalDelay) {}
+  virtual ~StreamMemAccess() {}
+  void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
+  void handlePacketResponse(PacketPtr packet);
+
+  Stream *getStream() const { return this->stream; }
+
+  void setAdditionalDelay(int additionalDelay) {
+    this->additionalDelay = additionalDelay;
+  }
+
+  struct ResponseEvent : public Event {
+  public:
+    LLVMTraceCPU *cpu;
+    StreamMemAccess *memAccess;
+    PacketPtr pkt;
+    std::string n;
+    ResponseEvent(LLVMTraceCPU *_cpu, StreamMemAccess *_memAccess,
+                  PacketPtr _pkt)
+        : cpu(_cpu), memAccess(_memAccess), pkt(_pkt),
+          n("StreamMemAccessResponseEvent") {}
+    void process() override {
+      this->memAccess->handlePacketResponse(this->cpu, this->pkt);
+    }
+
+    const char *description() const { return "StreamMemAccessResponseEvent"; }
+
+    const std::string name() const { return this->n; }
+  };
+
+  Stream *const stream;
+  StreamElement *const element;
+  /**
+   * Additional delay we want to add after we get the response.
+   */
+  int additionalDelay;
+};
+
+struct StreamElement {
   std::unordered_set<StreamElement *> baseElements;
   StreamElement *next;
   Stream *stream;
@@ -48,20 +97,43 @@ struct StreamElement : public TDGPacketHandler {
    */
   uint64_t addr;
   uint64_t size;
+  /**
+   * Represent the breakdown of this element according to cache block size.
+   */
+  struct CacheBlockBreakdownAccess {
+    // Which cache block this access belongs to.
+    uint64_t cacheBlockVirtualAddr;
+    // The actual virtual address.
+    uint64_t virtualAddr;
+    // The actual size.
+    uint8_t size;
+  };
   static constexpr int MAX_CACHE_BLOCKS = 10;
-  uint64_t cacheBlockAddrs[MAX_CACHE_BLOCKS];
+  CacheBlockBreakdownAccess cacheBlockBreakdownAccesses[MAX_CACHE_BLOCKS];
   int cacheBlocks;
 
-  std::unordered_set<PacketPtr> inflyLoadPackets;
+  // Store the infly mem accesses for this element.
+  std::unordered_set<StreamMemAccess *> inflyMemAccess;
+  // Store all the allocated mem accesses. May be different to inflyMemAccess
+  // if some the element is released before the result comes back, e.g. unused
+  // element.
+  std::unordered_set<StreamMemAccess *> allocatedMemAccess;
+
   bool stored;
 
   StreamElement();
 
-  void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
+  StreamMemAccess *allocateStreamMemAccess();
+  void handlePacketResponse(StreamMemAccess *memAccess);
+  void markValueReady();
 
   void dump() const;
 
   void clear();
+  Stream *getStream() {
+    assert(this->stream != nullptr && "Null stream in the element.");
+    return this->stream;
+  }
 };
 
 #endif

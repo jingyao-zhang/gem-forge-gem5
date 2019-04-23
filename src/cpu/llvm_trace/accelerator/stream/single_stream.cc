@@ -9,40 +9,41 @@
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define STREAM_DPRINTF(format, args...)                                      \
-  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(), \
+#define STREAM_DPRINTF(format, args...)                                        \
+  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(),   \
           ##args)
 
-#define STREAM_ENTRY_DPRINTF(entry, format, args...)                      \
-  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_DPRINTF(entry, format, args...)                           \
+  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
                  (entry).idx.entryIdx, ##args)
 
-#define STREAM_HACK(format, args...) \
+#define STREAM_HACK(format, args...)                                           \
   hack("Stream %s: " format, this->getStreamName().c_str(), ##args)
 
-#define STREAM_ENTRY_HACK(entry, format, args...)                      \
-  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_HACK(entry, format, args...)                              \
+  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance,         \
               (entry).idx.entryIdx, ##args)
 
-#define STREAM_PANIC(format, args...)                                   \
-  {                                                                     \
-    this->dump();                                                       \
-    panic("Stream %s: " format, this->getStreamName().c_str(), ##args); \
+#define STREAM_PANIC(format, args...)                                          \
+  {                                                                            \
+    this->dump();                                                              \
+    panic("Stream %s: " format, this->getStreamName().c_str(), ##args);        \
   }
 
-#define STREAM_ENTRY_PANIC(entry, format, args...)                      \
-  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance, \
+#define STREAM_ENTRY_PANIC(entry, format, args...)                             \
+  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
                (entry).idx.entryIdx, ##args)
 
 SingleStream::SingleStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
                            const LLVM::TDG::StreamInfo &_info, bool _isOracle,
                            size_t _maxRunAHeadLength)
-    : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength),
-      info(_info) {
+    : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength), info(_info) {
   const auto &relativeHistoryPath = this->info.history_path();
   auto historyPath = cpu->getTraceExtraFolder() + "/" + relativeHistoryPath;
   this->history =
       std::unique_ptr<StreamHistory>(new StreamHistory(historyPath));
+  this->patternStream = std::unique_ptr<StreamPattern>(new StreamPattern(
+      cpu->getTraceExtraFolder() + "/" + this->info.pattern_path()));
 
   for (const auto &baseStreamId : this->info.chosen_base_streams()) {
     auto baseStream = this->se->getStream(baseStreamId.id());
@@ -92,6 +93,7 @@ int32_t SingleStream::getElementSize() const {
 
 void SingleStream::configure(StreamConfigInst *inst) {
   this->history->configure();
+  this->patternStream->configure();
 }
 
 void SingleStream::prepareNewElement(StreamElement *element) {

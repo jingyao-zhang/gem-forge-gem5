@@ -15,6 +15,7 @@ ProtoBuf('TDGInstruction.proto')
 
 SimObject('LLVMTraceCPU.py')
 Source('bank_manager.cc')
+Source('tdg_packet_handler.cc')
 Source('region_stats.cc')
 Source('llvm_insts.cc')
 Source('dyn_inst_stream.cc')

@@ -2640,8 +2640,8 @@ StreamAwareCache::getCoalescedStreamFromPacket(PacketPtr pkt) const {
   TDGPacketHandler *handler =
       reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
 
-  if (auto streamMemAccess = dynamic_cast<Stream::StreamMemAccess *>(handler)) {
-    auto stream = streamMemAccess->getStream();
+  if (auto memAccess = dynamic_cast<StreamMemAccess *>(handler)) {
+    auto stream = memAccess->getStream();
     if (auto coalescedStream = dynamic_cast<CoalescedStream *>(stream)) {
       return coalescedStream;
     }
