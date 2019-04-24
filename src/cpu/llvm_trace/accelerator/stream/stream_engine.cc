@@ -149,20 +149,20 @@ void StreamEngine::regStats() {
       .desc("Number of alive memory stream.")
       .flags(Stats::pdf);
 
-  this->numAccessPlacedInCacheLevel.init(0, 5, 1)
+  this->numAccessPlacedInCacheLevel.init(3)
       .name(this->manager->name() + ".stream.numAccessPlacedInCacheLevel")
       .desc("Number of accesses placed in different cache level.")
-      .flags(Stats::pdf);
-  this->numAccessHitHigherThanPlacedCacheLevel.init(0, 5, 1)
+      .flags(Stats::total);
+  this->numAccessHitHigherThanPlacedCacheLevel.init(3)
       .name(this->manager->name() +
             ".stream.numAccessHitHigherThanPlacedCacheLevel")
       .desc("Number of accesses hit in higher level than placed cache.")
-      .flags(Stats::pdf);
-  this->numAccessHitLowerThanPlacedCacheLevel.init(0, 5, 1)
+      .flags(Stats::total);
+  this->numAccessHitLowerThanPlacedCacheLevel.init(3)
       .name(this->manager->name() +
             ".stream.numAccessHitLowerThanPlacedCacheLevel")
       .desc("Number of accesses hit in lower level than placed cache.")
-      .flags(Stats::pdf);
+      .flags(Stats::total);
 
   this->numAccessFootprintL1.init(0, 500, 100)
       .name(this->manager->name() + ".stream.numAccessFootprintL1")
@@ -176,9 +176,6 @@ void StreamEngine::regStats() {
       .name(this->manager->name() + ".stream.numAccessFootprintL3")
       .desc("Number of accesses with footprint at L3.")
       .flags(Stats::pdf);
-  this->numCacheLevel.name(this->manager->name() + ".stream.numCacheLevel")
-      .desc("Number of cache levels")
-      .prereq(this->numCacheLevel);
 }
 
 bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
@@ -709,7 +706,7 @@ void StreamEngine::initializeFIFO(size_t totalElements) {
 
   this->FIFOArray.reserve(totalElements);
   while (this->FIFOArray.size() < totalElements) {
-    this->FIFOArray.emplace_back();
+    this->FIFOArray.emplace_back(this);
   }
   this->FIFOFreeListHead = nullptr;
   this->numFreeFIFOEntries = 0;
@@ -889,6 +886,17 @@ void StreamEngine::allocateElement(Stream *S) {
       newElement->cacheBlocks++;
     }
 
+    // Create the CacheBlockInfo for the cache blocks.
+    for (int i = 0; i < newElement->cacheBlocks; ++i) {
+      auto cacheBlockAddr =
+          newElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
+      this->cacheBlockRefMap
+          .emplace(std::piecewise_construct,
+                   std::forward_as_tuple(cacheBlockAddr),
+                   std::forward_as_tuple())
+          .first->second.reference++;
+    }
+
   } else {
     // IV stream already ready.
     newElement->isAddrReady = true;
@@ -908,6 +916,17 @@ void StreamEngine::releaseElement(Stream *S) {
   // If the element is stored, we reissue the store request.
   if (releaseElement->stored) {
     this->issueElement(releaseElement);
+  }
+
+  // Decrease the reference count of the cache blocks.
+  for (int i = 0; i < releaseElement->cacheBlocks; ++i) {
+    auto cacheBlockVirtualAddr =
+        releaseElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
+    auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+    cacheBlockInfo.reference--;
+    if (cacheBlockInfo.reference == 0) {
+      this->cacheBlockRefMap.erase(cacheBlockVirtualAddr);
+    }
   }
 
   S->tail->next = releaseElement->next;
@@ -958,6 +977,23 @@ void StreamEngine::issueElements() {
     this->issueElement(element);
   }
 }
+void StreamEngine::fetchedCacheBlock(Addr cacheBlockVirtualAddr,
+                                     StreamMemAccess *memAccess) {
+  // Check if we still have the cache block.
+  if (this->cacheBlockRefMap.count(cacheBlockVirtualAddr) == 0) {
+    return;
+  }
+  auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+  cacheBlockInfo.status = CacheBlockInfo::Status::FETCHED;
+  // Notify all the pending streams.
+  for (auto &pendingMemAccess : cacheBlockInfo.pendingAccesses) {
+    if (pendingMemAccess == memAccess) {
+      // Ignore the fetched one.
+      continue;
+    }
+    pendingMemAccess->handleStreamEngineResponse();
+  }
+}
 
 void StreamEngine::issueElement(StreamElement *element) {
   assert(element->isAddrReady && "Address should be ready.");
@@ -972,6 +1008,26 @@ void StreamEngine::issueElement(StreamElement *element) {
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+
+    // Check if we already have the cache block fetched.
+    auto cacheBlockVirtualAddr = cacheBlockBreakdown.cacheBlockVirtualAddr;
+    auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+    if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHED) {
+      // This cache block is already fetched.
+      continue;
+    }
+
+    if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHING) {
+      // This cache block is already fetching.
+      auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
+      if (S->getStreamType() == "load") {
+        element->inflyMemAccess.insert(memAccess);
+      }
+      cacheBlockInfo.pendingAccesses.push_back(memAccess);
+      continue;
+    }
+
+    // Normal case: really fetching this from the cache.
     auto vaddr = cacheBlockBreakdown.virtualAddr;
     auto packetSize = cacheBlockBreakdown.size;
     Addr paddr;
@@ -983,25 +1039,27 @@ void StreamEngine::issueElement(StreamElement *element) {
 
     if (this->streamPlacementManager != nullptr) {
       // This means we have the placement manager.
-      if (this->streamPlacementManager->access(paddr, packetSize, element)) {
+      if (this->streamPlacementManager->access(cacheBlockBreakdown, element)) {
         // Stream placement manager handles this packet.
         continue;
       }
     }
-
     // Allocate the book-keeping StreamMemAccess.
-    auto memAccess = element->allocateStreamMemAccess();
+    auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     auto pkt = TDGPacketHandler::createTDGPacket(
         paddr, packetSize, memAccess, nullptr, cpu->getDataMasterID(), 0, 0);
     cpu->sendRequest(pkt);
+
+    // Change to FETCHING status.
+    cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
 
     if (S->getStreamType() == "load") {
       element->inflyMemAccess.insert(memAccess);
     }
   }
 
-  if (S->getStreamType() == "store") {
-    // Store can be directly value ready.
+  if (S->getStreamType() == "store" || element->inflyMemAccess.empty()) {
+    // Store can be directly value ready or if we have no infly memAccesses.
     // We do not track the infly packet for store stream.
     element->markValueReady();
   }

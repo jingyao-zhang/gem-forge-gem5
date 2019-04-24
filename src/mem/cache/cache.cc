@@ -314,6 +314,12 @@ bool Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
   // Here lat is the value passed as parameter to accessBlock() function
   // that can modify its value.
   blk = tags->accessBlock(pkt->getAddr(), pkt->isSecure(), lat);
+  {
+    // auto memAccess = this->getStreamMemAccessFromPacket(pkt);
+    // if (memAccess) {
+    //   STREAM_ELEMENT_DPRINTF(memAccess->element, "Access blk %p.\n", blk);
+    // }
+  }
 
   DPRINTF(Cache, "%s %s\n", pkt->print(), blk ? "hit " + blk->print() : "miss");
 
@@ -681,6 +687,14 @@ bool Cache::recvTimingReq(PacketPtr pkt) {
     // copy writebacks to write buffer here to ensure they logically
     // proceed anything happening below
     doWritebacks(writebacks, forward_time);
+  }
+
+  {
+    auto memAccess = this->getStreamMemAccessFromPacket(pkt);
+    if (memAccess != NULL) {
+      STREAM_ELEMENT_DPRINTF(memAccess->element, "Request %s.\n",
+                             (satisfied ? "hit" : "miss"));
+    }
   }
 
   // Here we charge the headerDelay that takes into account the latencies
@@ -2517,6 +2531,10 @@ Stream *Cache::getStreamFromPacket(PacketPtr pkt) const {
   return nullptr;
 }
 
+StreamMemAccess *Cache::getStreamMemAccessFromPacket(PacketPtr pkt) const {
+  return pkt->findNextSenderState<StreamMemAccess>();
+}
+
 CoalescedStream *Cache::getCoalescedStreamFromPacket(PacketPtr pkt) const {
   /**
    * Dangerous pointer casting! Only use stream aware cache with LLVMTraceCPU.
@@ -2582,7 +2600,8 @@ bool Cache::CpuSidePort::recvTimingReq(PacketPtr pkt) {
 
   auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
   if (memAccess != NULL) {
-    STREAM_ELEMENT_DPRINTF(memAccess->element, "Received packet.\n");
+    STREAM_ELEMENT_DPRINTF(memAccess->element, "Received packet paddr %p.\n",
+                           pkt->req->getPaddr());
   }
 
   bool success = false;
@@ -2651,13 +2670,11 @@ bool Cache::StreamAwareCpuSidePort::recvTimingReq(PacketPtr pkt) {
   // }
   auto memAccess = pkt->findNextSenderState<StreamMemAccess>();
   if (memAccess != NULL) {
-    STREAM_ELEMENT_DPRINTF(memAccess->element, "StreamPort received packet.\n");
+    STREAM_ELEMENT_DPRINTF(memAccess->element, "Received packet paddr %p.\n",
+                           pkt->req->getPaddr());
   }
   this->blockedPkts.emplace_back(pkt);
   this->process();
-  // if (!this->processEvent.scheduled()) {
-  //   this->owner.schedule(this->processEvent, curTick() + 1);
-  // }
   return true;
 }
 
@@ -2667,9 +2684,6 @@ void Cache::StreamAwareCpuSidePort::recvTimingReqForStream(PacketPtr pkt) {
 
   this->blockedPkts.emplace_back(pkt);
   this->handlingStreamPkts.insert(pkt);
-  // if (!this->processEvent.scheduled()) {
-  //   this->owner.schedule(this->processEvent, curTick() + 1);
-  // }
   this->process();
 }
 
@@ -2679,10 +2693,7 @@ void Cache::StreamAwareCpuSidePort::processSendRetry() {
   if (this->processEvent.scheduled()) {
     this->owner.deschedule(this->processEvent);
   }
-  this->owner.schedule(this->processEvent, curTick() + 1);
-  // if (!this->processEvent.scheduled()) {
-  //   this->owner.schedule(this->processEvent, curTick() + 1);
-  // }
+  this->process();
 }
 
 bool Cache::StreamAwareCpuSidePort::sendTimingResp(PacketPtr pkt) {
@@ -2714,7 +2725,8 @@ void Cache::StreamAwareCpuSidePort::process() {
   }
   count++;
 
-  if ((this->blocked || this->mustSendRetry) && !this->processEvent.scheduled()) {
+  if ((this->blocked || this->mustSendRetry) &&
+      !this->processEvent.scheduled()) {
     this->owner.schedule(this->processEvent, this->owner.nextCycle());
     return;
   }

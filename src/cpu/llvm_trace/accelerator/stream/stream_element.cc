@@ -1,5 +1,6 @@
 #include "stream_element.hh"
 #include "stream.hh"
+#include "stream_engine.hh"
 
 #include "cpu/llvm_trace/llvm_trace_cpu.hh"
 
@@ -42,6 +43,8 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
     return;
   }
   this->element->handlePacketResponse(this);
+  // We should notify the stream engine that this cache line is coming back.
+  this->element->se->fetchedCacheBlock(this->cacheBlockVirtualAddr, this);
   // After this point "this" is deleted.
   // Remember to release the packet.
   delete packet->req;
@@ -49,7 +52,11 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
   return;
 }
 
-StreamElement::StreamElement() { this->clear(); }
+void StreamMemAccess::handleStreamEngineResponse() {
+  this->element->handlePacketResponse(this);
+}
+
+StreamElement::StreamElement(StreamEngine *_se) : se(_se) { this->clear(); }
 
 void StreamElement::clear() {
   this->baseElements.clear();
@@ -71,8 +78,10 @@ void StreamElement::clear() {
   this->stored = false;
 }
 
-StreamMemAccess *StreamElement::allocateStreamMemAccess() {
-  auto memAccess = new StreamMemAccess(this->getStream(), this);
+StreamMemAccess *StreamElement::allocateStreamMemAccess(
+    const CacheBlockBreakdownAccess &cacheBlockBreakdown) {
+  auto memAccess = new StreamMemAccess(
+      this->getStream(), this, cacheBlockBreakdown.cacheBlockVirtualAddr);
   this->allocatedMemAccess.insert(memAccess);
   return memAccess;
 }
@@ -80,6 +89,7 @@ StreamMemAccess *StreamElement::allocateStreamMemAccess() {
 void StreamElement::handlePacketResponse(StreamMemAccess *memAccess) {
   assert(this->allocatedMemAccess.count(memAccess) != 0 &&
          "This StreamMemAccess is not allocated by me.");
+
   if (this->inflyMemAccess.count(memAccess) != 0) {
     this->inflyMemAccess.erase(memAccess);
     if (this->inflyMemAccess.empty() && !this->isValueReady) {

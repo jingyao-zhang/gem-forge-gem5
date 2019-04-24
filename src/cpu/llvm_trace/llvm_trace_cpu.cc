@@ -184,10 +184,20 @@ void LLVMTraceCPU::tick() {
   //    the stack depth is 0.
   bool done = false;
   if (this->isStandalone()) {
-    done = (this->getNumActivateThreads() == 0);
-    if (done) {
-      assert(this->inflyInstStatus.empty() &&
-             "Infly instruction status map is not empty when done.");
+    if (this->cpuParams->max_insts_any_thread > 0) {
+      auto &committedInsts = this->commitStage.instsCommitted;
+      for (int i = 0; i < committedInsts.size(); ++i) {
+        if (committedInsts[i].value() > this->cpuParams->max_insts_any_thread) {
+          done = true;
+          break;
+        }
+      }
+    } else {
+      done = (this->getNumActivateThreads() == 0);
+      if (done) {
+        assert(this->inflyInstStatus.empty() &&
+               "Infly instruction status map is not empty when done.");
+      }
     }
   } else {
     done = this->inflyInstStatus.empty() && this->currentStackDepth == 0;

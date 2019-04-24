@@ -14,7 +14,7 @@
 #include <unordered_map>
 
 class StreamEngine : public TDGAccelerator {
- public:
+public:
   StreamEngine();
   ~StreamEngine() override;
 
@@ -73,6 +73,9 @@ class StreamEngine : public TDGAccelerator {
     }
   }
 
+  void fetchedCacheBlock(Addr cacheBlockVirtualAddr,
+                         StreamMemAccess *memAccess);
+
   int currentTotalRunAheadLength;
   int maxTotalRunAheadLength;
 
@@ -100,16 +103,15 @@ class StreamEngine : public TDGAccelerator {
   /**
    * Statistics for stream placement manager.
    */
-  Stats::Scalar numCacheLevel;
-  Stats::Distribution numAccessPlacedInCacheLevel;
-  Stats::Distribution numAccessHitHigherThanPlacedCacheLevel;
-  Stats::Distribution numAccessHitLowerThanPlacedCacheLevel;
+  Stats::Vector numAccessPlacedInCacheLevel;
+  Stats::Vector numAccessHitHigherThanPlacedCacheLevel;
+  Stats::Vector numAccessHitLowerThanPlacedCacheLevel;
 
   Stats::Distribution numAccessFootprintL1;
   Stats::Distribution numAccessFootprintL2;
   Stats::Distribution numAccessFootprintL3;
 
- private:
+private:
   StreamPlacementManager *streamPlacementManager;
 
   std::vector<StreamElement> FIFOArray;
@@ -157,6 +159,19 @@ class StreamEngine : public TDGAccelerator {
   std::string placementLat;
   std::string placement;
 
+  struct CacheBlockInfo {
+    int reference;
+    enum Status {
+      INIT,
+      FETCHING,
+      FETCHED,
+    };
+    Status status;
+    std::list<StreamMemAccess *> pendingAccesses;
+    CacheBlockInfo() : reference(0), status(Status::INIT) {}
+  };
+  std::unordered_map<Addr, CacheBlockInfo> cacheBlockRefMap;
+
   void initializeStreams(
       const LLVM::TDG::TDGInstruction::StreamConfigExtra &configExtra);
 
@@ -166,8 +181,8 @@ class StreamEngine : public TDGAccelerator {
   void updateAliveStatistics();
 
   // A helper function to load a stream info protobuf file.
-  static LLVM::TDG::StreamInfo parseStreamInfoFromFile(
-      const std::string &infoPath);
+  static LLVM::TDG::StreamInfo
+  parseStreamInfoFromFile(const std::string &infoPath);
 
   void initializeFIFO(size_t totalElements);
   void addFreeElement(StreamElement *S);

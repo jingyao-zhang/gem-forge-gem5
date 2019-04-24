@@ -11,7 +11,8 @@ class StreamPlacementManager {
 public:
   StreamPlacementManager(LLVMTraceCPU *_cpu, StreamEngine *_se);
 
-  bool access(Addr paddr, int packetSize, StreamElement *element);
+  bool access(const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+              StreamElement *element);
 
   void dumpCacheStreamAwarePortStatus();
 
@@ -48,18 +49,27 @@ private:
 
   uint32_t L2BusWidth;
 
-  bool accessNoMSHR(Stream *stream, Addr paddr, int packetSize,
+  bool accessNoMSHR(Stream *stream,
+                    const CacheBlockBreakdownAccess &cacheBlockBreakdown,
                     StreamElement *element);
 
-  bool accessExpress(Stream *stream, Addr paddr, int packetSize,
+  bool accessExpress(Stream *stream,
+                     const CacheBlockBreakdownAccess &cacheBlockBreakdown,
                      StreamElement *element);
 
-  bool accessExpressFootprint(Stream *stream, Addr paddr, int packetSize,
-                              StreamElement *element);
+  bool
+  accessExpressFootprint(Stream *stream,
+                         const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+                         StreamElement *element);
 
   size_t whichCacheLevelToPlace(Stream *stream) const;
+  int getPlacedCacheLevelByFootprint(Stream *stream) const;
+  int getOrInitializePlacedCacheLevel(Stream *stream);
+  void updatePlacedCacheLevel(Stream *stream);
 
-  PacketPtr createPacket(Addr paddr, int size, StreamElement *element) const;
+  PacketPtr
+  createPacket(Addr paddr, int size, StreamElement *element,
+               const CacheBlockBreakdownAccess &cacheBlockBreakdown) const;
 
   bool isHit(Cache *cache, Addr paddr) const;
   void scheduleResponse(Cycles latency, StreamElement *element, PacketPtr pkt);

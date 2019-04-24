@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 class Stream;
+class StreamEngine;
 
 struct FIFOEntryIdx {
   uint64_t streamInstance;
@@ -32,6 +33,18 @@ struct FIFOEntryIdx {
   }
 };
 
+/**
+ * Represent the breakdown of one element according to cache block size.
+ */
+struct CacheBlockBreakdownAccess {
+  // Which cache block this access belongs to.
+  uint64_t cacheBlockVirtualAddr;
+  // The actual virtual address.
+  uint64_t virtualAddr;
+  // The actual size.
+  uint8_t size;
+};
+
 class StreamElement;
 /**
  * This is used as a handler to the response packet.
@@ -41,11 +54,15 @@ class StreamElement;
 class StreamMemAccess final : public TDGPacketHandler {
 public:
   StreamMemAccess(Stream *_stream, StreamElement *_element,
-                  int _additionalDelay = 0)
-      : stream(_stream), element(_element), additionalDelay(_additionalDelay) {}
+                  Addr _cacheBlockVirtualAddr, int _additionalDelay = 0)
+      : stream(_stream), element(_element),
+        cacheBlockVirtualAddr(_cacheBlockVirtualAddr),
+        additionalDelay(_additionalDelay) {}
   virtual ~StreamMemAccess() {}
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
   void handlePacketResponse(PacketPtr packet);
+  // This cache block is fetched in by some other StreamMemAccess.
+  void handleStreamEngineResponse();
 
   Stream *getStream() const { return this->stream; }
 
@@ -74,6 +91,7 @@ public:
 
   Stream *const stream;
   StreamElement *const element;
+  Addr cacheBlockVirtualAddr;
   /**
    * Additional delay we want to add after we get the response.
    */
@@ -84,6 +102,7 @@ struct StreamElement {
   std::unordered_set<StreamElement *> baseElements;
   StreamElement *next;
   Stream *stream;
+  StreamEngine *se;
   FIFOEntryIdx FIFOIdx;
   bool isAddrReady;
   bool isValueReady;
@@ -97,17 +116,6 @@ struct StreamElement {
    */
   uint64_t addr;
   uint64_t size;
-  /**
-   * Represent the breakdown of this element according to cache block size.
-   */
-  struct CacheBlockBreakdownAccess {
-    // Which cache block this access belongs to.
-    uint64_t cacheBlockVirtualAddr;
-    // The actual virtual address.
-    uint64_t virtualAddr;
-    // The actual size.
-    uint8_t size;
-  };
   static constexpr int MAX_CACHE_BLOCKS = 10;
   CacheBlockBreakdownAccess cacheBlockBreakdownAccesses[MAX_CACHE_BLOCKS];
   int cacheBlocks;
@@ -121,9 +129,10 @@ struct StreamElement {
 
   bool stored;
 
-  StreamElement();
+  StreamElement(StreamEngine *_se);
 
-  StreamMemAccess *allocateStreamMemAccess();
+  StreamMemAccess *
+  allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
   void handlePacketResponse(StreamMemAccess *memAccess);
   void markValueReady();
 

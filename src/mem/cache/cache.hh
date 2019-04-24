@@ -127,7 +127,6 @@ public:
 
     bool blockedUpper;
     EventFunctionWrapper processEvent;
-
   };
 
   /**
@@ -606,6 +605,7 @@ public:
 
   void dumpStreamStats(std::ostream &os) const;
   Stream *getStreamFromPacket(PacketPtr pkt) const;
+  StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;
   CoalescedStream *getCoalescedStreamFromPacket(PacketPtr pkt) const;
   void incMissCountStream(PacketPtr pkt);
   void incHitCountStream(PacketPtr pkt, CacheBlk *blk);

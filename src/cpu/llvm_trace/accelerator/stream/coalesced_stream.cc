@@ -275,7 +275,7 @@ uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
       this->primaryLogicalStream->history->getCurrentStreamLength();
   if (pattern.val_pattern() == "LINEAR") {
     // One dimension linear stream.
-    return totalElements * this->getElementSize() / cacheBlockSize;
+    return totalElements * pattern.stride_i() / cacheBlockSize;
   } else if (pattern.val_pattern() == "QUARDRIC") {
     // For 2 dimention linear stream, first compute footprint of one row.
     auto rowFootprint = pattern.ni() * this->getElementSize() / cacheBlockSize;

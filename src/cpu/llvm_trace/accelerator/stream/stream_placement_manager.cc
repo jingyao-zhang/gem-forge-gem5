@@ -53,13 +53,13 @@ StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
   this->caches.push_back(L2);
   this->lookupLatency.push_back(L2->getLookupLatency());
 
-  this->se->numCacheLevel = this->caches.size();
   assert(this->caches.size() == 3 &&
          "So far we only support 3 level of cache for stream placement.");
 }
 
-bool StreamPlacementManager::access(Addr paddr, int packetSize,
-                                    StreamElement *element) {
+bool StreamPlacementManager::access(
+    const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+    StreamElement *element) {
 
   if (!this->se->isPlacementEnabled()) {
     return false;
@@ -74,15 +74,15 @@ bool StreamPlacementManager::access(Addr paddr, int packetSize,
   assert(stream != nullptr && "Missing stream in StreamElement.");
 
   if (this->se->getPlacement() == "placement-no-mshr") {
-    return this->accessNoMSHR(stream, paddr, packetSize, element);
+    return this->accessNoMSHR(stream, cacheBlockBreakdown, element);
   }
 
   if (this->se->getPlacement() == "placement-expr") {
-    return this->accessExpress(stream, paddr, packetSize, element);
+    return this->accessExpress(stream, cacheBlockBreakdown, element);
   }
 
   if (this->se->getPlacement() == "placement-expr-fp") {
-    return this->accessExpressFootprint(stream, paddr, packetSize, element);
+    return this->accessExpressFootprint(stream, cacheBlockBreakdown, element);
   }
 
   auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
@@ -93,11 +93,20 @@ bool StreamPlacementManager::access(Addr paddr, int packetSize,
 
   auto placeCacheLevel = this->whichCacheLevelToPlace(coalescedStream);
 
-  this->se->numAccessPlacedInCacheLevel.sample(placeCacheLevel);
+  this->se->numAccessPlacedInCacheLevel[placeCacheLevel]++;
 
   bool hasHit = false;
   size_t hitLevel = this->caches.size();
   Cycles latency = Cycles(1);
+
+  auto vaddr = cacheBlockBreakdown.virtualAddr;
+  auto packetSize = cacheBlockBreakdown.size;
+  Addr paddr;
+  if (cpu->isStandalone()) {
+    paddr = cpu->translateAndAllocatePhysMem(vaddr);
+  } else {
+    panic("Stream so far can only work in standalone mode.");
+  }
 
   for (int cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     auto cache = this->caches[cacheLevel];
@@ -142,9 +151,9 @@ bool StreamPlacementManager::access(Addr paddr, int packetSize,
   }
 
   if (hitLevel < placeCacheLevel) {
-    this->se->numAccessHitHigherThanPlacedCacheLevel.sample(placeCacheLevel);
+    this->se->numAccessHitHigherThanPlacedCacheLevel[placeCacheLevel]++;
   } else if (hitLevel > placeCacheLevel) {
-    this->se->numAccessHitLowerThanPlacedCacheLevel.sample(placeCacheLevel);
+    this->se->numAccessHitLowerThanPlacedCacheLevel[placeCacheLevel]++;
   }
 
   /**
@@ -153,7 +162,8 @@ bool StreamPlacementManager::access(Addr paddr, int packetSize,
    *    cache.
    * 2. Otherwise, we issue a real packet to the place cache.
    */
-  auto pkt = this->createPacket(paddr, packetSize, element);
+  auto pkt =
+      this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
   auto placeCache = this->caches[placeCacheLevel];
   if (this->se->isOraclePlacementEnabled()) {
     placeCache->recvAtomic(pkt);
@@ -189,9 +199,9 @@ bool StreamPlacementManager::access(Addr paddr, int packetSize,
   return true;
 }
 
-bool StreamPlacementManager::accessNoMSHR(Stream *stream, Addr paddr,
-                                          int packetSize,
-                                          StreamElement *element) {
+bool StreamPlacementManager::accessNoMSHR(
+    Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+    StreamElement *element) {
 
   auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
   if (coalescedStream == nullptr) {
@@ -202,6 +212,15 @@ bool StreamPlacementManager::accessNoMSHR(Stream *stream, Addr paddr,
   // bool hasHit = false;
   // size_t hitLevel = this->caches.size();
   Cycles latency = Cycles(0);
+
+  auto vaddr = cacheBlockBreakdown.virtualAddr;
+  auto packetSize = cacheBlockBreakdown.size;
+  Addr paddr;
+  if (cpu->isStandalone()) {
+    paddr = cpu->translateAndAllocatePhysMem(vaddr);
+  } else {
+    panic("Stream so far can only work in standalone mode.");
+  }
 
   for (int cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     // latency += this->lookupLatency[cacheLevel];
@@ -218,22 +237,33 @@ bool StreamPlacementManager::accessNoMSHR(Stream *stream, Addr paddr,
   /**
    * Schedule the response.
    */
-  auto pkt = this->createPacket(paddr, packetSize, element);
+  auto pkt =
+      this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
   this->caches[0]->recvAtomic(pkt);
   this->scheduleResponse(latency, element, pkt);
 
   return true;
 }
 
-bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
-                                           int packetSize,
-                                           StreamElement *element) {
+bool StreamPlacementManager::accessExpress(
+    Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+    StreamElement *element) {
   int latency = 0;
   auto L1 = this->caches[0];
   auto &L1Stats = L1->getOrInitializeStreamStats(stream);
   if (L1Stats.accesses <= 100) {
     return false;
   }
+
+  auto vaddr = cacheBlockBreakdown.virtualAddr;
+  auto packetSize = cacheBlockBreakdown.size;
+  Addr paddr;
+  if (cpu->isStandalone()) {
+    paddr = cpu->translateAndAllocatePhysMem(vaddr);
+  } else {
+    panic("Stream so far can only work in standalone mode.");
+  }
+
   if (L1Stats.misses > L1Stats.accesses * 0.95f &&
       L1Stats.reuses < L1Stats.accesses * 0.1f) {
 
@@ -266,7 +296,8 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
           paddr = paddr & (~(64 - 1));
           packetSize = 64;
         }
-        auto pkt = this->createPacket(paddr, packetSize, element);
+        auto pkt =
+            this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
         if (this->se->getPlacementLat() != "imm") {
           auto memAccess =
               reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -283,7 +314,8 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
         }
         // Send request to L3.
         auto L3 = this->caches[2];
-        auto pkt = this->createPacket(paddr, packetSize, element);
+        auto pkt =
+            this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
         if (this->se->getPlacementLat() != "imm") {
           auto memAccess =
               reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -303,7 +335,8 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
       return true;
     } else {
       // Not bypassing L2.
-      auto pkt = this->createPacket(paddr, packetSize, element);
+      auto pkt =
+          this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
       if (this->se->getPlacementLat() != "imm") {
         auto memAccess =
             reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -319,17 +352,9 @@ bool StreamPlacementManager::accessExpress(Stream *stream, Addr paddr,
   return false;
 }
 
-bool StreamPlacementManager::accessExpressFootprint(Stream *stream, Addr paddr,
-                                                    int packetSize,
-                                                    StreamElement *element) {
-
-  // if (stream->getStreamName() == "(MEM train bb138 bb146::5(store))") {
-  //   return false;
-  // }
-
-  // if (stream->getStreamName() == "(MEM train bb63 bb69::5(store))") {
-  //   return false;
-  // }
+bool StreamPlacementManager::accessExpressFootprint(
+    Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+    StreamElement *element) {
 
   if (this->se->isPlacementNoBypassingStore()) {
     if (stream->getStreamType() == "store") {
@@ -337,35 +362,35 @@ bool StreamPlacementManager::accessExpressFootprint(Stream *stream, Addr paddr,
     }
   }
 
-  // Check the current cache level.
-  auto cacheLevelIter = this->streamCacheLevelMap.find(stream);
-  if (cacheLevelIter == this->streamCacheLevelMap.end()) {
-    auto initCacheLevel = this->whichCacheLevelToPlace(stream);
-    // initCacheLevel = 0;
-    cacheLevelIter =
-        this->streamCacheLevelMap.emplace(stream, initCacheLevel).first;
+  auto vaddr = cacheBlockBreakdown.virtualAddr;
+  auto packetSize = cacheBlockBreakdown.size;
+  Addr paddr;
+  if (cpu->isStandalone()) {
+    paddr = cpu->translateAndAllocatePhysMem(vaddr);
+  } else {
+    panic("Stream so far can only work in standalone mode.");
   }
 
   int latency = 0;
   auto bypassed = false;
-  auto &cacheLevel = cacheLevelIter->second;
+  auto placedCacheLevel = this->getOrInitializePlacedCacheLevel(stream);
+  this->se->numAccessPlacedInCacheLevel[placedCacheLevel]++;
+  // Get the hit level.
+  auto hitCacheLevel = this->caches.size();
+  for (int c = 0; c < this->caches.size(); ++c) {
+    if (this->isHit(this->caches[c], paddr)) {
+      hitCacheLevel = c;
+      break;
+    }
+  }
+  if (hitCacheLevel > placedCacheLevel) {
+    // Higher means closer to cpu.
+    this->se->numAccessHitLowerThanPlacedCacheLevel[placedCacheLevel]++;
+  } else if (hitCacheLevel < placedCacheLevel) {
+    this->se->numAccessHitHigherThanPlacedCacheLevel[placedCacheLevel]++;
+  }
 
-  // Try to fix them at L2.
-  // if (stream->getStreamName() == "(MEM train bb25 bb33::tmp36(load))") {
-  //   cacheLevel = 0;
-  // }
-  // if (stream->getStreamName() == "(MEM train bb158 bb160::tmp163(load))") {
-  //   if (cacheLevel == 2) {
-  //     panic("footprint %lu, true footprint \n",
-  //           stream->getFootprint(cpu->system->cacheLineSize()));
-  //   }
-  // }
-
-  // if (stream->getStreamName() == "(MEM train bb81 bb83::tmp90(load))") {
-  //   cacheLevel = 1;
-  // }
-
-  if (cacheLevel > 0) {
+  if (placedCacheLevel > 0) {
     bypassed = true;
     // Bypassing L1.
     latency++;
@@ -376,7 +401,7 @@ bool StreamPlacementManager::accessExpressFootprint(Stream *stream, Addr paddr,
 
     auto L2 = this->caches[1];
     auto &L2Stats = L2->getOrInitializeStreamStats(stream);
-    if (cacheLevel > 1) {
+    if (placedCacheLevel > 1) {
       // Bypassing L2.
       latency++;
       L2Stats.bypasses++;
@@ -392,14 +417,15 @@ bool StreamPlacementManager::accessExpressFootprint(Stream *stream, Addr paddr,
           paddr = paddr & (~(64 - 1));
           packetSize = 64;
         }
-        auto pkt = this->createPacket(paddr, packetSize, element);
+        auto pkt =
+            this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
         if (this->se->getPlacementLat() != "imm") {
           auto memAccess =
               reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
           memAccess->setAdditionalDelay(latency);
         }
-        this->caches[0]->incHitCount(pkt);
-        this->caches[1]->incHitCount(pkt);
+        // this->caches[0]->incHitCount(pkt);
+        // this->caches[1]->incHitCount(pkt);
         this->sendTimingRequestToL2Bus(pkt);
       } else {
         if (this->se->getPlacementLat() == "sub") {
@@ -409,63 +435,32 @@ bool StreamPlacementManager::accessExpressFootprint(Stream *stream, Addr paddr,
         }
 
         auto L3 = this->caches[2];
-        auto pkt = this->createPacket(paddr, packetSize, element);
+        auto pkt =
+            this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
         if (this->se->getPlacementLat() != "imm") {
           auto memAccess =
               reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
           memAccess->setAdditionalDelay(latency);
         }
-        this->caches[0]->incHitCount(pkt);
-        this->caches[1]->incHitCount(pkt);
+        // this->caches[0]->incHitCount(pkt);
+        // this->caches[1]->incHitCount(pkt);
         this->sendTimingRequest(pkt, L3);
       }
     } else {
       // Do not bypassing L2.
-      auto pkt = this->createPacket(paddr, packetSize, element);
+      auto pkt =
+          this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
       if (this->se->getPlacementLat() != "imm") {
         auto memAccess =
             reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
         memAccess->setAdditionalDelay(latency);
       }
-      this->caches[0]->incHitCount(pkt);
+      // this->caches[0]->incHitCount(pkt);
       this->sendTimingRequest(pkt, L2);
     }
   }
   // Adjust our cache level based on the statistics.
-  auto placedCache = this->caches[cacheLevel];
-  auto &placedCacheStats = placedCache->getOrInitializeStreamStats(stream);
-
-  // Check if we have enough access to decide which level of cache.
-  if (placedCacheStats.currentAccesses > 100 &&
-      placedCacheStats.currentMisses >
-          placedCacheStats.currentAccesses * 0.95f &&
-      placedCacheStats.currentReuses <
-          placedCacheStats.currentAccesses * 0.1f) {
-    // There are still a lot of miss and little reuse at this level of cache,
-    // we should try to lower the cache level.
-    if (cacheLevel < 2) {
-      cacheLevel++;
-      placedCacheStats.clear();
-    }
-  } else if (placedCacheStats.currentAccesses > 1000 &&
-             placedCacheStats.currentReuses >
-                 placedCacheStats.currentAccesses * 0.8f) {
-    // There is a lot of reuse here, try to promote the stream to higher
-    // level.
-    if (cacheLevel > 0) {
-      cacheLevel--;
-      placedCacheStats.clear();
-    }
-  } else {
-    if (this->se->isPlacementPeriodReset()) {
-      auto &L1Stats = this->caches[0]->getOrInitializeStreamStats(stream);
-      if (L1Stats.currentBypasses == 10000) {
-        L1Stats.clear();
-        cacheLevel = 0;
-        placedCacheStats.clear();
-      }
-    }
-  }
+  // this->updatePlacedCacheLevel(stream);
 
   return bypassed;
 }
@@ -474,9 +469,10 @@ bool StreamPlacementManager::isHit(Cache *cache, Addr paddr) const {
   return cache->inCache(paddr, false);
 }
 
-PacketPtr StreamPlacementManager::createPacket(Addr paddr, int size,
-                                               StreamElement *element) const {
-  auto memAccess = element->allocateStreamMemAccess();
+PacketPtr StreamPlacementManager::createPacket(
+    Addr paddr, int size, StreamElement *element,
+    const CacheBlockBreakdownAccess &cacheBlockBreakdown) const {
+  auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
   auto pkt = TDGPacketHandler::createTDGPacket(paddr, size, memAccess, nullptr,
                                                Request::funcMasterId, 0, 0);
   /**
@@ -534,6 +530,74 @@ void StreamPlacementManager::dumpCacheStreamAwarePortStatus() {
   }
 }
 
+int StreamPlacementManager::getPlacedCacheLevelByFootprint(
+    Stream *stream) const {
+  auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
+  if (this->se->getPlacement() == "placement-footprint") {
+    footprint = stream->getTrueFootprint();
+  }
+  auto placeCacheLevel = this->caches.size() - 1;
+  for (size_t cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
+    auto cache = this->caches[cacheLevel];
+    auto cacheCapacity = cache->getCacheSize() / cpu->system->cacheLineSize();
+    if (footprint < cacheCapacity) {
+      placeCacheLevel = cacheLevel;
+      break;
+    }
+  }
+  return placeCacheLevel;
+}
+
+int StreamPlacementManager::getOrInitializePlacedCacheLevel(Stream *stream) {
+  auto cacheLevelIter = this->streamCacheLevelMap.find(stream);
+  if (cacheLevelIter == this->streamCacheLevelMap.end()) {
+    // Initialize the placed cache level by footprint.
+    auto initCacheLevel = this->getPlacedCacheLevelByFootprint(stream);
+    cacheLevelIter =
+        this->streamCacheLevelMap.emplace(stream, initCacheLevel).first;
+  }
+  return cacheLevelIter->second;
+}
+
+void StreamPlacementManager::updatePlacedCacheLevel(Stream *stream) {
+  // Adjust our cache level based on the statistics.
+  auto &placedCacheLevel = this->streamCacheLevelMap.at(stream);
+  auto placedCache = this->caches[placedCacheLevel];
+  auto &placedCacheStats = placedCache->getOrInitializeStreamStats(stream);
+
+  // Check if we have enough access to decide which level of cache.
+  if (placedCacheStats.currentAccesses > 100 &&
+      placedCacheStats.currentMisses >
+          placedCacheStats.currentAccesses * 0.95f &&
+      placedCacheStats.currentReuses <
+          placedCacheStats.currentAccesses * 0.1f) {
+    // There are still a lot of miss and little reuse at this level of cache,
+    // we should try to lower the cache level.
+    if (placedCacheLevel < 2) {
+      placedCacheLevel++;
+      placedCacheStats.clear();
+    }
+  } else if (placedCacheStats.currentAccesses > 1000 &&
+             placedCacheStats.currentReuses >
+                 placedCacheStats.currentAccesses * 0.8f) {
+    // There is a lot of reuse here, try to promote the stream to higher
+    // level.
+    if (placedCacheLevel > 0) {
+      placedCacheLevel--;
+      placedCacheStats.clear();
+    }
+  } else {
+    if (this->se->isPlacementPeriodReset()) {
+      auto &L1Stats = this->caches[0]->getOrInitializeStreamStats(stream);
+      if (L1Stats.currentBypasses == 10000) {
+        L1Stats.clear();
+        placedCacheLevel = 0;
+        placedCacheStats.clear();
+      }
+    }
+  }
+}
+
 size_t StreamPlacementManager::whichCacheLevelToPlace(Stream *stream) const {
   auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
   if (this->se->getPlacement() == "placement-footprint") {
@@ -543,8 +607,6 @@ size_t StreamPlacementManager::whichCacheLevelToPlace(Stream *stream) const {
   for (size_t cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     auto cache = this->caches[cacheLevel];
     auto cacheCapacity = cache->getCacheSize() / cpu->system->cacheLineSize();
-    // inform("Cache %d size %lu capacity %lu.\n", cacheLevel,
-    //        cache->getCacheSize(), cacheCapacity);
     if (footprint < cacheCapacity) {
       placeCacheLevel = cacheLevel;
       break;
