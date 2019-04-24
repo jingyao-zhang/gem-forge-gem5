@@ -83,6 +83,8 @@ StreamMemAccess *StreamElement::allocateStreamMemAccess(
   auto memAccess = new StreamMemAccess(
       this->getStream(), this, cacheBlockBreakdown.cacheBlockVirtualAddr);
   this->allocatedMemAccess.insert(memAccess);
+  assert(this->allocatedMemAccess.size() < 100 &&
+         "Memory leaking due to StreamMemAccess.");
   return memAccess;
 }
 

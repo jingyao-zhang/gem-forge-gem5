@@ -925,6 +925,10 @@ void StreamEngine::releaseElement(Stream *S) {
     auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
     cacheBlockInfo.reference--;
     if (cacheBlockInfo.reference == 0) {
+      // Remember to remove the pendingAccesses.
+      for (auto &pendingAccess : cacheBlockInfo.pendingAccesses) {
+        pendingAccess->handleStreamEngineResponse();
+      }
       this->cacheBlockRefMap.erase(cacheBlockVirtualAddr);
     }
   }
@@ -987,12 +991,12 @@ void StreamEngine::fetchedCacheBlock(Addr cacheBlockVirtualAddr,
   cacheBlockInfo.status = CacheBlockInfo::Status::FETCHED;
   // Notify all the pending streams.
   for (auto &pendingMemAccess : cacheBlockInfo.pendingAccesses) {
-    if (pendingMemAccess == memAccess) {
-      // Ignore the fetched one.
-      continue;
-    }
+    assert(pendingMemAccess != memAccess &&
+           "pendingMemAccess should not be fetching access.");
     pendingMemAccess->handleStreamEngineResponse();
   }
+  // Remember to clear the pendingAccesses, as they are now released.
+  cacheBlockInfo.pendingAccesses.clear();
 }
 
 void StreamEngine::issueElement(StreamElement *element) {
