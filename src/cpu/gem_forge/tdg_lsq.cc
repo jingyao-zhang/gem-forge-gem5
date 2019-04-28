@@ -10,8 +10,8 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 TDGLoadStoreQueue::TDGLoadStoreQueue(LLVMTraceCPU *_cpu, LLVMIEWStage *_iew,
                                      int _loadQueueSize, int _storeQueueSize,
                                      int _cacheStorePorts)
-    : cpu(_cpu), iew(_iew), loadQueueSize(_loadQueueSize),
-      storeQueueSize(_storeQueueSize), cacheStorePorts(_cacheStorePorts) {}
+    : loadQueueSize(_loadQueueSize), storeQueueSize(_storeQueueSize),
+      cacheStorePorts(_cacheStorePorts), cpu(_cpu), iew(_iew) {}
 
 void TDGLoadStoreQueue::insertLoad(const GemForgeLQCallback &callback) {
   panic_if(this->loadQueue.size() >= this->loadQueueSize,

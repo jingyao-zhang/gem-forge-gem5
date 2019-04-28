@@ -99,17 +99,12 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
           this->TDG.stream_store().stream_id());
 }
 
+bool StreamStoreInst::canDispatch(LLVMTraceCPU *cpu) const { return true; }
+
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
-  auto hasStreamUse = false;
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      hasStreamUse = true;
-      break;
-    }
-  }
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  if (hasStreamUse) {
+  if (this->hasStreamUse()) {
     SE->executeStreamUser(this);
   }
   SE->executeStreamStore(this);
@@ -117,15 +112,8 @@ void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
 }
 
 void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
-  auto hasStreamUse = false;
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      hasStreamUse = true;
-      break;
-    }
-  }
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  if (hasStreamUse) {
+  if (this->hasStreamUse()) {
     SE->commitStreamUser(this);
   }
   SE->commitStreamStore(this);

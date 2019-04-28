@@ -34,6 +34,7 @@ public:
   void dispatchStreamStep(StreamStepInst *inst);
   void commitStreamStep(StreamStepInst *inst);
 
+  bool canStreamUserDispatch(const LLVMDynamicInst *inst) const;
   void dispatchStreamUser(LLVMDynamicInst *inst);
   bool areUsedStreamsReady(const LLVMDynamicInst *inst);
   void executeStreamUser(LLVMDynamicInst *inst);
@@ -82,18 +83,19 @@ public:
   /**
    * Stats
    */
-  Stats::Scalar numConfigured;
-  Stats::Scalar numStepped;
-  Stats::Scalar numStreamMemRequests;
-  Stats::Scalar numElements;
-  Stats::Scalar numElementsUsed;
-  Stats::Scalar numUnconfiguredStreamUse;
-  Stats::Scalar numConfiguredStreamUse;
-  Stats::Scalar entryWaitCycles;
-  Stats::Scalar numMemElements;
-  Stats::Scalar numMemElementsFetched;
-  Stats::Scalar numMemElementsUsed;
-  Stats::Scalar memEntryWaitCycles;
+  mutable Stats::Scalar numConfigured;
+  mutable Stats::Scalar numStepped;
+  mutable Stats::Scalar numStreamMemRequests;
+  mutable Stats::Scalar numElements;
+  mutable Stats::Scalar numElementsUsed;
+  mutable Stats::Scalar numUnconfiguredStreamUse;
+  mutable Stats::Scalar numConfiguredStreamUse;
+  mutable Stats::Scalar entryWaitCycles;
+  mutable Stats::Scalar numMemElements;
+  mutable Stats::Scalar numMemElementsFetched;
+  mutable Stats::Scalar numMemElementsUsed;
+  mutable Stats::Scalar memEntryWaitCycles;
+  mutable Stats::Scalar streamUserNotDispatchedByLoadQueue;
 
   Stats::Distribution numTotalAliveElements;
   Stats::Distribution numTotalAliveCacheBlocks;
@@ -148,6 +150,7 @@ private:
     DYNAMIC,
   };
   ThrottlingE throttling;
+  bool enableLSQ;
   bool enableCoalesce;
   bool enableMerge;
   bool enableStreamPlacement;

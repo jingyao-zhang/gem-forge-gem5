@@ -33,6 +33,8 @@ public:
     this->iewStates.at(contextId).clear();
   }
 
+  TDGLoadStoreQueue *getLSQ() { return this->lsq; }
+
   void dumpROB() const;
 
   /**

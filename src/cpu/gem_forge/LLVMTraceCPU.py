@@ -105,6 +105,8 @@ class LLVMTraceCPU(BaseCPU):
         1000, "How many total elements to run ahead.")
     streamEngineThrottling = Param.String(
         "Static", "Which throttling technique to use.")
+    streamEngineEnableLSQ = Param.Bool(
+        False, "Whether the stream engine model inserting into the LSQ.")
     streamEngineEnableCoalesce = Param.Bool(
         False, "Whether the steam engine enable coalesced streams.")
     streamEngineEnableMerge = Param.Bool(

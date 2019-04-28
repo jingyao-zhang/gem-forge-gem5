@@ -104,6 +104,12 @@ struct StreamElement {
   Stream *stream;
   StreamEngine *se;
   FIFOEntryIdx FIFOIdx;
+  /**
+   * Whether the first user of this stream element has been dispatched.
+   * This is used to determine the first user the of the stream element
+   * and allocate entry in the load queue.
+   */
+  bool firstUserDispatched;
   bool isAddrReady;
   bool isValueReady;
 

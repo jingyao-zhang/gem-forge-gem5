@@ -124,6 +124,7 @@ public:
   const std::string &getTraceExtraFolder() const {
     return this->traceExtraFolder;
   }
+  LLVMIEWStage &getIEWStage() { return this->iewStage; }
 
 private:
   const std::string traceFileName;

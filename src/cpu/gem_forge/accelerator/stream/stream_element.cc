@@ -63,6 +63,7 @@ void StreamElement::clear() {
   this->next = nullptr;
   this->stream = nullptr;
   this->FIFOIdx = FIFOEntryIdx();
+  this->firstUserDispatched = false;
   this->isAddrReady = false;
   this->isValueReady = false;
 

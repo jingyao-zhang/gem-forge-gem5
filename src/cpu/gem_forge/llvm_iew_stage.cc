@@ -441,8 +441,7 @@ void LLVMIEWStage::dispatch() {
         this->cpu->inflyInstStatus.at(instId) = InstStatus::COMMITTED;
       };
       this->lsq->insertStore(callback);
-    }
-    if (inst->isLoadInst()) {
+    } else if (inst->isLoadInst()) {
       GemForgeLQCallback callback;
       this->lsq->insertLoad(callback);
     }

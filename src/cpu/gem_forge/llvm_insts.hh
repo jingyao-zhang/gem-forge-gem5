@@ -43,7 +43,9 @@ public:
   virtual ~LLVMDynamicInst() {}
 
   // Interface.
-  virtual bool canDispatch(LLVMTraceCPU *cpu) const { return true; }
+  virtual bool canDispatch(LLVMTraceCPU *cpu) const {
+    return this->canStreamUserDispatch(cpu);
+  }
   virtual void dispatch(LLVMTraceCPU *cpu);
   virtual void execute(LLVMTraceCPU *cpu) = 0;
   virtual void writeback(LLVMTraceCPU *cpu) {
@@ -150,6 +152,12 @@ protected:
 
   static uint64_t currentSeqNum;
   static uint64_t allocateSeqNum();
+
+  /**
+   * Helper functions for general stream user inst.
+   */
+  bool hasStreamUse() const;
+  bool canStreamUserDispatch(LLVMTraceCPU *cpu) const;
 };
 
 // Memory access inst.

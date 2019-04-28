@@ -68,6 +68,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   } else {
     this->throttling = ThrottlingE::DYNAMIC;
   }
+  this->enableLSQ = cpuParams->streamEngineEnableLSQ;
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
   this->enableMerge = cpuParams->streamEngineEnableMerge;
   this->enableStreamPlacement = cpuParams->streamEngineEnablePlacement;
@@ -131,6 +132,12 @@ void StreamEngine::regStats() {
       .desc("Number of cycles of a mem entry from first checked ifReady to "
             "ready.")
       .prereq(this->memEntryWaitCycles);
+  this->streamUserNotDispatchedByLoadQueue
+      .name(this->manager->name() +
+            ".stream.streamUserNotDispatchedByLoadQueue")
+      .desc("Number of cycles of stream user cannot dispatch due to load queue "
+            "full.")
+      .prereq(this->streamUserNotDispatchedByLoadQueue);
 
   this->numTotalAliveElements.init(0, 1000, 50)
       .name(this->manager->name() + ".stream.numTotalAliveElements")
@@ -427,6 +434,61 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
   }
 }
 
+bool StreamEngine::canStreamUserDispatch(const LLVMDynamicInst *inst) const {
+  // Only care this if we enable lsq for the stream engine.
+  if (!this->enableLSQ) {
+    return true;
+  }
+  // Collect all the element used.
+  std::unordered_set<StreamElement *> usedElementSet;
+  for (const auto &dep : inst->getTDG().deps()) {
+    if (dep.type() != ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      continue;
+    }
+    auto streamId = dep.dependent_id();
+    auto S = this->getStream(streamId);
+    if (!S->configured) {
+      // Ignore the out-of-loop use (see dispatchStreamUser).
+      continue;
+    }
+    if (S->allocSize <= S->stepSize) {
+      inst->dumpBasic();
+      this->dumpFIFO();
+      panic("No allocated element to use for stream %s.",
+            S->getStreamName().c_str());
+    }
+    usedElementSet.insert(S->stepped->next);
+  }
+  /**
+   * The only thing we need to worry about is to check there are
+   * enough space in the load queue to hold all the first use of the
+   * load stream element.
+   */
+  auto firstUsedLoadStreamElement = 0;
+  for (auto &element : usedElementSet) {
+    if (element->stream->getStreamType() != "load") {
+      // Not a load stream. Ignore it.
+      continue;
+    }
+    if (element->firstUserDispatched) {
+      // Not the first user of the load stream element. Ignore it.
+      continue;
+    }
+    firstUsedLoadStreamElement++;
+  }
+  /**
+   * Check that the load queue has enough space to hold these first used load
+   * stream elements.
+   */
+  auto LSQ = cpu->getIEWStage().getLSQ();
+  if (LSQ->loads() + firstUsedLoadStreamElement > LSQ->loadQueueSize) {
+    this->streamUserNotDispatchedByLoadQueue++;
+    return false;
+  }
+
+  return true;
+}
+
 void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) == 0);
 
@@ -458,6 +520,15 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
       }
 
       elementSet.insert(S->stepped->next);
+    }
+  }
+  // Mark the firstUserDispatched for the element.
+  for (auto &element : elementSet) {
+    if (element == nullptr) {
+      continue;
+    }
+    if (!element->firstUserDispatched) {
+      element->firstUserDispatched = true;
     }
   }
 }

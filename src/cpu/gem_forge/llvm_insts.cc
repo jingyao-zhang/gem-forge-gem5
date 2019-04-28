@@ -101,7 +101,6 @@ bool LLVMDynamicInst::isLoadInst() const {
 
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 
-  bool hasStreamUse = false;
   for (const auto &dep : this->TDG.deps()) {
     if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::REGISTER) {
       if (!cpu->isInstFinished(dep.dependent_id())) {
@@ -113,12 +112,8 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
         return false;
       }
     }
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      hasStreamUse = true;
-      break;
-    }
   }
-  if (hasStreamUse) {
+  if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     if (!SE->areUsedStreamsReady(this)) {
       return false;
@@ -129,33 +124,36 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 }
 
 void LLVMDynamicInst::dispatch(LLVMTraceCPU *cpu) {
-  // Inform the the stream engine.
-  bool hasStreamUse = false;
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      hasStreamUse = true;
-      break;
-    }
-  }
-  if (hasStreamUse) {
+  if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     SE->dispatchStreamUser(this);
   }
 }
 
 void LLVMDynamicInst::commit(LLVMTraceCPU *cpu) {
-  // Default implementation will commit stream users, if any.
-  bool hasStreamUse = false;
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      hasStreamUse = true;
-      break;
-    }
-  }
-  if (hasStreamUse) {
+  if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     SE->commitStreamUser(this);
   }
+}
+
+bool LLVMDynamicInst::hasStreamUse() const {
+  for (const auto &dep : this->TDG.deps()) {
+    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool LLVMDynamicInst::canStreamUserDispatch(LLVMTraceCPU *cpu) const {
+  if (!this->hasStreamUse()) {
+    // This is not a stream user inst.
+    return true;
+  }
+  // If this is a stream user, we have to check with the stream engine.
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  return SE->canStreamUserDispatch(this);
 }
 
 void LLVMDynamicInst::dumpBasic() const {
@@ -284,15 +282,7 @@ LLVMDynamicInstMem::~LLVMDynamicInstMem() {
 }
 
 void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
-  // Notify the stream engine.
-  bool hasStreamUse = false;
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      hasStreamUse = true;
-      break;
-    }
-  }
-  if (hasStreamUse) {
+  if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     SE->executeStreamUser(this);
   }
@@ -477,15 +467,7 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
 }
 
 void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
-  // Notify the stream engine.
-  bool hasStreamUse = false;
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      hasStreamUse = true;
-      break;
-    }
-  }
-  if (hasStreamUse) {
+  if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     SE->executeStreamUser(this);
   }

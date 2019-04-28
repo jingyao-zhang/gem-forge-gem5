@@ -36,16 +36,16 @@ public:
 
   void writebackStore();
 
-  size_t loads() const { return this->loadQueue.size(); }
-  size_t stores() const { return this->storeQueue.size(); }
-
-private:
-  LLVMTraceCPU *cpu;
-  LLVMIEWStage *iew;
+  int loads() const { return this->loadQueue.size(); }
+  int stores() const { return this->storeQueue.size(); }
 
   const int loadQueueSize;
   const int storeQueueSize;
   const int cacheStorePorts;
+
+private:
+  LLVMTraceCPU *cpu;
+  LLVMIEWStage *iew;
 
   struct LoadQueueEntry {
   public:
