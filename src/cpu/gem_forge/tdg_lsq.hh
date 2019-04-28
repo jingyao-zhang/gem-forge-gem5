@@ -31,7 +31,6 @@ public:
 
   void commitLoad();
   void commitStore();
-  void postCommitLoad();
   void postCommitStore();
 
   void writebackStore();

@@ -26,16 +26,14 @@ void TDGLoadStoreQueue::insertStore(const GemForgeSQCallback &callback) {
   this->storeQueue.emplace_back(callback);
 }
 
-void TDGLoadStoreQueue::postCommitLoad() {
+void TDGLoadStoreQueue::postCommitStore() {}
+
+void TDGLoadStoreQueue::commitLoad() {
   if (this->loadQueue.empty()) {
     panic("Failed to find the commit load instruction.");
   }
   this->loadQueue.pop_front();
 }
-
-void TDGLoadStoreQueue::postCommitStore() {}
-
-void TDGLoadStoreQueue::commitLoad() {}
 
 void TDGLoadStoreQueue::commitStore() {
   auto commitIter = this->storeQueue.begin();

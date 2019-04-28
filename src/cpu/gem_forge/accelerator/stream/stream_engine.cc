@@ -470,7 +470,7 @@ bool StreamEngine::canStreamUserDispatch(const LLVMDynamicInst *inst) const {
       // Not a load stream. Ignore it.
       continue;
     }
-    if (element->firstUserDispatched) {
+    if (element->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM) {
       // Not the first user of the load stream element. Ignore it.
       continue;
     }
@@ -522,13 +522,23 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
       elementSet.insert(S->stepped->next);
     }
   }
-  // Mark the firstUserDispatched for the element.
+  // Mark the firstUserSeqNum for the element if this is a load stream.
+  auto lsq = cpu->getIEWStage().getLSQ();
   for (auto &element : elementSet) {
     if (element == nullptr) {
       continue;
     }
-    if (!element->firstUserDispatched) {
-      element->firstUserDispatched = true;
+    if (element->stream->getStreamType() != "load") {
+      // Not a load stream.
+      continue;
+    }
+    if (element->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
+      element->firstUserSeqNum = inst->getSeqNum();
+      // Insert into the load queue if we model the lsq.
+      if (this->enableLSQ) {
+        GemForgeLQCallback callback;
+        lsq->insertLoad(callback);
+      }
     }
   }
 }
@@ -564,6 +574,21 @@ void StreamEngine::executeStreamUser(LLVMDynamicInst *inst) {
 
 void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) != 0);
+  if (this->enableLSQ) {
+    // Release the load queue entry for the first used load stream element.
+    auto lsq = cpu->getIEWStage().getLSQ();
+    for (auto &element : this->userElementMap.at(inst)) {
+      if (element == nullptr) {
+        continue;
+      }
+      if (element->stream->getStreamType() != "load") {
+        continue;
+      }
+      if (element->firstUserSeqNum == inst->getSeqNum()) {
+        lsq->commitLoad();
+      }
+    }
+  }
   // Simply release the entry.
   this->userElementMap.erase(inst);
 }

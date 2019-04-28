@@ -63,7 +63,7 @@ void StreamElement::clear() {
   this->next = nullptr;
   this->stream = nullptr;
   this->FIFOIdx = FIFOEntryIdx();
-  this->firstUserDispatched = false;
+  this->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
   this->isAddrReady = false;
   this->isValueReady = false;
 

@@ -507,9 +507,12 @@ void LLVMIEWStage::commitInst(LLVMDynamicInstId instId) {
   if (inst->isStoreInst()) {
     instStatus = InstStatus::COMMITTING;
     this->lsq->commitStore();
+  } else if (inst->isLoadInst()) {
+    // Load queue is released now.
+    instStatus = InstStatus::COMMITTED;
+    this->lsq->commitLoad();
   } else {
     // For other cases, the instruction is automatically committed,
-    // including load inst.
     instStatus = InstStatus::COMMITTED;
   }
 }
@@ -538,10 +541,6 @@ void LLVMIEWStage::postCommitInst(LLVMDynamicInstId instId) {
       panic("Failed to find mem inst %u in inst queue.\n", instId);
     }
     this->instQueue.erase(instQueueIter);
-  }
-
-  if (inst->isLoadInst()) {
-    this->lsq->postCommitLoad();
   }
 }
 

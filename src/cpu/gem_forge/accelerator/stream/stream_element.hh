@@ -109,7 +109,7 @@ struct StreamElement {
    * This is used to determine the first user the of the stream element
    * and allocate entry in the load queue.
    */
-  bool firstUserDispatched;
+  uint64_t firstUserSeqNum;
   bool isAddrReady;
   bool isValueReady;
 
