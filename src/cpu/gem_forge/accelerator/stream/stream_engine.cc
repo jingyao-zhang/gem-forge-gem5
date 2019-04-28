@@ -138,6 +138,13 @@ void StreamEngine::regStats() {
       .desc("Number of cycles of stream user cannot dispatch due to load queue "
             "full.")
       .prereq(this->streamUserNotDispatchedByLoadQueue);
+  this->streamStoreNotDispatchedByStoreQueue
+      .name(this->manager->name() +
+            ".stream.streamStoreNotDispatchedByStoreQueue")
+      .desc(
+          "Number of cycles of stream store cannot dispatch due to store queue "
+          "full.")
+      .prereq(this->streamStoreNotDispatchedByStoreQueue);
 
   this->numTotalAliveElements.init(0, 1000, 50)
       .name(this->manager->name() + ".stream.numTotalAliveElements")
@@ -668,6 +675,26 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
       debugStream(S, "Commit End");
     }
   }
+}
+
+bool StreamEngine::canStreamStoreDispatch(const StreamStoreInst *inst) const {
+  if (!this->enableLSQ) {
+    return true;
+  }
+  // Check if there is an free entry in the store queue.
+  auto LSQ = cpu->getIEWStage().getLSQ();
+  if (LSQ->stores() + 1 > LSQ->storeQueueSize) {
+    this->streamStoreNotDispatchedByStoreQueue++;
+    return false;
+  }
+  return true;
+}
+
+void StreamEngine::dispatchStreamStore(StreamStoreInst *inst) {
+  if (!this->enableLSQ) {
+    return;
+  }
+  // Insert into the store queue.
 }
 
 void StreamEngine::executeStreamStore(StreamStoreInst *inst) {

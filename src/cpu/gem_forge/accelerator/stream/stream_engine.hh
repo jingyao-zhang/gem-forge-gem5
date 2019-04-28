@@ -43,6 +43,8 @@ public:
   void dispatchStreamEnd(StreamEndInst *inst);
   void commitStreamEnd(StreamEndInst *inst);
 
+  bool canStreamStoreDispatch(const StreamStoreInst *inst) const;
+  void dispatchStreamStore(StreamStoreInst *inst);
   void executeStreamStore(StreamStoreInst *inst);
   void commitStreamStore(StreamStoreInst *inst);
 
@@ -96,6 +98,7 @@ public:
   mutable Stats::Scalar numMemElementsUsed;
   mutable Stats::Scalar memEntryWaitCycles;
   mutable Stats::Scalar streamUserNotDispatchedByLoadQueue;
+  mutable Stats::Scalar streamStoreNotDispatchedByStoreQueue;
 
   Stats::Distribution numTotalAliveElements;
   Stats::Distribution numTotalAliveCacheBlocks;
@@ -137,8 +140,6 @@ private:
    * mapping.
    */
   std::unordered_map<StreamId, StreamId> coalescedStreamIdMap;
-  // std::unordered_map<uint64_t, std::unordered_map<uint64_t, CoalescedStream>>
-  // coalescedStreamMap;
 
   /**
    * Flags.

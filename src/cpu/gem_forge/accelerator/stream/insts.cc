@@ -99,7 +99,16 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
           this->TDG.stream_store().stream_id());
 }
 
-bool StreamStoreInst::canDispatch(LLVMTraceCPU *cpu) const { return true; }
+bool StreamStoreInst::canDispatch(LLVMTraceCPU *cpu) const {
+  // StreamStore may also be a stream user.
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  if (this->hasStreamUse()) {
+    if (!SE->canStreamUserDispatch(this)) {
+      return false;
+    }
+  }
+  return SE->canStreamStoreDispatch(this);
+}
 
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
