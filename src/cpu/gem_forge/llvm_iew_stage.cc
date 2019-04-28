@@ -296,10 +296,14 @@ void LLVMIEWStage::issue() {
         DPRINTF(LLVMTraceCPU, "Inst %u %s issued\n", instId, instName.c_str());
         // Special case for load/store.
         if (inst->isLoadInst()) {
-          this->lsq->executeLoad(instId);
+          if (cpu->dataPort.isBlocked()) {
+            this->blockMemInst(instId);
+          } else {
+            inst->execute(cpu);
+          }
           usedCacheLoadPorts++;
         } else if (inst->isStoreInst()) {
-          this->lsq->executeStore(instId);
+          inst->execute(cpu);
         } else {
           inst->execute(cpu);
         }
@@ -423,10 +427,24 @@ void LLVMIEWStage::dispatch() {
 
     this->instQueue.push_back(instId);
     if (inst->isStoreInst()) {
-      this->lsq->insertStore(instId);
+      GemForgeSQCallback callback;
+      callback.writeback = [inst, this]() -> void {
+        // Writeback the instruction.
+        inst->writeback(this->cpu);
+      };
+      callback.isWritebacked = [inst]() -> bool {
+        // Check if writebacked.
+        return inst->isWritebacked();
+      };
+      callback.writebacked = [instId, this]() -> void {
+        // Update the status to committed.
+        this->cpu->inflyInstStatus.at(instId) = InstStatus::COMMITTED;
+      };
+      this->lsq->insertStore(callback);
     }
     if (inst->isLoadInst()) {
-      this->lsq->insertLoad(instId);
+      GemForgeLQCallback callback;
+      this->lsq->insertLoad(callback);
     }
     DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
             instId);
@@ -489,9 +507,10 @@ void LLVMIEWStage::commitInst(LLVMDynamicInstId instId) {
   auto inst = cpu->inflyInstMap.at(instId);
   if (inst->isStoreInst()) {
     instStatus = InstStatus::COMMITTING;
-    this->lsq->commitStore(instId);
+    this->lsq->commitStore();
   } else {
-    // For other cases, the instruction is automatically committed.
+    // For other cases, the instruction is automatically committed,
+    // including load inst.
     instStatus = InstStatus::COMMITTED;
   }
 }
@@ -523,7 +542,7 @@ void LLVMIEWStage::postCommitInst(LLVMDynamicInstId instId) {
   }
 
   if (inst->isLoadInst()) {
-    this->lsq->postCommitLoad(instId);
+    this->lsq->postCommitLoad();
   }
 }
 
