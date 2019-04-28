@@ -2,7 +2,7 @@
 
 #include "debug/McPATManager.hh"
 
-#include "cpu/llvm_trace/llvm_trace_cpu.hh"
+#include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "mem/cache/cache.hh"
 #include "mem/cache/tags/base.hh"
 

@@ -51,7 +51,7 @@
 
 #include "base/misc.hh"
 #include "base/trace.hh"
-#include "cpu/llvm_trace/accelerator/stream/stream.hh"
+#include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "debug/AddrRanges.hh"
 #include "debug/CoherentXBar.hh"
 #include "debug/StreamEngine.hh"

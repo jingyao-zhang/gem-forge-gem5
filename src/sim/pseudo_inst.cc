@@ -61,7 +61,7 @@
 #include "base/output.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
-#include "cpu/llvm_trace/llvm_trace_cpu_driver.hh"
+#include "cpu/gem_forge/llvm_trace_cpu_driver.hh"
 #include "cpu/quiesce_event.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Loader.hh"

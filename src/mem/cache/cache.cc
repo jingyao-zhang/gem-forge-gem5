@@ -55,7 +55,7 @@
 
 #include "base/misc.hh"
 #include "base/types.hh"
-#include "cpu/llvm_trace/accelerator/stream/stream.hh"
+#include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "debug/Cache.hh"
 #include "debug/CachePort.hh"
 #include "debug/CacheTags.hh"
