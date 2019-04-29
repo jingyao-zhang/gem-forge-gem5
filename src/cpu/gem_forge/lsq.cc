@@ -8,43 +8,42 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 GemForgeLoadStoreQueue::LoadQueueEntry::LoadQueueEntry(
-    const LSQEntryIndex _lsqIndex, const GemForgeLQCallback &_callback)
-    : lsqIndex(_lsqIndex), callback(_callback), isAddressReady(false) {}
+    const LSQEntryIndex _lsqIndex,
+    std::unique_ptr<GemForgeLQCallback> _callback)
+    : lsqIndex(_lsqIndex), callback(std::move(_callback)),
+      isAddressReady(false) {}
 
 GemForgeLoadStoreQueue::StoreQueueEntry::StoreQueueEntry(
-    const LSQEntryIndex _lsqIndex, const GemForgeSQCallback &_callback)
-    : lsqIndex(_lsqIndex),
-      callback(_callback),
-      isAddressReady(false),
-      committed(false),
-      writebacking(false) {}
+    const LSQEntryIndex _lsqIndex,
+    std::unique_ptr<GemForgeSQCallback> _callback)
+    : lsqIndex(_lsqIndex), callback(std::move(_callback)),
+      isAddressReady(false), committed(false), writebacking(false) {}
 
 GemForgeLoadStoreQueue::GemForgeLoadStoreQueue(LLVMTraceCPU *_cpu,
                                                LLVMIEWStage *_iew,
                                                int _loadQueueSize,
                                                int _storeQueueSize,
                                                int _cacheStorePorts)
-    : loadQueueSize(_loadQueueSize),
-      storeQueueSize(_storeQueueSize),
-      cacheStorePorts(_cacheStorePorts),
-      cpu(_cpu),
-      iew(_iew),
+    : loadQueueSize(_loadQueueSize), storeQueueSize(_storeQueueSize),
+      cacheStorePorts(_cacheStorePorts), cpu(_cpu), iew(_iew),
       currentAllocatedLSQEntryIndex(INVALID_LSQ_ENTRY_INDEX) {}
 
-void GemForgeLoadStoreQueue::insertLoad(const GemForgeLQCallback &callback) {
+void GemForgeLoadStoreQueue::insertLoad(
+    std::unique_ptr<GemForgeLQCallback> callback) {
   panic_if(this->loadQueue.size() >= this->loadQueueSize,
            "Load queue overflows.");
   auto lsqIndex = ++this->currentAllocatedLSQEntryIndex;
-  this->loadQueue.emplace_back(lsqIndex, callback);
+  this->loadQueue.emplace_back(lsqIndex, std::move(callback));
   this->iew->loadQueueWrites++;
 }
 
-void GemForgeLoadStoreQueue::insertStore(const GemForgeSQCallback &callback) {
+void GemForgeLoadStoreQueue::insertStore(
+    std::unique_ptr<GemForgeSQCallback> callback) {
   if (this->storeQueue.size() >= this->storeQueueSize) {
     panic("Store queue overflows.");
   }
   auto lsqIndex = ++this->currentAllocatedLSQEntryIndex;
-  this->storeQueue.emplace_back(lsqIndex, callback);
+  this->storeQueue.emplace_back(lsqIndex, std::move(callback));
   this->iew->storeQueueWrites++;
 }
 
@@ -61,9 +60,8 @@ void GemForgeLoadStoreQueue::commitStore() {
     commitIter++;
   }
   if (commitIter == this->storeQueue.end()) {
-    panic(
-        "Try to commit store when there is no instruction in the store "
-        "queue waiting to be committed.");
+    panic("Try to commit store when there is no instruction in the store "
+          "queue waiting to be committed.");
   }
   commitIter->committed = true;
 }
@@ -75,7 +73,7 @@ void GemForgeLoadStoreQueue::writebackStore() {
     if (!writebackIter->writebacking) {
       // We start to writeback it.
       writebackIter->writebacking = true;
-      writebackIter->callback.writeback();
+      writebackIter->callback->writeback();
       usedStorePorts++;
       if (usedStorePorts >= this->cacheStorePorts) {
         // We are done for this cycle.
@@ -85,10 +83,10 @@ void GemForgeLoadStoreQueue::writebackStore() {
     } else {
       // We should check if it is writebacked.
       // if (inst->isWritebacked()) {
-      if (writebackIter->callback.isWritebacked()) {
+      if (writebackIter->callback->isWritebacked()) {
         // If so, update it to writebacked and remove from the store queue.
         // Continue to try to write back the next store in queue.
-        writebackIter->callback.writebacked();
+        writebackIter->callback->writebacked();
         writebackIter = this->storeQueue.erase(writebackIter);
         continue;
       } else {
@@ -108,7 +106,7 @@ void GemForgeLoadStoreQueue::detectAlias() {
     }
     Addr loadAddr;
     uint32_t loadSize;
-    if (!loadEntry.callback.getAddrSize(loadAddr, loadSize)) {
+    if (!loadEntry.callback->getAddrSize(loadAddr, loadSize)) {
       // This load queue still does not know the address.
       continue;
     }
@@ -141,7 +139,7 @@ void GemForgeLoadStoreQueue::detectAlias() {
     }
     Addr storeAddr;
     uint32_t storeSize;
-    if (!storeEntry.callback.getAddrSize(storeAddr, storeSize)) {
+    if (!storeEntry.callback->getAddrSize(storeAddr, storeSize)) {
       // This entry still does not know the address.
       continue;
     }
@@ -175,11 +173,11 @@ void GemForgeLoadStoreQueue::checkLoadStoreAlias(LoadQueueEntry &loadEntry,
                                                  StoreQueueEntry &storeEntry) {
   Addr loadAddr;
   uint32_t loadSize;
-  assert(loadEntry.callback.getAddrSize(loadAddr, loadSize) &&
+  assert(loadEntry.callback->getAddrSize(loadAddr, loadSize) &&
          "Failed to get the address for load entry.");
   Addr storeAddr;
   uint32_t storeSize;
-  assert(storeEntry.callback.getAddrSize(storeAddr, storeSize) &&
+  assert(storeEntry.callback->getAddrSize(storeAddr, storeSize) &&
          "Failed to get the address for store entry.");
   auto aliased = GemForgeLoadStoreQueue::isAliased(loadAddr, loadSize,
                                                    storeAddr, storeSize);
@@ -204,9 +202,9 @@ void GemForgeLoadStoreQueue::checkStoreStoreAlias(
          "Cannot check alias for the same store queue entry.");
   Addr storeAddr1, storeAddr2;
   uint32_t storeSize1, storeSize2;
-  assert(storeEntry1.callback.getAddrSize(storeAddr1, storeSize1) &&
+  assert(storeEntry1.callback->getAddrSize(storeAddr1, storeSize1) &&
          "Failed to get the address for first store entry.");
-  assert(storeEntry2.callback.getAddrSize(storeAddr2, storeSize2) &&
+  assert(storeEntry2.callback->getAddrSize(storeAddr2, storeSize2) &&
          "Failed to get the address for second store entry.");
   auto aliased = GemForgeLoadStoreQueue::isAliased(storeAddr1, storeSize1,
                                                    storeAddr2, storeSize2);

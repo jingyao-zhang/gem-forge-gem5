@@ -6,18 +6,14 @@
 using InstStatus = LLVMTraceCPU::InstStatus;
 
 LLVMIEWStage::LLVMIEWStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
-    : cpu(_cpu),
-      dispatchWidth(params->dispatchWidth),
-      issueWidth(params->issueWidth),
-      writeBackWidth(params->writeBackWidth),
-      maxRobSize(params->robSize),
-      cacheLoadPorts(params->cacheLoadPorts),
+    : cpu(_cpu), dispatchWidth(params->dispatchWidth),
+      issueWidth(params->issueWidth), writeBackWidth(params->writeBackWidth),
+      maxRobSize(params->robSize), cacheLoadPorts(params->cacheLoadPorts),
       instQueueSize(params->instQueueSize),
       loadQueueSize(params->loadQueueSize),
       storeQueueSize(params->storeQueueSize),
       fromRenameDelay(params->renameToIEWDelay),
-      toCommitDelay(params->iewToCommitDelay),
-      lsq(nullptr),
+      toCommitDelay(params->iewToCommitDelay), lsq(nullptr),
       iewStates(params->hardwareContexts) {
   this->lsq =
       new GemForgeLoadStoreQueue(this->cpu, this, this->loadQueueSize,
@@ -46,7 +42,7 @@ void LLVMIEWStage::regStats() {
       .flags(Stats::total | Stats::pdf | Stats::dist);
   this->statIssuedInstType.ysubnames(Enums::OpClassStrings);
 
-#define scalar(stat, describe) \
+#define scalar(stat, describe)                                                 \
   this->stat.name(name() + ("." #stat)).desc(describe).prereq(this->stat)
   scalar(blockedCycles, "Number of cycles blocked");
   scalar(robReads, "Number of rob reads");
@@ -281,27 +277,27 @@ void LLVMIEWStage::issue() {
         if (opClass != No_OpClass) {
           auto opLatency = cpu->getOpLatency(opClass);
           switch (opClass) {
-            case IntAluOp: {
-              this->ALUAccesses++;
-              this->ALUAccessesCycles += opLatency;
-              break;
-            }
-            case IntMultOp:
-            case IntDivOp: {
-              this->MultAccesses++;
-              this->MultAccessesCycles += opLatency;
-              break;
-            }
-            case FloatAddOp:
-            case FloatMultOp:
-            case FloatDivOp:
-            case FloatCvtOp:
-            case FloatCmpOp: {
-              this->FPUAccesses++;
-              this->FPUAccessesCycles += opLatency;
-              break;
-            }
-            default: { break; }
+          case IntAluOp: {
+            this->ALUAccesses++;
+            this->ALUAccessesCycles += opLatency;
+            break;
+          }
+          case IntMultOp:
+          case IntDivOp: {
+            this->MultAccesses++;
+            this->MultAccessesCycles += opLatency;
+            break;
+          }
+          case FloatAddOp:
+          case FloatMultOp:
+          case FloatDivOp:
+          case FloatCvtOp:
+          case FloatCmpOp: {
+            this->FPUAccesses++;
+            this->FPUAccessesCycles += opLatency;
+            break;
+          }
+          default: { break; }
           }
         }
 
@@ -439,36 +435,13 @@ void LLVMIEWStage::dispatch() {
 
     this->instQueue.push_back(instId);
     if (inst->isStoreInst()) {
-      GemForgeSQCallback callback;
-      callback.getAddrSize = [inst](Addr &addr, uint32_t &size) -> bool {
-        assert(inst->getTDG().has_store() &&
-               "Missing loadExtra for load inst.");
-        addr = inst->getTDG().store().addr();
-        size = inst->getTDG().store().size();
-        return true;
-      };
-      callback.writeback = [inst, this]() -> void {
-        // Writeback the instruction.
-        inst->writeback(this->cpu);
-      };
-      callback.isWritebacked = [inst]() -> bool {
-        // Check if writebacked.
-        return inst->isWritebacked();
-      };
-      callback.writebacked = [instId, this]() -> void {
-        // Update the status to committed.
-        this->cpu->inflyInstStatus.at(instId) = InstStatus::COMMITTED;
-      };
-      this->lsq->insertStore(callback);
+      std::unique_ptr<GemForgeIEWSQCallback> callback(
+          new GemForgeIEWSQCallback(inst, this->cpu));
+      this->lsq->insertStore(std::move(callback));
     } else if (inst->isLoadInst()) {
-      GemForgeLQCallback callback;
-      callback.getAddrSize = [inst](Addr &addr, uint32_t &size) -> bool {
-        assert(inst->getTDG().has_load() && "Missing loadExtra for load inst.");
-        addr = inst->getTDG().load().addr();
-        size = inst->getTDG().load().size();
-        return true;
-      };
-      this->lsq->insertLoad(callback);
+      std::unique_ptr<GemForgeLQCallback> callback(
+          new GemForgeIEWLQCallback(inst));
+      this->lsq->insertLoad(std::move(callback));
     }
     DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
             instId);
@@ -634,11 +607,8 @@ void LLVMIEWStage::processFUCompletion(LLVMDynamicInstId instId, int fuId) {
 
 LLVMIEWStage::FUCompletion::FUCompletion(LLVMDynamicInstId _instId, int _fuId,
                                          LLVMIEWStage *_iew, bool _shouldFreeFU)
-    : Event(Stat_Event_Pri, AutoDelete),
-      instId(_instId),
-      fuId(_fuId),
-      iew(_iew),
-      shouldFreeFU(_shouldFreeFU) {}
+    : Event(Stat_Event_Pri, AutoDelete), instId(_instId), fuId(_fuId),
+      iew(_iew), shouldFreeFU(_shouldFreeFU) {}
 
 void LLVMIEWStage::FUCompletion::process() {
   // Call the process function from cpu.
@@ -648,4 +618,8 @@ void LLVMIEWStage::FUCompletion::process() {
 
 const char *LLVMIEWStage::FUCompletion::description() const {
   return "Function unit completion";
+}
+
+void LLVMIEWStage::GemForgeIEWSQCallback::writebacked() {
+  cpu->inflyInstStatus.at(inst->getId()) = InstStatus::COMMITTED;
 }

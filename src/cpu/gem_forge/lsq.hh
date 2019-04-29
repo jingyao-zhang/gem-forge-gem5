@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <list>
+#include <memory>
 #include <vector>
 
 class LLVMTraceCPU;
@@ -21,7 +22,7 @@ struct GemForgeLQCallback {
    * * Get the address and size of this lsq entry.
    * @return true if the address is ready.
    */
-  std::function<bool(Addr &, uint32_t &)> getAddrSize;
+  virtual bool getAddrSize(Addr &addr, uint32_t &size) = 0;
 };
 
 struct GemForgeSQCallback {
@@ -29,20 +30,20 @@ struct GemForgeSQCallback {
    * * Get the address and size of this lsq entry.
    * @return true if the address is ready.
    */
-  std::function<bool(Addr &, uint32_t &)> getAddrSize;
-  std::function<void()> writeback;
-  std::function<bool()> isWritebacked;
-  std::function<void()> writebacked;
+  virtual bool getAddrSize(Addr &addr, uint32_t &size) = 0;
+  virtual void writeback() = 0;
+  virtual bool isWritebacked() = 0;
+  virtual void writebacked() = 0;
 };
 
 class GemForgeLoadStoreQueue {
- public:
+public:
   GemForgeLoadStoreQueue(LLVMTraceCPU *_cpu, LLVMIEWStage *_iew,
                          int _loadQueueSize, int _storeQueueSize,
                          int _cacheStorePorts);
 
-  void insertLoad(const GemForgeLQCallback &callback);
-  void insertStore(const GemForgeSQCallback &callback);
+  void insertLoad(std::unique_ptr<GemForgeLQCallback> callback);
+  void insertStore(std::unique_ptr<GemForgeSQCallback> callback);
 
   void commitLoad();
   void commitStore();
@@ -57,7 +58,7 @@ class GemForgeLoadStoreQueue {
   const int storeQueueSize;
   const int cacheStorePorts;
 
- private:
+private:
   LLVMTraceCPU *cpu;
   LLVMIEWStage *iew;
 
@@ -66,22 +67,22 @@ class GemForgeLoadStoreQueue {
   LSQEntryIndex currentAllocatedLSQEntryIndex;
 
   struct LoadQueueEntry {
-   public:
+  public:
     const LSQEntryIndex lsqIndex;
-    GemForgeLQCallback callback;
+    std::unique_ptr<GemForgeLQCallback> callback;
     bool isAddressReady;
     /**
      * WAR dependences. Stores the store queue entry index.
      */
     std::vector<LSQEntryIndex> WAREntryIndexes;
     LoadQueueEntry(const LSQEntryIndex _lsqIndex,
-                   const GemForgeLQCallback &_callback);
+                   std::unique_ptr<GemForgeLQCallback> _callback);
   };
 
   struct StoreQueueEntry {
-   public:
+  public:
     const LSQEntryIndex lsqIndex;
-    GemForgeSQCallback callback;
+    std::unique_ptr<GemForgeSQCallback> callback;
     bool isAddressReady;
     bool committed;
     bool writebacking;
@@ -91,7 +92,7 @@ class GemForgeLoadStoreQueue {
      */
     std::vector<LSQEntryIndex> XAWEntryIndexes;
     StoreQueueEntry(const LSQEntryIndex _lsqIndex,
-                    const GemForgeSQCallback &_callback);
+                    std::unique_ptr<GemForgeSQCallback> _callback);
   };
 
   std::list<LoadQueueEntry> loadQueue;

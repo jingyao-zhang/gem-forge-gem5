@@ -16,7 +16,7 @@
 class LLVMTraceCPU;
 
 class LLVMIEWStage {
- public:
+public:
   using RenameStruct = LLVMRenameStage::RenameStruct;
   using IEWStruct = std::vector<LLVMDynamicInstId>;
 
@@ -52,14 +52,14 @@ class LLVMIEWStage {
   void processFUCompletion(LLVMDynamicInstId instId, int fuId);
 
   class FUCompletion : public Event {
-   public:
+  public:
     FUCompletion(LLVMDynamicInstId _instId, int _fuId, LLVMIEWStage *_iew,
                  bool _shouldFreeFU = false);
     // From Event.
     void process() override;
     const char *description() const override;
 
-   private:
+  private:
     LLVMDynamicInstId instId;
     int fuId;
     // Pointer back to the CPU.
@@ -126,7 +126,7 @@ class LLVMIEWStage {
 
   Stats::Distribution numExecutingDist;
 
- private:
+private:
   LLVMTraceCPU *cpu;
 
   unsigned dispatchWidth;
@@ -165,6 +165,41 @@ class LLVMIEWStage {
   void markReady();
   void writeback(std::list<LLVMDynamicInstId> &queue, unsigned &writebacked);
   void sendToCommit();
+
+  /**
+   * * Callback structures for the lsq.
+   * * Since C++11, the nested class has the same access right as the
+   * * enclosing class. We make these callbacks nested to have the same
+   * * access right to LLVMTraceCPU as the IEWStage.
+   */
+  struct GemForgeIEWLQCallback : public GemForgeLQCallback {
+  public:
+    LLVMDynamicInst *inst;
+    GemForgeIEWLQCallback(LLVMDynamicInst *_inst) : inst(_inst) {}
+    bool getAddrSize(Addr &addr, uint32_t &size) override {
+      assert(inst->getTDG().has_load() && "Missing loadExtra for load inst.");
+      addr = inst->getTDG().load().addr();
+      size = inst->getTDG().load().size();
+      return true;
+    }
+  };
+  struct GemForgeIEWSQCallback : public GemForgeSQCallback {
+  public:
+    LLVMDynamicInst *inst;
+    LLVMTraceCPU *cpu;
+    GemForgeIEWSQCallback(LLVMDynamicInst *_inst, LLVMTraceCPU *_cpu)
+        : inst(_inst), cpu(_cpu) {}
+    bool getAddrSize(Addr &addr, uint32_t &size) override {
+      assert(inst->getTDG().has_store() &&
+             "Missing storeExtra for store inst.");
+      addr = inst->getTDG().store().addr();
+      size = inst->getTDG().store().size();
+      return true;
+    }
+    void writeback() override { inst->writeback(cpu); }
+    bool isWritebacked() override { return inst->isWritebacked(); }
+    void writebacked() override;
+  };
 };
 
 #endif
