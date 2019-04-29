@@ -10,13 +10,13 @@
 #include "cpu/gem_forge/llvm_rename_stage.hh"
 #include "cpu/gem_forge/llvm_stage_signal.hh"
 #include "cpu/timebuf.hh"
+#include "lsq.hh"
 #include "params/LLVMTraceCPU.hh"
-#include "tdg_lsq.hh"
 
 class LLVMTraceCPU;
 
 class LLVMIEWStage {
-public:
+ public:
   using RenameStruct = LLVMRenameStage::RenameStruct;
   using IEWStruct = std::vector<LLVMDynamicInstId>;
 
@@ -33,7 +33,7 @@ public:
     this->iewStates.at(contextId).clear();
   }
 
-  TDGLoadStoreQueue *getLSQ() { return this->lsq; }
+  GemForgeLoadStoreQueue *getLSQ() { return this->lsq; }
 
   void dumpROB() const;
 
@@ -52,14 +52,14 @@ public:
   void processFUCompletion(LLVMDynamicInstId instId, int fuId);
 
   class FUCompletion : public Event {
-  public:
+   public:
     FUCompletion(LLVMDynamicInstId _instId, int _fuId, LLVMIEWStage *_iew,
                  bool _shouldFreeFU = false);
     // From Event.
     void process() override;
     const char *description() const override;
 
-  private:
+   private:
     LLVMDynamicInstId instId;
     int fuId;
     // Pointer back to the CPU.
@@ -89,6 +89,9 @@ public:
   Stats::Scalar fpInstQueueWakeups;
   Stats::Scalar loadQueueWrites;
   Stats::Scalar storeQueueWrites;
+  Stats::Scalar RAWDependenceInLSQ;
+  Stats::Scalar WAWDependenceInLSQ;
+  Stats::Scalar WARDependenceInLSQ;
 
   Stats::Scalar intRegReads;
   Stats::Scalar intRegWrites;
@@ -123,7 +126,7 @@ public:
 
   Stats::Distribution numExecutingDist;
 
-private:
+ private:
   LLVMTraceCPU *cpu;
 
   unsigned dispatchWidth;
@@ -145,7 +148,7 @@ private:
   std::list<LLVMDynamicInstId> rob;
   std::list<LLVMDynamicInstId> instQueue;
 
-  TDGLoadStoreQueue *lsq;
+  GemForgeLoadStoreQueue *lsq;
 
   struct IEWState {
     size_t robSize;

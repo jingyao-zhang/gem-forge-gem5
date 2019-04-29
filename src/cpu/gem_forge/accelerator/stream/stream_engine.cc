@@ -18,15 +18,15 @@ void debugStream(Stream *S, const char *message) {
          message, S->getStreamName().c_str(), S->configured, S->stepSize,
          S->allocSize, S->maxSize);
 }
-} // namespace
+}  // namespace
 
-#define STREAM_DPRINTF(stream, format, args...)                                \
-  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
+#define STREAM_DPRINTF(stream, format, args...)                           \
+  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(), \
           ##args)
 
-#define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
-  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
-                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
+#define STREAM_ELEMENT_DPRINTF(element, format, args...)                     \
+  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                \
+                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx, \
                  ##args)
 
 StreamEngine::StreamEngine()
@@ -129,14 +129,16 @@ void StreamEngine::regStats() {
       .prereq(this->numMemElementsUsed);
   this->memEntryWaitCycles
       .name(this->manager->name() + ".stream.memEntryWaitCycles")
-      .desc("Number of cycles of a mem entry from first checked ifReady to "
-            "ready.")
+      .desc(
+          "Number of cycles of a mem entry from first checked ifReady to "
+          "ready.")
       .prereq(this->memEntryWaitCycles);
   this->streamUserNotDispatchedByLoadQueue
       .name(this->manager->name() +
             ".stream.streamUserNotDispatchedByLoadQueue")
-      .desc("Number of cycles of stream user cannot dispatch due to load queue "
-            "full.")
+      .desc(
+          "Number of cycles of stream user cannot dispatch due to load queue "
+          "full.")
       .prereq(this->streamUserNotDispatchedByLoadQueue);
   this->streamStoreNotDispatchedByStoreQueue
       .name(this->manager->name() +
@@ -544,6 +546,15 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
       // Insert into the load queue if we model the lsq.
       if (this->enableLSQ) {
         GemForgeLQCallback callback;
+        callback.getAddrSize = [element](Addr &addr, uint32_t &size) -> bool {
+          // Check if the address is ready.
+          if (!element->isAddrReady) {
+            return false;
+          }
+          addr = element->addr;
+          size = element->size;
+          return true;
+        };
         lsq->insertLoad(callback);
       }
     }
@@ -694,8 +705,31 @@ void StreamEngine::dispatchStreamStore(StreamStoreInst *inst) {
   if (!this->enableLSQ) {
     return;
   }
+  // Find the element to be stored.
+  StreamElement *storeElement = nullptr;
+  auto storeStream = this->getStream(inst->getTDG().stream_store().stream_id());
+  for (auto element : this->userElementMap.at(inst)) {
+    if (element == nullptr) {
+      continue;
+    }
+    if (element->stream == storeStream) {
+      // Found it.
+      storeElement = element;
+      break;
+    }
+  }
+  assert(storeElement != nullptr && "Failed to found the store element.");
   // Insert into the store queue.
   GemForgeSQCallback callback;
+  callback.getAddrSize = [storeElement](Addr &addr, uint32_t &size) -> bool {
+    // Check if the address is ready.
+    if (!storeElement->isAddrReady) {
+      return false;
+    }
+    addr = storeElement->addr;
+    size = storeElement->size;
+    return true;
+  };
   // * So far empty callbacks.
   callback.writeback = []() -> void { return; };
   callback.isWritebacked = []() -> bool { return true; };
@@ -827,8 +861,8 @@ void StreamEngine::updateAliveStatistics() {
   this->numTotalAliveMemStreams.sample(totalAliveMemStreams);
 }
 
-LLVM::TDG::StreamInfo
-StreamEngine::parseStreamInfoFromFile(const std::string &infoPath) {
+LLVM::TDG::StreamInfo StreamEngine::parseStreamInfoFromFile(
+    const std::string &infoPath) {
   ProtoInputStream infoIStream(infoPath);
   LLVM::TDG::StreamInfo info;
   if (!infoIStream.read(info)) {
@@ -871,8 +905,8 @@ bool StreamEngine::hasFreeElement() const {
   return this->numFreeFIFOEntries > 0;
 }
 
-const std::list<Stream *> &
-StreamEngine::getStepStreamList(Stream *stepS) const {
+const std::list<Stream *> &StreamEngine::getStepStreamList(
+    Stream *stepS) const {
   assert(stepS != nullptr && "stepS is nullptr.");
   if (this->memorizedStreamStepListMap.count(stepS) != 0) {
     return this->memorizedStreamStepListMap.at(stepS);
@@ -1002,9 +1036,10 @@ void StreamEngine::allocateElement(Stream *S) {
     for (int currentSize, totalSize = 0; totalSize < newElement->size;
          totalSize += currentSize) {
       if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic("More than %d cache blocks for one stream element, address %lu "
-              "size %lu.",
-              newElement->cacheBlocks, newElement->addr, newElement->size);
+        panic(
+            "More than %d cache blocks for one stream element, address %lu "
+            "size %lu.",
+            newElement->cacheBlocks, newElement->addr, newElement->size);
       }
       auto currentAddr = newElement->addr + totalSize;
       currentSize = newElement->size - totalSize;

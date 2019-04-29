@@ -195,7 +195,7 @@ private:
   friend class LLVMRenameStage;
   friend class LLVMIEWStage;
   friend class LLVMCommitStage;
-  friend class TDGLoadStoreQueue;
+  friend class GemForgeLoadStoreQueue;
 
   LLVMFetchStage fetchStage;
   LLVMDecodeStage decodeStage;
