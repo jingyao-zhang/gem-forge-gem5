@@ -695,6 +695,13 @@ void StreamEngine::dispatchStreamStore(StreamStoreInst *inst) {
     return;
   }
   // Insert into the store queue.
+  GemForgeSQCallback callback;
+  // * So far empty callbacks.
+  callback.writeback = []() -> void { return; };
+  callback.isWritebacked = []() -> bool { return true; };
+  callback.writebacked = []() -> void { return; };
+  auto lsq = cpu->getIEWStage().getLSQ();
+  lsq->insertStore(callback);
 }
 
 void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
@@ -713,7 +720,13 @@ void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
   }
 }
 
-void StreamEngine::commitStreamStore(StreamStoreInst *inst) {}
+void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
+  if (!this->enableLSQ) {
+    return;
+  }
+  auto lsq = cpu->getIEWStage().getLSQ();
+  lsq->commitStore();
+}
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
 
@@ -1188,7 +1201,11 @@ void StreamEngine::issueElement(StreamElement *element) {
   if (S->getStreamType() == "store" || element->inflyMemAccess.empty()) {
     // Store can be directly value ready or if we have no infly memAccesses.
     // We do not track the infly packet for store stream.
-    element->markValueReady();
+    if (!element->isValueReady) {
+      // The element may be already ready as we are issue packets for
+      // committed store stream elements.
+      element->markValueReady();
+    }
   }
 }
 

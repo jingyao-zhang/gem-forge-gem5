@@ -110,6 +110,14 @@ bool StreamStoreInst::canDispatch(LLVMTraceCPU *cpu) const {
   return SE->canStreamStoreDispatch(this);
 }
 
+void StreamStoreInst::dispatch(LLVMTraceCPU *cpu) {
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  if (this->hasStreamUse()) {
+    SE->dispatchStreamUser(this);
+  }
+  SE->dispatchStreamStore(this);
+}
+
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();

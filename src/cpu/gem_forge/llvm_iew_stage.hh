@@ -87,6 +87,8 @@ public:
   Stats::Scalar fpInstQueueReads;
   Stats::Scalar fpInstQueueWrites;
   Stats::Scalar fpInstQueueWakeups;
+  Stats::Scalar loadQueueWrites;
+  Stats::Scalar storeQueueWrites;
 
   Stats::Scalar intRegReads;
   Stats::Scalar intRegWrites;

@@ -17,6 +17,7 @@ void TDGLoadStoreQueue::insertLoad(const GemForgeLQCallback &callback) {
   panic_if(this->loadQueue.size() >= this->loadQueueSize,
            "Load queue overflows.");
   this->loadQueue.emplace_back(callback);
+  this->iew->loadQueueWrites++;
 }
 
 void TDGLoadStoreQueue::insertStore(const GemForgeSQCallback &callback) {
@@ -24,9 +25,8 @@ void TDGLoadStoreQueue::insertStore(const GemForgeSQCallback &callback) {
     panic("Store queue overflows.");
   }
   this->storeQueue.emplace_back(callback);
+  this->iew->storeQueueWrites++;
 }
-
-void TDGLoadStoreQueue::postCommitStore() {}
 
 void TDGLoadStoreQueue::commitLoad() {
   if (this->loadQueue.empty()) {

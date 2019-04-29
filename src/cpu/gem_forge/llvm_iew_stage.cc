@@ -53,6 +53,8 @@ void LLVMIEWStage::regStats() {
   scalar(fpInstQueueReads, "Number of fp inst queue reads");
   scalar(fpInstQueueWrites, "Number of fp inst queue writes");
   scalar(fpInstQueueWakeups, "Number of fp inst queue wakeups");
+  scalar(loadQueueWrites, "Number of load queue writes.");
+  scalar(storeQueueWrites, "Number of store queue writes.");
 
   scalar(intRegReads, "Number of int regfile reads");
   scalar(intRegWrites, "Number of int regfile writes");
