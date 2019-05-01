@@ -193,6 +193,11 @@ void GemForgeLoadStoreQueue::checkLoadStoreAlias(LoadQueueEntry &loadEntry,
     // RAW dependence.
     this->iew->RAWDependenceInLSQ++;
     storeEntry.XAWEntryIndexes.push_back(loadEntry.lsqIndex);
+    if (loadEntry.callback->isIssued()) {
+      // This load entry has been issued.
+      // There is an mis-speculation.
+      this->iew->MisSpecRAWDependence++;
+    }
   }
 }
 

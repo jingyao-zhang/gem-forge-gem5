@@ -58,6 +58,7 @@ void LLVMIEWStage::regStats() {
   scalar(RAWDependenceInLSQ, "Number of RAW dep found by LSQ.");
   scalar(WAWDependenceInLSQ, "Number of WAW dep found by LSQ.");
   scalar(WARDependenceInLSQ, "Number of WAR dep found by LSQ.");
+  scalar(MisSpecRAWDependence, "Number of RAW misspeculated dep.");
 
   scalar(intRegReads, "Number of int regfile reads");
   scalar(intRegWrites, "Number of int regfile writes");
@@ -440,7 +441,7 @@ void LLVMIEWStage::dispatch() {
       this->lsq->insertStore(std::move(callback));
     } else if (inst->isLoadInst()) {
       std::unique_ptr<GemForgeLQCallback> callback(
-          new GemForgeIEWLQCallback(inst));
+          new GemForgeIEWLQCallback(inst, this->cpu));
       this->lsq->insertLoad(std::move(callback));
     }
     DPRINTF(LLVMTraceCPU, "Inst %u is dispatched to instruction queue.\n",
@@ -618,6 +619,10 @@ void LLVMIEWStage::FUCompletion::process() {
 
 const char *LLVMIEWStage::FUCompletion::description() const {
   return "Function unit completion";
+}
+
+bool LLVMIEWStage::GemForgeIEWLQCallback::isIssued() {
+  return cpu->inflyInstStatus.at(inst->getId()) == InstStatus::ISSUED;
 }
 
 void LLVMIEWStage::GemForgeIEWSQCallback::writebacked() {

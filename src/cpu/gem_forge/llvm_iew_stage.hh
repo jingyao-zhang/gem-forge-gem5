@@ -89,9 +89,11 @@ public:
   Stats::Scalar fpInstQueueWakeups;
   Stats::Scalar loadQueueWrites;
   Stats::Scalar storeQueueWrites;
+
   Stats::Scalar RAWDependenceInLSQ;
   Stats::Scalar WAWDependenceInLSQ;
   Stats::Scalar WARDependenceInLSQ;
+  Stats::Scalar MisSpecRAWDependence;
 
   Stats::Scalar intRegReads;
   Stats::Scalar intRegWrites;
@@ -175,13 +177,16 @@ private:
   struct GemForgeIEWLQCallback : public GemForgeLQCallback {
   public:
     LLVMDynamicInst *inst;
-    GemForgeIEWLQCallback(LLVMDynamicInst *_inst) : inst(_inst) {}
+    LLVMTraceCPU *cpu;
+    GemForgeIEWLQCallback(LLVMDynamicInst *_inst, LLVMTraceCPU *_cpu)
+        : inst(_inst), cpu(_cpu) {}
     bool getAddrSize(Addr &addr, uint32_t &size) override {
       assert(inst->getTDG().has_load() && "Missing loadExtra for load inst.");
       addr = inst->getTDG().load().addr();
       size = inst->getTDG().load().size();
       return true;
     }
+    bool isIssued() override;
   };
   struct GemForgeIEWSQCallback : public GemForgeSQCallback {
   public:

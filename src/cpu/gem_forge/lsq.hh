@@ -23,6 +23,7 @@ struct GemForgeLQCallback {
    * @return true if the address is ready.
    */
   virtual bool getAddrSize(Addr &addr, uint32_t &size) = 0;
+  virtual bool isIssued() = 0;
 };
 
 struct GemForgeSQCallback {

@@ -75,6 +75,11 @@ void CoalescedStream::configure(StreamConfigInst *inst) {
 
 void CoalescedStream::prepareNewElement(StreamElement *element) {
   std::list<uint64_t> cacheBlocks;
+  /**
+   * The size of the coalesced element [lhsAddr, rhsAddr).
+   * ? The dummy initializer to silence the compiler.
+   */
+  Addr lhsAddr = 0, rhsAddr = 4;
   for (auto &S : this->coalescedStreams) {
     bool oracleUsed = false;
     auto nextValuePair = S.history->getNextAddr(oracleUsed);
@@ -82,11 +87,19 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
       continue;
     }
     auto addr = nextValuePair.second;
+    auto elementSize = S.info.element_size();
+    if (cacheBlocks.empty()) {
+      lhsAddr = addr;
+      rhsAddr = addr + elementSize;
+    } else {
+      lhsAddr = (addr < lhsAddr) ? addr : lhsAddr;
+      rhsAddr =
+          ((addr + elementSize) > rhsAddr) ? (addr + elementSize) : rhsAddr;
+    }
 
     const int cacheBlockSize = cpu->system->cacheLineSize();
     auto lhsCacheBlock = addr & (~(cacheBlockSize - 1));
-    auto rhsCacheBlock =
-        (addr + S.info.element_size() - 1) & (~(cacheBlockSize - 1));
+    auto rhsCacheBlock = (addr + elementSize - 1) & (~(cacheBlockSize - 1));
     while (lhsCacheBlock <= rhsCacheBlock) {
       if (cacheBlocks.size() > StreamElement::MAX_CACHE_BLOCKS) {
         inform(
@@ -150,8 +163,10 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
     element->addr = 0;
     element->size = 4;
   } else {
-    element->addr = cacheBlocks.front();
-    element->size = cacheBlocks.size() * cpu->system->cacheLineSize();
+    element->addr = lhsAddr;
+    element->size = rhsAddr - lhsAddr;
+    // element->addr = cacheBlocks.front();
+    // element->size = cacheBlocks.size() * cpu->system->cacheLineSize();
   }
 }
 

@@ -74,6 +74,9 @@ public:
     WRITEBACKING, // Writing back.
     WRITEBACKED,  // Write backed.
   };
+  InstStatus getInflyInstStatus(LLVMDynamicInstId instId) const {
+    return this->inflyInstStatus.at(instId);
+  }
 
 private:
   // This port will handle retry.

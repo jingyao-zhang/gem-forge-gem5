@@ -502,7 +502,11 @@ namespace {
 struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
 public:
   StreamElement *element;
-  GemForgeStreamEngineLQCallback(StreamElement *_element) : element(_element) {}
+  LLVMDynamicInst *userInst;
+  LLVMTraceCPU *cpu;
+  GemForgeStreamEngineLQCallback(StreamElement *_element,
+                                 LLVMDynamicInst *_userInst, LLVMTraceCPU *_cpu)
+      : element(_element), userInst(_userInst), cpu(_cpu) {}
   bool getAddrSize(Addr &addr, uint32_t &size) override {
     // Check if the address is ready.
     if (!element->isAddrReady) {
@@ -511,6 +515,10 @@ public:
     addr = element->addr;
     size = element->size;
     return true;
+  }
+  bool isIssued() override {
+    return cpu->getInflyInstStatus(userInst->getId()) ==
+           LLVMTraceCPU::InstStatus::ISSUED;
   }
 };
 struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {
@@ -583,7 +591,7 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
       // Insert into the load queue if we model the lsq.
       if (this->enableLSQ) {
         std::unique_ptr<GemForgeLQCallback> callback(
-            new GemForgeStreamEngineLQCallback(element));
+            new GemForgeStreamEngineLQCallback(element, inst, this->cpu));
         lsq->insertLoad(std::move(callback));
       }
     }
