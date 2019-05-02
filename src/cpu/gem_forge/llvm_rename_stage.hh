@@ -30,8 +30,8 @@ public:
   void regStats();
 
   void tick();
-  void clearContext(ThreadID contextId) {
-    this->renameStates.at(contextId).clear();
+  void clearThread(ThreadID threadId) {
+    this->renameStates.at(threadId).clear();
   }
 
   Stats::Scalar blockedCycles;
@@ -73,7 +73,7 @@ private:
 
   std::vector<RenameState> renameStates;
   size_t totalRenameQueueSize;
-  ThreadID lastRenamedContextId;
+  ContextID lastRenamedThreadId;
 };
 
 #endif

@@ -28,7 +28,7 @@ public:
   void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
   void regStats();
   void tick();
-  void clearContext(ThreadID contextId);
+  void clearThread(ThreadID threadId);
 
   std::string name();
 
@@ -84,7 +84,7 @@ private:
 
   BPredUnit *branchPredictor;
 
-  int lastFetchedContextId;
+  int lastFetchedThreadId;
 };
 
 #endif

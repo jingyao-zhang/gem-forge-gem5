@@ -10,7 +10,7 @@ LLVMFetchStage::LLVMFetchStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       toDecodeDelay(params->fetchToDecodeDelay),
       useGem5BranchPredictor(params->useGem5BranchPredictor),
       predictor(new LLVMBranchPredictor()), branchPredictor(params->branchPred),
-      lastFetchedContextId(0) {}
+      lastFetchedThreadId(0) {}
 
 LLVMFetchStage::~LLVMFetchStage() {
   delete this->predictor;
@@ -58,8 +58,8 @@ void LLVMFetchStage::regStats() {
       .prereq(predictedBranches);
 }
 
-void LLVMFetchStage::clearContext(ThreadID contextId) {
-  this->fetchStates[contextId].clear();
+void LLVMFetchStage::clearThread(ThreadID threadId) {
+  this->fetchStates[threadId].clear();
 }
 
 void LLVMFetchStage::tick() {
@@ -68,9 +68,9 @@ void LLVMFetchStage::tick() {
   LLVMTraceThreadContext *chosenThread = nullptr;
   int chosenContextId = 0;
   for (auto offset = 1; offset <= this->fetchStates.size() + 1; ++offset) {
-    auto contextId =
-        (this->lastFetchedContextId + offset) % this->fetchStates.size();
-    auto thread = cpu->activeThreads[contextId];
+    auto threadId =
+        (this->lastFetchedThreadId + offset) % this->fetchStates.size();
+    auto thread = cpu->activeThreads[threadId];
     if (thread == nullptr) {
       // This context id is not allocated.
       continue;
@@ -78,11 +78,11 @@ void LLVMFetchStage::tick() {
     if (!thread->canFetch()) {
       continue;
     }
-    if (this->signal->contextStall[contextId]) {
+    if (this->signal->contextStall[threadId]) {
       // The next stage require this context to be stalled.
       continue;
     }
-    chosenContextId = contextId;
+    chosenContextId = threadId;
     chosenThread = thread;
     break;
   }
@@ -92,7 +92,7 @@ void LLVMFetchStage::tick() {
     return;
   }
 
-  this->lastFetchedContextId = chosenContextId;
+  this->lastFetchedThreadId = chosenContextId;
 
   auto &fetchState = this->fetchStates[chosenContextId];
   // If we are blocked by a wrong branch prediction,
@@ -184,11 +184,11 @@ void LLVMFetchStage::tick() {
          * data structure it requires.
          */
         auto instSeqNum = inst->getSeqNum();
-        auto contextId = chosenThread->getContextId();
+        auto threadId = chosenThread->getThreadId();
         auto staticInst = inst->getStaticInst();
         TheISA::PCState targetPCState(inst->getPC());
         auto predictTaken = this->branchPredictor->predict(
-            staticInst, instSeqNum, targetPCState, contextId);
+            staticInst, instSeqNum, targetPCState, threadId);
 
         /**
          * Validate the prediction result.
@@ -211,10 +211,10 @@ void LLVMFetchStage::tick() {
           this->branchPredMissesGem5++;
           // Notify the predictor via squashing.
           this->branchPredictor->squash(instSeqNum, dynamicNextPCState,
-                                        !predictTaken, contextId);
+                                        !predictTaken, threadId);
         }
         // For simplicity, we always commit immediately.
-        this->branchPredictor->update(instSeqNum, contextId);
+        this->branchPredictor->update(instSeqNum, threadId);
 
         auto predictWrong = this->useGem5BranchPredictor ? predictWrongGem5 : predictionWrongLLVM;
         if (predictWrong) {

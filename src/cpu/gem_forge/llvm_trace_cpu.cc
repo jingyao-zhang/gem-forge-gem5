@@ -55,7 +55,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
 
   // Initialize the main thread.
   {
-    auto mainThreadId = LLVMTraceCPU::allocateThreadID();
+    auto mainThreadId = LLVMTraceCPU::allocateContextID();
     this->mainThread =
         new LLVMTraceThreadContext(mainThreadId, this->traceFileName);
     this->activateThread(mainThread);
@@ -532,9 +532,9 @@ void LLVMTraceCPU::regStats() {
       .flags(Stats::pdf);
 }
 
-ThreadID LLVMTraceCPU::allocateThreadID() {
-  static ThreadID threadId = 0;
-  return threadId++;
+ContextID LLVMTraceCPU::allocateContextID() {
+  static ContextID contextId = 0;
+  return contextId++;
 }
 
 void LLVMTraceCPU::activateThread(LLVMTraceThreadContext *thread) {
@@ -552,18 +552,18 @@ void LLVMTraceCPU::activateThread(LLVMTraceThreadContext *thread) {
 }
 
 void LLVMTraceCPU::deactivateThread(LLVMTraceThreadContext *thread) {
-  auto contextId = thread->getContextId();
-  assert(contextId >= 0 && contextId < this->activeThreads.size() &&
+  auto threadId = thread->getThreadId();
+  assert(threadId >= 0 && threadId < this->activeThreads.size() &&
          "Invalid context id.");
-  assert(this->activeThreads[contextId] == thread &&
+  assert(this->activeThreads[threadId] == thread &&
          "Unmatched thread at the context.");
   thread->deactivate();
-  this->activeThreads[contextId] = nullptr;
-  this->fetchStage.clearContext(contextId);
-  this->decodeStage.clearContext(contextId);
-  this->renameStage.clearContext(contextId);
-  this->iewStage.clearContext(contextId);
-  this->commitStage.clearContext(contextId);
+  this->activeThreads[threadId] = nullptr;
+  this->fetchStage.clearThread(threadId);
+  this->decodeStage.clearThread(threadId);
+  this->renameStage.clearThread(threadId);
+  this->iewStage.clearThread(threadId);
+  this->commitStage.clearThread(threadId);
 }
 
 size_t LLVMTraceCPU::getNumActivateThreads() const {

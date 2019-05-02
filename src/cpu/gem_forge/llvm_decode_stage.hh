@@ -31,8 +31,8 @@ public:
   void regStats();
 
   void tick();
-  void clearContext(ThreadID contextId) {
-    this->decodeStates.at(contextId).clear();
+  void clearThread(ThreadID threadId) {
+    this->decodeStates.at(threadId).clear();
   }
 
   Stats::Scalar blockedCycles;
@@ -68,7 +68,7 @@ private:
 
   std::vector<DecodeState> decodeStates;
   size_t totalDecodeQueueSize;
-  ThreadID lastDecodedContextId;
+  ContextID lastDecodedThreadId;
 };
 
 #endif

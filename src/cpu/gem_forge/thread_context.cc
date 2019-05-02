@@ -1,10 +1,10 @@
 #include "thread_context.hh"
 
 LLVMTraceThreadContext::LLVMTraceThreadContext(
-    ThreadID _threadId, const std::string &_traceFileName)
-    : threadId(_threadId), traceFileName(_traceFileName),
+    ContextID _contextId, const std::string &_traceFileName)
+    : contextId(_contextId), traceFileName(_traceFileName),
       dynInstStream(new DynamicInstructionStream(_traceFileName)),
-      inflyInsts(0) {}
+      inflyInsts(0), cpu(nullptr), threadId(InvalidThreadID) {}
 
 LLVMTraceThreadContext::~LLVMTraceThreadContext() {
   delete this->dynInstStream;
@@ -30,12 +30,12 @@ bool LLVMTraceThreadContext::isDone() const {
   return this->dynInstStream->fetchEmpty() && this->inflyInsts == 0;
 }
 
-void LLVMTraceThreadContext::activate(LLVMTraceCPU *cpu, ThreadID contextId) {
+void LLVMTraceThreadContext::activate(LLVMTraceCPU *cpu, ThreadID threadId) {
   this->cpu = cpu;
-  this->contextId = contextId;
+  this->threadId = threadId;
 }
 
 void LLVMTraceThreadContext::deactivate() {
   this->cpu = nullptr;
-  this->contextId = -1;
+  this->threadId = InvalidThreadID;
 }

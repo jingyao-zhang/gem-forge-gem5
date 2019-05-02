@@ -520,6 +520,10 @@ public:
     return cpu->getInflyInstStatus(userInst->getId()) ==
            LLVMTraceCPU::InstStatus::ISSUED;
   }
+
+  void RAWMisspeculate() override {
+    cpu->getIEWStage().misspeculateInst(userInst);
+  }
 };
 struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {
 public:

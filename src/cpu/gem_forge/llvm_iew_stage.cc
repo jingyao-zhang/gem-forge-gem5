@@ -153,8 +153,8 @@ void LLVMIEWStage::tick() {
     auto instId = *iter;
     this->rob.push_back(instId);
     this->robWrites++;
-    auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
-    this->iewStates.at(contextId).robSize++;
+    auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
+    this->iewStates.at(threadId).robSize++;
   }
 
   // Free FUs.
@@ -193,16 +193,20 @@ void LLVMIEWStage::tick() {
                                this->instQueue.size() >= this->instQueueSize ||
                                this->lsq->stores() >= this->storeQueueSize ||
                                this->lsq->loads() >= this->loadQueueSize);
-  for (ThreadID contextId = 0; contextId < this->iewStates.size();
-       ++contextId) {
+  for (ContextID threadId = 0; threadId < this->iewStates.size(); ++threadId) {
     bool stalled = false;
-    auto thread = cpu->activeThreads.at(contextId);
+    auto thread = cpu->activeThreads.at(threadId);
     if (thread == nullptr) {
       // This context is not active.
       stalled = false;
     } else {
+      auto &state = this->iewStates.at(threadId);
+      // Check the mis-speculation penalty.
+      if (state.misspecPenaltyCycles > 0) {
+        stalled = true;
+        state.misspecPenaltyCycles--;
+      }
       // Check the per-context limit.
-      const auto &state = this->iewStates.at(contextId);
       if (state.robSize >= this->maxRobSize / numActiveThreads) {
         stalled = true;
       }
@@ -211,7 +215,7 @@ void LLVMIEWStage::tick() {
         stalled = true;
       }
     }
-    this->signal->contextStall[contextId] = stalled;
+    this->signal->contextStall[threadId] = stalled;
   }
 }
 
@@ -234,6 +238,14 @@ void LLVMIEWStage::issue() {
       auto opClass = inst->getOpClass();
       auto fuId = FUPool::NoCapableFU;
       const auto &instName = inst->getInstName();
+
+      // Check if this thread is blocked by misspeculation.
+      auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
+      const auto &state = this->iewStates[threadId];
+      if (state.misspecPenaltyCycles > 0) {
+        ++iter;
+        continue;
+      }
 
       // Check if there is enough issueWidth.
       if (issuedInsts + inst->getQueueWeight() > this->issueWidth) {
@@ -387,6 +399,15 @@ void LLVMIEWStage::dispatch() {
     if (cpu->inflyInstStatus.at(instId) != InstStatus::DECODED) {
       continue;
     }
+
+    // Check if this thread is blocked by misspeculation.
+    auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
+    const auto &state = this->iewStates[threadId];
+    if (state.misspecPenaltyCycles > 0) {
+      // One thread has misspeculation will block other threads.
+      break;
+    }
+
     // Store queue full.
     if (inst->isStoreInst() && this->lsq->stores() == this->storeQueueSize) {
       break;
@@ -526,8 +547,8 @@ void LLVMIEWStage::postCommitInst(LLVMDynamicInstId instId) {
   auto &instStatus = cpu->inflyInstStatus.at(instId);
   panic_if(instStatus != InstStatus::COMMITTED,
            "Inst is not in committed status.");
-  auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
-  this->iewStates.at(contextId).robSize--;
+  auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
+  this->iewStates.at(threadId).robSize--;
   this->rob.pop_front();
 
   // Memory instruction can not be removed from the instruction queue
@@ -562,8 +583,8 @@ void LLVMIEWStage::sendToCommit() {
     canCommit = (instStatus == InstStatus::FINISHED);
 
     // Check if we are stalled by the commit stage.
-    auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
-    if (this->signal->contextStall[contextId]) {
+    auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
+    if (this->signal->contextStall[threadId]) {
       canCommit = false;
       this->blockedCycles++;
     }
@@ -623,6 +644,18 @@ const char *LLVMIEWStage::FUCompletion::description() const {
 
 bool LLVMIEWStage::GemForgeIEWLQCallback::isIssued() {
   return cpu->inflyInstStatus.at(inst->getId()) == InstStatus::ISSUED;
+}
+
+void LLVMIEWStage::misspeculateInst(LLVMDynamicInst *inst) {
+  auto threadId = cpu->inflyInstThread.at(inst->getId())->getThreadId();
+  auto &state = this->iewStates.at(threadId);
+  if (state.misspecPenaltyCycles == 0) {
+    state.misspecPenaltyCycles += 8;
+  }
+}
+
+void LLVMIEWStage::GemForgeIEWLQCallback::RAWMisspeculate() {
+  cpu->getIEWStage().misspeculateInst(inst);
 }
 
 void LLVMIEWStage::GemForgeIEWSQCallback::writebacked() {

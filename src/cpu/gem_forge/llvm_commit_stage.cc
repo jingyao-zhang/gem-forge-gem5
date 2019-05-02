@@ -7,8 +7,8 @@ using InstStatus = LLVMTraceCPU::InstStatus;
 LLVMCommitStage::LLVMCommitStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), commitWidth(params->commitWidth),
       maxCommitQueueSize(params->commitQueueSize),
-      fromIEWDelay(params->iewToCommitDelay), commitStates(params->hardwareContexts) {
-}
+      fromIEWDelay(params->iewToCommitDelay),
+      commitStates(params->hardwareContexts) {}
 
 void LLVMCommitStage::setFromIEW(TimeBuffer<IEWStruct> *fromIEWBuffer) {
   this->fromIEW = fromIEWBuffer->getWire(-this->fromIEWDelay);
@@ -63,8 +63,8 @@ void LLVMCommitStage::tick() {
 
     // Update the context.
     auto thread = cpu->inflyInstThread.at(instId);
-    auto contextId = thread->getContextId();
-    this->commitStates.at(contextId).commitQueueSize++;
+    auto threadId = thread->getThreadId();
+    this->commitStates.at(threadId).commitQueueSize++;
   }
 
   unsigned committedInsts = 0;
@@ -131,8 +131,8 @@ void LLVMCommitStage::tick() {
     this->commitQueue.pop_front();
     // Update the context.
     auto commitThread = cpu->inflyInstThread.at(instId);
-    auto commitContextId = commitThread->getContextId();
-    this->commitStates.at(commitContextId).commitQueueSize--;
+    auto commitThreadId = commitThread->getThreadId();
+    this->commitStates.at(commitThreadId).commitQueueSize--;
 
     // After this point, inst is released!
     cpu->inflyInstMap.erase(instId);
@@ -158,7 +158,7 @@ void LLVMCommitStage::tick() {
     return;
   }
   auto perContextCommitQueueLimit = this->maxCommitQueueSize / numActiveThreads;
-  for (ThreadID contextId = 0; contextId < this->commitStates.size();
+  for (ContextID contextId = 0; contextId < this->commitStates.size();
        ++contextId) {
     bool stalled = false;
     auto thread = cpu->activeThreads.at(contextId);
@@ -180,6 +180,6 @@ void LLVMCommitStage::tick() {
   }
 }
 
-void LLVMCommitStage::clearContext(ThreadID contextId) {
-  this->commitStates.at(contextId).clear();
+void LLVMCommitStage::clearThread(ThreadID threadId) {
+  this->commitStates.at(threadId).clear();
 }

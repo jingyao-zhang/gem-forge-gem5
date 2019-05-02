@@ -197,6 +197,8 @@ void GemForgeLoadStoreQueue::checkLoadStoreAlias(LoadQueueEntry &loadEntry,
       // This load entry has been issued.
       // There is an mis-speculation.
       this->iew->MisSpecRAWDependence++;
+      // Inform the user that there is an RAW misspeculation.
+      loadEntry.callback->RAWMisspeculate();
     }
   }
 }

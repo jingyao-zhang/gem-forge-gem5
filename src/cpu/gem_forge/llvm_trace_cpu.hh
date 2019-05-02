@@ -250,7 +250,7 @@ public:
   Addr allocateStack(Addr size, Addr align);
 
   // Allocate a new thread Id.
-  static ThreadID allocateThreadID();
+  static ContextID allocateContextID();
 
   // Add the thread to our threads.
   void activateThread(LLVMTraceThreadContext *thread);

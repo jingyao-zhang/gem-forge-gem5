@@ -10,7 +10,7 @@ LLVMDecodeStage::LLVMDecodeStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       fromFetchDelay(params->fetchToDecodeDelay),
       toRenameDelay(params->decodeToRenameDelay),
       decodeStates(params->hardwareContexts), totalDecodeQueueSize(0),
-      lastDecodedContextId(0) {}
+      lastDecodedThreadId(0) {}
 
 void LLVMDecodeStage::setToRename(TimeBuffer<FetchStruct> *toRenameBuffer) {
   this->toRename = toRenameBuffer->getWire(0);
@@ -41,27 +41,27 @@ void LLVMDecodeStage::tick() {
   for (auto iter = this->fromFetch->begin(), end = this->fromFetch->end();
        iter != end; iter++) {
     auto instId = *iter;
-    auto contextId = cpu->inflyInstThread.at(instId)->getContextId();
-    this->decodeStates.at(contextId).decodeQueue.push(instId);
+    auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
+    this->decodeStates.at(threadId).decodeQueue.push(instId);
     this->totalDecodeQueueSize++;
   }
 
   // Round-robin to find next non-blocking thread to decode.
   LLVMTraceThreadContext *chosenThread = nullptr;
-  ThreadID chosenContextId = 0;
+  ThreadID chosenThreadId = 0;
   for (auto offset = 1; offset <= this->decodeStates.size() + 1; ++offset) {
-    auto contextId =
-        (this->lastDecodedContextId + offset) % this->decodeStates.size();
-    auto thread = cpu->activeThreads[contextId];
+    auto threadId =
+        (this->lastDecodedThreadId + offset) % this->decodeStates.size();
+    auto thread = cpu->activeThreads[threadId];
     if (thread == nullptr) {
       // This context id is not allocated.
       continue;
     }
-    if (this->signal->contextStall[contextId]) {
+    if (this->signal->contextStall[threadId]) {
       // The next stage require this context to be stalled.
       continue;
     }
-    chosenContextId = contextId;
+    chosenThreadId = threadId;
     chosenThread = thread;
     break;
   }
@@ -71,13 +71,13 @@ void LLVMDecodeStage::tick() {
     return;
   }
 
-  this->lastDecodedContextId = chosenContextId;
+  this->lastDecodedThreadId = chosenThreadId;
 
   // Decode from the queue for the chosen context.
   // Only decode if we haven't reach decode width and we have more inst to
   // decode.
   unsigned decodedInsts = 0;
-  auto &decodeQueue = this->decodeStates.at(chosenContextId).decodeQueue;
+  auto &decodeQueue = this->decodeStates.at(chosenThreadId).decodeQueue;
   while (decodedInsts < this->decodeWidth && !decodeQueue.empty()) {
     auto instId = decodeQueue.front();
 
@@ -106,7 +106,7 @@ void LLVMDecodeStage::tick() {
     return;
   }
   auto perContextDecodeQueueLimit = this->maxDecodeQueueSize / numActiveThreads;
-  for (ThreadID contextId = 0; contextId < this->decodeStates.size();
+  for (ContextID contextId = 0; contextId < this->decodeStates.size();
        ++contextId) {
     bool stalled = false;
     auto thread = cpu->activeThreads.at(contextId);

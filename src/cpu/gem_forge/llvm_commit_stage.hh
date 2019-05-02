@@ -24,7 +24,7 @@ public:
   void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
 
   void tick();
-  void clearContext(ThreadID contextId);
+  void clearThread(ThreadID threadId);
 
   std::string name();
 

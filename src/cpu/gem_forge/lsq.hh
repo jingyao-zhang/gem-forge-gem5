@@ -24,6 +24,7 @@ struct GemForgeLQCallback {
    */
   virtual bool getAddrSize(Addr &addr, uint32_t &size) = 0;
   virtual bool isIssued() = 0;
+  virtual void RAWMisspeculate() = 0;
 };
 
 struct GemForgeSQCallback {

@@ -11,7 +11,7 @@ class SpeculativePrecomputationTriggerInst;
 
 class SpeculativePrecomputationThread : public LLVMTraceThreadContext {
 public:
-  SpeculativePrecomputationThread(ThreadID _threadId,
+  SpeculativePrecomputationThread(ContextID _contextId,
                                   const std::string &_traceFileName,
                                   Addr _criticalPC);
 

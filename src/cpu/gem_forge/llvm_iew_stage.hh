@@ -29,9 +29,7 @@ public:
   void setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer, int pos);
 
   void tick();
-  void clearContext(ThreadID contextId) {
-    this->iewStates.at(contextId).clear();
-  }
+  void clearThread(ThreadID threadId) { this->iewStates.at(threadId).clear(); }
 
   GemForgeLoadStoreQueue *getLSQ() { return this->lsq; }
 
@@ -44,6 +42,11 @@ public:
   void postCommitInst(LLVMDynamicInstId instId);
   void blockMemInst(LLVMDynamicInstId instId);
   void unblockMemoryInsts();
+
+  /**
+   * Add misspeculation penalty to a thread.
+   */
+  void misspeculateInst(LLVMDynamicInst* inst);
 
   std::string name();
 
@@ -154,10 +157,11 @@ private:
 
   struct IEWState {
     size_t robSize;
+    int misspecPenaltyCycles;
     void clear() {
       assert(this->robSize == 0 && "ROB not empty when clear context.");
     }
-    IEWState() : robSize(0) { this->clear(); }
+    IEWState() : robSize(0), misspecPenaltyCycles(0) { this->clear(); }
   };
 
   std::vector<IEWState> iewStates;
@@ -187,6 +191,7 @@ private:
       return true;
     }
     bool isIssued() override;
+    void RAWMisspeculate() override;
   };
   struct GemForgeIEWSQCallback : public GemForgeSQCallback {
   public:

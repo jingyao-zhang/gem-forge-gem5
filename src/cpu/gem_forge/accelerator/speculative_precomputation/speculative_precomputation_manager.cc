@@ -4,8 +4,8 @@
 #include "insts.hh"
 
 SpeculativePrecomputationThread::SpeculativePrecomputationThread(
-    ThreadID _threadId, const std::string &_traceFileName, Addr _criticalPC)
-    : LLVMTraceThreadContext(_threadId, _traceFileName),
+    ContextID _contextId, const std::string &_traceFileName, Addr _criticalPC)
+    : LLVMTraceThreadContext(_contextId, _traceFileName),
       criticalPC(_criticalPC), tokens(0), numTriggeredSlices(0), numSlices(0) {
   const auto &staticInfo = this->getStaticInfo();
   assert(staticInfo.module() == "specpre" && "Unmatched module name.");
@@ -91,7 +91,7 @@ void SpeculativePrecomputationManager::handleTrigger(
     this->criticalPCThreadMap.emplace(
         std::piecewise_construct, std::forward_as_tuple(criticalPC),
         std::forward_as_tuple(new SpeculativePrecomputationThread(
-            cpu->allocateThreadID(), sliceStreamFileName, criticalPC)));
+            cpu->allocateContextID(), sliceStreamFileName, criticalPC)));
   }
   auto thread = this->criticalPCThreadMap.at(criticalPC);
 
