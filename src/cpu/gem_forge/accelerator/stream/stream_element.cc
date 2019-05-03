@@ -10,10 +10,19 @@
   DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
           ##args)
 
+#define STREAM_PANIC(stream, format, args...)                                  \
+  panic("[%s]: " format, stream->getStreamName().c_str(), ##args)
+
 #define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
   STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
                  element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
                  ##args)
+
+#define STREAM_ELEMENT_PANIC(element, format, args...)                         \
+  element->se->dump();                                                         \
+  STREAM_PANIC(element->getStream(), "[%lu, %lu]: " format,                    \
+               element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,     \
+               ##args)
 
 FIFOEntryIdx::FIFOEntryIdx()
     : streamInstance(0), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
@@ -84,8 +93,16 @@ StreamMemAccess *StreamElement::allocateStreamMemAccess(
   auto memAccess = new StreamMemAccess(
       this->getStream(), this, cacheBlockBreakdown.cacheBlockVirtualAddr);
   this->allocatedMemAccess.insert(memAccess);
-  assert(this->allocatedMemAccess.size() < 100 &&
-         "Memory leaking due to StreamMemAccess.");
+  /**
+   * ! The reason why we allow such big number of allocated StreamMemAccess is
+   * ! due to a pathological case: MemSet. In the current implementation, we
+   * ! release the stream element not waiting for the writeback package to be
+   * ! returned. In such case, we may run way ahead. However, this is rare in
+   * ! the benchmarks.
+   */
+  if (this->allocatedMemAccess.size() == 100000) {
+    STREAM_ELEMENT_PANIC(this, "Allocated 100000 StreamMemAccess.");
+  }
   return memAccess;
 }
 
