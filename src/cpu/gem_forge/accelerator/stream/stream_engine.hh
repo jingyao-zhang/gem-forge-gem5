@@ -14,7 +14,7 @@
 #include <unordered_map>
 
 class StreamEngine : public TDGAccelerator {
-public:
+ public:
   StreamEngine();
   ~StreamEngine() override;
 
@@ -116,7 +116,7 @@ public:
   Stats::Distribution numAccessFootprintL2;
   Stats::Distribution numAccessFootprintL3;
 
-private:
+ private:
   StreamPlacementManager *streamPlacementManager;
 
   std::vector<StreamElement> FIFOArray;
@@ -163,6 +163,12 @@ private:
   std::string placementLat;
   std::string placement;
 
+  /**
+   * Memorize the StreamConfigureInfo.
+   */
+  mutable std::unordered_map<std::string, ::LLVM::TDG::StreamRegion>
+      memorizedStreamRegionMap;
+
   struct CacheBlockInfo {
     int reference;
     enum Status {
@@ -176,17 +182,12 @@ private:
   };
   std::unordered_map<Addr, CacheBlockInfo> cacheBlockRefMap;
 
-  void initializeStreams(
-      const LLVM::TDG::TDGInstruction::StreamConfigExtra &configExtra);
+  void initializeStreams(const ::LLVM::TDG::StreamRegion &streamRegion);
 
   CoalescedStream *getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
                                                   int32_t coalesceGroup);
 
   void updateAliveStatistics();
-
-  // A helper function to load a stream info protobuf file.
-  static LLVM::TDG::StreamInfo
-  parseStreamInfoFromFile(const std::string &infoPath);
 
   void initializeFIFO(size_t totalElements);
   void addFreeElement(StreamElement *S);
@@ -207,6 +208,9 @@ private:
   void throttleStream(Stream *S, StreamElement *element);
 
   size_t getTotalRunAheadLength() const;
+
+  const ::LLVM::TDG::StreamRegion &getStreamRegion(
+      const std::string &relativePath) const;
 
   void dumpFIFO() const;
 };

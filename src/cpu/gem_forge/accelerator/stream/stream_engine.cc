@@ -18,15 +18,15 @@ void debugStream(Stream *S, const char *message) {
          message, S->getStreamName().c_str(), S->configured, S->stepSize,
          S->allocSize, S->maxSize);
 }
-} // namespace
+}  // namespace
 
-#define STREAM_DPRINTF(stream, format, args...)                                \
-  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
+#define STREAM_DPRINTF(stream, format, args...)                           \
+  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(), \
           ##args)
 
-#define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
-  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
-                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
+#define STREAM_ELEMENT_DPRINTF(element, format, args...)                     \
+  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                \
+                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx, \
                  ##args)
 
 StreamEngine::StreamEngine()
@@ -129,14 +129,16 @@ void StreamEngine::regStats() {
       .prereq(this->numMemElementsUsed);
   this->memEntryWaitCycles
       .name(this->manager->name() + ".stream.memEntryWaitCycles")
-      .desc("Number of cycles of a mem entry from first checked ifReady to "
-            "ready.")
+      .desc(
+          "Number of cycles of a mem entry from first checked ifReady to "
+          "ready.")
       .prereq(this->memEntryWaitCycles);
   this->streamUserNotDispatchedByLoadQueue
       .name(this->manager->name() +
             ".stream.streamUserNotDispatchedByLoadQueue")
-      .desc("Number of cycles of stream user cannot dispatch due to load queue "
-            "full.")
+      .desc(
+          "Number of cycles of stream user cannot dispatch due to load queue "
+          "full.")
       .prereq(this->streamUserNotDispatchedByLoadQueue);
   this->streamStoreNotDispatchedByStoreQueue
       .name(this->manager->name() +
@@ -201,22 +203,40 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
    * free entries. Otherwise, we ALSO ensure that allocSize < maxSize.
    */
 
-  if (this->numFreeFIFOEntries <
-      inst->getTDG().stream_config().configs_size()) {
+  auto infoRelativePath = inst->getTDG().stream_config().info_path();
+  const auto &streamRegion = this->getStreamRegion(infoRelativePath);
+  auto configuredStreams = this->enableCoalesce
+                               ? streamRegion.coalesced_stream_ids_size()
+                               : streamRegion.streams_size();
+  if (this->numFreeFIFOEntries < configuredStreams) {
     // Not enough free entries for each stream.
     return false;
   }
-  const auto &configs = inst->getTDG().stream_config().configs();
 
-  for (const auto &config : configs) {
-    auto stream_id = config.stream_id();
-    auto iter = this->streamMap.find(stream_id);
-    if (iter != this->streamMap.end()) {
-      // Check if we have quota for this stream.
-      auto S = iter->second;
-      if (S->allocSize == S->maxSize) {
-        // No more quota.
-        return false;
+  // Check that allocSize < maxSize.
+  if (this->enableCoalesce) {
+    for (const auto &streamId : streamRegion.coalesced_stream_ids()) {
+      auto iter = this->streamMap.find(streamId);
+      if (iter != this->streamMap.end()) {
+        // Check if we have quota for this stream.
+        auto S = iter->second;
+        if (S->allocSize == S->maxSize) {
+          // No more quota.
+          return false;
+        }
+      }
+    }
+  } else {
+    for (const auto &streamInfo : streamRegion.streams()) {
+      auto streamId = streamInfo.id();
+      auto iter = this->streamMap.find(streamId);
+      if (iter != this->streamMap.end()) {
+        // Check if we have quota for this stream.
+        auto S = iter->second;
+        if (S->allocSize == S->maxSize) {
+          // No more quota.
+          return false;
+        }
       }
     }
   }
@@ -228,17 +248,18 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
 
   this->numConfigured++;
 
-  const auto &configs = inst->getTDG().stream_config().configs();
+  auto infoRelativePath = inst->getTDG().stream_config().info_path();
+  const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
   // Initialize all the streams if this is the first time we encounter the loop.
-  for (const auto &config : configs) {
-    const auto &streamId = config.stream_id();
+  for (const auto &streamInfo : streamRegion.streams()) {
+    const auto &streamId = streamInfo.id();
     // Remember to also check the coalesced id map.
     if (this->streamMap.count(streamId) == 0 &&
         this->coalescedStreamIdMap.count(streamId) == 0) {
       // We haven't initialize streams in this loop.
       hack("Initialize due to stream %lu.\n", streamId);
-      this->initializeStreams(inst->getTDG().stream_config());
+      this->initializeStreams(streamRegion);
       break;
     }
   }
@@ -251,13 +272,12 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
    */
   std::list<Stream *> configStreams;
   std::unordered_set<Stream *> dedupSet;
-  for (auto configIter = configs.rbegin(), configEnd = configs.rend();
-       configIter != configEnd; ++configIter) {
+  for (const auto &streamInfo : streamRegion.streams()) {
     // Deduplicate the streams due to coalescing.
-    const auto &streamId = configIter->stream_id();
+    const auto &streamId = streamInfo.id();
     auto stream = this->getStream(streamId);
     if (dedupSet.count(stream) == 0) {
-      configStreams.push_front(stream);
+      configStreams.push_back(stream);
       dedupSet.insert(stream);
     }
   }
@@ -500,7 +520,7 @@ namespace {
  * * Callback structures for the load/store queue.
  */
 struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
-public:
+ public:
   StreamElement *element;
   LLVMDynamicInst *userInst;
   LLVMTraceCPU *cpu;
@@ -526,7 +546,7 @@ public:
   }
 };
 struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {
-public:
+ public:
   StreamElement *element;
   GemForgeStreamEngineSQCallback(StreamElement *_element) : element(_element) {}
   bool getAddrSize(Addr &addr, uint32_t &size) override {
@@ -545,7 +565,7 @@ public:
   bool isWritebacked() override { return true; }
   void writebacked() override {}
 };
-} // namespace
+}  // namespace
 
 void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) == 0);
@@ -794,22 +814,14 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
 bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
 
 void StreamEngine::initializeStreams(
-    const LLVM::TDG::TDGInstruction::StreamConfigExtra &configExtra) {
+    const ::LLVM::TDG::StreamRegion &streamRegion) {
   // Coalesced streams.
   std::unordered_map<int, CoalescedStream *> coalescedGroupToStreamMap;
 
-  const auto &configs = configExtra.configs();
-  for (const auto &config : configs) {
-    const auto &streamId = config.stream_id();
+  for (const auto &streamInfo : streamRegion.streams()) {
+    const auto &streamId = streamInfo.id();
     assert(this->streamMap.count(streamId) == 0 &&
            "Stream is already initialized.");
-    /**
-     * The configInst does not contain much information,
-     * we need to load the info protobuf file.
-     * Luckily, this would only happen once for every stream.
-     */
-    auto infoPath = cpu->getTraceExtraFolder() + "/" + config.info_path();
-    auto streamInfo = StreamEngine::parseStreamInfoFromFile(infoPath);
     auto coalesceGroup = streamInfo.coalesce_group();
 
     if (coalesceGroup != -1 && this->enableCoalesce) {
@@ -890,16 +902,6 @@ void StreamEngine::updateAliveStatistics() {
   this->numTotalAliveMemStreams.sample(totalAliveMemStreams);
 }
 
-LLVM::TDG::StreamInfo
-StreamEngine::parseStreamInfoFromFile(const std::string &infoPath) {
-  ProtoInputStream infoIStream(infoPath);
-  LLVM::TDG::StreamInfo info;
-  if (!infoIStream.read(info)) {
-    panic("Failed to read in the stream info from file %s.", infoPath.c_str());
-  }
-  return info;
-}
-
 void StreamEngine::initializeFIFO(size_t totalElements) {
   panic_if(!this->FIFOArray.empty(), "FIFOArray has already been initialized.");
 
@@ -934,8 +936,8 @@ bool StreamEngine::hasFreeElement() const {
   return this->numFreeFIFOEntries > 0;
 }
 
-const std::list<Stream *> &
-StreamEngine::getStepStreamList(Stream *stepS) const {
+const std::list<Stream *> &StreamEngine::getStepStreamList(
+    Stream *stepS) const {
   assert(stepS != nullptr && "stepS is nullptr.");
   if (this->memorizedStreamStepListMap.count(stepS) != 0) {
     return this->memorizedStreamStepListMap.at(stepS);
@@ -1065,9 +1067,10 @@ void StreamEngine::allocateElement(Stream *S) {
     for (int currentSize, totalSize = 0; totalSize < newElement->size;
          totalSize += currentSize) {
       if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic("More than %d cache blocks for one stream element, address %lu "
-              "size %lu.",
-              newElement->cacheBlocks, newElement->addr, newElement->size);
+        panic(
+            "More than %d cache blocks for one stream element, address %lu "
+            "size %lu.",
+            newElement->cacheBlocks, newElement->addr, newElement->size);
       }
       auto currentAddr = newElement->addr + totalSize;
       currentSize = newElement->size - totalSize;
@@ -1356,4 +1359,24 @@ size_t StreamEngine::getTotalRunAheadLength() const {
     totalRunAheadLength += S->maxSize;
   }
   return totalRunAheadLength;
+}
+
+const ::LLVM::TDG::StreamRegion &StreamEngine::getStreamRegion(
+    const std::string &relativePath) const {
+  if (this->memorizedStreamRegionMap.count(relativePath) != 0) {
+    return this->memorizedStreamRegionMap.at(relativePath);
+  }
+
+  auto fullPath = cpu->getTraceExtraFolder() + "/" + relativePath;
+  ProtoInputStream istream(fullPath);
+  auto &protobufRegion =
+      this->memorizedStreamRegionMap
+          .emplace(std::piecewise_construct,
+                   std::forward_as_tuple(relativePath), std::forward_as_tuple())
+          .first->second;
+  if (!istream.read(protobufRegion)) {
+    panic("Failed to read in the stream region from file %s.",
+          fullPath.c_str());
+  }
+  return protobufRegion;
 }
