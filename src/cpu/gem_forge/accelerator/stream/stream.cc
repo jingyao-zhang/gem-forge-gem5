@@ -34,9 +34,8 @@
   STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
                (entry).idx.entryIdx, ##args)
 
-Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
-               size_t _maxRunAHeadLength)
-    : cpu(_cpu), se(_se), isOracle(_isOracle), nilTail(_se),
+Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, size_t _maxRunAHeadLength)
+    : cpu(_cpu), se(_se), nilTail(_se),
       firstConfigSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
       configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
       endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),

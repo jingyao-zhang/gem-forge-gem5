@@ -18,15 +18,15 @@ void debugStream(Stream *S, const char *message) {
          message, S->getStreamName().c_str(), S->configured, S->stepSize,
          S->allocSize, S->maxSize);
 }
-}  // namespace
+} // namespace
 
-#define STREAM_DPRINTF(stream, format, args...)                           \
-  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(), \
+#define STREAM_DPRINTF(stream, format, args...)                                \
+  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
           ##args)
 
-#define STREAM_ELEMENT_DPRINTF(element, format, args...)                     \
-  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                \
-                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx, \
+#define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
+  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
+                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
                  ##args)
 
 StreamEngine::StreamEngine()
@@ -57,7 +57,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   TDGAccelerator::handshake(_cpu, _manager);
 
   auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
-  this->setIsOracle(cpuParams->streamEngineIsOracle);
+  this->isOracle = cpuParams->streamEngineIsOracle;
   this->maxRunAHeadLength = cpuParams->streamEngineMaxRunAHeadLength;
   this->currentTotalRunAheadLength = 0;
   // this->maxTotalRunAheadLength =
@@ -129,16 +129,14 @@ void StreamEngine::regStats() {
       .prereq(this->numMemElementsUsed);
   this->memEntryWaitCycles
       .name(this->manager->name() + ".stream.memEntryWaitCycles")
-      .desc(
-          "Number of cycles of a mem entry from first checked ifReady to "
-          "ready.")
+      .desc("Number of cycles of a mem entry from first checked ifReady to "
+            "ready.")
       .prereq(this->memEntryWaitCycles);
   this->streamUserNotDispatchedByLoadQueue
       .name(this->manager->name() +
             ".stream.streamUserNotDispatchedByLoadQueue")
-      .desc(
-          "Number of cycles of stream user cannot dispatch due to load queue "
-          "full.")
+      .desc("Number of cycles of stream user cannot dispatch due to load queue "
+            "full.")
       .prereq(this->streamUserNotDispatchedByLoadQueue);
   this->streamStoreNotDispatchedByStoreQueue
       .name(this->manager->name() +
@@ -520,7 +518,7 @@ namespace {
  * * Callback structures for the load/store queue.
  */
 struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
- public:
+public:
   StreamElement *element;
   LLVMDynamicInst *userInst;
   LLVMTraceCPU *cpu;
@@ -546,7 +544,7 @@ struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
   }
 };
 struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {
- public:
+public:
   StreamElement *element;
   GemForgeStreamEngineSQCallback(StreamElement *_element) : element(_element) {}
   bool getAddrSize(Addr &addr, uint32_t &size) override {
@@ -565,7 +563,7 @@ struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {
   bool isWritebacked() override { return true; }
   void writebacked() override {}
 };
-}  // namespace
+} // namespace
 
 void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) == 0);
@@ -827,8 +825,8 @@ void StreamEngine::initializeStreams(
     if (coalesceGroup != -1 && this->enableCoalesce) {
       // First check if we have created the coalesced stream for the group.
       if (coalescedGroupToStreamMap.count(coalesceGroup) == 0) {
-        auto newCoalescedStream = new CoalescedStream(
-            cpu, this, streamInfo, this->isOracle, this->maxRunAHeadLength);
+        auto newCoalescedStream =
+            new CoalescedStream(cpu, this, streamInfo, this->maxRunAHeadLength);
         this->streamMap.emplace(streamId, newCoalescedStream);
         this->coalescedStreamIdMap.emplace(streamId, streamId);
         coalescedGroupToStreamMap.emplace(coalesceGroup, newCoalescedStream);
@@ -849,8 +847,8 @@ void StreamEngine::initializeStreams(
 
     } else {
       // Single stream can be immediately constructed and inserted into the map.
-      auto newStream = new SingleStream(cpu, this, streamInfo, this->isOracle,
-                                        this->maxRunAHeadLength);
+      auto newStream =
+          new SingleStream(cpu, this, streamInfo, this->maxRunAHeadLength);
       this->streamMap.emplace(streamId, newStream);
       hack("Initialized stream %lu %s.\n", streamId,
            newStream->getStreamName().c_str());
@@ -936,8 +934,8 @@ bool StreamEngine::hasFreeElement() const {
   return this->numFreeFIFOEntries > 0;
 }
 
-const std::list<Stream *> &StreamEngine::getStepStreamList(
-    Stream *stepS) const {
+const std::list<Stream *> &
+StreamEngine::getStepStreamList(Stream *stepS) const {
   assert(stepS != nullptr && "stepS is nullptr.");
   if (this->memorizedStreamStepListMap.count(stepS) != 0) {
     return this->memorizedStreamStepListMap.at(stepS);
@@ -1067,10 +1065,9 @@ void StreamEngine::allocateElement(Stream *S) {
     for (int currentSize, totalSize = 0; totalSize < newElement->size;
          totalSize += currentSize) {
       if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic(
-            "More than %d cache blocks for one stream element, address %lu "
-            "size %lu.",
-            newElement->cacheBlocks, newElement->addr, newElement->size);
+        panic("More than %d cache blocks for one stream element, address %lu "
+              "size %lu.",
+              newElement->cacheBlocks, newElement->addr, newElement->size);
       }
       auto currentAddr = newElement->addr + totalSize;
       currentSize = newElement->size - totalSize;
@@ -1361,8 +1358,8 @@ size_t StreamEngine::getTotalRunAheadLength() const {
   return totalRunAheadLength;
 }
 
-const ::LLVM::TDG::StreamRegion &StreamEngine::getStreamRegion(
-    const std::string &relativePath) const {
+const ::LLVM::TDG::StreamRegion &
+StreamEngine::getStreamRegion(const std::string &relativePath) const {
   if (this->memorizedStreamRegionMap.count(relativePath) != 0) {
     return this->memorizedStreamRegionMap.at(relativePath);
   }

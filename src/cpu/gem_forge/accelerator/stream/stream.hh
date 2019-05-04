@@ -18,9 +18,8 @@ class StreamStoreInst;
 class StreamEndInst;
 
 class Stream {
- public:
-  Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, bool _isOracle,
-         size_t _maxRunAHeadLength);
+public:
+  Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, size_t _maxRunAHeadLength);
 
   virtual ~Stream();
 
@@ -100,11 +99,10 @@ class Stream {
    * to.
    */
   class StreamMemAccess final : public TDGPacketHandler {
-   public:
+  public:
     StreamMemAccess(Stream *_stream, const FIFOEntryIdx _entryId,
                     int _additionalDelay = 0)
-        : stream(_stream),
-          entryId(_entryId),
+        : stream(_stream), entryId(_entryId),
           additionalDelay(_additionalDelay) {}
     virtual ~StreamMemAccess() {}
     void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
@@ -117,16 +115,14 @@ class Stream {
     }
 
     struct ResponseEvent : public Event {
-     public:
+    public:
       LLVMTraceCPU *cpu;
       Stream::StreamMemAccess *memAccess;
       PacketPtr pkt;
       std::string n;
       ResponseEvent(LLVMTraceCPU *_cpu, Stream::StreamMemAccess *_memAccess,
                     PacketPtr _pkt)
-          : cpu(_cpu),
-            memAccess(_memAccess),
-            pkt(_pkt),
+          : cpu(_cpu), memAccess(_memAccess), pkt(_pkt),
             n("StreamMemAccessResponseEvent") {}
       void process() override {
         this->memAccess->handlePacketResponse(this->cpu, this->pkt);
@@ -137,7 +133,7 @@ class Stream {
       const std::string name() const { return this->n; }
     };
 
-   private:
+  private:
     Stream *stream;
     FIFOEntryIdx entryId;
     /**
@@ -146,10 +142,9 @@ class Stream {
     int additionalDelay;
   };
 
- protected:
+protected:
   LLVMTraceCPU *cpu;
   StreamEngine *se;
-  bool isOracle;
 
   std::unordered_set<Stream *> baseStepStreams;
   std::unordered_set<Stream *> baseStepRootStreams;

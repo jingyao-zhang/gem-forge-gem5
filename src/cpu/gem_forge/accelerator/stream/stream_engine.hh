@@ -19,7 +19,6 @@ class StreamEngine : public TDGAccelerator {
   ~StreamEngine() override;
 
   void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
-  void setIsOracle(bool isOracle) { this->isOracle = isOracle; }
 
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;

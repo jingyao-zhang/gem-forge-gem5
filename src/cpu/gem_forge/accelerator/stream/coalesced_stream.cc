@@ -26,8 +26,8 @@ LogicalStream::~LogicalStream() {}
 
 CoalescedStream::CoalescedStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
                                  const LLVM::TDG::StreamInfo &_primaryInfo,
-                                 bool _isOracle, size_t _maxRunAHeadLength)
-    : Stream(_cpu, _se, _isOracle, _maxRunAHeadLength) {
+                                 size_t _maxRunAHeadLength)
+    : Stream(_cpu, _se, _maxRunAHeadLength) {
   // Create the primary logical stream.
   this->addStreamInfo(_primaryInfo);
   // Set the primaryLogicalStream to the newly created one.

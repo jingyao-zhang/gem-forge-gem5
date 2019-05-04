@@ -39,7 +39,7 @@ public:
 class CoalescedStream : public Stream {
 public:
   CoalescedStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
-                  const LLVM::TDG::StreamInfo &_primaryInfo, bool _isOracle,
+                  const LLVM::TDG::StreamInfo &_primaryInfo,
                   size_t _maxRunAHeadLength);
 
   ~CoalescedStream();
