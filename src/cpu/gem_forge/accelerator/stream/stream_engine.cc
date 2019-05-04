@@ -825,8 +825,12 @@ void StreamEngine::initializeStreams(
     if (coalesceGroup != -1 && this->enableCoalesce) {
       // First check if we have created the coalesced stream for the group.
       if (coalescedGroupToStreamMap.count(coalesceGroup) == 0) {
-        auto newCoalescedStream =
-            new CoalescedStream(cpu, this, streamInfo, this->maxRunAHeadLength);
+        Stream::StreamArguments args;
+        args.cpu = cpu;
+        args.se = this;
+        args.maxSize = this->maxRunAHeadLength;
+        args.streamRegion = &streamRegion;
+        auto newCoalescedStream = new CoalescedStream(args, streamInfo);
         this->streamMap.emplace(streamId, newCoalescedStream);
         this->coalescedStreamIdMap.emplace(streamId, streamId);
         coalescedGroupToStreamMap.emplace(coalesceGroup, newCoalescedStream);
@@ -847,8 +851,12 @@ void StreamEngine::initializeStreams(
 
     } else {
       // Single stream can be immediately constructed and inserted into the map.
-      auto newStream =
-          new SingleStream(cpu, this, streamInfo, this->maxRunAHeadLength);
+      Stream::StreamArguments args;
+      args.cpu = cpu;
+      args.se = this;
+      args.maxSize = this->maxRunAHeadLength;
+      args.streamRegion = &streamRegion;
+      auto newStream = new SingleStream(args, streamInfo);
       this->streamMap.emplace(streamId, newStream);
       hack("Initialized stream %lu %s.\n", streamId,
            newStream->getStreamName().c_str());
@@ -882,7 +890,7 @@ void StreamEngine::updateAliveStatistics() {
   for (const auto &streamPair : this->streamMap) {
     const auto &stream = streamPair.second;
     if (stream->isMemStream()) {
-      this->numRunAHeadLengthDist.sample(stream->getRunAheadLength());
+      this->numRunAHeadLengthDist.sample(stream->allocSize);
     }
     if (!stream->isConfigured()) {
       continue;

@@ -24,10 +24,9 @@ LogicalStream::LogicalStream(const std::string &_traceExtraFolder,
 
 LogicalStream::~LogicalStream() {}
 
-CoalescedStream::CoalescedStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
-                                 const LLVM::TDG::StreamInfo &_primaryInfo,
-                                 size_t _maxRunAHeadLength)
-    : Stream(_cpu, _se, _maxRunAHeadLength) {
+CoalescedStream::CoalescedStream(const StreamArguments &args,
+                                 const LLVM::TDG::StreamInfo &_primaryInfo)
+    : Stream(args) {
   // Create the primary logical stream.
   this->addStreamInfo(_primaryInfo);
   // Set the primaryLogicalStream to the newly created one.

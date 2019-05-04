@@ -7,6 +7,14 @@
 #include "base/types.hh"
 #include "mem/packet.hh"
 
+// Parse the instructions from a protobuf.
+#include "config/have_protobuf.hh"
+#ifndef HAVE_PROTOBUF
+#error "Require protobuf to parse stream info."
+#endif
+
+#include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
+
 #include <list>
 
 class LLVMTraceCPU;
@@ -19,7 +27,14 @@ class StreamEndInst;
 
 class Stream {
 public:
-  Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, size_t _maxRunAHeadLength);
+  struct StreamArguments {
+    LLVMTraceCPU *cpu;
+    StreamEngine *se;
+    int maxSize;
+    const ::LLVM::TDG::StreamRegion *streamRegion;
+  };
+
+  Stream(const StreamArguments &args);
 
   virtual ~Stream();
 
@@ -45,6 +60,8 @@ public:
   FIFOEntryIdx FIFOIdx;
   int lateFetchCount;
 
+  const ::LLVM::TDG::StreamRegion *streamRegion;
+
   /**
    * Step root stream, three possible cases:
    * 1. this: I am the step root.
@@ -68,8 +85,6 @@ public:
     }
     return seqNum < this->firstConfigSeqNum;
   }
-
-  int getRunAheadLength() const { return this->runAHeadLength; }
 
   virtual uint64_t getTrueFootprint() const = 0;
   virtual uint64_t getFootprint(unsigned cacheBlockSize) const = 0;
@@ -172,10 +187,6 @@ protected:
    * size tailor it as needed, as maximum size of a packet is a cache block.
    */
   uint8_t *storedData;
-
-  size_t maxRunAHeadLength;
-  size_t runAHeadLength;
-  // std::string throttling;
 
   std::unordered_set<StreamMemAccess *> memAccesses;
 

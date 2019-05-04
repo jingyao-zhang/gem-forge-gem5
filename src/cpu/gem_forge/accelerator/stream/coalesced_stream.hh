@@ -6,14 +6,6 @@
 #include "stream_history.hh"
 #include "stream_pattern.hh"
 
-// Parse the instructions from a protobuf.
-#include "config/have_protobuf.hh"
-#ifndef HAVE_PROTOBUF
-#error "Require protobuf to parse stream info."
-#endif
-
-#include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
-
 class StreamInst;
 
 /**
@@ -38,9 +30,8 @@ public:
 
 class CoalescedStream : public Stream {
 public:
-  CoalescedStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
-                  const LLVM::TDG::StreamInfo &_primaryInfo,
-                  size_t _maxRunAHeadLength);
+  CoalescedStream(const StreamArguments &args,
+                  const LLVM::TDG::StreamInfo &_primaryInfo);
 
   ~CoalescedStream();
 

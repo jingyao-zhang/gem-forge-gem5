@@ -34,13 +34,11 @@
   STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
                (entry).idx.entryIdx, ##args)
 
-Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, size_t _maxRunAHeadLength)
-    : cpu(_cpu), se(_se), nilTail(_se),
+Stream::Stream(const StreamArguments &args)
+    : cpu(args.cpu), se(args.se), nilTail(args.se),
       firstConfigSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
       configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr),
-      maxRunAHeadLength(_maxRunAHeadLength),
-      runAHeadLength(_maxRunAHeadLength) {
+      endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr) {
 
   this->storedData = new uint8_t[cpu->system->cacheLineSize()];
 
@@ -50,9 +48,10 @@ Stream::Stream(LLVMTraceCPU *_cpu, StreamEngine *_se, size_t _maxRunAHeadLength)
   this->tail = &this->nilTail;
   this->allocSize = 0;
   this->stepSize = 0;
-  this->maxSize = _maxRunAHeadLength;
+  this->maxSize = args.maxSize;
   this->stepRootStream = nullptr;
   this->lateFetchCount = 0;
+  this->streamRegion = args.streamRegion;
 }
 
 Stream::~Stream() {

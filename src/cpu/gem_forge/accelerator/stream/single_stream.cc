@@ -34,10 +34,9 @@
   STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
                (entry).idx.entryIdx, ##args)
 
-SingleStream::SingleStream(LLVMTraceCPU *_cpu, StreamEngine *_se,
-                           const LLVM::TDG::StreamInfo &_info,
-                           size_t _maxRunAHeadLength)
-    : Stream(_cpu, _se, _maxRunAHeadLength), info(_info) {
+SingleStream::SingleStream(const StreamArguments &args,
+                           const LLVM::TDG::StreamInfo &_info)
+    : Stream(args), info(_info) {
   const auto &relativeHistoryPath = this->info.history_path();
   auto historyPath = cpu->getTraceExtraFolder() + "/" + relativeHistoryPath;
   this->history =
