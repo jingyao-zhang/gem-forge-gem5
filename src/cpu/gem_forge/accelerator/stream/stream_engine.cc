@@ -7,7 +7,7 @@
 
 namespace {
 static std::string DEBUG_STREAM_NAME =
-    "(IV solve_l2r_l1l2_svc bb152 bb152::tmp154(phi))";
+    "(IV iSetArray.cc::9(iSetArray) bb15 bb15::tmp17(phi))";
 
 bool isDebugStream(Stream *S) {
   return S->getStreamName() == DEBUG_STREAM_NAME;
@@ -30,7 +30,8 @@ void debugStream(Stream *S, const char *message) {
                  ##args)
 
 StreamEngine::StreamEngine()
-    : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false) {}
+    : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false),
+      throttler(this) {}
 
 StreamEngine::~StreamEngine() {
   if (this->streamPlacementManager != nullptr) {
@@ -60,13 +61,14 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->isOracle = cpuParams->streamEngineIsOracle;
   this->maxRunAHeadLength = cpuParams->streamEngineMaxRunAHeadLength;
   this->currentTotalRunAheadLength = 0;
-  // this->maxTotalRunAheadLength =
-  // cpuParams->streamEngineMaxTotalRunAHeadLength;
-  this->maxTotalRunAheadLength = this->maxRunAHeadLength * 512;
+  this->maxTotalRunAheadLength = cpuParams->streamEngineMaxTotalRunAHeadLength;
+  // this->maxTotalRunAheadLength = this->maxRunAHeadLength * 512;
   if (cpuParams->streamEngineThrottling == "static") {
-    this->throttling = ThrottlingE::STATIC;
+    this->throttlingStrategy = ThrottlingStrategyE::STATIC;
+  } else if (cpuParams->streamEngineThrottling == "dynamic") {
+    this->throttlingStrategy = ThrottlingStrategyE::DYNAMIC;
   } else {
-    this->throttling = ThrottlingE::DYNAMIC;
+    this->throttlingStrategy = ThrottlingStrategyE::GLOBAL;
   }
   this->enableLSQ = cpuParams->streamEngineEnableLSQ;
   this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
@@ -211,6 +213,18 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
     return false;
   }
 
+  // Sanity check that we do not have too many streams.
+  auto totalAliveStreams = this->enableCoalesce
+                               ? streamRegion.total_alive_coalesced_streams()
+                               : streamRegion.total_alive_streams();
+  if (totalAliveStreams * this->maxRunAHeadLength >
+      this->maxTotalRunAheadLength) {
+    panic(
+        "Too many streams: TotalAliveStreams %d FIFOSize %d InitMaxSize %d.\n",
+        totalAliveStreams, this->maxTotalRunAheadLength,
+        this->maxRunAHeadLength);
+  }
+
   // Check that allocSize < maxSize.
   if (this->enableCoalesce) {
     for (const auto &streamId : streamRegion.coalesced_stream_ids()) {
@@ -344,6 +358,9 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   for (auto S : configStreams) {
     if (isDebugStream(S)) {
       debugStream(S, "Dispatch Config");
+      if (S->allocSize < this->maxRunAHeadLength) {
+        panic("Failed to allocate InitMaxSize number of elements.");
+      }
     }
   }
 }
@@ -366,6 +383,9 @@ bool StreamEngine::canStreamStep(const StreamStepInst *inst) const {
       canStep = false;
       break;
     }
+  }
+  if (isDebugStream(stepStream)) {
+    debugStream(stepStream, "canStreamStep");
   }
   // hack("Check if can step stream %s: %d.\n",
   //      stepStream->getStreamName().c_str(), canStep);
@@ -728,6 +748,11 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
    * Deduplicate the streams due to coalescing.
    */
   std::unordered_set<Stream *> endedStreams;
+  /**
+   * All the ended step root stream, but the next StreamConfigInst is already
+   * dispatched.
+   */
+  std::unordered_set<Stream *> endedConfiguredStepRootStreams;
   for (auto iter = endStreamIds.rbegin(), end = endStreamIds.rend();
        iter != end; ++iter) {
     // Release in reverse order.
@@ -737,12 +762,47 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
       continue;
     }
     endedStreams.insert(S);
+
+    if (S->stepRootStream == S && S->configured) {
+      // This is a StepRootStream.
+      endedConfiguredStepRootStreams.insert(S);
+    }
+
     /**
      * Release the last element we stepped at dispatch.
      */
     this->releaseElement(S);
     if (isDebugStream(S)) {
       debugStream(S, "Commit End");
+    }
+  }
+
+  /**
+   * Try to allocate more elements for ended but still configured streams.
+   * Set a target, try to make sure all streams reach this target.
+   * Then increment the target.
+   */
+  for (auto stepStream : endedConfiguredStepRootStreams) {
+    const auto &stepStreams = this->getStepStreamList(stepStream);
+    for (size_t targetSize = 1;
+         targetSize <= stepStream->maxSize && this->hasFreeElement();
+         ++targetSize) {
+      for (auto S : stepStreams) {
+        if (!this->hasFreeElement()) {
+          break;
+        }
+        if (!S->configured) {
+          continue;
+        }
+        if (S->allocSize >= targetSize) {
+          continue;
+        }
+        if (S->allocSize > stepStream->allocSize) {
+          // It doesn't make sense to allocate before the step root.
+          continue;
+        }
+        this->allocateElement(S);
+      }
     }
   }
 }
@@ -1299,7 +1359,7 @@ void StreamEngine::dump() {
 }
 
 void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
-  if (this->throttling == ThrottlingE::STATIC) {
+  if (this->throttlingStrategy == ThrottlingStrategyE::STATIC) {
     // Static means no throttling.
     return;
   }
@@ -1324,26 +1384,27 @@ void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
      */
     auto stepRootStream = S->stepRootStream;
     if (stepRootStream != nullptr) {
-      // All streams with the same stepRootStream must have the same run ahead
-      // length.
       const auto &streamList = this->getStepStreamList(stepRootStream);
-      auto totalRunAheadLength = this->getTotalRunAheadLength();
-      // Only increase the run ahead length if the totalRunAheadLength is within
-      // the 90% of the total FIFO entries. Need better solution here.
-      const auto incrementStep = 2;
-      // auto newTotalRunAheadLength =
-      //     totalRunAheadLength + streamList.size() * incrementStep;
-      if (static_cast<float>(totalRunAheadLength) <
-          0.9f * static_cast<float>(this->FIFOArray.size())) {
-        for (auto stepS : streamList) {
-          // Increase the run ahead length by 2.
-          stepS->maxSize += incrementStep;
+      if (this->throttlingStrategy == ThrottlingStrategyE::DYNAMIC) {
+        // All streams with the same stepRootStream must have the same run ahead
+        // length.
+        auto totalRunAheadLength = this->getTotalRunAheadLength();
+        // Only increase the run ahead length if the totalRunAheadLength is
+        // within the 90% of the total FIFO entries. Need better solution here.
+        const auto incrementStep = 2;
+        if (static_cast<float>(totalRunAheadLength) <
+            0.9f * static_cast<float>(this->FIFOArray.size())) {
+          for (auto stepS : streamList) {
+            // Increase the run ahead length by 2.
+            stepS->maxSize += incrementStep;
+          }
+          assert(S->maxSize == oldRunAheadSize + 2 &&
+                 "RunAheadLength is not increased.");
         }
-        assert(S->maxSize == oldRunAheadSize + 2 &&
-               "RunAheadLength is not increased.");
+      } else if (this->throttlingStrategy == ThrottlingStrategyE::GLOBAL) {
+        this->throttler.throttleStream(S, element);
       }
-      // No matter what, clear the lateFetchCount for all streams within the
-      // step group.
+      // No matter what, just clear the lateFetchCount in the whole step group.
       for (auto stepS : streamList) {
         stepS->lateFetchCount = 0;
       }
@@ -1384,4 +1445,83 @@ StreamEngine::getStreamRegion(const std::string &relativePath) const {
           fullPath.c_str());
   }
   return protobufRegion;
+}
+
+/********************************************************************
+ * StreamThrottler.
+ *
+ * When we trying to throttle a stream, the main problem is to avoid
+ * deadlock, as we do not reclaim stream element once it is allocated until
+ * it is stepped.
+ *
+ * To avoid deadlock, we leverage the information of total alive streams
+ * that can coexist with the current stream, and assign InitMaxSize number of
+ * elements to these streams, which is called BasicEntries.
+ * * BasicEntries = TotalAliveStreams * InitMaxSize.
+ *
+ * Then we want to know how many of these BasicEntries is already assigned to
+ * streams. This number is called AssignedBasicEntries.
+ * * AssignedBasicEntries = CurrentAliveStreams * InitMaxSize.
+ *
+ * We also want to know the number of AssignedEntries and UnAssignedEntries.
+ * * AssignedEntries = Sum(MaxSize, CurrentAliveStreams).
+ * * UnAssignedEntries = FIFOSize - AssignedEntries.
+ *
+ * The available pool for throttling is:
+ * * AvailableEntries = \
+ * *   UnAssignedEntries - (BasicEntries - AssignedBasicEntries).
+ *
+ * As we are throttling streams altogether with the same stepRoot, the condition
+ * is:
+ * * AvailableEntries >= IncrementSize * StepGroupSize.
+ *
+ ********************************************************************/
+
+StreamEngine::StreamThrottler::StreamThrottler(StreamEngine *_se) : se(_se) {}
+
+void StreamEngine::StreamThrottler::throttleStream(Stream *S,
+                                                   StreamElement *element) {
+  auto stepRootStream = S->stepRootStream;
+  assert(stepRootStream != nullptr &&
+         "Do not make sense to throttle for a constant stream.");
+  const auto &streamList = this->se->getStepStreamList(stepRootStream);
+
+  // * AssignedEntries.
+  auto currentAliveStreams = 0;
+  auto assignedEntries = 0;
+  for (const auto &IdStream : this->se->streamMap) {
+    auto S = IdStream.second;
+    if (!S->configured) {
+      continue;
+    }
+    currentAliveStreams++;
+    assignedEntries += S->maxSize;
+  }
+  // * UnAssignedEntries.
+  auto unAssignedEntries = this->se->maxTotalRunAheadLength - assignedEntries;
+  // * BasicEntries.
+  auto streamRegion = S->streamRegion;
+  auto totalAliveStreams = this->se->enableCoalesce
+                               ? streamRegion->total_alive_coalesced_streams()
+                               : streamRegion->total_alive_streams();
+  auto basicEntries = std::max(totalAliveStreams, currentAliveStreams) *
+                      this->se->maxRunAHeadLength;
+  // * AssignedBasicEntries.
+  auto assignedBasicEntries = currentAliveStreams * this->se->maxRunAHeadLength;
+  // * AvailableEntries.
+  auto availableEntries =
+      unAssignedEntries - (basicEntries - assignedBasicEntries);
+  const auto incrementStep = 2;
+  auto totalIncrementEntries = incrementStep * streamList.size();
+  if (availableEntries < totalIncrementEntries) {
+    return;
+  }
+
+  auto oldMaxSize = S->maxSize;
+  for (auto stepS : streamList) {
+    // Increase the run ahead length by 2.
+    stepS->maxSize += incrementStep;
+  }
+  assert(S->maxSize == oldMaxSize + incrementStep &&
+         "RunAheadLength is not increased.");
 }

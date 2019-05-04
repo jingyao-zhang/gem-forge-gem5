@@ -49,7 +49,10 @@ parser.add_option("--gem-forge-no-gem5-branch-predictor", action="store_true",
 parser.add_option("--llvm-mcpat", action="store", type="int",
                   help="""whether to use mcpat to estimate power""", default="0")
 parser.add_option("--gem-forge-stream-engine-max-run-ahead-length", action="store", type="int",
-                  help="""How many element can a stream run ahead""", default="10")
+                  help="""How many elements can a stream run ahead""", default="10")
+parser.add_option("--gem-forge-stream-engine-max-total-run-ahead-length",
+                  action="store", type="int",
+                  help="""How many elements can the stream engine run ahead""", default="10")
 parser.add_option("--gem-forge-stream-engine-is-oracle", action="store", type="int",
                   help="""whether make the stream engine oracle""", default="0")
 parser.add_option("--gem-forge-stream-engine-throttling", action="store", type="string",
@@ -209,6 +212,9 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
         options.gem_forge_stream_engine_is_oracle != 0)
     llvm_trace_cpu.streamEngineMaxRunAHeadLength = (
         options.gem_forge_stream_engine_max_run_ahead_length
+    )
+    llvm_trace_cpu.streamEngineMaxTotalRunAHeadLength = (
+        options.gem_forge_stream_engine_max_total_run_ahead_length
     )
     llvm_trace_cpu.streamEngineThrottling = options.gem_forge_stream_engine_throttling
     llvm_trace_cpu.streamEngineEnableLSQ = options.gem_forge_stream_engine_enable_lsq

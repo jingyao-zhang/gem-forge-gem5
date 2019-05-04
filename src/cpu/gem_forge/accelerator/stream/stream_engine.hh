@@ -14,7 +14,7 @@
 #include <unordered_map>
 
 class StreamEngine : public TDGAccelerator {
- public:
+public:
   StreamEngine();
   ~StreamEngine() override;
 
@@ -115,7 +115,7 @@ class StreamEngine : public TDGAccelerator {
   Stats::Distribution numAccessFootprintL2;
   Stats::Distribution numAccessFootprintL3;
 
- private:
+private:
   StreamPlacementManager *streamPlacementManager;
 
   std::vector<StreamElement> FIFOArray;
@@ -145,11 +145,12 @@ class StreamEngine : public TDGAccelerator {
    */
   bool isOracle;
   unsigned maxRunAHeadLength;
-  enum ThrottlingE {
+  enum ThrottlingStrategyE {
     STATIC,
     DYNAMIC,
+    GLOBAL,
   };
-  ThrottlingE throttling;
+  ThrottlingStrategyE throttlingStrategy;
   bool enableLSQ;
   bool enableCoalesce;
   bool enableMerge;
@@ -208,10 +209,23 @@ class StreamEngine : public TDGAccelerator {
 
   size_t getTotalRunAheadLength() const;
 
-  const ::LLVM::TDG::StreamRegion &getStreamRegion(
-      const std::string &relativePath) const;
+  const ::LLVM::TDG::StreamRegion &
+  getStreamRegion(const std::string &relativePath) const;
 
   void dumpFIFO() const;
+
+  /**
+   * Helper class to throttle the stream's maxSize.
+   */
+  class StreamThrottler {
+  public:
+    StreamEngine *se;
+    StreamThrottler(StreamEngine *_se);
+
+    void throttleStream(Stream *S, StreamElement *element);
+  };
+
+  StreamThrottler throttler;
 };
 
 #endif
