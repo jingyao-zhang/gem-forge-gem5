@@ -199,6 +199,8 @@ private:
       memorizedStreamStepListMap;
   const std::list<Stream *> &getStepStreamList(Stream *stepS) const;
 
+  // Called every cycle to allocate elements.
+  void allocateElements();
   // Allocate one element to stream.
   bool areBaseElementAllocated(Stream *S);
   void allocateElement(Stream *S);

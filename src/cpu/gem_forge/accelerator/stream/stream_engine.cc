@@ -7,7 +7,7 @@
 
 namespace {
 static std::string DEBUG_STREAM_NAME =
-    "(IV integralImage2D2D.c::9(integralImage2D2D) bb206 bb243::tmp244(phi))";
+    "(IV integralImage2D2D.c::9(integralImage2D2D) bb418 bb418::tmp421(phi))";
 
 bool isDebugStream(Stream *S) {
   return S->getStreamName() == DEBUG_STREAM_NAME;
@@ -355,8 +355,8 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   for (auto S : configStreams) {
     if (isDebugStream(S)) {
       debugStream(S, "Dispatch Config");
-      if (S->allocSize < this->maxRunAHeadLength) {
-        panic("Failed to allocate InitMaxSize number of elements.");
+      if (S->allocSize < 1) {
+        panic("Failed to allocate one number of elements.");
       }
     }
   }
@@ -773,44 +773,7 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
     }
   }
 
-  /**
-   * Try to allocate more elements for configured streams.
-   * Set a target, try to make sure all streams reach this target.
-   * Then increment the target.
-   */
-  std::unordered_set<Stream *> configuredStepRootStreams;
-  for (const auto &IdStream : this->streamMap) {
-    auto S = IdStream.second;
-    if (S->stepRootStream == S && S->configured) {
-      // This is a StepRootStream.
-      configuredStepRootStreams.insert(S);
-    }
-  }
-
-  for (auto stepStream : configuredStepRootStreams) {
-    const auto &stepStreams = this->getStepStreamList(stepStream);
-    for (size_t targetSize = 1;
-         targetSize <= stepStream->maxSize && this->hasFreeElement();
-         ++targetSize) {
-      for (auto S : stepStreams) {
-        if (!this->hasFreeElement()) {
-          break;
-        }
-        if (!S->configured) {
-          continue;
-        }
-        if (S->allocSize >= targetSize) {
-          continue;
-        }
-        if (S->allocSize - S->stepSize >=
-            stepStream->allocSize - stepStream->stepSize) {
-          // It doesn't make sense to allocate ahead than the step root.
-          continue;
-        }
-        this->allocateElement(S);
-      }
-    }
-  }
+  this->allocateElements();
 }
 
 bool StreamEngine::canStreamStoreDispatch(const StreamStoreInst *inst) const {
@@ -951,6 +914,7 @@ Stream *StreamEngine::getStream(uint64_t streamId) const {
 }
 
 void StreamEngine::tick() {
+  this->allocateElements();
   this->issueElements();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
@@ -1065,6 +1029,61 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
       .emplace(std::piecewise_construct, std::forward_as_tuple(stepS),
                std::forward_as_tuple(stepList))
       .first->second;
+}
+
+void StreamEngine::allocateElements() {
+  /**
+   * Try to allocate more elements for configured streams.
+   * Set a target, try to make sure all streams reach this target.
+   * Then increment the target.
+   */
+  std::vector<Stream *> configuredStepRootStreams;
+  for (const auto &IdStream : this->streamMap) {
+    auto S = IdStream.second;
+    if (S->stepRootStream == S && S->configured) {
+      // This is a StepRootStream.
+      configuredStepRootStreams.push_back(S);
+    }
+  }
+
+  // Sort by the allocated size.
+  std::sort(configuredStepRootStreams.begin(), configuredStepRootStreams.end(),
+            [](Stream *SA, Stream *SB) -> bool {
+              return SA->allocSize < SB->allocSize;
+            });
+
+  for (auto stepStream : configuredStepRootStreams) {
+    const auto &stepStreams = this->getStepStreamList(stepStream);
+    // if (isDebugStream(stepStream)) {
+    //   hack("Try to allocate for debug stream %d.", this->hasFreeElement());
+    // }
+    for (size_t targetSize = 1;
+         targetSize <= stepStream->maxSize && this->hasFreeElement();
+         ++targetSize) {
+      for (auto S : stepStreams) {
+        if (!this->hasFreeElement()) {
+          break;
+        }
+        if (!S->configured) {
+          continue;
+        }
+        if (S->allocSize >= targetSize) {
+          continue;
+        }
+        if (S != stepStream) {
+          if (S->allocSize - S->stepSize >=
+              stepStream->allocSize - stepStream->stepSize) {
+            // It doesn't make sense to allocate ahead than the step root.
+            continue;
+          }
+        }
+        // if (isDebugStream(S)) {
+        //   debugStream(S, "allocate one.");
+        // }
+        this->allocateElement(S);
+      }
+    }
+  }
 }
 
 bool StreamEngine::areBaseElementAllocated(Stream *S) {
