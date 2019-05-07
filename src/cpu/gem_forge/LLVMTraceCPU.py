@@ -15,7 +15,7 @@ class LLVMAccel(FUDesc):
 
 
 class LLVMIntMultDiv(FUDesc):
-    opList = [OpDesc(opClass='IntMult', opLat=5),
+    opList = [OpDesc(opClass='IntMult', opLat=4),
               OpDesc(opClass='IntDiv', opLat=12, pipelined=False)]
     count = 2
 
