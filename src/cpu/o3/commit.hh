@@ -45,6 +45,7 @@
 #define __CPU_O3_COMMIT_HH__
 
 #include <queue>
+#include <unordered_map>
 
 #include "base/statistics.hh"
 #include "cpu/exetrace.hh"
@@ -518,6 +519,9 @@ class DefaultCommit
 
     /** Number of cycles where the commit bandwidth limit is reached. */
     Stats::Scalar commitEligibleSamples;
+
+    std::unordered_map<Addr, uint64_t> pcCommitted;
+    std::unordered_map<std::string, uint64_t> funcCommitted;
 };
 
 #endif // __CPU_O3_COMMIT_HH__
