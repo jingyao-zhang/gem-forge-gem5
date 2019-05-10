@@ -19,9 +19,18 @@ class LLVMIntMultDiv(FUDesc):
               OpDesc(opClass='IntDiv', opLat=12, pipelined=False)]
     count = 2
 
+class GemForgeFPMultDiv(FUDesc):
+    opList = [ OpDesc(opClass='FloatMult', opLat=4),
+               OpDesc(opClass='FloatMultAcc', opLat=5),
+               OpDesc(opClass='FloatMisc', opLat=3),
+               OpDesc(opClass='FloatDiv', opLat=12, pipelined=False),
+               OpDesc(opClass='FloatSqrt', opLat=24, pipelined=False) ]
+    count = 2
+
 
 class DefaultFUPool(FUPool):
-    FUList = [IntALU(), LLVMIntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
+    FUList = [IntALU(), LLVMIntMultDiv(), FP_ALU(),
+              GemForgeFPMultDiv(), ReadPort(),
               SIMD_Unit(), WritePort(), RdWrPort(), IprPort(), LLVMAccel()]
 
 
