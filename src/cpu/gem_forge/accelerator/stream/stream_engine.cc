@@ -31,7 +31,7 @@ void debugStream(Stream *S, const char *message) {
 
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false),
-      throttler(this) {}
+      writebackCacheLine(nullptr), throttler(this) {}
 
 StreamEngine::~StreamEngine() {
   if (this->streamPlacementManager != nullptr) {
@@ -51,6 +51,8 @@ StreamEngine::~StreamEngine() {
     streamIdStreamPair.second = nullptr;
   }
   this->streamMap.clear();
+  delete[] this->writebackCacheLine;
+  this->writebackCacheLine = nullptr;
 }
 
 void StreamEngine::handshake(LLVMTraceCPU *_cpu,
@@ -82,6 +84,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->enablePlacementPeriodReset = cpuParams->streamEnginePeriodReset;
   this->placementLat = cpuParams->streamEnginePlacementLat;
   this->placement = cpuParams->streamEnginePlacement;
+  this->writebackCacheLine = new uint8_t[cpu->system->cacheLineSize()];
 
   this->initializeFIFO(this->maxTotalRunAheadLength);
 
@@ -1215,7 +1218,7 @@ void StreamEngine::releaseElement(Stream *S) {
 
   // If the element is stored, we reissue the store request.
   if (releaseElement->stored) {
-    this->issueElement(releaseElement);
+    this->writebackElement(releaseElement);
   }
 
   // Decrease the reference count of the cache blocks.
@@ -1370,6 +1373,49 @@ void StreamEngine::issueElement(StreamElement *element) {
       // committed store stream elements.
       element->markValueReady();
     }
+  }
+}
+
+void StreamEngine::writebackElement(StreamElement *element) {
+  assert(element->isAddrReady && "Address should be ready.");
+  auto S = element->stream;
+  assert(S->getStreamType() == "store" &&
+         "Should never writeback element for non store stream.");
+
+  STREAM_ELEMENT_DPRINTF(element, "Writeback.\n");
+
+  // hack("Send packt for stream %s.\n", S->getStreamName().c_str());
+
+  for (size_t i = 0; i < element->cacheBlocks; ++i) {
+    const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+
+    // Translate the virtual address.
+    auto vaddr = cacheBlockBreakdown.virtualAddr;
+    auto packetSize = cacheBlockBreakdown.size;
+    Addr paddr;
+    if (cpu->isStandalone()) {
+      paddr = cpu->translateAndAllocatePhysMem(vaddr);
+    } else {
+      panic("Stream so far can only work in standalone mode.");
+    }
+
+    // ! So far disable cache bypassing for writebacks.
+    // if (this->streamPlacementManager != nullptr) {
+    //   // This means we have the placement manager.
+    //   if (this->streamPlacementManager->access(cacheBlockBreakdown, element))
+    //   {
+    //     // Stream placement manager handles this packet.
+    //     continue;
+    //   }
+    // }
+
+    // Allocate the book-keeping StreamMemAccess.
+    auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
+    // Create the writeback package.
+    auto pkt = TDGPacketHandler::createTDGPacket(paddr, packetSize, memAccess,
+                                                 this->writebackCacheLine,
+                                                 cpu->getDataMasterID(), 0, 0);
+    cpu->sendRequest(pkt);
   }
 }
 

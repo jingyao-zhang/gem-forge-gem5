@@ -52,8 +52,11 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
     return;
   }
   this->element->handlePacketResponse(this);
-  // We should notify the stream engine that this cache line is coming back.
-  this->element->se->fetchedCacheBlock(this->cacheBlockVirtualAddr, this);
+  // Check if this is a read request.
+  if (packet->isRead()) {
+    // We should notify the stream engine that this cache line is coming back.
+    this->element->se->fetchedCacheBlock(this->cacheBlockVirtualAddr, this);
+  }
   // After this point "this" is deleted.
   // Remember to release the packet.
   delete packet->req;

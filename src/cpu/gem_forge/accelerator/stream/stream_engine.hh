@@ -162,6 +162,10 @@ private:
   bool continuousStore;
   std::string placementLat;
   std::string placement;
+  /**
+   * A dummy cacheline of data for write back.
+   */
+  uint8_t *writebackCacheLine;
 
   /**
    * Memorize the StreamConfigureInfo.
@@ -207,6 +211,7 @@ private:
   void releaseElement(Stream *S);
   void issueElements();
   void issueElement(StreamElement *element);
+  void writebackElement(StreamElement *element);
   void throttleStream(Stream *S, StreamElement *element);
 
   size_t getTotalRunAheadLength() const;
