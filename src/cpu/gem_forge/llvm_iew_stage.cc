@@ -443,7 +443,10 @@ void LLVMIEWStage::dispatch() {
     // Before we dispatch, we update the region stats.
     const auto &TDG = inst->getTDG();
     if (TDG.bb() != 0) {
-      cpu->getRegionStats()->update(TDG.bb());
+      auto regionStats = cpu->getRegionStats();
+      if (regionStats != nullptr) {
+        regionStats->update(TDG.bb());
+      }
     }
 
     inst->dispatch(cpu);

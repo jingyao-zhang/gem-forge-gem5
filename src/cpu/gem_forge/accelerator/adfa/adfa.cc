@@ -119,7 +119,10 @@ void AbstractDataFlowCore::fetch() {
     // We update RegionStats here.
     const auto &TDG = inst->getTDG();
     if (TDG.bb() != 0) {
-      cpu->getRegionStats()->update(TDG.bb());
+      auto regionStats = cpu->getRegionStats();
+      if (regionStats != nullptr) {
+        regionStats->update(TDG.bb());
+      }
     }
 
     auto id = inst->getId();

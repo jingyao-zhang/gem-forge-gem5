@@ -1411,6 +1411,10 @@ void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
     // Static means no throttling.
     return;
   }
+  if (S->getStreamType() == "store") {
+    // No need to throttle for store stream.
+    return;
+  }
   if (element->valueReadyCycle == 0 || element->firstCheckCycle == 0) {
     // No valid cycle record, do nothing.
     return;

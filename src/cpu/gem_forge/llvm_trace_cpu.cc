@@ -88,17 +88,22 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
       regionStruct.bbs.insert(bb);
     }
   }
-  this->regionStats = new RegionStats(std::move(regions), "region.stats.txt");
+  const bool enableRegionStats = false;
+  if (enableRegionStats) {
+    this->regionStats = new RegionStats(std::move(regions), "region.stats.txt");
+  }
 
   this->runTimeProfiler = new RunTimeProfiler();
 
   if (driver != nullptr) {
     // Handshake with the driver.
     driver->handshake(this);
-    // Add the dump handler to dump region stats at the end.
-    Stats::registerDumpCallback(
-        new MakeCallback<RegionStats, &RegionStats::dump>(this->regionStats,
-                                                          true));
+    if (this->regionStats != nullptr) {
+      // Add the dump handler to dump region stats at the end.
+      Stats::registerDumpCallback(
+          new MakeCallback<RegionStats, &RegionStats::dump>(this->regionStats,
+                                                            true));
+    }
   } else {
     // No driver, stand alone mode.
     // Schedule the first event.
@@ -205,13 +210,17 @@ void LLVMTraceCPU::tick() {
   if (done) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
     // Wraps up the region stats by sending in the invalid bb.
-    this->regionStats->update(RegionStats::InvalidBB);
+    if (this->regionStats != nullptr) {
+      this->regionStats->update(RegionStats::InvalidBB);
+    }
     // If in standalone mode, we can exit.
     if (this->isStandalone()) {
       // Decrease the workitem count.
       auto workItemsEnd = this->system->incWorkItemsEnd();
       if (workItemsEnd == this->totalCPUs) {
-        this->regionStats->dump();
+        if (this->regionStats != nullptr) {
+          this->regionStats->dump();
+        }
         this->runTimeProfiler->dump("profile.txt");
         this->accelManager->exitDump();
         exitSimLoop("All datagraphs finished.\n");
