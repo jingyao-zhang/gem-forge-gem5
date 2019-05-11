@@ -10,6 +10,7 @@
 
 #include "base/statistics.hh"
 #include "cpu/gem_forge/accelerator/tdg_accelerator.hh"
+#include "cpu/gem_forge/lsq.hh"
 
 #include <unordered_map>
 
@@ -233,6 +234,36 @@ private:
   };
 
   StreamThrottler throttler;
+
+  /**
+   * Callback structures for LSQ.
+   */
+  struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
+  public:
+    StreamElement *element;
+    LLVMDynamicInst *userInst;
+    LLVMTraceCPU *cpu;
+    GemForgeStreamEngineLQCallback(StreamElement *_element,
+                                   LLVMDynamicInst *_userInst,
+                                   LLVMTraceCPU *_cpu)
+        : element(_element), userInst(_userInst), cpu(_cpu) {}
+    bool getAddrSize(Addr &addr, uint32_t &size) override;
+    bool isIssued() override;
+    void RAWMisspeculate() override;
+  };
+
+  struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {
+  public:
+    StreamElement *element;
+    StreamStoreInst *storeInst;
+    GemForgeStreamEngineSQCallback(StreamElement *_element,
+                                   StreamStoreInst *_storeInst)
+        : element(_element), storeInst(_storeInst) {}
+    bool getAddrSize(Addr &addr, uint32_t &size) override;
+    void writeback() override;
+    bool isWritebacked() override;
+    void writebacked() override;
+  };
 };
 
 #endif

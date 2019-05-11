@@ -527,6 +527,10 @@ void LLVMIEWStage::commitInst(LLVMDynamicInstId instId) {
   if (inst->isStoreInst()) {
     instStatus = InstStatus::COMMITTING;
     this->lsq->commitStore();
+  } else if (inst->getInstName() == "stream-store") {
+    // Do the same thing for stream store.
+    instStatus = InstStatus::COMMITTING;
+    this->lsq->commitStore();
   } else if (inst->isLoadInst()) {
     // Load queue is released now.
     instStatus = InstStatus::COMMITTED;

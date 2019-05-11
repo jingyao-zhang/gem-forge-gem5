@@ -77,6 +77,13 @@ public:
   InstStatus getInflyInstStatus(LLVMDynamicInstId instId) const {
     return this->inflyInstStatus.at(instId);
   }
+  void updateInflyInstStats(LLVMDynamicInstId instId, InstStatus newStatus) {
+    auto &status = this->inflyInstStatus.at(instId);
+    if (status > newStatus) {
+      panic("InstStatus should always be increasing.");
+    }
+    status = newStatus;
+  }
 
 private:
   // This port will handle retry.

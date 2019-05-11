@@ -542,57 +542,6 @@ bool StreamEngine::canStreamUserDispatch(const LLVMDynamicInst *inst) const {
 
   return true;
 }
-namespace {
-/**
- * * Callback structures for the load/store queue.
- */
-struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
-public:
-  StreamElement *element;
-  LLVMDynamicInst *userInst;
-  LLVMTraceCPU *cpu;
-  GemForgeStreamEngineLQCallback(StreamElement *_element,
-                                 LLVMDynamicInst *_userInst, LLVMTraceCPU *_cpu)
-      : element(_element), userInst(_userInst), cpu(_cpu) {}
-  bool getAddrSize(Addr &addr, uint32_t &size) override {
-    // Check if the address is ready.
-    if (!element->isAddrReady) {
-      return false;
-    }
-    addr = element->addr;
-    size = element->size;
-    return true;
-  }
-  bool isIssued() override {
-    return cpu->getInflyInstStatus(userInst->getId()) ==
-           LLVMTraceCPU::InstStatus::ISSUED;
-  }
-
-  void RAWMisspeculate() override {
-    cpu->getIEWStage().misspeculateInst(userInst);
-  }
-};
-struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {
-public:
-  StreamElement *element;
-  GemForgeStreamEngineSQCallback(StreamElement *_element) : element(_element) {}
-  bool getAddrSize(Addr &addr, uint32_t &size) override {
-    // Check if the address is ready.
-    if (!element->isAddrReady) {
-      return false;
-    }
-    addr = element->addr;
-    size = element->size;
-    return true;
-  }
-  /**
-   * ! So far empty callback is fine for stream engine.
-   */
-  void writeback() override {}
-  bool isWritebacked() override { return true; }
-  void writebacked() override {}
-};
-} // namespace
 
 void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) == 0);
@@ -812,7 +761,7 @@ void StreamEngine::dispatchStreamStore(StreamStoreInst *inst) {
   assert(storeElement != nullptr && "Failed to found the store element.");
   // Insert into the store queue.
   std::unique_ptr<GemForgeStreamEngineSQCallback> callback(
-      new GemForgeStreamEngineSQCallback(storeElement));
+      new GemForgeStreamEngineSQCallback(storeElement, inst));
   auto lsq = cpu->getIEWStage().getLSQ();
   lsq->insertStore(std::move(callback));
 }
@@ -837,8 +786,8 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
   if (!this->enableLSQ) {
     return;
   }
-  auto lsq = cpu->getIEWStage().getLSQ();
-  lsq->commitStore();
+  // auto lsq = cpu->getIEWStage().getLSQ();
+  // lsq->commitStore();
 }
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
@@ -1216,10 +1165,10 @@ void StreamEngine::releaseElement(Stream *S) {
   assert(S->stepSize > 0 && "No element to release.");
   auto releaseElement = S->tail->next;
 
-  // If the element is stored, we reissue the store request.
-  if (releaseElement->stored) {
-    this->writebackElement(releaseElement);
-  }
+  // // If the element is stored, we reissue the store request.
+  // if (releaseElement->stored) {
+  //   this->writebackElement(releaseElement);
+  // }
 
   // Decrease the reference count of the cache blocks.
   for (int i = 0; i < releaseElement->cacheBlocks; ++i) {
@@ -1626,4 +1575,59 @@ void StreamEngine::StreamThrottler::throttleStream(Stream *S,
   }
   assert(S->maxSize == oldMaxSize + incrementStep &&
          "RunAheadLength is not increased.");
+}
+
+/***********************************************************
+ * Callback structures for LSQ.
+ ***********************************************************/
+
+bool StreamEngine::GemForgeStreamEngineLQCallback::getAddrSize(Addr &addr,
+                                                               uint32_t &size) {
+  // Check if the address is ready.
+  if (!this->element->isAddrReady) {
+    return false;
+  }
+  addr = this->element->addr;
+  size = this->element->size;
+  return true;
+}
+
+bool StreamEngine::GemForgeStreamEngineLQCallback::isIssued() {
+  return cpu->getInflyInstStatus(userInst->getId()) ==
+         LLVMTraceCPU::InstStatus::ISSUED;
+}
+
+void StreamEngine::GemForgeStreamEngineLQCallback::RAWMisspeculate() {
+  cpu->getIEWStage().misspeculateInst(userInst);
+}
+
+bool StreamEngine::GemForgeStreamEngineSQCallback::getAddrSize(Addr &addr,
+                                                               uint32_t &size) {
+  // Check if the address is ready.
+  if (!this->element->isAddrReady) {
+    return false;
+  }
+  addr = this->element->addr;
+  size = this->element->size;
+  return true;
+}
+
+void StreamEngine::GemForgeStreamEngineSQCallback::writeback() {
+  // Start inform the stream engine to write back.
+  this->element->se->writebackElement(this->element);
+}
+
+bool StreamEngine::GemForgeStreamEngineSQCallback::isWritebacked() {
+  // So far just say we are done.
+  return true;
+}
+
+void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
+  // Remember to change the status of the stream store to committed.
+  auto cpu = this->element->se->cpu;
+  auto storeInstId = this->storeInst->getId();
+  auto status = cpu->getInflyInstStatus(storeInstId);
+  assert(status == LLVMTraceCPU::InstStatus::COMMITTING &&
+         "Writebacked instructions should be committing.");
+  cpu->updateInflyInstStats(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
 }
