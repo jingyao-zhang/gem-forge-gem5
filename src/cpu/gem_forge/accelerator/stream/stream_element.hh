@@ -9,6 +9,7 @@
 
 class Stream;
 class StreamEngine;
+class StreamStoreInst;
 
 struct FIFOEntryIdx {
   uint64_t streamInstance;
@@ -126,8 +127,11 @@ struct StreamElement {
   CacheBlockBreakdownAccess cacheBlockBreakdownAccesses[MAX_CACHE_BLOCKS];
   int cacheBlocks;
 
-  // Store the infly mem accesses for this element.
+  // Store the infly mem accesses for this element, basically for load.
   std::unordered_set<StreamMemAccess *> inflyMemAccess;
+  // Store the infly writeback memory accesses.
+  std::unordered_map<StreamStoreInst *, std::unordered_set<StreamMemAccess *>>
+      inflyWritebackMemAccess;
   // Store all the allocated mem accesses. May be different to inflyMemAccess
   // if some the element is released before the result comes back, e.g. unused
   // element.

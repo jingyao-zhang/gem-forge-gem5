@@ -212,7 +212,7 @@ private:
   void releaseElement(Stream *S);
   void issueElements();
   void issueElement(StreamElement *element);
-  void writebackElement(StreamElement *element);
+  void writebackElement(StreamElement *element, StreamStoreInst *inst);
   void throttleStream(Stream *S, StreamElement *element);
 
   size_t getTotalRunAheadLength() const;

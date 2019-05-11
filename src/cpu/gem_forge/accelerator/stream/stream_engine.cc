@@ -1325,11 +1325,21 @@ void StreamEngine::issueElement(StreamElement *element) {
   }
 }
 
-void StreamEngine::writebackElement(StreamElement *element) {
+void StreamEngine::writebackElement(StreamElement *element,
+                                    StreamStoreInst *inst) {
   assert(element->isAddrReady && "Address should be ready.");
   auto S = element->stream;
   assert(S->getStreamType() == "store" &&
          "Should never writeback element for non store stream.");
+
+  // Check the bookkeeping for infly writeback memory accesses.
+  assert(element->inflyWritebackMemAccess.count(inst) == 0 &&
+         "This StreamStoreInst has already been writebacked.");
+  auto &inflyWritebackMemAccesses =
+      element->inflyWritebackMemAccess
+          .emplace(std::piecewise_construct, std::forward_as_tuple(inst),
+                   std::forward_as_tuple())
+          .first->second;
 
   STREAM_ELEMENT_DPRINTF(element, "Writeback.\n");
 
@@ -1360,6 +1370,7 @@ void StreamEngine::writebackElement(StreamElement *element) {
 
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
+    inflyWritebackMemAccesses.insert(memAccess);
     // Create the writeback package.
     auto pkt = TDGPacketHandler::createTDGPacket(paddr, packetSize, memAccess,
                                                  this->writebackCacheLine,
@@ -1614,15 +1625,21 @@ bool StreamEngine::GemForgeStreamEngineSQCallback::getAddrSize(Addr &addr,
 
 void StreamEngine::GemForgeStreamEngineSQCallback::writeback() {
   // Start inform the stream engine to write back.
-  this->element->se->writebackElement(this->element);
+  this->element->se->writebackElement(this->element, this->storeInst);
 }
 
 bool StreamEngine::GemForgeStreamEngineSQCallback::isWritebacked() {
-  // So far just say we are done.
-  return true;
+  assert(this->element->inflyWritebackMemAccess.count(this->storeInst) != 0 &&
+         "Missing writeback StreamMemAccess?");
+  // Check if all the writeback accesses are done.
+  return this->element->inflyWritebackMemAccess.at(this->storeInst).empty();
 }
 
 void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
+  // Remember to clear the inflyWritebackStreamAccess.
+  assert(this->element->inflyWritebackMemAccess.count(this->storeInst) != 0 &&
+         "Missing writeback StreamMemAccess?");
+  this->element->inflyWritebackMemAccess.erase(this->storeInst);
   // Remember to change the status of the stream store to committed.
   auto cpu = this->element->se->cpu;
   auto storeInstId = this->storeInst->getId();

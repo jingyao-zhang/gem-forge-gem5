@@ -52,12 +52,12 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
     return;
   }
   this->element->handlePacketResponse(this);
+  // After this point "this" is deleted.
   // Check if this is a read request.
   if (packet->isRead()) {
     // We should notify the stream engine that this cache line is coming back.
     this->element->se->fetchedCacheBlock(this->cacheBlockVirtualAddr, this);
   }
-  // After this point "this" is deleted.
   // Remember to release the packet.
   delete packet->req;
   delete packet;
@@ -118,6 +118,10 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess) {
     if (this->inflyMemAccess.empty() && !this->isValueReady) {
       this->markValueReady();
     }
+  }
+  // Dummy way to check if this is a writeback mem access.
+  for (auto &storeInstMemAccesses : this->inflyWritebackMemAccess) {
+    storeInstMemAccesses.second.erase(memAccess);
   }
   // Remember to release the memAccess.
   this->allocatedMemAccess.erase(memAccess);
