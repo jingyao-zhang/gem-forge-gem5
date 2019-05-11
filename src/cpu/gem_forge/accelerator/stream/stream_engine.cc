@@ -615,6 +615,18 @@ bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
     if (element->firstCheckCycle == 0) {
       element->firstCheckCycle = cpu->curCycle();
     }
+    if (element->stream->getStreamType() == "store") {
+      /**
+       * Basically this is a stream store.
+       * Make sure the stored element is AddrReady.
+       */
+      assert(inst->getInstName() == "stream-store" &&
+             "Only StreamStore should have usage of store stream element.");
+      if (!element->isAddrReady) {
+        ready = false;
+      }
+      continue;
+    }
     if (!element->isValueReady) {
       ready = false;
     }
@@ -777,6 +789,10 @@ void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
     if (element->stream == storeStream) {
       // Found it.
       element->stored = true;
+      // Mark the stored element value ready.
+      if (!element->isValueReady) {
+        element->markValueReady();
+      }
       break;
     }
   }
@@ -786,8 +802,6 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
   if (!this->enableLSQ) {
     return;
   }
-  // auto lsq = cpu->getIEWStage().getLSQ();
-  // lsq->commitStore();
 }
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
@@ -1165,11 +1179,6 @@ void StreamEngine::releaseElement(Stream *S) {
   assert(S->stepSize > 0 && "No element to release.");
   auto releaseElement = S->tail->next;
 
-  // // If the element is stored, we reissue the store request.
-  // if (releaseElement->stored) {
-  //   this->writebackElement(releaseElement);
-  // }
-
   // Decrease the reference count of the cache blocks.
   for (int i = 0; i < releaseElement->cacheBlocks; ++i) {
     auto cacheBlockVirtualAddr =
@@ -1314,9 +1323,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     }
   }
 
-  if (S->getStreamType() == "store" || element->inflyMemAccess.empty()) {
-    // Store can be directly value ready or if we have no infly memAccesses.
-    // We do not track the infly packet for store stream.
+  if (S->getStreamType() != "store" && element->inflyMemAccess.empty()) {
     if (!element->isValueReady) {
       // The element may be already ready as we are issue packets for
       // committed store stream elements.
