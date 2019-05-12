@@ -26,7 +26,10 @@
 #
 # Authors: Ali Saidi
 
-from SysPaths import script, disk, binary
+from __future__ import print_function
+from __future__ import absolute_import
+
+from .SysPaths import script, disk, binary
 from os import environ as env
 from m5.defines import buildEnv
 
@@ -63,8 +66,8 @@ class SysConfig:
         elif buildEnv['TARGET_ISA'] == 'sparc':
             return env.get('LINUX_IMAGE', disk('disk.s10hw2'))
         else:
-            print "Don't know what default disk image to use for %s ISA" % \
-                buildEnv['TARGET_ISA']
+            print("Don't know what default disk image to use for %s ISA" %
+                buildEnv['TARGET_ISA'])
             exit(1)
 
     def rootdev(self):
@@ -139,6 +142,6 @@ Benchmarks = {
                             None, 'android-ics')]
 }
 
-benchs = Benchmarks.keys()
+benchs = list(Benchmarks.keys())
 benchs.sort()
 DefinedBenchmarks = ", ".join(benchs)

@@ -36,10 +36,11 @@
 #include "arch/power/types.hh"
 #include "base/loader/elf_object.hh"
 #include "base/loader/object_file.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Stack.hh"
 #include "mem/page_table.hh"
+#include "params/Process.hh"
 #include "sim/aux_vector.hh"
 #include "sim/process_impl.hh"
 #include "sim/syscall_return.hh"
@@ -49,8 +50,11 @@ using namespace std;
 using namespace PowerISA;
 
 PowerProcess::PowerProcess(ProcessParams *params, ObjectFile *objFile)
-    : Process(params, objFile)
+    : Process(params,
+              new EmulationPageTable(params->name, params->pid, PageBytes),
+              objFile)
 {
+    fatal_if(params->useArchPT, "Arch page tables not implemented.");
     // Set up break point (Top of Heap)
     Addr brk_point = objFile->dataBase() + objFile->dataSize() +
                      objFile->bssSize();
@@ -81,8 +85,7 @@ PowerProcess::initState()
 void
 PowerProcess::argsInit(int intSize, int pageSize)
 {
-    typedef AuxVector<uint32_t> auxv_t;
-    std::vector<auxv_t> auxv;
+    std::vector<AuxVector<uint32_t>> auxv;
 
     string filename;
     if (argv.size() < 1)
@@ -107,37 +110,37 @@ PowerProcess::argsInit(int intSize, int pageSize)
 
         //Bits which describe the system hardware capabilities
         //XXX Figure out what these should be
-        auxv.push_back(auxv_t(M5_AT_HWCAP, features));
+        auxv.emplace_back(M5_AT_HWCAP, features);
         //The system page size
-        auxv.push_back(auxv_t(M5_AT_PAGESZ, PowerISA::PageBytes));
+        auxv.emplace_back(M5_AT_PAGESZ, PowerISA::PageBytes);
         //Frequency at which times() increments
-        auxv.push_back(auxv_t(M5_AT_CLKTCK, 0x64));
-        // For statically linked executables, this is the virtual address of the
-        // program header tables if they appear in the executable image
-        auxv.push_back(auxv_t(M5_AT_PHDR, elfObject->programHeaderTable()));
+        auxv.emplace_back(M5_AT_CLKTCK, 0x64);
+        // For statically linked executables, this is the virtual address of
+        // the program header tables if they appear in the executable image
+        auxv.emplace_back(M5_AT_PHDR, elfObject->programHeaderTable());
         // This is the size of a program header entry from the elf file.
-        auxv.push_back(auxv_t(M5_AT_PHENT, elfObject->programHeaderSize()));
+        auxv.emplace_back(M5_AT_PHENT, elfObject->programHeaderSize());
         // This is the number of program headers from the original elf file.
-        auxv.push_back(auxv_t(M5_AT_PHNUM, elfObject->programHeaderCount()));
+        auxv.emplace_back(M5_AT_PHNUM, elfObject->programHeaderCount());
         // This is the base address of the ELF interpreter; it should be
         // zero for static executables or contain the base address for
         // dynamic executables.
-        auxv.push_back(auxv_t(M5_AT_BASE, getBias()));
+        auxv.emplace_back(M5_AT_BASE, getBias());
         //XXX Figure out what this should be.
-        auxv.push_back(auxv_t(M5_AT_FLAGS, 0));
+        auxv.emplace_back(M5_AT_FLAGS, 0);
         //The entry point to the program
-        auxv.push_back(auxv_t(M5_AT_ENTRY, objFile->entryPoint()));
+        auxv.emplace_back(M5_AT_ENTRY, objFile->entryPoint());
         //Different user and group IDs
-        auxv.push_back(auxv_t(M5_AT_UID, uid()));
-        auxv.push_back(auxv_t(M5_AT_EUID, euid()));
-        auxv.push_back(auxv_t(M5_AT_GID, gid()));
-        auxv.push_back(auxv_t(M5_AT_EGID, egid()));
+        auxv.emplace_back(M5_AT_UID, uid());
+        auxv.emplace_back(M5_AT_EUID, euid());
+        auxv.emplace_back(M5_AT_GID, gid());
+        auxv.emplace_back(M5_AT_EGID, egid());
         //Whether to enable "secure mode" in the executable
-        auxv.push_back(auxv_t(M5_AT_SECURE, 0));
+        auxv.emplace_back(M5_AT_SECURE, 0);
         //The filename of the program
-        auxv.push_back(auxv_t(M5_AT_EXECFN, 0));
+        auxv.emplace_back(M5_AT_EXECFN, 0);
         //The string "v51" with unknown meaning
-        auxv.push_back(auxv_t(M5_AT_PLATFORM, 0));
+        auxv.emplace_back(M5_AT_PLATFORM, 0);
     }
 
     //Figure out how big the initial stack nedes to be
@@ -235,27 +238,25 @@ PowerProcess::argsInit(int intSize, int pageSize)
 
     //Fix up the aux vectors which point to other data
     for (int i = auxv.size() - 1; i >= 0; i--) {
-        if (auxv[i].a_type == M5_AT_PLATFORM) {
-            auxv[i].a_val = platform_base;
+        if (auxv[i].type == M5_AT_PLATFORM) {
+            auxv[i].val = platform_base;
             initVirtMem.writeString(platform_base, platform.c_str());
-        } else if (auxv[i].a_type == M5_AT_EXECFN) {
-            auxv[i].a_val = aux_data_base;
+        } else if (auxv[i].type == M5_AT_EXECFN) {
+            auxv[i].val = aux_data_base;
             initVirtMem.writeString(aux_data_base, filename.c_str());
         }
     }
 
     //Copy the aux stuff
-    for (int x = 0; x < auxv.size(); x++)
-    {
-        initVirtMem.writeBlob(auxv_array_base + x * 2 * intSize,
-                (uint8_t*)&(auxv[x].a_type), intSize);
-        initVirtMem.writeBlob(auxv_array_base + (x * 2 + 1) * intSize,
-                (uint8_t*)&(auxv[x].a_val), intSize);
+    Addr auxv_array_end = auxv_array_base;
+    for (const auto &aux: auxv) {
+        initVirtMem.write(auxv_array_end, aux, GuestByteOrder);
+        auxv_array_end += sizeof(aux);
     }
     //Write out the terminating zeroed auxilliary vector
-    const uint64_t zero = 0;
-    initVirtMem.writeBlob(auxv_array_base + 2 * intSize * auxv.size(),
-            (uint8_t*)&zero, 2 * intSize);
+    const AuxVector<uint64_t> zero(0, 0);
+    initVirtMem.write(auxv_array_end, zero);
+    auxv_array_end += sizeof(zero);
 
     copyStringArray(envp, envp_array_base, env_data_base, initVirtMem);
     copyStringArray(argv, argv_array_base, arg_data_base, initVirtMem);
@@ -273,7 +274,7 @@ PowerProcess::argsInit(int intSize, int pageSize)
     memState->setStackMin(roundDown(stack_min, pageSize));
 }
 
-PowerISA::IntReg
+RegVal
 PowerProcess::getSyscallArg(ThreadContext *tc, int &i)
 {
     assert(i < 5);
@@ -281,7 +282,7 @@ PowerProcess::getSyscallArg(ThreadContext *tc, int &i)
 }
 
 void
-PowerProcess::setSyscallArg(ThreadContext *tc, int i, PowerISA::IntReg val)
+PowerProcess::setSyscallArg(ThreadContext *tc, int i, RegVal val)
 {
     assert(i < 5);
     tc->setIntReg(ArgumentReg0 + i, val);

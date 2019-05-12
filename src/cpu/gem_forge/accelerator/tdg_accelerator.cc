@@ -2,7 +2,7 @@
 #include "tdg_accelerator.hh"
 
 // For the DPRINTF function.
-#include "base/misc.hh"
+// #include "base/misc.hh""
 #include "base/trace.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
 #include "debug/LLVMTraceCPU.hh"

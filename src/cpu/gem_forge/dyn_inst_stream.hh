@@ -1,7 +1,7 @@
 #ifndef __CPU_DYN_INST_STREAM_HH__
 #define __CPU_DYN_INST_STREAM_HH__
 
-#include "base/misc.hh"
+// #include "base/misc.hh""
 
 // Parse the instructions from a protobuf.
 #include "config/have_protobuf.hh"

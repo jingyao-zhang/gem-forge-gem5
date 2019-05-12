@@ -4,9 +4,8 @@ PacketPtr TDGPacketHandler::createTDGPacket(Addr paddr, int size,
                                             TDGPacketHandler *handler,
                                             uint8_t *data, MasterID masterID,
                                             int contextId, Addr pc) {
-  RequestPtr req =
-      new Request(paddr, size, 0, masterID,
-                  reinterpret_cast<InstSeqNum>(handler), contextId);
+  RequestPtr req(new Request(paddr, size, 0, masterID,
+                             reinterpret_cast<InstSeqNum>(handler), contextId));
   if (pc != 0) {
     req->setPC(pc);
   }

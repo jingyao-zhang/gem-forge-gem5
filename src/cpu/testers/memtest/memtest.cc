@@ -48,7 +48,6 @@
 #include "base/statistics.hh"
 #include "base/trace.hh"
 #include "debug/MemTest.hh"
-#include "mem/mem_object.hh"
 #include "sim/sim_exit.hh"
 #include "sim/stats.hh"
 #include "sim/system.hh"
@@ -85,7 +84,7 @@ MemTest::sendPkt(PacketPtr pkt) {
 }
 
 MemTest::MemTest(const Params *p)
-    : MemObject(p),
+    : ClockedObject(p),
       tickEvent([this]{ tick(); }, name()),
       noRequestEvent([this]{ noRequest(); }, name()),
       noResponseEvent([this]{ noResponse(); }, name()),
@@ -96,7 +95,7 @@ MemTest::MemTest(const Params *p)
       percentReads(p->percent_reads),
       percentFunctional(p->percent_functional),
       percentUncacheable(p->percent_uncacheable),
-      masterId(p->system->getMasterId(name())),
+      masterId(p->system->getMasterId(this)),
       blockSize(p->system->cacheLineSize()),
       blockAddrMask(blockSize - 1),
       progressInterval(p->progress_interval),
@@ -124,19 +123,19 @@ MemTest::MemTest(const Params *p)
     schedule(noResponseEvent, clockEdge(progressCheck));
 }
 
-BaseMasterPort &
-MemTest::getMasterPort(const std::string &if_name, PortID idx)
+Port &
+MemTest::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name == "port")
         return port;
     else
-        return MemObject::getMasterPort(if_name, idx);
+        return ClockedObject::getPort(if_name, idx);
 }
 
 void
 MemTest::completeRequest(PacketPtr pkt, bool functional)
 {
-    Request *req = pkt->req;
+    const RequestPtr &req = pkt->req;
     assert(req->getSize() == 1);
 
     // this address is no longer outstanding
@@ -187,8 +186,6 @@ MemTest::completeRequest(PacketPtr pkt, bool functional)
         }
     }
 
-    delete pkt->req;
-
     // the packet will delete the data
     delete pkt;
 
@@ -199,7 +196,7 @@ MemTest::completeRequest(PacketPtr pkt, bool functional)
 void
 MemTest::regStats()
 {
-    MemObject::regStats();
+    ClockedObject::regStats();
 
     using namespace Stats;
 
@@ -246,7 +243,7 @@ MemTest::tick()
 
     bool do_functional = (random_mt.random(0, 100) < percentFunctional) &&
         !uncacheable;
-    Request *req = new Request(paddr, 1, flags, masterId);
+    RequestPtr req = std::make_shared<Request>(paddr, 1, flags, masterId);
     req->setContext(id);
 
     outstandingAddrs.insert(paddr);

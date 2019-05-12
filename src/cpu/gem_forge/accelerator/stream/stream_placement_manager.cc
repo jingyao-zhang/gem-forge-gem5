@@ -493,7 +493,7 @@ void StreamPlacementManager::scheduleResponse(Cycles latency,
 
 void StreamPlacementManager::sendTimingRequest(PacketPtr pkt, Cache *cache) {
 
-  auto cpuSidePort = &(cache->getSlavePort("cpu_side", 0));
+  auto cpuSidePort = &(cache->getPort("cpu_side", 0));
   auto streamAwareCpuSidePort =
       dynamic_cast<Cache::StreamAwareCpuSidePort *>(cpuSidePort);
   if (streamAwareCpuSidePort == nullptr) {
@@ -505,7 +505,7 @@ void StreamPlacementManager::sendTimingRequest(PacketPtr pkt, Cache *cache) {
 
 void StreamPlacementManager::sendTimingRequestToL2Bus(PacketPtr pkt) {
   assert(this->L2Bus != nullptr);
-  auto slavePort = this->L2Bus->getSlavePort(3);
+  auto slavePort = &(this->L2Bus->getPort("slave", 3));
   auto streamAwareSlavePort =
       dynamic_cast<CoherentXBar::StreamAwareCoherentXBarSlavePort *>(slavePort);
   if (streamAwareSlavePort == nullptr) {
@@ -516,7 +516,7 @@ void StreamPlacementManager::sendTimingRequestToL2Bus(PacketPtr pkt) {
 
 void StreamPlacementManager::dumpCacheStreamAwarePortStatus() {
   for (auto cache : this->caches) {
-    auto cpuSidePort = &(cache->getSlavePort("cpu_side", 0));
+    auto cpuSidePort = &(cache->getPort("cpu_side", 0));
     auto streamAwareCpuSidePort =
         dynamic_cast<Cache::StreamAwareCpuSidePort *>(cpuSidePort);
     if (streamAwareCpuSidePort != nullptr) {

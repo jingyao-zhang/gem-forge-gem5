@@ -50,6 +50,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <climits>
 #include <csignal>
 #include <map>
 #include <string>
@@ -67,6 +68,7 @@
 #include "sim/emul_driver.hh"
 #include "sim/fd_array.hh"
 #include "sim/fd_entry.hh"
+#include "sim/redirect_path.hh"
 #include "sim/syscall_desc.hh"
 #include "sim/system.hh"
 
@@ -101,19 +103,28 @@
 using namespace std;
 using namespace TheISA;
 
-Process::Process(ProcessParams * params, ObjectFile * obj_file)
+static std::string
+normalize(std::string& directory)
+{
+    if (directory.back() != '/')
+        directory += '/';
+    return directory;
+}
+
+Process::Process(ProcessParams *params, EmulationPageTable *pTable,
+                 ObjectFile *obj_file)
     : SimObject(params), system(params->system),
       useArchPT(params->useArchPT),
       kvmInSE(params->kvmInSE),
-      pTable(useArchPT ?
-        static_cast<PageTableBase *>(new ArchPageTable(name(), params->pid,
-            system)) :
-        static_cast<PageTableBase *>(new FuncPageTable(name(), params->pid))),
+      useForClone(false),
+      pTable(pTable),
       initVirtMem(system->getSystemPort(), this,
                   SETranslatingPortProxy::Always),
       objFile(obj_file),
-      argv(params->cmd), envp(params->env), cwd(params->cwd),
+      argv(params->cmd), envp(params->env),
       executable(params->executable),
+      tgtCwd(normalize(params->cwd)),
+      hostCwd(checkPathRedirect(tgtCwd)),
       _uid(params->uid), _euid(params->euid),
       _gid(params->gid), _egid(params->egid),
       _pid(params->pid), _ppid(params->ppid),
@@ -158,7 +169,7 @@ Process::Process(ProcessParams * params, ObjectFile * obj_file)
 
 void
 Process::clone(ThreadContext *otc, ThreadContext *ntc,
-               Process *np, TheISA::IntReg flags)
+               Process *np, RegVal flags)
 {
 #ifndef CLONE_VM
 #define CLONE_VM 0
@@ -312,7 +323,8 @@ Process::allocateMem(Addr vaddr, int64_t size, bool clobber)
     int npages = divCeil(size, (int64_t)PageBytes);
     Addr paddr = system->allocPhysPages(npages);
     pTable->map(vaddr, paddr, size,
-                clobber ? PageTableBase::Clobber : PageTableBase::Zero);
+                clobber ? EmulationPageTable::Clobber :
+                          EmulationPageTable::MappingFlags(0));
 }
 
 void
@@ -367,6 +379,7 @@ Process::fixupStackFault(Addr vaddr)
 void
 Process::serialize(CheckpointOut &cp) const
 {
+    memState->serialize(cp);
     pTable->serialize(cp);
     /**
      * Checkpoints for file descriptors currently do not work. Need to
@@ -384,6 +397,7 @@ Process::serialize(CheckpointOut &cp) const
 void
 Process::unserialize(CheckpointIn &cp)
 {
+    memState->unserialize(cp);
     pTable->unserialize(cp);
     /**
      * Checkpoints for file descriptors currently do not work. Need to
@@ -405,7 +419,8 @@ bool
 Process::map(Addr vaddr, Addr paddr, int size, bool cacheable)
 {
     pTable->map(vaddr, paddr, size,
-                cacheable ? PageTableBase::Zero : PageTableBase::Uncacheable);
+                cacheable ? EmulationPageTable::MappingFlags(0) :
+                            EmulationPageTable::Uncacheable);
     return true;
 }
 
@@ -421,7 +436,7 @@ Process::syscall(int64_t callnum, ThreadContext *tc, Fault *fault)
     desc->doSyscall(callnum, this, tc, fault);
 }
 
-IntReg
+RegVal
 Process::getSyscallArg(ThreadContext *tc, int &i, int width)
 {
     return getSyscallArg(tc, i);
@@ -436,6 +451,39 @@ Process::findDriver(std::string filename)
     }
 
     return nullptr;
+}
+
+std::string
+Process::checkPathRedirect(const std::string &filename)
+{
+    // If the input parameter contains a relative path, convert it.
+    // The target version of the current working directory is fine since
+    // we immediately convert it using redirect paths into a host version.
+    auto abs_path = absolutePath(filename, false);
+
+    for (auto path : system->redirectPaths) {
+        // Search through the redirect paths to see if a starting substring of
+        // our path falls into any buckets which need to redirected.
+        if (startswith(abs_path, path->appPath())) {
+            std::string tail = abs_path.substr(path->appPath().size());
+
+            // If this path needs to be redirected, search through a list
+            // of targets to see if we can match a valid file (or directory).
+            for (auto host_path : path->hostPaths()) {
+                if (access((host_path + tail).c_str(), R_OK) == 0) {
+                    // Return the valid match.
+                    return host_path + tail;
+                }
+            }
+            // The path needs to be redirected, but the file or directory
+            // does not exist on the host filesystem. Return the first
+            // host path as a default.
+            return path->hostPaths()[0] + tail;
+        }
+    }
+
+    // The path does not need to be redirected.
+    return abs_path;
 }
 
 void
@@ -484,6 +532,33 @@ Process::getStartPC()
     ObjectFile *interp = getInterpreter();
 
     return interp ? interp->entryPoint() : objFile->entryPoint();
+}
+
+std::string
+Process::absolutePath(const std::string &filename, bool host_filesystem)
+{
+    if (filename.empty() || startswith(filename, "/"))
+        return filename;
+
+    // Construct the absolute path given the current working directory for
+    // either the host filesystem or target filesystem. The distinction only
+    // matters if filesystem redirection is utilized in the simulation.
+    auto path_base = std::string();
+    if (host_filesystem) {
+        path_base = hostCwd;
+        assert(!hostCwd.empty());
+    } else {
+        path_base = tgtCwd;
+        assert(!tgtCwd.empty());
+    }
+
+    // Add a trailing '/' if the current working directory did not have one.
+    normalize(path_base);
+
+    // Append the filename onto the current working path.
+    auto absolute_path = path_base + filename;
+
+    return absolute_path;
 }
 
 Process *
@@ -621,14 +696,19 @@ ProcessParams::create()
         fatal("Unknown/unsupported operating system.");
     }
 #elif THE_ISA == RISCV_ISA
-    if (obj_file->getArch() != ObjectFile::Riscv)
+    ObjectFile::Arch arch = obj_file->getArch();
+    if (arch != ObjectFile::Riscv64 && arch != ObjectFile::Riscv32)
         fatal("Object file architecture does not match compiled ISA (RISCV).");
     switch (obj_file->getOpSys()) {
       case ObjectFile::UnknownOpSys:
         warn("Unknown operating system; assuming Linux.");
         // fall through
       case ObjectFile::Linux:
-        process = new RiscvLinuxProcess(this, obj_file);
+        if (arch == ObjectFile::Riscv64) {
+            process = new RiscvLinuxProcess64(this, obj_file);
+        } else {
+            process = new RiscvLinuxProcess32(this, obj_file);
+        }
         break;
       default:
         fatal("Unknown/unsupported operating system.");
@@ -640,18 +720,4 @@ ProcessParams::create()
     if (process == nullptr)
         fatal("Unknown error creating process object.");
     return process;
-}
-
-std::string
-Process::fullPath(const std::string &file_name)
-{
-    if (file_name[0] == '/' || cwd.empty())
-        return file_name;
-
-    std::string full = cwd;
-
-    if (cwd[cwd.size() - 1] != '/')
-        full += '/';
-
-    return full + file_name;
 }

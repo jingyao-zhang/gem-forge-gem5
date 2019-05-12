@@ -2,6 +2,8 @@
 
 #include "debug/McPATManager.hh"
 
+#include "params/Cache.hh"
+
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "mem/cache/cache.hh"
 #include "mem/cache/tags/base.hh"
@@ -95,7 +97,7 @@ void McPATManager::configureLLVMTraceCPU(const LLVMTraceCPU *cpu) {
 
   // TODO: refactor this into a separate funciton.
 
-  if (auto instTLB = params->itb) {
+  if (auto instTLB = dynamic_cast<TheISA::TLB *>(params->itb)) {
     /**
      * Instruction TLB.
      */
@@ -103,7 +105,7 @@ void McPATManager::configureLLVMTraceCPU(const LLVMTraceCPU *cpu) {
     mcpatITLB.number_entries = McPATManager::getTLBSize(instTLB);
   }
 
-  if (auto dataTLB = params->dtb) {
+  if (auto dataTLB = dynamic_cast<TheISA::TLB *>(params->dtb)) {
     /**
      * Data TLB.
      */
@@ -120,7 +122,7 @@ void McPATManager::configureLLVMTraceCPU(const LLVMTraceCPU *cpu) {
     auto instL1TagParams =
         McPATManager::getParams<BaseTagsParams>(instL1Params->tags);
     auto accessLatency =
-        McPATManager::getCacheTagAccessLatency(instL1TagParams);
+        McPATManager::getCacheTagAccessLatency(instL1Params);
     auto &mcpatInstL1 = core.icache;
 
     mcpatInstL1.icache_config[0] = instL1Params->size;          // capacity
@@ -155,7 +157,7 @@ void McPATManager::configureLLVMTraceCPU(const LLVMTraceCPU *cpu) {
     auto dataL1TagParams =
         McPATManager::getParams<BaseTagsParams>(dataL1Params->tags);
     auto accessLatency =
-        McPATManager::getCacheTagAccessLatency(dataL1TagParams);
+        McPATManager::getCacheTagAccessLatency(dataL1Params);
     auto &mcpatDataL1 = core.dcache;
 
     mcpatDataL1.dcache_config[0] = dataL1Params->size;          // capacity

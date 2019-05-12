@@ -31,8 +31,8 @@
  * that they can be dequeued after a given delta time has expired.
  */
 
-#ifndef __MEM_RUBY_BUFFERS_MESSAGEBUFFER_HH__
-#define __MEM_RUBY_BUFFERS_MESSAGEBUFFER_HH__
+#ifndef __MEM_RUBY_NETWORK_MESSAGEBUFFER_HH__
+#define __MEM_RUBY_NETWORK_MESSAGEBUFFER_HH__
 
 #include <algorithm>
 #include <cassert>
@@ -43,10 +43,12 @@
 
 #include "base/trace.hh"
 #include "debug/RubyQueue.hh"
+#include "mem/packet.hh"
+#include "mem/port.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/common/Consumer.hh"
+#include "mem/ruby/network/dummy_port.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
-#include "mem/packet.hh"
 #include "params/MessageBuffer.hh"
 #include "sim/sim_object.hh"
 
@@ -120,7 +122,13 @@ class MessageBuffer : public SimObject
     void setIncomingLink(int link_id) { m_input_link_id = link_id; }
     void setVnet(int net) { m_vnet_id = net; }
 
-    void regStats();
+    Port &
+    getPort(const std::string &, PortID idx=InvalidPortID) override
+    {
+        return RubyDummyPort::instance();
+    }
+
+    void regStats() override;
 
     // Function for figuring out if any of the messages in the buffer need
     // to be updated with the data from the packet.
@@ -212,4 +220,4 @@ operator<<(std::ostream& out, const MessageBuffer& obj)
     return out;
 }
 
-#endif // __MEM_RUBY_BUFFERS_MESSAGEBUFFER_HH__
+#endif //__MEM_RUBY_NETWORK_MESSAGEBUFFER_HH__

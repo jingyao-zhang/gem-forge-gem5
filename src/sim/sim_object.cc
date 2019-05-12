@@ -32,8 +32,8 @@
 
 #include "sim/sim_object.hh"
 
+#include "base/logging.hh"
 #include "base/match.hh"
-#include "base/misc.hh"
 #include "base/trace.hh"
 #include "debug/Checkpoint.hh"
 #include "sim/probe/probe.hh"
@@ -131,6 +131,12 @@ ProbeManager *
 SimObject::getProbeManager()
 {
     return probeManager;
+}
+
+Port &
+SimObject::getPort(const std::string &if_name, PortID idx)
+{
+    fatal("%s does not have any port named %s\n", name(), if_name);
 }
 
 //

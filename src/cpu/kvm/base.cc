@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2015 ARM Limited
+ * Copyright (c) 2012, 2015, 2017 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -181,7 +181,6 @@ BaseKvmCPU::KVMCpuPort::submitIO(PacketPtr pkt)
 {
     if (cpu->system->isAtomicMode()) {
         Tick delay = sendAtomic(pkt);
-        delete pkt->req;
         delete pkt;
         return delay;
     } else {
@@ -200,7 +199,6 @@ BaseKvmCPU::KVMCpuPort::recvTimingResp(PacketPtr pkt)
 {
     DPRINTF(KvmIO, "KVM: Finished timing request\n");
 
-    delete pkt->req;
     delete pkt;
     activeMMIOReqs--;
 
@@ -383,7 +381,7 @@ BaseKvmCPU::drain()
             deschedule(tickEvent);
         _status = Idle;
 
-        /** FALLTHROUGH */
+        M5_FALLTHROUGH;
       case Idle:
         // Idle, no need to drain
         assert(!tickEvent.scheduled());
@@ -584,6 +582,7 @@ BaseKvmCPU::haltContext(ThreadID thread_num)
 {
     // for now, these are equivalent
     suspendContext(thread_num);
+    updateCycleCounters(BaseCPU::CPU_STATE_SLEEP);
 }
 
 ThreadContext *
@@ -1118,8 +1117,9 @@ BaseKvmCPU::doMMIOAccess(Addr paddr, void *data, int size, bool write)
     ThreadContext *tc(thread->getTC());
     syncThreadContext();
 
-    RequestPtr mmio_req = new Request(paddr, size, Request::UNCACHEABLE,
-                                      dataMasterId());
+    RequestPtr mmio_req = std::make_shared<Request>(
+        paddr, size, Request::UNCACHEABLE, dataMasterId());
+
     mmio_req->setContext(tc->contextId());
     // Some architectures do need to massage physical addresses a bit
     // before they are inserted into the memory system. This enables
@@ -1143,7 +1143,6 @@ BaseKvmCPU::doMMIOAccess(Addr paddr, void *data, int size, bool write)
                              TheISA::handleIprWrite(tc, pkt) :
                              TheISA::handleIprRead(tc, pkt));
         threadContextDirty = true;
-        delete pkt->req;
         delete pkt;
         return clockPeriod() * ipr_delay;
     } else {

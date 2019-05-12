@@ -11,7 +11,7 @@
 
 #include "tdg_packet_handler.hh"
 
-#include "base/misc.hh"
+// #include "base/misc.hh""
 #include "base/types.hh"
 #include "cpu/op_class.hh"
 #include "cpu/static_inst_fwd.hh"

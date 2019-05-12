@@ -5,7 +5,7 @@
 #error "Require protobuf to parse stream pattern"
 #endif
 
-#include "base/misc.hh"
+// #include "base/misc.hh""
 #include "base/trace.hh"
 #include "proto/protoio.hh"
 

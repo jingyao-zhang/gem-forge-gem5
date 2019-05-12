@@ -37,6 +37,10 @@ IMPORTANT: If you modify this file, it's likely that the Learning gem5 book
 
 """
 
+from __future__ import print_function
+from __future__ import absolute_import
+
+
 # import the m5 (gem5) library created when gem5 is built
 import m5
 # import all of the SimObjects
@@ -85,8 +89,11 @@ system.system_port = system.membus.slave
 # get ISA for the binary to run.
 isa = str(m5.defines.buildEnv['TARGET_ISA']).lower()
 
-# Run 'hello' and use the compiled ISA to find the binary
-binary = 'tests/test-progs/hello/bin/' + isa + '/linux/hello'
+# Default to running 'hello', use the compiled ISA to find the binary
+# grab the specific path to the binary
+thispath = os.path.dirname(os.path.realpath(__file__))
+binary = os.path.join(thispath, '../../../',
+                      'tests/test-progs/hello/bin/', isa, 'linux/hello')
 
 # Create a process for a simple "Hello World" application
 process = Process()
@@ -102,6 +109,6 @@ root = Root(full_system = False, system = system)
 # instantiate all of the objects we've created above
 m5.instantiate()
 
-print "Beginning simulation!"
+print("Beginning simulation!")
 exit_event = m5.simulate()
-print 'Exiting @ tick %i because %s' % (m5.curTick(), exit_event.getCause())
+print('Exiting @ tick %i because %s' % (m5.curTick(), exit_event.getCause()))

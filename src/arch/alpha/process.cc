@@ -34,10 +34,11 @@
 #include "arch/alpha/isa_traits.hh"
 #include "base/loader/elf_object.hh"
 #include "base/loader/object_file.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Loader.hh"
 #include "mem/page_table.hh"
+#include "params/Process.hh"
 #include "sim/aux_vector.hh"
 #include "sim/byteswap.hh"
 #include "sim/process_impl.hh"
@@ -48,8 +49,11 @@ using namespace AlphaISA;
 using namespace std;
 
 AlphaProcess::AlphaProcess(ProcessParams *params, ObjectFile *objFile)
-    : Process(params, objFile)
+    : Process(params,
+              new EmulationPageTable(params->name, params->pid, PageBytes),
+      objFile)
 {
+    fatal_if(params->useArchPT, "Arch page tables not implemented.");
     Addr brk_point = objFile->dataBase() + objFile->dataSize() +
                      objFile->bssSize();
     brk_point = roundUp(brk_point, PageBytes);
@@ -78,8 +82,7 @@ AlphaProcess::argsInit(int intSize, int pageSize)
 
     objFile->loadSections(initVirtMem);
 
-    typedef AuxVector<uint64_t> auxv_t;
-    std::vector<auxv_t>  auxv;
+    std::vector<AuxVector<uint64_t>>  auxv;
 
     ElfObject * elfObject = dynamic_cast<ElfObject *>(objFile);
     if (elfObject)
@@ -92,20 +95,21 @@ AlphaProcess::argsInit(int intSize, int pageSize)
         // seem to be a problem.
         // check out _dl_aux_init() in glibc/elf/dl-support.c for details
         // --Lisa
-        auxv.push_back(auxv_t(M5_AT_PAGESZ, AlphaISA::PageBytes));
-        auxv.push_back(auxv_t(M5_AT_CLKTCK, 100));
-        auxv.push_back(auxv_t(M5_AT_PHDR, elfObject->programHeaderTable()));
-        DPRINTF(Loader, "auxv at PHDR %08p\n", elfObject->programHeaderTable());
-        auxv.push_back(auxv_t(M5_AT_PHNUM, elfObject->programHeaderCount()));
+        auxv.emplace_back(M5_AT_PAGESZ, AlphaISA::PageBytes);
+        auxv.emplace_back(M5_AT_CLKTCK, 100);
+        auxv.emplace_back(M5_AT_PHDR, elfObject->programHeaderTable());
+        DPRINTF(Loader, "auxv at PHDR %08p\n",
+                elfObject->programHeaderTable());
+        auxv.emplace_back(M5_AT_PHNUM, elfObject->programHeaderCount());
         // This is the base address of the ELF interpreter; it should be
         // zero for static executables or contain the base address for
         // dynamic executables.
-        auxv.push_back(auxv_t(M5_AT_BASE, getBias()));
-        auxv.push_back(auxv_t(M5_AT_ENTRY, objFile->entryPoint()));
-        auxv.push_back(auxv_t(M5_AT_UID, uid()));
-        auxv.push_back(auxv_t(M5_AT_EUID, euid()));
-        auxv.push_back(auxv_t(M5_AT_GID, gid()));
-        auxv.push_back(auxv_t(M5_AT_EGID, egid()));
+        auxv.emplace_back(M5_AT_BASE, getBias());
+        auxv.emplace_back(M5_AT_ENTRY, objFile->entryPoint());
+        auxv.emplace_back(M5_AT_UID, uid());
+        auxv.emplace_back(M5_AT_EUID, euid());
+        auxv.emplace_back(M5_AT_GID, gid());
+        auxv.emplace_back(M5_AT_EGID, egid());
 
     }
 
@@ -164,11 +168,10 @@ AlphaProcess::argsInit(int intSize, int pageSize)
     copyStringArray(envp, envp_array_base, env_data_base, initVirtMem);
 
     //Copy the aux stuff
-    for (vector<auxv_t>::size_type x = 0; x < auxv.size(); x++) {
-        initVirtMem.writeBlob(auxv_array_base + x * 2 * intSize,
-                (uint8_t*)&(auxv[x].a_type), intSize);
-        initVirtMem.writeBlob(auxv_array_base + (x * 2 + 1) * intSize,
-                (uint8_t*)&(auxv[x].a_val), intSize);
+    Addr auxv_array_end = auxv_array_base;
+    for (const auto &aux: auxv) {
+        initVirtMem.write(auxv_array_end, aux, GuestByteOrder);
+        auxv_array_end += sizeof(aux);
     }
 
     ThreadContext *tc = system->getThreadContext(contextIds[0]);
@@ -218,7 +221,7 @@ AlphaProcess::initState()
     tc->setMiscRegNoEffect(IPR_MCSR, 0);
 }
 
-AlphaISA::IntReg
+RegVal
 AlphaProcess::getSyscallArg(ThreadContext *tc, int &i)
 {
     assert(i < 6);
@@ -226,7 +229,7 @@ AlphaProcess::getSyscallArg(ThreadContext *tc, int &i)
 }
 
 void
-AlphaProcess::setSyscallArg(ThreadContext *tc, int i, AlphaISA::IntReg val)
+AlphaProcess::setSyscallArg(ThreadContext *tc, int i, RegVal val)
 {
     assert(i < 6);
     tc->setIntReg(FirstArgumentReg + i, val);
@@ -244,7 +247,7 @@ AlphaProcess::setSyscallReturn(ThreadContext *tc, SyscallReturn sysret)
         tc->setIntReg(ReturnValueReg, sysret.returnValue());
     } else {
         // got an error, return details
-        tc->setIntReg(SyscallSuccessReg, (IntReg)-1);
+        tc->setIntReg(SyscallSuccessReg, (RegVal)-1);
         tc->setIntReg(ReturnValueReg, sysret.errnoValue());
     }
 }

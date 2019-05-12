@@ -56,6 +56,7 @@
 #include "sim/drain.hh"
 #include "sim/eventq.hh"
 #include "sim/eventq_impl.hh"
+#include "sim/port.hh"
 #include "sim/serialize.hh"
 
 class EventManager;
@@ -91,131 +92,145 @@ class ProbeManager;
  * SimObject.py). This has the effect of calling the method on the
  * parent node <i>before</i> its children.
  */
-class SimObject : public EventManager, public Serializable, public Drainable {
-private:
-  typedef std::vector<SimObject *> SimObjectList;
+class SimObject : public EventManager, public Serializable, public Drainable
+{
+  private:
+    typedef std::vector<SimObject *> SimObjectList;
 
-  /** List of all instantiated simulation objects. */
-  static SimObjectList simObjectList;
+    /** List of all instantiated simulation objects. */
+    static SimObjectList simObjectList;
 
-  /** Manager coordinates hooking up probe points with listeners. */
-  ProbeManager *probeManager;
+    /** Manager coordinates hooking up probe points with listeners. */
+    ProbeManager *probeManager;
 
-protected:
-  /**
-   * Is there other way to get all the SimObjects in the system?
-   */
-  static SimObjectList &getSimObjectList() { return simObjectList; }
+  protected:
+    /**
+     * Is there other way to get all the SimObjects in the system?
+     */
+    static SimObjectList &getSimObjectList() { return simObjectList; }
 
-  /** Cached copy of the object parameters. */
-  const SimObjectParams *_params;
+    /** Cached copy of the object parameters. */
+    const SimObjectParams *_params;
 
-public:
-  typedef SimObjectParams Params;
-  const Params *params() const { return _params; }
-  SimObject(const Params *_params);
-  virtual ~SimObject();
+  public:
+    typedef SimObjectParams Params;
+    const Params *params() const { return _params; }
+    SimObject(const Params *_params);
+    virtual ~SimObject();
 
-public:
-  virtual const std::string name() const { return params()->name; }
+  public:
 
-  /**
-   * init() is called after all C++ SimObjects have been created and
-   * all ports are connected.  Initializations that are independent
-   * of unserialization but rely on a fully instantiated and
-   * connected SimObject graph should be done here.
-   */
-  virtual void init();
+    virtual const std::string name() const { return params()->name; }
 
-  /**
-   * loadState() is called on each SimObject when restoring from a
-   * checkpoint.  The default implementation simply calls
-   * unserialize() if there is a corresponding section in the
-   * checkpoint.  However, objects can override loadState() to get
-   * other behaviors, e.g., doing other programmed initializations
-   * after unserialize(), or complaining if no checkpoint section is
-   * found.
-   *
-   * @param cp Checkpoint to restore the state from.
-   */
-  virtual void loadState(CheckpointIn &cp);
+    /**
+     * init() is called after all C++ SimObjects have been created and
+     * all ports are connected.  Initializations that are independent
+     * of unserialization but rely on a fully instantiated and
+     * connected SimObject graph should be done here.
+     */
+    virtual void init();
 
-  /**
-   * initState() is called on each SimObject when *not* restoring
-   * from a checkpoint.  This provides a hook for state
-   * initializations that are only required for a "cold start".
-   */
-  virtual void initState();
+    /**
+     * loadState() is called on each SimObject when restoring from a
+     * checkpoint.  The default implementation simply calls
+     * unserialize() if there is a corresponding section in the
+     * checkpoint.  However, objects can override loadState() to get
+     * other behaviors, e.g., doing other programmed initializations
+     * after unserialize(), or complaining if no checkpoint section is
+     * found.
+     *
+     * @param cp Checkpoint to restore the state from.
+     */
+    virtual void loadState(CheckpointIn &cp);
 
-  /**
-   * Register statistics for this object.
-   */
-  virtual void regStats();
+    /**
+     * initState() is called on each SimObject when *not* restoring
+     * from a checkpoint.  This provides a hook for state
+     * initializations that are only required for a "cold start".
+     */
+    virtual void initState();
 
-  /**
-   * Reset statistics associated with this object.
-   */
-  virtual void resetStats();
+    /**
+     * Register statistics for this object.
+     */
+    virtual void regStats();
 
-  /**
-   * Register probe points for this object.
-   */
-  virtual void regProbePoints();
+    /**
+     * Reset statistics associated with this object.
+     */
+    virtual void resetStats();
 
-  /**
-   * Register probe listeners for this object.
-   */
-  virtual void regProbeListeners();
+    /**
+     * Register probe points for this object.
+     */
+    virtual void regProbePoints();
 
-  /**
-   * Get the probe manager for this object.
-   */
-  ProbeManager *getProbeManager();
+    /**
+     * Register probe listeners for this object.
+     */
+    virtual void regProbeListeners();
 
-  /**
-   * startup() is the final initialization call before simulation.
-   * All state is initialized (including unserialized state, if any,
-   * such as the curTick() value), so this is the appropriate place to
-   * schedule initial event(s) for objects that need them.
-   */
-  virtual void startup();
+    /**
+     * Get the probe manager for this object.
+     */
+    ProbeManager *getProbeManager();
 
-  /**
-   * Provide a default implementation of the drain interface for
-   * objects that don't need draining.
-   */
-  DrainState drain() override { return DrainState::Drained; }
+    /**
+     * Get a port with a given name and index. This is used at binding time
+     * and returns a reference to a protocol-agnostic port.
+     *
+     * @param if_name Port name
+     * @param idx Index in the case of a VectorPort
+     *
+     * @return A reference to the given port
+     */
+    virtual Port &getPort(const std::string &if_name,
+                          PortID idx=InvalidPortID);
 
-  /**
-   * Write back dirty buffers to memory using functional writes.
-   *
-   * After returning, an object implementing this method should have
-   * written all its dirty data back to memory. This method is
-   * typically used to prepare a system with caches for
-   * checkpointing.
-   */
-  virtual void memWriteback(){};
+    /**
+     * startup() is the final initialization call before simulation.
+     * All state is initialized (including unserialized state, if any,
+     * such as the curTick() value), so this is the appropriate place to
+     * schedule initial event(s) for objects that need them.
+     */
+    virtual void startup();
 
-  /**
-   * Invalidate the contents of memory buffers.
-   *
-   * When the switching to hardware virtualized CPU models, we need
-   * to make sure that we don't have any cached state in the system
-   * that might become stale when we return. This method is used to
-   * flush all such state back to main memory.
-   *
-   * @warn This does <i>not</i> cause any dirty state to be written
-   * back to memory.
-   */
-  virtual void memInvalidate(){};
+    /**
+     * Provide a default implementation of the drain interface for
+     * objects that don't need draining.
+     */
+    DrainState drain() override { return DrainState::Drained; }
 
-  void serialize(CheckpointOut &cp) const override{};
-  void unserialize(CheckpointIn &cp) override{};
+    /**
+     * Write back dirty buffers to memory using functional writes.
+     *
+     * After returning, an object implementing this method should have
+     * written all its dirty data back to memory. This method is
+     * typically used to prepare a system with caches for
+     * checkpointing.
+     */
+    virtual void memWriteback() {};
 
-  /**
-   * Serialize all SimObjects in the system.
-   */
-  static void serializeAll(CheckpointOut &cp);
+    /**
+     * Invalidate the contents of memory buffers.
+     *
+     * When the switching to hardware virtualized CPU models, we need
+     * to make sure that we don't have any cached state in the system
+     * that might become stale when we return. This method is used to
+     * flush all such state back to main memory.
+     *
+     * @warn This does <i>not</i> cause any dirty state to be written
+     * back to memory.
+     */
+    virtual void memInvalidate() {};
+
+    void serialize(CheckpointOut &cp) const override {};
+    void unserialize(CheckpointIn &cp) override {};
+
+    /**
+     * Serialize all SimObjects in the system.
+     */
+    static void serializeAll(CheckpointOut &cp);
 
 #ifdef DEBUG
 public:

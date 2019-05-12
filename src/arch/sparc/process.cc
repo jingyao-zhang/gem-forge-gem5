@@ -38,10 +38,11 @@
 #include "arch/sparc/types.hh"
 #include "base/loader/elf_object.hh"
 #include "base/loader/object_file.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Stack.hh"
 #include "mem/page_table.hh"
+#include "params/Process.hh"
 #include "sim/aux_vector.hh"
 #include "sim/process_impl.hh"
 #include "sim/syscall_return.hh"
@@ -53,10 +54,14 @@ using namespace SparcISA;
 static const int FirstArgumentReg = 8;
 
 
-SparcProcess::SparcProcess(ProcessParams * params, ObjectFile *objFile,
+SparcProcess::SparcProcess(ProcessParams *params, ObjectFile *objFile,
                            Addr _StackBias)
-    : Process(params, objFile), StackBias(_StackBias)
+    : Process(params,
+              new EmulationPageTable(params->name, params->pid, PageBytes),
+              objFile),
+      StackBias(_StackBias)
 {
+    fatal_if(params->useArchPT, "Arch page tables not implemented.");
     // Initialize these to 0s
     fillStart = 0;
     spillStart = 0;
@@ -178,7 +183,7 @@ Sparc64Process::initState()
     pstate.ie = 1;
     tc->setMiscReg(MISCREG_PSTATE, pstate);
 
-    argsInit(sizeof(IntReg), PageBytes);
+    argsInit(sizeof(RegVal), PageBytes);
 }
 
 template<class IntType>
@@ -187,9 +192,7 @@ SparcProcess::argsInit(int pageSize)
 {
     int intSize = sizeof(IntType);
 
-    typedef AuxVector<IntType> auxv_t;
-
-    std::vector<auxv_t> auxv;
+    std::vector<AuxVector<IntType>> auxv;
 
     string filename;
     if (argv.size() < 1)
@@ -233,34 +236,34 @@ SparcProcess::argsInit(int pageSize)
     ElfObject * elfObject = dynamic_cast<ElfObject *>(objFile);
     if (elfObject) {
         // Bits which describe the system hardware capabilities
-        auxv.push_back(auxv_t(M5_AT_HWCAP, hwcap));
+        auxv.emplace_back(M5_AT_HWCAP, hwcap);
         // The system page size
-        auxv.push_back(auxv_t(M5_AT_PAGESZ, SparcISA::PageBytes));
+        auxv.emplace_back(M5_AT_PAGESZ, SparcISA::PageBytes);
         // Defined to be 100 in the kernel source.
         // Frequency at which times() increments
-        auxv.push_back(auxv_t(M5_AT_CLKTCK, 100));
-        // For statically linked executables, this is the virtual address of the
-        // program header tables if they appear in the executable image
-        auxv.push_back(auxv_t(M5_AT_PHDR, elfObject->programHeaderTable()));
+        auxv.emplace_back(M5_AT_CLKTCK, 100);
+        // For statically linked executables, this is the virtual address of
+        // the program header tables if they appear in the executable image
+        auxv.emplace_back(M5_AT_PHDR, elfObject->programHeaderTable());
         // This is the size of a program header entry from the elf file.
-        auxv.push_back(auxv_t(M5_AT_PHENT, elfObject->programHeaderSize()));
+        auxv.emplace_back(M5_AT_PHENT, elfObject->programHeaderSize());
         // This is the number of program headers from the original elf file.
-        auxv.push_back(auxv_t(M5_AT_PHNUM, elfObject->programHeaderCount()));
+        auxv.emplace_back(M5_AT_PHNUM, elfObject->programHeaderCount());
         // This is the base address of the ELF interpreter; it should be
         // zero for static executables or contain the base address for
         // dynamic executables.
-        auxv.push_back(auxv_t(M5_AT_BASE, getBias()));
+        auxv.emplace_back(M5_AT_BASE, getBias());
         // This is hardwired to 0 in the elf loading code in the kernel
-        auxv.push_back(auxv_t(M5_AT_FLAGS, 0));
+        auxv.emplace_back(M5_AT_FLAGS, 0);
         // The entry point to the program
-        auxv.push_back(auxv_t(M5_AT_ENTRY, objFile->entryPoint()));
+        auxv.emplace_back(M5_AT_ENTRY, objFile->entryPoint());
         // Different user and group IDs
-        auxv.push_back(auxv_t(M5_AT_UID, uid()));
-        auxv.push_back(auxv_t(M5_AT_EUID, euid()));
-        auxv.push_back(auxv_t(M5_AT_GID, gid()));
-        auxv.push_back(auxv_t(M5_AT_EGID, egid()));
+        auxv.emplace_back(M5_AT_UID, uid());
+        auxv.emplace_back(M5_AT_EUID, euid());
+        auxv.emplace_back(M5_AT_GID, gid());
+        auxv.emplace_back(M5_AT_EGID, egid());
         // Whether to enable "secure mode" in the executable
-        auxv.push_back(auxv_t(M5_AT_SECURE, 0));
+        auxv.emplace_back(M5_AT_SECURE, 0);
     }
 
     // Figure out how big the initial stack needs to be
@@ -368,19 +371,16 @@ SparcProcess::argsInit(int pageSize)
     initVirtMem.writeString(file_name_base, filename.c_str());
 
     // Copy the aux stuff
-    for (int x = 0; x < auxv.size(); x++) {
-        initVirtMem.writeBlob(auxv_array_base + x * 2 * intSize,
-                (uint8_t*)&(auxv[x].a_type), intSize);
-        initVirtMem.writeBlob(auxv_array_base + (x * 2 + 1) * intSize,
-                (uint8_t*)&(auxv[x].a_val), intSize);
+    Addr auxv_array_end = auxv_array_base;
+    for (const auto &aux: auxv) {
+        initVirtMem.write(auxv_array_end, aux, GuestByteOrder);
+        auxv_array_end += sizeof(aux);
     }
 
     // Write out the terminating zeroed auxilliary vector
-    const IntType zero = 0;
-    initVirtMem.writeBlob(auxv_array_base + intSize * 2 * auxv.size(),
-            (uint8_t*)&zero, intSize);
-    initVirtMem.writeBlob(auxv_array_base + intSize * (2 * auxv.size() + 1),
-            (uint8_t*)&zero, intSize);
+    const AuxVector<IntType> zero(0, 0);
+    initVirtMem.write(auxv_array_end, zero);
+    auxv_array_end += sizeof(zero);
 
     copyStringArray(envp, envp_array_base, env_data_base, initVirtMem);
     copyStringArray(argv, argv_array_base, arg_data_base, initVirtMem);
@@ -436,11 +436,11 @@ Sparc32Process::argsInit(int intSize, int pageSize)
 
 void Sparc32Process::flushWindows(ThreadContext *tc)
 {
-    IntReg Cansave = tc->readIntReg(NumIntArchRegs + 3);
-    IntReg Canrestore = tc->readIntReg(NumIntArchRegs + 4);
-    IntReg Otherwin = tc->readIntReg(NumIntArchRegs + 6);
-    MiscReg CWP = tc->readMiscReg(MISCREG_CWP);
-    MiscReg origCWP = CWP;
+    RegVal Cansave = tc->readIntReg(NumIntArchRegs + 3);
+    RegVal Canrestore = tc->readIntReg(NumIntArchRegs + 4);
+    RegVal Otherwin = tc->readIntReg(NumIntArchRegs + 6);
+    RegVal CWP = tc->readMiscReg(MISCREG_CWP);
+    RegVal origCWP = CWP;
     CWP = (CWP + Cansave + 2) % NWindows;
     while (NWindows - 2 - Cansave != 0) {
         if (Otherwin) {
@@ -448,7 +448,7 @@ void Sparc32Process::flushWindows(ThreadContext *tc)
         } else {
             tc->setMiscReg(MISCREG_CWP, CWP);
             // Do the stores
-            IntReg sp = tc->readIntReg(StackPointerReg);
+            RegVal sp = tc->readIntReg(StackPointerReg);
             for (int index = 16; index < 32; index++) {
                 uint32_t regVal = tc->readIntReg(index);
                 regVal = htog(regVal);
@@ -471,11 +471,11 @@ void Sparc32Process::flushWindows(ThreadContext *tc)
 void
 Sparc64Process::flushWindows(ThreadContext *tc)
 {
-    IntReg Cansave = tc->readIntReg(NumIntArchRegs + 3);
-    IntReg Canrestore = tc->readIntReg(NumIntArchRegs + 4);
-    IntReg Otherwin = tc->readIntReg(NumIntArchRegs + 6);
-    MiscReg CWP = tc->readMiscReg(MISCREG_CWP);
-    MiscReg origCWP = CWP;
+    RegVal Cansave = tc->readIntReg(NumIntArchRegs + 3);
+    RegVal Canrestore = tc->readIntReg(NumIntArchRegs + 4);
+    RegVal Otherwin = tc->readIntReg(NumIntArchRegs + 6);
+    RegVal CWP = tc->readMiscReg(MISCREG_CWP);
+    RegVal origCWP = CWP;
     CWP = (CWP + Cansave + 2) % NWindows;
     while (NWindows - 2 - Cansave != 0) {
         if (Otherwin) {
@@ -483,9 +483,9 @@ Sparc64Process::flushWindows(ThreadContext *tc)
         } else {
             tc->setMiscReg(MISCREG_CWP, CWP);
             // Do the stores
-            IntReg sp = tc->readIntReg(StackPointerReg);
+            RegVal sp = tc->readIntReg(StackPointerReg);
             for (int index = 16; index < 32; index++) {
-                IntReg regVal = tc->readIntReg(index);
+                RegVal regVal = tc->readIntReg(index);
                 regVal = htog(regVal);
                 if (!tc->getMemProxy().tryWriteBlob(
                         sp + 2047 + (index - 16) * 8, (uint8_t *)&regVal, 8)) {
@@ -503,7 +503,7 @@ Sparc64Process::flushWindows(ThreadContext *tc)
     tc->setMiscReg(MISCREG_CWP, origCWP);
 }
 
-IntReg
+RegVal
 Sparc32Process::getSyscallArg(ThreadContext *tc, int &i)
 {
     assert(i < 6);
@@ -511,13 +511,13 @@ Sparc32Process::getSyscallArg(ThreadContext *tc, int &i)
 }
 
 void
-Sparc32Process::setSyscallArg(ThreadContext *tc, int i, IntReg val)
+Sparc32Process::setSyscallArg(ThreadContext *tc, int i, RegVal val)
 {
     assert(i < 6);
     tc->setIntReg(FirstArgumentReg + i, bits(val, 31, 0));
 }
 
-IntReg
+RegVal
 Sparc64Process::getSyscallArg(ThreadContext *tc, int &i)
 {
     assert(i < 6);
@@ -525,7 +525,7 @@ Sparc64Process::getSyscallArg(ThreadContext *tc, int &i)
 }
 
 void
-Sparc64Process::setSyscallArg(ThreadContext *tc, int i, IntReg val)
+Sparc64Process::setSyscallArg(ThreadContext *tc, int i, RegVal val)
 {
     assert(i < 6);
     tc->setIntReg(FirstArgumentReg + i, val);
@@ -542,7 +542,7 @@ SparcProcess::setSyscallReturn(ThreadContext *tc, SyscallReturn sysret)
         // no error, clear XCC.C
         tc->setIntReg(NumIntArchRegs + 2,
                       tc->readIntReg(NumIntArchRegs + 2) & 0xEE);
-        IntReg val = sysret.returnValue();
+        RegVal val = sysret.returnValue();
         if (pstate.am)
             val = bits(val, 31, 0);
         tc->setIntReg(ReturnValueReg, val);
@@ -550,7 +550,7 @@ SparcProcess::setSyscallReturn(ThreadContext *tc, SyscallReturn sysret)
         // got an error, set XCC.C
         tc->setIntReg(NumIntArchRegs + 2,
                       tc->readIntReg(NumIntArchRegs + 2) | 0x11);
-        IntReg val = sysret.errnoValue();
+        RegVal val = sysret.errnoValue();
         if (pstate.am)
             val = bits(val, 31, 0);
         tc->setIntReg(ReturnValueReg, val);

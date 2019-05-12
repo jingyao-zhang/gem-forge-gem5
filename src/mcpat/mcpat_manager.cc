@@ -1,6 +1,7 @@
 #include "mcpat_manager.hh"
 
 // Headers for other SimObject's params.
+#include "params/Cache.hh"
 #include "params/DRAMCtrl.hh"
 
 #include "debug/McPATManager.hh"
@@ -246,7 +247,7 @@ void McPATManager::configureL2Cache(const BaseCache *cache) {
    *
    * How to compute this?
    */
-  auto accessLatency = McPATManager::getCacheTagAccessLatency(tagsParams);
+  auto accessLatency = McPATManager::getCacheTagAccessLatency(params);
   L2.L2_config[4] = accessLatency; // throughput w.r.t. core clock.
   /**
    * Latency w.r.t. core clock.
@@ -327,7 +328,7 @@ void McPATManager::configureL3Cache(const BaseCache *cache) {
   L3.L3_config[2] = params->assoc;          // associativity.
   L3.L3_config[3] = 1;                      // bank.
 
-  auto accessLatency = McPATManager::getCacheTagAccessLatency(tagsParams);
+  auto accessLatency = McPATManager::getCacheTagAccessLatency(params);
   L3.L3_config[4] = accessLatency; // throughput w.r.t. core clock.
   /**
    * Latency w.r.t. core clock.
@@ -439,7 +440,7 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
     this->configureBranchPredictor(branchPredictor, mcpatPredictor);
   }
 
-  if (auto instTLB = params->itb) {
+  if (auto instTLB = dynamic_cast<TheISA::TLB *>(params->itb)) {
     /**
      * Instruction TLB.
      */
@@ -447,7 +448,7 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
     mcpatITLB.number_entries = McPATManager::getTLBSize(instTLB);
   }
 
-  if (auto dataTLB = params->dtb) {
+  if (auto dataTLB = dynamic_cast<TheISA::TLB *>(params->dtb)) {
     /**
      * Data TLB.
      */
@@ -464,7 +465,7 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
     auto instL1TagParams =
         McPATManager::getParams<BaseTagsParams>(instL1Params->tags);
     auto accessLatency =
-        McPATManager::getCacheTagAccessLatency(instL1TagParams);
+        McPATManager::getCacheTagAccessLatency(instL1Params);
     auto &mcpatInstL1 = core.icache;
 
     mcpatInstL1.icache_config[0] = instL1Params->size;          // capacity
@@ -508,7 +509,7 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
     auto dataL1TagParams =
         McPATManager::getParams<BaseTagsParams>(dataL1Params->tags);
     auto accessLatency =
-        McPATManager::getCacheTagAccessLatency(dataL1TagParams);
+        McPATManager::getCacheTagAccessLatency(dataL1Params);
     auto &mcpatDataL1 = core.dcache;
 
     mcpatDataL1.dcache_config[0] = dataL1Params->size;          // capacity
@@ -638,11 +639,11 @@ int McPATManager::getTLBSize(const TheISA::TLB *tlb) {
   }
 }
 
-int McPATManager::getCacheTagAccessLatency(const BaseTagsParams *tagsParams) {
+int McPATManager::getCacheTagAccessLatency(const BaseCacheParams *cacheParams) {
   auto accessLatency =
-      tagsParams->sequential_access
-          ? (tagsParams->data_latency + tagsParams->tag_latency)
-          : std::max(tagsParams->data_latency, tagsParams->tag_latency);
+      cacheParams->sequential_access
+          ? (cacheParams->data_latency + cacheParams->tag_latency)
+          : std::max(cacheParams->data_latency, cacheParams->tag_latency);
   return accessLatency;
 }
 

@@ -35,6 +35,7 @@ from m5.objects import *
 from m5.defines import buildEnv
 from Ruby import create_topology, create_directories
 from Ruby import send_evicts
+from common import FileSystemConfig
 
 #
 # Declare caches used by the protocol
@@ -49,7 +50,8 @@ def define_options(parser):
             caches private to clusters")
     return
 
-def create_system(options, full_system, system, dma_ports, ruby_system):
+def create_system(options, full_system, system, dma_ports, bootmem,
+                  ruby_system):
 
     if buildEnv['PROTOCOL'] != 'MESI_Three_Level':
         fatal("This script requires the MESI_Three_Level protocol to be\
@@ -82,8 +84,8 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
     # Must create the individual controllers before the network to ensure the
     # controller constructors are called before the network constructor
     #
-    for i in xrange(options.num_clusters):
-        for j in xrange(num_cpus_per_cluster):
+    for i in range(options.num_clusters):
+        for j in range(num_cpus_per_cluster):
             #
             # First create the Ruby objects associated with this cpu
             #
@@ -163,7 +165,7 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
             l1_cntrl.responseFromL2.slave = ruby_system.network.master
 
 
-        for j in xrange(num_l2caches_per_cluster):
+        for j in range(num_l2caches_per_cluster):
             l2_cache = L2Cache(size = options.l2_size,
                                assoc = options.l2_assoc,
                                start_index_bit = l2_index_start)
@@ -199,8 +201,11 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
     ruby_system.memctrl_clk_domain = DerivedClockDomain(
             clk_domain = ruby_system.clk_domain, clk_divider = 3)
 
-    dir_cntrl_nodes = create_directories(options, system.mem_ranges,
-                                         ruby_system)
+    mem_dir_cntrl_nodes, rom_dir_cntrl_node = create_directories(
+        options, bootmem, ruby_system, system)
+    dir_cntrl_nodes = mem_dir_cntrl_nodes[:]
+    if rom_dir_cntrl_node is not None:
+        dir_cntrl_nodes.append(rom_dir_cntrl_node)
     for dir_cntrl in dir_cntrl_nodes:
         # Connect the directory controllers and the network
         dir_cntrl.requestToDir = MessageBuffer()
@@ -256,7 +261,46 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
         io_controller.requestToDir.master = ruby_system.network.slave
 
         all_cntrls = all_cntrls + [io_controller]
+    # Register configuration with filesystem
+    else:
+        FileSystemConfig.config_filesystem(options)
+
+        for i in xrange(options.num_clusters):
+            for j in xrange(num_cpus_per_cluster):
+                FileSystemConfig.register_cpu(physical_package_id = 0,
+                                              core_siblings = xrange(options.num_cpus),
+                                              core_id = i*num_cpus_per_cluster+j,
+                                              thread_siblings = [])
+
+                FileSystemConfig.register_cache(level = 0,
+                                                idu_type = 'Instruction',
+                                                size = '4096B',
+                                                line_size = options.cacheline_size,
+                                                assoc = 1,
+                                                cpus = [i*num_cpus_per_cluster+j])
+                FileSystemConfig.register_cache(level = 0,
+                                                idu_type = 'Data',
+                                                size = '4096B',
+                                                line_size = options.cacheline_size,
+                                                assoc = 1,
+                                                cpus = [i*num_cpus_per_cluster+j])
+
+                FileSystemConfig.register_cache(level = 1,
+                                                idu_type = 'Unified',
+                                                size = options.l1d_size,
+                                                line_size = options.cacheline_size,
+                                                assoc = options.l1d_assoc,
+                                                cpus = [i*num_cpus_per_cluster+j])
+
+            FileSystemConfig.register_cache(level = 2,
+                                            idu_type = 'Unified',
+                                            size = str(MemorySize(options.l2_size) * \
+                                                   num_l2caches_per_cluster)+'B',
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l2_assoc,
+                                            cpus = [n for n in xrange(i*num_cpus_per_cluster, \
+                                                                     (i+1)*num_cpus_per_cluster)])
 
     ruby_system.network.number_of_virtual_networks = 3
     topology = create_topology(all_cntrls, options)
-    return (cpu_sequencers, dir_cntrl_nodes, topology)
+    return (cpu_sequencers, mem_dir_cntrl_nodes, topology)

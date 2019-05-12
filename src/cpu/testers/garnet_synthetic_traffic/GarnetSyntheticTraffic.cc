@@ -36,11 +36,10 @@
 #include <string>
 #include <vector>
 
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/random.hh"
 #include "base/statistics.hh"
 #include "debug/GarnetSyntheticTraffic.hh"
-#include "mem/mem_object.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "mem/request.hh"
@@ -75,7 +74,7 @@ GarnetSyntheticTraffic::sendPkt(PacketPtr pkt)
 }
 
 GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params *p)
-    : MemObject(p),
+    : ClockedObject(p),
       tickEvent([this]{ tick(); }, "GarnetSyntheticTraffic tick",
                 false, Event::CPU_Tick_Pri),
       cachePort("GarnetSyntheticTraffic", this),
@@ -93,7 +92,7 @@ GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params *p)
       injVnet(p->inj_vnet),
       precision(p->precision),
       responseLimit(p->response_limit),
-      masterId(p->system->getMasterId(name()))
+      masterId(p->system->getMasterId(this))
 {
     // set up counters
     noResponseCycles = 0;
@@ -110,13 +109,13 @@ GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params *p)
             name(), id);
 }
 
-BaseMasterPort &
-GarnetSyntheticTraffic::getMasterPort(const std::string &if_name, PortID idx)
+Port &
+GarnetSyntheticTraffic::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name == "test")
         return cachePort;
     else
-        return MemObject::getMasterPort(if_name, idx);
+        return ClockedObject::getPort(if_name, idx);
 }
 
 void
@@ -129,16 +128,13 @@ GarnetSyntheticTraffic::init()
 void
 GarnetSyntheticTraffic::completeRequest(PacketPtr pkt)
 {
-    Request *req = pkt->req;
-
     DPRINTF(GarnetSyntheticTraffic,
             "Completed injection of %s packet for address %x\n",
             pkt->isWrite() ? "write" : "read\n",
-            req->getPaddr());
+            pkt->req->getPaddr());
 
     assert(pkt->isResponse());
     noResponseCycles = 0;
-    delete req;
     delete pkt;
 }
 
@@ -279,7 +275,7 @@ GarnetSyntheticTraffic::generatePkt()
     //
     MemCmd::Command requestType;
 
-    Request *req = nullptr;
+    RequestPtr req = nullptr;
     Request::Flags flags;
 
     // Inject in specific Vnet
@@ -296,17 +292,18 @@ GarnetSyntheticTraffic::generatePkt()
     if (injReqType == 0) {
         // generate packet for virtual network 0
         requestType = MemCmd::ReadReq;
-        req = new Request(paddr, access_size, flags, masterId);
+        req = std::make_shared<Request>(paddr, access_size, flags, masterId);
     } else if (injReqType == 1) {
         // generate packet for virtual network 1
         requestType = MemCmd::ReadReq;
         flags.set(Request::INST_FETCH);
-        req = new Request(0, 0x0, access_size, flags, masterId, 0x0, 0);
+        req = std::make_shared<Request>(
+            0, 0x0, access_size, flags, masterId, 0x0, 0);
         req->setPaddr(paddr);
     } else {  // if (injReqType == 2)
         // generate packet for virtual network 2
         requestType = MemCmd::WriteReq;
-        req = new Request(paddr, access_size, flags, masterId);
+        req = std::make_shared<Request>(paddr, access_size, flags, masterId);
     }
 
     req->setContext(id);

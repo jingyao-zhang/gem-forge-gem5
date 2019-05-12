@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, 2014, 2016, 2017 ARM Limited
+ * Copyright (c) 2011-2012, 2014, 2016, 2017, 2019 ARM Limited
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
  * All rights reserved
  *
@@ -143,6 +143,8 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
       dtb(params->dtb),
       tickEvent([this]{ tick(); }, "FullO3CPU tick",
                 false, Event::CPU_Tick_Pri),
+      threadExitEvent([this]{ exitThreads(); }, "FullO3CPU exit threads",
+                false, Event::CPU_Exit_Pri),
 #ifndef NDEBUG
       instcount(0),
 #endif
@@ -155,10 +157,11 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
 
       /* It is mandatory that all SMT threads use the same renaming mode as
        * they are sharing registers and rename */
-      vecMode(initRenameMode<TheISA::ISA>::mode(params->isa[0])),
+      vecMode(RenameMode<TheISA::ISA>::init(params->isa[0])),
       regFile(params->numPhysIntRegs,
               params->numPhysFloatRegs,
               params->numPhysVecRegs,
+              params->numPhysVecPredRegs,
               params->numPhysCCRegs,
               vecMode),
 
@@ -258,6 +261,7 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
     assert(params->numPhysIntRegs   >= numThreads * TheISA::NumIntRegs);
     assert(params->numPhysFloatRegs >= numThreads * TheISA::NumFloatRegs);
     assert(params->numPhysVecRegs >= numThreads * TheISA::NumVecRegs);
+    assert(params->numPhysVecPredRegs >= numThreads * TheISA::NumVecPredRegs);
     assert(params->numPhysCCRegs >= numThreads * TheISA::NumCCRegs);
 
     rename.setScoreboard(&scoreboard);
@@ -266,7 +270,7 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
     // Setup the rename map for whichever stages need it.
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         isa[tid] = params->isa[tid];
-        assert(initRenameMode<TheISA::ISA>::equals(isa[tid], isa[0]));
+        assert(RenameMode<TheISA::ISA>::equalsInit(isa[tid], isa[0]));
 
         // Only Alpha has an FP zero register, so for other ISAs we
         // use an invalid FP register index to avoid special treatment
@@ -323,6 +327,13 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
                     commitRenameMap[tid].setEntry(lrid, phys_elem);
                 }
             }
+        }
+
+        for (RegIndex ridx = 0; ridx < TheISA::NumVecPredRegs; ++ridx) {
+            PhysRegIdPtr phys_reg = freeList.getVecPredReg();
+            renameMap[tid].setEntry(RegId(VecPredRegClass, ridx), phys_reg);
+            commitRenameMap[tid].setEntry(
+                    RegId(VecPredRegClass, ridx), phys_reg);
         }
 
         for (RegIndex ridx = 0; ridx < TheISA::NumCCRegs; ++ridx) {
@@ -538,6 +549,16 @@ FullO3CPU<Impl>::regStats()
         .desc("number of vector regfile writes")
         .prereq(vecRegfileWrites);
 
+    vecPredRegfileReads
+        .name(name() + ".pred_regfile_reads")
+        .desc("number of predicate regfile reads")
+        .prereq(vecPredRegfileReads);
+
+    vecPredRegfileWrites
+        .name(name() + ".pred_regfile_writes")
+        .desc("number of predicate regfile writes")
+        .prereq(vecPredRegfileWrites);
+
     ccRegfileReads
         .name(name() + ".cc_regfile_reads")
         .desc("number of cc regfile reads")
@@ -568,7 +589,7 @@ FullO3CPU<Impl>::tick()
     assert(drainState() != DrainState::Drained);
 
     ++numCycles;
-    ppCycles->notify(1);
+    updateCycleCounters(BaseCPU::CPU_STATE_ON);
 
 //    activity = false;
 
@@ -668,11 +689,11 @@ FullO3CPU<Impl>::activateThread(ThreadID tid)
     list<ThreadID>::iterator isActive =
         std::find(activeThreads.begin(), activeThreads.end(), tid);
 
-    DPRINTF(O3CPU, "[tid:%i]: Calling activate thread.\n", tid);
+    DPRINTF(O3CPU, "[tid:%i] Calling activate thread.\n", tid);
     assert(!switchedOut());
 
     if (isActive == activeThreads.end()) {
-        DPRINTF(O3CPU, "[tid:%i]: Adding to active threads list\n",
+        DPRINTF(O3CPU, "[tid:%i] Adding to active threads list\n",
                 tid);
 
         activeThreads.push_back(tid);
@@ -687,11 +708,11 @@ FullO3CPU<Impl>::deactivateThread(ThreadID tid)
     list<ThreadID>::iterator thread_it =
         std::find(activeThreads.begin(), activeThreads.end(), tid);
 
-    DPRINTF(O3CPU, "[tid:%i]: Calling deactivate thread.\n", tid);
+    DPRINTF(O3CPU, "[tid:%i] Calling deactivate thread.\n", tid);
     assert(!switchedOut());
 
     if (thread_it != activeThreads.end()) {
-        DPRINTF(O3CPU,"[tid:%i]: Removing from active threads list\n",
+        DPRINTF(O3CPU,"[tid:%i] Removing from active threads list\n",
                 tid);
         activeThreads.erase(thread_it);
     }
@@ -769,7 +790,7 @@ template <class Impl>
 void
 FullO3CPU<Impl>::suspendContext(ThreadID tid)
 {
-    DPRINTF(O3CPU,"[tid: %i]: Suspending Thread Context.\n", tid);
+    DPRINTF(O3CPU,"[tid:%i] Suspending Thread Context.\n", tid);
     assert(!switchedOut());
 
     deactivateThread(tid);
@@ -791,11 +812,13 @@ void
 FullO3CPU<Impl>::haltContext(ThreadID tid)
 {
     //For now, this is the same as deallocate
-    DPRINTF(O3CPU,"[tid:%i]: Halt Context called. Deallocating", tid);
+    DPRINTF(O3CPU,"[tid:%i] Halt Context called. Deallocating\n", tid);
     assert(!switchedOut());
 
     deactivateThread(tid);
     removeThread(tid);
+
+    updateCycleCounters(BaseCPU::CPU_STATE_SLEEP);
 }
 
 template <class Impl>
@@ -848,7 +871,6 @@ FullO3CPU<Impl>::insertThread(ThreadID tid)
 
     //Reset ROB/IQ/LSQ Entries
     commit.rob->resetEntries();
-    iew.resetEntries();
 }
 
 template <class Impl>
@@ -866,41 +888,17 @@ FullO3CPU<Impl>::removeThread(ThreadID tid)
     // here to alleviate the case for double-freeing registers
     // in SMT workloads.
 
-    // Unbind Int Regs from Rename Map
-    for (RegId reg_id(IntRegClass, 0); reg_id.index() < TheISA::NumIntRegs;
-         reg_id.index()++) {
-        PhysRegIdPtr phys_reg = renameMap[tid].lookup(reg_id);
-        scoreboard.unsetReg(phys_reg);
-        freeList.addReg(phys_reg);
-    }
+    // clear all thread-specific states in each stage of the pipeline
+    // since this thread is going to be completely removed from the CPU
+    commit.clearStates(tid);
+    fetch.clearStates(tid);
+    decode.clearStates(tid);
+    rename.clearStates(tid);
+    iew.clearStates(tid);
 
-    // Unbind Float Regs from Rename Map
-    for (RegId reg_id(FloatRegClass, 0); reg_id.index() < TheISA::NumFloatRegs;
-         reg_id.index()++) {
-        PhysRegIdPtr phys_reg = renameMap[tid].lookup(reg_id);
-        scoreboard.unsetReg(phys_reg);
-        freeList.addReg(phys_reg);
-    }
-
-    // Unbind condition-code Regs from Rename Map
-    for (RegId reg_id(CCRegClass, 0); reg_id.index() < TheISA::NumCCRegs;
-         reg_id.index()++) {
-        PhysRegIdPtr phys_reg = renameMap[tid].lookup(reg_id);
-        scoreboard.unsetReg(phys_reg);
-        freeList.addReg(phys_reg);
-    }
-
-    // Squash Throughout Pipeline
-    DynInstPtr inst = commit.rob->readHeadInst(tid);
-    InstSeqNum squash_seq_num = inst->seqNum;
-    fetch.squash(0, squash_seq_num, inst, tid);
-    decode.squash(tid);
-    rename.squash(squash_seq_num, tid);
-    iew.squash(tid);
-    iew.ldstQueue.squash(squash_seq_num, tid);
-    commit.rob->squash(squash_seq_num, tid);
-
-
+    // at this step, all instructions in the pipeline should be already
+    // either committed successfully or squashed. All thread-specific
+    // queues in the pipeline must be empty.
     assert(iew.instQueue.getCount(tid) == 0);
 
     /**
@@ -916,6 +914,7 @@ FullO3CPU<Impl>::removeThread(ThreadID tid)
      * probably add some ThreadContext::exit() function in the future.
      */
     // assert(iew.ldstQueue.getCount(tid) == 0);
+    assert(commit.rob->isEmpty(tid));
 
     // Reset ROB/IQ/LSQ Entries
 
@@ -932,44 +931,22 @@ FullO3CPU<Impl>::removeThread(ThreadID tid)
 }
 
 template <class Impl>
-Fault
-FullO3CPU<Impl>::hwrei(ThreadID tid)
+void
+FullO3CPU<Impl>::switchRenameMode(ThreadID tid, UnifiedFreeList* freelist)
 {
-#if THE_ISA == ALPHA_ISA
-    // Need to clear the lock flag upon returning from an interrupt.
-    this->setMiscRegNoEffect(AlphaISA::MISCREG_LOCKFLAG, false, tid);
+    auto pc = this->pcState(tid);
 
-    this->thread[tid]->kernelStats->hwrei();
+    // new_mode is the new vector renaming mode
+    auto new_mode = RenameMode<TheISA::ISA>::mode(pc);
 
-    // FIXME: XXX check for interrupts? XXX
-#endif
-    return NoFault;
-}
+    // We update vecMode only if there has been a change
+    if (new_mode != vecMode) {
+        vecMode = new_mode;
 
-template <class Impl>
-bool
-FullO3CPU<Impl>::simPalCheck(int palFunc, ThreadID tid)
-{
-#if THE_ISA == ALPHA_ISA
-    if (this->thread[tid]->kernelStats)
-        this->thread[tid]->kernelStats->callpal(palFunc,
-                                                this->threadContexts[tid]);
-
-    switch (palFunc) {
-      case PAL::halt:
-        halt();
-        if (--System::numSystemsRunning == 0)
-            exitSimLoop("all cpus halted");
-        break;
-
-      case PAL::bpt:
-      case PAL::bugchk:
-        if (this->system->breakpoint())
-            return false;
-        break;
+        renameMap[tid].switchMode(vecMode);
+        commitRenameMap[tid].switchMode(vecMode);
+        renameMap[tid].switchFreeList(freelist);
     }
-#endif
-    return true;
 }
 
 template <class Impl>
@@ -1044,6 +1021,9 @@ template <class Impl>
 DrainState
 FullO3CPU<Impl>::drain()
 {
+    // Deschedule any power gating event (if any)
+    deschedulePowerGatingEvent();
+
     // If the CPU isn't doing anything, then return immediately.
     if (switchedOut())
         return DrainState::Drained;
@@ -1199,6 +1179,9 @@ FullO3CPU<Impl>::drainResume()
     assert(!tickEvent.scheduled());
     if (_status == Running)
         schedule(tickEvent, nextCycle());
+
+    // Reschedule any power gating event (if any)
+    schedulePowerGatingEvent();
 }
 
 template <class Impl>
@@ -1249,14 +1232,14 @@ FullO3CPU<Impl>::verifyMemoryMode() const
 }
 
 template <class Impl>
-TheISA::MiscReg
+RegVal
 FullO3CPU<Impl>::readMiscRegNoEffect(int misc_reg, ThreadID tid) const
 {
     return this->isa[tid]->readMiscRegNoEffect(misc_reg);
 }
 
 template <class Impl>
-TheISA::MiscReg
+RegVal
 FullO3CPU<Impl>::readMiscReg(int misc_reg, ThreadID tid)
 {
     miscRegfileReads++;
@@ -1265,23 +1248,21 @@ FullO3CPU<Impl>::readMiscReg(int misc_reg, ThreadID tid)
 
 template <class Impl>
 void
-FullO3CPU<Impl>::setMiscRegNoEffect(int misc_reg,
-        const TheISA::MiscReg &val, ThreadID tid)
+FullO3CPU<Impl>::setMiscRegNoEffect(int misc_reg, RegVal val, ThreadID tid)
 {
     this->isa[tid]->setMiscRegNoEffect(misc_reg, val);
 }
 
 template <class Impl>
 void
-FullO3CPU<Impl>::setMiscReg(int misc_reg,
-        const TheISA::MiscReg &val, ThreadID tid)
+FullO3CPU<Impl>::setMiscReg(int misc_reg, RegVal val, ThreadID tid)
 {
     miscRegfileWrites++;
     this->isa[tid]->setMiscReg(misc_reg, val, tcBase(tid));
 }
 
 template <class Impl>
-uint64_t
+RegVal
 FullO3CPU<Impl>::readIntReg(PhysRegIdPtr phys_reg)
 {
     intRegfileReads++;
@@ -1289,19 +1270,11 @@ FullO3CPU<Impl>::readIntReg(PhysRegIdPtr phys_reg)
 }
 
 template <class Impl>
-FloatReg
+RegVal
 FullO3CPU<Impl>::readFloatReg(PhysRegIdPtr phys_reg)
 {
     fpRegfileReads++;
     return regFile.readFloatReg(phys_reg);
-}
-
-template <class Impl>
-FloatRegBits
-FullO3CPU<Impl>::readFloatRegBits(PhysRegIdPtr phys_reg)
-{
-    fpRegfileReads++;
-    return regFile.readFloatRegBits(phys_reg);
 }
 
 template <class Impl>
@@ -1331,7 +1304,25 @@ FullO3CPU<Impl>::readVecElem(PhysRegIdPtr phys_reg) const -> const VecElem&
 }
 
 template <class Impl>
-CCReg
+auto
+FullO3CPU<Impl>::readVecPredReg(PhysRegIdPtr phys_reg) const
+        -> const VecPredRegContainer&
+{
+    vecPredRegfileReads++;
+    return regFile.readVecPredReg(phys_reg);
+}
+
+template <class Impl>
+auto
+FullO3CPU<Impl>::getWritableVecPredReg(PhysRegIdPtr phys_reg)
+        -> VecPredRegContainer&
+{
+    vecPredRegfileWrites++;
+    return regFile.getWritableVecPredReg(phys_reg);
+}
+
+template <class Impl>
+RegVal
 FullO3CPU<Impl>::readCCReg(PhysRegIdPtr phys_reg)
 {
     ccRegfileReads++;
@@ -1340,7 +1331,7 @@ FullO3CPU<Impl>::readCCReg(PhysRegIdPtr phys_reg)
 
 template <class Impl>
 void
-FullO3CPU<Impl>::setIntReg(PhysRegIdPtr phys_reg, uint64_t val)
+FullO3CPU<Impl>::setIntReg(PhysRegIdPtr phys_reg, RegVal val)
 {
     intRegfileWrites++;
     regFile.setIntReg(phys_reg, val);
@@ -1348,18 +1339,10 @@ FullO3CPU<Impl>::setIntReg(PhysRegIdPtr phys_reg, uint64_t val)
 
 template <class Impl>
 void
-FullO3CPU<Impl>::setFloatReg(PhysRegIdPtr phys_reg, FloatReg val)
+FullO3CPU<Impl>::setFloatReg(PhysRegIdPtr phys_reg, RegVal val)
 {
     fpRegfileWrites++;
     regFile.setFloatReg(phys_reg, val);
-}
-
-template <class Impl>
-void
-FullO3CPU<Impl>::setFloatRegBits(PhysRegIdPtr phys_reg, FloatRegBits val)
-{
-    fpRegfileWrites++;
-    regFile.setFloatRegBits(phys_reg, val);
 }
 
 template <class Impl>
@@ -1380,14 +1363,23 @@ FullO3CPU<Impl>::setVecElem(PhysRegIdPtr phys_reg, const VecElem& val)
 
 template <class Impl>
 void
-FullO3CPU<Impl>::setCCReg(PhysRegIdPtr phys_reg, CCReg val)
+FullO3CPU<Impl>::setVecPredReg(PhysRegIdPtr phys_reg,
+                               const VecPredRegContainer& val)
+{
+    vecPredRegfileWrites++;
+    regFile.setVecPredReg(phys_reg, val);
+}
+
+template <class Impl>
+void
+FullO3CPU<Impl>::setCCReg(PhysRegIdPtr phys_reg, RegVal val)
 {
     ccRegfileWrites++;
     regFile.setCCReg(phys_reg, val);
 }
 
 template <class Impl>
-uint64_t
+RegVal
 FullO3CPU<Impl>::readArchIntReg(int reg_idx, ThreadID tid)
 {
     intRegfileReads++;
@@ -1398,7 +1390,7 @@ FullO3CPU<Impl>::readArchIntReg(int reg_idx, ThreadID tid)
 }
 
 template <class Impl>
-float
+RegVal
 FullO3CPU<Impl>::readArchFloatReg(int reg_idx, ThreadID tid)
 {
     fpRegfileReads++;
@@ -1406,17 +1398,6 @@ FullO3CPU<Impl>::readArchFloatReg(int reg_idx, ThreadID tid)
         RegId(FloatRegClass, reg_idx));
 
     return regFile.readFloatReg(phys_reg);
-}
-
-template <class Impl>
-uint64_t
-FullO3CPU<Impl>::readArchFloatRegInt(int reg_idx, ThreadID tid)
-{
-    fpRegfileReads++;
-    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
-        RegId(FloatRegClass, reg_idx));
-
-    return regFile.readFloatRegBits(phys_reg);
 }
 
 template <class Impl>
@@ -1445,12 +1426,32 @@ FullO3CPU<Impl>::readArchVecElem(const RegIndex& reg_idx, const ElemIndex& ldx,
                                  ThreadID tid) const -> const VecElem&
 {
     PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
-                                RegId(VecRegClass, reg_idx, ldx));
+                                RegId(VecElemClass, reg_idx, ldx));
     return readVecElem(phys_reg);
 }
 
 template <class Impl>
-CCReg
+auto
+FullO3CPU<Impl>::readArchVecPredReg(int reg_idx, ThreadID tid) const
+        -> const VecPredRegContainer&
+{
+    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
+                RegId(VecPredRegClass, reg_idx));
+    return readVecPredReg(phys_reg);
+}
+
+template <class Impl>
+auto
+FullO3CPU<Impl>::getWritableArchVecPredReg(int reg_idx, ThreadID tid)
+        -> VecPredRegContainer&
+{
+    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
+                RegId(VecPredRegClass, reg_idx));
+    return getWritableVecPredReg(phys_reg);
+}
+
+template <class Impl>
+RegVal
 FullO3CPU<Impl>::readArchCCReg(int reg_idx, ThreadID tid)
 {
     ccRegfileReads++;
@@ -1462,7 +1463,7 @@ FullO3CPU<Impl>::readArchCCReg(int reg_idx, ThreadID tid)
 
 template <class Impl>
 void
-FullO3CPU<Impl>::setArchIntReg(int reg_idx, uint64_t val, ThreadID tid)
+FullO3CPU<Impl>::setArchIntReg(int reg_idx, RegVal val, ThreadID tid)
 {
     intRegfileWrites++;
     PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
@@ -1473,24 +1474,13 @@ FullO3CPU<Impl>::setArchIntReg(int reg_idx, uint64_t val, ThreadID tid)
 
 template <class Impl>
 void
-FullO3CPU<Impl>::setArchFloatReg(int reg_idx, float val, ThreadID tid)
+FullO3CPU<Impl>::setArchFloatReg(int reg_idx, RegVal val, ThreadID tid)
 {
     fpRegfileWrites++;
     PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
             RegId(FloatRegClass, reg_idx));
 
     regFile.setFloatReg(phys_reg, val);
-}
-
-template <class Impl>
-void
-FullO3CPU<Impl>::setArchFloatRegInt(int reg_idx, uint64_t val, ThreadID tid)
-{
-    fpRegfileWrites++;
-    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
-            RegId(FloatRegClass, reg_idx));
-
-    regFile.setFloatRegBits(phys_reg, val);
 }
 
 template <class Impl>
@@ -1509,13 +1499,23 @@ FullO3CPU<Impl>::setArchVecElem(const RegIndex& reg_idx, const ElemIndex& ldx,
                                 const VecElem& val, ThreadID tid)
 {
     PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
-                RegId(VecRegClass, reg_idx, ldx));
+                RegId(VecElemClass, reg_idx, ldx));
     setVecElem(phys_reg, val);
 }
 
 template <class Impl>
 void
-FullO3CPU<Impl>::setArchCCReg(int reg_idx, CCReg val, ThreadID tid)
+FullO3CPU<Impl>::setArchVecPredReg(int reg_idx, const VecPredRegContainer& val,
+                                   ThreadID tid)
+{
+    PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
+                RegId(VecPredRegClass, reg_idx));
+    setVecPredReg(phys_reg, val);
+}
+
+template <class Impl>
+void
+FullO3CPU<Impl>::setArchCCReg(int reg_idx, RegVal val, ThreadID tid)
 {
     ccRegfileWrites++;
     PhysRegIdPtr phys_reg = commitRenameMap[tid].lookup(
@@ -1569,7 +1569,7 @@ FullO3CPU<Impl>::squashFromTC(ThreadID tid)
 
 template <class Impl>
 typename FullO3CPU<Impl>::ListIt
-FullO3CPU<Impl>::addInst(DynInstPtr &inst)
+FullO3CPU<Impl>::addInst(const DynInstPtr &inst)
 {
     instList.push_back(inst);
 
@@ -1578,7 +1578,7 @@ FullO3CPU<Impl>::addInst(DynInstPtr &inst)
 
 template <class Impl>
 void
-FullO3CPU<Impl>::instDone(ThreadID tid, DynInstPtr &inst)
+FullO3CPU<Impl>::instDone(ThreadID tid, const DynInstPtr &inst)
 {
     // Keep an instruction count.
     if (!inst->isMicroop() || inst->isLastMicroop()) {
@@ -1595,12 +1595,12 @@ FullO3CPU<Impl>::instDone(ThreadID tid, DynInstPtr &inst)
     thread[tid]->numOps++;
     committedOps[tid]++;
 
-    probeInstCommit(inst->staticInst);
+    probeInstCommit(inst->staticInst, inst->instAddr());
 }
 
 template <class Impl>
 void
-FullO3CPU<Impl>::removeFrontInst(DynInstPtr &inst)
+FullO3CPU<Impl>::removeFrontInst(const DynInstPtr &inst)
 {
     DPRINTF(O3CPU, "Removing committed instruction [tid:%i] PC %s "
             "[sn:%lli]\n",
@@ -1756,7 +1756,7 @@ FullO3CPU<Impl>::dumpInsts()
 /*
 template <class Impl>
 void
-FullO3CPU<Impl>::wakeDependents(DynInstPtr &inst)
+FullO3CPU<Impl>::wakeDependents(const DynInstPtr &inst)
 {
     iew.wakeDependents(inst);
 }
@@ -1778,7 +1778,6 @@ FullO3CPU<Impl>::wakeCPU()
         --cycles;
         idleCycles += cycles;
         numCycles += cycles;
-        ppCycles->notify(cycles);
     }
 
     schedule(tickEvent, clockEdge());
@@ -1825,6 +1824,78 @@ FullO3CPU<Impl>::updateThreadPriority()
         activeThreads.erase(list_begin);
 
         activeThreads.push_back(high_thread);
+    }
+}
+
+template <class Impl>
+void
+FullO3CPU<Impl>::addThreadToExitingList(ThreadID tid)
+{
+    DPRINTF(O3CPU, "Thread %d is inserted to exitingThreads list\n", tid);
+
+    // the thread trying to exit can't be already halted
+    assert(tcBase(tid)->status() != ThreadContext::Halted);
+
+    // make sure the thread has not been added to the list yet
+    assert(exitingThreads.count(tid) == 0);
+
+    // add the thread to exitingThreads list to mark that this thread is
+    // trying to exit. The boolean value in the pair denotes if a thread is
+    // ready to exit. The thread is not ready to exit until the corresponding
+    // exit trap event is processed in the future. Until then, it'll be still
+    // an active thread that is trying to exit.
+    exitingThreads.emplace(std::make_pair(tid, false));
+}
+
+template <class Impl>
+bool
+FullO3CPU<Impl>::isThreadExiting(ThreadID tid) const
+{
+    return exitingThreads.count(tid) == 1;
+}
+
+template <class Impl>
+void
+FullO3CPU<Impl>::scheduleThreadExitEvent(ThreadID tid)
+{
+    assert(exitingThreads.count(tid) == 1);
+
+    // exit trap event has been processed. Now, the thread is ready to exit
+    // and be removed from the CPU.
+    exitingThreads[tid] = true;
+
+    // we schedule a threadExitEvent in the next cycle to properly clean
+    // up the thread's states in the pipeline. threadExitEvent has lower
+    // priority than tickEvent, so the cleanup will happen at the very end
+    // of the next cycle after all pipeline stages complete their operations.
+    // We want all stages to complete squashing instructions before doing
+    // the cleanup.
+    if (!threadExitEvent.scheduled()) {
+        schedule(threadExitEvent, nextCycle());
+    }
+}
+
+template <class Impl>
+void
+FullO3CPU<Impl>::exitThreads()
+{
+    // there must be at least one thread trying to exit
+    assert(exitingThreads.size() > 0);
+
+    // terminate all threads that are ready to exit
+    auto it = exitingThreads.begin();
+    while (it != exitingThreads.end()) {
+        ThreadID thread_id = it->first;
+        bool readyToExit = it->second;
+
+        if (readyToExit) {
+            DPRINTF(O3CPU, "Exiting thread %d\n", thread_id);
+            haltContext(thread_id);
+            tcBase(thread_id)->setStatus(ThreadContext::Halted);
+            it = exitingThreads.erase(it);
+        } else {
+            it++;
+        }
     }
 }
 

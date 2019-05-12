@@ -6,7 +6,7 @@
 #error "Require protobuf to parse stream history."
 #endif
 
-#include "base/misc.hh"
+// #include "base/misc.hh""
 #include "base/trace.hh"
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"

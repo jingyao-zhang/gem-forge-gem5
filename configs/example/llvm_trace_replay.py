@@ -326,6 +326,7 @@ else:
 
         # A dummy null driver to make the python script happy.
         llvm_trace_cpu.cpu_id = len(cpus)
+        llvm_trace_cpu.createThreads()
         llvm_trace_cpu.traceFile = tdg_fn
         llvm_trace_cpu.driver = NULL
         llvm_trace_cpu.totalCPUs = len(options.llvm_trace_file)

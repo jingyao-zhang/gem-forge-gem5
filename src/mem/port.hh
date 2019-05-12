@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012,2015 ARM Limited
+ * Copyright (c) 2011-2012,2015,2017 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -51,57 +51,11 @@
 #define __MEM_PORT_HH__
 
 #include "base/addr_range.hh"
+#include "mem/backdoor.hh"
 #include "mem/packet.hh"
+#include "sim/port.hh"
 
-class MemObject;
-
-/**
- * Ports are used to interface memory objects to each other. A port is
- * either a master or a slave and the connected peer is always of the
- * opposite role. Each port has a name, an owner, and an identifier.
- */
-class Port
-{
-
-  private:
-
-    /** Descriptive name (for DPRINTF output) */
-    std::string portName;
-
-  protected:
-
-    /**
-     * A numeric identifier to distinguish ports in a vector, and set
-     * to InvalidPortID in case this port is not part of a vector.
-     */
-    const PortID id;
-
-    /** A reference to the MemObject that owns this port. */
-    MemObject& owner;
-
-    /**
-     * Abstract base class for ports
-     *
-     * @param _name Port name including the owners name
-     * @param _owner The MemObject that is the structural owner of this port
-     * @param _id A port identifier for vector ports
-     */
-    Port(const std::string& _name, MemObject& _owner, PortID _id);
-
-    /**
-     * Virtual destructor due to inheritance.
-     */
-    virtual ~Port();
-
-  public:
-
-    /** Return port name (for DPRINTF). */
-    const std::string name() const { return portName; }
-
-    /** Get the port id. */
-    PortID getId() const { return id; }
-
-};
+class SimObject;
 
 /** Forward declaration */
 class BaseSlavePort;
@@ -119,16 +73,12 @@ class BaseMasterPort : public Port
 
     BaseSlavePort* _baseSlavePort;
 
-    BaseMasterPort(const std::string& name, MemObject* owner,
-                   PortID id = InvalidPortID);
+    BaseMasterPort(const std::string& name, PortID id=InvalidPortID);
     virtual ~BaseMasterPort();
 
   public:
 
-    virtual void bind(BaseSlavePort& slave_port) = 0;
-    virtual void unbind() = 0;
     BaseSlavePort& getSlavePort() const;
-    bool isConnected() const;
 
 };
 
@@ -143,14 +93,12 @@ class BaseSlavePort : public Port
 
     BaseMasterPort* _baseMasterPort;
 
-    BaseSlavePort(const std::string& name, MemObject* owner,
-                  PortID id = InvalidPortID);
+    BaseSlavePort(const std::string& name, PortID id=InvalidPortID);
     virtual ~BaseSlavePort();
 
   public:
 
     BaseMasterPort& getMasterPort() const;
-    bool isConnected() const;
 
 };
 
@@ -173,22 +121,26 @@ class MasterPort : public BaseMasterPort
 
     SlavePort* _slavePort;
 
+  protected:
+
+    SimObject& owner;
+
   public:
 
-    MasterPort(const std::string& name, MemObject* owner,
-               PortID id = InvalidPortID);
+    MasterPort(const std::string& name, SimObject* _owner,
+               PortID id=InvalidPortID);
     virtual ~MasterPort();
 
     /**
      * Bind this master port to a slave port. This also does the
      * mirror action and binds the slave port to the master port.
      */
-    void bind(BaseSlavePort& slave_port);
+    void bind(Port &peer) override;
 
     /**
      * Unbind this master port and the associated slave port.
      */
-    void unbind();
+    void unbind() override;
 
     /**
      * Send an atomic request packet, where the data is moved and the
@@ -200,6 +152,18 @@ class MasterPort : public BaseMasterPort
      * @return Estimated latency of access.
      */
     Tick sendAtomic(PacketPtr pkt);
+
+    /**
+     * Send an atomic request packet like above, but also request a backdoor
+     * to the data being accessed.
+     *
+     * @param pkt Packet to send.
+     * @param backdoor Can be set to a back door pointer by the target to let
+     *        caller have direct access to the requested data.
+     *
+     * @return Estimated latency of access.
+     */
+    Tick sendAtomicBackdoor(PacketPtr pkt, MemBackdoorPtr &backdoor);
 
     /**
      * Send a functional request packet, where the data is instantly
@@ -222,6 +186,19 @@ class MasterPort : public BaseMasterPort
      * @return If the send was succesful or not.
     */
     bool sendTimingReq(PacketPtr pkt);
+
+    /**
+     * Check if the slave can handle a timing request.
+     *
+     * If the send cannot be handled at the moment, as indicated by
+     * the return value, then the sender will receive a recvReqRetry
+     * at which point it can re-issue a sendTimingReq.
+     *
+     * @param pkt Packet to send.
+     *
+     * @return If the send was succesful or not.
+     */
+    bool tryTiming(PacketPtr pkt) const;
 
     /**
      * Attempt to send a timing snoop response packet to the slave
@@ -336,11 +313,16 @@ class SlavePort : public BaseSlavePort
   private:
 
     MasterPort* _masterPort;
+    bool defaultBackdoorWarned;
+
+  protected:
+
+    SimObject& owner;
 
   public:
 
-    SlavePort(const std::string& name, MemObject* owner,
-              PortID id = InvalidPortID);
+    SlavePort(const std::string& name, SimObject* _owner,
+              PortID id=InvalidPortID);
     virtual ~SlavePort();
 
     /**
@@ -422,24 +404,36 @@ class SlavePort : public BaseSlavePort
      */
     virtual AddrRangeList getAddrRanges() const = 0;
 
+    /**
+     * We let the master port do the work, so these don't do anything.
+     */
+    void unbind() override {}
+    void bind(Port &peer) override {}
+
   protected:
 
     /**
      * Called by the master port to unbind. Should never be called
      * directly.
      */
-    void unbind();
+    void slaveUnbind();
 
     /**
      * Called by the master port to bind. Should never be called
      * directly.
      */
-    void bind(MasterPort& master_port);
+    void slaveBind(MasterPort& master_port);
 
     /**
      * Receive an atomic request packet from the master port.
      */
     virtual Tick recvAtomic(PacketPtr pkt) = 0;
+
+    /**
+     * Receive an atomic request packet from the master port, and optionally
+     * provide a backdoor to the data being accessed.
+     */
+    virtual Tick recvAtomicBackdoor(PacketPtr pkt, MemBackdoorPtr &backdoor);
 
     /**
      * Receive a functional request packet from the master port.
@@ -450,6 +444,13 @@ class SlavePort : public BaseSlavePort
      * Receive a timing request from the master port.
      */
     virtual bool recvTimingReq(PacketPtr pkt) = 0;
+
+    /**
+     * Availability request from the master port.
+     */
+    virtual bool tryTiming(PacketPtr pkt) {
+        panic("%s was not expecting a %s\n", name(), __func__);
+    }
 
     /**
      * Receive a timing snoop response from the master port.

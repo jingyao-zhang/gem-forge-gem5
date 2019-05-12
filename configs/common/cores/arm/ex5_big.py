@@ -29,6 +29,9 @@
 #          Anastasiia Butko
 #          Louisa Bessad
 
+from __future__ import print_function
+from __future__ import absolute_import
+
 from m5.objects import *
 
 #-----------------------------------------------------------------------
@@ -197,4 +200,5 @@ class L2(Cache):
     clusivity = 'mostly_excl'
     # Simple stride prefetcher
     prefetcher = StridePrefetcher(degree=8, latency = 1)
-    tags = RandomRepl()
+    tags = BaseSetAssoc()
+    repl_policy = RandomRP()

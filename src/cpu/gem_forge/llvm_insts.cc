@@ -462,7 +462,6 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
         this->getTDG().pc(), this->loadEndCycle - this->loadStartCycle);
   }
   // Remember to release the packet.
-  delete packet->req;
   delete packet;
 }
 

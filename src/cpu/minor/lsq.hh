@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 ARM Limited
+ * Copyright (c) 2013-2014, 2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -143,7 +143,7 @@ class LSQ : public Named
         PacketPtr packet;
 
         /** The underlying request of this LSQRequest */
-        Request request;
+        RequestPtr request;
 
         /** Fault generated performing this request */
         Fault fault;
@@ -187,6 +187,8 @@ class LSQ : public Named
       protected:
         /** BaseTLB::Translation interface */
         void markDelayed() { }
+
+        void disableMemAccess();
 
       public:
         LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
@@ -272,7 +274,7 @@ class LSQ : public Named
     {
       protected:
         /** TLB interace */
-        void finish(const Fault &fault_, RequestPtr request_,
+        void finish(const Fault &fault_, const RequestPtr &request_,
                     ThreadContext *tc, BaseTLB::Mode mode)
         { }
 
@@ -333,7 +335,7 @@ class LSQ : public Named
     {
       protected:
         /** TLB interace */
-        void finish(const Fault &fault_, RequestPtr request_,
+        void finish(const Fault &fault_, const RequestPtr &request_,
                     ThreadContext *tc, BaseTLB::Mode mode);
 
         /** Has my only packet been sent to the memory system but has not
@@ -399,14 +401,14 @@ class LSQ : public Named
 
         /** Fragment Requests corresponding to the address ranges of
          *  each fragment */
-        std::vector<Request *> fragmentRequests;
+        std::vector<RequestPtr> fragmentRequests;
 
         /** Packets matching fragmentRequests to issue fragments to memory */
         std::vector<Packet *> fragmentPackets;
 
       protected:
         /** TLB response interface */
-        void finish(const Fault &fault_, RequestPtr request_,
+        void finish(const Fault &fault_, const RequestPtr &request_,
                     ThreadContext *tc, BaseTLB::Mode mode);
 
       public:
@@ -441,7 +443,8 @@ class LSQ : public Named
         { return numIssuedFragments != numRetiredFragments; }
 
         /** Have we stepped past the end of fragmentPackets? */
-        bool sentAllPackets() { return numIssuedFragments == numFragments; }
+        bool sentAllPackets()
+        { return numIssuedFragments == numTranslatedFragments; }
 
         /** For loads, paste the response data into the main
          *  response packet */
@@ -696,11 +699,13 @@ class LSQ : public Named
     void completeMemBarrierInst(MinorDynInstPtr inst,
         bool committed);
 
-    /** Single interface for readMem/writeMem to issue requests into
+    /** Single interface for readMem/writeMem/amoMem to issue requests into
      *  the LSQ */
     void pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                      unsigned int size, Addr addr, Request::Flags flags,
-                     uint64_t *res);
+                     uint64_t *res, AtomicOpFunctor *amo_op,
+                     const std::vector<bool>& byteEnable =
+                         std::vector<bool>());
 
     /** Push a predicate failed-representing request into the queues just
      *  to maintain commit order */
@@ -720,7 +725,7 @@ class LSQ : public Named
 /** Make a suitable packet for the given request.  If the request is a store,
  *  data will be the payload data.  If sender_state is NULL, it won't be
  *  pushed into the packet as senderState */
-PacketPtr makePacketForRequest(Request &request, bool isLoad,
+PacketPtr makePacketForRequest(const RequestPtr &request, bool isLoad,
     Packet::SenderState *sender_state = NULL, PacketDataPtr data = NULL);
 }
 

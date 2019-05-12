@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014 ARM Limited
+ * Copyright (c) 2011-2014,2017-2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -47,6 +47,8 @@
 
 #include "sim/system.hh"
 
+#include <algorithm>
+
 #include "arch/remote_gdb.hh"
 #include "arch/utility.hh"
 #include "base/loader/object_file.hh"
@@ -68,6 +70,7 @@
 #include "sim/byteswap.hh"
 #include "sim/debug.hh"
 #include "sim/full_system.hh"
+#include "sim/redirect_path.hh"
 
 /**
  * To avoid linking errors with LTO, only include the header if we
@@ -86,8 +89,7 @@ vector<System *> System::systemList;
 int System::numSystemsRunning = 0;
 
 System::System(Params *p)
-    : MemObject(p), _systemPort("system_port", this),
-      _numContexts(0),
+    : SimObject(p), _systemPort("system_port", this),
       multiThread(p->multi_thread),
       pagePtr(0),
       init_param(p->init_param),
@@ -110,8 +112,10 @@ System::System(Params *p)
       thermalModel(p->thermal_model),
       _params(p),
       totalNumInsts(0),
-      instEventQueue("system instruction-based event queue")
+      instEventQueue("system instruction-based event queue"),
+      redirectPaths(p->redirect_paths)
 {
+
     // add self to global system list
     systemList.push_back(this);
 
@@ -134,11 +138,11 @@ System::System(Params *p)
 
     // Get the generic system master IDs
     MasterID tmp_id M5_VAR_USED;
-    tmp_id = getMasterId("writebacks");
+    tmp_id = getMasterId(this, "writebacks");
     assert(tmp_id == Request::wbMasterId);
-    tmp_id = getMasterId("functional");
+    tmp_id = getMasterId(this, "functional");
     assert(tmp_id == Request::funcMasterId);
-    tmp_id = getMasterId("interrupt");
+    tmp_id = getMasterId(this, "interrupt");
     assert(tmp_id == Request::intMasterId);
 
     if (FullSystem) {
@@ -158,6 +162,14 @@ System::System(Params *p)
             kernelEnd = kernel->bssBase() + kernel->bssSize();
             kernelEntry = kernel->entryPoint();
 
+            // If load_addr_mask is set to 0x0, then auto-calculate
+            // the smallest mask to cover all kernel addresses so gem5
+            // can relocate the kernel to a new offset.
+            if (loadAddrMask == 0) {
+                Addr shift_amt = findMsbSet(kernelEnd - kernelStart) + 1;
+                loadAddrMask = ((Addr)1 << shift_amt) - 1;
+            }
+
             // load symbols
             if (!kernel->loadGlobalSymbols(kernelSymtab))
                 fatal("could not load kernel symbols\n");
@@ -173,6 +185,14 @@ System::System(Params *p)
 
             // Loading only needs to happen once and after memory system is
             // connected so it will happen in initState()
+        }
+
+        for (const auto &obj_name : p->kernel_extras) {
+            inform("Loading additional kernel object: %s", obj_name);
+            ObjectFile *obj = createObjectFile(obj_name);
+            fatal_if(!obj, "Failed to additional kernel object '%s'.\n",
+                     obj_name);
+            kernelExtras.push_back(obj);
         }
     }
 
@@ -201,8 +221,8 @@ System::init()
         panic("System port on %s is not connected.\n", name());
 }
 
-BaseMasterPort&
-System::getMasterPort(const std::string &if_name, PortID idx)
+Port &
+System::getPort(const std::string &if_name, PortID idx)
 {
     // no need to distinguish at the moment (besides checking)
     return _systemPort;
@@ -225,40 +245,34 @@ bool System::breakpoint()
 ContextID
 System::registerThreadContext(ThreadContext *tc, ContextID assigned)
 {
-    int id;
-    if (assigned == InvalidContextID) {
-        for (id = 0; id < threadContexts.size(); id++) {
-            if (!threadContexts[id])
-                break;
-        }
-
-        if (threadContexts.size() <= id)
-            threadContexts.resize(id + 1);
-    } else {
-        if (threadContexts.size() <= assigned)
-            threadContexts.resize(assigned + 1);
-        id = assigned;
+    int id = assigned;
+    if (id == InvalidContextID) {
+        // Find an unused context ID for this thread.
+        id = 0;
+        while (id < threadContexts.size() && threadContexts[id])
+            id++;
     }
 
-    if (threadContexts[id])
-        fatal("Cannot have two CPUs with the same id (%d)\n", id);
+    if (threadContexts.size() <= id)
+        threadContexts.resize(id + 1);
+
+    fatal_if(threadContexts[id],
+             "Cannot have two CPUs with the same id (%d)\n", id);
 
     threadContexts[id] = tc;
-    _numContexts++;
 
 #if THE_ISA != NULL_ISA
     int port = getRemoteGDBPort();
     if (port) {
-        RemoteGDB *rgdb = new RemoteGDB(this, tc);
-        GDBListener *gdbl = new GDBListener(rgdb, port + id);
-        gdbl->listen();
+        RemoteGDB *rgdb = new RemoteGDB(this, tc, port + id);
+        rgdb->listen();
 
         BaseCPU *cpu = tc->getCpuPtr();
         if (cpu->waitForRemoteGDB()) {
             inform("%s: Waiting for a remote GDB connection on port %d.\n",
-                   cpu->name(), gdbl->getPort());
+                   cpu->name(), rgdb->port());
 
-            gdbl->accept();
+            rgdb->connect();
         }
         if (remoteGDB.size() <= id) {
             remoteGDB.resize(id + 1);
@@ -276,12 +290,14 @@ System::registerThreadContext(ThreadContext *tc, ContextID assigned)
 int
 System::numRunningContexts()
 {
-    int running = 0;
-    for (int i = 0; i < _numContexts; ++i) {
-        if (threadContexts[i]->status() != ThreadContext::Halted)
-            ++running;
-    }
-    return running;
+    return std::count_if(
+        threadContexts.cbegin(),
+        threadContexts.cend(),
+        [] (ThreadContext* tc) {
+            return ((tc->status() != ThreadContext::Halted) &&
+                    (tc->status() != ThreadContext::Halting));
+        }
+    );
 }
 
 void
@@ -312,6 +328,10 @@ System::initState()
             }
             // Load program sections into memory
             kernel->loadSections(physProxy, loadAddrMask, loadAddrOffset);
+            for (const auto &extra_kernel : kernelExtras) {
+                extra_kernel->loadSections(physProxy, loadAddrMask,
+                                           loadAddrOffset);
+            }
 
             DPRINTF(Loader, "Kernel start = %#x\n", kernelStart);
             DPRINTF(Loader, "Kernel end   = %#x\n", kernelEnd);
@@ -424,7 +444,7 @@ System::unserialize(CheckpointIn &cp)
 void
 System::regStats()
 {
-    MemObject::regStats();
+    SimObject::regStats();
 
     for (uint32_t j = 0; j < numWorkIds ; j++) {
         workItemStats[j] = new Stats::Histogram();
@@ -475,16 +495,74 @@ printSystems()
     System::printSystems();
 }
 
-MasterID
-System::getMasterId(std::string master_name)
+std::string
+System::stripSystemName(const std::string& master_name) const
 {
-    // strip off system name if the string starts with it
-    if (startswith(master_name, name()))
-        master_name = master_name.erase(0, name().size() + 1);
+    if (startswith(master_name, name())) {
+        return master_name.substr(name().size());
+    } else {
+        return master_name;
+    }
+}
+
+MasterID
+System::lookupMasterId(const SimObject* obj) const
+{
+    MasterID id = Request::invldMasterId;
+
+    // number of occurrences of the SimObject pointer
+    // in the master list.
+    auto obj_number = 0;
+
+    for (int i = 0; i < masters.size(); i++) {
+        if (masters[i].obj == obj) {
+            id = i;
+            obj_number++;
+        }
+    }
+
+    fatal_if(obj_number > 1,
+        "Cannot lookup MasterID by SimObject pointer: "
+        "More than one master is sharing the same SimObject\n");
+
+    return id;
+}
+
+MasterID
+System::lookupMasterId(const std::string& master_name) const
+{
+    std::string name = stripSystemName(master_name);
+
+    for (int i = 0; i < masters.size(); i++) {
+        if (masters[i].masterName == name) {
+            return i;
+        }
+    }
+
+    return Request::invldMasterId;
+}
+
+MasterID
+System::getGlobalMasterId(const std::string& master_name)
+{
+    return _getMasterId(nullptr, master_name);
+}
+
+MasterID
+System::getMasterId(const SimObject* master, std::string submaster)
+{
+    auto master_name = leafMasterName(master, submaster);
+    return _getMasterId(master, master_name);
+}
+
+MasterID
+System::_getMasterId(const SimObject* master, const std::string& master_name)
+{
+    std::string name = stripSystemName(master_name);
 
     // CPUs in switch_cpus ask for ids again after switching
-    for (int i = 0; i < masterIds.size(); i++) {
-        if (masterIds[i] == master_name) {
+    for (int i = 0; i < masters.size(); i++) {
+        if (masters[i].masterName == name) {
             return i;
         }
     }
@@ -498,18 +576,35 @@ System::getMasterId(std::string master_name)
                 "You must do so in init().\n");
     }
 
-    masterIds.push_back(master_name);
+    // Generate a new MasterID incrementally
+    MasterID master_id = masters.size();
 
-    return masterIds.size() - 1;
+    // Append the new Master metadata to the group of system Masters.
+    masters.emplace_back(master, name, master_id);
+
+    return masters.back().masterId;
+}
+
+std::string
+System::leafMasterName(const SimObject* master, const std::string& submaster)
+{
+    if (submaster.empty()) {
+        return master->name();
+    } else {
+        // Get the full master name by appending the submaster name to
+        // the root SimObject master name
+        return master->name() + "." + submaster;
+    }
 }
 
 std::string
 System::getMasterName(MasterID master_id)
 {
-    if (master_id >= masterIds.size())
+    if (master_id >= masters.size())
         fatal("Invalid master_id passed to getMasterName()\n");
 
-    return masterIds[master_id];
+    const auto& master_info = masters[master_id];
+    return master_info.masterName;
 }
 
 System *

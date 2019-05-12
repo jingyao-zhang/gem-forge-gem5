@@ -43,7 +43,8 @@ class L2Cache(RubyCache): pass
 def define_options(parser):
     return
 
-def create_system(options, full_system, system, dma_ports, ruby_system):
+def create_system(options, full_system, system, dma_ports, bootmem,
+                  ruby_system):
 
     if buildEnv['PROTOCOL'] != 'MOESI_CMP_directory':
         panic("This script requires the MOESI_CMP_directory protocol to be built.")
@@ -66,7 +67,7 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
     l2_bits = int(math.log(options.num_l2caches, 2))
     block_size_bits = int(math.log(options.cacheline_size, 2))
 
-    for i in xrange(options.num_cpus):
+    for i in range(options.num_cpus):
         #
         # First create the Ruby objects associated with this cpu
         #
@@ -125,7 +126,7 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
 
     l2_index_start = block_size_bits + l2_bits
 
-    for i in xrange(options.num_l2caches):
+    for i in range(options.num_l2caches):
         #
         # First create the Ruby objects associated with this cpu
         #
@@ -165,8 +166,11 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
                                           clk_divider=3)
 
 
-    dir_cntrl_nodes = create_directories(options, system.mem_ranges,
-                                         ruby_system)
+    mem_dir_cntrl_nodes, rom_dir_cntrl_node = create_directories(
+        options, bootmem, ruby_system, system)
+    dir_cntrl_nodes = mem_dir_cntrl_nodes[:]
+    if rom_dir_cntrl_node is not None:
+        dir_cntrl_nodes.append(rom_dir_cntrl_node)
     for dir_cntrl in dir_cntrl_nodes:
         # Connect the directory controllers and the network
         dir_cntrl.requestToDir = MessageBuffer()
@@ -233,7 +237,6 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
 
         all_cntrls = all_cntrls + [io_controller]
 
-
     ruby_system.network.number_of_virtual_networks = 3
     topology = create_topology(all_cntrls, options)
-    return (cpu_sequencers, dir_cntrl_nodes, topology)
+    return (cpu_sequencers, mem_dir_cntrl_nodes, topology)

@@ -59,7 +59,6 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
     this->element->se->fetchedCacheBlock(this->cacheBlockVirtualAddr, this);
   }
   // Remember to release the packet.
-  delete packet->req;
   delete packet;
   return;
 }

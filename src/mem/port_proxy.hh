@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013 ARM Limited
+ * Copyright (c) 2011-2013, 2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -59,11 +59,6 @@
 #ifndef __MEM_PORT_PROXY_HH__
 #define __MEM_PORT_PROXY_HH__
 
-#include "config/the_isa.hh"
-#if THE_ISA != NULL_ISA
-    #include "arch/isa_traits.hh"
-#endif
-
 #include "mem/port.hh"
 #include "sim/byteswap.hh"
 
@@ -93,23 +88,54 @@ class PortProxy
 
   public:
     PortProxy(MasterPort &port, unsigned int cacheLineSize) :
-        _port(port), _cacheLineSize(cacheLineSize) { }
+        _port(port), _cacheLineSize(cacheLineSize)
+    {}
     virtual ~PortProxy() { }
 
     /**
      * Read size bytes memory at address and store in p.
      */
-    virtual void readBlob(Addr addr, uint8_t* p, int size) const;
+    virtual void
+    readBlob(Addr addr, uint8_t* p, int size) const
+    {
+        readBlobPhys(addr, 0, p, size);
+    }
 
     /**
      * Write size bytes from p to address.
      */
-    virtual void writeBlob(Addr addr, const uint8_t* p, int size) const;
+    virtual void
+    writeBlob(Addr addr, const uint8_t* p, int size) const
+    {
+        writeBlobPhys(addr, 0, p, size);
+    }
 
     /**
      * Fill size bytes starting at addr with byte value val.
      */
-    virtual void memsetBlob(Addr addr, uint8_t v, int size) const;
+    virtual void
+    memsetBlob(Addr addr, uint8_t v, int size) const
+    {
+        memsetBlobPhys(addr, 0, v, size);
+    }
+
+    /**
+     * Read size bytes memory at physical address and store in p.
+     */
+    void readBlobPhys(Addr addr, Request::Flags flags,
+                      uint8_t* p, int size) const;
+
+    /**
+     * Write size bytes from p to physical address.
+     */
+    void writeBlobPhys(Addr addr, Request::Flags flags,
+                       const uint8_t* p, int size) const;
+
+    /**
+     * Fill size bytes starting at physical addr with byte value val.
+     */
+    void memsetBlobPhys(Addr addr, Request::Flags flags,
+                        uint8_t v, int size) const;
 
     /**
      * Read sizeof(T) bytes from address and return as object T.
@@ -123,23 +149,38 @@ class PortProxy
     template <typename T>
     void write(Addr address, T data) const;
 
-#if THE_ISA != NULL_ISA
     /**
      * Read sizeof(T) bytes from address and return as object T.
-     * Performs Guest to Host endianness transform.
+     * Performs endianness conversion from the selected guest to host order.
      */
     template <typename T>
-    T readGtoH(Addr address) const;
+    T read(Addr address, ByteOrder guest_byte_order) const;
 
     /**
      * Write object T to address. Writes sizeof(T) bytes.
-     * Performs Host to Guest endianness transform.
+     * Performs endianness conversion from host to the selected guest order.
      */
     template <typename T>
-    void writeHtoG(Addr address, T data) const;
-#endif
+    void write(Addr address, T data, ByteOrder guest_byte_order) const;
 };
 
+
+/**
+ * This object is a proxy for a structural port, to be used for debug
+ * accesses to secure memory.
+ *
+ * The addresses are interpreted as physical addresses to secure memory.
+ */
+class SecurePortProxy : public PortProxy
+{
+  public:
+    SecurePortProxy(MasterPort &port, unsigned int cache_line_size)
+        : PortProxy(port, cache_line_size) {}
+
+    void readBlob(Addr addr, uint8_t *p, int size) const override;
+    void writeBlob(Addr addr, const uint8_t *p, int size) const override;
+    void memsetBlob(Addr addr, uint8_t val, int size) const override;
+};
 
 template <typename T>
 T
@@ -157,23 +198,21 @@ PortProxy::write(Addr address, T data) const
     writeBlob(address, (uint8_t*)&data, sizeof(T));
 }
 
-#if THE_ISA != NULL_ISA
 template <typename T>
 T
-PortProxy::readGtoH(Addr address) const
+PortProxy::read(Addr address, ByteOrder byte_order) const
 {
     T data;
     readBlob(address, (uint8_t*)&data, sizeof(T));
-    return TheISA::gtoh(data);
+    return gtoh(data, byte_order);
 }
 
 template <typename T>
 void
-PortProxy::writeHtoG(Addr address, T data) const
+PortProxy::write(Addr address, T data, ByteOrder byte_order) const
 {
-    data = TheISA::htog(data);
+    data = htog(data, byte_order);
     writeBlob(address, (uint8_t*)&data, sizeof(T));
 }
-#endif
 
 #endif // __MEM_PORT_PROXY_HH__

@@ -1,7 +1,7 @@
 #ifndef __MCPAT_MCAPT_MANAGER_HH__
 #define __MCPAT_MCAPT_MANAGER_HH__
 
-#include "base/misc.hh"
+// #include "base/misc.hh""
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
 #include "params/McPATManager.hh"
@@ -17,6 +17,7 @@ class BPredUnit;
 class BaseTagsParams;
 class DRAMCtrlParams;
 class BaseCache;
+class BaseCacheParams;
 class Cache;
 class BaseCPU;
 class DerivO3CPU;
@@ -83,7 +84,7 @@ private:
 
   static bool isCPU(const SimObject *so, const std::string &suffix, int &cpuId);
   static int getTLBSize(const TheISA::TLB *tlb);
-  static int getCacheTagAccessLatency(const BaseTagsParams *tagsParams);
+  static int getCacheTagAccessLatency(const BaseCacheParams *cacheParams);
 
   template <typename T> static const T *getParams(const SimObject *so) {
     auto params = dynamic_cast<const T *>(so->params());

@@ -126,7 +126,7 @@ private:
 
 public:
   const LLVMTraceCPUParams *cpuParams;
-  FuncPageTable pageTable;
+  EmulationPageTable pageTable;
   CPUPort instPort;
   CPUPort dataPort;
 
@@ -154,9 +154,6 @@ private:
    */
   std::vector<LLVMTraceThreadContext *> activeThreads;
 
-  TheISA::TLB *itb;
-  TheISA::TLB *dtb;
-
   FUPool *fuPool;
 
   RegionStats *regionStats;
@@ -173,7 +170,44 @@ private:
   void stackPush();
 
   // Cache warm up in standalone mode.
+  struct CacheWarmer {
+    LLVMTraceCPU *cpu;
+    size_t warmUpAddrs;
+    std::vector<Addr> addrs;
+    CacheWarmer(LLVMTraceCPU *_cpu, const std::string &fn)
+        : cpu(_cpu), warmUpAddrs(0) {
+      std::ifstream cacheFile(fn);
+      if (!cacheFile.is_open()) {
+        panic("Failed to open cache warm up file %s.\n", fn.c_str());
+      }
+      Addr vaddr;
+      while (cacheFile >> std::hex >> vaddr) {
+        addrs.push_back(vaddr);
+      }
+      cacheFile.close();
+    }
+    bool isDone() const { return this->warmUpAddrs == this->addrs.size(); }
+    PacketPtr getNextWarmUpPacket() {
+      assert(!isDone() && "Already done.");
+      constexpr auto size = 4;
+      uint8_t data[size];
+      auto vaddr = this->addrs.at(this->warmUpAddrs);
+      this->warmUpAddrs++;
+
+      auto paddr = this->cpu->translateAndAllocatePhysMem(vaddr);
+
+      int contextId = 0;
+      RequestPtr req(new Request(paddr, size, 0, this->cpu->_dataMasterId,
+                                 static_cast<InstSeqNum>(0), contextId));
+      PacketPtr pkt;
+      pkt = Packet::createRead(req);
+      pkt->dataStatic(data);
+      return pkt;
+    }
+  };
+  bool warmUpDone;
   Tick warmUpTick;
+  CacheWarmer *cacheWarmer;
   Tick warmUpCache(const std::string &FileName);
 
   // In fly instructions.

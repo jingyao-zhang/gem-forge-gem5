@@ -33,6 +33,7 @@ from m5.objects import *
 from m5.defines import buildEnv
 from Ruby import create_topology, create_directories
 from Ruby import send_evicts
+from common import FileSystemConfig
 
 #
 # Declare caches used by the protocol
@@ -52,7 +53,8 @@ def define_options(parser):
     parser.add_option("--dir-on", action="store_true",
           help="Hammer: enable Full-bit Directory")
 
-def create_system(options, full_system, system, dma_ports, ruby_system):
+def create_system(options, full_system, system, dma_ports, bootmem,
+                  ruby_system):
 
     if buildEnv['PROTOCOL'] != 'MOESI_hammer':
         panic("This script requires the MOESI_hammer protocol to be built.")
@@ -73,7 +75,7 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
     #
     block_size_bits = int(math.log(options.cacheline_size, 2))
 
-    for i in xrange(options.num_cpus):
+    for i in range(options.num_cpus):
         #
         # First create the Ruby objects associated with this cpu
         #
@@ -172,8 +174,11 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
                                           clk_domain=ruby_system.clk_domain,
                                           clk_divider=3)
 
-    dir_cntrl_nodes = create_directories(options, system.mem_ranges,
-                                         ruby_system)
+    mem_dir_cntrl_nodes, rom_dir_cntrl_node = create_directories(
+        options, bootmem, ruby_system, system)
+    dir_cntrl_nodes = mem_dir_cntrl_nodes[:]
+    if rom_dir_cntrl_node is not None:
+        dir_cntrl_nodes.append(rom_dir_cntrl_node)
     for dir_cntrl in dir_cntrl_nodes:
         pf = ProbeFilter(size = pf_size, assoc = 4,
                          start_index_bit = pf_start_bit)
@@ -251,7 +256,36 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
         io_controller.mandatoryQueue = MessageBuffer()
 
         all_cntrls = all_cntrls + [io_controller]
+    # Register configuration with filesystem
+    else:
+        FileSystemConfig.config_filesystem(options)
+
+        for i in xrange(options.num_cpus):
+            FileSystemConfig.register_cpu(physical_package_id = 0,
+                                          core_siblings = [],
+                                          core_id = i,
+                                          thread_siblings = [])
+
+            FileSystemConfig.register_cache(level = 1,
+                                            idu_type = 'Instruction',
+                                            size = options.l1i_size,
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l1i_assoc,
+                                            cpus = [i])
+            FileSystemConfig.register_cache(level = 1,
+                                            idu_type = 'Data',
+                                            size = options.l1d_size,
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l1d_assoc,
+                                            cpus = [i])
+
+            FileSystemConfig.register_cache(level = 2,
+                                            idu_type = 'Unified',
+                                            size = options.l2_size,
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l2_assoc,
+                                            cpus = [i])
 
     ruby_system.network.number_of_virtual_networks = 6
     topology = create_topology(all_cntrls, options)
-    return (cpu_sequencers, dir_cntrl_nodes, topology)
+    return (cpu_sequencers, mem_dir_cntrl_nodes, topology)

@@ -173,15 +173,12 @@ NSGigE::writeConfig(PacketPtr pkt)
     return configDelay;
 }
 
-EtherInt*
-NSGigE::getEthPort(const std::string &if_name, int idx)
+Port &
+NSGigE::getPort(const std::string &if_name, PortID idx)
 {
-    if (if_name == "interface") {
-       if (interface->getPeer())
-           panic("interface already connected to\n");
-       return interface;
-    }
-    return NULL;
+    if (if_name == "interface")
+       return *interface;
+    return EtherDevBase::getPort(if_name, idx);
 }
 
 /**
@@ -209,7 +206,7 @@ NSGigE::read(PacketPtr pkt)
         // don't implement all the MIB's.  hopefully the kernel
         // doesn't actually DEPEND upon their values
         // MIB are just hardware stats keepers
-        pkt->set<uint32_t>(0);
+        pkt->setLE<uint32_t>(0);
         pkt->makeAtomicResponse();
         return pioDelay;
     } else if (daddr > 0x3FC)
@@ -427,7 +424,7 @@ NSGigE::write(PacketPtr pkt)
         panic("Something is messed up!\n");
 
     if (pkt->getSize() == sizeof(uint32_t)) {
-        uint32_t reg = pkt->get<uint32_t>();
+        uint32_t reg = pkt->getLE<uint32_t>();
         uint16_t rfaddr;
 
         DPRINTF(EthernetPIO, "write data=%d data=%#x\n", reg, reg);
@@ -742,6 +739,7 @@ NSGigE::write(PacketPtr pkt)
                 panic("writing RFDR for something other than pattern matching "
                     "or hashing! %#x\n", rfaddr);
             }
+            break;
 
           case BRAR:
             regs.brar = reg;

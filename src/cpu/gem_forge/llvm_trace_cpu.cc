@@ -5,21 +5,21 @@
 #include "debug/LLVMTraceCPU.hh"
 #include "sim/process.hh"
 #include "sim/sim_exit.hh"
+#include "sim/stat_control.hh"
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
     : BaseCPU(params), cpuParams(params),
-      pageTable(params->name + ".page_table", 0),
+      pageTable(params->name + ".page_table", 0, TheISA::PageBytes),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
       traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
-      itb(params->itb), dtb(params->dtb), fuPool(params->fuPool),
-      regionStats(nullptr), currentStackDepth(0), warmUpTick(0),
-      process(nullptr), thread_context(nullptr), stackMin(0),
-      fetchStage(params, this), decodeStage(params, this),
-      renameStage(params, this), iewStage(params, this),
-      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
-      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
-      driver(params->driver), tickEvent(*this) {
+      fuPool(params->fuPool), regionStats(nullptr), currentStackDepth(0),
+      warmUpDone(false), warmUpTick(0), cacheWarmer(nullptr), process(nullptr),
+      thread_context(nullptr), stackMin(0), fetchStage(params, this),
+      decodeStage(params, this), renameStage(params, this),
+      iewStage(params, this), commitStage(params, this), fetchToDecode(5, 5),
+      decodeToRename(5, 5), renameToIEW(5, 5), iewToCommit(5, 5),
+      signalBuffer(5, 5), driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   assert(this->numThreads < LLVMTraceCPUConstants::MaxContexts &&
@@ -137,28 +137,59 @@ void LLVMTraceCPU::init() {
 }
 
 void LLVMTraceCPU::tick() {
-  if (curTick() % 100000000 == 0) {
-    DPRINTF(LLVMTraceCPU, "Tick()\n");
-    this->iewStage.dumpROB();
-    this->accelManager->dump();
-  }
-
   // First time.
-  if (this->numCycles.value() == 0 && this->isStandalone()) {
+  if (!this->warmUpDone && this->isStandalone()) {
     // Warm up the cache.
     // AdHoc for the cache warm up file name.
     if (this->cpuParams->warmCache) {
-      this->warmUpTick = this->warmUpCache(this->traceFileName + ".cache");
-    } else {
-      this->warmUpTick = this->curCycle();
+      if (this->cacheWarmer == nullptr) {
+        this->cacheWarmer =
+            new CacheWarmer(this, this->traceFileName + ".cache");
+      }
     }
+    this->warmUpTick = this->curCycle();
   }
 
   this->numCycles++;
   if (this->cyclesToTicks(this->curCycle()) < this->warmUpTick) {
-    // Waiting for warm up.
+    // Waiting for warm up the previous request.
     schedule(this->tickEvent, nextCycle());
     return;
+  }
+
+  // The previous warm up request is done.
+  if (this->cacheWarmer != nullptr) {
+    if (!this->cacheWarmer->isDone()) {
+      // We still have new warm up request.
+      auto pkt = this->cacheWarmer->getNextWarmUpPacket();
+      // this->warmUpTick = this->dataPort.sendAtomic(pkt);
+      this->warmUpTick += 500 * 100;
+      delete pkt;
+      schedule(this->tickEvent, nextCycle());
+      return;
+    } else {
+      // We are done with warm up.
+      delete this->cacheWarmer;
+      this->cacheWarmer = nullptr;
+      this->warmUpDone = true;
+      // Reset the stats.
+      // Stats::reset();
+      // Tick when = curTick() + 1 * SimClock::Int::ns;
+      // Tick repeat = 0 * SimClock::Int::ns;
+      // Stats::schedStatEvent(false, true, when, repeat);
+      auto &stats = Stats::statsList();
+      // First we have to prepare all of them.
+      for (auto stat : stats) {
+        stat->reset();
+      }
+      hack("done reset.\n");
+    }
+  }
+
+  if (curTick() % 100000000 == 0) {
+    DPRINTF(LLVMTraceCPU, "Tick()\n");
+    this->iewStage.dumpROB();
+    this->accelManager->dump();
   }
 
   // Unblock the memory instructions.
@@ -251,29 +282,23 @@ Tick LLVMTraceCPU::warmUpCache(const std::string &fileName) {
   }
 
   std::ifstream cacheFile(fileName);
-  if (!cacheFile.is_open()) {
-    panic("Failed to open cache warm up file %s.\n", fileName.c_str());
-  }
-  // PortProxy proxy(this->dataPort, 64);
-  Addr vaddr;
-  constexpr auto size = 4;
-  uint8_t data[size];
-
   Tick warmUpTick = 0;
+  Addr vaddr;
+  const size_t size = 4;
+  uint8_t data[size];
 
   while (cacheFile >> std::hex >> vaddr) {
     auto paddr = this->translateAndAllocatePhysMem(vaddr);
     // proxy.readBlob(paddr, data, 4);
 
     int contextId = 0;
-    RequestPtr req = new Request(paddr, size, 0, this->_dataMasterId,
-                                 static_cast<InstSeqNum>(0), contextId);
+    RequestPtr req(new Request(paddr, size, 0, this->_dataMasterId,
+                               static_cast<InstSeqNum>(0), contextId));
     PacketPtr pkt;
     pkt = Packet::createRead(req);
     pkt->dataStatic(data);
     warmUpTick = std::max(warmUpTick, this->dataPort.sendAtomic(pkt));
 
-    delete pkt->req;
     delete pkt;
   }
   cacheFile.close();
@@ -464,7 +489,7 @@ Addr LLVMTraceCPU::translateAndAllocatePhysMem(Addr vaddr) {
     Addr pageBytes = TheISA::PageBytes;
     Addr startVaddr = this->pageTable.pageAlign(vaddr);
     Addr startPaddr = this->system->allocPhysPages(1);
-    this->pageTable.map(startVaddr, startPaddr, pageBytes, PageTableBase::Zero);
+    this->pageTable.map(startVaddr, startPaddr, pageBytes);
     DPRINTF(LLVMTraceCPU, "Map vaddr 0x%x to paddr 0x%x\n", startVaddr,
             startPaddr);
   }

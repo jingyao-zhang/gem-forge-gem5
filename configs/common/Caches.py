@@ -38,6 +38,9 @@
 #
 # Authors: Lisa Hsu
 
+from __future__ import print_function
+from __future__ import absolute_import
+
 from m5.defines import buildEnv
 from m5.objects import *
 
@@ -48,14 +51,6 @@ from m5.objects import *
 # specific instantiations.
 
 class L1Cache(Cache):
-    assoc = 2
-    tag_latency = 2
-    data_latency = 2
-    response_latency = 2
-    mshrs = 4
-    tgts_per_mshr = 20
-
-class L1StreamAwareDataCache(StreamAwareCache):
     assoc = 2
     tag_latency = 2
     data_latency = 2

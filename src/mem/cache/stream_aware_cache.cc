@@ -1,7 +1,7 @@
 
 #include "mem/cache/stream_aware_cache.hh"
 
-#include "base/misc.hh"
+// #include "base/misc.hh""
 #include "base/types.hh"
 #include "debug/Cache.hh"
 #include "debug/CachePort.hh"

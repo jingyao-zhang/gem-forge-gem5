@@ -36,10 +36,11 @@
 IndirectPredictor::IndirectPredictor(bool hash_ghr, bool hash_targets,
     unsigned num_sets, unsigned num_ways,
     unsigned tag_bits, unsigned path_len, unsigned inst_shift,
-    unsigned num_threads)
+    unsigned num_threads, unsigned ghr_size)
     : hashGHR(hash_ghr), hashTargets(hash_targets),
       numSets(num_sets), numWays(num_ways), tagBits(tag_bits),
-      pathLength(path_len), instShift(inst_shift)
+      pathLength(path_len), instShift(inst_shift),
+      ghrNumBits(ghr_size), ghrMask((1 << ghr_size)-1)
 {
     if (!isPowerOf2(numSets)) {
       panic("Indirect predictor requires power of 2 number of sets");
@@ -51,13 +52,42 @@ IndirectPredictor::IndirectPredictor(bool hash_ghr, bool hash_targets,
     for (unsigned i = 0; i < numSets; i++) {
         targetCache[i].resize(numWays);
     }
+
+    fatal_if(ghrNumBits > (sizeof(ThreadInfo::ghr)*8), "ghr_size is too big");
+}
+
+void
+IndirectPredictor::genIndirectInfo(ThreadID tid, void* & indirect_history)
+{
+    // record the GHR as it was before this prediction
+    // It will be used to recover the history in case this prediction is
+    // wrong or belongs to bad path
+    indirect_history = new unsigned(threadInfo[tid].ghr);
+}
+
+void
+IndirectPredictor::updateDirectionInfo(
+    ThreadID tid, bool actually_taken)
+{
+    threadInfo[tid].ghr <<= 1;
+    threadInfo[tid].ghr |= actually_taken;
+    threadInfo[tid].ghr &= ghrMask;
+}
+
+void
+IndirectPredictor::changeDirectionPrediction(ThreadID tid,
+    void * indirect_history, bool actually_taken)
+{
+    unsigned * previousGhr = static_cast<unsigned *>(indirect_history);
+    threadInfo[tid].ghr = ((*previousGhr) << 1) + actually_taken;
+    threadInfo[tid].ghr &= ghrMask;
 }
 
 bool
-IndirectPredictor::lookup(Addr br_addr, unsigned ghr, TheISA::PCState& target,
+IndirectPredictor::lookup(Addr br_addr, TheISA::PCState& target,
     ThreadID tid)
 {
-    Addr set_index = getSetIndex(br_addr, ghr, tid);
+    Addr set_index = getSetIndex(br_addr, threadInfo[tid].ghr, tid);
     Addr tag = getTag(br_addr);
 
     assert(set_index < numSets);
@@ -85,10 +115,15 @@ IndirectPredictor::recordIndirect(Addr br_addr, Addr tgt_addr,
 }
 
 void
-IndirectPredictor::commit(InstSeqNum seq_num, ThreadID tid)
+IndirectPredictor::commit(InstSeqNum seq_num, ThreadID tid,
+                          void * indirect_history)
 {
     DPRINTF(Indirect, "Committing seq:%d\n", seq_num);
     ThreadInfo &t_info = threadInfo[tid];
+
+    // we do not need to recover the GHR, so delete the information
+    unsigned * previousGhr = static_cast<unsigned *>(indirect_history);
+    delete previousGhr;
 
     if (t_info.pathHist.empty()) return;
 
@@ -121,18 +156,29 @@ IndirectPredictor::squash(InstSeqNum seq_num, ThreadID tid)
     t_info.pathHist.erase(squash_itr, t_info.pathHist.end());
 }
 
+void
+IndirectPredictor::deleteIndirectInfo(ThreadID tid, void * indirect_history)
+{
+    unsigned * previousGhr = static_cast<unsigned *>(indirect_history);
+    threadInfo[tid].ghr = *previousGhr;
+
+    delete previousGhr;
+}
 
 void
-IndirectPredictor::recordTarget(InstSeqNum seq_num, unsigned ghr,
-        const TheISA::PCState& target, ThreadID tid)
+IndirectPredictor::recordTarget(
+    InstSeqNum seq_num, void * indirect_history, const TheISA::PCState& target,
+    ThreadID tid)
 {
     ThreadInfo &t_info = threadInfo[tid];
+
+    unsigned * ghr = static_cast<unsigned *>(indirect_history);
 
     // Should have just squashed so this branch should be the oldest
     auto hist_entry = *(t_info.pathHist.rbegin());
     // Temporarily pop it off the history so we can calculate the set
     t_info.pathHist.pop_back();
-    Addr set_index = getSetIndex(hist_entry.pcAddr, ghr, tid);
+    Addr set_index = getSetIndex(hist_entry.pcAddr, *ghr, tid);
     Addr tag = getTag(hist_entry.pcAddr);
     hist_entry.targetAddr = target.instAddr();
     t_info.pathHist.push_back(hist_entry);

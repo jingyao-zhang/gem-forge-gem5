@@ -36,11 +36,14 @@
 # Authors: Andreas Sandberg
 #          Andreas Hansson
 
+from __future__ import print_function
+from __future__ import absolute_import
+
 import m5.objects
 import inspect
 import sys
-import HMC
 from textwrap import  TextWrapper
+from . import HMC
 
 # Dictionary of mapping names of real memory controller models to
 # classes.
@@ -64,27 +67,27 @@ def get(name):
         mem_class = _mem_classes[name]
         return mem_class
     except KeyError:
-        print "%s is not a valid memory controller." % (name,)
+        print("%s is not a valid memory controller." % (name,))
         sys.exit(1)
 
 def print_mem_list():
     """Print a list of available memory classes."""
 
-    print "Available memory classes:"
+    print("Available memory classes:")
     doc_wrapper = TextWrapper(initial_indent="\t\t", subsequent_indent="\t\t")
     for name, cls in _mem_classes.items():
-        print "\t%s" % name
+        print("\t%s" % name)
 
         # Try to extract the class documentation from the class help
         # string.
         doc = inspect.getdoc(cls)
         if doc:
             for line in doc_wrapper.wrap(doc):
-                print line
+                print(line)
 
 def mem_names():
     """Return a list of valid memory names."""
-    return _mem_classes.keys()
+    return list(_mem_classes.keys())
 
 # Add all memory controllers in the object hierarchy.
 for name, cls in inspect.getmembers(m5.objects, is_mem_class):
@@ -164,8 +167,8 @@ def config_mem(options, system):
     opt_mem_ranks = getattr(options, "mem_ranks", None)
 
     if opt_mem_type == "HMC_2500_1x32":
-        HMChost = HMC.config_host_hmc(options, system)
-        HMC.config_hmc(options, system, HMChost.hmc_host)
+        HMChost = HMC.config_hmc_host_ctrl(options, system)
+        HMC.config_hmc_dev(options, system, HMChost.hmc_host)
         subsystem = system.hmc_dev
         xbar = system.hmc_dev.xbar
     else:
@@ -213,7 +216,7 @@ def config_mem(options, system):
     # array of controllers and set their parameters to match their
     # address mapping in the case of a DRAM
     for r in system.mem_ranges:
-        for i in xrange(nbr_mem_ctrls):
+        for i in range(nbr_mem_ctrls):
             mem_ctrl = create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits,
                                        intlv_size)
             # Set the number of ranks based on the command-line
@@ -223,16 +226,19 @@ def config_mem(options, system):
 
             if opt_elastic_trace_en:
                 mem_ctrl.latency = '1ns'
-                print "For elastic trace, over-riding Simple Memory " \
-                    "latency to 1ns."
+                print("For elastic trace, over-riding Simple Memory "
+                    "latency to 1ns.")
 
             mem_ctrls.append(mem_ctrl)
 
     subsystem.mem_ctrls = mem_ctrls
 
     # Connect the controllers to the membus
-    for i in xrange(len(subsystem.mem_ctrls)):
+    for i in range(len(subsystem.mem_ctrls)):
         if opt_mem_type == "HMC_2500_1x32":
             subsystem.mem_ctrls[i].port = xbar[i/4].master
+            # Set memory device size. There is an independent controller for
+            # each vault. All vaults are same size.
+            subsystem.mem_ctrls[i].device_size = options.hmc_dev_vault_size
         else:
             subsystem.mem_ctrls[i].port = xbar.master

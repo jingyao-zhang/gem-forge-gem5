@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013, 2016 ARM Limited
+ * Copyright (c) 2010-2013, 2016, 2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -77,7 +77,7 @@ class TlbTestInterface
      * @param mode Access type
      * @param domain Domain type
      */
-    virtual Fault translationCheck(RequestPtr req, bool is_priv,
+    virtual Fault translationCheck(const RequestPtr &req, bool is_priv,
                                    BaseTLB::Mode mode,
                                    TlbEntry::DomainType domain) = 0;
 
@@ -139,11 +139,23 @@ class TLB : public BaseTLB
         S12E0Tran = 0x80,
         S12E1Tran = 0x100
     };
+
+    /**
+     * Determine the EL to use for the purpose of a translation given
+     * a specific translation type. If the translation type doesn't
+     * specify an EL, we use the current EL.
+     */
+    static ExceptionLevel tranTypeEL(CPSR cpsr, ArmTranslationType type);
+
   protected:
     TlbEntry* table;     // the Page Table
     int size;            // TLB Size
     bool isStage2;       // Indicates this TLB is part of the second stage MMU
     bool stage2Req;      // Indicates whether a stage 2 lookup is also required
+    // Indicates whether a stage 2 lookup of the table descriptors is required.
+    // Certain address translation instructions will intercept the IPA but the
+    // table descriptors still need to be translated by the stage2.
+    bool stage2DescReq;
     uint64_t _attr;      // Memory attributes for last accessed TLB entry
     bool directToStage2; // Indicates whether all translation requests should
                          // be routed directly to the stage 2 TLB
@@ -219,16 +231,18 @@ class TLB : public BaseTLB
 
     void insert(Addr vaddr, TlbEntry &pte);
 
-    Fault getTE(TlbEntry **te, RequestPtr req, ThreadContext *tc, Mode mode,
+    Fault getTE(TlbEntry **te, const RequestPtr &req,
+                ThreadContext *tc, Mode mode,
                 Translation *translation, bool timing, bool functional,
                 bool is_secure, ArmTranslationType tranType);
 
-    Fault getResultTe(TlbEntry **te, RequestPtr req, ThreadContext *tc,
-                      Mode mode, Translation *translation, bool timing,
+    Fault getResultTe(TlbEntry **te, const RequestPtr &req,
+                      ThreadContext *tc, Mode mode,
+                      Translation *translation, bool timing,
                       bool functional, TlbEntry *mergeTe);
 
-    Fault checkPermissions(TlbEntry *te, RequestPtr req, Mode mode);
-    Fault checkPermissions64(TlbEntry *te, RequestPtr req, Mode mode,
+    Fault checkPermissions(TlbEntry *te, const RequestPtr &req, Mode mode);
+    Fault checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
                              ThreadContext *tc);
 
 
@@ -240,9 +254,8 @@ class TLB : public BaseTLB
 
     /** Remove all entries in the non secure world, depending on whether they
      *  were allocated in hyp mode or not
-     * @param hyp if the opperation affects hyp mode
      */
-    void flushAllNs(bool hyp, uint8_t target_el, bool ignore_el = false);
+    void flushAllNs(uint8_t target_el, bool ignore_el = false);
 
 
     /** Reset the entire TLB. Used for CPU switching to prevent stale
@@ -271,22 +284,24 @@ class TLB : public BaseTLB
     /** Remove all entries that match the va regardless of asn
      * @param mva address to flush from cache
      * @param secure_lookup if the operation affects the secure world
-     * @param hyp if the operation affects hyp mode
      */
-    void flushMva(Addr mva, bool secure_lookup, bool hyp, uint8_t target_el);
+    void flushMva(Addr mva, bool secure_lookup, uint8_t target_el);
 
     /**
      * Invalidate all entries in the stage 2 TLB that match the given ipa
      * and the current VMID
      * @param ipa the address to invalidate
      * @param secure_lookup if the operation affects the secure world
-     * @param hyp if the operation affects hyp mode
      */
-    void flushIpaVmid(Addr ipa, bool secure_lookup, bool hyp, uint8_t target_el);
+    void flushIpaVmid(Addr ipa, bool secure_lookup, uint8_t target_el);
 
-    Fault trickBoxCheck(RequestPtr req, Mode mode, TlbEntry::DomainType domain);
-    Fault walkTrickBoxCheck(Addr pa, bool is_secure, Addr va, Addr sz, bool is_exec,
-            bool is_write, TlbEntry::DomainType domain, LookupLevel lookup_level);
+    Fault trickBoxCheck(const RequestPtr &req, Mode mode,
+                        TlbEntry::DomainType domain);
+
+    Fault walkTrickBoxCheck(Addr pa, bool is_secure, Addr va, Addr sz,
+                            bool is_exec, bool is_write,
+                            TlbEntry::DomainType domain,
+                            LookupLevel lookup_level);
 
     void printTlb() const;
 
@@ -310,8 +325,14 @@ class TLB : public BaseTLB
      * Do a functional lookup on the TLB (for checker cpu) that
      * behaves like a normal lookup without modifying any page table state.
      */
-    Fault translateFunctional(RequestPtr req, ThreadContext *tc, Mode mode,
-            ArmTranslationType tranType = NormalTran);
+    Fault translateFunctional(const RequestPtr &req, ThreadContext *tc,
+            Mode mode, ArmTranslationType tranType);
+    Fault
+    translateFunctional(const RequestPtr &req,
+                        ThreadContext *tc, Mode mode) override
+    {
+        return translateFunctional(req, tc, mode, NormalTran);
+    }
 
     /** Accessor functions for memory attributes for last accessed TLB entry
      */
@@ -327,20 +348,35 @@ class TLB : public BaseTLB
         return _attr;
     }
 
-    Fault translateFs(RequestPtr req, ThreadContext *tc, Mode mode,
+    Fault translateFs(const RequestPtr &req, ThreadContext *tc, Mode mode,
             Translation *translation, bool &delay,
             bool timing, ArmTranslationType tranType, bool functional = false);
-    Fault translateSe(RequestPtr req, ThreadContext *tc, Mode mode,
+    Fault translateSe(const RequestPtr &req, ThreadContext *tc, Mode mode,
             Translation *translation, bool &delay, bool timing);
-    Fault translateAtomic(RequestPtr req, ThreadContext *tc, Mode mode,
-            ArmTranslationType tranType = NormalTran);
-    Fault translateTiming(RequestPtr req, ThreadContext *tc,
+    Fault translateAtomic(const RequestPtr &req, ThreadContext *tc, Mode mode,
+            ArmTranslationType tranType);
+    Fault
+    translateAtomic(const RequestPtr &req,
+                    ThreadContext *tc, Mode mode) override
+    {
+        return translateAtomic(req, tc, mode, NormalTran);
+    }
+    void translateTiming(
+            const RequestPtr &req, ThreadContext *tc,
             Translation *translation, Mode mode,
-            ArmTranslationType tranType = NormalTran);
-    Fault translateComplete(RequestPtr req, ThreadContext *tc,
+            ArmTranslationType tranType);
+    void
+    translateTiming(const RequestPtr &req, ThreadContext *tc,
+                    Translation *translation, Mode mode) override
+    {
+        translateTiming(req, tc, translation, mode, NormalTran);
+    }
+    Fault translateComplete(const RequestPtr &req, ThreadContext *tc,
             Translation *translation, Mode mode, ArmTranslationType tranType,
             bool callFromS2);
-    Fault finalizePhysical(RequestPtr req, ThreadContext *tc, Mode mode) const;
+    Fault finalizePhysical(
+            const RequestPtr &req,
+            ThreadContext *tc, Mode mode) const override;
 
     void drainResume() override;
 
@@ -353,7 +389,7 @@ class TLB : public BaseTLB
     void regProbePoints() override;
 
     /**
-     * Get the table walker master port. This is used for migrating
+     * Get the table walker port. This is used for migrating
      * port connections during a CPU takeOverFrom() call. For
      * architectures that do not have a table walker, NULL is
      * returned, hence the use of a pointer rather than a
@@ -362,7 +398,7 @@ class TLB : public BaseTLB
      *
      * @return A pointer to the walker master port
      */
-    BaseMasterPort* getMasterPort() override;
+    Port *getTableWalkerPort() override;
 
     // Caching misc register values here.
     // Writing to misc registers needs to invalidate them.
@@ -411,21 +447,38 @@ private:
      * @param mva virtual address to flush
      * @param asn contextid/asn to flush on match
      * @param secure_lookup if the operation affects the secure world
-     * @param hyp if the operation affects hyp mode
      * @param ignore_asn if the flush should ignore the asn
      */
     void _flushMva(Addr mva, uint64_t asn, bool secure_lookup,
-                   bool hyp, bool ignore_asn, uint8_t target_el);
+                   bool ignore_asn, uint8_t target_el);
 
     bool checkELMatch(uint8_t target_el, uint8_t tentry_el, bool ignore_el);
 
   public: /* Testing */
-    Fault testTranslation(RequestPtr req, Mode mode,
+    Fault testTranslation(const RequestPtr &req, Mode mode,
                           TlbEntry::DomainType domain);
     Fault testWalk(Addr pa, Addr size, Addr va, bool is_secure, Mode mode,
                    TlbEntry::DomainType domain,
                    LookupLevel lookup_level);
 };
+
+template<typename T>
+TLB *
+getITBPtr(T *tc)
+{
+    auto tlb = static_cast<TLB *>(tc->getITBPtr());
+    assert(tlb);
+    return tlb;
+}
+
+template<typename T>
+TLB *
+getDTBPtr(T *tc)
+{
+    auto tlb = static_cast<TLB *>(tc->getDTBPtr());
+    assert(tlb);
+    return tlb;
+}
 
 } // namespace ArmISA
 

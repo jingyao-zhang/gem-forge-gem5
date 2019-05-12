@@ -1,44 +1,46 @@
+# Copyright (c) 2010-2015 Advanced Micro Devices, Inc.
+# All rights reserved.
 #
-#  Copyright (c) 2010-2015 Advanced Micro Devices, Inc.
-#  All rights reserved.
+# For use for simulation and test purposes only
 #
-#  For use for simulation and test purposes only
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-#  Redistribution and use in source and binary forms, with or without
-#  modification, are permitted provided that the following conditions are met:
+# 1. Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
 #
-#  1. Redistributions of source code must retain the above copyright notice,
-#  this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
 #
-#  2. Redistributions in binary form must reproduce the above copyright notice,
-#  this list of conditions and the following disclaimer in the documentation
-#  and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from this
+# software without specific prior written permission.
 #
-#  3. Neither the name of the copyright holder nor the names of its contributors
-#  may be used to endorse or promote products derived from this software
-#  without specific prior written permission.
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 #
-#  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-#  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-#  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-#  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-#  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-#  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-#  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-#  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-#  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-#  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-#  POSSIBILITY OF SUCH DAMAGE.
-#
-#  Author: Lisa Hsu
-#
+# Authors: Lisa Hsu
 
 import math
 import m5
 from m5.objects import *
 from m5.defines import buildEnv
+from m5.util import addToPath
 from Ruby import create_topology
 from Ruby import send_evicts
+from common import FileSystemConfig
+
+addToPath('../')
 
 from topologies.Cluster import Cluster
 from topologies.Crossbar import Crossbar
@@ -209,7 +211,8 @@ def define_options(parser):
     parser.add_option("--num-tbes", type="int", default=256)
     parser.add_option("--l2-latency", type="int", default=50) # load to use
 
-def create_system(options, full_system, system, dma_devices, ruby_system):
+def create_system(options, full_system, system, dma_devices, bootmem,
+                  ruby_system):
     if buildEnv['PROTOCOL'] != 'MOESI_AMD_Base':
         panic("This script requires the MOESI_AMD_Base protocol.")
 
@@ -246,7 +249,7 @@ def create_system(options, full_system, system, dma_devices, ruby_system):
         block_size_bits = int(math.log(options.cacheline_size, 2))
         numa_bit = block_size_bits + dir_bits - 1
 
-    for i in xrange(options.num_dirs):
+    for i in range(options.num_dirs):
         dir_ranges = []
         for r in system.mem_ranges:
             addr_range = m5.objects.AddrRange(r.start, size = r.size(),
@@ -292,7 +295,7 @@ def create_system(options, full_system, system, dma_devices, ruby_system):
 
     # For an odd number of CPUs, still create the right number of controllers
     cpuCluster = Cluster(extBW = 512, intBW = 512)  # 1 TB/s
-    for i in xrange((options.num_cpus + 1) / 2):
+    for i in range((options.num_cpus + 1) // 2):
 
         cp_cntrl = CPCntrl()
         cp_cntrl.create(options, ruby_system, system)
@@ -323,6 +326,59 @@ def create_system(options, full_system, system, dma_devices, ruby_system):
         cp_cntrl.triggerQueue = MessageBuffer(ordered = True)
 
         cpuCluster.add(cp_cntrl)
+
+    # Register CPUs and caches for each CorePair and directory (SE mode only)
+    if not full_system:
+        FileSystemConfig.config_filesystem(options)
+        for i in xrange((options.num_cpus + 1) // 2):
+            FileSystemConfig.register_cpu(physical_package_id = 0,
+                                          core_siblings =
+                                            xrange(options.num_cpus),
+                                          core_id = i*2,
+                                          thread_siblings = [])
+
+            FileSystemConfig.register_cpu(physical_package_id = 0,
+                                          core_siblings =
+                                            xrange(options.num_cpus),
+                                          core_id = i*2+1,
+                                          thread_siblings = [])
+
+            FileSystemConfig.register_cache(level = 0,
+                                            idu_type = 'Instruction',
+                                            size = options.l1i_size,
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l1i_assoc,
+                                            cpus = [i*2, i*2+1])
+
+            FileSystemConfig.register_cache(level = 0,
+                                            idu_type = 'Data',
+                                            size = options.l1d_size,
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l1d_assoc,
+                                            cpus = [i*2])
+
+            FileSystemConfig.register_cache(level = 0,
+                                            idu_type = 'Data',
+                                            size = options.l1d_size,
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l1d_assoc,
+                                            cpus = [i*2+1])
+
+            FileSystemConfig.register_cache(level = 1,
+                                            idu_type = 'Unified',
+                                            size = options.l2_size,
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l2_assoc,
+                                            cpus = [i*2, i*2+1])
+
+        for i in range(options.num_dirs):
+            FileSystemConfig.register_cache(level = 2,
+                                            idu_type = 'Unified',
+                                            size = options.l3_size,
+                                            line_size = options.cacheline_size,
+                                            assoc = options.l3_assoc,
+                                            cpus = [n for n in
+                                                xrange(options.num_cpus)])
 
     # Assuming no DMA devices
     assert(len(dma_devices) == 0)

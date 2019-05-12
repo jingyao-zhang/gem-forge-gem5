@@ -26,6 +26,10 @@
 #
 # Authors: Ali Saidi
 
+from __future__ import print_function
+from __future__ import absolute_import
+
+from six import string_types
 import os, sys
 
 config_path = os.path.dirname(os.path.abspath(__file__))
@@ -34,8 +38,12 @@ config_root = os.path.dirname(config_path)
 class PathSearchFunc(object):
     _sys_paths = None
 
-    def __init__(self, *subdirs):
+    def __init__(self, subdirs, sys_paths=None):
+        if isinstance(subdirs, string_types):
+            subdirs = [subdirs]
         self._subdir = os.path.join(*subdirs)
+        if sys_paths:
+            self._sys_paths = sys_paths
 
     def __call__(self, filename):
         if self._sys_paths is None:
@@ -51,17 +59,17 @@ class PathSearchFunc(object):
             paths = filter(os.path.isdir, paths)
 
             if not paths:
-                raise IOError, "Can't find a path to system files."
+                raise IOError("Can't find a path to system files.")
 
-            self._sys_paths = paths
+            self._sys_paths = list(paths)
 
         filepath = os.path.join(self._subdir, filename)
         paths = (os.path.join(p, filepath) for p in self._sys_paths)
         try:
             return next(p for p in paths if os.path.exists(p))
         except StopIteration:
-            raise IOError, "Can't find file '%s' on path." % filename
+            raise IOError("Can't find file '%s' on path." % filename)
 
 disk = PathSearchFunc('disks')
 binary = PathSearchFunc('binaries')
-script = PathSearchFunc('boot')
+script = PathSearchFunc('boot', sys_paths=[config_root])
