@@ -12,7 +12,7 @@ public:
   StreamPlacementManager(LLVMTraceCPU *_cpu, StreamEngine *_se);
 
   bool access(const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-              StreamElement *element);
+              StreamElement *element, bool isWrite = false);
 
   void dumpCacheStreamAwarePortStatus();
 
@@ -51,25 +51,25 @@ private:
 
   bool accessNoMSHR(Stream *stream,
                     const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-                    StreamElement *element);
+                    StreamElement *element, bool isWrite);
 
   bool accessExpress(Stream *stream,
                      const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-                     StreamElement *element);
+                     StreamElement *element, bool isWrite);
 
   bool
   accessExpressFootprint(Stream *stream,
                          const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-                         StreamElement *element);
+                         StreamElement *element, bool isWrite);
 
   size_t whichCacheLevelToPlace(Stream *stream) const;
   int getPlacedCacheLevelByFootprint(Stream *stream) const;
   int getOrInitializePlacedCacheLevel(Stream *stream);
   void updatePlacedCacheLevel(Stream *stream);
 
-  PacketPtr
-  createPacket(Addr paddr, int size, StreamElement *element,
-               const CacheBlockBreakdownAccess &cacheBlockBreakdown) const;
+  PacketPtr createPacket(Addr paddr, int size, StreamElement *element,
+                         const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+                         bool isWrite) const;
 
   bool isHit(Cache *cache, Addr paddr) const;
   void scheduleResponse(Cycles latency, StreamElement *element, PacketPtr pkt);

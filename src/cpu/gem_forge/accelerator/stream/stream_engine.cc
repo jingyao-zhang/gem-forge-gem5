@@ -36,6 +36,7 @@ StreamEngine::StreamEngine()
 StreamEngine::~StreamEngine() {
   if (this->streamPlacementManager != nullptr) {
     delete this->streamPlacementManager;
+    this->streamPlacementManager = nullptr;
   }
 
   // Clear all the allocated streams.
@@ -88,9 +89,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
 
   this->initializeFIFO(this->maxTotalRunAheadLength);
 
-  if (this->enableStreamPlacement) {
-    this->streamPlacementManager = new StreamPlacementManager(cpu, this);
-  }
+  this->streamPlacementManager = new StreamPlacementManager(cpu, this);
 }
 
 void StreamEngine::regStats() {
@@ -215,8 +214,9 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
   // Sanity check on the number of configured streams.
   {
     if (configuredStreams * 3 > this->maxTotalRunAheadLength) {
-      panic("Too many streams configuredStreams %d, FIFOSize %d.\n",
-            configuredStreams, this->maxTotalRunAheadLength);
+      panic("Too many streams configuredStreams for loop %s %d, FIFOSize %d.\n",
+            inst->getTDG().stream_config().loop().c_str(), configuredStreams,
+            this->maxTotalRunAheadLength);
     }
   }
 
@@ -1302,10 +1302,12 @@ void StreamEngine::issueElement(StreamElement *element) {
       panic("Stream so far can only work in standalone mode.");
     }
 
-    if (this->streamPlacementManager != nullptr) {
+    if (this->enableStreamPlacement) {
       // This means we have the placement manager.
       if (this->streamPlacementManager->access(cacheBlockBreakdown, element)) {
         // Stream placement manager handles this packet.
+        // But we need to mark the cache block to be FETCHING.
+        cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
         continue;
       }
     }
@@ -1365,15 +1367,14 @@ void StreamEngine::writebackElement(StreamElement *element,
       panic("Stream so far can only work in standalone mode.");
     }
 
-    // ! So far disable cache bypassing for writebacks.
-    // if (this->streamPlacementManager != nullptr) {
-    //   // This means we have the placement manager.
-    //   if (this->streamPlacementManager->access(cacheBlockBreakdown, element))
-    //   {
-    //     // Stream placement manager handles this packet.
-    //     continue;
-    //   }
-    // }
+    if (this->enableStreamPlacement) {
+      // This means we have the placement manager.
+      if (this->streamPlacementManager->access(cacheBlockBreakdown, element,
+                                               true)) {
+        // Stream placement manager handles this packet.
+        continue;
+      }
+    }
 
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
@@ -1400,9 +1401,7 @@ void StreamEngine::dumpFIFO() const {
 }
 
 void StreamEngine::dump() {
-  if (this->streamPlacementManager != nullptr) {
-    this->streamPlacementManager->dumpCacheStreamAwarePortStatus();
-  }
+  this->streamPlacementManager->dumpCacheStreamAwarePortStatus();
   this->dumpFIFO();
 }
 

@@ -59,7 +59,7 @@ StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
 
 bool StreamPlacementManager::access(
     const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-    StreamElement *element) {
+    StreamElement *element, bool isWrite) {
 
   if (!this->se->isPlacementEnabled()) {
     return false;
@@ -74,134 +74,23 @@ bool StreamPlacementManager::access(
   assert(stream != nullptr && "Missing stream in StreamElement.");
 
   if (this->se->getPlacement() == "placement-no-mshr") {
-    return this->accessNoMSHR(stream, cacheBlockBreakdown, element);
+    return this->accessNoMSHR(stream, cacheBlockBreakdown, element, isWrite);
   }
 
   if (this->se->getPlacement() == "placement-expr") {
-    return this->accessExpress(stream, cacheBlockBreakdown, element);
+    return this->accessExpress(stream, cacheBlockBreakdown, element, isWrite);
   }
 
   if (this->se->getPlacement() == "placement-expr-fp") {
-    return this->accessExpressFootprint(stream, cacheBlockBreakdown, element);
+    return this->accessExpressFootprint(stream, cacheBlockBreakdown, element,
+                                        isWrite);
   }
-
-  auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
-  if (coalescedStream == nullptr) {
-    // So far we only consider coalesced streams.
-    return false;
-  }
-
-  auto placeCacheLevel = this->whichCacheLevelToPlace(coalescedStream);
-
-  this->se->numAccessPlacedInCacheLevel[placeCacheLevel]++;
-
-  bool hasHit = false;
-  size_t hitLevel = this->caches.size();
-  Cycles latency = Cycles(1);
-
-  auto vaddr = cacheBlockBreakdown.virtualAddr;
-  auto packetSize = cacheBlockBreakdown.size;
-  Addr paddr;
-  if (cpu->isStandalone()) {
-    paddr = cpu->translateAndAllocatePhysMem(vaddr);
-  } else {
-    panic("Stream so far can only work in standalone mode.");
-  }
-
-  for (int cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
-    auto cache = this->caches[cacheLevel];
-    auto isHitThisLevel = this->isHit(cache, paddr);
-    if (cacheLevel < placeCacheLevel) {
-      if (isHitThisLevel) {
-        if (!hasHit) {
-          // This is still where we sent the request.
-          latency = this->lookupLatency[cacheLevel];
-        } else {
-          // We have already been hit.
-        }
-      } else {
-        // Does not hit in this level.
-      }
-    } else if (cacheLevel == placeCacheLevel) {
-      if (isHitThisLevel) {
-        // Hit in what we expected.
-        if (!hasHit) {
-          latency = this->lookupLatency[cacheLevel];
-        } else {
-        }
-      } else {
-        // Build up the lookup latency.
-        latency += this->lookupLatency[cacheLevel];
-      }
-    } else {
-      if (isHitThisLevel) {
-        if (!hasHit) {
-          latency += this->lookupLatency[cacheLevel];
-        } else {
-          // Already hit.
-        }
-      } else {
-        latency += this->lookupLatency[cacheLevel];
-      }
-    }
-    if (!hasHit && (isHitThisLevel)) {
-      hasHit = true;
-      hitLevel = cacheLevel;
-    }
-  }
-
-  if (hitLevel < placeCacheLevel) {
-    this->se->numAccessHitHigherThanPlacedCacheLevel[placeCacheLevel]++;
-  } else if (hitLevel > placeCacheLevel) {
-    this->se->numAccessHitLowerThanPlacedCacheLevel[placeCacheLevel]++;
-  }
-
-  /**
-   * 1. If hit above the place cache level, we schedule a response according
-   *    to its tag lookup latency and issue a functional access to the place
-   *    cache.
-   * 2. Otherwise, we issue a real packet to the place cache.
-   */
-  auto pkt =
-      this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
-  auto placeCache = this->caches[placeCacheLevel];
-  if (this->se->isOraclePlacementEnabled()) {
-    placeCache->recvAtomic(pkt);
-    if (hitLevel == this->caches.size()) {
-      latency += Cycles(10);
-    }
-    this->scheduleResponse(latency, element, pkt);
-    return true;
-  }
-
-  if (placeCacheLevel == 0) {
-    // L1 cache is not handled by us.
-    return false;
-  }
-
-  if (hitLevel <= placeCacheLevel) {
-    placeCache->recvAtomic(pkt);
-    this->scheduleResponse(latency, element, pkt);
-  } else {
-    // Do a real cache access and allow.
-    if (this->se->isOraclePlacementEnabled()) {
-      auto sentLevel = hitLevel;
-      if (sentLevel == this->caches.size()) {
-        sentLevel -= 1;
-      }
-      auto sentCache = this->caches[sentLevel];
-      this->sendTimingRequest(pkt, sentCache);
-    } else {
-      this->sendTimingRequest(pkt, placeCache);
-    }
-  }
-
-  return true;
+  return false;
 }
 
 bool StreamPlacementManager::accessNoMSHR(
     Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-    StreamElement *element) {
+    StreamElement *element, bool isWrite) {
 
   auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
   if (coalescedStream == nullptr) {
@@ -237,8 +126,8 @@ bool StreamPlacementManager::accessNoMSHR(
   /**
    * Schedule the response.
    */
-  auto pkt =
-      this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
+  auto pkt = this->createPacket(paddr, packetSize, element, cacheBlockBreakdown,
+                                isWrite);
   this->caches[0]->recvAtomic(pkt);
   this->scheduleResponse(latency, element, pkt);
 
@@ -247,8 +136,9 @@ bool StreamPlacementManager::accessNoMSHR(
 
 bool StreamPlacementManager::accessExpress(
     Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-    StreamElement *element) {
-  int latency = 0;
+    StreamElement *element, bool isWrite) {
+  
+  // Do not bypass for the first 100 accesses.
   auto L1 = this->caches[0];
   auto &L1Stats = L1->getOrInitializeStreamStats(stream);
   if (L1Stats.accesses <= 100) {
@@ -264,6 +154,7 @@ bool StreamPlacementManager::accessExpress(
     panic("Stream so far can only work in standalone mode.");
   }
 
+  int latency = 0;
   if (L1Stats.misses > L1Stats.accesses * 0.95f &&
       L1Stats.reuses < L1Stats.accesses * 0.1f) {
 
@@ -296,8 +187,8 @@ bool StreamPlacementManager::accessExpress(
           paddr = paddr & (~(64 - 1));
           packetSize = 64;
         }
-        auto pkt =
-            this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
+        auto pkt = this->createPacket(paddr, packetSize, element,
+                                      cacheBlockBreakdown, isWrite);
         if (this->se->getPlacementLat() != "imm") {
           auto memAccess =
               reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -314,8 +205,8 @@ bool StreamPlacementManager::accessExpress(
         }
         // Send request to L3.
         auto L3 = this->caches[2];
-        auto pkt =
-            this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
+        auto pkt = this->createPacket(paddr, packetSize, element,
+                                      cacheBlockBreakdown, isWrite);
         if (this->se->getPlacementLat() != "imm") {
           auto memAccess =
               reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -335,8 +226,8 @@ bool StreamPlacementManager::accessExpress(
       return true;
     } else {
       // Not bypassing L2.
-      auto pkt =
-          this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
+      auto pkt = this->createPacket(paddr, packetSize, element,
+                                    cacheBlockBreakdown, isWrite);
       if (this->se->getPlacementLat() != "imm") {
         auto memAccess =
             reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -349,12 +240,16 @@ bool StreamPlacementManager::accessExpress(
 
     // this->scheduleResponse(latency, memAccess, pkt);
   }
+
+  /******************************************************
+   * No Bypassing
+   ******************************************************/
   return false;
 }
 
 bool StreamPlacementManager::accessExpressFootprint(
     Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-    StreamElement *element) {
+    StreamElement *element, bool isWrite) {
 
   if (this->se->isPlacementNoBypassingStore()) {
     if (stream->getStreamType() == "store") {
@@ -417,8 +312,8 @@ bool StreamPlacementManager::accessExpressFootprint(
           paddr = paddr & (~(64 - 1));
           packetSize = 64;
         }
-        auto pkt =
-            this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
+        auto pkt = this->createPacket(paddr, packetSize, element,
+                                      cacheBlockBreakdown, isWrite);
         if (this->se->getPlacementLat() != "imm") {
           auto memAccess =
               reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -435,8 +330,8 @@ bool StreamPlacementManager::accessExpressFootprint(
         }
 
         auto L3 = this->caches[2];
-        auto pkt =
-            this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
+        auto pkt = this->createPacket(paddr, packetSize, element,
+                                      cacheBlockBreakdown, isWrite);
         if (this->se->getPlacementLat() != "imm") {
           auto memAccess =
               reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -448,8 +343,8 @@ bool StreamPlacementManager::accessExpressFootprint(
       }
     } else {
       // Do not bypassing L2.
-      auto pkt =
-          this->createPacket(paddr, packetSize, element, cacheBlockBreakdown);
+      auto pkt = this->createPacket(paddr, packetSize, element,
+                                    cacheBlockBreakdown, isWrite);
       if (this->se->getPlacementLat() != "imm") {
         auto memAccess =
             reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum());
@@ -471,10 +366,17 @@ bool StreamPlacementManager::isHit(Cache *cache, Addr paddr) const {
 
 PacketPtr StreamPlacementManager::createPacket(
     Addr paddr, int size, StreamElement *element,
-    const CacheBlockBreakdownAccess &cacheBlockBreakdown) const {
+    const CacheBlockBreakdownAccess &cacheBlockBreakdown, bool isWrite) const {
   auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
-  auto pkt = TDGPacketHandler::createTDGPacket(paddr, size, memAccess, nullptr,
+  uint8_t *data = nullptr;
+  if (isWrite) {
+    data = new uint8_t[size];
+  }
+  auto pkt = TDGPacketHandler::createTDGPacket(paddr, size, memAccess, data,
                                                Request::funcMasterId, 0, 0);
+  if (isWrite) {
+    delete[] data;
+  }
   /**
    * Remember to add this to the element infly memAccess set.
    */
