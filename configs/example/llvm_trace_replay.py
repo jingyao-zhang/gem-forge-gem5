@@ -25,9 +25,9 @@ parser.add_option("--llvm-standalone", action="store_true",
                   help="""replay in stand alone mode""", default=False)
 parser.add_option("--llvm-prefetch", action="store", type="int",
                   help="""whether to use a prefetcher""", default="0")
-parser.add_option("--gem-forge-l1-prefetch", type="choice", default="none",
-                  choices=['none', 'stride', 'imp'],
-                  help="Type of prefetcher at L1 cache.")
+parser.add_option("--gem-forge-prefetcher", type="choice", default="none",
+                  choices=['none', 'stride', 'imp', 'isb'],
+                  help="Type of prefetcher we are using.")
 parser.add_option("--llvm-trace-file", action="callback", type="string",
                   help="""llvm trace file input LLVMTraceCPU""", default="",
                   callback=parse_tdg_files)
@@ -433,13 +433,17 @@ for cpu in system.cpu:
 
 if options.llvm_prefetch == 1:
     for cpu in system.cpu:
-        if options.gem_forge_l1_prefetch == 'imp':
+        if options.gem_forge_prefetcher == 'imp':
             cpu.dcache.prefetcher = IndirectMemoryPrefetcher()
         else:
             cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
         if options.l1_5dcache:
             cpu.l1_5dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
-    system.l2.prefetcher = StridePrefetcher(degree=8, latency=1)
+    if options.gem_forge_prefetcher == 'isb':
+        # ISB should work at LLC.
+        system.l2.prefetcher = IrregularStreamBufferPrefetcher()
+    else:
+        system.l2.prefetcher = StridePrefetcher(degree=8, latency=1)
 
 
 root = Root(full_system=False, system=system)
