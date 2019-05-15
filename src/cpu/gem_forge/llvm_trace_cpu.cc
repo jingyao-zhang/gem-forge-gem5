@@ -14,7 +14,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
       dataPort(params->name + ".data_port", this),
       traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
       fuPool(params->fuPool), regionStats(nullptr), currentStackDepth(0),
-      warmUpDone(false), warmUpTick(0), cacheWarmer(nullptr), process(nullptr),
+      warmUpDone(false), cacheWarmer(nullptr), process(nullptr),
       thread_context(nullptr), stackMin(0), fetchStage(params, this),
       decodeStage(params, this), renameStage(params, this),
       iewStage(params, this), commitStage(params, this), fetchToDecode(5, 5),
@@ -137,6 +137,11 @@ void LLVMTraceCPU::init() {
 }
 
 void LLVMTraceCPU::tick() {
+  /**
+   * Now we are warm up in timing mode,
+   * so we always need to send the packets.
+   */
+  this->dataPort.sendReq();
   // First time.
   if (!this->warmUpDone && this->isStandalone()) {
     // Warm up the cache.
@@ -147,43 +152,40 @@ void LLVMTraceCPU::tick() {
             new CacheWarmer(this, this->traceFileName + ".cache");
       }
     }
-    this->warmUpTick = this->curCycle();
   }
 
   this->numCycles++;
-  if (this->cyclesToTicks(this->curCycle()) < this->warmUpTick) {
-    // Waiting for warm up the previous request.
+
+  if (this->cacheWarmer != nullptr) {
+    if (this->cacheWarmer->isDoneWithPreviousRequest()) {
+      if (this->cacheWarmer->isDone()) {
+        // We are done warming up.
+        inform("Done cache warmup, %lu.\n", this->numCycles.value());
+        delete this->cacheWarmer;
+        this->cacheWarmer = nullptr;
+        this->warmUpDone = true;
+        // Reset the stats.
+        // Stats::reset();
+        // Tick when = curTick() + 1 * SimClock::Int::ns;
+        // Tick repeat = 0 * SimClock::Int::ns;
+        // Stats::schedStatEvent(false, true, when, repeat);
+        auto &stats = Stats::statsList();
+        // First we have to prepare all of them.
+        for (auto stat : stats) {
+          stat->reset();
+        }
+        inform("Done reset, %lu.\n", this->numCycles.value());
+      } else {
+        // We can try a new packet.
+        auto pkt = this->cacheWarmer->getNextWarmUpPacket();
+        assert(pkt != nullptr && "Should not a null warm up packet.");
+        // There are still more packets.
+        this->sendRequest(pkt);
+      }
+    }
+    // We schedule the next
     schedule(this->tickEvent, nextCycle());
     return;
-  }
-
-  // The previous warm up request is done.
-  if (this->cacheWarmer != nullptr) {
-    if (!this->cacheWarmer->isDone()) {
-      // We still have new warm up request.
-      auto pkt = this->cacheWarmer->getNextWarmUpPacket();
-      // this->warmUpTick = this->dataPort.sendAtomic(pkt);
-      this->warmUpTick += 500 * 100;
-      delete pkt;
-      schedule(this->tickEvent, nextCycle());
-      return;
-    } else {
-      // We are done with warm up.
-      delete this->cacheWarmer;
-      this->cacheWarmer = nullptr;
-      this->warmUpDone = true;
-      // Reset the stats.
-      // Stats::reset();
-      // Tick when = curTick() + 1 * SimClock::Int::ns;
-      // Tick repeat = 0 * SimClock::Int::ns;
-      // Stats::schedStatEvent(false, true, when, repeat);
-      auto &stats = Stats::statsList();
-      // First we have to prepare all of them.
-      for (auto stat : stats) {
-        stat->reset();
-      }
-      hack("done reset.\n");
-    }
   }
 
   if (curTick() % 100000000 == 0) {
@@ -203,9 +205,6 @@ void LLVMTraceCPU::tick() {
   this->iewStage.tick();
   this->accelManager->tick();
   this->commitStage.tick();
-
-  // Send the packets.
-  this->dataPort.sendReq();
 
   this->fetchToDecode.advance();
   this->decodeToRename.advance();
@@ -271,45 +270,46 @@ void LLVMTraceCPU::tick() {
   }
 
   this->numPendingAccessDist.sample(this->dataPort.getPendingPacketsNum());
-
-  this->numPendingAccessDist.sample(this->dataPort.getPendingPacketsNum());
-}
-
-Tick LLVMTraceCPU::warmUpCache(const std::string &fileName) {
-  if (!this->isStandalone()) {
-    // Only warm up cache in standalone mode.
-    return 0;
-  }
-
-  std::ifstream cacheFile(fileName);
-  Tick warmUpTick = 0;
-  Addr vaddr;
-  const size_t size = 4;
-  uint8_t data[size];
-
-  while (cacheFile >> std::hex >> vaddr) {
-    auto paddr = this->translateAndAllocatePhysMem(vaddr);
-    // proxy.readBlob(paddr, data, 4);
-
-    int contextId = 0;
-    RequestPtr req(new Request(paddr, size, 0, this->_dataMasterId,
-                               static_cast<InstSeqNum>(0), contextId));
-    PacketPtr pkt;
-    pkt = Packet::createRead(req);
-    pkt->dataStatic(data);
-    warmUpTick = std::max(warmUpTick, this->dataPort.sendAtomic(pkt));
-
-    delete pkt;
-  }
-  cacheFile.close();
-
-  return warmUpTick;
 }
 
 bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   // Receive the response from port.
   TDGPacketHandler::handleTDGPacketResponse(this, pkt);
   return true;
+}
+
+PacketPtr LLVMTraceCPU::CacheWarmer::getNextWarmUpPacket() {
+  assert(!isDone() && "Already done.");
+  if (this->warmUpAddrs == this->addrs.size()) {
+    // No more packets.
+    return nullptr;
+  }
+  constexpr auto size = 4;
+  uint8_t data[size];
+  auto vaddr = this->addrs.at(this->warmUpAddrs);
+  this->warmUpAddrs++;
+  // hack("Generate warmup for %d.\n", this->warmUpAddrs);
+
+  auto paddr = this->cpu->translateAndAllocatePhysMem(vaddr);
+
+  // int contextId = 0;
+  // RequestPtr req(new Request(paddr, size, 0, this->cpu->_dataMasterId,
+  //                            static_cast<InstSeqNum>(0), contextId));
+  // PacketPtr pkt;
+  // pkt = Packet::createRead(req);
+  // pkt->dataStatic(data);
+
+  auto pkt = TDGPacketHandler::createTDGPacket(
+      paddr, size, this, data, this->cpu->getDataMasterID(), 0, 0x303030);
+  return pkt;
+}
+
+void LLVMTraceCPU::CacheWarmer::handlePacketResponse(LLVMTraceCPU *cpu,
+                                                     PacketPtr packet) {
+  // Just release the packet.
+  this->receivedPackets++;
+  // hack("Received warmup for %d.\n", this->receivedPackets);
+  delete packet;
 }
 
 bool LLVMTraceCPU::CPUPort::recvTimingResp(PacketPtr pkt) {
