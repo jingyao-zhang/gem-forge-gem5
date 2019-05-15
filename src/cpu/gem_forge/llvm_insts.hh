@@ -200,10 +200,11 @@ protected:
   struct PacketParam {
   public:
     Addr paddr;
+    Addr vaddr;
     int size;
     uint8_t *data;
-    PacketParam(Addr _paddr, int _size, uint8_t *_data)
-        : paddr(_paddr), size(_size), data(_data) {}
+    PacketParam(Addr _paddr, Addr _vaddr, int _size, uint8_t *_data)
+        : paddr(_paddr), vaddr(_vaddr), size(_size), data(_data) {}
   };
   std::list<PacketParam> packets;
 

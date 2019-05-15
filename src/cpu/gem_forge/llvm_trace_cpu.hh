@@ -84,6 +84,9 @@ public:
     }
     status = newStatus;
   }
+  LLVMTraceThreadContext *getInflyInstThread(LLVMDynamicInstId instId) const {
+    return this->inflyInstThread.at(instId);
+  }
 
 private:
   // This port will handle retry.

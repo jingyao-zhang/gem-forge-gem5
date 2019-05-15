@@ -314,6 +314,13 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
       auto pkt = TDGPacketHandler::createTDGPacket(
           packet.paddr, packet.size, this, packet.data, cpu->getDataMasterID(),
           0, this->TDG.pc());
+      // We want to set up the virtual address.
+      // Use the ThreadID as the ASID.
+      auto thread = cpu->getInflyInstThread(this->TDG.id());
+      pkt->req->setVirt(thread->getThreadId(), packet.vaddr, packet.size, 0,
+                        cpu->getDataMasterID(), this->TDG.pc());
+      // ! setVirt will clear the physical address.
+      pkt->req->setPaddr(packet.paddr);
       cpu->sendRequest(pkt);
       DPRINTF(LLVMTraceCPU, "Send request paddr %p size %u for inst %d\n",
               reinterpret_cast<void *>(packet.paddr), packet.size,
@@ -384,9 +391,9 @@ void LLVMDynamicInstMem::constructPackets(LLVMTraceCPU *cpu) {
 
     // Construct the packet.
     if (this->type == Type::LOAD) {
-      this->packets.emplace_back(paddr, packetSize, nullptr);
+      this->packets.emplace_back(paddr, vaddr, packetSize, nullptr);
     } else {
-      this->packets.emplace_back(paddr, packetSize,
+      this->packets.emplace_back(paddr, vaddr, packetSize,
                                  this->value + inflyPacketsSize);
     }
 
