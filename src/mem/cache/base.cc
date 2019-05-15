@@ -2776,20 +2776,11 @@ void BaseCache::dumpStreamStats(std::ostream &os) const {
 }
 
 Stream *BaseCache::getStreamFromPacket(PacketPtr pkt) const {
-    /**
-     * Dangerous pointer casting! Only use stream aware cache with LLVMTraceCPU.
-     */
-    if (!pkt->req->hasInstSeqNum()) {
+    auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
+    if (streamMemAccess == nullptr) {
         return nullptr;
     }
-    TDGPacketHandler *handler =
-        reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
-
-    if (auto memAccess = dynamic_cast<StreamMemAccess *>(handler)) {
-        auto stream = memAccess->getStream();
-        return stream;
-    }
-    return nullptr;
+    return streamMemAccess->getStream();
 }
 
 
