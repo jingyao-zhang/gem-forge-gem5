@@ -434,7 +434,9 @@ for cpu in system.cpu:
 if options.llvm_prefetch == 1:
     for cpu in system.cpu:
         if options.gem_forge_prefetcher == 'imp':
-            cpu.dcache.prefetcher = IndirectMemoryPrefetcher()
+            cpu.dcache.prefetcher = IndirectMemoryPrefetcher(
+                streaming_distance=8
+            )
         else:
             cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
         if options.l1_5dcache:
