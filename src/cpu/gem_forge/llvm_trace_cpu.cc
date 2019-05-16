@@ -2,6 +2,7 @@
 
 #include "base/loader/object_file.hh"
 #include "cpu/thread_context.hh"
+#include "debug/GemForgeCPUDump.hh"
 #include "debug/LLVMTraceCPU.hh"
 #include "sim/process.hh"
 #include "sim/sim_exit.hh"
@@ -173,10 +174,12 @@ void LLVMTraceCPU::tick() {
     return;
   }
 
-  if (curTick() % 100000000 == 0) {
-    DPRINTF(LLVMTraceCPU, "Tick()\n");
-    this->iewStage.dumpROB();
-    this->accelManager->dump();
+  if (Debug::GemForgeCPUDump) {
+    if (curTick() % 100000000 == 0) {
+      DPRINTF(LLVMTraceCPU, "Tick()\n");
+      this->iewStage.dumpROB();
+      this->accelManager->dump();
+    }
   }
 
   // Unblock the memory instructions.
