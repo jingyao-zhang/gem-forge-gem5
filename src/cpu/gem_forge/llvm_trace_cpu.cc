@@ -112,6 +112,10 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
     DPRINTF(LLVMTraceCPU, "Schedule initial tick event.\n");
     schedule(this->tickEvent, nextCycle());
   }
+
+  if (this->cpuParams->warmCache && this->isStandalone()) {
+    this->cacheWarmer = new CacheWarmer(this, this->traceFileName + ".cache");
+  }
 }
 
 LLVMTraceCPU::~LLVMTraceCPU() {
@@ -142,17 +146,6 @@ void LLVMTraceCPU::tick() {
    * so we always need to send the packets.
    */
   this->dataPort.sendReq();
-  // First time.
-  if (!this->warmUpDone && this->isStandalone()) {
-    // Warm up the cache.
-    // AdHoc for the cache warm up file name.
-    if (this->cpuParams->warmCache) {
-      if (this->cacheWarmer == nullptr) {
-        this->cacheWarmer =
-            new CacheWarmer(this, this->traceFileName + ".cache");
-      }
-    }
-  }
 
   this->numCycles++;
 
@@ -165,15 +158,7 @@ void LLVMTraceCPU::tick() {
         this->cacheWarmer = nullptr;
         this->warmUpDone = true;
         // Reset the stats.
-        // Stats::reset();
-        // Tick when = curTick() + 1 * SimClock::Int::ns;
-        // Tick repeat = 0 * SimClock::Int::ns;
-        // Stats::schedStatEvent(false, true, when, repeat);
-        auto &stats = Stats::statsList();
-        // First we have to prepare all of them.
-        for (auto stat : stats) {
-          stat->reset();
-        }
+        Stats::reset();
         inform("Done reset, %lu.\n", this->numCycles.value());
       } else {
         // We can try a new packet.
