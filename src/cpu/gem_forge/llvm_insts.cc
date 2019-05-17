@@ -456,6 +456,12 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
     cpu->mapBaseNameToVAddr(this->TDG.load().new_base(), vaddr);
   }
 
+  // A fake sanity check that we have loaded the correct value.
+  if (this->TDG.pc() == 4195584) {
+    // auto idx = packet->get<uint32_t>();
+    // hack("Loaded Vaddr %x, Index %d.\n", this->TDG.load().addr(), idx);
+  }
+
   // We don't care about which packet for now, just mark one completed.
   this->packets.pop_front();
   DPRINTF(LLVMTraceCPU, "Get response for inst %u, remain infly packets %d\n",

@@ -172,6 +172,10 @@ private:
   void stackPop();
   void stackPush();
 
+  // Setup the initial memory snapshot via functional store.
+  void initializeMemorySnapshot();
+  bool initializeMemorySnapshotDone;
+
   // Cache warm up in standalone mode.
   struct CacheWarmer : public TDGPacketHandler {
     LLVMTraceCPU *cpu;

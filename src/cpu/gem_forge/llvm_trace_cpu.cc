@@ -4,6 +4,7 @@
 #include "cpu/thread_context.hh"
 #include "debug/GemForgeCPUDump.hh"
 #include "debug/LLVMTraceCPU.hh"
+#include "proto/protoio.hh"
 #include "sim/process.hh"
 #include "sim/sim_exit.hh"
 #include "sim/stat_control.hh"
@@ -15,12 +16,13 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
       dataPort(params->name + ".data_port", this),
       traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
       fuPool(params->fuPool), regionStats(nullptr), currentStackDepth(0),
-      warmUpDone(false), cacheWarmer(nullptr), process(nullptr),
-      thread_context(nullptr), stackMin(0), fetchStage(params, this),
-      decodeStage(params, this), renameStage(params, this),
-      iewStage(params, this), commitStage(params, this), fetchToDecode(5, 5),
-      decodeToRename(5, 5), renameToIEW(5, 5), iewToCommit(5, 5),
-      signalBuffer(5, 5), driver(params->driver), tickEvent(*this) {
+      initializeMemorySnapshotDone(true), warmUpDone(false),
+      cacheWarmer(nullptr), process(nullptr), thread_context(nullptr),
+      stackMin(0), fetchStage(params, this), decodeStage(params, this),
+      renameStage(params, this), iewStage(params, this),
+      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
+      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
+      driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   assert(this->numThreads < LLVMTraceCPUConstants::MaxContexts &&
@@ -107,6 +109,10 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
     }
   } else {
     // No driver, stand alone mode.
+    // Reset the initializeMemorySnapshotDone so that we will initialize the
+    // memory.
+    this->initializeMemorySnapshotDone = false;
+
     // Schedule the first event.
     // And remember to initialize the stack depth to 1.
     this->currentStackDepth = 1;
@@ -142,6 +148,13 @@ void LLVMTraceCPU::init() {
 }
 
 void LLVMTraceCPU::tick() {
+
+  // Remember to initialize the memory.
+  if (!this->initializeMemorySnapshotDone) {
+    this->initializeMemorySnapshot();
+    this->initializeMemorySnapshotDone = true;
+  }
+
   /**
    * Now we are warm up in timing mode,
    * so we always need to send the packets.
@@ -258,6 +271,34 @@ void LLVMTraceCPU::tick() {
   }
 
   this->numPendingAccessDist.sample(this->dataPort.getPendingPacketsNum());
+}
+
+void LLVMTraceCPU::initializeMemorySnapshot() {
+  assert(this->isStandalone() &&
+         "Only need to initialize memory snapshot in standalone mode.");
+  auto snapshotFileName = this->traceExtraFolder + "/mem.snap";
+  ProtoInputStream snapshotIStream(snapshotFileName);
+  LLVM::TDG::MemorySnapshot snapshot;
+  assert(snapshotIStream.read(snapshot) &&
+         "Failed to read in the memory snapshot.");
+  /**
+   * Do functional access.
+   */
+  PortProxy proxy(this->dataPort, this->system->cacheLineSize());
+  Addr vaddr;
+  uint8_t byte;
+  for (const auto &AddrBytePair : snapshot.snapshot()) {
+    vaddr = AddrBytePair.first;
+    byte = AddrBytePair.second;
+    auto paddr = this->translateAndAllocatePhysMem(vaddr);
+    // Store use proxy.
+    proxy.writeBlob(paddr, &byte, 1);
+    const Addr interestAddr = 0x88707c;
+    if (vaddr >= interestAddr && vaddr <= interestAddr + 4) {
+      hack("Stored Addr 0x%x byte %d.\n", vaddr, AddrBytePair.second);
+    }
+  }
+  inform("MemorySnapshot initialized.\n");
 }
 
 bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {

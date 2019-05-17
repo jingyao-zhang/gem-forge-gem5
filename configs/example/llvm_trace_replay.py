@@ -433,6 +433,7 @@ for cpu in system.cpu:
 
 if options.llvm_prefetch == 1:
     for cpu in system.cpu:
+        cpu.dcache.prefetch_on_access = True
         if options.gem_forge_prefetcher == 'imp':
             cpu.dcache.prefetcher = IndirectMemoryPrefetcher(
                 streaming_distance=8
@@ -440,7 +441,9 @@ if options.llvm_prefetch == 1:
         else:
             cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
         if options.l1_5dcache:
+            cpu.l1_5dcache.prefetch_on_access = True
             cpu.l1_5dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
+    system.l2.prefetch_on_access = True
     if options.gem_forge_prefetcher == 'isb':
         # ISB should work at LLC.
         system.l2.prefetcher = IrregularStreamBufferPrefetcher()
