@@ -28,6 +28,8 @@ parser.add_option("--llvm-prefetch", action="store", type="int",
 parser.add_option("--gem-forge-prefetcher", type="choice", default="none",
                   choices=['none', 'stride', 'imp', 'isb'],
                   help="Type of prefetcher we are using.")
+parser.add_option("--gem-forge-prefetch-on-access", action="store_true",
+                  help="""whether to prefetch on every access""", default=False)
 parser.add_option("--llvm-trace-file", action="callback", type="string",
                   help="""llvm trace file input LLVMTraceCPU""", default="",
                   callback=parse_tdg_files)
@@ -433,7 +435,7 @@ for cpu in system.cpu:
 
 if options.llvm_prefetch == 1:
     for cpu in system.cpu:
-        cpu.dcache.prefetch_on_access = True
+        cpu.dcache.prefetch_on_access = options.gem_forge_prefetch_on_access
         if options.gem_forge_prefetcher == 'imp':
             cpu.dcache.prefetcher = IndirectMemoryPrefetcher(
                 streaming_distance=8
@@ -441,9 +443,9 @@ if options.llvm_prefetch == 1:
         else:
             cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
         if options.l1_5dcache:
-            cpu.l1_5dcache.prefetch_on_access = True
+            cpu.l1_5dcache.prefetch_on_access = options.gem_forge_prefetch_on_access
             cpu.l1_5dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
-    system.l2.prefetch_on_access = True
+    system.l2.prefetch_on_access = options.gem_forge_prefetch_on_access
     if options.gem_forge_prefetcher == 'isb':
         # ISB should work at LLC.
         system.l2.prefetcher = IrregularStreamBufferPrefetcher()

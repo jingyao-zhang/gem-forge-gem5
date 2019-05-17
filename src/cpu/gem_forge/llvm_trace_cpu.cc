@@ -286,17 +286,23 @@ void LLVMTraceCPU::initializeMemorySnapshot() {
    */
   PortProxy proxy(this->dataPort, this->system->cacheLineSize());
   Addr vaddr;
-  uint8_t byte;
-  for (const auto &AddrBytePair : snapshot.snapshot()) {
-    vaddr = AddrBytePair.first;
-    byte = AddrBytePair.second;
-    auto paddr = this->translateAndAllocatePhysMem(vaddr);
-    // Store use proxy.
-    proxy.writeBlob(paddr, &byte, 1);
-    const Addr interestAddr = 0x88707c;
-    if (vaddr >= interestAddr && vaddr <= interestAddr + 4) {
-      hack("Stored Addr 0x%x byte %d.\n", vaddr, AddrBytePair.second);
+  for (const auto &AddrValuePair : snapshot.snapshot()) {
+    vaddr = AddrValuePair.first;
+    const auto &Value = AddrValuePair.second;
+    // * Dummy way to write byte by byte so that we do not have to align with
+    // * pages.
+    for (size_t idx = 0; idx < Value.size(); ++idx) {
+      auto paddr = this->translateAndAllocatePhysMem(vaddr + idx);
+      // Store use proxy.
+      proxy.writeBlob(paddr,
+                      reinterpret_cast<const uint8_t *>(Value.data() + idx), 1);
     }
+    // const Addr interestAddr = 0x88707c;
+    // for (Addr x = interestAddr; x < interestAddr + 4; ++x) {
+    //   if (x >= vaddr && x < vaddr + Value.size()) {
+    //     hack("Stored Addr 0x%x byte %u.\n", x, Value.at(x - vaddr));
+    //   }
+    // }
   }
   inform("MemorySnapshot initialized.\n");
 }

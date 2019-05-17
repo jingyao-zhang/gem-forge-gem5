@@ -455,12 +455,10 @@ void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
     uint64_t vaddr = packet->get<uint64_t>();
     cpu->mapBaseNameToVAddr(this->TDG.load().new_base(), vaddr);
   }
-
-  // A fake sanity check that we have loaded the correct value.
-  if (this->TDG.pc() == 4195584) {
-    // auto idx = packet->get<uint32_t>();
-    // hack("Loaded Vaddr %x, Index %d.\n", this->TDG.load().addr(), idx);
-  }
+  // if (this->TDG.pc() == 4195584 && this->TDG.load().addr() == 0x88707c) {
+  //   uint32_t vaddr = packet->get<uint32_t>();
+  //   hack("Loaded Index %x %d.\n", this->TDG.load().addr(), vaddr);
+  // }
 
   // We don't care about which packet for now, just mark one completed.
   this->packets.pop_front();
