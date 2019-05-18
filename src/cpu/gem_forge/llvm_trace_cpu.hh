@@ -181,22 +181,12 @@ private:
     LLVMTraceCPU *cpu;
     size_t warmUpAddrs;
     size_t receivedPackets;
-    std::vector<Addr> addrs;
-    CacheWarmer(LLVMTraceCPU *_cpu, const std::string &fn)
-        : cpu(_cpu), warmUpAddrs(0), receivedPackets(0) {
-      std::ifstream cacheFile(fn);
-      if (!cacheFile.is_open()) {
-        panic("Failed to open cache warm up file %s.\n", fn.c_str());
-      }
-      Addr vaddr;
-      while (cacheFile >> std::hex >> vaddr) {
-        addrs.push_back(vaddr);
-      }
-      cacheFile.close();
-    }
+    LLVM::TDG::CacheWarmUp cacheWarmUpProto;
+    // std::vector<Addr> addrs;
+    CacheWarmer(LLVMTraceCPU *_cpu, const std::string &fn);
     bool isDone() const {
-      return this->warmUpAddrs == this->addrs.size() &&
-             this->receivedPackets == this->addrs.size();
+      return this->warmUpAddrs == this->cacheWarmUpProto.requests_size() &&
+             this->receivedPackets == this->cacheWarmUpProto.requests_size();
     }
     bool isDoneWithPreviousRequest() const {
       return this->receivedPackets == this->warmUpAddrs;
