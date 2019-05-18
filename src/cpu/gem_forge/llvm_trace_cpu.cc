@@ -229,7 +229,7 @@ void LLVMTraceCPU::tick() {
         }
       }
     } else {
-      done = (this->getNumActivateThreads() == 0);
+      done = (this->getNumActiveThreads() == 0);
       if (done) {
         assert(this->inflyInstStatus.empty() &&
                "Infly instruction status map is not empty when done.");
@@ -635,11 +635,23 @@ void LLVMTraceCPU::deactivateThread(LLVMTraceThreadContext *thread) {
   this->commitStage.clearThread(threadId);
 }
 
-size_t LLVMTraceCPU::getNumActivateThreads() const {
+size_t LLVMTraceCPU::getNumActiveThreads() const {
   size_t activeThreads = 0;
   for (const auto &thread : this->activeThreads) {
     if (thread != nullptr) {
       activeThreads++;
+    }
+  }
+  return activeThreads;
+}
+
+size_t LLVMTraceCPU::getNumActiveNonIdealThreads() const {
+  size_t activeThreads = 0;
+  for (const auto &thread : this->activeThreads) {
+    if (thread != nullptr) {
+      if (!thread->isIdealThread()) {
+        activeThreads++;
+      }
     }
   }
   return activeThreads;

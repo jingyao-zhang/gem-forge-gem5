@@ -9,8 +9,7 @@ LLVMDecodeStage::LLVMDecodeStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
       maxDecodeQueueSize(params->decodeQueueSize),
       fromFetchDelay(params->fetchToDecodeDelay),
       toRenameDelay(params->decodeToRenameDelay),
-      decodeStates(params->hardwareContexts), totalDecodeQueueSize(0),
-      lastDecodedThreadId(0) {}
+      decodeStates(params->hardwareContexts), lastDecodedThreadId(0) {}
 
 void LLVMDecodeStage::setToRename(TimeBuffer<FetchStruct> *toRenameBuffer) {
   this->toRename = toRenameBuffer->getWire(0);
@@ -43,7 +42,6 @@ void LLVMDecodeStage::tick() {
     auto instId = *iter;
     auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
     this->decodeStates.at(threadId).decodeQueue.push(instId);
-    this->totalDecodeQueueSize++;
   }
 
   // Round-robin to find next non-blocking thread to decode.
@@ -88,7 +86,6 @@ void LLVMDecodeStage::tick() {
     }
 
     decodeQueue.pop();
-    this->totalDecodeQueueSize--;
     DPRINTF(LLVMTraceCPU, "Decode inst %d\n", instId);
     cpu->inflyInstStatus.at(instId) = InstStatus::DECODED;
     this->toRename->push_back(instId);
@@ -101,17 +98,22 @@ void LLVMDecodeStage::tick() {
   for (auto &stall : this->signal->contextStall) {
     stall = false;
   }
-  auto numActiveThreads = cpu->getNumActivateThreads();
-  if (numActiveThreads == 0) {
+  auto numActiveNonIdealThreads = cpu->getNumActiveNonIdealThreads();
+  if (numActiveNonIdealThreads == 0) {
     return;
   }
-  auto perContextDecodeQueueLimit = this->maxDecodeQueueSize / numActiveThreads;
+  auto totalDecodeQueueSize = this->getTotalDecodeQueueSize();
+  auto perContextDecodeQueueLimit =
+      this->maxDecodeQueueSize / numActiveNonIdealThreads;
   for (ContextID contextId = 0; contextId < this->decodeStates.size();
        ++contextId) {
     bool stalled = false;
     auto thread = cpu->activeThreads.at(contextId);
     if (thread == nullptr) {
       // This context is not active.
+      stalled = false;
+    } else if (thread->isIdealThread()) {
+      // Never stalled ideal thread.
       stalled = false;
     } else {
       // Check the per-context limit.
@@ -121,10 +123,31 @@ void LLVMDecodeStage::tick() {
         stalled = true;
       }
       // Check the total limit.
-      if (this->totalDecodeQueueSize >= this->maxDecodeQueueSize) {
+      if (totalDecodeQueueSize >= this->maxDecodeQueueSize) {
         stalled = true;
       }
     }
     this->signal->contextStall[contextId] = stalled;
   }
+}
+
+size_t LLVMDecodeStage::getTotalDecodeQueueSize() const {
+  size_t totalDecodeQueueSize = 0;
+  for (ContextID contextId = 0; contextId < this->decodeStates.size();
+       ++contextId) {
+    auto thread = cpu->activeThreads.at(contextId);
+    if (thread == nullptr) {
+      // This context is not active.
+      continue;
+    } else if (thread->isIdealThread()) {
+      // Ignore ideal thread.
+      continue;
+    } else {
+      // Check the per-context limit.
+      auto decodeQueueSize =
+          this->decodeStates.at(contextId).decodeQueue.size();
+      totalDecodeQueueSize += decodeQueueSize;
+    }
+  }
+  return totalDecodeQueueSize;
 }

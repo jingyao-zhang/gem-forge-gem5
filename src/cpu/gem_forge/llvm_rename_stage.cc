@@ -8,8 +8,8 @@ LLVMRenameStage::LLVMRenameStage(LLVMTraceCPUParams *params, LLVMTraceCPU *_cpu)
     : cpu(_cpu), renameWidth(params->renameWidth),
       maxRenameQueueSize(params->renameBufferSize),
       fromDecodeDelay(params->decodeToRenameDelay),
-      toIEWDelay(params->renameToIEWDelay), renameStates(params->hardwareContexts),
-      totalRenameQueueSize(0), lastRenamedThreadId(0) {}
+      toIEWDelay(params->renameToIEWDelay),
+      renameStates(params->hardwareContexts), lastRenamedThreadId(0) {}
 
 void LLVMRenameStage::setToIEW(TimeBuffer<RenameStruct> *toIEWBuffer) {
   this->toIEW = toIEWBuffer->getWire(0);
@@ -58,7 +58,6 @@ void LLVMRenameStage::tick() {
     auto instId = *iter;
     auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
     this->renameStates.at(threadId).renameQueue.push(instId);
-    this->totalRenameQueueSize++;
   }
 
   // Round-robin to find next non-blocking thread to rename.
@@ -123,7 +122,6 @@ void LLVMRenameStage::tick() {
 
     // Remove the inst from renameQueue
     renameQueue.pop();
-    this->totalRenameQueueSize--;
   }
 
   this->renameRenamedInsts += renamedInsts;
@@ -136,11 +134,13 @@ void LLVMRenameStage::tick() {
   for (auto &stall : this->signal->contextStall) {
     stall = false;
   }
-  auto numActiveThreads = cpu->getNumActivateThreads();
-  if (numActiveThreads == 0) {
+  auto numActiveNonIdealThreads = cpu->getNumActiveNonIdealThreads();
+  if (numActiveNonIdealThreads == 0) {
     return;
   }
-  auto perContextRenameQueueLimit = this->maxRenameQueueSize / numActiveThreads;
+  auto totalRenameQueueSize = this->getTotalRenameQueueSize();
+  auto perContextRenameQueueLimit =
+      this->maxRenameQueueSize / numActiveNonIdealThreads;
   for (ContextID threadId = 0; threadId < this->renameStates.size();
        ++threadId) {
     bool stalled = false;
@@ -148,18 +148,38 @@ void LLVMRenameStage::tick() {
     if (thread == nullptr) {
       // This context is not active.
       stalled = false;
+    } else if (thread->isIdealThread()) {
+      stalled = false;
     } else {
       // Check the per-context limit.
-      auto renameQueueSize =
-          this->renameStates.at(threadId).renameQueue.size();
+      auto renameQueueSize = this->renameStates.at(threadId).renameQueue.size();
       if (renameQueueSize >= perContextRenameQueueLimit) {
         stalled = true;
       }
       // Check the total limit.
-      if (this->totalRenameQueueSize >= this->maxRenameQueueSize) {
+      if (totalRenameQueueSize >= this->maxRenameQueueSize) {
         stalled = true;
       }
     }
     this->signal->contextStall[threadId] = stalled;
   }
+}
+
+size_t LLVMRenameStage::getTotalRenameQueueSize() const {
+  size_t totalRenameQueueSize = 0;
+  for (ContextID threadId = 0; threadId < this->renameStates.size();
+       ++threadId) {
+    auto thread = cpu->activeThreads.at(threadId);
+    if (thread == nullptr) {
+      // This context is not active.
+      continue;
+    } else if (thread->isIdealThread()) {
+      continue;
+    } else {
+      // Check the per-context limit.
+      auto renameQueueSize = this->renameStates.at(threadId).renameQueue.size();
+      totalRenameQueueSize += renameQueueSize;
+    }
+  }
+  return totalRenameQueueSize;
 }

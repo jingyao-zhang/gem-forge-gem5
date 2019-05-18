@@ -185,7 +185,7 @@ void LLVMIEWStage::tick() {
   for (auto &stall : this->signal->contextStall) {
     stall = false;
   }
-  auto numActiveThreads = cpu->getNumActivateThreads();
+  auto numActiveThreads = cpu->getNumActiveThreads();
   if (numActiveThreads == 0) {
     return;
   }

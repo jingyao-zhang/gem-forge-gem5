@@ -293,7 +293,8 @@ public:
   // Add the thread to our threads.
   void activateThread(LLVMTraceThreadContext *thread);
   void deactivateThread(LLVMTraceThreadContext *thread);
-  size_t getNumActivateThreads() const;
+  size_t getNumActiveThreads() const;
+  size_t getNumActiveNonIdealThreads() const;
   size_t getNumContexts() const { return this->activeThreads.size(); }
 
   /**

@@ -72,8 +72,9 @@ private:
   };
 
   std::vector<RenameState> renameStates;
-  size_t totalRenameQueueSize;
   ContextID lastRenamedThreadId;
+
+  size_t getTotalRenameQueueSize() const;
 };
 
 #endif

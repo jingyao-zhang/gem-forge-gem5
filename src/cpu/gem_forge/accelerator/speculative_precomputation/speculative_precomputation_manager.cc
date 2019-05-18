@@ -5,7 +5,8 @@
 
 SpeculativePrecomputationThread::SpeculativePrecomputationThread(
     ContextID _contextId, const std::string &_traceFileName, Addr _criticalPC)
-    : LLVMTraceThreadContext(_contextId, _traceFileName),
+    : LLVMTraceThreadContext(_contextId, _traceFileName,
+                             true /* This is ideal thread. */),
       criticalPC(_criticalPC), tokens(0), numTriggeredSlices(0), numSlices(0) {
   const auto &staticInfo = this->getStaticInfo();
   assert(staticInfo.module() == "specpre" && "Unmatched module name.");
@@ -102,7 +103,7 @@ void SpeculativePrecomputationManager::handleTrigger(
     this->numTriggeredChainSlices++;
   } else {
     // Check if the cpu still has available hardware context.
-    if (cpu->getNumContexts() == cpu->getNumActivateThreads()) {
+    if (cpu->getNumContexts() == cpu->getNumActiveThreads()) {
       // No free context. Skip it.
       thread->skipOneSlice();
       this->numSkippedSlices++;

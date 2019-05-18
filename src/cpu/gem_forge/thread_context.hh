@@ -12,8 +12,14 @@ class LLVMTraceCPU;
 class LLVMTraceThreadContext {
 public:
   LLVMTraceThreadContext(ContextID _contextId,
-                         const std::string &_traceFileName);
+                         const std::string &_traceFileName,
+                         bool _isIdeal = false);
   virtual ~LLVMTraceThreadContext();
+
+  /**
+   * * Whether this should be modeled as an ideal thread.
+   */
+  bool isIdealThread() const { return this->isIdeal; }
 
   virtual void activate(LLVMTraceCPU *cpu, ThreadID threadId);
   virtual void deactivate();
@@ -38,6 +44,7 @@ protected:
   ContextID contextId;
   const std::string traceFileName;
   DynamicInstructionStream *dynInstStream;
+  const bool isIdeal;
   size_t inflyInsts;
 
   /**

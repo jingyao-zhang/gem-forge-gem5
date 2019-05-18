@@ -67,8 +67,13 @@ private:
   };
 
   std::vector<DecodeState> decodeStates;
-  size_t totalDecodeQueueSize;
   ContextID lastDecodedThreadId;
+
+  /**
+   * Compute the total decode queue size.
+   * ! This will ignore the ideal thread.
+   */
+  size_t getTotalDecodeQueueSize() const;
 };
 
 #endif
