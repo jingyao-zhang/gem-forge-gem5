@@ -133,6 +133,7 @@ public:
   CPUPort instPort;
   CPUPort dataPort;
 
+  const std::string &getTraceFileName() const { return this->traceFileName; }
   const std::string &getTraceFolder() const { return this->traceFolder; }
   const std::string &getTraceExtraFolder() const {
     return this->traceExtraFolder;

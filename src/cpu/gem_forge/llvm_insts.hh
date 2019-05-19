@@ -112,6 +112,7 @@ public:
    * Getters.
    */
   static constexpr uint64_t INVALID_SEQ_NUM = 0;
+  static constexpr LLVMDynamicInstId INVALID_INST_ID = 0;
   uint64_t getSeqNum() const { return this->seqNum; }
   const LLVM::TDG::TDGInstruction &getTDG() const { return this->TDG; }
 

@@ -9,6 +9,7 @@
 
 // Include the accelerators.
 #include "adfa/adfa.hh"
+#include "ideal_prefetcher/ideal_prefetcher.hh"
 #include "speculative_precomputation/speculative_precomputation_manager.hh"
 #include "stream/stream_engine.hh"
 
@@ -24,6 +25,7 @@ TDGAcceleratorManager::TDGAcceleratorManager(
   this->addAccelerator(new AbstractDataFlowAccelerator());
   this->addAccelerator(new StreamEngine());
   this->addAccelerator(new SpeculativePrecomputationManager());
+  this->addAccelerator(new IdealPrefetcher());
 }
 
 TDGAcceleratorManager::~TDGAcceleratorManager() {

@@ -25,6 +25,10 @@ parser.add_option("--llvm-standalone", action="store_true",
                   help="""replay in stand alone mode""", default=False)
 parser.add_option("--llvm-prefetch", action="store", type="int",
                   help="""whether to use a prefetcher""", default="0")
+parser.add_option("--gem-forge-ideal-prefetcher", action="store_true",
+                  help="""whether to use an ideal prefetcher""", default=False)
+parser.add_option("--gem-forge-ideal-prefetcher-distance", action="store",
+                  type="int", help="""whether to use an ideal prefetcher""", default=400)
 parser.add_option("--gem-forge-prefetcher", type="choice", default="none",
                   choices=['none', 'stride', 'imp', 'isb'],
                   help="Type of prefetcher we are using.")
@@ -227,6 +231,9 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
     llvm_trace_cpu.streamEngineEnableMerge = (
         options.gem_forge_stream_engine_enable_merge != 0
     )
+
+    llvm_trace_cpu.enableIdealPrefetcher = options.gem_forge_ideal_prefetcher
+    llvm_trace_cpu.idealPrefetcherDistance = options.gem_forge_ideal_prefetcher_distance
 
 def setDerivO3CPUCommomParams(o3cpu):
     o3cpu.fetchWidth = options.llvm_issue_width

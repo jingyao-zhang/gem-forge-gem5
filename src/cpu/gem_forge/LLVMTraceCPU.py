@@ -137,6 +137,12 @@ class LLVMTraceCPU(BaseCPU):
     streamEnginePlacement = Param.String(
         "placement", "Which placement techinque to use.")
 
+    # Enable ideal prefetcher.
+    enableIdealPrefetcher = Param.Bool(
+        False, "Whether the ideal prefetcher is enabled.")
+    idealPrefetcherDistance = Param.Unsigned(
+        400, "Number of instructions to prefetch.")
+
     @classmethod
     def memory_mode(cls):
         return 'timing'

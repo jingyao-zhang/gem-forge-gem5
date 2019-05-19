@@ -32,6 +32,13 @@ public:
   void clearThread(ThreadID threadId) { this->iewStates.at(threadId).clear(); }
 
   GemForgeLoadStoreQueue *getLSQ() { return this->lsq; }
+  LLVMDynamicInstId getROBHeadInstId() const {
+    if (!this->rob.empty()) {
+      return this->rob.front();
+    } else {
+      return LLVMDynamicInst::INVALID_INST_ID;
+    }
+  }
 
   void dumpROB() const;
 
@@ -46,7 +53,7 @@ public:
   /**
    * Add misspeculation penalty to a thread.
    */
-  void misspeculateInst(LLVMDynamicInst* inst);
+  void misspeculateInst(LLVMDynamicInst *inst);
 
   std::string name();
 
@@ -81,7 +88,6 @@ public:
   Stats::Vector2d statIssuedInstType;
 
   Stats::Scalar blockedCycles;
-
   Stats::Scalar robReads;
   Stats::Scalar robWrites;
   Stats::Scalar intInstQueueReads;
