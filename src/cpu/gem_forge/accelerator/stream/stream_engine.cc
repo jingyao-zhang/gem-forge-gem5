@@ -93,62 +93,30 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
 }
 
 void StreamEngine::regStats() {
-  this->numConfigured.name(this->manager->name() + ".stream.numConfigured")
-      .desc("Number of streams configured.")
-      .prereq(this->numConfigured);
-  this->numStepped.name(this->manager->name() + ".stream.numStepped")
-      .desc("Number of streams stepped.")
-      .prereq(this->numStepped);
-  this->numStreamMemRequests
-      .name(this->manager->name() + ".stream.numStreamMemRequests")
-      .desc("Number of stream memory requests.")
-      .prereq(this->numStreamMemRequests);
-  this->numElements.name(this->manager->name() + ".stream.numElements")
-      .desc("Number of stream elements created.")
-      .prereq(this->numElements);
-  this->numElementsUsed.name(this->manager->name() + ".stream.numElementsUsed")
-      .desc("Number of stream elements used.")
-      .prereq(this->numElementsUsed);
-  this->numUnconfiguredStreamUse
-      .name(this->manager->name() + ".stream.numUnconfiguredStreamUse")
-      .desc("Number of unconfigured stream use request.")
-      .prereq(this->numUnconfiguredStreamUse);
-  this->numConfiguredStreamUse
-      .name(this->manager->name() + ".stream.numConfiguredStreamUse")
-      .desc("Number of Configured stream use request.")
-      .prereq(this->numConfiguredStreamUse);
-  this->entryWaitCycles.name(this->manager->name() + ".stream.entryWaitCycles")
-      .desc("Number of cycles from first checked ifReady to ready.")
-      .prereq(this->entryWaitCycles);
-  this->numMemElements.name(this->manager->name() + ".stream.numMemElements")
-      .desc("Number of mem stream elements created.")
-      .prereq(this->numMemElements);
-  this->numMemElementsFetched
-      .name(this->manager->name() + ".stream.numMemElementsFetched")
-      .desc("Number of mem stream elements fetched from cache.")
-      .prereq(this->numMemElementsFetched);
-  this->numMemElementsUsed
-      .name(this->manager->name() + ".stream.numMemElementsUsed")
-      .desc("Number of mem stream elements used.")
-      .prereq(this->numMemElementsUsed);
-  this->memEntryWaitCycles
-      .name(this->manager->name() + ".stream.memEntryWaitCycles")
-      .desc("Number of cycles of a mem entry from first checked ifReady to "
-            "ready.")
-      .prereq(this->memEntryWaitCycles);
-  this->streamUserNotDispatchedByLoadQueue
-      .name(this->manager->name() +
-            ".stream.streamUserNotDispatchedByLoadQueue")
-      .desc("Number of cycles of stream user cannot dispatch due to load queue "
-            "full.")
-      .prereq(this->streamUserNotDispatchedByLoadQueue);
-  this->streamStoreNotDispatchedByStoreQueue
-      .name(this->manager->name() +
-            ".stream.streamStoreNotDispatchedByStoreQueue")
-      .desc(
-          "Number of cycles of stream store cannot dispatch due to store queue "
-          "full.")
-      .prereq(this->streamStoreNotDispatchedByStoreQueue);
+
+#define scalar(stat, describe)                                                 \
+  this->stat.name(this->manager->name() + ("." #stat))                         \
+      .desc(describe)                                                          \
+      .prereq(this->stat)
+
+  scalar(numConfigured, "Number of streams configured.");
+  scalar(numStepped, "Number of streams stepped.");
+  scalar(numElementsAllocated, "Number of stream elements allocated.");
+  scalar(numElementsUsed, "Number of stream elements used.");
+  scalar(numUnconfiguredStreamUse, "Number of unconfigured stream use.");
+  scalar(numConfiguredStreamUse, "Number of configured stream use.");
+  scalar(entryWaitCycles, "Number of cycles form first check to ready.");
+  scalar(numLoadElementsAllocated, "Number of mem stream elements allocated.");
+  scalar(numLoadElementsFetched, "Number of mem stream elements fetched.");
+  scalar(numLoadElementsStepped, "Number of mem stream elements fetched.");
+  scalar(numLoadElementsUsed, "Number of mem stream elements used.");
+  scalar(numLoadElementWaitCycles,
+         "Number of cycles from first check to ready for load element.");
+  scalar(streamUserNotDispatchedByLoadQueue,
+         "Number of cycles a stream user cannot dispatch due LQ full.");
+  scalar(streamStoreNotDispatchedByStoreQueue,
+         "Number of cycles a stream store cannot dispatch due SQ full.");
+#undef scalar
 
   this->numTotalAliveElements.init(0, 1000, 50)
       .name(this->manager->name() + ".stream.numTotalAliveElements")
@@ -1087,6 +1055,10 @@ void StreamEngine::allocateElement(Stream *S) {
   assert(this->hasFreeElement());
   assert(S->configured && "Stream should be configured to allocate element.");
   auto newElement = this->removeFreeElement();
+  this->numElementsAllocated++;
+  if (S->getStreamType() == "load") {
+    this->numLoadElementsAllocated++;
+  }
 
   S->FIFOIdx.next();
   newElement->stream = S;
@@ -1176,8 +1148,27 @@ void StreamEngine::allocateElement(Stream *S) {
 }
 
 void StreamEngine::releaseElement(Stream *S) {
+
+  /**
+   * * This function performs a normal release, i.e. release a stepped element.
+   */
+
   assert(S->stepSize > 0 && "No element to release.");
   auto releaseElement = S->tail->next;
+
+  if (S->getStreamType() == "load") {
+    this->numLoadElementsStepped++;
+    if (releaseElement->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM) {
+      this->numLoadElementsUsed++;
+      // Update waited cycle information.
+      auto waitedCycles = 0;
+      if (releaseElement->valueReadyCycle > releaseElement->firstCheckCycle) {
+        waitedCycles =
+            releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
+      }
+      this->numLoadElementWaitCycles += waitedCycles;
+    }
+  }
 
   // Decrease the reference count of the cache blocks.
   for (int i = 0; i < releaseElement->cacheBlocks; ++i) {
@@ -1269,7 +1260,9 @@ void StreamEngine::issueElement(StreamElement *element) {
   STREAM_ELEMENT_DPRINTF(element, "Issue.\n");
 
   auto S = element->stream;
-  // hack("Send packt for stream %s.\n", S->getStreamName().c_str());
+  if (S->getStreamType() == "load") {
+    this->numLoadElementsFetched++;
+  }
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];

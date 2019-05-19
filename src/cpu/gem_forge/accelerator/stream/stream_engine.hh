@@ -87,16 +87,20 @@ public:
    */
   mutable Stats::Scalar numConfigured;
   mutable Stats::Scalar numStepped;
-  mutable Stats::Scalar numStreamMemRequests;
-  mutable Stats::Scalar numElements;
+  mutable Stats::Scalar numElementsAllocated;
   mutable Stats::Scalar numElementsUsed;
   mutable Stats::Scalar numUnconfiguredStreamUse;
   mutable Stats::Scalar numConfiguredStreamUse;
   mutable Stats::Scalar entryWaitCycles;
-  mutable Stats::Scalar numMemElements;
-  mutable Stats::Scalar numMemElementsFetched;
-  mutable Stats::Scalar numMemElementsUsed;
-  mutable Stats::Scalar memEntryWaitCycles;
+
+  mutable Stats::Scalar numLoadElementsAllocated;
+  mutable Stats::Scalar numLoadElementsFetched;
+  mutable Stats::Scalar numLoadElementsStepped;
+  mutable Stats::Scalar numLoadElementsUsed;
+  mutable Stats::Scalar numLoadElementWaitCycles;
+  /**
+   * * How many times a StreamUser/StreamStore not dispatched due to LSQ full.
+   */
   mutable Stats::Scalar streamUserNotDispatchedByLoadQueue;
   mutable Stats::Scalar streamStoreNotDispatchedByStoreQueue;
 

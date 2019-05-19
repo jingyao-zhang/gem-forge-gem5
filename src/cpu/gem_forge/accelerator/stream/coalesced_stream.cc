@@ -231,8 +231,6 @@ void CoalescedStream::handlePacketResponse(const FIFOEntryIdx &entryId,
   //   panic("Failed looking up the stream memory access inst in our set.");
   // }
 
-  // this->se->numStreamMemRequests++;
-
   // /**
   //  * If I am a load stream, mark the entry as value ready now.
   //  * It is possible that the entry is already stepped before the packet

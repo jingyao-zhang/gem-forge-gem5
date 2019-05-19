@@ -111,8 +111,6 @@ void SingleStream::handlePacketResponse(const FIFOEntryIdx &entryId,
   //   set.");
   // }
 
-  // this->se->numStreamMemRequests++;
-
   // /**
   //  * If I am a load stream, mark the entry as value ready now.
   //  * It is possible that the entry is already stepped before the packet
