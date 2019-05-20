@@ -794,8 +794,9 @@ void StreamEngine::initializeStreams(
     // If there are too many streams, we reduce the maxSize.
     args.maxSize = this->maxTotalRunAheadLength / totalAliveStreams;
     if (args.maxSize < 3) {
-      panic("Too many streams TotalAliveStreams %d, FIFOSize %d.\n",
-            totalAliveStreams, this->maxTotalRunAheadLength);
+      panic("Too many streams %s TotalAliveStreams %d, FIFOSize %d.\n",
+            streamRegion.region().c_str(), totalAliveStreams,
+            this->maxTotalRunAheadLength);
     }
   }
 
