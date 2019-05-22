@@ -1213,7 +1213,7 @@ void StreamEngine::releaseElement(Stream *S) {
       for (auto &pendingAccess : cacheBlockInfo.pendingAccesses) {
         pendingAccess->handleStreamEngineResponse();
       }
-      if (cacheBlockInfo.used) {
+      if (cacheBlockInfo.used && cacheBlockInfo.requestedByLoad) {
         this->numLoadCacheLineUsed++;
       }
       this->cacheBlockRefMap.erase(cacheBlockVirtualAddr);
@@ -1276,7 +1276,6 @@ void StreamEngine::fetchedCacheBlock(Addr cacheBlockVirtualAddr,
   }
   auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
   cacheBlockInfo.status = CacheBlockInfo::Status::FETCHED;
-  this->numLoadCacheLineFetched++;
   // Notify all the pending streams.
   for (auto &pendingMemAccess : cacheBlockInfo.pendingAccesses) {
     assert(pendingMemAccess != memAccess &&
@@ -1306,6 +1305,14 @@ void StreamEngine::issueElement(StreamElement *element) {
     // Check if we already have the cache block fetched.
     auto cacheBlockVirtualAddr = cacheBlockBreakdown.cacheBlockVirtualAddr;
     auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+
+    if (S->getStreamType() == "load") {
+      if (!cacheBlockInfo.requestedByLoad) {
+        cacheBlockInfo.requestedByLoad = true;
+        this->numLoadCacheLineFetched++;
+      }
+    }
+
     if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHED) {
       // This cache block is already fetched.
       continue;

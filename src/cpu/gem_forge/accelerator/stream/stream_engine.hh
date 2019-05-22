@@ -189,8 +189,11 @@ private:
     };
     Status status;
     bool used;
+    bool requestedByLoad;
     std::list<StreamMemAccess *> pendingAccesses;
-    CacheBlockInfo() : reference(0), status(Status::INIT), used(false) {}
+    CacheBlockInfo()
+        : reference(0), status(Status::INIT), used(false),
+          requestedByLoad(false) {}
   };
   std::unordered_map<Addr, CacheBlockInfo> cacheBlockRefMap;
 
