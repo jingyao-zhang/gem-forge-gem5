@@ -98,6 +98,8 @@ public:
   mutable Stats::Scalar numLoadElementsStepped;
   mutable Stats::Scalar numLoadElementsUsed;
   mutable Stats::Scalar numLoadElementWaitCycles;
+  mutable Stats::Scalar numLoadCacheLineFetched;
+  mutable Stats::Scalar numLoadCacheLineUsed;
   /**
    * * How many times a StreamUser/StreamStore not dispatched due to LSQ full.
    */
@@ -186,8 +188,9 @@ private:
       FETCHED,
     };
     Status status;
+    bool used;
     std::list<StreamMemAccess *> pendingAccesses;
-    CacheBlockInfo() : reference(0), status(Status::INIT) {}
+    CacheBlockInfo() : reference(0), status(Status::INIT), used(false) {}
   };
   std::unordered_map<Addr, CacheBlockInfo> cacheBlockRefMap;
 
@@ -268,6 +271,12 @@ private:
     bool isWritebacked() override;
     void writebacked() override;
   };
+
+  /**
+   * Hack for certain block dispatch.
+   */
+  mutable size_t blockCycle;
+  mutable size_t blockSeqNum;
 };
 
 #endif

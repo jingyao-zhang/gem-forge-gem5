@@ -31,7 +31,8 @@ void debugStream(Stream *S, const char *message) {
 
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false),
-      writebackCacheLine(nullptr), throttler(this) {}
+      writebackCacheLine(nullptr), throttler(this), blockCycle(0),
+      blockSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {}
 
 StreamEngine::~StreamEngine() {
   if (this->streamPlacementManager != nullptr) {
@@ -112,6 +113,8 @@ void StreamEngine::regStats() {
   scalar(numLoadElementsUsed, "Number of mem stream elements used.");
   scalar(numLoadElementWaitCycles,
          "Number of cycles from first check to ready for load element.");
+  scalar(numLoadCacheLineUsed, "Number of cache line used.");
+  scalar(numLoadCacheLineFetched, "Number of cache line fetched.");
   scalar(streamUserNotDispatchedByLoadQueue,
          "Number of cycles a stream user cannot dispatch due LQ full.");
   scalar(streamStoreNotDispatchedByStoreQueue,
@@ -173,6 +176,25 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
    * free entries. Otherwise, we ALSO ensure that allocSize < maxSize.
    */
 
+  // hack("Configure for loop %s.\n",
+  //      inst->getTDG().stream_config().loop().c_str());
+  /**
+   * ! I need to enforce a certain dependence.
+   */
+  if (blockCycle > 0) {
+    return false;
+  }
+  if (inst->getTDG().stream_config().loop() ==
+          "linear.c::844(solve_l2r_l1l2_svc)::bb218" ||
+      inst->getTDG().stream_config().loop() ==
+          "linear.c::844(solve_l2r_l1l2_svc)::bb295") {
+    if (blockSeqNum < inst->getSeqNum()) {
+      // A new blocking one.
+      blockSeqNum = inst->getSeqNum();
+      blockCycle = 1000;
+      return false;
+    }
+  }
   auto infoRelativePath = inst->getTDG().stream_config().info_path();
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
   auto configuredStreams = this->enableCoalesce
@@ -854,6 +876,9 @@ void StreamEngine::tick() {
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
+  if (this->blockCycle > 0) {
+    this->blockCycle--;
+  }
 }
 
 void StreamEngine::updateAliveStatistics() {
@@ -1157,9 +1182,12 @@ void StreamEngine::releaseElement(Stream *S) {
   assert(S->stepSize > 0 && "No element to release.");
   auto releaseElement = S->tail->next;
 
+  const bool used =
+      releaseElement->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM;
+
   if (S->getStreamType() == "load") {
     this->numLoadElementsStepped++;
-    if (releaseElement->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM) {
+    if (used) {
       this->numLoadElementsUsed++;
       // Update waited cycle information.
       auto waitedCycles = 0;
@@ -1176,6 +1204,9 @@ void StreamEngine::releaseElement(Stream *S) {
     auto cacheBlockVirtualAddr =
         releaseElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
     auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+    if (used) {
+      cacheBlockInfo.used = true;
+    }
     cacheBlockInfo.reference--;
     if (cacheBlockInfo.reference == 0) {
       // Remember to remove the pendingAccesses.
@@ -1183,6 +1214,7 @@ void StreamEngine::releaseElement(Stream *S) {
         pendingAccess->handleStreamEngineResponse();
       }
       this->cacheBlockRefMap.erase(cacheBlockVirtualAddr);
+      this->numLoadCacheLineUsed++;
     }
   }
 
@@ -1242,6 +1274,7 @@ void StreamEngine::fetchedCacheBlock(Addr cacheBlockVirtualAddr,
   }
   auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
   cacheBlockInfo.status = CacheBlockInfo::Status::FETCHED;
+  this->numLoadCacheLineFetched++;
   // Notify all the pending streams.
   for (auto &pendingMemAccess : cacheBlockInfo.pendingAccesses) {
     assert(pendingMemAccess != memAccess &&
@@ -1569,6 +1602,12 @@ void StreamEngine::StreamThrottler::throttleStream(Stream *S,
   int totalIncrementEntries = incrementStep * streamList.size();
 
   if (availableEntries < totalIncrementEntries) {
+    return;
+  }
+  if (totalAliveStreams * this->se->maxRunAHeadLength +
+          streamList.size() * (stepRootStream->maxSize + incrementStep -
+                               this->se->maxRunAHeadLength) >=
+      this->se->maxTotalRunAheadLength) {
     return;
   }
   if (stepRootStream->maxSize + incrementStep > upperBoundEntries) {
