@@ -121,7 +121,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   }
 
   if (this->cpuParams->warmCache && this->isStandalone()) {
-    this->cacheWarmer = new CacheWarmer(this, this->traceFileName + ".cache");
+    this->cacheWarmer =
+        new CacheWarmer(this, this->traceFileName + ".cache", 1);
   }
 }
 
@@ -314,29 +315,24 @@ bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
 }
 
 LLVMTraceCPU::CacheWarmer::CacheWarmer(LLVMTraceCPU *_cpu,
-                                       const std::string &fn)
-    : cpu(_cpu), warmUpAddrs(0), receivedPackets(0) {
+                                       const std::string &fn,
+                                       size_t _repeatedTimes)
+    : cpu(_cpu), repeatedTimes(_repeatedTimes), warmUpAddrs(0),
+      receivedPackets(0) {
   ProtoInputStream protoInput(fn);
   assert(protoInput.read(this->cacheWarmUpProto) &&
          "Failed to readin the cache warm file.");
-  // std::ifstream cacheFile(fn);
-  // if (!cacheFile.is_open()) {
-  //   panic("Failed to open cache warm up file %s.\n", fn.c_str());
-  // }
-  // Addr vaddr;
-  // while (cacheFile >> std::hex >> vaddr) {
-  //   addrs.push_back(vaddr);
-  // }
-  // cacheFile.close();
 }
 
 PacketPtr LLVMTraceCPU::CacheWarmer::getNextWarmUpPacket() {
   assert(!isDone() && "Already done.");
-  if (this->warmUpAddrs == this->cacheWarmUpProto.requests_size()) {
+  if (this->warmUpAddrs ==
+      this->cacheWarmUpProto.requests_size() * this->repeatedTimes) {
     // No more packets.
     return nullptr;
   }
-  const auto &request = this->cacheWarmUpProto.requests(this->warmUpAddrs);
+  const auto &request = this->cacheWarmUpProto.requests(
+      this->warmUpAddrs % this->cacheWarmUpProto.requests_size());
   this->warmUpAddrs++;
 
   const auto vaddr = request.addr();

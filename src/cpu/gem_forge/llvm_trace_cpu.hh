@@ -180,14 +180,16 @@ private:
   // Cache warm up in standalone mode.
   struct CacheWarmer : public TDGPacketHandler {
     LLVMTraceCPU *cpu;
+    const size_t repeatedTimes;
     size_t warmUpAddrs;
     size_t receivedPackets;
     LLVM::TDG::CacheWarmUp cacheWarmUpProto;
-    // std::vector<Addr> addrs;
-    CacheWarmer(LLVMTraceCPU *_cpu, const std::string &fn);
+    CacheWarmer(LLVMTraceCPU *_cpu, const std::string &fn,
+                size_t _repeatedTimes);
     bool isDone() const {
-      return this->warmUpAddrs == this->cacheWarmUpProto.requests_size() &&
-             this->receivedPackets == this->cacheWarmUpProto.requests_size();
+      return this->warmUpAddrs ==
+                 this->cacheWarmUpProto.requests_size() * this->repeatedTimes &&
+             this->receivedPackets == this->warmUpAddrs;
     }
     bool isDoneWithPreviousRequest() const {
       return this->receivedPackets == this->warmUpAddrs;
