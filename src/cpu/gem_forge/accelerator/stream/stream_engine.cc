@@ -1213,8 +1213,10 @@ void StreamEngine::releaseElement(Stream *S) {
       for (auto &pendingAccess : cacheBlockInfo.pendingAccesses) {
         pendingAccess->handleStreamEngineResponse();
       }
+      if (cacheBlockInfo.used) {
+        this->numLoadCacheLineUsed++;
+      }
       this->cacheBlockRefMap.erase(cacheBlockVirtualAddr);
-      this->numLoadCacheLineUsed++;
     }
   }
 
