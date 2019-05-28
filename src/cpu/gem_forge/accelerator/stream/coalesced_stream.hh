@@ -37,6 +37,7 @@ public:
 
   void addStreamInfo(const LLVM::TDG::StreamInfo &info);
   void prepareNewElement(StreamElement *element) override;
+  void initializeBackBaseStreams() override;
 
   uint64_t getCoalesceStreamId() const {
     return this->primaryLogicalStream->info.id();

@@ -29,6 +29,15 @@ void debugStream(Stream *S, const char *message) {
                  element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
                  ##args)
 
+#define STREAM_PANIC(stream, format, args...)                                  \
+  panic("[%s]: " format, stream->getStreamName().c_str(), ##args)
+
+#define STREAM_ELEMENT_PANIC(element, format, args...)                         \
+  element->se->dump();                                                         \
+  STREAM_PANIC(element->getStream(), "[%lu, %lu]: " format,                    \
+               element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,     \
+               ##args)
+
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false),
       writebackCacheLine(nullptr), throttler(this), blockCycle(0),
@@ -455,31 +464,33 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
     this->releaseElement(S);
   }
 
-  /**
-   * Try to allocate more elements.
-   * Set a target, try to make sure all streams reach this target.
-   * Then increment the target.
-   */
-  for (size_t targetSize = 1;
-       targetSize <= stepStream->maxSize && this->hasFreeElement();
-       ++targetSize) {
-    for (auto S : stepStreams) {
-      if (!this->hasFreeElement()) {
-        break;
-      }
-      if (!S->configured) {
-        continue;
-      }
-      if (S->allocSize >= targetSize) {
-        continue;
-      }
-      if (S->allocSize > stepStream->allocSize) {
-        // It doesn't make sense to allocate before the step root.
-        continue;
-      }
-      this->allocateElement(S);
-    }
-  }
+  // ! Do not allocate here.
+  // ! allocateElements() will handle it.
+  // /**
+  //  * Try to allocate more elements.
+  //  * Set a target, try to make sure all streams reach this target.
+  //  * Then increment the target.
+  //  */
+  // for (size_t targetSize = 1;
+  //      targetSize <= stepStream->maxSize && this->hasFreeElement();
+  //      ++targetSize) {
+  //   for (auto S : stepStreams) {
+  //     if (!this->hasFreeElement()) {
+  //       break;
+  //     }
+  //     if (!S->configured) {
+  //       continue;
+  //     }
+  //     if (S->allocSize >= targetSize) {
+  //       continue;
+  //     }
+  //     if (S->allocSize > stepStream->allocSize) {
+  //       // It doesn't make sense to allocate before the step root.
+  //       continue;
+  //     }
+  //     this->allocateElement(S);
+  //   }
+  // }
   if (isDebugStream(stepStream)) {
   }
 }
@@ -828,6 +839,7 @@ void StreamEngine::initializeStreams(
     }
   }
 
+  std::vector<Stream *> createdStreams;
   for (const auto &streamInfo : streamRegion.streams()) {
     const auto &streamId = streamInfo.id();
     assert(this->streamMap.count(streamId) == 0 &&
@@ -838,6 +850,7 @@ void StreamEngine::initializeStreams(
       // First check if we have created the coalesced stream for the group.
       if (coalescedGroupToStreamMap.count(coalesceGroup) == 0) {
         auto newCoalescedStream = new CoalescedStream(args, streamInfo);
+        createdStreams.push_back(newCoalescedStream);
         this->streamMap.emplace(streamId, newCoalescedStream);
         this->coalescedStreamIdMap.emplace(streamId, streamId);
         coalescedGroupToStreamMap.emplace(coalesceGroup, newCoalescedStream);
@@ -858,10 +871,16 @@ void StreamEngine::initializeStreams(
     } else {
       // Single stream can be immediately constructed and inserted into the map.
       auto newStream = new SingleStream(args, streamInfo);
+      createdStreams.push_back(newStream);
       this->streamMap.emplace(streamId, newStream);
       hack("Initialized stream %lu %s.\n", streamId,
            newStream->getStreamName().c_str());
     }
+  }
+
+  for (auto newStream : createdStreams) {
+    // Initialize any back-edge base stream dependepce.
+    newStream->initializeBackBaseStreams();
   }
 }
 
@@ -1019,12 +1038,33 @@ void StreamEngine::allocateElements() {
             });
 
   for (auto stepStream : configuredStepRootStreams) {
+
+    /**
+     * ! A hack here to delay the allocation if the back base stream has
+     * ! not caught up.
+     */
+    auto maxAllocSize = stepStream->maxSize;
+    if (!stepStream->backBaseStreams.empty()) {
+      if (stepStream->FIFOIdx.entryIdx > 0) {
+        // This is not the first element.
+        for (auto backBaseS : stepStream->backBaseStreams) {
+          auto backBaseSAllocDiff = backBaseS->allocSize - backBaseS->stepSize;
+          auto stepStreamAllocDiff = maxAllocSize - stepStream->stepSize;
+          if (backBaseSAllocDiff < stepStreamAllocDiff) {
+            // The back base stream is lagging off.
+            // Reduce the maxAllocSize.
+            maxAllocSize = stepStream->stepSize + backBaseSAllocDiff;
+          }
+        }
+      }
+    }
+
     const auto &stepStreams = this->getStepStreamList(stepStream);
     // if (isDebugStream(stepStream)) {
     //   hack("Try to allocate for debug stream %d.", this->hasFreeElement());
     // }
     for (size_t targetSize = 1;
-         targetSize <= stepStream->maxSize && this->hasFreeElement();
+         targetSize <= maxAllocSize && this->hasFreeElement();
          ++targetSize) {
       for (auto S : stepStreams) {
         if (!this->hasFreeElement()) {
@@ -1130,6 +1170,40 @@ void StreamEngine::allocateElement(Stream *S) {
     }
   }
 
+  // Find the back base element, starting from the second element.
+  if (newElement->FIFOIdx.entryIdx > 1) {
+    for (auto backBaseS : S->backBaseStreams) {
+      if (backBaseS->getLoopLevel() != S->getLoopLevel()) {
+        continue;
+      }
+
+      if (backBaseS->stepRootStream != nullptr) {
+        // Try to find the previous element for the base.
+        auto baseElement = backBaseS->stepped;
+        auto element = S->stepped->next;
+        while (element != nullptr) {
+          if (baseElement == nullptr) {
+            STREAM_ELEMENT_PANIC(newElement,
+                                 "Failed to find back base element from %s.\n",
+                                 backBaseS->getStreamName().c_str());
+          }
+          element = element->next;
+          baseElement = baseElement->next;
+        }
+        if (baseElement == nullptr) {
+          STREAM_ELEMENT_PANIC(newElement,
+                               "Failed to find back base element from %s.\n",
+                               backBaseS->getStreamName().c_str());
+        }
+        STREAM_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
+        STREAM_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
+        newElement->baseElements.insert(baseElement);
+      } else {
+        // Should be a constant stream. So far we ignore it.
+      }
+    }
+  }
+
   newElement->allocateCycle = cpu->curCycle();
 
   // Create all the cache lines this element will touch.
@@ -1173,9 +1247,11 @@ void StreamEngine::allocateElement(Stream *S) {
       }
     }
   } else {
-    // IV stream already ready.
-    newElement->isAddrReady = true;
-    newElement->markValueReady();
+    // IV stream already ready if there is no back-edge dependence.
+    if (newElement->baseElements.empty()) {
+      newElement->isAddrReady = true;
+      newElement->markValueReady();
+    }
   }
 
   // Append to the list.
@@ -1287,7 +1363,12 @@ void StreamEngine::issueElements() {
             });
   for (auto &element : readyElements) {
     element->isAddrReady = true;
-    this->issueElement(element);
+    if (element->stream->isMemStream()) {
+      this->issueElement(element);
+    } else {
+      // This is a Pseudo stream with back dependence.
+      element->markValueReady();
+    }
   }
 }
 void StreamEngine::fetchedCacheBlock(Addr cacheBlockVirtualAddr,

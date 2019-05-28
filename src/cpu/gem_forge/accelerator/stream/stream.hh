@@ -71,6 +71,10 @@ public:
   Stream *stepRootStream;
   std::unordered_set<Stream *> baseStreams;
   std::unordered_set<Stream *> dependentStreams;
+  /**
+   * Back edge dependence on previous iteration.
+   */
+  std::unordered_set<Stream *> backBaseStreams;
 
   /**
    * Per stream statistics.
@@ -87,6 +91,8 @@ public:
 
   void addBaseStream(Stream *baseStream);
   void addBaseStepStream(Stream *baseStepStream);
+  virtual void initializeBackBaseStreams() = 0;
+  void addBackBaseStream(Stream *backBaseStream);
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
 
   uint64_t getFirstConfigSeqNum() const { return this->firstConfigSeqNum; }

@@ -19,6 +19,7 @@ public:
   uint32_t getConfigLoopLevel() const override;
   int32_t getElementSize() const override;
 
+  void initializeBackBaseStreams() override;
   void prepareNewElement(StreamElement *element) override;
 
   bool isContinuous() const override;

@@ -48,6 +48,12 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
     this->addBaseStream(baseStream);
   }
 
+  for (const auto &backBaseStreamId : info.chosen_back_base_streams()) {
+    auto backBaseStream = this->se->getStream(backBaseStreamId.id());
+    assert(backBaseStream != this && "Should never have circular dependency.");
+    this->addBackBaseStream(backBaseStream);
+  }
+
   assert(info.type() != "phi" && "Never coalesce phi stream.");
 
   // Try to update the step root stream.
@@ -62,6 +68,14 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
       }
       this->stepRootStream = baseS->stepRootStream;
     }
+  }
+}
+
+void CoalescedStream::initializeBackBaseStreams() {
+  for (auto &logicalStream : this->coalescedStreams) {
+    auto &info = logicalStream.info;
+    assert(info.chosen_back_base_streams_size() == 0 &&
+           "No back edge dependence for coalesced stream.");
   }
 }
 

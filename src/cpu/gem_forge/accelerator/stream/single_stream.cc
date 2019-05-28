@@ -72,6 +72,15 @@ SingleStream::SingleStream(const StreamArguments &args,
 
 SingleStream::~SingleStream() {}
 
+void SingleStream::initializeBackBaseStreams() {
+  for (const auto &backBaseStreamId : this->info.chosen_back_base_streams()) {
+    assert(this->getStreamType() == "phi" &&
+           "Only phi node can have back edge dependence.");
+    auto backBaseStream = this->se->getStream(backBaseStreamId.id());
+    this->addBackBaseStream(backBaseStream);
+  }
+}
+
 const std::string &SingleStream::getStreamName() const {
   return this->info.name();
 }

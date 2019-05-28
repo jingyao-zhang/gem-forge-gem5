@@ -102,6 +102,13 @@ void Stream::addBaseStream(Stream *baseStream) {
   baseStream->dependentStreams.insert(this);
 }
 
+void Stream::addBackBaseStream(Stream *backBaseStream) {
+  if (backBaseStream == this) {
+    STREAM_PANIC("Base stream should not be self.");
+  }
+  this->backBaseStreams.insert(backBaseStream);
+}
+
 void Stream::addBaseStepStream(Stream *baseStepStream) {
   if (baseStepStream == this) {
     STREAM_PANIC("Base stream should not be self.");
