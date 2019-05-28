@@ -72,6 +72,17 @@ public:
   std::unordered_set<Stream *> baseStreams;
   std::unordered_set<Stream *> dependentStreams;
 
+  /**
+   * Per stream statistics.
+   */
+  size_t numConfigured;
+  size_t numAllocated;
+  size_t numFetched;
+  size_t numStepped;
+  size_t numUsed;
+
+  void dumpStreamStats(std::ostream &os) const;
+
   void tick();
 
   void addBaseStream(Stream *baseStream);

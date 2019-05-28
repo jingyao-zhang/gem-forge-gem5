@@ -1,6 +1,7 @@
 #ifndef __CPU_TDG_LSQ_H__
 #define __CPU_TDG_LSQ_H__
 
+#include "base/statistics.hh"
 #include "base/types.hh"
 
 #include <functional>
@@ -56,9 +57,14 @@ public:
   int loads() const { return this->loadQueue.size(); }
   int stores() const { return this->storeQueue.size(); }
 
+  void regStats();
+
   const int loadQueueSize;
   const int storeQueueSize;
   const int cacheStorePorts;
+
+  mutable Stats::Scalar LQEntriesAllocated;
+  mutable Stats::Scalar SQEntriesAllocated;
 
 private:
   LLVMTraceCPU *cpu;

@@ -70,11 +70,7 @@ public:
   const std::string &getPlacementLat() const { return this->placementLat; }
   const std::string &getPlacement() const { return this->placement; }
 
-  void exitDump() const {
-    if (streamPlacementManager != nullptr) {
-      this->streamPlacementManager->dumpStreamCacheStats();
-    }
-  }
+  void exitDump() const;
 
   void fetchedCacheBlock(Addr cacheBlockVirtualAddr,
                          StreamMemAccess *memAccess);
@@ -92,6 +88,10 @@ public:
   mutable Stats::Scalar numUnconfiguredStreamUse;
   mutable Stats::Scalar numConfiguredStreamUse;
   mutable Stats::Scalar entryWaitCycles;
+
+  mutable Stats::Scalar numStoreElementsAllocated;
+  mutable Stats::Scalar numStoreElementsStepped;
+  mutable Stats::Scalar numStoreElementsUsed;
 
   mutable Stats::Scalar numLoadElementsAllocated;
   mutable Stats::Scalar numLoadElementsFetched;

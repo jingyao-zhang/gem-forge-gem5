@@ -107,10 +107,14 @@ void StreamEngine::regStats() {
   scalar(numUnconfiguredStreamUse, "Number of unconfigured stream use.");
   scalar(numConfiguredStreamUse, "Number of configured stream use.");
   scalar(entryWaitCycles, "Number of cycles form first check to ready.");
-  scalar(numLoadElementsAllocated, "Number of mem stream elements allocated.");
-  scalar(numLoadElementsFetched, "Number of mem stream elements fetched.");
-  scalar(numLoadElementsStepped, "Number of mem stream elements fetched.");
-  scalar(numLoadElementsUsed, "Number of mem stream elements used.");
+  scalar(numStoreElementsAllocated,
+         "Number of store stream elements allocated.");
+  scalar(numStoreElementsStepped, "Number of store stream elements fetched.");
+  scalar(numStoreElementsUsed, "Number of store stream elements used.");
+  scalar(numLoadElementsAllocated, "Number of load stream elements allocated.");
+  scalar(numLoadElementsFetched, "Number of load stream elements fetched.");
+  scalar(numLoadElementsStepped, "Number of load stream elements fetched.");
+  scalar(numLoadElementsUsed, "Number of load stream elements used.");
   scalar(numLoadElementWaitCycles,
          "Number of cycles from first check to ready for load element.");
   scalar(numLoadCacheLineUsed, "Number of cache line used.");
@@ -188,12 +192,13 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
           "linear.c::844(solve_l2r_l1l2_svc)::bb218" ||
       inst->getTDG().stream_config().loop() ==
           "linear.c::844(solve_l2r_l1l2_svc)::bb295") {
-    if (blockSeqNum < inst->getSeqNum()) {
-      // A new blocking one.
-      blockSeqNum = inst->getSeqNum();
-      blockCycle = 1000;
-      return false;
-    }
+    // Jesus adhoc fix.
+    // if (blockSeqNum < inst->getSeqNum()) {
+    //   // A new blocking one.
+    //   blockSeqNum = inst->getSeqNum();
+    //   blockCycle = 1000;
+    //   return false;
+    // }
   }
   auto infoRelativePath = inst->getTDG().stream_config().info_path();
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
@@ -287,6 +292,7 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   for (auto &S : configStreams) {
     assert(!S->configured && "The stream should not be configured.");
     S->configured = true;
+    S->numConfigured++;
 
     /**
      * 1. Clear all elements between stepHead and allocHead.
@@ -1082,8 +1088,11 @@ void StreamEngine::allocateElement(Stream *S) {
   assert(S->configured && "Stream should be configured to allocate element.");
   auto newElement = this->removeFreeElement();
   this->numElementsAllocated++;
+  S->numAllocated++;
   if (S->getStreamType() == "load") {
     this->numLoadElementsAllocated++;
+  } else if (S->getStreamType() == "store") {
+    this->numStoreElementsAllocated++;
   }
 
   S->FIFOIdx.next();
@@ -1152,14 +1161,16 @@ void StreamEngine::allocateElement(Stream *S) {
     }
 
     // Create the CacheBlockInfo for the cache blocks.
-    for (int i = 0; i < newElement->cacheBlocks; ++i) {
-      auto cacheBlockAddr =
-          newElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
-      this->cacheBlockRefMap
-          .emplace(std::piecewise_construct,
-                   std::forward_as_tuple(cacheBlockAddr),
-                   std::forward_as_tuple())
-          .first->second.reference++;
+    if (this->enableMerge) {
+      for (int i = 0; i < newElement->cacheBlocks; ++i) {
+        auto cacheBlockAddr =
+            newElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
+        this->cacheBlockRefMap
+            .emplace(std::piecewise_construct,
+                     std::forward_as_tuple(cacheBlockAddr),
+                     std::forward_as_tuple())
+            .first->second.reference++;
+      }
     }
   } else {
     // IV stream already ready.
@@ -1185,6 +1196,10 @@ void StreamEngine::releaseElement(Stream *S) {
   const bool used =
       releaseElement->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM;
 
+  S->numStepped++;
+  if (used) {
+    S->numUsed++;
+  }
   if (S->getStreamType() == "load") {
     this->numLoadElementsStepped++;
     if (used) {
@@ -1197,26 +1212,33 @@ void StreamEngine::releaseElement(Stream *S) {
       }
       this->numLoadElementWaitCycles += waitedCycles;
     }
+  } else if (S->getStreamType() == "store") {
+    this->numStoreElementsStepped++;
+    if (used) {
+      this->numStoreElementsUsed++;
+    }
   }
 
   // Decrease the reference count of the cache blocks.
-  for (int i = 0; i < releaseElement->cacheBlocks; ++i) {
-    auto cacheBlockVirtualAddr =
-        releaseElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
-    auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
-    if (used) {
-      cacheBlockInfo.used = true;
-    }
-    cacheBlockInfo.reference--;
-    if (cacheBlockInfo.reference == 0) {
-      // Remember to remove the pendingAccesses.
-      for (auto &pendingAccess : cacheBlockInfo.pendingAccesses) {
-        pendingAccess->handleStreamEngineResponse();
+  if (this->enableMerge) {
+    for (int i = 0; i < releaseElement->cacheBlocks; ++i) {
+      auto cacheBlockVirtualAddr =
+          releaseElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
+      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+      if (used) {
+        cacheBlockInfo.used = true;
       }
-      if (cacheBlockInfo.used && cacheBlockInfo.requestedByLoad) {
-        this->numLoadCacheLineUsed++;
+      cacheBlockInfo.reference--;
+      if (cacheBlockInfo.reference == 0) {
+        // Remember to remove the pendingAccesses.
+        for (auto &pendingAccess : cacheBlockInfo.pendingAccesses) {
+          pendingAccess->handleStreamEngineResponse();
+        }
+        if (cacheBlockInfo.used && cacheBlockInfo.requestedByLoad) {
+          this->numLoadCacheLineUsed++;
+        }
+        this->cacheBlockRefMap.erase(cacheBlockVirtualAddr);
       }
-      this->cacheBlockRefMap.erase(cacheBlockVirtualAddr);
     }
   }
 
@@ -1271,6 +1293,9 @@ void StreamEngine::issueElements() {
 void StreamEngine::fetchedCacheBlock(Addr cacheBlockVirtualAddr,
                                      StreamMemAccess *memAccess) {
   // Check if we still have the cache block.
+  if (!this->enableMerge) {
+    return;
+  }
   if (this->cacheBlockRefMap.count(cacheBlockVirtualAddr) == 0) {
     return;
   }
@@ -1297,35 +1322,37 @@ void StreamEngine::issueElement(StreamElement *element) {
   auto S = element->stream;
   if (S->getStreamType() == "load") {
     this->numLoadElementsFetched++;
+    S->numFetched++;
   }
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
-
-    // Check if we already have the cache block fetched.
     auto cacheBlockVirtualAddr = cacheBlockBreakdown.cacheBlockVirtualAddr;
-    auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
 
-    if (S->getStreamType() == "load") {
-      if (!cacheBlockInfo.requestedByLoad) {
-        cacheBlockInfo.requestedByLoad = true;
-        this->numLoadCacheLineFetched++;
-      }
-    }
-
-    if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHED) {
-      // This cache block is already fetched.
-      continue;
-    }
-
-    if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHING) {
-      // This cache block is already fetching.
-      auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
+    if (this->enableMerge) {
+      // Check if we already have the cache block fetched.
+      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
       if (S->getStreamType() == "load") {
-        element->inflyMemAccess.insert(memAccess);
+        if (!cacheBlockInfo.requestedByLoad) {
+          cacheBlockInfo.requestedByLoad = true;
+          this->numLoadCacheLineFetched++;
+        }
       }
-      cacheBlockInfo.pendingAccesses.push_back(memAccess);
-      continue;
+
+      if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHED) {
+        // This cache block is already fetched.
+        continue;
+      }
+
+      if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHING) {
+        // This cache block is already fetching.
+        auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
+        if (S->getStreamType() == "load") {
+          element->inflyMemAccess.insert(memAccess);
+        }
+        cacheBlockInfo.pendingAccesses.push_back(memAccess);
+        continue;
+      }
     }
 
     // Normal case: really fetching this from the cache.
@@ -1338,13 +1365,17 @@ void StreamEngine::issueElement(StreamElement *element) {
       panic("Stream so far can only work in standalone mode.");
     }
 
-    if (this->enableStreamPlacement) {
-      // This means we have the placement manager.
-      if (this->streamPlacementManager->access(cacheBlockBreakdown, element)) {
-        // Stream placement manager handles this packet.
-        // But we need to mark the cache block to be FETCHING.
-        cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
-        continue;
+    if (this->enableMerge) {
+      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+      if (this->enableStreamPlacement) {
+        // This means we have the placement manager.
+        if (this->streamPlacementManager->access(cacheBlockBreakdown,
+                                                 element)) {
+          // Stream placement manager handles this packet.
+          // But we need to mark the cache block to be FETCHING.
+          cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
+          continue;
+        }
       }
     }
     // Allocate the book-keeping StreamMemAccess.
@@ -1354,7 +1385,10 @@ void StreamEngine::issueElement(StreamElement *element) {
     cpu->sendRequest(pkt);
 
     // Change to FETCHING status.
-    cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
+    if (this->enableMerge) {
+      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+      cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
+    }
 
     if (S->getStreamType() == "load") {
       element->inflyMemAccess.insert(memAccess);
@@ -1439,6 +1473,28 @@ void StreamEngine::dumpFIFO() const {
 void StreamEngine::dump() {
   this->streamPlacementManager->dumpCacheStreamAwarePortStatus();
   this->dumpFIFO();
+}
+
+void StreamEngine::exitDump() const {
+  if (streamPlacementManager != nullptr) {
+    this->streamPlacementManager->dumpStreamCacheStats();
+  }
+  std::vector<Stream *> allStreams;
+  for (auto &pair : this->streamMap) {
+    allStreams.push_back(pair.second);
+  }
+  // Try to sort them.
+  std::sort(allStreams.begin(), allStreams.end(),
+            [](const Stream *a, const Stream *b) -> bool {
+              // Sort by region and then stream name.
+              auto aId = a->streamRegion->region() + a->getStreamName();
+              auto bId = b->streamRegion->region() + b->getStreamName();
+              return aId < bId;
+            });
+  auto &streamOS = *simout.findOrCreate("stream.stas.txt")->stream();
+  for (auto &S : allStreams) {
+    S->dumpStreamStats(streamOS);
+  }
 }
 
 void StreamEngine::throttleStream(Stream *S, StreamElement *element) {

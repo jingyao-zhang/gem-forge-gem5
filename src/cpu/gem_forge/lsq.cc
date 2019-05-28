@@ -28,6 +28,15 @@ GemForgeLoadStoreQueue::GemForgeLoadStoreQueue(LLVMTraceCPU *_cpu,
       cacheStorePorts(_cacheStorePorts), cpu(_cpu), iew(_iew),
       currentAllocatedLSQEntryIndex(INVALID_LSQ_ENTRY_INDEX) {}
 
+void GemForgeLoadStoreQueue::regStats() {
+#define scalar(stat, describe)                                                 \
+  this->stat.name(this->iew->name() + (".lsq." #stat))                         \
+      .desc(describe)                                                          \
+      .prereq(this->stat)
+  scalar(LQEntriesAllocated, "LQ entries allocated.");
+  scalar(SQEntriesAllocated, "SQ entries allocated.");
+}
+
 void GemForgeLoadStoreQueue::insertLoad(
     std::unique_ptr<GemForgeLQCallback> callback) {
   panic_if(this->loadQueue.size() >= this->loadQueueSize,
@@ -35,6 +44,7 @@ void GemForgeLoadStoreQueue::insertLoad(
   auto lsqIndex = ++this->currentAllocatedLSQEntryIndex;
   this->loadQueue.emplace_back(lsqIndex, std::move(callback));
   this->iew->loadQueueWrites++;
+  this->LQEntriesAllocated++;
 }
 
 void GemForgeLoadStoreQueue::insertStore(
@@ -45,6 +55,7 @@ void GemForgeLoadStoreQueue::insertStore(
   auto lsqIndex = ++this->currentAllocatedLSQEntryIndex;
   this->storeQueue.emplace_back(lsqIndex, std::move(callback));
   this->iew->storeQueueWrites++;
+  this->SQEntriesAllocated++;
 }
 
 void GemForgeLoadStoreQueue::commitLoad() {

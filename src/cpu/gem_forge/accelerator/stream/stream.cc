@@ -52,6 +52,15 @@ Stream::Stream(const StreamArguments &args)
   this->stepRootStream = nullptr;
   this->lateFetchCount = 0;
   this->streamRegion = args.streamRegion;
+
+  /**
+   * Initialize the statistics.
+   */
+  this->numConfigured = 0;
+  this->numAllocated = 0;
+  this->numFetched = 0;
+  this->numStepped = 0;
+  this->numUsed = 0;
 }
 
 Stream::~Stream() {
@@ -66,6 +75,19 @@ Stream::~Stream() {
     delete memAccess;
   }
   this->memAccesses.clear();
+}
+
+void Stream::dumpStreamStats(std::ostream &os) const {
+  os << this->getStreamName() << '\n';
+#define dumpScalar(stat) os << "  " #stat << ' ' << this->stat << '\n'
+
+  dumpScalar(numConfigured);
+  dumpScalar(numAllocated);
+  dumpScalar(numFetched);
+  dumpScalar(numStepped);
+  dumpScalar(numUsed);
+
+#undef dumpScalar
 }
 
 bool Stream::isMemStream() const {

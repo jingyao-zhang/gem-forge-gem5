@@ -71,7 +71,7 @@ parser.add_option("--gem-forge-stream-engine-enable-lsq", action="store_true",
 parser.add_option("--gem-forge-stream-engine-enable-coalesce", action="store_true",
                   help="""Enable stream coalesce in the stream engine.""", default=False)
 parser.add_option("--gem-forge-stream-engine-enable-merge", action="store", type="int",
-                  help="""Enable stream merge in the stream engine.""", default="0")
+                  help="""Enable stream merge in the stream engine.""", default="1")
 parser.add_option("--gem-forge-stream-engine-placement",
                   type="string", default="original")
 

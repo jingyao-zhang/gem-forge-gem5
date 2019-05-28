@@ -36,6 +36,9 @@ void LLVMIEWStage::setSignal(TimeBuffer<LLVMStageSignal> *signalBuffer,
 std::string LLVMIEWStage::name() { return cpu->name() + ".iew"; }
 
 void LLVMIEWStage::regStats() {
+
+  this->lsq->regStats();
+
   this->statIssuedInstType.init(cpu->numThreads, Enums::Num_OpClass)
       .name(name() + ".FU_type")
       .desc("Type of FU issued")
