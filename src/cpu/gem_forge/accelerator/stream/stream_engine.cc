@@ -7,7 +7,7 @@
 
 namespace {
 static std::string DEBUG_STREAM_NAME =
-    "(IV integralImage2D2D.c::9(integralImage2D2D) bb418 bb418::tmp421(phi))";
+    "(IV acmod.c::1232(acmod_flags2list) bb19 bb19::tmp21(phi))";
 
 bool isDebugStream(Stream *S) {
   return S->getStreamName() == DEBUG_STREAM_NAME;
@@ -23,6 +23,9 @@ void debugStream(Stream *S, const char *message) {
 #define STREAM_DPRINTF(stream, format, args...)                                \
   DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
           ##args)
+
+#define STREAM_HACK(stream, format, args...)                                   \
+  hack("[%s]: " format, stream->getStreamName().c_str(), ##args)
 
 #define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
   STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
@@ -337,29 +340,30 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
     assert(this->areBaseElementAllocated(S));
     this->allocateElement(S);
   }
-  // Allocate the remaining free entries.
-  while (this->hasFreeElement()) {
-    bool allocated = false;
-    for (auto S : configStreams) {
-      if (S->allocSize == S->maxSize) {
-        // This stream has already reached the run ahead limit.
-        continue;
-      }
-      if (!this->areBaseElementAllocated(S)) {
-        // The base element is not yet allocated.
-        continue;
-      }
-      if (!this->hasFreeElement()) {
-        break;
-      }
-      this->allocateElement(S);
-      allocated = true;
-    }
-    if (!allocated) {
-      // No more streams can be allocate more entries.
-      break;
-    }
-  }
+  // The remaining elements will be allocated by allocateElements().
+  // // Allocate the remaining free entries.
+  // while (this->hasFreeElement()) {
+  //   bool allocated = false;
+  //   for (auto S : configStreams) {
+  //     if (S->allocSize == S->maxSize) {
+  //       // This stream has already reached the run ahead limit.
+  //       continue;
+  //     }
+  //     if (!this->areBaseElementAllocated(S)) {
+  //       // The base element is not yet allocated.
+  //       continue;
+  //     }
+  //     if (!this->hasFreeElement()) {
+  //       break;
+  //     }
+  //     this->allocateElement(S);
+  //     allocated = true;
+  //   }
+  //   if (!allocated) {
+  //     // No more streams can be allocate more entries.
+  //     break;
+  //   }
+  // }
   for (auto S : configStreams) {
     if (isDebugStream(S)) {
       debugStream(S, "Dispatch Config");
@@ -1048,6 +1052,11 @@ void StreamEngine::allocateElements() {
       if (stepStream->FIFOIdx.entryIdx > 0) {
         // This is not the first element.
         for (auto backBaseS : stepStream->backBaseStreams) {
+          if (backBaseS->stepRootStream == stepStream) {
+            // ! This is acutally a pointer chasing pattern.
+            // ! No constraint should be enforced here.
+            continue;
+          }
           auto backBaseSAllocDiff = backBaseS->allocSize - backBaseS->stepSize;
           auto stepStreamAllocDiff = maxAllocSize - stepStream->stepSize;
           if (backBaseSAllocDiff < stepStreamAllocDiff) {
@@ -1060,13 +1069,15 @@ void StreamEngine::allocateElements() {
     }
 
     const auto &stepStreams = this->getStepStreamList(stepStream);
-    // if (isDebugStream(stepStream)) {
-    //   hack("Try to allocate for debug stream %d.", this->hasFreeElement());
-    // }
+    if (isDebugStream(stepStream)) {
+      hack("Try to allocate for debug stream, maxAllocSize %d.", maxAllocSize);
+    }
     for (size_t targetSize = 1;
-         targetSize <= maxAllocSize && this->hasFreeElement();
-         ++targetSize) {
+         targetSize <= maxAllocSize && this->hasFreeElement(); ++targetSize) {
       for (auto S : stepStreams) {
+        if (isDebugStream(stepStream)) {
+          debugStream(S, "Try to allocate for it.");
+        }
         if (!this->hasFreeElement()) {
           break;
         }
