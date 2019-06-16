@@ -26,11 +26,19 @@ StreamConfigInst::StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
 
 bool StreamConfigInst::canDispatch(LLVMTraceCPU *cpu) const {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  if (this->hasStreamUse()) {
+    if (!SE->canStreamUserDispatch(this)) {
+      return false;
+    }
+  }
   return SE->canStreamConfig(this);
 }
 
 void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  if (this->hasStreamUse()) {
+    SE->dispatchStreamUser(this);
+  }
   SE->dispatchStreamConfigure(this);
 }
 
@@ -38,12 +46,18 @@ void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
   // Automatically finished.
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   SE->executeStreamConfigure(this);
+  if (this->hasStreamUse()) {
+    SE->executeStreamUser(this);
+  }
   this->markFinished();
 }
 
 void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream configure %lu\n", this->getSeqNum());
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  if (this->hasStreamUse()) {
+    SE->commitStreamUser(this);
+  }
   SE->commitStreamConfigure(this);
 }
 
