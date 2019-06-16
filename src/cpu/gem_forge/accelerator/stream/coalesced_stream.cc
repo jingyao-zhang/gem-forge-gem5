@@ -221,67 +221,6 @@ int32_t CoalescedStream::getElementSize() const {
   return this->primaryLogicalStream->info.element_size();
 }
 
-// bool CoalescedStream::shouldHandleStreamInst(StreamInst *inst) const {
-//   auto streamId = inst->getStreamId();
-
-//   auto logicalStreamMapIter = this->logicalStreamMap.find(streamId);
-//   if (logicalStreamMapIter == this->logicalStreamMap.end()) {
-//     panic("Incoming inst of a stream not included for this coalesced
-//     stream.");
-//   }
-
-//   if (streamId != this->primaryLogicalStream->info.id()) {
-//     // We only handle the primary config inst.
-//     return false;
-//   }
-//   return true;
-// }
-
-void CoalescedStream::handlePacketResponse(const FIFOEntryIdx &entryId,
-                                           PacketPtr packet,
-                                           StreamMemAccess *memAccess) {
-  panic("Not working so far.");
-  // if (this->memAccesses.count(memAccess) == 0) {
-  //   panic("Failed looking up the stream memory access inst in our set.");
-  // }
-
-  // /**
-  //  * If I am a load stream, mark the entry as value ready now.
-  //  * It is possible that the entry is already stepped before the packet
-  //  * returns, if the entry is unused.
-  //  *
-  //  * If I am a store stream, do nothing.
-  //  */
-  // if (this->primaryLogicalStream->info.type() == "load") {
-  //   for (auto &entry : this->FIFO) {
-  //     if (entry.idx == entryId) {
-  //       // We actually ingore the data here.
-  //       // STREAM_ENTRY_DPRINTF(entry, "Received load stream packet.\n");
-  //       if (entry.inflyLoadPackets == 0) {
-  //         // STREAM_ENTRY_PANIC(entry, "Received load stream packet when
-  //         there
-  //         // is "
-  //         //                           "no infly load packets.");
-  //         panic(
-  //             "Received load stream packet when there is "
-  //             "no infly load packets.");
-  //       }
-  //       entry.inflyLoadPackets--;
-  //       if (entry.inflyLoadPackets == 0) {
-  //         this->markValueReady(entry);
-  //       }
-  //     }
-  //   }
-  // } else if (this->primaryLogicalStream->info.type() == "store") {
-  // } else {
-  //   panic("Invalid type %s for a stream to receive packet response.",
-  //         this->primaryLogicalStream->info.type().c_str());
-  // }
-
-  // this->memAccesses.erase(memAccess);
-  // delete memAccess;
-}
-
 bool CoalescedStream::isContinuous() const {
   const auto &pattern = this->primaryLogicalStream->patternStream->getPattern();
   if (pattern.val_pattern() != "LINEAR") {
@@ -334,6 +273,5 @@ uint64_t CoalescedStream::getTrueFootprint() const {
 void CoalescedStream::dump() const {
   inform("Dump for coalesced stream %s.\n======================",
          this->getStreamName().c_str());
-  inform("ConfigSeq %lu, EndSeq %lu.\n", this->configSeqNum, this->endSeqNum);
   inform("=========================\n");
 }

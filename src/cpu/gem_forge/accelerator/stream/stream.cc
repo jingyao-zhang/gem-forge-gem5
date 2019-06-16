@@ -35,12 +35,7 @@
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(const StreamArguments &args)
-    : cpu(args.cpu), se(args.se), nilTail(args.se),
-      firstConfigSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      endSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), storedData(nullptr) {
-
-  this->storedData = new uint8_t[cpu->system->cacheLineSize()];
+    : cpu(args.cpu), se(args.se), nilTail(args.se) {
 
   this->configured = false;
   this->head = &this->nilTail;
@@ -63,19 +58,7 @@ Stream::Stream(const StreamArguments &args)
   this->numUsed = 0;
 }
 
-Stream::~Stream() {
-  // Actually the stream is only deallocated at the end of the program.
-  // But we still release the memory for completeness.
-  if (this->storedData != nullptr) {
-    delete[] this->storedData;
-    this->storedData = nullptr;
-  }
-
-  for (auto memAccess : this->memAccesses) {
-    delete memAccess;
-  }
-  this->memAccesses.clear();
-}
+Stream::~Stream() {}
 
 void Stream::dumpStreamStats(std::ostream &os) const {
   os << this->getStreamName() << '\n';
@@ -135,72 +118,4 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
     }
   }
   this->stepStreamList.emplace_back(newStepDependentStream);
-}
-
-uint64_t Stream::getCacheBlockAddr(uint64_t addr) const {
-  return addr & (~(cpu->system->cacheLineSize() - 1));
-}
-
-void Stream::addAliveCacheBlock(uint64_t addr) const {
-  if (this->getStreamType() == "phi") {
-    return;
-  }
-  auto cacheBlockAddr = this->getCacheBlockAddr(addr);
-  if (this->aliveCacheBlocks.count(cacheBlockAddr) == 0) {
-    this->aliveCacheBlocks.emplace(cacheBlockAddr, 1);
-  } else {
-    this->aliveCacheBlocks.at(cacheBlockAddr)++;
-  }
-}
-
-bool Stream::isCacheBlockAlive(uint64_t addr) const {
-  if (this->getStreamType() == "phi") {
-    return false;
-  }
-  auto cacheBlockAddr = this->getCacheBlockAddr(addr);
-  return this->aliveCacheBlocks.count(cacheBlockAddr) != 0;
-}
-
-void Stream::removeAliveCacheBlock(uint64_t addr) const {
-  if (this->getStreamType() == "phi") {
-    return;
-  }
-  auto cacheBlockAddr = this->getCacheBlockAddr(addr);
-  auto aliveMapIter = this->aliveCacheBlocks.find(cacheBlockAddr);
-  if (aliveMapIter == this->aliveCacheBlocks.end()) {
-    STREAM_PANIC("Missing alive cache block.");
-  } else {
-    if (aliveMapIter->second == 1) {
-      this->aliveCacheBlocks.erase(aliveMapIter);
-    } else {
-      aliveMapIter->second--;
-    }
-  }
-}
-void Stream::StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
-                                                   PacketPtr packet) {
-  if (this->additionalDelay == 0) {
-    this->stream->handlePacketResponse(this->entryId, packet, this);
-  } else {
-    // Schedule the event and clear the result.
-    Cycles delay(this->additionalDelay);
-    // Remember to clear this additional delay as we have already paid it.
-    this->additionalDelay = 0;
-    auto responseEvent = new ResponseEvent(cpu, this, packet);
-    cpu->schedule(responseEvent, cpu->clockEdge(delay));
-  }
-}
-
-void Stream::StreamMemAccess::handlePacketResponse(PacketPtr packet) {
-  if (this->additionalDelay == 0) {
-    this->stream->handlePacketResponse(this->entryId, packet, this);
-  } else {
-    // Schedule the event and clear the result.
-    auto cpu = this->stream->getCPU();
-    Cycles delay(this->additionalDelay);
-    // Remember to clear this additional delay as we have already paid it.
-    this->additionalDelay = 0;
-    auto responseEvent = new ResponseEvent(cpu, this, packet);
-    cpu->schedule(responseEvent, cpu->clockEdge(delay));
-  }
 }

@@ -75,16 +75,6 @@ protected:
   std::string streamName;
   void generateStreamName();
 
-  // bool shouldHandleStreamInst(StreamInst *inst) const;
-
-  void handlePacketResponse(const FIFOEntryIdx &entryId, PacketPtr packet,
-                            StreamMemAccess *memAccess) override;
-
-  /**
-   * Merge the request from different logical streams.
-   */
-  // std::pair<uint64_t, uint64_t> getNextAddr();
-
   /**
    * For debug.
    */

@@ -32,8 +32,6 @@ private:
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
   std::unique_ptr<StreamPattern> patternStream;
-  void handlePacketResponse(const FIFOEntryIdx &entryId, PacketPtr packet,
-                            StreamMemAccess *memAccess) override;
 
   /**
    * For debug.

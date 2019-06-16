@@ -340,30 +340,6 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
     assert(this->areBaseElementAllocated(S));
     this->allocateElement(S);
   }
-  // The remaining elements will be allocated by allocateElements().
-  // // Allocate the remaining free entries.
-  // while (this->hasFreeElement()) {
-  //   bool allocated = false;
-  //   for (auto S : configStreams) {
-  //     if (S->allocSize == S->maxSize) {
-  //       // This stream has already reached the run ahead limit.
-  //       continue;
-  //     }
-  //     if (!this->areBaseElementAllocated(S)) {
-  //       // The base element is not yet allocated.
-  //       continue;
-  //     }
-  //     if (!this->hasFreeElement()) {
-  //       break;
-  //     }
-  //     this->allocateElement(S);
-  //     allocated = true;
-  //   }
-  //   if (!allocated) {
-  //     // No more streams can be allocate more entries.
-  //     break;
-  //   }
-  // }
   for (auto S : configStreams) {
     if (isDebugStream(S)) {
       debugStream(S, "Dispatch Config");
@@ -920,15 +896,11 @@ void StreamEngine::updateAliveStatistics() {
     if (stream->isMemStream()) {
       this->numRunAHeadLengthDist.sample(stream->allocSize);
     }
-    if (!stream->isConfigured()) {
+    if (!stream->configured) {
       continue;
     }
     if (stream->isMemStream()) {
-      // totalAliveElements += stream->getAliveElements();
       totalAliveMemStreams++;
-      for (const auto &cacheBlockAddrPair : stream->getAliveCacheBlocks()) {
-        totalAliveCacheBlocks.insert(cacheBlockAddrPair.first);
-      }
     }
   }
   this->numTotalAliveElements.sample(totalAliveElements);
@@ -1257,12 +1229,6 @@ void StreamEngine::allocateElement(Stream *S) {
             .first->second.reference++;
       }
     }
-  } else {
-    // IV stream already ready if there is no back-edge dependence.
-    if (newElement->baseElements.empty()) {
-      newElement->isAddrReady = true;
-      newElement->markValueReady();
-    }
   }
 
   // Append to the list.
@@ -1377,7 +1343,7 @@ void StreamEngine::issueElements() {
     if (element->stream->isMemStream()) {
       this->issueElement(element);
     } else {
-      // This is a Pseudo stream with back dependence.
+      // This is an IV stream with back dependence.
       element->markValueReady();
     }
   }

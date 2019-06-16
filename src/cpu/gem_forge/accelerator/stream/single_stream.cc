@@ -111,48 +111,6 @@ void SingleStream::prepareNewElement(StreamElement *element) {
   element->size = this->getElementSize();
 }
 
-void SingleStream::handlePacketResponse(const FIFOEntryIdx &entryId,
-                                        PacketPtr packet,
-                                        StreamMemAccess *memAccess) {
-  panic("Not working so far.");
-  // if (this->memAccesses.count(memAccess) == 0) {
-  //   STREAM_PANIC("Failed looking up the stream memory access inst in our
-  //   set.");
-  // }
-
-  // /**
-  //  * If I am a load stream, mark the entry as value ready now.
-  //  * It is possible that the entry is already stepped before the packet
-  //  * returns, if the entry is unused.
-  //  *
-  //  * If I am a store stream, do nothing.
-  //  */
-  // if (this->info.type() == "load") {
-  //   for (auto &entry : this->FIFO) {
-  //     if (entry.idx == entryId) {
-  //       // We actually ingore the data here.
-  //       STREAM_ENTRY_DPRINTF(entry, "Received load stream packet.\n");
-  //       if (entry.inflyLoadPackets == 0) {
-  //         STREAM_ENTRY_PANIC(entry, "Received load stream packet when there
-  //         is "
-  //                                   "no infly load packets.");
-  //       }
-  //       entry.inflyLoadPackets--;
-  //       if (entry.inflyLoadPackets == 0) {
-  //         this->markValueReady(entry);
-  //       }
-  //     }
-  //   }
-  // } else if (this->info.type() == "store") {
-  // } else {
-  //   STREAM_PANIC("Invalid type %s for a stream to receive packet response.",
-  //                this->info.type().c_str());
-  // }
-
-  // this->memAccesses.erase(memAccess);
-  // delete memAccess;
-}
-
 uint64_t SingleStream::getTrueFootprint() const {
   return this->history->getNumCacheLines();
 }
@@ -164,6 +122,5 @@ bool SingleStream::isContinuous() const { return false; }
 void SingleStream::dump() const {
   inform("Dump for stream %s.\n======================",
          this->getStreamName().c_str());
-  inform("ConfigSeq %lu, EndSeq %lu.\n", this->configSeqNum, this->endSeqNum);
   inform("=========================\n");
 }
