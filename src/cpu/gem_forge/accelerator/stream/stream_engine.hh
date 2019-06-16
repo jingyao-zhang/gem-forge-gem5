@@ -28,6 +28,7 @@ public:
 
   bool canStreamConfig(const StreamConfigInst *inst) const;
   void dispatchStreamConfigure(StreamConfigInst *inst);
+  void executeStreamConfigure(StreamConfigInst *inst);
   void commitStreamConfigure(StreamConfigInst *inst);
 
   bool canStreamStep(const StreamStepInst *inst) const;

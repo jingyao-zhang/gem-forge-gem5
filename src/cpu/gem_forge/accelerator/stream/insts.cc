@@ -36,6 +36,8 @@ void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
 
 void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
   // Automatically finished.
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  SE->executeStreamConfigure(this);
   this->markFinished();
 }
 

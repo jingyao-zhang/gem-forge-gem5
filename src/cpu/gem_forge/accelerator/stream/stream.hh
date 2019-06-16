@@ -103,6 +103,11 @@ public:
 
   virtual void configure(StreamConfigInst *inst) = 0;
 
+  void dispatchStreamConfigure(StreamConfigInst *inst);
+  void executeStreamConfigure(StreamConfigInst *inst);
+  bool isStreamConfigureExecuted(uint64_t configInstSeqNum);
+  void commitStreamEnd(StreamEndInst *inst);
+
 protected:
   LLVMTraceCPU *cpu;
   StreamEngine *se;
@@ -122,6 +127,13 @@ protected:
     const auto &type = this->getStreamType();
     return this->baseStepStreams.empty() && (type == "phi" || type == "store");
   }
+
+  /**
+   * Manager stream_configuration executed status.
+   * A list of all stream_config instruction sequence number, along with a
+   * flag to remember whether this instruction is executed.
+   */
+  std::list<std::pair<uint64_t, bool>> configInstExecuted;
 
   /**
    * For debug.

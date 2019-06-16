@@ -285,9 +285,6 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
 
   /**
    * Get all the configured streams.
-   * A very subtle thing is that to make sure all the streams
-   * are configured after their base streams in the case of coalesced streams,
-   * we do this in the reverse order.
    */
   std::list<Stream *> configStreams;
   std::unordered_set<Stream *> dedupSet;
@@ -347,6 +344,32 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
         panic("Failed to allocate one number of elements.");
       }
     }
+  }
+}
+
+void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
+
+  auto infoRelativePath = inst->getTDG().stream_config().info_path();
+  const auto &streamRegion = this->getStreamRegion(infoRelativePath);
+
+  /**
+   * Get all the configured streams.
+   */
+  std::list<Stream *> configStreams;
+  std::unordered_set<Stream *> dedupSet;
+  for (const auto &streamInfo : streamRegion.streams()) {
+    // Deduplicate the streams due to coalescing.
+    const auto &streamId = streamInfo.id();
+    auto stream = this->getStream(streamId);
+    if (dedupSet.count(stream) == 0) {
+      configStreams.push_back(stream);
+      dedupSet.insert(stream);
+    }
+  }
+
+  for (auto &S : configStreams) {
+    // Simply notify the stream.
+    S->executeStreamConfigure(inst);
   }
 }
 
@@ -722,6 +745,9 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
     if (isDebugStream(S)) {
       debugStream(S, "Commit End");
     }
+
+    // Notify the stream.
+    S->commitStreamEnd(inst);
   }
 
   this->allocateElements();
@@ -1318,6 +1344,12 @@ void StreamEngine::issueElements() {
     }
     if (element.isAddrReady) {
       // We already issued request for this element.
+      continue;
+    }
+    // Check if StreamConfig is already executed.
+    if (!element.stream->isStreamConfigureExecuted(
+            element.FIFOIdx.configSeqNum)) {
+      // This stream is not fully configured yet.
       continue;
     }
     // Check if all the base element are value ready.

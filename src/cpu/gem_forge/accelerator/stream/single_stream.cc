@@ -100,6 +100,7 @@ int32_t SingleStream::getElementSize() const {
 }
 
 void SingleStream::configure(StreamConfigInst *inst) {
+  this->dispatchStreamConfigure(inst);
   this->history->configure();
   this->patternStream->configure();
 }
