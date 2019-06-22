@@ -10,6 +10,7 @@
 #include "TDGInstruction.pb.h"
 #include "llvm_insts.hh"
 #include "queue_buffer.hh"
+#include "region_table.hh"
 
 #include "proto/protoio.hh"
 
@@ -44,10 +45,13 @@ public:
     return this->staticInfo;
   }
 
+  const RegionTable &getRegionTable() const { return *this->regionTable; }
+
 private:
   std::string fn;
   ProtoInputStream *input;
   LLVM::TDG::StaticInformation staticInfo;
+  RegionTable *regionTable;
 
   std::shared_ptr<Buffer> mainBuffer;
   std::shared_ptr<Buffer> currentBuffer;

@@ -22,7 +22,6 @@
 #include "cpu/gem_forge/llvm_stage_signal.hh"
 #include "cpu/gem_forge/llvm_trace_cpu_driver.hh"
 #include "cpu/gem_forge/profiler/run_time_profiler.hh"
-#include "cpu/gem_forge/region_stats.hh"
 #include "cpu/gem_forge/thread_context.hh"
 #include "cpu/o3/fu_pool.hh"
 #include "mem/page_table.hh"
@@ -160,7 +159,6 @@ private:
 
   FUPool *fuPool;
 
-  RegionStats *regionStats;
   /**
    * Should be part of process instead.
    */
@@ -313,8 +311,6 @@ public:
   Cycles getOpLatency(OpClass opClass);
 
   TDGAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
-
-  RegionStats *getRegionStats() { return this->regionStats; }
 
   RunTimeProfiler *getRunTimeProfiler() { return this->runTimeProfiler; }
 

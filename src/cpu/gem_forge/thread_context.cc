@@ -5,12 +5,22 @@ LLVMTraceThreadContext::LLVMTraceThreadContext(
     : contextId(_contextId), traceFileName(_traceFileName),
       dispatcher(_traceFileName),
       dynInstStream(new DynamicInstructionStream(dispatcher.getMainBuffer())),
-      isIdeal(_isIdeal), inflyInsts(0), cpu(nullptr),
-      threadId(InvalidThreadID) {}
+      regionStats(nullptr), isIdeal(_isIdeal), inflyInsts(0), cpu(nullptr),
+      threadId(InvalidThreadID) {
+  const bool enableRegionStats = false;
+  if (enableRegionStats) {
+    this->regionStats =
+        new RegionStats(this->dispatcher.getRegionTable(), "region.stats.txt");
+  }
+}
 
 LLVMTraceThreadContext::~LLVMTraceThreadContext() {
   delete this->dynInstStream;
   this->dynInstStream = nullptr;
+  if (this->regionStats != nullptr) {
+    delete this->regionStats;
+    this->regionStats = nullptr;
+  }
 }
 
 bool LLVMTraceThreadContext::canFetch() const {

@@ -1,5 +1,7 @@
-#ifndef __CPU_LLVM_TRACE_REGION_STATS_H__
-#define __CPU_LLVM_TRACE_REGION_STATS_H__
+#ifndef __CPU_GEM_FORGE_REGION_STATS_HH__
+#define __CPU_GEM_FORGE_REGION_STATS_HH__
+
+#include "region_table.hh"
 
 #include "base/output.hh"
 #include "base/statistics.hh"
@@ -30,23 +32,16 @@
  * cleaner.
  */
 class RegionStats {
- public:
-  using RegionId = std::string;
-  using BasicBlockId = uint64_t;
-
-  struct Region {
-    RegionId name;
-    // Optional parent region id.
-    RegionId parent;
-    std::unordered_set<BasicBlockId> bbs;
-  };
-
-  using RegionMap = std::unordered_map<RegionId, Region>;
+public:
+  using RegionId = RegionTable::RegionId;
+  using BasicBlockId = RegionTable::BasicBlockId;
+  using Region = RegionTable::Region;
+  using RegionMap = RegionTable::RegionMap;
 
   using StatsMap = std::unordered_map<std::string, Stats::Result>;
   using Snapshot = std::shared_ptr<const StatsMap>;
 
-  RegionStats(RegionMap &&_regions, const std::string &_fileName);
+  RegionStats(const RegionTable &_regionTable, const std::string &_fileName);
 
   RegionStats(const RegionStats &other) = delete;
   RegionStats(RegionStats &&other) = delete;
@@ -69,15 +64,12 @@ class RegionStats {
   void dump(std::ostream &stream);
   void dump();
 
- private:
-  RegionMap regions;
+private:
+  const RegionTable &regionTable;
   std::string fileName;
 
   OutputDirectory *checkpointsDirectory;
   uint64_t checkpointsTaken;
-
-  // Reverse map from basic block to regions to speed up the look up.
-  std::unordered_map<BasicBlockId, std::unordered_set<RegionId>> bbToRegionMap;
 
   // Record the previous basic block to avoid expensive loop up if we are still
   // in the same basic block.
@@ -98,11 +90,6 @@ class RegionStats {
    * Map from regions to collected statstics.
    */
   std::unordered_map<RegionId, StatsMap> regionStats;
-
-  /**
-   * Check if a region contains a bb.
-   */
-  bool contains(const RegionId &region, const BasicBlockId &bb) const;
 
   /**
    * Take the snapshot.

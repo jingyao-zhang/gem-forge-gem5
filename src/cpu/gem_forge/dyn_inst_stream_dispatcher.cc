@@ -9,12 +9,15 @@
 
 DynamicInstructionStreamDispatcher::DynamicInstructionStreamDispatcher(
     const std::string &_fn)
-    : fn(_fn) {
+    : fn(_fn), input(nullptr), regionTable(nullptr) {
   this->input = new ProtoInputStream(this->fn);
 
   // Parse the static information.
   bool successReadStaticInfo = this->input->read(this->staticInfo);
   assert(successReadStaticInfo && "Failed to readin the static info.");
+
+  // Create the region table.
+  this->regionTable = new RegionTable(this->staticInfo);
 
   // Create the main buffer.
   this->mainBuffer = std::make_shared<Buffer>();
@@ -27,6 +30,9 @@ DynamicInstructionStreamDispatcher::DynamicInstructionStreamDispatcher(
 DynamicInstructionStreamDispatcher::~DynamicInstructionStreamDispatcher() {
   delete this->input;
   this->input = nullptr;
+
+  delete this->regionTable;
+  this->regionTable = nullptr;
 }
 
 void DynamicInstructionStreamDispatcher::parse() {

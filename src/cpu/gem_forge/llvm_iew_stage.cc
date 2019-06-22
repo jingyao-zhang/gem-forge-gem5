@@ -404,7 +404,8 @@ void LLVMIEWStage::dispatch() {
     }
 
     // Check if this thread is blocked by misspeculation.
-    auto threadId = cpu->inflyInstThread.at(instId)->getThreadId();
+    auto thread = cpu->inflyInstThread.at(instId);
+    auto threadId = thread->getThreadId();
     const auto &state = this->iewStates[threadId];
     if (state.misspecPenaltyCycles > 0) {
       // One thread has misspeculation will block other threads.
@@ -447,7 +448,7 @@ void LLVMIEWStage::dispatch() {
     // Before we dispatch, we update the region stats.
     const auto &TDG = inst->getTDG();
     if (TDG.bb() != 0) {
-      auto regionStats = cpu->getRegionStats();
+      auto regionStats = thread->getRegionStats();
       if (regionStats != nullptr) {
         regionStats->update(TDG.bb());
       }

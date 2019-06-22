@@ -15,7 +15,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
       traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
-      fuPool(params->fuPool), regionStats(nullptr), currentStackDepth(0),
+      fuPool(params->fuPool), currentStackDepth(0),
       initializeMemorySnapshotDone(true), warmUpDone(false),
       cacheWarmer(nullptr), process(nullptr), thread_context(nullptr),
       stackMin(0), fetchStage(params, this), decodeStage(params, this),
@@ -73,39 +73,16 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   DPRINTF(LLVMTraceCPU, "Accelerator manager name %s.\n",
           this->accelManager->name().c_str());
 
-  // Initialize the region stats from the main thread.
-  const auto &staticInfo = this->mainThread->getStaticInfo();
-  RegionStats::RegionMap regions;
-  for (const auto &region : staticInfo.regions()) {
-    const auto &regionId = region.name();
-    DPRINTF(LLVMTraceCPU, "Found region %s.\n", regionId.c_str());
-    if (regions.find(regionId) != regions.end()) {
-      panic("Multiple defined region %s.\n", regionId.c_str());
-    }
-
-    auto &regionStruct =
-        regions.emplace(regionId, RegionStats::Region()).first->second;
-    regionStruct.name = regionId;
-    regionStruct.parent = region.parent();
-    for (const auto &bb : region.bbs()) {
-      regionStruct.bbs.insert(bb);
-    }
-  }
-  const bool enableRegionStats = false;
-  if (enableRegionStats) {
-    this->regionStats = new RegionStats(std::move(regions), "region.stats.txt");
-  }
-
   this->runTimeProfiler = new RunTimeProfiler();
 
   if (driver != nullptr) {
     // Handshake with the driver.
     driver->handshake(this);
-    if (this->regionStats != nullptr) {
+    if (this->mainThread->getRegionStats() != nullptr) {
       // Add the dump handler to dump region stats at the end.
       Stats::registerDumpCallback(
-          new MakeCallback<RegionStats, &RegionStats::dump>(this->regionStats,
-                                                            true));
+          new MakeCallback<RegionStats, &RegionStats::dump>(
+              this->mainThread->getRegionStats(), true));
     }
   } else {
     // No driver, stand alone mode.
@@ -131,10 +108,6 @@ LLVMTraceCPU::~LLVMTraceCPU() {
   this->accelManager = nullptr;
   delete this->accelManagerParams;
   this->accelManagerParams = nullptr;
-  if (this->regionStats != nullptr) {
-    delete this->regionStats;
-    this->regionStats = nullptr;
-  }
   delete this->runTimeProfiler;
   this->runTimeProfiler = nullptr;
   delete this->mainThread;
@@ -242,16 +215,17 @@ void LLVMTraceCPU::tick() {
   if (done) {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
     // Wraps up the region stats by sending in the invalid bb.
-    if (this->regionStats != nullptr) {
-      this->regionStats->update(RegionStats::InvalidBB);
+    auto regionStats = this->mainThread->getRegionStats();
+    if (regionStats != nullptr) {
+      regionStats->update(RegionStats::InvalidBB);
     }
     // If in standalone mode, we can exit.
     if (this->isStandalone()) {
       // Decrease the workitem count.
       auto workItemsEnd = this->system->incWorkItemsEnd();
       if (workItemsEnd == this->totalCPUs) {
-        if (this->regionStats != nullptr) {
-          this->regionStats->dump();
+        if (regionStats != nullptr) {
+          regionStats->dump();
         }
         this->runTimeProfiler->dump("profile.txt");
         this->accelManager->exitDump();

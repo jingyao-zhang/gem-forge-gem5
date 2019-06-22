@@ -6,30 +6,11 @@
 
 const RegionStats::BasicBlockId RegionStats::InvalidBB = 0;
 
-RegionStats::RegionStats(RegionMap &&_regions, const std::string &_fileName)
-    : regions(std::move(_regions)),
-      fileName(_fileName),
-      checkpointsDirectory(nullptr),
-      checkpointsTaken(0),
+RegionStats::RegionStats(const RegionTable &_regionTable,
+                         const std::string &_fileName)
+    : regionTable(_regionTable), fileName(_fileName),
+      checkpointsDirectory(nullptr), checkpointsTaken(0),
       previousBB(InvalidBB) {
-  // Compute the reverse basic block to region map.
-  for (const auto &entry : this->regions) {
-    const auto &region = entry.first;
-    DPRINTF(RegionStats, "Compute reverse map for region %s.\n",
-            region.c_str());
-    for (const auto &bb : entry.second.bbs) {
-      DPRINTF(RegionStats, "Regions has bb %u.\n", bb);
-      auto iter = this->bbToRegionMap.find(bb);
-      if (iter == this->bbToRegionMap.end()) {
-        iter = this->bbToRegionMap
-                   .emplace(std::piecewise_construct, std::forward_as_tuple(bb),
-                            std::forward_as_tuple())
-                   .first;
-      }
-      iter->second.insert(region);
-    }
-  }
-
   // Create the checkpoints directory.
   this->checkpointsDirectory = simout.createSubdirectory("checkpoints");
 }
@@ -52,7 +33,7 @@ void RegionStats::update(const BasicBlockId &bb) {
             activeEnd = this->activeRegions.end();
        activeIter != activeEnd;) {
     const auto &region = activeIter->first;
-    if (!this->contains(region, bb)) {
+    if (!this->regionTable.isBBInRegion(bb, region)) {
       // We have exited an active region.
       if (!snapshot) {
         snapshot = this->takeSnapshot();
@@ -76,18 +57,19 @@ void RegionStats::update(const BasicBlockId &bb) {
   }
 
   // Check if we are in any new region.
-  auto bbToRegionMapIter = this->bbToRegionMap.find(bb);
-  if (bbToRegionMapIter == this->bbToRegionMap.end()) {
+  if (!this->regionTable.hasRegionSetFromBB(bb)) {
     return;
   }
-  for (const auto &newRegion : bbToRegionMapIter->second) {
-    if (this->activeRegions.find(newRegion) == this->activeRegions.end()) {
+  const auto &regionSet = this->regionTable.getRegionSetFromBB(bb);
+  for (const auto &newRegion : regionSet) {
+    if (this->activeRegions.find(newRegion->name()) ==
+        this->activeRegions.end()) {
       // This is a new region.
-      DPRINTF(RegionStats, "Enter region %s.\n", newRegion.c_str());
+      DPRINTF(RegionStats, "Enter region %s.\n", newRegion->name().c_str());
       if (!snapshot) {
         snapshot = this->takeSnapshot();
       }
-      this->activeRegions.emplace(newRegion, snapshot);
+      this->activeRegions.emplace(newRegion->name(), snapshot);
     }
   }
 }
@@ -99,12 +81,6 @@ void RegionStats::checkpoint(const std::string &suffix) {
   auto snapshot = this->takeSnapshot();
   this->dumpStatsMap(*snapshot, *outputStream->stream());
   this->checkpointsDirectory->close(outputStream);
-}
-
-bool RegionStats::contains(const RegionId &region,
-                           const BasicBlockId &bb) const {
-  const auto &bbs = this->regions.at(region).bbs;
-  return bbs.find(bb) != bbs.end();
 }
 
 RegionStats::Snapshot RegionStats::takeSnapshot() {
@@ -173,8 +149,8 @@ void RegionStats::dump(std::ostream &stream) {
     ccprintf(stream, "---- %s\n", name);
     // As additional information, we also print region's parent.
     if (name != "all") {
-      const auto &region = this->regions.at(name);
-      ccprintf(stream, "-parent %s\n", region.parent);
+      const auto &region = this->regionTable.getRegionFromRegionId(name);
+      ccprintf(stream, "-parent %s\n", region.parent());
     } else {
       // As a special region, all is not in our regions map.
       // Generate an empty parent for "all" region.

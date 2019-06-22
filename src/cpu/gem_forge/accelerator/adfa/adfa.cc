@@ -116,13 +116,14 @@ void AbstractDataFlowCore::fetch() {
     }
 
     // We update RegionStats here.
-    const auto &TDG = inst->getTDG();
-    if (TDG.bb() != 0) {
-      auto regionStats = cpu->getRegionStats();
-      if (regionStats != nullptr) {
-        regionStats->update(TDG.bb());
-      }
-    }
+    // ! This need to be fixed as now RegionStats comes with ThreadContext.
+    // const auto &TDG = inst->getTDG();
+    // if (TDG.bb() != 0) {
+    //   auto regionStats = cpu->getRegionStats();
+    //   if (regionStats != nullptr) {
+    //     regionStats->update(TDG.bb());
+    //   }
+    // }
 
     auto id = inst->getId();
     this->rob.push_back(id);

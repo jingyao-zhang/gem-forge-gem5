@@ -3,6 +3,7 @@
 
 #include "dyn_inst_stream.hh"
 #include "dyn_inst_stream_dispatcher.hh"
+#include "region_stats.hh"
 
 /**
  * A basic thread context.
@@ -35,6 +36,8 @@ public:
     return this->dispatcher.getStaticInfo();
   }
 
+  RegionStats *getRegionStats() { return this->regionStats; }
+
   ThreadID getThreadId() const {
     assert(this->isActive() &&
            "This context is not allocated hardware thread.");
@@ -46,6 +49,8 @@ protected:
   const std::string traceFileName;
   DynamicInstructionStreamDispatcher dispatcher;
   DynamicInstructionStream *dynInstStream;
+  RegionStats *regionStats;
+
   const bool isIdeal;
   size_t inflyInsts;
 
