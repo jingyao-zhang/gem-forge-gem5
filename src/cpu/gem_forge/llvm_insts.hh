@@ -15,6 +15,7 @@
 #include "base/types.hh"
 #include "cpu/op_class.hh"
 #include "cpu/static_inst_fwd.hh"
+#include "lsq.hh"
 #include "mem/packet.hh"
 
 #include <memory>
@@ -24,6 +25,14 @@
 
 class LLVMTraceCPU;
 class LLVMStaticInst;
+class LLVMDynamicInst;
+
+struct DynamicInstructionStreamPacket {
+  LLVMDynamicInst *inst;
+  LLVM::TDG::TDGInstruction tdg;
+  bool released;
+  DynamicInstructionStreamPacket() : inst(nullptr), released(false) {}
+};
 
 using LLVMDynamicInstId = uint64_t;
 
@@ -38,14 +47,13 @@ class LLVMDynamicInst : public TDGPacketHandler {
 public:
   LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
       : seqNum(allocateSeqNum()), TDG(_TDG), numMicroOps(_numMicroOps),
-        remainingMicroOps(_numMicroOps - 1), serializeBefore(false) {}
+        remainingMicroOps(_numMicroOps - 1), serializeBefore(false),
+        numAdditionalLQCallbacks(0) {}
 
   virtual ~LLVMDynamicInst() {}
 
   // Interface.
-  virtual bool canDispatch(LLVMTraceCPU *cpu) const {
-    return this->canStreamUserDispatch(cpu);
-  }
+  virtual bool canDispatch(LLVMTraceCPU *cpu) const { return true; }
   virtual void dispatch(LLVMTraceCPU *cpu);
   virtual void execute(LLVMTraceCPU *cpu) = 0;
   virtual void writeback(LLVMTraceCPU *cpu) {
@@ -74,6 +82,11 @@ public:
   bool isLoadInst() const;
 
   /**
+   * Helper functions for general stream user inst.
+   */
+  bool hasStreamUse() const;
+
+  /**
    * Handle serialization instructions.
    * A SerializeAfter instruction will mark the next instruction
    * SerializeBefore.
@@ -99,6 +112,23 @@ public:
   // e.g. getelementptr need IntMul and IntAlu.
   // TODO: Either to support multiple FUs or break LLVM inst into micro-ops.
   OpClass getOpClass() const;
+
+  // Get the number of LQ entries required for this instruction.
+  int getNumLQEntries(LLVMTraceCPU *cpu) const;
+  virtual int getNumSQEntries(LLVMTraceCPU *cpu) const;
+
+  // Get additional LQ callbacks, except the normal load inst.
+  std::list<std::unique_ptr<GemForgeLQCallback>>
+  createAdditionalLQCallbacks(LLVMTraceCPU *cpu);
+  int getNumAdditionalLQCallbacks() const {
+    return this->numAdditionalLQCallbacks;
+  }
+
+  // Get additional SQ callbacks, except the normal store inst.
+  virtual std::list<std::unique_ptr<GemForgeSQCallback>>
+  createAdditionalSQCallbacks(LLVMTraceCPU *cpu) {
+    return std::list<std::unique_ptr<GemForgeSQCallback>>();
+  }
 
   int getNumOperands() const;
   int getNumResults() const;
@@ -148,17 +178,13 @@ protected:
 
   bool serializeBefore;
 
+  int numAdditionalLQCallbacks;
+
   // A static global map from instName to the needed OpClass.
   static std::unordered_map<std::string, LLVMInstInfo> instInfo;
 
   static uint64_t currentSeqNum;
   static uint64_t allocateSeqNum();
-
-  /**
-   * Helper functions for general stream user inst.
-   */
-  bool hasStreamUse() const;
-  bool canStreamUserDispatch(LLVMTraceCPU *cpu) const;
 };
 
 // Memory access inst.

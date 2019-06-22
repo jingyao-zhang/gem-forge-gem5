@@ -7,6 +7,7 @@
 #include "cpu/gem_forge/accelerator/tdg_accelerator.hh"
 #include "cpu/gem_forge/bank_manager.hh"
 #include "cpu/gem_forge/dyn_inst_stream.hh"
+#include "cpu/gem_forge/dyn_inst_stream_dispatcher.hh"
 
 #include <list>
 #include <unordered_map>
@@ -188,6 +189,7 @@ private:
   bool enableTLS;
 
   DynamicInstructionStream *dataFlow;
+  DynamicInstructionStreamDispatcher *dataFlowDispatcher;
 
   std::vector<AbstractDataFlowCore *> cores;
 

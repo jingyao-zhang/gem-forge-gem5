@@ -18,6 +18,25 @@ void debugStream(Stream *S, const char *message) {
          message, S->getStreamName().c_str(), S->configured, S->stepSize,
          S->allocSize, S->maxSize);
 }
+
+void debugStreamWithElements(Stream *S, const char *message) {
+  inform("%20s: Stream %50s config %1d step %3d allocated %3d max %3d.\n",
+         message, S->getStreamName().c_str(), S->configured, S->stepSize,
+         S->allocSize, S->maxSize);
+  std::stringstream ss;
+  auto element = S->tail;
+  while (element != S->head) {
+    element = element->next;
+    ss << element->FIFOIdx.entryIdx << '('
+       << static_cast<int>(element->isAddrReady)
+       << static_cast<int>(element->isValueReady) << ')';
+    for (auto baseElement : element->baseElements) {
+      ss << '.' << baseElement->FIFOIdx.entryIdx;
+    }
+    ss << ' ';
+  }
+  inform("%s\n", ss.str().c_str());
+}
 } // namespace
 
 #define STREAM_DPRINTF(stream, format, args...)                                \
@@ -469,39 +488,15 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
 
   // ! Do not allocate here.
   // ! allocateElements() will handle it.
-  // /**
-  //  * Try to allocate more elements.
-  //  * Set a target, try to make sure all streams reach this target.
-  //  * Then increment the target.
-  //  */
-  // for (size_t targetSize = 1;
-  //      targetSize <= stepStream->maxSize && this->hasFreeElement();
-  //      ++targetSize) {
-  //   for (auto S : stepStreams) {
-  //     if (!this->hasFreeElement()) {
-  //       break;
-  //     }
-  //     if (!S->configured) {
-  //       continue;
-  //     }
-  //     if (S->allocSize >= targetSize) {
-  //       continue;
-  //     }
-  //     if (S->allocSize > stepStream->allocSize) {
-  //       // It doesn't make sense to allocate before the step root.
-  //       continue;
-  //     }
-  //     this->allocateElement(S);
-  //   }
-  // }
+
   if (isDebugStream(stepStream)) {
   }
 }
 
-bool StreamEngine::canStreamUserDispatch(const LLVMDynamicInst *inst) const {
+int StreamEngine::getStreamUserLQEntries(const LLVMDynamicInst *inst) const {
   // Only care this if we enable lsq for the stream engine.
   if (!this->enableLSQ) {
-    return true;
+    return 0;
   }
   // Collect all the element used.
   std::unordered_set<StreamElement *> usedElementSet;
@@ -540,17 +535,31 @@ bool StreamEngine::canStreamUserDispatch(const LLVMDynamicInst *inst) const {
     }
     firstUsedLoadStreamElement++;
   }
-  /**
-   * Check that the load queue has enough space to hold these first used load
-   * stream elements.
-   */
-  auto LSQ = cpu->getIEWStage().getLSQ();
-  if (LSQ->loads() + firstUsedLoadStreamElement > LSQ->loadQueueSize) {
-    this->streamUserNotDispatchedByLoadQueue++;
-    return false;
-  }
 
-  return true;
+  return firstUsedLoadStreamElement;
+}
+
+std::list<std::unique_ptr<GemForgeLQCallback>>
+StreamEngine::createStreamUserLQCallbacks(LLVMDynamicInst *inst) {
+  std::list<std::unique_ptr<GemForgeLQCallback>> callbacks;
+  auto &elementSet = this->userElementMap.at(inst);
+  for (auto &element : elementSet) {
+    if (element == nullptr) {
+      continue;
+    }
+    if (element->stream->getStreamType() != "load") {
+      // Not a load stream.
+      continue;
+    }
+    if (element->firstUserSeqNum == inst->getSeqNum()) {
+      // Insert into the load queue if we model the lsq.
+      if (this->enableLSQ) {
+        callbacks.emplace_back(
+            new GemForgeStreamEngineLQCallback(element, inst, this->cpu));
+      }
+    }
+  }
+  return callbacks;
 }
 
 void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
@@ -583,27 +592,12 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
               S->getStreamName().c_str());
       }
 
-      elementSet.insert(S->stepped->next);
-    }
-  }
-  // Mark the firstUserSeqNum for the element if this is a load stream.
-  auto lsq = cpu->getIEWStage().getLSQ();
-  for (auto &element : elementSet) {
-    if (element == nullptr) {
-      continue;
-    }
-    if (element->stream->getStreamType() != "load") {
-      // Not a load stream.
-      continue;
-    }
-    if (element->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
-      element->firstUserSeqNum = inst->getSeqNum();
-      // Insert into the load queue if we model the lsq.
-      if (this->enableLSQ) {
-        std::unique_ptr<GemForgeLQCallback> callback(
-            new GemForgeStreamEngineLQCallback(element, inst, this->cpu));
-        lsq->insertLoad(std::move(callback));
+      auto element = S->stepped->next;
+      // Mark the first user sequence number.
+      if (element->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
+        element->firstUserSeqNum = inst->getSeqNum();
       }
+      elementSet.insert(element);
     }
   }
 }
@@ -651,21 +645,6 @@ void StreamEngine::executeStreamUser(LLVMDynamicInst *inst) {
 
 void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) != 0);
-  if (this->enableLSQ) {
-    // Release the load queue entry for the first used load stream element.
-    auto lsq = cpu->getIEWStage().getLSQ();
-    for (auto &element : this->userElementMap.at(inst)) {
-      if (element == nullptr) {
-        continue;
-      }
-      if (element->stream->getStreamType() != "load") {
-        continue;
-      }
-      if (element->firstUserSeqNum == inst->getSeqNum()) {
-        lsq->commitLoad();
-      }
-    }
-  }
   // Simply release the entry.
   this->userElementMap.erase(inst);
 }
@@ -754,21 +733,17 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
 }
 
 bool StreamEngine::canStreamStoreDispatch(const StreamStoreInst *inst) const {
-  if (!this->enableLSQ) {
-    return true;
-  }
-  // Check if there is an free entry in the store queue.
-  auto LSQ = cpu->getIEWStage().getLSQ();
-  if (LSQ->stores() + 1 > LSQ->storeQueueSize) {
-    this->streamStoreNotDispatchedByStoreQueue++;
-    return false;
-  }
+  /**
+   * * The only requirement about the SQ is already handled.
+   */
   return true;
 }
 
-void StreamEngine::dispatchStreamStore(StreamStoreInst *inst) {
+std::list<std::unique_ptr<GemForgeSQCallback>>
+StreamEngine::createStreamStoreSQCallbacks(StreamStoreInst *inst) {
+  std::list<std::unique_ptr<GemForgeSQCallback>> callbacks;
   if (!this->enableLSQ) {
-    return;
+    return callbacks;
   }
   // Find the element to be stored.
   StreamElement *storeElement = nullptr;
@@ -784,11 +759,13 @@ void StreamEngine::dispatchStreamStore(StreamStoreInst *inst) {
     }
   }
   assert(storeElement != nullptr && "Failed to found the store element.");
-  // Insert into the store queue.
-  std::unique_ptr<GemForgeStreamEngineSQCallback> callback(
+  callbacks.emplace_back(
       new GemForgeStreamEngineSQCallback(storeElement, inst));
-  auto lsq = cpu->getIEWStage().getLSQ();
-  lsq->insertStore(std::move(callback));
+  return callbacks;
+}
+
+void StreamEngine::dispatchStreamStore(StreamStoreInst *inst) {
+  // So far we just do nothing.
 }
 
 void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
@@ -1055,6 +1032,11 @@ void StreamEngine::allocateElements() {
             // ! No constraint should be enforced here.
             continue;
           }
+          if (backBaseS->stepRootStream == nullptr) {
+            // ! THis is actually a constant load.
+            // ! So far ignore this dependence.
+            continue;
+          }
           auto backBaseSAllocDiff = backBaseS->allocSize - backBaseS->stepSize;
           auto stepStreamAllocDiff = maxAllocSize - stepStream->stepSize;
           if (backBaseSAllocDiff < stepStreamAllocDiff) {
@@ -1208,7 +1190,7 @@ void StreamEngine::allocateElement(Stream *S) {
         STREAM_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
         newElement->baseElements.insert(baseElement);
       } else {
-        // Should be a constant stream. So far we ignore it.
+        // ! Should be a constant stream. So far we ignore it.
       }
     }
   }
@@ -1355,6 +1337,15 @@ void StreamEngine::issueElements() {
     // Check if all the base element are value ready.
     bool ready = true;
     for (const auto &baseElement : element.baseElements) {
+      if (baseElement->stream == nullptr) {
+        // ! Some bug here that the base element is already released.
+        continue;
+      }
+      if (baseElement->FIFOIdx.entryIdx > element.FIFOIdx.entryIdx) {
+        // ! Some bug here that the base element is already used by others.
+        // TODO: Better handle all these.
+        continue;
+      }
       if (!baseElement->isValueReady) {
         ready = false;
         break;
@@ -1555,7 +1546,7 @@ void StreamEngine::dumpFIFO() const {
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
     if (S->configured) {
-      debugStream(S, "");
+      debugStreamWithElements(S, "dump");
     }
   }
 }
@@ -1844,5 +1835,5 @@ void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
   auto status = cpu->getInflyInstStatus(storeInstId);
   assert(status == LLVMTraceCPU::InstStatus::COMMITTING &&
          "Writebacked instructions should be committing.");
-  cpu->updateInflyInstStats(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
+  cpu->updateInflyInstStatus(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
 }

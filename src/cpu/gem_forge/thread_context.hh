@@ -2,6 +2,7 @@
 #define __CPU_LLVM_TRACE_CPU_THREAD_CONTEXT_HH__
 
 #include "dyn_inst_stream.hh"
+#include "dyn_inst_stream_dispatcher.hh"
 
 /**
  * A basic thread context.
@@ -31,7 +32,7 @@ public:
   virtual void commit(LLVMDynamicInst *inst);
 
   const LLVM::TDG::StaticInformation &getStaticInfo() const {
-    return this->dynInstStream->getStaticInfo();
+    return this->dispatcher.getStaticInfo();
   }
 
   ThreadID getThreadId() const {
@@ -43,6 +44,7 @@ public:
 protected:
   ContextID contextId;
   const std::string traceFileName;
+  DynamicInstructionStreamDispatcher dispatcher;
   DynamicInstructionStream *dynInstStream;
   const bool isIdeal;
   size_t inflyInsts;

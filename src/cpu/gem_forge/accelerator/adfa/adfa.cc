@@ -351,6 +351,8 @@ AbstractDataFlowAccelerator::AbstractDataFlowAccelerator()
     : TDGAccelerator(), handling(NONE), dataFlow(nullptr) {}
 AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
   if (this->dataFlow != nullptr) {
+    delete this->dataFlowDispatcher;
+    this->dataFlowDispatcher = nullptr;
     delete this->dataFlow;
     this->dataFlow = nullptr;
   }
@@ -419,7 +421,10 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     if (this->dataFlow == nullptr) {
       auto dataFlowFileName = cpu->getTraceFolder() + "/" +
                               inst->getTDG().adfa_config().data_flow();
-      this->dataFlow = new DynamicInstructionStream(dataFlowFileName);
+      this->dataFlowDispatcher =
+          new DynamicInstructionStreamDispatcher(dataFlowFileName);
+      this->dataFlow = new DynamicInstructionStream(
+          this->dataFlowDispatcher->getMainBuffer());
     }
     this->numConfigured++;
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: start configure.\n");
@@ -551,7 +556,7 @@ void AbstractDataFlowAccelerator::tickStart() {
 
     // For TLS mode, remember to release the endToken.
     if (this->enableTLS) {
-      if (this->TLSLHSIter->first->getInstName() != "df-end") {
+      if ((*this->TLSLHSIter)->inst->getInstName() != "df-end") {
         panic("The last token should be endToken for tls mode.");
       }
       this->dataFlow->commit(this->TLSLHSIter);
@@ -564,7 +569,7 @@ void AbstractDataFlowAccelerator::tickStart() {
 
 void AbstractDataFlowAccelerator::createTLSJobs() {
   while (this->pendingJobs.size() <= this->cores.size()) {
-    if (this->TLSLHSIter->first->getInstName() == "df-end") {
+    if ((*this->TLSLHSIter)->inst->getInstName() == "df-end") {
       // We have reached the end of the stream.
       return;
     }
@@ -577,15 +582,15 @@ void AbstractDataFlowAccelerator::createTLSJobs() {
     do {
       // Try to detect inter-iteration dependences.
       if (!newJob.shouldSerialize) {
-        newJob.shouldSerialize = this->hasTLSDependence(TLSRHSIter->first);
+        newJob.shouldSerialize = this->hasTLSDependence((*TLSRHSIter)->inst);
       }
 
       // Add to our instIds set.
-      newJob.instIds->insert(TLSRHSIter->first->getId());
+      newJob.instIds->insert((*TLSRHSIter)->inst->getId());
 
       TLSRHSIter = this->dataFlow->fetchIter();
 
-    } while (!this->isTLSBoundary(TLSRHSIter->first));
+    } while (!this->isTLSBoundary((*TLSRHSIter)->inst));
 
     // Creating the dataFlow.
     newJob.dataFlow = new DynamicInstructionStreamInterfaceFixedEnd(

@@ -35,7 +35,9 @@ public:
   void dispatchStreamStep(StreamStepInst *inst);
   void commitStreamStep(StreamStepInst *inst);
 
-  bool canStreamUserDispatch(const LLVMDynamicInst *inst) const;
+  int getStreamUserLQEntries(const LLVMDynamicInst *inst) const;
+  std::list<std::unique_ptr<GemForgeLQCallback>>
+  createStreamUserLQCallbacks(LLVMDynamicInst *inst);
   void dispatchStreamUser(LLVMDynamicInst *inst);
   bool areUsedStreamsReady(const LLVMDynamicInst *inst);
   void executeStreamUser(LLVMDynamicInst *inst);
@@ -45,6 +47,8 @@ public:
   void commitStreamEnd(StreamEndInst *inst);
 
   bool canStreamStoreDispatch(const StreamStoreInst *inst) const;
+  std::list<std::unique_ptr<GemForgeSQCallback>>
+  createStreamStoreSQCallbacks(StreamStoreInst *inst);
   void dispatchStreamStore(StreamStoreInst *inst);
   void executeStreamStore(StreamStoreInst *inst);
   void commitStreamStore(StreamStoreInst *inst);

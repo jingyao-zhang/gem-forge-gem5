@@ -3,7 +3,8 @@
 LLVMTraceThreadContext::LLVMTraceThreadContext(
     ContextID _contextId, const std::string &_traceFileName, bool _isIdeal)
     : contextId(_contextId), traceFileName(_traceFileName),
-      dynInstStream(new DynamicInstructionStream(_traceFileName)),
+      dispatcher(_traceFileName),
+      dynInstStream(new DynamicInstructionStream(dispatcher.getMainBuffer())),
       isIdeal(_isIdeal), inflyInsts(0), cpu(nullptr),
       threadId(InvalidThreadID) {}
 

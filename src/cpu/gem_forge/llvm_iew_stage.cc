@@ -412,12 +412,13 @@ void LLVMIEWStage::dispatch() {
     }
 
     // Store queue full.
-    if (inst->isStoreInst() && this->lsq->stores() == this->storeQueueSize) {
+    if (inst->getNumSQEntries(cpu) + this->lsq->stores() >
+        this->storeQueueSize) {
       break;
     }
 
     // Load queue full.
-    if (inst->isLoadInst() && this->lsq->loads() == this->loadQueueSize) {
+    if (inst->getNumLQEntries(cpu) + this->lsq->loads() > this->loadQueueSize) {
       break;
     }
 
@@ -462,6 +463,23 @@ void LLVMIEWStage::dispatch() {
     }
 
     this->instQueue.push_back(instId);
+
+    // Get all the stream user LQ callbacks.
+    if (inst->hasStreamUse()) {
+      auto callbacks = inst->createAdditionalLQCallbacks(cpu);
+      while (!callbacks.empty()) {
+        this->lsq->insertLoad(std::move(callbacks.front()));
+        callbacks.pop_front();
+      }
+    }
+    // Get all the additional SQ callbacks.
+    {
+      auto callbacks = inst->createAdditionalSQCallbacks(cpu);
+      while (!callbacks.empty()) {
+        this->lsq->insertStore(std::move(callbacks.front()));
+        callbacks.pop_front();
+      }
+    }
     if (inst->isStoreInst()) {
       std::unique_ptr<GemForgeIEWSQCallback> callback(
           new GemForgeIEWSQCallback(inst, this->cpu));
@@ -530,6 +548,12 @@ void LLVMIEWStage::commitInst(LLVMDynamicInstId instId) {
   panic_if(instStatus != InstStatus::COMMIT, "Inst is not in COMMIT status.");
 
   auto inst = cpu->inflyInstMap.at(instId);
+
+  // Commit the additional lq entries.
+  for (int i = 0; i < inst->getNumAdditionalLQCallbacks(); ++i) {
+    this->lsq->commitLoad();
+  }
+
   if (inst->isStoreInst()) {
     instStatus = InstStatus::COMMITTING;
     this->lsq->commitStore();

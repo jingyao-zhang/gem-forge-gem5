@@ -146,16 +146,6 @@ bool LLVMDynamicInst::hasStreamUse() const {
   return false;
 }
 
-bool LLVMDynamicInst::canStreamUserDispatch(LLVMTraceCPU *cpu) const {
-  if (!this->hasStreamUse()) {
-    // This is not a stream user inst.
-    return true;
-  }
-  // If this is a stream user, we have to check with the stream engine.
-  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  return SE->canStreamUserDispatch(this);
-}
-
 void LLVMDynamicInst::dumpBasic() const {
   inform("Inst seq %lu, id %lu, op %s.\n", this->seqNum, this->getId(),
          this->getInstName().c_str());
@@ -175,6 +165,14 @@ void LLVMDynamicInst::dumpDeps(LLVMTraceCPU *cpu) const {
     } else {
       depInst->dumpBasic();
     }
+  }
+  inform("Stream Deps Begin ===========================\n");
+  for (const auto &dep : this->TDG.deps()) {
+    if (dep.type() != ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+      continue;
+    }
+    auto dependentStreamId = dep.dependent_id();
+    inform("Stream id %lu\n", dependentStreamId);
   }
   inform("Mem Deps Begin ===========================\n");
   for (const auto &dep : this->TDG.deps()) {
@@ -200,6 +198,41 @@ OpClass LLVMDynamicInst::getOpClass() const {
     return No_OpClass;
   }
   return iter->second.opClass;
+}
+
+int LLVMDynamicInst::getNumLQEntries(LLVMTraceCPU *cpu) const {
+  int entries = 0;
+  if (this->hasStreamUse()) {
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    entries += SE->getStreamUserLQEntries(this);
+  }
+
+  if (this->isLoadInst()) {
+    entries++;
+  }
+
+  return entries;
+}
+
+int LLVMDynamicInst::getNumSQEntries(LLVMTraceCPU *cpu) const {
+  int entries = 0;
+  if (this->isStoreInst()) {
+    entries++;
+  }
+  return entries;
+}
+
+std::list<std::unique_ptr<GemForgeLQCallback>>
+LLVMDynamicInst::createAdditionalLQCallbacks(LLVMTraceCPU *cpu) {
+  if (this->hasStreamUse()) {
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    auto callbacks = SE->createStreamUserLQCallbacks(this);
+    this->numAdditionalLQCallbacks = callbacks.size();
+    return callbacks;
+  } else {
+    this->numAdditionalLQCallbacks = 0;
+    return std::list<std::unique_ptr<GemForgeLQCallback>>();
+  }
 }
 
 int LLVMDynamicInst::getNumOperands() const {

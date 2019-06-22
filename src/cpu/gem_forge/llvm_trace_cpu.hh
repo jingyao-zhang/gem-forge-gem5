@@ -61,7 +61,7 @@ public:
   }
 
   enum InstStatus {
-    FETCHED,      // In fetchQueue.
+    FETCHED,      // In FetchQueue.
     DECODED,      // Decoded.
     DISPATCHED,   // Dispatched to instQueue.
     BLOCKED,      // Blocked by memory, should not check ready unless unblock.
@@ -77,7 +77,7 @@ public:
   InstStatus getInflyInstStatus(LLVMDynamicInstId instId) const {
     return this->inflyInstStatus.at(instId);
   }
-  void updateInflyInstStats(LLVMDynamicInstId instId, InstStatus newStatus) {
+  void updateInflyInstStatus(LLVMDynamicInstId instId, InstStatus newStatus) {
     auto &status = this->inflyInstStatus.at(instId);
     if (status > newStatus) {
       panic("InstStatus should always be increasing.");
