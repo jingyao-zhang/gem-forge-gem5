@@ -121,7 +121,9 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
 
   this->initializeFIFO(this->maxTotalRunAheadLength);
 
-  this->streamPlacementManager = new StreamPlacementManager(cpu, this);
+  if (this->enableStreamPlacement) {
+    this->streamPlacementManager = new StreamPlacementManager(cpu, this);
+  }
 }
 
 void StreamEngine::regStats() {
@@ -598,6 +600,11 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
         element->firstUserSeqNum = inst->getSeqNum();
       }
       elementSet.insert(element);
+      // Construct the elementUserMap.
+      this->elementUserMap
+          .emplace(std::piecewise_construct, std::forward_as_tuple(element),
+                   std::forward_as_tuple())
+          .first->second.insert(inst);
     }
   }
 }
@@ -609,7 +616,7 @@ bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
   for (auto &element : this->userElementMap.at(inst)) {
     if (element == nullptr) {
       /**
-       * Sometimes thiere is use after stream end,
+       * Sometimes there is use after stream end,
        * in such case we assume the element is copied to register and
        * is ready.
        */
@@ -645,7 +652,14 @@ void StreamEngine::executeStreamUser(LLVMDynamicInst *inst) {
 
 void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
   assert(this->userElementMap.count(inst) != 0);
-  // Simply release the entry.
+  // Remove the entry from the elementUserMap.
+  for (auto element : this->userElementMap.at(inst)) {
+    assert(this->elementUserMap.count(element) != 0);
+    auto &userSet = this->elementUserMap.at(element);
+    assert(userSet.count(inst) != 0);
+    userSet.erase(inst);
+  }
+  // Remove the entry in the userElementMap.
   this->userElementMap.erase(inst);
 }
 
@@ -1186,9 +1200,24 @@ void StreamEngine::allocateElement(Stream *S) {
                                "Failed to find back base element from %s.\n",
                                backBaseS->getStreamName().c_str());
         }
-        STREAM_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
+        // ! Try to check the base element should have the previous element.
         STREAM_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
-        newElement->baseElements.insert(baseElement);
+        if (baseElement->FIFOIdx.streamInstance ==
+            newElement->FIFOIdx.streamInstance) {
+          if (baseElement->FIFOIdx.entryIdx + 1 ==
+              newElement->FIFOIdx.entryIdx) {
+            STREAM_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
+            newElement->baseElements.insert(baseElement);
+          } else {
+            // STREAM_ELEMENT_PANIC(
+            //     newElement, "The base element has wrong FIFOIdx.\n");
+          }
+        } else {
+          // STREAM_ELEMENT_PANIC(newElement,
+          //                      "The base element has wrong
+          //                      streamInstance.\n");
+        }
+
       } else {
         // ! Should be a constant stream. So far we ignore it.
       }
@@ -1256,6 +1285,14 @@ void StreamEngine::releaseElement(Stream *S) {
 
   const bool used =
       releaseElement->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM;
+
+  /**
+   * Sanity check that all the user are done with this element.
+   */
+  if (this->elementUserMap.count(releaseElement) != 0) {
+    assert(this->elementUserMap.at(releaseElement).empty() &&
+           "Some unreleased user instruction.");
+  }
 
   S->numStepped++;
   if (used) {
@@ -1339,6 +1376,10 @@ void StreamEngine::issueElements() {
     for (const auto &baseElement : element.baseElements) {
       if (baseElement->stream == nullptr) {
         // ! Some bug here that the base element is already released.
+        continue;
+      }
+      if (element.stream->baseStreams.count(baseElement->stream) == 0 &&
+          element.stream->backBaseStreams.count(baseElement->stream) == 0) {
         continue;
       }
       if (baseElement->FIFOIdx.entryIdx > element.FIFOIdx.entryIdx) {
@@ -1551,9 +1592,23 @@ void StreamEngine::dumpFIFO() const {
   }
 }
 
+void StreamEngine::dumpUser() const {
+  for (const auto &userElement : this->userElementMap) {
+    auto user = userElement.first;
+    user->dumpBasic();
+    inform("--used element.\n");
+    for (auto element : userElement.second) {
+      element->dump();
+    }
+  }
+}
+
 void StreamEngine::dump() {
-  this->streamPlacementManager->dumpCacheStreamAwarePortStatus();
+  if (this->enableStreamPlacement) {
+    this->streamPlacementManager->dumpCacheStreamAwarePortStatus();
+  }
   this->dumpFIFO();
+  this->dumpUser();
 }
 
 void StreamEngine::exitDump() const {

@@ -1,9 +1,10 @@
 #include "thread_context.hh"
 
 LLVMTraceThreadContext::LLVMTraceThreadContext(
-    ContextID _contextId, const std::string &_traceFileName, bool _isIdeal)
+    ContextID _contextId, const std::string &_traceFileName, bool _isIdeal,
+    bool _enableADFA)
     : contextId(_contextId), traceFileName(_traceFileName),
-      dispatcher(_traceFileName),
+      dispatcher(_traceFileName, _enableADFA),
       dynInstStream(new DynamicInstructionStream(dispatcher.getMainBuffer())),
       regionStats(nullptr), isIdeal(_isIdeal), inflyInsts(0), cpu(nullptr),
       threadId(InvalidThreadID) {

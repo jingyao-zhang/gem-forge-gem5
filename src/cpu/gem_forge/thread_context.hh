@@ -15,7 +15,7 @@ class LLVMTraceThreadContext {
 public:
   LLVMTraceThreadContext(ContextID _contextId,
                          const std::string &_traceFileName,
-                         bool _isIdeal = false);
+                         bool _isIdeal = false, bool _enableADFA = false);
   virtual ~LLVMTraceThreadContext();
 
   /**
@@ -25,6 +25,11 @@ public:
 
   virtual void activate(LLVMTraceCPU *cpu, ThreadID threadId);
   virtual void deactivate();
+
+  /**
+   * ! A hack here to parse more instructions.
+   */
+  void parse() { this->dispatcher.parse(); }
 
   bool isActive() const { return this->cpu != nullptr; }
   virtual bool isDone() const;

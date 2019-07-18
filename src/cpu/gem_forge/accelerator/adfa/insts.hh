@@ -3,6 +3,7 @@
 #define __CPU_TDG_ACCELERATOR_ADFA_INST_H__
 
 #include "cpu/gem_forge/llvm_insts.hh"
+#include "cpu/gem_forge/queue_buffer.hh"
 
 class ADFAConfigInst : public LLVMDynamicInst {
 public:
@@ -31,7 +32,14 @@ private:
  */
 class ADFAStartInst : public LLVMDynamicInst {
 public:
-  ADFAStartInst(const LLVM::TDG::TDGInstruction &_TDG);
+  // Stores the instruction stream buffer.
+  using Packet = DynamicInstructionStreamPacket;
+  using Buffer = QueueBuffer<Packet>;
+
+  ADFAStartInst(const LLVM::TDG::TDGInstruction &_TDG,
+                std::shared_ptr<Buffer> _buffer);
+
+  std::shared_ptr<Buffer> getBuffer() { return this->buffer; }
 
   void execute(LLVMTraceCPU *cpu) override;
   bool isCompleted() const override { return this->finished; }
@@ -49,6 +57,7 @@ public:
 
 private:
   bool finished;
+  std::shared_ptr<Buffer> buffer;
 };
 
 /**

@@ -20,7 +20,8 @@
  */
 class DynamicInstructionStreamDispatcher {
 public:
-  DynamicInstructionStreamDispatcher(const std::string &_fn);
+  DynamicInstructionStreamDispatcher(const std::string &_fn,
+                                     bool _enableADFA = false);
   ~DynamicInstructionStreamDispatcher();
 
   DynamicInstructionStreamDispatcher(
@@ -32,11 +33,13 @@ public:
   DynamicInstructionStreamDispatcher &
   operator=(DynamicInstructionStreamDispatcher &&other) = delete;
 
-  using Buffer = QueueBuffer<DynamicInstructionStreamPacket>;
+  using Packet = DynamicInstructionStreamPacket;
+  using Buffer = QueueBuffer<Packet>;
 
   std::shared_ptr<Buffer> getMainBuffer() { return this->mainBuffer; }
 
   void parse();
+  void dispatch(Packet *packet);
 
   /**
    * Get the static info at the header of the stream.
@@ -49,12 +52,20 @@ public:
 
 private:
   std::string fn;
+  bool enableADFA;
   ProtoInputStream *input;
   LLVM::TDG::StaticInformation staticInfo;
   RegionTable *regionTable;
 
   std::shared_ptr<Buffer> mainBuffer;
   std::shared_ptr<Buffer> currentBuffer;
+
+  /**
+   * Used for ADFA dispatcher.
+   */
+  bool inContinuousRegion;
+
+  void dispatchADFA(Packet *packet);
 };
 
 #endif

@@ -142,6 +142,14 @@ private:
                      std::unordered_set<StreamElement *>>
       userElementMap;
 
+  /**
+   * Map from the stream element to the user instruction.
+   * A reverse map of userElementMap.
+   */
+  std::unordered_map<StreamElement *,
+                     std::unordered_set<const LLVMDynamicInst *>>
+      elementUserMap;
+
   using StreamId = uint64_t;
   std::unordered_map<StreamId, Stream *> streamMap;
 
@@ -236,6 +244,7 @@ private:
   getStreamRegion(const std::string &relativePath) const;
 
   void dumpFIFO() const;
+  void dumpUser() const;
 
   /**
    * Helper class to throttle the stream's maxSize.

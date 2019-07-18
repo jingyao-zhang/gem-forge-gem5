@@ -66,6 +66,7 @@ private:
   unsigned numPortsPerBank;
 
   unsigned issueWidth;
+  unsigned fetchQueueSize;
   unsigned robSize;
 
   /**
@@ -98,6 +99,7 @@ private:
 
   enum InstStatus {
     FETCHED,
+    DECODED,
     READY,
     ISSUED,
     FINISHED,
@@ -111,7 +113,8 @@ private:
 
   BankManager *bankManager;
 
-  // Huge ROB.
+  // Queues.
+  std::list<LLVMDynamicInstId> fetchQueue;
   std::list<LLVMDynamicInstId> rob;
   std::list<LLVMDynamicInstId> readyInsts;
 
@@ -121,6 +124,7 @@ private:
   std::list<std::pair<Tick, LLVMDynamicInstId>> idealMemCompleteQueue;
 
   void fetch();
+  void decode();
   void markReady();
   void issue();
   void commit();

@@ -61,6 +61,7 @@ std::unordered_map<std::string, LLVMInstInfo> LLVMDynamicInst::instInfo = {
      {.opClass = Enums::OpClass::MemWrite, .numOperands = 2, .numResults = 0}},
 };
 
+LLVMDynamicInstId LLVMDynamicInst::currentDynamicInstId = 10000000000;
 uint64_t LLVMDynamicInst::currentSeqNum = 0;
 uint64_t LLVMDynamicInst::allocateSeqNum() {
   // 0 is reserved for invalid seq num.
@@ -102,7 +103,11 @@ bool LLVMDynamicInst::isLoadInst() const {
 bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 
   for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::REGISTER) {
+    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::REGISTER ||
+        dep.type() ==
+            ::LLVM::TDG::TDGInstructionDependence::INDUCTION_VARIABLE ||
+        dep.type() ==
+            ::LLVM::TDG::TDGInstructionDependence::REDUCTION_VARIABLE) {
       if (!cpu->isInstFinished(dep.dependent_id())) {
         return false;
       }
@@ -112,6 +117,8 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
         return false;
       }
     }
+    // This is actually used for O3 with speculation, so no checking for 
+    // control dependence or PDF/unrollable dependence.
   }
   if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
@@ -149,6 +156,11 @@ bool LLVMDynamicInst::hasStreamUse() const {
 void LLVMDynamicInst::dumpBasic() const {
   inform("Inst seq %lu, id %lu, op %s.\n", this->seqNum, this->getId(),
          this->getInstName().c_str());
+  inform("Deps Begin ===========================\n");
+  for (const auto &dep : this->TDG.deps()) {
+    inform("Dep id %lu Type %d.\n", dep.dependent_id(), dep.type());
+  }
+  inform("Deps End   ===========================\n");
 }
 
 void LLVMDynamicInst::dumpDeps(LLVMTraceCPU *cpu) const {
@@ -349,8 +361,12 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
           0, this->TDG.pc());
       // We want to set up the virtual address.
       // Use the ThreadID as the ASID.
-      auto thread = cpu->getInflyInstThread(this->TDG.id());
-      pkt->req->setVirt(thread->getThreadId(), packet.vaddr, packet.size, 0,
+      // ! This currently does not work, as ADFA does not has a thread
+      // ! associated with it. I need to improve the design.
+      auto asid = 0;
+      // auto thread = cpu->getInflyInstThread(this->TDG.id());
+      // asid = thread->getThreadId();
+      pkt->req->setVirt(asid, packet.vaddr, packet.size, 0,
                         cpu->getDataMasterID(), this->TDG.pc());
       // ! setVirt will clear the physical address.
       pkt->req->setPaddr(packet.paddr);

@@ -89,6 +89,7 @@ class LLVMTraceCPU(BaseCPU):
     useGem5BranchPredictor = Param.Bool(True, "Whether to use branch predictor from gem5.")
 
     # Parameters for ADFA.
+    adfaEnable = Param.Bool(False, "Whether the adfa is enabled.")
     adfaCoreIssueWidth = Param.Unsigned(16, "Issue width for each abstract dataflow core.")
     adfaEnableSpeculation = Param.Bool(
         False, "Whether the adfa can speculate.")

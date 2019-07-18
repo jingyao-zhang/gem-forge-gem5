@@ -1,13 +1,14 @@
 #include "adfa.hh"
 
 #include "base/trace.hh"
+#include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 
 AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
                                            LLVMTraceCPU *_cpu)
     : id(_id), cpu(_cpu), busy(false), dataFlow(nullptr), issueWidth(16),
-      robSize(512) {
+      fetchQueueSize(64), robSize(512) {
   auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
   this->issueWidth = cpuParams->adfaCoreIssueWidth;
   this->enableSpeculation = cpuParams->adfaEnableSpeculation;
@@ -32,6 +33,27 @@ AbstractDataFlowCore::~AbstractDataFlowCore() {
 void AbstractDataFlowCore::dump() {
   inform("ADFCore %s: Committed insts %f.\n", this->name(),
          this->numCommittedInst.value());
+  inform("ADFCore %s: FetchQueue ======================================\n",
+         this->name());
+  for (const auto &instId : this->fetchQueue) {
+    const auto inst = this->inflyInstMap.at(instId);
+    inst->dumpBasic();
+  }
+  inform("ADFCore %s: FetchQueue End ==================================\n",
+         this->name());
+  inform("ADFCore %s: ROB ======================================\n",
+         this->name());
+  size_t robIdx = 0;
+  for (const auto &instId : this->rob) {
+    const auto inst = this->inflyInstMap.at(instId);
+    if (robIdx == 0) {
+      inform("ROB Head %d.", this->inflyInstStatus.at(instId));
+      robIdx++;
+    }
+    inst->dumpBasic();
+  }
+  inform("ADFCore %s: ROB End ==================================\n",
+         this->name());
 }
 
 void AbstractDataFlowCore::regStats() {
@@ -85,15 +107,17 @@ void AbstractDataFlowCore::tick() {
   }
 
   this->fetch();
+  this->decode();
   this->markReady();
   this->issue();
   this->commit();
   this->release();
   this->numCycles++;
 
-  if (this->dataFlow->hasEnded() && this->rob.empty()) {
+  if (this->dataFlow->hasEnded() && this->inflyInstMap.empty()) {
     // Mark that we are done.
     this->busy = false;
+    hack("We are done.\n");
     DPRINTF(AbstractDataFlowAccelerator, "Work done.\n");
   }
 }
@@ -104,16 +128,38 @@ void AbstractDataFlowCore::fetch() {
   }
 
   // We maintain a crazy huge rob size.
-  if (this->rob.size() >= this->robSize) {
+  if (this->fetchQueue.size() >= this->fetchQueueSize) {
     return;
   }
 
-  while (this->rob.size() < this->robSize) {
+  while (this->fetchQueue.size() < this->fetchQueueSize) {
     auto inst = this->dataFlow->fetch();
     if (inst == nullptr) {
       // We have just reached the end of the data flow.
       break;
     }
+
+    auto id = inst->getId();
+    this->fetchQueue.push_back(id);
+    this->inflyInstAge.emplace(id, this->currentAge++);
+    this->inflyInstStatus.emplace(id, InstStatus::FETCHED);
+    this->inflyInstMap.emplace(id, inst);
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: fetched inst %u.\n", id);
+  }
+}
+
+void AbstractDataFlowCore::decode() {
+  while (this->rob.size() < this->robSize && !this->fetchQueue.empty()) {
+    auto id = this->fetchQueue.front();
+    auto inst = this->inflyInstMap.at(id);
+
+    if (!inst->canDispatch(cpu)) {
+      break;
+    }
+
+    // Hook to any instruction specific dispatch operation.
+    // ! Note that ADFA core does not have LSQ.
+    inst->dispatch(cpu);
 
     // We update RegionStats here.
     // ! This need to be fixed as now RegionStats comes with ThreadContext.
@@ -125,12 +171,11 @@ void AbstractDataFlowCore::fetch() {
     //   }
     // }
 
-    auto id = inst->getId();
+    // Able to decode.
+    this->fetchQueue.pop_front();
     this->rob.push_back(id);
-    this->inflyInstAge.emplace(id, this->currentAge++);
-    this->inflyInstStatus.emplace(id, InstStatus::FETCHED);
-    this->inflyInstMap.emplace(id, inst);
-    DPRINTF(AbstractDataFlowAccelerator, "ADFA: fetched inst %u.\n", id);
+    this->inflyInstStatus.at(id) = InstStatus::DECODED;
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: decoded inst %u.\n", id);
   }
 }
 
@@ -139,7 +184,7 @@ void AbstractDataFlowCore::markReady() {
    * This is quite inefficient as we loop through all the rob.
    */
   for (auto id : this->rob) {
-    if (this->inflyInstStatus.at(id) != InstStatus::FETCHED) {
+    if (this->inflyInstStatus.at(id) != InstStatus::DECODED) {
       continue;
     }
 
@@ -149,29 +194,44 @@ void AbstractDataFlowCore::markReady() {
     auto inst = this->inflyInstMap.at(id);
     for (const auto &dep : inst->getTDG().deps()) {
       bool shouldCheck = true;
-      if (dep.type() ==
-          ::LLVM::TDG::TDGInstructionDependence::POST_DOMINANCE_FRONTIER) {
+      switch (dep.type()) {
+      case ::LLVM::TDG::TDGInstructionDependence::CONTROL: {
+        shouldCheck = false;
+        break;
+      }
+      case ::LLVM::TDG::TDGInstructionDependence::POST_DOMINANCE_FRONTIER: {
         if (this->enableSpeculation) {
-          continue;
+          shouldCheck = false;
         }
+        break;
       }
-      if (dep.type() ==
-          ::LLVM::TDG::TDGInstructionDependence::UNROLLABLE_CONTROL) {
+      case ::LLVM::TDG::TDGInstructionDependence::UNROLLABLE_CONTROL: {
         if (this->enableSpeculation || this->breakUnrollableControlDep) {
-          continue;
+          shouldCheck = false;
         }
+        break;
       }
-      if (dep.type() ==
-          ::LLVM::TDG::TDGInstructionDependence::INDUCTION_VARIABLE) {
+      case ::LLVM::TDG::TDGInstructionDependence::INDUCTION_VARIABLE: {
         if (this->breakIVDep) {
-          continue;
+          shouldCheck = false;
         }
+        break;
       }
-      if (dep.type() ==
-          ::LLVM::TDG::TDGInstructionDependence::REDUCTION_VARIABLE) {
+      case ::LLVM::TDG::TDGInstructionDependence::REDUCTION_VARIABLE: {
         if (this->breakRVDep) {
-          continue;
+          shouldCheck = false;
         }
+        break;
+      }
+      case ::LLVM::TDG::TDGInstructionDependence::STREAM: {
+        // Stream dependence is not checked here.
+        shouldCheck = false;
+        break;
+      }
+      default: {
+        // For other type of dependence, we need to enforce.
+        break;
+      }
       }
       if (shouldCheck) {
         const auto depId = dep.dependent_id();
@@ -180,6 +240,15 @@ void AbstractDataFlowCore::markReady() {
             statusIter->second != InstStatus::FINISHED) {
           ready = false;
           break;
+        }
+      }
+    }
+    if (inst->hasStreamUse()) {
+      auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+      if (!SE->areUsedStreamsReady(inst)) {
+        ready = false;
+        if (id == 11489479) {
+          hack("Due to stream reason it is not ready.\n");
         }
       }
     }
@@ -262,7 +331,12 @@ void AbstractDataFlowCore::issue() {
         auto completeTick = cpu->clockEdge(Cycles(this->idealMemLatency));
         this->idealMemCompleteQueue.emplace_back(completeTick, id);
       } else {
+
+        DPRINTF(AbstractDataFlowAccelerator, "ADFA: execute load inst %u.\n",
+                id);
         inst->execute(cpu);
+        DPRINTF(AbstractDataFlowAccelerator, "ADFA: executed load inst %u.\n",
+                id);
         // For store instruction, we write back immediately as we have all the
         // memory/control dependence resolved.
         if (inst->isStoreInst()) {
@@ -277,8 +351,11 @@ void AbstractDataFlowCore::issue() {
     if (TDG.has_load()) {
       ++issuedLoad;
     }
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: check inflyInstStatus %u.\n",
+            id);
     this->inflyInstStatus.at(id) = InstStatus::ISSUED;
     readyIter = this->readyInsts.erase(readyIter);
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: issued inst %u.\n", id);
   }
 
   this->numIssuedDist.sample(issued);
@@ -336,12 +413,18 @@ void AbstractDataFlowCore::release() {
     if (this->inflyInstStatus.at(id) != InstStatus::FINISHED) {
       break;
     }
+    /**
+     * ! This is really a bad design, but I have to let the instruction know
+     * ! it is committed.
+     */
+    this->inflyInstMap.at(id)->commit(cpu);
     ++committed;
     iter = this->rob.erase(iter);
     auto inst = this->inflyInstMap.at(id);
     this->inflyInstStatus.erase(id);
     this->inflyInstAge.erase(id);
     this->inflyInstMap.erase(id);
+    DPRINTF(AbstractDataFlowAccelerator, "ADFA: inst %lu release.\n", id);
     this->dataFlow->commit(inst);
   }
   this->numCommittedInst += committed;
@@ -439,6 +522,10 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
 
     // Take a checkpoints.
     // cpu->getRegionStats()->checkpoint(this->configuredLoopName);
+
+    // Create the dataflow.
+    assert(this->dataFlow == nullptr && "Dataflow already created.");
+    this->dataFlow = new DynamicInstructionStream(StartInst->getBuffer());
 
     if (this->enableTLS) {
       // TLS mode.
@@ -562,6 +649,10 @@ void AbstractDataFlowAccelerator::tickStart() {
       }
       this->dataFlow->commit(this->TLSLHSIter);
     }
+
+    // Release the dataFlow.
+    delete this->dataFlow;
+    this->dataFlow = nullptr;
 
     // Take a checkpoint.
     // cpu->getRegionStats()->checkpoint(this->configuredLoopName);

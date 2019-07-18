@@ -23,8 +23,9 @@ void ADFAConfigInst::markFinished() {
   this->finished = true;
 }
 
-ADFAStartInst::ADFAStartInst(const LLVM::TDG::TDGInstruction &_TDG)
-    : LLVMDynamicInst(_TDG, 1), finished(false) {}
+ADFAStartInst::ADFAStartInst(const LLVM::TDG::TDGInstruction &_TDG,
+                             std::shared_ptr<Buffer> _buffer)
+    : LLVMDynamicInst(_TDG, 1), finished(false), buffer(_buffer) {}
 
 void ADFAStartInst::execute(LLVMTraceCPU *cpu) {
   cpu->getAcceleratorManager()->handle(this);
@@ -56,7 +57,7 @@ LLVMDynamicInst *parseADFAInst(LLVM::TDG::TDGInstruction &TDGInst) {
    */
   if (TDGInst.op() == "df-start") {
     // DPRINTF(AbstractDataFlowAccelerator, "Parsed ADFAStart inst.\n");
-    return new ADFAStartInst(TDGInst);
+    return new ADFAStartInst(TDGInst, nullptr);
   }
 
   /**

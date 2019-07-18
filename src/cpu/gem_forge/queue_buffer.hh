@@ -55,9 +55,12 @@ public:
     this->size--;
   }
 
-  // Get an allocated element, but without moving _end iterator.
-  // If there is no following alloc_back() call, this element is essentially not
-  // used by the user.
+  /**
+   * Get an allocated element, but without moving _end iterator.
+   * If followed by alloc_back, then this element is allocated.
+   * If followed by steal_back, then this element is not managed by the queue
+   * buffer any more.
+   */
   T *peek_back() { return *this->_end; }
 
   T *alloc_back() {
@@ -66,6 +69,22 @@ public:
     this->size++;
     this->expand();
     return allocated;
+  }
+
+  T *steal_back() {
+    auto stolen = *this->_end;
+    this->_end = this->list.erase(this->_end);
+    this->expand();
+    return stolen;
+  }
+
+  /**
+   * Push a newed element to the queue buffer.
+   * * The element must be newed and the buffer has the ownership.
+   */
+  void push_back(T *element) {
+    this->list.insert(this->_end, element);
+    this->size++;
   }
 
 private:

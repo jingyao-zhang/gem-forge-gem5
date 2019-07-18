@@ -161,6 +161,15 @@ public:
   virtual void dumpBasic() const;
   virtual void dumpDeps(LLVMTraceCPU *cpu) const;
 
+  /**
+   * Helper function to allocate a instruction id at run time.
+   * Used for dynamic create new instructions.
+   * To avoid conflict, this id will start from a large number, (1e10).
+   */
+  static LLVMDynamicInstId allocateDynamicInstId() {
+    return ++currentDynamicInstId;
+  }
+
 protected:
   /**
    * An incontinuous sequence number.
@@ -183,6 +192,7 @@ protected:
   // A static global map from instName to the needed OpClass.
   static std::unordered_map<std::string, LLVMInstInfo> instInfo;
 
+  static LLVMDynamicInstId currentDynamicInstId;
   static uint64_t currentSeqNum;
   static uint64_t allocateSeqNum();
 };

@@ -134,4 +134,9 @@ void StreamElement::markValueReady() {
   STREAM_ELEMENT_DPRINTF(this, "Value ready.\n");
 }
 
-void StreamElement::dump() const {}
+void StreamElement::dump() const {
+  inform("Stream %50s %d.%d (%d%d).\n", this->stream->getStreamName().c_str(),
+         this->FIFOIdx.streamInstance, this->FIFOIdx.entryIdx,
+         static_cast<int>(this->isAddrReady),
+         static_cast<int>(this->isValueReady));
+}

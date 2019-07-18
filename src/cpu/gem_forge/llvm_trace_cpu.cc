@@ -59,8 +59,9 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   // Initialize the main thread.
   {
     auto mainThreadId = LLVMTraceCPU::allocateContextID();
-    this->mainThread =
-        new LLVMTraceThreadContext(mainThreadId, this->traceFileName);
+    this->mainThread = new LLVMTraceThreadContext(
+        mainThreadId, this->traceFileName, false /*isIdeal */,
+        this->cpuParams->adfaEnable);
     this->activateThread(mainThread);
   }
 
@@ -167,6 +168,11 @@ void LLVMTraceCPU::tick() {
       this->iewStage.dumpROB();
       this->accelManager->dump();
     }
+  }
+
+  // Try to parse more instructions.
+  for (auto thread : this->activeThreads) {
+    thread->parse();
   }
 
   // Unblock the memory instructions.
@@ -521,7 +527,6 @@ Addr LLVMTraceCPU::translateAndAllocatePhysMem(Addr vaddr) {
   if (!this->pageTable.translate(vaddr, paddr)) {
     panic("Failed to translate vaddr at 0x%x\n", vaddr);
   }
-  DPRINTF(LLVMTraceCPU, "Translate vaddr 0x%x to paddr 0x%x\n", vaddr, paddr);
   return paddr;
 }
 

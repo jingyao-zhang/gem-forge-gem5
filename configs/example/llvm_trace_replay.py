@@ -75,6 +75,8 @@ parser.add_option("--gem-forge-stream-engine-enable-merge", action="store", type
 parser.add_option("--gem-forge-stream-engine-placement",
                   type="string", default="original")
 
+parser.add_option("--gem-forge-adfa-enable",
+                  action="store_true", default=False)
 parser.add_option("--gem-forge-adfa-core-issue-width", action="store", type="int", default="16")
 parser.add_option("--gem-forge-adfa-enable-speculation",
                   action="store", type="int", default="0")
@@ -187,6 +189,7 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
     llvm_trace_cpu.warmCache = not options.gem_forge_cold_cache
 
     # ADFA options.
+    llvm_trace_cpu.adfaEnable = options.gem_forge_adfa_enable
     llvm_trace_cpu.adfaCoreIssueWidth = options.gem_forge_adfa_core_issue_width
     llvm_trace_cpu.adfaEnableSpeculation = options.gem_forge_adfa_enable_speculation
     llvm_trace_cpu.adfaBreakIVDep = options.gem_forge_adfa_break_iv_dep

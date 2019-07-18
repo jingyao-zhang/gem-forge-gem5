@@ -8,8 +8,9 @@
 #include "accelerator/stream/insts.hh"
 
 DynamicInstructionStreamDispatcher::DynamicInstructionStreamDispatcher(
-    const std::string &_fn)
-    : fn(_fn), input(nullptr), regionTable(nullptr) {
+    const std::string &_fn, bool _enableADFA)
+    : fn(_fn), enableADFA(_enableADFA), input(nullptr), regionTable(nullptr),
+      inContinuousRegion(false) {
   this->input = new ProtoInputStream(this->fn);
 
   // Parse the static information.
@@ -36,24 +37,23 @@ DynamicInstructionStreamDispatcher::~DynamicInstructionStreamDispatcher() {
 }
 
 void DynamicInstructionStreamDispatcher::parse() {
-  if (this->currentBuffer->getSize() > 1000) {
-    return;
-  }
-
   size_t count = 0;
 
   while (true) {
+    if (this->currentBuffer->getSize() > 1000) {
+      break;
+    }
+
     // Try parse the next instruction, if failed, peek_back() won't truly
     // allocate the buffer.
     auto &packet = *(this->currentBuffer->peek_back());
+    // ! Remember to clear the fields.
+    packet.released = false;
+    packet.inst = nullptr;
     if (!this->input->read(packet.tdg)) {
       // Reached the end.
       break;
     }
-
-    // Consume this one. This one should return exactly the same as the
-    // previous peek_back().
-    this->currentBuffer->alloc_back();
 
     // Parse use-specified instruction.
     packet.inst = parseADFAInst(packet.tdg);
@@ -127,6 +127,9 @@ void DynamicInstructionStreamDispatcher::parse() {
       }
     }
 
+    // Dispatch the instruction.
+    this->dispatch(&packet);
+
     count++;
 
     // Each time we parse in at most 1000 instructions.
@@ -134,4 +137,89 @@ void DynamicInstructionStreamDispatcher::parse() {
       break;
     }
   }
+}
+
+void DynamicInstructionStreamDispatcher::dispatch(Packet *packet) {
+  if (this->enableADFA) {
+    this->dispatchADFA(packet);
+    return;
+  }
+
+  // Normally push into the current buffer.
+  this->currentBuffer->alloc_back();
+}
+
+void DynamicInstructionStreamDispatcher::dispatchADFA(Packet *packet) {
+  // inform("Dispatch %s.\n", packet->tdg.op().c_str());
+  if (packet->tdg.bb() != 0) {
+    if (this->regionTable->hasRegionSetFromBB(packet->tdg.bb())) {
+      bool newRegionContinuous = false;
+      for (auto region :
+           this->regionTable->getRegionSetFromBB(packet->tdg.bb())) {
+        if (region->continuous()) {
+          newRegionContinuous = true;
+          break;
+        }
+      }
+      if (newRegionContinuous && !this->inContinuousRegion) {
+        // Switch into the continuous region. Dispatch to a new buffer.
+        this->inContinuousRegion = true;
+
+        // Steal the packet from the current buffer.
+        this->currentBuffer->steal_back();
+
+        // Create a new buffer for the ADFA instruction stream.
+        auto ADFABuffer = std::make_shared<Buffer>();
+
+        // Allocate a special ADFAStart instruction in the current buffer.
+        // ! Although this will break the sequence number a little bit, but
+        // ! as we only do this when enter/leaving a region, so it should be
+        // fine.
+        auto ADFAStartPacket = this->currentBuffer->alloc_back();
+        ADFAStartPacket->released = false;
+        // ! Remember to clear the deps.
+        ADFAStartPacket->tdg.clear_deps();
+        ADFAStartPacket->tdg.set_op("df-start");
+        ADFAStartPacket->tdg.set_id(LLVMDynamicInst::allocateDynamicInstId());
+        
+        ADFAStartPacket->inst =
+            new ADFAStartInst(ADFAStartPacket->tdg, ADFABuffer);
+
+        // Push the new packet into the ADFABuffer.
+        ADFABuffer->push_back(packet);
+
+        // Switch to the ADFABuffer.
+        this->currentBuffer = ADFABuffer;
+
+        return;
+      } else if (!newRegionContinuous && this->inContinuousRegion) {
+        // Switch out of the continuous region.
+        this->inContinuousRegion = false;
+
+        // Steal the packet from the current (ADFA) buffer.
+        this->currentBuffer->steal_back();
+
+        // Allocate a ADFAEnd token in the current buffer.
+        auto ADFAEndPacket = this->currentBuffer->alloc_back();
+        ADFAEndPacket->released = false;
+        // ! Remember to clear the deps.
+        ADFAEndPacket->tdg.clear_deps();
+        ADFAEndPacket->tdg.set_op("df-end");
+        ADFAEndPacket->tdg.set_id(LLVMDynamicInst::allocateDynamicInstId());
+        ADFAEndPacket->inst =
+            new LLVMDynamicInstCompute(ADFAEndPacket->tdg, 1 /*numMicroOps*/,
+                                       LLVMDynamicInstCompute::Type::OTHER);
+
+        // Push the new packet into the MainBuffer.
+        this->mainBuffer->push_back(packet);
+
+        // Switch back to main buffer.
+        this->currentBuffer = this->mainBuffer;
+
+        return;
+      }
+    }
+  }
+  // Otherwise, normally push into the current buffer.
+  this->currentBuffer->alloc_back();
 }

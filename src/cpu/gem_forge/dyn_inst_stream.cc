@@ -95,6 +95,7 @@ LLVMDynamicInst *DynamicInstructionStreamInterfaceConditionalEnd::fetch() {
   }
   auto Iter = this->stream->fetchIter();
   if (this->fetchedSize == 0) {
+    hack("Updated the headIter to Iter.\n");
     this->headIter = Iter;
   }
   this->fetchedSize++;
@@ -117,7 +118,8 @@ void DynamicInstructionStreamInterfaceConditionalEnd::commit(
     panic("Try to commit when we have fetched nothing.");
   }
   if ((*this->headIter)->inst != inst) {
-    panic("Instruction is not committed in order.");
+    panic("Instruction %lu is not committed in order.",
+          (*this->headIter)->inst->getId());
   }
   auto committedIter = this->headIter;
   ++this->headIter;
