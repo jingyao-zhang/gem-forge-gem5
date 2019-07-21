@@ -540,6 +540,17 @@ Sequencer::makeRequest(PacketPtr pkt)
     RubyRequestType primary_type = RubyRequestType_NULL;
     RubyRequestType secondary_type = RubyRequestType_NULL;
 
+    /**
+     * ! Sean: StreamAwareCache.
+     * Check if this is a StreamConfigReq.
+     */
+    if (pkt->cmd == MemCmd::Command::StreamConfigReq) {
+        inform("Sequencer Recieved StreamConfigReq.\n");
+        issueRequest(pkt, RubyRequestType_StreamConfig);
+        // Simply return success now.
+        return RequestStatus_Issued;
+    }
+
     if (pkt->isLLSC()) {
         //
         // Alpha LL/SC instructions need to be handled carefully by the cache

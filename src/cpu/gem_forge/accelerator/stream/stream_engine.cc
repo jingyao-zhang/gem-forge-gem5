@@ -391,6 +391,15 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
   for (auto &S : configStreams) {
     // Simply notify the stream.
     S->executeStreamConfigure(inst);
+    /**
+     * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
+     * Todo: Find the initial address.
+     */
+    if (S->getStreamType() == "load") {
+      auto pkt = TDGPacketHandler::createStreamConfigPacket(
+          0 /* paddr */, cpu->getDataMasterID(), 0);
+      cpu->sendRequest(pkt);
+    }
   }
 }
 

@@ -5,6 +5,8 @@ from m5.util import addToPath, fatal
 
 addToPath('../')
 
+from ruby import Ruby
+
 from common import Options
 from common import Simulation
 from common import CacheConfig
@@ -14,6 +16,9 @@ from common.Caches import *
 parser = optparse.OptionParser()
 Options.addCommonOptions(parser)
 Options.addSEOptions(parser)
+
+if '--ruby' in sys.argv:
+    Ruby.define_options(parser)
 
 def parse_tdg_files(option, opt, value, parser):
     vs = value.split(',')
@@ -149,15 +154,8 @@ def get_processes(options):
         return multiprocesses, 1
 
 
-if options.ruby:
-    fatal("This script does not support Ruby configuration, mainly"
-          " because Trace CPU has been tested only with classic memory system")
-
 if options.cpu_type == "LLVMTraceCPU":
     fatal("The host CPU should be a normal CPU other than LLVMTraceCPU\n")
-
-if options.num_cpus > 1:
-    fatal("This script does not support multi-processor trace replay.\n")
 
 (CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(options)
 
@@ -331,7 +329,18 @@ else:
     # There should be a trace file for replay.
     assert options.llvm_trace_file != ''
     cpus = list()
-    # No need to worry about the process.
+    """
+    If num_cpus equals 1, we create as many cpus as traces specified.
+    If there is only one trace, we create as many cpu as num_cpus by duplicating the traces.
+    Otherwise, panic.
+    """
+    if len(options.llvm_trace_file) == 1:
+        # Duplicate the traces.
+        options.llvm_trace_file = options.llvm_trace_file * options.num_cpus
+    elif options.num_cpus == 1:
+        options.num_cpus = len(options.llvm_trace_file)
+    else:
+        assert(options.num_cpus == len(options.llvm_trace_file))
     for tdg_fn in options.llvm_trace_file:
 
         # For each process, add a LLVMTraceCPU for simulation.
@@ -346,7 +355,7 @@ else:
         llvm_trace_cpu.driver = NULL
         llvm_trace_cpu.totalCPUs = len(options.llvm_trace_file)
         cpus.append(llvm_trace_cpu)
-    options.num_cpus = len(cpus)
+    assert(options.num_cpus == len(cpus))
 
 system = System(cpu=cpus,
                 mem_mode=test_mem_mode,
@@ -384,17 +393,42 @@ for cpu in system.cpu:
 # system.cpu.traceFile = options.llvm_trace_file
 
 # Configure the classic memory system options
-MemClass = Simulation.setMemClass(options)
-system.membus = SystemXBar()
-system.system_port = system.membus.slave
-CacheConfig.config_cache(options, system)
-MemConfig.config_mem(options, system)
+if options.ruby:
+    Ruby.create_system(options, False, system)
+    assert(options.num_cpus == len(system.ruby._cpu_ports))
+
+    system.ruby.clk_domain = \
+        SrcClockDomain(clock=options.ruby_clock, 
+                       voltage_domain=system.voltage_domain)
+    for i in range(len(system.cpu)):
+        ruby_port = system.ruby._cpu_ports[i]
+
+        # Create the interrupt controller and connect its ports to Ruby
+        # Note that the interrupt controller is always present but only
+        # in x86 does it have message ports that need to be connected
+        system.cpu[i].createInterruptController()
+
+        # Connect the cpu's cache ports to Ruby
+        system.cpu[i].icache_port = ruby_port.slave
+        system.cpu[i].dcache_port = ruby_port.slave
+        if buildEnv['TARGET_ISA'] == 'x86':
+            system.cpu[i].interrupts[0].pio = ruby_port.master
+            system.cpu[i].interrupts[0].int_master = ruby_port.slave
+            system.cpu[i].interrupts[0].int_slave = ruby_port.master
+            system.cpu[i].itb.walker.port = ruby_port.slave
+            system.cpu[i].dtb.walker.port = ruby_port.slave
+else:
+    MemClass = Simulation.setMemClass(options)
+    system.membus = SystemXBar()
+    system.system_port = system.membus.slave
+    CacheConfig.config_cache(options, system)
+    MemConfig.config_mem(options, system)
 
 if options.llvm_mcpat == 1:
     system.mcpat_manager = McPATManager()
 
 # Disable snoop filter
-if not options.no_l2bus:
+if not options.ruby and not options.no_l2bus:
     system.tol2bus.snoop_filter = NULL
 
 for cpu in system.cpu:

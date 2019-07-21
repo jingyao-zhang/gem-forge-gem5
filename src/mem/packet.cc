@@ -224,7 +224,11 @@ MemCmd::commandInfo[] =
       InvalidateResp, "InvalidateReq" },
     /* Invalidation Response */
     { SET2(IsInvalidate, IsResponse),
-      InvalidCmd, "InvalidateResp" }
+      InvalidCmd, "InvalidateResp" },
+    /**
+     * ! Sean: StreamAwareCache
+     */
+    { SET1(IsRequest), StreamConfigReq, "StreamConfigReq" }
 };
 
 AddrRange

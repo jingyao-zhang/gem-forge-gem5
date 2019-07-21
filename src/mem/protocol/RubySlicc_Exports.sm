@@ -175,6 +175,9 @@ enumeration(RubyRequestType, desc="...", default="RubyRequestType_NULL") {
   Release,           desc="Release operation";
   Acquire,           desc="Acquire opertion";
   AcquireRelease,    desc="Acquire and Release opertion";
+  // ! Sean: StreamAwareCache
+  // ! Duplication of RubyRequestType.
+  StreamConfig,      desc="Stream configuration";
 }
 
 enumeration(SequencerRequestType, desc="...", default="SequencerRequestType_NULL") {

@@ -24,6 +24,20 @@ PacketPtr TDGPacketHandler::createTDGPacket(Addr paddr, int size,
   return pkt;
 }
 
+PacketPtr TDGPacketHandler::createStreamConfigPacket(Addr paddr,
+                                                     MasterID masterID,
+                                                     int contextId) {
+  /**
+   * ! Pure evil hack here.
+   */
+  RequestPtr req(new Request(paddr, 8, 0, masterID, 1, contextId));
+  MemCmd cmd(MemCmd::Command::StreamConfigReq);
+  PacketPtr pkt = new Packet(req, cmd);
+  uint8_t *pktData = new uint8_t[req->getSize()];
+  pkt->dataDynamic(pktData);
+  return pkt;
+}
+
 void TDGPacketHandler::handleTDGPacketResponse(LLVMTraceCPU *cpu,
                                                PacketPtr pkt) {
   // Decode the handler information.
