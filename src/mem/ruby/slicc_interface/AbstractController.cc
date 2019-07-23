@@ -60,10 +60,7 @@ AbstractController::AbstractController(const Params *p)
       m_transitions_per_cycle(p->transitions_per_cycle),
       m_buffer_size(p->buffer_size), m_recycle_latency(p->recycle_latency),
       memoryPort(csprintf("%s.memory", name()), this, ""),
-      addrRanges(p->addr_ranges.begin(), p->addr_ranges.end()),
-      // ! Sean: StreamAwareCache
-      llcSelectLowBit(p->llc_select_low_bit),
-      llcSelectNumBits(p->llc_select_num_bits)
+      addrRanges(p->addr_ranges.begin(), p->addr_ranges.end())
 {
     if (m_version == 0) {
         // Combine the statistics from all controllers
@@ -374,21 +371,6 @@ AbstractController::mapAddressToMachine(Addr addr, MachineType mtype) const
     NodeID node = m_net_ptr->addressToNodeID(addr, mtype);
     MachineID mach = {mtype, node};
     return mach;
-}
-
-// ! Sean: StreamAwareCache
-MachineID
-AbstractController::mapAddressToLLC(Addr addr, MachineType mtype) const
-{
-    // Ideally we should check mtype to be LLC or directory, etc.
-    // But here I ignore it.
-    return mapAddressToRange(
-        addr,
-        mtype,
-        this->llcSelectLowBit,
-        this->llcSelectNumBits,
-        0 /* cluster_id. */
-    );
 }
 
 bool

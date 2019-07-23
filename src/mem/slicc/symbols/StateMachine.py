@@ -58,6 +58,16 @@ class StateMachine(Symbol):
         super(StateMachine, self).__init__(symtab, ident, location, pairs)
         self.table = None
 
+        # ! Sean: StreamAwareCache
+        # ! Set the parent interface.
+        self.abstract_controller_class_py = 'RubyController'
+        self.abstract_controller_class_cc = 'AbstractController'
+        if 'interface' in self:
+            self.abstract_controller_class_cc = self['interface']
+            self.abstract_controller_class_py = self['interface'].replace(
+                'Abstract', 'Ruby'
+            )
+
         # Data members in the State Machine that have been declared before
         # the opening brace '{'  of the machine.  Note that these along with
         # the members in self.objects form the entire set of data members.
@@ -222,13 +232,14 @@ class StateMachine(Symbol):
 
         py_ident = "%s_Controller" % ident
         c_ident = "%s_Controller" % self.ident
+        abstract_controller_class_py = self.abstract_controller_class_py
 
         code('''
 from m5.params import *
 from m5.SimObject import SimObject
-from m5.objects.Controller import RubyController
+from m5.objects.Controller import ${abstract_controller_class_py}
 
-class $py_ident(RubyController):
+class $py_ident(${abstract_controller_class_py}):
     type = '$py_ident'
     cxx_header = 'mem/protocol/${c_ident}.hh'
 ''')
@@ -257,6 +268,8 @@ class $py_ident(RubyController):
         code = self.symtab.codeFormatter()
         ident = self.ident
         c_ident = "%s_Controller" % self.ident
+        # ! Sean: StreamAwareCache
+        abstract_controller_class_cc = self.abstract_controller_class_cc
 
         code('''
 /** \\file $c_ident.hh
@@ -275,7 +288,7 @@ class $py_ident(RubyController):
 #include "mem/protocol/TransitionResult.hh"
 #include "mem/protocol/Types.hh"
 #include "mem/ruby/common/Consumer.hh"
-#include "mem/ruby/slicc_interface/AbstractController.hh"
+#include "mem/ruby/slicc_interface/${abstract_controller_class_cc}.hh"
 #include "params/$c_ident.hh"
 
 ''')
@@ -290,7 +303,7 @@ class $py_ident(RubyController):
         code('''
 extern std::stringstream ${ident}_transitionComment;
 
-class $c_ident : public AbstractController
+class $c_ident : public ${abstract_controller_class_cc} 
 {
   public:
     typedef ${c_ident}Params Params;
@@ -442,6 +455,7 @@ void unset_tbe(${{self.TBEType.c_ident}}*& m_tbe_ptr);
         code = self.symtab.codeFormatter()
         ident = self.ident
         c_ident = "%s_Controller" % self.ident
+        abstract_controller_class_cc = self.abstract_controller_class_cc
 
         code('''
 /** \\file $c_ident.cc
@@ -513,7 +527,7 @@ stringstream ${ident}_transitionComment;
 
 /** \\brief constructor */
 $c_ident::$c_ident(const Params *p)
-    : AbstractController(p)
+    : ${abstract_controller_class_cc}(p)
 {
     m_machineID.type = MachineType_${ident};
     m_machineID.num = m_version;
@@ -662,7 +676,7 @@ $c_ident::init()
 
         code.dedent()
         code('''
-    AbstractController::init();
+    ${abstract_controller_class_cc}::init();
     resetStats();
 }
 ''')
@@ -738,7 +752,7 @@ $c_ident::getGPUCoalescer() const
 void
 $c_ident::regStats()
 {
-    AbstractController::regStats();
+    ${abstract_controller_class_cc}::regStats();
 
     if (m_version == 0) {
         for (${ident}_Event event = ${ident}_Event_FIRST;
@@ -877,7 +891,7 @@ void $c_ident::resetStats()
         m_event_counters[event] = 0;
     }
 
-    AbstractController::resetStats();
+    ${abstract_controller_class_cc}::resetStats();
 }
 ''')
 

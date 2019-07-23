@@ -12,11 +12,11 @@
 #include <list>
 #include <memory>
 
-class AbstractController;
+class AbstractStreamAwareController;
 
 class LLCStreamEngine : public Consumer {
 public:
-  LLCStreamEngine(AbstractController *_controller);
+  LLCStreamEngine(AbstractStreamAwareController *_controller);
   ~LLCStreamEngine();
 
   void receiveStreamConfigure(PacketPtr pkt);
@@ -24,7 +24,7 @@ public:
   void print(std::ostream &out) const override;
 
 private:
-  AbstractController *controller;
+  AbstractStreamAwareController *controller;
   const int issueWidth;
   const int migrateWidth;
 

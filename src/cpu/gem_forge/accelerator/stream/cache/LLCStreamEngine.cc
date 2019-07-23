@@ -1,12 +1,12 @@
 
 #include "LLCStreamEngine.hh"
 
-#include "mem/ruby/slicc_interface/AbstractController.hh"
+#include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
 
-LLCStreamEngine::LLCStreamEngine(AbstractController *_controller)
+LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller)
     : Consumer(_controller), controller(_controller), issueWidth(4),
       migrateWidth(2) {}
 

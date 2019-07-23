@@ -36,6 +36,7 @@ if env['PROTOCOL'] == 'None':
 SimObject('Controller.py')
 
 Source('AbstractController.cc')
+Source('AbstractStreamAwareController.cc')
 Source('AbstractEntry.cc')
 Source('AbstractCacheEntry.cc')
 Source('RubyRequest.cc')

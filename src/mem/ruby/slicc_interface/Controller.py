@@ -64,6 +64,13 @@ class RubyController(ClockedObject):
     memory = MasterPort("Port for attaching a memory controller")
     system = Param.System(Parent.any, "system object parameter")
 
+# ! Sean: StreamAwareCache
+class RubyStreamAwareController(RubyController):
+    type = 'RubyStreamAwareController'
+    cxx_class = 'AbstractStreamAwareController'
+    cxx_header = 'mem/ruby/slicc_interface/AbstractStreamAwareController.hh'
+    abstract = True
+
     # ! Sean: StreamAwareCache
     # ! I don't think the addr_ranges work in MESI_Three_Level.
     # ! I will hack here by adding a llc_select_low_bit and llc_select_num_bits.
