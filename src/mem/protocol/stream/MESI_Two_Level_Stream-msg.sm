@@ -69,6 +69,8 @@ structure(RequestMsg, desc="...", interface="Message") {
   int Len;
   bool Dirty, default="false",  desc="Dirty bit";
   PrefetchBit Prefetch,         desc="Is this a prefetch request";
+  // ! Sean: StreamAwareCache
+  PacketPtr StreamPkt,          desc="Hack to forward stream packet";
 
   bool functionalRead(Packet *pkt) {
     // Only PUTX messages contains the data block

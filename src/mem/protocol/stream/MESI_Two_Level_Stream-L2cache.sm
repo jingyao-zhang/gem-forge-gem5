@@ -150,6 +150,15 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
 
   TBETable TBEs, template="<L2Cache_TBE>", constructor="m_number_of_TBEs";
 
+  /**
+   * ! Sean: StreamAwareCache
+   */
+  structure(LLCStreamEngine, external="yes", desc="Stream Engine at LLC") {
+    void receiveStreamConfigure(PacketPtr);
+  }
+
+  LLCStreamEngine se, constructor="this";
+
   Tick clockEdge();
   Tick cyclesToTicks(Cycles c);
   Cycles ticksToCycles(Tick t);
@@ -802,8 +811,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
    * ! Sean: StreamAwareCache
    */
   action(rsc_receiveStreamConfig, "rsc", desc="Receive the StreamConfig") {
-    DPRINTF(RubyStream, "Receive StreamConfig: destination: %s\n",
-            "what?");
+    peek(L1RequestL2Network_in, RequestMsg) {
+      DPRINTF(RubyStream, "Receive StreamConfig: %#x\n", in_msg.StreamPkt);
+      se.receiveStreamConfigure(in_msg.StreamPkt);
+    }
   }
 
   //*****************************************************

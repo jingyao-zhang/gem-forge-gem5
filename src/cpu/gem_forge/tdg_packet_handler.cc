@@ -26,14 +26,18 @@ PacketPtr TDGPacketHandler::createTDGPacket(Addr paddr, int size,
 
 PacketPtr TDGPacketHandler::createStreamConfigPacket(Addr paddr,
                                                      MasterID masterID,
-                                                     int contextId) {
+                                                     int contextId,
+                                                     uint64_t data) {
   /**
    * ! Pure evil hack here.
+   * ! Pass the data in pktData.
    */
-  RequestPtr req(new Request(paddr, 8, 0, masterID, 1, contextId));
+  RequestPtr req(
+      new Request(paddr, sizeof(uint64_t), 0, masterID, 1, contextId));
   MemCmd cmd(MemCmd::Command::StreamConfigReq);
   PacketPtr pkt = new Packet(req, cmd);
   uint8_t *pktData = new uint8_t[req->getSize()];
+  *(reinterpret_cast<uint64_t *>(pktData)) = data;
   pkt->dataDynamic(pktData);
   return pkt;
 }

@@ -621,10 +621,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
         out_msg.Class := CoherenceClass:STREAM_CONFIG; 
         out_msg.Sender := machineID;
         out_msg.Dest := createMachineID(MachineType:L1Cache, version);
-        DPRINTF(RubyStream, "Forward StreamConfig: destination: %s\n",
-                out_msg.Dest);
+        DPRINTF(RubyStream, "Forward StreamConfig: destination: %s, data: %#x\n",
+                out_msg.Dest, in_msg.pkt);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.StreamPkt := in_msg.pkt;
       }
     }
   }

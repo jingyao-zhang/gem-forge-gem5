@@ -45,6 +45,13 @@ std::pair<bool, uint64_t> StreamHistory::getNextAddr(bool &used) {
   }
 }
 
+const ::LLVM::TDG::StreamHistory &StreamHistory::getCurrentHistory() const {
+  if (this->currentConfig == this->histories.cend()) {
+    panic("Failed to read in the current history config.");
+  }
+  return *this->currentConfig;
+}
+
 uint64_t StreamHistory::getCurrentStreamLength() const {
   return this->currentConfig->history_size();
 }

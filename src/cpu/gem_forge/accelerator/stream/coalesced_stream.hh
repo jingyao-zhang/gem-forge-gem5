@@ -63,6 +63,12 @@ public:
 
   bool isContinuous() const override;
 
+  /**
+   * ! Sean: StreamAwareCache
+   * Allocate the CacheStreamConfigureData.
+   */
+  CacheStreamConfigureData *allocateCacheConfigureData() override;
+
 protected:
   /**
    * Represented all the streams coalesced within this one.

@@ -1,8 +1,8 @@
 #include "stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
-// #include "base/misc.hh""
 #include "base/trace.hh"
+#include "debug/RubyStream.hh"
 #include "debug/StreamEngine.hh"
 
 namespace {
@@ -396,8 +396,26 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
      * Todo: Find the initial address.
      */
     if (S->getStreamType() == "load") {
+      // Get the CacheStreamConfigureData.
+      auto streamConfigureData = S->allocateCacheConfigureData();
+
+      // Set up the init physical address.
+      if (cpu->isStandalone()) {
+        auto initPAddr =
+            cpu->translateAndAllocatePhysMem(streamConfigureData->initVAddr);
+        streamConfigureData->initPAddr = initPAddr;
+      } else {
+        panic("Stream so far can only work in standalone mode.");
+      }
+
       auto pkt = TDGPacketHandler::createStreamConfigPacket(
-          0 /* paddr */, cpu->getDataMasterID(), 0);
+          streamConfigureData->initPAddr, cpu->getDataMasterID(), 0,
+          reinterpret_cast<uint64_t>(streamConfigureData));
+      DPRINTF(
+          RubyStream,
+          "Create StreamConfig pkt %#x %#x, initVAddr: %#x, initPAddr %#x.\n",
+          pkt, streamConfigureData, streamConfigureData->initVAddr,
+          streamConfigureData->initPAddr);
       cpu->sendRequest(pkt);
     }
   }

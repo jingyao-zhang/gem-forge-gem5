@@ -68,6 +68,11 @@ structure(CoherenceMsg, desc="...", interface="Message") {
   MessageSizeType MessageSize,  desc="size category of the message";
   DataBlock DataBlk,            desc="Data for the cache line (if PUTX)";
   bool Dirty, default="false",  desc="Dirty bit";
+  /**
+   * ! Sean: StreamAwareCache.
+   * ! Hack here to pass around a pointer.
+   */
+  PacketPtr StreamPkt, default=0, desc="Hack for storing stream packet";
 
   bool functionalRead(Packet *pkt) {
     // Only PUTX messages contains the data block

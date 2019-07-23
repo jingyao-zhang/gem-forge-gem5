@@ -120,6 +120,12 @@ uint64_t SingleStream::getFootprint(unsigned cacheBlockSize) const { return 1; }
 
 bool SingleStream::isContinuous() const { return false; }
 
+CacheStreamConfigureData *SingleStream::allocateCacheConfigureData() {
+  auto history = std::make_shared<::LLVM::TDG::StreamHistory>(
+      this->history->getCurrentHistory());
+  return new CacheStreamConfigureData(this, history);
+}
+
 void SingleStream::dump() const {
   inform("Dump for stream %s.\n======================",
          this->getStreamName().c_str());

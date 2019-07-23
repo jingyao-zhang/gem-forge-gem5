@@ -1,6 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_HH__
 #define __CPU_TDG_ACCELERATOR_STREAM_HH__
 
+#include "cache/CacheStreamConfigureData.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
 #include "stream_element.hh"
 
@@ -13,7 +14,7 @@
 #error "Require protobuf to parse stream info."
 #endif
 
-#include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
+#include "StreamMessage.pb.h"
 
 #include <list>
 
@@ -107,6 +108,12 @@ public:
   void executeStreamConfigure(StreamConfigInst *inst);
   bool isStreamConfigureExecuted(uint64_t configInstSeqNum);
   void commitStreamEnd(StreamEndInst *inst);
+
+  /**
+   * ! Sean: StreamAwareCache
+   * Allocate the CacheStreamConfigureData.
+   */
+  virtual CacheStreamConfigureData *allocateCacheConfigureData() = 0;
 
 protected:
   LLVMTraceCPU *cpu;

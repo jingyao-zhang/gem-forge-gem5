@@ -23,7 +23,7 @@ public:
                                    TDGPacketHandler *handler, uint8_t *data,
                                    MasterID masterID, int contextId, Addr pc);
   static PacketPtr createStreamConfigPacket(Addr paddr, MasterID masterID,
-                                            int contextId);
+                                            int contextId, uint64_t data);
   static void handleTDGPacketResponse(LLVMTraceCPU *cpu, PacketPtr pkt);
 };
 

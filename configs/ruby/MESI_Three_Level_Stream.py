@@ -175,7 +175,13 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                         version = i * num_l2caches_per_cluster + j,
                         L2cache = l2_cache, cluster_id = i,
                         transitions_per_cycle = options.ports,
-                        ruby_system = ruby_system)
+                        ruby_system = ruby_system,
+                        # ! Sean: StreamAwareCache.
+                        # ! For the LLCSelect bits.
+                        # ! So far do block interleaving.
+                        llc_select_low_bit=block_size_bits,
+                        llc_select_num_bits=l2_bits,
+                        )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"
                  % (i * num_l2caches_per_cluster + j))

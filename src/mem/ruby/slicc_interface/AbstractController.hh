@@ -161,6 +161,12 @@ class AbstractController : public ClockedObject, public Consumer
      */
     MachineID mapAddressToMachine(Addr addr, MachineType mtype) const;
 
+    /**
+     * ! Sean: StreamAwareCache.
+     * Map an address to a LLC bank (or other type of controller).
+     */
+    MachineID mapAddressToLLC(Addr addr, MachineType mtype) const;
+
   protected:
     //! Profiles original cache requests including PUTs
     void profileRequest(const std::string &request);
@@ -258,6 +264,13 @@ class AbstractController : public ClockedObject, public Consumer
   private:
     /** The address range to which the controller responds on the CPU side. */
     const AddrRangeList addrRanges;
+
+    /**
+     * ! Sean: StreamAwareCache.
+     * Store the bits used in S-NUCA to find the LLC bank.
+     */
+    const int llcSelectLowBit;
+    const int llcSelectNumBits;
 };
 
 #endif // __MEM_RUBY_SLICC_INTERFACE_ABSTRACTCONTROLLER_HH__

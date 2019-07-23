@@ -15,6 +15,8 @@ public:
    */
   void configure();
 
+  const ::LLVM::TDG::StreamHistory &getCurrentHistory() const;
+
   /**
    * Return the next value of the history.
    * The first boolean indicating the value is valid.

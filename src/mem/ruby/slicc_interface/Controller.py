@@ -63,3 +63,10 @@ class RubyController(ClockedObject):
 
     memory = MasterPort("Port for attaching a memory controller")
     system = Param.System(Parent.any, "system object parameter")
+
+    # ! Sean: StreamAwareCache
+    # ! I don't think the addr_ranges work in MESI_Three_Level.
+    # ! I will hack here by adding a llc_select_low_bit and llc_select_num_bits.
+    # ! This only works for a S-NUCA.
+    llc_select_low_bit = Param.UInt32(0, "Low bit used to select LLC bank")
+    llc_select_num_bits = Param.UInt32(0, "Num of bits used to select LLC bank")

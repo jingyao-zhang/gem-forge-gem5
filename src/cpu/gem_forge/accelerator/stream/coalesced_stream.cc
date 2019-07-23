@@ -230,6 +230,10 @@ bool CoalescedStream::isContinuous() const {
   return this->getElementSize() == pattern.stride_i();
 }
 
+CacheStreamConfigureData *CoalescedStream::allocateCacheConfigureData() {
+  panic("Coalesced stream in cache is not supported yet.\n");
+}
+
 uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
   /**
    * Estimate the memory footprint for this stream in number of unqiue cache

@@ -28,6 +28,12 @@ public:
   uint64_t getTrueFootprint() const override;
   uint64_t getFootprint(unsigned cacheBlockSize) const override;
 
+  /**
+   * ! Sean: StreamAwareCache
+   * Allocate the CacheStreamConfigureData.
+   */
+  CacheStreamConfigureData *allocateCacheConfigureData() override;
+
 private:
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
