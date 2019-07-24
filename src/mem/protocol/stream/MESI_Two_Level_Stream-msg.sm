@@ -117,3 +117,35 @@ structure(ResponseMsg, desc="...", interface="Message") {
     return testAndWrite(addr, DataBlk, pkt);
   }
 }
+
+/**
+ * ! Sean: StreamAwareCache.
+ * ! Declare the pointer to the dynamic stream in the LLC.
+ */
+external_type(LLCDynamicStreamPtr, primitive="yes");
+
+/**
+ * ! Sean: StreamAwareCache.
+ * ! StreamMigrationRequest.
+ */
+structure(StreamMigrateRequestMsg, desc="request to migrate a stream", interface="Message") {
+  Addr addr,                    desc="Physical address for this request";
+  CoherenceRequestType Type,    desc="Type of request (GetS, GetX, PutX, etc)";
+  RubyAccessMode AccessMode,    desc="user/supervisor access type";
+  MachineID Requestor      ,    desc="What component request";
+  NetDest Destination,          desc="What components receive the request, includes MachineType and num";
+  MessageSizeType MessageSize,  desc="size category of the message";
+  int Len;
+  // ! Sean: StreamAwareCache
+  LLCDynamicStreamPtr Stream,    desc="Hack to forward CacheDynamicStream";
+
+  bool functionalRead(Packet *pkt) {
+    // StreamMirgrateRequest does not hold data.
+    return false;
+  }
+
+  bool functionalWrite(Packet *pkt) {
+    // StreamMirgrateRequest does not hold data.
+    return false;
+  }
+}

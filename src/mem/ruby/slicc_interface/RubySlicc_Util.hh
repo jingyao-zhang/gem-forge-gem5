@@ -44,6 +44,13 @@
 #include "mem/ruby/common/TypeDefines.hh"
 #include "mem/ruby/common/WriteMask.hh"
 
+/**
+ * ! Sean: StreamAwareCache.
+ * ! This is to expose LLCDynamicStreamPtr to slicc.
+ * TODO: Figure out a better way to include this.
+ */
+#include "cpu/gem_forge/accelerator/stream/cache/LLCDynamicStream.hh"
+
 inline Cycles zero_time() { return Cycles(0); }
 
 inline NodeID

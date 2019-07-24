@@ -52,6 +52,18 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   MessageBuffer * responseToL2Cache, network="From", virtual_network="1",
     vnet_type="response";  // a local L1 || Memory -> this L2 bank
+
+  /**
+   * ! Sean: StreamAwareCache
+   * ! Ruby requires one virtual network per To/From buffer.
+   * ! I use virtual_network 4 for stream migration request, but they
+   * ! are actually the lowest priority.
+   */
+  MessageBuffer * streamMigrateToL2Cache, network="To", virtual_network="3",
+    vnet_type="StreamMigrateRequest"; // this L2 bank -> other L2 bank
+  MessageBuffer * streamMigrateFromL2Cache, network="From", virtual_network="3",
+    vnet_type="StreamMigrateRequest"; // other L2 bank -> this L2 bank
+  
 {
   // STATES
   state_declaration(State, desc="L2 Cache states", default="L2Cache_State_NP") {
@@ -155,9 +167,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
    */
   structure(LLCStreamEngine, external="yes", desc="Stream Engine at LLC") {
     void receiveStreamConfigure(PacketPtr);
+    void receiveStreamMigrate(LLCDynamicStreamPtr);
   }
 
-  LLCStreamEngine se, constructor="this";
+  LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr";
 
   Tick clockEdge();
   Tick cyclesToTicks(Cycles c);
@@ -302,8 +315,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   out_port(DirRequestL2Network_out, RequestMsg, DirRequestFromL2Cache);
   out_port(responseL2Network_out, ResponseMsg, responseFromL2Cache);
 
+  // ! Sean: StreamAwareCache
+  // For the stream migrate request.
+  out_port(streamMigrateToL2Cache_out, StreamMigrateRequestMsg, streamMigrateFromL2Cache);
 
-  in_port(L1unblockNetwork_in, ResponseMsg, unblockToL2Cache, rank = 2) {
+  in_port(L1unblockNetwork_in, ResponseMsg, unblockToL2Cache, rank = 3) {
     if(L1unblockNetwork_in.isReady(clockEdge())) {
       peek(L1unblockNetwork_in,  ResponseMsg) {
         Entry cache_entry := getCacheEntry(in_msg.addr);
@@ -325,7 +341,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   // Response  L2 Network - response msg to this particular L2 bank
-  in_port(responseL2Network_in, ResponseMsg, responseToL2Cache, rank = 1) {
+  in_port(responseL2Network_in, ResponseMsg, responseToL2Cache, rank = 2) {
     if (responseL2Network_in.isReady(clockEdge())) {
       peek(responseL2Network_in, ResponseMsg) {
         // test wether it's from a local L1 or an off chip source
@@ -366,7 +382,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   // L1 Request
-  in_port(L1RequestL2Network_in, RequestMsg, L1RequestToL2Cache, rank = 0) {
+  in_port(L1RequestL2Network_in, RequestMsg, L1RequestToL2Cache, rank = 1) {
     if(L1RequestL2Network_in.isReady(clockEdge())) {
       peek(L1RequestL2Network_in,  RequestMsg) {
         Entry cache_entry := getCacheEntry(in_msg.addr);
@@ -411,6 +427,20 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
             }
           }
         }
+      }
+    }
+  }
+
+  // ! Sean: StreamAwareCache
+  // Stream migrate request.
+  in_port(streamMigrateFromL2Cache_in, StreamMigrateRequestMsg, streamMigrateFromL2Cache, rank = 0) {
+    if(streamMigrateFromL2Cache_in.isReady(clockEdge())) {
+      peek(streamMigrateFromL2Cache_in,  StreamMigrateRequestMsg) {
+        DPRINTF(RubyStream, "Received migrated stream from %s.\n",
+                in_msg.Requestor);
+        se.receiveStreamMigrate(in_msg.Stream);
+        Tick delay := streamMigrateFromL2Cache_in.dequeue(clockEdge());
+        profileMsgDelay(3, ticksToCycles(delay));
       }
     }
   }

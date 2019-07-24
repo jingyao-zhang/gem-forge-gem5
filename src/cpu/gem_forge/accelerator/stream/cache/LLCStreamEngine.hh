@@ -13,18 +13,23 @@
 #include <memory>
 
 class AbstractStreamAwareController;
+class MessageBuffer;
 
 class LLCStreamEngine : public Consumer {
 public:
-  LLCStreamEngine(AbstractStreamAwareController *_controller);
+  LLCStreamEngine(AbstractStreamAwareController *_controller,
+                  MessageBuffer *_streamMigrateMsgBuffer);
   ~LLCStreamEngine();
 
   void receiveStreamConfigure(PacketPtr pkt);
+  void receiveStreamMigrate(LLCDynamicStreamPtr stream);
   void wakeup() override;
   void print(std::ostream &out) const override;
 
 private:
   AbstractStreamAwareController *controller;
+  // Out going stream migrate buffer.
+  MessageBuffer *streamMigrateMsgBuffer;
   const int issueWidth;
   const int migrateWidth;
 

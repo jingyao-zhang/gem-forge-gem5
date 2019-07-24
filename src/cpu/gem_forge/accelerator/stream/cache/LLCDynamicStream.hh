@@ -33,4 +33,6 @@ public:
   uint64_t allocated;
 };
 
+using LLCDynamicStreamPtr = LLCDynamicStream *;
+
 #endif

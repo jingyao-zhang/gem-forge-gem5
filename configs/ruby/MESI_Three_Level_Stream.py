@@ -202,6 +202,12 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l2_cntrl.responseToL2Cache = MessageBuffer()
             l2_cntrl.responseToL2Cache.slave = ruby_system.network.master
 
+            # ! Sean: StreamAwareCache
+            l2_cntrl.streamMigrateToL2Cache = MessageBuffer()
+            l2_cntrl.streamMigrateToL2Cache.master = ruby_system.network.slave
+            l2_cntrl.streamMigrateFromL2Cache = MessageBuffer()
+            l2_cntrl.streamMigrateFromL2Cache.slave = ruby_system.network.master
+
     # Run each of the ruby memory controllers at a ratio of the frequency of
     # the ruby system
     # clk_divider value is a fix to pass regression.
@@ -308,6 +314,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                             cpus = [n for n in xrange(i*num_cpus_per_cluster, \
                                                                      (i+1)*num_cpus_per_cluster)])
 
-    ruby_system.network.number_of_virtual_networks = 3
+    # ! Sean: StreamAwareCache
+    # ! Add one virtual network for stream migration request.
+    ruby_system.network.number_of_virtual_networks = 4
     topology = create_topology(all_cntrls, options)
     return (cpu_sequencers, mem_dir_cntrl_nodes, topology)

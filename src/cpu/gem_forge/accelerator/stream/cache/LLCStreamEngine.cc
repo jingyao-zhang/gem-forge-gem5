@@ -3,11 +3,16 @@
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
+// Can we find the slicc generated StreamMigrateRequestMsg?
+#include "mem/protocol/StreamMigrateRequestMsg.hh"
+
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
 
-LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller)
-    : Consumer(_controller), controller(_controller), issueWidth(4),
+LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
+                                 MessageBuffer *_streamMigrateMsgBuffer)
+    : Consumer(_controller), controller(_controller),
+      streamMigrateMsgBuffer(_streamMigrateMsgBuffer), issueWidth(4),
       migrateWidth(2) {}
 
 LLCStreamEngine::~LLCStreamEngine() {
@@ -33,6 +38,19 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   delete pkt;
 
   // Let's schedule a wakeup event.
+  this->scheduleEvent(Cycles(1));
+}
+
+void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
+
+  Addr vaddr = stream->peekVAddr();
+  Addr paddr = stream->translateToPAddr(vaddr);
+  Addr paddrLine = makeLineAddress(paddr);
+  assert(this->isPAddrHandledByMe(paddrLine) &&
+         "Stream migrated to wrong LLC bank.\n");
+  DPRINTF(RubyStream, "LLCStreamEngine: Received stream migrate.\n");
+
+  this->streams.push_back(stream);
   this->scheduleEvent(Cycles(1));
 }
 
@@ -129,7 +147,35 @@ void LLCStreamEngine::migrateStreams() {
   }
 }
 
-void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {}
+void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
+
+  // Create the migrate request.
+  Addr vaddr = stream->peekVAddr();
+  Addr paddr = stream->translateToPAddr(vaddr);
+  Addr paddrLine = makeLineAddress(paddr);
+  auto selfMachineId = this->controller->getMachineID();
+  auto addrMachineId =
+      this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
+
+  DPRINTF(RubyStream, "Migrate stream from %s to %s.\n",
+          MachineIDToString(selfMachineId).c_str(),
+          MachineIDToString(addrMachineId).c_str());
+
+  auto msg =
+      std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());
+  msg->m_addr = paddrLine;
+  msg->m_Type = CoherenceRequestType_GETS;
+  msg->m_Requestor = selfMachineId;
+  msg->m_Destination.add(addrMachineId);
+  msg->m_MessageSize = MessageSizeType_Data;
+  msg->m_Stream = stream;
+
+  Cycles latency(1); // Just use 1 cycle latency here.
+
+  this->streamMigrateMsgBuffer->enqueue(
+      msg, this->controller->clockEdge(),
+      this->controller->cyclesToTicks(latency));
+}
 
 bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr) const {
   auto selfMachineId = this->controller->getMachineID();
