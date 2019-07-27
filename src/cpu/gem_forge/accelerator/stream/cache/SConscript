@@ -1,5 +1,7 @@
 Import('*')
 
+Source('L0StreamEngine.cc')
+Source('MLCStreamEngine.cc')
 Source('LLCStreamEngine.cc')
 Source('LLCDynamicStream.cc')
 Source('CacheStreamConfigureData.cc')

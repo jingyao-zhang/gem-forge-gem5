@@ -81,6 +81,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     S_I, AccessPermission:Busy, desc="L2 replacing dirty data, collecting acks from L1s";
 
     // Transient States for fetching data from memory
+    IVV, AccessPermission:Busy, desc="L2 idle, got single L1_GETV, issued memory fetch, have not seen response yet";
     ISS, AccessPermission:Busy, desc="L2 idle, got single L1_GETS, issued memory fetch, have not seen response yet";
     IS, AccessPermission:Busy, desc="L2 idle, got L1_GET_INSTR or multiple L1_GETS, issued memory fetch, have not seen response yet";
     IM, AccessPermission:Busy, desc="L2 idle, got L1_GETX, issued memory fetch, have not seen response(s) yet";
@@ -102,8 +103,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     // events initiated by the local L1s
     L1_GET_INSTR,            desc="a L1I GET INSTR request for a block maped to us";
     L1_GETS,                 desc="a L1D GETS request for a block maped to us";
+    L1_GETV,                 desc="a volatile load that will not be cached at upper";
     L1_GETX,                 desc="a L1D GETX request for a block maped to us";
-    L1_UPGRADE,                 desc="a L1D GETX request for a block maped to us";
+    L1_UPGRADE,              desc="a L1D GETX request for a block maped to us";
 
     L1_PUTX,                 desc="L1 replacing data";
     L1_PUTX_old,             desc="L1 replacing data, but no longer sharer";
@@ -147,6 +149,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     State TBEState,             desc="Transient state";
     DataBlock DataBlk,          desc="Buffer for the data block";
     bool Dirty, default="false", desc="Data is Dirty";
+    bool cachedUpper, default="true", desc="Whether this block is cache by upper level";
 
     NetDest L1_GetS_IDs,            desc="Set of the internal processors that want the block in shared state";
     MachineID L1_GetX_ID,          desc="ID of the L1 cache to forward the block to once we get a response";
@@ -273,14 +276,16 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   Event L1Cache_request_type_to_event(CoherenceRequestType type, Addr addr,
                                       MachineID requestor, Entry cache_entry) {
-    if(type == CoherenceRequestType:GETS) {
+    if (type == CoherenceRequestType:GETS) {
       return Event:L1_GETS;
-    } else if(type == CoherenceRequestType:GET_INSTR) {
+    } else if (type == CoherenceRequestType:GETU) {
+      return Event:L1_GETV;
+    } else if (type == CoherenceRequestType:GET_INSTR) {
       return Event:L1_GET_INSTR;
     } else if (type == CoherenceRequestType:GETX) {
       return Event:L1_GETX;
     } else if (type == CoherenceRequestType:UPGRADE) {
-      if ( is_valid(cache_entry) && cache_entry.Sharers.isElement(requestor) ) {
+      if (is_valid(cache_entry) && cache_entry.Sharers.isElement(requestor) ) {
         return Event:L1_UPGRADE;
       } else {
         return Event:L1_GETX;
@@ -590,6 +595,20 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     }
   }
 
+  action(eu_sendDataToGetURequestors, "eu", desc="Send data from cache to the GetU IDs") {
+    assert(is_valid(tbe));
+    assert(tbe.L1_GetS_IDs.count() == 1);
+    enqueue(responseL2Network_out, ResponseMsg, to_l1_latency) {
+      assert(is_valid(cache_entry));
+      out_msg.addr := address;
+      out_msg.Type := CoherenceResponseType:DATA_EXCLUSIVE;
+      out_msg.Sender := machineID;
+      out_msg.Destination := tbe.L1_GetS_IDs;  // internal nodes
+      out_msg.DataBlk := cache_entry.DataBlk;
+      out_msg.MessageSize := MessageSizeType:Response_Data;
+    }
+  }
+
   action(ee_sendDataToGetXRequestor, "ee", desc="Send data from cache to GetX ID") {
     enqueue(responseL2Network_out, ResponseMsg, to_l1_latency) {
       assert(is_valid(tbe));
@@ -842,8 +861,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
    */
   action(rsc_receiveStreamConfig, "rsc", desc="Receive the StreamConfig") {
     peek(L1RequestL2Network_in, RequestMsg) {
-      DPRINTF(RubyStream, "Receive StreamConfig: %#x\n", in_msg.StreamPkt);
-      se.receiveStreamConfigure(in_msg.StreamPkt);
+      DPRINTF(RubyStream, "Receive StreamConfig: %#x\n", in_msg.pkt);
+      se.receiveStreamConfigure(in_msg.pkt);
     }
   }
 
@@ -866,7 +885,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     jj_popL1RequestQueue;
   }
 
-  transition({IM, IS, ISS, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, {L2_Replacement, L2_Replacement_clean}) {
+  transition({IM, IS, ISS, IVV, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, {L2_Replacement, L2_Replacement_clean}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
@@ -879,15 +898,25 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
 
-  transition({SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, {L1_GETS, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
+  transition({SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, {L1_GETS, L1_GETV, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
 
-  transition(NP, L1_GETS,  ISS) {
+  transition(NP, L1_GETS, ISS) {
     qq_allocateL2CacheBlock;
     ll_clearSharers;
     nn_addSharer;
+    i_allocateTBE;
+    ss_recordGetSL1ID;
+    a_issueFetchToMemory;
+    uu_profileMiss;
+    jj_popL1RequestQueue;
+  }
+
+  transition(NP, L1_GETV, IVV) {
+    qq_allocateL2CacheBlock;
+    ll_clearSharers;
     i_allocateTBE;
     ss_recordGetSL1ID;
     a_issueFetchToMemory;
@@ -923,6 +952,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   transition(ISS, Mem_Data, MT_MB) {
     m_writeDataToCache;
     ex_sendExclusiveDataToGetSRequestors;
+    s_deallocateTBE;
+    o_popIncomingResponseQueue;
+  }
+  
+  // The data is not cached by upper requestor.
+  transition(IVV, Mem_Data, M) {
+    m_writeDataToCache;
+    eu_sendDataToGetURequestors;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
   }
@@ -1013,6 +1050,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   transition(M, L1_GETS, MT_MB) {
+    dd_sendExclusiveDataToRequestor;
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
+
+  // The data is not cached above.
+  transition(M, L1_GETV, M) {
     dd_sendExclusiveDataToRequestor;
     set_setMRU;
     uu_profileHit;

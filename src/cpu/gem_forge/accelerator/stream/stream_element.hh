@@ -58,7 +58,7 @@ public:
                   Addr _cacheBlockVirtualAddr, int _additionalDelay = 0)
       : stream(_stream), element(_element),
         cacheBlockVirtualAddr(_cacheBlockVirtualAddr),
-        additionalDelay(_additionalDelay) {}
+        additionalDelay(_additionalDelay), cacheLevel(0) {}
   virtual ~StreamMemAccess() {}
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
   void handlePacketResponse(PacketPtr packet);
@@ -97,6 +97,12 @@ public:
    * Additional delay we want to add after we get the response.
    */
   int additionalDelay;
+  /**
+   * ! Sean: StreamAwareCache
+   * Which cache level should this access be cached. Default 0 (closest to
+   * core).
+   */
+  int cacheLevel;
 };
 
 struct StreamElement {

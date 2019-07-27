@@ -26,7 +26,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-machine(MachineType:L0Cache, "MESI Directory L0 Cache")
+machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStreamAwareController")
  : Sequencer * sequencer;
    CacheMemory * Icache;
    CacheMemory * Dcache;
@@ -72,6 +72,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
     // shared state so that the processor can read it.
     IS, AccessPermission:Busy;
 
+    // ! Sean: StreamAwareCache
+    // The cache controller has requested that this entry be fetched 
+    // but the fetched data will not be cached.
+    IU, AccessPermission:Busy;
+
     // The cache controller has requested that this entry be fetched in
     // modify state so that the processor can read/write it.
     IM, AccessPermission:Busy;
@@ -86,6 +91,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
   enumeration(Event, desc="Cache events") {
     // L0 events
     Load,            desc="Load request from the home processor";
+    LoadUncache,     desc="Load request that will not be cached";
     Ifetch,          desc="I-fetch request from the home processor";
     Store,           desc="Store request from the home processor";
 
@@ -138,6 +144,17 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
   }
 
   TBETable TBEs, template="<L0Cache_TBE>", constructor="m_number_of_TBEs";
+
+  /**
+   * ! Sean: StreamAwareCache
+   */
+  structure(L0StreamEngine, external="yes", desc="Stream Engine at L0") {
+    void receiveMiss(PacketPtr);
+    int getCacheLevel(PacketPtr);
+    void serveMiss(PacketPtr);
+  }
+
+  L0StreamEngine se, constructor="this";
 
   Tick clockEdge();
   Cycles ticksToCycles(Tick t);
@@ -360,9 +377,22 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
                       Icache_entry, TBEs[in_msg.LineAddress]);
             }
 
+            /**
+             * ! Sean: StreamAwareCache.
+             */
+            se.receiveMiss(in_msg.pkt);
+            int cacheLevel := se.getCacheLevel(in_msg.pkt);
+            if (cacheLevel > 0) {
+              // We are not going to cache this.
+              se.serveMiss(in_msg.pkt);
+              trigger(Event:LoadUncache, in_msg.LineAddress,
+                      Dcache_entry, TBEs[in_msg.LineAddress]);
+            }
+
             if (Dcache.cacheAvail(in_msg.LineAddress)) {
               // L1 does't have the line, but we have space for it
               // in the L0 let's see if the L1 has it
+              se.serveMiss(in_msg.pkt);
               trigger(mandatory_request_type_to_event(in_msg.Type), in_msg.LineAddress,
                       Dcache_entry, TBEs[in_msg.LineAddress]);
             } else {
@@ -389,6 +419,25 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        // ! Sean: StreamAwareCache.
+        out_msg.pkt := in_msg.pkt;
+      }
+    }
+  }
+
+  action(au_issueGETU, "au", desc="Issue GETU") {
+    peek(mandatoryQueue_in, RubyRequest) {
+      enqueue(requestNetwork_out, CoherenceMsg, request_latency) {
+        out_msg.addr := address;
+        out_msg.Class := CoherenceClass:GETU;
+        out_msg.Sender := machineID;
+        out_msg.Dest := createMachineID(MachineType:L1Cache, version);
+        DPRINTF(RubySlicc, "address: %#x, destination: %s\n",
+                address, out_msg.Dest);
+        out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.AccessMode := in_msg.AccessMode;
+        // ! Sean: StreamAwareCache.
+        out_msg.pkt := in_msg.pkt;
       }
     }
   }
@@ -406,6 +455,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.pkt := in_msg.pkt;
       }
     }
   }
@@ -422,6 +472,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.pkt := in_msg.pkt;
       }
     }
   }
@@ -498,6 +549,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
     sequencer.readCallback(address, cache_entry.DataBlk, true);
   }
 
+  action(hxu_load_hit, "hxu", desc="notify sequencer the load completed, but not cached.") {
+    assert(is_valid(tbe));
+    sequencer.readCallback(address, tbe.DataBlk, true);
+  }
+
   action(hx_ifetch_hit, "hxi", desc="notify sequencer the ifetch completed.") {
     assert(is_valid(cache_entry));
     DPRINTF(RubySlicc, "%s\n", cache_entry.DataBlk);
@@ -530,6 +586,13 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
     tbe.DataBlk := cache_entry.DataBlk;
   }
 
+  action(iu_allocateTBENoCacheBlock, "iu", desc="Allocate TBE (number of invalidates=0) without CacheBlock") {
+    check_allocate(TBEs);
+    TBEs.allocate(address);
+    set_tbe(TBEs[address]);
+    tbe.Dirty := false;
+  }
+
   action(k_popMandatoryQueue, "k", desc="Pop mandatory queue.") {
     mandatoryQueue_in.dequeue(clockEdge());
   }
@@ -555,6 +618,13 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
     peek(messgeBuffer_in, CoherenceMsg) {
       assert(is_valid(cache_entry));
       cache_entry.DataBlk := in_msg.DataBlk;
+    }
+  }
+
+  action(uuu_writeDataToTBE, "uuu", desc="Write data to TBE") {
+    peek(messgeBuffer_in, CoherenceMsg) {
+      assert(is_valid(tbe));
+      tbe.DataBlk := in_msg.DataBlk;
     }
   }
 
@@ -625,7 +695,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
                 out_msg.Dest, in_msg.pkt);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
-        out_msg.StreamPkt := in_msg.pkt;
+        out_msg.pkt := in_msg.pkt;
       }
     }
   }
@@ -644,6 +714,13 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
     oo_allocateDCacheBlock;
     i_allocateTBE;
     a_issueGETS;
+    uu_profileDataMiss;
+    k_popMandatoryQueue;
+  }
+
+  transition(I, LoadUncache, IU) {
+    iu_allocateTBENoCacheBlock;
+    au_issueGETU;
     uu_profileDataMiss;
     k_popMandatoryQueue;
   }
@@ -762,6 +839,15 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache")
   transition(IS, Data_Exclusive, E) {
     u_writeDataToCache;
     hx_load_hit;
+    s_deallocateTBE;
+    o_popIncomingResponseQueue;
+    kd_wakeUpDependents;
+  }
+
+  // Do not try to cache it.
+  transition(IU, Data_Exclusive, I) {
+    uuu_writeDataToTBE;
+    hxu_load_hit;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
     kd_wakeUpDependents;

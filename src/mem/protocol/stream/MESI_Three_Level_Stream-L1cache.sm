@@ -26,7 +26,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
+machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractStreamAwareController")
  : CacheMemory * cache;
    int l2_select_num_bits;
    Cycles l1_request_latency := 2;
@@ -60,15 +60,16 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
   state_declaration(State, desc="Cache states", default="L1Cache_State_I") {
     // Base states
     I, AccessPermission:Invalid, desc="a L1 cache entry Idle";
-    S, AccessPermission:Read_Only, desc="a L1 cache entry Shared";
-    SS, AccessPermission:Read_Only, desc="a L1 cache entry Shared";
-    E, AccessPermission:Read_Only, desc="a L1 cache entry Exclusive";
-    EE, AccessPermission:Read_Write, desc="a L1 cache entry Exclusive";
-    M, AccessPermission:Maybe_Stale, desc="a L1 cache entry Modified", format="!b";
-    MM, AccessPermission:Read_Write, desc="a L1 cache entry Modified", format="!b";
+    S, AccessPermission:Read_Only, desc="Shared, copy at L0";
+    SS, AccessPermission:Read_Only, desc="Shared, no copy at L0";
+    E, AccessPermission:Read_Only, desc="Exclusive, copy at L0";
+    EE, AccessPermission:Read_Write, desc="Exclusive, no copy at L0";
+    M, AccessPermission:Maybe_Stale, desc="Maybe modified (check Dirty bit), copy at L0", format="!b";
+    MM, AccessPermission:Read_Write, desc="Maybe modified (check Dirty bit), no copy at L0", format="!b";
 
     // Transient States
     IS, AccessPermission:Busy, desc="L1 idle, issued GETS, have not seen response yet";
+    IU, AccessPermission:Busy, desc="L1 idle, issued GETU, have not seen response yet";
     IM, AccessPermission:Busy, desc="L1 idle, issued GETX, have not seen response yet";
     SM, AccessPermission:Read_Only, desc="L1 idle, issued GETX, have not seen response yet";
     IS_I, AccessPermission:Busy, desc="L1 idle, issued GETS, saw Inv before data because directory doesn't block on GETS hit";
@@ -89,6 +90,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
   enumeration(Event, desc="Cache events") {
     // Requests from the L0 cache
     Load,            desc="Load request";
+    LoadV,           desc="Volatile load request, not cache at upper level";
+    LoadU,           desc="Uncached load request, not cache at this level";
     Store,           desc="Store request";
     WriteBack,       desc="Writeback request";
 
@@ -113,8 +116,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
 
     Data,       desc="Data for processor";
     Data_Exclusive,       desc="Data for processor";
-    DataS_fromL1,       desc="data for GETS request, need to unblock directory";
-    Data_all_Acks,       desc="Data for processor, all acks";
+    Data_ExclusiveV,      desc="Data for processor no cache";
+    DataS_fromL1,         desc="data for GETS request, need to unblock directory";
+    Data_all_Acks,        desc="Data for processor, all acks";
 
     L0_Ack,        desc="Ack for processor";
     Ack,        desc="Ack for processor";
@@ -137,11 +141,12 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
 
   // TBE fields
   structure(TBE, desc="...") {
-    Addr addr,              desc="Physical address for this TBE";
-    State TBEState,        desc="Transient state";
-    DataBlock DataBlk,                desc="Buffer for the data block";
-    bool Dirty, default="false",   desc="data is dirty";
-    int pendingAcks, default="0", desc="number of pending acks";
+    Addr addr,                          desc="Physical address for this TBE";
+    State TBEState,                     desc="Transient state";
+    DataBlock DataBlk,                  desc="Buffer for the data block";
+    bool Dirty, default="false",        desc="data is dirty";
+    int pendingAcks, default="0",       desc="number of pending acks";
+    bool cachedUpper, default="true",   desc="whether the upper level want to cache it";
   }
 
   structure(TBETable, external="yes") {
@@ -154,6 +159,17 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
   TBETable TBEs, template="<L1Cache_TBE>", constructor="m_number_of_TBEs";
 
   int l2_select_low_bit, default="RubySystem::getBlockSizeBits()";
+  
+  /**
+   * ! Sean: StreamAwareCache
+   */
+  structure(MLCStreamEngine, external="yes", desc="Stream Engine at L1") {
+    void receiveMiss(PacketPtr);
+    int getCacheLevel(PacketPtr);
+    void serveMiss(PacketPtr);
+  }
+
+  MLCStreamEngine se, constructor="this";
 
   Tick clockEdge();
   Cycles ticksToCycles(Tick t);
@@ -241,6 +257,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
   Event mandatory_request_type_to_event(CoherenceClass type) {
     if (type == CoherenceClass:GETS) {
       return Event:Load;
+    } else if (type == CoherenceClass:GETU) {
+      return Event:LoadV;
     } else if ((type == CoherenceClass:GETX) ||
                (type == CoherenceClass:UPGRADE)) {
       return Event:Store;
@@ -280,7 +298,13 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
         TBE tbe := TBEs[in_msg.addr];
 
         if(in_msg.Type == CoherenceResponseType:DATA_EXCLUSIVE) {
-          trigger(Event:Data_Exclusive, in_msg.addr, cache_entry, tbe);
+          if (tbe.cachedUpper) {
+            trigger(Event:Data_Exclusive, in_msg.addr, cache_entry, tbe);
+          } else {
+            // ! Sean: StreamAwareCache.
+            // This data will not be cached above.
+            trigger(Event:Data_ExclusiveV, in_msg.addr, cache_entry, tbe);
+          }
         } else if(in_msg.Type == CoherenceResponseType:DATA) {
           if ((getState(tbe, cache_entry, in_msg.addr) == State:IS ||
                getState(tbe, cache_entry, in_msg.addr) == State:IS_I) &&
@@ -357,35 +381,48 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
         // ! Sean: StreamAwareCache
         } else if (in_msg.Class == CoherenceClass:STREAM_CONFIG) {
           trigger(Event:L0_StreamConfig, in_msg.addr, cache_entry, tbe);
-        }  else if (in_msg.Class == CoherenceClass:INV_ACK) {
+        } else if (in_msg.Class == CoherenceClass:INV_ACK) {
             trigger(Event:L0_Ack, in_msg.addr, cache_entry, tbe);
-        }  else {
-            if (is_valid(cache_entry)) {
-                trigger(mandatory_request_type_to_event(in_msg.Class),
-                        in_msg.addr, cache_entry, tbe);
-            } else {
-                if (cache.cacheAvail(in_msg.addr)) {
-                    // L1 does't have the line, but we have space for it
-                    // in the L1 let's see if the L2 has it
-                    trigger(mandatory_request_type_to_event(in_msg.Class),
-                            in_msg.addr, cache_entry, tbe);
-                } else {
-                    // No room in the L1, so we need to make room in the L1
-                    Entry victim_entry :=
-                        getCacheEntry(cache.cacheProbe(in_msg.addr));
-                    TBE victim_tbe := TBEs[cache.cacheProbe(in_msg.addr)];
+        } else {
+          if (is_valid(cache_entry)) {
+            trigger(mandatory_request_type_to_event(in_msg.Class),
+                    in_msg.addr, cache_entry, tbe);
+          } else {
+            se.receiveMiss(in_msg.pkt);
 
-                    if (is_valid(victim_entry) && inL0Cache(victim_entry.CacheState)) {
-                        trigger(Event:L0_Invalidate_Own,
-                                cache.cacheProbe(in_msg.addr),
-                                victim_entry, victim_tbe);
-                    }  else {
-                        trigger(Event:L1_Replacement,
-                                cache.cacheProbe(in_msg.addr),
-                                victim_entry, victim_tbe);
-                    }
-                }
+            // Check for uncached load.
+            CoherenceClass type := in_msg.Class; 
+            if (type == CoherenceClass:GETU) {
+              if (se.getCacheLevel(in_msg.pkt) > 1) {
+                // This is an uncached load request.
+                se.serveMiss(in_msg.pkt);
+                trigger(Event:LoadU, in_msg.addr, cache_entry, tbe);
+              }
             }
+
+            if (cache.cacheAvail(in_msg.addr)) {
+              // L1 does't have the line, but we have space for it
+              // in the L1 let's see if the L2 has it
+              se.serveMiss(in_msg.pkt);
+              trigger(mandatory_request_type_to_event(in_msg.Class),
+                      in_msg.addr, cache_entry, tbe);
+            } else {
+              // No room in the L1, so we need to make room in the L1
+              Entry victim_entry :=
+                getCacheEntry(cache.cacheProbe(in_msg.addr));
+              TBE victim_tbe := TBEs[cache.cacheProbe(in_msg.addr)];
+
+              if (is_valid(victim_entry) && inL0Cache(victim_entry.CacheState)) {
+                trigger(Event:L0_Invalidate_Own,
+                        cache.cacheProbe(in_msg.addr),
+                        victim_entry, victim_tbe);
+              }  else {
+                trigger(Event:L1_Replacement,
+                        cache.cacheProbe(in_msg.addr),
+                        victim_entry, victim_tbe);
+              }
+            }
+          }
         }
       }
     }
@@ -397,6 +434,22 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
       enqueue(requestNetwork_out, RequestMsg, l1_request_latency) {
         out_msg.addr := address;
         out_msg.Type := CoherenceRequestType:GETS;
+        out_msg.Requestor := machineID;
+        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
+                          l2_select_low_bit, l2_select_num_bits, clusterID));
+        DPRINTF(RubySlicc, "address: %#x, destination: %s\n",
+                address, out_msg.Destination);
+        out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.AccessMode := in_msg.AccessMode;
+      }
+    }
+  }
+
+  action(au_issueGETU, "au", desc="Issue GETU") {
+    peek(messageBufferFromL0_in, CoherenceMsg) {
+      enqueue(requestNetwork_out, RequestMsg, l1_request_latency) {
+        out_msg.addr := address;
+        out_msg.Type := CoherenceRequestType:GETU;
         out_msg.Requestor := machineID;
         out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
                           l2_select_low_bit, l2_select_num_bits, clusterID));
@@ -619,34 +672,44 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
   }
 
   action(hh_xdata_to_l0, "\h", desc="If not prefetch, notify sequencer that store completed.") {
-      enqueue(bufferToL0_out, CoherenceMsg, l1_response_latency) {
-          assert(is_valid(cache_entry));
-
-          out_msg.addr := address;
-          out_msg.Class := CoherenceClass:DATA_EXCLUSIVE;
-          out_msg.Sender := machineID;
-          out_msg.Dest := createMachineID(MachineType:L0Cache, version);
-          out_msg.DataBlk := cache_entry.DataBlk;
-          out_msg.Dirty := cache_entry.Dirty;
-          out_msg.MessageSize := MessageSizeType:Response_Data;
-
-          //cache_entry.Dirty := true;
-      }
+    enqueue(bufferToL0_out, CoherenceMsg, l1_response_latency) {
+      assert(is_valid(cache_entry));
+      out_msg.addr := address;
+      out_msg.Class := CoherenceClass:DATA_EXCLUSIVE;
+      out_msg.Sender := machineID;
+      out_msg.Dest := createMachineID(MachineType:L0Cache, version);
+      out_msg.DataBlk := cache_entry.DataBlk;
+      out_msg.Dirty := cache_entry.Dirty;
+      out_msg.MessageSize := MessageSizeType:Response_Data;
+    }
   }
 
   action(h_stale_data_to_l0, "hs", desc="If not prefetch, send data to the L0 cache.") {
-      enqueue(bufferToL0_out, CoherenceMsg, l1_response_latency) {
-          assert(is_valid(cache_entry));
+    enqueue(bufferToL0_out, CoherenceMsg, l1_response_latency) {
+      assert(is_valid(cache_entry));
+      out_msg.addr := address;
+      out_msg.Class := CoherenceClass:STALE_DATA;
+      out_msg.Sender := machineID;
+      out_msg.Dest := createMachineID(MachineType:L0Cache, version);
+      out_msg.DataBlk := cache_entry.DataBlk;
+      out_msg.Dirty := cache_entry.Dirty;
+      out_msg.MessageSize := MessageSizeType:Response_Data;
+     }
+  }
 
-          out_msg.addr := address;
-          out_msg.Class := CoherenceClass:STALE_DATA;
-          out_msg.Sender := machineID;
-          out_msg.Dest := createMachineID(MachineType:L0Cache, version);
-          out_msg.DataBlk := cache_entry.DataBlk;
-          out_msg.Dirty := cache_entry.Dirty;
-          out_msg.MessageSize := MessageSizeType:Response_Data;
-       }
-   }
+  action(hu_xdata_to_l0, "hu", desc="Uncached exclusive data for L0") {
+    enqueue(bufferToL0_out, CoherenceMsg, l1_response_latency) {
+      assert(is_valid(tbe));
+      out_msg.addr := address;
+      out_msg.Class := CoherenceClass:DATA_EXCLUSIVE;
+      out_msg.Sender := machineID;
+      out_msg.Dest := createMachineID(MachineType:L0Cache, version);
+      out_msg.DataBlk := tbe.DataBlk;
+      out_msg.Dirty := tbe.Dirty;
+      out_msg.MessageSize := MessageSizeType:Response_Data;
+    }
+  }
+
 
   action(i_allocateTBE, "i", desc="Allocate TBE (number of invalidates=0)") {
     check_allocate(TBEs);
@@ -655,6 +718,21 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
     set_tbe(TBEs[address]);
     tbe.Dirty := cache_entry.Dirty;
     tbe.DataBlk := cache_entry.DataBlk;
+  }
+
+  action(iu_allocateTBEUncache, "iu", desc="Allocate TBE for GETU") {
+    check_allocate(TBEs);
+    TBEs.allocate(address);
+    set_tbe(TBEs[address]);
+    tbe.Dirty := false;
+  }
+
+  action(tu_setTBEForGetU, "tu", desc="Set TBE entry for GetU request") {
+    peek(messageBufferFromL0_in, CoherenceMsg) {
+      assert(is_valid(tbe));
+      assert(in_msg.Class == CoherenceClass:GETU);
+      tbe.cachedUpper := false;
+    }
   }
 
   action(k_popL0RequestQueue, "k", desc="Pop mandatory queue.") {
@@ -692,6 +770,13 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
     peek(responseNetwork_in, ResponseMsg) {
       assert(is_valid(cache_entry));
       cache_entry.DataBlk := in_msg.DataBlk;
+    }
+  }
+
+  action(u_writeDataFromL2ResponseToTBE, "uresl2tbe", desc="Write data to tbe") {
+    peek(responseNetwork_in, ResponseMsg) {
+      assert(is_valid(tbe));
+      tbe.DataBlk := in_msg.DataBlk;
     }
   }
 
@@ -761,10 +846,10 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
         out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
                           l2_select_low_bit, l2_select_num_bits, clusterID));
         DPRINTF(RubyStream, "Forward StreamConfig: address: %#x, destination: %s, StreamPkt %#x\n",
-                address, out_msg.Destination, in_msg.StreamPkt);
+                address, out_msg.Destination, in_msg.pkt);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
-        out_msg.StreamPkt := in_msg.StreamPkt;
+        out_msg.pkt := in_msg.pkt;
       }
     }
   }
@@ -775,8 +860,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
   //*****************************************************
 
   // Transitions for Load/Store/Replacement/WriteBack from transient states
-  transition({IS, IM, IS_I, M_I, SM, SINK_WB_ACK, S_IL0, M_IL0, E_IL0, MM_IL0},
-             {Load, Store, L1_Replacement}) {
+  transition({IS, IU, IM, IS_I, M_I, SM, SINK_WB_ACK, S_IL0, M_IL0, E_IL0, MM_IL0},
+             {Load, LoadV, LoadU, Store, L1_Replacement}) {
     z0_stallAndWaitL0Queue;
   }
 
@@ -784,6 +869,23 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
     oo_allocateCacheBlock;
     i_allocateTBE;
     a_issueGETS;
+    uu_profileMiss;
+    k_popL0RequestQueue;
+  }
+
+  transition(I, LoadV, IS) {
+    oo_allocateCacheBlock;
+    i_allocateTBE;
+    tu_setTBEForGetU;
+    a_issueGETS;
+    uu_profileMiss;
+    k_popL0RequestQueue;
+  }
+
+  transition(I, LoadU, IU) {
+    iu_allocateTBEUncache;
+    tu_setTBEForGetU;
+    au_issueGETU;
     uu_profileMiss;
     k_popL0RequestQueue;
   }
@@ -809,6 +911,12 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
   }
 
   transition(EE, Load, E) {
+    hh_xdata_to_l0;
+    uu_profileHit;
+    k_popL0RequestQueue;
+  }
+
+  transition(EE, LoadV, EE) {
     hh_xdata_to_l0;
     uu_profileHit;
     k_popL0RequestQueue;
@@ -988,6 +1096,25 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
     kd_wakeUpDependents;
   }
 
+  // The data will not be cached at upper level.
+  transition({IS, IS_I}, Data_ExclusiveV, EE) {
+    u_writeDataFromL2Response;
+    hh_xdata_to_l0;
+    jj_sendExclusiveUnblock;
+    s_deallocateTBE;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
+
+  // Lower level is not expecting an ExclusiveUnblock.
+  transition(IU, Data_ExclusiveV, I) {
+    u_writeDataFromL2ResponseToTBE;
+    hu_xdata_to_l0;
+    s_deallocateTBE;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
+
   // Transitions from IM
   transition({IM,SM}, Inv, IM) {
     fi_sendInvAck;
@@ -1082,7 +1209,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
     z2_stallAndWaitL2Queue;
   }
 
-  transition({I, S, SS, E, EE, M, MM, IS, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamConfig) {
+  transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamConfig) {
     fsc_forwardStreamConfig;
     k_popL0RequestQueue;
   }

@@ -56,6 +56,10 @@ Stream::Stream(const StreamArguments &args)
   this->numFetched = 0;
   this->numStepped = 0;
   this->numUsed = 0;
+  this->numIssuedRequest = 0;
+  this->numMissL0 = 0;
+  this->numMissL1 = 0;
+  this->numMissL2 = 0;
 }
 
 Stream::~Stream() {}
@@ -69,6 +73,10 @@ void Stream::dumpStreamStats(std::ostream &os) const {
   dumpScalar(numFetched);
   dumpScalar(numStepped);
   dumpScalar(numUsed);
+  dumpScalar(numIssuedRequest);
+  dumpScalar(numMissL0);
+  dumpScalar(numMissL1);
+  dumpScalar(numMissL2);
 
 #undef dumpScalar
 }

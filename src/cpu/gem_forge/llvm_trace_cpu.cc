@@ -126,7 +126,7 @@ void LLVMTraceCPU::tick() {
 
   // Remember to initialize the memory.
   if (!this->initializeMemorySnapshotDone) {
-    this->initializeMemorySnapshot();
+    // this->initializeMemorySnapshot();
     this->initializeMemorySnapshotDone = true;
   }
 

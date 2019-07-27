@@ -1502,9 +1502,23 @@ void StreamEngine::issueElement(StreamElement *element) {
         cacheBlockInfo.pendingAccesses.push_back(memAccess);
         continue;
       }
+
+      if (this->enableStreamPlacement) {
+        // This means we have the placement manager.
+        if (this->streamPlacementManager->access(cacheBlockBreakdown,
+                                                 element)) {
+          // Stream placement manager handles this packet.
+          // But we need to mark the cache block to be FETCHING.
+          cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
+          // The request is issued by the placement manager.
+          S->numIssuedRequest++;
+          continue;
+        }
+      }
     }
 
-    // Normal case: really fetching this from the cache.
+    // Normal case: really fetching this from the cache,
+    // i.e. not merged & not handled by placement manager.
     auto vaddr = cacheBlockBreakdown.virtualAddr;
     auto packetSize = cacheBlockBreakdown.size;
     Addr paddr;
@@ -1514,23 +1528,11 @@ void StreamEngine::issueElement(StreamElement *element) {
       panic("Stream so far can only work in standalone mode.");
     }
 
-    if (this->enableMerge) {
-      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
-      if (this->enableStreamPlacement) {
-        // This means we have the placement manager.
-        if (this->streamPlacementManager->access(cacheBlockBreakdown,
-                                                 element)) {
-          // Stream placement manager handles this packet.
-          // But we need to mark the cache block to be FETCHING.
-          cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
-          continue;
-        }
-      }
-    }
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     auto pkt = TDGPacketHandler::createTDGPacket(
         paddr, packetSize, memAccess, nullptr, cpu->getDataMasterID(), 0, 0);
+    S->numIssuedRequest++;
     cpu->sendRequest(pkt);
 
     // Change to FETCHING status.

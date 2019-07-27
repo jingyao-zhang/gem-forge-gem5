@@ -85,6 +85,14 @@ public:
   size_t numFetched;
   size_t numStepped;
   size_t numUsed;
+  size_t numIssuedRequest;
+  /**
+   * ! Sean: StreamAwareCache
+   * Statistics from StreamAwareCache.
+   */
+  size_t numMissL0;
+  size_t numMissL1;
+  size_t numMissL2;
 
   void dumpStreamStats(std::ostream &os) const;
 

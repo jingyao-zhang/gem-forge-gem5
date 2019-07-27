@@ -32,6 +32,7 @@ enumeration(CoherenceClass, desc="...") {
   GETX,      desc="Get eXclusive";
   UPGRADE,   desc="UPGRADE to exclusive";
   GETS,      desc="Get Shared";
+  GETU,      desc="Get Uncached";
   GET_INSTR, desc="Get Instruction";
   INV,       desc="INValidate";
   PUTX,      desc="Replacement message";
@@ -72,20 +73,20 @@ structure(CoherenceMsg, desc="...", interface="Message") {
    * ! Sean: StreamAwareCache.
    * ! Hack here to pass around a pointer.
    */
-  PacketPtr StreamPkt, default=0, desc="Hack for storing stream packet";
+  PacketPtr pkt, default=0,     desc="Hack for storing packet";
 
-  bool functionalRead(Packet *pkt) {
+  bool functionalRead(Packet *packet) {
     // Only PUTX messages contains the data block
     if (Class == CoherenceClass:PUTX) {
-        return testAndRead(addr, DataBlk, pkt);
+        return testAndRead(addr, DataBlk, packet);
     }
 
     return false;
   }
 
-  bool functionalWrite(Packet *pkt) {
+  bool functionalWrite(Packet *packet) {
     // No check on message type required since the protocol should
     // read data from those messages that contain the block
-    return testAndWrite(addr, DataBlk, pkt);
+    return testAndWrite(addr, DataBlk, packet);
   }
 }

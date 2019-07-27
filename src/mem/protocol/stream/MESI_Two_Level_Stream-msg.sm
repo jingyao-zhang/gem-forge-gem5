@@ -33,6 +33,7 @@ enumeration(CoherenceRequestType, desc="...") {
   GETX,      desc="Get eXclusive";
   UPGRADE,   desc="UPGRADE to exclusive";
   GETS,      desc="Get Shared";
+  GETU,      desc="Get Uncached";
   GET_INSTR, desc="Get Instruction";
   INV,       desc="INValidate";
   PUTX,      desc="Replacement message";
@@ -70,21 +71,21 @@ structure(RequestMsg, desc="...", interface="Message") {
   bool Dirty, default="false",  desc="Dirty bit";
   PrefetchBit Prefetch,         desc="Is this a prefetch request";
   // ! Sean: StreamAwareCache
-  PacketPtr StreamPkt,          desc="Hack to forward stream packet";
+  PacketPtr pkt,                desc="Hack to store packet";
 
-  bool functionalRead(Packet *pkt) {
+  bool functionalRead(Packet *packet) {
     // Only PUTX messages contains the data block
     if (Type == CoherenceRequestType:PUTX) {
-        return testAndRead(addr, DataBlk, pkt);
+        return testAndRead(addr, DataBlk, packet);
     }
 
     return false;
   }
 
-  bool functionalWrite(Packet *pkt) {
+  bool functionalWrite(Packet *packet) {
     // No check on message type required since the protocol should
     // read data from those messages that contain the block
-    return testAndWrite(addr, DataBlk, pkt);
+    return testAndWrite(addr, DataBlk, packet);
   }
 }
 
