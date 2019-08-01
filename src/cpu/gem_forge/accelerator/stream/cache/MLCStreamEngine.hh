@@ -8,26 +8,48 @@
  * This is where it receives the offloaded streams' data.
  */
 
+#include "MLCDynamicStream.hh"
+
 #include "mem/packet.hh"
 
-class AbstractStreamAwareController;
-class StreamMemAccess;
+#include <list>
 
+class StreamMemAccess;
+class MessageBuffer;
+
+/************************************************************************
+ * How a stream-aware MLC processes an incoming request from upper level.
+ *
+ * isStreamRequest? ------> N, handled as normal request.
+ * hitInCache?      ------> Y, response & notify stream engine.
+ * isOffloaded?     ------> N, isCached? ------> Y, handled as normal request.
+ *                                       ------> N, handled as uncached request.
+ * isDataReady?     ------> Y, send response.
+ */
 class MLCStreamEngine {
 public:
-  MLCStreamEngine(AbstractStreamAwareController *_controller);
+  MLCStreamEngine(AbstractStreamAwareController *_controller,
+                  MessageBuffer *_responseToUpperMsgBuffer);
   ~MLCStreamEngine();
+
+  void receiveStreamConfigure(PacketPtr pkt);
+  void receiveStreamData(const ResponseMsg &msg);
 
   void receiveMiss(PacketPtr pkt);
   int getCacheLevel(PacketPtr pkt);
   void serveMiss(PacketPtr pkt);
 
+  bool isStreamRequest(PacketPtr pkt);
+  bool isStreamOffloaded(PacketPtr pkt);
+  bool isStreamCached(PacketPtr pkt);
+  bool receiveOffloadStreamRequest(PacketPtr pkt);
+  void receiveOffloadStreamRequestHit(PacketPtr pkt);
+
 private:
   AbstractStreamAwareController *controller;
+  MessageBuffer *responseToUpperMsgBuffer;
+  std::list<MLCDynamicStream *> streams;
 
-  bool isStreamPacket(PacketPtr pkt) const {
-    return this->getStreamMemAccessFromPacket(pkt) != nullptr;
-  }
   StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;
 };
 

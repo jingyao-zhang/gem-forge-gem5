@@ -145,15 +145,16 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   // TBE fields
   structure(TBE, desc="...") {
-    Addr addr,            desc="Physical address for this TBE";
-    State TBEState,             desc="Transient state";
-    DataBlock DataBlk,          desc="Buffer for the data block";
-    bool Dirty, default="false", desc="Data is Dirty";
+    Addr addr,                        desc="Physical address for this TBE";
+    State TBEState,                   desc="Transient state";
+    DataBlock DataBlk,                desc="Buffer for the data block";
+    bool Dirty, default="false",      desc="Data is Dirty";
     bool cachedUpper, default="true", desc="Whether this block is cache by upper level";
 
-    NetDest L1_GetS_IDs,            desc="Set of the internal processors that want the block in shared state";
-    MachineID L1_GetX_ID,          desc="ID of the L1 cache to forward the block to once we get a response";
+    NetDest L1_GetS_IDs,        desc="Set of the internal processors that want the block in shared state";
+    MachineID L1_GetX_ID,       desc="ID of the L1 cache to forward the block to once we get a response";
     int pendingAcks,            desc="number of pending acks for invalidates during writeback";
+    StreamMeta streamMeta,      desc="Stream meta-data";
   }
 
   structure(TBETable, external="yes") {
@@ -173,7 +174,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamMigrate(LLCDynamicStreamPtr);
   }
 
-  LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr";
+  LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr, m_L1RequestToL2Cache_ptr";
 
   Tick clockEdge();
   Tick cyclesToTicks(Cycles c);
@@ -548,6 +549,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         if (cache_entry.Sharers.isElement(in_msg.Requestor)) {
           out_msg.AckCount := out_msg.AckCount + 1;
         }
+        // Don't forget to copy the stream meta-data.
+        out_msg.streamMeta := in_msg.streamMeta;
       }
     }
   }
@@ -606,6 +609,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       out_msg.Destination := tbe.L1_GetS_IDs;  // internal nodes
       out_msg.DataBlk := cache_entry.DataBlk;
       out_msg.MessageSize := MessageSizeType:Response_Data;
+      // Copy the stream meta-data.
+      out_msg.streamMeta := tbe.streamMeta;
     }
   }
 
@@ -673,6 +678,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     tbe.DataBlk := cache_entry.DataBlk;
     tbe.Dirty := cache_entry.Dirty;
     tbe.pendingAcks := cache_entry.Sharers.count();
+  }
+
+  action(csm_copyStreamMetaData, "csm", desc="Copy stream meta-data to TBE") {
+    assert(is_valid(tbe));
+    peek(L1RequestL2Network_in, RequestMsg) { 
+      tbe.streamMeta := in_msg.streamMeta;
+    }
   }
 
   action(s_deallocateTBE, "s", desc="Deallocate external TBE") {
@@ -918,6 +930,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     qq_allocateL2CacheBlock;
     ll_clearSharers;
     i_allocateTBE;
+    csm_copyStreamMetaData;
     ss_recordGetSL1ID;
     a_issueFetchToMemory;
     uu_profileMiss;
@@ -990,6 +1003,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     zz_stallAndWaitL1RequestQueue;
   }
 
+  transition(IVV, L1_GETV) {
+    zz_stallAndWaitL1RequestQueue;
+  }
+
   transition(IM, {L1_GETX, L1_GETS, L1_GET_INSTR}) {
     zz_stallAndWaitL1RequestQueue;
   }
@@ -1058,6 +1075,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   // The data is not cached above.
   transition(M, L1_GETV, M) {
+    dd_sendExclusiveDataToRequestor;
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
+
+  // ! May not be correct way to do this. 
+  transition(MT, L1_GETV, MT) {
     dd_sendExclusiveDataToRequestor;
     set_setMRU;
     uu_profileHit;

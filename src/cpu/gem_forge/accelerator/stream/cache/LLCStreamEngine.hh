@@ -18,7 +18,8 @@ class MessageBuffer;
 class LLCStreamEngine : public Consumer {
 public:
   LLCStreamEngine(AbstractStreamAwareController *_controller,
-                  MessageBuffer *_streamMigrateMsgBuffer);
+                  MessageBuffer *_streamMigrateMsgBuffer,
+                  MessageBuffer *_streamIssueMsgBuffer);
   ~LLCStreamEngine();
 
   void receiveStreamConfigure(PacketPtr pkt);
@@ -30,6 +31,7 @@ private:
   AbstractStreamAwareController *controller;
   // Out going stream migrate buffer.
   MessageBuffer *streamMigrateMsgBuffer;
+  MessageBuffer *streamIssueMsgBuffer;
   const int issueWidth;
   const int migrateWidth;
 

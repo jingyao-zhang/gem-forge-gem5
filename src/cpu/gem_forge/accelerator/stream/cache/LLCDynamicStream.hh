@@ -21,10 +21,10 @@ public:
     return this->idx + 1 < this->allocated;
   }
 
-  void consumeNextElement() {
+  uint64_t consumeNextElement() {
     assert(this->isNextElementAllcoated() &&
            "Next element is not allocated yet.");
-    this->idx++;
+    return this->idx++;
   }
 
   const CacheStreamConfigureData configData;

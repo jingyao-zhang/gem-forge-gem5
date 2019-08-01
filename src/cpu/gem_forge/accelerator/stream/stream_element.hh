@@ -32,6 +32,11 @@ struct FIFOEntryIdx {
   bool operator!=(const FIFOEntryIdx &other) const {
     return !(this->operator==(other));
   }
+  bool operator>(const FIFOEntryIdx &other) const {
+    return this->streamInstance > other.streamInstance ||
+           (this->streamInstance == other.streamInstance &&
+            this->entryIdx > other.entryIdx);
+  }
 };
 
 /**

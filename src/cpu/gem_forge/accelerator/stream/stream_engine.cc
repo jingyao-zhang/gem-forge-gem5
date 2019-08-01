@@ -1167,9 +1167,13 @@ void StreamEngine::allocateElement(Stream *S) {
     this->numStoreElementsAllocated++;
   }
 
-  S->FIFOIdx.next();
   newElement->stream = S;
+  /**
+   * next() is called after assign to make sure 
+   * entryIdx starts from 0.
+   */
   newElement->FIFOIdx = S->FIFOIdx;
+  S->FIFOIdx.next();
 
   // Find the base element.
   for (auto baseS : S->baseStreams) {
@@ -1424,15 +1428,28 @@ void StreamEngine::issueElements() {
     }
   }
 
+  /**
+   * Sort the ready elements by create cycle and relative order within 
+   * the single stream.
+   */
   // Sort the ready elements, by their create cycle.
   std::sort(readyElements.begin(), readyElements.end(),
             [](const StreamElement *A, const StreamElement *B) -> bool {
-              return B->allocateCycle > A->allocateCycle;
+              if (B->allocateCycle > A->allocateCycle) {
+                return true;
+              } else if (B->stream == A->stream) {
+                const auto &AIdx = A->FIFOIdx;
+                const auto &BIdx = B->FIFOIdx;
+                return BIdx > AIdx;
+              } else {
+                return false;
+              }
             });
   for (auto &element : readyElements) {
     element->isAddrReady = true;
     if (element->stream->isMemStream()) {
       this->issueElement(element);
+      hack("Issue element %lu.\n", element->FIFOIdx.entryIdx);
     } else {
       // This is an IV stream with back dependence.
       element->markValueReady();

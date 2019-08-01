@@ -58,6 +58,13 @@ enumeration(CoherenceResponseType, desc="...") {
   INV, desc="Invalidate from directory";
 }
 
+structure(StreamMeta, desc="Meta-data for stream data") {
+  bool valid,  default="false",     desc="whether this meta data is valid";
+  uint64_t stream,                  desc="A pointer to the stream";
+  uint64_t startIdx,                desc="Start index";
+  int numElements,                  desc="Number of elements";
+}
+
 // RequestMsg
 structure(RequestMsg, desc="...", interface="Message") {
   Addr addr,              desc="Physical address for this request";
@@ -72,6 +79,7 @@ structure(RequestMsg, desc="...", interface="Message") {
   PrefetchBit Prefetch,         desc="Is this a prefetch request";
   // ! Sean: StreamAwareCache
   PacketPtr pkt,                desc="Hack to store packet";
+  StreamMeta streamMeta,        desc="Stream meta-data";
 
   bool functionalRead(Packet *packet) {
     // Only PUTX messages contains the data block
@@ -91,14 +99,15 @@ structure(RequestMsg, desc="...", interface="Message") {
 
 // ResponseMsg
 structure(ResponseMsg, desc="...", interface="Message") {
-  Addr addr,              desc="Physical address for this request";
+  Addr addr,                    desc="Physical address for this request";
   CoherenceResponseType Type,   desc="Type of response (Ack, Data, etc)";
   MachineID Sender,             desc="What component sent the data";
   NetDest Destination,          desc="Node to whom the data is sent";
   DataBlock DataBlk,            desc="Data for the cache line";
   bool Dirty, default="false",  desc="Dirty bit";
-  int AckCount, default="0",  desc="number of acks in this message";
+  int AckCount, default="0",    desc="number of acks in this message";
   MessageSizeType MessageSize,  desc="size category of the message";
+  StreamMeta streamMeta,        desc="Stream meta-data";
 
   bool functionalRead(Packet *pkt) {
     // Valid data block is only present in message with following types
