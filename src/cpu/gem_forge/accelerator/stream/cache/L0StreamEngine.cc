@@ -28,6 +28,10 @@ int L0StreamEngine::getCacheLevel(PacketPtr pkt) {
   if (streamMemAccess == nullptr) {
     return 0;
   }
+  // If stream float is disabled, then not bypass.
+  if (!this->controller->isStreamFloatEnabled()) {
+    return 0;
+  }
   return streamMemAccess->cacheLevel;
 }
 

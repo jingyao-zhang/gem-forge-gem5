@@ -12,13 +12,17 @@
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
 
+#define LLCSE_DPRINTF(format, args...)                                         \
+  DPRINTF(RubyStream, "[LLC_SE%d]: " format,                                   \
+          this->controller->getMachineID().num, ##args)
+
 LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_streamMigrateMsgBuffer,
                                  MessageBuffer *_streamIssueMsgBuffer)
     : Consumer(_controller), controller(_controller),
       streamMigrateMsgBuffer(_streamMigrateMsgBuffer),
-      streamIssueMsgBuffer(_streamIssueMsgBuffer), issueWidth(4),
-      migrateWidth(2) {}
+      streamIssueMsgBuffer(_streamIssueMsgBuffer), issueWidth(1),
+      migrateWidth(1) {}
 
 LLCStreamEngine::~LLCStreamEngine() {
   for (auto &s : this->streams) {
@@ -30,12 +34,11 @@ LLCStreamEngine::~LLCStreamEngine() {
 
 void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
-  DPRINTF(RubyStream,
-          "LLCStreamEngine: Received Pkt %#x, StreamConfigure %#x, initVAddr "
-          "%#x, "
-          "initPAddr %#x.\n",
-          pkt, streamConfigureData, streamConfigureData->initVAddr,
-          streamConfigureData->initPAddr);
+  LLCSE_DPRINTF("Received Pkt %#x, StreamConfigure %#x, initVAddr "
+                "%#x, "
+                "initPAddr %#x.\n",
+                pkt, streamConfigureData, streamConfigureData->initVAddr,
+                streamConfigureData->initPAddr);
   // Create the stream.
   this->streams.emplace_back(new LLCDynamicStream(streamConfigureData));
   // Release memory.
@@ -53,23 +56,64 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
   Addr paddrLine = makeLineAddress(paddr);
   assert(this->isPAddrHandledByMe(paddrLine) &&
          "Stream migrated to wrong LLC bank.\n");
-  DPRINTF(RubyStream, "LLCStreamEngine: Received stream migrate.\n");
+  LLCSE_DPRINTF("Received stream migrate.\n");
 
   this->streams.push_back(stream);
   this->scheduleEvent(Cycles(1));
 }
 
+void LLCStreamEngine::receiveStreamFlow(StreamMeta streamMeta) {
+  // Simply append it to the list.
+  LLCSE_DPRINTF("Received stream flow [%lu, %lu).\n", streamMeta.m_startIdx,
+                streamMeta.m_startIdx + streamMeta.m_numElements);
+  this->pendingStreamFlowControlMsgs.push_back(streamMeta);
+  this->scheduleEvent(Cycles(1));
+}
+
 void LLCStreamEngine::wakeup() {
-  DPRINTF(RubyStream, "LLCStreamEngine wake up.\n");
+  this->processStreamFlowControlMsg();
   this->issueStreams();
   this->migrateStreams();
-  if (!this->streams.empty() && !this->migratingStreams.empty()) {
+  if (!this->streams.empty() || !this->migratingStreams.empty()) {
     this->scheduleEvent(Cycles(1));
   }
 }
 
+void LLCStreamEngine::processStreamFlowControlMsg() {
+  auto iter = this->pendingStreamFlowControlMsgs.begin();
+  auto end = this->pendingStreamFlowControlMsgs.end();
+  while (iter != end) {
+    const auto &msg = *iter;
+    auto staticStream = reinterpret_cast<Stream *>(msg.m_stream);
+    // So far we just use the static stream id (pointer),
+    // TODO: We may need a dynamic id to distinguish different dynamic
+    // TODO: instances.
+    bool processed = false;
+    for (auto stream : this->streams) {
+      if (stream->getStaticStream() == staticStream) {
+        // We found it.
+        // Update the idx.
+        assert(stream->allocatedIdx == msg.m_startIdx &&
+               "Mismatched index in the stream flow message.");
+        LLCSE_DPRINTF("Stream add credit %lu -> %lu.\n", msg.m_startIdx,
+                      msg.m_startIdx + msg.m_numElements);
+        stream->allocatedIdx += msg.m_numElements;
+        processed = true;
+        break;
+      }
+    }
+    if (processed) {
+      iter = this->pendingStreamFlowControlMsgs.erase(iter);
+    } else {
+      LLCSE_DPRINTF("Failed to process streawm credit %#x [%lu, %lu).\n",
+                    msg.m_stream, msg.m_startIdx,
+                    msg.m_startIdx + msg.m_numElements);
+      ++iter;
+    }
+  }
+}
+
 void LLCStreamEngine::issueStreams() {
-  DPRINTF(RubyStream, "LLCStreamEngine issueStreams.\n");
   auto streamIter = this->streams.begin();
   auto streamEnd = this->streams.end();
   StreamList issuedStreams;
@@ -134,8 +178,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
   }
 
-  DPRINTF(RubyStream, "LLCStreamEngine issue stream %s, numElement %d.\n",
-          stream->getStaticStream()->getStreamName().c_str(), numElements);
+  LLCSE_DPRINTF("LLCStreamEngine issue stream %#x, [%lu, %lu).\n",
+                stream->getStaticStream(), startIdx, startIdx + numElements);
 
   auto selfMachineId = this->controller->getMachineID();
   auto streamCPUId = stream->getStaticStream()->getCPU()->cpuId();
@@ -160,7 +204,6 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 }
 
 void LLCStreamEngine::migrateStreams() {
-  DPRINTF(RubyStream, "LLCStreamEngine migrateStreams.\n");
   auto streamIter = this->migratingStreams.begin();
   auto streamEnd = this->migratingStreams.end();
   int migrated = 0;
@@ -182,9 +225,8 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   auto addrMachineId =
       this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
 
-  DPRINTF(RubyStream, "Migrate stream from %s to %s.\n",
-          MachineIDToString(selfMachineId).c_str(),
-          MachineIDToString(addrMachineId).c_str());
+  LLCSE_DPRINTF("Migrate stream %#x to %s.\n", stream->getStaticStream(),
+                MachineIDToString(addrMachineId).c_str());
 
   auto msg =
       std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());

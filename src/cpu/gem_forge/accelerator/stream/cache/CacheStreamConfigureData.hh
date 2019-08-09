@@ -19,6 +19,8 @@ public:
   HistoryPtr history;
   Addr initVAddr;
   Addr initPAddr;
+  // Set by the MLC stream, for flow control.
+  int initAllocatedIdx;
 };
 
 #endif

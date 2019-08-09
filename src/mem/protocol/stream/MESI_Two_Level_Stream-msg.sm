@@ -43,6 +43,7 @@ enumeration(CoherenceRequestType, desc="...") {
   DMA_READ, desc="DMA Read";
   DMA_WRITE, desc="DMA Write";
   STREAM_CONFIG, desc="StreamConfig from L1";
+  STREAM_FLOW,   desc="Stream flow control message from L1";
 }
 
 // CoherenceResponseType
@@ -62,7 +63,7 @@ structure(StreamMeta, desc="Meta-data for stream data") {
   bool valid,  default="false",     desc="whether this meta data is valid";
   uint64_t stream,                  desc="A pointer to the stream";
   uint64_t startIdx,                desc="Start index";
-  int numElements,                  desc="Number of elements";
+  uint64_t numElements,                  desc="Number of elements";
 }
 
 // RequestMsg

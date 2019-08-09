@@ -180,6 +180,7 @@ private:
   bool enablePlacementPeriodReset;
   bool noBypassingStore;
   bool continuousStore;
+  bool enableStreamFloat;
   std::string placementLat;
   std::string placement;
   /**

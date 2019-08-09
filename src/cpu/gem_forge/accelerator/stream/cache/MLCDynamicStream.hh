@@ -17,7 +17,8 @@ class MLCDynamicStream {
 public:
   MLCDynamicStream(CacheStreamConfigureData *_configData,
                    AbstractStreamAwareController *_controller,
-                   MessageBuffer *_responseMsgBuffer);
+                   MessageBuffer *_responseMsgBuffer,
+                   MessageBuffer *_requestToLLCMsgBuffer);
 
   Stream *getStaticStream() { return this->stream; }
 
@@ -31,7 +32,13 @@ private:
   std::shared_ptr<::LLVM::TDG::StreamHistory> history;
   AbstractStreamAwareController *controller;
   MessageBuffer *responseMsgBuffer;
-  uint64_t allocateIdx;
+  MessageBuffer *requestToLLCMsgBuffer;
+  const uint64_t maxNumElements;
+  // Element index of allocated [head, tail).
+  uint64_t headIdx;
+  uint64_t tailIdx;
+  // Where the LLC stream's tail index is.
+  uint64_t llcTailIdx;
 
   /**
    * Represent an allocated stream element at MLC.
@@ -63,6 +70,7 @@ private:
   void advanceStream();
   void allocateElement();
   void makeResponse();
+  void sendCreditToLLC();
 };
 
 #endif

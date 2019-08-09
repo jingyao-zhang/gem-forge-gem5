@@ -77,3 +77,4 @@ class RubyStreamAwareController(RubyController):
     # ! This only works for a S-NUCA.
     llc_select_low_bit = Param.UInt32(0, "Low bit used to select LLC bank")
     llc_select_num_bits = Param.UInt32(0, "Num of bits used to select LLC bank")
+    enable_stream_float = Param.Bool(False, "Whether to enable stream float")

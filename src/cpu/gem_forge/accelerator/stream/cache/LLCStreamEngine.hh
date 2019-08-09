@@ -3,12 +3,14 @@
 
 #include "LLCDynamicStream.hh"
 
+// Generate by slicc.
+#include "mem/protocol/StreamMeta.hh"
+
 #include "mem/ruby/common/Consumer.hh"
 
 /**
  * Derive from Consumer to schedule wakeup event.
  */
-
 #include <list>
 #include <memory>
 
@@ -24,6 +26,7 @@ public:
 
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamMigrate(LLCDynamicStreamPtr stream);
+  void receiveStreamFlow(StreamMeta streamMeta);
   void wakeup() override;
   void print(std::ostream &out) const override;
 
@@ -42,6 +45,18 @@ private:
    * Streams waiting to be migrated to other LLC bank.
    */
   StreamList migratingStreams;
+
+  /**
+   * Buffered stream flow message waiting for the stream
+   * to migrate here.
+   */
+  std::list<StreamMeta> pendingStreamFlowControlMsgs;
+
+  /**
+   * Process stream flow control messages and distribute
+   * them to the coresponding stream.
+   */
+  void processStreamFlowControlMsg();
 
   /**
    * Issue streams in a round-robin way.

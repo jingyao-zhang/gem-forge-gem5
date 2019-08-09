@@ -18,12 +18,15 @@ public:
    */
   MachineID mapAddressToLLC(Addr addr, MachineType mtype) const;
 
+  bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
+
 private:
   /**
    * Store the bits used in S-NUCA to find the LLC bank.
    */
   const int llcSelectLowBit;
   const int llcSelectNumBits;
+  const bool enableStreamFloat;
 };
 
 #endif

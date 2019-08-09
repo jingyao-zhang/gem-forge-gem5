@@ -118,6 +118,7 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->placementLat = cpuParams->streamEnginePlacementLat;
   this->placement = cpuParams->streamEnginePlacement;
   this->writebackCacheLine = new uint8_t[cpu->system->cacheLineSize()];
+  this->enableStreamFloat = cpuParams->enableStreamFloat;
 
   this->initializeFIFO(this->maxTotalRunAheadLength);
 
@@ -393,30 +394,31 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
     S->executeStreamConfigure(inst);
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
-     * Todo: Find the initial address.
      */
-    if (S->getStreamType() == "load") {
-      // Get the CacheStreamConfigureData.
-      auto streamConfigureData = S->allocateCacheConfigureData();
+    if (this->enableStreamFloat) {
+      if (S->getStreamType() == "load") {
+        // Get the CacheStreamConfigureData.
+        auto streamConfigureData = S->allocateCacheConfigureData();
 
-      // Set up the init physical address.
-      if (cpu->isStandalone()) {
-        auto initPAddr =
-            cpu->translateAndAllocatePhysMem(streamConfigureData->initVAddr);
-        streamConfigureData->initPAddr = initPAddr;
-      } else {
-        panic("Stream so far can only work in standalone mode.");
+        // Set up the init physical address.
+        if (cpu->isStandalone()) {
+          auto initPAddr =
+              cpu->translateAndAllocatePhysMem(streamConfigureData->initVAddr);
+          streamConfigureData->initPAddr = initPAddr;
+        } else {
+          panic("Stream so far can only work in standalone mode.");
+        }
+
+        auto pkt = TDGPacketHandler::createStreamConfigPacket(
+            streamConfigureData->initPAddr, cpu->getDataMasterID(), 0,
+            reinterpret_cast<uint64_t>(streamConfigureData));
+        DPRINTF(
+            RubyStream,
+            "Create StreamConfig pkt %#x %#x, initVAddr: %#x, initPAddr %#x.\n",
+            pkt, streamConfigureData, streamConfigureData->initVAddr,
+            streamConfigureData->initPAddr);
+        cpu->sendRequest(pkt);
       }
-
-      auto pkt = TDGPacketHandler::createStreamConfigPacket(
-          streamConfigureData->initPAddr, cpu->getDataMasterID(), 0,
-          reinterpret_cast<uint64_t>(streamConfigureData));
-      DPRINTF(
-          RubyStream,
-          "Create StreamConfig pkt %#x %#x, initVAddr: %#x, initPAddr %#x.\n",
-          pkt, streamConfigureData, streamConfigureData->initVAddr,
-          streamConfigureData->initPAddr);
-      cpu->sendRequest(pkt);
     }
   }
 }
@@ -1169,7 +1171,7 @@ void StreamEngine::allocateElement(Stream *S) {
 
   newElement->stream = S;
   /**
-   * next() is called after assign to make sure 
+   * next() is called after assign to make sure
    * entryIdx starts from 0.
    */
   newElement->FIFOIdx = S->FIFOIdx;
@@ -1429,7 +1431,7 @@ void StreamEngine::issueElements() {
   }
 
   /**
-   * Sort the ready elements by create cycle and relative order within 
+   * Sort the ready elements by create cycle and relative order within
    * the single stream.
    */
   // Sort the ready elements, by their create cycle.
@@ -1449,7 +1451,6 @@ void StreamEngine::issueElements() {
     element->isAddrReady = true;
     if (element->stream->isMemStream()) {
       this->issueElement(element);
-      hack("Issue element %lu.\n", element->FIFOIdx.entryIdx);
     } else {
       // This is an IV stream with back dependence.
       element->markValueReady();

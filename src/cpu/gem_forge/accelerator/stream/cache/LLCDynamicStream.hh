@@ -18,7 +18,7 @@ public:
    * Used for flow control.
    */
   bool isNextElementAllcoated() const {
-    return this->idx + 1 < this->allocated;
+    return this->idx < this->allocatedIdx;
   }
 
   uint64_t consumeNextElement() {
@@ -30,7 +30,7 @@ public:
   const CacheStreamConfigureData configData;
   uint64_t idx;
   // For flow control.
-  uint64_t allocated;
+  uint64_t allocatedIdx;
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

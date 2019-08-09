@@ -4,7 +4,8 @@
 
 // TODO: Support real flow control.
 LLCDynamicStream::LLCDynamicStream(CacheStreamConfigureData *_configData)
-    : configData(*_configData), idx(0), allocated(1000000) {}
+    : configData(*_configData), idx(0),
+      allocatedIdx(_configData->initAllocatedIdx) {}
 
 Addr LLCDynamicStream::peekVAddr() const {
   auto historySize = this->configData.history->history_size();

@@ -29,7 +29,8 @@ class MessageBuffer;
 class MLCStreamEngine {
 public:
   MLCStreamEngine(AbstractStreamAwareController *_controller,
-                  MessageBuffer *_responseToUpperMsgBuffer);
+                  MessageBuffer *_responseToUpperMsgBuffer,
+                  MessageBuffer *_requestToLLCMsgBuffer);
   ~MLCStreamEngine();
 
   void receiveStreamConfigure(PacketPtr pkt);
@@ -48,6 +49,7 @@ public:
 private:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseToUpperMsgBuffer;
+  MessageBuffer *requestToLLCMsgBuffer;
   std::list<MLCDynamicStream *> streams;
 
   StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;

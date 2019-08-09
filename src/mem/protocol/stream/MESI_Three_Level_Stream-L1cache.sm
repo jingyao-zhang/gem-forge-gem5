@@ -176,7 +176,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     void receiveOffloadStreamRequestHit(PacketPtr);
   }
 
-  MLCStreamEngine se, constructor="this, m_bufferToL0_ptr";
+  MLCStreamEngine se, constructor="this, m_bufferToL0_ptr, m_requestToL2_ptr";
 
   Tick clockEdge();
   Cycles ticksToCycles(Tick t);

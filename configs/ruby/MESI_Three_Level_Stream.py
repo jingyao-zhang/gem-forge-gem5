@@ -78,7 +78,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
     l2_bits = int(math.log(num_l2caches_per_cluster, 2))
     block_size_bits = int(math.log(options.cacheline_size, 2))
-    l2_index_start = block_size_bits + l2_bits
+    l2_select_low_bit = options.llc_select_low_bit 
+    assert(l2_select_low_bit >= block_size_bits)
+    l2_index_start = l2_select_low_bit + l2_bits
 
     #
     # Must create the individual controllers before the network to ensure the
@@ -113,7 +115,11 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l0_cntrl = L0Cache_Controller(
                    version = i * num_cpus_per_cluster + j, Icache = l0i_cache,
                    Dcache = l0d_cache, send_evictions = send_evicts(options),
-                   clk_domain = clk_domain, ruby_system = ruby_system)
+                   clk_domain = clk_domain, ruby_system = ruby_system,
+                   llc_select_num_bits = l2_bits,
+                   llc_select_low_bit = l2_select_low_bit,
+                   enable_stream_float = options.gem_forge_enable_stream_float,
+                   )
 
             cpu_seq = RubySequencer(version = i * num_cpus_per_cluster + j,
                                     icache = l0i_cache,
@@ -130,8 +136,16 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
             l1_cntrl = L1Cache_Controller(
                     version = i * num_cpus_per_cluster + j,
-                    cache = l1_cache, l2_select_num_bits = l2_bits,
-                    cluster_id = i, ruby_system = ruby_system)
+                    cache = l1_cache, 
+                    l2_select_num_bits = l2_bits,
+                    l2_select_low_bit = l2_select_low_bit,
+                    cluster_id = i, ruby_system = ruby_system,
+                    # ! Sean: Stream-Aware Cache 
+                    # For the AbstractStreamAwareController
+                    llc_select_num_bits = l2_bits,
+                    llc_select_low_bit = l2_select_low_bit,
+                    enable_stream_float = options.gem_forge_enable_stream_float,
+                    )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
                  % ( i * num_cpus_per_cluster + j))
@@ -179,8 +193,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                         # ! Sean: StreamAwareCache.
                         # ! For the LLCSelect bits.
                         # ! So far do block interleaving.
-                        llc_select_low_bit=block_size_bits,
+                        llc_select_low_bit=l2_select_low_bit,
                         llc_select_num_bits=l2_bits,
+                        enable_stream_float=options.gem_forge_enable_stream_float,
                         )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"

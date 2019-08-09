@@ -89,7 +89,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
     // No driver, stand alone mode.
     // Reset the initializeMemorySnapshotDone so that we will initialize the
     // memory.
-    this->initializeMemorySnapshotDone = false;
+    this->initializeMemorySnapshotDone = !params->installMemorySnapshot;
 
     // Schedule the first event.
     // And remember to initialize the stack depth to 1.

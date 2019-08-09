@@ -43,6 +43,7 @@ class LLVMTraceCPU(BaseCPU):
     # Hack information of total cpus.
     totalCPUs = Param.Unsigned(1, 'Total number of CPUs.')
 
+    installMemorySnapshot = Param.Bool(True, 'Should we install memory snapshot.')
     warmCache = Param.Bool(True, 'Should we warm up the cache.')
 
     driver = Param.LLVMTraceCPUDriver('The driver to control this cpu.')
@@ -137,6 +138,9 @@ class LLVMTraceCPU(BaseCPU):
         "", "The latency modeling of bypassing.")
     streamEnginePlacement = Param.String(
         "placement", "Which placement techinque to use.")
+
+    # parameters for stream float.
+    enableStreamFloat = Param.Bool(False, "Whether the stream float is enabled.")
 
     # Enable ideal prefetcher.
     enableIdealPrefetcher = Param.Bool(

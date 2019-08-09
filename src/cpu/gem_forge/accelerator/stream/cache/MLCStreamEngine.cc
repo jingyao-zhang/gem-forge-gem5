@@ -8,9 +8,11 @@
 #include "debug/RubyStream.hh"
 
 MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
-                                 MessageBuffer *_responseToUpperMsgBuffer)
+                                 MessageBuffer *_responseToUpperMsgBuffer,
+                                 MessageBuffer *_requestToLLCMsgBuffer)
     : controller(_controller),
-      responseToUpperMsgBuffer(_responseToUpperMsgBuffer) {}
+      responseToUpperMsgBuffer(_responseToUpperMsgBuffer),
+      requestToLLCMsgBuffer(_requestToLLCMsgBuffer) {}
 
 MLCStreamEngine::~MLCStreamEngine() {
   for (auto &stream : this->streams) {
@@ -21,14 +23,19 @@ MLCStreamEngine::~MLCStreamEngine() {
 }
 
 void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
+  assert(this->controller->isStreamFloatEnabled() &&
+         "Receive stream configure when stream float is disabled.\n");
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
   DPRINTF(RubyStream, "MLCStreamEngine: Received StreamConfigure\n");
   // Create the stream.
   this->streams.emplace_back(new MLCDynamicStream(
-      streamConfigureData, this->controller, this->responseToUpperMsgBuffer));
+      streamConfigureData, this->controller, this->responseToUpperMsgBuffer,
+      this->requestToLLCMsgBuffer));
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
+  assert(this->controller->isStreamFloatEnabled() &&
+         "Receive stream data when stream float is disabled.\n");
   const auto &streamMeta = msg.m_streamMeta;
   assert(streamMeta.m_valid && "Invalid stream meta-data for stream data.");
   auto stream = reinterpret_cast<Stream *>(streamMeta.m_stream);
@@ -57,6 +64,9 @@ void MLCStreamEngine::receiveMiss(PacketPtr pkt) {
 }
 
 bool MLCStreamEngine::isStreamRequest(PacketPtr pkt) {
+  if (!this->controller->isStreamFloatEnabled()) {
+    return false;
+  }
   auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
   return streamMemAccess != nullptr;
 }

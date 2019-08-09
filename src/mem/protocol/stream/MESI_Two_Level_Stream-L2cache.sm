@@ -130,6 +130,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     MEM_Inv, desc="Invalidation from directory";
 
     STREAM_CONFIG, desc="StreamConfig req";
+    STREAM_FLOW,   desc="Flow control message for stream";
   }
 
   // TYPES
@@ -172,6 +173,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   structure(LLCStreamEngine, external="yes", desc="Stream Engine at LLC") {
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamMigrate(LLCDynamicStreamPtr);
+    void receiveStreamFlow(StreamMeta);
   }
 
   LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr, m_L1RequestToL2Cache_ptr";
@@ -408,14 +410,34 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           trigger(L1Cache_request_type_to_event(
                     in_msg.Type, in_msg.addr, in_msg.Requestor, cache_entry),
                   in_msg.addr, cache_entry, tbe);
+        } else if (in_msg.Type == CoherenceRequestType:STREAM_FLOW) {
+          trigger(Event:STREAM_FLOW,
+                  in_msg.addr, cache_entry, tbe);
+        }
+
+        if (in_msg.streamMeta.valid) {
+          DPRINTF(RubyStream, "Received stream request [%lu, +%lu) %#x.\n", 
+            in_msg.streamMeta.startIdx,
+            in_msg.streamMeta.numElements,
+            in_msg.addr);
         }
 
         if (is_valid(cache_entry)) {
           // The L2 contains the block, so proceeded with handling the request
+          if (in_msg.streamMeta.valid) {
+            DPRINTF(RubyStream, "Hit stream request [%lu, +%lu).\n", 
+              in_msg.streamMeta.startIdx,
+              in_msg.streamMeta.numElements);
+          }
           trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
                                                 in_msg.Requestor, cache_entry),
                   in_msg.addr, cache_entry, tbe);
         } else {
+          if (in_msg.streamMeta.valid) {
+            DPRINTF(RubyStream, "Miss stream request [%lu, +%lu).\n", 
+              in_msg.streamMeta.startIdx,
+              in_msg.streamMeta.numElements);
+          }
           if (L2cache.cacheAvail(in_msg.addr)) {
             // L2 does't have the line, but we have space for it in the L2
             trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
@@ -551,6 +573,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         }
         // Don't forget to copy the stream meta-data.
         out_msg.streamMeta := in_msg.streamMeta;
+        if (in_msg.streamMeta.valid) {
+          DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
+            in_msg.streamMeta.startIdx, 
+            in_msg.streamMeta.numElements);
+        }
       }
     }
   }
@@ -611,6 +638,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       out_msg.MessageSize := MessageSizeType:Response_Data;
       // Copy the stream meta-data.
       out_msg.streamMeta := tbe.streamMeta;
+      if (out_msg.streamMeta.valid) {
+        DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
+          out_msg.streamMeta.startIdx, 
+          out_msg.streamMeta.numElements);
+      }
     }
   }
 
@@ -878,6 +910,16 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     }
   }
 
+  /**
+   * ! Sean: StreamAwareCache
+   */
+  action(rsf_receiveStreamFlow, "rsf", desc="Receive the stream flow message") {
+    peek(L1RequestL2Network_in, RequestMsg) {
+      DPRINTF(RubyStream, "Receive StreamFlow: %#x\n", in_msg.streamMeta.stream);
+      se.receiveStreamFlow(in_msg.streamMeta);
+    }
+  }
+
   //*****************************************************
   // TRANSITIONS
   //*****************************************************
@@ -975,6 +1017,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     eu_sendDataToGetURequestors;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
+    kd_wakeUpDependents;
   }
 
   transition(IS, Mem_Data, SS) {
@@ -1237,6 +1280,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
    */
   transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, ISS, IS, IM, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, STREAM_CONFIG) {
     rsc_receiveStreamConfig;
+    jj_popL1RequestQueue;
+  }
+
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, ISS, IS, IM, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, STREAM_FLOW) {
+    rsf_receiveStreamFlow;
     jj_popL1RequestQueue;
   }
 }
