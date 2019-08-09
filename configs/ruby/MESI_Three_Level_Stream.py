@@ -181,9 +181,20 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
 
         for j in range(num_l2caches_per_cluster):
+            """
+            Originally, bits [6, 7] are used to select LLC bank (block-level), 
+            bits [8, ...] are used to select set.
+            Now bits [12, 12+n) are used to select bank (page-level),
+            bits [6-11] and [12+n, ...] are used to select set. 
+            Since the index bits are broken down into two pieces, we need
+            to inform the cache to skip the bank select bit.
+            """
             l2_cache = L2Cache(size = options.l2_size,
                                assoc = options.l2_assoc,
-                               start_index_bit = l2_index_start)
+                               start_index_bit=block_size_bits,
+                               skip_index_start_bit=l2_select_low_bit,
+                               skip_index_num_bits=l2_bits
+                               )
 
             l2_cntrl = L2Cache_Controller(
                         version = i * num_l2caches_per_cluster + j,

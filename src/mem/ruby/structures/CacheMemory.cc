@@ -67,6 +67,8 @@ CacheMemory::CacheMemory(const Params *p)
     m_replacementPolicy_ptr = p->replacement_policy;
     m_replacementPolicy_ptr->setCache(this);
     m_start_index_bit = p->start_index_bit;
+    m_skip_index_start_bit = p->skip_index_start_bit;
+    m_skip_index_num_bits = p->skip_index_num_bits;
     m_is_instruction_only_cache = p->is_icache;
     m_resource_stalls = p->resourceStalls;
     m_block_size = p->block_size;  // may be 0 at this point. Updated in init()
@@ -103,8 +105,25 @@ int64_t
 CacheMemory::addressToCacheSet(Addr address) const
 {
     assert(address == makeLineAddress(address));
-    return bitSelect(address, m_start_index_bit,
-                     m_start_index_bit + m_cache_num_set_bits - 1);
+
+    auto index_end_bit = m_start_index_bit + m_cache_num_set_bits;
+    auto skip_index_end_bit = m_skip_index_start_bit + m_skip_index_num_bits;
+
+    if (skip_index_end_bit <= m_start_index_bit || index_end_bit <= m_skip_index_start_bit) {
+        return bitSelect(address, m_start_index_bit,
+                         m_start_index_bit + m_cache_num_set_bits - 1);
+    } else {
+        // We have to break the index into two parts. 
+        auto index1_nbit = m_skip_index_start_bit - m_start_index_bit;
+        auto index1 = (index1_nbit > 0) ? 
+                      bitSelect(address, m_start_index_bit, 
+                                m_start_index_bit + index1_nbit - 1)
+                      : 0;
+        auto index2_nbit = m_cache_num_set_bits - index1_nbit;
+        auto index2 = bitSelect(address, skip_index_end_bit, 
+                                skip_index_end_bit + index2_nbit - 1);
+        return (index2 << index1_nbit) | index1;
+    }
 }
 
 // Given a cache index: returns the index of the tag in a set.

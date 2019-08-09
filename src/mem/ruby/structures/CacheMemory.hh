@@ -183,6 +183,8 @@ class CacheMemory : public SimObject
     int m_cache_num_set_bits;
     int m_cache_assoc;
     int m_start_index_bit;
+    int m_skip_index_start_bit;
+    int m_skip_index_num_bits;
     bool m_resource_stalls;
     int m_block_size;
 };

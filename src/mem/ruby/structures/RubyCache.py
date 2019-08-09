@@ -41,6 +41,12 @@ class RubyCache(SimObject):
     replacement_policy = Param.ReplacementPolicy(PseudoLRUReplacementPolicy(),
                          "")
     start_index_bit = Param.Int(6, "index start, default 6 for 64-byte line")
+    # ! Sean: Stream-Aware Cache.
+    # These two fields are used to implement skipping some bits when select 
+    # indexing bits, e.g. used for LLC bank selection.
+    skip_index_start_bit = Param.Int(0, "index bit skipped, start bit.")
+    skip_index_num_bits = Param.Int(0, "num index bit skipped.")
+
     is_icache = Param.Bool(False, "is instruction only cache")
     block_size = Param.MemorySize("0B", "block size in bytes. 0 means default RubyBlockSize")
 
