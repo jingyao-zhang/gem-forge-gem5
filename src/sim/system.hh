@@ -434,6 +434,12 @@ class System : public SimObject
         return ++workItemsEnd;
     }
 
+    uint64_t
+    getWorkItemsEnd()
+    {
+        return workItemsEnd;
+    }
+
     /**
      * Called by pseudo_inst to mark the cpus actively executing work items.
      * Returns the total number of cpus that have executed work item begin or

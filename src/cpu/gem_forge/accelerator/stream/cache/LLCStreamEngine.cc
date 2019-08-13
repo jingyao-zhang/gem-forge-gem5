@@ -90,13 +90,13 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
     // TODO: instances.
     bool processed = false;
     for (auto stream : this->streams) {
-      if (stream->getStaticStream() == staticStream) {
+      if (stream->getStaticStream() == staticStream &&
+          msg.m_startIdx == stream->allocatedIdx) {
         // We found it.
         // Update the idx.
-        assert(stream->allocatedIdx == msg.m_startIdx &&
-               "Mismatched index in the stream flow message.");
-        LLCSE_DPRINTF("Stream add credit %lu -> %lu.\n", msg.m_startIdx,
-                      msg.m_startIdx + msg.m_numElements);
+        LLCSE_DPRINTF("Stream add credit %lu -> %lu, stream %lu.\n",
+                      msg.m_startIdx, msg.m_startIdx + msg.m_numElements,
+                      stream->allocatedIdx);
         stream->allocatedIdx += msg.m_numElements;
         processed = true;
         break;

@@ -142,10 +142,20 @@ public:
 private:
   const std::string traceFileName;
 
-  const unsigned totalCPUs;
+  const unsigned totalActiveCPUs;
 
   std::string traceFolder;
   std::string traceExtraFolder;
+
+  enum CPUStatusE {
+    INITIALIZED,
+    CACHE_WARMING,
+    CACHE_WARMED,
+    EXECUTING,
+    DONE,
+  };
+
+  CPUStatusE cpuStatus;
 
   /**
    * This is the current main thread executed.
@@ -249,6 +259,7 @@ private:
   // Interface for the insts.
 public:
   Stats::Distribution numPendingAccessDist;
+  Stats::Distribution numOutstandingAccessDist;
 
   // Check if this is running in standalone mode (no normal cpu).
   bool isStandalone() const { return this->driver == nullptr; }

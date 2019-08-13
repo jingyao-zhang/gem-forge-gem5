@@ -14,15 +14,16 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
       pageTable(params->name + ".page_table", 0, TheISA::PageBytes),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
-      traceFileName(params->traceFile), totalCPUs(params->totalCPUs),
-      fuPool(params->fuPool), currentStackDepth(0),
-      initializeMemorySnapshotDone(true), warmUpDone(false),
-      cacheWarmer(nullptr), process(nullptr), thread_context(nullptr),
-      stackMin(0), fetchStage(params, this), decodeStage(params, this),
-      renameStage(params, this), iewStage(params, this),
-      commitStage(params, this), fetchToDecode(5, 5), decodeToRename(5, 5),
-      renameToIEW(5, 5), iewToCommit(5, 5), signalBuffer(5, 5),
-      driver(params->driver), tickEvent(*this) {
+      traceFileName(params->traceFile),
+      totalActiveCPUs(params->totalActiveCPUs),
+      cpuStatus(CPUStatusE::INITIALIZED), fuPool(params->fuPool),
+      currentStackDepth(0), initializeMemorySnapshotDone(true),
+      warmUpDone(false), cacheWarmer(nullptr), process(nullptr),
+      thread_context(nullptr), stackMin(0), fetchStage(params, this),
+      decodeStage(params, this), renameStage(params, this),
+      iewStage(params, this), commitStage(params, this), fetchToDecode(5, 5),
+      decodeToRename(5, 5), renameToIEW(5, 5), iewToCommit(5, 5),
+      signalBuffer(5, 5), driver(params->driver), tickEvent(*this) {
   DPRINTF(LLVMTraceCPU, "LLVMTraceCPU constructed\n");
 
   assert(this->numThreads < LLVMTraceCPUConstants::MaxContexts &&
@@ -56,15 +57,6 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   // Initialize the hardware contexts.
   this->activeThreads.resize(params->hardwareContexts, nullptr);
 
-  // Initialize the main thread.
-  {
-    auto mainThreadId = LLVMTraceCPU::allocateContextID();
-    this->mainThread = new LLVMTraceThreadContext(
-        mainThreadId, this->traceFileName, false /*isIdeal */,
-        this->cpuParams->adfaEnable);
-    this->activateThread(mainThread);
-  }
-
   // Initialize the accelerators.
   // We need to keep the params as the sim object will store its address.
   this->accelManagerParams = new TDGAcceleratorManagerParams();
@@ -76,7 +68,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
 
   this->runTimeProfiler = new RunTimeProfiler();
 
-  if (driver != nullptr) {
+  if (!this->isStandalone()) {
     // Handshake with the driver.
     driver->handshake(this);
     if (this->mainThread->getRegionStats() != nullptr) {
@@ -85,23 +77,42 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
           new MakeCallback<RegionStats, &RegionStats::dump>(
               this->mainThread->getRegionStats(), true));
     }
-  } else {
-    // No driver, stand alone mode.
-    // Reset the initializeMemorySnapshotDone so that we will initialize the
-    // memory.
-    this->initializeMemorySnapshotDone = !params->installMemorySnapshot;
-
-    // Schedule the first event.
-    // And remember to initialize the stack depth to 1.
-    this->currentStackDepth = 1;
-    DPRINTF(LLVMTraceCPU, "Schedule initial tick event.\n");
-    schedule(this->tickEvent, nextCycle());
+    return;
   }
 
-  if (this->cpuParams->warmCache && this->isStandalone()) {
+  /************************************
+   * No driver, standalone mode.
+   ************************************/
+
+  // First check if I am active.
+  if (this->traceFileName.empty()) {
+    // No trace assigned to me, I am inactive.
+    // Simply done.
+    return;
+  }
+
+  // Initialize the main thread.
+  auto mainThreadId = LLVMTraceCPU::allocateContextID();
+  this->mainThread = new LLVMTraceThreadContext(
+      mainThreadId, this->traceFileName, false /*isIdeal */,
+      this->cpuParams->adfaEnable);
+  this->activateThread(mainThread);
+
+  // Reset the initializeMemorySnapshotDone so that we will initialize the
+  // memory.
+  this->initializeMemorySnapshotDone = !params->installMemorySnapshot;
+
+  // Initialize the cache warmer.
+  if (this->cpuParams->warmCache) {
     this->cacheWarmer =
         new CacheWarmer(this, this->traceFileName + ".cache", 1);
   }
+
+  // Schedule the first event.
+  // And remember to initialize the stack depth to 1.
+  this->currentStackDepth = 1;
+  DPRINTF(LLVMTraceCPU, "Schedule initial tick event.\n");
+  schedule(this->tickEvent, nextCycle());
 }
 
 LLVMTraceCPU::~LLVMTraceCPU() {
@@ -149,17 +160,33 @@ void LLVMTraceCPU::tick() {
         // Reset the stats.
         Stats::reset();
         inform("Done reset, %lu.\n", this->numCycles.value());
+        this->system->incWorkItemsEnd();
+        this->cpuStatus = CPUStatusE::CACHE_WARMED;
       } else {
         // We can try a new packet.
         auto pkt = this->cacheWarmer->getNextWarmUpPacket();
         assert(pkt != nullptr && "Should not a null warm up packet.");
         // There are still more packets.
         this->sendRequest(pkt);
+        this->cpuStatus = CPUStatusE::CACHE_WARMING;
       }
     }
     // We schedule the next
     schedule(this->tickEvent, nextCycle());
     return;
+  }
+
+  if (this->cpuStatus == CPUStatusE::CACHE_WARMED) {
+    // We want to synchronize all cpus here.
+    if (this->system->getWorkItemsEnd() % this->totalActiveCPUs == 0) {
+      // We should have been synchronized.
+      this->cpuStatus = CPUStatusE::EXECUTING;
+      inform("Core %d start executiong.\n", this->cpuId());
+    } else {
+      // Check next cycle.
+      schedule(this->tickEvent, nextCycle());
+      return;
+    }
   }
 
   if (Debug::GemForgeCPUDump) {
@@ -229,7 +256,7 @@ void LLVMTraceCPU::tick() {
     if (this->isStandalone()) {
       // Decrease the workitem count.
       auto workItemsEnd = this->system->incWorkItemsEnd();
-      if (workItemsEnd == this->totalCPUs) {
+      if (workItemsEnd % this->totalActiveCPUs == 0) {
         if (regionStats != nullptr) {
           regionStats->dump();
         }
@@ -367,6 +394,7 @@ void LLVMTraceCPU::CPUPort::sendReq() {
    * but only enfore the limit on the total number of ports.
    */
   unsigned usedPorts = 0;
+  this->owner->numOutstandingAccessDist.sample(this->inflyNumPackets);
   const auto cpuParams = this->owner->getLLVMTraceCPUParams();
   unsigned totalPorts = cpuParams->cacheLoadPorts + cpuParams->cacheStorePorts;
   while (!this->blocked && !this->blockedPacketPtrs.empty() &&
@@ -592,6 +620,10 @@ void LLVMTraceCPU::regStats() {
   this->numPendingAccessDist.init(0, 4, 1)
       .name(this->name() + ".pending_acc_per_cycle")
       .desc("Number of pending memory access each cycle")
+      .flags(Stats::pdf);
+  this->numOutstandingAccessDist.init(0, 16, 2)
+      .name(this->name() + ".outstanding_acc_per_cycle")
+      .desc("Number of outstanding memory access each cycle")
       .flags(Stats::pdf);
 }
 

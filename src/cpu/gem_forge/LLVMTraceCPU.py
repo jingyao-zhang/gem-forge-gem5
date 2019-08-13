@@ -40,8 +40,8 @@ class LLVMTraceCPU(BaseCPU):
 
     traceFile = Param.String('', 'The input llvm trace file.')
 
-    # Hack information of total cpus.
-    totalCPUs = Param.Unsigned(1, 'Total number of CPUs.')
+    # Hack information of total active cpus that executes a trace.
+    totalActiveCPUs = Param.Unsigned(1, 'Total number of active CPUs.')
 
     installMemorySnapshot = Param.Bool(True, 'Should we install memory snapshot.')
     warmCache = Param.Bool(True, 'Should we warm up the cache.')

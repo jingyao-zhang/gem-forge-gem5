@@ -24,6 +24,8 @@ def parse_tdg_files(option, opt, value, parser):
     vs = value.split(',')
     setattr(parser.values, option.dest, vs)
 
+parser.add_option("--gem-forge-num-active-cpus", action="store", type="int",
+                  help="""number of active cpus.""", default="1")
 parser.add_option("--gem-forge-empty-mem", action="store_true",
                   help="""start simulation without installing the memory snapshot.""", default=False)
 parser.add_option("--gem-forge-cold-cache", action="store_true",
@@ -329,7 +331,7 @@ if not options.llvm_standalone:
             llvm_trace_cpu.cpu_id = len(cpus)
             llvm_trace_cpu.traceFile = tdg_fn
             llvm_trace_cpu.driver = driver
-            llvm_trace_cpu.totalCPUs = len(multiprocesses)
+            llvm_trace_cpu.totalActiveCPUs = len(multiprocesses)
 
             cpus.append(llvm_trace_cpu)
     options.num_cpus = len(cpus)
@@ -340,16 +342,23 @@ else:
     cpus = list()
     """
     If num_cpus equals 1, we create as many cpus as traces specified.
-    If there is only one trace, we create as many cpu as num_cpus by duplicating the traces.
+    If there is only one trace, we create as many cpu as #num_cpus, but only assign
+    #gem_forge_num_active_cpus to the same trace.
     Otherwise, panic.
     """
+    assert(options.gem_forge_num_active_cpus <= options.num_cpus)
     if len(options.llvm_trace_file) == 1:
-        # Duplicate the traces.
+        # Duplicate the traces to num_cpus.
         options.llvm_trace_file = options.llvm_trace_file * options.num_cpus
+        # Clear extra traces more than gem_forge_num_active_cpus.
+        for i in range(options.gem_forge_num_active_cpus, options.num_cpus):
+            options.llvm_trace_file[i] = ''
     elif options.num_cpus == 1:
         options.num_cpus = len(options.llvm_trace_file)
+        options.gem_forge_num_active_cpus = options.num_cpus
     else:
         assert(options.num_cpus == len(options.llvm_trace_file))
+        options.gem_forge_num_active_cpus = options.num_cpus
     for tdg_fn in options.llvm_trace_file:
 
         # For each process, add a LLVMTraceCPU for simulation.
@@ -362,7 +371,7 @@ else:
         llvm_trace_cpu.createThreads()
         llvm_trace_cpu.traceFile = tdg_fn
         llvm_trace_cpu.driver = NULL
-        llvm_trace_cpu.totalCPUs = len(options.llvm_trace_file)
+        llvm_trace_cpu.totalActiveCPUs = options.gem_forge_num_active_cpus
         cpus.append(llvm_trace_cpu)
     assert(options.num_cpus == len(cpus))
 
