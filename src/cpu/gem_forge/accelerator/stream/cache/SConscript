@@ -1,5 +1,7 @@
 Import('*')
 
+Source('DynamicStreamId.cc')
+Source('DynamicStreamSliceId.cc')
 Source('L0StreamEngine.cc')
 Source('MLCDynamicStream.cc')
 Source('MLCStreamEngine.cc')

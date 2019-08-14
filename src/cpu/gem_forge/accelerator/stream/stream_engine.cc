@@ -48,8 +48,8 @@ void debugStreamWithElements(Stream *S, const char *message) {
 
 #define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
   STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
-                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
-                 ##args)
+                 element->FIFOIdx.streamId.streamInstance,                     \
+                 element->FIFOIdx.entryIdx, ##args)
 
 #define STREAM_PANIC(stream, format, args...)                                  \
   panic("[%s]: " format, stream->getStreamName().c_str(), ##args)
@@ -57,8 +57,8 @@ void debugStreamWithElements(Stream *S, const char *message) {
 #define STREAM_ELEMENT_PANIC(element, format, args...)                         \
   element->se->dump();                                                         \
   STREAM_PANIC(element->getStream(), "[%lu, %lu]: " format,                    \
-               element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,     \
-               ##args)
+               element->FIFOIdx.streamId.streamInstance,                       \
+               element->FIFOIdx.entryIdx, ##args)
 
 StreamEngine::StreamEngine()
     : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false),
@@ -1235,8 +1235,8 @@ void StreamEngine::allocateElement(Stream *S) {
         }
         // ! Try to check the base element should have the previous element.
         STREAM_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
-        if (baseElement->FIFOIdx.streamInstance ==
-            newElement->FIFOIdx.streamInstance) {
+        if (baseElement->FIFOIdx.streamId.streamInstance ==
+            newElement->FIFOIdx.streamId.streamInstance) {
           if (baseElement->FIFOIdx.entryIdx + 1 ==
               newElement->FIFOIdx.entryIdx) {
             STREAM_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");

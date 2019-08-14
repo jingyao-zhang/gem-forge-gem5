@@ -3,6 +3,8 @@
 
 #include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
 
+#include "DynamicStreamId.hh"
+
 #include "base/types.hh"
 
 #include <memory>
@@ -12,10 +14,13 @@ class Stream;
 struct CacheStreamConfigureData {
 public:
   using HistoryPtr = std::shared_ptr<::LLVM::TDG::StreamHistory>;
-  CacheStreamConfigureData(Stream *_stream, HistoryPtr _history);
+  CacheStreamConfigureData(Stream *_stream, const DynamicStreamId &_dynamicId,
+                           HistoryPtr _history);
   CacheStreamConfigureData(const CacheStreamConfigureData &other);
 
   Stream *stream;
+  const DynamicStreamId dynamicId;
+
   HistoryPtr history;
   Addr initVAddr;
   Addr initPAddr;

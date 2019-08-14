@@ -59,13 +59,6 @@ enumeration(CoherenceResponseType, desc="...") {
   INV, desc="Invalidate from directory";
 }
 
-structure(StreamMeta, desc="Meta-data for stream data") {
-  bool valid,  default="false",     desc="whether this meta data is valid";
-  uint64_t stream,                  desc="A pointer to the stream";
-  uint64_t startIdx,                desc="Start index";
-  uint64_t numElements,                  desc="Number of elements";
-}
-
 // RequestMsg
 structure(RequestMsg, desc="...", interface="Message") {
   Addr addr,              desc="Physical address for this request";

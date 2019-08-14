@@ -144,6 +144,8 @@ MakeInclude('system/DMASequencer.hh')
 MakeInclude('system/Sequencer.hh')
 
 # ! Sean: StreamAwareCache
+MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamId.hh')
+MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceId.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/LLCStreamEngine.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/L0StreamEngine.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/MLCStreamEngine.hh')

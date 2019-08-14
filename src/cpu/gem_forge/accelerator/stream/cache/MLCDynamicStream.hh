@@ -1,6 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
 
+#include "cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceId.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 
 #include "mem/ruby/common/DataBlock.hh"
@@ -22,12 +23,16 @@ public:
 
   Stream *getStaticStream() { return this->stream; }
 
+  const DynamicStreamId &getDynamicStreamId() const {
+    return this->dynamicStreamId;
+  }
   void receiveStreamData(const ResponseMsg &msg);
   void receiveStreamRequest(uint64_t idx);
   void receiveStreamRequestHit(uint64_t idx);
 
 private:
   Stream *stream;
+  DynamicStreamId dynamicStreamId;
   // Store the history;
   std::shared_ptr<::LLVM::TDG::StreamHistory> history;
   AbstractStreamAwareController *controller;

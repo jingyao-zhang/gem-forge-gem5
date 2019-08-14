@@ -15,23 +15,28 @@
 
 #define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
   STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
-                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
-                 ##args)
+                 element->FIFOIdx.streamId.streamInstance,                     \
+                 element->FIFOIdx.entryIdx, ##args)
 
 #define STREAM_ELEMENT_PANIC(element, format, args...)                         \
   element->se->dump();                                                         \
   STREAM_PANIC(element->getStream(), "[%lu, %lu]: " format,                    \
-               element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,     \
-               ##args)
+               element->FIFOIdx.streamId.streamInstance,                       \
+               element->FIFOIdx.entryIdx, ##args)
 
 FIFOEntryIdx::FIFOEntryIdx()
-    : streamInstance(0), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      entryIdx(0) {}
+    : streamId(), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), entryIdx(0) {
+  streamId.streamInstance = 0;
+}
 
-FIFOEntryIdx::FIFOEntryIdx(uint64_t _streamInstance, uint64_t _configSeqNum,
-                           uint64_t _entryIdx)
-    : streamInstance(_streamInstance), configSeqNum(_configSeqNum),
-      entryIdx(_entryIdx) {}
+DynamicStreamSliceId StreamMemAccess::getSliceId() const {
+  DynamicStreamSliceId slice;
+  slice.streamId = this->element->FIFOIdx.streamId;
+  slice.startIdx = this->element->FIFOIdx.entryIdx;
+  // So far we make it fairly simple here.
+  slice.endIdx = slice.startIdx + 1;
+  return slice;
+}
 
 void StreamMemAccess::handlePacketResponse(PacketPtr packet) {
   // API for stream-aware cache, as it doesn't have the cpu.
@@ -136,7 +141,7 @@ void StreamElement::markValueReady() {
 
 void StreamElement::dump() const {
   inform("Stream %50s %d.%d (%d%d).\n", this->stream->getStreamName().c_str(),
-         this->FIFOIdx.streamInstance, this->FIFOIdx.entryIdx,
+         this->FIFOIdx.streamId.streamInstance, this->FIFOIdx.entryIdx,
          static_cast<int>(this->isAddrReady),
          static_cast<int>(this->isValueReady));
 }

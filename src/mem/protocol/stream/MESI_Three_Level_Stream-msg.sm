@@ -33,6 +33,7 @@ enumeration(CoherenceClass, desc="...") {
   UPGRADE,   desc="UPGRADE to exclusive";
   GETS,      desc="Get Shared";
   GETU,      desc="Get Uncached";
+  STREAM_L0, desc="Stream request served by L0 cache";
   GET_INSTR, desc="Get Instruction";
   INV,       desc="INValidate";
   PUTX,      desc="Replacement message";
@@ -70,10 +71,10 @@ structure(CoherenceMsg, desc="...", interface="Message") {
   DataBlock DataBlk,            desc="Data for the cache line (if PUTX)";
   bool Dirty, default="false",  desc="Dirty bit";
   /**
-   * ! Sean: StreamAwareCache.
-   * ! Hack here to pass around a pointer.
+   * Passed the stream information.
    */
-  PacketPtr pkt, default=0,     desc="Hack for storing packet";
+  DynamicStreamSliceId slice,   desc="Optional field for stream info";
+  PacketPtr pkt,                desc="Optional field for stream configure";
 
   bool functionalRead(Packet *packet) {
     // Only PUTX messages contains the data block

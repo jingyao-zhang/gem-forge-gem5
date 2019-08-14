@@ -22,8 +22,6 @@ class LLVMTraceCPU;
 
 class StreamEngine;
 class StreamConfigInst;
-class StreamStepInst;
-class StreamStoreInst;
 class StreamEndInst;
 
 class Stream {

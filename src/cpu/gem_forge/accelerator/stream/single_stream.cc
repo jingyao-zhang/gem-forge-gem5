@@ -37,6 +37,12 @@
 SingleStream::SingleStream(const StreamArguments &args,
                            const LLVM::TDG::StreamInfo &_info)
     : Stream(args), info(_info) {
+
+  // Update the DynamicStreamId.
+  this->FIFOIdx.streamId.coreId = cpu->cpuId();
+  this->FIFOIdx.streamId.name = this->info.name();
+  this->FIFOIdx.streamId.staticId = this->info.id();
+
   const auto &relativeHistoryPath = this->info.history_path();
   auto historyPath = cpu->getTraceExtraFolder() + "/" + relativeHistoryPath;
   this->history =
@@ -123,7 +129,7 @@ bool SingleStream::isContinuous() const { return false; }
 CacheStreamConfigureData *SingleStream::allocateCacheConfigureData() {
   auto history = std::make_shared<::LLVM::TDG::StreamHistory>(
       this->history->getCurrentHistory());
-  return new CacheStreamConfigureData(this, history);
+  return new CacheStreamConfigureData(this, this->FIFOIdx.streamId, history);
 }
 
 void SingleStream::dump() const {

@@ -28,9 +28,10 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
   DPRINTF(RubyStream, "MLCStreamEngine: Received StreamConfigure\n");
   // Create the stream.
-  this->streams.emplace_back(new MLCDynamicStream(
-      streamConfigureData, this->controller, this->responseToUpperMsgBuffer,
-      this->requestToLLCMsgBuffer));
+  auto stream = new MLCDynamicStream(streamConfigureData, this->controller,
+                                     this->responseToUpperMsgBuffer,
+                                     this->requestToLLCMsgBuffer);
+  this->idToStreamMap.emplace(stream->getDynamicStreamId(), stream);
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
@@ -39,42 +40,32 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
   const auto &streamMeta = msg.m_streamMeta;
   assert(streamMeta.m_valid && "Invalid stream meta-data for stream data.");
   auto stream = reinterpret_cast<Stream *>(streamMeta.m_stream);
-  for (auto configuredStream : this->streams) {
-    if (configuredStream->getStaticStream() == stream) {
+  for (auto &iter : this->idToStreamMap) {
+    if (iter.second->getStaticStream() == stream) {
       // Found the stream.
-      configuredStream->receiveStreamData(msg);
+      iter.second->receiveStreamData(msg);
       return;
     }
   }
   assert(false && "Failed to find configured stream for stream data.");
 }
 
-void MLCStreamEngine::receiveMiss(PacketPtr pkt) {
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  if (streamMemAccess == nullptr) {
-    return;
-  }
-  // So far let's bypass MLC level.
-  if (streamMemAccess->getStream()->getStreamType() == "load") {
-    if (streamMemAccess->cacheLevel == 1) {
-      // If this is cached here (level 1), I move it lower (level 2).
-      streamMemAccess->cacheLevel = 2;
-    }
-  }
-}
-
-bool MLCStreamEngine::isStreamRequest(PacketPtr pkt) {
+bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {
   if (!this->controller->isStreamFloatEnabled()) {
     return false;
   }
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  return streamMemAccess != nullptr;
+  if (!slice.isValid()) {
+    return false;
+  }
+  // So far just check if the target stream is configured here.
+  auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  return stream != nullptr;
 }
 
-bool MLCStreamEngine::isStreamOffloaded(PacketPtr pkt) {
-  assert(this->isStreamRequest(pkt) && "Should be a stream pkt.");
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  auto staticStream = streamMemAccess->getStream();
+bool MLCStreamEngine::isStreamOffloaded(const DynamicStreamSliceId &slice) {
+  assert(this->isStreamRequest(slice) && "Should be a stream request.");
+  auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  auto staticStream = stream->getStaticStream();
   // So far always offload for load stream.
   if (staticStream->getStreamType() == "load") {
     return true;
@@ -82,10 +73,10 @@ bool MLCStreamEngine::isStreamOffloaded(PacketPtr pkt) {
   return false;
 }
 
-bool MLCStreamEngine::isStreamCached(PacketPtr pkt) {
-  assert(this->isStreamRequest(pkt) && "Should be a stream pkt.");
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  auto staticStream = streamMemAccess->getStream();
+bool MLCStreamEngine::isStreamCached(const DynamicStreamSliceId &slice) {
+  assert(this->isStreamRequest(slice) && "Should be a stream request.");
+  auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  auto staticStream = stream->getStaticStream();
   // So far do not cache for load stream.
   if (staticStream->getStreamType() == "load") {
     return false;
@@ -93,62 +84,43 @@ bool MLCStreamEngine::isStreamCached(PacketPtr pkt) {
   return true;
 }
 
-bool MLCStreamEngine::receiveOffloadStreamRequest(PacketPtr pkt) {
-  assert(this->isStreamOffloaded(pkt) && "Should be an offloaded stream pkt.");
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  auto startIdx = streamMemAccess->element->FIFOIdx.entryIdx;
-  auto staticStream = streamMemAccess->getStream();
-
-  // Try to find the dynamic stream.
-  for (auto &stream : this->streams) {
-    if (stream->getStaticStream() == staticStream) {
-      stream->receiveStreamRequest(startIdx);
-      return true;
-    }
-  }
-
-  assert(false && "Failed to find the MLCDynamicStream.");
-  return false;
+bool MLCStreamEngine::receiveOffloadStreamRequest(
+    const DynamicStreamSliceId &slice) {
+  assert(this->isStreamOffloaded(slice) &&
+         "Should be an offloaded stream request.");
+  auto startIdx = slice.startIdx;
+  auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  stream->receiveStreamRequest(startIdx);
+  return true;
 }
 
-void MLCStreamEngine::receiveOffloadStreamRequestHit(PacketPtr pkt) {
-  assert(this->isStreamOffloaded(pkt) && "Should be an offloaded stream pkt.");
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  auto startIdx = streamMemAccess->element->FIFOIdx.entryIdx;
-  auto staticStream = streamMemAccess->getStream();
-
-  // Try to find the dynamic stream.
-  for (auto &stream : this->streams) {
-    if (stream->getStaticStream() == staticStream) {
-      stream->receiveStreamRequestHit(startIdx);
-      return;
-    }
-  }
-
-  assert(false && "Failed to find the MLCDynamicStream.");
+void MLCStreamEngine::receiveOffloadStreamRequestHit(
+    const DynamicStreamSliceId &slice) {
+  assert(this->isStreamOffloaded(slice) &&
+         "Should be an offloaded stream request.");
+  auto startIdx = slice.startIdx;
+  auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  stream->receiveStreamRequestHit(startIdx);
 }
 
-int MLCStreamEngine::getCacheLevel(PacketPtr pkt) {
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  if (streamMemAccess == nullptr) {
-    return 0;
-  }
-  return streamMemAccess->cacheLevel;
-}
-
-void MLCStreamEngine::serveMiss(PacketPtr pkt) {
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  if (streamMemAccess == nullptr) {
+void MLCStreamEngine::serveMiss(const DynamicStreamSliceId &slice) {
+  if (!this->isStreamRequest(slice)) {
     return;
   }
-  auto stream = streamMemAccess->getStream();
-  stream->numMissL1++;
+  auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  auto staticStream = stream->getStaticStream();
+  staticStream->numMissL1++;
 }
 
-StreamMemAccess *
-MLCStreamEngine::getStreamMemAccessFromPacket(PacketPtr pkt) const {
-  if (pkt == nullptr) {
+MLCDynamicStream *MLCStreamEngine::getMLCDynamicStreamFromSlice(
+    const DynamicStreamSliceId &slice) const {
+  if (!slice.isValid()) {
     return nullptr;
   }
-  return pkt->findNextSenderState<StreamMemAccess>();
+  auto iter = this->idToStreamMap.find(slice.streamId);
+  if (iter != this->idToStreamMap.end()) {
+    return iter->second;
+  } else {
+    return nullptr;
+  }
 }

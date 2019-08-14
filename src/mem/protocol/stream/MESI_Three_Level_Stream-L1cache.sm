@@ -132,6 +132,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     // ! Sean: StreamAwareCache
     L0_StreamConfig, desc="StreamConfig from L0";
     L2_StreamData,   desc="StreamData from L2";
+    L0_FwdStreamReq, desc="Stream request served by L0 and forwarded to L1";
   }
 
   // TYPES
@@ -168,12 +169,12 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   structure(MLCStreamEngine, external="yes", desc="Stream Engine at L1") {
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamData(ResponseMsg);
-    void serveMiss(PacketPtr);
-    bool isStreamRequest(PacketPtr);
-    bool isStreamOffloaded(PacketPtr);
-    bool isStreamCached(PacketPtr);
-    bool receiveOffloadStreamRequest(PacketPtr);
-    void receiveOffloadStreamRequestHit(PacketPtr);
+    void serveMiss(DynamicStreamSliceId);
+    bool isStreamRequest(DynamicStreamSliceId);
+    bool isStreamOffloaded(DynamicStreamSliceId);
+    bool isStreamCached(DynamicStreamSliceId);
+    bool receiveOffloadStreamRequest(DynamicStreamSliceId);
+    void receiveOffloadStreamRequestHit(DynamicStreamSliceId);
   }
 
   MLCStreamEngine se, constructor="this, m_bufferToL0_ptr, m_requestToL2_ptr";
@@ -397,27 +398,35 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
           trigger(Event:L0_StreamConfig, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:INV_ACK) {
           trigger(Event:L0_Ack, in_msg.addr, cache_entry, tbe);
+        } else if (in_msg.Class == CoherenceClass:STREAM_L0) {
+          /**
+           * This stream request is served at L0, but the stream is 
+           * offloaded, so we should notify the stream engine.
+           */
+           assert(in_msg.slice.isValid());
+           assert(se.isStreamOffloaded(in_msg.slice));
+           se.receiveOffloadStreamRequestHit(in_msg.slice);
+           trigger(Event:L0_FwdStreamReq, in_msg.addr, cache_entry, tbe);
         } else {
 
-
           // Stream-aware logic.
-          if (se.isStreamRequest(in_msg.pkt)) {
+          if (se.isStreamRequest(in_msg.slice)) {
             // Stream packet.
             if (is_valid(cache_entry)) {
               // Hit. Notify the stream engine and response.
-              if (se.isStreamOffloaded(in_msg.pkt)) {
-                se.receiveOffloadStreamRequestHit(in_msg.pkt);
+              if (se.isStreamOffloaded(in_msg.slice)) {
+                se.receiveOffloadStreamRequestHit(in_msg.slice);
               }
               trigger(mandatory_request_type_to_event(in_msg.Class),
                       in_msg.addr, cache_entry, tbe);
             }
             // Missed.
-            se.serveMiss(in_msg.pkt);
-            if (se.isStreamOffloaded(in_msg.pkt)) {
-              se.receiveOffloadStreamRequest(in_msg.pkt);
+            se.serveMiss(in_msg.slice);
+            if (se.isStreamOffloaded(in_msg.slice)) {
+              se.receiveOffloadStreamRequest(in_msg.slice);
               trigger(Event:OffloadStreamLoad, in_msg.addr, cache_entry, tbe);
             } else {
-              if (!se.isStreamCached(in_msg.pkt)) {
+              if (!se.isStreamCached(in_msg.slice)) {
                 // Not cached.
                 assert(in_msg.Class == CoherenceClass:GETU);
                 trigger(Event:LoadU, in_msg.addr, cache_entry, tbe);
@@ -440,7 +449,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
             if (cache.cacheAvail(in_msg.addr)) {
               // L1 does't have the line, but we have space for it
               // in the L1 let's see if the L2 has it
-              se.serveMiss(in_msg.pkt);
               trigger(mandatory_request_type_to_event(in_msg.Class),
                       in_msg.addr, cache_entry, tbe);
             } else {
@@ -1262,5 +1270,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   transition(I, OffloadStreamLoad, I) {
     k_popL0RequestQueue; 
+  }
+
+  transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_FwdStreamReq) {
+    k_popL0RequestQueue;
   }
 }

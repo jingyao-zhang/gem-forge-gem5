@@ -90,10 +90,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   // EVENTS
   enumeration(Event, desc="Cache events") {
     // L0 events
-    Load,            desc="Load request from the home processor";
-    LoadUncache,     desc="Load request that will not be cached";
-    Ifetch,          desc="I-fetch request from the home processor";
-    Store,           desc="Store request from the home processor";
+    Load,               desc="Load request from the home processor";
+    LoadUncache,        desc="Load request that will not be cached";
+    LoadHitAndForward,  desc="Load request hit, but still forward to L1";
+    Ifetch,             desc="I-fetch request from the home processor";
+    Store,              desc="Store request from the home processor";
 
     Inv,           desc="Invalidate request from L2 bank";
 
@@ -149,9 +150,12 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
    * ! Sean: StreamAwareCache
    */
   structure(L0StreamEngine, external="yes", desc="Stream Engine at L0") {
-    void receiveMiss(PacketPtr);
-    int getCacheLevel(PacketPtr);
+    void receiveStreamConfigure(PacketPtr);
     void serveMiss(PacketPtr);
+    bool isStreamAccess(PacketPtr);
+    bool shouldCache(PacketPtr);
+    bool shouldForward(PacketPtr);
+    DynamicStreamSliceId getSliceId(PacketPtr);
   }
 
   L0StreamEngine se, constructor="this";
@@ -357,12 +361,68 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
         } else if (in_msg.Type == RubyRequestType:StreamConfig) {
           Entry Dcache_entry := getDCacheEntry(in_msg.LineAddress);
           TBE tbe := TBEs[in_msg.LineAddress];
-          trigger(mandatory_request_type_to_event(in_msg.Type), in_msg.LineAddress,
+          se.receiveStreamConfigure(in_msg.pkt);
+          trigger(Event:StreamConfig, in_msg.LineAddress,
                   Dcache_entry, tbe); 
         } else {
 
           // *** DATA ACCESS ***
           Entry Dcache_entry := getDCacheEntry(in_msg.LineAddress);
+
+
+          /*************************************************************
+           * ! Sean: StreamAwareCache.
+           *************************************************************/
+          if (se.isStreamAccess(in_msg.pkt)) {
+            // Stream access.
+            Event event := mandatory_request_type_to_event(in_msg.Type);
+            assert(event == Event:Load);
+            if (is_valid(Dcache_entry)) {
+              // Hit.
+              if (se.shouldForward(in_msg.pkt)) {
+                // We should forward the request to lower cache level
+                // while serving this request.
+                trigger(Event:LoadHitAndForward, in_msg.LineAddress, 
+                        Dcache_entry, TBEs[in_msg.LineAddress]);
+              } else {
+                // No need to forward it, simply serve the request.
+                trigger(Event:Load, in_msg.LineAddress,
+                        Dcache_entry, TBEs[in_msg.LineAddress]);
+              }
+
+            } else {
+              // Miss.
+              // Sanity check that this is not in ICache.
+              Entry Icache_entry := getICacheEntry(in_msg.LineAddress);
+              if (is_valid(Icache_entry)) {
+                error("Stream access hit in Icache.\n");
+              }
+
+              // Do we want to cache it?
+              if (se.shouldCache(in_msg.pkt)) {
+                // Check if we have space for this line.
+                if (Dcache.cacheAvail(in_msg.LineAddress)) {
+                  se.serveMiss(in_msg.pkt);
+                  trigger(Event:Load, in_msg.LineAddress,
+                          Dcache_entry, TBEs[in_msg.LineAddress]);
+                } else {
+                  // Evict some line.
+                  trigger(Event:L0_Replacement, Dcache.cacheProbe(in_msg.LineAddress),
+                          getDCacheEntry(Dcache.cacheProbe(in_msg.LineAddress)),
+                          TBEs[Dcache.cacheProbe(in_msg.LineAddress)]);
+                }
+              } else {
+                // Not cache it. Send the request.
+                se.serveMiss(in_msg.pkt);
+                trigger(Event:LoadUncache, in_msg.LineAddress,
+                        Dcache_entry, TBEs[in_msg.LineAddress]);
+              }
+            }
+          }
+
+          /********************************************************************
+           * Normal case for non-stream.
+           *******************************************************************/
           if (is_valid(Dcache_entry)) {
             // The tag matches for the L0, so the L0 ask the L1 for it
             trigger(mandatory_request_type_to_event(in_msg.Type), in_msg.LineAddress,
@@ -377,22 +437,9 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                       Icache_entry, TBEs[in_msg.LineAddress]);
             }
 
-            /**
-             * ! Sean: StreamAwareCache.
-             */
-            se.receiveMiss(in_msg.pkt);
-            int cacheLevel := se.getCacheLevel(in_msg.pkt);
-            if (cacheLevel > 0) {
-              // We are not going to cache this.
-              se.serveMiss(in_msg.pkt);
-              trigger(Event:LoadUncache, in_msg.LineAddress,
-                      Dcache_entry, TBEs[in_msg.LineAddress]);
-            }
-
             if (Dcache.cacheAvail(in_msg.LineAddress)) {
               // L1 does't have the line, but we have space for it
               // in the L0 let's see if the L1 has it
-              se.serveMiss(in_msg.pkt);
               trigger(mandatory_request_type_to_event(in_msg.Type), in_msg.LineAddress,
                       Dcache_entry, TBEs[in_msg.LineAddress]);
             } else {
@@ -419,8 +466,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
-        // ! Sean: StreamAwareCache.
-        out_msg.pkt := in_msg.pkt;
+        out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
   }
@@ -436,8 +482,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
-        // ! Sean: StreamAwareCache.
-        out_msg.pkt := in_msg.pkt;
+        out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
   }
@@ -455,7 +500,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
-        out_msg.pkt := in_msg.pkt;
+        out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
   }
@@ -472,7 +517,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
-        out_msg.pkt := in_msg.pkt;
+        out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
   }
@@ -700,6 +745,20 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     }
   }
 
+  action(fsa_forwardStreamAccess, "fsa", desc="Forward a served request for offloaded stream") {
+    peek(mandatoryQueue_in, RubyRequest) {
+      enqueue(requestNetwork_out, CoherenceMsg, request_latency) {
+        out_msg.addr := address;
+        out_msg.Class := CoherenceClass:STREAM_L0;
+        out_msg.Sender := machineID;
+        out_msg.Dest := createMachineID(MachineType:L1Cache, version);
+        out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.slice := se.getSliceId(in_msg.pkt);
+      }
+    } 
+  }
+
   //*****************************************************
   // TRANSITIONS
   //*****************************************************
@@ -754,6 +813,13 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   // Transitions from Shared
   transition({S,E,M}, Load) {
     h_load_hit;
+    uu_profileDataHit;
+    k_popMandatoryQueue;
+  }
+
+  transition({S, E, M}, LoadHitAndForward) {
+    h_load_hit;
+    fsa_forwardStreamAccess;
     uu_profileDataHit;
     k_popMandatoryQueue;
   }

@@ -15,8 +15,9 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
                                    AbstractStreamAwareController *_controller,
                                    MessageBuffer *_responseMsgBuffer,
                                    MessageBuffer *_requestToLLCMsgBuffer)
-    : stream(_configData->stream), history(_configData->history),
-      controller(_controller), responseMsgBuffer(_responseMsgBuffer),
+    : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
+      history(_configData->history), controller(_controller),
+      responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer), maxNumElements(256),
       headIdx(0), tailIdx(0), llcTailIdx(0) {
 

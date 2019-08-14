@@ -2,6 +2,7 @@
 #define __CPU_TDG_ACCELERATOR_STREAM_ELEMENT_HH__
 
 #include "base/types.hh"
+#include "cache/DynamicStreamSliceId.hh"
 #include "cpu/gem_forge/tdg_packet_handler.hh"
 
 #include <unordered_map>
@@ -12,29 +13,26 @@ class StreamEngine;
 class StreamStoreInst;
 
 struct FIFOEntryIdx {
-  uint64_t streamInstance;
+  DynamicStreamId streamId;
   uint64_t configSeqNum;
   uint64_t entryIdx;
   FIFOEntryIdx();
-  FIFOEntryIdx(uint64_t _streamInstance, uint64_t _configSeqNum,
-               uint64_t _entryIdx);
   void next() { this->entryIdx++; }
   void newInstance(uint64_t configSeqNum) {
     this->entryIdx = 0;
-    this->streamInstance++;
+    this->streamId.streamInstance++;
     this->configSeqNum = configSeqNum;
   }
 
   bool operator==(const FIFOEntryIdx &other) const {
-    return this->streamInstance == other.streamInstance &&
-           this->entryIdx == other.entryIdx;
+    return this->streamId == other.streamId && this->entryIdx == other.entryIdx;
   }
   bool operator!=(const FIFOEntryIdx &other) const {
     return !(this->operator==(other));
   }
   bool operator>(const FIFOEntryIdx &other) const {
-    return this->streamInstance > other.streamInstance ||
-           (this->streamInstance == other.streamInstance &&
+    return this->streamId.streamInstance > other.streamId.streamInstance ||
+           (this->streamId.streamInstance == other.streamId.streamInstance &&
             this->entryIdx > other.entryIdx);
   }
 };
@@ -63,7 +61,7 @@ public:
                   Addr _cacheBlockVirtualAddr, int _additionalDelay = 0)
       : stream(_stream), element(_element),
         cacheBlockVirtualAddr(_cacheBlockVirtualAddr),
-        additionalDelay(_additionalDelay), cacheLevel(0) {}
+        additionalDelay(_additionalDelay) {}
   virtual ~StreamMemAccess() {}
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
   void handlePacketResponse(PacketPtr packet);
@@ -71,6 +69,8 @@ public:
   void handleStreamEngineResponse();
 
   Stream *getStream() const { return this->stream; }
+
+  DynamicStreamSliceId getSliceId() const;
 
   void setAdditionalDelay(int additionalDelay) {
     this->additionalDelay = additionalDelay;
@@ -102,12 +102,6 @@ public:
    * Additional delay we want to add after we get the response.
    */
   int additionalDelay;
-  /**
-   * ! Sean: StreamAwareCache
-   * Which cache level should this access be cached. Default 0 (closest to
-   * core).
-   */
-  int cacheLevel;
 };
 
 struct StreamElement {

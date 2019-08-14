@@ -67,7 +67,8 @@
 
 #define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
   STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
-                 element->FIFOIdx.streamInstance, element->FIFOIdx.entryIdx,   \
+                 element->FIFOIdx.streamId.streamInstance,                     \
+                 element->FIFOIdx.entryIdx,                                    \
                  ##args)
 
 CoherentXBar::CoherentXBar(const CoherentXBarParams *p)

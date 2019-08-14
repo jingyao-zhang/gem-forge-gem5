@@ -1,5 +1,6 @@
 protocol "MESI_Two_Level_Stream";
 include "RubySlicc_interfaces.slicc";
+include "StreamTypes.sm";
 include "MESI_Two_Level_Stream-msg.sm";
 include "MESI_Two_Level_Stream-L1cache.sm";
 include "MESI_Two_Level_Stream-L2cache.sm";

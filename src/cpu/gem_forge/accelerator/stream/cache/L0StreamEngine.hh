@@ -12,6 +12,12 @@
 
 #include "mem/packet.hh"
 
+#include "cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceId.hh"
+
+#include "CacheStreamConfigureData.hh"
+
+#include <unordered_set>
+
 class AbstractStreamAwareController;
 class StreamMemAccess;
 
@@ -20,16 +26,22 @@ public:
   L0StreamEngine(AbstractStreamAwareController *_controller);
   ~L0StreamEngine();
 
-  void receiveMiss(PacketPtr pkt);
+  bool isStreamAccess(PacketPtr pkt) const;
+  void receiveStreamConfigure(PacketPtr pkt);
+  bool shouldForward(PacketPtr pkt);
+  bool shouldCache(PacketPtr pkt);
   void serveMiss(PacketPtr pkt);
-  int getCacheLevel(PacketPtr pkt);
+
+  DynamicStreamSliceId getSliceId(PacketPtr pkt) const;  
 
 private:
   AbstractStreamAwareController *controller;
 
-  bool isStreamPacket(PacketPtr pkt) const {
-    return this->getStreamMemAccessFromPacket(pkt) != nullptr;
-  }
+  /**
+   * Set of all offloaded streams.
+   */
+  std::unordered_set<DynamicStreamId, DynamicStreamIdHasher> offloadedStreams;
+
   StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;
 };
 

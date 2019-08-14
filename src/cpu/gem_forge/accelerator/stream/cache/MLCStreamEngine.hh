@@ -12,7 +12,7 @@
 
 #include "mem/packet.hh"
 
-#include <list>
+#include <unordered_map>
 
 class StreamMemAccess;
 class MessageBuffer;
@@ -36,23 +36,24 @@ public:
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamData(const ResponseMsg &msg);
 
-  void receiveMiss(PacketPtr pkt);
-  int getCacheLevel(PacketPtr pkt);
-  void serveMiss(PacketPtr pkt);
+  void serveMiss(const DynamicStreamSliceId &slice);
 
-  bool isStreamRequest(PacketPtr pkt);
-  bool isStreamOffloaded(PacketPtr pkt);
-  bool isStreamCached(PacketPtr pkt);
-  bool receiveOffloadStreamRequest(PacketPtr pkt);
-  void receiveOffloadStreamRequestHit(PacketPtr pkt);
+  bool isStreamRequest(const DynamicStreamSliceId &slice);
+  bool isStreamOffloaded(const DynamicStreamSliceId &slice);
+  bool isStreamCached(const DynamicStreamSliceId &slice);
+  bool receiveOffloadStreamRequest(const DynamicStreamSliceId &slice);
+  void receiveOffloadStreamRequestHit(const DynamicStreamSliceId &slice);
 
 private:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseToUpperMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;
+  std::unordered_map<DynamicStreamId, MLCDynamicStream *, DynamicStreamIdHasher>
+      idToStreamMap;
   std::list<MLCDynamicStream *> streams;
 
-  StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;
+  MLCDynamicStream *
+  getMLCDynamicStreamFromSlice(const DynamicStreamSliceId &slice) const;
 };
 
 #endif
