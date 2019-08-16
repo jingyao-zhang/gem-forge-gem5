@@ -118,7 +118,8 @@ void StreamEngine::handshake(LLVMTraceCPU *_cpu,
   this->placementLat = cpuParams->streamEnginePlacementLat;
   this->placement = cpuParams->streamEnginePlacement;
   this->writebackCacheLine = new uint8_t[cpu->system->cacheLineSize()];
-  this->enableStreamFloat = cpuParams->enableStreamFloat;
+  this->enableStreamFloat = cpuParams->streamEngineEnableFloat;
+  this->enableStreamFloatIndirect = cpuParams->streamEngineEnableFloatIndirect;
 
   this->initializeFIFO(this->maxTotalRunAheadLength);
 
@@ -396,7 +397,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
     if (this->enableStreamFloat) {
-      if (S->getStreamType() == "load") {
+      if (S->isDirectLoadStream()) {
         // Get the CacheStreamConfigureData.
         auto streamConfigureData = S->allocateCacheConfigureData();
 
@@ -407,6 +408,30 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
           streamConfigureData->initPAddr = initPAddr;
         } else {
           panic("Stream so far can only work in standalone mode.");
+        }
+
+        /**
+         * If we enable indirect stream to float, so far we add only
+         * one indirect stream here.
+         */
+        if (this->enableStreamFloatIndirect) {
+          for (auto dependentStream : S->dependentStreams) {
+            if (dependentStream->getStreamType() == "load") {
+              if (dependentStream->baseStreams.size() == 1) {
+                // Only dependent on this direct stream.
+                auto indirectStreamConfigureData =
+                    dependentStream->allocateCacheConfigureData();
+                streamConfigureData->indirectStream = dependentStream;
+                streamConfigureData->indirectDynamicId =
+                    indirectStreamConfigureData->dynamicId;
+                streamConfigureData->indirectHistory =
+                    indirectStreamConfigureData->history;
+                // Don't forget to release the indirect stream configure data.
+                delete indirectStreamConfigureData;
+                break;
+              }
+            }
+          }
         }
 
         auto pkt = TDGPacketHandler::createStreamConfigPacket(
@@ -1496,7 +1521,8 @@ void StreamEngine::issueElement(StreamElement *element) {
     const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
     auto cacheBlockVirtualAddr = cacheBlockBreakdown.cacheBlockVirtualAddr;
 
-    if (this->enableMerge) {
+    // We only enable merge for direct load stream.
+    if (this->enableMerge && S->isDirectLoadStream()) {
       // Check if we already have the cache block fetched.
       auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
       if (S->getStreamType() == "load") {

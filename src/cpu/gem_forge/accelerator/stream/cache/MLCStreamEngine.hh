@@ -9,6 +9,7 @@
  */
 
 #include "MLCDynamicStream.hh"
+#include "MLCDynamicIndirectStream.hh"
 
 #include "mem/packet.hh"
 

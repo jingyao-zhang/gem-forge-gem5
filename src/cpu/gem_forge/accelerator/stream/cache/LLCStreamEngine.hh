@@ -4,7 +4,7 @@
 #include "LLCDynamicStream.hh"
 
 // Generate by slicc.
-#include "mem/protocol/StreamMeta.hh"
+#include "mem/protocol/RequestMsg.hh"
 
 #include "mem/ruby/common/Consumer.hh"
 
@@ -21,12 +21,15 @@ class LLCStreamEngine : public Consumer {
 public:
   LLCStreamEngine(AbstractStreamAwareController *_controller,
                   MessageBuffer *_streamMigrateMsgBuffer,
-                  MessageBuffer *_streamIssueMsgBuffer);
+                  MessageBuffer *_streamIssueMsgBuffer,
+                  MessageBuffer *_streamIndirectIssueMsgBuffer);
   ~LLCStreamEngine();
 
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamMigrate(LLCDynamicStreamPtr stream);
-  void receiveStreamFlow(StreamMeta streamMeta);
+  void receiveStreamFlow(const StreamMeta &streamMeta);
+  void receiveStreamElementData(const StreamMeta &streamMeta);
+  void receiveStreamIndirectRequest(const RequestMsg &req);
   void wakeup() override;
   void print(std::ostream &out) const override;
 
@@ -35,6 +38,7 @@ private:
   // Out going stream migrate buffer.
   MessageBuffer *streamMigrateMsgBuffer;
   MessageBuffer *streamIssueMsgBuffer;
+  MessageBuffer *streamIndirectIssueMsgBuffer;
   const int issueWidth;
   const int migrateWidth;
 
@@ -69,6 +73,26 @@ private:
   bool issueStream(LLCDynamicStream *stream);
 
   /**
+   * Issue the indirect elements for a stream.
+   */
+  bool issueStreamIndirect(LLCDynamicStream *stream);
+
+  /**
+   * Helper function to issue stream request to this controller.
+   */
+  void issueStreamRequestHere(LLCDynamicStream *stream, Addr paddrLine,
+                              uint64_t startIdx, int numElements, bool fwdToSE);
+
+  /**
+   * Helper function to issue stream request to other controller.
+   * TODO: Remember the offset within the cache line.
+   * TODO: So far let's pretend we simply send a cache line.
+   */
+  void issueStreamRequestThere(LLCDynamicStream *stream, Addr paddrLine,
+                               uint64_t startIdx, int numElements,
+                               bool fwdToSE);
+
+  /**
    * Migrate streams.
    */
   void migrateStreams();
@@ -79,9 +103,20 @@ private:
   void migrateStream(LLCDynamicStream *stream);
 
   /**
+   * Helper function to map an address to a LLC bank.
+   */
+  MachineID mapPaddrToLLCBank(Addr paddr) const;
+
+  /**
    * Check if this address is handled by myself.
    */
   bool isPAddrHandledByMe(Addr paddr) const;
+
+  /**
+   * Helper function to check if a stream should
+   * be migrated.
+   */
+  bool canMigrateStream(LLCDynamicStream *stream) const;
 };
 
 #endif

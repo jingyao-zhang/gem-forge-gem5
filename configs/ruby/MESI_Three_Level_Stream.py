@@ -118,7 +118,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                    clk_domain = clk_domain, ruby_system = ruby_system,
                    llc_select_num_bits = l2_bits,
                    llc_select_low_bit = l2_select_low_bit,
-                   enable_stream_float = options.gem_forge_enable_stream_float,
+                   enable_stream_float = options.gem_forge_stream_engine_enable_float,
                    )
 
             cpu_seq = RubySequencer(version = i * num_cpus_per_cluster + j,
@@ -144,7 +144,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     # For the AbstractStreamAwareController
                     llc_select_num_bits = l2_bits,
                     llc_select_low_bit = l2_select_low_bit,
-                    enable_stream_float = options.gem_forge_enable_stream_float,
+                    enable_stream_float = options.gem_forge_stream_engine_enable_float,
                     )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
@@ -206,7 +206,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                         # ! So far do block interleaving.
                         llc_select_low_bit=l2_select_low_bit,
                         llc_select_num_bits=l2_bits,
-                        enable_stream_float=options.gem_forge_enable_stream_float,
+                        enable_stream_float=options.gem_forge_stream_engine_enable_float,
                         )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"
@@ -233,6 +233,11 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l2_cntrl.streamMigrateToL2Cache.master = ruby_system.network.slave
             l2_cntrl.streamMigrateFromL2Cache = MessageBuffer()
             l2_cntrl.streamMigrateFromL2Cache.slave = ruby_system.network.master
+
+            l2_cntrl.streamIndirectToL2Cache = MessageBuffer()
+            l2_cntrl.streamIndirectToL2Cache.master = ruby_system.network.slave
+            l2_cntrl.streamIndirectFromL2Cache = MessageBuffer()
+            l2_cntrl.streamIndirectFromL2Cache.slave = ruby_system.network.master
 
     # Run each of the ruby memory controllers at a ratio of the frequency of
     # the ruby system
@@ -342,6 +347,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
     # ! Sean: StreamAwareCache
     # ! Add one virtual network for stream migration request.
-    ruby_system.network.number_of_virtual_networks = 4
+    # ! Add one virtual network for stream indirect request.
+    ruby_system.network.number_of_virtual_networks = 5
     topology = create_topology(all_cntrls, options)
     return (cpu_sequencers, mem_dir_cntrl_nodes, topology)

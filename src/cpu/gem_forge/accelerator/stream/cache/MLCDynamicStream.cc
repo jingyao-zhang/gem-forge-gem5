@@ -11,6 +11,11 @@
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
 
+#define MLCS_DPRINTF(format, args...)                                          \
+  DPRINTF(RubyStream, "[MLC_SE%d][%lu]: " format,                              \
+          this->controller->getMachineID().num,                                \
+          this->dynamicStreamId.staticId, ##args)
+
 MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
                                    AbstractStreamAwareController *_controller,
                                    MessageBuffer *_responseMsgBuffer,
@@ -36,9 +41,8 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
   assert(streamMeta.m_valid && "Invalid stream meta-data for stream data.");
   auto stream = reinterpret_cast<Stream *>(streamMeta.m_stream);
   assert(this->stream == stream && "Unmatched static stream.");
-  DPRINTF(RubyStream, "Receive stream data [%lu, %lu).\n",
-          streamMeta.m_startIdx,
-          streamMeta.m_startIdx + streamMeta.m_numElements);
+  MLCS_DPRINTF("Receive data [%lu, %lu).\n", streamMeta.m_startIdx,
+               streamMeta.m_startIdx + streamMeta.m_numElements);
 
   /**
    * Find the correct stream element and insert the data there.
@@ -56,12 +60,12 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
     }
   }
 
-  assert(false &&
-         "Failed to find the allocated stream element for stream data.");
+  panic("Failed to find the allocated element for data. Tail %lu.\n",
+        this->tailIdx);
 }
 
 void MLCDynamicStream::receiveStreamRequest(uint64_t idx) {
-  DPRINTF(RubyStream, "Receive stream request idx %lu.\n", idx);
+  MLCS_DPRINTF("Receive request [%lu, ...).\n", idx);
 
   // We should be ahead of the core.
   assert(this->tailIdx > idx && "MLCStream is behind the core?");
@@ -84,7 +88,7 @@ void MLCDynamicStream::receiveStreamRequest(uint64_t idx) {
 }
 
 void MLCDynamicStream::receiveStreamRequestHit(uint64_t idx) {
-  DPRINTF(RubyStream, "Receive stream request hit idx %lu.\n", idx);
+  MLCS_DPRINTF("Receive request hit [%lu, ...).\n", idx);
 
   while (this->tailIdx <= idx) {
     this->allocateElement();
@@ -160,12 +164,16 @@ void MLCDynamicStream::makeResponse() {
   msg->m_Dest = upperMachineId;
   msg->m_MessageSize = MessageSizeType_Response_Data;
 
-  Cycles latency(1); // Just use 1 cycle latency here.
+  MLCS_DPRINTF("Make response [%lu, %lu) %#x.\n", element.startIdx,
+               element.startIdx + element.numElements, paddrLine);
+  // The latency should be consistency with the cache controller.
+  // However, I still failed to find a clean way to exponse this info
+  // to the stream engine. So far I manually set it to the default value
+  // from the L1 cache controller.
+  // TODO: Make it consistent with the cache controller.
+  Cycles latency(2);
   this->responseMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                    this->controller->cyclesToTicks(latency));
-
-  DPRINTF(RubyStream, "Make MLCStreamResponse [%lu, %lu) %#x.\n",
-          element.startIdx, element.startIdx + element.numElements, paddrLine);
 }
 
 void MLCDynamicStream::allocateElement() {
@@ -187,9 +195,7 @@ void MLCDynamicStream::allocateElement() {
     this->tailIdx++;
   }
 
-  DPRINTF(RubyStream, "Allocate MLCStreamElement [%lu, %lu).\n", startIdx,
-          startIdx + numElements);
-
+  MLCS_DPRINTF("Allocate [%lu, %lu).\n", startIdx, startIdx + numElements);
   this->elements.emplace_back(startIdx, numElements, vaddr);
 }
 
@@ -209,10 +215,9 @@ void MLCDynamicStream::sendCreditToLLC() {
       paddrLine, static_cast<MachineType>(selfMachineId.type + 1));
 
   // Send the flow control.
-  DPRINTF(RubyStream,
-          "MLC stream %#x extended %lu -> %lu, sent to LLC bank %d %#x.\n",
-          this->getStaticStream(), this->llcTailIdx, this->tailIdx,
-          llcMachineId.num, paddrLine);
+  MLCS_DPRINTF("Extended %lu -> %lu, sent to LLC bank %d %#x.\n",
+               this->getStaticStream(), this->llcTailIdx, this->tailIdx,
+               llcMachineId.num, paddrLine);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;

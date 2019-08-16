@@ -21,16 +21,18 @@ public:
                    MessageBuffer *_responseMsgBuffer,
                    MessageBuffer *_requestToLLCMsgBuffer);
 
+  virtual ~MLCDynamicStream() {}
+
   Stream *getStaticStream() { return this->stream; }
 
   const DynamicStreamId &getDynamicStreamId() const {
     return this->dynamicStreamId;
   }
-  void receiveStreamData(const ResponseMsg &msg);
+  virtual void receiveStreamData(const ResponseMsg &msg);
   void receiveStreamRequest(uint64_t idx);
   void receiveStreamRequestHit(uint64_t idx);
 
-private:
+protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;
   // Store the history;
@@ -73,9 +75,18 @@ private:
   std::list<MLCStreamElement> elements;
 
   void advanceStream();
-  void allocateElement();
   void makeResponse();
-  void sendCreditToLLC();
+
+  /**
+   * Allocate stream element. It merges neighboring elements if they are from
+   * the same cache line.
+   */
+  virtual void allocateElement();
+
+  /**
+   * Send credit to the LLC stream. Update the llcTailIdx.
+   */
+  virtual void sendCreditToLLC();
 };
 
 #endif

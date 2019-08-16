@@ -33,6 +33,7 @@ public:
    * Allocate the CacheStreamConfigureData.
    */
   CacheStreamConfigureData *allocateCacheConfigureData() override;
+  bool isDirectLoadStream() const override;
 
 private:
   LLVM::TDG::StreamInfo info;

@@ -7,10 +7,20 @@ LLCDynamicStream::LLCDynamicStream(CacheStreamConfigureData *_configData)
     : configData(*_configData), idx(0),
       allocatedIdx(_configData->initAllocatedIdx) {}
 
-Addr LLCDynamicStream::peekVAddr() const {
+LLCDynamicStream::~LLCDynamicStream() {
+  for (auto &indirectStream : this->indirectStreams) {
+    delete indirectStream;
+    indirectStream = nullptr;
+  }
+  this->indirectStreams.clear();
+}
+
+Addr LLCDynamicStream::peekVAddr() const { return this->getVAddr(this->idx); }
+
+Addr LLCDynamicStream::getVAddr(uint64_t idx) const {
   auto historySize = this->configData.history->history_size();
-  if (this->idx < historySize) {
-    auto vaddr = this->configData.history->history(this->idx).addr();
+  if (idx < historySize) {
+    auto vaddr = this->configData.history->history(idx).addr();
     return vaddr;
   } else {
     // ! Do something reasonable here.
@@ -22,4 +32,11 @@ Addr LLCDynamicStream::translateToPAddr(Addr vaddr) const {
   // ! Do something reasonable here to translate the vaddr.
   auto cpu = this->configData.stream->getCPU();
   return cpu->translateAndAllocatePhysMem(vaddr);
+}
+
+void LLCDynamicStream::addCredit(uint64_t n) {
+  this->allocatedIdx += n;
+  for (auto indirectStream : this->indirectStreams) {
+    indirectStream->addCredit(n);
+  }
 }

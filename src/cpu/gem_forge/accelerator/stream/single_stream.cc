@@ -78,6 +78,24 @@ SingleStream::SingleStream(const StreamArguments &args,
 
 SingleStream::~SingleStream() {}
 
+bool SingleStream::isDirectLoadStream() const {
+  if (this->getStreamType() != "load") {
+    return false;
+  }
+  // So far only only one base stream of phi type.
+  if (this->baseStreams.size() != 1) {
+    return false;
+  }
+  auto baseStream = *(this->baseStreams.begin());
+  if (baseStream->getStreamType() != "phi") {
+    return false;
+  }
+  if (!baseStream->backBaseStreams.empty()) {
+    return false;
+  }
+  return true;
+}
+
 void SingleStream::initializeBackBaseStreams() {
   for (const auto &backBaseStreamId : this->info.chosen_back_base_streams()) {
     assert(this->getStreamType() == "phi" &&

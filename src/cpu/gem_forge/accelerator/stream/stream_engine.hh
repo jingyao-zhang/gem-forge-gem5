@@ -181,6 +181,7 @@ private:
   bool noBypassingStore;
   bool continuousStore;
   bool enableStreamFloat;
+  bool enableStreamFloatIndirect;
   std::string placementLat;
   std::string placement;
   /**

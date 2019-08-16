@@ -24,6 +24,16 @@ public:
   HistoryPtr history;
   Addr initVAddr;
   Addr initPAddr;
+
+  /**
+   * The above basically represent a direct stream.
+   * We allow one additional indirect stream so far.
+   * TODO: Support multiple indirect streams.
+   */
+  Stream *indirectStream;
+  DynamicStreamId indirectDynamicId;
+  HistoryPtr indirectHistory;
+
   // Set by the MLC stream, for flow control.
   int initAllocatedIdx;
 };

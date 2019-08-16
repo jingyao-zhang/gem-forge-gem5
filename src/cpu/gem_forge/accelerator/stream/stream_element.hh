@@ -70,6 +70,7 @@ public:
 
   Stream *getStream() const { return this->stream; }
 
+  const DynamicStreamId &getDynamicStreamId() const;
   DynamicStreamSliceId getSliceId() const;
 
   void setAdditionalDelay(int additionalDelay) {

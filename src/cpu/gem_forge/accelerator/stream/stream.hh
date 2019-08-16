@@ -84,6 +84,7 @@ public:
   size_t numStepped;
   size_t numUsed;
   size_t numIssuedRequest;
+
   /**
    * ! Sean: StreamAwareCache
    * Statistics from StreamAwareCache.
@@ -120,6 +121,11 @@ public:
    * Allocate the CacheStreamConfigureData.
    */
   virtual CacheStreamConfigureData *allocateCacheConfigureData() = 0;
+  
+  /**
+   * Helper function used in StreamAwareCache.
+   */
+  virtual bool isDirectLoadStream() const { return false; }
 
 protected:
   LLVMTraceCPU *cpu;

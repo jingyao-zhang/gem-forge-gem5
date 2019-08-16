@@ -140,7 +140,9 @@ class LLVMTraceCPU(BaseCPU):
         "placement", "Which placement techinque to use.")
 
     # parameters for stream float.
-    enableStreamFloat = Param.Bool(False, "Whether the stream float is enabled.")
+    streamEngineEnableFloat = Param.Bool(False, "Whether the stream float is enabled.")
+    streamEngineEnableFloatIndirect = Param.Bool(False, "Whether the stream float is enabled for indirect stream.")
+    
 
     # Enable ideal prefetcher.
     enableIdealPrefetcher = Param.Bool(

@@ -32,6 +32,20 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                                      this->responseToUpperMsgBuffer,
                                      this->requestToLLCMsgBuffer);
   this->idToStreamMap.emplace(stream->getDynamicStreamId(), stream);
+  // Check if there is indirect stream.
+  if (streamConfigureData->indirectStream != nullptr) {
+    // Let's create an indirect stream.
+    // Fake a configure data to make the constructor happy.
+    CacheStreamConfigureData indirectStreamConfigureData(
+        streamConfigureData->indirectStream,
+        streamConfigureData->indirectDynamicId,
+        streamConfigureData->indirectHistory);
+    auto indirectStream = new MLCDynamicIndirectStream(
+        &indirectStreamConfigureData, this->controller,
+        this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer);
+    this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
+                                indirectStream);
+  }
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {

@@ -29,6 +29,10 @@ FIFOEntryIdx::FIFOEntryIdx()
   streamId.streamInstance = 0;
 }
 
+const DynamicStreamId &StreamMemAccess::getDynamicStreamId() const {
+  return this->element->FIFOIdx.streamId;
+}
+
 DynamicStreamSliceId StreamMemAccess::getSliceId() const {
   DynamicStreamSliceId slice;
   slice.streamId = this->element->FIFOIdx.streamId;

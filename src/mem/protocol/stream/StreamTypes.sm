@@ -8,9 +8,10 @@ structure(DynamicStreamSliceId, external="yes", desc="Dynamic identification for
 }
 
 structure(StreamMeta, desc="Meta-data for stream data") {
-  bool valid,  default="false",     desc="whether this meta data is valid";
-  uint64_t stream,                  desc="A pointer to the stream";
-  DynamicStreamId streamId,         desc="Dynamic id for the stream";
-  uint64_t startIdx,                desc="Start index";
-  uint64_t numElements,             desc="Number of elements";
+  bool valid,  default="false",  desc="whether this meta data is valid";
+  uint64_t stream,               desc="A pointer to the stream";
+  DynamicStreamId streamId,      desc="Dynamic id for the stream";
+  uint64_t startIdx,             desc="Start index";
+  uint64_t numElements,          desc="Number of elements";
+  bool fwdToSE, default="false", desc="Should forward the data to the LLC SE";
 }

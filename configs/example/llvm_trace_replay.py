@@ -86,8 +86,10 @@ parser.add_option("--gem-forge-stream-engine-placement",
                   type="string", default="original")
 
 # Stream Float options.
-parser.add_option("--gem-forge-enable-stream-float", action="store_true", default=False,
+parser.add_option("--gem-forge-stream-engine-enable-float", action="store_true", default=False,
                   help="Enable stream float in LLC.")
+parser.add_option("--gem-forge-stream-engine-enable-float-indirect", action="store_true", default=False,
+                  help="Enable indirect stream float in LLC.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)
@@ -242,7 +244,11 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
     llvm_trace_cpu.streamEngineEnableMerge = (
         options.gem_forge_stream_engine_enable_merge != 0
     )
-    llvm_trace_cpu.enableStreamFloat = options.gem_forge_enable_stream_float
+    llvm_trace_cpu.streamEngineEnableFloat = options.gem_forge_stream_engine_enable_float
+    llvm_trace_cpu.streamEngineEnableFloatIndirect = \
+        options.gem_forge_stream_engine_enable_float_indirect
+    if options.gem_forge_stream_engine_enable_float_indirect:
+        assert(options.gem_forge_stream_engine_enable_float)
 
     llvm_trace_cpu.enableIdealPrefetcher = options.gem_forge_ideal_prefetcher
     llvm_trace_cpu.idealPrefetcherDistance = options.gem_forge_ideal_prefetcher_distance
