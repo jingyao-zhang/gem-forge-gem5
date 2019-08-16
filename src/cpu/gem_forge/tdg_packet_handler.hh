@@ -18,6 +18,7 @@ public:
    * delete packet;
    */
   virtual void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) = 0;
+  virtual void issueToMemoryCallback(LLVMTraceCPU *cpu) = 0;
   virtual ~TDGPacketHandler() {}
   static PacketPtr createTDGPacket(Addr paddr, int size,
                                    TDGPacketHandler *handler, uint8_t *data,
@@ -25,6 +26,7 @@ public:
   static PacketPtr createStreamConfigPacket(Addr paddr, MasterID masterID,
                                             int contextId, uint64_t data);
   static void handleTDGPacketResponse(LLVMTraceCPU *cpu, PacketPtr pkt);
+  static void issueToMemory(LLVMTraceCPU *cpu, PacketPtr pkt);
 };
 
 #endif

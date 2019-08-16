@@ -68,6 +68,9 @@ public:
     panic("Calling handlePacketResponse on non-mem inst %u\n", this->getId());
   }
 
+  // Do nothing.
+  void issueToMemoryCallback(LLVMTraceCPU *cpu) override {}
+
   // Handle a tick for inst. By default do nothing.
   virtual void tick() {}
 

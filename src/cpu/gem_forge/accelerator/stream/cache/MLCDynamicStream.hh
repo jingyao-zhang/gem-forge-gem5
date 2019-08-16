@@ -75,7 +75,7 @@ protected:
   std::list<MLCStreamElement> elements;
 
   void advanceStream();
-  void makeResponse();
+  void makeResponse(MLCStreamElement &element);
 
   /**
    * Allocate stream element. It merges neighboring elements if they are from

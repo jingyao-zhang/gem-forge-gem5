@@ -181,7 +181,7 @@ void LLVMTraceCPU::tick() {
     if (this->system->getWorkItemsEnd() % this->totalActiveCPUs == 0) {
       // We should have been synchronized.
       this->cpuStatus = CPUStatusE::EXECUTING;
-      inform("Core %d start executiong.\n", this->cpuId());
+      inform("Core %d start executing.\n", this->cpuId());
     } else {
       // Check next cycle.
       schedule(this->tickEvent, nextCycle());
@@ -408,6 +408,7 @@ void LLVMTraceCPU::CPUPort::sendReq() {
     } else {
       this->inflyNumPackets++;
       this->blockedPacketPtrs.pop();
+      ::TDGPacketHandler::issueToMemory(this->owner, pkt);
       usedPorts++;
     }
   }

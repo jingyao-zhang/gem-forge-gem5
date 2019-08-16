@@ -57,6 +57,7 @@ Stream::Stream(const StreamArguments &args)
   this->numStepped = 0;
   this->numUsed = 0;
   this->numIssuedRequest = 0;
+  this->numCycleRequestLatency = 0;
   this->numMissL0 = 0;
   this->numMissL1 = 0;
   this->numMissL2 = 0;
@@ -66,7 +67,7 @@ Stream::~Stream() {}
 
 void Stream::dumpStreamStats(std::ostream &os) const {
   os << this->getStreamName() << '\n';
-#define dumpScalar(stat) os << "  " #stat << ' ' << this->stat << '\n'
+#define dumpScalar(stat) os << "  " #stat << ' ' << stat << '\n'
 
   dumpScalar(numConfigured);
   dumpScalar(numAllocated);
@@ -74,6 +75,14 @@ void Stream::dumpStreamStats(std::ostream &os) const {
   dumpScalar(numStepped);
   dumpScalar(numUsed);
   dumpScalar(numIssuedRequest);
+  dumpScalar(numCycleRequestLatency);
+
+  auto avgRequestLatency =
+      (this->numIssuedRequest > 0)
+          ? this->numCycleRequestLatency / this->numIssuedRequest
+          : 0;
+  dumpScalar(avgRequestLatency);
+
   dumpScalar(numMissL0);
   dumpScalar(numMissL1);
   dumpScalar(numMissL2);

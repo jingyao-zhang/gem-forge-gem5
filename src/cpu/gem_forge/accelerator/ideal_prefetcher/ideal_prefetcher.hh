@@ -19,6 +19,7 @@ public:
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override {
     delete packet;
   }
+  void issueToMemoryCallback(LLVMTraceCPU *cpu) override {}
 
 private:
   LLVM::TDG::CacheWarmUp cacheWarmUpProto;

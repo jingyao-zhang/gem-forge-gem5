@@ -650,6 +650,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
             in_msg.streamMeta.startIdx, 
             in_msg.streamMeta.numElements);
+          if (in_msg.streamMeta.fwdToSE) {
+            // We have to notify the SE about the data.
+            se.receiveStreamElementData(out_msg.streamMeta);
+          }
         }
       }
     }

@@ -1474,6 +1474,7 @@ void StreamEngine::issueElements() {
             });
   for (auto &element : readyElements) {
     element->isAddrReady = true;
+    element->addrReadyCycle = cpu->curCycle();
     if (element->stream->isMemStream()) {
       this->issueElement(element);
     } else {

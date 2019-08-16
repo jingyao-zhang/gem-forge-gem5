@@ -421,7 +421,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
           }
 
           /********************************************************************
-           * Normal case for non-stream.
+           * Normal case for non-offloaded-stream.
            *******************************************************************/
           if (is_valid(Dcache_entry)) {
             // The tag matches for the L0, so the L0 ask the L1 for it
@@ -440,6 +440,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
             if (Dcache.cacheAvail(in_msg.LineAddress)) {
               // L1 does't have the line, but we have space for it
               // in the L0 let's see if the L1 has it
+              se.serveMiss(in_msg.pkt);
               trigger(mandatory_request_type_to_event(in_msg.Type), in_msg.LineAddress,
                       Dcache_entry, TBEs[in_msg.LineAddress]);
             } else {

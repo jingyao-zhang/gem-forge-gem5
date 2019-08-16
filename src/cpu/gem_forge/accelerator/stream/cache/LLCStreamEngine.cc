@@ -15,6 +15,15 @@
   DPRINTF(RubyStream, "[LLC_SE%d]: " format,                                   \
           this->controller->getMachineID().num, ##args)
 
+#define LLC_STREAM_DPRINTF(streamId, format, args...)                          \
+  DPRINTF(RubyStream, "[LLC_SE%d][%lu]: " format,                              \
+          this->controller->getMachineID().num, streamId, ##args)
+
+#define LLC_ELEMENT_DPRINTF(streamId, startIdx, numElements, format, args...)  \
+  DPRINTF(RubyStream, "[LLC_SE%d][%lu][%lu, +%d): " format,                    \
+          this->controller->getMachineID().num, streamId, startIdx,            \
+          numElements, ##args)
+
 LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_streamMigrateMsgBuffer,
                                  MessageBuffer *_streamIssueMsgBuffer,
@@ -73,7 +82,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
   Addr paddrLine = makeLineAddress(paddr);
   assert(this->isPAddrHandledByMe(paddrLine) &&
          "Stream migrated to wrong LLC bank.\n");
-  LLCSE_DPRINTF("Received stream migrate.\n");
+  LLC_STREAM_DPRINTF(stream->getStaticId(), "Received migrate.\n");
 
   this->streams.push_back(stream);
   this->scheduleEvent(Cycles(1));
@@ -88,8 +97,6 @@ void LLCStreamEngine::receiveStreamFlow(const StreamMeta &streamMeta) {
 }
 
 void LLCStreamEngine::receiveStreamElementData(const StreamMeta &streamMeta) {
-  LLCSE_DPRINTF("Received stream element [%lu, %lu).\n", streamMeta.m_startIdx,
-                streamMeta.m_startIdx + streamMeta.m_numElements);
   // First find the stream.
   assert(streamMeta.m_fwdToSE &&
          "This stream element data should not be forward here.");
@@ -101,6 +108,8 @@ void LLCStreamEngine::receiveStreamElementData(const StreamMeta &streamMeta) {
     }
   }
   assert(stream != nullptr && "Failed to find the base stream.");
+  LLC_ELEMENT_DPRINTF(stream->getStaticId(), streamMeta.m_startIdx,
+                      streamMeta.m_numElements, "Received element data.\n");
   for (auto idx = streamMeta.m_startIdx,
             endIdx = streamMeta.m_startIdx + streamMeta.m_numElements;
        idx < endIdx; ++idx) {
@@ -149,9 +158,8 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
           msg.m_startIdx == stream->allocatedIdx) {
         // We found it.
         // Update the idx.
-        LLCSE_DPRINTF("Stream add credit %lu -> %lu, stream %lu.\n",
-                      msg.m_startIdx, msg.m_startIdx + msg.m_numElements,
-                      stream->allocatedIdx);
+        LLC_STREAM_DPRINTF(stream->getStaticId(), "Add credit %lu -> %lu.\n",
+                           msg.m_startIdx, msg.m_startIdx + msg.m_numElements);
         stream->addCredit(msg.m_numElements);
         processed = true;
         break;
@@ -160,7 +168,7 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
     if (processed) {
       iter = this->pendingStreamFlowControlMsgs.erase(iter);
     } else {
-      LLCSE_DPRINTF("Failed to process streawm credit %#x [%lu, %lu).\n",
+      LLCSE_DPRINTF("Failed to process stream credit %#x [%lu, %lu).\n",
                     msg.m_stream, msg.m_startIdx,
                     msg.m_startIdx + msg.m_numElements);
       ++iter;
@@ -299,8 +307,8 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
 void LLCStreamEngine::issueStreamRequestHere(LLCDynamicStream *stream,
                                              Addr paddrLine, uint64_t startIdx,
                                              int numElements, bool fwdToSE) {
-  LLCSE_DPRINTF("Issue [local] request %#x, [%lu, %lu).\n",
-                stream->getStaticStream(), startIdx, startIdx + numElements);
+  LLC_ELEMENT_DPRINTF(stream->getStaticId(), startIdx, numElements,
+                      "Issue [local] request.\n");
 
   auto selfMachineId = this->controller->getMachineID();
   auto streamCPUId = stream->getStaticStream()->getCPU()->cpuId();
@@ -330,11 +338,11 @@ void LLCStreamEngine::issueStreamRequestHere(LLCDynamicStream *stream,
 void LLCStreamEngine::issueStreamRequestThere(LLCDynamicStream *stream,
                                               Addr paddrLine, uint64_t startIdx,
                                               int numElements, bool fwdToSE) {
-  LLCSE_DPRINTF("Issue [remote] request %#x, [%lu, %lu).\n",
-                stream->getStaticStream(), startIdx, startIdx + numElements);
+  auto addrMachineId = this->mapPaddrToLLCBank(paddrLine);
+  LLC_ELEMENT_DPRINTF(stream->getStaticId(), startIdx, numElements,
+                      "Issue [remote] request to LLC%d.\n", addrMachineId.num);
 
   auto selfMachineId = this->controller->getMachineID();
-  auto addrMachineId = this->mapPaddrToLLCBank(paddrLine);
   auto streamCPUId = stream->getStaticStream()->getCPU()->cpuId();
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
@@ -393,8 +401,8 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   auto addrMachineId =
       this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
 
-  LLCSE_DPRINTF("Migrate stream %#x to %s.\n", stream->getStaticStream(),
-                MachineIDToString(addrMachineId).c_str());
+  LLC_STREAM_DPRINTF(stream->getStaticId(), "Migrate to LLC%d.\n",
+                     addrMachineId.num);
 
   auto msg =
       std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());
@@ -434,8 +442,8 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
          "Invalid stream meta for indirect request.");
   auto startIdx = req.m_streamMeta.m_startIdx;
   auto numElements = req.m_streamMeta.m_numElements;
-  LLCSE_DPRINTF("Inject [remote] request [%lu, %lu).\n", startIdx,
-                startIdx + numElements);
+  LLC_ELEMENT_DPRINTF(req.m_streamMeta.m_streamId.staticId, startIdx,
+                      numElements, "Inject [remote] request.\n");
 
   auto msg = std::make_shared<RequestMsg>(req);
   Cycles latency(1); // Just use 1 cycle latency here.

@@ -84,6 +84,7 @@ public:
   size_t numStepped;
   size_t numUsed;
   size_t numIssuedRequest;
+  size_t numCycleRequestLatency;
 
   /**
    * ! Sean: StreamAwareCache

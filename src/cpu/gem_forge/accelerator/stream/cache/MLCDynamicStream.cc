@@ -11,10 +11,15 @@
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
 
-#define MLCS_DPRINTF(format, args...)                                          \
+#define MLC_STREAM_DPRINTF(format, args...)                                    \
   DPRINTF(RubyStream, "[MLC_SE%d][%lu]: " format,                              \
           this->controller->getMachineID().num,                                \
           this->dynamicStreamId.staticId, ##args)
+
+#define MLC_ELEMENT_DPRINTF(startIdx, numElements, format, args...)            \
+  DPRINTF(RubyStream, "[MLC_SE%d][%lu][%lu, +%d): " format,                    \
+          this->controller->getMachineID().num,                                \
+          this->dynamicStreamId.staticId, startIdx, numElements, ##args)
 
 MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
                                    AbstractStreamAwareController *_controller,
@@ -23,7 +28,7 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
     : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
       history(_configData->history), controller(_controller),
       responseMsgBuffer(_responseMsgBuffer),
-      requestToLLCMsgBuffer(_requestToLLCMsgBuffer), maxNumElements(256),
+      requestToLLCMsgBuffer(_requestToLLCMsgBuffer), maxNumElements(64),
       headIdx(0), tailIdx(0), llcTailIdx(0) {
 
   // Initialize the buffer for 32 entries?
@@ -41,8 +46,8 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
   assert(streamMeta.m_valid && "Invalid stream meta-data for stream data.");
   auto stream = reinterpret_cast<Stream *>(streamMeta.m_stream);
   assert(this->stream == stream && "Unmatched static stream.");
-  MLCS_DPRINTF("Receive data [%lu, %lu).\n", streamMeta.m_startIdx,
-               streamMeta.m_startIdx + streamMeta.m_numElements);
+  MLC_ELEMENT_DPRINTF(streamMeta.m_startIdx, streamMeta.m_numElements,
+                      "Receive data.\n");
 
   /**
    * Find the correct stream element and insert the data there.
@@ -55,6 +60,9 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
       assert(element->numElements == streamMeta.m_numElements &&
              "Mismatch numElements.");
       element->setData(msg.m_DataBlk);
+      if (element->coreStatus == MLCStreamElement::CoreStatusE::WAIT) {
+        this->makeResponse(*element);
+      }
       this->advanceStream();
       return;
     }
@@ -65,7 +73,7 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
 }
 
 void MLCDynamicStream::receiveStreamRequest(uint64_t idx) {
-  MLCS_DPRINTF("Receive request [%lu, ...).\n", idx);
+  MLC_ELEMENT_DPRINTF(idx, 1, "Receive request.\n");
 
   // We should be ahead of the core.
   assert(this->tailIdx > idx && "MLCStream is behind the core?");
@@ -80,6 +88,9 @@ void MLCDynamicStream::receiveStreamRequest(uint64_t idx) {
       assert(element.coreStatus == MLCStreamElement::CoreStatusE::NONE &&
              "Already seen a request.");
       element.coreStatus = MLCStreamElement::CoreStatusE::WAIT;
+      if (element.dataReady) {
+        this->makeResponse(element);
+      }
       break;
     }
   }
@@ -88,7 +99,7 @@ void MLCDynamicStream::receiveStreamRequest(uint64_t idx) {
 }
 
 void MLCDynamicStream::receiveStreamRequestHit(uint64_t idx) {
-  MLCS_DPRINTF("Receive request hit [%lu, ...).\n", idx);
+  MLC_ELEMENT_DPRINTF(idx, 1, "Receive request hit.\n");
 
   while (this->tailIdx <= idx) {
     this->allocateElement();
@@ -112,16 +123,12 @@ void MLCDynamicStream::receiveStreamRequestHit(uint64_t idx) {
 void MLCDynamicStream::advanceStream() {
 
   /**
-   * Maybe let's make response in order?
+   * Maybe let's make release in order.
    */
   while (!this->elements.empty() && this->elements.front().dataReady) {
     bool shouldPop = false;
     const auto &element = this->elements.front();
-    if (element.coreStatus == MLCStreamElement::CoreStatusE::WAIT) {
-      // Data already ready.
-      this->makeResponse();
-      shouldPop = true;
-    } else if (element.coreStatus == MLCStreamElement::CoreStatusE::DONE) {
+    if (element.coreStatus == MLCStreamElement::CoreStatusE::DONE) {
       // Simply drop the elements, as the element is
       // already served by upper-level cache.
       shouldPop = true;
@@ -129,6 +136,7 @@ void MLCDynamicStream::advanceStream() {
 
     if (shouldPop) {
       assert(this->headIdx == element.startIdx && "Illegal headIdx somehow.");
+      MLC_ELEMENT_DPRINTF(element.startIdx, element.numElements, "Pop.\n");
       this->headIdx += element.numElements;
       this->elements.pop_front();
     } else {
@@ -146,10 +154,10 @@ void MLCDynamicStream::advanceStream() {
   }
 }
 
-void MLCDynamicStream::makeResponse() {
-  assert(!this->elements.empty() && "Make response when there is no elements.");
-  auto &element = this->elements.front();
+void MLCDynamicStream::makeResponse(MLCStreamElement &element) {
   assert(element.dataReady && "Data should already be ready.");
+  assert(element.coreStatus == MLCStreamElement::CoreStatusE::WAIT &&
+         "Element core status should be WAIT to make response.");
   auto cpu = this->getStaticStream()->getCPU();
   auto paddr = cpu->translateAndAllocatePhysMem(element.vaddr);
   auto paddrLine = makeLineAddress(paddr);
@@ -164,8 +172,8 @@ void MLCDynamicStream::makeResponse() {
   msg->m_Dest = upperMachineId;
   msg->m_MessageSize = MessageSizeType_Response_Data;
 
-  MLCS_DPRINTF("Make response [%lu, %lu) %#x.\n", element.startIdx,
-               element.startIdx + element.numElements, paddrLine);
+  MLC_ELEMENT_DPRINTF(element.startIdx, element.numElements,
+                      "Make response.\n");
   // The latency should be consistency with the cache controller.
   // However, I still failed to find a clean way to exponse this info
   // to the stream engine. So far I manually set it to the default value
@@ -174,6 +182,8 @@ void MLCDynamicStream::makeResponse() {
   Cycles latency(2);
   this->responseMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                    this->controller->cyclesToTicks(latency));
+  // Set the core status to DONE.
+  element.coreStatus = MLCStreamElement::CoreStatusE::DONE;
 }
 
 void MLCDynamicStream::allocateElement() {
@@ -195,7 +205,7 @@ void MLCDynamicStream::allocateElement() {
     this->tailIdx++;
   }
 
-  MLCS_DPRINTF("Allocate [%lu, %lu).\n", startIdx, startIdx + numElements);
+  MLC_ELEMENT_DPRINTF(startIdx, numElements, "Allocated.\n");
   this->elements.emplace_back(startIdx, numElements, vaddr);
 }
 
@@ -215,9 +225,8 @@ void MLCDynamicStream::sendCreditToLLC() {
       paddrLine, static_cast<MachineType>(selfMachineId.type + 1));
 
   // Send the flow control.
-  MLCS_DPRINTF("Extended %lu -> %lu, sent to LLC bank %d %#x.\n",
-               this->getStaticStream(), this->llcTailIdx, this->tailIdx,
-               llcMachineId.num, paddrLine);
+  MLC_STREAM_DPRINTF("Extended %lu -> %lu, sent credit to LLC%d.\n",
+                     this->llcTailIdx, this->tailIdx, llcMachineId.num);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;

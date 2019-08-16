@@ -12,9 +12,14 @@
   DPRINTF(RubyStream, "[L0_SE%d]: " format,                                    \
           this->controller->getMachineID().num, ##args)
 
-#define L0S_DPRINTF(stream, format, args...)                                   \
+#define L0_STREAM_DPRINTF(streamId, format, args...)                           \
   DPRINTF(RubyStream, "[L0_SE%d][%lu]: " format,                               \
-          this->controller->getMachineID().num, stream.staticId, ##args)
+          this->controller->getMachineID().num, streamId.staticId, ##args)
+
+#define L0_ELEMENT_DPRINTF(streamId, startIdx, numElements, format, args...)   \
+  DPRINTF(RubyStream, "[L0_SE%d][%lu][%lu, +%d): " format,                     \
+          this->controller->getMachineID().num, streamId.staticId, startIdx,   \
+          numElements, ##args)
 
 L0StreamEngine::L0StreamEngine(AbstractStreamAwareController *_controller)
     : controller(_controller) {}
@@ -66,6 +71,9 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
   if (!this->controller->isStreamFloatEnabled()) {
     return false;
   }
+  auto slice = this->getSliceId(pkt);
+  L0_ELEMENT_DPRINTF(slice.streamId, slice.startIdx,
+                     slice.endIdx - slice.startIdx, "Forward hit.\n");
   return true;
 }
 
@@ -76,8 +84,8 @@ void L0StreamEngine::serveMiss(PacketPtr pkt) {
   }
   auto stream = streamMemAccess->getStream();
   const auto &slice = streamMemAccess->getSliceId();
-  // L0S_DPRINTF(slice.streamId, "Miss [%lu, %lu).\n", slice.startIdx,
-  //             slice.endIdx);
+  L0_ELEMENT_DPRINTF(slice.streamId, slice.startIdx,
+                     slice.endIdx - slice.startIdx, "Miss.\n");
   stream->numMissL0++;
 }
 

@@ -72,6 +72,10 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
   return;
 }
 
+void StreamMemAccess::issueToMemoryCallback(LLVMTraceCPU *cpu) {
+  this->element->issueCycle = cpu->curCycle();
+}
+
 void StreamMemAccess::handleStreamEngineResponse() {
   this->element->handlePacketResponse(this);
 }
@@ -141,6 +145,13 @@ void StreamElement::markValueReady() {
   this->isValueReady = true;
   this->valueReadyCycle = this->getStream()->getCPU()->curCycle();
   STREAM_ELEMENT_DPRINTF(this, "Value ready.\n");
+  // Notify the stream for statistics.
+  if (this->issueCycle >= this->addrReadyCycle &&
+      this->issueCycle <= this->valueReadyCycle) {
+    // The issue cycle is valid.
+    this->stream->numCycleRequestLatency +=
+        this->valueReadyCycle - this->issueCycle;
+  }
 }
 
 void StreamElement::dump() const {

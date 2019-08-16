@@ -64,6 +64,7 @@ public:
         additionalDelay(_additionalDelay) {}
   virtual ~StreamMemAccess() {}
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
+  void issueToMemoryCallback(LLVMTraceCPU *cpu) override;
   void handlePacketResponse(PacketPtr packet);
   // This cache block is fetched in by some other StreamMemAccess.
   void handleStreamEngineResponse();
@@ -121,6 +122,8 @@ struct StreamElement {
   bool isValueReady;
 
   Cycles allocateCycle;
+  Cycles addrReadyCycle;
+  Cycles issueCycle;
   Cycles valueReadyCycle;
   Cycles firstCheckCycle;
 

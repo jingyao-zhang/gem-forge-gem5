@@ -49,3 +49,13 @@ void TDGPacketHandler::handleTDGPacketResponse(LLVMTraceCPU *cpu,
   assert(handler != NULL && "This is not a TDGPacket.");
   handler->handlePacketResponse(cpu, pkt);
 }
+
+void TDGPacketHandler::issueToMemory(LLVMTraceCPU *cpu, PacketPtr pkt) {
+  // Decode the handler information.
+  auto handler = pkt->findNextSenderState<TDGPacketHandler>();
+  if (handler == nullptr) {
+    // This is not a TDGPacket. Ignore it.
+    return;
+  }
+  handler->issueToMemoryCallback(cpu);
+}

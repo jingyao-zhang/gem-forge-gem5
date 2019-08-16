@@ -204,6 +204,7 @@ private:
     }
     PacketPtr getNextWarmUpPacket();
     void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
+    void issueToMemoryCallback(LLVMTraceCPU *cpu) override {}
   };
   bool warmUpDone;
   CacheWarmer *cacheWarmer;

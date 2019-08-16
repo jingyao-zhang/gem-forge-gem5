@@ -4,8 +4,8 @@
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 
 #include <list>
-#include <set>
 #include <map>
+#include <set>
 
 class LLCDynamicStream {
 public:
@@ -13,6 +13,7 @@ public:
   ~LLCDynamicStream();
 
   Stream *getStaticStream() { return this->configData.stream; }
+  uint64_t getStaticId() { return this->configData.dynamicId.staticId; }
 
   Addr peekVAddr() const;
   Addr getVAddr(uint64_t idx) const;
