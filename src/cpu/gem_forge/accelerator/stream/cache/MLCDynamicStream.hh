@@ -65,10 +65,24 @@ protected:
     MLCStreamElement(uint64_t _startIdx, int _numElements, Addr _vaddr)
         : startIdx(_startIdx), numElements(_numElements), vaddr(_vaddr),
           dataBlock(), dataReady(false), coreStatus(CoreStatusE::NONE) {}
+
     void setData(const DataBlock &dataBlock) {
       assert(!this->dataReady && "Data already ready.");
       this->dataBlock = dataBlock;
       this->dataReady = true;
+    }
+    
+    static std::string convertCoreStatusToString(CoreStatusE status) {
+      switch (status) {
+      case CoreStatusE::NONE:
+        return "NONE";
+      case CoreStatusE::WAIT:
+        return "WAIT";
+      case CoreStatusE::DONE:
+        return "DONE";
+      default:
+        return "ILLEGAL";
+      }
     }
   };
 
@@ -87,6 +101,11 @@ protected:
    * Send credit to the LLC stream. Update the llcTailIdx.
    */
   virtual void sendCreditToLLC();
+
+  /**
+   * A helper function to dump some basic status of the stream when panic.
+   */
+  void panicDump() const;
 };
 
 #endif

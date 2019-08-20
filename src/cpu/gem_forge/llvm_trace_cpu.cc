@@ -352,10 +352,15 @@ PacketPtr LLVMTraceCPU::CacheWarmer::getNextWarmUpPacket() {
     size = cacheLineSize - (vaddr % cacheLineSize);
   }
 
-  // hack("Generate warmup for %d.\n", this->warmUpAddrs);
-
   auto paddr = this->cpu->translateAndAllocatePhysMem(vaddr);
 
+  // if (this->warmUpAddrs % 2 == 0) {
+  //   hack("Generate warmup for %d %#x %d. ", this->warmUpAddrs, paddr >> 12,
+  //        (paddr >> 12) & 0x3);
+  // } else {
+  //   hack("Generate warmup for %d %#x %d.\n", this->warmUpAddrs, paddr >> 12,
+  //        (paddr >> 12) & 0x3);
+  // }
   auto pkt = TDGPacketHandler::createTDGPacket(
       paddr, size, this, nullptr, this->cpu->getDataMasterID(), 0, pc);
   return pkt;

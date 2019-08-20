@@ -32,7 +32,8 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       streamMigrateMsgBuffer(_streamMigrateMsgBuffer),
       streamIssueMsgBuffer(_streamIssueMsgBuffer),
       streamIndirectIssueMsgBuffer(_streamIndirectIssueMsgBuffer),
-      issueWidth(1), migrateWidth(1) {}
+      issueWidth(1), migrateWidth(1), maxInflyRequests(8),
+      maxInqueueRequests(2) {}
 
 LLCStreamEngine::~LLCStreamEngine() {
   for (auto &s : this->streams) {
@@ -177,6 +178,19 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
 }
 
 void LLCStreamEngine::issueStreams() {
+
+  /**
+   * Enforce thresholds for issue stream requests here.
+   * 1. If there are many requests in the queue, there is no need to inject more
+   * packets to block the queue.
+   * 2. As a sanity check, we limit the total number of infly direct requests.
+   */
+
+  if (this->streamIssueMsgBuffer->getSize(this->controller->clockEdge()) >=
+      this->maxInqueueRequests) {
+    return;
+  }
+
   auto streamIter = this->streams.begin();
   auto streamEnd = this->streams.end();
   StreamList issuedStreams;

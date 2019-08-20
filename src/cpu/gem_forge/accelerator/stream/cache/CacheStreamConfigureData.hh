@@ -20,6 +20,7 @@ public:
 
   Stream *stream;
   const DynamicStreamId dynamicId;
+  int elementSize;
 
   HistoryPtr history;
   Addr initVAddr;

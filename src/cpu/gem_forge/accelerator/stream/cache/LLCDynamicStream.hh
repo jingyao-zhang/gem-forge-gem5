@@ -14,6 +14,7 @@ public:
 
   Stream *getStaticStream() { return this->configData.stream; }
   uint64_t getStaticId() { return this->configData.dynamicId.staticId; }
+  int32_t getElementSize() const { return this->configData.elementSize; }
 
   Addr peekVAddr() const;
   Addr getVAddr(uint64_t idx) const;

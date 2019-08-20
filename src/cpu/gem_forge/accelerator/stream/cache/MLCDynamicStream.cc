@@ -16,6 +16,16 @@
           this->controller->getMachineID().num,                                \
           this->dynamicStreamId.staticId, ##args)
 
+#define MLC_STREAM_PANIC(format, args...)                                      \
+  this->panicDump();                                                           \
+  panic("[MLC_SE%d][%lu]: " format, this->controller->getMachineID().num,      \
+        this->dynamicStreamId.staticId, ##args)
+
+#define MLC_STREAM_PANIC_IF(cond, format, args...)                             \
+  if ((cond)) {                                                                \
+    MLC_STREAM_PANIC(format, ##args);                                          \
+  }
+
 #define MLC_ELEMENT_DPRINTF(startIdx, numElements, format, args...)            \
   DPRINTF(RubyStream, "[MLC_SE%d][%lu][%lu, +%d): " format,                    \
           this->controller->getMachineID().num,                                \
@@ -50,6 +60,18 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
                       "Receive data.\n");
 
   /**
+   * It is possible when the core stream engine runs ahead than
+   * the LLC stream engine, and the stream data is delivered after
+   * the element is released. In such case we will ignore the
+   * stream data.
+   */
+  if (streamMeta.m_startIdx < this->headIdx) {
+    // The stream data is lagging behind. The element is already
+    // released.
+    return;
+  }
+
+  /**
    * Find the correct stream element and insert the data there.
    * Here we reversely search for it to save time.
    */
@@ -76,7 +98,7 @@ void MLCDynamicStream::receiveStreamRequest(uint64_t idx) {
   MLC_ELEMENT_DPRINTF(idx, 1, "Receive request.\n");
 
   // We should be ahead of the core.
-  assert(this->tailIdx > idx && "MLCStream is behind the core?");
+  MLC_STREAM_PANIC_IF(this->tailIdx <= idx, "MLCStream is behind the core?");
 
   /**
    * Let's not make assumption that the request will come in order.
@@ -124,17 +146,11 @@ void MLCDynamicStream::advanceStream() {
 
   /**
    * Maybe let's make release in order.
+   * The element is released once the core status is DONE.
    */
-  while (!this->elements.empty() && this->elements.front().dataReady) {
-    bool shouldPop = false;
+  while (!this->elements.empty()) {
     const auto &element = this->elements.front();
     if (element.coreStatus == MLCStreamElement::CoreStatusE::DONE) {
-      // Simply drop the elements, as the element is
-      // already served by upper-level cache.
-      shouldPop = true;
-    }
-
-    if (shouldPop) {
       assert(this->headIdx == element.startIdx && "Illegal headIdx somehow.");
       MLC_ELEMENT_DPRINTF(element.startIdx, element.numElements, "Pop.\n");
       this->headIdx += element.numElements;
@@ -247,4 +263,15 @@ void MLCDynamicStream::sendCreditToLLC() {
 
   // Update the record.
   this->llcTailIdx = this->tailIdx;
+}
+
+void MLCDynamicStream::panicDump() const {
+  MLC_STREAM_DPRINTF("-------------------Panic Dump--------------------\n");
+  for (const auto &element : this->elements) {
+    MLC_ELEMENT_DPRINTF(
+        element.startIdx, element.numElements, "Data %d Core %s.\n",
+        element.dataReady,
+        MLCStreamElement::convertCoreStatusToString(element.coreStatus)
+            .c_str());
+  }
 }
