@@ -419,15 +419,9 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
             if (dependentStream->getStreamType() == "load") {
               if (dependentStream->baseStreams.size() == 1) {
                 // Only dependent on this direct stream.
-                auto indirectStreamConfigureData =
-                    dependentStream->allocateCacheConfigureData();
-                streamConfigureData->indirectStream = dependentStream;
-                streamConfigureData->indirectDynamicId =
-                    indirectStreamConfigureData->dynamicId;
-                streamConfigureData->indirectHistory =
-                    indirectStreamConfigureData->history;
-                // Don't forget to release the indirect stream configure data.
-                delete indirectStreamConfigureData;
+                streamConfigureData->indirectStreamConfigure =
+                    std::shared_ptr<CacheStreamConfigureData>(
+                        dependentStream->allocateCacheConfigureData());
                 break;
               }
             }

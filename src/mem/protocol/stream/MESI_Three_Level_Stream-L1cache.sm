@@ -306,7 +306,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         TBE tbe := TBEs[in_msg.addr];
 
         // So far we can't handle stream data.
-        if (in_msg.streamMeta.valid == true) {
+        if (in_msg.sliceId.isValid()) {
           se.receiveStreamData(in_msg);
           trigger(Event:L2_StreamData, in_msg.addr, cache_entry, tbe);
         }

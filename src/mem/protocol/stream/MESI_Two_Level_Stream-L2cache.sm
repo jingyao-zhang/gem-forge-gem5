@@ -159,10 +159,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     bool Dirty, default="false",      desc="Data is Dirty";
     bool cachedUpper, default="true", desc="Whether this block is cache by upper level";
 
-    NetDest L1_GetS_IDs,        desc="Set of the internal processors that want the block in shared state";
-    MachineID L1_GetX_ID,       desc="ID of the L1 cache to forward the block to once we get a response";
-    int pendingAcks,            desc="number of pending acks for invalidates during writeback";
-    StreamMeta streamMeta,      desc="Stream meta-data";
+    NetDest L1_GetS_IDs,              desc="Set of the internal processors that want the block in shared state";
+    MachineID L1_GetX_ID,             desc="ID of the L1 cache to forward the block to once we get a response";
+    int pendingAcks,                  desc="number of pending acks for invalidates during writeback";
+    DynamicStreamSliceId sliceId,     desc="Stream meta-data";
   }
 
   structure(TBETable, external="yes") {
@@ -180,8 +180,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   structure(LLCStreamEngine, external="yes", desc="Stream Engine at LLC") {
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamMigrate(LLCDynamicStreamPtr);
-    void receiveStreamFlow(StreamMeta);
-    void receiveStreamElementData(StreamMeta);
+    void receiveStreamFlow(DynamicStreamSliceId);
+    void receiveStreamElementData(DynamicStreamSliceId);
     void receiveStreamIndirectRequest(RequestMsg);
   }
 
@@ -425,28 +425,28 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
                   in_msg.addr, cache_entry, tbe);
         }
 
-        if (in_msg.streamMeta.valid) {
+        if (in_msg.sliceId.isValid()) {
           DPRINTF(RubyStream, "Received stream request [%lu, +%lu) %#x.\n", 
-            in_msg.streamMeta.startIdx,
-            in_msg.streamMeta.numElements,
+            in_msg.sliceId.getStartIdx(),
+            in_msg.sliceId.getNumElements(),
             in_msg.addr);
         }
 
         if (is_valid(cache_entry)) {
           // The L2 contains the block, so proceeded with handling the request
-          if (in_msg.streamMeta.valid) {
+          if (in_msg.sliceId.isValid()) {
             DPRINTF(RubyStream, "Hit stream request [%lu, +%lu).\n", 
-              in_msg.streamMeta.startIdx,
-              in_msg.streamMeta.numElements);
+              in_msg.sliceId.getStartIdx(),
+              in_msg.sliceId.getNumElements());
           }
           trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
                                                 in_msg.Requestor, cache_entry),
                   in_msg.addr, cache_entry, tbe);
         } else {
-          if (in_msg.streamMeta.valid) {
+          if (in_msg.sliceId.isValid()) {
             DPRINTF(RubyStream, "Miss stream request [%lu, +%lu).\n", 
-              in_msg.streamMeta.startIdx,
-              in_msg.streamMeta.numElements);
+              in_msg.sliceId.getStartIdx(),
+              in_msg.sliceId.getNumElements());
           }
           if (L2cache.cacheAvail(in_msg.addr)) {
             // L2 does't have the line, but we have space for it in the L2
@@ -484,12 +484,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
         // ! Sean: StreamAwareCache
         // This message should always be GETU.
-        assert(in_msg.streamMeta.valid);
+        assert(in_msg.sliceId.isValid());
         assert(in_msg.Type == CoherenceRequestType:GETU);
 
         DPRINTF(RubyStream, "Received stream indirect request [%lu, +%lu) %#x.\n", 
-          in_msg.streamMeta.startIdx,
-          in_msg.streamMeta.numElements,
+          in_msg.sliceId.getStartIdx(),
+          in_msg.sliceId.getNumElements(),
           in_msg.addr);
         // No matter the cache line status, 
         // simply enqueue the request to L1Request message buffer.
@@ -500,34 +500,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         // Dequeue from the indirect message buffer.
         Tick delay := streamIndirectFromL2Cache_in.dequeue(clockEdge());
         profileMsgDelay(3, ticksToCycles(delay));
-
-        /**
-        if (is_valid(cache_entry)) {
-          // The L2 contains the block, so proceeded with handling the request
-          DPRINTF(RubyStream, "Hit stream indirect request [%lu, +%lu).\n", 
-            in_msg.streamMeta.startIdx,
-            in_msg.streamMeta.numElements);
-          trigger(Event:L1_GETVL, in_msg.addr, cache_entry, tbe);
-        } else {
-          DPRINTF(RubyStream, "Miss stream indirect request [%lu, +%lu).\n", 
-            in_msg.streamMeta.startIdx,
-            in_msg.streamMeta.numElements);
-          if (L2cache.cacheAvail(in_msg.addr)) {
-            // L2 does't have the line, but we have space for it in the L2
-            trigger(Event:L1_GETVL, in_msg.addr, cache_entry, tbe);
-          } else {
-            // No room in the L2, so we need to make room before handling the request
-            Entry L2cache_entry := getCacheEntry(L2cache.cacheProbe(in_msg.addr));
-            if (isDirty(L2cache_entry)) {
-              trigger(Event:L2_Replacement, L2cache.cacheProbe(in_msg.addr),
-                      L2cache_entry, TBEs[L2cache.cacheProbe(in_msg.addr)]);
-            } else {
-              trigger(Event:L2_Replacement_clean, L2cache.cacheProbe(in_msg.addr),
-                      L2cache_entry, TBEs[L2cache.cacheProbe(in_msg.addr)]);
-            }
-          }
-        }
-        */
       }
     }
   }
@@ -645,15 +617,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           out_msg.AckCount := out_msg.AckCount + 1;
         }
         // Don't forget to copy the stream meta-data.
-        out_msg.streamMeta := in_msg.streamMeta;
-        if (in_msg.streamMeta.valid) {
+        out_msg.sliceId := in_msg.sliceId;
+        if (in_msg.sliceId.isValid()) {
           DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
-            in_msg.streamMeta.startIdx, 
-            in_msg.streamMeta.numElements);
-          if (in_msg.streamMeta.fwdToSE) {
-            // We have to notify the SE about the data.
-            se.receiveStreamElementData(out_msg.streamMeta);
-          }
+            in_msg.sliceId.getStartIdx(), 
+            in_msg.sliceId.getNumElements());
+          // We have to notify the SE about the data.
+          se.receiveStreamElementData(out_msg.sliceId);
         }
       }
     }
@@ -714,15 +684,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       out_msg.DataBlk := cache_entry.DataBlk;
       out_msg.MessageSize := MessageSizeType:Response_Data;
       // Copy the stream meta-data.
-      out_msg.streamMeta := tbe.streamMeta;
-      if (out_msg.streamMeta.valid) {
+      out_msg.sliceId := tbe.sliceId;
+      if (out_msg.sliceId.isValid()) {
         DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
-          out_msg.streamMeta.startIdx, 
-          out_msg.streamMeta.numElements);
-        if (out_msg.streamMeta.fwdToSE) {
+          out_msg.sliceId.getStartIdx(), 
+          out_msg.sliceId.getNumElements());
           // We have to notify the SE about the data.
-          se.receiveStreamElementData(out_msg.streamMeta);
-        }
+          se.receiveStreamElementData(out_msg.sliceId);
       }
     }
   }
@@ -793,10 +761,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     tbe.pendingAcks := cache_entry.Sharers.count();
   }
 
-  action(csm_copyStreamMetaData, "csm", desc="Copy stream meta-data to TBE") {
+  action(css_copyStreamSliceId, "css", desc="Copy stream slice id to TBE") {
     assert(is_valid(tbe));
     peek(L1RequestL2Network_in, RequestMsg) { 
-      tbe.streamMeta := in_msg.streamMeta;
+      tbe.sliceId := in_msg.sliceId;
     }
   }
 
@@ -996,8 +964,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
    */
   action(rsf_receiveStreamFlow, "rsf", desc="Receive the stream flow message") {
     peek(L1RequestL2Network_in, RequestMsg) {
-      DPRINTF(RubyStream, "Receive StreamFlow: %#x\n", in_msg.streamMeta.stream);
-      se.receiveStreamFlow(in_msg.streamMeta);
+      se.receiveStreamFlow(in_msg.sliceId);
     }
   }
 
@@ -1052,7 +1019,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     qq_allocateL2CacheBlock;
     ll_clearSharers;
     i_allocateTBE;
-    csm_copyStreamMetaData;
+    css_copyStreamSliceId;
     ss_recordGetSL1ID;
     a_issueFetchToMemory;
     uu_profileMiss;

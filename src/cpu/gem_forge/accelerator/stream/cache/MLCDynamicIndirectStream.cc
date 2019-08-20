@@ -26,7 +26,7 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   // beyond the tailIdx, so we adhoc to fix that.
   // ! This breaks the MaximumNumElement constraint.
 
-  while (this->tailIdx <= msg.m_streamMeta.m_startIdx) {
+  while (this->tailIdx <= msg.m_sliceId.startIdx) {
     this->allocateElement();
   }
 

@@ -12,6 +12,9 @@ struct DynamicStreamSliceId {
 
   bool isValid() const { return !(this->startIdx == 0 && this->endIdx == 0); }
 
+  uint64_t getStartIdx() const { return this->startIdx; }
+  uint64_t getNumElements() const { return this->endIdx - this->startIdx; }
+
   bool operator==(const DynamicStreamSliceId &other) const {
     return this->streamId == other.streamId &&
            this->startIdx == other.startIdx && this->endIdx == other.endIdx;

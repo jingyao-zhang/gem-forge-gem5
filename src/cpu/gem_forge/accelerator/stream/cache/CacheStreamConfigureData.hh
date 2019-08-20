@@ -15,7 +15,7 @@ struct CacheStreamConfigureData {
 public:
   using HistoryPtr = std::shared_ptr<::LLVM::TDG::StreamHistory>;
   CacheStreamConfigureData(Stream *_stream, const DynamicStreamId &_dynamicId,
-                           HistoryPtr _history);
+                           int _elementSize, HistoryPtr _history);
   CacheStreamConfigureData(const CacheStreamConfigureData &other);
 
   Stream *stream;
@@ -31,9 +31,7 @@ public:
    * We allow one additional indirect stream so far.
    * TODO: Support multiple indirect streams.
    */
-  Stream *indirectStream;
-  DynamicStreamId indirectDynamicId;
-  HistoryPtr indirectHistory;
+  std::shared_ptr<CacheStreamConfigureData> indirectStreamConfigure;
 
   // Set by the MLC stream, for flow control.
   int initAllocatedIdx;

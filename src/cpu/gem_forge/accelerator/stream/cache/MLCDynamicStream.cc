@@ -52,12 +52,14 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
 }
 
 void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
-  const auto &streamMeta = msg.m_streamMeta;
-  assert(streamMeta.m_valid && "Invalid stream meta-data for stream data.");
-  auto stream = reinterpret_cast<Stream *>(streamMeta.m_stream);
-  assert(this->stream == stream && "Unmatched static stream.");
-  MLC_ELEMENT_DPRINTF(streamMeta.m_startIdx, streamMeta.m_numElements,
-                      "Receive data.\n");
+  const auto &sliceId = msg.m_sliceId;
+  assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
+
+  auto startIdx = sliceId.startIdx;
+  auto numElements = sliceId.getNumElements();
+  assert(this->dynamicStreamId == sliceId.streamId &&
+         "Unmatched dynamic stream id.");
+  MLC_ELEMENT_DPRINTF(startIdx, numElements, "Receive data.\n");
 
   /**
    * It is possible when the core stream engine runs ahead than
@@ -65,7 +67,7 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
    * the element is released. In such case we will ignore the
    * stream data.
    */
-  if (streamMeta.m_startIdx < this->headIdx) {
+  if (startIdx < this->headIdx) {
     // The stream data is lagging behind. The element is already
     // released.
     return;
@@ -77,10 +79,9 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
    */
   for (auto element = this->elements.rbegin(), end = this->elements.rend();
        element != end; ++element) {
-    if (element->startIdx == streamMeta.m_startIdx) {
+    if (element->startIdx == startIdx) {
       // Found the element.
-      assert(element->numElements == streamMeta.m_numElements &&
-             "Mismatch numElements.");
+      assert(element->numElements == numElements && "Mismatch numElements.");
       element->setData(msg.m_DataBlk);
       if (element->coreStatus == MLCStreamElement::CoreStatusE::WAIT) {
         this->makeResponse(*element);
@@ -249,11 +250,9 @@ void MLCDynamicStream::sendCreditToLLC() {
   msg->m_Requestor = selfMachineId;
   msg->m_Destination.add(llcMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
-  msg->m_streamMeta.m_valid = true;
-  msg->m_streamMeta.m_stream =
-      reinterpret_cast<uint64_t>(this->getStaticStream());
-  msg->m_streamMeta.m_startIdx = this->llcTailIdx;
-  msg->m_streamMeta.m_numElements = this->tailIdx - this->llcTailIdx;
+  msg->m_sliceId.streamId = this->dynamicStreamId;
+  msg->m_sliceId.startIdx = this->llcTailIdx;
+  msg->m_sliceId.endIdx = this->tailIdx;
 
   Cycles latency(1); // Just use 1 cycle latency here.
 

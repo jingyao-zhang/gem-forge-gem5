@@ -147,7 +147,8 @@ bool SingleStream::isContinuous() const { return false; }
 CacheStreamConfigureData *SingleStream::allocateCacheConfigureData() {
   auto history = std::make_shared<::LLVM::TDG::StreamHistory>(
       this->history->getCurrentHistory());
-  return new CacheStreamConfigureData(this, this->FIFOIdx.streamId, history);
+  return new CacheStreamConfigureData(this, this->FIFOIdx.streamId,
+                                      this->getElementSize(), history);
 }
 
 void SingleStream::dump() const {

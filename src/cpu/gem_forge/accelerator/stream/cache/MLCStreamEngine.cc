@@ -33,15 +33,10 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                                      this->requestToLLCMsgBuffer);
   this->idToStreamMap.emplace(stream->getDynamicStreamId(), stream);
   // Check if there is indirect stream.
-  if (streamConfigureData->indirectStream != nullptr) {
+  if (streamConfigureData->indirectStreamConfigure != nullptr) {
     // Let's create an indirect stream.
-    // Fake a configure data to make the constructor happy.
-    CacheStreamConfigureData indirectStreamConfigureData(
-        streamConfigureData->indirectStream,
-        streamConfigureData->indirectDynamicId,
-        streamConfigureData->indirectHistory);
     auto indirectStream = new MLCDynamicIndirectStream(
-        &indirectStreamConfigureData, this->controller,
+        streamConfigureData->indirectStreamConfigure.get(), this->controller,
         this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer);
     this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
                                 indirectStream);
@@ -51,11 +46,10 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream data when stream float is disabled.\n");
-  const auto &streamMeta = msg.m_streamMeta;
-  assert(streamMeta.m_valid && "Invalid stream meta-data for stream data.");
-  auto stream = reinterpret_cast<Stream *>(streamMeta.m_stream);
+  const auto &sliceId = msg.m_sliceId;
+  assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
   for (auto &iter : this->idToStreamMap) {
-    if (iter.second->getStaticStream() == stream) {
+    if (iter.second->getDynamicStreamId() == sliceId.streamId) {
       // Found the stream.
       iter.second->receiveStreamData(msg);
       return;

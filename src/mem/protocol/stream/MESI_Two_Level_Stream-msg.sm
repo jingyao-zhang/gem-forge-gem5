@@ -73,7 +73,7 @@ structure(RequestMsg, desc="...", interface="Message") {
   PrefetchBit Prefetch,         desc="Is this a prefetch request";
   // ! Sean: StreamAwareCache
   PacketPtr pkt,                desc="Hack to store packet";
-  StreamMeta streamMeta,        desc="Stream meta-data";
+  DynamicStreamSliceId sliceId, desc="Stream slice info";
 
   bool functionalRead(Packet *packet) {
     // Only PUTX messages contains the data block
@@ -101,7 +101,7 @@ structure(ResponseMsg, desc="...", interface="Message") {
   bool Dirty, default="false",  desc="Dirty bit";
   int AckCount, default="0",    desc="number of acks in this message";
   MessageSizeType MessageSize,  desc="size category of the message";
-  StreamMeta streamMeta,        desc="Stream meta-data";
+  DynamicStreamSliceId sliceId, desc="Stream slice info";
 
   bool functionalRead(Packet *pkt) {
     // Valid data block is only present in message with following types

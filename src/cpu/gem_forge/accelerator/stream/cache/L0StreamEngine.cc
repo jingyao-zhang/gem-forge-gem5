@@ -32,11 +32,13 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                streamConfigureData->dynamicId.name.c_str());
   // Add to offloaded stream set.
   this->offloadedStreams.insert(streamConfigureData->dynamicId);
-  if (streamConfigureData->indirectStream != nullptr) {
+  if (streamConfigureData->indirectStreamConfigure != nullptr) {
     // We have an indirect stream.
-    L0SE_DPRINTF("Received StreamConfigure for indirect %s.\n",
-                 streamConfigureData->indirectDynamicId.name.c_str());
-    this->offloadedStreams.insert(streamConfigureData->indirectDynamicId);
+    L0SE_DPRINTF(
+        "Received StreamConfigure for indirect %s.\n",
+        streamConfigureData->indirectStreamConfigure->dynamicId.name.c_str());
+    this->offloadedStreams.insert(
+        streamConfigureData->indirectStreamConfigure->dynamicId);
   }
 }
 

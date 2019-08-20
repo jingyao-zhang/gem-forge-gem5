@@ -27,8 +27,8 @@ public:
 
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamMigrate(LLCDynamicStreamPtr stream);
-  void receiveStreamFlow(const StreamMeta &streamMeta);
-  void receiveStreamElementData(const StreamMeta &streamMeta);
+  void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
+  void receiveStreamElementData(const DynamicStreamSliceId &sliceId);
   void receiveStreamIndirectRequest(const RequestMsg &req);
   void wakeup() override;
   void print(std::ostream &out) const override;
@@ -58,7 +58,7 @@ private:
    * Buffered stream flow message waiting for the stream
    * to migrate here.
    */
-  std::list<StreamMeta> pendingStreamFlowControlMsgs;
+  std::list<DynamicStreamSliceId> pendingStreamFlowControlMsgs;
 
   /**
    * Process stream flow control messages and distribute
@@ -85,7 +85,7 @@ private:
    * Helper function to issue stream request to this controller.
    */
   void issueStreamRequestHere(LLCDynamicStream *stream, Addr paddrLine,
-                              uint64_t startIdx, int numElements, bool fwdToSE);
+                              uint64_t startIdx, int numElements);
 
   /**
    * Helper function to issue stream request to other controller.
@@ -93,8 +93,7 @@ private:
    * TODO: So far let's pretend we simply send a cache line.
    */
   void issueStreamRequestThere(LLCDynamicStream *stream, Addr paddrLine,
-                               uint64_t startIdx, int numElements,
-                               bool fwdToSE);
+                               uint64_t startIdx, int numElements);
 
   /**
    * Migrate streams.

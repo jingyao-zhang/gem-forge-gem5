@@ -13,7 +13,11 @@ public:
   ~LLCDynamicStream();
 
   Stream *getStaticStream() { return this->configData.stream; }
-  uint64_t getStaticId() { return this->configData.dynamicId.staticId; }
+  uint64_t getStaticId() const { return this->configData.dynamicId.staticId; }
+  const DynamicStreamId &getDynamicStreamId() const {
+    return this->configData.dynamicId;
+  }
+
   int32_t getElementSize() const { return this->configData.elementSize; }
 
   Addr peekVAddr() const;
