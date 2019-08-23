@@ -259,6 +259,7 @@ enumeration(MessageSizeType, desc="...") {
   Unblock_Control, desc="Unblock control";
   Persistent_Control, desc="Persistent request activation messages";
   Completion_Control, desc="Completion messages";
+  Response_Data_4B, desc="4 byte subline data response";
 }
 
 // AccessType

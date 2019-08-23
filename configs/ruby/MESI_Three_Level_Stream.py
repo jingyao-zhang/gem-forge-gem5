@@ -113,13 +113,14 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 clk_domain = system.cpu[i].clk_domain
 
             l0_cntrl = L0Cache_Controller(
-                   version = i * num_cpus_per_cluster + j, Icache = l0i_cache,
-                   Dcache = l0d_cache, send_evictions = send_evicts(options),
-                   clk_domain = clk_domain, ruby_system = ruby_system,
-                   llc_select_num_bits = l2_bits,
-                   llc_select_low_bit = l2_select_low_bit,
-                   enable_stream_float = options.gem_forge_stream_engine_enable_float,
-                   )
+                    version = i * num_cpus_per_cluster + j, Icache = l0i_cache,
+                    Dcache = l0d_cache, send_evictions = send_evicts(options),
+                    clk_domain = clk_domain, ruby_system = ruby_system,
+                    llc_select_num_bits = l2_bits,
+                    llc_select_low_bit = l2_select_low_bit,
+                    enable_stream_float = options.gem_forge_stream_engine_enable_float,
+                    enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
+                    )
 
             cpu_seq = RubySequencer(version = i * num_cpus_per_cluster + j,
                                     icache = l0i_cache,
@@ -145,6 +146,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     llc_select_num_bits = l2_bits,
                     llc_select_low_bit = l2_select_low_bit,
                     enable_stream_float = options.gem_forge_stream_engine_enable_float,
+                    enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
                     )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
@@ -207,6 +209,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                         llc_select_low_bit=l2_select_low_bit,
                         llc_select_num_bits=l2_bits,
                         enable_stream_float=options.gem_forge_stream_engine_enable_float,
+                        enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
                         )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"

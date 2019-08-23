@@ -5,7 +5,8 @@
 AbstractStreamAwareController::AbstractStreamAwareController(const Params *p)
     : AbstractController(p), llcSelectLowBit(p->llc_select_low_bit),
       llcSelectNumBits(p->llc_select_num_bits),
-      enableStreamFloat(p->enable_stream_float) {}
+      enableStreamFloat(p->enable_stream_float),
+      enableStreamSubline(p->enable_stream_subline) {}
 
 MachineID
 AbstractStreamAwareController::mapAddressToLLC(Addr addr,

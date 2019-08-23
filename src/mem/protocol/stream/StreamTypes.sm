@@ -7,4 +7,5 @@ structure(DynamicStreamSliceId, external="yes", desc="Dynamic identification for
   bool isValid();
   uint64_t getStartIdx();
   uint64_t getNumElements();
+  int getSizeInByte();
 }

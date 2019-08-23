@@ -90,6 +90,8 @@ parser.add_option("--gem-forge-stream-engine-enable-float", action="store_true",
                   help="Enable stream float in LLC.")
 parser.add_option("--gem-forge-stream-engine-enable-float-indirect", action="store_true", default=False,
                   help="Enable indirect stream float in LLC.")
+parser.add_option("--gem-forge-stream-engine-enable-float-subline", action="store_true", default=False,
+                  help="Enable subline transimission in stream float.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

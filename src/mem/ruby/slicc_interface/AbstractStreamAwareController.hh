@@ -19,6 +19,7 @@ public:
   MachineID mapAddressToLLC(Addr addr, MachineType mtype) const;
 
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
+  bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
 
 private:
   /**
@@ -27,6 +28,7 @@ private:
   const int llcSelectLowBit;
   const int llcSelectNumBits;
   const bool enableStreamFloat;
+  const bool enableStreamSubline;
 };
 
 #endif

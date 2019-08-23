@@ -337,6 +337,7 @@ void LLCStreamEngine::issueStreamRequestHere(LLCDynamicStream *stream,
   msg->m_sliceId.streamId = stream->getDynamicStreamId();
   msg->m_sliceId.startIdx = startIdx;
   msg->m_sliceId.endIdx = startIdx + numElements;
+  msg->m_sliceId.sizeInByte = numElements * stream->getElementSize();
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
@@ -363,6 +364,7 @@ void LLCStreamEngine::issueStreamRequestThere(LLCDynamicStream *stream,
   msg->m_sliceId.streamId = stream->getDynamicStreamId();
   msg->m_sliceId.startIdx = startIdx;
   msg->m_sliceId.endIdx = startIdx + numElements;
+  msg->m_sliceId.sizeInByte = numElements * stream->getElementSize();
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
