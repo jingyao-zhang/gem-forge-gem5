@@ -61,6 +61,8 @@
 #include "cpu/inst_seq.hh"
 #include "sim/core.hh"
 
+#include "request_statistic.hh"
+
 /**
  * Special TaskIds that are used for per-context-switch stats dumps
  * and Cache Occupancy. Having too many tasks seems to be a problem
@@ -82,6 +84,7 @@ namespace ContextSwitchTaskId {
 class Request;
 
 typedef std::shared_ptr<Request> RequestPtr;
+typedef std::shared_ptr<RequestStatistic> RequestStatisticPtr;
 typedef uint16_t MasterID;
 
 class Request
@@ -390,6 +393,9 @@ class Request
 
     /** A pointer to an atomic operation */
     AtomicOpFunctor *atomicOpFunctor;
+
+    /** A pointer to the statistic placeholder */
+    RequestStatisticPtr statistic;
 
   public:
 
@@ -836,6 +842,18 @@ class Request
     {
         assert(privateFlags.isSet(VALID_PC));
         return _pc;
+    }
+
+    void setStatistic(RequestStatisticPtr statistic) {
+        this->statistic = statistic;
+    }
+
+    bool hasStatistic() const {
+        return this->statistic != nullptr;
+    }
+
+    RequestStatisticPtr getStatistic() {
+        return this->statistic;
     }
 
     /**
