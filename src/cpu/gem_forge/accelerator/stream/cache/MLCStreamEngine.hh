@@ -37,8 +37,6 @@ public:
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamData(const ResponseMsg &msg);
 
-  void serveMiss(const DynamicStreamSliceId &slice);
-
   bool isStreamRequest(const DynamicStreamSliceId &slice);
   bool isStreamOffloaded(const DynamicStreamSliceId &slice);
   bool isStreamCached(const DynamicStreamSliceId &slice);

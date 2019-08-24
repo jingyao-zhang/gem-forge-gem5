@@ -169,7 +169,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   structure(MLCStreamEngine, external="yes", desc="Stream Engine at L1") {
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamData(ResponseMsg);
-    void serveMiss(DynamicStreamSliceId);
     bool isStreamRequest(DynamicStreamSliceId);
     bool isStreamOffloaded(DynamicStreamSliceId);
     bool isStreamCached(DynamicStreamSliceId);
@@ -188,6 +187,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   void wakeUpBuffers(Addr a);
   void wakeUpAllBuffers(Addr a);
   void profileMsgDelay(int virtualNetworkType, Cycles c);
+  void setHitCacheLevel(RequestStatisticPtr, int);
+  RequestStatisticPtr getRequestStatistic(PacketPtr);
 
   // inclusive cache returns L1 entries only
   Entry getCacheEntry(Addr addr), return_by_pointer="yes" {
@@ -414,6 +415,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
             // Stream packet.
             if (is_valid(cache_entry)) {
               // Hit. Notify the stream engine and response.
+              setHitCacheLevel(in_msg.requestStatistic, 1);
               if (se.isStreamOffloaded(in_msg.slice)) {
                 se.receiveOffloadStreamRequestHit(in_msg.slice);
               }
@@ -421,8 +423,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
                       in_msg.addr, cache_entry, tbe);
             }
             // Missed.
-            se.serveMiss(in_msg.slice);
             if (se.isStreamOffloaded(in_msg.slice)) {
+              setHitCacheLevel(in_msg.requestStatistic, 5);
               se.receiveOffloadStreamRequest(in_msg.slice);
               trigger(Event:OffloadStreamLoad, in_msg.addr, cache_entry, tbe);
             } else {
@@ -442,6 +444,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
            */
 
           if (is_valid(cache_entry)) {
+            // Hit.
+            setHitCacheLevel(in_msg.requestStatistic, 1);
             trigger(mandatory_request_type_to_event(in_msg.Class),
                     in_msg.addr, cache_entry, tbe);
           } else {
@@ -486,6 +490,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
                 address, out_msg.Destination);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        // Remember to copy the statistic hook.
+        out_msg.requestStatistic := in_msg.requestStatistic;
       }
     }
   }
@@ -502,6 +508,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
                 address, out_msg.Destination);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        // Remember to copy the statistic hook.
+        out_msg.requestStatistic := in_msg.requestStatistic;
       }
     }
   }
@@ -519,6 +527,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
                 address, out_msg.Destination);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        // Remember to copy the statistic hook.
+        out_msg.requestStatistic := in_msg.requestStatistic;
       }
     }
   }

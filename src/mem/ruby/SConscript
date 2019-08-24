@@ -116,6 +116,11 @@ def MakeInclude(source):
     include_action = MakeAction(MakeIncludeAction, Transform("MAKE INC", 1))
     env.Command(target, source, include_action)
 
+def MakeIncludeRename(source, targetName):
+    target = generated_dir.File(targetName)
+    include_action = MakeAction(MakeIncludeAction, Transform("MAKE INC", 1))
+    env.Command(target, source, include_action)
+
 MakeInclude('slicc_interface/AbstractEntry.hh')
 MakeInclude('slicc_interface/AbstractCacheEntry.hh')
 MakeInclude('slicc_interface/Message.hh')
@@ -142,6 +147,9 @@ MakeInclude('structures/TimerTable.hh')
 MakeInclude('structures/WireBuffer.hh')
 MakeInclude('system/DMASequencer.hh')
 MakeInclude('system/Sequencer.hh')
+
+# ! RequestStatistic
+MakeIncludeRename('../request_statistic.hh', 'RequestStatisticPtr.hh')
 
 # ! Sean: StreamAwareCache
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamId.hh')

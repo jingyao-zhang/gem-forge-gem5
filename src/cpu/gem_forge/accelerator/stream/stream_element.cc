@@ -60,13 +60,38 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
     this->additionalDelay = 0;
     return;
   }
-  this->element->handlePacketResponse(this);
-  // After this point "this" is deleted.
+
+  // Handle the request statistic.
+  if (packet->req->hasStatistic()) {
+    auto statistic = packet->req->getStatistic();
+    switch (statistic->hitCacheLevel) {
+    case RequestStatistic::HitPlaceE::INVALID: {
+      // Invalid.
+      break;
+    }
+    case RequestStatistic::HitPlaceE::MEM: // Hit in mem.
+      this->stream->numMissL2++;
+    case RequestStatistic::HitPlaceE::L1_STREAM_BUFFER:
+      // This is considered hit in L2.
+    case RequestStatistic::HitPlaceE::L2_CACHE:
+      this->stream->numMissL1++;
+    case RequestStatistic::HitPlaceE::L1_CACHE:
+      this->stream->numMissL0++;
+      break;
+    case RequestStatistic::HitPlaceE::L0_CACHE: { // Hit in first level cache.
+      break;
+    }
+    default: { panic("Invalid hitCacheLevel %d.\n", statistic->hitCacheLevel); }
+    }
+  }
+
   // Check if this is a read request.
   if (packet->isRead()) {
     // We should notify the stream engine that this cache line is coming back.
     this->element->se->fetchedCacheBlock(this->cacheBlockVirtualAddr, this);
   }
+  this->element->handlePacketResponse(
+      this); // After this point "this" is deleted.
   // Remember to release the packet.
   delete packet;
   return;

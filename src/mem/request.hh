@@ -84,7 +84,6 @@ namespace ContextSwitchTaskId {
 class Request;
 
 typedef std::shared_ptr<Request> RequestPtr;
-typedef std::shared_ptr<RequestStatistic> RequestStatisticPtr;
 typedef uint16_t MasterID;
 
 class Request

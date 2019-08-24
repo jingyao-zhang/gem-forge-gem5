@@ -70,6 +70,7 @@ structure(CoherenceMsg, desc="...", interface="Message") {
   MessageSizeType MessageSize,  desc="size category of the message";
   DataBlock DataBlk,            desc="Data for the cache line (if PUTX)";
   bool Dirty, default="false",  desc="Dirty bit";
+  RequestStatisticPtr requestStatistic, default="nullptr", desc="Hook to update statistic of this core request";
   /**
    * Passed the stream information.
    */

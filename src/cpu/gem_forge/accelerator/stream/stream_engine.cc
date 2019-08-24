@@ -1695,7 +1695,10 @@ void StreamEngine::exitDump() const {
               auto bId = b->streamRegion->region() + b->getStreamName();
               return aId < bId;
             });
-  auto &streamOS = *simout.findOrCreate("stream.stas.txt")->stream();
+  // Create the stream stats file.
+  auto streamStatsFileName =
+      "stream.stats." + std::to_string(cpu->cpuId()) + ".txt";
+  auto &streamOS = *simout.findOrCreate(streamStatsFileName)->stream();
   for (auto &S : allStreams) {
     S->dumpStreamStats(streamOS);
   }

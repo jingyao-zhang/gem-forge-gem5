@@ -254,6 +254,8 @@ void LLVMTraceCPU::tick() {
     }
     // If in standalone mode, we can exit.
     if (this->isStandalone()) {
+      // Accelerator exitDump can execute now.
+      this->accelManager->exitDump();
       // Decrease the workitem count.
       auto workItemsEnd = this->system->incWorkItemsEnd();
       if (workItemsEnd % this->totalActiveCPUs == 0) {
@@ -261,7 +263,6 @@ void LLVMTraceCPU::tick() {
           regionStats->dump();
         }
         this->runTimeProfiler->dump("profile.txt");
-        this->accelManager->exitDump();
         exitSimLoop("All datagraphs finished.\n");
       } else {
         DPRINTF(LLVMTraceCPU, "CPU %d done.\n", this->_cpuId);

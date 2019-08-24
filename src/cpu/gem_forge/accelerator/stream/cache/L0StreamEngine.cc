@@ -79,18 +79,6 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
   return true;
 }
 
-void L0StreamEngine::serveMiss(PacketPtr pkt) {
-  auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
-  if (streamMemAccess == nullptr) {
-    return;
-  }
-  auto stream = streamMemAccess->getStream();
-  const auto &slice = streamMemAccess->getSliceId();
-  L0_ELEMENT_DPRINTF(slice.streamId, slice.startIdx,
-                     slice.endIdx - slice.startIdx, "Miss.\n");
-  stream->numMissL0++;
-}
-
 StreamMemAccess *
 L0StreamEngine::getStreamMemAccessFromPacket(PacketPtr pkt) const {
   if (pkt == nullptr) {

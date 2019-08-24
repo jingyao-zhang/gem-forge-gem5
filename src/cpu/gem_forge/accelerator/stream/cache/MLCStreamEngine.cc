@@ -111,15 +111,6 @@ void MLCStreamEngine::receiveOffloadStreamRequestHit(
   stream->receiveStreamRequestHit(startIdx);
 }
 
-void MLCStreamEngine::serveMiss(const DynamicStreamSliceId &slice) {
-  if (!this->isStreamRequest(slice)) {
-    return;
-  }
-  auto stream = this->getMLCDynamicStreamFromSlice(slice);
-  auto staticStream = stream->getStaticStream();
-  staticStream->numMissL1++;
-}
-
 MLCDynamicStream *MLCStreamEngine::getMLCDynamicStreamFromSlice(
     const DynamicStreamSliceId &slice) const {
   if (!slice.isValid()) {

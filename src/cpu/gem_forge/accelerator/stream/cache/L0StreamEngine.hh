@@ -30,7 +30,6 @@ public:
   void receiveStreamConfigure(PacketPtr pkt);
   bool shouldForward(PacketPtr pkt);
   bool shouldCache(PacketPtr pkt);
-  void serveMiss(PacketPtr pkt);
 
   DynamicStreamSliceId getSliceId(PacketPtr pkt) const;  
 

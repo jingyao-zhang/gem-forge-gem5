@@ -198,6 +198,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   void wakeUpBuffers(Addr a);
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   MachineID mapAddressToMachine(Addr addr, MachineType mtype);
+  void setHitCacheLevel(RequestStatisticPtr, int);
+  RequestStatisticPtr getRequestStatistic(PacketPtr);
 
   bool isStreamSublineEnabled();
 
@@ -441,6 +443,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
               in_msg.sliceId.getStartIdx(),
               in_msg.sliceId.getNumElements());
           }
+          // Hit.
+          setHitCacheLevel(in_msg.requestStatistic, 2);
           trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
                                                 in_msg.Requestor, cache_entry),
                   in_msg.addr, cache_entry, tbe);
@@ -451,6 +455,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
               in_msg.sliceId.getNumElements());
           }
           if (L2cache.cacheAvail(in_msg.addr)) {
+            // Miss.
+            setHitCacheLevel(in_msg.requestStatistic, 4);
             // L2 does't have the line, but we have space for it in the L2
             trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
                                                   in_msg.Requestor, cache_entry),

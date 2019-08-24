@@ -9,6 +9,8 @@ PacketPtr TDGPacketHandler::createTDGPacket(Addr paddr, int size,
   if (pc != 0) {
     req->setPC(pc);
   }
+  // For our request, we always track the request statistic.
+  req->setStatistic(std::make_shared<RequestStatistic>());
   PacketPtr pkt;
   uint8_t *pkt_data = new uint8_t[req->getSize()];
   if (data == nullptr) {

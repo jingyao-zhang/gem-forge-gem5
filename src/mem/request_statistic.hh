@@ -11,11 +11,25 @@
 #ifndef __MEM_REQUEST_STATISTIC_HH__
 #define __MEM_REQUEST_STATISTIC_HH__
 
+#include <memory>
+
 struct RequestStatistic {
-  int hitCacheLevel;
-  RequestStatistic() : hitCacheLevel(0) {}
+  enum HitPlaceE {
+    INVALID = -1,
+    L0_CACHE = 0,
+    L1_CACHE = 1,
+    L2_CACHE = 2,
+    L3_CACHE = 3,
+    MEM = 4,
+    L1_STREAM_BUFFER = 5,
+  };
+  HitPlaceE hitCacheLevel;
+  RequestStatistic() : hitCacheLevel(HitPlaceE::INVALID) {}
   void setHitCacheLevel(int hitCacheLevel) {
-    this->hitCacheLevel = hitCacheLevel;
+    this->hitCacheLevel = static_cast<HitPlaceE>(hitCacheLevel);
   }
 };
+
+typedef std::shared_ptr<RequestStatistic> RequestStatisticPtr;
+
 #endif

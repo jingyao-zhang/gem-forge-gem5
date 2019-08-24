@@ -249,3 +249,6 @@ structure (Prefetcher, external = "yes") {
     void observePfHit(Addr);
     void observePfMiss(Addr);
 }
+
+structure (RequestStatisticPtr, external="yes") {
+}

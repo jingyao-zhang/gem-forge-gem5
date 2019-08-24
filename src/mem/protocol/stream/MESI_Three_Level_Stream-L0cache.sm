@@ -151,7 +151,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
    */
   structure(L0StreamEngine, external="yes", desc="Stream Engine at L0") {
     void receiveStreamConfigure(PacketPtr);
-    void serveMiss(PacketPtr);
     bool isStreamAccess(PacketPtr);
     bool shouldCache(PacketPtr);
     bool shouldForward(PacketPtr);
@@ -169,6 +168,8 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   void wakeUpBuffers(Addr a);
   void wakeUpAllBuffers(Addr a);
   void profileMsgDelay(int virtualNetworkType, Cycles c);
+  void setHitCacheLevel(RequestStatisticPtr, int);
+  RequestStatisticPtr getRequestStatistic(PacketPtr);
 
   // inclusive cache returns L0 entries only
   Entry getCacheEntry(Addr addr), return_by_pointer="yes" {
@@ -379,6 +380,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
             assert(event == Event:Load);
             if (is_valid(Dcache_entry)) {
               // Hit.
+              setHitCacheLevel(getRequestStatistic(in_msg.pkt), 0);
               if (se.shouldForward(in_msg.pkt)) {
                 // We should forward the request to lower cache level
                 // while serving this request.
@@ -402,7 +404,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
               if (se.shouldCache(in_msg.pkt)) {
                 // Check if we have space for this line.
                 if (Dcache.cacheAvail(in_msg.LineAddress)) {
-                  se.serveMiss(in_msg.pkt);
                   trigger(Event:Load, in_msg.LineAddress,
                           Dcache_entry, TBEs[in_msg.LineAddress]);
                 } else {
@@ -413,7 +414,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 }
               } else {
                 // Not cache it. Send the request.
-                se.serveMiss(in_msg.pkt);
                 trigger(Event:LoadUncache, in_msg.LineAddress,
                         Dcache_entry, TBEs[in_msg.LineAddress]);
               }
@@ -425,6 +425,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
            *******************************************************************/
           if (is_valid(Dcache_entry)) {
             // The tag matches for the L0, so the L0 ask the L1 for it
+            setHitCacheLevel(getRequestStatistic(in_msg.pkt), 0);
             trigger(mandatory_request_type_to_event(in_msg.Type), in_msg.LineAddress,
                     Dcache_entry, TBEs[in_msg.LineAddress]);
           } else {
@@ -440,7 +441,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
             if (Dcache.cacheAvail(in_msg.LineAddress)) {
               // L1 does't have the line, but we have space for it
               // in the L0 let's see if the L1 has it
-              se.serveMiss(in_msg.pkt);
               trigger(mandatory_request_type_to_event(in_msg.Type), in_msg.LineAddress,
                       Dcache_entry, TBEs[in_msg.LineAddress]);
             } else {
@@ -467,6 +467,8 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        // Don't forget to copy the statistic hook.
+        out_msg.requestStatistic := getRequestStatistic(in_msg.pkt);
         out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
@@ -483,6 +485,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.requestStatistic := getRequestStatistic(in_msg.pkt);
         out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
@@ -501,6 +504,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.requestStatistic := getRequestStatistic(in_msg.pkt);
         out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
@@ -518,6 +522,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                 address, out_msg.Dest);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.requestStatistic := getRequestStatistic(in_msg.pkt);
         out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     }
@@ -755,6 +760,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
         out_msg.Dest := createMachineID(MachineType:L1Cache, version);
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
+        // No need to forward the statistic in such case.
         out_msg.slice := se.getSliceId(in_msg.pkt);
       }
     } 
