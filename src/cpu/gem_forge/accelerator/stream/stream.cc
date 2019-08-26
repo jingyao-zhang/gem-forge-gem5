@@ -47,47 +47,13 @@ Stream::Stream(const StreamArguments &args)
   this->stepRootStream = nullptr;
   this->lateFetchCount = 0;
   this->streamRegion = args.streamRegion;
-
-  /**
-   * Initialize the statistics.
-   */
-  this->numConfigured = 0;
-  this->numAllocated = 0;
-  this->numFetched = 0;
-  this->numStepped = 0;
-  this->numUsed = 0;
-  this->numIssuedRequest = 0;
-  this->numCycleRequestLatency = 0;
-  this->numMissL0 = 0;
-  this->numMissL1 = 0;
-  this->numMissL2 = 0;
 }
 
 Stream::~Stream() {}
 
 void Stream::dumpStreamStats(std::ostream &os) const {
   os << this->getStreamName() << '\n';
-#define dumpScalar(stat) os << "  " #stat << ' ' << stat << '\n'
-
-  dumpScalar(numConfigured);
-  dumpScalar(numAllocated);
-  dumpScalar(numFetched);
-  dumpScalar(numStepped);
-  dumpScalar(numUsed);
-  dumpScalar(numIssuedRequest);
-  dumpScalar(numCycleRequestLatency);
-
-  auto avgRequestLatency =
-      (this->numIssuedRequest > 0)
-          ? this->numCycleRequestLatency / this->numIssuedRequest
-          : 0;
-  dumpScalar(avgRequestLatency);
-
-  dumpScalar(numMissL0);
-  dumpScalar(numMissL1);
-  dumpScalar(numMissL2);
-
-#undef dumpScalar
+  this->statistic.dump(os);
 }
 
 bool Stream::isMemStream() const {

@@ -70,13 +70,13 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
       break;
     }
     case RequestStatistic::HitPlaceE::MEM: // Hit in mem.
-      this->stream->numMissL2++;
+      this->stream->statistic.numMissL2++;
     case RequestStatistic::HitPlaceE::L1_STREAM_BUFFER:
       // This is considered hit in L2.
     case RequestStatistic::HitPlaceE::L2_CACHE:
-      this->stream->numMissL1++;
+      this->stream->statistic.numMissL1++;
     case RequestStatistic::HitPlaceE::L1_CACHE:
-      this->stream->numMissL0++;
+      this->stream->statistic.numMissL0++;
       break;
     case RequestStatistic::HitPlaceE::L0_CACHE: { // Hit in first level cache.
       break;
@@ -174,7 +174,7 @@ void StreamElement::markValueReady() {
   if (this->issueCycle >= this->addrReadyCycle &&
       this->issueCycle <= this->valueReadyCycle) {
     // The issue cycle is valid.
-    this->stream->numCycleRequestLatency +=
+    this->stream->statistic.numCycleRequestLatency +=
         this->valueReadyCycle - this->issueCycle;
   }
 }

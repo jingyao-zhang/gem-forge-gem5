@@ -324,7 +324,7 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   for (auto &S : configStreams) {
     assert(!S->configured && "The stream should not be configured.");
     S->configured = true;
-    S->numConfigured++;
+    S->statistic.numConfigured++;
 
     /**
      * 1. Clear all elements between stepHead and allocHead.
@@ -1181,7 +1181,7 @@ void StreamEngine::allocateElement(Stream *S) {
   assert(S->configured && "Stream should be configured to allocate element.");
   auto newElement = this->removeFreeElement();
   this->numElementsAllocated++;
-  S->numAllocated++;
+  S->statistic.numAllocated++;
   if (S->getStreamType() == "load") {
     this->numLoadElementsAllocated++;
   } else if (S->getStreamType() == "store") {
@@ -1346,9 +1346,9 @@ void StreamEngine::releaseElement(Stream *S) {
            "Some unreleased user instruction.");
   }
 
-  S->numStepped++;
+  S->statistic.numStepped++;
   if (used) {
-    S->numUsed++;
+    S->statistic.numUsed++;
   }
   if (S->getStreamType() == "load") {
     this->numLoadElementsStepped++;
@@ -1509,7 +1509,7 @@ void StreamEngine::issueElement(StreamElement *element) {
   auto S = element->stream;
   if (S->getStreamType() == "load") {
     this->numLoadElementsFetched++;
-    S->numFetched++;
+    S->statistic.numFetched++;
   }
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
@@ -1550,7 +1550,7 @@ void StreamEngine::issueElement(StreamElement *element) {
           // But we need to mark the cache block to be FETCHING.
           cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
           // The request is issued by the placement manager.
-          S->numIssuedRequest++;
+          S->statistic.numIssuedRequest++;
           continue;
         }
       }
@@ -1571,7 +1571,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     auto pkt = TDGPacketHandler::createTDGPacket(
         paddr, packetSize, memAccess, nullptr, cpu->getDataMasterID(), 0, 0);
-    S->numIssuedRequest++;
+    S->statistic.numIssuedRequest++;
     cpu->sendRequest(pkt);
 
     // Change to FETCHING status.

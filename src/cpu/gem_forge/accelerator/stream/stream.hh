@@ -4,6 +4,7 @@
 #include "cache/CacheStreamConfigureData.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
 #include "stream_element.hh"
+#include "stream_statistic.hh"
 
 #include "base/types.hh"
 #include "mem/packet.hh"
@@ -78,22 +79,7 @@ public:
   /**
    * Per stream statistics.
    */
-  size_t numConfigured;
-  size_t numAllocated;
-  size_t numFetched;
-  size_t numStepped;
-  size_t numUsed;
-  size_t numIssuedRequest;
-  size_t numCycleRequestLatency;
-
-  /**
-   * ! Sean: StreamAwareCache
-   * Statistics from StreamAwareCache.
-   */
-  size_t numMissL0;
-  size_t numMissL1;
-  size_t numMissL2;
-
+  StreamStatistic statistic;
   void dumpStreamStats(std::ostream &os) const;
 
   void tick();

@@ -1,0 +1,33 @@
+#ifndef __CPU_TDG_ACCELERATOR_STREAM_STATISTIC_HH__
+#define __CPU_TDG_ACCELERATOR_STREAM_STATISTIC_HH__
+
+#include <ostream>
+
+/**
+ * Separate the stream statistic from Stream to a separate structure.
+ */
+
+struct StreamStatistic {
+public:
+  /**
+   * Per stream statistics.
+   *
+   * I use direct member initializer here for better readability.
+   * Member initializer list in the constructor is too verbose.
+   */
+  size_t numConfigured = 0;
+  size_t numAllocated = 0;
+  size_t numFetched = 0;
+  size_t numStepped = 0;
+  size_t numUsed = 0;
+  size_t numIssuedRequest = 0;
+  size_t numCycleRequestLatency = 0;
+  size_t numMissL0 = 0;
+  size_t numMissL1 = 0;
+  size_t numMissL2 = 0;
+
+  StreamStatistic() = default;
+  void dump(std::ostream &os) const;
+};
+
+#endif
