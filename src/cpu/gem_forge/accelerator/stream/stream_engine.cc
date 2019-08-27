@@ -1349,6 +1349,24 @@ void StreamEngine::releaseElement(Stream *S) {
   S->statistic.numStepped++;
   if (used) {
     S->statistic.numUsed++;
+
+    /**
+     * Since this element is used by the core, we update the statistic
+     * of the latency of this element experienced by the core.
+     */
+    if (releaseElement->valueReadyCycle < releaseElement->firstCheckCycle) {
+      // The element is ready earlier than core's user.
+      auto earlyCycles =
+          releaseElement->firstCheckCycle - releaseElement->valueReadyCycle;
+      S->statistic.numCoreEarlyElement++;
+      S->statistic.numCycleCoreEarlyElement += earlyCycles;
+    } else {
+      // The element makes the core's user wait.
+      auto lateCycles =
+          releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
+      S->statistic.numCoreLateElement++;
+      S->statistic.numCycleCoreLateElement += lateCycles;
+    }
   }
   if (S->getStreamType() == "load") {
     this->numLoadElementsStepped++;

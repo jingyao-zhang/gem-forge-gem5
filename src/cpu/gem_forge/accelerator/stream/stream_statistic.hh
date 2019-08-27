@@ -20,6 +20,13 @@ public:
   size_t numFetched = 0;
   size_t numStepped = 0;
   size_t numUsed = 0;
+
+  // Latency experienced by the core.
+  size_t numCoreEarlyElement = 0;
+  size_t numCycleCoreEarlyElement = 0;
+  size_t numCoreLateElement = 0;
+  size_t numCycleCoreLateElement = 0;
+
   size_t numIssuedRequest = 0;
   size_t numCycleRequestLatency = 0;
   size_t numMissL0 = 0;
