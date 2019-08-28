@@ -36,6 +36,7 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
                                    MessageBuffer *_responseMsgBuffer,
                                    MessageBuffer *_requestToLLCMsgBuffer)
     : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
+      isPointerChase(_configData->isPointerChase),
       history(_configData->history), controller(_controller),
       responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer), maxNumElements(64),
@@ -207,19 +208,31 @@ void MLCDynamicStream::allocateElement() {
   auto historySize = this->history->history_size();
   uint64_t startIdx = this->tailIdx;
   int numElements = 1;
-  Addr vaddr =
-      (startIdx < historySize) ? (this->history->history(startIdx).addr()) : 0;
+  // ! So far just return the last address.
+  // ! Do something reasonable here.
+  // ! Make sure this is consistent with the core stream engine.
+  Addr vaddr = (startIdx < historySize)
+                   ? (this->history->history(startIdx).addr())
+                   : (this->history->history(historySize - 1).addr());
   Addr vaddrLine = makeLineAddress(vaddr);
   this->tailIdx++;
-  while (this->tailIdx < historySize) {
-    Addr nextVAddr = this->history->history(this->tailIdx).addr();
-    Addr nextVAddrLine = makeLineAddress(nextVAddr);
-    if (nextVAddrLine != vaddrLine) {
-      break;
+  /**
+   * Try to merge element if we are not pointer chase stream.
+   * It is impossible for pointer chase stream to merge requests
+   * as you don't know the next virtual address until the previous request is
+   * resolved.
+   */
+  if (!this->isPointerChase) {
+    while (this->tailIdx < historySize) {
+      Addr nextVAddr = this->history->history(this->tailIdx).addr();
+      Addr nextVAddrLine = makeLineAddress(nextVAddr);
+      if (nextVAddrLine != vaddrLine) {
+        break;
+      }
+      // This element is the same line, maybe we can merge.
+      numElements++;
+      this->tailIdx++;
     }
-    // This element is the same line, maybe we can merge.
-    numElements++;
-    this->tailIdx++;
   }
 
   MLC_ELEMENT_DPRINTF(startIdx, numElements, "Allocated.\n");

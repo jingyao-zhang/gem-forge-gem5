@@ -61,3 +61,15 @@ void TDGPacketHandler::issueToMemory(LLVMTraceCPU *cpu, PacketPtr pkt) {
   }
   handler->issueToMemoryCallback(cpu);
 }
+
+bool TDGPacketHandler::needResponse(LLVMTraceCPU *cpu, PacketPtr pkt) {
+  // Decode the handler information.
+  auto handler = pkt->findNextSenderState<TDGPacketHandler>();
+  if (handler == nullptr) {
+    // This is not a TDGPacket. Ignore it.
+    // Which means it should be a stream configure packet.
+    // TODO: Fix this implementation. Too hacky.
+    return false;
+  }
+  return true;
+}

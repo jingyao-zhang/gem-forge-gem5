@@ -35,6 +35,7 @@ public:
 protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;
+  bool isPointerChase;
   // Store the history;
   std::shared_ptr<::LLVM::TDG::StreamHistory> history;
   AbstractStreamAwareController *controller;

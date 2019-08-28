@@ -74,11 +74,20 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
 void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
+  // Sanity check.
   Addr vaddr = stream->peekVAddr();
   Addr paddr = stream->translateToPAddr(vaddr);
   Addr paddrLine = makeLineAddress(paddr);
   assert(this->isPAddrHandledByMe(paddrLine) &&
          "Stream migrated to wrong LLC bank.\n");
+
+  assert(stream->waitingDataBaseRequests == 0 &&
+         "Stream migrated with waitingDataBaseRequests.");
+  assert(stream->waitingIndirectElements.empty() &&
+         "Stream migrated with waitingIndirectElements.");
+  assert(stream->readyIndirectElements.empty() &&
+         "Stream migrated with readyIndirectElements.");
+
   LLC_STREAM_DPRINTF(stream->getStaticId(), "Received migrate.\n");
 
   this->streams.push_back(stream);
@@ -111,14 +120,19 @@ void LLCStreamEngine::receiveStreamElementData(
   if (stream == nullptr) {
     return;
   }
+
+  stream->waitingDataBaseRequests--;
+  assert(stream->waitingDataBaseRequests >= 0 &&
+         "Negative waitingDataBaseRequests.");
+
+  LLC_ELEMENT_DPRINTF(stream->getStaticId(), sliceId.startIdx,
+                      sliceId.getNumElements(), "Received element data.\n");
   /**
    * It is also possible that this stream doesn't have indirect streams.
    */
   if (stream->indirectStreams.empty()) {
     return;
   }
-  LLC_ELEMENT_DPRINTF(stream->getStaticId(), sliceId.startIdx,
-                      sliceId.getNumElements(), "Received element data.\n");
   for (auto idx = sliceId.startIdx, endIdx = sliceId.endIdx; idx < endIdx;
        ++idx) {
     assert(stream->waitingIndirectElements.count(idx) == 1 &&
@@ -136,10 +150,26 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
   auto nextVAddr = stream->peekVAddr();
   auto nextPAddr = stream->translateToPAddr(nextVAddr);
   // Check if it is still on this bank.
-  bool shouldMigrate = !this->isPAddrHandledByMe(nextPAddr);
-  // Also check that there is no unissued indirect elements.
-  return shouldMigrate && stream->waitingIndirectElements.empty() &&
-         stream->readyIndirectElements.empty();
+  if (this->isPAddrHandledByMe(nextPAddr)) {
+    // Still here.
+    return false;
+  }
+  if (!stream->waitingIndirectElements.empty()) {
+    // We are still waiting data for indirect streams.
+    return false;
+  }
+  if (!stream->readyIndirectElements.empty()) {
+    // We are still waiting for some indirect streams to be issued.
+    return false;
+  }
+  /**
+   * Enforce that pointer chase stream can not migrate until the previous
+   * base request comes back.
+   */
+  if (stream->isPointerChase() && stream->waitingDataBaseRequests > 0) {
+    return false;
+  }
+  return true;
 }
 
 void LLCStreamEngine::wakeup() {
@@ -172,8 +202,8 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
     if (processed) {
       iter = this->pendingStreamFlowControlMsgs.erase(iter);
     } else {
-      LLCSE_DPRINTF("Failed to process stream credit %s [%lu, %lu).\n",
-                    msg.streamId.name.c_str(), msg.startIdx, msg.endIdx);
+      // LLCSE_DPRINTF("Failed to process stream credit %s [%lu, %lu).\n",
+      //               msg.streamId.name.c_str(), msg.startIdx, msg.endIdx);
       ++iter;
     }
   }
@@ -209,12 +239,29 @@ void LLCStreamEngine::issueStreams() {
     }
   }
 
+  /**
+   * Previously I only check issuedStreams for migration.
+   * This assumes we only need to check migration possibility after issuing.
+   * However, for pointer chase stream without indirect streams, this is not the
+   * case. It maybe come migration target after receiving the previous stream
+   * element data. Therefore, here I rescan all the streams to avoid deadlock.
+   */
+
+  // Insert the issued streams to the back of streams list.
   for (auto stream : issuedStreams) {
-    bool shouldMigrate = this->canMigrateStream(stream);
-    if (shouldMigrate) {
+    this->streams.emplace_back(stream);
+  }
+
+  // Scan all streams for migration target.
+  streamIter = this->streams.begin();
+  streamEnd = this->streams.end();
+  while (streamIter != streamEnd) {
+    auto stream = *streamIter;
+    if (this->canMigrateStream(stream)) {
       this->migratingStreams.emplace_back(stream);
+      streamIter = this->streams.erase(streamIter);
     } else {
-      this->streams.emplace_back(stream);
+      ++streamIter;
     }
   }
 }
@@ -233,6 +280,11 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   /**
    * After this point, try to issue base stream element.
    */
+
+  // Enforce the per stream maxWaitingDataBaseRequests constraint.
+  if (stream->waitingDataBaseRequests == stream->maxWaitingDataBaseRequests) {
+    return false;
+  }
 
   /**
    * Key point is to merge continuous stream elements within one cache line.
@@ -261,17 +313,19 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   auto startIdx = stream->consumeNextElement();
   numElements = 1;
 
-  // Try to get more elements.
-  while (stream->isNextElementAllcoated()) {
-    Addr nextVAddr = stream->peekVAddr();
-    Addr nextPAddr = stream->translateToPAddr(nextVAddr);
-    Addr nextPAddrLine = makeLineAddress(nextPAddr);
-    if (nextPAddrLine == paddrLine && nextVAddr != 0) {
-      // We can merge the request.
-      stream->consumeNextElement();
-      numElements++;
-    } else {
-      break;
+  // Try to get more elements if this is not pointer chase stream.
+  if (!stream->isPointerChase()) {
+    while (stream->isNextElementAllcoated()) {
+      Addr nextVAddr = stream->peekVAddr();
+      Addr nextPAddr = stream->translateToPAddr(nextVAddr);
+      Addr nextPAddrLine = makeLineAddress(nextPAddr);
+      if (nextPAddrLine == paddrLine && nextVAddr != 0) {
+        // We can merge the request.
+        stream->consumeNextElement();
+        numElements++;
+      } else {
+        break;
+      }
     }
   }
 
@@ -283,6 +337,9 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   }
 
   this->issueStreamRequestHere(stream, paddrLine, startIdx, numElements);
+
+  stream->waitingDataBaseRequests++;
+
   return true;
 }
 
@@ -379,24 +436,19 @@ void LLCStreamEngine::migrateStreams() {
   int migrated = 0;
   while (streamIter != streamEnd && migrated < this->migrateWidth) {
     auto stream = *streamIter;
+    assert(this->canMigrateStream(stream) && "Can't migrate stream.");
     // We do not migrate the stream if it has unprocessed indirect elements.
-    if (stream->waitingIndirectElements.empty() &&
-        stream->readyIndirectElements.empty()) {
-      this->migrateStream(stream);
-      streamIter = this->migratingStreams.erase(streamIter);
-      migrated++;
-    } else {
-      ++streamIter;
-    }
+    this->migrateStream(stream);
+    streamIter = this->migratingStreams.erase(streamIter);
+    migrated++;
   }
 }
 
 void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
 
-  // Make sure it's okay to migrate the stream.
-  assert(stream->waitingIndirectElements.empty() &&
-         stream->readyIndirectElements.empty() &&
-         "Can not migrate stream with unprocessed indirect request.");
+  // Remember to clear the waitingDataBaseRequests becase we may aggressively
+  // migrate direct streams (not pointer chase).
+  stream->waitingDataBaseRequests = 0;
 
   // Create the migrate request.
   Addr vaddr = stream->peekVAddr();

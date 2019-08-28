@@ -409,10 +409,14 @@ void LLVMTraceCPU::CPUPort::sendReq() {
     DPRINTF(LLVMTraceCPU, "Try sending pkt at %p\n", pkt);
     bool success = MasterPort::sendTimingReq(pkt);
     if (!success) {
-      DPRINTF(LLVMTraceCPU, "Blocked packet ptr %p\n", pkt);
+      DPRINTF(LLVMTraceCPU, "%llu Blocked packet ptr %p\n",
+              this->owner->curCycle(), pkt);
       this->blocked = true;
     } else {
-      this->inflyNumPackets++;
+      // Only increase the inflyNumPackets if it needs a response.
+      if (::TDGPacketHandler::needResponse(this->owner, pkt)) {
+        this->inflyNumPackets++;
+      }
       this->blockedPacketPtrs.pop();
       ::TDGPacketHandler::issueToMemory(this->owner, pkt);
       usedPorts++;

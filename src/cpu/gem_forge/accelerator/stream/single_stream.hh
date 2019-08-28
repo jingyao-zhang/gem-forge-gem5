@@ -34,6 +34,7 @@ public:
    */
   CacheStreamConfigureData *allocateCacheConfigureData() override;
   bool isDirectLoadStream() const override;
+  bool isPointerChaseLoadStream() const override;
 
 private:
   LLVM::TDG::StreamInfo info;

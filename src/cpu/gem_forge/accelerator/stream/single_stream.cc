@@ -96,6 +96,35 @@ bool SingleStream::isDirectLoadStream() const {
   return true;
 }
 
+bool SingleStream::isPointerChaseLoadStream() const {
+  if (this->getStreamType() != "load") {
+    return false;
+  }
+  // So far only only one base stream of phi type.
+  if (this->baseStreams.size() != 1) {
+    return false;
+  }
+  auto baseStream = *(this->baseStreams.begin());
+  if (baseStream->getStreamType() != "phi") {
+    return false;
+  }
+  // The base iv stream should have only one back dependence of myself.
+  if (baseStream->backBaseStreams.size() != 1) {
+    return false;
+  }
+  /**
+   * `backStreamStreams` is `std::unordered_set<Stream *>`,
+   * while `this` is `const Stream *`.
+   * One way to solve this is to use is_transparent comparator
+   * introduced in C++14. However, here I simply use a const
+   * cast.
+   */
+  if (!baseStream->backBaseStreams.count(const_cast<SingleStream *>(this))) {
+    return false;
+  }
+  return true;
+}
+
 void SingleStream::initializeBackBaseStreams() {
   for (const auto &backBaseStreamId : this->info.chosen_back_base_streams()) {
     assert(this->getStreamType() == "phi" &&

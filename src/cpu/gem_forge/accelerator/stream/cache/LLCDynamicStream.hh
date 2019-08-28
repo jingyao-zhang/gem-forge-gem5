@@ -19,6 +19,7 @@ public:
   }
 
   int32_t getElementSize() const { return this->configData.elementSize; }
+  bool isPointerChase() const { return this->configData.isPointerChase; }
 
   Addr peekVAddr() const;
   Addr getVAddr(uint64_t idx) const;
@@ -43,10 +44,23 @@ public:
   // Dependent indirect streams.
   std::list<LLCDynamicStream *> indirectStreams;
 
+  /**
+   * Maximum number of issued requests of the base stream that are waiting for
+   * the data.
+   */
+  int maxWaitingDataBaseRequests;
+
   // Next element index to be issued.
   uint64_t idx;
   // For flow control.
   uint64_t allocatedIdx;
+  /**
+   * Number of requests of the base stream (not including indirect streams)
+   * issued but data not ready.
+   * Notice that this number only tracks requests in the current LLC bank and
+   * will be cleared when migrating.
+   */
+  int waitingDataBaseRequests;
 
   /**
    * Indirect elements that has been waiting for

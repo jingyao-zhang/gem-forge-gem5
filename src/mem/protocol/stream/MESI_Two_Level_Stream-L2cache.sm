@@ -430,18 +430,18 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         }
 
         if (in_msg.sliceId.isValid()) {
-          DPRINTF(RubyStream, "Received stream request [%lu, +%lu) %#x.\n", 
-            in_msg.sliceId.getStartIdx(),
-            in_msg.sliceId.getNumElements(),
-            in_msg.addr);
+          //DPRINTF(RubyStream, "Received stream request [%lu, +%lu) %#x.\n", 
+          //  in_msg.sliceId.getStartIdx(),
+          //  in_msg.sliceId.getNumElements(),
+          //  in_msg.addr);
         }
 
         if (is_valid(cache_entry)) {
           // The L2 contains the block, so proceeded with handling the request
           if (in_msg.sliceId.isValid()) {
-            DPRINTF(RubyStream, "Hit stream request [%lu, +%lu).\n", 
-              in_msg.sliceId.getStartIdx(),
-              in_msg.sliceId.getNumElements());
+            //DPRINTF(RubyStream, "Hit stream request [%lu, +%lu).\n", 
+            //  in_msg.sliceId.getStartIdx(),
+            //  in_msg.sliceId.getNumElements());
           }
           // Hit.
           setHitCacheLevel(in_msg.requestStatistic, 2);
@@ -517,8 +517,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   in_port(streamMigrateFromL2Cache_in, StreamMigrateRequestMsg, streamMigrateFromL2Cache, rank = 0) {
     if(streamMigrateFromL2Cache_in.isReady(clockEdge())) {
       peek(streamMigrateFromL2Cache_in,  StreamMigrateRequestMsg) {
-        DPRINTF(RubyStream, "Received migrated stream from %s.\n",
-                in_msg.Requestor);
         se.receiveStreamMigrate(in_msg.Stream);
         Tick delay := streamMigrateFromL2Cache_in.dequeue(clockEdge());
         profileMsgDelay(3, ticksToCycles(delay));
@@ -627,9 +625,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         // Don't forget to copy the stream meta-data.
         out_msg.sliceId := in_msg.sliceId;
         if (in_msg.sliceId.isValid()) {
-          DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
-            in_msg.sliceId.getStartIdx(), 
-            in_msg.sliceId.getNumElements());
+          // DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
+          //   in_msg.sliceId.getStartIdx(), 
+          //   in_msg.sliceId.getNumElements());
           // We have to notify the SE about the data.
           se.receiveStreamElementData(out_msg.sliceId);
 
@@ -704,11 +702,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       // Copy the stream meta-data.
       out_msg.sliceId := tbe.sliceId;
       if (out_msg.sliceId.isValid()) {
-        DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
-          out_msg.sliceId.getStartIdx(), 
-          out_msg.sliceId.getNumElements());
-          // We have to notify the SE about the data.
-          se.receiveStreamElementData(out_msg.sliceId);
+        // DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
+        //   out_msg.sliceId.getStartIdx(), 
+        //   out_msg.sliceId.getNumElements());
+        // We have to notify the SE about the data.
+        se.receiveStreamElementData(out_msg.sliceId);
       }
     }
   }

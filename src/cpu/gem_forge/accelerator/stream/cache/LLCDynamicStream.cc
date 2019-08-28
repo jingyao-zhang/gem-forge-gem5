@@ -4,8 +4,14 @@
 
 // TODO: Support real flow control.
 LLCDynamicStream::LLCDynamicStream(CacheStreamConfigureData *_configData)
-    : configData(*_configData), idx(0),
-      allocatedIdx(_configData->initAllocatedIdx) {}
+    : configData(*_configData), maxWaitingDataBaseRequests(2), idx(0),
+      allocatedIdx(_configData->initAllocatedIdx), waitingDataBaseRequests(0) {
+  if (this->configData.isPointerChase) {
+    // Pointer chase stream can only have at most one base requests waiting for
+    // data.
+    this->maxWaitingDataBaseRequests = 1;
+  }
+}
 
 LLCDynamicStream::~LLCDynamicStream() {
   for (auto &indirectStream : this->indirectStreams) {
@@ -23,8 +29,10 @@ Addr LLCDynamicStream::getVAddr(uint64_t idx) const {
     auto vaddr = this->configData.history->history(idx).addr();
     return vaddr;
   } else {
+    // ! So far just return the last address.
     // ! Do something reasonable here.
-    return 0;
+    // ! Make sure this is consistent with the core stream engine.
+    return this->configData.history->history(historySize - 1).addr();
   }
 }
 

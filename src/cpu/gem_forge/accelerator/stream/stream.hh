@@ -113,6 +113,7 @@ public:
    * Helper function used in StreamAwareCache.
    */
   virtual bool isDirectLoadStream() const { return false; }
+  virtual bool isPointerChaseLoadStream() const { return false; }
 
 protected:
   LLVMTraceCPU *cpu;

@@ -231,8 +231,9 @@ private:
 
   // Called every cycle to allocate elements.
   void allocateElements();
-  // Allocate one element to stream.
+  // Check if all the base elements are allocated.
   bool areBaseElementAllocated(Stream *S);
+  // Allocate one element to stream.
   void allocateElement(Stream *S);
   void releaseElement(Stream *S);
   void issueElements();
@@ -296,6 +297,12 @@ private:
    */
   mutable size_t blockCycle;
   mutable size_t blockSeqNum;
+
+  /**
+   * Helper function for stream aware cache.
+   */
+  bool shouldOffloadStream(Stream *S);
+
 };
 
 #endif

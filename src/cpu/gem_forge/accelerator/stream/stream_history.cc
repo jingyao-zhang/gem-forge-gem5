@@ -39,6 +39,7 @@ std::pair<bool, uint64_t> StreamHistory::getNextAddr(bool &used) {
     used = entry.used();
     return std::make_pair(entry.valid(), entry.addr());
   } else {
+    // ! Make sure this is consistent with the cache stream engine.
     this->currentIdx++;
     used = false;
     return std::make_pair(false, this->previousAddr);

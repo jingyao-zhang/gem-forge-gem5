@@ -27,6 +27,13 @@ public:
   Addr initPAddr;
 
   /**
+   * Whether this is a pointer chase stream.
+   * TODO: This should be included in the future Pattern structure
+   * TODO: when introducing execution-driven simulation.
+   */
+  bool isPointerChase;
+
+  /**
    * The above basically represent a direct stream.
    * We allow one additional indirect stream so far.
    * TODO: Support multiple indirect streams.

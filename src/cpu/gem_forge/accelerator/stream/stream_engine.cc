@@ -397,7 +397,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
     if (this->enableStreamFloat) {
-      if (S->isDirectLoadStream()) {
+      if (this->shouldOffloadStream(S)) {
         // Get the CacheStreamConfigureData.
         auto streamConfigureData = S->allocateCacheConfigureData();
 
@@ -408,6 +408,10 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
           streamConfigureData->initPAddr = initPAddr;
         } else {
           panic("Stream so far can only work in standalone mode.");
+        }
+
+        if (S->isPointerChaseLoadStream()) {
+          streamConfigureData->isPointerChase = true;
         }
 
         /**
@@ -1590,6 +1594,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto pkt = TDGPacketHandler::createTDGPacket(
         paddr, packetSize, memAccess, nullptr, cpu->getDataMasterID(), 0, 0);
     S->statistic.numIssuedRequest++;
+    STREAM_ELEMENT_DPRINTF(element, "Issue cpu->sendRequest.\n");
     cpu->sendRequest(pkt);
 
     // Change to FETCHING status.
@@ -1980,4 +1985,8 @@ void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
   assert(status == LLVMTraceCPU::InstStatus::COMMITTING &&
          "Writebacked instructions should be committing.");
   cpu->updateInflyInstStatus(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
+}
+
+bool StreamEngine::shouldOffloadStream(Stream *S) {
+  return S->isDirectLoadStream() || S->isPointerChaseLoadStream();
 }

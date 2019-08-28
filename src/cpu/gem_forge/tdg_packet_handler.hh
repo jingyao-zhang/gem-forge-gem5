@@ -27,6 +27,14 @@ public:
                                             int contextId, uint64_t data);
   static void handleTDGPacketResponse(LLVMTraceCPU *cpu, PacketPtr pkt);
   static void issueToMemory(LLVMTraceCPU *cpu, PacketPtr pkt);
+  /**
+   * Check if the request requires response.
+   * So far the only TDG packet that does not need a response is the stream
+   * configure packet.
+   * TODO: Make a real TDGPacketHandler for StreamConfig and make this feature
+   * TODO: virtual.
+   */
+  static bool needResponse(LLVMTraceCPU *cpu, PacketPtr pkt);
 };
 
 #endif
