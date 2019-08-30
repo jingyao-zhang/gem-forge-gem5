@@ -2034,5 +2034,23 @@ void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
 }
 
 bool StreamEngine::shouldOffloadStream(Stream *S) {
-  return S->isDirectLoadStream() || S->isPointerChaseLoadStream();
+  if (!S->isDirectLoadStream() && !S->isPointerChaseLoadStream()) {
+    return false;
+  }
+  // Let's use the previous staistic of the average stream.
+  bool enableSmartDecision = false;
+  if (enableSmartDecision) {
+    const auto &statistic = S->statistic;
+    if (statistic.numConfigured == 0) {
+      // First time, maybe we aggressively offload as this is the
+      // case for many microbenchmark we designed.
+      return false;
+    }
+    auto avgLength = statistic.numUsed / statistic.numConfigured;
+    if (avgLength < 500) {
+      return false;
+    }
+  }
+
+  return true;
 }
