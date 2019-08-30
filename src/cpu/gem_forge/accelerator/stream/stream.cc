@@ -73,6 +73,7 @@ void Stream::addBackBaseStream(Stream *backBaseStream) {
     STREAM_PANIC("Base stream should not be self.");
   }
   this->backBaseStreams.insert(backBaseStream);
+  backBaseStream->backDependentStreams.insert(this);
 }
 
 void Stream::addBaseStepStream(Stream *baseStepStream) {

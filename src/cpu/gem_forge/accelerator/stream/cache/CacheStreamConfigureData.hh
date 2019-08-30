@@ -34,6 +34,14 @@ public:
   bool isPointerChase;
 
   /**
+   * NOTE: Only valid for indirect streams.
+   * Sometimes the dependence between the indirect stream and the base stream
+   * has a difference of one iteration, e.g. pointer chase base stream + an
+   * indirect stream loading the value.
+   */
+  bool isOneIterationBehind;
+
+  /**
    * The above basically represent a direct stream.
    * We allow one additional indirect stream so far.
    * TODO: Support multiple indirect streams.

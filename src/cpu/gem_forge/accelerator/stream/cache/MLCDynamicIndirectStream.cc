@@ -10,14 +10,36 @@
           this->controller->getMachineID().num,                                \
           this->dynamicStreamId.staticId, ##args)
 
+#define MLC_ELEMENT_DPRINTF(startIdx, numElements, format, args...)            \
+  DPRINTF(RubyStream, "[MLC_SE%d][%lu][%lu, +%d): " format,                    \
+          this->controller->getMachineID().num,                                \
+          this->dynamicStreamId.staticId, (startIdx), (numElements), ##args)
+
 MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     CacheStreamConfigureData *_configData,
     AbstractStreamAwareController *_controller,
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
     const DynamicStreamId &_rootStreamId)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
-                       _requestToLLCMsgBuffer),
-      rootStreamId(_rootStreamId) {}
+                       _requestToLLCMsgBuffer, false /*mergeElements*/),
+      rootStreamId(_rootStreamId),
+      isOneIterationBehind(_configData->isOneIterationBehind) {
+  if (this->isOneIterationBehind) {
+    // This indirect stream is behind one iteration, which means that the first
+    // element is not handled by LLC stream. The stream buffer should start at
+    // the second element. We simply release the first element here.
+    assert(!this->elements.empty() && "Empty initial elements list.");
+    // Let's do some sanity check.
+    auto &firstElement = this->elements.front();
+    assert(firstElement.startIdx == 0 && "Start index should always be 0.");
+    assert(firstElement.numElements == 1 &&
+           "Indirect stream should never merge elements.");
+    MLC_ELEMENT_DPRINTF(firstElement.startIdx, firstElement.numElements,
+                        "Initial offset pop.\n");
+    this->headIdx += firstElement.numElements;
+    this->elements.pop_front();
+  }
+}
 
 void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   MLCS_DPRINTF("Indirect received stream data.\n");
@@ -33,18 +55,6 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   }
 
   MLCDynamicStream::receiveStreamData(msg);
-}
-
-void MLCDynamicIndirectStream::allocateElement() {
-  auto historySize = this->history->history_size();
-  uint64_t startIdx = this->tailIdx;
-  int numElements = 1;
-  Addr vaddr =
-      (startIdx < historySize) ? (this->history->history(startIdx).addr()) : 0;
-  this->tailIdx++;
-
-  MLCS_DPRINTF("Allocate [%lu, %lu).\n", startIdx, startIdx + numElements);
-  this->elements.emplace_back(startIdx, numElements, vaddr);
 }
 
 void MLCDynamicIndirectStream::sendCreditToLLC() {

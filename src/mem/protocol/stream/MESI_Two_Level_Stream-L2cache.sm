@@ -1122,7 +1122,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition(IVV, L1_GETV) {
+  transition({IVV, ISS}, L1_GETV) {
+    // Stall the uncache request when there is a infly request to that line.
     zz_stallAndWaitL1RequestQueue;
   }
 

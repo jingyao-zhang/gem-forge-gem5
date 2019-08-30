@@ -30,11 +30,13 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
   L0SE_DPRINTF("Received StreamConfigure %s.\n",
                streamConfigureData->dynamicId.name.c_str());
-  hack("L0SE configured for %llu.\n", streamConfigureData->dynamicId.streamInstance);
   // Add to offloaded stream set.
+  assert(streamConfigureData->isOneIterationBehind == false &&
+         "Only indirect stream can be one iteration behind.");
   this->offloadedStreams.emplace(
       streamConfigureData->dynamicId,
-      new L0DynamicStream(streamConfigureData->dynamicId));
+      new L0DynamicStream(streamConfigureData->dynamicId,
+                          streamConfigureData->isOneIterationBehind));
   if (streamConfigureData->indirectStreamConfigure != nullptr) {
     // We have an indirect stream.
     L0SE_DPRINTF(
@@ -43,14 +45,15 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     this->offloadedStreams.emplace(
         streamConfigureData->indirectStreamConfigure->dynamicId,
         new L0DynamicStream(
-            streamConfigureData->dynamicId /* RootDynamicStreamId. */));
+            streamConfigureData->dynamicId /* RootDynamicStreamId. */,
+            streamConfigureData->indirectStreamConfigure
+                ->isOneIterationBehind));
   }
 }
 
 void L0StreamEngine::receiveStreamEnd(PacketPtr pkt) {
   auto endDynamicStreamId = *(pkt->getPtr<DynamicStreamId *>());
   L0_STREAM_DPRINTF(*endDynamicStreamId, "Received StreamEnd.\n");
-  hack("L0SE end for %llu.\n", endDynamicStreamId->streamInstance);
 
   auto rootStreamIter = this->offloadedStreams.find(*endDynamicStreamId);
   assert(rootStreamIter != this->offloadedStreams.end() &&
@@ -82,7 +85,23 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
   }
   // So far let's only consider offloaded stream.
   const auto &dynamicId = streamMemAccess->getDynamicStreamId();
-  return this->offloadedStreams.count(dynamicId) != 0;
+  auto streamIter = this->offloadedStreams.find(dynamicId);
+  if (streamIter == this->offloadedStreams.end()) {
+    // Failed to find the offloaded stream.
+    return false;
+  }
+  auto stream = streamIter->second;
+  // Check if this is an indirect stream one iteration behind.
+  if (stream->getIsOneIterationBehind()) {
+    auto sliceId = this->getSliceId(pkt);
+    assert(sliceId.getNumElements() == 1 &&
+           "Never merge elements for indirect stream one iteration behind.");
+    if (sliceId.startIdx == 0) {
+      // Ignore the first stream element.
+      return false;
+    }
+  }
+  return true;
 }
 
 DynamicStreamSliceId L0StreamEngine::getSliceId(PacketPtr pkt) const {

@@ -27,15 +27,20 @@ class StreamMemAccess;
  */
 class L0DynamicStream {
 public:
-  L0DynamicStream(const DynamicStreamId &_rootDynamicStreamId)
-      : rootDynamicStreamId(_rootDynamicStreamId) {}
+  L0DynamicStream(const DynamicStreamId &_rootDynamicStreamId,
+                  bool _isOneIterationBehind)
+      : rootDynamicStreamId(_rootDynamicStreamId),
+        isOneIterationBehind(_isOneIterationBehind) {}
 
   const DynamicStreamId &getRootDynamicStreamId() const {
     return this->rootDynamicStreamId;
   }
 
+  bool getIsOneIterationBehind() const { return this->isOneIterationBehind; }
+
 private:
   DynamicStreamId rootDynamicStreamId;
+  bool isOneIterationBehind;
 };
 
 class L0StreamEngine {
@@ -57,7 +62,8 @@ private:
   /**
    * Set of all offloaded streams, along with their root dynamic stream id.
    */
-  std::unordered_map<const DynamicStreamId, L0DynamicStream *, DynamicStreamIdHasher>
+  std::unordered_map<const DynamicStreamId, L0DynamicStream *,
+                     DynamicStreamIdHasher>
       offloadedStreams;
 
   StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;

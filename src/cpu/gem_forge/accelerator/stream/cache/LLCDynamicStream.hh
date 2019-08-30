@@ -20,6 +20,9 @@ public:
 
   int32_t getElementSize() const { return this->configData.elementSize; }
   bool isPointerChase() const { return this->configData.isPointerChase; }
+  bool isOneIterationBehind() const {
+    return this->configData.isOneIterationBehind;
+  }
 
   Addr peekVAddr() const;
   Addr getVAddr(uint64_t idx) const;

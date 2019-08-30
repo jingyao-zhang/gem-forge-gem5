@@ -131,7 +131,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
     LLC_STREAM_DPRINTF(stream->getStaticId(), "Ended instance %lu.\n",
-                         stream->getDynamicStreamId().streamInstance);
+                       stream->getDynamicStreamId().streamInstance);
     delete stream;
     return;
   }
@@ -185,7 +185,13 @@ void LLCStreamEngine::receiveStreamElementData(
            "There is no waiting indirect element for this index.");
     // Add them to the ready indirect list.
     for (auto indirectStream : stream->indirectStreams) {
-      stream->readyIndirectElements.emplace(idx, indirectStream);
+      // If the indirect stream is behind one iteration, base element of
+      // iteration 0 should trigger the indirect element of iteration 1.
+      if (indirectStream->isOneIterationBehind()) {
+        stream->readyIndirectElements.emplace(idx + 1, indirectStream);
+      } else {
+        stream->readyIndirectElements.emplace(idx, indirectStream);
+      }
     }
     // Don't forget to erase it from the waiting list.
     stream->waitingIndirectElements.erase(idx);

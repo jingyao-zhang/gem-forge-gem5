@@ -19,7 +19,8 @@ public:
   MLCDynamicStream(CacheStreamConfigureData *_configData,
                    AbstractStreamAwareController *_controller,
                    MessageBuffer *_responseMsgBuffer,
-                   MessageBuffer *_requestToLLCMsgBuffer);
+                   MessageBuffer *_requestToLLCMsgBuffer,
+                   bool _mergeElements = true);
 
   virtual ~MLCDynamicStream() {}
 
@@ -32,6 +33,15 @@ public:
   virtual const DynamicStreamId &getRootDynamicStreamId() const {
     // By default this we are the root stream.
     return this->getDynamicStreamId();
+  }
+
+  /**
+   * Helper function to check if a slice is valid within this stream context.
+   * So far always valid, except the first element of indirect stream that is
+   * behind by one iteration.
+   */
+  virtual bool isSliceValid(const DynamicStreamSliceId &sliceId) const {
+    return true;
   }
 
   /**
@@ -59,6 +69,9 @@ protected:
   MessageBuffer *responseMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;
   const uint64_t maxNumElements;
+  // Whether we can merge continuous elements if they are in the same cache
+  // line.
+  const bool mergeElements;
   // Element index of allocated [head, tail).
   uint64_t headIdx;
   uint64_t tailIdx;
@@ -123,7 +136,7 @@ protected:
    * Allocate stream element. It merges neighboring elements if they are from
    * the same cache line.
    */
-  virtual void allocateElement();
+  void allocateElement();
 
   /**
    * Send credit to the LLC stream. Update the llcTailIdx.

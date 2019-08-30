@@ -24,15 +24,24 @@ public:
     return this->rootStreamId;
   }
 
+  bool isSliceValid(const DynamicStreamSliceId &sliceId) const override {
+    assert(sliceId.getNumElements() == 1 &&
+           "Multiple elements for indirect stream.");
+    if (this->isOneIterationBehind) {
+      if (sliceId.startIdx == 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void receiveStreamData(const ResponseMsg &msg) override;
 
 private:
   // Remember the root stream id.
   DynamicStreamId rootStreamId;
-  /**
-   * Override the basic behavior, allocate elements one by one.
-   */
-  void allocateElement() override;
+  // Remember if this indirect stream is behind one iteration.
+  bool isOneIterationBehind;
 
   /**
    * Override the basic behavior, never really sends out the credit.

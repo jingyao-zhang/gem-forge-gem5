@@ -453,17 +453,54 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
               }
             }
           }
+          if (streamConfigureData->indirectStreamConfigure == nullptr) {
+            // Not found a valid indirect stream, let's try to search for
+            // a indirect stream that is one iteration behind.
+            for (auto backDependentStream : S->backDependentStreams) {
+              if (backDependentStream->getStreamType() != "phi") {
+                continue;
+              }
+              if (backDependentStream->backBaseStreams.size() != 1) {
+                continue;
+              }
+              for (auto indirectStream :
+                   backDependentStream->dependentStreams) {
+                if (indirectStream == S) {
+                  continue;
+                }
+                if (indirectStream->getStreamType() != "load") {
+                  continue;
+                }
+                if (indirectStream->baseStreams.size() != 1) {
+                  continue;
+                }
+                // We found one valid indirect stream that is one iteration
+                // behind S.
+                streamConfigureData->indirectStreamConfigure =
+                    std::shared_ptr<CacheStreamConfigureData>(
+                        indirectStream->allocateCacheConfigureData(
+                            inst->getSeqNum()));
+                streamConfigureData->indirectStreamConfigure
+                    ->isOneIterationBehind = true;
+                break;
+              }
+              if (streamConfigureData->indirectStreamConfigure != nullptr) {
+                // We already found one.
+                break;
+              }
+            }
+          }
         }
 
         auto pkt = TDGPacketHandler::createStreamControlPacket(
             streamConfigureData->initPAddr, cpu->getDataMasterID(), 0,
             MemCmd::Command::StreamConfigReq,
             reinterpret_cast<uint64_t>(streamConfigureData));
-        DPRINTF(
-            RubyStream,
-            "Create StreamConfig pkt %#x %#x, initVAddr: %#x, initPAddr %#x.\n",
-            pkt, streamConfigureData, streamConfigureData->initVAddr,
-            streamConfigureData->initPAddr);
+        DPRINTF(RubyStream,
+                "Create StreamConfig pkt %#x %#x, initVAddr: %#x, initPAddr "
+                "%#x.\n",
+                pkt, streamConfigureData, streamConfigureData->initVAddr,
+                streamConfigureData->initPAddr);
         cpu->sendRequest(pkt);
       }
     }
@@ -520,10 +557,12 @@ void StreamEngine::dispatchStreamStep(StreamStepInst *inst) {
   // for (auto S : this->getStepStreamList(stepStream)) {
   //   if (S->stepSize != stepStream->stepSize) {
   //     this->dumpFIFO();
-  //     panic("Streams within the same stepGroup should have the same stepSize:
+  //     panic("Streams within the same stepGroup should have the same
+  //     stepSize:
   //     "
   //           "%s, %s.",
-  //           S->getStreamName().c_str(), stepStream->getStreamName().c_str());
+  //           S->getStreamName().c_str(),
+  //           stepStream->getStreamName().c_str());
   //   }
   // }
   if (isDebugStream(stepStream)) {
@@ -541,9 +580,9 @@ void StreamEngine::commitStreamStep(StreamStepInst *inst) {
      * 1. Why only throttle for streamStep?
      * Normally you want to throttling when you release the element.
      * However, so far the throttling is constrainted by the
-     * totalRunAheadLength, which only considers configured streams. Therefore,
-     * we can not throttle for the last element (streamEnd), as some base
-     * streams may already be cleared, and we get an inaccurate
+     * totalRunAheadLength, which only considers configured streams.
+     * Therefore, we can not throttle for the last element (streamEnd), as
+     * some base streams may already be cleared, and we get an inaccurate
      * totalRunAheadLength, causing the throttling to exceed the limit and
      * deadlock.
      *
@@ -658,7 +697,8 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
 
     /**
      * It is possible that the stream is unconfigured (out-loop use).
-     * In such case we assume it's ready and use a nullptr as a special element
+     * In such case we assume it's ready and use a nullptr as a special
+     * element
      */
     if (!S->configured) {
       elementSet.insert(nullptr);
@@ -964,7 +1004,8 @@ void StreamEngine::initializeStreams(
 
       // panic("Disabled stream coalesce so far.");
     } else {
-      // Single stream can be immediately constructed and inserted into the map.
+      // Single stream can be immediately constructed and inserted into the
+      // map.
       auto newStream = new SingleStream(args, streamInfo);
       createdStreams.push_back(newStream);
       this->streamMap.emplace(streamId, newStream);
@@ -1379,7 +1420,8 @@ void StreamEngine::allocateElement(Stream *S) {
 void StreamEngine::releaseElement(Stream *S) {
 
   /**
-   * * This function performs a normal release, i.e. release a stepped element.
+   * * This function performs a normal release, i.e. release a stepped
+   * element.
    */
 
   assert(S->stepSize > 0 && "No element to release.");
@@ -1805,11 +1847,12 @@ void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
     if (stepRootStream != nullptr) {
       const auto &streamList = this->getStepStreamList(stepRootStream);
       if (this->throttlingStrategy == ThrottlingStrategyE::DYNAMIC) {
-        // All streams with the same stepRootStream must have the same run ahead
-        // length.
+        // All streams with the same stepRootStream must have the same run
+        // ahead length.
         auto totalRunAheadLength = this->getTotalRunAheadLength();
         // Only increase the run ahead length if the totalRunAheadLength is
-        // within the 90% of the total FIFO entries. Need better solution here.
+        // within the 90% of the total FIFO entries. Need better solution
+        // here.
         const auto incrementStep = 2;
         if (static_cast<float>(totalRunAheadLength) <
             0.9f * static_cast<float>(this->FIFOArray.size())) {
@@ -1823,7 +1866,8 @@ void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
       } else if (this->throttlingStrategy == ThrottlingStrategyE::GLOBAL) {
         this->throttler.throttleStream(S, element);
       }
-      // No matter what, just clear the lateFetchCount in the whole step group.
+      // No matter what, just clear the lateFetchCount in the whole step
+      // group.
       for (auto stepS : streamList) {
         stepS->lateFetchCount = 0;
       }
@@ -1894,8 +1938,8 @@ StreamEngine::getStreamRegion(const std::string &relativePath) const {
  * * UpperBoundEntries = \
  * *   (FIFOSize - BasicEntries) / StepGroupSize + InitMaxSize.
  *
- * As we are throttling streams altogether with the same stepRoot, the condition
- * is:
+ * As we are throttling streams altogether with the same stepRoot, the
+ *condition is:
  * * AvailableEntries >= IncrementSize * StepGroupSize.
  * * CurrentMaxSize + IncrementSize <= UpperBoundEntries
  *

@@ -178,8 +178,10 @@ MLCDynamicStream *MLCStreamEngine::getMLCDynamicStreamFromSlice(
   }
   auto iter = this->idToStreamMap.find(slice.streamId);
   if (iter != this->idToStreamMap.end()) {
-    return iter->second;
-  } else {
-    return nullptr;
+    // Ignore it if the slice is not considered valid by the stream.
+    if (iter->second->isSliceValid(slice)) {
+      return iter->second;
+    }
   }
+  return nullptr;
 }

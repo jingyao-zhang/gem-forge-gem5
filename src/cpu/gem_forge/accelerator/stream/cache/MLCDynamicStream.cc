@@ -34,13 +34,19 @@
 MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
                                    AbstractStreamAwareController *_controller,
                                    MessageBuffer *_responseMsgBuffer,
-                                   MessageBuffer *_requestToLLCMsgBuffer)
+                                   MessageBuffer *_requestToLLCMsgBuffer,
+                                   bool _mergeElements)
     : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
       isPointerChase(_configData->isPointerChase),
       history(_configData->history), controller(_controller),
       responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer), maxNumElements(64),
-      headIdx(0), tailIdx(0), llcTailIdx(0) {
+      mergeElements(_mergeElements), headIdx(0), tailIdx(0), llcTailIdx(0) {
+
+  /**
+   * ! You should never call any virtual function in the
+   * ! constructor/deconstructor.
+   */
 
   // Initialize the buffer for 32 entries?
   while (this->tailIdx < this->maxNumElements) {
@@ -82,7 +88,10 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
        element != end; ++element) {
     if (element->startIdx == startIdx) {
       // Found the element.
-      assert(element->numElements == numElements && "Mismatch numElements.");
+      if (element->numElements != numElements) {
+        MLC_STREAM_PANIC("Mismatch numElements, incoming %d, element %d.\n",
+                         numElements, element->numElements);
+      }
       element->setData(msg.m_DataBlk);
       if (element->coreStatus == MLCStreamElement::CoreStatusE::WAIT) {
         this->makeResponse(*element);
@@ -243,7 +252,7 @@ void MLCDynamicStream::allocateElement() {
    * as you don't know the next virtual address until the previous request is
    * resolved.
    */
-  if (!this->isPointerChase) {
+  if (!this->isPointerChase && this->mergeElements) {
     while (this->tailIdx < historySize) {
       Addr nextVAddr = this->history->history(this->tailIdx).addr();
       Addr nextVAddrLine = makeLineAddress(nextVAddr);

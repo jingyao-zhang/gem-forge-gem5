@@ -1,6 +1,7 @@
 #include "llvm_trace_cpu.hh"
 
 #include "base/loader/object_file.hh"
+#include "base/debug.hh"
 #include "cpu/thread_context.hh"
 #include "debug/GemForgeCPUDump.hh"
 #include "debug/LLVMTraceCPU.hh"
@@ -150,6 +151,8 @@ void LLVMTraceCPU::tick() {
   this->numCycles++;
 
   if (this->cacheWarmer != nullptr) {
+    // Disable all tracing output.
+    Debug::SimpleFlag::disableAll();
     if (this->cacheWarmer->isDoneWithPreviousRequest()) {
       if (this->cacheWarmer->isDone()) {
         // We are done warming up.
@@ -180,6 +183,7 @@ void LLVMTraceCPU::tick() {
     // We want to synchronize all cpus here.
     if (this->system->getWorkItemsEnd() % this->totalActiveCPUs == 0) {
       // We should have been synchronized.
+      Debug::SimpleFlag::enableAll();
       this->cpuStatus = CPUStatusE::EXECUTING;
       inform("Core %d start executing.\n", this->cpuId());
     } else {

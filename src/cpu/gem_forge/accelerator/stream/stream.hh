@@ -75,6 +75,7 @@ public:
    * Back edge dependence on previous iteration.
    */
   std::unordered_set<Stream *> backBaseStreams;
+  std::unordered_set<Stream *> backDependentStreams;
 
   /**
    * Per stream statistics.
