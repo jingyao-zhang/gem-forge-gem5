@@ -349,6 +349,12 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
 
     // 2. Create new index.
     S->FIFOIdx.newInstance(inst->getSeqNum());
+
+    /**
+     * Initialize the DynamicInstanceState.
+     */
+    S->dynamicInstanceStates.emplace_back(S->FIFOIdx.streamId,
+                                          inst->getSeqNum());
   }
 
   // 3. Allocate new entries one by one for all streams.
@@ -398,8 +404,24 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
      */
     if (this->enableStreamFloat) {
       if (this->shouldOffloadStream(S)) {
+
+        // Remember the offloaded decision.
+        // ! Only do this for the root offloaded stream.
+        bool foundDynamicInstanceState = false;
+        for (auto &dynamicInstanceState : S->dynamicInstanceStates) {
+          if (dynamicInstanceState.configSeqNum == inst->getSeqNum()) {
+            // We found the dynamicInstanceState.
+            dynamicInstanceState.offloadedToCache = true;
+            foundDynamicInstanceState = true;
+            break;
+          }
+        }
+        assert(foundDynamicInstanceState &&
+               "Failed to find the DynamicInstanceState.");
+
         // Get the CacheStreamConfigureData.
-        auto streamConfigureData = S->allocateCacheConfigureData();
+        auto streamConfigureData =
+            S->allocateCacheConfigureData(inst->getSeqNum());
 
         // Set up the init physical address.
         if (cpu->isStandalone()) {
@@ -425,15 +447,17 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
                 // Only dependent on this direct stream.
                 streamConfigureData->indirectStreamConfigure =
                     std::shared_ptr<CacheStreamConfigureData>(
-                        dependentStream->allocateCacheConfigureData());
+                        dependentStream->allocateCacheConfigureData(
+                            inst->getSeqNum()));
                 break;
               }
             }
           }
         }
 
-        auto pkt = TDGPacketHandler::createStreamConfigPacket(
+        auto pkt = TDGPacketHandler::createStreamControlPacket(
             streamConfigureData->initPAddr, cpu->getDataMasterID(), 0,
+            MemCmd::Command::StreamConfigReq,
             reinterpret_cast<uint64_t>(streamConfigureData));
         DPRINTF(
             RubyStream,
@@ -790,6 +814,28 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
     if (isDebugStream(S)) {
       debugStream(S, "Commit End");
     }
+
+    /**
+     * Check if this stream is offloaded and if so, send the StreamEnd packet.
+     */
+    assert(!S->dynamicInstanceStates.empty() &&
+           "Failed to find ended DynamicInstanceState.");
+    auto &endedDynamicInstanceState = S->dynamicInstanceStates.front();
+    if (endedDynamicInstanceState.offloadedToCache) {
+      auto endedDynamicStreamId =
+          new DynamicStreamId(endedDynamicInstanceState.dynamicStreamId);
+      // The target address is just virtually 0 (should be set by MLC stream
+      // engine).
+      auto pkt = TDGPacketHandler::createStreamControlPacket(
+          cpu->translateAndAllocatePhysMem(0), cpu->getDataMasterID(), 0,
+          MemCmd::Command::StreamEndReq,
+          reinterpret_cast<uint64_t>(endedDynamicStreamId));
+      DPRINTF(RubyStream, "[%s] Create StreamEnd pkt.\n",
+              S->getStreamName().c_str());
+      cpu->sendRequest(pkt);
+    }
+
+    S->dynamicInstanceStates.pop_front();
 
     // Notify the stream.
     S->commitStreamEnd(inst);

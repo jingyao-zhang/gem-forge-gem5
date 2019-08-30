@@ -32,7 +32,8 @@ public:
    * ! Sean: StreamAwareCache
    * Allocate the CacheStreamConfigureData.
    */
-  CacheStreamConfigureData *allocateCacheConfigureData() override;
+  CacheStreamConfigureData *
+  allocateCacheConfigureData(uint64_t configSeqNum) override;
   bool isDirectLoadStream() const override;
   bool isPointerChaseLoadStream() const override;
 

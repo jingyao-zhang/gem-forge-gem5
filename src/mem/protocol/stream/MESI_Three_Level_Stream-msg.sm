@@ -58,6 +58,7 @@ enumeration(CoherenceClass, desc="...") {
    * ! Sean: StreamAwareCache.
    */
   STREAM_CONFIG, desc="StreamConfig";
+  STREAM_END,    desc="StreamEnd";
 }
 
 // Class for messages sent between the L0 and the L1 controllers.

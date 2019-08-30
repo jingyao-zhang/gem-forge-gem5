@@ -131,6 +131,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
     // ! Sean: StreamAwareCache
     L0_StreamConfig, desc="StreamConfig from L0";
+    L0_StreamEnd,    desc="StreamEnd from L0";
     L2_StreamData,   desc="StreamData from L2";
     L0_FwdStreamReq, desc="Stream request served by L0 and forwarded to L1";
   }
@@ -168,6 +169,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
    */
   structure(MLCStreamEngine, external="yes", desc="Stream Engine at L1") {
     void receiveStreamConfigure(PacketPtr);
+    Addr receiveStreamEnd(PacketPtr);
     void receiveStreamData(ResponseMsg);
     bool isStreamRequest(DynamicStreamSliceId);
     bool isStreamOffloaded(DynamicStreamSliceId);
@@ -397,6 +399,16 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         } else if (in_msg.Class == CoherenceClass:STREAM_CONFIG) {
           se.receiveStreamConfigure(in_msg.pkt);
           trigger(Event:L0_StreamConfig, in_msg.addr, cache_entry, tbe);
+        } else if (in_msg.Class == CoherenceClass:STREAM_END) {
+          Addr llcStreamPAddr := se.receiveStreamEnd(in_msg.pkt);
+          /**
+           * Notice the in_msg.addr does not mean the correct LLC bank 
+           * where the LLC stream is.
+           * We have to use the physical address given by the stream engine.
+           */
+          cache_entry := getCacheEntry(llcStreamPAddr);
+          tbe := TBEs[llcStreamPAddr];
+          trigger(Event:L0_StreamEnd, llcStreamPAddr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:INV_ACK) {
           trigger(Event:L0_Ack, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:STREAM_L0) {
@@ -907,6 +919,27 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
       }
     }
   }
+  action(fse_forwardStreamEnd, "fse", desc="Forward the StreamEnd") {
+    peek(messageBufferFromL0_in, CoherenceMsg) {
+      enqueue(requestNetwork_out, RequestMsg, l1_request_latency) {
+        /**
+         * Be careful not to use the address in the in_msg.addr,
+         * which is wrong.
+         * We should use the "address" set by the stream engine.
+         */
+        out_msg.addr := address;
+        out_msg.Type := CoherenceRequestType:STREAM_END;
+        out_msg.Requestor := machineID;
+        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
+                          l2_select_low_bit, l2_select_num_bits, clusterID));
+        DPRINTF(RubyStream, "Forward StreamEnd: address: %#x, destination: %s.\n",
+                address, out_msg.Destination);
+        out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.pkt := in_msg.pkt;
+      }
+    }
+  }
 
 
   //*****************************************************
@@ -1271,6 +1304,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamConfig) {
     fsc_forwardStreamConfig;
+    k_popL0RequestQueue;
+  }
+
+  transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamEnd) {
+    fse_forwardStreamEnd;
     k_popL0RequestQueue;
   }
 

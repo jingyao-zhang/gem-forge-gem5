@@ -26,6 +26,7 @@ public:
   ~LLCStreamEngine();
 
   void receiveStreamConfigure(PacketPtr pkt);
+  void receiveStreamEnd(PacketPtr pkt);
   void receiveStreamMigrate(LLCDynamicStreamPtr stream);
   void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
   void receiveStreamElementData(const DynamicStreamSliceId &sliceId);
@@ -59,6 +60,13 @@ private:
    * to migrate here.
    */
   std::list<DynamicStreamSliceId> pendingStreamFlowControlMsgs;
+
+  /**
+   * Buffered stream end message waiting for the stream
+   * to migrate here.
+   */
+  std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>
+      pendingStreamEndMsgs;
 
   /**
    * Process stream flow control messages and distribute

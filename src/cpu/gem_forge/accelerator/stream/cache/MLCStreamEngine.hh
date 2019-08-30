@@ -8,8 +8,8 @@
  * This is where it receives the offloaded streams' data.
  */
 
-#include "MLCDynamicStream.hh"
 #include "MLCDynamicIndirectStream.hh"
+#include "MLCDynamicStream.hh"
 
 #include "mem/packet.hh"
 
@@ -35,6 +35,15 @@ public:
   ~MLCStreamEngine();
 
   void receiveStreamConfigure(PacketPtr pkt);
+  /**
+   * Receive a StreamEnd message.
+   * The difference between StreamConfigure and StreamEnd message
+   * is that the first one already knows the destination LLC bank from the core
+   * StreamEngine, while the later one has to rely on the MLC StreamEngine as it
+   * has the flow control information and knows where the stream is.
+   * @return The phyiscal line address where the LLC stream is.
+   */
+  Addr receiveStreamEnd(PacketPtr pkt);
   void receiveStreamData(const ResponseMsg &msg);
 
   bool isStreamRequest(const DynamicStreamSliceId &slice);
@@ -50,6 +59,11 @@ private:
   std::unordered_map<DynamicStreamId, MLCDynamicStream *, DynamicStreamIdHasher>
       idToStreamMap;
   std::list<MLCDynamicStream *> streams;
+
+  // For sanity check.
+  // TODO: Limit the size of this set.
+  std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>
+      endedStreamDynamicIds;
 
   MLCDynamicStream *
   getMLCDynamicStreamFromSlice(const DynamicStreamSliceId &slice) const;

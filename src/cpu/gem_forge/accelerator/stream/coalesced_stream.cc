@@ -230,7 +230,8 @@ bool CoalescedStream::isContinuous() const {
   return this->getElementSize() == pattern.stride_i();
 }
 
-CacheStreamConfigureData *CoalescedStream::allocateCacheConfigureData() {
+CacheStreamConfigureData *
+CoalescedStream::allocateCacheConfigureData(uint64_t configSeqNum) {
   panic("Coalesced stream in cache is not supported yet.\n");
 }
 

@@ -117,6 +117,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
 
     // ! StreamAwareCache events
     StreamConfig,  desc="Stream configuration";
+    StreamEnd,     desc="Stream End";
   }
 
   // TYPES
@@ -151,6 +152,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
    */
   structure(L0StreamEngine, external="yes", desc="Stream Engine at L0") {
     void receiveStreamConfigure(PacketPtr);
+    void receiveStreamEnd(PacketPtr);
     bool isStreamAccess(PacketPtr);
     bool shouldCache(PacketPtr);
     bool shouldForward(PacketPtr);
@@ -365,6 +367,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
           se.receiveStreamConfigure(in_msg.pkt);
           trigger(Event:StreamConfig, in_msg.LineAddress,
                   Dcache_entry, tbe); 
+        } else if (in_msg.Type == RubyRequestType:StreamEnd) {
+          Entry Dcache_entry := getDCacheEntry(in_msg.LineAddress);
+          TBE tbe := TBEs[in_msg.LineAddress];
+          se.receiveStreamEnd(in_msg.pkt);
+          trigger(Event:StreamEnd, in_msg.LineAddress, Dcache_entry, tbe); 
         } else {
 
           // *** DATA ACCESS ***
@@ -751,6 +758,22 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     }
   }
 
+  action(fse_forwardStreamEnd, "fse", desc="Forward the StreamEnd") {
+    peek(mandatoryQueue_in, RubyRequest) {
+      enqueue(requestNetwork_out, CoherenceMsg, request_latency) {
+        out_msg.addr := address;
+        out_msg.Class := CoherenceClass:STREAM_END; 
+        out_msg.Sender := machineID;
+        out_msg.Dest := createMachineID(MachineType:L1Cache, version);
+        DPRINTF(RubyStream, "Forward StreamEnd: destination: %s.\n",
+                out_msg.Dest);
+        out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.pkt := in_msg.pkt;
+      }
+    }
+  }
+
   action(fsa_forwardStreamAccess, "fsa", desc="Forward a served request for offloaded stream") {
     peek(mandatoryQueue_in, RubyRequest) {
       enqueue(requestNetwork_out, CoherenceMsg, request_latency) {
@@ -974,6 +997,10 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
    */
    transition({I, S, E, M, Inst_IS, IS, IM, SM}, StreamConfig) {
      fsc_forwardStreamConfig;
+     k_popMandatoryQueue;
+   }
+   transition({I, S, E, M, Inst_IS, IS, IM, SM}, StreamEnd) {
+     fse_forwardStreamEnd;
      k_popMandatoryQueue;
    }
 }

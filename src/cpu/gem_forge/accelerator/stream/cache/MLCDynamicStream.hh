@@ -23,14 +23,31 @@ public:
 
   virtual ~MLCDynamicStream() {}
 
-  Stream *getStaticStream() { return this->stream; }
+  Stream *getStaticStream() const { return this->stream; }
 
   const DynamicStreamId &getDynamicStreamId() const {
     return this->dynamicStreamId;
   }
+
+  virtual const DynamicStreamId &getRootDynamicStreamId() const {
+    // By default this we are the root stream.
+    return this->getDynamicStreamId();
+  }
+
+  /**
+   * Get where is the LLC stream is at the end of current allocated credits.
+   */
+  Addr getLLCStreamTailPAddr() const;
+
   virtual void receiveStreamData(const ResponseMsg &msg);
   void receiveStreamRequest(uint64_t idx);
   void receiveStreamRequestHit(uint64_t idx);
+
+  /**
+   * Before end the stream, we have make dummy response to the request
+   * we have seen to make the ruby system happy.
+   */
+  void endStream();
 
 protected:
   Stream *stream;
@@ -72,7 +89,7 @@ protected:
       this->dataBlock = dataBlock;
       this->dataReady = true;
     }
-    
+
     static std::string convertCoreStatusToString(CoreStatusE status) {
       switch (status) {
       case CoreStatusE::NONE:
@@ -91,6 +108,16 @@ protected:
 
   void advanceStream();
   void makeResponse(MLCStreamElement &element);
+
+  /**
+   * Helper function to get vaddr at index.
+   */
+  Addr getVAddrAtIndex(uint64_t index) const;
+
+  /**
+   * Helper function to translate the vaddr to paddr.
+   */
+  Addr translateVAddr(Addr vaddr) const;
 
   /**
    * Allocate stream element. It merges neighboring elements if they are from

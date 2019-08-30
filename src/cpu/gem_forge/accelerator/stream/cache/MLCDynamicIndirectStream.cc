@@ -13,9 +13,11 @@
 MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     CacheStreamConfigureData *_configData,
     AbstractStreamAwareController *_controller,
-    MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer)
+    MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
+    const DynamicStreamId &_rootStreamId)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
-                       _requestToLLCMsgBuffer) {}
+                       _requestToLLCMsgBuffer),
+      rootStreamId(_rootStreamId) {}
 
 void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   MLCS_DPRINTF("Indirect received stream data.\n");

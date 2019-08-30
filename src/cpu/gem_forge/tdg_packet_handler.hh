@@ -23,8 +23,9 @@ public:
   static PacketPtr createTDGPacket(Addr paddr, int size,
                                    TDGPacketHandler *handler, uint8_t *data,
                                    MasterID masterID, int contextId, Addr pc);
-  static PacketPtr createStreamConfigPacket(Addr paddr, MasterID masterID,
-                                            int contextId, uint64_t data);
+  static PacketPtr createStreamControlPacket(Addr paddr, MasterID masterID,
+                                             int contextId, MemCmd::Command cmd,
+                                             uint64_t data);
   static void handleTDGPacketResponse(LLVMTraceCPU *cpu, PacketPtr pkt);
   static void issueToMemory(LLVMTraceCPU *cpu, PacketPtr pkt);
   /**

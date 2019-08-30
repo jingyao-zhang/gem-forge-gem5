@@ -40,10 +40,11 @@ enumeration(CoherenceRequestType, desc="...") {
 
   WB_ACK,    desc="Writeback ack";
 
-  DMA_READ, desc="DMA Read";
-  DMA_WRITE, desc="DMA Write";
+  DMA_READ,      desc="DMA Read";
+  DMA_WRITE,     desc="DMA Write";
   STREAM_CONFIG, desc="StreamConfig from L1";
   STREAM_FLOW,   desc="Stream flow control message from L1";
+  STREAM_END,    desc="StreamEnd from L1";
 }
 
 // CoherenceResponseType

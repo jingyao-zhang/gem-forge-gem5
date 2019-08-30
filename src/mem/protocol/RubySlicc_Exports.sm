@@ -178,6 +178,7 @@ enumeration(RubyRequestType, desc="...", default="RubyRequestType_NULL") {
   // ! Sean: StreamAwareCache
   // ! Duplication of RubyRequestType.
   StreamConfig,      desc="Stream configuration";
+  StreamEnd,         desc="Stream end";
 }
 
 enumeration(SequencerRequestType, desc="...", default="SequencerRequestType_NULL") {

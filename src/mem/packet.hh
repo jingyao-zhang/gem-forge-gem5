@@ -140,6 +140,7 @@ class MemCmd
          * ! Sean: StreamAwareCache
          */
         StreamConfigReq,
+        StreamEndReq,
         NUM_MEM_CMDS
     };
 

@@ -19,7 +19,7 @@ public:
   CacheStreamConfigureData(const CacheStreamConfigureData &other);
 
   Stream *stream;
-  const DynamicStreamId dynamicId;
+  DynamicStreamId dynamicId;
   int elementSize;
 
   HistoryPtr history;

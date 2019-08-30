@@ -122,6 +122,16 @@ void MLCDynamicStream::receiveStreamRequest(uint64_t idx) {
   this->advanceStream();
 }
 
+void MLCDynamicStream::endStream() {
+  for (auto &element : this->elements) {
+    if (element.coreStatus == MLCStreamElement::CoreStatusE::WAIT) {
+      // Make a dummy response.
+      // Ignore if the data is ready.
+      this->makeResponse(element);
+    }
+  }
+}
+
 void MLCDynamicStream::receiveStreamRequestHit(uint64_t idx) {
   MLC_ELEMENT_DPRINTF(idx, 1, "Receive request hit.\n");
 
@@ -173,7 +183,6 @@ void MLCDynamicStream::advanceStream() {
 }
 
 void MLCDynamicStream::makeResponse(MLCStreamElement &element) {
-  assert(element.dataReady && "Data should already be ready.");
   assert(element.coreStatus == MLCStreamElement::CoreStatusE::WAIT &&
          "Element core status should be WAIT to make response.");
   auto cpu = this->getStaticStream()->getCPU();
@@ -204,16 +213,28 @@ void MLCDynamicStream::makeResponse(MLCStreamElement &element) {
   element.coreStatus = MLCStreamElement::CoreStatusE::DONE;
 }
 
+Addr MLCDynamicStream::getVAddrAtIndex(uint64_t index) const {
+  auto historySize = this->history->history_size();
+  // ! So far just return the last address.
+  // ! Do something reasonable here.
+  // ! Make sure this is consistent with the core stream engine.
+  Addr vaddr = (index < historySize)
+                   ? (this->history->history(index).addr())
+                   : (this->history->history(historySize - 1).addr());
+  return vaddr;
+}
+
+Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
+  auto cpu = this->getStaticStream()->getCPU();
+  auto paddr = cpu->translateAndAllocatePhysMem(vaddr);
+  return paddr;
+}
+
 void MLCDynamicStream::allocateElement() {
   auto historySize = this->history->history_size();
   uint64_t startIdx = this->tailIdx;
   int numElements = 1;
-  // ! So far just return the last address.
-  // ! Do something reasonable here.
-  // ! Make sure this is consistent with the core stream engine.
-  Addr vaddr = (startIdx < historySize)
-                   ? (this->history->history(startIdx).addr())
-                   : (this->history->history(historySize - 1).addr());
+  Addr vaddr = this->getVAddrAtIndex(startIdx);
   Addr vaddrLine = makeLineAddress(vaddr);
   this->tailIdx++;
   /**
@@ -240,13 +261,14 @@ void MLCDynamicStream::allocateElement() {
 }
 
 void MLCDynamicStream::sendCreditToLLC() {
-  // Find where is the LLC stream.
-  auto historySize = this->history->history_size();
-  Addr vaddr = (this->llcTailIdx < historySize)
-                   ? (this->history->history(this->llcTailIdx).addr())
-                   : 0;
-  auto cpu = this->getStaticStream()->getCPU();
-  auto paddr = cpu->translateAndAllocatePhysMem(vaddr);
+  /**
+   * Find where the LLC stream is.
+   * In this implementation, the LLC stream will aggressively
+   * migrate to llcTailIdx, even the credit has only been allocated to
+   * (llcTailIdx - 1).
+   */
+  auto vaddr = this->getVAddrAtIndex(this->llcTailIdx);
+  auto paddr = this->translateVAddr(vaddr);
   auto paddrLine = makeLineAddress(paddr);
 
   // Find the LLC bank.
@@ -275,6 +297,11 @@ void MLCDynamicStream::sendCreditToLLC() {
 
   // Update the record.
   this->llcTailIdx = this->tailIdx;
+}
+
+Addr MLCDynamicStream::getLLCStreamTailPAddr() const {
+  auto vaddr = this->getVAddrAtIndex(this->llcTailIdx);
+  return this->translateVAddr(vaddr);
 }
 
 void MLCDynamicStream::panicDump() const {

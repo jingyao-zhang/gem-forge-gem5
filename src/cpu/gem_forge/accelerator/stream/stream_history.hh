@@ -16,6 +16,8 @@ public:
   void configure();
 
   const ::LLVM::TDG::StreamHistory &getCurrentHistory() const;
+  const ::LLVM::TDG::StreamHistory &
+  getHistoryAtInstance(uint64_t streamInstance) const;
 
   /**
    * Return the next value of the history.
@@ -28,7 +30,7 @@ public:
   uint64_t getNumCacheLines() const;
 
 private:
-  using HistoryList = std::list<LLVM::TDG::StreamHistory>;
+  using HistoryList = std::vector<LLVM::TDG::StreamHistory>;
   HistoryList histories;
 
   HistoryList::const_iterator nextConfig;

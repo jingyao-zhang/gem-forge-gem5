@@ -228,7 +228,8 @@ MemCmd::commandInfo[] =
     /**
      * ! Sean: StreamAwareCache
      */
-    { SET1(IsRequest), StreamConfigReq, "StreamConfigReq" }
+    { SET1(IsRequest), StreamConfigReq, "StreamConfigReq" },
+    { SET1(IsRequest), StreamEndReq, "StreamEndReq" },
 };
 
 AddrRange

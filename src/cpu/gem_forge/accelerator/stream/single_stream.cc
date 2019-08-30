@@ -173,11 +173,21 @@ uint64_t SingleStream::getFootprint(unsigned cacheBlockSize) const { return 1; }
 
 bool SingleStream::isContinuous() const { return false; }
 
-CacheStreamConfigureData *SingleStream::allocateCacheConfigureData() {
-  auto history = std::make_shared<::LLVM::TDG::StreamHistory>(
-      this->history->getCurrentHistory());
-  return new CacheStreamConfigureData(this, this->FIFOIdx.streamId,
-                                      this->getElementSize(), history);
+CacheStreamConfigureData *
+SingleStream::allocateCacheConfigureData(uint64_t configSeqNum) {
+  for (auto &dynamicInstanceState : this->dynamicInstanceStates) {
+    if (dynamicInstanceState.configSeqNum == configSeqNum) {
+      // We found the dynamicInstanceState.
+      auto history = std::make_shared<::LLVM::TDG::StreamHistory>(
+          this->history->getHistoryAtInstance(
+              dynamicInstanceState.dynamicStreamId.streamInstance));
+      return new CacheStreamConfigureData(this,
+                                          dynamicInstanceState.dynamicStreamId,
+                                          this->getElementSize(), history);
+    }
+  }
+  assert(false && "Failed to find the DynamicInstanceState.");
+  return nullptr;
 }
 
 void SingleStream::dump() const {

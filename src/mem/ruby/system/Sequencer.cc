@@ -549,6 +549,11 @@ Sequencer::makeRequest(PacketPtr pkt)
         issueRequest(pkt, RubyRequestType_StreamConfig);
         // Simply return success now.
         return RequestStatus_Issued;
+    } else if (pkt->cmd == MemCmd::Command::StreamEndReq) {
+        inform("Sequencer Recieved StreamEndReq.\n");
+        issueRequest(pkt, RubyRequestType_StreamEnd);
+        // Simply return success now.
+        return RequestStatus_Issued;
     }
 
     if (pkt->isLLSC()) {

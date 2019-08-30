@@ -53,6 +53,16 @@ const ::LLVM::TDG::StreamHistory &StreamHistory::getCurrentHistory() const {
   return *this->currentConfig;
 }
 
+const ::LLVM::TDG::StreamHistory &
+StreamHistory::getHistoryAtInstance(uint64_t streamInstance) const {
+  // ! StreamInstance starts at 1.
+  if (streamInstance > this->histories.size()) {
+    panic("Failed to read in the history config at instance %llu.",
+          streamInstance);
+  }
+  return this->histories.at(streamInstance - 1);
+}
+
 uint64_t StreamHistory::getCurrentStreamLength() const {
   return this->currentConfig->history_size();
 }

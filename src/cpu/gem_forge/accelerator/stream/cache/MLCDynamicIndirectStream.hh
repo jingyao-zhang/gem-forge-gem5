@@ -15,13 +15,20 @@ public:
   MLCDynamicIndirectStream(CacheStreamConfigureData *_configData,
                            AbstractStreamAwareController *_controller,
                            MessageBuffer *_responseMsgBuffer,
-                           MessageBuffer *_requestToLLCMsgBuffer);
+                           MessageBuffer *_requestToLLCMsgBuffer,
+                           const DynamicStreamId &_rootStreamId);
 
   virtual ~MLCDynamicIndirectStream() {}
+
+  const DynamicStreamId &getRootDynamicStreamId() const override {
+    return this->rootStreamId;
+  }
 
   void receiveStreamData(const ResponseMsg &msg) override;
 
 private:
+  // Remember the root stream id.
+  DynamicStreamId rootStreamId;
   /**
    * Override the basic behavior, allocate elements one by one.
    */

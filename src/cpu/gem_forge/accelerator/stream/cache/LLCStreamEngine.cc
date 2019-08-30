@@ -72,6 +72,44 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   this->scheduleEvent(Cycles(1));
 }
 
+void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
+  auto endStreamDynamicId = *(pkt->getPtr<DynamicStreamId *>());
+  LLC_STREAM_DPRINTF(endStreamDynamicId->staticId,
+                     "Received StreamEnd for instance %lu.\n",
+                     endStreamDynamicId->streamInstance);
+  // Search for this stream.
+  for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
+       streamIter != streamEnd; ++streamIter) {
+    auto &stream = *streamIter;
+    if (stream->getDynamicStreamId() == (*endStreamDynamicId)) {
+      // Found it.
+      // ? Can we just sliently release it?
+      LLC_STREAM_DPRINTF(endStreamDynamicId->staticId, "Ended instance %lu.\n",
+                         endStreamDynamicId->streamInstance);
+      delete stream;
+      stream = nullptr;
+      this->streams.erase(streamIter);
+      return;
+    }
+  }
+  /**
+   * ? No need to search in migratingStreams?
+   * For migrating streams, the end message should be sent to the destination
+   * llcBank.
+   */
+
+  /**
+   * If not found, it is similar case as stream flow control message.
+   * We are waiting for the stream to migrate here.
+   * Add the message to the pending
+   */
+  this->pendingStreamEndMsgs.insert(*endStreamDynamicId);
+
+  // Don't forgot to release the memory.
+  delete endStreamDynamicId;
+  delete pkt;
+}
+
 void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
   // Sanity check.
@@ -89,6 +127,14 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
          "Stream migrated with readyIndirectElements.");
 
   LLC_STREAM_DPRINTF(stream->getStaticId(), "Received migrate.\n");
+
+  // Check for if the stream is already ended.
+  if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
+    LLC_STREAM_DPRINTF(stream->getStaticId(), "Ended instance %lu.\n",
+                         stream->getDynamicStreamId().streamInstance);
+    delete stream;
+    return;
+  }
 
   this->streams.push_back(stream);
   this->scheduleEvent(Cycles(1));
@@ -147,6 +193,12 @@ void LLCStreamEngine::receiveStreamElementData(
 }
 
 bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
+  /**
+   * In this implementation, the LLC stream will aggressively
+   * migrate to the next element bank, even the credit has only been allocated
+   * to the previous element. Therefore, we do not need to check if the next
+   * element is allocated.
+   */
   auto nextVAddr = stream->peekVAddr();
   auto nextPAddr = stream->translateToPAddr(nextVAddr);
   // Check if it is still on this bank.
@@ -173,6 +225,12 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
 }
 
 void LLCStreamEngine::wakeup() {
+
+  // Sanity check.
+  if (this->streams.size() >= 1000) {
+    panic("Too many LLCStream.\n");
+  }
+
   this->processStreamFlowControlMsg();
   this->issueStreams();
   this->migrateStreams();

@@ -107,13 +107,30 @@ public:
    * ! Sean: StreamAwareCache
    * Allocate the CacheStreamConfigureData.
    */
-  virtual CacheStreamConfigureData *allocateCacheConfigureData() = 0;
-  
+  virtual CacheStreamConfigureData *
+  allocateCacheConfigureData(uint64_t configSeqNum) = 0;
+
   /**
    * Helper function used in StreamAwareCache.
    */
   virtual bool isDirectLoadStream() const { return false; }
   virtual bool isPointerChaseLoadStream() const { return false; }
+
+  /**
+   * Helper structure to remember status of dynamic instance of this stream.
+   * Mainly for StreamAwareCache.
+   */
+  struct DynamicInstanceState {
+    DynamicStreamId dynamicStreamId;
+    uint64_t configSeqNum;
+    bool offloadedToCache;
+    DynamicInstanceState(const DynamicStreamId &_dynamicStreamId,
+                         uint64_t _configSeqNum)
+        : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum),
+          offloadedToCache(false) {}
+  };
+
+  std::deque<DynamicInstanceState> dynamicInstanceStates;
 
 protected:
   LLVMTraceCPU *cpu;

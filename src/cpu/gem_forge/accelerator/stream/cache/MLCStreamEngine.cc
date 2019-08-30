@@ -7,6 +7,14 @@
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
 
+#define MLCSE_DPRINTF(format, args...)                                         \
+  DPRINTF(RubyStream, "[MLC_SE%d]: " format,                                   \
+          this->controller->getMachineID().num, ##args)
+
+#define MLC_STREAM_DPRINTF(streamId, format, args...)                          \
+  DPRINTF(RubyStream, "[MLC_SE%d][%llu]: " format,                             \
+          this->controller->getMachineID().num, streamId, ##args)
+
 MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_responseToUpperMsgBuffer,
                                  MessageBuffer *_requestToLLCMsgBuffer)
@@ -26,7 +34,8 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream configure when stream float is disabled.\n");
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
-  DPRINTF(RubyStream, "MLCStreamEngine: Received StreamConfigure\n");
+  MLC_STREAM_DPRINTF(streamConfigureData->dynamicId.staticId,
+                     "Received StreamConfigure.\n");
   // Create the stream.
   auto stream = new MLCDynamicStream(streamConfigureData, this->controller,
                                      this->responseToUpperMsgBuffer,
@@ -37,10 +46,55 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     // Let's create an indirect stream.
     auto indirectStream = new MLCDynamicIndirectStream(
         streamConfigureData->indirectStreamConfigure.get(), this->controller,
-        this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer);
+        this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer,
+        streamConfigureData->dynamicId /* Root dynamic stream id. */);
     this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
                                 indirectStream);
   }
+  // Do not release the pkt and streamConfigureData as they should be forwarded
+  // to the LLC bank and released there.
+}
+
+Addr MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
+  assert(this->controller->isStreamFloatEnabled() &&
+         "Receive stream end when stream float is disabled.\n");
+  auto endDynamicStreamId = *(pkt->getPtr<DynamicStreamId *>());
+  MLC_STREAM_DPRINTF(endDynamicStreamId->staticId, "Received StreamEnd.\n");
+
+  // The PAddr of the llc stream. The cache controller uses this to find which
+  // LLC bank to forward this StreamEnd message.
+  auto rootStreamIter = this->idToStreamMap.find(*endDynamicStreamId);
+  assert(rootStreamIter != this->idToStreamMap.end() &&
+         "Failed to find the ending root stream.");
+  Addr rootLLCStreamPAddr = rootStreamIter->second->getLLCStreamTailPAddr();
+
+  // End all streams with the correct root stream id (indirect streams).
+  for (auto streamIter = this->idToStreamMap.begin(),
+            streamEnd = this->idToStreamMap.end();
+       streamIter != streamEnd;) {
+    auto stream = streamIter->second;
+    if (stream->getRootDynamicStreamId() == (*endDynamicStreamId)) {
+      /**
+       * ? Can we release right now?
+       * We need to make sure all the seen request is responded (with dummy
+       * data).
+       * TODO: In the future, if the core doesn't require to send the request,
+       * TODO: we are fine to simply release the stream.
+       */
+      this->endedStreamDynamicIds.insert(stream->getDynamicStreamId());
+      stream->endStream();
+      delete stream;
+      streamIter->second = nullptr;
+      streamIter = this->idToStreamMap.erase(streamIter);
+    } else {
+      ++streamIter;
+    }
+  }
+
+  // Do not release the pkt and streamDynamicId as they should be forwarded
+  // to the LLC bank and released there.
+
+  return makeLineAddress(rootLLCStreamPAddr);
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
@@ -54,6 +108,12 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
       iter.second->receiveStreamData(msg);
       return;
     }
+  }
+  // This is possible if the stream is already ended.
+  if (this->endedStreamDynamicIds.count(sliceId.streamId) > 0) {
+    // The stream is already ended.
+    // Sliently ignore it.
+    return;
   }
   assert(false && "Failed to find configured stream for stream data.");
 }
