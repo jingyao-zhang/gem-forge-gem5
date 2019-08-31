@@ -29,7 +29,7 @@ L0StreamEngine::~L0StreamEngine() {}
 void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
   L0SE_DPRINTF("Received StreamConfigure %s.\n",
-               streamConfigureData->dynamicId.name.c_str());
+               streamConfigureData->dynamicId.streamName);
   // Add to offloaded stream set.
   assert(streamConfigureData->isOneIterationBehind == false &&
          "Only indirect stream can be one iteration behind.");
@@ -41,7 +41,7 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     // We have an indirect stream.
     L0SE_DPRINTF(
         "Received StreamConfigure for indirect %s.\n",
-        streamConfigureData->indirectStreamConfigure->dynamicId.name.c_str());
+        streamConfigureData->indirectStreamConfigure->dynamicId.streamName);
     this->offloadedStreams.emplace(
         streamConfigureData->indirectStreamConfigure->dynamicId,
         new L0DynamicStream(

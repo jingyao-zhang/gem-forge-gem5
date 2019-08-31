@@ -25,9 +25,11 @@
                element->FIFOIdx.entryIdx, ##args)
 
 FIFOEntryIdx::FIFOEntryIdx()
-    : streamId(), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), entryIdx(0) {
-  streamId.streamInstance = 0;
-}
+    : streamId(), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), entryIdx(0) {}
+
+FIFOEntryIdx::FIFOEntryIdx(const DynamicStreamId &_streamId)
+    : streamId(_streamId), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
+      entryIdx(0) {}
 
 const DynamicStreamId &StreamMemAccess::getDynamicStreamId() const {
   return this->element->FIFOIdx.streamId;

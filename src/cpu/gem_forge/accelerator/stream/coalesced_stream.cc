@@ -198,12 +198,8 @@ void CoalescedStream::generateStreamName() {
     ss << ' ' << name.substr(pos + 1, name.size() - pos - 2);
   }
   ss << ")";
-  this->streamName = ss.str();
-}
-
-const std::string &CoalescedStream::getStreamName() const {
-  return this->streamName;
-  return this->primaryLogicalStream->info.name();
+  // So far I disabled the customized name for coalesced stream.
+  // this->streamName = ss.str();
 }
 
 const std::string &CoalescedStream::getStreamType() const {

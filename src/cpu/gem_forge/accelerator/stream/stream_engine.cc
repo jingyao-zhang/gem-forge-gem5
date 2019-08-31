@@ -981,6 +981,10 @@ void StreamEngine::initializeStreams(
            "Stream is already initialized.");
     auto coalesceGroup = streamInfo.coalesce_group();
 
+    // Set per stream field in stream args.
+    args.staticId = streamId;
+    args.name = streamInfo.name().c_str();
+
     if (coalesceGroup != -1 && this->enableCoalesce) {
       // First check if we have created the coalesced stream for the group.
       if (coalescedGroupToStreamMap.count(coalesceGroup) == 0) {

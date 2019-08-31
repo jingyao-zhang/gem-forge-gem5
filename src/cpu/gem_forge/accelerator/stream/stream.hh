@@ -32,13 +32,15 @@ public:
     StreamEngine *se;
     int maxSize;
     const ::LLVM::TDG::StreamRegion *streamRegion;
+    uint64_t staticId;
+    const char *name;
   };
 
   Stream(const StreamArguments &args);
 
   virtual ~Stream();
 
-  virtual const std::string &getStreamName() const = 0;
+  const std::string &getStreamName() const { return this->streamName; }
   virtual const std::string &getStreamType() const = 0;
   bool isMemStream() const;
   virtual uint32_t getLoopLevel() const = 0;
@@ -61,6 +63,8 @@ public:
   int lateFetchCount;
 
   const ::LLVM::TDG::StreamRegion *streamRegion;
+  const uint64_t staticId;
+  const std::string streamName;
 
   /**
    * Step root stream, three possible cases:

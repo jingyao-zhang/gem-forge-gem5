@@ -13,7 +13,6 @@ public:
 
   ~SingleStream();
 
-  const std::string &getStreamName() const override;
   const std::string &getStreamType() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;

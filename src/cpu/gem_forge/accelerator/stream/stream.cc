@@ -35,7 +35,10 @@
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(const StreamArguments &args)
-    : cpu(args.cpu), se(args.se), nilTail(args.se) {
+    : FIFOIdx(DynamicStreamId(args.cpu->cpuId(), args.staticId,
+                              0 /*StreamInstance*/)),
+      staticId(args.staticId), streamName(args.name), cpu(args.cpu),
+      se(args.se), nilTail(args.se) {
 
   this->configured = false;
   this->head = &this->nilTail;
@@ -47,6 +50,10 @@ Stream::Stream(const StreamArguments &args)
   this->stepRootStream = nullptr;
   this->lateFetchCount = 0;
   this->streamRegion = args.streamRegion;
+
+  // The name field in the dynamic id has to be set here after we initialize
+  // streamName.
+  this->FIFOIdx.streamId.streamName = this->streamName.c_str();
 }
 
 Stream::~Stream() {}

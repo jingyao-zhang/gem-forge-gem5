@@ -38,11 +38,6 @@ SingleStream::SingleStream(const StreamArguments &args,
                            const LLVM::TDG::StreamInfo &_info)
     : Stream(args), info(_info) {
 
-  // Update the DynamicStreamId.
-  this->FIFOIdx.streamId.coreId = cpu->cpuId();
-  this->FIFOIdx.streamId.name = this->info.name();
-  this->FIFOIdx.streamId.staticId = this->info.id();
-
   const auto &relativeHistoryPath = this->info.history_path();
   auto historyPath = cpu->getTraceExtraFolder() + "/" + relativeHistoryPath;
   this->history =
@@ -132,10 +127,6 @@ void SingleStream::initializeBackBaseStreams() {
     auto backBaseStream = this->se->getStream(backBaseStreamId.id());
     this->addBackBaseStream(backBaseStream);
   }
-}
-
-const std::string &SingleStream::getStreamName() const {
-  return this->info.name();
 }
 
 const std::string &SingleStream::getStreamType() const {

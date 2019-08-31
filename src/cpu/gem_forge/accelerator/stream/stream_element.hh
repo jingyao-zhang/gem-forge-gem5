@@ -17,6 +17,7 @@ struct FIFOEntryIdx {
   uint64_t configSeqNum;
   uint64_t entryIdx;
   FIFOEntryIdx();
+  FIFOEntryIdx(const DynamicStreamId &_streamId);
   void next() { this->entryIdx++; }
   void newInstance(uint64_t configSeqNum) {
     this->entryIdx = 0;

@@ -48,7 +48,6 @@ public:
    */
   void configure(StreamConfigInst *inst) override;
 
-  const std::string &getStreamName() const override;
   const std::string &getStreamType() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;
@@ -79,7 +78,6 @@ protected:
   std::list<LogicalStream> coalescedStreams;
   LogicalStream *primaryLogicalStream;
 
-  std::string streamName;
   void generateStreamName();
 
   /**

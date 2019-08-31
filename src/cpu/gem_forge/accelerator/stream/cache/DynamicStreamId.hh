@@ -12,11 +12,16 @@
 struct DynamicStreamId {
   // Use coreId to distinguish streams in multi-core context.
   // TODO: ThreadID may be a better option.
-  int coreId;
-  uint64_t staticId;
-  uint64_t streamInstance;
-  // Used for debug purpose.
-  std::string name;
+  int coreId = -1;
+  uint64_t staticId = 0;
+  uint64_t streamInstance = 0;
+  // Used for debug purpose. User should guarantee the life cycle of name.
+  // TODO: How to improve this?
+  const char *streamName = "Unknown_Stream";
+
+  DynamicStreamId() = default;
+  DynamicStreamId(int _coreId, uint64_t _staticId, uint64_t _streamInstance)
+      : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance) {}
 
   bool operator==(const DynamicStreamId &other) const {
     return this->coreId == other.coreId && this->staticId == other.staticId &&
