@@ -9,12 +9,13 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
 #include "base/trace.hh"
-#include "debug/RubyStream.hh"
+#include "debug/MLCRubyStream.hh"
 
 #define MLC_STREAM_DPRINTF(format, args...)                                    \
-  DPRINTF(RubyStream, "[MLC_SE%d][%lu]: " format,                              \
+  DPRINTF(MLCRubyStream, "[MLC_SE%d][%lu-%d]: " format,                        \
           this->controller->getMachineID().num,                                \
-          this->dynamicStreamId.staticId, ##args)
+          this->dynamicStreamId.staticId,                                      \
+          this->dynamicStreamId.streamInstance, ##args)
 
 #define MLC_STREAM_PANIC(format, args...)                                      \
   this->panicDump();                                                           \
@@ -27,9 +28,10 @@
   }
 
 #define MLC_ELEMENT_DPRINTF(startIdx, numElements, format, args...)            \
-  DPRINTF(RubyStream, "[MLC_SE%d][%lu][%lu, +%d): " format,                    \
+  DPRINTF(MLCRubyStream, "[MLC_SE%d][%lu-%d][%lu, +%d): " format,              \
           this->controller->getMachineID().num,                                \
-          this->dynamicStreamId.staticId, startIdx, numElements, ##args)
+          this->dynamicStreamId.staticId,                                      \
+          this->dynamicStreamId.streamInstance, startIdx, numElements, ##args)
 
 MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
                                    AbstractStreamAwareController *_controller,
@@ -53,8 +55,8 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
     this->allocateElement();
   }
   this->llcTailIdx = this->tailIdx;
-  // Set the CacheStreamConfigureData to inform the LLC stream engine initial
-  // credit.
+  // Set the CacheStreamConfigureData to inform the LLC stream engine
+  // initial credit.
   _configData->initAllocatedIdx = this->llcTailIdx;
 }
 
@@ -212,8 +214,8 @@ void MLCDynamicStream::makeResponse(MLCStreamElement &element) {
                       "Make response.\n");
   // The latency should be consistency with the cache controller.
   // However, I still failed to find a clean way to exponse this info
-  // to the stream engine. So far I manually set it to the default value
-  // from the L1 cache controller.
+  // to the stream engine. So far I manually set it to the default
+  // value from the L1 cache controller.
   // TODO: Make it consistent with the cache controller.
   Cycles latency(2);
   this->responseMsgBuffer->enqueue(msg, this->controller->clockEdge(),
@@ -249,8 +251,8 @@ void MLCDynamicStream::allocateElement() {
   /**
    * Try to merge element if we are not pointer chase stream.
    * It is impossible for pointer chase stream to merge requests
-   * as you don't know the next virtual address until the previous request is
-   * resolved.
+   * as you don't know the next virtual address until the previous
+   * request is resolved.
    */
   if (!this->isPointerChase && this->mergeElements) {
     while (this->tailIdx < historySize) {

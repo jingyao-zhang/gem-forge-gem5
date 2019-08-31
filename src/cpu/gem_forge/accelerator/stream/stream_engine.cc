@@ -1626,6 +1626,10 @@ void StreamEngine::issueElement(StreamElement *element) {
     S->statistic.numFetched++;
   }
 
+  if (element->cacheBlocks > 1) {
+    STREAM_ELEMENT_PANIC(element, "More than one cache block.\n");
+  }
+
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
     auto cacheBlockVirtualAddr = cacheBlockBreakdown.cacheBlockVirtualAddr;
@@ -1686,7 +1690,6 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto pkt = TDGPacketHandler::createTDGPacket(
         paddr, packetSize, memAccess, nullptr, cpu->getDataMasterID(), 0, 0);
     S->statistic.numIssuedRequest++;
-    STREAM_ELEMENT_DPRINTF(element, "Issue cpu->sendRequest.\n");
     cpu->sendRequest(pkt);
 
     // Change to FETCHING status.

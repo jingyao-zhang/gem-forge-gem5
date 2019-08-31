@@ -5,14 +5,14 @@
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include "base/trace.hh"
-#include "debug/RubyStream.hh"
+#include "debug/MLCRubyStream.hh"
 
 #define MLCSE_DPRINTF(format, args...)                                         \
-  DPRINTF(RubyStream, "[MLC_SE%d]: " format,                                   \
+  DPRINTF(MLCRubyStream, "[MLC_SE%d]: " format,                                \
           this->controller->getMachineID().num, ##args)
 
 #define MLC_STREAM_DPRINTF(streamId, format, args...)                          \
-  DPRINTF(RubyStream, "[MLC_SE%d][%llu]: " format,                             \
+  DPRINTF(MLCRubyStream, "[MLC_SE%d][%llu]: " format,                          \
           this->controller->getMachineID().num, streamId, ##args)
 
 MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,

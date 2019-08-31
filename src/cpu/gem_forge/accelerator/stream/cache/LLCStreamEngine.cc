@@ -9,20 +9,21 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
 #include "base/trace.hh"
-#include "debug/RubyStream.hh"
+#include "debug/LLCRubyStream.hh"
 
 #define LLCSE_DPRINTF(format, args...)                                         \
-  DPRINTF(RubyStream, "[LLC_SE%d]: " format,                                   \
+  DPRINTF(LLCRubyStream, "[LLC_SE%d]: " format,                                \
           this->controller->getMachineID().num, ##args)
 
 #define LLC_STREAM_DPRINTF(streamId, format, args...)                          \
-  DPRINTF(RubyStream, "[LLC_SE%d][%lu]: " format,                              \
-          this->controller->getMachineID().num, streamId, ##args)
+  DPRINTF(LLCRubyStream, "[LLC_SE%d][%lu-%d]: " format,                        \
+          this->controller->getMachineID().num, (streamId).staticId,           \
+          (streamId).streamInstance, ##args)
 
 #define LLC_ELEMENT_DPRINTF(streamId, startIdx, numElements, format, args...)  \
-  DPRINTF(RubyStream, "[LLC_SE%d][%lu][%lu, +%d): " format,                    \
-          this->controller->getMachineID().num, streamId, startIdx,            \
-          numElements, ##args)
+  DPRINTF(LLCRubyStream, "[LLC_SE%d][%lu-%d][%lu, +%d): " format,              \
+          this->controller->getMachineID().num, (streamId).staticId,           \
+          (streamId).streamInstance, startIdx, numElements, ##args)
 
 LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_streamMigrateMsgBuffer,
@@ -74,9 +75,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
 void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   auto endStreamDynamicId = *(pkt->getPtr<DynamicStreamId *>());
-  LLC_STREAM_DPRINTF(endStreamDynamicId->staticId,
-                     "Received StreamEnd for instance %lu.\n",
-                     endStreamDynamicId->streamInstance);
+  LLC_STREAM_DPRINTF(*endStreamDynamicId, "Received StreamEnd.\n");
   // Search for this stream.
   for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
        streamIter != streamEnd; ++streamIter) {
@@ -84,8 +83,7 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
     if (stream->getDynamicStreamId() == (*endStreamDynamicId)) {
       // Found it.
       // ? Can we just sliently release it?
-      LLC_STREAM_DPRINTF(endStreamDynamicId->staticId, "Ended instance %lu.\n",
-                         endStreamDynamicId->streamInstance);
+      LLC_STREAM_DPRINTF(*endStreamDynamicId, "Ended.\n");
       delete stream;
       stream = nullptr;
       this->streams.erase(streamIter);
@@ -126,12 +124,11 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
   assert(stream->readyIndirectElements.empty() &&
          "Stream migrated with readyIndirectElements.");
 
-  LLC_STREAM_DPRINTF(stream->getStaticId(), "Received migrate.\n");
+  LLC_STREAM_DPRINTF(stream->getDynamicStreamId(), "Received migrate.\n");
 
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
-    LLC_STREAM_DPRINTF(stream->getStaticId(), "Ended instance %lu.\n",
-                       stream->getDynamicStreamId().streamInstance);
+    LLC_STREAM_DPRINTF(stream->getDynamicStreamId(), "Ended.\n");
     delete stream;
     return;
   }
@@ -171,7 +168,7 @@ void LLCStreamEngine::receiveStreamElementData(
   assert(stream->waitingDataBaseRequests >= 0 &&
          "Negative waitingDataBaseRequests.");
 
-  LLC_ELEMENT_DPRINTF(stream->getStaticId(), sliceId.startIdx,
+  LLC_ELEMENT_DPRINTF(stream->getDynamicStreamId(), sliceId.startIdx,
                       sliceId.getNumElements(), "Received element data.\n");
   /**
    * It is also possible that this stream doesn't have indirect streams.
@@ -256,8 +253,9 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
           msg.startIdx == stream->allocatedIdx) {
         // We found it.
         // Update the idx.
-        LLC_STREAM_DPRINTF(stream->getStaticId(), "Add credit %lu -> %lu.\n",
-                           msg.startIdx, msg.endIdx);
+        LLC_STREAM_DPRINTF(stream->getDynamicStreamId(),
+                           "Add credit %lu -> %lu.\n", msg.startIdx,
+                           msg.endIdx);
         stream->addCredit(msg.getNumElements());
         processed = true;
         break;
@@ -443,7 +441,7 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
 void LLCStreamEngine::issueStreamRequestHere(LLCDynamicStream *stream,
                                              Addr paddrLine, uint64_t startIdx,
                                              int numElements) {
-  LLC_ELEMENT_DPRINTF(stream->getStaticId(), startIdx, numElements,
+  LLC_ELEMENT_DPRINTF(stream->getDynamicStreamId(), startIdx, numElements,
                       "Issue [local] request.\n");
 
   auto selfMachineId = this->controller->getMachineID();
@@ -470,7 +468,7 @@ void LLCStreamEngine::issueStreamRequestThere(LLCDynamicStream *stream,
                                               Addr paddrLine, uint64_t startIdx,
                                               int numElements) {
   auto addrMachineId = this->mapPaddrToLLCBank(paddrLine);
-  LLC_ELEMENT_DPRINTF(stream->getStaticId(), startIdx, numElements,
+  LLC_ELEMENT_DPRINTF(stream->getDynamicStreamId(), startIdx, numElements,
                       "Issue [remote] request to LLC%d.\n", addrMachineId.num);
 
   auto selfMachineId = this->controller->getMachineID();
@@ -522,7 +520,7 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   auto addrMachineId =
       this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
 
-  LLC_STREAM_DPRINTF(stream->getStaticId(), "Migrate to LLC%d.\n",
+  LLC_STREAM_DPRINTF(stream->getDynamicStreamId(), "Migrate to LLC%d.\n",
                      addrMachineId.num);
 
   auto msg =
@@ -564,7 +562,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
 
   auto startIdx = sliceId.startIdx;
   auto numElements = sliceId.getNumElements();
-  LLC_ELEMENT_DPRINTF(sliceId.streamId.staticId, startIdx, numElements,
+  LLC_ELEMENT_DPRINTF(sliceId.streamId, startIdx, numElements,
                       "Inject [remote] request.\n");
 
   auto msg = std::make_shared<RequestMsg>(req);

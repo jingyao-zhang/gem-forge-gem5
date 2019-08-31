@@ -31,14 +31,21 @@ FIFOEntryIdx::FIFOEntryIdx(const DynamicStreamId &_streamId)
     : streamId(_streamId), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
       entryIdx(0) {}
 
+StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
+                                 Addr _cacheBlockVirtualAddr,
+                                 int _additionalDelay)
+    : stream(_stream), element(_element), FIFOIdx(_element->FIFOIdx),
+      cacheBlockVirtualAddr(_cacheBlockVirtualAddr),
+      additionalDelay(_additionalDelay) {}
+
 const DynamicStreamId &StreamMemAccess::getDynamicStreamId() const {
-  return this->element->FIFOIdx.streamId;
+  return this->FIFOIdx.streamId;
 }
 
 DynamicStreamSliceId StreamMemAccess::getSliceId() const {
   DynamicStreamSliceId slice;
-  slice.streamId = this->element->FIFOIdx.streamId;
-  slice.startIdx = this->element->FIFOIdx.entryIdx;
+  slice.streamId = this->FIFOIdx.streamId;
+  slice.startIdx = this->FIFOIdx.entryIdx;
   // So far we make it fairly simple here.
   slice.endIdx = slice.startIdx + 1;
   return slice;

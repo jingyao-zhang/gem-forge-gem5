@@ -59,10 +59,7 @@ class StreamElement;
 class StreamMemAccess final : public TDGPacketHandler {
 public:
   StreamMemAccess(Stream *_stream, StreamElement *_element,
-                  Addr _cacheBlockVirtualAddr, int _additionalDelay = 0)
-      : stream(_stream), element(_element),
-        cacheBlockVirtualAddr(_cacheBlockVirtualAddr),
-        additionalDelay(_additionalDelay) {}
+                  Addr _cacheBlockVirtualAddr, int _additionalDelay = 0);
   virtual ~StreamMemAccess() {}
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
   void issueToMemoryCallback(LLVMTraceCPU *cpu) override;
@@ -100,6 +97,9 @@ public:
 
   Stream *const stream;
   StreamElement *const element;
+  // Make a copy of the FIFOIdx in case element is released.
+  const FIFOEntryIdx FIFOIdx;
+
   Addr cacheBlockVirtualAddr;
   /**
    * Additional delay we want to add after we get the response.

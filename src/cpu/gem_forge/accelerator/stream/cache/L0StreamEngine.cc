@@ -6,20 +6,21 @@
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include "base/trace.hh"
-#include "debug/RubyStream.hh"
+#include "debug/L0RubyStream.hh"
 
 #define L0SE_DPRINTF(format, args...)                                          \
-  DPRINTF(RubyStream, "[L0_SE%d]: " format,                                    \
+  DPRINTF(L0RubyStream, "[L0_SE%d]: " format,                                  \
           this->controller->getMachineID().num, ##args)
 
 #define L0_STREAM_DPRINTF(streamId, format, args...)                           \
-  DPRINTF(RubyStream, "[L0_SE%d][%lu]: " format,                               \
-          this->controller->getMachineID().num, (streamId).staticId, ##args)
+  DPRINTF(L0RubyStream, "[L0_SE%d][%lu-%d]: " format,                          \
+          this->controller->getMachineID().num, (streamId).staticId,           \
+          (streamId).streamInstance, ##args)
 
 #define L0_ELEMENT_DPRINTF(streamId, startIdx, numElements, format, args...)   \
-  DPRINTF(RubyStream, "[L0_SE%d][%lu][%lu, +%d): " format,                     \
-          this->controller->getMachineID().num, (streamId).staticId, startIdx, \
-          numElements, ##args)
+  DPRINTF(L0RubyStream, "[L0_SE%d][%lu-%d][%lu, +%d): " format,                \
+          this->controller->getMachineID().num, (streamId).staticId,           \
+          (streamId).streamInstance, startIdx, numElements, ##args)
 
 L0StreamEngine::L0StreamEngine(AbstractStreamAwareController *_controller)
     : controller(_controller) {}
@@ -100,6 +101,8 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
       // Ignore the first stream element.
       return false;
     }
+    L0_ELEMENT_DPRINTF(sliceId.streamId, sliceId.startIdx,
+                       sliceId.getNumElements(), "Is stream access.\n");
   }
   return true;
 }
