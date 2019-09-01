@@ -256,7 +256,7 @@ void MLCDynamicStream::allocateElement() {
    */
   if (!this->isPointerChase && this->mergeElements) {
     while (this->tailIdx < historySize) {
-      Addr nextVAddr = this->history->history(this->tailIdx).addr();
+      Addr nextVAddr = this->getVAddrAtIndex(this->tailIdx);
       Addr nextVAddrLine = makeLineAddress(nextVAddr);
       if (nextVAddrLine != vaddrLine) {
         break;

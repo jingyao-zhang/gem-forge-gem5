@@ -377,11 +377,12 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
   // Try to get more elements if this is not pointer chase stream.
   if (!stream->isPointerChase()) {
-    while (stream->isNextElementAllcoated()) {
+    while (stream->isNextElementAllcoated() &&
+           stream->isNextElementWithinHistory()) {
       Addr nextVAddr = stream->peekVAddr();
       Addr nextPAddr = stream->translateToPAddr(nextVAddr);
       Addr nextPAddrLine = makeLineAddress(nextPAddr);
-      if (nextPAddrLine == paddrLine && nextVAddr != 0) {
+      if (nextPAddrLine == paddrLine) {
         // We can merge the request.
         stream->consumeNextElement();
         numElements++;

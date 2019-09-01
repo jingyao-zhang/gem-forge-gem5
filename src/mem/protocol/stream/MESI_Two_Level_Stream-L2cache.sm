@@ -161,6 +161,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     bool cachedUpper, default="true", desc="Whether this block is cache by upper level";
 
     NetDest L1_GetS_IDs,              desc="Set of the internal processors that want the block in shared state";
+    NetDest L1_GetV_IDs,              desc="Set of the internal processors that want the block via L1_GETV";
     MachineID L1_GetX_ID,             desc="ID of the L1 cache to forward the block to once we get a response";
     int pendingAcks,                  desc="number of pending acks for invalidates during writeback";
     DynamicStreamSliceId sliceId,     desc="Stream meta-data";
@@ -699,23 +700,25 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   action(eu_sendDataToGetURequestors, "eu", desc="Send data from cache to the GetU IDs") {
     assert(is_valid(tbe));
-    assert(tbe.L1_GetS_IDs.count() == 1);
-    enqueue(responseL2Network_out, ResponseMsg, to_l1_latency) {
-      assert(is_valid(cache_entry));
-      out_msg.addr := address;
-      out_msg.Type := CoherenceResponseType:DATA_EXCLUSIVE;
-      out_msg.Sender := machineID;
-      out_msg.Destination := tbe.L1_GetS_IDs;  // internal nodes
-      out_msg.DataBlk := cache_entry.DataBlk;
-      out_msg.MessageSize := MessageSizeType:Response_Data;
-      // Copy the stream meta-data.
-      out_msg.sliceId := tbe.sliceId;
-      if (out_msg.sliceId.isValid()) {
-        // DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
-        //   out_msg.sliceId.getStartIdx(), 
-        //   out_msg.sliceId.getNumElements());
-        // We have to notify the SE about the data.
-        se.receiveStreamElementData(out_msg.sliceId);
+    if (tbe.L1_GetV_IDs.count() > 0) {
+      assert(tbe.L1_GetV_IDs.count() == 1);
+      enqueue(responseL2Network_out, ResponseMsg, to_l1_latency) {
+        assert(is_valid(cache_entry));
+        out_msg.addr := address;
+        out_msg.Type := CoherenceResponseType:DATA_EXCLUSIVE;
+        out_msg.Sender := machineID;
+        out_msg.Destination := tbe.L1_GetV_IDs;  // internal nodes
+        out_msg.DataBlk := cache_entry.DataBlk;
+        out_msg.MessageSize := MessageSizeType:Response_Data;
+        // Copy the stream meta-data.
+        out_msg.sliceId := tbe.sliceId;
+        if (out_msg.sliceId.isValid()) {
+          // DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
+          //   out_msg.sliceId.getStartIdx(), 
+          //   out_msg.sliceId.getNumElements());
+          // We have to notify the SE about the data.
+          se.receiveStreamElementData(out_msg.sliceId);
+        }
       }
     }
   }
@@ -855,6 +858,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(tbe));
       tbe.L1_GetS_IDs.add(in_msg.Requestor);
+    }
+  }
+
+  action(sv_recordGetVL1ID, "\v", desc="Record L1 GetV for load response") {
+    peek(L1RequestL2Network_in, RequestMsg) {
+      assert(is_valid(tbe));
+      tbe.L1_GetV_IDs.add(in_msg.Requestor);
     }
   }
 
@@ -1051,8 +1061,18 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ll_clearSharers;
     i_allocateTBE;
     css_copyStreamSliceId;
-    ss_recordGetSL1ID;
+    sv_recordGetVL1ID;
     a_issueFetchToMemory;
+    uu_profileMiss;
+    jj_popL1RequestQueue;
+  }
+
+  /**
+   * Race condition when the LLC SE generates GETU request while the core generates GETS address.
+   */
+  transition(IVV, L1_GETS, ISS) {
+    nn_addSharer;
+    ss_recordGetSL1ID;
     uu_profileMiss;
     jj_popL1RequestQueue;
   }
@@ -1085,6 +1105,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   transition(ISS, Mem_Data, MT_MB) {
     m_writeDataToCache;
     ex_sendExclusiveDataToGetSRequestors;
+    // Also sent data to possible GETU requestor.
+    eu_sendDataToGetURequestors;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
   }

@@ -34,6 +34,10 @@ public:
    * Used for flow control.
    */
   bool isNextElementAllcoated() const { return this->idx < this->allocatedIdx; }
+  bool isNextElementWithinHistory() const {
+    auto historySize = this->configData.history->history_size();
+    return this->idx < historySize;
+  }
 
   void addCredit(uint64_t n);
 
