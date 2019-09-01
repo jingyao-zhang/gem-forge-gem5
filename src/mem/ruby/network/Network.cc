@@ -153,6 +153,8 @@ Network::MessageSizeType_to_int(MessageSizeType size_type)
         return m_data_msg_size;
       case MessageSizeType_Response_Data_4B:
         return m_control_msg_size + 4;
+      case MessageSizeType_Response_Data_8B:
+        return m_control_msg_size + 8;
       default:
         panic("Invalid range for type MessageSizeType");
         break;

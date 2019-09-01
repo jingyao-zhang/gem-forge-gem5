@@ -642,11 +642,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
            * ! Sean: StreamAwareCache.
            * Only transmit the required sub cache line.
            */
-          if (isStreamSublineEnabled() && in_msg.sliceId.getSizeInByte() == 4) {
-            // So far let's only support 4 byte subline.
-            out_msg.MessageSize := MessageSizeType:Response_Data_4B;
+          if (isStreamSublineEnabled()) {
+            if (in_msg.sliceId.getSizeInByte() == 4) {
+              out_msg.MessageSize := MessageSizeType:Response_Data_4B;
+            } else if (in_msg.sliceId.getSizeInByte() == 8) {
+              out_msg.MessageSize := MessageSizeType:Response_Data_8B;
+            }
           }
-
         }
       }
     }
