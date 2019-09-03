@@ -79,3 +79,4 @@ class RubyStreamAwareController(RubyController):
     llc_select_num_bits = Param.UInt32(0, "Num of bits used to select LLC bank")
     enable_stream_float = Param.Bool(False, "Whether to enable stream float")
     enable_stream_subline = Param.Bool(False, "Whether to enable stream float subline transmission")
+    mlc_stream_buffer_init_num_entries = Param.UInt32(8, "Initial number of entries of MLC stream buffer")

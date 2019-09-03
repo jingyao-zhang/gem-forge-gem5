@@ -20,6 +20,9 @@ public:
 
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
   bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
+  int getMLCStreamBufferInitNumEntries() const {
+    return this->mlcStreamBufferInitNumEntries;
+  }
 
   /**
    * Set the hit cache level of the request.
@@ -53,6 +56,7 @@ private:
   const int llcSelectNumBits;
   const bool enableStreamFloat;
   const bool enableStreamSubline;
+  const int mlcStreamBufferInitNumEntries;
 };
 
 #endif

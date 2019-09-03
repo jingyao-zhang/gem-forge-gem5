@@ -120,6 +120,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     llc_select_low_bit = l2_select_low_bit,
                     enable_stream_float = options.gem_forge_stream_engine_enable_float,
                     enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
+                    mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
                     )
 
             cpu_seq = RubySequencer(version = i * num_cpus_per_cluster + j,
@@ -147,6 +148,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     llc_select_low_bit = l2_select_low_bit,
                     enable_stream_float = options.gem_forge_stream_engine_enable_float,
                     enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
+                    mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
                     )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
@@ -210,6 +212,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                         llc_select_num_bits=l2_bits,
                         enable_stream_float=options.gem_forge_stream_engine_enable_float,
                         enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
+                        mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
                         )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"

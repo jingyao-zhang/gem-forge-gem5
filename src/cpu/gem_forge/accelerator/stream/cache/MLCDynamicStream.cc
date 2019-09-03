@@ -42,7 +42,8 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
       isPointerChase(_configData->isPointerChase),
       history(_configData->history), controller(_controller),
       responseMsgBuffer(_responseMsgBuffer),
-      requestToLLCMsgBuffer(_requestToLLCMsgBuffer), maxNumElements(64),
+      requestToLLCMsgBuffer(_requestToLLCMsgBuffer),
+      maxNumElements(_controller->getMLCStreamBufferInitNumEntries()),
       mergeElements(_mergeElements), headIdx(0), tailIdx(0), llcTailIdx(0) {
 
   /**
