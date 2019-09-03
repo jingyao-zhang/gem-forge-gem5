@@ -80,8 +80,8 @@ parser.add_option("--gem-forge-stream-engine-enable-lsq", action="store_true",
                   help="""Enable stream lsq in the stream engine.""", default=False)
 parser.add_option("--gem-forge-stream-engine-enable-coalesce", action="store_true",
                   help="""Enable stream coalesce in the stream engine.""", default=False)
-parser.add_option("--gem-forge-stream-engine-enable-merge", action="store", type="int",
-                  help="""Enable stream merge in the stream engine.""", default="1")
+parser.add_option("--gem-forge-stream-engine-enable-merge", action="store_true", 
+                  help="""Enable stream merge in the stream engine.""", default=False)
 parser.add_option("--gem-forge-stream-engine-placement",
                   type="string", default="original")
 
@@ -243,9 +243,8 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
     llvm_trace_cpu.streamEngineThrottling = options.gem_forge_stream_engine_throttling
     llvm_trace_cpu.streamEngineEnableLSQ = options.gem_forge_stream_engine_enable_lsq
     llvm_trace_cpu.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
-    llvm_trace_cpu.streamEngineEnableMerge = (
-        options.gem_forge_stream_engine_enable_merge != 0
-    )
+    llvm_trace_cpu.streamEngineEnableMerge = options.gem_forge_stream_engine_enable_merge
+    
     llvm_trace_cpu.streamEngineEnableFloat = options.gem_forge_stream_engine_enable_float
     llvm_trace_cpu.streamEngineEnableFloatIndirect = \
         options.gem_forge_stream_engine_enable_float_indirect
@@ -467,7 +466,7 @@ for cpu in system.cpu:
         # if options.l1_5dcache:
         #     cpuel1_5dcache.tags = StreamLRU()
     elif options.gem_forge_stream_engine_placement == 'aware-miss-spec':
-        assert(options.gem_forge_stream_engine_enable_merge == 1)
+        assert(options.gem_forge_stream_engine_enable_merge)
         cpu.dcache.stream_aware_miss_speculation = True
         cpu.dcache.stream_aware_replacement = True
     elif options.gem_forge_stream_engine_placement.startswith('placement'):

@@ -149,6 +149,11 @@ struct StreamElement {
 
   bool stored;
 
+  /**
+   * Mark if the next element is also marked value ready by this element.
+   */
+  bool markNextElementValueReady;
+
   StreamElement(StreamEngine *_se);
 
   StreamMemAccess *

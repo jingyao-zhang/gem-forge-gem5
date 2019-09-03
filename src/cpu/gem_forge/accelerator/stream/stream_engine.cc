@@ -1627,18 +1627,33 @@ void StreamEngine::issueElement(StreamElement *element) {
   }
 
   if (element->cacheBlocks > 1) {
-    STREAM_ELEMENT_PANIC(element, "More than one cache block.\n");
+    STREAM_ELEMENT_PANIC(element, "More than one cache block per element.\n");
+  }
+
+  /**
+   * A quick hack to coalesce continuous elements that complemently overlap.
+   */
+  if (this->coalesceContinuousDirectLoadStreamElement(element)) {
+    // This is coalesced. Do not issue request to memory.
+    if (element->FIFOIdx.streamId.staticId == 34710992 &&
+        element->FIFOIdx.streamId.streamInstance == 252 &&
+        element->FIFOIdx.entryIdx == 0) {
+      hack("Skipped due to coalesced.\n");
+    }
+    return;
   }
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
     auto cacheBlockVirtualAddr = cacheBlockBreakdown.cacheBlockVirtualAddr;
 
-    // We only enable merge for direct load stream.
-    if (this->enableMerge && S->isDirectLoadStream()) {
+    if (this->enableMerge) {
       // Check if we already have the cache block fetched.
       auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+
+      // Mark this line is requested by a load, not a store.
       if (S->getStreamType() == "load") {
+        // This line is going to be fetched.
         if (!cacheBlockInfo.requestedByLoad) {
           cacheBlockInfo.requestedByLoad = true;
           this->numLoadCacheLineFetched++;
@@ -1647,11 +1662,21 @@ void StreamEngine::issueElement(StreamElement *element) {
 
       if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHED) {
         // This cache block is already fetched.
+        if (element->FIFOIdx.streamId.staticId == 34710992 &&
+            element->FIFOIdx.streamId.streamInstance == 252 &&
+            element->FIFOIdx.entryIdx == 0) {
+          hack("Skipped due to fetched.\n");
+        }
         continue;
       }
 
       if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHING) {
         // This cache block is already fetching.
+        if (element->FIFOIdx.streamId.staticId == 34710992 &&
+            element->FIFOIdx.streamId.streamInstance == 252 &&
+            element->FIFOIdx.entryIdx == 0) {
+          hack("Skipped due to fetching.\n");
+        }
         auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
         if (S->getStreamType() == "load") {
           element->inflyMemAccess.insert(memAccess);
@@ -1690,6 +1715,11 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto pkt = TDGPacketHandler::createTDGPacket(
         paddr, packetSize, memAccess, nullptr, cpu->getDataMasterID(), 0, 0);
     S->statistic.numIssuedRequest++;
+    if (element->FIFOIdx.streamId.staticId == 34710992 &&
+        element->FIFOIdx.streamId.streamInstance == 2523 &&
+        element->FIFOIdx.entryIdx == 2) {
+      hack("Normally fetched.\n");
+    }
     cpu->sendRequest(pkt);
 
     // Change to FETCHING status.
@@ -2104,4 +2134,53 @@ bool StreamEngine::shouldOffloadStream(Stream *S) {
   }
 
   return true;
+}
+
+bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
+    StreamElement *element) {
+  // Check if this is the first element.
+  if (element->FIFOIdx.entryIdx == 0) {
+    return false;
+  }
+  auto S = element->stream;
+  if (!S->isDirectLoadStream()) {
+    return false;
+  }
+  // Get the previous element.
+  for (auto prevElement = S->tail->next; prevElement != nullptr;
+       prevElement = prevElement->next) {
+    if (prevElement->next == element) {
+      // We found the previous element. Check if completely overlap.
+      assert(prevElement->FIFOIdx.entryIdx + 1 == element->FIFOIdx.entryIdx &&
+             "Mismatch entryIdx for prevElement.");
+      assert(prevElement->FIFOIdx.streamId == element->FIFOIdx.streamId &&
+             "Mismatch streamId for prevElement.");
+      if (element->cacheBlocks != prevElement->cacheBlocks) {
+        // If cache block size does not match, not completely overlapped.
+        return false;
+      }
+      for (int cacheBlockIdx = 0; cacheBlockIdx < element->cacheBlocks;
+           ++cacheBlockIdx) {
+        const auto &block = element->cacheBlockBreakdownAccesses[cacheBlockIdx];
+        const auto &prevBlock =
+            prevElement->cacheBlockBreakdownAccesses[cacheBlockIdx];
+        if (block.cacheBlockVirtualAddr != prevBlock.cacheBlockVirtualAddr) {
+          // Not completely overlapped.
+          return false;
+        }
+      }
+      // Completely overlapped. Check if the previous element is already value
+      // ready.
+      if (prevElement->isValueReady) {
+        // Mark value ready immediately.
+        element->markValueReady();
+      } else {
+        // Mark the prevElement to propagate its value ready signal to next
+        // element.
+        prevElement->markNextElementValueReady = true;
+      }
+      return true;
+    }
+  }
+  assert(false && "Failed to find the previous element.");
 }

@@ -303,6 +303,11 @@ private:
    */
   bool shouldOffloadStream(Stream *S);
 
+  /**
+   * Try to coalesce continuous element of direct load stream if they completely
+   * overlap.
+   */
+  bool coalesceContinuousDirectLoadStreamElement(StreamElement *element);
 };
 
 #endif

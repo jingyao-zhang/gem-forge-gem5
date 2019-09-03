@@ -53,6 +53,10 @@ public:
    * Simple bookkeeping information for the stream engine.
    */
   bool configured;
+  /**
+   * Head is the newest element.
+   * Tail is the dummy node before the oldest element.
+   */
   StreamElement *head;
   StreamElement *stepped;
   StreamElement *tail;

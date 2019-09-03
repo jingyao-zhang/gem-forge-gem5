@@ -135,6 +135,7 @@ void StreamElement::clear() {
   // Only clear the inflyMemAccess set, but not allocatedMemAccess set.
   this->inflyMemAccess.clear();
   this->stored = false;
+  this->markNextElementValueReady = false;
 }
 
 StreamMemAccess *StreamElement::allocateStreamMemAccess(
@@ -179,6 +180,19 @@ void StreamElement::markValueReady() {
   this->isValueReady = true;
   this->valueReadyCycle = this->getStream()->getCPU()->curCycle();
   STREAM_ELEMENT_DPRINTF(this, "Value ready.\n");
+
+  // Check if the next element is also dependent on me.
+  if (this->markNextElementValueReady) {
+    if (this->next != nullptr &&
+        this->next->FIFOIdx.streamId == this->FIFOIdx.streamId &&
+        this->next->FIFOIdx.entryIdx == this->FIFOIdx.entryIdx + 1) {
+      // Okay the next element is still valid.
+      assert(this->next->isAddrReady &&
+             "Address should be ready to propagate the value ready signal.");
+      this->next->markValueReady();
+    }
+  }
+
   // Notify the stream for statistics.
   if (this->issueCycle >= this->addrReadyCycle &&
       this->issueCycle <= this->valueReadyCycle) {
