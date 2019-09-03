@@ -93,7 +93,7 @@ parser.add_option("--gem-forge-stream-engine-enable-float-indirect", action="sto
 parser.add_option("--gem-forge-stream-engine-enable-float-subline", action="store_true", default=False,
                   help="Enable subline transimission in stream float.")
 parser.add_option("--gem-forge-stream-engine-mlc-stream-buffer-init-num-entries", action="store", 
-                  type="int", default="16", help="Initial number of entries of MLC stream buffer per stream.")
+                  type="int", default="8", help="Initial number of entries of MLC stream buffer per stream.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

@@ -124,6 +124,7 @@ public:
    */
   virtual bool isDirectLoadStream() const { return false; }
   virtual bool isPointerChaseLoadStream() const { return false; }
+  virtual uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const = 0;
 
   /**
    * Helper structure to remember status of dynamic instance of this stream.

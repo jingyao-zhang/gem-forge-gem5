@@ -403,21 +403,24 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
     if (this->enableStreamFloat) {
-      if (this->shouldOffloadStream(S)) {
+      // Try to find the DynamicInstanceState.
+      Stream::DynamicInstanceState *dynamicInstanceState = nullptr;
+      for (auto &state : S->dynamicInstanceStates) {
+        if (state.configSeqNum == inst->getSeqNum()) {
+          // We found the dynamicInstanceState.
+          dynamicInstanceState = &state;
+          break;
+        }
+      }
+      assert(dynamicInstanceState != nullptr &&
+             "Failed to find the DynamicInstanceState.");
+
+      if (this->shouldOffloadStream(
+              S, dynamicInstanceState->dynamicStreamId.streamInstance)) {
 
         // Remember the offloaded decision.
         // ! Only do this for the root offloaded stream.
-        bool foundDynamicInstanceState = false;
-        for (auto &dynamicInstanceState : S->dynamicInstanceStates) {
-          if (dynamicInstanceState.configSeqNum == inst->getSeqNum()) {
-            // We found the dynamicInstanceState.
-            dynamicInstanceState.offloadedToCache = true;
-            foundDynamicInstanceState = true;
-            break;
-          }
-        }
-        assert(foundDynamicInstanceState &&
-               "Failed to find the DynamicInstanceState.");
+        dynamicInstanceState->offloadedToCache = true;
 
         // Get the CacheStreamConfigureData.
         auto streamConfigureData =
@@ -2114,8 +2117,18 @@ void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
   cpu->updateInflyInstStatus(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
 }
 
-bool StreamEngine::shouldOffloadStream(Stream *S) {
+bool StreamEngine::shouldOffloadStream(Stream *S, uint64_t streamInstance) {
   if (!S->isDirectLoadStream() && !S->isPointerChaseLoadStream()) {
+    return false;
+  }
+  /**
+   * Make sure we do not offload empty stream.
+   * This information may be known at configuration time, or even require oracle
+   * information. However, as the stream is empty, trace-based simulation does
+   * not know which LLC bank should the stream be offloaded to.
+   * TODO: Improve this.
+   */
+  if (S->getStreamLengthAtInstance(streamInstance) == 0) {
     return false;
   }
   // Let's use the previous staistic of the average stream.
@@ -2125,7 +2138,7 @@ bool StreamEngine::shouldOffloadStream(Stream *S) {
     if (statistic.numConfigured == 0) {
       // First time, maybe we aggressively offload as this is the
       // case for many microbenchmark we designed.
-      return false;
+      return true;
     }
     auto avgLength = statistic.numUsed / statistic.numConfigured;
     if (avgLength < 500) {

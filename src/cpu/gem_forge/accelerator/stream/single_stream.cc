@@ -181,6 +181,11 @@ SingleStream::allocateCacheConfigureData(uint64_t configSeqNum) {
   return nullptr;
 }
 
+uint64_t
+SingleStream::getStreamLengthAtInstance(uint64_t streamInstance) const {
+  return this->history->getHistoryAtInstance(streamInstance).history_size();
+}
+
 void SingleStream::dump() const {
   inform("Dump for stream %s.\n======================",
          this->getStreamName().c_str());

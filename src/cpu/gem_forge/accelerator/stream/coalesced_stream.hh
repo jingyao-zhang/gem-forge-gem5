@@ -69,6 +69,8 @@ public:
   CacheStreamConfigureData *
   allocateCacheConfigureData(uint64_t configSeqNum) override;
 
+  uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const override;
+
 protected:
   /**
    * Represented all the streams coalesced within this one.

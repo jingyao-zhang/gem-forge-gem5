@@ -301,7 +301,7 @@ private:
   /**
    * Helper function for stream aware cache.
    */
-  bool shouldOffloadStream(Stream *S);
+  bool shouldOffloadStream(Stream *S, uint64_t streamInstance);
 
   /**
    * Try to coalesce continuous element of direct load stream if they completely
