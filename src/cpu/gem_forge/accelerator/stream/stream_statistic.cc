@@ -13,6 +13,9 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numStepped);
   dumpScalar(numUsed);
 
+  dumpAvg(avgLength, numStepped, numConfigured);
+  dumpAvg(avgUsed, numUsed, numConfigured);
+
   dumpScalar(numCoreEarlyElement);
   dumpScalar(numCycleCoreEarlyElement);
   dumpAvg(avgCoreEarlyCycle, numCycleCoreEarlyElement, numCoreEarlyElement);
