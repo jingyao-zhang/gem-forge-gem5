@@ -24,6 +24,11 @@ public:
   virtual int cpuId() const = 0;
 
   /**
+   * Really not sure how this should be implemeted in normal cpu.
+   */
+  virtual const std::string &getTraceExtraFolder() const = 0;
+
+  /**
    * TODO: This can be implemented here.
    * The accelerators are implemented as SimObject, not ClockedObject,
    * so we provide some timing and scheduling functionality in the delegator.

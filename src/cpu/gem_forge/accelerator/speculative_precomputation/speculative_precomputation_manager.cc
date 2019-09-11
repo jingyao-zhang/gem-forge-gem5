@@ -98,7 +98,7 @@ void SpeculativePrecomputationManager::handleTrigger(
   auto criticalPC = info.critical_pc();
   if (this->criticalPCThreadMap.count(criticalPC) == 0) {
     auto sliceStreamFileName =
-        cpu->getTraceExtraFolder() + "/" + info.slice_stream();
+        cpuDelegator->getTraceExtraFolder() + "/" + info.slice_stream();
     this->criticalPCThreadMap.emplace(
         std::piecewise_construct, std::forward_as_tuple(criticalPC),
         std::forward_as_tuple(new SpeculativePrecomputationThread(

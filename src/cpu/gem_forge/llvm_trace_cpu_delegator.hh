@@ -15,6 +15,10 @@ public:
   unsigned int cacheLineSize() const override;
   int cpuId() const override;
 
+  const std::string &getTraceExtraFolder() const override {
+    return this->cpu->getTraceExtraFolder();
+  }
+
   Cycles curCycle() const override { return this->cpu->curCycle(); }
 
   Tick cyclesToTicks(Cycles c) const override {

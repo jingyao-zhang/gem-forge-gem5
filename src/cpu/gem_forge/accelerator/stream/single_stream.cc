@@ -39,11 +39,11 @@ SingleStream::SingleStream(const StreamArguments &args,
     : Stream(args), info(_info) {
 
   const auto &relativeHistoryPath = this->info.history_path();
-  auto historyPath = cpu->getTraceExtraFolder() + "/" + relativeHistoryPath;
+  auto historyPath = cpuDelegator->getTraceExtraFolder() + "/" + relativeHistoryPath;
   this->history =
       std::unique_ptr<StreamHistory>(new StreamHistory(historyPath));
   this->patternStream = std::unique_ptr<StreamPattern>(new StreamPattern(
-      cpu->getTraceExtraFolder() + "/" + this->info.pattern_path()));
+      cpuDelegator->getTraceExtraFolder() + "/" + this->info.pattern_path()));
 
   for (const auto &baseStreamId : this->info.chosen_base_streams()) {
     auto baseStream = this->se->getStream(baseStreamId.id());

@@ -39,7 +39,7 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
   /**
    * Note: At this point the primary logical stream may not be created yet!
    */
-  this->coalescedStreams.emplace_back(cpu->getTraceExtraFolder(), info);
+  this->coalescedStreams.emplace_back(cpuDelegator->getTraceExtraFolder(), info);
   this->generateStreamName();
   // Update the dependence information.
   for (const auto &baseStreamId : info.chosen_base_streams()) {

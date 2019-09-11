@@ -1945,7 +1945,7 @@ StreamEngine::getStreamRegion(const std::string &relativePath) const {
     return this->memorizedStreamRegionMap.at(relativePath);
   }
 
-  auto fullPath = cpu->getTraceExtraFolder() + "/" + relativePath;
+  auto fullPath = cpuDelegator->getTraceExtraFolder() + "/" + relativePath;
   ProtoInputStream istream(fullPath);
   auto &protobufRegion =
       this->memorizedStreamRegionMap
