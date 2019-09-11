@@ -46,8 +46,9 @@ void SpeculativePrecomputationThread::skipOneSlice() {
   this->tokens = 0;
 }
 
-SpeculativePrecomputationManager::SpeculativePrecomputationManager()
-    : TDGAccelerator() {}
+SpeculativePrecomputationManager::SpeculativePrecomputationManager(
+    Params *params)
+    : GemForgeAccelerator(params) {}
 
 SpeculativePrecomputationManager::~SpeculativePrecomputationManager() {
   for (auto &pcThread : this->criticalPCThreadMap) {
@@ -58,11 +59,12 @@ SpeculativePrecomputationManager::~SpeculativePrecomputationManager() {
 }
 
 void SpeculativePrecomputationManager::handshake(
-    LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) {
-  TDGAccelerator::handshake(_cpu, _manager);
+    LLVMTraceCPU *_cpu, GemForgeAcceleratorManager *_manager) {
+  GemForgeAccelerator::handshake(_cpu, _manager);
 }
 
 void SpeculativePrecomputationManager::regStats() {
+  GemForgeAccelerator::regStats();
   this->numTriggeredSlices
       .name(this->manager->name() + ".specpre.numTriggeredSlices")
       .desc("Number of slices triggered.")
@@ -114,4 +116,9 @@ void SpeculativePrecomputationManager::handleTrigger(
       this->numTriggeredSlices++;
     }
   }
+}
+
+SpeculativePrecomputationManager *
+SpeculativePrecomputationManagerParams::create() {
+  return new SpeculativePrecomputationManager(this);
 }

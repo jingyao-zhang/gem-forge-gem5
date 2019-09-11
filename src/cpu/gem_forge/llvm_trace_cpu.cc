@@ -59,13 +59,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->activeThreads.resize(params->hardwareContexts, nullptr);
 
   // Initialize the accelerators.
-  // We need to keep the params as the sim object will store its address.
-  this->accelManagerParams = new TDGAcceleratorManagerParams();
-  accelManagerParams->name = this->name() + ".accs";
-  this->accelManager = accelManagerParams->create();
-
-  DPRINTF(LLVMTraceCPU, "Accelerator manager name %s.\n",
-          this->accelManager->name().c_str());
+  this->accelManager = params->accelManager;
 
   this->runTimeProfiler = new RunTimeProfiler();
 
@@ -627,10 +621,6 @@ void LLVMTraceCPU::regStats() {
   this->renameStage.regStats();
   this->iewStage.regStats();
   this->commitStage.regStats();
-
-  DPRINTF(LLVMTraceCPU, "Accelerator manager name %s.\n",
-          this->accelManager->name().c_str());
-  this->accelManager->regStats();
 
   this->numPendingAccessDist.init(0, 4, 1)
       .name(this->name() + ".pending_acc_per_cycle")

@@ -1,27 +1,27 @@
 #include "ideal_prefetcher.hh"
 
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
-#include "debug/GemForgeIdealPrefetcher.hh"
+#include "debug/IdealPrefetcher.hh"
 
-IdealPrefetcher::IdealPrefetcher()
-    : TDGAccelerator(), prefetchedIdx(0), enabled(false), prefetchDistance(0) {}
+IdealPrefetcher::IdealPrefetcher(Params *params)
+    : GemForgeAccelerator(params), prefetchedIdx(0), enabled(false),
+      prefetchDistance(0) {
+  this->enabled = params->enableIdealPrefetcher;
+  this->prefetchDistance = params->idealPrefetcherDistance;
+}
 
 void IdealPrefetcher::handshake(LLVMTraceCPU *_cpu,
-                                TDGAcceleratorManager *_manager) {
-  TDGAccelerator::handshake(_cpu, _manager);
-
-  auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
-  this->enabled = cpuParams->enableIdealPrefetcher;
+                                GemForgeAcceleratorManager *_manager) {
+  GemForgeAccelerator::handshake(_cpu, _manager);
   if (this->enabled) {
     // Load the cache warm up file.
     ProtoInputStream is(cpu->getTraceFileName() + ".cache");
     assert(is.read(this->cacheWarmUpProto) &&
            "Failed to read in the history for ideal prefetcher.");
-    this->prefetchDistance = cpuParams->idealPrefetcherDistance;
   }
 }
 
-void IdealPrefetcher::regStats() {}
+void IdealPrefetcher::regStats() { GemForgeAccelerator::regStats(); }
 
 bool IdealPrefetcher::handle(LLVMDynamicInst *inst) {
   // Ideal prefetcher is not based on instruction.
@@ -76,4 +76,8 @@ void IdealPrefetcher::tick() {
     // Only one prefetch per cycle.
     break;
   }
+}
+
+IdealPrefetcher *IdealPrefetcherParams::create() {
+  return new IdealPrefetcher(this);
 }

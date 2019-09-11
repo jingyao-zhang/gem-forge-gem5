@@ -9,17 +9,21 @@
 #include "stream_placement_manager.hh"
 
 #include "base/statistics.hh"
-#include "cpu/gem_forge/accelerator/tdg_accelerator.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/lsq.hh"
+
+#include "params/StreamEngine.hh"
 
 #include <unordered_map>
 
-class StreamEngine : public TDGAccelerator {
+class StreamEngine : public GemForgeAccelerator {
 public:
-  StreamEngine();
+  using Params = StreamEngineParams;
+  StreamEngine(Params *params);
   ~StreamEngine() override;
 
-  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
+  void handshake(LLVMTraceCPU *_cpu,
+                 GemForgeAcceleratorManager *_manager) override;
 
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;

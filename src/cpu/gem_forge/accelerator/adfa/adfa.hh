@@ -1,10 +1,12 @@
 #ifndef __CPU_TDG_ACCELERATOR_ADFA_HH__
 #define __CPU_TDG_ACCELERATOR_ADFA_HH__
 
+#include "params/AbstractDataFlowAccelerator.hh"
+
 #include "insts.hh"
 
 #include "base/statistics.hh"
-#include "cpu/gem_forge/accelerator/tdg_accelerator.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/bank_manager.hh"
 #include "cpu/gem_forge/dyn_inst_stream.hh"
 #include "cpu/gem_forge/dyn_inst_stream_dispatcher.hh"
@@ -18,7 +20,8 @@
 
 class AbstractDataFlowCore {
 public:
-  AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu);
+  AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu,
+                       AbstractDataFlowAcceleratorParams *params);
 
   AbstractDataFlowCore(const AbstractDataFlowCore &other) = delete;
   AbstractDataFlowCore(AbstractDataFlowCore &&other) = delete;
@@ -131,12 +134,14 @@ private:
   void release();
 };
 
-class AbstractDataFlowAccelerator : public TDGAccelerator {
+class AbstractDataFlowAccelerator : public GemForgeAccelerator {
 public:
-  AbstractDataFlowAccelerator();
+  using Params = AbstractDataFlowAcceleratorParams;
+  AbstractDataFlowAccelerator(Params *_params);
   ~AbstractDataFlowAccelerator() override;
 
-  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
+  void handshake(LLVMTraceCPU *_cpu,
+                 GemForgeAcceleratorManager *_manager) override;
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
   void dump() override;
@@ -153,6 +158,7 @@ public:
   Stats::Scalar numTLSJobsSerialized;
 
 private:
+  Params *params;
   union {
     ADFAConfigInst *config;
     ADFAStartInst *start;

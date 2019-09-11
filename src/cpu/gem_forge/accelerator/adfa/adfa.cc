@@ -5,19 +5,19 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 
-AbstractDataFlowCore::AbstractDataFlowCore(const std::string &_id,
-                                           LLVMTraceCPU *_cpu)
+AbstractDataFlowCore::AbstractDataFlowCore(
+    const std::string &_id, LLVMTraceCPU *_cpu,
+    AbstractDataFlowAcceleratorParams *params)
     : id(_id), cpu(_cpu), busy(false), dataFlow(nullptr), issueWidth(16),
       fetchQueueSize(64), robSize(512) {
-  auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
-  this->issueWidth = cpuParams->adfaCoreIssueWidth;
-  this->enableSpeculation = cpuParams->adfaEnableSpeculation;
-  this->breakIVDep = cpuParams->adfaBreakIVDep;
-  this->breakRVDep = cpuParams->adfaBreakRVDep;
-  this->breakUnrollableControlDep = cpuParams->adfaBreakUnrollableControlDep;
-  this->idealMem = cpuParams->adfaIdealMem;
-  this->numBanks = cpuParams->adfaNumBanks;
-  this->numPortsPerBank = cpuParams->adfaNumPortsPerBank;
+  this->issueWidth = params->adfaCoreIssueWidth;
+  this->enableSpeculation = params->adfaEnableSpeculation;
+  this->breakIVDep = params->adfaBreakIVDep;
+  this->breakRVDep = params->adfaBreakRVDep;
+  this->breakUnrollableControlDep = params->adfaBreakUnrollableControlDep;
+  this->idealMem = params->adfaIdealMem;
+  this->numBanks = params->adfaNumBanks;
+  this->numPortsPerBank = params->adfaNumPortsPerBank;
 
   this->bankManager = new BankManager(this->cpu->system->cacheLineSize(),
                                       this->numBanks, this->numPortsPerBank);
@@ -431,8 +431,12 @@ void AbstractDataFlowCore::release() {
   this->numCommittedDist.sample(committed);
 }
 
-AbstractDataFlowAccelerator::AbstractDataFlowAccelerator()
-    : TDGAccelerator(), handling(NONE), dataFlow(nullptr) {}
+AbstractDataFlowAccelerator::AbstractDataFlowAccelerator(Params *_params)
+    : GemForgeAccelerator(_params), params(_params), handling(NONE),
+      dataFlow(nullptr) {
+  this->numCores = this->params->adfaNumCores;
+  this->enableTLS = this->params->adfaEnableTLS;
+}
 AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
   if (this->dataFlow != nullptr) {
     delete this->dataFlowDispatcher;
@@ -446,13 +450,9 @@ AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
   }
 }
 
-void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
-                                            TDGAcceleratorManager *_manager) {
-  TDGAccelerator::handshake(_cpu, _manager);
-
-  auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
-  this->numCores = cpuParams->adfaNumCores;
-  this->enableTLS = cpuParams->adfaEnableTLS;
+void AbstractDataFlowAccelerator::handshake(
+    LLVMTraceCPU *_cpu, GemForgeAcceleratorManager *_manager) {
+  GemForgeAccelerator::handshake(_cpu, _manager);
 
   /**
    * Be careful to reserve space so that core is not moved.
@@ -460,12 +460,12 @@ void AbstractDataFlowAccelerator::handshake(LLVMTraceCPU *_cpu,
    */
   for (int i = 0; i < this->numCores; ++i) {
     auto id = this->manager->name() + ".adfa.core" + std::to_string(i);
-    this->cores.push_back(new AbstractDataFlowCore(id, _cpu));
+    this->cores.push_back(new AbstractDataFlowCore(id, _cpu, this->params));
   }
 }
 
 void AbstractDataFlowAccelerator::regStats() {
-  DPRINTF(AbstractDataFlowAccelerator, "ADFA: CALLED REGSTATS\n");
+  GemForgeAccelerator::regStats();
   this->numConfigured.name(this->manager->name() + ".adfa.numConfigured")
       .desc("Number of times ADFA get configured")
       .prereq(this->numConfigured);
@@ -745,4 +745,8 @@ bool AbstractDataFlowAccelerator::hasTLSDependence(
     }
   }
   return false;
+}
+
+AbstractDataFlowAccelerator *AbstractDataFlowAcceleratorParams::create() {
+  return new AbstractDataFlowAccelerator(this);
 }

@@ -12,7 +12,7 @@
 
 #include "base/statistics.hh"
 #include "cpu/base.hh"
-#include "cpu/gem_forge/accelerator/tdg_accelerator.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/llvm_commit_stage.hh"
 #include "cpu/gem_forge/llvm_decode_stage.hh"
 #include "cpu/gem_forge/llvm_fetch_stage.hh"
@@ -253,8 +253,8 @@ private:
   TimeBuffer<LLVMStageSignal> signalBuffer;
 
   LLVMTraceCPUDriver *driver;
-  TDGAcceleratorManager *accelManager;
-  TDGAcceleratorManagerParams *accelManagerParams;
+  GemForgeAcceleratorManager *accelManager;
+  GemForgeAcceleratorManagerParams *accelManagerParams;
 
   /**************************************************************/
   // Interface for the insts.
@@ -322,7 +322,7 @@ public:
 
   Cycles getOpLatency(OpClass opClass);
 
-  TDGAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
+  GemForgeAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
 
   RunTimeProfiler *getRunTimeProfiler() { return this->runTimeProfiler; }
 

@@ -174,6 +174,59 @@ if options.cpu_type == "LLVMTraceCPU":
 
 (CPUClass, test_mem_mode, FutureClass) = Simulation.setCPUClass(options)
 
+def initializeADFA():
+    adfa = AbstractDataFlowAccelerator()
+    adfa.adfaCoreIssueWidth = options.gem_forge_adfa_core_issue_width
+    adfa.adfaEnableSpeculation = options.gem_forge_adfa_enable_speculation
+    adfa.adfaBreakIVDep = options.gem_forge_adfa_break_iv_dep
+    adfa.adfaBreakRVDep = options.gem_forge_adfa_break_rv_dep
+    adfa.adfaBreakUnrollableControlDep = \
+        options.gem_forge_adfa_break_unrollable_ctr_dep
+    adfa.adfaNumBanks = options.gem_forge_adfa_num_banks
+    adfa.adfaNumPortsPerBank = options.gem_forge_adfa_num_ports_per_bank
+    adfa.adfaNumCores = options.gem_forge_adfa_num_cores
+    adfa.adfaEnableTLS = (options.gem_forge_adfa_enable_tls == 1)
+    adfa.adfaIdealMem = (options.gem_forge_adfa_ideal_mem == 1)
+    return adfa
+
+def initializeIdealPrefetcher():
+    idealPrefetcher = IdealPrefetcher()
+    idealPrefetcher.enableIdealPrefetcher = options.gem_forge_ideal_prefetcher
+    idealPrefetcher.idealPrefetcherDistance = options.gem_forge_ideal_prefetcher_distance
+    return idealPrefetcher
+
+def initializeStreamEngine():
+    se = StreamEngine()
+    se.streamEngineIsOracle = (
+        options.gem_forge_stream_engine_is_oracle != 0)
+    se.streamEngineMaxRunAHeadLength = (
+        options.gem_forge_stream_engine_max_run_ahead_length
+    )
+    se.streamEngineMaxTotalRunAHeadLength = (
+        options.gem_forge_stream_engine_max_total_run_ahead_length
+    )
+    se.streamEngineThrottling = options.gem_forge_stream_engine_throttling
+    se.streamEngineEnableLSQ = options.gem_forge_stream_engine_enable_lsq
+    se.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
+    se.streamEngineEnableMerge = options.gem_forge_stream_engine_enable_merge
+
+    se.streamEngineEnableFloat = options.gem_forge_stream_engine_enable_float
+    se.streamEngineEnableFloatIndirect = \
+        options.gem_forge_stream_engine_enable_float_indirect
+    if options.gem_forge_stream_engine_enable_float_indirect:
+        assert(options.gem_forge_stream_engine_enable_float)
+
+    return se
+
+def initializeGemForgeAcceleratorManager():
+    accelerators = list()
+    accelerators.append(initializeADFA())
+    accelerators.append(initializeIdealPrefetcher())
+    accelerators.append(SpeculativePrecomputationManager())
+    accelerators.append(initializeStreamEngine())
+    accelManager = GemForgeAcceleratorManager(accelerators=accelerators)
+    return accelManager
+
 def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
     llvm_trace_cpu.fetchWidth = options.llvm_issue_width
     llvm_trace_cpu.decodeWidth = options.llvm_issue_width
@@ -204,17 +257,6 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
 
     # ADFA options.
     llvm_trace_cpu.adfaEnable = options.gem_forge_adfa_enable
-    llvm_trace_cpu.adfaCoreIssueWidth = options.gem_forge_adfa_core_issue_width
-    llvm_trace_cpu.adfaEnableSpeculation = options.gem_forge_adfa_enable_speculation
-    llvm_trace_cpu.adfaBreakIVDep = options.gem_forge_adfa_break_iv_dep
-    llvm_trace_cpu.adfaBreakRVDep = options.gem_forge_adfa_break_rv_dep
-    llvm_trace_cpu.adfaBreakUnrollableControlDep = \
-        options.gem_forge_adfa_break_unrollable_ctr_dep
-    llvm_trace_cpu.adfaNumBanks = options.gem_forge_adfa_num_banks
-    llvm_trace_cpu.adfaNumPortsPerBank = options.gem_forge_adfa_num_ports_per_bank
-    llvm_trace_cpu.adfaNumCores = options.gem_forge_adfa_num_cores
-    llvm_trace_cpu.adfaEnableTLS = (options.gem_forge_adfa_enable_tls == 1)
-    llvm_trace_cpu.adfaIdealMem = (options.gem_forge_adfa_ideal_mem == 1)
 
     llvm_trace_cpu.storeQueueSize = options.llvm_store_queue_size
     llvm_trace_cpu.loadQueueSize = options.llvm_load_queue_size
@@ -234,27 +276,6 @@ def setLLVMTraceCPUCommomParams(llvm_trace_cpu):
         llvm_trace_cpu.loadQueueSize = 42
         llvm_trace_cpu.storeQueueSize = 36
 
-    llvm_trace_cpu.streamEngineIsOracle = (
-        options.gem_forge_stream_engine_is_oracle != 0)
-    llvm_trace_cpu.streamEngineMaxRunAHeadLength = (
-        options.gem_forge_stream_engine_max_run_ahead_length
-    )
-    llvm_trace_cpu.streamEngineMaxTotalRunAHeadLength = (
-        options.gem_forge_stream_engine_max_total_run_ahead_length
-    )
-    llvm_trace_cpu.streamEngineThrottling = options.gem_forge_stream_engine_throttling
-    llvm_trace_cpu.streamEngineEnableLSQ = options.gem_forge_stream_engine_enable_lsq
-    llvm_trace_cpu.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
-    llvm_trace_cpu.streamEngineEnableMerge = options.gem_forge_stream_engine_enable_merge
-    
-    llvm_trace_cpu.streamEngineEnableFloat = options.gem_forge_stream_engine_enable_float
-    llvm_trace_cpu.streamEngineEnableFloatIndirect = \
-        options.gem_forge_stream_engine_enable_float_indirect
-    if options.gem_forge_stream_engine_enable_float_indirect:
-        assert(options.gem_forge_stream_engine_enable_float)
-
-    llvm_trace_cpu.enableIdealPrefetcher = options.gem_forge_ideal_prefetcher
-    llvm_trace_cpu.idealPrefetcherDistance = options.gem_forge_ideal_prefetcher_distance
 
 def setDerivO3CPUCommomParams(o3cpu):
     o3cpu.fetchWidth = options.llvm_issue_width
@@ -380,6 +401,7 @@ else:
         llvm_trace_cpu.createThreads()
         llvm_trace_cpu.traceFile = tdg_fn
         llvm_trace_cpu.driver = NULL
+        llvm_trace_cpu.accelManager = initializeGemForgeAcceleratorManager()
         llvm_trace_cpu.totalActiveCPUs = options.gem_forge_num_active_cpus
         cpus.append(llvm_trace_cpu)
     assert(options.num_cpus == len(cpus))

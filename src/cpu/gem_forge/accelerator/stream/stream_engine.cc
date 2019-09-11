@@ -60,10 +60,38 @@ void debugStreamWithElements(Stream *S, const char *message) {
                element->FIFOIdx.streamId.streamInstance,                       \
                element->FIFOIdx.entryIdx, ##args)
 
-StreamEngine::StreamEngine()
-    : TDGAccelerator(), streamPlacementManager(nullptr), isOracle(false),
-      writebackCacheLine(nullptr), throttler(this), blockCycle(0),
-      blockSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {}
+StreamEngine::StreamEngine(Params *params)
+    : GemForgeAccelerator(params), streamPlacementManager(nullptr),
+      isOracle(false), writebackCacheLine(nullptr), throttler(this),
+      blockCycle(0), blockSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {
+
+  this->isOracle = params->streamEngineIsOracle;
+  this->maxRunAHeadLength = params->streamEngineMaxRunAHeadLength;
+  this->currentTotalRunAheadLength = 0;
+  this->maxTotalRunAheadLength = params->streamEngineMaxTotalRunAHeadLength;
+  // this->maxTotalRunAheadLength = this->maxRunAHeadLength * 512;
+  if (params->streamEngineThrottling == "static") {
+    this->throttlingStrategy = ThrottlingStrategyE::STATIC;
+  } else if (params->streamEngineThrottling == "dynamic") {
+    this->throttlingStrategy = ThrottlingStrategyE::DYNAMIC;
+  } else {
+    this->throttlingStrategy = ThrottlingStrategyE::GLOBAL;
+  }
+  this->enableLSQ = params->streamEngineEnableLSQ;
+  this->enableCoalesce = params->streamEngineEnableCoalesce;
+  this->enableMerge = params->streamEngineEnableMerge;
+  this->enableStreamPlacement = params->streamEngineEnablePlacement;
+  this->enableStreamPlacementOracle = params->streamEngineEnablePlacementOracle;
+  this->enableStreamPlacementBus = params->streamEngineEnablePlacementBus;
+  this->noBypassingStore = params->streamEngineNoBypassingStore;
+  this->continuousStore = params->streamEngineContinuousStore;
+  this->enablePlacementPeriodReset = params->streamEnginePeriodReset;
+  this->placementLat = params->streamEnginePlacementLat;
+  this->placement = params->streamEnginePlacement;
+  this->enableStreamFloat = params->streamEngineEnableFloat;
+  this->enableStreamFloatIndirect = params->streamEngineEnableFloatIndirect;
+  this->initializeFIFO(this->maxTotalRunAheadLength);
+}
 
 StreamEngine::~StreamEngine() {
   if (this->streamPlacementManager != nullptr) {
@@ -89,46 +117,16 @@ StreamEngine::~StreamEngine() {
 }
 
 void StreamEngine::handshake(LLVMTraceCPU *_cpu,
-                             TDGAcceleratorManager *_manager) {
-  TDGAccelerator::handshake(_cpu, _manager);
-
-  auto cpuParams = dynamic_cast<const LLVMTraceCPUParams *>(_cpu->params());
-  this->isOracle = cpuParams->streamEngineIsOracle;
-  this->maxRunAHeadLength = cpuParams->streamEngineMaxRunAHeadLength;
-  this->currentTotalRunAheadLength = 0;
-  this->maxTotalRunAheadLength = cpuParams->streamEngineMaxTotalRunAHeadLength;
-  // this->maxTotalRunAheadLength = this->maxRunAHeadLength * 512;
-  if (cpuParams->streamEngineThrottling == "static") {
-    this->throttlingStrategy = ThrottlingStrategyE::STATIC;
-  } else if (cpuParams->streamEngineThrottling == "dynamic") {
-    this->throttlingStrategy = ThrottlingStrategyE::DYNAMIC;
-  } else {
-    this->throttlingStrategy = ThrottlingStrategyE::GLOBAL;
-  }
-  this->enableLSQ = cpuParams->streamEngineEnableLSQ;
-  this->enableCoalesce = cpuParams->streamEngineEnableCoalesce;
-  this->enableMerge = cpuParams->streamEngineEnableMerge;
-  this->enableStreamPlacement = cpuParams->streamEngineEnablePlacement;
-  this->enableStreamPlacementOracle =
-      cpuParams->streamEngineEnablePlacementOracle;
-  this->enableStreamPlacementBus = cpuParams->streamEngineEnablePlacementBus;
-  this->noBypassingStore = cpuParams->streamEngineNoBypassingStore;
-  this->continuousStore = cpuParams->streamEngineContinuousStore;
-  this->enablePlacementPeriodReset = cpuParams->streamEnginePeriodReset;
-  this->placementLat = cpuParams->streamEnginePlacementLat;
-  this->placement = cpuParams->streamEnginePlacement;
+                             GemForgeAcceleratorManager *_manager) {
+  GemForgeAccelerator::handshake(_cpu, _manager);
   this->writebackCacheLine = new uint8_t[cpu->system->cacheLineSize()];
-  this->enableStreamFloat = cpuParams->streamEngineEnableFloat;
-  this->enableStreamFloatIndirect = cpuParams->streamEngineEnableFloatIndirect;
-
-  this->initializeFIFO(this->maxTotalRunAheadLength);
-
   if (this->enableStreamPlacement) {
     this->streamPlacementManager = new StreamPlacementManager(cpu, this);
   }
 }
 
 void StreamEngine::regStats() {
+  GemForgeAccelerator::regStats();
 
 #define scalar(stat, describe)                                                 \
   this->stat.name(this->manager->name() + ("." #stat))                         \
@@ -2197,3 +2195,5 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
   }
   assert(false && "Failed to find the previous element.");
 }
+
+StreamEngine *StreamEngineParams::create() { return new StreamEngine(this); }

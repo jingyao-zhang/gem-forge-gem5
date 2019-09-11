@@ -2,14 +2,18 @@
 #define __CPU_GEM_FORGE_ACCELERATOR_IDEAL_PREFETCHER_HH__
 
 #include "cpu/gem_forge/TDGInstruction.pb.h"
-#include "cpu/gem_forge/accelerator/tdg_accelerator.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/tdg_packet_handler.hh"
 
-class IdealPrefetcher : public TDGAccelerator, public TDGPacketHandler {
-public:
-  IdealPrefetcher();
+#include "params/IdealPrefetcher.hh"
 
-  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
+class IdealPrefetcher : public GemForgeAccelerator, public TDGPacketHandler {
+public:
+  using Params = IdealPrefetcherParams;
+  IdealPrefetcher(Params *params);
+
+  void handshake(LLVMTraceCPU *_cpu,
+                 GemForgeAcceleratorManager *_manager) override;
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
   void dump() override;

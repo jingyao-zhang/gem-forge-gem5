@@ -4,8 +4,10 @@
 class SpeculativePrecomputationTriggerInst;
 
 #include "base/statistics.hh"
-#include "cpu/gem_forge/accelerator/tdg_accelerator.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/thread_context.hh"
+
+#include "params/SpeculativePrecomputationManager.hh"
 
 #include <unordered_map>
 
@@ -41,12 +43,14 @@ private:
   size_t numSlices;
 };
 
-class SpeculativePrecomputationManager : public TDGAccelerator {
+class SpeculativePrecomputationManager : public GemForgeAccelerator {
 public:
-  SpeculativePrecomputationManager();
+  using Params = SpeculativePrecomputationManagerParams;
+  SpeculativePrecomputationManager(Params *params);
   ~SpeculativePrecomputationManager() override;
 
-  void handshake(LLVMTraceCPU *_cpu, TDGAcceleratorManager *_manager) override;
+  void handshake(LLVMTraceCPU *_cpu,
+                 GemForgeAcceleratorManager *_manager) override;
 
   void handleTrigger(SpeculativePrecomputationTriggerInst *inst);
   void tick() override;

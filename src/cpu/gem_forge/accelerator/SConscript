@@ -1,4 +1,4 @@
 Import('*')
 
-SimObject('TDGAccelerator.py')
-Source('tdg_accelerator.cc')
+SimObject('GemForgeAccelerator.py')
+Source('gem_forge_accelerator.cc')

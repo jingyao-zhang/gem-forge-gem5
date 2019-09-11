@@ -1,5 +1,5 @@
 Import('*')
 
-DebugFlag('GemForgeIdealPrefetcher')
+DebugFlag('IdealPrefetcher')
 
 Source('ideal_prefetcher.cc')
