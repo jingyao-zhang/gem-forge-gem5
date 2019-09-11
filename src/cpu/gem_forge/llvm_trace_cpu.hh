@@ -27,6 +27,8 @@
 #include "mem/page_table.hh"
 #include "params/LLVMTraceCPU.hh"
 
+class LLVMTraceCPUDelegator;
+
 class LLVMTraceCPU : public BaseCPU {
 public:
   LLVMTraceCPU(LLVMTraceCPUParams *params);
@@ -233,6 +235,12 @@ private:
 
   Addr finish_tag_paddr;
 
+  /**
+   * Delegator for GemForgeAccelerators.
+   */
+  friend class LLVMTraceCPUDelegator;
+  std::unique_ptr<LLVMTraceCPUDelegator> cpuDelegator;
+
   friend class LLVMFetchStage;
   friend class LLVMDecodeStage;
   friend class LLVMRenameStage;
@@ -322,7 +330,9 @@ public:
 
   Cycles getOpLatency(OpClass opClass);
 
-  GemForgeAcceleratorManager *getAcceleratorManager() { return this->accelManager; }
+  GemForgeAcceleratorManager *getAcceleratorManager() {
+    return this->accelManager;
+  }
 
   RunTimeProfiler *getRunTimeProfiler() { return this->runTimeProfiler; }
 

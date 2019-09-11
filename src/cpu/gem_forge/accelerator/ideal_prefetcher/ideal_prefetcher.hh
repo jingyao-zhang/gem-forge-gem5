@@ -12,7 +12,7 @@ public:
   using Params = IdealPrefetcherParams;
   IdealPrefetcher(Params *params);
 
-  void handshake(LLVMTraceCPU *_cpu,
+  void handshake(GemForgeCPUDelegator *_cpuDelegator,
                  GemForgeAcceleratorManager *_manager) override;
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
@@ -26,6 +26,7 @@ public:
   void issueToMemoryCallback(LLVMTraceCPU *cpu) override {}
 
 private:
+  LLVMTraceCPU *cpu;
   LLVM::TDG::CacheWarmUp cacheWarmUpProto;
   size_t prefetchedIdx;
   bool enabled;

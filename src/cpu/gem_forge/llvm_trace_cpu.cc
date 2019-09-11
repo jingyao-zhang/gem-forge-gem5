@@ -1,7 +1,8 @@
 #include "llvm_trace_cpu.hh"
+#include "llvm_trace_cpu_delegator.hh"
 
-#include "base/loader/object_file.hh"
 #include "base/debug.hh"
+#include "base/loader/object_file.hh"
 #include "cpu/thread_context.hh"
 #include "debug/GemForgeCPUDump.hh"
 #include "debug/LLVMTraceCPU.hh"
@@ -124,8 +125,9 @@ LLVMTraceCPU::~LLVMTraceCPU() {
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
 
 void LLVMTraceCPU::init() {
-  // This can only happen here.
-  this->accelManager->handshake(this);
+  // Create the delegator and handshake with the accelerator manager.
+  this->cpuDelegator = m5::make_unique<LLVMTraceCPUDelegator>(this);
+  this->accelManager->handshake(this->cpuDelegator.get());
 }
 
 void LLVMTraceCPU::tick() {

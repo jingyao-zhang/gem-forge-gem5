@@ -1,5 +1,5 @@
 #include "stream_engine.hh"
-#include "cpu/gem_forge/llvm_trace_cpu.hh"
+#include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
@@ -116,9 +116,18 @@ StreamEngine::~StreamEngine() {
   this->writebackCacheLine = nullptr;
 }
 
-void StreamEngine::handshake(LLVMTraceCPU *_cpu,
+void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
                              GemForgeAcceleratorManager *_manager) {
-  GemForgeAccelerator::handshake(_cpu, _manager);
+  GemForgeAccelerator::handshake(_cpuDelegator, _manager);
+
+  LLVMTraceCPU *_cpu = nullptr;
+  if (auto llvmTraceCPUDelegator =
+          dynamic_cast<LLVMTraceCPUDelegator *>(_cpuDelegator)) {
+    _cpu = llvmTraceCPUDelegator->cpu;
+  }
+  assert(_cpu != nullptr && "Only work for LLVMTraceCPU so far.");
+  this->cpu = _cpu;
+
   this->writebackCacheLine = new uint8_t[cpu->system->cacheLineSize()];
   if (this->enableStreamPlacement) {
     this->streamPlacementManager = new StreamPlacementManager(cpu, this);

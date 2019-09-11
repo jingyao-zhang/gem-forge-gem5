@@ -1,10 +1,13 @@
 #ifndef __CPU_GEM_FORGE_ACCELERATOR_HH__
 #define __CPU_GEM_FORGE_ACCELERATOR_HH__
 
+#include "gem_forge_cpu_delegator.hh"
+
 #include "base/types.hh"
+#include "sim/sim_object.hh"
+
 #include "params/GemForgeAccelerator.hh"
 #include "params/GemForgeAcceleratorManager.hh"
-#include "sim/sim_object.hh"
 
 #include <vector>
 
@@ -14,7 +17,8 @@ class GemForgeAcceleratorManager;
 
 class GemForgeAccelerator : public SimObject {
 public:
-  GemForgeAccelerator(GemForgeAcceleratorParams *params) : SimObject(params) {}
+  GemForgeAccelerator(GemForgeAcceleratorParams *params)
+      : SimObject(params), cpuDelegator(nullptr), manager(nullptr) {}
   virtual ~GemForgeAccelerator() {}
 
   GemForgeAccelerator(const GemForgeAccelerator &other) = delete;
@@ -22,15 +26,13 @@ public:
   GemForgeAccelerator &operator=(const GemForgeAccelerator &other) = delete;
   GemForgeAccelerator &operator=(GemForgeAccelerator &&other) = delete;
 
-  virtual void handshake(LLVMTraceCPU *_cpu,
+  virtual void handshake(GemForgeCPUDelegator *_cpuDelegator,
                          GemForgeAcceleratorManager *_manager);
 
   virtual bool handle(LLVMDynamicInst *inst) = 0;
   virtual void tick() = 0;
 
   virtual void dump() {}
-
-  LLVMTraceCPU *getCPU() { return this->cpu; }
 
   /**
    * Called by the manager to register stats.
@@ -39,7 +41,7 @@ public:
   void regStats() override { SimObject::regStats(); }
 
 protected:
-  LLVMTraceCPU *cpu;
+  GemForgeCPUDelegator *cpuDelegator;
   GemForgeAcceleratorManager *manager;
 };
 
@@ -59,7 +61,7 @@ public:
 
   void addAccelerator(GemForgeAccelerator *accelerator);
 
-  void handshake(LLVMTraceCPU *_cpu);
+  void handshake(GemForgeCPUDelegator *_cpuDelegator);
   void handle(LLVMDynamicInst *inst);
   void tick();
   void dump();

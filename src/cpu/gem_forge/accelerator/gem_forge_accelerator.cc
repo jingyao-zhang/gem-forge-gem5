@@ -2,31 +2,22 @@
 #include "gem_forge_accelerator.hh"
 
 // For the DPRINTF function.
-// #include "base/misc.hh""
 #include "base/trace.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
-#include "debug/LLVMTraceCPU.hh"
 
 // Include the accelerators.
-#include "adfa/adfa.hh"
-#include "ideal_prefetcher/ideal_prefetcher.hh"
 #include "speculative_precomputation/speculative_precomputation_manager.hh"
 #include "stream/stream_engine.hh"
 
-void GemForgeAccelerator::handshake(LLVMTraceCPU *_cpu,
+void GemForgeAccelerator::handshake(GemForgeCPUDelegator *_cpuDelegator,
                                     GemForgeAcceleratorManager *_manager) {
-  this->cpu = _cpu;
+  this->cpuDelegator = _cpuDelegator;
   this->manager = _manager;
 }
 
 GemForgeAcceleratorManager::GemForgeAcceleratorManager(
     GemForgeAcceleratorManagerParams *params)
-    : SimObject(params), accelerators(params->accelerators) {
-  // this->addAccelerator(new AbstractDataFlowAccelerator());
-  // this->addAccelerator(new StreamEngine());
-  // this->addAccelerator(new SpeculativePrecomputationManager());
-  // this->addAccelerator(new IdealPrefetcher());
-}
+    : SimObject(params), accelerators(params->accelerators) {}
 
 GemForgeAcceleratorManager::~GemForgeAcceleratorManager() {}
 
@@ -35,9 +26,10 @@ void GemForgeAcceleratorManager::addAccelerator(
   this->accelerators.push_back(accelerator);
 }
 
-void GemForgeAcceleratorManager::handshake(LLVMTraceCPU *_cpu) {
+void GemForgeAcceleratorManager::handshake(
+    GemForgeCPUDelegator *_cpuDelegator) {
   for (auto accelerator : this->accelerators) {
-    accelerator->handshake(_cpu, this);
+    accelerator->handshake(_cpuDelegator, this);
   }
 }
 

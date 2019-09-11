@@ -1,6 +1,6 @@
 #include "ideal_prefetcher.hh"
 
-#include "cpu/gem_forge/llvm_trace_cpu.hh"
+#include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 #include "debug/IdealPrefetcher.hh"
 
 IdealPrefetcher::IdealPrefetcher(Params *params)
@@ -10,9 +10,18 @@ IdealPrefetcher::IdealPrefetcher(Params *params)
   this->prefetchDistance = params->idealPrefetcherDistance;
 }
 
-void IdealPrefetcher::handshake(LLVMTraceCPU *_cpu,
+void IdealPrefetcher::handshake(GemForgeCPUDelegator *_cpuDelegator,
                                 GemForgeAcceleratorManager *_manager) {
-  GemForgeAccelerator::handshake(_cpu, _manager);
+  GemForgeAccelerator::handshake(_cpuDelegator, _manager);
+
+  LLVMTraceCPU *_cpu = nullptr;
+  if (auto llvmTraceCPUDelegator =
+          dynamic_cast<LLVMTraceCPUDelegator *>(_cpuDelegator)) {
+    _cpu = llvmTraceCPUDelegator->cpu;
+  }
+  assert(_cpu != nullptr && "Only work for LLVMTraceCPU so far.");
+  this->cpu = _cpu;
+
   if (this->enabled) {
     // Load the cache warm up file.
     ProtoInputStream is(cpu->getTraceFileName() + ".cache");

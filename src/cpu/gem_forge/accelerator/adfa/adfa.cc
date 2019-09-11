@@ -2,7 +2,7 @@
 
 #include "base/trace.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
-#include "cpu/gem_forge/llvm_trace_cpu.hh"
+#include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 
 AbstractDataFlowCore::AbstractDataFlowCore(
@@ -451,8 +451,17 @@ AbstractDataFlowAccelerator::~AbstractDataFlowAccelerator() {
 }
 
 void AbstractDataFlowAccelerator::handshake(
-    LLVMTraceCPU *_cpu, GemForgeAcceleratorManager *_manager) {
-  GemForgeAccelerator::handshake(_cpu, _manager);
+    GemForgeCPUDelegator *_cpuDelegator, GemForgeAcceleratorManager *_manager) {
+
+  GemForgeAccelerator::handshake(_cpuDelegator, _manager);
+
+  LLVMTraceCPU *_cpu = nullptr;
+  if (auto llvmTraceCPUDelegator =
+          dynamic_cast<LLVMTraceCPUDelegator *>(_cpuDelegator)) {
+    _cpu = llvmTraceCPUDelegator->cpu;
+  }
+  assert(_cpu != nullptr && "Only work for LLVMTraceCPU so far.");
+  this->cpu = _cpu;
 
   /**
    * Be careful to reserve space so that core is not moved.

@@ -49,7 +49,7 @@ public:
   SpeculativePrecomputationManager(Params *params);
   ~SpeculativePrecomputationManager() override;
 
-  void handshake(LLVMTraceCPU *_cpu,
+  void handshake(GemForgeCPUDelegator *_cpuDelegator,
                  GemForgeAcceleratorManager *_manager) override;
 
   void handleTrigger(SpeculativePrecomputationTriggerInst *inst);
@@ -63,6 +63,7 @@ public:
   Stats::Scalar numTriggeredChainSlices;
 
 private:
+  LLVMTraceCPU *cpu;
   std::unordered_map<Addr, SpeculativePrecomputationThread *>
       criticalPCThreadMap;
 };

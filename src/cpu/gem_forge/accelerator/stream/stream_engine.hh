@@ -22,7 +22,7 @@ public:
   StreamEngine(Params *params);
   ~StreamEngine() override;
 
-  void handshake(LLVMTraceCPU *_cpu,
+  void handshake(GemForgeCPUDelegator *_cpuDelegator,
                  GemForgeAcceleratorManager *_manager) override;
 
   bool handle(LLVMDynamicInst *inst) override;
@@ -132,6 +132,7 @@ public:
   Stats::Distribution numAccessFootprintL3;
 
 private:
+  LLVMTraceCPU *cpu;
   StreamPlacementManager *streamPlacementManager;
 
   std::vector<StreamElement> FIFOArray;

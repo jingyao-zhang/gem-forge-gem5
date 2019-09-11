@@ -140,7 +140,7 @@ public:
   AbstractDataFlowAccelerator(Params *_params);
   ~AbstractDataFlowAccelerator() override;
 
-  void handshake(LLVMTraceCPU *_cpu,
+  void handshake(GemForgeCPUDelegator *_cpuDelegator,
                  GemForgeAcceleratorManager *_manager) override;
   bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
@@ -159,6 +159,7 @@ public:
 
 private:
   Params *params;
+  LLVMTraceCPU *cpu;
   union {
     ADFAConfigInst *config;
     ADFAStartInst *start;
