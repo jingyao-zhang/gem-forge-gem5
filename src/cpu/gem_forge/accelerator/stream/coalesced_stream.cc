@@ -111,7 +111,7 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
           ((addr + elementSize) > rhsAddr) ? (addr + elementSize) : rhsAddr;
     }
 
-    const int cacheBlockSize = cpu->system->cacheLineSize();
+    const int cacheBlockSize = cpuDelegator->cacheLineSize();
     auto lhsCacheBlock = addr & (~(cacheBlockSize - 1));
     auto rhsCacheBlock = (addr + elementSize - 1) & (~(cacheBlockSize - 1));
     while (lhsCacheBlock <= rhsCacheBlock) {
@@ -162,7 +162,7 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
     auto initCacheBlock = cacheBlocks.front();
     auto idx = 0;
     for (auto cacheBlock : cacheBlocks) {
-      if (cacheBlock != initCacheBlock + idx * cpu->system->cacheLineSize()) {
+      if (cacheBlock != initCacheBlock + idx * cpuDelegator->cacheLineSize()) {
         for (auto c : cacheBlocks) {
           hack("Uncontinuous address for coalesced stream %lx\n", c);
         }
@@ -180,7 +180,7 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
     element->addr = lhsAddr;
     element->size = rhsAddr - lhsAddr;
     // element->addr = cacheBlocks.front();
-    // element->size = cacheBlocks.size() * cpu->system->cacheLineSize();
+    // element->size = cacheBlocks.size() * cpuDelegator->cacheLineSize();
   }
 }
 

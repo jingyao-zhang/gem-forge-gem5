@@ -7,9 +7,10 @@
 
 AbstractDataFlowCore::AbstractDataFlowCore(
     const std::string &_id, LLVMTraceCPU *_cpu,
+    GemForgeCPUDelegator *_cpuDelegator,
     AbstractDataFlowAcceleratorParams *params)
-    : id(_id), cpu(_cpu), busy(false), dataFlow(nullptr), issueWidth(16),
-      fetchQueueSize(64), robSize(512) {
+    : id(_id), cpu(_cpu), cpuDelegator(_cpuDelegator), busy(false),
+      dataFlow(nullptr), issueWidth(16), fetchQueueSize(64), robSize(512) {
   this->issueWidth = params->adfaCoreIssueWidth;
   this->enableSpeculation = params->adfaEnableSpeculation;
   this->breakIVDep = params->adfaBreakIVDep;
@@ -19,7 +20,7 @@ AbstractDataFlowCore::AbstractDataFlowCore(
   this->numBanks = params->adfaNumBanks;
   this->numPortsPerBank = params->adfaNumPortsPerBank;
 
-  this->bankManager = new BankManager(this->cpu->system->cacheLineSize(),
+  this->bankManager = new BankManager(this->cpuDelegator->cacheLineSize(),
                                       this->numBanks, this->numPortsPerBank);
 }
 
@@ -309,7 +310,7 @@ void AbstractDataFlowCore::issue() {
       auto addr = TDG.has_load() ? TDG.load().addr() : TDG.store().addr();
       auto size = TDG.has_load() ? TDG.load().size() : TDG.store().size();
       // For now just look at the first cache line.
-      auto cacheLineSize = this->cpu->system->cacheLineSize();
+      auto cacheLineSize = this->cpuDelegator->cacheLineSize();
       size = std::min(size, cacheLineSize - (addr % cacheLineSize));
       if (!this->bankManager->isNonConflict(addr, size)) {
         // Has conflict, not issue this one.
@@ -368,7 +369,7 @@ void AbstractDataFlowCore::commit() {
   if (this->idealMem) {
     auto iter = this->idealMemCompleteQueue.begin();
     auto end = this->idealMemCompleteQueue.end();
-    auto currentTick = cpu->cyclesToTicks(cpu->curCycle());
+    auto currentTick = cpuDelegator->cyclesToTicks(cpuDelegator->curCycle());
     while (iter != end) {
       if (iter->first > currentTick) {
         break;
@@ -469,7 +470,8 @@ void AbstractDataFlowAccelerator::handshake(
    */
   for (int i = 0; i < this->numCores; ++i) {
     auto id = this->manager->name() + ".adfa.core" + std::to_string(i);
-    this->cores.push_back(new AbstractDataFlowCore(id, _cpu, this->params));
+    this->cores.push_back(
+        new AbstractDataFlowCore(id, _cpu, _cpuDelegator, this->params));
   }
 }
 

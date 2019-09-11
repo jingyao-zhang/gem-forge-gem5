@@ -69,7 +69,7 @@ public:
   }
 
   // Do nothing.
-  void issueToMemoryCallback(LLVMTraceCPU *cpu) override {}
+  void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override {}
 
   // Handle a tick for inst. By default do nothing.
   virtual void tick() {}

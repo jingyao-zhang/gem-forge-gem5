@@ -9,7 +9,9 @@ class CoalescedStream;
 
 class StreamPlacementManager {
 public:
-  StreamPlacementManager(LLVMTraceCPU *_cpu, StreamEngine *_se);
+  StreamPlacementManager(LLVMTraceCPU *_cpu,
+                         GemForgeCPUDelegator *_cpuDelegator,
+                         StreamEngine *_se);
 
   bool access(const CacheBlockBreakdownAccess &cacheBlockBreakdown,
               StreamElement *element, bool isWrite = false);
@@ -39,6 +41,7 @@ public:
 
 private:
   LLVMTraceCPU *cpu;
+  GemForgeCPUDelegator *cpuDelegator;
   StreamEngine *se;
 
   std::unordered_map<Stream *, int> streamCacheLevelMap;

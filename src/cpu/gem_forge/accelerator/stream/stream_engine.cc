@@ -128,9 +128,10 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
   assert(_cpu != nullptr && "Only work for LLVMTraceCPU so far.");
   this->cpu = _cpu;
 
-  this->writebackCacheLine = new uint8_t[cpu->system->cacheLineSize()];
+  this->writebackCacheLine = new uint8_t[cpuDelegator->cacheLineSize()];
   if (this->enableStreamPlacement) {
-    this->streamPlacementManager = new StreamPlacementManager(cpu, this);
+    this->streamPlacementManager =
+        new StreamPlacementManager(cpu, cpuDelegator, this);
   }
 }
 
@@ -750,7 +751,7 @@ bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
     }
     // Mark the first check cycle.
     if (element->firstCheckCycle == 0) {
-      element->firstCheckCycle = cpu->curCycle();
+      element->firstCheckCycle = cpuDelegator->curCycle();
     }
     if (element->stream->getStreamType() == "store") {
       /**
@@ -965,6 +966,7 @@ void StreamEngine::initializeStreams(
 
   Stream::StreamArguments args;
   args.cpu = cpu;
+  args.cpuDelegator = cpuDelegator;
   args.se = this;
   args.maxSize = this->maxRunAHeadLength;
   args.streamRegion = &streamRegion;
@@ -1381,12 +1383,12 @@ void StreamEngine::allocateElement(Stream *S) {
     }
   }
 
-  newElement->allocateCycle = cpu->curCycle();
+  newElement->allocateCycle = cpuDelegator->curCycle();
 
   // Create all the cache lines this element will touch.
   if (S->isMemStream()) {
     S->prepareNewElement(newElement);
-    const int cacheBlockSize = cpu->system->cacheLineSize();
+    const int cacheBlockSize = cpuDelegator->cacheLineSize();
 
     for (int currentSize, totalSize = 0; totalSize < newElement->size;
          totalSize += currentSize) {
@@ -1592,7 +1594,7 @@ void StreamEngine::issueElements() {
             });
   for (auto &element : readyElements) {
     element->isAddrReady = true;
-    element->addrReadyCycle = cpu->curCycle();
+    element->addrReadyCycle = cpuDelegator->curCycle();
     if (element->stream->isMemStream()) {
       this->issueElement(element);
     } else {

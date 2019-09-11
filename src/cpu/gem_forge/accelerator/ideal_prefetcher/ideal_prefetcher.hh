@@ -23,7 +23,7 @@ public:
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override {
     delete packet;
   }
-  void issueToMemoryCallback(LLVMTraceCPU *cpu) override {}
+  void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override {}
 
 private:
   LLVMTraceCPU *cpu;

@@ -106,8 +106,9 @@ void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
   return;
 }
 
-void StreamMemAccess::issueToMemoryCallback(LLVMTraceCPU *cpu) {
-  this->element->issueCycle = cpu->curCycle();
+void StreamMemAccess::issueToMemoryCallback(
+    GemForgeCPUDelegator *cpuDelegator) {
+  this->element->issueCycle = cpuDelegator->curCycle();
 }
 
 void StreamMemAccess::handleStreamEngineResponse() {

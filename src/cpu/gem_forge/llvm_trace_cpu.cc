@@ -418,7 +418,7 @@ void LLVMTraceCPU::CPUPort::sendReq() {
         this->inflyNumPackets++;
       }
       this->blockedPacketPtrs.pop();
-      ::TDGPacketHandler::issueToMemory(this->owner, pkt);
+      ::TDGPacketHandler::issueToMemory(this->owner->getDelegator(), pkt);
       usedPorts++;
     }
   }

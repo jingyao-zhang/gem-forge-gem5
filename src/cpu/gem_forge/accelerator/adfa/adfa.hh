@@ -21,6 +21,7 @@
 class AbstractDataFlowCore {
 public:
   AbstractDataFlowCore(const std::string &_id, LLVMTraceCPU *_cpu,
+                       GemForgeCPUDelegator *_cpuDelegator,
                        AbstractDataFlowAcceleratorParams *params);
 
   AbstractDataFlowCore(const AbstractDataFlowCore &other) = delete;
@@ -55,6 +56,7 @@ public:
 private:
   std::string id;
   LLVMTraceCPU *cpu;
+  GemForgeCPUDelegator *cpuDelegator;
 
   bool busy;
   DynamicInstructionStreamInterface *dataFlow;

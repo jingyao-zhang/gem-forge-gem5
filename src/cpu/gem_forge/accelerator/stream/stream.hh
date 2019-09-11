@@ -20,6 +20,7 @@
 #include <list>
 
 class LLVMTraceCPU;
+class GemForgeCPUDelegator;
 
 class StreamEngine;
 class StreamConfigInst;
@@ -29,6 +30,7 @@ class Stream {
 public:
   struct StreamArguments {
     LLVMTraceCPU *cpu;
+    GemForgeCPUDelegator *cpuDelegator;
     StreamEngine *se;
     int maxSize;
     const ::LLVM::TDG::StreamRegion *streamRegion;
@@ -144,6 +146,7 @@ public:
 
 protected:
   LLVMTraceCPU *cpu;
+  GemForgeCPUDelegator *cpuDelegator;
   StreamEngine *se;
 
   std::unordered_set<Stream *> baseStepStreams;

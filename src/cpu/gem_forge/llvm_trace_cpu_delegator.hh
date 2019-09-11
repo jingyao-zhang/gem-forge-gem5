@@ -12,6 +12,14 @@ class LLVMTraceCPUDelegator : public GemForgeCPUDelegator {
 public:
   LLVMTraceCPUDelegator(LLVMTraceCPU *_cpu) : cpu(_cpu) {}
 
+  unsigned int cacheLineSize() const override;
+
+  Cycles curCycle() const override { return this->cpu->curCycle(); }
+
+  Tick cyclesToTicks(Cycles c) const override {
+    return this->cpu->cyclesToTicks(c);
+  }
+
   LLVMTraceCPU *cpu;
 };
 

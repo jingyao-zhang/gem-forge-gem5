@@ -62,7 +62,7 @@ public:
                   Addr _cacheBlockVirtualAddr, int _additionalDelay = 0);
   virtual ~StreamMemAccess() {}
   void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
-  void issueToMemoryCallback(LLVMTraceCPU *cpu) override;
+  void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override;
   void handlePacketResponse(PacketPtr packet);
   // This cache block is fetched in by some other StreamMemAccess.
   void handleStreamEngineResponse();

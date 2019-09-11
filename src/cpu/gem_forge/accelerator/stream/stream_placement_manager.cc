@@ -4,13 +4,14 @@
 #include "stream_engine.hh"
 
 #include "base/output.hh"
-#include "cpu/gem_forge/llvm_trace_cpu.hh"
+#include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 #include "mem/cache/cache.hh"
 #include "mem/coherent_xbar.hh"
 
-StreamPlacementManager::StreamPlacementManager(LLVMTraceCPU *_cpu,
-                                               StreamEngine *_se)
-    : cpu(_cpu), se(_se), L2Bus(nullptr), L2BusWidth(0) {
+StreamPlacementManager::StreamPlacementManager(
+    LLVMTraceCPU *_cpu, GemForgeCPUDelegator *_cpuDelegator, StreamEngine *_se)
+    : cpu(_cpu), cpuDelegator(_cpuDelegator), se(_se), L2Bus(nullptr),
+      L2BusWidth(0) {
 
   Cache *L2 = nullptr;
   Cache *L1D = nullptr;
@@ -137,7 +138,7 @@ bool StreamPlacementManager::accessNoMSHR(
 bool StreamPlacementManager::accessExpress(
     Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
     StreamElement *element, bool isWrite) {
-  
+
   // Do not bypass for the first 100 accesses.
   auto L1 = this->caches[0];
   auto &L1Stats = L1->getOrInitializeStreamStats(stream);
@@ -434,14 +435,14 @@ void StreamPlacementManager::dumpCacheStreamAwarePortStatus() {
 
 int StreamPlacementManager::getPlacedCacheLevelByFootprint(
     Stream *stream) const {
-  auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
+  auto footprint = stream->getFootprint(cpuDelegator->cacheLineSize());
   if (this->se->getPlacement() == "placement-footprint") {
     footprint = stream->getTrueFootprint();
   }
   auto placeCacheLevel = this->caches.size() - 1;
   for (size_t cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     auto cache = this->caches[cacheLevel];
-    auto cacheCapacity = cache->getCacheSize() / cpu->system->cacheLineSize();
+    auto cacheCapacity = cache->getCacheSize() / cpuDelegator->cacheLineSize();
     if (footprint < cacheCapacity) {
       placeCacheLevel = cacheLevel;
       break;
@@ -501,14 +502,14 @@ void StreamPlacementManager::updatePlacedCacheLevel(Stream *stream) {
 }
 
 size_t StreamPlacementManager::whichCacheLevelToPlace(Stream *stream) const {
-  auto footprint = stream->getFootprint(cpu->system->cacheLineSize());
+  auto footprint = stream->getFootprint(cpuDelegator->cacheLineSize());
   if (this->se->getPlacement() == "placement-footprint") {
     footprint = stream->getTrueFootprint();
   }
   auto placeCacheLevel = this->caches.size() - 1;
   for (size_t cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     auto cache = this->caches[cacheLevel];
-    auto cacheCapacity = cache->getCacheSize() / cpu->system->cacheLineSize();
+    auto cacheCapacity = cache->getCacheSize() / cpuDelegator->cacheLineSize();
     if (footprint < cacheCapacity) {
       placeCacheLevel = cacheLevel;
       break;

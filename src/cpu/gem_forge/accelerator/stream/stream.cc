@@ -2,7 +2,7 @@
 #include "insts.hh"
 #include "stream_engine.hh"
 
-#include "cpu/gem_forge/llvm_trace_cpu.hh"
+#include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 
 // #include "base/misc.hh""
 #include "base/trace.hh"
@@ -38,7 +38,7 @@ Stream::Stream(const StreamArguments &args)
     : FIFOIdx(DynamicStreamId(args.cpu->cpuId(), args.staticId,
                               0 /*StreamInstance*/)),
       staticId(args.staticId), streamName(args.name), cpu(args.cpu),
-      se(args.se), nilTail(args.se) {
+      cpuDelegator(args.cpuDelegator), se(args.se), nilTail(args.se) {
 
   this->configured = false;
   this->head = &this->nilTail;

@@ -52,14 +52,15 @@ void TDGPacketHandler::handleTDGPacketResponse(LLVMTraceCPU *cpu,
   handler->handlePacketResponse(cpu, pkt);
 }
 
-void TDGPacketHandler::issueToMemory(LLVMTraceCPU *cpu, PacketPtr pkt) {
+void TDGPacketHandler::issueToMemory(GemForgeCPUDelegator *cpuDelegator,
+                                     PacketPtr pkt) {
   // Decode the handler information.
   auto handler = pkt->findNextSenderState<TDGPacketHandler>();
   if (handler == nullptr) {
     // This is not a TDGPacket. Ignore it.
     return;
   }
-  handler->issueToMemoryCallback(cpu);
+  handler->issueToMemoryCallback(cpuDelegator);
 }
 
 bool TDGPacketHandler::needResponse(LLVMTraceCPU *cpu, PacketPtr pkt) {

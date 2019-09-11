@@ -4,6 +4,7 @@
 #include "mem/packet.hh"
 
 class LLVMTraceCPU;
+class GemForgeCPUDelegator;
 
 /**
  * Drived from SenderState so that it's able to distinguish a TDGPacket
@@ -18,7 +19,7 @@ public:
    * delete packet;
    */
   virtual void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) = 0;
-  virtual void issueToMemoryCallback(LLVMTraceCPU *cpu) = 0;
+  virtual void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) = 0;
   virtual ~TDGPacketHandler() {}
   static PacketPtr createTDGPacket(Addr paddr, int size,
                                    TDGPacketHandler *handler, uint8_t *data,
@@ -27,7 +28,7 @@ public:
                                              int contextId, MemCmd::Command cmd,
                                              uint64_t data);
   static void handleTDGPacketResponse(LLVMTraceCPU *cpu, PacketPtr pkt);
-  static void issueToMemory(LLVMTraceCPU *cpu, PacketPtr pkt);
+  static void issueToMemory(GemForgeCPUDelegator *cpuDelegator, PacketPtr pkt);
   /**
    * Check if the request requires response.
    * So far the only TDG packet that does not need a response is the stream

@@ -70,7 +70,7 @@ void IdealPrefetcher::tick() {
     const auto pc = request.pc();
 
     // Truncate by cache line.
-    const auto cacheLineSize = this->cpu->system->cacheLineSize();
+    const auto cacheLineSize = this->cpuDelegator->cacheLineSize();
     if ((vaddr % cacheLineSize) + size > cacheLineSize) {
       size = cacheLineSize - (vaddr % cacheLineSize);
     }

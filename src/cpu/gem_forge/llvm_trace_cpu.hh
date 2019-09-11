@@ -139,6 +139,7 @@ public:
   const std::string &getTraceExtraFolder() const {
     return this->traceExtraFolder;
   }
+  LLVMTraceCPUDelegator *getDelegator() { return this->cpuDelegator.get(); }
   LLVMIEWStage &getIEWStage() { return this->iewStage; }
 
 private:
@@ -206,7 +207,7 @@ private:
     }
     PacketPtr getNextWarmUpPacket();
     void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
-    void issueToMemoryCallback(LLVMTraceCPU *cpu) override {}
+    void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override {}
   };
   bool warmUpDone;
   CacheWarmer *cacheWarmer;
