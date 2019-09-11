@@ -25,6 +25,12 @@ public:
    */
   virtual Cycles curCycle() const = 0;
   virtual Tick cyclesToTicks(Cycles c) const = 0;
+
+  /**
+   * Immediately translate a vaddr to paddr. Panic when not possible.
+   * TODO: Move this the some Process delegator.
+   */
+  virtual Addr translateVAddrOracle(Addr vaddr) = 0;
 };
 
 #endif

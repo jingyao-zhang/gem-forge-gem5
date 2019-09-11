@@ -179,7 +179,7 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess) {
 void StreamElement::markValueReady() {
   assert(!this->isValueReady && "Value is already ready.");
   this->isValueReady = true;
-  this->valueReadyCycle = this->getStream()->getCPU()->curCycle();
+  this->valueReadyCycle = this->getStream()->getCPUDelegator()->curCycle();
   STREAM_ELEMENT_DPRINTF(this, "Value ready.\n");
 
   // Check if the next element is also dependent on me.

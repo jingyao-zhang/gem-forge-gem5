@@ -20,6 +20,8 @@ public:
     return this->cpu->cyclesToTicks(c);
   }
 
+  Addr translateVAddrOracle(Addr vaddr) override;
+
   LLVMTraceCPU *cpu;
 };
 

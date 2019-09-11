@@ -3,3 +3,7 @@
 unsigned int LLVMTraceCPUDelegator::cacheLineSize() const {
   return this->cpu->system->cacheLineSize();
 }
+
+Addr LLVMTraceCPUDelegator::translateVAddrOracle(Addr vaddr) {
+  return this->cpu->translateAndAllocatePhysMem(vaddr);
+}

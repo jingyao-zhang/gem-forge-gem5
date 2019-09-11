@@ -106,6 +106,7 @@ public:
   virtual bool isContinuous() const = 0;
 
   LLVMTraceCPU *getCPU() { return this->cpu; }
+  GemForgeCPUDelegator *getCPUDelegator() { return this->cpuDelegator; }
 
   virtual void configure(StreamConfigInst *inst) = 0;
 

@@ -437,7 +437,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
         // Set up the init physical address.
         if (cpu->isStandalone()) {
           auto initPAddr =
-              cpu->translateAndAllocatePhysMem(streamConfigureData->initVAddr);
+              cpuDelegator->translateVAddrOracle(streamConfigureData->initVAddr);
           streamConfigureData->initPAddr = initPAddr;
         } else {
           panic("Stream so far can only work in standalone mode.");
@@ -878,7 +878,7 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
       // The target address is just virtually 0 (should be set by MLC stream
       // engine).
       auto pkt = TDGPacketHandler::createStreamControlPacket(
-          cpu->translateAndAllocatePhysMem(0), cpu->getDataMasterID(), 0,
+          cpuDelegator->translateVAddrOracle(0), cpu->getDataMasterID(), 0,
           MemCmd::Command::StreamEndReq,
           reinterpret_cast<uint64_t>(endedDynamicStreamId));
       DPRINTF(RubyStream, "[%s] Create StreamEnd pkt.\n",
@@ -1717,7 +1717,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto packetSize = cacheBlockBreakdown.size;
     Addr paddr;
     if (cpu->isStandalone()) {
-      paddr = cpu->translateAndAllocatePhysMem(vaddr);
+      paddr = cpuDelegator->translateVAddrOracle(vaddr);
     } else {
       panic("Stream so far can only work in standalone mode.");
     }
@@ -1782,7 +1782,7 @@ void StreamEngine::writebackElement(StreamElement *element,
     auto packetSize = cacheBlockBreakdown.size;
     Addr paddr;
     if (cpu->isStandalone()) {
-      paddr = cpu->translateAndAllocatePhysMem(vaddr);
+      paddr = cpuDelegator->translateVAddrOracle(vaddr);
     } else {
       panic("Stream so far can only work in standalone mode.");
     }

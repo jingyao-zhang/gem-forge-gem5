@@ -107,7 +107,7 @@ bool StreamPlacementManager::accessNoMSHR(
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
   if (cpu->isStandalone()) {
-    paddr = cpu->translateAndAllocatePhysMem(vaddr);
+    paddr = cpuDelegator->translateVAddrOracle(vaddr);
   } else {
     panic("Stream so far can only work in standalone mode.");
   }
@@ -150,7 +150,7 @@ bool StreamPlacementManager::accessExpress(
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
   if (cpu->isStandalone()) {
-    paddr = cpu->translateAndAllocatePhysMem(vaddr);
+    paddr = cpuDelegator->translateVAddrOracle(vaddr);
   } else {
     panic("Stream so far can only work in standalone mode.");
   }
@@ -262,7 +262,7 @@ bool StreamPlacementManager::accessExpressFootprint(
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
   if (cpu->isStandalone()) {
-    paddr = cpu->translateAndAllocatePhysMem(vaddr);
+    paddr = cpuDelegator->translateVAddrOracle(vaddr);
   } else {
     panic("Stream so far can only work in standalone mode.");
   }

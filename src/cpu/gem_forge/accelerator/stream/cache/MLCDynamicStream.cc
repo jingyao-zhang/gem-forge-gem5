@@ -197,8 +197,8 @@ void MLCDynamicStream::advanceStream() {
 void MLCDynamicStream::makeResponse(MLCStreamElement &element) {
   assert(element.coreStatus == MLCStreamElement::CoreStatusE::WAIT &&
          "Element core status should be WAIT to make response.");
-  auto cpu = this->getStaticStream()->getCPU();
-  auto paddr = cpu->translateAndAllocatePhysMem(element.vaddr);
+  auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
+  auto paddr = cpuDelegator->translateVAddrOracle(element.vaddr);
   auto paddrLine = makeLineAddress(paddr);
 
   auto selfMachineId = this->controller->getMachineID();
@@ -237,8 +237,8 @@ Addr MLCDynamicStream::getVAddrAtIndex(uint64_t index) const {
 }
 
 Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
-  auto cpu = this->getStaticStream()->getCPU();
-  auto paddr = cpu->translateAndAllocatePhysMem(vaddr);
+  auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
+  auto paddr = cpuDelegator->translateVAddrOracle(vaddr);
   return paddr;
 }
 

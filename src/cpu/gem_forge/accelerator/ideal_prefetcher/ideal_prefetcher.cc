@@ -75,7 +75,7 @@ void IdealPrefetcher::tick() {
       size = cacheLineSize - (vaddr % cacheLineSize);
     }
 
-    auto paddr = this->cpu->translateAndAllocatePhysMem(vaddr);
+    auto paddr = this->cpuDelegator->translateVAddrOracle(vaddr);
     auto pkt = TDGPacketHandler::createTDGPacket(
         paddr, size, this, nullptr, this->cpu->getDataMasterID(), 0, pc);
 
