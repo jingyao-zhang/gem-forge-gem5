@@ -17,9 +17,14 @@ class GemForgeCPUDelegator {
 public:
   virtual ~GemForgeCPUDelegator() {}
 
+  /**
+   * TODO: This can be implemented here.
+   */
   virtual unsigned int cacheLineSize() const = 0;
+  virtual int cpuId() const = 0;
 
   /**
+   * TODO: This can be implemented here.
    * The accelerators are implemented as SimObject, not ClockedObject,
    * so we provide some timing and scheduling functionality in the delegator.
    */

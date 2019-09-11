@@ -35,7 +35,7 @@
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(const StreamArguments &args)
-    : FIFOIdx(DynamicStreamId(args.cpu->cpuId(), args.staticId,
+    : FIFOIdx(DynamicStreamId(args.cpuDelegator->cpuId(), args.staticId,
                               0 /*StreamInstance*/)),
       staticId(args.staticId), streamName(args.name), cpu(args.cpu),
       cpuDelegator(args.cpuDelegator), se(args.se), nilTail(args.se) {

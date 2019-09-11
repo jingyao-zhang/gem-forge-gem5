@@ -446,7 +446,7 @@ void LLCStreamEngine::issueStreamRequestHere(LLCDynamicStream *stream,
                       "Issue [local] request.\n");
 
   auto selfMachineId = this->controller->getMachineID();
-  auto streamCPUId = stream->getStaticStream()->getCPU()->cpuId();
+  auto streamCPUId = stream->getStaticStream()->getCPUDelegator()->cpuId();
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = CoherenceRequestType_GETU;
@@ -473,7 +473,7 @@ void LLCStreamEngine::issueStreamRequestThere(LLCDynamicStream *stream,
                       "Issue [remote] request to LLC%d.\n", addrMachineId.num);
 
   auto selfMachineId = this->controller->getMachineID();
-  auto streamCPUId = stream->getStaticStream()->getCPU()->cpuId();
+  auto streamCPUId = stream->getStaticStream()->getCPUDelegator()->cpuId();
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = CoherenceRequestType_GETU;

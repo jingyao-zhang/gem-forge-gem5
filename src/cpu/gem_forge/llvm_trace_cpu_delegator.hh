@@ -13,6 +13,7 @@ public:
   LLVMTraceCPUDelegator(LLVMTraceCPU *_cpu) : cpu(_cpu) {}
 
   unsigned int cacheLineSize() const override;
+  int cpuId() const override;
 
   Cycles curCycle() const override { return this->cpu->curCycle(); }
 

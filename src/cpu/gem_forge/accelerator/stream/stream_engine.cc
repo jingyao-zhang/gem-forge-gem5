@@ -1857,7 +1857,7 @@ void StreamEngine::exitDump() const {
             });
   // Create the stream stats file.
   auto streamStatsFileName =
-      "stream.stats." + std::to_string(cpu->cpuId()) + ".txt";
+      "stream.stats." + std::to_string(cpuDelegator->cpuId()) + ".txt";
   auto &streamOS = *simout.findOrCreate(streamStatsFileName)->stream();
   for (auto &S : allStreams) {
     S->dumpStreamStats(streamOS);
