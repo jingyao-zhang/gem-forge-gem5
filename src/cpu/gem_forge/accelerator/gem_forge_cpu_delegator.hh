@@ -15,13 +15,13 @@
 
 class GemForgeCPUDelegator {
 public:
+  GemForgeCPUDelegator(BaseCPU *_baseCPU) : baseCPU(_baseCPU) {}
   virtual ~GemForgeCPUDelegator() {}
 
-  /**
-   * TODO: This can be implemented here.
-   */
-  virtual unsigned int cacheLineSize() const = 0;
-  virtual int cpuId() const = 0;
+  unsigned int cacheLineSize() const {
+    return this->baseCPU->system->cacheLineSize();
+  }
+  int cpuId() const { return this->baseCPU->cpuId(); }
 
   /**
    * Really not sure how this should be implemeted in normal cpu.
@@ -29,18 +29,22 @@ public:
   virtual const std::string &getTraceExtraFolder() const = 0;
 
   /**
-   * TODO: This can be implemented here.
    * The accelerators are implemented as SimObject, not ClockedObject,
    * so we provide some timing and scheduling functionality in the delegator.
    */
-  virtual Cycles curCycle() const = 0;
-  virtual Tick cyclesToTicks(Cycles c) const = 0;
+  Cycles curCycle() const { return this->baseCPU->curCycle(); }
+  Tick cyclesToTicks(Cycles c) const { return this->baseCPU->cyclesToTicks(c); }
+  void schedule(Event *event, Cycles latency) {
+    this->baseCPU->schedule(event, this->baseCPU->clockEdge(latency));
+  }
 
   /**
    * Immediately translate a vaddr to paddr. Panic when not possible.
    * TODO: Move this the some Process delegator.
    */
   virtual Addr translateVAddrOracle(Addr vaddr) = 0;
+
+  BaseCPU *baseCPU;
 };
 
 #endif

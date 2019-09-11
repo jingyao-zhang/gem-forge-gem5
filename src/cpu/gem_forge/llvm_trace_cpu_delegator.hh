@@ -10,19 +10,11 @@
 
 class LLVMTraceCPUDelegator : public GemForgeCPUDelegator {
 public:
-  LLVMTraceCPUDelegator(LLVMTraceCPU *_cpu) : cpu(_cpu) {}
-
-  unsigned int cacheLineSize() const override;
-  int cpuId() const override;
+  LLVMTraceCPUDelegator(LLVMTraceCPU *_cpu)
+      : GemForgeCPUDelegator(_cpu), cpu(_cpu) {}
 
   const std::string &getTraceExtraFolder() const override {
     return this->cpu->getTraceExtraFolder();
-  }
-
-  Cycles curCycle() const override { return this->cpu->curCycle(); }
-
-  Tick cyclesToTicks(Cycles c) const override {
-    return this->cpu->cyclesToTicks(c);
   }
 
   Addr translateVAddrOracle(Addr vaddr) override;

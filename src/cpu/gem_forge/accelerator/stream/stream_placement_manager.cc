@@ -391,7 +391,7 @@ void StreamPlacementManager::scheduleResponse(Cycles latency,
   auto responseEvent = new ResponseEvent(
       cpu, reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum()),
       pkt);
-  cpu->schedule(responseEvent, cpu->clockEdge(latency));
+  cpuDelegator->schedule(responseEvent, latency);
 }
 
 void StreamPlacementManager::sendTimingRequest(PacketPtr pkt, Cache *cache) {
