@@ -9,8 +9,7 @@ class CoalescedStream;
 
 class StreamPlacementManager {
 public:
-  StreamPlacementManager(LLVMTraceCPU *_cpu,
-                         GemForgeCPUDelegator *_cpuDelegator,
+  StreamPlacementManager(GemForgeCPUDelegator *_cpuDelegator,
                          StreamEngine *_se);
 
   bool access(const CacheBlockBreakdownAccess &cacheBlockBreakdown,
@@ -22,16 +21,16 @@ public:
 
   struct ResponseEvent : public Event {
   public:
-    LLVMTraceCPU *cpu;
+    GemForgeCPUDelegator *cpuDelegator;
     StreamMemAccess *memAccess;
     PacketPtr pkt;
     std::string n;
-    ResponseEvent(LLVMTraceCPU *_cpu, StreamMemAccess *_memAccess,
-                  PacketPtr _pkt)
-        : cpu(_cpu), memAccess(_memAccess), pkt(_pkt),
+    ResponseEvent(GemForgeCPUDelegator *_cpuDelegator,
+                  StreamMemAccess *_memAccess, PacketPtr _pkt)
+        : cpuDelegator(_cpuDelegator), memAccess(_memAccess), pkt(_pkt),
           n("StreamPlacementResponseEvent") {}
     void process() override {
-      this->memAccess->handlePacketResponse(this->cpu, this->pkt);
+      this->memAccess->handlePacketResponse(this->cpuDelegator, this->pkt);
     }
 
     const char *description() const { return "StreamPlacementResponseEvent"; }
@@ -40,7 +39,6 @@ public:
   };
 
 private:
-  LLVMTraceCPU *cpu;
   GemForgeCPUDelegator *cpuDelegator;
   StreamEngine *se;
 

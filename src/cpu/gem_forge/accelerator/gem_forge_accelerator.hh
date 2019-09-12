@@ -1,7 +1,7 @@
 #ifndef __CPU_GEM_FORGE_ACCELERATOR_HH__
 #define __CPU_GEM_FORGE_ACCELERATOR_HH__
 
-#include "gem_forge_cpu_delegator.hh"
+#include "cpu/gem_forge/gem_forge_cpu_delegator.hh"
 
 #include "base/types.hh"
 #include "sim/sim_object.hh"

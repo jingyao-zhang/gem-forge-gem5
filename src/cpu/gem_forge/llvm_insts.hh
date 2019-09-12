@@ -9,7 +9,7 @@
 
 #include "TDGInstruction.pb.h"
 
-#include "tdg_packet_handler.hh"
+#include "gem_forge_packet_handler.hh"
 
 // #include "base/misc.hh""
 #include "base/types.hh"
@@ -43,7 +43,7 @@ public:
   int numResults;
 };
 
-class LLVMDynamicInst : public TDGPacketHandler {
+class LLVMDynamicInst : public GemForgePacketHandler {
 public:
   LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
       : seqNum(allocateSeqNum()), TDG(_TDG), numMicroOps(_numMicroOps),
@@ -63,7 +63,7 @@ public:
 
   // Handle a packet response. Default will panic.
   // Only for mem insts.
-  virtual void handlePacketResponse(LLVMTraceCPU *cpu,
+  virtual void handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
                                     PacketPtr packet) override {
     panic("Calling handlePacketResponse on non-mem inst %u\n", this->getId());
   }
@@ -215,7 +215,8 @@ public:
 
   void execute(LLVMTraceCPU *cpu) override;
 
-  void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
+  void handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
+                            PacketPtr packet) override;
 
   bool isCompleted() const override;
 

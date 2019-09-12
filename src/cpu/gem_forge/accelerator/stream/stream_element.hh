@@ -3,7 +3,7 @@
 
 #include "base/types.hh"
 #include "cache/DynamicStreamSliceId.hh"
-#include "cpu/gem_forge/tdg_packet_handler.hh"
+#include "cpu/gem_forge/gem_forge_packet_handler.hh"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -56,12 +56,13 @@ class StreamElement;
  * The stream aware cache also use this to find the stream the packet belongs
  * to.
  */
-class StreamMemAccess final : public TDGPacketHandler {
+class StreamMemAccess final : public GemForgePacketHandler {
 public:
   StreamMemAccess(Stream *_stream, StreamElement *_element,
                   Addr _cacheBlockVirtualAddr, int _additionalDelay = 0);
   virtual ~StreamMemAccess() {}
-  void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
+  void handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
+                            PacketPtr packet) override;
   void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override;
   void handlePacketResponse(PacketPtr packet);
   // This cache block is fetched in by some other StreamMemAccess.
@@ -78,16 +79,16 @@ public:
 
   struct ResponseEvent : public Event {
   public:
-    LLVMTraceCPU *cpu;
+    GemForgeCPUDelegator *cpuDelegator;
     StreamMemAccess *memAccess;
     PacketPtr pkt;
     std::string n;
-    ResponseEvent(LLVMTraceCPU *_cpu, StreamMemAccess *_memAccess,
-                  PacketPtr _pkt)
-        : cpu(_cpu), memAccess(_memAccess), pkt(_pkt),
+    ResponseEvent(GemForgeCPUDelegator *_cpuDelegator,
+                  StreamMemAccess *_memAccess, PacketPtr _pkt)
+        : cpuDelegator(_cpuDelegator), memAccess(_memAccess), pkt(_pkt),
           n("StreamMemAccessResponseEvent") {}
     void process() override {
-      this->memAccess->handlePacketResponse(this->cpu, this->pkt);
+      this->memAccess->handlePacketResponse(this->cpuDelegator, this->pkt);
     }
 
     const char *description() const { return "StreamMemAccessResponseEvent"; }

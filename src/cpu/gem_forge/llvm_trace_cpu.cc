@@ -318,7 +318,8 @@ void LLVMTraceCPU::initializeMemorySnapshot() {
 
 bool LLVMTraceCPU::handleTimingResp(PacketPtr pkt) {
   // Receive the response from port.
-  TDGPacketHandler::handleTDGPacketResponse(this, pkt);
+  GemForgePacketHandler::handleGemForgePacketResponse(this->getDelegator(),
+                                                      pkt);
   return true;
 }
 
@@ -362,13 +363,13 @@ PacketPtr LLVMTraceCPU::CacheWarmer::getNextWarmUpPacket() {
   //   hack("Generate warmup for %d %#x %d.\n", this->warmUpAddrs, paddr >> 12,
   //        (paddr >> 12) & 0x3);
   // }
-  auto pkt = TDGPacketHandler::createTDGPacket(
-      paddr, size, this, nullptr, this->cpu->getDataMasterID(), 0, pc);
+  auto pkt = GemForgePacketHandler::createGemForgePacket(
+      paddr, size, this, nullptr, this->cpu->dataMasterId(), 0, pc);
   return pkt;
 }
 
-void LLVMTraceCPU::CacheWarmer::handlePacketResponse(LLVMTraceCPU *cpu,
-                                                     PacketPtr packet) {
+void LLVMTraceCPU::CacheWarmer::handlePacketResponse(
+    GemForgeCPUDelegator *cpuDelegator, PacketPtr packet) {
   // Just release the packet.
   this->receivedPackets++;
   // hack("Received warmup for %d.\n", this->receivedPackets);
@@ -414,11 +415,11 @@ void LLVMTraceCPU::CPUPort::sendReq() {
       this->blocked = true;
     } else {
       // Only increase the inflyNumPackets if it needs a response.
-      if (::TDGPacketHandler::needResponse(this->owner, pkt)) {
+      if (::GemForgePacketHandler::needResponse(pkt)) {
         this->inflyNumPackets++;
       }
       this->blockedPacketPtrs.pop();
-      ::TDGPacketHandler::issueToMemory(this->owner->getDelegator(), pkt);
+      ::GemForgePacketHandler::issueToMemory(this->owner->getDelegator(), pkt);
       usedPorts++;
     }
   }

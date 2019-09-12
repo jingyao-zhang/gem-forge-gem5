@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "tdg_packet_handler.hh"
+#include "gem_forge_packet_handler.hh"
 
 #include "base/statistics.hh"
 #include "cpu/base.hh"
@@ -47,10 +47,6 @@ public:
   void init() override;
 
   bool handleTimingResp(PacketPtr pkt);
-
-  std::vector<SimObject *> &getSimObjectList() {
-    return SimObject::getSimObjectList();
-  }
 
   // API interface for driver.
   void handleReplay(Process *p, ThreadContext *tc, const std::string &trace,
@@ -189,7 +185,7 @@ private:
   bool initializeMemorySnapshotDone;
 
   // Cache warm up in standalone mode.
-  struct CacheWarmer : public TDGPacketHandler {
+  struct CacheWarmer : public GemForgePacketHandler {
     LLVMTraceCPU *cpu;
     const size_t repeatedTimes;
     size_t warmUpAddrs;
@@ -206,7 +202,8 @@ private:
       return this->receivedPackets == this->warmUpAddrs;
     }
     PacketPtr getNextWarmUpPacket();
-    void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override;
+    void handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
+                              PacketPtr packet) override;
     void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override {}
   };
   bool warmUpDone;
@@ -327,7 +324,6 @@ public:
 
   // Send a request to memory.
   void sendRequest(PacketPtr pkt);
-  MasterID getDataMasterID() const { return this->_dataMasterId; }
 
   Cycles getOpLatency(OpClass opClass);
 

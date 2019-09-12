@@ -63,6 +63,13 @@ public:
     return this->streamPlacementManager;
   }
 
+  /**
+   * Used by StreamPlacementManager to get all cache.
+   */
+  std::vector<SimObject *> &getSimObjectList() {
+    return SimObject::getSimObjectList();
+  }
+
   bool isMergeEnabled() const { return this->enableMerge; }
   bool isOracleEnabled() const { return this->isOracle; }
 

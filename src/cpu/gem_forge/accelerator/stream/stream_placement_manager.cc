@@ -9,15 +9,14 @@
 #include "mem/coherent_xbar.hh"
 
 StreamPlacementManager::StreamPlacementManager(
-    LLVMTraceCPU *_cpu, GemForgeCPUDelegator *_cpuDelegator, StreamEngine *_se)
-    : cpu(_cpu), cpuDelegator(_cpuDelegator), se(_se), L2Bus(nullptr),
-      L2BusWidth(0) {
+    GemForgeCPUDelegator *_cpuDelegator, StreamEngine *_se)
+    : cpuDelegator(_cpuDelegator), se(_se), L2Bus(nullptr), L2BusWidth(0) {
 
   Cache *L2 = nullptr;
   Cache *L1D = nullptr;
   Cache *L1_5D = nullptr;
 
-  for (auto so : this->cpu->getSimObjectList()) {
+  for (auto so : this->se->getSimObjectList()) {
     // inform("so name %s.n", so->name().c_str());
     if (so->name() == "system.l2") {
       // L2 cache.
@@ -106,11 +105,7 @@ bool StreamPlacementManager::accessNoMSHR(
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
-  if (cpu->isStandalone()) {
-    paddr = cpuDelegator->translateVAddrOracle(vaddr);
-  } else {
-    panic("Stream so far can only work in standalone mode.");
-  }
+  paddr = cpuDelegator->translateVAddrOracle(vaddr);
 
   for (int cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     // latency += this->lookupLatency[cacheLevel];
@@ -149,11 +144,7 @@ bool StreamPlacementManager::accessExpress(
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
-  if (cpu->isStandalone()) {
-    paddr = cpuDelegator->translateVAddrOracle(vaddr);
-  } else {
-    panic("Stream so far can only work in standalone mode.");
-  }
+  paddr = cpuDelegator->translateVAddrOracle(vaddr);
 
   int latency = 0;
   if (L1Stats.misses > L1Stats.accesses * 0.95f &&
@@ -260,12 +251,7 @@ bool StreamPlacementManager::accessExpressFootprint(
 
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
-  Addr paddr;
-  if (cpu->isStandalone()) {
-    paddr = cpuDelegator->translateVAddrOracle(vaddr);
-  } else {
-    panic("Stream so far can only work in standalone mode.");
-  }
+  Addr paddr = cpuDelegator->translateVAddrOracle(vaddr);
 
   int latency = 0;
   auto bypassed = false;
@@ -373,8 +359,8 @@ PacketPtr StreamPlacementManager::createPacket(
   if (isWrite) {
     data = new uint8_t[size];
   }
-  auto pkt = TDGPacketHandler::createTDGPacket(paddr, size, memAccess, data,
-                                               Request::funcMasterId, 0, 0);
+  auto pkt = GemForgePacketHandler::createGemForgePacket(
+      paddr, size, memAccess, data, Request::funcMasterId, 0, 0);
   if (isWrite) {
     delete[] data;
   }
@@ -389,8 +375,8 @@ void StreamPlacementManager::scheduleResponse(Cycles latency,
                                               StreamElement *element,
                                               PacketPtr pkt) {
   auto responseEvent = new ResponseEvent(
-      cpu, reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum()),
-      pkt);
+      cpuDelegator,
+      reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum()), pkt);
   cpuDelegator->schedule(responseEvent, latency);
 }
 

@@ -5,7 +5,7 @@
  * This implementes the delegator for the LLVMTraceCPU.
  */
 
-#include "cpu/gem_forge/accelerator/gem_forge_cpu_delegator.hh"
+#include "cpu/gem_forge/gem_forge_cpu_delegator.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
 class LLVMTraceCPUDelegator : public GemForgeCPUDelegator {
@@ -18,6 +18,7 @@ public:
   }
 
   Addr translateVAddrOracle(Addr vaddr) override;
+  void sendRequest(PacketPtr pkt) override { this->cpu->sendRequest(pkt); }
 
   LLVMTraceCPU *cpu;
 };

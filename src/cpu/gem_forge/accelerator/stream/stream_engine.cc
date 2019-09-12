@@ -131,7 +131,7 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
   this->writebackCacheLine = new uint8_t[cpuDelegator->cacheLineSize()];
   if (this->enableStreamPlacement) {
     this->streamPlacementManager =
-        new StreamPlacementManager(cpu, cpuDelegator, this);
+        new StreamPlacementManager(cpuDelegator, this);
   }
 }
 
@@ -435,13 +435,9 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
             S->allocateCacheConfigureData(inst->getSeqNum());
 
         // Set up the init physical address.
-        if (cpu->isStandalone()) {
-          auto initPAddr =
-              cpuDelegator->translateVAddrOracle(streamConfigureData->initVAddr);
-          streamConfigureData->initPAddr = initPAddr;
-        } else {
-          panic("Stream so far can only work in standalone mode.");
-        }
+        auto initPAddr =
+            cpuDelegator->translateVAddrOracle(streamConfigureData->initVAddr);
+        streamConfigureData->initPAddr = initPAddr;
 
         if (S->isPointerChaseLoadStream()) {
           streamConfigureData->isPointerChase = true;
@@ -503,8 +499,8 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
           }
         }
 
-        auto pkt = TDGPacketHandler::createStreamControlPacket(
-            streamConfigureData->initPAddr, cpu->getDataMasterID(), 0,
+        auto pkt = GemForgePacketHandler::createStreamControlPacket(
+            streamConfigureData->initPAddr, cpuDelegator->dataMasterId(), 0,
             MemCmd::Command::StreamConfigReq,
             reinterpret_cast<uint64_t>(streamConfigureData));
         DPRINTF(RubyStream,
@@ -512,7 +508,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
                 "%#x.\n",
                 pkt, streamConfigureData, streamConfigureData->initVAddr,
                 streamConfigureData->initPAddr);
-        cpu->sendRequest(pkt);
+        cpuDelegator->sendRequest(pkt);
       }
     }
   }
@@ -877,13 +873,13 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
           new DynamicStreamId(endedDynamicInstanceState.dynamicStreamId);
       // The target address is just virtually 0 (should be set by MLC stream
       // engine).
-      auto pkt = TDGPacketHandler::createStreamControlPacket(
-          cpuDelegator->translateVAddrOracle(0), cpu->getDataMasterID(), 0,
-          MemCmd::Command::StreamEndReq,
+      auto pkt = GemForgePacketHandler::createStreamControlPacket(
+          cpuDelegator->translateVAddrOracle(0), cpuDelegator->dataMasterId(),
+          0, MemCmd::Command::StreamEndReq,
           reinterpret_cast<uint64_t>(endedDynamicStreamId));
       DPRINTF(RubyStream, "[%s] Create StreamEnd pkt.\n",
               S->getStreamName().c_str());
-      cpu->sendRequest(pkt);
+      cpuDelegator->sendRequest(pkt);
     }
 
     S->dynamicInstanceStates.pop_front();
@@ -1715,24 +1711,20 @@ void StreamEngine::issueElement(StreamElement *element) {
     // i.e. not merged & not handled by placement manager.
     auto vaddr = cacheBlockBreakdown.virtualAddr;
     auto packetSize = cacheBlockBreakdown.size;
-    Addr paddr;
-    if (cpu->isStandalone()) {
-      paddr = cpuDelegator->translateVAddrOracle(vaddr);
-    } else {
-      panic("Stream so far can only work in standalone mode.");
-    }
+    Addr paddr = cpuDelegator->translateVAddrOracle(vaddr);
 
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
-    auto pkt = TDGPacketHandler::createTDGPacket(
-        paddr, packetSize, memAccess, nullptr, cpu->getDataMasterID(), 0, 0);
+    auto pkt = GemForgePacketHandler::createGemForgePacket(
+        paddr, packetSize, memAccess, nullptr, cpuDelegator->dataMasterId(), 0,
+        0);
     S->statistic.numIssuedRequest++;
     if (element->FIFOIdx.streamId.staticId == 34710992 &&
         element->FIFOIdx.streamId.streamInstance == 2523 &&
         element->FIFOIdx.entryIdx == 2) {
       hack("Normally fetched.\n");
     }
-    cpu->sendRequest(pkt);
+    cpuDelegator->sendRequest(pkt);
 
     // Change to FETCHING status.
     if (this->enableMerge) {
@@ -1780,12 +1772,7 @@ void StreamEngine::writebackElement(StreamElement *element,
     // Translate the virtual address.
     auto vaddr = cacheBlockBreakdown.virtualAddr;
     auto packetSize = cacheBlockBreakdown.size;
-    Addr paddr;
-    if (cpu->isStandalone()) {
-      paddr = cpuDelegator->translateVAddrOracle(vaddr);
-    } else {
-      panic("Stream so far can only work in standalone mode.");
-    }
+    Addr paddr = cpuDelegator->translateVAddrOracle(vaddr);
 
     if (this->enableStreamPlacement) {
       // This means we have the placement manager.
@@ -1800,10 +1787,10 @@ void StreamEngine::writebackElement(StreamElement *element,
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     inflyWritebackMemAccesses.insert(memAccess);
     // Create the writeback package.
-    auto pkt = TDGPacketHandler::createTDGPacket(paddr, packetSize, memAccess,
-                                                 this->writebackCacheLine,
-                                                 cpu->getDataMasterID(), 0, 0);
-    cpu->sendRequest(pkt);
+    auto pkt = GemForgePacketHandler::createGemForgePacket(
+        paddr, packetSize, memAccess, this->writebackCacheLine,
+        cpuDelegator->dataMasterId(), 0, 0);
+    cpuDelegator->sendRequest(pkt);
   }
 }
 

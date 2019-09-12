@@ -117,7 +117,7 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
         return false;
       }
     }
-    // This is actually used for O3 with speculation, so no checking for 
+    // This is actually used for O3 with speculation, so no checking for
     // control dependence or PDF/unrollable dependence.
   }
   if (this->hasStreamUse()) {
@@ -356,9 +356,9 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
     this->constructPackets(cpu);
     this->loadStartCycle = cpu->curCycle();
     for (const auto &packet : this->packets) {
-      auto pkt = TDGPacketHandler::createTDGPacket(
-          packet.paddr, packet.size, this, packet.data, cpu->getDataMasterID(),
-          0, this->TDG.pc());
+      auto pkt = GemForgePacketHandler::createGemForgePacket(
+          packet.paddr, packet.size, this, packet.data, cpu->dataMasterId(), 0,
+          this->TDG.pc());
       // We want to set up the virtual address.
       // Use the ThreadID as the ASID.
       // ! This currently does not work, as ADFA does not has a thread
@@ -366,8 +366,8 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
       auto asid = 0;
       // auto thread = cpu->getInflyInstThread(this->TDG.id());
       // asid = thread->getThreadId();
-      pkt->req->setVirt(asid, packet.vaddr, packet.size, 0,
-                        cpu->getDataMasterID(), this->TDG.pc());
+      pkt->req->setVirt(asid, packet.vaddr, packet.size, 0, cpu->dataMasterId(),
+                        this->TDG.pc());
       // ! setVirt will clear the physical address.
       pkt->req->setPaddr(packet.paddr);
       cpu->sendRequest(pkt);
@@ -463,8 +463,8 @@ void LLVMDynamicInstMem::writeback(LLVMTraceCPU *cpu) {
       DPRINTF(LLVMTraceCPU, "Store data %f for inst %u to paddr %p\n",
               *(double *)(packet.data), this->getId(), packet.paddr);
     }
-    auto pkt = TDGPacketHandler::createTDGPacket(
-        packet.paddr, packet.size, this, packet.data, cpu->getDataMasterID(), 0,
+    auto pkt = GemForgePacketHandler::createGemForgePacket(
+        packet.paddr, packet.size, this, packet.data, cpu->dataMasterId(), 0,
         this->TDG.pc());
     cpu->sendRequest(pkt);
   }
@@ -491,13 +491,18 @@ void LLVMDynamicInstMem::dumpBasic() const {
          this->getId(), this->getInstName().c_str(), this->packets.size());
 }
 
-void LLVMDynamicInstMem::handlePacketResponse(LLVMTraceCPU *cpu,
-                                              PacketPtr packet) {
+void LLVMDynamicInstMem::handlePacketResponse(
+    GemForgeCPUDelegator *cpuDelegator, PacketPtr packet) {
   if (this->type != Type::STORE && this->type != Type::LOAD) {
     panic("LLVMDynamicInstMem::handlePacketResponse called for non store/load "
           "inst %d, but type %d.\n",
           this->getId(), this->type);
   }
+
+  // LLVMDynamicInstruction should only be called with LLVMTraceCPU.
+  auto cpu = dynamic_cast<LLVMTraceCPU *>(cpuDelegator->baseCPU);
+  assert(cpu != nullptr &&
+         "LLVMDynamicInst should only interact with LLVMTraceCPU.");
 
   // Check if the load will produce a new base.
   if (this->type == Type::LOAD && this->TDG.load().new_base() != "") {

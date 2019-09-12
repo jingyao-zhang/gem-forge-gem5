@@ -76,10 +76,10 @@ void IdealPrefetcher::tick() {
     }
 
     auto paddr = this->cpuDelegator->translateVAddrOracle(vaddr);
-    auto pkt = TDGPacketHandler::createTDGPacket(
-        paddr, size, this, nullptr, this->cpu->getDataMasterID(), 0, pc);
+    auto pkt = GemForgePacketHandler::createGemForgePacket(
+        paddr, size, this, nullptr, this->cpuDelegator->dataMasterId(), 0, pc);
 
-    this->cpu->sendRequest(pkt);
+    this->cpuDelegator->sendRequest(pkt);
 
     this->prefetchedIdx++;
     // Only one prefetch per cycle.

@@ -7,7 +7,7 @@
 /**
  * Originally, these accelerators are implemented assuming a LLVMTraceCPU.
  * However, we may want to integrate them with Gem5's other execution-driven CPU
- * model for more realistic simulation. In order to avoid intrusive change to
+ * models for more realistic simulation. In order to avoid intrusive change to
  * existing CPU code, we add this intermediate layer -- CPUDelegator.
  *
  * This implementes the delegator interface.
@@ -21,7 +21,10 @@ public:
   unsigned int cacheLineSize() const {
     return this->baseCPU->system->cacheLineSize();
   }
+  /** Reads this CPU's ID. */
   int cpuId() const { return this->baseCPU->cpuId(); }
+  /** Reads this CPU's unique data requestor ID. */
+  MasterID dataMasterId() const { return this->baseCPU->dataMasterId(); }
 
   /**
    * Really not sure how this should be implemeted in normal cpu.
@@ -43,6 +46,11 @@ public:
    * TODO: Move this the some Process delegator.
    */
   virtual Addr translateVAddrOracle(Addr vaddr) = 0;
+
+  /**
+   * Send a packet through the cpu.
+   */
+  virtual void sendRequest(PacketPtr pkt) = 0;
 
   BaseCPU *baseCPU;
 };

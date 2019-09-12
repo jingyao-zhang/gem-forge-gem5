@@ -3,11 +3,12 @@
 
 #include "cpu/gem_forge/TDGInstruction.pb.h"
 #include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
-#include "cpu/gem_forge/tdg_packet_handler.hh"
+#include "cpu/gem_forge/gem_forge_packet_handler.hh"
 
 #include "params/IdealPrefetcher.hh"
 
-class IdealPrefetcher : public GemForgeAccelerator, public TDGPacketHandler {
+class IdealPrefetcher : public GemForgeAccelerator,
+                        public GemForgePacketHandler {
 public:
   using Params = IdealPrefetcherParams;
   IdealPrefetcher(Params *params);
@@ -20,7 +21,8 @@ public:
   void regStats() override;
 
   // Prefetcher does not care about the result.
-  void handlePacketResponse(LLVMTraceCPU *cpu, PacketPtr packet) override {
+  void handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
+                            PacketPtr packet) override {
     delete packet;
   }
   void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override {}

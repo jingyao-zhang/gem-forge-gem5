@@ -53,18 +53,18 @@ DynamicStreamSliceId StreamMemAccess::getSliceId() const {
 
 void StreamMemAccess::handlePacketResponse(PacketPtr packet) {
   // API for stream-aware cache, as it doesn't have the cpu.
-  this->handlePacketResponse(this->getStream()->getCPU(), packet);
+  this->handlePacketResponse(this->getStream()->getCPUDelegator(), packet);
 }
 
-void StreamMemAccess::handlePacketResponse(LLVMTraceCPU *cpu,
+void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
                                            PacketPtr packet) {
   if (this->additionalDelay != 0) {
     // We have to reschedule the event to pay for the additional delay.
     STREAM_ELEMENT_DPRINTF(
         this->element, "PacketResponse with additional delay of %d cycles.\n",
         this->additionalDelay);
-    auto responseEvent = new ResponseEvent(cpu, this, packet);
-    cpu->schedule(responseEvent, cpu->clockEdge(Cycles(this->additionalDelay)));
+    auto responseEvent = new ResponseEvent(cpuDelegator, this, packet);
+    cpuDelegator->schedule(responseEvent, Cycles(this->additionalDelay));
     // Remember to reset the additional delay as we have already paid for it.
     this->additionalDelay = 0;
     return;
