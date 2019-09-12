@@ -622,6 +622,10 @@ int StreamEngine::getStreamUserLQEntries(const LLVMDynamicInst *inst) const {
   if (!this->enableLSQ) {
     return 0;
   }
+  // So far we only support LSQ for LLVMTraceCPU.
+  assert(cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE &&
+         "LSQ only works for LLVMTraceCPU.");
+
   // Collect all the element used.
   std::unordered_set<StreamElement *> usedElementSet;
   for (const auto &dep : inst->getTDG().deps()) {
@@ -678,6 +682,10 @@ StreamEngine::createStreamUserLQCallbacks(LLVMDynamicInst *inst) {
     if (element->firstUserSeqNum == inst->getSeqNum()) {
       // Insert into the load queue if we model the lsq.
       if (this->enableLSQ) {
+        // So far we only support LSQ for LLVMTraceCPU.
+        assert(cpuDelegator->cpuType ==
+                   GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE &&
+               "LSQ only works for LLVMTraceCPU.");
         callbacks.emplace_back(
             new GemForgeStreamEngineLQCallback(element, inst, this->cpu));
       }
@@ -904,6 +912,9 @@ StreamEngine::createStreamStoreSQCallbacks(StreamStoreInst *inst) {
   if (!this->enableLSQ) {
     return callbacks;
   }
+  // So far we only support LSQ for LLVMTraceCPU.
+  assert(cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE &&
+         "LSQ only works for LLVMTraceCPU.");
   // Find the element to be stored.
   StreamElement *storeElement = nullptr;
   auto storeStream = this->getStream(inst->getTDG().stream_store().stream_id());
@@ -951,6 +962,9 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
   if (!this->enableLSQ) {
     return;
   }
+  // So far we only support LSQ for LLVMTraceCPU.
+  assert(cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE &&
+         "LSQ only works for LLVMTraceCPU.");
 }
 
 bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }

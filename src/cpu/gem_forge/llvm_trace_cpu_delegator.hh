@@ -11,7 +11,7 @@
 class LLVMTraceCPUDelegator : public GemForgeCPUDelegator {
 public:
   LLVMTraceCPUDelegator(LLVMTraceCPU *_cpu)
-      : GemForgeCPUDelegator(_cpu), cpu(_cpu) {}
+      : GemForgeCPUDelegator(CPUTypeE::LLVM_TRACE, _cpu), cpu(_cpu) {}
 
   const std::string &getTraceExtraFolder() const override {
     return this->cpu->getTraceExtraFolder();

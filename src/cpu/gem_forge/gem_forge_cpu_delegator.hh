@@ -15,7 +15,12 @@
 
 class GemForgeCPUDelegator {
 public:
-  GemForgeCPUDelegator(BaseCPU *_baseCPU) : baseCPU(_baseCPU) {}
+  enum CPUTypeE {
+    LLVM_TRACE,
+  };
+  const CPUTypeE cpuType;
+  GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU)
+      : cpuType(_cpuType), baseCPU(_baseCPU) {}
   virtual ~GemForgeCPUDelegator() {}
 
   unsigned int cacheLineSize() const {
