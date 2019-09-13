@@ -9,7 +9,16 @@
 #include "cpu/pred/2bit_local.hh"
 #include "cpu/pred/tournament.hh"
 
+#if THE_ISA == X86_ISA
 #include "arch/x86/tlb.hh"
+#define TheISATLBParams X86TLBParams
+#elif THE_ISA == RISCV_ISA
+#include "arch/riscv/tlb.hh"
+#define TheISATLBParams RiscvTLBParams
+#else
+#error "Unsupported ISA."
+#endif
+
 #include "base/output.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "cpu/o3/deriv.hh"
@@ -464,8 +473,7 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
     auto instL1Params = McPATManager::getParams<CacheParams>(instL1);
     auto instL1TagParams =
         McPATManager::getParams<BaseTagsParams>(instL1Params->tags);
-    auto accessLatency =
-        McPATManager::getCacheTagAccessLatency(instL1Params);
+    auto accessLatency = McPATManager::getCacheTagAccessLatency(instL1Params);
     auto &mcpatInstL1 = core.icache;
 
     mcpatInstL1.icache_config[0] = instL1Params->size;          // capacity
@@ -508,8 +516,7 @@ void McPATManager::configureDerivO3CPU(const DerivO3CPU *cpu) {
     auto dataL1Params = McPATManager::getParams<CacheParams>(dataL1);
     auto dataL1TagParams =
         McPATManager::getParams<BaseTagsParams>(dataL1Params->tags);
-    auto accessLatency =
-        McPATManager::getCacheTagAccessLatency(dataL1Params);
+    auto accessLatency = McPATManager::getCacheTagAccessLatency(dataL1Params);
     auto &mcpatDataL1 = core.dcache;
 
     mcpatDataL1.dcache_config[0] = dataL1Params->size;          // capacity
@@ -633,7 +640,7 @@ bool McPATManager::isCPU(const SimObject *so, const std::string &suffix,
 int McPATManager::getTLBSize(const TheISA::TLB *tlb) {
   switch (static_cast<Arch>(THE_ISA)) {
   case Arch::X86ISA: {
-    return McPATManager::getParams<X86TLBParams>(tlb)->size;
+    return McPATManager::getParams<TheISATLBParams>(tlb)->size;
   }
   default: { panic("Unsupported ISA %s for get TLBSize.", THE_ISA_STR); }
   }

@@ -4,6 +4,14 @@
 
 #include "params/Cache.hh"
 
+#if THE_ISA==X86_ISA
+#include "arch/x86/tlb.hh"
+#elif THE_ISA==RISCV_ISA
+#include "arch/riscv/tlb.hh"
+#else
+#error "Unsupported ISA."
+#endif
+
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "mem/cache/cache.hh"
 #include "mem/cache/tags/base.hh"

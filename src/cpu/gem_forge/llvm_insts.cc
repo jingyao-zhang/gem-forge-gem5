@@ -505,8 +505,9 @@ void LLVMDynamicInstMem::handlePacketResponse(
          "LLVMDynamicInst should only interact with LLVMTraceCPU.");
 
   // Check if the load will produce a new base.
+  // ! This is very fragile to ISA.
   if (this->type == Type::LOAD && this->TDG.load().new_base() != "") {
-    uint64_t vaddr = packet->get<uint64_t>();
+    uint64_t vaddr = TheISA::gtoh(packet->getRaw<uint64_t>());
     cpu->mapBaseNameToVAddr(this->TDG.load().new_base(), vaddr);
   }
   // if (this->TDG.pc() == 4195584 && this->TDG.load().addr() == 0x88707c) {
