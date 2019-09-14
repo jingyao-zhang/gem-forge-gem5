@@ -111,14 +111,14 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
   this->stepStreamList.emplace_back(newStepDependentStream);
 }
 
-void Stream::dispatchStreamConfigure(StreamConfigInst *inst) {
-  this->configInstExecuted.emplace_back(inst->getSeqNum(), false);
+void Stream::dispatchStreamConfigure(uint64_t seqNum) {
+  this->configInstExecuted.emplace_back(seqNum, false);
 }
 
-void Stream::executeStreamConfigure(StreamConfigInst *inst) {
+void Stream::executeStreamConfigure(uint64_t seqNum) {
   for (auto &record : this->configInstExecuted) {
-    if (record.first == inst->getSeqNum()) {
-      assert(record.second == false &&
+    if (record.first == seqNum) {
+      assert(!record.second &&
              "This StreamConfig is alread executed for this stream.");
       record.second = true;
       return;
@@ -136,16 +136,16 @@ bool Stream::isStreamConfigureExecuted(uint64_t configInstSeqNum) {
   assert(false && "Failed to find the record for the StreamConfig seqNum.");
 }
 
-void Stream::commitStreamEnd(StreamEndInst *inst) {
+void Stream::commitStreamEnd(uint64_t seqNum) {
   assert(!this->configInstExecuted.empty() && "Empty list for StreamEnd.");
-  assert(this->configInstExecuted.front().first < inst->getSeqNum() &&
+  assert(this->configInstExecuted.front().first < seqNum &&
          "End before config.");
   assert(this->configInstExecuted.front().second &&
          "End before config executed.");
   this->configInstExecuted.pop_front();
   if (!this->configInstExecuted.empty()) {
     // There is another configinst waiting.
-    assert(this->configInstExecuted.front().first > inst->getSeqNum() &&
+    assert(this->configInstExecuted.front().first > seqNum &&
            "Next StreamConfig not younger than previous StreamEnd.");
   }
 }

@@ -12,7 +12,6 @@
 
 #include "base/statistics.hh"
 #include "cpu/base.hh"
-#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/llvm_commit_stage.hh"
 #include "cpu/gem_forge/llvm_decode_stage.hh"
 #include "cpu/gem_forge/llvm_fetch_stage.hh"
@@ -259,8 +258,6 @@ private:
   TimeBuffer<LLVMStageSignal> signalBuffer;
 
   LLVMTraceCPUDriver *driver;
-  GemForgeAcceleratorManager *accelManager;
-  GemForgeAcceleratorManagerParams *accelManagerParams;
 
   /**************************************************************/
   // Interface for the insts.

@@ -46,7 +46,7 @@ public:
   /**
    * Only to configure all the history.
    */
-  void configure(StreamConfigInst *inst) override;
+  void configure(uint64_t seqNum) override;
 
   const std::string &getStreamType() const override;
   uint32_t getLoopLevel() const override;

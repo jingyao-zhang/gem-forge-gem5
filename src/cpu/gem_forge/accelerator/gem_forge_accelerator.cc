@@ -62,7 +62,7 @@ StreamEngine *GemForgeAcceleratorManager::getStreamEngine() {
       return se;
     }
   }
-  panic("Failed to find the stream engine to handle commitStreamStore.");
+  panic("Failed to find the stream engine.");
 }
 
 SpeculativePrecomputationManager *
@@ -73,7 +73,7 @@ GemForgeAcceleratorManager::getSpeculativePrecomputationManager() {
       return spm;
     }
   }
-  panic("Failed to find the stream engine to handle commitStreamStore.");
+  panic("Failed to find the SpeculativePrecomputationManager.");
 }
 
 GemForgeAcceleratorManager *GemForgeAcceleratorManagerParams::create() {

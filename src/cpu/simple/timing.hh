@@ -48,6 +48,8 @@
 #include "cpu/translation.hh"
 #include "params/TimingSimpleCPU.hh"
 
+class TimingSimpleCPUDelegator;
+
 class TimingSimpleCPU : public BaseSimpleCPU
 {
   public:
@@ -56,6 +58,12 @@ class TimingSimpleCPU : public BaseSimpleCPU
     virtual ~TimingSimpleCPU();
 
     void init() override;
+
+    /**
+     * GemForgeCPUDelegator.
+     */
+    friend class TimingSimpleCPUDelegator;
+    std::unique_ptr<TimingSimpleCPUDelegator> cpuDelegator;
 
   private:
 

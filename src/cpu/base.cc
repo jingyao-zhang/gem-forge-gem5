@@ -140,6 +140,7 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
       syscallRetryLatency(p->syscallRetryLatency),
       pwrGatingLatency(p->pwr_gating_latency),
       powerGatingOnIdle(p->power_gating_on_idle),
+      accelManager(p->accelManager),
       enterPwrGatingEvent([this]{ enterPwrGating(); }, name())
 {
     // if Python did not provide a valid ID, do it here

@@ -34,8 +34,6 @@ parser.add_option("--llvm-standalone", action="store_true",
                   help="""replay in stand alone mode""", default=False)
 parser.add_option("--llvm-prefetch", action="store", type="int",
                   help="""whether to use a prefetcher""", default="0")
-parser.add_option("--gem-forge-ideal-prefetcher", action="store_true",
-                  help="""whether to use an ideal prefetcher""", default=False)
 parser.add_option("--gem-forge-ideal-prefetcher-distance", action="store",
                   type="int", help="""whether to use an ideal prefetcher""", default=400)
 parser.add_option("--gem-forge-prefetcher", type="choice", default="none",
@@ -66,6 +64,9 @@ parser.add_option("--gem-forge-no-gem5-branch-predictor", action="store_true",
 
 parser.add_option("--llvm-mcpat", action="store", type="int",
                   help="""whether to use mcpat to estimate power""", default="0")
+
+parser.add_option("--gem-forge-ideal-prefetcher", action="store_true",
+                  help="""whether to use an ideal prefetcher""", default=False)
 
 parser.add_option("--gem-forge-stream-engine-max-run-ahead-length", action="store", type="int",
                   help="""How many elements can a stream run ahead""", default="10")
@@ -220,9 +221,11 @@ def initializeStreamEngine():
 
 def initializeGemForgeAcceleratorManager():
     accelerators = list()
-    accelerators.append(initializeADFA())
-    accelerators.append(initializeIdealPrefetcher())
-    accelerators.append(SpeculativePrecomputationManager())
+    if options.gem_forge_adfa_enable:
+        accelerators.append(initializeADFA())
+    if options.gem_forge_ideal_prefetcher:
+        accelerators.append(initializeIdealPrefetcher())
+    # accelerators.append(SpeculativePrecomputationManager())
     accelerators.append(initializeStreamEngine())
     accelManager = GemForgeAcceleratorManager(accelerators=accelerators)
     return accelManager
@@ -338,6 +341,8 @@ if not options.llvm_standalone:
         # Also set the common parameters for the normal CPUs.
         if isinstance(cpu, DerivO3CPU):
             setDerivO3CPUCommomParams(cpu)
+        elif isinstance(cpu, TimingSimpleCPU):
+            pass
         else:
             raise ValueError("Unsupported cpu class.")
 
@@ -401,10 +406,13 @@ else:
         llvm_trace_cpu.createThreads()
         llvm_trace_cpu.traceFile = tdg_fn
         llvm_trace_cpu.driver = NULL
-        llvm_trace_cpu.accelManager = initializeGemForgeAcceleratorManager()
         llvm_trace_cpu.totalActiveCPUs = options.gem_forge_num_active_cpus
         cpus.append(llvm_trace_cpu)
     assert(options.num_cpus == len(cpus))
+
+# Initialize the GemForgeAccelerator for every CPU:
+for cpu in cpus:
+    cpu.accelManager = initializeGemForgeAcceleratorManager()
 
 system = System(cpu=cpus,
                 mem_mode=test_mem_mode,

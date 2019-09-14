@@ -39,7 +39,8 @@ SingleStream::SingleStream(const StreamArguments &args,
     : Stream(args), info(_info) {
 
   const auto &relativeHistoryPath = this->info.history_path();
-  auto historyPath = cpuDelegator->getTraceExtraFolder() + "/" + relativeHistoryPath;
+  auto historyPath =
+      cpuDelegator->getTraceExtraFolder() + "/" + relativeHistoryPath;
   this->history =
       std::unique_ptr<StreamHistory>(new StreamHistory(historyPath));
   this->patternStream = std::unique_ptr<StreamPattern>(new StreamPattern(
@@ -143,8 +144,8 @@ int32_t SingleStream::getElementSize() const {
   return this->info.element_size();
 }
 
-void SingleStream::configure(StreamConfigInst *inst) {
-  this->dispatchStreamConfigure(inst);
+void SingleStream::configure(uint64_t seqNum) {
+  this->dispatchStreamConfigure(seqNum);
   this->history->configure();
   this->patternStream->configure();
 }

@@ -71,6 +71,7 @@ class BaseCPU;
 struct BaseCPUParams;
 class CheckerCPU;
 class ThreadContext;
+class GemForgeAcceleratorManager;
 
 struct AddressMonitor
 {
@@ -204,6 +205,11 @@ class BaseCPU : public ClockedObject
     inline void workItemEnd() { numWorkItemsCompleted++; }
     // @todo remove me after debugging with legion done
     Tick instCount() { return instCnt; }
+
+    /**
+     * ! GemForge
+     */
+    GemForgeAcceleratorManager *getAccelManager();
 
     TheISA::MicrocodeRom microcodeRom;
 
@@ -645,6 +651,10 @@ class BaseCPU : public ClockedObject
 
     const Cycles pwrGatingLatency;
     const bool powerGatingOnIdle;
+
+    // GemForgeAcceleratorManager.
+    GemForgeAcceleratorManager * const accelManager;
+
     EventFunctionWrapper enterPwrGatingEvent;
 };
 

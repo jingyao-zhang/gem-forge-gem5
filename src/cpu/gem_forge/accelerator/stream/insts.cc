@@ -26,7 +26,9 @@ StreamConfigInst::StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
 
 bool StreamConfigInst::canDispatch(LLVMTraceCPU *cpu) const {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  return SE->canStreamConfig(this);
+  auto args = StreamEngine::StreamConfigArgs(
+      this->getSeqNum(), this->TDG.stream_config().info_path());
+  return SE->canStreamConfig(args);
 }
 
 void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
@@ -34,13 +36,17 @@ void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
   if (this->hasStreamUse()) {
     SE->dispatchStreamUser(this);
   }
-  SE->dispatchStreamConfigure(this);
+  auto args = StreamEngine::StreamConfigArgs(
+      this->getSeqNum(), this->TDG.stream_config().info_path());
+  SE->dispatchStreamConfigure(args);
 }
 
 void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
   // Automatically finished.
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  SE->executeStreamConfigure(this);
+  auto args = StreamEngine::StreamConfigArgs(
+      this->getSeqNum(), this->TDG.stream_config().info_path());
+  SE->executeStreamConfigure(args);
   if (this->hasStreamUse()) {
     SE->executeStreamUser(this);
   }
@@ -53,7 +59,9 @@ void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   if (this->hasStreamUse()) {
     SE->commitStreamUser(this);
   }
-  SE->commitStreamConfigure(this);
+  auto args = StreamEngine::StreamConfigArgs(
+      this->getSeqNum(), this->TDG.stream_config().info_path());
+  SE->commitStreamConfigure(args);
 }
 
 uint64_t StreamConfigInst::getStreamId() const {
@@ -77,18 +85,22 @@ StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
 
 bool StreamStepInst::canDispatch(LLVMTraceCPU *cpu) const {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  return SE->canStreamStep(this);
+  auto stepStreamId = this->getTDG().stream_step().stream_id();
+  return SE->canStreamStep(stepStreamId);
 }
 
 void StreamStepInst::dispatch(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  SE->dispatchStreamStep(this);
+  auto stepStreamId = this->getTDG().stream_step().stream_id();
+  SE->dispatchStreamStep(stepStreamId);
 }
 
 void StreamStepInst::execute(LLVMTraceCPU *cpu) { this->markFinished(); }
 
 void StreamStepInst::commit(LLVMTraceCPU *cpu) {
-  cpu->getAcceleratorManager()->getStreamEngine()->commitStreamStep(this);
+  auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+  auto stepStreamId = this->getTDG().stream_step().stream_id();
+  SE->commitStreamStep(stepStreamId);
 }
 
 uint64_t StreamStepInst::getStreamId() const {
@@ -157,20 +169,22 @@ StreamEndInst::StreamEndInst(const LLVM::TDG::TDGInstruction &_TDG)
   if (!this->TDG.has_stream_end()) {
     panic("StreamEndInst with missing protobuf field.");
   }
-  DPRINTF(StreamEngine, "Parsed StreamEndInst to loop %s.\n",
-          this->TDG.stream_end().loop().c_str());
 }
 
 void StreamEndInst::dispatch(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  SE->dispatchStreamEnd(this);
+  auto args = StreamEngine::StreamEndArgs(this->getSeqNum(),
+                                          this->TDG.stream_end().info_path());
+  SE->dispatchStreamEnd(args);
 }
 
 void StreamEndInst::execute(LLVMTraceCPU *cpu) { this->markFinished(); }
 
 void StreamEndInst::commit(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  SE->commitStreamEnd(this);
+  auto args = StreamEngine::StreamEndArgs(this->getSeqNum(),
+                                          this->TDG.stream_end().info_path());
+  SE->commitStreamEnd(args);
 }
 
 uint64_t StreamEndInst::getStreamId() const {

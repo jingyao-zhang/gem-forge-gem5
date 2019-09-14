@@ -42,6 +42,9 @@
  */
 
 #include "cpu/simple/timing.hh"
+// ! GemForge
+#include "cpu/simple/timing_simple_cpu_delegator.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 
 #include "arch/locked_mem.hh"
 #include "arch/mmapped_ipr.hh"
@@ -67,6 +70,8 @@ void
 TimingSimpleCPU::init()
 {
     BaseSimpleCPU::init();
+    this->cpuDelegator = m5::make_unique<TimingSimpleCPUDelegator>(this);
+    this->accelManager->handshake(this->cpuDelegator.get());
 }
 
 void

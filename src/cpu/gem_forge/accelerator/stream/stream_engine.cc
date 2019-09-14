@@ -62,8 +62,7 @@ void debugStreamWithElements(Stream *S, const char *message) {
 
 StreamEngine::StreamEngine(Params *params)
     : GemForgeAccelerator(params), streamPlacementManager(nullptr),
-      isOracle(false), writebackCacheLine(nullptr), throttler(this),
-      blockCycle(0), blockSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM) {
+      isOracle(false), writebackCacheLine(nullptr), throttler(this) {
 
   this->isOracle = params->streamEngineIsOracle;
   this->maxRunAHeadLength = params->streamEngineMaxRunAHeadLength;
@@ -125,7 +124,7 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
           dynamic_cast<LLVMTraceCPUDelegator *>(_cpuDelegator)) {
     _cpu = llvmTraceCPUDelegator->cpu;
   }
-  assert(_cpu != nullptr && "Only work for LLVMTraceCPU so far.");
+  // assert(_cpu != nullptr && "Only work for LLVMTraceCPU so far.");
   this->cpu = _cpu;
 
   this->writebackCacheLine = new uint8_t[cpuDelegator->cacheLineSize()];
@@ -214,7 +213,7 @@ void StreamEngine::regStats() {
       .flags(Stats::pdf);
 }
 
-bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
+bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
   /**
    * A stream can be configured iff. we can guarantee that it will be allocate
    * one entry when configured.
@@ -223,27 +222,7 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
    * free entries. Otherwise, we ALSO ensure that allocSize < maxSize.
    */
 
-  // hack("Configure for loop %s.\n",
-  //      inst->getTDG().stream_config().loop().c_str());
-  /**
-   * ! I need to enforce a certain dependence.
-   */
-  if (blockCycle > 0) {
-    return false;
-  }
-  if (inst->getTDG().stream_config().loop() ==
-          "linear.c::844(solve_l2r_l1l2_svc)::bb218" ||
-      inst->getTDG().stream_config().loop() ==
-          "linear.c::844(solve_l2r_l1l2_svc)::bb295") {
-    // Jesus adhoc fix.
-    // if (blockSeqNum < inst->getSeqNum()) {
-    //   // A new blocking one.
-    //   blockSeqNum = inst->getSeqNum();
-    //   blockCycle = 1000;
-    //   return false;
-    // }
-  }
-  auto infoRelativePath = inst->getTDG().stream_config().info_path();
+  const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
   auto configuredStreams = this->enableCoalesce
                                ? streamRegion.coalesced_stream_ids_size()
@@ -252,8 +231,8 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
   // Sanity check on the number of configured streams.
   {
     if (configuredStreams * 3 > this->maxTotalRunAheadLength) {
-      panic("Too many streams configuredStreams for loop %s %d, FIFOSize %d.\n",
-            inst->getTDG().stream_config().loop().c_str(), configuredStreams,
+      panic("Too many streams configuredStreams for %s %d, FIFOSize %d.\n",
+            infoRelativePath.c_str(), configuredStreams,
             this->maxTotalRunAheadLength);
     }
   }
@@ -293,12 +272,12 @@ bool StreamEngine::canStreamConfig(const StreamConfigInst *inst) const {
   return true;
 }
 
-void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
-  assert(this->canStreamConfig(inst) && "Cannot configure stream.");
+void StreamEngine::dispatchStreamConfigure(const StreamConfigArgs &args) {
+  assert(this->canStreamConfig(args) && "Cannot configure stream.");
 
   this->numConfigured++;
 
-  auto infoRelativePath = inst->getTDG().stream_config().info_path();
+  const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
   // Initialize all the streams if this is the first time we encounter the loop.
@@ -353,16 +332,15 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
     }
 
     // Only to configure the history for single stream.
-    S->configure(inst);
+    S->configure(args.seqNum);
 
     // 2. Create new index.
-    S->FIFOIdx.newInstance(inst->getSeqNum());
+    S->FIFOIdx.newInstance(args.seqNum);
 
     /**
      * Initialize the DynamicInstanceState.
      */
-    S->dynamicInstanceStates.emplace_back(S->FIFOIdx.streamId,
-                                          inst->getSeqNum());
+    S->dynamicInstanceStates.emplace_back(S->FIFOIdx.streamId, args.seqNum);
   }
 
   // 3. Allocate new entries one by one for all streams.
@@ -384,9 +362,9 @@ void StreamEngine::dispatchStreamConfigure(StreamConfigInst *inst) {
   }
 }
 
-void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
+void StreamEngine::executeStreamConfigure(const StreamConfigArgs &args) {
 
-  auto infoRelativePath = inst->getTDG().stream_config().info_path();
+  const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
   /**
@@ -406,7 +384,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
 
   for (auto &S : configStreams) {
     // Simply notify the stream.
-    S->executeStreamConfigure(inst);
+    S->executeStreamConfigure(args.seqNum);
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
@@ -414,7 +392,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
       // Try to find the DynamicInstanceState.
       Stream::DynamicInstanceState *dynamicInstanceState = nullptr;
       for (auto &state : S->dynamicInstanceStates) {
-        if (state.configSeqNum == inst->getSeqNum()) {
+        if (state.configSeqNum == args.seqNum) {
           // We found the dynamicInstanceState.
           dynamicInstanceState = &state;
           break;
@@ -431,8 +409,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
         dynamicInstanceState->offloadedToCache = true;
 
         // Get the CacheStreamConfigureData.
-        auto streamConfigureData =
-            S->allocateCacheConfigureData(inst->getSeqNum());
+        auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
 
         // Set up the init physical address.
         auto initPAddr =
@@ -455,7 +432,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
                 streamConfigureData->indirectStreamConfigure =
                     std::shared_ptr<CacheStreamConfigureData>(
                         dependentStream->allocateCacheConfigureData(
-                            inst->getSeqNum()));
+                            args.seqNum));
                 break;
               }
             }
@@ -486,7 +463,7 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
                 streamConfigureData->indirectStreamConfigure =
                     std::shared_ptr<CacheStreamConfigureData>(
                         indirectStream->allocateCacheConfigureData(
-                            inst->getSeqNum()));
+                            args.seqNum));
                 streamConfigureData->indirectStreamConfigure
                     ->isOneIterationBehind = true;
                 break;
@@ -514,16 +491,15 @@ void StreamEngine::executeStreamConfigure(StreamConfigInst *inst) {
   }
 }
 
-void StreamEngine::commitStreamConfigure(StreamConfigInst *inst) {
+void StreamEngine::commitStreamConfigure(const StreamConfigArgs &args) {
   // So far we don't need to do anything.
 }
 
-bool StreamEngine::canStreamStep(const StreamStepInst *inst) const {
+bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
   /**
    * For all the streams get stepped, make sure that
    * allocSize - stepSize >= 2.
    */
-  auto stepStreamId = inst->getTDG().stream_step().stream_id();
   auto stepStream = this->getStream(stepStreamId);
 
   bool canStep = true;
@@ -538,15 +514,15 @@ bool StreamEngine::canStreamStep(const StreamStepInst *inst) const {
   return canStep;
 }
 
-void StreamEngine::dispatchStreamStep(StreamStepInst *inst) {
+void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
   /**
    * For all the streams get stepped, increase the stepped pointer.
    */
 
-  assert(this->canStreamStep(inst) && "canStreamStep assertion failed.");
+  assert(this->canStreamStep(stepStreamId) &&
+         "canStreamStep assertion failed.");
   this->numStepped++;
 
-  auto stepStreamId = inst->getTDG().stream_step().stream_id();
   auto stepStream = this->getStream(stepStreamId);
 
   // hack("Step stream %s.\n", stepStream->getStreamName().c_str());
@@ -576,8 +552,7 @@ void StreamEngine::dispatchStreamStep(StreamStepInst *inst) {
   }
 }
 
-void StreamEngine::commitStreamStep(StreamStepInst *inst) {
-  auto stepStreamId = inst->getTDG().stream_step().stream_id();
+void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   auto stepStream = this->getStream(stepStreamId);
 
   const auto &stepStreams = this->getStepStreamList(stepStream);
@@ -794,17 +769,18 @@ void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
   this->userElementMap.erase(inst);
 }
 
-void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
-  const auto &endStreamIds = inst->getTDG().stream_end().stream_ids();
+void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
+  const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
+  const auto &endStreamInfos = streamRegion.streams();
 
   /**
    * Dedup the coalesced stream ids.
    */
   std::unordered_set<Stream *> endedStreams;
-  for (auto iter = endStreamIds.rbegin(), end = endStreamIds.rend();
+  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
        iter != end; ++iter) {
     // Release in reverse order.
-    auto streamId = *iter;
+    auto streamId = iter->id();
     auto S = this->getStream(streamId);
     if (endedStreams.count(S) != 0) {
       continue;
@@ -845,17 +821,18 @@ void StreamEngine::dispatchStreamEnd(StreamEndInst *inst) {
   }
 }
 
-void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
-  const auto &endStreamIds = inst->getTDG().stream_end().stream_ids();
+void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
+  const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
+  const auto &endStreamInfos = streamRegion.streams();
 
   /**
    * Deduplicate the streams due to coalescing.
    */
   std::unordered_set<Stream *> endedStreams;
-  for (auto iter = endStreamIds.rbegin(), end = endStreamIds.rend();
+  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
        iter != end; ++iter) {
     // Release in reverse order.
-    auto streamId = *iter;
+    auto streamId = iter->id();
     auto S = this->getStream(streamId);
     if (endedStreams.count(S) != 0) {
       continue;
@@ -893,7 +870,7 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
     S->dynamicInstanceStates.pop_front();
 
     // Notify the stream.
-    S->commitStreamEnd(inst);
+    S->commitStreamEnd(args.seqNum);
   }
 
   this->allocateElements();
@@ -901,7 +878,7 @@ void StreamEngine::commitStreamEnd(StreamEndInst *inst) {
 
 bool StreamEngine::canStreamStoreDispatch(const StreamStoreInst *inst) const {
   /**
-   * * The only requirement about the SQ is already handled.
+   * * The only requirement about the SQ is already handled in the CPU.
    */
   return true;
 }
@@ -1062,9 +1039,6 @@ void StreamEngine::tick() {
   this->issueElements();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
-  }
-  if (this->blockCycle > 0) {
-    this->blockCycle--;
   }
 }
 

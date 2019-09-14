@@ -22,7 +22,7 @@ public:
   void prepareNewElement(StreamElement *element) override;
 
   bool isContinuous() const override;
-  void configure(StreamConfigInst *inst) override;
+  void configure(uint64_t seqNum) override;
 
   uint64_t getTrueFootprint() const override;
   uint64_t getFootprint(unsigned cacheBlockSize) const override;

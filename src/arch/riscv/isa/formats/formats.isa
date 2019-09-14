@@ -44,3 +44,8 @@
 
 // Include the unknown
 ##include "unknown.isa"
+
+//
+// ! GemForge
+//
+##include "gem_forge.isa"

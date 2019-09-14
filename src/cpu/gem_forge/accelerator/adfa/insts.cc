@@ -1,7 +1,7 @@
 #include "insts.hh"
 
-// #include "base/misc.hh""
 #include "base/trace.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "debug/AbstractDataFlowAccelerator.hh"
 

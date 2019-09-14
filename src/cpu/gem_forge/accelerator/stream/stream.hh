@@ -108,12 +108,12 @@ public:
   LLVMTraceCPU *getCPU() { return this->cpu; }
   GemForgeCPUDelegator *getCPUDelegator() { return this->cpuDelegator; }
 
-  virtual void configure(StreamConfigInst *inst) = 0;
+  virtual void configure(uint64_t seqNum) = 0;
 
-  void dispatchStreamConfigure(StreamConfigInst *inst);
-  void executeStreamConfigure(StreamConfigInst *inst);
+  void dispatchStreamConfigure(uint64_t seqNum);
+  void executeStreamConfigure(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t configInstSeqNum);
-  void commitStreamEnd(StreamEndInst *inst);
+  void commitStreamEnd(uint64_t seqNum);
 
   /**
    * ! Sean: StreamAwareCache

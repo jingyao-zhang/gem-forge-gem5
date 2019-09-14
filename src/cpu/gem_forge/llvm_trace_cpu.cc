@@ -3,6 +3,7 @@
 
 #include "base/debug.hh"
 #include "base/loader/object_file.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/thread_context.hh"
 #include "debug/GemForgeCPUDump.hh"
 #include "debug/LLVMTraceCPU.hh"
@@ -59,9 +60,6 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   // Initialize the hardware contexts.
   this->activeThreads.resize(params->hardwareContexts, nullptr);
 
-  // Initialize the accelerators.
-  this->accelManager = params->accelManager;
-
   this->runTimeProfiler = new RunTimeProfiler();
 
   if (!this->isStandalone()) {
@@ -112,10 +110,6 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
 }
 
 LLVMTraceCPU::~LLVMTraceCPU() {
-  delete this->accelManager;
-  this->accelManager = nullptr;
-  delete this->accelManagerParams;
-  this->accelManagerParams = nullptr;
   delete this->runTimeProfiler;
   this->runTimeProfiler = nullptr;
   delete this->mainThread;
@@ -125,6 +119,7 @@ LLVMTraceCPU::~LLVMTraceCPU() {
 LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
 
 void LLVMTraceCPU::init() {
+  BaseCPU::init();
   // Create the delegator and handshake with the accelerator manager.
   this->cpuDelegator = m5::make_unique<LLVMTraceCPUDelegator>(this);
   this->accelManager->handshake(this->cpuDelegator.get());

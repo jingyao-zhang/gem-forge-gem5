@@ -225,6 +225,9 @@ class BaseCPU(ClockedObject):
 
     tracer = Param.InstTracer(default_tracer, "Instruction tracer")
 
+    # GemForgeAcceleratorManager.
+    accelManager = Param.GemForgeAcceleratorManager(NULL, "GemForgeAcceleratorManager.")
+
     icache_port = MasterPort("Instruction Port")
     dcache_port = MasterPort("Data Port")
     _cached_ports = ['icache_port', 'dcache_port']

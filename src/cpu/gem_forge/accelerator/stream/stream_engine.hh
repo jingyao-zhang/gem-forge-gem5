@@ -30,14 +30,28 @@ public:
   void dump() override;
   void regStats() override;
 
-  bool canStreamConfig(const StreamConfigInst *inst) const;
-  void dispatchStreamConfigure(StreamConfigInst *inst);
-  void executeStreamConfigure(StreamConfigInst *inst);
-  void commitStreamConfigure(StreamConfigInst *inst);
+  /**
+   * To prepare for execution-driven simulation,
+   * decouple StreamEngine from StreamInstruction, but
+   * use the inst sequence number and protobuf field
+   * as the arguments.
+   */
 
-  bool canStreamStep(const StreamStepInst *inst) const;
-  void dispatchStreamStep(StreamStepInst *inst);
-  void commitStreamStep(StreamStepInst *inst);
+  struct StreamConfigArgs {
+    uint64_t seqNum; // Just the instruction sequence number.
+    const std::string &infoRelativePath; // Where to find the info.
+    StreamConfigArgs(uint64_t _seqNum, const std::string &_infoRelativePath)
+        : seqNum(_seqNum), infoRelativePath(_infoRelativePath) {}
+  };
+
+  bool canStreamConfig(const StreamConfigArgs &args) const;
+  void dispatchStreamConfigure(const StreamConfigArgs &args);
+  void executeStreamConfigure(const StreamConfigArgs &args);
+  void commitStreamConfigure(const StreamConfigArgs &args);
+
+  bool canStreamStep(uint64_t stepStreamId) const;
+  void dispatchStreamStep(uint64_t stepStreamId);
+  void commitStreamStep(uint64_t stepStreamId);
 
   int getStreamUserLQEntries(const LLVMDynamicInst *inst) const;
   std::list<std::unique_ptr<GemForgeLQCallback>>
@@ -47,8 +61,14 @@ public:
   void executeStreamUser(LLVMDynamicInst *inst);
   void commitStreamUser(LLVMDynamicInst *inst);
 
-  void dispatchStreamEnd(StreamEndInst *inst);
-  void commitStreamEnd(StreamEndInst *inst);
+  struct StreamEndArgs {
+    uint64_t seqNum;
+    const std::string &infoRelativePath;
+    StreamEndArgs(uint64_t _seqNum, const std::string &_infoRelativePath)
+        : seqNum(_seqNum), infoRelativePath(_infoRelativePath) {}
+  };
+  void dispatchStreamEnd(const StreamEndArgs &args);
+  void commitStreamEnd(const StreamEndArgs &args);
 
   bool canStreamStoreDispatch(const StreamStoreInst *inst) const;
   std::list<std::unique_ptr<GemForgeSQCallback>>
@@ -303,12 +323,6 @@ private:
     bool isWritebacked() override;
     void writebacked() override;
   };
-
-  /**
-   * Hack for certain block dispatch.
-   */
-  mutable size_t blockCycle;
-  mutable size_t blockSeqNum;
 
   /**
    * Helper function for stream aware cache.

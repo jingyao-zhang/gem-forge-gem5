@@ -89,9 +89,6 @@ class LLVMTraceCPU(BaseCPU):
                                        "Branch Predictor")
     useGem5BranchPredictor = Param.Bool(True, "Whether to use branch predictor from gem5.")
 
-    # GemForgeAcceleratorManager.
-    accelManager = Param.GemForgeAcceleratorManager(NULL, "GemForgeAcceleratorManager.")
-
     # Parameters for ADFA.
     adfaEnable = Param.Bool(False, "Whether the adfa is enabled.")
 
