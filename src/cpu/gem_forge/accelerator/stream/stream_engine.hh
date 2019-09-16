@@ -45,11 +45,14 @@ public:
   };
 
   bool canStreamConfig(const StreamConfigArgs &args) const;
-  void dispatchStreamConfigure(const StreamConfigArgs &args);
-  void executeStreamConfigure(const StreamConfigArgs &args);
-  void commitStreamConfigure(const StreamConfigArgs &args);
+  void dispatchStreamConfig(const StreamConfigArgs &args);
+  void executeStreamConfig(const StreamConfigArgs &args);
+  void commitStreamConfig(const StreamConfigArgs &args);
 
   bool canStreamConfig(uint64_t seqNum, Addr vadd) const;
+  void dispatchStreamConfig(uint64_t seqNum, Addr vadd);
+  void executeStreamConfig(uint64_t seqNum, Addr vadd);
+  void commitStreamConfig(uint64_t seqNum, Addr vadd);
 
   bool canStreamStep(uint64_t stepStreamId) const;
   void dispatchStreamStep(uint64_t stepStreamId);
@@ -71,6 +74,9 @@ public:
   };
   void dispatchStreamEnd(const StreamEndArgs &args);
   void commitStreamEnd(const StreamEndArgs &args);
+
+  void dispatchStreamEnd(uint64_t seqNum, Addr vadd);
+  void commitStreamEnd(uint64_t seqNum, Addr vadd);
 
   bool canStreamStoreDispatch(const StreamStoreInst *inst) const;
   std::list<std::unique_ptr<GemForgeSQCallback>>

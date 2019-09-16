@@ -145,7 +145,7 @@ int32_t SingleStream::getElementSize() const {
 }
 
 void SingleStream::configure(uint64_t seqNum) {
-  this->dispatchStreamConfigure(seqNum);
+  this->dispatchStreamConfig(seqNum);
   this->history->configure();
   this->patternStream->configure();
 }

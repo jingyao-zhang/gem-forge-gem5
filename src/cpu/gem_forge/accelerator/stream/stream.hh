@@ -110,8 +110,8 @@ public:
 
   virtual void configure(uint64_t seqNum) = 0;
 
-  void dispatchStreamConfigure(uint64_t seqNum);
-  void executeStreamConfigure(uint64_t seqNum);
+  void dispatchStreamConfig(uint64_t seqNum);
+  void executeStreamConfig(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t configInstSeqNum);
   void commitStreamEnd(uint64_t seqNum);
 

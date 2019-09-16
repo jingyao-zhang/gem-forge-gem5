@@ -111,11 +111,11 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
   this->stepStreamList.emplace_back(newStepDependentStream);
 }
 
-void Stream::dispatchStreamConfigure(uint64_t seqNum) {
+void Stream::dispatchStreamConfig(uint64_t seqNum) {
   this->configInstExecuted.emplace_back(seqNum, false);
 }
 
-void Stream::executeStreamConfigure(uint64_t seqNum) {
+void Stream::executeStreamConfig(uint64_t seqNum) {
   for (auto &record : this->configInstExecuted) {
     if (record.first == seqNum) {
       assert(!record.second &&

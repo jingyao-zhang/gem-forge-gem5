@@ -38,7 +38,7 @@ void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
   }
   auto args = StreamEngine::StreamConfigArgs(
       this->getSeqNum(), this->TDG.stream_config().info_path());
-  SE->dispatchStreamConfigure(args);
+  SE->dispatchStreamConfig(args);
 }
 
 void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
@@ -46,7 +46,7 @@ void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   auto args = StreamEngine::StreamConfigArgs(
       this->getSeqNum(), this->TDG.stream_config().info_path());
-  SE->executeStreamConfigure(args);
+  SE->executeStreamConfig(args);
   if (this->hasStreamUse()) {
     SE->executeStreamUser(this);
   }
@@ -61,7 +61,7 @@ void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   }
   auto args = StreamEngine::StreamConfigArgs(
       this->getSeqNum(), this->TDG.stream_config().info_path());
-  SE->commitStreamConfigure(args);
+  SE->commitStreamConfig(args);
 }
 
 uint64_t StreamConfigInst::getStreamId() const {

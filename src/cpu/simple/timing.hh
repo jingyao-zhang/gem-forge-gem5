@@ -225,13 +225,22 @@ class TimingSimpleCPU : public BaseSimpleCPU
 
         DcachePort(TimingSimpleCPU *_cpu)
             : TimingCPUPort(_cpu->name() + ".dcache_port", _cpu),
-              tickEvent(_cpu)
+              tickEvent(_cpu, this)
         {
            cacheBlockMask = ~(cpu->cacheLineSize() - 1);
         }
 
         Addr cacheBlockMask;
+        /**
+         * ! GemForge
+         * Make this virtual to be override.
+         * MasterPort::sendTimingReq is not virtual.
+         */
+        virtual bool sendTimingReqVirtual(PacketPtr pkt) {
+          return this->sendTimingReq(pkt);
+        }
       protected:
+        virtual void processTickEvent(PacketPtr pkt);
 
         /** Snoop a coherence request, we need to check if this causes
          * a wakeup event on a cpu that is monitoring an address
@@ -249,8 +258,17 @@ class TimingSimpleCPU : public BaseSimpleCPU
 
         struct DTickEvent : public TickEvent
         {
-            DTickEvent(TimingSimpleCPU *_cpu)
-                : TickEvent(_cpu) {}
+            /**
+             * ! GemForge
+             * Instead of calling completeDataAccess directly,
+             * we call processTickEvent so that GemForgeDcachePort can
+             * have different behavior while still uses the current
+             * mechanism to ensure only one reponse is processed per
+             * cycle.
+             */
+            DcachePort *port;
+            DTickEvent(TimingSimpleCPU *_cpu, DcachePort *_port)
+                : TickEvent(_cpu), port(_port) {}
             void process();
             const char *description() const { return "Timing CPU dcache tick"; }
         };
@@ -259,10 +277,43 @@ class TimingSimpleCPU : public BaseSimpleCPU
 
     };
 
+    /**
+     * GemForgeDcachePort uses a queue in the CPUPort to buffer the requests
+     * and never returns false on sendTimingReq. It drains the queue on retry
+     * at 2 packets per cycle. The response is handled one packet per cycle,
+     * which is the original design.
+     */
+    class GemForgeDcachePort : public DcachePort
+    {
+      public:
+        GemForgeDcachePort(TimingSimpleCPU *_cpu)
+          : DcachePort(_cpu),
+            blocked(false),
+            curCycle(0),
+            numUsedPorts(0),
+            drainEvent([this]()->void { this->drain(); }, name()) {}
+        bool sendTimingReqVirtual(PacketPtr pkt) override;
+      protected:
+        void processTickEvent(PacketPtr pkt) override;
+        void recvReqRetry() override;
+
+        const int numPorts = 2;
+        std::queue<PacketPtr> blockedQueue;
+        bool blocked;
+        Cycles curCycle;
+        int numUsedPorts;
+
+        EventFunctionWrapper drainEvent;
+
+        void drain();
+    };
+
+
     void updateCycleCounts();
 
     IcachePort icachePort;
-    DcachePort dcachePort;
+    // ! GemForge
+    std::unique_ptr<DcachePort> dcachePort;
 
     PacketPtr ifetch_pkt;
     PacketPtr dcache_pkt;
@@ -272,7 +323,7 @@ class TimingSimpleCPU : public BaseSimpleCPU
   protected:
 
      /** Return a reference to the data port. */
-    MasterPort &getDataPort() override { return dcachePort; }
+    MasterPort &getDataPort() override { return *dcachePort; }
 
     /** Return a reference to the instruction port. */
     MasterPort &getInstPort() override { return icachePort; }

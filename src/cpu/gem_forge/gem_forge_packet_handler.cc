@@ -43,6 +43,11 @@ PacketPtr GemForgePacketHandler::createStreamControlPacket(Addr paddr,
   return pkt;
 }
 
+bool GemForgePacketHandler::isGemForgePacket(PacketPtr pkt) {
+  auto handler = pkt->findNextSenderState<GemForgePacketHandler>();
+  return handler != nullptr;
+}
+
 void GemForgePacketHandler::handleGemForgePacketResponse(
     GemForgeCPUDelegator *cpuDelegator, PacketPtr pkt) {
   // Decode the handler information.

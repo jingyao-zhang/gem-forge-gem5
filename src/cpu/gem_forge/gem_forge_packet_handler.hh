@@ -29,6 +29,7 @@ public:
   static PacketPtr createStreamControlPacket(Addr paddr, MasterID masterID,
                                              int contextId, MemCmd::Command cmd,
                                              uint64_t data);
+  static bool isGemForgePacket(PacketPtr pkt);
   static void handleGemForgePacketResponse(GemForgeCPUDelegator *cpuDelegator,
                                            PacketPtr pkt);
   static void issueToMemory(GemForgeCPUDelegator *cpuDelegator, PacketPtr pkt);

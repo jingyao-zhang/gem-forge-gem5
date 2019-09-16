@@ -39,6 +39,8 @@ void debugStreamWithElements(Stream *S, const char *message) {
 }
 } // namespace
 
+#define SE_DPRINTF(format, args...) DPRINTF(StreamEngine, format, ##args)
+
 #define STREAM_DPRINTF(stream, format, args...)                                \
   DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
           ##args)
@@ -221,6 +223,21 @@ bool StreamEngine::canStreamConfig(uint64_t seqNum, Addr vaddr) const {
   return this->canStreamConfig(args);
 }
 
+#define GenerateStreamConfigEndMethod(stage, inst)                             \
+  void StreamEngine::stage##Stream##inst(uint64_t seqNum, Addr vaddr) {        \
+    auto infoRelativePath = cpuDelegator->readStringFromMem(vaddr);            \
+    Stream##inst##Args args(seqNum, infoRelativePath);                         \
+    this->stage##Stream##inst(args);                                           \
+  }
+
+GenerateStreamConfigEndMethod(dispatch, Config);
+GenerateStreamConfigEndMethod(execute, Config);
+GenerateStreamConfigEndMethod(commit, Config);
+GenerateStreamConfigEndMethod(dispatch, End);
+GenerateStreamConfigEndMethod(commit, End);
+
+#undef GenerateStreamConfigEndMethod
+
 bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
   /**
    * A stream can be configured iff. we can guarantee that it will be allocate
@@ -280,7 +297,7 @@ bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
   return true;
 }
 
-void StreamEngine::dispatchStreamConfigure(const StreamConfigArgs &args) {
+void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   assert(this->canStreamConfig(args) && "Cannot configure stream.");
 
   this->numConfigured++;
@@ -370,7 +387,7 @@ void StreamEngine::dispatchStreamConfigure(const StreamConfigArgs &args) {
   }
 }
 
-void StreamEngine::executeStreamConfigure(const StreamConfigArgs &args) {
+void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
 
   const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
@@ -392,7 +409,7 @@ void StreamEngine::executeStreamConfigure(const StreamConfigArgs &args) {
 
   for (auto &S : configStreams) {
     // Simply notify the stream.
-    S->executeStreamConfigure(args.seqNum);
+    S->executeStreamConfig(args.seqNum);
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
@@ -499,7 +516,7 @@ void StreamEngine::executeStreamConfigure(const StreamConfigArgs &args) {
   }
 }
 
-void StreamEngine::commitStreamConfigure(const StreamConfigArgs &args) {
+void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
   // So far we don't need to do anything.
 }
 
@@ -781,6 +798,8 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
   const auto &endStreamInfos = streamRegion.streams();
 
+  SE_DPRINTF("Dispatch StreamEnd for %s.\n", streamRegion.region().c_str());
+
   /**
    * Dedup the coalesced stream ids.
    */
@@ -832,6 +851,8 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
 void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
   const auto &endStreamInfos = streamRegion.streams();
+
+  SE_DPRINTF("Commit StreamEnd for %s.\n", streamRegion.region().c_str());
 
   /**
    * Deduplicate the streams due to coalescing.
@@ -1000,8 +1021,6 @@ void StreamEngine::initializeStreams(
         this->streamMap.emplace(streamId, newCoalescedStream);
         this->coalescedStreamIdMap.emplace(streamId, streamId);
         coalescedGroupToStreamMap.emplace(coalesceGroup, newCoalescedStream);
-        hack("Initialized stream %lu %s.\n", streamId,
-             newCoalescedStream->getStreamName().c_str());
       } else {
         // This is not the first time we encounter this coalesce group.
         // Add the config to the coalesced stream.
@@ -1020,8 +1039,6 @@ void StreamEngine::initializeStreams(
       auto newStream = new SingleStream(args, streamInfo);
       createdStreams.push_back(newStream);
       this->streamMap.emplace(streamId, newStream);
-      hack("Initialized stream %lu %s.\n", streamId,
-           newStream->getStreamName().c_str());
     }
   }
 

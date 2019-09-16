@@ -81,7 +81,7 @@ void CoalescedStream::initializeBackBaseStreams() {
 }
 
 void CoalescedStream::configure(uint64_t seqNum) {
-  this->dispatchStreamConfigure(seqNum);
+  this->dispatchStreamConfig(seqNum);
   for (auto &S : this->coalescedStreams) {
     S.history->configure();
     S.patternStream->configure();

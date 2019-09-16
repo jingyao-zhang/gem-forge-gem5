@@ -45,6 +45,7 @@
 // ! GemForge
 #include "cpu/simple/timing_simple_cpu_delegator.hh"
 #include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
+#include "cpu/gem_forge/gem_forge_packet_handler.hh"
 
 #include "arch/locked_mem.hh"
 #include "arch/mmapped_ipr.hh"
@@ -85,7 +86,12 @@ TimingSimpleCPU::TimingCPUPort::TickEvent::schedule(PacketPtr _pkt, Tick t)
 
 TimingSimpleCPU::TimingSimpleCPU(TimingSimpleCPUParams *p)
     : BaseSimpleCPU(p), fetchTranslation(this), icachePort(this),
-      dcachePort(this), ifetch_pkt(NULL), dcache_pkt(NULL), previousCycle(0),
+      dcachePort(
+          p->accelManager
+            ? (new TimingSimpleCPU::GemForgeDcachePort(this))
+            : (new TimingSimpleCPU::DcachePort(this))
+      ),
+      ifetch_pkt(NULL), dcache_pkt(NULL), previousCycle(0),
       fetchEvent([this]{ fetch(); }, name())
 {
     _status = Idle;
@@ -280,7 +286,7 @@ TimingSimpleCPU::handleReadPacket(PacketPtr pkt)
         new IprEvent(pkt, this, clockEdge(delay));
         _status = DcacheWaitResponse;
         dcache_pkt = NULL;
-    } else if (!dcachePort.sendTimingReq(pkt)) {
+    } else if (!dcachePort->sendTimingReqVirtual(pkt)) {
         _status = DcacheRetry;
         dcache_pkt = pkt;
     } else {
@@ -311,7 +317,8 @@ TimingSimpleCPU::sendData(const RequestPtr &req, uint8_t *data, uint64_t *res,
         bool do_access = true;  // flag to suppress cache access
 
         if (req->isLLSC()) {
-            do_access = TheISA::handleLockedWrite(thread, req, dcachePort.cacheBlockMask);
+            do_access = TheISA::handleLockedWrite(
+                thread, req, dcachePort->cacheBlockMask);
         } else if (req->isCondSwap()) {
             assert(res);
             req->setExtraData(*res);
@@ -490,7 +497,7 @@ TimingSimpleCPU::handleWritePacket()
         new IprEvent(dcache_pkt, this, clockEdge(delay));
         _status = DcacheWaitResponse;
         dcache_pkt = NULL;
-    } else if (!dcachePort.sendTimingReq(dcache_pkt)) {
+    } else if (!dcachePort->sendTimingReqVirtual(dcache_pkt)) {
         _status = DcacheRetry;
     } else {
         _status = DcacheWaitResponse;
@@ -625,7 +632,7 @@ TimingSimpleCPU::threadSnoop(PacketPtr pkt, ThreadID sender)
                 wakeup(tid);
             }
             TheISA::handleLockedSnoop(threadInfo[tid]->thread, pkt,
-                    dcachePort.cacheBlockMask);
+                    dcachePort->cacheBlockMask);
         }
     }
 }
@@ -1012,10 +1019,15 @@ TimingSimpleCPU::DcachePort::recvTimingResp(PacketPtr pkt)
     }
 }
 
+void TimingSimpleCPU::DcachePort::processTickEvent(PacketPtr pkt)
+{
+    cpu->completeDataAccess(pkt);
+}
+
 void
 TimingSimpleCPU::DcachePort::DTickEvent::process()
 {
-    cpu->completeDataAccess(pkt);
+    port->processTickEvent(pkt);
 }
 
 void
@@ -1062,6 +1074,95 @@ TimingSimpleCPU::DcachePort::recvReqRetry()
     }
 }
 
+//
+// ! GemForge
+//
+bool TimingSimpleCPU::GemForgeDcachePort::sendTimingReqVirtual(PacketPtr pkt)
+{
+    // Update the used port info.
+    if (this->curCycle != cpu->curCycle()) {
+        this->curCycle = cpu->curCycle();
+        this->numUsedPorts = 0;
+    }
+    if (this->blocked ||
+        this->numUsedPorts == this->numPorts ||
+        this->blockedQueue.size()) {
+        /**
+         * Three reasons:
+         * 1. Blocked.
+         * 2. Ports are all used in this cycle.
+         * 3. Waiting for some undrained packets.
+         */
+        this->blockedQueue.push(pkt);
+        assert(this->blockedQueue.size() < 80 && "Too many blocked packets.");
+
+        // If not the first reason, schedule the drain event.
+        if (!this->blocked && !this->drainEvent.scheduled()) {
+            cpu->schedule(this->drainEvent, cpu->clockEdge(Cycles(1)));
+        }
+        return true;
+    }
+    assert(!this->drainEvent.scheduled());
+    this->blockedQueue.push(pkt);
+    this->drain();
+    return true;
+}
+
+void TimingSimpleCPU::GemForgeDcachePort::recvReqRetry() {
+    assert(this->blocked && "recvReqRetry while not blocked.");
+    assert(!this->blockedQueue.empty()
+        && "recvReqRetry with empty blockedQueue.");
+    this->blocked = false;
+    assert(!this->drainEvent.scheduled()
+        && "Drain event should have not been scheduled.");
+    this->drain();
+}
+
+void TimingSimpleCPU::GemForgeDcachePort::drain() {
+    assert(!this->blocked && "drain while blocked.");
+    assert(!this->blockedQueue.empty()
+        && "drain with empty blockedQueue.");
+    // Update the used port info.
+    if (this->curCycle != cpu->curCycle()) {
+        this->curCycle = cpu->curCycle();
+        this->numUsedPorts = 0;
+    }
+    // Drain the blocked queue.
+    while (!this->blockedQueue.empty()
+        && !this->blocked
+        && this->numUsedPorts < this->numPorts) {
+        auto pkt = this->blockedQueue.front();
+        auto succeed = DcachePort::sendTimingReqVirtual(pkt);
+        if (succeed) {
+            this->numUsedPorts++;
+            if (GemForgePacketHandler::isGemForgePacket(pkt)) {
+                GemForgePacketHandler::issueToMemory(
+                    cpu->cpuDelegator.get(),
+                    pkt);
+            }
+            this->blockedQueue.pop();
+        } else {
+            // Blocked.
+            this->blocked = true;
+        }
+    }
+    if (!this->blocked && !this->blockedQueue.empty()) {
+        // We haven't finished.
+        assert(!this->drainEvent.scheduled());
+        cpu->schedule(this->drainEvent, cpu->clockEdge(Cycles(1)));
+    }
+}
+
+void TimingSimpleCPU::GemForgeDcachePort::processTickEvent(PacketPtr pkt) {
+    // Intercept the GemForgePackets.
+    if (GemForgePacketHandler::isGemForgePacket(pkt)) {
+        GemForgePacketHandler::handleGemForgePacketResponse(
+            cpu->cpuDelegator.get(), pkt);
+        return;
+    }
+    cpu->completeDataAccess(pkt);
+}
+
 TimingSimpleCPU::IprEvent::IprEvent(Packet *_pkt, TimingSimpleCPU *_cpu,
     Tick t)
     : pkt(_pkt), cpu(_cpu)
@@ -1085,7 +1186,7 @@ TimingSimpleCPU::IprEvent::description() const
 void
 TimingSimpleCPU::printAddr(Addr a)
 {
-    dcachePort.printAddr(a);
+    dcachePort->printAddr(a);
 }
 
 

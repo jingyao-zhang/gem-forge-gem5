@@ -62,18 +62,24 @@ bool TimingSimpleCPUDelegator::canDispatch(StaticInstPtr staticInst,
 void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
                                         ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_DISPATCH);
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
+  pimpl->isaHandler.dispatch(dynInfo, xc);
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
 
 void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
                                        ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
+  pimpl->isaHandler.execute(dynInfo, xc);
   pimpl->state = Impl::StateE::BEFORE_COMMIT;
 }
 
 void TimingSimpleCPUDelegator::commit(StaticInstPtr staticInst,
                                       ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
+  pimpl->isaHandler.commit(dynInfo, xc);
   pimpl->state = Impl::StateE::BEFORE_DISPATCH;
   pimpl->curSeqNum++;
 }
@@ -104,4 +110,14 @@ Addr TimingSimpleCPUDelegator::translateVAddrOracle(Addr vaddr) {
   // TODO: Let the caller handle this.
   panic("Translate vaddr failed %#x.", vaddr);
   return paddr;
+}
+
+void TimingSimpleCPUDelegator::sendRequest(PacketPtr pkt) {
+  // The CPU's port should already be a GemForgeDcachePort.
+  assert(dynamic_cast<TimingSimpleCPU::GemForgeDcachePort *>(
+             pimpl->cpu->dcachePort.get()) &&
+         "GemForgeCPUDelegator::sendRequest called when the DcachePort is not "
+         "a GemForge port.");
+  auto succeed = pimpl->cpu->dcachePort->sendTimingReqVirtual(pkt);
+  assert(succeed && "GemForgePort should always succeed on sending TimingReq.");
 }

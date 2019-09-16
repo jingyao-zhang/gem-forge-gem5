@@ -17,7 +17,7 @@ public:
 
   Addr translateVAddrOracle(Addr vaddr) override;
 
-  void sendRequest(PacketPtr pkt) override { panic("Not implemented yet."); }
+  void sendRequest(PacketPtr pkt) override;
 
   /**
    * Interface to the CPU.
