@@ -70,8 +70,10 @@ void
 TimingSimpleCPU::init()
 {
     BaseSimpleCPU::init();
-    this->cpuDelegator = m5::make_unique<TimingSimpleCPUDelegator>(this);
-    this->accelManager->handshake(this->cpuDelegator.get());
+    if (this->accelManager) {
+        this->cpuDelegator = m5::make_unique<TimingSimpleCPUDelegator>(this);
+        this->accelManager->handshake(this->cpuDelegator.get());
+    }
 }
 
 void
@@ -819,8 +821,20 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
             advanceInst(fault);
         }
     } else if (curStaticInst) {
+
+        // ! GemForge.
+        if (this->cpuDelegator) {
+            assert(this->cpuDelegator->canDispatch(curStaticInst, t_info));
+            this->cpuDelegator->dispatch(curStaticInst, t_info);
+            this->cpuDelegator->execute(curStaticInst, t_info);
+        }
         // non-memory instruction: execute completely now
         Fault fault = curStaticInst->execute(&t_info, traceData);
+
+        // ! GemForge.
+        if (this->cpuDelegator) {
+            this->cpuDelegator->commit(curStaticInst, t_info);
+        }
 
         // keep an instruction count
         if (fault == NoFault)

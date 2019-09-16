@@ -270,24 +270,6 @@ class StaticInst : public RefCounted, public StaticInstFlags
   public:
     virtual ~StaticInst();
 
-    /**
-     * ! GemForge
-     * Most GemForgeAccelrators will assume an out-of-order cpu.
-     * For those instructions, we need additional hooks.
-     */
-    virtual bool canDispatch(ExecContext *xc,
-                             Trace::InstRecord *traceData) const {
-        return true;
-    }
-    virtual Fault dispatch(ExecContext *xc,
-                           Trace::InstRecord *traceData) const {
-        return NoFault;
-    }
-    virtual Fault commit(ExecContext *xc,
-                         Trace::InstRecord *traceData) const {
-        return NoFault;
-    }
-
     virtual Fault execute(ExecContext *xc,
                           Trace::InstRecord *traceData) const = 0;
 

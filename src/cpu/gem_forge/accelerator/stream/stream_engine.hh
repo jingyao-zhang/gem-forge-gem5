@@ -49,6 +49,8 @@ public:
   void executeStreamConfigure(const StreamConfigArgs &args);
   void commitStreamConfigure(const StreamConfigArgs &args);
 
+  bool canStreamConfig(uint64_t seqNum, Addr vadd) const;
+
   bool canStreamStep(uint64_t stepStreamId) const;
   void dispatchStreamStep(uint64_t stepStreamId);
   void commitStreamStep(uint64_t stepStreamId);

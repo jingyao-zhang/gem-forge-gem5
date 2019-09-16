@@ -10,20 +10,26 @@
 
 class TimingSimpleCPUDelegator : public GemForgeCPUDelegator {
 public:
-  TimingSimpleCPUDelegator(TimingSimpleCPU *_cpu)
-      : GemForgeCPUDelegator(CPUTypeE::TIMING_SIMPLE, _cpu), cpu(_cpu) {}
+  TimingSimpleCPUDelegator(TimingSimpleCPU *_cpu);
+  ~TimingSimpleCPUDelegator() override;
 
-  const std::string &getTraceExtraFolder() const override {
-    panic("Not implemented yet.");
-  }
+  const std::string &getTraceExtraFolder() const override;
 
-  Addr translateVAddrOracle(Addr vaddr) override {
-    panic("Not implemented yet.");
-  }
+  Addr translateVAddrOracle(Addr vaddr) override;
 
   void sendRequest(PacketPtr pkt) override { panic("Not implemented yet."); }
 
-  TimingSimpleCPU *cpu;
+  /**
+   * Interface to the CPU.
+   */
+  bool canDispatch(StaticInstPtr staticInst, ExecContext &xc);
+  void dispatch(StaticInstPtr staticInst, ExecContext &xc);
+  void execute(StaticInstPtr staticInst, ExecContext &xc);
+  void commit(StaticInstPtr staticInst, ExecContext &xc);
+
+private:
+  class Impl;
+  std::unique_ptr<Impl> pimpl;
 };
 
 #endif

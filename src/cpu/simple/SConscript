@@ -46,6 +46,7 @@ if 'TimingSimpleCPU' in env['CPU_MODELS']:
     need_simple_base = True
     SimObject('TimingSimpleCPU.py')
     Source('timing.cc')
+    Source('timing_simple_cpu_delegator.cc')
 
 if 'AtomicSimpleCPU' in env['CPU_MODELS'] or \
        'TimingSimpleCPU' in env['CPU_MODELS']:

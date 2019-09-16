@@ -38,6 +38,8 @@ def template GemForgeExecute {{
         ExecContext *xc, Trace::InstRecord *traceData) const {
         Fault fault = NoFault;
 
+        %(op_decl)s;
+        %(op_rd)s;
         if (fault == NoFault) {
             %(can_dispatch_code)s;
         }

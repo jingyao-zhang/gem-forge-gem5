@@ -33,11 +33,6 @@ public:
   MasterID dataMasterId() const { return this->baseCPU->dataMasterId(); }
 
   /**
-   * Really not sure how this should be implemeted in normal cpu.
-   */
-  virtual const std::string &getTraceExtraFolder() const = 0;
-
-  /**
    * The accelerators are implemented as SimObject, not ClockedObject,
    * so we provide some timing and scheduling functionality in the delegator.
    */
@@ -46,6 +41,16 @@ public:
   void schedule(Event *event, Cycles latency) {
     this->baseCPU->schedule(event, this->baseCPU->clockEdge(latency));
   }
+
+  /**
+   * Read a zero-terminated string from the memory.
+   */
+  std::string readStringFromMem(Addr vaddr);
+
+  /**
+   * Really not sure how this should be implemeted in normal cpu.
+   */
+  virtual const std::string &getTraceExtraFolder() const = 0;
 
   /**
    * Immediately translate a vaddr to paddr. Panic when not possible.

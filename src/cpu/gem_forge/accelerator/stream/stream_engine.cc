@@ -213,6 +213,14 @@ void StreamEngine::regStats() {
       .flags(Stats::pdf);
 }
 
+bool StreamEngine::canStreamConfig(uint64_t seqNum, Addr vaddr) const {
+  hack("Check if canStreamConfig at seq %llu vaddr %#x.\n", seqNum, vaddr);
+  auto infoRelativePath = cpuDelegator->readStringFromMem(vaddr);
+  hack("Check if canStreamConfig %s.\n", infoRelativePath.c_str());
+  StreamConfigArgs args(seqNum, infoRelativePath);
+  return this->canStreamConfig(args);
+}
+
 bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
   /**
    * A stream can be configured iff. we can guarantee that it will be allocate

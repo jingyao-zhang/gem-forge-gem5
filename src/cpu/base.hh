@@ -209,7 +209,7 @@ class BaseCPU : public ClockedObject
     /**
      * ! GemForge
      */
-    GemForgeAcceleratorManager *getAccelManager();
+    GemForgeAcceleratorManager *getAccelManager() { return accelManager; }
 
     TheISA::MicrocodeRom microcodeRom;
 

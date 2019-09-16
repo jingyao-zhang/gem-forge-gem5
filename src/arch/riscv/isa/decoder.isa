@@ -400,56 +400,24 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x02: decode FUNCT3 {
-            format GemForgeIOp {
+            format IOp {
                 0x0: ssp_stream_config({{
-                    // canDispatch
-                }}, {{
-                    // dispatch
-                }}, {{
-                    // execute
-                }}, {{
-                    // commit
+                    // Declare the used register.
+                    (void)Rs1;
                 }},
                 uint64_t, No_OpClass);
                 0x1: ssp_stream_end({{
-                    // canDispatch
-                }}, {{
-                    // dispatch
-                }}, {{
-                    // execute
-                }}, {{
-                    // commit
                 }},
                 uint64_t, No_OpClass);
                 0x2: ssp_stream_input({{
-                    // canDispatch
-                }}, {{
-                    // dispatch
-                }}, {{
-                    // execute
-                }}, {{
-                    // commit
                 }},
                 uint64_t, No_OpClass);
                 0x3: ssp_stream_step({{
-                    // canDispatch
-                }}, {{
-                    // dispatch
-                }}, {{
-                    // execute
-                }}, {{
-                    // commit
                 }},
                 uint64_t, No_OpClass);
                 0x4: ssp_stream_load({{
-                    // canDispatch
-                }}, {{
-                    // dispatch
-                }}, {{
                     // execute
                     Rd = 2;
-                }}, {{
-                    // commit
                 }}, uint64_t, No_OpClass);
             }
         }
