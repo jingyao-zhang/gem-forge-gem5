@@ -9,7 +9,6 @@
 #include "base/types.hh"
 #include "mem/packet.hh"
 
-// Parse the instructions from a protobuf.
 #include "config/have_protobuf.hh"
 #ifndef HAVE_PROTOBUF
 #error "Require protobuf to parse stream info."

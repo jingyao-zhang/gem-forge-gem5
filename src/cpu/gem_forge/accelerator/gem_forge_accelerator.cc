@@ -17,7 +17,8 @@ void GemForgeAccelerator::handshake(GemForgeCPUDelegator *_cpuDelegator,
 
 GemForgeAcceleratorManager::GemForgeAcceleratorManager(
     GemForgeAcceleratorManagerParams *params)
-    : SimObject(params), accelerators(params->accelerators) {}
+    : SimObject(params), accelerators(params->accelerators),
+      cpuDelegator(nullptr), tickEvent([this] { this->tick(); }, name()) {}
 
 GemForgeAcceleratorManager::~GemForgeAcceleratorManager() {}
 
@@ -28,9 +29,11 @@ void GemForgeAcceleratorManager::addAccelerator(
 
 void GemForgeAcceleratorManager::handshake(
     GemForgeCPUDelegator *_cpuDelegator) {
+  cpuDelegator = _cpuDelegator;
   for (auto accelerator : this->accelerators) {
     accelerator->handshake(_cpuDelegator, this);
   }
+  cpuDelegator->schedule(&tickEvent, Cycles(1));
 }
 
 void GemForgeAcceleratorManager::handle(LLVMDynamicInst *inst) {
@@ -46,6 +49,8 @@ void GemForgeAcceleratorManager::tick() {
   for (auto accelerator : this->accelerators) {
     accelerator->tick();
   }
+  // Schedule the next tick event.
+  cpuDelegator->schedule(&tickEvent, Cycles(1));
 }
 
 void GemForgeAcceleratorManager::dump() {

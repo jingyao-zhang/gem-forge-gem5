@@ -64,9 +64,6 @@ if env['TARGET_ISA'] == 'riscv':
 
     Source('bare_metal/system.cc')
 
-    # ! GemForge
-    Source('gem_forge_isa_handler.cc')
-
     SimObject('RiscvInterrupts.py')
     SimObject('RiscvISA.py')
     SimObject('RiscvTLB.py')

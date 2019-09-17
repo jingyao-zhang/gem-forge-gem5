@@ -1077,6 +1077,11 @@ TimingSimpleCPU::DcachePort::recvReqRetry()
 //
 // ! GemForge
 //
+GemForgeCPUDelegator *TimingSimpleCPU::getCPUDelegator()
+{
+  return cpuDelegator.get();
+}
+
 bool TimingSimpleCPU::GemForgeDcachePort::sendTimingReqVirtual(PacketPtr pkt)
 {
     // Update the used port info.

@@ -72,6 +72,7 @@ struct BaseCPUParams;
 class CheckerCPU;
 class ThreadContext;
 class GemForgeAcceleratorManager;
+class GemForgeCPUDelegator;
 
 struct AddressMonitor
 {
@@ -210,6 +211,9 @@ class BaseCPU : public ClockedObject
      * ! GemForge
      */
     GemForgeAcceleratorManager *getAccelManager() { return accelManager; }
+    virtual GemForgeCPUDelegator *getCPUDelegator() {
+      return nullptr;
+    }
 
     TheISA::MicrocodeRom microcodeRom;
 

@@ -206,7 +206,7 @@ void LLVMTraceCPU::tick() {
   this->decodeStage.tick();
   this->renameStage.tick();
   this->iewStage.tick();
-  this->accelManager->tick();
+  // this->accelManager->tick();
   this->commitStage.tick();
 
   this->fetchToDecode.advance();

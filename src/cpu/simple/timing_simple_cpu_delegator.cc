@@ -1,7 +1,7 @@
 #include "timing_simple_cpu_delegator.hh"
 
 #if THE_ISA == RISCV_ISA
-#include "arch/riscv/gem_forge_isa_handler.hh"
+#include "cpu/gem_forge/accelerator/arch/riscv/gem_forge_isa_handler.hh"
 #else
 #error "Unsupported ISA."
 #endif

@@ -215,29 +215,6 @@ void StreamEngine::regStats() {
       .flags(Stats::pdf);
 }
 
-bool StreamEngine::canStreamConfig(uint64_t seqNum, Addr vaddr) const {
-  hack("Check if canStreamConfig at seq %llu vaddr %#x.\n", seqNum, vaddr);
-  auto infoRelativePath = cpuDelegator->readStringFromMem(vaddr);
-  hack("Check if canStreamConfig %s.\n", infoRelativePath.c_str());
-  StreamConfigArgs args(seqNum, infoRelativePath);
-  return this->canStreamConfig(args);
-}
-
-#define GenerateStreamConfigEndMethod(stage, inst)                             \
-  void StreamEngine::stage##Stream##inst(uint64_t seqNum, Addr vaddr) {        \
-    auto infoRelativePath = cpuDelegator->readStringFromMem(vaddr);            \
-    Stream##inst##Args args(seqNum, infoRelativePath);                         \
-    this->stage##Stream##inst(args);                                           \
-  }
-
-GenerateStreamConfigEndMethod(dispatch, Config);
-GenerateStreamConfigEndMethod(execute, Config);
-GenerateStreamConfigEndMethod(commit, Config);
-GenerateStreamConfigEndMethod(dispatch, End);
-GenerateStreamConfigEndMethod(commit, End);
-
-#undef GenerateStreamConfigEndMethod
-
 bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
   /**
    * A stream can be configured iff. we can guarantee that it will be allocate
@@ -534,8 +511,8 @@ bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
       break;
     }
   }
-  // hack("Check if can step stream %s: %d.\n",
-  //      stepStream->getStreamName().c_str(), canStep);
+  hack("Check if can step stream %s: %d.\n",
+       stepStream->getStreamName().c_str(), canStep);
   return canStep;
 }
 

@@ -60,6 +60,8 @@ class RegOp : public RiscvStaticInst
 template<typename I>
 class ImmOp : public RiscvStaticInst
 {
+  public:
+    I getImm() const { return imm; }
   protected:
     I imm;
 

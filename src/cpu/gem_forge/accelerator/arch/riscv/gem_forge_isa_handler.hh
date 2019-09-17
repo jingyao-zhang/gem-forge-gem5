@@ -5,19 +5,11 @@
  * A place to implement the actual instruction functionality.
  */
 
-#include "cpu/static_inst.hh"
+#include "stream/riscv_stream_engine.hh"
 
 #include <unordered_map>
 
 namespace RiscvISA {
-
-struct GemForgeDynInstInfo {
-  uint64_t seqNum;
-  StaticInst *staticInst;
-  GemForgeDynInstInfo(uint64_t _seqNum, StaticInst *_staticInst)
-      : seqNum(_seqNum), staticInst(_staticInst) {}
-};
-
 class GemForgeISAHandler {
 public:
   bool canDispatch(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
@@ -41,6 +33,8 @@ private:
 
   GemForgeStaticInstInfo &getStaticInstInfo(const TheISA::PCState &pcState,
                                             const GemForgeDynInstInfo &dynInfo);
+
+  RISCVStreamEngine se;
 };
 
 } // namespace RiscvISA

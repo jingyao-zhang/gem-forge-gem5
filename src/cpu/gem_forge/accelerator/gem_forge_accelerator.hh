@@ -75,6 +75,9 @@ public:
 
 private:
   std::vector<GemForgeAccelerator *> &accelerators;
+  GemForgeCPUDelegator *cpuDelegator;
+
+  EventFunctionWrapper tickEvent;
 };
 
 #endif

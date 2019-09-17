@@ -2,24 +2,20 @@
 
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
-#include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
-
-#define GEM_FORGE_INST_GET_CPU() (xc.tcBase()->getCpuPtr())
-#define GEM_FORGE_INST_GET_ACCEL_MANAGER()                                     \
-  (GEM_FORGE_INST_GET_CPU()->getAccelManager())
-#define GEM_FORGE_INST_GET_STREAM_ENGINE()                                     \
-  (GEM_FORGE_INST_GET_ACCEL_MANAGER()->getStreamEngine())
 
 namespace RiscvISA {
 bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo,
                                      ExecContext &xc) {
   auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
-  if (staticInstInfo.op == GemForgeStaticInstOpE::STREAM_CONFIG) {
-    auto se = GEM_FORGE_INST_GET_STREAM_ENGINE();
-    auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-    return se->canStreamConfig(dynInfo.seqNum, rs1);
+  switch (staticInstInfo.op) {
+  case GemForgeStaticInstOpE::STREAM_CONFIG: {
+    return se.canDispatchStreamConfig(dynInfo, xc);
   }
-  return true;
+  case GemForgeStaticInstOpE::STREAM_STEP: {
+    return se.canDispatchStreamStep(dynInfo, xc);
+  }
+  default: { return true; }
+  }
 }
 
 void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
@@ -27,15 +23,15 @@ void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
   auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
   switch (staticInstInfo.op) {
   case GemForgeStaticInstOpE::STREAM_CONFIG: {
-    auto se = GEM_FORGE_INST_GET_STREAM_ENGINE();
-    auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-    se->dispatchStreamConfig(dynInfo.seqNum, rs1);
+    se.dispatchStreamConfig(dynInfo, xc);
     break;
   }
   case GemForgeStaticInstOpE::STREAM_END: {
-    auto se = GEM_FORGE_INST_GET_STREAM_ENGINE();
-    auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-    se->dispatchStreamEnd(dynInfo.seqNum, rs1);
+    se.dispatchStreamEnd(dynInfo, xc);
+    break;
+  }
+  case GemForgeStaticInstOpE::STREAM_STEP: {
+    se.dispatchStreamStep(dynInfo, xc);
     break;
   }
   default: { break; }
@@ -45,10 +41,12 @@ void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
 void GemForgeISAHandler::execute(const GemForgeDynInstInfo &dynInfo,
                                  ExecContext &xc) {
   auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
-  if (staticInstInfo.op == GemForgeStaticInstOpE::STREAM_CONFIG) {
-    auto se = GEM_FORGE_INST_GET_STREAM_ENGINE();
-    auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-    se->executeStreamConfig(dynInfo.seqNum, rs1);
+  switch (staticInstInfo.op) {
+  case GemForgeStaticInstOpE::STREAM_CONFIG: {
+    se.executeStreamConfig(dynInfo, xc);
+    break;
+  }
+  default: { break; }
   }
 }
 
@@ -57,15 +55,15 @@ void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo,
   auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
   switch (staticInstInfo.op) {
   case GemForgeStaticInstOpE::STREAM_CONFIG: {
-    auto se = GEM_FORGE_INST_GET_STREAM_ENGINE();
-    auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-    se->commitStreamConfig(dynInfo.seqNum, rs1);
+    se.commitStreamConfig(dynInfo, xc);
     break;
   }
   case GemForgeStaticInstOpE::STREAM_END: {
-    auto se = GEM_FORGE_INST_GET_STREAM_ENGINE();
-    auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-    se->commitStreamEnd(dynInfo.seqNum, rs1);
+    se.commitStreamEnd(dynInfo, xc);
+    break;
+  }
+  case GemForgeStaticInstOpE::STREAM_STEP: {
+    se.commitStreamStep(dynInfo, xc);
     break;
   }
   default: { break; }
@@ -91,6 +89,8 @@ GemForgeISAHandler::getStaticInstInfo(const TheISA::PCState &pcState,
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_CONFIG;
     } else if (instName == "ssp_stream_end") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_END;
+    } else if (instName == "ssp_stream_step") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_STEP;
     }
   }
   return emplaceRet.first->second;
