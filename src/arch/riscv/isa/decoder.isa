@@ -414,10 +414,13 @@ decode QUADRANT default Unknown::unknown() {
                 0x2: ssp_stream_input({{
                 }},
                 uint64_t, No_OpClass);
-                0x3: ssp_stream_step({{
+                0x3: ssp_stream_ready({{
                 }},
                 uint64_t, No_OpClass);
-                0x4: ssp_stream_load({{
+                0x4: ssp_stream_step({{
+                }},
+                uint64_t, No_OpClass);
+                0x5: ssp_stream_load({{
                     // execute
                     Rd = 2;
                 }}, uint64_t, No_OpClass);

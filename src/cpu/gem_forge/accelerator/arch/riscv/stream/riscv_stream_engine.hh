@@ -43,6 +43,8 @@ public:
   void commitStream##Inst(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
 
   DeclareStreamInstHandler(Config);
+  DeclareStreamInstHandler(Input);
+  DeclareStreamInstHandler(Ready);
   DeclareStreamInstHandler(End);
   DeclareStreamInstHandler(Step);
 
@@ -73,19 +75,75 @@ private:
   uint64_t lookupRegionStreamId(int regionStreamId);
 
   /**
+   * StreamEngine is configured through a sequence of instructions:
+   * ssp.stream.config
+   * ssp.stream.input*
+   * ssp.stream.ready
+   * We hide this detail from the StreamEngine. When dispatched, all these
+   * instructions will
+   * be marked with the current DynStreamRegionInfo.
+   * 1. When ssp.stream.ready dispatches, we call StreamEngine::canStreamConfig
+   * and StreamEngine::dispatchStreamConfig.
+   * 2. When all the instructions are executed, we inform the
+   * StreamEngine::executeStreamConfig.
+   * 3. When ssp.stream.ready commits, we call StreamEngine::commitStreamEngine.
+   */
+  struct DynStreamRegionInfo {
+    const std::string infoRelativePath;
+    bool streamReadyDispatched = false;
+    uint64_t streamReadySeqNum = 0;
+    int numDispatchedInsts = 0;
+    int numExecutedInsts = 0;
+    DynStreamRegionInfo(const std::string &_infoRelativePath)
+        : infoRelativePath(_infoRelativePath) {}
+  };
+
+  /**
+   * Store the current stream region info being used at dispatch stage.
+   * We need a shared_ptr as it will be stored in DynStreamInstInfo and used
+   * later in execution stage, etc.
+   */
+  std::shared_ptr<DynStreamRegionInfo> curStreamRegionInfo;
+
+  /**
+   * We need some extra information for each dynamic stream information.
+   * ssp.stream.config
+   * ssp.stream.input
+   * ssp.stream.ready
+   *   --> They require DynStreamRegionInfo.
+   * ssp.stream.step
+   *   --> Need the translated StreamId.
+   */
+  struct DynStreamConfigInstInfo {
+    std::shared_ptr<DynStreamRegionInfo> dynStreamRegionInfo;
+  };
+
+  struct DynStreamStepInstInfo {
+    uint64_t translatedStreamId = InvalidStreamId;
+  };
+
+  /**
    * We also remember the translated regionStreamId for every dynamic
    * instruction.
    */
   struct DynStreamInstInfo {
-    static constexpr int MaxStreamIds = 1;
-    std::array<uint64_t, MaxStreamIds> translatedStreamIds;
-    DynStreamInstInfo() {
-      for (auto &streamId : this->translatedStreamIds) {
-        streamId = InvalidStreamId;
-      }
-    }
+    /**
+     * Maybe we can use a union to save the storage, but union is
+     * painful to use when the member is not POD and I don't care.
+     */
+    DynStreamConfigInstInfo configInfo;
+    DynStreamStepInstInfo stepInfo;
   };
   std::unordered_map<uint64_t, DynStreamInstInfo> seqNumToDynInfoMap;
+
+  DynStreamInstInfo &createDynStreamInstInfo(uint64_t seqNum);
+
+  /**
+   * Mark one stream config inst executed.
+   * If all executed, will call StreamEngine::executeStreamConfig.
+   */
+  void increamentStreamRegionInfoNumExecutedInsts(
+      DynStreamRegionInfo &dynStreamRegionInfo, ExecContext &xc);
 };
 
 } // namespace RiscvISA

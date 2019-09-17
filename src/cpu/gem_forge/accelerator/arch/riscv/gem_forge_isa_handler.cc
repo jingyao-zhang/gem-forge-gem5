@@ -4,12 +4,44 @@
 #include "cpu/exec_context.hh"
 
 namespace RiscvISA {
+
+#define StreamInstCase(stage)                                                  \
+  case GemForgeStaticInstOpE::STREAM_CONFIG: {                                 \
+    se.stage##StreamConfig(dynInfo, xc);                                       \
+    break;                                                                     \
+  }                                                                            \
+  case GemForgeStaticInstOpE::STREAM_INPUT: {                                  \
+    se.stage##StreamInput(dynInfo, xc);                                        \
+    break;                                                                     \
+  }                                                                            \
+  case GemForgeStaticInstOpE::STREAM_READY: {                                  \
+    se.stage##StreamReady(dynInfo, xc);                                        \
+    break;                                                                     \
+  }                                                                            \
+  case GemForgeStaticInstOpE::STREAM_END: {                                    \
+    se.stage##StreamEnd(dynInfo, xc);                                          \
+    break;                                                                     \
+  }                                                                            \
+  case GemForgeStaticInstOpE::STREAM_STEP: {                                   \
+    se.stage##StreamStep(dynInfo, xc);                                         \
+    break;                                                                     \
+  }
+
 bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo,
                                      ExecContext &xc) {
   auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
   switch (staticInstInfo.op) {
   case GemForgeStaticInstOpE::STREAM_CONFIG: {
     return se.canDispatchStreamConfig(dynInfo, xc);
+  }
+  case GemForgeStaticInstOpE::STREAM_INPUT: {
+    return se.canDispatchStreamInput(dynInfo, xc);
+  }
+  case GemForgeStaticInstOpE::STREAM_READY: {
+    return se.canDispatchStreamReady(dynInfo, xc);
+  }
+  case GemForgeStaticInstOpE::STREAM_END: {
+    return se.canDispatchStreamEnd(dynInfo, xc);
   }
   case GemForgeStaticInstOpE::STREAM_STEP: {
     return se.canDispatchStreamStep(dynInfo, xc);
@@ -22,18 +54,7 @@ void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
                                   ExecContext &xc) {
   auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
   switch (staticInstInfo.op) {
-  case GemForgeStaticInstOpE::STREAM_CONFIG: {
-    se.dispatchStreamConfig(dynInfo, xc);
-    break;
-  }
-  case GemForgeStaticInstOpE::STREAM_END: {
-    se.dispatchStreamEnd(dynInfo, xc);
-    break;
-  }
-  case GemForgeStaticInstOpE::STREAM_STEP: {
-    se.dispatchStreamStep(dynInfo, xc);
-    break;
-  }
+    StreamInstCase(dispatch);
   default: { break; }
   }
 }
@@ -42,10 +63,7 @@ void GemForgeISAHandler::execute(const GemForgeDynInstInfo &dynInfo,
                                  ExecContext &xc) {
   auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
   switch (staticInstInfo.op) {
-  case GemForgeStaticInstOpE::STREAM_CONFIG: {
-    se.executeStreamConfig(dynInfo, xc);
-    break;
-  }
+    StreamInstCase(execute);
   default: { break; }
   }
 }
@@ -54,18 +72,7 @@ void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo,
                                 ExecContext &xc) {
   auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
   switch (staticInstInfo.op) {
-  case GemForgeStaticInstOpE::STREAM_CONFIG: {
-    se.commitStreamConfig(dynInfo, xc);
-    break;
-  }
-  case GemForgeStaticInstOpE::STREAM_END: {
-    se.commitStreamEnd(dynInfo, xc);
-    break;
-  }
-  case GemForgeStaticInstOpE::STREAM_STEP: {
-    se.commitStreamStep(dynInfo, xc);
-    break;
-  }
+    StreamInstCase(commit);
   default: { break; }
   }
 }
@@ -91,6 +98,10 @@ GemForgeISAHandler::getStaticInstInfo(const TheISA::PCState &pcState,
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_END;
     } else if (instName == "ssp_stream_step") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_STEP;
+    } else if (instName == "ssp_stream_input") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_INPUT;
+    } else if (instName == "ssp_stream_ready") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_READY;
     }
   }
   return emplaceRet.first->second;

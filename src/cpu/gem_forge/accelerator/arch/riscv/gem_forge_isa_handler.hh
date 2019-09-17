@@ -23,6 +23,7 @@ private:
     STREAM_CONFIG,
     STREAM_END,
     STREAM_INPUT,
+    STREAM_READY,
     STREAM_LOAD,
     STREAM_STEP,
   };
