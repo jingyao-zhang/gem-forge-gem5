@@ -632,7 +632,7 @@ int StreamEngine::getStreamUserLQEntries(const LLVMDynamicInst *inst) const {
 std::list<std::unique_ptr<GemForgeLQCallback>>
 StreamEngine::createStreamUserLQCallbacks(LLVMDynamicInst *inst) {
   std::list<std::unique_ptr<GemForgeLQCallback>> callbacks;
-  auto &elementSet = this->userElementMap.at(inst);
+  auto &elementSet = this->userElementMap.at(inst->getSeqNum());
   for (auto &element : elementSet) {
     if (element == nullptr) {
       continue;
@@ -656,20 +656,17 @@ StreamEngine::createStreamUserLQCallbacks(LLVMDynamicInst *inst) {
   return callbacks;
 }
 
-void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
-  assert(this->userElementMap.count(inst) == 0);
+void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
+  auto seqNum = args.seqNum;
+  assert(this->userElementMap.count(seqNum) == 0);
 
   auto &elementSet =
       this->userElementMap
-          .emplace(std::piecewise_construct, std::forward_as_tuple(inst),
+          .emplace(std::piecewise_construct, std::forward_as_tuple(seqNum),
                    std::forward_as_tuple())
           .first->second;
 
-  for (const auto &dep : inst->getTDG().deps()) {
-    if (dep.type() != ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      continue;
-    }
-    auto streamId = dep.dependent_id();
+  for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
 
     /**
@@ -681,32 +678,32 @@ void StreamEngine::dispatchStreamUser(LLVMDynamicInst *inst) {
       elementSet.insert(nullptr);
     } else {
       if (S->allocSize <= S->stepSize) {
-        inst->dumpBasic();
         this->dumpFIFO();
-        panic("No allocated element to use for stream %s.",
-              S->getStreamName().c_str());
+        panic("No allocated element to use for stream %s seqNum %llu.",
+              S->getStreamName().c_str(), seqNum);
       }
 
       auto element = S->stepped->next;
       // Mark the first user sequence number.
       if (element->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
-        element->firstUserSeqNum = inst->getSeqNum();
+        element->firstUserSeqNum = seqNum;
       }
       elementSet.insert(element);
       // Construct the elementUserMap.
       this->elementUserMap
           .emplace(std::piecewise_construct, std::forward_as_tuple(element),
                    std::forward_as_tuple())
-          .first->second.insert(inst);
+          .first->second.insert(seqNum);
     }
   }
 }
 
-bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
-  assert(this->userElementMap.count(inst) != 0);
+bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
+  auto seqNum = args.seqNum;
+  assert(this->userElementMap.count(seqNum) != 0);
 
   bool ready = true;
-  for (auto &element : this->userElementMap.at(inst)) {
+  for (auto &element : this->userElementMap.at(seqNum)) {
     if (element == nullptr) {
       /**
        * Sometimes there is use after stream end,
@@ -724,8 +721,6 @@ bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
        * Basically this is a stream store.
        * Make sure the stored element is AddrReady.
        */
-      assert(inst->getInstName() == "stream-store" &&
-             "Only StreamStore should have usage of store stream element.");
       if (!element->isAddrReady) {
         ready = false;
       }
@@ -739,21 +734,22 @@ bool StreamEngine::areUsedStreamsReady(const LLVMDynamicInst *inst) {
   return ready;
 }
 
-void StreamEngine::executeStreamUser(LLVMDynamicInst *inst) {
-  assert(this->userElementMap.count(inst) != 0);
+void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
+  assert(this->userElementMap.count(args.seqNum) != 0);
 }
 
-void StreamEngine::commitStreamUser(LLVMDynamicInst *inst) {
-  assert(this->userElementMap.count(inst) != 0);
+void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
+  auto seqNum = args.seqNum;
+  assert(this->userElementMap.count(seqNum) != 0);
   // Remove the entry from the elementUserMap.
-  for (auto element : this->userElementMap.at(inst)) {
+  for (auto element : this->userElementMap.at(seqNum)) {
     assert(this->elementUserMap.count(element) != 0);
     auto &userSet = this->elementUserMap.at(element);
-    assert(userSet.count(inst) != 0);
-    userSet.erase(inst);
+    assert(userSet.count(seqNum) != 0);
+    userSet.erase(seqNum);
   }
   // Remove the entry in the userElementMap.
-  this->userElementMap.erase(inst);
+  this->userElementMap.erase(seqNum);
 }
 
 void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
@@ -887,7 +883,7 @@ StreamEngine::createStreamStoreSQCallbacks(StreamStoreInst *inst) {
   // Find the element to be stored.
   StreamElement *storeElement = nullptr;
   auto storeStream = this->getStream(inst->getTDG().stream_store().stream_id());
-  for (auto element : this->userElementMap.at(inst)) {
+  for (auto element : this->userElementMap.at(inst->getSeqNum())) {
     if (element == nullptr) {
       continue;
     }
@@ -908,10 +904,11 @@ void StreamEngine::dispatchStreamStore(StreamStoreInst *inst) {
 }
 
 void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
-  assert(this->userElementMap.count(inst) != 0);
+  auto seqNum = inst->getSeqNum();
+  assert(this->userElementMap.count(seqNum) != 0);
   // Check my element.
   auto storeStream = this->getStream(inst->getTDG().stream_store().stream_id());
-  for (auto element : this->userElementMap.at(inst)) {
+  for (auto element : this->userElementMap.at(seqNum)) {
     if (element == nullptr) {
       continue;
     }
@@ -1762,8 +1759,7 @@ void StreamEngine::dumpFIFO() const {
 void StreamEngine::dumpUser() const {
   for (const auto &userElement : this->userElementMap) {
     auto user = userElement.first;
-    user->dumpBasic();
-    inform("--used element.\n");
+    inform("--seqNum %llu used element.\n", user);
     for (auto element : userElement.second) {
       element->dump();
     }

@@ -121,8 +121,9 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
     // control dependence or PDF/unrollable dependence.
   }
   if (this->hasStreamUse()) {
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    if (!SE->areUsedStreamsReady(this)) {
+    if (!SE->areUsedStreamsReady(args)) {
       return false;
     }
   }
@@ -131,26 +132,37 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
 }
 
 void LLVMDynamicInst::dispatch(LLVMTraceCPU *cpu) {
-  if (this->hasStreamUse()) {
-    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    SE->dispatchStreamUser(this);
-  }
+  this->dispatchStreamUser(cpu);
 }
 
-void LLVMDynamicInst::commit(LLVMTraceCPU *cpu) {
-  if (this->hasStreamUse()) {
-    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    SE->commitStreamUser(this);
-  }
-}
+void LLVMDynamicInst::commit(LLVMTraceCPU *cpu) { this->commitStreamUser(cpu); }
 
 bool LLVMDynamicInst::hasStreamUse() const {
-  for (const auto &dep : this->TDG.deps()) {
-    if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      return true;
-    }
+  return !this->usedStreamIds.empty();
+}
+
+void LLVMDynamicInst::dispatchStreamUser(LLVMTraceCPU *cpu) {
+  if (this->hasStreamUse()) {
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    SE->dispatchStreamUser(args);
   }
-  return false;
+}
+
+void LLVMDynamicInst::executeStreamUser(LLVMTraceCPU *cpu) {
+  if (this->hasStreamUse()) {
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    SE->executeStreamUser(args);
+  }
+}
+
+void LLVMDynamicInst::commitStreamUser(LLVMTraceCPU *cpu) {
+  if (this->hasStreamUse()) {
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    SE->commitStreamUser(args);
+  }
 }
 
 void LLVMDynamicInst::dumpBasic() const {
@@ -327,10 +339,7 @@ LLVMDynamicInstMem::~LLVMDynamicInstMem() {
 }
 
 void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
-  if (this->hasStreamUse()) {
-    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    SE->executeStreamUser(this);
-  }
+  this->executeStreamUser(cpu);
 
   switch (this->type) {
   case Type::ALLOCA: {
@@ -532,10 +541,7 @@ void LLVMDynamicInstMem::handlePacketResponse(
 }
 
 void LLVMDynamicInstCompute::execute(LLVMTraceCPU *cpu) {
-  if (this->hasStreamUse()) {
-    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    SE->executeStreamUser(this);
-  }
+  this->executeStreamUser(cpu);
   this->fuLatency = cpu->getOpLatency(this->getOpClass());
   /**
    * Hack here: for branching instructions, add one more cycle of latency.

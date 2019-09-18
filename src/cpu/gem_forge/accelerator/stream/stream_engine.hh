@@ -58,13 +58,22 @@ public:
   void dispatchStreamStep(uint64_t stepStreamId);
   void commitStreamStep(uint64_t stepStreamId);
 
+  struct StreamUserArgs {
+    uint64_t seqNum;
+    const std::vector<uint64_t> &usedStreamIds;
+    StreamUserArgs(uint64_t _seqNum,
+                   const std::vector<uint64_t> &_usedStreamIds)
+        : seqNum(_seqNum), usedStreamIds(_usedStreamIds) {}
+  };
+
   int getStreamUserLQEntries(const LLVMDynamicInst *inst) const;
   std::list<std::unique_ptr<GemForgeLQCallback>>
   createStreamUserLQCallbacks(LLVMDynamicInst *inst);
-  void dispatchStreamUser(LLVMDynamicInst *inst);
-  bool areUsedStreamsReady(const LLVMDynamicInst *inst);
-  void executeStreamUser(LLVMDynamicInst *inst);
-  void commitStreamUser(LLVMDynamicInst *inst);
+
+  void dispatchStreamUser(const StreamUserArgs &args);
+  bool areUsedStreamsReady(const StreamUserArgs &args);
+  void executeStreamUser(const StreamUserArgs &args);
+  void commitStreamUser(const StreamUserArgs &args);
 
   struct StreamEndArgs {
     uint64_t seqNum;
@@ -175,16 +184,14 @@ private:
    * Map from the user instruction to all the actual element to use.
    * Update at dispatchStreamUser and commitStreamUser.
    */
-  std::unordered_map<const LLVMDynamicInst *,
-                     std::unordered_set<StreamElement *>>
+  std::unordered_map<uint64_t, std::unordered_set<StreamElement *>>
       userElementMap;
 
   /**
    * Map from the stream element to the user instruction.
    * A reverse map of userElementMap.
    */
-  std::unordered_map<StreamElement *,
-                     std::unordered_set<const LLVMDynamicInst *>>
+  std::unordered_map<StreamElement *, std::unordered_set<uint64_t>>
       elementUserMap;
 
   using StreamId = uint64_t;

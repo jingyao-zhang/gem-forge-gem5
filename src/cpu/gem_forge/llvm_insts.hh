@@ -48,7 +48,14 @@ public:
   LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
       : seqNum(allocateSeqNum()), TDG(_TDG), numMicroOps(_numMicroOps),
         remainingMicroOps(_numMicroOps - 1), serializeBefore(false),
-        numAdditionalLQCallbacks(0) {}
+        numAdditionalLQCallbacks(0) {
+    // Extrace used stream ids.
+    for (const auto &dep : this->TDG.deps()) {
+      if (dep.type() == ::LLVM::TDG::TDGInstructionDependence::STREAM) {
+        this->usedStreamIds.push_back(dep.dependent_id());
+      }
+    }
+  }
 
   virtual ~LLVMDynamicInst() {}
 
@@ -87,7 +94,11 @@ public:
   /**
    * Helper functions for general stream user inst.
    */
+  std::vector<uint64_t> usedStreamIds;
   bool hasStreamUse() const;
+  void dispatchStreamUser(LLVMTraceCPU *cpu);
+  void executeStreamUser(LLVMTraceCPU *cpu);
+  void commitStreamUser(LLVMTraceCPU *cpu);
 
   /**
    * Handle serialization instructions.

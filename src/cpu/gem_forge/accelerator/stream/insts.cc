@@ -32,10 +32,10 @@ bool StreamConfigInst::canDispatch(LLVMTraceCPU *cpu) const {
 }
 
 void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
+
+  this->dispatchStreamUser(cpu);
+
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  if (this->hasStreamUse()) {
-    SE->dispatchStreamUser(this);
-  }
   StreamEngine::StreamConfigArgs args(this->getSeqNum(),
                                       this->TDG.stream_config().info_path());
   SE->dispatchStreamConfig(args);
@@ -47,18 +47,14 @@ void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
   StreamEngine::StreamConfigArgs args(this->getSeqNum(),
                                       this->TDG.stream_config().info_path());
   SE->executeStreamConfig(args);
-  if (this->hasStreamUse()) {
-    SE->executeStreamUser(this);
-  }
+  this->executeStreamUser(cpu);
   this->markFinished();
 }
 
 void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
   DPRINTF(StreamEngine, "Commit stream configure %lu\n", this->getSeqNum());
+  this->commitStreamUser(cpu);
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  if (this->hasStreamUse()) {
-    SE->commitStreamUser(this);
-  }
   StreamEngine::StreamConfigArgs args(this->getSeqNum(),
                                       this->TDG.stream_config().info_path());
   SE->commitStreamConfig(args);
@@ -135,28 +131,23 @@ StreamStoreInst::createAdditionalSQCallbacks(LLVMTraceCPU *cpu) {
 }
 
 void StreamStoreInst::dispatch(LLVMTraceCPU *cpu) {
+  this->dispatchStreamUser(cpu);
+
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  if (this->hasStreamUse()) {
-    SE->dispatchStreamUser(this);
-  }
   SE->dispatchStreamStore(this);
 }
 
 void StreamStoreInst::execute(LLVMTraceCPU *cpu) {
   // Notify the stream engine.
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  if (this->hasStreamUse()) {
-    SE->executeStreamUser(this);
-  }
+  this->executeStreamUser(cpu);
   SE->executeStreamStore(this);
   this->markFinished();
 }
 
 void StreamStoreInst::commit(LLVMTraceCPU *cpu) {
+  this->commitStreamUser(cpu);
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  if (this->hasStreamUse()) {
-    SE->commitStreamUser(this);
-  }
   SE->commitStreamStore(this);
 }
 

@@ -245,8 +245,9 @@ void AbstractDataFlowCore::markReady() {
       }
     }
     if (inst->hasStreamUse()) {
+      StreamEngine::StreamUserArgs args(inst->getSeqNum(), inst->usedStreamIds);
       auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-      if (!SE->areUsedStreamsReady(inst)) {
+      if (!SE->areUsedStreamsReady(args)) {
         ready = false;
         if (id == 11489479) {
           hack("Due to stream reason it is not ready.\n");
