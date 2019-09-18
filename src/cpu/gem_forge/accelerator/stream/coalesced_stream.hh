@@ -62,6 +62,8 @@ public:
 
   bool isContinuous() const override;
 
+  void setupAddrGen(DynamicStream &dynStream) override;
+
   /**
    * ! Sean: StreamAwareCache
    * Allocate the CacheStreamConfigureData.

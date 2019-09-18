@@ -70,3 +70,20 @@ uint64_t StreamHistory::getCurrentStreamLength() const {
 uint64_t StreamHistory::getNumCacheLines() const {
   return this->currentConfig->num_cache_lines();
 }
+
+std::unique_ptr<StreamHistory::StreamHistoryAddrGenCallback>
+StreamHistory::allocateCallbackAtInstance(uint64_t streamInstance) {
+  return std::unique_ptr<StreamHistoryAddrGenCallback>(
+      new StreamHistoryAddrGenCallback(
+          this->getHistoryAtInstance(streamInstance)));
+}
+
+uint64_t StreamHistory::StreamHistoryAddrGenCallback::genAddr(
+    uint64_t idx, const std::vector<uint64_t> &params) {
+  if (idx < this->history.history_size()) {
+    return this->history.history(idx).addr();
+  } else {
+    // ! Return the last address.
+    return this->history.history(this->history.history_size() - 1).addr();
+  }
+}

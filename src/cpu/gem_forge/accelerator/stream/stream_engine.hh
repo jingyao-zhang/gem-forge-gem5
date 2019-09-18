@@ -273,6 +273,8 @@ private:
   void writebackElement(StreamElement *element, StreamStoreInst *inst);
   void throttleStream(Stream *S, StreamElement *element);
 
+  std::vector<StreamElement *> findReadyElements();
+
   size_t getTotalRunAheadLength() const;
 
   const ::LLVM::TDG::StreamRegion &

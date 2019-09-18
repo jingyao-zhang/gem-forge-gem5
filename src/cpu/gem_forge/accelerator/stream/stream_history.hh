@@ -3,6 +3,8 @@
 
 #include "StreamMessage.pb.h"
 
+#include "addr_gen_callback.hh"
+
 #include <list>
 #include <string>
 
@@ -18,6 +20,17 @@ public:
   const ::LLVM::TDG::StreamHistory &getCurrentHistory() const;
   const ::LLVM::TDG::StreamHistory &
   getHistoryAtInstance(uint64_t streamInstance) const;
+
+  struct StreamHistoryAddrGenCallback : public AddrGenCallback {
+    uint64_t genAddr(uint64_t idx,
+                     const std::vector<uint64_t> &params) override;
+    const ::LLVM::TDG::StreamHistory &history;
+    StreamHistoryAddrGenCallback(const ::LLVM::TDG::StreamHistory &_history)
+        : history(_history) {}
+  };
+
+  std::unique_ptr<StreamHistoryAddrGenCallback>
+  allocateCallbackAtInstance(uint64_t streamInstance);
 
   /**
    * Return the next value of the history.

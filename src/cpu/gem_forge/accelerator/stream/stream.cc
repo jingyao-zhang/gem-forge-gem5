@@ -112,40 +112,43 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
 }
 
 void Stream::dispatchStreamConfig(uint64_t seqNum) {
-  this->configInstExecuted.emplace_back(seqNum, false);
+  // Create new index.
+  this->FIFOIdx.newInstance(seqNum);
+  // Allocate the new DynamicStream.
+  this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum) {
-  for (auto &record : this->configInstExecuted) {
-    if (record.first == seqNum) {
-      assert(!record.second &&
-             "This StreamConfig is alread executed for this stream.");
-      record.second = true;
-      return;
-    }
-  }
-  assert(false && "Failed to find the record for the StreamConfig inst.");
+  auto &dynStream = this->getDynamicStream(seqNum);
+  assert(!dynStream.configExecuted && "StreamConfig already executed.");
+  dynStream.configExecuted = true;
+  this->setupAddrGen(dynStream);
 }
 
 bool Stream::isStreamConfigureExecuted(uint64_t configInstSeqNum) {
-  for (auto &record : this->configInstExecuted) {
-    if (record.first == configInstSeqNum) {
-      return record.second;
-    }
-  }
-  assert(false && "Failed to find the record for the StreamConfig seqNum.");
+  auto &dynStream = this->getDynamicStream(configInstSeqNum);
+  return dynStream.configExecuted;
 }
 
 void Stream::commitStreamEnd(uint64_t seqNum) {
-  assert(!this->configInstExecuted.empty() && "Empty list for StreamEnd.");
-  assert(this->configInstExecuted.front().first < seqNum &&
-         "End before config.");
-  assert(this->configInstExecuted.front().second &&
-         "End before config executed.");
-  this->configInstExecuted.pop_front();
-  if (!this->configInstExecuted.empty()) {
-    // There is another configinst waiting.
-    assert(this->configInstExecuted.front().first > seqNum &&
+  assert(!this->dynamicStreams.empty() &&
+         "Empty dynamicStreams for StreamEnd.");
+  auto &endedDynamicStream = this->dynamicStreams.front();
+  assert(endedDynamicStream.configSeqNum < seqNum && "End before config.");
+  assert(endedDynamicStream.configExecuted && "End before config executed.");
+  this->dynamicStreams.pop_front();
+  if (!this->dynamicStreams.empty()) {
+    // There is another config inst waiting.
+    assert(this->dynamicStreams.front().configSeqNum > seqNum &&
            "Next StreamConfig not younger than previous StreamEnd.");
   }
+}
+
+DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
+  for (auto &dynStream : this->dynamicStreams) {
+    if (dynStream.configSeqNum == seqNum) {
+      return dynStream;
+    }
+  }
+  panic("Failed to find DynamicStream %llu.\n", seqNum);
 }

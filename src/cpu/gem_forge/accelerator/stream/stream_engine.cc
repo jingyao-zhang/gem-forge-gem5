@@ -333,16 +333,8 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
       this->addFreeElement(releaseElement);
     }
 
-    // Only to configure the history for single stream.
+    // Notify the stream.
     S->configure(args.seqNum);
-
-    // 2. Create new index.
-    S->FIFOIdx.newInstance(args.seqNum);
-
-    /**
-     * Initialize the DynamicInstanceState.
-     */
-    S->dynamicInstanceStates.emplace_back(S->FIFOIdx.streamId, args.seqNum);
   }
 
   // 3. Allocate new entries one by one for all streams.
@@ -391,24 +383,15 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
     if (this->enableStreamFloat) {
-      // Try to find the DynamicInstanceState.
-      Stream::DynamicInstanceState *dynamicInstanceState = nullptr;
-      for (auto &state : S->dynamicInstanceStates) {
-        if (state.configSeqNum == args.seqNum) {
-          // We found the dynamicInstanceState.
-          dynamicInstanceState = &state;
-          break;
-        }
-      }
-      assert(dynamicInstanceState != nullptr &&
-             "Failed to find the DynamicInstanceState.");
 
-      if (this->shouldOffloadStream(
-              S, dynamicInstanceState->dynamicStreamId.streamInstance)) {
+      auto &dynStream = S->getDynamicStream(args.seqNum);
+
+      if (this->shouldOffloadStream(S,
+                                    dynStream.dynamicStreamId.streamInstance)) {
 
         // Remember the offloaded decision.
         // ! Only do this for the root offloaded stream.
-        dynamicInstanceState->offloadedToCache = true;
+        dynStream.offloadedToCache = true;
 
         // Get the CacheStreamConfigureData.
         auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
@@ -511,8 +494,6 @@ bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
       break;
     }
   }
-  hack("Check if can step stream %s: %d.\n",
-       stepStream->getStreamName().c_str(), canStep);
   return canStep;
 }
 
@@ -856,14 +837,17 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     /**
      * Check if this stream is offloaded and if so, send the StreamEnd packet.
      */
-    assert(!S->dynamicInstanceStates.empty() &&
+    assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
-    auto &endedDynamicInstanceState = S->dynamicInstanceStates.front();
-    if (endedDynamicInstanceState.offloadedToCache) {
+    auto &endedDynamicStream = S->dynamicStreams.front();
+    if (endedDynamicStream.offloadedToCache) {
+      // We need to explicitly allocate and copy the DynamicStreamId for the
+      // packet.
       auto endedDynamicStreamId =
-          new DynamicStreamId(endedDynamicInstanceState.dynamicStreamId);
+          new DynamicStreamId(endedDynamicStream.dynamicStreamId);
       // The target address is just virtually 0 (should be set by MLC stream
       // engine).
+      // TODO: Fix this.
       auto pkt = GemForgePacketHandler::createStreamControlPacket(
           cpuDelegator->translateVAddrOracle(0), cpuDelegator->dataMasterId(),
           0, MemCmd::Command::StreamEndReq,
@@ -872,8 +856,6 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
               S->getStreamName().c_str());
       cpuDelegator->sendRequest(pkt);
     }
-
-    S->dynamicInstanceStates.pop_front();
 
     // Notify the stream.
     S->commitStreamEnd(args.seqNum);
@@ -1371,48 +1353,6 @@ void StreamEngine::allocateElement(Stream *S) {
 
   newElement->allocateCycle = cpuDelegator->curCycle();
 
-  // Create all the cache lines this element will touch.
-  if (S->isMemStream()) {
-    S->prepareNewElement(newElement);
-    const int cacheBlockSize = cpuDelegator->cacheLineSize();
-
-    for (int currentSize, totalSize = 0; totalSize < newElement->size;
-         totalSize += currentSize) {
-      if (newElement->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
-        panic("More than %d cache blocks for one stream element, address %lu "
-              "size %lu.",
-              newElement->cacheBlocks, newElement->addr, newElement->size);
-      }
-      auto currentAddr = newElement->addr + totalSize;
-      currentSize = newElement->size - totalSize;
-      // Make sure we don't span across multiple cache blocks.
-      if (((currentAddr % cacheBlockSize) + currentSize) > cacheBlockSize) {
-        currentSize = cacheBlockSize - (currentAddr % cacheBlockSize);
-      }
-      // Create the breakdown.
-      auto cacheBlockAddr = currentAddr & (~(cacheBlockSize - 1));
-      auto &newCacheBlockBreakdown =
-          newElement->cacheBlockBreakdownAccesses[newElement->cacheBlocks];
-      newCacheBlockBreakdown.cacheBlockVirtualAddr = cacheBlockAddr;
-      newCacheBlockBreakdown.virtualAddr = currentAddr;
-      newCacheBlockBreakdown.size = currentSize;
-      newElement->cacheBlocks++;
-    }
-
-    // Create the CacheBlockInfo for the cache blocks.
-    if (this->enableMerge) {
-      for (int i = 0; i < newElement->cacheBlocks; ++i) {
-        auto cacheBlockAddr =
-            newElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
-        this->cacheBlockRefMap
-            .emplace(std::piecewise_construct,
-                     std::forward_as_tuple(cacheBlockAddr),
-                     std::forward_as_tuple())
-            .first->second.reference++;
-      }
-    }
-  }
-
   // Append to the list.
   S->head->next = newElement;
   S->allocSize++;
@@ -1517,8 +1457,7 @@ void StreamEngine::releaseElement(Stream *S) {
   this->addFreeElement(releaseElement);
 }
 
-void StreamEngine::issueElements() {
-  // Find all ready elements.
+std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElements;
   for (auto &element : this->FIFOArray) {
     if (element.stream == nullptr) {
@@ -1560,6 +1499,12 @@ void StreamEngine::issueElements() {
       readyElements.emplace_back(&element);
     }
   }
+  return readyElements;
+}
+
+void StreamEngine::issueElements() {
+  // Find all ready elements.
+  auto readyElements = this->findReadyElements();
 
   /**
    * Sort the ready elements by create cycle and relative order within
@@ -1579,9 +1524,22 @@ void StreamEngine::issueElements() {
               }
             });
   for (auto &element : readyElements) {
-    element->isAddrReady = true;
-    element->addrReadyCycle = cpuDelegator->curCycle();
+    element->markAddrReady(cpuDelegator);
+
     if (element->stream->isMemStream()) {
+      // Increase the reference of the cache block if we enable merging.
+      if (this->enableMerge) {
+        for (int i = 0; i < element->cacheBlocks; ++i) {
+          auto cacheBlockAddr =
+              element->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
+          this->cacheBlockRefMap
+              .emplace(std::piecewise_construct,
+                       std::forward_as_tuple(cacheBlockAddr),
+                       std::forward_as_tuple())
+              .first->second.reference++;
+        }
+      }
+      // Issue the element.
       this->issueElement(element);
     } else {
       // This is an IV stream with back dependence.

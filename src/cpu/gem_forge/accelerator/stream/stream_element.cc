@@ -176,6 +176,33 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess) {
   delete memAccess;
 }
 
+void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
+  assert(!this->isAddrReady && "Addr is already ready.");
+  this->isAddrReady = true;
+  this->addrReadyCycle = cpuDelegator->curCycle();
+
+  /**
+   * Compute the address.
+   */
+  auto &dynStream = this->stream->getDynamicStream(this->FIFOIdx.configSeqNum);
+
+  // 1. Prepare the parameters.
+  std::vector<uint64_t> params;
+  for (const auto &formalParam : dynStream.formalParams) {
+    // TODO: Really handle the parameters.
+    (void)formalParam;
+    panic("Formal parameter is not supported yet.");
+  }
+
+  // 2. Call the AddrGenCallback.
+  this->addr =
+      dynStream.addrGenCallback->genAddr(this->FIFOIdx.entryIdx, params);
+  this->size = stream->getElementSize();
+
+  // 3. Split into cache lines.
+  this->splitIntoCacheBlocks(cpuDelegator);
+}
+
 void StreamElement::markValueReady() {
   assert(!this->isValueReady && "Value is already ready.");
   this->isValueReady = true;
@@ -200,6 +227,33 @@ void StreamElement::markValueReady() {
     // The issue cycle is valid.
     this->stream->statistic.numCycleRequestLatency +=
         this->valueReadyCycle - this->issueCycle;
+  }
+}
+
+void StreamElement::splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator) {
+  const int cacheBlockSize = cpuDelegator->cacheLineSize();
+
+  for (int currentSize, totalSize = 0; totalSize < this->size;
+       totalSize += currentSize) {
+    if (this->cacheBlocks >= StreamElement::MAX_CACHE_BLOCKS) {
+      panic("More than %d cache blocks for one stream element, address %lu "
+            "size %lu.",
+            this->cacheBlocks, this->addr, this->size);
+    }
+    auto currentAddr = this->addr + totalSize;
+    currentSize = this->size - totalSize;
+    // Make sure we don't span across multiple cache blocks.
+    if (((currentAddr % cacheBlockSize) + currentSize) > cacheBlockSize) {
+      currentSize = cacheBlockSize - (currentAddr % cacheBlockSize);
+    }
+    // Create the breakdown.
+    auto cacheBlockAddr = currentAddr & (~(cacheBlockSize - 1));
+    auto &newCacheBlockBreakdown =
+        this->cacheBlockBreakdownAccesses[this->cacheBlocks];
+    newCacheBlockBreakdown.cacheBlockVirtualAddr = cacheBlockAddr;
+    newCacheBlockBreakdown.virtualAddr = currentAddr;
+    newCacheBlockBreakdown.size = currentSize;
+    this->cacheBlocks++;
   }
 }
 

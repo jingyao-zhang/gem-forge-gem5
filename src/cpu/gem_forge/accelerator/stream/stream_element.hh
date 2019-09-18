@@ -160,7 +160,10 @@ struct StreamElement {
   StreamMemAccess *
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
   void handlePacketResponse(StreamMemAccess *memAccess);
+  void markAddrReady(GemForgeCPUDelegator *cpuDelegator);
   void markValueReady();
+
+  void splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator);
 
   void dump() const;
 

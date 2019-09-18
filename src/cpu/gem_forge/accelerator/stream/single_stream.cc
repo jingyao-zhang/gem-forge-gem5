@@ -165,21 +165,21 @@ uint64_t SingleStream::getFootprint(unsigned cacheBlockSize) const { return 1; }
 
 bool SingleStream::isContinuous() const { return false; }
 
+void SingleStream::setupAddrGen(DynamicStream &dynStream) {
+  // So far just use the history callback.
+  dynStream.addrGenCallback = this->history->allocateCallbackAtInstance(
+      dynStream.dynamicStreamId.streamInstance);
+  // No arguments needed for history information.
+}
+
 CacheStreamConfigureData *
 SingleStream::allocateCacheConfigureData(uint64_t configSeqNum) {
-  for (auto &dynamicInstanceState : this->dynamicInstanceStates) {
-    if (dynamicInstanceState.configSeqNum == configSeqNum) {
-      // We found the dynamicInstanceState.
-      auto history = std::make_shared<::LLVM::TDG::StreamHistory>(
-          this->history->getHistoryAtInstance(
-              dynamicInstanceState.dynamicStreamId.streamInstance));
-      return new CacheStreamConfigureData(this,
-                                          dynamicInstanceState.dynamicStreamId,
-                                          this->getElementSize(), history);
-    }
-  }
-  assert(false && "Failed to find the DynamicInstanceState.");
-  return nullptr;
+  auto &dynStream = this->getDynamicStream(configSeqNum);
+  auto history = std::make_shared<::LLVM::TDG::StreamHistory>(
+      this->history->getHistoryAtInstance(
+          dynStream.dynamicStreamId.streamInstance));
+  return new CacheStreamConfigureData(this, dynStream.dynamicStreamId,
+                                      this->getElementSize(), history);
 }
 
 uint64_t

@@ -1,8 +1,9 @@
-#ifndef __CPU_TDG_ACCELERATOR_STREAM_HH__
-#define __CPU_TDG_ACCELERATOR_STREAM_HH__
+#ifndef __GEM_FORGE_ACCELERATOR_STREAM_HH__
+#define __GEM_FORGE_ACCELERATOR_STREAM_HH__
 
 #include "cache/CacheStreamConfigureData.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
+#include "dyn_stream.hh"
 #include "stream_element.hh"
 #include "stream_statistic.hh"
 
@@ -25,6 +26,9 @@ class StreamEngine;
 class StreamConfigInst;
 class StreamEndInst;
 
+/**
+ * Holdes the aggregated stream state, across multiple dynamic stream.
+ */
 class Stream {
 public:
   struct StreamArguments {
@@ -115,6 +119,12 @@ public:
   void commitStreamEnd(uint64_t seqNum);
 
   /**
+   * Called by executeStreamConfig() to allow derived class to set up the
+   * AddrGenCallback in DynamicStream.
+   */
+  virtual void setupAddrGen(DynamicStream &dynStream) = 0;
+
+  /**
    * ! Sean: StreamAwareCache
    * Allocate the CacheStreamConfigureData.
    */
@@ -128,21 +138,8 @@ public:
   virtual bool isPointerChaseLoadStream() const { return false; }
   virtual uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const = 0;
 
-  /**
-   * Helper structure to remember status of dynamic instance of this stream.
-   * Mainly for StreamAwareCache.
-   */
-  struct DynamicInstanceState {
-    DynamicStreamId dynamicStreamId;
-    uint64_t configSeqNum;
-    bool offloadedToCache;
-    DynamicInstanceState(const DynamicStreamId &_dynamicStreamId,
-                         uint64_t _configSeqNum)
-        : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum),
-          offloadedToCache(false) {}
-  };
-
-  std::deque<DynamicInstanceState> dynamicInstanceStates;
+  std::deque<DynamicStream> dynamicStreams;
+  DynamicStream &getDynamicStream(uint64_t seqNum);
 
 protected:
   LLVMTraceCPU *cpu;
@@ -164,13 +161,6 @@ protected:
     const auto &type = this->getStreamType();
     return this->baseStepStreams.empty() && (type == "phi" || type == "store");
   }
-
-  /**
-   * Manager stream_configuration executed status.
-   * A list of all stream_config instruction sequence number, along with a
-   * flag to remember whether this instruction is executed.
-   */
-  std::list<std::pair<uint64_t, bool>> configInstExecuted;
 
   /**
    * For debug.

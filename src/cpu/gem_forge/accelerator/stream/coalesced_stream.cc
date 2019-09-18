@@ -227,6 +227,10 @@ bool CoalescedStream::isContinuous() const {
   return this->getElementSize() == pattern.stride_i();
 }
 
+void CoalescedStream::setupAddrGen(DynamicStream &dynStream) {
+  panic("Coalesced stream in cache is not supported yet.\n");
+}
+
 CacheStreamConfigureData *
 CoalescedStream::allocateCacheConfigureData(uint64_t configSeqNum) {
   panic("Coalesced stream in cache is not supported yet.\n");
