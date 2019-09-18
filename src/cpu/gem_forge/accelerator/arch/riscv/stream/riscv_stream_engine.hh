@@ -94,6 +94,7 @@ private:
     uint64_t streamReadySeqNum = 0;
     int numDispatchedInsts = 0;
     int numExecutedInsts = 0;
+    std::unordered_map<uint64_t, std::vector<uint64_t>> inputMap;
     DynStreamRegionInfo(const std::string &_infoRelativePath)
         : infoRelativePath(_infoRelativePath) {}
   };
@@ -118,6 +119,11 @@ private:
     std::shared_ptr<DynStreamRegionInfo> dynStreamRegionInfo;
   };
 
+  struct DynStreamInputInstInfo {
+    uint64_t translatedStreamId = InvalidStreamId;
+    int inputIdx = -1;
+  };
+
   struct DynStreamStepInstInfo {
     uint64_t translatedStreamId = InvalidStreamId;
   };
@@ -132,6 +138,7 @@ private:
      * painful to use when the member is not POD and I don't care.
      */
     DynStreamConfigInstInfo configInfo;
+    DynStreamInputInstInfo inputInfo;
     DynStreamStepInstInfo stepInfo;
   };
   std::unordered_map<uint64_t, DynStreamInstInfo> seqNumToDynInfoMap;

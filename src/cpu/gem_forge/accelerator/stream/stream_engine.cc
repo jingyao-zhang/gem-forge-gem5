@@ -378,7 +378,11 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
 
   for (auto &S : configStreams) {
     // Simply notify the stream.
-    S->executeStreamConfig(args.seqNum);
+    const StreamConfigArgs::InputVec *inputVec = nullptr;
+    if (args.inputMap) {
+      inputVec = &(args.inputMap->at(S->staticId));
+    }
+    S->executeStreamConfig(args.seqNum, inputVec);
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */

@@ -118,15 +118,16 @@ void Stream::dispatchStreamConfig(uint64_t seqNum) {
   this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum);
 }
 
-void Stream::executeStreamConfig(uint64_t seqNum) {
+void Stream::executeStreamConfig(uint64_t seqNum,
+                                 const std::vector<uint64_t> *inputVec) {
   auto &dynStream = this->getDynamicStream(seqNum);
   assert(!dynStream.configExecuted && "StreamConfig already executed.");
   dynStream.configExecuted = true;
-  this->setupAddrGen(dynStream);
+  this->setupAddrGen(dynStream, inputVec);
 }
 
-bool Stream::isStreamConfigureExecuted(uint64_t configInstSeqNum) {
-  auto &dynStream = this->getDynamicStream(configInstSeqNum);
+bool Stream::isStreamConfigureExecuted(uint64_t seqNum) {
+  auto &dynStream = this->getDynamicStream(seqNum);
   return dynStream.configExecuted;
 }
 

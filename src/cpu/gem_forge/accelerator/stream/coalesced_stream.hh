@@ -62,7 +62,8 @@ public:
 
   bool isContinuous() const override;
 
-  void setupAddrGen(DynamicStream &dynStream) override;
+  void setupAddrGen(DynamicStream &dynStream,
+                    const std::vector<uint64_t> *inputVec) override;
 
   /**
    * ! Sean: StreamAwareCache

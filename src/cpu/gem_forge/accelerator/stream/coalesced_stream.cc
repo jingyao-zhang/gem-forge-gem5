@@ -227,7 +227,8 @@ bool CoalescedStream::isContinuous() const {
   return this->getElementSize() == pattern.stride_i();
 }
 
-void CoalescedStream::setupAddrGen(DynamicStream &dynStream) {
+void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
+                                   const std::vector<uint64_t> *inputVec) {
   panic("Coalesced stream in cache is not supported yet.\n");
 }
 

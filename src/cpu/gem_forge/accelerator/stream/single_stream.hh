@@ -27,7 +27,8 @@ public:
   uint64_t getTrueFootprint() const override;
   uint64_t getFootprint(unsigned cacheBlockSize) const override;
 
-  void setupAddrGen(DynamicStream &dynStream) override;
+  void setupAddrGen(DynamicStream &dynStream,
+                    const std::vector<uint64_t> *inputVec) override;
 
   /**
    * ! Sean: StreamAwareCache

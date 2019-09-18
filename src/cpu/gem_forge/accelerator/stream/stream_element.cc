@@ -189,9 +189,11 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
   // 1. Prepare the parameters.
   std::vector<uint64_t> params;
   for (const auto &formalParam : dynStream.formalParams) {
-    // TODO: Really handle the parameters.
-    (void)formalParam;
-    panic("Formal parameter is not supported yet.");
+    if (formalParam.isInvariant) {
+      params.push_back(formalParam.param.invariant);
+    } else {
+      panic("Formal parameter of base stream is not supported yet.");
+    }
   }
 
   // 2. Call the AddrGenCallback.

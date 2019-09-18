@@ -412,6 +412,8 @@ decode QUADRANT default Unknown::unknown() {
                 }},
                 uint64_t, No_OpClass);
                 0x2: ssp_stream_input({{
+                    // Declare the used register.
+                    (void)Rs1;
                 }},
                 uint64_t, No_OpClass);
                 0x3: ssp_stream_ready({{

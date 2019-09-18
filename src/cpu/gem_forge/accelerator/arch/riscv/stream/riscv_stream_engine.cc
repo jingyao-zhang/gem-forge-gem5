@@ -42,6 +42,17 @@ void RISCVStreamEngine::dispatchStreamConfig(const GemForgeDynInstInfo &dynInfo,
       std::make_shared<DynStreamRegionInfo>(infoRelativePath);
   this->curStreamRegionInfo->numDispatchedInsts++;
 
+  // Initialize an empty InputVector for each configured stream.
+  for (const auto &streamInfo : info.streams()) {
+    auto streamId = streamInfo.id();
+    auto inserted =
+        this->curStreamRegionInfo->inputMap
+            .emplace(std::piecewise_construct, std::forward_as_tuple(streamId),
+                     std::forward_as_tuple())
+            .second;
+    assert(inserted && "InputVector already initialized.");
+  }
+
   // Remember the inst info.
   auto &configInfo = this->createDynStreamInstInfo(dynInfo.seqNum).configInfo;
   configInfo.dynStreamRegionInfo = this->curStreamRegionInfo;
@@ -77,6 +88,19 @@ void RISCVStreamEngine::dispatchStreamInput(const GemForgeDynInstInfo &dynInfo,
   // Remember the current DynStreamRegionInfo.
   auto &configInfo = this->createDynStreamInstInfo(dynInfo.seqNum).configInfo;
   configInfo.dynStreamRegionInfo = this->curStreamRegionInfo;
+
+  // Remember the input info.
+  auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
+  // Translate the regionStreamId.
+  auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
+  auto streamId = this->lookupRegionStreamId(regionStreamId);
+  inputInfo.translatedStreamId = streamId;
+
+  // Allocate the entry in the InputMap.
+  auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
+  auto &inputVec = inputMap.at(streamId);
+  inputInfo.inputIdx = inputVec.size();
+  inputVec.push_back(0);
 }
 
 void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
@@ -84,6 +108,14 @@ void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
   this->increamentStreamRegionInfoNumExecutedInsts(
       *(configInfo.dynStreamRegionInfo), xc);
+
+  // Record the live input.
+  auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
+  auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
+  auto &inputVec = inputMap.at(inputInfo.translatedStreamId);
+  auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
+  hack("Record input %llu.\n", rs1);
+  inputVec.at(inputInfo.inputIdx) = rs1;
 }
 
 void RISCVStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo,
@@ -324,9 +356,11 @@ void RISCVStreamEngine::increamentStreamRegionInfoNumExecutedInsts(
   if (dynStreamRegionInfo.streamReadyDispatched &&
       dynStreamRegionInfo.numExecutedInsts ==
           dynStreamRegionInfo.numDispatchedInsts) {
-    // We can notify the StreamEngine that StreamConfig can be executed.
+    // We can notify the StreamEngine that StreamConfig can be executed,
+    // including the InputMap.
     ::StreamEngine::StreamConfigArgs args(dynStreamRegionInfo.streamReadySeqNum,
-                                          dynStreamRegionInfo.infoRelativePath);
+                                          dynStreamRegionInfo.infoRelativePath,
+                                          &dynStreamRegionInfo.inputMap);
     auto se = this->getStreamEngine(xc);
     se->executeStreamConfig(args);
   }

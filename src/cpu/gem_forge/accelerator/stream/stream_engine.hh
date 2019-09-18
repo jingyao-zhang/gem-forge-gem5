@@ -38,10 +38,15 @@ public:
    */
 
   struct StreamConfigArgs {
+    using InputVec = std::vector<uint64_t>;
+    using InputMap = std::unordered_map<uint64_t, InputVec>;
     uint64_t seqNum; // Just the instruction sequence number.
     const std::string &infoRelativePath; // Where to find the info.
-    StreamConfigArgs(uint64_t _seqNum, const std::string &_infoRelativePath)
-        : seqNum(_seqNum), infoRelativePath(_infoRelativePath) {}
+    const InputMap *inputMap;            // Live input of streams.
+    StreamConfigArgs(uint64_t _seqNum, const std::string &_infoRelativePath,
+                     InputMap *_inputMap = nullptr)
+        : seqNum(_seqNum), infoRelativePath(_infoRelativePath),
+          inputMap(_inputMap) {}
   };
 
   bool canStreamConfig(const StreamConfigArgs &args) const;

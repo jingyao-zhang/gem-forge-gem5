@@ -165,7 +165,52 @@ uint64_t SingleStream::getFootprint(unsigned cacheBlockSize) const { return 1; }
 
 bool SingleStream::isContinuous() const { return false; }
 
-void SingleStream::setupAddrGen(DynamicStream &dynStream) {
+void SingleStream::setupAddrGen(DynamicStream &dynStream,
+                                const std::vector<uint64_t> *inputVec) {
+
+  if (cpuDelegator->cpuType != GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE) {
+    // We have to use the pattern.
+    assert(inputVec && "Missing InputVec when using execution simulation.");
+    const auto &staticInfo = this->info.static_info();
+    const auto &pattern = staticInfo.iv_pattern();
+    assert(pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR &&
+           "So far only LINEAR pattern is supported for execution-driven "
+           "simulation.");
+    /**
+     * We have two parameters for LINEAR pattern, base and stride.
+     */
+    assert(pattern.params_size() == 2 && "Missing parameters.");
+    auto &formalParams = dynStream.formalParams;
+    int inputIdx = 0;
+    for (const auto &param : pattern.params()) {
+      if (param.valid()) {
+        // This is a valid parameter.
+        hack("Find valid param #%d, val %llu", formalParams.size(),
+             param.param());
+        formalParams.emplace_back();
+        auto &formalParam = formalParams.back();
+        formalParam.isInvariant = true;
+        formalParam.param.invariant = param.param();
+      } else {
+        // This should be a input.
+        // TODO: Handle stream input for indirect streams.
+        assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
+        hack("Find input param #%d, val %llu", formalParams.size(),
+             inputVec->at(inputIdx));
+        formalParams.emplace_back();
+        auto &formalParam = formalParams.back();
+        formalParam.isInvariant = true;
+        formalParam.param.invariant = inputVec->at(inputIdx);
+        inputIdx++;
+      }
+    }
+
+    // Set the callback.
+    dynStream.addrGenCallback =
+        std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
+    return;
+  }
+
   // So far just use the history callback.
   dynStream.addrGenCallback = this->history->allocateCallbackAtInstance(
       dynStream.dynamicStreamId.streamInstance);

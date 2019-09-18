@@ -114,15 +114,17 @@ public:
   virtual void configure(uint64_t seqNum) = 0;
 
   void dispatchStreamConfig(uint64_t seqNum);
-  void executeStreamConfig(uint64_t seqNum);
-  bool isStreamConfigureExecuted(uint64_t configInstSeqNum);
+  void executeStreamConfig(uint64_t seqNum,
+                           const std::vector<uint64_t> *inputVec);
+  bool isStreamConfigureExecuted(uint64_t seqNum);
   void commitStreamEnd(uint64_t seqNum);
 
   /**
    * Called by executeStreamConfig() to allow derived class to set up the
    * AddrGenCallback in DynamicStream.
    */
-  virtual void setupAddrGen(DynamicStream &dynStream) = 0;
+  virtual void setupAddrGen(DynamicStream &dynStream,
+                            const std::vector<uint64_t> *inputVec) = 0;
 
   /**
    * ! Sean: StreamAwareCache
