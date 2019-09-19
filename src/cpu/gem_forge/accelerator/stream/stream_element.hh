@@ -43,7 +43,7 @@ struct FIFOEntryIdx {
  */
 struct CacheBlockBreakdownAccess {
   // Which cache block this access belongs to.
-  uint64_t cacheBlockVirtualAddr;
+  uint64_t cacheBlockVAddr;
   // The actual virtual address.
   uint64_t virtualAddr;
   // The actual size.
@@ -59,7 +59,8 @@ class StreamElement;
 class StreamMemAccess final : public GemForgePacketHandler {
 public:
   StreamMemAccess(Stream *_stream, StreamElement *_element,
-                  Addr _cacheBlockVirtualAddr, int _additionalDelay = 0);
+                  Addr _cacheBlockAddr, Addr _vaddr, int _size,
+                  int _additionalDelay = 0);
   virtual ~StreamMemAccess() {}
   void handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
                             PacketPtr packet) override;
@@ -101,7 +102,9 @@ public:
   // Make a copy of the FIFOIdx in case element is released.
   const FIFOEntryIdx FIFOIdx;
 
-  Addr cacheBlockVirtualAddr;
+  Addr cacheBlockVAddr;
+  Addr vaddr;
+  int size;
   /**
    * Additional delay we want to add after we get the response.
    */
@@ -135,8 +138,30 @@ struct StreamElement {
   uint64_t addr;
   uint64_t size;
   static constexpr int MAX_CACHE_BLOCKS = 10;
-  CacheBlockBreakdownAccess cacheBlockBreakdownAccesses[MAX_CACHE_BLOCKS];
   int cacheBlocks;
+  CacheBlockBreakdownAccess cacheBlockBreakdownAccesses[MAX_CACHE_BLOCKS];
+  /**
+   * Small vector stores all the data.
+   * * The value should be indexed in cache line granularity.
+   * * i.e. the first byte of value is the byte at
+   * * cacheBlockBreakdownAccesses[0].cacheBlockVAddr.
+   * * Please use setValue() and getValue() to interact with value so that this
+   * * is always respected.
+   * This design is a compromise with existing implementation of coalescing
+   * continuous stream elements, which allows an element to hold a little bit of
+   * more data in the last cache block beyond its size.
+   */
+  std::vector<uint8_t> value;
+  void setValue(Addr vaddr, int size, uint8_t *val);
+  void getValue(Addr vaddr, int size, uint8_t *val) const;
+  uint64_t mapVAddrToValueOffset(Addr vaddr, int size) const;
+  // Some helper template.
+  template <typename T> void setValue(Addr vaddr, T *val) {
+    this->setValue(vaddr, sizeof(*val), reinterpret_cast<uint8_t *>(val));
+  }
+  template <typename T> void getValue(Addr vaddr, T *val) {
+    this->getValue(vaddr, sizeof(*val), reinterpret_cast<uint8_t *>(val));
+  }
 
   // Store the infly mem accesses for this element, basically for load.
   std::unordered_set<StreamMemAccess *> inflyMemAccess;
@@ -159,7 +184,7 @@ struct StreamElement {
 
   StreamMemAccess *
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
-  void handlePacketResponse(StreamMemAccess *memAccess);
+  void handlePacketResponse(StreamMemAccess *memAccess, PacketPtr pkt);
   void markAddrReady(GemForgeCPUDelegator *cpuDelegator);
   void markValueReady();
 

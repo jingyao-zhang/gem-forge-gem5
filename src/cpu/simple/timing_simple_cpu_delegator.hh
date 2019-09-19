@@ -24,6 +24,7 @@ public:
    */
   bool canDispatch(StaticInstPtr staticInst, ExecContext &xc);
   void dispatch(StaticInstPtr staticInst, ExecContext &xc);
+  bool canExecute(StaticInstPtr staticInst, ExecContext &xc);
   void execute(StaticInstPtr staticInst, ExecContext &xc);
   void commit(StaticInstPtr staticInst, ExecContext &xc);
 

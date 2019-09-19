@@ -92,7 +92,8 @@ TimingSimpleCPU::TimingSimpleCPU(TimingSimpleCPUParams *p)
             : (new TimingSimpleCPU::DcachePort(this))
       ),
       ifetch_pkt(NULL), dcache_pkt(NULL), previousCycle(0),
-      fetchEvent([this]{ fetch(); }, name())
+      fetchEvent([this]{ fetch(); }, name()),
+      tryResumeExecuteEvent([this]{ tryResumeExecute(); }, name())
 {
     _status = Idle;
 }
@@ -833,6 +834,15 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
         if (this->cpuDelegator) {
             assert(this->cpuDelegator->canDispatch(curStaticInst, t_info));
             this->cpuDelegator->dispatch(curStaticInst, t_info);
+            if (!this->cpuDelegator->canExecute(curStaticInst, t_info))
+            {
+                // Recheck next cycle.
+                schedule(tryResumeExecuteEvent, clockEdge(Cycles(1)));
+                if (pkt) {
+                    delete pkt;
+                }
+                return;
+            }
             this->cpuDelegator->execute(curStaticInst, t_info);
         }
         // non-memory instruction: execute completely now
@@ -864,6 +874,42 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
     if (pkt) {
         delete pkt;
     }
+}
+
+void
+TimingSimpleCPU::tryResumeExecute()
+{
+    assert(this->cpuDelegator);
+    SimpleExecContext& t_info = *threadInfo[curThread];
+
+    if (!this->cpuDelegator->canExecute(curStaticInst, t_info))
+    {
+        // Recheck next cycle.
+        schedule(tryResumeExecuteEvent, clockEdge(Cycles(1)));
+        return;
+    }
+
+    this->cpuDelegator->execute(curStaticInst, t_info);
+
+    // non-memory instruction: execute completely now
+    Fault fault = curStaticInst->execute(&t_info, traceData);
+
+    this->cpuDelegator->commit(curStaticInst, t_info);
+
+    // keep an instruction count
+    if (fault == NoFault)
+        countInst();
+    else if (traceData && !DTRACE(ExecFaulting)) {
+        delete traceData;
+        traceData = NULL;
+    }
+
+    postExecute();
+    // @todo remove me after debugging with legion done
+    if (curStaticInst && (!curStaticInst->isMicroop() ||
+            curStaticInst->isFirstMicroop()))
+        instCnt++;
+    advanceInst(fault);
 }
 
 void

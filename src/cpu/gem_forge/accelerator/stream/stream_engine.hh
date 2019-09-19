@@ -59,11 +59,17 @@ public:
   void commitStreamStep(uint64_t stepStreamId);
 
   struct StreamUserArgs {
+    using Value = std::array<uint8_t, 8>;
+    using ValueVec = std::vector<Value>;
     uint64_t seqNum;
     const std::vector<uint64_t> &usedStreamIds;
+    // Used to return the stream values.
+    // Only used in executeStreamUser().
+    ValueVec *values;
     StreamUserArgs(uint64_t _seqNum,
-                   const std::vector<uint64_t> &_usedStreamIds)
-        : seqNum(_seqNum), usedStreamIds(_usedStreamIds) {}
+                   const std::vector<uint64_t> &_usedStreamIds,
+                   ValueVec *_values = nullptr)
+        : seqNum(_seqNum), usedStreamIds(_usedStreamIds), values(_values) {}
   };
 
   int getStreamUserLQEntries(const LLVMDynamicInst *inst) const;
@@ -122,8 +128,7 @@ public:
 
   void exitDump() const;
 
-  void fetchedCacheBlock(Addr cacheBlockVirtualAddr,
-                         StreamMemAccess *memAccess);
+  void fetchedCacheBlock(Addr cacheBlockVAddr, StreamMemAccess *memAccess);
 
   int currentTotalRunAheadLength;
   int maxTotalRunAheadLength;
@@ -181,7 +186,7 @@ private:
   size_t numFreeFIFOEntries;
 
   /**
-   * Map from the user instruction to all the actual element to use.
+   * Map from the user instruction seqNum to all the actual element to use.
    * Update at dispatchStreamUser and commitStreamUser.
    */
   std::unordered_map<uint64_t, std::unordered_set<StreamElement *>>

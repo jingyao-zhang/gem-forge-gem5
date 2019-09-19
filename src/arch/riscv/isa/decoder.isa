@@ -422,9 +422,11 @@ decode QUADRANT default Unknown::unknown() {
                 0x4: ssp_stream_step({{
                 }},
                 uint64_t, No_OpClass);
+            }
+            format GemForgeIOp {
                 0x5: ssp_stream_load({{
-                    // execute
-                    Rd = 2;
+                    // Use GemForgeIOp to declare the dest register
+                    // directly (not here).
                 }}, uint64_t, No_OpClass);
             }
         }

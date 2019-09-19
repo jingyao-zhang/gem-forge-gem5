@@ -14,6 +14,7 @@ class GemForgeISAHandler {
 public:
   bool canDispatch(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void dispatch(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
+  bool canExecute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void execute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void commit(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
 

@@ -38,6 +38,8 @@ public:
                                ExecContext &xc);                               \
   void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,                \
                             ExecContext &xc);                                  \
+  bool canExecuteStream##Inst(const GemForgeDynInstInfo &dynInfo,              \
+                              ExecContext &xc);                                \
   void executeStream##Inst(const GemForgeDynInstInfo &dynInfo,                 \
                            ExecContext &xc);                                   \
   void commitStream##Inst(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
@@ -47,6 +49,7 @@ public:
   DeclareStreamInstHandler(Ready);
   DeclareStreamInstHandler(End);
   DeclareStreamInstHandler(Step);
+  DeclareStreamInstHandler(Load);
 
 #undef DeclareStreamInstHandler
 
@@ -128,6 +131,11 @@ private:
     uint64_t translatedStreamId = InvalidStreamId;
   };
 
+  struct DynStreamUserInstInfo {
+    static constexpr int MaxUsedStreams = 2;
+    std::array<uint64_t, MaxUsedStreams> translatedUsedStreamIds;
+  };
+
   /**
    * We also remember the translated regionStreamId for every dynamic
    * instruction.
@@ -140,6 +148,7 @@ private:
     DynStreamConfigInstInfo configInfo;
     DynStreamInputInstInfo inputInfo;
     DynStreamStepInstInfo stepInfo;
+    DynStreamUserInstInfo userInfo;
   };
   std::unordered_map<uint64_t, DynStreamInstInfo> seqNumToDynInfoMap;
 

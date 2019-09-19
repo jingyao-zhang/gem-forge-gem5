@@ -32,10 +32,10 @@ FIFOEntryIdx::FIFOEntryIdx(const DynamicStreamId &_streamId)
       entryIdx(0) {}
 
 StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
-                                 Addr _cacheBlockVirtualAddr,
+                                 Addr _cacheBlockVAddr, Addr _vaddr, int _size,
                                  int _additionalDelay)
     : stream(_stream), element(_element), FIFOIdx(_element->FIFOIdx),
-      cacheBlockVirtualAddr(_cacheBlockVirtualAddr),
+      cacheBlockVAddr(_cacheBlockVAddr), vaddr(_vaddr), size(_size),
       additionalDelay(_additionalDelay) {}
 
 const DynamicStreamId &StreamMemAccess::getDynamicStreamId() const {
@@ -51,19 +51,19 @@ DynamicStreamSliceId StreamMemAccess::getSliceId() const {
   return slice;
 }
 
-void StreamMemAccess::handlePacketResponse(PacketPtr packet) {
+void StreamMemAccess::handlePacketResponse(PacketPtr pkt) {
   // API for stream-aware cache, as it doesn't have the cpu.
-  this->handlePacketResponse(this->getStream()->getCPUDelegator(), packet);
+  this->handlePacketResponse(this->getStream()->getCPUDelegator(), pkt);
 }
 
 void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
-                                           PacketPtr packet) {
+                                           PacketPtr pkt) {
   if (this->additionalDelay != 0) {
     // We have to reschedule the event to pay for the additional delay.
     STREAM_ELEMENT_DPRINTF(
         this->element, "PacketResponse with additional delay of %d cycles.\n",
         this->additionalDelay);
-    auto responseEvent = new ResponseEvent(cpuDelegator, this, packet);
+    auto responseEvent = new ResponseEvent(cpuDelegator, this, pkt);
     cpuDelegator->schedule(responseEvent, Cycles(this->additionalDelay));
     // Remember to reset the additional delay as we have already paid for it.
     this->additionalDelay = 0;
@@ -71,8 +71,8 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
   }
 
   // Handle the request statistic.
-  if (packet->req->hasStatistic()) {
-    auto statistic = packet->req->getStatistic();
+  if (pkt->req->hasStatistic()) {
+    auto statistic = pkt->req->getStatistic();
     switch (statistic->hitCacheLevel) {
     case RequestStatistic::HitPlaceE::INVALID: {
       // Invalid.
@@ -95,14 +95,14 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
   }
 
   // Check if this is a read request.
-  if (packet->isRead()) {
+  if (pkt->isRead()) {
     // We should notify the stream engine that this cache line is coming back.
-    this->element->se->fetchedCacheBlock(this->cacheBlockVirtualAddr, this);
+    this->element->se->fetchedCacheBlock(this->cacheBlockVAddr, this);
   }
-  this->element->handlePacketResponse(
-      this); // After this point "this" is deleted.
-  // Remember to release the packet.
-  delete packet;
+  this->element->handlePacketResponse(this, pkt);
+  /*********************************************************************
+   * ! After StreamElement::handlePacketResponse() this is deleted.
+   *********************************************************************/
   return;
 }
 
@@ -112,7 +112,10 @@ void StreamMemAccess::issueToMemoryCallback(
 }
 
 void StreamMemAccess::handleStreamEngineResponse() {
-  this->element->handlePacketResponse(this);
+  // Merge at StreamEngine level is disabled as we have no easy method
+  // to propagate the data here.
+  assert(false && "No propagate data for merged request.");
+  this->element->handlePacketResponse(this, nullptr);
 }
 
 StreamElement::StreamElement(StreamEngine *_se) : se(_se) { this->clear(); }
@@ -130,9 +133,11 @@ void StreamElement::clear() {
   this->valueReadyCycle = Cycles(0);
   this->firstCheckCycle = Cycles(0);
 
-  this->cacheBlocks = 0;
-  this->size = 0;
   this->addr = 0;
+  this->size = 0;
+  this->cacheBlocks = 0;
+  std::fill(this->value.begin(), this->value.end(), 0);
+
   // Only clear the inflyMemAccess set, but not allocatedMemAccess set.
   this->inflyMemAccess.clear();
   this->stored = false;
@@ -141,8 +146,11 @@ void StreamElement::clear() {
 
 StreamMemAccess *StreamElement::allocateStreamMemAccess(
     const CacheBlockBreakdownAccess &cacheBlockBreakdown) {
+
   auto memAccess = new StreamMemAccess(
-      this->getStream(), this, cacheBlockBreakdown.cacheBlockVirtualAddr);
+      this->getStream(), this, cacheBlockBreakdown.cacheBlockVAddr,
+      cacheBlockBreakdown.virtualAddr, cacheBlockBreakdown.size);
+
   this->allocatedMemAccess.insert(memAccess);
   /**
    * ! The reason why we allow such big number of allocated StreamMemAccess is
@@ -157,11 +165,22 @@ StreamMemAccess *StreamElement::allocateStreamMemAccess(
   return memAccess;
 }
 
-void StreamElement::handlePacketResponse(StreamMemAccess *memAccess) {
+void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
+                                         PacketPtr pkt) {
   assert(this->allocatedMemAccess.count(memAccess) != 0 &&
          "This StreamMemAccess is not allocated by me.");
 
   if (this->inflyMemAccess.count(memAccess) != 0) {
+
+    /**
+     * Update the value vector.
+     * Notice that pkt->getAddr() will give you physics address.
+     */
+    auto vaddr = memAccess->vaddr;
+    auto size = pkt->getSize();
+    auto data = pkt->getPtr<uint8_t>();
+    this->setValue(vaddr, size, data);
+
     this->inflyMemAccess.erase(memAccess);
     if (this->inflyMemAccess.empty() && !this->isValueReady) {
       this->markValueReady();
@@ -174,6 +193,8 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess) {
   // Remember to release the memAccess.
   this->allocatedMemAccess.erase(memAccess);
   delete memAccess;
+  // Remember to release the pkt.
+  delete pkt;
 }
 
 void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
@@ -252,11 +273,44 @@ void StreamElement::splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator) {
     auto cacheBlockAddr = currentAddr & (~(cacheBlockSize - 1));
     auto &newCacheBlockBreakdown =
         this->cacheBlockBreakdownAccesses[this->cacheBlocks];
-    newCacheBlockBreakdown.cacheBlockVirtualAddr = cacheBlockAddr;
+    newCacheBlockBreakdown.cacheBlockVAddr = cacheBlockAddr;
     newCacheBlockBreakdown.virtualAddr = currentAddr;
     newCacheBlockBreakdown.size = currentSize;
     this->cacheBlocks++;
   }
+
+  // Expand the value to match the number of cache blocks.
+  // We never shrink this value vector.
+  auto cacheBlockBytes = this->cacheBlocks * cacheBlockSize;
+  while (this->value.size() < cacheBlockBytes) {
+    this->value.push_back(0);
+  }
+}
+
+void StreamElement::setValue(Addr vaddr, int size, uint8_t *val) {
+  // Copy the data.
+  auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
+  for (int i = 0; i < size; ++i) {
+    this->value.at(i + initOffset) = val[i];
+  }
+}
+
+void StreamElement::getValue(Addr vaddr, int size, uint8_t *val) const {
+  // Copy the data.
+  auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
+  for (int i = 0; i < size; ++i) {
+    val[i] = this->value.at(i + initOffset);
+  }
+}
+
+uint64_t StreamElement::mapVAddrToValueOffset(Addr vaddr, int size) const {
+  assert(this->cacheBlocks > 0 && "There is no cache blocks.");
+  auto firstCacheBlockVAddr =
+      this->cacheBlockBreakdownAccesses[0].cacheBlockVAddr;
+  assert(vaddr >= firstCacheBlockVAddr && "Underflow of vaddr.");
+  auto initOffset = vaddr - firstCacheBlockVAddr;
+  assert(initOffset + size <= this->value.size() && "Overflow of size.");
+  return initOffset;
 }
 
 void StreamElement::dump() const {

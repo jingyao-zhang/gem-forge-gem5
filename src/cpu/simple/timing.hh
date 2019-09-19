@@ -362,6 +362,11 @@ class TimingSimpleCPU : public BaseSimpleCPU
     void completeDataAccess(PacketPtr pkt);
     void advanceInst(const Fault &fault);
 
+    /**
+     * Resume the execution if possible.
+     */
+    void tryResumeExecute();
+
     /** This function is used by the page table walker to determine if it could
      * translate the a pending request or if the underlying request has been
      * squashed. This always returns false for the simple timing CPU as it never
@@ -385,6 +390,8 @@ class TimingSimpleCPU : public BaseSimpleCPU
   private:
 
     EventFunctionWrapper fetchEvent;
+    // ! GemForge
+    EventFunctionWrapper tryResumeExecuteEvent;
 
     struct IprEvent : Event {
         Packet *pkt;

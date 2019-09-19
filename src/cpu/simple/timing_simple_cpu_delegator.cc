@@ -67,6 +67,13 @@ void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
 
+bool TimingSimpleCPUDelegator::canExecute(StaticInstPtr staticInst,
+                                          ExecContext &xc) {
+  assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
+  return pimpl->isaHandler.canExecute(dynInfo, xc);
+}
+
 void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
                                        ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);

@@ -10,6 +10,7 @@
 namespace RiscvISA {
 
 constexpr uint64_t RISCVStreamEngine::InvalidStreamId;
+constexpr int RISCVStreamEngine::DynStreamUserInstInfo::MaxUsedStreams;
 
 /********************************************************************************
  * StreamConfig Handlers.
@@ -58,6 +59,11 @@ void RISCVStreamEngine::dispatchStreamConfig(const GemForgeDynInstInfo &dynInfo,
   configInfo.dynStreamRegionInfo = this->curStreamRegionInfo;
 }
 
+bool RISCVStreamEngine::canExecuteStreamConfig(
+    const GemForgeDynInstInfo &dynInfo, ExecContext &xc) {
+  return true;
+}
+
 void RISCVStreamEngine::executeStreamConfig(const GemForgeDynInstInfo &dynInfo,
                                             ExecContext &xc) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
@@ -101,6 +107,11 @@ void RISCVStreamEngine::dispatchStreamInput(const GemForgeDynInstInfo &dynInfo,
   auto &inputVec = inputMap.at(streamId);
   inputInfo.inputIdx = inputVec.size();
   inputVec.push_back(0);
+}
+
+bool RISCVStreamEngine::canExecuteStreamInput(
+    const GemForgeDynInstInfo &dynInfo, ExecContext &xc) {
+  return true;
 }
 
 void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
@@ -163,6 +174,11 @@ void RISCVStreamEngine::dispatchStreamReady(const GemForgeDynInstInfo &dynInfo,
   this->curStreamRegionInfo = nullptr;
 }
 
+bool RISCVStreamEngine::canExecuteStreamReady(
+    const GemForgeDynInstInfo &dynInfo, ExecContext &xc) {
+  return true;
+}
+
 void RISCVStreamEngine::executeStreamReady(const GemForgeDynInstInfo &dynInfo,
                                            ExecContext &xc) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
@@ -208,6 +224,11 @@ void RISCVStreamEngine::dispatchStreamEnd(const GemForgeDynInstInfo &dynInfo,
 
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   se->dispatchStreamEnd(args);
+}
+
+bool RISCVStreamEngine::canExecuteStreamEnd(const GemForgeDynInstInfo &dynInfo,
+                                            ExecContext &xc) {
+  return true;
 }
 
 void RISCVStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
@@ -258,6 +279,11 @@ void RISCVStreamEngine::dispatchStreamStep(const GemForgeDynInstInfo &dynInfo,
   se->dispatchStreamStep(streamId);
 }
 
+bool RISCVStreamEngine::canExecuteStreamStep(const GemForgeDynInstInfo &dynInfo,
+                                             ExecContext &xc) {
+  return true;
+}
+
 void RISCVStreamEngine::executeStreamStep(const GemForgeDynInstInfo &dynInfo,
                                           ExecContext &xc) {}
 
@@ -268,6 +294,86 @@ void RISCVStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo,
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine(xc);
   se->commitStreamStep(streamId);
+
+  // Release the info.
+  this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
+}
+
+/********************************************************************************
+ * StreamLoad Handlers.
+ *******************************************************************************/
+
+bool RISCVStreamEngine::canDispatchStreamLoad(
+    const GemForgeDynInstInfo &dynInfo, ExecContext &xc) {
+
+  // First create the memorized info.
+  auto emplaceRet = this->seqNumToDynInfoMap.emplace(
+      std::piecewise_construct, std::forward_as_tuple(dynInfo.seqNum),
+      std::forward_as_tuple());
+  auto &userInfo = emplaceRet.first->second.userInfo;
+  if (emplaceRet.second) {
+    // First time. Translate the regionStreamId.
+    auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
+    auto streamId = this->lookupRegionStreamId(regionStreamId);
+    userInfo.translatedUsedStreamIds.at(0) = streamId;
+  }
+
+  // TODO: Check LSQ entry if this is the first use of the element.
+  return true;
+}
+
+void RISCVStreamEngine::dispatchStreamLoad(const GemForgeDynInstInfo &dynInfo,
+                                           ExecContext &xc) {
+
+  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &userInfo = dynStreamInstInfo.userInfo;
+  std::vector<uint64_t> usedStreamIds{
+      userInfo.translatedUsedStreamIds.at(0),
+  };
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+  auto se = this->getStreamEngine(xc);
+  se->dispatchStreamUser(args);
+}
+
+bool RISCVStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo,
+                                             ExecContext &xc) {
+  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &userInfo = dynStreamInstInfo.userInfo;
+  std::vector<uint64_t> usedStreamIds{
+      userInfo.translatedUsedStreamIds.at(0),
+  };
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+  auto se = this->getStreamEngine(xc);
+  return se->areUsedStreamsReady(args);
+}
+
+void RISCVStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
+                                          ExecContext &xc) {
+  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &userInfo = dynStreamInstInfo.userInfo;
+  std::vector<uint64_t> usedStreamIds{
+      userInfo.translatedUsedStreamIds.at(0),
+  };
+  StreamEngine::StreamUserArgs::ValueVec values;
+  values.reserve(usedStreamIds.size());
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds, &values);
+  auto se = this->getStreamEngine(xc);
+  se->executeStreamUser(args);
+  auto loadedValue = *(reinterpret_cast<uint64_t *>(values.at(0).data()));
+  hack("StreamLoad get value %llu.\n", loadedValue);
+  xc.setIntRegOperand(dynInfo.staticInst, 0, loadedValue);
+}
+
+void RISCVStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo,
+                                         ExecContext &xc) {
+  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &userInfo = dynStreamInstInfo.userInfo;
+  std::vector<uint64_t> usedStreamIds{
+      userInfo.translatedUsedStreamIds.at(0),
+  };
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+  auto se = this->getStreamEngine(xc);
+  se->commitStreamUser(args);
 
   // Release the info.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);

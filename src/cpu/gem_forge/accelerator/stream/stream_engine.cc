@@ -735,7 +735,48 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
 }
 
 void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
-  assert(this->userElementMap.count(args.seqNum) != 0);
+  auto seqNum = args.seqNum;
+  assert(this->userElementMap.count(seqNum) != 0);
+
+  if (args.values == nullptr) {
+    // This is traced base simulation, and they do not require us to provide the
+    // value.
+    return;
+  }
+  std::unordered_map<Stream *, StreamElement *> streamToElementMap;
+  for (auto &element : this->userElementMap.at(seqNum)) {
+    assert(element && "Out-of-loop use after StreamEnd cannot be handled in "
+                      "execution-based simulation.");
+    auto inserted = streamToElementMap
+                        .emplace(std::piecewise_construct,
+                                 std::forward_as_tuple(element->stream),
+                                 std::forward_as_tuple(element))
+                        .second;
+    assert(inserted && "Using two elements from the same stream.");
+  }
+  for (auto streamId : args.usedStreamIds) {
+    /**
+     * This is necessary, we can not directly use the usedStreamId cause it may
+     * be a coalesced stream.
+     */
+    auto S = this->getStream(streamId);
+    auto element = streamToElementMap.at(S);
+    args.values->emplace_back();
+    if (element->stream->getStreamType() == "store") {
+      /**
+       * This should be a stream store. Just leave it there.
+       */
+      continue;
+    } else {
+      /**
+       * Read in the value.
+       * TODO: Need an offset for coalesced stream.
+       */
+      assert(element->size <= 8 && "Do we really have such huge register.");
+      element->getValue(element->addr, element->size,
+                        args.values->back().data());
+    }
+  }
 }
 
 void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
@@ -1425,9 +1466,9 @@ void StreamEngine::releaseElement(Stream *S) {
   // Decrease the reference count of the cache blocks.
   if (this->enableMerge) {
     for (int i = 0; i < releaseElement->cacheBlocks; ++i) {
-      auto cacheBlockVirtualAddr =
-          releaseElement->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
-      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+      auto cacheBlockVAddr =
+          releaseElement->cacheBlockBreakdownAccesses[i].cacheBlockVAddr;
+      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVAddr);
       if (used) {
         cacheBlockInfo.used = true;
       }
@@ -1440,7 +1481,7 @@ void StreamEngine::releaseElement(Stream *S) {
         if (cacheBlockInfo.used && cacheBlockInfo.requestedByLoad) {
           this->numLoadCacheLineUsed++;
         }
-        this->cacheBlockRefMap.erase(cacheBlockVirtualAddr);
+        this->cacheBlockRefMap.erase(cacheBlockVAddr);
       }
     }
   }
@@ -1532,7 +1573,7 @@ void StreamEngine::issueElements() {
       if (this->enableMerge) {
         for (int i = 0; i < element->cacheBlocks; ++i) {
           auto cacheBlockAddr =
-              element->cacheBlockBreakdownAccesses[i].cacheBlockVirtualAddr;
+              element->cacheBlockBreakdownAccesses[i].cacheBlockVAddr;
           this->cacheBlockRefMap
               .emplace(std::piecewise_construct,
                        std::forward_as_tuple(cacheBlockAddr),
@@ -1543,21 +1584,28 @@ void StreamEngine::issueElements() {
       // Issue the element.
       this->issueElement(element);
     } else {
-      // This is an IV stream with back dependence.
+      /**
+       * This is an IV stream. We assume their size be less than 8 bytes
+       * and copy the address directly as the value.
+       * TODO: This is not enough to support other type of IV stream, like
+       * TODO: the back dependence of pointer chasing stream.
+       */
+      assert(element->size <= 8 && "IV Stream size greater than 8 bytes.");
+      element->setValue<uint64_t>(element->addr, &element->addr);
       element->markValueReady();
     }
   }
 }
-void StreamEngine::fetchedCacheBlock(Addr cacheBlockVirtualAddr,
+void StreamEngine::fetchedCacheBlock(Addr cacheBlockVAddr,
                                      StreamMemAccess *memAccess) {
   // Check if we still have the cache block.
   if (!this->enableMerge) {
     return;
   }
-  if (this->cacheBlockRefMap.count(cacheBlockVirtualAddr) == 0) {
+  if (this->cacheBlockRefMap.count(cacheBlockVAddr) == 0) {
     return;
   }
-  auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+  auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVAddr);
   cacheBlockInfo.status = CacheBlockInfo::Status::FETCHED;
   // Notify all the pending streams.
   for (auto &pendingMemAccess : cacheBlockInfo.pendingAccesses) {
@@ -1588,25 +1636,20 @@ void StreamEngine::issueElement(StreamElement *element) {
   }
 
   /**
-   * A quick hack to coalesce continuous elements that complemently overlap.
+   * A quick hack to coalesce continuous elements that completely overlap.
    */
   if (this->coalesceContinuousDirectLoadStreamElement(element)) {
     // This is coalesced. Do not issue request to memory.
-    if (element->FIFOIdx.streamId.staticId == 34710992 &&
-        element->FIFOIdx.streamId.streamInstance == 252 &&
-        element->FIFOIdx.entryIdx == 0) {
-      hack("Skipped due to coalesced.\n");
-    }
     return;
   }
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
-    auto cacheBlockVirtualAddr = cacheBlockBreakdown.cacheBlockVirtualAddr;
+    auto cacheBlockVAddr = cacheBlockBreakdown.cacheBlockVAddr;
 
     if (this->enableMerge) {
       // Check if we already have the cache block fetched.
-      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVAddr);
 
       // Mark this line is requested by a load, not a store.
       if (S->getStreamType() == "load") {
@@ -1677,7 +1720,7 @@ void StreamEngine::issueElement(StreamElement *element) {
 
     // Change to FETCHING status.
     if (this->enableMerge) {
-      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVirtualAddr);
+      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVAddr);
       cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
     }
 
@@ -2121,7 +2164,7 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
         const auto &block = element->cacheBlockBreakdownAccesses[cacheBlockIdx];
         const auto &prevBlock =
             prevElement->cacheBlockBreakdownAccesses[cacheBlockIdx];
-        if (block.cacheBlockVirtualAddr != prevBlock.cacheBlockVirtualAddr) {
+        if (block.cacheBlockVAddr != prevBlock.cacheBlockVAddr) {
           // Not completely overlapped.
           return false;
         }
