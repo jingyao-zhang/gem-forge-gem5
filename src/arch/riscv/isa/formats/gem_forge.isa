@@ -67,12 +67,23 @@ def template GemForgeExecute {{
 
 def format GemForgeIOp(
         execute_code,
-        imm_type='int64_t', *opt_flags) {{
-    user_constructor = """
-        _destRegIdx[_numDestRegs++] = RegId(IntRegClass, RD);
-        _numIntDestRegs++;
-        flags[IsInteger] = true;;
-    """
+        is_float,
+        imm_type='int64_t',
+        *opt_flags) {{
+
+    if is_float:
+        user_constructor = """
+            _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, FD);
+            _numFPDestRegs++;
+            flags[IsFloating] = true;;
+        """
+    else:
+        user_constructor = """
+            _destRegIdx[_numDestRegs++] = RegId(IntRegClass, RD);
+            _numIntDestRegs++;
+            flags[IsInteger] = true;;
+        """
+
     regs = ['_destRegIdx[0]','_srcRegIdx[0]']
     iop = InstObjParams(
         # parse

@@ -26,7 +26,8 @@ namespace RiscvISA {
     se.stage##StreamStep(dynInfo, xc);                                         \
     break;                                                                     \
   }                                                                            \
-  case GemForgeStaticInstOpE::STREAM_LOAD: {                                   \
+  case GemForgeStaticInstOpE::STREAM_LOAD:                                     \
+  case GemForgeStaticInstOpE::STREAM_FLOAD: {                                  \
     se.stage##StreamLoad(dynInfo, xc);                                         \
     break;                                                                     \
   }
@@ -47,7 +48,8 @@ namespace RiscvISA {
   case GemForgeStaticInstOpE::STREAM_STEP: {                                   \
     return se.stage##StreamStep(dynInfo, xc);                                  \
   }                                                                            \
-  case GemForgeStaticInstOpE::STREAM_LOAD: {                                   \
+  case GemForgeStaticInstOpE::STREAM_LOAD:                                     \
+  case GemForgeStaticInstOpE::STREAM_FLOAD: {                                  \
     return se.stage##StreamLoad(dynInfo, xc);                                  \
   }
 
@@ -123,6 +125,8 @@ GemForgeISAHandler::getStaticInstInfo(const TheISA::PCState &pcState,
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_READY;
     } else if (instName == "ssp_stream_load") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
+    } else if (instName == "ssp_stream_fload") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_FLOAD;
     }
   }
   return emplaceRet.first->second;

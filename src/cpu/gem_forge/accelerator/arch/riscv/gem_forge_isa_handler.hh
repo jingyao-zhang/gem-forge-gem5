@@ -26,6 +26,7 @@ private:
     STREAM_INPUT,
     STREAM_READY,
     STREAM_LOAD,
+    STREAM_FLOAD,
     STREAM_STEP,
   };
   struct GemForgeStaticInstInfo {
