@@ -138,6 +138,7 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
 
 void StreamEngine::regStats() {
   GemForgeAccelerator::regStats();
+  assert(this->manager && "No handshake.");
 
 #define scalar(stat, describe)                                                 \
   this->stat.name(this->manager->name() + ("." #stat))                         \
