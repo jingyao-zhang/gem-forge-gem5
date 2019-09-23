@@ -72,7 +72,7 @@ namespace X86ISA {
 
 ApicRegIndex decodeAddr(Addr paddr);
 
-class Interrupts : public BasicPioDevice, IntDevice
+class Interrupts : public PioDevice, IntDevice
 {
   protected:
     // Storage for the APIC registers
@@ -172,7 +172,10 @@ class Interrupts : public BasicPioDevice, IntDevice
     int initialApicId;
 
     // Port for receiving interrupts
-    IntSlavePort intSlavePort;
+    IntSlavePort<Interrupts> intSlavePort;
+
+    Tick pioDelay;
+    Addr pioAddr = MaxAddr;
 
   public:
 
@@ -197,12 +200,12 @@ class Interrupts : public BasicPioDevice, IntDevice
     void init() override;
 
     /*
-     * Functions to interact with the interrupt port from IntDevice.
+     * Functions to interact with the interrupt port.
      */
     Tick read(PacketPtr pkt) override;
     Tick write(PacketPtr pkt) override;
-    Tick recvMessage(PacketPtr pkt) override;
-    Tick recvResponse(PacketPtr pkt) override;
+    Tick recvMessage(PacketPtr pkt);
+    bool recvResponse(PacketPtr pkt) override;
 
     bool
     triggerTimerInterrupt()
@@ -213,7 +216,8 @@ class Interrupts : public BasicPioDevice, IntDevice
         return entry.periodic;
     }
 
-    AddrRangeList getIntAddrRange() const override;
+    AddrRangeList getAddrRanges() const override;
+    AddrRangeList getIntAddrRange() const;
 
     Port &getPort(const std::string &if_name,
                   PortID idx=InvalidPortID) override
@@ -223,7 +227,7 @@ class Interrupts : public BasicPioDevice, IntDevice
         } else if (if_name == "int_slave") {
             return intSlavePort;
         }
-        return BasicPioDevice::getPort(if_name, idx);
+        return PioDevice::getPort(if_name, idx);
     }
 
     /*

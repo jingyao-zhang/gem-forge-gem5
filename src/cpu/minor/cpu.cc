@@ -345,12 +345,14 @@ MinorCPUParams::create()
     return new MinorCPU(this);
 }
 
-MasterPort &MinorCPU::getInstPort()
+Port &
+MinorCPU::getInstPort()
 {
     return pipeline->getInstPort();
 }
 
-MasterPort &MinorCPU::getDataPort()
+Port &
+MinorCPU::getDataPort()
 {
     return pipeline->getDataPort();
 }

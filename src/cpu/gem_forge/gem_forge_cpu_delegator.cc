@@ -3,7 +3,8 @@
 #include "mem/port_proxy.hh"
 
 std::string GemForgeCPUDelegator::readStringFromMem(Addr vaddr) {
-  PortProxy proxy(this->baseCPU->getDataPort(), this->baseCPU->cacheLineSize());
+  PortProxy proxy(this->baseCPU->getSendFunctional(),
+                  this->baseCPU->cacheLineSize());
   std::string s;
   uint8_t c;
   do {

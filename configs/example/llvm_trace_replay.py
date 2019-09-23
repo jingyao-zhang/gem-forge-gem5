@@ -485,7 +485,7 @@ if options.llvm_mcpat == 1:
     system.mcpat_manager = McPATManager()
 
 # Disable snoop filter
-if not options.ruby and not options.no_l2bus:
+if not options.ruby and options.l2cache:
     system.tol2bus.snoop_filter = NULL
 
 for cpu in system.cpu:

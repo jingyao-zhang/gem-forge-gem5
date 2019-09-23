@@ -57,6 +57,10 @@ X86ISA::I82094AA::I82094AA(Params *p)
         redirTable[i] = entry;
         pinStates[i] = false;
     }
+
+    for (int i = 0; i < p->port_inputs_connection_count; i++)
+        inputs.push_back(new IntSinkPin<I82094AA>(
+                    csprintf("%s.inputs[%d]", name(), i), i, this));
 }
 
 void
@@ -75,25 +79,18 @@ X86ISA::I82094AA::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name == "int_master")
         return intMasterPort;
-    return BasicPioDevice::getPort(if_name, idx);
+    if (if_name == "inputs")
+        return *inputs.at(idx);
+    else
+        return BasicPioDevice::getPort(if_name, idx);
 }
 
-AddrRangeList
-X86ISA::I82094AA::getIntAddrRange() const
-{
-    AddrRangeList ranges;
-    ranges.push_back(RangeEx(x86InterruptAddress(initialApicId, 0),
-                             x86InterruptAddress(initialApicId, 0) +
-                             PhysAddrAPICRangeSize));
-    return ranges;
-}
-
-Tick
+bool
 X86ISA::I82094AA::recvResponse(PacketPtr pkt)
 {
     // Packet instantiated calling sendMessage() in signalInterrupt()
     delete pkt;
-    return 0;
+    return true;
 }
 
 Tick

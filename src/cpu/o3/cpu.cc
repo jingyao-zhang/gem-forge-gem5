@@ -90,52 +90,6 @@ BaseO3CPU::regStats()
     BaseCPU::regStats();
 }
 
-template<class Impl>
-bool
-FullO3CPU<Impl>::IcachePort::recvTimingResp(PacketPtr pkt)
-{
-    DPRINTF(O3CPU, "Fetch unit received timing\n");
-    // We shouldn't ever get a cacheable block in Modified state
-    assert(pkt->req->isUncacheable() ||
-           !(pkt->cacheResponding() && !pkt->hasSharers()));
-    fetch->processCacheCompletion(pkt);
-
-    return true;
-}
-
-template<class Impl>
-void
-FullO3CPU<Impl>::IcachePort::recvReqRetry()
-{
-    fetch->recvReqRetry();
-}
-
-template <class Impl>
-bool
-FullO3CPU<Impl>::DcachePort::recvTimingResp(PacketPtr pkt)
-{
-    return lsq->recvTimingResp(pkt);
-}
-
-template <class Impl>
-void
-FullO3CPU<Impl>::DcachePort::recvTimingSnoopReq(PacketPtr pkt)
-{
-    for (ThreadID tid = 0; tid < cpu->numThreads; tid++) {
-        if (cpu->getCpuAddrMonitor(tid)->doMonitor(pkt)) {
-            cpu->wakeup(tid);
-        }
-    }
-    lsq->recvTimingSnoopReq(pkt);
-}
-
-template <class Impl>
-void
-FullO3CPU<Impl>::DcachePort::recvReqRetry()
-{
-    lsq->recvReqRetry();
-}
-
 template <class Impl>
 FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
     : BaseO3CPU(params),
@@ -174,9 +128,6 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
 
       isa(numThreads, NULL),
 
-      icachePort(&fetch, this),
-      dcachePort(&iew.ldstQueue, this),
-
       timeBuffer(params->backComSize, params->forwardComSize),
       fetchQueue(params->backComSize, params->forwardComSize),
       decodeQueue(params->backComSize, params->forwardComSize),
@@ -199,7 +150,7 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
     if (params->checker) {
         BaseCPU *temp_checker = params->checker;
         checker = dynamic_cast<Checker<Impl> *>(temp_checker);
-        checker->setIcachePort(&icachePort);
+        checker->setIcachePort(&this->fetch.getInstPort());
         checker->setSystem(params->system);
     } else {
         checker = NULL;
@@ -351,11 +302,6 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
     commit.setROB(&rob);
 
     lastActivatedCycle = 0;
-#if 0
-    // Give renameMap & rename stage access to the freeList;
-    for (ThreadID tid = 0; tid < numThreads; tid++)
-        globalSeqNum[tid] = 1;
-#endif
 
     DPRINTF(O3CPU, "Creating O3CPU object.\n");
 
@@ -900,20 +846,7 @@ FullO3CPU<Impl>::removeThread(ThreadID tid)
     // either committed successfully or squashed. All thread-specific
     // queues in the pipeline must be empty.
     assert(iew.instQueue.getCount(tid) == 0);
-
-    /**
-     * I comment the assertion out as in the original implementation,
-     * the only caller of ThreadContext::halt() would be exit syscall,
-     * and therefore it is guaranteed that would not be pending WB
-     * stores.
-     * However, now I am trying to implement exitGroup and need to
-     * halt thread A when another thread in the same thread group
-     * calls exitGroup(). In this case, thread A may be caught in the
-     * middle when it has some pending WB stores and cause problem.
-     * For now I will simply comment out this assertion. We should
-     * probably add some ThreadContext::exit() function in the future.
-     */
-    // assert(iew.ldstQueue.getCount(tid) == 0);
+    assert(iew.ldstQueue.getCount(tid) == 0);
     assert(commit.rob->isEmpty(tid));
 
     // Reset ROB/IQ/LSQ Entries
@@ -1040,7 +973,7 @@ FullO3CPU<Impl>::drain()
 
     // Wake the CPU and record activity so everything can drain out if
     // the CPU was not able to immediately drain.
-    if (!isDrained())  {
+    if (!isCpuDrained())  {
         // If a thread is suspended, wake it up so it can be drained
         for (auto t : threadContexts) {
             if (t->status() == ThreadContext::Suspended){
@@ -1066,7 +999,7 @@ FullO3CPU<Impl>::drain()
         // Flush out any old data from the time buffers.  In
         // particular, there might be some data in flight from the
         // fetch stage that isn't visible in any of the CPU buffers we
-        // test in isDrained().
+        // test in isCpuDrained().
         for (int i = 0; i < timeBuffer.getSize(); ++i) {
             timeBuffer.advance();
             fetchQueue.advance();
@@ -1084,7 +1017,7 @@ template <class Impl>
 bool
 FullO3CPU<Impl>::tryDrain()
 {
-    if (drainState() != DrainState::Draining || !isDrained())
+    if (drainState() != DrainState::Draining || !isCpuDrained())
         return false;
 
     if (tickEvent.scheduled())
@@ -1100,7 +1033,7 @@ template <class Impl>
 void
 FullO3CPU<Impl>::drainSanityCheck() const
 {
-    assert(isDrained());
+    assert(isCpuDrained());
     fetch.drainSanityCheck();
     decode.drainSanityCheck();
     rename.drainSanityCheck();
@@ -1110,7 +1043,7 @@ FullO3CPU<Impl>::drainSanityCheck() const
 
 template <class Impl>
 bool
-FullO3CPU<Impl>::isDrained() const
+FullO3CPU<Impl>::isCpuDrained() const
 {
     bool drained(true);
 

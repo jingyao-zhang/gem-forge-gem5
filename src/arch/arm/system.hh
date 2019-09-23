@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2012-2013, 2015-2018 ARM Limited
+ * Copyright (c) 2010, 2012-2013, 2015-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -131,6 +131,14 @@ class ArmSystem : public System
     const unsigned _sveVL;
 
     /**
+     * True if LSE is implemented (ARMv8.1)
+     */
+    const bool _haveLSE;
+
+    /** True if Priviledge Access Never is implemented */
+    const unsigned _havePAN;
+
+    /**
      * Range for memory-mapped m5 pseudo ops. The range will be
      * invalid/empty if disabled.
      */
@@ -240,6 +248,12 @@ class ArmSystem : public System
 
     /** Returns the SVE vector length at reset, in quadwords */
     unsigned sveVL() const { return _sveVL; }
+
+    /** Returns true if LSE is implemented (ARMv8.1) */
+    bool haveLSE() const { return _haveLSE; }
+
+    /** Returns true if Priviledge Access Never is implemented */
+    bool havePAN() const { return _havePAN; }
 
     /** Returns the supported physical address range in bits if the highest
      * implemented exception level is 64 bits (ARMv8) */

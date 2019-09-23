@@ -1,3 +1,18 @@
+<<<<<<< HEAD
+=======
+# Copyright (c) 2019 ARM Limited
+# All rights reserved
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
 # Copyright (c) 2017 Mark D. Hill and David A. Wood
 # All rights reserved.
 #
@@ -25,12 +40,24 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # Authors: Sean Wilson
+<<<<<<< HEAD
+=======
+#          Nikos Nikoleris
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
 
 import os
 import tempfile
 import shutil
+<<<<<<< HEAD
 
 from testlib.fixture import Fixture, globalfixture
+=======
+import threading
+import urllib
+import urllib2
+
+from testlib.fixture import Fixture
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
 from testlib.config import config, constants
 from testlib.helper import log_call, cacheresult, joinpath, absdirpath
 import testlib.log as log
@@ -59,8 +86,52 @@ class TempdirFixture(Fixture):
         # Set path to none so it's not deleted
         self.path = None
 
+<<<<<<< HEAD
 
 class SConsFixture(Fixture):
+=======
+class UniqueFixture(Fixture):
+    '''
+    Base class for fixtures that generate a target in the
+    filesystem. If the same fixture is used by more than one
+    test/suite, rather than creating a copy of the fixture, it returns
+    the same object and makes sure that setup is only executed
+    once. Devired classses should override the _init and _setup
+    functions.
+
+    :param target: The absolute path of the target in the filesystem.
+
+    '''
+    fixtures = {}
+
+    def __new__(cls, target):
+        if target in cls.fixtures:
+            obj = cls.fixtures[target]
+        else:
+            obj = super(UniqueFixture, cls).__new__(cls)
+            obj.lock = threading.Lock()
+            obj.target = target
+            cls.fixtures[target] = obj
+        return obj
+
+    def __init__(self, *args, **kwargs):
+        with self.lock:
+            if hasattr(self, '_init_done'):
+                return
+            super(UniqueFixture, self).__init__(self, **kwargs)
+            self._init(*args, **kwargs)
+            self._init_done = True
+
+    def setup(self, testitem):
+        with self.lock:
+            if hasattr(self, '_setup_done'):
+                return
+            self._setup_done = True
+            self._setup(testitem)
+
+
+class SConsFixture(UniqueFixture):
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
     '''
     Fixture will wait until all SCons targets are collected and tests are
     about to be ran, then will invocate a single instance of SCons for all
@@ -69,6 +140,7 @@ class SConsFixture(Fixture):
     :param directory: The directory which scons will -C (cd) into before
         executing. If None is provided, will choose the config base_dir.
     '''
+<<<<<<< HEAD
     def __init__(self, directory=None, target_class=None, options=[]):
         self.directory = directory if directory else config.base_dir
         self.target_class = target_class if target_class else SConsTarget
@@ -78,12 +150,24 @@ class SConsFixture(Fixture):
         super(SConsFixture, self).__init__()
 
     def setup(self, testitem):
+=======
+
+    def __new__(cls, target):
+        obj = super(SConsFixture, cls).__new__(cls, target)
+        return obj
+
+    def _setup(self, testitem):
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
         if config.skip_build:
             return
 
         command = [
             'scons', '-C', self.directory,
+<<<<<<< HEAD
             '-j', str(self.threads),
+=======
+            '-j', str(config.threads),
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
             '--ignore-style'
         ]
 
@@ -107,6 +191,7 @@ class SConsFixture(Fixture):
             command.extend(self.options)
         log_call(log.test_log, command)
 
+<<<<<<< HEAD
 
 class SConsTarget(Fixture):
     # The singleton scons fixture we'll use for all targets.
@@ -171,6 +256,29 @@ class Gem5Fixture(SConsTarget):
         self.isa = isa
         self.variant = variant
 
+=======
+class Gem5Fixture(SConsFixture):
+    def __new__(cls, isa, variant, protocol=None):
+        target_dir = joinpath(config.build_dir, isa.upper())
+        if protocol:
+            target_dir += '_' + protocol
+        target = joinpath(target_dir, 'gem5.%s' % variant)
+        obj = super(Gem5Fixture, cls).__new__(cls, target)
+        return obj
+
+    def _init(self, isa, variant, protocol=None):
+        self.name = constants.gem5_binary_fixture_name
+
+        self.targets = [self.target]
+        self.path = self.target
+        self.directory = config.base_dir
+
+        self.options = []
+        if protocol:
+            self.options = [ '--default=' + isa.upper(),
+                             'PROTOCOL=' + protocol ]
+        self.set_global()
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
 
 class MakeFixture(Fixture):
     def __init__(self, directory, *args, **kwargs):
@@ -233,6 +341,7 @@ class TestProgram(MakeTarget):
         elif not os.path.exists(self.path):
             super(MakeTarget, self).setup()
 
+<<<<<<< HEAD
 class DownloadedProgram(Fixture):
     """ Like TestProgram, but checks the version in the gem5 binary repository
         and downloads an updated version if it is needed.
@@ -271,6 +380,45 @@ class DownloadedProgram(Fixture):
 
     def _getremotetime(self):
         import  urllib2, datetime, time
+=======
+class DownloadedProgram(UniqueFixture):
+    """ Like TestProgram, but checks the version in the gem5 binary repository
+        and downloads an updated version if it is needed.
+    """
+
+    def __new__(cls, url, path, filename):
+        target = joinpath(path, filename)
+        return super(DownloadedProgram, cls).__new__(cls, target)
+
+    def _init(self, url, path, filename, **kwargs):
+        """
+        url: string
+            The url of the archive
+        path: string
+            The absolute path of the directory containing the archive
+        filename: string
+            The name of the archive
+        """
+
+        self.url = url
+        self.path = path
+        self.filename = joinpath(path, filename)
+        self.name = "Downloaded:" + self.filename
+
+    def _download(self):
+        import errno
+        log.test_log.debug("Downloading " + self.url + " to " + self.path)
+        if not os.path.exists(self.path):
+            try:
+                os.makedirs(self.path)
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+        urllib.urlretrieve(self.url, self.filename)
+
+    def _getremotetime(self):
+        import datetime, time
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
         import _strptime # Needed for python threading bug
 
         u = urllib2.urlopen(self.url)
@@ -278,18 +426,60 @@ class DownloadedProgram(Fixture):
                     u.info().getheaders("Last-Modified")[0],
                     "%a, %d %b %Y %X GMT").timetuple())
 
+<<<<<<< HEAD
     def setup(self, testitem):
         import urllib2
         # Check to see if there is a file downloaded
         if not os.path.exists(self.path):
+            self._download()
+=======
+    def _setup(self, testitem):
+        # Check to see if there is a file downloaded
+        if not os.path.exists(self.filename):
             self._download()
         else:
             try:
                 t = self._getremotetime()
             except urllib2.URLError:
                 # Problem checking the server, use the old files.
+                log.test_log.debug("Could not contact server. Binaries may be old.")
+                return
+            # If the server version is more recent, download it
+            if t > os.path.getmtime(self.filename):
+                self._download()
+
+class DownloadedArchive(DownloadedProgram):
+    """ Like TestProgram, but checks the version in the gem5 binary repository
+        and downloads an updated version if it is needed.
+    """
+
+    def _extract(self):
+        import tarfile
+        with tarfile.open(self.filename) as tf:
+            tf.extractall(self.path)
+
+    def _setup(self, testitem):
+        # Check to see if there is a file downloaded
+        if not os.path.exists(self.filename):
+            self._download()
+            self._extract()
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
+        else:
+            try:
+                t = self._getremotetime()
+            except urllib2.URLError:
+                # Problem checking the server, use the old files.
+<<<<<<< HEAD
                 log.debug("Could not contact server. Binaries may be old.")
                 return
             # If the server version is more recent, download it
             if t > os.path.getmtime(self.path):
                 self._download()
+=======
+                log.test_log.debug("Could not contact server. Binaries may be old.")
+                return
+            # If the server version is more recent, download it
+            if t > os.path.getmtime(self.filename):
+                self._download()
+                self._extract()
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306

@@ -1,6 +1,6 @@
 /*
  * Copyright 2014 Google, Inc.
- * Copyright (c) 2012-2013,2015,2017-2018 ARM Limited
+ * Copyright (c) 2012-2013,2015,2017-2019 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -112,7 +112,7 @@ AtomicSimpleCPU::drain()
     if (switchedOut())
         return DrainState::Drained;
 
-    if (!isDrained()) {
+    if (!isCpuDrained()) {
         DPRINTF(Drain, "Requesting drain.\n");
         return DrainState::Draining;
     } else {
@@ -183,7 +183,7 @@ AtomicSimpleCPU::tryCompleteDrain()
         return false;
 
     DPRINTF(Drain, "tryCompleteDrain.\n");
-    if (!isDrained())
+    if (!isCpuDrained())
         return false;
 
     DPRINTF(Drain, "CPU done draining, processing drain event\n");
@@ -200,7 +200,7 @@ AtomicSimpleCPU::switchOut()
 
     assert(!tickEvent.scheduled());
     assert(_status == BaseSimpleCPU::Running || _status == Idle);
-    assert(isDrained());
+    assert(isCpuDrained());
 }
 
 
@@ -362,6 +362,7 @@ AtomicSimpleCPU::genMemFragmentRequest(const RequestPtr& req, Addr frag_addr,
     } else {
         req->setVirt(0, frag_addr, frag_size, flags, dataMasterId(),
                      inst_addr);
+        req->setByteEnable(std::vector<bool>());
     }
 
     return predicate;
@@ -541,7 +542,6 @@ AtomicSimpleCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
         {
             if (req->isLockedRMW() && fault == NoFault) {
                 assert(byteEnable.empty());
-                assert(locked && curr_frag_id == 0);
                 locked = false;
             }
 

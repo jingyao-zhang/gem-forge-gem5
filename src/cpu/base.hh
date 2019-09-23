@@ -160,7 +160,18 @@ class BaseCPU : public ClockedObject
      *
      * @return a reference to the data port
      */
-    virtual MasterPort &getDataPort() = 0;
+    virtual Port &getDataPort() = 0;
+
+    /**
+     * Returns a sendFunctional delegate for use with port proxies.
+     */
+    virtual PortProxy::SendFunctionalFunc
+    getSendFunctional()
+    {
+        auto port = dynamic_cast<MasterPort *>(&getDataPort());
+        assert(port);
+        return [port](PacketPtr pkt)->void { port->sendFunctional(pkt); };
+    }
 
     /**
      * Purely virtual method that returns a reference to the instruction
@@ -168,7 +179,7 @@ class BaseCPU : public ClockedObject
      *
      * @return a reference to the instruction port
      */
-    virtual MasterPort &getInstPort() = 0;
+    virtual Port &getInstPort() = 0;
 
     /** Reads this CPU's ID. */
     int cpuId() const { return _cpuId; }
@@ -297,7 +308,9 @@ class BaseCPU : public ClockedObject
    virtual ThreadContext *getContext(int tn) { return threadContexts[tn]; }
 
    /// Get the number of thread contexts available
-   unsigned numContexts() { return threadContexts.size(); }
+   unsigned numContexts() {
+       return static_cast<unsigned>(threadContexts.size());
+   }
 
     /// Convert ContextID to threadID
     ThreadID contextToThread(ContextID cid)
@@ -409,7 +422,7 @@ class BaseCPU : public ClockedObject
      * uniform data format for all CPU models and promotes better code
      * reuse.
      *
-     * @param os The stream to serialize to.
+     * @param cp The stream to serialize to.
      */
     void serialize(CheckpointOut &cp) const override;
 
@@ -422,14 +435,13 @@ class BaseCPU : public ClockedObject
      * promotes better code reuse.
 
      * @param cp The checkpoint use.
-     * @param section The section name of this object.
      */
     void unserialize(CheckpointIn &cp) override;
 
     /**
      * Serialize a single thread.
      *
-     * @param os The stream to serialize to.
+     * @param cp The stream to serialize to.
      * @param tid ID of the current thread.
      */
     virtual void serializeThread(CheckpointOut &cp, ThreadID tid) const {};
@@ -438,7 +450,6 @@ class BaseCPU : public ClockedObject
      * Unserialize one thread.
      *
      * @param cp The checkpoint use.
-     * @param section The section name of this thread.
      * @param tid ID of the current thread.
      */
     virtual void unserializeThread(CheckpointIn &cp, ThreadID tid) {};

@@ -4,7 +4,7 @@
 #include "LLCDynamicStream.hh"
 
 // Generate by slicc.
-#include "mem/protocol/RequestMsg.hh"
+#include "mem/ruby/protocol/RequestMsg.hh"
 
 #include "mem/ruby/common/Consumer.hh"
 

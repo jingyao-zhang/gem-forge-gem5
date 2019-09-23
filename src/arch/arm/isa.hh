@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2012-2018 ARM Limited
+ * Copyright (c) 2010, 2012-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -95,6 +95,8 @@ namespace ArmISA
         bool haveGICv3CPUInterface;
         uint8_t physAddrRange;
         bool haveSVE;
+        bool haveLSE;
+        bool havePAN;
 
         /** SVE vector length in quadwords */
         unsigned sveVL;
@@ -104,6 +106,8 @@ namespace ArmISA
          * as NOP hence not causing UNDEFINED INSTRUCTION.
          */
         bool impdefAsNop;
+
+        bool afterStartup;
 
         /** MiscReg metadata **/
         struct MiscRegLUTEntry {
@@ -177,6 +181,10 @@ namespace ArmISA
             }
             chain banked(bool v = true) const {
                 info[MISCREG_BANKED] = v;
+                return *this;
+            }
+            chain banked64(bool v = true) const {
+                info[MISCREG_BANKED64] = v;
                 return *this;
             }
             chain bankedChild(bool v = true) const {
@@ -638,9 +646,23 @@ namespace ArmISA
                                      inSecureState(miscRegs[MISCREG_SCR],
                                                    miscRegs[MISCREG_CPSR]);
                     flat_idx += secureReg ? 2 : 1;
+                } else {
+                    flat_idx = snsBankedIndex64((MiscRegIndex)reg,
+                        !inSecureState(miscRegs[MISCREG_SCR],
+                                       miscRegs[MISCREG_CPSR]));
                 }
             }
             return flat_idx;
+        }
+
+        int
+        snsBankedIndex64(MiscRegIndex reg, bool ns) const
+        {
+            int reg_as_int = static_cast<int>(reg);
+            if (miscRegInfo[reg][MISCREG_BANKED64]) {
+                reg_as_int += (haveSecurity && !ns) ? 2 : 1;
+            }
+            return reg_as_int;
         }
 
         std::pair<int,int> getMiscIndices(int misc_reg) const
@@ -684,6 +706,8 @@ namespace ArmISA
             SERIALIZE_SCALAR(physAddrRange);
             SERIALIZE_SCALAR(haveSVE);
             SERIALIZE_SCALAR(sveVL);
+            SERIALIZE_SCALAR(haveLSE);
+            SERIALIZE_SCALAR(havePAN);
         }
         void unserialize(CheckpointIn &cp)
         {
@@ -700,11 +724,23 @@ namespace ArmISA
             UNSERIALIZE_SCALAR(physAddrRange);
             UNSERIALIZE_SCALAR(haveSVE);
             UNSERIALIZE_SCALAR(sveVL);
+            UNSERIALIZE_SCALAR(haveLSE);
+            UNSERIALIZE_SCALAR(havePAN);
         }
 
         void startup(ThreadContext *tc);
 
         Enums::DecoderFlavour decoderFlavour() const { return _decoderFlavour; }
+
+        /** Getter for haveGICv3CPUInterface */
+        bool haveGICv3CpuIfc() const
+        {
+            // haveGICv3CPUInterface is initialized at startup time, hence
+            // trying to read its value before the startup stage will lead
+            // to an error
+            assert(afterStartup);
+            return haveGICv3CPUInterface;
+        }
 
         Enums::VecRegRenameMode
         vecRegRenameMode() const

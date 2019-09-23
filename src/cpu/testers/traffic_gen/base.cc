@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, 2016-2018 ARM Limited
+ * Copyright (c) 2012-2013, 2016-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -75,10 +75,12 @@ BaseTrafficGen::BaseTrafficGen(const BaseTrafficGenParams* p)
       noProgressEvent([this]{ noProgress(); }, name()),
       nextTransitionTick(0),
       nextPacketTick(0),
+      maxOutstandingReqs(p->max_outstanding_reqs),
       port(name() + ".port", *this),
       retryPkt(NULL),
-      retryPktTick(0),
+      retryPktTick(0), blockedWaitingResp(false),
       updateEvent([this]{ update(); }, name()),
+      stats(this),
       masterID(system->getMasterId(this)),
       streamGenerator(StreamGen::create(p))
 {
@@ -194,8 +196,10 @@ BaseTrafficGen::update()
         // suppress packets that are not destined for a memory, such as
         // device accesses that could be part of a trace
         if (pkt && system->isMemAddr(pkt->getAddr())) {
-            numPackets++;
-            if (!port.sendTimingReq(pkt)) {
+            stats.numPackets++;
+            // Only attempts to send if not blocked by pending responses
+            blockedWaitingResp = allocateWaitingRespSlot(pkt);
+            if (blockedWaitingResp || !port.sendTimingReq(pkt)) {
                 retryPkt = pkt;
                 retryPktTick = curTick();
             }
@@ -203,18 +207,18 @@ BaseTrafficGen::update()
             DPRINTF(TrafficGen, "Suppressed packet %s 0x%x\n",
                     pkt->cmdString(), pkt->getAddr());
 
-            ++numSuppressed;
-            if (!(static_cast<int>(numSuppressed.value()) % 10000))
+            ++stats.numSuppressed;
+            if (!(static_cast<int>(stats.numSuppressed.value()) % 10000))
                 warn("%s suppressed %d packets with non-memory addresses\n",
-                     name(), numSuppressed.value());
+                     name(), stats.numSuppressed.value());
 
             delete pkt;
             pkt = nullptr;
         }
     }
 
-    // if we are waiting for a retry, do not schedule any further
-    // events, in the case of a transition or a successful send, go
+    // if we are waiting for a retry or for a response, do not schedule any
+    // further events, in the case of a transition or a successful send, go
     // ahead and determine when the next update should take place
     if (retryPkt == NULL) {
         nextPacketTick = activeGenerator->nextPacketTick(elasticReq, 0);
@@ -284,10 +288,18 @@ BaseTrafficGen::start()
 void
 BaseTrafficGen::recvReqRetry()
 {
-    assert(retryPkt != NULL);
-
     DPRINTF(TrafficGen, "Received retry\n");
-    numRetries++;
+    stats.numRetries++;
+    retryReq();
+}
+
+void
+BaseTrafficGen::retryReq()
+{
+    assert(retryPkt != NULL);
+    assert(retryPktTick != 0);
+    assert(!blockedWaitingResp);
+
     // attempt to send the packet, and if we are successful start up
     // the machinery again
     if (port.sendTimingReq(retryPkt)) {
@@ -297,7 +309,7 @@ BaseTrafficGen::recvReqRetry()
         // the tick for the next packet
         Tick delay = curTick() - retryPktTick;
         retryPktTick = 0;
-        retryTicks += delay;
+        stats.retryTicks += delay;
 
         if (drainState() != DrainState::Draining) {
             // packet is sent, so find out when the next one is due
@@ -320,29 +332,28 @@ BaseTrafficGen::noProgress()
           name(), progressCheck);
 }
 
-void
-BaseTrafficGen::regStats()
+BaseTrafficGen::StatGroup::StatGroup(Stats::Group *parent)
+    : Stats::Group(parent),
+      ADD_STAT(numSuppressed,
+               "Number of suppressed packets to non-memory space"),
+      ADD_STAT(numPackets, "Number of packets generated"),
+      ADD_STAT(numRetries, "Number of retries"),
+      ADD_STAT(retryTicks, "Time spent waiting due to back-pressure (ticks)"),
+      ADD_STAT(bytesRead, "Number of bytes read"),
+      ADD_STAT(bytesWritten, "Number of bytes written"),
+      ADD_STAT(totalReadLatency, "Total latency of read requests"),
+      ADD_STAT(totalWriteLatency, "Total latency of write requests"),
+      ADD_STAT(totalReads, "Total num of reads"),
+      ADD_STAT(totalWrites, "Total num of writes"),
+      ADD_STAT(avgReadLatency, "Avg latency of read requests",
+               totalReadLatency / totalReads),
+      ADD_STAT(avgWriteLatency, "Avg latency of write requests",
+               totalWriteLatency / totalWrites),
+      ADD_STAT(readBW, "Read bandwidth in bytes/s",
+               bytesRead / simSeconds),
+      ADD_STAT(writeBW, "Write bandwidth in bytes/s",
+               bytesWritten / simSeconds)
 {
-    ClockedObject::regStats();
-
-    // Initialise all the stats
-    using namespace Stats;
-
-    numPackets
-        .name(name() + ".numPackets")
-        .desc("Number of packets generated");
-
-    numSuppressed
-        .name(name() + ".numSuppressed")
-        .desc("Number of suppressed packets to non-memory space");
-
-    numRetries
-        .name(name() + ".numRetries")
-        .desc("Number of retries");
-
-    retryTicks
-        .name(name() + ".retryTicks")
-        .desc("Time spent waiting due to back-pressure (ticks)");
 }
 
 std::shared_ptr<BaseGen>
@@ -449,9 +460,35 @@ BaseTrafficGen::createTrace(Tick duration,
 }
 
 bool
-BaseTrafficGen::TrafficGenPort::recvTimingResp(PacketPtr pkt)
+BaseTrafficGen::recvTimingResp(PacketPtr pkt)
 {
+    auto iter = waitingResp.find(pkt->req);
+
+    panic_if(iter == waitingResp.end(), "%s: "
+            "Received unexpected response [%s reqPtr=%x]\n",
+               pkt->print(), pkt->req);
+
+    assert(iter->second <= curTick());
+
+    if (pkt->isWrite()) {
+        ++stats.totalWrites;
+        stats.bytesWritten += pkt->req->getSize();
+        stats.totalWriteLatency += curTick() - iter->second;
+    } else {
+        ++stats.totalReads;
+        stats.bytesRead += pkt->req->getSize();
+        stats.totalReadLatency += curTick() - iter->second;
+    }
+
+    waitingResp.erase(iter);
+
     delete pkt;
+
+    // Sends up the request if we were blocked
+    if (blockedWaitingResp) {
+        blockedWaitingResp = false;
+        retryReq();
+    }
 
     return true;
 }

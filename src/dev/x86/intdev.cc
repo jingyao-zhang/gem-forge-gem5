@@ -43,48 +43,9 @@
 #include "dev/x86/intdev.hh"
 
 void
-X86ISA::IntDevice::IntMasterPort::sendMessage(ApicList apics,
-                                           TriggerIntMessage message,
-                                           bool timing)
-{
-    ApicList::iterator apicIt;
-    for (apicIt = apics.begin(); apicIt != apics.end(); apicIt++) {
-        PacketPtr pkt = buildIntRequest(*apicIt, message);
-        if (timing) {
-            schedTimingReq(pkt, curTick() + latency);
-            // The target handles cleaning up the packet in timing mode.
-        } else {
-            // ignore the latency involved in the atomic transaction
-            sendAtomic(pkt);
-            assert(pkt->isResponse());
-            // also ignore the latency in handling the response
-            recvResponse(pkt);
-        }
-    }
-}
-
-void
 X86ISA::IntDevice::init()
 {
     if (!intMasterPort.isConnected()) {
         panic("Int port not connected to anything!");
     }
-}
-
-X86ISA::IntSourcePin *
-X86IntSourcePinParams::create()
-{
-    return new X86ISA::IntSourcePin(this);
-}
-
-X86ISA::IntSinkPin *
-X86IntSinkPinParams::create()
-{
-    return new X86ISA::IntSinkPin(this);
-}
-
-X86ISA::IntLine *
-X86IntLineParams::create()
-{
-    return new X86ISA::IntLine(this);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2011, 2014, 2016-2017 ARM Limited
+ * Copyright (c) 2010-2011, 2014, 2016-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -61,6 +61,9 @@ const int MaxInstSrcRegs = ArmISAInst::MaxInstDestRegs +
 using ArmISAInst::MaxInstDestRegs;
 using ArmISAInst::MaxMiscDestRegs;
 
+// Number of VecElem per Vector Register considering only pre-SVE
+// Advanced SIMD registers.
+constexpr unsigned NumVecElemPerNeonVecReg = 4;
 // Number of VecElem per Vector Register, computed based on the vector length
 constexpr unsigned NumVecElemPerVecReg = MaxSveVecLenInWords;
 
@@ -85,13 +88,20 @@ const int NumVecV7ArchRegs  = 64;
 const int NumVecV8ArchRegs  = 32;
 const int NumVecSpecialRegs = 8;
 
+const int NumVecIntrlvRegs = 4;
 const int NumIntRegs = NUM_INTREGS;
 const int NumFloatRegs = NumFloatV8ArchRegs + NumFloatSpecialRegs;
-const int NumVecRegs = NumVecV8ArchRegs + NumVecSpecialRegs;
-const int NumVecPredRegs = 17;  // P0-P15, FFR
+const int NumVecRegs = NumVecV8ArchRegs + NumVecSpecialRegs + NumVecIntrlvRegs;
+const int VECREG_UREG0 = 32;
+const int NumVecPredRegs = 18;  // P0-P15, FFR, UREG0
 const int PREDREG_FFR = 16;
+const int PREDREG_UREG0 = 17;
 const int NumCCRegs = NUM_CCREGS;
 const int NumMiscRegs = NUM_MISCREGS;
+const int INTRLVREG0 = NumVecV8ArchRegs + NumVecSpecialRegs;
+const int INTRLVREG1 = INTRLVREG0 + 1;
+const int INTRLVREG2 = INTRLVREG0 + 2;
+const int INTRLVREG3 = INTRLVREG0 + 3;
 
 #define ISA_HAS_CC_REGS
 

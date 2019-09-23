@@ -230,7 +230,7 @@ def config_cache(options, system):
                 )
             else:
                 system.cpu[i].connectAllPorts(
-                    system.tol2bus.slave,
+                    system.tol2bus,
                     system.membus,
                 )
         elif options.external_memory_system:

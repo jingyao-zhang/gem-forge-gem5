@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013, 2015-2018 ARM Limited
+ * Copyright (c) 2010-2013, 2015-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -962,6 +962,18 @@ decodeCP15Reg64(unsigned crm, unsigned opc1)
             return MISCREG_CNTHP_CVAL;
         }
         break;
+      case 12:
+        switch (opc1) {
+          case 0:
+            return MISCREG_ICC_SGI1R;
+          case 1:
+            return MISCREG_ICC_ASGI1R;
+          case 2:
+            return MISCREG_ICC_SGI0R;
+          default:
+            break;
+        }
+        break;
       case 15:
         if (opc1 == 0)
             return MISCREG_CPUMERRSR;
@@ -1063,6 +1075,12 @@ snsBankedIndex(MiscRegIndex reg, ThreadContext *tc, bool ns)
     return reg_as_int;
 }
 
+int
+snsBankedIndex64(MiscRegIndex reg, ThreadContext *tc)
+{
+    SCR scr = tc->readMiscReg(MISCREG_SCR);
+    return tc->getIsaPtr()->snsBankedIndex64(reg, scr.ns);
+}
 
 /**
  * If the reg is a child reg of a banked set, then the parent is the last
@@ -1117,7 +1135,7 @@ canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
 
     bool secure = ArmSystem::haveSecurity(tc) && !scr.ns;
 
-    switch (opModeToEL((OperatingMode) (uint8_t) cpsr.mode)) {
+    switch (currEL(cpsr)) {
       case EL0:
         return secure ? miscRegInfo[reg][MISCREG_USR_S_RD] :
             miscRegInfo[reg][MISCREG_USR_NS_RD];
@@ -1140,7 +1158,7 @@ canWriteAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
     // Check for SP_EL0 access while SPSEL == 0
     if ((reg == MISCREG_SP_EL0) && (tc->readMiscReg(MISCREG_SPSEL) == 0))
         return false;
-    ExceptionLevel el = opModeToEL((OperatingMode) (uint8_t) cpsr.mode);
+    ExceptionLevel el = currEL(cpsr);
     if (reg == MISCREG_DAIF) {
         SCTLR sctlr = tc->readMiscReg(MISCREG_SCTLR_EL1);
         if (el == EL0 && !sctlr.uma)
@@ -1984,6 +2002,14 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_SPSEL;
                       case 2:
                         return MISCREG_CURRENTEL;
+                      case 3:
+                        return MISCREG_PAN;
+                    }
+                    break;
+                  case 6:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICC_PMR_EL1;
                     }
                     break;
                   case 6:
@@ -4057,6 +4083,9 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges().exceptUserMode();
     InitReg(MISCREG_CURRENTEL)
       .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_PAN)
+      .allPrivileges().exceptUserMode()
+      .implemented(havePAN);
     InitReg(MISCREG_NZCV)
       .allPrivileges();
     InitReg(MISCREG_DAIF)
@@ -4510,7 +4539,7 @@ ISA::initializeMiscRegMetadata()
         .allPrivileges().exceptUserMode()
         .mapsTo(MISCREG_ICC_AP0R3);
     InitReg(MISCREG_ICC_AP1R0_EL1)
-        .banked()
+        .banked64()
         .mapsTo(MISCREG_ICC_AP1R0);
     InitReg(MISCREG_ICC_AP1R0_EL1_NS)
         .bankedChild()
@@ -4521,7 +4550,7 @@ ISA::initializeMiscRegMetadata()
         .allPrivileges().exceptUserMode()
         .mapsTo(MISCREG_ICC_AP1R0_S);
     InitReg(MISCREG_ICC_AP1R1_EL1)
-        .banked()
+        .banked64()
         .mapsTo(MISCREG_ICC_AP1R1);
     InitReg(MISCREG_ICC_AP1R1_EL1_NS)
         .bankedChild()
@@ -4532,7 +4561,7 @@ ISA::initializeMiscRegMetadata()
         .allPrivileges().exceptUserMode()
         .mapsTo(MISCREG_ICC_AP1R1_S);
     InitReg(MISCREG_ICC_AP1R2_EL1)
-        .banked()
+        .banked64()
         .mapsTo(MISCREG_ICC_AP1R2);
     InitReg(MISCREG_ICC_AP1R2_EL1_NS)
         .bankedChild()
@@ -4543,7 +4572,7 @@ ISA::initializeMiscRegMetadata()
         .allPrivileges().exceptUserMode()
         .mapsTo(MISCREG_ICC_AP1R2_S);
     InitReg(MISCREG_ICC_AP1R3_EL1)
-        .banked()
+        .banked64()
         .mapsTo(MISCREG_ICC_AP1R3);
     InitReg(MISCREG_ICC_AP1R3_EL1_NS)
         .bankedChild()
@@ -4580,7 +4609,7 @@ ISA::initializeMiscRegMetadata()
         .allPrivileges().exceptUserMode().writes(0)
         .mapsTo(MISCREG_ICC_HPPIR1);
     InitReg(MISCREG_ICC_BPR1_EL1)
-        .banked()
+        .banked64()
         .mapsTo(MISCREG_ICC_BPR1);
     InitReg(MISCREG_ICC_BPR1_EL1_NS)
         .bankedChild()
@@ -4593,7 +4622,7 @@ ISA::initializeMiscRegMetadata()
         .secure().exceptUserMode()
         .mapsTo(MISCREG_ICC_BPR1_S);
     InitReg(MISCREG_ICC_CTLR_EL1)
-        .banked()
+        .banked64()
         .mapsTo(MISCREG_ICC_CTLR);
     InitReg(MISCREG_ICC_CTLR_EL1_NS)
         .bankedChild()
@@ -4623,7 +4652,7 @@ ISA::initializeMiscRegMetadata()
         .allPrivileges().exceptUserMode()
         .mapsTo(MISCREG_ICC_IGRPEN0);
     InitReg(MISCREG_ICC_IGRPEN1_EL1)
-        .banked()
+        .banked64()
         .mapsTo(MISCREG_ICC_IGRPEN1);
     InitReg(MISCREG_ICC_IGRPEN1_EL1_NS)
         .bankedChild()

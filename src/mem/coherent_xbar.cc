@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 ARM Limited
+ * Copyright (c) 2011-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -74,6 +74,8 @@
 CoherentXBar::CoherentXBar(const CoherentXBarParams *p)
     : BaseXBar(p), system(p->system), snoopFilter(p->snoop_filter),
       snoopResponseLatency(p->snoop_response_latency),
+      maxOutstandingSnoopCheck(p->max_outstanding_snoops),
+      maxRoutingTableSizeCheck(p->max_routing_table_size),
       pointOfCoherency(p->point_of_coherency),
       pointOfUnification(p->point_of_unification)
 {
@@ -146,8 +148,7 @@ CoherentXBar::init()
     for (const auto& p: slavePorts) {
         // check if the connected master port is snooping
         if (p->isSnooping()) {
-            DPRINTF(AddrRanges, "Adding snooping master %s\n",
-                    p->getMasterPort().name());
+            DPRINTF(AddrRanges, "Adding snooping master %s\n", p->getPeer());
             snoopPorts.push_back(p);
         }
     }
@@ -348,8 +349,9 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID slave_port_id)
                 outstandingSnoop.insert(pkt->req);
 
                 // basic sanity check on the outstanding snoops
-                panic_if(outstandingSnoop.size() > 512,
-                         "Outstanding snoop requests exceeded 512\n");
+                panic_if(outstandingSnoop.size() > maxOutstandingSnoopCheck,
+                         "%s: Outstanding snoop requests exceeded %d\n",
+                         name(), maxOutstandingSnoopCheck);
             }
 
             // remember where to route the normal response to
@@ -357,8 +359,9 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID slave_port_id)
                 assert(routeTo.find(pkt->req) == routeTo.end());
                 routeTo[pkt->req] = slave_port_id;
 
-                panic_if(routeTo.size() > 512,
-                         "Routing table exceeds 512 packets\n");
+                panic_if(routeTo.size() > maxRoutingTableSizeCheck,
+                         "%s: Routing table exceeds %d packets\n",
+                         name(), maxRoutingTableSizeCheck);
             }
 
             // update the layer state and schedule an idle event
@@ -424,8 +427,9 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID slave_port_id)
                 assert(routeTo.find(pkt->req) == routeTo.end());
                 routeTo[pkt->req] = slave_port_id;
 
-                panic_if(routeTo.size() > 512,
-                         "Routing table exceeds 512 packets\n");
+                panic_if(routeTo.size() > maxRoutingTableSizeCheck,
+                         "%s: Routing table exceeds %d packets\n",
+                         name(), maxRoutingTableSizeCheck);
             }
         }
     }

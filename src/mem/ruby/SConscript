@@ -103,7 +103,7 @@ def do_embed_text(target, source, env):
 #
 # Link includes
 #
-generated_dir = Dir('../protocol')
+generated_dir = Dir('protocol')
 
 def MakeIncludeAction(target, source, env):
     f = file(str(target[0]), 'w')
@@ -135,7 +135,6 @@ MakeInclude('common/MachineID.hh')
 MakeInclude('common/NetDest.hh')
 MakeInclude('common/Set.hh')
 MakeInclude('common/WriteMask.hh')
-MakeInclude('filters/AbstractBloomFilter.hh')
 MakeInclude('network/MessageBuffer.hh')
 MakeInclude('structures/CacheMemory.hh')
 MakeInclude('structures/DirectoryMemory.hh')

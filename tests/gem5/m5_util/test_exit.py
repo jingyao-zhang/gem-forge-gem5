@@ -37,8 +37,16 @@ m5_exit_regex = re.compile(
 r'Exiting @ tick \d* because m5_exit instruction encountered'
 )
 
+<<<<<<< HEAD
 test_program = DownloadedProgram('test-progs/m5-exit/bin/x86/linux/',\
         'm5_exit')
+=======
+path = joinpath(absdirpath(__file__), '..',
+                'test-progs', 'hello', 'bin', 'x86', 'linux')
+filename = 'm5_exit'
+url = 'http://gem5.org/dist/current/test-progs/m5-exit/bin/x86/linux/m5_exit'
+test_program = DownloadedProgram(url, path, filename)
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
 
 a = verifier.MatchRegex(m5_exit_regex)
 gem5_verify_config(
@@ -46,6 +54,10 @@ gem5_verify_config(
     verifiers=[a],
     fixtures=(test_program,),
     config=os.path.join(config.base_dir, 'configs', 'example','se.py'),
+<<<<<<< HEAD
     config_args=['--cmd', test_program.path],
+=======
+    config_args=['--cmd', joinpath(test_program.path, filename)],
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
     valid_isas=('X86',)
 )

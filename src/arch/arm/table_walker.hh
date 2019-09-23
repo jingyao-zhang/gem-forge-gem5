@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2016 ARM Limited
+ * Copyright (c) 2010-2016, 2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -43,6 +43,7 @@
 
 #include <list>
 
+#include "arch/arm/faults.hh"
 #include "arch/arm/miscregs.hh"
 #include "arch/arm/system.hh"
 #include "arch/arm/tlb.hh"
@@ -67,6 +68,8 @@ class TableWalker : public ClockedObject
 
     class DescriptorBase {
       public:
+        DescriptorBase() : lookupLevel(L0) {}
+
         /** Current lookup level for this descriptor */
         LookupLevel lookupLevel;
 
@@ -381,6 +384,8 @@ class TableWalker : public ClockedObject
             Block,
             Page
         };
+
+        LongDescriptor() : data(0), _dirty(false) {}
 
         /** The raw bits of the entry */
         uint64_t data;
@@ -759,6 +764,9 @@ class TableWalker : public ClockedObject
         bool xnTable;
         bool pxnTable;
 
+        /** Hierarchical access permission disable */
+        bool hpd;
+
         /** Flag indicating if a second stage of lookup is required */
         bool stage2Req;
 
@@ -940,6 +948,8 @@ class TableWalker : public ClockedObject
     bool fetchDescriptor(Addr descAddr, uint8_t *data, int numBytes,
         Request::Flags flags, int queueIndex, Event *event,
         void (TableWalker::*doDescriptor)());
+
+    Fault generateLongDescFault(ArmFault::FaultSource src);
 
     void insertTableEntry(DescriptorBase &descriptor, bool longDescriptor);
 

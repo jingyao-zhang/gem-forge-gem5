@@ -10,8 +10,8 @@ class LLVMTraceCPUDriver final : public EmulatedDriver {
  public:
   LLVMTraceCPUDriver(LLVMTraceCPUDriverParams *p);
   void handshake(LLVMTraceCPU *llvm_trace_cpu);
-  int open(Process *p, ThreadContext *tc, int mode, int flags) override;
-  int ioctl(Process *p, ThreadContext *tc, unsigned req) override;
+  int open(ThreadContext *tc, int mode, int flags) override;
+  int ioctl(ThreadContext *tc, unsigned req) override;
 
   void map(Process* p, ThreadContext* tc, Addr base_ptr, Addr vaddr);
   void replay(Process* p, ThreadContext* tc, Addr trace_ptr, Addr vaddr);

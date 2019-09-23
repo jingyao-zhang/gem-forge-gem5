@@ -37,9 +37,9 @@
 #include "debug/RubySequencer.hh"
 #include "debug/RubyStats.hh"
 #include "mem/packet.hh"
-#include "mem/protocol/PrefetchBit.hh"
-#include "mem/protocol/RubyAccessMode.hh"
 #include "mem/ruby/profiler/Profiler.hh"
+#include "mem/ruby/protocol/PrefetchBit.hh"
+#include "mem/ruby/protocol/RubyAccessMode.hh"
 #include "mem/ruby/slicc_interface/RubyRequest.hh"
 #include "mem/ruby/system/RubySystem.hh"
 #include "sim/system.hh"
@@ -60,8 +60,6 @@ Sequencer::Sequencer(const Params *p)
 
     m_instCache_ptr = p->icache;
     m_dataCache_ptr = p->dcache;
-    m_data_cache_hit_latency = p->dcache_hit_latency;
-    m_inst_cache_hit_latency = p->icache_hit_latency;
     m_max_outstanding_requests = p->max_outstanding_requests;
     m_deadlock_threshold = p->deadlock_threshold;
 
@@ -70,8 +68,6 @@ Sequencer::Sequencer(const Params *p)
     assert(m_deadlock_threshold > 0);
     assert(m_instCache_ptr != NULL);
     assert(m_dataCache_ptr != NULL);
-    assert(m_data_cache_hit_latency > 0);
-    assert(m_inst_cache_hit_latency > 0);
 
     m_runningGarnetStandalone = p->garnet_standalone;
 }
@@ -488,11 +484,23 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
                          getOffset(request_address), pkt->getSize());
             DPRINTF(RubySequencer, "swap data %s\n", data);
         } else if (type != RubyRequestType_Store_Conditional || llscSuccess) {
-            // Types of stores set the actual data here, apart from
-            // failed Store Conditional requests
-            data.setData(pkt->getConstPtr<uint8_t>(),
+            // ! Hack to support AMO.
+            if (pkt->isAtomicOp()){
+                std::vector<uint8_t> overwrite_val(pkt->getSize());
+                pkt->setData(
+                    data.getData(getOffset(request_address), pkt->getSize()));
+                pkt->writeData(&overwrite_val[0]);
+                (*(pkt->getAtomicOp()))(&overwrite_val[0]);
+                data.setData(&overwrite_val[0],
                          getOffset(request_address), pkt->getSize());
-            DPRINTF(RubySequencer, "set data %s\n", data);
+                DPRINTF(RubySequencer, "AMO data %s\n", data);
+            } else {
+                // Types of stores set the actual data here, apart from
+                // failed Store Conditional requests
+                data.setData(pkt->getConstPtr<uint8_t>(),
+                             getOffset(request_address), pkt->getSize());
+                DPRINTF(RubySequencer, "set data %s\n", data);
+            }
         }
     }
 
@@ -664,23 +672,12 @@ Sequencer::issueRequest(PacketPtr pkt, RubyRequestType secondary_type)
             printAddress(msg->getPhysicalAddress()),
             RubyRequestType_to_string(secondary_type));
 
-    // The Sequencer currently assesses instruction and data cache hit latency
-    // for the top-level caches at the beginning of a memory access.
-    // TODO: Eventually, this latency should be moved to represent the actual
-    // cache access latency portion of the memory access. This will require
-    // changing cache controller protocol files to assess the latency on the
-    // access response path.
-    Cycles latency(0);  // Initialize to zero to catch misconfigured latency
-    if (secondary_type == RubyRequestType_IFETCH)
-        latency = m_inst_cache_hit_latency;
-    else
-        latency = m_data_cache_hit_latency;
-
-    // Send the message to the cache controller
+    Tick latency = cyclesToTicks(
+                        m_controller->mandatoryQueueLatency(secondary_type));
     assert(latency > 0);
 
     assert(m_mandatory_q_ptr != NULL);
-    m_mandatory_q_ptr->enqueue(msg, clockEdge(), cyclesToTicks(latency));
+    m_mandatory_q_ptr->enqueue(msg, clockEdge(), latency);
 }
 
 template <class KEY, class VALUE>
@@ -714,9 +711,6 @@ Sequencer::print(ostream& out) const
 void
 Sequencer::checkCoherence(Addr addr)
 {
-#ifdef CHECK_COHERENCE
-    m_ruby_system->checkGlobalCoherenceInvariant(addr);
-#endif
 }
 
 void

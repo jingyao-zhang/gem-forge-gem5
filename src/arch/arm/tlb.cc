@@ -150,7 +150,7 @@ TLB::finalizePhysical(const RequestPtr &req,
 
 TlbEntry*
 TLB::lookup(Addr va, uint16_t asn, uint8_t vmid, bool hyp, bool secure,
-            bool functional, bool ignore_asn, uint8_t target_el)
+            bool functional, bool ignore_asn, ExceptionLevel target_el)
 {
 
     TlbEntry *retval = NULL;
@@ -236,7 +236,8 @@ TLB::printTlb() const
 }
 
 void
-TLB::flushAllSecurity(bool secure_lookup, uint8_t target_el, bool ignore_el)
+TLB::flushAllSecurity(bool secure_lookup, ExceptionLevel target_el,
+                      bool ignore_el)
 {
     DPRINTF(TLB, "Flushing all TLB entries (%s lookup)\n",
             (secure_lookup ? "secure" : "non-secure"));
@@ -244,9 +245,11 @@ TLB::flushAllSecurity(bool secure_lookup, uint8_t target_el, bool ignore_el)
     TlbEntry *te;
     while (x < size) {
         te = &table[x];
+        const bool el_match = ignore_el ?
+            true : te->checkELMatch(target_el);
+
         if (te->valid && secure_lookup == !te->nstid &&
-            (te->vmid == vmid || secure_lookup) &&
-            checkELMatch(target_el, te->el, ignore_el)) {
+            (te->vmid == vmid || secure_lookup) && el_match) {
 
             DPRINTF(TLB, " -  %s\n", te->print());
             te->valid = false;
@@ -260,12 +263,12 @@ TLB::flushAllSecurity(bool secure_lookup, uint8_t target_el, bool ignore_el)
     // If there's a second stage TLB (and we're not it) then flush it as well
     // if we're currently in hyp mode
     if (!isStage2 && isHyp) {
-        stage2Tlb->flushAllSecurity(secure_lookup, true);
+        stage2Tlb->flushAllSecurity(secure_lookup, EL1, true);
     }
 }
 
 void
-TLB::flushAllNs(uint8_t target_el, bool ignore_el)
+TLB::flushAllNs(ExceptionLevel target_el, bool ignore_el)
 {
     bool hyp = target_el == EL2;
 
@@ -275,8 +278,10 @@ TLB::flushAllNs(uint8_t target_el, bool ignore_el)
     TlbEntry *te;
     while (x < size) {
         te = &table[x];
-        if (te->valid && te->nstid && te->isHyp == hyp &&
-            checkELMatch(target_el, te->el, ignore_el)) {
+        const bool el_match = ignore_el ?
+            true : te->checkELMatch(target_el);
+
+        if (te->valid && te->nstid && te->isHyp == hyp && el_match) {
 
             DPRINTF(TLB, " -  %s\n", te->print());
             flushedEntries++;
@@ -289,12 +294,13 @@ TLB::flushAllNs(uint8_t target_el, bool ignore_el)
 
     // If there's a second stage TLB (and we're not it) then flush it as well
     if (!isStage2 && !hyp) {
-        stage2Tlb->flushAllNs(false, true);
+        stage2Tlb->flushAllNs(EL1, true);
     }
 }
 
 void
-TLB::flushMvaAsid(Addr mva, uint64_t asn, bool secure_lookup, uint8_t target_el)
+TLB::flushMvaAsid(Addr mva, uint64_t asn, bool secure_lookup,
+                  ExceptionLevel target_el)
 {
     DPRINTF(TLB, "Flushing TLB entries with mva: %#x, asid: %#x "
             "(%s lookup)\n", mva, asn, (secure_lookup ?
@@ -304,7 +310,7 @@ TLB::flushMvaAsid(Addr mva, uint64_t asn, bool secure_lookup, uint8_t target_el)
 }
 
 void
-TLB::flushAsid(uint64_t asn, bool secure_lookup, uint8_t target_el)
+TLB::flushAsid(uint64_t asn, bool secure_lookup, ExceptionLevel target_el)
 {
     DPRINTF(TLB, "Flushing TLB entries with asid: %#x (%s lookup)\n", asn,
             (secure_lookup ? "secure" : "non-secure"));
@@ -316,7 +322,7 @@ TLB::flushAsid(uint64_t asn, bool secure_lookup, uint8_t target_el)
         te = &table[x];
         if (te->valid && te->asid == asn && secure_lookup == !te->nstid &&
             (te->vmid == vmid || secure_lookup) &&
-            checkELMatch(target_el, te->el, false)) {
+            te->checkELMatch(target_el)) {
 
             te->valid = false;
             DPRINTF(TLB, " -  %s\n", te->print());
@@ -328,7 +334,7 @@ TLB::flushAsid(uint64_t asn, bool secure_lookup, uint8_t target_el)
 }
 
 void
-TLB::flushMva(Addr mva, bool secure_lookup, uint8_t target_el)
+TLB::flushMva(Addr mva, bool secure_lookup, ExceptionLevel target_el)
 {
     DPRINTF(TLB, "Flushing TLB entries with mva: %#x (%s lookup)\n", mva,
             (secure_lookup ? "secure" : "non-secure"));
@@ -338,7 +344,7 @@ TLB::flushMva(Addr mva, bool secure_lookup, uint8_t target_el)
 
 void
 TLB::_flushMva(Addr mva, uint64_t asn, bool secure_lookup,
-               bool ignore_asn, uint8_t target_el)
+               bool ignore_asn, ExceptionLevel target_el)
 {
     TlbEntry *te;
     // D5.7.2: Sign-extend address to 64 bits
@@ -360,24 +366,10 @@ TLB::_flushMva(Addr mva, uint64_t asn, bool secure_lookup,
 }
 
 void
-TLB::flushIpaVmid(Addr ipa, bool secure_lookup, uint8_t target_el)
+TLB::flushIpaVmid(Addr ipa, bool secure_lookup, ExceptionLevel target_el)
 {
     assert(!isStage2);
     stage2Tlb->_flushMva(ipa, 0xbeef, secure_lookup, true, target_el);
-}
-
-bool
-TLB::checkELMatch(uint8_t target_el, uint8_t tentry_el, bool ignore_el)
-{
-    bool elMatch = true;
-    if (!ignore_el) {
-        if (target_el == 2 || target_el == 3) {
-            elMatch = (tentry_el  == target_el);
-        } else {
-            elMatch = (tentry_el == 0) || (tentry_el  == 1);
-        }
-    }
-    return elMatch;
 }
 
 void
@@ -586,7 +578,7 @@ TLB::translateSe(const RequestPtr &req, ThreadContext *tc, Mode mode,
     bool is_write = (mode == Write);
 
     if (!is_fetch) {
-        assert(flags & MustBeOne);
+        assert(flags & MustBeOne || req->isPrefetch());
         if (sctlr.a || !(flags & AllowUnaligned)) {
             if (vaddr & mask(flags & AlignmentMask)) {
                 // LPAE is always disabled in SE mode
@@ -809,6 +801,7 @@ TLB::checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
     bool is_fetch  = (mode == Execute);
     // Cache clean operations require read permissions to the specified VA
     bool is_write = !req->isCacheClean() && mode == Write;
+    bool is_atomic = req->isAtomic();
     bool is_priv M5_VAR_USED  = isPriv && !(flags & UserMode);
 
     updateMiscReg(tc, curTranType);
@@ -833,7 +826,8 @@ TLB::checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
                 alignFaults++;
                 return std::make_shared<DataAbort>(
                     vaddr_tainted,
-                    TlbEntry::DomainType::NoAccess, is_write,
+                    TlbEntry::DomainType::NoAccess,
+                    is_atomic ? false : is_write,
                     ArmFault::AlignmentFault, isStage2,
                     ArmFault::LpaeTran);
             }
@@ -860,6 +854,12 @@ TLB::checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
     bool r = !is_write && !is_fetch;
     bool w = is_write;
     bool x = is_fetch;
+
+    // grant_read is used for faults from an atomic instruction that
+    // both reads and writes from a memory location. From a ISS point
+    // of view they count as read if a read to that address would have
+    // generated the fault; they count as writes otherwise
+    bool grant_read = true;
     DPRINTF(TLBVerbose, "Checking permissions: ap:%d, xn:%d, pxn:%d, r:%d, "
                         "w:%d, x:%d\n", ap, xn, pxn, r, w, x);
 
@@ -869,18 +869,20 @@ TLB::checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
         // The following permissions are described in ARM DDI 0487A.f
         // D4-1802
         uint8_t hap = 0x3 & te->hap;
+        grant_read = hap & 0x1;
         if (is_fetch) {
             // sctlr.wxn overrides the xn bit
             grant = !sctlr.wxn && !xn;
         } else if (is_write) {
             grant = hap & 0x2;
         } else { // is_read
-            grant = hap & 0x1;
+            grant = grant_read;
         }
     } else {
         switch (aarch64EL) {
           case EL0:
             {
+                grant_read = ap & 0x1;
                 uint8_t perm = (ap << 2)  | (xn << 1) | pxn;
                 switch (perm) {
                   case 0:
@@ -912,6 +914,12 @@ TLB::checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
             break;
           case EL1:
             {
+                if (checkPAN(tc, ap, req, mode)) {
+                    grant = false;
+                    grant_read = false;
+                    break;
+                }
+
                 uint8_t perm = (ap << 2)  | (xn << 1) | pxn;
                 switch (perm) {
                   case 0:
@@ -946,6 +954,12 @@ TLB::checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
             }
             break;
           case EL2:
+            if (hcr.e2h && checkPAN(tc, ap, req, mode)) {
+                grant = false;
+                grant_read = false;
+                break;
+            }
+            M5_FALLTHROUGH;
           case EL3:
             {
                 uint8_t perm = (ap & 0x2) | xn;
@@ -988,13 +1002,34 @@ TLB::checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
             DPRINTF(TLB, "TLB Fault: Data abort on permission check. AP:%d "
                     "priv:%d write:%d\n", ap, is_priv, is_write);
             return std::make_shared<DataAbort>(
-                vaddr_tainted, te->domain, is_write,
+                vaddr_tainted, te->domain,
+                (is_atomic && !grant_read) ? false : is_write,
                 ArmFault::PermissionLL + te->lookupLevel,
                 isStage2, ArmFault::LpaeTran);
         }
     }
 
     return NoFault;
+}
+
+bool
+TLB::checkPAN(ThreadContext *tc, uint8_t ap, const RequestPtr &req, Mode mode)
+{
+    // The PAN bit has no effect on:
+    // 1) Instruction accesses.
+    // 2) Data Cache instructions other than DC ZVA
+    // 3) Address translation instructions, other than ATS1E1RP and
+    // ATS1E1WP when ARMv8.2-ATS1E1 is implemented. (Unimplemented in
+    // gem5)
+    // 4) Unprivileged instructions (Unimplemented in gem5)
+    AA64MMFR1 mmfr1 = tc->readMiscReg(MISCREG_ID_AA64MMFR1_EL1);
+    if (mmfr1.pan && cpsr.pan && (ap & 0x1) && mode != Execute &&
+        (!req->isCacheMaintenance() ||
+            (req->getFlags() & Request::CACHE_BLOCK_ZERO))) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 Fault
@@ -1038,7 +1073,7 @@ TLB::translateFs(const RequestPtr &req, ThreadContext *tc, Mode mode,
         req->setFlags(Request::STRICT_ORDER);
     }
     if (!is_fetch) {
-        assert(flags & MustBeOne);
+        assert(flags & MustBeOne || req->isPrefetch());
         if (sctlr.a || !(flags & AllowUnaligned)) {
             if (vaddr & mask(flags & AlignmentMask)) {
                 alignFaults++;
@@ -1406,7 +1441,7 @@ TLB::tranTypeEL(CPSR cpsr, ArmTranslationType type)
       case S1CTran:
       case S1S2NsTran:
       case HypMode:
-        return opModeToEL((OperatingMode)(uint8_t)cpsr.mode);
+        return currEL(cpsr);
 
       default:
         panic("Unknown translation mode!\n");
@@ -1418,6 +1453,11 @@ TLB::getTE(TlbEntry **te, const RequestPtr &req, ThreadContext *tc, Mode mode,
         Translation *translation, bool timing, bool functional,
         bool is_secure, TLB::ArmTranslationType tranType)
 {
+    // In a 2-stage system, the IPA->PA translation can be started via this
+    // call so make sure the miscRegs are correct.
+    if (isStage2) {
+        updateMiscReg(tc, tranType);
+    }
     bool is_fetch = (mode == Execute);
     bool is_write = (mode == Write);
 

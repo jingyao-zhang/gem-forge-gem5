@@ -36,11 +36,22 @@ test_progs = {
     'arm': ('hello64-static', 'hello32-static'),
 }
 
+<<<<<<< HEAD
 for isa in test_progs:
     for binary in test_progs[isa]:
         import os
         path = os.path.join('test-progs', 'hello', 'bin', isa, 'linux')
         hello_program = DownloadedProgram(path, binary)
+=======
+urlbase = 'http://gem5.org/dist/current/test-progs/hello/bin/'
+for isa in test_progs:
+    for binary in test_progs[isa]:
+        import os
+        url = urlbase + isa + '/linux/' + binary
+        path = joinpath(absdirpath(__file__), '..', 'test-progs', 'hello',
+                        'bin', isa, 'linux')
+        hello_program = DownloadedProgram(url, path, binary)
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
 
         ref_path = joinpath(getcwd(), 'ref')
 
@@ -53,6 +64,10 @@ for isa in test_progs:
                 fixtures=(hello_program,),
                 verifiers=verifiers,
                 config=joinpath(config.base_dir, 'configs', 'example','se.py'),
+<<<<<<< HEAD
                 config_args=['--cmd', hello_program.path],
+=======
+                config_args=['--cmd', joinpath(path, binary)],
+>>>>>>> a56ab04598be184427e8dd71fa5528b016738306
                 valid_isas=(isa.upper(),),
         )

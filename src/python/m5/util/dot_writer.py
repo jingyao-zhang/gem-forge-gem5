@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2013 ARM Limited
+# Copyright (c) 2012-2013,2019 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -117,10 +117,12 @@ def dot_create_edges(simNode, callgraph):
             port_node = dot_create_node(simNode, full_port_name, port_name)
             # create edges
             if isinstance(port, PortRef):
-                dot_add_edge(simNode, callgraph, full_port_name, port)
+                if port.peer:
+                    dot_add_edge(simNode, callgraph, full_port_name, port)
             else:
                 for p in port.elements:
-                    dot_add_edge(simNode, callgraph, full_port_name, p)
+                    if p.peer:
+                        dot_add_edge(simNode, callgraph, full_port_name, p)
 
     # recurse to children
     for child in simnode_children(simNode):
@@ -154,7 +156,7 @@ def dot_create_cluster(simNode, full_path, label):
             ini_strings.append(str(param) + "&#61;" +
                                simNode._values[param].ini_str())
     # join all the parameters with an HTML newline
-    tooltip = "&#10;".join(ini_strings)
+    tooltip = "&#10;\\".join(ini_strings)
 
     return pydot.Cluster( \
                          full_path, \

@@ -49,66 +49,93 @@
 
 #include "arch/x86/intmessage.hh"
 #include "arch/x86/x86_traits.hh"
-#include "mem/mport.hh"
-#include "params/X86IntLine.hh"
-#include "params/X86IntSinkPin.hh"
-#include "params/X86IntSourcePin.hh"
+#include "mem/tport.hh"
 #include "sim/sim_object.hh"
 
-namespace X86ISA {
+namespace X86ISA
+{
+
+template <class Device>
+class IntSlavePort : public SimpleTimingPort
+{
+    Device * device;
+
+  public:
+    IntSlavePort(const std::string& _name, SimObject* _parent,
+                 Device* dev) :
+        SimpleTimingPort(_name, _parent), device(dev)
+    {
+    }
+
+    AddrRangeList
+    getAddrRanges() const
+    {
+        return device->getIntAddrRange();
+    }
+
+    Tick
+    recvAtomic(PacketPtr pkt)
+    {
+        panic_if(pkt->cmd != MemCmd::MessageReq,
+                "%s received unexpected command %s from %s.\n",
+                name(), pkt->cmd.toString(), getPeer());
+        pkt->headerDelay = pkt->payloadDelay = 0;
+        return device->recvMessage(pkt);
+    }
+};
 
 typedef std::list<int> ApicList;
+
+template <class Device>
+class IntMasterPort : public QueuedMasterPort
+{
+    ReqPacketQueue reqQueue;
+    SnoopRespPacketQueue snoopRespQueue;
+
+    Device* device;
+    Tick latency;
+
+  public:
+    IntMasterPort(const std::string& _name, SimObject* _parent,
+                  Device* dev, Tick _latency) :
+        QueuedMasterPort(_name, _parent, reqQueue, snoopRespQueue),
+        reqQueue(*_parent, *this), snoopRespQueue(*_parent, *this),
+        device(dev), latency(_latency)
+    {
+    }
+
+    bool
+    recvTimingResp(PacketPtr pkt) override
+    {
+        return device->recvResponse(pkt);
+    }
+
+    // This is x86 focused, so if this class becomes generic, this would
+    // need to be moved into a subclass.
+    void
+    sendMessage(X86ISA::ApicList apics, TriggerIntMessage message, bool timing)
+    {
+        for (auto id: apics) {
+            PacketPtr pkt = buildIntRequest(id, message);
+            if (timing) {
+                schedTimingReq(pkt, curTick() + latency);
+                // The target handles cleaning up the packet in timing mode.
+            } else {
+                // ignore the latency involved in the atomic transaction
+                sendAtomic(pkt);
+                assert(pkt->isResponse());
+                // also ignore the latency in handling the response
+                device->recvResponse(pkt);
+            }
+        }
+    }
+};
 
 class IntDevice
 {
   protected:
-    class IntSlavePort : public MessageSlavePort
-    {
-        IntDevice * device;
 
-      public:
-        IntSlavePort(const std::string& _name, SimObject* _parent,
-                     IntDevice* dev) :
-            MessageSlavePort(_name, _parent), device(dev)
-        {
-        }
-
-        AddrRangeList getAddrRanges() const
-        {
-            return device->getIntAddrRange();
-        }
-
-        Tick recvMessage(PacketPtr pkt)
-        {
-            // @todo someone should pay for this
-            pkt->headerDelay = pkt->payloadDelay = 0;
-            return device->recvMessage(pkt);
-        }
-    };
-
-    class IntMasterPort : public MessageMasterPort
-    {
-        IntDevice* device;
-        Tick latency;
-      public:
-        IntMasterPort(const std::string& _name, SimObject* _parent,
-                      IntDevice* dev, Tick _latency) :
-            MessageMasterPort(_name, _parent), device(dev), latency(_latency)
-        {
-        }
-
-        Tick recvResponse(PacketPtr pkt)
-        {
-            return device->recvResponse(pkt);
-        }
-
-        // This is x86 focused, so if this class becomes generic, this would
-        // need to be moved into a subclass.
-        void sendMessage(ApicList apics,
-                TriggerIntMessage message, bool timing);
-    };
-
-    IntMasterPort intMasterPort;
+    IntMasterPort<IntDevice> intMasterPort;
 
   public:
     IntDevice(SimObject * parent, Tick latency = 0) :
@@ -121,126 +148,10 @@ class IntDevice
 
     virtual void init();
 
-    virtual void
-    signalInterrupt(int line)
-    {
-        panic("signalInterrupt not implemented.\n");
-    }
-
-    virtual void
-    raiseInterruptPin(int number)
-    {
-        panic("raiseInterruptPin not implemented.\n");
-    }
-
-    virtual void
-    lowerInterruptPin(int number)
-    {
-        panic("lowerInterruptPin not implemented.\n");
-    }
-
-    virtual Tick
-    recvMessage(PacketPtr pkt)
-    {
-        panic("recvMessage not implemented.\n");
-        return 0;
-    }
-
-    virtual Tick
+    virtual bool
     recvResponse(PacketPtr pkt)
     {
         panic("recvResponse not implemented.\n");
-        return 0;
-    }
-
-    virtual AddrRangeList
-    getIntAddrRange() const
-    {
-        panic("intAddrRange not implemented.\n");
-    }
-};
-
-class IntSinkPin : public SimObject
-{
-  public:
-    IntDevice * device;
-    int number;
-
-    typedef X86IntSinkPinParams Params;
-
-    const Params *
-    params() const
-    {
-        return dynamic_cast<const Params *>(_params);
-    }
-
-    IntSinkPin(Params *p) : SimObject(p),
-            device(dynamic_cast<IntDevice *>(p->device)), number(p->number)
-    {
-        assert(device);
-    }
-};
-
-class IntSourcePin : public SimObject
-{
-  protected:
-    std::vector<IntSinkPin *> sinks;
-
-  public:
-    typedef X86IntSourcePinParams Params;
-
-    const Params *
-    params() const
-    {
-        return dynamic_cast<const Params *>(_params);
-    }
-
-    void
-    addSink(IntSinkPin *sink)
-    {
-        sinks.push_back(sink);
-    }
-
-    void
-    raise()
-    {
-        for (int i = 0; i < sinks.size(); i++) {
-            const IntSinkPin &pin = *sinks[i];
-            pin.device->raiseInterruptPin(pin.number);
-        }
-    }
-
-    void
-    lower()
-    {
-        for (int i = 0; i < sinks.size(); i++) {
-            const IntSinkPin &pin = *sinks[i];
-            pin.device->lowerInterruptPin(pin.number);
-        }
-    }
-
-    IntSourcePin(Params *p) : SimObject(p)
-    {}
-};
-
-class IntLine : public SimObject
-{
-  protected:
-    IntSourcePin *source;
-    IntSinkPin *sink;
-
-  public:
-    typedef X86IntLineParams Params;
-
-    const Params *
-    params() const
-    {
-        return dynamic_cast<const Params *>(_params);
-    }
-
-    IntLine(Params *p) : SimObject(p), source(p->source), sink(p->sink)
-    {
-        source->addSink(sink);
     }
 };
 

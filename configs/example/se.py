@@ -64,7 +64,7 @@ from common import CacheConfig
 from common import CpuConfig
 from common import BPConfig
 from common import MemConfig
-from common.FileSystemConfig import redirect_paths, config_filesystem
+from common.FileSystemConfig import config_filesystem
 from common.Caches import *
 from common.cpu2000 import *
 
@@ -243,10 +243,11 @@ for i in range(np):
         bpClass = BPConfig.get(options.bp_type)
         system.cpu[i].branchPred = bpClass()
 
-    system.cpu[i].createThreads()
+    if options.indirect_bp_type:
+        indirectBPClass = BPConfig.get_indirect(options.indirect_bp_type)
+        system.cpu[i].branchPred.indirectBranchPred = indirectBPClass()
 
-system.redirect_paths = redirect_paths(os.path.expanduser(options.chroot))
-config_filesystem(options)
+    system.cpu[i].createThreads()
 
 if options.ruby:
     Ruby.create_system(options, False, system)
@@ -277,6 +278,7 @@ else:
     system.system_port = system.membus.slave
     CacheConfig.config_cache(options, system)
     MemConfig.config_mem(options, system)
+    config_filesystem(system, options)
 
 if options.llvm_mcpat == 1:
     system.mcpat_manager = McPATManager()

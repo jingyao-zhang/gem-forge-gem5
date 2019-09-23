@@ -1,4 +1,4 @@
-# Copyright (c) 2009-2018 ARM Limited
+# Copyright (c) 2009-2019 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -65,6 +65,7 @@ from m5.objects.Graphics import ImageFormat
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.PS2 import *
 from m5.objects.VirtIOMMIO import MmioVirtIO
+from m5.objects.Display import Display, Display1080p
 
 # Platforms with KVM support should generally use in-kernel GIC
 # emulation. Use a GIC model that automatically switches between
@@ -126,8 +127,9 @@ class GenericArmPciHost(GenericPciHost):
     _dma_coherent = True
 
     def generateDeviceTree(self, state):
-        local_state = FdtState(addr_cells=3, size_cells=2, cpu_cells=1)
-        intterrupt_cells = 1
+        local_state = FdtState(
+            addr_cells=3, size_cells=2,
+            cpu_cells=1, interrupt_cells=1)
 
         node = FdtNode("pci")
 
@@ -143,7 +145,7 @@ class GenericArmPciHost(GenericPciHost):
         # Cell sizes of child nodes/peripherals
         node.append(local_state.addrCellsProperty())
         node.append(local_state.sizeCellsProperty())
-        node.append(FdtPropertyWords("#interrupt-cells", intterrupt_cells))
+        node.append(local_state.interruptCellsProperty())
         # PCI address for CPU
         node.append(FdtPropertyWords("reg",
             state.addrCells(self.conf_base) +
@@ -167,12 +169,24 @@ class GenericArmPciHost(GenericPciHost):
         node.append(FdtPropertyWords("ranges", ranges))
 
         if str(self.int_policy) == 'ARM_PCI_INT_DEV':
-            int_phandle = state.phandle(self._parent.unproxy(self).gic)
+            gic = self._parent.unproxy(self).gic
+            int_phandle = state.phandle(gic)
             # Interrupt mapping
             interrupts = []
+
+            # child interrupt specifier
+            child_interrupt = local_state.interruptCells(0x0)
+
+            # parent unit address
+            parent_addr = gic._state.addrCells(0x0)
+
             for i in range(int(self.int_count)):
+                parent_interrupt = gic.interruptCells(0,
+                    int(self.int_base) - 32 + i, 1)
+
                 interrupts += self.pciFdtAddr(device=i, addr=0) + \
-                    [0x0, int_phandle, 0, int(self.int_base) - 32 + i, 1]
+                    child_interrupt + [int_phandle] + parent_addr + \
+                    parent_interrupt
 
             node.append(FdtPropertyWords("interrupt-map", interrupts))
 
@@ -477,6 +491,50 @@ class HDLcd(AmbaDmaDevice):
     pixel_chunk = Param.Unsigned(32, "Number of pixels to handle in one batch")
     virt_refresh_rate = Param.Frequency("20Hz", "Frame refresh rate "
                                         "in KVM mode")
+    _status = "disabled"
+
+    encoder = Param.Display(Display1080p(), "Display encoder")
+
+    def endpointPhandle(self):
+        return "hdlcd_endpoint"
+
+    def generateDeviceTree(self, state):
+        endpoint_node = FdtNode("endpoint")
+        endpoint_node.appendPhandle(self.endpointPhandle())
+
+        for encoder_node in self.encoder.generateDeviceTree(state):
+            encoder_endpoint = self.encoder.endpointNode()
+
+            # Endpoint subnode
+            endpoint_node.append(FdtPropertyWords("remote-endpoint",
+                [ state.phandle(self.encoder.endpointPhandle()) ]))
+            encoder_endpoint.append(FdtPropertyWords("remote-endpoint",
+                [ state.phandle(self.endpointPhandle()) ]))
+
+            yield encoder_node
+
+        port_node = FdtNode("port")
+        port_node.append(endpoint_node)
+
+        # Interrupt number is hardcoded; it is not a property of this class
+        node = self.generateBasicPioDeviceNode(state, 'hdlcd',
+                                               self.pio_addr, 0x1000, [63])
+
+        node.appendCompatible(["arm,hdlcd"])
+        node.append(FdtPropertyWords("clocks", state.phandle(self.pxl_clk)))
+        node.append(FdtPropertyStrings("clock-names", ["pxlclk"]))
+
+        # This driver is disabled by default since the required DT nodes
+        # haven't been standardized yet. To use it,  override this status to
+        # "ok" and add the display configuration nodes required by the driver.
+        # See the driver for more information.
+        node.append(FdtPropertyStrings("status", [ self._status ]))
+
+        self.addIommuProperty(state, node)
+
+        node.append(port_node)
+
+        yield node
 
     def generateDeviceTree(self, state):
         # Interrupt number is hardcoded; it is not a property of this class
@@ -1084,14 +1142,15 @@ class VExpress_GEM5_V1(VExpress_GEM5_V1_Base):
 
 class VExpress_GEM5_V2_Base(VExpress_GEM5_Base):
     gic = Gicv3(dist_addr=0x2c000000, redist_addr=0x2c010000,
-                maint_int=ArmPPI(num=25))
+                maint_int=ArmPPI(num=25),
+                its=Gicv3Its(pio_addr=0x2e010000))
 
     # Limiting to 128 since it will otherwise overlap with PCI space
     gic.cpu_max = 128
 
     def _on_chip_devices(self):
         return super(VExpress_GEM5_V2_Base,self)._on_chip_devices() + [
-                self.gic,
+                self.gic, self.gic.its
             ]
 
     def setupBootLoader(self, mem_bus, cur_sys, loc):
