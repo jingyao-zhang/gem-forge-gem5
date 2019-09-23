@@ -213,7 +213,27 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
     if (formalParam.isInvariant) {
       params.push_back(formalParam.param.invariant);
     } else {
-      panic("Formal parameter of base stream is not supported yet.");
+      auto baseStreamId = formalParam.param.baseStreamId;
+      auto baseStream = this->se->getStream(baseStreamId);
+      bool foundBaseValue = false;
+      for (auto baseElement : this->baseElements) {
+        if (baseElement->stream == baseStream) {
+          // TODO: Check the FIFOIdx to make sure that the element is correct to
+          // TODO: use.
+          assert(baseElement->isValueReady &&
+                 "Base element is not value ready yet.");
+          assert(baseElement->size <= sizeof(uint64_t) &&
+                 "Base element too large, maybe coalesced?");
+          // ! This effectively does zero extension.
+          uint64_t baseValue = 0;
+          baseElement->getValue(baseElement->addr, baseElement->size,
+                                reinterpret_cast<uint8_t *>(&baseValue));
+          params.push_back(baseValue);
+          foundBaseValue = true;
+          break;
+        }
+      }
+      assert(foundBaseValue && "Failed to find the base stream value.");
     }
   }
 

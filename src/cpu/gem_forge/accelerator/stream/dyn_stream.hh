@@ -16,6 +16,8 @@ struct DynamicStreamParam {
   bool isInvariant;
 };
 
+class ThreadContext;
+
 /**
  * Holds some information of a dynamic instance of a stream,
  * e.g. callback to generate addresses.
@@ -24,6 +26,7 @@ struct DynamicStream {
 
   const DynamicStreamId dynamicStreamId;
   const uint64_t configSeqNum;
+  ThreadContext *tc;
 
   // Whether the dynamic stream is offloaded to cache.
   bool offloadedToCache = false;
@@ -37,8 +40,10 @@ struct DynamicStream {
   // Callback to generate the address.
   std::unique_ptr<AddrGenCallback> addrGenCallback;
 
-  DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum)
-      : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum) {}
+  DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
+                ThreadContext *_tc)
+      : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum),
+        tc(_tc) {}
 };
 
 #endif

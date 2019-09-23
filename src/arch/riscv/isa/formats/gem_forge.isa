@@ -67,11 +67,11 @@ def template GemForgeExecute {{
 
 def format GemForgeIOp(
         execute_code,
-        is_float,
+        is_float='False',
         imm_type='int64_t',
         *opt_flags) {{
 
-    if is_float:
+    if is_float == 'True':
         user_constructor = """
             _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, FD);
             _numFPDestRegs++;

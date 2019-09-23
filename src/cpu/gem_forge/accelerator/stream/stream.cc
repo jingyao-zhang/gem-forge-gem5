@@ -111,11 +111,11 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
   this->stepStreamList.emplace_back(newStepDependentStream);
 }
 
-void Stream::dispatchStreamConfig(uint64_t seqNum) {
+void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
   // Create new index.
   this->FIFOIdx.newInstance(seqNum);
   // Allocate the new DynamicStream.
-  this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum);
+  this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum, tc);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum,

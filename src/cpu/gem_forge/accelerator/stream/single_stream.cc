@@ -4,6 +4,12 @@
 
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
+#if THE_ISA == RISCV_ISA
+#include "cpu/gem_forge/accelerator/arch/riscv/stream/riscv_func_addr_callback.hh"
+#else
+#error "Unsupported ISA."
+#endif
+
 // #include "base/misc.hh""
 #include "base/trace.hh"
 #include "debug/StreamEngine.hh"
@@ -144,8 +150,8 @@ int32_t SingleStream::getElementSize() const {
   return this->info.element_size();
 }
 
-void SingleStream::configure(uint64_t seqNum) {
-  this->dispatchStreamConfig(seqNum);
+void SingleStream::configure(uint64_t seqNum, ThreadContext *tc) {
+  this->dispatchStreamConfig(seqNum, tc);
   this->history->configure();
   this->patternStream->configure();
 }
@@ -173,42 +179,76 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
     assert(inputVec && "Missing InputVec when using execution simulation.");
     const auto &staticInfo = this->info.static_info();
     const auto &pattern = staticInfo.iv_pattern();
-    assert(pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR &&
-           "So far only LINEAR pattern is supported for execution-driven "
-           "simulation.");
-    /**
-     * We have two parameters for LINEAR pattern, base and stride.
-     */
-    assert(pattern.params_size() == 2 && "Missing parameters.");
-    auto &formalParams = dynStream.formalParams;
-    int inputIdx = 0;
-    for (const auto &param : pattern.params()) {
-      if (param.valid()) {
-        // This is a valid parameter.
-        hack("Find valid param #%d, val %llu", formalParams.size(),
-             param.param());
-        formalParams.emplace_back();
-        auto &formalParam = formalParams.back();
-        formalParam.isInvariant = true;
-        formalParam.param.invariant = param.param();
+    // First handle linear pattern.
+    if (pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR) {
+      /**
+       * We have two parameters for LINEAR pattern, base and stride.
+       */
+      assert(pattern.params_size() == 2 && "Missing parameters.");
+      auto &formalParams = dynStream.formalParams;
+      int inputIdx = 0;
+      for (const auto &param : pattern.params()) {
+        if (param.valid()) {
+          // This is a valid parameter.
+          hack("Find valid param #%d, val %llu", formalParams.size(),
+               param.param());
+          formalParams.emplace_back();
+          auto &formalParam = formalParams.back();
+          formalParam.isInvariant = true;
+          formalParam.param.invariant = param.param();
+        } else {
+          // This should be a input.
+          // TODO: Handle stream input for indirect streams.
+          assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
+          hack("Find input param #%d, val %llu", formalParams.size(),
+               inputVec->at(inputIdx));
+          formalParams.emplace_back();
+          auto &formalParam = formalParams.back();
+          formalParam.isInvariant = true;
+          formalParam.param.invariant = inputVec->at(inputIdx);
+          inputIdx++;
+        }
+      }
+      // Set the callback.
+      dynStream.addrGenCallback =
+          std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
+      return;
+    } else {
+      // Check if there is an address function.
+      const auto &addrFuncInfo = this->info.addr_func_info();
+      if (addrFuncInfo.name() != "") {
+        auto &formalParams = dynStream.formalParams;
+        int inputIdx = 0;
+        for (const auto &arg : addrFuncInfo.args()) {
+          if (arg.is_stream()) {
+            // This is a stream input.
+            hack("Find stream input param #%d id #llu.\n", formalParams.size(),
+                 arg.stream_id());
+            formalParams.emplace_back();
+            auto &formalParam = formalParams.back();
+            formalParam.isInvariant = false;
+            formalParam.param.baseStreamId = arg.stream_id();
+          } else {
+            assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
+            hack("Find invariant param #%d, val %llu", formalParams.size(),
+                 inputVec->at(inputIdx));
+            formalParams.emplace_back();
+            auto &formalParam = formalParams.back();
+            formalParam.isInvariant = true;
+            formalParam.param.invariant = inputVec->at(inputIdx);
+            inputIdx++;
+          }
+        }
+        // Set the callback.
+        dynStream.addrGenCallback =
+            std::unique_ptr<TheISA::FuncAddrGenCallback>(
+                new TheISA::FuncAddrGenCallback(dynStream.tc,
+                                                this->info.addr_func_info()));
+        return;
       } else {
-        // This should be a input.
-        // TODO: Handle stream input for indirect streams.
-        assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
-        hack("Find input param #%d, val %llu", formalParams.size(),
-             inputVec->at(inputIdx));
-        formalParams.emplace_back();
-        auto &formalParam = formalParams.back();
-        formalParam.isInvariant = true;
-        formalParam.param.invariant = inputVec->at(inputIdx);
-        inputIdx++;
+        assert(false && "Don't know how to generate the address.");
       }
     }
-
-    // Set the callback.
-    dynStream.addrGenCallback =
-        std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
-    return;
   }
 
   // So far just use the history callback.

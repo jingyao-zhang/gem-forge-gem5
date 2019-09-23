@@ -335,7 +335,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     }
 
     // Notify the stream.
-    S->configure(args.seqNum);
+    S->configure(args.seqNum, args.tc);
   }
 
   // 3. Allocate new entries one by one for all streams.
@@ -1593,6 +1593,7 @@ void StreamEngine::issueElements() {
        */
       assert(element->size <= 8 && "IV Stream size greater than 8 bytes.");
       element->setValue<uint64_t>(element->addr, &element->addr);
+      hack("Set IV stream value to %llu.\n", element->addr);
       element->markValueReady();
     }
   }

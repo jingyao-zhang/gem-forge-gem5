@@ -158,7 +158,8 @@ void RISCVStreamEngine::dispatchStreamReady(const GemForgeDynInstInfo &dynInfo,
                                             ExecContext &xc) {
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
-  ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
+  ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath,
+                                        nullptr /* InputVec */, xc.tcBase());
   auto se = this->getStreamEngine(xc);
   se->dispatchStreamConfig(args);
 
@@ -360,8 +361,8 @@ void RISCVStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   auto se = this->getStreamEngine(xc);
   se->executeStreamUser(args);
   auto loadedValue = *(reinterpret_cast<uint64_t *>(values.at(0).data()));
-  hack("StreamLoad get value %llu.\n", loadedValue);
   auto instName = dynInfo.staticInst->getName();
+  hack("StreamLoad get value %llu for %s.\n", loadedValue, instName.c_str());
   if (instName == "ssp_stream_fload") {
     xc.setFloatRegOperandBits(dynInfo.staticInst, 0, loadedValue);
   } else {

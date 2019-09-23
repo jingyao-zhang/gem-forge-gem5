@@ -43,10 +43,13 @@ public:
     uint64_t seqNum; // Just the instruction sequence number.
     const std::string &infoRelativePath; // Where to find the info.
     const InputMap *inputMap;            // Live input of streams.
+    // Only valid at dispatchStreamConfig for execution simulation.
+    ThreadContext *const tc;
     StreamConfigArgs(uint64_t _seqNum, const std::string &_infoRelativePath,
-                     InputMap *_inputMap = nullptr)
+                     InputMap *_inputMap = nullptr,
+                     ThreadContext *_tc = nullptr)
         : seqNum(_seqNum), infoRelativePath(_infoRelativePath),
-          inputMap(_inputMap) {}
+          inputMap(_inputMap), tc(_tc) {}
   };
 
   bool canStreamConfig(const StreamConfigArgs &args) const;

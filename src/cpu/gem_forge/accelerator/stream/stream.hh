@@ -111,9 +111,9 @@ public:
   LLVMTraceCPU *getCPU() { return this->cpu; }
   GemForgeCPUDelegator *getCPUDelegator() { return this->cpuDelegator; }
 
-  virtual void configure(uint64_t seqNum) = 0;
+  virtual void configure(uint64_t seqNum, ThreadContext *tc) = 0;
 
-  void dispatchStreamConfig(uint64_t seqNum);
+  void dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc);
   void executeStreamConfig(uint64_t seqNum,
                            const std::vector<uint64_t> *inputVec);
   bool isStreamConfigureExecuted(uint64_t seqNum);
