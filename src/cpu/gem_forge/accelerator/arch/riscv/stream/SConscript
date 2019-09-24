@@ -1,4 +1,6 @@
 Import('*')
 
+DebugFlag('RISCVStreamEngine')
+DebugFlag('RISCVFuncAddrCallback')
 Source('riscv_stream_engine.cc')
 Source('riscv_func_addr_callback.cc')

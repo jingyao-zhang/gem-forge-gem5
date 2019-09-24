@@ -117,6 +117,7 @@ struct StreamElement {
   Stream *stream;
   StreamEngine *se;
   FIFOEntryIdx FIFOIdx;
+  int cacheBlockSize;
   /**
    * Whether the first user of this stream element has been dispatched.
    * This is used to determine the first user the of the stream element
@@ -152,7 +153,8 @@ struct StreamElement {
    * more data in the last cache block beyond its size.
    */
   std::vector<uint8_t> value;
-  void setValue(Addr vaddr, int size, uint8_t *val);
+  void setValue(StreamElement *prevElement);
+  void setValue(Addr vaddr, int size, const uint8_t *val);
   void getValue(Addr vaddr, int size, uint8_t *val) const;
   uint64_t mapVAddrToValueOffset(Addr vaddr, int size) const;
   // Some helper template.

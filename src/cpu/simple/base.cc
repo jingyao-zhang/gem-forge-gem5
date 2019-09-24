@@ -678,7 +678,6 @@ BaseSimpleCPU::advancePC(const Fault &fault)
     t_info.fetchOffset = 0;
     if (fault != NoFault) {
         curMacroStaticInst = StaticInst::nullStaticInstPtr;
-        hack("Fault at pc %#x\n", t_info.pcState().pc());
         fault->invoke(threadContexts[curThread], curStaticInst);
         thread->decoder.reset();
     } else {

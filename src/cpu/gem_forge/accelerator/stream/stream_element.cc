@@ -175,8 +175,9 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
     /**
      * Update the value vector.
      * Notice that pkt->getAddr() will give you physics address.
+     * ! So far all requests are in cache line size.
      */
-    auto vaddr = memAccess->vaddr;
+    auto vaddr = memAccess->cacheBlockVAddr;
     auto size = pkt->getSize();
     auto data = pkt->getPtr<uint8_t>();
     this->setValue(vaddr, size, data);
@@ -260,6 +261,9 @@ void StreamElement::markValueReady() {
       // Okay the next element is still valid.
       assert(this->next->isAddrReady &&
              "Address should be ready to propagate the value ready signal.");
+
+      // Fill next element cache blocks.
+      this->next->setValue(this);
       this->next->markValueReady();
     }
   }
@@ -274,7 +278,8 @@ void StreamElement::markValueReady() {
 }
 
 void StreamElement::splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator) {
-  const int cacheBlockSize = cpuDelegator->cacheLineSize();
+  // TODO: Initialize this only once.
+  this->cacheBlockSize = cpuDelegator->cacheLineSize();
 
   for (int currentSize, totalSize = 0; totalSize < this->size;
        totalSize += currentSize) {
@@ -307,7 +312,22 @@ void StreamElement::splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator) {
   }
 }
 
-void StreamElement::setValue(Addr vaddr, int size, uint8_t *val) {
+void StreamElement::setValue(StreamElement *prevElement) {
+  // Fill element cache blocks from previous element.
+  // This should be completely overlapped.
+  assert(prevElement->next == this && "Next element should be me.");
+  for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
+    auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
+    assert(this->cacheBlockSize > 0 && "cacheBlockSize is not initialized.");
+    auto initOffset = this->mapVAddrToValueOffset(block.cacheBlockVAddr,
+                                                  this->cacheBlockSize);
+    // Get the value from previous element.
+    prevElement->getValue(block.cacheBlockVAddr, this->cacheBlockSize,
+                          this->value.data() + initOffset);
+  }
+}
+
+void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
   // Copy the data.
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
   for (int i = 0; i < size; ++i) {

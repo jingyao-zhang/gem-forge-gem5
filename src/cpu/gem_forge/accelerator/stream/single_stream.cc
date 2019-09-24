@@ -190,7 +190,7 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
       for (const auto &param : pattern.params()) {
         if (param.valid()) {
           // This is a valid parameter.
-          hack("Find valid param #%d, val %llu", formalParams.size(),
+          hack("Find valid param #%d, val %llu.\n", formalParams.size(),
                param.param());
           formalParams.emplace_back();
           auto &formalParam = formalParams.back();
@@ -200,7 +200,7 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
           // This should be a input.
           // TODO: Handle stream input for indirect streams.
           assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
-          hack("Find input param #%d, val %llu", formalParams.size(),
+          hack("Find input param #%d, val %llu.\n", formalParams.size(),
                inputVec->at(inputIdx));
           formalParams.emplace_back();
           auto &formalParam = formalParams.back();
@@ -222,7 +222,7 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
         for (const auto &arg : addrFuncInfo.args()) {
           if (arg.is_stream()) {
             // This is a stream input.
-            hack("Find stream input param #%d id #llu.\n", formalParams.size(),
+            hack("Find stream input param #%d id %llu.\n", formalParams.size(),
                  arg.stream_id());
             formalParams.emplace_back();
             auto &formalParam = formalParams.back();
@@ -230,7 +230,7 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
             formalParam.param.baseStreamId = arg.stream_id();
           } else {
             assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
-            hack("Find invariant param #%d, val %llu", formalParams.size(),
+            hack("Find invariant param #%d, val %llu.\n", formalParams.size(),
                  inputVec->at(inputIdx));
             formalParams.emplace_back();
             auto &formalParam = formalParams.back();

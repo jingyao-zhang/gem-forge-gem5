@@ -1592,11 +1592,8 @@ void StreamEngine::issueElements() {
        * TODO: the back dependence of pointer chasing stream.
        */
       assert(element->size <= 8 && "IV Stream size greater than 8 bytes.");
-      hack("Set IV stream value to %llu, cache lines %d size %d.\n",
-           element->addr, element->cacheBlocks, element->size);
       element->setValue(element->addr, element->size,
                         reinterpret_cast<uint8_t *>(&element->addr));
-      // element->setValue<uint64_t>(element->addr, &element->addr);
       element->markValueReady();
     }
   }
@@ -1706,8 +1703,12 @@ void StreamEngine::issueElement(StreamElement *element) {
 
     // Normal case: really fetching this from the cache,
     // i.e. not merged & not handled by placement manager.
-    auto vaddr = cacheBlockBreakdown.virtualAddr;
-    auto packetSize = cacheBlockBreakdown.size;
+    // ! Always fetch the whole cache line, this is an
+    // ! optimization for continuous load stream.
+    // TODO: Continuous load stream should really be allocated in
+    // TODO: granularity of cache lines (not stream elements).
+    auto vaddr = cacheBlockBreakdown.cacheBlockVAddr;
+    auto packetSize = cpuDelegator->cacheLineSize();
     Addr paddr = cpuDelegator->translateVAddrOracle(vaddr);
 
     // Allocate the book-keeping StreamMemAccess.
@@ -2177,6 +2178,8 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
       // Completely overlapped. Check if the previous element is already value
       // ready.
       if (prevElement->isValueReady) {
+        // Copy the value.
+        element->setValue(prevElement);
         // Mark value ready immediately.
         element->markValueReady();
       } else {

@@ -5,7 +5,11 @@
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
+#include "debug/RISCVStreamEngine.hh"
 #include "proto/protoio.hh"
+
+#define RISCV_SE_DPRINTF(format, args...)                                      \
+  DPRINTF(RISCVStreamEngine, format, ##args)
 
 namespace RiscvISA {
 
@@ -125,7 +129,8 @@ void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
   auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
   auto &inputVec = inputMap.at(inputInfo.translatedStreamId);
   auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-  hack("Record input %llu.\n", rs1);
+  RISCV_SE_DPRINTF("Record input %llu %llu.\n", inputInfo.translatedStreamId,
+                   rs1);
   inputVec.at(inputInfo.inputIdx) = rs1;
 }
 
@@ -361,7 +366,8 @@ void RISCVStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   auto se = this->getStreamEngine(xc);
   se->executeStreamUser(args);
   auto loadedValue = *(reinterpret_cast<uint64_t *>(values.at(0).data()));
-  hack("StreamLoad get value %llu.\n", loadedValue);
+  RISCV_SE_DPRINTF("StreamLoad get value %llu for stream %llu.\n", loadedValue,
+                   userInfo.translatedUsedStreamIds.at(0));
   if (dynInfo.staticInst->isFloating()) {
     xc.setFloatRegOperandBits(dynInfo.staticInst, 0, loadedValue);
   } else {
