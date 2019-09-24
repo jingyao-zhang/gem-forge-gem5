@@ -127,6 +127,9 @@ GemForgeISAHandler::getStaticInstInfo(const TheISA::PCState &pcState,
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
     } else if (instName == "ssp_stream_fload") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_FLOAD;
+    } else if (instName == "ssp_stream_flw") {
+      // ? Do we have to distinguish these?
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_FLOAD;
     }
   }
   return emplaceRet.first->second;

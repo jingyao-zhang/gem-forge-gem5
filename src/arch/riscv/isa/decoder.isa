@@ -435,6 +435,9 @@ decode QUADRANT default Unknown::unknown() {
                 0x6: ssp_stream_fload({{
                 }},
                 True, uint64_t, No_OpClass);
+                0x7: ssp_stream_flw({{
+                }},
+                True, uint64_t, No_OpClass);
             }
         }
 

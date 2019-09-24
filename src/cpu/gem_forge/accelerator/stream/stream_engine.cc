@@ -1592,8 +1592,11 @@ void StreamEngine::issueElements() {
        * TODO: the back dependence of pointer chasing stream.
        */
       assert(element->size <= 8 && "IV Stream size greater than 8 bytes.");
-      element->setValue<uint64_t>(element->addr, &element->addr);
-      hack("Set IV stream value to %llu.\n", element->addr);
+      hack("Set IV stream value to %llu, cache lines %d size %d.\n",
+           element->addr, element->cacheBlocks, element->size);
+      element->setValue(element->addr, element->size,
+                        reinterpret_cast<uint8_t *>(&element->addr));
+      // element->setValue<uint64_t>(element->addr, &element->addr);
       element->markValueReady();
     }
   }

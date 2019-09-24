@@ -361,9 +361,8 @@ void RISCVStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   auto se = this->getStreamEngine(xc);
   se->executeStreamUser(args);
   auto loadedValue = *(reinterpret_cast<uint64_t *>(values.at(0).data()));
-  auto instName = dynInfo.staticInst->getName();
-  hack("StreamLoad get value %llu for %s.\n", loadedValue, instName.c_str());
-  if (instName == "ssp_stream_fload") {
+  hack("StreamLoad get value %llu.\n", loadedValue);
+  if (dynInfo.staticInst->isFloating()) {
     xc.setFloatRegOperandBits(dynInfo.staticInst, 0, loadedValue);
   } else {
     xc.setIntRegOperand(dynInfo.staticInst, 0, loadedValue);
