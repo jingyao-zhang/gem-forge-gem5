@@ -502,6 +502,14 @@ TimingSimpleCPU::handleWritePacket()
         _status = DcacheRetry;
     } else {
         _status = DcacheWaitResponse;
+        /**
+         * ! GemForge
+         * Notify the delegator.
+         */
+        assert(req->hasVaddr() && "No vaddr for write request.");
+        auto vaddr = req->getVaddr();
+        auto size = req->getSize();
+        this->cpuDelegator->storeTo(vaddr, size);
         // memory system takes ownership of packet
         dcache_pkt = NULL;
     }

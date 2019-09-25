@@ -9,16 +9,25 @@
 
 #include <unordered_map>
 
+class GemForgeCPUDelegator;
+
 namespace RiscvISA {
 class GemForgeISAHandler {
 public:
+  GemForgeISAHandler(GemForgeCPUDelegator *_cpuDelegaor)
+      : cpuDelegator(_cpuDelegaor), se(_cpuDelegaor) {}
+
   bool canDispatch(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void dispatch(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   bool canExecute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void execute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void commit(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
 
+  void storeTo(Addr vaddr, int size);
+
 private:
+  GemForgeCPUDelegator *cpuDelegator;
+
   enum GemForgeStaticInstOpE {
     NORMAL, // Normal instructions.
     STREAM_CONFIG,

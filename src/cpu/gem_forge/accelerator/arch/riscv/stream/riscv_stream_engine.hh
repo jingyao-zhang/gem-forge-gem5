@@ -20,6 +20,7 @@
 #include <unordered_map>
 
 class StreamEngine;
+class GemForgeCPUDelegator;
 
 namespace RiscvISA {
 
@@ -33,6 +34,9 @@ struct GemForgeDynInstInfo {
 
 class RISCVStreamEngine {
 public:
+  RISCVStreamEngine(GemForgeCPUDelegator *_cpuDelegator)
+      : cpuDelegator(_cpuDelegator) {}
+
 #define DeclareStreamInstHandler(Inst)                                         \
   bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,             \
                                ExecContext &xc);                               \
@@ -53,8 +57,11 @@ public:
 
 #undef DeclareStreamInstHandler
 
+  void storeTo(Addr vaddr, int size);
+
 private:
-  ::StreamEngine *getStreamEngine(ExecContext &xc);
+  ::GemForgeCPUDelegator *cpuDelegator;
+  ::StreamEngine *getStreamEngine();
 
   template <typename T> T extractImm(const StaticInst *staticInst) const;
 

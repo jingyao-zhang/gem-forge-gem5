@@ -98,6 +98,10 @@ void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo,
   }
 }
 
+void GemForgeISAHandler::storeTo(Addr vaddr, int size) {
+  se.storeTo(vaddr, size);
+}
+
 GemForgeISAHandler::GemForgeStaticInstInfo &
 GemForgeISAHandler::getStaticInstInfo(const TheISA::PCState &pcState,
                                       const GemForgeDynInstInfo &dynInfo) {

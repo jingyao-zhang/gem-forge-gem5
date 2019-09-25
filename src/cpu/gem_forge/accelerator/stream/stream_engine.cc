@@ -39,7 +39,8 @@ void debugStreamWithElements(Stream *S, const char *message) {
 }
 } // namespace
 
-#define SE_DPRINTF(format, args...) DPRINTF(StreamEngine, format, ##args)
+#define SE_DPRINTF(format, args...)                                            \
+  DPRINTF(StreamEngine, "[SE]: " format, ##args)
 
 #define STREAM_DPRINTF(stream, format, args...)                                \
   DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
@@ -279,6 +280,9 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   assert(this->canStreamConfig(args) && "Cannot configure stream.");
 
   this->numConfigured++;
+  this->numInflyStreamConfigurations++;
+  assert(this->numInflyStreamConfigurations < 10 &&
+         "Too many infly StreamConfigurations.");
 
   const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
@@ -838,6 +842,11 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
 }
 
 void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
+
+  this->numInflyStreamConfigurations--;
+  assert(this->numInflyStreamConfigurations >= 0 &&
+         "Negative infly StreamConfigurations.");
+
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
   const auto &endStreamInfos = streamRegion.streams();
 
@@ -964,7 +973,12 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
          "LSQ only works for LLVMTraceCPU.");
 }
 
-bool StreamEngine::handle(LLVMDynamicInst *inst) { return false; }
+void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
+  if (this->numInflyStreamConfigurations == 0) {
+    return;
+  }
+  hack("CPU stores to (%#x, %d).\n", vaddr, size);
+}
 
 void StreamEngine::initializeStreams(
     const ::LLVM::TDG::StreamRegion &streamRegion) {

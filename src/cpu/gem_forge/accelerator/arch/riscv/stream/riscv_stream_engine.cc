@@ -155,7 +155,7 @@ bool RISCVStreamEngine::canDispatchStreamReady(
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
 
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   return se->canStreamConfig(args);
 }
 
@@ -165,7 +165,7 @@ void RISCVStreamEngine::dispatchStreamReady(const GemForgeDynInstInfo &dynInfo,
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath,
                                         nullptr /* InputVec */, xc.tcBase());
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   se->dispatchStreamConfig(args);
 
   this->curStreamRegionInfo->numDispatchedInsts++;
@@ -199,7 +199,7 @@ void RISCVStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo,
   auto infoRelativePath = configInfo.dynStreamRegionInfo->infoRelativePath;
 
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   se->commitStreamConfig(args);
 
   // Release the InstInfo.
@@ -217,7 +217,7 @@ bool RISCVStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo,
 
 void RISCVStreamEngine::dispatchStreamEnd(const GemForgeDynInstInfo &dynInfo,
                                           ExecContext &xc) {
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
   auto cpuDelegator = xc.tcBase()->getCpuPtr()->getCPUDelegator();
   assert(cpuDelegator && "Failed to find the CPUDelegator.");
@@ -242,7 +242,7 @@ void RISCVStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
 
 void RISCVStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo,
                                         ExecContext &xc) {
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
   auto cpuDelegator = xc.tcBase()->getCpuPtr()->getCPUDelegator();
   assert(cpuDelegator && "Failed to find the CPUDelegator.");
@@ -271,7 +271,7 @@ bool RISCVStreamEngine::canDispatchStreamStep(
 
   auto streamId = stepInstInfo.translatedStreamId;
 
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   return se->canStreamStep(streamId);
 }
 
@@ -281,7 +281,7 @@ void RISCVStreamEngine::dispatchStreamStep(const GemForgeDynInstInfo &dynInfo,
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &stepInfo = dynStreamInstInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   se->dispatchStreamStep(streamId);
 }
 
@@ -298,7 +298,7 @@ void RISCVStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo,
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &stepInfo = dynStreamInstInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   se->commitStreamStep(streamId);
 
   // Release the info.
@@ -337,7 +337,7 @@ void RISCVStreamEngine::dispatchStreamLoad(const GemForgeDynInstInfo &dynInfo,
       userInfo.translatedUsedStreamIds.at(0),
   };
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   se->dispatchStreamUser(args);
 }
 
@@ -349,7 +349,7 @@ bool RISCVStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo,
       userInfo.translatedUsedStreamIds.at(0),
   };
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   return se->areUsedStreamsReady(args);
 }
 
@@ -363,7 +363,7 @@ void RISCVStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   StreamEngine::StreamUserArgs::ValueVec values;
   values.reserve(usedStreamIds.size());
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds, &values);
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   se->executeStreamUser(args);
   auto loadedValue = *(reinterpret_cast<uint64_t *>(values.at(0).data()));
   RISCV_SE_DPRINTF("StreamLoad get value %llu for stream %llu.\n", loadedValue,
@@ -383,7 +383,7 @@ void RISCVStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo,
       userInfo.translatedUsedStreamIds.at(0),
   };
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
-  auto se = this->getStreamEngine(xc);
+  auto se = this->getStreamEngine();
   se->commitStreamUser(args);
 
   // Release the info.
@@ -391,11 +391,19 @@ void RISCVStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo,
 }
 
 /********************************************************************************
+ * APIs related to misspeculation handling.
+ *******************************************************************************/
+void RISCVStreamEngine::storeTo(Addr vaddr, int size) {
+  auto se = this->getStreamEngine();
+  se->cpuStoreTo(vaddr, size);
+}
+
+/********************************************************************************
  * StreamEngine Helpers.
  *******************************************************************************/
 
-::StreamEngine *RISCVStreamEngine::getStreamEngine(ExecContext &xc) {
-  return xc.tcBase()->getCpuPtr()->getAccelManager()->getStreamEngine();
+::StreamEngine *RISCVStreamEngine::getStreamEngine() {
+  return this->cpuDelegator->baseCPU->getAccelManager()->getStreamEngine();
 }
 
 template <typename T>
@@ -478,7 +486,7 @@ void RISCVStreamEngine::increamentStreamRegionInfoNumExecutedInsts(
     ::StreamEngine::StreamConfigArgs args(dynStreamRegionInfo.streamReadySeqNum,
                                           dynStreamRegionInfo.infoRelativePath,
                                           &dynStreamRegionInfo.inputMap);
-    auto se = this->getStreamEngine(xc);
+    auto se = this->getStreamEngine();
     se->executeStreamConfig(args);
   }
 }

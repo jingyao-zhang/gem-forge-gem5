@@ -26,7 +26,6 @@ public:
   void handshake(GemForgeCPUDelegator *_cpuDelegator,
                  GemForgeAcceleratorManager *_manager) override;
 
-  bool handle(LLVMDynamicInst *inst) override;
   void tick() override;
   void dump() override;
   void regStats() override;
@@ -100,6 +99,11 @@ public:
   void dispatchStreamStore(StreamStoreInst *inst);
   void executeStreamStore(StreamStoreInst *inst);
   void commitStreamStore(StreamStoreInst *inst);
+
+  /*************************************************************************
+   * Tough part: handling misspeculation.
+   ************************************************************************/
+  void cpuStoreTo(Addr vaddr, int size);
 
   Stream *getStream(uint64_t streamId) const;
 
@@ -188,6 +192,12 @@ private:
   std::vector<StreamElement> FIFOArray;
   StreamElement *FIFOFreeListHead;
   size_t numFreeFIFOEntries;
+
+  /**
+   * Incremented when dispatch StreamConfig and decremented when commit
+   * StreamEnd.
+   */
+  int numInflyStreamConfigurations = 0;
 
   /**
    * Map from the user instruction seqNum to all the actual element to use.

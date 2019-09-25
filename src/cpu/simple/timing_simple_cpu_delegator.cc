@@ -8,8 +8,9 @@
 
 class TimingSimpleCPUDelegator::Impl {
 public:
-  Impl(TimingSimpleCPU *_cpu)
-      : cpu(_cpu), state(StateE::BEFORE_DISPATCH), curSeqNum(1) {}
+  Impl(TimingSimpleCPU *_cpu, TimingSimpleCPUDelegator *_cpuDelegator)
+      : cpu(_cpu), state(StateE::BEFORE_DISPATCH), curSeqNum(1),
+        isaHandler(_cpuDelegator) {}
 
   TimingSimpleCPU *cpu;
   /**
@@ -48,8 +49,8 @@ public:
  *************************************************************************/
 
 TimingSimpleCPUDelegator::TimingSimpleCPUDelegator(TimingSimpleCPU *_cpu)
-    : GemForgeCPUDelegator(CPUTypeE::TIMING_SIMPLE, _cpu), pimpl{new Impl{
-                                                               _cpu}} {}
+    : GemForgeCPUDelegator(CPUTypeE::TIMING_SIMPLE, _cpu),
+      pimpl(new Impl(_cpu, this)) {}
 TimingSimpleCPUDelegator::~TimingSimpleCPUDelegator() = default;
 
 bool TimingSimpleCPUDelegator::canDispatch(StaticInstPtr staticInst,
@@ -89,6 +90,10 @@ void TimingSimpleCPUDelegator::commit(StaticInstPtr staticInst,
   pimpl->isaHandler.commit(dynInfo, xc);
   pimpl->state = Impl::StateE::BEFORE_DISPATCH;
   pimpl->curSeqNum++;
+}
+
+void TimingSimpleCPUDelegator::storeTo(Addr vaddr, int size) {
+  pimpl->isaHandler.storeTo(vaddr, size);
 }
 
 const std::string &TimingSimpleCPUDelegator::getTraceExtraFolder() const {

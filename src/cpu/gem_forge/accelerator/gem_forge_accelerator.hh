@@ -29,7 +29,10 @@ public:
   virtual void handshake(GemForgeCPUDelegator *_cpuDelegator,
                          GemForgeAcceleratorManager *_manager);
 
-  virtual bool handle(LLVMDynamicInst *inst) = 0;
+  /**
+   * TODO: Finally decouple accelerator model from instruction.
+   */
+  virtual bool handle(LLVMDynamicInst *inst) { return false; }
   virtual void tick() = 0;
 
   virtual void dump() {}
