@@ -317,22 +317,14 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     S->statistic.numConfigured++;
 
     /**
-     * 1. Clear all elements between stepHead and allocHead.
+     * 1. Check there are no unstepped elements.
      * 2. Create the new index.
      * 3. Allocate more entries.
      */
 
-    // 1. Release elements.
-    while (S->allocSize > S->stepSize) {
-      assert(S->stepped->next != nullptr && "Missing next element.");
-      auto releaseElement = S->stepped->next;
-      S->stepped->next = releaseElement->next;
-      S->allocSize--;
-      if (S->head == releaseElement) {
-        S->head = S->stepped;
-      }
-      this->addFreeElement(releaseElement);
-    }
+    // 1. Check there are no unstepped elements.
+    assert(S->allocSize == S->stepSize &&
+           "Unstepped elements wwhen dispatch StreamConfig.");
 
     // Notify the stream.
     S->configure(args.seqNum, args.tc);
@@ -570,7 +562,7 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
     if (releaseElement->FIFOIdx.entryIdx > S->maxSize) {
       this->throttleStream(S, releaseElement);
     }
-    this->releaseElement(S);
+    this->releaseElementStepped(S);
   }
 
   // ! Do not allocate here.
@@ -688,6 +680,10 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
       // Mark the first user sequence number.
       if (element->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
         element->firstUserSeqNum = seqNum;
+        if (S->getStreamType() == "load" && element->isAddrReady) {
+          // The element should already be in peb, remove it.
+          this->peb.removeElement(element);
+        }
       }
       elementSet.insert(element);
       // Construct the elementUserMap.
@@ -830,14 +826,7 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
 
     // 2. Release allocated but unstepped elements.
     while (S->allocSize > S->stepSize) {
-      assert(S->stepped->next != nullptr && "Missing next element.");
-      auto releaseElement = S->stepped->next;
-      S->stepped->next = releaseElement->next;
-      S->allocSize--;
-      if (S->head == releaseElement) {
-        S->head = S->stepped;
-      }
-      this->addFreeElement(releaseElement);
+      this->releaseElementUnstepped(S);
     }
 
     // 3. Mark the stream to be unconfigured.
@@ -871,7 +860,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     /**
      * Release the last element we stepped at dispatch.
      */
-    this->releaseElement(S);
+    this->releaseElementStepped(S);
     if (isDebugStream(S)) {
       debugStream(S, "Commit End");
     }
@@ -1402,7 +1391,7 @@ void StreamEngine::allocateElement(Stream *S) {
   S->head = newElement;
 }
 
-void StreamEngine::releaseElement(Stream *S) {
+void StreamEngine::releaseElementStepped(Stream *S) {
 
   /**
    * * This function performs a normal release, i.e. release a stepped
@@ -1448,6 +1437,13 @@ void StreamEngine::releaseElement(Stream *S) {
   if (S->getStreamType() == "load") {
     this->numLoadElementsStepped++;
     if (used) {
+      /**
+       * For a used load element, it should be removed from the PEB.
+       */
+      assert(!this->peb.contains(releaseElement) &&
+             "Used load element still in PEB when released.");
+
+      // Stats.
       this->numLoadElementsUsed++;
       // Update waited cycle information.
       auto waitedCycles = 0;
@@ -1456,6 +1452,14 @@ void StreamEngine::releaseElement(Stream *S) {
             releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
       }
       this->numLoadElementWaitCycles += waitedCycles;
+    } else {
+      /**
+       * This is unused load element it should be still in the PEB if issued.
+       * So far we immediately issue after the address is ready.
+       */
+      if (releaseElement->isAddrReady) {
+        this->peb.removeElement(releaseElement);
+      }
     }
   } else if (S->getStreamType() == "store") {
     this->numStoreElementsStepped++;
@@ -1497,6 +1501,29 @@ void StreamEngine::releaseElement(Stream *S) {
   S->stepSize--;
   S->allocSize--;
 
+  this->addFreeElement(releaseElement);
+}
+
+void StreamEngine::releaseElementUnstepped(Stream *S) {
+  assert(S->stepped->next != nullptr && "Missing unstepped element.");
+  auto releaseElement = S->stepped->next;
+
+  // This should be unused.
+  assert(releaseElement->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM &&
+         "Release unstepped but used element.");
+
+  if (S->getStreamType() == "load") {
+    if (releaseElement->isAddrReady) {
+      // This should be in PEB.
+      this->peb.removeElement(releaseElement);
+    }
+  }
+
+  S->stepped->next = releaseElement->next;
+  S->allocSize--;
+  if (S->head == releaseElement) {
+    S->head = S->stepped;
+  }
   this->addFreeElement(releaseElement);
 }
 
@@ -1631,6 +1658,10 @@ void StreamEngine::issueElement(StreamElement *element) {
   if (S->getStreamType() == "load") {
     this->numLoadElementsFetched++;
     S->statistic.numFetched++;
+    // Add to the PEB if the first user has not been dispatched.
+    if (element->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
+      this->peb.addElement(element);
+    }
   }
 
   if (element->cacheBlocks > 1) {
@@ -1868,7 +1899,8 @@ void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
   // This is a late fetch, increase the counter.
   S->lateFetchCount++;
   if (S->lateFetchCount == 10) {
-    // We have reached the threshold to allow the stream to run further ahead.
+    // We have reached the threshold to allow the stream to run further
+    // ahead.
     auto oldRunAheadSize = S->maxSize;
     /**
      * Get the step root stream.
@@ -1951,12 +1983,12 @@ StreamEngine::getStreamRegion(const std::string &relativePath) const {
  * it is stepped.
  *
  * To avoid deadlock, we leverage the information of total alive streams
- * that can coexist with the current stream, and assign InitMaxSize number of
- * elements to these streams, which is called BasicEntries.
+ * that can coexist with the current stream, and assign InitMaxSize number
+ *of elements to these streams, which is called BasicEntries.
  * * BasicEntries = TotalAliveStreams * InitMaxSize.
  *
- * Then we want to know how many of these BasicEntries is already assigned to
- * streams. This number is called AssignedBasicEntries.
+ * Then we want to know how many of these BasicEntries is already assigned
+ *to streams. This number is called AssignedBasicEntries.
  * * AssignedBasicEntries = CurrentAliveStreams * InitMaxSize.
  *
  * We also want to know the number of AssignedEntries and UnAssignedEntries.
@@ -2033,11 +2065,11 @@ void StreamEngine::StreamThrottler::throttleStream(Stream *S,
   }
 
   if (isDebugStream(stepRootStream)) {
-    inform(
-        "AssignedEntries %d UnAssignedEntries %d BasicEntries %d "
-        "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries %d.\n",
-        assignedEntries, unAssignedEntries, basicEntries, assignedBasicEntries,
-        availableEntries, upperBoundEntries);
+    inform("AssignedEntries %d UnAssignedEntries %d BasicEntries %d "
+           "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries "
+           "%d.\n",
+           assignedEntries, unAssignedEntries, basicEntries,
+           assignedBasicEntries, availableEntries, upperBoundEntries);
   }
 
   auto oldMaxSize = S->maxSize;
@@ -2116,9 +2148,10 @@ bool StreamEngine::shouldOffloadStream(Stream *S, uint64_t streamInstance) {
   }
   /**
    * Make sure we do not offload empty stream.
-   * This information may be known at configuration time, or even require oracle
-   * information. However, as the stream is empty, trace-based simulation does
-   * not know which LLC bank should the stream be offloaded to.
+   * This information may be known at configuration time, or even require
+   * oracle information. However, as the stream is empty, trace-based
+   * simulation does not know which LLC bank should the stream be offloaded
+   * to.
    * TODO: Improve this.
    */
   if (S->getStreamLengthAtInstance(streamInstance) == 0) {
@@ -2175,8 +2208,8 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
           return false;
         }
       }
-      // Completely overlapped. Check if the previous element is already value
-      // ready.
+      // Completely overlapped. Check if the previous element is already
+      // value ready.
       if (prevElement->isValueReady) {
         // Copy the value.
         element->setValue(prevElement);

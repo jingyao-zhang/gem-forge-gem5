@@ -4,6 +4,7 @@ DebugFlag('StreamEngine')
 
 ProtoBuf('StreamMessage.proto')
 
+Source('prefetch_element_buffer.cc')
 Source('stream_statistic.cc')
 Source('stream_engine.cc')
 Source('stream.cc')

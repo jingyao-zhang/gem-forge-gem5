@@ -3,6 +3,7 @@
 
 #include "coalesced_stream.hh"
 #include "insts.hh"
+#include "prefetch_element_buffer.hh"
 #include "single_stream.hh"
 #include "stream_element.hh"
 
@@ -202,6 +203,11 @@ private:
   std::unordered_map<StreamElement *, std::unordered_set<uint64_t>>
       elementUserMap;
 
+  /**
+   * Holds the prefetch element buffer.
+   */
+  PrefetchElementBuffer peb;
+
   using StreamId = uint64_t;
   std::unordered_map<StreamId, Stream *> streamMap;
 
@@ -287,7 +293,14 @@ private:
   bool areBaseElementAllocated(Stream *S);
   // Allocate one element to stream.
   void allocateElement(Stream *S);
-  void releaseElement(Stream *S);
+  /**
+   * Release a unstepped stream element.
+   */
+  void releaseElementUnstepped(Stream *S);
+  /**
+   * Release a stepped stream element.
+   */
+  void releaseElementStepped(Stream *S);
   void issueElements();
   void issueElement(StreamElement *element);
   void writebackElement(StreamElement *element, StreamStoreInst *inst);
