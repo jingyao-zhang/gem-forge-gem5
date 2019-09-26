@@ -38,6 +38,10 @@
  */
 
 #include "cpu/minor/cpu.hh"
+// ! GemForge
+#include "minor_cpu_delegator.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
+#include "cpu/gem_forge/gem_forge_packet_handler.hh"
 
 #include "arch/utility.hh"
 #include "cpu/minor/dyn_inst.hh"
@@ -95,6 +99,12 @@ void
 MinorCPU::init()
 {
     BaseCPU::init();
+    // ! GemForge
+    if (this->accelManager)
+    {
+        this->cpuDelegator = m5::make_unique<MinorCPUDelegator>(this);
+        this->accelManager->handshake(this->cpuDelegator.get());
+    }
 
     if (!params()->switched_out &&
         system->getMemoryMode() != Enums::timing)
@@ -377,4 +387,12 @@ MinorCPU::totalOps() const
         ret += (*i)->numOp;
 
     return ret;
+}
+
+//
+// ! GemForge
+//
+GemForgeCPUDelegator *MinorCPU::getCPUDelegator()
+{
+  return cpuDelegator.get();
 }

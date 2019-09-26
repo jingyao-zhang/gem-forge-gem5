@@ -63,6 +63,9 @@ class Pipeline;
 typedef SimpleThread MinorThread;
 };
 
+// Forward declaration of the cpu delegator.
+class MinorCPUDelegator;
+
 /**
  *  MinorCPU is an in-order CPU model with four fixed pipeline stages:
  *
@@ -100,6 +103,13 @@ class MinorCPU : public BaseCPU
      *  you need a ThreadContext for *any* reason, use
      *  threads[threadId]->getTC() */
     std::vector<Minor::MinorThread *> threads;
+
+    /**
+     * GemForgeDelegator.
+     */
+    friend class MinorCPUDelegator;
+    std::unique_ptr<MinorCPUDelegator> cpuDelegator;
+    GemForgeCPUDelegator *getCPUDelegator() override;
 
   public:
     /** Provide a non-protected base class for Minor's Ports as derived

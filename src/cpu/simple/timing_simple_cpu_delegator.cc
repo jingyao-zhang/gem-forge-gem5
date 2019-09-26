@@ -35,7 +35,7 @@ public:
   Process *getProcess() {
     assert(this->cpu->activeThreads.size() == 1 &&
            "SMT not supported in GemForge yet.");
-    // Cracy oracle access chain.
+    // Crazy oracle access chain.
     auto threadInfo =
         this->cpu->threadInfo.at(this->cpu->activeThreads.front());
     auto thread = threadInfo->thread;

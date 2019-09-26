@@ -60,6 +60,10 @@ if 'MinorCPU' in env['CPU_MODELS']:
     Source('scoreboard.cc')
     Source('stats.cc')
 
+    # ! GemForge
+    Source('minor_cpu_delegator.cc')
+    DebugFlag('MinorCPUDelegator', 'MinorCPUDelegator behavior.')
+
     DebugFlag('MinorCPU', 'Minor CPU-level events')
     DebugFlag('MinorExecute', 'Minor Execute stage')
     DebugFlag('MinorInterrupt', 'Minor interrupt handling')

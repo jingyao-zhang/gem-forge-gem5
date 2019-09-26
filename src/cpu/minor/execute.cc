@@ -1175,6 +1175,8 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
                     ex_info.inFUMemInsts->front().inst;
                 FUPipeline *fu = funcUnits[head_mem_ref_inst->fuIndex];
                 const MinorDynInstPtr &fu_inst = fu->front().inst;
+                // ! GemForge
+                // Confused, isn't head_mem_ref_inst the same as fu_inst?
 
                 /* Use this, possibly out of order, inst as the one
                  *  to 'commit'/send to the LSQ */

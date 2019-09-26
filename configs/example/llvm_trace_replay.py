@@ -341,6 +341,9 @@ if not options.llvm_standalone:
         # Also set the common parameters for the normal CPUs.
         if isinstance(cpu, DerivO3CPU):
             setDerivO3CPUCommomParams(cpu)
+        elif isinstance(cpu, MinorCPU):
+            # TODO: Set parameters for MinorCPU.
+            pass
         elif isinstance(cpu, TimingSimpleCPU):
             pass
         else:

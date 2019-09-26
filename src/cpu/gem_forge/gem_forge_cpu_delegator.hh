@@ -18,6 +18,7 @@ public:
   enum CPUTypeE {
     LLVM_TRACE,
     TIMING_SIMPLE,
+    MINOR,
   };
   const CPUTypeE cpuType;
   GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU)
