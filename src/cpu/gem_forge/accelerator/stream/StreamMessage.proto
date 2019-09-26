@@ -114,7 +114,14 @@ message StreamRegion {
   repeated uint64 coalesced_stream_ids = 9;
 }
 
+// All the configured stream region in one place.
+message AllStreamRegions {
+  string binary = 1;
+  repeated string relative_paths = 2;
+};
+
 message StreamPattern {
+  // Describe the pattern of the a dynamic direct stream.
   string val_pattern = 1;
   string acc_pattern = 2;
   uint64 iters = 3;
@@ -133,6 +140,7 @@ message StreamPattern {
 }
 
 message StreamHistory {
+  // Describe the accessed entries of the a dynamic stream.
   message HistoryEntry {
     bool valid = 1;
     uint64 addr = 2;

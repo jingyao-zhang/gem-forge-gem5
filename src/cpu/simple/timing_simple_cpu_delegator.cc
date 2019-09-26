@@ -56,29 +56,33 @@ TimingSimpleCPUDelegator::~TimingSimpleCPUDelegator() = default;
 bool TimingSimpleCPUDelegator::canDispatch(StaticInstPtr staticInst,
                                            ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_DISPATCH);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
-  return pimpl->isaHandler.canDispatch(dynInfo, xc);
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
+                                      staticInst.get(), xc.tcBase());
+  return pimpl->isaHandler.canDispatch(dynInfo);
 }
 
 void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
                                         ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_DISPATCH);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
-  pimpl->isaHandler.dispatch(dynInfo, xc);
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
+                                      staticInst.get(), xc.tcBase());
+  pimpl->isaHandler.dispatch(dynInfo);
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
 
 bool TimingSimpleCPUDelegator::canExecute(StaticInstPtr staticInst,
                                           ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
-  return pimpl->isaHandler.canExecute(dynInfo, xc);
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
+                                      staticInst.get(), xc.tcBase());
+  return pimpl->isaHandler.canExecute(dynInfo);
 }
 
 void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
                                        ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
+                                      staticInst.get(), xc.tcBase());
   pimpl->isaHandler.execute(dynInfo, xc);
   pimpl->state = Impl::StateE::BEFORE_COMMIT;
 }
@@ -86,8 +90,9 @@ void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
 void TimingSimpleCPUDelegator::commit(StaticInstPtr staticInst,
                                       ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, staticInst.get());
-  pimpl->isaHandler.commit(dynInfo, xc);
+  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
+                                      staticInst.get(), xc.tcBase());
+  pimpl->isaHandler.commit(dynInfo);
   pimpl->state = Impl::StateE::BEFORE_DISPATCH;
   pimpl->curSeqNum++;
 }

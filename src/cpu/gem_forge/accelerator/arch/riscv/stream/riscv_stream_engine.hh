@@ -26,10 +26,13 @@ namespace RiscvISA {
 
 // TODO: Move these into separate header.
 struct GemForgeDynInstInfo {
-  uint64_t seqNum;
+  const uint64_t seqNum;
+  const TheISA::PCState pc;
   StaticInst *staticInst;
-  GemForgeDynInstInfo(uint64_t _seqNum, StaticInst *_staticInst)
-      : seqNum(_seqNum), staticInst(_staticInst) {}
+  ThreadContext *tc;
+  GemForgeDynInstInfo(uint64_t _seqNum, const TheISA::PCState &_pc,
+                      StaticInst *_staticInst, ThreadContext *_tc)
+      : seqNum(_seqNum), pc(_pc), staticInst(_staticInst), tc(_tc) {}
 };
 
 class RISCVStreamEngine {
@@ -38,15 +41,12 @@ public:
       : cpuDelegator(_cpuDelegator) {}
 
 #define DeclareStreamInstHandler(Inst)                                         \
-  bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,             \
-                               ExecContext &xc);                               \
-  void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,                \
-                            ExecContext &xc);                                  \
-  bool canExecuteStream##Inst(const GemForgeDynInstInfo &dynInfo,              \
-                              ExecContext &xc);                                \
+  bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);            \
+  void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);               \
+  bool canExecuteStream##Inst(const GemForgeDynInstInfo &dynInfo);             \
   void executeStream##Inst(const GemForgeDynInstInfo &dynInfo,                 \
                            ExecContext &xc);                                   \
-  void commitStream##Inst(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
+  void commitStream##Inst(const GemForgeDynInstInfo &dynInfo);
 
   DeclareStreamInstHandler(Config);
   DeclareStreamInstHandler(Input);
@@ -64,6 +64,12 @@ private:
   ::StreamEngine *getStreamEngine();
 
   template <typename T> T extractImm(const StaticInst *staticInst) const;
+
+  /**
+   * Memorize the AllStreamRegions.
+   */
+  std::unique_ptr<::LLVM::TDG::AllStreamRegions> allStreamRegions;
+  const std::string &getRelativePath(int configIdx);
 
   /**
    * Memorize the StreamConfigureInfo.
@@ -166,7 +172,7 @@ private:
    * If all executed, will call StreamEngine::executeStreamConfig.
    */
   void increamentStreamRegionInfoNumExecutedInsts(
-      DynStreamRegionInfo &dynStreamRegionInfo, ExecContext &xc);
+      DynStreamRegionInfo &dynStreamRegionInfo);
 };
 
 } // namespace RiscvISA

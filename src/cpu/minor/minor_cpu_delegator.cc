@@ -46,9 +46,7 @@ MinorCPUDelegator::~MinorCPUDelegator() = default;
 
 bool MinorCPUDelegator::canDispatch(Minor::MinorDynInstPtr dynInstPtr) {
   assert(dynInstPtr->isInst() && "Should be a real inst.");
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->getInstSeqNum(dynInstPtr),
-                                      dynInstPtr->staticInst.get());
-  return pimpl->isaHandler.canDispatch(dynInfo, xc);
+  return true;
 }
 
 const std::string &MinorCPUDelegator::getTraceExtraFolder() const {

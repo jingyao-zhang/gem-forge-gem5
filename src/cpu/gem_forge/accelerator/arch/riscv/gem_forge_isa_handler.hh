@@ -17,11 +17,11 @@ public:
   GemForgeISAHandler(GemForgeCPUDelegator *_cpuDelegaor)
       : cpuDelegator(_cpuDelegaor), se(_cpuDelegaor) {}
 
-  bool canDispatch(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
-  void dispatch(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
-  bool canExecute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
+  bool canDispatch(const GemForgeDynInstInfo &dynInfo);
+  void dispatch(const GemForgeDynInstInfo &dynInfo);
+  bool canExecute(const GemForgeDynInstInfo &dynInfo);
   void execute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
-  void commit(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
+  void commit(const GemForgeDynInstInfo &dynInfo);
 
   void storeTo(Addr vaddr, int size);
 
@@ -43,8 +43,7 @@ private:
   };
   mutable std::unordered_map<Addr, GemForgeStaticInstInfo> cachedStaticInstInfo;
 
-  GemForgeStaticInstInfo &getStaticInstInfo(const TheISA::PCState &pcState,
-                                            const GemForgeDynInstInfo &dynInfo);
+  GemForgeStaticInstInfo &getStaticInstInfo(const GemForgeDynInstInfo &dynInfo);
 
   RISCVStreamEngine se;
 };

@@ -5,75 +5,72 @@
 
 namespace RiscvISA {
 
-#define StreamInstCase(stage)                                                  \
+#define StreamInstCase(stage, xc...)                                           \
   case GemForgeStaticInstOpE::STREAM_CONFIG: {                                 \
-    se.stage##StreamConfig(dynInfo, xc);                                       \
+    se.stage##StreamConfig(dynInfo, ##xc);                                     \
     break;                                                                     \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_INPUT: {                                  \
-    se.stage##StreamInput(dynInfo, xc);                                        \
+    se.stage##StreamInput(dynInfo, ##xc);                                      \
     break;                                                                     \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_READY: {                                  \
-    se.stage##StreamReady(dynInfo, xc);                                        \
+    se.stage##StreamReady(dynInfo, ##xc);                                      \
     break;                                                                     \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_END: {                                    \
-    se.stage##StreamEnd(dynInfo, xc);                                          \
+    se.stage##StreamEnd(dynInfo, ##xc);                                        \
     break;                                                                     \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_STEP: {                                   \
-    se.stage##StreamStep(dynInfo, xc);                                         \
+    se.stage##StreamStep(dynInfo, ##xc);                                       \
     break;                                                                     \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_LOAD:                                     \
   case GemForgeStaticInstOpE::STREAM_FLOAD: {                                  \
-    se.stage##StreamLoad(dynInfo, xc);                                         \
+    se.stage##StreamLoad(dynInfo, ##xc);                                       \
     break;                                                                     \
   }
 
-#define StreamInstRetCase(stage)                                               \
+#define StreamInstRetCase(stage, xc...)                                        \
   case GemForgeStaticInstOpE::STREAM_CONFIG: {                                 \
-    return se.stage##StreamConfig(dynInfo, xc);                                \
+    return se.stage##StreamConfig(dynInfo, ##xc);                              \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_INPUT: {                                  \
-    return se.stage##StreamInput(dynInfo, xc);                                 \
+    return se.stage##StreamInput(dynInfo, ##xc);                               \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_READY: {                                  \
-    return se.stage##StreamReady(dynInfo, xc);                                 \
+    return se.stage##StreamReady(dynInfo, ##xc);                               \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_END: {                                    \
-    return se.stage##StreamEnd(dynInfo, xc);                                   \
+    return se.stage##StreamEnd(dynInfo, ##xc);                                 \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_STEP: {                                   \
-    return se.stage##StreamStep(dynInfo, xc);                                  \
+    return se.stage##StreamStep(dynInfo, ##xc);                                \
   }                                                                            \
   case GemForgeStaticInstOpE::STREAM_LOAD:                                     \
   case GemForgeStaticInstOpE::STREAM_FLOAD: {                                  \
-    return se.stage##StreamLoad(dynInfo, xc);                                  \
+    return se.stage##StreamLoad(dynInfo, ##xc);                                \
   }
 
-bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo,
-                                     ExecContext &xc) {
-  auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
+bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo) {
+  auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstRetCase(canDispatch);
   default: { return true; }
   }
 }
 
-void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
-                                  ExecContext &xc) {
-  auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
+void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo) {
+  auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(dispatch);
   default: { break; }
   }
 }
 
-bool GemForgeISAHandler::canExecute(const GemForgeDynInstInfo &dynInfo,
-                                    ExecContext &xc) {
-  auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
+bool GemForgeISAHandler::canExecute(const GemForgeDynInstInfo &dynInfo) {
+  auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstRetCase(canExecute);
   default: { return true; }
@@ -82,16 +79,15 @@ bool GemForgeISAHandler::canExecute(const GemForgeDynInstInfo &dynInfo,
 
 void GemForgeISAHandler::execute(const GemForgeDynInstInfo &dynInfo,
                                  ExecContext &xc) {
-  auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
+  auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
-    StreamInstCase(execute);
+    StreamInstCase(execute, xc);
   default: { break; }
   }
 }
 
-void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo,
-                                ExecContext &xc) {
-  auto &staticInstInfo = this->getStaticInstInfo(xc.pcState(), dynInfo);
+void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo) {
+  auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(commit);
   default: { break; }
@@ -103,9 +99,9 @@ void GemForgeISAHandler::storeTo(Addr vaddr, int size) {
 }
 
 GemForgeISAHandler::GemForgeStaticInstInfo &
-GemForgeISAHandler::getStaticInstInfo(const TheISA::PCState &pcState,
-                                      const GemForgeDynInstInfo &dynInfo) {
-  auto pc = pcState.pc();
+GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
+  // TODO: Handle microop.
+  auto pc = dynInfo.pc.pc();
   auto emplaceRet = this->cachedStaticInstInfo.emplace(
       std::piecewise_construct, std::forward_as_tuple(pc),
       std::forward_as_tuple());
