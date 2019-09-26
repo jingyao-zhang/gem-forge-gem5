@@ -124,8 +124,11 @@ struct StreamElement {
    * and allocate entry in the load queue.
    */
   uint64_t firstUserSeqNum;
+  bool isFirstUserDispatched() const;
+  bool isStepped;
   bool isAddrReady;
   bool isValueReady;
+  bool flushed;
 
   Cycles allocateCycle;
   Cycles addrReadyCycle;

@@ -7,6 +7,10 @@
 
 /**
  * This data struction holds the stream element that's in prefetch state.
+ * These elements should be
+ * isAddrReady = true
+ * isFirstUserDispatched = false
+ * isStepped = false
  * There is no order between these elements.
  */
 class PrefetchElementBuffer {
@@ -24,7 +28,6 @@ public:
    */
   bool isHit(Addr vaddr, int size) const;
 
-private:
   std::unordered_set<StreamElement *> elements;
 };
 

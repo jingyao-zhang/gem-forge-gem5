@@ -54,14 +54,14 @@ void debugStreamWithElements(Stream *S, const char *message) {
                  element->FIFOIdx.streamId.streamInstance,                     \
                  element->FIFOIdx.entryIdx, ##args)
 
-#define STREAM_PANIC(stream, format, args...)                                  \
-  panic("[%s]: " format, stream->getStreamName().c_str(), ##args)
+#define STREAM_LOG(log, stream, format, args...)                               \
+  log("[%s]: " format, stream->getStreamName().c_str(), ##args)
 
-#define STREAM_ELEMENT_PANIC(element, format, args...)                         \
+#define STREAM_ELEMENT_LOG(log, element, format, args...)                      \
   element->se->dump();                                                         \
-  STREAM_PANIC(element->getStream(), "[%lu, %lu]: " format,                    \
-               element->FIFOIdx.streamId.streamInstance,                       \
-               element->FIFOIdx.entryIdx, ##args)
+  STREAM_LOG(log, element->getStream(), "[%lu, %lu]: " format,                 \
+             element->FIFOIdx.streamId.streamInstance,                         \
+             element->FIFOIdx.entryIdx, ##args)
 
 StreamEngine::StreamEngine(Params *params)
     : GemForgeAccelerator(params), streamPlacementManager(nullptr),
@@ -513,8 +513,7 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
 
   for (auto S : this->getStepStreamList(stepStream)) {
     assert(S->configured && "Stream should be configured to be stepped.");
-    S->stepped = S->stepped->next;
-    S->stepSize++;
+    this->stepElement(S);
   }
   /**
    * * Enforce that stepSize is the same within the stepGroup.
@@ -616,7 +615,7 @@ int StreamEngine::getStreamUserLQEntries(const LLVMDynamicInst *inst) const {
       // Not a load stream. Ignore it.
       continue;
     }
-    if (element->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM) {
+    if (element->isFirstUserDispatched()) {
       // Not the first user of the load stream element. Ignore it.
       continue;
     }
@@ -682,9 +681,10 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
 
       auto element = S->stepped->next;
       // Mark the first user sequence number.
-      if (element->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
+      if (!element->isFirstUserDispatched()) {
         element->firstUserSeqNum = seqNum;
-        if (S->getStreamType() == "load" && element->isAddrReady) {
+        if (S->getStreamType() == "load" && element->isAddrReady &&
+            !element->isStepped) {
           // The element should already be in peb, remove it.
           this->peb.removeElement(element);
         }
@@ -825,8 +825,7 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
     // 1. Step one element.
     assert(S->allocSize > S->stepSize &&
            "Should have at least one unstepped allocate element.");
-    S->stepped = S->stepped->next;
-    S->stepSize++;
+    this->stepElement(S);
 
     // 2. Release allocated but unstepped elements.
     while (S->allocSize > S->stepSize) {
@@ -977,7 +976,10 @@ void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
   if (this->numInflyStreamConfigurations == 0) {
     return;
   }
-  hack("CPU stores to (%#x, %d).\n", vaddr, size);
+  if (this->peb.isHit(vaddr, size)) {
+    hack("CPU stores to (%#x, %d), hits in PEB.\n", vaddr, size);
+    this->flushPEB();
+  }
 }
 
 void StreamEngine::initializeStreams(
@@ -1361,17 +1363,17 @@ void StreamEngine::allocateElement(Stream *S) {
         auto element = S->stepped->next;
         while (element != nullptr) {
           if (baseElement == nullptr) {
-            STREAM_ELEMENT_PANIC(newElement,
-                                 "Failed to find back base element from %s.\n",
-                                 backBaseS->getStreamName().c_str());
+            STREAM_ELEMENT_LOG(panic, newElement,
+                               "Failed to find back base element from %s.\n",
+                               backBaseS->getStreamName().c_str());
           }
           element = element->next;
           baseElement = baseElement->next;
         }
         if (baseElement == nullptr) {
-          STREAM_ELEMENT_PANIC(newElement,
-                               "Failed to find back base element from %s.\n",
-                               backBaseS->getStreamName().c_str());
+          STREAM_ELEMENT_LOG(panic, newElement,
+                             "Failed to find back base element from %s.\n",
+                             backBaseS->getStreamName().c_str());
         }
         // ! Try to check the base element should have the previous element.
         STREAM_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
@@ -1382,11 +1384,11 @@ void StreamEngine::allocateElement(Stream *S) {
             STREAM_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
             newElement->baseElements.insert(baseElement);
           } else {
-            // STREAM_ELEMENT_PANIC(
+            // STREAM_ELEMENT_LOG(panic,
             //     newElement, "The base element has wrong FIFOIdx.\n");
           }
         } else {
-          // STREAM_ELEMENT_PANIC(newElement,
+          // STREAM_ELEMENT_LOG(panic,newElement,
           //                      "The base element has wrong
           //                      streamInstance.\n");
         }
@@ -1415,8 +1417,7 @@ void StreamEngine::releaseElementStepped(Stream *S) {
   assert(S->stepSize > 0 && "No element to release.");
   auto releaseElement = S->tail->next;
 
-  const bool used =
-      releaseElement->firstUserSeqNum != LLVMDynamicInst::INVALID_SEQ_NUM;
+  const bool used = releaseElement->isFirstUserDispatched();
 
   /**
    * Sanity check that all the user are done with this element.
@@ -1450,14 +1451,12 @@ void StreamEngine::releaseElementStepped(Stream *S) {
   }
   if (S->getStreamType() == "load") {
     this->numLoadElementsStepped++;
+    /**
+     * For a stepped load element, it should be removed from the PEB.
+     */
+    assert(!this->peb.contains(releaseElement) &&
+           "Used load element still in PEB when released.");
     if (used) {
-      /**
-       * For a used load element, it should be removed from the PEB.
-       */
-      assert(!this->peb.contains(releaseElement) &&
-             "Used load element still in PEB when released.");
-
-      // Stats.
       this->numLoadElementsUsed++;
       // Update waited cycle information.
       auto waitedCycles = 0;
@@ -1466,14 +1465,6 @@ void StreamEngine::releaseElementStepped(Stream *S) {
             releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
       }
       this->numLoadElementWaitCycles += waitedCycles;
-    } else {
-      /**
-       * This is unused load element it should be still in the PEB if issued.
-       * So far we immediately issue after the address is ready.
-       */
-      if (releaseElement->isAddrReady) {
-        this->peb.removeElement(releaseElement);
-      }
     }
   } else if (S->getStreamType() == "store") {
     this->numStoreElementsStepped++;
@@ -1523,7 +1514,8 @@ void StreamEngine::releaseElementUnstepped(Stream *S) {
   auto releaseElement = S->stepped->next;
 
   // This should be unused.
-  assert(releaseElement->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM &&
+  assert(!releaseElement->isStepped && "Release stepped element.");
+  assert(!releaseElement->isFirstUserDispatched() &&
          "Release unstepped but used element.");
 
   if (S->getStreamType() == "load") {
@@ -1539,6 +1531,19 @@ void StreamEngine::releaseElementUnstepped(Stream *S) {
     S->head = S->stepped;
   }
   this->addFreeElement(releaseElement);
+}
+
+void StreamEngine::stepElement(Stream *S) {
+  auto stepElement = S->stepped->next;
+  assert(!stepElement->isStepped && "Element already stepped.");
+  if (S->getStreamType() == "load") {
+    if (!stepElement->isFirstUserDispatched() && stepElement->isAddrReady) {
+      // This issued element is stepped but not used, remove from PEB.
+      this->peb.removeElement(stepElement);
+    }
+  }
+  S->stepped = stepElement;
+  S->stepSize++;
 }
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
@@ -1670,16 +1675,20 @@ void StreamEngine::issueElement(StreamElement *element) {
 
   auto S = element->stream;
   if (S->getStreamType() == "load") {
+    if (element->flushed) {
+      // STREAM_ELEMENT_LOG(hack, element, "Reissue element.\n");
+    }
     this->numLoadElementsFetched++;
     S->statistic.numFetched++;
     // Add to the PEB if the first user has not been dispatched.
-    if (element->firstUserSeqNum == LLVMDynamicInst::INVALID_SEQ_NUM) {
+    if (!element->isFirstUserDispatched() && !element->isStepped) {
       this->peb.addElement(element);
     }
   }
 
   if (element->cacheBlocks > 1) {
-    STREAM_ELEMENT_PANIC(element, "More than one cache block per element.\n");
+    STREAM_ELEMENT_LOG(panic, element,
+                       "More than one cache block per element.\n");
   }
 
   /**
@@ -2195,6 +2204,10 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
   if (element->FIFOIdx.entryIdx == 0) {
     return false;
   }
+  // Check if this element is flushed.
+  if (element->flushed) {
+    return false;
+  }
   auto S = element->stream;
   if (!S->isDirectLoadStream()) {
     return false;
@@ -2238,6 +2251,35 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
     }
   }
   assert(false && "Failed to find the previous element.");
+}
+
+void StreamEngine::flushPEB() {
+  for (auto element : this->peb.elements) {
+    assert(element->isAddrReady);
+    assert(!element->isStepped);
+    assert(!element->isFirstUserDispatched());
+
+    // Clear the element to just allocate state.
+    element->isAddrReady = false;
+    element->isValueReady = false;
+
+    // Raise the flush flag.
+    element->flushed = true;
+
+    element->valueReadyCycle = Cycles(0);
+    element->firstCheckCycle = Cycles(0);
+
+    element->addr = 0;
+    element->size = 0;
+    element->cacheBlocks = 0;
+    std::fill(element->value.begin(), element->value.end(), 0);
+
+    // Clear the inflyMemAccess set, which effectively clears the infly memory
+    // access.
+    element->inflyMemAccess.clear();
+    element->markNextElementValueReady = false;
+  }
+  this->peb.elements.clear();
 }
 
 StreamEngine *StreamEngineParams::create() { return new StreamEngine(this); }

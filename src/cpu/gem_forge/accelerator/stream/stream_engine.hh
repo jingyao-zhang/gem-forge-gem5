@@ -311,9 +311,19 @@ private:
    * Release a stepped stream element.
    */
   void releaseElementStepped(Stream *S);
+  /**
+   * Step one element.
+   */
+  void stepElement(Stream *S);
   void issueElements();
   void issueElement(StreamElement *element);
   void writebackElement(StreamElement *element, StreamStoreInst *inst);
+
+  /**
+   * Flush all the PEB entries.
+   */
+  void flushPEB();
+
   void throttleStream(Stream *S, StreamElement *element);
 
   std::vector<StreamElement *> findReadyElements();

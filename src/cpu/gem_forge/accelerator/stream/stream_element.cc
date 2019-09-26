@@ -126,8 +126,10 @@ void StreamElement::clear() {
   this->stream = nullptr;
   this->FIFOIdx = FIFOEntryIdx();
   this->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
+  this->isStepped = false;
   this->isAddrReady = false;
   this->isValueReady = false;
+  this->flushed = false;
 
   this->allocateCycle = Cycles(0);
   this->valueReadyCycle = Cycles(0);
@@ -196,6 +198,10 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
   delete memAccess;
   // Remember to release the pkt.
   delete pkt;
+}
+
+bool StreamElement::isFirstUserDispatched() const {
+  return this->firstUserSeqNum != ::LLVMDynamicInst::INVALID_SEQ_NUM;
 }
 
 void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
