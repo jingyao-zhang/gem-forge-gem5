@@ -55,6 +55,8 @@
 #include "debug/MinorMem.hh"
 #include "debug/MinorTrace.hh"
 #include "debug/PCEvent.hh"
+// ! GemForge
+#include "minor_cpu_delegator.hh"
 
 namespace Minor
 {
@@ -308,7 +310,17 @@ Execute::updateBranchData(
     if (reason != BranchData::NoBranch) {
         /* Bump up the stream sequence number on a real branch*/
         if (BranchData::isStreamChange(reason))
+        {
             executeInfo[tid].streamSeqNum++;
+
+            /**
+             * ! GemForge
+             * Notify GemForge the control misspeculation.
+             */
+            if (cpu.cpuDelegator) {
+                cpu.cpuDelegator->streamChange(executeInfo[tid].streamSeqNum);
+            }
+        }
 
         /* Branches (even mis-predictions) don't change the predictionSeqNum,
          *  just the streamSeqNum */
@@ -598,6 +610,10 @@ Execute::issue(ThreadID thread_id)
                 *inst, thread.streamSeqNum);
             issued = true;
             discarded = true;
+        } else if (cpu.cpuDelegator && !cpu.cpuDelegator->canDispatch(inst)) {
+            // ! GemForge
+            // Check if GemForge is happy to dispatch it.
+            issued = false;
         } else {
             /* Try and issue an instruction into an FU, assume we didn't and
              * fix that in the loop */
@@ -609,6 +625,7 @@ Execute::issue(ThreadID thread_id)
             /* Try and issue a single instruction stepping through the
              *  available FUs */
             do {
+
                 FUPipeline *fu = funcUnits[fu_index];
 
                 DPRINTF(MinorExecute, "Trying to issue inst: %s to FU: %d\n",
@@ -644,6 +661,13 @@ Execute::issue(ThreadID thread_id)
                     QueuedInst fu_inst(inst);
                     thread.inFlightInsts->push(fu_inst);
 
+                    /**
+                     * ! GemForge
+                     * Notify the CPUDelegator that it is dispatched.
+                     */
+                    if (cpu.cpuDelegator) {
+                        cpu.cpuDelegator->dispatch(inst);
+                    }
                     issued = true;
 
                 } else if (!fu_is_capable || fu->alreadyPushed()) {
@@ -770,6 +794,13 @@ Execute::issue(ThreadID thread_id)
                          *  it can be committed in order */
                         thread.inFlightInsts->push(fu_inst);
 
+                        /**
+                         * ! GemForge
+                         * Notify the CPUDelegator that it is dispatched.
+                         */
+                        if (cpu.cpuDelegator) {
+                            cpu.cpuDelegator->dispatch(inst);
+                        }
                         issued = true;
                     }
                 }
@@ -977,8 +1008,30 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
 
         DPRINTF(MinorExecute, "Committing inst: %s\n", *inst);
 
+        /**
+         * ! GemForge.
+         * This is where MinorCPU execute and commit non-mem-ref inst.
+         * Execute and commit happens at the same place.
+         * StreamLoad will be handled as a special MemRef in LSQ.
+         * So far canExecute() only matters for StreamLoad, which is
+         * not handled here.
+         */
+        if (cpu.cpuDelegator) {
+            assert(cpu.cpuDelegator->canExecute(inst) &&
+                "Cannot execute.");
+            cpu.cpuDelegator->execute(inst, context);
+        }
+
         fault = inst->staticInst->execute(&context,
             inst->traceData);
+
+        /**
+         * ! GemForge
+         * Notify that inst is committed.
+         */
+        if (cpu.cpuDelegator) {
+            cpu.cpuDelegator->commit(inst);
+        }
 
         /* Set the predicate for tracing and dump */
         if (inst->traceData)
@@ -1148,6 +1201,14 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
             } else {
                 handleMemResponse(inst, mem_response, branch, fault);
                 committed_inst = true;
+
+                /**
+                 * ! GemForge
+                 * MemRef instruction is committed here.
+                 */
+                if (cpu.cpuDelegator) {
+                    cpu.cpuDelegator->commit(inst);
+                }
             }
 
             completed_mem_ref = true;

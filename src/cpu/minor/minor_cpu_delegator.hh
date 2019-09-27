@@ -18,7 +18,19 @@ public:
    * Interface to the CPU.
    * We can use the execSeqNum as the sequence number.
    */
-  bool canDispatch(Minor::MinorDynInstPtr dynInstPtr);
+  bool canDispatch(Minor::MinorDynInstPtr &dynInstPtr);
+  void dispatch(Minor::MinorDynInstPtr &dynInstPtr);
+  bool canExecute(Minor::MinorDynInstPtr &dynInstPtr);
+  void execute(Minor::MinorDynInstPtr &dynInstPtr, ExecContext &xc);
+  void commit(Minor::MinorDynInstPtr &dynInstPtr);
+
+  /**
+   * Control misspeculation happened.
+   * * The branch caused the stream change must be committed before
+   * * this, otherwise it will be considered as a misspeculated inst
+   * * and rewinded. Luckily this is the case in MinorCPU so far.
+   */
+  void streamChange(InstSeqNum newStreamSeqNum);
 
 private:
   class Impl;

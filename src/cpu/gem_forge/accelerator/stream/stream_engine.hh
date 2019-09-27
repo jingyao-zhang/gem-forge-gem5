@@ -92,6 +92,7 @@ public:
   };
   void dispatchStreamEnd(const StreamEndArgs &args);
   void commitStreamEnd(const StreamEndArgs &args);
+  void rewindStreamEnd(const StreamEndArgs &args);
 
   bool canStreamStoreDispatch(const StreamStoreInst *inst) const;
   std::list<std::unique_ptr<GemForgeSQCallback>>
@@ -315,9 +316,19 @@ private:
    * Step one element.
    */
   void stepElement(Stream *S);
+  /**
+   * Unstep one element.
+   */
+  void unstepElement(Stream *S);
   void issueElements();
   void issueElement(StreamElement *element);
   void writebackElement(StreamElement *element, StreamStoreInst *inst);
+  /**
+   * Get previous element in the chain of the stream.
+   * Notice that it may return the (dummy) element->stream->tail if this is
+   * the first element for that stream.
+   */
+  StreamElement *getPrevElement(StreamElement *element);
 
   /**
    * Flush all the PEB entries.

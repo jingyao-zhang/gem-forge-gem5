@@ -22,6 +22,7 @@ public:
   bool canExecute(const GemForgeDynInstInfo &dynInfo);
   void execute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void commit(const GemForgeDynInstInfo &dynInfo);
+  void rewind(const GemForgeDynInstInfo &dynInfo);
 
   void storeTo(Addr vaddr, int size);
 

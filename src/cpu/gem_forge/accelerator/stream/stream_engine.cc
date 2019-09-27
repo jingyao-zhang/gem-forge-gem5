@@ -840,6 +840,45 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
   }
 }
 
+void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
+  const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
+  const auto &endStreamInfos = streamRegion.streams();
+
+  SE_DPRINTF("Dispatch StreamEnd for %s.\n", streamRegion.region().c_str());
+
+  /**
+   * Dedup the coalesced stream ids.
+   */
+  std::unordered_set<Stream *> endedStreams;
+  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
+       iter != end; ++iter) {
+    // Rewind in reverse order.
+    auto streamId = iter->id();
+    auto S = this->getStream(streamId);
+    if (endedStreams.count(S) != 0) {
+      continue;
+    }
+    endedStreams.insert(S);
+
+    assert(!S->configured && "Stream should not configured.");
+
+    /**
+     * 1. Unstep one element.
+     * 2. Mark the stream to be configured so that we restart the stream.
+     */
+
+    // 1. Unstep one element.
+    assert(S->allocSize == S->stepSize && "Should have no unstepped element.");
+    this->unstepElement(S);
+
+    // 3. Mark the stream to be configured.
+    S->configured = true;
+    if (isDebugStream(S)) {
+      debugStream(S, "Rewind End");
+    }
+  }
+}
+
 void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
 
   this->numInflyStreamConfigurations--;
@@ -1416,6 +1455,7 @@ void StreamEngine::releaseElementStepped(Stream *S) {
 
   assert(S->stepSize > 0 && "No element to release.");
   auto releaseElement = S->tail->next;
+  assert(releaseElement->isStepped && "Release unstepped element.");
 
   const bool used = releaseElement->isFirstUserDispatched();
 
@@ -1530,20 +1570,55 @@ void StreamEngine::releaseElementUnstepped(Stream *S) {
   if (S->head == releaseElement) {
     S->head = S->stepped;
   }
+  /**
+   * Since this element is released as unstepped,
+   * we need to reverse the FIFOIdx so that if we misspeculated,
+   * new elements can be allocated with correct FIFOIdx.
+   */
+  S->FIFOIdx.prev();
   this->addFreeElement(releaseElement);
 }
 
 void StreamEngine::stepElement(Stream *S) {
-  auto stepElement = S->stepped->next;
-  assert(!stepElement->isStepped && "Element already stepped.");
+  auto element = S->stepped->next;
+  assert(!element->isStepped && "Element already stepped.");
+  element->isStepped = true;
   if (S->getStreamType() == "load") {
-    if (!stepElement->isFirstUserDispatched() && stepElement->isAddrReady) {
+    if (!element->isFirstUserDispatched() && element->isAddrReady) {
       // This issued element is stepped but not used, remove from PEB.
-      this->peb.removeElement(stepElement);
+      this->peb.removeElement(element);
     }
   }
-  S->stepped = stepElement;
+  S->stepped = element;
   S->stepSize++;
+}
+
+void StreamEngine::unstepElement(Stream *S) {
+  assert(S->stepSize > 0 && "No element to unstep.");
+  auto element = S->stepped;
+  assert(element->isStepped && "Element not stepped.");
+  element->isStepped = false;
+  // We may need to add this back to PEB.
+  if (S->getStreamType() == "load") {
+    if (!element->isFirstUserDispatched() && element->isAddrReady) {
+      this->peb.addElement(element);
+    }
+  }
+  // Search to get previous element.
+  S->stepped = this->getPrevElement(element);
+  S->stepSize--;
+}
+
+StreamElement *StreamEngine::getPrevElement(StreamElement *element) {
+  auto S = element->stream;
+  assert(S && "Element not allocated.");
+  for (auto prevElement = S->tail; prevElement != nullptr;
+       prevElement = prevElement->next) {
+    if (prevElement->next == element) {
+      return prevElement;
+    }
+  }
+  assert(false && "Failed to find the previous element.");
 }
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
@@ -2213,44 +2288,41 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
     return false;
   }
   // Get the previous element.
-  for (auto prevElement = S->tail->next; prevElement != nullptr;
-       prevElement = prevElement->next) {
-    if (prevElement->next == element) {
-      // We found the previous element. Check if completely overlap.
-      assert(prevElement->FIFOIdx.entryIdx + 1 == element->FIFOIdx.entryIdx &&
-             "Mismatch entryIdx for prevElement.");
-      assert(prevElement->FIFOIdx.streamId == element->FIFOIdx.streamId &&
-             "Mismatch streamId for prevElement.");
-      if (element->cacheBlocks != prevElement->cacheBlocks) {
-        // If cache block size does not match, not completely overlapped.
-        return false;
-      }
-      for (int cacheBlockIdx = 0; cacheBlockIdx < element->cacheBlocks;
-           ++cacheBlockIdx) {
-        const auto &block = element->cacheBlockBreakdownAccesses[cacheBlockIdx];
-        const auto &prevBlock =
-            prevElement->cacheBlockBreakdownAccesses[cacheBlockIdx];
-        if (block.cacheBlockVAddr != prevBlock.cacheBlockVAddr) {
-          // Not completely overlapped.
-          return false;
-        }
-      }
-      // Completely overlapped. Check if the previous element is already
-      // value ready.
-      if (prevElement->isValueReady) {
-        // Copy the value.
-        element->setValue(prevElement);
-        // Mark value ready immediately.
-        element->markValueReady();
-      } else {
-        // Mark the prevElement to propagate its value ready signal to next
-        // element.
-        prevElement->markNextElementValueReady = true;
-      }
-      return true;
+  auto prevElement = this->getPrevElement(element);
+  assert(prevElement != S->tail && "Element is the first one.");
+
+  // We found the previous element. Check if completely overlap.
+  assert(prevElement->FIFOIdx.entryIdx + 1 == element->FIFOIdx.entryIdx &&
+         "Mismatch entryIdx for prevElement.");
+  assert(prevElement->FIFOIdx.streamId == element->FIFOIdx.streamId &&
+         "Mismatch streamId for prevElement.");
+  if (element->cacheBlocks != prevElement->cacheBlocks) {
+    // If cache block size does not match, not completely overlapped.
+    return false;
+  }
+  for (int cacheBlockIdx = 0; cacheBlockIdx < element->cacheBlocks;
+       ++cacheBlockIdx) {
+    const auto &block = element->cacheBlockBreakdownAccesses[cacheBlockIdx];
+    const auto &prevBlock =
+        prevElement->cacheBlockBreakdownAccesses[cacheBlockIdx];
+    if (block.cacheBlockVAddr != prevBlock.cacheBlockVAddr) {
+      // Not completely overlapped.
+      return false;
     }
   }
-  assert(false && "Failed to find the previous element.");
+  // Completely overlapped. Check if the previous element is already
+  // value ready.
+  if (prevElement->isValueReady) {
+    // Copy the value.
+    element->setValue(prevElement);
+    // Mark value ready immediately.
+    element->markValueReady();
+  } else {
+    // Mark the prevElement to propagate its value ready signal to next
+    // element.
+    prevElement->markNextElementValueReady = true;
+  }
+  return true;
 }
 
 void StreamEngine::flushPEB() {

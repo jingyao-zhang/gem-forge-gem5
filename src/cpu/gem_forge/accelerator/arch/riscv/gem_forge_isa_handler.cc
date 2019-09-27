@@ -94,6 +94,14 @@ void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo) {
   }
 }
 
+void GemForgeISAHandler::rewind(const GemForgeDynInstInfo &dynInfo) {
+  auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
+  switch (staticInstInfo.op) {
+    StreamInstCase(rewind);
+  default: { break; }
+  }
+}
+
 void GemForgeISAHandler::storeTo(Addr vaddr, int size) {
   se.storeTo(vaddr, size);
 }
@@ -128,7 +136,7 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
     } else if (instName == "ssp_stream_fload") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_FLOAD;
     } else if (instName == "ssp_stream_flw") {
-      // ? Do we have to distinguish these?
+      // ? Do we have to distinguish fload and flw?
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_FLOAD;
     }
   }

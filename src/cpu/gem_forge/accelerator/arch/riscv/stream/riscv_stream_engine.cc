@@ -78,6 +78,10 @@ void RISCVStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
+void RISCVStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
+  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
+}
+
 /********************************************************************************
  * StreamInput Handlers.
  *******************************************************************************/
@@ -134,6 +138,10 @@ void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
 void RISCVStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
+}
+
+void RISCVStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
+  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
 }
 
 /********************************************************************************
@@ -201,6 +209,10 @@ void RISCVStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
+void RISCVStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
+  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
+}
+
 /********************************************************************************
  * StreamEnd Handlers.
  *******************************************************************************/
@@ -212,7 +224,7 @@ bool RISCVStreamEngine::canDispatchStreamEnd(
 
 void RISCVStreamEngine::dispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
-  auto infoRelativePath = this->getRelativePath(configIdx);
+  const auto &infoRelativePath = this->getRelativePath(configIdx);
 
   auto infoFullPath =
       cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
@@ -234,10 +246,25 @@ void RISCVStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
 
 void RISCVStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
-  auto infoRelativePath = this->getRelativePath(configIdx);
+  const auto &infoRelativePath = this->getRelativePath(configIdx);
   auto se = this->getStreamEngine();
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   se->commitStreamEnd(args);
+}
+
+void RISCVStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
+  auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
+  const auto &infoRelativePath = this->getRelativePath(configIdx);
+
+  // Don't forget to add back the removed region stream ids.
+  auto infoFullPath =
+      cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
+  const auto &info = this->getStreamRegion(infoFullPath);
+  this->insertRegionStreamIds(info);
+
+  auto se = this->getStreamEngine();
+  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  se->rewindStreamEnd(args);
 }
 
 /********************************************************************************
@@ -290,6 +317,10 @@ void RISCVStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
 
   // Release the info.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
+}
+
+void RISCVStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
+  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
 }
 
 /********************************************************************************
@@ -373,6 +404,10 @@ void RISCVStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
 
   // Release the info.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
+}
+
+void RISCVStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
+  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
 }
 
 /********************************************************************************
