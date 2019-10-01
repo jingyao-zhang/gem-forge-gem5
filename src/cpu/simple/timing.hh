@@ -309,7 +309,6 @@ class TimingSimpleCPU : public BaseSimpleCPU
         void drain();
     };
 
-
     void updateCycleCounts();
 
     IcachePort icachePort;

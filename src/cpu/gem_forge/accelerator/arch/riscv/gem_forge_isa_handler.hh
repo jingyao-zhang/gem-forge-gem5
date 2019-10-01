@@ -18,7 +18,14 @@ public:
       : cpuDelegator(_cpuDelegaor), se(_cpuDelegaor) {}
 
   bool canDispatch(const GemForgeDynInstInfo &dynInfo);
-  void dispatch(const GemForgeDynInstInfo &dynInfo);
+
+  /**
+   * Dispatch the instruction, and generate extra LQ callbacks.
+   * ! Note: So far canDispatch does not check the LSQ has enough
+   * ! space to hold it.
+   */
+  void dispatch(const GemForgeDynInstInfo &dynInfo,
+                GemForgeLQCallbackList &extraLQCallbacks);
   bool canExecute(const GemForgeDynInstInfo &dynInfo);
   void execute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void commit(const GemForgeDynInstInfo &dynInfo);

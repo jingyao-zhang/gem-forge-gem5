@@ -52,6 +52,8 @@
 #include "cpu/minor/pipe_data.hh"
 #include "cpu/minor/trace.hh"
 
+class MinorCPUDelegator;
+
 namespace Minor
 {
 
@@ -60,6 +62,10 @@ class Execute;
 
 class LSQ : public Named
 {
+
+  // ! GemForge
+  friend class ::MinorCPUDelegator;
+
   protected:
     /** My owner(s) */
     MinorCPU &cpu;
@@ -97,6 +103,15 @@ class LSQ : public Named
             MinorCPU::MinorCPUPort(name, cpu), lsq(lsq_)
         { }
 
+        /**
+         * ! GemForge
+         * Make this virtual to be override.
+         * MasterPort::sendTimingReq is not virtual.
+         */
+        virtual bool sendTimingReqVirtual(PacketPtr pkt) {
+          return this->sendTimingReq(pkt);
+        }
+
       protected:
         bool recvTimingResp(PacketPtr pkt) override
         { return lsq.recvTimingResp(pkt); }
@@ -111,7 +126,43 @@ class LSQ : public Named
         void recvFunctionalSnoop(PacketPtr pkt) override { }
     };
 
-    DcachePort dcachePort;
+    /**
+     * ! GemForge
+     * GemForgeDcachePort uses a queue in the CPUPort to buffer the requests
+     * and never returns false on sendTimingReq. It drains the queue on retry
+     * at 2 packets per cycle. The response is handled one packet per cycle,
+     * which is the original design.
+     */
+    class GemForgeDcachePort : public DcachePort
+    {
+      public:
+        GemForgeDcachePort(std::string _name, LSQ &_lsq, MinorCPU &_cpu)
+          : DcachePort(_name, _lsq, _cpu),
+            blocked(false),
+            curCycle(0),
+            numUsedPorts(0),
+            drainEvent([this]()->void { this->drain(); }, name()) {}
+        bool sendTimingReqVirtual(PacketPtr pkt) override;
+      protected:
+        bool recvTimingResp(PacketPtr pkt) override;
+        void recvReqRetry() override;
+
+        const int numPorts = 2;
+        std::queue<PacketPtr> blockedQueue;
+        bool blocked;
+        Cycles curCycle;
+        int numUsedPorts;
+
+        EventFunctionWrapper drainEvent;
+
+        void drain();
+    };
+
+    /**
+     * ! GemForge
+     * Use pointer to use GemForgeDcachePort.
+     */
+    DcachePort *dcachePort;
 
   public:
     /** Derived SenderState to carry data access info. through address
@@ -245,6 +296,20 @@ class LSQ : public Named
         /** Retire a response packet into the LSQRequest packet possibly
          *  completing this transfer */
         virtual void retireResponse(PacketPtr packet_) = 0;
+
+        /**
+         * ! GemForge
+         * Special checker to see if this is a GemForgeLoadRequest.
+         */
+        virtual bool isGemForgeLoadRequest() const { return false; }
+
+        /**
+         * ! GemForge
+         * Special checker to see if this is complemeted.
+         */
+        virtual void checkIsComplete() {
+            panic("%s not implemented.\n", __PRETTY_FUNCTION__);
+        }
 
         /** Is this a request a barrier? */
         virtual bool isBarrier();
@@ -722,7 +787,7 @@ class LSQ : public Named
     void recvTimingSnoopReq(PacketPtr pkt);
 
     /** Return the raw-bindable port */
-    MinorCPU::MinorCPUPort &getDcachePort() { return dcachePort; }
+    MinorCPU::MinorCPUPort &getDcachePort() { return *dcachePort; }
 
     void minorTrace() const;
 };

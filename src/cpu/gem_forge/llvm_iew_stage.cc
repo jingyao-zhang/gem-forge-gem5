@@ -467,10 +467,13 @@ void LLVMIEWStage::dispatch() {
 
     // Get all the stream user LQ callbacks.
     if (inst->hasStreamUse()) {
-      auto callbacks = inst->createAdditionalLQCallbacks(cpu);
-      while (!callbacks.empty()) {
-        this->lsq->insertLoad(std::move(callbacks.front()));
-        callbacks.pop_front();
+      GemForgeLQCallbackList callbacks;
+      inst->createAdditionalLQCallbacks(cpu, callbacks);
+      for (auto &callback : callbacks) {
+        if (!callback) {
+          break;
+        }
+        this->lsq->insertLoad(std::move(callback));
       }
     }
     // Get all the additional SQ callbacks.
@@ -679,6 +682,10 @@ const char *LLVMIEWStage::FUCompletion::description() const {
 
 bool LLVMIEWStage::GemForgeIEWLQCallback::isIssued() {
   return cpu->inflyInstStatus.at(inst->getId()) == InstStatus::ISSUED;
+}
+
+bool LLVMIEWStage::GemForgeIEWLQCallback::isValueLoaded() {
+  return inst->isCompleted();
 }
 
 void LLVMIEWStage::misspeculateInst(LLVMDynamicInst *inst) {

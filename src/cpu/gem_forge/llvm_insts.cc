@@ -228,7 +228,8 @@ int LLVMDynamicInst::getNumLQEntries(LLVMTraceCPU *cpu) const {
   int entries = 0;
   if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    entries += SE->getStreamUserLQEntries(this);
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    entries += SE->getStreamUserLQEntries(args);
   }
 
   if (this->isLoadInst()) {
@@ -246,16 +247,15 @@ int LLVMDynamicInst::getNumSQEntries(LLVMTraceCPU *cpu) const {
   return entries;
 }
 
-std::list<std::unique_ptr<GemForgeLQCallback>>
-LLVMDynamicInst::createAdditionalLQCallbacks(LLVMTraceCPU *cpu) {
+void LLVMDynamicInst::createAdditionalLQCallbacks(
+    LLVMTraceCPU *cpu, GemForgeLQCallbackList &callbacks) {
   if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    auto callbacks = SE->createStreamUserLQCallbacks(this);
-    this->numAdditionalLQCallbacks = callbacks.size();
-    return callbacks;
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    this->numAdditionalLQCallbacks =
+        SE->createStreamUserLQCallbacks(args, callbacks);
   } else {
     this->numAdditionalLQCallbacks = 0;
-    return std::list<std::unique_ptr<GemForgeLQCallback>>();
   }
 }
 

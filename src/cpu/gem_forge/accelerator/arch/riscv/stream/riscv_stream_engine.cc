@@ -26,7 +26,8 @@ bool RISCVStreamEngine::canDispatchStreamConfig(
 }
 
 void RISCVStreamEngine::dispatchStreamConfig(
-    const GemForgeDynInstInfo &dynInfo) {
+    const GemForgeDynInstInfo &dynInfo,
+    GemForgeLQCallbackList &extraLQCallbacks) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
 
@@ -92,7 +93,8 @@ bool RISCVStreamEngine::canDispatchStreamInput(
 }
 
 void RISCVStreamEngine::dispatchStreamInput(
-    const GemForgeDynInstInfo &dynInfo) {
+    const GemForgeDynInstInfo &dynInfo,
+    GemForgeLQCallbackList &extraLQCallbacks) {
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
   this->curStreamRegionInfo->numDispatchedInsts++;
 
@@ -164,7 +166,8 @@ bool RISCVStreamEngine::canDispatchStreamReady(
 }
 
 void RISCVStreamEngine::dispatchStreamReady(
-    const GemForgeDynInstInfo &dynInfo) {
+    const GemForgeDynInstInfo &dynInfo,
+    GemForgeLQCallbackList &extraLQCallbacks) {
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath,
@@ -222,7 +225,9 @@ bool RISCVStreamEngine::canDispatchStreamEnd(
   return true;
 }
 
-void RISCVStreamEngine::dispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
+void RISCVStreamEngine::dispatchStreamEnd(
+    const GemForgeDynInstInfo &dynInfo,
+    GemForgeLQCallbackList &extraLQCallbacks) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   const auto &infoRelativePath = this->getRelativePath(configIdx);
 
@@ -291,7 +296,9 @@ bool RISCVStreamEngine::canDispatchStreamStep(
   return se->canStreamStep(streamId);
 }
 
-void RISCVStreamEngine::dispatchStreamStep(const GemForgeDynInstInfo &dynInfo) {
+void RISCVStreamEngine::dispatchStreamStep(
+    const GemForgeDynInstInfo &dynInfo,
+    GemForgeLQCallbackList &extraLQCallbacks) {
 
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &stepInfo = dynStreamInstInfo.stepInfo;
@@ -346,7 +353,9 @@ bool RISCVStreamEngine::canDispatchStreamLoad(
   return true;
 }
 
-void RISCVStreamEngine::dispatchStreamLoad(const GemForgeDynInstInfo &dynInfo) {
+void RISCVStreamEngine::dispatchStreamLoad(
+    const GemForgeDynInstInfo &dynInfo,
+    GemForgeLQCallbackList &extraLQCallbacks) {
 
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
@@ -356,6 +365,8 @@ void RISCVStreamEngine::dispatchStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
   auto se = this->getStreamEngine();
   se->dispatchStreamUser(args);
+  // After dispatch, we get extra LQ callbacks.
+  se->createStreamUserLQCallbacks(args, extraLQCallbacks);
 }
 
 bool RISCVStreamEngine::canExecuteStreamLoad(

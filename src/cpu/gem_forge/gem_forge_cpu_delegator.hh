@@ -2,6 +2,8 @@
 #ifndef __GEM_FORGE_CPU_DELEGATOR_HH__
 #define __GEM_FORGE_CPU_DELEGATOR_HH__
 
+#include "gem_forge_lsq_callback.hh"
+
 #include "cpu/base.hh"
 
 /**
@@ -61,6 +63,7 @@ public:
 
   /**
    * Send a packet through the cpu.
+   * If the CPU has a store buffer, it should be searched.
    */
   virtual void sendRequest(PacketPtr pkt) = 0;
 

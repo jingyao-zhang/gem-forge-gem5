@@ -404,6 +404,15 @@ Execute::handleMemResponse(MinorDynInstPtr inst,
                 fault->name());
             fault->invoke(thread, inst->staticInst);
         } else {
+            /**
+             * ! GemForge
+             * Execute the mem-ref instruction.
+             */
+            if (cpu.cpuDelegator) {
+                assert(cpu.cpuDelegator->canExecute(inst));
+                cpu.cpuDelegator->execute(inst, context);
+            }
+
             /* Stores need to be pushed into the store buffer to finish
              *  them off */
             if (response->needsToBeSentToStoreBuffer())
@@ -476,6 +485,10 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
         /* Not acting on instruction yet as the memory
          * queues are full */
         issued = false;
+    } else if (cpu.cpuDelegator && !cpu.cpuDelegator->isAddrSizeReady(inst)) {
+        // ! GemForge
+        // Requires GemForgeLQCallback's addr/size to be ready, if any.
+        issued = false;
     } else {
         ThreadContext *thread = cpu.getContext(inst->id.threadId);
         TheISA::PCState old_pc = thread->pcState();
@@ -487,6 +500,11 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
 
         Fault init_fault = inst->staticInst->initiateAcc(&context,
             inst->traceData);
+
+        // ! GemForge
+        if (cpu.cpuDelegator) {
+            cpu.cpuDelegator->insertLSQ(inst);
+        }
 
         if (inst->inLSQ) {
             if (init_fault != NoFault) {

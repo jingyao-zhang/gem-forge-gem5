@@ -66,7 +66,12 @@ void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_DISPATCH);
   TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
                                       staticInst.get(), xc.tcBase());
-  pimpl->isaHandler.dispatch(dynInfo);
+  /**
+   * SimpleTimingCPU never really all cause a RAW misspeculation in LSQ,
+   * so we ignore any extra LQCallbacks.
+   */
+  GemForgeLQCallbackList extraLQCallbacks;
+  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks);
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
 

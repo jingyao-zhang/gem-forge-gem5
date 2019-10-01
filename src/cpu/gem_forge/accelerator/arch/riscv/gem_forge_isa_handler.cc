@@ -61,10 +61,11 @@ bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo) {
   }
 }
 
-void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo) {
+void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
+                                  GemForgeLQCallbackList &extraLQCallbacks) {
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
-    StreamInstCase(dispatch);
+    StreamInstCase(dispatch, extraLQCallbacks);
   default: { break; }
   }
 }
@@ -133,11 +134,11 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_READY;
     } else if (instName == "ssp_stream_load") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
-    } else if (instName == "ssp_stream_fload") {
-      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_FLOAD;
-    } else if (instName == "ssp_stream_flw") {
-      // ? Do we have to distinguish fload and flw?
-      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_FLOAD;
+      // } else if (instName == "ssp_stream_fload") {
+      //   staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
+      // } else if (instName == "ssp_stream_flw") {
+      //   // ? Do we have to distinguish fload and flw?
+      //   staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
     }
   }
   return emplaceRet.first->second;

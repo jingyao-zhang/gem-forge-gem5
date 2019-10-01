@@ -1168,6 +1168,16 @@ LSQ::tryToSend(LSQRequestPtr request)
     if (!canSendToMemorySystem()) {
         DPRINTF(MinorMem, "Can't send request: %s yet, no space in memory\n",
             *(request->inst));
+    } else if (request->isGemForgeLoadRequest()) {
+        /**
+         * ! GemForge
+         * GemForgeLoadRequest is a special load request that doesn't
+         * issue to memory.
+         */
+        assert(request->state == LSQRequest::RequestIssuing &&
+               "GemForgeLoadRequest should always be RequestIssuing"
+               " when pushed into Transfer queue.");
+        ret = true;
     } else {
         PacketPtr packet = request->getHeadPacket();
 
@@ -1203,7 +1213,7 @@ LSQ::tryToSend(LSQRequestPtr request)
                 request->setState(LSQRequest::Complete);
             else
                 request->setState(LSQRequest::RequestIssuing);
-        } else if (dcachePort.sendTimingReq(packet)) {
+        } else if (dcachePort->sendTimingReqVirtual(packet)) {
             DPRINTF(MinorMem, "Sent data memory request\n");
 
             numAccessesInMemorySystem++;
@@ -1399,7 +1409,10 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
     Named(name_),
     cpu(cpu_),
     execute(execute_),
-    dcachePort(dcache_port_name_, *this, cpu_),
+    dcachePort(
+        cpu_.getAccelManager()
+          ? (new GemForgeDcachePort(dcache_port_name_, *this, cpu_))
+          : (new DcachePort(dcache_port_name_, *this, cpu_))),
     lastMemBarrier(cpu.numThreads, 0),
     state(MemoryRunning),
     inMemorySystemLimit(in_memory_system_limit),
@@ -1484,6 +1497,15 @@ LSQ::findResponse(MinorDynInstPtr inst)
         /* Same instruction and complete access or a store that's
          *  capable of being moved to the store buffer */
         if (request->inst->id == inst->id) {
+
+            /**
+             * ! GemForge
+             * Check if GemForgeLQCallback is loaded.
+             */
+            if (request->isGemForgeLoadRequest()) {
+                request->checkIsComplete();
+            }
+
             bool complete = request->isComplete();
             bool can_store = storeBuffer.canInsert();
             bool to_store_buffer = request->state ==

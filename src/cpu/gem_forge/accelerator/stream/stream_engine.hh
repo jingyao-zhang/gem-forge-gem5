@@ -75,9 +75,13 @@ public:
         : seqNum(_seqNum), usedStreamIds(_usedStreamIds), values(_values) {}
   };
 
-  int getStreamUserLQEntries(const LLVMDynamicInst *inst) const;
-  std::list<std::unique_ptr<GemForgeLQCallback>>
-  createStreamUserLQCallbacks(LLVMDynamicInst *inst);
+  int getStreamUserLQEntries(const StreamUserArgs &args) const;
+  /**
+   * Create LQ callbacks for first stream user.
+   * @return The number of LQ callbacks created.
+   */
+  int createStreamUserLQCallbacks(const StreamUserArgs &args,
+                                  GemForgeLQCallbackList &callbacks);
 
   void dispatchStreamUser(const StreamUserArgs &args);
   bool areUsedStreamsReady(const StreamUserArgs &args);
@@ -366,14 +370,11 @@ private:
   struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
   public:
     StreamElement *element;
-    LLVMDynamicInst *userInst;
-    LLVMTraceCPU *cpu;
-    GemForgeStreamEngineLQCallback(StreamElement *_element,
-                                   LLVMDynamicInst *_userInst,
-                                   LLVMTraceCPU *_cpu)
-        : element(_element), userInst(_userInst), cpu(_cpu) {}
+    GemForgeStreamEngineLQCallback(StreamElement *_element)
+        : element(_element) {}
     bool getAddrSize(Addr &addr, uint32_t &size) override;
     bool isIssued() override;
+    bool isValueLoaded() override;
     void RAWMisspeculate() override;
   };
 

@@ -56,6 +56,9 @@
 #include "params/MinorCPU.hh"
 #include "sim/ticked_object.hh"
 
+// ! GemForge
+class MinorCPUDelegator;
+
 namespace Minor
 {
 
@@ -70,6 +73,10 @@ namespace Minor
  *  between the CPU and its grubby implementation details clean. */
 class Pipeline : public Ticked
 {
+
+  // ! GemForge
+  friend class ::MinorCPUDelegator;
+
   protected:
     MinorCPU &cpu;
 

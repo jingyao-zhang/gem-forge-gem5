@@ -197,6 +197,7 @@ private:
       return true;
     }
     bool isIssued() override;
+    bool isValueLoaded() override;
     void RAWMisspeculate() override;
   };
   struct GemForgeIEWSQCallback : public GemForgeSQCallback {

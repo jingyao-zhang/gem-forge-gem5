@@ -7,6 +7,7 @@
  * engine.
  */
 
+#include "cpu/gem_forge/gem_forge_lsq_callback.hh"
 #include "cpu/static_inst.hh"
 
 #include "config/have_protobuf.hh"
@@ -42,7 +43,8 @@ public:
 
 #define DeclareStreamInstHandler(Inst)                                         \
   bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);            \
-  void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);               \
+  void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,                \
+                            GemForgeLQCallbackList &extraLQCallbacks);         \
   bool canExecuteStream##Inst(const GemForgeDynInstInfo &dynInfo);             \
   void executeStream##Inst(const GemForgeDynInstInfo &dynInfo,                 \
                            ExecContext &xc);                                   \

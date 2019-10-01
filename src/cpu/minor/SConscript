@@ -62,6 +62,8 @@ if 'MinorCPU' in env['CPU_MODELS']:
 
     # ! GemForge
     Source('minor_cpu_delegator.cc')
+    Source('gem_forge_load_request.cc')
+    Source('gem_forge_dcache_port.cc')
     DebugFlag('MinorCPUDelegator', 'MinorCPUDelegator behavior.')
 
     DebugFlag('MinorCPU', 'Minor CPU-level events')

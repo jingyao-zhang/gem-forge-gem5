@@ -132,8 +132,8 @@ public:
   virtual int getNumSQEntries(LLVMTraceCPU *cpu) const;
 
   // Get additional LQ callbacks, except the normal load inst.
-  std::list<std::unique_ptr<GemForgeLQCallback>>
-  createAdditionalLQCallbacks(LLVMTraceCPU *cpu);
+  void createAdditionalLQCallbacks(LLVMTraceCPU *cpu,
+                                   GemForgeLQCallbackList &callbacks);
   int getNumAdditionalLQCallbacks() const {
     return this->numAdditionalLQCallbacks;
   }

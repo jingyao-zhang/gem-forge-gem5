@@ -575,29 +575,21 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   }
 }
 
-int StreamEngine::getStreamUserLQEntries(const LLVMDynamicInst *inst) const {
+int StreamEngine::getStreamUserLQEntries(const StreamUserArgs &args) const {
   // Only care this if we enable lsq for the stream engine.
   if (!this->enableLSQ) {
     return 0;
   }
-  // So far we only support LSQ for LLVMTraceCPU.
-  assert(cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE &&
-         "LSQ only works for LLVMTraceCPU.");
 
-  // Collect all the element used.
+  // Collect all the elements used.
   std::unordered_set<StreamElement *> usedElementSet;
-  for (const auto &dep : inst->getTDG().deps()) {
-    if (dep.type() != ::LLVM::TDG::TDGInstructionDependence::STREAM) {
-      continue;
-    }
-    auto streamId = dep.dependent_id();
+  for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
     if (!S->configured) {
       // Ignore the out-of-loop use (see dispatchStreamUser).
       continue;
     }
     if (S->allocSize <= S->stepSize) {
-      inst->dumpBasic();
       this->dumpFIFO();
       panic("No allocated element to use for stream %s.",
             S->getStreamName().c_str());
@@ -625,10 +617,11 @@ int StreamEngine::getStreamUserLQEntries(const LLVMDynamicInst *inst) const {
   return firstUsedLoadStreamElement;
 }
 
-std::list<std::unique_ptr<GemForgeLQCallback>>
-StreamEngine::createStreamUserLQCallbacks(LLVMDynamicInst *inst) {
-  std::list<std::unique_ptr<GemForgeLQCallback>> callbacks;
-  auto &elementSet = this->userElementMap.at(inst->getSeqNum());
+int StreamEngine::createStreamUserLQCallbacks(
+    const StreamUserArgs &args, GemForgeLQCallbackList &callbacks) {
+  auto seqNum = args.seqNum;
+  auto &elementSet = this->userElementMap.at(seqNum);
+  auto numCallbacks = 0;
   for (auto &element : elementSet) {
     if (element == nullptr) {
       continue;
@@ -637,19 +630,17 @@ StreamEngine::createStreamUserLQCallbacks(LLVMDynamicInst *inst) {
       // Not a load stream.
       continue;
     }
-    if (element->firstUserSeqNum == inst->getSeqNum()) {
+    if (element->firstUserSeqNum == seqNum) {
       // Insert into the load queue if we model the lsq.
       if (this->enableLSQ) {
-        // So far we only support LSQ for LLVMTraceCPU.
-        assert(cpuDelegator->cpuType ==
-                   GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE &&
-               "LSQ only works for LLVMTraceCPU.");
-        callbacks.emplace_back(
-            new GemForgeStreamEngineLQCallback(element, inst, this->cpu));
+        assert(numCallbacks < callbacks.size() && "LQCallback overflows.");
+        callbacks.at(numCallbacks) =
+            m5::make_unique<GemForgeStreamEngineLQCallback>(element);
+        numCallbacks++;
       }
     }
   }
-  return callbacks;
+  return numCallbacks;
 }
 
 void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
@@ -2195,12 +2186,23 @@ bool StreamEngine::GemForgeStreamEngineLQCallback::getAddrSize(Addr &addr,
 }
 
 bool StreamEngine::GemForgeStreamEngineLQCallback::isIssued() {
-  return cpu->getInflyInstStatus(userInst->getId()) ==
-         LLVMTraceCPU::InstStatus::ISSUED;
+  /**
+   * So far the element is considered issued when its address is ready.
+   */
+  return this->element->isAddrReady;
+}
+
+bool StreamEngine::GemForgeStreamEngineLQCallback::isValueLoaded() {
+  return this->element->isValueReady;
 }
 
 void StreamEngine::GemForgeStreamEngineLQCallback::RAWMisspeculate() {
-  cpu->getIEWStage().misspeculateInst(userInst);
+  /**
+   * Disable this for now.
+   * TODO: Reimplement this for memory misspeculation.
+   */
+  // cpu->getIEWStage().misspeculateInst(userInst);
+  panic("Not implemented: %s.\n", __PRETTY_FUNCTION__);
 }
 
 bool StreamEngine::GemForgeStreamEngineSQCallback::getAddrSize(Addr &addr,

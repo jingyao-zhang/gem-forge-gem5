@@ -1,12 +1,10 @@
 
 //////////////////////////////////////////////////////////
 //
-// GemForgeInsts is IOp, but allows user to specific
-// constructor code (to specify dest register directly, without using
-// the regex matching inside the code generator).
+// GemForge instructions that has load semantics.
 //
 
-def template GemForgeDeclare {{
+def template GemForgeLoadDeclare {{
     //
     // Static instruction class for "%(mnemonic)s".
     //
@@ -15,15 +13,22 @@ def template GemForgeDeclare {{
         /// Constructor.
         %(class_name)s(MachInst machInst);
         Fault execute(
-            ExecContext *xc,
-            Trace::InstRecord *traceData) const override;
+            ExecContext *,
+            Trace::InstRecord *) const override;
+        Fault initiateAcc(
+            ExecContext *,
+            Trace::InstRecord *) const override;
+        Fault completeAcc(
+            PacketPtr,
+            ExecContext *,
+            Trace::InstRecord *) const override;
         std::string generateDisassembly(
             Addr pc,
             const SymbolTable *symtab) const override;
     };
 }};
 
-def template GemForgeConstructor {{
+def template GemForgeLoadConstructor {{
     %(class_name)s::%(class_name)s(MachInst machInst)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
     {
@@ -33,7 +38,7 @@ def template GemForgeConstructor {{
     }
 }};
 
-def template GemForgeExecute {{
+def template GemForgeLoadExecute {{
 
     Fault
     %(class_name)s::execute(
@@ -52,6 +57,19 @@ def template GemForgeExecute {{
         return fault;
     }
 
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc, Trace::InstRecord *traceData) const {
+        Fault fault = NoFault;
+        return fault;
+    }
+
+    Fault
+    %(class_name)s::completeAcc(
+        PacketPtr pkt, ExecContext *xc, Trace::InstRecord *traceData) const {
+        Fault fault = NoFault;
+        return fault;
+    }
+
     std::string
     %(class_name)s::generateDisassembly(Addr pc,
             const SymbolTable *symtab) const {
@@ -65,7 +83,7 @@ def template GemForgeExecute {{
     }
 }};
 
-def format GemForgeIOp(
+def format GemForgeLoad(
         execute_code,
         is_float='False',
         imm_type='int64_t',
@@ -101,8 +119,8 @@ def format GemForgeIOp(
         },
         opt_flags,
     )
-    header_output = GemForgeDeclare.subst(iop)
-    decoder_output = GemForgeConstructor.subst(iop)
+    header_output = GemForgeLoadDeclare.subst(iop)
+    decoder_output = GemForgeLoadConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = GemForgeExecute.subst(iop)
+    exec_output = GemForgeLoadExecute.subst(iop)
 }};
