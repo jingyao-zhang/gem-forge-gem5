@@ -72,6 +72,9 @@
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
 
+// ! GemForge
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
+
 // Hack
 #include "sim/stat_control.hh"
 
@@ -143,6 +146,19 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
       accelManager(p->accelManager),
       enterPwrGatingEvent([this]{ enterPwrGating(); }, name())
 {
+
+    /**
+     * ! GemForge
+     * Register the exit dump.
+     */
+    if (this->accelManager) {
+        registerExitCallback(
+            new MakeCallback<
+                GemForgeAcceleratorManager,
+                &GemForgeAcceleratorManager::exitDump>(
+                    &*this->accelManager, true));
+    }
+
     // if Python did not provide a valid ID, do it here
     if (_cpuId == -1 ) {
         _cpuId = cpuList.size();

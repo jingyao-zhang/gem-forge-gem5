@@ -249,8 +249,6 @@ void LLVMTraceCPU::tick() {
     }
     // If in standalone mode, we can exit.
     if (this->isStandalone()) {
-      // Accelerator exitDump can execute now.
-      this->accelManager->exitDump();
       // Decrease the workitem count.
       auto workItemsEnd = this->system->incWorkItemsEnd();
       if (workItemsEnd % this->totalActiveCPUs == 0) {
