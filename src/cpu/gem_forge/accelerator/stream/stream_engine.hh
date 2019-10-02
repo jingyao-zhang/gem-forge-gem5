@@ -87,6 +87,7 @@ public:
   bool areUsedStreamsReady(const StreamUserArgs &args);
   void executeStreamUser(const StreamUserArgs &args);
   void commitStreamUser(const StreamUserArgs &args);
+  void rewindStreamUser(const StreamUserArgs &args);
 
   struct StreamEndArgs {
     uint64_t seqNum;

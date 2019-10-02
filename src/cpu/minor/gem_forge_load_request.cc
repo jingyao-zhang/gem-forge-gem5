@@ -14,4 +14,13 @@ void GemForgeLoadRequest::checkIsComplete() {
   }
 }
 
+void GemForgeLoadRequest::markDiscarded() {
+  assert(!this->discarded && "Mark discarded twice.");
+  this->discarded = true;
+  if (!this->isComplete()) {
+    // Mark myself completed.
+    this->setState(LSQRequest::Complete);
+  }
+}
+
 } // namespace Minor

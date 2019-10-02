@@ -14,6 +14,8 @@ class GemForgeLoadRequest : public LSQ::LSQRequest {
 private:
   GemForgeLQCallbackPtr callback;
 
+  bool discarded = false;
+
 protected:
   /**
    * Finish translation in TLB.
@@ -57,6 +59,11 @@ public:
   bool isGemForgeLoadRequest() const override { return true; }
 
   void checkIsComplete() override;
+
+  /**
+   * See MinorCPUDelegator::streamChange() for details.
+   */
+  void markDiscarded();
 
   GemForgeLoadRequest(LSQ &_port, MinorDynInstPtr _inst,
                       GemForgeLQCallbackPtr _callback)

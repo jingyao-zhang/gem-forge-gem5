@@ -671,11 +671,12 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
       }
 
       auto element = S->stepped->next;
+      // * Notice the element is guaranteed to be not stepped.
+      assert(!element->isStepped && "Dispatch user to stepped stream element.");
       // Mark the first user sequence number.
       if (!element->isFirstUserDispatched()) {
         element->firstUserSeqNum = seqNum;
-        if (S->getStreamType() == "load" && element->isAddrReady &&
-            !element->isStepped) {
+        if (S->getStreamType() == "load" && element->isAddrReady) {
           // The element should already be in peb, remove it.
           this->peb.removeElement(element);
         }
@@ -773,13 +774,31 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
 
 void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
   auto seqNum = args.seqNum;
-  assert(this->userElementMap.count(seqNum) != 0);
   // Remove the entry from the elementUserMap.
   for (auto element : this->userElementMap.at(seqNum)) {
-    assert(this->elementUserMap.count(element) != 0);
     auto &userSet = this->elementUserMap.at(element);
-    assert(userSet.count(seqNum) != 0);
-    userSet.erase(seqNum);
+    assert(userSet.erase(seqNum) && "Not found in userSet.");
+  }
+  // Remove the entry in the userElementMap.
+  this->userElementMap.erase(seqNum);
+}
+
+void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
+  auto seqNum = args.seqNum;
+  for (auto element : this->userElementMap.at(seqNum)) {
+    // The element should be in unstepped state.
+    assert(!element->isStepped && "Rewind user of stepped element.");
+    if (element->firstUserSeqNum == seqNum) {
+      // I am the first user.
+      element->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
+      // Check if the element should go back to PEB.
+      if (element->stream->getStreamType() == "load" && element->isAddrReady) {
+        this->peb.addElement(element);
+      }
+    }
+    // Remove the entry from the elementUserMap.
+    auto &userSet = this->elementUserMap.at(element);
+    assert(userSet.erase(seqNum) && "Not found in userSet.");
   }
   // Remove the entry in the userElementMap.
   this->userElementMap.erase(seqNum);

@@ -45,6 +45,13 @@ public:
   std::unordered_map<InstSeqNum, GemForgeLQCallbackList> preLSQ;
 
   /**
+   * Stores the GemForgeLoadRequest in the LSQ, after the callback from preLSQ
+   * inserted into the LSQ.
+   */
+  std::unordered_map<InstSeqNum, std::vector<Minor::GemForgeLoadRequest *>>
+      inLSQ;
+
+  /**
    * Stores the packets pending to be sent.
    */
   std::deque<PacketPtr> pendingPkts;
@@ -150,6 +157,7 @@ bool MinorCPUDelegator::isAddrSizeReady(Minor::MinorDynInstPtr &dynInstPtr) {
 
 void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
   auto &preLSQ = pimpl->preLSQ;
+  auto &inLSQ = pimpl->inLSQ;
   auto seqNum = dynInstPtr->id.execSeqNum;
   auto iter = preLSQ.find(seqNum);
   // INST_LOG(hack, dynInstPtr, "Insert into LSQ.\n");
@@ -181,7 +189,7 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
     assert(!dynInstPtr->inLSQ && "Inst already in LSQ.");
 
     INST_DPRINTF(dynInstPtr, "Insert into LSQ (%#x, %u).\n", vaddr, size);
-    Minor::LSQ::LSQRequestPtr request =
+    auto request =
         new Minor::GemForgeLoadRequest(lsq, dynInstPtr, std::move(callback));
 
     // Have to setup the request.
@@ -205,7 +213,21 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
 
     // Insert the special GemForgeLoadRequest.
     dynInstPtr->inLSQ = true;
-    lsq.requests.push(request);
+
+    /**
+     * Push takes Minor::LSQ::LSQRequestPtr&, which requires a lvalue so
+     * we have to do the type cast by ourselves.
+     */
+    {
+      Minor::LSQ::LSQRequestPtr lsqRequest = request;
+      lsq.requests.push(lsqRequest);
+    }
+    // Push into inLSQ.
+    inLSQ
+        .emplace(std::piecewise_construct, std::forward_as_tuple(seqNum),
+                 std::forward_as_tuple())
+        .first->second.push_back(request);
+
     request->startAddrTranslation();
   }
   /**
@@ -249,6 +271,11 @@ void MinorCPUDelegator::commit(Minor::MinorDynInstPtr &dynInstPtr) {
   // All PreLSQ entries should already be cleared.
   assert(pimpl->preLSQ.count(dynInstPtr->id.execSeqNum) == 0 &&
          "PreLSQ entries found when commit.");
+  /**
+   * Release InLSQ entries, if any.
+   * ! These request is already released in LSQ::popResponse().
+   */
+  pimpl->inLSQ.erase(dynInstPtr->id.execSeqNum);
   pimpl->inflyInstQueue.pop_front();
   pimpl->isaHandler.commit(dynInfo);
 }
@@ -257,15 +284,54 @@ void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
   // Rewind the inflyInstQueue.
   auto &inflyInstQueue = pimpl->inflyInstQueue;
   auto &preLSQ = pimpl->preLSQ;
+  auto &inLSQ = pimpl->inLSQ;
   while (!inflyInstQueue.empty() &&
          inflyInstQueue.back()->id.streamSeqNum != newStreamSeqNum) {
     // This needs to be rewind.
     auto &misspeculatedInst = inflyInstQueue.back();
+    INST_DPRINTF(misspeculatedInst, "Rewind.\n");
     auto dynInfo = pimpl->createDynInfo(misspeculatedInst);
     pimpl->isaHandler.rewind(dynInfo);
-    // Release the misspeculated LQ callback.
-    INST_DPRINTF(misspeculatedInst, "Rewind.\n");
+
+    /**
+     * Rewinding a instruction with GemForgeLQCallback involves 3 cases:
+     *
+     * 1. If the instruction is still in FU (not inserted into LSQ), the
+     * callback is still in preLSQ. Erase it from preLSQ and it will be
+     * discarded when exit the FU.
+     *
+     * 2. If the instruction is in the LSQ's request queue, it will be
+     * marked complete in LSQ::tryToSendToTransfers() and moved to
+     * transfers. Since it's already complete, it will eventually be
+     * discarded in Execute::commit().
+     *
+     * 3. If the instruction is already in LSQ's transfer queue, normally
+     * LSQ::findResponse() will call request->checkIsComplete(), which
+     * eventually calls GemForgeLQCallback::isValueReady() and mark it
+     * complete. After rewinding, we assume the callback is invalid to
+     * use, therefore we explicitly mark the GemForgeLoadRequest discarded.
+     *    We need explicitly marking it discarded because requests in
+     * transfer queue is only marked complete when response comes back,
+     * and Execute::commit() requires it to be completed before discarded.
+     *
+     * If the instruction is out of the transfer queue, it should already
+     * be committed and not possible for it to be rewinded.
+     */
+
+    // 1. Release PreLSQ, if any.
     preLSQ.erase(misspeculatedInst->id.execSeqNum);
+
+    // 2. Mark InLSQ GemForgeLoadRequest discarded, if any.
+    auto inLSQIter = inLSQ.find(misspeculatedInst->id.execSeqNum);
+    if (inLSQIter != inLSQ.end()) {
+      for (auto loadRequest : inLSQIter->second) {
+        loadRequest->markDiscarded();
+      }
+      // Erase inLSQ.
+      inLSQ.erase(inLSQIter);
+    }
+
+    // Pop from the inflyInstQueue.
     inflyInstQueue.pop_back();
   }
   pimpl->currentStreamSeqNum = newStreamSeqNum;

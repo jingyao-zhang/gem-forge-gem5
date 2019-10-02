@@ -418,7 +418,17 @@ void RISCVStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void RISCVStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
+  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &userInfo = dynStreamInstInfo.userInfo;
+  std::vector<uint64_t> usedStreamIds{
+      userInfo.translatedUsedStreamIds.at(0),
+  };
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+  auto se = this->getStreamEngine();
+  se->rewindStreamUser(args);
+
+  // Release the info.
+  this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 /********************************************************************************
