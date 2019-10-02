@@ -414,7 +414,7 @@ decode QUADRANT default Unknown::unknown() {
                 uint64_t, No_OpClass);
                 0x3: ssp_stream_ready({{
                 }},
-                uint64_t, No_OpClass);
+                uint64_t, IsMemBarrier, No_OpClass);
                 0x4: ssp_stream_step({{
                 }},
                 uint64_t, No_OpClass);
@@ -427,13 +427,13 @@ decode QUADRANT default Unknown::unknown() {
                     // Use GemForgeIOp to declare the dest register
                     // directly (not here).
                 }},
-                False, uint64_t, IsLoad, IsMemRef, No_OpClass);
+                False, uint64_t, IsLoad, IsMemRef, MemReadOp);
                 0x6: ssp_stream_fload({{
                 }},
-                True, uint64_t, IsLoad, IsMemRef, No_OpClass);
+                True, uint64_t, IsLoad, IsMemRef, FloatMemReadOp);
                 0x7: ssp_stream_flw({{
                 }},
-                True, uint64_t, IsLoad, IsMemRef, No_OpClass);
+                True, uint64_t, IsLoad, IsMemRef, FloatMemReadOp);
             }
         }
 

@@ -65,6 +65,21 @@ public:
    */
   void insertLSQ(Minor::MinorDynInstPtr &dynInstPtr);
 
+  /**
+   * ! This is not used right now.
+   * ! The following problem is fixed by making StreamReady a memory barrier.
+   * Get any inst that has to commit before MemRef inst can be early issued.
+   * This is to solve a live-lock problem:
+   * A StreamLoad may reached the head of the FU and need to be early issued
+   * before the stream is configured. The problem is:
+   * StreamNotConfigured -> StreamElementAddrNotReady -> StreamLoadCannotIssue
+   *           |                                             |
+   *           ------------------- <- ------------------------
+   * The implementation of commit logic is that if EarlyIssue failed, MinorCPU
+   * won't try to commit other instructions.
+   */
+  InstSeqNum getEarlyIssueMustWaitSeqNum(Minor::MinorDynInstPtr &dynInstPtr);
+
   bool canExecute(Minor::MinorDynInstPtr &dynInstPtr);
   void execute(Minor::MinorDynInstPtr &dynInstPtr, ExecContext &xc);
   void commit(Minor::MinorDynInstPtr &dynInstPtr);

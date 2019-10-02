@@ -784,6 +784,21 @@ Execute::issue(ThreadID thread_id)
                                         *inst, inst->instToWaitFor);
                                 }
 
+                                /**
+                                 * ! GemForge
+                                 * Check if there is any extra requirement.
+                                 */
+                                if (cpu.cpuDelegator) {
+                                    auto extraWaitSeqNum =
+                                        cpu.cpuDelegator
+                                            ->getEarlyIssueMustWaitSeqNum(
+                                            inst);
+                                    if (extraWaitSeqNum > inst->instToWaitFor)
+                                    {
+                                        inst->instToWaitFor = extraWaitSeqNum;
+                                    }
+                                }
+
                                 inst->canEarlyIssue = true;
                             }
                             /* Also queue this instruction in the memory ref
@@ -1278,7 +1293,7 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
 
             /* Try and commit FU-less insts */
             if (!completed_inst && inst->isNoCostInst()) {
-                DPRINTF(MinorExecute, "Committing no cost inst: %s", *inst);
+                DPRINTF(MinorExecute, "Committing no cost inst: %s\n", *inst);
 
                 try_to_commit = true;
                 completed_inst = true;

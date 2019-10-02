@@ -137,6 +137,7 @@ bool MinorCPUDelegator::isAddrSizeReady(Minor::MinorDynInstPtr &dynInstPtr) {
       uint32_t size;
       if (!callback->getAddrSize(vaddr, size)) {
         // This one is not ready yet.
+        INST_LOG(hack, dynInstPtr, "AddrSize not ready.\n");
         return false;
       }
     } else {
@@ -189,6 +190,14 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
     request->request->setVirt(0 /* asid */, vaddr, size, 0 /* flags */,
                               baseCPU->dataMasterId(),
                               dynInstPtr->pc.instAddr());
+
+    /**
+     * The StoreBuffer requires the physical address for store-to-load check.
+     * We hack there to set the physical address for the place holder request.
+     */
+    auto paddr = this->translateVAddrOracle(vaddr);
+    request->request->setPaddr(paddr);
+
     // No ByteEnable.
 
     // Create the packet.
@@ -203,6 +212,12 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
    * Clear the preLSQ as they are now in LSQ.
    */
   preLSQ.erase(seqNum);
+}
+
+InstSeqNum MinorCPUDelegator::getEarlyIssueMustWaitSeqNum(
+    Minor::MinorDynInstPtr &dynInstPtr) {
+  // This should make this function no effect.
+  return 0;
 }
 
 bool MinorCPUDelegator::canExecute(Minor::MinorDynInstPtr &dynInstPtr) {
@@ -249,6 +264,7 @@ void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
     auto dynInfo = pimpl->createDynInfo(misspeculatedInst);
     pimpl->isaHandler.rewind(dynInfo);
     // Release the misspeculated LQ callback.
+    INST_DPRINTF(misspeculatedInst, "Rewind.\n");
     preLSQ.erase(misspeculatedInst->id.execSeqNum);
     inflyInstQueue.pop_back();
   }

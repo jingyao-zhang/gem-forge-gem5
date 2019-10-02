@@ -1586,6 +1586,21 @@ LSQ::needsToTick()
             storeBuffer.numUnissuedStores() != 0;
     }
 
+    /**
+     * ! GemForge
+     * Evil: Tick if we have a GemForgeLoadRequest at the head of Transfer.
+     */
+    if (!ret) {
+        if (!transfers.empty()) {
+            LSQRequestPtr request = transfers.front();
+            if (request->isGemForgeLoadRequest()) {
+                if (!request->isComplete()) {
+                    ret = true;
+                }
+            }
+        }
+    }
+
     if (ret)
         DPRINTF(Activity, "Need to tick\n");
 

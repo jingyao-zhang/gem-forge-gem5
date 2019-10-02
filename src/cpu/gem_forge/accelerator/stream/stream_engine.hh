@@ -370,8 +370,9 @@ private:
   struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
   public:
     StreamElement *element;
+    const FIFOEntryIdx FIFOIdx;
     GemForgeStreamEngineLQCallback(StreamElement *_element)
-        : element(_element) {}
+        : element(_element), FIFOIdx(_element->FIFOIdx) {}
     bool getAddrSize(Addr &addr, uint32_t &size) override;
     bool isIssued() override;
     bool isValueLoaded() override;

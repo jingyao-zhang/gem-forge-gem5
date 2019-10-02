@@ -2176,6 +2176,8 @@ void StreamEngine::StreamThrottler::throttleStream(Stream *S,
 
 bool StreamEngine::GemForgeStreamEngineLQCallback::getAddrSize(Addr &addr,
                                                                uint32_t &size) {
+  assert(this->FIFOIdx == this->element->FIFOIdx &&
+         "Element already released.");
   // Check if the address is ready.
   if (!this->element->isAddrReady) {
     return false;
@@ -2189,14 +2191,20 @@ bool StreamEngine::GemForgeStreamEngineLQCallback::isIssued() {
   /**
    * So far the element is considered issued when its address is ready.
    */
+  assert(this->FIFOIdx == this->element->FIFOIdx &&
+         "Element already released.");
   return this->element->isAddrReady;
 }
 
 bool StreamEngine::GemForgeStreamEngineLQCallback::isValueLoaded() {
+  assert(this->FIFOIdx == this->element->FIFOIdx &&
+         "Element already released.");
   return this->element->isValueReady;
 }
 
 void StreamEngine::GemForgeStreamEngineLQCallback::RAWMisspeculate() {
+  assert(this->FIFOIdx == this->element->FIFOIdx &&
+         "Element already released.");
   /**
    * Disable this for now.
    * TODO: Reimplement this for memory misspeculation.
