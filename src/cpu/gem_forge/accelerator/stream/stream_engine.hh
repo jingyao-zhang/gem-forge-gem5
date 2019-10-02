@@ -340,6 +340,11 @@ private:
    */
   void flushPEB();
 
+  /**
+   * LoadQueue RAW misspeculation.
+   */
+  void RAWMisspeculate(StreamElement *element);
+
   void throttleStream(Stream *S, StreamElement *element);
 
   std::vector<StreamElement *> findReadyElements();

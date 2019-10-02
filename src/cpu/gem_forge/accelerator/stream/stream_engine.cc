@@ -2226,10 +2226,9 @@ void StreamEngine::GemForgeStreamEngineLQCallback::RAWMisspeculate() {
          "Element already released.");
   /**
    * Disable this for now.
-   * TODO: Reimplement this for memory misspeculation.
    */
   // cpu->getIEWStage().misspeculateInst(userInst);
-  panic("Not implemented: %s.\n", __PRETTY_FUNCTION__);
+  this->element->se->RAWMisspeculate(this->element);
 }
 
 bool StreamEngine::GemForgeStreamEngineSQCallback::getAddrSize(Addr &addr,
@@ -2381,6 +2380,28 @@ void StreamEngine::flushPEB() {
     element->markNextElementValueReady = false;
   }
   this->peb.elements.clear();
+}
+
+void StreamEngine::RAWMisspeculate(StreamElement *element) {
+  assert(!this->peb.contains(element) && "RAWMisspeculate on PEB element.");
+  // Still, we flush the PEB when LQ misspeculate happens.
+  this->flushPEB();
+
+  // Revert this element to just allocate state.
+  element->flushed = true;
+  element->isAddrReady = false;
+  element->isValueReady = false;
+  element->valueReadyCycle = Cycles(0);
+  element->firstCheckCycle = Cycles(0);
+
+  element->addr = 0;
+  element->size = 0;
+  element->cacheBlocks = 0;
+  std::fill(element->value.begin(), element->value.end(), 0);
+  // Clear the inflyMemAccess set, which effectively clears the infly memory
+  // access.
+  element->inflyMemAccess.clear();
+  element->markNextElementValueReady = false;
 }
 
 StreamEngine *StreamEngineParams::create() { return new StreamEngine(this); }

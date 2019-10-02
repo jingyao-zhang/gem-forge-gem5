@@ -415,8 +415,19 @@ Execute::handleMemResponse(MinorDynInstPtr inst,
 
             /* Stores need to be pushed into the store buffer to finish
              *  them off */
-            if (response->needsToBeSentToStoreBuffer())
+            if (response->needsToBeSentToStoreBuffer()) {
                 lsq.sendStoreToStoreBuffer(response);
+                /**
+                 * ! GemForge
+                 * Notify GemForge that CPU stores to a place.
+                 */
+                if (cpu.cpuDelegator) {
+                    cpu.cpuDelegator->storeTo(
+                        response->request->getVaddr(),
+                        response->request->getSize()
+                    );
+                }
+            }
         }
     } else {
         fatal("There should only ever be reads, "

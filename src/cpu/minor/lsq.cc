@@ -1155,7 +1155,13 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
             moveFromRequestsToTransfers(request);
         }
     } else {
-        request->setState(LSQRequest::Complete);
+        /**
+         * ! GemForge
+         * Disable store-load forwarding for GemForgeLoadRequest.
+         */
+        if (!request->isGemForgeLoadRequest()) {
+            request->setState(LSQRequest::Complete);
+        }
         moveFromRequestsToTransfers(request);
     }
 }

@@ -337,6 +337,90 @@ void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
   pimpl->currentStreamSeqNum = newStreamSeqNum;
 }
 
+void MinorCPUDelegator::storeTo(Addr vaddr, int size) {
+  // First notify the IsaHandler.
+  pimpl->isaHandler.storeTo(vaddr, size);
+  // Find the oldest seqNum that aliased with this store.
+  if (pimpl->inflyInstQueue.empty()) {
+    // This should actually never happen.
+    return;
+  }
+  auto &preLSQ = pimpl->preLSQ;
+  auto &inLSQ = pimpl->inLSQ;
+  // * This relies on that execSeqNum is never decreasing.
+  auto oldestMisspeculatedSeqNum = pimpl->inflyInstQueue.back()->id.execSeqNum;
+  bool foundMisspeculated = false;
+
+  auto checkMisspeculated =
+      [vaddr, size, &foundMisspeculated, &oldestMisspeculatedSeqNum](
+          InstSeqNum seqNum, GemForgeLQCallbackPtr &callback) -> void {
+    if (seqNum > oldestMisspeculatedSeqNum) {
+      // This is already younder than what we have, ignore it.
+      return;
+    }
+    if (!callback->isIssued()) {
+      // This load is not issued yet, ignore it.
+      return;
+    }
+    Addr ldVaddr;
+    uint32_t ldSize;
+    assert(callback->getAddrSize(ldVaddr, ldSize) &&
+           "Issued LQCallback should have Addr/Size.");
+    if (vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr) {
+      // No overlap.
+      return;
+    } else {
+      // Aliased.
+      oldestMisspeculatedSeqNum = seqNum;
+      foundMisspeculated = true;
+    }
+  };
+
+  // Check request within inLSQ.
+  for (auto &inLSQSeqNumRequest : inLSQ) {
+    auto &seqNum = inLSQSeqNumRequest.first;
+    for (auto &request : inLSQSeqNumRequest.second) {
+      checkMisspeculated(seqNum, request->callback);
+    }
+  }
+
+  // Check requests in preLSQ.
+  for (auto &preLSQSeqNumRequest : preLSQ) {
+    auto &seqNum = preLSQSeqNumRequest.first;
+    for (auto &callback : preLSQSeqNumRequest.second) {
+      if (callback) {
+        checkMisspeculated(seqNum, callback);
+      }
+    }
+  }
+
+  // No misspeculation found in LSQ.
+  if (!foundMisspeculated) {
+    return;
+  }
+
+  // For all younger LQ callback, we make it misspeculated.
+  for (auto &inLSQSeqNumRequest : inLSQ) {
+    auto &seqNum = inLSQSeqNumRequest.first;
+    if (seqNum >= oldestMisspeculatedSeqNum) {
+      for (auto &request : inLSQSeqNumRequest.second) {
+        request->callback->RAWMisspeculate();
+      }
+    }
+  }
+
+  for (auto &preLSQSeqNumRequest : preLSQ) {
+    auto &seqNum = preLSQSeqNumRequest.first;
+    if (seqNum >= oldestMisspeculatedSeqNum) {
+      for (auto &callback : preLSQSeqNumRequest.second) {
+        if (callback) {
+          callback->RAWMisspeculate();
+        }
+      }
+    }
+  }
+}
+
 const std::string &MinorCPUDelegator::getTraceExtraFolder() const {
   // Always assume that the binary is in the TraceExtraFolder.
   if (pimpl->traceExtraFolder.empty()) {

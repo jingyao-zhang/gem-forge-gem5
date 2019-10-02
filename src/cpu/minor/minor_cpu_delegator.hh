@@ -92,6 +92,11 @@ public:
    */
   void streamChange(InstSeqNum newStreamSeqNum);
 
+  /**
+   * CPU stores to a place. Notify GemForge to check any memory misspeculation.
+   */
+  void storeTo(Addr vaddr, int size);
+
 private:
   class Impl;
   std::unique_ptr<Impl> pimpl;

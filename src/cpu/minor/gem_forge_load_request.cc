@@ -1,5 +1,10 @@
 #include "gem_forge_load_request.hh"
 
+#include "debug/MinorGemForgeLoadRequest.hh"
+
+#define INST_DPRINTF(inst, format, args...)                                    \
+  DPRINTF(MinorGemForgeLoadRequest, "[%s]: " format, *(inst), ##args)
+
 namespace Minor {
 
 void GemForgeLoadRequest::checkIsComplete() {
@@ -10,6 +15,7 @@ void GemForgeLoadRequest::checkIsComplete() {
   // Check the LQ callback.
   bool completed = this->callback->isValueLoaded();
   if (completed) {
+    INST_DPRINTF(this->inst, "checkIsComplete() succeed.\n");
     this->setState(LSQRequest::Complete);
   }
 }

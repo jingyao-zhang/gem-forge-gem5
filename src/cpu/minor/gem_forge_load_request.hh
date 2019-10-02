@@ -11,7 +11,7 @@ namespace Minor {
  */
 class GemForgeLoadRequest : public LSQ::LSQRequest {
 
-private:
+public:
   GemForgeLQCallbackPtr callback;
 
   bool discarded = false;
