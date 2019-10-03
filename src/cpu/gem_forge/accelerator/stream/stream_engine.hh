@@ -60,6 +60,7 @@ public:
   bool canStreamStep(uint64_t stepStreamId) const;
   void dispatchStreamStep(uint64_t stepStreamId);
   void commitStreamStep(uint64_t stepStreamId);
+  void rewindStreamStep(uint64_t stepStreamId);
 
   struct StreamUserArgs {
     using Value = std::array<uint8_t, 8>;
@@ -152,6 +153,7 @@ public:
    */
   mutable Stats::Scalar numConfigured;
   mutable Stats::Scalar numStepped;
+  mutable Stats::Scalar numUnstepped;
   mutable Stats::Scalar numElementsAllocated;
   mutable Stats::Scalar numElementsUsed;
   mutable Stats::Scalar numUnconfiguredStreamUse;

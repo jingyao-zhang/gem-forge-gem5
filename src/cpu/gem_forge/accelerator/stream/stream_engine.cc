@@ -148,6 +148,7 @@ void StreamEngine::regStats() {
 
   scalar(numConfigured, "Number of streams configured.");
   scalar(numStepped, "Number of streams stepped.");
+  scalar(numUnstepped, "Number of streams unstepped.");
   scalar(numElementsAllocated, "Number of stream elements allocated.");
   scalar(numElementsUsed, "Number of stream elements used.");
   scalar(numUnconfiguredStreamUse, "Number of unconfigured stream use.");
@@ -572,6 +573,15 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   // ! allocateElements() will handle it.
 
   if (isDebugStream(stepStream)) {
+  }
+}
+
+void StreamEngine::rewindStreamStep(uint64_t stepStreamId) {
+  this->numUnstepped++;
+  auto stepStream = this->getStream(stepStreamId);
+  for (auto S : this->getStepStreamList(stepStream)) {
+    assert(S->configured && "Stream should be configured to be stepped.");
+    this->unstepElement(S);
   }
 }
 

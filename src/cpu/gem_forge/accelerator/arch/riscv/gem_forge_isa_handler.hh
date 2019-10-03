@@ -25,7 +25,7 @@ public:
    * ! space to hold it.
    */
   void dispatch(const GemForgeDynInstInfo &dynInfo,
-                GemForgeLQCallbackList &extraLQCallbacks);
+                GemForgeLQCallbackList &extraLQCallbacks, bool &isGemForgeLoad);
   bool canExecute(const GemForgeDynInstInfo &dynInfo);
   void execute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   void commit(const GemForgeDynInstInfo &dynInfo);

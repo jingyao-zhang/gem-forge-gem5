@@ -174,6 +174,8 @@ bool SingleStream::isContinuous() const { return false; }
 void SingleStream::setupAddrGen(DynamicStream &dynStream,
                                 const std::vector<uint64_t> *inputVec) {
 
+  hack("Set up AddrGen for %s.\n", this->getStreamName().c_str());
+
   if (cpuDelegator->cpuType != GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE) {
     // We have to use the pattern.
     assert(inputVec && "Missing InputVec when using execution simulation.");

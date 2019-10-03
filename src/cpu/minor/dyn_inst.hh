@@ -231,6 +231,12 @@ class MinorDynInst : public RefCounted
      *  up */
     RegId flatDestRegIdx[TheISA::MaxInstDestRegs];
 
+    /**
+     * ! GemForge
+     * Force this dynamic instruction not to be considered as MemRef.
+     */
+    bool forceNotMemRef = false;
+
   public:
     MinorDynInst(InstId id_ = InstId(), Fault fault_ = NoFault) :
         staticInst(NULL), id(id_), traceData(NULL),
@@ -256,7 +262,13 @@ class MinorDynInst : public RefCounted
     bool isInst() const { return !isBubble() && !isFault(); }
 
     /** Is this a real mem ref instruction */
-    bool isMemRef() const { return isInst() && staticInst->isMemRef(); }
+    bool isMemRef() const {
+      /**
+       * ! GemForge
+       * Check if this is forced to not be MemRef.
+       */
+      return isInst() && !forceNotMemRef && staticInst->isMemRef();
+    }
 
     /** Is this an instruction that can be executed `for free' and
      *  needn't spend time in an FU */

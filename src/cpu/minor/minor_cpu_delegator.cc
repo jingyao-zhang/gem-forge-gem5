@@ -118,14 +118,26 @@ void MinorCPUDelegator::dispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   INST_DPRINTF(dynInstPtr, "Dispatch.\n");
   GemForgeLQCallbackList extraLQCallbacks;
-  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks);
+  bool isGemForgeLoad;
+  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
   pimpl->inflyInstQueue.push_back(dynInstPtr);
-  // TODO: Insert these extra LQCallbacks into PreLSQ.
   if (extraLQCallbacks.front()) {
     // There are at least one extra LQ callbacks.
     pimpl->preLSQ.emplace(std::piecewise_construct,
                           std::forward_as_tuple(dynInstPtr->id.execSeqNum),
                           std::forward_as_tuple(std::move(extraLQCallbacks)));
+  } else if (isGemForgeLoad) {
+    /**
+     * ! Pure Evil
+     * GemForge allows different behaviors of the same static instruction at
+     * runtime. Here, a GemForgeLoad without extraLQCallbacks is not considered
+     * to be a load anymore, i.e. it is treated as a load, but a normal load.
+     * An example of this is a dynamic StreamLoad and not the first user of
+     * that StreamElement.
+     *
+     * We do this by setting forceNotMemRef in the dynamic instruction.
+     */
+    dynInstPtr->forceNotMemRef = true;
   }
 }
 

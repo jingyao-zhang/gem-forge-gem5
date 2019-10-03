@@ -327,7 +327,14 @@ void RISCVStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void RISCVStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
-  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
+  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &stepInfo = dynStreamInstInfo.stepInfo;
+  auto streamId = stepInfo.translatedStreamId;
+  auto se = this->getStreamEngine();
+  se->rewindStreamStep(streamId);
+
+  // Release the info.
+  this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 /********************************************************************************

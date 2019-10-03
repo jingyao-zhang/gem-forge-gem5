@@ -69,9 +69,12 @@ void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
   /**
    * SimpleTimingCPU never really all cause a RAW misspeculation in LSQ,
    * so we ignore any extra LQCallbacks.
+   *
+   * TODO: Correctly handle the StreamLoad, which is now a MemRef inst.
    */
   GemForgeLQCallbackList extraLQCallbacks;
-  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks);
+  bool isGemForgeLoad;
+  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
 

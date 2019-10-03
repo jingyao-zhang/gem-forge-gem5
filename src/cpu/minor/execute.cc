@@ -758,6 +758,16 @@ Execute::issue(ThreadID thread_id)
                                 timing->extraAssumedLat;
                         }
 
+                        /**
+                         * ! GemForge
+                         * Notify the CPUDelegator that it is dispatched.
+                         * ! Evil hack: it may change StreamLoad to
+                         * ! a non MemRef inst if it's not the first user.
+                         */
+                        if (cpu.cpuDelegator) {
+                            cpu.cpuDelegator->dispatch(inst);
+                        }
+
                         issued_mem_ref = inst->isMemRef();
 
                         QueuedInst fu_inst(inst);
@@ -838,13 +848,6 @@ Execute::issue(ThreadID thread_id)
                          *  it can be committed in order */
                         thread.inFlightInsts->push(fu_inst);
 
-                        /**
-                         * ! GemForge
-                         * Notify the CPUDelegator that it is dispatched.
-                         */
-                        if (cpu.cpuDelegator) {
-                            cpu.cpuDelegator->dispatch(inst);
-                        }
                         issued = true;
                     }
                 }
@@ -996,7 +999,12 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         inst->fault->invoke(thread, NULL);
 
         tryToBranch(inst, fault, branch);
-    } else if (inst->staticInst->isMemRef()) {
+    } else if (inst->isMemRef()) {
+        /**
+         * ! GemForge
+         * Use MinorDynInst::isMemRef() to allow forceNotMemRef.
+         */
+
         /* Memory accesses are executed in two parts:
          *  executeMemRefInst -- calculates the EA and issues the access
          *      to memory.  This is done here.
