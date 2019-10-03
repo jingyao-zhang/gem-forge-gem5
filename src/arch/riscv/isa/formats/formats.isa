@@ -49,3 +49,4 @@
 // ! GemForge
 //
 ##include "gem_forge.isa"
+##include "m5ops.isa"

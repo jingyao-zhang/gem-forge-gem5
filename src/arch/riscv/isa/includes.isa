@@ -96,6 +96,7 @@ output exec {{
 #include "sim/sim_events.hh"
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
+#include "sim/pseudo_inst.hh"
 
 using namespace RiscvISA;
 using namespace std;

@@ -419,6 +419,10 @@ decode QUADRANT default Unknown::unknown() {
                 }},
                 uint64_t, No_OpClass);
             }
+            format M5Op {
+                0x7: m5op({{
+                }}, uint64_t, IsNonSpeculative, No_OpClass);
+            }
         }
 
         0x0a: decode FUNCT3 {
