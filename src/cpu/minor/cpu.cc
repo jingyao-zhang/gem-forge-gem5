@@ -198,6 +198,13 @@ MinorCPU::startup()
         threads[tid]->startup();
         pipeline->wakeupFetch(tid);
     }
+
+    /**
+     * ! GemForge
+     */
+    if (cpuDelegator) {
+        cpuDelegator->startup();
+    }
 }
 
 DrainState

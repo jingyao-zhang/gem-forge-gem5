@@ -5,6 +5,7 @@
 #include "pipeline.hh"
 
 #include "debug/MinorCPUDelegator.hh"
+#include "debug/MinorCPUDelegatorDump.hh"
 
 #if THE_ISA == RISCV_ISA
 #include "cpu/gem_forge/accelerator/arch/riscv/gem_forge_isa_handler.hh"
@@ -23,7 +24,9 @@ public:
       : cpu(_cpu), cpuDelegator(_cpuDelegator), isaHandler(_cpuDelegator),
         drainPendingPacketsEvent(
             [this]() -> void { this->cpuDelegator->drainPendingPackets(); },
-            _cpu->name()) {}
+            _cpu->name()),
+        dumpInflyInstsEvent([this]() -> void { this->dumpInflyInsts(); },
+                            _cpu->name()) {}
 
   MinorCPU *cpu;
   MinorCPUDelegator *cpuDelegator;
@@ -93,7 +96,22 @@ public:
     return dynInfo;
   }
 
+  void dumpInflyInsts() {
+    if (!Debug::MinorCPUDelegatorDump) {
+      return;
+    }
+    DPRINTF(MinorCPUDelegatorDump,
+            "========= MinorCPUDelegatorDump ===========\n");
+    for (const auto &dynInstPtr : this->inflyInstQueue) {
+      DPRINTF(MinorCPUDelegatorDump, "%s\n", *dynInstPtr);
+    }
+    DPRINTF(MinorCPUDelegatorDump,
+            "======= MinorCPUDelegatorDump End =========\n");
+    this->cpuDelegator->schedule(&this->dumpInflyInstsEvent, Cycles(100000));
+  }
+
   EventFunctionWrapper drainPendingPacketsEvent;
+  EventFunctionWrapper dumpInflyInstsEvent;
 };
 
 /**********************************************************************
@@ -104,6 +122,10 @@ MinorCPUDelegator::MinorCPUDelegator(MinorCPU *_cpu)
     : GemForgeCPUDelegator(CPUTypeE::MINOR, _cpu), pimpl(new Impl(_cpu, this)) {
 }
 MinorCPUDelegator::~MinorCPUDelegator() = default;
+
+void MinorCPUDelegator::startup() {
+  this->schedule(&pimpl->dumpInflyInstsEvent, Cycles(1));
+}
 
 bool MinorCPUDelegator::canDispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);

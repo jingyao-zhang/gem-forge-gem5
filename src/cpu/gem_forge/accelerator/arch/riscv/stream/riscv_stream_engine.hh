@@ -90,7 +90,12 @@ private:
   std::vector<uint64_t> regionStreamIdTable;
   static constexpr uint64_t InvalidStreamId = 0;
   void insertRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
-  void removeRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
+
+  /**
+   * Try to remove RegionStreamIds.
+   * @return if succeed.
+   */
+  bool removeRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
   uint64_t lookupRegionStreamId(int regionStreamId);
 
   /**
@@ -165,6 +170,10 @@ private:
     DynStreamInputInstInfo inputInfo;
     DynStreamStepInstInfo stepInfo;
     DynStreamUserInstInfo userInfo;
+    /**
+     * Sometimes it is for sure this instruction is misspeculated.
+     */
+    bool mustBeMisspeculated = false;
   };
   std::unordered_map<uint64_t, DynStreamInstInfo> seqNumToDynInfoMap;
 

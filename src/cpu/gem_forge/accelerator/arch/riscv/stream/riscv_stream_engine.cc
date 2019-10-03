@@ -80,7 +80,32 @@ void RISCVStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void RISCVStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
-  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
+  auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
+  auto infoRelativePath = this->getRelativePath(configIdx);
+  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+
+  // Check the current DynStreamRegionInfo.
+  assert(this->curStreamRegionInfo == configInfo.dynStreamRegionInfo &&
+         "Mismatch curStreamRegionInfo when rewinding StreamConfig.");
+  assert(this->curStreamRegionInfo->numDispatchedInsts == 1 &&
+         "More than one dispatched inst when rewinding StreamConfig.");
+  assert(!this->curStreamRegionInfo->streamReadyDispatched &&
+         "StreamReady should not be dispatched when rewinding StreamConfig.");
+
+  /**
+   * No need to notify the StreamEngine. It's StreamReady's job.
+   * Just clear the curStreamRegionInfo.
+   */
+  this->curStreamRegionInfo = nullptr;
+
+  // Clear the regionStreamId translation table.
+  auto infoFullPath =
+      cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
+  const auto &info = this->getStreamRegion(infoFullPath);
+  assert(this->removeRegionStreamIds(info) && "Failed rewinding StreamConfig");
+
+  // Release the InstInfo.
+  this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 /********************************************************************************
@@ -124,8 +149,6 @@ bool RISCVStreamEngine::canExecuteStreamInput(
 void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
                                            ExecContext &xc) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
-  this->increamentStreamRegionInfoNumExecutedInsts(
-      *(configInfo.dynStreamRegionInfo));
 
   // Record the live input.
   auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
@@ -134,7 +157,11 @@ void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
   auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
   RISCV_SE_DPRINTF("Record input %llu %llu.\n", inputInfo.translatedStreamId,
                    rs1);
+
   inputVec.at(inputInfo.inputIdx) = rs1;
+
+  this->increamentStreamRegionInfoNumExecutedInsts(
+      *(configInfo.dynStreamRegionInfo));
 }
 
 void RISCVStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
@@ -143,7 +170,13 @@ void RISCVStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void RISCVStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
-  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
+  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+  auto &regionInfo = configInfo.dynStreamRegionInfo;
+  // Decrease numDispatchedInst.
+  regionInfo->numDispatchedInsts--;
+
+  // Release the InstInfo.
+  this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 /********************************************************************************
@@ -234,7 +267,22 @@ void RISCVStreamEngine::dispatchStreamEnd(
   auto infoFullPath =
       cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
   const auto &info = this->getStreamRegion(infoFullPath);
-  this->removeRegionStreamIds(info);
+
+  auto &dynStreamInstInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
+
+  /**
+   * Sometimes it's possible to misspeculate StreamEnd before StreamConfig.
+   * We check the RegionStreamIdTable to make sure this is the correct one.
+   *
+   * TODO: This is still very hacky, we have to be careful as there maybe
+   * TODO: a misspeculated chain.
+   */
+  if (!this->removeRegionStreamIds(info)) {
+    // We failed.
+    dynStreamInstInfo.mustBeMisspeculated = true;
+    // We don't try to notify the StreamEngine.
+    return;
+  }
 
   auto se = this->getStreamEngine();
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
@@ -250,26 +298,42 @@ void RISCVStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
                                          ExecContext &xc) {}
 
 void RISCVStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
+
+  auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  assert(!dynStreamInstInfo.mustBeMisspeculated &&
+         "Try to commit a MustBeMisspeculated inst.");
+
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   const auto &infoRelativePath = this->getRelativePath(configIdx);
   auto se = this->getStreamEngine();
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   se->commitStreamEnd(args);
+
+  // Release the info.
+  this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 void RISCVStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
-  auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
-  const auto &infoRelativePath = this->getRelativePath(configIdx);
 
-  // Don't forget to add back the removed region stream ids.
-  auto infoFullPath =
-      cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
-  const auto &info = this->getStreamRegion(infoFullPath);
-  this->insertRegionStreamIds(info);
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (!instInfo.mustBeMisspeculated) {
+    // Really rewind the StreamEnd.
+    auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
+    const auto &infoRelativePath = this->getRelativePath(configIdx);
 
-  auto se = this->getStreamEngine();
-  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
-  se->rewindStreamEnd(args);
+    // Don't forget to add back the removed region stream ids.
+    auto infoFullPath =
+        cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
+    const auto &info = this->getStreamRegion(infoFullPath);
+    this->insertRegionStreamIds(info);
+
+    auto se = this->getStreamEngine();
+    ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+    se->rewindStreamEnd(args);
+  }
+
+  // Release the info.
+  this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 /********************************************************************************
@@ -492,17 +556,27 @@ void RISCVStreamEngine::insertRegionStreamIds(
   }
 }
 
-void RISCVStreamEngine::removeRegionStreamIds(
+bool RISCVStreamEngine::removeRegionStreamIds(
     const ::LLVM::TDG::StreamRegion &region) {
   for (const auto &streamInfo : region.streams()) {
+    // Check if valid to be removed.
     auto streamId = streamInfo.id();
     auto regionStreamId = streamInfo.region_stream_id();
-    assert(this->regionStreamIdTable.size() > regionStreamId &&
-           "Overflow RegionStreamId.");
-    assert(this->regionStreamIdTable.at(regionStreamId) == streamId &&
-           "RegionStreamId compromised.");
+    if (this->regionStreamIdTable.size() <= regionStreamId) {
+      // Overflow RegionStreamId.
+      return false;
+    }
+    if (this->regionStreamIdTable.at(regionStreamId) != streamId) {
+      // RegionStreamId Compromised.
+      return false;
+    }
+  }
+  for (const auto &streamInfo : region.streams()) {
+    // Perform the removal.
+    auto regionStreamId = streamInfo.region_stream_id();
     this->regionStreamIdTable.at(regionStreamId) = InvalidStreamId;
   }
+  return true;
 }
 
 uint64_t RISCVStreamEngine::lookupRegionStreamId(int regionStreamId) {

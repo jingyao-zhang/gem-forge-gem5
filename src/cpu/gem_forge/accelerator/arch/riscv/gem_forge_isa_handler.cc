@@ -140,11 +140,11 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_READY;
     } else if (instName == "ssp_stream_load") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
-      // } else if (instName == "ssp_stream_fload") {
-      //   staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
-      // } else if (instName == "ssp_stream_flw") {
-      //   // ? Do we have to distinguish fload and flw?
-      //   staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
+    } else if (instName == "ssp_stream_fload") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
+    } else if (instName == "ssp_stream_flw") {
+      // ? Do we have to distinguish fload and flw?
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
     }
   }
   return emplaceRet.first->second;

@@ -46,6 +46,7 @@ public:
    * Interface to the CPU.
    * We can use the execSeqNum as the sequence number.
    */
+  void startup();
   bool canDispatch(Minor::MinorDynInstPtr &dynInstPtr);
   void dispatch(Minor::MinorDynInstPtr &dynInstPtr);
 
