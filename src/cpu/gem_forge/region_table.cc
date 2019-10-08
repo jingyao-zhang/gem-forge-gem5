@@ -33,10 +33,14 @@ RegionTable::getRegionFromRegionId(const RegionId &regionId) const {
 
 bool RegionTable::isBBInRegion(BasicBlockId bbId,
                                const RegionId &regionId) const {
-  // ! Currently it takes too much overhead to search through the list.
-  // ! Maybe make it a set.
-  panic("isBBInRegion not working right now.");
-  return false;
+  if (!this->hasRegionSetFromBB(bbId)) {
+    return false;
+  }
+  // Two level look up.
+  auto regionMapIter = this->regions.find(regionId);
+  assert(regionMapIter != this->regions.end() && "Invalid regionId.");
+  const auto *region = regionMapIter->second;
+  return this->getRegionSetFromBB(bbId).count(region);
 }
 
 bool RegionTable::hasRegionSetFromBB(BasicBlockId bbId) const {

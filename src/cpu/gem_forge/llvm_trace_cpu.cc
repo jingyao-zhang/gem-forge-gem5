@@ -65,12 +65,7 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   if (!this->isStandalone()) {
     // Handshake with the driver.
     driver->handshake(this);
-    if (this->mainThread->getRegionStats() != nullptr) {
-      // Add the dump handler to dump region stats at the end.
-      Stats::registerDumpCallback(
-          new MakeCallback<RegionStats, &RegionStats::dump>(
-              this->mainThread->getRegionStats(), true));
-    }
+    panic("Standalone mode not supported any more.");
     return;
   }
 
@@ -90,6 +85,12 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   this->mainThread = new LLVMTraceThreadContext(
       mainThreadId, this->traceFileName, false /*isIdeal */,
       this->cpuParams->adfaEnable);
+  if (this->mainThread->getRegionStats() != nullptr) {
+    // Add the dump handler to dump region stats at the end.
+    Stats::registerDumpCallback(
+        new MakeCallback<RegionStats, &RegionStats::dump>(
+            this->mainThread->getRegionStats(), true));
+  }
   this->activateThread(mainThread);
 
   // Reset the initializeMemorySnapshotDone so that we will initialize the

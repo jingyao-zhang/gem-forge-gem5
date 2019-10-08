@@ -8,7 +8,7 @@ LLVMTraceThreadContext::LLVMTraceThreadContext(
       dynInstStream(new DynamicInstructionStream(dispatcher.getMainBuffer())),
       regionStats(nullptr), isIdeal(_isIdeal), inflyInsts(0), cpu(nullptr),
       threadId(InvalidThreadID) {
-  const bool enableRegionStats = false;
+  const bool enableRegionStats = true;
   if (enableRegionStats) {
     this->regionStats =
         new RegionStats(this->dispatcher.getRegionTable(), "region.stats.txt");
