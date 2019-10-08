@@ -245,7 +245,7 @@ void LLVMTraceCPU::tick() {
     DPRINTF(LLVMTraceCPU, "We have no inst left to be scheduled.\n");
     // Wraps up the region stats by sending in the invalid bb.
     auto regionStats = this->mainThread->getRegionStats();
-    if (regionStats != nullptr) {
+    if (regionStats) {
       regionStats->update(RegionStats::InvalidBB);
     }
     // If in standalone mode, we can exit.

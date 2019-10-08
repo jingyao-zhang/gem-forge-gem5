@@ -80,10 +80,13 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
     }
     case RequestStatistic::HitPlaceE::MEM: // Hit in mem.
       this->stream->statistic.numMissL2++;
+      [[gnu::fallthrough]];
     case RequestStatistic::HitPlaceE::L1_STREAM_BUFFER:
       // This is considered hit in L2.
+      [[gnu::fallthrough]];
     case RequestStatistic::HitPlaceE::L2_CACHE:
       this->stream->statistic.numMissL1++;
+      [[gnu::fallthrough]];
     case RequestStatistic::HitPlaceE::L1_CACHE:
       this->stream->statistic.numMissL0++;
       break;

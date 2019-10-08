@@ -83,6 +83,7 @@ public:
   LLVMTraceThreadContext *getInflyInstThread(LLVMDynamicInstId instId) const {
     return this->inflyInstThread.at(instId);
   }
+  LLVMTraceThreadContext *getMainThread() { return this->mainThread; }
 
 private:
   // This port will handle retry.
@@ -158,7 +159,7 @@ private:
   /**
    * This is the current main thread executed.
    */
-  LLVMTraceThreadContext *mainThread;
+  LLVMTraceThreadContext *mainThread = nullptr;
   /**
    * Map from hardware context to active threads.
    * nullptr means no active thread mapped to that context.

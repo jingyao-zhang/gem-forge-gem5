@@ -163,14 +163,19 @@ void AbstractDataFlowCore::decode() {
     inst->dispatch(cpu);
 
     // We update RegionStats here.
-    // ! This need to be fixed as now RegionStats comes with ThreadContext.
+    // ! Now RegionStats comes from ThreadContext. Here I assume it
+    // ! always from CPU's main thread. This will certainly break when
+    // ! TLS enabled (at least for the inner most region that is
+    // ! distributed among ADFA cores).
     // const auto &TDG = inst->getTDG();
-    // if (TDG.bb() != 0) {
-    //   auto regionStats = cpu->getRegionStats();
-    //   if (regionStats != nullptr) {
-    //     regionStats->update(TDG.bb());
-    //   }
-    // }
+    if (inst->getTDG().bb() != 0) {
+      auto mainThread = cpu->getMainThread();
+      assert(mainThread && "Failed to get main thread.");
+      auto regionStats = mainThread->getRegionStats();
+      if (regionStats) {
+        regionStats->update(inst->getTDG().bb());
+      }
+    }
 
     // Able to decode.
     this->fetchQueue.pop_front();
