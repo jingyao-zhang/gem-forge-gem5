@@ -92,6 +92,12 @@ InfoAccess::setInfo(Group *parent, Info *info)
         return;
     }
 
+    /**
+     * ! GemForge
+     * Cache it in _info to speed up info().
+     */
+    this->_info = info;
+
     statsList().push_back(info);
 
 #ifndef NDEBUG

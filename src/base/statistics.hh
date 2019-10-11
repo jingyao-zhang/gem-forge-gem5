@@ -186,6 +186,11 @@ struct StorageParams
 class InfoAccess
 {
   private:
+    /**
+     * ! GemForge
+     * Normally this is used if the stats has parent,
+     * but I am using it as the cache to avoid accessing statsMap() frequently.
+     */
     Info *_info;
 
   protected:
