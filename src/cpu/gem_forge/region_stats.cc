@@ -45,8 +45,10 @@ void RegionStats::update(const BasicBlockId &bb) {
       auto statsIter =
           this->regionStats
               .emplace(std::piecewise_construct,
-                       std::forward_as_tuple(regionId), std::forward_as_tuple())
+                       std::forward_as_tuple(regionId),
+                       std::forward_as_tuple(this->statsVecTemplate.numStats))
               .first;
+
       this->updateStats(activeIter->second, snapshot, statsIter->second);
       // Erase the active region.
       activeIter = this->activeRegions.erase(activeIter);
@@ -82,74 +84,72 @@ void RegionStats::checkpoint(const std::string &suffix) {
   auto outputStream = this->checkpointsDirectory->findOrCreate(fn);
   auto snapshot = this->takeSnapshot();
   panic("Checkpoint has too much overhead, disabled for now.\n");
-  // this->dumpStatsMap(*snapshot, *outputStream->stream());
+  // this->dumpStatsVec(*snapshot, *outputStream->stream());
   this->checkpointsDirectory->close(outputStream);
 }
 
-void RegionStats::initializeStatsMapTemplate() {
-  assert(!this->statsMapTemplate.initialized &&
-         "Already initialized StatsMapTemplate.");
+void RegionStats::initializeStatsVecTemplate() {
+  assert(!this->statsVecTemplate.initialized &&
+         "Already initialized StatsVecTemplate.");
   // So far we only care about scalar and vector stats.
   for (auto stat : Stats::statsList()) {
     // ! Crazy template black magic in Stats.
-    if (auto scalar =
-            dynamic_cast<Stats::ScalarInfoProxy<Stats::Scalar> *>(stat)) {
-      this->statsMapTemplate.scalarStats.insert(scalar);
-    } else if (auto *vector =
-                   dynamic_cast<Stats::VectorInfoProxy<Stats::Vector> *>(
-                       stat)) {
-      this->statsMapTemplate.vectorStats.insert(vector);
+    if (auto scalar = dynamic_cast<ScalarInfo *>(stat)) {
+      this->statsVecTemplate.scalarStats.push_back(scalar);
+    } else if (auto *vector = dynamic_cast<VectorInfo *>(stat)) {
+      this->statsVecTemplate.vectorStats.push_back(vector);
     }
   }
-  this->statsMapTemplate.initialized = true;
+  this->statsVecTemplate.numStats = this->statsVecTemplate.scalarStats.size() +
+                                    this->statsVecTemplate.vectorStats.size();
+  this->statsVecTemplate.initialized = true;
 }
 
 RegionStats::Snapshot RegionStats::takeSnapshot() {
-  auto snapshot = std::make_shared<StatsMap>();
-  if (!this->statsMapTemplate.initialized) {
-    this->initializeStatsMapTemplate();
+  auto snapshot = std::make_shared<StatsVec>();
+  if (!this->statsVecTemplate.initialized) {
+    this->initializeStatsVecTemplate();
   }
-  for (auto scalar : this->statsMapTemplate.scalarStats) {
+  snapshot->reserve(this->statsVecTemplate.numStats);
+  for (auto scalar : this->statsVecTemplate.scalarStats) {
     scalar->enable();
     scalar->prepare();
-    snapshot->emplace(scalar, scalar->result());
+    snapshot->push_back(scalar->result());
   }
-  for (auto vector : this->statsMapTemplate.vectorStats) {
+  for (auto vector : this->statsVecTemplate.vectorStats) {
     vector->enable();
     vector->prepare();
-    snapshot->emplace(vector, vector->total());
+    snapshot->push_back(vector->total());
   }
   return snapshot;
 }
 
 void RegionStats::updateStats(const Snapshot &enterSnapshot,
                               const Snapshot &exitSnapshot,
-                              StatsMapExt &updatingMap) {
-  for (const auto &stat : *enterSnapshot) {
-    const auto &info = stat.first;
-    auto exitIter = exitSnapshot->find(info);
-    if (exitIter == exitSnapshot->end()) {
-      panic("Missing stat %s in exit snapshot.\n", info->name.c_str());
-    }
-    auto enterValue = stat.second;
-    auto exitValue = exitIter->second;
+                              StatsVecExt &updatingStats) {
+  for (size_t statId = 0, statEnd = enterSnapshot->size(); statId < statEnd;
+       ++statId) {
+    auto enterValue = enterSnapshot->at(statId);
+    auto exitValue = exitSnapshot->at(statId);
     auto diffValue = exitValue - enterValue;
-    updatingMap.map.emplace(info, 0.0).first->second += diffValue;
+    updatingStats.vec.at(statId) += diffValue;
   }
+
   // Add our own region entered statistics.
-  updatingMap.entered++;
+  updatingStats.entered++;
 }
 
 void RegionStats::dump(std::ostream &stream) {
   // Whenever dump, we add an "all" region.
   auto snapshot = this->takeSnapshot();
   // Add our own hack of region entered statistic.
-  auto &all = this->regionStats
-                  .emplace(std::piecewise_construct,
-                           std::forward_as_tuple(RegionTable::REGION_ID_ALL),
-                           std::forward_as_tuple())
-                  .first->second;
-  all.map = *snapshot;
+  auto &all =
+      this->regionStats
+          .emplace(std::piecewise_construct,
+                   std::forward_as_tuple(RegionTable::REGION_ID_ALL),
+                   std::forward_as_tuple(this->statsVecTemplate.numStats))
+          .first->second;
+  all.vec = *snapshot;
   all.entered = 1;
 
   for (const auto &regionStat : this->regionStats) {
@@ -165,7 +165,7 @@ void RegionStats::dump(std::ostream &stream) {
       ccprintf(stream, "---- %s\n", region.name());
       ccprintf(stream, "-parent %s\n", region.parent());
     }
-    this->dumpStatsMap(regionStat.second, stream);
+    this->dumpStatsVec(regionStat.second, stream);
   }
 
   this->regionStats.erase(RegionTable::REGION_ID_ALL);
@@ -178,12 +178,22 @@ void RegionStats::dump() {
   simout.close(outputStream);
 }
 
-void RegionStats::dumpStatsMap(const StatsMapExt &stats,
+void RegionStats::dumpStatsVec(const StatsVecExt &stats,
                                std::ostream &stream) const {
   // We have to sort this.
   std::map<std::string, Stats::Result> sorted;
-  for (const auto &stat : stats.map) {
-    sorted.emplace(stat.first->name, stat.second);
+  for (size_t statId = 0, statEnd = stats.vec.size(); statId < statEnd;
+       ++statId) {
+    auto value = stats.vec.at(statId);
+    auto nScalarStats = this->statsVecTemplate.scalarStats.size();
+    if (statId < nScalarStats) {
+      sorted.emplace(this->statsVecTemplate.scalarStats.at(statId)->name,
+                     value);
+    } else {
+      sorted.emplace(
+          this->statsVecTemplate.vectorStats.at(statId - nScalarStats)->name,
+          value);
+    }
   }
   // Don't forget our own stats.
   sorted.emplace("region.entered", stats.entered);

@@ -38,8 +38,12 @@ public:
   using Region = RegionTable::Region;
   using RegionMap = RegionTable::RegionMap;
 
-  using StatsMap = std::unordered_map<const Stats::Info *, Stats::Result>;
-  using Snapshot = std::shared_ptr<const StatsMap>;
+  /**
+   * All the stats we recorded. The order is defined in
+   * StatsVecTemplate::scalarStats and StatsVecTemplate::vectorStats.
+   */
+  using StatsVec = std::vector<Stats::Result>;
+  using Snapshot = std::shared_ptr<const StatsVec>;
 
   RegionStats(const RegionTable &_regionTable, const std::string &_fileName);
 
@@ -89,27 +93,33 @@ private:
   /**
    * To avoid searching through all Stats every time we take a snapshot,
    * we memorize the stats we care about.
+   * So far we only care about scalar and vector stats.
+   * ! Crazy template black magic in Stats.
    */
-  struct StatsMapTemplate {
-    std::unordered_set<Stats::ScalarInfo *> scalarStats;
-    std::unordered_set<Stats::VectorInfo *> vectorStats;
+  using ScalarInfo = Stats::ScalarInfoProxy<Stats::Scalar>;
+  using VectorInfo = Stats::VectorInfoProxy<Stats::Vector>;
+  struct StatsVecTemplate {
+    std::vector<Stats::ScalarInfo *> scalarStats;
+    std::vector<Stats::VectorInfo *> vectorStats;
+    size_t numStats = 0;
     bool initialized = false;
   };
-  StatsMapTemplate statsMapTemplate;
+  StatsVecTemplate statsVecTemplate;
 
-  struct StatsMapExt {
+  struct StatsVecExt {
     /**
-     * This store the StatsMap and also some additional stats,
+     * This store the StatsVec and also some additional stats,
      * e.g. number of enters to this region.
      */
-    StatsMap map;
+    StatsVec vec;
     uint64_t entered = 0;
+    StatsVecExt(size_t nStats) : vec(nStats, 0.0), entered(0) {}
   };
 
   /**
    * Map from regions to collected statstics.
    */
-  std::unordered_map<RegionId, StatsMapExt> regionStats;
+  std::unordered_map<RegionId, StatsVecExt> regionStats;
 
   /**
    * Take the snapshot.
@@ -121,11 +131,11 @@ private:
    * If the entry in the update stats is missing, we initialize it to 0.
    */
   void updateStats(const Snapshot &enterSnapshot, const Snapshot &exitSnapshot,
-                   StatsMapExt &updatingMap);
+                   StatsVecExt &updatingStats);
 
-  void dumpStatsMap(const StatsMapExt &stats, std::ostream &stream) const;
+  void dumpStatsVec(const StatsVecExt &stats, std::ostream &stream) const;
 
-  void initializeStatsMapTemplate();
+  void initializeStatsVecTemplate();
 };
 
 #endif
