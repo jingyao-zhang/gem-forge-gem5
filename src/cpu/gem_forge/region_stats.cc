@@ -32,21 +32,21 @@ void RegionStats::update(const BasicBlockId &bb) {
   for (auto activeIter = this->activeRegions.begin(),
             activeEnd = this->activeRegions.end();
        activeIter != activeEnd;) {
-    const auto &region = activeIter->first;
-    if (!this->regionTable.isBBInRegion(bb, region)) {
+    const auto &regionId = activeIter->first;
+    if (!this->regionTable.isBBInRegion(bb, regionId)) {
       // We have exited an active region.
       if (!snapshot) {
         snapshot = this->takeSnapshot();
       }
-      DPRINTF(RegionStats, "Exit region %s.\n", region.c_str());
-      auto statsIter = this->regionStats.find(region);
-      if (statsIter == this->regionStats.end()) {
-        statsIter =
-            this->regionStats
-                .emplace(std::piecewise_construct,
-                         std::forward_as_tuple(region), std::forward_as_tuple())
-                .first;
+      if (Debug::RegionStats) {
+        const auto &region = this->regionTable.getRegionFromRegionId(regionId);
+        DPRINTF(RegionStats, "Exit region %s.\n", region.name().c_str());
       }
+      auto statsIter =
+          this->regionStats
+              .emplace(std::piecewise_construct,
+                       std::forward_as_tuple(regionId), std::forward_as_tuple())
+              .first;
       this->updateStats(activeIter->second, snapshot, statsIter->second);
       // Erase the active region.
       activeIter = this->activeRegions.erase(activeIter);
@@ -60,16 +60,18 @@ void RegionStats::update(const BasicBlockId &bb) {
   if (!this->regionTable.hasRegionSetFromBB(bb)) {
     return;
   }
-  const auto &regionSet = this->regionTable.getRegionSetFromBB(bb);
-  for (const auto &newRegion : regionSet) {
-    if (this->activeRegions.find(newRegion->name()) ==
-        this->activeRegions.end()) {
+  for (const auto &newRegionId : this->regionTable.getRegionSetFromBB(bb)) {
+    if (this->activeRegions.find(newRegionId) == this->activeRegions.end()) {
       // This is a new region.
-      DPRINTF(RegionStats, "Enter region %s.\n", newRegion->name().c_str());
+      if (Debug::RegionStats) {
+        const auto &newRegion =
+            this->regionTable.getRegionFromRegionId(newRegionId);
+        DPRINTF(RegionStats, "Enter region %s.\n", newRegion.name().c_str());
+      }
       if (!snapshot) {
         snapshot = this->takeSnapshot();
       }
-      this->activeRegions.emplace(newRegion->name(), snapshot);
+      this->activeRegions.emplace(newRegionId, snapshot);
     }
   }
 }
@@ -79,7 +81,8 @@ void RegionStats::checkpoint(const std::string &suffix) {
             "." + suffix + ".txt";
   auto outputStream = this->checkpointsDirectory->findOrCreate(fn);
   auto snapshot = this->takeSnapshot();
-  this->dumpStatsMap(*snapshot, *outputStream->stream());
+  panic("Checkpoint has too much overhead, disabled for now.\n");
+  // this->dumpStatsMap(*snapshot, *outputStream->stream());
   this->checkpointsDirectory->close(outputStream);
 }
 
@@ -99,10 +102,10 @@ RegionStats::Snapshot RegionStats::takeSnapshot() {
     Stats::ScalarInfo *scalar = dynamic_cast<Stats::ScalarInfo *>(stat);
     if (scalar) {
       // We only care about scalar statistics.
-      snapshot->emplace(scalar->name, scalar->result());
+      snapshot->emplace(stat, scalar->result());
     } else if (vector) {
       // DPRINTF(RegionStats, "Get stats %f\n", vector->total());
-      snapshot->emplace(vector->name, vector->total());
+      snapshot->emplace(stat, vector->total());
     }
   }
   return snapshot;
@@ -110,57 +113,57 @@ RegionStats::Snapshot RegionStats::takeSnapshot() {
 
 void RegionStats::updateStats(const Snapshot &enterSnapshot,
                               const Snapshot &exitSnapshot,
-                              StatsMap &updatingMap) {
+                              StatsMapExt &updatingMap) {
   for (const auto &stat : *enterSnapshot) {
-    const auto &statName = stat.first;
-    auto exitIter = exitSnapshot->find(statName);
+    const auto &info = stat.first;
+    auto exitIter = exitSnapshot->find(info);
     if (exitIter == exitSnapshot->end()) {
-      panic("Missing stat %s in exit snapshot.\n", statName.c_str());
+      panic("Missing stat %s in exit snapshot.\n", info->name.c_str());
     }
     auto enterValue = stat.second;
     auto exitValue = exitIter->second;
     auto diffValue = exitValue - enterValue;
-    auto updateIter = updatingMap.find(statName);
-    // Updating the map.
-    if (updateIter == updatingMap.end()) {
-      updatingMap.emplace(statName, diffValue);
-    } else {
-      updateIter->second = updateIter->second + diffValue;
-    }
+    updatingMap.map.emplace(info, 0.0).first->second += diffValue;
   }
   // Add our own region entered statistics.
-  auto updateIter = updatingMap.find("region.entered");
-  if (updateIter == updatingMap.end()) {
-    updatingMap.emplace("region.entered", 1.0);
-  } else {
-    updateIter->second += 1.0;
-  }
+  updatingMap.entered++;
+  // auto updateIter = updatingMap.find("region.entered");
+  // if (updateIter == updatingMap.end()) {
+  //   updatingMap.emplace("region.entered", 1.0);
+  // } else {
+  //   updateIter->second += 1.0;
+  // }
 }
 
 void RegionStats::dump(std::ostream &stream) {
   // Whenever dump, we add an "all" region.
   auto snapshot = this->takeSnapshot();
   // Add our own hack of region entered statistic.
-  this->regionStats["all"] = *snapshot;
-  this->regionStats["all"].emplace("region.entered", 1.0);
+  auto &all = this->regionStats
+                  .emplace(std::piecewise_construct,
+                           std::forward_as_tuple(RegionTable::REGION_ID_ALL),
+                           std::forward_as_tuple())
+                  .first->second;
+  all.map = *snapshot;
+  all.entered = 1;
 
   for (const auto &regionStat : this->regionStats) {
-    const auto &name = regionStat.first;
-    ccprintf(stream, "---- %s\n", name);
+    const auto &regionId = regionStat.first;
     // As additional information, we also print region's parent.
-    if (name != "all") {
-      const auto &region = this->regionTable.getRegionFromRegionId(name);
-      ccprintf(stream, "-parent %s\n", region.parent());
-    } else {
+    if (regionId == RegionTable::REGION_ID_ALL) {
       // As a special region, all is not in our regions map.
       // Generate an empty parent for "all" region.
+      ccprintf(stream, "---- all\n");
       ccprintf(stream, "-parent \n");
+    } else {
+      const auto &region = this->regionTable.getRegionFromRegionId(regionId);
+      ccprintf(stream, "---- %s\n", region.name());
+      ccprintf(stream, "-parent %s\n", region.parent());
     }
-
     this->dumpStatsMap(regionStat.second, stream);
   }
 
-  this->regionStats.erase("all");
+  this->regionStats.erase(RegionTable::REGION_ID_ALL);
 }
 
 void RegionStats::dump() {
@@ -170,13 +173,15 @@ void RegionStats::dump() {
   simout.close(outputStream);
 }
 
-void RegionStats::dumpStatsMap(const StatsMap &stats,
+void RegionStats::dumpStatsMap(const StatsMapExt &stats,
                                std::ostream &stream) const {
   // We have to sort this.
   std::map<std::string, Stats::Result> sorted;
-  for (const auto &stat : stats) {
-    sorted.emplace(stat.first, stat.second);
+  for (const auto &stat : stats.map) {
+    sorted.emplace(stat.first->name, stat.second);
   }
+  // Don't forget our own stats.
+  sorted.emplace("region.entered", stats.entered);
   for (const auto &stat : sorted) {
     // When dump we ignore nan.
     if (!std::isnan(stat.second)) {

@@ -17,12 +17,14 @@
  */
 class RegionTable {
 public:
-  using RegionId = std::string;
+  using RegionId = uint64_t;
+  static constexpr RegionId REGION_ID_ALL = 0;
+
   using BasicBlockId = uint64_t;
   using Region = LLVM::TDG::Region;
 
   using RegionMap = std::unordered_map<RegionId, const Region *>;
-  using RegionSet = std::unordered_set<const Region *>;
+  using RegionSet = std::unordered_set<RegionId>;
 
   RegionTable(const LLVM::TDG::StaticInformation &info);
   ~RegionTable() {}

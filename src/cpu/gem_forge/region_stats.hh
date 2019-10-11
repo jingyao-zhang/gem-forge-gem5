@@ -38,7 +38,7 @@ public:
   using Region = RegionTable::Region;
   using RegionMap = RegionTable::RegionMap;
 
-  using StatsMap = std::unordered_map<std::string, Stats::Result>;
+  using StatsMap = std::unordered_map<const Stats::Info *, Stats::Result>;
   using Snapshot = std::shared_ptr<const StatsMap>;
 
   RegionStats(const RegionTable &_regionTable, const std::string &_fileName);
@@ -86,10 +86,19 @@ private:
    */
   std::map<RegionId, Snapshot> activeRegions;
 
+  struct StatsMapExt {
+    /**
+     * This store the StatsMap and also some additional stats,
+     * e.g. number of enters to this region.
+     */
+    StatsMap map;
+    uint64_t entered = 0;
+  };
+
   /**
    * Map from regions to collected statstics.
    */
-  std::unordered_map<RegionId, StatsMap> regionStats;
+  std::unordered_map<RegionId, StatsMapExt> regionStats;
 
   /**
    * Take the snapshot.
@@ -101,9 +110,9 @@ private:
    * If the entry in the update stats is missing, we initialize it to 0.
    */
   void updateStats(const Snapshot &enterSnapshot, const Snapshot &exitSnapshot,
-                   StatsMap &updatingMap);
+                   StatsMapExt &updatingMap);
 
-  void dumpStatsMap(const StatsMap &stats, std::ostream &stream) const;
+  void dumpStatsMap(const StatsMapExt &stats, std::ostream &stream) const;
 };
 
 #endif
