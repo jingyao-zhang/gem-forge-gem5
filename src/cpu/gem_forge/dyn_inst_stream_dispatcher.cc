@@ -154,9 +154,10 @@ void DynamicInstructionStreamDispatcher::dispatchADFA(Packet *packet) {
   if (packet->tdg.bb() != 0) {
     if (this->regionTable->hasRegionSetFromBB(packet->tdg.bb())) {
       bool newRegionContinuous = false;
-      for (auto region :
+      for (const auto &regionId :
            this->regionTable->getRegionSetFromBB(packet->tdg.bb())) {
-        if (region->continuous()) {
+        const auto &region = this->regionTable->getRegionFromRegionId(regionId);
+        if (region.continuous()) {
           newRegionContinuous = true;
           break;
         }
@@ -181,7 +182,7 @@ void DynamicInstructionStreamDispatcher::dispatchADFA(Packet *packet) {
         ADFAStartPacket->tdg.clear_deps();
         ADFAStartPacket->tdg.set_op("df-start");
         ADFAStartPacket->tdg.set_id(LLVMDynamicInst::allocateDynamicInstId());
-        
+
         ADFAStartPacket->inst =
             new ADFAStartInst(ADFAStartPacket->tdg, ADFABuffer);
 
