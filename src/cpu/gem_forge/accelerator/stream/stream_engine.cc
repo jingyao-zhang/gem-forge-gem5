@@ -282,7 +282,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
 
   this->numConfigured++;
   this->numInflyStreamConfigurations++;
-  assert(this->numInflyStreamConfigurations < 10 &&
+  assert(this->numInflyStreamConfigurations < 100 &&
          "Too many infly StreamConfigurations.");
 
   const auto &infoRelativePath = args.infoRelativePath;
@@ -655,6 +655,7 @@ int StreamEngine::createStreamUserLQCallbacks(
 
 void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
   auto seqNum = args.seqNum;
+  SE_DPRINTF("Dispatch StreamUser %llu.\n", seqNum);
   assert(this->userElementMap.count(seqNum) == 0);
 
   auto &elementSet =
@@ -784,8 +785,17 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
 
 void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
   auto seqNum = args.seqNum;
+  SE_DPRINTF("Commit StreamUser %llu.\n", seqNum);
+  assert(this->userElementMap.count(seqNum) && "UserElementMap not correct.");
   // Remove the entry from the elementUserMap.
   for (auto element : this->userElementMap.at(seqNum)) {
+    /**
+     * As a hack, we use nullptr to represent an out-of-loop use.
+     * TODO: Fix this.
+     */
+    if (!element) {
+      continue;
+    }
     auto &userSet = this->elementUserMap.at(element);
     assert(userSet.erase(seqNum) && "Not found in userSet.");
   }
@@ -1526,6 +1536,15 @@ void StreamEngine::releaseElementStepped(Stream *S) {
       }
       this->numLoadElementWaitCycles += waitedCycles;
     }
+
+    /**
+     * Jesus: If this element is still in charge of fetching value for the next
+     * element.
+     */
+    if (releaseElement->markNextElementValueReady) {
+      panic("Step an element with markNextElementValueReady set.");
+    }
+
   } else if (S->getStreamType() == "store") {
     this->numStoreElementsStepped++;
     if (used) {
@@ -2313,6 +2332,16 @@ bool StreamEngine::shouldOffloadStream(Stream *S, uint64_t streamInstance) {
 
 bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
     StreamElement *element) {
+
+  /**
+   * ! Disable this feature for now cause the previous element
+   * ! may be stepped without value ready.
+   */
+  const bool enableCoalesceContinuousElement = false;
+  if (!enableCoalesceContinuousElement) {
+    return false;
+  }
+
   // Check if this is the first element.
   if (element->FIFOIdx.entryIdx == 0) {
     return false;

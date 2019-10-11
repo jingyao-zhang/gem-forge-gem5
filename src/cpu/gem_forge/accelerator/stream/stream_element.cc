@@ -272,6 +272,8 @@ void StreamElement::markValueReady() {
       this->next->setValue(this);
       this->next->markValueReady();
     }
+    // Clear the flag.
+    this->markNextElementValueReady = false;
   }
 
   // Notify the stream for statistics.

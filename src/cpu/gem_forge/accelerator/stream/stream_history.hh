@@ -43,6 +43,7 @@ public:
   uint64_t getNumCacheLines() const;
 
 private:
+  std::string historyPath;
   using HistoryList = std::vector<LLVM::TDG::StreamHistory>;
   HistoryList histories;
 

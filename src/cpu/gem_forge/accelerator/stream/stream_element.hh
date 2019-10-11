@@ -184,7 +184,7 @@ struct StreamElement {
   /**
    * Mark if the next element is also marked value ready by this element.
    */
-  bool markNextElementValueReady;
+  bool markNextElementValueReady = false;
 
   StreamElement(StreamEngine *_se);
 

@@ -184,6 +184,7 @@ void GemForgeLoadStoreQueue::checkLoadStoreAlias(LoadQueueEntry &loadEntry,
                                                  StoreQueueEntry &storeEntry) {
   Addr loadAddr;
   uint32_t loadSize;
+  assert(loadEntry.isAddressReady && "LoadEntry should be address ready.");
   assert(loadEntry.callback->getAddrSize(loadAddr, loadSize) &&
          "Failed to get the address for load entry.");
   Addr storeAddr;
@@ -210,6 +211,9 @@ void GemForgeLoadStoreQueue::checkLoadStoreAlias(LoadQueueEntry &loadEntry,
       this->iew->MisSpecRAWDependence++;
       // Inform the user that there is an RAW misspeculation.
       loadEntry.callback->RAWMisspeculate();
+      // // Revert the load queue entry to not knowing the address.
+      // loadEntry.isAddressReady = false;
+      // loadEntry.WAREntryIndexes.clear();
     }
   }
 }

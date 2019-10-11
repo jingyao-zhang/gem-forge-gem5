@@ -174,7 +174,8 @@ bool SingleStream::isContinuous() const { return false; }
 void SingleStream::setupAddrGen(DynamicStream &dynStream,
                                 const std::vector<uint64_t> *inputVec) {
 
-  hack("Set up AddrGen for %s.\n", this->getStreamName().c_str());
+  STREAM_DPRINTF("Set up AddrGen for streamInstance %llu.\n",
+                 dynStream.dynamicStreamId.streamInstance);
 
   if (cpuDelegator->cpuType != GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE) {
     // We have to use the pattern.

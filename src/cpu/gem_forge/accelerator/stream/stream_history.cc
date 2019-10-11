@@ -11,7 +11,8 @@
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-StreamHistory::StreamHistory(const std::string &_historyPath) {
+StreamHistory::StreamHistory(const std::string &_historyPath)
+    : historyPath(_historyPath) {
   ProtoInputStream historyStream(_historyPath);
   LLVM::TDG::StreamHistory history;
   while (historyStream.read(history)) {
@@ -59,6 +60,11 @@ StreamHistory::getHistoryAtInstance(uint64_t streamInstance) const {
   if (streamInstance > this->histories.size()) {
     panic("Failed to read in the history config at instance %llu.",
           streamInstance);
+  }
+  const auto &history = this->histories.at(streamInstance - 1);
+  if (history.history_size() == 0) {
+    panic("History empty for streamInstance %llu in %s.\n", streamInstance,
+          this->historyPath.c_str());
   }
   return this->histories.at(streamInstance - 1);
 }

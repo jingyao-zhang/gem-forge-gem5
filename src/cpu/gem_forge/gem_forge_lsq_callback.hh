@@ -34,7 +34,7 @@ using GemForgeLQCallbackPtr = std::unique_ptr<GemForgeLQCallback>;
 /**
  * TODO: Extend this.
  */
-using GemForgeLQCallbackList = std::array<GemForgeLQCallbackPtr, 1>;
+using GemForgeLQCallbackList = std::array<GemForgeLQCallbackPtr, 4>;
 
 struct GemForgeSQCallback {
   /**
