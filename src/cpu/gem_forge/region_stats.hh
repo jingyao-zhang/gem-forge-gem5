@@ -86,6 +86,17 @@ private:
    */
   std::map<RegionId, Snapshot> activeRegions;
 
+  /**
+   * To avoid searching through all Stats every time we take a snapshot,
+   * we memorize the stats we care about.
+   */
+  struct StatsMapTemplate {
+    std::unordered_set<Stats::ScalarInfo *> scalarStats;
+    std::unordered_set<Stats::VectorInfo *> vectorStats;
+    bool initialized = false;
+  };
+  StatsMapTemplate statsMapTemplate;
+
   struct StatsMapExt {
     /**
      * This store the StatsMap and also some additional stats,
@@ -113,6 +124,8 @@ private:
                    StatsMapExt &updatingMap);
 
   void dumpStatsMap(const StatsMapExt &stats, std::ostream &stream) const;
+
+  void initializeStatsMapTemplate();
 };
 
 #endif

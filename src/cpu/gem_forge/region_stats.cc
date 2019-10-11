@@ -86,27 +86,38 @@ void RegionStats::checkpoint(const std::string &suffix) {
   this->checkpointsDirectory->close(outputStream);
 }
 
+void RegionStats::initializeStatsMapTemplate() {
+  assert(!this->statsMapTemplate.initialized &&
+         "Already initialized StatsMapTemplate.");
+  // So far we only care about scalar and vector stats.
+  for (auto stat : Stats::statsList()) {
+    // ! Crazy template black magic in Stats.
+    if (auto scalar =
+            dynamic_cast<Stats::ScalarInfoProxy<Stats::Scalar> *>(stat)) {
+      this->statsMapTemplate.scalarStats.insert(scalar);
+    } else if (auto *vector =
+                   dynamic_cast<Stats::VectorInfoProxy<Stats::Vector> *>(
+                       stat)) {
+      this->statsMapTemplate.vectorStats.insert(vector);
+    }
+  }
+  this->statsMapTemplate.initialized = true;
+}
+
 RegionStats::Snapshot RegionStats::takeSnapshot() {
   auto snapshot = std::make_shared<StatsMap>();
-  auto &stats = Stats::statsList();
-  // First we have to prepare all of them.
-  for (auto stat : stats) {
-    stat->enable();
+  if (!this->statsMapTemplate.initialized) {
+    this->initializeStatsMapTemplate();
   }
-  for (auto stat : stats) {
-    stat->prepare();
+  for (auto scalar : this->statsMapTemplate.scalarStats) {
+    scalar->enable();
+    scalar->prepare();
+    snapshot->emplace(scalar, scalar->result());
   }
-  for (auto stat : stats) {
-    stat->prepare();
-    auto *vector = dynamic_cast<Stats::VectorInfo *>(stat);
-    Stats::ScalarInfo *scalar = dynamic_cast<Stats::ScalarInfo *>(stat);
-    if (scalar) {
-      // We only care about scalar statistics.
-      snapshot->emplace(stat, scalar->result());
-    } else if (vector) {
-      // DPRINTF(RegionStats, "Get stats %f\n", vector->total());
-      snapshot->emplace(stat, vector->total());
-    }
+  for (auto vector : this->statsMapTemplate.vectorStats) {
+    vector->enable();
+    vector->prepare();
+    snapshot->emplace(vector, vector->total());
   }
   return snapshot;
 }
@@ -127,12 +138,6 @@ void RegionStats::updateStats(const Snapshot &enterSnapshot,
   }
   // Add our own region entered statistics.
   updatingMap.entered++;
-  // auto updateIter = updatingMap.find("region.entered");
-  // if (updateIter == updatingMap.end()) {
-  //   updatingMap.emplace("region.entered", 1.0);
-  // } else {
-  //   updateIter->second += 1.0;
-  // }
 }
 
 void RegionStats::dump(std::ostream &stream) {
