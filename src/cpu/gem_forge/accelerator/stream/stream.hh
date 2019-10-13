@@ -52,7 +52,10 @@ public:
   virtual uint32_t getConfigLoopLevel() const = 0;
   virtual int32_t getElementSize() const = 0;
 
-  virtual void prepareNewElement(StreamElement *element) = 0;
+  virtual void prepareNewElement(StreamElement *element) {
+    // Deprecated.
+    panic("prepareNewElement is deprecated.");
+  }
 
   /**
    * Simple bookkeeping information for the stream engine.

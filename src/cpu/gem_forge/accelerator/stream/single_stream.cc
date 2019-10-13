@@ -152,15 +152,9 @@ int32_t SingleStream::getElementSize() const {
 
 void SingleStream::configure(uint64_t seqNum, ThreadContext *tc) {
   this->dispatchStreamConfig(seqNum, tc);
-  this->history->configure();
-  this->patternStream->configure();
-}
-
-void SingleStream::prepareNewElement(StreamElement *element) {
-  bool oracleUsed = false;
-  auto nextValuePair = this->history->getNextAddr(oracleUsed);
-  element->addr = nextValuePair.second;
-  element->size = this->getElementSize();
+  // ! We are removing the hacky state machine inside the history.
+  // this->history->configure();
+  // this->patternStream->configure();
 }
 
 uint64_t SingleStream::getTrueFootprint() const {

@@ -19,7 +19,6 @@ public:
   int32_t getElementSize() const override;
 
   void initializeBackBaseStreams() override;
-  void prepareNewElement(StreamElement *element) override;
 
   bool isContinuous() const override;
   void configure(uint64_t seqNum, ThreadContext *tc) override;
