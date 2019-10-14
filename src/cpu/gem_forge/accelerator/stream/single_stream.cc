@@ -178,27 +178,34 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
     const auto &pattern = staticInfo.iv_pattern();
     // First handle linear pattern.
     if (pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR) {
+
       /**
-       * We have two parameters for LINEAR pattern, base and stride.
+       * LINEAR pattern has 2n parameters, where n is the difference of loop
+       * level between ConfigureLoop and InnerMostLoop.
+       * It has the following format, starting from InnerMostLoop.
+       * Stride0, [BackEdgeCount[i], Stride[i + 1]]*, Start
+       * We will add 1 to BackEdgeCount to get the TripCount.
        */
-      assert(pattern.params_size() == 2 && "Missing parameters.");
+      assert(pattern.params_size() % 2 == 0 &&
+             "Number of parameters must be even.");
+      assert(pattern.params_size() >= 2 &&
+             "Number of parameters must be >= 2.");
       auto &formalParams = dynStream.formalParams;
-      int inputIdx = 0;
+      auto inputIdx = 0;
       for (const auto &param : pattern.params()) {
         if (param.valid()) {
-          // This is a valid parameter.
-          hack("Find valid param #%d, val %llu.\n", formalParams.size(),
-               param.param());
+          // This param comes from the Configuration.
+          // hack("Find valid param #%d, val %llu.\n", formalParams.size(),
+          //      param.param());
           formalParams.emplace_back();
           auto &formalParam = formalParams.back();
           formalParam.isInvariant = true;
           formalParam.param.invariant = param.param();
         } else {
-          // This should be a input.
-          // TODO: Handle stream input for indirect streams.
+          // This should be an input.
           assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
-          hack("Find input param #%d, val %llu.\n", formalParams.size(),
-               inputVec->at(inputIdx));
+          // hack("Find input param #%d, val %llu.\n", formalParams.size(),
+          //      inputVec->at(inputIdx));
           formalParams.emplace_back();
           auto &formalParam = formalParams.back();
           formalParam.isInvariant = true;
@@ -206,6 +213,26 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
           inputIdx++;
         }
       }
+
+      /**
+       * We have to process the params to compute TotalTripCount for each nested
+       * loop.
+       * TripCount[i] = BackEdgeCount[i] + 1;
+       * TotalTripCount[i] = TotalTripCount[i - 1] * TripCount[i];
+       */
+      for (auto idx = 1; idx < formalParams.size() - 1; idx += 2) {
+        auto &formalParam = formalParams.at(idx);
+        // BackEdgeCount.
+        auto backEdgeCount = formalParam.param.invariant;
+        // TripCount.
+        auto tripCount = backEdgeCount + 1;
+        // TotalTripCount.
+        auto totalTripCount =
+            (idx == 1) ? (tripCount)
+                       : (tripCount * formalParams.at(idx - 2).param.invariant);
+        formalParam.param.invariant = totalTripCount;
+      }
+
       // Set the callback.
       dynStream.addrGenCallback =
           std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
@@ -219,16 +246,18 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
         for (const auto &arg : addrFuncInfo.args()) {
           if (arg.is_stream()) {
             // This is a stream input.
-            hack("Find stream input param #%d id %llu.\n", formalParams.size(),
-                 arg.stream_id());
+            // hack("Find stream input param #%d id %llu.\n",
+            // formalParams.size(),
+            //      arg.stream_id());
             formalParams.emplace_back();
             auto &formalParam = formalParams.back();
             formalParam.isInvariant = false;
             formalParam.param.baseStreamId = arg.stream_id();
           } else {
             assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
-            hack("Find invariant param #%d, val %llu.\n", formalParams.size(),
-                 inputVec->at(inputIdx));
+            // hack("Find invariant param #%d, val %llu.\n",
+            // formalParams.size(),
+            //      inputVec->at(inputIdx));
             formalParams.emplace_back();
             auto &formalParam = formalParams.back();
             formalParam.isInvariant = true;

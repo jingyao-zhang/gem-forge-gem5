@@ -178,7 +178,7 @@ bool MinorCPUDelegator::isAddrSizeReady(Minor::MinorDynInstPtr &dynInstPtr) {
       uint32_t size;
       if (!callback->getAddrSize(vaddr, size)) {
         // This one is not ready yet.
-        INST_LOG(hack, dynInstPtr, "AddrSize not ready.\n");
+        // INST_LOG(hack, dynInstPtr, "AddrSize not ready.\n");
         return false;
       }
     } else {
