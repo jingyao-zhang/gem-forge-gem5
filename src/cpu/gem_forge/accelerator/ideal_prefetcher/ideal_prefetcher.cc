@@ -75,7 +75,10 @@ void IdealPrefetcher::tick() {
       size = cacheLineSize - (vaddr % cacheLineSize);
     }
 
-    auto paddr = this->cpuDelegator->translateVAddrOracle(vaddr);
+    Addr paddr;
+    if (!this->cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+      panic("Failed translate vaddr %#x.\n", vaddr);
+    }
     auto pkt = GemForgePacketHandler::createGemForgePacket(
         paddr, size, this, nullptr, this->cpuDelegator->dataMasterId(), 0, pc);
 

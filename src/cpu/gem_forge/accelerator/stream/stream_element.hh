@@ -4,6 +4,7 @@
 #include "base/types.hh"
 #include "cache/DynamicStreamSliceId.hh"
 #include "cpu/gem_forge/gem_forge_packet_handler.hh"
+#include "fifo_entry_idx.hh"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -11,33 +12,6 @@
 class Stream;
 class StreamEngine;
 class StreamStoreInst;
-
-struct FIFOEntryIdx {
-  DynamicStreamId streamId;
-  uint64_t configSeqNum;
-  uint64_t entryIdx;
-  FIFOEntryIdx();
-  FIFOEntryIdx(const DynamicStreamId &_streamId);
-  void next() { this->entryIdx++; }
-  void prev() { this->entryIdx--; }
-  void newInstance(uint64_t configSeqNum) {
-    this->entryIdx = 0;
-    this->streamId.streamInstance++;
-    this->configSeqNum = configSeqNum;
-  }
-
-  bool operator==(const FIFOEntryIdx &other) const {
-    return this->streamId == other.streamId && this->entryIdx == other.entryIdx;
-  }
-  bool operator!=(const FIFOEntryIdx &other) const {
-    return !(this->operator==(other));
-  }
-  bool operator>(const FIFOEntryIdx &other) const {
-    return this->streamId.streamInstance > other.streamId.streamInstance ||
-           (this->streamId.streamInstance == other.streamId.streamInstance &&
-            this->entryIdx > other.entryIdx);
-  }
-};
 
 /**
  * Represent the breakdown of one element according to cache block size.

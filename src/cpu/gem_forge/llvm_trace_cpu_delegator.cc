@@ -1,5 +1,6 @@
 #include "llvm_trace_cpu_delegator.hh"
 
-Addr LLVMTraceCPUDelegator::translateVAddrOracle(Addr vaddr) {
-  return this->cpu->translateAndAllocatePhysMem(vaddr);
+bool LLVMTraceCPUDelegator::translateVAddrOracle(Addr vaddr, Addr &paddr) {
+  paddr = this->cpu->translateAndAllocatePhysMem(vaddr);
+  return true;
 }

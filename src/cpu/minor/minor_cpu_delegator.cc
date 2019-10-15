@@ -237,7 +237,10 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
      * The StoreBuffer requires the physical address for store-to-load check.
      * We hack there to set the physical address for the place holder request.
      */
-    auto paddr = this->translateVAddrOracle(vaddr);
+    Addr paddr;
+    if (!this->translateVAddrOracle(vaddr, paddr)) {
+      panic("Failed translate vaddr %#x.\n", vaddr);
+    }
     request->request->setPaddr(paddr);
 
     // No ByteEnable.
@@ -471,16 +474,13 @@ const std::string &MinorCPUDelegator::getTraceExtraFolder() const {
   return pimpl->traceExtraFolder;
 }
 
-Addr MinorCPUDelegator::translateVAddrOracle(Addr vaddr) {
+bool MinorCPUDelegator::translateVAddrOracle(Addr vaddr, Addr &paddr) {
   auto process = pimpl->getProcess();
   auto pTable = process->pTable;
-  Addr paddr;
   if (pTable->translate(vaddr, paddr)) {
-    return paddr;
+    return true;
   }
-  // TODO: Let the caller handle this.
-  panic("Translate vaddr failed %#x.", vaddr);
-  return paddr;
+  return false;
 }
 
 void MinorCPUDelegator::sendRequest(PacketPtr pkt) {

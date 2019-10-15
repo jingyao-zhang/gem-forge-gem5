@@ -301,21 +301,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     }
   }
 
-  /**
-   * Get all the configured streams.
-   */
-  std::list<Stream *> configStreams;
-  std::unordered_set<Stream *> dedupSet;
-  for (const auto &streamInfo : streamRegion.streams()) {
-    // Deduplicate the streams due to coalescing.
-    const auto &streamId = streamInfo.id();
-    auto stream = this->getStream(streamId);
-    if (dedupSet.count(stream) == 0) {
-      configStreams.push_back(stream);
-      dedupSet.insert(stream);
-    }
-  }
-
+  auto configStreams = this->getConfigStreamsInRegion(streamRegion);
   for (auto &S : configStreams) {
     assert(!S->configured && "The stream should not be configured.");
     S->configured = true;
@@ -329,7 +315,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
 
     // 1. Check there are no unstepped elements.
     assert(S->allocSize == S->stepSize &&
-           "Unstepped elements wwhen dispatch StreamConfig.");
+           "Unstepped elements when dispatch StreamConfig.");
 
     // Notify the stream.
     S->configure(args.seqNum, args.tc);
@@ -359,21 +345,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
-  /**
-   * Get all the configured streams.
-   */
-  std::list<Stream *> configStreams;
-  std::unordered_set<Stream *> dedupSet;
-  for (const auto &streamInfo : streamRegion.streams()) {
-    // Deduplicate the streams due to coalescing.
-    const auto &streamId = streamInfo.id();
-    auto stream = this->getStream(streamId);
-    if (dedupSet.count(stream) == 0) {
-      configStreams.push_back(stream);
-      dedupSet.insert(stream);
-    }
-  }
-
+  auto configStreams = this->getConfigStreamsInRegion(streamRegion);
   for (auto &S : configStreams) {
     // Simply notify the stream.
     const StreamConfigArgs::InputVec *inputVec = nullptr;
@@ -385,9 +357,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
     if (this->enableStreamFloat) {
-
       auto &dynStream = S->getDynamicStream(args.seqNum);
-
       if (this->shouldOffloadStream(S,
                                     dynStream.dynamicStreamId.streamInstance)) {
 
@@ -399,8 +369,12 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
 
         // Set up the init physical address.
-        auto initPAddr =
-            cpuDelegator->translateVAddrOracle(streamConfigureData->initVAddr);
+        Addr initPAddr;
+        if (!cpuDelegator->translateVAddrOracle(streamConfigureData->initVAddr,
+                                                initPAddr)) {
+          panic("Failed translate vaddr %#x.\n",
+                streamConfigureData->initVAddr);
+        }
         streamConfigureData->initPAddr = initPAddr;
 
         if (S->isPointerChaseLoadStream()) {
@@ -480,6 +454,19 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
 
 void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
   // So far we don't need to do anything.
+}
+
+void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
+
+  const auto &infoRelativePath = args.infoRelativePath;
+  const auto &configSeqNum = args.seqNum;
+  const auto &streamRegion = this->getStreamRegion(infoRelativePath);
+
+  auto configStreams = this->getConfigStreamsInRegion(streamRegion);
+  for (auto &S : configStreams) {
+    // This file is already too long, move this to stream.cc.
+    S->rewindStreamConfig(configSeqNum);
+  }
 }
 
 bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
@@ -956,9 +943,13 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
       // The target address is just virtually 0 (should be set by MLC stream
       // engine).
       // TODO: Fix this.
+      Addr initPAddr;
+      if (!cpuDelegator->translateVAddrOracle(0, initPAddr)) {
+        panic("Failed translate vaddr %#x.\n", 0);
+      }
       auto pkt = GemForgePacketHandler::createStreamControlPacket(
-          cpuDelegator->translateVAddrOracle(0), cpuDelegator->dataMasterId(),
-          0, MemCmd::Command::StreamEndReq,
+          initPAddr, cpuDelegator->dataMasterId(), 0,
+          MemCmd::Command::StreamEndReq,
           reinterpret_cast<uint64_t>(endedDynamicStreamId));
       DPRINTF(RubyStream, "[%s] Create StreamEnd pkt.\n",
               S->getStreamName().c_str());
@@ -1247,6 +1238,25 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
       .emplace(std::piecewise_construct, std::forward_as_tuple(stepS),
                std::forward_as_tuple(stepList))
       .first->second;
+}
+
+std::list<Stream *> StreamEngine::getConfigStreamsInRegion(
+    const LLVM::TDG::StreamRegion &streamRegion) {
+  /**
+   * Get all the configured streams.
+   */
+  std::list<Stream *> configStreams;
+  std::unordered_set<Stream *> dedupSet;
+  for (const auto &streamInfo : streamRegion.streams()) {
+    // Deduplicate the streams due to coalescing.
+    const auto &streamId = streamInfo.id();
+    auto stream = this->getStream(streamId);
+    if (dedupSet.count(stream) == 0) {
+      configStreams.push_back(stream);
+      dedupSet.insert(stream);
+    }
+  }
+  return configStreams;
 }
 
 void StreamEngine::allocateElements() {
@@ -1877,7 +1887,11 @@ void StreamEngine::issueElement(StreamElement *element) {
     // TODO: granularity of cache lines (not stream elements).
     auto vaddr = cacheBlockBreakdown.cacheBlockVAddr;
     auto packetSize = cpuDelegator->cacheLineSize();
-    Addr paddr = cpuDelegator->translateVAddrOracle(vaddr);
+    Addr paddr;
+    if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+      panic("Failed translate vaddr %#x for stream %s.\n", vaddr,
+            S->getStreamName().c_str());
+    }
 
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
@@ -1938,7 +1952,10 @@ void StreamEngine::writebackElement(StreamElement *element,
     // Translate the virtual address.
     auto vaddr = cacheBlockBreakdown.virtualAddr;
     auto packetSize = cacheBlockBreakdown.size;
-    Addr paddr = cpuDelegator->translateVAddrOracle(vaddr);
+    Addr paddr;
+    if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+      panic("Failed translate vaddr %#x.\n", vaddr);
+    }
 
     if (this->enableStreamPlacement) {
       // This means we have the placement manager.

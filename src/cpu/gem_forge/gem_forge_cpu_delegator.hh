@@ -59,7 +59,7 @@ public:
    * Immediately translate a vaddr to paddr. Panic when not possible.
    * TODO: Move this the some Process delegator.
    */
-  virtual Addr translateVAddrOracle(Addr vaddr) = 0;
+  virtual bool translateVAddrOracle(Addr vaddr, Addr &paddr) = 0;
 
   /**
    * Send a packet through the cpu.

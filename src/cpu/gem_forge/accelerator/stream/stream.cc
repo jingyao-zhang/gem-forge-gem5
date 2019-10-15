@@ -112,10 +112,13 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
 }
 
 void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
+  // Remember to old index for rewinding.
+  auto prevFIFOIdx = this->FIFOIdx;
   // Create new index.
   this->FIFOIdx.newInstance(seqNum);
   // Allocate the new DynamicStream.
-  this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum, tc);
+  this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum, tc,
+                                    prevFIFOIdx);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum,
@@ -124,6 +127,41 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   assert(!dynStream.configExecuted && "StreamConfig already executed.");
   dynStream.configExecuted = true;
   this->setupAddrGen(dynStream, inputVec);
+}
+
+void Stream::rewindStreamConfig(uint64_t seqNum) {
+  // Rewind must happen in reverse order.
+  assert(!this->dynamicStreams.empty() &&
+         "Missing DynamicStream when rewinding StreamConfig.");
+  auto &dynStream = this->dynamicStreams.back();
+  assert(dynStream.configSeqNum == seqNum && "Mismatch configSeqNum.");
+
+  // Check if we have offloaded this.
+  if (dynStream.offloadedToCache) {
+    // ! Jesus, donot know how to rewind an offloaded stream yet.
+    panic("Don't support rewind offloaded stream.");
+  }
+
+  /**
+   * Get rid of any unstepped elements.
+   */
+  while (this->allocSize > this->stepSize) {
+    this->se->releaseElementUnstepped(this);
+  }
+
+  /**
+   * Reset the FIFOIdx.
+   * ! This is required as StreamEnd does not remember it.
+   */
+  this->FIFOIdx = dynStream.prevFIFOIdx;
+
+  // Get rid of the dynamicStream.
+  this->dynamicStreams.pop_back();
+
+  assert(this->allocSize == this->stepSize &&
+         "Unstepped elements when rewind StreamConfig.");
+  this->statistic.numMisConfigured++;
+  this->configured = false;
 }
 
 bool Stream::isStreamConfigureExecuted(uint64_t seqNum) {

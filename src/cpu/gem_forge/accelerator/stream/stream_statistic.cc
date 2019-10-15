@@ -8,6 +8,7 @@ void StreamStatistic::dump(std::ostream &os) const {
     os << "  " #name << ' ' << avg << '\n';                                    \
   }
   dumpScalar(numConfigured);
+  dumpScalar(numMisConfigured);
   dumpScalar(numAllocated);
   dumpScalar(numFetched);
   dumpScalar(numStepped);

@@ -39,7 +39,7 @@ public:
   ~MinorCPUDelegator() override;
 
   const std::string &getTraceExtraFolder() const override;
-  Addr translateVAddrOracle(Addr vaddr) override;
+  bool translateVAddrOracle(Addr vaddr, Addr &paddr) override;
   void sendRequest(PacketPtr pkt) override;
 
   /**

@@ -56,6 +56,7 @@ public:
   void dispatchStreamConfig(const StreamConfigArgs &args);
   void executeStreamConfig(const StreamConfigArgs &args);
   void commitStreamConfig(const StreamConfigArgs &args);
+  void rewindStreamConfig(const StreamConfigArgs &args);
 
   bool canStreamStep(uint64_t stepStreamId) const;
   void dispatchStreamStep(uint64_t stepStreamId);
@@ -194,6 +195,9 @@ public:
   Stats::Distribution numAccessFootprintL3;
 
 private:
+  // Make the Stream a friend to simplify code.
+  friend class Stream;
+
   LLVMTraceCPU *cpu;
   StreamPlacementManager *streamPlacementManager;
 
@@ -304,6 +308,10 @@ private:
   mutable std::unordered_map<Stream *, std::list<Stream *>>
       memorizedStreamStepListMap;
   const std::list<Stream *> &getStepStreamList(Stream *stepS) const;
+
+  // Helper function to get streams configured in the region.
+  std::list<Stream *>
+  getConfigStreamsInRegion(const LLVM::TDG::StreamRegion &streamRegion);
 
   // Called every cycle to allocate elements.
   void allocateElements();

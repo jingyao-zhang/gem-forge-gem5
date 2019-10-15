@@ -138,6 +138,8 @@ void RISCVStreamEngine::dispatchStreamInput(
   auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
   auto &inputVec = inputMap.at(streamId);
   inputInfo.inputIdx = inputVec.size();
+  RISCV_SE_DPRINTF("Dispatch input #%d %llu.\n", inputInfo.inputIdx,
+                   inputInfo.translatedStreamId);
   inputVec.push_back(0);
 }
 
@@ -155,10 +157,11 @@ void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
   auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
   auto &inputVec = inputMap.at(inputInfo.translatedStreamId);
   auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-  RISCV_SE_DPRINTF("Record input %llu %llu.\n", inputInfo.translatedStreamId,
-                   rs1);
+  RISCV_SE_DPRINTF("Record input #%d %llu %llu.\n", inputInfo.inputIdx,
+                   inputInfo.translatedStreamId, rs1);
 
   inputVec.at(inputInfo.inputIdx) = rs1;
+  inputInfo.executed = true;
 
   this->increamentStreamRegionInfoNumExecutedInsts(
       *(configInfo.dynStreamRegionInfo));
@@ -171,9 +174,23 @@ void RISCVStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
 
 void RISCVStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+  auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
   auto &regionInfo = configInfo.dynStreamRegionInfo;
+
+  // Check if I executed.
+  if (inputInfo.executed) {
+    regionInfo->numExecutedInsts--;
+  }
+
   // Decrease numDispatchedInst.
   regionInfo->numDispatchedInsts--;
+
+  // Release the inputVec.
+  RISCV_SE_DPRINTF("Rewind input #%d %llu.\n", inputInfo.inputIdx,
+                   inputInfo.translatedStreamId);
+  auto &inputVec = regionInfo->inputMap.at(inputInfo.translatedStreamId);
+  assert(inputVec.size() == inputInfo.inputIdx + 1 && "Mismatch input index.");
+  inputVec.pop_back();
 
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
@@ -246,7 +263,36 @@ void RISCVStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void RISCVStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
-  panic("%s not implemented.\n", __PRETTY_FUNCTION__);
+  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+  auto &regionInfo = configInfo.dynStreamRegionInfo;
+  assert(regionInfo->streamReadyDispatched &&
+         "StreamReady must be dispatched.");
+
+  // Check if the StreamReady is actually executed.
+  if (regionInfo->numExecutedInsts == regionInfo->numDispatchedInsts) {
+    // Too bad, we already called StreamEngine::executeStreamConfig().
+    // This may be a little bit complicate to rewind.
+    // ! This should never happen for MinorCPU.
+    panic("%s when executeStreamConfig has been called is not implemented.",
+          __PRETTY_FUNCTION__);
+    regionInfo->numExecutedInsts--;
+  } else {
+    ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum,
+                                          regionInfo->infoRelativePath,
+                                          nullptr /* InputVec */, dynInfo.tc);
+    auto se = this->getStreamEngine();
+    se->rewindStreamConfig(args);
+  }
+
+  // Decrease numDispatchedInst.
+  regionInfo->streamReadyDispatched = false;
+  regionInfo->numDispatchedInsts--;
+
+  // Restore the currentStreamRegion.
+  this->curStreamRegionInfo = regionInfo;
+
+  // Release the InstInfo.
+  this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 /********************************************************************************

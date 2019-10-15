@@ -193,26 +193,25 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
       auto &formalParams = dynStream.formalParams;
       auto inputIdx = 0;
       for (const auto &param : pattern.params()) {
+        formalParams.emplace_back();
+        auto &formalParam = formalParams.back();
+        formalParam.isInvariant = true;
         if (param.valid()) {
           // This param comes from the Configuration.
           // hack("Find valid param #%d, val %llu.\n", formalParams.size(),
           //      param.param());
-          formalParams.emplace_back();
-          auto &formalParam = formalParams.back();
-          formalParam.isInvariant = true;
           formalParam.param.invariant = param.param();
         } else {
           // This should be an input.
           assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
           // hack("Find input param #%d, val %llu.\n", formalParams.size(),
           //      inputVec->at(inputIdx));
-          formalParams.emplace_back();
-          auto &formalParam = formalParams.back();
-          formalParam.isInvariant = true;
           formalParam.param.invariant = inputVec->at(inputIdx);
           inputIdx++;
         }
       }
+
+      assert(inputIdx == inputVec->size() && "Unused input value.");
 
       /**
        * We have to process the params to compute TotalTripCount for each nested
@@ -220,6 +219,18 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
        * TripCount[i] = BackEdgeCount[i] + 1;
        * TotalTripCount[i] = TotalTripCount[i - 1] * TripCount[i];
        */
+      if (this->getStreamName() ==
+          "(MEM computeSAD.c::9(computeSAD) bb17 bb22::tmp29(load))") {
+        hack("Setup LinearAddrGenCallback with Input params --------\n");
+        for (auto param : *inputVec) {
+          hack("%llu\n", param);
+        }
+        hack("Setup LinearAddrGenCallback with params --------\n");
+        for (auto param : formalParams) {
+          hack("%llu\n", param.param.invariant);
+        }
+      }
+
       for (auto idx = 1; idx < formalParams.size() - 1; idx += 2) {
         auto &formalParam = formalParams.at(idx);
         // BackEdgeCount.
@@ -231,6 +242,14 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
             (idx == 1) ? (tripCount)
                        : (tripCount * formalParams.at(idx - 2).param.invariant);
         formalParam.param.invariant = totalTripCount;
+      }
+
+      if (this->getStreamName() ==
+          "(MEM computeSAD.c::9(computeSAD) bb17 bb22::tmp29(load))") {
+        hack("Setup LinearAddrGenCallback with params --------\n");
+        for (auto param : formalParams) {
+          hack("%llu\n", param.param.invariant);
+        }
       }
 
       // Set the callback.

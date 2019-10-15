@@ -1,7 +1,7 @@
 #ifndef __GEM_FORGE_ACCELERATOR_DYN_STREAM_HH__
 #define __GEM_FORGE_ACCELERATOR_DYN_STREAM_HH__
 
-#include "cache/DynamicStreamId.hh"
+#include "fifo_entry_idx.hh"
 
 #include "addr_gen_callback.hh"
 
@@ -27,6 +27,7 @@ struct DynamicStream {
   const DynamicStreamId dynamicStreamId;
   const uint64_t configSeqNum;
   ThreadContext *tc;
+  const FIFOEntryIdx prevFIFOIdx;
 
   // Whether the dynamic stream is offloaded to cache.
   bool offloadedToCache = false;
@@ -41,9 +42,9 @@ struct DynamicStream {
   std::unique_ptr<AddrGenCallback> addrGenCallback;
 
   DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
-                ThreadContext *_tc)
-      : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum),
-        tc(_tc) {}
+                ThreadContext *_tc, const FIFOEntryIdx &_prevFIFOIdx)
+      : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum), tc(_tc),
+        prevFIFOIdx(_prevFIFOIdx) {}
 };
 
 #endif

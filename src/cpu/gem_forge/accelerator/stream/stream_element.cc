@@ -24,13 +24,6 @@
                element->FIFOIdx.streamId.streamInstance,                       \
                element->FIFOIdx.entryIdx, ##args)
 
-FIFOEntryIdx::FIFOEntryIdx()
-    : streamId(), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM), entryIdx(0) {}
-
-FIFOEntryIdx::FIFOEntryIdx(const DynamicStreamId &_streamId)
-    : streamId(_streamId), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
-      entryIdx(0) {}
-
 StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
                                  Addr _cacheBlockVAddr, Addr _vaddr, int _size,
                                  int _additionalDelay)

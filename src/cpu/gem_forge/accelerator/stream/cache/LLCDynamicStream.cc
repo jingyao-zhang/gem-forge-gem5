@@ -39,7 +39,11 @@ Addr LLCDynamicStream::getVAddr(uint64_t idx) const {
 Addr LLCDynamicStream::translateToPAddr(Addr vaddr) const {
   // ! Do something reasonable here to translate the vaddr.
   auto cpuDelegator = this->configData.stream->getCPUDelegator();
-  return cpuDelegator->translateVAddrOracle(vaddr);
+  Addr paddr;
+  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+    panic("Failed translate vaddr %#x.\n", vaddr);
+  }
+  return paddr;
 }
 
 void LLCDynamicStream::addCredit(uint64_t n) {

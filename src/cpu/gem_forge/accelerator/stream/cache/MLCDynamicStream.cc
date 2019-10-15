@@ -198,7 +198,10 @@ void MLCDynamicStream::makeResponse(MLCStreamElement &element) {
   assert(element.coreStatus == MLCStreamElement::CoreStatusE::WAIT &&
          "Element core status should be WAIT to make response.");
   auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
-  auto paddr = cpuDelegator->translateVAddrOracle(element.vaddr);
+  Addr paddr;
+  if (!cpuDelegator->translateVAddrOracle(element.vaddr, paddr)) {
+    panic("Failed translate vaddr %#x.\n", element.vaddr);
+  }
   auto paddrLine = makeLineAddress(paddr);
 
   auto selfMachineId = this->controller->getMachineID();
@@ -238,7 +241,10 @@ Addr MLCDynamicStream::getVAddrAtIndex(uint64_t index) const {
 
 Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
   auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
-  auto paddr = cpuDelegator->translateVAddrOracle(vaddr);
+  Addr paddr;
+  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+    panic("Failed translate vaddr %#x.\n", vaddr);
+  }
   return paddr;
 }
 

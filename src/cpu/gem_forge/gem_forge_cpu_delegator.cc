@@ -8,7 +8,10 @@ std::string GemForgeCPUDelegator::readStringFromMem(Addr vaddr) {
   std::string s;
   uint8_t c;
   do {
-    auto paddr = this->translateVAddrOracle(vaddr);
+    Addr paddr;
+    if (!this->translateVAddrOracle(vaddr, paddr)) {
+      panic("Failed translate vaddr %#x.\n", vaddr);
+    }
     proxy.readBlob(paddr, &c, 1);
     s.push_back(static_cast<char>(c));
     vaddr++;

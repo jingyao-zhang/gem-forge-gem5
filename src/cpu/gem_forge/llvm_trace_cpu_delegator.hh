@@ -17,7 +17,7 @@ public:
     return this->cpu->getTraceExtraFolder();
   }
 
-  Addr translateVAddrOracle(Addr vaddr) override;
+  bool translateVAddrOracle(Addr vaddr, Addr &paddr) override;
   void sendRequest(PacketPtr pkt) override { this->cpu->sendRequest(pkt); }
 
   LLVMTraceCPU *cpu;

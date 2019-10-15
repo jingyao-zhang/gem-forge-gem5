@@ -125,16 +125,14 @@ const std::string &TimingSimpleCPUDelegator::getTraceExtraFolder() const {
   return pimpl->traceExtraFolder;
 }
 
-Addr TimingSimpleCPUDelegator::translateVAddrOracle(Addr vaddr) {
+bool TimingSimpleCPUDelegator::translateVAddrOracle(Addr vaddr, Addr &paddr) {
   auto process = pimpl->getProcess();
   auto pTable = process->pTable;
-  Addr paddr;
   if (pTable->translate(vaddr, paddr)) {
+    return true;
     return paddr;
   }
-  // TODO: Let the caller handle this.
-  panic("Translate vaddr failed %#x.", vaddr);
-  return paddr;
+  return false;
 }
 
 void TimingSimpleCPUDelegator::sendRequest(PacketPtr pkt) {

@@ -119,6 +119,7 @@ public:
   void dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc);
   void executeStreamConfig(uint64_t seqNum,
                            const std::vector<uint64_t> *inputVec);
+  void rewindStreamConfig(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t seqNum);
   void commitStreamEnd(uint64_t seqNum);
 

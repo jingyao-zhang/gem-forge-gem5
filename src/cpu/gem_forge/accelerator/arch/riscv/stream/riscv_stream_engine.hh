@@ -146,6 +146,7 @@ private:
   struct DynStreamInputInstInfo {
     uint64_t translatedStreamId = InvalidStreamId;
     int inputIdx = -1;
+    bool executed = false;
   };
 
   struct DynStreamStepInstInfo {

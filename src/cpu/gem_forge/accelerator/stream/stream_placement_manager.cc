@@ -105,7 +105,9 @@ bool StreamPlacementManager::accessNoMSHR(
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
-  paddr = cpuDelegator->translateVAddrOracle(vaddr);
+  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+    panic("Failed translate vaddr %#x.\n", vaddr);
+  }
 
   for (int cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     // latency += this->lookupLatency[cacheLevel];
@@ -144,7 +146,9 @@ bool StreamPlacementManager::accessExpress(
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
-  paddr = cpuDelegator->translateVAddrOracle(vaddr);
+  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+    panic("Failed translate vaddr %#x.\n", vaddr);
+  }
 
   int latency = 0;
   if (L1Stats.misses > L1Stats.accesses * 0.95f &&
@@ -251,7 +255,10 @@ bool StreamPlacementManager::accessExpressFootprint(
 
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
-  Addr paddr = cpuDelegator->translateVAddrOracle(vaddr);
+  Addr paddr;
+  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+    panic("Failed translate vaddr %#x.\n", vaddr);
+  }
 
   int latency = 0;
   auto bypassed = false;
