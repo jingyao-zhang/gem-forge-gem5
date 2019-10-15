@@ -632,7 +632,8 @@ int StreamEngine::createStreamUserLQCallbacks(
       if (this->enableLSQ) {
         assert(numCallbacks < callbacks.size() && "LQCallback overflows.");
         callbacks.at(numCallbacks) =
-            m5::make_unique<GemForgeStreamEngineLQCallback>(element);
+            m5::make_unique<GemForgeStreamEngineLQCallback>(element, seqNum,
+                                                            args.usedStreamIds);
         numCallbacks++;
       }
     }
@@ -2264,7 +2265,13 @@ bool StreamEngine::GemForgeStreamEngineLQCallback::isIssued() {
 bool StreamEngine::GemForgeStreamEngineLQCallback::isValueLoaded() {
   assert(this->FIFOIdx == this->element->FIFOIdx &&
          "Element already released.");
-  return this->element->isValueReady;
+
+  /**
+   * We can directly check for element->isValueReady, but instead we
+   * call areUsedStreamReady() so that StreamEngine can mark the
+   * firstCheckCycle for the element, hence it can throttle the stream.
+   */
+  return this->element->se->areUsedStreamsReady(this->args);
 }
 
 void StreamEngine::GemForgeStreamEngineLQCallback::RAWMisspeculate() {

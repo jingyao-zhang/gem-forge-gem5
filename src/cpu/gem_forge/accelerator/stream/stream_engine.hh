@@ -387,8 +387,18 @@ private:
   public:
     StreamElement *element;
     const FIFOEntryIdx FIFOIdx;
-    GemForgeStreamEngineLQCallback(StreamElement *_element)
-        : element(_element), FIFOIdx(_element->FIFOIdx) {}
+    /**
+     * We construct the args here so that we can later call
+     * areUsedStreamsReady().
+     * ! args takes reference of usedStreamIds.
+     */
+    std::vector<uint64_t> usedStreamIds;
+    StreamUserArgs args;
+    GemForgeStreamEngineLQCallback(StreamElement *_element,
+                                   uint64_t _userSeqNum,
+                                   const std::vector<uint64_t> &_usedStreamIds)
+        : element(_element), FIFOIdx(_element->FIFOIdx),
+          usedStreamIds(_usedStreamIds), args(_userSeqNum, usedStreamIds) {}
     bool getAddrSize(Addr &addr, uint32_t &size) override;
     bool isIssued() override;
     bool isValueLoaded() override;
