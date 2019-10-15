@@ -17,6 +17,9 @@
   DPRINTF(MinorCPUDelegator, "[%s]: " format, *(inst), ##args)
 #define INST_LOG(log, inst, format, args...)                                   \
   log("[%s]: " format, *(inst), ##args)
+#define INST_PANIC(impl, inst, format, args...)                                \
+  impl->dumpInflyInsts();                                                      \
+  panic("[%s]: " format, *(inst), ##args)
 
 class MinorCPUDelegator::Impl {
 public:
@@ -25,8 +28,16 @@ public:
         drainPendingPacketsEvent(
             [this]() -> void { this->cpuDelegator->drainPendingPackets(); },
             _cpu->name()),
-        dumpInflyInstsEvent([this]() -> void { this->dumpInflyInsts(); },
-                            _cpu->name()) {}
+        dumpInflyInstsEvent(
+            [this]() -> void {
+              if (!Debug::MinorCPUDelegatorDump) {
+                return;
+              }
+              this->dumpInflyInsts();
+              this->cpuDelegator->schedule(&this->dumpInflyInstsEvent,
+                                           Cycles(100000));
+            },
+            _cpu->name()) {}
 
   MinorCPU *cpu;
   MinorCPUDelegator *cpuDelegator;
@@ -88,26 +99,22 @@ public:
   TheISA::GemForgeDynInstInfo
   createDynInfo(Minor::MinorDynInstPtr &dynInstPtr) const {
     assert(dynInstPtr->isInst() && "Should be a real inst.");
-    assert(dynInstPtr->id.streamSeqNum == this->currentStreamSeqNum &&
-           "Mismatched streamSeqNum.");
+    if (dynInstPtr->id.streamSeqNum != this->currentStreamSeqNum) {
+      INST_PANIC(this, dynInstPtr, "Mismatched streamSeqNum %llu.\n",
+                 this->currentStreamSeqNum);
+    }
     TheISA::GemForgeDynInstInfo dynInfo(
         this->getInstSeqNum(dynInstPtr), dynInstPtr->pc,
         dynInstPtr->staticInst.get(), this->getThreadContext(dynInstPtr));
     return dynInfo;
   }
 
-  void dumpInflyInsts() {
-    if (!Debug::MinorCPUDelegatorDump) {
-      return;
-    }
-    DPRINTF(MinorCPUDelegatorDump,
-            "========= MinorCPUDelegatorDump ===========\n");
+  void dumpInflyInsts() const {
+    hack("========= MinorCPUDelegatorDump ===========\n");
     for (const auto &dynInstPtr : this->inflyInstQueue) {
-      DPRINTF(MinorCPUDelegatorDump, "%s\n", *dynInstPtr);
+      hack("%s\n", *dynInstPtr);
     }
-    DPRINTF(MinorCPUDelegatorDump,
-            "======= MinorCPUDelegatorDump End =========\n");
-    this->cpuDelegator->schedule(&this->dumpInflyInstsEvent, Cycles(100000));
+    hack("======= MinorCPUDelegatorDump End =========\n");
   }
 
   EventFunctionWrapper drainPendingPacketsEvent;
@@ -290,14 +297,14 @@ bool MinorCPUDelegator::canExecute(Minor::MinorDynInstPtr &dynInstPtr) {
 
 void MinorCPUDelegator::execute(Minor::MinorDynInstPtr &dynInstPtr,
                                 ExecContext &xc) {
-  auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   INST_DPRINTF(dynInstPtr, "Execute.\n");
+  auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   pimpl->isaHandler.execute(dynInfo, xc);
 }
 
 void MinorCPUDelegator::commit(Minor::MinorDynInstPtr &dynInstPtr) {
-  auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   INST_DPRINTF(dynInstPtr, "Commit.\n");
+  auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   assert(!pimpl->inflyInstQueue.empty() &&
          "Empty inflyInstQueue to commit from.");
   auto &frontInst = pimpl->inflyInstQueue.front();
@@ -322,6 +329,10 @@ void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
   auto &inflyInstQueue = pimpl->inflyInstQueue;
   auto &preLSQ = pimpl->preLSQ;
   auto &inLSQ = pimpl->inLSQ;
+  // if (newStreamSeqNum == 22152) {
+  //   hack("Dump due to streamChange to %llu.\n", newStreamSeqNum);
+  //   pimpl->dumpInflyInsts();
+  // }
   while (!inflyInstQueue.empty() &&
          inflyInstQueue.back()->id.streamSeqNum != newStreamSeqNum) {
     // This needs to be rewind.
@@ -371,6 +382,14 @@ void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
     // Pop from the inflyInstQueue.
     inflyInstQueue.pop_back();
   }
+
+  /**
+   * Is there any instruction remaining?
+   */
+  // if (!inflyInstQueue.empty()) {
+  //   pimpl->dumpInflyInsts();
+  // }
+
   pimpl->currentStreamSeqNum = newStreamSeqNum;
 }
 

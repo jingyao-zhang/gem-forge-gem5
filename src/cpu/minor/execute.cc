@@ -443,6 +443,14 @@ Execute::handleMemResponse(MinorDynInstPtr inst,
 
     doInstCommitAccounting(inst);
 
+    /**
+     * ! GemForge
+     * We have to commit it before the branch.
+     */
+    if (cpu.cpuDelegator) {
+        cpu.cpuDelegator->commit(inst);
+    }
+
     /* Generate output to account for branches */
     tryToBranch(inst, fault, branch);
 }
@@ -1256,11 +1264,12 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
 
                 /**
                  * ! GemForge
-                 * MemRef instruction is committed here.
+                 * MemRef instruction used to be committed here, but
+                 * a TranslationFault may cause a streamSeqNum change.
+                 * The delegator assumes that it will first commit then
+                 * change the streamSeqNum, so we move it into handleMemResponse(),
+                 * before the tryToBranch().
                  */
-                if (cpu.cpuDelegator) {
-                    cpu.cpuDelegator->commit(inst);
-                }
             }
 
             completed_mem_ref = true;
