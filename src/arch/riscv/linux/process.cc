@@ -245,7 +245,7 @@ std::map<int, SyscallDesc> RiscvLinuxProcess64::syscallDescs = {
     {120,  SyscallDesc("sched_getscheduler")},
     {121,  SyscallDesc("sched_getparam")},
     {122,  SyscallDesc("sched_setaffinity")},
-    {123,  SyscallDesc("sched_getaffinity")},
+    {123,  SyscallDesc("sched_getaffinity", sched_getaffinityFunc<RiscvLinux64>)},
     {124,  SyscallDesc("sched_yield", ignoreFunc, SyscallDesc::WarnOnce)},
     {125,  SyscallDesc("sched_get_priority_max")},
     {126,  SyscallDesc("sched_get_priority_min")},

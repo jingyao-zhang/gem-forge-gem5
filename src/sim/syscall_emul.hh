@@ -2096,6 +2096,16 @@ clock_getresFunc(SyscallDesc *desc, int num, ThreadContext *tc)
     return 0;
 }
 
+/// Fail on sched_getaffinity() function.
+template <class OS>
+SyscallReturn
+sched_getaffinityFunc(SyscallDesc *desc, int num, ThreadContext *tc)
+{
+    // Simply return -1 to mark it failed.
+    warn("Failed on syscall (-1) %s (%#d).", desc->name(), num);
+    return -1;
+}
+
 /// Target gettimeofday() handler.
 template <class OS>
 SyscallReturn
