@@ -28,4 +28,8 @@ __attribute__((noinline)) extern void m5_work_end(uint64_t workid,
   volatile int x = dummy;
   (void)x;
 }
+__attribute__((noinline)) extern void m5_switch_cpu() {
+  volatile int x = dummy;
+  (void)x;
+}
 }

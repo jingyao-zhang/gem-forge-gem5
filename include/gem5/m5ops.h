@@ -67,8 +67,8 @@ void m5_panic(void);
 void m5_work_begin(uint64_t workid, uint64_t threadid);
 void m5_work_end(uint64_t workid, uint64_t threadid);
 
-void m5_llvm_trace_map(const char* base, void* vaddr);
-void m5_llvm_trace_replay(const char* trace, void* vaddr);
+void m5_llvm_trace_map(const char *base, void *vaddr);
+void m5_llvm_trace_replay(const char *trace, void *vaddr);
 
 // These operations are for critical path annotation
 void m5a_bsm(char *sm, const void *id, int flags);
@@ -86,6 +86,19 @@ void m5a_pq(const void *id, char *q, int count);
 void m5a_l(char *lsm, const void *id, char *sm);
 void m5a_identify(uint64_t id);
 uint64_t m5a_getid(void);
+
+void m5_detail_sim_start() {
+  m5_work_begin(0, 0);
+  m5_reset_stats(0, 0);
+}
+void m5_detail_sim_end() {
+  m5_work_end(0, 0);
+  m5_dump_stats(0, 0);
+}
+void m5_gem_forge_region_simpoint() {
+  m5_reset_stats(0, 0);
+  m5_switch_cpu();
+}
 
 #ifdef __cplusplus
 }
