@@ -2,11 +2,12 @@ import m5
 
 def run(options, root, system, future_cpus):
     # Add future_cpus to system so that they can be instantiated.
-    system.future_cpus = future_cpus
+    if future_cpus:
+        system.future_cpus = future_cpus
     checkpoint_dir = None
     # We only allow some number of maximum instructions in real simulation.
     for cpu in future_cpus:
-        cpu.max_insts_any_thread = 10e9
+        cpu.max_insts_any_thread = 1e9
     m5.instantiate(checkpoint_dir)
     if future_cpus:
         assert(len(future_cpus) == len(system.cpu))
