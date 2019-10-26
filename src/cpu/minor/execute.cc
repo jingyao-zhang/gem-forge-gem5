@@ -735,14 +735,36 @@ Execute::issue(ThreadID thread_id)
                     const std::vector<bool> *cant_forward_from_fu_indices =
                         &(fu->cantForwardFromFUIndices);
 
+                    /**
+                     * ! GemForge
+                     */
+                    bool isLoadBlocked = false;
                     if (timing && timing->suppress) {
                         DPRINTF(MinorExecute, "Can't issue inst: %s as extra"
                             " decoding is suppressing it\n",
                             *inst);
                     } else if (!scoreboard[thread_id].canInstIssue(inst,
                         src_latencies, cant_forward_from_fu_indices,
-                        cpu.curCycle(), cpu.getContext(thread_id)))
+                        cpu.curCycle(), cpu.getContext(thread_id), isLoadBlocked))
                     {
+                        /**
+                         * ! GemForge
+                         * Check if this is blocked by a load.
+                         */
+                        if (isLoadBlocked) {
+                            auto execSeqNum = inst->id.execSeqNum;
+                            auto curCycle = cpu.curCycle();
+                            if (this->prevLoadBlockedInstExecSeq != execSeqNum) {
+                                this->prevLoadBlockedInstExecSeq = execSeqNum;
+                                this->prevLoadBlockedCycle =
+                                    curCycle - Cycles(1);
+                                cpu.stats.loadBlockedIssueInsts++;
+                            }
+                            // Update the stats.
+                            cpu.stats.loadBlockedIssueCycles +=
+                                curCycle - this->prevLoadBlockedCycle;
+                            this->prevLoadBlockedCycle = curCycle;
+                        }
                         DPRINTF(MinorExecute, "Can't issue inst: %s yet\n",
                             *inst);
                     } else {
@@ -845,12 +867,22 @@ Execute::issue(ThreadID thread_id)
 
                         /* Mark the destinations for this instruction as
                          *  busy */
+
+                        /**
+                         * ! GemForge
+                         * It seems to be that mem_ref should always be unpredictable.
+                         * extra_assumed_lat seems to be a bug here causing mem_ref has
+                         * deterministic latency.
+                         */
+                        // bool mark_unpredictable = issued_mem_ref
+                        //     && extra_assumed_lat == Cycles(0);
+                        bool mark_unpredictable = issued_mem_ref;
                         scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
                             fu->description.opLat +
                             extra_dest_retire_lat +
                             extra_assumed_lat,
                             cpu.getContext(thread_id),
-                            issued_mem_ref && extra_assumed_lat == Cycles(0));
+                            mark_unpredictable);
 
                         /* Push the instruction onto the inFlight queue so
                          *  it can be committed in order */
@@ -1660,10 +1692,11 @@ Execute::evaluate()
          * if the CPU should remain active, only run it if we aren't sure
          * we are active next cycle yet */
         for (auto inst : next_issuable_insts) {
+            bool isLoadBlocked;
             if (!fu->stalled && fu->provides(inst->staticInst->opClass()) &&
                 scoreboard[inst->id.threadId].canInstIssue(inst,
                     NULL, NULL, cpu.curCycle() + Cycles(1),
-                    cpu.getContext(inst->id.threadId))) {
+                    cpu.getContext(inst->id.threadId), isLoadBlocked)) {
                 can_issue_next = true;
                 break;
             }

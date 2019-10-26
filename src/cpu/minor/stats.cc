@@ -71,6 +71,28 @@ MinorStats::regStats(const std::string &name, BaseCPU &baseCpu)
               "for an interrupt")
         .prereq(quiesceCycles);
 
+    loadBlockedIssueCycles
+        .name(name + ".loadBlockedIssueCycles")
+        .desc("Total number of cycles that CPU has blocked issue waiting "
+              "for a load")
+        .prereq(loadBlockedIssueCycles);
+    loadBlockedIssueInsts
+        .name(name + ".loadBlockedIssueInsts")
+        .desc("Total number of insts that CPU has blocked issue waiting "
+              "for a load")
+        .prereq(loadBlockedIssueInsts);
+    loadBlockedIssueCPI
+        .name(name + ".loadBlockedCPI")
+        .desc("LoadBlockedCPI: cycles per instruction")
+        .precision(6);
+    loadBlockedIssueCPI = loadBlockedIssueCycles / loadBlockedIssueInsts;
+    loadBlockedIssueCyclesPercentage
+        .name(name + ".loadBlockedCyclesPercengate")
+        .desc("Percentage of cycles issue blocked by a load")
+        .precision(6);
+    loadBlockedIssueCyclesPercentage =
+        loadBlockedIssueCycles / baseCpu.numCycles;
+
     cpi
         .name(name + ".cpi")
         .desc("CPI: cycles per instruction")

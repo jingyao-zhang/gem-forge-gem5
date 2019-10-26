@@ -130,10 +130,16 @@ class Scoreboard : public Named
 
     /** Can this instruction be issued.  Are any of its source registers
      *  due to be written by other marked-up instructions in flight */
+    /**
+     * ! GemForge
+     * Return if this instruction is blocked by a load (load has an
+     * unpredictable latency).
+     */
     bool canInstIssue(MinorDynInstPtr inst,
         const std::vector<Cycles> *src_reg_relative_latencies,
         const std::vector<bool> *cant_forward_from_fu_indices,
-        Cycles now, ThreadContext *thread_context);
+        Cycles now, ThreadContext *thread_context,
+        bool &isLoadBlocked);
 
     /** MinorTraceIF interface */
     void minorTrace() const;

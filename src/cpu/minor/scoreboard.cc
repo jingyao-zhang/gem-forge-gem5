@@ -218,7 +218,8 @@ bool
 Scoreboard::canInstIssue(MinorDynInstPtr inst,
     const std::vector<Cycles> *src_reg_relative_latencies,
     const std::vector<bool> *cant_forward_from_fu_indices,
-    Cycles now, ThreadContext *thread_context)
+    Cycles now, ThreadContext *thread_context,
+    bool &isLoadBlocked)
 {
     /* Always allow fault to be issued */
     if (inst->isFault())
@@ -229,6 +230,12 @@ Scoreboard::canInstIssue(MinorDynInstPtr inst,
 
     /* Default to saying you can issue */
     bool ret = true;
+
+    /**
+     * ! GemForge
+     * Default to not blocked by load.
+     */
+    isLoadBlocked = false;
 
     unsigned int num_relative_latencies = 0;
     Cycles default_relative_latency = Cycles(0);
@@ -267,6 +274,13 @@ Scoreboard::canInstIssue(MinorDynInstPtr inst,
             if (returnCycle[index] > (now + relative_latency) ||
                 numUnpredictableResults[index] != 0)
             {
+                /**
+                 * ! GemForge
+                 * If this is unpredictable, we assume it's load.
+                 */
+                if (numUnpredictableResults[index] != 0) {
+                    isLoadBlocked = true;
+                }
                 ret = false;
             }
         }

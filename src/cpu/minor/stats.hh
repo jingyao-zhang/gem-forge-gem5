@@ -72,6 +72,15 @@ class MinorStats
     /** Number of cycles in quiescent state */
     Stats::Scalar quiesceCycles;
 
+    /**
+     * ! GemForge
+     * Number of cycles issue blocked by a load.
+     */
+    Stats::Scalar loadBlockedIssueCycles;
+    Stats::Scalar loadBlockedIssueInsts;
+    Stats::Formula loadBlockedIssueCPI;
+    Stats::Formula loadBlockedIssueCyclesPercentage;
+
     /** CPI/IPC for total cycle counts and macro insts */
     Stats::Formula cpi;
     Stats::Formula ipc;

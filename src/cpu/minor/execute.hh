@@ -121,6 +121,13 @@ class Execute : public Named
     /** The execution functional units */
     std::vector<FUPipeline *> funcUnits;
 
+    /**
+     * ! GemForge
+     * Used to compute number of cycles the issue stage blocked by a load.
+     */
+    InstSeqNum prevLoadBlockedInstExecSeq = InstId::firstExecSeqNum;
+    Cycles prevLoadBlockedCycle;
+
   public: /* Public for Pipeline to be able to pass it to Decode */
     std::vector<InputBuffer<ForwardInstData>> inputBuffer;
 
