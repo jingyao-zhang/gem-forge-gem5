@@ -55,6 +55,10 @@
 #include "params/BaseCPU.hh"
 #include "sim/full_system.hh"
 
+// ! GemForge
+// We need this to revoke thread context.
+#include "sim/process.hh"
+
 void
 ThreadContext::compare(ThreadContext *one, ThreadContext *two)
 {
@@ -249,6 +253,19 @@ unserialize(ThreadContext &tc, CheckpointIn &cp)
 void
 takeOverFrom(ThreadContext &ntc, ThreadContext &otc)
 {
+    if (ntc.getProcessPtr() != otc.getProcessPtr()) {
+        hack("New thread process ptr %#x, old %#x.\n", ntc.getProcessPtr(), otc.getProcessPtr());
+        /**
+         * ! GemForge
+         * It seems that it's possible that we are taking over from
+         * a cloned thread.
+         * I know the name is confusing.
+         */
+        auto newOwner = ntc.getProcessPtr();
+        auto oldOwner = otc.getProcessPtr();
+        newOwner->revokeThreadContext(ntc.contextId());
+        ntc.setProcessPtr(oldOwner);
+    }
     assert(ntc.getProcessPtr() == otc.getProcessPtr());
 
     ntc.setStatus(otc.status());
@@ -275,6 +292,10 @@ takeOverFrom(ThreadContext &ntc, ThreadContext &otc)
             ncpu->schedule(nqe, oqe->when());
             ocpu->deschedule(oqe);
         }
+    } else {
+        // ! GemForge
+        // Don't forgot to update the futexMap.
+        otc.getSystemPtr()->futexMap.takeOverThread(&otc, &ntc);
     }
 
     otc.setStatus(ThreadContext::Halted);

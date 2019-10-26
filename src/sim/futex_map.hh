@@ -275,6 +275,22 @@ class FutexMap : public std::unordered_map<FutexKey, WaiterList>
 
         return woken_up + requeued;
     }
+
+    /**
+     * ! GemForge
+     * This function replaces threads in the futex map.
+     * Used to support take over from multiple threads.
+     */
+    void
+    takeOverThread(ThreadContext *oldThread, ThreadContext *newThread) {
+        for (auto &waiterList : *this) {
+            for (auto &waiterState : waiterList.second) {
+                if (waiterState.tc == oldThread) {
+                    waiterState.tc = newThread;
+                }
+            }
+        }
+    }
 };
 
 #endif // __FUTEX_MAP_HH__
