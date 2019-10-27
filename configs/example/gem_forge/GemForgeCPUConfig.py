@@ -174,13 +174,14 @@ def initializeCPUs(options):
             options, InitialCPUClass, multiprocesses, numThreads)
         future_cpus = createCPUNonStandalone(
             options, FutureCPUClass, multiprocesses, numThreads)
-    for cpu in initial_cpus:
-        cpu.accelManager = \
-            GemForgeAccConfig.initializeGemForgeAcceleratorManager(options)
-    for cpu in future_cpus:
+
+    # We assume initial_cpu does not have GemForge accelerators if future_cpu is valid.
+    for cpu in future_cpus if future_cpus else initial_cpus:
         cpu.accelManager = \
             GemForgeAccConfig.initializeGemForgeAcceleratorManager(options)
         cpu.switched_out = True
+        if options.prog_interval:
+            cpu.progress_interval = options.prog_interval
     return (initial_cpus, future_cpus, test_mem_mode)
 
 
