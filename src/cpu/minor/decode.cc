@@ -192,6 +192,13 @@ Decode::evaluate()
                     if (static_micro_inst->isLastMicroop()) {
                         output_inst->predictedTaken = inst->predictedTaken;
                         output_inst->predictedTarget = inst->predictedTarget;
+                        /**
+                         * ! GemForge
+                         * We need to also set triedToPredict so that when
+                         * branch signal comes back Fetch2 stage will take
+                         * action.
+                         */
+                        output_inst->triedToPredict = inst->triedToPredict;
                     }
 
                     DPRINTF(Decode, "Microop decomposition inputIndex:"
