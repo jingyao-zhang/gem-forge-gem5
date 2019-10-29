@@ -168,10 +168,6 @@ namespace X86ISA {
                 result = CpuidResult(0x00000000, 0x01800000,
                                      0x00000000, 0x00000000);
                 break;
-              case ExtendedFeatures:
-                result = CpuidResult(0x00000000, 0x01800000,
-                                     0x00000000, 0x00000000);
-                break;
               default:
                 warn("x86 cpuid family 0x0000: unimplemented function %u",
                     funcNum);
