@@ -1,0 +1,4 @@
+Import('*')
+
+if env['TARGET_ISA'] == 'x86':
+    Source('x86_func_addr_callback.cc')

@@ -3,8 +3,6 @@
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
 
-namespace RiscvISA {
-
 #define StreamInstCase(stage, xc...)                                           \
   case GemForgeStaticInstOpE::STREAM_CONFIG: {                                 \
     se.stage##StreamConfig(dynInfo, ##xc);                                     \
@@ -149,5 +147,3 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
   }
   return emplaceRet.first->second;
 }
-
-} // namespace RiscvISA

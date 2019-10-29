@@ -7,11 +7,7 @@
 #include "debug/MinorCPUDelegator.hh"
 #include "debug/MinorCPUDelegatorDump.hh"
 
-#if THE_ISA == RISCV_ISA
-#include "cpu/gem_forge/accelerator/arch/riscv/gem_forge_isa_handler.hh"
-#else
-#error "Unsupported ISA"
-#endif
+#include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
 
 #define INST_DPRINTF(inst, format, args...)                                    \
   DPRINTF(MinorCPUDelegator, "[%s]: " format, *(inst), ##args)
@@ -42,7 +38,7 @@ public:
   MinorCPU *cpu;
   MinorCPUDelegator *cpuDelegator;
 
-  TheISA::GemForgeISAHandler isaHandler;
+  GemForgeISAHandler isaHandler;
 
   // Cache of the traceExtraFolder.
   std::string traceExtraFolder;
@@ -96,16 +92,15 @@ public:
     return thread;
   }
 
-  TheISA::GemForgeDynInstInfo
-  createDynInfo(Minor::MinorDynInstPtr &dynInstPtr) const {
+  GemForgeDynInstInfo createDynInfo(Minor::MinorDynInstPtr &dynInstPtr) const {
     assert(dynInstPtr->isInst() && "Should be a real inst.");
     if (dynInstPtr->id.streamSeqNum != this->currentStreamSeqNum) {
       INST_PANIC(this, dynInstPtr, "Mismatched streamSeqNum %llu.\n",
                  this->currentStreamSeqNum);
     }
-    TheISA::GemForgeDynInstInfo dynInfo(
-        this->getInstSeqNum(dynInstPtr), dynInstPtr->pc,
-        dynInstPtr->staticInst.get(), this->getThreadContext(dynInstPtr));
+    GemForgeDynInstInfo dynInfo(this->getInstSeqNum(dynInstPtr), dynInstPtr->pc,
+                                dynInstPtr->staticInst.get(),
+                                this->getThreadContext(dynInstPtr));
     return dynInfo;
   }
 

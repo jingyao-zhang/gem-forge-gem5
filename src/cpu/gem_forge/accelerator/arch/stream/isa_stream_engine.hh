@@ -1,14 +1,14 @@
-#ifndef __GEM_FORGE_RISCV_STREAM_ENGINE_H__
-#define __GEM_FORGE_RISCV_STREAM_ENGINE_H__
+#ifndef __GEM_FORGE_ISA_STREAM_ENGINE_H__
+#define __GEM_FORGE_ISA_STREAM_ENGINE_H__
 
 /**
- * An interface between the riscv ssp instructions and the real stream engine.
- * May get rid of this later when we have better code base in the real stream
- * engine.
+ * An interface between the ssp instructions in a ISA and the real stream
+ * engine. May get rid of this later when we have better code base in the real
+ * stream engine.
  */
 
+#include "cpu/gem_forge/accelerator/arch/gem_forge_dyn_inst_info.hh"
 #include "cpu/gem_forge/gem_forge_lsq_callback.hh"
-#include "cpu/static_inst.hh"
 
 #include "config/have_protobuf.hh"
 #ifndef HAVE_PROTOBUF
@@ -23,22 +23,9 @@
 class StreamEngine;
 class GemForgeCPUDelegator;
 
-namespace RiscvISA {
-
-// TODO: Move these into separate header.
-struct GemForgeDynInstInfo {
-  const uint64_t seqNum;
-  const TheISA::PCState pc;
-  StaticInst *staticInst;
-  ThreadContext *tc;
-  GemForgeDynInstInfo(uint64_t _seqNum, const TheISA::PCState &_pc,
-                      StaticInst *_staticInst, ThreadContext *_tc)
-      : seqNum(_seqNum), pc(_pc), staticInst(_staticInst), tc(_tc) {}
-};
-
-class RISCVStreamEngine {
+class ISAStreamEngine {
 public:
-  RISCVStreamEngine(GemForgeCPUDelegator *_cpuDelegator)
+  ISAStreamEngine(GemForgeCPUDelegator *_cpuDelegator)
       : cpuDelegator(_cpuDelegator) {}
 
 #define DeclareStreamInstHandler(Inst)                                         \
@@ -187,7 +174,5 @@ private:
   void increamentStreamRegionInfoNumExecutedInsts(
       DynStreamRegionInfo &dynStreamRegionInfo);
 };
-
-} // namespace RiscvISA
 
 #endif

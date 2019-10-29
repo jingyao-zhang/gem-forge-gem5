@@ -4,13 +4,8 @@
 
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
-#if THE_ISA == RISCV_ISA
-#include "cpu/gem_forge/accelerator/arch/riscv/stream/riscv_func_addr_callback.hh"
-#else
-#error "Unsupported ISA."
-#endif
+#include "cpu/gem_forge/accelerator/arch/stream/func_addr_callback.hh"
 
-// #include "base/misc.hh""
 #include "base/trace.hh"
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"

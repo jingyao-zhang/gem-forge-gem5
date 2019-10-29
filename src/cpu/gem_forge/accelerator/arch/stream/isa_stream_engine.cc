@@ -1,31 +1,30 @@
-#include "riscv_stream_engine.hh"
-
-#include "arch/riscv/insts/standard.hh"
+#include "isa_stream_engine.hh"
 
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
-#include "debug/RISCVStreamEngine.hh"
+#include "debug/ISAStreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define RISCV_SE_DPRINTF(format, args...)                                      \
-  DPRINTF(RISCVStreamEngine, format, ##args)
+#if THE_ISA == RISCV_ISA
+#include "arch/riscv/insts/standard.hh"
+#endif
 
-namespace RiscvISA {
+#define ISA_SE_DPRINTF(format, args...) DPRINTF(ISAStreamEngine, format, ##args)
 
-constexpr uint64_t RISCVStreamEngine::InvalidStreamId;
-constexpr int RISCVStreamEngine::DynStreamUserInstInfo::MaxUsedStreams;
+constexpr uint64_t ISAStreamEngine::InvalidStreamId;
+constexpr int ISAStreamEngine::DynStreamUserInstInfo::MaxUsedStreams;
 
 /********************************************************************************
  * StreamConfig Handlers.
  *******************************************************************************/
 
-bool RISCVStreamEngine::canDispatchStreamConfig(
+bool ISAStreamEngine::canDispatchStreamConfig(
     const GemForgeDynInstInfo &dynInfo) {
   return true;
 }
 
-void RISCVStreamEngine::dispatchStreamConfig(
+void ISAStreamEngine::dispatchStreamConfig(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
@@ -62,24 +61,24 @@ void RISCVStreamEngine::dispatchStreamConfig(
   configInfo.dynStreamRegionInfo = this->curStreamRegionInfo;
 }
 
-bool RISCVStreamEngine::canExecuteStreamConfig(
+bool ISAStreamEngine::canExecuteStreamConfig(
     const GemForgeDynInstInfo &dynInfo) {
   return true;
 }
 
-void RISCVStreamEngine::executeStreamConfig(const GemForgeDynInstInfo &dynInfo,
-                                            ExecContext &xc) {
+void ISAStreamEngine::executeStreamConfig(const GemForgeDynInstInfo &dynInfo,
+                                          ExecContext &xc) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
   this->increamentStreamRegionInfoNumExecutedInsts(
       *(configInfo.dynStreamRegionInfo));
 }
 
-void RISCVStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
-void RISCVStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
@@ -112,12 +111,12 @@ void RISCVStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
  * StreamInput Handlers.
  *******************************************************************************/
 
-bool RISCVStreamEngine::canDispatchStreamInput(
+bool ISAStreamEngine::canDispatchStreamInput(
     const GemForgeDynInstInfo &dynInfo) {
   return true;
 }
 
-void RISCVStreamEngine::dispatchStreamInput(
+void ISAStreamEngine::dispatchStreamInput(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
@@ -138,18 +137,18 @@ void RISCVStreamEngine::dispatchStreamInput(
   auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
   auto &inputVec = inputMap.at(streamId);
   inputInfo.inputIdx = inputVec.size();
-  RISCV_SE_DPRINTF("Dispatch input #%d %llu.\n", inputInfo.inputIdx,
-                   inputInfo.translatedStreamId);
+  ISA_SE_DPRINTF("Dispatch input #%d %llu.\n", inputInfo.inputIdx,
+                 inputInfo.translatedStreamId);
   inputVec.push_back(0);
 }
 
-bool RISCVStreamEngine::canExecuteStreamInput(
+bool ISAStreamEngine::canExecuteStreamInput(
     const GemForgeDynInstInfo &dynInfo) {
   return true;
 }
 
-void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
-                                           ExecContext &xc) {
+void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
+                                         ExecContext &xc) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
 
   // Record the live input.
@@ -157,8 +156,8 @@ void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
   auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
   auto &inputVec = inputMap.at(inputInfo.translatedStreamId);
   auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-  RISCV_SE_DPRINTF("Record input #%d %llu %llu.\n", inputInfo.inputIdx,
-                   inputInfo.translatedStreamId, rs1);
+  ISA_SE_DPRINTF("Record input #%d %llu %llu.\n", inputInfo.inputIdx,
+                 inputInfo.translatedStreamId, rs1);
 
   inputVec.at(inputInfo.inputIdx) = rs1;
   inputInfo.executed = true;
@@ -167,12 +166,12 @@ void RISCVStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
       *(configInfo.dynStreamRegionInfo));
 }
 
-void RISCVStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
-void RISCVStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
   auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
   auto &regionInfo = configInfo.dynStreamRegionInfo;
@@ -186,8 +185,8 @@ void RISCVStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
   regionInfo->numDispatchedInsts--;
 
   // Release the inputVec.
-  RISCV_SE_DPRINTF("Rewind input #%d %llu.\n", inputInfo.inputIdx,
-                   inputInfo.translatedStreamId);
+  ISA_SE_DPRINTF("Rewind input #%d %llu.\n", inputInfo.inputIdx,
+                 inputInfo.translatedStreamId);
   auto &inputVec = regionInfo->inputMap.at(inputInfo.translatedStreamId);
   assert(inputVec.size() == inputInfo.inputIdx + 1 && "Mismatch input index.");
   inputVec.pop_back();
@@ -200,7 +199,7 @@ void RISCVStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
  * StreamReady Handlers.
  *******************************************************************************/
 
-bool RISCVStreamEngine::canDispatchStreamReady(
+bool ISAStreamEngine::canDispatchStreamReady(
     const GemForgeDynInstInfo &dynInfo) {
   /**
    * Although confusing, but ssp.stream.ready is used as the synchronization
@@ -215,7 +214,7 @@ bool RISCVStreamEngine::canDispatchStreamReady(
   return se->canStreamConfig(args);
 }
 
-void RISCVStreamEngine::dispatchStreamReady(
+void ISAStreamEngine::dispatchStreamReady(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
@@ -237,19 +236,19 @@ void RISCVStreamEngine::dispatchStreamReady(
   this->curStreamRegionInfo = nullptr;
 }
 
-bool RISCVStreamEngine::canExecuteStreamReady(
+bool ISAStreamEngine::canExecuteStreamReady(
     const GemForgeDynInstInfo &dynInfo) {
   return true;
 }
 
-void RISCVStreamEngine::executeStreamReady(const GemForgeDynInstInfo &dynInfo,
-                                           ExecContext &xc) {
+void ISAStreamEngine::executeStreamReady(const GemForgeDynInstInfo &dynInfo,
+                                         ExecContext &xc) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
   this->increamentStreamRegionInfoNumExecutedInsts(
       *(configInfo.dynStreamRegionInfo));
 }
 
-void RISCVStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
   // Notifiy the StreamEngine.
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
   auto infoRelativePath = configInfo.dynStreamRegionInfo->infoRelativePath;
@@ -262,7 +261,7 @@ void RISCVStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
-void RISCVStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
   auto &regionInfo = configInfo.dynStreamRegionInfo;
   assert(regionInfo->streamReadyDispatched &&
@@ -299,12 +298,11 @@ void RISCVStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
  * StreamEnd Handlers.
  *******************************************************************************/
 
-bool RISCVStreamEngine::canDispatchStreamEnd(
-    const GemForgeDynInstInfo &dynInfo) {
+bool ISAStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   return true;
 }
 
-void RISCVStreamEngine::dispatchStreamEnd(
+void ISAStreamEngine::dispatchStreamEnd(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
@@ -335,15 +333,14 @@ void RISCVStreamEngine::dispatchStreamEnd(
   se->dispatchStreamEnd(args);
 }
 
-bool RISCVStreamEngine::canExecuteStreamEnd(
-    const GemForgeDynInstInfo &dynInfo) {
+bool ISAStreamEngine::canExecuteStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   return true;
 }
 
-void RISCVStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
-                                         ExecContext &xc) {}
+void ISAStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
+                                       ExecContext &xc) {}
 
-void RISCVStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
   auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   assert(!dynStreamInstInfo.mustBeMisspeculated &&
@@ -359,7 +356,7 @@ void RISCVStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
-void RISCVStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
   auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   if (!instInfo.mustBeMisspeculated) {
@@ -386,7 +383,7 @@ void RISCVStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
  * StreamStep Handlers.
  *******************************************************************************/
 
-bool RISCVStreamEngine::canDispatchStreamStep(
+bool ISAStreamEngine::canDispatchStreamStep(
     const GemForgeDynInstInfo &dynInfo) {
   // First create the memorized info.
   auto emplaceRet = this->seqNumToDynInfoMap.emplace(
@@ -406,7 +403,7 @@ bool RISCVStreamEngine::canDispatchStreamStep(
   return se->canStreamStep(streamId);
 }
 
-void RISCVStreamEngine::dispatchStreamStep(
+void ISAStreamEngine::dispatchStreamStep(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
 
@@ -417,15 +414,14 @@ void RISCVStreamEngine::dispatchStreamStep(
   se->dispatchStreamStep(streamId);
 }
 
-bool RISCVStreamEngine::canExecuteStreamStep(
-    const GemForgeDynInstInfo &dynInfo) {
+bool ISAStreamEngine::canExecuteStreamStep(const GemForgeDynInstInfo &dynInfo) {
   return true;
 }
 
-void RISCVStreamEngine::executeStreamStep(const GemForgeDynInstInfo &dynInfo,
-                                          ExecContext &xc) {}
+void ISAStreamEngine::executeStreamStep(const GemForgeDynInstInfo &dynInfo,
+                                        ExecContext &xc) {}
 
-void RISCVStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &stepInfo = dynStreamInstInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
@@ -436,7 +432,7 @@ void RISCVStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
-void RISCVStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &stepInfo = dynStreamInstInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
@@ -451,7 +447,7 @@ void RISCVStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
  * StreamLoad Handlers.
  *******************************************************************************/
 
-bool RISCVStreamEngine::canDispatchStreamLoad(
+bool ISAStreamEngine::canDispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo) {
 
   // First create the memorized info.
@@ -470,7 +466,7 @@ bool RISCVStreamEngine::canDispatchStreamLoad(
   return true;
 }
 
-void RISCVStreamEngine::dispatchStreamLoad(
+void ISAStreamEngine::dispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
 
@@ -486,8 +482,7 @@ void RISCVStreamEngine::dispatchStreamLoad(
   se->createStreamUserLQCallbacks(args, extraLQCallbacks);
 }
 
-bool RISCVStreamEngine::canExecuteStreamLoad(
-    const GemForgeDynInstInfo &dynInfo) {
+bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   std::vector<uint64_t> usedStreamIds{
@@ -498,8 +493,8 @@ bool RISCVStreamEngine::canExecuteStreamLoad(
   return se->areUsedStreamsReady(args);
 }
 
-void RISCVStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
-                                          ExecContext &xc) {
+void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
+                                        ExecContext &xc) {
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   std::vector<uint64_t> usedStreamIds{
@@ -511,8 +506,8 @@ void RISCVStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
   auto loadedValue = *(reinterpret_cast<uint64_t *>(values.at(0).data()));
-  RISCV_SE_DPRINTF("StreamLoad get value %llu for stream %llu.\n", loadedValue,
-                   userInfo.translatedUsedStreamIds.at(0));
+  ISA_SE_DPRINTF("StreamLoad get value %llu for stream %llu.\n", loadedValue,
+                 userInfo.translatedUsedStreamIds.at(0));
   if (dynInfo.staticInst->isFloating()) {
     xc.setFloatRegOperandBits(dynInfo.staticInst, 0, loadedValue);
   } else {
@@ -520,7 +515,7 @@ void RISCVStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   }
 }
 
-void RISCVStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   std::vector<uint64_t> usedStreamIds{
@@ -534,7 +529,7 @@ void RISCVStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
-void RISCVStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   std::vector<uint64_t> usedStreamIds{
@@ -551,7 +546,7 @@ void RISCVStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
 /********************************************************************************
  * APIs related to misspeculation handling.
  *******************************************************************************/
-void RISCVStreamEngine::storeTo(Addr vaddr, int size) {
+void ISAStreamEngine::storeTo(Addr vaddr, int size) {
   auto se = this->getStreamEngine();
   se->cpuStoreTo(vaddr, size);
 }
@@ -560,19 +555,25 @@ void RISCVStreamEngine::storeTo(Addr vaddr, int size) {
  * StreamEngine Helpers.
  *******************************************************************************/
 
-::StreamEngine *RISCVStreamEngine::getStreamEngine() {
+::StreamEngine *ISAStreamEngine::getStreamEngine() {
   return this->cpuDelegator->baseCPU->getAccelManager()->getStreamEngine();
 }
 
 template <typename T>
-T RISCVStreamEngine::extractImm(const StaticInst *staticInst) const {
-  auto immOp = dynamic_cast<const ImmOp<T> *>(staticInst);
+T ISAStreamEngine::extractImm(const StaticInst *staticInst) const {
+#if THE_ISA == RISCV_ISA
+  auto immOp = dynamic_cast<const RiscvISA::ImmOp<T> *>(staticInst);
   assert(immOp && "Invalid ImmOp.");
   return immOp->getImm();
+#elif THE_ISA == X86_ISA
+  panic("x86 ISA stream engine is not supported.");
+#else
+  panic("ISA stream engine is not supported.");
+#endif
 }
 
 const ::LLVM::TDG::StreamRegion &
-RISCVStreamEngine::getStreamRegion(const std::string &path) const {
+ISAStreamEngine::getStreamRegion(const std::string &path) const {
   if (this->memorizedStreamRegionMap.count(path) != 0) {
     return this->memorizedStreamRegionMap.at(path);
   }
@@ -589,7 +590,7 @@ RISCVStreamEngine::getStreamRegion(const std::string &path) const {
   return protobufRegion;
 }
 
-void RISCVStreamEngine::insertRegionStreamIds(
+void ISAStreamEngine::insertRegionStreamIds(
     const ::LLVM::TDG::StreamRegion &region) {
   for (const auto &streamInfo : region.streams()) {
     auto streamId = streamInfo.id();
@@ -602,7 +603,7 @@ void RISCVStreamEngine::insertRegionStreamIds(
   }
 }
 
-bool RISCVStreamEngine::removeRegionStreamIds(
+bool ISAStreamEngine::removeRegionStreamIds(
     const ::LLVM::TDG::StreamRegion &region) {
   for (const auto &streamInfo : region.streams()) {
     // Check if valid to be removed.
@@ -625,7 +626,7 @@ bool RISCVStreamEngine::removeRegionStreamIds(
   return true;
 }
 
-uint64_t RISCVStreamEngine::lookupRegionStreamId(int regionStreamId) {
+uint64_t ISAStreamEngine::lookupRegionStreamId(int regionStreamId) {
   assert(this->regionStreamIdTable.size() > regionStreamId &&
          "Overflow RegionStreamId.");
   auto streamId = this->regionStreamIdTable.at(regionStreamId);
@@ -634,8 +635,8 @@ uint64_t RISCVStreamEngine::lookupRegionStreamId(int regionStreamId) {
   return streamId;
 }
 
-RISCVStreamEngine::DynStreamInstInfo &
-RISCVStreamEngine::createDynStreamInstInfo(uint64_t seqNum) {
+ISAStreamEngine::DynStreamInstInfo &
+ISAStreamEngine::createDynStreamInstInfo(uint64_t seqNum) {
   auto emplaceRet = this->seqNumToDynInfoMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(seqNum),
       std::forward_as_tuple());
@@ -643,7 +644,7 @@ RISCVStreamEngine::createDynStreamInstInfo(uint64_t seqNum) {
   return emplaceRet.first->second;
 }
 
-void RISCVStreamEngine::increamentStreamRegionInfoNumExecutedInsts(
+void ISAStreamEngine::increamentStreamRegionInfoNumExecutedInsts(
     DynStreamRegionInfo &dynStreamRegionInfo) {
   dynStreamRegionInfo.numExecutedInsts++;
   if (dynStreamRegionInfo.streamReadyDispatched &&
@@ -659,7 +660,7 @@ void RISCVStreamEngine::increamentStreamRegionInfoNumExecutedInsts(
   }
 }
 
-const std::string &RISCVStreamEngine::getRelativePath(int configIdx) {
+const std::string &ISAStreamEngine::getRelativePath(int configIdx) {
   if (!this->allStreamRegions) {
     auto path = cpuDelegator->getTraceExtraFolder() + "/all.stream.data";
     ProtoInputStream istream(path);
@@ -673,5 +674,3 @@ const std::string &RISCVStreamEngine::getRelativePath(int configIdx) {
          "ConfigIdx overflow.");
   return this->allStreamRegions->relative_paths(configIdx);
 }
-
-} // namespace RiscvISA

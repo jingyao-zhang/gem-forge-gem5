@@ -1,10 +1,6 @@
 #include "timing_simple_cpu_delegator.hh"
 
-#if THE_ISA == RISCV_ISA
-#include "cpu/gem_forge/accelerator/arch/riscv/gem_forge_isa_handler.hh"
-#else
-#error "Unsupported ISA."
-#endif
+#include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
 
 class TimingSimpleCPUDelegator::Impl {
 public:
@@ -28,7 +24,7 @@ public:
    */
   uint64_t curSeqNum;
 
-  TheISA::GemForgeISAHandler isaHandler;
+  GemForgeISAHandler isaHandler;
 
   std::string traceExtraFolder;
 
@@ -56,16 +52,16 @@ TimingSimpleCPUDelegator::~TimingSimpleCPUDelegator() = default;
 bool TimingSimpleCPUDelegator::canDispatch(StaticInstPtr staticInst,
                                            ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_DISPATCH);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
-                                      staticInst.get(), xc.tcBase());
+  GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
+                              xc.tcBase());
   return pimpl->isaHandler.canDispatch(dynInfo);
 }
 
 void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
                                         ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_DISPATCH);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
-                                      staticInst.get(), xc.tcBase());
+  GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
+                              xc.tcBase());
   /**
    * SimpleTimingCPU never really all cause a RAW misspeculation in LSQ,
    * so we ignore any extra LQCallbacks.
@@ -81,16 +77,16 @@ void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
 bool TimingSimpleCPUDelegator::canExecute(StaticInstPtr staticInst,
                                           ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
-                                      staticInst.get(), xc.tcBase());
+  GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
+                              xc.tcBase());
   return pimpl->isaHandler.canExecute(dynInfo);
 }
 
 void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
                                        ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
-                                      staticInst.get(), xc.tcBase());
+  GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
+                              xc.tcBase());
   pimpl->isaHandler.execute(dynInfo, xc);
   pimpl->state = Impl::StateE::BEFORE_COMMIT;
 }
@@ -98,8 +94,8 @@ void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
 void TimingSimpleCPUDelegator::commit(StaticInstPtr staticInst,
                                       ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
-  TheISA::GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(),
-                                      staticInst.get(), xc.tcBase());
+  GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
+                              xc.tcBase());
   pimpl->isaHandler.commit(dynInfo);
   pimpl->state = Impl::StateE::BEFORE_DISPATCH;
   pimpl->curSeqNum++;

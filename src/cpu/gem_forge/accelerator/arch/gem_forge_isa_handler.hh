@@ -1,17 +1,17 @@
-#ifndef __RISCV_GEM_FORGE_ISA_HANDLER_HH__
-#define __RISCV_GEM_FORGE_ISA_HANDLER_HH__
+#ifndef __GEM_FORGE_ISA_HANDLER_HH__
+#define __GEM_FORGE_ISA_HANDLER_HH__
 
 /**
  * A place to implement the actual instruction functionality.
  */
+#include "gem_forge_dyn_inst_info.hh"
 
-#include "stream/riscv_stream_engine.hh"
+#include "stream/isa_stream_engine.hh"
 
 #include <unordered_map>
 
 class GemForgeCPUDelegator;
 
-namespace RiscvISA {
 class GemForgeISAHandler {
 public:
   GemForgeISAHandler(GemForgeCPUDelegator *_cpuDelegaor)
@@ -53,9 +53,7 @@ private:
 
   GemForgeStaticInstInfo &getStaticInstInfo(const GemForgeDynInstInfo &dynInfo);
 
-  RISCVStreamEngine se;
+  ISAStreamEngine se;
 };
-
-} // namespace RiscvISA
 
 #endif

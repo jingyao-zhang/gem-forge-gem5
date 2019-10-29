@@ -4,11 +4,11 @@
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/exec_context.hh"
-#include "debug/RISCVFuncAddrCallback.hh"
+#include "debug/FuncAddrCallback.hh"
 #include "sim/process.hh"
 
-#define RISCV_FUNC_ADDR_DPRINTF(format, args...)                               \
-  DPRINTF(RISCVFuncAddrCallback, "[%s]: " format, this->func.name().c_str(),   \
+#define FUNC_ADDR_DPRINTF(format, args...)                               \
+  DPRINTF(FuncAddrCallback, "[%s]: " format, this->func.name().c_str(),   \
           ##args)
 
 namespace {
@@ -377,7 +377,7 @@ FuncAddrGenCallback::FuncAddrGenCallback(ThreadContext *_tc,
   SymbolTable table;
   obj->loadAllSymbols(&table);
   assert(table.findAddress(this->func.name(), this->funcStartVAddr));
-  RISCV_FUNC_ADDR_DPRINTF("Start PC %#x.\n", this->funcStartVAddr);
+  FUNC_ADDR_DPRINTF("Start PC %#x.\n", this->funcStartVAddr);
 
   auto &prox = this->tc->getVirtProxy();
   auto pc = this->funcStartVAddr;
@@ -399,7 +399,7 @@ FuncAddrGenCallback::FuncAddrGenCallback(ThreadContext *_tc,
       break;
     }
     // We assume there is no branch.
-    RISCV_FUNC_ADDR_DPRINTF("Decode Inst %s.\n",
+    FUNC_ADDR_DPRINTF("Decode Inst %s.\n",
                             staticInst->disassemble(pc).c_str());
     assert(!staticInst->isControl() &&
            "No control instruction allowed in address function.");
@@ -419,7 +419,7 @@ uint64_t FuncAddrGenCallback::genAddr(uint64_t idx,
   for (auto param : params) {
     RegId reg(RegClass::IntRegClass, argIdx);
     addrFuncXC.setIntRegOperand(reg, param);
-    RISCV_FUNC_ADDR_DPRINTF("Arg %d %llu.\n", argIdx - a0RegIdx, param);
+    FUNC_ADDR_DPRINTF("Arg %d %llu.\n", argIdx - a0RegIdx, param);
     argIdx++;
   }
 
@@ -430,7 +430,7 @@ uint64_t FuncAddrGenCallback::genAddr(uint64_t idx,
   // The result value should be in a0 = x10.
   RegId a0Reg(RegClass::IntRegClass, a0RegIdx);
   auto retAddr = addrFuncXC.readIntRegOperand(a0Reg);
-  RISCV_FUNC_ADDR_DPRINTF("Ret %llu.\n", retAddr);
+  FUNC_ADDR_DPRINTF("Ret %llu.\n", retAddr);
   return retAddr;
 }
 } // namespace RiscvISA
