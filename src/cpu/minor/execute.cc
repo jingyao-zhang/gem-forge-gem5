@@ -759,10 +759,26 @@ Execute::issue(ThreadID thread_id)
                                 this->prevLoadBlockedCycle =
                                     curCycle - Cycles(1);
                                 cpu.stats.loadBlockedIssueInsts++;
+                                DPRINTF(MinorExecute,
+                                // hack(
+                                    "[%llu], new load blocked inst %s, total %llu.\n",
+                                    execSeqNum,
+                                    *inst,
+                                    cpu.stats.loadBlockedIssueInsts.result()
+                                );
                             }
                             // Update the stats.
-                            cpu.stats.loadBlockedIssueCycles +=
-                                curCycle - this->prevLoadBlockedCycle;
+                            auto deltaCycles = curCycle - this->prevLoadBlockedCycle;
+                            DPRINTF(MinorExecute,
+                            // hack(
+                                "[%llu], blocked update loadblocked cycles cur %llu,"
+                                " prev %llu, delta %llu.\n",
+                                execSeqNum,
+                                curCycle,
+                                this->prevLoadBlockedCycle,
+                                deltaCycles
+                            );
+                            cpu.stats.loadBlockedIssueCycles += deltaCycles;
                             this->prevLoadBlockedCycle = curCycle;
                         }
                         DPRINTF(MinorExecute, "Can't issue inst: %s yet\n",
@@ -772,6 +788,29 @@ Execute::issue(ThreadID thread_id)
                         DPRINTF(MinorExecute, "Issuing inst: %s"
                             " into FU %d\n", *inst,
                             fu_index);
+
+                        /**
+                         * ! GemForge
+                         * Don't forget to update the loadBlocked statistics.
+                         */
+                        if (this->prevLoadBlockedInstExecSeq == inst->id.execSeqNum) {
+                            auto curCycle = cpu.curCycle();
+                            auto deltaCycles = curCycle - this->prevLoadBlockedCycle - Cycles(1);
+                            DPRINTF(MinorExecute,
+                            // hack(
+                                "[%llu], issued update loadblocked cycles cur %llu,"
+                                " prev %llu, delta %llu, insts %llu.\n",
+                                inst->id.execSeqNum,
+                                curCycle,
+                                this->prevLoadBlockedCycle,
+                                deltaCycles,
+                                cpu.stats.loadBlockedIssueInsts.result()
+                            );
+                            cpu.stats.loadBlockedIssueCycles += deltaCycles;
+                            // Clear it.
+                            this->prevLoadBlockedInstExecSeq = InstId::firstExecSeqNum - 1;
+                            this->prevLoadBlockedCycle = Cycles(0);
+                        }
 
                         Cycles extra_dest_retire_lat = Cycles(0);
                         TimingExpr *extra_dest_retire_lat_expr = NULL;
