@@ -6,6 +6,7 @@ from common import Simulation
 
 import GemForgeLLVMTraceCPUConfig
 import GemForgeO3CPUConfig
+import GemForgeMinorCPUConfig
 import GemForgeAccConfig
 
 import os
@@ -81,7 +82,7 @@ def createCPUNonStandalone(options, CPUClass, multiprocesses, numThreads):
         if isinstance(cpu, DerivO3CPU):
             GemForgeO3CPUConfig.initializeO3CPU(options, cpu)
         elif isinstance(cpu, MinorCPU):
-            # TODO: Set parameters for MinorCPU.
+            GemForgeMinorCPUConfig.initializeMinorCPU(options, cpu)
             pass
         elif isinstance(cpu, TimingSimpleCPU):
             pass
