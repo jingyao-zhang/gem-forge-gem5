@@ -465,7 +465,7 @@ static SyscallDesc syscallDescs64[] = {
     /* 200 */ SyscallDesc("tkill", unimplementedFunc),
     /* 201 */ SyscallDesc("time", timeFunc<X86Linux64>),
     /* 202 */ SyscallDesc("futex", futexFunc<X86Linux64>),
-    /* 203 */ SyscallDesc("sched_setaffinity", unimplementedFunc),
+    /* 203 */ SyscallDesc("sched_setaffinity", ignoreFunc),
     /* 204 */ SyscallDesc("sched_getaffinity", ignoreFunc),
     /* 205 */ SyscallDesc("set_thread_area", unimplementedFunc),
     /* 206 */ SyscallDesc("io_setup", unimplementedFunc),

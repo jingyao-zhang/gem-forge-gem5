@@ -88,6 +88,8 @@ if env['TARGET_ISA'] == 'x86':
 
     python_files = (
         '__init__.py',
+        'gem_forge/__init__.py',
+        'gem_forge/ssp.py',
         'general_purpose/__init__.py',
         'general_purpose/arithmetic/__init__.py',
         'general_purpose/arithmetic/add_and_subtract.py',

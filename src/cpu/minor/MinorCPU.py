@@ -131,6 +131,12 @@ class MinorDefaultIntFU(MinorFU):
         srcRegsRelativeLats=[2])]
     opLat = 3
 
+class MinorSimpleIntFU(MinorFU):
+    opClasses = minorMakeOpClassSet(['IntAlu'])
+    timings = [MinorFUTiming(description="Int",
+        srcRegsRelativeLats=[0])]
+    opLat = 1
+
 class MinorDefaultIntMulFU(MinorFU):
     opClasses = minorMakeOpClassSet(['IntMult'])
     timings = [MinorFUTiming(description='Mul',
@@ -182,6 +188,25 @@ class MinorDefaultFUPool(MinorFUPool):
         MinorDefaultIntMulFU(), MinorDefaultIntDivFU(),
         MinorDefaultFloatSimdFU(), MinorDefaultPredFU(),
         MinorDefaultMemFU(), MinorDefaultMiscFU()]
+
+class MinorGemForgeI2FUPool(MinorFUPool):
+    funcUnits = [
+        MinorSimpleIntFU(), MinorSimpleIntFU(),
+        MinorDefaultIntMulFU(), MinorDefaultIntDivFU(),
+        MinorDefaultFloatSimdFU(), MinorDefaultPredFU(),
+        MinorDefaultMemFU(), MinorDefaultMiscFU()]
+
+class MinorGemForgeI4FUPool(MinorFUPool):
+    funcUnits = [
+        MinorSimpleIntFU(), MinorSimpleIntFU(),
+        MinorSimpleIntFU(), MinorSimpleIntFU(),
+        MinorDefaultIntMulFU(), MinorDefaultIntDivFU(),
+        MinorDefaultIntMulFU(), MinorDefaultIntDivFU(),
+        MinorDefaultFloatSimdFU(), MinorDefaultPredFU(),
+        MinorDefaultFloatSimdFU(), MinorDefaultPredFU(),
+        MinorDefaultMemFU(), MinorDefaultMiscFU(),
+        MinorDefaultMemFU(), MinorDefaultMiscFU(),
+    ]
 
 class ThreadPolicy(Enum): vals = ['SingleThreaded', 'RoundRobin', 'Random']
 

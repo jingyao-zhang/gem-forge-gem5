@@ -35,28 +35,12 @@
 #
 # Authors: Gabe Black
 
-microcode = '''
+categories = [
+    "ssp",
+]
 
-def macroop FLDCW_M {
-    ld t1, seg, sib, disp, dataSize=2
-    wrval fcw, t1
-};
+microcode = ""
+for category in categories:
+    exec "import %s as cat" % category
+    microcode += cat.microcode
 
-def macroop FLDCW_P {
-    ld t1, seg, riprel, disp, dataSize=2
-    wrval fcw, t1
-};
-
-# FSTCW
-
-def macroop FNSTCW_M {
-    rdval t1, fcw
-    st t1, seg, sib, disp, dataSize=2
-};
-
-def macroop FNSTCW_P {
-    rdip t7
-    rdval t1, fcw
-    st t1, seg, riprel, disp, dataSize=2
-};
-'''

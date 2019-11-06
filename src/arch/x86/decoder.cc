@@ -427,6 +427,15 @@ Decoder::doThreeByte0F38OpcodeState(uint8_t nextByte)
     emi.opcode.type = ThreeByte0F38Opcode;
     emi.opcode.op = nextByte;
 
+    /**
+     * ! GemForge
+     * If there is no prefix, then it's gemforge instructions.
+     * TODO: Improve this fragile implementation.
+     */
+    if (!emi.vex.present && !emi.legacy.op && !emi.legacy.addr) {
+        return processOpcode(ImmediateTypeThreeByte0F38GemForge,
+            UsesModRMThreeByte0F38GemForge);
+    }
     return processOpcode(ImmediateTypeThreeByte0F38, UsesModRMThreeByte0F38);
 }
 

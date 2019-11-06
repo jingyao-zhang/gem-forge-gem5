@@ -286,7 +286,7 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
                                                 this->info.addr_func_info()));
         return;
       } else {
-        assert(false && "Don't know how to generate the address.");
+        STREAM_PANIC("Don't know how to generate the address.");
       }
     }
   }

@@ -1,0 +1,351 @@
+// Copyright (c) 2007 The Hewlett-Packard Development Company
+// All rights reserved.
+//
+// The license below extends only to copyright in the software and shall
+// not be construed as granting a license to any other intellectual
+// property including but not limited to intellectual property relating
+// to a hardware implementation of the functionality of the software
+// licensed hereunder.  You may use the software subject to the license
+// terms below provided that you ensure that this notice is replicated
+// unmodified and in its entirety in all distributions of the software,
+// modified or unmodified, in source code or in binary form.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met: redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer;
+// redistributions in binary form must reproduce the above copyright
+// notice, this list of conditions and the following disclaimer in the
+// documentation and/or other materials provided with the distribution;
+// neither the name of the copyright holders nor the names of its
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+// Authors: Gabe Black
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Stream-specialized Processor Microop templates
+//
+//////////////////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Microops that only use no operand.
+//
+//////////////////////////////////////////////////////////////////////////
+def template MicroSSPRawOpExecute {{
+        Fault %(class_name)s::execute(ExecContext *xc,
+                Trace::InstRecord *traceData) const
+        {
+            %(op_decl)s;
+            %(op_rd)s;
+            %(code)s;
+            %(op_wb)s;
+            return NoFault;
+        }
+}};
+
+def template MicroSSPRawOpDeclare {{
+    class %(class_name)s : public X86ISA::X86MicroopBase
+    {
+      protected:
+        const uint8_t dataSize;
+        RegIndex foldOBit;
+
+        std::string generateDisassembly(Addr pc,
+            const SymbolTable *symtab) const;
+
+      public:
+        %(class_name)s(ExtMachInst _machInst,
+                const char * instMnem,
+                uint64_t setFlags,
+                uint8_t _dataSize);
+
+        Fault execute(ExecContext *, Trace::InstRecord *) const;
+    };
+}};
+
+def template MicroSSPRawOpDisassembly {{
+    std::string %(class_name)s::generateDisassembly(Addr pc,
+            const SymbolTable *symtab) const
+    {
+        std::stringstream response;
+
+        printMnemonic(response, instMnem, mnemonic);
+        return response.str();
+    }
+}};
+
+def template MicroSSPRawOpConstructor {{
+    %(class_name)s::%(class_name)s(
+            ExtMachInst machInst, const char * instMnem, uint64_t setFlags,
+            uint8_t _dataSize) :
+        %(base_class)s(machInst, "%(mnemonic)s", instMnem,
+                setFlags, %(op_class)s),
+                dataSize(_dataSize)
+    {
+        foldOBit = (dataSize == 1 && !machInst.rex.present) ? 1 << 6 : 0;
+        %(constructor)s;
+    }
+}};
+
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Microops that only use one immediate.
+//
+//////////////////////////////////////////////////////////////////////////
+def template MicroSSPImmOpExecute {{
+        Fault %(class_name)s::execute(ExecContext *xc,
+                Trace::InstRecord *traceData) const
+        {
+            %(op_decl)s;
+            %(op_rd)s;
+            %(code)s;
+            %(op_wb)s;
+            return NoFault;
+        }
+}};
+
+def template MicroSSPImmOpDeclare {{
+    class %(class_name)s : public X86ISA::X86MicroopBase
+    {
+      protected:
+        const uint64_t imm;
+        const uint8_t dataSize;
+        RegIndex foldOBit;
+
+        std::string generateDisassembly(Addr pc,
+            const SymbolTable *symtab) const;
+
+      public:
+        %(class_name)s(ExtMachInst _machInst,
+                const char * instMnem,
+                uint64_t setFlags,
+                uint64_t _imm,
+                uint8_t _dataSize);
+
+        Fault execute(ExecContext *, Trace::InstRecord *) const;
+    };
+}};
+
+def template MicroSSPImmOpDisassembly {{
+    std::string %(class_name)s::generateDisassembly(Addr pc,
+            const SymbolTable *symtab) const
+    {
+        std::stringstream response;
+
+        printMnemonic(response, instMnem, mnemonic);
+        response << ", ";
+        ccprintf(response, "%#x", imm);
+        return response.str();
+    }
+}};
+
+def template MicroSSPImmOpConstructor {{
+    %(class_name)s::%(class_name)s(
+            ExtMachInst machInst, const char * instMnem, uint64_t setFlags,
+            uint64_t _imm, uint8_t _dataSize) :
+        %(base_class)s(machInst, "%(mnemonic)s", instMnem,
+                setFlags, %(op_class)s),
+                imm(_imm), dataSize(_dataSize)
+    {
+        foldOBit = (dataSize == 1 && !machInst.rex.present) ? 1 << 6 : 0;
+        %(constructor)s;
+    }
+}};
+
+
+let {{
+    class SSPStreamConfigOp(X86Microop):
+        op_class = "No_OpClass"
+        def __init__(self, imm, dataSize="env.dataSize"):
+            self.className = "SSPStreamConfig"
+            self.mnemonic = "ssp.stream.config"
+            if isinstance(imm, (int, long)):
+                imm = "ULL(%d)" % imm
+            self.imm = imm
+            self.dataSize = dataSize
+
+        def getAllocator(self, microFlags):
+            allocString = '''
+                (StaticInstPtr)(new %(class_name)s(
+                    machInst,
+                    macrocodeBlock,
+                    %(flags)s,
+                    %(imm)s,
+                    %(dataSize)s)
+                )
+            '''
+            allocator = allocString % {
+                "class_name" : self.className,
+                "mnemonic" : self.mnemonic,
+                "flags" : self.microFlagsText(microFlags),
+                "imm" : self.imm,
+                "dataSize" : self.dataSize}
+            return allocator
+
+    microopClasses["ssp_stream_config"] = SSPStreamConfigOp
+
+    class SSPStreamEndOp(X86Microop):
+        op_class = "No_OpClass"
+        def __init__(self, imm, dataSize="env.dataSize"):
+            self.className = "SSPStreamEnd"
+            self.mnemonic = "ssp.stream.end"
+            if isinstance(imm, (int, long)):
+                imm = "ULL(%d)" % imm
+            self.imm = imm
+            self.dataSize = dataSize
+
+        def getAllocator(self, microFlags):
+            allocString = '''
+                (StaticInstPtr)(new %(class_name)s(
+                    machInst,
+                    macrocodeBlock,
+                    %(flags)s,
+                    %(imm)s,
+                    %(dataSize)s)
+                )
+            '''
+            allocator = allocString % {
+                "class_name" : self.className,
+                "mnemonic" : self.mnemonic,
+                "flags" : self.microFlagsText(microFlags),
+                "imm" : self.imm,
+                "dataSize" : self.dataSize}
+            return allocator
+
+    microopClasses["ssp_stream_end"] = SSPStreamEndOp
+
+    class SSPStreamStepOp(X86Microop):
+        op_class = "No_OpClass"
+        def __init__(self, imm, dataSize="env.dataSize"):
+            self.className = "SSPStreamStep"
+            self.mnemonic = "ssp.stream.step"
+            if isinstance(imm, (int, long)):
+                imm = "ULL(%d)" % imm
+            self.imm = imm
+            self.dataSize = dataSize
+
+        def getAllocator(self, microFlags):
+            allocString = '''
+                (StaticInstPtr)(new %(class_name)s(
+                    machInst,
+                    macrocodeBlock,
+                    %(flags)s,
+                    %(imm)s,
+                    %(dataSize)s)
+                )
+            '''
+            allocator = allocString % {
+                "class_name" : self.className,
+                "mnemonic" : self.mnemonic,
+                "flags" : self.microFlagsText(microFlags),
+                "imm" : self.imm,
+                "dataSize" : self.dataSize}
+            return allocator
+
+    microopClasses["ssp_stream_step"] = SSPStreamStepOp
+
+    class SSPStreamReadyOp(X86Microop):
+        op_class = "No_OpClass"
+        def __init__(self, dataSize="env.dataSize"):
+            self.className = "SSPStreamReady"
+            self.mnemonic = "ssp.stream.ready"
+            self.dataSize = dataSize
+
+        def getAllocator(self, microFlags):
+            allocString = '''
+                (StaticInstPtr)(new %(class_name)s(
+                    machInst,
+                    macrocodeBlock,
+                    %(flags)s,
+                    %(dataSize)s)
+                )
+            '''
+            allocator = allocString % {
+                "class_name" : self.className,
+                "mnemonic" : self.mnemonic,
+                "flags" : self.microFlagsText(microFlags),
+                "dataSize" : self.dataSize}
+            return allocator
+
+    microopClasses["ssp_stream_ready"] = SSPStreamReadyOp
+
+}};
+
+
+let {{
+    iops = [
+        InstObjParams(
+            # parse
+            "ssp_stream_config",
+            # classname
+            "SSPStreamConfig",
+            # base_class
+            'X86MicroopBase',
+            # snippets
+            {
+                'code' : '',
+            },
+            # flags
+            ['No_OpClass']
+        ),
+        InstObjParams(
+            "ssp_stream_end",
+            "SSPStreamEnd",
+            'X86MicroopBase',
+            {
+                'code' : '',
+            },
+            ['No_OpClass']
+        ),
+        InstObjParams(
+            "ssp_stream_step",
+            "SSPStreamStep",
+            'X86MicroopBase',
+            {
+                'code' : '',
+            },
+            ['No_OpClass']
+        ),
+    ]
+    for iop in iops:
+        header_output += MicroSSPImmOpDeclare.subst(iop)
+        decoder_output += MicroSSPImmOpConstructor.subst(iop)
+        decoder_output += MicroSSPImmOpDisassembly.subst(iop)
+        exec_output += MicroSSPImmOpExecute.subst(iop)
+
+    iops = [
+        InstObjParams(
+            "ssp_stream_ready",
+            "SSPStreamReady",
+            'X86MicroopBase',
+            {
+                'code' : '',
+            },
+            ['No_OpClass', 'IsMemBarrier']
+        ),
+    ]
+    for iop in iops:
+        header_output += MicroSSPRawOpDeclare.subst(iop)
+        decoder_output += MicroSSPRawOpConstructor.subst(iop)
+        decoder_output += MicroSSPRawOpDisassembly.subst(iop)
+        exec_output += MicroSSPRawOpExecute.subst(iop)
+}};
+
+##include "ssp_stream_load_op.isa"
+##include "ssp_stream_input_op.isa"

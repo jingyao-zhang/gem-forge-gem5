@@ -1,0 +1,117 @@
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Micro ops that uses one source register and one immediate.
+//
+//////////////////////////////////////////////////////////////////////////
+
+def template MicroSSPInputOpExecute {{
+        Fault %(class_name)s::execute(ExecContext *xc,
+                Trace::InstRecord *traceData) const
+        {
+            %(op_decl)s;
+            %(op_rd)s;
+            %(code)s;
+            %(op_wb)s;
+            return NoFault;
+        }
+}};
+
+def template MicroSSPInputOpDeclare {{
+    class %(class_name)s : public X86ISA::X86MicroopBase
+    {
+      protected:
+        const RegIndex src1;
+        const uint64_t imm;
+        const uint8_t dataSize;
+        RegIndex foldOBit;
+
+        std::string generateDisassembly(Addr pc,
+            const SymbolTable *symtab) const;
+
+      public:
+        %(class_name)s(ExtMachInst _machInst,
+                const char * instMnem,
+                uint64_t setFlags, InstRegIndex _src1,
+                uint64_t _imm, uint8_t _dataSize);
+
+        Fault execute(ExecContext *, Trace::InstRecord *) const;
+    };
+}};
+
+def template MicroSSPInputOpDisassembly {{
+    std::string %(class_name)s::generateDisassembly(Addr pc,
+            const SymbolTable *symtab) const
+    {
+        std::stringstream response;
+
+        printMnemonic(response, instMnem, mnemonic);
+        printSrcReg(response, 0, dataSize);
+        response << ", ";
+        ccprintf(response, "%#x", imm);
+        return response.str();
+    }
+}};
+
+def template MicroSSPInputOpConstructor {{
+    %(class_name)s::%(class_name)s(
+            ExtMachInst machInst, const char * instMnem, uint64_t setFlags,
+            InstRegIndex _src1, uint64_t _imm, uint8_t _dataSize) :
+        %(base_class)s(machInst, "%(mnemonic)s", instMnem,
+                setFlags, %(op_class)s),
+                src1(_src1.index()), imm(_imm), dataSize(_dataSize)
+    {
+        foldOBit = (dataSize == 1 && !machInst.rex.present) ? 1 << 6 : 0;
+        %(constructor)s;
+    }
+}};
+
+let {{
+    class SSPStreamInputOp(X86Microop):
+        op_class = "No_OpClass"
+        def __init__(self, src, imm, dataSize="env.dataSize"):
+            self.className = "SSPStreamInput"
+            self.mnemonic = "ssp.stream.input"
+            self.src = src
+            if isinstance(imm, (int, long)):
+                imm = "ULL(%d)" % imm
+            self.imm = imm
+            self.dataSize = dataSize
+
+        def getAllocator(self, microFlags):
+            allocString = '''
+                (StaticInstPtr)(new %(class_name)s(machInst,
+                    macrocodeBlock, %(flags)s, %(src)s, %(imm)s,
+                    %(dataSize)s))
+            '''
+            allocator = allocString % {
+                "class_name" : self.className,
+                "mnemonic" : self.mnemonic,
+                "flags" : self.microFlagsText(microFlags),
+                "src" : self.src,
+                "imm" : self.imm,
+                "dataSize" : self.dataSize
+            }
+            return allocator
+
+    microopClasses["ssp_stream_input"] = SSPStreamInputOp
+}};
+
+let {{
+    iops = [
+        InstObjParams(
+            "ssp_stream_input",
+            "SSPStreamInput",
+            'X86MicroopBase',
+            {
+                'code' : '(void)SrcReg1',
+            },
+            ['No_OpClass']
+        ),
+    ]
+    for iop in iops:
+        header_output += MicroSSPInputOpDeclare.subst(iop)
+        decoder_output += MicroSSPInputOpConstructor.subst(iop)
+        decoder_output += MicroSSPInputOpDisassembly.subst(iop)
+        exec_output += MicroSSPInputOpExecute.subst(iop)
+}};

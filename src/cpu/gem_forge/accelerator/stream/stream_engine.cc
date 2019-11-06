@@ -2359,9 +2359,10 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
 
   /**
    * ! Disable this feature for now cause the previous element
-   * ! may be stepped without value ready.
+   * ! may be stepped without value ready for conditionally
+   * ! used streams.
    */
-  const bool enableCoalesceContinuousElement = false;
+  const bool enableCoalesceContinuousElement = true;
   if (!enableCoalesceContinuousElement) {
     return false;
   }

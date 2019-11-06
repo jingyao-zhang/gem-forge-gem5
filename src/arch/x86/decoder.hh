@@ -60,11 +60,13 @@ class Decoder
     static ByteTable UsesModRMOneByte;
     static ByteTable UsesModRMTwoByte;
     static ByteTable UsesModRMThreeByte0F38;
+    static ByteTable UsesModRMThreeByte0F38GemForge;
     static ByteTable UsesModRMThreeByte0F3A;
 
     static ByteTable ImmediateTypeOneByte;
     static ByteTable ImmediateTypeTwoByte;
     static ByteTable ImmediateTypeThreeByte0F38;
+    static ByteTable ImmediateTypeThreeByte0F38GemForge;
     static ByteTable ImmediateTypeThreeByte0F3A;
     static ByteTable ImmediateTypeVex[10];
 

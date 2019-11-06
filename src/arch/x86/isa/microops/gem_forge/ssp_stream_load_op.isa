@@ -1,0 +1,142 @@
+
+//////////////////////////////////////////////////////////////////////////
+//
+// Micro ops that uses one register and one immediate.
+//
+//////////////////////////////////////////////////////////////////////////
+
+def template MicroSSPLoadOpExecute {{
+        Fault %(class_name)s::execute(ExecContext *xc,
+                Trace::InstRecord *traceData) const
+        {
+            %(op_decl)s;
+            %(op_rd)s;
+            %(code)s;
+            %(op_wb)s;
+            return NoFault;
+        }
+
+        Fault
+        %(class_name)s::initiateAcc(
+            ExecContext *xc, Trace::InstRecord *traceData) const {
+            Fault fault = NoFault;
+            return fault;
+        }
+
+        Fault
+        %(class_name)s::completeAcc(
+            PacketPtr pkt, ExecContext *xc, Trace::InstRecord *traceData) const {
+            Fault fault = NoFault;
+            return fault;
+        }
+}};
+
+def template MicroSSPLoadOpDeclare {{
+    class %(class_name)s : public X86ISA::X86MicroopBase
+    {
+      protected:
+        const RegIndex dest;
+        const uint64_t imm;
+        const uint8_t dataSize;
+        RegIndex foldOBit;
+
+        std::string generateDisassembly(Addr pc,
+            const SymbolTable *symtab) const;
+
+      public:
+        %(class_name)s(ExtMachInst _machInst,
+                const char * instMnem,
+                uint64_t setFlags, InstRegIndex _dest,
+                uint64_t _imm, uint8_t _dataSize);
+
+        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, Trace::InstRecord *) const override;
+        Fault completeAcc(
+            PacketPtr, ExecContext *, Trace::InstRecord *) const override;
+    };
+}};
+
+def template MicroSSPLoadOpDisassembly {{
+    std::string %(class_name)s::generateDisassembly(Addr pc,
+            const SymbolTable *symtab) const
+    {
+        std::stringstream response;
+
+        printMnemonic(response, instMnem, mnemonic);
+        printDestReg(response, 0, dataSize);
+        response << ", ";
+        ccprintf(response, "%#x", imm);
+        return response.str();
+    }
+}};
+
+def template MicroSSPLoadOpConstructor {{
+    %(class_name)s::%(class_name)s(
+            ExtMachInst machInst, const char * instMnem, uint64_t setFlags,
+            InstRegIndex _dest, uint64_t _imm, uint8_t _dataSize) :
+        %(base_class)s(machInst, "%(mnemonic)s", instMnem,
+                setFlags, %(op_class)s),
+                dest(_dest.index()), imm(_imm), dataSize(_dataSize)
+    {
+        foldOBit = (dataSize == 1 && !machInst.rex.present) ? 1 << 6 : 0;
+        %(constructor)s;
+
+        /**
+         * ! GemForge
+         * Explicitly mark the dest register.
+         */
+        _destRegIdx[_numDestRegs++] = RegId(IntRegClass, INTREG_FOLDED(dest, foldOBit));
+        _numIntDestRegs++;
+        flags[IsInteger] = true;
+    }
+}};
+
+let {{
+    class SSPStreamLoadOp(X86Microop):
+        op_class = "MemReadOp"
+        def __init__(self, dest, imm, dataSize="env.dataSize"):
+            self.className = "SSPStreamLoad"
+            self.mnemonic = "ssp.stream.load"
+            self.dest = dest
+            if isinstance(imm, (int, long)):
+                imm = "ULL(%d)" % imm
+            self.imm = imm
+            self.dataSize = dataSize
+
+        def getAllocator(self, microFlags):
+            allocString = '''
+                (StaticInstPtr)(new %(class_name)s(machInst,
+                    macrocodeBlock, %(flags)s, %(dest)s, %(imm)s,
+                    %(dataSize)s))
+            '''
+            allocator = allocString % {
+                "class_name" : self.className,
+                "mnemonic" : self.mnemonic,
+                "flags" : self.microFlagsText(microFlags),
+                "dest" : self.dest,
+                "imm" : self.imm,
+                "dataSize" : self.dataSize
+            }
+            return allocator
+
+    microopClasses["ssp_stream_load"] = SSPStreamLoadOp
+}};
+
+let {{
+    iops = [
+        InstObjParams(
+            "ssp_stream_load",
+            "SSPStreamLoad",
+            'X86MicroopBase',
+            {
+                'code' : '',
+            },
+            ['MemReadOp', 'IsLoad', 'IsMemRef']
+        ),
+    ]
+    for iop in iops:
+        header_output += MicroSSPLoadOpDeclare.subst(iop)
+        decoder_output += MicroSSPLoadOpConstructor.subst(iop)
+        decoder_output += MicroSSPLoadOpDisassembly.subst(iop)
+        exec_output += MicroSSPLoadOpExecute.subst(iop)
+}};

@@ -36,6 +36,7 @@
 # Authors: Gabe Black
 
 categories = ["romutil",
+              "gem_forge",
               "general_purpose",
               "simd128",
               "simd64",

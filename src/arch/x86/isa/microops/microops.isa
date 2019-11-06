@@ -61,3 +61,6 @@
 
 //Microops for printing out debug messages through M5
 ##include "debug.isa"
+
+//Microops for stream-specialized processor
+##include "gem_forge/sspop.isa"

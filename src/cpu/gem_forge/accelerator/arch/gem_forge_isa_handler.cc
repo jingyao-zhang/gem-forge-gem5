@@ -120,9 +120,8 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
       std::forward_as_tuple());
   if (emplaceRet.second) {
     // Newly created. Do basic analysis.
-    // I am very surprised that Gem5 does not provide an easy way for me to get
-    // the opcode of the inst. So far this is so fragile.
-    // TODO: Improve this.
+    // * Simply use the instruction name may be a bad idea, but it decouples
+    // * us from the encoding of the instruction in a specific ISA.
     auto instName = dynInfo.staticInst->getName();
     auto &staticInstInfo = emplaceRet.first->second;
 

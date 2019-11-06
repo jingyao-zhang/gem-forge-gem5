@@ -30,6 +30,9 @@ void ISAStreamEngine::dispatchStreamConfig(
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
 
+  ISA_SE_DPRINTF("Dispatch config %llu, %s.\n", configIdx,
+                 infoRelativePath.c_str());
+
   // Initialize the regionStreamId translation table.
   auto infoFullPath =
       cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
@@ -566,7 +569,8 @@ T ISAStreamEngine::extractImm(const StaticInst *staticInst) const {
   assert(immOp && "Invalid ImmOp.");
   return immOp->getImm();
 #elif THE_ISA == X86_ISA
-  panic("x86 ISA stream engine is not supported.");
+  auto machineInst = staticInst->machInst;
+  return machineInst.immediate;
 #else
   panic("ISA stream engine is not supported.");
 #endif
