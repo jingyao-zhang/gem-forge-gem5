@@ -330,6 +330,30 @@ RubyPort::MemSlavePort::recvAtomic(PacketPtr pkt)
                RubySystem::getBlockSizeBytes());
     }
 
+    /**
+     * ! GemForge
+     * Ruby does not support functional access when the cache line is
+     * transient state. Unfortunately, when the number of cores increases,
+     * this always happens for Rodinia benchmarks (frequent syscall sched_yield()
+     * will try to read the arguments use functional access).
+     * I think one way to bypass this is to use back_store. However, the problem
+     * is that when fast forwarding, the back_storage is not updated by atomic
+     * access.
+     *
+     * I am going for a quick fix here that actually breaks the meaning of
+     * atomic mode -- I will only access the back_store here, and returns a
+     * crazy default latency. This should be fine cause ruby doesn't support
+     * caching in atomic mode.
+     */
+    if (access_backing_store) {
+        // The attached physmem contains the official version of data.
+        // The following command performs the real functional access.
+        // This line should be removed once Ruby supplies the official version
+        // of data.
+        auto backStore = ruby_port->m_ruby_system->getPhysMem();
+        return backStore->recvAtomic(pkt);
+    }
+
     // Find appropriate directory for address
     // This assumes that protocols have a Directory machine,
     // which has its memPort hooked up to memory. This can
@@ -399,8 +423,8 @@ RubyPort::MemSlavePort::recvFunctional(PacketPtr pkt)
         // Unless the requester explicitly said otherwise, generate an error if
         // the functional request failed
         if (!accessSucceeded && !pkt->suppressFuncError()) {
-            fatal("Ruby functional %s failed for address %#x\n",
-                  pkt->isWrite() ? "write" : "read", pkt->getAddr());
+            fatal("[%llu]: Ruby functional %s failed for address %#x\n",
+                  curTick(), pkt->isWrite() ? "write" : "read", pkt->getAddr());
         }
 
         // turn packet around to go back to requester if response expected

@@ -184,8 +184,9 @@ class SimpleMemory : public AbstractMemory
                   PortID idx=InvalidPortID) override;
     void init() override;
 
-  protected:
     Tick recvAtomic(PacketPtr pkt);
+
+  protected:
     Tick recvAtomicBackdoor(PacketPtr pkt, MemBackdoorPtr &_backdoor);
     void recvFunctional(PacketPtr pkt);
     bool recvTimingReq(PacketPtr pkt);

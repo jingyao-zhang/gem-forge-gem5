@@ -221,7 +221,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   AccessPermission getAccessPermission(Addr addr) {
     TBE tbe := TBEs[addr];
     if(is_valid(tbe)) {
-      DPRINTF(RubySlicc, "%s\n", L0Cache_State_to_permission(tbe.TBEState));
+      DPRINTF(RubySlicc, "%s %s\n", tbe.TBEState, L0Cache_State_to_permission(tbe.TBEState));
       return L0Cache_State_to_permission(tbe.TBEState);
     }
 
