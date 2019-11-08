@@ -65,15 +65,7 @@ class MessageBuffer : public SimObject
     // TRUE if head of queue timestamp <= SystemTime
     bool isReady(Tick current_time) const;
 
-    void
-    delayHead(Tick current_time, Tick delta)
-    {
-        MsgPtr m = m_prio_heap.front();
-        std::pop_heap(m_prio_heap.begin(), m_prio_heap.end(),
-                      std::greater<MsgPtr>());
-        m_prio_heap.pop_back();
-        enqueue(m, current_time, delta);
-    }
+    void delayHead(Tick current_time, Tick delta);
 
     bool areNSlotsAvailable(unsigned int n, Tick curTime);
     int getPriority() { return m_priority_rank; }

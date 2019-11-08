@@ -185,9 +185,9 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
     if (m_strict_fifo) {
         if (arrival_time < m_last_arrival_time) {
             panic("FIFO ordering violated: %s name: %s current time: %d "
-                  "delta: %d arrival_time: %d last arrival_time: %d\n",
+                  "delta: %d arrival_time: %d last arrival_time: %d, Message: %s\n",
                   *this, name(), current_time, delta, arrival_time,
-                  m_last_arrival_time);
+                  m_last_arrival_time, *(message.get()));
         }
     }
 
@@ -468,6 +468,48 @@ MessageBuffer::functionalWrite(Packet *pkt)
     }
 
     return num_functional_writes;
+}
+
+void
+MessageBuffer::delayHead(Tick current_time, Tick delta)
+{
+    /**
+     * ! GemForge
+     * The only use case for this is to delay the message processing
+     * when the sequencer blocked the controller to handle an RMW operation.
+     * This simply pop an message from the queue and requeue
+     * it with one cycle latency. This is a very confusing implementation.
+     * It may cause FIFO ordering violation if there are messages in the
+     * buffer with arrival_time later than current_time + delta.
+     *
+     * To solve this, all messages with arrival_time earlier than
+     * current_time + delta is modified to be arrived at current_time + delta.
+     * The message counter should not be changed to maintain the FIFO order.
+     *
+     * This is because the MessageBuffer relies on the lastEnqueueTime to
+     * check isReady().
+     *
+     */
+    DPRINTF(RubyQueue, "Delay head with delta %d\n", delta);
+    auto targetTime = current_time + delta;
+    for (auto &msg : m_prio_heap) {
+        if (msg->getLastEnqueueTime() < targetTime) {
+            // We need to update the latency.
+            msg->updateDelayedTicks(targetTime);
+            msg->setLastEnqueueTime(targetTime);
+        }
+    }
+    // Remake the heap.
+    std::make_heap(m_prio_heap.begin(), m_prio_heap.end(),
+                   std::greater<MsgPtr>());
+    // Schedule an event at that time.
+    m_consumer->scheduleEventAbsolute(targetTime);
+
+    // MsgPtr m = m_prio_heap.front();
+    // std::pop_heap(m_prio_heap.begin(), m_prio_heap.end(),
+    //               std::greater<MsgPtr>());
+    // m_prio_heap.pop_back();
+    // enqueue(m, current_time, delta);
 }
 
 MessageBuffer *
