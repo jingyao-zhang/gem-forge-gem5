@@ -5,13 +5,21 @@
 
 // #include "base/misc.hh""
 #include "base/trace.hh"
-#include "debug/StreamEngine.hh"
+#include "debug/CoalescedStream.hh"
 #include "proto/protoio.hh"
 
 #include <sstream>
 
 #define LOGICAL_STREAM_PANIC(S, format, args...)                               \
   panic("Logical Stream %s: " format, (S)->info.name().c_str(), ##args)
+
+#define LS_DPRINTF(LS, format, args...)                                        \
+  DPRINTF(CoalescedStream, "L-Stream %s: " format, (LS)->info.name().c_str(),  \
+          ##args)
+
+#define STREAM_DPRINTF(format, args...)                                        \
+  DPRINTF(CoalescedStream, "C-Stream %s: " format,                             \
+          this->getStreamName().c_str(), ##args)
 
 LogicalStream::LogicalStream(const std::string &_traceExtraFolder,
                              const LLVM::TDG::StreamInfo &_info)
@@ -25,23 +33,23 @@ LogicalStream::LogicalStream(const std::string &_traceExtraFolder,
 LogicalStream::~LogicalStream() {}
 
 CoalescedStream::CoalescedStream(const StreamArguments &args,
-                                 const LLVM::TDG::StreamInfo &_primaryInfo)
-    : Stream(args) {
-  // Create the primary logical stream.
-  this->addStreamInfo(_primaryInfo);
-  // Set the primaryLogicalStream to the newly created one.
-  this->primaryLogicalStream = &(this->coalescedStreams.front());
-}
+                                 bool _staticCoalesced)
+    : Stream(args), staticCoalesced(_staticCoalesced), primeLStream(nullptr) {}
 
-CoalescedStream::~CoalescedStream() {}
+CoalescedStream::~CoalescedStream() {
+  for (auto &LS : this->coalescedStreams) {
+    delete LS;
+    LS = nullptr;
+  }
+  this->coalescedStreams.clear();
+}
 
 void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
   /**
    * Note: At this point the primary logical stream may not be created yet!
    */
-  this->coalescedStreams.emplace_back(cpuDelegator->getTraceExtraFolder(),
-                                      info);
-  this->generateStreamName();
+  this->coalescedStreams.emplace_back(
+      new LogicalStream(cpuDelegator->getTraceExtraFolder(), info));
   // Update the dependence information.
   for (const auto &baseStreamId : info.chosen_base_streams()) {
     auto baseStream = this->se->getStream(baseStreamId.id());
@@ -72,9 +80,45 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
   }
 }
 
+void CoalescedStream::finalize() {
+  assert(!this->coalescedStreams.empty());
+  // Other sanity check for statically coalesced streams.
+  if (this->staticCoalesced) {
+    this->coalescedElementSize =
+        this->coalescedStreams.front()->getElementSize();
+    // Make sure we have the currect base_stream.
+    for (const auto &LS : this->coalescedStreams) {
+      assert(LS->info.coalesce_info().base_stream() > 0);
+      assert(
+          LS->info.coalesce_info().base_stream() ==
+          this->coalescedStreams.front()->info.coalesce_info().base_stream());
+      assert(LS->getCoalesceOffset() >= 0);
+      // Compute the element size.
+      this->coalescedElementSize =
+          std::max(this->coalescedElementSize,
+                   LS->getCoalesceOffset() + LS->getElementSize());
+    }
+    // Sort the streams with offset.
+    std::sort(this->coalescedStreams.begin(), this->coalescedStreams.end(),
+              [](const LogicalStream *LA, const LogicalStream *LB) -> bool {
+                return LA->getCoalesceOffset() <= LB->getCoalesceOffset();
+              });
+    // Make sure at least the first one has zero offset.
+    assert(this->coalescedStreams.front()->getCoalesceOffset() == 0);
+  }
+  this->primeLStream = this->coalescedStreams.front();
+  STREAM_DPRINTF("Finalized, ElementSize %d, LStreams: =========.\n",
+                 this->coalescedElementSize);
+  for (auto LS : this->coalescedStreams) {
+    LS_DPRINTF(LS, "Offset %d, ElementSize %d.\n", LS->getCoalesceOffset(),
+               LS->getElementSize());
+  }
+  STREAM_DPRINTF("Finalized ====================================.\n");
+}
+
 void CoalescedStream::initializeBackBaseStreams() {
   for (auto &logicalStream : this->coalescedStreams) {
-    auto &info = logicalStream.info;
+    auto &info = logicalStream->info;
     assert(info.chosen_back_base_streams_size() == 0 &&
            "No back edge dependence for coalesced stream.");
   }
@@ -82,9 +126,14 @@ void CoalescedStream::initializeBackBaseStreams() {
 
 void CoalescedStream::configure(uint64_t seqNum, ThreadContext *tc) {
   this->dispatchStreamConfig(seqNum, tc);
-  for (auto &S : this->coalescedStreams) {
-    S.history->configure();
-    S.patternStream->configure();
+  if (!this->staticCoalesced) {
+    // We still use the trace based history address.
+    assert(this->staticCoalesced &&
+           "Trace based coalesced stream is disabled.");
+    for (auto &S : this->coalescedStreams) {
+      S->history->configure();
+      S->patternStream->configure();
+    }
   }
 }
 
@@ -97,12 +146,12 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
   Addr lhsAddr = 0, rhsAddr = 4;
   for (auto &S : this->coalescedStreams) {
     bool oracleUsed = false;
-    auto nextValuePair = S.history->getNextAddr(oracleUsed);
+    auto nextValuePair = S->history->getNextAddr(oracleUsed);
     if (!nextValuePair.first) {
       continue;
     }
     auto addr = nextValuePair.second;
-    auto elementSize = S.info.element_size();
+    auto elementSize = S->info.element_size();
     if (cacheBlocks.empty()) {
       lhsAddr = addr;
       rhsAddr = addr + elementSize;
@@ -121,7 +170,7 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
             "%s: More than %d cache blocks for one stream element, address %lu "
             "size %lu.",
             this->getStreamName().c_str(), cacheBlocks.size(), addr,
-            S.info.element_size());
+            S->info.element_size());
       }
 
       // Insert into the list.
@@ -185,42 +234,20 @@ void CoalescedStream::prepareNewElement(StreamElement *element) {
   }
 }
 
-void CoalescedStream::generateStreamName() {
-  std::stringstream ss;
-  ss << "(CLS ";
-  const auto &primaryName = this->coalescedStreams.front().info.name();
-  auto lhs = primaryName.find(' ');
-  auto rhs = primaryName.rfind(' ');
-  ss << primaryName.substr(lhs + 1, rhs - lhs - 1);
-
-  for (const auto &S : this->coalescedStreams) {
-    const auto &name = S.info.name();
-    auto pos = name.rfind(' ');
-    ss << ' ' << name.substr(pos + 1, name.size() - pos - 2);
-  }
-  ss << ")";
-  // So far I disabled the customized name for coalesced stream.
-  // this->streamName = ss.str();
-}
-
 const std::string &CoalescedStream::getStreamType() const {
-  return this->primaryLogicalStream->info.type();
+  return this->primeLStream->info.type();
 }
 
 uint32_t CoalescedStream::getLoopLevel() const {
-  return this->primaryLogicalStream->info.loop_level();
+  return this->primeLStream->info.loop_level();
 }
 
 uint32_t CoalescedStream::getConfigLoopLevel() const {
-  return this->primaryLogicalStream->info.config_loop_level();
-}
-
-int32_t CoalescedStream::getElementSize() const {
-  return this->primaryLogicalStream->info.element_size();
+  return this->primeLStream->info.config_loop_level();
 }
 
 bool CoalescedStream::isContinuous() const {
-  const auto &pattern = this->primaryLogicalStream->patternStream->getPattern();
+  const auto &pattern = this->primeLStream->patternStream->getPattern();
   if (pattern.val_pattern() != "LINEAR") {
     return false;
   }
@@ -229,6 +256,19 @@ bool CoalescedStream::isContinuous() const {
 
 void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
                                    const std::vector<uint64_t> *inputVec) {
+
+  if (this->staticCoalesced) {
+    // We generate the address based on the primeLStream.
+    assert(inputVec && "Missing InputVec.");
+    const auto &info = this->primeLStream->info;
+    const auto &staticInfo = info.static_info();
+    const auto &pattern = staticInfo.iv_pattern();
+    if (pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR) {
+      this->setupLinearAddrFunc(dynStream, inputVec, info);
+      return;
+    }
+  }
+
   panic("Coalesced stream in cache is not supported yet.\n");
 }
 
@@ -248,9 +288,9 @@ uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
    * blocks. It is OK for us to under-estimate the footprint, as the cache will
    * try to cache a stream with low-memory footprint.
    */
-  const auto &pattern = this->primaryLogicalStream->patternStream->getPattern();
+  const auto &pattern = this->primeLStream->patternStream->getPattern();
   const auto totalElements =
-      this->primaryLogicalStream->history->getCurrentStreamLength();
+      this->primeLStream->history->getCurrentStreamLength();
   if (pattern.val_pattern() == "LINEAR") {
     // One dimension linear stream.
     return totalElements * pattern.stride_i() / cacheBlockSize;
@@ -280,7 +320,21 @@ uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
 }
 
 uint64_t CoalescedStream::getTrueFootprint() const {
-  return this->primaryLogicalStream->history->getNumCacheLines();
+  return this->primeLStream->history->getNumCacheLines();
+}
+
+void CoalescedStream::getCoalescedOffsetAndSize(uint64_t streamId,
+                                                int32_t &offset,
+                                                int32_t &size) const {
+  for (auto LS : this->coalescedStreams) {
+    if (LS->getStreamId() == streamId) {
+      offset = LS->getCoalesceOffset();
+      size = LS->getElementSize();
+      return;
+    }
+  }
+  STREAM_DPRINTF("Failed to find logical stream %llu.\n", streamId);
+  assert(false);
 }
 
 void CoalescedStream::dump() const {

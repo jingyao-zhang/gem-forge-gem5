@@ -23,6 +23,16 @@ struct CacheBlockBreakdownAccess {
   uint64_t virtualAddr;
   // The actual size.
   uint8_t size;
+  /**
+   * State of the cache line.
+   */
+  enum StateE {
+    None,
+    Initialized,
+    Issued,
+    PrevElement,
+    Ready
+  } state;
 };
 
 class StreamElement;
@@ -93,6 +103,12 @@ struct StreamElement {
   StreamEngine *se;
   FIFOEntryIdx FIFOIdx;
   int cacheBlockSize;
+  /**
+   * Whether this element's value managed in cache block level.
+   * So far all memory streams are managed in cache block level.
+   * TODO: Handle indirect stream where this is not true.
+   */
+  bool isCacheBlockedValue;
   /**
    * Whether the first user of this stream element has been dispatched.
    * This is used to determine the first user the of the stream element
@@ -166,6 +182,7 @@ struct StreamElement {
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
   void handlePacketResponse(StreamMemAccess *memAccess, PacketPtr pkt);
   void markAddrReady(GemForgeCPUDelegator *cpuDelegator);
+  void tryMarkValueReady();
   void markValueReady();
 
   void splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator);
@@ -173,6 +190,7 @@ struct StreamElement {
   void dump() const;
 
   void clear();
+  void clearCacheBlocks();
   Stream *getStream() {
     assert(this->stream != nullptr && "Null stream in the element.");
     return this->stream;

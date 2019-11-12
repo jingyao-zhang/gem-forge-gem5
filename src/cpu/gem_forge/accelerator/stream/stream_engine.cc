@@ -40,28 +40,10 @@ void debugStreamWithElements(Stream *S, const char *message) {
 } // namespace
 
 #define SE_DPRINTF(format, args...)                                            \
-  DPRINTF(StreamEngine, "[SE]: " format, ##args)
+  DPRINTF(StreamEngine, "[SE%d]: " format, this->cpuDelegator->cpuId(), ##args)
 
-#define STREAM_DPRINTF(stream, format, args...)                                \
-  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
-          ##args)
-
-#define STREAM_HACK(stream, format, args...)                                   \
-  hack("[%s]: " format, stream->getStreamName().c_str(), ##args)
-
-#define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
-  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
-                 element->FIFOIdx.streamId.streamInstance,                     \
-                 element->FIFOIdx.entryIdx, ##args)
-
-#define STREAM_LOG(log, stream, format, args...)                               \
-  log("[%s]: " format, stream->getStreamName().c_str(), ##args)
-
-#define STREAM_ELEMENT_LOG(log, element, format, args...)                      \
-  element->se->dump();                                                         \
-  STREAM_LOG(log, element->getStream(), "[%lu, %lu]: " format,                 \
-             element->FIFOIdx.streamId.streamInstance,                         \
-             element->FIFOIdx.entryIdx, ##args)
+#define DEBUG_TYPE StreamEngine
+#include "stream_log.hh"
 
 StreamEngine::StreamEngine(Params *params)
     : GemForgeAccelerator(params), streamPlacementManager(nullptr),
@@ -104,7 +86,8 @@ StreamEngine::~StreamEngine() {
   // Clear all the allocated streams.
   for (auto &streamIdStreamPair : this->streamMap) {
     /**
-     * Be careful here as CoalescedStream are not newed, no need to delete them.
+     * Be careful here as CoalescedStream are not newed, no need to delete
+     * them.
      */
     if (dynamic_cast<CoalescedStream *>(streamIdStreamPair.second) != nullptr) {
       continue;
@@ -220,11 +203,12 @@ void StreamEngine::regStats() {
 
 bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
   /**
-   * A stream can be configured iff. we can guarantee that it will be allocate
-   * one entry when configured.
+   * A stream can be configured iff. we can guarantee that it will be
+   * allocate one entry when configured.
    *
-   * If this this the first time we encounter the stream, we check the number of
-   * free entries. Otherwise, we ALSO ensure that allocSize < maxSize.
+   * If this this the first time we encounter the stream, we check the
+   * number of free entries. Otherwise, we ALSO ensure that allocSize <
+   * maxSize.
    */
 
   const auto &infoRelativePath = args.infoRelativePath;
@@ -288,7 +272,8 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
-  // Initialize all the streams if this is the first time we encounter the loop.
+  // Initialize all the streams if this is the first time we encounter the
+  // loop.
   for (const auto &streamInfo : streamRegion.streams()) {
     const auto &streamId = streamInfo.id();
     // Remember to also check the coalesced id map.
@@ -324,7 +309,8 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   // 3. Allocate new entries one by one for all streams.
   // The first element is guaranteed to be allocated.
   for (auto S : configStreams) {
-    // hack("Allocate element for stream %s.\n", S->getStreamName().c_str());
+    // hack("Allocate element for stream %s.\n",
+    // S->getStreamName().c_str());
     assert(this->hasFreeElement());
     assert(S->allocSize < S->maxSize);
     assert(this->areBaseElementAllocated(S));
@@ -542,9 +528,10 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
      * To solve this, we only do throttling for streamStep.
      *
      * 2. How to handle short streams?
-     * There is a pathological case when the streams are short, and increasing
-     * the run ahead length beyond the stream length does not make sense.
-     * We do not throttle if the element is within the run ahead length.
+     * There is a pathological case when the streams are short, and
+     * increasing the run ahead length beyond the stream length does not
+     * make sense. We do not throttle if the element is within the run ahead
+     * length.
      */
     auto releaseElement = S->tail->next;
     assert(releaseElement->FIFOIdx.configSeqNum !=
@@ -731,8 +718,8 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
   assert(this->userElementMap.count(seqNum) != 0);
 
   if (args.values == nullptr) {
-    // This is traced base simulation, and they do not require us to provide the
-    // value.
+    // This is traced base simulation, and they do not require us to provide
+    // the value.
     return;
   }
   std::unordered_map<Stream *, StreamElement *> streamToElementMap;
@@ -748,8 +735,8 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
   }
   for (auto streamId : args.usedStreamIds) {
     /**
-     * This is necessary, we can not directly use the usedStreamId cause it may
-     * be a coalesced stream.
+     * This is necessary, we can not directly use the usedStreamId cause it
+     * may be a coalesced stream.
      */
     auto S = this->getStream(streamId);
     auto element = streamToElementMap.at(S);
@@ -762,11 +749,17 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
     } else {
       /**
        * Read in the value.
-       * TODO: Need an offset for coalesced stream.
        */
-      assert(element->size <= 8 && "Do we really have such huge register.");
-      element->getValue(element->addr, element->size,
-                        args.values->back().data());
+      auto vaddr = element->addr;
+      int size = element->size;
+      if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
+        // Handle offset for coalesced stream.
+        int32_t offset;
+        CS->getCoalescedOffsetAndSize(streamId, offset, size);
+        vaddr += offset;
+      }
+      assert(size <= 8 && "Do we really have such huge register.");
+      element->getValue(vaddr, size, args.values->back().data());
     }
   }
 }
@@ -931,7 +924,8 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     }
 
     /**
-     * Check if this stream is offloaded and if so, send the StreamEnd packet.
+     * Check if this stream is offloaded and if so, send the StreamEnd
+     * packet.
      */
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
@@ -1016,6 +1010,7 @@ void StreamEngine::executeStreamStore(StreamStoreInst *inst) {
       // Found it.
       element->stored = true;
       // Mark the stored element value ready.
+      // No one is going to use it.
       if (!element->isValueReady) {
         element->markValueReady();
       }
@@ -1045,8 +1040,6 @@ void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
 
 void StreamEngine::initializeStreams(
     const ::LLVM::TDG::StreamRegion &streamRegion) {
-  // Coalesced streams.
-  std::unordered_map<int, CoalescedStream *> coalescedGroupToStreamMap;
 
   Stream::StreamArguments args;
   args.cpu = cpu;
@@ -1071,33 +1064,49 @@ void StreamEngine::initializeStreams(
   }
 
   std::vector<Stream *> createdStreams;
+  // Coalesced streams.
+  std::unordered_map<uint64_t, uint64_t> coalescedGroupToStreamIdMap;
   for (const auto &streamInfo : streamRegion.streams()) {
     const auto &streamId = streamInfo.id();
     assert(this->streamMap.count(streamId) == 0 &&
            "Stream is already initialized.");
-    auto coalesceGroup = streamInfo.coalesce_group();
+    /**
+     * I know this is confusing. But there are two possible interpretation
+     * of coalesce group. In both case, 0 is used as the invalid coalesce
+     * group.
+     * 1. In the old trace based implementation, this is some arbitrarily
+     *    allocated number. The offset should be -1.
+     * 2. In the static transform implementation, this is the base stream
+     *    id, and the offset should be >= 0.
+     */
+    const auto &coalesceInfo = streamInfo.coalesce_info();
+    auto coalesceGroup = coalesceInfo.base_stream();
+    constexpr uint64_t InvalidCoalesceGroup = 0;
 
     // Set per stream field in stream args.
     args.staticId = streamId;
     args.name = streamInfo.name().c_str();
 
-    if (coalesceGroup != -1 && this->enableCoalesce) {
+    if (coalesceGroup != InvalidCoalesceGroup && this->enableCoalesce) {
+
+      auto staticCoalesced = coalesceInfo.offset() != 1;
+
       // First check if we have created the coalesced stream for the group.
-      if (coalescedGroupToStreamMap.count(coalesceGroup) == 0) {
-        auto newCoalescedStream = new CoalescedStream(args, streamInfo);
+      if (coalescedGroupToStreamIdMap.count(coalesceGroup) == 0) {
+        auto newCoalescedStream = new CoalescedStream(args, staticCoalesced);
+        newCoalescedStream->addStreamInfo(streamInfo);
         createdStreams.push_back(newCoalescedStream);
         this->streamMap.emplace(streamId, newCoalescedStream);
         this->coalescedStreamIdMap.emplace(streamId, streamId);
-        coalescedGroupToStreamMap.emplace(coalesceGroup, newCoalescedStream);
+        coalescedGroupToStreamIdMap.emplace(coalesceGroup, streamId);
       } else {
         // This is not the first time we encounter this coalesce group.
         // Add the config to the coalesced stream.
-        auto coalescedStream = coalescedGroupToStreamMap.at(coalesceGroup);
-        auto coalescedStreamId = coalescedStream->getCoalesceStreamId();
+        auto coalescedStreamId = coalescedGroupToStreamIdMap.at(coalesceGroup);
+        auto coalescedStream = dynamic_cast<CoalescedStream *>(
+            this->streamMap.at(coalescedStreamId));
         coalescedStream->addStreamInfo(streamInfo);
         this->coalescedStreamIdMap.emplace(streamId, coalescedStreamId);
-        hack("Add coalesced stream %lu %lu %s.\n", streamId, coalescedStreamId,
-             coalescedStream->getStreamName().c_str());
       }
 
       // panic("Disabled stream coalesce so far.");
@@ -1107,6 +1116,15 @@ void StreamEngine::initializeStreams(
       auto newStream = new SingleStream(args, streamInfo);
       createdStreams.push_back(newStream);
       this->streamMap.emplace(streamId, newStream);
+    }
+  }
+
+  /**
+   * Remember to finalize the coalesced streams.
+   */
+  for (auto newStream : createdStreams) {
+    if (auto newCoalescedStream = dynamic_cast<CoalescedStream *>(newStream)) {
+      newCoalescedStream->finalize();
     }
   }
 
@@ -1369,7 +1387,8 @@ bool StreamEngine::areBaseElementAllocated(Stream *S) {
         allocated = false;
       }
     }
-    // hack("Check base element from stream %s for stream %s allocated %d.\n",
+    // hack("Check base element from stream %s for stream %s allocated
+    // %d.\n",
     //      baseS->getStreamName().c_str(), S->getStreamName().c_str(),
     //      allocated);
     if (!allocated) {
@@ -1397,6 +1416,7 @@ void StreamEngine::allocateElement(Stream *S) {
    * entryIdx starts from 0.
    */
   newElement->FIFOIdx = S->FIFOIdx;
+  newElement->isCacheBlockedValue = S->isMemStream();
   S->FIFOIdx.next();
 
   // Find the base element.
@@ -1443,32 +1463,32 @@ void StreamEngine::allocateElement(Stream *S) {
         auto element = S->stepped->next;
         while (element != nullptr) {
           if (baseElement == nullptr) {
-            STREAM_ELEMENT_LOG(panic, newElement,
-                               "Failed to find back base element from %s.\n",
-                               backBaseS->getStreamName().c_str());
+            S_ELEMENT_PANIC(newElement,
+                            "Failed to find back base element from %s.\n",
+                            backBaseS->getStreamName().c_str());
           }
           element = element->next;
           baseElement = baseElement->next;
         }
         if (baseElement == nullptr) {
-          STREAM_ELEMENT_LOG(panic, newElement,
-                             "Failed to find back base element from %s.\n",
-                             backBaseS->getStreamName().c_str());
+          S_ELEMENT_PANIC(newElement,
+                          "Failed to find back base element from %s.\n",
+                          backBaseS->getStreamName().c_str());
         }
         // ! Try to check the base element should have the previous element.
-        STREAM_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
+        S_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
         if (baseElement->FIFOIdx.streamId.streamInstance ==
             newElement->FIFOIdx.streamId.streamInstance) {
           if (baseElement->FIFOIdx.entryIdx + 1 ==
               newElement->FIFOIdx.entryIdx) {
-            STREAM_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
+            S_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
             newElement->baseElements.insert(baseElement);
           } else {
-            // STREAM_ELEMENT_LOG(panic,
+            // S_ELEMENT_PANIC(
             //     newElement, "The base element has wrong FIFOIdx.\n");
           }
         } else {
-          // STREAM_ELEMENT_LOG(panic,newElement,
+          // S_ELEMENT_PANIC(newElement,
           //                      "The base element has wrong
           //                      streamInstance.\n");
         }
@@ -1485,6 +1505,14 @@ void StreamEngine::allocateElement(Stream *S) {
   S->head->next = newElement;
   S->allocSize++;
   S->head = newElement;
+
+  if (newElement->FIFOIdx.entryIdx == 1) {
+    if (newElement->FIFOIdx.streamId.coreId == 8 &&
+        newElement->FIFOIdx.streamId.streamInstance == 1 &&
+        newElement->FIFOIdx.streamId.staticId == 11704592) {
+      S_ELEMENT_HACK(newElement, "Allocated.\n");
+    }
+  }
 }
 
 void StreamEngine::releaseElementStepped(Stream *S) {
@@ -1549,8 +1577,8 @@ void StreamEngine::releaseElementStepped(Stream *S) {
     }
 
     /**
-     * Jesus: If this element is still in charge of fetching value for the next
-     * element.
+     * Jesus: If this element is still in charge of fetching value for the
+     * next element.
      */
     if (releaseElement->markNextElementValueReady) {
       panic("Step an element with markNextElementValueReady set.");
@@ -1600,8 +1628,24 @@ void StreamEngine::releaseElementStepped(Stream *S) {
 }
 
 void StreamEngine::releaseElementUnstepped(Stream *S) {
-  assert(S->stepped->next != nullptr && "Missing unstepped element.");
+  /**
+   * Make sure we release in reverse order.
+   */
+  auto prevElement = S->stepped;
   auto releaseElement = S->stepped->next;
+  assert(releaseElement && "Missing unstepped element.");
+  while (releaseElement->next) {
+    prevElement = releaseElement;
+    releaseElement = releaseElement->next;
+  }
+  assert(releaseElement == S->head && "Head should point to the last element.");
+
+  // Clear the markNextElementValueReady.
+  if (prevElement->markNextElementValueReady) {
+    S_ELEMENT_DPRINTF(prevElement,
+                      "Reset markNextElementValueReady as released.\n");
+    prevElement->markNextElementValueReady = false;
+  }
 
   // This should be unused.
   assert(!releaseElement->isStepped && "Release stepped element.");
@@ -1615,11 +1659,9 @@ void StreamEngine::releaseElementUnstepped(Stream *S) {
     }
   }
 
-  S->stepped->next = releaseElement->next;
+  prevElement->next = releaseElement->next;
   S->allocSize--;
-  if (S->head == releaseElement) {
-    S->head = S->stepped;
-  }
+  S->head = prevElement;
   /**
    * Since this element is released as unstepped,
    * we need to reverse the FIFOIdx so that if we misspeculated,
@@ -1710,6 +1752,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
       }
     }
     if (ready) {
+      S_ELEMENT_DPRINTF(&element, "Found ready.\n");
       readyElements.emplace_back(&element);
     }
   }
@@ -1727,15 +1770,17 @@ void StreamEngine::issueElements() {
   // Sort the ready elements, by their create cycle.
   std::sort(readyElements.begin(), readyElements.end(),
             [](const StreamElement *A, const StreamElement *B) -> bool {
-              if (B->allocateCycle > A->allocateCycle) {
-                return true;
-              } else if (B->stream == A->stream) {
-                const auto &AIdx = A->FIFOIdx;
-                const auto &BIdx = B->FIFOIdx;
-                return BIdx > AIdx;
-              } else {
-                return false;
+              if (A->allocateCycle != B->allocateCycle) {
+                return A->allocateCycle < B->allocateCycle;
               }
+              if (A->stream != B->stream) {
+                // Break the time by stream address.
+                return reinterpret_cast<uint64_t>(A->stream) <
+                       reinterpret_cast<uint64_t>(B->stream);
+              }
+              const auto &AIdx = A->FIFOIdx;
+              const auto &BIdx = B->FIFOIdx;
+              return BIdx > AIdx;
             });
   for (auto &element : readyElements) {
     element->markAddrReady(cpuDelegator);
@@ -1765,7 +1810,6 @@ void StreamEngine::issueElements() {
       assert(element->size <= 8 && "IV Stream size greater than 8 bytes.");
       element->setValue(element->addr, element->size,
                         reinterpret_cast<uint8_t *>(&element->addr));
-      element->markValueReady();
     }
   }
 }
@@ -1796,12 +1840,12 @@ void StreamEngine::issueElement(StreamElement *element) {
   assert(element->stream->isMemStream() &&
          "Should never issue element for IVStream.");
 
-  STREAM_ELEMENT_DPRINTF(element, "Issue.\n");
+  S_ELEMENT_DPRINTF(element, "Issue.\n");
 
   auto S = element->stream;
   if (S->getStreamType() == "load") {
     if (element->flushed) {
-      // STREAM_ELEMENT_LOG(hack, element, "Reissue element.\n");
+      // S_ELEMENT_HACK(element, "Reissue element.\n");
     }
     this->numLoadElementsFetched++;
     S->statistic.numFetched++;
@@ -1811,21 +1855,13 @@ void StreamEngine::issueElement(StreamElement *element) {
     }
   }
 
-  if (element->cacheBlocks > 1) {
-    STREAM_ELEMENT_LOG(panic, element,
-                       "More than one cache block per element.\n");
-  }
-
   /**
    * A quick hack to coalesce continuous elements that completely overlap.
    */
-  if (this->coalesceContinuousDirectLoadStreamElement(element)) {
-    // This is coalesced. Do not issue request to memory.
-    return;
-  }
+  this->coalesceContinuousDirectLoadStreamElement(element);
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
-    const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+    auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
     auto cacheBlockVAddr = cacheBlockBreakdown.cacheBlockVAddr;
 
     if (this->enableMerge) {
@@ -1886,6 +1922,13 @@ void StreamEngine::issueElement(StreamElement *element) {
     // ! optimization for continuous load stream.
     // TODO: Continuous load stream should really be allocated in
     // TODO: granularity of cache lines (not stream elements).
+
+    // Check if this cache line is already done.
+    if (cacheBlockBreakdown.state !=
+        CacheBlockBreakdownAccess::StateE::Initialized) {
+      continue;
+    }
+
     auto vaddr = cacheBlockBreakdown.cacheBlockVAddr;
     auto packetSize = cpuDelegator->cacheLineSize();
     Addr paddr;
@@ -1899,13 +1942,12 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto pkt = GemForgePacketHandler::createGemForgePacket(
         paddr, packetSize, memAccess, nullptr, cpuDelegator->dataMasterId(), 0,
         0);
+    S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i, vaddr,
+                      packetSize);
     S->statistic.numIssuedRequest++;
-    if (element->FIFOIdx.streamId.staticId == 34710992 &&
-        element->FIFOIdx.streamId.streamInstance == 2523 &&
-        element->FIFOIdx.entryIdx == 2) {
-      hack("Normally fetched.\n");
-    }
     cpuDelegator->sendRequest(pkt);
+
+    cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
 
     // Change to FETCHING status.
     if (this->enableMerge) {
@@ -1915,14 +1957,6 @@ void StreamEngine::issueElement(StreamElement *element) {
 
     if (S->getStreamType() == "load") {
       element->inflyMemAccess.insert(memAccess);
-    }
-  }
-
-  if (S->getStreamType() != "store" && element->inflyMemAccess.empty()) {
-    if (!element->isValueReady) {
-      // The element may be already ready as we are issue packets for
-      // committed store stream elements.
-      element->markValueReady();
     }
   }
 }
@@ -1943,7 +1977,7 @@ void StreamEngine::writebackElement(StreamElement *element,
                    std::forward_as_tuple())
           .first->second;
 
-  STREAM_ELEMENT_DPRINTF(element, "Writeback.\n");
+  S_ELEMENT_DPRINTF(element, "Writeback.\n");
 
   // hack("Send packt for stream %s.\n", S->getStreamName().c_str());
 
@@ -2354,7 +2388,7 @@ bool StreamEngine::shouldOffloadStream(Stream *S, uint64_t streamInstance) {
   return true;
 }
 
-bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
+void StreamEngine::coalesceContinuousDirectLoadStreamElement(
     StreamElement *element) {
 
   /**
@@ -2364,20 +2398,20 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
    */
   const bool enableCoalesceContinuousElement = true;
   if (!enableCoalesceContinuousElement) {
-    return false;
+    return;
   }
 
   // Check if this is the first element.
   if (element->FIFOIdx.entryIdx == 0) {
-    return false;
+    return;
   }
   // Check if this element is flushed.
   if (element->flushed) {
-    return false;
+    return;
   }
   auto S = element->stream;
   if (!S->isDirectLoadStream()) {
-    return false;
+    return;
   }
   // Get the previous element.
   auto prevElement = this->getPrevElement(element);
@@ -2388,33 +2422,45 @@ bool StreamEngine::coalesceContinuousDirectLoadStreamElement(
          "Mismatch entryIdx for prevElement.");
   assert(prevElement->FIFOIdx.streamId == element->FIFOIdx.streamId &&
          "Mismatch streamId for prevElement.");
-  if (element->cacheBlocks != prevElement->cacheBlocks) {
-    // If cache block size does not match, not completely overlapped.
-    return false;
+
+  // Check if the previous element has the cache line.
+  if (!prevElement->isCacheBlockedValue) {
+    return;
   }
+  assert(prevElement->cacheBlocks && "No block in prevElement.");
+
+  auto &prevElementMinBlockVAddr =
+      prevElement->cacheBlockBreakdownAccesses[0].cacheBlockVAddr;
   for (int cacheBlockIdx = 0; cacheBlockIdx < element->cacheBlocks;
        ++cacheBlockIdx) {
-    const auto &block = element->cacheBlockBreakdownAccesses[cacheBlockIdx];
-    const auto &prevBlock =
-        prevElement->cacheBlockBreakdownAccesses[cacheBlockIdx];
-    if (block.cacheBlockVAddr != prevBlock.cacheBlockVAddr) {
-      // Not completely overlapped.
-      return false;
+    auto &block = element->cacheBlockBreakdownAccesses[cacheBlockIdx];
+    assert(block.state == CacheBlockBreakdownAccess::StateE::Initialized);
+    if (block.cacheBlockVAddr < prevElementMinBlockVAddr) {
+      // Underflow.
+      continue;
+    }
+    auto blockOffset = (block.cacheBlockVAddr - prevElementMinBlockVAddr) /
+                       element->cacheBlockSize;
+    if (blockOffset >= prevElement->cacheBlocks) {
+      // Overflow.
+      continue;
+    }
+    // Found a match.
+    if (prevElement->isValueReady) {
+      // We can copy the value.
+      auto offset = prevElement->mapVAddrToValueOffset(block.cacheBlockVAddr,
+                                                       element->cacheBlockSize);
+      element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
+                        &prevElement->value.at(offset));
+    } else {
+      // Mark the prevElement to propagate its value to next element.
+      if (element->FIFOIdx.entryIdx == 1) {
+        S_ELEMENT_HACK(element, "Mark prevElement's nextElementValueReady.\n");
+      }
+      prevElement->markNextElementValueReady = true;
+      block.state = CacheBlockBreakdownAccess::StateE::PrevElement;
     }
   }
-  // Completely overlapped. Check if the previous element is already
-  // value ready.
-  if (prevElement->isValueReady) {
-    // Copy the value.
-    element->setValue(prevElement);
-    // Mark value ready immediately.
-    element->markValueReady();
-  } else {
-    // Mark the prevElement to propagate its value ready signal to next
-    // element.
-    prevElement->markNextElementValueReady = true;
-  }
-  return true;
 }
 
 void StreamEngine::flushPEB() {
@@ -2435,11 +2481,11 @@ void StreamEngine::flushPEB() {
 
     element->addr = 0;
     element->size = 0;
-    element->cacheBlocks = 0;
+    element->clearCacheBlocks();
     std::fill(element->value.begin(), element->value.end(), 0);
 
-    // Clear the inflyMemAccess set, which effectively clears the infly memory
-    // access.
+    // Clear the inflyMemAccess set, which effectively clears the infly
+    // memory access.
     element->inflyMemAccess.clear();
     element->markNextElementValueReady = false;
   }
@@ -2460,7 +2506,7 @@ void StreamEngine::RAWMisspeculate(StreamElement *element) {
 
   element->addr = 0;
   element->size = 0;
-  element->cacheBlocks = 0;
+  element->clearCacheBlocks();
   std::fill(element->value.begin(), element->value.end(), 0);
   // Clear the inflyMemAccess set, which effectively clears the infly memory
   // access.

@@ -35,7 +35,6 @@ public:
    */
   CacheStreamConfigureData *
   allocateCacheConfigureData(uint64_t configSeqNum) override;
-  bool isDirectLoadStream() const override;
   bool isPointerChaseLoadStream() const override;
   uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const override;
 

@@ -24,7 +24,7 @@ bool LSQ::GemForgeDcachePort::sendTimingReqVirtual(PacketPtr pkt) {
      * 3. Waiting for some undrained packets.
      */
     this->blockedQueue.push(pkt);
-    assert(this->blockedQueue.size() < 80 && "Too many blocked packets.");
+    assert(this->blockedQueue.size() < 1024 && "Too many blocked packets.");
 
     // If not the first reason, schedule the drain event.
     if (!this->blocked && !this->drainEvent.scheduled()) {

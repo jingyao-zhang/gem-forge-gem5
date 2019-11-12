@@ -424,10 +424,10 @@ private:
   bool shouldOffloadStream(Stream *S, uint64_t streamInstance);
 
   /**
-   * Try to coalesce continuous element of direct load stream if they completely
+   * Try to coalesce continuous element of direct load stream if they
    * overlap.
    */
-  bool coalesceContinuousDirectLoadStreamElement(StreamElement *element);
+  void coalesceContinuousDirectLoadStreamElement(StreamElement *element);
 };
 
 #endif

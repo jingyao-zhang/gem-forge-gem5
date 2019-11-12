@@ -140,7 +140,7 @@ public:
   /**
    * Helper function used in StreamAwareCache.
    */
-  virtual bool isDirectLoadStream() const { return false; }
+  bool isDirectLoadStream() const;
   virtual bool isPointerChaseLoadStream() const { return false; }
   virtual uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const = 0;
 
@@ -167,6 +167,13 @@ protected:
     const auto &type = this->getStreamType();
     return this->baseStepStreams.empty() && (type == "phi" || type == "store");
   }
+
+  /**
+   * Helper function to setup a linear addr func.
+   */
+  void setupLinearAddrFunc(DynamicStream &dynStream,
+                           const std::vector<uint64_t> *inputVec,
+                           const LLVM::TDG::StreamInfo &info);
 
   /**
    * For debug.

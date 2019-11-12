@@ -23,6 +23,12 @@ public:
 
   ~LogicalStream();
 
+  int32_t getCoalesceOffset() const {
+    return this->info.coalesce_info().offset();
+  }
+  int32_t getElementSize() const { return this->info.element_size(); }
+  uint64_t getStreamId() const { return this->info.id(); }
+
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
   std::unique_ptr<StreamPattern> patternStream;
@@ -30,18 +36,17 @@ public:
 
 class CoalescedStream : public Stream {
 public:
-  CoalescedStream(const StreamArguments &args,
-                  const LLVM::TDG::StreamInfo &_primaryInfo);
+  CoalescedStream(const StreamArguments &args, bool _staticCoalesced);
 
   ~CoalescedStream();
 
   void addStreamInfo(const LLVM::TDG::StreamInfo &info);
+  /**
+   * User must call finalize after all stream infos are added.
+   */
+  void finalize();
   void prepareNewElement(StreamElement *element) override;
   void initializeBackBaseStreams() override;
-
-  uint64_t getCoalesceStreamId() const {
-    return this->primaryLogicalStream->info.id();
-  }
 
   /**
    * Only to configure all the history.
@@ -51,7 +56,10 @@ public:
   const std::string &getStreamType() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;
-  int32_t getElementSize() const override;
+  int32_t getElementSize() const override {
+    assert(this->coalescedElementSize > 0 && "Invalid element size.");
+    return this->coalescedElementSize;
+  }
 
   /**
    * Get the number of unique cache blocks the stream touches.
@@ -74,16 +82,20 @@ public:
 
   uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const override;
 
+  void getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
+                                 int32_t &size) const;
+
 protected:
   /**
    * Represented all the streams coalesced within this one.
-   * The first one is "primary stream", whose stream id is used to represent
+   * The first one is "prime stream", whose stream id is used to represent
    * this coalesced stream.
+   * In statically coalesced streams, this is the base stream with offset 0.
    */
-  std::list<LogicalStream> coalescedStreams;
-  LogicalStream *primaryLogicalStream;
-
-  void generateStreamName();
+  bool staticCoalesced;
+  std::vector<LogicalStream *> coalescedStreams;
+  LogicalStream *primeLStream;
+  int32_t coalescedElementSize = -1;
 
   /**
    * For debug.

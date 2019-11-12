@@ -191,3 +191,99 @@ DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
   }
   panic("Failed to find DynamicStream %llu.\n", seqNum);
 }
+
+void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
+                                 const std::vector<uint64_t> *inputVec,
+                                 const LLVM::TDG::StreamInfo &info) {
+  assert(inputVec && "Missing InputVec.");
+  const auto &staticInfo = info.static_info();
+  const auto &pattern = staticInfo.iv_pattern();
+  assert(pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR);
+  /**
+   * LINEAR pattern has 2n parameters, where n is the difference of loop
+   * level between ConfigureLoop and InnerMostLoop.
+   * It has the following format, starting from InnerMostLoop.
+   * Stride0, [BackEdgeCount[i], Stride[i + 1]]*, Start
+   * We will add 1 to BackEdgeCount to get the TripCount.
+   */
+  assert(pattern.params_size() % 2 == 0 &&
+         "Number of parameters must be even.");
+  assert(pattern.params_size() >= 2 && "Number of parameters must be >= 2.");
+  auto &formalParams = dynStream.formalParams;
+  auto inputIdx = 0;
+  for (const auto &param : pattern.params()) {
+    formalParams.emplace_back();
+    auto &formalParam = formalParams.back();
+    formalParam.isInvariant = true;
+    if (param.valid()) {
+      // This param comes from the Configuration.
+      // hack("Find valid param #%d, val %llu.\n", formalParams.size(),
+      //      param.param());
+      formalParam.param.invariant = param.param();
+    } else {
+      // This should be an input.
+      assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
+      // hack("Find input param #%d, val %llu.\n", formalParams.size(),
+      //      inputVec->at(inputIdx));
+      formalParam.param.invariant = inputVec->at(inputIdx);
+      inputIdx++;
+    }
+  }
+
+  assert(inputIdx == inputVec->size() && "Unused input value.");
+
+  /**
+   * We have to process the params to compute TotalTripCount for each nested
+   * loop.
+   * TripCount[i] = BackEdgeCount[i] + 1;
+   * TotalTripCount[i] = TotalTripCount[i - 1] * TripCount[i];
+   */
+  STREAM_DPRINTF("Setup LinearAddrGenCallback with Input params --------\n");
+  for (auto param : *inputVec) {
+    STREAM_DPRINTF("%llu\n", param);
+  }
+  STREAM_DPRINTF("Setup LinearAddrGenCallback with params --------\n");
+  for (auto param : formalParams) {
+    STREAM_DPRINTF("%llu\n", param.param.invariant);
+  }
+
+  for (auto idx = 1; idx < formalParams.size() - 1; idx += 2) {
+    auto &formalParam = formalParams.at(idx);
+    // BackEdgeCount.
+    auto backEdgeCount = formalParam.param.invariant;
+    // TripCount.
+    auto tripCount = backEdgeCount + 1;
+    // TotalTripCount.
+    auto totalTripCount =
+        (idx == 1) ? (tripCount)
+                   : (tripCount * formalParams.at(idx - 2).param.invariant);
+    formalParam.param.invariant = totalTripCount;
+  }
+
+  STREAM_DPRINTF("Finalize LinearAddrGenCallback with params --------\n");
+  for (auto param : formalParams) {
+    STREAM_DPRINTF("%llu\n", param.param.invariant);
+  }
+
+  // Set the callback.
+  dynStream.addrGenCallback =
+      std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
+}
+
+bool Stream::isDirectLoadStream() const {
+  if (this->getStreamType() != "load") {
+    return false;
+  }
+  // So far only only one base stream of phi type.
+  if (this->baseStreams.size() != 1) {
+    return false;
+  }
+  auto baseStream = *(this->baseStreams.begin());
+  if (baseStream->getStreamType() != "phi") {
+    return false;
+  }
+  if (!baseStream->backBaseStreams.empty()) {
+    return false;
+  }
+  return true;
+}

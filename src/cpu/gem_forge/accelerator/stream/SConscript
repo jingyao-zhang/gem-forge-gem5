@@ -1,6 +1,8 @@
 Import('*')
 
 DebugFlag('StreamEngine')
+DebugFlag('StreamElement')
+DebugFlag('CoalescedStream')
 DebugFlag('AddrGenCallback')
 
 ProtoBuf('StreamMessage.proto')

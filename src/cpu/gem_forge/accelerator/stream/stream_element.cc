@@ -4,25 +4,10 @@
 
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
-#include "debug/StreamEngine.hh"
+#include "debug/StreamElement.hh"
 
-#define STREAM_DPRINTF(stream, format, args...)                                \
-  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
-          ##args)
-
-#define STREAM_PANIC(stream, format, args...)                                  \
-  panic("[%s]: " format, stream->getStreamName().c_str(), ##args)
-
-#define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \
-  STREAM_DPRINTF(element->getStream(), "[%lu, %lu]: " format,                  \
-                 element->FIFOIdx.streamId.streamInstance,                     \
-                 element->FIFOIdx.entryIdx, ##args)
-
-#define STREAM_ELEMENT_PANIC(element, format, args...)                         \
-  element->se->dump();                                                         \
-  STREAM_PANIC(element->getStream(), "[%lu, %lu]: " format,                    \
-               element->FIFOIdx.streamId.streamInstance,                       \
-               element->FIFOIdx.entryIdx, ##args)
+#define DEBUG_TYPE StreamElement
+#include "stream_log.hh"
 
 StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
                                  Addr _cacheBlockVAddr, Addr _vaddr, int _size,
@@ -53,9 +38,9 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
                                            PacketPtr pkt) {
   if (this->additionalDelay != 0) {
     // We have to reschedule the event to pay for the additional delay.
-    STREAM_ELEMENT_DPRINTF(
-        this->element, "PacketResponse with additional delay of %d cycles.\n",
-        this->additionalDelay);
+    S_ELEMENT_DPRINTF(this->element,
+                      "PacketResponse with additional delay of %d cycles.\n",
+                      this->additionalDelay);
     auto responseEvent = new ResponseEvent(cpuDelegator, this, pkt);
     cpuDelegator->schedule(responseEvent, Cycles(this->additionalDelay));
     // Remember to reset the additional delay as we have already paid for it.
@@ -114,10 +99,23 @@ void StreamMemAccess::handleStreamEngineResponse() {
 StreamElement::StreamElement(StreamEngine *_se) : se(_se) { this->clear(); }
 
 void StreamElement::clear() {
+
+  if (this->FIFOIdx.entryIdx == 1) {
+    if (this->FIFOIdx.streamId.coreId == 8 &&
+        this->FIFOIdx.streamId.streamInstance == 1 &&
+        this->FIFOIdx.streamId.staticId == 11704592) {
+      S_ELEMENT_HACK(this, "Clear\n");
+    }
+  }
+
+  assert(!this->markNextElementValueReady &&
+         "Element released while next one is waiting.");
+
   this->baseElements.clear();
   this->next = nullptr;
   this->stream = nullptr;
   this->FIFOIdx = FIFOEntryIdx();
+  this->isCacheBlockedValue = false;
   this->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
   this->isStepped = false;
   this->isAddrReady = false;
@@ -130,13 +128,23 @@ void StreamElement::clear() {
 
   this->addr = 0;
   this->size = 0;
-  this->cacheBlocks = 0;
+  this->clearCacheBlocks();
   std::fill(this->value.begin(), this->value.end(), 0);
 
   // Only clear the inflyMemAccess set, but not allocatedMemAccess set.
   this->inflyMemAccess.clear();
   this->stored = false;
   this->markNextElementValueReady = false;
+}
+
+void StreamElement::clearCacheBlocks() {
+  this->cacheBlocks = 0;
+  for (auto &block : this->cacheBlockBreakdownAccesses) {
+    block.state = CacheBlockBreakdownAccess::StateE::None;
+    block.cacheBlockVAddr = 0;
+    block.virtualAddr = 0;
+    block.size = 0;
+  }
 }
 
 StreamMemAccess *StreamElement::allocateStreamMemAccess(
@@ -155,7 +163,7 @@ StreamMemAccess *StreamElement::allocateStreamMemAccess(
    * ! the benchmarks.
    */
   if (this->allocatedMemAccess.size() == 100000) {
-    STREAM_ELEMENT_PANIC(this, "Allocated 100000 StreamMemAccess.");
+    S_ELEMENT_PANIC(this, "Allocated 100000 StreamMemAccess.");
   }
   return memAccess;
 }
@@ -178,9 +186,6 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
     this->setValue(vaddr, size, data);
 
     this->inflyMemAccess.erase(memAccess);
-    if (this->inflyMemAccess.empty() && !this->isValueReady) {
-      this->markValueReady();
-    }
   }
   // Dummy way to check if this is a writeback mem access.
   for (auto &storeInstMemAccesses : this->inflyWritebackMemAccess) {
@@ -246,24 +251,37 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
   this->splitIntoCacheBlocks(cpuDelegator);
 }
 
+void StreamElement::tryMarkValueReady() {
+  for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
+    const auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
+    if (block.state != CacheBlockBreakdownAccess::StateE::Ready) {
+      return;
+    }
+  }
+  this->markValueReady();
+}
+
 void StreamElement::markValueReady() {
   assert(!this->isValueReady && "Value is already ready.");
   this->isValueReady = true;
   this->valueReadyCycle = this->getStream()->getCPUDelegator()->curCycle();
-  STREAM_ELEMENT_DPRINTF(this, "Value ready.\n");
+  S_ELEMENT_DPRINTF(this, "Value ready.\n");
 
   // Check if the next element is also dependent on me.
+  // Notice that after flushed, the next element will issue request by itself,
+  // and we should not set that.
   if (this->markNextElementValueReady) {
     if (this->next != nullptr &&
         this->next->FIFOIdx.streamId == this->FIFOIdx.streamId &&
-        this->next->FIFOIdx.entryIdx == this->FIFOIdx.entryIdx + 1) {
+        this->next->FIFOIdx.entryIdx == this->FIFOIdx.entryIdx + 1 &&
+        !this->next->flushed) {
+      S_ELEMENT_DPRINTF(this->next, "Prev element value is ready.\n");
       // Okay the next element is still valid.
       assert(this->next->isAddrReady &&
              "Address should be ready to propagate the value ready signal.");
 
       // Fill next element cache blocks.
       this->next->setValue(this);
-      this->next->markValueReady();
     }
     // Clear the flag.
     this->markNextElementValueReady = false;
@@ -302,6 +320,8 @@ void StreamElement::splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator) {
     newCacheBlockBreakdown.cacheBlockVAddr = cacheBlockAddr;
     newCacheBlockBreakdown.virtualAddr = currentAddr;
     newCacheBlockBreakdown.size = currentSize;
+    newCacheBlockBreakdown.state =
+        CacheBlockBreakdownAccess::StateE::Initialized;
     this->cacheBlocks++;
   }
 
@@ -319,21 +339,42 @@ void StreamElement::setValue(StreamElement *prevElement) {
   assert(prevElement->next == this && "Next element should be me.");
   for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
     auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
-    assert(this->cacheBlockSize > 0 && "cacheBlockSize is not initialized.");
-    auto initOffset = this->mapVAddrToValueOffset(block.cacheBlockVAddr,
-                                                  this->cacheBlockSize);
-    // Get the value from previous element.
-    prevElement->getValue(block.cacheBlockVAddr, this->cacheBlockSize,
-                          this->value.data() + initOffset);
+    if (block.state != CacheBlockBreakdownAccess::StateE::PrevElement) {
+      continue;
+    }
+    auto offset = prevElement->mapVAddrToValueOffset(block.cacheBlockVAddr,
+                                                     this->cacheBlockSize);
+    // Copy the value from prevElement.
+    this->setValue(block.cacheBlockVAddr, this->cacheBlockSize,
+                   &prevElement->value.at(offset));
+    assert(block.state == CacheBlockBreakdownAccess::StateE::Ready);
   }
 }
 
 void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
   // Copy the data.
+  S_ELEMENT_DPRINTF(this, "Set value [%#x, %#x).\n", vaddr, vaddr + size);
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
   for (int i = 0; i < size; ++i) {
     this->value.at(i + initOffset) = val[i];
   }
+  // Mark the cache line ready.
+  // TODO: Really check that every byte is set.
+  for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
+    auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
+    // So far we just check for overlap.
+    if (vaddr >= block.cacheBlockVAddr + this->cacheBlockSize ||
+        vaddr + size <= block.cacheBlockVAddr) {
+      // No overlap.
+      continue;
+    }
+    S_ELEMENT_DPRINTF(this, "Mark block ready: [%#x, %#x).\n",
+                      block.cacheBlockVAddr,
+                      block.cacheBlockVAddr + this->cacheBlockSize);
+    block.state = CacheBlockBreakdownAccess::StateE::Ready;
+  }
+
+  this->tryMarkValueReady();
 }
 
 void StreamElement::getValue(Addr vaddr, int size, uint8_t *val) const {
