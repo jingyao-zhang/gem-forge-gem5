@@ -2,21 +2,21 @@
 
 CacheStreamConfigureData::CacheStreamConfigureData(
     Stream *_stream, const DynamicStreamId &_dynamicId, int _elementSize,
-    HistoryPtr _history)
+    const std::vector<DynamicStreamFormalParam> &_formalParams,
+    std::shared_ptr<AddrGenCallback> _addrGenCallback)
     : stream(_stream), dynamicId(_dynamicId), elementSize(_elementSize),
-      history(_history), initVAddr(0), initPAddr(0), isPointerChase(false),
+      initVAddr(0), initPAddr(0), formalParams(_formalParams),
+      addrGenCallback(_addrGenCallback), isPointerChase(false),
       isOneIterationBehind(false), indirectStreamConfigure(nullptr),
       initAllocatedIdx(0) {
-  assert(this->history->history_size() > 0 && "Empty stream?");
-
-  const auto &entry = this->history->history(0);
-  this->initVAddr = entry.addr();
+  assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
 
 CacheStreamConfigureData::CacheStreamConfigureData(
     const CacheStreamConfigureData &other)
-    : stream(other.stream), dynamicId(other.dynamicId), history(other.history),
+    : stream(other.stream), dynamicId(other.dynamicId),
       initVAddr(other.initVAddr), initPAddr(other.initPAddr),
+      formalParams(other.formalParams), addrGenCallback(other.addrGenCallback),
       isPointerChase(other.isPointerChase),
       isOneIterationBehind(other.isOneIterationBehind),
       indirectStreamConfigure(other.indirectStreamConfigure),

@@ -93,7 +93,7 @@ private:
    * Helper function to issue stream request to this controller.
    */
   void issueStreamRequestHere(LLCDynamicStream *stream, Addr paddrLine,
-                              uint64_t startIdx, int numElements);
+                              const DynamicStreamSliceId &sliceId);
 
   /**
    * Helper function to issue stream request to other controller.
@@ -101,7 +101,7 @@ private:
    * TODO: So far let's pretend we simply send a cache line.
    */
   void issueStreamRequestThere(LLCDynamicStream *stream, Addr paddrLine,
-                               uint64_t startIdx, int numElements);
+                               const DynamicStreamSliceId &sliceId);
 
   /**
    * Migrate streams.

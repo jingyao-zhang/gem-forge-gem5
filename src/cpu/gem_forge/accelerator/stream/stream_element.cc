@@ -14,19 +14,14 @@ StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
                                  int _additionalDelay)
     : stream(_stream), element(_element), FIFOIdx(_element->FIFOIdx),
       cacheBlockVAddr(_cacheBlockVAddr), vaddr(_vaddr), size(_size),
-      additionalDelay(_additionalDelay) {}
-
-const DynamicStreamId &StreamMemAccess::getDynamicStreamId() const {
-  return this->FIFOIdx.streamId;
-}
-
-DynamicStreamSliceId StreamMemAccess::getSliceId() const {
-  DynamicStreamSliceId slice;
-  slice.streamId = this->FIFOIdx.streamId;
-  slice.startIdx = this->FIFOIdx.entryIdx;
-  // So far we make it fairly simple here.
-  slice.endIdx = slice.startIdx + 1;
-  return slice;
+      additionalDelay(_additionalDelay) {
+  // Initialize it fairly simply.
+  this->sliceId.streamId = this->FIFOIdx.streamId;
+  this->sliceId.startIdx = this->FIFOIdx.entryIdx;
+  this->sliceId.endIdx = this->FIFOIdx.entryIdx + 1;
+  // ! So far always do cache line level.
+  this->sliceId.vaddr = this->cacheBlockVAddr;
+  this->sliceId.size = this->size;
 }
 
 void StreamMemAccess::handlePacketResponse(PacketPtr pkt) {
@@ -212,39 +207,29 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
    */
   auto &dynStream = this->stream->getDynamicStream(this->FIFOIdx.configSeqNum);
 
-  // 1. Prepare the parameters.
-  std::vector<uint64_t> params;
-  for (const auto &formalParam : dynStream.formalParams) {
-    if (formalParam.isInvariant) {
-      params.push_back(formalParam.param.invariant);
-    } else {
-      auto baseStreamId = formalParam.param.baseStreamId;
-      auto baseStream = this->se->getStream(baseStreamId);
-      bool foundBaseValue = false;
-      for (auto baseElement : this->baseElements) {
-        if (baseElement->stream == baseStream) {
-          // TODO: Check the FIFOIdx to make sure that the element is correct to
-          // TODO: use.
-          assert(baseElement->isValueReady &&
-                 "Base element is not value ready yet.");
-          assert(baseElement->size <= sizeof(uint64_t) &&
-                 "Base element too large, maybe coalesced?");
-          // ! This effectively does zero extension.
-          uint64_t baseValue = 0;
-          baseElement->getValue(baseElement->addr, baseElement->size,
-                                reinterpret_cast<uint8_t *>(&baseValue));
-          params.push_back(baseValue);
-          foundBaseValue = true;
-          break;
-        }
+  GetStreamValueFunc getStreamValue =
+      [this](uint64_t baseStreamId) -> uint64_t {
+    auto baseStream = this->se->getStream(baseStreamId);
+    for (auto baseElement : this->baseElements) {
+      if (baseElement->stream == baseStream) {
+        // TODO: Check the FIFOIdx to make sure that the element is correct to
+        // TODO: use.
+        assert(baseElement->isValueReady &&
+               "Base element is not value ready yet.");
+        assert(baseElement->size <= sizeof(uint64_t) &&
+               "Base element too large, maybe coalesced?");
+        // ! This effectively does zero extension.
+        uint64_t baseValue = 0;
+        baseElement->getValue(baseElement->addr, baseElement->size,
+                              reinterpret_cast<uint8_t *>(&baseValue));
+        return baseValue;
       }
-      assert(foundBaseValue && "Failed to find the base stream value.");
     }
-  }
+    assert(false && "Failed to find the base stream value.");
+  };
 
-  // 2. Call the AddrGenCallback.
-  this->addr =
-      dynStream.addrGenCallback->genAddr(this->FIFOIdx.entryIdx, params);
+  this->addr = dynStream.addrGenCallback->genAddr(
+      this->FIFOIdx.entryIdx, dynStream.formalParams, getStreamValue);
   this->size = stream->getElementSize();
 
   // 3. Split into cache lines.

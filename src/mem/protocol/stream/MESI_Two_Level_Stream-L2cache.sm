@@ -644,9 +644,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
            * Only transmit the required sub cache line.
            */
           if (isStreamSublineEnabled()) {
-            if (in_msg.sliceId.getSizeInByte() == 4) {
+            if (in_msg.sliceId.getSize() == 4) {
               out_msg.MessageSize := MessageSizeType:Response_Data_4B;
-            } else if (in_msg.sliceId.getSizeInByte() == 8) {
+            } else if (in_msg.sliceId.getSize() == 8) {
               out_msg.MessageSize := MessageSizeType:Response_Data_8B;
             }
           }

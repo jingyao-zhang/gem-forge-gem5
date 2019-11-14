@@ -5,15 +5,8 @@
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
 
-#define MLCS_DPRINTF(format, args...)                                          \
-  DPRINTF(RubyStream, "[MLC_SE%d][%lu]: " format,                              \
-          this->controller->getMachineID().num,                                \
-          this->dynamicStreamId.staticId, ##args)
-
-#define MLC_ELEMENT_DPRINTF(startIdx, numElements, format, args...)            \
-  DPRINTF(RubyStream, "[MLC_SE%d][%lu][%lu, +%d): " format,                    \
-          this->controller->getMachineID().num,                                \
-          this->dynamicStreamId.staticId, (startIdx), (numElements), ##args)
+#define DEBUG_TYPE RubyStream
+#include "../stream_log.hh"
 
 MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     CacheStreamConfigureData *_configData,
@@ -28,30 +21,29 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     // This indirect stream is behind one iteration, which means that the first
     // element is not handled by LLC stream. The stream buffer should start at
     // the second element. We simply release the first element here.
-    assert(!this->elements.empty() && "Empty initial elements list.");
+    assert(!this->slices.empty() && "No initial slices.");
     // Let's do some sanity check.
-    auto &firstElement = this->elements.front();
-    assert(firstElement.startIdx == 0 && "Start index should always be 0.");
-    assert(firstElement.numElements == 1 &&
-           "Indirect stream should never merge elements.");
-    MLC_ELEMENT_DPRINTF(firstElement.startIdx, firstElement.numElements,
-                        "Initial offset pop.\n");
-    this->headIdx += firstElement.numElements;
-    this->elements.pop_front();
+    auto &firstSliceId = this->slices.front().sliceId;
+    assert(firstSliceId.startIdx == 0 && "Start index should always be 0.");
+    assert(firstSliceId.endIdx - firstSliceId.startIdx == 1 &&
+           "Indirect stream should never merge slices.");
+    MLC_SLICE_DPRINTF(firstSliceId, "Initial offset pop.\n");
+    this->headSliceIdx++;
+    this->slices.pop_front();
   }
 }
 
 void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
-  MLCS_DPRINTF("Indirect received stream data.\n");
+  MLC_S_DPRINTF("Indirect received stream data.\n");
 
   // It is indeed a problem to synchronize the flow control between
   // base stream and indirect stream.
   // It is possible for an indirect stream to receive stream data
-  // beyond the tailIdx, so we adhoc to fix that.
+  // beyond the tailSliceIdx, so we adhoc to fix that.
   // ! This breaks the MaximumNumElement constraint.
 
-  while (this->tailIdx <= msg.m_sliceId.startIdx) {
-    this->allocateElement();
+  while (this->tailSliceIdx <= msg.m_sliceId.startIdx) {
+    this->allocateSlice();
   }
 
   MLCDynamicStream::receiveStreamData(msg);
@@ -59,5 +51,6 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
 
 void MLCDynamicIndirectStream::sendCreditToLLC() {
   // Just update the record.
-  this->llcTailIdx = this->tailIdx;
+  // Since the credit is managed through the base stream.
+  this->llcTailSliceIdx = this->tailSliceIdx;
 }

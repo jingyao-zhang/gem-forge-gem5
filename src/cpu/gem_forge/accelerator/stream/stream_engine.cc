@@ -354,7 +354,10 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         // Get the CacheStreamConfigureData.
         auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
 
-        // Set up the init physical address.
+        // Set up the init address.
+        streamConfigureData->initVAddr =
+            streamConfigureData->addrGenCallback->genAddr(
+                0, streamConfigureData->formalParams, getStreamValueFail);
         Addr initPAddr;
         if (!cpuDelegator->translateVAddrOracle(streamConfigureData->initVAddr,
                                                 initPAddr)) {
@@ -937,11 +940,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
           new DynamicStreamId(endedDynamicStream.dynamicStreamId);
       // The target address is just virtually 0 (should be set by MLC stream
       // engine).
-      // TODO: Fix this.
-      Addr initPAddr;
-      if (!cpuDelegator->translateVAddrOracle(0, initPAddr)) {
-        panic("Failed translate vaddr %#x.\n", 0);
-      }
+      Addr initPAddr = 0;
       auto pkt = GemForgePacketHandler::createStreamControlPacket(
           initPAddr, cpuDelegator->dataMasterId(), 0,
           MemCmd::Command::StreamEndReq,
@@ -2367,8 +2366,10 @@ bool StreamEngine::shouldOffloadStream(Stream *S, uint64_t streamInstance) {
    * to.
    * TODO: Improve this.
    */
-  if (S->getStreamLengthAtInstance(streamInstance) == 0) {
-    return false;
+  if (this->isTraceSim()) {
+    if (S->getStreamLengthAtInstance(streamInstance) == 0) {
+      return false;
+    }
   }
   // Let's use the previous staistic of the average stream.
   bool enableSmartDecision = false;

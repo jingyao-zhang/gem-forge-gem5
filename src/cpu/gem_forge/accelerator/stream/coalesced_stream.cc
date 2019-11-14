@@ -272,11 +272,6 @@ void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
   panic("Coalesced stream in cache is not supported yet.\n");
 }
 
-CacheStreamConfigureData *
-CoalescedStream::allocateCacheConfigureData(uint64_t configSeqNum) {
-  panic("Coalesced stream in cache is not supported yet.\n");
-}
-
 uint64_t
 CoalescedStream::getStreamLengthAtInstance(uint64_t streamInstance) const {
   panic("Coalesced stream length at instance is not supported yet.\n");

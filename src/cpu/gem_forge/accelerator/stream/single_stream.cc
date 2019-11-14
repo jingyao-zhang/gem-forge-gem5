@@ -148,7 +148,7 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
   STREAM_DPRINTF("Set up AddrGen for streamInstance %llu.\n",
                  dynStream.dynamicStreamId.streamInstance);
 
-  if (cpuDelegator->cpuType != GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE) {
+  if (!se->isTraceSim()) {
     // We have to use the pattern.
     assert(inputVec && "Missing InputVec when using execution simulation.");
     const auto &staticInfo = this->info.static_info();
@@ -201,16 +201,6 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
   dynStream.addrGenCallback = this->history->allocateCallbackAtInstance(
       dynStream.dynamicStreamId.streamInstance);
   // No arguments needed for history information.
-}
-
-CacheStreamConfigureData *
-SingleStream::allocateCacheConfigureData(uint64_t configSeqNum) {
-  auto &dynStream = this->getDynamicStream(configSeqNum);
-  auto history = std::make_shared<::LLVM::TDG::StreamHistory>(
-      this->history->getHistoryAtInstance(
-          dynStream.dynamicStreamId.streamInstance));
-  return new CacheStreamConfigureData(this, dynStream.dynamicStreamId,
-                                      this->getElementSize(), history);
 }
 
 uint64_t

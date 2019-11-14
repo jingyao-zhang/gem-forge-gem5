@@ -1,7 +1,8 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
 
-#include "cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceId.hh"
+#include "SlicedDynamicStream.hh"
+
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 
 #include "mem/ruby/common/DataBlock.hh"
@@ -50,8 +51,8 @@ public:
   Addr getLLCStreamTailPAddr() const;
 
   virtual void receiveStreamData(const ResponseMsg &msg);
-  void receiveStreamRequest(uint64_t idx);
-  void receiveStreamRequestHit(uint64_t idx);
+  void receiveStreamRequest(const DynamicStreamSliceId &sliceId);
+  void receiveStreamRequestHit(const DynamicStreamSliceId &sliceId);
 
   /**
    * Before end the stream, we have make dummy response to the request
@@ -63,39 +64,32 @@ protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;
   bool isPointerChase;
-  // Store the history;
-  std::shared_ptr<::LLVM::TDG::StreamHistory> history;
+
+  SlicedDynamicStream slicedStream;
+
   AbstractStreamAwareController *controller;
   MessageBuffer *responseMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;
-  const uint64_t maxNumElements;
-  // Whether we can merge continuous elements if they are in the same cache
+  const uint64_t maxNumSlices;
+  // Whether we can merge continuous slices if they are in the same cache
   // line.
   const bool mergeElements;
-  // Element index of allocated [head, tail).
-  uint64_t headIdx;
-  uint64_t tailIdx;
-  // Where the LLC stream's tail index is.
-  uint64_t llcTailIdx;
-
   /**
-   * Represent an allocated stream element at MLC.
+   * Represent an allocated stream slice at MLC.
    * Used as a meeting point for the request from core
    * and data from LLC stream engine.
    */
-  struct MLCStreamElement {
-    uint64_t startIdx;
-    int numElements;
-    Addr vaddr;
+  struct MLCStreamSlice {
+    DynamicStreamSliceId sliceId;
     DataBlock dataBlock;
     // Whether the core's request is already here.
     bool dataReady;
     enum CoreStatusE { NONE, WAIT, DONE };
     CoreStatusE coreStatus;
 
-    MLCStreamElement(uint64_t _startIdx, int _numElements, Addr _vaddr)
-        : startIdx(_startIdx), numElements(_numElements), vaddr(_vaddr),
-          dataBlock(), dataReady(false), coreStatus(CoreStatusE::NONE) {}
+    MLCStreamSlice(const DynamicStreamSliceId &_sliceId)
+        : sliceId(_sliceId), dataBlock(), dataReady(false),
+          coreStatus(CoreStatusE::NONE) {}
 
     void setData(const DataBlock &dataBlock) {
       assert(!this->dataReady && "Data already ready.");
@@ -117,15 +111,18 @@ protected:
     }
   };
 
-  std::list<MLCStreamElement> elements;
+  std::deque<MLCStreamSlice> slices;
+  // Element index of allocated [head, tail).
+  uint64_t headSliceIdx;
+  uint64_t tailSliceIdx;
+  // Where the LLC stream's tail index is.
+  uint64_t llcTailSliceIdx;
 
   void advanceStream();
-  void makeResponse(MLCStreamElement &element);
+  void makeResponse(MLCStreamSlice &element);
 
-  /**
-   * Helper function to get vaddr at index.
-   */
-  Addr getVAddrAtIndex(uint64_t index) const;
+  MLCStreamSlice &getSlice(uint64_t sliceIdx);
+  const MLCStreamSlice &getSlice(uint64_t sliceIdx) const;
 
   /**
    * Helper function to translate the vaddr to paddr.
@@ -133,13 +130,13 @@ protected:
   Addr translateVAddr(Addr vaddr) const;
 
   /**
-   * Allocate stream element. It merges neighboring elements if they are from
+   * Allocate stream element. It merges neighboring slices if they are from
    * the same cache line.
    */
-  void allocateElement();
+  void allocateSlice();
 
   /**
-   * Send credit to the LLC stream. Update the llcTailIdx.
+   * Send credit to the LLC stream. Update the llcTailSliceIdx.
    */
   virtual void sendCreditToLLC();
 

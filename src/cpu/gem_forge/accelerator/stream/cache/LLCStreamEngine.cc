@@ -11,19 +11,12 @@
 #include "base/trace.hh"
 #include "debug/LLCRubyStream.hh"
 
+#define DEBUG_TYPE LLCRubyStream
+#include "../stream_log.hh"
+
 #define LLCSE_DPRINTF(format, args...)                                         \
   DPRINTF(LLCRubyStream, "[LLC_SE%d]: " format,                                \
           this->controller->getMachineID().num, ##args)
-
-#define LLC_STREAM_DPRINTF(streamId, format, args...)                          \
-  DPRINTF(LLCRubyStream, "[LLC_SE%d][%lu-%d]: " format,                        \
-          this->controller->getMachineID().num, (streamId).staticId,           \
-          (streamId).streamInstance, ##args)
-
-#define LLC_ELEMENT_DPRINTF(streamId, startIdx, numElements, format, args...)  \
-  DPRINTF(LLCRubyStream, "[LLC_SE%d][%lu-%d][%lu, +%d): " format,              \
-          this->controller->getMachineID().num, (streamId).staticId,           \
-          (streamId).streamInstance, startIdx, numElements, ##args)
 
 LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_streamMigrateMsgBuffer,
@@ -54,6 +47,10 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   // Create the stream.
   auto stream = new LLCDynamicStream(streamConfigureData);
 
+  // ! Disable indirect streams as we are migrating to slice.
+  assert(!streamConfigureData->indirectStreamConfigure &&
+         "Disable floating indirect stream so far.");
+
   // Check if we have indirect streams.
   if (streamConfigureData->indirectStreamConfigure != nullptr) {
     // Let's create an indirect stream.
@@ -75,7 +72,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
 void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   auto endStreamDynamicId = *(pkt->getPtr<DynamicStreamId *>());
-  LLC_STREAM_DPRINTF(*endStreamDynamicId, "Received StreamEnd.\n");
+  LLC_S_DPRINTF(*endStreamDynamicId, "Received StreamEnd.\n");
   // Search for this stream.
   for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
        streamIter != streamEnd; ++streamIter) {
@@ -83,7 +80,7 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
     if (stream->getDynamicStreamId() == (*endStreamDynamicId)) {
       // Found it.
       // ? Can we just sliently release it?
-      LLC_STREAM_DPRINTF(*endStreamDynamicId, "Ended.\n");
+      LLC_S_DPRINTF(*endStreamDynamicId, "Ended.\n");
       delete stream;
       stream = nullptr;
       this->streams.erase(streamIter);
@@ -124,11 +121,11 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
   assert(stream->readyIndirectElements.empty() &&
          "Stream migrated with readyIndirectElements.");
 
-  LLC_STREAM_DPRINTF(stream->getDynamicStreamId(), "Received migrate.\n");
+  LLC_S_DPRINTF(stream->getDynamicStreamId(), "Received migrate.\n");
 
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
-    LLC_STREAM_DPRINTF(stream->getDynamicStreamId(), "Ended.\n");
+    LLC_S_DPRINTF(stream->getDynamicStreamId(), "Ended.\n");
     delete stream;
     return;
   }
@@ -168,8 +165,7 @@ void LLCStreamEngine::receiveStreamElementData(
   assert(stream->waitingDataBaseRequests >= 0 &&
          "Negative waitingDataBaseRequests.");
 
-  LLC_ELEMENT_DPRINTF(stream->getDynamicStreamId(), sliceId.startIdx,
-                      sliceId.getNumElements(), "Received element data.\n");
+  LLC_SLICE_DPRINTF(sliceId, "Received element data.\n");
   /**
    * It is also possible that this stream doesn't have indirect streams.
    */
@@ -250,12 +246,11 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
     bool processed = false;
     for (auto stream : this->streams) {
       if (stream->getDynamicStreamId() == msg.streamId &&
-          msg.startIdx == stream->allocatedIdx) {
+          msg.startIdx == stream->allocatedSliceIdx) {
         // We found it.
         // Update the idx.
-        LLC_STREAM_DPRINTF(stream->getDynamicStreamId(),
-                           "Add credit %lu -> %lu.\n", msg.startIdx,
-                           msg.endIdx);
+        LLC_S_DPRINTF(stream->getDynamicStreamId(), "Add credit %lu -> %lu.\n",
+                      msg.startIdx, msg.endIdx);
         stream->addCredit(msg.getNumElements());
         processed = true;
         break;
@@ -348,17 +343,11 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     return false;
   }
 
-  /**
-   * Key point is to merge continuous stream elements within one cache line.
-   * TODO: Really check if continuous. So far just consume until a different
-   * TODO: cache line.
-   */
-  if (!stream->isNextElementAllcoated()) {
+  if (!stream->isNextSliceAllocated()) {
     return false;
   }
 
   // Get the first element.
-  int numElements = 0;
   Addr vaddr = stream->peekVAddr();
   Addr paddr = stream->translateToPAddr(vaddr);
   Addr paddrLine = makeLineAddress(paddr);
@@ -372,34 +361,17 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     return false;
   }
 
-  auto startIdx = stream->consumeNextElement();
-  numElements = 1;
-
-  // Try to get more elements if this is not pointer chase stream.
-  if (!stream->isPointerChase()) {
-    while (stream->isNextElementAllcoated() &&
-           stream->isNextElementWithinHistory()) {
-      Addr nextVAddr = stream->peekVAddr();
-      Addr nextPAddr = stream->translateToPAddr(nextVAddr);
-      Addr nextPAddrLine = makeLineAddress(nextPAddr);
-      if (nextPAddrLine == paddrLine) {
-        // We can merge the request.
-        stream->consumeNextElement();
-        numElements++;
-      } else {
-        break;
-      }
-    }
-  }
+  auto sliceId = stream->consumeNextSlice();
+  LLC_SLICE_DPRINTF(sliceId, "Issue.\n");
 
   // Register the waiting indirect elements.
   if (!stream->indirectStreams.empty()) {
-    for (auto idx = startIdx; idx < startIdx + numElements; ++idx) {
+    for (auto idx = sliceId.startIdx; idx < sliceId.endIdx; ++idx) {
       stream->waitingIndirectElements.insert(idx);
     }
   }
 
-  this->issueStreamRequestHere(stream, paddrLine, startIdx, numElements);
+  this->issueStreamRequestHere(stream, paddrLine, sliceId);
 
   stream->waitingDataBaseRequests++;
 
@@ -423,15 +395,19 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
 
   /**
    * It's possible that the element is not handled here.
+   * Create a sliceId.
    */
+  DynamicStreamSliceId sliceId;
+  sliceId.vaddr = vaddr;
+  sliceId.startIdx = idx;
+  sliceId.endIdx = idx + 1;
+  sliceId.size = indirectStream->getElementSize();
   if (!this->isPAddrHandledByMe(paddr)) {
     // Send to other bank.
-    this->issueStreamRequestThere(indirectStream, paddrLine, idx,
-                                  1 /* numElements */);
+    this->issueStreamRequestThere(indirectStream, paddrLine, sliceId);
   } else {
     // Send to this bank;
-    this->issueStreamRequestHere(indirectStream, paddrLine, idx,
-                                 1 /* numElements */);
+    this->issueStreamRequestHere(indirectStream, paddrLine, sliceId);
   }
 
   // Don't forget to release the element.
@@ -439,11 +415,10 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   return true;
 }
 
-void LLCStreamEngine::issueStreamRequestHere(LLCDynamicStream *stream,
-                                             Addr paddrLine, uint64_t startIdx,
-                                             int numElements) {
-  LLC_ELEMENT_DPRINTF(stream->getDynamicStreamId(), startIdx, numElements,
-                      "Issue [local] request.\n");
+void LLCStreamEngine::issueStreamRequestHere(
+    LLCDynamicStream *stream, Addr paddrLine,
+    const DynamicStreamSliceId &sliceId) {
+  LLC_SLICE_DPRINTF(sliceId, "Issue [local] request.\n");
 
   auto selfMachineId = this->controller->getMachineID();
   auto streamCPUId = stream->getStaticStream()->getCPUDelegator()->cpuId();
@@ -454,10 +429,7 @@ void LLCStreamEngine::issueStreamRequestHere(LLCDynamicStream *stream,
       MachineID(static_cast<MachineType>(selfMachineId.type - 1), streamCPUId);
   msg->m_Destination.add(selfMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
-  msg->m_sliceId.streamId = stream->getDynamicStreamId();
-  msg->m_sliceId.startIdx = startIdx;
-  msg->m_sliceId.endIdx = startIdx + numElements;
-  msg->m_sliceId.sizeInByte = numElements * stream->getElementSize();
+  msg->m_sliceId = sliceId;
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
@@ -465,12 +437,12 @@ void LLCStreamEngine::issueStreamRequestHere(LLCDynamicStream *stream,
                                       this->controller->cyclesToTicks(latency));
 }
 
-void LLCStreamEngine::issueStreamRequestThere(LLCDynamicStream *stream,
-                                              Addr paddrLine, uint64_t startIdx,
-                                              int numElements) {
+void LLCStreamEngine::issueStreamRequestThere(
+    LLCDynamicStream *stream, Addr paddrLine,
+    const DynamicStreamSliceId &sliceId) {
   auto addrMachineId = this->mapPaddrToLLCBank(paddrLine);
-  LLC_ELEMENT_DPRINTF(stream->getDynamicStreamId(), startIdx, numElements,
-                      "Issue [remote] request to LLC%d.\n", addrMachineId.num);
+  LLC_SLICE_DPRINTF(sliceId, "Issue [remote] request to LLC%d.\n",
+                    addrMachineId.num);
 
   auto selfMachineId = this->controller->getMachineID();
   auto streamCPUId = stream->getStaticStream()->getCPUDelegator()->cpuId();
@@ -481,10 +453,7 @@ void LLCStreamEngine::issueStreamRequestThere(LLCDynamicStream *stream,
       MachineID(static_cast<MachineType>(selfMachineId.type - 1), streamCPUId);
   msg->m_Destination.add(addrMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
-  msg->m_sliceId.streamId = stream->getDynamicStreamId();
-  msg->m_sliceId.startIdx = startIdx;
-  msg->m_sliceId.endIdx = startIdx + numElements;
-  msg->m_sliceId.sizeInByte = numElements * stream->getElementSize();
+  msg->m_sliceId = sliceId;
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
@@ -521,8 +490,8 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   auto addrMachineId =
       this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
 
-  LLC_STREAM_DPRINTF(stream->getDynamicStreamId(), "Migrate to LLC%d.\n",
-                     addrMachineId.num);
+  LLC_S_DPRINTF(stream->getDynamicStreamId(), "Migrate to LLC%d.\n",
+                addrMachineId.num);
 
   auto msg =
       std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());
@@ -561,10 +530,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
   const auto &sliceId = req.m_sliceId;
   assert(sliceId.isValid() && "Invalid stream slice for indirect request.");
 
-  auto startIdx = sliceId.startIdx;
-  auto numElements = sliceId.getNumElements();
-  LLC_ELEMENT_DPRINTF(sliceId.streamId, startIdx, numElements,
-                      "Inject [remote] request.\n");
+  LLC_SLICE_DPRINTF(sliceId, "Inject [remote] request.\n");
 
   auto msg = std::make_shared<RequestMsg>(req);
   Cycles latency(1); // Just use 1 cycle latency here.

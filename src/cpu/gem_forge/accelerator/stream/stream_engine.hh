@@ -126,6 +126,11 @@ public:
     return SimObject::getSimObjectList();
   }
 
+  bool isTraceSim() const {
+    assert(cpuDelegator && "Missing cpuDelegator.");
+    return cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE;
+  }
+
   bool isMergeEnabled() const { return this->enableMerge; }
   bool isOracleEnabled() const { return this->isOracle; }
 

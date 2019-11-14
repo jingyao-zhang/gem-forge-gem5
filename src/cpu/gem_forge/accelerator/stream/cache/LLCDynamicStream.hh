@@ -1,7 +1,9 @@
 #ifndef __CPU_TDG_ACCELERATOR_LLC_DYNAMIC_STREAM_H__
 #define __CPU_TDG_ACCELERATOR_LLC_DYNAMIC_STREAM_H__
 
+#include "SlicedDynamicStream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
+#include "mem/ruby/system/RubySystem.hh"
 
 #include <list>
 #include <map>
@@ -24,8 +26,8 @@ public:
     return this->configData.isOneIterationBehind;
   }
 
-  Addr peekVAddr() const;
-  Addr getVAddr(uint64_t idx) const;
+  Addr peekVAddr();
+  Addr getVAddr(uint64_t sliceIdx) const;
   Addr translateToPAddr(Addr vaddr) const;
 
   /**
@@ -33,21 +35,21 @@ public:
    * buffer.
    * Used for flow control.
    */
-  bool isNextElementAllcoated() const { return this->idx < this->allocatedIdx; }
-  bool isNextElementWithinHistory() const {
-    auto historySize = this->configData.history->history_size();
-    return this->idx < historySize;
+  bool isNextSliceAllocated() const {
+    return this->sliceIdx < this->allocatedSliceIdx;
   }
 
   void addCredit(uint64_t n);
 
-  uint64_t consumeNextElement() {
-    assert(this->isNextElementAllcoated() &&
-           "Next element is not allocated yet.");
-    return this->idx++;
+  DynamicStreamSliceId consumeNextSlice() {
+    assert(this->isNextSliceAllocated() && "Next slice is not allocated yet.");
+    this->sliceIdx++;
+    return this->slicedStream.getNextSlice();
   }
 
   const CacheStreamConfigureData configData;
+  SlicedDynamicStream slicedStream;
+
   // Dependent indirect streams.
   std::list<LLCDynamicStream *> indirectStreams;
 
@@ -57,10 +59,10 @@ public:
    */
   int maxWaitingDataBaseRequests;
 
-  // Next element index to be issued.
-  uint64_t idx;
+  // Next slice index to be issued.
+  uint64_t sliceIdx;
   // For flow control.
-  uint64_t allocatedIdx;
+  uint64_t allocatedSliceIdx;
   /**
    * Number of requests of the base stream (not including indirect streams)
    * issued but data not ready.

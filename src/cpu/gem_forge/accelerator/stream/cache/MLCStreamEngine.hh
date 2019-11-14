@@ -49,8 +49,8 @@ public:
   bool isStreamRequest(const DynamicStreamSliceId &slice);
   bool isStreamOffloaded(const DynamicStreamSliceId &slice);
   bool isStreamCached(const DynamicStreamSliceId &slice);
-  bool receiveOffloadStreamRequest(const DynamicStreamSliceId &slice);
-  void receiveOffloadStreamRequestHit(const DynamicStreamSliceId &slice);
+  bool receiveOffloadStreamRequest(const DynamicStreamSliceId &sliceId);
+  void receiveOffloadStreamRequestHit(const DynamicStreamSliceId &sliceId);
 
 private:
   AbstractStreamAwareController *controller;

@@ -270,6 +270,14 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
       std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
 }
 
+CacheStreamConfigureData *
+Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
+  auto &dynStream = this->getDynamicStream(configSeqNum);
+  return new CacheStreamConfigureData(
+      this, dynStream.dynamicStreamId, this->getElementSize(),
+      dynStream.formalParams, dynStream.addrGenCallback);
+}
+
 bool Stream::isDirectLoadStream() const {
   if (this->getStreamType() != "load") {
     return false;

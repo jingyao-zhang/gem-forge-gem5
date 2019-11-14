@@ -8,14 +8,6 @@
 #include <memory>
 #include <vector>
 
-struct DynamicStreamParam {
-  union {
-    uint64_t invariant;
-    uint64_t baseStreamId;
-  } param;
-  bool isInvariant;
-};
-
 class ThreadContext;
 
 /**
@@ -36,10 +28,10 @@ struct DynamicStream {
   bool configExecuted = false;
 
   // Params used to compute address.
-  std::vector<DynamicStreamParam> formalParams;
+  DynamicStreamFormalParamV formalParams;
 
   // Callback to generate the address.
-  std::unique_ptr<AddrGenCallback> addrGenCallback;
+  AddrGenCallbackPtr addrGenCallback;
 
   DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
                 ThreadContext *_tc, const FIFOEntryIdx &_prevFIFOIdx)

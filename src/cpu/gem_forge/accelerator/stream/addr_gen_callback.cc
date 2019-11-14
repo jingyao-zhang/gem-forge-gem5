@@ -4,6 +4,30 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 
+uint64_t getStreamValueFail(uint64_t streamId) {
+  assert(false && "Failed to get stream value.");
+}
+
+uint64_t AddrGenCallback::genAddr(uint64_t idx,
+                                  const DynamicStreamFormalParamV &formalParams,
+                                  GetStreamValueFunc getStreamValue) {
+
+  // 1. Prepare the parameters.
+  DynamicStreamParamV params;
+  for (const auto &formalParam : formalParams) {
+    if (formalParam.isInvariant) {
+      params.push_back(formalParam.param.invariant);
+    } else {
+      auto baseStreamId = formalParam.param.baseStreamId;
+      auto baseStreamValue = getStreamValue(baseStreamId);
+      params.push_back(baseStreamValue);
+    }
+  }
+
+  // 2. Call the AddrGenCallback.
+  return this->genAddr(idx, params);
+}
+
 uint64_t LinearAddrGenCallback::genAddr(uint64_t idx,
                                         const std::vector<uint64_t> &params) {
   /**

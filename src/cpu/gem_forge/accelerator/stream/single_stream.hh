@@ -29,12 +29,6 @@ public:
   void setupAddrGen(DynamicStream &dynStream,
                     const std::vector<uint64_t> *inputVec) override;
 
-  /**
-   * ! Sean: StreamAwareCache
-   * Allocate the CacheStreamConfigureData.
-   */
-  CacheStreamConfigureData *
-  allocateCacheConfigureData(uint64_t configSeqNum) override;
   bool isPointerChaseLoadStream() const override;
   uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const override;
 

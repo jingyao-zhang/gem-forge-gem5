@@ -27,7 +27,7 @@ class StreamConfigInst;
 class StreamEndInst;
 
 /**
- * Holdes the aggregated stream state, across multiple dynamic stream.
+ * Holdes the aggregated stream state, across multiple dynamic streams.
  */
 class Stream {
 public:
@@ -134,8 +134,7 @@ public:
    * ! Sean: StreamAwareCache
    * Allocate the CacheStreamConfigureData.
    */
-  virtual CacheStreamConfigureData *
-  allocateCacheConfigureData(uint64_t configSeqNum) = 0;
+  CacheStreamConfigureData *allocateCacheConfigureData(uint64_t configSeqNum);
 
   /**
    * Helper function used in StreamAwareCache.

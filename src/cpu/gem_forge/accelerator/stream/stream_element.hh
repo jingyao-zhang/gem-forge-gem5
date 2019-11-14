@@ -26,13 +26,7 @@ struct CacheBlockBreakdownAccess {
   /**
    * State of the cache line.
    */
-  enum StateE {
-    None,
-    Initialized,
-    Issued,
-    PrevElement,
-    Ready
-  } state;
+  enum StateE { None, Initialized, Issued, PrevElement, Ready } state;
 };
 
 class StreamElement;
@@ -56,8 +50,13 @@ public:
 
   Stream *getStream() const { return this->stream; }
 
-  const DynamicStreamId &getDynamicStreamId() const;
-  DynamicStreamSliceId getSliceId() const;
+  const DynamicStreamId &getDynamicStreamId() const {
+    return this->FIFOIdx.streamId;
+  }
+  /**
+   * TODO: Return a reference.
+   */
+  DynamicStreamSliceId getSliceId() const { return this->sliceId; }
 
   void setAdditionalDelay(int additionalDelay) {
     this->additionalDelay = additionalDelay;
@@ -90,6 +89,10 @@ public:
   Addr cacheBlockVAddr;
   Addr vaddr;
   int size;
+
+  // The slice of the this memory request.
+  DynamicStreamSliceId sliceId;
+
   /**
    * Additional delay we want to add after we get the response.
    */

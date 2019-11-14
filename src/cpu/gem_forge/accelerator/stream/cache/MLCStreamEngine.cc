@@ -153,22 +153,20 @@ bool MLCStreamEngine::isStreamCached(const DynamicStreamSliceId &slice) {
 }
 
 bool MLCStreamEngine::receiveOffloadStreamRequest(
-    const DynamicStreamSliceId &slice) {
-  assert(this->isStreamOffloaded(slice) &&
+    const DynamicStreamSliceId &sliceId) {
+  assert(this->isStreamOffloaded(sliceId) &&
          "Should be an offloaded stream request.");
-  auto startIdx = slice.startIdx;
-  auto stream = this->getMLCDynamicStreamFromSlice(slice);
-  stream->receiveStreamRequest(startIdx);
+  auto stream = this->getMLCDynamicStreamFromSlice(sliceId);
+  stream->receiveStreamRequest(sliceId);
   return true;
 }
 
 void MLCStreamEngine::receiveOffloadStreamRequestHit(
-    const DynamicStreamSliceId &slice) {
-  assert(this->isStreamOffloaded(slice) &&
+    const DynamicStreamSliceId &sliceId) {
+  assert(this->isStreamOffloaded(sliceId) &&
          "Should be an offloaded stream request.");
-  auto startIdx = slice.startIdx;
-  auto stream = this->getMLCDynamicStreamFromSlice(slice);
-  stream->receiveStreamRequestHit(startIdx);
+  auto stream = this->getMLCDynamicStreamFromSlice(sliceId);
+  stream->receiveStreamRequestHit(sliceId);
 }
 
 MLCDynamicStream *MLCStreamEngine::getMLCDynamicStreamFromSlice(
