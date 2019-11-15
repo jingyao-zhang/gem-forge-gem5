@@ -39,15 +39,68 @@
 
 #include "cpu/minor/stats.hh"
 
+#include "base/output.hh"
+#include <cassert>
+
 namespace Minor
 {
 
 MinorStats::MinorStats()
 { }
 
+void MinorStats::updateLoadBlockedStat(Addr pc, int upc, uint64_t cycles)
+{
+    // Use (pc << 3) + upc as the key.
+    assert(upc <= UPC_MASK && "Overflow of upc.");
+    auto key = (pc << UPC_WIDTH) + upc;
+    auto &stat = this->loadBlockedPCStat.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(key), std::forward_as_tuple())
+        .first->second;
+    stat.times++;
+    stat.cycles += cycles;
+    this->loadBlockedIssueCycles += cycles;
+    this->loadBlockedIssueInsts++;
+}
+
+void MinorStats::resetLoadBlockedStat()
+{
+    this->loadBlockedPCStat.clear();
+}
+
+void MinorStats::dumpLoadBlockedStat()
+{
+    std::string fn = "load.blocked.";
+    fn += std::to_string(this->cpuId);
+    fn += ".";
+    fn += std::to_string(this->dumped);
+    fn += ".txt";
+    auto outputStream = simout.findOrCreate(fn);
+    auto &stream = *outputStream->stream();
+    for (const auto &record : this->loadBlockedPCStat) {
+        auto pc = record.first >> UPC_WIDTH;
+        auto upc = record.first & UPC_MASK;
+        auto cpi = static_cast<float>(record.second.cycles) /
+            static_cast<float>(record.second.times);
+        stream << std::hex << pc << ' ' << upc << ' ' << std::dec << cpi << ' '
+            << record.second.times << '\n';
+    }
+    simout.close(outputStream);
+    this->dumped++;
+}
+
 void
 MinorStats::regStats(const std::string &name, BaseCPU &baseCpu)
 {
+    this->cpuId = baseCpu.cpuId();
+
+    Stats::registerDumpCallback(
+        new MakeCallback<MinorStats, &MinorStats::dumpLoadBlockedStat>(
+            this, true));
+    Stats::registerResetCallback(
+        new MakeCallback<MinorStats, &MinorStats::resetLoadBlockedStat>(
+            this, true));
+
     numInsts
         .name(name + ".committedInsts")
         .desc("Number of instructions committed");

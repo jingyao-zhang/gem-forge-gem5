@@ -767,19 +767,6 @@ Execute::issue(ThreadID thread_id)
                                     cpu.stats.loadBlockedIssueInsts.result()
                                 );
                             }
-                            // Update the stats.
-                            auto deltaCycles = curCycle - this->prevLoadBlockedCycle;
-                            DPRINTF(MinorExecute,
-                            // hack(
-                                "[%llu], blocked update loadblocked cycles cur %llu,"
-                                " prev %llu, delta %llu.\n",
-                                execSeqNum,
-                                curCycle,
-                                this->prevLoadBlockedCycle,
-                                deltaCycles
-                            );
-                            cpu.stats.loadBlockedIssueCycles += deltaCycles;
-                            this->prevLoadBlockedCycle = curCycle;
                         }
                         DPRINTF(MinorExecute, "Can't issue inst: %s yet\n",
                             *inst);
@@ -806,7 +793,8 @@ Execute::issue(ThreadID thread_id)
                                 deltaCycles,
                                 cpu.stats.loadBlockedIssueInsts.result()
                             );
-                            cpu.stats.loadBlockedIssueCycles += deltaCycles;
+                            cpu.stats.updateLoadBlockedStat(inst->pc.pc(),
+                                inst->pc.upc(), deltaCycles);
                             // Clear it.
                             this->prevLoadBlockedInstExecSeq = InstId::firstExecSeqNum - 1;
                             this->prevLoadBlockedCycle = Cycles(0);
@@ -1504,7 +1492,8 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
                      *  but had already been committed, it would have
                      *  unstalled the pipeline before here */
                     if (inst->fuIndex != noCostFUIndex) {
-                        DPRINTF(MinorExecute, "Unstalling %d for inst %s\n", inst->fuIndex, inst->id);
+                        DPRINTF(MinorExecute, "Unstalling %d for inst %s\n",
+                            inst->fuIndex, inst->id);
                         funcUnits[inst->fuIndex]->stalled = false;
                     }
                 }

@@ -50,6 +50,8 @@
 #include "cpu/base.hh"
 #include "sim/ticked_object.hh"
 
+#include <map>
+
 namespace Minor
 {
 
@@ -87,6 +89,20 @@ class MinorStats
 
     /** Number of instructions by type (OpClass) */
     Stats::Vector2d committedInstType;
+
+    struct BlockedStat {
+      uint64_t cycles = 0;
+      uint64_t times = 0;
+    };
+    std::map<Addr, BlockedStat> loadBlockedPCStat;
+    static constexpr int UPC_WIDTH = 3;
+    static constexpr int UPC_MASK = (1 << UPC_WIDTH) - 1;
+    void updateLoadBlockedStat(Addr pc, int upc, uint64_t cycles);
+    void resetLoadBlockedStat();
+    void dumpLoadBlockedStat();
+
+    int cpuId = 0;
+    int dumped = 0;
 
   public:
     MinorStats();
