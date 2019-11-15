@@ -325,13 +325,14 @@ private:
   // Allocate one element to stream.
   void allocateElement(Stream *S);
   /**
-   * Release a unstepped stream element.
+   * Release an unstepped stream element.
+   * Used to clear ended stream.
    */
-  void releaseElementUnstepped(Stream *S);
+  bool releaseElementUnstepped(Stream *S);
   /**
    * Release a stepped stream element.
    */
-  void releaseElementStepped(Stream *S);
+  void releaseElementStepped(Stream *S, bool doThrottle);
   /**
    * Step one element.
    */
@@ -343,12 +344,6 @@ private:
   void issueElements();
   void issueElement(StreamElement *element);
   void writebackElement(StreamElement *element, StreamStoreInst *inst);
-  /**
-   * Get previous element in the chain of the stream.
-   * Notice that it may return the (dummy) element->stream->tail if this is
-   * the first element for that stream.
-   */
-  StreamElement *getPrevElement(StreamElement *element);
 
   /**
    * Flush all the PEB entries.

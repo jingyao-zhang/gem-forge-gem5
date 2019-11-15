@@ -10,6 +10,7 @@
 #include <unordered_set>
 
 class Stream;
+class DynamicStream;
 class StreamEngine;
 class StreamStoreInst;
 

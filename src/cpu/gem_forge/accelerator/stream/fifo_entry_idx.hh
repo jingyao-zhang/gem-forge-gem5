@@ -14,6 +14,8 @@ struct FIFOEntryIdx {
   FIFOEntryIdx(const DynamicStreamId &_streamId)
       : streamId(_streamId), configSeqNum(LLVMDynamicInst::INVALID_SEQ_NUM),
         entryIdx(0) {}
+  FIFOEntryIdx(const DynamicStreamId &_streamId, uint64_t _configSeqNum)
+      : streamId(_streamId), configSeqNum(_configSeqNum), entryIdx(0) {}
   void next() { this->entryIdx++; }
   void prev() { this->entryIdx--; }
   void newInstance(uint64_t configSeqNum) {

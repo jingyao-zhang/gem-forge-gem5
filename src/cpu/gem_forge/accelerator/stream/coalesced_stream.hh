@@ -89,11 +89,6 @@ protected:
   std::vector<LogicalStream *> coalescedStreams;
   LogicalStream *primeLStream;
   int32_t coalescedElementSize = -1;
-
-  /**
-   * For debug.
-   */
-  void dump() const override;
 };
 
 #endif

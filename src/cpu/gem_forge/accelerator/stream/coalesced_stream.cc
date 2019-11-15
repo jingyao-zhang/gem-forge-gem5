@@ -331,9 +331,3 @@ void CoalescedStream::getCoalescedOffsetAndSize(uint64_t streamId,
   STREAM_DPRINTF("Failed to find logical stream %llu.\n", streamId);
   assert(false);
 }
-
-void CoalescedStream::dump() const {
-  inform("Dump for coalesced stream %s.\n======================",
-         this->getStreamName().c_str());
-  inform("=========================\n");
-}

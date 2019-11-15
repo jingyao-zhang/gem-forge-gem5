@@ -18,7 +18,7 @@ public:
   SlicedDynamicStream(CacheStreamConfigureData *_configData);
 
   DynamicStreamSliceId getNextSlice();
-  const DynamicStreamSliceId &peekNextSlice();
+  const DynamicStreamSliceId &peekNextSlice() const;
 
 private:
   DynamicStreamId streamId;
@@ -28,11 +28,12 @@ private:
 
   /**
    * Internal states.
+   * ! Evil trick to make peekNextSlice constant.
    */
-  uint64_t tailIdx;
-  std::deque<DynamicStreamSliceId> slices;
+  mutable uint64_t tailIdx;
+  mutable std::deque<DynamicStreamSliceId> slices;
 
-  void allocateOneElement();
+  void allocateOneElement() const;
 };
 
 #endif

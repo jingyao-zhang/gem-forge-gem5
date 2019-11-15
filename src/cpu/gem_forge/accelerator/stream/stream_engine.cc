@@ -13,30 +13,6 @@ bool isDebugStream(Stream *S) {
   return S->getStreamName() == DEBUG_STREAM_NAME;
 }
 
-void debugStream(Stream *S, const char *message) {
-  inform("%20s: Stream %50s config %1d step %3d allocated %3d max %3d.\n",
-         message, S->getStreamName().c_str(), S->configured, S->stepSize,
-         S->allocSize, S->maxSize);
-}
-
-void debugStreamWithElements(Stream *S, const char *message) {
-  inform("%20s: Stream %50s config %1d step %3d allocated %3d max %3d.\n",
-         message, S->getStreamName().c_str(), S->configured, S->stepSize,
-         S->allocSize, S->maxSize);
-  std::stringstream ss;
-  auto element = S->tail;
-  while (element != S->head) {
-    element = element->next;
-    ss << element->FIFOIdx.entryIdx << '('
-       << static_cast<int>(element->isAddrReady)
-       << static_cast<int>(element->isValueReady) << ')';
-    for (auto baseElement : element->baseElements) {
-      ss << '.' << baseElement->FIFOIdx.entryIdx;
-    }
-    ss << ' ';
-  }
-  inform("%s\n", ss.str().c_str());
-}
 } // namespace
 
 #define SE_DPRINTF(format, args...)                                            \
@@ -238,7 +214,7 @@ bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
       if (iter != this->streamMap.end()) {
         // Check if we have quota for this stream.
         auto S = iter->second;
-        if (S->allocSize == S->maxSize) {
+        if (S->getAllocSize() == S->maxSize) {
           // No more quota.
           return false;
         }
@@ -251,7 +227,7 @@ bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
       if (iter != this->streamMap.end()) {
         // Check if we have quota for this stream.
         auto S = iter->second;
-        if (S->allocSize == S->maxSize) {
+        if (S->getAllocSize() == S->maxSize) {
           // No more quota.
           return false;
         }
@@ -292,37 +268,18 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     S->configured = true;
     S->statistic.numConfigured++;
 
-    /**
-     * 1. Check there are no unstepped elements.
-     * 2. Create the new index.
-     * 3. Allocate more entries.
-     */
-
-    // 1. Check there are no unstepped elements.
-    assert(S->allocSize == S->stepSize &&
-           "Unstepped elements when dispatch StreamConfig.");
-
     // Notify the stream.
     S->configure(args.seqNum, args.tc);
   }
 
-  // 3. Allocate new entries one by one for all streams.
-  // The first element is guaranteed to be allocated.
+  // 3. Allocate one new entries for all streams.
   for (auto S : configStreams) {
     // hack("Allocate element for stream %s.\n",
     // S->getStreamName().c_str());
     assert(this->hasFreeElement());
-    assert(S->allocSize < S->maxSize);
+    assert(S->getAllocSize() < S->maxSize);
     assert(this->areBaseElementAllocated(S));
     this->allocateElement(S);
-  }
-  for (auto S : configStreams) {
-    if (isDebugStream(S)) {
-      debugStream(S, "Dispatch Config");
-      if (S->allocSize < 1) {
-        panic("Failed to allocate one number of elements.");
-      }
-    }
   }
 }
 
@@ -459,15 +416,11 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
 }
 
 bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
-  /**
-   * For all the streams get stepped, make sure that
-   * allocSize - stepSize >= 2.
-   */
   auto stepStream = this->getStream(stepStreamId);
 
   bool canStep = true;
   for (auto S : this->getStepStreamList(stepStream)) {
-    if (S->allocSize - S->stepSize < 2) {
+    if (!S->canStep()) {
       canStep = false;
       break;
     }
@@ -519,7 +472,7 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
 
   for (auto S : stepStreams) {
     /**
-     * 1. Why only throttle for streamStep?
+     * Why only throttle for streamStep?
      * Normally you want to throttling when you release the element.
      * However, so far the throttling is constrainted by the
      * totalRunAheadLength, which only considers configured streams.
@@ -529,21 +482,8 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
      * deadlock.
      *
      * To solve this, we only do throttling for streamStep.
-     *
-     * 2. How to handle short streams?
-     * There is a pathological case when the streams are short, and
-     * increasing the run ahead length beyond the stream length does not
-     * make sense. We do not throttle if the element is within the run ahead
-     * length.
      */
-    auto releaseElement = S->tail->next;
-    assert(releaseElement->FIFOIdx.configSeqNum !=
-               LLVMDynamicInst::INVALID_SEQ_NUM &&
-           "This element does not have valid config sequence number.");
-    if (releaseElement->FIFOIdx.entryIdx > S->maxSize) {
-      this->throttleStream(S, releaseElement);
-    }
-    this->releaseElementStepped(S);
+    this->releaseElementStepped(S, true /* doThrottle */);
   }
 
   // ! Do not allocate here.
@@ -576,12 +516,8 @@ int StreamEngine::getStreamUserLQEntries(const StreamUserArgs &args) const {
       // Ignore the out-of-loop use (see dispatchStreamUser).
       continue;
     }
-    if (S->allocSize <= S->stepSize) {
-      this->dumpFIFO();
-      panic("No allocated element to use for stream %s.",
-            S->getStreamName().c_str());
-    }
-    usedElementSet.insert(S->stepped->next);
+    auto element = S->getFirstUnsteppedElement();
+    usedElementSet.insert(element);
   }
   /**
    * The only thing we need to worry about is to check there are
@@ -653,15 +589,7 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
     if (!S->configured) {
       elementSet.insert(nullptr);
     } else {
-      if (S->allocSize <= S->stepSize) {
-        this->dumpFIFO();
-        panic("No allocated element to use for stream %s seqNum %llu.",
-              S->getStreamName().c_str(), seqNum);
-      }
-
-      auto element = S->stepped->next;
-      // * Notice the element is guaranteed to be not stepped.
-      assert(!element->isStepped && "Dispatch user to stepped stream element.");
+      auto element = S->getFirstUnsteppedElement();
       // Mark the first user sequence number.
       if (!element->isFirstUserDispatched()) {
         element->firstUserSeqNum = seqNum;
@@ -828,28 +756,13 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
     }
     endedStreams.insert(S);
 
-    assert(S->configured && "Stream should be configured.");
-
-    /**
-     * 1. Step one element (retain one last element).
-     * 2. Release all unstepped allocated element.
-     * 3. Mark the stream to be unconfigured.
-     */
-
     // 1. Step one element.
-    assert(S->allocSize > S->stepSize &&
-           "Should have at least one unstepped allocate element.");
     this->stepElement(S);
 
-    // 2. Release allocated but unstepped elements.
-    while (S->allocSize > S->stepSize) {
-      this->releaseElementUnstepped(S);
-    }
-
-    // 3. Mark the stream to be unconfigured.
-    S->configured = false;
+    // 2. Mark the dynamicStream as ended.
+    S->dispatchStreamEnd(args.seqNum);
     if (isDebugStream(S)) {
-      debugStream(S, "Dispatch End");
+      S_DPRINTF(S, "Dispatch End");
     }
   }
 }
@@ -858,7 +771,7 @@ void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
   const auto &endStreamInfos = streamRegion.streams();
 
-  SE_DPRINTF("Dispatch StreamEnd for %s.\n", streamRegion.region().c_str());
+  SE_DPRINTF("Rewind StreamEnd for %s.\n", streamRegion.region().c_str());
 
   /**
    * Dedup the coalesced stream ids.
@@ -874,21 +787,13 @@ void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
     }
     endedStreams.insert(S);
 
-    assert(!S->configured && "Stream should not configured.");
+    // 1. Restart the last dynamic stream.
+    S->rewindStreamEnd(args.seqNum);
 
-    /**
-     * 1. Unstep one element.
-     * 2. Mark the stream to be configured so that we restart the stream.
-     */
-
-    // 1. Unstep one element.
-    assert(S->allocSize == S->stepSize && "Should have no unstepped element.");
+    // 2. Unstep one element.
     this->unstepElement(S);
-
-    // 3. Mark the stream to be configured.
-    S->configured = true;
     if (isDebugStream(S)) {
-      debugStream(S, "Rewind End");
+      S_DPRINTF(S, "Rewind End");
     }
   }
 }
@@ -919,11 +824,17 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     endedStreams.insert(S);
 
     /**
+     * Release all unstepped element until there is none.
+     */
+    while (this->releaseElementUnstepped(S)) {
+    }
+
+    /**
      * Release the last element we stepped at dispatch.
      */
-    this->releaseElementStepped(S);
+    this->releaseElementStepped(S, false /* doThrottle */);
     if (isDebugStream(S)) {
-      debugStream(S, "Commit End");
+      S_DPRINTF(S, "Commit End");
     }
 
     /**
@@ -1160,7 +1071,7 @@ void StreamEngine::updateAliveStatistics() {
   for (const auto &streamPair : this->streamMap) {
     const auto &stream = streamPair.second;
     if (stream->isMemStream()) {
-      this->numRunAHeadLengthDist.sample(stream->allocSize);
+      this->numRunAHeadLengthDist.sample(stream->getAllocSize());
     }
     if (!stream->configured) {
       continue;
@@ -1295,7 +1206,7 @@ void StreamEngine::allocateElements() {
   // Sort by the allocated size.
   std::sort(configuredStepRootStreams.begin(), configuredStepRootStreams.end(),
             [](Stream *SA, Stream *SB) -> bool {
-              return SA->allocSize < SB->allocSize;
+              return SA->getAllocSize() < SB->getAllocSize();
             });
 
   for (auto stepStream : configuredStepRootStreams) {
@@ -1319,46 +1230,34 @@ void StreamEngine::allocateElements() {
             // ! So far ignore this dependence.
             continue;
           }
-          auto backBaseSAllocDiff = backBaseS->allocSize - backBaseS->stepSize;
-          auto stepStreamAllocDiff = maxAllocSize - stepStream->stepSize;
-          if (backBaseSAllocDiff < stepStreamAllocDiff) {
-            // The back base stream is lagging off.
+          if (backBaseS->getAllocSize() < maxAllocSize) {
+            // The back base stream is lagging behind.
             // Reduce the maxAllocSize.
-            maxAllocSize = stepStream->stepSize + backBaseSAllocDiff;
+            maxAllocSize = backBaseS->getAllocSize();
           }
         }
       }
     }
 
     const auto &stepStreams = this->getStepStreamList(stepStream);
-    if (isDebugStream(stepStream)) {
-      hack("Try to allocate for debug stream, maxAllocSize %d.", maxAllocSize);
-    }
     for (size_t targetSize = 1;
          targetSize <= maxAllocSize && this->hasFreeElement(); ++targetSize) {
       for (auto S : stepStreams) {
-        if (isDebugStream(stepStream)) {
-          debugStream(S, "Try to allocate for it.");
-        }
         if (!this->hasFreeElement()) {
           break;
         }
         if (!S->configured) {
           continue;
         }
-        if (S->allocSize >= targetSize) {
+        if (S->getAllocSize() >= targetSize) {
           continue;
         }
         if (S != stepStream) {
-          if (S->allocSize - S->stepSize >=
-              stepStream->allocSize - stepStream->stepSize) {
+          if (S->getAllocSize() >= stepStream->getAllocSize()) {
             // It doesn't make sense to allocate ahead than the step root.
             continue;
           }
         }
-        // if (isDebugStream(S)) {
-        //   debugStream(S, "allocate one.");
-        // }
         this->allocateElement(S);
       }
     }
@@ -1374,7 +1273,7 @@ bool StreamEngine::areBaseElementAllocated(Stream *S) {
 
     auto allocated = true;
     if (baseS->stepRootStream == S->stepRootStream) {
-      if (baseS->allocSize - baseS->stepSize <= S->allocSize - S->stepSize) {
+      if (baseS->getAllocSize() <= S->getAllocSize()) {
         // The base stream has not allocate the element we want.
         allocated = false;
       }
@@ -1382,9 +1281,7 @@ bool StreamEngine::areBaseElementAllocated(Stream *S) {
       // The other one must be a constant stream.
       assert(baseS->stepRootStream == nullptr &&
              "Should be a constant stream.");
-      if (baseS->stepped->next == nullptr) {
-        allocated = false;
-      }
+      // It should always be allocated.
     }
     // hack("Check base element from stream %s for stream %s allocated
     // %d.\n",
@@ -1399,131 +1296,37 @@ bool StreamEngine::areBaseElementAllocated(Stream *S) {
 
 void StreamEngine::allocateElement(Stream *S) {
   assert(this->hasFreeElement());
-  assert(S->configured && "Stream should be configured to allocate element.");
   auto newElement = this->removeFreeElement();
   this->numElementsAllocated++;
-  S->statistic.numAllocated++;
   if (S->getStreamType() == "load") {
     this->numLoadElementsAllocated++;
   } else if (S->getStreamType() == "store") {
     this->numStoreElementsAllocated++;
   }
 
-  newElement->stream = S;
-  /**
-   * next() is called after assign to make sure
-   * entryIdx starts from 0.
-   */
-  newElement->FIFOIdx = S->FIFOIdx;
-  newElement->isCacheBlockedValue = S->isMemStream();
-  S->FIFOIdx.next();
-
-  // Find the base element.
-  for (auto baseS : S->baseStreams) {
-    if (baseS->getLoopLevel() != S->getLoopLevel()) {
-      continue;
-    }
-
-    if (baseS->stepRootStream == S->stepRootStream) {
-      if (baseS->allocSize - baseS->stepSize <= S->allocSize - S->stepSize) {
-        this->dumpFIFO();
-        panic("Base %s has not enough allocated element for %s.",
-              baseS->getStreamName().c_str(), S->getStreamName().c_str());
-      }
-
-      auto baseElement = baseS->stepped;
-      auto element = S->stepped;
-      while (element != nullptr) {
-        assert(baseElement != nullptr && "Failed to find base element.");
-        element = element->next;
-        baseElement = baseElement->next;
-      }
-      assert(baseElement != nullptr && "Failed to find base element.");
-      newElement->baseElements.insert(baseElement);
-    } else {
-      // The other one must be a constant stream.
-      assert(baseS->stepRootStream == nullptr &&
-             "Should be a constant stream.");
-      assert(baseS->stepped->next != nullptr && "Missing base element.");
-      newElement->baseElements.insert(baseS->stepped->next);
-    }
-  }
-
-  // Find the back base element, starting from the second element.
-  if (newElement->FIFOIdx.entryIdx > 1) {
-    for (auto backBaseS : S->backBaseStreams) {
-      if (backBaseS->getLoopLevel() != S->getLoopLevel()) {
-        continue;
-      }
-
-      if (backBaseS->stepRootStream != nullptr) {
-        // Try to find the previous element for the base.
-        auto baseElement = backBaseS->stepped;
-        auto element = S->stepped->next;
-        while (element != nullptr) {
-          if (baseElement == nullptr) {
-            S_ELEMENT_PANIC(newElement,
-                            "Failed to find back base element from %s.\n",
-                            backBaseS->getStreamName().c_str());
-          }
-          element = element->next;
-          baseElement = baseElement->next;
-        }
-        if (baseElement == nullptr) {
-          S_ELEMENT_PANIC(newElement,
-                          "Failed to find back base element from %s.\n",
-                          backBaseS->getStreamName().c_str());
-        }
-        // ! Try to check the base element should have the previous element.
-        S_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
-        if (baseElement->FIFOIdx.streamId.streamInstance ==
-            newElement->FIFOIdx.streamId.streamInstance) {
-          if (baseElement->FIFOIdx.entryIdx + 1 ==
-              newElement->FIFOIdx.entryIdx) {
-            S_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
-            newElement->baseElements.insert(baseElement);
-          } else {
-            // S_ELEMENT_PANIC(
-            //     newElement, "The base element has wrong FIFOIdx.\n");
-          }
-        } else {
-          // S_ELEMENT_PANIC(newElement,
-          //                      "The base element has wrong
-          //                      streamInstance.\n");
-        }
-
-      } else {
-        // ! Should be a constant stream. So far we ignore it.
-      }
-    }
-  }
-
-  newElement->allocateCycle = cpuDelegator->curCycle();
-
-  // Append to the list.
-  S->head->next = newElement;
-  S->allocSize++;
-  S->head = newElement;
-
-  if (newElement->FIFOIdx.entryIdx == 1) {
-    if (newElement->FIFOIdx.streamId.coreId == 8 &&
-        newElement->FIFOIdx.streamId.streamInstance == 1 &&
-        newElement->FIFOIdx.streamId.staticId == 11704592) {
-      S_ELEMENT_HACK(newElement, "Allocated.\n");
-    }
-  }
+  S->allocateElement(newElement);
 }
 
-void StreamEngine::releaseElementStepped(Stream *S) {
+void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
 
   /**
-   * * This function performs a normal release, i.e. release a stepped
+   * This function performs a normal release, i.e. release a stepped
    * element.
    */
 
-  assert(S->stepSize > 0 && "No element to release.");
-  auto releaseElement = S->tail->next;
-  assert(releaseElement->isStepped && "Release unstepped element.");
+  auto releaseElement = S->releaseElementStepped();
+  /**
+   * How to handle short streams?
+   * There is a pathological case when the streams are short, and
+   * increasing the run ahead length beyond the stream length does not
+   * make sense. We do not throttle if the element is within the run ahead
+   * length.
+   */
+  if (doThrottle) {
+    if (releaseElement->FIFOIdx.entryIdx > S->maxSize) {
+      this->throttleStream(S, releaseElement);
+    }
+  }
 
   const bool used = releaseElement->isFirstUserDispatched();
 
@@ -1535,28 +1338,6 @@ void StreamEngine::releaseElementStepped(Stream *S) {
            "Some unreleased user instruction.");
   }
 
-  S->statistic.numStepped++;
-  if (used) {
-    S->statistic.numUsed++;
-
-    /**
-     * Since this element is used by the core, we update the statistic
-     * of the latency of this element experienced by the core.
-     */
-    if (releaseElement->valueReadyCycle < releaseElement->firstCheckCycle) {
-      // The element is ready earlier than core's user.
-      auto earlyCycles =
-          releaseElement->firstCheckCycle - releaseElement->valueReadyCycle;
-      S->statistic.numCoreEarlyElement++;
-      S->statistic.numCycleCoreEarlyElement += earlyCycles;
-    } else {
-      // The element makes the core's user wait.
-      auto lateCycles =
-          releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
-      S->statistic.numCoreLateElement++;
-      S->statistic.numCycleCoreLateElement += lateCycles;
-    }
-  }
   if (S->getStreamType() == "load") {
     this->numLoadElementsStepped++;
     /**
@@ -1613,103 +1394,41 @@ void StreamEngine::releaseElementStepped(Stream *S) {
     }
   }
 
-  S->tail->next = releaseElement->next;
-  if (S->stepped == releaseElement) {
-    S->stepped = S->tail;
-  }
-  if (S->head == releaseElement) {
-    S->head = S->tail;
-  }
-  S->stepSize--;
-  S->allocSize--;
-
   this->addFreeElement(releaseElement);
 }
 
-void StreamEngine::releaseElementUnstepped(Stream *S) {
-  /**
-   * Make sure we release in reverse order.
-   */
-  auto prevElement = S->stepped;
-  auto releaseElement = S->stepped->next;
-  assert(releaseElement && "Missing unstepped element.");
-  while (releaseElement->next) {
-    prevElement = releaseElement;
-    releaseElement = releaseElement->next;
-  }
-  assert(releaseElement == S->head && "Head should point to the last element.");
-
-  // Clear the markNextElementValueReady.
-  if (prevElement->markNextElementValueReady) {
-    S_ELEMENT_DPRINTF(prevElement,
-                      "Reset markNextElementValueReady as released.\n");
-    prevElement->markNextElementValueReady = false;
-  }
-
-  // This should be unused.
-  assert(!releaseElement->isStepped && "Release stepped element.");
-  assert(!releaseElement->isFirstUserDispatched() &&
-         "Release unstepped but used element.");
-
-  if (S->getStreamType() == "load") {
-    if (releaseElement->isAddrReady) {
-      // This should be in PEB.
-      this->peb.removeElement(releaseElement);
+bool StreamEngine::releaseElementUnstepped(Stream *S) {
+  auto releaseElement = S->releaseElementUnstepped();
+  if (releaseElement) {
+    if (S->getStreamType() == "load") {
+      if (releaseElement->isAddrReady) {
+        // This should be in PEB.
+        this->peb.removeElement(releaseElement);
+      }
     }
+    this->addFreeElement(releaseElement);
   }
-
-  prevElement->next = releaseElement->next;
-  S->allocSize--;
-  S->head = prevElement;
-  /**
-   * Since this element is released as unstepped,
-   * we need to reverse the FIFOIdx so that if we misspeculated,
-   * new elements can be allocated with correct FIFOIdx.
-   */
-  S->FIFOIdx.prev();
-  this->addFreeElement(releaseElement);
+  return releaseElement != nullptr;
 }
 
 void StreamEngine::stepElement(Stream *S) {
-  auto element = S->stepped->next;
-  assert(!element->isStepped && "Element already stepped.");
-  element->isStepped = true;
+  auto element = S->stepElement();
   if (S->getStreamType() == "load") {
     if (!element->isFirstUserDispatched() && element->isAddrReady) {
       // This issued element is stepped but not used, remove from PEB.
       this->peb.removeElement(element);
     }
   }
-  S->stepped = element;
-  S->stepSize++;
 }
 
 void StreamEngine::unstepElement(Stream *S) {
-  assert(S->stepSize > 0 && "No element to unstep.");
-  auto element = S->stepped;
-  assert(element->isStepped && "Element not stepped.");
-  element->isStepped = false;
+  auto element = S->unstepElement();
   // We may need to add this back to PEB.
   if (S->getStreamType() == "load") {
     if (!element->isFirstUserDispatched() && element->isAddrReady) {
       this->peb.addElement(element);
     }
   }
-  // Search to get previous element.
-  S->stepped = this->getPrevElement(element);
-  S->stepSize--;
-}
-
-StreamElement *StreamEngine::getPrevElement(StreamElement *element) {
-  auto S = element->stream;
-  assert(S && "Element not allocated.");
-  for (auto prevElement = S->tail; prevElement != nullptr;
-       prevElement = prevElement->next) {
-    if (prevElement->next == element) {
-      return prevElement;
-    }
-  }
-  assert(false && "Failed to find the previous element.");
 }
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
@@ -2019,7 +1738,7 @@ void StreamEngine::dumpFIFO() const {
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
     if (S->configured) {
-      debugStreamWithElements(S, "dump");
+      S->dump();
     }
   }
 }
@@ -2415,9 +2134,7 @@ void StreamEngine::coalesceContinuousDirectLoadStreamElement(
     return;
   }
   // Get the previous element.
-  auto prevElement = this->getPrevElement(element);
-  assert(prevElement != S->tail && "Element is the first one.");
-
+  auto prevElement = S->getPrevElement(element);
   // We found the previous element. Check if completely overlap.
   assert(prevElement->FIFOIdx.entryIdx + 1 == element->FIFOIdx.entryIdx &&
          "Mismatch entryIdx for prevElement.");

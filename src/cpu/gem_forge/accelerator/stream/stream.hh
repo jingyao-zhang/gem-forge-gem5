@@ -68,7 +68,6 @@ public:
   StreamElement *head;
   StreamElement *stepped;
   StreamElement *tail;
-  size_t allocSize;
   size_t stepSize;
   size_t maxSize;
   FIFOEntryIdx FIFOIdx;
@@ -121,7 +120,53 @@ public:
                            const std::vector<uint64_t> *inputVec);
   void rewindStreamConfig(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t seqNum);
+
+  void dispatchStreamEnd(uint64_t seqNum);
+  void rewindStreamEnd(uint64_t seqNum);
   void commitStreamEnd(uint64_t seqNum);
+
+  /***********************************************************************
+   * API to manage the elements of this stream.
+   ***********************************************************************/
+  /**
+   * Get the total number of allocated elements among all dynamic streams.
+   */
+  int getAllocSize() const { return this->allocSize; }
+
+  /**
+   * Add one element to the last dynamic stream.
+   */
+  void allocateElement(StreamElement *newElement);
+  /**
+   * Remove one stepped element from the first dynamic stream.
+   */
+  StreamElement *releaseElementStepped();
+  /**
+   * Remove one unstepped element from the first dynamic stream.
+   */
+  StreamElement *releaseElementUnstepped();
+  /**
+   * Check if the last dynamic stream can be stepped.
+   */
+  bool canStep() const { return this->allocSize - this->stepSize >= 2; }
+  /**
+   * Step one element of the last dynamic stream.
+   */
+  StreamElement *stepElement();
+  /**
+   * Unstep one element.
+   */
+  StreamElement *unstepElement();
+  /**
+   * Get the first unstepped element of the last dynamic stream.
+   */
+  StreamElement *getFirstUnsteppedElement();
+  /**
+   * Get previous element in the chain of the stream.
+   * Notice that it may return the (dummy) element->stream->tail if this is
+   * the first element for that stream.
+   */
+  StreamElement *getPrevElement(StreamElement *element);
 
   /**
    * Called by executeStreamConfig() to allow derived class to set up the
@@ -129,6 +174,11 @@ public:
    */
   virtual void setupAddrGen(DynamicStream &dynStream,
                             const std::vector<uint64_t> *inputVec) = 0;
+
+  /**
+   * For debug.
+   */
+  void dump() const;
 
   /**
    * ! Sean: StreamAwareCache
@@ -145,6 +195,10 @@ public:
 
   std::deque<DynamicStream> dynamicStreams;
   DynamicStream &getDynamicStream(uint64_t seqNum);
+  DynamicStream &getLastDynamicStream() {
+    assert(!this->dynamicStreams.empty() && "No dynamic stream.");
+    return this->dynamicStreams.back();
+  }
 
 protected:
   LLVMTraceCPU *cpu;
@@ -156,6 +210,11 @@ protected:
   std::unordered_set<Stream *> dependentStepStreams;
 
   StreamElement nilTail;
+
+  /**
+   * Total allocated elements among all dynamic streams.
+   */
+  size_t allocSize;
 
   /**
    * Step the dependent streams in this order.
@@ -173,11 +232,6 @@ protected:
   void setupLinearAddrFunc(DynamicStream &dynStream,
                            const std::vector<uint64_t> *inputVec,
                            const LLVM::TDG::StreamInfo &info);
-
-  /**
-   * For debug.
-   */
-  virtual void dump() const = 0;
 };
 
 #endif

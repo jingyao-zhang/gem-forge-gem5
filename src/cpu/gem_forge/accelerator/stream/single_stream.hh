@@ -36,11 +36,6 @@ private:
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
   std::unique_ptr<StreamPattern> patternStream;
-
-  /**
-   * For debug.
-   */
-  void dump() const override;
 };
 
 #endif

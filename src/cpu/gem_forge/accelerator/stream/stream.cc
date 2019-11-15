@@ -9,6 +9,9 @@
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
+#define DEBUG_TYPE StreamEngine
+#include "stream_log.hh"
+
 #define STREAM_DPRINTF(format, args...)                                        \
   DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(),   \
           ##args)
@@ -118,7 +121,7 @@ void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
   this->FIFOIdx.newInstance(seqNum);
   // Allocate the new DynamicStream.
   this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum, tc,
-                                    prevFIFOIdx);
+                                    prevFIFOIdx, &this->nilTail);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum,
@@ -169,12 +172,37 @@ bool Stream::isStreamConfigureExecuted(uint64_t seqNum) {
   return dynStream.configExecuted;
 }
 
+void Stream::dispatchStreamEnd(uint64_t seqNum) {
+  assert(this->configured && "Stream should be configured.");
+  auto &dynS = this->getLastDynamicStream();
+  assert(!dynS.endDispatched && "Already ended.");
+  assert(dynS.configSeqNum < seqNum && "End before configure.");
+  dynS.endDispatched = true;
+  this->configured = false;
+}
+
+void Stream::rewindStreamEnd(uint64_t seqNum) {
+  assert(!this->configured && "Stream should not be configured.");
+  auto &dynS = this->getLastDynamicStream();
+  assert(dynS.endDispatched && "Not ended.");
+  assert(dynS.configSeqNum < seqNum && "End before configure.");
+  dynS.endDispatched = false;
+  this->configured = true;
+}
+
 void Stream::commitStreamEnd(uint64_t seqNum) {
   assert(!this->dynamicStreams.empty() &&
          "Empty dynamicStreams for StreamEnd.");
-  auto &endedDynamicStream = this->dynamicStreams.front();
-  assert(endedDynamicStream.configSeqNum < seqNum && "End before config.");
-  assert(endedDynamicStream.configExecuted && "End before config executed.");
+  auto &dynS = this->dynamicStreams.front();
+  assert(dynS.configSeqNum < seqNum && "End before config.");
+  assert(dynS.configExecuted && "End before config executed.");
+
+  /**
+   * We need to release all unstepped elements.
+   */
+  assert(dynS.stepSize == 0 && "Stepped but unreleased element.");
+  assert(dynS.allocSize == 0 && "Unreleased element.");
+
   this->dynamicStreams.pop_front();
   if (!this->dynamicStreams.empty()) {
     // There is another config inst waiting.
@@ -294,4 +322,233 @@ bool Stream::isDirectLoadStream() const {
     return false;
   }
   return true;
+}
+
+void Stream::allocateElement(StreamElement *newElement) {
+  assert(this->configured &&
+         "Stream should be configured to allocate element.");
+  this->statistic.numAllocated++;
+  newElement->stream = this;
+
+  /**
+   * Append this new element to the last dynamic stream.
+   */
+  auto &dynS = this->getLastDynamicStream();
+
+  /**
+   * next() is called after assign to make sure
+   * entryIdx starts from 0.
+   */
+  newElement->FIFOIdx = dynS.FIFOIdx;
+  newElement->isCacheBlockedValue = this->isMemStream();
+  dynS.FIFOIdx.next();
+
+  // Find the base element.
+  for (auto baseS : this->baseStreams) {
+    if (baseS->getLoopLevel() != this->getLoopLevel()) {
+      continue;
+    }
+
+    auto &baseDynS = baseS->getLastDynamicStream();
+    if (baseS->stepRootStream == this->stepRootStream) {
+      if (baseDynS.allocSize - baseDynS.stepSize <=
+          dynS.allocSize - dynS.stepSize) {
+        this->se->dumpFIFO();
+        panic("Base %s has not enough allocated element for %s.",
+              baseS->getStreamName().c_str(), this->getStreamName().c_str());
+      }
+
+      auto baseElement = baseDynS.stepped;
+      auto element = dynS.stepped;
+      while (element != nullptr) {
+        assert(baseElement != nullptr && "Failed to find base element.");
+        element = element->next;
+        baseElement = baseElement->next;
+      }
+      assert(baseElement != nullptr && "Failed to find base element.");
+      newElement->baseElements.insert(baseElement);
+    } else {
+      // The other one must be a constant stream.
+      assert(baseS->stepRootStream == nullptr &&
+             "Should be a constant stream.");
+      auto baseElement = baseDynS.stepped->next;
+      assert(baseElement != nullptr && "Missing base element.");
+      newElement->baseElements.insert(baseElement);
+    }
+  }
+
+  // Find the back base element, starting from the second element.
+  if (newElement->FIFOIdx.entryIdx > 1) {
+    for (auto backBaseS : this->backBaseStreams) {
+      if (backBaseS->getLoopLevel() != this->getLoopLevel()) {
+        continue;
+      }
+
+      if (backBaseS->stepRootStream != nullptr) {
+        // Try to find the previous element for the base.
+        auto &baseDynS = backBaseS->getLastDynamicStream();
+        auto baseElement = baseDynS.stepped;
+        auto element = dynS.stepped->next;
+        while (element != nullptr) {
+          if (baseElement == nullptr) {
+            S_ELEMENT_PANIC(newElement,
+                            "Failed to find back base element from %s.\n",
+                            backBaseS->getStreamName().c_str());
+          }
+          element = element->next;
+          baseElement = baseElement->next;
+        }
+        if (baseElement == nullptr) {
+          S_ELEMENT_PANIC(newElement,
+                          "Failed to find back base element from %s.\n",
+                          backBaseS->getStreamName().c_str());
+        }
+        // ! Try to check the base element should have the previous element.
+        S_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
+        if (baseElement->FIFOIdx.streamId.streamInstance ==
+            newElement->FIFOIdx.streamId.streamInstance) {
+          if (baseElement->FIFOIdx.entryIdx + 1 ==
+              newElement->FIFOIdx.entryIdx) {
+            S_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
+            newElement->baseElements.insert(baseElement);
+          } else {
+            // S_ELEMENT_PANIC(
+            //     newElement, "The base element has wrong FIFOIdx.\n");
+          }
+        } else {
+          // S_ELEMENT_PANIC(newElement,
+          //                      "The base element has wrong
+          //                      streamInstance.\n");
+        }
+
+      } else {
+        // ! Should be a constant stream. So far we ignore it.
+      }
+    }
+  }
+
+  newElement->allocateCycle = cpuDelegator->curCycle();
+
+  // Append to the list.
+  dynS.head->next = newElement;
+  dynS.head = newElement;
+  dynS.allocSize++;
+  this->allocSize++;
+
+  if (newElement->FIFOIdx.entryIdx == 1) {
+    if (newElement->FIFOIdx.streamId.coreId == 8 &&
+        newElement->FIFOIdx.streamId.streamInstance == 1 &&
+        newElement->FIFOIdx.streamId.staticId == 11704592) {
+      S_ELEMENT_HACK(newElement, "Allocated.\n");
+    }
+  }
+}
+
+StreamElement *Stream::releaseElementStepped() {
+
+  /**
+   * This function performs a normal release, i.e. release a stepped
+   * element from the stream.
+   */
+
+  assert(!this->dynamicStreams.empty() && "No dynamic stream.");
+  auto &dynS = this->dynamicStreams.front();
+
+  assert(dynS.stepSize > 0 && "No element to release.");
+  auto releaseElement = dynS.tail->next;
+  assert(releaseElement->isStepped && "Release unstepped element.");
+
+  const bool used = releaseElement->isFirstUserDispatched();
+
+  this->statistic.numStepped++;
+  if (used) {
+    this->statistic.numUsed++;
+
+    /**
+     * Since this element is used by the core, we update the statistic
+     * of the latency of this element experienced by the core.
+     */
+    if (releaseElement->valueReadyCycle < releaseElement->firstCheckCycle) {
+      // The element is ready earlier than core's user.
+      auto earlyCycles =
+          releaseElement->firstCheckCycle - releaseElement->valueReadyCycle;
+      this->statistic.numCoreEarlyElement++;
+      this->statistic.numCycleCoreEarlyElement += earlyCycles;
+    } else {
+      // The element makes the core's user wait.
+      auto lateCycles =
+          releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
+      this->statistic.numCoreLateElement++;
+      this->statistic.numCycleCoreLateElement += lateCycles;
+    }
+  }
+
+  dynS.tail->next = releaseElement->next;
+  if (dynS.stepped == releaseElement) {
+    dynS.stepped = dynS.tail;
+  }
+  if (dynS.head == releaseElement) {
+    dynS.head = dynS.tail;
+  }
+  dynS.stepSize--;
+  dynS.allocSize--;
+  this->allocSize--;
+
+  return releaseElement;
+}
+
+StreamElement *Stream::releaseElementUnstepped() {
+  assert(!this->dynamicStreams.empty() && "No dynamic stream.");
+  auto &dynS = this->dynamicStreams.front();
+  if (dynS.allocSize == dynS.stepSize) {
+    return nullptr;
+  }
+  auto element = dynS.releaseElementUnstepped();
+  this->allocSize--;
+  return element;
+}
+
+StreamElement *Stream::stepElement() {
+  auto &dynS = this->getLastDynamicStream();
+  auto element = dynS.stepped->next;
+  assert(!element->isStepped && "Element already stepped.");
+  element->isStepped = true;
+  dynS.stepped = element;
+  dynS.stepSize++;
+  return element;
+}
+
+StreamElement *Stream::unstepElement() {
+  auto &dynS = this->getLastDynamicStream();
+  assert(dynS.stepSize > 0 && "No element to unstep.");
+  auto element = dynS.stepped;
+  assert(element->isStepped && "Element not stepped.");
+  element->isStepped = false;
+  // Search to get previous element.
+  dynS.stepped = dynS.getPrevElement(element);
+  dynS.stepSize--;
+  return element;
+}
+
+StreamElement *Stream::getFirstUnsteppedElement() {
+  auto &dynS = this->getLastDynamicStream();
+  auto element = dynS.getFirstUnsteppedElement();
+  if (!element) {
+    this->se->dumpFIFO();
+    S_PANIC(this, "No allocated element to use.");
+  }
+  return element;
+}
+
+StreamElement *Stream::getPrevElement(StreamElement *element) {
+  auto &dynS = this->getDynamicStream(element->FIFOIdx.configSeqNum);
+  return dynS.getPrevElement(element);
+}
+
+void Stream::dump() const {
+  inform("Stream %50s =============================\n",
+         this->getStreamName().c_str());
+  for (const auto &dynS : this->dynamicStreams) {
+    dynS.dump();
+  }
 }

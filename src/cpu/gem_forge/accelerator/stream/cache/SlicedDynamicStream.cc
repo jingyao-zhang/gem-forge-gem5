@@ -22,7 +22,7 @@ DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
   return slice;
 }
 
-const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() {
+const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
   while (slices.empty() || slices.front().endIdx == this->tailIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
@@ -31,7 +31,7 @@ const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() {
   return this->slices.front();
 }
 
-void SlicedDynamicStream::allocateOneElement() {
+void SlicedDynamicStream::allocateOneElement() const {
 
   // Let's not worry about indirect streams here.
   auto lhs = this->addrGenCallback->genAddr(this->tailIdx, this->formalParams,

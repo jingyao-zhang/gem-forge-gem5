@@ -308,7 +308,13 @@ void MLCDynamicStream::sendCreditToLLC() {
 }
 
 Addr MLCDynamicStream::getLLCStreamTailPAddr() const {
-  auto vaddr = this->getSlice(this->llcTailSliceIdx).sliceId.vaddr;
+  Addr vaddr;
+  if (this->llcTailSliceIdx == this->tailSliceIdx) {
+    // We have to peek.
+    vaddr = this->slicedStream.peekNextSlice().vaddr;
+  } else {
+    vaddr = this->getSlice(this->llcTailSliceIdx).sliceId.vaddr;
+  }
   return this->translateVAddr(vaddr);
 }
 

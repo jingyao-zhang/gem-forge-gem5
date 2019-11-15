@@ -6,7 +6,7 @@
   "[SE%d][%s]: " format, S->getCPUDelegator()->cpuId(),                        \
       S->getStreamName().c_str(), ##args
 
-#define S_DPINTF(S, format, args...)                                           \
+#define S_DPRINTF(S, format, args...)                                           \
   DPRINTF(DEBUG_TYPE, S_MSG(S, format, ##args))
 #define S_HACK(S, format, args...) hack(S_MSG(S, format, ##args))
 #define S_PANIC(S, format, args...) panic(S_MSG(S, format, ##args))
