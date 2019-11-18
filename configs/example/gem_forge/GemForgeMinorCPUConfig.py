@@ -18,7 +18,7 @@ def initializeMinorCPU(options, minor_cpu):
     minor_cpu.executeCommitLimit = options.llvm_issue_width
     minor_cpu.executeMemoryCommitLimit = scale * 1
     minor_cpu.executeInputBufferSize = scale * 7
-    minor_cpu.executeMaxAccessesInMemory = scale * 2
+    minor_cpu.executeMaxAccessesInMemory = scale * 5
     minor_cpu.executeLSQRequestsQueueSize = scale * 1
     minor_cpu.executeLSQTransfersQueueSize = scale * 2
     minor_cpu.executeLSQStoreBufferSize = scale * 5

@@ -70,12 +70,11 @@ void MinorStats::resetLoadBlockedStat()
 
 void MinorStats::dumpLoadBlockedStat()
 {
-    std::string fn = "load.blocked.";
-    fn += std::to_string(this->cpuId);
+    std::string fn = std::to_string(this->cpuId);
     fn += ".";
     fn += std::to_string(this->dumped);
     fn += ".txt";
-    auto outputStream = simout.findOrCreate(fn);
+    auto outputStream = this->loadBlockedDir->findOrCreate(fn);
     auto &stream = *outputStream->stream();
     for (const auto &record : this->loadBlockedPCStat) {
         auto pc = record.first >> UPC_WIDTH;
@@ -85,7 +84,7 @@ void MinorStats::dumpLoadBlockedStat()
         stream << std::hex << pc << ' ' << upc << ' ' << std::dec << cpi << ' '
             << record.second.times << '\n';
     }
-    simout.close(outputStream);
+    this->loadBlockedDir->close(outputStream);
     this->dumped++;
 }
 
@@ -93,6 +92,7 @@ void
 MinorStats::regStats(const std::string &name, BaseCPU &baseCpu)
 {
     this->cpuId = baseCpu.cpuId();
+    this->loadBlockedDir = simout.createSubdirectory("loadBlocked");
 
     Stats::registerDumpCallback(
         new MakeCallback<MinorStats, &MinorStats::dumpLoadBlockedStat>(

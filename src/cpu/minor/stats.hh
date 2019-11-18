@@ -52,6 +52,8 @@
 
 #include <map>
 
+class OutputDirectory;
+
 namespace Minor
 {
 
@@ -103,6 +105,7 @@ class MinorStats
 
     int cpuId = 0;
     int dumped = 0;
+    OutputDirectory *loadBlockedDir;
 
   public:
     MinorStats();

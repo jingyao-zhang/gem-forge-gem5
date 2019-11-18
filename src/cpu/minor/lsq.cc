@@ -1529,6 +1529,12 @@ LSQ::findResponse(MinorDynInstPtr inst)
         DPRINTF(MinorMem, "Found matching memory response for inst: %s\n",
             *inst);
     } else {
+        if (transfers.empty()) {
+            DPRINTF(MinorMem, "Transfers empty.\n");
+        } else {
+            DPRINTF(MinorMem, "Transfers head: %s.\n",
+                *(transfers.front()->inst));
+        }
         DPRINTF(MinorMem, "No matching memory response for inst: %s\n",
             *inst);
     }

@@ -753,23 +753,24 @@ Execute::issue(ThreadID thread_id)
                          */
                         if (isLoadBlocked) {
                             auto execSeqNum = inst->id.execSeqNum;
-                            auto curCycle = cpu.curCycle();
                             if (this->prevLoadBlockedInstExecSeq != execSeqNum) {
                                 this->prevLoadBlockedInstExecSeq = execSeqNum;
+                                auto curCycle = cpu.curCycle();
                                 this->prevLoadBlockedCycle =
                                     curCycle - Cycles(1);
-                                cpu.stats.loadBlockedIssueInsts++;
+                                // Debug::MinorExecute.enable();
+                                // Debug::MinorMem.enable();
                                 DPRINTF(MinorExecute,
                                 // hack(
-                                    "[%llu], new load blocked inst %s, total %llu.\n",
+                                    "[%llu]: new load blocked inst %s, total %llu.\n",
                                     execSeqNum,
                                     *inst,
                                     cpu.stats.loadBlockedIssueInsts.result()
                                 );
                             }
                         }
-                        DPRINTF(MinorExecute, "Can't issue inst: %s yet\n",
-                            *inst);
+                        DPRINTF(MinorExecute, "Can't issue inst: %s yet, loadBlocked %d\n",
+                            *inst, isLoadBlocked);
                     } else {
                         /* Can insert the instruction into this FU */
                         DPRINTF(MinorExecute, "Issuing inst: %s"
@@ -785,7 +786,7 @@ Execute::issue(ThreadID thread_id)
                             auto deltaCycles = curCycle - this->prevLoadBlockedCycle - Cycles(1);
                             DPRINTF(MinorExecute,
                             // hack(
-                                "[%llu], issued update loadblocked cycles cur %llu,"
+                                "[%llu]: issued loadblocked cycles cur %llu,"
                                 " prev %llu, delta %llu, insts %llu.\n",
                                 inst->id.execSeqNum,
                                 curCycle,
@@ -793,6 +794,8 @@ Execute::issue(ThreadID thread_id)
                                 deltaCycles,
                                 cpu.stats.loadBlockedIssueInsts.result()
                             );
+                            // Debug::MinorExecute.disable();
+                            // Debug::MinorMem.disable();
                             cpu.stats.updateLoadBlockedStat(inst->pc.pc(),
                                 inst->pc.upc(), deltaCycles);
                             // Clear it.
