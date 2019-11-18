@@ -50,4 +50,9 @@ def macroop SSP_STREAM_LOAD_P_I
     panic "SSP_STREAM_LOAD with P operand in R/M."
 };
 
+def macroop SSP_STREAM_LOAD_XMM_I
+{
+    ssp_stream_flw xmml, imm, dataSize=4, isFloat=True
+};
+
 '''

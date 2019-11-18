@@ -85,18 +85,19 @@ def template MicroSSPLoadOpConstructor {{
          * ! GemForge
          * Explicitly mark the dest register.
          */
-        _destRegIdx[_numDestRegs++] = RegId(IntRegClass, INTREG_FOLDED(dest, foldOBit));
-        _numIntDestRegs++;
-        flags[IsInteger] = true;
+        %(user_constructor)s;
     }
 }};
 
 let {{
     class SSPStreamLoadOp(X86Microop):
         op_class = "MemReadOp"
-        def __init__(self, dest, imm, dataSize="env.dataSize"):
-            self.className = "SSPStreamLoad"
-            self.mnemonic = "ssp.stream.load"
+        def __init__(self, dest, imm, dataSize="env.dataSize", isFloat=False):
+            if isFloat:
+                if dataSize == 4:
+                    self.className = "SSPStreamFLW"
+            else:
+                self.className = "SSPStreamLoad"
             self.dest = dest
             if isinstance(imm, (int, long)):
                 imm = "ULL(%d)" % imm
@@ -111,7 +112,6 @@ let {{
             '''
             allocator = allocString % {
                 "class_name" : self.className,
-                "mnemonic" : self.mnemonic,
                 "flags" : self.microFlagsText(microFlags),
                 "dest" : self.dest,
                 "imm" : self.imm,
@@ -120,18 +120,40 @@ let {{
             return allocator
 
     microopClasses["ssp_stream_load"] = SSPStreamLoadOp
+    microopClasses["ssp_stream_flw"] = SSPStreamLoadOp
 }};
 
 let {{
     iops = [
         InstObjParams(
+            # mnemonic
             "ssp_stream_load",
+            # class name
             "SSPStreamLoad",
             'X86MicroopBase',
             {
                 'code' : '',
+                'user_constructor': """
+                    _destRegIdx[_numDestRegs++] = RegId(IntRegClass, INTREG_FOLDED(dest, foldOBit));
+                    _numIntDestRegs++;
+                    flags[IsInteger] = true;
+                """,
             },
             ['MemReadOp', 'IsLoad', 'IsMemRef']
+        ),
+        InstObjParams(
+            "ssp_stream_flw",
+            "SSPStreamFLW",
+            'X86MicroopBase',
+            {
+                'code' : '',
+                'user_constructor': """
+                    _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest);
+                    _numFPDestRegs++;
+                    flags[IsFloating] = true;
+                """,
+            },
+            ['FloatMemReadOp', 'IsLoad', 'IsMemRef']
         ),
     ]
     for iop in iops:

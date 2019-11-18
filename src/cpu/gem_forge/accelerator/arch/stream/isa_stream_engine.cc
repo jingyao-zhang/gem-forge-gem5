@@ -509,8 +509,8 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
   auto loadedValue = *(reinterpret_cast<uint64_t *>(values.at(0).data()));
-  ISA_SE_DPRINTF("StreamLoad get value %llu for stream %llu.\n", loadedValue,
-                 userInfo.translatedUsedStreamIds.at(0));
+  ISA_SE_DPRINTF("StreamLoad get value %llu for stream %llu, reg %s.\n", loadedValue,
+                 userInfo.translatedUsedStreamIds.at(0), dynInfo.staticInst->destRegIdx(0));
   if (dynInfo.staticInst->isFloating()) {
     xc.setFloatRegOperandBits(dynInfo.staticInst, 0, loadedValue);
   } else {
