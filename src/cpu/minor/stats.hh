@@ -97,7 +97,7 @@ class MinorStats
       uint64_t times = 0;
     };
     std::map<Addr, BlockedStat> loadBlockedPCStat;
-    static constexpr int UPC_WIDTH = 3;
+    static constexpr int UPC_WIDTH = 8;
     static constexpr int UPC_MASK = (1 << UPC_WIDTH) - 1;
     void updateLoadBlockedStat(Addr pc, int upc, uint64_t cycles);
     void resetLoadBlockedStat();

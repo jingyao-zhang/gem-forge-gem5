@@ -51,6 +51,9 @@ MinorStats::MinorStats()
 void MinorStats::updateLoadBlockedStat(Addr pc, int upc, uint64_t cycles)
 {
     // Use (pc << 3) + upc as the key.
+    if (upc > UPC_MASK) {
+        panic("Overflow of upc at pc %#x, upc %d.\n", pc, upc);
+    }
     assert(upc <= UPC_MASK && "Overflow of upc.");
     auto key = (pc << UPC_WIDTH) + upc;
     auto &stat = this->loadBlockedPCStat.emplace(
