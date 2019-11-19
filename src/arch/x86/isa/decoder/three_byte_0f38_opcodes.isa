@@ -115,7 +115,9 @@
                 0x33: SSP_STREAM_READY();
                 0x34: SSP_STREAM_STEP(Ib);
                 0x35: SSP_STREAM_LOAD(Ev, Ib);
-                0x36: SSP_STREAM_LOAD(Wd, Ib);
+                0x36: SSP_STREAM_LOAD(WSSPd, Ib);
+                0x38: SSP_STREAM_LOAD(WSSPo, Ib);
+                0x39: SSP_STREAM_LOAD(WSSPo, Ib);
             }
             default: Inst::UD2();
         }

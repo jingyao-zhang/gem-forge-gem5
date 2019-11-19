@@ -64,7 +64,8 @@ public:
   void rewindStreamStep(uint64_t stepStreamId);
 
   struct StreamUserArgs {
-    using Value = std::array<uint8_t, 8>;
+    static constexpr int MaxElementSize = 64;
+    using Value = std::array<uint8_t, MaxElementSize>;
     using ValueVec = std::vector<Value>;
     uint64_t seqNum;
     const std::vector<uint64_t> &usedStreamIds;

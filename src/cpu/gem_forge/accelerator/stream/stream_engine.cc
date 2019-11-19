@@ -672,6 +672,10 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
     auto S = this->getStream(streamId);
     auto element = streamToElementMap.at(S);
     args.values->emplace_back();
+    /**
+     * Make sure we zero out the data.
+     */
+    args.values->back().fill(0);
     if (element->stream->getStreamType() == "store") {
       /**
        * This should be a stream store. Just leave it there.
@@ -689,7 +693,8 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
         CS->getCoalescedOffsetAndSize(streamId, offset, size);
         vaddr += offset;
       }
-      assert(size <= 8 && "Do we really have such huge register.");
+      assert(size <= StreamUserArgs::MaxElementSize &&
+             "Do we really have such huge register.");
       element->getValue(vaddr, size, args.values->back().data());
     }
   }
@@ -2173,7 +2178,8 @@ void StreamEngine::coalesceContinuousDirectLoadStreamElement(
     } else {
       // Mark the prevElement to propagate its value to next element.
       if (element->FIFOIdx.entryIdx == 1) {
-        S_ELEMENT_HACK(element, "Mark prevElement's nextElementValueReady.\n");
+        S_ELEMENT_DPRINTF(element,
+                          "Mark prevElement's nextElementValueReady.\n");
       }
       prevElement->markNextElementValueReady = true;
       block.state = CacheBlockBreakdownAccess::StateE::PrevElement;

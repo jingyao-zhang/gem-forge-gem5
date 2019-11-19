@@ -306,6 +306,8 @@ let {{
                 self.dataSize = "(REX_W ? 8 : 4)"
             elif self.size == 'q':
                 self.dataSize = 8
+            elif self.size == 'o':
+                self.dataSize = 16
             elif self.size == 'v':
                 self.dataSize = "OPSIZE"
             elif self.size == 'w':

@@ -94,8 +94,7 @@ let {{
         op_class = "MemReadOp"
         def __init__(self, dest, imm, dataSize="env.dataSize", isFloat=False):
             if isFloat:
-                if dataSize == 4:
-                    self.className = "SSPStreamFLW"
+                self.className = "SSPStreamFLoad"
             else:
                 self.className = "SSPStreamLoad"
             self.dest = dest
@@ -120,7 +119,7 @@ let {{
             return allocator
 
     microopClasses["ssp_stream_load"] = SSPStreamLoadOp
-    microopClasses["ssp_stream_flw"] = SSPStreamLoadOp
+    microopClasses["ssp_stream_fload"] = SSPStreamLoadOp
 }};
 
 let {{
@@ -134,23 +133,32 @@ let {{
             {
                 'code' : '',
                 'user_constructor': """
+                    flags[IsInteger] = true;
                     _destRegIdx[_numDestRegs++] = RegId(IntRegClass, INTREG_FOLDED(dest, foldOBit));
                     _numIntDestRegs++;
-                    flags[IsInteger] = true;
                 """,
             },
             ['MemReadOp', 'IsLoad', 'IsMemRef']
         ),
         InstObjParams(
-            "ssp_stream_flw",
-            "SSPStreamFLW",
+            "ssp_stream_fload",
+            "SSPStreamFLoad",
             'X86MicroopBase',
             {
                 'code' : '',
                 'user_constructor': """
+                    flags[IsFloating] = true;
+                    if (dataSize == 16) {
+                        /**
+                         * ! GemForge
+                         * Hack to also mark the xmmh as my destination.
+                         * TODO: Improve this for wider registers.
+                         */
+                        _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest + 1);
+                        _numFPDestRegs++;
+                    }
                     _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest);
                     _numFPDestRegs++;
-                    flags[IsFloating] = true;
                 """,
             },
             ['FloatMemReadOp', 'IsLoad', 'IsMemRef']

@@ -198,7 +198,10 @@ let {{
                     Name += "_XMM"
                 else:
                     Name += "_R"
-            elif opType.tag in ("E", "Q", "W"):
+            elif opType.tag in ("E", "Q", "W", "WSSP"):
+                # ! GemForge
+                # We introduce WSSP, same as W but use env.setSize(opType.size)
+
                 # This might refer to memory or to a register. We need to
                 # divide it up farther.
                 regEnv = copy.copy(env)
@@ -215,7 +218,7 @@ let {{
                 regSuffix = "_R"
                 if opType.tag == "Q":
                     regSuffix = "_MMX"
-                elif opType.tag == "W":
+                elif opType.tag == "W" or opType.tag == "WSSP":
                     regSuffix = "_XMM"
                 return doSplitDecode("MODRM_MOD",
                     {"3" : (specializeInst, Name + regSuffix,

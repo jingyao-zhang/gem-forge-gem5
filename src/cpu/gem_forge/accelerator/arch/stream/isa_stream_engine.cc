@@ -508,13 +508,25 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds, &values);
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
-  auto loadedValue = *(reinterpret_cast<uint64_t *>(values.at(0).data()));
-  ISA_SE_DPRINTF("StreamLoad get value %llu for stream %llu, reg %s.\n", loadedValue,
-                 userInfo.translatedUsedStreamIds.at(0), dynInfo.staticInst->destRegIdx(0));
-  if (dynInfo.staticInst->isFloating()) {
-    xc.setFloatRegOperandBits(dynInfo.staticInst, 0, loadedValue);
-  } else {
-    xc.setIntRegOperand(dynInfo.staticInst, 0, loadedValue);
+
+  /**
+   * We handle wider registers by checking the number of destination registers.
+   */
+  RegVal *loadedPtr = reinterpret_cast<uint64_t *>(values.at(0).data());
+  for (int destIdx = 0; destIdx < dynInfo.staticInst->numDestRegs();
+       ++destIdx, loadedPtr++) {
+    assert(destIdx <
+               StreamEngine::StreamUserArgs::MaxElementSize / sizeof(RegVal) &&
+           "Too many destination registers.");
+    auto loadedValue = *loadedPtr;
+    ISA_SE_DPRINTF("[%llu] Got value %llu, reg %d %s.\n",
+                   userInfo.translatedUsedStreamIds.at(0), loadedValue, destIdx,
+                   dynInfo.staticInst->destRegIdx(destIdx));
+    if (dynInfo.staticInst->isFloating()) {
+      xc.setFloatRegOperandBits(dynInfo.staticInst, destIdx, loadedValue);
+    } else {
+      xc.setIntRegOperand(dynInfo.staticInst, destIdx, loadedValue);
+    }
   }
 }
 
