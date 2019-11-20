@@ -239,7 +239,8 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
 void StreamElement::tryMarkValueReady() {
   for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
     const auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
-    if (block.state != CacheBlockBreakdownAccess::StateE::Ready) {
+    if (block.state != CacheBlockBreakdownAccess::StateE::Ready &&
+        block.state != CacheBlockBreakdownAccess::StateE::Faulted) {
       return;
     }
   }
@@ -327,6 +328,17 @@ void StreamElement::setValue(StreamElement *prevElement) {
     if (block.state != CacheBlockBreakdownAccess::StateE::PrevElement) {
       continue;
     }
+    // Get previous block.
+    auto prevBlockOffset = prevElement->mapVAddrToBlockOffset(
+        block.cacheBlockVAddr, this->cacheBlockSize);
+    const auto &prevBlock =
+        prevElement->cacheBlockBreakdownAccesses[prevBlockOffset];
+    if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
+      // Propagate the faulted state.
+      block.state = CacheBlockBreakdownAccess::StateE::Faulted;
+      this->tryMarkValueReady();
+      continue;
+    }
     auto offset = prevElement->mapVAddrToValueOffset(block.cacheBlockVAddr,
                                                      this->cacheBlockSize);
     // Copy the value from prevElement.
@@ -370,6 +382,19 @@ void StreamElement::getValue(Addr vaddr, int size, uint8_t *val) const {
   }
 }
 
+bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
+  auto blockIdx = this->mapVAddrToBlockOffset(vaddr, size);
+  auto blockEnd = this->mapVAddrToBlockOffset(vaddr + size - 1, 1);
+  while (blockIdx <= blockEnd) {
+    const auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
+    if (block.state == CacheBlockBreakdownAccess::Faulted) {
+      return true;
+    }
+    blockIdx++;
+  }
+  return false;
+}
+
 uint64_t StreamElement::mapVAddrToValueOffset(Addr vaddr, int size) const {
   assert(this->cacheBlocks > 0 && "There is no cache blocks.");
   auto firstCacheBlockVAddr =
@@ -378,6 +403,10 @@ uint64_t StreamElement::mapVAddrToValueOffset(Addr vaddr, int size) const {
   auto initOffset = vaddr - firstCacheBlockVAddr;
   assert(initOffset + size <= this->value.size() && "Overflow of size.");
   return initOffset;
+}
+
+uint64_t StreamElement::mapVAddrToBlockOffset(Addr vaddr, int size) const {
+  return this->mapVAddrToValueOffset(vaddr, size) / this->cacheBlockSize;
 }
 
 void StreamElement::dump() const {

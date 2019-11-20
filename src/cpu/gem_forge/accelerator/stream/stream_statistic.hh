@@ -21,6 +21,8 @@ public:
   size_t numFetched = 0;
   size_t numStepped = 0;
   size_t numUsed = 0;
+  size_t numAliased = 0;
+  size_t numFaulted = 0;
 
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;

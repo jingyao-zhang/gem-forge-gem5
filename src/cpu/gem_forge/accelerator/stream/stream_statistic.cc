@@ -1,11 +1,14 @@
 #include "stream_statistic.hh"
 
+#include <iomanip>
+
 void StreamStatistic::dump(std::ostream &os) const {
-#define dumpScalar(stat) os << "  " #stat << ' ' << stat << '\n'
+#define dumpScalar(stat)                                                       \
+  os << std::setw(40) << "  " #stat << ' ' << stat << '\n'
 #define dumpAvg(name, dividend, divisor)                                       \
   {                                                                            \
     auto avg = (divisor > 0) ? dividend / divisor : 0;                         \
-    os << "  " #name << ' ' << avg << '\n';                                    \
+    os << std::setw(40) << "  " #name << ' ' << avg << '\n';                   \
   }
   dumpScalar(numConfigured);
   dumpScalar(numMisConfigured);
@@ -13,6 +16,8 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numFetched);
   dumpScalar(numStepped);
   dumpScalar(numUsed);
+  dumpScalar(numAliased);
+  dumpScalar(numFaulted);
 
   dumpAvg(avgLength, numStepped, numConfigured);
   dumpAvg(avgUsed, numUsed, numConfigured);

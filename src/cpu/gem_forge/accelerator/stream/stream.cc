@@ -6,15 +6,13 @@
 
 // #include "base/misc.hh""
 #include "base/trace.hh"
-#include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define DEBUG_TYPE StreamEngine
+#include "debug/StreamBase.hh"
+#define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
 
-#define STREAM_DPRINTF(format, args...)                                        \
-  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(),   \
-          ##args)
+#define STREAM_DPRINTF(format, args...) S_DPRINTF(this, format, ##args)
 
 #define STREAM_ENTRY_DPRINTF(entry, format, args...)                           \
   STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
@@ -483,6 +481,12 @@ StreamElement *Stream::releaseElementStepped() {
     }
   }
 
+  // Check if the element is faulted.
+  if (releaseElement->isValueFaulted(releaseElement->addr,
+                                     releaseElement->size)) {
+    this->statistic.numFaulted++;
+  }
+
   dynS.tail->next = releaseElement->next;
   if (dynS.stepped == releaseElement) {
     dynS.stepped = dynS.tail;
@@ -503,7 +507,11 @@ StreamElement *Stream::releaseElementUnstepped() {
   if (dynS.allocSize == dynS.stepSize) {
     return nullptr;
   }
+  // Check if the element is faulted.
   auto element = dynS.releaseElementUnstepped();
+  if (element->isValueFaulted(element->addr, element->size)) {
+    this->statistic.numFaulted++;
+  }
   this->allocSize--;
   return element;
 }

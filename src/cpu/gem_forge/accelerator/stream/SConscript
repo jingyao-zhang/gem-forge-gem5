@@ -1,5 +1,6 @@
 Import('*')
 
+DebugFlag('StreamBase')
 DebugFlag('StreamEngine')
 DebugFlag('StreamElement')
 DebugFlag('CoalescedStream')

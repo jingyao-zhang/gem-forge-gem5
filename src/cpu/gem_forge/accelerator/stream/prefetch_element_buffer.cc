@@ -1,6 +1,7 @@
 
 #include "prefetch_element_buffer.hh"
 
+#include "stream.hh"
 #include "stream_element.hh"
 
 void PrefetchElementBuffer::addElement(StreamElement *element) {
@@ -23,6 +24,7 @@ bool PrefetchElementBuffer::isHit(Addr vaddr, int size) const {
         element->addr + element->size <= vaddr) {
       continue;
     }
+    element->getStream()->statistic.numAliased++;
     return true;
   }
   return false;

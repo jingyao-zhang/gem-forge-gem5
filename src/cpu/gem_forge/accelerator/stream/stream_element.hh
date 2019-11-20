@@ -26,8 +26,10 @@ struct CacheBlockBreakdownAccess {
   uint8_t size;
   /**
    * State of the cache line.
+   * ! Faulted is treated as a poison value and should be propagated
+   * ! to any user.
    */
-  enum StateE { None, Initialized, Issued, PrevElement, Ready } state;
+  enum StateE { None, Initialized, Faulted, Issued, PrevElement, Ready } state;
 };
 
 class StreamElement;
@@ -155,6 +157,7 @@ struct StreamElement {
   void setValue(Addr vaddr, int size, const uint8_t *val);
   void getValue(Addr vaddr, int size, uint8_t *val) const;
   uint64_t mapVAddrToValueOffset(Addr vaddr, int size) const;
+  uint64_t mapVAddrToBlockOffset(Addr vaddr, int size) const;
   // Some helper template.
   template <typename T> void setValue(Addr vaddr, T *val) {
     this->setValue(vaddr, sizeof(*val), reinterpret_cast<uint8_t *>(val));
@@ -162,6 +165,7 @@ struct StreamElement {
   template <typename T> void getValue(Addr vaddr, T *val) {
     this->getValue(vaddr, sizeof(*val), reinterpret_cast<uint8_t *>(val));
   }
+  bool isValueFaulted(Addr vaddr, int size) const;
 
   // Store the infly mem accesses for this element, basically for load.
   std::unordered_set<StreamMemAccess *> inflyMemAccess;

@@ -713,6 +713,30 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
     if (!element) {
       continue;
     }
+
+    /**
+     * Sanity check that no faulted block is used.
+     */
+    auto S = element->getStream();
+    // Dummy way to check the streamId.
+    for (auto streamId : args.usedStreamIds) {
+      // Check if this streamId corresponding to S.
+      if (this->getStream(streamId) != S) {
+        continue;
+      }
+      auto vaddr = element->addr;
+      int32_t size = element->size;
+      if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
+        // Handle offset for coalesced stream.
+        int32_t offset;
+        CS->getCoalescedOffsetAndSize(streamId, offset, size);
+        vaddr += offset;
+      }
+      if (element->isValueFaulted(vaddr, size)) {
+        S_ELEMENT_PANIC(element, "Commit user of faulted value.");
+      }
+    }
+
     auto &userSet = this->elementUserMap.at(element);
     assert(userSet.erase(seqNum) && "Not found in userSet.");
   }
@@ -1656,8 +1680,17 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto packetSize = cpuDelegator->cacheLineSize();
     Addr paddr;
     if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
-      panic("Failed translate vaddr %#x for stream %s.\n", vaddr,
-            S->getStreamName().c_str());
+      S_ELEMENT_DPRINTF(element, "Fault on vaddr %#x,\n", vaddr);
+      cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Faulted;
+      /**
+       * The current mechanism to mark value ready is too hacky.
+       * We rely on the setValue() to call tryMarkValueReady().
+       * However, since Faulted is also considered ready, we have to
+       * call tryMarkValueReady() whenver we set a block to Faulted state.
+       * TODO: Improve this poor design.
+       */
+      element->tryMarkValueReady();
+      continue;
     }
 
     // Allocate the book-keeping StreamMemAccess.
@@ -2170,11 +2203,20 @@ void StreamEngine::coalesceContinuousDirectLoadStreamElement(
     }
     // Found a match.
     if (prevElement->isValueReady) {
-      // We can copy the value.
-      auto offset = prevElement->mapVAddrToValueOffset(block.cacheBlockVAddr,
-                                                       element->cacheBlockSize);
-      element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
-                        &prevElement->value.at(offset));
+      // Check if the previous block faulted.
+      const auto &prevBlock =
+          prevElement->cacheBlockBreakdownAccesses[blockOffset];
+      if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
+        // Also mark this block faulted.
+        block.state = CacheBlockBreakdownAccess::StateE::Faulted;
+        element->tryMarkValueReady();
+      } else {
+        // We can copy the value.
+        auto offset = prevElement->mapVAddrToValueOffset(
+            block.cacheBlockVAddr, element->cacheBlockSize);
+        element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
+                          &prevElement->value.at(offset));
+      }
     } else {
       // Mark the prevElement to propagate its value to next element.
       if (element->FIFOIdx.entryIdx == 1) {
