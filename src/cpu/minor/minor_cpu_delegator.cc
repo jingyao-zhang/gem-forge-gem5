@@ -239,16 +239,28 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
      * The StoreBuffer requires the physical address for store-to-load check.
      * We hack there to set the physical address for the place holder request.
      */
-    Addr paddr;
-    if (!this->translateVAddrOracle(vaddr, paddr)) {
-      panic("Failed translate vaddr %#x.\n", vaddr);
+    Addr paddrLHS;
+    Addr paddrRHS;
+    if (!this->translateVAddrOracle(vaddr, paddrLHS) ||
+        !this->translateVAddrOracle(vaddr + size - 1, paddrRHS)) {
+      // There is translation fault.
+      INST_DPRINTF(dynInstPtr, "Translation fault on vaddr %#x.\n", vaddr);
+      dynInstPtr->translationFault =
+          std::make_shared<Minor::GemForgeLoadTranslationFault>();
+      /**
+       * Request the state of the request to Translated.
+       * When sent to transfer queue, LSQ will mark it completed and skipped.
+       * If it ever gets to commit stage, our translation fault will be invoked
+       * and we will get a panic.
+       */
+      request->setState(Minor::LSQ::LSQRequest::LSQRequestState::Translated);
+    } else {
+      request->request->setPaddr(paddrLHS);
+      // Create the packet.
+      request->makePacket();
     }
-    request->request->setPaddr(paddr);
 
     // No ByteEnable.
-
-    // Create the packet.
-    request->makePacket();
 
     // Insert the special GemForgeLoadRequest.
     dynInstPtr->inLSQ = true;
