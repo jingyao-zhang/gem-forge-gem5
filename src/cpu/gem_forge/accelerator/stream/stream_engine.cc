@@ -413,6 +413,8 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
     // This file is already too long, move this to stream.cc.
     S->rewindStreamConfig(configSeqNum);
   }
+
+  this->numInflyStreamConfigurations--;
 }
 
 bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
