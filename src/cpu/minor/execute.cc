@@ -522,7 +522,15 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
 
         // ! GemForge
         if (cpu.cpuDelegator) {
-            cpu.cpuDelegator->insertLSQ(inst);
+            auto gemForgeFault = cpu.cpuDelegator->insertLSQ(inst);
+            if (gemForgeFault != NoFault) {
+                /**
+                 * This should be a translation fault for our special inst.
+                 * We need to suppress the init_fault.
+                 */
+                assert(init_fault == NoFault && "GemForgeInst InitiateAcc should not raise fault.");
+                init_fault = gemForgeFault;
+            }
         }
 
         if (inst->inLSQ) {

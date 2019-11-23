@@ -232,6 +232,12 @@ protected:
   void setupLinearAddrFunc(DynamicStream &dynStream,
                            const std::vector<uint64_t> *inputVec,
                            const LLVM::TDG::StreamInfo &info);
+  /**
+   * Helper function to setup an func addr func.
+   */
+  void setupFuncAddrFunc(DynamicStream &dynStream,
+                         const std::vector<uint64_t> *inputVec,
+                         const LLVM::TDG::StreamInfo &info);
 };
 
 #endif

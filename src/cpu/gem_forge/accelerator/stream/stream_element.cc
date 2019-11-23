@@ -399,7 +399,10 @@ uint64_t StreamElement::mapVAddrToValueOffset(Addr vaddr, int size) const {
   assert(this->cacheBlocks > 0 && "There is no cache blocks.");
   auto firstCacheBlockVAddr =
       this->cacheBlockBreakdownAccesses[0].cacheBlockVAddr;
-  assert(vaddr >= firstCacheBlockVAddr && "Underflow of vaddr.");
+  if (vaddr < firstCacheBlockVAddr) {
+    S_ELEMENT_PANIC(this, "Underflow of vaddr %#x, [%#x, +%d).", vaddr,
+                    this->addr, this->size);
+  }
   auto initOffset = vaddr - firstCacheBlockVAddr;
   assert(initOffset + size <= this->value.size() && "Overflow of size.");
   return initOffset;

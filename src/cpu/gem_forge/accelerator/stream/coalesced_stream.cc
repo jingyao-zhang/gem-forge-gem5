@@ -5,8 +5,11 @@
 
 // #include "base/misc.hh""
 #include "base/trace.hh"
-#include "debug/CoalescedStream.hh"
 #include "proto/protoio.hh"
+
+#include "debug/CoalescedStream.hh"
+#define DEBUG_TYPE CoalescedStream
+#include "stream_log.hh"
 
 #include <sstream>
 
@@ -107,8 +110,14 @@ void CoalescedStream::finalize() {
     assert(this->coalescedStreams.front()->getCoalesceOffset() == 0);
   }
   this->primeLStream = this->coalescedStreams.front();
-  STREAM_DPRINTF("Finalized, ElementSize %d, LStreams: =========.\n",
-                 this->coalescedElementSize);
+  // Sanity check for the loop level.
+  for (const auto &LS : this->coalescedStreams) {
+    assert(LS->info.loop_level() == this->getLoopLevel());
+    assert(LS->info.config_loop_level() == this->getConfigLoopLevel());
+  }
+  STREAM_DPRINTF(
+      "Finalized, StaticCoalesced %d, ElementSize %d, LStreams: =========.\n",
+      this->staticCoalesced, this->coalescedElementSize);
   for (auto LS : this->coalescedStreams) {
     LS_DPRINTF(LS, "Offset %d, ElementSize %d.\n", LS->getCoalesceOffset(),
                LS->getElementSize());
@@ -239,11 +248,16 @@ const std::string &CoalescedStream::getStreamType() const {
 }
 
 uint32_t CoalescedStream::getLoopLevel() const {
-  return this->primeLStream->info.loop_level();
+  /**
+   * * finalize() will make sure that all logical streams ahve the same loop
+   * * level.
+   */
+  return this->coalescedStreams.front()->info.loop_level();
 }
 
 uint32_t CoalescedStream::getConfigLoopLevel() const {
-  return this->primeLStream->info.config_loop_level();
+  // See getLoopLevel().
+  return this->coalescedStreams.front()->info.config_loop_level();
 }
 
 bool CoalescedStream::isContinuous() const {
@@ -266,10 +280,17 @@ void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
     if (pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR) {
       this->setupLinearAddrFunc(dynStream, inputVec, info);
       return;
+    } else {
+      // See there is an address function.
+      const auto &addrFuncInfo = info.addr_func_info();
+      if (addrFuncInfo.name() != "") {
+        this->setupFuncAddrFunc(dynStream, inputVec, info);
+        return;
+      }
     }
   }
 
-  panic("Coalesced stream in cache is not supported yet.\n");
+  S_PANIC(this, "Cannot setup addr gen for trace coalesced stream so far.");
 }
 
 uint64_t

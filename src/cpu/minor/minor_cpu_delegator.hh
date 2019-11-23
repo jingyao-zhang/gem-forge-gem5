@@ -63,8 +63,10 @@ public:
   /**
    * Insert the GemForgeLQCallback into the LSQ.
    * This requires that the addr/size of this callback is ready.
+   *
+   * Returns the Fault if we ever encounter a translation fault.
    */
-  void insertLSQ(Minor::MinorDynInstPtr &dynInstPtr);
+  Fault insertLSQ(Minor::MinorDynInstPtr &dynInstPtr);
 
   /**
    * ! This is not used right now.

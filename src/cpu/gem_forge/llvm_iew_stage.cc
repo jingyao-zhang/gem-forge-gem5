@@ -680,7 +680,7 @@ const char *LLVMIEWStage::FUCompletion::description() const {
   return "Function unit completion";
 }
 
-bool LLVMIEWStage::GemForgeIEWLQCallback::isIssued() {
+bool LLVMIEWStage::GemForgeIEWLQCallback::isIssued() const {
   return cpu->inflyInstStatus.at(inst->getId()) == InstStatus::ISSUED;
 }
 

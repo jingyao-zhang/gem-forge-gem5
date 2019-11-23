@@ -400,10 +400,15 @@ private:
                                    const std::vector<uint64_t> &_usedStreamIds)
         : element(_element), FIFOIdx(_element->FIFOIdx),
           usedStreamIds(_usedStreamIds), args(_userSeqNum, usedStreamIds) {}
-    bool getAddrSize(Addr &addr, uint32_t &size) override;
-    bool isIssued() override;
+    bool getAddrSize(Addr &addr, uint32_t &size) const override;
+    bool isIssued() const override;
     bool isValueLoaded() override;
     void RAWMisspeculate() override;
+    std::ostream &format(std::ostream &os) const override {
+      os << this->FIFOIdx;
+      GemForgeLQCallback::format(os);
+      return os;
+    }
   };
 
   struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {

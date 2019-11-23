@@ -1030,7 +1030,7 @@ void StreamEngine::initializeStreams(
 
     if (coalesceGroup != InvalidCoalesceGroup && this->enableCoalesce) {
 
-      auto staticCoalesced = coalesceInfo.offset() != 1;
+      auto staticCoalesced = coalesceInfo.offset() != -1;
 
       // First check if we have created the coalesced stream for the group.
       if (coalescedGroupToStreamIdMap.count(coalesceGroup) == 0) {
@@ -1392,7 +1392,8 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
      * next element.
      */
     if (releaseElement->markNextElementValueReady) {
-      panic("Step an element with markNextElementValueReady set.");
+      S_ELEMENT_PANIC(releaseElement,
+                      "Step an element with markNextElementValueReady set.");
     }
 
   } else if (S->getStreamType() == "store") {
@@ -2032,8 +2033,8 @@ void StreamEngine::StreamThrottler::throttleStream(Stream *S,
  * Callback structures for LSQ.
  ***********************************************************/
 
-bool StreamEngine::GemForgeStreamEngineLQCallback::getAddrSize(Addr &addr,
-                                                               uint32_t &size) {
+bool StreamEngine::GemForgeStreamEngineLQCallback::getAddrSize(
+    Addr &addr, uint32_t &size) const {
   assert(this->FIFOIdx == this->element->FIFOIdx &&
          "Element already released.");
   // Check if the address is ready.
@@ -2045,7 +2046,7 @@ bool StreamEngine::GemForgeStreamEngineLQCallback::getAddrSize(Addr &addr,
   return true;
 }
 
-bool StreamEngine::GemForgeStreamEngineLQCallback::isIssued() {
+bool StreamEngine::GemForgeStreamEngineLQCallback::isIssued() const {
   /**
    * So far the element is considered issued when its address is ready.
    */

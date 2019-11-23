@@ -328,6 +328,11 @@ class LSQ : public Named
 
         /** MinorTrace report interface */
         void reportData(std::ostream &os) const;
+
+        virtual std::ostream &format(std::ostream &os) const {
+            return os << "LSQRequest";
+        }
+
     };
 
     typedef LSQRequest *LSQRequestPtr;

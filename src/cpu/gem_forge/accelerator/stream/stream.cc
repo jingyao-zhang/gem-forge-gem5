@@ -2,6 +2,7 @@
 #include "insts.hh"
 #include "stream_engine.hh"
 
+#include "cpu/gem_forge/accelerator/arch/stream/func_addr_callback.hh"
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 
 // #include "base/misc.hh""
@@ -296,6 +297,42 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
       std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
 }
 
+void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
+                               const std::vector<uint64_t> *inputVec,
+                               const LLVM::TDG::StreamInfo &info) {
+
+  const auto &addrFuncInfo = info.addr_func_info();
+  assert(addrFuncInfo.name() != "" && "Missing AddrFuncInfo.");
+  auto &formalParams = dynStream.formalParams;
+  int inputIdx = 0;
+  for (const auto &arg : addrFuncInfo.args()) {
+    if (arg.is_stream()) {
+      // This is a stream input.
+      // hack("Find stream input param #%d id %llu.\n",
+      // formalParams.size(),
+      //      arg.stream_id());
+      formalParams.emplace_back();
+      auto &formalParam = formalParams.back();
+      formalParam.isInvariant = false;
+      formalParam.param.baseStreamId = arg.stream_id();
+    } else {
+      assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
+      // hack("Find invariant param #%d, val %llu.\n",
+      // formalParams.size(),
+      //      inputVec->at(inputIdx));
+      formalParams.emplace_back();
+      auto &formalParam = formalParams.back();
+      formalParam.isInvariant = true;
+      formalParam.param.invariant = inputVec->at(inputIdx);
+      inputIdx++;
+    }
+  }
+  assert(inputIdx == inputVec->size() && "Underflow of inputVec.");
+  // Set the callback.
+  dynStream.addrGenCallback = std::unique_ptr<TheISA::FuncAddrGenCallback>(
+      new TheISA::FuncAddrGenCallback(dynStream.tc, info.addr_func_info()));
+}
+
 CacheStreamConfigureData *
 Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
   auto &dynStream = this->getDynamicStream(configSeqNum);
@@ -482,9 +519,11 @@ StreamElement *Stream::releaseElementStepped() {
   }
 
   // Check if the element is faulted.
-  if (releaseElement->isValueFaulted(releaseElement->addr,
-                                     releaseElement->size)) {
-    this->statistic.numFaulted++;
+  if (this->isMemStream() && releaseElement->isAddrReady) {
+    if (releaseElement->isValueFaulted(releaseElement->addr,
+                                       releaseElement->size)) {
+      this->statistic.numFaulted++;
+    }
   }
 
   dynS.tail->next = releaseElement->next;
@@ -509,8 +548,12 @@ StreamElement *Stream::releaseElementUnstepped() {
   }
   // Check if the element is faulted.
   auto element = dynS.releaseElementUnstepped();
-  if (element->isValueFaulted(element->addr, element->size)) {
-    this->statistic.numFaulted++;
+  S_ELEMENT_DPRINTF(element, "ReleaseElementUnstepped, isAddrReady %d.\n",
+                    element->isAddrReady);
+  if (this->isMemStream() && element->isAddrReady) {
+    if (element->isValueFaulted(element->addr, element->size)) {
+      this->statistic.numFaulted++;
+    }
   }
   this->allocSize--;
   return element;

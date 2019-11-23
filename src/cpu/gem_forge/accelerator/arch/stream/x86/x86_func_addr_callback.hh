@@ -9,6 +9,7 @@
 #include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
 #include "cpu/gem_forge/accelerator/stream/addr_gen_callback.hh"
 
+#include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 
 namespace X86ISA {
@@ -23,9 +24,7 @@ private:
   ThreadContext *tc;
   const ::LLVM::TDG::AddrFuncInfo &func;
 
-//   TheISA::Decoder *decoder;
-//   Addr funcStartVAddr;
-//   std::list<StaticInstPtr> instructions;
+  std::list<StaticInstPtr> instructions;
 };
 } // namespace X86ISA
 

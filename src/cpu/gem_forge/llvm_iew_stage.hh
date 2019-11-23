@@ -190,13 +190,13 @@ private:
     LLVMTraceCPU *cpu;
     GemForgeIEWLQCallback(LLVMDynamicInst *_inst, LLVMTraceCPU *_cpu)
         : inst(_inst), cpu(_cpu) {}
-    bool getAddrSize(Addr &addr, uint32_t &size) override {
+    bool getAddrSize(Addr &addr, uint32_t &size) const override {
       assert(inst->getTDG().has_load() && "Missing loadExtra for load inst.");
       addr = inst->getTDG().load().addr();
       size = inst->getTDG().load().size();
       return true;
     }
-    bool isIssued() override;
+    bool isIssued() const override;
     bool isValueLoaded() override;
     void RAWMisspeculate() override;
   };

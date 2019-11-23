@@ -191,7 +191,7 @@ bool MinorCPUDelegator::isAddrSizeReady(Minor::MinorDynInstPtr &dynInstPtr) {
   return true;
 }
 
-void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
+Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
   auto &preLSQ = pimpl->preLSQ;
   auto &inLSQ = pimpl->inLSQ;
   auto seqNum = dynInstPtr->id.execSeqNum;
@@ -199,7 +199,7 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
   // INST_LOG(hack, dynInstPtr, "Insert into LSQ.\n");
   if (iter == preLSQ.end()) {
     // Not our special instruction requires LSQ handling.
-    return;
+    return NoFault;
   }
   /**
    * So far the LSQ requires the address ready, we enforce that.
@@ -245,8 +245,10 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
         !this->translateVAddrOracle(vaddr + size - 1, paddrRHS)) {
       // There is translation fault.
       INST_DPRINTF(dynInstPtr, "Translation fault on vaddr %#x.\n", vaddr);
-      dynInstPtr->translationFault =
-          std::make_shared<Minor::GemForgeLoadTranslationFault>();
+      if (dynInstPtr->translationFault == NoFault) {
+        dynInstPtr->translationFault =
+            std::make_shared<Minor::GemForgeLoadTranslationFault>();
+      }
       /**
        * Request the state of the request to Translated.
        * When sent to transfer queue, LSQ will mark it completed and skipped.
@@ -285,6 +287,7 @@ void MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
    * Clear the preLSQ as they are now in LSQ.
    */
   preLSQ.erase(seqNum);
+  return dynInstPtr->translationFault;
 }
 
 InstSeqNum MinorCPUDelegator::getEarlyIssueMustWaitSeqNum(

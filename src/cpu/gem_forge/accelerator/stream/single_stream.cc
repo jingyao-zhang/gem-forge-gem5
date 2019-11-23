@@ -4,7 +4,6 @@
 
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
-#include "cpu/gem_forge/accelerator/arch/stream/func_addr_callback.hh"
 
 #include "base/trace.hh"
 #include "debug/StreamEngine.hh"
@@ -161,35 +160,36 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
       // Check if there is an address function.
       const auto &addrFuncInfo = this->info.addr_func_info();
       if (addrFuncInfo.name() != "") {
-        auto &formalParams = dynStream.formalParams;
-        int inputIdx = 0;
-        for (const auto &arg : addrFuncInfo.args()) {
-          if (arg.is_stream()) {
-            // This is a stream input.
-            // hack("Find stream input param #%d id %llu.\n",
-            // formalParams.size(),
-            //      arg.stream_id());
-            formalParams.emplace_back();
-            auto &formalParam = formalParams.back();
-            formalParam.isInvariant = false;
-            formalParam.param.baseStreamId = arg.stream_id();
-          } else {
-            assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
-            // hack("Find invariant param #%d, val %llu.\n",
-            // formalParams.size(),
-            //      inputVec->at(inputIdx));
-            formalParams.emplace_back();
-            auto &formalParam = formalParams.back();
-            formalParam.isInvariant = true;
-            formalParam.param.invariant = inputVec->at(inputIdx);
-            inputIdx++;
-          }
-        }
-        // Set the callback.
-        dynStream.addrGenCallback =
-            std::unique_ptr<TheISA::FuncAddrGenCallback>(
-                new TheISA::FuncAddrGenCallback(dynStream.tc,
-                                                this->info.addr_func_info()));
+        this->setupFuncAddrFunc(dynStream, inputVec, this->info);
+        // auto &formalParams = dynStream.formalParams;
+        // int inputIdx = 0;
+        // for (const auto &arg : addrFuncInfo.args()) {
+        //   if (arg.is_stream()) {
+        //     // This is a stream input.
+        //     // hack("Find stream input param #%d id %llu.\n",
+        //     // formalParams.size(),
+        //     //      arg.stream_id());
+        //     formalParams.emplace_back();
+        //     auto &formalParam = formalParams.back();
+        //     formalParam.isInvariant = false;
+        //     formalParam.param.baseStreamId = arg.stream_id();
+        //   } else {
+        //     assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
+        //     // hack("Find invariant param #%d, val %llu.\n",
+        //     // formalParams.size(),
+        //     //      inputVec->at(inputIdx));
+        //     formalParams.emplace_back();
+        //     auto &formalParam = formalParams.back();
+        //     formalParam.isInvariant = true;
+        //     formalParam.param.invariant = inputVec->at(inputIdx);
+        //     inputIdx++;
+        //   }
+        // }
+        // // Set the callback.
+        // dynStream.addrGenCallback =
+        //     std::unique_ptr<TheISA::FuncAddrGenCallback>(
+        //         new TheISA::FuncAddrGenCallback(dynStream.tc,
+        //                                         this->info.addr_func_info()));
         return;
       } else {
         STREAM_PANIC("Don't know how to generate the address.");

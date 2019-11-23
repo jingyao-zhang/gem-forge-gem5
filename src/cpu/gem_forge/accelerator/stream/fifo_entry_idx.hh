@@ -4,6 +4,8 @@
 #include "cache/DynamicStreamSliceId.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
 
+#include <iostream>
+
 struct FIFOEntryIdx {
   DynamicStreamId streamId;
   uint64_t configSeqNum;
@@ -34,6 +36,9 @@ struct FIFOEntryIdx {
     return this->streamId.streamInstance > other.streamId.streamInstance ||
            (this->streamId.streamInstance == other.streamId.streamInstance &&
             this->entryIdx > other.entryIdx);
+  }
+  friend std::ostream &operator<<(std::ostream &os, const FIFOEntryIdx &id) {
+    return os << id.streamId << '[' << id.entryIdx << ']';
   }
 };
 

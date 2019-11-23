@@ -90,6 +90,10 @@ public:
   GemForgeLoadRequest(const GemForgeLoadRequest &other) = delete;
   GemForgeLoadRequest &operator=(GemForgeLoadRequest &&other) = delete;
   GemForgeLoadRequest &operator=(const GemForgeLoadRequest &other) = delete;
+
+  std::ostream &format(std::ostream &os) const override {
+    return os << *(this->callback.get()) << "[State: " << this->state << ']';
+  }
 };
 } // namespace Minor
 

@@ -1180,9 +1180,12 @@ LSQ::tryToSend(LSQRequestPtr request)
          * GemForgeLoadRequest is a special load request that doesn't
          * issue to memory.
          */
-        assert(request->state == LSQRequest::RequestIssuing &&
-               "GemForgeLoadRequest should always be RequestIssuing"
-               " when pushed into Transfer queue.");
+        if (request->state != LSQRequest::RequestIssuing) {
+            std::stringstream ss;
+            request->format(ss);
+            panic("%s, GemForgeLoadRequest should be RequestIssuing state to be sent.\n",
+                ss.str().c_str());
+        }
         ret = true;
     } else {
         PacketPtr packet = request->getHeadPacket();

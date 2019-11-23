@@ -199,7 +199,7 @@ struct StreamElement {
 
   void clear();
   void clearCacheBlocks();
-  Stream *getStream() {
+  Stream *getStream() const {
     assert(this->stream != nullptr && "Null stream in the element.");
     return this->stream;
   }
