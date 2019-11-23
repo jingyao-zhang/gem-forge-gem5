@@ -296,6 +296,15 @@ class Decoder
         altAddr = old->altAddr;
         defAddr = old->defAddr;
         stack = old->stack;
+
+        // ! GemForge
+        // Also takes over the decodePages and instMap.
+        if (!this->decodePages) {
+            this->decodePages = old->decodePages;
+        }
+        if (!this->instMap) {
+            this->instMap = old->instMap;
+        }
     }
 
     void reset()
