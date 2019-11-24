@@ -17,19 +17,36 @@ class StreamStoreInst;
 /**
  * Represent the breakdown of one element according to cache block size.
  */
+class StreamMemAccess;
 struct CacheBlockBreakdownAccess {
   // Which cache block this access belongs to.
-  uint64_t cacheBlockVAddr;
+  uint64_t cacheBlockVAddr = 0;
   // The actual virtual address.
-  uint64_t virtualAddr;
+  uint64_t virtualAddr = 0;
   // The actual size.
-  uint8_t size;
+  uint8_t size = 0;
+  // The StreamMemAccess that's inorder to bring the data.
+  StreamMemAccess *memAccess = nullptr;
   /**
    * State of the cache line.
    * ! Faulted is treated as a poison value and should be propagated
    * ! to any user.
    */
-  enum StateE { None, Initialized, Faulted, Issued, PrevElement, Ready } state;
+  enum StateE {
+    None,
+    Initialized,
+    Faulted,
+    Issued,
+    PrevElement,
+    Ready
+  } state = None;
+  void clear() {
+    this->state = CacheBlockBreakdownAccess::StateE::None;
+    this->cacheBlockVAddr = 0;
+    this->virtualAddr = 0;
+    this->size = 0;
+    this->memAccess = nullptr;
+  }
 };
 
 class StreamElement;
@@ -37,6 +54,17 @@ class StreamElement;
  * This is used as a handler to the response packet.
  * The stream aware cache also use this to find the stream the packet belongs
  * to.
+ *
+ * Update 2019.11.22 By Zhengrong.
+ * Due to the complicate requirement to coalesce continuous elements
+ * belong to the same stream, we extend both the StreamMemAccess and
+ * StreamElement to reflect the many to many mapping.
+ * A StreamMemAccess has a leading element, which allocates it, and
+ * is used as the sliceId for stream floating.
+ * It also contains a receiver list, which are elements who expect
+ * its response. Notice that a receiver may deregister itself from
+ * the list if it's flushed and reissued (due to misspeculation).
+ *
  */
 class StreamMemAccess final : public GemForgePacketHandler {
 public:
@@ -85,6 +113,9 @@ public:
   };
 
   Stream *const stream;
+  /**
+   * Leading element.
+   */
   StreamElement *const element;
   // Make a copy of the FIFOIdx in case element is released.
   const FIFOEntryIdx FIFOIdx;
@@ -95,6 +126,15 @@ public:
 
   // The slice of the this memory request.
   DynamicStreamSliceId sliceId;
+
+  /**
+   * Stores the elements that expect the response from this access.
+   */
+  static constexpr int MAX_NUM_RECEIVERS = 16;
+  std::array<std::pair<StreamElement *, bool>, MAX_NUM_RECEIVERS> receivers;
+  int numReceivers = 0;
+  void registerReceiver(StreamElement *element);
+  void deregisterReceiver(StreamElement *element);
 
   /**
    * Additional delay we want to add after we get the response.
@@ -136,10 +176,10 @@ struct StreamElement {
   /**
    * Small vector stores the cache blocks this element touched.
    */
-  uint64_t addr;
-  uint64_t size;
+  uint64_t addr = 0;
+  uint64_t size = 0;
   static constexpr int MAX_CACHE_BLOCKS = 10;
-  int cacheBlocks;
+  int cacheBlocks = 0;
   CacheBlockBreakdownAccess cacheBlockBreakdownAccesses[MAX_CACHE_BLOCKS];
   /**
    * Small vector stores all the data.
@@ -167,22 +207,11 @@ struct StreamElement {
   }
   bool isValueFaulted(Addr vaddr, int size) const;
 
-  // Store the infly mem accesses for this element, basically for load.
-  std::unordered_set<StreamMemAccess *> inflyMemAccess;
   // Store the infly writeback memory accesses.
   std::unordered_map<StreamStoreInst *, std::unordered_set<StreamMemAccess *>>
       inflyWritebackMemAccess;
-  // Store all the allocated mem accesses. May be different to inflyMemAccess
-  // if some the element is released before the result comes back, e.g. unused
-  // element.
-  std::unordered_set<StreamMemAccess *> allocatedMemAccess;
 
   bool stored;
-
-  /**
-   * Mark if the next element is also marked value ready by this element.
-   */
-  bool markNextElementValueReady = false;
 
   StreamElement(StreamEngine *_se);
 
@@ -199,6 +228,8 @@ struct StreamElement {
 
   void clear();
   void clearCacheBlocks();
+  void clearInflyMemAccesses();
+
   Stream *getStream() const {
     assert(this->stream != nullptr && "Null stream in the element.");
     return this->stream;

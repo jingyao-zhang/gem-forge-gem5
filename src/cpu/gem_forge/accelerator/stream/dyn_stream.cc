@@ -42,13 +42,6 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
   assert(releaseElement == this->head &&
          "Head should point to the last element.");
 
-  // Clear the markNextElementValueReady.
-  if (prevElement->markNextElementValueReady) {
-    S_ELEMENT_DPRINTF(prevElement,
-                      "Reset markNextElementValueReady as released.\n");
-    prevElement->markNextElementValueReady = false;
-  }
-
   // This should be unused.
   assert(!releaseElement->isStepped && "Release stepped element.");
   assert(!releaseElement->isFirstUserDispatched() &&

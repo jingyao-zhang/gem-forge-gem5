@@ -58,7 +58,7 @@ StreamPlacementManager::StreamPlacementManager(
 }
 
 bool StreamPlacementManager::access(
-    const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+    CacheBlockBreakdownAccess &cacheBlockBreakdown,
     StreamElement *element, bool isWrite) {
 
   if (!this->se->isPlacementEnabled()) {
@@ -89,7 +89,7 @@ bool StreamPlacementManager::access(
 }
 
 bool StreamPlacementManager::accessNoMSHR(
-    Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+    Stream *stream, CacheBlockBreakdownAccess &cacheBlockBreakdown,
     StreamElement *element, bool isWrite) {
 
   auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
@@ -133,7 +133,7 @@ bool StreamPlacementManager::accessNoMSHR(
 }
 
 bool StreamPlacementManager::accessExpress(
-    Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+    Stream *stream, CacheBlockBreakdownAccess &cacheBlockBreakdown,
     StreamElement *element, bool isWrite) {
 
   // Do not bypass for the first 100 accesses.
@@ -244,7 +244,7 @@ bool StreamPlacementManager::accessExpress(
 }
 
 bool StreamPlacementManager::accessExpressFootprint(
-    Stream *stream, const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+    Stream *stream, CacheBlockBreakdownAccess &cacheBlockBreakdown,
     StreamElement *element, bool isWrite) {
 
   if (this->se->isPlacementNoBypassingStore()) {
@@ -360,7 +360,7 @@ bool StreamPlacementManager::isHit(Cache *cache, Addr paddr) const {
 
 PacketPtr StreamPlacementManager::createPacket(
     Addr paddr, int size, StreamElement *element,
-    const CacheBlockBreakdownAccess &cacheBlockBreakdown, bool isWrite) const {
+    CacheBlockBreakdownAccess &cacheBlockBreakdown, bool isWrite) const {
   auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
   uint8_t *data = nullptr;
   if (isWrite) {
@@ -374,7 +374,7 @@ PacketPtr StreamPlacementManager::createPacket(
   /**
    * Remember to add this to the element infly memAccess set.
    */
-  element->inflyMemAccess.insert(memAccess);
+  cacheBlockBreakdown.memAccess = memAccess;
   return pkt;
 }
 

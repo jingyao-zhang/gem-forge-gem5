@@ -24,6 +24,32 @@ StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
   this->sliceId.size = this->size;
 }
 
+void StreamMemAccess::registerReceiver(StreamElement *element) {
+  // Sanity check that there are no duplicate receivers.
+  for (int i = 0; i < this->numReceivers; ++i) {
+    assert(this->receivers.at(i).first != element &&
+           "Register duplicate receiver.");
+  }
+  assert(this->numReceivers < StreamMemAccess::MAX_NUM_RECEIVERS &&
+         "Too many receivers.");
+  auto &newReceiver = this->receivers.at(this->numReceivers);
+  newReceiver.first = element;
+  newReceiver.second = true;
+  this->numReceivers++;
+}
+
+void StreamMemAccess::deregisterReceiver(StreamElement *element) {
+  for (int i = 0; i < this->numReceivers; ++i) {
+    auto &receiver = this->receivers.at(i);
+    if (receiver.first == element) {
+      assert(receiver.second && "Receiver has already been deregistered.");
+      receiver.second = false;
+      return;
+    }
+  }
+  assert(false && "Failed to find receiver.");
+}
+
 void StreamMemAccess::handlePacketResponse(PacketPtr pkt) {
   // API for stream-aware cache, as it doesn't have the cpu.
   this->handlePacketResponse(this->getStream()->getCPUDelegator(), pkt);
@@ -72,10 +98,21 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
     // We should notify the stream engine that this cache line is coming back.
     this->element->se->fetchedCacheBlock(this->cacheBlockVAddr, this);
   }
-  this->element->handlePacketResponse(this, pkt);
-  /*********************************************************************
-   * ! After StreamElement::handlePacketResponse() this is deleted.
-   *********************************************************************/
+
+  // Notify all receivers.
+  for (int i = 0; i < this->numReceivers; ++i) {
+    auto &receiver = this->receivers.at(i);
+    if (receiver.second) {
+      // The receiver is still expecting the response.
+      receiver.first->handlePacketResponse(this, pkt);
+      receiver.second = false;
+    }
+  }
+
+  // Release myself.
+  delete this;
+  delete pkt;
+
   return;
 }
 
@@ -103,9 +140,6 @@ void StreamElement::clear() {
     }
   }
 
-  assert(!this->markNextElementValueReady &&
-         "Element released while next one is waiting.");
-
   this->baseElements.clear();
   this->next = nullptr;
   this->stream = nullptr;
@@ -126,19 +160,28 @@ void StreamElement::clear() {
   this->clearCacheBlocks();
   std::fill(this->value.begin(), this->value.end(), 0);
 
-  // Only clear the inflyMemAccess set, but not allocatedMemAccess set.
-  this->inflyMemAccess.clear();
   this->stored = false;
-  this->markNextElementValueReady = false;
 }
 
 void StreamElement::clearCacheBlocks() {
+  for (int i = 0; i < this->cacheBlocks; ++i) {
+    auto &block = this->cacheBlockBreakdownAccesses[i];
+    if (block.memAccess) {
+      panic("Still has unregistered StreamMemAccess.");
+    }
+    block.clear();
+  }
   this->cacheBlocks = 0;
-  for (auto &block : this->cacheBlockBreakdownAccesses) {
-    block.state = CacheBlockBreakdownAccess::StateE::None;
-    block.cacheBlockVAddr = 0;
-    block.virtualAddr = 0;
-    block.size = 0;
+}
+
+void StreamElement::clearInflyMemAccesses() {
+  // Deregister all StreamMemAccesses.
+  for (int i = 0; i < this->cacheBlocks; ++i) {
+    auto &block = this->cacheBlockBreakdownAccesses[i];
+    if (block.memAccess) {
+      block.memAccess->deregisterReceiver(this);
+      block.memAccess = nullptr;
+    }
   }
 }
 
@@ -149,48 +192,34 @@ StreamMemAccess *StreamElement::allocateStreamMemAccess(
       this->getStream(), this, cacheBlockBreakdown.cacheBlockVAddr,
       cacheBlockBreakdown.virtualAddr, cacheBlockBreakdown.size);
 
-  this->allocatedMemAccess.insert(memAccess);
-  /**
-   * ! The reason why we allow such big number of allocated StreamMemAccess is
-   * ! due to a pathological case: MemSet. In the current implementation, we
-   * ! release the stream element not waiting for the writeback package to be
-   * ! returned. In such case, we may run way ahead. However, this is rare in
-   * ! the benchmarks.
-   */
-  if (this->allocatedMemAccess.size() == 100000) {
-    S_ELEMENT_PANIC(this, "Allocated 100000 StreamMemAccess.");
-  }
   return memAccess;
 }
 
 void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
                                          PacketPtr pkt) {
-  assert(this->allocatedMemAccess.count(memAccess) != 0 &&
-         "This StreamMemAccess is not allocated by me.");
+  // Make sure I am still expect this.
+  auto vaddr = memAccess->cacheBlockVAddr;
+  auto size = pkt->getSize();
+  auto blockIdx = this->mapVAddrToBlockOffset(vaddr, size);
+  auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
+  assert(block.memAccess == memAccess &&
+         "We are not expecting from this StreamMemAccess.");
 
-  if (this->inflyMemAccess.count(memAccess) != 0) {
+  /**
+   * Update the value vector.
+   * Notice that pkt->getAddr() will give you physics address.
+   * ! So far all requests are in cache line size.
+   */
+  auto data = pkt->getPtr<uint8_t>();
+  this->setValue(vaddr, size, data);
 
-    /**
-     * Update the value vector.
-     * Notice that pkt->getAddr() will give you physics address.
-     * ! So far all requests are in cache line size.
-     */
-    auto vaddr = memAccess->cacheBlockVAddr;
-    auto size = pkt->getSize();
-    auto data = pkt->getPtr<uint8_t>();
-    this->setValue(vaddr, size, data);
+  // Clear the receiver.
+  block.memAccess = nullptr;
 
-    this->inflyMemAccess.erase(memAccess);
-  }
   // Dummy way to check if this is a writeback mem access.
   for (auto &storeInstMemAccesses : this->inflyWritebackMemAccess) {
     storeInstMemAccesses.second.erase(memAccess);
   }
-  // Remember to release the memAccess.
-  this->allocatedMemAccess.erase(memAccess);
-  delete memAccess;
-  // Remember to release the pkt.
-  delete pkt;
 }
 
 bool StreamElement::isFirstUserDispatched() const {
@@ -252,26 +281,6 @@ void StreamElement::markValueReady() {
   this->isValueReady = true;
   this->valueReadyCycle = this->getStream()->getCPUDelegator()->curCycle();
   S_ELEMENT_DPRINTF(this, "Value ready.\n");
-
-  // Check if the next element is also dependent on me.
-  // Notice that after flushed, the next element will issue request by itself,
-  // and we should not set that.
-  if (this->markNextElementValueReady) {
-    if (this->next != nullptr &&
-        this->next->FIFOIdx.streamId == this->FIFOIdx.streamId &&
-        this->next->FIFOIdx.entryIdx == this->FIFOIdx.entryIdx + 1 &&
-        !this->next->flushed) {
-      S_ELEMENT_DPRINTF(this->next, "Prev element value is ready.\n");
-      // Okay the next element is still valid.
-      assert(this->next->isAddrReady &&
-             "Address should be ready to propagate the value ready signal.");
-
-      // Fill next element cache blocks.
-      this->next->setValue(this);
-    }
-    // Clear the flag.
-    this->markNextElementValueReady = false;
-  }
 
   // Notify the stream for statistics.
   if (this->issueCycle >= this->addrReadyCycle &&

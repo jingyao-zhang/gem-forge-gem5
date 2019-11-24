@@ -12,7 +12,7 @@ public:
   StreamPlacementManager(GemForgeCPUDelegator *_cpuDelegator,
                          StreamEngine *_se);
 
-  bool access(const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+  bool access(CacheBlockBreakdownAccess &cacheBlockBreakdown,
               StreamElement *element, bool isWrite = false);
 
   void dumpCacheStreamAwarePortStatus();
@@ -51,17 +51,16 @@ private:
   uint32_t L2BusWidth;
 
   bool accessNoMSHR(Stream *stream,
-                    const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+                    CacheBlockBreakdownAccess &cacheBlockBreakdown,
                     StreamElement *element, bool isWrite);
 
   bool accessExpress(Stream *stream,
-                     const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+                     CacheBlockBreakdownAccess &cacheBlockBreakdown,
                      StreamElement *element, bool isWrite);
 
-  bool
-  accessExpressFootprint(Stream *stream,
-                         const CacheBlockBreakdownAccess &cacheBlockBreakdown,
-                         StreamElement *element, bool isWrite);
+  bool accessExpressFootprint(Stream *stream,
+                              CacheBlockBreakdownAccess &cacheBlockBreakdown,
+                              StreamElement *element, bool isWrite);
 
   size_t whichCacheLevelToPlace(Stream *stream) const;
   int getPlacedCacheLevelByFootprint(Stream *stream) const;
@@ -69,7 +68,7 @@ private:
   void updatePlacedCacheLevel(Stream *stream);
 
   PacketPtr createPacket(Addr paddr, int size, StreamElement *element,
-                         const CacheBlockBreakdownAccess &cacheBlockBreakdown,
+                         CacheBlockBreakdownAccess &cacheBlockBreakdown,
                          bool isWrite) const;
 
   bool isHit(Cache *cache, Addr paddr) const;

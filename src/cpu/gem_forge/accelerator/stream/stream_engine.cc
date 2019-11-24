@@ -1131,6 +1131,7 @@ void StreamEngine::initializeFIFO(size_t totalElements) {
 }
 
 void StreamEngine::addFreeElement(StreamElement *element) {
+  element->clearInflyMemAccesses();
   element->clear();
   element->next = this->FIFOFreeListHead;
   this->FIFOFreeListHead = element;
@@ -1386,16 +1387,6 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
       }
       this->numLoadElementWaitCycles += waitedCycles;
     }
-
-    /**
-     * Jesus: If this element is still in charge of fetching value for the
-     * next element.
-     */
-    if (releaseElement->markNextElementValueReady) {
-      S_ELEMENT_PANIC(releaseElement,
-                      "Step an element with markNextElementValueReady set.");
-    }
-
   } else if (S->getStreamType() == "store") {
     this->numStoreElementsStepped++;
     if (used) {
@@ -1612,59 +1603,6 @@ void StreamEngine::issueElement(StreamElement *element) {
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
-    auto cacheBlockVAddr = cacheBlockBreakdown.cacheBlockVAddr;
-
-    if (this->enableMerge) {
-      // Check if we already have the cache block fetched.
-      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVAddr);
-
-      // Mark this line is requested by a load, not a store.
-      if (S->getStreamType() == "load") {
-        // This line is going to be fetched.
-        if (!cacheBlockInfo.requestedByLoad) {
-          cacheBlockInfo.requestedByLoad = true;
-          this->numLoadCacheLineFetched++;
-        }
-      }
-
-      if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHED) {
-        // This cache block is already fetched.
-        if (element->FIFOIdx.streamId.staticId == 34710992 &&
-            element->FIFOIdx.streamId.streamInstance == 252 &&
-            element->FIFOIdx.entryIdx == 0) {
-          hack("Skipped due to fetched.\n");
-        }
-        continue;
-      }
-
-      if (cacheBlockInfo.status == CacheBlockInfo::Status::FETCHING) {
-        // This cache block is already fetching.
-        if (element->FIFOIdx.streamId.staticId == 34710992 &&
-            element->FIFOIdx.streamId.streamInstance == 252 &&
-            element->FIFOIdx.entryIdx == 0) {
-          hack("Skipped due to fetching.\n");
-        }
-        auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
-        if (S->getStreamType() == "load") {
-          element->inflyMemAccess.insert(memAccess);
-        }
-        cacheBlockInfo.pendingAccesses.push_back(memAccess);
-        continue;
-      }
-
-      if (this->enableStreamPlacement) {
-        // This means we have the placement manager.
-        if (this->streamPlacementManager->access(cacheBlockBreakdown,
-                                                 element)) {
-          // Stream placement manager handles this packet.
-          // But we need to mark the cache block to be FETCHING.
-          cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
-          // The request is issued by the placement manager.
-          S->statistic.numIssuedRequest++;
-          continue;
-        }
-      }
-    }
 
     // Normal case: really fetching this from the cache,
     // i.e. not merged & not handled by placement manager.
@@ -1706,16 +1644,13 @@ void StreamEngine::issueElement(StreamElement *element) {
     S->statistic.numIssuedRequest++;
     cpuDelegator->sendRequest(pkt);
 
-    cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
-
-    // Change to FETCHING status.
-    if (this->enableMerge) {
-      auto &cacheBlockInfo = this->cacheBlockRefMap.at(cacheBlockVAddr);
-      cacheBlockInfo.status = CacheBlockInfo::Status::FETCHING;
-    }
-
     if (S->getStreamType() == "load") {
-      element->inflyMemAccess.insert(memAccess);
+      // Mark the state.
+      cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
+      cacheBlockBreakdown.memAccess = memAccess;
+      memAccess->registerReceiver(element);
+    } else if (S->getStreamType() == "store") {
+      // No need to register receiver.
     }
   }
 }
@@ -1741,7 +1676,7 @@ void StreamEngine::writebackElement(StreamElement *element,
   // hack("Send packt for stream %s.\n", S->getStreamName().c_str());
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
-    const auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+    auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
 
     // Translate the virtual address.
     auto vaddr = cacheBlockBreakdown.virtualAddr;
@@ -2205,29 +2140,26 @@ void StreamEngine::coalesceContinuousDirectLoadStreamElement(
       continue;
     }
     // Found a match.
-    if (prevElement->isValueReady) {
-      // Check if the previous block faulted.
-      const auto &prevBlock =
-          prevElement->cacheBlockBreakdownAccesses[blockOffset];
-      if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
-        // Also mark this block faulted.
-        block.state = CacheBlockBreakdownAccess::StateE::Faulted;
-        element->tryMarkValueReady();
-      } else {
-        // We can copy the value.
-        auto offset = prevElement->mapVAddrToValueOffset(
-            block.cacheBlockVAddr, element->cacheBlockSize);
-        element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
-                          &prevElement->value.at(offset));
-      }
-    } else {
-      // Mark the prevElement to propagate its value to next element.
-      if (element->FIFOIdx.entryIdx == 1) {
-        S_ELEMENT_DPRINTF(element,
-                          "Mark prevElement's nextElementValueReady.\n");
-      }
-      prevElement->markNextElementValueReady = true;
-      block.state = CacheBlockBreakdownAccess::StateE::PrevElement;
+    // Check if the previous block faulted.
+    const auto &prevBlock =
+        prevElement->cacheBlockBreakdownAccesses[blockOffset];
+    if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
+      // Also mark this block faulted.
+      block.state = CacheBlockBreakdownAccess::StateE::Faulted;
+      element->tryMarkValueReady();
+    } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Ready) {
+      // We can copy the value.
+      auto offset = prevElement->mapVAddrToValueOffset(block.cacheBlockVAddr,
+                                                       element->cacheBlockSize);
+      element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
+                        &prevElement->value.at(offset));
+    } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Issued) {
+      // Register myself as a receiver.
+      assert(prevBlock.memAccess &&
+             "Missing memAccess for Issued cache block.");
+      block.memAccess = prevBlock.memAccess;
+      block.memAccess->registerReceiver(element);
+      block.state = CacheBlockBreakdownAccess::StateE::Issued;
     }
   }
 }
@@ -2250,13 +2182,9 @@ void StreamEngine::flushPEB() {
 
     element->addr = 0;
     element->size = 0;
+    element->clearInflyMemAccesses();
     element->clearCacheBlocks();
     std::fill(element->value.begin(), element->value.end(), 0);
-
-    // Clear the inflyMemAccess set, which effectively clears the infly
-    // memory access.
-    element->inflyMemAccess.clear();
-    element->markNextElementValueReady = false;
   }
   this->peb.elements.clear();
 }
@@ -2275,12 +2203,9 @@ void StreamEngine::RAWMisspeculate(StreamElement *element) {
 
   element->addr = 0;
   element->size = 0;
+  element->clearInflyMemAccesses();
   element->clearCacheBlocks();
   std::fill(element->value.begin(), element->value.end(), 0);
-  // Clear the inflyMemAccess set, which effectively clears the infly memory
-  // access.
-  element->inflyMemAccess.clear();
-  element->markNextElementValueReady = false;
 }
 
 StreamEngine *StreamEngineParams::create() { return new StreamEngine(this); }
