@@ -83,7 +83,8 @@ private:
    * @return if succeed.
    */
   bool removeRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
-  uint64_t lookupRegionStreamId(int regionStreamId);
+  uint64_t lookupRegionStreamId(int regionStreamId) const;
+  bool isValidRegionStreamId(int regionStreamId) const;
 
   /**
    * StreamEngine is configured through a sequence of instructions:
