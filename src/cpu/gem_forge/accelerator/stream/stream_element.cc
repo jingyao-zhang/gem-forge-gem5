@@ -1,4 +1,5 @@
 #include "stream_element.hh"
+#include "coalesced_stream.hh"
 #include "stream.hh"
 #include "stream_engine.hh"
 
@@ -245,11 +246,19 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
         // TODO: use.
         assert(baseElement->isValueReady &&
                "Base element is not value ready yet.");
-        assert(baseElement->size <= sizeof(uint64_t) &&
+        auto vaddr = baseElement->addr;
+        int32_t size = baseElement->size;
+        if (auto CS = dynamic_cast<CoalescedStream *>(baseStream)) {
+          // Handle offset for coalesced stream.
+          int32_t offset;
+          CS->getCoalescedOffsetAndSize(baseStreamId, offset, size);
+          vaddr += offset;
+        }
+        assert(size <= sizeof(uint64_t) &&
                "Base element too large, maybe coalesced?");
         // ! This effectively does zero extension.
         uint64_t baseValue = 0;
-        baseElement->getValue(baseElement->addr, baseElement->size,
+        baseElement->getValue(vaddr, size,
                               reinterpret_cast<uint8_t *>(&baseValue));
         return baseValue;
       }

@@ -15,10 +15,6 @@
 
 #define STREAM_DPRINTF(format, args...) S_DPRINTF(this, format, ##args)
 
-#define STREAM_ENTRY_DPRINTF(entry, format, args...)                           \
-  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
-                 (entry).idx.entryIdx, ##args)
-
 #define STREAM_HACK(format, args...)                                           \
   hack("Stream %s: " format, this->getStreamName().c_str(), ##args)
 

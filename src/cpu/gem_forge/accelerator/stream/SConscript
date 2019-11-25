@@ -4,6 +4,7 @@ DebugFlag('StreamBase')
 DebugFlag('StreamEngine')
 DebugFlag('StreamElement')
 DebugFlag('CoalescedStream')
+DebugFlag('SingleStream')
 DebugFlag('AddrGenCallback')
 
 ProtoBuf('StreamMessage.proto')

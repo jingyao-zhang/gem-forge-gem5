@@ -4,35 +4,13 @@
 
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
-
 #include "base/trace.hh"
 #include "debug/StreamEngine.hh"
 #include "proto/protoio.hh"
 
-#define STREAM_DPRINTF(format, args...)                                        \
-  DPRINTF(StreamEngine, "Stream %s: " format, this->getStreamName().c_str(),   \
-          ##args)
-
-#define STREAM_ENTRY_DPRINTF(entry, format, args...)                           \
-  STREAM_DPRINTF("Entry (%lu, %lu): " format, (entry).idx.streamInstance,      \
-                 (entry).idx.entryIdx, ##args)
-
-#define STREAM_HACK(format, args...)                                           \
-  hack("Stream %s: " format, this->getStreamName().c_str(), ##args)
-
-#define STREAM_ENTRY_HACK(entry, format, args...)                              \
-  STREAM_HACK("Entry (%lu, %lu): " format, (entry).idx.streamInstance,         \
-              (entry).idx.entryIdx, ##args)
-
-#define STREAM_PANIC(format, args...)                                          \
-  {                                                                            \
-    this->dump();                                                              \
-    panic("Stream %s: " format, this->getStreamName().c_str(), ##args);        \
-  }
-
-#define STREAM_ENTRY_PANIC(entry, format, args...)                             \
-  STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
-               (entry).idx.entryIdx, ##args)
+#include "debug/SingleStream.hh"
+#define DEBUG_TYPE SingleStream
+#include "stream_log.hh"
 
 SingleStream::SingleStream(const StreamArguments &args,
                            const LLVM::TDG::StreamInfo &_info)
@@ -46,6 +24,18 @@ SingleStream::SingleStream(const StreamArguments &args,
   this->patternStream = std::unique_ptr<StreamPattern>(new StreamPattern(
       cpuDelegator->getTraceExtraFolder() + "/" + this->info.pattern_path()));
 
+  S_DPRINTF(this, "Initialized.\n");
+}
+
+SingleStream::~SingleStream() {}
+
+void SingleStream::finalize() {
+  S_DPRINTF(this, "Finalized.\n");
+  this->initializeBaseStreams();
+  this->initializeBackBaseStreams();
+}
+
+void SingleStream::initializeBaseStreams() {
   for (const auto &baseStreamId : this->info.chosen_base_streams()) {
     auto baseStream = this->se->getStream(baseStreamId.id());
     this->addBaseStream(baseStream);
@@ -68,11 +58,16 @@ SingleStream::SingleStream(const StreamArguments &args,
       this->stepRootStream = baseS->stepRootStream;
     }
   }
-
-  STREAM_DPRINTF("Initialized.\n");
 }
 
-SingleStream::~SingleStream() {}
+void SingleStream::initializeBackBaseStreams() {
+  for (const auto &backBaseStreamId : this->info.chosen_back_base_streams()) {
+    assert(this->getStreamType() == "phi" &&
+           "Only phi node can have back edge dependence.");
+    auto backBaseStream = this->se->getStream(backBaseStreamId.id());
+    this->addBackBaseStream(backBaseStream);
+  }
+}
 
 bool SingleStream::isPointerChaseLoadStream() const {
   if (this->getStreamType() != "load") {
@@ -101,15 +96,6 @@ bool SingleStream::isPointerChaseLoadStream() const {
     return false;
   }
   return true;
-}
-
-void SingleStream::initializeBackBaseStreams() {
-  for (const auto &backBaseStreamId : this->info.chosen_back_base_streams()) {
-    assert(this->getStreamType() == "phi" &&
-           "Only phi node can have back edge dependence.");
-    auto backBaseStream = this->se->getStream(backBaseStreamId.id());
-    this->addBackBaseStream(backBaseStream);
-  }
 }
 
 const std::string &SingleStream::getStreamType() const {
@@ -144,8 +130,8 @@ bool SingleStream::isContinuous() const { return false; }
 void SingleStream::setupAddrGen(DynamicStream &dynStream,
                                 const std::vector<uint64_t> *inputVec) {
 
-  STREAM_DPRINTF("Set up AddrGen for streamInstance %llu.\n",
-                 dynStream.dynamicStreamId.streamInstance);
+  S_DPRINTF(this, "Set up AddrGen for streamInstance %llu.\n",
+            dynStream.dynamicStreamId.streamInstance);
 
   if (!se->isTraceSim()) {
     // We have to use the pattern.
@@ -161,38 +147,9 @@ void SingleStream::setupAddrGen(DynamicStream &dynStream,
       const auto &addrFuncInfo = this->info.addr_func_info();
       if (addrFuncInfo.name() != "") {
         this->setupFuncAddrFunc(dynStream, inputVec, this->info);
-        // auto &formalParams = dynStream.formalParams;
-        // int inputIdx = 0;
-        // for (const auto &arg : addrFuncInfo.args()) {
-        //   if (arg.is_stream()) {
-        //     // This is a stream input.
-        //     // hack("Find stream input param #%d id %llu.\n",
-        //     // formalParams.size(),
-        //     //      arg.stream_id());
-        //     formalParams.emplace_back();
-        //     auto &formalParam = formalParams.back();
-        //     formalParam.isInvariant = false;
-        //     formalParam.param.baseStreamId = arg.stream_id();
-        //   } else {
-        //     assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
-        //     // hack("Find invariant param #%d, val %llu.\n",
-        //     // formalParams.size(),
-        //     //      inputVec->at(inputIdx));
-        //     formalParams.emplace_back();
-        //     auto &formalParam = formalParams.back();
-        //     formalParam.isInvariant = true;
-        //     formalParam.param.invariant = inputVec->at(inputIdx);
-        //     inputIdx++;
-        //   }
-        // }
-        // // Set the callback.
-        // dynStream.addrGenCallback =
-        //     std::unique_ptr<TheISA::FuncAddrGenCallback>(
-        //         new TheISA::FuncAddrGenCallback(dynStream.tc,
-        //                                         this->info.addr_func_info()));
         return;
       } else {
-        STREAM_PANIC("Don't know how to generate the address.");
+        S_PANIC(this, "Don't know how to generate the address.");
       }
     }
   }

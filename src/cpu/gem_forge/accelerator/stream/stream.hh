@@ -42,8 +42,23 @@ public:
   };
 
   Stream(const StreamArguments &args);
-
   virtual ~Stream();
+
+  /**
+   * Stream initialization is divided into 2 phases:
+   * 1. Create the basic unit -- as the place holder.
+   * 2. Finalize it.
+   *    a. For coalesced stream -- choose the prime logical stream.
+   *    b. Find base streams.
+   *    c. Find back base streams.
+   * Notice that some information are not valid until finalized, e.g.
+   * StreamName, StaticId.
+   */
+  virtual void finalize() = 0;
+  void addBaseStream(Stream *baseStream);
+  void addBaseStepStream(Stream *baseStepStream);
+  void addBackBaseStream(Stream *backBaseStream);
+  void registerStepDependentStreamToRoot(Stream *newDependentStream);
 
   const std::string &getStreamName() const { return this->streamName; }
   virtual const std::string &getStreamType() const = 0;
@@ -74,8 +89,8 @@ public:
   int lateFetchCount;
 
   const ::LLVM::TDG::StreamRegion *streamRegion;
-  const uint64_t staticId;
-  const std::string streamName;
+  uint64_t staticId;
+  std::string streamName;
 
   /**
    * Step root stream, three possible cases:
@@ -99,12 +114,6 @@ public:
   void dumpStreamStats(std::ostream &os) const;
 
   void tick();
-
-  void addBaseStream(Stream *baseStream);
-  void addBaseStepStream(Stream *baseStepStream);
-  virtual void initializeBackBaseStreams() = 0;
-  void addBackBaseStream(Stream *backBaseStream);
-  void registerStepDependentStreamToRoot(Stream *newDependentStream);
 
   virtual uint64_t getTrueFootprint() const = 0;
   virtual uint64_t getFootprint(unsigned cacheBlockSize) const = 0;

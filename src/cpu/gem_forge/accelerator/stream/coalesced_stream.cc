@@ -51,39 +51,27 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
   /**
    * Note: At this point the primary logical stream may not be created yet!
    */
+  assert(info.type() != "phi" && "Never coalesce phi stream.");
   this->coalescedStreams.emplace_back(
       new LogicalStream(cpuDelegator->getTraceExtraFolder(), info));
-  // Update the dependence information.
-  for (const auto &baseStreamId : info.chosen_base_streams()) {
-    auto baseStream = this->se->getStream(baseStreamId.id());
-    assert(baseStream != this && "Should never have circular dependency.");
-    this->addBaseStream(baseStream);
-  }
-
-  for (const auto &backBaseStreamId : info.chosen_back_base_streams()) {
-    auto backBaseStream = this->se->getStream(backBaseStreamId.id());
-    assert(backBaseStream != this && "Should never have circular dependency.");
-    this->addBackBaseStream(backBaseStream);
-  }
-
-  assert(info.type() != "phi" && "Never coalesce phi stream.");
-
-  // Try to update the step root stream.
-  for (auto &baseS : this->baseStreams) {
-    if (baseS->getLoopLevel() != info.loop_level()) {
-      continue;
-    }
-    if (baseS->stepRootStream != nullptr) {
-      if (this->stepRootStream != nullptr &&
-          this->stepRootStream != baseS->stepRootStream) {
-        panic("Double step root stream found.\n");
-      }
-      this->stepRootStream = baseS->stepRootStream;
-    }
-  }
 }
 
 void CoalescedStream::finalize() {
+  this->selectPrimeLogicalStream();
+  // Initialize the dependence graph.
+  this->initializeBaseStreams();
+  this->initializeBackBaseStreams();
+  STREAM_DPRINTF(
+      "Finalized, StaticCoalesced %d, ElementSize %d, LStreams: =========.\n",
+      this->staticCoalesced, this->coalescedElementSize);
+  for (auto LS : this->coalescedStreams) {
+    LS_DPRINTF(LS, "Offset %d, ElementSize %d.\n", LS->getCoalesceOffset(),
+               LS->getElementSize());
+  }
+  STREAM_DPRINTF("Finalized ====================================.\n");
+}
+
+void CoalescedStream::selectPrimeLogicalStream() {
   assert(!this->coalescedStreams.empty());
   // Other sanity check for statically coalesced streams.
   if (this->staticCoalesced) {
@@ -109,20 +97,48 @@ void CoalescedStream::finalize() {
     // Make sure at least the first one has zero offset.
     assert(this->coalescedStreams.front()->getCoalesceOffset() == 0);
   }
-  this->primeLStream = this->coalescedStreams.front();
   // Sanity check for the loop level.
   for (const auto &LS : this->coalescedStreams) {
     assert(LS->info.loop_level() == this->getLoopLevel());
     assert(LS->info.config_loop_level() == this->getConfigLoopLevel());
   }
-  STREAM_DPRINTF(
-      "Finalized, StaticCoalesced %d, ElementSize %d, LStreams: =========.\n",
-      this->staticCoalesced, this->coalescedElementSize);
+  this->primeLStream = this->coalescedStreams.front();
+  /**
+   * Finalize the stream name and static id.
+   * ! This is important to get the correct StreamInput values.
+   * ! I feel like some day I will pay the price due to this hacky
+   * ! implementation.
+   */
+  this->streamName = this->primeLStream->info.name();
+  this->staticId = this->primeLStream->info.id();
+  this->FIFOIdx.streamId.streamName = this->streamName.c_str();
+  this->FIFOIdx.streamId.staticId = this->staticId;
+}
+
+void CoalescedStream::initializeBaseStreams() {
   for (auto LS : this->coalescedStreams) {
-    LS_DPRINTF(LS, "Offset %d, ElementSize %d.\n", LS->getCoalesceOffset(),
-               LS->getElementSize());
+    const auto &info = LS->info;
+    // Update the dependence information.
+    for (const auto &baseStreamId : info.chosen_base_streams()) {
+      auto baseStream = this->se->getStream(baseStreamId.id());
+      assert(baseStream != this && "Should never have circular dependency.");
+      this->addBaseStream(baseStream);
+    }
+
+    // Try to update the step root stream.
+    for (auto &baseS : this->baseStreams) {
+      if (baseS->getLoopLevel() != info.loop_level()) {
+        continue;
+      }
+      if (baseS->stepRootStream != nullptr) {
+        if (this->stepRootStream != nullptr &&
+            this->stepRootStream != baseS->stepRootStream) {
+          panic("Double step root stream found.\n");
+        }
+        this->stepRootStream = baseS->stepRootStream;
+      }
+    }
   }
-  STREAM_DPRINTF("Finalized ====================================.\n");
 }
 
 void CoalescedStream::initializeBackBaseStreams() {

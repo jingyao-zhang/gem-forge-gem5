@@ -13,12 +13,13 @@ public:
 
   ~SingleStream();
 
+  void finalize() override;
+
   const std::string &getStreamType() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;
   int32_t getElementSize() const override;
 
-  void initializeBackBaseStreams() override;
 
   bool isContinuous() const override;
   void configure(uint64_t seqNum, ThreadContext *tc) override;
@@ -36,6 +37,9 @@ private:
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
   std::unique_ptr<StreamPattern> patternStream;
+
+  void initializeBaseStreams();
+  void initializeBackBaseStreams();
 };
 
 #endif

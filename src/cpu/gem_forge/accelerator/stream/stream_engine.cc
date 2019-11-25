@@ -1061,17 +1061,10 @@ void StreamEngine::initializeStreams(
   }
 
   /**
-   * Remember to finalize the coalesced streams.
+   * Remember to finalize the streams.
    */
   for (auto newStream : createdStreams) {
-    if (auto newCoalescedStream = dynamic_cast<CoalescedStream *>(newStream)) {
-      newCoalescedStream->finalize();
-    }
-  }
-
-  for (auto newStream : createdStreams) {
-    // Initialize any back-edge base stream dependepce.
-    newStream->initializeBackBaseStreams();
+    newStream->finalize();
   }
 }
 

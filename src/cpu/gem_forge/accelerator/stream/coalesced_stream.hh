@@ -41,12 +41,10 @@ public:
   ~CoalescedStream();
 
   void addStreamInfo(const LLVM::TDG::StreamInfo &info);
-  /**
-   * User must call finalize after all stream infos are added.
-   */
-  void finalize();
+  void finalize() override;
+
   void prepareNewElement(StreamElement *element) override;
-  void initializeBackBaseStreams() override;
+
 
   /**
    * Only to configure all the history.
@@ -89,6 +87,10 @@ protected:
   std::vector<LogicalStream *> coalescedStreams;
   LogicalStream *primeLStream;
   int32_t coalescedElementSize = -1;
+
+  void selectPrimeLogicalStream();
+  void initializeBaseStreams();
+  void initializeBackBaseStreams();
 };
 
 #endif
