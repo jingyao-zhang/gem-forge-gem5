@@ -33,7 +33,6 @@ void GemForgeAcceleratorManager::handshake(
   for (auto accelerator : this->accelerators) {
     accelerator->handshake(_cpuDelegator, this);
   }
-  cpuDelegator->schedule(&tickEvent, Cycles(1));
 }
 
 void GemForgeAcceleratorManager::handle(LLVMDynamicInst *inst) {
@@ -49,8 +48,13 @@ void GemForgeAcceleratorManager::tick() {
   for (auto accelerator : this->accelerators) {
     accelerator->tick();
   }
-  // Schedule the next tick event.
-  cpuDelegator->schedule(&tickEvent, Cycles(1));
+}
+
+void GemForgeAcceleratorManager::scheduleTickNextCycle() {
+  if (!this->tickEvent.scheduled()) {
+    // Schedule the next tick event.
+    cpuDelegator->schedule(&tickEvent, Cycles(1));
+  }
 }
 
 void GemForgeAcceleratorManager::dump() {

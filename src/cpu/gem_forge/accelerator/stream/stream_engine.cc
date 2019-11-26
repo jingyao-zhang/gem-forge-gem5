@@ -242,6 +242,8 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
 
   this->numConfigured++;
   this->numInflyStreamConfigurations++;
+  // We require next tick.
+  this->manager->scheduleTickNextCycle();
   assert(this->numInflyStreamConfigurations < 100 &&
          "Too many infly StreamConfigurations.");
 
@@ -1084,6 +1086,10 @@ void StreamEngine::tick() {
   this->issueElements();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
+  }
+  if (this->numInflyStreamConfigurations > 0) {
+    // We require next tick.
+    this->manager->scheduleTickNextCycle();
   }
 }
 

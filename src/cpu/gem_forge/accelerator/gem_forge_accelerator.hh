@@ -67,6 +67,8 @@ public:
   void handshake(GemForgeCPUDelegator *_cpuDelegator);
   void handle(LLVMDynamicInst *inst);
   void tick();
+  // Allow the accelerator to schedule tick() in next event.
+  void scheduleTickNextCycle();
   void dump();
 
   void exitDump();

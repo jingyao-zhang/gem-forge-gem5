@@ -28,8 +28,20 @@ StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
 void StreamMemAccess::registerReceiver(StreamElement *element) {
   // Sanity check that there are no duplicate receivers.
   for (int i = 0; i < this->numReceivers; ++i) {
-    assert(this->receivers.at(i).first != element &&
-           "Register duplicate receiver.");
+    auto &receiver = this->receivers.at(i);
+    if (receiver.first == element) {
+      // It is possible that one element get reallocated.
+      if (receiver.second) {
+        S_ELEMENT_HACK(this->element, "Register receiver, my FIFOIdx is %s.\n",
+                       this->FIFOIdx);
+        S_ELEMENT_PANIC(element,
+                        "Register duplicate receiver, still valid %d.\n",
+                        this->receivers.at(i).second);
+      } else {
+        receiver.second = true;
+        return;
+      }
+    }
   }
   assert(this->numReceivers < StreamMemAccess::MAX_NUM_RECEIVERS &&
          "Too many receivers.");

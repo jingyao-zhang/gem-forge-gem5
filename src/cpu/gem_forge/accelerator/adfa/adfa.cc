@@ -529,7 +529,10 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
     }
     this->numConfigured++;
     DPRINTF(AbstractDataFlowAccelerator, "ADFA: start configure.\n");
+
+    this->manager->scheduleTickNextCycle();
     return true;
+
   } else if (auto StartInst = dynamic_cast<ADFAStartInst *>(inst)) {
     this->handling = START;
     this->currentInst.start = StartInst;
@@ -560,6 +563,7 @@ bool AbstractDataFlowAccelerator::handle(LLVMDynamicInst *inst) {
           });
     }
 
+    this->manager->scheduleTickNextCycle();
     return true;
   }
   return false;
@@ -579,11 +583,13 @@ void AbstractDataFlowAccelerator::tick() {
   case CONFIG: {
     this->numCycles++;
     this->tickConfig();
+    this->manager->scheduleTickNextCycle();
     break;
   }
   case START: {
     this->numCycles++;
     this->tickStart();
+    this->manager->scheduleTickNextCycle();
     break;
   }
   default: { panic("Unknown handling instruction."); }
