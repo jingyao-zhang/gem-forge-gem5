@@ -138,7 +138,7 @@ let {{
                     _numIntDestRegs++;
                 """,
             },
-            ['MemReadOp', 'IsLoad', 'IsMemRef']
+            ['MemReadOp', 'IsLoad', 'IsMemRef', 'IsGemForge']
         ),
         InstObjParams(
             "ssp_stream_fload",
@@ -161,7 +161,7 @@ let {{
                     _numFPDestRegs++;
                 """,
             },
-            ['FloatMemReadOp', 'IsLoad', 'IsMemRef']
+            ['FloatMemReadOp', 'IsLoad', 'IsMemRef', 'IsGemForge']
         ),
     ]
     for iop in iops:

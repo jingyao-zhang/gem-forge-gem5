@@ -52,6 +52,9 @@
   }
 
 bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo) {
+  if (!dynInfo.staticInst->isGemForge()) {
+    return true;
+  }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstRetCase(canDispatch);
@@ -62,6 +65,9 @@ bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo) {
 void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
                                   GemForgeLQCallbackList &extraLQCallbacks,
                                   bool &isGemForgeLoad) {
+  if (!dynInfo.staticInst->isGemForge()) {
+    return;
+  }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(dispatch, extraLQCallbacks);
@@ -75,6 +81,9 @@ void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
 }
 
 bool GemForgeISAHandler::canExecute(const GemForgeDynInstInfo &dynInfo) {
+  if (!dynInfo.staticInst->isGemForge()) {
+    return true;
+  }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstRetCase(canExecute);
@@ -84,6 +93,9 @@ bool GemForgeISAHandler::canExecute(const GemForgeDynInstInfo &dynInfo) {
 
 void GemForgeISAHandler::execute(const GemForgeDynInstInfo &dynInfo,
                                  ExecContext &xc) {
+  if (!dynInfo.staticInst->isGemForge()) {
+    return;
+  }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(execute, xc);
@@ -92,6 +104,9 @@ void GemForgeISAHandler::execute(const GemForgeDynInstInfo &dynInfo,
 }
 
 void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo) {
+  if (!dynInfo.staticInst->isGemForge()) {
+    return;
+  }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(commit);
@@ -100,6 +115,9 @@ void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void GemForgeISAHandler::rewind(const GemForgeDynInstInfo &dynInfo) {
+  if (!dynInfo.staticInst->isGemForge()) {
+    return;
+  }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(rewind);

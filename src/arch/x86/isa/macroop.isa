@@ -136,6 +136,7 @@ def template MacroConstructor {{
             if(%(num_microops)s>0) {
                 flags[IsControl] = microops[%(num_microops)s-1]->isControl();
                 flags[IsCondControl] = microops[%(num_microops)s-1]->isCondCtrl();
+                flags[IsGemForge] = microops[%(num_microops)s-1]->isGemForge();
             }
         }
 }};

@@ -106,7 +106,7 @@ let {{
             {
                 'code' : '(void)SrcReg1',
             },
-            ['No_OpClass']
+            ['No_OpClass', 'IsGemForge']
         ),
     ]
     for iop in iops:

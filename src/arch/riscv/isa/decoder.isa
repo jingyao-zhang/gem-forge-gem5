@@ -403,21 +403,21 @@ decode QUADRANT default Unknown::unknown() {
             format IOp {
                 0x0: ssp_stream_config({{
                 }},
-                uint64_t, No_OpClass);
+                uint64_t, No_OpClass, IsGemForge);
                 0x1: ssp_stream_end({{
                 }},
-                uint64_t, No_OpClass);
+                uint64_t, No_OpClass, IsGemForge);
                 0x2: ssp_stream_input({{
                     // Declare the used register.
                     (void)Rs1;
                 }},
-                uint64_t, No_OpClass);
+                uint64_t, No_OpClass, IsGemForge);
                 0x3: ssp_stream_ready({{
                 }},
-                uint64_t, IsMemBarrier, No_OpClass);
+                uint64_t, IsMemBarrier, IsGemForge, No_OpClass);
                 0x4: ssp_stream_step({{
                 }},
-                uint64_t, No_OpClass);
+                uint64_t, No_OpClass, IsGemForge);
             }
             format M5Op {
                 0x7: m5op({{
@@ -431,13 +431,13 @@ decode QUADRANT default Unknown::unknown() {
                     // Use GemForgeIOp to declare the dest register
                     // directly (not here).
                 }},
-                False, uint64_t, IsLoad, IsMemRef, MemReadOp);
+                False, uint64_t, IsLoad, IsMemRef, IsGemForge, MemReadOp);
                 0x6: ssp_stream_fload({{
                 }},
-                True, uint64_t, IsLoad, IsMemRef, FloatMemReadOp);
+                True, uint64_t, IsLoad, IsMemRef, IsGemForge, FloatMemReadOp);
                 0x7: ssp_stream_flw({{
                 }},
-                True, uint64_t, IsLoad, IsMemRef, FloatMemReadOp);
+                True, uint64_t, IsLoad, IsMemRef, IsGemForge, FloatMemReadOp);
             }
         }
 
