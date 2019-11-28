@@ -142,7 +142,7 @@ void MinorCPUDelegator::dispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   INST_DPRINTF(dynInstPtr, "Dispatch.\n");
   GemForgeLQCallbackList extraLQCallbacks;
-  bool isGemForgeLoad;
+  bool isGemForgeLoad = false;
   pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
   pimpl->inflyInstQueue.push_back(dynInstPtr);
   if (extraLQCallbacks.front()) {
