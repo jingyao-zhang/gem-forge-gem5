@@ -34,9 +34,7 @@ void ISAStreamEngine::dispatchStreamConfig(
                  infoRelativePath.c_str());
 
   // Initialize the regionStreamId translation table.
-  auto infoFullPath =
-      cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
-  const auto &info = this->getStreamRegion(infoFullPath);
+  const auto &info = this->getStreamRegion(configIdx);
   this->insertRegionStreamIds(info);
 
   /**
@@ -104,9 +102,7 @@ void ISAStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   this->curStreamRegionInfo = nullptr;
 
   // Clear the regionStreamId translation table.
-  auto infoFullPath =
-      cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
-  const auto &info = this->getStreamRegion(infoFullPath);
+  const auto &info = this->getStreamRegion(configIdx);
   assert(this->removeRegionStreamIds(info) && "Failed rewinding StreamConfig");
 
   // Release the InstInfo.
@@ -318,9 +314,7 @@ void ISAStreamEngine::dispatchStreamEnd(
   ISA_SE_DPRINTF("Dispatch StreamEnd %llu, %s.\n", configIdx,
                  infoRelativePath.c_str());
 
-  auto infoFullPath =
-      cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
-  const auto &info = this->getStreamRegion(infoFullPath);
+  const auto &info = this->getStreamRegion(configIdx);
 
   auto &dynStreamInstInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
 
@@ -379,9 +373,7 @@ void ISAStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
     const auto &infoRelativePath = this->getRelativePath(configIdx);
 
     // Don't forget to add back the removed region stream ids.
-    auto infoFullPath =
-        cpuDelegator->getTraceExtraFolder() + "/" + infoRelativePath;
-    const auto &info = this->getStreamRegion(infoFullPath);
+    const auto &info = this->getStreamRegion(configIdx);
     this->insertRegionStreamIds(info);
 
     auto se = this->getStreamEngine();
@@ -639,21 +631,23 @@ T ISAStreamEngine::extractImm(const StaticInst *staticInst) const {
 }
 
 const ::LLVM::TDG::StreamRegion &
-ISAStreamEngine::getStreamRegion(const std::string &path) const {
-  if (this->memorizedStreamRegionMap.count(path) != 0) {
-    return this->memorizedStreamRegionMap.at(path);
+ISAStreamEngine::getStreamRegion(uint64_t configIdx) const {
+  auto iter = this->memorizedStreamRegionMap.find(configIdx);
+  if (iter == this->memorizedStreamRegionMap.end()) {
+    auto relativePath = this->getRelativePath(configIdx);
+    auto path = cpuDelegator->getTraceExtraFolder() + "/" + relativePath;
+    iter =
+        this->memorizedStreamRegionMap
+            .emplace(std::piecewise_construct, std::forward_as_tuple(configIdx),
+                     std::forward_as_tuple())
+            .first;
+    ProtoInputStream istream(path);
+    if (!istream.read(iter->second)) {
+      panic("Failed to read in the stream region from file %s.", path.c_str());
+    }
   }
 
-  ProtoInputStream istream(path);
-  auto &protobufRegion =
-      this->memorizedStreamRegionMap
-          .emplace(std::piecewise_construct, std::forward_as_tuple(path),
-                   std::forward_as_tuple())
-          .first->second;
-  if (!istream.read(protobufRegion)) {
-    panic("Failed to read in the stream region from file %s.", path.c_str());
-  }
-  return protobufRegion;
+  return iter->second;
 }
 
 void ISAStreamEngine::insertRegionStreamIds(
@@ -735,7 +729,7 @@ void ISAStreamEngine::increamentStreamRegionInfoNumExecutedInsts(
   }
 }
 
-const std::string &ISAStreamEngine::getRelativePath(int configIdx) {
+const std::string &ISAStreamEngine::getRelativePath(int configIdx) const {
   if (!this->allStreamRegions) {
     auto path = cpuDelegator->getTraceExtraFolder() + "/all.stream.data";
     ProtoInputStream istream(path);

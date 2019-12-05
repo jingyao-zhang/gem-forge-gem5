@@ -58,16 +58,15 @@ private:
   /**
    * Memorize the AllStreamRegions.
    */
-  std::unique_ptr<::LLVM::TDG::AllStreamRegions> allStreamRegions;
-  const std::string &getRelativePath(int configIdx);
+  mutable std::unique_ptr<::LLVM::TDG::AllStreamRegions> allStreamRegions;
+  const std::string &getRelativePath(int configIdx) const;
 
   /**
    * Memorize the StreamConfigureInfo.
    */
-  mutable std::unordered_map<std::string, ::LLVM::TDG::StreamRegion>
+  mutable std::unordered_map<uint64_t, ::LLVM::TDG::StreamRegion>
       memorizedStreamRegionMap;
-  const ::LLVM::TDG::StreamRegion &
-  getStreamRegion(const std::string &path) const;
+  const ::LLVM::TDG::StreamRegion &getStreamRegion(uint64_t configIdx) const;
 
   /**
    * Since the stream engine uses the full stream id,
