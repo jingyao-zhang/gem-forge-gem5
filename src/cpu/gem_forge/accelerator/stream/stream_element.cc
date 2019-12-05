@@ -43,8 +43,18 @@ void StreamMemAccess::registerReceiver(StreamElement *element) {
       }
     }
   }
-  assert(this->numReceivers < StreamMemAccess::MAX_NUM_RECEIVERS &&
-         "Too many receivers.");
+  if (this->numReceivers == StreamMemAccess::MAX_NUM_RECEIVERS) {
+    for (int i = 0; i < this->numReceivers; ++i) {
+      auto &receiver = this->receivers.at(i);
+      if (receiver.second) {
+        S_ELEMENT_HACK(receiver.first, "A valid receiver of [%#x, +%d).\n",
+                       receiver.first->addr, receiver.first->size);
+      } else {
+        hack("In invalid receiver.\n");
+      }
+    }
+    S_FIFO_ENTRY_PANIC(this->FIFOIdx, "Too many receivers.\n");
+  }
   auto &newReceiver = this->receivers.at(this->numReceivers);
   newReceiver.first = element;
   newReceiver.second = true;
@@ -161,6 +171,7 @@ void StreamElement::clear() {
   this->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
   this->isStepped = false;
   this->isAddrReady = false;
+  this->isAddrAliased = false;
   this->isValueReady = false;
   this->flushed = false;
 

@@ -130,7 +130,7 @@ public:
   /**
    * Stores the elements that expect the response from this access.
    */
-  static constexpr int MAX_NUM_RECEIVERS = 16;
+  static constexpr int MAX_NUM_RECEIVERS = 64;
   std::array<std::pair<StreamElement *, bool>, MAX_NUM_RECEIVERS> receivers;
   int numReceivers = 0;
   void registerReceiver(StreamElement *element);
@@ -162,10 +162,11 @@ struct StreamElement {
    */
   uint64_t firstUserSeqNum;
   bool isFirstUserDispatched() const;
-  bool isStepped;
-  bool isAddrReady;
-  bool isValueReady;
-  bool flushed;
+  bool isStepped = false;
+  bool isAddrReady = false;
+  bool isAddrAliased = false;
+  bool isValueReady = false;
+  bool flushed = false;
 
   Cycles allocateCycle;
   Cycles addrReadyCycle;

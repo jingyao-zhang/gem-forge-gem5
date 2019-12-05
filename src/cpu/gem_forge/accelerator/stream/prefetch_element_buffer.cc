@@ -24,7 +24,7 @@ bool PrefetchElementBuffer::isHit(Addr vaddr, int size) const {
         element->addr + element->size <= vaddr) {
       continue;
     }
-    element->getStream()->statistic.numAliased++;
+    element->isAddrAliased = true;
     return true;
   }
   return false;

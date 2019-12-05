@@ -22,6 +22,15 @@
 #define S_ELEMENT_PANIC(E, format, args...)                                    \
   panic(S_ELEMENT_MSG(E, format, ##args))
 
+#define S_FIFO_ENTRY_MSG(E, format, args...) \
+  "%s: " format, (E), ##args
+#define S_FIFO_ENTRY_DPRINTF(E, format, args...) \
+  DPRINTF(DEBUG_TYPE, S_FIFO_ENTRY_MSG((E), format, ##args))
+#define S_FIFO_ENTRY_HACK(E, format, args...) \
+  hack(S_FIFO_ENTRY_MSG((E), format, ##args))
+#define S_FIFO_ENTRY_PANIC(E, format, args...) \
+  panic(S_FIFO_ENTRY_MSG((E), format, ##args))
+
 #define DYN_S_MSG(dynamicStreamId, format, args...)                            \
   "[%lu] " format, (dynamicStreamId).staticId, ##args
 #define DYN_S_DPRINTF(dynamicStreamId, format, args...)                        \

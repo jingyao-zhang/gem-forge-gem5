@@ -514,6 +514,11 @@ StreamElement *Stream::releaseElementStepped() {
     }
   }
 
+  // Update the aliased statistic.
+  if (releaseElement->isAddrAliased) {
+    this->statistic.numAliased++;
+  }
+
   // Check if the element is faulted.
   if (this->isMemStream() && releaseElement->isAddrReady) {
     if (releaseElement->isValueFaulted(releaseElement->addr,
