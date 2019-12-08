@@ -1455,33 +1455,19 @@ void StreamEngine::unstepElement(Stream *S) {
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElements;
-  for (auto &element : this->FIFOArray) {
-    if (element.stream == nullptr) {
-      // Not allocated, ignore.
-      continue;
-    }
-    if (element.isAddrReady) {
-      // We already issued request for this element.
-      continue;
-    }
-    // Check if StreamConfig is already executed.
-    if (!element.stream->isStreamConfigureExecuted(
-            element.FIFOIdx.configSeqNum)) {
-      // This stream is not fully configured yet.
-      continue;
-    }
-    // Check if all the base element are value ready.
+
+  auto areBaseElementsValReady = [](StreamElement *element) -> bool {
     bool ready = true;
-    for (const auto &baseElement : element.baseElements) {
+    for (const auto &baseElement : element->baseElements) {
       if (baseElement->stream == nullptr) {
         // ! Some bug here that the base element is already released.
         continue;
       }
-      if (element.stream->baseStreams.count(baseElement->stream) == 0 &&
-          element.stream->backBaseStreams.count(baseElement->stream) == 0) {
+      if (element->stream->baseStreams.count(baseElement->stream) == 0 &&
+          element->stream->backBaseStreams.count(baseElement->stream) == 0) {
         continue;
       }
-      if (baseElement->FIFOIdx.entryIdx > element.FIFOIdx.entryIdx) {
+      if (baseElement->FIFOIdx.entryIdx > element->FIFOIdx.entryIdx) {
         // ! Some bug here that the base element is already used by others.
         // TODO: Better handle all these.
         continue;
@@ -1491,11 +1477,72 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         break;
       }
     }
-    if (ready) {
-      S_ELEMENT_DPRINTF(&element, "Found ready.\n");
-      readyElements.emplace_back(&element);
+    return ready;
+  };
+
+  /**
+   * We iterate through all configured streams' elements.
+   * In this way, elements are marked ready in order, i.e. if
+   * one element is not ready then we break searching in this stream.
+   */
+  for (const auto &idStream : this->streamMap) {
+    auto S = idStream.second;
+    if (!S->configured) {
+      continue;
+    }
+    for (auto &dynS : S->dynamicStreams) {
+      if (!dynS.configExecuted) {
+        // The StreamConfig has not been executed, do not issue.
+        continue;
+      }
+      for (auto element = dynS.tail->next; element != nullptr;
+           element = element->next) {
+        assert(element->stream == S && "Sanity check that streams match.");
+        if (element->isAddrReady) {
+          // Already ready.
+          continue;
+        }
+        /**
+         * To avoid overhead, if an element is aliased, we do not try to
+         * issue it until the first user is dispatched.
+         */
+        if (element->isAddrAliased && !element->isFirstUserDispatched()) {
+          break;
+        }
+        auto baseElementsValReady = areBaseElementsValReady(element);
+        if (baseElementsValReady) {
+          S_ELEMENT_DPRINTF(element, "Found ready.\n");
+          readyElements.emplace_back(element);
+        }
+      }
     }
   }
+
+  // /**
+  //  * Old implementation to search for ready elements.
+  //  */
+  // for (auto &element : this->FIFOArray) {
+  //   if (element.stream == nullptr) {
+  //     // Not allocated, ignore.
+  //     continue;
+  //   }
+  //   if (element.isAddrReady) {
+  //     // We already issued request for this element.
+  //     continue;
+  //   }
+  //   // Check if StreamConfig is already executed.
+  //   if (!element.stream->isStreamConfigureExecuted(
+  //           element.FIFOIdx.configSeqNum)) {
+  //     // This stream is not fully configured yet.
+  //     continue;
+  //   }
+  //   // Check if all the base element are value ready.
+  //   bool ready = areBaseElementsValReady(&element);
+  //   if (ready) {
+  //     S_ELEMENT_DPRINTF(&element, "Found ready.\n");
+  //     readyElements.emplace_back(&element);
+  //   }
+  // }
   return readyElements;
 }
 
