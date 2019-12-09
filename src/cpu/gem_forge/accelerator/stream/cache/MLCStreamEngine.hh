@@ -34,7 +34,13 @@ public:
                   MessageBuffer *_requestToLLCMsgBuffer);
   ~MLCStreamEngine();
 
-  void receiveStreamConfigure(PacketPtr pkt);
+  /**
+   * Receive a StreamConfig message.
+   * In case the first element's virtual address faulted, the MLC StreamEngine
+   * will return physical address that maps to the LLC bank of this tile.
+   * @return A randomly picked physical line address that maps to our LLC bank.
+   */
+  Addr receiveStreamConfigure(PacketPtr pkt);
   /**
    * Receive a StreamEnd message.
    * The difference between StreamConfigure and StreamEnd message

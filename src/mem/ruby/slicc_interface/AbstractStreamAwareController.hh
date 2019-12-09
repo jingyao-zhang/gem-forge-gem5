@@ -18,6 +18,11 @@ public:
    */
   MachineID mapAddressToLLC(Addr addr, MachineType mtype) const;
 
+  /**
+   * Get a physical line address that map to our LLC bank.
+   */
+  Addr getAddressToOurLLC() const;
+
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
   bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
   int getMLCStreamBufferInitNumEntries() const {

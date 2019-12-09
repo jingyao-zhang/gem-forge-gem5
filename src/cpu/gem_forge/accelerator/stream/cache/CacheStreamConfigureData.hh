@@ -23,8 +23,10 @@ public:
   DynamicStreamId dynamicId;
   int elementSize;
 
+  // NOTE: Line address here.
   Addr initVAddr;
   Addr initPAddr;
+  bool initPAddrValid = false;
 
   /**
    * Migrate to AddrGenCallback.

@@ -344,12 +344,20 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
       configData->initVAddr % this->cpuDelegator->cacheLineSize();
 
   Addr initPAddr;
-  if (!this->cpuDelegator->translateVAddrOracle(configData->initVAddr,
+  if (this->cpuDelegator->translateVAddrOracle(configData->initVAddr,
                                                 initPAddr)) {
-    panic("Failed translate vaddr for StreamConfigureData %#x.\n",
-          configData->initVAddr);
+    configData->initPAddr = initPAddr;
+    configData->initPAddrValid = true;
+  } else {
+    /**
+     * In case of faulted initVAddr, we simply set the initPAddr to 0
+     * and mark it invalid. Later the MLC StreamEngine will pick up
+     * a physical address that maps to the closes LLC bank and let the
+     * stream spin there until we have a valid address.
+     */
+    configData->initPAddr = 0;
+    configData->initPAddrValid = false;
   }
-  configData->initPAddr = initPAddr;
 
   return configData;
 }
@@ -358,16 +366,18 @@ bool Stream::isDirectLoadStream() const {
   if (this->getStreamType() != "load") {
     return false;
   }
-  // So far only only one base stream of phi type.
-  if (this->baseStreams.size() != 1) {
-    return false;
-  }
-  auto baseStream = *(this->baseStreams.begin());
-  if (baseStream->getStreamType() != "phi") {
-    return false;
-  }
-  if (!baseStream->backBaseStreams.empty()) {
-    return false;
+  // So far only only one base stream of phi type of the same loop level.
+  for (auto baseS : this->baseStreams) {
+    if (baseS->getLoopLevel() != this->getLoopLevel()) {
+      // Ignore streams from different loop level.
+      continue;
+    }
+    if (baseS->getStreamType() != "phi") {
+      return false;
+    }
+    if (!baseS->backBaseStreams.empty()) {
+      return false;
+    }
   }
   return true;
 }

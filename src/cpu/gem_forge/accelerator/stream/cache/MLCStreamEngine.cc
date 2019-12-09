@@ -30,7 +30,7 @@ MLCStreamEngine::~MLCStreamEngine() {
   this->streams.clear();
 }
 
-void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
+Addr MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream configure when stream float is disabled.\n");
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
@@ -51,8 +51,17 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
                                 indirectStream);
   }
-  // Do not release the pkt and streamConfigureData as they should be forwarded
-  // to the LLC bank and released there.
+
+  /**
+   * Do not release the pkt and streamConfigureData as they should be forwarded
+   * to the LLC bank and released there. However, we do need to fix up the
+   * initPAddr to our LLC bank if case it is not valid.
+   */
+  if (!streamConfigureData->initPAddrValid) {
+    streamConfigureData->initPAddr = this->controller->getAddressToOurLLC();
+    streamConfigureData->initPAddrValid = true;
+  }
+  return streamConfigureData->initPAddr;
 }
 
 Addr MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {

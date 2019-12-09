@@ -18,3 +18,8 @@ AbstractStreamAwareController::mapAddressToLLC(Addr addr,
                            this->llcSelectNumBits, 0 /* cluster_id. */
   );
 }
+
+  Addr AbstractStreamAwareController::getAddressToOurLLC() const {
+    // Make it simple.
+    return this->getMachineID().num << this->llcSelectLowBit;
+  }

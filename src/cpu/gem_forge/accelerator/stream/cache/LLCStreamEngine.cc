@@ -282,17 +282,16 @@ void LLCStreamEngine::issueStreams() {
 
   auto streamIter = this->streams.begin();
   auto streamEnd = this->streams.end();
-  StreamList issuedStreams;
-  while (streamIter != streamEnd && issuedStreams.size() < this->issueWidth) {
-    auto stream = *streamIter;
-    bool issued = this->issueStream(stream);
+  for (int i = 0, issuedStreams = 0, nStreams = this->streams.size();
+       i < nStreams && issuedStreams < this->issueWidth; ++i) {
+    auto curStream = streamIter;
+    // Move to the next one.
+    ++streamIter;
+    bool issued = this->issueStream(*curStream);
     if (issued) {
-      // Check if we want to migrate the stream.
-      issuedStreams.emplace_back(stream);
-      streamIter = this->streams.erase(streamIter);
-    } else {
-      // Move to the next one.
-      ++streamIter;
+      issuedStreams++;
+      // Push the stream back to the end.
+      this->streams.splice(streamEnd, this->streams, curStream);
     }
   }
 
@@ -303,11 +302,6 @@ void LLCStreamEngine::issueStreams() {
    * case. It maybe come migration target after receiving the previous stream
    * element data. Therefore, here I rescan all the streams to avoid deadlock.
    */
-
-  // Insert the issued streams to the back of streams list.
-  for (auto stream : issuedStreams) {
-    this->streams.emplace_back(stream);
-  }
 
   // Scan all streams for migration target.
   streamIter = this->streams.begin();
