@@ -97,6 +97,9 @@ parser.add_option("--gem-forge-stream-engine-placement",
 # Stream Float options.
 parser.add_option("--gem-forge-stream-engine-enable-float", action="store_true", default=False,
                   help="Enable stream float in LLC.")
+parser.add_option("--gem-forge-stream-engine-float-policy", type="choice", default="static",
+                  choices=['static', 'manual'],
+                  help="Policy to choose floating stream in LLC.")
 parser.add_option("--gem-forge-stream-engine-enable-float-indirect", action="store_true",
                   default=False,
                   help="Enable indirect stream float in LLC.")
@@ -145,6 +148,7 @@ system = System(cpu=initial_cpus,
                 mem_ranges=[AddrRange(options.mem_size)],
                 cache_line_size=options.cacheline_size)
 
+# Set the work count options.
 Simulation.setWorkCountOptions(system, options)
 
 # Create a top-level voltage domain

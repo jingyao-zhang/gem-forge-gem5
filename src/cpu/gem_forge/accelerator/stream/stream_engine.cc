@@ -50,6 +50,9 @@ StreamEngine::StreamEngine(Params *params)
   this->placement = params->streamEnginePlacement;
   this->enableStreamFloat = params->streamEngineEnableFloat;
   this->enableStreamFloatIndirect = params->streamEngineEnableFloatIndirect;
+  this->streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
+      this->enableStreamFloat, params->streamEngineFloatPolicy);
+
   this->initializeFIFO(this->maxTotalRunAheadLength);
 }
 
@@ -301,101 +304,84 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
-    if (this->enableStreamFloat) {
-      auto &dynStream = S->getDynamicStream(args.seqNum);
-      if (this->shouldOffloadStream(S,
-                                    dynStream.dynamicStreamId.streamInstance)) {
+    auto &dynStream = S->getDynamicStream(args.seqNum);
+    if (this->streamFloatPolicy->shouldFloatStream(
+            S, dynStream.dynamicStreamId.streamInstance)) {
 
-        // Remember the offloaded decision.
-        // ! Only do this for the root offloaded stream.
-        dynStream.offloadedToCache = true;
+      // Remember the offloaded decision.
+      // ! Only do this for the root offloaded stream.
+      dynStream.offloadedToCache = true;
 
-        // Get the CacheStreamConfigureData.
-        auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
+      // Get the CacheStreamConfigureData.
+      auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
 
-        // Set up the init address.
-        streamConfigureData->initVAddr =
-            streamConfigureData->addrGenCallback->genAddr(
-                0, streamConfigureData->formalParams, getStreamValueFail);
-        Addr initPAddr;
-        if (!cpuDelegator->translateVAddrOracle(streamConfigureData->initVAddr,
-                                                initPAddr)) {
-          panic("Failed translate vaddr %#x.\n",
-                streamConfigureData->initVAddr);
-        }
-        streamConfigureData->initPAddr = initPAddr;
-
-        if (S->isPointerChaseLoadStream()) {
-          streamConfigureData->isPointerChase = true;
-        }
-
-        /**
-         * If we enable indirect stream to float, so far we add only
-         * one indirect stream here.
-         */
-        if (this->enableStreamFloatIndirect) {
-          for (auto dependentStream : S->dependentStreams) {
-            if (dependentStream->getStreamType() == "load") {
-              if (dependentStream->baseStreams.size() == 1) {
-                // Only dependent on this direct stream.
-                streamConfigureData->indirectStreamConfigure =
-                    std::shared_ptr<CacheStreamConfigureData>(
-                        dependentStream->allocateCacheConfigureData(
-                            args.seqNum));
-                break;
-              }
-            }
-          }
-          if (streamConfigureData->indirectStreamConfigure == nullptr) {
-            // Not found a valid indirect stream, let's try to search for
-            // a indirect stream that is one iteration behind.
-            for (auto backDependentStream : S->backDependentStreams) {
-              if (backDependentStream->getStreamType() != "phi") {
-                continue;
-              }
-              if (backDependentStream->backBaseStreams.size() != 1) {
-                continue;
-              }
-              for (auto indirectStream :
-                   backDependentStream->dependentStreams) {
-                if (indirectStream == S) {
-                  continue;
-                }
-                if (indirectStream->getStreamType() != "load") {
-                  continue;
-                }
-                if (indirectStream->baseStreams.size() != 1) {
-                  continue;
-                }
-                // We found one valid indirect stream that is one iteration
-                // behind S.
-                streamConfigureData->indirectStreamConfigure =
-                    std::shared_ptr<CacheStreamConfigureData>(
-                        indirectStream->allocateCacheConfigureData(
-                            args.seqNum));
-                streamConfigureData->indirectStreamConfigure
-                    ->isOneIterationBehind = true;
-                break;
-              }
-              if (streamConfigureData->indirectStreamConfigure != nullptr) {
-                // We already found one.
-                break;
-              }
-            }
-          }
-        }
-
-        auto pkt = GemForgePacketHandler::createStreamControlPacket(
-            streamConfigureData->initPAddr, cpuDelegator->dataMasterId(), 0,
-            MemCmd::Command::StreamConfigReq,
-            reinterpret_cast<uint64_t>(streamConfigureData));
-        DPRINTF(RubyStream,
-                "Create StreamConfig pkt %#x %#x, initVAddr: %#x, initPAddr "
-                "%#x.\n",
-                pkt, streamConfigureData, streamConfigureData->initVAddr,
-                streamConfigureData->initPAddr);
-        cpuDelegator->sendRequest(pkt);
+      if (S->isPointerChaseLoadStream()) {
+        streamConfigureData->isPointerChase = true;
       }
+
+      /**
+       * If we enable indirect stream to float, so far we add only
+       * one indirect stream here.
+       */
+      if (this->enableStreamFloatIndirect) {
+        for (auto dependentStream : S->dependentStreams) {
+          if (dependentStream->getStreamType() == "load") {
+            if (dependentStream->baseStreams.size() == 1) {
+              // Only dependent on this direct stream.
+              streamConfigureData->indirectStreamConfigure =
+                  std::shared_ptr<CacheStreamConfigureData>(
+                      dependentStream->allocateCacheConfigureData(args.seqNum));
+              break;
+            }
+          }
+        }
+        if (streamConfigureData->indirectStreamConfigure == nullptr) {
+          // Not found a valid indirect stream, let's try to search for
+          // a indirect stream that is one iteration behind.
+          for (auto backDependentStream : S->backDependentStreams) {
+            if (backDependentStream->getStreamType() != "phi") {
+              continue;
+            }
+            if (backDependentStream->backBaseStreams.size() != 1) {
+              continue;
+            }
+            for (auto indirectStream : backDependentStream->dependentStreams) {
+              if (indirectStream == S) {
+                continue;
+              }
+              if (indirectStream->getStreamType() != "load") {
+                continue;
+              }
+              if (indirectStream->baseStreams.size() != 1) {
+                continue;
+              }
+              // We found one valid indirect stream that is one iteration
+              // behind S.
+              streamConfigureData->indirectStreamConfigure =
+                  std::shared_ptr<CacheStreamConfigureData>(
+                      indirectStream->allocateCacheConfigureData(args.seqNum));
+              streamConfigureData->indirectStreamConfigure
+                  ->isOneIterationBehind = true;
+              break;
+            }
+            if (streamConfigureData->indirectStreamConfigure != nullptr) {
+              // We already found one.
+              break;
+            }
+          }
+        }
+      }
+
+      auto pkt = GemForgePacketHandler::createStreamControlPacket(
+          streamConfigureData->initPAddr, cpuDelegator->dataMasterId(), 0,
+          MemCmd::Command::StreamConfigReq,
+          reinterpret_cast<uint64_t>(streamConfigureData));
+      DPRINTF(RubyStream,
+              "Create StreamConfig pkt %#x %#x, initVAddr: %#x, initPAddr "
+              "%#x.\n",
+              pkt, streamConfigureData, streamConfigureData->initVAddr,
+              streamConfigureData->initPAddr);
+      cpuDelegator->sendRequest(pkt);
     }
   }
 }
@@ -2093,41 +2079,6 @@ void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
   assert(status == LLVMTraceCPU::InstStatus::COMMITTING &&
          "Writebacked instructions should be committing.");
   cpu->updateInflyInstStatus(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
-}
-
-bool StreamEngine::shouldOffloadStream(Stream *S, uint64_t streamInstance) {
-  if (!S->isDirectLoadStream() && !S->isPointerChaseLoadStream()) {
-    return false;
-  }
-  /**
-   * Make sure we do not offload empty stream.
-   * This information may be known at configuration time, or even require
-   * oracle information. However, as the stream is empty, trace-based
-   * simulation does not know which LLC bank should the stream be offloaded
-   * to.
-   * TODO: Improve this.
-   */
-  if (this->isTraceSim()) {
-    if (S->getStreamLengthAtInstance(streamInstance) == 0) {
-      return false;
-    }
-  }
-  // Let's use the previous staistic of the average stream.
-  bool enableSmartDecision = false;
-  if (enableSmartDecision) {
-    const auto &statistic = S->statistic;
-    if (statistic.numConfigured == 0) {
-      // First time, maybe we aggressively offload as this is the
-      // case for many microbenchmark we designed.
-      return true;
-    }
-    auto avgLength = statistic.numUsed / statistic.numConfigured;
-    if (avgLength < 500) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 void StreamEngine::coalesceContinuousDirectLoadStreamElement(

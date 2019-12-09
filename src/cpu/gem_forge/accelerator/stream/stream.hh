@@ -209,10 +209,11 @@ public:
     return this->dynamicStreams.back();
   }
 
-protected:
   LLVMTraceCPU *cpu;
   GemForgeCPUDelegator *cpuDelegator;
   StreamEngine *se;
+
+protected:
 
   std::unordered_set<Stream *> baseStepStreams;
   std::unordered_set<Stream *> baseStepRootStreams;

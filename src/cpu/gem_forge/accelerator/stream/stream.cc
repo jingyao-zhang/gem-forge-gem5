@@ -332,9 +332,26 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
 CacheStreamConfigureData *
 Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
   auto &dynStream = this->getDynamicStream(configSeqNum);
-  return new CacheStreamConfigureData(
+  auto configData = new CacheStreamConfigureData(
       this, dynStream.dynamicStreamId, this->getElementSize(),
       dynStream.formalParams, dynStream.addrGenCallback);
+
+  // Set the initial vaddr.
+  configData->initVAddr = dynStream.addrGenCallback->genAddr(
+      0, dynStream.formalParams, getStreamValueFail);
+  // Remember to make line address.
+  configData->initVAddr -=
+      configData->initVAddr % this->cpuDelegator->cacheLineSize();
+
+  Addr initPAddr;
+  if (!this->cpuDelegator->translateVAddrOracle(configData->initVAddr,
+                                                initPAddr)) {
+    panic("Failed translate vaddr for StreamConfigureData %#x.\n",
+          configData->initVAddr);
+  }
+  configData->initPAddr = initPAddr;
+
+  return configData;
 }
 
 bool Stream::isDirectLoadStream() const {

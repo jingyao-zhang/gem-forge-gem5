@@ -38,6 +38,7 @@ def initializeStreamEngine(options):
     se.streamEngineEnableMerge = options.gem_forge_stream_engine_enable_merge
 
     se.streamEngineEnableFloat = options.gem_forge_stream_engine_enable_float
+    se.streamEngineFloatPolicy = options.gem_forge_stream_engine_float_policy
     se.streamEngineEnableFloatIndirect = \
         options.gem_forge_stream_engine_enable_float_indirect
     if options.gem_forge_stream_engine_enable_float_indirect:

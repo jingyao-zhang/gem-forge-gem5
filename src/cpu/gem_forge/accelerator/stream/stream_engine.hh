@@ -7,6 +7,7 @@
 #include "single_stream.hh"
 #include "stream_element.hh"
 
+#include "stream_float_policy.hh"
 #include "stream_placement_manager.hh"
 
 #include "base/statistics.hh"
@@ -206,6 +207,7 @@ private:
 
   LLVMTraceCPU *cpu;
   StreamPlacementManager *streamPlacementManager;
+  std::unique_ptr<StreamFloatPolicy> streamFloatPolicy;
 
   std::vector<StreamElement> FIFOArray;
   StreamElement *FIFOFreeListHead;
@@ -423,11 +425,6 @@ private:
     bool isWritebacked() override;
     void writebacked() override;
   };
-
-  /**
-   * Helper function for stream aware cache.
-   */
-  bool shouldOffloadStream(Stream *S, uint64_t streamInstance);
 
   /**
    * Try to coalesce continuous element of direct load stream if they

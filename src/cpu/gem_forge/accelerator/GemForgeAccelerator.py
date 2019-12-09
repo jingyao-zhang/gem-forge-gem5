@@ -76,6 +76,8 @@ class StreamEngine(GemForgeAccelerator):
     # parameters for stream float.
     streamEngineEnableFloat = Param.Bool(
         False, "Whether the stream float is enabled.")
+    streamEngineFloatPolicy = Param.String(
+        "static", "Policy to choose floating stream.")
     streamEngineEnableFloatIndirect = Param.Bool(
         False, "Whether the stream float is enabled for indirect stream.")
 
