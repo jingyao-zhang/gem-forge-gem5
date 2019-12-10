@@ -93,7 +93,9 @@ public:
   }
 
   GemForgeDynInstInfo createDynInfo(Minor::MinorDynInstPtr &dynInstPtr) const {
-    assert(dynInstPtr->isInst() && "Should be a real inst.");
+    if (!dynInstPtr->isInst()) {
+      panic("Should be a real inst, but a fault %d.\n", dynInstPtr->isFault());
+    }
     if (dynInstPtr->id.streamSeqNum != this->currentStreamSeqNum) {
       INST_PANIC(this, dynInstPtr, "Mismatched streamSeqNum %llu.\n",
                  this->currentStreamSeqNum);

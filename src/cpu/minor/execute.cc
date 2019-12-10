@@ -655,7 +655,7 @@ Execute::issue(ThreadID thread_id)
                 *inst, thread.streamSeqNum);
             issued = true;
             discarded = true;
-        } else if (cpu.cpuDelegator && !cpu.cpuDelegator->canDispatch(inst)) {
+        } else if (inst->isInst() && cpu.cpuDelegator && !cpu.cpuDelegator->canDispatch(inst)) {
             // ! GemForge
             // Check if GemForge is happy to dispatch it.
             issued = false;
@@ -710,7 +710,7 @@ Execute::issue(ThreadID thread_id)
                      * ! GemForge
                      * Notify the CPUDelegator that it is dispatched.
                      */
-                    if (cpu.cpuDelegator) {
+                    if (inst->isInst() && cpu.cpuDelegator) {
                         cpu.cpuDelegator->dispatch(inst);
                     }
                     issued = true;
@@ -832,7 +832,7 @@ Execute::issue(ThreadID thread_id)
                          * ! Evil hack: it may change StreamLoad to
                          * ! a non MemRef inst if it's not the first user.
                          */
-                        if (cpu.cpuDelegator) {
+                        if (inst->isInst() && cpu.cpuDelegator) {
                             cpu.cpuDelegator->dispatch(inst);
                         }
 
