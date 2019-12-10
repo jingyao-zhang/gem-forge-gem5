@@ -109,7 +109,9 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
   // Sanity check.
   Addr vaddr = stream->peekVAddr();
-  Addr paddr = stream->translateToPAddr(vaddr);
+  Addr paddr;
+  assert(stream->translateToPAddr(vaddr, paddr) &&
+         "Paddr should always be valid to migrate a stream.");
   Addr paddrLine = makeLineAddress(paddr);
   assert(this->isPAddrHandledByMe(paddrLine) &&
          "Stream migrated to wrong LLC bank.\n");
@@ -199,7 +201,11 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
    * element is allocated.
    */
   auto nextVAddr = stream->peekVAddr();
-  auto nextPAddr = stream->translateToPAddr(nextVAddr);
+  Addr nextPAddr;
+  if (!stream->translateToPAddr(nextVAddr, nextPAddr)) {
+    // If the address is faulted, we stay here.
+    return false;
+  }
   // Check if it is still on this bank.
   if (this->isPAddrHandledByMe(nextPAddr)) {
     // Still here.
@@ -343,33 +349,53 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
   // Get the first element.
   Addr vaddr = stream->peekVAddr();
-  Addr paddr = stream->translateToPAddr(vaddr);
-  Addr paddrLine = makeLineAddress(paddr);
+  Addr paddr;
+  if (stream->translateToPAddr(vaddr, paddr)) {
 
-  /**
-   * Due to the waiting indirect element, a stream may not be migrated
-   * immediately after the stream engine found the next element is not
-   * handled here. In such case, we simply give up and return false.
-   */
-  if (!this->isPAddrHandledByMe(paddr)) {
-    return false;
-  }
+    /**
+     * ! The paddr is valid. We issue request to the LLC.
+     */
 
-  auto sliceId = stream->consumeNextSlice();
-  LLC_SLICE_DPRINTF(sliceId, "Issue.\n");
+    Addr paddrLine = makeLineAddress(paddr);
 
-  // Register the waiting indirect elements.
-  if (!stream->indirectStreams.empty()) {
-    for (auto idx = sliceId.startIdx; idx < sliceId.endIdx; ++idx) {
-      stream->waitingIndirectElements.insert(idx);
+    /**
+     * Due to the waiting indirect element, a stream may not be migrated
+     * immediately after the stream engine found the next element is not
+     * handled here. In such case, we simply give up and return false.
+     */
+    if (!this->isPAddrHandledByMe(paddr)) {
+      return false;
     }
+
+    auto sliceId = stream->consumeNextSlice();
+    LLC_SLICE_DPRINTF(sliceId, "Issue.\n");
+
+    // Register the waiting indirect elements.
+    if (!stream->indirectStreams.empty()) {
+      for (auto idx = sliceId.startIdx; idx < sliceId.endIdx; ++idx) {
+        stream->waitingIndirectElements.insert(idx);
+      }
+    }
+
+    this->issueStreamRequestHere(stream, paddrLine, sliceId);
+    stream->waitingDataBaseRequests++;
+
+    return true;
+
+  } else {
+
+    /**
+     * ! The paddr is not valid. We ignore this slice.
+     */
+    auto sliceId = stream->consumeNextSlice();
+    LLC_SLICE_DPRINTF(sliceId, "Discard due to fault.\n");
+
+    assert(stream->indirectStreams.empty() &&
+           "Faulted stream with indirect streams.");
+
+    // This is also considered issued.
+    return true;
   }
-
-  this->issueStreamRequestHere(stream, paddrLine, sliceId);
-
-  stream->waitingDataBaseRequests++;
-
-  return true;
 }
 
 bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
@@ -384,7 +410,9 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   auto indirectStream = firstIndirectIter->second;
 
   Addr vaddr = indirectStream->getVAddr(idx);
-  Addr paddr = indirectStream->translateToPAddr(vaddr);
+  Addr paddr;
+  assert(indirectStream->translateToPAddr(vaddr, paddr) &&
+         "Cannot handle translation fault for indirect stream yet.");
   Addr paddrLine = makeLineAddress(paddr);
 
   /**
@@ -478,7 +506,9 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
 
   // Create the migrate request.
   Addr vaddr = stream->peekVAddr();
-  Addr paddr = stream->translateToPAddr(vaddr);
+  Addr paddr;
+  assert(stream->translateToPAddr(vaddr, paddr) &&
+         "Migrating streams should have valid paddr.");
   Addr paddrLine = makeLineAddress(paddr);
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =

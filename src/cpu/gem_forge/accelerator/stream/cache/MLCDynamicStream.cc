@@ -45,21 +45,44 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer),
       maxNumSlices(_controller->getMLCStreamBufferInitNumEntries()),
       mergeElements(_mergeElements), headSliceIdx(0), tailSliceIdx(0),
-      llcTailSliceIdx(0) {
+      llcTailSliceIdx(0),
+      advanceStreamEvent([this]() -> void { this->advanceStream(); },
+                         "MLC::advanceStream",
+                         false /*delete after process. */) {
 
   /**
    * ! You should never call any virtual function in the
    * ! constructor/deconstructor.
    */
 
+  // Initialize the llc bank.
+  assert(_configData->initPAddrValid && "InitPAddr should be valid.");
+  this->tailPAddr = _configData->initPAddr;
+  this->tailSliceLLCBank = this->mapPAddrToLLCBank(_configData->initPAddr);
+
   // Initialize the buffer for 32 entries?
   while (this->tailSliceIdx < this->maxNumSlices) {
     this->allocateSlice();
   }
+
   this->llcTailSliceIdx = this->tailSliceIdx;
+  this->llcTailPAddr = this->tailPAddr;
+  this->llcTailSliceLLCBank = this->tailSliceLLCBank;
+
   // Set the CacheStreamConfigureData to inform the LLC stream engine
   // initial credit.
   _configData->initAllocatedIdx = this->llcTailSliceIdx;
+
+  // Schedule the first advanceStreamEvent.
+  this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
+                                            Cycles(1));
+}
+
+MLCDynamicStream::~MLCDynamicStream() {
+  // We got to deschedule the advanceStreamEvent.
+  if (this->advanceStreamEvent.scheduled()) {
+    this->stream->getCPUDelegator()->deschedule(&this->advanceStreamEvent);
+  }
 }
 
 void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
@@ -156,11 +179,6 @@ void MLCDynamicStream::receiveStreamRequestHit(
     const DynamicStreamSliceId &sliceId) {
   MLC_SLICE_DPRINTF(sliceId, "Receive request hit.\n");
 
-  // // It's possible that we are lagging behind the core if there
-  // // are many hit.
-  // while (this->tailSliceIdx <= idx) {
-  //   this->allocateSlice();
-  // }
   /**
    * Let's not make assumption that the request will come in order.
    */
@@ -181,11 +199,12 @@ void MLCDynamicStream::advanceStream() {
 
   /**
    * Maybe let's make release in order.
-   * The slice is released once the core status is DONE.
+   * The slice is released once the core status is DONE or FAULTED.
    */
   while (!this->slices.empty()) {
     const auto &slice = this->slices.front();
-    if (slice.coreStatus == MLCStreamSlice::CoreStatusE::DONE) {
+    if (slice.coreStatus == MLCStreamSlice::CoreStatusE::DONE ||
+        slice.coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
       MLC_SLICE_DPRINTF(slice.sliceId, "Pop.\n");
       this->headSliceIdx++;
       this->slices.pop_front();
@@ -201,6 +220,16 @@ void MLCDynamicStream::advanceStream() {
   if (this->tailSliceIdx - this->llcTailSliceIdx > this->maxNumSlices / 2) {
     // It's time for us to send more credit to LLC stream.
     this->sendCreditToLLC();
+  }
+
+  // We may need to schedule advance stream if the first slice is FAULTED,
+  // as no other event will cause it to be released.
+  if (!this->slices.empty() &&
+      this->slices.front().coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
+    if (!this->advanceStreamEvent.scheduled()) {
+      this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
+                                                Cycles(1));
+    }
   }
 }
 
@@ -259,39 +288,56 @@ Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
 void MLCDynamicStream::allocateSlice() {
   auto sliceId = this->slicedStream.getNextSlice();
   MLC_SLICE_DPRINTF(sliceId, "Allocated %#x.\n", sliceId.vaddr);
+  // Try to handle faulted slice.
   this->slices.emplace_back(sliceId);
+  Addr paddr;
+  auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
+  if (cpuDelegator->translateVAddrOracle(sliceId.vaddr, paddr)) {
+    // This is address is valid.
+  } else {
+    // This address is invalid. Mark the slice faulted.
+    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::FAULTED;
+  }
+
+  // Try to find where the LLC stream would be at this point.
   this->tailSliceIdx++;
+  if (cpuDelegator->translateVAddrOracle(
+          this->slicedStream.peekNextSlice().vaddr, paddr)) {
+    // The next slice would be valid.
+    this->tailPAddr = paddr;
+    this->tailSliceLLCBank = this->mapPAddrToLLCBank(paddr);
+  } else {
+    // This address is invalid.
+    // Do not update tailSliceLLCBank as the LLC stream would not move.
+  }
+}
+
+MachineID MLCDynamicStream::mapPAddrToLLCBank(Addr paddr) const {
+  auto selfMachineId = this->controller->getMachineID();
+  auto llcMachineId = this->controller->mapAddressToLLC(
+      paddr, static_cast<MachineType>(selfMachineId.type + 1));
+  return llcMachineId;
 }
 
 void MLCDynamicStream::sendCreditToLLC() {
   /**
-   * Find where the LLC stream is.
-   * In this implementation, the LLC stream will aggressively
-   * migrate to llcTailSliceIdx, even the credit has only been allocated to
-   * (llcTailSliceIdx - 1).
+   * The LLC stream will be at llcTailSliceLLCBank, and we need to
+   * update its credit and the new location is tailSliceLLCBank.
    *
    * This will not work for pointer chasing stream.
    */
   assert(this->tailSliceIdx > this->llcTailSliceIdx &&
          "Don't know where to send credit.");
-  auto vaddr = this->getSlice(this->llcTailSliceIdx).sliceId.vaddr;
-  auto paddr = this->translateVAddr(vaddr);
-  auto paddrLine = makeLineAddress(paddr);
-
-  // Find the LLC bank.
-  auto selfMachineId = this->controller->getMachineID();
-  auto llcMachineId = this->controller->mapAddressToLLC(
-      paddrLine, static_cast<MachineType>(selfMachineId.type + 1));
 
   // Send the flow control.
   MLC_STREAM_DPRINTF("Extended %lu -> %lu, sent credit to LLC%d.\n",
                      this->llcTailSliceIdx, this->tailSliceIdx,
-                     llcMachineId.num);
+                     this->llcTailSliceLLCBank.num);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = paddrLine;
+  msg->m_addr = this->llcTailPAddr;
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;
-  msg->m_Requestor = selfMachineId;
-  msg->m_Destination.add(llcMachineId);
+  msg->m_Requestor = this->controller->getMachineID();
+  msg->m_Destination.add(this->llcTailSliceLLCBank);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_sliceId.streamId = this->dynamicStreamId;
   msg->m_sliceId.startIdx = this->llcTailSliceIdx;
@@ -305,17 +351,8 @@ void MLCDynamicStream::sendCreditToLLC() {
 
   // Update the record.
   this->llcTailSliceIdx = this->tailSliceIdx;
-}
-
-Addr MLCDynamicStream::getLLCStreamTailPAddr() const {
-  Addr vaddr;
-  if (this->llcTailSliceIdx == this->tailSliceIdx) {
-    // We have to peek.
-    vaddr = this->slicedStream.peekNextSlice().vaddr;
-  } else {
-    vaddr = this->getSlice(this->llcTailSliceIdx).sliceId.vaddr;
-  }
-  return this->translateVAddr(vaddr);
+  this->llcTailPAddr = this->tailPAddr;
+  this->llcTailSliceLLCBank = this->tailSliceLLCBank;
 }
 
 void MLCDynamicStream::panicDump() const {

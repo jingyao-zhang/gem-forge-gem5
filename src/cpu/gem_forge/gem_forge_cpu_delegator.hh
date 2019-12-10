@@ -44,6 +44,9 @@ public:
   void schedule(Event *event, Cycles latency) {
     this->baseCPU->schedule(event, this->baseCPU->clockEdge(latency));
   }
+  void deschedule(Event *event) {
+    this->baseCPU->deschedule(event);
+  }
 
   /**
    * Read a zero-terminated string from the memory.

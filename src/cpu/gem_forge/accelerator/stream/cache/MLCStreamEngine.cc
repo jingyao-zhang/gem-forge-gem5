@@ -36,6 +36,18 @@ Addr MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
   MLC_STREAM_DPRINTF(streamConfigureData->dynamicId.staticId,
                      "Received StreamConfigure.\n");
+  /**
+   * Do not release the pkt and streamConfigureData as they should be forwarded
+   * to the LLC bank and released there. However, we do need to fix up the
+   * initPAddr to our LLC bank if case it is not valid.
+   * ! This has to be done before initializing the MLCDynamicStream so that it
+   * ! knows the initial llc bank.
+   */
+  if (!streamConfigureData->initPAddrValid) {
+    streamConfigureData->initPAddr = this->controller->getAddressToOurLLC();
+    streamConfigureData->initPAddrValid = true;
+  }
+
   // Create the stream.
   auto stream = new MLCDynamicStream(streamConfigureData, this->controller,
                                      this->responseToUpperMsgBuffer,
@@ -52,15 +64,6 @@ Addr MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                                 indirectStream);
   }
 
-  /**
-   * Do not release the pkt and streamConfigureData as they should be forwarded
-   * to the LLC bank and released there. However, we do need to fix up the
-   * initPAddr to our LLC bank if case it is not valid.
-   */
-  if (!streamConfigureData->initPAddrValid) {
-    streamConfigureData->initPAddr = this->controller->getAddressToOurLLC();
-    streamConfigureData->initPAddrValid = true;
-  }
   return streamConfigureData->initPAddr;
 }
 

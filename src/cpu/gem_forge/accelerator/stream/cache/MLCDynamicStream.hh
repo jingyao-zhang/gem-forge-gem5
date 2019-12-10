@@ -23,7 +23,7 @@ public:
                    MessageBuffer *_requestToLLCMsgBuffer,
                    bool _mergeElements = true);
 
-  virtual ~MLCDynamicStream() {}
+  virtual ~MLCDynamicStream();
 
   Stream *getStaticStream() const { return this->stream; }
 
@@ -48,7 +48,7 @@ public:
   /**
    * Get where is the LLC stream is at the end of current allocated credits.
    */
-  Addr getLLCStreamTailPAddr() const;
+  Addr getLLCStreamTailPAddr() const { return this->llcTailPAddr; }
 
   virtual void receiveStreamData(const ResponseMsg &msg);
   void receiveStreamRequest(const DynamicStreamSliceId &sliceId);
@@ -84,7 +84,7 @@ protected:
     DataBlock dataBlock;
     // Whether the core's request is already here.
     bool dataReady;
-    enum CoreStatusE { NONE, WAIT, DONE };
+    enum CoreStatusE { NONE, WAIT, DONE, FAULTED };
     CoreStatusE coreStatus;
 
     MLCStreamSlice(const DynamicStreamSliceId &_sliceId)
@@ -105,6 +105,8 @@ protected:
         return "WAIT";
       case CoreStatusE::DONE:
         return "DONE";
+      case CoreStatusE::FAULTED:
+        return "FAULTED";
       default:
         return "ILLEGAL";
       }
@@ -115,8 +117,17 @@ protected:
   // Element index of allocated [head, tail).
   uint64_t headSliceIdx;
   uint64_t tailSliceIdx;
+  // Where the LLC stream would be at tailSliceIdx.
+  Addr tailPAddr;
+  MachineID tailSliceLLCBank;
+
   // Where the LLC stream's tail index is.
   uint64_t llcTailSliceIdx;
+  // Where the LLC stream currently would be, given the credit limit.
+  Addr llcTailPAddr;
+  MachineID llcTailSliceLLCBank;
+
+  EventFunctionWrapper advanceStreamEvent;
 
   void advanceStream();
   void makeResponse(MLCStreamSlice &element);
@@ -128,6 +139,11 @@ protected:
    * Helper function to translate the vaddr to paddr.
    */
   Addr translateVAddr(Addr vaddr) const;
+
+  /**
+   * Map paddr line to LLC bank.
+   */
+  MachineID mapPAddrToLLCBank(Addr paddr) const;
 
   /**
    * Allocate stream element. It merges neighboring slices if they are from

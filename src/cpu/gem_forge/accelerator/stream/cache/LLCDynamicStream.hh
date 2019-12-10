@@ -28,7 +28,7 @@ public:
 
   Addr peekVAddr();
   Addr getVAddr(uint64_t sliceIdx) const;
-  Addr translateToPAddr(Addr vaddr) const;
+  bool translateToPAddr(Addr vaddr, Addr &paddr) const;
 
   /**
    * Check if the next element is allocated in the upper cache level's stream
