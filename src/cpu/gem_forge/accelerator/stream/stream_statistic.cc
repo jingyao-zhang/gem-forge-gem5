@@ -12,6 +12,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   }
   dumpScalar(numConfigured);
   dumpScalar(numMisConfigured);
+  dumpScalar(numFloated);
   dumpScalar(numAllocated);
   dumpScalar(numFetched);
   dumpScalar(numStepped);

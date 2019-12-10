@@ -17,6 +17,7 @@ public:
    */
   size_t numConfigured = 0;
   size_t numMisConfigured = 0;
+  size_t numFloated = 0;
   size_t numAllocated = 0;
   size_t numFetched = 0;
   size_t numStepped = 0;

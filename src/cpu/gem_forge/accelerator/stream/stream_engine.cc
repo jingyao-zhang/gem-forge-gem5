@@ -308,6 +308,8 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
     if (this->streamFloatPolicy->shouldFloatStream(
             S, dynStream.dynamicStreamId.streamInstance)) {
 
+      S->statistic.numFloated++;
+
       // Remember the offloaded decision.
       // ! Only do this for the root offloaded stream.
       dynStream.offloadedToCache = true;
