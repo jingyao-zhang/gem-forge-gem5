@@ -745,7 +745,7 @@ LSQ::StoreBuffer::insert(LSQRequestPtr request)
             " inst: %s\n", name(), *(request->inst));
     }
 
-    DPRINTF(MinorMem, "Pushing store: %s into store buffer\n", request);
+    DPRINTF(MinorMem, "Enqueue: %s %s\n", request, *(request->inst));
 
     numUnissuedAccesses++;
 
@@ -789,6 +789,42 @@ LSQ::StoreBuffer::canForwardDataToLoad(LSQRequestPtr request,
 
                 found_slot = slot_index;
                 ret = coverage;
+            } else {
+                /**
+                 * ! GemForge
+                 * When there is a lock_write waiting in the StoreBuffer, if
+                 * the core tries to issue a load to access that locked cache line
+                 * but different portion, the StoreBuffer will not stall that load
+                 * as there is no overlapping. However, the cache is already
+                 * blocked by that cache line, and the load request will be denied
+                 * and would retry later. The LSQ will store that request in
+                 * retryRequest and always first try to resend that request when
+                 * the cache is unblocked.
+                 * This results in a ! DEADLOCK ! as the lock_write never gets the
+                 * chance to be issued to the cache and release that line.
+                 *
+                 * (Such a long story, imagine how long it takes me to figure this out).
+                 *
+                 * The solution I came so far is when there is a lock_write to the
+                 * same cache line in the StoreBuffer, we always return PartialOverlap
+                 * to stop the load being issued.
+                 */
+                if (slot->packet->req->isLockedRMW()) {
+                    auto paddrA = slot->packet->req->getPaddr();
+                    auto paddrB = request->request->getPaddr();
+                    auto paddrALine = paddrA - (paddrA % this->lsq.lineWidth);
+                    auto paddrBLine = paddrB - (paddrB % this->lsq.lineWidth);
+                    if (paddrALine == paddrBLine) {
+                        coverage = PartialAddrRangeCoverage;
+                        found_slot = slot_index;
+                        ret = coverage;
+                        DPRINTF(MinorMem, "LockedWrite overlap: slot: %d result: %s"
+                            "thisAddr 0x%x thisSize: %d slotAddr: 0x%x slotSize: %d.\n",
+                            slot_index, coverage,
+                            request->request->getPaddr(), request->request->getSize(),
+                            slot->request->getPaddr(), slot->request->getSize());
+                    }
+                }
             }
         }
 
