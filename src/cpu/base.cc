@@ -74,6 +74,7 @@
 
 // ! GemForge
 #include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
+#include "debug/MinorExecute.hh"
 
 // Hack
 #include "sim/stat_control.hh"
@@ -89,7 +90,7 @@ int maxThreadsPerCPU = 1;
 
 CPUProgressEvent::CPUProgressEvent(BaseCPU *_cpu, Tick ival)
     : Event(Event::Progress_Event_Pri), _interval(ival), lastNumInst(0),
-      cpu(_cpu), _repeatEvent(true)
+      cpu(_cpu), _repeatEvent(true), _stucked(false)
 {
     if (_interval)
         cpu->schedule(this, curTick() + _interval);
@@ -107,6 +108,18 @@ CPUProgressEvent::process()
       return;
     }
 
+    // ! Hack some deadlock check here.
+    if (cpu->cpuId() == 0 && temp == lastNumInst) {
+        if (!this->_stucked) {
+            // Enable the debug flag after we found deadlock.
+            Debug::MinorExecute.enable();
+            this->_stucked = true;
+        } else {
+            exitSimLoop("Deadlock found!");
+        }
+    }
+
+
 #ifndef NDEBUG
     double ipc = double(temp - lastNumInst) / (_interval / cpu->clockPeriod());
 
@@ -119,6 +132,10 @@ CPUProgressEvent::process()
             "committed: %lli\n", curTick(), cpu->name(), temp,
             temp - lastNumInst);
 #endif
+    // ! GemForge
+    if (auto accelManager = cpu->getAccelManager()) {
+        accelManager->dump();
+    }
     lastNumInst = temp;
 }
 
