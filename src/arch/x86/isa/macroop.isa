@@ -198,7 +198,13 @@ let {{
                     (self.name, env.getAllocator())
         def getMnemonic(self):
             mnemonic = self.name.lower()
-            mnemonic = re.match(r'[^_]*', mnemonic).group(0)
+            if mnemonic.startswith('ssp_stream_'):
+                # ! GemForge
+                # Avoid truncate the ssp_stream mnemonic.
+                pos = mnemonic.find('_', len('ssp_stream_'))
+                mnemonic = mnemonic[0:pos]
+            else:
+                mnemonic = re.match(r'[^_]*', mnemonic).group(0)
             return mnemonic
         def getDeclaration(self):
             #FIXME This first parameter should be the mnemonic. I need to
