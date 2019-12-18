@@ -78,7 +78,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
     l2_bits = int(math.log(num_l2caches_per_cluster, 2))
     block_size_bits = int(math.log(options.cacheline_size, 2))
-    l2_select_low_bit = options.llc_select_low_bit 
+    l2_select_low_bit = options.llc_select_low_bit
     assert(l2_select_low_bit >= block_size_bits)
     l2_index_start = l2_select_low_bit + l2_bits
 
@@ -98,7 +98,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
             l0d_cache = L0Cache(size=options.l1d_size, assoc=options.l1d_assoc, is_icache = False,
                 start_index_bit = block_size_bits,
-                replacement_policy = LRUReplacementPolicy())
+                replacement_policy = LRUReplacementPolicy(),
+                dataAccessLatency = options.l1d_lat)
 
             # the ruby random tester reuses num_cpus to specify the
             # number of cpu ports connected to the tester object, which
@@ -138,11 +139,11 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
             l1_cntrl = L1Cache_Controller(
                     version = i * num_cpus_per_cluster + j,
-                    cache = l1_cache, 
+                    cache = l1_cache,
                     l2_select_num_bits = l2_bits,
                     l2_select_low_bit = l2_select_low_bit,
                     cluster_id = i, ruby_system = ruby_system,
-                    # ! Sean: Stream-Aware Cache 
+                    # ! Sean: Stream-Aware Cache
                     # For the AbstractStreamAwareController
                     llc_select_num_bits = l2_bits,
                     llc_select_low_bit = l2_select_low_bit,
@@ -167,7 +168,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l0_cntrl.mandatoryQueue = MessageBuffer()
             l0_cntrl.bufferToL1 = MessageBuffer(ordered = True)
             l1_cntrl.bufferFromL0 = l0_cntrl.bufferToL1
-            l0_cntrl.bufferFromL1 = MessageBuffer(ordered = True)
+            l0_cntrl.bufferFromL1 = MessageBuffer(ordered = False)
             l1_cntrl.bufferToL0 = l0_cntrl.bufferFromL1
 
             # Connect the L1 controllers and the network
@@ -186,10 +187,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
         for j in range(num_l2caches_per_cluster):
             """
-            Originally, bits [6, 7] are used to select LLC bank (block-level), 
+            Originally, bits [6, 7] are used to select LLC bank (block-level),
             bits [8, ...] are used to select set.
             Now bits [12, 12+n) are used to select bank (page-level),
-            bits [6-11] and [12+n, ...] are used to select set. 
+            bits [6-11] and [12+n, ...] are used to select set.
             Since the index bits are broken down into two pieces, we need
             to inform the cache to skip the bank select bit.
             """

@@ -399,8 +399,10 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
         // the specified queue. In this case, a Locked_RMW_Write must go to
         // the mandatory_q before unblocking the first-level controller.
         // This will block standard loads, stores, ifetches, etc.
+        DPRINTF(RubySequencer, "Block l0 on addr %#x.\n", address);
         m_controller->blockOnQueue(address, m_mandatory_q_ptr);
     } else if (request->m_type == RubyRequestType_Locked_RMW_Write) {
+        DPRINTF(RubySequencer, "Unblock l0 on addr %#x.\n", address);
         m_controller->unblock(address);
     }
 
@@ -474,7 +476,7 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
             (type == RubyRequestType_Load_Linked)) {
             pkt->setData(
                 data.getData(getOffset(request_address), pkt->getSize()));
-            DPRINTF(RubySequencer, "read data %s\n", data);
+            // DPRINTF(RubySequencer, "read data %s\n", data);
         } else if (pkt->req->isSwap()) {
             std::vector<uint8_t> overwrite_val(pkt->getSize());
             pkt->writeData(&overwrite_val[0]);
@@ -482,7 +484,7 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
                 data.getData(getOffset(request_address), pkt->getSize()));
             data.setData(&overwrite_val[0],
                          getOffset(request_address), pkt->getSize());
-            DPRINTF(RubySequencer, "swap data %s\n", data);
+            // DPRINTF(RubySequencer, "swap data %s\n", data);
         } else if (type != RubyRequestType_Store_Conditional || llscSuccess) {
             // ! Hack to support AMO.
             if (pkt->isAtomicOp()){
@@ -499,7 +501,7 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
                 // failed Store Conditional requests
                 data.setData(pkt->getConstPtr<uint8_t>(),
                              getOffset(request_address), pkt->getSize());
-                DPRINTF(RubySequencer, "set data %s\n", data);
+                // DPRINTF(RubySequencer, "set data %s\n", data);
             }
         }
     }
@@ -588,10 +590,12 @@ Sequencer::makeRequest(PacketPtr pkt)
         // optimization built into the protocol.
         //
         if (pkt->isWrite()) {
-            DPRINTF(RubySequencer, "Issuing Locked RMW Write\n");
+            DPRINTF(RubySequencer, "Issuing Locked RMW Write to %#x, pc %#x\n",
+                pkt->req->getPaddr(), pkt->req->getPC());
             primary_type = RubyRequestType_Locked_RMW_Write;
         } else {
-            DPRINTF(RubySequencer, "Issuing Locked RMW Read\n");
+            DPRINTF(RubySequencer, "Issuing Locked RMW Read to %#x, pc %#x\n",
+                pkt->req->getPaddr(), pkt->req->getPC());
             assert(pkt->isRead());
             primary_type = RubyRequestType_Locked_RMW_Read;
         }

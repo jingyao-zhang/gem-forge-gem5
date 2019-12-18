@@ -491,25 +491,25 @@ MessageBuffer::delayHead(Tick current_time, Tick delta)
      *
      */
     DPRINTF(RubyQueue, "Delay head with delta %d\n", delta);
-    auto targetTime = current_time + delta;
-    for (auto &msg : m_prio_heap) {
-        if (msg->getLastEnqueueTime() < targetTime) {
-            // We need to update the latency.
-            msg->updateDelayedTicks(targetTime);
-            msg->setLastEnqueueTime(targetTime);
-        }
-    }
-    // Remake the heap.
-    std::make_heap(m_prio_heap.begin(), m_prio_heap.end(),
-                   std::greater<MsgPtr>());
-    // Schedule an event at that time.
-    m_consumer->scheduleEventAbsolute(targetTime);
+    // auto targetTime = current_time + delta;
+    // for (auto &msg : m_prio_heap) {
+    //     if (msg->getLastEnqueueTime() < targetTime) {
+    //         // We need to update the latency.
+    //         msg->updateDelayedTicks(targetTime);
+    //         msg->setLastEnqueueTime(targetTime);
+    //     }
+    // }
+    // // Remake the heap.
+    // std::make_heap(m_prio_heap.begin(), m_prio_heap.end(),
+    //                std::greater<MsgPtr>());
+    // // Schedule an event at that time.
+    // m_consumer->scheduleEventAbsolute(targetTime);
 
-    // MsgPtr m = m_prio_heap.front();
-    // std::pop_heap(m_prio_heap.begin(), m_prio_heap.end(),
-    //               std::greater<MsgPtr>());
-    // m_prio_heap.pop_back();
-    // enqueue(m, current_time, delta);
+    MsgPtr m = m_prio_heap.front();
+    std::pop_heap(m_prio_heap.begin(), m_prio_heap.end(),
+                  std::greater<MsgPtr>());
+    m_prio_heap.pop_back();
+    enqueue(m, current_time, delta);
 }
 
 MessageBuffer *
