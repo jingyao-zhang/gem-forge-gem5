@@ -573,9 +573,14 @@ LSQUnit<Impl>::executeLoad(const DynInstPtr &inst)
         // commit.
         if (!inst->readPredicate())
             inst->forwardOldRegs();
-        DPRINTF(LSQUnit, "Load [sn:%lli] not executed from %s\n",
-                inst->seqNum,
-                (load_fault != NoFault ? "fault" : "predication"));
+        if (load_fault != NoFault) {
+            DPRINTF(LSQUnit, "Load [sn:%lli] not executed from fault %s\n",
+                    inst->seqNum,
+                    load_fault->name());
+        } else {
+            DPRINTF(LSQUnit, "Load [sn:%lli] not executed from predication\n",
+                    inst->seqNum);
+        }
         if (!(inst->hasRequest() && inst->strictlyOrdered()) ||
             inst->isAtCommit()) {
             inst->setExecuted();

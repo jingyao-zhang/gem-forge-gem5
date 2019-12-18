@@ -743,17 +743,34 @@ LSQ<Impl>::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             if (cpu->checker) {
                 inst->reqToVerify = std::make_shared<Request>(*req->request());
             }
-            Fault fault;
-            if (isLoad)
-                fault = cpu->read(req, inst->lqIdx);
-            else
-                fault = cpu->write(req, data, inst->sqIdx);
-            // inst->getFault() may have the first-fault of a
-            // multi-access split request at this point.
-            // Overwrite that only if we got another type of fault
-            // (e.g. re-exec).
-            if (fault != NoFault)
-                inst->getFault() = fault;
+
+            /**
+             * ! GemForge
+             * I am trying to fix the bug that re-exec an inst that has been
+             * marked with an ReEx fault by a Ruby's snoop invalid message.
+             * I will try to not execute instruction again.
+             */
+            bool shouldExec = true;
+            if (inst->getFault() != NoFault && inst->isExecuted()) {
+                auto reexec = dynamic_cast<ReExec *>(inst->getFault().get());
+                if (reexec) {
+                    shouldExec = false;
+                }
+            }
+
+            if (shouldExec) {
+                Fault fault;
+                if (isLoad)
+                    fault = cpu->read(req, inst->lqIdx);
+                else
+                    fault = cpu->write(req, data, inst->sqIdx);
+                // inst->getFault() may have the first-fault of a
+                // multi-access split request at this point.
+                // Overwrite that only if we got another type of fault
+                // (e.g. re-exec).
+                if (fault != NoFault)
+                    inst->getFault() = fault;
+            }
         } else if (isLoad) {
             inst->setMemAccPredicate(false);
             // Commit will have to clean up whatever happened.  Set this

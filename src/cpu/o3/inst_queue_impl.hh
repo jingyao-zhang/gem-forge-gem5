@@ -781,11 +781,13 @@ InstructionQueue<Impl>::scheduleReadyInsts()
     IssueStruct *i2e_info = issueToExecuteQueue->access(0);
 
     DynInstPtr mem_inst;
+    DPRINTF(IQ, "Checking for deferred mem inst.\n");
     while (mem_inst = std::move(getDeferredMemInstToExecute())) {
         addReadyMemInst(mem_inst);
     }
 
     // See if any cache blocked instructions are able to be executed
+    DPRINTF(IQ, "Checking for blocked mem inst.\n");
     while (mem_inst = std::move(getBlockedMemInstToExecute())) {
         addReadyMemInst(mem_inst);
     }
@@ -1098,7 +1100,7 @@ InstructionQueue<Impl>::addReadyMemInst(const DynInstPtr &ready_inst)
         addToOrderList(op_class);
     }
 
-    DPRINTF(IQ, "Instruction is ready to issue, putting it onto "
+    DPRINTF(IQ, "Mem inst is ready to issue, putting it onto "
             "the ready list, PC %s opclass:%i [sn:%llu].\n",
             ready_inst->pcState(), op_class, ready_inst->seqNum);
 }
@@ -1469,7 +1471,7 @@ InstructionQueue<Impl>::addIfReady(const DynInstPtr &inst)
 
         OpClass op_class = inst->opClass();
 
-        DPRINTF(IQ, "Instruction is ready to issue, putting it onto "
+        DPRINTF(IQ, "NonMem inst is ready to issue, putting it onto "
                 "the ready list, PC %s opclass:%i [sn:%llu].\n",
                 inst->pcState(), op_class, inst->seqNum);
 

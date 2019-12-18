@@ -618,6 +618,10 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
     load_req.setRequest(req);
     assert(load_inst);
 
+    if (load_inst->isExecuted()) {
+      DPRINTF(LSQUnit, "Already executed load [sn:%llu] PC %s\n.",
+              load_inst->seqNum, load_inst->pcState());
+    }
     assert(!load_inst->isExecuted());
 
     // Make sure this isn't a strictly ordered load
@@ -819,7 +823,7 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
     }
 
     // If there's no forwarding case, then go access memory
-    DPRINTF(LSQUnit, "Doing memory access for inst [sn:%lli] PC %s\n",
+    DPRINTF(LSQUnit, "Access mem for inst [sn:%lli] PC %s\n",
             load_inst->seqNum, load_inst->pcState());
 
     // Allocate memory if this is the first time a load is issued.
@@ -844,8 +848,11 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
     }
     req->buildPackets();
     req->sendPacketToCache();
-    if (!req->isSent())
+    if (!req->isSent()) {
+        DPRINTF(LSQUnit, "Blocked MemInst [sn:%lli] PC %s.\n",
+                load_inst->seqNum, load_inst->pcState());
         iewStage->blockMemInst(load_inst);
+    }
 
     return NoFault;
 }
