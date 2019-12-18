@@ -912,9 +912,9 @@ Execute::issue(ThreadID thread_id)
                          * extra_assumed_lat seems to be a bug here causing mem_ref has
                          * deterministic latency.
                          */
-                        // bool mark_unpredictable = issued_mem_ref
-                        //     && extra_assumed_lat == Cycles(0);
-                        bool mark_unpredictable = issued_mem_ref;
+                        bool mark_unpredictable = issued_mem_ref
+                            && extra_assumed_lat == Cycles(0);
+                        // bool mark_unpredictable = issued_mem_ref;
                         scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
                             fu->description.opLat +
                             extra_dest_retire_lat +
