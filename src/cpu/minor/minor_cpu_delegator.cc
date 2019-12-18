@@ -131,6 +131,20 @@ void MinorCPUDelegator::startup() {
   this->schedule(&pimpl->dumpInflyInstsEvent, Cycles(1));
 }
 
+bool MinorCPUDelegator::shouldCountInFrontend(
+    Minor::MinorDynInstPtr &dynInstPtr) {
+  if (!dynInstPtr->isInst()) {
+    // This is not handled by me, should always count.
+    return true;
+  }
+  // Checking with the isaHandler.
+  // At this stage, there is no valid sequence number, so we can't use
+  // pimpl->createDynInfo().
+  GemForgeDynInstInfo dynInfo(0, dynInstPtr->pc, dynInstPtr->staticInst.get(),
+                              pimpl->getThreadContext(dynInstPtr));
+  return pimpl->isaHandler.shouldCountInFrontend(dynInfo);
+}
+
 bool MinorCPUDelegator::canDispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   auto ret = pimpl->isaHandler.canDispatch(dynInfo);

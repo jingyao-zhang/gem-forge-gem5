@@ -48,6 +48,8 @@
 #include "debug/Branch.hh"
 #include "debug/Fetch.hh"
 #include "debug/MinorTrace.hh"
+// ! GemForge
+#include "minor_cpu_delegator.hh"
 
 namespace Minor
 {
@@ -303,13 +305,22 @@ Fetch2::evaluate()
 
         unsigned int output_index = 0;
 
+        /**
+         * ! GemForge
+         * Sometimes we don't want the frontend to be the bottleneck as
+         * we are introducing more instructions, especially for CISC ISA
+         * like x86. We have a very hacky way to introduce the "effective"
+         * fetchedInst, and some GemForge instructions are not counted.
+         */
+        unsigned int fetchedInst = 0;
+
         /* Pack instructions into the output while we can.  This may involve
          * using more than one input line.  Note that lineWidth will be 0
          * for faulting lines */
         while (line_in &&
             (line_in->isFault() ||
                 fetch_info.inputIndex < line_in->lineWidth) && /* More input */
-            output_index < outputWidth && /* More output to fill */
+            fetchedInst < outputWidth && /* More output to fill */
             prediction.isBubble() /* No predicted branch */)
         {
             ThreadContext *thread = cpu.getContext(line_in->id.threadId);
@@ -486,9 +497,34 @@ Fetch2::evaluate()
                 if (output_index == 0) {
                     insts_out.resize(outputWidth);
                 }
+
+                /**
+                 * ! GemForge
+                 * Since some instructions are ingored for the fetchedInst,
+                 * it's possible that we generate more instructions than
+                 * outputWidth. Handle it here.
+                 */
+                if (output_index >= outputWidth) {
+                    assert(insts_out.numInsts == output_index && "Invalid output_index.");
+                    assert(output_index < MAX_FORWARD_INSTS && "Overflow output_index.");
+                    insts_out.numInsts++;
+                    insts_out.insts[output_index] = MinorDynInst::bubble();
+                }
+
                 /* Pack the generated dynamic instruction into the output */
                 insts_out.insts[output_index] = dyn_inst;
                 output_index++;
+                fetchedInst++;
+
+                if (cpu.cpuDelegator) {
+                    /**
+                     * ! GemForge
+                     * Check if this instruction should count.
+                     */
+                    if (!cpu.cpuDelegator->shouldCountInFrontend(dyn_inst)) {
+                        fetchedInst--;
+                    }
+                }
 
                 /* Output MinorTrace instruction info for
                  *  pre-microop decomposition macroops */

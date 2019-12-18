@@ -17,6 +17,7 @@ public:
   GemForgeISAHandler(GemForgeCPUDelegator *_cpuDelegaor)
       : cpuDelegator(_cpuDelegaor), se(_cpuDelegaor) {}
 
+  bool shouldCountInFrontend(const GemForgeDynInstInfo &dynInfo);
   bool canDispatch(const GemForgeDynInstInfo &dynInfo);
 
   /**
@@ -49,7 +50,10 @@ private:
   struct GemForgeStaticInstInfo {
     GemForgeStaticInstOpE op;
   };
-  mutable std::unordered_map<Addr, GemForgeStaticInstInfo> cachedStaticInstInfo;
+  mutable std::unordered_map<Addr, GemForgeStaticInstInfo>
+      cachedStaticMicroInstInfo;
+  mutable std::unordered_map<Addr, GemForgeStaticInstInfo>
+      cachedStaticMacroInstInfo;
 
   GemForgeStaticInstInfo &getStaticInstInfo(const GemForgeDynInstInfo &dynInfo);
 

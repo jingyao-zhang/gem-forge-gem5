@@ -47,6 +47,13 @@ public:
    * We can use the execSeqNum as the sequence number.
    */
   void startup();
+
+  /**
+   * Whether this instruction should be count in Fetch2 and Decode.
+   * Note that these are macroinstructions.
+   */
+  bool shouldCountInFrontend(Minor::MinorDynInstPtr &dynInstPtr);
+
   bool canDispatch(Minor::MinorDynInstPtr &dynInstPtr);
   void dispatch(Minor::MinorDynInstPtr &dynInstPtr);
 

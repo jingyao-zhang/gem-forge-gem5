@@ -51,6 +51,23 @@
     return se.stage##StreamLoad(dynInfo, ##xc);                                \
   }
 
+bool GemForgeISAHandler::shouldCountInFrontend(
+    const GemForgeDynInstInfo &dynInfo) {
+  if (!dynInfo.staticInst->isGemForge()) {
+    return true;
+  }
+  auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
+  switch (staticInstInfo.op) {
+  // Only step and load are considered no overhead in front end.
+  case GemForgeStaticInstOpE::STREAM_STEP:
+  case GemForgeStaticInstOpE::STREAM_LOAD:
+  case GemForgeStaticInstOpE::STREAM_FLOAD: {
+    return false;
+  }
+  default: { return true; }
+  }
+}
+
 bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo) {
   if (!dynInfo.staticInst->isGemForge()) {
     return true;
@@ -132,10 +149,17 @@ void GemForgeISAHandler::storeTo(Addr vaddr, int size) {
 GemForgeISAHandler::GemForgeStaticInstInfo &
 GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
   // TODO: Handle microop.
+  // TODO: So far this is fine as all our GemForge instructions are decoded to
+  // TODO: single microop.
   auto pc = dynInfo.pc.pc();
-  auto emplaceRet = this->cachedStaticInstInfo.emplace(
-      std::piecewise_construct, std::forward_as_tuple(pc),
-      std::forward_as_tuple());
+
+  auto &infoMap = dynInfo.staticInst->isMicroop()
+                      ? this->cachedStaticMicroInstInfo
+                      : this->cachedStaticMacroInstInfo;
+
+  auto emplaceRet =
+      infoMap.emplace(std::piecewise_construct, std::forward_as_tuple(pc),
+                      std::forward_as_tuple());
   if (emplaceRet.second) {
     // Newly created. Do basic analysis.
     // * Simply use the instruction name may be a bad idea, but it decouples

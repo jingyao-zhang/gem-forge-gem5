@@ -42,6 +42,9 @@
 #include "cpu/minor/pipeline.hh"
 #include "debug/Decode.hh"
 
+// ! GemForge
+#include "minor_cpu_delegator.hh"
+
 namespace Minor
 {
 
@@ -142,11 +145,17 @@ Decode::evaluate()
 
         unsigned int output_index = 0;
 
+        /**
+         * ! GemForge
+         * Ignore some instructions in the front end. See fetch2.cc for details.
+         */
+        unsigned int decodedInst = 0;
+
         /* Pack instructions into the output while we can.  This may involve
          * using more than one input line */
         while (insts_in &&
            decode_info.inputIndex < insts_in->width() && /* Still more input */
-           output_index < outputWidth /* Still more output to fill */)
+           decodedInst < outputWidth /* Still more output to fill */)
         {
             MinorDynInstPtr inst = insts_in->insts[decode_info.inputIndex];
 
@@ -247,9 +256,32 @@ Decode::evaluate()
 
                 /* Correctly size the output before writing */
                 if (output_index == 0) insts_out.resize(outputWidth);
+
+                /**
+                 * ! GemForge
+                 * See fetch2.cc for similar code.
+                 */
+                if (output_index >= outputWidth) {
+                    assert(insts_out.numInsts == output_index && "Invalid output_index.");
+                    assert(output_index < MAX_FORWARD_INSTS && "Overflow output_index.");
+                    insts_out.numInsts++;
+                    insts_out.insts[output_index] = MinorDynInst::bubble();
+                }
+
                 /* Push into output */
                 insts_out.insts[output_index] = output_inst;
                 output_index++;
+                decodedInst++;
+
+                if (cpu.cpuDelegator) {
+                    /**
+                     * ! GemForge.
+                     * Check if this instruction should count.
+                     */
+                    if (!cpu.cpuDelegator->shouldCountInFrontend(output_inst)) {
+                        decodedInst--;
+                    }
+                }
             }
 
             /* Have we finished with the input? */
