@@ -1224,8 +1224,19 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     uu_profileHit;
     jj_popL1RequestQueue;
   }
+  // The data may be cached somewhere above, but we have the correct copy. 
+  transition(SS, L1_GETV, SS) {
+    dd_sendExclusiveDataToRequestor;
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
 
-  // ! May not be correct way to do this. 
+  /**
+   * ! Not a correct way to do this.
+   * This means LLC's data is stale. We actually need to invalidate other's
+   * copy and then sent to upper level.
+   */
   transition(MT, L1_GETV, MT) {
     dd_sendExclusiveDataToRequestor;
     set_setMRU;
