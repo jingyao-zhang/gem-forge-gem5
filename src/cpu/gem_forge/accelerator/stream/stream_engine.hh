@@ -427,10 +427,10 @@ private:
   };
 
   /**
-   * Try to coalesce continuous element of direct load stream if they
+   * Try to coalesce continuous element of direct mem stream if they
    * overlap.
    */
-  void coalesceContinuousDirectLoadStreamElement(StreamElement *element);
+  void coalesceContinuousDirectMemStreamElement(StreamElement *element);
 };
 
 #endif

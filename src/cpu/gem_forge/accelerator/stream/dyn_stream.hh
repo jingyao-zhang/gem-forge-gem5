@@ -33,6 +33,7 @@ struct DynamicStream {
   int allocSize = 0;
   int stepSize = 0;
   FIFOEntryIdx FIFOIdx;
+  Cycles lastStepCycle = Cycles(0);
 
   // Whether the dynamic stream is offloaded to cache.
   bool offloadedToCache = false;

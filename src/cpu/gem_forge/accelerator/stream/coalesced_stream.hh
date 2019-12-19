@@ -45,7 +45,6 @@ public:
 
   void prepareNewElement(StreamElement *element) override;
 
-
   /**
    * Only to configure all the history.
    */
@@ -58,6 +57,7 @@ public:
     assert(this->coalescedElementSize > 0 && "Invalid element size.");
     return this->coalescedElementSize;
   }
+  bool getFloatManual() const override;
 
   /**
    * Get the number of unique cache blocks the stream touches.

@@ -276,6 +276,10 @@ uint32_t CoalescedStream::getConfigLoopLevel() const {
   return this->coalescedStreams.front()->info.config_loop_level();
 }
 
+bool CoalescedStream::getFloatManual() const {
+  return this->primeLStream->info.static_info().float_manual();
+}
+
 bool CoalescedStream::isContinuous() const {
   const auto &pattern = this->primeLStream->patternStream->getPattern();
   if (pattern.val_pattern() != "LINEAR") {

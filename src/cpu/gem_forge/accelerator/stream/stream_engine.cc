@@ -1633,7 +1633,7 @@ void StreamEngine::issueElement(StreamElement *element) {
   /**
    * A quick hack to coalesce continuous elements that completely overlap.
    */
-  this->coalesceContinuousDirectLoadStreamElement(element);
+  this->coalesceContinuousDirectMemStreamElement(element);
 
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
@@ -1678,14 +1678,10 @@ void StreamEngine::issueElement(StreamElement *element) {
     S->statistic.numIssuedRequest++;
     cpuDelegator->sendRequest(pkt);
 
-    if (S->getStreamType() == "load") {
-      // Mark the state.
-      cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
-      cacheBlockBreakdown.memAccess = memAccess;
-      memAccess->registerReceiver(element);
-    } else if (S->getStreamType() == "store") {
-      // No need to register receiver.
-    }
+    // Mark the state.
+    cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
+    cacheBlockBreakdown.memAccess = memAccess;
+    memAccess->registerReceiver(element);
   }
 }
 
@@ -2083,7 +2079,7 @@ void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
   cpu->updateInflyInstStatus(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
 }
 
-void StreamEngine::coalesceContinuousDirectLoadStreamElement(
+void StreamEngine::coalesceContinuousDirectMemStreamElement(
     StreamElement *element) {
 
   /**
@@ -2105,7 +2101,7 @@ void StreamEngine::coalesceContinuousDirectLoadStreamElement(
     return;
   }
   auto S = element->stream;
-  if (!S->isDirectLoadStream()) {
+  if (!S->isDirectMemStream()) {
     return;
   }
   // Get the previous element.

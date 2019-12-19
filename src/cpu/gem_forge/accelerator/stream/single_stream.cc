@@ -104,6 +104,10 @@ const std::string &SingleStream::getStreamType() const {
 
 uint32_t SingleStream::getLoopLevel() const { return this->info.loop_level(); }
 
+bool SingleStream::getFloatManual() const {
+  return this->info.static_info().float_manual();
+}
+
 uint32_t SingleStream::getConfigLoopLevel() const {
   return this->info.config_loop_level();
 }

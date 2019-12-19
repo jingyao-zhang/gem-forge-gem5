@@ -345,7 +345,7 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
 
   Addr initPAddr;
   if (this->cpuDelegator->translateVAddrOracle(configData->initVAddr,
-                                                initPAddr)) {
+                                               initPAddr)) {
     configData->initPAddr = initPAddr;
     configData->initPAddrValid = true;
   } else {
@@ -362,8 +362,8 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
   return configData;
 }
 
-bool Stream::isDirectLoadStream() const {
-  if (this->getStreamType() != "load") {
+bool Stream::isDirectMemStream() const {
+  if (!this->isMemStream()) {
     return false;
   }
   // So far only only one base stream of phi type of the same loop level.
@@ -380,6 +380,13 @@ bool Stream::isDirectLoadStream() const {
     }
   }
   return true;
+}
+
+bool Stream::isDirectLoadStream() const {
+  if (this->getStreamType() != "load") {
+    return false;
+  }
+  return this->isDirectMemStream();
 }
 
 void Stream::allocateElement(StreamElement *newElement) {
@@ -515,6 +522,12 @@ StreamElement *Stream::releaseElementStepped() {
   assert(dynS.stepSize > 0 && "No element to release.");
   auto releaseElement = dynS.tail->next;
   assert(releaseElement->isStepped && "Release unstepped element.");
+
+  auto cycle = this->cpuDelegator->curCycle();
+  if (dynS.lastStepCycle != 0) {
+    // hack("Step turn around cycle %lu.\n", cycle - dynS.lastStepCycle);
+  }
+  dynS.lastStepCycle = cycle;
 
   const bool used = releaseElement->isFirstUserDispatched();
 

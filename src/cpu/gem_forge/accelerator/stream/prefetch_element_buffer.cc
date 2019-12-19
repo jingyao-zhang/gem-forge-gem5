@@ -8,6 +8,8 @@ void PrefetchElementBuffer::addElement(StreamElement *element) {
   assert(!element->isStepped && "Insert stepped element into PEB.");
   assert(!element->isFirstUserDispatched() &&
          "Insert element with first user dispatched.");
+  assert(element->stream->getStreamType() == "load" &&
+         "Only load stream should be in PEB.");
   assert(element->isAddrReady && "Addr not ready element into PEB.");
   auto inserted = this->elements.emplace(element).second;
   assert(inserted && "Element already in PEB.");

@@ -66,6 +66,7 @@ public:
   virtual uint32_t getLoopLevel() const = 0;
   virtual uint32_t getConfigLoopLevel() const = 0;
   virtual int32_t getElementSize() const = 0;
+  virtual bool getFloatManual() const = 0;
 
   virtual void prepareNewElement(StreamElement *element) {
     // Deprecated.
@@ -199,6 +200,7 @@ public:
    * Helper function used in StreamAwareCache.
    */
   bool isDirectLoadStream() const;
+  bool isDirectMemStream() const;
   virtual bool isPointerChaseLoadStream() const { return false; }
   virtual uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const = 0;
 

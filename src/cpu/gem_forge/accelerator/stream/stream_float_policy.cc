@@ -69,16 +69,7 @@ bool StreamFloatPolicy::shouldFloatStreamManual(Stream *S,
   static std::unordered_map<Stream *, bool> memorizedDecision;
   auto iter = memorizedDecision.find(S);
   if (iter == memorizedDecision.end()) {
-    auto shouldFloat = true;
-    if (S->getStreamName() ==
-        "(MEM pathfinder.cpp::92(.omp_outlined.) bb32 bb52::tmp55(load))") {
-      // pathfinder wall[], has reuse in l3.
-      shouldFloat = true;
-    } else if (S->getStreamName() == "(MEM pathfinder.cpp::92(.omp_outlined.) "
-                                     "bb32 bb37::tmp40(load))") {
-      // pathfinder src[], has reuse in l2.
-      shouldFloat = false;
-    }
+    auto shouldFloat = S->getFloatManual();
     iter = memorizedDecision.emplace(S, shouldFloat).first;
   }
 
