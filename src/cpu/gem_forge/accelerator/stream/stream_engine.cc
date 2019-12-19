@@ -585,7 +585,8 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
       // Mark the first user sequence number.
       if (!element->isFirstUserDispatched()) {
         element->firstUserSeqNum = seqNum;
-        if (S->getStreamType() == "load" && element->isAddrReady) {
+        if (S->getStreamType() == "load" && !S->getFloatManual() &&
+            element->isAddrReady) {
           // The element should already be in peb, remove it.
           this->peb.removeElement(element);
         }
@@ -745,7 +746,8 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
       // I am the first user.
       element->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
       // Check if the element should go back to PEB.
-      if (element->stream->getStreamType() == "load" && element->isAddrReady) {
+      if (element->stream->getStreamType() == "load" && element->isAddrReady &&
+          !element->stream->getFloatManual()) {
         this->peb.addElement(element);
       }
     }
@@ -1410,7 +1412,7 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
 bool StreamEngine::releaseElementUnstepped(Stream *S) {
   auto releaseElement = S->releaseElementUnstepped();
   if (releaseElement) {
-    if (S->getStreamType() == "load") {
+    if (S->getStreamType() == "load" && !S->getFloatManual()) {
       if (releaseElement->isAddrReady) {
         // This should be in PEB.
         this->peb.removeElement(releaseElement);
@@ -1423,7 +1425,7 @@ bool StreamEngine::releaseElementUnstepped(Stream *S) {
 
 void StreamEngine::stepElement(Stream *S) {
   auto element = S->stepElement();
-  if (S->getStreamType() == "load") {
+  if (S->getStreamType() == "load" && !S->getFloatManual()) {
     if (!element->isFirstUserDispatched() && element->isAddrReady) {
       // This issued element is stepped but not used, remove from PEB.
       this->peb.removeElement(element);
@@ -1434,7 +1436,7 @@ void StreamEngine::stepElement(Stream *S) {
 void StreamEngine::unstepElement(Stream *S) {
   auto element = S->unstepElement();
   // We may need to add this back to PEB.
-  if (S->getStreamType() == "load") {
+  if (S->getStreamType() == "load" && !S->getFloatManual()) {
     if (!element->isFirstUserDispatched() && element->isAddrReady) {
       this->peb.addElement(element);
     }
@@ -1625,7 +1627,8 @@ void StreamEngine::issueElement(StreamElement *element) {
     this->numLoadElementsFetched++;
     S->statistic.numFetched++;
     // Add to the PEB if the first user has not been dispatched.
-    if (!element->isFirstUserDispatched() && !element->isStepped) {
+    if (!S->getFloatManual() && !element->isFirstUserDispatched() &&
+        !element->isStepped) {
       this->peb.addElement(element);
     }
   }

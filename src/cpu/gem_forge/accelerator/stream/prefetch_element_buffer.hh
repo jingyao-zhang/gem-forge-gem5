@@ -11,7 +11,11 @@
  * isAddrReady = true
  * isFirstUserDispatched = false
  * isStepped = false
+ * isLoad = true
+ *
  * There is no order between these elements.
+ * If the compiler can be sure that this stream will not be aliased, then
+ * the StreamEngine can skip PEB.
  */
 class PrefetchElementBuffer {
 public:
