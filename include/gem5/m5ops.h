@@ -88,12 +88,10 @@ void m5a_identify(uint64_t id);
 uint64_t m5a_getid(void);
 
 #define m5_detail_sim_start()                                                  \
-  m5_work_begin(0, 0);                                                         \
   m5_reset_stats(0, 0);                                                        \
   m5_switch_cpu();
 
 #define m5_detail_sim_end()                                                    \
-  m5_work_end(0, 0);                                                           \
   m5_dump_stats(0, 0);
 
 #define m5_gem_forge_region_simpoint()                                         \
