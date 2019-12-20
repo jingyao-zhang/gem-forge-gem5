@@ -436,10 +436,6 @@ void MinorCPUDelegator::storeTo(Addr vaddr, int size) {
   auto checkMisspeculated =
       [vaddr, size, &foundMisspeculated, &oldestMisspeculatedSeqNum](
           InstSeqNum seqNum, GemForgeLQCallbackPtr &callback) -> void {
-    if (seqNum > oldestMisspeculatedSeqNum) {
-      // This is already younder than what we have, ignore it.
-      return;
-    }
     if (!callback->isIssued()) {
       // This load is not issued yet, ignore it.
       return;
@@ -453,7 +449,12 @@ void MinorCPUDelegator::storeTo(Addr vaddr, int size) {
       return;
     } else {
       // Aliased.
-      oldestMisspeculatedSeqNum = seqNum;
+      if (callback->bypassAliasCheck()) {
+        panic("Bypassed LQCallback is aliased: %s.\n", callback.get());
+      }
+      if (seqNum > oldestMisspeculatedSeqNum) {
+        oldestMisspeculatedSeqNum = seqNum;
+      }
       foundMisspeculated = true;
     }
   };
@@ -486,7 +487,9 @@ void MinorCPUDelegator::storeTo(Addr vaddr, int size) {
     auto &seqNum = inLSQSeqNumRequest.first;
     if (seqNum >= oldestMisspeculatedSeqNum) {
       for (auto &request : inLSQSeqNumRequest.second) {
-        request->callback->RAWMisspeculate();
+        if (!request->callback->bypassAliasCheck()) {
+          request->callback->RAWMisspeculate();
+        }
       }
     }
   }
@@ -495,7 +498,7 @@ void MinorCPUDelegator::storeTo(Addr vaddr, int size) {
     auto &seqNum = preLSQSeqNumRequest.first;
     if (seqNum >= oldestMisspeculatedSeqNum) {
       for (auto &callback : preLSQSeqNumRequest.second) {
-        if (callback) {
+        if (callback && !callback->bypassAliasCheck()) {
           callback->RAWMisspeculate();
         }
       }

@@ -2045,6 +2045,13 @@ void StreamEngine::GemForgeStreamEngineLQCallback::RAWMisspeculate() {
   this->element->se->RAWMisspeculate(this->element);
 }
 
+bool StreamEngine::GemForgeStreamEngineLQCallback::bypassAliasCheck() const {
+  assert(this->FIFOIdx == this->element->FIFOIdx &&
+         "Element already released.");
+  // Only bypass alias check if the stream is marked FloatManual.
+  return this->element->stream->getFloatManual();
+}
+
 bool StreamEngine::GemForgeStreamEngineSQCallback::getAddrSize(Addr &addr,
                                                                uint32_t &size) {
   // Check if the address is ready.
@@ -2164,6 +2171,7 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
 
 void StreamEngine::flushPEB() {
   for (auto element : this->peb.elements) {
+    S_ELEMENT_DPRINTF(element, "Flushed in PEB.\n");
     assert(element->isAddrReady);
     assert(!element->isStepped);
     assert(!element->isFirstUserDispatched());
@@ -2189,6 +2197,7 @@ void StreamEngine::flushPEB() {
 
 void StreamEngine::RAWMisspeculate(StreamElement *element) {
   assert(!this->peb.contains(element) && "RAWMisspeculate on PEB element.");
+  S_ELEMENT_DPRINTF(element, "RAWMisspeculated.\n");
   // Still, we flush the PEB when LQ misspeculate happens.
   this->flushPEB();
 

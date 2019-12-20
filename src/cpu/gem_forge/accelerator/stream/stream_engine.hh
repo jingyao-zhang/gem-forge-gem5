@@ -406,6 +406,7 @@ private:
     bool isIssued() const override;
     bool isValueLoaded() override;
     void RAWMisspeculate() override;
+    bool bypassAliasCheck() const override;
     std::ostream &format(std::ostream &os) const override {
       os << this->FIFOIdx;
       GemForgeLQCallback::format(os);

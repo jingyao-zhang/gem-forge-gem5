@@ -28,7 +28,15 @@ struct GemForgeLQCallback {
    * Check if the value is loaded.
    */
   virtual bool isValueLoaded() = 0;
+
   virtual void RAWMisspeculate() = 0;
+
+  /**
+   * Whether the compiler feels confident that this access should
+   * be alias free.
+   */
+  virtual bool bypassAliasCheck() const { return false; }
+
   virtual std::ostream &format(std::ostream &os) const {
     Addr addr = 0;
     uint32_t size = 0;
