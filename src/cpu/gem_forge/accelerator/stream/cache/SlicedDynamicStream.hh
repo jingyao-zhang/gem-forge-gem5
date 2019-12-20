@@ -31,6 +31,10 @@ private:
    * ! Evil trick to make peekNextSlice constant.
    */
   mutable uint64_t tailIdx;
+  /**
+   * The headIdx that can be checked for slicing.
+   */
+  mutable uint64_t sliceHeadIdx;
   mutable std::deque<DynamicStreamSliceId> slices;
 
   void allocateOneElement() const;

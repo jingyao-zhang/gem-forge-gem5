@@ -9,7 +9,7 @@
 SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureData *_configData)
     : streamId(_configData->dynamicId), formalParams(_configData->formalParams),
       addrGenCallback(_configData->addrGenCallback),
-      elementSize(_configData->elementSize), tailIdx(0) {}
+      elementSize(_configData->elementSize), tailIdx(0), sliceHeadIdx(0) {}
 
 DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
   while (slices.empty() || slices.front().endIdx == this->tailIdx) {
@@ -45,27 +45,41 @@ void SlicedDynamicStream::allocateOneElement() const {
   DYN_S_DPRINTF(this->streamId, "Allocate element %llu, block [%#x, %#x].\n",
                 this->tailIdx, lhsBlock, rhsBlock);
 
-  // Update existing slices to the new element if there is overlap.
+  /**
+   * Special case to handle decreasing address.
+   * If there is a bump back to lower address, we make sure that it has no
+   * overlap with existing slices and restart.
+   */
   auto curBlock = lhsBlock;
-  for (auto &slice : this->slices) {
-    if (slice.vaddr == curBlock) {
-      assert(slice.endIdx == tailIdx && "Hole in overlapping elements.");
-      slice.endIdx++;
-      curBlock += RubySystem::getBlockSizeBytes();
-      if (curBlock > rhsBlock) {
-        // We are done.
-        break;
+  if (!this->slices.empty() && lhsBlock < this->slices.back().vaddr) {
+    for (auto &slice : this->slices) {
+      assert(rhsBlock < slice.vaddr && "Overlapped decreasing element.");
+    }
+    // Set sliceHeadIdx so that slicing branch below will ignore previous slices
+    // and restart.
+    this->sliceHeadIdx = this->tailIdx;
+  } else {
+    // Non-decreasing case, keep going.
+    // Update existing slices to the new element if there is overlap.
+    for (auto &slice : this->slices) {
+      if (slice.startIdx < this->sliceHeadIdx) {
+        // This slice is already "sealed" by a decreasing element.
+        continue;
+      }
+      if (slice.vaddr == curBlock) {
+        assert(slice.endIdx == tailIdx && "Hole in overlapping elements.");
+        slice.endIdx++;
+        curBlock += RubySystem::getBlockSizeBytes();
+        if (curBlock > rhsBlock) {
+          // We are done.
+          break;
+        }
       }
     }
   }
 
   // Insert new slices.
   while (curBlock <= rhsBlock) {
-    // So far we can only handle monotonic increasing address.
-    if (!this->slices.empty()) {
-      assert(this->slices.back().vaddr < curBlock &&
-             "We can only slice monotonic increasing stream.");
-    }
     this->slices.emplace_back();
     auto &slice = this->slices.back();
     slice.streamId = this->streamId;

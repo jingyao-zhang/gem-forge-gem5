@@ -135,7 +135,8 @@ void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
 
 void MLCDynamicStream::receiveStreamRequest(
     const DynamicStreamSliceId &sliceId) {
-  MLC_SLICE_DPRINTF(sliceId, "Receive request to %#x.\n", sliceId.vaddr);
+  MLC_SLICE_DPRINTF(sliceId, "Receive request to %#x. Tail %lu.\n",
+                    sliceId.vaddr, this->tailSliceIdx);
 
   /**
    * Let's not make assumption that the request will come in order.
@@ -161,7 +162,9 @@ void MLCDynamicStream::receiveStreamRequest(
     }
   }
 
-  assert(found && "Failed to found match.");
+  if (!found) {
+    MLC_STREAM_PANIC("Failed to find slice %s.\n", sliceId);
+  }
   this->advanceStream();
 }
 
