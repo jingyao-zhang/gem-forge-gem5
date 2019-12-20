@@ -1040,7 +1040,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition({MCT_I, M_I}, L1_GETV) {
+  transition({MCT_I, M_I, MT_I}, L1_GETV) {
     // Should only happen when the LLC stream engine request the data unknown that this line is being evicted.
     zz_stallAndWaitL1RequestQueue;
   }

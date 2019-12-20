@@ -1022,6 +1022,12 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     k_popL0RequestQueue;
   }
 
+  transition(S, LoadV, S) {
+    hh_xdata_to_l0;
+    uu_profileHit;
+    k_popL0RequestQueue;
+  }
+
   transition(MM, LoadV, MM) {
     hh_xdata_to_l0;
     uu_profileHit;
