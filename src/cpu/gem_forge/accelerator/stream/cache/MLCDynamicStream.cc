@@ -60,8 +60,11 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
   this->tailPAddr = _configData->initPAddr;
   this->tailSliceLLCBank = this->mapPAddrToLLCBank(_configData->initPAddr);
 
-  // Initialize the buffer for 32 entries?
-  while (this->tailSliceIdx < this->maxNumSlices) {
+  // Initialize the buffer for some slices.
+  // Since the LLC is bounded by the credit, it's sufficient to only check
+  // hasOverflowed() at MLC level.
+  while (this->tailSliceIdx < this->maxNumSlices &&
+         !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();
   }
 
@@ -217,12 +220,23 @@ void MLCDynamicStream::advanceStream() {
     }
   }
   // Of course we need to allocate more slices.
-  while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices) {
+  while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
+         !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();
   }
-  if (this->tailSliceIdx - this->llcTailSliceIdx > this->maxNumSlices / 2) {
-    // It's time for us to send more credit to LLC stream.
-    this->sendCreditToLLC();
+  /**
+   * There are two cases we need to send the token:
+   * 1. We have allocated more half the buffer size.
+   * 2. The sthrea has overflowed.
+   */
+  if (!this->slicedStream.hasOverflowed()) {
+    if (this->tailSliceIdx - this->llcTailSliceIdx > this->maxNumSlices / 2) {
+      this->sendCreditToLLC();
+    }
+  } else {
+    if (this->tailSliceIdx > this->llcTailSliceIdx) {
+      this->sendCreditToLLC();
+    }
   }
 
   // We may need to schedule advance stream if the first slice is FAULTED,
@@ -291,8 +305,11 @@ Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
 void MLCDynamicStream::allocateSlice() {
   auto sliceId = this->slicedStream.getNextSlice();
   MLC_SLICE_DPRINTF(sliceId, "Allocated %#x.\n", sliceId.vaddr);
-  // Try to handle faulted slice.
+
   this->slices.emplace_back(sliceId);
+  this->stream->statistic.numFloatAllocatedSlice++;
+
+  // Try to handle faulted slice.
   Addr paddr;
   auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
   if (cpuDelegator->translateVAddrOracle(sliceId.vaddr, paddr)) {

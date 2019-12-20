@@ -50,6 +50,9 @@ struct DynamicStream {
   // Callback to generate the address.
   AddrGenCallbackPtr addrGenCallback;
 
+  // Optional total length of this dynamic stream. -1 as indefinite.
+  int64_t totalTripCount = -1;
+
   DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
                 ThreadContext *_tc, const FIFOEntryIdx &_prevFIFOIdx,
                 StreamElement *nilTail)

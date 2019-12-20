@@ -33,6 +33,7 @@ public:
    */
   DynamicStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
+  int64_t totalTripCount = -1;
 
   /**
    * Whether this is a pointer chase stream.

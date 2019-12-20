@@ -1260,6 +1260,30 @@ void StreamEngine::allocateElements() {
       }
     }
 
+    /**
+     * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
+     * StreamEnd. Condition: maxAllocSize > allocSize: originally we are trying
+     * to allocate more.
+     * ! We allow (totalTripCount + 1) elements as StreamEnd would consume one
+     * ! element.
+     */
+    {
+      auto allocSize = stepStream->getAllocSize();
+      auto &stepRootDynStream = stepStream->getLastDynamicStream();
+      if (stepRootDynStream.totalTripCount > 0 && maxAllocSize > allocSize) {
+        auto nextEntryIdx = stepRootDynStream.FIFOIdx.entryIdx;
+        auto maxTripCount = stepRootDynStream.totalTripCount + 1;
+        if (nextEntryIdx >= maxTripCount) {
+          // We are already overflowed, set maxAllocSize to allocSize to stop
+          // allocating. NOTE: This should not happen at all.
+          maxAllocSize = allocSize;
+        } else {
+          maxAllocSize =
+              std::min(maxAllocSize, (maxTripCount - nextEntryIdx) + allocSize);
+        }
+      }
+    }
+
     const auto &stepStreams = this->getStepStreamList(stepStream);
     for (size_t targetSize = 1;
          targetSize <= maxAllocSize && this->hasFreeElement(); ++targetSize) {

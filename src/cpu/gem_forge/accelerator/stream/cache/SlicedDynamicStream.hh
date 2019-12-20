@@ -20,11 +20,29 @@ public:
   DynamicStreamSliceId getNextSlice();
   const DynamicStreamSliceId &peekNextSlice() const;
 
+  /**
+   * Check if we have allocated beyond the end of the stream.
+   * Instead of terminating the stream, here I take a "soft"
+   * approach to ease the implementation complexicity.
+   *
+   * Notice that we allow (totalTripCount + 1) elements as
+   * StreamEnd will consume one element and we have to be synchronized
+   * with the core's StreamEngine.
+   */
+  bool hasOverflowed() const {
+    return this->totalTripCount > 0 &&
+           (this->peekNextSlice().startIdx >= (this->totalTripCount + 1));
+  }
+
 private:
   DynamicStreamId streamId;
   DynamicStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
   int32_t elementSize;
+  /**
+   * -1 means indefinite.
+   */
+  int64_t totalTripCount;
 
   /**
    * Internal states.

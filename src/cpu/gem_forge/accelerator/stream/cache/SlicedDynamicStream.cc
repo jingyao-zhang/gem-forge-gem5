@@ -9,7 +9,9 @@
 SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureData *_configData)
     : streamId(_configData->dynamicId), formalParams(_configData->formalParams),
       addrGenCallback(_configData->addrGenCallback),
-      elementSize(_configData->elementSize), tailIdx(0), sliceHeadIdx(0) {}
+      elementSize(_configData->elementSize),
+      totalTripCount(_configData->totalTripCount), tailIdx(0), sliceHeadIdx(0) {
+}
 
 DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
   while (slices.empty() || slices.front().endIdx == this->tailIdx) {

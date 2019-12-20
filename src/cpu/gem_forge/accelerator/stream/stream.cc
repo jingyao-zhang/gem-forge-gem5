@@ -223,14 +223,12 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
   const auto &pattern = staticInfo.iv_pattern();
   assert(pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR);
   /**
-   * LINEAR pattern has 2n parameters, where n is the difference of loop
-   * level between ConfigureLoop and InnerMostLoop.
-   * It has the following format, starting from InnerMostLoop.
-   * Stride0, [BackEdgeCount[i], Stride[i + 1]]*, Start
-   * We will add 1 to BackEdgeCount to get the TripCount.
+   * LINEAR pattern has 2n or (2n+1) parameters, where n is the difference of
+   * loop level between ConfigureLoop and InnerMostLoop. It has the following
+   * format, starting from InnerMostLoop. Stride0, [BackEdgeCount[i], Stride[i +
+   * 1]]*, [BackEdgeCount[n]], Start We will add 1 to BackEdgeCount to get the
+   * TripCount.
    */
-  assert(pattern.params_size() % 2 == 0 &&
-         "Number of parameters must be even.");
   assert(pattern.params_size() >= 2 && "Number of parameters must be >= 2.");
   auto &formalParams = dynStream.formalParams;
   auto inputIdx = 0;
@@ -291,6 +289,12 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
   // Set the callback.
   dynStream.addrGenCallback =
       std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
+
+  // Update the totalTripCount to the dynamic stream if possible.
+  if (formalParams.size() % 2 == 1) {
+    dynStream.totalTripCount =
+        formalParams.at(formalParams.size() - 2).param.invariant;
+  }
 }
 
 void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
@@ -335,6 +339,9 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
   auto configData = new CacheStreamConfigureData(
       this, dynStream.dynamicStreamId, this->getElementSize(),
       dynStream.formalParams, dynStream.addrGenCallback);
+
+  // Set the totalTripCount.
+  configData->totalTripCount = dynStream.totalTripCount;
 
   // Set the initial vaddr.
   configData->initVAddr = dynStream.addrGenCallback->genAddr(

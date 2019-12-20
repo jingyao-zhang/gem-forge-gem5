@@ -20,6 +20,8 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numAliased);
   dumpScalar(numFaulted);
 
+  dumpScalar(numFloatAllocatedSlice);
+
   dumpAvg(avgLength, numStepped, numConfigured);
   dumpAvg(avgUsed, numUsed, numConfigured);
 

@@ -25,6 +25,9 @@ public:
   size_t numAliased = 0;
   size_t numFaulted = 0;
 
+  // Float statistics.
+  size_t numFloatAllocatedSlice = 0;
+
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;
   size_t numCycleCoreEarlyElement = 0;
