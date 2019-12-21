@@ -415,6 +415,15 @@ void Stream::allocateElement(StreamElement *newElement) {
   newElement->isCacheBlockedValue = this->isMemStream();
   dynS.FIFOIdx.next();
 
+  if (dynS.totalTripCount > 0 &&
+      newElement->FIFOIdx.entryIdx >= dynS.totalTripCount + 1) {
+    S_PANIC(
+        this,
+        "Allocate beyond totalTripCount %lu, allocSize %lu, entryIdx %lu.\n",
+        dynS.totalTripCount, this->getAllocSize(),
+        newElement->FIFOIdx.entryIdx);
+  }
+
   // Find the base element.
   for (auto baseS : this->baseStreams) {
     if (baseS->getLoopLevel() != this->getLoopLevel()) {

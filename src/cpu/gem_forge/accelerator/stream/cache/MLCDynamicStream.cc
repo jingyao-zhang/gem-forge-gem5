@@ -144,7 +144,12 @@ void MLCDynamicStream::receiveStreamRequest(
   /**
    * Let's not make assumption that the request will come in order.
    */
-  assert(!this->slices.empty() && "Empty slice list.");
+  if (this->slices.empty()) {
+    MLC_STREAM_PANIC(
+        "No slices for request, overflowed %d, totalTripCount %lu.\n",
+        this->slicedStream.hasOverflowed(),
+        this->slicedStream.getTotalTripCount());
+  }
   bool found = false;
   for (auto &slice : this->slices) {
     /**

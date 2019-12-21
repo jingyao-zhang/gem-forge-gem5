@@ -34,6 +34,8 @@ public:
            (this->peekNextSlice().startIdx >= (this->totalTripCount + 1));
   }
 
+  int64_t getTotalTripCount() const { return this->totalTripCount; }
+
 private:
   DynamicStreamId streamId;
   DynamicStreamFormalParamV formalParams;
@@ -42,7 +44,7 @@ private:
   /**
    * -1 means indefinite.
    */
-  int64_t totalTripCount;
+  const int64_t totalTripCount;
 
   /**
    * Internal states.

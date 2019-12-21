@@ -1273,6 +1273,8 @@ void StreamEngine::allocateElements() {
       if (stepRootDynStream.totalTripCount > 0 && maxAllocSize > allocSize) {
         auto nextEntryIdx = stepRootDynStream.FIFOIdx.entryIdx;
         auto maxTripCount = stepRootDynStream.totalTripCount + 1;
+        S_DPRINTF(stepStream, "maxTripCount %lu, nextEntryIdx %lu.\n",
+                  maxTripCount, nextEntryIdx);
         if (nextEntryIdx >= maxTripCount) {
           // We are already overflowed, set maxAllocSize to allocSize to stop
           // allocating. NOTE: This should not happen at all.
