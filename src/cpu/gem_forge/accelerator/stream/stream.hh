@@ -81,9 +81,6 @@ public:
    * Head is the newest element.
    * Tail is the dummy node before the oldest element.
    */
-  StreamElement *head;
-  StreamElement *stepped;
-  StreamElement *tail;
   size_t stepSize;
   size_t maxSize;
   FIFOEntryIdx FIFOIdx;
@@ -220,8 +217,6 @@ protected:
   std::unordered_set<Stream *> baseStepStreams;
   std::unordered_set<Stream *> baseStepRootStreams;
   std::unordered_set<Stream *> dependentStepStreams;
-
-  StreamElement nilTail;
 
   /**
    * Total allocated elements among all dynamic streams.

@@ -11,6 +11,7 @@
 class ThreadContext;
 
 class StreamElement;
+class StreamEngine;
 
 /**
  * Holds some information of a dynamic instance of a stream,
@@ -55,10 +56,8 @@ struct DynamicStream {
 
   DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
                 ThreadContext *_tc, const FIFOEntryIdx &_prevFIFOIdx,
-                StreamElement *nilTail)
-      : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum), tc(_tc),
-        prevFIFOIdx(_prevFIFOIdx), head(nilTail), stepped(nilTail),
-        tail(nilTail), FIFOIdx(_dynamicStreamId, _configSeqNum) {}
+                StreamEngine *_se);
+  ~DynamicStream();
 
   /***********************************************************************
    * API to manage the elements of this stream.

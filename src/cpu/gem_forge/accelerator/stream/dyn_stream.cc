@@ -1,10 +1,28 @@
 #include "dyn_stream.hh"
-#include "stream_element.hh"
 #include "stream.hh"
+#include "stream_element.hh"
 
 #include "debug/StreamEngine.hh"
 #define DEBUG_TYPE StreamEngine
 #include "stream_log.hh"
+
+DynamicStream::DynamicStream(const DynamicStreamId &_dynamicStreamId,
+                             uint64_t _configSeqNum, ThreadContext *_tc,
+                             const FIFOEntryIdx &_prevFIFOIdx,
+                             StreamEngine *_se)
+    : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum), tc(_tc),
+      prevFIFOIdx(_prevFIFOIdx), FIFOIdx(_dynamicStreamId, _configSeqNum) {
+  this->tail = new StreamElement(_se);
+  this->head = this->tail;
+  this->stepped = this->tail;
+}
+
+DynamicStream::~DynamicStream() {
+  delete this->tail;
+  this->tail = nullptr;
+  this->head = nullptr;
+  this->stepped = nullptr;
+}
 
 StreamElement *DynamicStream::getPrevElement(StreamElement *element) {
   assert(element->FIFOIdx.streamId == this->dynamicStreamId &&

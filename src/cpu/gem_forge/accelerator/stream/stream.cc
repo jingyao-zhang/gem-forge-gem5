@@ -36,12 +36,9 @@ Stream::Stream(const StreamArguments &args)
     : FIFOIdx(DynamicStreamId(args.cpuDelegator->cpuId(), args.staticId,
                               0 /*StreamInstance*/)),
       staticId(args.staticId), streamName(args.name), cpu(args.cpu),
-      cpuDelegator(args.cpuDelegator), se(args.se), nilTail(args.se) {
+      cpuDelegator(args.cpuDelegator), se(args.se) {
 
   this->configured = false;
-  this->head = &this->nilTail;
-  this->stepped = &this->nilTail;
-  this->tail = &this->nilTail;
   this->allocSize = 0;
   this->stepSize = 0;
   this->maxSize = args.maxSize;
@@ -116,7 +113,7 @@ void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
   this->FIFOIdx.newInstance(seqNum);
   // Allocate the new DynamicStream.
   this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum, tc,
-                                    prevFIFOIdx, &this->nilTail);
+                                    prevFIFOIdx, this->se);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum,
@@ -397,6 +394,7 @@ bool Stream::isDirectLoadStream() const {
 }
 
 void Stream::allocateElement(StreamElement *newElement) {
+
   assert(this->configured &&
          "Stream should be configured to allocate element.");
   this->statistic.numAllocated++;
@@ -406,6 +404,7 @@ void Stream::allocateElement(StreamElement *newElement) {
    * Append this new element to the last dynamic stream.
    */
   auto &dynS = this->getLastDynamicStream();
+  DYN_S_DPRINTF(dynS.dynamicStreamId, "Try to allocate element.\n");
 
   /**
    * next() is called after assign to make sure
@@ -431,6 +430,7 @@ void Stream::allocateElement(StreamElement *newElement) {
     }
 
     auto &baseDynS = baseS->getLastDynamicStream();
+    DYN_S_DPRINTF(baseDynS.dynamicStreamId, "BaseDynS.\n");
     if (baseS->stepRootStream == this->stepRootStream) {
       if (baseDynS.allocSize - baseDynS.stepSize <=
           dynS.allocSize - dynS.stepSize) {
@@ -442,9 +442,17 @@ void Stream::allocateElement(StreamElement *newElement) {
       auto baseElement = baseDynS.stepped;
       auto element = dynS.stepped;
       while (element != nullptr) {
-        assert(baseElement != nullptr && "Failed to find base element.");
+        if (!baseElement) {
+          baseDynS.dump();
+          S_PANIC(this, "Failed to find base element from %s.",
+                  baseS->getStreamName());
+        }
         element = element->next;
         baseElement = baseElement->next;
+      }
+      if (!baseElement) {
+        S_PANIC(this, "Failed to find base element from %s.",
+                baseS->getStreamName());
       }
       assert(baseElement != nullptr && "Failed to find base element.");
       newElement->baseElements.insert(baseElement);
@@ -523,6 +531,8 @@ void Stream::allocateElement(StreamElement *newElement) {
       S_ELEMENT_HACK(newElement, "Allocated.\n");
     }
   }
+
+  S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
 }
 
 StreamElement *Stream::releaseElementStepped() {
