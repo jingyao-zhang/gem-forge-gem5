@@ -4,8 +4,7 @@
 /**
  * A place to implement the actual instruction functionality.
  */
-#include "gem_forge_dyn_inst_info.hh"
-
+#include "cpu/gem_forge/gem_forge_dyn_inst_info.hh"
 #include "stream/isa_stream_engine.hh"
 
 #include <unordered_map>

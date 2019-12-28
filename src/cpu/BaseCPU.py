@@ -211,6 +211,8 @@ class BaseCPU(ClockedObject):
 
     # GemForgeAcceleratorManager.
     accelManager = Param.GemForgeAcceleratorManager(NULL, "GemForgeAcceleratorManager.")
+    enableIdeaInorderCPU = Param.Bool(
+        False, "Whether model an idea inorder CPU.")
 
     icache_port = MasterPort("Instruction Port")
     dcache_port = MasterPort("Data Port")

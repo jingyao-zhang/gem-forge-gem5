@@ -2,6 +2,7 @@
 #ifndef __GEM_FORGE_CPU_DELEGATOR_HH__
 #define __GEM_FORGE_CPU_DELEGATOR_HH__
 
+#include "gem_forge_idea_inorder_cpu.hh"
 #include "gem_forge_lsq_callback.hh"
 
 #include "cpu/base.hh"
@@ -23,8 +24,7 @@ public:
     MINOR,
   };
   const CPUTypeE cpuType;
-  GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU)
-      : cpuType(_cpuType), baseCPU(_baseCPU) {}
+  GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU);
   virtual ~GemForgeCPUDelegator() {}
 
   unsigned int cacheLineSize() const {
@@ -44,9 +44,7 @@ public:
   void schedule(Event *event, Cycles latency) {
     this->baseCPU->schedule(event, this->baseCPU->clockEdge(latency));
   }
-  void deschedule(Event *event) {
-    this->baseCPU->deschedule(event);
-  }
+  void deschedule(Event *event) { this->baseCPU->deschedule(event); }
 
   /**
    * Read a zero-terminated string from the memory.
@@ -71,6 +69,13 @@ public:
   virtual void sendRequest(PacketPtr pkt) = 0;
 
   BaseCPU *baseCPU;
+
+  /**
+   * We have three idea inorder cpu modeling.
+   */
+  std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPU;
+  std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPUNoFUTiming;
+  std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPUNoLDTiming;
 };
 
 #endif

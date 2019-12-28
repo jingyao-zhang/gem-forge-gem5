@@ -35,7 +35,8 @@ Addr MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
          "Receive stream configure when stream float is disabled.\n");
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
   MLC_STREAM_DPRINTF(streamConfigureData->dynamicId.staticId,
-                     "Received StreamConfigure.\n");
+                     "Received StreamConfigure, totalTripCount %lu.\n",
+                     streamConfigureData->totalTripCount);
   /**
    * Do not release the pkt and streamConfigureData as they should be forwarded
    * to the LLC bank and released there. However, we do need to fix up the

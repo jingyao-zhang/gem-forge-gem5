@@ -333,6 +333,20 @@ void MinorCPUDelegator::commit(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   assert(!pimpl->inflyInstQueue.empty() &&
          "Empty inflyInstQueue to commit from.");
+
+  // Notify the idea inorder cpu.
+  // TODO: Do not update the opc too frequently.
+  if (this->ideaInorderCPU) {
+    this->ideaInorderCPU->addOp(dynInfo);
+    this->ideaInorderCPUNoFUTiming->addOp(dynInfo);
+    this->ideaInorderCPUNoLDTiming->addOp(dynInfo);
+    pimpl->cpu->stats.ideaCycles = this->ideaInorderCPU->getCycles();
+    pimpl->cpu->stats.ideaCyclesNoFUTiming =
+        this->ideaInorderCPUNoFUTiming->getCycles();
+    pimpl->cpu->stats.ideaCyclesNoLDTiming =
+        this->ideaInorderCPUNoLDTiming->getCycles();
+  }
+
   auto &frontInst = pimpl->inflyInstQueue.front();
   if (pimpl->inflyInstQueue.front() != dynInstPtr) {
     INST_LOG(panic, dynInstPtr, "Commit mismatch inflyInstQueue front %s.",

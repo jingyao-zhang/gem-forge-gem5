@@ -107,7 +107,7 @@ parser.add_option("--gem-forge-stream-engine-enable-float-subline", action="stor
                   default=False,
                   help="Enable subline transimission in stream float.")
 parser.add_option("--gem-forge-stream-engine-mlc-stream-buffer-init-num-entries", action="store",
-                  type="int", default="8",
+                  type="int", default="32",
                   help="Initial number of entries of MLC stream buffer per stream.")
 
 parser.add_option("--gem-forge-adfa-enable",
@@ -130,6 +130,10 @@ parser.add_option("--gem-forge-adfa-num-cores",
 parser.add_option("--gem-forge-adfa-enable-tls",
                   action="store", type="int", default="0")
 parser.add_option("--gem-forge-adfa-ideal-mem", action="store", type="int", default="0")
+
+parser.add_option("--gem-forge-idea-inorder-cpu", action="store_true",
+                  default=False,
+                  help="Enable idea inorder cpu.")
 
 (options, args) = parser.parse_args()
 

@@ -145,8 +145,16 @@ class MinorDefaultIntMulFU(MinorFU):
 
 class MinorDefaultIntDivFU(MinorFU):
     opClasses = minorMakeOpClassSet(['IntDiv'])
-    issueLat = 9
-    opLat = 9
+    # DIV and IDIV instructions in x86 are implemented using a loop which
+    # issues division microops.  The latency of these microops should really be
+    # one (or a small number) cycle each since each of these computes one bit
+    # of the quotient.
+    if buildEnv['TARGET_ISA'] in ('x86'):
+        issueLat = 1
+        opLat = 1
+    else:
+        issueLat = 9
+        opLat = 9
 
 class MinorDefaultFloatSimdFU(MinorFU):
     opClasses = minorMakeOpClassSet([
@@ -165,6 +173,56 @@ class MinorDefaultFloatSimdFU(MinorFU):
     timings = [MinorFUTiming(description='FloatSimd',
         srcRegsRelativeLats=[2])]
     opLat = 6
+
+class MinorGemForgeFloatALU(MinorFU):
+    opClasses = minorMakeOpClassSet([
+        'FloatAdd', 'FloatCmp', 'FloatCvt',
+    ])
+    timings = [MinorFUTiming(description='FloatAlu',
+        srcRegsRelativeLats=[0])]
+    opLat = 2
+
+class MinorGemForgeFloatMult(MinorFU):
+    opClasses = minorMakeOpClassSet([
+        'FloatMult', 'FloatMultAcc', 'FloatMisc',
+    ])
+    timings = [MinorFUTiming(description='FloatMult',
+        srcRegsRelativeLats=[2])]
+    opLat = 4
+
+class MinorGemForgeFloatDiv(MinorFU):
+    opClasses = minorMakeOpClassSet([
+        'FloatDiv',
+    ])
+    timings = [MinorFUTiming(description='FloatDiv',
+        srcRegsRelativeLats=[0])]
+    opLat = 12
+    issueLat = 12
+
+class MinorGemForgeFloatSqrt(MinorFU):
+    opClasses = minorMakeOpClassSet([
+        'FloatSqrt',
+    ])
+    timings = [MinorFUTiming(description='FloatSqrt',
+        srcRegsRelativeLats=[0])]
+    opLat = 24
+    issueLat = 24
+
+class MinorGemForgeSimdFU(MinorFU):
+    opClasses = minorMakeOpClassSet([
+        'SimdAdd', 'SimdAddAcc', 'SimdAlu', 'SimdCmp', 'SimdCvt',
+        'SimdMisc', 'SimdMult', 'SimdMultAcc', 'SimdShift', 'SimdShiftAcc',
+        'SimdDiv', 'SimdSqrt', 'SimdFloatAdd', 'SimdFloatAlu', 'SimdFloatCmp',
+        'SimdFloatCvt', 'SimdFloatDiv', 'SimdFloatMisc', 'SimdFloatMult',
+        'SimdFloatMultAcc', 'SimdFloatSqrt', 'SimdReduceAdd', 'SimdReduceAlu',
+        'SimdReduceCmp', 'SimdFloatReduceAdd', 'SimdFloatReduceCmp',
+        'SimdAes', 'SimdAesMix',
+        'SimdSha1Hash', 'SimdSha1Hash2', 'SimdSha256Hash',
+        'SimdSha256Hash2', 'SimdShaSigma2', 'SimdShaSigma3'])
+
+    timings = [MinorFUTiming(description='FloatSimd',
+        srcRegsRelativeLats=[0])]
+    opLat = 1
 
 class MinorDefaultPredFU(MinorFU):
     opClasses = minorMakeOpClassSet(['SimdPredAlu'])
@@ -198,12 +256,20 @@ class MinorGemForgeI2FUPool(MinorFUPool):
 
 class MinorGemForgeI4FUPool(MinorFUPool):
     funcUnits = [
-        MinorSimpleIntFU(), MinorSimpleIntFU(),
-        MinorSimpleIntFU(), MinorSimpleIntFU(),
+        # MinorSimpleIntFU(), MinorSimpleIntFU(),
+        # MinorSimpleIntFU(), MinorSimpleIntFU(),
+        MinorDefaultIntFU(), MinorDefaultIntFU(),
+        MinorDefaultIntFU(), MinorDefaultIntFU(),
         MinorDefaultIntMulFU(), MinorDefaultIntDivFU(),
         MinorDefaultIntMulFU(), MinorDefaultIntDivFU(),
-        MinorDefaultFloatSimdFU(), MinorDefaultPredFU(),
-        MinorDefaultFloatSimdFU(), MinorDefaultPredFU(),
+        MinorGemForgeFloatALU(), MinorGemForgeFloatALU(),
+        MinorGemForgeFloatALU(), MinorGemForgeFloatALU(),
+        MinorGemForgeFloatMult(), MinorGemForgeFloatMult(),
+        MinorGemForgeFloatDiv(), MinorGemForgeFloatDiv(),
+        MinorGemForgeFloatSqrt(),
+        MinorGemForgeSimdFU(), MinorGemForgeSimdFU(),
+        MinorGemForgeSimdFU(), MinorGemForgeSimdFU(),
+        MinorDefaultPredFU(), MinorDefaultPredFU(),
         MinorDefaultMemFU(), MinorDefaultMiscFU(),
         MinorDefaultMemFU(), MinorDefaultMiscFU(),
     ]

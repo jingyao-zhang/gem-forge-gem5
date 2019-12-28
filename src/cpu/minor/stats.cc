@@ -149,6 +149,19 @@ MinorStats::regStats(const std::string &name, BaseCPU &baseCpu)
     loadBlockedIssueCyclesPercentage =
         loadBlockedIssueCycles / baseCpu.numCycles;
 
+    ideaCycles
+        .name(name + ".ideaCycles")
+        .desc("Ideal inorder cpu cycles")
+        .prereq(ideaCycles);
+    ideaCyclesNoFUTiming
+        .name(name + ".ideaCyclesNoFUTiming")
+        .desc("Ideal inorder cpu cycles without FUTiming")
+        .prereq(ideaCyclesNoFUTiming);
+    ideaCyclesNoLDTiming
+        .name(name + ".ideaCyclesNoLDTiming")
+        .desc("Ideal inorder cpu cycles without LDTiming")
+        .prereq(ideaCyclesNoLDTiming);
+
     cpi
         .name(name + ".cpi")
         .desc("CPI: cycles per instruction")

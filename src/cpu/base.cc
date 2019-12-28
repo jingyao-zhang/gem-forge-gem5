@@ -112,11 +112,13 @@ CPUProgressEvent::process()
     if (cpu->cpuId() == 0 && temp == lastNumInst) {
         if (!this->_stucked) {
             // Enable the debug flag after we found deadlock.
-            Debug::MinorExecute.enable();
+            // Debug::MinorExecute.enable();
             this->_stucked = true;
         } else {
-            exitSimLoop("Deadlock found!");
+            panic("Deadlock found!");
         }
+    } else {
+        this->_stucked = false;
     }
 
 

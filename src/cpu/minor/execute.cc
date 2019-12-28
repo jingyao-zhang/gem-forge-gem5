@@ -696,7 +696,7 @@ Execute::issue(ThreadID thread_id)
                     scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
                         Cycles(0), cpu.getContext(thread_id), false);
 
-                    DPRINTF(MinorExecute, "Issuing %s to %d\n", inst->id, noCostFUIndex);
+                    DPRINTF(MinorExecute, "Issuing %s to %d\n", *inst, noCostFUIndex);
                     inst->fuIndex = noCostFUIndex;
                     inst->extraCommitDelay = Cycles(0);
                     inst->extraCommitDelayExpr = NULL;
@@ -915,6 +915,12 @@ Execute::issue(ThreadID thread_id)
                         bool mark_unpredictable = issued_mem_ref
                             && extra_assumed_lat == Cycles(0);
                         // bool mark_unpredictable = issued_mem_ref;
+                        // if (inst->pc.pc() == 0x401086) {
+                        //     hack("with oplat %d retire_lat %d extra_assume_lat %d.\n",
+                        //         fu->description.opLat,
+                        //         extra_dest_retire_lat,
+                        //         extra_assumed_lat);
+                        // }
                         scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
                             fu->description.opLat +
                             extra_dest_retire_lat +

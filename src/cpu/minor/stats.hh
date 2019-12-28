@@ -85,6 +85,13 @@ class MinorStats
     Stats::Formula loadBlockedIssueCPI;
     Stats::Formula loadBlockedIssueCyclesPercentage;
 
+    /**
+     * Ideal inorder cpu's cycles.
+     */
+    Stats::Scalar ideaCycles;
+    Stats::Scalar ideaCyclesNoFUTiming;
+    Stats::Scalar ideaCyclesNoLDTiming;
+
     /** CPI/IPC for total cycle counts and macro insts */
     Stats::Formula cpi;
     Stats::Formula ipc;

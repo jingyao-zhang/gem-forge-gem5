@@ -57,5 +57,10 @@ def initializeGemForgeAcceleratorManager(options):
         accelerators.append(initializeStreamEngine(options))
     if accelerators:
         return GemForgeAcceleratorManager(accelerators=accelerators)
+    elif options.gem_forge_idea_inorder_cpu:
+        # IdeaInorderCPU is implemented in CPU delegator, which is
+        # dependent on accelManaguer.
+        return GemForgeAcceleratorManager(accelerators=accelerators)
     else:
+        # Disable this in default.
         return NULL

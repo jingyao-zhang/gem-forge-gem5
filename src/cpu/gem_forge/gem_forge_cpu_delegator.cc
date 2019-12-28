@@ -1,6 +1,7 @@
 #include "gem_forge_cpu_delegator.hh"
 
 #include "mem/port_proxy.hh"
+#include "params/BaseCPU.hh"
 
 std::string GemForgeCPUDelegator::readStringFromMem(Addr vaddr) {
   PortProxy proxy(this->baseCPU->getSendFunctional(),
@@ -17,4 +18,17 @@ std::string GemForgeCPUDelegator::readStringFromMem(Addr vaddr) {
     vaddr++;
   } while (c != 0);
   return s;
+}
+
+GemForgeCPUDelegator::GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU)
+    : cpuType(_cpuType), baseCPU(_baseCPU) {
+  auto baseCPUParams = dynamic_cast<const BaseCPUParams *>(baseCPU->params());
+  if (baseCPUParams->enableIdeaInorderCPU) {
+    this->ideaInorderCPU = m5::make_unique<GemForgeIdeaInorderCPU>(
+        baseCPU->cpuId(), 4, true, true);
+    this->ideaInorderCPUNoFUTiming = m5::make_unique<GemForgeIdeaInorderCPU>(
+        baseCPU->cpuId(), 4, false, false);
+    this->ideaInorderCPUNoLDTiming = m5::make_unique<GemForgeIdeaInorderCPU>(
+        baseCPU->cpuId(), 4, true, false);
+  }
 }

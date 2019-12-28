@@ -31,9 +31,9 @@ def initializeO3CPU(options, o3cpu):
         o3cpu.SQEntries = 20
     elif options.llvm_issue_width == 4:
         o3cpu.numROBEntries = 96
-        o3cpu.numIQEntries = 20
-        o3cpu.LQEntries = 20
-        o3cpu.SQEntries = 24
+        o3cpu.numIQEntries = 24
+        o3cpu.LQEntries = 24
+        o3cpu.SQEntries = 30
     elif options.llvm_issue_width == 6:
         o3cpu.numROBEntries = 192
         o3cpu.numIQEntries = 28

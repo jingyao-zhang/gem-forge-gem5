@@ -180,6 +180,8 @@ def initializeCPUs(options):
     for cpu in future_cpus if future_cpus else initial_cpus:
         cpu.accelManager = \
             GemForgeAccConfig.initializeGemForgeAcceleratorManager(options)
+        if options.gem_forge_idea_inorder_cpu:
+            cpu.enableIdeaInorderCPU = True
         cpu.switched_out = True
         if options.prog_interval:
             cpu.progress_interval = options.prog_interval

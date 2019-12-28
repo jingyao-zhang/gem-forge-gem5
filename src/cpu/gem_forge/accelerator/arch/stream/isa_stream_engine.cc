@@ -605,7 +605,9 @@ void ISAStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
  *******************************************************************************/
 void ISAStreamEngine::storeTo(Addr vaddr, int size) {
   auto se = this->getStreamEngine();
-  se->cpuStoreTo(vaddr, size);
+  if (se) {
+    se->cpuStoreTo(vaddr, size);
+  }
 }
 
 /********************************************************************************
@@ -613,7 +615,12 @@ void ISAStreamEngine::storeTo(Addr vaddr, int size) {
  *******************************************************************************/
 
 ::StreamEngine *ISAStreamEngine::getStreamEngine() {
-  return this->cpuDelegator->baseCPU->getAccelManager()->getStreamEngine();
+  if (!this->SEMemorized) {
+    this->SE =
+        this->cpuDelegator->baseCPU->getAccelManager()->getStreamEngine();
+    this->SEMemorized = true;
+  }
+  return this->SE;
 }
 
 template <typename T>

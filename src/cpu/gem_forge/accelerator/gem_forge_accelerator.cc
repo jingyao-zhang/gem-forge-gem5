@@ -71,7 +71,7 @@ StreamEngine *GemForgeAcceleratorManager::getStreamEngine() {
       return se;
     }
   }
-  panic("Failed to find the stream engine.");
+  return nullptr;
 }
 
 SpeculativePrecomputationManager *

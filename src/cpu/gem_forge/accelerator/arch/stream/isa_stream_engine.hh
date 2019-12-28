@@ -7,7 +7,7 @@
  * stream engine.
  */
 
-#include "cpu/gem_forge/accelerator/arch/gem_forge_dyn_inst_info.hh"
+#include "cpu/gem_forge/gem_forge_dyn_inst_info.hh"
 #include "cpu/gem_forge/gem_forge_lsq_callback.hh"
 
 #include "config/have_protobuf.hh"
@@ -51,6 +51,9 @@ public:
 
 private:
   ::GemForgeCPUDelegator *cpuDelegator;
+
+  ::StreamEngine *SE = nullptr;
+  bool SEMemorized = false;
   ::StreamEngine *getStreamEngine();
 
   template <typename T> T extractImm(const StaticInst *staticInst) const;
