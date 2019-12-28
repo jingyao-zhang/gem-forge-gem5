@@ -253,6 +253,8 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
+  SE_DPRINTF("Dispatch StreamConfig for %s.\n", streamRegion.region().c_str());
+
   // Initialize all the streams if this is the first time we encounter the
   // loop.
   for (const auto &streamInfo : streamRegion.streams()) {
@@ -292,6 +294,8 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
 
   const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
+
+  SE_DPRINTF("Execute StreamConfig for %s.\n", streamRegion.region());
 
   auto configStreams = this->getConfigStreamsInRegion(streamRegion);
   for (auto &S : configStreams) {
@@ -887,8 +891,6 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     // Notify the stream.
     S->commitStreamEnd(args.seqNum);
   }
-
-  this->allocateElements();
 }
 
 bool StreamEngine::canStreamStoreDispatch(const StreamStoreInst *inst) const {
@@ -1218,8 +1220,9 @@ void StreamEngine::allocateElements() {
   std::vector<Stream *> configuredStepRootStreams;
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
-    if (S->stepRootStream == S && S->configured) {
-      // This is a StepRootStream.
+    if (S->stepRootStream == S && S->configured &&
+        S->getLastDynamicStream().configExecuted) {
+      // This is a StepRootStream, with StreamConfig executed.
       configuredStepRootStreams.push_back(S);
     }
   }
