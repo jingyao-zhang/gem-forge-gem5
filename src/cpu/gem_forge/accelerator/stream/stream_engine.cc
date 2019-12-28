@@ -1503,9 +1503,6 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
    */
   for (const auto &idStream : this->streamMap) {
     auto S = idStream.second;
-    if (!S->configured) {
-      continue;
-    }
     for (auto &dynS : S->dynamicStreams) {
       if (!dynS.configExecuted) {
         // The StreamConfig has not been executed, do not issue.
@@ -1772,7 +1769,7 @@ void StreamEngine::dumpFIFO() const {
 
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
-    if (S->configured) {
+    if (!S->dynamicStreams.empty()) {
       S->dump();
     }
   }
