@@ -3,9 +3,9 @@
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include "base/trace.hh"
-#include "debug/RubyStream.hh"
+#include "debug/MLCRubyStream.hh"
 
-#define DEBUG_TYPE RubyStream
+#define DEBUG_TYPE MLCRubyStream
 #include "../stream_log.hh"
 
 MLCDynamicIndirectStream::MLCDynamicIndirectStream(
@@ -14,9 +14,10 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
     const DynamicStreamId &_rootStreamId)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
-                       _requestToLLCMsgBuffer, false /*mergeElements*/),
+                       _requestToLLCMsgBuffer),
       rootStreamId(_rootStreamId),
-      isOneIterationBehind(_configData->isOneIterationBehind) {
+      isOneIterationBehind(_configData->isOneIterationBehind),
+      totalTripCount(_configData->totalTripCount) {
   if (this->isOneIterationBehind) {
     // This indirect stream is behind one iteration, which means that the first
     // element is not handled by LLC stream. The stream buffer should start at
@@ -34,7 +35,6 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
 }
 
 void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
-  MLC_S_DPRINTF("Indirect received stream data.\n");
 
   // It is indeed a problem to synchronize the flow control between
   // base stream and indirect stream.
@@ -42,15 +42,106 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   // beyond the tailSliceIdx, so we adhoc to fix that.
   // ! This breaks the MaximumNumElement constraint.
 
-  while (this->tailSliceIdx <= msg.m_sliceId.startIdx) {
+  const auto &sliceId = msg.m_sliceId;
+  MLC_SLICE_DPRINTF(sliceId, "Receive data vaddr %#x paddr %#x.\n",
+                    sliceId.vaddr, msg.getaddr());
+
+  while (this->tailSliceIdx <= sliceId.startIdx) {
     this->allocateSlice();
   }
 
-  MLCDynamicStream::receiveStreamData(msg);
+  assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
+  assert(this->dynamicStreamId == sliceId.streamId &&
+         "Unmatched dynamic stream id.");
+
+  auto numElements = sliceId.getNumElements();
+  assert(numElements == 1 && "Can not merge indirect elements.");
+
+  /**
+   * It is possible when the core stream engine runs ahead than
+   * the LLC stream engine, and the stream data is delivered after
+   * the slice is released. In such case we will ignore the
+   * stream data.
+   *
+   * TODO: Properly handle this with sliceIdx.
+   */
+  if (this->slices.empty()) {
+    // We better be overflowed.
+    assert(this->hasOverflowed() && "No slices when not overflowed.");
+  } else {
+    if (sliceId.startIdx < this->slices.front().sliceId.startIdx) {
+      // The stream data is lagging behind. The slice is already
+      // released.
+      return;
+    }
+  }
+
+  /**
+   * Find the correct stream slice and insert the data there.
+   * Here we reversely search for it to save time.
+   */
+  for (auto slice = this->slices.rbegin(), end = this->slices.rend();
+       slice != end; ++slice) {
+    if (slice->sliceId.startIdx == sliceId.startIdx) {
+      // Found the slice.
+      if (slice->sliceId.getNumElements() != numElements) {
+        MLC_S_PANIC("Mismatch numElements, incoming %d, slice %d.\n",
+                    numElements, slice->sliceId.getNumElements());
+      }
+      /**
+       * ! Notice that for indirect stream, we also have to set the vaddr.
+       * ! So that it knows how to construct the response packet.
+       */
+      slice->sliceId.vaddr = sliceId.vaddr;
+      slice->setData(msg.m_DataBlk);
+      if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
+        // Sanity check that LLC and Core generated the same address.
+        // ! Core is line address.
+        if (slice->coreSliceId.vaddr != makeLineAddress(sliceId.vaddr)) {
+          MLC_SLICE_PANIC(sliceId, "Mismatch between Core %#x and LLC %#x.\n",
+                          slice->coreSliceId.vaddr, sliceId.vaddr);
+        }
+        this->makeResponse(*slice);
+      }
+      this->advanceStream();
+      return;
+    }
+  }
+
+  MLC_SLICE_PANIC(sliceId, "Fail to find the slice. Tail %lu.\n",
+                  this->tailSliceIdx);
 }
 
-void MLCDynamicIndirectStream::sendCreditToLLC() {
-  // Just update the record.
-  // Since the credit is managed through the base stream.
-  this->llcTailSliceIdx = this->tailSliceIdx;
+void MLCDynamicIndirectStream::advanceStream() {
+  // We simply pop the stream and rely on other API to allocate slices.
+  this->popStream();
+  // Of course we need to allocate more slices.
+  while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
+         !this->hasOverflowed()) {
+    this->allocateSlice();
+  }
+}
+
+void MLCDynamicIndirectStream::allocateSlice() {
+  // For indirect stream, there is no merging, so it's pretty simple
+  // to allocate new slice.
+  DynamicStreamSliceId sliceId;
+  sliceId.startIdx = this->tailSliceIdx;
+  sliceId.endIdx = this->tailSliceIdx + 1;
+
+  MLC_SLICE_DPRINTF(sliceId, "Allocated indirect slice.\n");
+
+  this->slices.emplace_back(sliceId);
+  this->stream->statistic.numFloatAllocatedSlice++;
+
+  this->tailSliceIdx++;
+}
+
+bool MLCDynamicIndirectStream::hasOverflowed() const {
+  return this->totalTripCount > 0 &&
+         (this->tailSliceIdx >= (this->totalTripCount + 1));
+}
+
+int64_t MLCDynamicIndirectStream::getTotalTripCount() const {
+  return this->totalTripCount;
 }

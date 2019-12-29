@@ -191,7 +191,8 @@ public:
    * ! Sean: StreamAwareCache
    * Allocate the CacheStreamConfigureData.
    */
-  CacheStreamConfigureData *allocateCacheConfigureData(uint64_t configSeqNum);
+  CacheStreamConfigureData *allocateCacheConfigureData(uint64_t configSeqNum,
+                                                       bool isIndirect = false);
 
   /**
    * Helper function used in StreamAwareCache.
@@ -213,7 +214,6 @@ public:
   StreamEngine *se;
 
 protected:
-
   std::unordered_set<Stream *> baseStepStreams;
   std::unordered_set<Stream *> baseStepRootStreams;
   std::unordered_set<Stream *> dependentStepStreams;

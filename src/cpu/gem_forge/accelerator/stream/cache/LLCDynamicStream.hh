@@ -74,14 +74,21 @@ public:
   /**
    * Indirect elements that has been waiting for
    * the direct stream element's data.
+   * Indexed by element idx.
    */
   std::set<uint64_t> waitingIndirectElements;
 
   /**
    * Indirect elements that has seen the direct stream element's data
    * and is waiting to be issued.
+   * Indexed by element idx.
    */
   std::multimap<uint64_t, LLCDynamicStream *> readyIndirectElements;
+  /**
+   * Store the base element data, used to compute indirect stream address.
+   * Indexed by element idx.
+   */
+  std::map<uint64_t, uint64_t> readyBaseElementData;
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

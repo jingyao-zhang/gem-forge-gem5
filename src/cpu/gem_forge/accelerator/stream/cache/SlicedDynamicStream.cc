@@ -33,11 +33,15 @@ const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
   return this->slices.front();
 }
 
+Addr SlicedDynamicStream::getElementVAddr(uint64_t elementIdx) const {
+  return this->addrGenCallback->genAddr(elementIdx, this->formalParams,
+                                        getStreamValueFail);
+}
+
 void SlicedDynamicStream::allocateOneElement() const {
 
   // Let's not worry about indirect streams here.
-  auto lhs = this->addrGenCallback->genAddr(this->tailIdx, this->formalParams,
-                                            getStreamValueFail);
+  auto lhs = this->getElementVAddr(this->tailIdx);
   auto rhs = lhs + this->elementSize;
 
   // Break to cache line granularity, [lhsBlock, rhsBlock]

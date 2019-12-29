@@ -184,7 +184,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamEnd(PacketPtr);
     void receiveStreamMigrate(LLCDynamicStreamPtr);
     void receiveStreamFlow(DynamicStreamSliceId);
-    void receiveStreamElementData(DynamicStreamSliceId);
+    void receiveStreamElementData(DynamicStreamSliceId, DataBlock);
     void receiveStreamIndirectRequest(RequestMsg);
   }
 
@@ -637,7 +637,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           //   in_msg.sliceId.getStartIdx(), 
           //   in_msg.sliceId.getNumElements());
           // We have to notify the SE about the data.
-          se.receiveStreamElementData(out_msg.sliceId);
+          se.receiveStreamElementData(out_msg.sliceId, out_msg.DataBlk);
 
           /**
            * ! Sean: StreamAwareCache.
@@ -717,7 +717,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           //   out_msg.sliceId.getStartIdx(), 
           //   out_msg.sliceId.getNumElements());
           // We have to notify the SE about the data.
-          se.receiveStreamElementData(out_msg.sliceId);
+          se.receiveStreamElementData(out_msg.sliceId, out_msg.DataBlk);
         }
       }
     }

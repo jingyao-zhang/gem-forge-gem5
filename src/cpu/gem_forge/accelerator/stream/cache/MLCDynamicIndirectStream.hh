@@ -7,8 +7,8 @@
  * MLCDynamicIndirectStream is a special stream.
  * 1. It does not send credit to LLC. The direct stream should perform the flow
  * control for the indirect stream.
- * 2. It always allocates elements one by one. No merge elements if they are
- * from the same cache line.
+ * 2. It always allocates elements one by one. No merge elements even if they
+ * are from the same cache line.
  */
 class MLCDynamicIndirectStream : public MLCDynamicStream {
 public:
@@ -44,9 +44,20 @@ private:
   bool isOneIterationBehind;
 
   /**
-   * Override the basic behavior, never really sends out the credit.
+   * -1 means indefinite.
    */
-  void sendCreditToLLC() override;
+  const int64_t totalTripCount;
+
+  bool hasOverflowed() const override;
+  int64_t getTotalTripCount() const override;
+  bool matchSliceId(const DynamicStreamSliceId &A,
+                    const DynamicStreamSliceId &B) const override {
+    // Indirect stream can just match the startIdx.
+    return A.startIdx == B.startIdx;
+  }
+
+  void advanceStream() override;
+  void allocateSlice();
 };
 
 #endif

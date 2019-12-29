@@ -29,7 +29,8 @@ public:
   void receiveStreamEnd(PacketPtr pkt);
   void receiveStreamMigrate(LLCDynamicStreamPtr stream);
   void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
-  void receiveStreamElementData(const DynamicStreamSliceId &sliceId);
+  void receiveStreamElementData(const DynamicStreamSliceId &sliceId,
+                                const DataBlock &dataBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
   void wakeup() override;
   void print(std::ostream &out) const override;

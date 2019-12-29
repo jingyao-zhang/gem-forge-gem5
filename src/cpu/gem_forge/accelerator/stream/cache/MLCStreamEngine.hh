@@ -8,8 +8,8 @@
  * This is where it receives the offloaded streams' data.
  */
 
+#include "MLCDynamicDirectStream.hh"
 #include "MLCDynamicIndirectStream.hh"
-#include "MLCDynamicStream.hh"
 
 #include "mem/packet.hh"
 

@@ -49,10 +49,10 @@ Addr MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     streamConfigureData->initPAddrValid = true;
   }
 
-  // Create the stream.
-  auto stream = new MLCDynamicStream(streamConfigureData, this->controller,
-                                     this->responseToUpperMsgBuffer,
-                                     this->requestToLLCMsgBuffer);
+  // Create the direct stream.
+  auto stream = new MLCDynamicDirectStream(
+      streamConfigureData, this->controller, this->responseToUpperMsgBuffer,
+      this->requestToLLCMsgBuffer);
   this->idToStreamMap.emplace(stream->getDynamicStreamId(), stream);
   // Check if there is indirect stream.
   if (streamConfigureData->indirectStreamConfigure != nullptr) {
@@ -128,7 +128,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
     // Sliently ignore it.
     return;
   }
-  assert(false && "Failed to find configured stream for stream data.");
+  panic("Failed to find configured stream for %s.\n", sliceId.streamId);
 }
 
 bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {

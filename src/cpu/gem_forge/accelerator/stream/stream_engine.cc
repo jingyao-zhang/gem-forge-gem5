@@ -298,13 +298,20 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   SE_DPRINTF("Execute StreamConfig for %s.\n", streamRegion.region());
 
   auto configStreams = this->getConfigStreamsInRegion(streamRegion);
+
+  /**
+   * First notify the stream. This will set up the addr gen function.
+   * This has to be done before trying to offload stream.
+   */
   for (auto &S : configStreams) {
-    // Simply notify the stream.
     const StreamConfigArgs::InputVec *inputVec = nullptr;
     if (args.inputMap) {
       inputVec = &(args.inputMap->at(S->staticId));
     }
     S->executeStreamConfig(args.seqNum, inputVec);
+  }
+
+  for (auto &S : configStreams) {
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
      */
@@ -336,7 +343,8 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
               // Only dependent on this direct stream.
               streamConfigureData->indirectStreamConfigure =
                   std::shared_ptr<CacheStreamConfigureData>(
-                      dependentStream->allocateCacheConfigureData(args.seqNum));
+                      dependentStream->allocateCacheConfigureData(
+                          args.seqNum, true /* isIndirect */));
               break;
             }
           }

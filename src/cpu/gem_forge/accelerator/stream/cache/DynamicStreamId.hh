@@ -22,6 +22,9 @@ struct DynamicStreamId {
   DynamicStreamId() = default;
   DynamicStreamId(int _coreId, uint64_t _staticId, uint64_t _streamInstance)
       : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance) {}
+  DynamicStreamId(const DynamicStreamId &other)
+      : coreId(other.coreId), staticId(other.staticId),
+        streamInstance(other.streamInstance), streamName(other.streamName) {}
 
   bool operator==(const DynamicStreamId &other) const {
     return this->coreId == other.coreId && this->staticId == other.staticId &&

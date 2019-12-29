@@ -36,7 +36,15 @@ public:
 
   int64_t getTotalTripCount() const { return this->totalTripCount; }
 
+  /**
+   * Helper function to get element vaddr and size.
+   */
+  Addr getElementVAddr(uint64_t elementIdx) const;
+  int32_t getElementSize() const { return this->elementSize; }
+
 private:
+  // TODO: Move this out of SlicedDynamicStream and make it only
+  // TODO: worry about slicing.
   DynamicStreamId streamId;
   DynamicStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;

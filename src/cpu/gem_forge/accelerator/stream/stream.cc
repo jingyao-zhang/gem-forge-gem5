@@ -331,7 +331,7 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
 }
 
 CacheStreamConfigureData *
-Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
+Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   auto &dynStream = this->getDynamicStream(configSeqNum);
   auto configData = new CacheStreamConfigureData(
       this, dynStream.dynamicStreamId, this->getElementSize(),
@@ -340,27 +340,29 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum) {
   // Set the totalTripCount.
   configData->totalTripCount = dynStream.totalTripCount;
 
-  // Set the initial vaddr.
-  configData->initVAddr = dynStream.addrGenCallback->genAddr(
-      0, dynStream.formalParams, getStreamValueFail);
-  // Remember to make line address.
-  configData->initVAddr -=
-      configData->initVAddr % this->cpuDelegator->cacheLineSize();
+  // Set the initial vaddr if this is not indirect stream.
+  if (!isIndirect) {
+    configData->initVAddr = dynStream.addrGenCallback->genAddr(
+        0, dynStream.formalParams, getStreamValueFail);
+    // Remember to make line address.
+    configData->initVAddr -=
+        configData->initVAddr % this->cpuDelegator->cacheLineSize();
 
-  Addr initPAddr;
-  if (this->cpuDelegator->translateVAddrOracle(configData->initVAddr,
-                                               initPAddr)) {
-    configData->initPAddr = initPAddr;
-    configData->initPAddrValid = true;
-  } else {
-    /**
-     * In case of faulted initVAddr, we simply set the initPAddr to 0
-     * and mark it invalid. Later the MLC StreamEngine will pick up
-     * a physical address that maps to the closes LLC bank and let the
-     * stream spin there until we have a valid address.
-     */
-    configData->initPAddr = 0;
-    configData->initPAddrValid = false;
+    Addr initPAddr;
+    if (this->cpuDelegator->translateVAddrOracle(configData->initVAddr,
+                                                 initPAddr)) {
+      configData->initPAddr = initPAddr;
+      configData->initPAddrValid = true;
+    } else {
+      /**
+       * In case of faulted initVAddr, we simply set the initPAddr to 0
+       * and mark it invalid. Later the MLC StreamEngine will pick up
+       * a physical address that maps to the closes LLC bank and let the
+       * stream spin there until we have a valid address.
+       */
+      configData->initPAddr = 0;
+      configData->initPAddrValid = false;
+    }
   }
 
   return configData;

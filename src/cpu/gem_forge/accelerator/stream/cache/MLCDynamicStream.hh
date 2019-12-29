@@ -1,8 +1,6 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
 
-#include "SlicedDynamicStream.hh"
-
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 
 #include "mem/ruby/common/DataBlock.hh"
@@ -20,8 +18,7 @@ public:
   MLCDynamicStream(CacheStreamConfigureData *_configData,
                    AbstractStreamAwareController *_controller,
                    MessageBuffer *_responseMsgBuffer,
-                   MessageBuffer *_requestToLLCMsgBuffer,
-                   bool _mergeElements = true);
+                   MessageBuffer *_requestToLLCMsgBuffer);
 
   virtual ~MLCDynamicStream();
 
@@ -48,7 +45,9 @@ public:
   /**
    * Get where is the LLC stream is at the end of current allocated credits.
    */
-  Addr getLLCStreamTailPAddr() const { return this->llcTailPAddr; }
+  virtual Addr getLLCStreamTailPAddr() const {
+    panic("Should only call this on direct stream.");
+  }
 
   virtual void receiveStreamData(const ResponseMsg &msg);
   void receiveStreamRequest(const DynamicStreamSliceId &sliceId);
@@ -65,15 +64,10 @@ protected:
   DynamicStreamId dynamicStreamId;
   bool isPointerChase;
 
-  SlicedDynamicStream slicedStream;
-
   AbstractStreamAwareController *controller;
   MessageBuffer *responseMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;
   const uint64_t maxNumSlices;
-  // Whether we can merge continuous slices if they are in the same cache
-  // line.
-  const bool mergeElements;
   /**
    * Represent an allocated stream slice at MLC.
    * Used as a meeting point for the request from core
@@ -86,6 +80,8 @@ protected:
     bool dataReady;
     enum CoreStatusE { NONE, WAIT, DONE, FAULTED };
     CoreStatusE coreStatus;
+    // For debug purpose, we also remember core's request sliceId.
+    DynamicStreamSliceId coreSliceId;
 
     MLCStreamSlice(const DynamicStreamSliceId &_sliceId)
         : sliceId(_sliceId), dataBlock(), dataReady(false),
@@ -117,23 +113,26 @@ protected:
   // Element index of allocated [head, tail).
   uint64_t headSliceIdx;
   uint64_t tailSliceIdx;
-  // Where the LLC stream would be at tailSliceIdx.
-  Addr tailPAddr;
-  MachineID tailSliceLLCBank;
-
-  // Where the LLC stream's tail index is.
-  uint64_t llcTailSliceIdx;
-  // Where the LLC stream currently would be, given the credit limit.
-  Addr llcTailPAddr;
-  MachineID llcTailSliceLLCBank;
 
   EventFunctionWrapper advanceStreamEvent;
 
-  void advanceStream();
+  virtual void advanceStream() = 0;
   void makeResponse(MLCStreamSlice &element);
 
   MLCStreamSlice &getSlice(uint64_t sliceIdx);
   const MLCStreamSlice &getSlice(uint64_t sliceIdx) const;
+
+  /**
+   * API for this to check if overflowed.
+   */
+  virtual bool hasOverflowed() const = 0;
+  virtual int64_t getTotalTripCount() const = 0;
+  virtual bool matchSliceId(const DynamicStreamSliceId &A,
+                            const DynamicStreamSliceId &B) const {
+    // By default match the vaddr.
+    // TODO: This is really wrong.
+    return A.vaddr == B.vaddr;
+  }
 
   /**
    * Helper function to translate the vaddr to paddr.
@@ -146,15 +145,9 @@ protected:
   MachineID mapPAddrToLLCBank(Addr paddr) const;
 
   /**
-   * Allocate stream element. It merges neighboring slices if they are from
-   * the same cache line.
+   * Pop slices.
    */
-  void allocateSlice();
-
-  /**
-   * Send credit to the LLC stream. Update the llcTailSliceIdx.
-   */
-  virtual void sendCreditToLLC();
+  void popStream();
 
   /**
    * A helper function to dump some basic status of the stream when panic.

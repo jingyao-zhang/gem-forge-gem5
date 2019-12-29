@@ -15,8 +15,9 @@ CacheStreamConfigureData::CacheStreamConfigureData(
 CacheStreamConfigureData::CacheStreamConfigureData(
     const CacheStreamConfigureData &other)
     : stream(other.stream), dynamicId(other.dynamicId),
-      initVAddr(other.initVAddr), initPAddr(other.initPAddr),
-      formalParams(other.formalParams), addrGenCallback(other.addrGenCallback),
+      elementSize(other.elementSize), initVAddr(other.initVAddr),
+      initPAddr(other.initPAddr), formalParams(other.formalParams),
+      addrGenCallback(other.addrGenCallback),
       isPointerChase(other.isPointerChase),
       isOneIterationBehind(other.isOneIterationBehind),
       indirectStreamConfigure(other.indirectStreamConfigure),

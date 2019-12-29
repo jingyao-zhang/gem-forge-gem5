@@ -31,23 +31,48 @@
   panic(S_FIFO_ENTRY_MSG((E), format, ##args))
 
 #define DYN_S_MSG(dynamicStreamId, format, args...)                            \
-  "[%lu-%lu] " format, (dynamicStreamId).staticId,                             \
+  "[%lu-%lu]" format, (dynamicStreamId).staticId,                              \
       (dynamicStreamId).streamInstance, ##args
 #define DYN_S_DPRINTF(dynamicStreamId, format, args...)                        \
   DPRINTF(DEBUG_TYPE, DYN_S_MSG((dynamicStreamId), format, ##args))
-#define MLC_S_DPRINTF(format, args...)                                         \
-  DPRINTF(DEBUG_TYPE, DYN_S_MSG(this->dynamicStreamId, "[MLC_SE%d] " format,   \
-                                this->controller->getMachineID().num, ##args))
-#define LLC_S_DPRINTF(streamId, format, args...)                               \
-  DPRINTF(DEBUG_TYPE, DYN_S_MSG((streamId), "[LLC_SE%d] " format,              \
-                                this->controller->getMachineID().num, ##args))
 
 #define SLICE_MSG(sliceId, format, args...)                                    \
   DYN_S_MSG((sliceId).streamId, "[%lu, +%d) " format, (sliceId).startIdx,      \
             (sliceId).endIdx - (sliceId).startIdx, ##args)
+
+#define MLC_S_MSG(format, args...)                                             \
+  "[MLC_SE%d][%lu-%lu]: " format, this->controller->getMachineID().num,        \
+      this->dynamicStreamId.staticId, this->dynamicStreamId.streamInstance,    \
+      ##args
+#define MLC_SLICE_MSG(sliceId, format, args...)                                \
+  "[MLC_SE%d][%lu-%lu][%lu, +%d): " format,                                    \
+      this->controller->getMachineID().num, this->dynamicStreamId.staticId,    \
+      this->dynamicStreamId.streamInstance, (sliceId).startIdx,                \
+      (sliceId).endIdx - (sliceId).startIdx, ##args
+
+#define MLC_S_DPRINTF(format, args...)                                         \
+  DPRINTF(DEBUG_TYPE, MLC_S_MSG(format, ##args))
+#define MLC_S_PANIC(format, args...)                                           \
+  this->panicDump();                                                           \
+  panic(MLC_S_MSG(format, ##args))
+
 #define MLC_SLICE_DPRINTF(sliceId, format, args...)                            \
-  DPRINTF(DEBUG_TYPE, SLICE_MSG(sliceId, "[MLC_SE%d] " format,                 \
-                                this->controller->getMachineID().num, ##args))
+  DPRINTF(DEBUG_TYPE, MLC_SLICE_MSG(sliceId, format, ##args))
+#define MLC_SLICE_PANIC(sliceId, format, args...)                              \
+  this->panicDump();                                                           \
+  panic(MLC_SLICE_MSG(sliceId, format, ##args))
+
+#define LLC_S_MSG(streamId, format, args...)                                   \
+  "[LLC_SE%d][%lu-%lu]: " format, this->controller->getMachineID().num,        \
+      (streamId).staticId, (streamId).streamInstance, ##args
+#define LLC_SLICE_MSG(sliceId, format, args...)                                \
+  "[LLC_SE%d][%lu-%lu][%lu, +%d): " format,                                    \
+      this->controller->getMachineID().num, (sliceId).streamId.staticId,       \
+      (sliceId).streamId.streamInstance, (sliceId).startIdx,                   \
+      (sliceId).endIdx - (sliceId).startIdx, ##args
+
+#define LLC_S_DPRINTF(streamId, format, args...)                               \
+  DPRINTF(DEBUG_TYPE, LLC_S_MSG(streamId, format, ##args))
+
 #define LLC_SLICE_DPRINTF(sliceId, format, args...)                            \
-  DPRINTF(DEBUG_TYPE, SLICE_MSG(sliceId, "[LLC_SE%d] " format,                 \
-                                this->controller->getMachineID().num, ##args))
+  DPRINTF(DEBUG_TYPE, LLC_SLICE_MSG(sliceId, format, ##args))
