@@ -25,8 +25,8 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     assert(!this->slices.empty() && "No initial slices.");
     // Let's do some sanity check.
     auto &firstSliceId = this->slices.front().sliceId;
-    assert(firstSliceId.startIdx == 0 && "Start index should always be 0.");
-    assert(firstSliceId.endIdx - firstSliceId.startIdx == 1 &&
+    assert(firstSliceId.lhsElementIdx == 0 && "Start index should always be 0.");
+    assert(firstSliceId.rhsElementIdx - firstSliceId.lhsElementIdx == 1 &&
            "Indirect stream should never merge slices.");
     MLC_SLICE_DPRINTF(firstSliceId, "Initial offset pop.\n");
     this->headSliceIdx++;
@@ -46,7 +46,7 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   MLC_SLICE_DPRINTF(sliceId, "Receive data vaddr %#x paddr %#x.\n",
                     sliceId.vaddr, msg.getaddr());
 
-  while (this->tailSliceIdx <= sliceId.startIdx) {
+  while (this->tailSliceIdx <= sliceId.lhsElementIdx) {
     this->allocateSlice();
   }
 
@@ -69,7 +69,7 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
     // We better be overflowed.
     assert(this->hasOverflowed() && "No slices when not overflowed.");
   } else {
-    if (sliceId.startIdx < this->slices.front().sliceId.startIdx) {
+    if (sliceId.lhsElementIdx < this->slices.front().sliceId.lhsElementIdx) {
       // The stream data is lagging behind. The slice is already
       // released.
       return;
@@ -82,7 +82,7 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
    */
   for (auto slice = this->slices.rbegin(), end = this->slices.rend();
        slice != end; ++slice) {
-    if (slice->sliceId.startIdx == sliceId.startIdx) {
+    if (slice->sliceId.lhsElementIdx == sliceId.lhsElementIdx) {
       // Found the slice.
       if (slice->sliceId.getNumElements() != numElements) {
         MLC_S_PANIC("Mismatch numElements, incoming %d, slice %d.\n",
@@ -126,13 +126,13 @@ void MLCDynamicIndirectStream::allocateSlice() {
   // For indirect stream, there is no merging, so it's pretty simple
   // to allocate new slice.
   DynamicStreamSliceId sliceId;
-  sliceId.startIdx = this->tailSliceIdx;
-  sliceId.endIdx = this->tailSliceIdx + 1;
+  sliceId.lhsElementIdx = this->tailSliceIdx;
+  sliceId.rhsElementIdx = this->tailSliceIdx + 1;
 
   MLC_SLICE_DPRINTF(sliceId, "Allocated indirect slice.\n");
 
   this->slices.emplace_back(sliceId);
-  this->stream->statistic.numFloatAllocatedSlice++;
+  this->stream->statistic.numMLCAllocatedSlice++;
 
   this->tailSliceIdx++;
 }

@@ -20,7 +20,8 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer),
-      slicedStream(_configData), llcTailSliceIdx(0) {
+      slicedStream(_configData, true /* coalesceContinuousElements */),
+      llcTailSliceIdx(0) {
 
   // Initialize the llc bank.
   assert(_configData->initPAddrValid && "InitPAddr should be valid.");
@@ -84,7 +85,7 @@ void MLCDynamicDirectStream::allocateSlice() {
   MLC_SLICE_DPRINTF(sliceId, "Allocated %#x.\n", sliceId.vaddr);
 
   this->slices.emplace_back(sliceId);
-  this->stream->statistic.numFloatAllocatedSlice++;
+  this->stream->statistic.numMLCAllocatedSlice++;
 
   // Try to handle faulted slice.
   Addr paddr;
@@ -130,8 +131,8 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
   msg->m_Destination.add(this->llcTailSliceLLCBank);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_sliceId.streamId = this->dynamicStreamId;
-  msg->m_sliceId.startIdx = this->llcTailSliceIdx;
-  msg->m_sliceId.endIdx = this->tailSliceIdx;
+  msg->m_sliceId.lhsElementIdx = this->llcTailSliceIdx;
+  msg->m_sliceId.rhsElementIdx = this->tailSliceIdx;
 
   Cycles latency(1); // Just use 1 cycle latency here.
 

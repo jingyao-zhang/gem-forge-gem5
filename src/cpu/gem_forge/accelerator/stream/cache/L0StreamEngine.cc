@@ -17,10 +17,10 @@
           this->controller->getMachineID().num, (streamId).staticId,           \
           (streamId).streamInstance, ##args)
 
-#define L0_ELEMENT_DPRINTF(streamId, startIdx, numElements, format, args...)   \
+#define L0_ELEMENT_DPRINTF(streamId, lhsElementIdx, numElements, format, args...)   \
   DPRINTF(L0RubyStream, "[L0_SE%d][%lu-%d][%lu, +%d): " format,                \
           this->controller->getMachineID().num, (streamId).staticId,           \
-          (streamId).streamInstance, startIdx, numElements, ##args)
+          (streamId).streamInstance, lhsElementIdx, numElements, ##args)
 
 L0StreamEngine::L0StreamEngine(AbstractStreamAwareController *_controller)
     : controller(_controller) {}
@@ -97,11 +97,11 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
     auto sliceId = this->getSliceId(pkt);
     assert(sliceId.getNumElements() == 1 &&
            "Never merge elements for indirect stream one iteration behind.");
-    if (sliceId.startIdx == 0) {
+    if (sliceId.lhsElementIdx == 0) {
       // Ignore the first stream element.
       return false;
     }
-    L0_ELEMENT_DPRINTF(sliceId.streamId, sliceId.startIdx,
+    L0_ELEMENT_DPRINTF(sliceId.streamId, sliceId.lhsElementIdx,
                        sliceId.getNumElements(), "Is stream access.\n");
   }
   return true;
@@ -129,8 +129,8 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
     return false;
   }
   auto slice = this->getSliceId(pkt);
-  L0_ELEMENT_DPRINTF(slice.streamId, slice.startIdx,
-                     slice.endIdx - slice.startIdx, "Forward hit.\n");
+  L0_ELEMENT_DPRINTF(slice.streamId, slice.lhsElementIdx,
+                     slice.rhsElementIdx - slice.lhsElementIdx, "Forward hit.\n");
   return true;
 }
 

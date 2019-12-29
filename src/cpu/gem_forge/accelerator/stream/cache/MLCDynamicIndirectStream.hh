@@ -28,7 +28,7 @@ public:
     assert(sliceId.getNumElements() == 1 &&
            "Multiple elements for indirect stream.");
     if (this->isOneIterationBehind) {
-      if (sliceId.startIdx == 0) {
+      if (sliceId.lhsElementIdx == 0) {
         return false;
       }
     }
@@ -52,8 +52,8 @@ private:
   int64_t getTotalTripCount() const override;
   bool matchSliceId(const DynamicStreamSliceId &A,
                     const DynamicStreamSliceId &B) const override {
-    // Indirect stream can just match the startIdx.
-    return A.startIdx == B.startIdx;
+    // Indirect stream can just match the lhsElementIdx.
+    return A.lhsElementIdx == B.lhsElementIdx;
   }
 
   void advanceStream() override;

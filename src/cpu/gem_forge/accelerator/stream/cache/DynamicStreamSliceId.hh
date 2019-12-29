@@ -15,30 +15,30 @@
  * This represent the basic unit how the cache system manages streams.
  * A slice is a piece of continuous memory, and does not span across
  * cache lines. It also remembers elements within this slice,
- * [startIdx, endIdx).
+ * [lhsElementIdx, rhsElementIdx).
  *
  * Notice that one element may span across multiple cache lines, and
  * thus the data in a slice may only be a portion of the whole element.
  */
 struct DynamicStreamSliceId {
   DynamicStreamId streamId;
-  uint64_t startIdx;
-  uint64_t endIdx;
+  uint64_t lhsElementIdx;
+  uint64_t rhsElementIdx;
   Addr vaddr;
   int size;
 
   DynamicStreamSliceId()
-      : streamId(), startIdx(0), endIdx(0), vaddr(0), size(0) {}
+      : streamId(), lhsElementIdx(0), rhsElementIdx(0), vaddr(0), size(0) {}
 
-  bool isValid() const { return !(this->startIdx == 0 && this->endIdx == 0); }
+  bool isValid() const { return !(this->lhsElementIdx == 0 && this->rhsElementIdx == 0); }
 
-  uint64_t getStartIdx() const { return this->startIdx; }
-  uint64_t getNumElements() const { return this->endIdx - this->startIdx; }
+  uint64_t getStartIdx() const { return this->lhsElementIdx; }
+  uint64_t getNumElements() const { return this->rhsElementIdx - this->lhsElementIdx; }
   int getSize() const { return this->size; }
 
   bool operator==(const DynamicStreamSliceId &other) const {
     return this->streamId == other.streamId &&
-           this->startIdx == other.startIdx && this->endIdx == other.endIdx;
+           this->lhsElementIdx == other.lhsElementIdx && this->rhsElementIdx == other.rhsElementIdx;
   }
 
   bool operator!=(const DynamicStreamSliceId &other) const {

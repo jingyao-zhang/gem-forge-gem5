@@ -139,7 +139,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
 void LLCStreamEngine::receiveStreamFlow(const DynamicStreamSliceId &sliceId) {
   // Simply append it to the list.
-  LLCSE_DPRINTF("Received stream flow [%lu, +%lu).\n", sliceId.startIdx,
+  LLCSE_DPRINTF("Received stream flow [%lu, +%lu).\n", sliceId.lhsElementIdx,
                 sliceId.getNumElements());
   this->pendingStreamFlowControlMsgs.push_back(sliceId);
   this->scheduleEvent(Cycles(1));
@@ -175,8 +175,8 @@ void LLCStreamEngine::receiveStreamElementData(
   if (stream->indirectStreams.empty()) {
     return;
   }
-  for (auto idx = sliceId.startIdx, endIdx = sliceId.endIdx; idx < endIdx;
-       ++idx) {
+  for (auto idx = sliceId.lhsElementIdx, rhsElementIdx = sliceId.rhsElementIdx;
+       idx < rhsElementIdx; ++idx) {
     assert(stream->waitingIndirectElements.count(idx) == 1 &&
            "There is no waiting indirect element for this index.");
 
@@ -294,11 +294,11 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
     bool processed = false;
     for (auto stream : this->streams) {
       if (stream->getDynamicStreamId() == msg.streamId &&
-          msg.startIdx == stream->allocatedSliceIdx) {
+          msg.lhsElementIdx == stream->allocatedSliceIdx) {
         // We found it.
         // Update the idx.
         LLC_S_DPRINTF(stream->getDynamicStreamId(), "Add credit %lu -> %lu.\n",
-                      msg.startIdx, msg.endIdx);
+                      msg.lhsElementIdx, msg.rhsElementIdx);
         stream->addCredit(msg.getNumElements());
         processed = true;
         break;
@@ -308,7 +308,8 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
       iter = this->pendingStreamFlowControlMsgs.erase(iter);
     } else {
       // LLCSE_DPRINTF("Failed to process stream credit %s [%lu, %lu).\n",
-      //               msg.streamId.name.c_str(), msg.startIdx, msg.endIdx);
+      //               msg.streamId.name.c_str(), msg.lhsElementIdx,
+      //               msg.rhsElementIdx);
       ++iter;
     }
   }
@@ -411,10 +412,12 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
     auto sliceId = stream->consumeNextSlice();
     LLC_SLICE_DPRINTF(sliceId, "Issue.\n");
+    stream->getStaticStream()->statistic.numLLCSentSlice++;
 
     // Register the waiting indirect elements.
     if (!stream->indirectStreams.empty()) {
-      for (auto idx = sliceId.startIdx; idx < sliceId.endIdx; ++idx) {
+      for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx;
+           ++idx) {
         stream->waitingIndirectElements.insert(idx);
       }
     }
@@ -476,13 +479,15 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
 
   DynamicStreamSliceId sliceId;
   sliceId.streamId = indirectStream->getDynamicStreamId();
-  sliceId.startIdx = idx;
-  sliceId.endIdx = idx + 1;
+  sliceId.lhsElementIdx = idx;
+  sliceId.rhsElementIdx = idx + 1;
   sliceId.vaddr = vaddr;
+  // ! Here we overwrite the size.
   sliceId.size = indirectStream->getElementSize();
 
   LLC_SLICE_DPRINTF(sliceId, "Generate indirect slice %#x, size %d.\n", vaddr,
                     sliceId.size);
+  indirectStream->getStaticStream()->statistic.numLLCSentSlice++;
 
   assert(paddr % RubySystem::getBlockSizeBytes() + sliceId.size <=
              RubySystem::getBlockSizeBytes() &&

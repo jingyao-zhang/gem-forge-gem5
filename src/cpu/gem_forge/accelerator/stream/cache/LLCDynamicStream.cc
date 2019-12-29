@@ -4,7 +4,8 @@
 
 // TODO: Support real flow control.
 LLCDynamicStream::LLCDynamicStream(CacheStreamConfigureData *_configData)
-    : configData(*_configData), slicedStream(_configData),
+    : configData(*_configData),
+      slicedStream(_configData, true /* coalesceContinuousElements */),
       maxWaitingDataBaseRequests(2), sliceIdx(0),
       allocatedSliceIdx(_configData->initAllocatedIdx),
       waitingDataBaseRequests(0) {

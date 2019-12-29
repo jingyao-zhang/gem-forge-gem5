@@ -2,10 +2,10 @@
 #define __GEM_FORGE_SLICED_DYNAMIC_STREAM_H__
 
 /**
- * Since the cache stream engines manage streams in slice granularity,
- * we introduce this utility class to slice the stream.
- *
- * Only direct streams can be sliced.
+ * This will slice the stream into slices. A slice is a piece of the stream,
+ * and can span across multiple elements (when continuous elements are
+ * coalesced) or be sub-element (when multiple streams are coalesced into a
+ * wider stream).
  */
 
 #include "CacheStreamConfigureData.hh"
@@ -15,7 +15,8 @@
 
 class SlicedDynamicStream {
 public:
-  SlicedDynamicStream(CacheStreamConfigureData *_configData);
+  SlicedDynamicStream(CacheStreamConfigureData *_configData,
+                      bool _coalesceContinuousElements);
 
   DynamicStreamSliceId getNextSlice();
   const DynamicStreamSliceId &peekNextSlice() const;
@@ -30,8 +31,7 @@ public:
    * with the core's StreamEngine.
    */
   bool hasOverflowed() const {
-    return this->totalTripCount > 0 &&
-           (this->peekNextSlice().startIdx >= (this->totalTripCount + 1));
+    return this->hasOverflowed(this->peekNextSlice().lhsElementIdx);
   }
 
   int64_t getTotalTripCount() const { return this->totalTripCount; }
@@ -54,18 +54,23 @@ private:
    */
   const int64_t totalTripCount;
 
+  const bool coalesceContinuousElements;
+
   /**
    * Internal states.
    * ! Evil trick to make peekNextSlice constant.
    */
-  mutable uint64_t tailIdx;
+  mutable uint64_t tailElementIdx;
   /**
    * The headIdx that can be checked for slicing.
    */
-  mutable uint64_t sliceHeadIdx;
+  mutable uint64_t sliceHeadElementIdx;
   mutable std::deque<DynamicStreamSliceId> slices;
 
   void allocateOneElement() const;
+  bool hasOverflowed(uint64_t elementIdx) const {
+    return this->totalTripCount > 0 && elementIdx >= (this->totalTripCount + 1);
+  }
 };
 
 #endif
