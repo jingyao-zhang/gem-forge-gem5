@@ -995,11 +995,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
    * Sean: StreamAwareCache.
    * Simply forward the StreamConfig request without changing anything.
    */
-   transition({I, S, E, M, Inst_IS, IS, IM, SM}, StreamConfig) {
+   transition({I, S, E, M, Inst_IS, IS, IM, SM, IU}, StreamConfig) {
      fsc_forwardStreamConfig;
      k_popMandatoryQueue;
    }
-   transition({I, S, E, M, Inst_IS, IS, IM, SM}, StreamEnd) {
+   transition({I, S, E, M, Inst_IS, IS, IM, SM, IU}, StreamEnd) {
      fse_forwardStreamEnd;
      k_popMandatoryQueue;
    }

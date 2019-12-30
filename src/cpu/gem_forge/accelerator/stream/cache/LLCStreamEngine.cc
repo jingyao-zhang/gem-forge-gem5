@@ -483,7 +483,14 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   sliceId.rhsElementIdx = idx + 1;
   sliceId.vaddr = vaddr;
   // ! Here we overwrite the size.
-  sliceId.size = indirectStream->getElementSize();
+  auto elementSize = indirectStream->getElementSize();
+  sliceId.size = elementSize;
+  Addr lineOffset = paddr - paddrLine;
+  if (lineOffset + elementSize > RubySystem::getBlockSizeBytes()) {
+    LLC_SLICE_PANIC(sliceId,
+                    "Multi-line indirect element, offset %d size %d.\n",
+                    lineOffset, elementSize);
+  }
 
   LLC_SLICE_DPRINTF(sliceId, "Generate indirect slice %#x, size %d.\n", vaddr,
                     sliceId.size);

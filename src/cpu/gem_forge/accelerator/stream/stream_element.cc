@@ -283,6 +283,9 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
         uint64_t baseValue = 0;
         baseElement->getValue(vaddr, size,
                               reinterpret_cast<uint8_t *>(&baseValue));
+        S_ELEMENT_DPRINTF(baseElement,
+                          "GetStreamValue vaddr %#x size %d value %llu.\n",
+                          vaddr, size, baseValue);
         return baseValue;
       }
     }
@@ -292,6 +295,9 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
   this->addr = dynStream.addrGenCallback->genAddr(
       this->FIFOIdx.entryIdx, dynStream.formalParams, getStreamValue);
   this->size = stream->getElementSize();
+
+  S_ELEMENT_DPRINTF(this, "MarkAddrReady vaddr %#x size %d.\n", this->addr,
+                    this->size);
 
   // 3. Split into cache lines.
   this->splitIntoCacheBlocks(cpuDelegator);
@@ -391,8 +397,9 @@ void StreamElement::setValue(StreamElement *prevElement) {
 
 void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
   // Copy the data.
-  S_ELEMENT_DPRINTF(this, "Set value [%#x, %#x).\n", vaddr, vaddr + size);
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
+  S_ELEMENT_DPRINTF(this, "SetValue [%#x, %#x), initOffset %d.\n", vaddr,
+                    vaddr + size, initOffset);
   for (int i = 0; i < size; ++i) {
     this->value.at(i + initOffset) = val[i];
   }

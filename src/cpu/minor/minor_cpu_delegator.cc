@@ -260,7 +260,8 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
     if (!this->translateVAddrOracle(vaddr, paddrLHS) ||
         !this->translateVAddrOracle(vaddr + size - 1, paddrRHS)) {
       // There is translation fault.
-      INST_DPRINTF(dynInstPtr, "Translation fault on vaddr %#x.\n", vaddr);
+      INST_DPRINTF(dynInstPtr, "Translation fault on vaddr %#x size %d.\n",
+                   vaddr, size);
       if (dynInstPtr->translationFault == NoFault) {
         dynInstPtr->translationFault =
             std::make_shared<Minor::GemForgeLoadTranslationFault>();

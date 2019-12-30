@@ -37,7 +37,7 @@
   DPRINTF(DEBUG_TYPE, DYN_S_MSG((dynamicStreamId), format, ##args))
 
 #define SLICE_MSG(sliceId, format, args...)                                    \
-  DYN_S_MSG((sliceId).streamId, "[%lu, +%d) " format, (sliceId).lhsElementIdx,      \
+  DYN_S_MSG((sliceId).streamId, "[%lu, +%d) " format, (sliceId).lhsElementIdx, \
             (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args)
 
 #define MLC_S_MSG(format, args...)                                             \
@@ -47,7 +47,7 @@
 #define MLC_SLICE_MSG(sliceId, format, args...)                                \
   "[MLC_SE%d][%lu-%lu][%lu, +%d): " format,                                    \
       this->controller->getMachineID().num, this->dynamicStreamId.staticId,    \
-      this->dynamicStreamId.streamInstance, (sliceId).lhsElementIdx,                \
+      this->dynamicStreamId.streamInstance, (sliceId).lhsElementIdx,           \
       (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args
 
 #define MLC_S_DPRINTF(format, args...)                                         \
@@ -68,7 +68,7 @@
 #define LLC_SLICE_MSG(sliceId, format, args...)                                \
   "[LLC_SE%d][%lu-%lu][%lu, +%d): " format,                                    \
       this->controller->getMachineID().num, (sliceId).streamId.staticId,       \
-      (sliceId).streamId.streamInstance, (sliceId).lhsElementIdx,                   \
+      (sliceId).streamId.streamInstance, (sliceId).lhsElementIdx,              \
       (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args
 
 #define LLC_S_DPRINTF(streamId, format, args...)                               \
@@ -76,3 +76,5 @@
 
 #define LLC_SLICE_DPRINTF(sliceId, format, args...)                            \
   DPRINTF(DEBUG_TYPE, LLC_SLICE_MSG(sliceId, format, ##args))
+#define LLC_SLICE_PANIC(sliceId, format, args...)                              \
+  panic(LLC_SLICE_MSG(sliceId, format, ##args))
