@@ -8,7 +8,13 @@
  * 1. It does not send credit to LLC. The direct stream should perform the flow
  * control for the indirect stream.
  * 2. It always allocates elements one by one. No merge elements even if they
- * are from the same cache line.
+ * are from the same cache line, i.e. one slice must belong to one single
+ * element.
+ * 3. Due to coalescing, an indirect stream element may span multiple cache
+ * lines. This is not handled yet.
+ *
+ * Indirect streams are more complicated to manage, as the address is only know
+ * when the base stream data is ready.
  */
 class MLCDynamicIndirectStream : public MLCDynamicStream {
 public:
@@ -35,11 +41,24 @@ public:
     return true;
   }
 
+  /**
+   * Receive data from LLC.
+   */
   void receiveStreamData(const ResponseMsg &msg) override;
+
+  /**
+   * Receive data from the base direct stream.
+   * Try to generate more slices.
+   */
+  void receiveBaseStreamData(uint64_t elementIdx, uint64_t baseData);
 
 private:
   // Remember the root stream id.
   DynamicStreamId rootStreamId;
+  DynamicStreamFormalParamV formalParams;
+  AddrGenCallbackPtr addrGenCallback;
+  int32_t elementSize;
+
   // Remember if this indirect stream is behind one iteration.
   bool isOneIterationBehind;
 
@@ -58,6 +77,7 @@ private:
 
   void advanceStream() override;
   void allocateSlice();
+  Addr genElementVAddr(uint64_t elementIdx, uint64_t baseData);
 };
 
 #endif

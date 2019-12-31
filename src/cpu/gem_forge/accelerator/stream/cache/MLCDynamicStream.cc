@@ -45,61 +45,6 @@ MLCDynamicStream::~MLCDynamicStream() {
   }
 }
 
-void MLCDynamicStream::receiveStreamData(const ResponseMsg &msg) {
-  const auto &sliceId = msg.m_sliceId;
-  assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
-
-  auto numElements = sliceId.getNumElements();
-  assert(this->dynamicStreamId == sliceId.streamId &&
-         "Unmatched dynamic stream id.");
-  MLC_SLICE_DPRINTF(sliceId, "Receive data %#x.\n", sliceId.vaddr);
-
-  /**
-   * It is possible when the core stream engine runs ahead than
-   * the LLC stream engine, and the stream data is delivered after
-   * the slice is released. In such case we will ignore the
-   * stream data.
-   *
-   * TODO: Properly handle this with sliceIdx.
-   */
-  if (this->slices.empty()) {
-    assert(this->hasOverflowed() && "No slices when not overflowed yet.");
-    // Simply ignore it.
-    return;
-  } else {
-    // TODO: Properly detect that the slice is lagging behind.
-    if (sliceId.vaddr < this->slices.front().sliceId.vaddr) {
-      // The stream data is lagging behind. The slice is already
-      // released.
-      return;
-    }
-  }
-
-  /**
-   * Find the correct stream slice and insert the data there.
-   * Here we reversely search for it to save time.
-   */
-  for (auto slice = this->slices.rbegin(), end = this->slices.rend();
-       slice != end; ++slice) {
-    if (this->matchSliceId(slice->sliceId, sliceId)) {
-      // Found the slice.
-      if (slice->sliceId.getNumElements() != numElements) {
-        MLC_S_PANIC("Mismatch numElements, incoming %d, slice %d.\n",
-                    numElements, slice->sliceId.getNumElements());
-      }
-      slice->setData(msg.m_DataBlk);
-      if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
-        this->makeResponse(*slice);
-      }
-      this->advanceStream();
-      return;
-    }
-  }
-
-  MLC_SLICE_PANIC(sliceId, "Fail to find the slice. Tail %lu.\n",
-                  this->tailSliceIdx);
-}
-
 void MLCDynamicStream::receiveStreamRequest(
     const DynamicStreamSliceId &sliceId) {
   MLC_SLICE_DPRINTF(sliceId, "Receive request to %#x. Tail %lu.\n",

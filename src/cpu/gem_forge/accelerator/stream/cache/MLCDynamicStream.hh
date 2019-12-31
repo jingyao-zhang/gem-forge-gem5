@@ -49,7 +49,7 @@ public:
     panic("Should only call this on direct stream.");
   }
 
-  virtual void receiveStreamData(const ResponseMsg &msg);
+  virtual void receiveStreamData(const ResponseMsg &msg) = 0;
   void receiveStreamRequest(const DynamicStreamSliceId &sliceId);
   void receiveStreamRequestHit(const DynamicStreamSliceId &sliceId);
 

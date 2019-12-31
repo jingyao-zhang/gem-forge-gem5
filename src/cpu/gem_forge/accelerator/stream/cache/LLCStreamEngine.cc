@@ -175,8 +175,7 @@ void LLCStreamEngine::receiveStreamElementData(
   if (stream->indirectStreams.empty()) {
     return;
   }
-  for (auto idx = sliceId.lhsElementIdx, rhsElementIdx = sliceId.rhsElementIdx;
-       idx < rhsElementIdx; ++idx) {
+  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
     assert(stream->waitingIndirectElements.count(idx) == 1 &&
            "There is no waiting indirect element for this index.");
 
@@ -437,6 +436,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
     assert(stream->indirectStreams.empty() &&
            "Faulted stream with indirect streams.");
+    stream->getStaticStream()->statistic.numLLCFaultSlice++;
 
     // This is also considered issued.
     return true;
@@ -472,44 +472,49 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   };
   Addr vaddr = indirectConfig.addrGenCallback->genAddr(
       idx, indirectConfig.formalParams, getBaseStreamValue);
-  Addr paddr;
-  assert(indirectStream->translateToPAddr(vaddr, paddr) &&
-         "Cannot handle translation fault for indirect stream yet.");
-  Addr paddrLine = makeLineAddress(paddr);
-
   DynamicStreamSliceId sliceId;
   sliceId.streamId = indirectStream->getDynamicStreamId();
   sliceId.lhsElementIdx = idx;
   sliceId.rhsElementIdx = idx + 1;
   sliceId.vaddr = vaddr;
-  // ! Here we overwrite the size.
-  auto elementSize = indirectStream->getElementSize();
-  sliceId.size = elementSize;
-  Addr lineOffset = paddr - paddrLine;
-  if (lineOffset + elementSize > RubySystem::getBlockSizeBytes()) {
-    LLC_SLICE_PANIC(sliceId,
-                    "Multi-line indirect element, offset %d size %d.\n",
-                    lineOffset, elementSize);
-  }
-
   LLC_SLICE_DPRINTF(sliceId, "Generate indirect slice %#x, size %d.\n", vaddr,
                     sliceId.size);
-  indirectStream->getStaticStream()->statistic.numLLCSentSlice++;
 
-  assert(paddr % RubySystem::getBlockSizeBytes() + sliceId.size <=
-             RubySystem::getBlockSizeBytes() &&
-         "Multi-line indirect elements.");
+  Addr paddr;
+  if (indirectStream->translateToPAddr(vaddr, paddr)) {
+    Addr paddrLine = makeLineAddress(paddr);
+    // ! Here we overwrite the size.
+    auto elementSize = indirectStream->getElementSize();
+    sliceId.size = elementSize;
+    Addr lineOffset = paddr - paddrLine;
+    if (lineOffset + elementSize > RubySystem::getBlockSizeBytes()) {
+      LLC_SLICE_PANIC(sliceId,
+                      "Multi-line indirect element, offset %d size %d.\n",
+                      lineOffset, elementSize);
+    }
 
-  /**
-   * It's possible that the element is not handled here.
-   * Create a sliceId.
-   */
-  if (!this->isPAddrHandledByMe(paddr)) {
-    // Send to other bank.
-    this->issueStreamRequestThere(indirectStream, paddrLine, sliceId);
+    indirectStream->getStaticStream()->statistic.numLLCSentSlice++;
+
+    assert(paddr % RubySystem::getBlockSizeBytes() + sliceId.size <=
+               RubySystem::getBlockSizeBytes() &&
+           "Multi-line indirect elements.");
+
+    /**
+     * It's possible that the element is not handled here.
+     * Create a sliceId.
+     */
+    if (!this->isPAddrHandledByMe(paddr)) {
+      // Send to other bank.
+      this->issueStreamRequestThere(indirectStream, paddrLine, sliceId);
+    } else {
+      // Send to this bank;
+      this->issueStreamRequestHere(indirectStream, paddrLine, sliceId);
+    }
   } else {
-    // Send to this bank;
-    this->issueStreamRequestHere(indirectStream, paddrLine, sliceId);
+    // For faulted elements, we simply ignore it.
+    LLC_SLICE_DPRINTF(sliceId, "Discard due to fault, vaddr %#x.\n",
+                      sliceId.vaddr);
+    indirectStream->getStaticStream()->statistic.numLLCFaultSlice++;
   }
 
   // Don't forget to release the element.

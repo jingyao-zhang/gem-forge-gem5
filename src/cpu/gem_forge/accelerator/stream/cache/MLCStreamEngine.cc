@@ -50,19 +50,20 @@ Addr MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   }
 
   // Create the direct stream.
-  auto stream = new MLCDynamicDirectStream(
+  auto directStream = new MLCDynamicDirectStream(
       streamConfigureData, this->controller, this->responseToUpperMsgBuffer,
       this->requestToLLCMsgBuffer);
-  this->idToStreamMap.emplace(stream->getDynamicStreamId(), stream);
+  this->idToStreamMap.emplace(directStream->getDynamicStreamId(), directStream);
   // Check if there is indirect stream.
   if (streamConfigureData->indirectStreamConfigure != nullptr) {
     // Let's create an indirect stream.
     auto indirectStream = new MLCDynamicIndirectStream(
         streamConfigureData->indirectStreamConfigure.get(), this->controller,
         this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer,
-        streamConfigureData->dynamicId /* Root dynamic stream id. */);
+        directStream->getDynamicStreamId() /* Root dynamic stream id. */);
     this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
                                 indirectStream);
+    directStream->addIndirectStream(indirectStream);
   }
 
   return streamConfigureData->initPAddr;

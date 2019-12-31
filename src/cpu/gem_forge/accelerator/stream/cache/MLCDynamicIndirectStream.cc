@@ -15,7 +15,9 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     const DynamicStreamId &_rootStreamId)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer),
-      rootStreamId(_rootStreamId),
+      rootStreamId(_rootStreamId), formalParams(_configData->formalParams),
+      addrGenCallback(_configData->addrGenCallback),
+      elementSize(_configData->elementSize),
       isOneIterationBehind(_configData->isOneIterationBehind),
       totalTripCount(_configData->totalTripCount) {
   if (this->isOneIterationBehind) {
@@ -25,13 +27,15 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     assert(!this->slices.empty() && "No initial slices.");
     // Let's do some sanity check.
     auto &firstSliceId = this->slices.front().sliceId;
-    assert(firstSliceId.lhsElementIdx == 0 && "Start index should always be 0.");
+    assert(firstSliceId.lhsElementIdx == 0 &&
+           "Start index should always be 0.");
     assert(firstSliceId.rhsElementIdx - firstSliceId.lhsElementIdx == 1 &&
            "Indirect stream should never merge slices.");
     MLC_SLICE_DPRINTF(firstSliceId, "Initial offset pop.\n");
     this->headSliceIdx++;
     this->slices.pop_front();
   }
+  assert(!isOneIterationBehind && "Temporarily disable this.");
 }
 
 void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
@@ -112,13 +116,99 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
                   this->tailSliceIdx);
 }
 
+void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
+                                                     uint64_t baseData) {
+
+  MLC_S_DPRINTF("Receive BaseStreamData element %lu data %lu.\n", elementIdx,
+                baseData);
+
+  // It's possible that we are behind the base stream?
+  while (this->tailSliceIdx <= elementIdx) {
+    this->allocateSlice();
+  }
+
+  if (this->slices.empty()) {
+    // We better be overflowed.
+    assert(this->hasOverflowed() && "No slices when not overflowed.");
+  } else {
+    if (elementIdx < this->slices.front().sliceId.lhsElementIdx) {
+      // The stream is lagging behind the core. The slice has already been
+      // released.
+      return;
+    }
+  }
+
+  auto elementVAddr = this->genElementVAddr(elementIdx, baseData);
+  auto elementSize = this->elementSize;
+  auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
+  assert(elementLineOffset + elementSize <= RubySystem::getBlockSizeBytes() &&
+         "Multi-line indirect element.");
+
+  DynamicStreamSliceId sliceId;
+  sliceId.streamId = this->dynamicStreamId;
+  sliceId.lhsElementIdx = elementIdx;
+  sliceId.rhsElementIdx = elementIdx + 1;
+  sliceId.vaddr = elementVAddr;
+
+  // Search for the slice reversely.
+  for (auto slice = this->slices.rbegin(), end = this->slices.rend();
+       slice != end; ++slice) {
+    if (slice->sliceId.lhsElementIdx == elementIdx) {
+      // Found the slice.
+      /**
+       * ! Notice that for indirect stream, we also have to set the vaddr.
+       * ! So that it knows how to construct the response packet.
+       */
+      if (slice->sliceId.vaddr == 0) {
+        // Set the addr.
+        slice->sliceId.vaddr = elementVAddr;
+      } else {
+        // Make sure we has the right address.
+        assert(slice->sliceId.vaddr == elementVAddr &&
+               "Mismatch element vaddr.");
+      }
+
+      /**
+       * The reason we do this is to check if the indirect stream faulted,
+       * in which case the LLC won't send data here, and we need to mark
+       * this slice Fault and release it.
+       */
+      auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
+      Addr elementPAddr;
+      if (!cpuDelegator->translateVAddrOracle(slice->sliceId.vaddr,
+                                              elementPAddr)) {
+        // This slice has faulted.
+        slice->coreStatus = MLCStreamSlice::CoreStatusE::FAULTED;
+        MLC_SLICE_DPRINTF(slice->sliceId,
+                          "Faulted Indirect Element VAddr %#x.\n",
+                          slice->sliceId.vaddr);
+      }
+
+      this->advanceStream();
+      return;
+    }
+  }
+
+  MLC_SLICE_PANIC(sliceId, "Fail to find the slice. Tail %lu.\n",
+                  this->tailSliceIdx);
+}
+
 void MLCDynamicIndirectStream::advanceStream() {
-  // We simply pop the stream and rely on other API to allocate slices.
   this->popStream();
   // Of course we need to allocate more slices.
   while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
          !this->hasOverflowed()) {
     this->allocateSlice();
+  }
+
+  // We may need to schedule advance stream if the first slice is FAULTED,
+  // as no other event will cause it to be released.
+  if (!this->slices.empty() &&
+      this->slices.front().coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
+    if (!this->advanceStreamEvent.scheduled()) {
+      this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
+                                                Cycles(1));
+    }
   }
 }
 
@@ -144,4 +234,13 @@ bool MLCDynamicIndirectStream::hasOverflowed() const {
 
 int64_t MLCDynamicIndirectStream::getTotalTripCount() const {
   return this->totalTripCount;
+}
+
+Addr MLCDynamicIndirectStream::genElementVAddr(uint64_t elementIdx,
+                                               uint64_t baseData) {
+  auto getBaseStreamValue = [baseData](uint64_t baseStreamId) -> uint64_t {
+    return baseData;
+  };
+  return this->addrGenCallback->genAddr(elementIdx, this->formalParams,
+                                        getBaseStreamValue);
 }
