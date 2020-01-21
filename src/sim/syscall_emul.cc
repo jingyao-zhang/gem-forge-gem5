@@ -46,6 +46,7 @@
 #include "config/the_isa.hh"
 #include "cpu/thread_context.hh"
 #include "dev/net/dist_iface.hh"
+#include "debug/SyscallVerbose.hh"
 #include "mem/page_table.hh"
 #include "sim/byteswap.hh"
 #include "sim/process.hh"
@@ -106,6 +107,9 @@ exitImpl(SyscallDesc *desc, int callnum, ThreadContext *tc, bool group)
 
     System *sys = tc->getSystemPtr();
 
+    DPRINTF(SyscallVerbose, "Calling exitImpl group %d exitGroup %d.\n",
+        group, *p->exitGroup);
+
     /**
      *  NOTE by seanzw:
      *  The current exitImpl will actually ignore group option since
@@ -156,6 +160,7 @@ exitImpl(SyscallDesc *desc, int callnum, ThreadContext *tc, bool group)
     int activeContexts = 0;
     for (auto &system: sys->systemList)
         activeContexts += system->numRunningContexts();
+    DPRINTF(SyscallVerbose, "ActiveContexts %d.\n", activeContexts);
     if (activeContexts == 1) {
         exitSimLoop("exiting with last active thread context", status & 0xff);
         return status;
@@ -252,6 +257,7 @@ exitImpl(SyscallDesc *desc, int callnum, ThreadContext *tc, bool group)
         }
     }
 
+    DPRINTF(SyscallVerbose, "Halt the thread.\n");
     tc->halt();
 
     /**
@@ -261,6 +267,7 @@ exitImpl(SyscallDesc *desc, int callnum, ThreadContext *tc, bool group)
     activeContexts = 0;
     for (auto &system: sys->systemList)
         activeContexts += system->numRunningContexts();
+    DPRINTF(SyscallVerbose, "After halting, numActiveContexts %d.\n", activeContexts);
 
     if (activeContexts == 0) {
         /**

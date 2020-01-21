@@ -35,6 +35,7 @@ def get_processes(options):
         process = Process()
         process.executable = wrkld
         process.cwd = os.getcwd()
+        process.exitGroup = True
 
         if len(pargs) > idx:
             process.cmd = [wrkld] + pargs[idx].split()
