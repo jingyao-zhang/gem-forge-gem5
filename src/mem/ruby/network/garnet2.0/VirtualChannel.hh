@@ -68,6 +68,10 @@ class VirtualChannel
         m_input_buffer->insert(t_flit);
     }
 
+    inline int getSize() {
+        return m_input_buffer->getSize();
+    }
+
     inline void
     set_state(VC_state_type m_state, Cycles curTime)
     {

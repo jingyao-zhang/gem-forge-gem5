@@ -126,11 +126,10 @@ MessageBuffer::areNSlotsAvailable(unsigned int n, Tick current_time)
 const Message*
 MessageBuffer::peek() const
 {
-    DPRINTF(RubyQueue, "Peeking at head of queue.\n");
     const Message* msg_ptr = m_prio_heap.front().get();
     assert(msg_ptr);
 
-    DPRINTF(RubyQueue, "Message: %s\n", (*msg_ptr));
+    DPRINTF(RubyQueue, "Peeking: %s\n", (*msg_ptr));
     return msg_ptr;
 }
 
@@ -225,11 +224,11 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
 Tick
 MessageBuffer::dequeue(Tick current_time, bool decrement_messages)
 {
-    DPRINTF(RubyQueue, "Popping\n");
     assert(isReady(current_time));
 
     // get MsgPtr of the message about to be dequeued
     MsgPtr message = m_prio_heap.front();
+    DPRINTF(RubyQueue, "Popping: %s\n", *message);
 
     // get the delay cycles
     message->updateDelayedTicks(current_time);

@@ -54,6 +54,7 @@ class SimpleNetwork : public Network
     bool getAdaptiveRouting() {return m_adaptive_routing; }
 
     void collateStats();
+    void resetStats();
     void regStats();
 
     bool isVNetOrdered(int vnet) const { return m_ordered[vnet]; }

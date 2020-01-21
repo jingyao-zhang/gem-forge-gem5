@@ -95,6 +95,9 @@ CrossbarSwitch::wakeup()
             m_output_unit[outport]->insert_flit(t_flit);
             m_switch_buffer[inport]->getTopFlit();
             m_crossbar_activity++;
+
+            DPRINTF(RubyNetwork, "CrossbarSwitch[%d] move flit %d of %s.\n",
+                m_router->get_id(), t_flit->get_id(), *(t_flit->get_msg_ptr()));
         }
     }
 }

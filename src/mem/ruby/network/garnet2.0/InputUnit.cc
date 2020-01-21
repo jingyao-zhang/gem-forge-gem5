@@ -37,6 +37,7 @@
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet2.0/Credit.hh"
 #include "mem/ruby/network/garnet2.0/Router.hh"
+#include "debug/RubyNetwork.hh"
 
 using namespace std;
 using m5::stl_helpers::deletePointers;
@@ -110,6 +111,13 @@ InputUnit::wakeup()
             assert(m_vcs[vc]->get_state() == ACTIVE_);
         }
 
+
+        DPRINTF(RubyNetwork, "InputUnit[%d][%s][%d] size %d flit %d of %s.\n",
+            m_router->get_id(),
+            m_router->getPortDirectionName(this->get_direction()),
+            vc,
+            m_vcs[vc]->getSize(),
+            t_flit->get_id(), *(t_flit->get_msg_ptr()));
 
         // Buffer the flit
         m_vcs[vc]->insertFlit(t_flit);

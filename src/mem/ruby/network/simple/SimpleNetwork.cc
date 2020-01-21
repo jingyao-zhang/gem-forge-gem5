@@ -166,6 +166,14 @@ SimpleNetwork::collateStats()
 }
 
 void
+SimpleNetwork::resetStats()
+{
+    for (auto sw : this->m_switches) {
+        sw->resetStats();
+    }
+}
+
+void
 SimpleNetwork::print(ostream& out) const
 {
     out << "[SimpleNetwork]";

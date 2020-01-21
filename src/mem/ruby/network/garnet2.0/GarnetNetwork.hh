@@ -103,6 +103,7 @@ class GarnetNetwork : public Network
 
     // Stats
     void collateStats();
+    void resetStats();
     void regStats();
     void print(std::ostream& out) const;
 

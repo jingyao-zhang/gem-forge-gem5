@@ -35,6 +35,8 @@
 
 #include "mem/ruby/network/garnet2.0/CreditLink.hh"
 
+#include "debug/RubyNetwork.hh"
+
 NetworkLink::NetworkLink(const Params *p)
     : ClockedObject(p), Consumer(this), m_id(p->link_id),
       m_type(NUM_LINK_TYPES_),
@@ -69,6 +71,8 @@ NetworkLink::wakeup()
         flit *t_flit = link_srcQueue->getTopFlit();
         t_flit->set_time(curCycle() + m_latency);
         linkBuffer->insert(t_flit);
+        // DPRINTF(RubyNetwork, "Insert to linkBuffer flit %d of %s.\n",
+        //     t_flit->get_id(), *(t_flit->get_msg_ptr()));
         link_consumer->scheduleEventAbsolute(clockEdge(m_latency));
         m_link_utilized++;
         m_vc_load[t_flit->get_vc()]++;

@@ -428,6 +428,17 @@ GarnetNetwork::collateStats()
 }
 
 void
+GarnetNetwork::resetStats()
+{
+    for (auto link : this->m_networklinks) {
+        link->resetStats();
+    }
+    for (auto router : this->m_routers) {
+        router->resetStats();
+    }
+}
+
+void
 GarnetNetwork::print(ostream& out) const
 {
     out << "[GarnetNetwork]";

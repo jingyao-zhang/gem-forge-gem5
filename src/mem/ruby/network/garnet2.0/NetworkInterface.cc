@@ -216,6 +216,8 @@ NetworkInterface::wakeup()
         // If a tail flit is received, enqueue into the protocol buffers if
         // space is available. Otherwise, exchange non-tail flits for credits.
         if (t_flit->get_type() == TAIL_ || t_flit->get_type() == HEAD_TAIL_) {
+            DPRINTF(RubyNetwork, "Receive tail flit of %s.\n",
+                *(t_flit->get_msg_ptr()));
             if (!messageEnqueuedThisCycle &&
                 outNode_ptr[vnet]->areNSlotsAvailable(1, curTime)) {
                 // Space is available. Enqueue to protocol buffer.
@@ -393,6 +395,8 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
 
             fl->set_src_delay(curCycle() - ticksToCycles(msg_ptr->getTime()));
             m_ni_out_vcs[vc]->insert(fl);
+            DPRINTF(RubyNetwork, "Allocate vc %d flit %d of %s.\n",
+                vc, fl->get_id(), *new_msg_ptr);
         }
 
         m_ni_out_vcs_enqueue_time[vc] = curCycle();
@@ -476,6 +480,8 @@ NetworkInterface::scheduleOutputLink()
             outFlitQueue->insert(t_flit);
             // schedule the out link
             outNetLink->scheduleEventAbsolute(clockEdge(Cycles(1)));
+            DPRINTF(RubyNetwork, "Move to outFlitQueue flit %d of %s.\n",
+                t_flit->get_id(), *(t_flit->get_msg_ptr()));
 
             if (t_flit->get_type() == TAIL_ ||
                t_flit->get_type() == HEAD_TAIL_) {

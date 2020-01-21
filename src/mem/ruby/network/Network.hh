@@ -108,6 +108,7 @@ class Network : public ClockedObject
                                   PortDirection dst_inport) = 0;
 
     virtual void collateStats() = 0;
+    virtual void resetStats() = 0;
     virtual void print(std::ostream& out) const = 0;
 
     /*

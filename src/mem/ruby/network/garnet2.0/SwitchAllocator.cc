@@ -136,6 +136,13 @@ SwitchAllocator::arbitrate_inports()
                     m_port_requests[outport][inport] = true;
                     m_vc_winners[outport][inport]= invc;
 
+                    DPRINTF(RubyNetwork, "SA[%d] Arbitrate inport [%s][%d] -> [%s][%d].\n",
+                        m_router->get_id(),
+                        m_router->getPortDirectionName(m_input_unit[inport]->get_direction()),
+                        invc,
+                        m_router->getPortDirectionName(m_output_unit[outport]->get_direction()),
+                        outvc);
+
                     // Update Round Robin pointer to the next VC
                     m_round_robin_invc[inport] = invc + 1;
                     if (m_round_robin_invc[inport] >= m_num_vcs)
@@ -193,18 +200,20 @@ SwitchAllocator::arbitrate_outports()
                 // remove flit from Input VC
                 flit *t_flit = m_input_unit[inport]->getTopFlit(invc);
 
-                DPRINTF(RubyNetwork, "SwitchAllocator at Router %d "
-                                     "granted outvc %d at outport %d "
-                                     "to invc %d at inport %d to flit %s at "
-                                     "time: %lld\n",
-                        m_router->get_id(), outvc,
-                        m_router->getPortDirectionName(
-                            m_output_unit[outport]->get_direction()),
-                        invc,
+                DPRINTF(RubyNetwork, "SA[%d] "
+                                     "Grant [%s][%d] -> [%s][%d] to flit %s at "
+                                     "time %lld, %d of %s.\n",
+                        m_router->get_id(),
                         m_router->getPortDirectionName(
                             m_input_unit[inport]->get_direction()),
-                            *t_flit,
-                        m_router->curCycle());
+                        invc,
+                        m_router->getPortDirectionName(
+                            m_output_unit[outport]->get_direction()),
+                        outvc,
+                        *t_flit,
+                        m_router->curCycle(),
+                        t_flit->get_id(),
+                        *(t_flit->get_msg_ptr()));
 
 
                 // Update outport field in the flit since this is
@@ -309,8 +318,21 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
     }
 
     // cannot send if no outvc or no credit.
-    if (!has_outvc || !has_credit)
+    if (!has_outvc || !has_credit) {
+        DPRINTF(RubyNetwork, "SA[%d] Decline [%s][%d] -> [%s][%d] "
+            "has_outvc %d has_credit %d.\n",
+            m_router->get_id(),
+            m_router->getPortDirectionName(
+                m_input_unit[inport]->get_direction()),
+            invc,
+            m_router->getPortDirectionName(
+                m_output_unit[outport]->get_direction()),
+            outvc,
+            has_outvc,
+            has_credit
+            );
         return false;
+    }
 
 
     // protocol ordering check
@@ -329,6 +351,22 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
                (m_input_unit[inport]->get_outport(temp_vc) == outport) &&
                (m_input_unit[inport]->get_enqueue_time(temp_vc) <
                     t_enqueue_time)) {
+                DPRINTF(RubyNetwork, "SA[%d] Decline [%s][%d] -> [%s][%d] "
+                    "due to order violation from [%s][%d], enqueue time"
+                    "%lu < %lu.\n",
+                    m_router->get_id(),
+                    m_router->getPortDirectionName(
+                        m_input_unit[inport]->get_direction()),
+                    invc,
+                    m_router->getPortDirectionName(
+                        m_output_unit[outport]->get_direction()),
+                    outvc,
+                    m_router->getPortDirectionName(
+                        m_input_unit[inport]->get_direction()),
+                    temp_vc,
+                    m_input_unit[inport]->get_enqueue_time(temp_vc),
+                    t_enqueue_time
+                    );
                 return false;
             }
         }
