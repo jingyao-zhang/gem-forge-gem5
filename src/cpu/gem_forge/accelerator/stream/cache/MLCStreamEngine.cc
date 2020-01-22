@@ -7,6 +7,9 @@
 #include "base/trace.hh"
 #include "debug/MLCRubyStream.hh"
 
+#define DEBUG_TYPE MLCRubyStream
+#include "../stream_log.hh"
+
 #define MLCSE_DPRINTF(format, args...)                                         \
   DPRINTF(MLCRubyStream, "[MLC_SE%d]: " format,                                \
           this->controller->getMachineID().num, ##args)
@@ -49,22 +52,27 @@ Addr MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     streamConfigureData->initPAddrValid = true;
   }
 
+  /**
+   * ! We initialize the indirect stream first so that
+   * ! the direct stream's constructor can start notify it about base stream
+   * data.
+   */
+  // Check if there is indirect stream.
+  MLCDynamicIndirectStream *indirectStream = nullptr;
+  if (streamConfigureData->indirectStreamConfigure != nullptr) {
+    // Let's create an indirect stream.
+    indirectStream = new MLCDynamicIndirectStream(
+        streamConfigureData->indirectStreamConfigure.get(), this->controller,
+        this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer,
+        streamConfigureData->dynamicId /* Root dynamic stream id. */);
+    this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
+                                indirectStream);
+  }
   // Create the direct stream.
   auto directStream = new MLCDynamicDirectStream(
       streamConfigureData, this->controller, this->responseToUpperMsgBuffer,
-      this->requestToLLCMsgBuffer);
+      this->requestToLLCMsgBuffer, indirectStream);
   this->idToStreamMap.emplace(directStream->getDynamicStreamId(), directStream);
-  // Check if there is indirect stream.
-  if (streamConfigureData->indirectStreamConfigure != nullptr) {
-    // Let's create an indirect stream.
-    auto indirectStream = new MLCDynamicIndirectStream(
-        streamConfigureData->indirectStreamConfigure.get(), this->controller,
-        this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer,
-        directStream->getDynamicStreamId() /* Root dynamic stream id. */);
-    this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
-                                indirectStream);
-    directStream->addIndirectStream(indirectStream);
-  }
 
   return streamConfigureData->initPAddr;
 }
@@ -116,6 +124,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
          "Receive stream data when stream float is disabled.\n");
   const auto &sliceId = msg.m_sliceId;
   assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
+  MLC_SLICE_DPRINTF(sliceId, "SE received data %#x.\n", sliceId.vaddr);
   for (auto &iter : this->idToStreamMap) {
     if (iter.second->getDynamicStreamId() == sliceId.streamId) {
       // Found the stream.

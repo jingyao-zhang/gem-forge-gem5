@@ -19,11 +19,12 @@
 MLCDynamicDirectStream::MLCDynamicDirectStream(
     CacheStreamConfigureData *_configData,
     AbstractStreamAwareController *_controller,
-    MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer)
+    MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
+    MLCDynamicIndirectStream *_indirectStream)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      llcTailSliceIdx(0), indirectStream(nullptr) {
+      llcTailSliceIdx(0), indirectStream(_indirectStream) {
 
   // Initialize the llc bank.
   assert(_configData->initPAddrValid && "InitPAddr should be valid.");
@@ -45,6 +46,9 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
   // Set the CacheStreamConfigureData to inform the LLC stream engine
   // initial credit.
   _configData->initAllocatedIdx = this->llcTailSliceIdx;
+
+  MLC_S_DPRINTF("InitAllocatedSlice %d overflowed %d.\n", this->llcTailSliceIdx,
+                this->slicedStream.hasOverflowed());
 }
 
 void MLCDynamicDirectStream::advanceStream() {
@@ -94,6 +98,14 @@ void MLCDynamicDirectStream::allocateSlice() {
   auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
   if (cpuDelegator->translateVAddrOracle(sliceId.vaddr, paddr)) {
     // This is address is valid.
+    /**
+     * ! We cheat here to notify the indirect stream immediately,
+     * ! to avoid some complicate problem of managing streams.
+     */
+    assert(this->controller->params()->ruby_system->getAccessBackingStore() &&
+           "This only works with backing store.");
+    this->notifyIndirectStream(this->slices.back());
+
   } else {
     // This address is invalid. Mark the slice faulted.
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::FAULTED;
@@ -106,6 +118,7 @@ void MLCDynamicDirectStream::allocateSlice() {
     // The next slice would be valid.
     this->tailPAddr = paddr;
     this->tailSliceLLCBank = this->mapPAddrToLLCBank(paddr);
+
   } else {
     // This address is invalid.
     // Do not update tailSliceLLCBank as the LLC stream would not move.
@@ -171,9 +184,12 @@ void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
     return;
   } else {
     // TODO: Properly detect that the slice is lagging behind.
-    if (sliceId.vaddr < this->slices.front().sliceId.vaddr) {
+    const auto &firstSlice = this->slices.front();
+    if (sliceId.lhsElementIdx < firstSlice.sliceId.lhsElementIdx) {
       // The stream data is lagging behind. The slice is already
       // released.
+      MLC_SLICE_DPRINTF(sliceId, "Discard as lagging behind %s.\n",
+                        firstSlice.sliceId);
       return;
     }
   }
@@ -192,8 +208,8 @@ void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
       }
       slice->setData(msg.m_DataBlk);
 
-      // Notify the indirect stream. Call this after setData().
-      this->notifyIndirectStream(*slice);
+      // // Notify the indirect stream. Call this after setData().
+      // this->notifyIndirectStream(*slice);
 
       if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
         this->makeResponse(*slice);
@@ -255,4 +271,30 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
                       elementData);
     this->indirectStream->receiveBaseStreamData(elementIdx, elementData);
   }
+}
+
+MLCDynamicDirectStream::SliceIter
+MLCDynamicDirectStream::findSliceForCoreRequest(
+    const DynamicStreamSliceId &sliceId) {
+  if (this->slices.empty()) {
+    MLC_S_PANIC("No slices for request, overflowed %d, totalTripCount %lu.\n",
+                this->hasOverflowed(), this->getTotalTripCount());
+  }
+  // Try to allocate more slices.
+  while (!this->hasOverflowed() &&
+         this->slices.back().sliceId.lhsElementIdx <= sliceId.lhsElementIdx) {
+    this->allocateSlice();
+  }
+  for (auto iter = this->slices.begin(), end = this->slices.end(); iter != end;
+       ++iter) {
+    /**
+     * So far we match them on vaddr.
+     * TODO: Really assign the sliceIdx and match that.
+     */
+    if (iter->sliceId.vaddr == sliceId.vaddr) {
+      return iter;
+    }
+  }
+
+  MLC_S_PANIC("Failed to find slice for core %s.\n", sliceId);
 }

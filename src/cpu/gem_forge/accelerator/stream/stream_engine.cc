@@ -388,7 +388,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
 
       // ! Sanity check that the base stream is not coaleasced.
       if (streamConfigureData->indirectStreamConfigure) {
-        if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
+        if (dynamic_cast<CoalescedStream *>(S)) {
           S_PANIC(S, "CoalescedStream cannot be floated with indirect stream.");
         }
       }

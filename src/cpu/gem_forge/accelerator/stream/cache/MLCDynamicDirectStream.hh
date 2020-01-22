@@ -15,7 +15,8 @@ public:
   MLCDynamicDirectStream(CacheStreamConfigureData *_configData,
                          AbstractStreamAwareController *_controller,
                          MessageBuffer *_responseMsgBuffer,
-                         MessageBuffer *_requestToLLCMsgBuffer);
+                         MessageBuffer *_requestToLLCMsgBuffer,
+                         MLCDynamicIndirectStream *_indirectStream);
 
   /**
    * Get where is the LLC stream is at the end of current allocated credits.
@@ -54,6 +55,8 @@ protected:
   int64_t getTotalTripCount() const override {
     return this->slicedStream.getTotalTripCount();
   }
+
+  SliceIter findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
 
   /**
    * Override this as we need to send credit to llc.

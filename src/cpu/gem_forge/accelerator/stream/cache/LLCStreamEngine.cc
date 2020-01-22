@@ -325,9 +325,11 @@ void LLCStreamEngine::issueStreams() {
 
   if (this->streamIssueMsgBuffer->getSize(this->controller->clockEdge()) >=
       this->maxInqueueRequests) {
+    LLCSE_DPRINTF("Not issue: MaxInqueueRequests.\n");
     return;
   }
 
+  LLCSE_DPRINTF("Try issuing streams.\n");
   auto streamIter = this->streams.begin();
   auto streamEnd = this->streams.end();
   for (int i = 0, issuedStreams = 0, nStreams = this->streams.size();
@@ -382,10 +384,14 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
   // Enforce the per stream maxWaitingDataBaseRequests constraint.
   if (stream->waitingDataBaseRequests == stream->maxWaitingDataBaseRequests) {
+    LLC_S_DPRINTF(stream->getDynamicStreamId(),
+                  "Not issue: MaxWaitingDataBaseRequests.\n");
     return false;
   }
 
   if (!stream->isNextSliceAllocated()) {
+    LLC_S_DPRINTF(stream->getDynamicStreamId(),
+                  "Not issue: NextSliceNotAllocated.\n");
     return false;
   }
 
@@ -459,6 +465,14 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   if (indirectStream->isOneIterationBehind()) {
     baseElementIdx = idx - 1;
   }
+
+  DynamicStreamSliceId sliceId;
+  sliceId.streamId = indirectStream->getDynamicStreamId();
+  sliceId.lhsElementIdx = idx;
+  sliceId.rhsElementIdx = idx + 1;
+  auto elementSize = indirectStream->getElementSize();
+  LLC_SLICE_DPRINTF(sliceId, "Issue indirect slice.\n");
+
   assert(stream->readyBaseElementData.count(baseElementIdx) &&
          "Failed to find baseElementData.");
   uint64_t baseElementData = stream->readyBaseElementData.at(baseElementIdx);
@@ -470,51 +484,49 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
     assert(baseStreamId == stream->getStaticId() && "Invalid baseStreamId.");
     return baseElementData;
   };
-  Addr vaddr = indirectConfig.addrGenCallback->genAddr(
+  Addr elementVAddr = indirectConfig.addrGenCallback->genAddr(
       idx, indirectConfig.formalParams, getBaseStreamValue);
-  DynamicStreamSliceId sliceId;
-  sliceId.streamId = indirectStream->getDynamicStreamId();
-  sliceId.lhsElementIdx = idx;
-  sliceId.rhsElementIdx = idx + 1;
-  sliceId.vaddr = vaddr;
-  LLC_SLICE_DPRINTF(sliceId, "Generate indirect slice %#x, size %d.\n", vaddr,
-                    sliceId.size);
+  LLC_SLICE_DPRINTF(sliceId, "Generate indirect vaddr %#x, size %d.\n",
+                    elementVAddr, elementSize);
 
-  Addr paddr;
-  if (indirectStream->translateToPAddr(vaddr, paddr)) {
-    Addr paddrLine = makeLineAddress(paddr);
-    // ! Here we overwrite the size.
-    auto elementSize = indirectStream->getElementSize();
-    sliceId.size = elementSize;
-    Addr lineOffset = paddr - paddrLine;
-    if (lineOffset + elementSize > RubySystem::getBlockSizeBytes()) {
-      LLC_SLICE_PANIC(sliceId,
-                      "Multi-line indirect element, offset %d size %d.\n",
-                      lineOffset, elementSize);
-    }
+  // Hanle coalesced multi-line element.
+  auto totalSliceSize = 0;
+  while (totalSliceSize < elementSize) {
+    Addr curSliceVAddr = elementVAddr + totalSliceSize;
+    // Make sure the slice is contained within one line.
+    int lineOffset = curSliceVAddr % RubySystem::getBlockSizeBytes();
+    auto curSliceSize = std::min(
+        elementSize - totalSliceSize,
+        static_cast<int>(RubySystem::getBlockSizeBytes()) - lineOffset);
+    // Here we set the slice vaddr and size.
+    sliceId.vaddr = curSliceVAddr;
+    sliceId.size = curSliceSize;
+    Addr curSlicePAddr;
+    if (indirectStream->translateToPAddr(curSliceVAddr, curSlicePAddr)) {
+      Addr curSlicePAddrLine = makeLineAddress(curSlicePAddr);
+      indirectStream->getStaticStream()->statistic.numLLCSentSlice++;
 
-    indirectStream->getStaticStream()->statistic.numLLCSentSlice++;
-
-    assert(paddr % RubySystem::getBlockSizeBytes() + sliceId.size <=
-               RubySystem::getBlockSizeBytes() &&
-           "Multi-line indirect elements.");
-
-    /**
-     * It's possible that the element is not handled here.
-     * Create a sliceId.
-     */
-    if (!this->isPAddrHandledByMe(paddr)) {
-      // Send to other bank.
-      this->issueStreamRequestThere(indirectStream, paddrLine, sliceId);
+      /**
+       * It's possible that the element is not handled here.
+       * Create a sliceId.
+       */
+      if (!this->isPAddrHandledByMe(curSlicePAddrLine)) {
+        // Send to other bank.
+        this->issueStreamRequestThere(indirectStream, curSlicePAddrLine,
+                                      sliceId);
+      } else {
+        // Send to this bank;
+        this->issueStreamRequestHere(indirectStream, curSlicePAddrLine,
+                                     sliceId);
+      }
     } else {
-      // Send to this bank;
-      this->issueStreamRequestHere(indirectStream, paddrLine, sliceId);
+      // For faulted slices, we simply ignore it.
+      LLC_SLICE_DPRINTF(sliceId, "Discard due to fault, vaddr %#x.\n",
+                        sliceId.vaddr);
+      indirectStream->getStaticStream()->statistic.numLLCFaultSlice++;
     }
-  } else {
-    // For faulted elements, we simply ignore it.
-    LLC_SLICE_DPRINTF(sliceId, "Discard due to fault, vaddr %#x.\n",
-                      sliceId.vaddr);
-    indirectStream->getStaticStream()->statistic.numLLCFaultSlice++;
+
+    totalSliceSize += curSliceSize;
   }
 
   // Don't forget to release the element.
@@ -522,7 +534,7 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   // So far only support one indirec stream.
   assert(stream->indirectStreams.size() == 1 &&
          "Cannot support multiple indirec streams.");
-  stream->readyBaseElementData.erase(baseElementData);
+  stream->readyBaseElementData.erase(baseElementIdx);
 
   return true;
 }
@@ -530,7 +542,8 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
 void LLCStreamEngine::issueStreamRequestHere(
     LLCDynamicStream *stream, Addr paddrLine,
     const DynamicStreamSliceId &sliceId) {
-  LLC_SLICE_DPRINTF(sliceId, "Issue [local] request.\n");
+  LLC_SLICE_DPRINTF(sliceId, "Issue [local] request vaddr %#x paddrLine %#x.\n",
+    sliceId.vaddr, paddrLine);
 
   auto selfMachineId = this->controller->getMachineID();
   auto streamCPUId = stream->getStaticStream()->getCPUDelegator()->cpuId();

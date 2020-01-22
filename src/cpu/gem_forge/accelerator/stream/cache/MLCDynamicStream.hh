@@ -109,7 +109,8 @@ protected:
     }
   };
 
-  std::deque<MLCStreamSlice> slices;
+  std::list<MLCStreamSlice> slices;
+  using SliceIter = std::list<MLCStreamSlice>::iterator;
   // Element index of allocated [head, tail).
   uint64_t headSliceIdx;
   uint64_t tailSliceIdx;
@@ -118,9 +119,6 @@ protected:
 
   virtual void advanceStream() = 0;
   void makeResponse(MLCStreamSlice &element);
-
-  MLCStreamSlice &getSlice(uint64_t sliceIdx);
-  const MLCStreamSlice &getSlice(uint64_t sliceIdx) const;
 
   /**
    * API for this to check if overflowed.
@@ -133,6 +131,11 @@ protected:
     // TODO: This is really wrong.
     return A.vaddr == B.vaddr;
   }
+  /**
+   * Find the correct slice for a core request.
+   * Used in receiveStreamRequest() and receiveStreamRequestHit().
+   */
+  virtual SliceIter findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) = 0;
 
   /**
    * Helper function to translate the vaddr to paddr.

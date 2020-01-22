@@ -11,7 +11,7 @@
  * are from the same cache line, i.e. one slice must belong to one single
  * element.
  * 3. Due to coalescing, an indirect stream element may span multiple cache
- * lines. This is not handled yet.
+ * lines. So we need to match lhsElementIdx and vaddr to find the correct slice.
  *
  * Indirect streams are more complicated to manage, as the address is only know
  * when the base stream data is ready.
@@ -57,7 +57,7 @@ private:
   DynamicStreamId rootStreamId;
   DynamicStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
-  int32_t elementSize;
+  const int32_t elementSize;
 
   // Remember if this indirect stream is behind one iteration.
   bool isOneIterationBehind;
@@ -71,13 +71,32 @@ private:
   int64_t getTotalTripCount() const override;
   bool matchSliceId(const DynamicStreamSliceId &A,
                     const DynamicStreamSliceId &B) const override {
-    // Indirect stream can just match the lhsElementIdx.
-    return A.lhsElementIdx == B.lhsElementIdx;
+    /**
+     * For indirect stream, one element may be mapped to multiple slices,
+     * but not the reverse way. So we need to match both the lhsElementIdx
+     * and the vaddr.
+     */
+    return A.lhsElementIdx == B.lhsElementIdx &&
+           makeLineAddress(A.vaddr) == makeLineAddress(B.vaddr);
   }
+  SliceIter findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
 
   void advanceStream() override;
   void allocateSlice();
   Addr genElementVAddr(uint64_t elementIdx, uint64_t baseData);
+
+  /**
+   * Find the begin and end of the substream that belongs to an elementIdx.
+   */
+  std::pair<SliceIter, SliceIter> findSliceByElementIdx(uint64_t elementIdx);
+
+  /**
+   * Try to find the slice with the given vaddr. If failed, insert one and
+   * maintain the sorted order.
+   */
+  SliceIter findOrInsertSliceBySliceId(const SliceIter &begin,
+                                       const SliceIter &end,
+                                       const DynamicStreamSliceId &sliceId);
 };
 
 #endif

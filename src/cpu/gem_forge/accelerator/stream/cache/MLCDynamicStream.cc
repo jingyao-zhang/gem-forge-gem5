@@ -45,51 +45,6 @@ MLCDynamicStream::~MLCDynamicStream() {
   }
 }
 
-void MLCDynamicStream::receiveStreamRequest(
-    const DynamicStreamSliceId &sliceId) {
-  MLC_SLICE_DPRINTF(sliceId, "Receive request to %#x. Tail %lu.\n",
-                    sliceId.vaddr, this->tailSliceIdx);
-
-  /**
-   * Let's not make assumption that the request will come in order.
-   */
-  if (this->slices.empty()) {
-    MLC_S_PANIC("No slices for request, overflowed %d, totalTripCount %lu.\n",
-                this->hasOverflowed(), this->getTotalTripCount());
-  }
-  bool found = false;
-  for (auto &slice : this->slices) {
-    /**
-     * So far we match them on vaddr.
-     * TODO: Really assign the sliceIdx and match that.
-     */
-    if (this->matchSliceId(slice.sliceId, sliceId)) {
-      // Found the slice.
-      assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::NONE &&
-             "Already seen a request.");
-      found = true;
-      MLC_SLICE_DPRINTF(slice.sliceId, "Matched to request.\n");
-      slice.coreStatus = MLCStreamSlice::CoreStatusE::WAIT;
-      slice.coreSliceId = sliceId;
-      if (slice.dataReady) {
-        // Sanity check the address.
-        // ! Core is line address.
-        if (slice.coreSliceId.vaddr != makeLineAddress(slice.sliceId.vaddr)) {
-          MLC_SLICE_PANIC(sliceId, "Mismatch between Core %#x and LLC %#x.\n",
-                          slice.coreSliceId.vaddr, slice.sliceId.vaddr);
-        }
-        this->makeResponse(slice);
-      }
-      break;
-    }
-  }
-
-  if (!found) {
-    MLC_S_PANIC("Failed to find slice %s.\n", sliceId);
-  }
-  this->advanceStream();
-}
-
 void MLCDynamicStream::endStream() {
   for (auto &slice : this->slices) {
     if (slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
@@ -106,24 +61,38 @@ void MLCDynamicStream::endStream() {
   }
 }
 
+void MLCDynamicStream::receiveStreamRequest(
+    const DynamicStreamSliceId &sliceId) {
+  MLC_SLICE_DPRINTF(sliceId, "Receive request to %#x. Tail %lu.\n",
+                    sliceId.vaddr, this->tailSliceIdx);
+
+  auto slice = this->findSliceForCoreRequest(sliceId);
+  assert(slice->coreStatus == MLCStreamSlice::CoreStatusE::NONE &&
+         "Already seen a request.");
+  MLC_SLICE_DPRINTF(slice->sliceId, "Matched to request.\n");
+  slice->coreStatus = MLCStreamSlice::CoreStatusE::WAIT;
+  slice->coreSliceId = sliceId;
+  if (slice->dataReady) {
+    // Sanity check the address.
+    // ! Core is line address.
+    if (slice->coreSliceId.vaddr != makeLineAddress(slice->sliceId.vaddr)) {
+      MLC_SLICE_PANIC(sliceId, "Mismatch between Core %#x and LLC %#x.\n",
+                      slice->coreSliceId.vaddr, slice->sliceId.vaddr);
+    }
+    this->makeResponse(*slice);
+  }
+  this->advanceStream();
+}
+
 void MLCDynamicStream::receiveStreamRequestHit(
     const DynamicStreamSliceId &sliceId) {
-  MLC_SLICE_DPRINTF(sliceId, "Receive request hit.\n");
+  MLC_SLICE_DPRINTF(sliceId, "Receive request hit to %#x.\n", sliceId.vaddr);
 
-  /**
-   * Let's not make assumption that the request will come in order.
-   */
-  assert(!this->slices.empty() && "Empty slice list.");
-  for (auto &slice : this->slices) {
-    if (this->matchSliceId(slice.sliceId, sliceId)) {
-      // Found the slice.
-      assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::NONE &&
-             "Already seen a request.");
-      slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
-      slice.coreSliceId = sliceId;
-      break;
-    }
-  }
+  auto slice = this->findSliceForCoreRequest(sliceId);
+  assert(slice->coreStatus == MLCStreamSlice::CoreStatusE::NONE &&
+         "Already seen a request.");
+  slice->coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+  slice->coreSliceId = sliceId;
   this->advanceStream();
 }
 
@@ -173,20 +142,6 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
                                    this->controller->cyclesToTicks(latency));
   // Set the core status to DONE.
   slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
-}
-
-MLCDynamicStream::MLCStreamSlice &
-MLCDynamicStream::getSlice(uint64_t sliceIdx) {
-  assert(sliceIdx >= this->headSliceIdx && "Underflow of sliceIdx.");
-  assert(sliceIdx < this->tailSliceIdx && "Overflow of sliceIdx.");
-  return this->slices.at(sliceIdx - this->headSliceIdx);
-}
-
-const MLCDynamicStream::MLCStreamSlice &
-MLCDynamicStream::getSlice(uint64_t sliceIdx) const {
-  assert(sliceIdx >= this->headSliceIdx && "Underflow of sliceIdx.");
-  assert(sliceIdx < this->tailSliceIdx && "Overflow of sliceIdx.");
-  return this->slices.at(sliceIdx - this->headSliceIdx);
 }
 
 Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
