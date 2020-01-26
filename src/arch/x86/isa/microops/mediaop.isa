@@ -362,6 +362,8 @@ let {{
                 int loIndex = (i + 0) * sizeBits;
                 result = insertBits(result, hiIndex, loIndex, resBits);
             }
+            // hack("shuffle %#x %#x -> %#x.\\n",
+            //     FpSrcReg1_uqw, FpSrcReg2_uqw, result);
             FpDestReg_uqw = result;
         '''
 
@@ -957,6 +959,11 @@ let {{
                 uint64_t arg1Bits = bits(FpSrcReg1_uqw, hiIndex, loIndex);
                 uint64_t arg2Bits = bits(FpSrcReg2_uqw, hiIndex, loIndex);
                 uint64_t resBits = arg1Bits + arg2Bits;
+
+                hack("MAddi %d %s + %s = %s, rm %d, v %d %#x + %#x = %#x.\\n",
+                    i, srcRegIdx(0), srcRegIdx(1), destRegIdx(0),
+                    machInst.modRM.rm, machInst.evex.v_extend,
+                    arg1Bits, arg2Bits, resBits);
 
                 if (ext & 0x2) {
                     if (signedOp()) {

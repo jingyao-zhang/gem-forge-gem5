@@ -315,6 +315,10 @@ let {{
                 self.dataSize = 8
             elif self.size == 'o':
                 self.dataSize = 16
+            elif self.size == 'do':
+                self.dataSize = 32
+            elif self.size == 'qo':
+                self.dataSize = 64
             elif self.size == 'v':
                 self.dataSize = "OPSIZE"
             elif self.size == 'w':

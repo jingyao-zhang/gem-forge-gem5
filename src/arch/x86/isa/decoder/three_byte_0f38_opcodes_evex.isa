@@ -1,14 +1,5 @@
-// Copyright (c) 2007 The Hewlett-Packard Development Company
+// Copyright (c) 2008 The Regents of The University of Michigan
 // All rights reserved.
-//
-// The license below extends only to copyright in the software and shall
-// not be construed as granting a license to any other intellectual
-// property including but not limited to intellectual property relating
-// to a hardware implementation of the functionality of the software
-// licensed hereunder.  You may use the software subject to the license
-// terms below provided that you ensure that this notice is replicated
-// unmodified and in its entirety in all distributions of the software,
-// modified or unmodified, in source code or in binary form.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -37,31 +28,16 @@
 
 ////////////////////////////////////////////////////////////////////
 //
-// The actual decoder specification
+// Decode the three byte opcodes with the 0f38 prefix.
 //
-
-decode LEGACY_LOCK default Unknown::unknown() {
-    //No lock prefix
-    0x0: decode EVEX_PREFIX_TYPE {
-        // VEX Prefix
-        0x1: decode OPCODE_TYPE {
-            ##include "two_byte_opcodes_vex.isa"
-            ##include "three_byte_0f3a_opcodes_vex.isa"
+'X86ISA::ThreeByte0F38Opcode': decode LEGACY_OP {
+    1: decode OPCODE_OP {
+        format Inst {
+            0x59: decode EVEX_L_EXTEND {
+                0x2: VPBROADCASTQ(VZqo, Wq);
+                default: UD2();
+            }
         }
-        // EVEX Prefix
-        0x2: decode OPCODE_TYPE {
-            ##include "two_byte_opcodes_evex.isa"
-            ##include "three_byte_0f38_opcodes_evex.isa"
-            ##include "three_byte_0f3a_opcodes_evex.isa"
-        }
-        // No VEX/EVEX Prefix
-        0x0: decode OPCODE_TYPE {
-            ##include "one_byte_opcodes.isa"
-            ##include "two_byte_opcodes.isa"
-            ##include "three_byte_0f38_opcodes.isa"
-            ##include "three_byte_0f3a_opcodes.isa"
-        }
+        default: Inst::UD2();
     }
-    //Lock prefix
-    ##include "locked_opcodes.isa"
 }

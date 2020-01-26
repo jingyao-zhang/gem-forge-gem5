@@ -39,6 +39,12 @@ microcode = '''
 def macroop PXOR_XMM_XMM {
     mxor xmml, xmml, xmmlm
     mxor xmmh, xmmh, xmmhm
+    mxor xmm2, xmm2, xmm2
+    mxor xmm3, xmm3, xmm3
+    mxor xmm4, xmm4, xmm4
+    mxor xmm5, xmm5, xmm5
+    mxor xmm6, xmm6, xmm6
+    mxor xmm7, xmm7, xmm7
 };
 
 def macroop PXOR_XMM_M {
@@ -47,6 +53,12 @@ def macroop PXOR_XMM_M {
     ldfp ufp2, seg, [1, t0, t1], 8, dataSize=8
     mxor xmml, xmml, ufp1
     mxor xmmh, xmmh, ufp2
+    mxor xmm2, xmm2, xmm2
+    mxor xmm3, xmm3, xmm3
+    mxor xmm4, xmm4, xmm4
+    mxor xmm5, xmm5, xmm5
+    mxor xmm6, xmm6, xmm6
+    mxor xmm7, xmm7, xmm7
 };
 
 def macroop PXOR_XMM_P {
@@ -56,5 +68,11 @@ def macroop PXOR_XMM_P {
     ldfp ufp2, seg, [1, t0, t1], 8, dataSize=8
     mxor xmml, xmml, ufp1
     mxor xmmh, xmmh, ufp2
+    mxor xmm2, xmm2, xmm2
+    mxor xmm3, xmm3, xmm3
+    mxor xmm4, xmm4, xmm4
+    mxor xmm5, xmm5, xmm5
+    mxor xmm6, xmm6, xmm6
+    mxor xmm7, xmm7, xmm7
 };
 '''

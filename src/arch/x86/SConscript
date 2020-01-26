@@ -45,6 +45,7 @@ Import('*')
 if env['TARGET_ISA'] == 'x86':
     Source('cpuid.cc')
     Source('decoder.cc')
+    Source('decompress_displacement.cc')
     Source('decoder_tables.cc')
     Source('emulenv.cc')
     Source('faults.cc')

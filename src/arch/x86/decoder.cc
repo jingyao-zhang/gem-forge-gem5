@@ -49,7 +49,7 @@ Decoder::doResetState()
 
     emi.rex = 0;
     emi.legacy = 0;
-    emi.vex = 0;
+    emi.evex = 0;
 
     emi.opcode.type = BadOpcode;
     emi.opcode.op = 0;
@@ -107,6 +107,15 @@ Decoder::process()
             break;
           case VexOpcodeState:
             state = doVexOpcodeState(nextByte);
+            break;
+          case EVex2Of4State:
+            state = doEVex2Of4State(nextByte);
+            break;
+          case EVex3Of4State:
+            state = doEVex3Of4State(nextByte);
+            break;
+          case EVex4Of4State:
+            state = doEVex4Of4State(nextByte);
             break;
           case OneByteOpcodeState:
             state = doOneByteOpcodeState(nextByte);
@@ -223,13 +232,18 @@ Decoder::doPrefixState(uint8_t nextByte)
         break;
       case Vex2Prefix:
         DPRINTF(Decoder, "Found VEX two-byte prefix %#x.\n", nextByte);
-        emi.vex.present = 1;
+        emi.evex.vex_present = 1;
         nextState = Vex2Of2State;
         break;
       case Vex3Prefix:
         DPRINTF(Decoder, "Found VEX three-byte prefix %#x.\n", nextByte);
-        emi.vex.present = 1;
+        emi.evex.vex_present = 1;
         nextState = Vex2Of3State;
+        break;
+      case EVexPrefix:
+        DPRINTF(Decoder, "Found EVEX prefix %#x.\n", nextByte);
+        emi.evex.evex_present = 1;
+        nextState = EVex2Of4State;
         break;
       case 0:
         nextState = OneByteOpcodeState;
@@ -249,8 +263,8 @@ Decoder::doVex2Of2State(uint8_t nextByte)
 
     emi.rex.r = !vex.r;
 
-    emi.vex.l = vex.l;
-    emi.vex.v = ~vex.v;
+    emi.evex.l = vex.l;
+    emi.evex.v = ~vex.v;
 
     switch (vex.p) {
       case 0:
@@ -276,7 +290,7 @@ Decoder::doVex2Of3State(uint8_t nextByte)
 {
     if (emi.mode.submode != SixtyFourBitMode && bits(nextByte, 7, 6) == 0x3) {
         // This was actually an LDS instruction. Reroute to that path.
-        emi.vex.present = 0;
+        emi.evex.vex_present = 0;
         emi.opcode.type = OneByteOpcode;
         emi.opcode.op = 0xC4;
         return processOpcode(ImmediateTypeOneByte, UsesModRMOneByte,
@@ -317,7 +331,7 @@ Decoder::doVex3Of3State(uint8_t nextByte)
 {
     if (emi.mode.submode != SixtyFourBitMode && bits(nextByte, 7, 6) == 0x3) {
         // This was actually an LES instruction. Reroute to that path.
-        emi.vex.present = 0;
+        emi.evex.vex_present = 0;
         emi.opcode.type = OneByteOpcode;
         emi.opcode.op = 0xC5;
         return processOpcode(ImmediateTypeOneByte, UsesModRMOneByte,
@@ -329,8 +343,8 @@ Decoder::doVex3Of3State(uint8_t nextByte)
 
     emi.rex.w = vex.w;
 
-    emi.vex.l = vex.l;
-    emi.vex.v = ~vex.v;
+    emi.evex.l = vex.l;
+    emi.evex.v = ~vex.v;
 
     switch (vex.p) {
       case 0:
@@ -369,6 +383,95 @@ Decoder::doVexOpcodeState(uint8_t nextByte)
       default:
         panic("Unrecognized opcode type %d.\n", emi.opcode.type);
     }
+}
+
+Decoder::State
+Decoder::doEVex2Of4State(uint8_t nextByte)
+{
+    consumeByte();
+    EVex2Of4 evex = nextByte;
+
+    emi.rex.r = !evex.r;
+    emi.rex.x = !evex.x;
+    emi.rex.b = !evex.b;
+
+    emi.evex.r = !evex.r;
+    emi.evex.r_prime = !evex.r_prime;
+
+    switch (evex.m) {
+      case 1:
+        emi.opcode.type = TwoByteOpcode;
+        break;
+      case 2:
+        emi.opcode.type = ThreeByte0F38Opcode;
+        break;
+      case 3:
+        emi.opcode.type = ThreeByte0F3AOpcode;
+        break;
+      default:
+        // These encodings are reserved. Pretend this was an undefined
+        // instruction so the main decoder will behave correctly, and stop
+        // trying to interpret bytes.
+        emi.opcode.type = TwoByteOpcode;
+        emi.opcode.op = 0x0B;
+        instDone = true;
+        return ResetState;
+    }
+    return EVex3Of4State;
+}
+
+Decoder::State
+Decoder::doEVex3Of4State(uint8_t nextByte)
+{
+    consumeByte();
+    EVex3Of4 evex = nextByte;
+
+    emi.rex.w = evex.w;
+    emi.evex.v = ~evex.v;
+
+    switch (evex.p) {
+      case 0:
+        break;
+      case 1:
+        emi.legacy.op = 1;
+        break;
+      case 2:
+        emi.legacy.rep = 1;
+        break;
+      case 3:
+        emi.legacy.repne = 1;
+        break;
+    }
+    DPRINTF(Decoder, "EVEX-3: w-%d p-%d v-%d.\n",
+        emi.rex.w,
+        evex.p,
+        emi.evex.v
+    );
+
+    return EVex4Of4State;
+}
+
+Decoder::State
+Decoder::doEVex4Of4State(uint8_t nextByte)
+{
+    consumeByte();
+    EVex4Of4 evex = nextByte;
+
+    emi.evex.a = evex.a;
+    emi.evex.b = evex.b;
+    emi.evex.z = evex.z;
+    emi.evex.l = evex.l;
+    emi.evex.l_prime = evex.l_prime;
+    emi.evex.v_prime = !evex.v_prime;
+
+    assert(emi.evex.a == 0 && "Can not handle mask register in evex.");
+    DPRINTF(Decoder, "EVEX-4: L'-%d L-%d a-%d.\n",
+        emi.evex.l_prime,
+        emi.evex.l,
+        emi.evex.a
+    );
+
+    return VexOpcodeState;
 }
 
 // Load the first opcode byte. Determine if there are more opcode bytes, and
@@ -432,7 +535,7 @@ Decoder::doThreeByte0F38OpcodeState(uint8_t nextByte)
      * If there is no prefix, then it's gemforge instructions.
      * TODO: Improve this fragile implementation.
      */
-    if (!emi.vex.present && !emi.legacy.op && !emi.legacy.addr) {
+    if (!emi.evex.present && !emi.legacy.op && !emi.legacy.addr) {
         return processOpcode(ImmediateTypeThreeByte0F38GemForge,
             UsesModRMThreeByte0F38GemForge);
     }
@@ -509,6 +612,8 @@ Decoder::processOpcode(ByteTable &immTable, ByteTable &modrmTable,
             nextState = ResetState;
         }
     }
+
+    sanityCheckSIMD();
     return nextState;
 }
 
@@ -622,16 +727,18 @@ Decoder::doDisplacementState()
           default:
             panic("Undefined displacement size!\n");
         }
-        DPRINTF(Decoder, "Collected displacement %#x.\n",
-                emi.displacement);
+
+        emi.dispSize = displacementSize;
+        processCompressedDisplacement();
+
+        DPRINTF(Decoder, "Collected displacement %d bytes: %#x.\n",
+                emi.dispSize, emi.displacement);
         if (immediateSize) {
             nextState = ImmediateState;
         } else {
             instDone = true;
             nextState = ResetState;
         }
-
-        emi.dispSize = displacementSize;
     }
     else
         nextState = DisplacementState;

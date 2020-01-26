@@ -35,17 +35,18 @@
 #
 # Authors: Gabe Black
 
-categories = ["romutil",
-              "gem_forge",
-              "general_purpose",
-              "simd512",
-              "simd128",
-              "simd64",
-              "system",
-              "x87"]
+categories = [
+    "vpbroadcast",
+    "vextract",
+    "vmovdqa",
+    "vmovdqu",
+    "vmovaps",
+    "vmovups",
+    "vpshufd",
+]
 
 microcode = '''
-# X86 microcode
+# SSE instructions
 '''
 for category in categories:
     exec "import %s as cat" % category

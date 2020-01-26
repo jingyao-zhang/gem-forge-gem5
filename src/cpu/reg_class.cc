@@ -44,7 +44,7 @@
 
 const char *RegId::regClassStrings[] = {
     "IntRegClass",
-    "FloatRegClass",
+    "FPR",
     "VecRegClass",
     "VecElemClass",
     "VecPredRegClass",

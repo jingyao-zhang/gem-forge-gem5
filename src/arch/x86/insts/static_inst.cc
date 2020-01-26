@@ -204,12 +204,12 @@ namespace X86ISA
                 return;
             }
             reg_idx -= NumMMXRegs;
-            if (reg_idx < NumXMMRegs * 2) {
-                ccprintf(os, "%%xmm%d_%s", reg_idx / 2,
-                        (reg_idx % 2) ? "high": "low");
+            if (reg_idx < NumXMMRegs * NumXMMSubRegs) {
+                ccprintf(os, "%%xmm%d_%d", reg_idx / NumXMMSubRegs,
+                         reg_idx % NumXMMSubRegs);
                 return;
             }
-            reg_idx -= NumXMMRegs * 2;
+            reg_idx -= NumXMMRegs * NumXMMSubRegs;
             if (reg_idx < NumMicroFpRegs) {
                 ccprintf(os, "%%ufp%d", reg_idx);
                 return;

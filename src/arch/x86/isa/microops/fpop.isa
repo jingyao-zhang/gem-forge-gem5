@@ -268,8 +268,14 @@ let {{
                 "spm" : self.spm}
 
     class Movfp(FpUnaryOp):
-        code = 'FpDestReg_uqw = FpSrcReg1_uqw;'
-        else_code = 'FpDestReg_uqw = FpDestReg_uqw;'
+        code = '''
+            FpDestReg_uqw = FpSrcReg1_uqw;
+            // hack("Move %s->%s %#x\\n", srcRegIdx(0), destRegIdx(0), FpSrcReg1_uqw);
+        '''
+        else_code = '''
+            FpDestReg_uqw = FpDestReg_uqw;
+            //hack("Unmove\\n");
+        '''
         cond_check = "checkCondition(ccFlagBits | cfofBits | dfBit | \
                                      ecfBit | ezfBit, src2)"
         op_class = 'IntAluOp'
