@@ -40,7 +40,6 @@
                     0x1: VMOVDQU(VYdo, WYdo);
                     0x0: VMOVDQU(Vq, Wq);
                 }
-                default: UD2();
             }
             // operand size (0x66)
             0x1: decode OPCODE_OP_BOTTOM3 {
@@ -49,7 +48,6 @@
                     0x1: VMOVDQA(VYdo, WYdo);
                     0x0: VMOVDQA(Vo, Wo);
                 }
-                default: UD2();
             }
         }
         0x0F: decode LEGACY_DECODEVAL {
@@ -60,7 +58,6 @@
                     0x1: VMOVDQU(WYdo, VYdo);
                     0x0: VMOVDQU(Wo, Vo);
                 }
-                default: UD2();
             }
             0x1: decode OPCODE_OP_BOTTOM3 {
                 0x7: decode EVEX_L_EXTEND {
@@ -68,7 +65,6 @@
                     0x1: VMOVDQA(WYdo, VYdo);
                     0x0: VMOVDQA(Wo, Vo);
                 }
-                default: UD2();
             }
         }
         0x1A: decode LEGACY_DECODEVAL {
@@ -77,7 +73,14 @@
                 0x4: decode EVEX_L_EXTEND {
                     0x2: VPADDQ(VZqo, WZqo);
                 }
-                default: UD2();
+            }
+        }
+        0x1F: decode LEGACY_DECODEVAL {
+            // operand size (0x66)
+            0x1: decode OPCODE_OP_BOTTOM3 {
+                0x6: decode EVEX_L_EXTEND {
+                    0x2: VPADDD(VZqo, WZqo);
+                }
             }
         }
     }

@@ -100,5 +100,13 @@
                 }
             }
         }
+        0x1F: decode LEGACY_DECODEVAL {
+            0x1: decode OPCODE_OP_BOTTOM3 {
+                0x6: decode EVEX_L {
+                    0x1: VPADDD(VYdo, WYdo);
+                    0x0: VPADDD(Vo, Wo);
+                }
+            }
+        }
     }
 }

@@ -34,6 +34,7 @@ void Decoder::processCompressedDisplacement() {
     if (emi.legacy.decodeVal == 0x1) {
       switch (emi.opcode.op) {
       case 0xD4: // vpaddq
+      case 0xFE: // vpaddd
       case 0x6F: // vmovdqa(load)
       case 0x7F: // vmovdqa(store)
         N = 64;
@@ -55,6 +56,12 @@ void Decoder::processCompressedDisplacement() {
         N = 64;
         break;
       }
+    }
+  } else if (emi.opcode.type == ThreeByte0F38Opcode) {
+    switch (emi.opcode.op) {
+    case 0x39: // vpminsd, vpminsq
+      N = 64;
+      break;
     }
   }
   if (N == 1) {
@@ -83,6 +90,7 @@ std::unordered_set<int> VEX_TWO_BYTE_OP_0x66_IMPL = {
     0x70, // vpshufd
     0xD4, // vpaddq
     0xEF, // vpxor
+    0xFE, // vpaddd
 };
 std::unordered_set<int> VEX_TWO_BYTE_OP_0xF3_IMPL = {
     0x6F, // vmovdqu(load)
@@ -100,6 +108,7 @@ std::unordered_set<int> EVEX_TWO_BYTE_OP_IMPL = {
 std::unordered_set<int> EVEX_TWO_BYTE_OP_0x66_IMPL = {
     0x6F, // vmovdqa(load)
     0xD4, // vpaddq
+    0xFE, // vpaddd
 };
 std::unordered_set<int> EVEX_TWO_BYTE_OP_0xF3_IMPL = {
     0x6F, // vmovdqu(load)
@@ -110,6 +119,7 @@ std::unordered_set<int> EVEX_0F3A_OP_IMPL = {
 };
 std::unordered_set<int> EVEX_0F38_OP_IMPL = {
     0x59, // vpbroadcastq
+    0x39, // vpminsd, vpminsq
 };
 } // namespace
 

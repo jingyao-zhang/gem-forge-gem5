@@ -465,6 +465,7 @@ Decoder::doEVex4Of4State(uint8_t nextByte)
     emi.evex.v_prime = !evex.v_prime;
 
     assert(emi.evex.a == 0 && "Can not handle mask register in evex.");
+    assert(emi.evex.b == 0 && "Can not handle embed broadcast in evex.");
     DPRINTF(Decoder, "EVEX-4: L'-%d L-%d a-%d.\n",
         emi.evex.l_prime,
         emi.evex.l,
