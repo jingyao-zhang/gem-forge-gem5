@@ -503,6 +503,8 @@ void ISAStreamEngine::dispatchStreamLoad(
   se->dispatchStreamUser(args);
   // After dispatch, we get extra LQ callbacks.
   se->createStreamUserLQCallbacks(args, extraLQCallbacks);
+  ISA_SE_DPRINTF("Dispatch StreamLoad %llu with callback %d.\n",
+    userInfo.translatedUsedStreamIds.at(0), (bool)(extraLQCallbacks.front()));
 }
 
 bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
@@ -519,7 +521,10 @@ bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   };
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
   auto se = this->getStreamEngine();
-  return se->areUsedStreamsReady(args);
+  bool canExecute = se->areUsedStreamsReady(args);
+  ISA_SE_DPRINTF("CanExecute StreamLoad %llu, %d.\n",
+    userInfo.translatedUsedStreamIds.at(0), canExecute);
+  return canExecute;
 }
 
 void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
@@ -540,6 +545,8 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds, &values);
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
+  ISA_SE_DPRINTF("Execute StreamLoad RegionStream %llu destRegs %d.\n",
+    userInfo.translatedUsedStreamIds.at(0), dynInfo.staticInst->numDestRegs());
 
   /**
    * We handle wider registers by checking the number of destination registers.
