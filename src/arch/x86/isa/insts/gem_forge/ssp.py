@@ -52,7 +52,17 @@ def macroop SSP_STREAM_LOAD_P_I
 
 def macroop SSP_STREAM_LOAD_XMM_I
 {
-    ssp_stream_fload xmml, imm, dataSize="env.dataSize", isFloat=True
+    ssp_stream_fload xmm0, imm, dataSize="env.dataSize", isFloat=True
+};
+
+def macroop SSP_STREAM_LOAD_YMM_I
+{
+    ssp_stream_fload xmm0, imm, dataSize=32, isFloat=True
+};
+
+def macroop SSP_STREAM_LOAD_ZMM_I
+{
+    ssp_stream_fload xmm0, imm, dataSize=64, isFloat=True
 };
 
 '''

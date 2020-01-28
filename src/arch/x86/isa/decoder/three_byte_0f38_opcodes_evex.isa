@@ -31,24 +31,39 @@
 // Decode the three byte opcodes with the 0f38 prefix.
 //
 'X86ISA::ThreeByte0F38Opcode': decode LEGACY_OP {
-    1: decode OPCODE_OP {
-        format Inst {
-            0x39: decode REX_W {
-                0x1: decode EVEX_L_EXTEND {
-                    0x2: VPMINSQ(VZqo, WZqo);
-                    0x1: VPMINSQ(VYdo, WYdo);
-                    0x0: VPMINSQ(Vo, Wo);
+    format Inst {
+        1: decode LEGACY_DECODEVAL {
+            // 0x66
+            0x1: decode OPCODE_OP {
+                0x39: decode REX_W {
+                    0x1: decode EVEX_L_EXTEND {
+                        0x2: VPMINSQ(VZqo, WZqo);
+                        0x1: VPMINSQ(VYdo, WYdo);
+                        0x0: VPMINSQ(Vo, Wo);
+                    }
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPMINSD(VZqo, WZqo);
+                        0x1: VPMINSD(VYdo, WYdo);
+                        0x0: VPMINSD(Vo, Wo);
+                    }
                 }
-                0x0: decode EVEX_L_EXTEND {
-                    0x2: VPMINSD(VZqo, WZqo);
-                    0x1: VPMINSD(VYdo, WYdo);
-                    0x0: VPMINSD(Vo, Wo);
+                0x59: decode EVEX_L_EXTEND {
+                    0x2: VPBROADCASTQ(VZqo, Wq);
                 }
-            }
-            0x59: decode EVEX_L_EXTEND {
-                0x2: VPBROADCASTQ(VZqo, Wq);
             }
         }
-        default: Inst::UD2();
+        0: decode LEGACY_DECODEVAL {
+            // no prefix.
+            0x0: decode OPCODE_OP {
+                0x40: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_LOAD(WZqo, Ib);
+                    0x1: SSP_STREAM_LOAD(WYdo, Ib);
+                }
+                0x41: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_LOAD(WZqo, Ib);
+                    0x1: SSP_STREAM_LOAD(WYdo, Ib);
+                }
+            }
+        }
     }
 }

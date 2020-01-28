@@ -118,6 +118,10 @@ std::unordered_set<int> EVEX_0F3A_OP_IMPL = {
     0x3B, // vextract
 };
 std::unordered_set<int> EVEX_0F38_OP_IMPL = {
+    0x40, // vsspstreamloadv8i64
+    0x41, // vsspstreamloadv16i32
+};
+std::unordered_set<int> EVEX_0F38_OP_0x66_IMPL = {
     0x59, // vpbroadcastq
     0x39, // vpminsd, vpminsq
 };
@@ -129,7 +133,16 @@ void Decoder::sanityCheckSIMD() {
     bool implemented = false;
     // Sanity check that we have implemented the evex instruction.
     if (emi.opcode.type == ThreeByte0F38Opcode) {
-      implemented = EVEX_0F38_OP_IMPL.count(emi.opcode.op);
+      switch (emi.legacy.decodeVal) {
+        case 0x0:
+          implemented = EVEX_0F38_OP_IMPL.count(emi.opcode.op);
+          break;
+        case 0x1:
+          implemented = EVEX_0F38_OP_0x66_IMPL.count(emi.opcode.op);
+          break;
+        case 0x4:
+          break;
+      }
     } else if (emi.opcode.type == ThreeByte0F3AOpcode) {
       implemented = EVEX_0F3A_OP_IMPL.count(emi.opcode.op);
     } else if (emi.opcode.type == TwoByteOpcode) {
@@ -143,10 +156,6 @@ void Decoder::sanityCheckSIMD() {
         case 0x4:
           implemented = EVEX_TWO_BYTE_OP_0xF3_IMPL.count(emi.opcode.op);
           break;
-      }
-      if (emi.legacy.decodeVal == 0x1 && emi.opcode.op == 0xD4) {
-        hack("%#x vpaddq with v_extend %d v %d v_prime %d.\n",
-          origPC, emi.evex.v_extend, emi.evex.v, emi.evex.v_prime);
       }
     }
     if (!implemented) {

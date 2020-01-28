@@ -374,9 +374,20 @@ Decoder::doVexOpcodeState(uint8_t nextByte)
     switch (emi.opcode.type) {
       case TwoByteOpcode:
         return processOpcode(ImmediateTypeTwoByte, UsesModRMTwoByte);
-      case ThreeByte0F38Opcode:
+      case ThreeByte0F38Opcode: {
+
+        /**
+         * ! GemForge.
+         * We allow GemForge instructions to have EVEX prefix.
+         */
+        if (emi.evex.evex_present && !emi.legacy.op && !emi.legacy.decodeVal) {
+          return processOpcode(ImmediateTypeThreeByte0F38GemForge,
+                               UsesModRMThreeByte0F38GemForge);
+        }
+
         return processOpcode(ImmediateTypeThreeByte0F38,
                              UsesModRMThreeByte0F38);
+      }
       case ThreeByte0F3AOpcode:
         return processOpcode(ImmediateTypeThreeByte0F3A,
                              UsesModRMThreeByte0F3A);
@@ -533,7 +544,8 @@ Decoder::doThreeByte0F38OpcodeState(uint8_t nextByte)
 
     /**
      * ! GemForge
-     * If there is no prefix, then it's gemforge instructions.
+     * GemForge instruction can be evex encoded, or no prefix,
+     * with no lagacy.op or legacy.addr.
      * TODO: Improve this fragile implementation.
      */
     if (!emi.evex.present && !emi.legacy.op && !emi.legacy.addr) {

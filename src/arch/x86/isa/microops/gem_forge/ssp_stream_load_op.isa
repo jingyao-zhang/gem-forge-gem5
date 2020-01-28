@@ -148,17 +148,15 @@ let {{
                 'code' : '',
                 'user_constructor': """
                     flags[IsFloating] = true;
-                    if (dataSize == 16) {
-                        /**
-                         * ! GemForge
-                         * Hack to also mark the xmmh as my destination.
-                         * TODO: Improve this for wider registers.
-                         */
-                        _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest + 1);
+                    /**
+                     * ! GemForge
+                     * Hack to also mark higher bits as my destination.
+                     */
+                    for (int i = 0; i < dataSize / sizeof(uint64_t); i++) {
+                        assert(_numDestRegs < MaxInstDestRegs && "DestRegs overflow.");
+                        _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest + i);
                         _numFPDestRegs++;
                     }
-                    _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest);
-                    _numFPDestRegs++;
                 """,
             },
             ['FloatMemReadOp', 'IsLoad', 'IsMemRef', 'IsGemForge']
