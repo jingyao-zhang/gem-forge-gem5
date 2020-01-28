@@ -164,7 +164,8 @@ void MLCDynamicStream::panicDump() const {
   MLC_S_DPRINTF("-------------------Panic Dump--------------------\n");
   for (const auto &slice : this->slices) {
     MLC_SLICE_DPRINTF(
-        slice.sliceId, "Data %d Core %s.\n", slice.dataReady,
+        slice.sliceId, "VAddr %#x Data %d Core %s.\n",
+        slice.sliceId.vaddr, slice.dataReady,
         MLCStreamSlice::convertCoreStatusToString(slice.coreStatus).c_str());
   }
 }

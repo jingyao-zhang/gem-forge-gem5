@@ -185,7 +185,16 @@ void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
   } else {
     // TODO: Properly detect that the slice is lagging behind.
     const auto &firstSlice = this->slices.front();
+    bool laggingBehind = false;
     if (sliceId.lhsElementIdx < firstSlice.sliceId.lhsElementIdx) {
+      laggingBehind = true;
+    }
+    if (sliceId.lhsElementIdx == firstSlice.sliceId.lhsElementIdx &&
+        sliceId.vaddr < firstSlice.sliceId.vaddr) {
+      // Due to multi-line elements, we have to also check vaddr.
+      laggingBehind = true;
+    }
+    if (laggingBehind) {
       // The stream data is lagging behind. The slice is already
       // released.
       MLC_SLICE_DPRINTF(sliceId, "Discard as lagging behind %s.\n",
