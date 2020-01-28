@@ -2,6 +2,7 @@
 'X86ISA::TwoByteOpcode': decode OPCODE_OP_TOP5 {
     format Inst{
         0x02: decode LEGACY_DECODEVAL {
+            // no prefix, packed single.
             0x0: decode OPCODE_OP_BOTTOM3 {
                 0x0: decode EVEX_L_EXTEND {
                     0x2: VMOVUPS(VZqo, WZqo);
@@ -12,6 +13,12 @@
                     0x2: VMOVUPS(WZqo, VZqo);
                     0x1: VMOVUPS(WYdo, VYdo);
                     0x0: VMOVUPS(Wo, Vo);
+                }
+            }
+            // 0xF3, scalar single.
+            0x4: decode OPCODE_OP_BOTTOM3 {
+                0x0: decode EVEX_L_EXTEND {
+                    0x0: VMOVSS(VZqo, WZqo);
                 }
             }
         }
@@ -27,6 +34,21 @@
                     0x2: VMOVAPS(WZqo, VZqo);
                     0x1: VMOVAPS(WYdo, VYdo);
                     0x0: VMOVAPS(Wo, Vo);
+                }
+            }
+        }
+        0x0B: decode LEGACY_DECODEVAL {
+            // packed single
+            0x0: decode OPCODE_OP_BOTTOM3 {
+                0x0: decode EVEX_L_EXTEND {
+                    0x2: VADDPS(VZqo, WZqo);
+                    0x1: VADDPS(VYdo, WYdo);
+                    0x0: VADDPS(Vo, Wo);
+                }
+                0x4: decode EVEX_L_EXTEND {
+                    0x2: VSUBPS(VZqo, WZqo);
+                    0x1: VSUBPS(VYdo, WYdo);
+                    0x0: VSUBPS(Vo, Wo);
                 }
             }
         }

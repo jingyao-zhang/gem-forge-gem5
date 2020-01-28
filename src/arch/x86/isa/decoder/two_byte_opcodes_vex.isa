@@ -12,6 +12,15 @@
                     0x0: MOVUPS(Wo, Vo);
                 }
             }
+            // 0xF3
+            0x4: decode OPCODE_OP_BOTTOM3 {
+                0x0: decode EVEX_L {
+                    0x0: VMOVSS(Vo, Wo);
+                }
+                0x1: decode EVEX_L {
+                    0x0: VMOVSS(Wo, Vo);
+                }
+            }
         }
         0x05: decode LEGACY_DECODEVAL {
             0x0: decode OPCODE_OP_BOTTOM3 {
@@ -33,8 +42,17 @@
                 }
             }
         }
+        0x0B: decode LEGACY_DECODEVAL {
+            0x4: decode OPCODE_OP_BOTTOM3 {
+                0x0: decode EVEX_L {
+                    0x0: VADDSS(Vo, Wo);
+                }
+                0x4: decode EVEX_L {
+                    0x0: VSUBSS(Vo, Wo);
+                }
+            }
+        }
         0x0D: decode LEGACY_DECODEVAL {
-            0x0: UD2();
             0x1: decode OPCODE_OP_BOTTOM3 {
                 0x7: decode EVEX_L {
                     0x1: VMOVDQA(VYdo, WYdo);

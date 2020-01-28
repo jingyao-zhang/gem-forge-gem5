@@ -10,6 +10,148 @@
 
 namespace X86ISA {
 
+namespace {
+enum EVEXTupleType {
+  NOT_IMPLEMENTED = 0,
+  O = NOT_IMPLEMENTED,
+  FULL,
+  FU = FULL,
+  HALF,
+  HA = HALF,
+  FULL_MEM,
+  FM = FULL_MEM,
+  TUPLE1_SCALAR,
+  TS = TUPLE1_SCALAR,
+  TUPLE1_FIXED,
+  TF = TUPLE1_FIXED,
+  TUPLE1_4X,
+  TX = TUPLE1_4X,
+  TUPLE2,
+  T2 = TUPLE2,
+  TUPLE4,
+  T4 = TUPLE4,
+  TUPLE8,
+  T8 = TUPLE8,
+  HALF_MEM,
+  HM = HALF_MEM,
+  QUARTER_MEM,
+  QM = QUARTER_MEM,
+  EIGHTH_MEM,
+  EM = EIGHTH_MEM,
+  MEM128,
+  MX = MEM128,
+  MOVDDUP,
+  MO = MOVDDUP,
+};
+
+/****************************************************************
+ * Implemeted.
+ * 66 6F vmovdqa(load)  FULL_MEM
+ * 66 7F vmovdqa(store) FULL_MEM
+ * 66 D4 vpaddq         FULL
+ * 66 FE vpaddd         FULL
+ */
+const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
+    {    //LSB
+// MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
+/*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  1 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  5 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FM,
+/*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FM,
+/*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  9 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  D */ O , O , O , O , FU, O , O , O , O , O , O , O , O , O , O , O ,
+/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  F */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , FU, O
+    };
+/****************************************************************
+ * Implemeted.
+ * F3 10 vmovss         TUPLE1_SCALAR
+ * F3 6F vmovdqu(load)  FULL_MEM
+ * F3 7F vmovdqu(store) FULL_MEM
+ */
+const EVEXTupleType EVEXTupleTypeTwoByteF3[256] =
+    {    //LSB
+// MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
+/*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  1 */ TS, O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  5 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FM,
+/*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FM,
+/*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  9 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  D */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  F */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O
+    };
+/****************************************************************
+ * Implemeted.
+ * 10 vmovups(load)        FULL_MEM
+ * 11 vmovups(store)       FULL_MEM
+ * 28 vmovaps(load)        FULL_MEM
+ * 29 vmovaps(store)       FULL_MEM
+ * 58 vaddps               FULL
+ * 5C vsubps               FULL
+ */
+const EVEXTupleType EVEXTupleTypeTwoByte[256] =
+    {    //LSB
+// MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
+/*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  1 */ FM, FM, O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , FM, FM, O , O , O , O , O , O ,
+/*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  5 */ O , O , O , O , O , O , O , O , FU, O , O , O , FU, O , O , O ,
+/*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  9 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  D */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  F */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O
+    };
+/****************************************************************
+ * Implemeted.
+ * 39 vpminss,vpminsq        FULL
+ */
+const EVEXTupleType EVEXTupleTypeThreeByte0F38[256] =
+    {    //LSB
+// MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
+/*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  1 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  3 */ O , O , O , O , O , O , O , O , O , FU, O , O , O , O , O , O ,
+/*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  5 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  9 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  D */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  F */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O
+    };
+}
+
 void Decoder::processCompressedDisplacement() {
   /**
    * ! Compressed Displacement.
@@ -20,171 +162,57 @@ void Decoder::processCompressedDisplacement() {
    * It is quite complicated, so far we only do this in adhoc way.
    *
    */
+  if (this->isGemForgeInst(emi)) {
+    return;
+  }
   if (!emi.evex.evex_present) {
     return;
   }
   if (emi.dispSize != 1) {
     return;
   }
-  assert(emi.evex.l_prime == 1 && "Can only handle EVEX.512.");
-  // Convert to signed int64_t.
-  int64_t displacment = emi.displacement;
-  int64_t N = 1;
-  if (emi.opcode.type == TwoByteOpcode) {
-    if (emi.legacy.decodeVal == 0x1) {
-      switch (emi.opcode.op) {
-      case 0xD4: // vpaddq
-      case 0xFE: // vpaddd
-      case 0x6F: // vmovdqa(load)
-      case 0x7F: // vmovdqa(store)
-        N = 64;
-        break;
+
+  EVEXTupleType tupleType = EVEXTupleType::NOT_IMPLEMENTED;
+  switch (emi.opcode.type) {
+    case TwoByteOpcode: {
+      switch (emi.legacy.decodeVal) {
+        case 0x1: tupleType = EVEXTupleTypeTwoByte66[emi.opcode.op]; break;
+        case 0x4: tupleType = EVEXTupleTypeTwoByteF3[emi.opcode.op]; break;
+        case 0x0: tupleType = EVEXTupleTypeTwoByte[emi.opcode.op]; break;
       }
-    } else if (emi.legacy.decodeVal == 0x4) {
-      switch (emi.opcode.op) {
-      case 0x6F: // vmovdqu(load)
-      case 0x7F: // vmovdqu(store)
-        N = 64;
-        break;
-      }
-    } else {
-      switch (emi.opcode.op) {
-      case 0x10: // vmovups(load)
-      case 0x11: // vmovups(store)
-      case 0x28: // vmovaps(load)
-      case 0x29: // vmovaps(store)
-        N = 64;
-        break;
-      }
+      break;
     }
-  } else if (emi.opcode.type == ThreeByte0F38Opcode) {
-    switch (emi.opcode.op) {
-    case 0x39: // vpminsd, vpminsq
-      N = 64;
+    case ThreeByte0F38Opcode: {
+      tupleType = EVEXTupleTypeThreeByte0F38[emi.opcode.op];
       break;
     }
   }
-  if (N == 1) {
-    panic("Don't know how to expand displacement for %#x %s.\n", this->origPC,
-          emi);
+
+  // Convert to signed int64_t.
+  // assert(tupleType != EVEXTupleType::NOT_IMPLEMENTED && "TupleType not implemented.\n");
+  int64_t displacment = emi.displacement;
+  int64_t N = 1;
+  switch (tupleType) {
+    case FULL: {
+      if (emi.evex.b) {
+        N = emi.rex.w ? 8 : 4;
+      } else {
+        N = 16 * (emi.evex.l_extend << 1);
+      }
+      break;
+    }
+    case FULL_MEM:      N = 16 * (emi.evex.l_extend << 1); break;
+    case TUPLE1_SCALAR: N = emi.rex.w ? 8 : 4; break;
+    default: {
+      panic("Don't know how to expand displacement for %#x %s.\n", this->origPC,
+            emi);
+    }
   }
   DPRINTF(Decoder, "Expand displacement pc %#x op %x %lld x %lld = %lld.\n",
           this->origPC, emi.opcode.op, displacment, N, displacment * N);
   hack("Expand displacement pc %#x op %x %lld x %lld = %lld.\n", this->origPC,
        emi.opcode.op, displacment, N, displacment * N);
   emi.displacement = displacment * N;
-}
-
-namespace {
-std::unordered_set<int> VEX_TWO_BYTE_OP_IMPL = {
-    0x10, // vmovups(load)
-    0x11, // vmovups(store)
-    0x28, // vmovaps(load)
-    0x29, // vmovups(store)
-    0x57, // vxorps
-};
-std::unordered_set<int> VEX_TWO_BYTE_OP_0x66_IMPL = {
-    0x6F, // vmovdqa(load)
-    0x7E, // vmovq(store)
-    0x7F, // vmovdqa(store)
-    0x70, // vpshufd
-    0xD4, // vpaddq
-    0xEF, // vpxor
-    0xFE, // vpaddd
-};
-std::unordered_set<int> VEX_TWO_BYTE_OP_0xF3_IMPL = {
-    0x6F, // vmovdqu(load)
-    0x7F, // vmovdqu(store)
-};
-std::unordered_set<int> VEX_0F3A_OP_IMPL = {
-    0x39, // vextract
-};
-std::unordered_set<int> EVEX_TWO_BYTE_OP_IMPL = {
-    0x10, // vmovups(load)
-    0x11, // vmovups(store)
-    0x28, // vmovaps(load)
-    0x29, // vmovaps(store)
-};
-std::unordered_set<int> EVEX_TWO_BYTE_OP_0x66_IMPL = {
-    0x6F, // vmovdqa(load)
-    0xD4, // vpaddq
-    0xFE, // vpaddd
-};
-std::unordered_set<int> EVEX_TWO_BYTE_OP_0xF3_IMPL = {
-    0x6F, // vmovdqu(load)
-    0x7F, // vmovdqu(store)
-};
-std::unordered_set<int> EVEX_0F3A_OP_IMPL = {
-    0x3B, // vextract
-};
-std::unordered_set<int> EVEX_0F38_OP_IMPL = {
-    0x40, // vsspstreamloadv8i64
-    0x41, // vsspstreamloadv16i32
-};
-std::unordered_set<int> EVEX_0F38_OP_0x66_IMPL = {
-    0x59, // vpbroadcastq
-    0x39, // vpminsd, vpminsq
-};
-} // namespace
-
-// Remove this once you feel confident that instructions are supported.
-void Decoder::sanityCheckSIMD() {
-  if (emi.evex.evex_present) {
-    bool implemented = false;
-    // Sanity check that we have implemented the evex instruction.
-    if (emi.opcode.type == ThreeByte0F38Opcode) {
-      switch (emi.legacy.decodeVal) {
-        case 0x0:
-          implemented = EVEX_0F38_OP_IMPL.count(emi.opcode.op);
-          break;
-        case 0x1:
-          implemented = EVEX_0F38_OP_0x66_IMPL.count(emi.opcode.op);
-          break;
-        case 0x4:
-          break;
-      }
-    } else if (emi.opcode.type == ThreeByte0F3AOpcode) {
-      implemented = EVEX_0F3A_OP_IMPL.count(emi.opcode.op);
-    } else if (emi.opcode.type == TwoByteOpcode) {
-      switch (emi.legacy.decodeVal) {
-        case 0x0:
-          implemented = EVEX_TWO_BYTE_OP_IMPL.count(emi.opcode.op);
-          break;
-        case 0x1:
-          implemented = EVEX_TWO_BYTE_OP_0x66_IMPL.count(emi.opcode.op);
-          break;
-        case 0x4:
-          implemented = EVEX_TWO_BYTE_OP_0xF3_IMPL.count(emi.opcode.op);
-          break;
-      }
-    }
-    if (!implemented) {
-      panic("Unimplemented evex inst %#x:\n%s.\n", basePC, emi);
-    }
-  }
-
-  if (emi.evex.vex_present) {
-    // 256bit simd.
-    bool implemented = false;
-    if (emi.opcode.type == ThreeByte0F3AOpcode) {
-      implemented = VEX_0F3A_OP_IMPL.count(emi.opcode.op);
-    } else if (emi.opcode.type == TwoByteOpcode) {
-      switch (emi.legacy.decodeVal) {
-      case 0x0:
-        implemented = VEX_TWO_BYTE_OP_IMPL.count(emi.opcode.op);
-        break;
-      case 0x1:
-        implemented = VEX_TWO_BYTE_OP_0x66_IMPL.count(emi.opcode.op);
-        break;
-      case 0x4:
-        implemented = VEX_TWO_BYTE_OP_0xF3_IMPL.count(emi.opcode.op);
-        break;
-      }
-    }
-    if (!implemented) {
-      panic("Unimplemented vex inst %#x:\n%s.\n", origPC, emi);
-    }
-  }
 }
 
 } // namespace X86ISA

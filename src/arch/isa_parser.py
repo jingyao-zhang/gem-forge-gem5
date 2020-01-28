@@ -1735,8 +1735,6 @@ class ISAParser(Grammar):
         if self.namespace == 'X86ISAInst':
             if self.maxInstDestRegs < 8:
                 self.maxInstDestRegs = 8
-        print(self.namespace)
-        print(self.maxInstDestRegs)
         self.update('max_inst_regs.hh',
                     '''namespace %(namespace)s {
     const int MaxInstSrcRegs = %(maxInstSrcRegs)d;

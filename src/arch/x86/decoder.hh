@@ -227,10 +227,10 @@ class Decoder
     // Process the opcode found with VEX / XOP prefix.
     State processExtendedOpcode(ByteTable &immTable);
 
+    bool isGemForgeInst(const ExtMachInst &emi) const;
+
     // Process the Compressed displacement in EVEX.
     void processCompressedDisplacement();
-    // Sanity check for the partial support of AVX2 and AVX512.
-    void sanityCheckSIMD();
 
   protected:
     /// Caching for decoded instruction objects.

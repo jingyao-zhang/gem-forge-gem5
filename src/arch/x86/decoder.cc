@@ -626,7 +626,6 @@ Decoder::processOpcode(ByteTable &immTable, ByteTable &modrmTable,
         }
     }
 
-    sanityCheckSIMD();
     return nextState;
 }
 
@@ -815,6 +814,10 @@ Decoder::decode(ExtMachInst mach_inst, Addr addr)
         return iter->second;
 
     StaticInstPtr si = decodeInst(mach_inst);
+    if (si->getName() == "ud2" && mach_inst.evex.present) {
+      panic("UD2 decoded at %#x %s.\n", origPC, mach_inst);
+    }
+
     (*instMap)[mach_inst] = si;
     return si;
 }
@@ -863,4 +866,19 @@ Decoder::decode(PCState &nextPC)
     return si;
 }
 
+bool Decoder::isGemForgeInst(const ExtMachInst &emi) const {
+    /**
+     * ! GemForge
+     * 1. Must be 0F 38 opcode.
+     * 2. Must not be legacy op or legacy addr.
+     * 3. May or may not have evex prefix.
+     */
+    if (emi.opcode.type != ThreeByte0F38Opcode) {
+      return false;
+    }
+    if (emi.legacy.op || emi.legacy.addr) {
+      return false;
+    }
+    return true;
+}
 }

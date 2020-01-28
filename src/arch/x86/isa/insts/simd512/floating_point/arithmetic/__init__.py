@@ -1,4 +1,8 @@
 categories = [
+    "vaddss",
+    "vaddps",
+    "vsubss",
+    "vsubps",
     "vxorps",
     "vxorpd",
     "vpxor",

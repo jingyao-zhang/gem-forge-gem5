@@ -42,6 +42,7 @@ categories = [
     "vmovdqu",
     "vmovaps",
     "vmovups",
+    "vmovss",
     "vpshufd",
 ]
 
