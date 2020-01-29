@@ -362,8 +362,8 @@ let {{
                 int loIndex = (i + 0) * sizeBits;
                 result = insertBits(result, hiIndex, loIndex, resBits);
             }
-            // hack("shuffle %#x %#x -> %#x.\\n",
-            //     FpSrcReg1_uqw, FpSrcReg2_uqw, result);
+            DPRINTF(X86MediaMicroop, "shuffle %#x %#x -> %#x.\\n",
+                FpSrcReg1_uqw, FpSrcReg2_uqw, result);
             FpDestReg_uqw = result;
         '''
 
@@ -908,15 +908,20 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.f = arg1.f + arg2.f;
-                    hack("maddf32 %s + %s = %s, %f + %f = %f.\\n",
-                        srcRegIdx(0), srcRegIdx(1), destRegIdx(0),
-                        arg1.f, arg2.f, res.f);
+                    DPRINTF(X86MediaMicroop, "maddf32 %s(%f) + %s(%f) = %s(%f).\\n",
+                        srcRegIdx(0), arg1.f,
+                        srcRegIdx(1), arg2.f,
+                        destRegIdx(0), res.f);
                     resBits = res.i;
                 } else {
                     doubleInt arg1, arg2, res;
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.d = arg1.d + arg2.d;
+                    DPRINTF(X86MediaMicroop, "maddf64 %s(%f) + %s(%f) = %s(%f).\\n",
+                        srcRegIdx(0), arg1.d,
+                        srcRegIdx(1), arg2.d,
+                        destRegIdx(0), res.d);
                     resBits = res.i;
                 }
 
@@ -958,7 +963,7 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.f = arg1.f - arg2.f;
-                    hack("msubf32 %s - %s = %s, %f - %f = %f.\\n",
+                    DPRINTF(X86MediaMicroop, "msubf32 %s - %s = %s, %f - %f = %f.\\n",
                         srcRegIdx(0), srcRegIdx(1), destRegIdx(0),
                         arg1.f, arg2.f, res.f);
                     resBits = res.i;
@@ -1008,7 +1013,7 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.f = arg1.f * arg2.f;
-                    hack("mmulf32 %s(%f) * %s(%f) = %s(%f).\\n",
+                    DPRINTF(X86MediaMicroop, "mmulf32 %s(%f) * %s(%f) = %s(%f).\\n",
                         srcRegIdx(0), arg1.f,
                         srcRegIdx(1), arg2.f,
                         destRegIdx(0), res.f);
@@ -1018,7 +1023,7 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.d = arg1.d * arg2.d;
-                    hack("mmulf64 %s(%f) * %s(%f) = %s(%f).\\n",
+                    DPRINTF(X86MediaMicroop, "mmulf64 %s(%f) * %s(%f) = %s(%f).\\n",
                         srcRegIdx(0), arg1.d,
                         srcRegIdx(1), arg2.d,
                         destRegIdx(0), res.d);
@@ -1093,10 +1098,11 @@ let {{
                 uint64_t arg2Bits = bits(FpSrcReg2_uqw, hiIndex, loIndex);
                 uint64_t resBits = arg1Bits + arg2Bits;
 
-                // hack("MAddi %d %s + %s = %s, rm %d, v %d %#x + %#x = %#x.\\n",
-                //     i, srcRegIdx(0), srcRegIdx(1), destRegIdx(0),
-                //     machInst.modRM.rm, machInst.evex.v_extend,
-                //     arg1Bits, arg2Bits, resBits);
+                DPRINTF(X86MediaMicroop, "MAddi %d %s(%#x) + %s(#x) = %s(#x), rm %d, v %d.\\n",
+                    i, srcRegIdx(0), arg1Bits,
+                    srcRegIdx(1), arg2Bits,
+                    destRegIdx(0), resBits,
+                    machInst.modRM.rm, machInst.evex.v_extend);
 
                 if (ext & 0x2) {
                     if (signedOp()) {
