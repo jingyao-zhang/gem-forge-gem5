@@ -1008,12 +1008,20 @@ let {{
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.f = arg1.f * arg2.f;
+                    hack("mmulf32 %s(%f) * %s(%f) = %s(%f).\\n",
+                        srcRegIdx(0), arg1.f,
+                        srcRegIdx(1), arg2.f,
+                        destRegIdx(0), res.f);
                     resBits = res.i;
                 } else {
                     doubleInt arg1, arg2, res;
                     arg1.i = arg1Bits;
                     arg2.i = arg2Bits;
                     res.d = arg1.d * arg2.d;
+                    hack("mmulf64 %s(%f) * %s(%f) = %s(%f).\\n",
+                        srcRegIdx(0), arg1.d,
+                        srcRegIdx(1), arg2.d,
+                        destRegIdx(0), res.d);
                     resBits = res.i;
                 }
 

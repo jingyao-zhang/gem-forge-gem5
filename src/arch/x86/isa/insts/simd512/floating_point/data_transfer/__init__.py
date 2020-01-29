@@ -37,6 +37,7 @@
 
 categories = [
     "vpbroadcast",
+    "vbroadcastss",
     "vblendps",
     "vextract",
     "vinsertps",
