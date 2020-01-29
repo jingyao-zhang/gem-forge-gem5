@@ -270,7 +270,7 @@ let {{
     class Movfp(FpUnaryOp):
         code = '''
             FpDestReg_uqw = FpSrcReg1_uqw;
-            // hack("Move %s->%s %#x\\n", srcRegIdx(0), destRegIdx(0), FpSrcReg1_uqw);
+            //hack("Move %s->%s %#x\\n", srcRegIdx(0), destRegIdx(0), FpSrcReg1_uqw);
         '''
         else_code = '''
             FpDestReg_uqw = FpDestReg_uqw;
@@ -286,6 +286,13 @@ let {{
     class Sqrtfp(FpBinaryOp):
         code = 'FpDestReg = sqrt(FpSrcReg2);'
         op_class = 'FloatSqrtOp'
+
+    class Movfph32(FpUnaryOp):
+        code = '''
+            uint64_t h32 = bits(FpSrcReg1_uqw, 63, 32);
+            FpDestReg_uqw = insertBits(FpDestReg_uqw, 63, 32, h32);
+        '''
+        op_class = 'IntAluOp'
 
     class Cosfp(FpUnaryOp):
         code = 'FpDestReg = cos(FpSrcReg1);'

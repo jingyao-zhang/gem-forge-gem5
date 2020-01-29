@@ -814,8 +814,10 @@ Decoder::decode(ExtMachInst mach_inst, Addr addr)
         return iter->second;
 
     StaticInstPtr si = decodeInst(mach_inst);
-    if (si->getName() == "ud2" && mach_inst.evex.present) {
-      panic("UD2 decoded at %#x %s.\n", origPC, mach_inst);
+    if (mach_inst.evex.present) {
+        if (si->getName() == "ud2" || si->getName() == "unknown") {
+            panic("Invalid op decoded at %#x %s.\n", origPC, mach_inst);
+        }
     }
 
     (*instMap)[mach_inst] = si;

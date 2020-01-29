@@ -51,6 +51,18 @@
                     0x0: VSUBPS(Vo, Wo);
                 }
             }
+            // F3, scalar single
+            0x4: decode OPCODE_OP_BOTTOM3 {
+                0x0: decode EVEX_L_EXTEND {
+                    0x0: VADDSS(Vo, Wo);
+                }
+                0x2: decode EVEX_L_EXTEND {
+                    0x0: VCVTSS2SD(Vo, Wo);
+                }
+                0x4: decode EVEX_L_EXTEND {
+                    0x0: VSUBSS(Vo, Wo);
+                }
+            }
         }
         0x0D: decode LEGACY_DECODEVAL {
             // no prefix

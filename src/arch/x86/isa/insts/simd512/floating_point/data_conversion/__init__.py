@@ -36,25 +36,11 @@
 # Authors: Gabe Black
 
 categories = [
-    "vpbroadcast",
-    "vblendps",
-    "vextract",
-    "vinsertps",
-    "vmovdqa",
-    "vmovdqu",
-    "vmovaps",
-    "vmovups",
-    "vmovss",
-    "vmovsd",
-    "vmovsldup",
-    "vmovshdup",
-    "vblendps",
-    "vpermilps",
-    "vpshufd",
+    "vcvtss2sd",
 ]
 
 microcode = '''
-# SSE instructions
+# AVX instructions
 '''
 for category in categories:
     exec "import %s as cat" % category

@@ -1,6 +1,7 @@
 
 categories = [
     "arithmetic",
+    "data_conversion",
     "data_transfer",
 ]
 

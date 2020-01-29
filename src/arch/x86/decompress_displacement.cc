@@ -74,6 +74,9 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 /****************************************************************
  * Implemeted.
  * F3 10 vmovss         TUPLE1_SCALAR
+ * F3 58 vaddss         TUPLE1_SCALAR
+ * F3 5A vcvtss2sd      TUPLE1_SCALAR
+ * F3 5C vsubss         TUPLE1_SCALAR
  * F3 6F vmovdqu(load)  FULL_MEM
  * F3 7F vmovdqu(store) FULL_MEM
  */
@@ -85,7 +88,7 @@ const EVEXTupleType EVEXTupleTypeTwoByteF3[256] =
 /*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  5 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  5 */ O , O , O , O , O , O , O , O , TS, O , TS, O , TS, O , O , O ,
 /*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FM,
 /*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FM,
 /*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
@@ -174,6 +177,7 @@ void Decoder::processCompressedDisplacement() {
 
   EVEXTupleType tupleType = EVEXTupleType::NOT_IMPLEMENTED;
   switch (emi.opcode.type) {
+    case OneByteOpcode: break;
     case TwoByteOpcode: {
       switch (emi.legacy.decodeVal) {
         case 0x1: tupleType = EVEXTupleTypeTwoByte66[emi.opcode.op]; break;
@@ -186,6 +190,8 @@ void Decoder::processCompressedDisplacement() {
       tupleType = EVEXTupleTypeThreeByte0F38[emi.opcode.op];
       break;
     }
+    case ThreeByte0F3AOpcode: break;
+    case BadOpcode: break;
   }
 
   // Convert to signed int64_t.

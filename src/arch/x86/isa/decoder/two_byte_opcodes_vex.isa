@@ -20,6 +20,23 @@
                 0x1: decode EVEX_L {
                     0x0: VMOVSS(Wo, Vo);
                 }
+                0x2: decode EVEX_L {
+                    0x1: VMOVSLDUP(VYdo, WYdo);
+                    0x0: VMOVSLDUP(Vo, Wo);
+                }
+                0x6: decode EVEX_L {
+                    0x1: VMOVSHDUP(VYdo, WYdo);
+                    0x0: VMOVSHDUP(Vo, Wo);
+                }
+            }
+            // 0xF2 scalar double
+            0x8: decode OPCODE_OP_BOTTOM3 {
+                0x0: decode EVEX_L {
+                    0x0: VMOVSD(Vq, Wq);
+                }
+                0x1: decode EVEX_L {
+                    0x0: VMOVSD(Wd, Vd);
+                }
             }
         }
         0x05: decode LEGACY_DECODEVAL {
@@ -43,9 +60,22 @@
             }
         }
         0x0B: decode LEGACY_DECODEVAL {
+            0x0: decode OPCODE_OP_BOTTOM3 {
+                0x0: decode EVEX_L {
+                    0x1: VADDPS(VYdo, WYdo);
+                    0x0: VADDPS(Vo, Wo);
+                }
+                0x4: decode EVEX_L {
+                    0x1: VSUBPS(VYdo, WYdo);
+                    0x0: VSUBPS(Vo, Wo);
+                }
+            }
             0x4: decode OPCODE_OP_BOTTOM3 {
                 0x0: decode EVEX_L {
                     0x0: VADDSS(Vo, Wo);
+                }
+                0x2: decode EVEX_L {
+                    0x0: VCVTSS2SD(Vo, Wo);
                 }
                 0x4: decode EVEX_L {
                     0x0: VSUBSS(Vo, Wo);

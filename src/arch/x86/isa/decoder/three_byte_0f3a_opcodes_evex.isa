@@ -31,19 +31,17 @@
 // Decode the three byte opcodes with the 0f3a prefix.
 //
 'X86ISA::ThreeByte0F3AOpcode': decode LEGACY_OP {
-    1: decode OPCODE_OP {
+    1: decode LEGACY_DECODEVAL {
         format Inst {
-            0x39: decode EVEX_L_EXTEND {
-                default: UD2();
-            }
-            0x3b: decode EVEX_L_EXTEND {
-                0x2: decode IMMEDIATE {
-                    0x0: VEXTRACT256L(WYdo, VZqo, Ib);
-                    0x1: VEXTRACT256H(WYdo, VZqo, Ib);
+            // 0x66
+            0x1: decode OPCODE_OP {
+                0x3B: decode EVEX_L_EXTEND {
+                    0x2: decode IMMEDIATE {
+                        0x0: VEXTRACT256L(WYdo, VZqo, Ib);
+                        0x1: VEXTRACT256H(WYdo, VZqo, Ib);
+                    }
                 }
-                default: UD2();
             }
         }
-        default: Inst::UD2();
     }
 }
