@@ -41,6 +41,7 @@ categories = [
     "vblendps",
     "vextract",
     "vinsertps",
+    "vmovd",
     "vmovdqa",
     "vmovdqu",
     "vmovaps",

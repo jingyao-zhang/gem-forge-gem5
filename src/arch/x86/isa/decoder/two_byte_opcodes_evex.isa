@@ -61,6 +61,11 @@
                     0x1: VSUBPS(VYdo, WYdo);
                     0x0: VSUBPS(Vo, Wo);
                 }
+                0x6: decode EVEX_L_EXTEND {
+                    0x2: VDIVPS(VZqo, WZqo);
+                    0x1: VDIVPS(VYdo, WYdo);
+                    0x0: VDIVPS(Vo, Wo);
+                }
             }
             // F3, scalar single
             0x4: decode OPCODE_OP_BOTTOM3 {
@@ -82,11 +87,17 @@
             }
             // 0xF2 scalar double
             0x8: decode OPCODE_OP_BOTTOM3 {
+                0x0: decode EVEX_L_EXTEND {
+                    0x0: VADDSD(Vo, Wo);
+                }
                 0x1: decode EVEX_L_EXTEND {
                     0x0: VMULSD(Vo, Wo);
                 }
                 0x2: decode EVEX_L_EXTEND {
                     0x0: VCVTSD2SS(Vo, Wo);
+                }
+                0x4: decode EVEX_L_EXTEND {
+                    0x0: VSUBSD(Vo, Wo);
                 }
                 0x6: decode EVEX_L_EXTEND {
                     0x0: VDIVSD(Vo, Wo);

@@ -104,7 +104,9 @@ const EVEXTupleType EVEXTupleTypeTwoByteF3[256] =
     };
 /****************************************************************
  * Implemeted.
+ * F2 58 vaddsd         TUPLE1_SCALAR
  * F2 59 vmulsd         TUPLE1_SCALAR
+ * F2 5C vsubsd         TUPLE1_SCALAR
  * F2 5A vcvtsd2ss      TUPLE1_SCALAR
  * F2 5E vdivsd         TUPLE1_SCALAR
  */
@@ -116,7 +118,7 @@ const EVEXTupleType EVEXTupleTypeTwoByteF2[256] =
 /*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  5 */ O , O , O , O , O , O , O , O , O , TS, TS, O , O , O , TS, O ,
+/*  5 */ O , O , O , O , O , O , O , O , TS, TS, TS, O , TS, O , TS, O ,
 /*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
@@ -137,6 +139,7 @@ const EVEXTupleType EVEXTupleTypeTwoByteF2[256] =
  * 58 vaddps               FULL
  * 59 vmulps               FULL
  * 5C vsubps               FULL
+ * 5E vdivps               FULL
  */
 const EVEXTupleType EVEXTupleTypeTwoByte[256] =
     {    //LSB
@@ -146,7 +149,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte[256] =
 /*  2 */ O , O , O , O , O , O , O , O , FM, FM, O , O , O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  5 */ O , O , O , O , O , O , O , O , FU, FU, O , O , FU, O , O , O ,
+/*  5 */ O , O , O , O , O , O , O , O , FU, FU, O , O , FU, O , FU, O ,
 /*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
@@ -249,8 +252,6 @@ void Decoder::processCompressedDisplacement() {
   }
   DPRINTF(Decoder, "Expand displacement pc %#x op %x %lld x %lld = %lld.\n",
           this->origPC, emi.opcode.op, displacment, N, displacment * N);
-  hack("Expand displacement pc %#x op %x %lld x %lld = %lld.\n", this->origPC,
-       emi.opcode.op, displacment, N, displacment * N);
   emi.displacement = displacment * N;
 }
 
