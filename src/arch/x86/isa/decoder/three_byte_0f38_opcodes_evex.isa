@@ -66,6 +66,14 @@
                     0x2: SSP_STREAM_LOAD(WZqo, Ib);
                     0x1: SSP_STREAM_LOAD(WYdo, Ib);
                 }
+                0x42: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_LOAD(WZqo, Ib);
+                    0x1: SSP_STREAM_LOAD(WYdo, Ib);
+                }
+                0x43: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_LOAD(WZqo, Ib);
+                    0x1: SSP_STREAM_LOAD(WYdo, Ib);
+                }
             }
         }
     }
