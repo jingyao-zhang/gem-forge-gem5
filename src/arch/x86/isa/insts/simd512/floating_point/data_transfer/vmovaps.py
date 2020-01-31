@@ -3,17 +3,35 @@ microcode = '''
 def macroop VMOVAPS_XMM_XMM {
     movfp dest=xmm0, src1=xmm0m, dataSize=8
     movfp dest=xmm1, src1=xmm1m, dataSize=8
+    lfpimm xmm2, 0
+    lfpimm xmm3, 0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VMOVAPS_XMM_M {
     ldfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
     ldfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
+    lfpimm xmm2, 0
+    lfpimm xmm3, 0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VMOVAPS_XMM_P {
     rdip t7
     ldfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
     ldfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
+    lfpimm xmm2, 0
+    lfpimm xmm3, 0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VMOVAPS_M_XMM {
@@ -32,6 +50,10 @@ def macroop VMOVAPS_YMM_YMM {
     movfp dest=xmm1, src1=xmm1m, dataSize=8
     movfp dest=xmm2, src1=xmm2m, dataSize=8
     movfp dest=xmm3, src1=xmm3m, dataSize=8
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VMOVAPS_YMM_M {
@@ -39,6 +61,10 @@ def macroop VMOVAPS_YMM_M {
     ldfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
     ldfp xmm2, seg, sib, "DISPLACEMENT + 16", dataSize=8
     ldfp xmm3, seg, sib, "DISPLACEMENT + 24", dataSize=8
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VMOVAPS_YMM_P {
@@ -47,6 +73,10 @@ def macroop VMOVAPS_YMM_P {
     ldfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
     ldfp xmm2, seg, riprel, "DISPLACEMENT + 16", dataSize=8
     ldfp xmm3, seg, riprel, "DISPLACEMENT + 24", dataSize=8
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VMOVAPS_M_YMM {

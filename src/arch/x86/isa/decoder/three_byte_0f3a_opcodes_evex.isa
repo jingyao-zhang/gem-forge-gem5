@@ -35,6 +35,20 @@
         format Inst {
             // 0x66
             0x1: decode OPCODE_OP {
+                0x1A: decode EVEX_L_EXTEND {
+                    0x2: decode IMMEDIATE {
+                        0x0: VINSERT256L(VZqo, WYdo, Ib);
+                        0x1: VINSERT256H(VZqo, WYdo, Ib);
+                    }
+                }
+                0x1B: decode EVEX_L_EXTEND {
+                    0x2: decode REX_W {
+                        0x1: decode IMMEDIATE {
+                            0x0: VEXTRACT256L(WYdo, VZqo, Ib);
+                            0x1: VEXTRACT256H(WYdo, VZqo, Ib);
+                        }
+                    }
+                }
                 0x3B: decode EVEX_L_EXTEND {
                     0x2: decode IMMEDIATE {
                         0x0: VEXTRACT256L(WYdo, VZqo, Ib);

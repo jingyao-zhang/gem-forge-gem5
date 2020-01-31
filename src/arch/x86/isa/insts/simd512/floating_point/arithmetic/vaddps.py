@@ -3,6 +3,12 @@ microcode = '''
 def macroop VADDPS_XMM_XMM {
     maddf dest=xmm0, src1=xmm0v, op2=xmm0m, size=4, ext=0
     maddf dest=xmm1, src1=xmm1v, op2=xmm1m, size=4, ext=0
+    lfpimm xmm2, 0
+    lfpimm xmm3, 0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VADDPS_XMM_M {
@@ -10,6 +16,12 @@ def macroop VADDPS_XMM_M {
     ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
     maddf dest=xmm0, src1=xmm0v, op2=ufp1, size=4, ext=0
     maddf dest=xmm1, src1=xmm1v, op2=ufp2, size=4, ext=0
+    lfpimm xmm2, 0
+    lfpimm xmm3, 0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VADDPS_XMM_P {
@@ -18,6 +30,12 @@ def macroop VADDPS_XMM_P {
     ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
     maddf dest=xmm0, src1=xmm0v, op2=ufp1, size=4, ext=0
     maddf dest=xmm1, src1=xmm1v, op2=ufp2, size=4, ext=0
+    lfpimm xmm2, 0
+    lfpimm xmm3, 0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VADDPS_YMM_YMM {
@@ -25,6 +43,10 @@ def macroop VADDPS_YMM_YMM {
     maddf dest=xmm1, src1=xmm1v, op2=xmm1m, size=4, ext=0
     maddf dest=xmm2, src1=xmm2v, op2=xmm2m, size=4, ext=0
     maddf dest=xmm3, src1=xmm3v, op2=xmm3m, size=4, ext=0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VADDPS_YMM_M {
@@ -36,6 +58,10 @@ def macroop VADDPS_YMM_M {
     maddf dest=xmm1, src1=xmm1v, op2=ufp2, size=4, ext=0
     maddf dest=xmm2, src1=xmm2v, op2=ufp3, size=4, ext=0
     maddf dest=xmm3, src1=xmm3v, op2=ufp4, size=4, ext=0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VADDPS_YMM_P {
@@ -48,6 +74,10 @@ def macroop VADDPS_YMM_P {
     maddf dest=xmm1, src1=xmm1v, op2=ufp2, size=4, ext=0
     maddf dest=xmm2, src1=xmm2v, op2=ufp3, size=4, ext=0
     maddf dest=xmm3, src1=xmm3v, op2=ufp4, size=4, ext=0
+    lfpimm xmm4, 0
+    lfpimm xmm5, 0
+    lfpimm xmm6, 0
+    lfpimm xmm7, 0
 };
 
 def macroop VADDPS_ZMM_ZMM {

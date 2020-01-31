@@ -1,5 +1,5 @@
 microcode = '''
-def macroop VMOVUPS_XMM_XMM {
+def macroop VMOVAPD_XMM_XMM {
     movfp dest=xmm0, src1=xmm0m, dataSize=8
     movfp dest=xmm1, src1=xmm1m, dataSize=8
     lfpimm xmm2, 0
@@ -10,7 +10,7 @@ def macroop VMOVUPS_XMM_XMM {
     lfpimm xmm7, 0
 };
 
-def macroop VMOVUPS_XMM_M {
+def macroop VMOVAPD_XMM_M {
     ldfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
     ldfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
     lfpimm xmm2, 0
@@ -21,7 +21,7 @@ def macroop VMOVUPS_XMM_M {
     lfpimm xmm7, 0
 };
 
-def macroop VMOVUPS_XMM_P {
+def macroop VMOVAPD_XMM_P {
     rdip t7
     ldfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
     ldfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
@@ -33,18 +33,18 @@ def macroop VMOVUPS_XMM_P {
     lfpimm xmm7, 0
 };
 
-def macroop VMOVUPS_M_XMM {
+def macroop VMOVAPD_M_XMM {
     stfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
     stfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
 };
 
-def macroop VMOVUPS_P_XMM {
+def macroop VMOVAPD_P_XMM {
     rdip t7
     stfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
     stfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
 };
 
-def macroop VMOVUPS_YMM_YMM {
+def macroop VMOVAPD_YMM_YMM {
     movfp dest=xmm0, src1=xmm0m, dataSize=8
     movfp dest=xmm1, src1=xmm1m, dataSize=8
     movfp dest=xmm2, src1=xmm2m, dataSize=8
@@ -55,7 +55,7 @@ def macroop VMOVUPS_YMM_YMM {
     lfpimm xmm7, 0
 };
 
-def macroop VMOVUPS_YMM_M {
+def macroop VMOVAPD_YMM_M {
     ldfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
     ldfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
     ldfp xmm2, seg, sib, "DISPLACEMENT + 16", dataSize=8
@@ -66,7 +66,7 @@ def macroop VMOVUPS_YMM_M {
     lfpimm xmm7, 0
 };
 
-def macroop VMOVUPS_YMM_P {
+def macroop VMOVAPD_YMM_P {
     rdip t7
     ldfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
     ldfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
@@ -78,14 +78,14 @@ def macroop VMOVUPS_YMM_P {
     lfpimm xmm7, 0
 };
 
-def macroop VMOVUPS_M_YMM {
+def macroop VMOVAPD_M_YMM {
     stfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
     stfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
     stfp xmm2, seg, sib, "DISPLACEMENT + 16", dataSize=8
     stfp xmm3, seg, sib, "DISPLACEMENT + 24", dataSize=8
 };
 
-def macroop VMOVUPS_P_YMM {
+def macroop VMOVAPD_P_YMM {
     rdip t7
     stfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
     stfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
@@ -93,7 +93,7 @@ def macroop VMOVUPS_P_YMM {
     stfp xmm3, seg, riprel, "DISPLACEMENT + 24", dataSize=8
 };
 
-def macroop VMOVUPS_ZMM_ZMM {
+def macroop VMOVAPD_ZMM_ZMM {
     movfp dest=xmm0, src1=xmm0m, dataSize=8
     movfp dest=xmm1, src1=xmm1m, dataSize=8
     movfp dest=xmm2, src1=xmm2m, dataSize=8
@@ -104,7 +104,7 @@ def macroop VMOVUPS_ZMM_ZMM {
     movfp dest=xmm7, src1=xmm7m, dataSize=8
 };
 
-def macroop VMOVUPS_ZMM_M {
+def macroop VMOVAPD_ZMM_M {
     ldfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
     ldfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
     ldfp xmm2, seg, sib, "DISPLACEMENT + 16", dataSize=8
@@ -115,7 +115,7 @@ def macroop VMOVUPS_ZMM_M {
     ldfp xmm7, seg, sib, "DISPLACEMENT + 56", dataSize=8
 };
 
-def macroop VMOVUPS_ZMM_P {
+def macroop VMOVAPD_ZMM_P {
     rdip t7
     ldfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
     ldfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
@@ -127,7 +127,7 @@ def macroop VMOVUPS_ZMM_P {
     ldfp xmm7, seg, riprel, "DISPLACEMENT + 56", dataSize=8
 };
 
-def macroop VMOVUPS_M_ZMM {
+def macroop VMOVAPD_M_ZMM {
     stfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
     stfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
     stfp xmm2, seg, sib, "DISPLACEMENT + 16", dataSize=8
@@ -138,7 +138,7 @@ def macroop VMOVUPS_M_ZMM {
     stfp xmm7, seg, sib, "DISPLACEMENT + 56", dataSize=8
 };
 
-def macroop VMOVUPS_P_ZMM {
+def macroop VMOVAPD_P_ZMM {
     rdip t7
     stfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
     stfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
