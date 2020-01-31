@@ -4,12 +4,7 @@ def macroop VCVTPD2PS128_XMM_XMM {
     cvtf2f xmm0, xmm0m, destSize=4, srcSize=8, ext=0
     cvtf2f xmm0, xmm1m, destSize=4, srcSize=8, ext=2
     lfpimm xmm1, 0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPD2PS128_XMM_M {
@@ -18,12 +13,7 @@ def macroop VCVTPD2PS128_XMM_M {
     cvtf2f xmm0, ufp1, destSize=4, srcSize=8, ext=0
     cvtf2f xmm0, ufp2, destSize=4, srcSize=8, ext=2
     lfpimm xmm1, 0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPD2PS128_XMM_P {
@@ -33,12 +23,7 @@ def macroop VCVTPD2PS128_XMM_P {
     cvtf2f xmm0, ufp1, destSize=4, srcSize=8, ext=0
     cvtf2f xmm0, ufp2, destSize=4, srcSize=8, ext=2
     lfpimm xmm1, 0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPD2PS256_XMM_YMM {
@@ -46,12 +31,7 @@ def macroop VCVTPD2PS256_XMM_YMM {
     cvtf2f xmm0, xmm1m, destSize=4, srcSize=8, ext=2
     cvtf2f xmm1, xmm2m, destSize=4, srcSize=8, ext=0
     cvtf2f xmm1, xmm3m, destSize=4, srcSize=8, ext=2
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPD2PS256_XMM_M {
@@ -63,12 +43,7 @@ def macroop VCVTPD2PS256_XMM_M {
     cvtf2f xmm0, ufp2, destSize=4, srcSize=8, ext=2
     cvtf2f xmm1, ufp3, destSize=4, srcSize=8, ext=0
     cvtf2f xmm1, ufp4, destSize=4, srcSize=8, ext=2
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPD2PS256_XMM_P {
@@ -81,12 +56,7 @@ def macroop VCVTPD2PS256_XMM_P {
     cvtf2f xmm0, ufp2, destSize=4, srcSize=8, ext=2
     cvtf2f xmm1, ufp3, destSize=4, srcSize=8, ext=0
     cvtf2f xmm1, ufp4, destSize=4, srcSize=8, ext=2
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPD2PS512_YMM_ZMM {
@@ -98,10 +68,7 @@ def macroop VCVTPD2PS512_YMM_ZMM {
     cvtf2f xmm2, xmm5m, destSize=4, srcSize=8, ext=0
     cvtf2f xmm3, xmm6m, destSize=4, srcSize=8, ext=2
     cvtf2f xmm3, xmm7m, destSize=4, srcSize=8, ext=2
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VCVTPD2PS512_YMM_M {
@@ -121,10 +88,7 @@ def macroop VCVTPD2PS512_YMM_M {
     cvtf2f xmm2, ufp6, destSize=4, srcSize=8, ext=0
     cvtf2f xmm3, ufp7, destSize=4, srcSize=8, ext=2
     cvtf2f xmm3, ufp8, destSize=4, srcSize=8, ext=2
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VCVTPD2PS512_YMM_P {
@@ -145,10 +109,7 @@ def macroop VCVTPD2PS512_YMM_P {
     cvtf2f xmm2, ufp6, destSize=4, srcSize=8, ext=0
     cvtf2f xmm3, ufp7, destSize=4, srcSize=8, ext=2
     cvtf2f xmm3, ufp8, destSize=4, srcSize=8, ext=2
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 '''

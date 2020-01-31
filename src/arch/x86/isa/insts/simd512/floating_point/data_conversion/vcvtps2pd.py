@@ -3,24 +3,14 @@ microcode = '''
 def macroop VCVTPS2PD_XMM_XMM {
     cvtf2f xmm0, xmm0m, destSize=8, srcSize=4, ext=0
     cvtf2f xmm1, xmm0m, destSize=8, srcSize=4, ext=2
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPS2PD_XMM_M {
     ldfp ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=8
     cvtf2f xmm0, ufp1, destSize=8, srcSize=4, ext=0
     cvtf2f xmm1, ufp1, destSize=8, srcSize=4, ext=2
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPS2PD_XMM_P {
@@ -28,12 +18,7 @@ def macroop VCVTPS2PD_XMM_P {
     ldfp ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=8
     cvtf2f xmm0, ufp1, destSize=8, srcSize=4, ext=0
     cvtf2f xmm1, ufp1, destSize=8, srcSize=4, ext=2
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTPS2PD_YMM_XMM {
@@ -41,10 +26,7 @@ def macroop VCVTPS2PD_YMM_XMM {
     cvtf2f xmm1, xmm0m, destSize=8, srcSize=4, ext=2
     cvtf2f xmm2, xmm1m, destSize=8, srcSize=4, ext=0
     cvtf2f xmm3, xmm1m, destSize=8, srcSize=4, ext=2
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VCVTPS2PD_YMM_M {
@@ -54,10 +36,7 @@ def macroop VCVTPS2PD_YMM_M {
     cvtf2f xmm1, ufp1, destSize=8, srcSize=4, ext=2
     cvtf2f xmm2, ufp2, destSize=8, srcSize=4, ext=0
     cvtf2f xmm3, ufp2, destSize=8, srcSize=4, ext=2
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VCVTPS2PD_YMM_P {
@@ -68,10 +47,7 @@ def macroop VCVTPS2PD_YMM_P {
     cvtf2f xmm1, ufp1, destSize=8, srcSize=4, ext=2
     cvtf2f xmm2, ufp2, destSize=8, srcSize=4, ext=0
     cvtf2f xmm3, ufp2, destSize=8, srcSize=4, ext=2
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VCVTPS2PD_ZMM_YMM {

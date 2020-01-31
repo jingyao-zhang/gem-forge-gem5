@@ -2,12 +2,7 @@ microcode = '''
 def macroop VMOVSLDUP_XMM_XMM {
     mmovsdup dest=xmm0, src1=xmm0m, size=4, ext=0
     mmovsdup dest=xmm1, src1=xmm1m, size=4, ext=0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMOVSLDUP_XMM_M {
@@ -15,12 +10,7 @@ def macroop VMOVSLDUP_XMM_M {
     ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
     mmovsdup dest=xmm0, src1=ufp1, size=4, ext=0
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMOVSLDUP_XMM_P {
@@ -29,12 +19,7 @@ def macroop VMOVSLDUP_XMM_P {
     ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
     mmovsdup dest=xmm0, src1=ufp1, size=4, ext=0
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMOVSLDUP_YMM_YMM {
@@ -42,10 +27,7 @@ def macroop VMOVSLDUP_YMM_YMM {
     mmovsdup dest=xmm1, src1=xmm1m, size=4, ext=0
     mmovsdup dest=xmm2, src1=xmm2m, size=4, ext=0
     mmovsdup dest=xmm3, src1=xmm3m, size=4, ext=0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VMOVSLDUP_YMM_M {
@@ -57,10 +39,7 @@ def macroop VMOVSLDUP_YMM_M {
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=0
     mmovsdup dest=xmm2, src1=ufp3, size=4, ext=0
     mmovsdup dest=xmm3, src1=ufp4, size=4, ext=0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VMOVSLDUP_YMM_P {
@@ -73,10 +52,7 @@ def macroop VMOVSLDUP_YMM_P {
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=0
     mmovsdup dest=xmm2, src1=ufp3, size=4, ext=0
     mmovsdup dest=xmm3, src1=ufp4, size=4, ext=0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VMOVSLDUP_ZMM_ZMM {

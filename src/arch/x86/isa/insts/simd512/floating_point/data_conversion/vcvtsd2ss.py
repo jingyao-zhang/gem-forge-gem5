@@ -4,12 +4,7 @@ def macroop VCVTSD2SS_XMM_XMM {
     cvtf2f xmm0, xmm0m, destSize=4, srcSize=8, ext=Scalar
     movfph32 xmm0, xmm0v, dataSize=4
     movfp  xmm1, xmm1v, dataSize=8
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTSD2SS_XMM_M {
@@ -17,12 +12,7 @@ def macroop VCVTSD2SS_XMM_M {
     cvtf2f xmm0, ufp1, destSize=4, srcSize=8, ext=Scalar
     movfph32 xmm0, xmm0v, dataSize=4
     movfp  xmm1, xmm1v, dataSize=8
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VCVTSD2SS_XMM_P {
@@ -31,12 +21,7 @@ def macroop VCVTSD2SS_XMM_P {
     cvtf2f xmm0, ufp1, destSize=4, srcSize=8, ext=Scalar
     movfph32 xmm0, xmm0v, dataSize=4
     movfp  xmm1, xmm1v, dataSize=8
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 '''

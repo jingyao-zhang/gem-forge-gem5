@@ -6,24 +6,14 @@ def macroop VMOVSD_XMM_XMM {
 def macroop VMOVSD_XMM_M {
     ldfp xmm0, seg, sib, disp, dataSize=8
     lfpimm xmm1, 0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMOVSD_XMM_P {
     rdip t7
     ldfp xmm0, seg, riprel, disp, dataSize=8
     lfpimm xmm1, 0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMOVSD_M_XMM {
@@ -42,24 +32,14 @@ def macroop VMOVSD_ZMM_ZMM {
 def macroop VMOVSD_ZMM_M {
     ldfp xmm0, seg, sib, disp, dataSize=8
     lfpimm xmm1, 0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMOVSD_ZMM_P {
     rdip t7
     ldfp xmm0, seg, riprel, disp, dataSize=8
     lfpimm xmm1, 0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 '''

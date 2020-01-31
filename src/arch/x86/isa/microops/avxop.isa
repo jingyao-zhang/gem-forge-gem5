@@ -1,0 +1,198 @@
+def template AVXOpExecute {{
+        Fault %(class_name)s::execute(
+            ExecContext *xc, Trace::InstRecord *traceData) const
+        {
+            Fault fault = NoFault;
+
+            %(op_decl)s;
+            %(op_rd)s;
+
+            %(code)s;
+
+            //Write the resulting state to the execution context
+            if(fault == NoFault)
+            {
+                %(op_wb)s;
+            }
+            return fault;
+        }
+}};
+
+def template AVXOpDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      public:
+        %(class_name)s(ExtMachInst _machInst, const char *_instMnem,
+                  uint64_t _setFlags, SrcType _srcType,
+                  InstRegIndex _dest, InstRegIndex _src1,
+                  InstRegIndex _src2, uint8_t _destSize, uint8_t _destVL,
+                  uint8_t _srcSize, uint8_t _srcVL,
+                  uint8_t _imm8, uint8_t _ext);
+
+        Fault execute(ExecContext *, Trace::InstRecord *) const;
+    };
+}};
+
+def template AVXOpConstructor {{
+    %(class_name)s::%(class_name)s(
+        ExtMachInst _machInst, const char *_instMnem,
+        uint64_t _setFlags, SrcType _srcType,
+        InstRegIndex _dest, InstRegIndex _src1,
+        InstRegIndex _src2, uint8_t _destSize, uint8_t _destVL,
+        uint8_t _srcSize, uint8_t _srcVL,
+        uint8_t _imm8, uint8_t _ext)
+        : %(base_class)s(_machInst, "%(mnemonic)s", _instMnem, _setFlags,
+        %(op_class)s, _srcType, _dest, _src1, _src2, _destSize, _destVL,
+        _srcSize, _srcVL, _imm8, _ext)
+    {
+        %(constructor)s;
+        %(user_constructor)s;
+    }
+}};
+
+let {{
+    # Make these empty strings so that concatenating onto
+    # them will always work.
+    header_output = ""
+    decoder_output = ""
+    exec_output = ""
+
+    class AVXOpMeta(type):
+        def buildCppClasses(self, name, Name, suffix,
+            user_constructor, code, additional_params):
+
+            # Globals to stick the output in
+            global header_output
+            global decoder_output
+            global exec_output
+
+            base = "X86ISA::AVXOpBase"
+            templates = (
+                AVXOpDeclare,
+                AVXOpConstructor,
+                AVXOpExecute
+            )
+
+            # Get everything ready for the substitution
+            opt_args = []
+            if self.opClass:
+                opt_args.append(self.opClass)
+            iop = InstObjParams(
+                name,
+                Name + suffix,
+                base,
+                {
+                    "user_constructor": user_constructor,
+                    "code" : code
+                },
+                opt_args
+            )
+
+            # Generate the actual code (finally!)
+            header_output += templates[0].subst(iop)
+            decoder_output += templates[1].subst(iop)
+            exec_output += templates[2].subst(iop)
+
+
+        def __new__(mcls, Name, bases, dict):
+            abstract = False
+            name = Name.lower()
+            if "abstract" in dict:
+                abstract = dict['abstract']
+                del dict['abstract']
+            if not "opClass" in dict:
+                dict["opClass"] = None
+
+            cls = super(AVXOpMeta, mcls).__new__(mcls, Name, bases, dict)
+            if not abstract:
+                cls.className = Name
+                cls.base_mnemonic = name
+                user_constructor = cls.user_constructor
+                code = cls.code
+
+                # Set up the C++ classes
+                additional_params = []
+                if hasattr(cls, 'opClass'):
+                    additional_params.append(cls.opClass)
+                mcls.buildCppClasses(cls, name, Name, "",
+                    user_constructor, code, additional_params)
+
+                # Hook into the microassembler dict
+                global microopClasses
+                microopClasses[name] = cls
+
+            return cls
+
+
+    class AVXOp(X86Microop):
+        __metaclass__ = AVXOpMeta
+        # This class itself doesn't act as a microop
+        abstract = True
+
+        def __init__(self, dest,
+            src1='InstRegIndex(0)',
+            src2='InstRegIndex(0)',
+            destSize=0,
+            destVL=16,
+            srcSize=0,
+            srcVL=16,
+            imm8=0,
+            ext=0):
+            self.dest = dest
+            self.src1 = src1
+            self.src2 = src2
+            self.destSize = destSize
+            self.destVL = destVL
+            self.srcSize = srcSize
+            self.srcVL = srcVL
+            self.imm8 = imm8
+            self.ext = ext
+
+        def getAllocator(self, microFlags):
+            className = self.className
+            allocator = '''new %(class_name)s(machInst, macrocodeBlock,
+                    %(flags)s, %(srcType)s, %(dest)s, %(src1)s, %(src2)s,
+                    %(destSize)s, %(destVL)s, %(srcSize)s, %(srcVL)s, %(imm8)s, %(ext)s)''' % {
+                "class_name" : className,
+                "flags" : self.microFlagsText(microFlags),
+                "srcType": self.srcType,
+                "src1" : self.src1, "src2" : self.src2,
+                "dest" : self.dest,
+                "srcSize" : self.srcSize,
+                "srcVL": self.srcVL,
+                "destSize" : self.destSize,
+                "destVL": self.destVL,
+                "imm8": self.imm8,
+                "ext" : self.ext}
+            return allocator
+
+    class Vclear(AVXOp):
+        '''
+        Helper microop to clear higher bits.
+        '''
+        def __init__(self, dest, destVL):
+            super(Vclear, self).__init__(
+                dest=dest,
+                destVL=destVL,
+            )
+        opClass = 'SimdMiscOp'
+        srcType = 'AVXOpBase::SrcType::Non'
+        user_constructor = '''
+            // Add MAXVL-1:VL to destination.
+            auto vRegs = destVL / sizeof(uint64_t);
+            assert(vRegs <= NumXMMSubRegs && "VL overflow.");
+            _numDestRegs = NumXMMSubRegs - vRegs;
+            assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
+            _numFPDestRegs = _numDestRegs;
+            for (int i = 0; i < _numDestRegs; i++) {
+                _destRegIdx[i] = RegId(FloatRegClass, dest + i);
+            }
+        '''
+        code = '''
+            for (int i = 0; i < _numDestRegs; i++) {
+                xc->setFloatRegOperandBits(this, i, 0);
+            }
+        '''
+
+
+}};

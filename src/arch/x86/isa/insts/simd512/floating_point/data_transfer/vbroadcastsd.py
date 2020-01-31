@@ -5,10 +5,7 @@ def macroop VBROADCASTSD_YMM_XMM {
     movfp dest=xmm1, src1=xmm0m, dataSize=8
     movfp dest=xmm2, src1=xmm0m, dataSize=8
     movfp dest=xmm3, src1=xmm0m, dataSize=8
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VBROADCASTSD_YMM_M {
@@ -17,10 +14,7 @@ def macroop VBROADCASTSD_YMM_M {
     movfp dest=xmm1, src1=ufp1, dataSize=8
     movfp dest=xmm2, src1=ufp1, dataSize=8
     movfp dest=xmm3, src1=ufp1, dataSize=8
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VBROADCASTSD_YMM_P {
@@ -30,10 +24,7 @@ def macroop VBROADCASTSD_YMM_P {
     movfp dest=xmm1, src1=ufp1, dataSize=8
     movfp dest=xmm2, src1=ufp1, dataSize=8
     movfp dest=xmm3, src1=ufp1, dataSize=8
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VBROADCASTSD_ZMM_XMM {

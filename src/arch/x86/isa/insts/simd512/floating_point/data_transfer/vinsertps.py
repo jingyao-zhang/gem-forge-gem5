@@ -5,12 +5,7 @@ def macroop VINSERTPS_XMM_XMM_I {
     movfp xmm1, xmm1v, dataSize=8
     minsertpsl dest=xmm0, src1=xmm0m, op2=xmm1m, size=4, ext="(IMMEDIATE & 0xFF)"
     minsertpsh dest=xmm1, src1=xmm0m, op2=xmm1m, size=4, ext="(IMMEDIATE & 0xFF)"
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VINSERTPS_XMM_M_I {
@@ -19,12 +14,7 @@ def macroop VINSERTPS_XMM_M_I {
     ldfp ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=4
     minsertpsl dest=xmm0, src1=ufp1, op2=ufp1, size=4, ext="(IMMEDIATE & 0x3F)"
     minsertpsh dest=xmm1, src1=ufp1, op2=ufp1, size=4, ext="(IMMEDIATE & 0x3F)"
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VINSERTPS_XMM_P_I {
@@ -34,12 +24,7 @@ def macroop VINSERTPS_XMM_P_I {
     ldfp ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=4
     minsertpsl dest=xmm0, src1=ufp1, op2=ufp1, size=4, ext="(IMMEDIATE & 0x3F)"
     minsertpsh dest=xmm1, src1=ufp1, op2=ufp1, size=4, ext="(IMMEDIATE & 0x3F)"
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 '''

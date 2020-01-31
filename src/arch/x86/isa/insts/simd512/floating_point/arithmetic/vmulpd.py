@@ -3,12 +3,7 @@ microcode = '''
 def macroop VMULPD_XMM_XMM {
     mmulf dest=xmm0, src1=xmm0v, op2=xmm0m, size=8, ext=0
     mmulf dest=xmm1, src1=xmm1v, op2=xmm1m, size=8, ext=0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMULPD_XMM_M {
@@ -16,12 +11,7 @@ def macroop VMULPD_XMM_M {
     ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
     mmulf dest=xmm0, src1=xmm0v, op2=ufp1, size=8, ext=0
     mmulf dest=xmm1, src1=xmm1v, op2=ufp2, size=8, ext=0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMULPD_XMM_P {
@@ -30,12 +20,7 @@ def macroop VMULPD_XMM_P {
     ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
     mmulf dest=xmm0, src1=xmm0v, op2=ufp1, size=8, ext=0
     mmulf dest=xmm1, src1=xmm1v, op2=ufp2, size=8, ext=0
-    lfpimm xmm2, 0
-    lfpimm xmm3, 0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VMULPD_YMM_YMM {
@@ -43,10 +28,7 @@ def macroop VMULPD_YMM_YMM {
     mmulf dest=xmm1, src1=xmm1v, op2=xmm1m, size=8, ext=0
     mmulf dest=xmm2, src1=xmm2v, op2=xmm2m, size=8, ext=0
     mmulf dest=xmm3, src1=xmm3v, op2=xmm3m, size=8, ext=0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VMULPD_YMM_M {
@@ -58,10 +40,7 @@ def macroop VMULPD_YMM_M {
     mmulf dest=xmm1, src1=xmm1v, op2=ufp2, size=8, ext=0
     mmulf dest=xmm2, src1=xmm2v, op2=ufp3, size=8, ext=0
     mmulf dest=xmm3, src1=xmm3v, op2=ufp4, size=8, ext=0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VMULPD_YMM_P {
@@ -74,10 +53,7 @@ def macroop VMULPD_YMM_P {
     mmulf dest=xmm1, src1=xmm1v, op2=ufp2, size=8, ext=0
     mmulf dest=xmm2, src1=xmm2v, op2=ufp3, size=8, ext=0
     mmulf dest=xmm3, src1=xmm3v, op2=ufp4, size=8, ext=0
-    lfpimm xmm4, 0
-    lfpimm xmm5, 0
-    lfpimm xmm6, 0
-    lfpimm xmm7, 0
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VMULPD_ZMM_ZMM {
