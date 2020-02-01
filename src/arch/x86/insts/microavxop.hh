@@ -50,9 +50,30 @@ protected:
       float f2;
     } f;
     double d;
-    uint32_t i;
-    uint64_t l;
+    struct __attribute__((packed)) {
+      uint32_t i1;
+      uint32_t i2;
+    } ui;
+    struct __attribute__((packed)) {
+      int32_t i1;
+      int32_t i2;
+    } si;
+    uint64_t ul;
+    int64_t sl;
   };
+
+  enum BinaryOp {
+    FloatAdd,
+    FloatSub,
+    FloatMul,
+    FloatDiv,
+    // Add/Sub can ignore sign.
+    IntAdd,
+    SIntMin,
+  };
+
+  // A helper function to perform packed binary op.
+  void doPackedBinaryOp(ExecContext *xc, BinaryOp op) const;
 };
 
 } // namespace X86ISA

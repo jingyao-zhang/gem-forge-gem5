@@ -218,89 +218,37 @@ let {{
     class Vaddf(Varithp):
         opClass = 'SimdFloatAddOp'
         code = '''
-            auto vRegs = destVL / sizeof(uint64_t);
-            FloatInt src1;
-            FloatInt src2;
-            FloatInt dest;
-            for (int i = 0; i < vRegs; i++) {
-                src1.l = xc->readFloatRegOperandBits(this, i * 2 + 0);
-                src2.l = xc->readFloatRegOperandBits(this, i * 2 + 1);
-                if (this->srcSize == 4) {
-                    // 2 float.
-                    dest.f.f1 = src1.f.f1 + src2.f.f1;
-                    dest.f.f2 = src1.f.f2 + src2.f.f2;
-                } else {
-                    // 1 double;
-                    dest.d = src1.d + src2.d;
-                }
-                xc->setFloatRegOperandBits(this, i, dest.l);
-            }
+            this->doPackedBinaryOp(xc, BinaryOp::FloatAdd);
         '''
 
     class Vsubf(Varithp):
         opClass = 'SimdFloatAddOp'
         code = '''
-            auto vRegs = destVL / sizeof(uint64_t);
-            FloatInt src1;
-            FloatInt src2;
-            FloatInt dest;
-            for (int i = 0; i < vRegs; i++) {
-                src1.l = xc->readFloatRegOperandBits(this, i * 2 + 0);
-                src2.l = xc->readFloatRegOperandBits(this, i * 2 + 1);
-                if (this->srcSize == 4) {
-                    // 2 float.
-                    dest.f.f1 = src1.f.f1 - src2.f.f1;
-                    dest.f.f2 = src1.f.f2 - src2.f.f2;
-                } else {
-                    // 1 double;
-                    dest.d = src1.d - src2.d;
-                }
-                xc->setFloatRegOperandBits(this, i, dest.l);
-            }
+            this->doPackedBinaryOp(xc, BinaryOp::FloatSub);
         '''
 
     class Vmulf(Varithp):
         opClass = 'SimdFloatMultOp'
         code = '''
-            auto vRegs = destVL / sizeof(uint64_t);
-            FloatInt src1;
-            FloatInt src2;
-            FloatInt dest;
-            for (int i = 0; i < vRegs; i++) {
-                src1.l = xc->readFloatRegOperandBits(this, i * 2 + 0);
-                src2.l = xc->readFloatRegOperandBits(this, i * 2 + 1);
-                if (this->srcSize == 4) {
-                    // 2 float.
-                    dest.f.f1 = src1.f.f1 * src2.f.f1;
-                    dest.f.f2 = src1.f.f2 * src2.f.f2;
-                } else {
-                    // 1 double;
-                    dest.d = src1.d * src2.d;
-                }
-                xc->setFloatRegOperandBits(this, i, dest.l);
-            }
+            this->doPackedBinaryOp(xc, BinaryOp::FloatMul);
         '''
 
     class Vdivf(Varithp):
         opClass = 'SimdFloatDivOp'
         code = '''
-            auto vRegs = destVL / sizeof(uint64_t);
-            FloatInt src1;
-            FloatInt src2;
-            FloatInt dest;
-            for (int i = 0; i < vRegs; i++) {
-                src1.l = xc->readFloatRegOperandBits(this, i * 2 + 0);
-                src2.l = xc->readFloatRegOperandBits(this, i * 2 + 1);
-                if (this->srcSize == 4) {
-                    // 2 float.
-                    dest.f.f1 = src1.f.f1 / src2.f.f1;
-                    dest.f.f2 = src1.f.f2 / src2.f.f2;
-                } else {
-                    // 1 double;
-                    dest.d = src1.d / src2.d;
-                }
-                xc->setFloatRegOperandBits(this, i, dest.l);
-            }
+            this->doPackedBinaryOp(xc, BinaryOp::FloatDiv);
+        '''
+
+    class Vaddi(Varithp):
+        opClass = 'SimdAddOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntAdd);
+        '''
+
+    class Vminsi(Varithp):
+        opClass = 'SimdCmpOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::SIntMin);
         '''
 
 }};
