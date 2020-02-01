@@ -46,7 +46,7 @@ def template AVXOpConstructor {{
         _srcSize, _srcVL, _imm8, _ext)
     {
         %(constructor)s;
-        %(user_constructor)s;
+        %(constructorCode)s;
     }
 }};
 
@@ -59,7 +59,7 @@ let {{
 
     class AVXOpMeta(type):
         def buildCppClasses(self, name, Name, suffix,
-            user_constructor, code, additional_params):
+            constructorCode, code, additional_params):
 
             # Globals to stick the output in
             global header_output
@@ -82,7 +82,7 @@ let {{
                 Name + suffix,
                 base,
                 {
-                    "user_constructor": user_constructor,
+                    "constructorCode": constructorCode,
                     "code" : code
                 },
                 opt_args
@@ -107,7 +107,7 @@ let {{
             if not abstract:
                 cls.className = Name
                 cls.base_mnemonic = name
-                user_constructor = cls.user_constructor
+                constructorCode = cls.constructorCode
                 code = cls.code
 
                 # Set up the C++ classes
@@ -115,7 +115,7 @@ let {{
                 if hasattr(cls, 'opClass'):
                     additional_params.append(cls.opClass)
                 mcls.buildCppClasses(cls, name, Name, "",
-                    user_constructor, code, additional_params)
+                    constructorCode, code, additional_params)
 
                 # Hook into the microassembler dict
                 global microopClasses
@@ -167,9 +167,7 @@ let {{
             return allocator
 
     class Vclear(AVXOp):
-        '''
-        Helper microop to clear higher bits.
-        '''
+        # Helper microop to clear higher bits.
         def __init__(self, dest, destVL):
             super(Vclear, self).__init__(
                 dest=dest,
@@ -177,7 +175,7 @@ let {{
             )
         opClass = 'SimdMiscOp'
         srcType = 'AVXOpBase::SrcType::Non'
-        user_constructor = '''
+        constructorCode = '''
             // Add MAXVL-1:VL to destination.
             auto vRegs = destVL / sizeof(uint64_t);
             assert(vRegs <= NumXMMSubRegs && "VL overflow.");
@@ -194,5 +192,115 @@ let {{
             }
         '''
 
+    class Varithp(AVXOp):
+        # Used in packed arithmetic ops, e.g. vaddps.
+        abstract = True
+        def __init__(self, dest, src1, src2, size, VL):
+            super(Varithp, self).__init__(
+                dest=dest, src1=src1, src2=src2,
+                destSize=size, destVL=VL, srcSize=size, srcVL=VL
+            )
+        srcType = 'AVXOpBase::SrcType::RegReg'
+        constructorCode = '''
+            auto vRegs = destVL / sizeof(uint64_t);
+            assert(vRegs <= NumXMMSubRegs && "VL overflow.");
+            _numDestRegs = _numFPDestRegs = vRegs;
+            _numSrcRegs = 2 * vRegs;
+            assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            for (int i = 0; i < vRegs; i++) {
+                _destRegIdx[i] = RegId(FloatRegClass, dest + i);
+                _srcRegIdx[i * 2 + 0] = RegId(FloatRegClass, src1 + i);
+                _srcRegIdx[i * 2 + 1] = RegId(FloatRegClass, src2 + i);
+            }
+        '''
+
+    class Vaddf(Varithp):
+        opClass = 'SimdFloatAddOp'
+        code = '''
+            auto vRegs = destVL / sizeof(uint64_t);
+            FloatInt src1;
+            FloatInt src2;
+            FloatInt dest;
+            for (int i = 0; i < vRegs; i++) {
+                src1.l = xc->readFloatRegOperandBits(this, i * 2 + 0);
+                src2.l = xc->readFloatRegOperandBits(this, i * 2 + 1);
+                if (this->srcSize == 4) {
+                    // 2 float.
+                    dest.f.f1 = src1.f.f1 + src2.f.f1;
+                    dest.f.f2 = src1.f.f2 + src2.f.f2;
+                } else {
+                    // 1 double;
+                    dest.d = src1.d + src2.d;
+                }
+                xc->setFloatRegOperandBits(this, i, dest.l);
+            }
+        '''
+
+    class Vsubf(Varithp):
+        opClass = 'SimdFloatAddOp'
+        code = '''
+            auto vRegs = destVL / sizeof(uint64_t);
+            FloatInt src1;
+            FloatInt src2;
+            FloatInt dest;
+            for (int i = 0; i < vRegs; i++) {
+                src1.l = xc->readFloatRegOperandBits(this, i * 2 + 0);
+                src2.l = xc->readFloatRegOperandBits(this, i * 2 + 1);
+                if (this->srcSize == 4) {
+                    // 2 float.
+                    dest.f.f1 = src1.f.f1 - src2.f.f1;
+                    dest.f.f2 = src1.f.f2 - src2.f.f2;
+                } else {
+                    // 1 double;
+                    dest.d = src1.d - src2.d;
+                }
+                xc->setFloatRegOperandBits(this, i, dest.l);
+            }
+        '''
+
+    class Vmulf(Varithp):
+        opClass = 'SimdFloatMultOp'
+        code = '''
+            auto vRegs = destVL / sizeof(uint64_t);
+            FloatInt src1;
+            FloatInt src2;
+            FloatInt dest;
+            for (int i = 0; i < vRegs; i++) {
+                src1.l = xc->readFloatRegOperandBits(this, i * 2 + 0);
+                src2.l = xc->readFloatRegOperandBits(this, i * 2 + 1);
+                if (this->srcSize == 4) {
+                    // 2 float.
+                    dest.f.f1 = src1.f.f1 * src2.f.f1;
+                    dest.f.f2 = src1.f.f2 * src2.f.f2;
+                } else {
+                    // 1 double;
+                    dest.d = src1.d * src2.d;
+                }
+                xc->setFloatRegOperandBits(this, i, dest.l);
+            }
+        '''
+
+    class Vdivf(Varithp):
+        opClass = 'SimdFloatDivOp'
+        code = '''
+            auto vRegs = destVL / sizeof(uint64_t);
+            FloatInt src1;
+            FloatInt src2;
+            FloatInt dest;
+            for (int i = 0; i < vRegs; i++) {
+                src1.l = xc->readFloatRegOperandBits(this, i * 2 + 0);
+                src2.l = xc->readFloatRegOperandBits(this, i * 2 + 1);
+                if (this->srcSize == 4) {
+                    // 2 float.
+                    dest.f.f1 = src1.f.f1 / src2.f.f1;
+                    dest.f.f2 = src1.f.f2 / src2.f.f2;
+                } else {
+                    // 1 double;
+                    dest.d = src1.d / src2.d;
+                }
+                xc->setFloatRegOperandBits(this, i, dest.l);
+            }
+        '''
 
 }};

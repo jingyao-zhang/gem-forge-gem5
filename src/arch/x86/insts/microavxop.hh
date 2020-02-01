@@ -43,6 +43,16 @@ protected:
   }
 
   std::string generateDisassembly(Addr pc, const SymbolTable *symtab) const;
+
+  union FloatInt {
+    struct __attribute__((packed)) {
+      float f1;
+      float f2;
+    } f;
+    double d;
+    uint32_t i;
+    uint64_t l;
+  };
 };
 
 } // namespace X86ISA
