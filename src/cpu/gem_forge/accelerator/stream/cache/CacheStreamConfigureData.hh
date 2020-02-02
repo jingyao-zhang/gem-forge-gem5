@@ -61,4 +61,6 @@ public:
   int initAllocatedIdx;
 };
 
+using CacheStreamConfigureVec = std::vector<CacheStreamConfigureData *>;
+
 #endif

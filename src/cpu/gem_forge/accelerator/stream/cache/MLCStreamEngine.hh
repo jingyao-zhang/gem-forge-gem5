@@ -35,12 +35,18 @@ public:
   ~MLCStreamEngine();
 
   /**
-   * Receive a StreamConfig message.
+   * Receive a StreamConfig message and configurea all streams.
+   */
+  void receiveStreamConfigure(PacketPtr pkt);
+  /**
+   * Configure a single stream.
+   * It will insert an configure message into the message buffer to configure
+   * the correct LLC bank.
    * In case the first element's virtual address faulted, the MLC StreamEngine
    * will return physical address that maps to the LLC bank of this tile.
-   * @return A randomly picked physical line address that maps to our LLC bank.
    */
-  Addr receiveStreamConfigure(PacketPtr pkt);
+  void configureStream(CacheStreamConfigureData *streamConfigureData,
+                       MasterID masterId);
   /**
    * Receive a StreamEnd message.
    * The difference between StreamConfigure and StreamEnd message
@@ -73,6 +79,8 @@ private:
 
   MLCDynamicStream *
   getMLCDynamicStreamFromSlice(const DynamicStreamSliceId &slice) const;
+
+  MachineID mapPAddrToLLCBank(Addr paddr) const;
 };
 
 #endif

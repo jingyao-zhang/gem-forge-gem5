@@ -311,6 +311,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
     S->executeStreamConfig(args.seqNum, inputVec);
   }
 
+  auto *cacheStreamConfigVec = new CacheStreamConfigureVec();
   for (auto &S : configStreams) {
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
@@ -392,17 +393,21 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
           S_PANIC(S, "CoalescedStream cannot be floated with indirect stream.");
         }
       }
-      auto pkt = GemForgePacketHandler::createStreamControlPacket(
-          streamConfigureData->initPAddr, cpuDelegator->dataMasterId(), 0,
-          MemCmd::Command::StreamConfigReq,
-          reinterpret_cast<uint64_t>(streamConfigureData));
-      DPRINTF(RubyStream,
-              "Create StreamConfig pkt %#x %#x, initVAddr: %#x, initPAddr "
-              "%#x.\n",
-              pkt, streamConfigureData, streamConfigureData->initVAddr,
-              streamConfigureData->initPAddr);
-      cpuDelegator->sendRequest(pkt);
+      cacheStreamConfigVec->push_back(streamConfigureData);
     }
+  }
+  // Send all the floating streams in one packet.
+  if (!cacheStreamConfigVec->empty()) {
+    // Dummy paddr to make ruby happy.
+    Addr initPAddr = 0;
+    auto pkt = GemForgePacketHandler::createStreamControlPacket(
+        initPAddr, cpuDelegator->dataMasterId(), 0,
+        MemCmd::Command::StreamConfigReq,
+        reinterpret_cast<uint64_t>(cacheStreamConfigVec));
+    DPRINTF(RubyStream, "Create StreamConfig pkt %#x.\n", pkt);
+    cpuDelegator->sendRequest(pkt);
+  } else {
+    delete cacheStreamConfigVec;
   }
 }
 

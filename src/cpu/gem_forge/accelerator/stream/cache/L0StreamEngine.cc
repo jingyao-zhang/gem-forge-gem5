@@ -17,7 +17,8 @@
           this->controller->getMachineID().num, (streamId).staticId,           \
           (streamId).streamInstance, ##args)
 
-#define L0_ELEMENT_DPRINTF(streamId, lhsElementIdx, numElements, format, args...)   \
+#define L0_ELEMENT_DPRINTF(streamId, lhsElementIdx, numElements, format,       \
+                           args...)                                            \
   DPRINTF(L0RubyStream, "[L0_SE%d][%lu-%d][%lu, +%d): " format,                \
           this->controller->getMachineID().num, (streamId).staticId,           \
           (streamId).streamInstance, lhsElementIdx, numElements, ##args)
@@ -28,27 +29,29 @@ L0StreamEngine::L0StreamEngine(AbstractStreamAwareController *_controller)
 L0StreamEngine::~L0StreamEngine() {}
 
 void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
-  auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
-  L0SE_DPRINTF("Received StreamConfigure %s.\n",
-               streamConfigureData->dynamicId.streamName);
-  // Add to offloaded stream set.
-  assert(streamConfigureData->isOneIterationBehind == false &&
-         "Only indirect stream can be one iteration behind.");
-  this->offloadedStreams.emplace(
-      streamConfigureData->dynamicId,
-      new L0DynamicStream(streamConfigureData->dynamicId,
-                          streamConfigureData->isOneIterationBehind));
-  if (streamConfigureData->indirectStreamConfigure != nullptr) {
-    // We have an indirect stream.
-    L0SE_DPRINTF(
-        "Received StreamConfigure for indirect %s.\n",
-        streamConfigureData->indirectStreamConfigure->dynamicId.streamName);
+  auto streamConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+  for (auto streamConfigureData : *streamConfigs) {
+    L0SE_DPRINTF("Received StreamConfigure %s.\n",
+                 streamConfigureData->dynamicId.streamName);
+    // Add to offloaded stream set.
+    assert(!streamConfigureData->isOneIterationBehind &&
+           "Only indirect stream can be one iteration behind.");
     this->offloadedStreams.emplace(
-        streamConfigureData->indirectStreamConfigure->dynamicId,
-        new L0DynamicStream(
-            streamConfigureData->dynamicId /* RootDynamicStreamId. */,
-            streamConfigureData->indirectStreamConfigure
-                ->isOneIterationBehind));
+        streamConfigureData->dynamicId,
+        new L0DynamicStream(streamConfigureData->dynamicId,
+                            streamConfigureData->isOneIterationBehind));
+    if (streamConfigureData->indirectStreamConfigure != nullptr) {
+      // We have an indirect stream.
+      L0SE_DPRINTF(
+          "Received StreamConfigure for indirect %s.\n",
+          streamConfigureData->indirectStreamConfigure->dynamicId.streamName);
+      this->offloadedStreams.emplace(
+          streamConfigureData->indirectStreamConfigure->dynamicId,
+          new L0DynamicStream(
+              streamConfigureData->dynamicId /* RootDynamicStreamId. */,
+              streamConfigureData->indirectStreamConfigure
+                  ->isOneIterationBehind));
+    }
   }
 }
 
@@ -130,7 +133,8 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
   }
   auto slice = this->getSliceId(pkt);
   L0_ELEMENT_DPRINTF(slice.streamId, slice.lhsElementIdx,
-                     slice.rhsElementIdx - slice.lhsElementIdx, "Forward hit.\n");
+                     slice.rhsElementIdx - slice.lhsElementIdx,
+                     "Forward hit.\n");
   return true;
 }
 

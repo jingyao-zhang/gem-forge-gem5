@@ -168,7 +168,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
    * ! Sean: StreamAwareCache
    */
   structure(MLCStreamEngine, external="yes", desc="Stream Engine at L1") {
-    Addr receiveStreamConfigure(PacketPtr);
+    void receiveStreamConfigure(PacketPtr);
     Addr receiveStreamEnd(PacketPtr);
     void receiveStreamData(ResponseMsg);
     bool isStreamRequest(DynamicStreamSliceId);
@@ -397,15 +397,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
           trigger(Event:L0_DataAck, in_msg.addr, cache_entry, tbe);
         // ! Sean: StreamAwareCache
         } else if (in_msg.Class == CoherenceClass:STREAM_CONFIG) {
-          Addr llcStreamPAddr := se.receiveStreamConfigure(in_msg.pkt);
-          /**
-           * Notice that the se may provide a legal paddr for the current bank.
-           */
-          if (llcStreamPAddr != in_msg.addr) {
-            cache_entry := getCacheEntry(llcStreamPAddr);
-            tbe := TBEs[llcStreamPAddr];
-          }
-          trigger(Event:L0_StreamConfig, llcStreamPAddr, cache_entry, tbe);
+          se.receiveStreamConfigure(in_msg.pkt);
+          trigger(Event:L0_StreamConfig, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:STREAM_END) {
           Addr llcStreamPAddr := se.receiveStreamEnd(in_msg.pkt);
           /**
@@ -1322,7 +1315,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamConfig) {
-    fsc_forwardStreamConfig;
     k_popL0RequestQueue;
   }
 
