@@ -1012,56 +1012,32 @@ void StreamEngine::initializeStreams(
     }
   }
 
+  this->generateCoalescedStreamIdMap(streamRegion, args);
+
   std::vector<Stream *> createdStreams;
-  // Coalesced streams.
-  std::unordered_map<uint64_t, uint64_t> coalescedGroupToStreamIdMap;
   for (const auto &streamInfo : streamRegion.streams()) {
     const auto &streamId = streamInfo.id();
-    assert(this->streamMap.count(streamId) == 0 &&
-           "Stream is already initialized.");
-    /**
-     * I know this is confusing. But there are two possible interpretation
-     * of coalesce group. In both case, 0 is used as the invalid coalesce
-     * group.
-     * 1. In the old trace based implementation, this is some arbitrarily
-     *    allocated number. The offset should be -1.
-     * 2. In the static transform implementation, this is the base stream
-     *    id, and the offset should be >= 0.
-     */
-    const auto &coalesceInfo = streamInfo.coalesce_info();
-    auto coalesceGroup = coalesceInfo.base_stream();
-    constexpr uint64_t InvalidCoalesceGroup = 0;
-
     // Set per stream field in stream args.
     args.staticId = streamId;
     args.name = streamInfo.name().c_str();
 
-    if (coalesceGroup != InvalidCoalesceGroup && this->enableCoalesce) {
-
-      auto staticCoalesced = coalesceInfo.offset() != -1;
-
-      // First check if we have created the coalesced stream for the group.
-      if (coalescedGroupToStreamIdMap.count(coalesceGroup) == 0) {
-        auto newCoalescedStream = new CoalescedStream(args, staticCoalesced);
-        newCoalescedStream->addStreamInfo(streamInfo);
-        createdStreams.push_back(newCoalescedStream);
-        this->streamMap.emplace(streamId, newCoalescedStream);
-        this->coalescedStreamIdMap.emplace(streamId, streamId);
-        coalescedGroupToStreamIdMap.emplace(coalesceGroup, streamId);
-      } else {
-        // This is not the first time we encounter this coalesce group.
-        // Add the config to the coalesced stream.
-        auto coalescedStreamId = coalescedGroupToStreamIdMap.at(coalesceGroup);
-        auto coalescedStream = dynamic_cast<CoalescedStream *>(
-            this->streamMap.at(coalescedStreamId));
-        coalescedStream->addStreamInfo(streamInfo);
-        this->coalescedStreamIdMap.emplace(streamId, coalescedStreamId);
+    // Check if this stream belongs to CoalescedStream.
+    auto coalescedIter = this->coalescedStreamIdMap.find(streamId);
+    if (coalescedIter != this->coalescedStreamIdMap.end()) {
+      auto coalescedStreamId = coalescedIter->second;
+      auto coalescedStream = dynamic_cast<CoalescedStream *>(
+          this->streamMap.at(coalescedStreamId));
+      assert(coalescedStream && "Illegal type for CoalescedStream.");
+      coalescedStream->addStreamInfo(streamInfo);
+      // Don't forget to push into created streams.
+      if (std::find(createdStreams.begin(), createdStreams.end(),
+                    coalescedStream) == createdStreams.end()) {
+        createdStreams.push_back(coalescedStream);
       }
-
-      // panic("Disabled stream coalesce so far.");
     } else {
-      // Single stream can be immediately constructed and inserted into the
-      // map.
+      // This is single stream.
+      assert(this->streamMap.count(streamId) == 0 &&
+             "Stream is already initialized.");
       auto newStream = new SingleStream(args, streamInfo);
       createdStreams.push_back(newStream);
       this->streamMap.emplace(streamId, newStream);
@@ -1073,6 +1049,114 @@ void StreamEngine::initializeStreams(
    */
   for (auto newStream : createdStreams) {
     newStream->finalize();
+  }
+}
+
+void StreamEngine::generateCoalescedStreamIdMap(
+    const ::LLVM::TDG::StreamRegion &streamRegion,
+    Stream::StreamArguments &args) {
+
+  if (!this->enableCoalesce) {
+    // Simply return empty coalesce group.
+    return;
+  }
+
+  /**
+   * The compiler would provide coalesce info based on offset, however,
+   * we would like to split large offset into multiple streams.
+   * For example, accessing a 2-D array a[i] and a[i + cols].
+   * The offset is cols * sizeof(element), which is a row. These two accesses
+   * are not coalesced, as it would require very large element size.
+   */
+  std::list<std::vector<const ::LLVM::TDG::StreamInfo *>> coalescedGroup;
+  // Collect coalesced info and reconstruct coalesced group.
+  for (const auto &streamInfo : streamRegion.streams()) {
+    const auto &coalesceInfo = streamInfo.coalesce_info();
+    auto coalesceGroup = coalesceInfo.base_stream();
+    constexpr uint64_t InvalidCoalesceGroup = 0;
+    if (coalesceGroup != InvalidCoalesceGroup) {
+      // Search for the group. This is O(N^2).
+      bool found = false;
+      for (auto &group : coalescedGroup) {
+        if (group.front()->coalesce_info().base_stream() == coalesceGroup) {
+          group.push_back(&streamInfo);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        coalescedGroup.emplace_back();
+        coalescedGroup.back().push_back(&streamInfo);
+      }
+    }
+  }
+  // Sort each group with increasing order of offset.
+  for (auto &group : coalescedGroup) {
+    std::sort(group.begin(), group.end(),
+              [](const ::LLVM::TDG::StreamInfo *a,
+                 const ::LLVM::TDG::StreamInfo *b) -> bool {
+                auto offsetA = a->coalesce_info().offset();
+                auto offsetB = b->coalesce_info().offset();
+                return offsetA < offsetB;
+              });
+  }
+  // Resplit each group dependending on the expansion.
+  for (auto groupIter = coalescedGroup.begin();
+       groupIter != coalescedGroup.end(); ++groupIter) {
+    if (groupIter->size() == 1) {
+      // Ignore single streams.
+      continue;
+    }
+    auto baseS = groupIter->front();
+    auto baseOffset = baseS->coalesce_info().offset();
+    auto endOffset = baseOffset;
+    size_t nStream = 0;
+    for (auto streamIter = groupIter->begin(), streamEnd = groupIter->end();
+         streamIter != streamEnd; ++streamIter, ++nStream) {
+      const auto *streamInfo = *streamIter;
+      auto offset = streamInfo->coalesce_info().offset();
+      if (offset > endOffset) {
+        // The expansion is broken, split the group.
+        assert(nStream != 0 && "Emplty LHS group.");
+        coalescedGroup.emplace_back(streamIter, streamEnd);
+        groupIter->resize(nStream);
+        break;
+      } else {
+        // The expansion keeps going.
+        endOffset = std::max(endOffset, offset + streamInfo->element_size());
+      }
+    }
+  }
+  // For each split group, generate a CoalescedStream.
+  for (auto &group : coalescedGroup) {
+    CoalescedStream *coalescedStream = nullptr;
+    uint64_t coalescedStreamId = 0;
+    for (int i = 0; i < group.size(); ++i) {
+      const auto &streamInfo = *(group[i]);
+      const auto &streamId = streamInfo.id();
+      args.staticId = streamId;
+      args.name = streamInfo.name().c_str();
+      if (i == 0) {
+        // The first stream is the leading stream.
+        /**
+         * I know this is confusing. But there are two possible interpretation
+         * of coalesce group. In both case, 0 is used as the invalid coalesce
+         * group.
+         * 1. In the old trace based implementation, this is some arbitrarily
+         *    allocated number. The offset should be -1.
+         * 2. In the static transform implementation, this is the base stream
+         *    id, and the offset should be >= 0.
+         */
+        auto staticCoalesced = streamInfo.coalesce_info().offset() != -1;
+
+        // TODO: I don't like this design, all initialization should happen
+        // TODO: in the function initializeStreams().
+        coalescedStream = new CoalescedStream(args, staticCoalesced);
+        coalescedStreamId = streamId;
+        this->streamMap.emplace(coalescedStreamId, coalescedStream);
+      }
+      this->coalescedStreamIdMap.emplace(streamId, coalescedStreamId);
+    }
   }
 }
 

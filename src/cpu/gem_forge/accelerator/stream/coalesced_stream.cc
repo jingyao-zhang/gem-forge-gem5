@@ -75,34 +75,32 @@ void CoalescedStream::selectPrimeLogicalStream() {
   assert(!this->coalescedStreams.empty());
   // Other sanity check for statically coalesced streams.
   if (this->staticCoalesced) {
-    this->coalescedElementSize =
-        this->coalescedStreams.front()->getElementSize();
-    // Make sure we have the currect base_stream.
-    for (const auto &LS : this->coalescedStreams) {
-      assert(LS->info.coalesce_info().base_stream() > 0);
-      assert(
-          LS->info.coalesce_info().base_stream() ==
-          this->coalescedStreams.front()->info.coalesce_info().base_stream());
-      assert(LS->getCoalesceOffset() >= 0);
-      // Compute the element size.
-      this->coalescedElementSize =
-          std::max(this->coalescedElementSize,
-                   LS->getCoalesceOffset() + LS->getElementSize());
-    }
     // Sort the streams with offset.
     std::sort(this->coalescedStreams.begin(), this->coalescedStreams.end(),
               [](const LogicalStream *LA, const LogicalStream *LB) -> bool {
                 return LA->getCoalesceOffset() <= LB->getCoalesceOffset();
               });
-    // Make sure at least the first one has zero offset.
-    assert(this->coalescedStreams.front()->getCoalesceOffset() == 0);
+    this->primeLStream = this->coalescedStreams.front();
+    this->baseOffset = this->primeLStream->getCoalesceOffset();
+    this->coalescedElementSize = this->primeLStream->getElementSize();
+    assert(this->baseOffset >= 0 && "Illegal BaseOffset.");
+    // Make sure we have the currect base_stream.
+    for (const auto &LS : this->coalescedStreams) {
+      assert(LS->getCoalesceBaseStreamId() ==
+             this->primeLStream->getCoalesceBaseStreamId());
+      // Compute the element size.
+      this->coalescedElementSize = std::max(
+          this->coalescedElementSize,
+          LS->getCoalesceOffset() - this->baseOffset + LS->getElementSize());
+    }
+  } else {
+    this->primeLStream = this->coalescedStreams.front();
   }
   // Sanity check for the loop level.
   for (const auto &LS : this->coalescedStreams) {
     assert(LS->info.loop_level() == this->getLoopLevel());
     assert(LS->info.config_loop_level() == this->getConfigLoopLevel());
   }
-  this->primeLStream = this->coalescedStreams.front();
   /**
    * Finalize the stream name and static id.
    * ! This is important to get the correct StreamInput values.
@@ -364,7 +362,7 @@ void CoalescedStream::getCoalescedOffsetAndSize(uint64_t streamId,
                                                 int32_t &size) const {
   for (auto LS : this->coalescedStreams) {
     if (LS->getStreamId() == streamId) {
-      offset = LS->getCoalesceOffset();
+      offset = LS->getCoalesceOffset() - this->baseOffset;
       size = LS->getElementSize();
       return;
     }

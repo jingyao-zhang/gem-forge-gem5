@@ -23,6 +23,9 @@ public:
 
   ~LogicalStream();
 
+  uint64_t getCoalesceBaseStreamId() const {
+    return this->info.coalesce_info().base_stream();
+  }
   int32_t getCoalesceOffset() const {
     return this->info.coalesce_info().offset();
   }
@@ -87,6 +90,7 @@ protected:
   std::vector<LogicalStream *> coalescedStreams;
   LogicalStream *primeLStream;
   int32_t coalescedElementSize = -1;
+  int32_t baseOffset = -1;
 
   void selectPrimeLogicalStream();
   void initializeBaseStreams();

@@ -301,6 +301,9 @@ private:
   std::unordered_map<Addr, CacheBlockInfo> cacheBlockRefMap;
 
   void initializeStreams(const ::LLVM::TDG::StreamRegion &streamRegion);
+  void
+  generateCoalescedStreamIdMap(const ::LLVM::TDG::StreamRegion &streamRegion,
+                               Stream::StreamArguments &args);
 
   CoalescedStream *getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
                                                   int32_t coalesceGroup);
