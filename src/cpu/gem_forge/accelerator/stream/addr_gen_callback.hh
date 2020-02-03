@@ -43,6 +43,19 @@ using AddrGenCallbackPtr = std::shared_ptr<AddrGenCallback>;
 
 struct LinearAddrGenCallback : public AddrGenCallback {
   uint64_t genAddr(uint64_t idx, const DynamicStreamParamV &params) override;
+
+public:
+  bool isContinuous(const DynamicStreamFormalParamV &params,
+                    int32_t elementSize);
+  /**
+   * Only valid when continuous.
+   */
+  uint64_t getStartAddr(const DynamicStreamFormalParamV &params);
+  /**
+   * Compute the first elementIdx that will touch the address.
+   */
+  uint64_t getFirstElementForAddr(const DynamicStreamFormalParamV &params,
+                                  int32_t elementSize, uint64_t addr);
 };
 
 #endif

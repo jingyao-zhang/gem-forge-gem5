@@ -67,6 +67,11 @@ public:
   virtual uint32_t getConfigLoopLevel() const = 0;
   virtual int32_t getElementSize() const = 0;
   virtual bool getFloatManual() const = 0;
+  /**
+   * Get coalesce base stream, 0 for invalid.
+   */
+  virtual uint64_t getCoalesceBaseStreamId() const { return 0; }
+  virtual int32_t getCoalesceOffset() const { return 0; }
 
   virtual void prepareNewElement(StreamElement *element) {
     // Deprecated.

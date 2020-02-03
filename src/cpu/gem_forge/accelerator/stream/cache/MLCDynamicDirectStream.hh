@@ -32,9 +32,18 @@ public:
   }
 
   void receiveStreamData(const ResponseMsg &msg) override;
+  void receiveReuseStreamData(Addr vaddr, const DataBlock &dataBlock);
+  void setLLCCutLineVAddr(Addr vaddr) { this->llcCutLineVAddr = vaddr; }
 
 protected:
   SlicedDynamicStream slicedStream;
+
+  /**
+   * For reuse pattern, store the cut information.
+   */
+  Addr llcCutLineVAddr = 0;
+  uint64_t llcCutSliceIdx = 0;
+  bool llcCutted = false;
 
   // Where the LLC stream would be at tailSliceIdx.
   Addr tailPAddr;
@@ -46,6 +55,8 @@ protected:
   Addr llcTailPAddr;
   MachineID llcTailSliceLLCBank;
 
+  std::unordered_map<Addr, DataBlock> reuseBlockMap;
+
   // Only support one indirect stream.
   MLCDynamicIndirectStream *indirectStream;
 
@@ -56,7 +67,8 @@ protected:
     return this->slicedStream.getTotalTripCount();
   }
 
-  SliceIter findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
+  SliceIter
+  findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
 
   /**
    * Override this as we need to send credit to llc.

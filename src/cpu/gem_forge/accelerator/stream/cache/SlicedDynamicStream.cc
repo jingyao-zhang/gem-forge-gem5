@@ -47,10 +47,14 @@ void SlicedDynamicStream::allocateOneElement() const {
   // Let's not worry about indirect streams here.
   auto lhs = this->getElementVAddr(this->tailElementIdx);
   auto rhs = lhs + this->elementSize;
+  auto prevLHS = this->tailElementIdx > 0
+                     ? this->getElementVAddr(this->tailElementIdx - 1)
+                     : lhs;
 
   // Break to cache line granularity, [lhsBlock, rhsBlock]
   auto lhsBlock = makeLineAddress(lhs);
   auto rhsBlock = makeLineAddress(rhs - 1);
+  auto prevLHSBlock = makeLineAddress(prevLHS);
 
   DYN_S_DPRINTF(this->streamId, "Allocate element %llu, block [%#x, %#x].\n",
                 this->tailElementIdx, lhsBlock, rhsBlock);
@@ -62,7 +66,7 @@ void SlicedDynamicStream::allocateOneElement() const {
   auto curBlock = lhsBlock;
   if (this->coalesceContinuousElements &&
       !this->hasOverflowed(this->tailElementIdx)) {
-    if (!this->slices.empty() && lhsBlock < this->slices.back().vaddr) {
+    if (lhsBlock < prevLHSBlock) {
       /**
        * Special case to handle decreasing address.
        * If there is a bump back to lower address, we make sure that it has no

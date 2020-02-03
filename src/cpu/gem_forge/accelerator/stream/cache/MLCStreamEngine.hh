@@ -81,6 +81,27 @@ private:
   getMLCDynamicStreamFromSlice(const DynamicStreamSliceId &slice) const;
 
   MachineID mapPAddrToLLCBank(Addr paddr) const;
+
+  /**
+   * An experimental new feature: handle reuse among streams.
+   */
+  void computeReuseInformation(CacheStreamConfigureVec &streamConfigs);
+
+  struct ReuseInfo {
+    DynamicStreamId targetStreamId;
+    uint64_t targetCutElementIdx;
+    uint64_t targetCutLineVAddr;
+    ReuseInfo(const DynamicStreamId &_targetStreamId,
+              uint64_t _targetCutElementIdx, uint64_t _targetCutLineVAddr)
+        : targetStreamId(_targetStreamId),
+          targetCutElementIdx(_targetCutElementIdx),
+          targetCutLineVAddr(_targetCutLineVAddr) {}
+  };
+  std::unordered_map<DynamicStreamId, ReuseInfo, DynamicStreamIdHasher>
+      reuseInfoMap;
+  std::unordered_map<DynamicStreamId, ReuseInfo, DynamicStreamIdHasher>
+      reverseReuseInfoMap;
+  void reuseSlice(const ResponseMsg &msg);
 };
 
 #endif

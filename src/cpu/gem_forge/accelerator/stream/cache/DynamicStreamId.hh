@@ -25,6 +25,16 @@ struct DynamicStreamId {
   DynamicStreamId(const DynamicStreamId &other)
       : coreId(other.coreId), staticId(other.staticId),
         streamInstance(other.streamInstance), streamName(other.streamName) {}
+  DynamicStreamId &operator=(const DynamicStreamId &other) {
+    this->coreId = other.coreId;
+    this->staticId = other.staticId;
+    this->streamInstance = other.streamInstance;
+    this->streamName = other.streamName;
+    return *this;
+  }
+
+  DynamicStreamId(DynamicStreamId &&other) = delete;
+  DynamicStreamId &operator=(DynamicStreamId &&other) = delete;
 
   bool operator==(const DynamicStreamId &other) const {
     return this->coreId == other.coreId && this->staticId == other.staticId &&

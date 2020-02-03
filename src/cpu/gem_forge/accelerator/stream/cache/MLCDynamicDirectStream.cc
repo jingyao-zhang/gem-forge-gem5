@@ -74,13 +74,20 @@ void MLCDynamicDirectStream::advanceStream() {
    * There are two cases we need to send the token:
    * 1. We have allocated more half the buffer size.
    * 2. The stream has overflowed.
+   * 3. The llc stream is cutted.
    */
-  if (!this->slicedStream.hasOverflowed()) {
-    if (this->tailSliceIdx - this->llcTailSliceIdx > this->maxNumSlices / 2) {
-      this->sendCreditToLLC();
+  if (!this->llcCutted) {
+    if (!this->slicedStream.hasOverflowed()) {
+      if (this->tailSliceIdx - this->llcTailSliceIdx > this->maxNumSlices / 2) {
+        this->sendCreditToLLC();
+      }
+    } else {
+      if (this->tailSliceIdx > this->llcTailSliceIdx) {
+        this->sendCreditToLLC();
+      }
     }
   } else {
-    if (this->tailSliceIdx > this->llcTailSliceIdx) {
+    if (this->llcCutSliceIdx > this->llcTailSliceIdx) {
       this->sendCreditToLLC();
     }
   }
@@ -93,11 +100,27 @@ void MLCDynamicDirectStream::allocateSlice() {
   this->slices.emplace_back(sliceId);
   this->stream->statistic.numMLCAllocatedSlice++;
 
+  // Update the llc cut information.
+  if (this->llcCutLineVAddr == sliceId.vaddr) {
+    // This should be cutted.
+    this->llcCutSliceIdx = this->tailSliceIdx;
+    this->llcCutted = true;
+  }
+
   // Try to handle faulted slice.
   Addr paddr;
   auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
   if (cpuDelegator->translateVAddrOracle(sliceId.vaddr, paddr)) {
-    // This is address is valid.
+    /**
+     * This address is valid.
+     * Check if we have reuse data.
+     */
+    auto reuseIter = this->reuseBlockMap.find(sliceId.vaddr);
+    if (reuseIter != this->reuseBlockMap.end()) {
+      this->slices.back().setData(reuseIter->second);
+      this->reuseBlockMap.erase(reuseIter);
+    }
+
     /**
      * ! We cheat here to notify the indirect stream immediately,
      * ! to avoid some complicate problem of managing streams.
@@ -212,10 +235,18 @@ void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
     if (this->matchSliceId(slice->sliceId, sliceId)) {
       // Found the slice.
       if (slice->sliceId.getNumElements() != numElements) {
-        MLC_S_PANIC("Mismatch numElements, incoming %d, slice %d.\n",
-                    numElements, slice->sliceId.getNumElements());
+        // Also consider llc stream being cut.
+        if (this->llcCutLineVAddr > 0 &&
+            slice->sliceId.vaddr < this->llcCutLineVAddr) {
+          MLC_S_PANIC("Mismatch numElements, incoming %d, slice %d.\n",
+                      numElements, slice->sliceId.getNumElements());
+        }
       }
-      slice->setData(msg.m_DataBlk);
+      if (slice->dataReady) {
+        // Must be from reuse.
+      } else {
+        slice->setData(msg.m_DataBlk);
+      }
 
       // // Notify the indirect stream. Call this after setData().
       // this->notifyIndirectStream(*slice);
@@ -306,4 +337,14 @@ MLCDynamicDirectStream::findSliceForCoreRequest(
   }
 
   MLC_S_PANIC("Failed to find slice for core %s.\n", sliceId);
+}
+
+void MLCDynamicDirectStream::receiveReuseStreamData(
+    Addr vaddr, const DataBlock &dataBlock) {
+  MLC_S_DPRINTF("Received reuse block %#x.\n", vaddr);
+  this->reuseBlockMap.emplace(vaddr, dataBlock).second;
+  /**
+   * TODO: The current implementation may have multiple reuses, in
+   * TODO: the boundary cases when streams overlapped.
+   */
 }

@@ -29,7 +29,7 @@ uint64_t AddrGenCallback::genAddr(uint64_t idx,
 }
 
 uint64_t LinearAddrGenCallback::genAddr(uint64_t idx,
-                                        const std::vector<uint64_t> &params) {
+                                        const DynamicStreamParamV &params) {
   /**
    * LINEAR pattern has 2n or (2n+1) parameters, where n is the difference of
    * loop level between ConfigureLoop and InnerMostLoop. It has the following
@@ -70,4 +70,47 @@ uint64_t LinearAddrGenCallback::genAddr(uint64_t idx,
   auto addr = start + stride * nestedIdx;
   DPRINTF(AddrGenCallback, "[LinearAddrGen]: Final addr %#x.\n", addr);
   return addr;
+}
+
+bool LinearAddrGenCallback::isContinuous(
+    const DynamicStreamFormalParamV &params, int32_t elementSize) {
+  assert(params.size() >= 2 && "Invalid number of inputs.");
+  // Make sure it is all invariant.
+  for (const auto &p : params) {
+    if (!p.isInvariant) {
+      return false;
+    }
+  }
+  auto stride0 = params[0].param.invariant;
+  if (stride0 > elementSize) {
+    return false;
+  }
+  for (auto paramIdx = 1; paramIdx + 2 < params.size(); paramIdx += 2) {
+    auto totalTripCount = params[paramIdx].param.invariant;
+    auto newStride = params[paramIdx + 1].param.invariant;
+    DPRINTF(AddrGenCallback,
+            "[LinearAddrGen]: newStride %llu, totalTripCount %llu, stride0 "
+            "%llu.\n",
+            newStride, totalTripCount, stride0);
+    if (stride0 * totalTripCount != newStride) {
+      return false;
+    }
+  }
+  return true;
+}
+
+uint64_t
+LinearAddrGenCallback::getStartAddr(const DynamicStreamFormalParamV &params) {
+  // The last one is start address.
+  return params.rbegin()->param.invariant;
+}
+
+uint64_t LinearAddrGenCallback::getFirstElementForAddr(
+    const DynamicStreamFormalParamV &params, int32_t elementSize,
+    uint64_t addr) {
+  // Get the stride 0.
+  auto startAddr = this->getStartAddr(params);
+  assert(addr > startAddr + elementSize && "Addr too small.");
+  auto stride0 = params.front().param.invariant;
+  return (addr - startAddr) / stride0 + 1;
 }

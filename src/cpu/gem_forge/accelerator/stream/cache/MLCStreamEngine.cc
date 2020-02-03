@@ -40,6 +40,7 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream configure when stream float is disabled.\n");
   auto streamConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+  this->computeReuseInformation(*streamConfigs);
   for (auto streamConfigureData : *streamConfigs) {
     this->configureStream(streamConfigureData, pkt->req->masterId());
   }
@@ -86,6 +87,27 @@ void MLCStreamEngine::configureStream(
       streamConfigureData, this->controller, this->responseToUpperMsgBuffer,
       this->requestToLLCMsgBuffer, indirectStream);
   this->idToStreamMap.emplace(directStream->getDynamicStreamId(), directStream);
+
+  /**
+   * If there is reuse for this stream, we cut the stream's totalTripCount.
+   * ! This can only be done after initializing MLC streams, as only LLC streams
+   * ! should be cut.
+   */
+  {
+    auto reuseIter =
+        this->reverseReuseInfoMap.find(streamConfigureData->dynamicId);
+    if (reuseIter != this->reverseReuseInfoMap.end()) {
+      auto cutElementIdx = reuseIter->second.targetCutElementIdx;
+      auto cutLineVAddr = reuseIter->second.targetCutLineVAddr;
+      if (streamConfigureData->totalTripCount == -1 ||
+          streamConfigureData->totalTripCount > cutElementIdx) {
+        streamConfigureData->totalTripCount = cutElementIdx;
+        directStream->setLLCCutLineVAddr(cutLineVAddr);
+        assert(!streamConfigureData->indirectStreamConfigure &&
+               "Reuse stream with indirect stream is not supported.");
+      }
+    }
+  }
 
   // Create a new packet.
   RequestPtr req(new Request(streamConfigureData->initPAddr,
@@ -147,6 +169,13 @@ Addr MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
     }
   }
 
+  // Clear the reuse information.
+  if (this->reuseInfoMap.count(*endDynamicStreamId)) {
+    this->reverseReuseInfoMap.erase(
+        this->reuseInfoMap.at(*endDynamicStreamId).targetStreamId);
+    this->reuseInfoMap.erase(*endDynamicStreamId);
+  }
+
   // Do not release the pkt and streamDynamicId as they should be forwarded
   // to the LLC bank and released there.
 
@@ -163,6 +192,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
     if (iter.second->getDynamicStreamId() == sliceId.streamId) {
       // Found the stream.
       iter.second->receiveStreamData(msg);
+      this->reuseSlice(msg);
       return;
     }
   }
@@ -246,4 +276,101 @@ MachineID MLCStreamEngine::mapPAddrToLLCBank(Addr paddr) const {
   auto llcMachineId = this->controller->mapAddressToLLC(
       paddr, static_cast<MachineType>(selfMachineId.type + 1));
   return llcMachineId;
+}
+
+void MLCStreamEngine::computeReuseInformation(
+    CacheStreamConfigureVec &streamConfigs) {
+
+  // 1. Group them by base.
+  std::unordered_map<uint64_t, std::vector<CacheStreamConfigureData *>> groups;
+  for (auto *config : streamConfigs) {
+    auto S = config->stream;
+    auto groupId = S->getCoalesceBaseStreamId();
+    if (groupId == 0) {
+      continue;
+    }
+    // Check if continuous.
+    auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+        config->addrGenCallback);
+    if (!linearAddrGen) {
+      continue;
+    }
+    if (!linearAddrGen->isContinuous(config->formalParams,
+                                     config->elementSize)) {
+      MLC_STREAM_DPRINTF(config->dynamicId.staticId,
+                         "Address pattern not continuous.\n");
+      continue;
+    }
+    groups
+        .emplace(std::piecewise_construct, std::forward_as_tuple(groupId),
+                 std::forward_as_tuple())
+        .first->second.push_back(config);
+  }
+  // 2. Sort them with offset.
+  for (auto &entry : groups) {
+    auto &group = entry.second;
+    std::sort(group.begin(), group.end(),
+              [](const CacheStreamConfigureData *a,
+                 const CacheStreamConfigureData *b) -> bool {
+                return a->stream->getCoalesceOffset() <
+                       b->stream->getCoalesceOffset();
+              });
+  }
+  // 3. Build reuse chain.
+  for (auto &entry : groups) {
+    auto &group = entry.second;
+    for (int i = 1; i < group.size(); ++i) {
+      auto *lhsConfig = group[i - 1];
+      auto *rhsConfig = group[i];
+      auto lhsAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+          lhsConfig->addrGenCallback);
+      auto rhsAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+          rhsConfig->addrGenCallback);
+      // Compute the cut element idx.
+      auto lhsStartAddr = lhsAddrGen->getStartAddr(lhsConfig->formalParams);
+      auto rhsStartAddr = rhsAddrGen->getStartAddr(rhsConfig->formalParams);
+      // Set the threshold to 32kB.
+      constexpr uint64_t ReuseThreshold = 32 * 1024;
+      assert(rhsStartAddr > lhsStartAddr && "Illegal reversed startAddr.");
+      auto startOffset = rhsStartAddr - lhsStartAddr;
+      if (startOffset > ReuseThreshold) {
+        MLC_STREAM_DPRINTF(lhsConfig->dynamicId.staticId,
+                           "Ingore large reuse distance -> %lu offset %lu.\n",
+                           rhsConfig->dynamicId.staticId, startOffset);
+        continue;
+      }
+      auto rhsStartLindAddr = makeLineAddress(rhsStartAddr);
+      auto lhsCutElementIdx = lhsAddrGen->getFirstElementForAddr(
+          lhsConfig->formalParams, lhsConfig->elementSize, rhsStartLindAddr);
+      // Store the reuse info.
+      this->reuseInfoMap.emplace(
+          std::piecewise_construct, std::forward_as_tuple(rhsConfig->dynamicId),
+          std::forward_as_tuple(lhsConfig->dynamicId, lhsCutElementIdx,
+                                rhsStartLindAddr));
+      this->reverseReuseInfoMap.emplace(
+          std::piecewise_construct, std::forward_as_tuple(lhsConfig->dynamicId),
+          std::forward_as_tuple(rhsConfig->dynamicId, lhsCutElementIdx,
+                                rhsStartLindAddr));
+      MLC_STREAM_DPRINTF(lhsConfig->dynamicId.staticId,
+                         "Add reuse chain -> %lu cut %lu.\n",
+                         rhsConfig->dynamicId.staticId, lhsCutElementIdx);
+    }
+  }
+}
+
+void MLCStreamEngine::reuseSlice(const ResponseMsg &msg) {
+  auto sliceId = msg.m_sliceId;
+  auto streamId = sliceId.streamId;
+  while (this->reuseInfoMap.count(streamId)) {
+    const auto &reuseInfo = this->reuseInfoMap.at(streamId);
+    const auto &targetStreamId = reuseInfo.targetStreamId;
+    // Simply notify the target stream.
+    assert(this->idToStreamMap.count(targetStreamId) &&
+           "Failed to find target stream.");
+    auto S = dynamic_cast<MLCDynamicDirectStream *>(
+        this->idToStreamMap.at(targetStreamId));
+    assert(S && "Only direct stream can have reuse.");
+    S->receiveReuseStreamData(makeLineAddress(sliceId.vaddr), msg.m_DataBlk);
+    streamId = targetStreamId;
+  }
 }

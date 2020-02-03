@@ -60,6 +60,13 @@ public:
     assert(this->coalescedElementSize > 0 && "Invalid element size.");
     return this->coalescedElementSize;
   }
+  uint64_t getCoalesceBaseStreamId() const override {
+    return this->primeLStream->getCoalesceBaseStreamId();
+  }
+  int32_t getCoalesceOffset() const override {
+    // This is the true offset.
+    return this->primeLStream->getCoalesceOffset();
+  }
   bool getFloatManual() const override;
 
   /**
