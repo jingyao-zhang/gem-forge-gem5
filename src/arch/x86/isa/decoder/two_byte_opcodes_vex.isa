@@ -78,6 +78,12 @@
                     0x0: VCVTSI2SS(Vo, Ed);
                 }
             }
+            // 0xF2 scalar double.
+            0x8: decode OPCODE_OP_BOTTOM3 {
+                0x2: decode EVEX_L {
+                    0x0: VCVTSI2SD(Vo, Edp);
+                }
+            }
         }
         0x0A: decode LEGACY_DECODEVAL {
             0x0: decode OPCODE_OP_BOTTOM3 {
@@ -227,6 +233,18 @@
                 0x4: decode EVEX_L {
                     0x1: VPADDQ(VYdo, WYdo);
                     0x0: VPADDQ(Vo,Wo);
+                }
+                0x6: decode EVEX_L {
+                    0x0: VMOVQ(Wq, Vq);
+                }
+            }
+        }
+        0x1C: decode LEGACY_DECODEVAL {
+            // 0xF3
+            0x4: decode OPCODE_OP_BOTTOM3 {
+                0x6: decode EVEX_L {
+                    0x1: VCVTDQ2PD(VYdo, Wo);
+                    0x0: VCVTDQ2PD(Vo, Wq);
                 }
             }
         }

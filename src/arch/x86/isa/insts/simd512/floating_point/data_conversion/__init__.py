@@ -40,8 +40,10 @@ categories = [
     "vcvtps2pd",
     "vcvtpd2ps",
     "vcvtdq2ps",
+    "vcvtdq2pd",
     "vcvtsd2ss",
     "vcvtsi2ss",
+    "vcvtsi2sd",
     "vcvtusi2ss",
 ]
 

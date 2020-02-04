@@ -59,6 +59,7 @@ enum EVEXTupleType {
  * 66 6F vmovdqa(load)  FULL_MEM
  * 66 7F vmovdqa(store) FULL_MEM
  * 66 D4 vpaddq         FULL
+ * 66 D6 vmovq          TUPLE1_SCALAR
  * 66 FE vpaddd         FULL
  */
 const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
@@ -77,7 +78,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 /*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  D */ O , O , O , O , FU, O , O , O , O , O , O , O , O , O , O , O ,
+/*  D */ O , O , O , O , FU, O , TS, O , O , O , O , O , O , O , O , O ,
 /*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  F */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , FU, O
     };
@@ -92,6 +93,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
  * F3 6F vmovdqu(load)  FULL_MEM
  * F3 7B vcvtusi2ss     TUPLE1_SCALAR
  * F3 7F vmovdqu(store) FULL_MEM
+ * F3 E6 vcvtdq2pd      HALF
  */
 const EVEXTupleType EVEXTupleTypeTwoByteF3[256] =
     {    //LSB
@@ -110,12 +112,13 @@ const EVEXTupleType EVEXTupleTypeTwoByteF3[256] =
 /*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  D */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  E */ O , O , O , O , O , O , HA, O , O , O , O , O , O , O , O , O ,
 /*  F */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O
     };
 /****************************************************************
  * Implemeted.
  * F2 10 vmovsd(load)   TUPLE1_SCALAR
+ * F2 2A vcvtsi2sd      TUPLE1_SCALAR
  * F2 58 vaddsd         TUPLE1_SCALAR
  * F2 59 vmulsd         TUPLE1_SCALAR
  * F2 5C vsubsd         TUPLE1_SCALAR
@@ -127,7 +130,7 @@ const EVEXTupleType EVEXTupleTypeTwoByteF2[256] =
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  1 */ TS, O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , O , O , TS, O , O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , TS, TS, TS, O , TS, O , TS, O ,

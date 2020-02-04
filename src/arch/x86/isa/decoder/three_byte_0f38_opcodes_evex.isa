@@ -59,6 +59,8 @@
                 0x58: decode REX_W {
                     0x0: decode EVEX_L_EXTEND {
                         0x2: VPBROADCASTD(VZqo, Wd);
+                        0x1: VPBROADCASTD(VYdo, Wd);
+                        0x0: VPBROADCASTD(Vo, Wd);
                     }
                 }
                 0x59: decode REX_W {

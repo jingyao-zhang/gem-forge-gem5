@@ -44,6 +44,7 @@ categories = [
     "vinsertps",
     "vinsert",
     "vmovd",
+    "vmovq",
     "vmovdqa",
     "vmovdqu",
     "vmovaps",
