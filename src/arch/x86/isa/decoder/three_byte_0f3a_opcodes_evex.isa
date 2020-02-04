@@ -49,6 +49,12 @@
                         }
                     }
                 }
+                0x3A: decode EVEX_L_EXTEND {
+                    0x2: decode IMMEDIATE {
+                        0x0: VINSERT256L(VZqo, WYdo, Ib);
+                        0x1: VINSERT256H(VZqo, WYdo, Ib);
+                    }
+                }
                 0x3B: decode EVEX_L_EXTEND {
                     0x2: decode IMMEDIATE {
                         0x0: VEXTRACT256L(WYdo, VZqo, Ib);

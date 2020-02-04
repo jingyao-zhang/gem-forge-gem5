@@ -74,6 +74,17 @@ protected:
 
   // A helper function to perform packed binary op.
   void doPackedBinaryOp(ExecContext *xc, BinaryOp op) const;
+
+  // A helper function to add dest regs.
+  inline void addAVXDestRegs() {
+    auto vDestRegs = destVL / sizeof(uint64_t);
+    assert(vDestRegs <= NumXMMSubRegs && "DestVL overflow.");
+    _numDestRegs = _numFPDestRegs = vDestRegs;
+    assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
+    for (int i = 0; i < vDestRegs; i++) {
+      _destRegIdx[i] = RegId(FloatRegClass, dest + i);
+    }
+  }
 };
 
 } // namespace X86ISA

@@ -287,10 +287,24 @@ let {{
         code = 'FpDestReg = sqrt(FpSrcReg2);'
         op_class = 'FloatSqrtOp'
 
-    class Movfph32(FpUnaryOp):
+    class Movfph2h(FpUnaryOp):
         code = '''
-            uint64_t h32 = bits(FpSrcReg1_uqw, 63, 32);
-            FpDestReg_uqw = insertBits(FpDestReg_uqw, 63, 32, h32);
+            uint64_t v = bits(FpSrcReg1_uqw, 63, 32);
+            FpDestReg_uqw = insertBits(FpDestReg_uqw, 63, 32, v);
+        '''
+        op_class = 'IntAluOp'
+
+    class Movfpl2h(FpUnaryOp):
+        code = '''
+            uint64_t v = bits(FpSrcReg1_uqw, 31, 0);
+            FpDestReg_uqw = insertBits(FpDestReg_uqw, 63, 32, v);
+        '''
+        op_class = 'IntAluOp'
+
+    class Movfpl2l(FpUnaryOp):
+        code = '''
+            uint64_t v = bits(FpSrcReg1_uqw, 31, 0);
+            FpDestReg_uqw = insertBits(FpDestReg_uqw, 31, 0, v);
         '''
         op_class = 'IntAluOp'
 

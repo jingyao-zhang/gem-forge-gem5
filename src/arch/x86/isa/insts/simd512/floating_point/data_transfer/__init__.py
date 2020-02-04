@@ -54,6 +54,7 @@ categories = [
     "vmovsd",
     "vmovsldup",
     "vmovshdup",
+    "vpmovdq",
     "vblendps",
     "vpermilps",
     "vpshufd",

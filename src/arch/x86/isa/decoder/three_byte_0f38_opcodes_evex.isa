@@ -56,8 +56,20 @@
                         0x0: VPMINSD(Vo, Wo);
                     }
                 }
-                0x59: decode EVEX_L_EXTEND {
-                    0x2: VPBROADCASTQ(VZqo, Wq);
+                0x58: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPBROADCASTD(VZqo, Wd);
+                    }
+                }
+                0x59: decode REX_W {
+                    0x1: decode EVEX_L_EXTEND {
+                        0x2: VPBROADCASTQ(VZqo, Wq);
+                    }
+                }
+                0x7C: decode REX_W {
+                    0x1: decode EVEX_L_EXTEND {
+                        0x2: VPBROADCASTQ(VZqo, Eqo);
+                    }
                 }
             }
         }
@@ -79,6 +91,16 @@
                 0x43: decode EVEX_L_EXTEND {
                     0x2: SSP_STREAM_LOAD(WZqo, Ib);
                     0x1: SSP_STREAM_LOAD(WYdo, Ib);
+                }
+            }
+            // 0xF3
+            0x4: decode OPCODE_OP {
+                0x35: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPMOVDQ(WYdo, VZqo);
+                        0x1: VPMOVDQ(Wo, VYdo);
+                        0x0: VPMOVDQ(Wq, Vo);
+                    }
                 }
             }
         }

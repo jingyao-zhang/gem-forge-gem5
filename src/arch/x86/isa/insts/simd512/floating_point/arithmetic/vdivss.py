@@ -2,7 +2,7 @@
 microcode = '''
 def macroop VDIVSS_XMM_XMM {
     mdivf xmm0, xmm0v, xmm0m, size=4, ext=Scalar
-    movfph32 dest=xmm0, src1=xmm0v, dataSize=4
+    movfph2h dest=xmm0, src1=xmm0v, dataSize=4
     movfp dest=xmm1, src1=xmm1v, dataSize=8
     vclear dest=xmm2, destVL=16
 };

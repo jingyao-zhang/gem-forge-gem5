@@ -1,37 +1,38 @@
 microcode = '''
 
+def macroop VPBROADCASTQ_ZMM_R {
+    mov2fp ufp1, regm, destSize=8, srcSize=8
+    vbroadcast64 dest=xmm0, src=ufp1, destVL=64
+};
+
 def macroop VPBROADCASTQ_ZMM_XMM {
-    movfp xmm0, xmm0m, dataSize=8
-    movfp xmm1, xmm0m, dataSize=8
-    movfp xmm2, xmm0m, dataSize=8
-    movfp xmm3, xmm0m, dataSize=8
-    movfp xmm4, xmm0m, dataSize=8
-    movfp xmm5, xmm0m, dataSize=8
-    movfp xmm6, xmm0m, dataSize=8
-    movfp xmm7, xmm0m, dataSize=8
+    vbroadcast64 dest=xmm0, src=xmm0m, destVL=64
 };
 
 def macroop VPBROADCASTQ_ZMM_M {
-    ldfp xmm0, seg, sib, disp, dataSize=8
-    movfp xmm1, xmm0, dataSize=8
-    movfp xmm2, xmm0, dataSize=8
-    movfp xmm3, xmm0, dataSize=8
-    movfp xmm4, xmm0, dataSize=8
-    movfp xmm5, xmm0, dataSize=8
-    movfp xmm6, xmm0, dataSize=8
-    movfp xmm7, xmm0, dataSize=8
+    ldfp ufp1, seg, sib, disp, dataSize=8
+    vbroadcast64 dest=xmm0, src=ufp1, destVL=64
 };
 
 def macroop VPBROADCASTQ_ZMM_P {
     rdip t7
-    ldfp xmm0, seg, riprel, disp, dataSize=8
-    movfp xmm1, xmm0, dataSize=8
-    movfp xmm2, xmm0, dataSize=8
-    movfp xmm3, xmm0, dataSize=8
-    movfp xmm4, xmm0, dataSize=8
-    movfp xmm5, xmm0, dataSize=8
-    movfp xmm6, xmm0, dataSize=8
-    movfp xmm7, xmm0, dataSize=8
+    ldfp ufp1, seg, riprel, disp, dataSize=8
+    vbroadcast64 dest=xmm0, src=ufp1, destVL=64
+};
+
+def macroop VPBROADCASTD_ZMM_XMM {
+    vbroadcast32 dest=xmm0, src=xmm0m, destVL=64
+};
+
+def macroop VPBROADCASTD_ZMM_M {
+    ldfp ufp1, seg, sib, disp, dataSize=4
+    vbroadcast32 dest=xmm0, src=ufp1, destVL=64
+};
+
+def macroop VPBROADCASTD_ZMM_P {
+    rdip t7
+    ldfp ufp1, seg, riprel, disp, dataSize=4
+    vbroadcast32 dest=xmm0, src=ufp1, destVL=64
 };
 
 '''

@@ -93,6 +93,11 @@
                     0x1: VCVTPS2PD(VYdo, Wo);
                     0x0: VCVTPS2PD(Vo, Wq);
                 }
+                0x3: decode EVEX_L_EXTEND {
+                    0x2: VCVTDQ2PS(VZqo, WZqo);
+                    0x1: VCVTDQ2PS(VYdo, WYdo);
+                    0x0: VCVTDQ2PS(Vo, Wo);
+                }
                 0x4: decode EVEX_L_EXTEND {
                     0x2: VSUBPS(VZqo, WZqo);
                     0x1: VSUBPS(VYdo, WYdo);

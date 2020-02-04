@@ -202,14 +202,11 @@ let {{
             )
         srcType = 'AVXOpBase::SrcType::RegReg'
         constructorCode = '''
+            this->addAVXDestRegs();
             auto vRegs = destVL / sizeof(uint64_t);
-            assert(vRegs <= NumXMMSubRegs && "VL overflow.");
-            _numDestRegs = _numFPDestRegs = vRegs;
             _numSrcRegs = 2 * vRegs;
-            assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
-                _destRegIdx[i] = RegId(FloatRegClass, dest + i);
                 _srcRegIdx[i * 2 + 0] = RegId(FloatRegClass, src1 + i);
                 _srcRegIdx[i * 2 + 1] = RegId(FloatRegClass, src2 + i);
             }
@@ -249,6 +246,65 @@ let {{
         opClass = 'SimdCmpOp'
         code = '''
             this->doPackedBinaryOp(xc, BinaryOp::SIntMin);
+        '''
+
+    class Vbroadcast32(AVXOp):
+        def __init__(self, dest, src, destVL):
+            super(Vbroadcast32, self).__init__(
+                dest=dest, src1=src, destVL=destVL
+            )
+        srcType = 'AVXOpBase::SrcType::Reg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            _numSrcRegs = 1;
+            _srcRegIdx[0] = RegId(FloatRegClass, src1);
+        '''
+        code = '''
+            FloatInt src;
+            src.ul = xc->readFloatRegOperandBits(this, 0);
+            src.ui.i2 = src.ui.i1;
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            for (int i = 0; i < vDestRegs; ++i) {
+                xc->setFloatRegOperandBits(this, i, src.ul);
+            }
+        '''
+
+    class Vbroadcast64(AVXOp):
+        def __init__(self, dest, src, destVL):
+            super(Vbroadcast64, self).__init__(
+                dest=dest, src1=src, destVL=destVL
+            )
+        srcType = 'AVXOpBase::SrcType::Reg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            _numSrcRegs = 1;
+            _srcRegIdx[0] = RegId(FloatRegClass, src1);
+        '''
+        code = '''
+            FloatInt src;
+            src.ul = xc->readFloatRegOperandBits(this, 0);
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            for (int i = 0; i < vDestRegs; ++i) {
+                xc->setFloatRegOperandBits(this, i, src.ul);
+            }
+        '''
+
+    class Vcvtp(AVXOp):
+        # Used in packed convert ops, e.g. vcvtps2pd.
+        abstract = True
+        def __init__(self, dest, src, VL):
+            super(Varithp, self).__init__(
+                dest=dest, src1=src1, destVL=VL, srcVL=VL
+            )
+        srcType = 'AVXOpBase::SrcType::Reg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = destVL / sizeof(uint64_t);
+            _numSrcRegs = vRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+            }
         '''
 
 }};
