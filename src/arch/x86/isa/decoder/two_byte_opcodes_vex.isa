@@ -172,6 +172,9 @@
         }
         0x0D: decode LEGACY_DECODEVAL {
             0x1: decode OPCODE_OP_BOTTOM3 {
+                0x6: decode EVEX_L {
+                    0x0: VMOVD(Vo, Edp);
+                }
                 0x7: decode EVEX_L {
                     0x1: VMOVDQA(VYdo, WYdo);
                     0x0: MOVDQA(Vo, Wo);
