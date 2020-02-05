@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) 1999-2013 Mark D. Hill and David A. Wood
  * All rights reserved.
  *
@@ -1390,7 +1390,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   /**
    * Sean: StreamAwareCache.
    */
-  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, ISS, IS, IM, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, STREAM_CONFIG) {
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, STREAM_CONFIG) {
     rsc_receiveStreamConfig;
     jj_popL1RequestQueue;
   }
