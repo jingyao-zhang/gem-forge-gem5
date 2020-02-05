@@ -35,6 +35,11 @@
         format Inst {
             // 0x66
             0x1: decode OPCODE_OP {
+                0x05: decode EVEX_L_EXTEND {
+                    0x2: VPERMILPD(VZqo, WZqo, Ib);
+                    0x1: VPERMILPD(VYdo, WYdo, Ib);
+                    0x0: VPERMILPD(Vo, Wo, Ib);
+                }
                 0x1A: decode EVEX_L_EXTEND {
                     0x2: decode IMMEDIATE {
                         0x0: VINSERT256L(VZqo, WYdo, Ib);

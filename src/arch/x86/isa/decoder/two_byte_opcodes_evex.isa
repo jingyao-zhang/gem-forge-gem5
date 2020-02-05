@@ -27,6 +27,9 @@
                     0x1: VMOVUPD(WYdo, VYdo);
                     0x0: VMOVUPD(Wo, Vo);
                 }
+                0x6: decode EVEX_L_EXTEND {
+                    0x0: VMOVHPD(Vo, Mq);
+                }
             }
             // 0xF3, scalar single.
             0x4: decode OPCODE_OP_BOTTOM3 {
@@ -38,6 +41,11 @@
             0x8: decode OPCODE_OP_BOTTOM3 {
                 0x0: decode EVEX_L_EXTEND {
                     0x0: VMOVSD(Vq, Wq);
+                }
+                0x2: decode EVEX_L_EXTEND {
+                    0x2: VMOVDDUP(VZqo, WZqo);
+                    0x1: VMOVDDUP(VYdo, WYdo);
+                    0x0: VMOVDDUP(Vo, Wo);
                 }
             }
         }

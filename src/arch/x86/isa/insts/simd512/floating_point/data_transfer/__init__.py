@@ -45,7 +45,9 @@ categories = [
     "vinsert",
     "vmovd",
     "vmovq",
+    "vmovhpd",
     "vmovdqa",
+    "vmovddup",
     "vmovdqu",
     "vmovaps",
     "vmovapd",
@@ -58,6 +60,7 @@ categories = [
     "vpmovdq",
     "vblendps",
     "vpermilps",
+    "vpermilpd",
     "vpshufd",
 ]
 

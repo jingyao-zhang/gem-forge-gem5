@@ -48,6 +48,7 @@ enum EVEXTupleType {
  * Implemeted.
  * 66 10 vmovups(load)        FULL_MEM
  * 66 11 vmovups(store)       FULL_MEM
+ * 66 16 vmovhpd(load)        TUPLE1_SCALAR
  * 66 28 vmovaps(load)        FULL_MEM
  * 66 29 vmovaps(store)       FULL_MEM
  * 66 58 vaddpd         FULL
@@ -66,7 +67,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
     {    //LSB
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  1 */ FM, FM, O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  1 */ FM, FM, O , O , O , O , TS, O , O , O , O , O , O , O , O , O ,
 /*  2 */ O , O , O , O , O , O , O , O , FM, FM, O , O , O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
@@ -118,6 +119,7 @@ const EVEXTupleType EVEXTupleTypeTwoByteF3[256] =
 /****************************************************************
  * Implemeted.
  * F2 10 vmovsd(load)   TUPLE1_SCALAR
+ * F2 12 vmovddup(load) MOVDDUP
  * F2 2A vcvtsi2sd      TUPLE1_SCALAR
  * F2 58 vaddsd         TUPLE1_SCALAR
  * F2 59 vmulsd         TUPLE1_SCALAR
@@ -129,7 +131,7 @@ const EVEXTupleType EVEXTupleTypeTwoByteF2[256] =
     {    //LSB
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  1 */ TS, O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  1 */ TS, O , MO, O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  2 */ O , O , O , O , O , O , O , O , O , O , TS, O , O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
@@ -229,6 +231,30 @@ const EVEXTupleType EVEXTupleTypeThreeByteF30F38[256] =
 /*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  F */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O
     };
+/****************************************************************
+ * Implemeted.
+ *   66 05 vpermilpd               FULL
+ */
+const EVEXTupleType EVEXTupleTypeThreeByte660F3A[256] =
+    {    //LSB
+// MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
+/*  O */ O , O , O , O , O , FU, O , O , O , O , O , O , O , O , O , O ,
+/*  1 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  5 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  9 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  D */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  F */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O
+    };
 /**
  * TODO: I did not handle tuple type of 66 0F 3A as they are often
  * TODO: dependent on W -> tuple type. So far I just make them panic.
@@ -302,6 +328,14 @@ void Decoder::processCompressedDisplacement() {
     case FULL_MEM:      N = 16 * (emi.evex.l_extend << 1); break;
     case HALF_MEM:      N = 8 * (emi.evex.l_extend << 1); break;
     case TUPLE1_SCALAR: N = emi.rex.w ? 8 : 4; break;
+    case MOVDDUP: {
+      switch (emi.evex.l_extend) {
+        case 0: N = 8; break;
+        case 1: N = 32; break;
+        case 2: N = 64; break;
+      }
+      break;
+    }
     default: {
       panic("Don't know how to expand displacement for %#x %s.\n", this->origPC,
             emi);

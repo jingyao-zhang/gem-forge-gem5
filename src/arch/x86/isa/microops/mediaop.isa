@@ -430,6 +430,16 @@ let {{
             FpDestReg_uqw = result;
         '''
 
+    class Mpermilpd(MediaOp):
+        op_class = 'SimdMiscOp'
+        code = '''
+            assert(srcSize == destSize);
+            assert(srcSize == 8);
+            uint8_t sel0 = (ext >> 0) & 0x1;
+            uint64_t result = sel0 ? FpSrcReg2_uqw : FpSrcReg1_uqw;
+            FpDestReg_uqw = result;
+        '''
+
     class Minsertpsl(MediaOp):
         op_class = 'SimdMiscOp'
         code = '''
