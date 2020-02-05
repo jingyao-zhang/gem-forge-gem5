@@ -354,6 +354,8 @@ void MLCStreamEngine::computeReuseInformation(
       MLC_STREAM_DPRINTF(lhsConfig->dynamicId.staticId,
                          "Add reuse chain -> %lu cut %lu.\n",
                          rhsConfig->dynamicId.staticId, lhsCutElementIdx);
+      hack("Add reuse chain %lu -> %lu cut %lu.\n", lhsConfig->dynamicId.staticId,
+           rhsConfig->dynamicId.staticId, lhsCutElementIdx);
     }
   }
 }

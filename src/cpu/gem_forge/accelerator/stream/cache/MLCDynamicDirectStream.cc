@@ -342,7 +342,27 @@ MLCDynamicDirectStream::findSliceForCoreRequest(
 void MLCDynamicDirectStream::receiveReuseStreamData(
     Addr vaddr, const DataBlock &dataBlock) {
   MLC_S_DPRINTF("Received reuse block %#x.\n", vaddr);
-  this->reuseBlockMap.emplace(vaddr, dataBlock).second;
+  /**
+   * Somehow it's possible that the slice is already allocated.
+   * Search for it.
+   */
+  bool reused = false;
+  for (auto &slice : this->slices) {
+    if (slice.sliceId.vaddr == vaddr) {
+      reused = true;
+      if (!slice.dataReady) {
+        slice.setData(dataBlock);
+        if (slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
+          this->makeResponse(slice);
+        }
+        this->advanceStream();
+      }
+      break;
+    }
+  }
+  if (!reused) {
+    this->reuseBlockMap.emplace(vaddr, dataBlock).second;
+  }
   /**
    * TODO: The current implementation may have multiple reuses, in
    * TODO: the boundary cases when streams overlapped.
