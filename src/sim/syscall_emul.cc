@@ -107,8 +107,8 @@ exitImpl(SyscallDesc *desc, int callnum, ThreadContext *tc, bool group)
 
     System *sys = tc->getSystemPtr();
 
-    DPRINTF(SyscallVerbose, "Calling exitImpl group %d exitGroup %d.\n",
-        group, *p->exitGroup);
+    DPRINTF(SyscallVerbose, "Calling exitImpl cpu %d group %d exitGroup %d.\n",
+        tc->cpuId(), group, *p->exitGroup);
 
     /**
      *  NOTE by seanzw:
@@ -211,7 +211,7 @@ exitImpl(SyscallDesc *desc, int callnum, ThreadContext *tc, bool group)
                  * set to false to prevent the parent thread from killing
                  * all threads in the group.
                  */
-                if (*(p->exitGroup)) {
+                if (group && *(p->exitGroup)) {
                     sys->threadContexts[i]->halt();
                 } else {
                     last_thread = false;
