@@ -234,14 +234,17 @@ const EVEXTupleType EVEXTupleTypeThreeByteF30F38[256] =
 /****************************************************************
  * Implemeted.
  *   66 05 vpermilpd               FULL
+ *   66 16 vpextrq                 TUPLE1_SCALAR
+ * ! 66 18 vinsertf128             TUPLE2/TUPLE4
+ * ! 66 39 vextracti128            TUPLE2/TUPLE4
  */
 const EVEXTupleType EVEXTupleTypeThreeByte660F3A[256] =
     {    //LSB
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , O , O , FU, O , O , O , O , O , O , O , O , O , O ,
-/*  1 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  1 */ O , O , O , O , O , O , TS, O , T2, O , O , O , O , O , O , O ,
 /*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  3 */ O , O , O , O , O , O , O , O , O , T2, O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
@@ -300,7 +303,22 @@ void Decoder::processCompressedDisplacement() {
       }
       break;
     }
-    case ThreeByte0F3AOpcode: break;
+    case ThreeByte0F3AOpcode: {
+      switch (emi.legacy.decodeVal) {
+        case 0x1: {
+          tupleType = EVEXTupleTypeThreeByte660F38[emi.opcode.op];
+          if (emi.opcode.op == 0x18) {
+          // Special case for 66 0F 3A 18 vinsert32x4/vinsertf64x2.
+            tupleType = emi.rex.w ? EVEXTupleType::TUPLE2 : EVEXTupleType::TUPLE4;
+          } else if (emi.opcode.op == 0x39) {
+          // Special case for 66 0F 3A 39 vextracti32x4/vextracti64x2.
+            tupleType = emi.rex.w ? EVEXTupleType::TUPLE2 : EVEXTupleType::TUPLE4;
+          }
+          break;
+        }
+      }
+      break;
+    }
     case BadOpcode: break;
   }
 
@@ -328,6 +346,8 @@ void Decoder::processCompressedDisplacement() {
     case FULL_MEM:      N = 16 * (emi.evex.l_extend << 1); break;
     case HALF_MEM:      N = 8 * (emi.evex.l_extend << 1); break;
     case TUPLE1_SCALAR: N = emi.rex.w ? 8 : 4; break;
+    case TUPLE2:        N = emi.rex.w ? 16 : 8; break;
+    case TUPLE4:        N = emi.rex.w ? 32 : 16; break;
     case MOVDDUP: {
       switch (emi.evex.l_extend) {
         case 0: N = 8; break;

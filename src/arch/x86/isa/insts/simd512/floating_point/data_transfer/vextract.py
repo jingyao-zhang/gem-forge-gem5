@@ -80,4 +80,38 @@ def macroop VEXTRACT128H_P_YMM_I {
     stfp xmm3, seg, riprel, "DISPLACEMENT + 8", dataSize=8
 };
 
+def macroop VEXTRACT128HL_XMM_ZMM_I {
+    movfp xmm0, xmm4m, dataSize=8
+    movfp xmm1, xmm5m, dataSize=8
+    vclear dest=xmm2, destVL=16
+};
+
+def macroop VEXTRACT128HL_M_ZMM_I {
+    stfp xmm4, seg, sib, "DISPLACEMENT + 0", dataSize=8
+    stfp xmm5, seg, sib, "DISPLACEMENT + 8", dataSize=8
+};
+
+def macroop VEXTRACT128HL_P_ZMM_I {
+    rdip t7
+    stfp xmm4, seg, riprel, "DISPLACEMENT + 0", dataSize=8
+    stfp xmm5, seg, riprel, "DISPLACEMENT + 8", dataSize=8
+};
+
+def macroop VEXTRACT128HH_XMM_ZMM_I {
+    movfp xmm0, xmm6m, dataSize=8
+    movfp xmm1, xmm7m, dataSize=8
+    vclear dest=xmm2, destVL=16
+};
+
+def macroop VEXTRACT128HH_M_ZMM_I {
+    stfp xmm6, seg, sib, "DISPLACEMENT + 0", dataSize=8
+    stfp xmm7, seg, sib, "DISPLACEMENT + 8", dataSize=8
+};
+
+def macroop VEXTRACT128HH_P_ZMM_I {
+    rdip t7
+    stfp xmm6, seg, riprel, "DISPLACEMENT + 0", dataSize=8
+    stfp xmm7, seg, riprel, "DISPLACEMENT + 8", dataSize=8
+};
+
 '''

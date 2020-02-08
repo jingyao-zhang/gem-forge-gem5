@@ -40,6 +40,20 @@
                     0x1: VPERMILPD(VYdo, WYdo, Ib);
                     0x0: VPERMILPD(Vo, Wo, Ib);
                 }
+                0x16: decode EVEX_L_EXTEND {
+                    0x0: decode REX_W {
+                        0x1: decode IMMEDIATE {
+                            0x0: VPEXTRQL(Eq, Vo, Ib);
+                            0x1: VPEXTRQH(Eq, Vo, Ib);
+                        }
+                    }
+                }
+                0x18: decode EVEX_L_EXTEND {
+                    0x1: decode IMMEDIATE {
+                        0x0: VINSERT128L(VYdo, Wo, Ib);
+                        0x1: VINSERT128H(VYdo, Wo, Ib);
+                    }
+                }
                 0x1A: decode EVEX_L_EXTEND {
                     0x2: decode IMMEDIATE {
                         0x0: VINSERT256L(VZqo, WYdo, Ib);
@@ -51,6 +65,22 @@
                         0x1: decode IMMEDIATE {
                             0x0: VEXTRACT256L(WYdo, VZqo, Ib);
                             0x1: VEXTRACT256H(WYdo, VZqo, Ib);
+                        }
+                    }
+                }
+                0x39: decode EVEX_L_EXTEND {
+                    0x2: decode REX_W {
+                        0x1: decode IMMEDIATE {
+                            0x0: VEXTRACT128L(Wo, VYdo, Ib);
+                            0x1: VEXTRACT128H(Wo, VYdo, Ib);
+                            0x2: VEXTRACT128HL(Wo, VZqo, Ib);
+                            0x3: VEXTRACT128HH(Wo, VZqo, Ib);
+                        }
+                        0x0: decode IMMEDIATE {
+                            0x0: VEXTRACT128L(Wo, VYdo, Ib);
+                            0x1: VEXTRACT128H(Wo, VYdo, Ib);
+                            0x2: VEXTRACT128HL(Wo, VZqo, Ib);
+                            0x3: VEXTRACT128HH(Wo, VZqo, Ib);
                         }
                     }
                 }

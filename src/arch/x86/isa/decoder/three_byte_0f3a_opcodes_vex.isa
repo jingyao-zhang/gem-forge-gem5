@@ -47,6 +47,20 @@
                     0x1: VBLENDPS(VYdo, WYdo, Ib);
                     0x0: VBLENDPS(Vo, Wo, Ib);
                 }
+                0x16: decode EVEX_L {
+                    0x0: decode REX_W {
+                        0x1: decode IMMEDIATE {
+                            0x0: VPEXTRQL(Eq, Vo, Ib);
+                            0x1: VPEXTRQH(Eq, Vo, Ib);
+                        }
+                    }
+                }
+                0x18: decode EVEX_L {
+                    0x1: decode IMMEDIATE {
+                        0x0: VINSERT128L(VYdo, Wo, Ib);
+                        0x1: VINSERT128H(VYdo, Wo, Ib);
+                    }
+                }
                 0x21: decode EVEX_L {
                     0x0: VINSERTPS(Vo, Wo, Ib);
                 }

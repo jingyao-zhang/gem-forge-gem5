@@ -1479,10 +1479,14 @@ let {{
                     floatInt fi;
                     fi.f = arg;
                     argBits = fi.i;
+                    DPRINTF(X86MediaMicroop, "cvti2f32 %d -> %f.\\n",
+                        arg, fi.f);
                 } else {
                     doubleInt di;
                     di.d = arg;
                     argBits = di.i;
+                    DPRINTF(X86MediaMicroop, "cvti2f64 %d -> %f.\\n",
+                        arg, di.d);
                 }
                 int destHiIndex = destStart + (i + 1) * destSizeBits - 1;
                 int destLoIndex = destStart + (i + 0) * destSizeBits;

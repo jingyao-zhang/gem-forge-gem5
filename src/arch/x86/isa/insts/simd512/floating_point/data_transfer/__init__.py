@@ -62,6 +62,7 @@ categories = [
     "vpermilps",
     "vpermilpd",
     "vpshufd",
+    "vpextrq",
 ]
 
 microcode = '''
