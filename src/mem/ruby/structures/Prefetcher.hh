@@ -96,6 +96,11 @@ class Prefetcher : public SimObject
         void observePfMiss(Addr address);
 
         /**
+         * Observe a pf request being accepted.
+         */
+        void observePfAccept(Addr address);
+
+        /**
          * Observe a memory miss from the cache.
          *
          * @param address   The physical address that missed out of the cache.

@@ -101,6 +101,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 replacement_policy = LRUReplacementPolicy(),
                 dataAccessLatency = options.l1d_lat)
 
+            prefetcher = RubyPrefetcher.Prefetcher()
+
             # the ruby random tester reuses num_cpus to specify the
             # number of cpu ports connected to the tester object, which
             # is stored in system.cpu. because there is only ever one
@@ -115,10 +117,12 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
             l0_cntrl = L0Cache_Controller(
                     version = i * num_cpus_per_cluster + j, Icache = l0i_cache,
-                    Dcache = l0d_cache, send_evictions = send_evicts(options),
+                    Dcache = l0d_cache, prefetcher=prefetcher,
+                    send_evictions = send_evicts(options),
                     clk_domain = clk_domain, ruby_system = ruby_system,
                     llc_select_num_bits = l2_bits,
                     llc_select_low_bit = l2_select_low_bit,
+                    enable_prefetch=(options.gem_forge_prefetcher == 'stride'),
                     enable_stream_float = options.gem_forge_stream_engine_enable_float,
                     enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
                     mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
@@ -166,6 +170,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
             # Connect the L0 and L1 controllers
             l0_cntrl.mandatoryQueue = MessageBuffer()
+            l0_cntrl.prefetchQueue = MessageBuffer()
             l0_cntrl.bufferToL1 = MessageBuffer(ordered = True)
             l1_cntrl.bufferFromL0 = l0_cntrl.bufferToL1
             l0_cntrl.bufferFromL1 = MessageBuffer(ordered = False)

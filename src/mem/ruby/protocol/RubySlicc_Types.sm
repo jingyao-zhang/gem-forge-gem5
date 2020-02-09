@@ -237,6 +237,7 @@ structure (Prefetcher, external = "yes") {
     void observeMiss(Addr, RubyRequestType);
     void observePfHit(Addr);
     void observePfMiss(Addr);
+    void observePfAccept(Addr);
 }
 
 structure (RequestStatisticPtr, external="yes") {

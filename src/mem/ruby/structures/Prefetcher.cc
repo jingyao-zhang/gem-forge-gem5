@@ -220,6 +220,12 @@ Prefetcher::observePfHit(Addr address)
 }
 
 void
+Prefetcher::observePfAccept(Addr address) {
+    numPrefetchAccepted++;
+    DPRINTF(RubyPrefetcher, "Observed pf accepted for %#x.\n", address);
+}
+
+void
 Prefetcher::issueNextPrefetch(Addr address, PrefetchEntry *stream)
 {
     // get our corresponding stream fetcher
