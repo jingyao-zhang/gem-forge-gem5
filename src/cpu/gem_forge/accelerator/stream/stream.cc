@@ -572,13 +572,13 @@ StreamElement *Stream::releaseElementStepped() {
       auto earlyCycles =
           releaseElement->firstCheckCycle - releaseElement->valueReadyCycle;
       this->statistic.numCoreEarlyElement++;
-      this->statistic.numCycleCoreEarlyElement += earlyCycles;
+      this->statistic.numCoreEarlyCycle += earlyCycles;
     } else {
       // The element makes the core's user wait.
       auto lateCycles =
           releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
       this->statistic.numCoreLateElement++;
-      this->statistic.numCycleCoreLateElement += lateCycles;
+      this->statistic.numCoreLateCycle += lateCycles;
     }
   }
 

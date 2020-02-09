@@ -117,7 +117,8 @@ void MLCDynamicDirectStream::allocateSlice() {
      */
     auto reuseIter = this->reuseBlockMap.find(sliceId.vaddr);
     if (reuseIter != this->reuseBlockMap.end()) {
-      this->slices.back().setData(reuseIter->second);
+      this->slices.back().setData(reuseIter->second,
+                                  this->controller->curCycle());
       this->reuseBlockMap.erase(reuseIter);
     }
 
@@ -245,7 +246,7 @@ void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
       if (slice->dataReady) {
         // Must be from reuse.
       } else {
-        slice->setData(msg.m_DataBlk);
+        slice->setData(msg.m_DataBlk, this->controller->curCycle());
       }
 
       // // Notify the indirect stream. Call this after setData().
@@ -351,7 +352,7 @@ void MLCDynamicDirectStream::receiveReuseStreamData(
     if (slice.sliceId.vaddr == vaddr) {
       reused = true;
       if (!slice.dataReady) {
-        slice.setData(dataBlock);
+        slice.setData(dataBlock, this->controller->curCycle());
         if (slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
           this->makeResponse(slice);
         }

@@ -82,15 +82,19 @@ protected:
     CoreStatusE coreStatus;
     // For debug purpose, we also remember core's request sliceId.
     DynamicStreamSliceId coreSliceId;
+    // Statistics.
+    Cycles dataReadyCycle;
+    Cycles coreWaitCycle;
 
     MLCStreamSlice(const DynamicStreamSliceId &_sliceId)
         : sliceId(_sliceId), dataBlock(), dataReady(false),
           coreStatus(CoreStatusE::NONE) {}
 
-    void setData(const DataBlock &dataBlock) {
+    void setData(const DataBlock &dataBlock, Cycles currentCycle) {
       assert(!this->dataReady && "Data already ready.");
       this->dataBlock = dataBlock;
       this->dataReady = true;
+      this->dataReadyCycle = currentCycle;
     }
 
     static std::string convertCoreStatusToString(CoreStatusE status) {

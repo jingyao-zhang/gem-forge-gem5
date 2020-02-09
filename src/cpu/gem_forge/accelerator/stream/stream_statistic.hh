@@ -32,9 +32,15 @@ public:
 
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;
-  size_t numCycleCoreEarlyElement = 0;
+  size_t numCoreEarlyCycle = 0;
   size_t numCoreLateElement = 0;
-  size_t numCycleCoreLateElement = 0;
+  size_t numCoreLateCycle = 0;
+
+  // Latency experienced at MLC.
+  size_t numMLCEarlySlice = 0;
+  size_t numMLCEarlyCycle = 0;
+  size_t numMLCLateSlice = 0;
+  size_t numMLCLateCycle = 0;
 
   size_t numIssuedRequest = 0;
   size_t numCycleRequestLatency = 0;

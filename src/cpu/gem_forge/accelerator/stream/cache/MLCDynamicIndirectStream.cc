@@ -89,7 +89,7 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   auto sliceIter =
       this->findOrInsertSliceBySliceId(slicesBegin, slicesEnd, sliceId);
 
-  sliceIter->setData(msg.m_DataBlk);
+  sliceIter->setData(msg.m_DataBlk, this->controller->curCycle());
   if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
     // Sanity check that LLC and Core generated the same address.
     // ! Core is line address.

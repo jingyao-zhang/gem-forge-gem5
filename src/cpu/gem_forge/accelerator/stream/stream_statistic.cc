@@ -28,12 +28,20 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpAvg(avgUsed, numUsed, numConfigured);
 
   dumpScalar(numCoreEarlyElement);
-  dumpScalar(numCycleCoreEarlyElement);
-  dumpAvg(avgCoreEarlyCycle, numCycleCoreEarlyElement, numCoreEarlyElement);
+  dumpScalar(numCoreEarlyCycle);
+  dumpAvg(avgCoreEarlyCycle, numCoreEarlyCycle, numCoreEarlyElement);
 
   dumpScalar(numCoreLateElement);
-  dumpScalar(numCycleCoreLateElement);
-  dumpAvg(avgCoreLateCycle, numCycleCoreLateElement, numCoreLateElement);
+  dumpScalar(numCoreLateCycle);
+  dumpAvg(avgCoreLateCycle, numCoreLateCycle, numCoreLateElement);
+
+  dumpScalar(numMLCEarlySlice);
+  dumpScalar(numMLCEarlyCycle);
+  dumpAvg(avgMLCEarlyCycle, numMLCEarlyCycle, numMLCEarlySlice);
+
+  dumpScalar(numMLCLateSlice);
+  dumpScalar(numMLCLateCycle);
+  dumpAvg(avgMLCLateCycle, numMLCLateCycle, numMLCLateSlice);
 
   dumpScalar(numIssuedRequest);
   dumpScalar(numCycleRequestLatency);

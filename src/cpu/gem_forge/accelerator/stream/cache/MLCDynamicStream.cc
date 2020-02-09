@@ -71,6 +71,7 @@ void MLCDynamicStream::receiveStreamRequest(
          "Already seen a request.");
   MLC_SLICE_DPRINTF(slice->sliceId, "Matched to request.\n");
   slice->coreStatus = MLCStreamSlice::CoreStatusE::WAIT;
+  slice->coreWaitCycle = this->controller->curCycle();
   slice->coreSliceId = sliceId;
   if (slice->dataReady) {
     // Sanity check the address.
@@ -106,6 +107,23 @@ void MLCDynamicStream::popStream() {
     if (slice.coreStatus == MLCStreamSlice::CoreStatusE::DONE ||
         slice.coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
       MLC_SLICE_DPRINTF(slice.sliceId, "Pop.\n");
+
+      // Update the statistics.
+      if (slice.coreWaitCycle != 0 && slice.dataReadyCycle != 0) {
+        auto &streamStats = this->stream->statistic;
+        if (slice.coreWaitCycle > slice.dataReadyCycle) {
+          // Early.
+          streamStats.numMLCEarlySlice++;
+          streamStats.numMLCEarlyCycle +=
+              slice.coreWaitCycle - slice.dataReadyCycle;
+        } else {
+          // Late.
+          streamStats.numMLCLateSlice++;
+          streamStats.numMLCLateCycle +=
+              slice.dataReadyCycle - slice.coreWaitCycle;
+        }
+      }
+
       this->headSliceIdx++;
       this->slices.pop_front();
     } else {
@@ -164,8 +182,8 @@ void MLCDynamicStream::panicDump() const {
   MLC_S_DPRINTF("-------------------Panic Dump--------------------\n");
   for (const auto &slice : this->slices) {
     MLC_SLICE_DPRINTF(
-        slice.sliceId, "VAddr %#x Data %d Core %s.\n",
-        slice.sliceId.vaddr, slice.dataReady,
+        slice.sliceId, "VAddr %#x Data %d Core %s.\n", slice.sliceId.vaddr,
+        slice.dataReady,
         MLCStreamSlice::convertCoreStatusToString(slice.coreStatus).c_str());
   }
 }
