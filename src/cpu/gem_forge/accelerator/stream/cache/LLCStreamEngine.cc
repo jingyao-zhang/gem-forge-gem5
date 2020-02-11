@@ -11,7 +11,6 @@
 
 #include "base/trace.hh"
 #include "debug/LLCRubyStream.hh"
-
 #define DEBUG_TYPE LLCRubyStream
 #include "../stream_log.hh"
 
@@ -46,7 +45,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                 pkt, streamConfigureData, streamConfigureData->initVAddr,
                 streamConfigureData->initPAddr);
   // Create the stream.
-  auto stream = new LLCDynamicStream(streamConfigureData);
+  auto stream = new LLCDynamicStream(this->controller, streamConfigureData);
 
   // Check if we have indirect streams.
   if (streamConfigureData->indirectStreamConfigure != nullptr) {
@@ -54,7 +53,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     streamConfigureData->indirectStreamConfigure->initAllocatedIdx =
         streamConfigureData->initAllocatedIdx;
     auto indirectStream = new LLCDynamicStream(
-        streamConfigureData->indirectStreamConfigure.get());
+        this->controller, streamConfigureData->indirectStreamConfigure.get());
     LLC_S_DPRINTF(indirectStream->getDynamicStreamId(),
                   "Configure IndirectStream size %d, config size %d.\n",
                   indirectStream->getElementSize(),
@@ -370,11 +369,22 @@ void LLCStreamEngine::issueStreams() {
 bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
   /**
+   * Check if we have reached issue limit for this stream.
+   */
+  const auto curCycle = this->controller->curCycle();
+  if (curCycle < stream->prevIssuedCycle + stream->issueClearCycle) {
+    // We can not issue yet.
+    return false;
+  }
+
+  /**
    * Prioritize indirect elements.
    */
   if (this->issueStreamIndirect(stream)) {
     // We successfully issued an indirect element of this stream.
     // We are done.
+    stream->prevIssuedCycle = curCycle;
+    stream->updateIssueClearCycle();
     return true;
   }
 
@@ -430,6 +440,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     this->issueStreamRequestHere(stream, paddrLine, sliceId);
     stream->waitingDataBaseRequests++;
 
+    stream->prevIssuedCycle = curCycle;
+    stream->updateIssueClearCycle();
     return true;
 
   } else {
@@ -445,6 +457,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     stream->getStaticStream()->statistic.numLLCFaultSlice++;
 
     // This is also considered issued.
+    stream->prevIssuedCycle = curCycle;
+    stream->updateIssueClearCycle();
     return true;
   }
 }
@@ -543,7 +557,7 @@ void LLCStreamEngine::issueStreamRequestHere(
     LLCDynamicStream *stream, Addr paddrLine,
     const DynamicStreamSliceId &sliceId) {
   LLC_SLICE_DPRINTF(sliceId, "Issue [local] request vaddr %#x paddrLine %#x.\n",
-    sliceId.vaddr, paddrLine);
+                    sliceId.vaddr, paddrLine);
 
   auto selfMachineId = this->controller->getMachineID();
   auto streamCPUId = stream->getStaticStream()->getCPUDelegator()->cpuId();

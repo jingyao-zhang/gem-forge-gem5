@@ -112,8 +112,9 @@ void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
   // Create new index.
   this->FIFOIdx.newInstance(seqNum);
   // Allocate the new DynamicStream.
-  this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum, tc,
-                                    prevFIFOIdx, this->se);
+  this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum,
+                                    cpuDelegator->curCycle(), tc, prevFIFOIdx,
+                                    this->se);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum,
@@ -195,6 +196,10 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   assert(dynS.stepSize == 0 && "Stepped but unreleased element.");
   assert(dynS.allocSize == 0 && "Unreleased element.");
 
+  // Update stats of cycles.
+  auto endCycle = cpuDelegator->curCycle();
+  this->statistic.numCycle += endCycle - dynS.configCycle;
+
   this->dynamicStreams.pop_front();
   if (!this->dynamicStreams.empty()) {
     // There is another config inst waiting.
@@ -210,6 +215,15 @@ DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
     }
   }
   panic("Failed to find DynamicStream %llu.\n", seqNum);
+}
+
+DynamicStream *Stream::getDynamicStream(const DynamicStreamId &dynId) {
+  for (auto &dynStream : this->dynamicStreams) {
+    if (dynStream.dynamicStreamId == dynId) {
+      return &dynStream;
+    }
+  }
+  return nullptr;
 }
 
 void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
@@ -551,18 +565,12 @@ StreamElement *Stream::releaseElementStepped() {
   auto releaseElement = dynS.tail->next;
   assert(releaseElement->isStepped && "Release unstepped element.");
 
-  auto cycle = this->cpuDelegator->curCycle();
-  if (dynS.lastStepCycle != 0) {
-    // hack("Step turn around cycle %lu.\n", cycle - dynS.lastStepCycle);
-  }
-  dynS.lastStepCycle = cycle;
-
   const bool used = releaseElement->isFirstUserDispatched();
+  bool late = false;
 
   this->statistic.numStepped++;
   if (used) {
     this->statistic.numUsed++;
-
     /**
      * Since this element is used by the core, we update the statistic
      * of the latency of this element experienced by the core.
@@ -579,8 +587,10 @@ StreamElement *Stream::releaseElementStepped() {
           releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
       this->statistic.numCoreLateElement++;
       this->statistic.numCoreLateCycle += lateCycles;
+      late = true;
     }
   }
+  dynS.updateReleaseCycle(this->cpuDelegator->curCycle(), late);
 
   // Update the aliased statistic.
   if (releaseElement->isAddrAliased) {

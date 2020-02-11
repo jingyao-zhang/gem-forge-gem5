@@ -13,7 +13,31 @@ SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureData *_configData,
       elementSize(_configData->elementSize),
       totalTripCount(_configData->totalTripCount),
       coalesceContinuousElements(_coalesceContinuousElements),
-      tailElementIdx(0), sliceHeadElementIdx(0) {}
+      tailElementIdx(0), sliceHeadElementIdx(0) {
+
+  // Try to compute element per slice.
+  if (auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+          this->addrGenCallback)) {
+    auto innerStride = linearAddrGen->getInnerStride(this->formalParams);
+    auto blockBytes = RubySystem::getBlockSizeBytes();
+    if (innerStride <= blockBytes) {
+      this->elementPerSlice = blockBytes / innerStride;
+    } else {
+      if (this->elementSize <= blockBytes) {
+        this->elementPerSlice = 1.0f;
+      } else {
+        this->elementPerSlice =
+            static_cast<float>(blockBytes) /
+            static_cast<float>(std::min(
+                static_cast<uint64_t>(this->elementSize), innerStride));
+        DYN_S_DPRINTF(
+            this->streamId,
+            "innerStride %lu elementSize %lu block %lu elementPerSlice %f.\n",
+            innerStride, elementSize, blockBytes, this->elementPerSlice);
+      }
+    }
+  }
+}
 
 DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
   while (slices.empty() ||

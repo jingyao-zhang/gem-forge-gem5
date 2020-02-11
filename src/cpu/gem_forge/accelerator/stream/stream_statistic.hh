@@ -24,6 +24,7 @@ public:
   size_t numUsed = 0;
   size_t numAliased = 0;
   size_t numFaulted = 0;
+  size_t numCycle = 0;
 
   // Float statistics.
   size_t numMLCAllocatedSlice = 0;

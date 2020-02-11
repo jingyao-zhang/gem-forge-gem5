@@ -9,9 +9,12 @@
 #include <map>
 #include <set>
 
+class AbstractStreamAwareController;
+
 class LLCDynamicStream {
 public:
-  LLCDynamicStream(CacheStreamConfigureData *_configData);
+  LLCDynamicStream(AbstractStreamAwareController *_controller,
+                   CacheStreamConfigureData *_configData);
   ~LLCDynamicStream();
 
   Stream *getStaticStream() { return this->configData.stream; }
@@ -47,6 +50,7 @@ public:
     return this->slicedStream.getNextSlice();
   }
 
+  AbstractStreamAwareController *controller;
   const CacheStreamConfigureData configData;
   SlicedDynamicStream slicedStream;
 
@@ -58,6 +62,10 @@ public:
    * the data.
    */
   int maxWaitingDataBaseRequests;
+
+  Cycles issueClearCycle = Cycles(4);
+  // Last issued cycle.
+  Cycles prevIssuedCycle = Cycles(0);
 
   // Next slice index to be issued.
   uint64_t sliceIdx;
@@ -89,6 +97,8 @@ public:
    * Indexed by element idx.
    */
   std::map<uint64_t, uint64_t> readyBaseElementData;
+
+  void updateIssueClearCycle();
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

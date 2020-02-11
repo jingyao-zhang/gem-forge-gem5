@@ -47,6 +47,7 @@ struct LinearAddrGenCallback : public AddrGenCallback {
 public:
   bool isContinuous(const DynamicStreamFormalParamV &params,
                     int32_t elementSize);
+  uint64_t getInnerStride(const DynamicStreamFormalParamV &params);
   /**
    * Only valid when continuous.
    */

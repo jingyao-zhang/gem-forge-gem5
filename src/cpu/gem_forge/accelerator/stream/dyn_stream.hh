@@ -21,6 +21,7 @@ struct DynamicStream {
 
   const DynamicStreamId dynamicStreamId;
   const uint64_t configSeqNum;
+  const Cycles configCycle;
   ThreadContext *tc;
   const FIFOEntryIdx prevFIFOIdx;
 
@@ -34,7 +35,6 @@ struct DynamicStream {
   int allocSize = 0;
   int stepSize = 0;
   FIFOEntryIdx FIFOIdx;
-  Cycles lastStepCycle = Cycles(0);
 
   // Whether the dynamic stream is offloaded to cache.
   bool offloadedToCache = false;
@@ -55,9 +55,17 @@ struct DynamicStream {
   int64_t totalTripCount = -1;
 
   DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
-                ThreadContext *_tc, const FIFOEntryIdx &_prevFIFOIdx,
-                StreamEngine *_se);
+                Cycles _configCycle, ThreadContext *_tc,
+                const FIFOEntryIdx &_prevFIFOIdx, StreamEngine *_se);
   ~DynamicStream();
+
+  Cycles getAvgTurnAroundCycle() const { return this->avgTurnAroundCycle; }
+  int getNumLateElement() const { return this->numLateElement; }
+
+  /**
+   * Update step cycle.
+   */
+  void updateReleaseCycle(Cycles releaseCycle, bool late);
 
   /***********************************************************************
    * API to manage the elements of this stream.
@@ -78,6 +86,17 @@ struct DynamicStream {
   StreamElement *releaseElementUnstepped();
 
   void dump() const;
+
+private:
+  /**
+   * Used to compute flow control signal.
+   */
+  constexpr static int HistoryWindowSize = 10;
+  Cycles lastReleaseCycle = Cycles(0);
+  Cycles avgTurnAroundCycle = Cycles(0);
+  uint64_t numReleaseElement = 0;
+  int lateElementCount = 0;
+  int numLateElement = 0;
 };
 
 #endif

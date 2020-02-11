@@ -41,6 +41,7 @@ public:
    */
   Addr getElementVAddr(uint64_t elementIdx) const;
   int32_t getElementSize() const { return this->elementSize; }
+  float getElementPerSlice() const { return this->elementPerSlice; }
 
 private:
   // TODO: Move this out of SlicedDynamicStream and make it only
@@ -49,6 +50,8 @@ private:
   DynamicStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
   int32_t elementSize;
+  // On average how many elements per slice.
+  float elementPerSlice = 1.0f;
   /**
    * -1 means indefinite.
    */

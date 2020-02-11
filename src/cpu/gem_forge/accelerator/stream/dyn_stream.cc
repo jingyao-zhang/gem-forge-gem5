@@ -7,11 +7,13 @@
 #include "stream_log.hh"
 
 DynamicStream::DynamicStream(const DynamicStreamId &_dynamicStreamId,
-                             uint64_t _configSeqNum, ThreadContext *_tc,
+                             uint64_t _configSeqNum, Cycles _configCycle,
+                             ThreadContext *_tc,
                              const FIFOEntryIdx &_prevFIFOIdx,
                              StreamEngine *_se)
-    : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum), tc(_tc),
-      prevFIFOIdx(_prevFIFOIdx), FIFOIdx(_dynamicStreamId, _configSeqNum) {
+    : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum),
+      configCycle(_configCycle), tc(_tc), prevFIFOIdx(_prevFIFOIdx),
+      FIFOIdx(_dynamicStreamId, _configSeqNum) {
   this->tail = new StreamElement(_se);
   this->head = this->tail;
   this->stepped = this->tail;
@@ -75,6 +77,25 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
    */
   this->FIFOIdx.prev();
   return releaseElement;
+}
+
+void DynamicStream::updateReleaseCycle(Cycles releaseCycle, bool late) {
+  this->numReleaseElement++;
+  if (late) {
+    this->lateElementCount++;
+  }
+  if (this->numReleaseElement % DynamicStream::HistoryWindowSize == 0) {
+    if (this->numReleaseElement >= 3 * DynamicStream::HistoryWindowSize) {
+      // Time to update.
+      this->avgTurnAroundCycle =
+          Cycles((releaseCycle - this->lastReleaseCycle) /
+                 DynamicStream::HistoryWindowSize);
+      this->numLateElement = this->lateElementCount;
+    }
+    // Time to reset.
+    this->lastReleaseCycle = releaseCycle;
+    this->lateElementCount = 0;
+  }
 }
 
 void DynamicStream::dump() const {

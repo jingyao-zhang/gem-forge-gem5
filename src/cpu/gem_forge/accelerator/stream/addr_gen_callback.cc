@@ -100,6 +100,14 @@ bool LinearAddrGenCallback::isContinuous(
 }
 
 uint64_t
+LinearAddrGenCallback::getInnerStride(const DynamicStreamFormalParamV &params) {
+  // auto idx = (params.size() % 2 == 0) ? params.size() - 2 : params.size() - 3;
+  auto idx = 0;
+  assert(params.at(idx).isInvariant && "Variant inner stride.");
+  return params.at(idx).param.invariant;
+}
+
+uint64_t
 LinearAddrGenCallback::getStartAddr(const DynamicStreamFormalParamV &params) {
   // The last one is start address.
   return params.rbegin()->param.invariant;
