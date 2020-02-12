@@ -665,7 +665,9 @@ StreamElement *Stream::getFirstUnsteppedElement() {
   auto element = dynS.getFirstUnsteppedElement();
   if (!element) {
     this->se->dumpFIFO();
-    S_PANIC(this, "No allocated element to use.");
+    S_PANIC(this,
+            "No allocated element to use, TotalTripCount %d, EndDispatched %d.",
+            dynS.totalTripCount, dynS.endDispatched);
   }
   return element;
 }

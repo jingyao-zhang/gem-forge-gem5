@@ -443,6 +443,23 @@ bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
   return canStep;
 }
 
+bool StreamEngine::hasUnsteppedElement(uint64_t stepStreamId) {
+  auto stepStream = this->getStream(stepStreamId);
+  for (auto S : this->getStepStreamList(stepStream)) {
+    if (!S->configured) {
+      // This must be wrong.
+      return false;
+    }
+    auto &dynS = S->getLastDynamicStream();
+    auto element = dynS.getFirstUnsteppedElement();
+    if (!element) {
+      // We don't have element for this used stream.
+      return false;
+    }
+  }
+  return true;
+}
+
 void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
   /**
    * For all the streams get stepped, increase the stepped pointer.
@@ -582,10 +599,27 @@ int StreamEngine::createStreamUserLQCallbacks(
   return numCallbacks;
 }
 
+bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
+  for (const auto &streamId : args.usedStreamIds) {
+    auto S = this->getStream(streamId);
+    if (!S->configured) {
+      continue;
+    }
+    auto &dynS = S->getLastDynamicStream();
+    auto element = dynS.getFirstUnsteppedElement();
+    if (!element) {
+      // We don't have element for this used stream.
+      return false;
+    }
+  }
+  return true;
+}
+
 void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
   auto seqNum = args.seqNum;
   SE_DPRINTF("Dispatch StreamUser %llu.\n", seqNum);
   assert(this->userElementMap.count(seqNum) == 0);
+  assert(this->hasUnsteppedElement(args) && "Don't have used elements.\n");
 
   auto &elementSet =
       this->userElementMap
@@ -782,11 +816,31 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
   this->userElementMap.erase(seqNum);
 }
 
+bool StreamEngine::hasUnsteppedElement(const StreamEndArgs &args) {
+  const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
+  const auto &endStreamInfos = streamRegion.streams();
+  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
+       iter != end; ++iter) {
+    // Release in reverse order.
+    auto streamId = iter->id();
+    auto S = this->getStream(streamId);
+    auto &dynS = S->getLastDynamicStream();
+    auto element = dynS.getFirstUnsteppedElement();
+    if (!element) {
+      // We don't have element for this used stream.
+      return false;
+    }
+  }
+  return true;
+}
+
 void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
   const auto &endStreamInfos = streamRegion.streams();
 
   SE_DPRINTF("Dispatch StreamEnd for %s.\n", streamRegion.region().c_str());
+  assert(this->hasUnsteppedElement(args) &&
+         "StreamEnd without unstepped elements.");
 
   /**
    * Dedup the coalesced stream ids.

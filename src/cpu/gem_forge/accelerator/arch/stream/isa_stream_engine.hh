@@ -84,7 +84,8 @@ private:
    * Try to remove RegionStreamIds.
    * @return if succeed.
    */
-  bool removeRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
+  bool canRemoveRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
+  void removeRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
   uint64_t lookupRegionStreamId(int regionStreamId) const;
   bool isValidRegionStreamId(int regionStreamId) const;
 

@@ -103,7 +103,9 @@ void ISAStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
 
   // Clear the regionStreamId translation table.
   const auto &info = this->getStreamRegion(configIdx);
-  assert(this->removeRegionStreamIds(info) && "Failed rewinding StreamConfig");
+  assert(this->canRemoveRegionStreamIds(info) &&
+         "Failed rewinding StreamConfig");
+  this->removeRegionStreamIds(info);
 
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
@@ -226,6 +228,7 @@ void ISAStreamEngine::dispatchStreamReady(
                                         nullptr /* InputVec */, dynInfo.tc);
   auto se = this->getStreamEngine();
   se->dispatchStreamConfig(args);
+  ISA_SE_DPRINTF("Dispatch StreamReady %s.\n", infoRelativePath.c_str());
 
   this->curStreamRegionInfo->numDispatchedInsts++;
   this->curStreamRegionInfo->streamReadyDispatched = true;
@@ -259,6 +262,7 @@ void ISAStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
   se->commitStreamConfig(args);
+  ISA_SE_DPRINTF("Commit StreamReady %s.\n", infoRelativePath.c_str());
 
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
@@ -316,7 +320,7 @@ void ISAStreamEngine::dispatchStreamEnd(
 
   const auto &info = this->getStreamRegion(configIdx);
 
-  auto &dynStreamInstInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
+  auto &instInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
 
   /**
    * Sometimes it's possible to misspeculate StreamEnd before StreamConfig.
@@ -325,15 +329,21 @@ void ISAStreamEngine::dispatchStreamEnd(
    * TODO: This is still very hacky, we have to be careful as there maybe
    * TODO: a misspeculated chain.
    */
-  if (!this->removeRegionStreamIds(info)) {
+  if (!this->canRemoveRegionStreamIds(info)) {
     // We failed.
-    dynStreamInstInfo.mustBeMisspeculated = true;
-    // We don't try to notify the StreamEngine.
+    instInfo.mustBeMisspeculated = true;
     return;
   }
 
-  auto se = this->getStreamEngine();
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  auto se = this->getStreamEngine();
+  if (!se->hasUnsteppedElement(args)) {
+    // There is no unstepped elements. This must be misspeculated.
+    instInfo.mustBeMisspeculated = true;
+    return;
+  }
+  // ! Make sure all effects happen as atomic.
+  this->removeRegionStreamIds(info);
   se->dispatchStreamEnd(args);
 }
 
@@ -346,8 +356,8 @@ void ISAStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
 
 void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
-  auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
-  assert(!dynStreamInstInfo.mustBeMisspeculated &&
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  assert(!instInfo.mustBeMisspeculated &&
          "Try to commit a MustBeMisspeculated inst.");
 
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
@@ -392,32 +402,52 @@ void ISAStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 bool ISAStreamEngine::canDispatchStreamStep(
     const GemForgeDynInstInfo &dynInfo) {
   // First create the memorized info.
-  ISA_SE_DPRINTF("CanDispatch StreamStep.\n");
+  auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
+  ISA_SE_DPRINTF("CanDispatch StreamStep PC %#x RegionStream %lu.\n",
+                 dynInfo.pc, regionStreamId);
   auto emplaceRet = this->seqNumToDynInfoMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(dynInfo.seqNum),
       std::forward_as_tuple());
-  auto &stepInstInfo = emplaceRet.first->second.stepInfo;
+  auto &instInfo = emplaceRet.first->second;
+  auto &stepInstInfo = instInfo.stepInfo;
   if (emplaceRet.second) {
     // First time. Translate the regionStreamId.
-    auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
-    auto streamId = this->lookupRegionStreamId(regionStreamId);
-    stepInstInfo.translatedStreamId = streamId;
+    if (!this->isValidRegionStreamId(regionStreamId)) {
+      ISA_SE_DPRINTF("MustMisspeculated StreamStep RegionStream %llu.\n",
+                     regionStreamId);
+      instInfo.mustBeMisspeculated = true;
+    } else {
+      auto streamId = this->lookupRegionStreamId(regionStreamId);
+      stepInstInfo.translatedStreamId = streamId;
+    }
   }
 
-  auto streamId = stepInstInfo.translatedStreamId;
-
-  auto se = this->getStreamEngine();
-  return se->canStreamStep(streamId);
+  if (instInfo.mustBeMisspeculated) {
+    return true;
+  } else {
+    auto streamId = stepInstInfo.translatedStreamId;
+    auto se = this->getStreamEngine();
+    return se->canStreamStep(streamId);
+  }
 }
 
 void ISAStreamEngine::dispatchStreamStep(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
 
-  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
-  const auto &stepInfo = dynStreamInstInfo.stepInfo;
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    return;
+  }
+  auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
+  if (!se->hasUnsteppedElement(streamId)) {
+    // This must be wrong.
+    ISA_SE_DPRINTF("MustMisspeculated StreamStep: No unstepped elements.\n");
+    instInfo.mustBeMisspeculated = true;
+    return;
+  }
   se->dispatchStreamStep(streamId);
 }
 
@@ -429,8 +459,11 @@ void ISAStreamEngine::executeStreamStep(const GemForgeDynInstInfo &dynInfo,
                                         ExecContext &xc) {}
 
 void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
-  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
-  const auto &stepInfo = dynStreamInstInfo.stepInfo;
+  const auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    panic("Commit a MustBeMisspeculated StreamStep.\n");
+  }
+  const auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
   se->commitStreamStep(streamId);
@@ -440,11 +473,15 @@ void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void ISAStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
-  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
-  const auto &stepInfo = dynStreamInstInfo.stepInfo;
-  auto streamId = stepInfo.translatedStreamId;
-  auto se = this->getStreamEngine();
-  se->rewindStreamStep(streamId);
+  const auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    // Nothing to do.
+  } else {
+    const auto &stepInfo = instInfo.stepInfo;
+    auto streamId = stepInfo.translatedStreamId;
+    auto se = this->getStreamEngine();
+    se->rewindStreamStep(streamId);
+  }
 
   // Release the info.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
@@ -473,8 +510,9 @@ bool ISAStreamEngine::canDispatchStreamLoad(
       userInfo.translatedUsedStreamIds.at(0) = streamId;
     } else {
       // This must be a misspeculated StreamLoad.
-      ISA_SE_DPRINTF("MustMisspeculated StreamLoad RegionStream %llu.\n",
-                     regionStreamId);
+      ISA_SE_DPRINTF(
+          "MustMisspeculated StreamLoad invalid regionStream %llu.\n",
+          regionStreamId);
       dynStreamInstInfo.mustBeMisspeculated = true;
     }
   }
@@ -487,10 +525,10 @@ void ISAStreamEngine::dispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
 
-  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
-  const auto &userInfo = dynStreamInstInfo.userInfo;
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &userInfo = instInfo.userInfo;
 
-  if (dynStreamInstInfo.mustBeMisspeculated) {
+  if (instInfo.mustBeMisspeculated) {
     // This is a must be misspeculated instruction.
     return;
   }
@@ -500,11 +538,19 @@ void ISAStreamEngine::dispatchStreamLoad(
   };
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
   auto se = this->getStreamEngine();
-  se->dispatchStreamUser(args);
-  // After dispatch, we get extra LQ callbacks.
-  se->createStreamUserLQCallbacks(args, extraLQCallbacks);
-  ISA_SE_DPRINTF("Dispatch StreamLoad %llu with callback %d.\n",
-    userInfo.translatedUsedStreamIds.at(0), (bool)(extraLQCallbacks.front()));
+  // It's possible that this is misspeculated and we don't have element.
+  if (!se->hasUnsteppedElement(args)) {
+    ISA_SE_DPRINTF("MustMisspeculated StreamLoad no element, %llu.\n",
+                   usedStreamIds.at(0));
+    instInfo.mustBeMisspeculated = true;
+  } else {
+    se->dispatchStreamUser(args);
+    // After dispatch, we get extra LQ callbacks.
+    se->createStreamUserLQCallbacks(args, extraLQCallbacks);
+    ISA_SE_DPRINTF("Dispatch StreamLoad %llu with callback %d.\n",
+                   userInfo.translatedUsedStreamIds.at(0),
+                   (bool)(extraLQCallbacks.front()));
+  }
 }
 
 bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
@@ -523,7 +569,7 @@ bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   auto se = this->getStreamEngine();
   bool canExecute = se->areUsedStreamsReady(args);
   ISA_SE_DPRINTF("CanExecute StreamLoad %llu, %d.\n",
-    userInfo.translatedUsedStreamIds.at(0), canExecute);
+                 userInfo.translatedUsedStreamIds.at(0), canExecute);
   return canExecute;
 }
 
@@ -546,7 +592,8 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
   ISA_SE_DPRINTF("Execute StreamLoad RegionStream %llu destRegs %d.\n",
-    userInfo.translatedUsedStreamIds.at(0), dynInfo.staticInst->numDestRegs());
+                 userInfo.translatedUsedStreamIds.at(0),
+                 dynInfo.staticInst->numDestRegs());
 
   /**
    * We handle wider registers by checking the number of destination registers.
@@ -677,7 +724,7 @@ void ISAStreamEngine::insertRegionStreamIds(
   }
 }
 
-bool ISAStreamEngine::removeRegionStreamIds(
+bool ISAStreamEngine::canRemoveRegionStreamIds(
     const ::LLVM::TDG::StreamRegion &region) {
   for (const auto &streamInfo : region.streams()) {
     // Check if valid to be removed.
@@ -692,12 +739,18 @@ bool ISAStreamEngine::removeRegionStreamIds(
       return false;
     }
   }
+  return true;
+}
+
+void ISAStreamEngine::removeRegionStreamIds(
+    const ::LLVM::TDG::StreamRegion &region) {
+  assert(this->canRemoveRegionStreamIds(region) &&
+         "Can not remove region stream ids.");
   for (const auto &streamInfo : region.streams()) {
     // Perform the removal.
     auto regionStreamId = streamInfo.region_stream_id();
     this->regionStreamIdTable.at(regionStreamId) = InvalidStreamId;
   }
-  return true;
 }
 
 bool ISAStreamEngine::isValidRegionStreamId(int regionStreamId) const {
