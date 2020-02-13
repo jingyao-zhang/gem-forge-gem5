@@ -611,7 +611,8 @@ class System : public SimObject
     Counter totalNumInsts;
     EventQueue instEventQueue;
     std::map<std::pair<uint32_t,uint32_t>, Tick>  lastWorkItemStarted;
-    std::map<uint32_t, Stats::Histogram*> workItemStats;
+    std::map<uint32_t, Stats::Histogram *> workItemTickHistogram;
+    std::map<uint32_t, Stats::Scalar *> workItemTickSum;
 
     ////////////////////////////////////////////
     //

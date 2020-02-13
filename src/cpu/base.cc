@@ -115,7 +115,7 @@ CPUProgressEvent::process()
             // Debug::MinorExecute.enable();
             this->_stucked = true;
         } else {
-            panic("Deadlock found!");
+            // panic("Deadlock found!");
         }
     } else {
         this->_stucked = false;

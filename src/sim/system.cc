@@ -209,8 +209,10 @@ System::~System()
     delete kernelSymtab;
     delete kernel;
 
-    for (uint32_t j = 0; j < numWorkIds; j++)
-        delete workItemStats[j];
+    for (uint32_t j = 0; j < numWorkIds; j++) {
+        delete workItemTickHistogram[j];
+        delete workItemTickSum[j];
+    }
 }
 
 void
@@ -448,13 +450,17 @@ System::regStats()
     SimObject::regStats();
 
     for (uint32_t j = 0; j < numWorkIds ; j++) {
-        workItemStats[j] = new Stats::Histogram();
+        workItemTickHistogram[j] = new Stats::Histogram();
         stringstream namestr;
         ccprintf(namestr, "work_item_type%d", j);
-        workItemStats[j]->init(20)
+        workItemTickHistogram[j]->init(20)
                          .name(name() + "." + namestr.str())
-                         .desc("Run time stat for" + namestr.str())
-                         .prereq(*workItemStats[j]);
+                         .desc("Run time histogram for " + namestr.str())
+                         .prereq(*workItemTickHistogram[j]);
+        workItemTickSum[j] = new Stats::Scalar();
+        workItemTickSum[j]->name(name() + "." + namestr.str() + ".sum")
+            .desc("Run time sum for " + namestr.str())
+            .prereq(*workItemTickSum[j]);
     }
 }
 
@@ -471,7 +477,8 @@ System::workItemEnd(uint32_t tid, uint32_t workid)
     if (workid >= numWorkIds)
         fatal("Got workid greater than specified in system configuration\n");
 
-    workItemStats[workid]->sample(samp);
+    workItemTickHistogram[workid]->sample(samp);
+    workItemTickSum[workid]->operator+=(samp);
     lastWorkItemStarted.erase(p);
 }
 
