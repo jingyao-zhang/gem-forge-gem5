@@ -20,6 +20,8 @@ public:
   uint32_t getConfigLoopLevel() const override;
   int32_t getElementSize() const override;
   bool getFloatManual() const override;
+  bool hasConstUpdate() const override;
+  const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
 
   bool isContinuous() const override;
   void configure(uint64_t seqNum, ThreadContext *tc) override;

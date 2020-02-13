@@ -108,6 +108,14 @@ bool SingleStream::getFloatManual() const {
   return this->info.static_info().float_manual();
 }
 
+bool SingleStream::hasConstUpdate() const {
+  return this->info.static_info().has_upgraded_to_update();
+}
+
+const ::LLVM::TDG::StreamParam &SingleStream::getConstUpdateParam() const {
+  return this->info.static_info().const_update_param();
+}
+
 uint32_t SingleStream::getConfigLoopLevel() const {
   return this->info.config_loop_level();
 }

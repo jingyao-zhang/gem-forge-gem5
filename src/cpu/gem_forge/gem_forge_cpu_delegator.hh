@@ -52,6 +52,11 @@ public:
   std::string readStringFromMem(Addr vaddr);
 
   /**
+   * Write to memory.
+   */
+  void writeToMem(Addr vaddr, int size, const uint8_t *data);
+
+  /**
    * Really not sure how this should be implemeted in normal cpu.
    */
   virtual const std::string &getTraceExtraFolder() const = 0;

@@ -394,6 +394,12 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         }
       }
       cacheStreamConfigVec->push_back(streamConfigureData);
+    } else {
+      // Do not offload the stream.
+      // Sanity check that this is not a update stream.
+      if (S->hasConstUpdate()) {
+        S_PANIC(S, "UpdateStream not offloaded.\n");
+      }
     }
   }
   // Send all the floating streams in one packet.

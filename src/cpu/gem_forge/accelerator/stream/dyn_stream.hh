@@ -51,6 +51,9 @@ struct DynamicStream {
   // Callback to generate the address.
   AddrGenCallbackPtr addrGenCallback;
 
+  // Optional constant update information.
+  uint64_t constUpdateValue = 0;
+
   // Optional total length of this dynamic stream. -1 as indefinite.
   int64_t totalTripCount = -1;
 

@@ -67,6 +67,8 @@ public:
   virtual uint32_t getConfigLoopLevel() const = 0;
   virtual int32_t getElementSize() const = 0;
   virtual bool getFloatManual() const = 0;
+  virtual bool hasConstUpdate() const = 0;
+  virtual const ::LLVM::TDG::StreamParam &getConstUpdateParam() const = 0;
   /**
    * Get coalesce base stream, 0 for invalid.
    */
@@ -179,6 +181,10 @@ public:
    * the first element for that stream.
    */
   StreamElement *getPrevElement(StreamElement *element);
+  /**
+   * Perform const update for stepped && used element.
+   */
+  void performConstUpdate(const DynamicStream &dynS, StreamElement *element);
 
   /**
    * Called by executeStreamConfig() to allow derived class to set up the

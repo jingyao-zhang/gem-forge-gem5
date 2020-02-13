@@ -129,6 +129,21 @@ private:
    * be migrated.
    */
   bool canMigrateStream(LLCDynamicStream *stream) const;
+
+  /**
+   * Helper function to process stream data for indirect/update.
+   */
+  void processStreamDataForIndirectStreams(LLCDynamicStreamPtr stream,
+                                           const DynamicStreamSliceId &sliceId,
+                                           const DataBlock &dataBlock);
+  void processStreamDataForUpdateStream(LLCDynamicStreamPtr stream,
+                                        const DynamicStreamSliceId &sliceId,
+                                        const DataBlock &dataBlock);
+  uint64_t extractElementDataFromSlice(LLCDynamicStreamPtr stream,
+                                       uint64_t elementIdx,
+                                       const DataBlock &dataBlock);
+  void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,
+                         uint64_t updateValue);
 };
 
 #endif

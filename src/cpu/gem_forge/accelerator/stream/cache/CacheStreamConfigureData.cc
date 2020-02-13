@@ -18,6 +18,8 @@ CacheStreamConfigureData::CacheStreamConfigureData(
       elementSize(other.elementSize), initVAddr(other.initVAddr),
       initPAddr(other.initPAddr), formalParams(other.formalParams),
       addrGenCallback(other.addrGenCallback),
+      totalTripCount(other.totalTripCount),
+      constUpdateValue(other.constUpdateValue),
       isPointerChase(other.isPointerChase),
       isOneIterationBehind(other.isOneIterationBehind),
       indirectStreamConfigure(other.indirectStreamConfigure),

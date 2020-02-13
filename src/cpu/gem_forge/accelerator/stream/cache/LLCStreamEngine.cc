@@ -156,7 +156,7 @@ void LLCStreamEngine::receiveStreamElementData(
   }
   /**
    * Since we notify the stream engine for all stream data,
-   * it is possible that we don't find the stream if it is indirect stream.
+   * it is possible that we don't find the stream if it is not indirect stream.
    * Ignore it in such case.
    */
   if (stream == nullptr) {
@@ -168,69 +168,11 @@ void LLCStreamEngine::receiveStreamElementData(
          "Negative waitingDataBaseRequests.");
 
   LLC_SLICE_DPRINTF(sliceId, "Received element data.\n");
-  /**
-   * It is also possible that this stream doesn't have indirect streams.
-   */
-  if (stream->indirectStreams.empty()) {
-    return;
-  }
-  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
-    assert(stream->waitingIndirectElements.count(idx) == 1 &&
-           "There is no waiting indirect element for this index.");
-
-    // Try to extract the stream element data.
-    // TODO: Handle coalesced stream's data.
-    auto elementVAddr = stream->slicedStream.getElementVAddr(idx);
-    auto elementSize = stream->getElementSize();
-    auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
-    assert(elementLineOffset + elementSize <= RubySystem::getBlockSizeBytes() &&
-           "Cannot support multi-line element with indirect streams yet.");
-    assert(elementSize <= sizeof(uint64_t) && "At most 8 byte element size.");
-
-    uint64_t &baseData =
-        stream->readyBaseElementData.emplace(idx, 0).first->second;
-    auto rubySystem = this->controller->params()->ruby_system;
-    if (rubySystem->getAccessBackingStore()) {
-      // Get the data from backing store.
-      Addr elementPAddr;
-      assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
-             "Failed to translate address for accessing backing storage.");
-      RequestPtr req(new Request(elementPAddr, elementSize, 0, 0 /* MasterId */,
-                                 0 /* InstSeqNum */, 0 /* contextId */));
-      PacketPtr pkt = Packet::createRead(req);
-      uint8_t *pktData = new uint8_t[req->getSize()];
-      pkt->dataDynamic(pktData);
-      rubySystem->getPhysMem()->functionalAccess(pkt);
-      for (auto byteOffset = 0; byteOffset < elementSize; ++byteOffset) {
-        *(reinterpret_cast<uint8_t *>(&baseData) + byteOffset) =
-            pktData[byteOffset];
-      }
-      delete pkt;
-    } else {
-      // Get the data from the cache line.
-      // Copy the data in.
-      // TODO: How do we handle sign for data type less than 8 bytes?
-      for (auto byteOffset = 0; byteOffset < elementSize; ++byteOffset) {
-        *(reinterpret_cast<uint8_t *>(&baseData) + byteOffset) =
-            dataBlock.getByte(byteOffset + elementLineOffset);
-      }
-    }
-    LLC_S_DPRINTF(sliceId.streamId, "Received element %lu data %lu.\n", idx,
-                  baseData);
-
-    // Add them to the ready indirect list.
-    for (auto indirectStream : stream->indirectStreams) {
-      // If the indirect stream is behind one iteration, base element of
-      // iteration 0 should trigger the indirect element of iteration 1.
-      if (indirectStream->isOneIterationBehind()) {
-        stream->readyIndirectElements.emplace(idx + 1, indirectStream);
-      } else {
-        stream->readyIndirectElements.emplace(idx, indirectStream);
-      }
-    }
-    // Don't forget to erase it from the waiting list.
-    stream->waitingIndirectElements.erase(idx);
-  }
+  // Indirect streams.
+  this->processStreamDataForIndirectStreams(stream, sliceId, dataBlock);
+  // Update streams.
+  // ! Keep this at the end as it will modify BackingStores.
+  this->processStreamDataForUpdateStream(stream, sliceId, dataBlock);
 }
 
 bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
@@ -257,6 +199,11 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
   }
   if (!stream->readyIndirectElements.empty()) {
     // We are still waiting for some indirect streams to be issued.
+    return false;
+  }
+  if (stream->getStaticStream()->hasConstUpdate() &&
+      stream->waitingDataBaseRequests > 0) {
+    // We are still waiting to update the request.
     return false;
   }
   /**
@@ -678,4 +625,130 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
 
   this->streamIssueMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                       this->controller->cyclesToTicks(latency));
+}
+
+void LLCStreamEngine::processStreamDataForIndirectStreams(
+    LLCDynamicStreamPtr stream, const DynamicStreamSliceId &sliceId,
+    const DataBlock &dataBlock) {
+  if (stream->indirectStreams.empty()) {
+    return;
+  }
+  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
+    assert(stream->waitingIndirectElements.count(idx) == 1 &&
+           "There is no waiting indirect element for this index.");
+    auto elementData =
+        this->extractElementDataFromSlice(stream, idx, dataBlock);
+    stream->readyBaseElementData.emplace(idx, elementData);
+    LLC_S_DPRINTF(sliceId.streamId, "Received element %lu data %lu.\n", idx,
+                  elementData);
+
+    // Add them to the ready indirect list.
+    for (auto indirectStream : stream->indirectStreams) {
+      // If the indirect stream is behind one iteration, base element of
+      // iteration 0 should trigger the indirect element of iteration 1.
+      if (indirectStream->isOneIterationBehind()) {
+        stream->readyIndirectElements.emplace(idx + 1, indirectStream);
+      } else {
+        stream->readyIndirectElements.emplace(idx, indirectStream);
+      }
+    }
+    // Don't forget to erase it from the waiting list.
+    stream->waitingIndirectElements.erase(idx);
+  }
+}
+
+void LLCStreamEngine::processStreamDataForUpdateStream(
+    LLCDynamicStreamPtr stream, const DynamicStreamSliceId &sliceId,
+    const DataBlock &dataBlock) {
+
+  if (!stream->getStaticStream()->hasConstUpdate()) {
+    return;
+  }
+
+  uint64_t updateValue = stream->configData.constUpdateValue;
+  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
+    this->updateElementData(stream, idx, updateValue);
+    LLC_S_DPRINTF(sliceId.streamId, "Update element %lu value %lu.\n", idx,
+                  updateValue);
+  }
+}
+
+uint64_t
+LLCStreamEngine::extractElementDataFromSlice(LLCDynamicStreamPtr stream,
+                                             uint64_t elementIdx,
+                                             const DataBlock &dataBlock) {
+  // TODO: Handle multi-line element.
+  auto elementVAddr = stream->slicedStream.getElementVAddr(elementIdx);
+  auto elementSize = stream->getElementSize();
+  auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
+  assert(elementLineOffset + elementSize <= RubySystem::getBlockSizeBytes() &&
+         "Cannot support multi-line element with indirect streams yet.");
+  assert(elementSize <= sizeof(uint64_t) && "At most 8 byte element size.");
+
+  uint64_t elementData;
+  auto rubySystem = this->controller->params()->ruby_system;
+  if (rubySystem->getAccessBackingStore()) {
+    // Get the data from backing store.
+    Addr elementPAddr;
+    assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
+           "Failed to translate address for accessing backing storage.");
+    RequestPtr req(new Request(elementPAddr, elementSize, 0, 0 /* MasterId */,
+                               0 /* InstSeqNum */, 0 /* contextId */));
+    PacketPtr pkt = Packet::createRead(req);
+    uint8_t *pktData = new uint8_t[req->getSize()];
+    pkt->dataDynamic(pktData);
+    rubySystem->getPhysMem()->functionalAccess(pkt);
+    for (auto byteOffset = 0; byteOffset < elementSize; ++byteOffset) {
+      *(reinterpret_cast<uint8_t *>(&elementData) + byteOffset) =
+          pktData[byteOffset];
+    }
+    delete pkt;
+  } else {
+    // Get the data from the cache line.
+    // Copy the data in.
+    // TODO: How do we handle sign for data type less than 8 bytes?
+    for (auto byteOffset = 0; byteOffset < elementSize; ++byteOffset) {
+      *(reinterpret_cast<uint8_t *>(&elementData) + byteOffset) =
+          dataBlock.getByte(byteOffset + elementLineOffset);
+    }
+  }
+  return elementData;
+}
+
+void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,
+                                        uint64_t elementIdx,
+                                        uint64_t updateValue) {
+  // TODO: Handle multi-line element.
+  auto elementVAddr = stream->slicedStream.getElementVAddr(elementIdx);
+  auto elementSize = stream->getElementSize();
+  auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
+  assert(elementLineOffset + elementSize <= RubySystem::getBlockSizeBytes() &&
+         "Cannot support multi-line element with indirect streams yet.");
+  assert(elementSize <= sizeof(uint64_t) && "At most 8 byte element size.");
+
+  auto rubySystem = this->controller->params()->ruby_system;
+  if (rubySystem->getAccessBackingStore()) {
+
+    /**
+     * ! The ruby system uses the BackingStore. However, we can not
+     * update it here, as then the RubySequencer will read the updated
+     * value for the StreamEngine.
+     */
+    return;
+
+    // // Get the data from backing store.
+    // Addr elementPAddr;
+    // assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
+    //        "Failed to translate address for accessing backing storage.");
+    // RequestPtr req(new Request(elementPAddr, elementSize, 0, 0 /* MasterId */,
+    //                            0 /* InstSeqNum */, 0 /* contextId */));
+    // PacketPtr pkt = Packet::createWrite(req);
+    // uint8_t *pktData = new uint8_t[req->getSize()];
+    // memcpy(pktData, reinterpret_cast<uint8_t *>(&updateValue), elementSize);
+    // pkt->dataDynamic(pktData);
+    // rubySystem->getPhysMem()->functionalAccess(pkt);
+    // delete pkt;
+  } else {
+    panic("Do not support UpdateStream without BackingStore.");
+  }
 }

@@ -34,6 +34,7 @@ public:
   DynamicStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
   int64_t totalTripCount = -1;
+  uint64_t constUpdateValue = 0;
 
   /**
    * Whether this is a pointer chase stream.

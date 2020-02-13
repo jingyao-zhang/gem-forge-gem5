@@ -122,7 +122,28 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   auto &dynStream = this->getDynamicStream(seqNum);
   assert(!dynStream.configExecuted && "StreamConfig already executed.");
   dynStream.configExecuted = true;
-  this->setupAddrGen(dynStream, inputVec);
+
+  /**
+   * We intercept the constant update value here.
+   */
+  if (this->hasConstUpdate()) {
+    const auto &updateParam = this->getConstUpdateParam();
+    if (updateParam.is_static()) {
+      // Static input.
+      dynStream.constUpdateValue = updateParam.value();
+      this->setupAddrGen(dynStream, inputVec);
+    } else {
+      // Dynamic input. Extract it out and make a copy of inputVec.
+      // TODO: Improve this.
+      assert(!inputVec->empty() && "Missing dynamic const update value.");
+      dynStream.constUpdateValue = inputVec->front();
+      std::vector<uint64_t> inputVecCopy(inputVec->begin() + 1,
+                                         inputVec->end());
+      this->setupAddrGen(dynStream, &inputVecCopy);
+    }
+  } else {
+    this->setupAddrGen(dynStream, inputVec);
+  }
 }
 
 void Stream::rewindStreamConfig(uint64_t seqNum) {
@@ -247,11 +268,11 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
     formalParams.emplace_back();
     auto &formalParam = formalParams.back();
     formalParam.isInvariant = true;
-    if (param.valid()) {
+    if (param.is_static()) {
       // This param comes from the Configuration.
       // hack("Find valid param #%d, val %llu.\n", formalParams.size(),
       //      param.param());
-      formalParam.param.invariant = param.param();
+      formalParam.param.invariant = param.value();
     } else {
       // This should be an input.
       assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
@@ -353,6 +374,9 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
 
   // Set the totalTripCount.
   configData->totalTripCount = dynStream.totalTripCount;
+
+  // Set the ConstUpdateValue.
+  configData->constUpdateValue = dynStream.constUpdateValue;
 
   // Set the initial vaddr if this is not indirect stream.
   if (!isIndirect) {
@@ -605,6 +629,11 @@ StreamElement *Stream::releaseElementStepped() {
     }
   }
 
+  // Only do this for used elements.
+  if (used) {
+    this->performConstUpdate(dynS, releaseElement);
+  }
+
   dynS.tail->next = releaseElement->next;
   if (dynS.stepped == releaseElement) {
     dynS.stepped = dynS.tail;
@@ -675,6 +704,32 @@ StreamElement *Stream::getFirstUnsteppedElement() {
 StreamElement *Stream::getPrevElement(StreamElement *element) {
   auto &dynS = this->getDynamicStream(element->FIFOIdx.configSeqNum);
   return dynS.getPrevElement(element);
+}
+
+void Stream::performConstUpdate(const DynamicStream &dynS,
+                                StreamElement *element) {
+  if (!(this->hasConstUpdate() && dynS.offloadedToCache)) {
+    return;
+  }
+  /**
+   * * Perform const update here.
+   * We can not do that in the Ruby because it uses BackingStore, which
+   * would cause the core to read the updated value.
+   */
+  auto elementVAddr = element->addr;
+  auto elementSize = this->getElementSize();
+  auto blockSize = cpuDelegator->cacheLineSize();
+  auto elementLineOffset = elementVAddr % blockSize;
+  assert(elementLineOffset + elementSize <= blockSize &&
+         "Cannot support multi-line element with const update yet.");
+  assert(elementSize <= sizeof(uint64_t) && "At most 8 byte element size.");
+  Addr elementPAddr;
+  assert(cpuDelegator->translateVAddrOracle(elementVAddr, elementPAddr) &&
+         "Failed to translate address for const update.");
+  // ! Hack: Just do a functional write.
+  cpuDelegator->writeToMem(
+      elementVAddr, elementSize,
+      reinterpret_cast<const uint8_t *>(&dynS.constUpdateValue));
 }
 
 void Stream::dump() const {

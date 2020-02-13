@@ -96,10 +96,12 @@ void CoalescedStream::selectPrimeLogicalStream() {
   } else {
     this->primeLStream = this->coalescedStreams.front();
   }
-  // Sanity check for the loop level.
+  // Sanity check for consistency between logical streams.
   for (const auto &LS : this->coalescedStreams) {
     assert(LS->info.loop_level() == this->getLoopLevel());
     assert(LS->info.config_loop_level() == this->getConfigLoopLevel());
+    assert(LS->info.static_info().has_upgraded_to_update() ==
+           this->hasConstUpdate());
   }
   /**
    * Finalize the stream name and static id.
@@ -276,6 +278,17 @@ uint32_t CoalescedStream::getConfigLoopLevel() const {
 
 bool CoalescedStream::getFloatManual() const {
   return this->primeLStream->info.static_info().float_manual();
+}
+
+bool CoalescedStream::hasConstUpdate() const {
+  return this->primeLStream->info.static_info().has_upgraded_to_update();
+}
+
+const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {
+  assert(
+      this->coalescedStreams.size() == 1 &&
+      "Do not support constant update for more than 1 coalesced stream yet.");
+  return this->primeLStream->info.static_info().const_update_param();
 }
 
 bool CoalescedStream::isContinuous() const {

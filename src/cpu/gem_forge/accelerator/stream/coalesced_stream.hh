@@ -68,6 +68,8 @@ public:
     return this->primeLStream->getCoalesceOffset();
   }
   bool getFloatManual() const override;
+  bool hasConstUpdate() const override;
+  const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
 
   /**
    * Get the number of unique cache blocks the stream touches.
