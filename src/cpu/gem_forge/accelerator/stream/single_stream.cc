@@ -102,24 +102,6 @@ const std::string &SingleStream::getStreamType() const {
   return this->info.type();
 }
 
-uint32_t SingleStream::getLoopLevel() const { return this->info.loop_level(); }
-
-bool SingleStream::getFloatManual() const {
-  return this->info.static_info().float_manual();
-}
-
-bool SingleStream::hasConstUpdate() const {
-  return this->info.static_info().has_upgraded_to_update();
-}
-
-const ::LLVM::TDG::StreamParam &SingleStream::getConstUpdateParam() const {
-  return this->info.static_info().const_update_param();
-}
-
-uint32_t SingleStream::getConfigLoopLevel() const {
-  return this->info.config_loop_level();
-}
-
 int32_t SingleStream::getElementSize() const {
   return this->info.element_size();
 }

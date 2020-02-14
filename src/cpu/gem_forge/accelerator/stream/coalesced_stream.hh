@@ -46,13 +46,14 @@ public:
   void addStreamInfo(const LLVM::TDG::StreamInfo &info);
   void finalize() override;
 
-  void prepareNewElement(StreamElement *element) override;
-
   /**
    * Only to configure all the history.
    */
   void configure(uint64_t seqNum, ThreadContext *tc) override;
 
+  /*******************************************************************************
+   * Static information accessor.
+   *******************************************************************************/
   const std::string &getStreamType() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;
@@ -60,6 +61,13 @@ public:
     assert(this->coalescedElementSize > 0 && "Invalid element size.");
     return this->coalescedElementSize;
   }
+  bool getFloatManual() const override;
+  bool hasUpgradedToUpdate() const override;
+  const PredicatedStreamIdList &getMergedPredicatedStreams() const override;
+  const ::LLVM::TDG::ExecFuncInfo &getPredicateFuncInfo() const override;
+  bool isMerged() const override;
+  const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
+
   uint64_t getCoalesceBaseStreamId() const override {
     return this->primeLStream->getCoalesceBaseStreamId();
   }
@@ -67,9 +75,6 @@ public:
     // This is the true offset.
     return this->primeLStream->getCoalesceOffset();
   }
-  bool getFloatManual() const override;
-  bool hasConstUpdate() const override;
-  const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
 
   /**
    * Get the number of unique cache blocks the stream touches.

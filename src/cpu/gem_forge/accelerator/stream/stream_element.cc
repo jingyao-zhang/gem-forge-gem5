@@ -293,7 +293,7 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
   };
 
   this->addr = dynStream.addrGenCallback->genAddr(
-      this->FIFOIdx.entryIdx, dynStream.formalParams, getStreamValue);
+      this->FIFOIdx.entryIdx, dynStream.addrGenFormalParams, getStreamValue);
   this->size = stream->getElementSize();
 
   S_ELEMENT_DPRINTF(this, "MarkAddrReady vaddr %#x size %d.\n", this->addr,

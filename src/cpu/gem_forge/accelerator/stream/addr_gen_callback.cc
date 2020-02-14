@@ -8,11 +8,9 @@ uint64_t getStreamValueFail(uint64_t streamId) {
   assert(false && "Failed to get stream value.");
 }
 
-uint64_t AddrGenCallback::genAddr(uint64_t idx,
-                                  const DynamicStreamFormalParamV &formalParams,
-                                  GetStreamValueFunc getStreamValue) {
-
-  // 1. Prepare the parameters.
+DynamicStreamParamV
+convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
+                          GetStreamValueFunc getStreamValue) {
   DynamicStreamParamV params;
   for (const auto &formalParam : formalParams) {
     if (formalParam.isInvariant) {
@@ -23,6 +21,15 @@ uint64_t AddrGenCallback::genAddr(uint64_t idx,
       params.push_back(baseStreamValue);
     }
   }
+  return params;
+}
+
+uint64_t AddrGenCallback::genAddr(uint64_t idx,
+                                  const DynamicStreamFormalParamV &formalParams,
+                                  GetStreamValueFunc getStreamValue) {
+
+  // 1. Prepare the parameters.
+  auto params = convertFormalParamToParam(formalParams, getStreamValue);
 
   // 2. Call the AddrGenCallback.
   return this->genAddr(idx, params);
@@ -101,7 +108,8 @@ bool LinearAddrGenCallback::isContinuous(
 
 uint64_t
 LinearAddrGenCallback::getInnerStride(const DynamicStreamFormalParamV &params) {
-  // auto idx = (params.size() % 2 == 0) ? params.size() - 2 : params.size() - 3;
+  // auto idx = (params.size() % 2 == 0) ? params.size() - 2 : params.size() -
+  // 3;
   auto idx = 0;
   assert(params.at(idx).isInvariant && "Variant inner stride.");
   return params.at(idx).param.invariant;

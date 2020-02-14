@@ -1,15 +1,15 @@
-#include "riscv_func_addr_callback.hh"
+#include "riscv_exec_func.hh"
 
-#include "../func_addr_exec_context.hh"
+#include "../exec_func_context.hh"
 #include "arch/riscv/decoder.hh"
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/exec_context.hh"
-#include "debug/FuncAddrCallback.hh"
+#include "debug/ExecFunc.hh"
 #include "sim/process.hh"
 
-#define FUNC_ADDR_DPRINTF(format, args...)                                     \
-  DPRINTF(FuncAddrCallback, "[%s]: " format, this->func.name().c_str(), ##args)
+#define EXEC_FUNC_DPRINTF(format, args...)                                     \
+  DPRINTF(ExecFunc, "[%s]: " format, this->func.name().c_str(), ##args)
 
 namespace {
 
@@ -17,21 +17,20 @@ namespace {
  * Since gem5 is single thread, and all the address computation is not
  * overlapped, we use a static global context.
  */
-static AddrFuncExecContext addrFuncXC;
+static ExecFuncContext execFuncXC;
 
 } // namespace
 
 namespace RiscvISA {
 
-FuncAddrGenCallback::FuncAddrGenCallback(ThreadContext *_tc,
-                                         const ::LLVM::TDG::AddrFuncInfo &_func)
+ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     : tc(_tc), func(_func), decoder(_tc->getDecoderPtr()), funcStartVAddr(0) {
   auto p = tc->getProcessPtr();
   auto obj = p->objFile;
   SymbolTable table;
   obj->loadAllSymbols(&table);
   assert(table.findAddress(this->func.name(), this->funcStartVAddr));
-  FUNC_ADDR_DPRINTF("Start PC %#x.\n", this->funcStartVAddr);
+  EXEC_FUNC_DPRINTF("Start PC %#x.\n", this->funcStartVAddr);
 
   auto &prox = this->tc->getVirtProxy();
   auto pc = this->funcStartVAddr;
@@ -53,7 +52,7 @@ FuncAddrGenCallback::FuncAddrGenCallback(ThreadContext *_tc,
       break;
     }
     // We assume there is no branch.
-    FUNC_ADDR_DPRINTF("Decode Inst %s.\n", staticInst->disassemble(pc).c_str());
+    EXEC_FUNC_DPRINTF("Decode Inst %s.\n", staticInst->disassemble(pc).c_str());
     assert(!staticInst->isControl() &&
            "No control instruction allowed in address function.");
     this->instructions.push_back(staticInst);
@@ -61,8 +60,8 @@ FuncAddrGenCallback::FuncAddrGenCallback(ThreadContext *_tc,
   }
 }
 
-uint64_t FuncAddrGenCallback::genAddr(uint64_t idx,
-                                      const std::vector<uint64_t> &params) {
+uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
+  execFuncXC.clear();
   /**
    * Prepare the arguments according to the calling convention.
    */
@@ -71,19 +70,19 @@ uint64_t FuncAddrGenCallback::genAddr(uint64_t idx,
   auto argIdx = a0RegIdx;
   for (auto param : params) {
     RegId reg(RegClass::IntRegClass, argIdx);
-    addrFuncXC.setIntRegOperand(reg, param);
-    FUNC_ADDR_DPRINTF("Arg %d %llu.\n", argIdx - a0RegIdx, param);
+    execFuncXC.setIntRegOperand(reg, param);
+    EXEC_FUNC_DPRINTF("Arg %d %llu.\n", argIdx - a0RegIdx, param);
     argIdx++;
   }
 
   for (auto &staticInst : this->instructions) {
-    staticInst->execute(&addrFuncXC, nullptr /* traceData. */);
+    staticInst->execute(&execFuncXC, nullptr /* traceData. */);
   }
 
   // The result value should be in a0 = x10.
   RegId a0Reg(RegClass::IntRegClass, a0RegIdx);
-  auto retAddr = addrFuncXC.readIntRegOperand(a0Reg);
-  FUNC_ADDR_DPRINTF("Ret %llu.\n", retAddr);
+  auto retAddr = execFuncXC.readIntRegOperand(a0Reg);
+  EXEC_FUNC_DPRINTF("Ret %llu.\n", retAddr);
   return retAddr;
 }
 } // namespace RiscvISA

@@ -67,18 +67,21 @@ public:
   virtual uint32_t getConfigLoopLevel() const = 0;
   virtual int32_t getElementSize() const = 0;
   virtual bool getFloatManual() const = 0;
-  virtual bool hasConstUpdate() const = 0;
+  virtual bool hasUpgradedToUpdate() const = 0;
+  /**
+   * Whether this stream has been merged, including predicated merge.
+   */
+  using PredicatedStreamIdList =
+      ::google::protobuf::RepeatedPtrField<::LLVM::TDG::PredicatedStreamId>;
+  virtual const PredicatedStreamIdList &getMergedPredicatedStreams() const = 0;
+  virtual const ::LLVM::TDG::ExecFuncInfo &getPredicateFuncInfo() const = 0;
+  virtual bool isMerged() const = 0;
   virtual const ::LLVM::TDG::StreamParam &getConstUpdateParam() const = 0;
   /**
    * Get coalesce base stream, 0 for invalid.
    */
   virtual uint64_t getCoalesceBaseStreamId() const { return 0; }
   virtual int32_t getCoalesceOffset() const { return 0; }
-
-  virtual void prepareNewElement(StreamElement *element) {
-    // Deprecated.
-    panic("prepareNewElement is deprecated.");
-  }
 
   /**
    * Simple bookkeeping information for the stream engine.
@@ -184,7 +187,9 @@ public:
   /**
    * Perform const update for stepped && used element.
    */
-  void performConstUpdate(const DynamicStream &dynS, StreamElement *element);
+  void handleConstUpdate(const DynamicStream &dynS, StreamElement *element);
+  void handleMergedPredicate(const DynamicStream &dynS, StreamElement *element);
+  void performConstStore(const DynamicStream &dynS, StreamElement *element);
 
   /**
    * Called by executeStreamConfig() to allow derived class to set up the
@@ -192,6 +197,12 @@ public:
    */
   virtual void setupAddrGen(DynamicStream &dynStream,
                             const std::vector<uint64_t> *inputVec) = 0;
+
+  /**
+   * Extract extra input values from the inputVec. May modify inputVec.
+   */
+  void extractExtraInputValues(DynamicStream &dynS,
+                               std::vector<uint64_t> &inputVec);
 
   /**
    * For debug.
@@ -252,11 +263,18 @@ protected:
                            const std::vector<uint64_t> *inputVec,
                            const LLVM::TDG::StreamInfo &info);
   /**
-   * Helper function to setup an func addr func.
+   * Helper function to setup an func addr gen.
    */
   void setupFuncAddrFunc(DynamicStream &dynStream,
                          const std::vector<uint64_t> *inputVec,
                          const LLVM::TDG::StreamInfo &info);
+  /**
+   * Helper function to setup formal params for an ExecFunc.
+   * @return Number of input value consumed.
+   */
+  int setupFormalParams(const std::vector<uint64_t> *inputVec,
+                        const LLVM::TDG::ExecFuncInfo &info,
+                        DynamicStreamFormalParamV &formalParams);
 };
 
 #endif

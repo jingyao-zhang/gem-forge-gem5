@@ -2,5 +2,3 @@ Import('*')
 
 DebugFlag('ISAStreamEngine')
 Source('isa_stream_engine.cc')
-
-DebugFlag('FuncAddrCallback')

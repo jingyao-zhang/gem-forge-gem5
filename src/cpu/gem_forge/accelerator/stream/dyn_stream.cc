@@ -26,6 +26,16 @@ DynamicStream::~DynamicStream() {
   this->stepped = nullptr;
 }
 
+StreamElement *DynamicStream::getElementByIdx(uint64_t elementIdx) const {
+  for (auto element = this->tail->next; element != nullptr;
+       element = element->next) {
+    if (element->FIFOIdx.entryIdx == elementIdx) {
+      return element;
+    }
+  }
+  return nullptr;
+}
+
 StreamElement *DynamicStream::getPrevElement(StreamElement *element) {
   assert(element->FIFOIdx.streamId == this->dynamicStreamId &&
          "Element is not mine.");

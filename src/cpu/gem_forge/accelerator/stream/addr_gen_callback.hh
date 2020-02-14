@@ -1,6 +1,8 @@
 #ifndef __GEM_FORGE_STREAM_ADDRESS_GENERATE_CALLBACK_HH__
 #define __GEM_FORGE_STREAM_ADDRESS_GENERATE_CALLBACK_HH__
 
+#include "cpu/gem_forge/accelerator/arch/exec_func.hh"
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -17,11 +19,16 @@ struct DynamicStreamFormalParam {
 using DynamicStreamFormalParamV = std::vector<DynamicStreamFormalParam>;
 using DynamicStreamParamV = std::vector<uint64_t>;
 using GetStreamValueFunc = std::function<uint64_t(uint64_t)>;
+using ExecFuncPtr = std::shared_ptr<TheISA::ExecFunc>;
 
 /**
  * Used if you expect no base stream.
  */
 uint64_t getStreamValueFail(uint64_t streamId);
+
+DynamicStreamParamV
+convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
+                          GetStreamValueFunc getStreamValue);
 
 /**
  * This represent a stateless addr_gen function.
@@ -57,6 +64,19 @@ public:
    */
   uint64_t getFirstElementForAddr(const DynamicStreamFormalParamV &params,
                                   int32_t elementSize, uint64_t addr);
+};
+
+class FuncAddrGenCallback : public AddrGenCallback {
+public:
+  FuncAddrGenCallback(ExecFuncPtr _execFunc) : execFunc(_execFunc) {}
+
+  uint64_t genAddr(uint64_t idx, const std::vector<uint64_t> &params) override {
+    // We ignore the idx.
+    return this->execFunc->invoke(params);
+  }
+
+private:
+  ExecFuncPtr execFunc;
 };
 
 #endif

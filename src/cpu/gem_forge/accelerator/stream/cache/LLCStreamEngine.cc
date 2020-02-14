@@ -201,7 +201,7 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
     // We are still waiting for some indirect streams to be issued.
     return false;
   }
-  if (stream->getStaticStream()->hasConstUpdate() &&
+  if (stream->getStaticStream()->hasUpgradedToUpdate() &&
       stream->waitingDataBaseRequests > 0) {
     // We are still waiting to update the request.
     return false;
@@ -661,7 +661,7 @@ void LLCStreamEngine::processStreamDataForUpdateStream(
     LLCDynamicStreamPtr stream, const DynamicStreamSliceId &sliceId,
     const DataBlock &dataBlock) {
 
-  if (!stream->getStaticStream()->hasConstUpdate()) {
+  if (!stream->getStaticStream()->hasUpgradedToUpdate()) {
     return;
   }
 

@@ -2,7 +2,6 @@
 #include "insts.hh"
 #include "stream_engine.hh"
 
-#include "cpu/gem_forge/accelerator/arch/stream/func_addr_callback.hh"
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 
 // #include "base/misc.hh""
@@ -126,24 +125,9 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   /**
    * We intercept the constant update value here.
    */
-  if (this->hasConstUpdate()) {
-    const auto &updateParam = this->getConstUpdateParam();
-    if (updateParam.is_static()) {
-      // Static input.
-      dynStream.constUpdateValue = updateParam.value();
-      this->setupAddrGen(dynStream, inputVec);
-    } else {
-      // Dynamic input. Extract it out and make a copy of inputVec.
-      // TODO: Improve this.
-      assert(!inputVec->empty() && "Missing dynamic const update value.");
-      dynStream.constUpdateValue = inputVec->front();
-      std::vector<uint64_t> inputVecCopy(inputVec->begin() + 1,
-                                         inputVec->end());
-      this->setupAddrGen(dynStream, &inputVecCopy);
-    }
-  } else {
-    this->setupAddrGen(dynStream, inputVec);
-  }
+  std::vector<uint64_t> inputVecCopy(*inputVec);
+  this->extractExtraInputValues(dynStream, inputVecCopy);
+  this->setupAddrGen(dynStream, &inputVecCopy);
 }
 
 void Stream::rewindStreamConfig(uint64_t seqNum) {
@@ -262,7 +246,7 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
    * TripCount.
    */
   assert(pattern.params_size() >= 2 && "Number of parameters must be >= 2.");
-  auto &formalParams = dynStream.formalParams;
+  auto &formalParams = dynStream.addrGenFormalParams;
   auto inputIdx = 0;
   for (const auto &param : pattern.params()) {
     formalParams.emplace_back();
@@ -335,9 +319,23 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
 
   const auto &addrFuncInfo = info.addr_func_info();
   assert(addrFuncInfo.name() != "" && "Missing AddrFuncInfo.");
-  auto &formalParams = dynStream.formalParams;
+  auto &formalParams = dynStream.addrGenFormalParams;
+  auto usedInputs =
+      this->setupFormalParams(inputVec, addrFuncInfo, formalParams);
+  assert(usedInputs == inputVec->size() && "Underflow of inputVec.");
+  // Set the callback.
+  auto addrExecFunc =
+      std::make_shared<TheISA::ExecFunc>(dynStream.tc, addrFuncInfo);
+  dynStream.addrGenCallback =
+      std::make_shared<FuncAddrGenCallback>(addrExecFunc);
+}
+
+int Stream::setupFormalParams(const std::vector<uint64_t> *inputVec,
+                              const LLVM::TDG::ExecFuncInfo &info,
+                              DynamicStreamFormalParamV &formalParams) {
+  assert(info.name() != "" && "Missing AddrFuncInfo.");
   int inputIdx = 0;
-  for (const auto &arg : addrFuncInfo.args()) {
+  for (const auto &arg : info.args()) {
     if (arg.is_stream()) {
       // This is a stream input.
       // hack("Find stream input param #%d id %llu.\n",
@@ -359,10 +357,63 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
       inputIdx++;
     }
   }
-  assert(inputIdx == inputVec->size() && "Underflow of inputVec.");
-  // Set the callback.
-  dynStream.addrGenCallback = std::unique_ptr<TheISA::FuncAddrGenCallback>(
-      new TheISA::FuncAddrGenCallback(dynStream.tc, info.addr_func_info()));
+  return inputIdx;
+}
+
+/**
+ * Extract extra input values from the inputVec. May modify inputVec.
+ */
+void Stream::extractExtraInputValues(DynamicStream &dynS,
+                                     std::vector<uint64_t> &inputVec) {
+
+  /**
+   * If this is a load stream upgraded to update stream.
+   */
+  if (this->hasUpgradedToUpdate()) {
+    const auto &updateParam = this->getConstUpdateParam();
+    if (updateParam.is_static()) {
+      // Static input.
+      dynS.constUpdateValue = updateParam.value();
+    } else {
+      // Dynamic input.
+      assert(!inputVec.empty() && "Missing dynamic const update value.");
+      dynS.constUpdateValue = inputVec.front();
+      inputVec.erase(inputVec.begin());
+    }
+  }
+  /**
+   * If this is a merged store stream, we only support const store so far.
+   */
+  if (this->isMerged()) {
+    const auto &type = this->getStreamType();
+    if (type == "store") {
+      const auto &updateParam = this->getConstUpdateParam();
+      if (updateParam.is_static()) {
+        // Static input.
+        dynS.constUpdateValue = updateParam.value();
+      } else {
+        // Dynamic input.
+        assert(!inputVec.empty() && "Missing dynamic const update value.");
+        dynS.constUpdateValue = inputVec.front();
+        inputVec.erase(inputVec.begin());
+      }
+    }
+  }
+  /**
+   * If this has is load stream with merged predicated stream, check for
+   * any inputs for the predication function.
+   */
+  const auto &mergedPredicatedStreams = this->getMergedPredicatedStreams();
+  if (mergedPredicatedStreams.size() > 0) {
+    const auto &predFuncInfo = this->getPredicateFuncInfo();
+    dynS.predCallback =
+        std::make_shared<TheISA::ExecFunc>(dynS.tc, predFuncInfo);
+    auto &predFormalParams = dynS.predFormalParams;
+    auto usedInputs =
+        this->setupFormalParams(&inputVec, predFuncInfo, predFormalParams);
+    // Consume these inputs.
+    inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
+  }
 }
 
 CacheStreamConfigureData *
@@ -370,7 +421,7 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   auto &dynStream = this->getDynamicStream(configSeqNum);
   auto configData = new CacheStreamConfigureData(
       this, dynStream.dynamicStreamId, this->getElementSize(),
-      dynStream.formalParams, dynStream.addrGenCallback);
+      dynStream.addrGenFormalParams, dynStream.addrGenCallback);
 
   // Set the totalTripCount.
   configData->totalTripCount = dynStream.totalTripCount;
@@ -381,7 +432,7 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   // Set the initial vaddr if this is not indirect stream.
   if (!isIndirect) {
     configData->initVAddr = dynStream.addrGenCallback->genAddr(
-        0, dynStream.formalParams, getStreamValueFail);
+        0, dynStream.addrGenFormalParams, getStreamValueFail);
     // Remember to make line address.
     configData->initVAddr -=
         configData->initVAddr % this->cpuDelegator->cacheLineSize();
@@ -631,7 +682,8 @@ StreamElement *Stream::releaseElementStepped() {
 
   // Only do this for used elements.
   if (used) {
-    this->performConstUpdate(dynS, releaseElement);
+    this->handleConstUpdate(dynS, releaseElement);
+    this->handleMergedPredicate(dynS, releaseElement);
   }
 
   dynS.tail->next = releaseElement->next;
@@ -706,18 +758,61 @@ StreamElement *Stream::getPrevElement(StreamElement *element) {
   return dynS.getPrevElement(element);
 }
 
-void Stream::performConstUpdate(const DynamicStream &dynS,
-                                StreamElement *element) {
-  if (!(this->hasConstUpdate() && dynS.offloadedToCache)) {
+void Stream::handleConstUpdate(const DynamicStream &dynS,
+                               StreamElement *element) {
+  if (!(this->hasUpgradedToUpdate() && dynS.offloadedToCache)) {
     return;
   }
+  this->performConstStore(dynS, element);
+}
+
+void Stream::handleMergedPredicate(const DynamicStream &dynS,
+                                   StreamElement *element) {
+  auto mergedPredicatedStreamIds = this->getMergedPredicatedStreams();
+  if (!(mergedPredicatedStreamIds.size() > 0 && dynS.offloadedToCache)) {
+    return;
+  }
+  // Prepare the predicate actual params.
+  uint64_t elementVal = 0;
+  element->getValue(element->addr, element->size,
+                    reinterpret_cast<uint8_t *>(&elementVal));
+  GetStreamValueFunc getStreamValue = [elementVal,
+                                       element](uint64_t streamId) -> uint64_t {
+    assert(streamId == element->FIFOIdx.streamId.staticId &&
+           "Mismatch stream id for predication.");
+    return elementVal;
+  };
+  auto params =
+      convertFormalParamToParam(dynS.predFormalParams, getStreamValue);
+  bool predTrue = dynS.predCallback->invoke(params) & 0x1;
+  for (auto predStreamId : mergedPredicatedStreamIds) {
+    S_ELEMENT_DPRINTF(element, "Predicate %d %d: %s.\n", predTrue,
+                      predStreamId.pred_true(), predStreamId.id().name());
+    if (predTrue != predStreamId.pred_true()) {
+      continue;
+    }
+    auto predS = this->se->getStream(predStreamId.id().id());
+    // They should be configured by the same configure instruction.
+    const auto &predDynS = predS->getDynamicStream(dynS.configSeqNum);
+    if (predS->getStreamType() == "store") {
+      auto predElement = predDynS.getElementByIdx(element->FIFOIdx.entryIdx);
+      assert(predElement && "Failed to get prediated element.");
+      this->performConstStore(predDynS, predElement);
+    } else {
+      S_ELEMENT_PANIC(element, "Can only handle merged store stream.");
+    }
+  }
+}
+
+void Stream::performConstStore(const DynamicStream &dynS,
+                               StreamElement *element) {
   /**
-   * * Perform const update here.
+   * * Perform const store here.
    * We can not do that in the Ruby because it uses BackingStore, which
    * would cause the core to read the updated value.
    */
   auto elementVAddr = element->addr;
-  auto elementSize = this->getElementSize();
+  auto elementSize = element->size;
   auto blockSize = cpuDelegator->cacheLineSize();
   auto elementLineOffset = elementVAddr % blockSize;
   assert(elementLineOffset + elementSize <= blockSize &&

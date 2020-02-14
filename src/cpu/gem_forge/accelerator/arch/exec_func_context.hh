@@ -1,5 +1,5 @@
-#ifndef __GEM_FORGE_STREAM_ADDR_FUNC_EXEC_CONTEXT_HH__
-#define __GEM_FORGE_STREAM_ADDR_FUNC_EXEC_CONTEXT_HH__
+#ifndef __GEM_FORGE_EXEC_FUNC_CONTEXT_HH__
+#define __GEM_FORGE_EXEC_FUNC_CONTEXT_HH__
 
 #include "cpu/exec_context.hh"
 
@@ -7,7 +7,7 @@
  * A taylored ExecContext that only provides integer register file,
  * for the address computation.
  */
-class AddrFuncExecContext : public ExecContext {
+class ExecFuncContext : public ExecContext {
 public:
   /** Reads an integer register. */
   RegVal readIntRegOperand(const StaticInst *si, int idx) override {
@@ -156,17 +156,27 @@ public:
   /** @} */
 
   /**
-   * @{
-   * @name Condition Code Registers
-   * This may be used by x86.
-   * ! So far ignore them.
+   * Condition Code Registers
    */
   RegVal readCCRegOperand(const StaticInst *si, int idx) override {
-    return 0;
+#ifdef ISA_HAS_CC_REGS
+    const RegId &reg = si->srcRegIdx(idx);
+    assert(reg.isCCReg());
+    return this->ccRegs[this->flattenCCRegIdx(reg.index())];
+#else
+    panic("Tried to read a CC register.");
+#endif
   }
+
   void setCCRegOperand(const StaticInst *si, int idx, RegVal val) override {
+#ifdef ISA_HAS_CC_REGS
+    const RegId &reg = si->destRegIdx(idx);
+    assert(reg.isCCReg());
+    this->ccRegs[this->flattenCCRegIdx(reg.index())] = val;
+#else
+    panic("Tried to set a CC register.");
+#endif
   }
-  /** @} */
 
   /**
    * @{
@@ -347,8 +357,31 @@ public:
     panic("FuncAddrExecContext does not implement this.");
   }
 
+  void clear() {
+    for (auto &reg : this->intRegs) {
+      reg = 0;
+    }
+    for (auto &reg : this->ccRegs) {
+      reg = 0;
+    }
+  }
+
 protected:
   RegVal intRegs[TheISA::NumIntRegs];
+#ifdef ISA_HAS_CC_REGS
+  RegVal ccRegs[TheISA::NumCCRegs];
+  int flattenCCRegIdx(int regIdx) const {
+#if THE_ISA == X86_ISA
+    int flatIndex = regIdx;
+#elif THE_ISA == RISCV_ISA
+    int flatIndex = regIdx;
+#else
+    panic("ExecFuncContext does not support this ISA.");
+#endif
+    assert(flatIndex < TheISA::NumCCRegs);
+    return flatIndex;
+  }
+#endif
 };
 
 #endif

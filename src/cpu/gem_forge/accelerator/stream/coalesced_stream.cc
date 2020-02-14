@@ -101,7 +101,10 @@ void CoalescedStream::selectPrimeLogicalStream() {
     assert(LS->info.loop_level() == this->getLoopLevel());
     assert(LS->info.config_loop_level() == this->getConfigLoopLevel());
     assert(LS->info.static_info().has_upgraded_to_update() ==
-           this->hasConstUpdate());
+           this->hasUpgradedToUpdate());
+    assert(
+        LS->info.static_info().is_merged_predicated_stream() ==
+        this->primeLStream->info.static_info().is_merged_predicated_stream());
   }
   /**
    * Finalize the stream name and static id.
@@ -162,103 +165,6 @@ void CoalescedStream::configure(uint64_t seqNum, ThreadContext *tc) {
   }
 }
 
-void CoalescedStream::prepareNewElement(StreamElement *element) {
-  std::list<uint64_t> cacheBlocks;
-  /**
-   * The size of the coalesced element [lhsAddr, rhsAddr).
-   * ? The dummy initializer to silence the compiler.
-   */
-  Addr lhsAddr = 0, rhsAddr = 4;
-  for (auto &S : this->coalescedStreams) {
-    bool oracleUsed = false;
-    auto nextValuePair = S->history->getNextAddr(oracleUsed);
-    if (!nextValuePair.first) {
-      continue;
-    }
-    auto addr = nextValuePair.second;
-    auto elementSize = S->info.element_size();
-    if (cacheBlocks.empty()) {
-      lhsAddr = addr;
-      rhsAddr = addr + elementSize;
-    } else {
-      lhsAddr = (addr < lhsAddr) ? addr : lhsAddr;
-      rhsAddr =
-          ((addr + elementSize) > rhsAddr) ? (addr + elementSize) : rhsAddr;
-    }
-
-    const int cacheBlockSize = cpuDelegator->cacheLineSize();
-    auto lhsCacheBlock = addr & (~(cacheBlockSize - 1));
-    auto rhsCacheBlock = (addr + elementSize - 1) & (~(cacheBlockSize - 1));
-    while (lhsCacheBlock <= rhsCacheBlock) {
-      if (cacheBlocks.size() > StreamElement::MAX_CACHE_BLOCKS) {
-        inform(
-            "%s: More than %d cache blocks for one stream element, address %lu "
-            "size %lu.",
-            this->getStreamName().c_str(), cacheBlocks.size(), addr,
-            S->info.element_size());
-      }
-
-      // Insert into the list.
-      auto cacheBlockIter = cacheBlocks.begin();
-      auto cacheBlockEnd = cacheBlocks.end();
-      bool inserted = false;
-      while (cacheBlockIter != cacheBlockEnd) {
-        auto cacheBlock = *cacheBlockIter;
-        if (cacheBlock == lhsCacheBlock) {
-          inserted = true;
-          break;
-        } else if (cacheBlock > lhsCacheBlock) {
-          cacheBlocks.insert(cacheBlockIter, lhsCacheBlock);
-          inserted = true;
-          break;
-        }
-        ++cacheBlockIter;
-      }
-      if (!inserted) {
-        cacheBlocks.push_back(lhsCacheBlock);
-      }
-
-      if (lhsCacheBlock == 0xFFFFFFFFFFFFFFC0) {
-        // This is the last block in the address space.
-        // Something wrong here.
-        break;
-      }
-      lhsCacheBlock += cacheBlockSize;
-    }
-  }
-
-  if (cacheBlocks.size() > StreamElement::MAX_CACHE_BLOCKS) {
-    panic("%s: More than %d cache blocks for one stream element",
-          this->getStreamName().c_str(), cacheBlocks.size());
-  }
-
-  // Check if all the cache blocks are continuous.
-  if (cacheBlocks.size() > 1) {
-    auto initCacheBlock = cacheBlocks.front();
-    auto idx = 0;
-    for (auto cacheBlock : cacheBlocks) {
-      if (cacheBlock != initCacheBlock + idx * cpuDelegator->cacheLineSize()) {
-        for (auto c : cacheBlocks) {
-          hack("Uncontinuous address for coalesced stream %lx\n", c);
-        }
-        panic("Uncontinuous address for coalesced stream %s.",
-              this->getStreamName().c_str());
-      }
-      ++idx;
-    }
-  }
-  // Add the stream.
-  if (cacheBlocks.empty()) {
-    element->addr = 0;
-    element->size = 4;
-  } else {
-    element->addr = lhsAddr;
-    element->size = rhsAddr - lhsAddr;
-    // element->addr = cacheBlocks.front();
-    // element->size = cacheBlocks.size() * cpuDelegator->cacheLineSize();
-  }
-}
-
 const std::string &CoalescedStream::getStreamType() const {
   return this->primeLStream->info.type();
 }
@@ -280,8 +186,21 @@ bool CoalescedStream::getFloatManual() const {
   return this->primeLStream->info.static_info().float_manual();
 }
 
-bool CoalescedStream::hasConstUpdate() const {
+bool CoalescedStream::hasUpgradedToUpdate() const {
   return this->primeLStream->info.static_info().has_upgraded_to_update();
+}
+
+const Stream::PredicatedStreamIdList &
+CoalescedStream::getMergedPredicatedStreams() const {
+  return this->primeLStream->info.static_info().merged_predicated_streams();
+}
+
+const ::LLVM::TDG::ExecFuncInfo &CoalescedStream::getPredicateFuncInfo() const {
+  return this->primeLStream->info.static_info().pred_func_info();
+}
+
+bool CoalescedStream::isMerged() const {
+  return this->primeLStream->info.static_info().is_merged_predicated_stream();
 }
 
 const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {

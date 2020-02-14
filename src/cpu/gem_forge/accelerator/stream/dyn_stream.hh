@@ -2,7 +2,6 @@
 #define __GEM_FORGE_ACCELERATOR_DYN_STREAM_HH__
 
 #include "fifo_entry_idx.hh"
-
 #include "addr_gen_callback.hh"
 
 #include <memory>
@@ -45,13 +44,19 @@ struct DynamicStream {
   // Whether the StreamEnd has dispatched (waiting to be released).
   bool endDispatched = false;
 
-  // Params used to compute address.
-  DynamicStreamFormalParamV formalParams;
-
-  // Callback to generate the address.
+  // Address generator.
+  DynamicStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;
 
-  // Optional constant update information.
+  // Predication compute.
+  DynamicStreamFormalParamV predFormalParams;
+  ExecFuncPtr predCallback;
+
+  /**
+   * Optional constant update value.
+   * 1. If the load stream is upgraded to an update stream.
+   * 2. If the store stream is merged into load and is constant store.
+   */
   uint64_t constUpdateValue = 0;
 
   // Optional total length of this dynamic stream. -1 as indefinite.
@@ -60,6 +65,11 @@ struct DynamicStream {
   DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
                 Cycles _configCycle, ThreadContext *_tc,
                 const FIFOEntryIdx &_prevFIFOIdx, StreamEngine *_se);
+  DynamicStream(const DynamicStream &other) = delete;
+  DynamicStream(DynamicStream &&other) = delete;
+  DynamicStream &operator=(const DynamicStream &other) = delete;
+  DynamicStream &operator=(DynamicStream &&other) = delete;
+
   ~DynamicStream();
 
   Cycles getAvgTurnAroundCycle() const { return this->avgTurnAroundCycle; }
@@ -74,7 +84,11 @@ struct DynamicStream {
    * API to manage the elements of this stream.
    ***********************************************************************/
   /**
-   * Get the first unstepped element of the last dynamic stream.
+   * Get element with the elementIdx.
+   */
+  StreamElement *getElementByIdx(uint64_t elementIdx) const;
+  /**
+   * Get the first unstepped element of the dynamic stream.
    */
   StreamElement *getFirstUnsteppedElement();
   /**

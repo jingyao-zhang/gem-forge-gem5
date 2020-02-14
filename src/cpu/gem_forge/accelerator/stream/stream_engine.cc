@@ -387,6 +387,12 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         }
       }
 
+      // ! As a hack here, we simply mark the merged stream also floated.
+      // for (auto mergedStreamId : S->getMergedPredicatedStreams()) {
+      //   auto mergedS = this->getStream(mergedStreamId.id().id());
+      //   auto &mergedDynS = mergedS->getDynamicStream(args.seqNum);
+      // }
+
       // ! Sanity check that the base stream is not coaleasced.
       if (streamConfigureData->indirectStreamConfigure) {
         if (dynamic_cast<CoalescedStream *>(S)) {
@@ -397,9 +403,15 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
     } else {
       // Do not offload the stream.
       // Sanity check that this is not a update stream.
-      if (S->hasConstUpdate()) {
+      if (S->hasUpgradedToUpdate()) {
         S_PANIC(S, "UpdateStream not offloaded.\n");
       }
+      if (S->getMergedPredicatedStreams().size() > 0) {
+        S_PANIC(S, "Should offload streams with merged streams.");
+      }
+      // if (S->isMerged()) {
+      //   S_PANIC(S, "MergedStream not offloaded.");
+      // }
     }
   }
   // Send all the floating streams in one packet.
@@ -644,6 +656,10 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
     if (!S->configured) {
       elementSet.insert(nullptr);
     } else {
+
+      assert(!S->isMerged() &&
+             "Merged stream should never be used by the core.");
+
       auto element = S->getFirstUnsteppedElement();
       // Mark the first user sequence number.
       if (!element->isFirstUserDispatched()) {
@@ -1752,6 +1768,13 @@ void StreamEngine::issueElements() {
     element->markAddrReady(cpuDelegator);
 
     if (element->stream->isMemStream()) {
+      /**
+       * * New Feature: If the stream is merged, then we do not issue.
+       * * The stream should never be used by the core.
+       */
+      if (element->stream->isMerged()) {
+        continue;
+      }
       // Increase the reference of the cache block if we enable merging.
       if (this->enableMerge) {
         for (int i = 0; i < element->cacheBlocks; ++i) {
