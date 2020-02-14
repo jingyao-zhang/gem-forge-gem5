@@ -40,17 +40,15 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
         streamConfigureData->dynamicId,
         new L0DynamicStream(streamConfigureData->dynamicId,
                             streamConfigureData->isOneIterationBehind));
-    if (streamConfigureData->indirectStreamConfigure != nullptr) {
+    for (auto &indirectStreamConfig : streamConfigureData->indirectStreams) {
       // We have an indirect stream.
-      L0SE_DPRINTF(
-          "Received StreamConfigure for indirect %s.\n",
-          streamConfigureData->indirectStreamConfigure->dynamicId.streamName);
+      L0SE_DPRINTF("Received StreamConfigure for indirect %s.\n",
+                   indirectStreamConfig->dynamicId.streamName);
       this->offloadedStreams.emplace(
-          streamConfigureData->indirectStreamConfigure->dynamicId,
+          indirectStreamConfig->dynamicId,
           new L0DynamicStream(
               streamConfigureData->dynamicId /* RootDynamicStreamId. */,
-              streamConfigureData->indirectStreamConfigure
-                  ->isOneIterationBehind));
+              indirectStreamConfig->isOneIterationBehind));
     }
   }
 }

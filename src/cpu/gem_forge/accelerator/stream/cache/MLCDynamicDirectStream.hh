@@ -12,24 +12,16 @@ class MLCDynamicIndirectStream;
  */
 class MLCDynamicDirectStream : public MLCDynamicStream {
 public:
-  MLCDynamicDirectStream(CacheStreamConfigureData *_configData,
-                         AbstractStreamAwareController *_controller,
-                         MessageBuffer *_responseMsgBuffer,
-                         MessageBuffer *_requestToLLCMsgBuffer,
-                         MLCDynamicIndirectStream *_indirectStream);
+  MLCDynamicDirectStream(
+      CacheStreamConfigureData *_configData,
+      AbstractStreamAwareController *_controller,
+      MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
+      const std::vector<MLCDynamicIndirectStream *> &_indirectStreams);
 
   /**
    * Get where is the LLC stream is at the end of current allocated credits.
    */
   Addr getLLCStreamTailPAddr() const override { return this->llcTailPAddr; }
-
-  /**
-   * Set the indirect stream.
-   */
-  void addIndirectStream(MLCDynamicIndirectStream *indirectStream) {
-    assert(!this->indirectStream && "More than one indirect stream.");
-    this->indirectStream = indirectStream;
-  }
 
   void receiveStreamData(const ResponseMsg &msg) override;
   void receiveReuseStreamData(Addr vaddr, const DataBlock &dataBlock);
@@ -58,7 +50,7 @@ protected:
   std::unordered_map<Addr, DataBlock> reuseBlockMap;
 
   // Only support one indirect stream.
-  MLCDynamicIndirectStream *indirectStream;
+  std::vector<MLCDynamicIndirectStream *> indirectStreams;
 
   bool hasOverflowed() const override {
     return this->slicedStream.hasOverflowed();

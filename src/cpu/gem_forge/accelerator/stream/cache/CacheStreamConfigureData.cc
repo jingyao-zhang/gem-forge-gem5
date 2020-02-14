@@ -7,8 +7,7 @@ CacheStreamConfigureData::CacheStreamConfigureData(
     : stream(_stream), dynamicId(_dynamicId), elementSize(_elementSize),
       initVAddr(0), initPAddr(0), formalParams(_formalParams),
       addrGenCallback(_addrGenCallback), isPointerChase(false),
-      isOneIterationBehind(false), indirectStreamConfigure(nullptr),
-      initAllocatedIdx(0) {
+      isOneIterationBehind(false), initAllocatedIdx(0) {
   assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
 
@@ -22,5 +21,5 @@ CacheStreamConfigureData::CacheStreamConfigureData(
       constUpdateValue(other.constUpdateValue),
       isPointerChase(other.isPointerChase),
       isOneIterationBehind(other.isOneIterationBehind),
-      indirectStreamConfigure(other.indirectStreamConfigure),
+      indirectStreams(other.indirectStreams),
       initAllocatedIdx(other.initAllocatedIdx) {}

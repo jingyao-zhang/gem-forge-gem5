@@ -56,7 +56,7 @@ public:
    * We allow one additional indirect stream so far.
    * TODO: Support multiple indirect streams.
    */
-  std::shared_ptr<CacheStreamConfigureData> indirectStreamConfigure;
+  std::vector<std::shared_ptr<CacheStreamConfigureData>> indirectStreams;
 
   // Set by the MLC stream, for flow control.
   int initAllocatedIdx;

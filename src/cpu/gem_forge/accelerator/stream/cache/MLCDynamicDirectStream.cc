@@ -20,11 +20,11 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
     CacheStreamConfigureData *_configData,
     AbstractStreamAwareController *_controller,
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
-    MLCDynamicIndirectStream *_indirectStream)
+    const std::vector<MLCDynamicIndirectStream *> &_indirectStreams)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      llcTailSliceIdx(0), indirectStream(_indirectStream) {
+      llcTailSliceIdx(0), indirectStreams(_indirectStreams) {
 
   // Initialize the llc bank.
   assert(_configData->initPAddrValid && "InitPAddr should be valid.");
@@ -266,7 +266,7 @@ void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
 
 void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
 
-  if (!this->indirectStream) {
+  if (this->indirectStreams.empty()) {
     return;
   }
 
@@ -310,7 +310,9 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
     }
     MLC_SLICE_DPRINTF(sliceId, "Extract element %lu data %#x.\n", elementIdx,
                       elementData);
-    this->indirectStream->receiveBaseStreamData(elementIdx, elementData);
+    for (auto indirectStream : this->indirectStreams) {
+      indirectStream->receiveBaseStreamData(elementIdx, elementData);
+    }
   }
 }
 

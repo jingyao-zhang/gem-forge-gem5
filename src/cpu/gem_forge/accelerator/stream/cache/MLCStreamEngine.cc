@@ -72,20 +72,21 @@ void MLCStreamEngine::configureStream(
    * data.
    */
   // Check if there is indirect stream.
-  MLCDynamicIndirectStream *indirectStream = nullptr;
-  if (streamConfigureData->indirectStreamConfigure != nullptr) {
+  std::vector<MLCDynamicIndirectStream *> indirectStreams;
+  for (auto &indirectStreamConfig : streamConfigureData->indirectStreams) {
     // Let's create an indirect stream.
-    indirectStream = new MLCDynamicIndirectStream(
-        streamConfigureData->indirectStreamConfigure.get(), this->controller,
+    auto indirectStream = new MLCDynamicIndirectStream(
+        indirectStreamConfig.get(), this->controller,
         this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer,
         streamConfigureData->dynamicId /* Root dynamic stream id. */);
     this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
                                 indirectStream);
+    indirectStreams.push_back(indirectStream);
   }
   // Create the direct stream.
   auto directStream = new MLCDynamicDirectStream(
       streamConfigureData, this->controller, this->responseToUpperMsgBuffer,
-      this->requestToLLCMsgBuffer, indirectStream);
+      this->requestToLLCMsgBuffer, indirectStreams);
   this->idToStreamMap.emplace(directStream->getDynamicStreamId(), directStream);
 
   /**
@@ -103,7 +104,7 @@ void MLCStreamEngine::configureStream(
           streamConfigureData->totalTripCount > cutElementIdx) {
         streamConfigureData->totalTripCount = cutElementIdx;
         directStream->setLLCCutLineVAddr(cutLineVAddr);
-        assert(!streamConfigureData->indirectStreamConfigure &&
+        assert(streamConfigureData->indirectStreams.empty() &&
                "Reuse stream with indirect stream is not supported.");
       }
     }
@@ -354,8 +355,9 @@ void MLCStreamEngine::computeReuseInformation(
       MLC_STREAM_DPRINTF(lhsConfig->dynamicId.staticId,
                          "Add reuse chain -> %lu cut %lu.\n",
                          rhsConfig->dynamicId.staticId, lhsCutElementIdx);
-      hack("Add reuse chain %lu -> %lu cut %lu.\n", lhsConfig->dynamicId.staticId,
-           rhsConfig->dynamicId.staticId, lhsCutElementIdx);
+      hack("Add reuse chain %lu -> %lu cut %lu.\n",
+           lhsConfig->dynamicId.staticId, rhsConfig->dynamicId.staticId,
+           lhsCutElementIdx);
     }
   }
 }

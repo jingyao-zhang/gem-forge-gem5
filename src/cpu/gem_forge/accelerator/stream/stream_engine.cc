@@ -342,15 +342,14 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
           if (dependentStream->getStreamType() == "load") {
             if (dependentStream->baseStreams.size() == 1) {
               // Only dependent on this direct stream.
-              streamConfigureData->indirectStreamConfigure =
-                  std::shared_ptr<CacheStreamConfigureData>(
-                      dependentStream->allocateCacheConfigureData(
-                          args.seqNum, true /* isIndirect */));
+              streamConfigureData->indirectStreams.emplace_back(
+                  dependentStream->allocateCacheConfigureData(
+                      args.seqNum, true /* isIndirect */));
               break;
             }
           }
         }
-        if (streamConfigureData->indirectStreamConfigure == nullptr) {
+        if (streamConfigureData->indirectStreams.empty()) {
           // Not found a valid indirect stream, let's try to search for
           // a indirect stream that is one iteration behind.
           for (auto backDependentStream : S->backDependentStreams) {
@@ -372,14 +371,13 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
               }
               // We found one valid indirect stream that is one iteration
               // behind S.
-              streamConfigureData->indirectStreamConfigure =
-                  std::shared_ptr<CacheStreamConfigureData>(
-                      indirectStream->allocateCacheConfigureData(args.seqNum));
-              streamConfigureData->indirectStreamConfigure
+              streamConfigureData->indirectStreams.emplace_back(
+                  indirectStream->allocateCacheConfigureData(args.seqNum));
+              streamConfigureData->indirectStreams.back()
                   ->isOneIterationBehind = true;
               break;
             }
-            if (streamConfigureData->indirectStreamConfigure != nullptr) {
+            if (!streamConfigureData->indirectStreams.empty()) {
               // We already found one.
               break;
             }
@@ -394,7 +392,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       // }
 
       // ! Sanity check that the base stream is not coaleasced.
-      if (streamConfigureData->indirectStreamConfigure) {
+      if (!streamConfigureData->indirectStreams.empty()) {
         if (dynamic_cast<CoalescedStream *>(S)) {
           S_PANIC(S, "CoalescedStream cannot be floated with indirect stream.");
         }

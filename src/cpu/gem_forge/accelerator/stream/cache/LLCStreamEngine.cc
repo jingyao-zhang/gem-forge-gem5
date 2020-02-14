@@ -48,16 +48,16 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto stream = new LLCDynamicStream(this->controller, streamConfigureData);
 
   // Check if we have indirect streams.
-  if (streamConfigureData->indirectStreamConfigure != nullptr) {
+  for (auto &indirectStreamConfig : streamConfigureData->indirectStreams) {
     // Let's create an indirect stream.
-    streamConfigureData->indirectStreamConfigure->initAllocatedIdx =
+    indirectStreamConfig->initAllocatedIdx =
         streamConfigureData->initAllocatedIdx;
-    auto indirectStream = new LLCDynamicStream(
-        this->controller, streamConfigureData->indirectStreamConfigure.get());
+    auto indirectStream =
+        new LLCDynamicStream(this->controller, indirectStreamConfig.get());
     LLC_S_DPRINTF(indirectStream->getDynamicStreamId(),
                   "Configure IndirectStream size %d, config size %d.\n",
                   indirectStream->getElementSize(),
-                  streamConfigureData->indirectStreamConfigure->elementSize);
+                  indirectStreamConfig->elementSize);
     stream->indirectStreams.push_back(indirectStream);
   }
 
@@ -740,7 +740,8 @@ void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,
     // Addr elementPAddr;
     // assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
     //        "Failed to translate address for accessing backing storage.");
-    // RequestPtr req(new Request(elementPAddr, elementSize, 0, 0 /* MasterId */,
+    // RequestPtr req(new Request(elementPAddr, elementSize, 0, 0 /* MasterId
+    // */,
     //                            0 /* InstSeqNum */, 0 /* contextId */));
     // PacketPtr pkt = Packet::createWrite(req);
     // uint8_t *pktData = new uint8_t[req->getSize()];
