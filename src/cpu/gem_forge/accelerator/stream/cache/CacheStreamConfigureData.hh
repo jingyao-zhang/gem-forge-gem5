@@ -15,7 +15,7 @@ struct CacheStreamConfigureData {
 public:
   CacheStreamConfigureData(
       Stream *_stream, const DynamicStreamId &_dynamicId, int _elementSize,
-      const std::vector<DynamicStreamFormalParam> &_formalParams,
+      const std::vector<DynamicStreamFormalParam> &_addrGenFormalParams,
       AddrGenCallbackPtr _addrGenCallback);
   CacheStreamConfigureData(const CacheStreamConfigureData &other);
 
@@ -28,13 +28,14 @@ public:
   Addr initPAddr;
   bool initPAddrValid = false;
 
-  /**
-   * Migrate to AddrGenCallback.
-   */
-  DynamicStreamFormalParamV formalParams;
+  DynamicStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;
+  DynamicStreamFormalParamV predFormalParams;
+  ExecFuncPtr predCallback;
   int64_t totalTripCount = -1;
   uint64_t constUpdateValue = 0;
+  bool isPredicated = false;
+  bool isPredicatedTrue = false;
 
   /**
    * Whether this is a pointer chase stream.

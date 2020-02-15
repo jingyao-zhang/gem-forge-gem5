@@ -385,16 +385,25 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         }
       }
 
-      // ! As a hack here, we simply mark the merged stream also floated.
-      // for (auto mergedStreamId : S->getMergedPredicatedStreams()) {
-      //   auto mergedS = this->getStream(mergedStreamId.id().id());
-      //   auto &mergedDynS = mergedS->getDynamicStream(args.seqNum);
-      // }
+      /**
+       * Merged streams are always offloaded.
+       */
+      for (auto mergedStreamId : S->getMergedPredicatedStreams()) {
+        auto mergedS = this->getStream(mergedStreamId.id().id());
+        auto mergedConfigureData =
+            mergedS->allocateCacheConfigureData(args.seqNum);
+        mergedConfigureData->isPredicated = true;
+        mergedConfigureData->isPredicatedTrue = mergedStreamId.pred_true();
+        streamConfigureData->indirectStreams.emplace_back(mergedConfigureData);
+      }
 
       // ! Sanity check that the base stream is not coaleasced.
       if (!streamConfigureData->indirectStreams.empty()) {
-        if (dynamic_cast<CoalescedStream *>(S)) {
-          S_PANIC(S, "CoalescedStream cannot be floated with indirect stream.");
+        if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
+          if (CS->getNumCoalescedStreams() > 1) {
+            S_PANIC(S,
+                    "CoalescedStream cannot be floated with indirect stream.");
+          }
         }
       }
       cacheStreamConfigVec->push_back(streamConfigureData);

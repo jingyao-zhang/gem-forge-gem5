@@ -429,6 +429,10 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   // Set the ConstUpdateValue.
   configData->constUpdateValue = dynStream.constUpdateValue;
 
+  // Set the predication function.
+  configData->predFormalParams = dynStream.predFormalParams;
+  configData->predCallback = dynStream.predCallback;
+
   // Set the initial vaddr if this is not indirect stream.
   if (!isIndirect) {
     configData->initVAddr = dynStream.addrGenCallback->genAddr(

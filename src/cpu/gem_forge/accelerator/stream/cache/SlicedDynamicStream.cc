@@ -8,7 +8,7 @@
 
 SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureData *_configData,
                                          bool _coalesceContinuousElements)
-    : streamId(_configData->dynamicId), formalParams(_configData->formalParams),
+    : streamId(_configData->dynamicId), formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize),
       totalTripCount(_configData->totalTripCount),

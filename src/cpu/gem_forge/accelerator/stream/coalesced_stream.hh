@@ -75,6 +75,9 @@ public:
     // This is the true offset.
     return this->primeLStream->getCoalesceOffset();
   }
+  size_t getNumCoalescedStreams() const {
+    return this->coalescedStreams.size();
+  }
 
   /**
    * Get the number of unique cache blocks the stream touches.

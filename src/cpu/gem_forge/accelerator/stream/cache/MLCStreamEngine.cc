@@ -296,7 +296,7 @@ void MLCStreamEngine::computeReuseInformation(
     if (!linearAddrGen) {
       continue;
     }
-    if (!linearAddrGen->isContinuous(config->formalParams,
+    if (!linearAddrGen->isContinuous(config->addrGenFormalParams,
                                      config->elementSize)) {
       MLC_STREAM_DPRINTF(config->dynamicId.staticId,
                          "Address pattern not continuous.\n");
@@ -328,8 +328,8 @@ void MLCStreamEngine::computeReuseInformation(
       auto rhsAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
           rhsConfig->addrGenCallback);
       // Compute the cut element idx.
-      auto lhsStartAddr = lhsAddrGen->getStartAddr(lhsConfig->formalParams);
-      auto rhsStartAddr = rhsAddrGen->getStartAddr(rhsConfig->formalParams);
+      auto lhsStartAddr = lhsAddrGen->getStartAddr(lhsConfig->addrGenFormalParams);
+      auto rhsStartAddr = rhsAddrGen->getStartAddr(rhsConfig->addrGenFormalParams);
       // Set the threshold to 32kB.
       constexpr uint64_t ReuseThreshold = 32 * 1024;
       assert(rhsStartAddr > lhsStartAddr && "Illegal reversed startAddr.");
@@ -342,7 +342,7 @@ void MLCStreamEngine::computeReuseInformation(
       }
       auto rhsStartLindAddr = makeLineAddress(rhsStartAddr);
       auto lhsCutElementIdx = lhsAddrGen->getFirstElementForAddr(
-          lhsConfig->formalParams, lhsConfig->elementSize, rhsStartLindAddr);
+          lhsConfig->addrGenFormalParams, lhsConfig->elementSize, rhsStartLindAddr);
       // Store the reuse info.
       this->reuseInfoMap.emplace(
           std::piecewise_construct, std::forward_as_tuple(rhsConfig->dynamicId),

@@ -91,12 +91,8 @@ public:
    * and is waiting to be issued.
    * Indexed by element idx.
    */
-  std::multimap<uint64_t, LLCDynamicStream *> readyIndirectElements;
-  /**
-   * Store the base element data, used to compute indirect stream address.
-   * Indexed by element idx.
-   */
-  std::map<uint64_t, uint64_t> readyBaseElementData;
+  std::multimap<uint64_t, std::pair<LLCDynamicStream *, uint64_t>>
+      readyIndirectElements;
 
   void updateIssueClearCycle();
 };

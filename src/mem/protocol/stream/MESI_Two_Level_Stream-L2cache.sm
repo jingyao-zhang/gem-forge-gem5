@@ -139,6 +139,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     STREAM_FLOW,   desc="Flow control message for stream";
     STREAM_REQ,    desc="Received a stream indirect request from other LLC";
     STREAM_END,    desc="StreamEnd req";
+    STREAM_STORE,  desc="StreamStore req";
   }
 
   // TYPES
@@ -320,6 +321,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       return Event:STREAM_CONFIG;
     } else if (type == CoherenceRequestType:STREAM_END) {
       return Event:STREAM_END;
+    } else if (type == CoherenceRequestType:STREAM_STORE) {
+      return Event:STREAM_STORE;
     } else {
       DPRINTF(RubySlicc, "address: %#x, Request Type: %s\n", addr, type);
       error("Invalid L1 forwarded request type");
@@ -499,9 +502,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         assert(in_msg.Destination.isElement(machineID));
 
         // ! Sean: StreamAwareCache
-        // This message should always be GETU.
         assert(in_msg.sliceId.isValid());
-        assert(in_msg.Type == CoherenceRequestType:GETU);
 
         DPRINTF(RubyStream, "Received stream indirect request [%lu, +%lu) %#x.\n", 
           in_msg.sliceId.getStartIdx(),
@@ -1036,11 +1037,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
 
-  transition({SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, {L1_GETS, L1_GETV, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
+  transition({SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, {L1_GETS, L1_GETV, STREAM_STORE, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition({MCT_I, M_I, MT_I}, L1_GETV) {
+  transition({MCT_I, M_I, MT_I}, {L1_GETV, STREAM_STORE}) {
     // Should only happen when the LLC stream engine request the data unknown that this line is being evicted.
     zz_stallAndWaitL1RequestQueue;
   }
@@ -1062,6 +1063,19 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     i_allocateTBE;
     css_copyStreamSliceId;
     sv_recordGetVL1ID;
+    a_issueFetchToMemory;
+    uu_profileMiss;
+    jj_popL1RequestQueue;
+  }
+
+  /**
+   * For StreamStore, we do not record the L1 so that we won't send response.
+   */
+  transition(NP, STREAM_STORE, IVV) {
+    qq_allocateL2CacheBlock;
+    ll_clearSharers;
+    i_allocateTBE;
+    css_copyStreamSliceId;
     a_issueFetchToMemory;
     uu_profileMiss;
     jj_popL1RequestQueue;
@@ -1146,7 +1160,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition({IVV, ISS}, L1_GETV) {
+  transition({IVV, ISS}, {L1_GETV, STREAM_STORE} ) {
     // Stall the uncache request when there is a infly request to that line.
     zz_stallAndWaitL1RequestQueue;
   }
@@ -1224,9 +1238,19 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     uu_profileHit;
     jj_popL1RequestQueue;
   }
+  transition(M, STREAM_STORE, M) {
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
   // The data may be cached somewhere above, but we have the correct copy. 
   transition(SS, L1_GETV, SS) {
     dd_sendExclusiveDataToRequestor;
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
+  transition(SS, STREAM_STORE, SS) {
     set_setMRU;
     uu_profileHit;
     jj_popL1RequestQueue;
@@ -1239,6 +1263,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
    */
   transition(MT, L1_GETV, MT) {
     dd_sendExclusiveDataToRequestor;
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
+  transition(MT, STREAM_STORE, MT) {
     set_setMRU;
     uu_profileHit;
     jj_popL1RequestQueue;

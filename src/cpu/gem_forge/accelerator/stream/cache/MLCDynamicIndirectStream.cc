@@ -15,7 +15,8 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     const DynamicStreamId &_rootStreamId)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer),
-      rootStreamId(_rootStreamId), formalParams(_configData->formalParams),
+      rootStreamId(_rootStreamId),
+      formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize),
       isOneIterationBehind(_configData->isOneIterationBehind),
@@ -116,6 +117,7 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
   if (this->slices.empty()) {
     // We better be overflowed.
     assert(this->hasOverflowed() && "No slices when not overflowed.");
+    return;
   } else {
     if (elementIdx < this->slices.front().sliceId.lhsElementIdx) {
       // The stream is lagging behind the core. The slice has already been
@@ -200,6 +202,7 @@ void MLCDynamicIndirectStream::allocateSlice() {
   // For indirect stream, there is no merging, so it's pretty simple
   // to allocate new slice.
   DynamicStreamSliceId sliceId;
+  sliceId.streamId = this->dynamicStreamId;
   sliceId.lhsElementIdx = this->tailSliceIdx;
   sliceId.rhsElementIdx = this->tailSliceIdx + 1;
 
@@ -207,6 +210,14 @@ void MLCDynamicIndirectStream::allocateSlice() {
 
   this->slices.emplace_back(sliceId);
   this->stream->statistic.numMLCAllocatedSlice++;
+
+  /**
+   * If this is a merged store stream, we mark the core done
+   * as it will not try to issue requests for this stream.
+   */
+  if (this->stream->isMerged() && this->stream->getStreamType() == "store") {
+    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+  }
 
   this->tailSliceIdx++;
 }
@@ -248,6 +259,9 @@ MLCDynamicIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
     }
   }
 
+  if (ret.first == this->slices.end()) {
+    this->panicDump();
+  }
   assert(ret.first != this->slices.end() &&
          "Failed to find slices by elementIdx.");
   return ret;

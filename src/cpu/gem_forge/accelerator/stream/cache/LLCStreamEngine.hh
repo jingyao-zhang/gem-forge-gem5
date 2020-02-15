@@ -91,18 +91,13 @@ private:
   bool issueStreamIndirect(LLCDynamicStream *stream);
 
   /**
-   * Helper function to issue stream request to this controller.
+   * Helper function to issue stream request to the LLC cache bank.
    */
-  void issueStreamRequestHere(LLCDynamicStream *stream, Addr paddrLine,
-                              const DynamicStreamSliceId &sliceId);
-
-  /**
-   * Helper function to issue stream request to other controller.
-   * TODO: Remember the offset within the cache line.
-   * TODO: So far let's pretend we simply send a cache line.
-   */
-  void issueStreamRequestThere(LLCDynamicStream *stream, Addr paddrLine,
-                               const DynamicStreamSliceId &sliceId);
+  void issueStreamRequestToLLCBank(
+      LLCDynamicStream *stream, Addr paddrLine,
+      const DynamicStreamSliceId &sliceId,
+      CoherenceRequestType requestType = CoherenceRequestType_GETU,
+      uint64_t storeData = 0);
 
   /**
    * Migrate streams.

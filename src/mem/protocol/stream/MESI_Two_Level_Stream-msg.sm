@@ -45,6 +45,7 @@ enumeration(CoherenceRequestType, desc="...") {
   STREAM_CONFIG, desc="StreamConfig from L1";
   STREAM_FLOW,   desc="Stream flow control message from L1";
   STREAM_END,    desc="StreamEnd from L1";
+  STREAM_STORE,  desc="Stream store";
 }
 
 // CoherenceResponseType
