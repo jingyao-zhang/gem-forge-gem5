@@ -1334,10 +1334,27 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
   if (this->memorizedStreamStepListMap.count(stepS) != 0) {
     return this->memorizedStreamStepListMap.at(stepS);
   }
-  // Create the list.
+  /**
+   * Create the list by topological sort.
+   */
   std::list<Stream *> stepList;
   std::list<Stream *> stack;
   std::unordered_map<Stream *, int> stackStatusMap;
+
+  auto pushToStack = [&stack, &stackStatusMap](Stream *S) -> void {
+    auto status = stackStatusMap.emplace(S, 0).first->second;
+    if (status == 1) {
+      // Cycle dependence found.
+      panic("Cycle dependence found %s.", S->getStreamName());
+    } else if (status == 2) {
+      // This one has already dumped.
+      return;
+    } else {
+      // This one has not been visited.
+      stack.emplace_back(S);
+    }
+  };
+
   stack.emplace_back(stepS);
   stackStatusMap.emplace(stepS, 0);
   while (!stack.empty()) {
@@ -1348,17 +1365,16 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
         if (depS->getLoopLevel() != stepS->getLoopLevel()) {
           continue;
         }
-        if (stackStatusMap.count(depS) != 0) {
-          if (stackStatusMap.at(depS) == 1) {
-            // Cycle dependence found.
-            panic("Cycle dependence found %s.", depS->getStreamName().c_str());
-          } else if (stackStatusMap.at(depS) == 2) {
-            // This one has already dumped.
-            continue;
-          }
-        }
-        stack.emplace_back(depS);
-        stackStatusMap.emplace(depS, 0);
+        pushToStack(depS);
+      }
+      /**
+       * Also respect the merged predicated relationship.
+       */
+      for (auto predStreamId : S->getMergedPredicatedStreams()) {
+        auto predS = this->getStream(predStreamId.id().id());
+        assert(predS->stepRootStream == stepS &&
+               "PredicatedStream should have same step root.");
+        pushToStack(predS);
       }
       stackStatusMap.at(S) = 1;
     } else if (stackStatusMap.at(S) == 1) {

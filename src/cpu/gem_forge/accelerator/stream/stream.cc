@@ -800,7 +800,9 @@ void Stream::handleMergedPredicate(const DynamicStream &dynS,
     const auto &predDynS = predS->getDynamicStream(dynS.configSeqNum);
     if (predS->getStreamType() == "store") {
       auto predElement = predDynS.getElementByIdx(element->FIFOIdx.entryIdx);
-      assert(predElement && "Failed to get prediated element.");
+      if (!predElement) {
+        S_ELEMENT_PANIC(element, "Failed to get predicated element.");
+      }
       this->performConstStore(predDynS, predElement);
     } else {
       S_ELEMENT_PANIC(element, "Can only handle merged store stream.");
