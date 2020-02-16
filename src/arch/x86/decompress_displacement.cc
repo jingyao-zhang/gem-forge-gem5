@@ -86,6 +86,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 /****************************************************************
  * Implemeted.
  * F3 10 vmovss         TUPLE1_SCALAR
+ * F3 2D vcvttss2si     TUPLE1_SCALAR
  * F3 58 vaddss         TUPLE1_SCALAR
  * F3 59 vmulss         TUPLE1_SCALAR
  * F3 5A vcvtss2sd      TUPLE1_SCALAR
@@ -101,7 +102,7 @@ const EVEXTupleType EVEXTupleTypeTwoByteF3[256] =
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  1 */ TS, O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  2 */ O , O , O , O , O , O , O , O , O , O , TS, O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , O , O , TS, O , O , TS, O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , TS, TS, TS, O , TS, O , TS, O ,

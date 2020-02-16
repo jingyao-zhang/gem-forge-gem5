@@ -45,6 +45,7 @@ categories = [
     "vcvtsi2ss",
     "vcvtsi2sd",
     "vcvtusi2ss",
+    "vcvttss2si",
 ]
 
 microcode = '''
