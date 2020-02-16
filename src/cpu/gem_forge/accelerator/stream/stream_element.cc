@@ -289,11 +289,19 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
         return baseValue;
       }
     }
-    assert(false && "Failed to find the base stream value.");
+    S_ELEMENT_PANIC(this, "Failed to find the base stream value of %llu.\n",
+                    baseStreamId);
   };
 
-  this->addr = dynStream.addrGenCallback->genAddr(
-      this->FIFOIdx.entryIdx, dynStream.addrGenFormalParams, getStreamValue);
+  if (this->stream->isReduction() && this->FIFOIdx.entryIdx == 0) {
+    // Special case: first element of reduction stream uses the initial value.
+    this->addr = dynStream.initialValue;
+  } else {
+    // Normal case: use addrGenCallback.
+    this->addr = dynStream.addrGenCallback->genAddr(
+        this->FIFOIdx.entryIdx, dynStream.addrGenFormalParams, getStreamValue);
+  }
+
   this->size = stream->getElementSize();
 
   S_ELEMENT_DPRINTF(this, "MarkAddrReady vaddr %#x size %d.\n", this->addr,

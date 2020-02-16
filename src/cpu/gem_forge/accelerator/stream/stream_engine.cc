@@ -1443,24 +1443,23 @@ void StreamEngine::allocateElements() {
      */
     auto maxAllocSize = stepStream->maxSize;
     if (!stepStream->backBaseStreams.empty()) {
-      if (stepStream->FIFOIdx.entryIdx > 0) {
-        // This is not the first element.
-        for (auto backBaseS : stepStream->backBaseStreams) {
-          if (backBaseS->stepRootStream == stepStream) {
-            // ! This is acutally a pointer chasing pattern.
-            // ! No constraint should be enforced here.
-            continue;
-          }
-          if (backBaseS->stepRootStream == nullptr) {
-            // ! THis is actually a constant load.
-            // ! So far ignore this dependence.
-            continue;
-          }
-          if (backBaseS->getAllocSize() < maxAllocSize) {
-            // The back base stream is lagging behind.
-            // Reduce the maxAllocSize.
-            maxAllocSize = backBaseS->getAllocSize();
-          }
+      for (auto backBaseS : stepStream->backBaseStreams) {
+        if (backBaseS->stepRootStream == stepStream) {
+          // ! This is acutally a pointer chasing pattern.
+          // ! No constraint should be enforced here.
+          continue;
+        }
+        if (backBaseS->stepRootStream == nullptr) {
+          // ! THis is actually a constant load.
+          // ! So far ignore this dependence.
+          continue;
+        }
+        hack("MaxAllocSize %d backBaseSAllocSize %d.\n", maxAllocSize,
+             backBaseS->getAllocSize());
+        if (backBaseS->getAllocSize() < maxAllocSize) {
+          // The back base stream is lagging behind.
+          // Reduce the maxAllocSize.
+          maxAllocSize = backBaseS->getAllocSize();
         }
       }
     }

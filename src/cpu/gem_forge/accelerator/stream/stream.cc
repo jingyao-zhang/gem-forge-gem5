@@ -414,6 +414,14 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
     // Consume these inputs.
     inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
   }
+  /**
+   * If this is a reduction stream, check for the initial value.
+   */
+  if (this->isReduction()) {
+    assert(!inputVec.empty() && "Missing initial value for reduction stream.");
+    dynS.initialValue = inputVec.front();
+    inputVec.erase(inputVec.begin());
+  }
 }
 
 CacheStreamConfigureData *
@@ -561,27 +569,29 @@ void Stream::allocateElement(StreamElement *newElement) {
     }
   }
 
-  // Find the back base element, starting from the second element.
-  if (newElement->FIFOIdx.entryIdx > 1) {
+  auto newElementIdx = newElement->FIFOIdx.entryIdx;
+  // Find the previous element of my self for reduction stream.
+  if (this->isReduction()) {
+    if (newElementIdx > 0) {
+      assert(dynS.head != dynS.tail &&
+             "Failed to find previous element for reduction stream.");
+      S_ELEMENT_DPRINTF(newElement, "Found reduction dependence.");
+      newElement->baseElements.insert(dynS.head);
+    } else {
+      // This is the first element. Let StreamElement::markAddrReady() set up
+      // the initial value.
+    }
+  }
+  if (newElementIdx > 0) {
+    // Find the back base element, starting from the second element.
     for (auto backBaseS : this->backBaseStreams) {
       if (backBaseS->getLoopLevel() != this->getLoopLevel()) {
         continue;
       }
-
       if (backBaseS->stepRootStream != nullptr) {
         // Try to find the previous element for the base.
         auto &baseDynS = backBaseS->getLastDynamicStream();
-        auto baseElement = baseDynS.stepped;
-        auto element = dynS.stepped->next;
-        while (element != nullptr) {
-          if (baseElement == nullptr) {
-            S_ELEMENT_PANIC(newElement,
-                            "Failed to find back base element from %s.\n",
-                            backBaseS->getStreamName().c_str());
-          }
-          element = element->next;
-          baseElement = baseElement->next;
-        }
+        auto baseElement = baseDynS.getElementByIdx(newElementIdx - 1);
         if (baseElement == nullptr) {
           S_ELEMENT_PANIC(newElement,
                           "Failed to find back base element from %s.\n",
@@ -591,20 +601,13 @@ void Stream::allocateElement(StreamElement *newElement) {
         S_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
         if (baseElement->FIFOIdx.streamId.streamInstance ==
             newElement->FIFOIdx.streamId.streamInstance) {
-          if (baseElement->FIFOIdx.entryIdx + 1 ==
-              newElement->FIFOIdx.entryIdx) {
-            S_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
-            newElement->baseElements.insert(baseElement);
-          } else {
-            // S_ELEMENT_PANIC(
-            //     newElement, "The base element has wrong FIFOIdx.\n");
-          }
+          S_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
+          newElement->baseElements.insert(baseElement);
         } else {
           // S_ELEMENT_PANIC(newElement,
           //                      "The base element has wrong
           //                      streamInstance.\n");
         }
-
       } else {
         // ! Should be a constant stream. So far we ignore it.
       }

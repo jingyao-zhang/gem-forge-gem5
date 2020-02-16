@@ -67,6 +67,7 @@ public:
   const ::LLVM::TDG::ExecFuncInfo &getPredicateFuncInfo() const override;
   bool isMerged() const override;
   const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
+  bool isReduction() const override;
 
   uint64_t getCoalesceBaseStreamId() const override {
     return this->primeLStream->getCoalesceBaseStreamId();

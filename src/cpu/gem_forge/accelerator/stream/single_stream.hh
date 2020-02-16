@@ -52,6 +52,11 @@ public:
     return this->info.static_info().const_update_param();
   }
 
+  bool isReduction() const override {
+    return this->info.static_info().val_pattern() ==
+           ::LLVM::TDG::StreamValuePattern::REDUCTION;
+  }
+
   bool isContinuous() const override;
   void configure(uint64_t seqNum, ThreadContext *tc) override;
 

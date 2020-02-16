@@ -210,6 +210,13 @@ const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {
   return this->primeLStream->info.static_info().const_update_param();
 }
 
+bool CoalescedStream::isReduction() const {
+  assert(this->primeLStream->info.static_info().val_pattern() !=
+             ::LLVM::TDG::StreamValuePattern::REDUCTION &&
+         "CoalescedStream should never be reduction stream.");
+  return false;
+}
+
 bool CoalescedStream::isContinuous() const {
   const auto &pattern = this->primeLStream->patternStream->getPattern();
   if (pattern.val_pattern() != "LINEAR") {
