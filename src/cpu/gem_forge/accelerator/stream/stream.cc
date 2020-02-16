@@ -441,6 +441,9 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   configData->predFormalParams = dynStream.predFormalParams;
   configData->predCallback = dynStream.predCallback;
 
+  // Set the reduction information.
+  configData->reductionInitValue = dynStream.initialValue;
+
   // Set the initial vaddr if this is not indirect stream.
   if (!isIndirect) {
     configData->initVAddr = dynStream.addrGenCallback->genAddr(

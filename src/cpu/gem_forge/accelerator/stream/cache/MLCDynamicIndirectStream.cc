@@ -22,6 +22,12 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
       isOneIterationBehind(_configData->isOneIterationBehind),
       totalTripCount(_configData->totalTripCount) {
   if (this->isOneIterationBehind) {
+    // TODO: Clean this up, as we no longer allocate slices in the constructor.
+    // So far I just hack to ignore this case for reduction stream, which is the
+    // only case we will have OneIterationBehind stream.
+    if (this->stream->isReduction()) {
+      return;
+    }
     // This indirect stream is behind one iteration, which means that the first
     // element is not handled by LLC stream. The stream buffer should start at
     // the second element. We simply release the first element here.
@@ -214,8 +220,11 @@ void MLCDynamicIndirectStream::allocateSlice() {
   /**
    * If this is a merged store stream, we mark the core done
    * as it will not try to issue requests for this stream.
+   * Same case for reduction stream.
    */
   if (this->stream->isMerged() && this->stream->getStreamType() == "store") {
+    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+  } else if (this->stream->isReduction()) {
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
   }
 

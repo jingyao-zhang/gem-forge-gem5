@@ -427,8 +427,37 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   auto elementSize = indirectStream->getElementSize();
   LLC_SLICE_DPRINTF(sliceId, "Issue indirect slice.\n");
 
-  // Compute the address.
+  auto IS = indirectStream->getStaticStream();
   const auto &indirectConfig = indirectStream->configData;
+  if (IS->isReduction()) {
+    // This is a reduction stream.
+    assert(idx > 0 && "Reduction stream ElementIdx should start at 1.");
+
+    // Perform the reduction.
+    auto getBaseStreamValue = [baseElementData, stream, indirectStream](
+                                  uint64_t baseStreamId) -> uint64_t {
+      if (baseStreamId == stream->getStaticId()) {
+        return baseElementData;
+      }
+      if (baseStreamId == indirectStream->getStaticId()) {
+        return indirectStream->reductionValue;
+      }
+      assert(false && "Invalid baseStreamId.");
+      return 0;
+    };
+    auto newReductionValue = indirectConfig.addrGenCallback->genAddr(
+        idx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
+    LLC_SLICE_DPRINTF(sliceId, "Do reduction %#x, %#x -> %#x.\n",
+                      indirectStream->reductionValue, baseElementData,
+                      newReductionValue);
+    indirectStream->reductionValue = newReductionValue;
+
+    // Do not issue any indirect request.
+    stream->readyIndirectElements.erase(firstIndirectIter);
+    return true;
+  }
+
+  // Compute the address.
   auto getBaseStreamValue = [baseElementData,
                              stream](uint64_t baseStreamId) -> uint64_t {
     assert(baseStreamId == stream->getStaticId() && "Invalid baseStreamId.");
@@ -441,7 +470,6 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
-  auto IS = indirectStream->getStaticStream();
   if (IS->isMerged() && IS->getStreamType() == "store") {
     // This is a merged store, we need to issue STREAM_STORE request.
     assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
@@ -500,7 +528,6 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
 
   // Don't forget to release the indirect element.
   stream->readyIndirectElements.erase(firstIndirectIter);
-
   return true;
 }
 
@@ -668,17 +695,23 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
         }
       }
 
-      // If the indirect stream is behind one iteration, base element of
-      // iteration 0 should trigger the indirect element of iteration 1.
+      /**
+       * If the indirect stream is behind one iteration, base element of
+       * iteration i should trigger the indirect element of iteration i + 1.
+       * Also we should be careful to not overflow the boundary.
+       */
+      auto indirectElementIdx = idx;
       if (indirectStream->isOneIterationBehind()) {
-        stream->readyIndirectElements.emplace(
-            std::piecewise_construct, std::forward_as_tuple(idx + 1),
-            std::forward_as_tuple(indirectStream, elementData));
-      } else {
-        stream->readyIndirectElements.emplace(
-            std::piecewise_construct, std::forward_as_tuple(idx),
-            std::forward_as_tuple(indirectStream, elementData));
+        indirectElementIdx = idx + 1;
       }
+      auto indirectTripCount = indirectStream->configData.totalTripCount;
+      if (indirectTripCount != -1 && indirectElementIdx > indirectTripCount) {
+        // Ignore overflow elements.
+        continue;
+      }
+      stream->readyIndirectElements.emplace(
+          std::piecewise_construct, std::forward_as_tuple(indirectElementIdx),
+          std::forward_as_tuple(indirectStream, elementData));
     }
     // Don't forget to erase it from the waiting list.
     stream->waitingIndirectElements.erase(idx);

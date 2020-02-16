@@ -397,6 +397,20 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         streamConfigureData->indirectStreams.emplace_back(mergedConfigureData);
       }
 
+      /**
+       * Reduction streams are always offloaded along with the base stream.
+       */
+      for (auto backDepS : S->backDependentStreams) {
+        if (backDepS->isReduction()) {
+          auto reductionConfigData =
+              backDepS->allocateCacheConfigureData(args.seqNum, true);
+          // Reduction stream is always one iteration behind.
+          reductionConfigData->isOneIterationBehind = true;
+          streamConfigureData->indirectStreams.emplace_back(
+              reductionConfigData);
+        }
+      }
+
       // ! Sanity check that the base stream is not coaleasced.
       if (!streamConfigureData->indirectStreams.empty()) {
         if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
@@ -1454,8 +1468,6 @@ void StreamEngine::allocateElements() {
           // ! So far ignore this dependence.
           continue;
         }
-        hack("MaxAllocSize %d backBaseSAllocSize %d.\n", maxAllocSize,
-             backBaseS->getAllocSize());
         if (backBaseS->getAllocSize() < maxAllocSize) {
           // The back base stream is lagging behind.
           // Reduce the maxAllocSize.

@@ -21,6 +21,10 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
     // data.
     this->maxWaitingDataBaseRequests = 1;
   }
+  if (this->getStaticStream()->isReduction()) {
+    // Copy the initial reduction value.
+    this->reductionValue = this->configData.reductionInitValue;
+  }
 }
 
 LLCDynamicStream::~LLCDynamicStream() {
@@ -65,8 +69,8 @@ void LLCDynamicStream::updateIssueClearCycle() {
   uint64_t newIssueClearCycle = this->issueClearCycle;
   if (avgTurnAroundCycle != 0) {
     // We need to adjust the turn around cycle from element to slice.
-    uint64_t avgSliceTurnAroundCycle =
-        static_cast<float>(avgTurnAroundCycle) * this->slicedStream.getElementPerSlice();
+    uint64_t avgSliceTurnAroundCycle = static_cast<float>(avgTurnAroundCycle) *
+                                       this->slicedStream.getElementPerSlice();
     // We divide by 1.5 so to reflect that we should be slighly faster than
     // core.
     uint64_t adjustSliceTurnAroundCycle = avgSliceTurnAroundCycle * 2 / 3;

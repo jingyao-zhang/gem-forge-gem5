@@ -53,6 +53,7 @@ public:
   AbstractStreamAwareController *controller;
   const CacheStreamConfigureData configData;
   SlicedDynamicStream slicedStream;
+  uint64_t reductionValue = 0;
 
   // Dependent indirect streams.
   std::list<LLCDynamicStream *> indirectStreams;

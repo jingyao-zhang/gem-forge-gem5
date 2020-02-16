@@ -23,6 +23,7 @@ CacheStreamConfigureData::CacheStreamConfigureData(
       constUpdateValue(other.constUpdateValue),
       isPredicated(other.isPredicated),
       isPredicatedTrue(other.isPredicatedTrue),
+      reductionInitValue(other.reductionInitValue),
       isPointerChase(other.isPointerChase),
       isOneIterationBehind(other.isOneIterationBehind),
       indirectStreams(other.indirectStreams),

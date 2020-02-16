@@ -36,6 +36,7 @@ public:
   uint64_t constUpdateValue = 0;
   bool isPredicated = false;
   bool isPredicatedTrue = false;
+  uint64_t reductionInitValue = 0;
 
   /**
    * Whether this is a pointer chase stream.
