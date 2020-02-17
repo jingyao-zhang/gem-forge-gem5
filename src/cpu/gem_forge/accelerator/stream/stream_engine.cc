@@ -312,77 +312,106 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   }
 
   auto *cacheStreamConfigVec = new CacheStreamConfigureVec();
+  std::unordered_map<Stream *, CacheStreamConfigureData *>
+      offloadedStreamConfigMap;
   for (auto &S : configStreams) {
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
+     * TODO: Rewrite this bunch of hack.
      */
+    if (offloadedStreamConfigMap.count(S)) {
+      continue;
+    }
     auto &dynStream = S->getDynamicStream(args.seqNum);
     if (this->streamFloatPolicy->shouldFloatStream(
             S, dynStream.dynamicStreamId.streamInstance)) {
 
-      S->statistic.numFloated++;
-
-      // Remember the offloaded decision.
-      // ! Only do this for the root offloaded stream.
-      dynStream.offloadedToCache = true;
-
       // Get the CacheStreamConfigureData.
       auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
+
+      // Remember the offloaded decision.
+      dynStream.offloadedToCacheAsRoot = true;
+      dynStream.offloadedToCache = true;
+      offloadedStreamConfigMap.emplace(S, streamConfigureData);
 
       if (S->isPointerChaseLoadStream()) {
         streamConfigureData->isPointerChase = true;
       }
 
       /**
-       * If we enable indirect stream to float, so far we add only
-       * one indirect stream here.
+       * If we enable indirect stream to float.
        */
       if (this->enableStreamFloatIndirect) {
-        for (auto dependentStream : S->dependentStreams) {
-          if (dependentStream->getStreamType() == "load") {
-            if (dependentStream->baseStreams.size() == 1) {
+        for (auto depS : S->dependentStreams) {
+          if (depS->getStreamType() == "load") {
+            if (depS->baseStreams.size() == 1) {
               // Only dependent on this direct stream.
-              streamConfigureData->indirectStreams.emplace_back(
-                  dependentStream->allocateCacheConfigureData(
-                      args.seqNum, true /* isIndirect */));
-              break;
+              auto depConfig = depS->allocateCacheConfigureData(
+                  args.seqNum, true /* isIndirect */);
+              streamConfigureData->indirectStreams.emplace_back(depConfig);
+              // Remember the decision.
+              auto &depDynS = depS->getDynamicStream(args.seqNum);
+              depDynS.offloadedToCache = true;
+              S_DPRINTF(depS, "Offload as indirect.\n");
+              assert(offloadedStreamConfigMap.emplace(depS, depConfig).second &&
+                     "Already offloaded this indirect stream.");
+              // ! Pure hack here to indclude merged stream of this indirect
+              // ! stream.
+              for (auto mergedStreamId : depS->getMergedPredicatedStreams()) {
+                auto mergedS = this->getStream(mergedStreamId.id().id());
+                auto mergedConfig = mergedS->allocateCacheConfigureData(
+                    args.seqNum, true /* isIndirect */);
+                mergedConfig->isPredicated = true;
+                mergedConfig->isPredicatedTrue = mergedStreamId.pred_true();
+                mergedConfig->predicateStreamId = depDynS.dynamicStreamId;
+                /**
+                 * Remember the decision.
+                 */
+                mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
+                assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig)
+                           .second &&
+                       "Merged stream already offloaded.");
+                streamConfigureData->indirectStreams.emplace_back(mergedConfig);
+              }
             }
           }
         }
-        if (streamConfigureData->indirectStreams.empty()) {
-          // Not found a valid indirect stream, let's try to search for
-          // a indirect stream that is one iteration behind.
-          for (auto backDependentStream : S->backDependentStreams) {
-            if (backDependentStream->getStreamType() != "phi") {
-              continue;
-            }
-            if (backDependentStream->backBaseStreams.size() != 1) {
-              continue;
-            }
-            for (auto indirectStream : backDependentStream->dependentStreams) {
-              if (indirectStream == S) {
-                continue;
-              }
-              if (indirectStream->getStreamType() != "load") {
-                continue;
-              }
-              if (indirectStream->baseStreams.size() != 1) {
-                continue;
-              }
-              // We found one valid indirect stream that is one iteration
-              // behind S.
-              streamConfigureData->indirectStreams.emplace_back(
-                  indirectStream->allocateCacheConfigureData(args.seqNum));
-              streamConfigureData->indirectStreams.back()
-                  ->isOneIterationBehind = true;
-              break;
-            }
-            if (!streamConfigureData->indirectStreams.empty()) {
-              // We already found one.
-              break;
-            }
-          }
-        }
+        // ! Disable one iteration behind indirect streams so far.
+        // if (streamConfigureData->indirectStreams.empty()) {
+        //   // Not found a valid indirect stream, let's try to search for
+        //   // a indirect stream that is one iteration behind.
+        //   for (auto backDependentStream : S->backDependentStreams) {
+        //     if (backDependentStream->getStreamType() != "phi") {
+        //       continue;
+        //     }
+        //     if (backDependentStream->backBaseStreams.size() != 1) {
+        //       continue;
+        //     }
+        //     for (auto indirectStream : backDependentStream->dependentStreams)
+        //     {
+        //       if (indirectStream == S) {
+        //         continue;
+        //       }
+        //       if (indirectStream->getStreamType() != "load") {
+        //         continue;
+        //       }
+        //       if (indirectStream->baseStreams.size() != 1) {
+        //         continue;
+        //       }
+        //       // We found one valid indirect stream that is one iteration
+        //       // behind S.
+        //       streamConfigureData->indirectStreams.emplace_back(
+        //           indirectStream->allocateCacheConfigureData(args.seqNum));
+        //       streamConfigureData->indirectStreams.back()
+        //           ->isOneIterationBehind = true;
+        //       break;
+        //     }
+        //     if (!streamConfigureData->indirectStreams.empty()) {
+        //       // We already found one.
+        //       break;
+        //     }
+        //   }
+        // }
       }
 
       /**
@@ -390,11 +419,18 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
        */
       for (auto mergedStreamId : S->getMergedPredicatedStreams()) {
         auto mergedS = this->getStream(mergedStreamId.id().id());
-        auto mergedConfigureData =
-            mergedS->allocateCacheConfigureData(args.seqNum);
-        mergedConfigureData->isPredicated = true;
-        mergedConfigureData->isPredicatedTrue = mergedStreamId.pred_true();
-        streamConfigureData->indirectStreams.emplace_back(mergedConfigureData);
+        auto mergedConfig = mergedS->allocateCacheConfigureData(
+            args.seqNum, true /* isIndirect */);
+        mergedConfig->isPredicated = true;
+        mergedConfig->isPredicatedTrue = mergedStreamId.pred_true();
+        mergedConfig->predicateStreamId = dynStream.dynamicStreamId;
+        /**
+         * Remember the decision.
+         */
+        mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
+        assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig).second &&
+               "Merged stream already offloaded.");
+        streamConfigureData->indirectStreams.emplace_back(mergedConfig);
       }
 
       /**
@@ -402,12 +438,16 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
        */
       for (auto backDepS : S->backDependentStreams) {
         if (backDepS->isReduction()) {
-          auto reductionConfigData =
+          auto reductionConfig =
               backDepS->allocateCacheConfigureData(args.seqNum, true);
           // Reduction stream is always one iteration behind.
-          reductionConfigData->isOneIterationBehind = true;
-          streamConfigureData->indirectStreams.emplace_back(
-              reductionConfigData);
+          reductionConfig->isOneIterationBehind = true;
+          streamConfigureData->indirectStreams.emplace_back(reductionConfig);
+          // Remember the decision.
+          backDepS->getDynamicStream(args.seqNum).offloadedToCache = true;
+          assert(offloadedStreamConfigMap.emplace(backDepS, reductionConfig)
+                     .second &&
+                 "Reduction stream already offloaded.");
         }
       }
 
@@ -421,20 +461,31 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         }
       }
       cacheStreamConfigVec->push_back(streamConfigureData);
-    } else {
-      // Do not offload the stream.
-      // Sanity check that this is not a update stream.
+    }
+  }
+
+  // Sanity check for some offload decision.
+  for (auto &S : configStreams) {
+    auto &dynS = S->getDynamicStream(args.seqNum);
+    if (!dynS.offloadedToCache) {
       if (S->hasUpgradedToUpdate()) {
         S_PANIC(S, "UpdateStream not offloaded.\n");
       }
       if (S->getMergedPredicatedStreams().size() > 0) {
         S_PANIC(S, "Should offload streams with merged streams.");
       }
-      // if (S->isMerged()) {
-      //   S_PANIC(S, "MergedStream not offloaded.");
-      // }
+      if (S->isMerged()) {
+        S_PANIC(S, "MergedStream not offloaded.");
+      }
     }
   }
+
+  // Update stats.
+  for (auto &offloadedS : offloadedStreamConfigMap) {
+    auto S = offloadedS.first;
+    S->statistic.numFloated++;
+  }
+
   // Send all the floating streams in one packet.
   if (!cacheStreamConfigVec->empty()) {
     // Dummy paddr to make ruby happy.
@@ -987,7 +1038,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
     auto &endedDynamicStream = S->dynamicStreams.front();
-    if (endedDynamicStream.offloadedToCache) {
+    if (endedDynamicStream.offloadedToCacheAsRoot) {
       // We need to explicitly allocate and copy the DynamicStreamId for the
       // packet.
       auto endedDynamicStreamId =

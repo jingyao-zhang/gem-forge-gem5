@@ -36,6 +36,7 @@ struct DynamicStream {
   FIFOEntryIdx FIFOIdx;
 
   // Whether the dynamic stream is offloaded to cache.
+  bool offloadedToCacheAsRoot = false;
   bool offloadedToCache = false;
 
   // Whether the StreamConfig has executed (ready to go).

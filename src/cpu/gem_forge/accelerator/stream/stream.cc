@@ -138,9 +138,9 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   assert(dynStream.configSeqNum == seqNum && "Mismatch configSeqNum.");
 
   // Check if we have offloaded this.
-  if (dynStream.offloadedToCache) {
+  if (dynStream.offloadedToCacheAsRoot) {
     // ! Jesus, donot know how to rewind an offloaded stream yet.
-    panic("Don't support rewind offloaded stream.");
+    panic("Don't support rewind StreamConfig for offloaded stream.");
   }
 
   /**
@@ -303,8 +303,10 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
   }
 
   // Set the callback.
-  dynStream.addrGenCallback =
-      std::unique_ptr<LinearAddrGenCallback>(new LinearAddrGenCallback());
+  if (!this->addrGenCallback) {
+    this->addrGenCallback = std::make_shared<LinearAddrGenCallback>();
+  }
+  dynStream.addrGenCallback = this->addrGenCallback;
 
   // Update the totalTripCount to the dynamic stream if possible.
   if (formalParams.size() % 2 == 1) {
@@ -324,10 +326,12 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
       this->setupFormalParams(inputVec, addrFuncInfo, formalParams);
   assert(usedInputs == inputVec->size() && "Underflow of inputVec.");
   // Set the callback.
-  auto addrExecFunc =
-      std::make_shared<TheISA::ExecFunc>(dynStream.tc, addrFuncInfo);
-  dynStream.addrGenCallback =
-      std::make_shared<FuncAddrGenCallback>(addrExecFunc);
+  if (!this->addrGenCallback) {
+    auto addrExecFunc =
+        std::make_shared<TheISA::ExecFunc>(dynStream.tc, addrFuncInfo);
+    this->addrGenCallback = std::make_shared<FuncAddrGenCallback>(addrExecFunc);
+  }
+  dynStream.addrGenCallback = this->addrGenCallback;
 }
 
 int Stream::setupFormalParams(const std::vector<uint64_t> *inputVec,
@@ -406,8 +410,11 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
   const auto &mergedPredicatedStreams = this->getMergedPredicatedStreams();
   if (mergedPredicatedStreams.size() > 0) {
     const auto &predFuncInfo = this->getPredicateFuncInfo();
-    dynS.predCallback =
-        std::make_shared<TheISA::ExecFunc>(dynS.tc, predFuncInfo);
+    if (!this->predCallback) {
+      this->predCallback =
+          std::make_shared<TheISA::ExecFunc>(dynS.tc, predFuncInfo);
+    }
+    dynS.predCallback = this->predCallback;
     auto &predFormalParams = dynS.predFormalParams;
     auto usedInputs =
         this->setupFormalParams(&inputVec, predFuncInfo, predFormalParams);
@@ -770,7 +777,7 @@ StreamElement *Stream::getPrevElement(StreamElement *element) {
 
 void Stream::handleConstUpdate(const DynamicStream &dynS,
                                StreamElement *element) {
-  if (!(this->hasUpgradedToUpdate() && dynS.offloadedToCache)) {
+  if (!(this->hasUpgradedToUpdate() && dynS.offloadedToCacheAsRoot)) {
     return;
   }
   this->performConstStore(dynS, element);

@@ -28,6 +28,15 @@ public:
   bool isOneIterationBehind() const {
     return this->configData.isOneIterationBehind;
   }
+  bool isPredicated() const { return this->configData.isPredicated; }
+  bool isPredicatedTrue() const {
+    assert(this->isPredicated());
+    return this->configData.isPredicatedTrue;
+  }
+  const DynamicStreamId &getPredicateStreamId() const {
+    assert(this->isPredicated());
+    return this->configData.predicateStreamId;
+  }
 
   Addr peekVAddr();
   Addr getVAddr(uint64_t sliceIdx) const;
@@ -49,6 +58,13 @@ public:
     this->sliceIdx++;
     return this->slicedStream.getNextSlice();
   }
+  /**
+   * A hacky way to set up a global map for LLCDynamicStream.
+   * TODO: Improve this.
+   */
+  static std::unordered_map<DynamicStreamId, LLCDynamicStream *,
+                            DynamicStreamIdHasher>
+      GlobalLLCDynamicStreamMap;
 
   AbstractStreamAwareController *controller;
   const CacheStreamConfigureData configData;
@@ -57,6 +73,15 @@ public:
 
   // Dependent indirect streams.
   std::list<LLCDynamicStream *> indirectStreams;
+
+  // Base stream.
+  LLCDynamicStream *baseStream = nullptr;
+
+  // Dependent predicated streams.
+  std::unordered_set<LLCDynamicStream *> predicatedStreams;
+
+  // Base predicate stream.
+  LLCDynamicStream *predicateStream = nullptr;
 
   /**
    * Maximum number of issued requests of the base stream that are waiting for
@@ -94,6 +119,12 @@ public:
    */
   std::multimap<uint64_t, std::pair<LLCDynamicStream *, uint64_t>>
       readyIndirectElements;
+
+  /**
+   * The elements that is predicated by this stream.
+   */
+  std::map<uint64_t, std::list<std::pair<LLCDynamicStream *, uint64_t>>>
+      waitingPredicatedElements;
 
   void updateIssueClearCycle();
 };

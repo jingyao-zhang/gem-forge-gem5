@@ -48,7 +48,7 @@ private:
   // Threshold to limit maximum number of requests in queue;
   const int maxInqueueRequests;
 
-  using StreamList = std::list<LLCDynamicStream *>;
+  using StreamList = std::list<LLCDynamicStreamPtr>;
   using StreamListIter = StreamList::iterator;
   StreamList streams;
   /**
@@ -135,6 +135,7 @@ private:
                                         const DynamicStreamSliceId &sliceId,
                                         const DataBlock &dataBlock);
   uint64_t extractElementDataFromSlice(LLCDynamicStreamPtr stream,
+                                       const DynamicStreamSliceId &sliceId,
                                        uint64_t elementIdx,
                                        const DataBlock &dataBlock);
   void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,

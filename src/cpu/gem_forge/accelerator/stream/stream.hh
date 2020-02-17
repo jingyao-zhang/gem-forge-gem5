@@ -242,6 +242,9 @@ protected:
   std::unordered_set<Stream *> baseStepRootStreams;
   std::unordered_set<Stream *> dependentStepStreams;
 
+  AddrGenCallbackPtr addrGenCallback;
+  ExecFuncPtr predCallback;
+
   /**
    * Total allocated elements among all dynamic streams.
    */

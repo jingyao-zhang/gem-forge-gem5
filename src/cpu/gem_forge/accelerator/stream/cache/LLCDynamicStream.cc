@@ -8,6 +8,9 @@
 #define DEBUG_TYPE LLCRubyStream
 #include "../stream_log.hh"
 
+std::unordered_map<DynamicStreamId, LLCDynamicStream *, DynamicStreamIdHasher>
+    LLCDynamicStream::GlobalLLCDynamicStreamMap;
+
 // TODO: Support real flow control.
 LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
                                    CacheStreamConfigureData *_configData)
@@ -25,6 +28,8 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
     // Copy the initial reduction value.
     this->reductionValue = this->configData.reductionInitValue;
   }
+  assert(GlobalLLCDynamicStreamMap.emplace(this->getDynamicStreamId(), this)
+             .second);
 }
 
 LLCDynamicStream::~LLCDynamicStream() {
@@ -33,6 +38,7 @@ LLCDynamicStream::~LLCDynamicStream() {
     indirectStream = nullptr;
   }
   this->indirectStreams.clear();
+  assert(GlobalLLCDynamicStreamMap.erase(this->getDynamicStreamId()) == 1);
 }
 
 Addr LLCDynamicStream::peekVAddr() {
