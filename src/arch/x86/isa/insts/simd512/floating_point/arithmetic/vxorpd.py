@@ -3,6 +3,7 @@ microcode = '''
 def macroop VXORPD_XMM_XMM {
     mxor xmm0, xmm0v, xmm0m
     mxor xmm1, xmm1v, xmm1m
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VXORPD_XMM_M {
@@ -10,6 +11,7 @@ def macroop VXORPD_XMM_M {
     ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
     mxor xmm0, xmm0v, ufp1
     mxor xmm1, xmm1v, ufp2
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VXORPD_XMM_P {
@@ -18,6 +20,7 @@ def macroop VXORPD_XMM_P {
     ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
     mxor xmm0, xmm0v, ufp1
     mxor xmm1, xmm1v, ufp2
+    vclear dest=xmm2, destVL=16
 };
 
 def macroop VXORPD_YMM_YMM {
@@ -25,6 +28,7 @@ def macroop VXORPD_YMM_YMM {
     mxor xmm1, xmm1v, xmm1m
     mxor xmm2, xmm2v, xmm2m
     mxor xmm3, xmm3v, xmm3m
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VXORPD_YMM_M {
@@ -36,6 +40,7 @@ def macroop VXORPD_YMM_M {
     mxor xmm1, xmm1v, ufp2
     mxor xmm2, xmm2v, ufp3
     mxor xmm3, xmm3v, ufp4
+    vclear dest=xmm4, destVL=32
 };
 
 def macroop VXORPD_YMM_P {
@@ -48,6 +53,7 @@ def macroop VXORPD_YMM_P {
     mxor xmm1, xmm1v, ufp2
     mxor xmm2, xmm2v, ufp3
     mxor xmm3, xmm3v, ufp4
+    vclear dest=xmm4, destVL=32
 };
 
 '''
