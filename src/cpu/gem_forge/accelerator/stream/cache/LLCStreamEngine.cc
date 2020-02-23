@@ -313,11 +313,9 @@ void LLCStreamEngine::issueStreams() {
 
   if (this->streamIssueMsgBuffer->getSize(this->controller->clockEdge()) >=
       this->maxInqueueRequests) {
-    LLCSE_DPRINTF("Not issue: MaxInqueueRequests.\n");
     return;
   }
 
-  LLCSE_DPRINTF("Try issuing streams.\n");
   auto streamIter = this->streams.begin();
   auto streamEnd = this->streams.end();
   for (int i = 0, issuedStreams = 0, nStreams = this->streams.size();
@@ -381,8 +379,6 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
   // Enforce the per stream maxWaitingDataBaseRequests constraint.
   if (stream->waitingDataBaseRequests == stream->maxWaitingDataBaseRequests) {
-    LLC_S_DPRINTF(stream->getDynamicStreamId(),
-                  "Not issue: MaxWaitingDataBaseRequests.\n");
     return false;
   }
 

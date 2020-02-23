@@ -372,7 +372,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
             } else {
               trigger(Event:Fwd_GETX, in_msg.addr, cache_entry, tbe);
             }
-        } else if (in_msg.Type == CoherenceRequestType:GETS) {
+        } else if (in_msg.Type == CoherenceRequestType:GETS ||
+                   in_msg.Type == CoherenceRequestType:GETU) {
+            // For a forwarded GETU request, we treat it as GETS.
             if (is_valid(cache_entry) && inL0Cache(cache_entry.CacheState)) {
               trigger(Event:L0_Invalidate_Else, in_msg.addr,
                       cache_entry, tbe);
@@ -572,6 +574,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         out_msg.Sender := machineID;
         out_msg.Destination.add(in_msg.Requestor);
         out_msg.MessageSize := MessageSizeType:Response_Data;
+        out_msg.sliceId := in_msg.sliceId;
       }
     }
   }
@@ -601,6 +604,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         out_msg.Sender := machineID;
         out_msg.Destination.add(in_msg.Requestor);
         out_msg.MessageSize := MessageSizeType:Response_Data;
+        out_msg.sliceId := in_msg.sliceId;
       }
     }
   }
@@ -659,7 +663,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     }
   }
 
-  action(fi_sendInvAck, "fi", desc="send data to the L2 cache") {
+  action(fi_sendInvAck, "fi", desc="send inv ack to the requestor") {
     peek(requestNetwork_in, RequestMsg) {
       enqueue(responseNetwork_out, ResponseMsg, l1_response_latency) {
         out_msg.addr := address;

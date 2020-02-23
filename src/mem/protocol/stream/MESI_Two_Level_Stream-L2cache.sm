@@ -92,6 +92,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     IS, AccessPermission:Busy, desc="L2 idle, got L1_GET_INSTR or multiple L1_GETS, issued memory fetch, have not seen response yet";
     IM, AccessPermission:Busy, desc="L2 idle, got L1_GETX, issued memory fetch, have not seen response(s) yet";
 
+    // Stream Store. In LLC update.
+    // S_M, AccessPermission::Busy, desc="L2 updating, collecting acks from L1s";
+
     // Blocking states
     SS_MB, AccessPermission:Busy, desc="Blocked for L1_GETX from SS";
     MT_MB, AccessPermission:Busy, desc="Blocked for L1_GETX from MT";
@@ -151,6 +154,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     MachineID Exclusive,          desc="Exclusive holder of block";
     DataBlock DataBlk,       desc="data for the block";
     bool Dirty, default="false", desc="data is dirty";
+    DynamicStreamSliceId sliceId, desc="tempoary slice for this entry.";
   }
 
   // TBE fields
@@ -557,6 +561,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.Requestor := in_msg.Requestor;
         out_msg.Destination.add(cache_entry.Exclusive);
         out_msg.MessageSize := MessageSizeType:Request_Control;
+        // Don't forget to copy the slice id.
+        out_msg.sliceId := in_msg.sliceId;
       }
     }
   }
@@ -941,6 +947,16 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     }
   }
 
+  action(ns_addSliceIdFromRequest, "\ns", desc="Add slice id to cache") {
+    peek(L1RequestL2Network_in, RequestMsg) {
+      assert(is_valid(cache_entry));
+      assert(!cache_entry.sliceId.isValid());
+      assert(in_msg.sliceId.isValid());
+      DPRINTF(LLCRubyStream, "%s: Add to LLC cache entry.\n", in_msg.sliceId);
+      cache_entry.sliceId := in_msg.sliceId;
+    }
+  }
+
   action(kk_removeRequestSharer, "\k", desc="Remove L1 Request sharer from list") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(cache_entry));
@@ -988,6 +1004,16 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   /**
    * ! Sean: StreamAwareCache
    */
+
+  action(nec_notifyStreamEngineFromCacheEntry, "nec", desc="notify the stream engine from cache entry") {
+    assert(is_valid(cache_entry));
+    if (cache_entry.sliceId.isValid()) {
+      se.receiveStreamElementData(cache_entry.sliceId, cache_entry.DataBlk);
+      // Clear the sliceId.
+      cache_entry.sliceId.clear();
+    }
+  }
+
   action(rsc_receiveStreamConfig, "rsc", desc="Receive the StreamConfig") {
     peek(L1RequestL2Network_in, RequestMsg) {
       DPRINTF(RubyStream, "Receive StreamConfig: %#x\n", in_msg.pkt);
@@ -1207,7 +1233,34 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     f_sendInvToSharers;
     rr_deallocateL2CacheBlock;
   }
+  transition(S_I, Ack) {
+    q_updateAck;
+    o_popIncomingResponseQueue;
+  }
+  transition(S_I, Ack_all, M_I) {
+    ct_exclusiveReplacementFromTBE;
+    o_popIncomingResponseQueue;
+  }
 
+  /**
+   * ! Not a correct way to do this.
+   */
+  transition(SS, STREAM_STORE, SS) {
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
+  // transition(SS, STREAM_STORE, S_M) {
+  //   i_allocateTBE;
+  //   f_sendInvToSharers;
+  // }
+  // transition(S_M, Ack) {
+  //   q_updateAck;
+  //   o_popIncomingResponseQueue;
+  // }
+  // transition(S_M, Ack_all, M) {
+
+  // }
 
   transition(M, L1_GETX, MT_MB) {
     d_sendDataToRequestor;
@@ -1250,26 +1303,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     uu_profileHit;
     jj_popL1RequestQueue;
   }
-  /**
-   * ! Not a correct way to do this.
-   */
-  transition(SS, STREAM_STORE, SS) {
-    set_setMRU;
-    uu_profileHit;
-    jj_popL1RequestQueue;
-  }
 
   /**
    * ! Not a correct way to do this.
    * This means LLC's data is stale. We actually need to invalidate other's
-   * copy and then sent to upper level.
+   * copy and then update level.
    */
-  transition(MT, L1_GETV, MT) {
-    dd_sendExclusiveDataToRequestor;
-    set_setMRU;
-    uu_profileHit;
-    jj_popL1RequestQueue;
-  }
   transition(MT, STREAM_STORE, MT) {
     set_setMRU;
     uu_profileHit;
@@ -1305,6 +1344,23 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     jj_popL1RequestQueue;
   }
 
+  transition(MT, L1_GETV, MT_IB) {
+    // For uncached request, we immediately transit to MT_IB
+    // as the requestor will not send unblock message to us.
+    b_forwardRequestToExclusive;
+    ns_addSliceIdFromRequest;
+    uu_profileMiss;
+    set_setMRU;
+    jj_popL1RequestQueue;
+  }
+
+  // transition(MT, L1_GETV, MT) {
+  //   dd_sendExclusiveDataToRequestor;
+  //   set_setMRU;
+  //   uu_profileHit;
+  //   jj_popL1RequestQueue;
+  // }
+
   transition(MT, {L2_Replacement, MEM_Inv}, MT_I) {
     i_allocateTBE;
     f_sendInvToSharers;
@@ -1324,7 +1380,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     jj_popL1RequestQueue;
   }
 
-  transition({SS_MB,MT_MB}, Exclusive_Unblock, MT) {
+  transition({SS_MB, MT_MB}, Exclusive_Unblock, MT) {
     // update actual directory
     mmu_markExclusiveFromUnblock;
     k_popUnblockQueue;
@@ -1347,12 +1403,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   transition(MT_IB, {WB_Data, WB_Data_clean}, SS) {
     m_writeDataToCache;
+    nec_notifyStreamEngineFromCacheEntry;
     o_popIncomingResponseQueue;
     kd_wakeUpDependents;
   }
 
   transition(MT_SB, Unblock, SS) {
     nnu_addSharerFromUnblock;
+    nec_notifyStreamEngineFromCacheEntry;
     k_popUnblockQueue;
     kd_wakeUpDependents;
   }
@@ -1400,16 +1458,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   // possible race between unblock and immediate replacement
   transition({MT_MB,SS_MB}, {L1_PUTX, L1_PUTX_old}) {
     zz_stallAndWaitL1RequestQueue;
-  }
-
-  transition(S_I, Ack) {
-    q_updateAck;
-    o_popIncomingResponseQueue;
-  }
-
-  transition(S_I, Ack_all, M_I) {
-    ct_exclusiveReplacementFromTBE;
-    o_popIncomingResponseQueue;
   }
 
   transition(M_I, Mem_Ack, NP) {

@@ -31,6 +31,13 @@ struct DynamicStreamSliceId {
       : streamId(), lhsElementIdx(0), rhsElementIdx(0), vaddr(0), size(0) {}
 
   bool isValid() const { return !(this->lhsElementIdx == 0 && this->rhsElementIdx == 0); }
+  void clear() {
+    this->streamId = DynamicStreamId();
+    this->lhsElementIdx = 0;
+    this->rhsElementIdx = 0;
+    this->vaddr = 0;
+    this->size = 0;
+  }
 
   uint64_t getStartIdx() const { return this->lhsElementIdx; }
   uint64_t getNumElements() const { return this->rhsElementIdx - this->lhsElementIdx; }
