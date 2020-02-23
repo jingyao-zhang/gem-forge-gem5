@@ -30,6 +30,8 @@ public:
   size_t numMLCAllocatedSlice = 0;
   size_t numLLCSentSlice = 0;
   size_t numLLCFaultSlice = 0;
+  size_t numLLCPredYSlice = 0;
+  size_t numLLCPredNSlice = 0;
 
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;

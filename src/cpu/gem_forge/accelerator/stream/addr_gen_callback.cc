@@ -8,6 +8,11 @@ uint64_t getStreamValueFail(uint64_t streamId) {
   assert(false && "Failed to get stream value.");
 }
 
+uint64_t GetSingleStreamValue::operator()(uint64_t streamId) const {
+  assert(this->streamId == streamId && "Invalid base stream.");
+  return this->streamValue;
+}
+
 DynamicStreamParamV
 convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
                           GetStreamValueFunc getStreamValue) {

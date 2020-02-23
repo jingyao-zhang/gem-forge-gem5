@@ -5,6 +5,7 @@
 
 // Generate by slicc.
 #include "mem/ruby/protocol/RequestMsg.hh"
+#include "mem/ruby/protocol/ResponseMsg.hh"
 
 #include "mem/ruby/common/Consumer.hh"
 
@@ -13,6 +14,7 @@
  */
 #include <list>
 #include <memory>
+#include <queue>
 
 class AbstractStreamAwareController;
 class MessageBuffer;
@@ -22,7 +24,8 @@ public:
   LLCStreamEngine(AbstractStreamAwareController *_controller,
                   MessageBuffer *_streamMigrateMsgBuffer,
                   MessageBuffer *_streamIssueMsgBuffer,
-                  MessageBuffer *_streamIndirectIssueMsgBuffer);
+                  MessageBuffer *_streamIndirectIssueMsgBuffer,
+                  MessageBuffer *_streamResponseMsgBuffer);
   ~LLCStreamEngine();
 
   void receiveStreamConfigure(PacketPtr pkt);
@@ -39,8 +42,12 @@ private:
   AbstractStreamAwareController *controller;
   // Out going stream migrate buffer.
   MessageBuffer *streamMigrateMsgBuffer;
+  // Issue stream request here at the local bank.
   MessageBuffer *streamIssueMsgBuffer;
+  // Issue stream request to a remote bank.
   MessageBuffer *streamIndirectIssueMsgBuffer;
+  // Send response to MLC.
+  MessageBuffer *streamResponseMsgBuffer;
   const int issueWidth;
   const int migrateWidth;
   // Threshold to limit maximum number of infly requests.
@@ -70,6 +77,11 @@ private:
       pendingStreamEndMsgs;
 
   /**
+   * Hold the request queue.
+   */
+  std::queue<LLCStreamRequest> requestQueue;
+
+  /**
    * Process stream flow control messages and distribute
    * them to the coresponding stream.
    */
@@ -91,13 +103,21 @@ private:
   bool issueStreamIndirect(LLCDynamicStream *stream);
 
   /**
+   * Generate indirect stream request.
+   */
+  void generateIndirectStreamRequest(LLCDynamicStream *dynIS,
+                                     uint64_t elementIdx,
+                                     uint64_t baseElementData);
+
+  /**
    * Helper function to issue stream request to the LLC cache bank.
    */
-  void issueStreamRequestToLLCBank(
-      LLCDynamicStream *stream, Addr paddrLine,
-      const DynamicStreamSliceId &sliceId,
-      CoherenceRequestType requestType = CoherenceRequestType_GETU,
-      uint64_t storeData = 0);
+  void issueStreamRequestToLLCBank(const LLCStreamRequest &req);
+
+  /**
+   * Helper function to issue stream ack back to MLC at request core.
+   */
+  void issueStreamAckToMLC(const DynamicStreamSliceId &sliceId);
 
   /**
    * Migrate streams.

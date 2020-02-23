@@ -189,7 +189,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamIndirectRequest(RequestMsg);
   }
 
-  LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectToL2Cache_ptr";
+  LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectToL2Cache_ptr, m_responseFromL2Cache_ptr";
 
   Tick clockEdge();
   Tick cyclesToTicks(Cycles c);
@@ -1250,6 +1250,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     uu_profileHit;
     jj_popL1RequestQueue;
   }
+  /**
+   * ! Not a correct way to do this.
+   */
   transition(SS, STREAM_STORE, SS) {
     set_setMRU;
     uu_profileHit;
@@ -1294,7 +1297,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     set_setMRU;
     jj_popL1RequestQueue;
   }
-
 
   transition(MT, {L1_GETS, L1_GET_INSTR}, MT_IIB) {
     b_forwardRequestToExclusive;

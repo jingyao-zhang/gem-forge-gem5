@@ -21,13 +21,14 @@
 LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_streamMigrateMsgBuffer,
                                  MessageBuffer *_streamIssueMsgBuffer,
-                                 MessageBuffer *_streamIndirectIssueMsgBuffer)
+                                 MessageBuffer *_streamIndirectIssueMsgBuffer,
+                                 MessageBuffer *_streamResponseMsgBuffer)
     : Consumer(_controller), controller(_controller),
       streamMigrateMsgBuffer(_streamMigrateMsgBuffer),
       streamIssueMsgBuffer(_streamIssueMsgBuffer),
       streamIndirectIssueMsgBuffer(_streamIndirectIssueMsgBuffer),
-      issueWidth(1), migrateWidth(1), maxInflyRequests(8),
-      maxInqueueRequests(2) {}
+      streamResponseMsgBuffer(_streamResponseMsgBuffer), issueWidth(1),
+      migrateWidth(1), maxInflyRequests(8), maxInqueueRequests(2) {}
 
 LLCStreamEngine::~LLCStreamEngine() {
   for (auto &s : this->streams) {
@@ -258,7 +259,16 @@ void LLCStreamEngine::wakeup() {
   this->processStreamFlowControlMsg();
   this->issueStreams();
   this->migrateStreams();
-  if (!this->streams.empty() || !this->migratingStreams.empty()) {
+
+  // So we limit the issue rate in issueStreams.
+  while (!this->requestQueue.empty()) {
+    const auto &req = this->requestQueue.front();
+    this->issueStreamRequestToLLCBank(req);
+    this->requestQueue.pop();
+  }
+
+  if (!this->streams.empty() || !this->migratingStreams.empty() ||
+      !this->requestQueue.empty()) {
     this->scheduleEvent(Cycles(1));
   }
 }
@@ -414,7 +424,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
       }
     }
 
-    this->issueStreamRequestToLLCBank(stream, paddrLine, sliceId);
+    // Push to the request queue.
+    this->requestQueue.emplace(sliceId, paddrLine);
     stream->waitingDataBaseRequests++;
 
     stream->prevIssuedCycle = curCycle;
@@ -452,10 +463,22 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   auto dynIS = firstIndirectIter->second.first;
   auto baseElementData = firstIndirectIter->second.second;
 
+  this->generateIndirectStreamRequest(dynIS, idx, baseElementData);
+  // Don't forget to release the indirect element.
+  stream->readyIndirectElements.erase(firstIndirectIter);
+  return true;
+}
+
+void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
+                                                    uint64_t elementIdx,
+                                                    uint64_t baseElementData) {
+  auto dynBS = dynIS->baseStream;
+  assert(dynBS &&
+         "GenerateIndirectStreamRequest can only handle indirect stream.");
   DynamicStreamSliceId sliceId;
   sliceId.streamId = dynIS->getDynamicStreamId();
-  sliceId.lhsElementIdx = idx;
-  sliceId.rhsElementIdx = idx + 1;
+  sliceId.lhsElementIdx = elementIdx;
+  sliceId.rhsElementIdx = elementIdx + 1;
   auto elementSize = dynIS->getElementSize();
   LLC_SLICE_DPRINTF(sliceId, "Issue indirect slice baseElementData %llu.\n",
                     baseElementData);
@@ -464,12 +487,12 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   const auto &indirectConfig = dynIS->configData;
   if (IS->isReduction()) {
     // This is a reduction stream.
-    assert(idx > 0 && "Reduction stream ElementIdx should start at 1.");
+    assert(elementIdx > 0 && "Reduction stream ElementIdx should start at 1.");
 
     // Perform the reduction.
-    auto getBaseStreamValue = [baseElementData, stream,
+    auto getBaseStreamValue = [baseElementData, dynBS,
                                dynIS](uint64_t baseStreamId) -> uint64_t {
-      if (baseStreamId == stream->getStaticId()) {
+      if (baseStreamId == dynBS->getStaticId()) {
         return baseElementData;
       }
       if (baseStreamId == dynIS->getStaticId()) {
@@ -479,25 +502,24 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
       return 0;
     };
     auto newReductionValue = indirectConfig.addrGenCallback->genAddr(
-        idx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
+        elementIdx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
     LLC_SLICE_DPRINTF(sliceId, "Do reduction %#x, %#x -> %#x.\n",
                       dynIS->reductionValue, baseElementData,
                       newReductionValue);
     dynIS->reductionValue = newReductionValue;
 
     // Do not issue any indirect request.
-    stream->readyIndirectElements.erase(firstIndirectIter);
-    return true;
+    return;
   }
 
   // Compute the address.
   auto getBaseStreamValue = [baseElementData,
-                             stream](uint64_t baseStreamId) -> uint64_t {
-    assert(baseStreamId == stream->getStaticId() && "Invalid baseStreamId.");
+                             dynBS](uint64_t baseStreamId) -> uint64_t {
+    assert(baseStreamId == dynBS->getStaticId() && "Invalid baseStreamId.");
     return baseElementData;
   };
   Addr elementVAddr = indirectConfig.addrGenCallback->genAddr(
-      idx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
+      elementIdx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
   LLC_SLICE_DPRINTF(sliceId, "Generate indirect vaddr %#x, size %d.\n",
                     elementVAddr, elementSize);
 
@@ -516,18 +538,20 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
     Addr elementPAddr;
     if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
       IS->statistic.numLLCSentSlice++;
-      this->issueStreamRequestToLLCBank(
-          dynIS, makeLineAddress(elementPAddr), sliceId,
-          CoherenceRequestType_STREAM_STORE, indirectConfig.constUpdateValue);
+      auto paddrLine = makeLineAddress(elementPAddr);
+      // Push to the request queue.
+      this->requestQueue.emplace(sliceId, paddrLine,
+                                 indirectConfig.constUpdateValue);
     } else {
       panic("Faulted merged store stream.");
     }
-
-    stream->readyIndirectElements.erase(firstIndirectIter);
-    return true;
+    return;
   }
 
-  // Hanle coalesced multi-line element.
+  /**
+   * Finally normal indirect load stream.
+   * Handle coalesced multi-line element.
+   */
   auto totalSliceSize = 0;
   while (totalSliceSize < elementSize) {
     Addr curSliceVAddr = elementVAddr + totalSliceSize;
@@ -543,11 +567,8 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
       Addr curSlicePAddrLine = makeLineAddress(curSlicePAddr);
       IS->statistic.numLLCSentSlice++;
 
-      /**
-       * It's possible that the element is not handled here.
-       * Create a sliceId.
-       */
-      this->issueStreamRequestToLLCBank(dynIS, curSlicePAddrLine, sliceId);
+      // Push to the request queue.
+      this->requestQueue.emplace(sliceId, curSlicePAddrLine);
     } else {
       // For faulted slices, we simply ignore it.
       LLC_SLICE_DPRINTF(sliceId, "Discard due to fault, vaddr %#x.\n",
@@ -558,18 +579,15 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
     totalSliceSize += curSliceSize;
   }
 
-  // Don't forget to release the indirect element.
-  stream->readyIndirectElements.erase(firstIndirectIter);
-  return true;
+  return;
 }
 
-void LLCStreamEngine::issueStreamRequestToLLCBank(
-    LLCDynamicStream *stream, Addr paddrLine,
-    const DynamicStreamSliceId &sliceId, CoherenceRequestType requestType,
-    uint64_t storeData) {
+void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
+  const auto &sliceId = req.sliceId;
+  const auto paddrLine = req.paddrLine;
   auto selfMachineId = this->controller->getMachineID();
   auto destMachineId = selfMachineId;
-  bool handledHere = this->isPAddrHandledByMe(paddrLine);
+  bool handledHere = this->isPAddrHandledByMe(req.paddrLine);
   if (handledHere) {
     LLC_SLICE_DPRINTF(sliceId,
                       "Issue [local] request vaddr %#x paddrLine %#x.\n",
@@ -580,12 +598,11 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(
                       destMachineId.num);
   }
 
-  auto streamCPUId = stream->getStaticStream()->getCPUDelegator()->cpuId();
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
-  msg->m_Type = requestType;
-  msg->m_Requestor =
-      MachineID(static_cast<MachineType>(selfMachineId.type - 1), streamCPUId);
+  msg->m_Type = req.requestType;
+  msg->m_Requestor = MachineID(static_cast<MachineType>(selfMachineId.type - 1),
+                               sliceId.streamId.coreId);
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_sliceId = sliceId;
@@ -601,6 +618,29 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
   }
+}
+
+void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId) {
+
+  auto selfMachineId = this->controller->getMachineID();
+  MachineID mlcMachineId(static_cast<MachineType>(selfMachineId.type - 1),
+                         sliceId.streamId.coreId);
+
+  auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
+  msg->m_Type = CoherenceResponseType_STREAM_ACK;
+  msg->m_Sender = selfMachineId;
+  msg->m_Destination.add(mlcMachineId);
+  msg->m_MessageSize = MessageSizeType_Response_Control;
+  msg->m_sliceId = sliceId;
+
+  /**
+   * This should match with LLC controller l2_response_latency.
+   * TODO: Really get this value from the controller.
+   */
+  Cycles latency(2);
+  this->streamResponseMsgBuffer->enqueue(
+      msg, this->controller->clockEdge(),
+      this->controller->cyclesToTicks(latency));
 }
 
 void LLCStreamEngine::migrateStreams() {
@@ -673,7 +713,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
   const auto &sliceId = req.m_sliceId;
   assert(sliceId.isValid() && "Invalid stream slice for indirect request.");
 
-  LLC_SLICE_DPRINTF(sliceId, "Inject [remote] request.\n");
+  LLC_SLICE_DPRINTF(sliceId, "Inject [indirect] request.\n");
 
   auto msg = std::make_shared<RequestMsg>(req);
   Cycles latency(1); // Just use 1 cycle latency here.
@@ -715,7 +755,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
         }
 
         /**
-         * Handle predication here.
+         * Check if the stream has predication.
          */
         if (IS->isPredicated()) {
           assert(!IS->isOneIterationBehind() && "How to handle this?");
@@ -752,23 +792,48 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
       auto predicatedIter = stream->waitingPredicatedElements.find(idx);
       if (predicatedIter != stream->waitingPredicatedElements.end()) {
         for (auto &predEntry : predicatedIter->second) {
-          auto predS = predEntry.first;
+          auto dynPredS = predEntry.first;
+          auto predS = dynPredS->getStaticStream();
           auto predBaseData = predEntry.second;
           LLC_S_DPRINTF(sliceId.streamId, "Predicate %d %d: %s.\n",
-                        predicatedTrue, predS->isPredicatedTrue(),
-                        predS->getDynamicStreamId());
-          if (predS->isPredicatedTrue() == predicatedTrue) {
+                        predicatedTrue, dynPredS->isPredicatedTrue(),
+                        dynPredS->getDynamicStreamId());
+          if (dynPredS->isPredicatedTrue() == predicatedTrue) {
+            predS->statistic.numLLCPredYSlice++;
             // Predicated match, add to ready list.
-            // ! Hack here: always add to base stream.
             if (stream->baseStream) {
-              stream->baseStream->readyIndirectElements.emplace(
-                  std::piecewise_construct, std::forward_as_tuple(idx),
-                  std::forward_as_tuple(predS, predBaseData));
+              /**
+               * The predication is from an indirect stream, this is for
+               * pattern: if (a[b[i]]) c[xx]; Since this is an indirect
+               * stream, it is likely that we are in a remote LLC bank where
+               * a[b[i]] is sitting. We would like to directly generate the
+               * address and inject to the requestQueue here.
+               */
+              this->generateIndirectStreamRequest(dynPredS, idx, predBaseData);
             } else {
+              /**
+               * The predication is from a direct stream, this is for pattern:
+               * if (a[i]) b[i];
+               * There is no data dependence between these two streams.
+               * In such case we add to readyIndirectElements and waiting to
+               * be issued.
+               */
               stream->readyIndirectElements.emplace(
                   std::piecewise_construct, std::forward_as_tuple(idx),
-                  std::forward_as_tuple(predS, predBaseData));
+                  std::forward_as_tuple(dynPredS, predBaseData));
             }
+          } else {
+            // This element is predicated off.
+            predS->statistic.numLLCPredNSlice++;
+            // if (predS->isMerged() && predS->getStreamType() == "store") {
+            //   // This is a predicated off merged store, we have to send
+            //   // STREAM_ACK.
+            //   DynamicStreamSliceId sliceId;
+            //   sliceId.streamId = dynPredS->getDynamicStreamId();
+            //   sliceId.lhsElementIdx = idx;
+            //   sliceId.rhsElementIdx = idx + 1;
+            //   this->issueStreamAckToMLC(sliceId);
+            // }
           }
         }
         stream->waitingPredicatedElements.erase(predicatedIter);
@@ -874,8 +939,8 @@ void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,
     //                            0 /* InstSeqNum */, 0 /* contextId */));
     // PacketPtr pkt = Packet::createWrite(req);
     // uint8_t *pktData = new uint8_t[req->getSize()];
-    // memcpy(pktData, reinterpret_cast<uint8_t *>(&updateValue), elementSize);
-    // pkt->dataDynamic(pktData);
+    // memcpy(pktData, reinterpret_cast<uint8_t *>(&updateValue),
+    // elementSize); pkt->dataDynamic(pktData);
     // rubySystem->getPhysMem()->functionalAccess(pkt);
     // delete pkt;
   } else {

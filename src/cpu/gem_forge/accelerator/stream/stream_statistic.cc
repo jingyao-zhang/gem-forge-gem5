@@ -25,6 +25,8 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numMLCAllocatedSlice);
   dumpScalar(numLLCSentSlice);
   dumpScalar(numLLCFaultSlice);
+  dumpScalar(numLLCPredYSlice);
+  dumpScalar(numLLCPredNSlice);
 
   dumpAvg(avgLength, numStepped, numConfigured);
   dumpAvg(avgUsed, numUsed, numConfigured);

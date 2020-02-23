@@ -59,6 +59,7 @@ enumeration(CoherenceResponseType, desc="...") {
   UNBLOCK, desc="unblock";
   EXCLUSIVE_UNBLOCK, desc="exclusive unblock";
   INV, desc="Invalidate from directory";
+  STREAM_ACK, desc="ack the core that the reqired operation is performed";
 }
 
 // RequestMsg

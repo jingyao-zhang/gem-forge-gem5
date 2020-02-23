@@ -3,6 +3,7 @@
 
 #include "SlicedDynamicStream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
+#include "mem/ruby/protocol/CoherenceRequestType.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
 #include <list>
@@ -10,6 +11,24 @@
 #include <set>
 
 class AbstractStreamAwareController;
+
+/**
+ * Represent generated request to LLC bank.
+ */
+struct LLCStreamRequest {
+  DynamicStreamSliceId sliceId;
+  Addr paddrLine;
+  CoherenceRequestType requestType;
+  // Optional for StreamStore request.
+  uint64_t storeData;
+  LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine)
+      : sliceId(_sliceId), paddrLine(_paddrLine),
+        requestType(CoherenceRequestType_GETU) {}
+  LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
+                   uint64_t _storeData)
+      : sliceId(_sliceId), paddrLine(_paddrLine),
+        requestType(CoherenceRequestType_STREAM_STORE), storeData(_storeData) {}
+};
 
 class LLCDynamicStream {
 public:

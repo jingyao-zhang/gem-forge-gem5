@@ -22,9 +22,20 @@ using GetStreamValueFunc = std::function<uint64_t(uint64_t)>;
 using ExecFuncPtr = std::shared_ptr<TheISA::ExecFunc>;
 
 /**
- * Used if you expect no base stream.
+ * Use if you expect no base stream.
  */
 uint64_t getStreamValueFail(uint64_t streamId);
+
+/**
+ * Use if you expect only one base stream.
+ */
+struct GetSingleStreamValue {
+  const uint64_t streamId;
+  const uint64_t streamValue;
+  GetSingleStreamValue(uint64_t _streamId, uint64_t _streamValue)
+      : streamId(_streamId), streamValue(_streamValue) {}
+  uint64_t operator()(uint64_t streamId) const;
+};
 
 DynamicStreamParamV
 convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
