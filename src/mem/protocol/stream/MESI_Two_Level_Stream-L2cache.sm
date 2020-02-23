@@ -93,7 +93,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     IM, AccessPermission:Busy, desc="L2 idle, got L1_GETX, issued memory fetch, have not seen response(s) yet";
 
     // Stream Store. In LLC update.
-    // S_M, AccessPermission::Busy, desc="L2 updating, collecting acks from L1s";
+    SS_M, AccessPermission:Busy, desc="L2 updating from SS, collecting acks from L1s";
+    MT_M, AccessPermission:Busy, desc="L2 updating from MT, waiting for data";
 
     // Blocking states
     SS_MB, AccessPermission:Busy, desc="Blocked for L1_GETX from SS";
@@ -965,10 +966,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   action(ll_clearSharers, "\l", desc="Remove all L1 sharers from list") {
-    peek(L1RequestL2Network_in, RequestMsg) {
-      assert(is_valid(cache_entry));
-      cache_entry.Sharers.clear();
-    }
+    assert(is_valid(cache_entry));
+    cache_entry.Sharers.clear();
   }
 
   action(mm_markExclusive, "\m", desc="set the exclusive owner") {
@@ -1050,11 +1049,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     jj_popL1RequestQueue;
   }
 
-  transition({IM, IS, ISS, IVV, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, {L2_Replacement, L2_Replacement_clean}) {
+  transition({IM, IS, ISS, IVV, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, {L2_Replacement, L2_Replacement_clean}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition({IM, IS, ISS, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, MEM_Inv) {
+  transition({IM, IS, ISS, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, MEM_Inv) {
     zn_recycleResponseNetwork;
   }
 
@@ -1063,7 +1062,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
 
-  transition({SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, {L1_GETS, L1_GETV, STREAM_STORE, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
+  transition({SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, {L1_GETS, L1_GETV, STREAM_STORE, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
@@ -1233,6 +1232,30 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     f_sendInvToSharers;
     rr_deallocateL2CacheBlock;
   }
+  // The data may be cached somewhere above, but we have the correct copy. 
+  transition(SS, L1_GETV, SS) {
+    dd_sendExclusiveDataToRequestor;
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
+  /**
+   * ! Not a correct way to do this.
+   */
+  // transition(SS, STREAM_STORE, SS) {
+  //   set_setMRU;
+  //   uu_profileHit;
+  //   jj_popL1RequestQueue;
+  // }
+  transition(SS, STREAM_STORE, SS_M) {
+    i_allocateTBE; 
+    css_copyStreamSliceId;
+    f_sendInvToSharers;
+    set_setMRU;
+    uu_profileHit;
+    jj_popL1RequestQueue;
+  }
+
   transition(S_I, Ack) {
     q_updateAck;
     o_popIncomingResponseQueue;
@@ -1241,26 +1264,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ct_exclusiveReplacementFromTBE;
     o_popIncomingResponseQueue;
   }
-
-  /**
-   * ! Not a correct way to do this.
-   */
-  transition(SS, STREAM_STORE, SS) {
-    set_setMRU;
-    uu_profileHit;
-    jj_popL1RequestQueue;
+  transition(SS_M, Ack) {
+    q_updateAck;
+    o_popIncomingResponseQueue;
   }
-  // transition(SS, STREAM_STORE, S_M) {
-  //   i_allocateTBE;
-  //   f_sendInvToSharers;
-  // }
-  // transition(S_M, Ack) {
-  //   q_updateAck;
-  //   o_popIncomingResponseQueue;
-  // }
-  // transition(S_M, Ack_all, M) {
-
-  // }
+  transition(SS_M, Ack_all, M) {
+    s_deallocateTBE;
+    o_popIncomingResponseQueue;
+  }
 
   transition(M, L1_GETX, MT_MB) {
     d_sendDataToRequestor;
@@ -1296,25 +1307,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     uu_profileHit;
     jj_popL1RequestQueue;
   }
-  // The data may be cached somewhere above, but we have the correct copy. 
-  transition(SS, L1_GETV, SS) {
-    dd_sendExclusiveDataToRequestor;
-    set_setMRU;
-    uu_profileHit;
-    jj_popL1RequestQueue;
-  }
-
-  /**
-   * ! Not a correct way to do this.
-   * This means LLC's data is stale. We actually need to invalidate other's
-   * copy and then update level.
-   */
-  transition(MT, STREAM_STORE, MT) {
-    set_setMRU;
-    uu_profileHit;
-    jj_popL1RequestQueue;
-  }
-
   transition(M, {L2_Replacement, MEM_Inv}, M_I) {
     i_allocateTBE;
     c_exclusiveReplacement;
@@ -1336,14 +1328,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     set_setMRU;
     jj_popL1RequestQueue;
   }
-
   transition(MT, {L1_GETS, L1_GET_INSTR}, MT_IIB) {
     b_forwardRequestToExclusive;
     uu_profileMiss;
     set_setMRU;
     jj_popL1RequestQueue;
   }
-
   transition(MT, L1_GETV, MT_IB) {
     // For uncached request, we immediately transit to MT_IB
     // as the requestor will not send unblock message to us.
@@ -1353,26 +1343,34 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     set_setMRU;
     jj_popL1RequestQueue;
   }
-
-  // transition(MT, L1_GETV, MT) {
-  //   dd_sendExclusiveDataToRequestor;
+  /**
+   * ! Not a correct way to do this.
+   * This means LLC's data is stale. We actually need to invalidate other's
+   * copy and then update level.
+   */
+  // transition(MT, STREAM_STORE, MT) {
   //   set_setMRU;
   //   uu_profileHit;
   //   jj_popL1RequestQueue;
   // }
-
+  transition(MT, STREAM_STORE, MT_M) {
+    i_allocateTBE;
+    css_copyStreamSliceId;
+    f_sendInvToSharers;
+    set_setMRU;
+    uu_profileMiss;
+    jj_popL1RequestQueue;
+  }
   transition(MT, {L2_Replacement, MEM_Inv}, MT_I) {
     i_allocateTBE;
     f_sendInvToSharers;
     rr_deallocateL2CacheBlock;
   }
-
   transition(MT, L2_Replacement_clean, MCT_I) {
     i_allocateTBE;
     f_sendInvToSharers;
     rr_deallocateL2CacheBlock;
   }
-
   transition(MT, L1_PUTX, M) {
     ll_clearSharers;
     mr_writeDataToCacheFromRequest;
@@ -1412,6 +1410,20 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     nnu_addSharerFromUnblock;
     nec_notifyStreamEngineFromCacheEntry;
     k_popUnblockQueue;
+    kd_wakeUpDependents;
+  }
+
+  transition(MT_M, WB_Data, M) {
+    ll_clearSharers;
+    m_writeDataToCache;
+    s_deallocateTBE;
+    o_popIncomingResponseQueue;
+    kd_wakeUpDependents;
+  }
+  transition(MT_M, {WB_Data_clean, Ack_all}, M) {
+    ll_clearSharers;
+    s_deallocateTBE;
+    o_popIncomingResponseQueue;
     kd_wakeUpDependents;
   }
 
@@ -1456,7 +1468,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   // possible race between unblock and immediate replacement
-  transition({MT_MB,SS_MB}, {L1_PUTX, L1_PUTX_old}) {
+  transition({MT_MB, MT_M, SS_MB, SS_M}, {L1_PUTX, L1_PUTX_old}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
@@ -1469,17 +1481,17 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   /**
    * Sean: StreamAwareCache.
    */
-  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, STREAM_CONFIG) {
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_CONFIG) {
     rsc_receiveStreamConfig;
     jj_popL1RequestQueue;
   }
 
-  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, STREAM_FLOW) {
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_FLOW) {
     rsf_receiveStreamFlow;
     jj_popL1RequestQueue;
   }
 
-  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB}, STREAM_END) {
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_END) {
     rse_receiveStreamEnd;
     jj_popL1RequestQueue;
   }
