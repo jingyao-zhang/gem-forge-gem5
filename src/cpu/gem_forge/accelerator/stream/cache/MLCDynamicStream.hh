@@ -78,7 +78,13 @@ protected:
     DataBlock dataBlock;
     // Whether the core's request is already here.
     bool dataReady;
-    enum CoreStatusE { NONE, WAIT, DONE, FAULTED };
+    enum CoreStatusE {
+      NONE,
+      WAIT_DATA, // The core is waiting the data.
+      WAIT_ACK, // The core is waiting the ack.
+      DONE,
+      FAULTED
+    };
     CoreStatusE coreStatus;
     // For debug purpose, we also remember core's request sliceId.
     DynamicStreamSliceId coreSliceId;
@@ -101,8 +107,10 @@ protected:
       switch (status) {
       case CoreStatusE::NONE:
         return "NONE";
-      case CoreStatusE::WAIT:
-        return "WAIT";
+      case CoreStatusE::WAIT_DATA:
+        return "WAIT_DATA";
+      case CoreStatusE::WAIT_ACK:
+        return "WAIT_ACK";
       case CoreStatusE::DONE:
         return "DONE";
       case CoreStatusE::FAULTED:
@@ -122,7 +130,8 @@ protected:
   EventFunctionWrapper advanceStreamEvent;
 
   virtual void advanceStream() = 0;
-  void makeResponse(MLCStreamSlice &element);
+  void makeResponse(MLCStreamSlice &slice);
+  void makeAck(MLCStreamSlice &slice);
 
   /**
    * API for this to check if overflowed.

@@ -11,6 +11,7 @@
 
 #include "base/trace.hh"
 #include "debug/LLCRubyStream.hh"
+#include "debug/LLCRubyStreamStore.hh"
 #define DEBUG_TYPE LLCRubyStream
 #include "../stream_log.hh"
 
@@ -191,12 +192,31 @@ void LLCStreamEngine::receiveStreamElementData(
     }
   }
 
+  /**
+   * Check if this is a StreamStore stream. If so, we send ack back to the core.
+   */
+  auto S = stream->getStaticStream();
+  if (S->isMerged() && S->getStreamType() == "store") {
+    LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                       "StreamStore done, send back StreamAck.\n");
+    this->issueStreamAckToMLC(sliceId);
+    if (!this->requestQueue.empty()) {
+      this->scheduleEvent(Cycles(1));
+    }
+    return;
+  }
+
   LLC_SLICE_DPRINTF(sliceId, "Received element data.\n");
   // Indirect streams.
   this->processStreamDataForIndirectStreams(stream, sliceId, dataBlock);
   // Update streams.
   // ! Keep this at the end as it will modify BackingStores.
   this->processStreamDataForUpdateStream(stream, sliceId, dataBlock);
+  // If this generate any request, we schedule a wakeup.
+  if (!this->requestQueue.empty()) {
+    this->scheduleEvent(Cycles(1));
+  }
+  return;
 }
 
 bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
@@ -524,6 +544,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
   if (IS->isMerged() && IS->getStreamType() == "store") {
     // This is a merged store, we need to issue STREAM_STORE request.
     assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
+    if (dynIS->hasTotalTripCount()) {
+      assert(elementIdx < dynIS->getTotalTripCount() &&
+             "Try to store beyond TotalTripCount.");
+    }
 
     int lineOffset = elementVAddr % blockBytes;
     assert(lineOffset + elementSize <= blockBytes &&
@@ -536,6 +560,8 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
       IS->statistic.numLLCSentSlice++;
       auto paddrLine = makeLineAddress(elementPAddr);
       // Push to the request queue.
+      LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                         "StreamStore -> RequestQueue.\n");
       this->requestQueue.emplace(sliceId, paddrLine,
                                  indirectConfig.constUpdateValue);
     } else {
@@ -588,10 +614,21 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
     LLC_SLICE_DPRINTF(sliceId,
                       "Issue [local] request vaddr %#x paddrLine %#x.\n",
                       sliceId.vaddr, paddrLine);
+    if (req.requestType == CoherenceRequestType_STREAM_STORE) {
+      LLC_SLICE_DPRINTF_(
+          LLCRubyStreamStore, sliceId,
+          "Issue [local] StreamStore request vaddr %#x paddrLine %#x.\n",
+          sliceId.vaddr, paddrLine);
+    }
   } else {
     destMachineId = this->mapPaddrToLLCBank(paddrLine);
     LLC_SLICE_DPRINTF(sliceId, "Issue [remote] request to LLC%d.\n",
                       destMachineId.num);
+    if (req.requestType == CoherenceRequestType_STREAM_STORE) {
+      LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                         "Issue [remote] StreamStore request to LLC%d.\n",
+                         destMachineId.num);
+    }
   }
 
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
@@ -623,6 +660,8 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId) {
                          sliceId.streamId.coreId);
 
   auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
+  // For StreamAck, we do not care about the address?
+  msg->m_addr = 0;
   msg->m_Type = CoherenceResponseType_STREAM_ACK;
   msg->m_Sender = selfMachineId;
   msg->m_Destination.add(mlcMachineId);
@@ -710,6 +749,11 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
   assert(sliceId.isValid() && "Invalid stream slice for indirect request.");
 
   LLC_SLICE_DPRINTF(sliceId, "Inject [indirect] request.\n");
+  if (req.m_Type == CoherenceRequestType_STREAM_STORE) {
+    LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                       "Inject [indirect] StreamStore request paddrLine %#x.\n",
+                       req.m_addr);
+  }
 
   auto msg = std::make_shared<RequestMsg>(req);
   Cycles latency(1); // Just use 1 cycle latency here.
@@ -821,15 +865,34 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
           } else {
             // This element is predicated off.
             predS->statistic.numLLCPredNSlice++;
-            // if (predS->isMerged() && predS->getStreamType() == "store") {
-            //   // This is a predicated off merged store, we have to send
-            //   // STREAM_ACK.
-            //   DynamicStreamSliceId sliceId;
-            //   sliceId.streamId = dynPredS->getDynamicStreamId();
-            //   sliceId.lhsElementIdx = idx;
-            //   sliceId.rhsElementIdx = idx + 1;
-            //   this->issueStreamAckToMLC(sliceId);
-            // }
+            if (predS->isMerged() && predS->getStreamType() == "store") {
+              /**
+               * This is a predicated off merged store, we have to send
+               * STREAM_ACK. We still have to set the vaddr as the MLC requires
+               * it to match.
+               */
+              auto dynBS = dynPredS->baseStream;
+              assert(dynBS && "MergedStore stream should have base stream.");
+              DynamicStreamSliceId sliceId;
+              sliceId.streamId = dynPredS->getDynamicStreamId();
+              sliceId.lhsElementIdx = idx;
+              sliceId.rhsElementIdx = idx + 1;
+              auto getBaseStreamValue =
+                  [predBaseData, dynBS](uint64_t baseStreamId) -> uint64_t {
+                assert(baseStreamId == dynBS->getStaticId() &&
+                       "Invalid baseStreamId.");
+                return predBaseData;
+              };
+              auto &predConfig = dynPredS->configData;
+              Addr elementVAddr = predConfig.addrGenCallback->genAddr(
+                  idx, predConfig.addrGenFormalParams, getBaseStreamValue);
+              sliceId.vaddr = elementVAddr;
+              sliceId.size = dynPredS->getElementSize();
+              LLC_SLICE_DPRINTF_(
+                  LLCRubyStreamStore, sliceId,
+                  "StreamStore predicated off, send back StreamAck.\n");
+              this->issueStreamAckToMLC(sliceId);
+            }
           }
         }
         stream->waitingPredicatedElements.erase(predicatedIter);

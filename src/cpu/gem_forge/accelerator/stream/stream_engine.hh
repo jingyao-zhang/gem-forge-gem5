@@ -62,6 +62,7 @@ public:
   bool canStreamStep(uint64_t stepStreamId) const;
   bool hasUnsteppedElement(uint64_t stepStreamId);
   void dispatchStreamStep(uint64_t stepStreamId);
+  bool canExecuteStreamStep(uint64_t stepStreamId);
   void commitStreamStep(uint64_t stepStreamId);
   void rewindStreamStep(uint64_t stepStreamId);
 
@@ -89,6 +90,7 @@ public:
                                   GemForgeLQCallbackList &callbacks);
 
   bool hasUnsteppedElement(const StreamUserArgs &args);
+  bool hasUsedLastElement(const StreamUserArgs &args);
   void dispatchStreamUser(const StreamUserArgs &args);
   bool areUsedStreamsReady(const StreamUserArgs &args);
   void executeStreamUser(const StreamUserArgs &args);
@@ -103,6 +105,7 @@ public:
   };
   bool hasUnsteppedElement(const StreamEndArgs &args);
   void dispatchStreamEnd(const StreamEndArgs &args);
+  bool canExecuteStreamEnd(const StreamEndArgs &args);
   void commitStreamEnd(const StreamEndArgs &args);
   void rewindStreamEnd(const StreamEndArgs &args);
 

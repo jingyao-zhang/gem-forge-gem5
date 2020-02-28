@@ -56,6 +56,8 @@ public:
     assert(this->isPredicated());
     return this->configData.predicateStreamId;
   }
+  bool hasTotalTripCount() const;
+  uint64_t getTotalTripCount() const;
 
   Addr peekVAddr();
   Addr getVAddr(uint64_t sliceIdx) const;

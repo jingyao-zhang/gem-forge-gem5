@@ -72,7 +72,7 @@ private:
 
   void allocateOneElement() const;
   bool hasOverflowed(uint64_t elementIdx) const {
-    return this->totalTripCount > 0 && elementIdx >= (this->totalTripCount + 1);
+    return this->totalTripCount > 0 && elementIdx >= (this->totalTripCount);
   }
 };
 

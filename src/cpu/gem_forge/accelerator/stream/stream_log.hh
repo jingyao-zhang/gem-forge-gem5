@@ -76,7 +76,9 @@
 #define LLC_S_DPRINTF(streamId, format, args...)                               \
   DPRINTF(DEBUG_TYPE, LLC_S_MSG(streamId, format, ##args))
 
+#define LLC_SLICE_DPRINTF_(X, sliceId, format, args...)                        \
+  DPRINTF(X, LLC_SLICE_MSG(sliceId, format, ##args))
 #define LLC_SLICE_DPRINTF(sliceId, format, args...)                            \
-  DPRINTF(DEBUG_TYPE, LLC_SLICE_MSG(sliceId, format, ##args))
+  LLC_SLICE_DPRINTF_(DEBUG_TYPE, sliceId, format, ##args)
 #define LLC_SLICE_PANIC(sliceId, format, args...)                              \
   panic(LLC_SLICE_MSG(sliceId, format, ##args))

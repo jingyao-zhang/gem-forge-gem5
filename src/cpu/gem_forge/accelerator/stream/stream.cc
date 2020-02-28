@@ -128,6 +128,26 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   std::vector<uint64_t> inputVecCopy(*inputVec);
   this->extractExtraInputValues(dynStream, inputVecCopy);
   this->setupAddrGen(dynStream, &inputVecCopy);
+
+  /**
+   * We are going to copy the total trip count from the step root stream.
+   */
+  if (this->stepRootStream) {
+    const auto &rootDynS = this->stepRootStream->getDynamicStream(seqNum);
+    assert(rootDynS.configExecuted &&
+           "Root dynamic stream should be executed.");
+    if (rootDynS.hasTotalTripCount()) {
+      if (dynStream.hasTotalTripCount()) {
+        assert(dynStream.getTotalTripCount() == rootDynS.getTotalTripCount() &&
+               "Mismatch in TotalTripCount.");
+      } else {
+        dynStream.totalTripCount = rootDynS.getTotalTripCount();
+      }
+    } else {
+      assert(!dynStream.hasTotalTripCount() &&
+             "Missing TotalTripCount in StepRootStream.");
+    }
+  }
 }
 
 void Stream::rewindStreamConfig(uint64_t seqNum) {
@@ -518,6 +538,7 @@ void Stream::allocateElement(StreamElement *newElement) {
    */
   auto &dynS = this->getLastDynamicStream();
   DYN_S_DPRINTF(dynS.dynamicStreamId, "Try to allocate element.\n");
+  newElement->dynS = &dynS;
 
   /**
    * next() is called after assign to make sure

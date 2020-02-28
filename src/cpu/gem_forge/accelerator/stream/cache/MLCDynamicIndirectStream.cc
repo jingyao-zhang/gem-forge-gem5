@@ -97,7 +97,7 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
       this->findOrInsertSliceBySliceId(slicesBegin, slicesEnd, sliceId);
 
   sliceIter->setData(msg.m_DataBlk, this->controller->curCycle());
-  if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
+  if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
     // Sanity check that LLC and Core generated the same address.
     // ! Core is line address.
     if (sliceIter->coreSliceId.vaddr != makeLineAddress(sliceId.vaddr)) {
@@ -105,6 +105,13 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
                       sliceIter->coreSliceId.vaddr, sliceId.vaddr);
     }
     this->makeResponse(*sliceIter);
+  } else if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK) {
+    // Ack the stream element.
+    // TODO: Send the packet back via normal message buffer.
+    // hack("Indirect slices acked element %llu size %llu header %llu.\n",
+    //      sliceId.lhsElementIdx, this->slices.size(),
+    //      this->slices.front().sliceId.lhsElementIdx);
+    this->makeAck(*sliceIter);
   }
   this->advanceStream();
 }
@@ -218,12 +225,12 @@ void MLCDynamicIndirectStream::allocateSlice() {
   this->stream->statistic.numMLCAllocatedSlice++;
 
   /**
-   * If this is a merged store stream, we mark the core done
-   * as it will not try to issue requests for this stream.
-   * Same case for reduction stream.
+   * The core still wait for ack from the MergedStoreStream to synchronize with
+   * the LLC. So far this is done with hack.
+   * It would not issue request for reduction stream.
    */
   if (this->stream->isMerged() && this->stream->getStreamType() == "store") {
-    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::WAIT_ACK;
   } else if (this->stream->isReduction()) {
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
   }

@@ -252,7 +252,9 @@ void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
       // // Notify the indirect stream. Call this after setData().
       // this->notifyIndirectStream(*slice);
 
-      if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
+      assert(slice->coreStatus != MLCStreamSlice::CoreStatusE::WAIT_ACK &&
+             "MLCDirectStream should not be WAIT_ACK.");
+      if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
         this->makeResponse(*slice);
       }
       this->advanceStream();
@@ -355,7 +357,7 @@ void MLCDynamicDirectStream::receiveReuseStreamData(
       reused = true;
       if (!slice.dataReady) {
         slice.setData(dataBlock, this->controller->curCycle());
-        if (slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
+        if (slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
           this->makeResponse(slice);
         }
         this->advanceStream();

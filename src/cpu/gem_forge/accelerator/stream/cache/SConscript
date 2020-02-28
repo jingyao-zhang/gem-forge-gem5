@@ -3,6 +3,7 @@ Import('*')
 DebugFlag('L0RubyStream')
 DebugFlag('MLCRubyStream')
 DebugFlag('LLCRubyStream')
+DebugFlag('LLCRubyStreamStore')
 DebugFlag('SlicedDynamicStream')
 
 Source('DynamicStreamId.cc')

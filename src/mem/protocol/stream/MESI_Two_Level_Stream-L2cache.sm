@@ -95,6 +95,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     // Stream Store. In LLC update.
     SS_M, AccessPermission:Busy, desc="L2 updating from SS, collecting acks from L1s";
     MT_M, AccessPermission:Busy, desc="L2 updating from MT, waiting for data";
+    NP_M, AccessPermission:Busy, desc="L2 updating from NP, issued memory fetch, have not seen response yet";
 
     // Blocking states
     SS_MB, AccessPermission:Busy, desc="Blocked for L1_GETX from SS";
@@ -641,12 +642,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         // Don't forget to copy the stream meta-data.
         out_msg.sliceId := in_msg.sliceId;
         if (in_msg.sliceId.isValid()) {
-          // DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
-          //   in_msg.sliceId.getStartIdx(), 
-          //   in_msg.sliceId.getNumElements());
-          // We have to notify the SE about the data.
-          se.receiveStreamElementData(out_msg.sliceId, out_msg.DataBlk);
-
           /**
            * ! Sean: StreamAwareCache.
            * Only transmit the required sub cache line.
@@ -720,13 +715,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.MessageSize := MessageSizeType:Response_Data;
         // Copy the stream meta-data.
         out_msg.sliceId := tbe.sliceId;
-        if (out_msg.sliceId.isValid()) {
-          // DPRINTF(RubyStream, "Send stream data [%lu, +%lu).\n", 
-          //   out_msg.sliceId.getStartIdx(), 
-          //   out_msg.sliceId.getNumElements());
-          // We have to notify the SE about the data.
-          se.receiveStreamElementData(out_msg.sliceId, out_msg.DataBlk);
-        }
       }
     }
   }
@@ -1012,6 +1000,20 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       cache_entry.sliceId.clear();
     }
   }
+  action(net_notifyStreamEngineFromTBE, "net", desc="notify the stream engine from TBE") {
+    assert(is_valid(tbe));
+    if (tbe.sliceId.isValid()) {
+      se.receiveStreamElementData(tbe.sliceId, tbe.DataBlk);
+    }
+  }
+  action(ner_notifyStreamEngineFromL1Req, "ner", desc="notify the stream engine from L1 request") {
+    peek(L1RequestL2Network_in, RequestMsg) {
+      assert(is_valid(cache_entry));
+      if (in_msg.sliceId.isValid()) {
+        se.receiveStreamElementData(in_msg.sliceId, cache_entry.DataBlk);
+      }
+    }
+  }
 
   action(rsc_receiveStreamConfig, "rsc", desc="Receive the StreamConfig") {
     peek(L1RequestL2Network_in, RequestMsg) {
@@ -1081,7 +1083,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     uu_profileMiss;
     jj_popL1RequestQueue;
   }
-
   transition(NP, L1_GETV, IVV) {
     qq_allocateL2CacheBlock;
     ll_clearSharers;
@@ -1092,15 +1093,31 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     uu_profileMiss;
     jj_popL1RequestQueue;
   }
-
-  /**
-   * For StreamStore, we do not record the L1 so that we won't send response.
-   */
-  transition(NP, STREAM_STORE, IVV) {
+  transition(NP, STREAM_STORE, NP_M) {
     qq_allocateL2CacheBlock;
     ll_clearSharers;
     i_allocateTBE;
     css_copyStreamSliceId;
+    a_issueFetchToMemory;
+    uu_profileMiss;
+    jj_popL1RequestQueue;
+  }
+  transition(NP, L1_GET_INSTR, IS) {
+    qq_allocateL2CacheBlock;
+    ll_clearSharers;
+    nn_addSharer;
+    i_allocateTBE;
+    ss_recordGetSL1ID;
+    a_issueFetchToMemory;
+    uu_profileMiss;
+    jj_popL1RequestQueue;
+  }
+  transition(NP, L1_GETX, IM) {
+    qq_allocateL2CacheBlock;
+    ll_clearSharers;
+    // nn_addSharer;
+    i_allocateTBE;
+    xx_recordGetXL1ID;
     a_issueFetchToMemory;
     uu_profileMiss;
     jj_popL1RequestQueue;
@@ -1116,35 +1133,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     jj_popL1RequestQueue;
   }
 
-  transition(NP, L1_GET_INSTR, IS) {
-    qq_allocateL2CacheBlock;
-    ll_clearSharers;
-    nn_addSharer;
-    i_allocateTBE;
-    ss_recordGetSL1ID;
-    a_issueFetchToMemory;
-    uu_profileMiss;
-    jj_popL1RequestQueue;
-  }
-
-  transition(NP, L1_GETX, IM) {
-    qq_allocateL2CacheBlock;
-    ll_clearSharers;
-    // nn_addSharer;
-    i_allocateTBE;
-    xx_recordGetXL1ID;
-    a_issueFetchToMemory;
-    uu_profileMiss;
-    jj_popL1RequestQueue;
-  }
-
-
   // transitions from IS/IM
 
   transition(ISS, Mem_Data, MT_MB) {
     m_writeDataToCache;
     ex_sendExclusiveDataToGetSRequestors;
     // Also sent data to possible GETU requestor.
+    net_notifyStreamEngineFromTBE;
     eu_sendDataToGetURequestors;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
@@ -1153,6 +1148,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   // The data is not cached by upper requestor.
   transition(IVV, Mem_Data, M) {
     m_writeDataToCache;
+    net_notifyStreamEngineFromTBE;
     eu_sendDataToGetURequestors;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
@@ -1173,6 +1169,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     s_deallocateTBE;
     o_popIncomingResponseQueue;
   }
+  transition(NP_M, Mem_Data, M) {
+    qq_writeDataToTBE;
+    net_notifyStreamEngineFromTBE;
+    m_writeDataToCache;
+    s_deallocateTBE;
+    o_popIncomingResponseQueue;
+  }
 
   transition({IS, ISS}, {L1_GETS, L1_GET_INSTR}, IS) {
     nn_addSharer;
@@ -1190,7 +1193,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition(IM, {L1_GETX, L1_GETS, L1_GET_INSTR}) {
+  transition({IM, NP_M}, {L1_GETX, L1_GETS, L1_GET_INSTR}) {
     zz_stallAndWaitL1RequestQueue;
   }
 
@@ -1234,19 +1237,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
   // The data may be cached somewhere above, but we have the correct copy. 
   transition(SS, L1_GETV, SS) {
+    ner_notifyStreamEngineFromL1Req;
     dd_sendExclusiveDataToRequestor;
     set_setMRU;
     uu_profileHit;
     jj_popL1RequestQueue;
   }
-  /**
-   * ! Not a correct way to do this.
-   */
-  // transition(SS, STREAM_STORE, SS) {
-  //   set_setMRU;
-  //   uu_profileHit;
-  //   jj_popL1RequestQueue;
-  // }
   transition(SS, STREAM_STORE, SS_M) {
     i_allocateTBE; 
     css_copyStreamSliceId;
@@ -1269,8 +1265,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     o_popIncomingResponseQueue;
   }
   transition(SS_M, Ack_all, M) {
+    net_notifyStreamEngineFromTBE;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
+    kd_wakeUpDependents;
   }
 
   transition(M, L1_GETX, MT_MB) {
@@ -1297,12 +1295,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   // The data is not cached above.
   transition(M, L1_GETV, M) {
+    ner_notifyStreamEngineFromL1Req;
     dd_sendExclusiveDataToRequestor;
     set_setMRU;
     uu_profileHit;
     jj_popL1RequestQueue;
   }
   transition(M, STREAM_STORE, M) {
+    ner_notifyStreamEngineFromL1Req;
     set_setMRU;
     uu_profileHit;
     jj_popL1RequestQueue;
@@ -1344,15 +1344,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     jj_popL1RequestQueue;
   }
   /**
-   * ! Not a correct way to do this.
    * This means LLC's data is stale. We actually need to invalidate other's
-   * copy and then update level.
+   * copy and then update the data.
+   * MT -> MT_M -> M
    */
-  // transition(MT, STREAM_STORE, MT) {
-  //   set_setMRU;
-  //   uu_profileHit;
-  //   jj_popL1RequestQueue;
-  // }
   transition(MT, STREAM_STORE, MT_M) {
     i_allocateTBE;
     css_copyStreamSliceId;
@@ -1414,6 +1409,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   transition(MT_M, WB_Data, M) {
+    qq_writeDataToTBE;
+    net_notifyStreamEngineFromTBE;
     ll_clearSharers;
     m_writeDataToCache;
     s_deallocateTBE;
@@ -1421,6 +1418,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     kd_wakeUpDependents;
   }
   transition(MT_M, {WB_Data_clean, Ack_all}, M) {
+    net_notifyStreamEngineFromTBE;
     ll_clearSharers;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
@@ -1481,17 +1479,17 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   /**
    * Sean: StreamAwareCache.
    */
-  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_CONFIG) {
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_CONFIG) {
     rsc_receiveStreamConfig;
     jj_popL1RequestQueue;
   }
 
-  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_FLOW) {
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_FLOW) {
     rsf_receiveStreamFlow;
     jj_popL1RequestQueue;
   }
 
-  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_END) {
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_IB, MT_SB}, STREAM_END) {
     rse_receiveStreamEnd;
     jj_popL1RequestQueue;
   }

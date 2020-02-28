@@ -587,6 +587,30 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
   }
 }
 
+bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
+  auto stepStream = this->getStream(stepStreamId);
+
+  const auto &stepStreams = this->getStepStreamList(stepStream);
+
+  for (auto S : stepStreams) {
+    // Check for StreamAck. So far that's only merged store stream.
+    if (S->isMerged() && S->getStreamType() == "store") {
+      const auto &dynS = S->getLastDynamicStream();
+      if (!dynS.configExecuted) {
+        return false;
+      }
+      // Check if the first element is acked.
+      auto stepElement = dynS.tail->next;
+      if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
+        // S_DPRINTF(S, "Can not step as no Ack for %llu.\n",
+        //           stepElement->FIFOIdx.entryIdx);
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   auto stepStream = this->getStream(stepStreamId);
 
@@ -696,13 +720,41 @@ bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
       continue;
     }
     auto &dynS = S->getLastDynamicStream();
+    if (!dynS.configExecuted) {
+      // So far we will not try to allocate element until the configuration is
+      // executed.
+      return false;
+    }
     auto element = dynS.getFirstUnsteppedElement();
     if (!element) {
       // We don't have element for this used stream.
+      S_DPRINTF(
+          S, "No unstepped element alloc %d stepped %d total %d next %s.\n",
+          dynS.allocSize, dynS.stepSize, dynS.totalTripCount, dynS.FIFOIdx);
       return false;
     }
   }
   return true;
+}
+
+bool StreamEngine::hasUsedLastElement(const StreamUserArgs &args) {
+  for (const auto &streamId : args.usedStreamIds) {
+    auto S = this->getStream(streamId);
+    if (!S->configured) {
+      continue;
+    }
+    auto &dynS = S->getLastDynamicStream();
+    assert(dynS.configExecuted && "StreamConfig should be executed before "
+                                  "dispatching any user instruction.");
+    auto element = dynS.getFirstUnsteppedElement();
+    assert(element && "Has no unstepped element.");
+    if (element->isLastElement()) {
+      S_ELEMENT_DPRINTF(element, "Used LastElement total %d next %s.\n",
+                        dynS.totalTripCount, dynS.FIFOIdx);
+      return true;
+    }
+  }
+  return false;
 }
 
 void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
@@ -898,7 +950,7 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
       element->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
       // Check if the element should go back to PEB.
       if (element->stream->getStreamType() == "load" && element->isAddrReady &&
-          !element->stream->getFloatManual()) {
+          !element->isLastElement() && !element->stream->getFloatManual()) {
         this->peb.addElement(element);
       }
     }
@@ -959,6 +1011,41 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
       S_DPRINTF(S, "Dispatch End");
     }
   }
+}
+
+bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
+  const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
+  const auto &endStreamInfos = streamRegion.streams();
+
+  SE_DPRINTF("CanExecute StreamEnd for %s.\n", streamRegion.region().c_str());
+  /**
+   * Dedup the coalesced stream ids.
+   */
+  std::unordered_set<Stream *> endedStreams;
+  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
+       iter != end; ++iter) {
+    // Release in reverse order.
+    auto streamId = iter->id();
+    auto S = this->getStream(streamId);
+    if (endedStreams.count(S) != 0) {
+      continue;
+    }
+    endedStreams.insert(S);
+    // Check for StreamAck. So far that's only merged store stream.
+    if (S->isMerged() && S->getStreamType() == "store") {
+      const auto &dynS = S->getLastDynamicStream();
+      if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
+        return false;
+      }
+      if (dynS.cacheAcked + 1 < dynS.FIFOIdx.entryIdx) {
+        // We are not ack the LastElement.
+        hack("not enough ack %llu %llu.\n", dynS.cacheAcked,
+             dynS.FIFOIdx.entryIdx);
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
@@ -1540,8 +1627,6 @@ void StreamEngine::allocateElements() {
       if (stepRootDynStream.totalTripCount > 0 && maxAllocSize > allocSize) {
         auto nextEntryIdx = stepRootDynStream.FIFOIdx.entryIdx;
         auto maxTripCount = stepRootDynStream.totalTripCount + 1;
-        S_DPRINTF(stepStream, "maxTripCount %lu, nextEntryIdx %lu.\n",
-                  maxTripCount, nextEntryIdx);
         if (nextEntryIdx >= maxTripCount) {
           // We are already overflowed, set maxAllocSize to allocSize to stop
           // allocating. NOTE: This should not happen at all.
@@ -1643,6 +1728,9 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
   }
 
   const bool used = releaseElement->isFirstUserDispatched();
+  if (releaseElement->isLastElement()) {
+    assert(!used && "LastElement released being used.");
+  }
 
   /**
    * Sanity check that all the user are done with this element.
@@ -1656,6 +1744,7 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
     this->numLoadElementsStepped++;
     /**
      * For a stepped load element, it should be removed from the PEB.
+     * Except it's the last element.
      */
     assert(!this->peb.contains(releaseElement) &&
            "Used load element still in PEB when released.");
@@ -1719,7 +1808,8 @@ bool StreamEngine::releaseElementUnstepped(Stream *S) {
 void StreamEngine::stepElement(Stream *S) {
   auto element = S->stepElement();
   if (S->getStreamType() == "load" && !S->getFloatManual()) {
-    if (!element->isFirstUserDispatched() && element->isAddrReady) {
+    if (!element->isFirstUserDispatched() && element->isAddrReady &&
+        !element->isLastElement()) {
       // This issued element is stepped but not used, remove from PEB.
       this->peb.removeElement(element);
     }
@@ -1730,7 +1820,8 @@ void StreamEngine::unstepElement(Stream *S) {
   auto element = S->unstepElement();
   // We may need to add this back to PEB.
   if (S->getStreamType() == "load" && !S->getFloatManual()) {
-    if (!element->isFirstUserDispatched() && element->isAddrReady) {
+    if (!element->isFirstUserDispatched() && element->isAddrReady &&
+        !element->isLastElement()) {
       this->peb.addElement(element);
     }
   }
@@ -1860,6 +1951,13 @@ void StreamEngine::issueElements() {
       if (element->stream->isMerged()) {
         continue;
       }
+      /**
+       * If this is the last element, we do not issue. This is just a
+       * dummy element to deal with StreamEnd, and should have no user.
+       */
+      if (element->isLastElement()) {
+        continue;
+      }
       // Increase the reference of the cache block if we enable merging.
       if (this->enableMerge) {
         for (int i = 0; i < element->cacheBlocks; ++i) {
@@ -1910,9 +2008,9 @@ void StreamEngine::fetchedCacheBlock(Addr cacheBlockVAddr,
 
 void StreamEngine::issueElement(StreamElement *element) {
   assert(element->isAddrReady && "Address should be ready.");
-
   assert(element->stream->isMemStream() &&
          "Should never issue element for IVStream.");
+  assert(!element->isLastElement() && "Should never issue LastElement");
 
   S_ELEMENT_DPRINTF(element, "Issue.\n");
 

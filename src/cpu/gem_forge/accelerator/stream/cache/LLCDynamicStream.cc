@@ -41,6 +41,20 @@ LLCDynamicStream::~LLCDynamicStream() {
   assert(GlobalLLCDynamicStreamMap.erase(this->getDynamicStreamId()) == 1);
 }
 
+bool LLCDynamicStream::hasTotalTripCount() const {
+  if (this->baseStream) {
+    return this->baseStream->hasTotalTripCount();
+  }
+  return this->configData.totalTripCount != -1;
+}
+
+uint64_t LLCDynamicStream::getTotalTripCount() const {
+  if (this->baseStream) {
+    return this->baseStream->getTotalTripCount();
+  }
+  return this->configData.totalTripCount;
+}
+
 Addr LLCDynamicStream::peekVAddr() {
   return this->slicedStream.peekNextSlice().vaddr;
 }

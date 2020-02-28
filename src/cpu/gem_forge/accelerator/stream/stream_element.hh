@@ -146,6 +146,7 @@ struct StreamElement {
   std::unordered_set<StreamElement *> baseElements;
   StreamElement *next;
   Stream *stream;
+  DynamicStream *dynS;
   StreamEngine *se;
   FIFOEntryIdx FIFOIdx;
   int cacheBlockSize;
@@ -166,6 +167,7 @@ struct StreamElement {
   bool isAddrReady = false;
   bool isAddrAliased = false;
   bool isValueReady = false;
+  bool isCacheAcked = false;
   bool flushed = false;
 
   Cycles allocateCycle;
@@ -215,6 +217,12 @@ struct StreamElement {
   bool stored;
 
   StreamElement(StreamEngine *_se);
+
+  /**
+   * Return true if the DynamicStream has known total trip count and this is the
+   * last element.
+   */
+  bool isLastElement() const;
 
   StreamMemAccess *
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);

@@ -1,8 +1,8 @@
 #ifndef __GEM_FORGE_ACCELERATOR_DYN_STREAM_HH__
 #define __GEM_FORGE_ACCELERATOR_DYN_STREAM_HH__
 
-#include "fifo_entry_idx.hh"
 #include "addr_gen_callback.hh"
+#include "fifo_entry_idx.hh"
 
 #include <memory>
 #include <vector>
@@ -34,6 +34,9 @@ struct DynamicStream {
   int allocSize = 0;
   int stepSize = 0;
   FIFOEntryIdx FIFOIdx;
+  // A hack to store how many elements has the cache acked.
+  uint64_t cacheAcked = 0;
+  std::set<uint64_t> cacheAckedElements;
 
   // Whether the dynamic stream is offloaded to cache.
   bool offloadedToCacheAsRoot = false;
@@ -67,6 +70,8 @@ struct DynamicStream {
 
   // Optional total length of this dynamic stream. -1 as indefinite.
   int64_t totalTripCount = -1;
+  bool hasTotalTripCount() const { return this->totalTripCount != -1; }
+  int64_t getTotalTripCount() const { return this->totalTripCount; }
 
   DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
                 Cycles _configCycle, ThreadContext *_tc,

@@ -153,6 +153,13 @@ void StreamMemAccess::handleStreamEngineResponse() {
 
 StreamElement::StreamElement(StreamEngine *_se) : se(_se) { this->clear(); }
 
+bool StreamElement::isLastElement() const {
+  assert(this->dynS && "This element has not been allocated.");
+  assert(this->dynS->configExecuted && "The DynS has not be configured.");
+  return this->dynS->hasTotalTripCount() &&
+         this->FIFOIdx.entryIdx == this->dynS->getTotalTripCount();
+}
+
 void StreamElement::clear() {
 
   if (this->FIFOIdx.entryIdx == 1) {
@@ -166,6 +173,7 @@ void StreamElement::clear() {
   this->baseElements.clear();
   this->next = nullptr;
   this->stream = nullptr;
+  this->dynS = nullptr;
   this->FIFOIdx = FIFOEntryIdx();
   this->isCacheBlockedValue = false;
   this->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
@@ -173,6 +181,7 @@ void StreamElement::clear() {
   this->isAddrReady = false;
   this->isAddrAliased = false;
   this->isValueReady = false;
+  this->isCacheAcked = false;
   this->flushed = false;
 
   this->allocateCycle = Cycles(0);

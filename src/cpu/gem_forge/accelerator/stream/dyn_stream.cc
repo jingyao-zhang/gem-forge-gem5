@@ -109,8 +109,9 @@ void DynamicStream::updateReleaseCycle(Cycles releaseCycle, bool late) {
 }
 
 void DynamicStream::dump() const {
-  inform("DynS %llu step %3d allocated %3d. =======\n",
-         this->dynamicStreamId.streamInstance, this->stepSize, this->allocSize);
+  inform("DynS %llu total %d step %3d allocated %3d. =======\n",
+         this->dynamicStreamId.streamInstance, this->totalTripCount,
+         this->stepSize, this->allocSize);
   std::stringstream ss;
   auto element = this->tail;
   while (element != this->head) {

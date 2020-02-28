@@ -1139,6 +1139,12 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         /* This instruction can suspend, need to be able to communicate
          * backwards, so no other branches may evaluate this cycle*/
         completed_inst = false;
+    } else if (cpu.cpuDelegator && !cpu.cpuDelegator->canExecute(inst)) {
+        /**
+         * ! GemForge complains that this inst can not execute/commit for now.
+         */
+        DPRINTF(MinorExecute, "Can't execute GemForge inst: %s.\n", *inst);
+        completed_inst = false;
     } else {
         ExecContext context(cpu, *cpu.threads[thread_id], *this, inst);
 

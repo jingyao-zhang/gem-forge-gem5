@@ -47,7 +47,7 @@ MLCDynamicStream::~MLCDynamicStream() {
 
 void MLCDynamicStream::endStream() {
   for (auto &slice : this->slices) {
-    if (slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT) {
+    if (slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
       // Make a dummy response.
       // Ignore whether the data is ready.
       // ! For indirect stream, the sliceId may not have vaddr.
@@ -70,7 +70,7 @@ void MLCDynamicStream::receiveStreamRequest(
   assert(slice->coreStatus == MLCStreamSlice::CoreStatusE::NONE &&
          "Already seen a request.");
   MLC_SLICE_DPRINTF(slice->sliceId, "Matched to request.\n");
-  slice->coreStatus = MLCStreamSlice::CoreStatusE::WAIT;
+  slice->coreStatus = MLCStreamSlice::CoreStatusE::WAIT_DATA;
   slice->coreWaitCycle = this->controller->curCycle();
   slice->coreSliceId = sliceId;
   if (slice->dataReady) {
@@ -134,8 +134,8 @@ void MLCDynamicStream::popStream() {
 }
 
 void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
-  assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT &&
-         "Element core status should be WAIT to make response.");
+  assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA &&
+         "Element core status should be WAIT_DATA to make response.");
   Addr paddr = this->translateVAddr(slice.sliceId.vaddr);
   auto paddrLine = makeLineAddress(paddr);
 
@@ -158,6 +158,24 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
   Cycles latency(2);
   this->responseMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                    this->controller->cyclesToTicks(latency));
+  // Set the core status to DONE.
+  slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+}
+
+void MLCDynamicStream::makeAck(MLCStreamSlice &slice) {
+  assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK &&
+         "Element core status should be WAIT_ACK to make ack.");
+  assert(slice.sliceId.getNumElements() == 1 &&
+         "Ack should be in element granularity.");
+  MLC_SLICE_DPRINTF(slice.sliceId, "Make Ack.\n");
+  // So far I just immediately notify the stream.
+  auto dynS = this->stream->getDynamicStream(this->dynamicStreamId);
+  assert(dynS && "makeAck when dynS has already been released.");
+  dynS->cacheAcked++;
+  dynS->cacheAckedElements.insert(slice.sliceId.lhsElementIdx);
+  // auto element = dynS->getElementByIdx(slice.sliceId.lhsElementIdx);
+  // assert(!element->isCacheAcked && "Core element is already acked.");
+  // element->isCacheAcked = true;
   // Set the core status to DONE.
   slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
 }
