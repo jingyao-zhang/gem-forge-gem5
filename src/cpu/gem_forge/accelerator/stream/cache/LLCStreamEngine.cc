@@ -197,8 +197,18 @@ void LLCStreamEngine::receiveStreamElementData(
    */
   auto S = stream->getStaticStream();
   if (S->isMerged() && S->getStreamType() == "store") {
-    LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                       "StreamStore done, send back StreamAck.\n");
+    // Perform the store.
+    auto elementSize = S->getElementSize();
+    auto elementVAddr = sliceId.vaddr;
+    Addr elementPAddr;
+    assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
+           "Failed to translate vaddr for LLCStoreStream.");
+    auto storeValue = stream->configData.constUpdateValue;
+    this->performStore(elementPAddr, elementSize, storeValue);
+    LLC_SLICE_DPRINTF_(
+        LLCRubyStreamStore, sliceId,
+        "StreamStore done with value %llu, send back StreamAck.\n", storeValue);
+
     this->issueStreamAckToMLC(sliceId);
     if (!this->requestQueue.empty()) {
       this->scheduleEvent(Cycles(1));
@@ -979,30 +989,31 @@ void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,
          "Cannot support multi-line element with indirect streams yet.");
   assert(elementSize <= sizeof(uint64_t) && "At most 8 byte element size.");
 
+  Addr elementPAddr;
+  assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
+         "Failed to translate address for accessing backing storage.");
+  /**
+   * ! The ruby system uses the BackingStore. However, we can not
+   * update it here, as then the RubySequencer will read the updated
+   * value for the StreamEngine.
+   */
+  // this->performStore(elementPAddr, elementSize, updateValue);
+}
+
+void LLCStreamEngine::performStore(Addr paddr, int size, uint64_t value) {
   auto rubySystem = this->controller->params()->ruby_system;
-  if (rubySystem->getAccessBackingStore()) {
-
-    /**
-     * ! The ruby system uses the BackingStore. However, we can not
-     * update it here, as then the RubySequencer will read the updated
-     * value for the StreamEngine.
-     */
-    return;
-
-    // // Get the data from backing store.
-    // Addr elementPAddr;
-    // assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
-    //        "Failed to translate address for accessing backing storage.");
-    // RequestPtr req(new Request(elementPAddr, elementSize, 0, 0 /* MasterId
-    // */,
-    //                            0 /* InstSeqNum */, 0 /* contextId */));
-    // PacketPtr pkt = Packet::createWrite(req);
-    // uint8_t *pktData = new uint8_t[req->getSize()];
-    // memcpy(pktData, reinterpret_cast<uint8_t *>(&updateValue),
-    // elementSize); pkt->dataDynamic(pktData);
-    // rubySystem->getPhysMem()->functionalAccess(pkt);
-    // delete pkt;
-  } else {
-    panic("Do not support UpdateStream without BackingStore.");
-  }
+  assert(rubySystem->getAccessBackingStore() &&
+         "Do not support store stream without BackingStore.");
+  assert(size <= sizeof(value) && "At most 8 byte data.");
+  assert((paddr % RubySystem::getBlockSizeBytes()) + size <=
+             RubySystem::getBlockSizeBytes() &&
+         "Can not store to multi-line elements.");
+  RequestPtr req(new Request(paddr, size, 0, 0 /* MasterId */,
+                             0 /* InstSeqNum */, 0 /* contextId */));
+  PacketPtr pkt = Packet::createWrite(req);
+  uint8_t *pktData = new uint8_t[req->getSize()];
+  memcpy(pktData, reinterpret_cast<uint8_t *>(&value), size);
+  pkt->dataDynamic(pktData);
+  rubySystem->getPhysMem()->functionalAccess(pkt);
+  delete pkt;
 }

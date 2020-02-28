@@ -160,6 +160,10 @@ private:
                                        const DataBlock &dataBlock);
   void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,
                          uint64_t updateValue);
+  /**
+   * Perform store to the BackingStorage.
+   */
+  void performStore(Addr paddr, int size, uint64_t value);
 };
 
 #endif

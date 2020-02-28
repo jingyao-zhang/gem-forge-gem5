@@ -721,7 +721,7 @@ StreamElement *Stream::releaseElementStepped() {
   // Only do this for used elements.
   if (used) {
     this->handleConstUpdate(dynS, releaseElement);
-    this->handleMergedPredicate(dynS, releaseElement);
+    // this->handleMergedPredicate(dynS, releaseElement);
   }
 
   dynS.tail->next = releaseElement->next;
