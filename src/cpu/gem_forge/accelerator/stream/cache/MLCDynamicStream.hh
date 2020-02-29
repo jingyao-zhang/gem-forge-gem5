@@ -59,6 +59,11 @@ public:
    */
   void endStream();
 
+  uint64_t getHeadSliceIdx() const { return this->headSliceIdx; }
+  uint64_t getTailSliceIdx() const { return this->tailSliceIdx; }
+
+  void scheduleAdvanceStream();
+
 protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;
@@ -81,7 +86,7 @@ protected:
     enum CoreStatusE {
       NONE,
       WAIT_DATA, // The core is waiting the data.
-      WAIT_ACK, // The core is waiting the ack.
+      WAIT_ACK,  // The core is waiting the ack.
       DONE,
       FAULTED
     };
@@ -123,7 +128,7 @@ protected:
 
   std::list<MLCStreamSlice> slices;
   using SliceIter = std::list<MLCStreamSlice>::iterator;
-  // Element index of allocated [head, tail).
+  // Slice index of allocated [head, tail).
   uint64_t headSliceIdx;
   uint64_t tailSliceIdx;
 
@@ -148,7 +153,8 @@ protected:
    * Find the correct slice for a core request.
    * Used in receiveStreamRequest() and receiveStreamRequestHit().
    */
-  virtual SliceIter findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) = 0;
+  virtual SliceIter
+  findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) = 0;
 
   /**
    * Helper function to translate the vaddr to paddr.

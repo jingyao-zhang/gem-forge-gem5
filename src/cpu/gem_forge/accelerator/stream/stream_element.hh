@@ -224,6 +224,12 @@ struct StreamElement {
    */
   bool isLastElement() const;
 
+  /**
+   * Return whether if this stream element should issue request to cache.
+   * This assumes that this is a memory stream.
+   */
+  bool shouldIssue() const;
+
   StreamMemAccess *
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
   void handlePacketResponse(StreamMemAccess *memAccess, PacketPtr pkt);

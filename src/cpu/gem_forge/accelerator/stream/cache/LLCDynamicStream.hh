@@ -21,9 +21,9 @@ struct LLCStreamRequest {
   CoherenceRequestType requestType;
   // Optional for StreamStore request.
   uint64_t storeData;
-  LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine)
-      : sliceId(_sliceId), paddrLine(_paddrLine),
-        requestType(CoherenceRequestType_GETU) {}
+  LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
+                   CoherenceRequestType _type)
+      : sliceId(_sliceId), paddrLine(_paddrLine), requestType(_type) {}
   LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
                    uint64_t _storeData)
       : sliceId(_sliceId), paddrLine(_paddrLine),

@@ -49,7 +49,6 @@ protected:
 
   std::unordered_map<Addr, DataBlock> reuseBlockMap;
 
-  // Only support one indirect stream.
   std::vector<MLCDynamicIndirectStream *> indirectStreams;
 
   bool hasOverflowed() const override {

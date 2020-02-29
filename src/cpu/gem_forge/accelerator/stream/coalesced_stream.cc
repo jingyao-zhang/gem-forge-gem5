@@ -105,6 +105,8 @@ void CoalescedStream::selectPrimeLogicalStream() {
     assert(
         LS->info.static_info().is_merged_predicated_stream() ==
         this->primeLStream->info.static_info().is_merged_predicated_stream());
+    assert(LS->info.static_info().no_core_user() ==
+           this->primeLStream->info.static_info().no_core_user());
   }
   /**
    * Finalize the stream name and static id.
@@ -215,6 +217,10 @@ bool CoalescedStream::isReduction() const {
              ::LLVM::TDG::StreamValuePattern::REDUCTION &&
          "CoalescedStream should never be reduction stream.");
   return false;
+}
+
+bool CoalescedStream::hasCoreUser() const {
+  return !this->primeLStream->info.static_info().no_core_user();
 }
 
 bool CoalescedStream::isContinuous() const {

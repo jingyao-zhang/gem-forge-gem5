@@ -68,6 +68,7 @@ public:
   bool isMerged() const override;
   const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
   bool isReduction() const override;
+  bool hasCoreUser() const override;
 
   uint64_t getCoalesceBaseStreamId() const override {
     return this->primeLStream->getCoalesceBaseStreamId();

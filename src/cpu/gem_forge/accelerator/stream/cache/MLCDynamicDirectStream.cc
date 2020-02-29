@@ -31,6 +31,11 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
   this->tailPAddr = _configData->initPAddr;
   this->tailSliceLLCBank = this->mapPAddrToLLCBank(_configData->initPAddr);
 
+  // Set the base stream for indirect streams.
+  for (auto dynIS : this->indirectStreams) {
+    dynIS->setBaseStream(this);
+  }
+
   // Initialize the buffer for some slices.
   // Since the LLC is bounded by the credit, it's sufficient to only check
   // hasOverflowed() at MLC level.
@@ -54,20 +59,47 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
 void MLCDynamicDirectStream::advanceStream() {
 
   this->popStream();
+  /**
+   * In order to synchronize the direct/indirect stream, we want to make sure
+   * that the direct stream is only ahead of the indirect stream by a reasonable
+   * distance.
+   */
+  uint64_t indirectSlices = 0;
+  for (auto dynIS : this->indirectStreams) {
+    indirectSlices = std::max(
+        dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx(), indirectSlices);
+  }
   // Of course we need to allocate more slices.
-  while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
-         !this->hasOverflowed()) {
-    this->allocateSlice();
+  if (indirectSlices <
+      2 * this->maxNumSlices *
+          std::max(
+              static_cast<uint64_t>(1),
+              static_cast<uint64_t>(this->slicedStream.getElementPerSlice()))) {
+    while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
+           !this->hasOverflowed()) {
+      // Although wierd, do not allocate more slices than indirect stream to
+      // avoid running too much ahead.
+      // TODO: Make this more robustic.
+      // bool waitForIndirectStream = false;
+      // for (auto dynIS : this->indirectStreams) {
+      //   if (dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx() >
+      //       this->maxNumSlices * 8) {
+      //     waitForIndirectStream = true;
+      //     break;
+      //   }
+      // }
+      // if (waitForIndirectStream) {
+      //   break;
+      // }
+      this->allocateSlice();
+    }
   }
 
   // We may need to schedule advance stream if the first slice is FAULTED,
   // as no other event will cause it to be released.
   if (!this->slices.empty() &&
       this->slices.front().coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
-    if (!this->advanceStreamEvent.scheduled()) {
-      this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
-                                                Cycles(1));
-    }
+    this->scheduleAdvanceStream();
   }
 
   /**
@@ -130,6 +162,11 @@ void MLCDynamicDirectStream::allocateSlice() {
            "This only works with backing store.");
     this->notifyIndirectStream(this->slices.back());
 
+    // The address is valid, but we check if this stream has no core user.
+    if (!this->stream->hasCoreUser()) {
+      // We mark this slice done.
+      this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+    }
   } else {
     // This address is invalid. Mark the slice faulted.
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::FAULTED;

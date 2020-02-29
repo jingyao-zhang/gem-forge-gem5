@@ -167,7 +167,8 @@ void MLCDynamicStream::makeAck(MLCStreamSlice &slice) {
          "Element core status should be WAIT_ACK to make ack.");
   assert(slice.sliceId.getNumElements() == 1 &&
          "Ack should be in element granularity.");
-  MLC_SLICE_DPRINTF(slice.sliceId, "Make Ack.\n");
+  MLC_SLICE_DPRINTF(slice.sliceId, "Make Ack, header %s.\n",
+                    this->slices.front().sliceId);
   // So far I just immediately notify the stream.
   auto dynS = this->stream->getDynamicStream(this->dynamicStreamId);
   assert(dynS && "makeAck when dynS has already been released.");
@@ -194,6 +195,13 @@ MachineID MLCDynamicStream::mapPAddrToLLCBank(Addr paddr) const {
   auto llcMachineId = this->controller->mapAddressToLLC(
       paddr, static_cast<MachineType>(selfMachineId.type + 1));
   return llcMachineId;
+}
+
+void MLCDynamicStream::scheduleAdvanceStream() {
+  if (!this->advanceStreamEvent.scheduled()) {
+    this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
+                                              Cycles(1));
+  }
 }
 
 void MLCDynamicStream::panicDump() const {

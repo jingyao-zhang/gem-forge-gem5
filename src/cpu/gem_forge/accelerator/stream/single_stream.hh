@@ -57,6 +57,10 @@ public:
            ::LLVM::TDG::StreamValuePattern::REDUCTION;
   }
 
+  bool hasCoreUser() const override {
+    return !this->info.static_info().no_core_user();
+  }
+
   bool isContinuous() const override;
   void configure(uint64_t seqNum, ThreadContext *tc) override;
 

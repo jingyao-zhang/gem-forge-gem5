@@ -160,6 +160,23 @@ bool StreamElement::isLastElement() const {
          this->FIFOIdx.entryIdx == this->dynS->getTotalTripCount();
 }
 
+bool StreamElement::shouldIssue() const {
+  /**
+   * So far there are two cases when we do not issue requests:
+   * 1. LastElement that only uses to deal with StreamEnd.
+   * 2. Offloaded streams with no core user.
+   */
+  if (this->isLastElement()) {
+    // Last element should never be issued.
+    return false;
+  }
+  if (!this->stream->hasCoreUser() && this->dynS->offloadedToCache) {
+    // If this has no core user and is offloaded to cache, we should not issue.
+    return false;
+  }
+  return true;
+}
+
 void StreamElement::clear() {
 
   if (this->FIFOIdx.entryIdx == 1) {

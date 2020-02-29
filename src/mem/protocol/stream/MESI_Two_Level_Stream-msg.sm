@@ -34,6 +34,7 @@ enumeration(CoherenceRequestType, desc="...") {
   UPGRADE,   desc="UPGRADE to exclusive";
   GETS,      desc="Get Shared";
   GETU,      desc="Get Uncached";
+  GETH,      desc="Get Here, no response";
   GET_INSTR, desc="Get Instruction";
   INV,       desc="INValidate";
   PUTX,      desc="Replacement message";

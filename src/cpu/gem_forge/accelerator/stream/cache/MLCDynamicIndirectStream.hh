@@ -52,12 +52,23 @@ public:
    */
   void receiveBaseStreamData(uint64_t elementIdx, uint64_t baseData);
 
+  void setBaseStream(MLCDynamicStream *baseStream) {
+    assert(!this->baseStream && "Already has base stream.");
+    this->baseStream = baseStream;
+  }
+
+  /**
+   * By design, indirect stream's sliceIdx is actually elementIdx.
+   */
+  uint64_t getTailElementIdx() const { return this->tailSliceIdx; }
+
 private:
   // Remember the root stream id.
   DynamicStreamId rootStreamId;
   DynamicStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
   const int32_t elementSize;
+  MLCDynamicStream *baseStream = nullptr;
 
   // Remember if this indirect stream is behind one iteration.
   bool isOneIterationBehind;
@@ -79,7 +90,8 @@ private:
     return A.lhsElementIdx == B.lhsElementIdx &&
            makeLineAddress(A.vaddr) == makeLineAddress(B.vaddr);
   }
-  SliceIter findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
+  SliceIter
+  findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
 
   void advanceStream() override;
   void allocateSlice();

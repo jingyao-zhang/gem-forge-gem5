@@ -204,11 +204,11 @@ void MLCDynamicIndirectStream::advanceStream() {
   // as no other event will cause it to be released.
   if (!this->slices.empty() &&
       this->slices.front().coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
-    if (!this->advanceStreamEvent.scheduled()) {
-      this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
-                                                Cycles(1));
-    }
+    this->scheduleAdvanceStream();
   }
+
+  // Let's try to schedule advanceStream for the baseStream.
+  this->baseStream->scheduleAdvanceStream();
 }
 
 void MLCDynamicIndirectStream::allocateSlice() {
@@ -232,6 +232,9 @@ void MLCDynamicIndirectStream::allocateSlice() {
   if (this->stream->isMerged() && this->stream->getStreamType() == "store") {
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::WAIT_ACK;
   } else if (this->stream->isReduction()) {
+    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+  } else if (!this->stream->hasCoreUser()) {
+    // If the load has no core user, we are going to mark it done immediately.
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
   }
 
@@ -261,7 +264,7 @@ std::pair<MLCDynamicIndirectStream::SliceIter,
 MLCDynamicIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
   auto ret = std::make_pair<SliceIter, SliceIter>(this->slices.end(),
                                                   this->slices.end());
-
+  // hack("findSliceByElementIdx when slices are %d.\n", this->slices.size());
   for (auto iter = this->slices.begin(), end = this->slices.end(); iter != end;
        ++iter) {
     auto lhsElementIdx = iter->sliceId.lhsElementIdx;

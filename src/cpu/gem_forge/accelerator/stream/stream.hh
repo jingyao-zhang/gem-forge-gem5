@@ -69,6 +69,7 @@ public:
   virtual bool getFloatManual() const = 0;
   virtual bool hasUpgradedToUpdate() const = 0;
   virtual bool isReduction() const = 0;
+  virtual bool hasCoreUser() const = 0;
   /**
    * Whether this stream has been merged, including predicated merge.
    */

@@ -771,6 +771,7 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
 
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
+    assert(S->hasCoreUser() && "Try to use a stream with no core user.");
 
     /**
      * It is possible that the stream is unconfigured (out-loop use).
@@ -950,7 +951,7 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
       element->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
       // Check if the element should go back to PEB.
       if (element->stream->getStreamType() == "load" && element->isAddrReady &&
-          !element->isLastElement() && !element->stream->getFloatManual()) {
+          element->shouldIssue() && !element->stream->getFloatManual()) {
         this->peb.addElement(element);
       }
     }
@@ -1809,7 +1810,7 @@ void StreamEngine::stepElement(Stream *S) {
   auto element = S->stepElement();
   if (S->getStreamType() == "load" && !S->getFloatManual()) {
     if (!element->isFirstUserDispatched() && element->isAddrReady &&
-        !element->isLastElement()) {
+        element->shouldIssue()) {
       // This issued element is stepped but not used, remove from PEB.
       this->peb.removeElement(element);
     }
@@ -1821,7 +1822,7 @@ void StreamEngine::unstepElement(Stream *S) {
   // We may need to add this back to PEB.
   if (S->getStreamType() == "load" && !S->getFloatManual()) {
     if (!element->isFirstUserDispatched() && element->isAddrReady &&
-        !element->isLastElement()) {
+        element->shouldIssue()) {
       this->peb.addElement(element);
     }
   }
@@ -1951,11 +1952,7 @@ void StreamEngine::issueElements() {
       if (element->stream->isMerged()) {
         continue;
       }
-      /**
-       * If this is the last element, we do not issue. This is just a
-       * dummy element to deal with StreamEnd, and should have no user.
-       */
-      if (element->isLastElement()) {
+      if (!element->shouldIssue()) {
         continue;
       }
       // Increase the reference of the cache block if we enable merging.
@@ -2010,7 +2007,7 @@ void StreamEngine::issueElement(StreamElement *element) {
   assert(element->isAddrReady && "Address should be ready.");
   assert(element->stream->isMemStream() &&
          "Should never issue element for IVStream.");
-  assert(!element->isLastElement() && "Should never issue LastElement");
+  assert(element->shouldIssue() && "Should not issue this element.");
 
   S_ELEMENT_DPRINTF(element, "Issue.\n");
 

@@ -451,7 +451,10 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
 
     // Push to the request queue.
-    this->requestQueue.emplace(sliceId, paddrLine);
+    auto reqType = stream->getStaticStream()->hasCoreUser()
+                       ? CoherenceRequestType_GETU
+                       : CoherenceRequestType_GETH;
+    this->requestQueue.emplace(sliceId, paddrLine, reqType);
     stream->waitingDataBaseRequests++;
 
     stream->prevIssuedCycle = curCycle;
@@ -584,6 +587,8 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
    * Finally normal indirect load stream.
    * Handle coalesced multi-line element.
    */
+  auto reqType =
+      IS->hasCoreUser() ? CoherenceRequestType_GETU : CoherenceRequestType_GETH;
   auto totalSliceSize = 0;
   while (totalSliceSize < elementSize) {
     Addr curSliceVAddr = elementVAddr + totalSliceSize;
@@ -600,7 +605,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
       IS->statistic.numLLCSentSlice++;
 
       // Push to the request queue.
-      this->requestQueue.emplace(sliceId, curSlicePAddrLine);
+      this->requestQueue.emplace(sliceId, curSlicePAddrLine, reqType);
     } else {
       // For faulted slices, we simply ignore it.
       LLC_SLICE_DPRINTF(sliceId, "Discard due to fault, vaddr %#x.\n",
