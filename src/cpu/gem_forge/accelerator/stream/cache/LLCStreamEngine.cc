@@ -440,7 +440,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
     auto sliceId = stream->consumeNextSlice();
     LLC_SLICE_DPRINTF(sliceId, "Issue.\n");
-    stream->getStaticStream()->statistic.numLLCSentSlice++;
+    stream->getStaticStream()->statistic.numLLCIssueSlice++;
 
     // Register the waiting indirect elements.
     if (!stream->indirectStreams.empty()) {
@@ -454,6 +454,9 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     auto reqType = stream->getStaticStream()->hasCoreUser()
                        ? CoherenceRequestType_GETU
                        : CoherenceRequestType_GETH;
+    if (reqType == CoherenceRequestType_GETU) {
+      stream->getStaticStream()->statistic.numLLCSentSlice++;
+    }
     this->requestQueue.emplace(sliceId, paddrLine, reqType);
     stream->waitingDataBaseRequests++;
 
@@ -537,6 +540,20 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
                       newReductionValue);
     dynIS->reductionValue = newReductionValue;
 
+    /**
+     * If this is the last reduction element, we send this back to the core.
+     * TODO: Really send a packet to the requesting core.
+     */
+    if (sliceId.lhsElementIdx == indirectConfig.totalTripCount) {
+      // This is the last reduction.
+      auto dynCoreIS = IS->getDynamicStream(dynIS->getDynamicStreamId());
+      assert(dynCoreIS && "Core has no dynamic stream.");
+      assert(!dynCoreIS->finalReductionValueReady &&
+             "FinalReductionValue is already ready.");
+      dynCoreIS->finalReductionValue = dynIS->reductionValue;
+      dynCoreIS->finalReductionValueReady = true;
+    }
+
     // Do not issue any indirect request.
     return;
   }
@@ -570,7 +587,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
     sliceId.size = elementSize;
     Addr elementPAddr;
     if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
-      IS->statistic.numLLCSentSlice++;
+      IS->statistic.numLLCIssueSlice++;
       auto paddrLine = makeLineAddress(elementPAddr);
       // Push to the request queue.
       LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
@@ -602,7 +619,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
     Addr curSlicePAddr;
     if (dynIS->translateToPAddr(curSliceVAddr, curSlicePAddr)) {
       Addr curSlicePAddrLine = makeLineAddress(curSlicePAddr);
-      IS->statistic.numLLCSentSlice++;
+      IS->statistic.numLLCIssueSlice++;
+      if (reqType == CoherenceRequestType_GETU) {
+        IS->statistic.numLLCSentSlice++;
+      }
 
       // Push to the request queue.
       this->requestQueue.emplace(sliceId, curSlicePAddrLine, reqType);
@@ -1000,9 +1020,15 @@ void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,
   /**
    * ! The ruby system uses the BackingStore. However, we can not
    * update it here, as then the RubySequencer will read the updated
-   * value for the StreamEngine.
+   * value for the StreamEngine. So we perform the update in StreamEngine
+   * when this element is released.
+   *
+   * However, if we know this stream has no core user, the core stream
+   * engine will not try to get the data. Then we perform the update here.
    */
-  // this->performStore(elementPAddr, elementSize, updateValue);
+  if (!stream->getStaticStream()->hasCoreUser()) {
+    this->performStore(elementPAddr, elementSize, updateValue);
+  }
 }
 
 void LLCStreamEngine::performStore(Addr paddr, int size, uint64_t value) {

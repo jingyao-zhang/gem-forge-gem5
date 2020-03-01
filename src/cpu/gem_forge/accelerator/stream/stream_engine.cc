@@ -521,19 +521,21 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
 }
 
 bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
-  auto stepStream = this->getStream(stepStreamId);
+  // hmm simply check if we have UnsteppedElement.
+  return this->hasUnsteppedElement(stepStreamId);
+  // auto stepStream = this->getStream(stepStreamId);
 
-  bool canStep = true;
-  for (auto S : this->getStepStreamList(stepStream)) {
-    if (!S->canStep()) {
-      canStep = false;
-      break;
-    }
-  }
-  return canStep;
+  // bool canStep = true;
+  // for (auto S : this->getStepStreamList(stepStream)) {
+  //   if (!S->canStep()) {
+  //     canStep = false;
+  //     break;
+  //   }
+  // }
+  // return canStep;
 }
 
-bool StreamEngine::hasUnsteppedElement(uint64_t stepStreamId) {
+bool StreamEngine::hasUnsteppedElement(uint64_t stepStreamId) const {
   auto stepStream = this->getStream(stepStreamId);
   for (auto S : this->getStepStreamList(stepStream)) {
     if (!S->configured) {
@@ -593,17 +595,46 @@ bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
   const auto &stepStreams = this->getStepStreamList(stepStream);
 
   for (auto S : stepStreams) {
+    const auto &dynS = S->getLastDynamicStream();
+    if (!dynS.configExecuted) {
+      return false;
+    }
+    auto stepElement = dynS.tail->next;
     // Check for StreamAck. So far that's only merged store stream.
     if (S->isMerged() && S->getStreamType() == "store") {
-      const auto &dynS = S->getLastDynamicStream();
-      if (!dynS.configExecuted) {
-        return false;
-      }
       // Check if the first element is acked.
-      auto stepElement = dynS.tail->next;
       if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
         // S_DPRINTF(S, "Can not step as no Ack for %llu.\n",
         //           stepElement->FIFOIdx.entryIdx);
+        return false;
+      }
+    }
+    // Check for unoffloaded ReductionStream. The next steped element should be
+    // ValueReady.
+    if (S->isReduction() && !dynS.offloadedToCache) {
+      auto stepNextElement = stepElement->next;
+      if (!stepNextElement && stepElement->FIFOIdx.entryIdx == 0) {
+        /**
+         * Due to the allocation algorithm, the only case that StepNextElement
+         * is not allocated is at the first element, where we are waiting for
+         * StreamConfig to be executed.
+         */
+        S_ELEMENT_DPRINTF(stepElement, "Failed to find StepNextElement.\n");
+        return false;
+      }
+      assert(stepNextElement && "No StepNextElement for ReductionStream.");
+      if (!stepNextElement->isValueReady) {
+        return false;
+      }
+    }
+    if (S->getStreamType() == "load" && !dynS.offloadedToCache &&
+        !S->hasCoreUser() && S->hasBackDepReductionStream) {
+      /**
+       * S is a load stream that is not offloaded, with no core user and
+       * reduction stream. We have to make sure the element is value ready so
+       * that the reduction is correctly performed.
+       */
+      if (!stepElement->isValueReady) {
         return false;
       }
     }
@@ -737,7 +768,7 @@ bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
   return true;
 }
 
-bool StreamEngine::hasUsedLastElement(const StreamUserArgs &args) {
+bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
     if (!S->configured) {
@@ -751,7 +782,11 @@ bool StreamEngine::hasUsedLastElement(const StreamUserArgs &args) {
     if (element->isLastElement()) {
       S_ELEMENT_DPRINTF(element, "Used LastElement total %d next %s.\n",
                         dynS.totalTripCount, dynS.FIFOIdx);
-      return true;
+      // The only exception is for ReductionStream, whose LastElement is used to
+      // convey back the final value.
+      if (!S->isReduction()) {
+        return true;
+      }
     }
   }
   return false;
@@ -771,7 +806,11 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
 
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    assert(S->hasCoreUser() && "Try to use a stream with no core user.");
+    if (!S->isReduction()) {
+      // We only enforce this for NonReductionStream, as ReductionStream may use
+      // LastElement to convey back the final value.
+      assert(S->hasCoreUser() && "Try to use a stream with no core user.");
+    }
 
     /**
      * It is possible that the stream is unconfigured (out-loop use).
@@ -1729,8 +1768,8 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
   }
 
   const bool used = releaseElement->isFirstUserDispatched();
-  if (releaseElement->isLastElement()) {
-    assert(!used && "LastElement released being used.");
+  if (releaseElement->isLastElement() && !S->isReduction()) {
+    assert(!used && "LastElement of NonReductionStream released being used.");
   }
 
   /**
@@ -1832,6 +1871,20 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElements;
 
   auto areBaseElementsValReady = [](StreamElement *element) -> bool {
+    /**
+     * Special case for LastElement of offloaded ReductionStream with no core
+     * user, which is marked ready by checking its
+     * dynS->finalReductionValueReady.
+     */
+    if (element->stream->isReduction() && !element->stream->hasCoreUser() &&
+        element->dynS->offloadedToCache) {
+      if (element->isLastElement()) {
+        return element->dynS->finalReductionValueReady;
+      } else {
+        // Should never be ready.
+        return false;
+      }
+    }
     bool ready = true;
     for (const auto &baseElement : element->baseElements) {
       if (baseElement->stream == nullptr) {

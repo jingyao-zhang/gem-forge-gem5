@@ -75,6 +75,9 @@ void Stream::addBackBaseStream(Stream *backBaseStream) {
   }
   this->backBaseStreams.insert(backBaseStream);
   backBaseStream->backDependentStreams.insert(this);
+  if (this->isReduction()) {
+    backBaseStream->hasBackDepReductionStream = true;
+  }
 }
 
 void Stream::addBaseStepStream(Stream *baseStepStream) {
@@ -142,11 +145,34 @@ void Stream::executeStreamConfig(uint64_t seqNum,
                "Mismatch in TotalTripCount.");
       } else {
         dynStream.totalTripCount = rootDynS.getTotalTripCount();
+        DYN_S_DPRINTF(dynStream.dynamicStreamId,
+                      "Set TotalTripCount %llu from StepRoot.\n",
+                      dynStream.totalTripCount);
       }
     } else {
       assert(!dynStream.hasTotalTripCount() &&
              "Missing TotalTripCount in StepRootStream.");
     }
+  } else if (!this->backBaseStreams.empty()) {
+    // Try to copy total trip count from back base stream.
+    assert(this->backBaseStreams.size() == 1);
+    auto backBaseS = *(this->backBaseStreams.begin());
+    const auto &backBaseDynS = backBaseS->getDynamicStream(seqNum);
+    if (backBaseDynS.configExecuted) {
+      dynStream.totalTripCount = backBaseDynS.totalTripCount;
+      DYN_S_DPRINTF(dynStream.dynamicStreamId,
+                    "Set TotalTripCount %llu from BackBase.\n",
+                    dynStream.totalTripCount);
+    }
+  }
+
+  // Try to set total trip count for back dependent streams.
+  for (auto backDepS : this->backDependentStreams) {
+    auto &backDepDynS = backDepS->getDynamicStream(seqNum);
+    backDepDynS.totalTripCount = dynStream.totalTripCount;
+    DYN_S_DPRINTF(backDepDynS.dynamicStreamId,
+                  "Set TotalTripCount %llu from BackBase.\n",
+                  backDepDynS.totalTripCount);
   }
 }
 
@@ -601,8 +627,14 @@ void Stream::allocateElement(StreamElement *newElement) {
   }
 
   auto newElementIdx = newElement->FIFOIdx.entryIdx;
-  // Find the previous element of my self for reduction stream.
-  if (this->isReduction()) {
+  /**
+   * Find the previous element of my self for reduction stream.
+   * However, if the reduction stream is offloaded without core user,
+   * we do not try to track its BackMemBaseStream.
+   */
+  bool isOffloadedNoCoreUserReduction =
+      dynS.offloadedToCache && !this->hasCoreUser() && this->isReduction();
+  if (this->isReduction() && !isOffloadedNoCoreUserReduction) {
     if (newElementIdx > 0) {
       assert(dynS.head != dynS.tail &&
              "Failed to find previous element for reduction stream.");
@@ -613,7 +645,7 @@ void Stream::allocateElement(StreamElement *newElement) {
       // the initial value.
     }
   }
-  if (newElementIdx > 0) {
+  if (newElementIdx > 0 && !isOffloadedNoCoreUserReduction) {
     // Find the back base element, starting from the second element.
     for (auto backBaseS : this->backBaseStreams) {
       if (backBaseS->getLoopLevel() != this->getLoopLevel()) {
@@ -735,6 +767,7 @@ StreamElement *Stream::releaseElementStepped() {
   dynS.allocSize--;
   this->allocSize--;
 
+  S_ELEMENT_DPRINTF(releaseElement, "ReleaseElementStepped, used %d.\n", used);
   return releaseElement;
 }
 

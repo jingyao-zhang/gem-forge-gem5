@@ -23,6 +23,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpAvg(avgTurnAroundCycle, numCycle, numStepped);
 
   dumpScalar(numMLCAllocatedSlice);
+  dumpScalar(numLLCIssueSlice);
   dumpScalar(numLLCSentSlice);
   dumpScalar(numLLCFaultSlice);
   dumpScalar(numLLCPredYSlice);

@@ -306,7 +306,27 @@ void ISAStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
  *******************************************************************************/
 
 bool ISAStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
-  return true;
+  auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
+  const auto &infoRelativePath = this->getRelativePath(configIdx);
+
+  ISA_SE_DPRINTF("CanDispatch StreamEnd %llu, %s.\n", configIdx,
+                 infoRelativePath.c_str());
+  /**
+   * Sometimes it's possible to misspeculate StreamEnd before StreamConfig.
+   * We check the RegionStreamIdTable to make sure this is the correct one.
+   *
+   * TODO: This is still very hacky, we have to be careful as there maybe
+   * TODO: a misspeculated chain.
+   */
+  const auto &info = this->getStreamRegion(configIdx);
+  if (!this->canRemoveRegionStreamIds(info)) {
+    // We failed. This is must be misspeculation, we delay issue.
+    return false;
+  }
+
+  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  auto se = this->getStreamEngine();
+  return se->hasUnsteppedElement(args);
 }
 
 void ISAStreamEngine::dispatchStreamEnd(
@@ -319,29 +339,13 @@ void ISAStreamEngine::dispatchStreamEnd(
                  infoRelativePath.c_str());
 
   const auto &info = this->getStreamRegion(configIdx);
+  this->createDynStreamInstInfo(dynInfo.seqNum);
 
-  auto &instInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
-
-  /**
-   * Sometimes it's possible to misspeculate StreamEnd before StreamConfig.
-   * We check the RegionStreamIdTable to make sure this is the correct one.
-   *
-   * TODO: This is still very hacky, we have to be careful as there maybe
-   * TODO: a misspeculated chain.
-   */
-  if (!this->canRemoveRegionStreamIds(info)) {
-    // We failed.
-    instInfo.mustBeMisspeculated = true;
-    return;
-  }
-
+  assert(this->canRemoveRegionStreamIds(info) &&
+         "Cannot remove RegionStreamIds for StreamEnd.");
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
-  if (!se->hasUnsteppedElement(args)) {
-    // There is no unstepped elements. This must be misspeculated.
-    instInfo.mustBeMisspeculated = true;
-    return;
-  }
+  assert(se->hasUnsteppedElement(args) && "No UnsteppedElement for StreamEnd.");
   // ! Make sure all effects happen as atomic.
   this->removeRegionStreamIds(info);
   se->dispatchStreamEnd(args);
@@ -550,7 +554,7 @@ bool ISAStreamEngine::canDispatchStreamLoad(
       // We must wait.
       return false;
     } else {
-      if (se->hasUsedLastElement(args)) {
+      if (se->hasIllegalUsedLastElement(args)) {
         // This is a use beyond the last element. Must be misspeculated.
         dynStreamInstInfo.mustBeMisspeculated = true;
         return true;
@@ -758,7 +762,9 @@ void ISAStreamEngine::insertRegionStreamIds(
   for (const auto &streamInfo : region.streams()) {
     auto streamId = streamInfo.id();
     auto regionStreamId = streamInfo.region_stream_id();
-    assert(regionStreamId < 64 && "More than 64 streams in a region.");
+    const int MaxRegionStreamId = 128;
+    assert(regionStreamId < MaxRegionStreamId &&
+           "More than 128 streams in a region.");
     while (this->regionStreamIdTable.size() <= regionStreamId) {
       this->regionStreamIdTable.push_back(InvalidStreamId);
     }
@@ -819,6 +825,14 @@ ISAStreamEngine::createDynStreamInstInfo(uint64_t seqNum) {
       std::piecewise_construct, std::forward_as_tuple(seqNum),
       std::forward_as_tuple());
   assert(emplaceRet.second && "StreamInstInfo already there.");
+  return emplaceRet.first->second;
+}
+
+ISAStreamEngine::DynStreamInstInfo &
+ISAStreamEngine::getOrCreateDynStreamInstInfo(uint64_t seqNum) {
+  auto emplaceRet = this->seqNumToDynInfoMap.emplace(
+      std::piecewise_construct, std::forward_as_tuple(seqNum),
+      std::forward_as_tuple());
   return emplaceRet.first->second;
 }
 

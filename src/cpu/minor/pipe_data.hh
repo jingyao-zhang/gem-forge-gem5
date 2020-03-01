@@ -247,7 +247,7 @@ class ForwardLineData /* : public ReportIF, public BubbleIF */
 };
 
 /** Maximum number of instructions that can be carried by the pipeline. */
-const unsigned int MAX_FORWARD_INSTS = 16;
+const unsigned int MAX_FORWARD_INSTS = 32;
 
 /** Forward flowing data between Fetch2,Decode,Execute carrying a packet of
  *  instructions of a width appropriate to the configured stage widths.

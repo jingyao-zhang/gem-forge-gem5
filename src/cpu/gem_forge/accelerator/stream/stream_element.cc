@@ -322,6 +322,13 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
   if (this->stream->isReduction() && this->FIFOIdx.entryIdx == 0) {
     // Special case: first element of reduction stream uses the initial value.
     this->addr = dynStream.initialValue;
+  } else if (this->isLastElement() && this->stream->isReduction() &&
+             !this->stream->hasCoreUser() && this->dynS->offloadedToCache) {
+    // Special case: last element of offloaded reduction stream without core
+    // user.
+    assert(this->dynS->finalReductionValueReady &&
+           "FinalReductionValue should be ready.");
+    this->addr = this->dynS->finalReductionValue;
   } else {
     // Normal case: use addrGenCallback.
     this->addr = dynStream.addrGenCallback->genAddr(

@@ -116,6 +116,7 @@ public:
    */
   std::unordered_set<Stream *> backBaseStreams;
   std::unordered_set<Stream *> backDependentStreams;
+  bool hasBackDepReductionStream;
 
   /**
    * Per stream statistics.

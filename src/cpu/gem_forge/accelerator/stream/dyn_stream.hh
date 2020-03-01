@@ -64,9 +64,11 @@ struct DynamicStream {
   uint64_t constUpdateValue = 0;
 
   /**
-   * Optional initial value for reduction stream.
+   * Optional initial/final value for reduction stream.
    */
   uint64_t initialValue = 0;
+  uint64_t finalReductionValue = 0;
+  bool finalReductionValueReady = false;
 
   // Optional total length of this dynamic stream. -1 as indefinite.
   int64_t totalTripCount = -1;

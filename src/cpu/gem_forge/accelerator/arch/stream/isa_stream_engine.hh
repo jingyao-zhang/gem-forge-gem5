@@ -170,6 +170,7 @@ private:
   std::unordered_map<uint64_t, DynStreamInstInfo> seqNumToDynInfoMap;
 
   DynStreamInstInfo &createDynStreamInstInfo(uint64_t seqNum);
+  DynStreamInstInfo &getOrCreateDynStreamInstInfo(uint64_t seqNum);
 
   /**
    * Mark one stream config inst executed.
