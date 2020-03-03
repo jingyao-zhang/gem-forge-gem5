@@ -389,9 +389,10 @@ System::allocPhysPages(int npages)
         pagePtr = 0xffffffff >> PageShift;
     }
 
-    if ((pagePtr << PageShift) > physmem.totalSize())
-        fatal("Out of memory, please increase size of physical memory,"
+    if ((pagePtr << PageShift) > physmem.totalSize()) {
+        panic("Out of memory, please increase size of physical memory,"
               " request %d pages.", npages);
+    }
     return return_addr;
 }
 

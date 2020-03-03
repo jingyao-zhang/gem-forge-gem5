@@ -118,8 +118,14 @@ PacketQueue::schedSendTiming(PacketPtr pkt, Tick when)
 
     // add a very basic sanity check on the port to ensure the
     // invisible buffer is not growing beyond reasonable limits
-    if (!_disableSanityCheck && transmitList.size() > 100) {
-        panic("Packet queue %s has grown beyond 100 packets\n",
+    if (!_disableSanityCheck && transmitList.size() > 2048) {
+        /**
+         * ! GemForge.
+         * I have to increase this as we are simulating 64-cores with only
+         * 4 memory controllers at each corner, so the packets would be
+         * large.
+         */
+        panic("Packet queue %s has grown beyond 2048 packets\n",
               name());
     }
 

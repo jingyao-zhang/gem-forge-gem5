@@ -64,12 +64,16 @@ class MeshDirCorners_XY(SimpleTopology):
         dma_nodes = []
         for node in nodes:
             if node.type == 'L1Cache_Controller' or \
-            node.type == 'L2Cache_Controller':
+                node.type == 'L2Cache_Controller' or \
+                node.type == 'L0Cache_Controller':
                 cache_nodes.append(node)
             elif node.type == 'Directory_Controller':
                 dir_nodes.append(node)
             elif node.type == 'DMA_Controller':
                 dma_nodes.append(node)
+            else:
+                print('Unkown node controller {t}'.format(t=node.type))
+                assert(False)
 
         # Obviously the number or rows must be <= the number of routers
         # and evenly divisible.  Also the number of caches must be a
@@ -102,24 +106,24 @@ class MeshDirCorners_XY(SimpleTopology):
 
         # NUMA Node for each quadrant
         # With odd columns or rows, the nodes will be unequal
-        numa_nodes = [ [], [], [], []]
+        self.numa_nodes = [[], [], [], []]
         for i in xrange(num_routers):
             if i % num_columns < num_columns / 2  and \
                i < num_routers / 2:
-                numa_nodes[0].append(i)
+                self.numa_nodes[0].append(i)
             elif i % num_columns >= num_columns / 2  and \
                i < num_routers / 2:
-                numa_nodes[1].append(i)
+                self.numa_nodes[1].append(i)
             elif i % num_columns < num_columns / 2  and \
                i >= num_routers / 2:
-                numa_nodes[2].append(i)
+                self.numa_nodes[2].append(i)
             else:
-                numa_nodes[3].append(i)
+                self.numa_nodes[3].append(i)
 
-        num_numa_nodes = 0
-        for n in numa_nodes:
+        self.num_numa_nodes = 0
+        for n in self.numa_nodes:
             if n:
-                num_numa_nodes += 1
+                self.num_numa_nodes += 1
 
         # Connect the dir nodes to the corners.
         ext_links.append(ExtLink(link_id=link_count, ext_node=dir_nodes[0],
@@ -217,9 +221,9 @@ class MeshDirCorners_XY(SimpleTopology):
     # Register nodes with filesystem
     def registerTopology(self, options):
         i = 0
-        for n in numa_nodes:
+        for n in self.numa_nodes:
             if n:
                 FileSystemConfig.register_node(n,
-                    MemorySize(options.mem_size) / num_numa_nodes, i)
+                    MemorySize(options.mem_size) / self.num_numa_nodes, i)
             i += 1
 
