@@ -293,8 +293,10 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
       if (baseElement->stream == baseStream) {
         // TODO: Check the FIFOIdx to make sure that the element is correct to
         // TODO: use.
-        assert(baseElement->isValueReady &&
-               "Base element is not value ready yet.");
+        if (!baseElement->isValueReady) {
+          S_ELEMENT_PANIC(this, "BaseElement %s is not value ready.",
+                          baseElement->FIFOIdx);
+        }
         auto vaddr = baseElement->addr;
         int32_t size = baseElement->size;
         if (auto CS = dynamic_cast<CoalescedStream *>(baseStream)) {
@@ -314,6 +316,24 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
                           vaddr, size, baseValue);
         return baseValue;
       }
+    }
+    /**
+     * A special case for reduction stream: it is allowed to use an IVStream,
+     * which should be the index of the LoadStream.
+     */
+    if (this->stream->isReduction()) {
+      auto baseS = this->se->getStream(baseStreamId);
+      assert(baseS->getStreamType() == "phi" &&
+             "Extra MemStream Input for ReductionStream.");
+      auto &baseDynS = baseS->getDynamicStream(this->dynS->configSeqNum);
+      assert(baseDynS.configExecuted && "Extra IVBaseStream is configured.");
+      // It should have -1 ElementIdx.
+      assert(this->FIFOIdx.entryIdx > 0 &&
+             "Generate value for first element of ReductionStream.");
+      // This IVBaseStream should simply has no input.
+      return baseDynS.addrGenCallback->genAddr(this->FIFOIdx.entryIdx - 1,
+                                               baseDynS.addrGenFormalParams,
+                                               getStreamValueFail);
     }
     S_ELEMENT_PANIC(this, "Failed to find the base stream value of %llu.\n",
                     baseStreamId);

@@ -113,6 +113,8 @@ public:
   Cycles issueClearCycle = Cycles(4);
   // Last issued cycle.
   Cycles prevIssuedCycle = Cycles(0);
+  // Last migrate cycle.
+  Cycles prevMigrateCycle = Cycles(0);
 
   // Next slice index to be issued.
   uint64_t sliceIdx;
@@ -148,6 +150,9 @@ public:
       waitingPredicatedElements;
 
   void updateIssueClearCycle();
+  bool shouldUpdateIssueClearCycleMemorized = true;
+  bool shouldUpdateIssueClearCycleInitialized = false;
+  bool shouldUpdateIssueClearCycle();
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

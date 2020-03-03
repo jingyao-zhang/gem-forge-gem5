@@ -7,6 +7,7 @@
 #include "mem/ruby/protocol/StreamMigrateRequestMsg.hh"
 #include "mem/simple_mem.hh"
 
+#include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
 #include "base/trace.hh"
@@ -51,6 +52,9 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
   // Create the stream.
   auto S = new LLCDynamicStream(this->controller, streamConfigureData);
+  LLC_S_DPRINTF(S->getDynamicStreamId(),
+                "Configure DirectStream InitAllocatedSlice %d.\n",
+                streamConfigureData->initAllocatedIdx);
   configuredStreamMap.emplace(S->getDynamicStreamId(), S);
 
   // Check if we have indirect streams.
@@ -144,6 +148,11 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
          "Stream migrated with readyIndirectElements.");
 
   LLC_S_DPRINTF(stream->getDynamicStreamId(), "Received migrate.\n");
+
+  auto &stats = stream->getStaticStream()->statistic;
+  stats.numLLCMigrate++;
+  stats.numLLCMigrateCycle +=
+      this->controller->curCycle() - stream->prevMigrateCycle;
 
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
@@ -522,13 +531,31 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
     assert(elementIdx > 0 && "Reduction stream ElementIdx should start at 1.");
 
     // Perform the reduction.
-    auto getBaseStreamValue = [baseElementData, dynBS,
-                               dynIS](uint64_t baseStreamId) -> uint64_t {
+    auto getBaseStreamValue = [baseElementData, dynBS, dynIS,
+                               elementIdx](uint64_t baseStreamId) -> uint64_t {
       if (baseStreamId == dynBS->getStaticId()) {
         return baseElementData;
       }
       if (baseStreamId == dynIS->getStaticId()) {
         return dynIS->reductionValue;
+      }
+      // Special case for extra IVBaseS for ReductionStream.
+      {
+        auto IS = dynIS->getStaticStream();
+        auto coreDynIS = IS->getDynamicStream(dynIS->getDynamicStreamId());
+        assert(coreDynIS && "Failed to get CoreDynIS.");
+
+        auto baseS = IS->se->getStream(baseStreamId);
+        assert(baseS->getStreamType() == "phi" &&
+               "Extra MemStream Input for ReductionStream.");
+        auto &baseDynS = baseS->getDynamicStream(coreDynIS->configSeqNum);
+        assert(baseDynS.configExecuted && "Extra IVBaseStream is configured.");
+        // It should have -1 ElementIdx.
+        assert(elementIdx > 0 &&
+               "Generate value for first element of ReductionStream.");
+        // This IVBaseStream should simply has no input.
+        return baseDynS.addrGenCallback->genAddr(
+            elementIdx - 1, baseDynS.addrGenFormalParams, getStreamValueFail);
       }
       assert(false && "Invalid baseStreamId.");
       return 0;
@@ -760,6 +787,8 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   this->streamMigrateMsgBuffer->enqueue(
       msg, this->controller->clockEdge(),
       this->controller->cyclesToTicks(latency));
+
+  stream->prevMigrateCycle = this->controller->curCycle();
 }
 
 MachineID LLCStreamEngine::mapPaddrToLLCBank(Addr paddr) const {

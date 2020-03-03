@@ -12,7 +12,7 @@
 #define S_PANIC(S, format, args...) panic(S_MSG(S, format, ##args))
 
 #define S_ELEMENT_MSG(E, format, args...)                                      \
-  S_MSG((E)->getStream(), "[%lu, %lu]: " format,                               \
+  S_MSG((E)->getStream(), "[%lu-%lu]: " format,                               \
         (E)->FIFOIdx.streamId.streamInstance, (E)->FIFOIdx.entryIdx, ##args)
 
 #define S_ELEMENT_DPRINTF(E, format, args...)                                  \

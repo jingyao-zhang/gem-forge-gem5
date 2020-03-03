@@ -66,15 +66,19 @@ void MLCDynamicDirectStream::advanceStream() {
    */
   uint64_t indirectSlices = 0;
   for (auto dynIS : this->indirectStreams) {
+    assert(dynIS->getTailSliceIdx() >= dynIS->getHeadSliceIdx() &&
+           "Illegal Head/TailSliceIdx.\n");
     indirectSlices = std::max(
         dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx(), indirectSlices);
   }
-  // Of course we need to allocate more slices.
-  if (indirectSlices <
+  uint64_t indirectSlicesThreshold =
       2 * this->maxNumSlices *
-          std::max(
-              static_cast<uint64_t>(1),
-              static_cast<uint64_t>(this->slicedStream.getElementPerSlice()))) {
+      std::max(static_cast<uint64_t>(1),
+               static_cast<uint64_t>(this->slicedStream.getElementPerSlice()));
+  MLC_S_DPRINTF("IndirectSlices %llu Threshold %llu.\n", indirectSlices,
+                indirectSlicesThreshold);
+  // Of course we need to allocate more slices.
+  if (indirectSlices < indirectSlicesThreshold) {
     while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
            !this->hasOverflowed()) {
       // Although wierd, do not allocate more slices than indirect stream to

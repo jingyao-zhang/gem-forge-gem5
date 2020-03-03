@@ -128,8 +128,10 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
   }
 
   if (this->slices.empty()) {
-    // We better be overflowed.
-    assert(this->hasOverflowed() && "No slices when not overflowed.");
+    // We better be overflowed, unless we are Reduction.
+    if (!this->getStaticStream()->isReduction()) {
+      assert(this->hasOverflowed() && "No slices when not overflowed.");
+    }
     return;
   } else {
     if (elementIdx < this->slices.front().sliceId.lhsElementIdx) {
@@ -316,6 +318,7 @@ MLCDynamicIndirectStream::findOrInsertSliceBySliceId(
   }
   // Insert one slice before ret.
   ret = this->slices.emplace(ret, sliceId);
+  this->tailSliceIdx++;
   this->stream->statistic.numMLCAllocatedSlice++;
   MLC_SLICE_DPRINTF(ret->sliceId, "Insert indirect slice.\n");
   return ret;

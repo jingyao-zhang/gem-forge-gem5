@@ -7,7 +7,7 @@
 
 namespace {
 static std::string DEBUG_STREAM_NAME =
-    "(IV acmod.c::1232(acmod_flags2list) bb19 bb19::tmp21(phi))";
+    "(particlefilter.c::415(.omp_outlined..2) 444 bb45 bb91::tmp96(load))";
 
 bool isDebugStream(Stream *S) {
   return S->getStreamName() == DEBUG_STREAM_NAME;
@@ -860,6 +860,8 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     }
     // Mark the first check cycle.
     if (element->firstCheckCycle == 0) {
+      S_ELEMENT_DPRINTF(element, "Mark FirstCheckCycle %lu.\n",
+                        cpuDelegator->curCycle());
       element->firstCheckCycle = cpuDelegator->curCycle();
     }
     if (element->stream->getStreamType() == "store") {
@@ -1870,7 +1872,7 @@ void StreamEngine::unstepElement(Stream *S) {
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElements;
 
-  auto areBaseElementsValReady = [](StreamElement *element) -> bool {
+  auto areBaseElementsValReady = [this](StreamElement *element) -> bool {
     /**
      * Special case for LastElement of offloaded ReductionStream with no core
      * user, which is marked ready by checking its
@@ -1901,6 +1903,11 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         continue;
       }
       if (!baseElement->isValueReady) {
+        if (isDebugStream(element->stream)) {
+          S_ELEMENT_DPRINTF(element,
+                            "Element is not ready due to base element: \n");
+          S_ELEMENT_DPRINTF(baseElement, "Blocked.\n");
+        }
         ready = false;
         break;
       }
@@ -1929,15 +1936,35 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         }
         /**
          * To avoid overhead, if an element is aliased, we do not try to
-         * issue it until the first user is dispatched.
+         * issue it until the first user is dispatched. However, now we
+         * have removed the load b[i] for indirect access like a[b[i]],
+         * we need to further check if my dependent stream has user dispatched
+         * to avoid deadlock.
+         *
+         * TODO: This adhoc fix only works for one level, if it's a[b[c]] then
+         * TODO: it will deadlock again.
+         * TODO: Record dependent element information to avoid this expensive
+         * TODO: search.
          */
         if (element->isAddrAliased && !element->isFirstUserDispatched()) {
-          break;
+          bool hasIndirectUserDispatched = false;
+          for (auto depS : S->dependentStreams) {
+            auto &dynDepS = depS->getDynamicStream(dynS.configSeqNum);
+            auto depElement =
+                dynDepS.getElementByIdx(element->FIFOIdx.entryIdx);
+            if (depElement && depElement->isFirstUserDispatched()) {
+              hasIndirectUserDispatched = true;
+            }
+          }
+          if (!hasIndirectUserDispatched) {
+            break;
+          }
         }
         auto baseElementsValReady = areBaseElementsValReady(element);
         if (baseElementsValReady) {
           S_ELEMENT_DPRINTF(element, "Found ready.\n");
           readyElements.emplace_back(element);
+        } else {
         }
       }
     }

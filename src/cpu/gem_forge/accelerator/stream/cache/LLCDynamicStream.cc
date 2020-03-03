@@ -78,6 +78,9 @@ void LLCDynamicStream::addCredit(uint64_t n) {
 }
 
 void LLCDynamicStream::updateIssueClearCycle() {
+  if (!this->shouldUpdateIssueClearCycle()) {
+    return;
+  }
   const auto *dynS =
       this->configData.stream->getDynamicStream(this->configData.dynamicId);
   if (dynS == nullptr) {
@@ -110,4 +113,29 @@ void LLCDynamicStream::updateIssueClearCycle() {
       this->issueClearCycle = Cycles(newIssueClearCycle);
     }
   }
+}
+
+bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
+  if (!this->shouldUpdateIssueClearCycleInitialized) {
+    // We do not constrain ourselves from the core if there are no core users
+    // for both myself and all the indirect streams.
+    this->shouldUpdateIssueClearCycleMemorized = true;
+    if (!this->getStaticStream()->hasCoreUser()) {
+      bool hasCoreUser = false;
+      for (auto dynIS : this->indirectStreams) {
+        auto IS = dynIS->getStaticStream();
+        if (IS->hasCoreUser()) {
+          hasCoreUser = true;
+          break;
+        }
+      }
+      if (!hasCoreUser) {
+        // No core user. Turn off the IssueClearCycle.
+        this->shouldUpdateIssueClearCycleMemorized = false;
+      }
+    }
+  }
+
+  this->shouldUpdateIssueClearCycleInitialized = true;
+  return this->shouldUpdateIssueClearCycleMemorized;
 }

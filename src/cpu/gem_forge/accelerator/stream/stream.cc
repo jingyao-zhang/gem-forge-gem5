@@ -726,6 +726,8 @@ StreamElement *Stream::releaseElementStepped() {
           releaseElement->firstCheckCycle - releaseElement->valueReadyCycle;
       this->statistic.numCoreEarlyElement++;
       this->statistic.numCoreEarlyCycle += earlyCycles;
+      S_ELEMENT_DPRINTF(releaseElement, "Release Early Cycle %lu.\n",
+                        earlyCycles);
     } else {
       // The element makes the core's user wait.
       auto lateCycles =
@@ -733,6 +735,8 @@ StreamElement *Stream::releaseElementStepped() {
       this->statistic.numCoreLateElement++;
       this->statistic.numCoreLateCycle += lateCycles;
       late = true;
+      S_ELEMENT_DPRINTF(releaseElement, "Release Late Cycle %lu.\n",
+                        lateCycles);
     }
   }
   dynS.updateReleaseCycle(this->cpuDelegator->curCycle(), late);

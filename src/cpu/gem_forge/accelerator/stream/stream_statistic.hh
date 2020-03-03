@@ -33,6 +33,8 @@ public:
   size_t numLLCFaultSlice = 0;
   size_t numLLCPredYSlice = 0;
   size_t numLLCPredNSlice = 0;
+  size_t numLLCMigrate = 0;
+  size_t numLLCMigrateCycle = 0;
 
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;
