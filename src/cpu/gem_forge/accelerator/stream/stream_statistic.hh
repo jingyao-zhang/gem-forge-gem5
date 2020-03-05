@@ -26,6 +26,13 @@ public:
   size_t numFaulted = 0;
   size_t numCycle = 0;
 
+  size_t numInflyRequest = 0;
+  size_t numInflyRequestSample = 0;
+  void sampleInflyRequest(int numInflyRequest) {
+    this->numInflyRequestSample++;
+    this->numInflyRequest += numInflyRequest;
+  }
+
   // Float statistics.
   size_t numMLCAllocatedSlice = 0;
   size_t numLLCIssueSlice = 0;

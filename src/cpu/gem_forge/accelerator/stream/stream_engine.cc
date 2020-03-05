@@ -1463,8 +1463,7 @@ void StreamEngine::tick() {
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
-  // Update infly StreamRequests distribution.
-  this->numInflyStreamRequestDist.sample(this->numInflyStreamRequests);
+
   if (this->numInflyStreamConfigurations > 0) {
     // We require next tick.
     this->manager->scheduleTickNextCycle();
@@ -1487,10 +1486,13 @@ void StreamEngine::updateAliveStatistics() {
     if (stream->isMemStream()) {
       totalAliveMemStreams++;
     }
+    stream->statistic.sampleInflyRequest(stream->numInflyStreamRequests);
   }
   this->numTotalAliveElements.sample(totalAliveElements);
   this->numTotalAliveCacheBlocks.sample(totalAliveCacheBlocks.size());
   this->numTotalAliveMemStreams.sample(totalAliveMemStreams);
+  // Update infly StreamRequests distribution.
+  this->numInflyStreamRequestDist.sample(this->numInflyStreamRequests);
 }
 
 void StreamEngine::initializeFIFO(size_t totalElements) {
@@ -2157,6 +2159,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i, vaddr,
                       packetSize);
     S->statistic.numIssuedRequest++;
+    S->incrementInflyStreamRequest();
     this->incrementInflyStreamRequest();
     cpuDelegator->sendRequest(pkt);
 
@@ -2214,6 +2217,7 @@ void StreamEngine::writebackElement(StreamElement *element,
     auto pkt = GemForgePacketHandler::createGemForgePacket(
         paddr, packetSize, memAccess, this->writebackCacheLine,
         cpuDelegator->dataMasterId(), 0, 0);
+    S->incrementInflyStreamRequest();
     this->incrementInflyStreamRequest();
     cpuDelegator->sendRequest(pkt);
   }

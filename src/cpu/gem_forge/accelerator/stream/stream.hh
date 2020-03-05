@@ -102,6 +102,12 @@ public:
   size_t maxSize;
   FIFOEntryIdx FIFOIdx;
   int lateFetchCount;
+  int numInflyStreamRequests = 0;
+  void incrementInflyStreamRequest() { this->numInflyStreamRequests++; }
+  void decrementInflyStreamRequest() {
+    assert(this->numInflyStreamRequests > 0);
+    this->numInflyStreamRequests--;
+  }
 
   const ::LLVM::TDG::StreamRegion *streamRegion;
   uint64_t staticId;

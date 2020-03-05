@@ -133,6 +133,7 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
   }
 
   // Decrement myself as infly.
+  this->stream->decrementInflyStreamRequest();
   this->stream->se->decrementInflyStreamRequest();
 
   // Release myself.
