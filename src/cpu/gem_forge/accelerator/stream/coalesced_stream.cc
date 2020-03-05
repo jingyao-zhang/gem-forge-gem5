@@ -107,6 +107,20 @@ void CoalescedStream::selectPrimeLogicalStream() {
         this->primeLStream->info.static_info().is_merged_predicated_stream());
     assert(LS->info.static_info().no_core_user() ==
            this->primeLStream->info.static_info().no_core_user());
+    assert(LS->info.static_info().merged_load_store_base_streams_size() ==
+           this->primeLStream->info.static_info()
+               .merged_load_store_base_streams_size());
+    for (const auto &sid : LS->getMergedLoadStoreBaseStreams()) {
+      bool matched = false;
+      for (const auto &tid :
+           this->primeLStream->getMergedLoadStoreBaseStreams()) {
+        if (tid.id() == sid.id()) {
+          matched = true;
+          break;
+        }
+      }
+      assert(matched && "Failed to match MergedLoadStoreBaseStream.");
+    }
   }
   /**
    * Finalize the stream name and static id.
@@ -202,7 +216,9 @@ const ::LLVM::TDG::ExecFuncInfo &CoalescedStream::getPredicateFuncInfo() const {
 }
 
 bool CoalescedStream::isMerged() const {
-  return this->primeLStream->info.static_info().is_merged_predicated_stream();
+  return this->primeLStream->info.static_info().is_merged_predicated_stream() ||
+         this->primeLStream->info.static_info()
+                 .merged_load_store_base_streams_size() > 0;
 }
 
 const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {

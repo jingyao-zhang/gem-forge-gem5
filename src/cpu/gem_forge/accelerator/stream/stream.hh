@@ -75,8 +75,13 @@ public:
    */
   using PredicatedStreamIdList =
       ::google::protobuf::RepeatedPtrField<::LLVM::TDG::PredicatedStreamId>;
+  using StreamIdList =
+      ::google::protobuf::RepeatedPtrField<::LLVM::TDG::StreamId>;
   virtual const PredicatedStreamIdList &getMergedPredicatedStreams() const = 0;
   virtual const ::LLVM::TDG::ExecFuncInfo &getPredicateFuncInfo() const = 0;
+  virtual const StreamIdList &getMergedLoadStoreDepStreams() const = 0;
+  virtual const StreamIdList &getMergedLoadStoreBaseStreams() const = 0;
+  virtual const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const = 0;
   virtual bool isMerged() const = 0;
   virtual const ::LLVM::TDG::StreamParam &getConstUpdateParam() const = 0;
   /**

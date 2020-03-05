@@ -158,6 +158,11 @@ public:
   void exitDump() const;
 
   void fetchedCacheBlock(Addr cacheBlockVAddr, StreamMemAccess *memAccess);
+  void incrementInflyStreamRequest() { this->numInflyStreamRequests++; }
+  void decrementInflyStreamRequest() {
+    assert(this->numInflyStreamRequests > 0);
+    this->numInflyStreamRequests--;
+  }
 
   int currentTotalRunAheadLength;
   int maxTotalRunAheadLength;
@@ -195,6 +200,7 @@ public:
   Stats::Distribution numTotalAliveCacheBlocks;
   Stats::Distribution numRunAHeadLengthDist;
   Stats::Distribution numTotalAliveMemStreams;
+  Stats::Distribution numInflyStreamRequestDist;
 
   /**
    * Statistics for stream placement manager.
@@ -224,6 +230,12 @@ private:
    * StreamEnd.
    */
   int numInflyStreamConfigurations = 0;
+
+  /**
+   * Incremented when issue a stream request out and decremented when the
+   * result comes back.
+   */
+  int numInflyStreamRequests = 0;
 
   /**
    * Map from the user instruction seqNum to all the actual element to use.

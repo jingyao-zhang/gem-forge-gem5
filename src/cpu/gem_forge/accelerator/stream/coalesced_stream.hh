@@ -31,6 +31,15 @@ public:
   }
   int32_t getElementSize() const { return this->info.element_size(); }
   uint64_t getStreamId() const { return this->info.id(); }
+  const Stream::StreamIdList &getMergedLoadStoreDepStreams() const {
+    return this->info.static_info().merged_load_store_dep_streams();
+  }
+  const Stream::StreamIdList &getMergedLoadStoreBaseStreams() const {
+    return this->info.static_info().merged_load_store_base_streams();
+  }
+  const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const {
+    return this->info.static_info().store_func_info();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -65,6 +74,17 @@ public:
   bool hasUpgradedToUpdate() const override;
   const PredicatedStreamIdList &getMergedPredicatedStreams() const override;
   const ::LLVM::TDG::ExecFuncInfo &getPredicateFuncInfo() const override;
+
+  const StreamIdList &getMergedLoadStoreDepStreams() const override {
+    return this->primeLStream->getMergedLoadStoreDepStreams();
+  }
+  const StreamIdList &getMergedLoadStoreBaseStreams() const override {
+    return this->primeLStream->getMergedLoadStoreBaseStreams();
+  }
+  const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const override {
+    return this->primeLStream->getStoreFuncInfo();
+  }
+
   bool isMerged() const override;
   const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
   bool isReduction() const override;

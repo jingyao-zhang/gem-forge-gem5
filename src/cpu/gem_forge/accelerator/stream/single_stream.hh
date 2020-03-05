@@ -44,8 +44,19 @@ public:
     return this->info.static_info().pred_func_info();
   }
 
+  const StreamIdList &getMergedLoadStoreDepStreams() const override {
+    return this->info.static_info().merged_load_store_dep_streams();
+  }
+  const StreamIdList &getMergedLoadStoreBaseStreams() const override {
+    return this->info.static_info().merged_load_store_base_streams();
+  }
+  const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const override {
+    return this->info.static_info().store_func_info();
+  }
+
   bool isMerged() const override {
-    return this->info.static_info().is_merged_predicated_stream();
+    return this->info.static_info().is_merged_predicated_stream() ||
+           this->info.static_info().merged_load_store_base_streams_size() > 0;
   }
 
   const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override {

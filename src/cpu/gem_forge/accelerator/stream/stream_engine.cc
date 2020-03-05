@@ -150,6 +150,10 @@ void StreamEngine::regStats() {
       .name(this->manager->name() + ".stream.numTotalAliveMemStreams")
       .desc("Number of alive memory stream.")
       .flags(Stats::pdf);
+  this->numInflyStreamRequestDist.init(0, 16, 1)
+      .name(this->manager->name() + ".stream.numInflyStreamDist")
+      .desc("Distribution of infly stream requests.")
+      .flags(Stats::pdf);
 
   this->numAccessPlacedInCacheLevel.init(3)
       .name(this->manager->name() + ".stream.numAccessPlacedInCacheLevel")
@@ -1459,6 +1463,8 @@ void StreamEngine::tick() {
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
+  // Update infly StreamRequests distribution.
+  this->numInflyStreamRequestDist.sample(this->numInflyStreamRequests);
   if (this->numInflyStreamConfigurations > 0) {
     // We require next tick.
     this->manager->scheduleTickNextCycle();
@@ -2151,6 +2157,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i, vaddr,
                       packetSize);
     S->statistic.numIssuedRequest++;
+    this->incrementInflyStreamRequest();
     cpuDelegator->sendRequest(pkt);
 
     // Mark the state.
@@ -2207,6 +2214,7 @@ void StreamEngine::writebackElement(StreamElement *element,
     auto pkt = GemForgePacketHandler::createGemForgePacket(
         paddr, packetSize, memAccess, this->writebackCacheLine,
         cpuDelegator->dataMasterId(), 0, 0);
+    this->incrementInflyStreamRequest();
     cpuDelegator->sendRequest(pkt);
   }
 }

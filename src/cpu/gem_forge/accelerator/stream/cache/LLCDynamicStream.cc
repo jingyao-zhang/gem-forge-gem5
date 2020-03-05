@@ -104,13 +104,22 @@ void LLCDynamicStream::updateIssueClearCycle() {
       newIssueClearCycle = adjustSliceTurnAroundCycle;
     }
     if (newIssueClearCycle != this->issueClearCycle) {
+      /**
+       * Some the stats from the core may be disruptly. we have some simple
+       * threshold here.
+       * TODO: Improve this.
+       */
+      const uint64_t IssueClearThreshold = 1024;
       LLC_S_DPRINTF(this->configData.dynamicId,
-                    "Update IssueClearCycle %lu -> %lu, avgEleTurn %lu, "
+                    "Update IssueClearCycle %lu -> %lu (%lu), avgEleTurn %lu, "
                     "avgSliceTurn %lu, avgLateEle %d, elementPerSlice %f.\n",
                     this->issueClearCycle, newIssueClearCycle,
-                    avgTurnAroundCycle, avgSliceTurnAroundCycle,
-                    avgLateElements, this->slicedStream.getElementPerSlice());
-      this->issueClearCycle = Cycles(newIssueClearCycle);
+                    IssueClearThreshold, avgTurnAroundCycle,
+                    avgSliceTurnAroundCycle, avgLateElements,
+                    this->slicedStream.getElementPerSlice());
+      this->issueClearCycle =
+          Cycles(newIssueClearCycle > IssueClearThreshold ? IssueClearThreshold
+                                                          : newIssueClearCycle);
     }
   }
 }
