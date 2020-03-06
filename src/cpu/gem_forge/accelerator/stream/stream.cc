@@ -484,8 +484,6 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
     auto &storeFormalParams = dynS.storeFormalParams;
     auto usedInputs =
         this->setupFormalParams(&inputVec, storeFuncInfo, storeFormalParams);
-    // So far there should be only stream inputs for StoreFunc.
-    assert(usedInputs == 0 && "StoreFunc should have only StreamInputs.");
     // Consume these inputs.
     inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
   }
