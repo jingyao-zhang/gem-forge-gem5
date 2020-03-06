@@ -3,6 +3,7 @@
 #include "../exec_func_context.hh"
 #include "arch/x86/decoder.hh"
 #include "arch/x86/insts/macroop.hh"
+#include "arch/x86/regs/float.hh"
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/exec_context.hh"
@@ -34,6 +35,12 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
   if (!table.findAddress(this->func.name(), funcStartVAddr)) {
     panic("Failed to resovle symbol: %s.", this->func.name());
   }
+
+  auto dsEffBase = tc->readMiscRegNoEffect(MiscRegIndex::MISCREG_DS_EFF_BASE);
+  auto csEffBase = tc->readMiscRegNoEffect(MiscRegIndex::MISCREG_CS_EFF_BASE);
+  assert(dsEffBase == 0 && "We cannot handle this DS.\n");
+  assert(csEffBase == 0 && "We cannot handle this CS.\n");
+
   EXEC_FUNC_DPRINTF("======= Start decoding from %#x.\n", funcStartVAddr);
 
   auto &prox = this->tc->getVirtProxy();
@@ -97,6 +104,7 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
       EXEC_FUNC_DPRINTF("  Decode MicroInst %s.\n",
                         microop->disassemble(pc.pc()).c_str());
       this->instructions.push_back(microop);
+      this->pcs.push_back(pc);
     }
 
     // Advance to the next pc.
@@ -113,32 +121,69 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
    * The exec function should never use stack.
    */
   assert(params.size() <= 6 && "Too many arguments for exec function.");
+  assert(params.size() == this->func.args_size() &&
+         "Mismatch with number of args.");
   execFuncXC.clear();
 
-  const InstRegIndex regParams[6] = {
-      InstRegIndex(IntRegIndex::INTREG_RDI),
-      InstRegIndex(IntRegIndex::INTREG_RSI),
-      InstRegIndex(IntRegIndex::INTREG_RDX),
-      InstRegIndex(IntRegIndex::INTREG_RCX),
-      InstRegIndex(IntRegIndex::INTREG_R8),
-      InstRegIndex(IntRegIndex::INTREG_R9),
+  const RegId intRegParams[6] = {
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDI),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RSI),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDX),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RCX),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R8),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R9),
+  };
+  const RegId floatRegParams[8] = {
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM1_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM2_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM3_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM4_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM5_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM6_0),
+      RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM7_0),
   };
   EXEC_FUNC_DPRINTF("Set up calling convention.\n");
+  int intParamIdx = 0;
+  int floatParamIdx = 0;
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
-    const auto &reg = regParams[idx];
-    execFuncXC.setIntRegOperand(reg, param);
-    EXEC_FUNC_DPRINTF("Arg %d Reg %s %llu.\n", idx, reg, param);
+    if (this->func.args(idx).is_float()) {
+      const auto &reg = floatRegParams[floatParamIdx];
+      floatParamIdx++;
+      execFuncXC.setFloatRegOperand(reg, param);
+      EXEC_FUNC_DPRINTF("Arg %d Reg %s %llu.\n", idx, reg, param);
+    } else {
+      const auto &reg = intRegParams[intParamIdx];
+      intParamIdx++;
+      execFuncXC.setIntRegOperand(reg, param);
+      EXEC_FUNC_DPRINTF("Arg %d Reg %s %llu.\n", idx, reg, param);
+    }
   }
 
-  for (auto &staticInst : this->instructions) {
+  // Set up the virt proxy.
+  execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
+
+  for (auto idx = 0; idx < this->instructions.size(); ++idx) {
+    auto &staticInst = this->instructions.at(idx);
+    auto &pc = this->pcs.at(idx);
+    EXEC_FUNC_DPRINTF("Set PCState %s.\n", pc);
+    execFuncXC.pcState(pc);
     staticInst->execute(&execFuncXC, nullptr /* traceData. */);
   }
 
-  // We expect the result in rax.
-  const InstRegIndex rax(IntRegIndex::INTREG_RAX);
-  auto retValue = execFuncXC.readIntRegOperand(rax);
-  EXEC_FUNC_DPRINTF("Ret %#x.\n", retValue);
-  return retValue;
+  if (this->func.is_float()) {
+    // We expect the float result in xmm0.
+    const RegId xmm0(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0);
+    auto retValue = execFuncXC.readFloatRegOperand(xmm0);
+    EXEC_FUNC_DPRINTF("Ret %#x.\n", retValue);
+    return retValue;
+  } else {
+    // We expect the int result in rax.
+    const RegId rax(RegClass::IntRegClass, IntRegIndex::INTREG_RAX);
+    auto retValue = execFuncXC.readIntRegOperand(rax);
+    EXEC_FUNC_DPRINTF("Ret %#x.\n", retValue);
+    return retValue;
+  }
 }
 } // namespace X86ISA

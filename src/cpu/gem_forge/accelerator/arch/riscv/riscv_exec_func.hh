@@ -22,7 +22,7 @@ private:
 
   TheISA::Decoder *decoder;
   Addr funcStartVAddr;
-  std::list<StaticInstPtr> instructions;
+  std::vector<StaticInstPtr> instructions;
 };
 
 } // namespace RiscvISA

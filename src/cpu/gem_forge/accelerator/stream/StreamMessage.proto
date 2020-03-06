@@ -52,8 +52,10 @@ message ExecFuncInfo {
   message FuncArg {
     bool is_stream = 1;
     uint64 stream_id = 2;
+    bool is_float = 3;
   }
   repeated FuncArg args = 2;
+  bool is_float = 3;
 }
 
 message StaticStreamInfo {

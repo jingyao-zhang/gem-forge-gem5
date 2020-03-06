@@ -23,7 +23,8 @@ private:
   ThreadContext *tc;
   const ::LLVM::TDG::ExecFuncInfo &func;
 
-  std::list<StaticInstPtr> instructions;
+  std::vector<StaticInstPtr> instructions;
+  std::vector<PCState> pcs;
 };
 } // namespace X86ISA
 

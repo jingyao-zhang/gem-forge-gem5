@@ -3,6 +3,11 @@
 
 #include "cpu/exec_context.hh"
 
+#if THE_ISA == X86_ISA
+// ! Jesus I break the isolation.
+#include "arch/x86/regs/misc.hh"
+#endif
+
 /**
  * A taylored ExecContext that only provides integer register file,
  * for the address computation.
@@ -25,7 +30,6 @@ public:
     // For RISCV, this is directly flattened.
     return this->intRegs[reg.index()];
   }
-
   void setIntRegOperand(const RegId &reg, RegVal val) {
     assert(reg.isIntReg());
     this->intRegs[reg.index()] = val;
@@ -41,14 +45,32 @@ public:
   /** Reads a floating point register in its binary format, instead
    * of by value. */
   RegVal readFloatRegOperandBits(const StaticInst *si, int idx) override {
-    panic("FuncAddrExecContext does not implement this.");
+    const RegId &reg = si->srcRegIdx(idx);
+    assert(reg.isFloatReg());
+    assert(reg.index() < TheISA::NumFloatRegs);
+    return this->floatRegs[reg.index()];
   }
 
   /** Sets the bits of a floating point register of single width
    * to a binary value. */
   void setFloatRegOperandBits(const StaticInst *si, int idx,
                               RegVal val) override {
-    panic("FuncAddrExecContext does not implement this.");
+    const RegId &reg = si->destRegIdx(idx);
+    assert(reg.isFloatReg());
+    assert(reg.index() < TheISA::NumFloatRegs);
+    this->floatRegs[reg.index()] = val;
+  }
+
+  /** Directly read/set the integer register, used to pass in arguments. **/
+  RegVal readFloatRegOperand(const RegId &reg) {
+    assert(reg.isFloatReg());
+    assert(reg.index() < TheISA::NumFloatRegs);
+    return this->floatRegs[reg.index()];
+  }
+  void setFloatRegOperand(const RegId &reg, RegVal val) {
+    assert(reg.isFloatReg());
+    assert(reg.index() < TheISA::NumFloatRegs);
+    this->floatRegs[reg.index()] = val;
   }
 
   /** @} */
@@ -183,6 +205,20 @@ public:
    * @name Misc Register Interfaces
    */
   RegVal readMiscRegOperand(const StaticInst *si, int idx) override {
+/**
+ * Only support CSBase for Rdip.
+ */
+#if THE_ISA == X86_ISA
+    const auto &reg = si->srcRegIdx(idx);
+    assert(reg.isMiscReg());
+    switch (reg.index()) {
+    case X86ISA::MiscRegIndex::MISCREG_DS_EFF_BASE:
+    case X86ISA::MiscRegIndex::MISCREG_CS_EFF_BASE: {
+      return 0;
+    }
+    default: { panic("Unsupported MiscReg %d.\n", reg.index()); }
+    }
+#endif
     panic("FuncAddrExecContext does not implement this.");
   }
   void setMiscRegOperand(const StaticInst *si, int idx, RegVal val) override {
@@ -211,12 +247,8 @@ public:
    * @{
    * @name PC Control
    */
-  PCState pcState() const override {
-    panic("FuncAddrExecContext does not implement this.");
-  }
-  void pcState(const PCState &val) override {
-    panic("FuncAddrExecContext does not implement this.");
-  }
+  PCState pcState() const override { return this->pc; }
+  void pcState(const PCState &val) override { this->pc = val; }
   /** @} */
 
   /**
@@ -233,7 +265,11 @@ public:
   Fault readMem(Addr addr, uint8_t *data, unsigned int size,
                 Request::Flags flags,
                 const std::vector<bool> &byteEnable = std::vector<bool>()) {
-    panic("ExecContext::readMem() should be overridden\n");
+    assert(this->virtProxy && "No virt port proxy.");
+    if (!this->virtProxy->tryReadBlob(addr, data, size)) {
+      panic("ExecContext::readMem() failed.\n");
+    }
+    return NoFault;
   }
 
   /**
@@ -361,13 +397,23 @@ public:
     for (auto &reg : this->intRegs) {
       reg = 0;
     }
+    for (auto &reg : this->floatRegs) {
+      reg = 0;
+    }
     for (auto &reg : this->ccRegs) {
       reg = 0;
     }
+    this->virtProxy = nullptr;
+  }
+
+  void setVirtProxy(PortProxy *virtProxy) {
+    assert(!this->virtProxy && "VirtProxy already set.");
+    this->virtProxy = virtProxy;
   }
 
 protected:
   RegVal intRegs[TheISA::NumIntRegs];
+  RegVal floatRegs[TheISA::NumFloatRegs];
 #ifdef ISA_HAS_CC_REGS
   RegVal ccRegs[TheISA::NumCCRegs];
   int flattenCCRegIdx(int regIdx) const {
@@ -382,6 +428,8 @@ protected:
     return flatIndex;
   }
 #endif
+  TheISA::PCState pc;
+  PortProxy *virtProxy = nullptr;
 };
 
 #endif

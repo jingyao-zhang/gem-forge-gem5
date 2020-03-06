@@ -61,6 +61,7 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
 }
 
 uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
+  assert(params.size() == this->func.args_size());
   execFuncXC.clear();
   /**
    * Prepare the arguments according to the calling convention.
@@ -68,7 +69,10 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
   // a0 starts at x10.
   const RegIndex a0RegIdx = 10;
   auto argIdx = a0RegIdx;
-  for (auto param : params) {
+  for (auto idx = 0; idx < params.size(); ++idx) {
+    auto param = params.at(idx);
+    assert(!this->func.args(idx).is_float() &&
+           "Do not know how to handle float param");
     RegId reg(RegClass::IntRegClass, argIdx);
     execFuncXC.setIntRegOperand(reg, param);
     EXEC_FUNC_DPRINTF("Arg %d %llu.\n", argIdx - a0RegIdx, param);
@@ -80,6 +84,7 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
   }
 
   // The result value should be in a0 = x10.
+  assert(!this->func.is_float() && "Do not support float return value yet.");
   RegId a0Reg(RegClass::IntRegClass, a0RegIdx);
   auto retAddr = execFuncXC.readIntRegOperand(a0Reg);
   EXEC_FUNC_DPRINTF("Ret %llu.\n", retAddr);
