@@ -215,10 +215,12 @@ const ::LLVM::TDG::ExecFuncInfo &CoalescedStream::getPredicateFuncInfo() const {
   return this->primeLStream->info.static_info().pred_func_info();
 }
 
-bool CoalescedStream::isMerged() const {
-  return this->primeLStream->info.static_info().is_merged_predicated_stream() ||
-         this->primeLStream->info.static_info()
-                 .merged_load_store_base_streams_size() > 0;
+bool CoalescedStream::isMergedPredicated() const {
+  return this->primeLStream->info.static_info().is_merged_predicated_stream();
+}
+bool CoalescedStream::isMergedLoadStoreDepStream() const {
+  return this->primeLStream->info.static_info()
+             .merged_load_store_base_streams_size() > 0;
 }
 
 const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {

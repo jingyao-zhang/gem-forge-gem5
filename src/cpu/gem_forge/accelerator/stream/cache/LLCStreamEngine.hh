@@ -33,7 +33,8 @@ public:
   void receiveStreamMigrate(LLCDynamicStreamPtr stream);
   void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
   void receiveStreamElementData(const DynamicStreamSliceId &sliceId,
-                                const DataBlock &dataBlock);
+                                const DataBlock &dataBlock,
+                                const DataBlock &storeValueBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
   void wakeup() override;
   void print(std::ostream &out) const override;
@@ -163,7 +164,7 @@ private:
   /**
    * Perform store to the BackingStorage.
    */
-  void performStore(Addr paddr, int size, uint64_t value);
+  void performStore(Addr paddr, int size, const uint8_t *value);
 };
 
 #endif

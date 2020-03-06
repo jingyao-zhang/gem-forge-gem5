@@ -37,6 +37,11 @@ public:
   bool isPredicated = false;
   bool isPredicatedTrue = false;
   DynamicStreamId predicateStreamId;
+
+  // For StoreFunc.
+  DynamicStreamFormalParamV storeFormalParams;
+  ExecFuncPtr storeCallback;
+
   uint64_t reductionInitValue = 0;
 
   /**

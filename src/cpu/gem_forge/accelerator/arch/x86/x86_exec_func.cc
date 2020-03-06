@@ -31,7 +31,9 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
   SymbolTable table;
   obj->loadAllSymbols(&table);
   Addr funcStartVAddr;
-  assert(table.findAddress(this->func.name(), funcStartVAddr));
+  if (!table.findAddress(this->func.name(), funcStartVAddr)) {
+    panic("Failed to resovle symbol: %s.", this->func.name());
+  }
   EXEC_FUNC_DPRINTF("======= Start decoding from %#x.\n", funcStartVAddr);
 
   auto &prox = this->tc->getVirtProxy();

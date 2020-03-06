@@ -79,6 +79,7 @@ structure(RequestMsg, desc="...", interface="Message") {
   // ! Sean: StreamAwareCache
   PacketPtr pkt,                desc="Hack to store packet";
   DynamicStreamSliceId sliceId, desc="Stream slice info";
+  DataBlock streamStoreBlk,     desc="StreamStore value";
 
   bool functionalRead(Packet *packet) {
     // Only PUTX messages contains the data block

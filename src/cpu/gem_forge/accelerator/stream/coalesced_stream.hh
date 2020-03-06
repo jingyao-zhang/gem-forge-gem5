@@ -85,7 +85,8 @@ public:
     return this->primeLStream->getStoreFuncInfo();
   }
 
-  bool isMerged() const override;
+  bool isMergedPredicated() const override;
+  bool isMergedLoadStoreDepStream() const override;
   const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
   bool isReduction() const override;
   bool hasCoreUser() const override;

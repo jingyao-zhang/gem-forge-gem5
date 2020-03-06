@@ -24,6 +24,8 @@ CacheStreamConfigureData::CacheStreamConfigureData(
       isPredicated(other.isPredicated),
       isPredicatedTrue(other.isPredicatedTrue),
       predicateStreamId(other.predicateStreamId),
+      storeFormalParams(other.storeFormalParams),
+      storeCallback(other.storeCallback),
       reductionInitValue(other.reductionInitValue),
       isPointerChase(other.isPointerChase),
       isOneIterationBehind(other.isOneIterationBehind),

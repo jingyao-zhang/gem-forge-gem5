@@ -173,6 +173,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     MachineID L1_GetX_ID,             desc="ID of the L1 cache to forward the block to once we get a response";
     int pendingAcks,                  desc="number of pending acks for invalidates during writeback";
     DynamicStreamSliceId sliceId,     desc="Stream meta-data";
+    DataBlock streamStoreBlk,         desc="Buffer for the update data";
   }
 
   structure(TBETable, external="yes") {
@@ -192,7 +193,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamEnd(PacketPtr);
     void receiveStreamMigrate(LLCDynamicStreamPtr);
     void receiveStreamFlow(DynamicStreamSliceId);
-    void receiveStreamElementData(DynamicStreamSliceId, DataBlock);
+    void receiveStreamElementData(DynamicStreamSliceId, DataBlock, DataBlock);
     void receiveStreamIndirectRequest(RequestMsg);
   }
 
@@ -794,6 +795,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       tbe.sliceId := in_msg.sliceId;
     }
   }
+  action(csv_copyStreamStoreValue, "csv", desc="Copy stream store value to TBE") {
+    assert(is_valid(tbe));
+    peek(L1RequestL2Network_in, RequestMsg) { 
+      tbe.streamStoreBlk := in_msg.streamStoreBlk;
+    }
+  }
 
   action(s_deallocateTBE, "s", desc="Deallocate external TBE") {
     TBEs.deallocate(address);
@@ -998,7 +1005,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   action(nec_notifyStreamEngineFromCacheEntry, "nec", desc="notify the stream engine from cache entry") {
     assert(is_valid(cache_entry));
     if (cache_entry.sliceId.isValid()) {
-      se.receiveStreamElementData(cache_entry.sliceId, cache_entry.DataBlk);
+      // This should never be used for StreamStore.
+      se.receiveStreamElementData(cache_entry.sliceId, cache_entry.DataBlk, cache_entry.DataBlk);
       // Clear the sliceId.
       cache_entry.sliceId.clear();
     }
@@ -1006,14 +1014,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   action(net_notifyStreamEngineFromTBE, "net", desc="notify the stream engine from TBE") {
     assert(is_valid(tbe));
     if (tbe.sliceId.isValid()) {
-      se.receiveStreamElementData(tbe.sliceId, tbe.DataBlk);
+      se.receiveStreamElementData(tbe.sliceId, tbe.DataBlk, tbe.streamStoreBlk);
     }
   }
   action(ner_notifyStreamEngineFromL1Req, "ner", desc="notify the stream engine from L1 request") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(cache_entry));
       if (in_msg.sliceId.isValid()) {
-        se.receiveStreamElementData(in_msg.sliceId, cache_entry.DataBlk);
+        se.receiveStreamElementData(in_msg.sliceId, cache_entry.DataBlk, in_msg.streamStoreBlk);
       }
     }
   }
@@ -1111,6 +1119,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ll_clearSharers;
     i_allocateTBE;
     css_copyStreamSliceId;
+    csv_copyStreamStoreValue;
     a_issueFetchToMemory;
     uu_profileMiss;
     jj_popL1RequestQueue;
@@ -1265,6 +1274,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   transition(SS, STREAM_STORE, SS_M) {
     i_allocateTBE; 
     css_copyStreamSliceId;
+    csv_copyStreamStoreValue;
     f_sendInvToSharers;
     set_setMRU;
     uu_profileHit;
@@ -1385,6 +1395,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   transition(MT, STREAM_STORE, MT_M) {
     i_allocateTBE;
     css_copyStreamSliceId;
+    csv_copyStreamStoreValue;
     f_sendInvToSharers;
     set_setMRU;
     uu_profileMiss;

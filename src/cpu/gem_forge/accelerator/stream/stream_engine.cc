@@ -419,7 +419,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       }
 
       /**
-       * Merged streams are always offloaded.
+       * Merged predicated streams are always offloaded.
        */
       for (auto mergedStreamId : S->getMergedPredicatedStreams()) {
         auto mergedS = this->getStream(mergedStreamId.id().id());
@@ -428,6 +428,21 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         mergedConfig->isPredicated = true;
         mergedConfig->isPredicatedTrue = mergedStreamId.pred_true();
         mergedConfig->predicateStreamId = dynStream.dynamicStreamId;
+        /**
+         * Remember the decision.
+         */
+        mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
+        assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig).second &&
+               "Merged stream already offloaded.");
+        streamConfigureData->indirectStreams.emplace_back(mergedConfig);
+      }
+      /**
+       * Merged LoadStore dep streams are always offloaded.
+       */
+      for (auto mergedStreamId : S->getMergedLoadStoreDepStreams()) {
+        auto mergedS = this->getStream(mergedStreamId.id());
+        auto mergedConfig = mergedS->allocateCacheConfigureData(
+            args.seqNum, true /* isIndirect */);
         /**
          * Remember the decision.
          */

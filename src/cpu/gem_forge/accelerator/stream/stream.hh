@@ -82,7 +82,11 @@ public:
   virtual const StreamIdList &getMergedLoadStoreDepStreams() const = 0;
   virtual const StreamIdList &getMergedLoadStoreBaseStreams() const = 0;
   virtual const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const = 0;
-  virtual bool isMerged() const = 0;
+  virtual bool isMerged() const {
+    return this->isMergedPredicated() || this->isMergedLoadStoreDepStream();
+  }
+  virtual bool isMergedPredicated() const = 0;
+  virtual bool isMergedLoadStoreDepStream() const = 0;
   virtual const ::LLVM::TDG::StreamParam &getConstUpdateParam() const = 0;
   /**
    * Get coalesce base stream, 0 for invalid.
@@ -257,6 +261,7 @@ protected:
 
   AddrGenCallbackPtr addrGenCallback;
   ExecFuncPtr predCallback;
+  ExecFuncPtr storeCallback;
 
   /**
    * Total allocated elements among all dynamic streams.

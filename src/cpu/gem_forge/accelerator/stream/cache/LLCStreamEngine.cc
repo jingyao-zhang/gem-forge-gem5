@@ -174,7 +174,8 @@ void LLCStreamEngine::receiveStreamFlow(const DynamicStreamSliceId &sliceId) {
 }
 
 void LLCStreamEngine::receiveStreamElementData(
-    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock) {
+    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+    const DataBlock &storeValueBlock) {
   // Search through the direct streams.
   LLCDynamicStream *stream = nullptr;
   for (auto S : this->streams) {
@@ -212,11 +213,14 @@ void LLCStreamEngine::receiveStreamElementData(
     Addr elementPAddr;
     assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
            "Failed to translate vaddr for LLCStoreStream.");
-    auto storeValue = stream->configData.constUpdateValue;
+    // Extract the store value.
+    auto lineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
+    auto storeValue = storeValueBlock.getData(lineOffset, elementSize);
     this->performStore(elementPAddr, elementSize, storeValue);
     LLC_SLICE_DPRINTF_(
         LLCRubyStreamStore, sliceId,
-        "StreamStore done with value %llu, send back StreamAck.\n", storeValue);
+        "StreamStore done with value %llu, send back StreamAck.\n",
+        *reinterpret_cast<const uint64_t *>(storeValue));
 
     this->issueStreamAckToMLC(sliceId);
     if (!this->requestQueue.empty()) {
@@ -616,11 +620,30 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
     if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
       IS->statistic.numLLCIssueSlice++;
       auto paddrLine = makeLineAddress(elementPAddr);
+      /**
+       * Compute the store value.
+       * If this is a MergededPedicatedStream, it is a constant value.
+       * If this is a MergededLoadStoreDepStream, it is computed use the
+       * StoreCallback.
+       * TODO: These should be merged together.
+       */
+      uint64_t storeValue = 0;
+      if (IS->isMergedPredicated()) {
+        storeValue = indirectConfig.constUpdateValue;
+      } else if (IS->isMergedLoadStoreDepStream()) {
+        // Compute the value.
+        auto params = convertFormalParamToParam(
+            indirectConfig.storeFormalParams, getBaseStreamValue);
+        storeValue = indirectConfig.storeCallback->invoke(params);
+      } else {
+        assert("Unknow merged stream type.");
+      }
+
       // Push to the request queue.
       LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                         "StreamStore -> RequestQueue.\n");
-      this->requestQueue.emplace(sliceId, paddrLine,
-                                 indirectConfig.constUpdateValue);
+                         "StreamStore -> RequestQueue, StoreValue %lu.\n",
+                         storeValue);
+      this->requestQueue.emplace(sliceId, paddrLine, storeValue);
     } else {
       panic("Faulted merged store stream.");
     }
@@ -677,19 +700,20 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
                       "Issue [local] request vaddr %#x paddrLine %#x.\n",
                       sliceId.vaddr, paddrLine);
     if (req.requestType == CoherenceRequestType_STREAM_STORE) {
-      LLC_SLICE_DPRINTF_(
-          LLCRubyStreamStore, sliceId,
-          "Issue [local] StreamStore request vaddr %#x paddrLine %#x.\n",
-          sliceId.vaddr, paddrLine);
+      LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                         "Issue [local] StreamStore request vaddr %#x "
+                         "paddrLine %#x, value %lu.\n",
+                         sliceId.vaddr, paddrLine, req.storeData);
     }
   } else {
     destMachineId = this->mapPaddrToLLCBank(paddrLine);
     LLC_SLICE_DPRINTF(sliceId, "Issue [remote] request to LLC%d.\n",
                       destMachineId.num);
     if (req.requestType == CoherenceRequestType_STREAM_STORE) {
-      LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                         "Issue [remote] StreamStore request to LLC%d.\n",
-                         destMachineId.num);
+      LLC_SLICE_DPRINTF_(
+          LLCRubyStreamStore, sliceId,
+          "Issue [remote] StreamStore request to LLC%d, value %lu.\n",
+          destMachineId.num, req.storeData);
     }
   }
 
@@ -701,6 +725,14 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_sliceId = sliceId;
+
+  // We need to set hold the store value.
+  if (req.requestType == CoherenceRequestType_STREAM_STORE) {
+    auto lineOffset = sliceId.vaddr % RubySystem::getBlockSizeBytes();
+    msg->m_streamStoreBlk.setData(
+        reinterpret_cast<const uint8_t *>(&req.storeData), lineOffset,
+        sliceId.size);
+  }
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
@@ -1056,24 +1088,23 @@ void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,
    * engine will not try to get the data. Then we perform the update here.
    */
   if (!stream->getStaticStream()->hasCoreUser()) {
-    this->performStore(elementPAddr, elementSize, updateValue);
+    this->performStore(elementPAddr, elementSize,
+                       reinterpret_cast<uint8_t *>(&updateValue));
   }
 }
 
-void LLCStreamEngine::performStore(Addr paddr, int size, uint64_t value) {
+void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
   auto rubySystem = this->controller->params()->ruby_system;
   assert(rubySystem->getAccessBackingStore() &&
          "Do not support store stream without BackingStore.");
-  assert(size <= sizeof(value) && "At most 8 byte data.");
+  assert(size <= 8 && "At most 8 byte data.");
   assert((paddr % RubySystem::getBlockSizeBytes()) + size <=
              RubySystem::getBlockSizeBytes() &&
          "Can not store to multi-line elements.");
   RequestPtr req(new Request(paddr, size, 0, 0 /* MasterId */,
                              0 /* InstSeqNum */, 0 /* contextId */));
   PacketPtr pkt = Packet::createWrite(req);
-  uint8_t *pktData = new uint8_t[req->getSize()];
-  memcpy(pktData, reinterpret_cast<uint8_t *>(&value), size);
-  pkt->dataDynamic(pktData);
+  pkt->dataStaticConst(value);
   rubySystem->getPhysMem()->functionalAccess(pkt);
   delete pkt;
 }

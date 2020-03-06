@@ -16,7 +16,7 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
                                    CacheStreamConfigureData *_configData)
     : controller(_controller), configData(*_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      maxWaitingDataBaseRequests(2), sliceIdx(0),
+      maxWaitingDataBaseRequests(8), sliceIdx(0),
       allocatedSliceIdx(_configData->initAllocatedIdx),
       waitingDataBaseRequests(0) {
   if (this->configData.isPointerChase) {

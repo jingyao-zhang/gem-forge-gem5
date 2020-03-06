@@ -56,6 +56,10 @@ struct DynamicStream {
   DynamicStreamFormalParamV predFormalParams;
   ExecFuncPtr predCallback;
 
+  // Store value compute.
+  DynamicStreamFormalParamV storeFormalParams;
+  ExecFuncPtr storeCallback;
+
   /**
    * Optional constant update value.
    * 1. If the load stream is upgraded to an update stream.

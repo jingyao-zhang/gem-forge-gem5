@@ -305,7 +305,10 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
       formalParam.param.invariant = param.value();
     } else {
       // This should be an input.
-      assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
+      if (inputIdx >= inputVec->size()) {
+        S_PANIC(this, "InputIdx (%d) overflowed, InputVec (%d).\n", inputIdx,
+                inputVec->size());
+      }
       // hack("Find input param #%d, val %llu.\n", formalParams.size(),
       //      inputVec->at(inputIdx));
       formalParam.param.invariant = inputVec->at(inputIdx);
@@ -434,7 +437,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
   /**
    * If this is a merged store stream, we only support const store so far.
    */
-  if (this->isMerged()) {
+  if (this->isMergedPredicated()) {
     const auto &type = this->getStreamType();
     if (type == "store") {
       const auto &updateParam = this->getConstUpdateParam();
@@ -468,6 +471,25 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
     inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
   }
   /**
+   * If this is a MergedLoadStoreDepStream, check for the StoreFunc.
+   */
+  if (this->isMergedLoadStoreDepStream()) {
+    assert(this->getStreamType() == "store");
+    const auto &storeFuncInfo = this->getStoreFuncInfo();
+    if (!this->storeCallback) {
+      this->storeCallback =
+          std::make_shared<TheISA::ExecFunc>(dynS.tc, storeFuncInfo);
+    }
+    dynS.storeCallback = this->storeCallback;
+    auto &storeFormalParams = dynS.storeFormalParams;
+    auto usedInputs =
+        this->setupFormalParams(&inputVec, storeFuncInfo, storeFormalParams);
+    // So far there should be only stream inputs for StoreFunc.
+    assert(usedInputs == 0 && "StoreFunc should have only StreamInputs.");
+    // Consume these inputs.
+    inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
+  }
+  /**
    * If this is a reduction stream, check for the initial value.
    */
   if (this->isReduction()) {
@@ -493,6 +515,10 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   // Set the predication function.
   configData->predFormalParams = dynStream.predFormalParams;
   configData->predCallback = dynStream.predCallback;
+
+  // Set the store function.
+  configData->storeFormalParams = dynStream.storeFormalParams;
+  configData->storeCallback = dynStream.storeCallback;
 
   // Set the reduction information.
   configData->reductionInitValue = dynStream.initialValue;
