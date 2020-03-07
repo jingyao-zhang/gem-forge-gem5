@@ -30,13 +30,39 @@ struct LLCStreamRequest {
         requestType(CoherenceRequestType_STREAM_STORE), storeData(_storeData) {}
 };
 
+class LLCDynamicStream;
+struct LLCStreamElement {
+  const LLCDynamicStream *dynS;
+  const uint64_t idx;
+  const Addr vaddr;
+  const int size;
+  int readyBytes;
+  static constexpr int MAX_SIZE = 16;
+  std::array<uint8_t, MAX_SIZE> data;
+  LLCStreamElement(LLCDynamicStream *_dynS, uint64_t _idx, Addr _vaddr,
+                   int _size)
+      : dynS(_dynS), idx(_idx), vaddr(_vaddr), size(_size), readyBytes(0) {
+    assert(this->size <= MAX_SIZE && "Can not support this large element.\n");
+    this->data.fill(0);
+  }
+  bool isReady() const { return this->readyBytes == this->size; }
+  uint64_t getUint64_t() const {
+    assert(this->isReady());
+    assert(this->size <= sizeof(uint64_t));
+    return *reinterpret_cast<const uint64_t *>(this->data.data());
+  }
+  uint64_t getData(uint64_t streamId) const;
+};
+using LLCStreamElementPtr = std::shared_ptr<LLCStreamElement>;
+using ConstLLCStreamElementPtr = std::shared_ptr<const LLCStreamElement>;
+
 class LLCDynamicStream {
 public:
   LLCDynamicStream(AbstractStreamAwareController *_controller,
                    CacheStreamConfigureData *_configData);
   ~LLCDynamicStream();
 
-  Stream *getStaticStream() { return this->configData.stream; }
+  Stream *getStaticStream() const { return this->configData.stream; }
   uint64_t getStaticId() const { return this->configData.dynamicId.staticId; }
   const DynamicStreamId &getDynamicStreamId() const {
     return this->configData.dynamicId;
@@ -129,6 +155,11 @@ public:
   int waitingDataBaseRequests;
 
   /**
+   * Map from ElementIdx to LLCStreamElement.
+   */
+  std::map<uint64_t, LLCStreamElementPtr> idxToElementMap;
+
+  /**
    * Indirect elements that has been waiting for
    * the direct stream element's data.
    * Indexed by element idx.
@@ -140,13 +171,15 @@ public:
    * and is waiting to be issued.
    * Indexed by element idx.
    */
-  std::multimap<uint64_t, std::pair<LLCDynamicStream *, uint64_t>>
+  std::multimap<uint64_t,
+                std::pair<LLCDynamicStream *, ConstLLCStreamElementPtr>>
       readyIndirectElements;
 
   /**
    * The elements that is predicated by this stream.
    */
-  std::map<uint64_t, std::list<std::pair<LLCDynamicStream *, uint64_t>>>
+  std::map<uint64_t,
+           std::list<std::pair<LLCDynamicStream *, ConstLLCStreamElementPtr>>>
       waitingPredicatedElements;
 
   void updateIssueClearCycle();

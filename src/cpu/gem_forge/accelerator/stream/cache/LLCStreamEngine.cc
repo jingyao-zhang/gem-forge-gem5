@@ -142,8 +142,6 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
   assert(stream->waitingDataBaseRequests == 0 &&
          "Stream migrated with waitingDataBaseRequests.");
-  assert(stream->waitingIndirectElements.empty() &&
-         "Stream migrated with waitingIndirectElements.");
   assert(stream->readyIndirectElements.empty() &&
          "Stream migrated with readyIndirectElements.");
 
@@ -260,7 +258,7 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
     // Still here.
     return false;
   }
-  if (!stream->waitingIndirectElements.empty()) {
+  if (!stream->indirectStreams.empty() && stream->waitingDataBaseRequests > 0) {
     // We are still waiting data for indirect streams.
     return false;
   }
@@ -426,8 +424,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   }
 
   if (!stream->isNextSliceAllocated()) {
-    LLC_S_DPRINTF(stream->getDynamicStreamId(),
-                  "Not issue: NextSliceNotAllocated.\n");
+    // LLC_S_DPRINTF(stream->getDynamicStreamId(),
+    //               "Not issue: NextSliceNotAllocated.\n");
     return false;
   }
 
@@ -506,27 +504,27 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   auto firstIndirectIter = stream->readyIndirectElements.begin();
   auto idx = firstIndirectIter->first;
   auto dynIS = firstIndirectIter->second.first;
-  auto baseElementData = firstIndirectIter->second.second;
+  const auto &baseElement = firstIndirectIter->second.second;
 
-  this->generateIndirectStreamRequest(dynIS, idx, baseElementData);
+  this->generateIndirectStreamRequest(dynIS, idx, baseElement);
   // Don't forget to release the indirect element.
   stream->readyIndirectElements.erase(firstIndirectIter);
   return true;
 }
 
-void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
-                                                    uint64_t elementIdx,
-                                                    uint64_t baseElementData) {
+void LLCStreamEngine::generateIndirectStreamRequest(
+    LLCDynamicStream *dynIS, uint64_t elementIdx,
+    const ConstLLCStreamElementPtr &baseElement) {
   auto dynBS = dynIS->baseStream;
   assert(dynBS &&
          "GenerateIndirectStreamRequest can only handle indirect stream.");
+  assert(baseElement->isReady() && "BaseElement should be ready.");
   DynamicStreamSliceId sliceId;
   sliceId.streamId = dynIS->getDynamicStreamId();
   sliceId.lhsElementIdx = elementIdx;
   sliceId.rhsElementIdx = elementIdx + 1;
   auto elementSize = dynIS->getElementSize();
-  LLC_SLICE_DPRINTF(sliceId, "Issue indirect slice baseElementData %llu.\n",
-                    baseElementData);
+  LLC_SLICE_DPRINTF(sliceId, "Issue indirect slice baseElementData.\n");
 
   auto IS = dynIS->getStaticStream();
   const auto &indirectConfig = dynIS->configData;
@@ -535,10 +533,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
     assert(elementIdx > 0 && "Reduction stream ElementIdx should start at 1.");
 
     // Perform the reduction.
-    auto getBaseStreamValue = [baseElementData, dynBS, dynIS,
+    auto getBaseStreamValue = [&baseElement, dynBS, dynIS,
                                elementIdx](uint64_t baseStreamId) -> uint64_t {
       if (baseStreamId == dynBS->getStaticId()) {
-        return baseElementData;
+        return baseElement->getUint64_t();
       }
       if (baseStreamId == dynIS->getStaticId()) {
         return dynIS->reductionValue;
@@ -567,7 +565,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
     auto newReductionValue = indirectConfig.addrGenCallback->genAddr(
         elementIdx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
     LLC_SLICE_DPRINTF(sliceId, "Do reduction %#x, %#x -> %#x.\n",
-                      dynIS->reductionValue, baseElementData,
+                      dynIS->reductionValue, baseElement->getUint64_t(),
                       newReductionValue);
     dynIS->reductionValue = newReductionValue;
 
@@ -590,10 +588,9 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
   }
 
   // Compute the address.
-  auto getBaseStreamValue = [baseElementData,
+  auto getBaseStreamValue = [&baseElement,
                              dynBS](uint64_t baseStreamId) -> uint64_t {
-    assert(baseStreamId == dynBS->getStaticId() && "Invalid baseStreamId.");
-    return baseElementData;
+    return baseElement->getData(baseStreamId);
   };
   Addr elementVAddr = indirectConfig.addrGenCallback->genAddr(
       elementIdx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
@@ -861,17 +858,27 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
 void LLCStreamEngine::processStreamDataForIndirectStreams(
     LLCDynamicStreamPtr stream, const DynamicStreamSliceId &sliceId,
     const DataBlock &dataBlock) {
-  if (stream->indirectStreams.empty() &&
-      stream->waitingPredicatedElements.empty()) {
+  if (stream->indirectStreams.empty() && stream->predicatedStreams.empty()) {
+    // There is no stream dependent on my data.
     return;
   }
   for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
-    auto elementData =
-        this->extractElementDataFromSlice(stream, sliceId, idx, dataBlock);
-    LLC_S_DPRINTF(sliceId.streamId, "Received element %lu data %lu.\n", idx,
-                  elementData);
+    this->extractElementDataFromSlice(stream, sliceId, idx, dataBlock);
+  }
 
-    // Add them to the ready indirect list.
+  while (!stream->idxToElementMap.empty()) {
+    /**
+     * We use extra loop here to ensure BaseElement is processed in order.
+     */
+    auto elementIter = stream->idxToElementMap.begin();
+    auto idx = elementIter->first;
+    auto &element = elementIter->second;
+    if (!element->isReady()) {
+      // Not ready yet. Break.
+      break;
+    }
+
+    // First we handle any indirect element.
     if (stream->waitingIndirectElements.count(idx) != 0) {
       for (auto IS : stream->indirectStreams) {
 
@@ -900,14 +907,14 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
           IS->predicateStream->waitingPredicatedElements
               .emplace(std::piecewise_construct, std::forward_as_tuple(idx),
                        std::forward_as_tuple())
-              .first->second.emplace_back(IS, elementData);
+              .first->second.emplace_back(IS, element);
         } else {
           // Not predicated, add to readyElements.
           assert(stream->baseStream == nullptr);
           stream->readyIndirectElements.emplace(
               std::piecewise_construct,
               std::forward_as_tuple(indirectElementIdx),
-              std::forward_as_tuple(IS, elementData));
+              std::forward_as_tuple(IS, element));
         }
       }
       // Don't forget to erase it from the waiting list.
@@ -916,10 +923,10 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
     // Now we handle any predication.
     if (stream->configData.predCallback) {
       GetStreamValueFunc getStreamValue =
-          [elementData, stream](uint64_t streamId) -> uint64_t {
+          [&element, stream](uint64_t streamId) -> uint64_t {
         assert(streamId == stream->getStaticId() &&
                "Mismatch stream id for predication.");
-        return elementData;
+        return element->getUint64_t();
       };
       auto params = convertFormalParamToParam(
           stream->configData.predFormalParams, getStreamValue);
@@ -930,7 +937,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
         for (auto &predEntry : predicatedIter->second) {
           auto dynPredS = predEntry.first;
           auto predS = dynPredS->getStaticStream();
-          auto predBaseData = predEntry.second;
+          auto &predBaseElement = predEntry.second;
           LLC_S_DPRINTF(sliceId.streamId, "Predicate %d %d: %s.\n",
                         predicatedTrue, dynPredS->isPredicatedTrue(),
                         dynPredS->getDynamicStreamId());
@@ -945,7 +952,8 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
                * a[b[i]] is sitting. We would like to directly generate the
                * address and inject to the requestQueue here.
                */
-              this->generateIndirectStreamRequest(dynPredS, idx, predBaseData);
+              this->generateIndirectStreamRequest(dynPredS, idx,
+                                                  predBaseElement);
             } else {
               /**
                * The predication is from a direct stream, this is for pattern:
@@ -956,7 +964,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
                */
               stream->readyIndirectElements.emplace(
                   std::piecewise_construct, std::forward_as_tuple(idx),
-                  std::forward_as_tuple(dynPredS, predBaseData));
+                  std::forward_as_tuple(dynPredS, predBaseElement));
             }
           } else {
             // This element is predicated off.
@@ -974,10 +982,12 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
               sliceId.lhsElementIdx = idx;
               sliceId.rhsElementIdx = idx + 1;
               auto getBaseStreamValue =
-                  [predBaseData, dynBS](uint64_t baseStreamId) -> uint64_t {
+                  [&predBaseElement, dynBS](uint64_t baseStreamId) -> uint64_t {
                 assert(baseStreamId == dynBS->getStaticId() &&
                        "Invalid baseStreamId.");
-                return predBaseData;
+                assert(predBaseElement->isReady());
+                assert(predBaseElement->size <= 8);
+                return predBaseElement->getUint64_t();
               };
               auto &predConfig = dynPredS->configData;
               Addr elementVAddr = predConfig.addrGenCallback->genAddr(
@@ -998,6 +1008,9 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
       assert(stream->waitingPredicatedElements.empty() &&
              "No predCallback for predicated elements.");
     }
+
+    // Time to remove the ready element.
+    stream->idxToElementMap.erase(elementIter);
   }
 }
 
@@ -1017,10 +1030,12 @@ void LLCStreamEngine::processStreamDataForUpdateStream(
   }
 }
 
-uint64_t LLCStreamEngine::extractElementDataFromSlice(
+void LLCStreamEngine::extractElementDataFromSlice(
     LLCDynamicStreamPtr stream, const DynamicStreamSliceId &sliceId,
     uint64_t elementIdx, const DataBlock &dataBlock) {
-  // TODO: Handle multi-line element.
+  /**
+   * Extract the element data and update the LLCStreamElement.
+   */
   Addr elementVAddr;
   if (stream->baseStream) {
     // This is indirect stream, directly use sliceId.vaddr as elementVAddr.
@@ -1029,39 +1044,52 @@ uint64_t LLCStreamEngine::extractElementDataFromSlice(
     elementVAddr = stream->slicedStream.getElementVAddr(elementIdx);
   }
   auto elementSize = stream->getElementSize();
-  auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
-  assert(elementLineOffset + elementSize <= RubySystem::getBlockSizeBytes() &&
-         "Cannot support multi-line element with indirect streams yet.");
-  assert(elementSize <= sizeof(uint64_t) && "At most 8 byte element size.");
 
-  uint64_t elementData = 0;
+  // Get the LLCStreamElement.
+  if (stream->idxToElementMap.count(elementIdx) == 0) {
+    stream->idxToElementMap.emplace(
+        elementIdx, std::make_shared<LLCStreamElement>(
+                        stream, elementIdx, elementVAddr, elementSize));
+  }
+  LLCStreamElementPtr &element = stream->idxToElementMap.at(elementIdx);
+
+  // Compute the overlap between the element and the slice.
+  Addr overlapLHS = std::max(elementVAddr, sliceId.vaddr);
+  Addr overlapRHS = std::min(
+      elementVAddr + elementSize,
+      makeLineAddress(sliceId.vaddr + RubySystem::getBlockSizeBytes()));
+  // Check that the overlap is within the same line.
+  assert(overlapLHS < overlapRHS && "Empty overlap.");
+  assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
+         "Illegal overlap.");
+  auto overlapSize = overlapRHS - overlapLHS;
+  auto elementOffset = overlapLHS - elementVAddr;
+  assert(elementOffset + overlapSize <= elementSize && "Overlap overflow.");
+
+  LLC_S_DPRINTF(sliceId.streamId, "Received element %lu Overlap [%lu, %lu).\n",
+                elementIdx, elementOffset, elementOffset + overlapSize);
+
   auto rubySystem = this->controller->params()->ruby_system;
   if (rubySystem->getAccessBackingStore()) {
     // Get the data from backing store.
-    Addr elementPAddr;
-    assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
+    Addr paddr;
+    assert(stream->translateToPAddr(overlapLHS, paddr) &&
            "Failed to translate address for accessing backing storage.");
-    RequestPtr req(new Request(elementPAddr, elementSize, 0, 0 /* MasterId */,
+    RequestPtr req(new Request(paddr, overlapSize, 0, 0 /* MasterId */,
                                0 /* InstSeqNum */, 0 /* contextId */));
     PacketPtr pkt = Packet::createRead(req);
-    uint8_t *pktData = new uint8_t[req->getSize()];
-    pkt->dataDynamic(pktData);
+    pkt->dataStatic(element->data.data() + elementOffset);
     rubySystem->getPhysMem()->functionalAccess(pkt);
-    for (auto byteOffset = 0; byteOffset < elementSize; ++byteOffset) {
-      *(reinterpret_cast<uint8_t *>(&elementData) + byteOffset) =
-          pktData[byteOffset];
-    }
     delete pkt;
   } else {
     // Get the data from the cache line.
-    // Copy the data in.
-    // TODO: How do we handle sign for data type less than 8 bytes?
-    for (auto byteOffset = 0; byteOffset < elementSize; ++byteOffset) {
-      *(reinterpret_cast<uint8_t *>(&elementData) + byteOffset) =
-          dataBlock.getByte(byteOffset + elementLineOffset);
-    }
+    auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),
+                                  overlapSize);
+    memcpy(element->data.data() + elementOffset, data, overlapSize);
   }
-  return elementData;
+  // Mark these bytes ready.
+  element->readyBytes += overlapSize;
+  assert(element->readyBytes <= element->size && "Too many ready bytes.");
 }
 
 void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,

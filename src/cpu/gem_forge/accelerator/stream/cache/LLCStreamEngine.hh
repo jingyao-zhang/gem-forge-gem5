@@ -106,9 +106,9 @@ private:
   /**
    * Generate indirect stream request.
    */
-  void generateIndirectStreamRequest(LLCDynamicStream *dynIS,
-                                     uint64_t elementIdx,
-                                     uint64_t baseElementData);
+  void
+  generateIndirectStreamRequest(LLCDynamicStream *dynIS, uint64_t elementIdx,
+                                const ConstLLCStreamElementPtr &baseElement);
 
   /**
    * Helper function to issue stream request to the LLC cache bank.
@@ -155,10 +155,10 @@ private:
   void processStreamDataForUpdateStream(LLCDynamicStreamPtr stream,
                                         const DynamicStreamSliceId &sliceId,
                                         const DataBlock &dataBlock);
-  uint64_t extractElementDataFromSlice(LLCDynamicStreamPtr stream,
-                                       const DynamicStreamSliceId &sliceId,
-                                       uint64_t elementIdx,
-                                       const DataBlock &dataBlock);
+  void extractElementDataFromSlice(LLCDynamicStreamPtr stream,
+                                   const DynamicStreamSliceId &sliceId,
+                                   uint64_t elementIdx,
+                                   const DataBlock &dataBlock);
   void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,
                          uint64_t updateValue);
   /**

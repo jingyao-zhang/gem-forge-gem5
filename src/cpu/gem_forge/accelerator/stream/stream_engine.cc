@@ -439,6 +439,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       /**
        * Merged LoadStore dep streams are always offloaded.
        */
+      int numOffloadedLoadStoreDepStreams = 0;
       for (auto mergedStreamId : S->getMergedLoadStoreDepStreams()) {
         auto mergedS = this->getStream(mergedStreamId.id());
         auto mergedConfig = mergedS->allocateCacheConfigureData(
@@ -450,6 +451,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig).second &&
                "Merged stream already offloaded.");
         streamConfigureData->indirectStreams.emplace_back(mergedConfig);
+        numOffloadedLoadStoreDepStreams++;
       }
 
       /**
@@ -472,10 +474,15 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
 
       // ! Sanity check that the base stream is not coaleasced.
       if (!streamConfigureData->indirectStreams.empty()) {
-        if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
-          if (CS->getNumCoalescedStreams() > 1) {
-            S_PANIC(S,
-                    "CoalescedStream cannot be floated with indirect stream.");
+        // We allow for LoadStore stream to be offloaded with coalesced base
+        // stream.
+        if (streamConfigureData->indirectStreams.size() >
+            numOffloadedLoadStoreDepStreams) {
+          if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
+            if (CS->getNumCoalescedStreams() > 1) {
+              S_PANIC(
+                  S, "CoalescedStream cannot be floated with indirect stream.");
+            }
           }
         }
       }

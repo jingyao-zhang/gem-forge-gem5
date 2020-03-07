@@ -313,6 +313,22 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
     return;
   }
 
+  bool hasIndirectAddrStreams = false;
+  auto S = this->getStaticStream();
+  for (auto dynIS : this->indirectStreams) {
+    auto IS = dynIS->getStaticStream();
+    if (S->dependentStreams.count(IS)) {
+      hasIndirectAddrStreams = true;
+      break;
+    }
+  }
+  if (!hasIndirectAddrStreams) {
+    // The indirect stream is not really dependent on me to compute the address.
+    // We do not bother to notify indirect streams.
+    // TODO: Too hacky?
+    return;
+  }
+
   const auto &sliceId = slice.sliceId;
   MLC_SLICE_DPRINTF(sliceId, "Notify IndirectSream.\n");
   for (auto elementIdx = sliceId.lhsElementIdx;

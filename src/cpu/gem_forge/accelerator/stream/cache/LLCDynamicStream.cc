@@ -1,5 +1,6 @@
 #include "LLCDynamicStream.hh"
 
+#include "cpu/gem_forge/accelerator/stream/coalesced_stream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
@@ -10,6 +11,30 @@
 
 std::unordered_map<DynamicStreamId, LLCDynamicStream *, DynamicStreamIdHasher>
     LLCDynamicStream::GlobalLLCDynamicStreamMap;
+
+uint64_t LLCStreamElement::getData(uint64_t streamId) const {
+  assert(this->isReady());
+  auto S = this->dynS->getStaticStream();
+  int32_t offset = 0;
+  int size = this->size;
+  if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
+    // Handle offset for coalesced stream.
+    CS->getCoalescedOffsetAndSize(streamId, offset, size);
+  }
+  assert(size <= sizeof(uint64_t) && "ElementSize overflow.");
+  assert(offset + size <= this->size && "Size overflow.");
+  switch (size) {
+  case 8:
+    return *reinterpret_cast<const uint64_t *>(this->data.data() + offset);
+  case 4:
+    return *reinterpret_cast<const uint32_t *>(this->data.data() + offset);
+  case 2:
+    return *reinterpret_cast<const uint16_t *>(this->data.data() + offset);
+  case 1:
+    return *reinterpret_cast<const uint8_t *>(this->data.data() + offset);
+  default: { panic("Unsupported element size %d.\n", size); }
+  }
+}
 
 // TODO: Support real flow control.
 LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
