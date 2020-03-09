@@ -268,6 +268,11 @@ GarnetNetwork::regStats()
         .name(name() + ".packets_injected")
         .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
         ;
+    m_packet_types_injected
+        .init(MAX_MSG_CATEGORY * MAX_MSG_TYPES_PER_CATEGORY)
+        .name(name() + ".packet_types_injected")
+        .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
+        ;
 
     m_packet_network_latency
         .init(m_virtual_networks)
@@ -325,6 +330,11 @@ GarnetNetwork::regStats()
     m_flits_injected
         .init(m_virtual_networks)
         .name(name() + ".flits_injected")
+        .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
+        ;
+    m_flit_types_injected
+        .init(MAX_MSG_TYPES_PER_CATEGORY * MAX_MSG_CATEGORY)
+        .name(name() + ".flit_types_injected")
         .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
         ;
 

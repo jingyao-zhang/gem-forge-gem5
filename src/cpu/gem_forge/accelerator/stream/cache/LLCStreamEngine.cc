@@ -805,7 +805,7 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   auto msg =
       std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
-  msg->m_Type = CoherenceRequestType_GETS;
+  msg->m_Type = CoherenceRequestType_STREAM_MIGRATE;
   msg->m_Requestor = selfMachineId;
   msg->m_Destination.add(addrMachineId);
   msg->m_MessageSize = MessageSizeType_Data;

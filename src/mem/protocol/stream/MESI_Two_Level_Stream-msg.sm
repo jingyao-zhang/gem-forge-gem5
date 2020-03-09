@@ -41,12 +41,13 @@ enumeration(CoherenceRequestType, desc="...") {
 
   WB_ACK,    desc="Writeback ack";
 
-  DMA_READ,      desc="DMA Read";
-  DMA_WRITE,     desc="DMA Write";
-  STREAM_CONFIG, desc="StreamConfig from L1";
-  STREAM_FLOW,   desc="Stream flow control message from L1";
-  STREAM_END,    desc="StreamEnd from L1";
-  STREAM_STORE,  desc="Stream store";
+  DMA_READ,       desc="DMA Read";
+  DMA_WRITE,      desc="DMA Write";
+  STREAM_CONFIG,  desc="StreamConfig from L1";
+  STREAM_FLOW,    desc="Stream flow control message from L1";
+  STREAM_END,     desc="StreamEnd from L1";
+  STREAM_STORE,   desc="Stream store";
+  STREAM_MIGRATE, desc="Stream migrate";
 }
 
 // CoherenceResponseType
@@ -59,8 +60,8 @@ enumeration(CoherenceResponseType, desc="...") {
   WB_ACK, desc="writeback ack";
   UNBLOCK, desc="unblock";
   EXCLUSIVE_UNBLOCK, desc="exclusive unblock";
-  INV, desc="Invalidate from directory";
-  STREAM_ACK, desc="ack the core that the reqired operation is performed";
+  INV,            desc="Invalidate from directory";
+  STREAM_ACK,     desc="ack the core that the reqired operation is performed";
 }
 
 // RequestMsg
@@ -80,6 +81,10 @@ structure(RequestMsg, desc="...", interface="Message") {
   PacketPtr pkt,                desc="Hack to store packet";
   DynamicStreamSliceId sliceId, desc="Stream slice info";
   DataBlock streamStoreBlk,     desc="StreamStore value";
+
+  int getStatsType() {
+    return Type;
+  }
 
   bool functionalRead(Packet *packet) {
     // Only PUTX messages contains the data block
@@ -108,6 +113,13 @@ structure(ResponseMsg, desc="...", interface="Message") {
   int AckCount, default="0",    desc="number of acks in this message";
   MessageSizeType MessageSize,  desc="size category of the message";
   DynamicStreamSliceId sliceId, desc="Stream slice info";
+  int getStatsType() {
+    return Type;
+  }
+  int getStatsCategory() {
+    // ! This should be second category.
+    return 1;
+  }
 
   bool functionalRead(Packet *pkt) {
     // Valid data block is only present in message with following types
@@ -148,6 +160,9 @@ structure(StreamMigrateRequestMsg, desc="request to migrate a stream", interface
   int Len;
   // ! Sean: StreamAwareCache
   LLCDynamicStreamPtr Stream,    desc="Hack to forward CacheDynamicStream";
+  int getStatsType() {
+    return Type;
+  }
 
   bool functionalRead(Packet *pkt) {
     // StreamMirgrateRequest does not hold data.

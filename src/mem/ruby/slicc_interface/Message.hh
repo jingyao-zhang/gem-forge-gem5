@@ -76,6 +76,12 @@ class Message
     virtual bool functionalRead(Packet *pkt) = 0;
     virtual bool functionalWrite(Packet *pkt) = 0;
 
+    /**
+     * Used to expose types to upper Ruby for statistics.
+     */
+    virtual int getStatsType() { return 0; }
+    virtual int getStatsCategory() { return 0; }
+
     //! Update the delay this message has experienced so far.
     void updateDelayedTicks(Tick curTime)
     {

@@ -108,7 +108,10 @@ class GarnetNetwork : public Network
     void print(std::ostream& out) const;
 
     // increment counters
+    static constexpr int MAX_MSG_TYPES_PER_CATEGORY = 16;
+    static constexpr int MAX_MSG_CATEGORY = 2;
     void increment_injected_packets(int vnet) { m_packets_injected[vnet]++; }
+    void increment_injected_packet_type(int type) { m_packet_types_injected[type]++; }
     void increment_received_packets(int vnet) { m_packets_received[vnet]++; }
 
     void
@@ -124,6 +127,7 @@ class GarnetNetwork : public Network
     }
 
     void increment_injected_flits(int vnet) { m_flits_injected[vnet]++; }
+    void increment_injected_flit_type(int type) { m_flit_types_injected[type]++; }
     void increment_received_flits(int vnet) { m_flits_received[vnet]++; }
 
     void
@@ -158,6 +162,7 @@ class GarnetNetwork : public Network
     // Statistical variables
     Stats::Vector m_packets_received;
     Stats::Vector m_packets_injected;
+    Stats::Vector m_packet_types_injected;
     Stats::Vector m_packet_network_latency;
     Stats::Vector m_packet_queueing_latency;
 
@@ -169,6 +174,7 @@ class GarnetNetwork : public Network
 
     Stats::Vector m_flits_received;
     Stats::Vector m_flits_injected;
+    Stats::Vector m_flit_types_injected;
     Stats::Vector m_flit_network_latency;
     Stats::Vector m_flit_queueing_latency;
 

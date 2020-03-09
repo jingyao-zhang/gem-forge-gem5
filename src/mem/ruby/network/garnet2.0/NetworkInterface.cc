@@ -387,9 +387,16 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         // so that the first router increments it to 0
         route.hops_traversed = -1;
 
+        auto msgType = msg_ptr->getStatsType();
+        auto msgCategory = msg_ptr->getStatsCategory();
+        assert(msgType < GarnetNetwork::MAX_MSG_TYPES_PER_CATEGORY);
+        assert(msgCategory < GarnetNetwork::MAX_MSG_CATEGORY);
+        msgType += msgCategory * GarnetNetwork::MAX_MSG_TYPES_PER_CATEGORY;
         m_net_ptr->increment_injected_packets(vnet);
+        m_net_ptr->increment_injected_packet_type(msgType);
         for (int i = 0; i < num_flits; i++) {
             m_net_ptr->increment_injected_flits(vnet);
+            m_net_ptr->increment_injected_flit_type(msgType);
             flit *fl = new flit(i, vc, vnet, route, num_flits, new_msg_ptr,
                 curCycle());
 

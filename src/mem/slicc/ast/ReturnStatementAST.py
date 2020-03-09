@@ -46,6 +46,9 @@ class ReturnStatementAST(StatementAST):
 
         # The return type must match
         if actual_type != "OOD" and return_type != actual_type:
+            # We allow implicit cast from enum to int.
+            if actual_type.isEnumeration and str(return_type) == 'int':
+                return
             self.expr_ast.error("Return type miss-match, expected return " +
                                 "type is '%s', actual is '%s'",
                                 return_type, actual_type)
