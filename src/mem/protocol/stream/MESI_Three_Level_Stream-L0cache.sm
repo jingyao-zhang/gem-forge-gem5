@@ -1105,7 +1105,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     k_popMandatoryQueue;
   }
 
-  transition({I, IS, IM, PF_IM, Inst_IS}, Inv) {
+  transition({I, IS, IU, IM, PF_IM, Inst_IS}, Inv) {
     fi_sendInvAck;
     l_popRequestQueue;
   }
