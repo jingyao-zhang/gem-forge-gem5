@@ -5,6 +5,7 @@
 #include "cpu/gem_forge/llvm_insts.hh"
 #include "dyn_stream.hh"
 #include "stream_element.hh"
+#include "stream_float_tracer.hh"
 #include "stream_statistic.hh"
 
 #include "base/types.hh"
@@ -137,6 +138,7 @@ public:
    * Per stream statistics.
    */
   StreamStatistic statistic;
+  StreamFloatTracer floatTracer;
   void dumpStreamStats(std::ostream &os) const;
 
   void tick();
@@ -146,6 +148,7 @@ public:
   virtual bool isContinuous() const = 0;
 
   LLVMTraceCPU *getCPU() { return this->cpu; }
+  int getCPUId() { return this->cpuDelegator->cpuId(); }
   GemForgeCPUDelegator *getCPUDelegator() { return this->cpuDelegator; }
 
   virtual void configure(uint64_t seqNum, ThreadContext *tc) = 0;

@@ -288,6 +288,13 @@ class OutputDirectory
     OutputDirectory *createSubdirectory(const std::string &name);
 
     /**
+     * Find or create a subdirectory within this directory.
+     * @param name name of subdirectory
+     * @return the new subdirectory's name suffixed with a path separator
+     */
+    OutputDirectory *findOrCreateSubdirectory(const std::string &name);
+
+    /**
      * Removes a specified file or subdirectory.
      *
      * Will cause sim to fail for most errors.  However, it will only warn the

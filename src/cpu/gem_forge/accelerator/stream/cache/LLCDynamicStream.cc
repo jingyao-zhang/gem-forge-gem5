@@ -173,3 +173,15 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
   this->shouldUpdateIssueClearCycleInitialized = true;
   return this->shouldUpdateIssueClearCycleMemorized;
 }
+
+void LLCDynamicStream::traceEvent(
+    const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type) {
+  auto &floatTracer = this->getStaticStream()->floatTracer;
+  auto curCycle = this->controller->curCycle();
+  auto llcBank = this->controller->getMachineID().num;
+  floatTracer.traceEvent(curCycle, llcBank, type);
+  // Do this for all indirect streams.
+  for (auto IS : this->indirectStreams) {
+    IS->traceEvent(type);
+  }
+}

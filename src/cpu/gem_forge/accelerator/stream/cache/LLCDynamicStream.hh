@@ -105,6 +105,10 @@ public:
     this->sliceIdx++;
     return this->slicedStream.getNextSlice();
   }
+
+  void
+  traceEvent(const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type);
+
   /**
    * A hacky way to set up a global map for LLCDynamicStream.
    * TODO: Improve this.

@@ -86,6 +86,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   }
 
   this->streams.emplace_back(S);
+  S->traceEvent(::LLVM::TDG::StreamFloatEvent::CONFIG);
   // Release memory.
   delete streamConfigureData;
   delete pkt;
@@ -105,6 +106,7 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
       // Found it.
       // ? Can we just sliently release it?
       LLC_S_DPRINTF(*endStreamDynamicId, "Ended.\n");
+      stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
       delete stream;
       stream = nullptr;
       this->streams.erase(streamIter);
@@ -151,10 +153,12 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
   stats.numLLCMigrate++;
   stats.numLLCMigrateCycle +=
       this->controller->curCycle() - stream->prevMigrateCycle;
+  stream->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_IN);
 
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
     LLC_S_DPRINTF(stream->getDynamicStreamId(), "Ended.\n");
+    stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
     delete stream;
     return;
   }
@@ -818,6 +822,7 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
       this->controller->cyclesToTicks(latency));
 
   stream->prevMigrateCycle = this->controller->curCycle();
+  stream->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
 }
 
 MachineID LLCStreamEngine::mapPaddrToLLCBank(Addr paddr) const {

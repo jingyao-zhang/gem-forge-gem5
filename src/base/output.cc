@@ -288,6 +288,15 @@ OutputDirectory::createSubdirectory(const string &name)
     return dir;
 }
 
+OutputDirectory *
+OutputDirectory::findOrCreateSubdirectory(const string &name)
+{
+    if (dirs.count(name)) {
+        return dirs[name];
+    }
+    return this->createSubdirectory(name);
+}
+
 void
 OutputDirectory::remove(const string &name, bool recursive)
 {

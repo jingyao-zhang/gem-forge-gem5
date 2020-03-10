@@ -34,8 +34,8 @@
 Stream::Stream(const StreamArguments &args)
     : FIFOIdx(DynamicStreamId(args.cpuDelegator->cpuId(), args.staticId,
                               0 /*StreamInstance*/)),
-      staticId(args.staticId), streamName(args.name), cpu(args.cpu),
-      cpuDelegator(args.cpuDelegator), se(args.se) {
+      staticId(args.staticId), streamName(args.name), floatTracer(this),
+      cpu(args.cpu), cpuDelegator(args.cpuDelegator), se(args.se) {
 
   this->configured = false;
   this->allocSize = 0;
@@ -55,6 +55,7 @@ Stream::~Stream() {}
 void Stream::dumpStreamStats(std::ostream &os) const {
   os << this->getStreamName() << '\n';
   this->statistic.dump(os);
+  this->floatTracer.dump();
 }
 
 bool Stream::isMemStream() const {
