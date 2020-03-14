@@ -1331,7 +1331,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     o_popL2ResponseQueue;
   }
 
-  transition({I, M_I}, OffloadStreamLoad) {
+  transition({I, M_I, SINK_WB_ACK}, OffloadStreamLoad) {
     k_popL0RequestQueue; 
   }
 
