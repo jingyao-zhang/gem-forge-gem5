@@ -183,9 +183,15 @@ void LLCStreamEngine::receiveStreamElementData(
   for (auto S : this->streams) {
     if (S->getDynamicStreamId() == sliceId.streamId) {
       stream = S;
-      stream->waitingDataBaseRequests--;
-      assert(stream->waitingDataBaseRequests >= 0 &&
-             "Negative waitingDataBaseRequests.");
+      // Check if we need to track waitingDataBaseRequests.
+      if (!stream->indirectStreams.empty() ||
+          stream->getStaticStream()->hasUpgradedToUpdate() ||
+          stream->isPointerChase()) {
+        stream->waitingDataBaseRequests--;
+        if (stream->waitingDataBaseRequests < 0) {
+          LLC_SLICE_PANIC(sliceId, "Negative waitingDataBaseRequests.\n");
+        }
+      }
       break;
     }
   }
@@ -231,7 +237,9 @@ void LLCStreamEngine::receiveStreamElementData(
     return;
   }
 
-  LLC_SLICE_DPRINTF(sliceId, "Received element data.\n");
+  LLC_SLICE_DPRINTF(sliceId,
+                    "Received ElementData, WaitingDataBaseRequests %d.\n",
+                    stream->waitingDataBaseRequests);
   // Indirect streams.
   this->processStreamDataForIndirectStreams(stream, sliceId, dataBlock);
   // Update streams.
@@ -266,13 +274,20 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
     // We are still waiting data for indirect streams.
     return false;
   }
-  if (!stream->readyIndirectElements.empty()) {
-    // We are still waiting for some indirect streams to be issued.
-    return false;
-  }
   if (stream->getStaticStream()->hasUpgradedToUpdate() &&
       stream->waitingDataBaseRequests > 0) {
     // We are still waiting to update the request.
+    return false;
+  }
+  if (stream->isPointerChase() && stream->waitingDataBaseRequests > 0) {
+    /**
+     * Enforce that pointer chase stream can not migrate until the previous
+     * base request comes back.
+     */
+    return false;
+  }
+  if (!stream->readyIndirectElements.empty()) {
+    // We are still waiting for some indirect streams to be issued.
     return false;
   }
   /**
@@ -283,13 +298,6 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
     if (!IS->waitingPredicatedElements.empty()) {
       return false;
     }
-  }
-  /**
-   * Enforce that pointer chase stream can not migrate until the previous
-   * base request comes back.
-   */
-  if (stream->isPointerChase() && stream->waitingDataBaseRequests > 0) {
-    return false;
   }
   return true;
 }
@@ -454,7 +462,6 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
 
     auto sliceId = stream->consumeNextSlice();
-    LLC_SLICE_DPRINTF(sliceId, "Issue.\n");
     stream->getStaticStream()->statistic.numLLCIssueSlice++;
 
     // Register the waiting indirect elements.
@@ -473,7 +480,17 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
       stream->getStaticStream()->statistic.numLLCSentSlice++;
     }
     this->requestQueue.emplace(sliceId, paddrLine, reqType);
-    stream->waitingDataBaseRequests++;
+    // Check if we track waitingDataBaseRequests.
+    if (!stream->indirectStreams.empty() || stream->isPointerChase() ||
+        stream->getStaticStream()->hasUpgradedToUpdate()) {
+      stream->waitingDataBaseRequests++;
+      LLC_SLICE_DPRINTF(sliceId, "Issue, WaitingDataBaseRequests++ %d.\n",
+                        stream->waitingDataBaseRequests);
+    } else {
+      LLC_SLICE_DPRINTF(sliceId,
+                        "Issue, WaitingDataBaseRequests Unchange %d.\n",
+                        stream->waitingDataBaseRequests);
+    }
 
     stream->prevIssuedCycle = curCycle;
     stream->updateIssueClearCycle();
@@ -788,10 +805,6 @@ void LLCStreamEngine::migrateStreams() {
 }
 
 void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
-
-  // Remember to clear the waitingDataBaseRequests becase we may aggressively
-  // migrate direct streams (not pointer chase).
-  stream->waitingDataBaseRequests = 0;
 
   // Create the migrate request.
   Addr vaddr = stream->peekVAddr();
