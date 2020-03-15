@@ -158,6 +158,10 @@ Network::MessageSizeType_to_int(MessageSizeType size_type)
       case MessageSizeType_ResponseL2hit_Data:
       case MessageSizeType_Writeback_Data:
         return m_data_msg_size;
+      case MessageSizeType_Response_Data_1B:
+        return m_control_msg_size + 1;
+      case MessageSizeType_Response_Data_2B:
+        return m_control_msg_size + 2;
       case MessageSizeType_Response_Data_4B:
         return m_control_msg_size + 4;
       case MessageSizeType_Response_Data_8B:

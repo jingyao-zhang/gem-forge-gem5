@@ -651,7 +651,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
            * Only transmit the required sub cache line.
            */
           if (isStreamSublineEnabled()) {
-            if (in_msg.sliceId.getSize() == 4) {
+            if (in_msg.sliceId.getSize() == 1) {
+              out_msg.MessageSize := MessageSizeType:Response_Data_1B;
+            } else if (in_msg.sliceId.getSize() == 2) {
+              out_msg.MessageSize := MessageSizeType:Response_Data_2B;
+            } else if (in_msg.sliceId.getSize() == 4) {
               out_msg.MessageSize := MessageSizeType:Response_Data_4B;
             } else if (in_msg.sliceId.getSize() == 8) {
               out_msg.MessageSize := MessageSizeType:Response_Data_8B;
@@ -719,6 +723,23 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.MessageSize := MessageSizeType:Response_Data;
         // Copy the stream meta-data.
         out_msg.sliceId := tbe.sliceId;
+        if (tbe.sliceId.isValid()) {
+          /**
+           * ! Sean: StreamAwareCache.
+           * Only transmit the required sub cache line.
+           */
+          if (isStreamSublineEnabled()) {
+            if (tbe.sliceId.getSize() == 1) {
+              out_msg.MessageSize := MessageSizeType:Response_Data_1B;
+            } else if (tbe.sliceId.getSize() == 2) {
+              out_msg.MessageSize := MessageSizeType:Response_Data_2B;
+            } else if (tbe.sliceId.getSize() == 4) {
+              out_msg.MessageSize := MessageSizeType:Response_Data_4B;
+            } else if (tbe.sliceId.getSize() == 8) {
+              out_msg.MessageSize := MessageSizeType:Response_Data_8B;
+            }
+          }
+        }
       }
     }
   }

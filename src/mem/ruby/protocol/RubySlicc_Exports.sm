@@ -260,6 +260,8 @@ enumeration(MessageSizeType, desc="...") {
   Unblock_Control, desc="Unblock control";
   Persistent_Control, desc="Persistent request activation messages";
   Completion_Control, desc="Completion messages";
+  Response_Data_1B, desc="1 byte subline data response";
+  Response_Data_2B, desc="2 byte subline data response";
   Response_Data_4B, desc="4 byte subline data response";
   Response_Data_8B, desc="8 byte subline data response";
 }

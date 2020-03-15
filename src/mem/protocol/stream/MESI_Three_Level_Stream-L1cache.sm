@@ -191,6 +191,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
+  bool isStreamSublineEnabled();
 
   // inclusive cache returns L1 entries only
   Entry getCacheEntry(Addr addr), return_by_pointer="yes" {
@@ -575,6 +576,18 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         out_msg.Destination.add(in_msg.Requestor);
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.sliceId := in_msg.sliceId;
+        // Try to detect subline.
+        if (in_msg.sliceId.isValid() && in_msg.Type == CoherenceRequestType:GETU && isStreamSublineEnabled()) {
+          if (in_msg.sliceId.getSize() == 1) {
+            out_msg.MessageSize := MessageSizeType:Response_Data_1B;
+          } else if (in_msg.sliceId.getSize() == 2) {
+            out_msg.MessageSize := MessageSizeType:Response_Data_2B;
+          } else if (in_msg.sliceId.getSize() == 4) {
+            out_msg.MessageSize := MessageSizeType:Response_Data_4B;
+          } else if (in_msg.sliceId.getSize() == 8) {
+            out_msg.MessageSize := MessageSizeType:Response_Data_8B;
+          }
+        }
       }
     }
   }
