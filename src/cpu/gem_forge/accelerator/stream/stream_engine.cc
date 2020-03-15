@@ -327,8 +327,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       continue;
     }
     auto &dynStream = S->getDynamicStream(args.seqNum);
-    if (this->streamFloatPolicy->shouldFloatStream(
-            S, dynStream.dynamicStreamId.streamInstance)) {
+    if (this->streamFloatPolicy->shouldFloatStream(S, dynStream)) {
 
       // Get the CacheStreamConfigureData.
       auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
@@ -1290,7 +1289,7 @@ void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
     return;
   }
   if (this->peb.isHit(vaddr, size)) {
-    hack("CPU stores to (%#x, %d), hits in PEB.\n", vaddr, size);
+    // hack("CPU stores to (%#x, %d), hits in PEB.\n", vaddr, size);
     this->flushPEB();
   }
 }
@@ -1475,6 +1474,17 @@ Stream *StreamEngine::getStream(uint64_t streamId) const {
   auto iter = this->streamMap.find(streamId);
   if (iter == this->streamMap.end()) {
     panic("Failed to find stream %lu.\n", streamId);
+  }
+  return iter->second;
+}
+
+Stream *StreamEngine::tryGetStream(uint64_t streamId) const {
+  if (this->coalescedStreamIdMap.count(streamId)) {
+    streamId = this->coalescedStreamIdMap.at(streamId);
+  }
+  auto iter = this->streamMap.find(streamId);
+  if (iter == this->streamMap.end()) {
+    return nullptr;
   }
   return iter->second;
 }
@@ -2124,7 +2134,7 @@ void StreamEngine::issueElement(StreamElement *element) {
   auto S = element->stream;
   if (S->getStreamType() == "load") {
     if (element->flushed) {
-      // S_ELEMENT_HACK(element, "Reissue element.\n");
+      S_ELEMENT_DPRINTF(element, "Reissue.\n");
     }
     this->numLoadElementsFetched++;
     S->statistic.numFetched++;
@@ -2181,6 +2191,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i, vaddr,
                       packetSize);
     S->statistic.numIssuedRequest++;
+    element->dynS->incrementNumIssuedRequests();
     S->incrementInflyStreamRequest();
     this->incrementInflyStreamRequest();
     cpuDelegator->sendRequest(pkt);
@@ -2681,6 +2692,9 @@ void StreamEngine::flushPEB() {
     assert(element->isAddrReady);
     assert(!element->isStepped);
     assert(!element->isFirstUserDispatched());
+    if (element->dynS->offloadedToCache) {
+      S_ELEMENT_PANIC(element, "Cannot flush offloaded stream element.\n");
+    }
 
     // Clear the element to just allocate state.
     element->isAddrReady = false;

@@ -119,16 +119,25 @@ struct DynamicStream {
    */
   StreamElement *releaseElementUnstepped();
 
+  uint64_t getNumReleasedElements() const { return this->numReleaseElement; }
+  uint64_t getNumIssuedRequests() const { return this->numIssuedRequests; }
+  void incrementNumIssuedRequests() { this->numIssuedRequests++; }
+
   void dump() const;
 
 private:
+  /**
+   * Some statistics for this stream.
+   */
+  uint64_t numReleaseElement = 0;
+  uint64_t numIssuedRequests = 0;
+
   /**
    * Used to compute flow control signal.
    */
   constexpr static int HistoryWindowSize = 10;
   Cycles lastReleaseCycle = Cycles(0);
   Cycles avgTurnAroundCycle = Cycles(0);
-  uint64_t numReleaseElement = 0;
   int lateElementCount = 0;
   int numLateElement = 0;
 };

@@ -98,7 +98,7 @@ parser.add_option("--gem-forge-stream-engine-placement",
 parser.add_option("--gem-forge-stream-engine-enable-float", action="store_true", default=False,
                   help="Enable stream float in LLC.")
 parser.add_option("--gem-forge-stream-engine-float-policy", type="choice", default="static",
-                  choices=['static', 'manual'],
+                  choices=['static', 'manual', 'smart'],
                   help="Policy to choose floating stream in LLC.")
 parser.add_option("--gem-forge-stream-engine-enable-float-indirect", action="store_true",
                   default=False,

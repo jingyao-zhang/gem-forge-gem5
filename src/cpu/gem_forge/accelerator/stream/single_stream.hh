@@ -32,6 +32,9 @@ public:
     return this->info.static_info().float_manual();
   }
 
+  bool hasUpdate() const override {
+    return this->info.static_info().has_update();
+  }
   bool hasUpgradedToUpdate() const override {
     return this->info.static_info().has_upgraded_to_update();
   }
@@ -93,6 +96,7 @@ private:
 
   void initializeBaseStreams();
   void initializeBackBaseStreams();
+  void initializeAliasStreams();
 };
 
 #endif

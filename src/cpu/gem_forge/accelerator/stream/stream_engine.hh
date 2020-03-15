@@ -122,6 +122,7 @@ public:
   void cpuStoreTo(Addr vaddr, int size);
 
   Stream *getStream(uint64_t streamId) const;
+  Stream *tryGetStream(uint64_t streamId) const;
 
   StreamPlacementManager *getStreamPlacementManager() {
     return this->streamPlacementManager;

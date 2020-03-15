@@ -12,7 +12,7 @@
 #define S_PANIC(S, format, args...) panic(S_MSG(S, format, ##args))
 
 #define S_ELEMENT_MSG(E, format, args...)                                      \
-  S_MSG((E)->getStream(), "[%lu-%lu]: " format,                               \
+  S_MSG((E)->getStream(), "[%lu-%lu]: " format,                                \
         (E)->FIFOIdx.streamId.streamInstance, (E)->FIFOIdx.entryIdx, ##args)
 
 #define S_ELEMENT_DPRINTF(E, format, args...)                                  \
@@ -52,12 +52,15 @@
 
 #define MLC_S_DPRINTF(format, args...)                                         \
   DPRINTF(DEBUG_TYPE, MLC_S_MSG(format, ##args))
+#define MLC_S_WARN(format, args...) warn(MLC_S_MSG(format, ##args))
 #define MLC_S_PANIC(format, args...)                                           \
   this->panicDump();                                                           \
   panic(MLC_S_MSG(format, ##args))
 
 #define MLC_SLICE_DPRINTF(sliceId, format, args...)                            \
   DPRINTF(DEBUG_TYPE, MLC_SLICE_MSG(sliceId, format, ##args))
+#define MLC_SLICE_WARN(sliceId, format, args...)                               \
+  warn(MLC_SLICE_MSG(sliceId, format, ##args))
 #define MLC_SLICE_PANIC(sliceId, format, args...)                              \
   this->panicDump();                                                           \
   panic(MLC_SLICE_MSG(sliceId, format, ##args))

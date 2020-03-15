@@ -61,6 +61,7 @@ void CoalescedStream::finalize() {
   // Initialize the dependence graph.
   this->initializeBaseStreams();
   this->initializeBackBaseStreams();
+  this->initializeAliasStreams();
   STREAM_DPRINTF(
       "Finalized, StaticCoalesced %d, ElementSize %d, LStreams: =========.\n",
       this->staticCoalesced, this->coalescedElementSize);
@@ -168,6 +169,27 @@ void CoalescedStream::initializeBackBaseStreams() {
   }
 }
 
+void CoalescedStream::initializeAliasStreams() {
+  // First sanity check for alias stream information.
+  const auto &primeSSI = this->primeLStream->info.static_info();
+  const auto &aliasBaseStreamId = primeSSI.alias_base_stream();
+  for (auto &LS : this->coalescedStreams) {
+    const auto &SSI = LS->info.static_info();
+    assert(SSI.alias_base_stream().id() == aliasBaseStreamId.id() &&
+           "Mismatch AliasBaseStream.");
+    if (this->getStreamType() == "load") {
+      /**
+       * Only check this for LoadStream. This is because coalescing
+       * is not performed between different stream types, but alias
+       * is.
+       */
+      assert(SSI.alias_offset() == LS->getCoalesceOffset() &&
+             "Mismatch between CoalesceOffset and AliasOffset.");
+    }
+  }
+  this->initializeAliasStreamsFromProtobuf(primeSSI);
+}
+
 void CoalescedStream::configure(uint64_t seqNum, ThreadContext *tc) {
   this->dispatchStreamConfig(seqNum, tc);
   if (!this->staticCoalesced) {
@@ -202,6 +224,9 @@ bool CoalescedStream::getFloatManual() const {
   return this->primeLStream->info.static_info().float_manual();
 }
 
+bool CoalescedStream::hasUpdate() const {
+  return this->primeLStream->info.static_info().has_update();
+}
 bool CoalescedStream::hasUpgradedToUpdate() const {
   return this->primeLStream->info.static_info().has_upgraded_to_update();
 }

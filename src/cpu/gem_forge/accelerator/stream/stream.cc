@@ -109,6 +109,40 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
   this->stepStreamList.emplace_back(newStepDependentStream);
 }
 
+void Stream::initializeAliasStreamsFromProtobuf(
+    const ::LLVM::TDG::StaticStreamInfo &info) {
+  auto aliasBaseStreamId = info.alias_base_stream().id();
+  this->aliasBaseStream = this->se->getStream(aliasBaseStreamId);
+  assert(this->aliasBaseStream && "Failed to find the AliasBaseStream.");
+  this->aliasOffset = info.alias_offset();
+  /**
+   * Inform the AliasBaseStream that whether I am store.
+   * Notice that this should not be implemented in the opposite way, as
+   * AliasedStream may not be finalized yet, and getStreamType() may not be
+   * available.
+   */
+  if (this->getStreamType() == "store") {
+    this->aliasBaseStream->hasAliasedStoreStream = true;
+  }
+  /**
+   * Same thing for update stream.
+   */
+  if (this->hasUpdate() && !this->hasUpgradedToUpdate()) {
+    // There are StoreStream that update this LoadStream.
+    this->aliasBaseStream->hasAliasedStoreStream = true;
+  }
+
+  for (const auto &aliasedStreamId : info.aliased_streams()) {
+    auto aliasedS = this->se->tryGetStream(aliasedStreamId.id());
+    if (aliasedS) {
+      // It's possible some streams may not be configured, e.g.
+      // StoreStream that is merged into the LoadStream, making
+      // them a UpdateStream.
+      this->aliasedStreams.push_back(aliasedS);
+    }
+  }
+}
+
 void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
   // Remember to old index for rewinding.
   auto prevFIFOIdx = this->FIFOIdx;
@@ -252,12 +286,26 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   auto endCycle = cpuDelegator->curCycle();
   this->statistic.numCycle += endCycle - dynS.configCycle;
 
+  // Remember the formal params history.
+  this->recordAggregateHistory(dynS);
+
   this->dynamicStreams.pop_front();
   if (!this->dynamicStreams.empty()) {
     // There is another config inst waiting.
     assert(this->dynamicStreams.front().configSeqNum > seqNum &&
            "Next StreamConfig not younger than previous StreamEnd.");
   }
+}
+
+void Stream::recordAggregateHistory(const DynamicStream &dynS) {
+  if (this->aggregateHistory.size() == AggregateHistorySize) {
+    this->aggregateHistory.pop_front();
+  }
+  this->aggregateHistory.emplace_back();
+  auto &history = this->aggregateHistory.back();
+  history.addrGenFormalParams = dynS.addrGenFormalParams;
+  history.numReleasedElements = dynS.getNumReleasedElements();
+  history.numIssuedRequests = dynS.getNumIssuedRequests();
 }
 
 DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {

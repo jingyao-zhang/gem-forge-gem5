@@ -33,6 +33,7 @@ void SingleStream::finalize() {
   S_DPRINTF(this, "Finalized.\n");
   this->initializeBaseStreams();
   this->initializeBackBaseStreams();
+  this->initializeAliasStreams();
 }
 
 void SingleStream::initializeBaseStreams() {
@@ -67,6 +68,15 @@ void SingleStream::initializeBackBaseStreams() {
     auto backBaseStream = this->se->getStream(backBaseStreamId.id());
     this->addBackBaseStream(backBaseStream);
   }
+}
+
+void SingleStream::initializeAliasStreams() {
+  if (this->getStreamType() == "phi") {
+    // Not MemStream.
+    return;
+  }
+  const auto &staticInfo = this->info.static_info();
+  this->initializeAliasStreamsFromProtobuf(staticInfo);
 }
 
 bool SingleStream::isPointerChaseLoadStream() const {

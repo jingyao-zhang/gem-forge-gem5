@@ -71,6 +71,7 @@ public:
     return this->coalescedElementSize;
   }
   bool getFloatManual() const override;
+  bool hasUpdate() const override;
   bool hasUpgradedToUpdate() const override;
   const PredicatedStreamIdList &getMergedPredicatedStreams() const override;
   const ::LLVM::TDG::ExecFuncInfo &getPredicateFuncInfo() const override;
@@ -135,6 +136,7 @@ protected:
   void selectPrimeLogicalStream();
   void initializeBaseStreams();
   void initializeBackBaseStreams();
+  void initializeAliasStreams();
 };
 
 #endif

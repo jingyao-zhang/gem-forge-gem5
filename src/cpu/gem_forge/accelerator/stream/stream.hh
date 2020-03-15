@@ -52,6 +52,7 @@ public:
    *    a. For coalesced stream -- choose the prime logical stream.
    *    b. Find base streams.
    *    c. Find back base streams.
+   *    d. Find AliasBaseStream and AliasedStreams.
    * Notice that some information are not valid until finalized, e.g.
    * StreamName, StaticId.
    */
@@ -60,6 +61,8 @@ public:
   void addBaseStepStream(Stream *baseStepStream);
   void addBackBaseStream(Stream *backBaseStream);
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
+  void
+  initializeAliasStreamsFromProtobuf(const ::LLVM::TDG::StaticStreamInfo &info);
 
   const std::string &getStreamName() const { return this->streamName; }
   virtual const std::string &getStreamType() const = 0;
@@ -68,7 +71,10 @@ public:
   virtual uint32_t getConfigLoopLevel() const = 0;
   virtual int32_t getElementSize() const = 0;
   virtual bool getFloatManual() const = 0;
+
+  virtual bool hasUpdate() const = 0;
   virtual bool hasUpgradedToUpdate() const = 0;
+
   virtual bool isReduction() const = 0;
   virtual bool hasCoreUser() const = 0;
   /**
@@ -125,14 +131,27 @@ public:
    * 3. nullptr: I am a constant stream.
    */
   Stream *stepRootStream;
-  std::unordered_set<Stream *> baseStreams;
-  std::unordered_set<Stream *> dependentStreams;
+  using StreamSet = std::unordered_set<Stream *>;
+  using StreamVec = std::vector<Stream *>;
+  StreamSet baseStreams;
+  StreamSet dependentStreams;
   /**
    * Back edge dependence on previous iteration.
    */
-  std::unordered_set<Stream *> backBaseStreams;
-  std::unordered_set<Stream *> backDependentStreams;
+  StreamSet backBaseStreams;
+  StreamSet backDependentStreams;
   bool hasBackDepReductionStream;
+  /**
+   * Alias stream information.
+   * AliasBaseStream can be:
+   * 1. nullptr -> not memory stream.
+   * 2. this    -> I am the leader of the alias group.
+   * 3. other   -> I am a follower in the alias group.
+   */
+  Stream *aliasBaseStream = nullptr;
+  int32_t aliasOffset = 0;
+  StreamVec aliasedStreams;
+  bool hasAliasedStoreStream = false;
 
   /**
    * Per stream statistics.
@@ -257,10 +276,25 @@ public:
   GemForgeCPUDelegator *cpuDelegator;
   StreamEngine *se;
 
+  /**
+   * StreamAggregateHistory. This is used to detect reuse
+   * across stream configuration.
+   */
+  struct StreamAggregateHistory {
+    DynamicStreamFormalParamV addrGenFormalParams;
+    uint64_t numReleasedElements;
+    uint64_t numIssuedRequests;
+  };
+  static constexpr int AggregateHistorySize = 4;
+  std::list<StreamAggregateHistory> aggregateHistory;
+  void recordAggregateHistory(const DynamicStream &dynS);
+
+  AddrGenCallbackPtr &getAddrGenCallback() { return this->addrGenCallback; }
+
 protected:
-  std::unordered_set<Stream *> baseStepStreams;
-  std::unordered_set<Stream *> baseStepRootStreams;
-  std::unordered_set<Stream *> dependentStepStreams;
+  StreamSet baseStepStreams;
+  StreamSet baseStepRootStreams;
+  StreamSet dependentStepStreams;
 
   AddrGenCallbackPtr addrGenCallback;
   ExecFuncPtr predCallback;

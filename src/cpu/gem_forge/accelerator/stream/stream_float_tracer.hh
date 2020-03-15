@@ -20,7 +20,13 @@ public:
       uint64_t cycle, uint32_t llcBank,
       const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type) const;
 
-  void dump() const { this->write(); }
+  void dump() const {
+    if (this->protoStream) {
+      this->write();
+      // Simply reset.
+      this->protoStream = nullptr;
+    }
+  }
 
 private:
   void initialize() const;

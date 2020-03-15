@@ -18,6 +18,7 @@ void StreamFloatTracer::traceEvent(
     this->write();
   }
   auto &entry = this->buffer.at(this->used);
+  entry.Clear();
   entry.set_cycle(cycle);
   entry.set_llc_bank(llcBank);
   entry.set_type(type);
@@ -34,7 +35,6 @@ void StreamFloatTracer::initialize() const {
   std::stringstream ss;
   ss << cpuId << '-' << streamName << ".data";
   auto fileName = directory->resolve(ss.str());
-  hack("Creating StreamFloatLog %s.\n", fileName);
   this->protoStream = m5::make_unique<ProtoOutputStream>(fileName);
 }
 

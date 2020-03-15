@@ -65,6 +65,9 @@ struct LinearAddrGenCallback : public AddrGenCallback {
 public:
   bool isContinuous(const DynamicStreamFormalParamV &params,
                     int32_t elementSize);
+  /**
+   * Get the inner most stride.
+   */
   uint64_t getInnerStride(const DynamicStreamFormalParamV &params);
   /**
    * Only valid when continuous.
@@ -75,6 +78,13 @@ public:
    */
   uint64_t getFirstElementForAddr(const DynamicStreamFormalParamV &params,
                                   int32_t elementSize, uint64_t addr);
+  /**
+   * Estimate memory footprint and reuse count.
+   * @return success, reuse footprint, reuse count.
+   */
+  bool estimateReuse(const DynamicStreamFormalParamV &params,
+                     uint64_t elementSize, uint64_t &reuseFootprint,
+                     uint64_t &reuseCount);
 };
 
 class FuncAddrGenCallback : public AddrGenCallback {

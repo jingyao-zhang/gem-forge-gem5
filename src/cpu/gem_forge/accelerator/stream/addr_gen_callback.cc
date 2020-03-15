@@ -135,3 +135,52 @@ uint64_t LinearAddrGenCallback::getFirstElementForAddr(
   auto stride0 = params.front().param.invariant;
   return (addr - startAddr) / stride0 + 1;
 }
+
+bool LinearAddrGenCallback::estimateReuse(
+    const DynamicStreamFormalParamV &params, uint64_t elementSize,
+    uint64_t &reuseFootprint, uint64_t &reuseCount) {
+  assert(params.size() >= 2);
+  for (const auto &param : params) {
+    assert(param.isInvariant && "Variant param for LinearAddrGenCallback.");
+  }
+  auto hasTotalTripCount = params.size() % 2 == 1;
+  // We search for 0 stride.
+  auto strideEnd = hasTotalTripCount ? params.size() - 2 : params.size() - 1;
+
+  // Reuse stride index is the first zero stride index, when we fall back to
+  // StartAddr.
+  int reuseStrideIdx = -1;
+  for (int strideIdx = 0; strideIdx < strideEnd; ++strideIdx) {
+    auto stride = params.at(strideIdx).param.invariant;
+    if (stride == 0) {
+      // We found 0 stride -- we are back to StartVAddr, so reuse happens.
+      reuseStrideIdx = strideIdx;
+      break;
+    }
+  }
+
+  if (reuseStrideIdx == -1) {
+    // No reuse found within this stream.
+    return false;
+  }
+
+  /**
+   * Try to estimate reuse footprint.
+   * Adjust the elementSize by FirstStride.
+   * Get the number of elements before reuse happens.
+   */
+  uint64_t adjustedElementSize =
+      (reuseStrideIdx > 0) ? std::min(elementSize, this->getInnerStride(params))
+                           : elementSize;
+  uint64_t numElementBeforeReuse =
+      (reuseStrideIdx > 0) ? params.at(reuseStrideIdx - 1).param.invariant : 1;
+  reuseFootprint = numElementBeforeReuse * adjustedElementSize;
+  /**
+   * Try to get minimal reuse count.
+   */
+  reuseCount = (reuseStrideIdx + 2 < params.size())
+                   ? (params.at(reuseStrideIdx + 1).param.invariant /
+                      numElementBeforeReuse)
+                   : 1;
+  return true;
+}
