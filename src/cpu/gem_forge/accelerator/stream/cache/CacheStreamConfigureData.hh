@@ -28,6 +28,14 @@ public:
   Addr initPAddr;
   bool initPAddrValid = false;
 
+  /**
+   * Used to only offload the indirect stream,
+   * e.g. a[b[i]], when b[i] is marked as PseudoOffload,
+   * both a[] and b[] will be offloaded, but LLC will only send back data
+   * of a[]. Core requests of b[] will be treated as normal requests.
+   */
+  bool isPseudoOffload = false;
+
   DynamicStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;
   DynamicStreamFormalParamV predFormalParams;

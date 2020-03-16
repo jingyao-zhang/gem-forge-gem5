@@ -286,6 +286,14 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   auto endCycle = cpuDelegator->curCycle();
   this->statistic.numCycle += endCycle - dynS.configCycle;
 
+  // Update float stats.
+  if (dynS.offloadedToCache) {
+    this->statistic.numFloated++;
+    if (dynS.pseudoOffloadedToCache) {
+      this->statistic.numPseudoFloated++;
+    }
+  }
+
   // Remember the formal params history.
   this->recordAggregateHistory(dynS);
 
@@ -315,6 +323,19 @@ DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
     }
   }
   panic("Failed to find DynamicStream %llu.\n", seqNum);
+}
+
+DynamicStream &Stream::getDynamicStreamBefore(uint64_t seqNum) {
+  DynamicStream *dynS = nullptr;
+  for (auto &dynStream : this->dynamicStreams) {
+    if (dynStream.configSeqNum < seqNum) {
+      dynS = &dynStream;
+    }
+  }
+  if (!dynS) {
+    panic("Failed to find DynamicStream before SeqNum %llu.\n", seqNum);
+  }
+  return *dynS;
 }
 
 DynamicStream *Stream::getDynamicStream(const DynamicStreamId &dynId) {

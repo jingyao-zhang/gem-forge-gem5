@@ -337,6 +337,12 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       dynStream.offloadedToCache = true;
       offloadedStreamConfigMap.emplace(S, streamConfigureData);
 
+      // Remember the pseudo offloaded decision.
+      if (this->streamFloatPolicy->shouldPseudoFloatStream(S, dynStream)) {
+        dynStream.pseudoOffloadedToCache = true;
+        streamConfigureData->isPseudoOffload = true;
+      }
+
       if (S->isPointerChaseLoadStream()) {
         streamConfigureData->isPointerChase = true;
       }
@@ -505,12 +511,6 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
     }
   }
 
-  // Update stats.
-  for (auto &offloadedS : offloadedStreamConfigMap) {
-    auto S = offloadedS.first;
-    S->statistic.numFloated++;
-  }
-
   // Send all the floating streams in one packet.
   if (!cacheStreamConfigVec->empty()) {
     // Dummy paddr to make ruby happy.
@@ -620,7 +620,17 @@ bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
   const auto &stepStreams = this->getStepStreamList(stepStream);
 
   for (auto S : stepStreams) {
-    const auto &dynS = S->getLastDynamicStream();
+    /**
+     * It's tricky to get the correct StepElement when we check if
+     * we can execute a StreamStep. For MinorCPU, execution comes
+     * in order, so we hack here to get the first DynamicStream.
+     *
+     * ! This only works for inorder execution cpus.
+     */
+    assert(cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::MINOR ||
+           cpuDelegator->cpuType ==
+               GemForgeCPUDelegator::CPUTypeE::TIMING_SIMPLE);
+    const auto &dynS = S->getFirstDynamicStream();
     if (!dynS.configExecuted) {
       return false;
     }

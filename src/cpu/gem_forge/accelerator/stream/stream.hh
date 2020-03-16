@@ -266,10 +266,15 @@ public:
 
   std::deque<DynamicStream> dynamicStreams;
   DynamicStream &getDynamicStream(uint64_t seqNum);
+  DynamicStream &getDynamicStreamBefore(uint64_t seqNum);
   DynamicStream *getDynamicStream(const DynamicStreamId &dynId);
   DynamicStream &getLastDynamicStream() {
     assert(!this->dynamicStreams.empty() && "No dynamic stream.");
     return this->dynamicStreams.back();
+  }
+  DynamicStream &getFirstDynamicStream() {
+    assert(!this->dynamicStreams.empty() && "No dynamic stream.");
+    return this->dynamicStreams.front();
   }
 
   LLVMTraceCPU *cpu;

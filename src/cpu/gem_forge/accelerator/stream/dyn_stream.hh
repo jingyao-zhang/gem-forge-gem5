@@ -41,6 +41,7 @@ struct DynamicStream {
   // Whether the dynamic stream is offloaded to cache.
   bool offloadedToCacheAsRoot = false;
   bool offloadedToCache = false;
+  bool pseudoOffloadedToCache = false;
 
   // Whether the StreamConfig has executed (ready to go).
   bool configExecuted = false;

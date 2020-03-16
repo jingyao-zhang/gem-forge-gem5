@@ -11,6 +11,7 @@ public:
   ~StreamFloatPolicy();
 
   bool shouldFloatStream(Stream *S, DynamicStream &dynS);
+  bool shouldPseudoFloatStream(Stream *S, DynamicStream &dynS);
 
 private:
   bool enabled;

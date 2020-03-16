@@ -15,7 +15,8 @@ CacheStreamConfigureData::CacheStreamConfigureData(
     const CacheStreamConfigureData &other)
     : stream(other.stream), dynamicId(other.dynamicId),
       elementSize(other.elementSize), initVAddr(other.initVAddr),
-      initPAddr(other.initPAddr),
+      initPAddr(other.initPAddr), initPAddrValid(other.initPAddrValid),
+      isPseudoOffload(other.isPseudoOffload),
       addrGenFormalParams(other.addrGenFormalParams),
       addrGenCallback(other.addrGenCallback),
       predFormalParams(other.predFormalParams),

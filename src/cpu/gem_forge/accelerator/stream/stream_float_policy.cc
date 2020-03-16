@@ -262,3 +262,27 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(Stream *S, DynamicStream &dynS) {
   logStream(S) << "[Float].\n" << std::flush;
   return true;
 }
+
+bool StreamFloatPolicy::shouldPseudoFloatStream(Stream *S,
+                                                DynamicStream &dynS) {
+  /**
+   * So far we use simple heuristic:
+   * 1. It has indirect streams.
+   * 2. Its TotalTripCount is known and shorter than a threshold.
+   * 3. TODO: Use history hit information.
+   */
+  if (S->dependentStreams.empty()) {
+    return false;
+  }
+  if (!dynS.hasTotalTripCount()) {
+    return false;
+  }
+  auto totalTripCount = dynS.getTotalTripCount();
+  constexpr int MaxTotalTripCount = 10;
+  if (totalTripCount > MaxTotalTripCount) {
+    return false;
+  }
+  S_DPRINTF(S, "[PseudoFloat] TotalTripCount %lu.\n", totalTripCount);
+  logStream(S) << "[PseudoFloat] TotalTripCount " << totalTripCount << '\n'
+               << std::flush;
+}
