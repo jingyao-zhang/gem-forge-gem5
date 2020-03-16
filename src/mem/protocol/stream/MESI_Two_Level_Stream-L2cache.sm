@@ -103,7 +103,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
     MT_IIB, AccessPermission:Busy, desc="Blocked for L1_GETS from MT, waiting for unblock and data";
     MT_IB, AccessPermission:Busy, desc="Blocked for L1_GETS from MT, got unblock, waiting for data";
-    MT_SB, AccessPermission:Busy, desc="Blocked for L1_GETS from MT, got data,  waiting for unblock";
+    MT_SB, AccessPermission:Busy, desc="Blocked for L1_GETS from MT, got data, waiting for unblock";
 
   }
 
@@ -1392,8 +1392,18 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     jj_popL1RequestQueue;
   }
   transition(MT, L1_GETV, MT_IB) {
-    // For uncached request, we immediately transit to MT_IB
-    // as the requestor will not send unblock message to us.
+    /**
+     * For uncached request, we immediately transit to MT_IB
+     * as the requestor will not send unblock message to us.
+     * ! There is a known race case:
+     * -----------------------------------------------------------------------------------------------------> Time
+     * LLC                L1_GETV(MT > MT_IB)   L1_PUTX(MT_IB > MT_IB)  
+     * MLC L1_Replacement(MM > M_I)                                       WB_Ack(M_I > I)  Fwd_GETV(Invalid!)
+     *
+     * The reason is that WB_Ack has higher priority than Fwd_GETV requests.
+     * Nomally, MT_IIB will block the LLC to process L1_PUTX, and waits for Unblock.
+     * TODO: I have to figure out a correct way to handle this.
+     */
     b_forwardRequestToExclusive;
     ns_addSliceIdFromRequest;
     uu_profileMiss;
