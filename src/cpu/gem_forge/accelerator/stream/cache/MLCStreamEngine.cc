@@ -215,7 +215,14 @@ bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {
   }
   // So far just check if the target stream is configured here.
   auto stream = this->getMLCDynamicStreamFromSlice(slice);
-  return stream != nullptr;
+  if (!stream) {
+    return false;
+  }
+  // If this is a PseudoOffload, we do not treate it as stream request.
+  if (stream->getIsPseudoOffload()) {
+    return false;
+  }
+  return true;
 }
 
 bool MLCStreamEngine::isStreamOffloaded(const DynamicStreamSliceId &slice) {
@@ -328,8 +335,10 @@ void MLCStreamEngine::computeReuseInformation(
       auto rhsAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
           rhsConfig->addrGenCallback);
       // Compute the cut element idx.
-      auto lhsStartAddr = lhsAddrGen->getStartAddr(lhsConfig->addrGenFormalParams);
-      auto rhsStartAddr = rhsAddrGen->getStartAddr(rhsConfig->addrGenFormalParams);
+      auto lhsStartAddr =
+          lhsAddrGen->getStartAddr(lhsConfig->addrGenFormalParams);
+      auto rhsStartAddr =
+          rhsAddrGen->getStartAddr(rhsConfig->addrGenFormalParams);
       // Set the threshold to 32kB.
       constexpr uint64_t ReuseThreshold = 32 * 1024;
       assert(rhsStartAddr > lhsStartAddr && "Illegal reversed startAddr.");
@@ -342,7 +351,8 @@ void MLCStreamEngine::computeReuseInformation(
       }
       auto rhsStartLindAddr = makeLineAddress(rhsStartAddr);
       auto lhsCutElementIdx = lhsAddrGen->getFirstElementForAddr(
-          lhsConfig->addrGenFormalParams, lhsConfig->elementSize, rhsStartLindAddr);
+          lhsConfig->addrGenFormalParams, lhsConfig->elementSize,
+          rhsStartLindAddr);
       // Store the reuse info.
       this->reuseInfoMap.emplace(
           std::piecewise_construct, std::forward_as_tuple(rhsConfig->dynamicId),

@@ -41,8 +41,12 @@ def initializeStreamEngine(options):
     se.streamEngineFloatPolicy = options.gem_forge_stream_engine_float_policy
     se.streamEngineEnableFloatIndirect = \
         options.gem_forge_stream_engine_enable_float_indirect
+    se.streamEngineEnableFloatPseudo = \
+        options.gem_forge_stream_engine_enable_float_pseudo
     if options.gem_forge_stream_engine_enable_float_indirect:
         assert(options.gem_forge_stream_engine_enable_float)
+    if options.gem_forge_stream_engine_enable_float_pseudo:
+        assert(options.gem_forge_stream_engine_enable_float_indirect)
 
     return se
 

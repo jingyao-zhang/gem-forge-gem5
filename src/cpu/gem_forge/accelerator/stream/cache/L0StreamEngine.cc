@@ -39,7 +39,7 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     this->offloadedStreams.emplace(
         streamConfigureData->dynamicId,
         new L0DynamicStream(streamConfigureData->dynamicId,
-                            streamConfigureData->isOneIterationBehind));
+                            streamConfigureData));
     for (auto &indirectStreamConfig : streamConfigureData->indirectStreams) {
       // We have an indirect stream.
       L0SE_DPRINTF("Received StreamConfigure for indirect %s.\n",
@@ -48,7 +48,7 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
           indirectStreamConfig->dynamicId,
           new L0DynamicStream(
               streamConfigureData->dynamicId /* RootDynamicStreamId. */,
-              indirectStreamConfig->isOneIterationBehind));
+              indirectStreamConfig.get()));
     }
   }
 }
@@ -93,6 +93,10 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
     return false;
   }
   auto stream = streamIter->second;
+  // If this is a PseudoOffload stream, we still treat it as normal request.
+  if (stream->getIsPseudoOffload()) {
+    return false;
+  }
   // Check if this is an indirect stream one iteration behind.
   if (stream->getIsOneIterationBehind()) {
     auto sliceId = this->getSliceId(pkt);

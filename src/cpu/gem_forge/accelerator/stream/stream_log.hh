@@ -53,6 +53,7 @@
 #define MLC_S_DPRINTF(format, args...)                                         \
   DPRINTF(DEBUG_TYPE, MLC_S_MSG(format, ##args))
 #define MLC_S_WARN(format, args...) warn(MLC_S_MSG(format, ##args))
+#define MLC_S_HACK(format, args...) hack(MLC_S_MSG(format, ##args))
 #define MLC_S_PANIC(format, args...)                                           \
   this->panicDump();                                                           \
   panic(MLC_S_MSG(format, ##args))
@@ -61,6 +62,8 @@
   DPRINTF(DEBUG_TYPE, MLC_SLICE_MSG(sliceId, format, ##args))
 #define MLC_SLICE_WARN(sliceId, format, args...)                               \
   warn(MLC_SLICE_MSG(sliceId, format, ##args))
+#define MLC_SLICE_HACK(sliceId, format, args...)                               \
+  hack(MLC_SLICE_MSG(sliceId, format, ##args))
 #define MLC_SLICE_PANIC(sliceId, format, args...)                              \
   this->panicDump();                                                           \
   panic(MLC_SLICE_MSG(sliceId, format, ##args))

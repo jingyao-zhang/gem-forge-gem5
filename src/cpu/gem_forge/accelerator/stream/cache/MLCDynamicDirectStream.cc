@@ -166,8 +166,11 @@ void MLCDynamicDirectStream::allocateSlice() {
            "This only works with backing store.");
     this->notifyIndirectStream(this->slices.back());
 
-    // The address is valid, but we check if this stream has no core user.
-    if (!this->stream->hasCoreUser()) {
+    /**
+     * The address is valid, but we check if this stream has no core user,
+     * or if this is just a PseudoOffload.
+     */
+    if (!this->stream->hasCoreUser() || this->isPseudoOffload) {
       // We mark this slice done.
       this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
     }

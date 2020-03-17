@@ -28,19 +28,22 @@ class StreamMemAccess;
 class L0DynamicStream {
 public:
   L0DynamicStream(const DynamicStreamId &_rootDynamicStreamId,
-                  bool _isOneIterationBehind)
+                  CacheStreamConfigureData *_configData)
       : rootDynamicStreamId(_rootDynamicStreamId),
-        isOneIterationBehind(_isOneIterationBehind) {}
+        isOneIterationBehind(_configData->isOneIterationBehind),
+        isPseudoOffload(_configData->isPseudoOffload) {}
 
   const DynamicStreamId &getRootDynamicStreamId() const {
     return this->rootDynamicStreamId;
   }
 
   bool getIsOneIterationBehind() const { return this->isOneIterationBehind; }
+  bool getIsPseudoOffload() const { return this->isPseudoOffload; }
 
 private:
   DynamicStreamId rootDynamicStreamId;
   bool isOneIterationBehind;
+  bool isPseudoOffload;
 };
 
 class L0StreamEngine {

@@ -80,6 +80,8 @@ class StreamEngine(GemForgeAccelerator):
         "static", "Policy to choose floating stream.")
     streamEngineEnableFloatIndirect = Param.Bool(
         False, "Whether the stream float is enabled for indirect stream.")
+    streamEngineEnableFloatPseudo = Param.Bool(
+        False, "Whether the stream float is enabled for pseudo float.")
 
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'

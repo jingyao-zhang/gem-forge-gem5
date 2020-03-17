@@ -70,6 +70,7 @@ public:
 
   int32_t getElementSize() const { return this->configData.elementSize; }
   bool isPointerChase() const { return this->configData.isPointerChase; }
+  bool isPseudoOffload() const { return this->configData.isPseudoOffload; }
   bool isOneIterationBehind() const {
     return this->configData.isOneIterationBehind;
   }

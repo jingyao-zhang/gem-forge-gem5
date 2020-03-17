@@ -50,6 +50,7 @@ StreamEngine::StreamEngine(Params *params)
   this->placement = params->streamEnginePlacement;
   this->enableStreamFloat = params->streamEngineEnableFloat;
   this->enableStreamFloatIndirect = params->streamEngineEnableFloatIndirect;
+  this->enableStreamFloatPseudo = params->streamEngineEnableFloatPseudo;
   this->streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
       this->enableStreamFloat, params->streamEngineFloatPolicy);
 
@@ -338,7 +339,8 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       offloadedStreamConfigMap.emplace(S, streamConfigureData);
 
       // Remember the pseudo offloaded decision.
-      if (this->streamFloatPolicy->shouldPseudoFloatStream(S, dynStream)) {
+      if (this->enableStreamFloatPseudo &&
+          this->streamFloatPolicy->shouldPseudoFloatStream(S, dynStream)) {
         dynStream.pseudoOffloadedToCache = true;
         streamConfigureData->isPseudoOffload = true;
       }

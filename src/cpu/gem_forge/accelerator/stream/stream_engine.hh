@@ -289,6 +289,7 @@ private:
   bool continuousStore;
   bool enableStreamFloat;
   bool enableStreamFloatIndirect;
+  bool enableStreamFloatPseudo;
   std::string placementLat;
   std::string placement;
   /**

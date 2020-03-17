@@ -19,7 +19,8 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
                                    MessageBuffer *_responseMsgBuffer,
                                    MessageBuffer *_requestToLLCMsgBuffer)
     : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
-      isPointerChase(_configData->isPointerChase), controller(_controller),
+      isPointerChase(_configData->isPointerChase),
+      isPseudoOffload(_configData->isPseudoOffload), controller(_controller),
       responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer),
       maxNumSlices(_controller->getMLCStreamBufferInitNumEntries()),
@@ -90,8 +91,9 @@ void MLCDynamicStream::receiveStreamRequestHit(
   MLC_SLICE_DPRINTF(sliceId, "Receive request hit to %#x.\n", sliceId.vaddr);
 
   auto slice = this->findSliceForCoreRequest(sliceId);
-  assert(slice->coreStatus == MLCStreamSlice::CoreStatusE::NONE &&
-         "Already seen a request.");
+  if (slice->coreStatus != MLCStreamSlice::CoreStatusE::NONE) {
+    MLC_SLICE_PANIC(sliceId, "Already seen a request.");
+  }
   slice->coreStatus = MLCStreamSlice::CoreStatusE::DONE;
   slice->coreSliceId = sliceId;
   this->advanceStream();
@@ -205,11 +207,10 @@ void MLCDynamicStream::scheduleAdvanceStream() {
 }
 
 void MLCDynamicStream::panicDump() const {
-  MLC_S_DPRINTF("-------------------Panic Dump--------------------\n");
+  MLC_S_HACK("-------------------Panic Dump--------------------\n");
   for (const auto &slice : this->slices) {
-    MLC_SLICE_DPRINTF(
-        slice.sliceId, "VAddr %#x Data %d Core %s.\n", slice.sliceId.vaddr,
-        slice.dataReady,
-        MLCStreamSlice::convertCoreStatusToString(slice.coreStatus).c_str());
+    MLC_SLICE_HACK(slice.sliceId, "VAddr %#x Data %d Core %s.\n",
+                   slice.sliceId.vaddr, slice.dataReady,
+                   MLCStreamSlice::convertCoreStatusToString(slice.coreStatus));
   }
 }

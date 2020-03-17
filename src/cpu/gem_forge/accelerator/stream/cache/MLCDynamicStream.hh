@@ -28,6 +28,8 @@ public:
     return this->dynamicStreamId;
   }
 
+  bool getIsPseudoOffload() const { return this->isPseudoOffload; }
+
   virtual const DynamicStreamId &getRootDynamicStreamId() const {
     // By default this we are the root stream.
     return this->getDynamicStreamId();
@@ -68,6 +70,7 @@ protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;
   bool isPointerChase;
+  bool isPseudoOffload;
 
   AbstractStreamAwareController *controller;
   MessageBuffer *responseMsgBuffer;

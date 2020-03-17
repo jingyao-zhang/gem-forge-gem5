@@ -473,9 +473,10 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
 
     // Push to the request queue.
-    auto reqType = stream->getStaticStream()->hasCoreUser()
-                       ? CoherenceRequestType_GETU
-                       : CoherenceRequestType_GETH;
+    auto reqType =
+        (stream->getStaticStream()->hasCoreUser() && !stream->isPseudoOffload())
+            ? CoherenceRequestType_GETU
+            : CoherenceRequestType_GETH;
     if (reqType == CoherenceRequestType_GETU) {
       stream->getStaticStream()->statistic.numLLCSentSlice++;
     }
@@ -674,6 +675,8 @@ void LLCStreamEngine::generateIndirectStreamRequest(
    */
   auto reqType =
       IS->hasCoreUser() ? CoherenceRequestType_GETU : CoherenceRequestType_GETH;
+  assert(!dynIS->isPseudoOffload() &&
+         "Indirect stream should never be PseudoOffload.");
   auto totalSliceSize = 0;
   while (totalSliceSize < elementSize) {
     Addr curSliceVAddr = elementVAddr + totalSliceSize;
@@ -1133,7 +1136,7 @@ void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,
    * However, if we know this stream has no core user, the core stream
    * engine will not try to get the data. Then we perform the update here.
    */
-  if (!stream->getStaticStream()->hasCoreUser()) {
+  if (!stream->getStaticStream()->hasCoreUser() && !stream->isPseudoOffload()) {
     this->performStore(elementPAddr, elementSize,
                        reinterpret_cast<uint8_t *>(&updateValue));
   }

@@ -285,4 +285,5 @@ bool StreamFloatPolicy::shouldPseudoFloatStream(Stream *S,
   S_DPRINTF(S, "[PseudoFloat] TotalTripCount %lu.\n", totalTripCount);
   logStream(S) << "[PseudoFloat] TotalTripCount " << totalTripCount << '\n'
                << std::flush;
+  return true;
 }
