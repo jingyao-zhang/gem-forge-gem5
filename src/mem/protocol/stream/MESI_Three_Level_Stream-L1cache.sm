@@ -133,6 +133,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     L0_StreamConfig, desc="StreamConfig from L0";
     L0_StreamEnd,    desc="StreamEnd from L0";
     L2_StreamData,   desc="StreamData from L2";
+    L1_StreamData,   desc="StreamData from L1, need to unblock L2";
     L0_FwdStreamReq, desc="Stream request served by L0 and forwarded to L1";
   }
 
@@ -312,7 +313,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         // So far we can't handle stream data.
         if (in_msg.sliceId.isValid()) {
           se.receiveStreamData(in_msg);
-          trigger(Event:L2_StreamData, in_msg.addr, cache_entry, tbe);
+          if (machineIDToMachineType(in_msg.Sender) == MachineType:L1Cache) {
+            trigger(Event:L1_StreamData, in_msg.addr, cache_entry, tbe);
+          } else {
+            trigger(Event:L2_StreamData, in_msg.addr, cache_entry, tbe);
+          }
         }
 
         if(in_msg.Type == CoherenceResponseType:DATA_EXCLUSIVE) {
@@ -1341,6 +1346,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L2_StreamData) {
+    o_popL2ResponseQueue;
+  }
+
+  transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L1_StreamData) {
+    j_sendUnblock;
     o_popL2ResponseQueue;
   }
 
