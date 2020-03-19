@@ -92,6 +92,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     // Requests from the L0 cache
     Load,                  desc="Load request";
     LoadV,                 desc="Volatile load request, not cache at upper level";
+    HitStreamLoadV,        desc="A StreamLoadV that has been hit here";
     LoadU,                 desc="Uncached load request, not cache at this level";
     OffloadStreamLoad,     desc="Receive an offloaded stream request";
     Store,                 desc="Store request";
@@ -431,16 +432,14 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         } else {
 
           // Stream-aware logic.
-          if (se.isStreamRequest(in_msg.slice)) {
+          // We check if it's GETU to filter out Fwd_GETS from other stream.
+          if (in_msg.Class == CoherenceClass:GETU && se.isStreamRequest(in_msg.slice)) {
             // Stream packet.
             if (is_valid(cache_entry)) {
+              // This is a hit StreamLoadV.
               // Hit. Notify the stream engine and response.
               setHitCacheLevel(in_msg.requestStatistic, 1);
-              if (se.isStreamOffloaded(in_msg.slice)) {
-                se.receiveOffloadStreamRequestHit(in_msg.slice);
-              }
-              trigger(mandatory_request_type_to_event(in_msg.Class),
-                      in_msg.addr, cache_entry, tbe);
+              trigger(Event:HitStreamLoadV, in_msg.addr, cache_entry, tbe);
             }
             // Missed.
             if (se.isStreamOffloaded(in_msg.slice)) {
@@ -962,6 +961,13 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
       }
     }
   }
+  action(nhs_notifyHitStreamLoadV, "nhs", desc="Notify the SE a HitStreamLoadV") {
+    peek(messageBufferFromL0_in, CoherenceMsg) {
+      if (se.isStreamOffloaded(in_msg.slice)) {
+        se.receiveOffloadStreamRequestHit(in_msg.slice);
+      }
+    }
+  }
 
 
   //*****************************************************
@@ -970,7 +976,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   // Transitions for Load/Store/Replacement/WriteBack from transient states
   transition({IS, IU, IM, IS_I, M_I, SM, SINK_WB_ACK, S_IL0, M_IL0, E_IL0, MM_IL0},
-             {Load, LoadV, LoadU, Store, L1_Replacement}) {
+             {Load, LoadV, HitStreamLoadV, LoadU, Store, L1_Replacement}) {
     z0_stallAndWaitL0Queue;
   }
 
@@ -1030,22 +1036,44 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     uu_profileHit;
     k_popL0RequestQueue;
   }
-
   transition(SS, LoadV, SS) {
     hh_xdata_to_l0;
     uu_profileHit;
     k_popL0RequestQueue;
   }
-
   transition(S, LoadV, S) {
     hh_xdata_to_l0;
     uu_profileHit;
     k_popL0RequestQueue;
   }
-
   transition(MM, LoadV, MM) {
     hh_xdata_to_l0;
     uu_profileHit;
+    k_popL0RequestQueue;
+  }
+
+  transition(EE, HitStreamLoadV, EE) {
+    hh_xdata_to_l0;
+    uu_profileHit;
+    nhs_notifyHitStreamLoadV;
+    k_popL0RequestQueue;
+  }
+  transition(SS, HitStreamLoadV, SS) {
+    hh_xdata_to_l0;
+    uu_profileHit;
+    nhs_notifyHitStreamLoadV;
+    k_popL0RequestQueue;
+  }
+  transition(S, HitStreamLoadV, S) {
+    hh_xdata_to_l0;
+    uu_profileHit;
+    nhs_notifyHitStreamLoadV;
+    k_popL0RequestQueue;
+  }
+  transition(MM, HitStreamLoadV, MM) {
+    hh_xdata_to_l0;
+    uu_profileHit;
+    nhs_notifyHitStreamLoadV;
     k_popL0RequestQueue;
   }
 
