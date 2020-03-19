@@ -55,5 +55,12 @@ class X86TLB(BaseTLB):
     cxx_class = 'X86ISA::TLB'
     cxx_header = 'arch/x86/tlb.hh'
     size = Param.Unsigned(64, "TLB size")
+    assoc = Param.Unsigned(0, "TLB assoc, 0 is fully-associative")
+    l2size = Param.Unsigned(0, "L2 TLB size, 0 is no L2 TLB")
+    l2assoc = Param.Unsigned(16, "L2 TLB assoc, 0 is fully-associative")
+    l2_lat = Param.Unsigned(8, "L2 TLB hit latency, SE mode only")
+    walker_se_lat = Param.Unsigned(17, "Page walker latency in SE mode")
+    walker_se_port = Param.Unsigned(2, "Number of simultaneous page walk in SE mode")
+    timing_se = Param.Bool(False, "Enable TLB miss timing in SE mode")
     walker = Param.X86PagetableWalker(\
             X86PagetableWalker(), "page table walker")

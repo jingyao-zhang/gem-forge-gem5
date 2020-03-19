@@ -70,6 +70,8 @@ if env['TARGET_ISA'] == 'x86':
     Source('remote_gdb.cc')
     Source('stacktrace.cc')
     Source('system.cc')
+    Source('tlb_set.cc')
+    Source('tlb_cache.cc')
     Source('tlb.cc')
     Source('types.cc')
     Source('utility.cc')

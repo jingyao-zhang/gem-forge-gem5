@@ -46,6 +46,7 @@ if env['TARGET_ISA'] == 'null':
 Source('decode_cache.cc')
 Source('mmapped_ipr.cc')
 Source('tlb.cc')
+Source('se_page_walker.cc')
 
 SimObject('BaseTLB.py')
 SimObject('ISACommon.py')

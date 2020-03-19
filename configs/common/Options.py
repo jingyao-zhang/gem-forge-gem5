@@ -146,8 +146,21 @@ def addNoISAOptions(parser):
     parser.add_option("--l3_assoc", type="int", default=16)
     parser.add_option("--l3_size", type="string", default="16MB")
     parser.add_option("--cacheline_size", type="int", default=64)
-    parser.add_option("--llc-select-low-bit", type="int", default=8, 
+    parser.add_option("--llc-select-low-bit", type="int", default=8,
       help="Granularity how address is mapped among LLC, default 64B.")
+
+    # TLB size.
+    parser.add_option("--l1tlb-size", type="int", default=64)
+    parser.add_option("--l1tlb-assoc", type="int", default=0)
+    parser.add_option("--l2tlb-size", type="int", default=0)
+    parser.add_option("--l2tlb-assoc", type="int", default=8)
+    parser.add_option("--l2tlb-hit-lat", type="int", default=8)
+    parser.add_option("--walker-se-lat", type="int", default=16,
+      help="PageTable Walker fixed latency when modeling it in se")
+    parser.add_option("--walker-se-port", type="int", default=2,
+      help="PageTable Walker number of simultaneous context.")
+    parser.add_option("--tlb-timing-se", action="store_true",
+      help="Model TLB timing in SE mode.")
 
     # Enable Ruby
     parser.add_option("--ruby", action="store_true")

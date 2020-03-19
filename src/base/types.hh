@@ -140,6 +140,11 @@ class Cycles
  * in the system, which will probably be 64 bits.
  */
 typedef uint64_t Addr;
+const uint32_t ADDRESS_WIDTH = 64; // address width in bytes
+
+// selects bits inclusive
+Addr bitSelect(Addr addr, unsigned int small, unsigned int big);
+Addr bitRemove(Addr addr, unsigned int small, unsigned int big);
 
 typedef uint16_t MicroPC;
 

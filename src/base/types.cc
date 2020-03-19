@@ -30,6 +30,46 @@
 
 #include "base/types.hh"
 
+Addr
+bitSelect(Addr addr, unsigned int small, unsigned int big)
+{
+    assert(big >= small);
+
+    if (big >= ADDRESS_WIDTH - 1) {
+        return (addr >> small);
+    } else {
+        Addr mask = ~((Addr)~0 << (big + 1));
+        // FIXME - this is slow to manipulate a 64-bit number using 32-bits
+        Addr partial = (addr & mask);
+        return (partial >> small);
+    }
+}
+
+Addr
+bitRemove(Addr addr, unsigned int small, unsigned int big)
+{
+    assert(big >= small);
+
+    if (small >= ADDRESS_WIDTH - 1) {
+        return addr;
+    } else if (big >= ADDRESS_WIDTH - 1) {
+        Addr mask = (Addr)~0 >> small;
+        return (addr & mask);
+    } else if (small == 0) {
+        Addr mask = (Addr)~0 << big;
+        return (addr & mask);
+    } else {
+        Addr mask = ~((Addr)~0 << small);
+        Addr lower_bits = addr & mask;
+        mask = (Addr)~0 << (big + 1);
+        Addr higher_bits = addr & mask;
+
+        // Shift the valid high bits over the removed section
+        higher_bits = higher_bits >> (big - small + 1);
+        return (higher_bits | lower_bits);
+    }
+}
+
 std::ostream&
 operator<<(std::ostream &out, const Cycles & cycles)
 {

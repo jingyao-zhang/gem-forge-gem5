@@ -60,69 +60,105 @@
 namespace X86ISA {
 
 TLB::TLB(const Params *p)
-    : BaseTLB(p), configAddress(0), size(p->size),
-      tlb(size), lruSeq(0)
+    : BaseTLB(p), configAddress(0),
+    size(p->size), assoc(p->assoc),
+    l2size(p->l2size), l2assoc(p->l2assoc), l2HitLatency(p->l2_lat),
+    walkerSELatency(p->walker_se_lat), walkerSEPort(p->walker_se_port),
+    timingSE(p->timing_se),
+    tlbCache(p->size, 0)
 {
     if (!size)
         fatal("TLBs must have a non-zero size.\n");
 
-    for (int x = 0; x < size; x++) {
-        tlb[x].trieHandle = NULL;
-        freeList.push_back(&tlb[x]);
-    }
-
     walker = p->walker;
     walker->setTLB(this);
-}
 
-void
-TLB::evictLRU()
-{
-    // Find the entry with the lowest (and hence least recently updated)
-    // sequence number.
-
-    unsigned lru = 0;
-    for (unsigned i = 1; i < size; i++) {
-        if (tlb[i].lruSeq < tlb[lru].lruSeq)
-            lru = i;
+    /**
+     * Check if we are using new multi-level set-partitioned
+     * TLB implementation.
+     */
+    if (this->assoc > 0) {
+        // This is not a fully assoicative TLB, we use TLBCache.
+        this->l1tlb = m5::make_unique<TLBCache>(this->size, this->assoc);
     }
-
-    assert(tlb[lru].trieHandle);
-    trie.remove(tlb[lru].trieHandle);
-    tlb[lru].trieHandle = NULL;
-    freeList.push_back(&tlb[lru]);
+    if (this->l2size > 0) {
+        // Set up the L2 TLB.
+        this->l2tlb = m5::make_unique<TLBCache>(this->l2size, this->l2assoc);
+    }
+    /**
+     * Check if we want to have timing in se.
+     */
+    if (this->timingSE) {
+        this->sePageWalker = m5::make_unique<SEPageWalker>(
+            this->name() + ".se_walker",
+            this->walkerSELatency, this->walkerSEPort);
+    }
 }
 
 TlbEntry *
 TLB::insert(Addr vpn, const TlbEntry &entry)
 {
-    // If somebody beat us to it, just use that existing entry.
-    TlbEntry *newEntry = trie.lookup(vpn);
-    if (newEntry) {
-        assert(newEntry->vaddr == vpn);
-        return newEntry;
+    /**
+     * We simply insert into both level TLB.
+     */
+    if (this->l2tlb) {
+        this->l2tlb->insert(vpn, entry);
     }
-
-    if (freeList.empty())
-        evictLRU();
-
-    newEntry = freeList.front();
-    freeList.pop_front();
-
-    *newEntry = entry;
-    newEntry->lruSeq = nextSeq();
-    newEntry->vaddr = vpn;
-    newEntry->trieHandle =
-    trie.insert(vpn, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
-    return newEntry;
+    if (this->l1tlb) {
+        return this->l1tlb->insert(vpn, entry);
+    }
+    // Legacy implementation.
+    return this->tlbCache.insert(vpn, entry);
 }
 
 TlbEntry *
-TLB::lookup(Addr va, bool update_lru)
+TLB::lookup(Addr va, bool update_stats, bool update_lru, int &hitLevel)
 {
-    TlbEntry *entry = trie.lookup(va);
-    if (entry && update_lru)
-        entry->lruSeq = nextSeq();
+    TlbEntry *entry = nullptr;
+    hitLevel = 0;
+    if (this->l1tlb) {
+        entry = this->l1tlb->lookup(va, update_lru);
+    } else {
+        entry = this->tlbCache.lookup(va, update_lru);
+    }
+    // Look up in L2 if we miss in L1.
+    if (!entry) {
+        hitLevel++;
+        if (this->l2tlb) {
+            entry = this->l2tlb->lookup(va, update_lru);
+            if (entry) {
+                // Hit in L2. Move this to L1.
+                if (this->l1tlb) {
+                    this->l1tlb->insert(entry->vaddr, *entry);
+                } else {
+                    this->tlbCache.insert(entry->vaddr, *entry);
+                }
+            } else {
+                // This go to page walker.
+                hitLevel++;
+            }
+        }
+    }
+    if (update_stats) {
+        this->l1Accesses++;
+        switch (hitLevel) {
+        case 2:
+            // Miss in both level TLB.
+            this->l1Misses++;
+            this->l2Accesses++;
+            this->l2Misses++;
+            break;
+        case 1:
+            // Miss in L1.
+            this->l1Misses++;
+            if (this->l2tlb) this->l2Accesses++;
+            break;
+        case 0:
+            // Hit in L1.
+            break;
+        default: panic("Illegal TLB HitLevel %d.\n", hitLevel);
+        }
+    }
     return entry;
 }
 
@@ -130,13 +166,14 @@ void
 TLB::flushAll()
 {
     DPRINTF(TLB, "Invalidating all entries.\n");
-    for (unsigned i = 0; i < size; i++) {
-        if (tlb[i].trieHandle) {
-            trie.remove(tlb[i].trieHandle);
-            tlb[i].trieHandle = NULL;
-            freeList.push_back(&tlb[i]);
-        }
+    if (this->l2tlb) {
+        this->l2tlb->flushAll();
     }
+    if (this->l1tlb) {
+        this->l1tlb->flushAll();
+        return;
+    }
+    this->tlbCache.flushAll();
 }
 
 void
@@ -149,24 +186,27 @@ void
 TLB::flushNonGlobal()
 {
     DPRINTF(TLB, "Invalidating all non global entries.\n");
-    for (unsigned i = 0; i < size; i++) {
-        if (tlb[i].trieHandle && !tlb[i].global) {
-            trie.remove(tlb[i].trieHandle);
-            tlb[i].trieHandle = NULL;
-            freeList.push_back(&tlb[i]);
-        }
+    if (this->l2tlb) {
+        this->l2tlb->flushNonGlobal();
     }
+    if (this->l1tlb) {
+        this->l1tlb->flushNonGlobal();
+        return;
+    }
+    this->tlbCache.flushNonGlobal();
 }
 
 void
 TLB::demapPage(Addr va, uint64_t asn)
 {
-    TlbEntry *entry = trie.lookup(va);
-    if (entry) {
-        trie.remove(entry->trieHandle);
-        entry->trieHandle = NULL;
-        freeList.push_back(entry);
+    if (this->l2tlb) {
+        this->l2tlb->demapPage(va, asn);
     }
+    if (this->l1tlb) {
+        this->l1tlb->demapPage(va, asn);
+        return;
+    }
+    this->tlbCache.demapPage(va, asn);
 }
 
 Fault
@@ -268,19 +308,23 @@ TLB::finalizePhysical(const RequestPtr &req,
 Fault
 TLB::translate(const RequestPtr &req,
         ThreadContext *tc, Translation *translation,
-        Mode mode, bool &delayedResponse, bool timing)
+        Mode mode, bool &delayedResponse, Cycles &delayedResponseCycles,
+        bool timing, bool updateStats)
 {
+    DPRINTF(TLB, "GetFlags.\n");
     Request::Flags flags = req->getFlags();
     int seg = flags & SegmentFlagMask;
     bool storeCheck = flags & (StoreCheck << FlagShift);
 
     delayedResponse = false;
+    delayedResponseCycles = Cycles(0);
 
     // If this is true, we're dealing with a request to a non-memory address
     // space.
     if (seg == SEGMENT_REG_MS) {
         return translateInt(req, tc);
     }
+    DPRINTF(TLB, "GetVaddr vaddr.\n");
 
     Addr vaddr = req->getVaddr();
     DPRINTF(TLB, "Translating vaddr %#x.\n", vaddr);
@@ -333,20 +377,19 @@ TLB::translate(const RequestPtr &req,
         if (m5Reg.paging) {
             DPRINTF(TLB, "Paging enabled.\n");
             // The vaddr already has the segment base applied.
-            TlbEntry *entry = lookup(vaddr);
-            if (mode == Read) {
-                rdAccesses++;
-            } else {
-                wrAccesses++;
+            int hitLevel = 0;
+            TlbEntry *entry = lookup(vaddr, updateStats, true /* UpdateLRU */,
+                hitLevel);
+            if (updateStats) {
+                if (mode == Read) rdAccesses++;
+                else wrAccesses++;
             }
             if (!entry) {
-                DPRINTF(TLB, "Handling a TLB miss for "
-                        "address %#x at pc %#x.\n",
+                DPRINTF(TLB, "Handling a TLB miss for address %#x at pc %#x.\n",
                         vaddr, tc->instAddr());
-                if (mode == Read) {
-                    rdMisses++;
-                } else {
-                    wrMisses++;
+                if (updateStats) {
+                    if (mode == Read) rdMisses++;
+                    else wrMisses++;
                 }
                 if (FullSystem) {
                     Fault fault = walker->start(tc, translation, req, mode);
@@ -355,7 +398,9 @@ TLB::translate(const RequestPtr &req,
                         delayedResponse = true;
                         return fault;
                     }
-                    entry = lookup(vaddr);
+                    int hitLevel = 0;
+                    entry = lookup(vaddr, false /* updateStats */, true /* updateLRU */,
+                        hitLevel);
                     assert(entry);
                 } else {
                     Process *p = tc->getProcessPtr();
@@ -380,7 +425,29 @@ TLB::translate(const RequestPtr &req,
                                 pte->flags & EmulationPageTable::Uncacheable,
                                 pte->flags & EmulationPageTable::ReadOnly));
                     }
-                    DPRINTF(TLB, "Miss was serviced.\n");
+                    DPRINTF(TLB, "HitLevel %d (Miss) was serviced.\n",
+                        hitLevel);
+                }
+            }
+            if (!FullSystem && timing && this->timingSE && hitLevel > 0) {
+                // We will delay the response and schedule a event.
+                delayedResponse = true;
+                Addr pageVAddr = tc->getProcessPtr()->pTable->pageAlign(vaddr);
+                switch (hitLevel) {
+                case 2:
+                    // This access goes to page walker.
+                    delayedResponseCycles = this->sePageWalker->walk(
+                        pageVAddr, this->walker->curCycle());
+                    break;
+                case 1:
+                    if (this->l2tlb) {
+                        delayedResponseCycles = this->l2HitLatency;
+                    } else {
+                        delayedResponseCycles = this->sePageWalker->walk(
+                            pageVAddr, this->walker->curCycle());
+                    }
+                    break;
+                default: panic("Illegal TLB HitLevel %d.\n", hitLevel);
                 }
             }
 
@@ -429,8 +496,11 @@ TLB::translate(const RequestPtr &req,
 Fault
 TLB::translateAtomic(const RequestPtr &req, ThreadContext *tc, Mode mode)
 {
-    bool delayedResponse;
-    return TLB::translate(req, tc, NULL, mode, delayedResponse, false);
+    bool delayedResponse = false;
+    Cycles delayedResponseCycles = Cycles(0);
+    bool updateStats = true;
+    return TLB::translate(req, tc, NULL, mode, delayedResponse,
+        delayedResponseCycles, false, updateStats);
 }
 
 void
@@ -438,13 +508,23 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
         Translation *translation, Mode mode)
 {
     bool delayedResponse;
+    Cycles delayedResponseCycles = Cycles(0);
+    bool updateStats = true;
     assert(translation);
-    Fault fault =
-        TLB::translate(req, tc, translation, mode, delayedResponse, true);
-    if (!delayedResponse)
+    Fault fault = TLB::translate(req, tc, translation, mode, delayedResponse,
+            delayedResponseCycles, true, updateStats);
+    if (!delayedResponse) {
         translation->finish(fault, req, tc, mode);
-    else
+    } else {
         translation->markDelayed();
+        if (delayedResponseCycles > 0) {
+            // We know the delayed cycles, schedule a event.
+            auto event = new DelayedTranslationEvent(
+                this, tc, translation, req, mode, fault);
+            // We borrow the walker's cycle.
+            this->schedule(event, this->walker->clockEdge(delayedResponseCycles));
+        }
+    }
 }
 
 Walker *
@@ -474,20 +554,33 @@ TLB::regStats()
         .name(name() + ".wrMisses")
         .desc("TLB misses on write requests");
 
+    l1Accesses
+        .name(name() + ".l1Accesses")
+        .desc("L1 TLB accesses");
+    l1Misses
+        .name(name() + ".l1Misses")
+        .desc("L1 TLB misses");
+    l2Accesses
+        .name(name() + ".l2Accesses")
+        .desc("L2 TLB accesses");
+    l2Misses
+        .name(name() + ".l2Misses")
+        .desc("L2 TLB misses");
+
+    if (this->sePageWalker) {
+        this->sePageWalker->regStats();
+    }
 }
 
 void
 TLB::serialize(CheckpointOut &cp) const
 {
-    // Only store the entries in use.
-    uint32_t _size = size - freeList.size();
-    SERIALIZE_SCALAR(_size);
-    SERIALIZE_SCALAR(lruSeq);
-
-    uint32_t _count = 0;
-    for (uint32_t x = 0; x < size; x++) {
-        if (tlb[x].trieHandle != NULL)
-            tlb[x].serializeSection(cp, csprintf("Entry%d", _count++));
+    this->tlbCache.serializeSection(cp, "L1TLBSet");
+    if (this->l1tlb) {
+        this->l1tlb->serializeSection(cp, "L1TLB");
+    }
+    if (this->l2tlb) {
+        this->l2tlb->serializeSection(cp, "L2TLB");
     }
 }
 
@@ -495,21 +588,12 @@ void
 TLB::unserialize(CheckpointIn &cp)
 {
     // Do not allow to restore with a smaller tlb.
-    uint32_t _size;
-    UNSERIALIZE_SCALAR(_size);
-    if (_size > size) {
-        fatal("TLB size less than the one in checkpoint!");
+    this->tlbCache.unserializeSection(cp, "L1TLBSet");
+    if (this->l1tlb) {
+        this->l1tlb->unserializeSection(cp, "L1TLB");
     }
-
-    UNSERIALIZE_SCALAR(lruSeq);
-
-    for (uint32_t x = 0; x < _size; x++) {
-        TlbEntry *newEntry = freeList.front();
-        freeList.pop_front();
-
-        newEntry->unserializeSection(cp, csprintf("Entry%d", x));
-        newEntry->trieHandle = trie.insert(newEntry->vaddr,
-            TlbEntryTrie::MaxBits - newEntry->logBytes, newEntry);
+    if (this->l2tlb) {
+        this->l2tlb->unserializeSection(cp, "L2TLB");
     }
 }
 
@@ -517,6 +601,37 @@ Port *
 TLB::getTableWalkerPort()
 {
     return &walker->getPort("port");
+}
+
+TLB::DelayedTranslationEvent::DelayedTranslationEvent(
+  TLB *_tlb, ThreadContext *_tc, Translation *_translation,
+  const RequestPtr &_req, BaseTLB::Mode _mode, Fault _fault)
+  : tlb(_tlb), tc(_tc), translation(_translation), req(_req), mode(_mode),
+    fault(_fault), n("DelayedTranslationEvent") {
+  assert(this->fault == NoFault && "Fault on DelayedTranslation.");
+  assert(req->hasPaddr() && "Req has no paddr at constructor.\n");
+  this->setFlags(EventBase::AutoDelete);
+}
+
+void TLB::DelayedTranslationEvent:: process() {
+  DPRINTF(TLB, "Serve DelayedTranslationEvent, Squashed %d.\n",
+    this->translation->squashed());
+  if (this->translation->squashed()) {
+    // finish the translation which will delete the translation object
+    this->translation->finish(
+        std::make_shared<UnimpFault>("Squashed Inst"),
+        this->req, this->tc, this->mode);
+    return;
+  }
+  bool delayedResponse;
+  Cycles delayedResponseCycles = Cycles(0);
+  bool updateStats = false;
+  Fault fault = tlb->translate(
+    req, tc, NULL, mode, delayedResponse, delayedResponseCycles,
+    true, updateStats);
+  assert(!delayedResponse);
+  assert(req->hasPaddr() && "Req has no paddr.\n");
+  this->translation->finish(fault, req, tc, mode);
 }
 
 } // namespace X86ISA

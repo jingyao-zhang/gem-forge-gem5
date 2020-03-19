@@ -102,7 +102,9 @@ public:
     ResponseEvent(GemForgeCPUDelegator *_cpuDelegator,
                   StreamMemAccess *_memAccess, PacketPtr _pkt)
         : cpuDelegator(_cpuDelegator), memAccess(_memAccess), pkt(_pkt),
-          n("StreamMemAccessResponseEvent") {}
+          n("StreamMemAccessResponseEvent") {
+      this->setFlags(EventBase::AutoDelete);
+    }
     void process() override {
       this->memAccess->handlePacketResponse(this->cpuDelegator, this->pkt);
     }

@@ -43,11 +43,15 @@
 #include <list>
 #include <vector>
 
+#include "arch/generic/se_page_walker.hh"
 #include "arch/generic/tlb.hh"
 #include "arch/x86/pagetable.hh"
+#include "arch/x86/tlb_cache.hh"
 #include "base/trie.hh"
 #include "mem/request.hh"
 #include "params/X86TLB.hh"
+
+#include <memory>
 
 class ThreadContext;
 
@@ -71,13 +75,12 @@ namespace X86ISA
 
         void takeOverFrom(BaseTLB *otlb) override {}
 
-        TlbEntry *lookup(Addr va, bool update_lru = true);
+        TlbEntry *lookup(Addr va, bool update_stats, bool update_lru,
+          int &hitLevel);
 
         void setConfigAddress(uint32_t addr);
 
       protected:
-
-        EntryList::iterator lookupIt(Addr va, bool update_lru = true);
 
         Walker * walker;
 
@@ -92,35 +95,52 @@ namespace X86ISA
 
       protected:
         uint32_t size;
+        uint32_t assoc;
+        uint32_t l2size;
+        uint32_t l2assoc;
+        Cycles l2HitLatency;
+        // A fixed walker latency for SE mode.
+        Cycles walkerSELatency;
+        // Number of simultaneous page walking for SE mode.
+        uint32_t walkerSEPort;
+        // Whether we enable TLB timing in SE mode.
+        bool timingSE;
 
-        std::vector<TlbEntry> tlb;
+        /**
+         * Legacy fully-associative L1 TLB. I keep it here
+         * cause the new multi-level TLB has assumed fixed page size.
+         */
+        TLBSet tlbCache;
 
-        EntryList freeList;
-
-        TlbEntryTrie trie;
-        uint64_t lruSeq;
+        /**
+         * New implementation of 2-level, set-partitioned TLB.
+         */
+        std::unique_ptr<TLBCache> l1tlb;
+        std::unique_ptr<TLBCache> l2tlb;
+        std::unique_ptr<SEPageWalker> sePageWalker;
 
         // Statistics
         Stats::Scalar rdAccesses;
         Stats::Scalar wrAccesses;
         Stats::Scalar rdMisses;
         Stats::Scalar wrMisses;
+        Stats::Scalar l1Accesses;
+        Stats::Scalar l1Misses;
+        Stats::Scalar l2Accesses;
+        Stats::Scalar l2Misses;
 
         Fault translateInt(const RequestPtr &req, ThreadContext *tc);
 
+        /**
+         * Perform the translation and serve the TLB miss.
+         * @param updateStats: whether this translation should be counted.
+         */
         Fault translate(const RequestPtr &req, ThreadContext *tc,
                 Translation *translation, Mode mode,
-                bool &delayedResponse, bool timing);
+                bool &delayedResponse, Cycles &delayedResponseCycles,
+                bool timing, bool updateStats);
 
       public:
-
-        void evictLRU();
-
-        uint64_t
-        nextSeq()
-        {
-            return ++lruSeq;
-        }
 
         Fault translateAtomic(
             const RequestPtr &req, ThreadContext *tc, Mode mode) override;
@@ -166,6 +186,26 @@ namespace X86ISA
          * @return A pointer to the walker port
          */
         Port *getTableWalkerPort() override;
+
+        /**
+         * Schedule an event to mark Translation finish in SE mode.
+         */
+        struct DelayedTranslationEvent : public Event {
+        public:
+          TLB *tlb;
+          ThreadContext *tc;
+          Translation *translation;
+          RequestPtr req;
+          BaseTLB::Mode mode;
+          Fault fault;
+          std::string n;
+          DelayedTranslationEvent(
+            TLB *_tlb, ThreadContext *_tc, Translation *_translation,
+            const RequestPtr &_req, BaseTLB::Mode _mode, Fault _fault);
+          void process() override;
+          const char *description() const { return "DelayedTranslationEvent"; }
+          const std::string name() const { return this->n; }
+        };
     };
 }
 

@@ -177,6 +177,19 @@ def initializeCPUs(options):
         future_cpus = createCPUNonStandalone(
             options, FutureCPUClass, multiprocesses, numThreads)
 
+    # Set up TLB options.
+    for cpu in future_cpus if future_cpus else initial_cpus:
+        dtb = cpu.dtb
+        if isinstance(dtb, X86TLB):
+            dtb.size = options.l1tlb_size
+            dtb.assoc = options.l1tlb_assoc
+            dtb.l2size = options.l2tlb_size
+            dtb.l2assoc = options.l2tlb_assoc
+            dtb.l2_lat = options.l2tlb_hit_lat
+            dtb.walker_se_lat = options.walker_se_lat
+            dtb.walker_se_port = options.walker_se_port
+            dtb.timing_se = options.tlb_timing_se
+
     # We assume initial_cpu does not have GemForge accelerators if future_cpu is valid.
     for cpu in future_cpus if future_cpus else initial_cpus:
         cpu.accelManager = \
@@ -186,6 +199,15 @@ def initializeCPUs(options):
         cpu.switched_out = True
         if options.prog_interval:
             cpu.progress_interval = options.prog_interval
+    # Update the progress count.
+    # if options.prog_interval:
+    #     for cpu in initial_cpus:
+    #         cpu.progress_interval = options.prog_interval
+    #     if future_cpus:
+    #         for cpu in future_cpus:
+    #             cpu.progress_interval = options.prog_interval
+
+
     return (initial_cpus, future_cpus, test_mem_mode)
 
 

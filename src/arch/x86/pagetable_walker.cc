@@ -641,8 +641,11 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
              * well.
              */
             bool delayedResponse;
-            Fault fault = walker->tlb->translate(req, tc, NULL, mode,
-                                                 delayedResponse, true);
+            Cycles delayedResponseCycles = Cycles(0);
+            bool updateStats = false;
+            Fault fault = walker->tlb->translate(
+                req, tc, NULL, mode, delayedResponse, delayedResponseCycles,
+                true, updateStats);
             assert(!delayedResponse);
             // Let the CPU continue.
             translation->finish(fault, req, tc, mode);
