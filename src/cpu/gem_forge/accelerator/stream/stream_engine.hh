@@ -6,6 +6,7 @@
 #include "prefetch_element_buffer.hh"
 #include "single_stream.hh"
 #include "stream_element.hh"
+#include "stream_translation_buffer.hh"
 
 #include "stream_float_policy.hh"
 #include "stream_placement_manager.hh"
@@ -219,6 +220,7 @@ private:
   friend class Stream;
 
   LLVMTraceCPU *cpu;
+  std::unique_ptr<StreamTranslationBuffer<void *>> translationBuffer;
   StreamPlacementManager *streamPlacementManager;
   std::unique_ptr<StreamFloatPolicy> streamFloatPolicy;
 

@@ -1,15 +1,19 @@
 #include "se_page_walker.hh"
+#include "base/trace.hh"
+
+#include "debug/TLB.hh"
 
 namespace X86ISA {
 
 SEPageWalker::SEPageWalker(const std::string &_name, Cycles _latency,
                            uint32_t _numContext)
-    : name(_name), latency(_latency), numContext(_numContext) {}
+    : myName(_name), latency(_latency), numContext(_numContext) {}
 
 void SEPageWalker::regStats() {
-  this->accesses.name(this->name + ".accesses").desc("PageWalker accesses");
-  this->hits.name(this->name + ".hits").desc("PageWalker hits on infly walks");
-  this->waits.name(this->name + ".waits")
+  this->accesses.name(this->name() + ".accesses").desc("PageWalker accesses");
+  this->hits.name(this->name() + ".hits")
+      .desc("PageWalker hits on infly walks");
+  this->waits.name(this->name() + ".waits")
       .desc("PageWalker waits on available context");
 }
 
@@ -31,18 +35,18 @@ Cycles SEPageWalker::walk(Addr pageVAddr, Cycles curCycle) {
   this->clearReadyStates(curCycle);
 
   this->accesses++;
+  DPRINTF(TLB, "Walk PageTable %#x.\n", pageVAddr);
 
   // Check if we have a parallel miss to the same page.
   auto iter = this->pageVAddrToStateMap.find(pageVAddr);
   if (iter != this->pageVAddrToStateMap.end()) {
     /**
-     * Normally we would add some latency for this miss,
-     * but I do not bother to do that, which would also
-     * add some latency to the current miss and resort
-     * the infly list.
+     * Just add one cycle latency for parallel miss.
      */
     this->hits++;
-    return iter->second->readyCycle;
+    DPRINTF(TLB, "Hit %#x, Latency %s.\n", pageVAddr,
+            iter->second->readyCycle - curCycle + Cycles(1));
+    return iter->second->readyCycle - curCycle + Cycles(1);
   }
 
   /**

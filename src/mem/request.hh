@@ -558,6 +558,14 @@ class Request
     }
 
     /**
+     * Set just the virtual address.
+     */
+    void setVirt(Addr vaddr) {
+        _vaddr = vaddr;
+        privateFlags.set(VALID_VADDR);
+    }
+
+    /**
      * Set just the physical address.  This usually used to record the
      * result of a translation. However, when using virtualized CPUs
      * setPhys() is sometimes called to finalize a physical address

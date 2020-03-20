@@ -512,8 +512,10 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
     }
     if (doEndWalk) {
         if (doTLBInsert)
-            if (!functional)
-                walker->tlb->insert(entry.vaddr, entry);
+            if (!functional) {
+                bool isLastLevel = false;
+                walker->tlb->insert(entry.vaddr, entry, isLastLevel);
+            }
         endWalk();
     } else {
         PacketPtr oldRead = read;
@@ -643,9 +645,10 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
             bool delayedResponse;
             Cycles delayedResponseCycles = Cycles(0);
             bool updateStats = false;
+            bool isLastLevel = false;
             Fault fault = walker->tlb->translate(
                 req, tc, NULL, mode, delayedResponse, delayedResponseCycles,
-                true, updateStats);
+                true, isLastLevel, updateStats);
             assert(!delayedResponse);
             // Let the CPU continue.
             translation->finish(fault, req, tc, mode);

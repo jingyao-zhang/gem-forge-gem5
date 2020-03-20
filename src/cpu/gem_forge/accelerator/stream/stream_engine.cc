@@ -98,6 +98,14 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
     this->streamPlacementManager =
         new StreamPlacementManager(cpuDelegator, this);
   }
+
+  // Set up the translation buffer.
+  this->translationBuffer = m5::make_unique<StreamTranslationBuffer<void *>>(
+      cpuDelegator->getDataTLB(),
+      [this](PacketPtr pkt, ThreadContext *tc, void *) -> void {
+        this->cpuDelegator->sendRequest(pkt);
+      },
+      false /* AccessLastLevelTLBOnly */);
 }
 
 void StreamEngine::regStats() {
@@ -2198,15 +2206,18 @@ void StreamEngine::issueElement(StreamElement *element) {
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     auto pkt = GemForgePacketHandler::createGemForgePacket(
-        paddr, packetSize, memAccess, nullptr, cpuDelegator->dataMasterId(), 0,
-        0);
+        paddr, packetSize, memAccess, nullptr, cpuDelegator->dataMasterId(),
+        0 /* ContextId */, 0 /* PC */);
+    pkt->req->setVirt(vaddr);
     S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i, vaddr,
                       packetSize);
     S->statistic.numIssuedRequest++;
     element->dynS->incrementNumIssuedRequests();
     S->incrementInflyStreamRequest();
     this->incrementInflyStreamRequest();
-    cpuDelegator->sendRequest(pkt);
+    // Send the pkt to translation.
+    this->translationBuffer->addTranslation(
+        pkt, cpuDelegator->getSingleThreadContext(), nullptr);
 
     // Mark the state.
     cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;

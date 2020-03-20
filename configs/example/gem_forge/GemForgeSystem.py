@@ -1,9 +1,6 @@
 import m5
 
 def run(options, root, system, future_cpus):
-    # Add future_cpus to system so that they can be instantiated.
-    if future_cpus:
-        system.future_cpus = future_cpus
     checkpoint_dir = None
     # We only allow some number of maximum instructions in real simulation.
     # In total, 4 billion instructions.

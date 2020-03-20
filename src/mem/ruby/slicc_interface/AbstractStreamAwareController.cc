@@ -19,7 +19,33 @@ AbstractStreamAwareController::mapAddressToLLC(Addr addr,
   );
 }
 
-  Addr AbstractStreamAwareController::getAddressToOurLLC() const {
-    // Make it simple.
-    return this->getMachineID().num << this->llcSelectLowBit;
+Addr AbstractStreamAwareController::getAddressToOurLLC() const {
+  // Make it simple.
+  return this->getMachineID().num << this->llcSelectLowBit;
+}
+
+GemForgeCPUDelegator *AbstractStreamAwareController::getCPUDelegator() {
+  if (!this->cpu) {
+    // Start to search for the CPU.
+    for (auto so : this->getSimObjectList()) {
+      auto cpu = dynamic_cast<BaseCPU *>(so);
+      if (!cpu) {
+        continue;
+      }
+      if (cpu->cpuId() != this->getMachineID().num) {
+        // This is not my local cpu.
+        continue;
+      }
+      if (!cpu->getCPUDelegator()) {
+        // This one has no GemForgeCPUDelegator, should not be our target.
+        continue;
+      }
+      this->cpu = cpu;
+      break;
+    }
   }
+  assert(this->cpu && "Failed to find CPU.");
+  auto cpuDelegator = this->cpu->getCPUDelegator();
+  assert(cpuDelegator && "Missing CPUDelegator.");
+  return cpuDelegator;
+}

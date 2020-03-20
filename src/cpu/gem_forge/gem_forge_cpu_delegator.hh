@@ -6,6 +6,7 @@
 #include "gem_forge_lsq_callback.hh"
 
 #include "cpu/base.hh"
+#include "params/BaseCPU.hh"
 
 /**
  * Originally, these accelerators are implemented assuming a LLVMTraceCPU.
@@ -45,6 +46,18 @@ public:
     this->baseCPU->schedule(event, this->baseCPU->clockEdge(latency));
   }
   void deschedule(Event *event) { this->baseCPU->deschedule(event); }
+
+  /**
+   * Get the ThreadContext.
+   * Currently only support single thread per cpu.
+   */
+  ThreadContext *getSingleThreadContext() {
+    assert(this->baseCPU->numContexts() == 1 &&
+           "Can not support SMT CPU right now.");
+    return this->baseCPU->getContext(0);
+  }
+
+  BaseTLB *getDataTLB() { return this->baseCPU->params()->dtb; }
 
   /**
    * Read a zero-terminated string from the memory.

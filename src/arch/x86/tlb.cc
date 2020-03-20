@@ -96,13 +96,17 @@ TLB::TLB(const Params *p)
 }
 
 TlbEntry *
-TLB::insert(Addr vpn, const TlbEntry &entry)
+TLB::insert(Addr vpn, const TlbEntry &entry, bool isLastLevel)
 {
     /**
-     * We simply insert into both level TLB.
+     * Normally we insert into both level TLB, unless it is
+     * explicitly marked for the LastLevel only.
      */
     if (this->l2tlb) {
-        this->l2tlb->insert(vpn, entry);
+        auto newEntry = this->l2tlb->insert(vpn, entry);
+        if (isLastLevel) {
+            return newEntry;
+        }
     }
     if (this->l1tlb) {
         return this->l1tlb->insert(vpn, entry);
@@ -112,51 +116,66 @@ TLB::insert(Addr vpn, const TlbEntry &entry)
 }
 
 TlbEntry *
-TLB::lookup(Addr va, bool update_stats, bool update_lru, int &hitLevel)
-{
-    TlbEntry *entry = nullptr;
-    hitLevel = 0;
-    if (this->l1tlb) {
-        entry = this->l1tlb->lookup(va, update_lru);
-    } else {
-        entry = this->tlbCache.lookup(va, update_lru);
+TLB::lookupL1(Addr va, bool isLastLevel, bool updateStats,
+    bool updateLRU) {
+    if (isLastLevel && this->l2tlb) {
+        // Goes directly to L2TLB.
+        return nullptr;
     }
+    TlbEntry *entry = nullptr;
+    if (this->l1tlb) {
+        entry = this->l1tlb->lookup(va, updateLRU);
+    } else {
+        entry = this->tlbCache.lookup(va, updateLRU);
+    }
+    if (updateStats) {
+        this->l1Accesses++;
+        if (!entry) this->l1Misses++;
+    }
+    return entry;
+}
+
+TlbEntry *
+TLB::lookupL2(Addr va, bool isLastLevel, bool updateStats,
+    bool updateLRU) {
+    TlbEntry *entry = nullptr;
+    if (this->l2tlb) {
+        entry = this->l1tlb->lookup(va, updateLRU);
+        if (updateStats) {
+            this->l2Accesses++;
+            if (!entry) this->l2Misses++;
+        }
+    }
+    return entry;
+}
+
+TlbEntry *
+TLB::lookup(Addr va, bool isLastLevel, bool updateStats,
+    bool updateLRU, int &hitLevel)
+{
+    hitLevel = 0;
+    TlbEntry *entry = this->lookupL1(
+        va, isLastLevel, updateStats, updateLRU);
     // Look up in L2 if we miss in L1.
     if (!entry) {
         hitLevel++;
-        if (this->l2tlb) {
-            entry = this->l2tlb->lookup(va, update_lru);
-            if (entry) {
-                // Hit in L2. Move this to L1.
+        entry = this->lookupL2(
+            va, isLastLevel, updateStats, updateLRU);
+        if (!entry) {
+            // Miss in L2.
+            hitLevel++;
+        } else {
+            /**
+             * Hit in L2. Bring in the entry to L1 if this
+             * access is not limited to LastLevel only.
+             */
+            if (!isLastLevel) {
                 if (this->l1tlb) {
                     this->l1tlb->insert(entry->vaddr, *entry);
                 } else {
                     this->tlbCache.insert(entry->vaddr, *entry);
                 }
-            } else {
-                // This go to page walker.
-                hitLevel++;
             }
-        }
-    }
-    if (update_stats) {
-        this->l1Accesses++;
-        switch (hitLevel) {
-        case 2:
-            // Miss in both level TLB.
-            this->l1Misses++;
-            this->l2Accesses++;
-            this->l2Misses++;
-            break;
-        case 1:
-            // Miss in L1.
-            this->l1Misses++;
-            if (this->l2tlb) this->l2Accesses++;
-            break;
-        case 0:
-            // Hit in L1.
-            break;
-        default: panic("Illegal TLB HitLevel %d.\n", hitLevel);
         }
     }
     return entry;
@@ -309,9 +328,8 @@ Fault
 TLB::translate(const RequestPtr &req,
         ThreadContext *tc, Translation *translation,
         Mode mode, bool &delayedResponse, Cycles &delayedResponseCycles,
-        bool timing, bool updateStats)
+        bool timing, bool isLastLevel, bool updateStats)
 {
-    DPRINTF(TLB, "GetFlags.\n");
     Request::Flags flags = req->getFlags();
     int seg = flags & SegmentFlagMask;
     bool storeCheck = flags & (StoreCheck << FlagShift);
@@ -324,10 +342,9 @@ TLB::translate(const RequestPtr &req,
     if (seg == SEGMENT_REG_MS) {
         return translateInt(req, tc);
     }
-    DPRINTF(TLB, "GetVaddr vaddr.\n");
 
     Addr vaddr = req->getVaddr();
-    DPRINTF(TLB, "Translating vaddr %#x.\n", vaddr);
+    DPRINTF(TLB, "Translating %#x, LastLevel %d.\n", vaddr, isLastLevel);
 
     HandyM5Reg m5Reg = tc->readMiscRegNoEffect(MISCREG_M5_REG);
 
@@ -378,8 +395,8 @@ TLB::translate(const RequestPtr &req,
             DPRINTF(TLB, "Paging enabled.\n");
             // The vaddr already has the segment base applied.
             int hitLevel = 0;
-            TlbEntry *entry = lookup(vaddr, updateStats, true /* UpdateLRU */,
-                hitLevel);
+            TlbEntry *entry = lookup(vaddr, isLastLevel,
+                updateStats, true /* UpdateLRU */, hitLevel);
             if (updateStats) {
                 if (mode == Read) rdAccesses++;
                 else wrAccesses++;
@@ -399,8 +416,8 @@ TLB::translate(const RequestPtr &req,
                         return fault;
                     }
                     int hitLevel = 0;
-                    entry = lookup(vaddr, false /* updateStats */, true /* updateLRU */,
-                        hitLevel);
+                    entry = lookup(vaddr, isLastLevel,
+                        false /* updateStats */, true /* updateLRU */, hitLevel);
                     assert(entry);
                 } else {
                     Process *p = tc->getProcessPtr();
@@ -421,9 +438,10 @@ TLB::translate(const RequestPtr &req,
                         DPRINTF(TLB, "Mapping %#x to %#x\n", alignedVaddr,
                                 pte->paddr);
                         entry = insert(alignedVaddr, TlbEntry(
-                                p->pTable->pid(), alignedVaddr, pte->paddr,
-                                pte->flags & EmulationPageTable::Uncacheable,
-                                pte->flags & EmulationPageTable::ReadOnly));
+                            p->pTable->pid(), alignedVaddr, pte->paddr,
+                            pte->flags & EmulationPageTable::Uncacheable,
+                            pte->flags & EmulationPageTable::ReadOnly),
+                            isLastLevel);
                     }
                     DPRINTF(TLB, "HitLevel %d (Miss) was serviced.\n",
                         hitLevel);
@@ -440,15 +458,13 @@ TLB::translate(const RequestPtr &req,
                         pageVAddr, this->walker->curCycle());
                     break;
                 case 1:
-                    if (this->l2tlb) {
-                        delayedResponseCycles = this->l2HitLatency;
-                    } else {
-                        delayedResponseCycles = this->sePageWalker->walk(
-                            pageVAddr, this->walker->curCycle());
-                    }
+                    assert(this->l2tlb && "Missing L2TLB.");
+                    delayedResponseCycles = this->l2HitLatency;
                     break;
                 default: panic("Illegal TLB HitLevel %d.\n", hitLevel);
                 }
+                DPRINTF(TLB, "SETiming HitLevel %d, Delayed by %s\n",
+                    hitLevel, delayedResponseCycles);
             }
 
             DPRINTF(TLB, "Entry found with paddr %#x, "
@@ -500,27 +516,29 @@ TLB::translateAtomic(const RequestPtr &req, ThreadContext *tc, Mode mode)
     Cycles delayedResponseCycles = Cycles(0);
     bool updateStats = true;
     return TLB::translate(req, tc, NULL, mode, delayedResponse,
-        delayedResponseCycles, false, updateStats);
+        delayedResponseCycles, false, false, updateStats);
 }
 
 void
-TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
-        Translation *translation, Mode mode)
+TLB::translateTimingImpl(const RequestPtr &req, ThreadContext *tc,
+        Translation *translation, Mode mode, bool isLastLevel)
 {
     bool delayedResponse;
     Cycles delayedResponseCycles = Cycles(0);
     bool updateStats = true;
     assert(translation);
     Fault fault = TLB::translate(req, tc, translation, mode, delayedResponse,
-            delayedResponseCycles, true, updateStats);
+            delayedResponseCycles, true, isLastLevel, updateStats);
     if (!delayedResponse) {
         translation->finish(fault, req, tc, mode);
     } else {
         translation->markDelayed();
         if (delayedResponseCycles > 0) {
             // We know the delayed cycles, schedule a event.
+            DPRINTF(TLB, "Translation %#x LastLevel %d Delayed by %s.\n",
+                req->getVaddr(), isLastLevel, delayedResponseCycles);
             auto event = new DelayedTranslationEvent(
-                this, tc, translation, req, mode, fault);
+                this, isLastLevel, tc, translation, req, mode, fault);
             // We borrow the walker's cycle.
             this->schedule(event, this->walker->clockEdge(delayedResponseCycles));
         }
@@ -604,18 +622,18 @@ TLB::getTableWalkerPort()
 }
 
 TLB::DelayedTranslationEvent::DelayedTranslationEvent(
-  TLB *_tlb, ThreadContext *_tc, Translation *_translation,
+  TLB *_tlb, bool _isLastLevel, ThreadContext *_tc, Translation *_translation,
   const RequestPtr &_req, BaseTLB::Mode _mode, Fault _fault)
-  : tlb(_tlb), tc(_tc), translation(_translation), req(_req), mode(_mode),
-    fault(_fault), n("DelayedTranslationEvent") {
+  : tlb(_tlb), isLastLevel(_isLastLevel), tc(_tc), translation(_translation),
+    req(_req), mode(_mode), fault(_fault), n("DelayedTranslationEvent") {
   assert(this->fault == NoFault && "Fault on DelayedTranslation.");
   assert(req->hasPaddr() && "Req has no paddr at constructor.\n");
   this->setFlags(EventBase::AutoDelete);
 }
 
 void TLB::DelayedTranslationEvent:: process() {
-  DPRINTF(TLB, "Serve DelayedTranslationEvent, Squashed %d.\n",
-    this->translation->squashed());
+  DPRINTF(TLB, "Serve DelayedTranslationEvent %#x, Squashed %d.\n",
+    this->req->getVaddr(), this->translation->squashed());
   if (this->translation->squashed()) {
     // finish the translation which will delete the translation object
     this->translation->finish(
@@ -625,11 +643,14 @@ void TLB::DelayedTranslationEvent:: process() {
   }
   bool delayedResponse;
   Cycles delayedResponseCycles = Cycles(0);
+  bool timing = false;
   bool updateStats = false;
   Fault fault = tlb->translate(
     req, tc, NULL, mode, delayedResponse, delayedResponseCycles,
-    true, updateStats);
-  assert(!delayedResponse);
+    timing, this->isLastLevel, updateStats);
+  if (!this->isLastLevel) {
+    assert(!delayedResponse);
+  }
   assert(req->hasPaddr() && "Req has no paddr.\n");
   this->translation->finish(fault, req, tc, mode);
 }

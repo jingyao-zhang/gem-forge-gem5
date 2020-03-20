@@ -154,6 +154,9 @@ system = System(cpu=initial_cpus,
                 mem_mode=test_mem_mode,
                 mem_ranges=[AddrRange(options.mem_size)],
                 cache_line_size=options.cacheline_size)
+# Add future_cpus to system so that they can be instantiated.
+if future_cpus:
+    system.future_cpus = future_cpus
 
 # Set the work count options.
 Simulation.setWorkCountOptions(system, options)

@@ -38,7 +38,8 @@ public:
   Stats::Scalar waits;
 
 private:
-  std::string name;
+  std::string myName;
+  std::string name() { return this->myName; }
   const Cycles latency;
   const uint32_t numContext;
 

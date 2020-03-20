@@ -75,8 +75,12 @@ namespace X86ISA
 
         void takeOverFrom(BaseTLB *otlb) override {}
 
-        TlbEntry *lookup(Addr va, bool update_stats, bool update_lru,
-          int &hitLevel);
+        TlbEntry *lookupL1(Addr va, bool isLastLevel,
+            bool updateStats, bool updateLRU);
+        TlbEntry *lookupL2(Addr va, bool isLastLevel,
+            bool updateStats, bool updateLRU);
+        TlbEntry *lookup(Addr va, bool isLastLevel,
+            bool updateStats, bool updateLRU, int &hitLevel);
 
         void setConfigAddress(uint32_t addr);
 
@@ -138,7 +142,11 @@ namespace X86ISA
         Fault translate(const RequestPtr &req, ThreadContext *tc,
                 Translation *translation, Mode mode,
                 bool &delayedResponse, Cycles &delayedResponseCycles,
-                bool timing, bool updateStats);
+                bool timing, bool isLastLeve, bool updateStats);
+
+        void translateTimingImpl(
+            const RequestPtr &req, ThreadContext *tc,
+            Translation *translation, Mode mode, bool isLastLevel);
 
       public:
 
@@ -146,7 +154,14 @@ namespace X86ISA
             const RequestPtr &req, ThreadContext *tc, Mode mode) override;
         void translateTiming(
             const RequestPtr &req, ThreadContext *tc,
-            Translation *translation, Mode mode) override;
+            Translation *translation, Mode mode) override {
+            translateTimingImpl(req, tc, translation, mode, false);
+        }
+        void translateTimingAtLastLevel(
+            const RequestPtr &req, ThreadContext *tc,
+            Translation *translation, Mode mode) {
+            translateTimingImpl(req, tc, translation, mode, true);
+        }
 
         /**
          * Do post-translation physical address finalization.
@@ -164,7 +179,8 @@ namespace X86ISA
         Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
                                Mode mode) const override;
 
-        TlbEntry *insert(Addr vpn, const TlbEntry &entry);
+        TlbEntry *insert(Addr vpn, const TlbEntry &entry,
+            bool isLastLevel);
 
         /*
          * Function to register Stats
@@ -193,6 +209,7 @@ namespace X86ISA
         struct DelayedTranslationEvent : public Event {
         public:
           TLB *tlb;
+          bool isLastLevel;
           ThreadContext *tc;
           Translation *translation;
           RequestPtr req;
@@ -200,8 +217,9 @@ namespace X86ISA
           Fault fault;
           std::string n;
           DelayedTranslationEvent(
-            TLB *_tlb, ThreadContext *_tc, Translation *_translation,
-            const RequestPtr &_req, BaseTLB::Mode _mode, Fault _fault);
+            TLB *_tlb, bool _isLastLevel, ThreadContext *_tc,
+            Translation *_translation, const RequestPtr &_req,
+            BaseTLB::Mode _mode, Fault _fault);
           void process() override;
           const char *description() const { return "DelayedTranslationEvent"; }
           const std::string name() const { return this->n; }

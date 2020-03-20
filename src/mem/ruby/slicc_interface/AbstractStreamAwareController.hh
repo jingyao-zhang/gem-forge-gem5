@@ -2,6 +2,7 @@
 #define __MEM_RUBY_SLICC_INTERFACE_ABSTRACT_STREAM_AWARE_CONTROLLER_HH__
 
 #include "AbstractController.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "params/RubyStreamAwareController.hh"
 
 /**
@@ -53,10 +54,13 @@ public:
     return pkt->req->getStatistic();
   }
 
+  GemForgeCPUDelegator *getCPUDelegator();
+
 private:
   /**
    * Store the bits used in S-NUCA to find the LLC bank.
    */
+  BaseCPU *cpu = nullptr;
   const int llcSelectLowBit;
   const int llcSelectNumBits;
   const bool enableStreamFloat;

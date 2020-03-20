@@ -3,6 +3,8 @@
 
 #include "LLCDynamicStream.hh"
 
+#include "cpu/gem_forge/accelerator/stream/stream_translation_buffer.hh"
+
 // Generate by slicc.
 #include "mem/ruby/protocol/RequestMsg.hh"
 #include "mem/ruby/protocol/ResponseMsg.hh"
@@ -14,7 +16,6 @@
  */
 #include <list>
 #include <memory>
-#include <queue>
 
 class AbstractStreamAwareController;
 class MessageBuffer;
@@ -26,7 +27,7 @@ public:
                   MessageBuffer *_streamIssueMsgBuffer,
                   MessageBuffer *_streamIndirectIssueMsgBuffer,
                   MessageBuffer *_streamResponseMsgBuffer);
-  ~LLCStreamEngine();
+  ~LLCStreamEngine() override;
 
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamEnd(PacketPtr pkt);
@@ -80,7 +81,17 @@ private:
   /**
    * Hold the request queue.
    */
-  std::queue<LLCStreamRequest> requestQueue;
+  std::list<LLCStreamRequest> requestQueue;
+
+  /**
+   * Hold the request in translation. The request should be in
+   * requestQueue.
+   */
+  using RequestQueueIter = std::list<LLCStreamRequest>::iterator;
+  std::unique_ptr<StreamTranslationBuffer<RequestQueueIter>> translationBuffer =
+      nullptr;
+
+  void initializeTranslationBuffer();
 
   /**
    * Process stream flow control messages and distribute
@@ -109,6 +120,16 @@ private:
   void
   generateIndirectStreamRequest(LLCDynamicStream *dynIS, uint64_t elementIdx,
                                 const ConstLLCStreamElementPtr &baseElement);
+
+  /**
+   * Helper function to enqueue a request and start address translation.
+   */
+  void enqueueRequest(LLCDynamicStreamPtr dynS,
+                      const DynamicStreamSliceId &sliceId, Addr vaddrLine,
+                      Addr paddrLine, CoherenceRequestType type,
+                      uint64_t storeData);
+  void translationCallback(PacketPtr pkt, ThreadContext *tc,
+                           RequestQueueIter reqIter);
 
   /**
    * Helper function to issue stream request to the LLC cache bank.

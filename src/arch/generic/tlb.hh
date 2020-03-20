@@ -94,6 +94,17 @@ class BaseTLB : public SimObject
     virtual void translateTiming(
             const RequestPtr &req, ThreadContext *tc,
             Translation *translation, Mode mode) = 0;
+    /**
+     * ! GemForge
+     * Translate at last level TLB. Used for StreamFloating.
+     * Default is the same for translateTiming.
+     */
+    virtual void translateTimingAtLastLevel(
+            const RequestPtr &req, ThreadContext *tc,
+            Translation *translation, Mode mode) {
+      panic("TranslateAtLastLevel is not implemented.\n");
+      translateTiming(req, tc, translation, mode);
+    }
     virtual Fault
     translateFunctional(const RequestPtr &req, ThreadContext *tc, Mode mode)
     {

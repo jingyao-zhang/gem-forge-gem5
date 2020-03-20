@@ -19,15 +19,13 @@ struct LLCStreamRequest {
   DynamicStreamSliceId sliceId;
   Addr paddrLine;
   CoherenceRequestType requestType;
+  bool translationDone = false;
   // Optional for StreamStore request.
   uint64_t storeData;
   LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
-                   CoherenceRequestType _type)
-      : sliceId(_sliceId), paddrLine(_paddrLine), requestType(_type) {}
-  LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
-                   uint64_t _storeData)
+                   CoherenceRequestType _type, uint64_t _storeData)
       : sliceId(_sliceId), paddrLine(_paddrLine),
-        requestType(CoherenceRequestType_STREAM_STORE), storeData(_storeData) {}
+        requestType(_type), storeData(_storeData) {}
 };
 
 class LLCDynamicStream;

@@ -30,7 +30,8 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       streamIssueMsgBuffer(_streamIssueMsgBuffer),
       streamIndirectIssueMsgBuffer(_streamIndirectIssueMsgBuffer),
       streamResponseMsgBuffer(_streamResponseMsgBuffer), issueWidth(1),
-      migrateWidth(1), maxInflyRequests(8), maxInqueueRequests(2) {}
+      migrateWidth(1), maxInflyRequests(8), maxInqueueRequests(2),
+      translationBuffer(nullptr) {}
 
 LLCStreamEngine::~LLCStreamEngine() {
   for (auto &s : this->streams) {
@@ -41,6 +42,10 @@ LLCStreamEngine::~LLCStreamEngine() {
 }
 
 void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
+
+  // Initialize the translation buffer.
+  this->initializeTranslationBuffer();
+
   auto streamConfigureData = *(pkt->getPtr<CacheStreamConfigureData *>());
   LLCSE_DPRINTF("Received Pkt %#x, StreamConfigure %#x, initVAddr "
                 "%#x, "
@@ -132,6 +137,8 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
 }
 
 void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
+
+  this->initializeTranslationBuffer();
 
   // Sanity check.
   Addr vaddr = stream->peekVAddr();
@@ -316,13 +323,28 @@ void LLCStreamEngine::wakeup() {
   // So we limit the issue rate in issueStreams.
   while (!this->requestQueue.empty()) {
     const auto &req = this->requestQueue.front();
+    if (!req.translationDone) {
+      break;
+    }
     this->issueStreamRequestToLLCBank(req);
-    this->requestQueue.pop();
+    this->requestQueue.pop_front();
   }
 
   if (!this->streams.empty() || !this->migratingStreams.empty() ||
       !this->requestQueue.empty()) {
     this->scheduleEvent(Cycles(1));
+  }
+}
+
+void LLCStreamEngine::initializeTranslationBuffer() {
+  if (!this->translationBuffer) {
+    this->translationBuffer =
+        m5::make_unique<StreamTranslationBuffer<RequestQueueIter>>(
+            this->controller->getCPUDelegator()->getDataTLB(),
+            [this](PacketPtr pkt, ThreadContext *tc, RequestQueueIter reqIter)
+                -> void { this->translationCallback(pkt, tc, reqIter); },
+            true /* AccessLastLevelTLBOnly */
+        );
   }
 }
 
@@ -449,7 +471,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     /**
      * ! The paddr is valid. We issue request to the LLC.
      */
-
+    Addr vaddrLine = makeLineAddress(vaddr);
     Addr paddrLine = makeLineAddress(paddr);
 
     /**
@@ -480,7 +502,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     if (reqType == CoherenceRequestType_GETU) {
       stream->getStaticStream()->statistic.numLLCSentSlice++;
     }
-    this->requestQueue.emplace(sliceId, paddrLine, reqType);
+    this->enqueueRequest(stream, sliceId, vaddrLine, paddrLine, reqType,
+                         0 /* StoreValue */);
     // Check if we track waitingDataBaseRequests.
     if (!stream->indirectStreams.empty() || stream->isPointerChase() ||
         stream->getStaticStream()->hasUpgradedToUpdate()) {
@@ -638,6 +661,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
     Addr elementPAddr;
     if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
       IS->statistic.numLLCIssueSlice++;
+      auto vaddrLine = makeLineAddress(elementVAddr);
       auto paddrLine = makeLineAddress(elementPAddr);
       /**
        * Compute the store value.
@@ -662,7 +686,8 @@ void LLCStreamEngine::generateIndirectStreamRequest(
       LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                          "StreamStore -> RequestQueue, StoreValue %lu.\n",
                          storeValue);
-      this->requestQueue.emplace(sliceId, paddrLine, storeValue);
+      this->enqueueRequest(dynIS, sliceId, vaddrLine, paddrLine,
+                           CoherenceRequestType_STREAM_STORE, storeValue);
     } else {
       panic("Faulted merged store stream.");
     }
@@ -689,6 +714,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
     sliceId.size = curSliceSize;
     Addr curSlicePAddr;
     if (dynIS->translateToPAddr(curSliceVAddr, curSlicePAddr)) {
+      Addr curSliceVAddrLine = makeLineAddress(curSliceVAddr);
       Addr curSlicePAddrLine = makeLineAddress(curSlicePAddr);
       IS->statistic.numLLCIssueSlice++;
       if (reqType == CoherenceRequestType_GETU) {
@@ -696,7 +722,8 @@ void LLCStreamEngine::generateIndirectStreamRequest(
       }
 
       // Push to the request queue.
-      this->requestQueue.emplace(sliceId, curSlicePAddrLine, reqType);
+      this->enqueueRequest(dynIS, sliceId, curSliceVAddrLine, curSlicePAddrLine,
+                           reqType, 0 /* StoreValue */);
     } else {
       // For faulted slices, we simply ignore it.
       LLC_SLICE_DPRINTF(sliceId, "Discard due to fault, vaddr %#x.\n",
@@ -708,6 +735,40 @@ void LLCStreamEngine::generateIndirectStreamRequest(
   }
 
   return;
+}
+
+void LLCStreamEngine::enqueueRequest(LLCDynamicStreamPtr dynS,
+                                     const DynamicStreamSliceId &sliceId,
+                                     Addr vaddrLine, Addr paddrLine,
+                                     CoherenceRequestType type,
+                                     uint64_t storeValue) {
+  this->requestQueue.emplace_back(sliceId, paddrLine, type, storeValue);
+  auto requestQueueIter = std::prev(this->requestQueue.end());
+  // To match with TLB interface, we first create a fake packet.
+  auto S = dynS->getStaticStream();
+  auto cpuDelegator = S->getCPUDelegator();
+  auto tc = cpuDelegator->getSingleThreadContext();
+  RequestPtr req(new Request(paddrLine, sliceId.getSize(), 0,
+                             cpuDelegator->dataMasterId(), 0 /* InstSeqNum */,
+                             0 /* contextId */));
+  // Set the vaddrLine as this is what we want to translate.
+  req->setVirt(vaddrLine);
+  // Simply always read request, since this is a fake request.
+  auto pkt = Packet::createRead(req);
+  // Do not allocate data for this fake packet.
+  uint8_t *pktData = nullptr;
+  pkt->dataStatic(pktData);
+  // Start the translation.
+  this->translationBuffer->addTranslation(pkt, tc, requestQueueIter);
+}
+
+void LLCStreamEngine::translationCallback(PacketPtr pkt, ThreadContext *tc,
+                                          RequestQueueIter reqIter) {
+  assert(!reqIter->translationDone && "Translation already done.");
+  reqIter->translationDone = true;
+  LLC_SLICE_DPRINTF(reqIter->sliceId, "Translated.\n");
+  // Remember to release the pkt.
+  delete pkt;
 }
 
 void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
@@ -858,6 +919,9 @@ bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr) const {
 void LLCStreamEngine::print(std::ostream &out) const {}
 
 void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
+
+  this->initializeTranslationBuffer();
+
   // Simply copy and inject the msg to L1 request in.
   const auto &sliceId = req.m_sliceId;
   assert(sliceId.isValid() && "Invalid stream slice for indirect request.");
