@@ -33,6 +33,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
    Cycles l1_request_latency := 2;
    Cycles l1_response_latency := 2;
    Cycles to_l2_latency := 1;
+   Cycles l1_stream_message_latency := 2;
 
    // Message Buffers between the L1 and the L0 Cache
    // From the L1 cache to the L0 cache
@@ -694,7 +695,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   action(forward_eviction_to_L0, "\cc", desc="sends eviction information to the processor") {
-      enqueue(bufferToL0_out, CoherenceMsg, l1_request_latency) {
+      enqueue(bufferToL0_out, CoherenceMsg, l1_response_latency) {
           out_msg.addr := address;
           out_msg.Class := CoherenceClass:INV;
           out_msg.Sender := machineID;
@@ -926,7 +927,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
    */
   action(fsc_forwardStreamConfig, "fsc", desc="Forward the StreamConfig") {
     peek(messageBufferFromL0_in, CoherenceMsg) {
-      enqueue(requestNetwork_out, RequestMsg, l1_request_latency) {
+      enqueue(requestNetwork_out, RequestMsg, l1_stream_message_latency) {
         out_msg.addr := address;
         out_msg.Type := CoherenceRequestType:STREAM_CONFIG;
         out_msg.Requestor := machineID;
@@ -942,7 +943,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
   action(fse_forwardStreamEnd, "fse", desc="Forward the StreamEnd") {
     peek(messageBufferFromL0_in, CoherenceMsg) {
-      enqueue(requestNetwork_out, RequestMsg, l1_request_latency) {
+      enqueue(requestNetwork_out, RequestMsg, l1_stream_message_latency) {
         /**
          * Be careful not to use the address in the in_msg.addr,
          * which is wrong.

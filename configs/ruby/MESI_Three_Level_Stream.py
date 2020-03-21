@@ -120,6 +120,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     Dcache = l0d_cache, prefetcher=prefetcher,
                     send_evictions = send_evicts(options),
                     clk_domain = clk_domain, ruby_system = ruby_system,
+                    # ! Sean: l0_cntrl is actually L1 cache.
+                    # ! And request_latency is the enqueue latency for request from L1 -> L2.
+                    # ! So we charge L2 tag lookup latency here.
+                    request_latency = options.l2_lat,
                     llc_select_num_bits = l2_bits,
                     llc_select_low_bit = l2_select_low_bit,
                     enable_prefetch=(options.gem_forge_prefetcher == 'stride'),
@@ -144,6 +148,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l1_cntrl = L1Cache_Controller(
                     version = i * num_cpus_per_cluster + j,
                     cache = l1_cache,
+                    # ! Sean: l1_cntrl is actually L2 cache.
+                    # ! And l1_request_latency is the enqueue latency for request from L2 -> L3.
+                    # ! So we charge L3 tag lookup latency here.
+                    l1_request_latency = options.l3_lat,
                     l2_select_num_bits = l2_bits,
                     l2_select_low_bit = l2_select_low_bit,
                     cluster_id = i, ruby_system = ruby_system,
@@ -171,7 +179,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             # Connect the L0 and L1 controllers
             l0_cntrl.mandatoryQueue = MessageBuffer()
             l0_cntrl.prefetchQueue = MessageBuffer()
-            l0_cntrl.bufferToL1 = MessageBuffer(ordered = True)
+            l0_cntrl.bufferToL1 = MessageBuffer(ordered = False)
             l1_cntrl.bufferFromL0 = l0_cntrl.bufferToL1
             l0_cntrl.bufferFromL1 = MessageBuffer(ordered = False)
             l1_cntrl.bufferToL0 = l0_cntrl.bufferFromL1

@@ -220,6 +220,15 @@ private:
   friend class Stream;
 
   LLVMTraceCPU *cpu;
+
+  // struct InflyTranslation {
+  //   PacketPtr pkt;
+  //   bool doneTranslation = false;
+  //   InflyTranslation(PacketPtr _pkt) : pkt(_pkt) {}
+  // };
+  // using InflyTranslationQueue = std::list<InflyTranslation>;
+  // using InflyTranslationQueueIter = InflyTranslationQueue::iterator;
+  // InflyTranslationQueue inflyTranslationQueue;
   std::unique_ptr<StreamTranslationBuffer<void *>> translationBuffer;
   StreamPlacementManager *streamPlacementManager;
   std::unique_ptr<StreamFloatPolicy> streamFloatPolicy;
