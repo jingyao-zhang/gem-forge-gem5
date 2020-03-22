@@ -441,7 +441,7 @@ bool LLCStreamEngine::hasMergedAsMulticast(LLCDynamicStreamPtr dynS) const {
     return true;
   }
   for (auto &entry : this->multicastStreamMap) {
-    if (entry.second.count(dynS) > 0) {
+    if (entry.second.count(dynS) > 1) {
       return true;
     }
   }
