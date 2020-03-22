@@ -32,6 +32,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
    Cycles l2_response_latency := 2;
    Cycles to_l1_latency := 1;
 
+   bool multicast_test := "false";
+
   // Message Queues
   // From local bank of L2 cache TO the network
   MessageBuffer * DirRequestFromL2Cache, network="To", virtual_network="0",
@@ -639,6 +641,22 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.Destination.add(in_msg.Requestor);
         out_msg.DataBlk := cache_entry.DataBlk;
         out_msg.MessageSize := MessageSizeType:Response_Data;
+
+        // Multicast only: Send this to core 7
+        if (multicast_test) {
+          MachineID multicastTestDest1 := createMachineID(MachineType:L1Cache, intToID(6));
+          DPRINTF(RubyMulticast, "Multicast %#x to %s.\n", address, multicastTestDest1);
+          out_msg.Destination.add(multicastTestDest1);
+          MachineID multicastTestDest2 := createMachineID(MachineType:L1Cache, intToID(7));
+          DPRINTF(RubyMulticast, "Multicast %#x to %s.\n", address, multicastTestDest2);
+          out_msg.Destination.add(multicastTestDest2);
+          MachineID multicastTestDest3 := createMachineID(MachineType:L1Cache, intToID(10));
+          DPRINTF(RubyMulticast, "Multicast %#x to %s.\n", address, multicastTestDest3);
+          out_msg.Destination.add(multicastTestDest3);
+          MachineID multicastTestDest4 := createMachineID(MachineType:L1Cache, intToID(11));
+          DPRINTF(RubyMulticast, "Multicast %#x to %s.\n", address, multicastTestDest4);
+          out_msg.Destination.add(multicastTestDest4);
+        }
 
         out_msg.AckCount := 0 - cache_entry.Sharers.count();
         if (cache_entry.Sharers.isElement(in_msg.Requestor)) {

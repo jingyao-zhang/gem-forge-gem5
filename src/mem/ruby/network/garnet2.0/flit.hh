@@ -56,7 +56,8 @@ class flit
     Cycles get_time() { return m_time; }
     int get_vnet() { return m_vnet; }
     int get_vc() { return m_vc; }
-    RouteInfo get_route() { return m_route; }
+    RouteInfo &get_route() { return m_route; }
+    void setRoute(const RouteInfo &route) { m_route = route; }
     MsgPtr& get_msg_ptr() { return m_msg_ptr; }
     flit_type get_type() { return m_type; }
     std::pair<flit_stage, Cycles> get_stage() { return m_stage; }
@@ -99,6 +100,13 @@ class flit
 
     bool functionalWrite(Packet *pkt);
 
+    bool isMulticastDuplicate() const {
+        return this->multicastDuplicate;
+    }
+    void setMulticastDuplicate(bool multicastDuplicate) {
+        this->multicastDuplicate = multicastDuplicate;
+    }
+
   protected:
     int m_id;
     int m_vnet;
@@ -111,6 +119,13 @@ class flit
     int m_outport;
     Cycles src_delay;
     std::pair<flit_stage, Cycles> m_stage;
+    /**
+     * Set by InputUnit when duplicate a flit, and cleared
+     * after SwitchAllocator processed it. This is needed
+     * to avoid SwitchAllocator sending back credit for
+     * duplicated flits.
+     */
+    bool multicastDuplicate = false;
 };
 
 inline std::ostream&

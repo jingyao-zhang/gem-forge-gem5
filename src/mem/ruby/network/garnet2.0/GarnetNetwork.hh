@@ -74,6 +74,7 @@ class GarnetNetwork : public Network
     bool isFaultModelEnabled() const { return m_enable_fault_model; }
     FaultModel* fault_model;
 
+    bool isMulticastEnabled() const { return m_enable_multicast; }
 
     // Internal configuration
     bool isVNetOrdered(int vnet) const { return m_ordered[vnet]; }
@@ -158,6 +159,7 @@ class GarnetNetwork : public Network
     uint32_t m_buffers_per_data_vc;
     int m_routing_algorithm;
     bool m_enable_fault_model;
+    bool m_enable_multicast;
 
     // Statistical variables
     Stats::Vector m_packets_received;

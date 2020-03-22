@@ -246,16 +246,21 @@ SwitchAllocator::arbitrate_outports()
                     m_input_unit[inport]->set_vc_idle(invc,
                         m_router->curCycle());
 
-                    // Send a credit back
-                    // along with the information that this VC is now idle
-                    m_input_unit[inport]->increment_credit(invc, true,
-                        m_router->curCycle());
+                    // Send a credit back along with the information that this VC is now idle
+                    // Only do this for Non-MulticastDuplicate flit.
+                    if (!t_flit->isMulticastDuplicate()) {
+                        m_input_unit[inport]->increment_credit(invc, true,
+                            m_router->curCycle());
+                    }
                 } else {
-                    // Send a credit back
-                    // but do not indicate that the VC is idle
-                    m_input_unit[inport]->increment_credit(invc, false,
-                        m_router->curCycle());
+                    // Send a credit back but do not indicate that the VC is idle
+                    // Only do this for Non-MulticastDuplicate flit.
+                    if (!t_flit->isMulticastDuplicate()) {
+                        m_input_unit[inport]->increment_credit(invc, false,
+                            m_router->curCycle());
+                    }
                 }
+                t_flit->setMulticastDuplicate(false);
 
                 // remove this request
                 m_port_requests[outport][inport] = false;

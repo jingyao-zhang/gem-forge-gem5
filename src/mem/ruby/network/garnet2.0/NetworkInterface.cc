@@ -39,6 +39,7 @@
 #include "base/cast.hh"
 #include "base/stl_helpers.hh"
 #include "debug/RubyNetwork.hh"
+#include "debug/RubyMulticast.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/network/garnet2.0/Credit.hh"
 #include "mem/ruby/network/garnet2.0/flitBuffer.hh"
@@ -333,6 +334,19 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
 
     // gets all the destinations associated with this message.
     vector<NodeID> dest_nodes = net_msg_dest.getAllDest();
+    vector<MachineID> destMachineIDs;
+    for (auto &rawDestNodeID : dest_nodes) {
+        destMachineIDs.push_back(MachineID::getMachineIDFromRawNodeID(
+            rawDestNodeID));
+    }
+    if (destMachineIDs.size() > 1) {
+        std::stringstream ss;
+        for (const auto &destMachineID : destMachineIDs) {
+            ss << ' ' << destMachineID;
+        }
+        DPRINTF(RubyMulticast, "Multicast Message %s to %d destination: %s\n",
+            *msg_ptr, destMachineIDs.size(), ss.str());
+    }
 
     // Number of flits is dependent on the link bandwidth available.
     // This is expressed in terms of bytes/cycle or the flit size
@@ -350,26 +364,18 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         }
         MsgPtr new_msg_ptr = msg_ptr->clone();
         NodeID destID = dest_nodes[ctr];
+        MachineID destMachineID = MachineID::getMachineIDFromRawNodeID(destID);
 
-        Message *new_net_msg_ptr = new_msg_ptr.get();
-        if (dest_nodes.size() > 1) {
-            NetDest personal_dest;
-            for (int m = 0; m < (int) MachineType_NUM; m++) {
-                if ((destID >= MachineType_base_number((MachineType) m)) &&
-                    destID < MachineType_base_number((MachineType) (m+1))) {
-                    // calculating the NetDest associated with this destID
-                    personal_dest.clear();
-                    personal_dest.add((MachineID) {(MachineType) m, (destID -
-                        MachineType_base_number((MachineType) m))});
-                    new_net_msg_ptr->getDestination() = personal_dest;
-                    break;
-                }
-            }
-            net_msg_dest.removeNetDest(personal_dest);
+        if (dest_nodes.size() > 1 && !m_net_ptr->isMulticastEnabled()) {
+            // Turn this into a unicast if multicast is disabled.
+            NetDest unicastDest;
+            unicastDest.add(destMachineID);
+            new_msg_ptr->getDestination() = unicastDest;
+            net_msg_dest.removeNetDest(unicastDest);
             // removing the destination from the original message to reflect
             // that a message with this particular destination has been
             // flitisized and an output vc is acquired
-            net_msg_ptr->getDestination().removeNetDest(personal_dest);
+            net_msg_ptr->getDestination().removeNetDest(unicastDest);
         }
 
         // Embed Route into the flits
@@ -377,7 +383,7 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         // Custom routing algorithms just need destID
         RouteInfo route;
         route.vnet = vnet;
-        route.net_dest = new_net_msg_ptr->getDestination();
+        route.net_dest = new_msg_ptr->getDestination();
         route.src_ni = m_id;
         route.src_router = m_router_id;
         route.dest_ni = destID;
@@ -408,6 +414,11 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
 
         m_ni_out_vcs_enqueue_time[vc] = curCycle();
         m_out_vc_state[vc]->setState(ACTIVE_, curCycle());
+
+        if (m_net_ptr->isMulticastEnabled()) {
+            // No need to go on, as we have multicast support.
+            break;
+        }
     }
     return true ;
 }

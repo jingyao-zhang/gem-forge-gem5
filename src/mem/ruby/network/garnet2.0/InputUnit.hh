@@ -36,6 +36,7 @@
 
 #include <iostream>
 #include <vector>
+#include <queue>
 
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/network/garnet2.0/CommonTypes.hh"
@@ -165,6 +166,73 @@ class InputUnit : public Consumer
     // Statistical variables
     std::vector<double> m_num_buffer_writes;
     std::vector<double> m_num_buffer_reads;
+
+    struct MulticastDuplicateBuffer {
+        enum StateE {
+            Invalid,
+            Buffering,
+        };
+        InputUnit *inputUnit;
+        StateE state = Invalid;
+        RouteInfo route;
+        MsgPtr msg = nullptr;
+        int readyFlits = 0;
+        std::queue<flit *> flits;
+        MulticastDuplicateBuffer(InputUnit *_inputUnit)
+            : inputUnit(_inputUnit) {}
+        void allocate(const RouteInfo &route, MsgPtr msg) {
+            assert(this->state == Invalid);
+            this->route = route;
+            this->msg = msg;
+            this->state = Buffering;
+        }
+        void push(flit *f) {
+            assert(this->state == Buffering);
+            // Set the flag indicating this is a duplicate flit.
+            f->setMulticastDuplicate(true);
+            this->flits.push(f);
+            auto type = f->get_type();
+            if (type == TAIL_ || type == HEAD_TAIL_) {
+                this->readyFlits += f->get_size();
+                this->inputUnit->totalReadyMulitcastFlits += f->get_size();
+                assert(this->readyFlits == this->flits.size());
+                this->state = Invalid;
+            }
+        }
+        flit *peek() {
+            assert(this->isReady());
+            auto f = this->flits.front();
+            return f;
+        }
+        flit *pop() {
+            assert(this->isReady());
+            auto f = this->flits.front();
+            this->flits.pop();
+            this->readyFlits--;
+            this->inputUnit->totalReadyMulitcastFlits--;
+            return f;
+        }
+        bool isReady() const {
+            return this->readyFlits > 0;
+        }
+        bool isBuffering() const {
+            return this->state == Buffering;
+        }
+    };
+
+    std::vector<MulticastDuplicateBuffer> multicastBuffers;
+    int totalReadyMulitcastFlits = 0;
+    // Used for round robin.
+    int currMulticastBufferIdx = 0;
+
+    // Group destination by routing out port.
+    using PortToDestinationMap = std::map<int, std::vector<MachineID>>;
+    PortToDestinationMap groupDestinationByRouting(
+        flit* inflyFlit,
+        const std::vector<MachineID> &destMachineIDs);
+    flit *selectFlit();
+    void allocateMulticastBuffer(flit *f);
+    void duplicateMulitcastFlit(flit *f);
 };
 
 #endif // __MEM_RUBY_NETWORK_GARNET2_0_INPUTUNIT_HH__

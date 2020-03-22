@@ -48,6 +48,7 @@ class GarnetNetwork(RubyNetwork):
     fault_model = Param.FaultModel(NULL, "network fault model");
     garnet_deadlock_threshold = Param.UInt32(50000,
                               "network-level deadlock threshold")
+    enable_multicast = Param.Bool(False, "enable multicast")
 
 class GarnetNetworkInterface(ClockedObject):
     type = 'GarnetNetworkInterface'

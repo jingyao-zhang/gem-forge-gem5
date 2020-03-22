@@ -55,6 +55,7 @@ DebugFlag('RubyPrefetcher')
 DebugFlag('RubyQueue')
 DebugFlag('RubySequencer')
 DebugFlag('RubySlicc')
+DebugFlag('RubyMulticast')
 DebugFlag('RubySystem')
 DebugFlag('RubyTester')
 DebugFlag('RubyStats')
@@ -63,9 +64,9 @@ DebugFlag('RubyResourceStalls')
 DebugFlag('RubyStream')
 
 CompoundFlag('Ruby', [ 'RubyQueue', 'RubyNetwork', 'RubyTester',
-    'RubyGenerated', 'RubySlicc', 'RubySystem', 'RubyCache',
-    'RubyDma', 'RubyPort', 'RubySequencer', 'RubyCacheTrace',
-    'RubyPrefetcher', 
+    'RubyGenerated', 'RubySlicc', 'RubyMulticast', 'RubySystem',
+    'RubyCache', 'RubyDma', 'RubyPort', 'RubySequencer', 'RubyCacheTrace',
+    'RubyPrefetcher',
     # ! Sean: StreamAwareCache
     'RubyStream',
     ])

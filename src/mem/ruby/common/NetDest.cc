@@ -32,7 +32,8 @@
 
 NetDest::NetDest()
 {
-  resize();
+    resize();
+    clear();
 }
 
 void

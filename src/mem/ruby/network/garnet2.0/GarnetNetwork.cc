@@ -69,6 +69,7 @@ GarnetNetwork::GarnetNetwork(const Params *p)
     m_enable_fault_model = p->enable_fault_model;
     if (m_enable_fault_model)
         fault_model = p->fault_model;
+    m_enable_multicast = p->enable_multicast;
 
     m_vnet_type.resize(m_virtual_networks);
 
@@ -385,6 +386,8 @@ GarnetNetwork::regStats()
 
 
     // Hops
+    m_total_hops
+        .name(name() + ".total_hops");
     m_avg_hops.name(name() + ".average_hops");
     m_avg_hops = m_total_hops / sum(m_flits_received);
 

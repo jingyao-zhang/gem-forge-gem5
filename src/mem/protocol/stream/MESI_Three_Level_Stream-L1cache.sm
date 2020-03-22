@@ -35,6 +35,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
    Cycles to_l2_latency := 1;
    Cycles l1_stream_message_latency := 2;
 
+   bool multicast_test := "false";
+
    // Message Buffers between the L1 and the L0 Cache
    // From the L1 cache to the L0 cache
    MessageBuffer * bufferToL0, network="To";
@@ -323,6 +325,10 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         }
 
         if(in_msg.Type == CoherenceResponseType:DATA_EXCLUSIVE) {
+          if (!is_valid(tbe)) {
+            assert(multicast_test);
+            trigger(Event:Data_Exclusive, in_msg.addr, cache_entry, tbe);
+          }
           if (tbe.cachedUpper) {
             trigger(Event:Data_Exclusive, in_msg.addr, cache_entry, tbe);
           } else {
@@ -970,6 +976,13 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     }
   }
 
+  action(mt_multicastTestReceived, "mt", desc="MulticastTestReceived") {
+    peek(responseNetwork_in, ResponseMsg) {
+      assert(multicast_test);
+      DPRINTF(RubyMulticast, "Multicast received from %s.\n", in_msg.Sender);
+    }
+  }
+
 
   //*****************************************************
   // TRANSITIONS
@@ -1017,6 +1030,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(I, Inv) {
     fi_sendInvAck;
     l_popL2RequestQueue;
+  }
+
+  transition(I, Data_Exclusive, I) {
+    mt_multicastTestReceived;
+    o_popL2ResponseQueue;
   }
 
   // Transitions from Shared

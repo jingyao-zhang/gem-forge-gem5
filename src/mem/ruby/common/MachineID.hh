@@ -47,6 +47,21 @@ struct MachineID
 
     MachineType getType() const { return type; }
     NodeID getNum() const { return num; }
+    static MachineID getMachineIDFromRawNodeID(NodeID rawNodeID) {
+        for (int m = 0; m < static_cast<int>(MachineType_NUM); m++) {
+            auto currType = static_cast<MachineType>(m);
+            auto nextType = static_cast<MachineType>(m + 1);
+            auto currBaseId = MachineType_base_number(currType);
+            auto nextBaseId = MachineType_base_number(nextType);
+            if (rawNodeID >= currBaseId && rawNodeID < nextBaseId) {
+                return MachineID(currType, rawNodeID - currBaseId);
+            }
+        }
+        assert(false && "Failed to convert RawNodeID to MachineID.");
+    }
+    NodeID getRawNodeID() const {
+        return MachineType_base_number(this->type) + this->num;
+    }
 };
 
 inline std::string

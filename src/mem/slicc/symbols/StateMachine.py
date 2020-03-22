@@ -105,6 +105,7 @@ class StateMachine(Symbol):
         self.debug_flags = set()
         self.debug_flags.add('RubyGenerated')
         self.debug_flags.add('RubySlicc')
+        self.debug_flags.add('RubyMulticast')
 
     def __repr__(self):
         return "[StateMachine: %s]" % self.ident
@@ -303,7 +304,7 @@ class $py_ident(${abstract_controller_class_py}):
         code('''
 extern std::stringstream ${ident}_transitionComment;
 
-class $c_ident : public ${abstract_controller_class_cc} 
+class $c_ident : public ${abstract_controller_class_cc}
 {
   public:
     typedef ${c_ident}Params Params;
