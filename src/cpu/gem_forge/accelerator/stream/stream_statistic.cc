@@ -30,6 +30,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numMLCAllocatedSlice);
   dumpScalar(numLLCIssueSlice);
   dumpScalar(numLLCSentSlice);
+  dumpScalar(numLLCCanMulticastSlice);
   dumpScalar(numLLCFaultSlice);
   dumpScalar(numLLCPredYSlice);
   dumpScalar(numLLCPredNSlice);

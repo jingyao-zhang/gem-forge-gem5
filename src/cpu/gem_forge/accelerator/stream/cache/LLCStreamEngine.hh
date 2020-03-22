@@ -15,7 +15,9 @@
  * Derive from Consumer to schedule wakeup event.
  */
 #include <list>
+#include <map>
 #include <memory>
+#include <set>
 
 class AbstractStreamAwareController;
 class MessageBuffer;
@@ -57,6 +59,7 @@ private:
   // Threshold to limit maximum number of requests in queue;
   const int maxInqueueRequests;
 
+  using StreamSet = std::set<LLCDynamicStreamPtr>;
   using StreamList = std::list<LLCDynamicStreamPtr>;
   using StreamListIter = StreamList::iterator;
   StreamList streams;
@@ -64,6 +67,12 @@ private:
    * Streams waiting to be migrated to other LLC bank.
    */
   StreamList migratingStreams;
+
+  /**
+   * Bidirectionaly map between streams that are identical but
+   * to different cores.
+   */
+  std::map<LLCDynamicStreamPtr, StreamSet> multicastStreamMap;
 
   /**
    * Buffered stream flow message waiting for the stream
@@ -91,7 +100,20 @@ private:
   std::unique_ptr<StreamTranslationBuffer<RequestQueueIter>> translationBuffer =
       nullptr;
 
+  /**
+   * TranslationBuffer can only be initialized after start up as it
+   * requires the TLB.
+   */
   void initializeTranslationBuffer();
+
+  /**
+   * Check if two streams can be merged into a multicast stream.
+   */
+  bool canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
+                           LLCDynamicStreamPtr dynSB) const;
+  void addStreamToMulticastTable(LLCDynamicStreamPtr dynS);
+  void removeStreamFromMulticastTable(LLCDynamicStreamPtr dynS);
+  bool hasMergedAsMulticast(LLCDynamicStreamPtr dynS) const;
 
   /**
    * Process stream flow control messages and distribute

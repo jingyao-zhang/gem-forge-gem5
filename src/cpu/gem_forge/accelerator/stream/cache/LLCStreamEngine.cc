@@ -91,6 +91,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   }
 
   this->streams.emplace_back(S);
+  this->addStreamToMulticastTable(S);
   S->traceEvent(::LLVM::TDG::StreamFloatEvent::CONFIG);
   // Release memory.
   delete streamConfigureData;
@@ -111,6 +112,7 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
       // Found it.
       // ? Can we just sliently release it?
       LLC_S_DPRINTF(*endStreamDynamicId, "Ended.\n");
+      this->removeStreamFromMulticastTable(stream);
       stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
       delete stream;
       stream = nullptr;
@@ -170,7 +172,8 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
     return;
   }
 
-  this->streams.push_back(stream);
+  this->streams.emplace_back(stream);
+  this->addStreamToMulticastTable(stream);
   this->scheduleEvent(Cycles(1));
 }
 
@@ -348,6 +351,103 @@ void LLCStreamEngine::initializeTranslationBuffer() {
   }
 }
 
+bool LLCStreamEngine::canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
+                                          LLCDynamicStreamPtr dynSB) const {
+  /**
+   * Streams are considered possible to merged into one multicast stream iff:
+   * 1. They are from different cores.
+   * 2. They both have linear address generation function.
+   * 3. They have same dynamic parameters for address generation.
+   */
+  const auto &dynSAId = dynSA->getDynamicStreamId();
+  const auto &dynSBId = dynSB->getDynamicStreamId();
+  if (dynSAId.coreId == dynSBId.coreId) {
+    // Ignore streams from the same core.
+    return false;
+  }
+  auto linearAddrGenA = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+      dynSA->configData.addrGenCallback);
+  auto linearAddrGenB = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+      dynSB->configData.addrGenCallback);
+  if (!linearAddrGenA || !linearAddrGenB) {
+    return false;
+  }
+  const auto &formalParamsA = dynSA->configData.addrGenFormalParams;
+  const auto &formalParamsB = dynSB->configData.addrGenFormalParams;
+  if (formalParamsA.size() != formalParamsB.size()) {
+    return false;
+  }
+  for (auto i = 0; i < formalParamsA.size(); ++i) {
+    const auto &paramA = formalParamsA.at(i);
+    const auto &paramB = formalParamsB.at(i);
+    if (!paramA.isInvariant || !paramB.isInvariant) {
+      // One of the parameters rely on stream.
+      return false;
+    }
+    if (paramA.param.invariant != paramB.param.invariant) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void LLCStreamEngine::addStreamToMulticastTable(LLCDynamicStreamPtr dynS) {
+  for (auto &entry : this->multicastStreamMap) {
+    auto dynSRoot = entry.first;
+    if (this->canMergeAsMulticast(dynS, dynSRoot)) {
+      // Found the entry.
+      entry.second.insert(dynS);
+      return;
+    }
+  }
+  // Not found.
+  this->multicastStreamMap
+      .emplace(std::piecewise_construct, std::forward_as_tuple(dynS),
+               std::forward_as_tuple())
+      .first->second.insert(dynS);
+}
+
+void LLCStreamEngine::removeStreamFromMulticastTable(LLCDynamicStreamPtr dynS) {
+  for (auto &entry : this->multicastStreamMap) {
+    if (entry.first == dynS) {
+      // This is a leading stream, we simply select a new leader.
+      LLCDynamicStreamPtr newLeader = nullptr;
+      for (auto S : entry.second) {
+        if (S != dynS) {
+          newLeader = S;
+          break;
+        }
+      }
+      if (newLeader) {
+        // Rewrite the set.
+        entry.second.erase(dynS);
+        this->multicastStreamMap.emplace(newLeader, entry.second);
+      }
+      // Either way, we remove the original entry.
+      this->multicastStreamMap.erase(dynS);
+      return;
+    }
+    // Search through the set.
+    if (entry.second.erase(dynS) > 0) {
+      // We found it.
+      return;
+    }
+  }
+  assert(false && "Failed to remove from MulticastTable.");
+}
+
+bool LLCStreamEngine::hasMergedAsMulticast(LLCDynamicStreamPtr dynS) const {
+  if (this->multicastStreamMap.count(dynS) != 0) {
+    return true;
+  }
+  for (auto &entry : this->multicastStreamMap) {
+    if (entry.second.count(dynS) > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void LLCStreamEngine::processStreamFlowControlMsg() {
   auto iter = this->pendingStreamFlowControlMsgs.begin();
   auto end = this->pendingStreamFlowControlMsgs.end();
@@ -501,6 +601,9 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
             : CoherenceRequestType_GETH;
     if (reqType == CoherenceRequestType_GETU) {
       stream->getStaticStream()->statistic.numLLCSentSlice++;
+      if (this->hasMergedAsMulticast(stream)) {
+        stream->getStaticStream()->statistic.numLLCCanMulticastSlice++;
+      }
     }
     this->enqueueRequest(stream, sliceId, vaddrLine, paddrLine, reqType,
                          0 /* StoreValue */);
@@ -816,13 +919,13 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
         sliceId.size);
   }
 
-  Cycles latency(1); // Just use 1 cycle latency here.
-
   if (handledHere) {
+    Cycles latency(1); // 20 cycle latency for local request.
     this->streamIssueMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
   } else {
+    Cycles latency(1); // Just use 1 cycle latency for remote request.
     this->streamIndirectIssueMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
@@ -898,6 +1001,7 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
       msg, this->controller->clockEdge(),
       this->controller->cyclesToTicks(latency));
 
+  this->removeStreamFromMulticastTable(stream);
   stream->prevMigrateCycle = this->controller->curCycle();
   stream->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
 }
@@ -934,8 +1038,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
   }
 
   auto msg = std::make_shared<RequestMsg>(req);
-  Cycles latency(1); // Just use 1 cycle latency here.
-
+  Cycles latency(1); // 20 cycle latency for forwarding.
   this->streamIssueMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                       this->controller->cyclesToTicks(latency));
 }
