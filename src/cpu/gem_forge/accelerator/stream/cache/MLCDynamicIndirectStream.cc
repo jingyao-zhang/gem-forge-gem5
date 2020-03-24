@@ -45,7 +45,9 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
   assert(!isOneIterationBehind && "Temporarily disable this.");
 }
 
-void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
+void MLCDynamicIndirectStream::receiveStreamData(
+    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+    Addr paddrLine) {
 
   // It is indeed a problem to synchronize the flow control between
   // base stream and indirect stream.
@@ -53,9 +55,8 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   // beyond the tailSliceIdx, so we adhoc to fix that.
   // ! This breaks the MaximumNumElement constraint.
 
-  const auto &sliceId = msg.m_sliceId;
   MLC_SLICE_DPRINTF(sliceId, "Receive data vaddr %#x paddr %#x.\n",
-                    sliceId.vaddr, msg.getaddr());
+                    sliceId.vaddr, paddrLine);
 
   while (this->tailSliceIdx <= sliceId.lhsElementIdx) {
     this->allocateSlice();
@@ -96,7 +97,7 @@ void MLCDynamicIndirectStream::receiveStreamData(const ResponseMsg &msg) {
   auto sliceIter =
       this->findOrInsertSliceBySliceId(slicesBegin, slicesEnd, sliceId);
 
-  sliceIter->setData(msg.m_DataBlk, this->controller->curCycle());
+  sliceIter->setData(dataBlock, this->controller->curCycle());
   if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
     // Sanity check that LLC and Core generated the same address.
     // ! Core is line address.

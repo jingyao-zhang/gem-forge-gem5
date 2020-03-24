@@ -44,7 +44,8 @@ public:
   /**
    * Receive data from LLC.
    */
-  void receiveStreamData(const ResponseMsg &msg) override;
+  void receiveStreamData(const DynamicStreamSliceId &sliceId,
+                         const DataBlock &dataBlock, Addr paddrLine) override;
 
   /**
    * Receive data from the base direct stream.

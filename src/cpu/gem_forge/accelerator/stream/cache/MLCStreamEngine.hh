@@ -57,6 +57,9 @@ public:
    */
   Addr receiveStreamEnd(PacketPtr pkt);
   void receiveStreamData(const ResponseMsg &msg);
+  void receiveStreamDataForSingleSlice(const DynamicStreamSliceId &sliceId,
+                                       const DataBlock &dataBlock,
+                                       Addr paddrLine);
 
   bool isStreamRequest(const DynamicStreamSliceId &slice);
   bool isStreamOffloaded(const DynamicStreamSliceId &slice);
@@ -101,7 +104,8 @@ private:
       reuseInfoMap;
   std::unordered_map<DynamicStreamId, ReuseInfo, DynamicStreamIdHasher>
       reverseReuseInfoMap;
-  void reuseSlice(const ResponseMsg &msg);
+  void reuseSlice(const DynamicStreamSliceId &sliceId,
+                  const DataBlock &dataBlock);
 };
 
 #endif

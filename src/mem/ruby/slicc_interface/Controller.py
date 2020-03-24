@@ -85,7 +85,13 @@ class RubyStreamAwareController(RubyController):
     # ! This only works for a S-NUCA.
     llc_select_low_bit = Param.UInt32(0, "Low bit used to select LLC bank")
     llc_select_num_bits = Param.UInt32(0, "Num of bits used to select LLC bank")
+    # So far we only support Mesh topology
+    num_cores_per_row = Param.UInt32(0, "Num of cores per row for Mesh Topology")
     enable_stream_float = Param.Bool(False, "Whether to enable stream float")
     enable_stream_subline = Param.Bool(False, "Whether to enable stream float subline transmission")
+    enable_stream_multicast = Param.Bool(False, "Whether to enable multicast stream")
+    stream_multicast_group_size = Param.UInt32(0, "MulticastGroup is Size x Size, 0 means all")
+    stream_multicast_issue_policy = \
+        Param.String("any", "Multicast issue policy, default is the relaxed")
     mlc_stream_buffer_init_num_entries = \
         Param.UInt32(16, "Initial number of entries of MLC stream buffer")

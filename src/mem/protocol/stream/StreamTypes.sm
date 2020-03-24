@@ -10,3 +10,11 @@ structure(DynamicStreamSliceId, external="yes", desc="Dynamic identification for
   int getSize();
   void clear();
 }
+
+structure(DynamicStreamSliceIdVec, external="yes", desc="A vector of sliceIds.") {
+  bool isValid();
+  DynamicStreamSliceId singleSliceId();
+  DynamicStreamSliceId firstSliceId();
+  void add(DynamicStreamSliceId);
+  void clear();
+}

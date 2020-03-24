@@ -5,9 +5,29 @@
 AbstractStreamAwareController::AbstractStreamAwareController(const Params *p)
     : AbstractController(p), llcSelectLowBit(p->llc_select_low_bit),
       llcSelectNumBits(p->llc_select_num_bits),
+      numCoresPerRow(p->num_cores_per_row),
       enableStreamFloat(p->enable_stream_float),
       enableStreamSubline(p->enable_stream_subline),
-      mlcStreamBufferInitNumEntries(p->mlc_stream_buffer_init_num_entries) {}
+      enableStreamMulticast(p->enable_stream_multicast),
+      streamMulticastGroupSize(p->stream_multicast_group_size),
+      streamMulticastGroupPerRow(1),
+      mlcStreamBufferInitNumEntries(p->mlc_stream_buffer_init_num_entries) {
+  if (this->streamMulticastGroupSize > 0) {
+    this->streamMulticastGroupPerRow =
+        (this->numCoresPerRow + this->streamMulticastGroupSize - 1) /
+        this->streamMulticastGroupSize;
+  }
+  if (p->stream_multicast_issue_policy == "any") {
+    this->streamMulticastIssuePolicy = MulticastIssuePolicy::Any;
+  } else if (p->stream_multicast_issue_policy == "first_allocated") {
+    this->streamMulticastIssuePolicy = MulticastIssuePolicy::FirstAllocated;
+  } else if (p->stream_multicast_issue_policy == "first") {
+    this->streamMulticastIssuePolicy = MulticastIssuePolicy::First;
+  } else {
+    panic("Illegal StreamMulticastIssuePolicy %s.\n",
+          p->stream_multicast_issue_policy);
+  }
+}
 
 MachineID
 AbstractStreamAwareController::mapAddressToLLC(Addr addr,

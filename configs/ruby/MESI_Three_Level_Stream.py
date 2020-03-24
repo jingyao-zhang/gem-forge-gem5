@@ -82,6 +82,15 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     assert(l2_select_low_bit >= block_size_bits)
     l2_index_start = l2_select_low_bit + l2_bits
 
+    # ! Break the isolation. Assume MeshTopology and compute NumCoresPerRow.
+    num_cores_per_row = options.num_cpus
+    if options.gem_forge_stream_engine_enable_float_multicast:
+        if options.topology != 'Mesh_XY' and options.topology != 'MeshDirCorners_XY':
+            print('So far MESI_Three_Level_Stream can only support MeshTopology for Multicast')
+            assert(False)
+        num_cores_per_row = options.num_cpus / options.mesh_rows
+
+
     #
     # Must create the individual controllers before the network to ensure the
     # controller constructors are called before the network constructor
@@ -116,21 +125,29 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 clk_domain = system.cpu[i].clk_domain
 
             l0_cntrl = L0Cache_Controller(
-                    version = i * num_cpus_per_cluster + j, Icache = l0i_cache,
-                    Dcache = l0d_cache, prefetcher=prefetcher,
-                    send_evictions = send_evicts(options),
-                    clk_domain = clk_domain, ruby_system = ruby_system,
-                    # ! Sean: l0_cntrl is actually L1 cache.
-                    # ! And request_latency is the enqueue latency for request from L1 -> L2.
-                    # ! So we charge L2 tag lookup latency here.
-                    request_latency = options.l2_lat,
-                    llc_select_num_bits = l2_bits,
-                    llc_select_low_bit = l2_select_low_bit,
-                    enable_prefetch=(options.gem_forge_prefetcher == 'stride'),
-                    enable_stream_float = options.gem_forge_stream_engine_enable_float,
-                    enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
-                    mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
-                    )
+                version = i * num_cpus_per_cluster + j, Icache = l0i_cache,
+                Dcache = l0d_cache, prefetcher=prefetcher,
+                send_evictions = send_evicts(options),
+                clk_domain = clk_domain, ruby_system = ruby_system,
+                # ! Sean: l0_cntrl is actually L1 cache.
+                # ! And request_latency is the enqueue latency for request from L1 -> L2.
+                # ! So we charge L2 tag lookup latency here.
+                request_latency = options.l2_lat,
+                llc_select_num_bits = l2_bits,
+                llc_select_low_bit = l2_select_low_bit,
+                num_cores_per_row = num_cores_per_row,
+                enable_prefetch=(options.gem_forge_prefetcher == 'stride'),
+                enable_stream_float = options.gem_forge_stream_engine_enable_float,
+                enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_multicast = \
+                    options.gem_forge_stream_engine_enable_float_multicast,
+                stream_multicast_group_size = \
+                    options.gem_forge_stream_engine_llc_multicast_group_size,
+                stream_multicast_issue_policy = \
+                    options.gem_forge_stream_engine_llc_multicast_issue_policy,
+                mlc_stream_buffer_init_num_entries = \
+                    options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                )
 
             cpu_seq = RubySequencer(version = i * num_cpus_per_cluster + j,
                                     icache = l0i_cache,
@@ -146,23 +163,31 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                is_icache = False)
 
             l1_cntrl = L1Cache_Controller(
-                    version = i * num_cpus_per_cluster + j,
-                    cache = l1_cache,
-                    # ! Sean: l1_cntrl is actually L2 cache.
-                    # ! And l1_request_latency is the enqueue latency for request from L2 -> L3.
-                    # ! So we charge L3 tag lookup latency here.
-                    l1_request_latency = options.l3_lat,
-                    l2_select_num_bits = l2_bits,
-                    l2_select_low_bit = l2_select_low_bit,
-                    cluster_id = i, ruby_system = ruby_system,
-                    # ! Sean: Stream-Aware Cache
-                    # For the AbstractStreamAwareController
-                    llc_select_num_bits = l2_bits,
-                    llc_select_low_bit = l2_select_low_bit,
-                    enable_stream_float = options.gem_forge_stream_engine_enable_float,
-                    enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
-                    mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
-                    )
+                version = i * num_cpus_per_cluster + j,
+                cache = l1_cache,
+                # ! Sean: l1_cntrl is actually L2 cache.
+                # ! And l1_request_latency is the enqueue latency for request from L2 -> L3.
+                # ! So we charge L3 tag lookup latency here.
+                l1_request_latency = options.l3_lat,
+                l2_select_num_bits = l2_bits,
+                l2_select_low_bit = l2_select_low_bit,
+                num_cores_per_row = num_cores_per_row,
+                cluster_id = i, ruby_system = ruby_system,
+                # ! Sean: Stream-Aware Cache
+                # For the AbstractStreamAwareController
+                llc_select_num_bits = l2_bits,
+                llc_select_low_bit = l2_select_low_bit,
+                enable_stream_float = options.gem_forge_stream_engine_enable_float,
+                enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_multicast = \
+                    options.gem_forge_stream_engine_enable_float_multicast,
+                stream_multicast_group_size = \
+                    options.gem_forge_stream_engine_llc_multicast_group_size,
+                stream_multicast_issue_policy = \
+                    options.gem_forge_stream_engine_llc_multicast_issue_policy,
+                mlc_stream_buffer_init_num_entries = \
+                    options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
                  % ( i * num_cpus_per_cluster + j))
@@ -215,19 +240,27 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                )
 
             l2_cntrl = L2Cache_Controller(
-                        version = i * num_l2caches_per_cluster + j,
-                        L2cache = l2_cache, cluster_id = i,
-                        transitions_per_cycle = options.ports,
-                        ruby_system = ruby_system,
-                        # ! Sean: StreamAwareCache.
-                        # ! For the LLCSelect bits.
-                        # ! So far do block interleaving.
-                        llc_select_low_bit=l2_select_low_bit,
-                        llc_select_num_bits=l2_bits,
-                        enable_stream_float=options.gem_forge_stream_engine_enable_float,
-                        enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
-                        mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
-                        )
+                version = i * num_l2caches_per_cluster + j,
+                L2cache = l2_cache, cluster_id = i,
+                transitions_per_cycle = options.ports,
+                ruby_system = ruby_system,
+                # ! Sean: StreamAwareCache.
+                # ! For the LLCSelect bits.
+                # ! So far do block interleaving.
+                llc_select_low_bit=l2_select_low_bit,
+                llc_select_num_bits=l2_bits,
+                num_cores_per_row = num_cores_per_row,
+                enable_stream_float=options.gem_forge_stream_engine_enable_float,
+                enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_multicast=\
+                    options.gem_forge_stream_engine_enable_float_multicast,
+                stream_multicast_group_size=\
+                    options.gem_forge_stream_engine_llc_multicast_group_size,
+                stream_multicast_issue_policy=\
+                    options.gem_forge_stream_engine_llc_multicast_issue_policy,
+                mlc_stream_buffer_init_num_entries=\
+                    options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"
                  % (i * num_l2caches_per_cluster + j))

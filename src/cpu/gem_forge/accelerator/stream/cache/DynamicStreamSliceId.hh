@@ -30,7 +30,9 @@ struct DynamicStreamSliceId {
   DynamicStreamSliceId()
       : streamId(), lhsElementIdx(0), rhsElementIdx(0), vaddr(0), size(0) {}
 
-  bool isValid() const { return !(this->lhsElementIdx == 0 && this->rhsElementIdx == 0); }
+  bool isValid() const {
+    return !(this->lhsElementIdx == 0 && this->rhsElementIdx == 0);
+  }
   void clear() {
     this->streamId = DynamicStreamId();
     this->lhsElementIdx = 0;
@@ -40,12 +42,15 @@ struct DynamicStreamSliceId {
   }
 
   uint64_t getStartIdx() const { return this->lhsElementIdx; }
-  uint64_t getNumElements() const { return this->rhsElementIdx - this->lhsElementIdx; }
+  uint64_t getNumElements() const {
+    return this->rhsElementIdx - this->lhsElementIdx;
+  }
   int getSize() const { return this->size; }
 
   bool operator==(const DynamicStreamSliceId &other) const {
     return this->streamId == other.streamId &&
-           this->lhsElementIdx == other.lhsElementIdx && this->rhsElementIdx == other.rhsElementIdx;
+           this->lhsElementIdx == other.lhsElementIdx &&
+           this->rhsElementIdx == other.rhsElementIdx;
   }
 
   bool operator!=(const DynamicStreamSliceId &other) const {

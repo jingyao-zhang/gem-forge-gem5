@@ -12,6 +12,7 @@
 
 #include "base/trace.hh"
 #include "debug/LLCRubyStream.hh"
+#include "debug/LLCRubyStreamMulticast.hh"
 #include "debug/LLCRubyStreamStore.hh"
 #define DEBUG_TYPE LLCRubyStream
 #include "../stream_log.hh"
@@ -117,6 +118,9 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
       delete stream;
       stream = nullptr;
       this->streams.erase(streamIter);
+      // Don't forgot to release the memory.
+      delete endStreamDynamicId;
+      delete pkt;
       return;
     }
   }
@@ -157,6 +161,8 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
          "Stream migrated with readyIndirectElements.");
 
   LLC_S_DPRINTF(stream->getDynamicStreamId(), "Received migrate.\n");
+  // Set the controller and clear the per controller states.
+  stream->setController(this->controller);
 
   auto &stats = stream->getStaticStream()->statistic;
   stats.numLLCMigrate++;
@@ -185,6 +191,14 @@ void LLCStreamEngine::receiveStreamFlow(const DynamicStreamSliceId &sliceId) {
   this->scheduleEvent(Cycles(1));
 }
 
+void LLCStreamEngine::receiveStreamElementDataVec(
+    const DynamicStreamSliceIdVec &sliceIds, const DataBlock &dataBlock,
+    const DataBlock &storeValueBlock) {
+  for (const auto &sliceId : sliceIds.sliceIds) {
+    this->receiveStreamElementData(sliceId, dataBlock, storeValueBlock);
+  }
+}
+
 void LLCStreamEngine::receiveStreamElementData(
     const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
     const DataBlock &storeValueBlock) {
@@ -194,9 +208,7 @@ void LLCStreamEngine::receiveStreamElementData(
     if (S->getDynamicStreamId() == sliceId.streamId) {
       stream = S;
       // Check if we need to track waitingDataBaseRequests.
-      if (!stream->indirectStreams.empty() ||
-          stream->getStaticStream()->hasUpgradedToUpdate() ||
-          stream->isPointerChase()) {
+      if (stream->hasIndirectDependent()) {
         stream->waitingDataBaseRequests--;
         if (stream->waitingDataBaseRequests < 0) {
           LLC_SLICE_PANIC(sliceId, "Negative waitingDataBaseRequests.\n");
@@ -280,20 +292,11 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
     // Still here.
     return false;
   }
-  if (!stream->indirectStreams.empty() && stream->waitingDataBaseRequests > 0) {
-    // We are still waiting data for indirect streams.
-    return false;
-  }
-  if (stream->getStaticStream()->hasUpgradedToUpdate() &&
-      stream->waitingDataBaseRequests > 0) {
-    // We are still waiting to update the request.
-    return false;
-  }
-  if (stream->isPointerChase() && stream->waitingDataBaseRequests > 0) {
-    /**
-     * Enforce that pointer chase stream can not migrate until the previous
-     * base request comes back.
-     */
+  if (stream->hasIndirectDependent() && stream->waitingDataBaseRequests > 0) {
+    // We are still waiting data for indirect usages:
+    // 1. Indirect streams.
+    // 2. Update request.
+    // 3. Pointer chasing.
     return false;
   }
   if (!stream->readyIndirectElements.empty()) {
@@ -355,14 +358,26 @@ bool LLCStreamEngine::canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
                                           LLCDynamicStreamPtr dynSB) const {
   /**
    * Streams are considered possible to merged into one multicast stream iff:
-   * 1. They are from different cores.
+   * 1. They are from cores within the same multicast group.
    * 2. They both have linear address generation function.
    * 3. They have same dynamic parameters for address generation.
+   * 4. They have the same static stream id.
    */
   const auto &dynSAId = dynSA->getDynamicStreamId();
   const auto &dynSBId = dynSB->getDynamicStreamId();
   if (dynSAId.coreId == dynSBId.coreId) {
     // Ignore streams from the same core.
+    return false;
+  }
+  auto multicastGroupIdA =
+      this->controller->getMulticastGroupId(dynSAId.coreId);
+  auto multicastGroupIdB =
+      this->controller->getMulticastGroupId(dynSBId.coreId);
+  if (multicastGroupIdA != multicastGroupIdB) {
+    // They are not from the same multicast group.
+    return false;
+  }
+  if (dynSA->getStaticId() != dynSA->getStaticId()) {
     return false;
   }
   auto linearAddrGenA = std::dynamic_pointer_cast<LinearAddrGenCallback>(
@@ -392,60 +407,254 @@ bool LLCStreamEngine::canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
 }
 
 void LLCStreamEngine::addStreamToMulticastTable(LLCDynamicStreamPtr dynS) {
-  for (auto &entry : this->multicastStreamMap) {
-    auto dynSRoot = entry.first;
-    if (this->canMergeAsMulticast(dynS, dynSRoot)) {
-      // Found the entry.
-      entry.second.insert(dynS);
-      return;
+  bool hasIndirectDependent = dynS->hasIndirectDependent();
+  LLC_S_DPRINTF_(LLCRubyStreamMulticast, dynS->getDynamicStreamId(),
+                 "Add to MulticastTable, HasIndirectDependent %d.\n",
+                 hasIndirectDependent);
+  // We only try to merge into multicast if it has no indirect dependent.
+  if (!hasIndirectDependent) {
+    for (auto &entry : this->multicastStreamMap) {
+      auto dynSRoot = entry.first;
+      auto &group = entry.second;
+      auto canMerge = this->canMergeAsMulticast(dynS, dynSRoot);
+      LLC_S_DPRINTF_(LLCRubyStreamMulticast, dynSRoot->getDynamicStreamId(),
+                     "Check CanMergeAsMulticast %d.\n", canMerge);
+      if (canMerge) {
+        // Found the entry.
+        group.push_back(dynS);
+        dynS->setMulticastGroupLeader(dynSRoot);
+        this->sortMulticastGroup(group);
+        LLC_S_DPRINTF_(LLCRubyStreamMulticast, dynSRoot->getDynamicStreamId(),
+                       "Merged into MulticastGroup.\n");
+        return;
+      }
     }
   }
   // Not found.
+  LLC_S_DPRINTF_(LLCRubyStreamMulticast, dynS->getDynamicStreamId(),
+                 "New MulticastGroup.\n");
   this->multicastStreamMap
       .emplace(std::piecewise_construct, std::forward_as_tuple(dynS),
                std::forward_as_tuple())
-      .first->second.insert(dynS);
+      .first->second.push_back(dynS);
+  dynS->setMulticastGroupLeader(dynS);
 }
 
 void LLCStreamEngine::removeStreamFromMulticastTable(LLCDynamicStreamPtr dynS) {
-  for (auto &entry : this->multicastStreamMap) {
-    if (entry.first == dynS) {
-      // This is a leading stream, we simply select a new leader.
-      LLCDynamicStreamPtr newLeader = nullptr;
-      for (auto S : entry.second) {
-        if (S != dynS) {
-          newLeader = S;
-          break;
-        }
-      }
-      if (newLeader) {
-        // Rewrite the set.
-        entry.second.erase(dynS);
-        this->multicastStreamMap.emplace(newLeader, entry.second);
-      }
-      // Either way, we remove the original entry.
-      this->multicastStreamMap.erase(dynS);
-      return;
-    }
-    // Search through the set.
-    if (entry.second.erase(dynS) > 0) {
-      // We found it.
-      return;
+  LLC_S_DPRINTF_(LLCRubyStreamMulticast, dynS->getDynamicStreamId(),
+                 "Remove from MulticastTable.\n");
+  auto multicastGroupLeader = dynS->getMulticastGroupLeader();
+  auto mapIter = this->multicastStreamMap.find(multicastGroupLeader);
+  assert(mapIter != this->multicastStreamMap.end() &&
+         "Failed to find multicast group.");
+  // First we remove dynS from this group.
+  auto &group = mapIter->second;
+  bool erased = false;
+  for (auto iter = group.begin(), end = group.end(); iter != end; ++iter) {
+    if ((*iter) == dynS) {
+      group.erase(iter);
+      erased = true;
+      break;
     }
   }
-  assert(false && "Failed to remove from MulticastTable.");
+  assert(erased && "Failed to erase from MulticastGroup.");
+  // Clear the multicast leader for dynS.
+  dynS->setMulticastGroupLeader(nullptr);
+  if (mapIter->first == dynS) {
+    if (!group.empty()) {
+      // If this is the leader and the group is not empty after removing,
+      // we reinsert this group with a new leader.
+      auto newLeader = group.front();
+      for (auto &S : group) {
+        S->setMulticastGroupLeader(newLeader);
+      }
+      LLC_S_DPRINTF_(LLCRubyStreamMulticast, newLeader->getDynamicStreamId(),
+                     "Select as NewLeader.\n");
+      this->multicastStreamMap.emplace(newLeader, group);
+    }
+    // We can remove the group from the table now.
+    assert(this->multicastStreamMap.erase(dynS) == 1 &&
+           "Failed to remove the group");
+  }
 }
 
 bool LLCStreamEngine::hasMergedAsMulticast(LLCDynamicStreamPtr dynS) const {
-  if (this->multicastStreamMap.count(dynS) != 0) {
+  return this->getMulticastGroup(dynS).size() > 1;
+}
+
+LLCStreamEngine::StreamVec &
+LLCStreamEngine::getMulticastGroup(LLCDynamicStreamPtr dynS) {
+  auto groupLeader = dynS->getMulticastGroupLeader();
+  auto mapIter = this->multicastStreamMap.find(groupLeader);
+  assert(mapIter != this->multicastStreamMap.end());
+  return mapIter->second;
+}
+
+const LLCStreamEngine::StreamVec &
+LLCStreamEngine::getMulticastGroup(LLCDynamicStreamPtr dynS) const {
+  auto groupLeader = dynS->getMulticastGroupLeader();
+  auto mapIter = this->multicastStreamMap.find(groupLeader);
+  assert(mapIter != this->multicastStreamMap.end());
+  return mapIter->second;
+}
+
+bool LLCStreamEngine::canIssueByMulticastPolicy(
+    LLCDynamicStreamPtr dynS) const {
+  /**
+   * There are some policies to tune if we want to delay a stream from
+   * issuing to have more multicast oppotunties. Here are the policies:
+   * ----- Most Relaxed (Optimize for Latency) ------
+   * - Do nothing. Always return ture.
+   * - The first stream with NextSliceAllocated in the MulticastGroup.
+   * - The stream must be the first one in the MulticastGroup.
+   * ---- Most Constranit (Optimize for Traffic) ----
+   */
+
+  const auto &group = this->getMulticastGroup(dynS);
+
+  const auto policy = this->controller->getStreamMulticastIssuePolicy();
+  switch (policy) {
+  case AbstractStreamAwareController::MulticastIssuePolicy::Any:
+    return true;
+  case AbstractStreamAwareController::MulticastIssuePolicy::FirstAllocated:
+    for (const auto &S : group) {
+      if (!S->isNextSliceAllocated()) {
+        continue;
+      }
+      // This is the first available stream.
+      return S == dynS;
+    }
+    // Should never happen.
+    assert(false && "DynS not found in MulticastGroup.");
+  case AbstractStreamAwareController::MulticastIssuePolicy::First:
+    return group.front() == dynS;
+  default:
     return true;
   }
-  for (auto &entry : this->multicastStreamMap) {
-    if (entry.second.count(dynS) > 1) {
-      return true;
+}
+
+void LLCStreamEngine::sortMulticastGroup(StreamVec &group) const {
+  auto comparator = [this](const LLCDynamicStreamPtr &SA,
+                           const LLCDynamicStreamPtr &SB) -> bool {
+    auto sliceIdxA = SA->getNextSliceIdx();
+    auto sliceIdxB = SB->getNextSliceIdx();
+    if (sliceIdxA != sliceIdxB) {
+      return sliceIdxA < sliceIdxB;
     }
+    /**
+     * When the next sliceId is the same, it's interesting how we break
+     * the tie.
+     * 1. If we considered streams with next slice not allocated "smaller",
+     *    we are more frequently blocked and this achieves maximum save of
+     *    the traffic, as it exposes more multicast opportunity.
+     * 2. Otherwise, we try to issue ready streams with smaller sliceId as
+     *    soon as possible. This reduces the multicast opportunity, but may
+     *    help the latency.
+     */
+    if (SA->isNextSliceAllocated() != SB->isNextSliceAllocated()) {
+      return !SA->isNextSliceAllocated(); // Option 1
+      // return SA->isNextSliceAllocated(); // Option 2
+    }
+    // Break the tie with core id.
+    return SA->getDynamicStreamId().coreId < SB->getDynamicStreamId().coreId;
+  };
+  std::sort(group.begin(), group.end(), comparator);
+  if (Debug::LLCRubyStreamMulticast) {
+    DPRINTF(LLCRubyStreamMulticast, "Sorted MulticastGroup:---\n");
+    for (auto &dynS : group) {
+      LLC_S_DPRINTF_(LLCRubyStreamMulticast, dynS->getDynamicStreamId(),
+                     "NextSliceIdx %lu, Allocated %d.\n",
+                     dynS->getNextSliceIdx(), dynS->isNextSliceAllocated());
+    }
+    DPRINTF(LLCRubyStreamMulticast, "---\n");
   }
-  return false;
+}
+
+void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
+                                               LLCDynamicStreamPtr targetDynS) {
+  assert(this->controller->isStreamMulticastEnabled());
+  auto &group = this->getMulticastGroup(targetDynS);
+
+  const auto &targetSliceId = reqIter->sliceId;
+  auto targetSliceIdx = targetDynS->getNextSliceIdx();
+  assert(targetSliceIdx > 0 &&
+         "DynS should have positive NextSliceIdx as it generated reqIter.");
+  LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast, targetSliceId,
+                     "Generate MulticastRequest.\n");
+  // Start to scan, skip dynS.
+  for (auto idx = 0; idx < group.size(); ++idx) {
+    auto dynS = group.at(idx);
+    if (dynS == targetDynS) {
+      // We just issued.
+      continue;
+    }
+    if (!dynS->isNextSliceAllocated()) {
+      // Not allocated, skip this one.
+      continue;
+    }
+    if (dynS->getNextSliceIdx() + 1 < targetSliceIdx) {
+      // This is behind stream, skip it.
+      continue;
+    }
+    if (dynS->getNextSliceIdx() + 1 > targetSliceIdx) {
+      // This is future stream, we are done.
+      break;
+    }
+    // Found a multicast stream candidate.
+    auto sliceId = dynS->consumeNextSlice();
+    // Sanity check for multicast slices.
+    if (sliceId.vaddr != targetSliceId.vaddr) {
+      LLC_SLICE_PANIC(sliceId, "Mismatch VAddr %#x for Multicast Slice %#x.",
+                      sliceId.vaddr, targetSliceId.vaddr);
+    }
+    if (sliceId.getSize() != targetSliceId.getSize()) {
+      LLC_SLICE_PANIC(sliceId, "Mismatch Size %d for Multicast Slice %d.",
+                      sliceId.getSize(), targetSliceId.getSize());
+    }
+
+    auto SS = dynS->getStaticStream();
+    SS->statistic.numLLCIssueSlice++;
+
+    // Register the waiting indirect elements.
+    if (!dynS->indirectStreams.empty()) {
+      for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx;
+           ++idx) {
+        dynS->waitingIndirectElements.insert(idx);
+      }
+    }
+
+    // Add this to the request.
+    auto reqType = (SS->hasCoreUser() && !dynS->isPseudoOffload())
+                       ? CoherenceRequestType_GETU
+                       : CoherenceRequestType_GETH;
+    if (reqType != reqIter->requestType) {
+      LLC_SLICE_PANIC(
+          sliceId,
+          "Mismatch RequestType for Multicast Slice, Target %d, Ours %d.",
+          reqIter->requestType, reqType);
+    }
+    if (reqType == CoherenceRequestType_GETU) {
+      SS->statistic.numLLCSentSlice++;
+      SS->statistic.numLLCMulticastSlice++;
+      SS->statistic.numLLCCanMulticastSlice++;
+    }
+    LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast, sliceId, "Multicast Issue.\n");
+    bool hasIndirectDependent = dynS->hasIndirectDependent();
+    if (hasIndirectDependent) {
+      LLC_SLICE_PANIC(sliceId, "Multicast Issue with IndirectDependent.\n");
+    }
+    dynS->prevIssuedCycle = this->controller->curCycle();
+    dynS->updateIssueClearCycle();
+
+    reqIter->multicastSliceIds.push_back(sliceId);
+  }
+
+  if (!reqIter->multicastSliceIds.empty()) {
+    targetDynS->getStaticStream()->statistic.numLLCMulticastSlice++;
+  }
+
+  // Finally we want to make sure we are sorted.
+  this->sortMulticastGroup(group);
 }
 
 void LLCStreamEngine::processStreamFlowControlMsg() {
@@ -462,6 +671,11 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
         LLC_S_DPRINTF(stream->getDynamicStreamId(), "Add credit %lu -> %lu.\n",
                       msg.lhsElementIdx, msg.rhsElementIdx);
         stream->addCredit(msg.getNumElements());
+        // Maybe we want to resort the Multicast group.
+        if (this->controller->isStreamMulticastEnabled() &&
+            this->hasMergedAsMulticast(stream)) {
+          this->sortMulticastGroup(this->getMulticastGroup(stream));
+        }
         processed = true;
         break;
       }
@@ -481,8 +695,8 @@ void LLCStreamEngine::issueStreams() {
 
   /**
    * Enforce thresholds for issue stream requests here.
-   * 1. If there are many requests in the queue, there is no need to inject more
-   * packets to block the queue.
+   * 1. If there are many requests in the queue, there is no need to inject
+   * more packets to block the queue.
    * 2. As a sanity check, we limit the total number of infly direct requests.
    */
 
@@ -509,9 +723,10 @@ void LLCStreamEngine::issueStreams() {
   /**
    * Previously I only check issuedStreams for migration.
    * This assumes we only need to check migration possibility after issuing.
-   * However, for pointer chase stream without indirect streams, this is not the
-   * case. It maybe come migration target after receiving the previous stream
-   * element data. Therefore, here I rescan all the streams to avoid deadlock.
+   * However, for pointer chase stream without indirect streams, this is not
+   * the case. It maybe come migration target after receiving the previous
+   * stream element data. Therefore, here I rescan all the streams to avoid
+   * deadlock.
    */
 
   // Scan all streams for migration target.
@@ -531,15 +746,6 @@ void LLCStreamEngine::issueStreams() {
 bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
   /**
-   * Check if we have reached issue limit for this stream.
-   */
-  const auto curCycle = this->controller->curCycle();
-  if (curCycle < stream->prevIssuedCycle + stream->issueClearCycle) {
-    // We can not issue yet.
-    return false;
-  }
-
-  /**
    * Prioritize indirect elements.
    */
   if (this->issueStreamIndirect(stream)) {
@@ -548,18 +754,47 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     return true;
   }
 
+  if (!stream->isNextSliceAllocated()) {
+    // LLC_S_DPRINTF(stream->getDynamicStreamId(),
+    //               "Not issue: NextSliceNotAllocated.\n");
+    return false;
+  }
+
+  /**
+   * If we enabled Multicast and this is not the lowest stream in
+   * the multicast group, i.e. lagging the most behind, then we do
+   * not issue it as we are waiting for behind streams to catch up
+   * and explore multicast opportunity.
+   */
+  bool checkIssueCycleLimit = true;
+  if (this->controller->isStreamMulticastEnabled()) {
+    if (!this->canIssueByMulticastPolicy(stream)) {
+      return false;
+    }
+    /**
+     * Disable issue cycle limit for multicast stream, as it is
+     * not well defined for MulticastStreams.
+     */
+    // checkIssueCycleLimit = false;
+  }
+
+  /**
+   * Check if we have reached issue limit for this stream.
+   */
+  const auto curCycle = this->controller->curCycle();
+  if (checkIssueCycleLimit) {
+    if (curCycle < stream->prevIssuedCycle + stream->issueClearCycle) {
+      // We can not issue yet.
+      return false;
+    }
+  }
+
   /**
    * After this point, try to issue base stream element.
    */
 
   // Enforce the per stream maxWaitingDataBaseRequests constraint.
   if (stream->waitingDataBaseRequests == stream->maxWaitingDataBaseRequests) {
-    return false;
-  }
-
-  if (!stream->isNextSliceAllocated()) {
-    // LLC_S_DPRINTF(stream->getDynamicStreamId(),
-    //               "Not issue: NextSliceNotAllocated.\n");
     return false;
   }
 
@@ -605,11 +840,11 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
         stream->getStaticStream()->statistic.numLLCCanMulticastSlice++;
       }
     }
-    this->enqueueRequest(stream, sliceId, vaddrLine, paddrLine, reqType,
-                         0 /* StoreValue */);
+    auto requestIter = this->enqueueRequest(
+        stream, sliceId, vaddrLine, paddrLine, reqType, 0 /* StoreValue */);
     // Check if we track waitingDataBaseRequests.
-    if (!stream->indirectStreams.empty() || stream->isPointerChase() ||
-        stream->getStaticStream()->hasUpgradedToUpdate()) {
+    bool hasIndirectDependent = stream->hasIndirectDependent();
+    if (hasIndirectDependent) {
       stream->waitingDataBaseRequests++;
       LLC_SLICE_DPRINTF(sliceId, "Issue, WaitingDataBaseRequests++ %d.\n",
                         stream->waitingDataBaseRequests);
@@ -621,6 +856,15 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
     stream->prevIssuedCycle = curCycle;
     stream->updateIssueClearCycle();
+
+    /**
+     * Try to handle multicast for streams:
+     * 1. Has multicast group.
+     * 2. No indirect dependent (can be relaxed later).
+     */
+    if (!hasIndirectDependent && this->controller->isStreamMulticastEnabled()) {
+      this->generateMulticastRequest(requestIter, stream);
+    }
     return true;
 
   } else {
@@ -840,11 +1084,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(
   return;
 }
 
-void LLCStreamEngine::enqueueRequest(LLCDynamicStreamPtr dynS,
-                                     const DynamicStreamSliceId &sliceId,
-                                     Addr vaddrLine, Addr paddrLine,
-                                     CoherenceRequestType type,
-                                     uint64_t storeValue) {
+LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
+    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId,
+    Addr vaddrLine, Addr paddrLine, CoherenceRequestType type,
+    uint64_t storeValue) {
   this->requestQueue.emplace_back(sliceId, paddrLine, type, storeValue);
   auto requestQueueIter = std::prev(this->requestQueue.end());
   // To match with TLB interface, we first create a fake packet.
@@ -863,6 +1106,7 @@ void LLCStreamEngine::enqueueRequest(LLCDynamicStreamPtr dynS,
   pkt->dataStatic(pktData);
   // Start the translation.
   this->translationBuffer->addTranslation(pkt, tc, requestQueueIter);
+  return requestQueueIter;
 }
 
 void LLCStreamEngine::translationCallback(PacketPtr pkt, ThreadContext *tc,
@@ -905,11 +1149,12 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = req.requestType;
-  msg->m_Requestor = MachineID(static_cast<MachineType>(selfMachineId.type - 1),
-                               sliceId.streamId.coreId);
+  msg->m_XXNewRewquestor.add(
+      MachineID(static_cast<MachineType>(selfMachineId.type - 1),
+                sliceId.streamId.coreId));
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
-  msg->m_sliceId = sliceId;
+  msg->m_sliceIds.add(sliceId);
 
   // We need to set hold the store value.
   if (req.requestType == CoherenceRequestType_STREAM_STORE) {
@@ -917,6 +1162,15 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
     msg->m_streamStoreBlk.setData(
         reinterpret_cast<const uint8_t *>(&req.storeData), lineOffset,
         sliceId.size);
+  }
+
+  for (const auto &multicastSliceId : req.multicastSliceIds) {
+    // TODO: We should really also pass on the sliceId.
+    auto mlcMachineID =
+        MachineID(static_cast<MachineType>(selfMachineId.type - 1),
+                  multicastSliceId.streamId.coreId);
+    msg->m_XXNewRewquestor.add(mlcMachineID);
+    msg->m_sliceIds.add(multicastSliceId);
   }
 
   if (handledHere) {
@@ -945,7 +1199,7 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId) {
   msg->m_Sender = selfMachineId;
   msg->m_Destination.add(mlcMachineId);
   msg->m_MessageSize = MessageSizeType_Response_Control;
-  msg->m_sliceId = sliceId;
+  msg->m_sliceIds.add(sliceId);
 
   /**
    * This should match with LLC controller l2_response_latency.
@@ -1027,7 +1281,7 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
   this->initializeTranslationBuffer();
 
   // Simply copy and inject the msg to L1 request in.
-  const auto &sliceId = req.m_sliceId;
+  const auto &sliceId = req.m_sliceIds.singleSliceId();
   assert(sliceId.isValid() && "Invalid stream slice for indirect request.");
 
   LLC_SLICE_DPRINTF(sliceId, "Inject [indirect] request.\n");
@@ -1160,8 +1414,8 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
             if (predS->isMerged() && predS->getStreamType() == "store") {
               /**
                * This is a predicated off merged store, we have to send
-               * STREAM_ACK. We still have to set the vaddr as the MLC requires
-               * it to match.
+               * STREAM_ACK. We still have to set the vaddr as the MLC
+               * requires it to match.
                */
               auto dynBS = dynPredS->baseStream;
               assert(dynBS && "MergedStore stream should have base stream.");

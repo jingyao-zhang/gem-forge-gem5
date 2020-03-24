@@ -9,12 +9,14 @@
 #include <list>
 #include <map>
 #include <set>
+#include <vector>
 
 class AbstractStreamAwareController;
 
 /**
  * Represent generated request to LLC bank.
  */
+class LLCDynamicStream;
 struct LLCStreamRequest {
   DynamicStreamSliceId sliceId;
   Addr paddrLine;
@@ -22,13 +24,14 @@ struct LLCStreamRequest {
   bool translationDone = false;
   // Optional for StreamStore request.
   uint64_t storeData;
+  // Optional for Multicast streams, excluding the original stream
+  std::vector<DynamicStreamSliceId> multicastSliceIds;
   LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
                    CoherenceRequestType _type, uint64_t _storeData)
-      : sliceId(_sliceId), paddrLine(_paddrLine),
-        requestType(_type), storeData(_storeData) {}
+      : sliceId(_sliceId), paddrLine(_paddrLine), requestType(_type),
+        storeData(_storeData) {}
 };
 
-class LLCDynamicStream;
 struct LLCStreamElement {
   const LLCDynamicStream *dynS;
   const uint64_t idx;
@@ -83,6 +86,21 @@ public:
   }
   bool hasTotalTripCount() const;
   uint64_t getTotalTripCount() const;
+  bool hasIndirectDependent() const {
+    return !this->indirectStreams.empty() || this->isPointerChase() ||
+           this->getStaticStream()->hasUpgradedToUpdate();
+  }
+
+  void setController(AbstractStreamAwareController *controller) {
+    this->controller = controller;
+  }
+
+  void setMulticastGroupLeader(LLCDynamicStream *S) {
+    this->multicastGroupLeader = S;
+  }
+  LLCDynamicStream *getMulticastGroupLeader() {
+    return this->multicastGroupLeader;
+  }
 
   Addr peekVAddr();
   Addr getVAddr(uint64_t sliceIdx) const;
@@ -96,6 +114,7 @@ public:
   bool isNextSliceAllocated() const {
     return this->sliceIdx < this->allocatedSliceIdx;
   }
+  uint64_t getNextSliceIdx() const { return this->sliceIdx; }
 
   void addCredit(uint64_t n);
 
@@ -116,7 +135,6 @@ public:
                             DynamicStreamIdHasher>
       GlobalLLCDynamicStreamMap;
 
-  AbstractStreamAwareController *controller;
   const CacheStreamConfigureData configData;
   SlicedDynamicStream slicedStream;
   uint64_t reductionValue = 0;
@@ -144,6 +162,13 @@ public:
   Cycles prevIssuedCycle = Cycles(0);
   // Last migrate cycle.
   Cycles prevMigrateCycle = Cycles(0);
+
+  /**
+   * Transient states that should be reset after migration.
+   * ! Only valid for DirectStream.
+   */
+  AbstractStreamAwareController *controller;
+  LLCDynamicStream *multicastGroupLeader = nullptr;
 
   // Next slice index to be issued.
   uint64_t sliceIdx;

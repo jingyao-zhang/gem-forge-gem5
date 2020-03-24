@@ -79,8 +79,10 @@
       (sliceId).lhsElementIdx,                                                 \
       (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args
 
+#define LLC_S_DPRINTF_(X, streamId, format, args...)                           \
+  DPRINTF(X, LLC_S_MSG(streamId, format, ##args))
 #define LLC_S_DPRINTF(streamId, format, args...)                               \
-  DPRINTF(DEBUG_TYPE, LLC_S_MSG(streamId, format, ##args))
+  LLC_S_DPRINTF_(DEBUG_TYPE, streamId, format, ##args)
 
 #define LLC_SLICE_DPRINTF_(X, sliceId, format, args...)                        \
   DPRINTF(X, LLC_SLICE_MSG(sliceId, format, ##args))

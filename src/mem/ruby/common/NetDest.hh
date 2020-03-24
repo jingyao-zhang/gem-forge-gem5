@@ -83,6 +83,7 @@ class NetDest
 
     MachineID smallestElement() const;
     MachineID smallestElement(MachineType machine) const;
+    MachineID singleElement() const;
 
     void resize();
     int getSize() const { return m_bits.size(); }

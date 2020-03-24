@@ -24,10 +24,62 @@ public:
    */
   Addr getAddressToOurLLC() const;
 
+  int getNumCoresPerRow() const { return this->numCoresPerRow; }
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
   bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
+  bool isStreamMulticastEnabled() const { return this->enableStreamMulticast; }
+  int getStreamMulticastGroupSize() const {
+    return this->streamMulticastGroupSize;
+  }
+
+  /**
+   * Issue policy, starting from the most relaxed to most conservative.
+   * See LLCStreamEngine::canIssueByMulticastPolicy for explaination.
+   */
+  enum MulticastIssuePolicy {
+    Any,
+    FirstAllocated,
+    First,
+  };
+  MulticastIssuePolicy getStreamMulticastIssuePolicy() const {
+    return this->streamMulticastIssuePolicy;
+  }
   int getMLCStreamBufferInitNumEntries() const {
     return this->mlcStreamBufferInitNumEntries;
+  }
+
+  int getMulticastGroupId(int coreId) const {
+    /**
+     * MulticastGroup is used for LLC to try to multicast streams from
+     * cores within the same MulticastGroup. It's just a block in the
+     * Mesh topology.
+     */
+    if (this->streamMulticastGroupSize == 0) {
+      // Just one large MulticastGroup.
+      return 0;
+    }
+    auto rowId = coreId / this->numCoresPerRow;
+    auto colId = coreId % this->numCoresPerRow;
+    auto multicastGroupRowId = rowId / this->streamMulticastGroupSize;
+    auto multicastGroupColId = colId / this->streamMulticastGroupSize;
+    auto multicastGroupPerRow = this->streamMulticastGroupPerRow;
+    return multicastGroupRowId * multicastGroupPerRow + multicastGroupColId;
+  }
+
+  MessageSizeType getMessageSizeType(int size) const {
+    assert(this->isStreamSublineEnabled());
+    switch (size) {
+    case 1:
+      return MessageSizeType_Response_Data_1B;
+    case 2:
+      return MessageSizeType_Response_Data_2B;
+    case 4:
+      return MessageSizeType_Response_Data_4B;
+    case 8:
+      return MessageSizeType_Response_Data_8B;
+    default:
+      return MessageSizeType_Response_Data;
+    }
   }
 
   /**
@@ -63,8 +115,13 @@ private:
   BaseCPU *cpu = nullptr;
   const int llcSelectLowBit;
   const int llcSelectNumBits;
+  const int numCoresPerRow;
   const bool enableStreamFloat;
   const bool enableStreamSubline;
+  const bool enableStreamMulticast;
+  const int streamMulticastGroupSize;
+  int streamMulticastGroupPerRow;
+  MulticastIssuePolicy streamMulticastIssuePolicy;
   const int mlcStreamBufferInitNumEntries;
 };
 

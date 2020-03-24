@@ -109,6 +109,15 @@ parser.add_option("--gem-forge-stream-engine-enable-float-pseudo", action="store
 parser.add_option("--gem-forge-stream-engine-enable-float-subline", action="store_true",
                   default=False,
                   help="Enable subline transimission in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-multicast", action="store_true",
+                  default=False,
+                  help="Enable multicast transimission in stream float.")
+parser.add_option("--gem-forge-stream-engine-llc-multicast-group-size", action="store",
+                  type="int", default="0",
+                  help="Stream MulticastGroupSize for LLCStreamEngine.")
+parser.add_option("--gem-forge-stream-engine-llc-multicast-issue-policy", type="choice",
+                  default='first', choices=['any', 'first_allocated', 'first'],
+                  help="Stream Multicast issue policy, first means most conservative.")
 parser.add_option("--gem-forge-stream-engine-mlc-stream-buffer-init-num-entries", action="store",
                   type="int", default="32",
                   help="Initial number of entries of MLC stream buffer per stream.")

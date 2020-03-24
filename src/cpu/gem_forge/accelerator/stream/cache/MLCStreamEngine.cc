@@ -122,7 +122,7 @@ void MLCStreamEngine::configureStream(
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = streamConfigureData->initPAddr;
   msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
-  msg->m_Requestor = this->controller->getMachineID();
+  msg->m_XXNewRewquestor.add(this->controller->getMachineID());
   msg->m_Destination.add(this->mapPAddrToLLCBank(msg->m_addr));
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_pkt = pkt;
@@ -186,14 +186,30 @@ Addr MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream data when stream float is disabled.\n");
-  const auto &sliceId = msg.m_sliceId;
-  assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
+  for (const auto &sliceId : msg.m_sliceIds.sliceIds) {
+    /**
+     * Due to multicast, it's possible we received sliceIds that
+     * do not belong to this core. We simply ignore those.
+     */
+    auto sliceCoreId = sliceId.streamId.coreId;
+    auto myCoreId = this->controller->getMachineID().getNum();
+    if (sliceCoreId != myCoreId) {
+      continue;
+    }
+    this->receiveStreamDataForSingleSlice(sliceId, msg.m_DataBlk,
+                                          msg.getaddr());
+  }
+}
+
+void MLCStreamEngine::receiveStreamDataForSingleSlice(
+    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+    Addr paddrLine) {
   MLC_SLICE_DPRINTF(sliceId, "SE received data %#x.\n", sliceId.vaddr);
   for (auto &iter : this->idToStreamMap) {
     if (iter.second->getDynamicStreamId() == sliceId.streamId) {
       // Found the stream.
-      iter.second->receiveStreamData(msg);
-      this->reuseSlice(msg);
+      iter.second->receiveStreamData(sliceId, dataBlock, paddrLine);
+      this->reuseSlice(sliceId, dataBlock);
       return;
     }
   }
@@ -372,8 +388,8 @@ void MLCStreamEngine::computeReuseInformation(
   }
 }
 
-void MLCStreamEngine::reuseSlice(const ResponseMsg &msg) {
-  auto sliceId = msg.m_sliceId;
+void MLCStreamEngine::reuseSlice(const DynamicStreamSliceId &sliceId,
+                                 const DataBlock &dataBlock) {
   auto streamId = sliceId.streamId;
   while (this->reuseInfoMap.count(streamId)) {
     const auto &reuseInfo = this->reuseInfoMap.at(streamId);
@@ -384,7 +400,7 @@ void MLCStreamEngine::reuseSlice(const ResponseMsg &msg) {
     auto S = dynamic_cast<MLCDynamicDirectStream *>(
         this->idToStreamMap.at(targetStreamId));
     assert(S && "Only direct stream can have reuse.");
-    S->receiveReuseStreamData(makeLineAddress(sliceId.vaddr), msg.m_DataBlk);
+    S->receiveReuseStreamData(makeLineAddress(sliceId.vaddr), dataBlock);
     streamId = targetStreamId;
   }
 }

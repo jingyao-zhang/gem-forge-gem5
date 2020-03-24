@@ -39,10 +39,10 @@ uint64_t LLCStreamElement::getData(uint64_t streamId) const {
 // TODO: Support real flow control.
 LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
                                    CacheStreamConfigureData *_configData)
-    : controller(_controller), configData(*_configData),
+    : configData(*_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      maxWaitingDataBaseRequests(8), sliceIdx(0),
-      allocatedSliceIdx(_configData->initAllocatedIdx),
+      maxWaitingDataBaseRequests(8), controller(_controller),
+      sliceIdx(0), allocatedSliceIdx(_configData->initAllocatedIdx),
       waitingDataBaseRequests(0) {
   if (this->configData.isPointerChase) {
     // Pointer chase stream can only have at most one base requests waiting for

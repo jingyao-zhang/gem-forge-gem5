@@ -69,7 +69,8 @@ structure(RequestMsg, desc="...", interface="Message") {
   Addr addr,              desc="Physical address for this request";
   CoherenceRequestType Type,    desc="Type of request (GetS, GetX, PutX, etc)";
   RubyAccessMode AccessMode,    desc="user/supervisor access type";
-  MachineID Requestor      ,    desc="What component request";
+  // MachineID Requestor,       desc="What component request";
+  NetDest XXNewRewquestor,       desc="What components request, include Multicast";
   NetDest Destination,          desc="What components receive the request, includes MachineType and num";
   MessageSizeType MessageSize,  desc="size category of the message";
   DataBlock DataBlk,            desc="Data for the cache line (if PUTX)";
@@ -79,7 +80,8 @@ structure(RequestMsg, desc="...", interface="Message") {
   RequestStatisticPtr requestStatistic, default="nullptr", desc="Hook to update statistic of this core request";
   // ! Sean: StreamAwareCache
   PacketPtr pkt,                desc="Hack to store packet";
-  DynamicStreamSliceId sliceId, desc="Stream slice info";
+  // DynamicStreamSliceId sliceId, desc="Stream slice info";
+  DynamicStreamSliceIdVec sliceIds, desc="Stream slice ids";
   DataBlock streamStoreBlk,     desc="StreamStore value";
 
   int getStatsType() {
@@ -112,7 +114,8 @@ structure(ResponseMsg, desc="...", interface="Message") {
   bool Dirty, default="false",  desc="Dirty bit";
   int AckCount, default="0",    desc="number of acks in this message";
   MessageSizeType MessageSize,  desc="size category of the message";
-  DynamicStreamSliceId sliceId, desc="Stream slice info";
+  // DynamicStreamSliceId sliceId, desc="Stream slice info";
+  DynamicStreamSliceIdVec sliceIds, desc="Stream slice ids";
   int getStatsType() {
     return Type;
   }

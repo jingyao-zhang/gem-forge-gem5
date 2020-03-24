@@ -210,12 +210,14 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = this->llcTailPAddr;
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;
-  msg->m_Requestor = this->controller->getMachineID();
+  msg->m_XXNewRewquestor.add(this->controller->getMachineID());
   msg->m_Destination.add(this->llcTailSliceLLCBank);
   msg->m_MessageSize = MessageSizeType_Control;
-  msg->m_sliceId.streamId = this->dynamicStreamId;
-  msg->m_sliceId.lhsElementIdx = this->llcTailSliceIdx;
-  msg->m_sliceId.rhsElementIdx = this->tailSliceIdx;
+  DynamicStreamSliceId sliceId;
+  sliceId.streamId = this->dynamicStreamId;
+  sliceId.lhsElementIdx = this->llcTailSliceIdx;
+  sliceId.rhsElementIdx = this->tailSliceIdx;
+  msg->m_sliceIds.add(sliceId);
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
@@ -229,8 +231,9 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
   this->llcTailSliceLLCBank = this->tailSliceLLCBank;
 }
 
-void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
-  const auto &sliceId = msg.m_sliceId;
+void MLCDynamicDirectStream::receiveStreamData(
+    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+    Addr paddrLine) {
   assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
 
   auto numElements = sliceId.getNumElements();
@@ -290,7 +293,7 @@ void MLCDynamicDirectStream::receiveStreamData(const ResponseMsg &msg) {
       if (slice->dataReady) {
         // Must be from reuse.
       } else {
-        slice->setData(msg.m_DataBlk, this->controller->curCycle());
+        slice->setData(dataBlock, this->controller->curCycle());
       }
 
       // // Notify the indirect stream. Call this after setData().

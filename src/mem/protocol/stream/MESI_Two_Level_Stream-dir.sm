@@ -306,7 +306,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 
   action(qf_queueMemoryFetchRequest, "qf", desc="Queue off-chip fetch request") {
     peek(requestNetwork_in, RequestMsg) {
-      queueMemoryRead(in_msg.Requestor, address, to_mem_ctrl_latency);
+      queueMemoryRead(in_msg.XXNewRewquestor.singleElement(), address, to_mem_ctrl_latency);
     }
   }
 
@@ -320,7 +320,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 //added by SS for dma
   action(qf_queueMemoryFetchRequestDMA, "qfd", desc="Queue off-chip fetch request") {
     peek(requestNetwork_in, RequestMsg) {
-      queueMemoryRead(in_msg.Requestor, address, to_mem_ctrl_latency);
+      queueMemoryRead(in_msg.XXNewRewquestor.singleElement(), address, to_mem_ctrl_latency);
     }
   }
 
@@ -400,7 +400,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
       tbe.DataBlk := in_msg.DataBlk;
       tbe.PhysicalAddress := in_msg.addr;
       tbe.Len := in_msg.Len;
-      tbe.Requestor := in_msg.Requestor;
+      tbe.Requestor := in_msg.XXNewRewquestor.singleElement();
     }
   }
 

@@ -140,6 +140,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     Ack_all,      desc="writeback ack";
 
     Unblock, desc="Unblock from L1 requestor";
+    Pre_Unblock, desc="(Not Final) Unblock from L1 requestors, used when we are expecting multiple unblocks.";
     Exclusive_Unblock, desc="Unblock from L1 requestor";
 
     MEM_Inv, desc="Invalidation from directory";
@@ -155,12 +156,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   // CacheEntry
   structure(Entry, desc="...", interface="AbstractCacheEntry") {
-    State CacheState,          desc="cache state";
-    NetDest Sharers,               desc="tracks the L1 shares on-chip";
-    MachineID Exclusive,          desc="Exclusive holder of block";
-    DataBlock DataBlk,       desc="data for the block";
-    bool Dirty, default="false", desc="data is dirty";
-    DynamicStreamSliceId sliceId, desc="tempoary slice for this entry.";
+    State CacheState,                 desc="cache state";
+    NetDest Sharers,                  desc="tracks the L1 shares on-chip";
+    MachineID Exclusive,              desc="Exclusive holder of block";
+    DataBlock DataBlk,                desc="data for the block";
+    bool Dirty, default="false",      desc="data is dirty";
+    DynamicStreamSliceIdVec sliceIds, desc="tempoary slices for this entry";
+    int pendingUnblocks,              desc="Number of pending unblocks from multicast requestors";
   }
 
   // TBE fields
@@ -175,7 +177,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     NetDest L1_GetV_IDs,              desc="Set of the internal processors that want the block via L1_GETV";
     MachineID L1_GetX_ID,             desc="ID of the L1 cache to forward the block to once we get a response";
     int pendingAcks,                  desc="number of pending acks for invalidates during writeback";
-    DynamicStreamSliceId sliceId,     desc="Stream meta-data";
+    DynamicStreamSliceIdVec sliceIds, desc="Stream slices meta-data";
     DataBlock streamStoreBlk,         desc="Buffer for the update data";
   }
 
@@ -196,6 +198,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamEnd(PacketPtr);
     void receiveStreamMigrate(LLCDynamicStreamPtr);
     void receiveStreamFlow(DynamicStreamSliceId);
+    void receiveStreamElementDataVec(DynamicStreamSliceIdVec, DataBlock, DataBlock);
     void receiveStreamElementData(DynamicStreamSliceId, DataBlock, DataBlock);
     void receiveStreamIndirectRequest(RequestMsg);
   }
@@ -217,6 +220,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   RequestStatisticPtr getRequestStatistic(PacketPtr);
 
   bool isStreamSublineEnabled();
+  MessageSizeType getMessageSizeType(int);
 
   // inclusive cache, returns L2 entries only
   Entry getCacheEntry(Addr addr), return_by_pointer="yes" {
@@ -306,7 +310,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   Event L1Cache_request_type_to_event(CoherenceRequestType type, Addr addr,
-                                      MachineID requestor, Entry cache_entry) {
+                                      NetDest requestors, Entry cache_entry) {
     if (type == CoherenceRequestType:GETS) {
       return Event:L1_GETS;
     } else if (type == CoherenceRequestType:GETU) {
@@ -318,12 +322,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     } else if (type == CoherenceRequestType:GETX) {
       return Event:L1_GETX;
     } else if (type == CoherenceRequestType:UPGRADE) {
+      MachineID requestor := requestors.singleElement();
       if (is_valid(cache_entry) && cache_entry.Sharers.isElement(requestor) ) {
         return Event:L1_UPGRADE;
       } else {
         return Event:L1_GETX;
       }
     } else if (type == CoherenceRequestType:PUTX) {
+      MachineID requestor := requestors.singleElement();
       if (isSharer(addr, requestor, cache_entry)) {
         return Event:L1_PUTX;
       } else {
@@ -367,15 +373,32 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       peek(L1unblockNetwork_in,  ResponseMsg) {
         Entry cache_entry := getCacheEntry(in_msg.addr);
         TBE tbe := TBEs[in_msg.addr];
+        State state := getState(tbe, cache_entry, in_msg.addr);
         DPRINTF(RubySlicc, "Addr: %#x State: %s Sender: %s Type: %s Dest: %s\n",
-                in_msg.addr, getState(tbe, cache_entry, in_msg.addr),
+                in_msg.addr, state,
                 in_msg.Sender, in_msg.Type, in_msg.Destination);
 
         assert(in_msg.Destination.isElement(machineID));
         if (in_msg.Type == CoherenceResponseType:EXCLUSIVE_UNBLOCK) {
           trigger(Event:Exclusive_Unblock, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Type == CoherenceResponseType:UNBLOCK) {
-          trigger(Event:Unblock, in_msg.addr, cache_entry, tbe);
+          /**
+           * Special case for MT_VVB and MT_VB, as we may expect
+           * multiple Unblocks.
+           */
+          if (state == State:MT_VVB || state == State:MT_VB) {
+            assert(is_valid(cache_entry));
+            int pendingUnblocks := cache_entry.pendingUnblocks;
+            if (pendingUnblocks > 1) {
+              trigger(Event:Pre_Unblock, in_msg.addr, cache_entry, tbe);
+            } else if (pendingUnblocks == 1) {
+              trigger(Event:Unblock, in_msg.addr, cache_entry, tbe);
+            } else {
+              error("Zero PendingUnblocks when receiving Unblock");
+            }
+          } else {
+            trigger(Event:Unblock, in_msg.addr, cache_entry, tbe);
+          }
         } else {
           error("unknown unblock message");
         }
@@ -431,11 +454,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         Entry cache_entry := getCacheEntry(in_msg.addr);
         TBE tbe := TBEs[in_msg.addr];
 
-        DPRINTF(RubySlicc, "Addr: %#x State: %s Req: %s Type: %s Slice: %s Dest: %s\n",
+        DPRINTF(RubySlicc, "Addr: %#x State: %s Req: %s Type: %s Slices: %s Dest: %s\n",
                 in_msg.addr, getState(tbe, cache_entry, in_msg.addr),
-                in_msg.Requestor, in_msg.Type, in_msg.sliceId, in_msg.Destination);
+                in_msg.XXNewRewquestor, in_msg.Type, in_msg.sliceIds, in_msg.Destination);
 
-        assert(machineIDToMachineType(in_msg.Requestor) == MachineType:L1Cache);
+        // assert(machineIDToMachineType(in_msg.XXNewRewquestor.singleElement()) == MachineType:L1Cache);
         assert(in_msg.Destination.isElement(machineID));
 
         /**
@@ -443,7 +466,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
          */
         if (in_msg.Type == CoherenceRequestType:STREAM_CONFIG) {
           trigger(L1Cache_request_type_to_event(
-                    in_msg.Type, in_msg.addr, in_msg.Requestor, cache_entry),
+                    in_msg.Type, in_msg.addr, in_msg.XXNewRewquestor, cache_entry),
                   in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Type == CoherenceRequestType:STREAM_FLOW) {
           trigger(Event:STREAM_FLOW,
@@ -453,37 +476,25 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
                   in_msg.addr, cache_entry, tbe);
         }
 
-        if (in_msg.sliceId.isValid()) {
-          //DPRINTF(RubyStream, "Received stream request [%lu, +%lu) %#x.\n", 
-          //  in_msg.sliceId.getStartIdx(),
-          //  in_msg.sliceId.getNumElements(),
-          //  in_msg.addr);
-        }
-
         if (is_valid(cache_entry)) {
           // The L2 contains the block, so proceeded with handling the request
-          if (in_msg.sliceId.isValid()) {
-            //DPRINTF(RubyStream, "Hit stream request [%lu, +%lu).\n", 
-            //  in_msg.sliceId.getStartIdx(),
-            //  in_msg.sliceId.getNumElements());
-          }
           // Hit.
           setHitCacheLevel(in_msg.requestStatistic, 2);
           trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
-                                                in_msg.Requestor, cache_entry),
+                                                in_msg.XXNewRewquestor, cache_entry),
                   in_msg.addr, cache_entry, tbe);
         } else {
-          if (in_msg.sliceId.isValid()) {
+          if (in_msg.sliceIds.isValid()) {
             DPRINTF(RubyStream, "Miss stream request [%lu, +%lu).\n", 
-              in_msg.sliceId.getStartIdx(),
-              in_msg.sliceId.getNumElements());
+              in_msg.sliceIds.singleSliceId().getStartIdx(),
+              in_msg.sliceIds.singleSliceId().getNumElements());
           }
           if (L2cache.cacheAvail(in_msg.addr)) {
             // Miss.
             setHitCacheLevel(in_msg.requestStatistic, 4);
             // L2 does't have the line, but we have space for it in the L2
             trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
-                                                  in_msg.Requestor, cache_entry),
+                                                  in_msg.XXNewRewquestor, cache_entry),
                     in_msg.addr, cache_entry, tbe);
           } else {
             // No room in the L2, so we need to make room before handling the request
@@ -511,15 +522,15 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
         // This requestor is not the LLC bank generating this request,
         // but the host L1 controller to receive the data.
-        assert(machineIDToMachineType(in_msg.Requestor) == MachineType:L1Cache);
+        // assert(machineIDToMachineType(in_msg.XXNewRewquestor.singleElement()) == MachineType:L1Cache);
         assert(in_msg.Destination.isElement(machineID));
 
         // ! Sean: StreamAwareCache
-        assert(in_msg.sliceId.isValid());
+        assert(in_msg.sliceIds.isValid());
 
         DPRINTF(RubyStream, "Received stream indirect request [%lu, +%lu) %#x.\n", 
-          in_msg.sliceId.getStartIdx(),
-          in_msg.sliceId.getNumElements(),
+          in_msg.sliceIds.singleSliceId().getStartIdx(),
+          in_msg.sliceIds.singleSliceId().getNumElements(),
           in_msg.addr);
         // No matter the cache line status, 
         // simply enqueue the request to L1Request message buffer.
@@ -554,7 +565,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       enqueue(DirRequestL2Network_out, RequestMsg, l2_request_latency) {
         out_msg.addr := address;
         out_msg.Type := CoherenceRequestType:GETS;
-        out_msg.Requestor := machineID;
+        out_msg.XXNewRewquestor.add(machineID);
         out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
         out_msg.MessageSize := MessageSizeType:Control;
       }
@@ -567,11 +578,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         assert(is_valid(cache_entry));
         out_msg.addr := address;
         out_msg.Type := in_msg.Type;
-        out_msg.Requestor := in_msg.Requestor;
+        out_msg.XXNewRewquestor.addNetDest(in_msg.XXNewRewquestor);
         out_msg.Destination.add(cache_entry.Exclusive);
         out_msg.MessageSize := MessageSizeType:Request_Control;
         // Don't forget to copy the slice id.
-        out_msg.sliceId := in_msg.sliceId;
+        out_msg.sliceIds := in_msg.sliceIds;
       }
     }
   }
@@ -619,12 +630,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:DATA;
         out_msg.Sender := machineID;
-        out_msg.Destination.add(in_msg.Requestor);
+        out_msg.Destination.addNetDest(in_msg.XXNewRewquestor);
         out_msg.DataBlk := cache_entry.DataBlk;
         out_msg.MessageSize := MessageSizeType:Response_Data;
 
         out_msg.AckCount := 0 - cache_entry.Sharers.count();
-        if (cache_entry.Sharers.isElement(in_msg.Requestor)) {
+        if (cache_entry.Sharers.isElement(in_msg.XXNewRewquestor.singleElement())) {
           out_msg.AckCount := out_msg.AckCount + 1;
         }
       }
@@ -638,7 +649,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:DATA_EXCLUSIVE;
         out_msg.Sender := machineID;
-        out_msg.Destination.add(in_msg.Requestor);
+        out_msg.Destination.addNetDest(in_msg.XXNewRewquestor);
         out_msg.DataBlk := cache_entry.DataBlk;
         out_msg.MessageSize := MessageSizeType:Response_Data;
 
@@ -657,33 +668,61 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           DPRINTF(RubyMulticast, "Multicast %#x to %s.\n", address, multicastTestDest4);
           out_msg.Destination.add(multicastTestDest4);
         }
+        if (in_msg.sliceIds.isValid() && in_msg.XXNewRewquestor.count() > 1) {
+          DPRINTF(RubyMulticast, "Multicast Line %#x State %s\n", address, cache_entry.CacheState);
+        }
 
         out_msg.AckCount := 0 - cache_entry.Sharers.count();
-        if (cache_entry.Sharers.isElement(in_msg.Requestor)) {
+        if (cache_entry.Sharers.isElement(in_msg.XXNewRewquestor.singleElement())) {
           out_msg.AckCount := out_msg.AckCount + 1;
         }
         // Don't forget to copy the stream meta-data.
-        out_msg.sliceId := in_msg.sliceId;
-        if (in_msg.sliceId.isValid()) {
+        out_msg.sliceIds := in_msg.sliceIds;
+        if (in_msg.sliceIds.isValid()) {
           /**
            * ! Sean: StreamAwareCache.
            * Only transmit the required sub cache line.
            */
           if (isStreamSublineEnabled()) {
-            if (in_msg.sliceId.getSize() == 1) {
-              out_msg.MessageSize := MessageSizeType:Response_Data_1B;
-            } else if (in_msg.sliceId.getSize() == 2) {
-              out_msg.MessageSize := MessageSizeType:Response_Data_2B;
-            } else if (in_msg.sliceId.getSize() == 4) {
-              out_msg.MessageSize := MessageSizeType:Response_Data_4B;
-            } else if (in_msg.sliceId.getSize() == 8) {
-              out_msg.MessageSize := MessageSizeType:Response_Data_8B;
-            }
+            out_msg.MessageSize := getMessageSizeType(in_msg.sliceIds.singleSliceId().getSize());
           }
         }
       }
     }
   }
+
+  action(du_sendUncacheDataToRequestors, "du", desc="Send uncache data from cache to all reqeustors") {
+    peek(L1RequestL2Network_in, RequestMsg) {
+      enqueue(responseL2Network_out, ResponseMsg, l2_response_latency) {
+        assert(is_valid(cache_entry));
+        out_msg.addr := address;
+        out_msg.Type := CoherenceResponseType:DATA_EXCLUSIVE;
+        out_msg.Sender := machineID;
+        out_msg.Destination.addNetDest(in_msg.XXNewRewquestor);
+        out_msg.DataBlk := cache_entry.DataBlk;
+        out_msg.MessageSize := MessageSizeType:Response_Data;
+
+        if (in_msg.sliceIds.isValid() && in_msg.XXNewRewquestor.count() > 1) {
+          DPRINTF(RubyMulticast, "Multicast Line %#x State %s.\n", address, cache_entry.CacheState);
+        }
+
+        /**
+         * Don't forget to copy the stream meta-data.
+         * So far all Uncache request is generated by Stream.
+         */
+        assert(in_msg.sliceIds.isValid());
+        out_msg.sliceIds := in_msg.sliceIds;
+        /**
+         * ! Sean: StreamAwareCache.
+         * Only transmit the required sub cache line.
+         */
+        if (isStreamSublineEnabled()) {
+          out_msg.MessageSize := getMessageSizeType(in_msg.sliceIds.firstSliceId().getSize());
+        }
+      }
+    }
+  }
+
 
   action(ds_sendSharedDataToRequestor, "ds", desc="Send data from cache to reqeustor") {
     peek(L1RequestL2Network_in, RequestMsg) {
@@ -692,7 +731,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:DATA;
         out_msg.Sender := machineID;
-        out_msg.Destination.add(in_msg.Requestor);
+        out_msg.Destination.addNetDest(in_msg.XXNewRewquestor);
         out_msg.DataBlk := cache_entry.DataBlk;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.AckCount := 0;
@@ -731,33 +770,24 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   action(eu_sendDataToGetURequestors, "eu", desc="Send data from cache to the GetU IDs") {
     assert(is_valid(tbe));
     if (tbe.L1_GetV_IDs.count() > 0) {
-      assert(tbe.L1_GetV_IDs.count() == 1);
+      // So far only stream can send GetV request.
+      assert(tbe.sliceIds.isValid());
       enqueue(responseL2Network_out, ResponseMsg, to_l1_latency) {
         assert(is_valid(cache_entry));
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:DATA_EXCLUSIVE;
         out_msg.Sender := machineID;
-        out_msg.Destination := tbe.L1_GetV_IDs;  // internal nodes
+        out_msg.Destination := tbe.L1_GetV_IDs;
         out_msg.DataBlk := cache_entry.DataBlk;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         // Copy the stream meta-data.
-        out_msg.sliceId := tbe.sliceId;
-        if (tbe.sliceId.isValid()) {
-          /**
-           * ! Sean: StreamAwareCache.
-           * Only transmit the required sub cache line.
-           */
-          if (isStreamSublineEnabled()) {
-            if (tbe.sliceId.getSize() == 1) {
-              out_msg.MessageSize := MessageSizeType:Response_Data_1B;
-            } else if (tbe.sliceId.getSize() == 2) {
-              out_msg.MessageSize := MessageSizeType:Response_Data_2B;
-            } else if (tbe.sliceId.getSize() == 4) {
-              out_msg.MessageSize := MessageSizeType:Response_Data_4B;
-            } else if (tbe.sliceId.getSize() == 8) {
-              out_msg.MessageSize := MessageSizeType:Response_Data_8B;
-            }
-          }
+        out_msg.sliceIds := tbe.sliceIds;
+        /**
+         * ! Sean: StreamAwareCache.
+         * Only transmit the required sub cache line.
+         */
+        if (isStreamSublineEnabled()) {
+          out_msg.MessageSize := getMessageSizeType(tbe.sliceIds.firstSliceId().getSize());
         }
       }
     }
@@ -784,7 +814,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       assert(is_valid(cache_entry));
       out_msg.addr := address;
       out_msg.Type := CoherenceRequestType:INV;
-      out_msg.Requestor := machineID;
+      out_msg.XXNewRewquestor.add(machineID);
       out_msg.Destination := cache_entry.Sharers;
       out_msg.MessageSize := MessageSizeType:Request_Control;
     }
@@ -796,7 +826,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         assert(is_valid(cache_entry));
         out_msg.addr := address;
         out_msg.Type := CoherenceRequestType:INV;
-        out_msg.Requestor := in_msg.Requestor;
+        out_msg.XXNewRewquestor := in_msg.XXNewRewquestor;
         out_msg.Destination := cache_entry.Sharers;
         out_msg.MessageSize := MessageSizeType:Request_Control;
       }
@@ -809,9 +839,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         assert(is_valid(cache_entry));
         out_msg.addr := address;
         out_msg.Type := CoherenceRequestType:INV;
-        out_msg.Requestor := in_msg.Requestor;
+        out_msg.XXNewRewquestor := in_msg.XXNewRewquestor;
         out_msg.Destination := cache_entry.Sharers;
-        out_msg.Destination.remove(in_msg.Requestor);
+        out_msg.Destination.removeNetDest(in_msg.XXNewRewquestor);
         out_msg.MessageSize := MessageSizeType:Request_Control;
       }
     }
@@ -832,7 +862,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   action(css_copyStreamSliceId, "css", desc="Copy stream slice id to TBE") {
     assert(is_valid(tbe));
     peek(L1RequestL2Network_in, RequestMsg) { 
-      tbe.sliceId := in_msg.sliceId;
+      tbe.sliceIds := in_msg.sliceIds;
     }
   }
   action(csv_copyStreamStoreValue, "csv", desc="Copy stream store value to TBE") {
@@ -903,21 +933,21 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   action(ss_recordGetSL1ID, "\s", desc="Record L1 GetS for load response") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(tbe));
-      tbe.L1_GetS_IDs.add(in_msg.Requestor);
+      tbe.L1_GetS_IDs.add(in_msg.XXNewRewquestor.singleElement());
     }
   }
 
   action(sv_recordGetVL1ID, "\v", desc="Record L1 GetV for load response") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(tbe));
-      tbe.L1_GetV_IDs.add(in_msg.Requestor);
+      tbe.L1_GetV_IDs.addNetDest(in_msg.XXNewRewquestor);
     }
   }
 
   action(xx_recordGetXL1ID, "\x", desc="Record L1 GetX for store response") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(tbe));
-      tbe.L1_GetX_ID := in_msg.Requestor;
+      tbe.L1_GetX_ID := in_msg.XXNewRewquestor.singleElement();
     }
   }
 
@@ -942,7 +972,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:WB_ACK;
         out_msg.Sender := machineID;
-        out_msg.Destination.add(in_msg.Requestor);
+        out_msg.Destination.addNetDest(in_msg.XXNewRewquestor);
         out_msg.MessageSize := MessageSizeType:Response_Control;
       }
     }
@@ -955,7 +985,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         out_msg.addr := address;
         out_msg.Type := CoherenceResponseType:ACK;
         out_msg.Sender := machineID;
-        out_msg.Destination.add(in_msg.Requestor);
+        out_msg.Destination.addNetDest(in_msg.XXNewRewquestor);
         out_msg.MessageSize := MessageSizeType:Response_Control;
         // upgrader doesn't get ack from itself, hence the + 1
         out_msg.AckCount := 0 - cache_entry.Sharers.count() + 1;
@@ -974,7 +1004,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   action(nn_addSharer, "\n", desc="Add L1 sharer to list") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(cache_entry));
-      addSharer(address, in_msg.Requestor, cache_entry);
+      addSharer(address, in_msg.XXNewRewquestor.singleElement(), cache_entry);
       APPEND_TRANSITION_COMMENT( cache_entry.Sharers );
     }
   }
@@ -986,20 +1016,28 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     }
   }
 
-  action(ns_addSliceIdFromRequest, "\ns", desc="Add slice id to cache") {
+  action(ns_recordMTGetVInfoFromRequest, "\ns", desc="Record required information for MT->L1_GETV") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(cache_entry));
-      assert(!cache_entry.sliceId.isValid());
-      assert(in_msg.sliceId.isValid());
-      DPRINTF(LLCRubyStream, "%s: Add to LLC cache entry.\n", in_msg.sliceId);
-      cache_entry.sliceId := in_msg.sliceId;
+      assert(!cache_entry.sliceIds.isValid());
+      assert(in_msg.sliceIds.isValid());
+      DPRINTF(LLCRubyStream, "%s: Add to LLC cache entry.\n", in_msg.sliceIds);
+      cache_entry.sliceIds := in_msg.sliceIds;
+      cache_entry.pendingUnblocks := in_msg.XXNewRewquestor.count();
+    }
+  }
+
+  action(qu_updateUnblockInCacheEntry, "qu", desc="update pending unblock count in cache entry") {
+    peek(L1unblockNetwork_in, ResponseMsg) {
+      assert(is_valid(cache_entry));
+      cache_entry.pendingUnblocks := cache_entry.pendingUnblocks - 1;
     }
   }
 
   action(kk_removeRequestSharer, "\k", desc="Remove L1 Request sharer from list") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(cache_entry));
-      cache_entry.Sharers.remove(in_msg.Requestor);
+      cache_entry.Sharers.removeNetDest(in_msg.XXNewRewquestor);
     }
   }
 
@@ -1012,8 +1050,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(cache_entry));
       cache_entry.Sharers.clear();
-      cache_entry.Exclusive := in_msg.Requestor;
-      addSharer(address, in_msg.Requestor, cache_entry);
+      cache_entry.Exclusive := in_msg.XXNewRewquestor.singleElement();
+      addSharer(address, in_msg.XXNewRewquestor.singleElement(), cache_entry);
     }
   }
 
@@ -1044,24 +1082,24 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   action(nec_notifyStreamEngineFromCacheEntry, "nec", desc="notify the stream engine from cache entry") {
     assert(is_valid(cache_entry));
-    if (cache_entry.sliceId.isValid()) {
+    if (cache_entry.sliceIds.isValid()) {
       // This should never be used for StreamStore.
-      se.receiveStreamElementData(cache_entry.sliceId, cache_entry.DataBlk, cache_entry.DataBlk);
+      se.receiveStreamElementDataVec(cache_entry.sliceIds, cache_entry.DataBlk, cache_entry.DataBlk);
       // Clear the sliceId.
-      cache_entry.sliceId.clear();
+      cache_entry.sliceIds.clear();
     }
   }
   action(net_notifyStreamEngineFromTBE, "net", desc="notify the stream engine from TBE") {
     assert(is_valid(tbe));
-    if (tbe.sliceId.isValid()) {
-      se.receiveStreamElementData(tbe.sliceId, tbe.DataBlk, tbe.streamStoreBlk);
+    if (tbe.sliceIds.isValid()) {
+      se.receiveStreamElementDataVec(tbe.sliceIds, tbe.DataBlk, tbe.streamStoreBlk);
     }
   }
   action(ner_notifyStreamEngineFromL1Req, "ner", desc="notify the stream engine from L1 request") {
     peek(L1RequestL2Network_in, RequestMsg) {
       assert(is_valid(cache_entry));
-      if (in_msg.sliceId.isValid()) {
-        se.receiveStreamElementData(in_msg.sliceId, cache_entry.DataBlk, in_msg.streamStoreBlk);
+      if (in_msg.sliceIds.isValid()) {
+        se.receiveStreamElementDataVec(in_msg.sliceIds, cache_entry.DataBlk, in_msg.streamStoreBlk);
       }
     }
   }
@@ -1074,7 +1112,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
   action(rsf_receiveStreamFlow, "rsf", desc="Receive the stream flow message") {
     peek(L1RequestL2Network_in, RequestMsg) {
-      se.receiveStreamFlow(in_msg.sliceId);
+      se.receiveStreamFlow(in_msg.sliceIds.singleSliceId());
     }
   }
   action(rse_receiveStreamEnd, "rse", desc="Receive the StreamEnd") {
@@ -1301,7 +1339,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   // The data may be cached somewhere above, but we have the correct copy. 
   transition(SS, L1_GETV, SS) {
     ner_notifyStreamEngineFromL1Req;
-    dd_sendExclusiveDataToRequestor;
+    du_sendUncacheDataToRequestors;
     set_setMRU;
     uu_profileHit;
     jj_popL1RequestQueue;
@@ -1366,7 +1404,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   // The data is not cached above.
   transition(M, L1_GETV, M) {
     ner_notifyStreamEngineFromL1Req;
-    dd_sendExclusiveDataToRequestor;
+    du_sendUncacheDataToRequestors;
     set_setMRU;
     uu_profileHit;
     jj_popL1RequestQueue;
@@ -1416,7 +1454,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
      * The only difference from MT_IIB is that we do not add sharer from Unblock.
      */
     b_forwardRequestToExclusive;
-    ns_addSliceIdFromRequest;
+    ns_recordMTGetVInfoFromRequest;
     uu_profileMiss;
     set_setMRU;
     jj_popL1RequestQueue;
@@ -1476,7 +1514,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     nnu_addSharerFromUnblock;
     k_popUnblockQueue;
   }
+  transition(MT_VVB, Pre_Unblock, MT_VVB) {
+    qu_updateUnblockInCacheEntry;
+    k_popUnblockQueue;
+  }
   transition(MT_VVB, Unblock, MT_IB) {
+    qu_updateUnblockInCacheEntry;
     k_popUnblockQueue;
   }
 
@@ -1502,7 +1545,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     k_popUnblockQueue;
     kd_wakeUpDependents;
   }
+  transition(MT_VB, Pre_Unblock, MT_VB) {
+    qu_updateUnblockInCacheEntry;
+    k_popUnblockQueue;
+  }
   transition(MT_VB, Unblock, SS) {
+    qu_updateUnblockInCacheEntry;
     nec_notifyStreamEngineFromCacheEntry;
     k_popUnblockQueue;
     kd_wakeUpDependents;

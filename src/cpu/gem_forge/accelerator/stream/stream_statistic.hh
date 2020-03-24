@@ -38,6 +38,7 @@ public:
   size_t numMLCAllocatedSlice = 0;
   size_t numLLCIssueSlice = 0;
   size_t numLLCSentSlice = 0;
+  size_t numLLCMulticastSlice = 0;
   size_t numLLCCanMulticastSlice = 0;
   size_t numLLCFaultSlice = 0;
   size_t numLLCPredYSlice = 0;

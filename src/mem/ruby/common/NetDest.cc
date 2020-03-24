@@ -164,6 +164,12 @@ NetDest::smallestElement(MachineType machine) const
     panic("No smallest element of given MachineType.");
 }
 
+MachineID
+NetDest::singleElement() const {
+    assert(this->count() == 1);
+    return this->smallestElement();
+}
+
 // Returns true iff all bits are set
 bool
 NetDest::isBroadcast() const

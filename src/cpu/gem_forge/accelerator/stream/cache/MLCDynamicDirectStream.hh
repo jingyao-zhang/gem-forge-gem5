@@ -23,7 +23,8 @@ public:
    */
   Addr getLLCStreamTailPAddr() const override { return this->llcTailPAddr; }
 
-  void receiveStreamData(const ResponseMsg &msg) override;
+  void receiveStreamData(const DynamicStreamSliceId &sliceId,
+                         const DataBlock &dataBlock, Addr paddrLine) override;
   void receiveReuseStreamData(Addr vaddr, const DataBlock &dataBlock);
   void setLLCCutLineVAddr(Addr vaddr) { this->llcCutLineVAddr = vaddr; }
 

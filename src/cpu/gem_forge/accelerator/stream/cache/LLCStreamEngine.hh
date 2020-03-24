@@ -35,6 +35,9 @@ public:
   void receiveStreamEnd(PacketPtr pkt);
   void receiveStreamMigrate(LLCDynamicStreamPtr stream);
   void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
+  void receiveStreamElementDataVec(const DynamicStreamSliceIdVec &sliceIds,
+                                   const DataBlock &dataBlock,
+                                   const DataBlock &storeValueBlock);
   void receiveStreamElementData(const DynamicStreamSliceId &sliceId,
                                 const DataBlock &dataBlock,
                                 const DataBlock &storeValueBlock);
@@ -60,6 +63,7 @@ private:
   const int maxInqueueRequests;
 
   using StreamSet = std::set<LLCDynamicStreamPtr>;
+  using StreamVec = std::vector<LLCDynamicStreamPtr>;
   using StreamList = std::list<LLCDynamicStreamPtr>;
   using StreamListIter = StreamList::iterator;
   StreamList streams;
@@ -72,7 +76,7 @@ private:
    * Bidirectionaly map between streams that are identical but
    * to different cores.
    */
-  std::map<LLCDynamicStreamPtr, StreamSet> multicastStreamMap;
+  std::map<LLCDynamicStreamPtr, StreamVec> multicastStreamMap;
 
   /**
    * Buffered stream flow message waiting for the stream
@@ -114,6 +118,23 @@ private:
   void addStreamToMulticastTable(LLCDynamicStreamPtr dynS);
   void removeStreamFromMulticastTable(LLCDynamicStreamPtr dynS);
   bool hasMergedAsMulticast(LLCDynamicStreamPtr dynS) const;
+  StreamVec &getMulticastGroup(LLCDynamicStreamPtr dynS);
+  const StreamVec &getMulticastGroup(LLCDynamicStreamPtr dynS) const;
+
+  /**
+   * Check if the stream can issue by MulticastPolicy.
+   */
+  bool canIssueByMulticastPolicy(LLCDynamicStreamPtr dynS) const;
+
+  /**
+   * Sort the multicast group s.t. behind streams comes first.
+   */
+  void sortMulticastGroup(StreamVec &group) const;
+  /**
+   * Given a request, we check if we can have multicast slice.
+   */
+  void generateMulticastRequest(RequestQueueIter reqIter,
+                                LLCDynamicStreamPtr dynS);
 
   /**
    * Process stream flow control messages and distribute
@@ -146,10 +167,11 @@ private:
   /**
    * Helper function to enqueue a request and start address translation.
    */
-  void enqueueRequest(LLCDynamicStreamPtr dynS,
-                      const DynamicStreamSliceId &sliceId, Addr vaddrLine,
-                      Addr paddrLine, CoherenceRequestType type,
-                      uint64_t storeData);
+  RequestQueueIter enqueueRequest(LLCDynamicStreamPtr dynS,
+                                  const DynamicStreamSliceId &sliceId,
+                                  Addr vaddrLine, Addr paddrLine,
+                                  CoherenceRequestType type,
+                                  uint64_t storeData);
   void translationCallback(PacketPtr pkt, ThreadContext *tc,
                            RequestQueueIter reqIter);
 
