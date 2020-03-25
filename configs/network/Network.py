@@ -69,6 +69,8 @@ def define_options(parser):
                             0: weight-based table
                             1: XY (for Mesh. see garnet2.0/RoutingUnit.cc)
                             2: Custom (see garnet2.0/RoutingUnit.cc""")
+    parser.add_option("--routing-YX", action="store_true", default=False,
+                      help="Switch XY to YX, used in MeshDirCorners_XY only.")
     parser.add_option("--network-fault-model", action="store_true",
                       default=False,
                       help="""enable network fault model:

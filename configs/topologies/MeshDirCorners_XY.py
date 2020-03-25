@@ -155,6 +155,13 @@ class MeshDirCorners_XY(SimpleTopology):
         # Create the mesh links.
         int_links = []
 
+        # Smaller weight means higher priority
+        weightX = 1
+        weightY = 2
+        if options.routing_YX:
+            weightX = 2
+            weightY = 1
+
         # East output to West input links (weight = 1)
         for row in range(num_rows):
             for col in range(num_columns):
@@ -167,7 +174,7 @@ class MeshDirCorners_XY(SimpleTopology):
                                              src_outport="East",
                                              dst_inport="West",
                                              latency = link_latency,
-                                             weight=1))
+                                             weight=weightX))
                     link_count += 1
 
         # West output to East input links (weight = 1)
@@ -182,7 +189,7 @@ class MeshDirCorners_XY(SimpleTopology):
                                              src_outport="West",
                                              dst_inport="East",
                                              latency = link_latency,
-                                             weight=1))
+                                             weight=weightX))
                     link_count += 1
 
         # North output to South input links (weight = 2)
@@ -197,7 +204,7 @@ class MeshDirCorners_XY(SimpleTopology):
                                              src_outport="North",
                                              dst_inport="South",
                                              latency = link_latency,
-                                             weight=2))
+                                             weight=weightY))
                     link_count += 1
 
         # South output to North input links (weight = 2)
@@ -212,7 +219,7 @@ class MeshDirCorners_XY(SimpleTopology):
                                              src_outport="South",
                                              dst_inport="North",
                                              latency = link_latency,
-                                             weight=2))
+                                             weight=weightY))
                     link_count += 1
 
 
