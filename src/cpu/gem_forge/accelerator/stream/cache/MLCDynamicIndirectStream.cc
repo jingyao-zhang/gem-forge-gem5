@@ -20,7 +20,7 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize),
       isOneIterationBehind(_configData->isOneIterationBehind),
-      totalTripCount(_configData->totalTripCount) {
+      totalTripCount(_configData->totalTripCount), tailElementIdx(0) {
   if (this->isOneIterationBehind) {
     // TODO: Clean this up, as we no longer allocate slices in the constructor.
     // So far I just hack to ignore this case for reduction stream, which is the
@@ -52,13 +52,13 @@ void MLCDynamicIndirectStream::receiveStreamData(
   // It is indeed a problem to synchronize the flow control between
   // base stream and indirect stream.
   // It is possible for an indirect stream to receive stream data
-  // beyond the tailSliceIdx, so we adhoc to fix that.
+  // beyond the tailElementIdx, so we adhoc to fix that.
   // ! This breaks the MaximumNumElement constraint.
 
   MLC_SLICE_DPRINTF(sliceId, "Receive data vaddr %#x paddr %#x.\n",
                     sliceId.vaddr, paddrLine);
 
-  while (this->tailSliceIdx <= sliceId.lhsElementIdx) {
+  while (this->tailElementIdx <= sliceId.lhsElementIdx) {
     this->allocateSlice();
   }
 
@@ -81,9 +81,19 @@ void MLCDynamicIndirectStream::receiveStreamData(
     // We better be overflowed.
     assert(this->hasOverflowed() && "No slices when not overflowed.");
   } else {
-    if (sliceId.lhsElementIdx < this->slices.front().sliceId.lhsElementIdx) {
-      // The stream data is lagging behind. The slice is already
-      // released.
+    /**
+     * Check if the data is lagging behind. Since we guarantee that
+     * all slices will be created during allocation, it is impossible that
+     * we may need to insert new slices here.
+     */
+    auto frontVAddr = this->slices.front().sliceId.vaddr;
+    auto frontElementIdx = this->slices.front().sliceId.lhsElementIdx;
+    if (sliceId.lhsElementIdx < frontElementIdx) {
+      // Definitely behind.
+      return;
+    } else if (sliceId.lhsElementIdx == frontElementIdx &&
+               sliceId.vaddr < frontVAddr) {
+      // Still behind.
       return;
     }
   }
@@ -94,8 +104,23 @@ void MLCDynamicIndirectStream::receiveStreamData(
   auto elementSlices = this->findSliceByElementIdx(sliceId.lhsElementIdx);
   auto slicesBegin = elementSlices.first;
   auto slicesEnd = elementSlices.second;
-  auto sliceIter =
-      this->findOrInsertSliceBySliceId(slicesBegin, slicesEnd, sliceId);
+
+  auto sliceIter = slicesBegin;
+  auto targetLineAddr = makeLineAddress(sliceId.vaddr);
+  while (sliceIter != slicesEnd) {
+    assert(sliceIter->sliceId.lhsElementIdx == sliceId.lhsElementIdx);
+    auto sliceLineAddr = makeLineAddress(sliceIter->sliceId.vaddr);
+    if (sliceLineAddr == targetLineAddr) {
+      break;
+    } else if (sliceLineAddr < targetLineAddr) {
+      ++sliceIter;
+    } else {
+      MLC_SLICE_PANIC(sliceId, "Failed to find slice.\n");
+    }
+  }
+  if (sliceIter == slicesEnd) {
+    MLC_SLICE_PANIC(sliceId, "Failed to find slice.\n");
+  }
 
   sliceIter->setData(dataBlock, this->controller->curCycle());
   if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
@@ -120,11 +145,12 @@ void MLCDynamicIndirectStream::receiveStreamData(
 void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
                                                      uint64_t baseData) {
 
-  MLC_S_DPRINTF("Receive BaseStreamData element %lu data %lu.\n", elementIdx,
-                baseData);
+  MLC_S_DPRINTF("Receive BaseStreamData element %lu data %lu tailSliceIdx %lu "
+                "tailElementIdx %lu.\n",
+                elementIdx, baseData, this->tailSliceIdx, this->tailElementIdx);
 
   // It's possible that we are behind the base stream?
-  while (this->tailSliceIdx <= elementIdx) {
+  while (this->tailElementIdx <= elementIdx) {
     this->allocateSlice();
   }
 
@@ -219,8 +245,8 @@ void MLCDynamicIndirectStream::allocateSlice() {
   // to allocate new slice.
   DynamicStreamSliceId sliceId;
   sliceId.streamId = this->dynamicStreamId;
-  sliceId.lhsElementIdx = this->tailSliceIdx;
-  sliceId.rhsElementIdx = this->tailSliceIdx + 1;
+  sliceId.lhsElementIdx = this->tailElementIdx;
+  sliceId.rhsElementIdx = this->tailElementIdx + 1;
 
   MLC_SLICE_DPRINTF(sliceId, "Allocated indirect slice.\n");
 
@@ -242,11 +268,12 @@ void MLCDynamicIndirectStream::allocateSlice() {
   }
 
   this->tailSliceIdx++;
+  this->tailElementIdx++;
 }
 
 bool MLCDynamicIndirectStream::hasOverflowed() const {
   return this->totalTripCount > 0 &&
-         (this->tailSliceIdx >= (this->totalTripCount + 1));
+         (this->tailElementIdx >= (this->totalTripCount + 1));
 }
 
 int64_t MLCDynamicIndirectStream::getTotalTripCount() const {

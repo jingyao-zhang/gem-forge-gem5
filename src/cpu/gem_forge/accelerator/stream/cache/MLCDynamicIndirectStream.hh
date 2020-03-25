@@ -58,11 +58,6 @@ public:
     this->baseStream = baseStream;
   }
 
-  /**
-   * By design, indirect stream's sliceIdx is actually elementIdx.
-   */
-  uint64_t getTailElementIdx() const { return this->tailSliceIdx; }
-
 private:
   // Remember the root stream id.
   DynamicStreamId rootStreamId;
@@ -78,6 +73,13 @@ private:
    * -1 means indefinite.
    */
   const int64_t totalTripCount;
+
+  /**
+   * The tail ElementIdx (Not allocated yet).
+   * This is not the same as tailSliceIdx due to coalesced indirect stream:
+   * a[b[i] + 0]; a[b[i] + 1];
+   */
+  uint64_t tailElementIdx;
 
   bool hasOverflowed() const override;
   int64_t getTotalTripCount() const override;
