@@ -134,7 +134,7 @@ def _url_factory(schemes, enable=True):
     return decorator
 
 @_url_factory([ None, "", "text", "file", ])
-def _textFactory(fn, desc=True):
+def _textFactory(fn, desc=True, dumpAll=False):
     """Output stats in text format.
 
     Text stat files contain one stat per line with an optional
@@ -143,13 +143,14 @@ def _textFactory(fn, desc=True):
 
     Parameters:
       * desc (bool): Output stat descriptions (default: True)
+      * dumpAll: Output stat even if it is set to no Output (default: False)
 
     Example:
-      text://stats.txt?desc=False
+      text://stats.txt?desc=False;dumpAll=True
 
     """
 
-    return _m5.stats.initText(fn, desc)
+    return _m5.stats.initText(fn, desc, dumpAll)
 
 @_url_factory([ "h5", ], enable=hasattr(_m5.stats, "initHDF5"))
 def _hdf5Factory(fn, chunking=10, desc=True, formulas=True):

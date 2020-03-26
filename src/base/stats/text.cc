@@ -194,11 +194,16 @@ Text::endGroup()
 bool
 Text::noOutput(const Info &info)
 {
-    if (!info.flags.isSet(display))
-        return true;
+    /**
+     * Check if we want to dump all stats.
+     */
+    if (!this->dumpAll) {
+        if (!info.flags.isSet(display))
+            return true;
 
-    if (info.prereq && info.prereq->zero())
-        return true;
+        if (info.prereq && info.prereq->zero())
+            return true;
+    }
 
     return false;
 }
@@ -231,6 +236,7 @@ struct ScalarPrint
     string desc;
     Flags flags;
     bool descriptions;
+    bool dumpAll;
     int precision;
     Result pdf;
     Result cdf;
@@ -252,9 +258,11 @@ ScalarPrint::update(Result val, Result total)
 void
 ScalarPrint::operator()(ostream &stream, bool oneLine) const
 {
-    if ((flags.isSet(nozero) && (!oneLine) && value == 0.0) ||
-        (flags.isSet(nonan) && std::isnan(value)))
-        return;
+    if (!this->dumpAll) {
+        if ((flags.isSet(nozero) && (!oneLine) && value == 0.0) ||
+            (flags.isSet(nonan) && std::isnan(value)))
+            return;
+    }
 
     stringstream pdfstr, cdfstr;
 
@@ -288,6 +296,7 @@ struct VectorPrint
     vector<string> subdescs;
     Flags flags;
     bool descriptions;
+    bool dumpAll;
     int precision;
     VResult vec;
     Result total;
@@ -315,6 +324,7 @@ VectorPrint::operator()(std::ostream &stream) const
     print.desc = desc;
     print.precision = precision;
     print.descriptions = descriptions;
+    print.dumpAll = dumpAll;
     print.flags = flags;
     print.pdf = _total ? 0.0 : NAN;
     print.cdf = _total ? 0.0 : NAN;
@@ -375,6 +385,7 @@ struct DistPrint
     string desc;
     Flags flags;
     bool descriptions;
+    bool dumpAll;
     int precision;
 
     const DistData &data;
@@ -412,6 +423,7 @@ DistPrint::init(const Text *text, const Info &info)
     flags = info.flags;
     precision = info.precision;
     descriptions = text->descriptions;
+    dumpAll = text->dumpAll;
 }
 
 void
@@ -424,6 +436,7 @@ DistPrint::operator()(ostream &stream) const
     print.precision = precision;
     print.flags = flags;
     print.descriptions = descriptions;
+    print.dumpAll = dumpAll;
     print.desc = desc;
     print.pdf = NAN;
     print.cdf = NAN;
@@ -553,6 +566,7 @@ Text::visit(const ScalarInfo &info)
     print.desc = info.desc;
     print.flags = info.flags;
     print.descriptions = descriptions;
+    print.dumpAll = dumpAll;
     print.precision = info.precision;
     print.pdf = NAN;
     print.cdf = NAN;
@@ -574,6 +588,7 @@ Text::visit(const VectorInfo &info)
     print.desc = info.desc;
     print.flags = info.flags;
     print.descriptions = descriptions;
+    print.dumpAll = dumpAll;
     print.precision = info.precision;
     print.vec = info.result();
     print.total = info.total();
@@ -620,6 +635,7 @@ Text::visit(const Vector2dInfo &info)
     print.flags = info.flags;
     print.separatorString = info.separatorString;
     print.descriptions = descriptions;
+    print.dumpAll = dumpAll;
     print.precision = info.precision;
     print.forceSubnames = true;
 
@@ -706,6 +722,7 @@ struct SparseHistPrint
     string desc;
     Flags flags;
     bool descriptions;
+    bool dumpAll;
     int precision;
 
     const SparseHistData &data;
@@ -732,6 +749,7 @@ SparseHistPrint::init(const Text *text, const Info &info)
     flags = info.flags;
     precision = info.precision;
     descriptions = text->descriptions;
+    dumpAll = text->dumpAll;
 }
 
 /* Grab data from map and write to output stream */
@@ -744,6 +762,7 @@ SparseHistPrint::operator()(ostream &stream) const
     print.precision = precision;
     print.flags = flags;
     print.descriptions = descriptions;
+    print.dumpAll = dumpAll;
     print.desc = desc;
     print.pdf = NAN;
     print.cdf = NAN;
@@ -775,7 +794,7 @@ Text::visit(const SparseHistInfo &info)
 }
 
 Output *
-initText(const string &filename, bool desc)
+initText(const string &filename, bool desc, bool dumpAll)
 {
     static Text text;
     static bool connected = false;
@@ -783,6 +802,7 @@ initText(const string &filename, bool desc)
     if (!connected) {
         text.open(*simout.findOrCreate(filename)->stream());
         text.descriptions = desc;
+        text.dumpAll = dumpAll;
         connected = true;
     }
 

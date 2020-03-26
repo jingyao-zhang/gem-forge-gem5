@@ -76,7 +76,8 @@ void statsPrepare()
 void statsDump()
 {
     bool desc = true;
-    Stats::Output *output = Stats::initText(filename, desc);
+    bool dumpZero = false;
+    Stats::Output *output = Stats::initText(filename, desc, dumpZero);
 
     Stats::processDumpQueue();
 

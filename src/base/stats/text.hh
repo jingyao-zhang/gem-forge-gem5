@@ -67,6 +67,7 @@ class Text : public Output
 
   public:
     bool descriptions;
+    bool dumpAll = false;
 
   public:
     Text();
@@ -99,7 +100,7 @@ class Text : public Output
 
 std::string ValueToString(Result value, int precision);
 
-Output *initText(const std::string &filename, bool desc);
+Output *initText(const std::string &filename, bool desc, bool dumpAll);
 
 } // namespace Stats
 
