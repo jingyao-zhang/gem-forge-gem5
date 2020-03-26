@@ -196,9 +196,10 @@ def initializeCPUs(options):
             GemForgeAccConfig.initializeGemForgeAcceleratorManager(options)
         if options.gem_forge_idea_inorder_cpu:
             cpu.enableIdeaInorderCPU = True
-        cpu.switched_out = True
         if options.prog_interval:
             cpu.progress_interval = options.prog_interval
+    for cpu in future_cpus:
+        cpu.switched_out = True
     # Update the progress count.
     # if options.prog_interval:
     #     for cpu in initial_cpus:

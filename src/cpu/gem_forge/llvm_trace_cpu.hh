@@ -326,6 +326,7 @@ public:
   Cycles getOpLatency(OpClass opClass);
 
   GemForgeAcceleratorManager *getAcceleratorManager() {
+    assert(this->accelManager && "Failed to get AcceleratorManager.");
     return this->accelManager;
   }
 

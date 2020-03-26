@@ -4,7 +4,8 @@ def run(options, root, system, future_cpus):
     checkpoint_dir = None
     # We only allow some number of maximum instructions in real simulation.
     # In total, 4 billion instructions.
-    future_cpus[0].max_insts_any_thread = 1e9
+    if future_cpus:
+        future_cpus[0].max_insts_any_thread = 1e9
     m5.instantiate(checkpoint_dir)
     if future_cpus:
         assert(len(future_cpus) == len(system.cpu))

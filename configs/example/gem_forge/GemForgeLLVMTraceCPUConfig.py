@@ -50,6 +50,7 @@ def initializeLLVMTraceCPU(options, cpu_id):
         llvm_trace_cpu.instQueueSize = 28
         llvm_trace_cpu.loadQueueSize = 42
         llvm_trace_cpu.storeQueueSize = 36
+    return llvm_trace_cpu
 
 
 def initializeStreamPolicy(options, system):

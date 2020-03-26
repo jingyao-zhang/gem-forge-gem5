@@ -121,9 +121,11 @@ LLVMTraceCPU *LLVMTraceCPUParams::create() { return new LLVMTraceCPU(this); }
 
 void LLVMTraceCPU::init() {
   BaseCPU::init();
-  // Create the delegator and handshake with the accelerator manager.
   this->cpuDelegator = m5::make_unique<LLVMTraceCPUDelegator>(this);
-  this->accelManager->handshake(this->cpuDelegator.get());
+  if (this->accelManager) {
+    // Create the delegator and handshake with the accelerator manager.
+    this->accelManager->handshake(this->cpuDelegator.get());
+  }
 }
 
 void LLVMTraceCPU::tick() {
@@ -189,7 +191,9 @@ void LLVMTraceCPU::tick() {
     if (curTick() % 100000000 == 0) {
       DPRINTF(LLVMTraceCPU, "Tick()\n");
       this->iewStage.dumpROB();
-      this->accelManager->dump();
+      if (this->accelManager) {
+        this->accelManager->dump();
+      }
     }
   }
 
