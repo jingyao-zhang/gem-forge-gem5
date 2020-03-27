@@ -202,6 +202,8 @@ Fetch2::predictBranch(MinorDynInstPtr inst, BranchData &branch)
         /* Tried to predict */
         inst->triedToPredict = true;
 
+        cpu.stats.numFetch2Branches++;
+
         DPRINTF(Branch, "Trying to predict for inst: %s\n", *inst);
 
         if (branchPredictor.predict(inst->staticInst,

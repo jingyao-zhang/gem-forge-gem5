@@ -61,6 +61,41 @@ namespace Minor
 class MinorStats
 {
   public:
+
+    /**
+     * Stats for fetch2 stage.
+     */
+    Stats::Scalar numFetch2Branches;
+
+    /**
+     * Stats for decode stage.
+     */
+    Stats::Scalar numDecodedInsts;
+    Stats::Scalar numDecodedOps;
+
+    /**
+     * Stats for execute lsq.
+     */
+    Stats::Scalar numLSQLoadOps;
+    Stats::Scalar numLSQStoreOps;
+    Stats::Scalar numIQIntReads;
+    Stats::Scalar numIQIntWrites;
+    Stats::Scalar numIQIntWakeups;
+    Stats::Scalar numIQFpReads;
+    Stats::Scalar numIQFpWrites;
+    Stats::Scalar numIQFpWakeups;
+    Stats::Scalar numIntRegReads;
+    Stats::Scalar numIntRegWrites;
+    Stats::Scalar numFpRegReads;
+    Stats::Scalar numFpRegWrites;
+
+    /**
+     * Stats for commit stage.
+     */
+    Stats::Scalar numCommittedIntOps;
+    Stats::Scalar numCommittedFpOps;
+    Stats::Scalar numCommittedCallInsts;
+
     /** Number of simulated instructions */
     Stats::Scalar numInsts;
 

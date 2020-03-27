@@ -199,6 +199,8 @@ Decode::evaluate()
                     /* Allow a predicted next address only on the last
                      *  microop */
                     if (static_micro_inst->isLastMicroop()) {
+                        // This is the last microop.
+                        cpu.stats.numDecodedInsts++;
                         output_inst->predictedTaken = inst->predictedTaken;
                         output_inst->predictedTarget = inst->predictedTarget;
                         /**
@@ -242,6 +244,9 @@ Decode::evaluate()
                     /* Step input */
                     decode_info.inputIndex++;
                     decode_info.inMacroop = false;
+
+                    // RISC instructions.
+                    cpu.stats.numDecodedInsts++;
                 }
 
                 /* Set execSeqNum of output_inst */
@@ -272,6 +277,10 @@ Decode::evaluate()
                 insts_out.insts[output_index] = output_inst;
                 output_index++;
                 decodedInst++;
+                /**
+                 * Here is actually decoded ops.
+                 */
+                cpu.stats.numDecodedOps++;
 
                 if (cpu.cpuDelegator) {
                     /**

@@ -1324,8 +1324,12 @@ LSQ::moveFromRequestsToTransfers(LSQRequestPtr request)
      *  queue so that loads know when their store buffer forwarding
      *  results will be correct (only when all those stores
      *  have reached the store buffer) */
-    if (!request->isLoad)
+    if (!request->isLoad) {
         numStoresInTransfers++;
+        cpu.stats.numLSQStoreOps++;
+    } else {
+        cpu.stats.numLSQLoadOps++;
+    }
 
     requests.pop();
     transfers.push(request);

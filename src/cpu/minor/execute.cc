@@ -638,6 +638,18 @@ Execute::issue(ThreadID thread_id)
         bool discarded = false;
         bool issued_mem_ref = false;
 
+        /**
+         * Since we try to issue here, we record reads to IQ here.
+         */
+        if (inst->isInst()) {
+            if (inst->staticInst->isFloating()) {
+                cpu.stats.numIQFpReads++;
+            }
+            if (inst->staticInst->isInteger()) {
+                cpu.stats.numIQIntReads++;
+            }
+        }
+
         if (inst->isBubble()) {
             /* Skip */
             issued = true;
@@ -969,6 +981,18 @@ Execute::issue(ThreadID thread_id)
             } else if (!inst->isBubble()) {
                 num_insts_issued++;
 
+                /**
+                 * We record IQ writes here.
+                 */
+                if (inst->isInst()) {
+                    if (inst->staticInst->isFloating()) {
+                        cpu.stats.numIQFpWrites++;
+                    }
+                    if (inst->staticInst->isInteger()) {
+                        cpu.stats.numIQIntWrites++;
+                    }
+                }
+
                 if (num_insts_issued == issueLimit)
                     DPRINTF(MinorExecute, "Reached inst issue limit\n");
             }
@@ -1038,6 +1062,10 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
         cpu.stats.numInsts++;
         cpu.system->totalNumInsts++;
 
+        if (inst->staticInst->isCall()) {
+            cpu.stats.numCommittedCallInsts++;
+        }
+
         /* Act on events related to instruction counts */
         cpu.comInstEventQueue[inst->id.threadId]->serviceEvents(thread->numInst);
         cpu.system->instEventQueue.serviceEvents(cpu.system->totalNumInsts);
@@ -1047,6 +1075,20 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
     cpu.stats.numOps++;
     cpu.stats.committedInstType[inst->id.threadId]
                                [inst->staticInst->opClass()]++;
+
+    if (inst->staticInst->isFloating()) {
+        cpu.stats.numCommittedFpOps++;
+        cpu.stats.numFpRegReads += inst->staticInst->numSrcRegs();
+        // We approximate IQ wake up here?
+        cpu.stats.numIQFpWakeups++;
+    }
+    if (inst->staticInst->isInteger()) {
+        cpu.stats.numCommittedIntOps++;
+        cpu.stats.numIntRegReads += inst->staticInst->numSrcRegs();
+        cpu.stats.numIQIntWakeups++;
+    }
+    cpu.stats.numFpRegWrites += inst->staticInst->numFPDestRegs();
+    cpu.stats.numIntRegWrites += inst->staticInst->numIntDestRegs();
 
     /* Set the CP SeqNum to the numOps commit number */
     if (inst->traceData)

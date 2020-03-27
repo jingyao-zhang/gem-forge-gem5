@@ -104,6 +104,66 @@ MinorStats::regStats(const std::string &name, BaseCPU &baseCpu)
         new MakeCallback<MinorStats, &MinorStats::resetLoadBlockedStat>(
             this, true));
 
+    numFetch2Branches
+        .name(name + ".fetch2.branches")
+        .desc("Number of branches fetched");
+
+    numDecodedInsts
+        .name(name + ".decode.insts")
+        .desc("Number of instructions decoded");
+    numDecodedOps
+        .name(name + ".decode.ops")
+        .desc("Number of ops (including micro ops) decoded");
+
+    numLSQLoadOps
+        .name(name + ".lsq.loads")
+        .desc("Number of load ops executed");
+    numLSQStoreOps
+        .name(name + ".lsq.stores")
+        .desc("Number of store ops executed");
+
+    numIQIntReads
+        .name(name + ".execute.iqIntReads")
+        .desc("Number of reads to int iq");
+    numIQIntWrites
+        .name(name + ".execute.iqIntWrites")
+        .desc("Number of writes to int iq");
+    numIQIntWakeups
+        .name(name + ".execute.iqIntWakeups")
+        .desc("Number of wakeups to int iq");
+    numIQFpReads
+        .name(name + ".execute.iqFpReads")
+        .desc("Number of reads to fp iq");
+    numIQFpWrites
+        .name(name + ".execute.iqFpWrites")
+        .desc("Number of writes to fp iq");
+    numIQFpWakeups
+        .name(name + ".execute.iqFpWakeups")
+        .desc("Number of wakeups to fp iq");
+
+    numIntRegReads
+        .name(name + ".execute.intRegReads")
+        .desc("Number of reads to int regs");
+    numIntRegWrites
+        .name(name + ".execute.intRegWrites")
+        .desc("Number of writes to int regs");
+    numFpRegReads
+        .name(name + ".execute.fpRegReads")
+        .desc("Number of reads to fp regs");
+    numFpRegWrites
+        .name(name + ".execute.fpRegWrites")
+        .desc("Number of writes to fp regs");
+
+    numCommittedIntOps
+        .name(name + ".commit.intOps")
+        .desc("Number of int ops committed");
+    numCommittedFpOps
+        .name(name + ".commit.fpOps")
+        .desc("Number of fp ops committed");
+    numCommittedCallInsts
+        .name(name + ".commit.callInsts")
+        .desc("Number of call insts committed");
+
     numInsts
         .name(name + ".committedInsts")
         .desc("Number of instructions committed");
