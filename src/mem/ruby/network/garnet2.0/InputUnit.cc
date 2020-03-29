@@ -38,6 +38,7 @@
 #include "debug/RubyMulticast.hh"
 #include "mem/ruby/network/garnet2.0/Credit.hh"
 #include "mem/ruby/network/garnet2.0/Router.hh"
+#include "mem/ruby/network/garnet2.0/NetworkInterface.hh"
 #include "debug/RubyNetwork.hh"
 
 using namespace std;
@@ -69,6 +70,8 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
     for (int i = 0; i < m_num_vcs; ++i) {
         multicastBuffers.emplace_back(this);
     }
+
+    m_vnet_busy_count.resize(m_router->get_num_vnets(), 0);
 }
 
 InputUnit::~InputUnit()
@@ -265,6 +268,20 @@ flit *InputUnit::selectFlit() {
         flit *f = buffer.peek();
 
         /**
+         * Check if we can find an idle vc for the header vc.
+         */
+        auto flitType = f->get_type();
+        if (flitType == HEAD_ || flitType == HEAD_TAIL_) {
+            auto vc = this->calculateVCForMulticastDuplicateFlit(f->get_vnet());
+            if (vc != -1) {
+                // We found one idle vc, set all flits.
+                buffer.setVCForFrontMsg(vc);
+            } else {
+                // The below checkIfCanPop() will fail for us.
+            }
+        }
+
+        /**
          * Check if the vc is idle.
          */
         if (checkIfCanPop(f)) {
@@ -373,6 +390,7 @@ void InputUnit::allocateMulticastBuffer(flit *f) {
 
     auto remainMsg = f->get_msg_ptr()->clone();
     remainMsg->getDestination() = remainRoute.net_dest;
+    remainMsg->setVnet(f->get_vnet());
     // Allocate the MulticastDuplicateBuffer.
     multicastBuffer.allocate(remainRoute, remainMsg);
 }
@@ -429,4 +447,45 @@ void InputUnit::duplicateMulitcastFlit(flit *f) {
     route.dest_router = m_router->get_net_ptr()->get_router_id(
         selectDestRawNodeID);
     f->get_msg_ptr()->getDestination() = route.net_dest;
+}
+
+int InputUnit::calculateVCForMulticastDuplicateFlit(int vnet) {
+    for (int i = 0; i < m_vc_per_vnet; i++) {
+        auto vc = vnet * m_vc_per_vnet + i;
+        if (m_vcs[vc]->get_state() == IDLE_) {
+            m_vnet_busy_count[vnet] = 0;
+            return vc;
+        }
+    }
+
+    m_vnet_busy_count[vnet]++;
+    panic_if(m_vnet_busy_count[vnet] > 50000,
+        "%s: Possible network deadlock in vnet: %d at time: %llu \n",
+        name(), vnet, curTick());
+
+    return -1;
+}
+
+void InputUnit::duplicateMulticastMsgToNetworkInterface(
+    MulticastDuplicateBuffer &buffer) {
+    auto f = buffer.peek();
+    auto msg = f->get_msg_ptr();
+
+    // Get the Local NetworkInterface.
+    // ! This assumes one router per node.
+    auto senderNI = m_router->get_net_ptr()->getNetworkInterface(f->get_route().src_ni);
+    auto senderNodeId = senderNI->get_node_id();
+    auto senderMachineId = MachineID::getMachineIDFromRawNodeID(senderNodeId);
+    auto localMachineId = MachineID(senderMachineId.getType(), m_router->get_id());
+    auto localNodeId = localMachineId.getRawNodeID();
+    auto localNI = m_router->get_net_ptr()->getNetworkInterface(localNodeId);
+    // Inject the message.
+    localNI->injectMulticastDuplicateMsg(msg);
+
+    // Release all flits.
+    auto size = f->get_size();
+    for (int i = 0; i < size; ++i) {
+        delete buffer.pop();
+    }
+    assert(this->totalReadyMulitcastFlits == 0);
 }

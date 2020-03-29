@@ -388,6 +388,11 @@ GarnetNetwork::regStats()
     // Hops
     m_total_hops
         .name(name() + ".total_hops");
+    m_total_hop_types
+        .init(MAX_MSG_TYPES_PER_CATEGORY * MAX_MSG_CATEGORY)
+        .name(name() + ".total_hop_types")
+        .flags(Stats::pdf | Stats::total | Stats::nozero | Stats::oneline)
+        ;
     m_avg_hops.name(name() + ".average_hops");
     m_avg_hops = m_total_hops / sum(m_flits_received);
 

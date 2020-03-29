@@ -36,7 +36,7 @@
 
 #include <iostream>
 #include <vector>
-#include <queue>
+#include <deque>
 
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/network/garnet2.0/CommonTypes.hh"
@@ -155,6 +155,8 @@ class InputUnit : public Consumer
     int m_num_vcs;
     int m_vc_per_vnet;
 
+    std::vector<int> m_vnet_busy_count;
+
     Router *m_router;
     NetworkLink *m_in_link;
     CreditLink *m_credit_link;
@@ -177,7 +179,7 @@ class InputUnit : public Consumer
         RouteInfo route;
         MsgPtr msg = nullptr;
         int readyFlits = 0;
-        std::queue<flit *> flits;
+        std::deque<flit *> flits;
         MulticastDuplicateBuffer(InputUnit *_inputUnit)
             : inputUnit(_inputUnit) {}
         void allocate(const RouteInfo &route, MsgPtr msg) {
@@ -190,13 +192,14 @@ class InputUnit : public Consumer
             assert(this->state == Buffering);
             // Set the flag indicating this is a duplicate flit.
             f->setMulticastDuplicate(true);
-            this->flits.push(f);
+            this->flits.push_back(f);
             auto type = f->get_type();
             if (type == TAIL_ || type == HEAD_TAIL_) {
                 this->readyFlits += f->get_size();
                 this->inputUnit->totalReadyMulitcastFlits += f->get_size();
                 assert(this->readyFlits == this->flits.size());
                 this->state = Invalid;
+                inputUnit->duplicateMulticastMsgToNetworkInterface(*this);
             }
         }
         flit *peek() {
@@ -207,10 +210,26 @@ class InputUnit : public Consumer
         flit *pop() {
             assert(this->isReady());
             auto f = this->flits.front();
-            this->flits.pop();
+            this->flits.pop_front();
             this->readyFlits--;
             this->inputUnit->totalReadyMulitcastFlits--;
             return f;
+        }
+        void setVCForFrontMsg(int vc) {
+            assert(this->isReady());
+            auto frontFlitType = this->flits.front()->get_type();
+            assert(frontFlitType == HEAD_ || frontFlitType == HEAD_TAIL_);
+            assert(this->readyFlits >= this->flits.front()->get_size());
+            int i = 0;
+            int n = this->flits.front()->get_size();
+            auto iter = this->flits.begin();
+            auto end = this->flits.end();
+            while (i < n) {
+                assert(iter != end);
+                (*iter)->set_vc(vc);
+                ++i;
+                ++iter;
+            }
         }
         bool isReady() const {
             return this->readyFlits > 0;
@@ -233,6 +252,9 @@ class InputUnit : public Consumer
     flit *selectFlit();
     void allocateMulticastBuffer(flit *f);
     void duplicateMulitcastFlit(flit *f);
+    int calculateVCForMulticastDuplicateFlit(int vnet);
+    void duplicateMulticastMsgToNetworkInterface(
+        MulticastDuplicateBuffer &buffer);
 };
 
 #endif // __MEM_RUBY_NETWORK_GARNET2_0_INPUTUNIT_HH__

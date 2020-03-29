@@ -70,9 +70,15 @@ class NetworkInterface : public ClockedObject, public Consumer
     void print(std::ostream& out) const;
     int get_vnet(int vc);
     int get_router_id() { return m_router_id; }
+    int get_node_id() { return m_id; }
     void init_net_ptr(GarnetNetwork *net_ptr) { m_net_ptr = net_ptr; }
 
     uint32_t functionalWrite(Packet *);
+
+    /**
+     * Hacker function to inject a duplicate multicast message.
+     */
+    void injectMulticastDuplicateMsg(MsgPtr msg);
 
   private:
     GarnetNetwork *m_net_ptr;
@@ -116,6 +122,8 @@ class NetworkInterface : public ClockedObject, public Consumer
     void sendCredit(flit *t_flit, bool is_free);
 
     void incrementStats(flit *t_flit);
+
+    int getMessageStatsType(const MsgPtr &msg_ptr);
 };
 
 #endif // __MEM_RUBY_NETWORK_GARNET2_0_NETWORKINTERFACE_HH__

@@ -163,7 +163,8 @@ NetworkInterface::incrementStats(flit *t_flit)
     }
 
     // Hops
-    m_net_ptr->increment_total_hops(t_flit->get_route().hops_traversed);
+    auto msgType = this->getMessageStatsType(t_flit->get_msg_ptr());
+    m_net_ptr->increment_total_hops(t_flit->get_route().hops_traversed, msgType);
 }
 
 /*
@@ -393,11 +394,7 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         // so that the first router increments it to 0
         route.hops_traversed = -1;
 
-        auto msgType = msg_ptr->getStatsType();
-        auto msgCategory = msg_ptr->getStatsCategory();
-        assert(msgType < GarnetNetwork::MAX_MSG_TYPES_PER_CATEGORY);
-        assert(msgCategory < GarnetNetwork::MAX_MSG_CATEGORY);
-        msgType += msgCategory * GarnetNetwork::MAX_MSG_TYPES_PER_CATEGORY;
+        auto msgType = this->getMessageStatsType(msg_ptr);
         m_net_ptr->increment_injected_packets(vnet);
         m_net_ptr->increment_injected_packet_type(msgType);
         for (int i = 0; i < num_flits; i++) {
@@ -521,6 +518,23 @@ NetworkInterface::get_vnet(int vc)
     fatal("Could not determine vc");
 }
 
+int NetworkInterface::getMessageStatsType(const MsgPtr &msg_ptr) {
+    auto msgType = msg_ptr->getStatsType();
+    auto msgCategory = msg_ptr->getStatsCategory();
+    assert(msgType < GarnetNetwork::MAX_MSG_TYPES_PER_CATEGORY);
+    assert(msgCategory < GarnetNetwork::MAX_MSG_CATEGORY);
+    return msgCategory * GarnetNetwork::MAX_MSG_TYPES_PER_CATEGORY + msgType;
+}
+
+void NetworkInterface::injectMulticastDuplicateMsg(MsgPtr msg) {
+    auto vnet = msg->getVnet();
+    if (vnet > this->inNode_ptr.size()) {
+        panic("Illegal VNet %d.\n", vnet);
+    }
+    auto buffer = this->inNode_ptr.at(vnet);
+    assert(buffer);
+    buffer->enqueue(msg, this->clockEdge(), this->cyclesToTicks(Cycles(1)));
+}
 
 // Wakeup the NI in the next cycle if there are waiting
 // messages in the protocol buffer, or waiting flits in the

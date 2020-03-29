@@ -86,6 +86,9 @@ class GarnetNetwork : public Network
     }
     int getNumRouters();
     int get_router_id(int ni);
+    NetworkInterface *getNetworkInterface(int ni) {
+        return this->m_nis.at(ni);
+    }
 
 
     // Methods used by Topology to setup the network
@@ -144,9 +147,10 @@ class GarnetNetwork : public Network
     }
 
     void
-    increment_total_hops(int hops)
+    increment_total_hops(int hops, int type)
     {
         m_total_hops += hops;
+        m_total_hop_types[type] += hops;
     }
 
   protected:
@@ -193,6 +197,7 @@ class GarnetNetwork : public Network
     Stats::Vector m_average_vc_load;
 
     Stats::Scalar  m_total_hops;
+    Stats::Vector  m_total_hop_types;
     Stats::Formula m_avg_hops;
 
   private:
