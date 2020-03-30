@@ -395,8 +395,13 @@ void MLCStreamEngine::reuseSlice(const DynamicStreamSliceId &sliceId,
     const auto &reuseInfo = this->reuseInfoMap.at(streamId);
     const auto &targetStreamId = reuseInfo.targetStreamId;
     // Simply notify the target stream.
-    assert(this->idToStreamMap.count(targetStreamId) &&
-           "Failed to find target stream.");
+    if (this->idToStreamMap.count(targetStreamId) == 0) {
+      if (this->endedStreamDynamicIds.count(targetStreamId) != 0) {
+        // This stream has already ended.
+        continue;
+      }
+      panic("Failed to find target stream %s.\n", targetStreamId);
+    }
     auto S = dynamic_cast<MLCDynamicDirectStream *>(
         this->idToStreamMap.at(targetStreamId));
     assert(S && "Only direct stream can have reuse.");
