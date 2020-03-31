@@ -131,7 +131,8 @@ exitImpl(SyscallDesc *desc, int callnum, ThreadContext *tc, bool group)
      *  the same group is that the childClearTID may wake a waiting futex (I
      *  believe this is how pthread_join is implemented).
      */
-    if (group && *p->exitGroup) {
+    // if (group && *p->exitGroup) {
+    if (*p->exitGroup) {
         // Not sure if we really need to handle the childClearTID since we are
         // exit the whole group here. But if we want to hanle it, we have to
         // do it before we actually halt any thread as the futex may accidently
