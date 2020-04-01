@@ -62,6 +62,7 @@ void CoalescedStream::finalize() {
   this->initializeBaseStreams();
   this->initializeBackBaseStreams();
   this->initializeAliasStreams();
+  this->initializeCoalesceGroupStreams();
   STREAM_DPRINTF(
       "Finalized, StaticCoalesced %d, ElementSize %d, LStreams: =========.\n",
       this->staticCoalesced, this->coalescedElementSize);

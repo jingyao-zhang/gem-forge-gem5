@@ -34,6 +34,7 @@ void SingleStream::finalize() {
   this->initializeBaseStreams();
   this->initializeBackBaseStreams();
   this->initializeAliasStreams();
+  this->initializeCoalesceGroupStreams();
 }
 
 void SingleStream::initializeBaseStreams() {

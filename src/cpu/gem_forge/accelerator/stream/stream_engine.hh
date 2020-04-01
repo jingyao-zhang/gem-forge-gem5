@@ -125,6 +125,11 @@ public:
   Stream *getStream(uint64_t streamId) const;
   Stream *tryGetStream(uint64_t streamId) const;
 
+  /**
+   * Send StreamEnd packet.
+   */
+  void endFloatStream(Stream *S, DynamicStream &dynS);
+
   StreamPlacementManager *getStreamPlacementManager() {
     return this->streamPlacementManager;
   }
@@ -154,6 +159,7 @@ public:
   bool isOraclePlacementEnabled() const {
     return this->enableStreamPlacementOracle;
   }
+  bool isStreamFloatCancelEnabled() const { return this->enableStreamFloatCancel; }
   const std::string &getPlacementLat() const { return this->placementLat; }
   const std::string &getPlacement() const { return this->placement; }
 
@@ -301,6 +307,7 @@ private:
   bool enableStreamFloat;
   bool enableStreamFloatIndirect;
   bool enableStreamFloatPseudo;
+  bool enableStreamFloatCancel;
   std::string placementLat;
   std::string placement;
   /**

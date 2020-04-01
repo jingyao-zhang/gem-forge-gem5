@@ -4,6 +4,7 @@
 #include "addr_gen_callback.hh"
 #include "fifo_entry_idx.hh"
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -11,6 +12,7 @@ class ThreadContext;
 
 class StreamElement;
 class StreamEngine;
+class Stream;
 
 /**
  * Holds some information of a dynamic instance of a stream,
@@ -18,6 +20,7 @@ class StreamEngine;
  */
 struct DynamicStream {
 
+  Stream *stream;
   const DynamicStreamId dynamicStreamId;
   const uint64_t configSeqNum;
   const Cycles configCycle;
@@ -41,6 +44,7 @@ struct DynamicStream {
   // Whether the dynamic stream is offloaded to cache.
   bool offloadedToCacheAsRoot = false;
   bool offloadedToCache = false;
+  bool offloadedWithDependent = false;
   bool pseudoOffloadedToCache = false;
 
   // Whether the StreamConfig has executed (ready to go).
@@ -80,8 +84,8 @@ struct DynamicStream {
   bool hasTotalTripCount() const { return this->totalTripCount != -1; }
   int64_t getTotalTripCount() const { return this->totalTripCount; }
 
-  DynamicStream(const DynamicStreamId &_dynamicStreamId, uint64_t _configSeqNum,
-                Cycles _configCycle, ThreadContext *_tc,
+  DynamicStream(Stream *_stream, const DynamicStreamId &_dynamicStreamId,
+                uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,
                 const FIFOEntryIdx &_prevFIFOIdx, StreamEngine *_se);
   DynamicStream(const DynamicStream &other) = delete;
   DynamicStream(DynamicStream &&other) = delete;
@@ -124,6 +128,12 @@ struct DynamicStream {
   uint64_t getNumIssuedRequests() const { return this->numIssuedRequests; }
   void incrementNumIssuedRequests() { this->numIssuedRequests++; }
 
+  void recordHitHistory(bool hitPrivateCache);
+  int getTotalHitPrivateCache() const { return this->totalHitPrivateCache; }
+  int getHitPrivateCacheHistoryWindowSize() const {
+    return HitHistoryWindowSize;
+  }
+
   void dump() const;
 
 private:
@@ -141,6 +151,18 @@ private:
   Cycles avgTurnAroundCycle = Cycles(0);
   int lateElementCount = 0;
   int numLateElement = 0;
+
+  /**
+   * Used to estimate last few request hit statistics.
+   * True if hit in private cache.
+   */
+  constexpr static int HitHistoryWindowSize = 8;
+  std::array<bool, HitHistoryWindowSize> hitPrivateCacheHistory;
+  int currentHitPrivateCacheHistoryIdx = 0;
+  int totalHitPrivateCache = 0;
+
+  void tryCancelFloat();
+  void cancelFloat();
 };
 
 #endif

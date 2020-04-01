@@ -94,6 +94,7 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
 
   // Handle the request statistic.
   if (pkt->req->hasStatistic()) {
+    bool hitInPrivateCache = false;
     auto statistic = pkt->req->getStatistic();
     switch (statistic->hitCacheLevel) {
     case RequestStatistic::HitPlaceE::INVALID: {
@@ -102,17 +103,36 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
     }
     case RequestStatistic::HitPlaceE::MEM: // Hit in mem.
       this->stream->statistic.numMissL2++;
+      this->stream->statistic.numMissL1++;
+      this->stream->statistic.numMissL0++;
+      hitInPrivateCache = false;
+      break;
     case RequestStatistic::HitPlaceE::L1_STREAM_BUFFER:
       // This is considered hit in L2.
+      this->stream->statistic.numMissL1++;
+      this->stream->statistic.numMissL0++;
+      hitInPrivateCache = false;
+      break;
     case RequestStatistic::HitPlaceE::L2_CACHE:
       this->stream->statistic.numMissL1++;
+      this->stream->statistic.numMissL0++;
+      hitInPrivateCache = false;
+      break;
     case RequestStatistic::HitPlaceE::L1_CACHE:
       this->stream->statistic.numMissL0++;
+      hitInPrivateCache = true;
       break;
     case RequestStatistic::HitPlaceE::L0_CACHE: { // Hit in first level cache.
+      hitInPrivateCache = true;
       break;
     }
     default: { panic("Invalid hitCacheLevel %d.\n", statistic->hitCacheLevel); }
+    }
+    // We just use the last dynamic stream.
+    // Not 100% accurate but should be fine.
+    if (this->stream->hasDynamicStream()) {
+      auto &dynS = this->stream->getLastDynamicStream();
+      dynS.recordHitHistory(hitInPrivateCache);
     }
   }
 

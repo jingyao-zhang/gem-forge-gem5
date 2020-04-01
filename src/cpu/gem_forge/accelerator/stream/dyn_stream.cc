@@ -1,22 +1,29 @@
 #include "dyn_stream.hh"
 #include "stream.hh"
 #include "stream_element.hh"
+#include "stream_engine.hh"
 
 #include "debug/StreamEngine.hh"
 #define DEBUG_TYPE StreamEngine
 #include "stream_log.hh"
 
-DynamicStream::DynamicStream(const DynamicStreamId &_dynamicStreamId,
+DynamicStream::DynamicStream(Stream *_stream,
+                             const DynamicStreamId &_dynamicStreamId,
                              uint64_t _configSeqNum, Cycles _configCycle,
                              ThreadContext *_tc,
                              const FIFOEntryIdx &_prevFIFOIdx,
                              StreamEngine *_se)
-    : dynamicStreamId(_dynamicStreamId), configSeqNum(_configSeqNum),
-      configCycle(_configCycle), tc(_tc), prevFIFOIdx(_prevFIFOIdx),
-      FIFOIdx(_dynamicStreamId, _configSeqNum) {
+    : stream(_stream), dynamicStreamId(_dynamicStreamId),
+      configSeqNum(_configSeqNum), configCycle(_configCycle), tc(_tc),
+      prevFIFOIdx(_prevFIFOIdx), FIFOIdx(_dynamicStreamId, _configSeqNum) {
   this->tail = new StreamElement(_se);
   this->head = this->tail;
   this->stepped = this->tail;
+
+  for (auto &hitPrivate : this->hitPrivateCacheHistory) {
+    hitPrivate = false;
+  }
+  this->totalHitPrivateCache = 0;
 }
 
 DynamicStream::~DynamicStream() {
@@ -106,6 +113,75 @@ void DynamicStream::updateReleaseCycle(Cycles releaseCycle, bool late) {
     this->lastReleaseCycle = releaseCycle;
     this->lateElementCount = 0;
   }
+}
+
+void DynamicStream::recordHitHistory(bool hitPrivateCache) {
+  auto &record =
+      this->hitPrivateCacheHistory.at(this->currentHitPrivateCacheHistoryIdx);
+  if (record) {
+    this->totalHitPrivateCache--;
+    assert(this->totalHitPrivateCache >= 0);
+  }
+  record = hitPrivateCache;
+  if (record) {
+    this->totalHitPrivateCache++;
+  }
+  this->currentHitPrivateCacheHistoryIdx =
+      (this->currentHitPrivateCacheHistoryIdx + 1) %
+      this->hitPrivateCacheHistory.size();
+  // Let's check if we have hitInPrivateCache a lot.
+  if (this->offloadedToCacheAsRoot) {
+    auto totalHitPrivateCache = this->getTotalHitPrivateCache();
+    auto hitPrivateCacheHistoryWindowSize =
+        this->getHitPrivateCacheHistoryWindowSize();
+    if (totalHitPrivateCache == hitPrivateCacheHistoryWindowSize) {
+      // Try to cancel this offloaded.
+      S_DPRINTF(this->stream, "All Last %d Requests Hit in Private Cache.\n",
+                totalHitPrivateCache);
+      this->tryCancelFloat();
+    }
+  }
+}
+
+void DynamicStream::tryCancelFloat() {
+  // So far we only have limited support cacelling stream floating.
+  auto S = this->stream;
+  if (!S->se->isStreamFloatCancelEnabled()) {
+    // This feature is not enabled.
+    return;
+  }
+  if (!S->dependentStreams.empty()) {
+    return;
+  }
+  if (S->hasUpgradedToUpdate()) {
+    return;
+  }
+  if (this->offloadedWithDependent) {
+    return;
+  }
+  // Try cancel the whole coalesce group.
+  auto sid = S->getCoalesceBaseStreamId();
+  if (sid == 0) {
+    // No coalesce group, just cancel myself.
+    this->cancelFloat();
+  } else {
+    auto coalesceBaseS = S->se->getStream(sid);
+    const auto &coalesceGroupS = coalesceBaseS->coalesceGroupStreams;
+    for (auto &coalescedS : coalesceGroupS) {
+      auto &dynS = coalescedS->getDynamicStream(this->configSeqNum);
+      dynS.cancelFloat();
+    }
+  }
+}
+
+void DynamicStream::cancelFloat() {
+  auto S = this->stream;
+  S_DPRINTF(S, "Cancel FloatStream.\n");
+  S->se->endFloatStream(S, *this);
+  // We are no longer considered offloaded.
+  this->offloadedToCache = false;
+  this->offloadedToCacheAsRoot = false;
+  S->statistic.numFloatCancelled++;
 }
 
 void DynamicStream::dump() const {

@@ -63,6 +63,7 @@ public:
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
   void
   initializeAliasStreamsFromProtobuf(const ::LLVM::TDG::StaticStreamInfo &info);
+  void initializeCoalesceGroupStreams();
 
   const std::string &getStreamName() const { return this->streamName; }
   virtual const std::string &getStreamType() const = 0;
@@ -152,6 +153,10 @@ public:
   int32_t aliasOffset = 0;
   StreamVec aliasedStreams;
   bool hasAliasedStoreStream = false;
+  /**
+   * Coalesce stream information, including this.
+   */
+  StreamSet coalesceGroupStreams;
 
   /**
    * Per stream statistics.
@@ -265,6 +270,7 @@ public:
   virtual uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const = 0;
 
   std::deque<DynamicStream> dynamicStreams;
+  bool hasDynamicStream() const { return !this->dynamicStreams.empty(); }
   DynamicStream &getDynamicStream(uint64_t seqNum);
   DynamicStream &getDynamicStreamBefore(uint64_t seqNum);
   DynamicStream *getDynamicStream(const DynamicStreamId &dynId);

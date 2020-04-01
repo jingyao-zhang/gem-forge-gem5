@@ -13,6 +13,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numConfigured);
   dumpScalar(numMisConfigured);
   dumpScalar(numFloated);
+  dumpScalar(numFloatCancelled);
   dumpScalar(numPseudoFloated);
   dumpScalar(numAllocated);
   dumpScalar(numFetched);

@@ -43,6 +43,8 @@ def initializeStreamEngine(options):
         options.gem_forge_stream_engine_enable_float_indirect
     se.streamEngineEnableFloatPseudo = \
         options.gem_forge_stream_engine_enable_float_pseudo
+    se.streamEngineEnableFloatCancel = \
+        options.gem_forge_stream_engine_enable_float_cancel
     if options.gem_forge_stream_engine_enable_float_indirect:
         assert(options.gem_forge_stream_engine_enable_float)
     if options.gem_forge_stream_engine_enable_float_pseudo:

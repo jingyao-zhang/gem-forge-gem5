@@ -143,13 +143,27 @@ void Stream::initializeAliasStreamsFromProtobuf(
   }
 }
 
+void Stream::initializeCoalesceGroupStreams() {
+  if (this->getStreamType() == "phi") {
+    // Not MemStream.
+    return;
+  }
+  auto sid = this->getCoalesceBaseStreamId();
+  if (sid == 0) {
+    // This is invalid.
+    return;
+  }
+  auto coalesceBaseS = this->se->getStream(sid);
+  coalesceBaseS->coalesceGroupStreams.insert(this);
+}
+
 void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
   // Remember to old index for rewinding.
   auto prevFIFOIdx = this->FIFOIdx;
   // Create new index.
   this->FIFOIdx.newInstance(seqNum);
   // Allocate the new DynamicStream.
-  this->dynamicStreams.emplace_back(this->FIFOIdx.streamId, seqNum,
+  this->dynamicStreams.emplace_back(this, this->FIFOIdx.streamId, seqNum,
                                     cpuDelegator->curCycle(), tc, prevFIFOIdx,
                                     this->se);
 }
@@ -831,6 +845,10 @@ StreamElement *Stream::releaseElementStepped() {
       late = true;
       S_ELEMENT_DPRINTF(releaseElement, "Release Late Cycle %lu.\n",
                         lateCycles);
+      if (lateCycles > 1000) {
+        S_ELEMENT_HACK(releaseElement, "Release Extremely Late Cycle %lu.\n",
+                       lateCycles);
+      }
     }
   }
   dynS.updateReleaseCycle(this->cpuDelegator->curCycle(), late);

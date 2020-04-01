@@ -51,6 +51,7 @@ StreamEngine::StreamEngine(Params *params)
   this->enableStreamFloat = params->streamEngineEnableFloat;
   this->enableStreamFloatIndirect = params->streamEngineEnableFloatIndirect;
   this->enableStreamFloatPseudo = params->streamEngineEnableFloatPseudo;
+  this->enableStreamFloatCancel = params->streamEngineEnableFloatCancel;
   this->streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
       this->enableStreamFloat, params->streamEngineFloatPolicy);
 
@@ -489,6 +490,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
 
       // ! Sanity check that the base stream is not coaleasced.
       if (!streamConfigureData->indirectStreams.empty()) {
+        dynStream.offloadedWithDependent = true;
         // We allow for LoadStore stream to be offloaded with coalesced base
         // stream.
         if (streamConfigureData->indirectStreams.size() >
@@ -1212,23 +1214,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
     auto &endedDynamicStream = S->dynamicStreams.front();
-    if (endedDynamicStream.offloadedToCacheAsRoot) {
-      // We need to explicitly allocate and copy the DynamicStreamId for the
-      // packet.
-      auto endedDynamicStreamId =
-          new DynamicStreamId(endedDynamicStream.dynamicStreamId);
-      // The target address is just virtually 0 (should be set by MLC stream
-      // engine).
-      Addr initPAddr = 0;
-      auto pkt = GemForgePacketHandler::createStreamControlPacket(
-          initPAddr, cpuDelegator->dataMasterId(), 0,
-          MemCmd::Command::StreamEndReq,
-          reinterpret_cast<uint64_t>(endedDynamicStreamId));
-      DPRINTF(RubyStream, "[%s] Create StreamEnd pkt.\n",
-              S->getStreamName().c_str());
-      cpuDelegator->sendRequest(pkt);
-    }
-
+    this->endFloatStream(S, endedDynamicStream);
     // Notify the stream.
     S->commitStreamEnd(args.seqNum);
   }
@@ -2706,6 +2692,24 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
       block.memAccess->registerReceiver(element);
       block.state = CacheBlockBreakdownAccess::StateE::Issued;
     }
+  }
+}
+
+void StreamEngine::endFloatStream(Stream *S, DynamicStream &dynS) {
+  if (dynS.offloadedToCacheAsRoot) {
+    // We need to explicitly allocate and copy the DynamicStreamId for the
+    // packet.
+    auto endedDynamicStreamId = new DynamicStreamId(dynS.dynamicStreamId);
+    // The target address is just virtually 0 (should be set by MLC stream
+    // engine).
+    Addr initPAddr = 0;
+    auto pkt = GemForgePacketHandler::createStreamControlPacket(
+        initPAddr, cpuDelegator->dataMasterId(), 0,
+        MemCmd::Command::StreamEndReq,
+        reinterpret_cast<uint64_t>(endedDynamicStreamId));
+    DPRINTF(RubyStream, "[%s] Create StreamEnd pkt.\n",
+            S->getStreamName().c_str());
+    cpuDelegator->sendRequest(pkt);
   }
 }
 
