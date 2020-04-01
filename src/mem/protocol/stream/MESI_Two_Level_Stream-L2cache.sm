@@ -1337,7 +1337,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     rr_deallocateL2CacheBlock;
   }
   // The data may be cached somewhere above, but we have the correct copy. 
-  transition(SS, L1_GETV, SS) {
+  transition({SS, S_I}, L1_GETV) {
     ner_notifyStreamEngineFromL1Req;
     du_sendUncacheDataToRequestors;
     set_setMRU;
