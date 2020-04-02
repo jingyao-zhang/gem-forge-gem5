@@ -177,6 +177,9 @@ void DynamicStream::tryCancelFloat() {
     }
   }
   // Construct the end ids.
+  if (endStreams.empty()) {
+    return;
+  }
   std::vector<DynamicStreamId> endIds;
   for (auto endDynS : endStreams) {
     endIds.push_back(endDynS->dynamicStreamId);

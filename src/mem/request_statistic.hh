@@ -23,6 +23,10 @@ struct RequestStatistic {
     MEM = 4,
     L1_STREAM_BUFFER = 5,
   };
+  /**
+   * A bad way to snick some information here.
+   */
+  bool isStream = false;
   HitPlaceE hitCacheLevel;
   /**
    * If this request caused NoC traffic, here is the basic breakdown.

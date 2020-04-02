@@ -218,6 +218,9 @@ structure (CacheMemory, external = "yes") {
   Scalar deallocated_no_reuse;
   Scalar deallocated_no_reuse_noc_control_message;
   Scalar deallocated_no_reuse_noc_data_message;
+  Scalar deallocated_no_reuse_stream;
+  Scalar deallocated_no_reuse_stream_noc_control_message;
+  Scalar deallocated_no_reuse_stream_noc_data_message;
 }
 
 structure (WireBuffer, inport="yes", outport="yes", external = "yes") {

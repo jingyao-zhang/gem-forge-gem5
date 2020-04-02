@@ -110,6 +110,10 @@ public:
     return statistic ? statistic->nocDataMessages : 0;
   }
 
+  bool isRequestStatisticStream(const RequestStatisticPtr &reqStat) const {
+    return reqStat ? reqStat->isStream : false;
+  }
+
   bool isRequestStatisticValid(const RequestStatisticPtr &reqStat) const {
     return reqStat != nullptr;
   }

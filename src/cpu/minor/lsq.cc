@@ -72,6 +72,11 @@ LSQ::LSQRequest::LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
     state(NotIssued)
 {
     request = std::make_shared<Request>();
+    /**
+     * ! GemForge
+     * Add RequestStatistic here.
+     */
+    request->setStatistic(std::make_shared<RequestStatistic>());
 }
 
 void
@@ -487,6 +492,11 @@ LSQ::SplitDataRequest::makeFragmentRequests()
         }
 
         RequestPtr fragment = std::make_shared<Request>();
+        /**
+         * ! GemForge
+         * Add RequestStatistic here.
+         */
+        fragment->setStatistic(std::make_shared<RequestStatistic>());
         bool disabled_fragment = false;
 
         fragment->setContext(request->contextId());

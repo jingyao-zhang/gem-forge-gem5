@@ -1232,7 +1232,9 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     S->commitStreamEnd(args.seqNum);
   }
   // Finally send out the StreanEnd packet.
-  this->sendStreamFloatEndPacket(endedFloatRootIds);
+  if (!endedFloatRootIds.empty()) {
+    this->sendStreamFloatEndPacket(endedFloatRootIds);
+  }
 }
 
 bool StreamEngine::canStreamStoreDispatch(const StreamStoreInst *inst) const {
@@ -2210,6 +2212,7 @@ void StreamEngine::issueElement(StreamElement *element) {
         paddr, packetSize, memAccess, nullptr, cpuDelegator->dataMasterId(),
         0 /* ContextId */, 0 /* PC */);
     pkt->req->setVirt(vaddr);
+    pkt->req->getStatistic()->isStream = true;
     S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i, vaddr,
                       packetSize);
     S->statistic.numIssuedRequest++;
