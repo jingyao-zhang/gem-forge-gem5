@@ -214,6 +214,10 @@ structure (CacheMemory, external = "yes") {
 
   Scalar demand_misses;
   Scalar demand_hits;
+  Scalar deallocated;
+  Scalar deallocated_no_reuse;
+  Scalar deallocated_no_reuse_noc_control_message;
+  Scalar deallocated_no_reuse_noc_data_message;
 }
 
 structure (WireBuffer, inport="yes", outport="yes", external = "yes") {

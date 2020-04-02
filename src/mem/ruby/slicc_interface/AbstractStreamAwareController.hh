@@ -84,13 +84,34 @@ public:
 
   /**
    * Set the hit cache level of the request.
-   * TODO: Maybe move this into AbstractStreamAwareController.
    */
   void setHitCacheLevel(RequestStatisticPtr statistic,
                         int hitCacheLevel) const {
     if (statistic != nullptr) {
       statistic->setHitCacheLevel(hitCacheLevel);
     }
+  }
+
+  void addNoCControlMsgs(RequestStatisticPtr statistic, int msgs) const {
+    if (statistic != nullptr) {
+      statistic->addNoCControlMessages(msgs);
+    }
+  }
+  int getNoCControlMsgs(const RequestStatisticPtr &statistic) const {
+    return statistic ? statistic->nocControlMessages : 0;
+  }
+
+  void addNoCDataMsgs(RequestStatisticPtr statistic, int msgs) const {
+    if (statistic != nullptr) {
+      statistic->addNoCDataMessages(msgs);
+    }
+  }
+  int getNoCDataMsgs(const RequestStatisticPtr &statistic) const {
+    return statistic ? statistic->nocDataMessages : 0;
+  }
+
+  bool isRequestStatisticValid(const RequestStatisticPtr &reqStat) const {
+    return reqStat != nullptr;
   }
 
   RequestStatisticPtr getRequestStatistic(PacketPtr pkt) const {
@@ -104,6 +125,10 @@ public:
       return nullptr;
     }
     return pkt->req->getStatistic();
+  }
+
+  void addToStat(Stats::Scalar &s, int v) const {
+    s += v;
   }
 
   GemForgeCPUDelegator *getCPUDelegator();

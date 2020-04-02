@@ -145,9 +145,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   // CacheEntry
   structure(Entry, desc="...", interface="AbstractCacheEntry" ) {
-    State CacheState,        desc="cache state";
-    DataBlock DataBlk,       desc="data for the block";
+    State CacheState,              desc="cache state";
+    DataBlock DataBlk,             desc="data for the block";
     bool Dirty, default="false",   desc="data is dirty";
+    bool Reused, default="false",  desc="data is reused";
+    RequestStatisticPtr ReqStat, default="nullptr", desc="stats of init req for data";
   }
 
   // TBE fields
@@ -158,6 +160,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     bool Dirty, default="false",        desc="data is dirty";
     int pendingAcks, default="0",       desc="number of pending acks";
     bool cachedUpper, default="true",   desc="whether the upper level want to cache it";
+    RequestStatisticPtr ReqStat, default="nullptr", desc="stats of init req for data";
   }
 
   structure(TBETable, external="yes") {
@@ -174,7 +177,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
    */
   structure(MLCStreamEngine, external="yes", desc="Stream Engine at L1") {
     void receiveStreamConfigure(PacketPtr);
-    Addr receiveStreamEnd(PacketPtr);
+    void receiveStreamEnd(PacketPtr);
     void receiveStreamData(ResponseMsg);
     bool isStreamRequest(DynamicStreamSliceId);
     bool isStreamOffloaded(DynamicStreamSliceId);
@@ -195,7 +198,14 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   void wakeUpAllBuffers(Addr a);
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   void setHitCacheLevel(RequestStatisticPtr, int);
+  void addNoCControlMsgs(RequestStatisticPtr, int);
+  void addNoCDataMsgs(RequestStatisticPtr, int);
+  int getNoCControlMsgs(RequestStatisticPtr);
+  int getNoCDataMsgs(RequestStatisticPtr);
+  void addToStat(Scalar, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
+  bool isRequestStatisticValid(RequestStatisticPtr);
+
   bool isStreamSublineEnabled();
   MessageSizeType getMessageSizeType(int);
 
@@ -417,15 +427,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
           se.receiveStreamConfigure(in_msg.pkt);
           trigger(Event:L0_StreamConfig, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:STREAM_END) {
-          Addr llcStreamPAddr := se.receiveStreamEnd(in_msg.pkt);
-          /**
-           * Notice the in_msg.addr does not mean the correct LLC bank 
-           * where the LLC stream is.
-           * We have to use the physical address given by the stream engine.
-           */
-          cache_entry := getCacheEntry(llcStreamPAddr);
-          tbe := TBEs[llcStreamPAddr];
-          trigger(Event:L0_StreamEnd, llcStreamPAddr, cache_entry, tbe);
+          se.receiveStreamEnd(in_msg.pkt);
+          trigger(Event:L0_StreamEnd, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:INV_ACK) {
           trigger(Event:L0_Ack, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:STREAM_L0) {
@@ -717,6 +720,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         out_msg.DataBlk := cache_entry.DataBlk;
       } else {
         out_msg.MessageSize := MessageSizeType:Writeback_Control;
+        // This is considered a control message.
+        addNoCControlMsgs(cache_entry.ReqStat, 1);
       }
     }
   }
@@ -822,6 +827,23 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     }
   }
 
+  action(trs_copyReqStatToTBE, "trs", desc="Copy ReqStat to TBE") {
+    peek(messageBufferFromL0_in, CoherenceMsg) {
+      assert(is_valid(tbe));
+      tbe.ReqStat := in_msg.requestStatistic;
+      // To simplify actions, this implicitly means one control message
+      // to send the request to LLC, and one data message.
+      addNoCControlMsgs(tbe.ReqStat, 1);
+      addNoCDataMsgs(tbe.ReqStat, 1);
+    }
+  }
+
+  action(crs_copyReqStatFromTBEToCacheEntry, "crs", desc="Copy ReqStat from TBE to cache entry.") {
+    assert(is_valid(tbe));
+    assert(is_valid(cache_entry));
+    cache_entry.ReqStat := tbe.ReqStat;
+  }
+
   action(k_popL0RequestQueue, "k", desc="Pop mandatory queue.") {
     messageBufferFromL0_in.dequeue(clockEdge());
   }
@@ -887,10 +909,28 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     }
   }
 
+  action(drsc_addNoCCtrlMsgToCacheEntry, "drsc", desc="Add one ctrl msg to cache ReqStat") {
+    assert(is_valid(cache_entry));
+    addNoCControlMsgs(cache_entry.ReqStat, 1);
+  }
+
   action(ff_deallocateCacheBlock, "\f",
          desc="Deallocate L1 cache block.") {
     if (cache.isTagPresent(address)) {
       cache.deallocate(address);
+    }
+    if (is_valid(cache_entry)) {
+      ++cache.deallocated;
+      // If this is dirty then we considered it has been reused.
+      bool reused := cache_entry.Reused || cache_entry.Dirty;
+      if (!reused) {
+        ++cache.deallocated_no_reuse;
+        if (isRequestStatisticValid(cache_entry.ReqStat)) {
+          // Record msg stats.
+          addToStat(cache.deallocated_no_reuse_noc_control_message, getNoCControlMsgs(cache_entry.ReqStat));
+          addToStat(cache.deallocated_no_reuse_noc_data_message, getNoCDataMsgs(cache_entry.ReqStat));
+        }
+      }
     }
     unset_cache_entry();
   }
@@ -914,53 +954,19 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   action(uu_profileMiss, "\um", desc="Profile the demand miss") {
-      ++cache.demand_misses;
+    ++cache.demand_misses;
   }
 
   action(uu_profileHit, "\uh", desc="Profile the demand hit") {
-      ++cache.demand_hits;
+    ++cache.demand_hits;
+    if (is_valid(cache_entry)) {
+      cache_entry.Reused := true;
+    }
   }
 
   /**
    * ! Sean: StreamAwareCache
    */
-  action(fsc_forwardStreamConfig, "fsc", desc="Forward the StreamConfig") {
-    peek(messageBufferFromL0_in, CoherenceMsg) {
-      enqueue(requestNetwork_out, RequestMsg, l1_stream_message_latency) {
-        out_msg.addr := address;
-        out_msg.Type := CoherenceRequestType:STREAM_CONFIG;
-        out_msg.XXNewRewquestor.add(machineID);
-        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
-                          l2_select_low_bit, l2_select_num_bits, clusterID));
-        DPRINTF(RubyStream, "Forward StreamConfig: address: %#x, destination: %s, StreamPkt %#x\n",
-                address, out_msg.Destination, in_msg.pkt);
-        out_msg.MessageSize := MessageSizeType:Control;
-        out_msg.AccessMode := in_msg.AccessMode;
-        out_msg.pkt := in_msg.pkt;
-      }
-    }
-  }
-  action(fse_forwardStreamEnd, "fse", desc="Forward the StreamEnd") {
-    peek(messageBufferFromL0_in, CoherenceMsg) {
-      enqueue(requestNetwork_out, RequestMsg, l1_stream_message_latency) {
-        /**
-         * Be careful not to use the address in the in_msg.addr,
-         * which is wrong.
-         * We should use the "address" set by the stream engine.
-         */
-        out_msg.addr := address;
-        out_msg.Type := CoherenceRequestType:STREAM_END;
-        out_msg.XXNewRewquestor.add(machineID);
-        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
-                          l2_select_low_bit, l2_select_num_bits, clusterID));
-        DPRINTF(RubyStream, "Forward StreamEnd: address: %#x, destination: %s.\n",
-                address, out_msg.Destination);
-        out_msg.MessageSize := MessageSizeType:Control;
-        out_msg.AccessMode := in_msg.AccessMode;
-        out_msg.pkt := in_msg.pkt;
-      }
-    }
-  }
   action(nhs_notifyHitStreamLoadV, "nhs", desc="Notify the SE a HitStreamLoadV") {
     peek(messageBufferFromL0_in, CoherenceMsg) {
       if (se.isStreamOffloaded(in_msg.slice)) {
@@ -990,6 +996,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(I, Load, IS) {
     oo_allocateCacheBlock;
     i_allocateTBE;
+    trs_copyReqStatToTBE;
     a_issueGETS;
     uu_profileMiss;
     k_popL0RequestQueue;
@@ -999,6 +1006,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     oo_allocateCacheBlock;
     i_allocateTBE;
     tu_setTBEForGetU;
+    trs_copyReqStatToTBE;
     a_issueGETS;
     uu_profileMiss;
     k_popL0RequestQueue;
@@ -1007,6 +1015,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(I, LoadU, IU) {
     iu_allocateTBEUncache;
     tu_setTBEForGetU;
+    trs_copyReqStatToTBE;
     au_issueGETU;
     uu_profileMiss;
     k_popL0RequestQueue;
@@ -1015,6 +1024,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(I, Store, IM) {
     oo_allocateCacheBlock;
     i_allocateTBE;
+    trs_copyReqStatToTBE;
     b_issueGETX;
     uu_profileMiss;
     k_popL0RequestQueue;
@@ -1097,6 +1107,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   transition({S,SS}, Store, SM) {
     i_allocateTBE;
+    trs_copyReqStatToTBE;
     c_issueUPGRADE;
     uu_profileMiss;
     k_popL0RequestQueue;
@@ -1112,6 +1123,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   transition(SS, Inv, I) {
     fi_sendInvAck;
+    drsc_addNoCCtrlMsgToCacheEntry;
     ff_deallocateCacheBlock;
     l_popL2RequestQueue;
   }
@@ -1134,6 +1146,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(EE, Inv, I) {
     // don't send data
     fi_sendInvAck;
+    drsc_addNoCCtrlMsgToCacheEntry;
     ff_deallocateCacheBlock;
     l_popL2RequestQueue;
   }
@@ -1220,6 +1233,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(IS, Data_all_Acks, S) {
     u_writeDataFromL2Response;
     h_data_to_l0;
+    crs_copyReqStatFromTBEToCacheEntry;
     s_deallocateTBE;
     o_popL2ResponseQueue;
     kd_wakeUpDependents;
@@ -1228,6 +1242,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(IS_I, Data_all_Acks, I) {
     u_writeDataFromL2Response;
     h_stale_data_to_l0;
+    crs_copyReqStatFromTBEToCacheEntry;
     s_deallocateTBE;
     ff_deallocateCacheBlock;
     o_popL2ResponseQueue;
@@ -1238,6 +1253,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     u_writeDataFromL2Response;
     j_sendUnblock;
     h_data_to_l0;
+    crs_copyReqStatFromTBEToCacheEntry;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
     s_deallocateTBE;
     o_popL2ResponseQueue;
     kd_wakeUpDependents;
@@ -1247,6 +1265,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     u_writeDataFromL2Response;
     j_sendUnblock;
     h_stale_data_to_l0;
+    crs_copyReqStatFromTBEToCacheEntry;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
     s_deallocateTBE;
     ff_deallocateCacheBlock;
     o_popL2ResponseQueue;
@@ -1258,6 +1279,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     u_writeDataFromL2Response;
     hh_xdata_to_l0;
     jj_sendExclusiveUnblock;
+    crs_copyReqStatFromTBEToCacheEntry;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
     s_deallocateTBE;
     o_popL2ResponseQueue;
     kd_wakeUpDependents;
@@ -1268,6 +1292,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     u_writeDataFromL2Response;
     hh_xdata_to_l0;
     jj_sendExclusiveUnblock;
+    crs_copyReqStatFromTBEToCacheEntry;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
     s_deallocateTBE;
     o_popL2ResponseQueue;
     kd_wakeUpDependents;
@@ -1298,6 +1325,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     u_writeDataFromL2Response;
     hh_xdata_to_l0;
     jj_sendExclusiveUnblock;
+    crs_copyReqStatFromTBEToCacheEntry;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
     s_deallocateTBE;
     o_popL2ResponseQueue;
     kd_wakeUpDependents;
@@ -1381,7 +1411,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamEnd) {
-    fse_forwardStreamEnd;
     k_popL0RequestQueue;
   }
 

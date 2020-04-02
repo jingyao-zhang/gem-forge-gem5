@@ -83,6 +83,8 @@
   DPRINTF(X, LLC_S_MSG(streamId, format, ##args))
 #define LLC_S_DPRINTF(streamId, format, args...)                               \
   LLC_S_DPRINTF_(DEBUG_TYPE, streamId, format, ##args)
+#define LLC_S_HACK(streamId, format, args...)                                  \
+  hack(LLC_S_MSG(streamId, format, ##args))
 
 #define LLC_SLICE_DPRINTF_(X, sliceId, format, args...)                        \
   DPRINTF(X, LLC_SLICE_MSG(sliceId, format, ##args))

@@ -528,6 +528,23 @@ CacheMemory::regStats()
 
     m_demand_accesses = m_demand_hits + m_demand_misses;
 
+    m_deallocated
+        .name(name() + ".deallocated")
+        .desc("Number of cache line deallocated")
+        ;
+    m_deallocated_no_reuse
+        .name(name() + ".deallocated_no_reuse")
+        .desc("Number of cache line deallocated before any reuse")
+        ;
+    m_deallocated_no_reuse_noc_control_message
+        .name(name() + ".deallocated_no_reuse_noc_ctrl_msg")
+        .desc("Number of NoC control messages of no reuse data")
+        ;
+    m_deallocated_no_reuse_noc_data_message
+        .name(name() + ".deallocated_no_reuse_noc_data_msg")
+        .desc("Number of NoC data messages of no reuse data")
+        ;
+
     m_sw_prefetches
         .name(name() + ".total_sw_prefetches")
         .desc("Number of software prefetches")

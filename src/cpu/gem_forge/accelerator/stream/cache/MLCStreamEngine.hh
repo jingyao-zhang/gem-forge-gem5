@@ -35,7 +35,7 @@ public:
   ~MLCStreamEngine();
 
   /**
-   * Receive a StreamConfig message and configurea all streams.
+   * Receive a StreamConfig message and configure all streams.
    */
   void receiveStreamConfigure(PacketPtr pkt);
   /**
@@ -48,14 +48,18 @@ public:
   void configureStream(CacheStreamConfigureData *streamConfigureData,
                        MasterID masterId);
   /**
+   * Receive a StreamEnd message and end all streams.
+   */
+  void receiveStreamEnd(PacketPtr pkt);
+  /**
    * Receive a StreamEnd message.
    * The difference between StreamConfigure and StreamEnd message
    * is that the first one already knows the destination LLC bank from the core
    * StreamEngine, while the later one has to rely on the MLC StreamEngine as it
    * has the flow control information and knows where the stream is.
-   * @return The phyiscal line address where the LLC stream is.
+   * It will terminate the stream and send a EndPacket to the LLC bank.
    */
-  Addr receiveStreamEnd(PacketPtr pkt);
+  void endStream(const DynamicStreamId &endId, MasterID masterId);
   void receiveStreamData(const ResponseMsg &msg);
   void receiveStreamDataForSingleSlice(const DynamicStreamSliceId &sliceId,
                                        const DataBlock &dataBlock,

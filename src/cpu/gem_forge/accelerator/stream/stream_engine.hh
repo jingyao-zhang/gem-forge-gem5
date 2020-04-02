@@ -126,9 +126,9 @@ public:
   Stream *tryGetStream(uint64_t streamId) const;
 
   /**
-   * Send StreamEnd packet.
+   * Send StreamEnd packet for all the ended dynamic stream ids.
    */
-  void endFloatStream(Stream *S, DynamicStream &dynS);
+  void sendStreamFloatEndPacket(const std::vector<DynamicStreamId> &endedIds);
 
   StreamPlacementManager *getStreamPlacementManager() {
     return this->streamPlacementManager;
@@ -159,7 +159,9 @@ public:
   bool isOraclePlacementEnabled() const {
     return this->enableStreamPlacementOracle;
   }
-  bool isStreamFloatCancelEnabled() const { return this->enableStreamFloatCancel; }
+  bool isStreamFloatCancelEnabled() const {
+    return this->enableStreamFloatCancel;
+  }
   const std::string &getPlacementLat() const { return this->placementLat; }
   const std::string &getPlacement() const { return this->placement; }
 

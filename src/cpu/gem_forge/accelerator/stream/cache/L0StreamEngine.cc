@@ -54,28 +54,30 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 }
 
 void L0StreamEngine::receiveStreamEnd(PacketPtr pkt) {
-  auto endDynamicStreamId = *(pkt->getPtr<DynamicStreamId *>());
-  L0_STREAM_DPRINTF(*endDynamicStreamId, "Received StreamEnd.\n");
+  auto endIds = *(pkt->getPtr<std::vector<DynamicStreamId> *>());
+  for (const auto &endId : *endIds) {
+    L0_STREAM_DPRINTF(endId, "Received StreamEnd.\n");
 
-  auto rootStreamIter = this->offloadedStreams.find(*endDynamicStreamId);
-  assert(rootStreamIter != this->offloadedStreams.end() &&
-         "Failed to find the ending root stream.");
+    auto rootStreamIter = this->offloadedStreams.find(endId);
+    assert(rootStreamIter != this->offloadedStreams.end() &&
+           "Failed to find the ending root stream.");
 
-  // End all streams with the correct root stream id (indirect streams).
-  for (auto streamIter = this->offloadedStreams.begin(),
-            streamEnd = this->offloadedStreams.end();
-       streamIter != streamEnd;) {
-    auto stream = streamIter->second;
-    if (stream->getRootDynamicStreamId() == (*endDynamicStreamId)) {
-      /**
-       * ? Can we release right now?
-       * Let's keep the ended id for sanity check purpose.
-       */
-      delete stream;
-      streamIter->second = nullptr;
-      streamIter = this->offloadedStreams.erase(streamIter);
-    } else {
-      ++streamIter;
+    // End all streams with the correct root stream id (indirect streams).
+    for (auto streamIter = this->offloadedStreams.begin(),
+              streamEnd = this->offloadedStreams.end();
+         streamIter != streamEnd;) {
+      auto stream = streamIter->second;
+      if (stream->getRootDynamicStreamId() == endId) {
+        /**
+         * ? Can we release right now?
+         * Let's keep the ended id for sanity check purpose.
+         */
+        delete stream;
+        streamIter->second = nullptr;
+        streamIter = this->offloadedStreams.erase(streamIter);
+      } else {
+        ++streamIter;
+      }
     }
   }
 }

@@ -161,23 +161,34 @@ void DynamicStream::tryCancelFloat() {
   }
   // Try cancel the whole coalesce group.
   auto sid = S->getCoalesceBaseStreamId();
+  std::vector<DynamicStream *> endStreams;
   if (sid == 0) {
     // No coalesce group, just cancel myself.
-    this->cancelFloat();
+    endStreams.push_back(this);
   } else {
     auto coalesceBaseS = S->se->getStream(sid);
     const auto &coalesceGroupS = coalesceBaseS->coalesceGroupStreams;
     for (auto &coalescedS : coalesceGroupS) {
       auto &dynS = coalescedS->getDynamicStream(this->configSeqNum);
-      dynS.cancelFloat();
+      // Simply check that it has been floated.
+      if (dynS.offloadedToCacheAsRoot && !dynS.offloadedWithDependent) {
+        endStreams.push_back(&dynS);
+      }
     }
   }
+  // Construct the end ids.
+  std::vector<DynamicStreamId> endIds;
+  for (auto endDynS : endStreams) {
+    endIds.push_back(endDynS->dynamicStreamId);
+    endDynS->cancelFloat();
+  }
+  S->se->sendStreamFloatEndPacket(endIds);
 }
 
 void DynamicStream::cancelFloat() {
   auto S = this->stream;
   S_DPRINTF(S, "Cancel FloatStream.\n");
-  S->se->endFloatStream(S, *this);
+  S_HACK(S, "Cancel FloatStream.\n");
   // We are no longer considered offloaded.
   this->offloadedToCache = false;
   this->offloadedToCacheAsRoot = false;

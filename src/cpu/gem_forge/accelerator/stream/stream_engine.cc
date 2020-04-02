@@ -1193,6 +1193,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
    * Deduplicate the streams due to coalescing.
    */
   std::unordered_set<Stream *> endedStreams;
+  std::vector<DynamicStreamId> endedFloatRootIds;
   for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
        iter != end; ++iter) {
     // Release in reverse order.
@@ -1224,10 +1225,14 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
     auto &endedDynamicStream = S->dynamicStreams.front();
-    this->endFloatStream(S, endedDynamicStream);
+    if (endedDynamicStream.offloadedToCacheAsRoot) {
+      endedFloatRootIds.push_back(endedDynamicStream.dynamicStreamId);
+    }
     // Notify the stream.
     S->commitStreamEnd(args.seqNum);
   }
+  // Finally send out the StreanEnd packet.
+  this->sendStreamFloatEndPacket(endedFloatRootIds);
 }
 
 bool StreamEngine::canStreamStoreDispatch(const StreamStoreInst *inst) const {
@@ -2705,22 +2710,24 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
   }
 }
 
-void StreamEngine::endFloatStream(Stream *S, DynamicStream &dynS) {
-  if (dynS.offloadedToCacheAsRoot) {
-    // We need to explicitly allocate and copy the DynamicStreamId for the
-    // packet.
-    auto endedDynamicStreamId = new DynamicStreamId(dynS.dynamicStreamId);
-    // The target address is just virtually 0 (should be set by MLC stream
-    // engine).
-    Addr initPAddr = 0;
-    auto pkt = GemForgePacketHandler::createStreamControlPacket(
-        initPAddr, cpuDelegator->dataMasterId(), 0,
-        MemCmd::Command::StreamEndReq,
-        reinterpret_cast<uint64_t>(endedDynamicStreamId));
-    DPRINTF(RubyStream, "[%s] Create StreamEnd pkt.\n",
-            S->getStreamName().c_str());
-    cpuDelegator->sendRequest(pkt);
+void StreamEngine::sendStreamFloatEndPacket(
+    const std::vector<DynamicStreamId> &endedIds) {
+  // We need to explicitly allocate and copy the all the ids in the packet.
+  auto endedIdsCopy = new std::vector<DynamicStreamId>(endedIds);
+  // The target address is just virtually 0 (should be set by MLC stream
+  // engine).
+  Addr initPAddr = 0;
+  auto pkt = GemForgePacketHandler::createStreamControlPacket(
+      initPAddr, cpuDelegator->dataMasterId(), 0, MemCmd::Command::StreamEndReq,
+      reinterpret_cast<uint64_t>(endedIdsCopy));
+  if (Debug::RubyStream) {
+    std::stringstream ss;
+    for (const auto &id : endedIds) {
+      ss << ' ' << id;
+    }
+    DPRINTF(RubyStream, "Send StreamFloatEndPacket for %s.\n", ss.str());
   }
+  cpuDelegator->sendRequest(pkt);
 }
 
 void StreamEngine::flushPEB() {

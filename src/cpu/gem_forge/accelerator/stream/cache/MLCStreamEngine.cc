@@ -20,6 +20,9 @@
 #define MLC_STREAM_DPRINTF(streamId, format, args...)                          \
   DPRINTF(MLCRubyStream, "[MLC_SE%d][%llu]: " format,                          \
           this->controller->getMachineID().num, streamId, ##args)
+#define MLC_STREAM_HACK(streamId, format, args...)                             \
+  hack("[MLC_SE%d][%llu]: " format, this->controller->getMachineID().num,      \
+       streamId, ##args)
 
 MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_responseToUpperMsgBuffer,
@@ -134,15 +137,27 @@ void MLCStreamEngine::configureStream(
       this->controller->cyclesToTicks(latency));
 }
 
-Addr MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
+void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
-  auto endDynamicStreamId = *(pkt->getPtr<DynamicStreamId *>());
-  MLC_STREAM_DPRINTF(endDynamicStreamId->staticId, "Received StreamEnd.\n");
+  auto endIds = *(pkt->getPtr<std::vector<DynamicStreamId> *>());
+  for (const auto &endId : *endIds) {
+    this->endStream(endId, pkt->req->masterId());
+  }
+  // Release the vector and packet.
+  delete endIds;
+  delete pkt;
+}
+
+void MLCStreamEngine::endStream(const DynamicStreamId &endId,
+                                MasterID masterId) {
+  assert(this->controller->isStreamFloatEnabled() &&
+         "Receive stream end when stream float is disabled.\n");
+  MLC_STREAM_DPRINTF(endId.staticId, "Received StreamEnd.\n");
 
   // The PAddr of the llc stream. The cache controller uses this to find which
   // LLC bank to forward this StreamEnd message.
-  auto rootStreamIter = this->idToStreamMap.find(*endDynamicStreamId);
+  auto rootStreamIter = this->idToStreamMap.find(endId);
   assert(rootStreamIter != this->idToStreamMap.end() &&
          "Failed to find the ending root stream.");
   Addr rootLLCStreamPAddr = rootStreamIter->second->getLLCStreamTailPAddr();
@@ -152,7 +167,7 @@ Addr MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
             streamEnd = this->idToStreamMap.end();
        streamIter != streamEnd;) {
     auto stream = streamIter->second;
-    if (stream->getRootDynamicStreamId() == (*endDynamicStreamId)) {
+    if (stream->getRootDynamicStreamId() == endId) {
       /**
        * ? Can we release right now?
        * We need to make sure all the seen request is responded (with dummy
@@ -171,16 +186,36 @@ Addr MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   }
 
   // Clear the reuse information.
-  if (this->reuseInfoMap.count(*endDynamicStreamId)) {
+  if (this->reuseInfoMap.count(endId)) {
     this->reverseReuseInfoMap.erase(
-        this->reuseInfoMap.at(*endDynamicStreamId).targetStreamId);
-    this->reuseInfoMap.erase(*endDynamicStreamId);
+        this->reuseInfoMap.at(endId).targetStreamId);
+    this->reuseInfoMap.erase(endId);
   }
 
-  // Do not release the pkt and streamDynamicId as they should be forwarded
-  // to the LLC bank and released there.
+  // Create a new packet and send to LLC bank to terminate the stream.
+  auto rootLLCStreamPAddrLine = makeLineAddress(rootLLCStreamPAddr);
+  auto copyEndId = new DynamicStreamId(endId);
+  RequestPtr req(
+      new Request(rootLLCStreamPAddrLine, sizeof(copyEndId), 0, masterId));
+  PacketPtr pkt = new Packet(req, MemCmd::StreamEndReq);
+  uint8_t *pktData = new uint8_t[req->getSize()];
+  *(reinterpret_cast<uint64_t *>(pktData)) =
+      reinterpret_cast<uint64_t>(copyEndId);
+  pkt->dataDynamic(pktData);
+  // Enqueue a configure packet to the target LLC bank.
+  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  msg->m_addr = rootLLCStreamPAddrLine;
+  msg->m_Type = CoherenceRequestType_STREAM_END;
+  msg->m_XXNewRewquestor.add(this->controller->getMachineID());
+  msg->m_Destination.add(this->mapPAddrToLLCBank(msg->m_addr));
+  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_pkt = pkt;
 
-  return makeLineAddress(rootLLCStreamPAddr);
+  Cycles latency(1); // Just use 1 cycle latency here.
+
+  this->requestToLLCMsgBuffer->enqueue(
+      msg, this->controller->clockEdge(),
+      this->controller->cyclesToTicks(latency));
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {

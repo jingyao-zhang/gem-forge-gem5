@@ -24,10 +24,17 @@ struct RequestStatistic {
     L1_STREAM_BUFFER = 5,
   };
   HitPlaceE hitCacheLevel;
+  /**
+   * If this request caused NoC traffic, here is the basic breakdown.
+   */
+  int nocControlMessages = 0;
+  int nocDataMessages = 0;
   RequestStatistic() : hitCacheLevel(HitPlaceE::INVALID) {}
   void setHitCacheLevel(int hitCacheLevel) {
     this->hitCacheLevel = static_cast<HitPlaceE>(hitCacheLevel);
   }
+  void addNoCControlMessages(int msgs) { this->nocControlMessages += msgs; }
+  void addNoCDataMessages(int msgs) { this->nocDataMessages += msgs; }
 };
 
 typedef std::shared_ptr<RequestStatistic> RequestStatisticPtr;
