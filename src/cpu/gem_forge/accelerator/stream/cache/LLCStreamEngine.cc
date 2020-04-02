@@ -635,6 +635,7 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
     }
     if (reqType == CoherenceRequestType_GETU) {
       SS->statistic.numLLCSentSlice++;
+      SS->se->numLLCSentSlice++;
       SS->statistic.numLLCMulticastSlice++;
       SS->statistic.numLLCCanMulticastSlice++;
     }
@@ -836,6 +837,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
             : CoherenceRequestType_GETH;
     if (reqType == CoherenceRequestType_GETU) {
       stream->getStaticStream()->statistic.numLLCSentSlice++;
+      stream->getStaticStream()->se->numLLCSentSlice++;
       if (this->hasMergedAsMulticast(stream)) {
         stream->getStaticStream()->statistic.numLLCCanMulticastSlice++;
       }
@@ -1066,6 +1068,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
       IS->statistic.numLLCIssueSlice++;
       if (reqType == CoherenceRequestType_GETU) {
         IS->statistic.numLLCSentSlice++;
+        IS->se->numLLCSentSlice++;
       }
 
       // Push to the request queue.
@@ -1258,6 +1261,7 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   this->removeStreamFromMulticastTable(stream);
   stream->prevMigrateCycle = this->controller->curCycle();
   stream->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
+  stream->getStaticStream()->se->numLLCMigrated++;
 }
 
 MachineID LLCStreamEngine::mapPaddrToLLCBank(Addr paddr) const {

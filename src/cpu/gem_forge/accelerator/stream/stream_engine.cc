@@ -114,7 +114,7 @@ void StreamEngine::regStats() {
   assert(this->manager && "No handshake.");
 
 #define scalar(stat, describe)                                                 \
-  this->stat.name(this->manager->name() + ("." #stat))                         \
+  this->stat.name(this->manager->name() + (".se." #stat))                      \
       .desc(describe)                                                          \
       .prereq(this->stat)
 
@@ -142,6 +142,10 @@ void StreamEngine::regStats() {
          "Number of cycles a stream user cannot dispatch due LQ full.");
   scalar(streamStoreNotDispatchedByStoreQueue,
          "Number of cycles a stream store cannot dispatch due SQ full.");
+  scalar(numFloated, "Number of floated streams.");
+  scalar(numLLCSentSlice, "Number of LLC sent slices.");
+  scalar(numLLCMigrated, "Number of LLC stream migration.");
+  scalar(numMLCResponse, "Number of MLCStreamEngine response.");
 #undef scalar
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -345,6 +349,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       // Remember the offloaded decision.
       dynStream.offloadedToCacheAsRoot = true;
       dynStream.offloadedToCache = true;
+      this->numFloated++;
       offloadedStreamConfigMap.emplace(S, streamConfigureData);
 
       // Remember the pseudo offloaded decision.
@@ -372,6 +377,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
               // Remember the decision.
               auto &depDynS = depS->getDynamicStream(args.seqNum);
               depDynS.offloadedToCache = true;
+              this->numFloated++;
               S_DPRINTF(depS, "Offload as indirect.\n");
               assert(offloadedStreamConfigMap.emplace(depS, depConfig).second &&
                      "Already offloaded this indirect stream.");
@@ -388,6 +394,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
                  * Remember the decision.
                  */
                 mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
+                this->numFloated++;
                 assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig)
                            .second &&
                        "Merged stream already offloaded.");
@@ -448,6 +455,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
          * Remember the decision.
          */
         mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
+        this->numFloated++;
         assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig).second &&
                "Merged stream already offloaded.");
         streamConfigureData->indirectStreams.emplace_back(mergedConfig);
@@ -464,6 +472,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
          * Remember the decision.
          */
         mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
+        this->numFloated++;
         assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig).second &&
                "Merged stream already offloaded.");
         streamConfigureData->indirectStreams.emplace_back(mergedConfig);
@@ -482,6 +491,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
           streamConfigureData->indirectStreams.emplace_back(reductionConfig);
           // Remember the decision.
           backDepS->getDynamicStream(args.seqNum).offloadedToCache = true;
+          this->numFloated++;
           assert(offloadedStreamConfigMap.emplace(backDepS, reductionConfig)
                      .second &&
                  "Reduction stream already offloaded.");

@@ -221,6 +221,14 @@ public:
   Stats::Distribution numAccessFootprintL2;
   Stats::Distribution numAccessFootprintL3;
 
+  /**
+   * Statistics for stream float.
+   */
+  Stats::Scalar numFloated;
+  Stats::Scalar numLLCSentSlice;
+  Stats::Scalar numLLCMigrated;
+  Stats::Scalar numMLCResponse;
+
 private:
   // Make the Stream a friend to simplify code.
   friend class Stream;

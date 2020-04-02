@@ -6,7 +6,7 @@
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
-#include "cpu/gem_forge/llvm_trace_cpu.hh"
+#include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStream.hh"
@@ -162,6 +162,8 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
                                    this->controller->cyclesToTicks(latency));
   // Set the core status to DONE.
   slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+  // Update the stats in core SE.
+  this->stream->se->numMLCResponse++;
 }
 
 void MLCDynamicStream::makeAck(MLCStreamSlice &slice) {
