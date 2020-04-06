@@ -112,6 +112,18 @@ parser.add_option("--gem-forge-stream-engine-enable-float-cancel", action="store
 parser.add_option("--gem-forge-stream-engine-enable-float-subline", action="store_true",
                   default=False,
                   help="Enable subline transimission in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-idea-ack", action="store_true",
+                  default=False,
+                  help="Enable idea (instant, no NoC) StreamAck in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-idea-store", action="store_true",
+                  default=False,
+                  help="Enable idea (instant, no NoC) StreamStore in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-compact-store", action="store_true",
+                  default=False,
+                  help="Enable compact (same cache line) StreamStore in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-advance-migrate", action="store_true",
+                  default=False,
+                  help="Enable advance migrate in stream float.")
 parser.add_option("--gem-forge-stream-engine-enable-float-multicast", action="store_true",
                   default=False,
                   help="Enable multicast transimission in stream float.")
@@ -124,6 +136,15 @@ parser.add_option("--gem-forge-stream-engine-llc-multicast-issue-policy", type="
 parser.add_option("--gem-forge-stream-engine-mlc-stream-buffer-init-num-entries", action="store",
                   type="int", default="32",
                   help="Initial number of entries of MLC stream buffer per stream.")
+parser.add_option("--gem-forge-stream-engine-llc-stream-engine-issue-width", action="store",
+                  type="int", default="1",
+                  help="LLCStreamEngine issue width.")
+parser.add_option("--gem-forge-stream-engine-llc-stream-engine-migrate-width", action="store",
+                  type="int", default="1",
+                  help="LLCStreamEngine migrate width.")
+parser.add_option("--gem-forge-stream-engine-llc-stream-max-infly-request", action="store",
+                  type="int", default="8",
+                  help="LLCStream max infly request per stream.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

@@ -1,5 +1,6 @@
 
 #include "LLCStreamEngine.hh"
+#include "MLCStreamEngine.hh"
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
@@ -13,6 +14,8 @@
 #include "base/trace.hh"
 #include "debug/LLCRubyStream.hh"
 #include "debug/LLCRubyStreamMulticast.hh"
+#include "debug/LLCRubyStreamNotIssue.hh"
+#include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
 #define DEBUG_TYPE LLCRubyStream
 #include "../stream_log.hh"
@@ -30,9 +33,12 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       streamMigrateMsgBuffer(_streamMigrateMsgBuffer),
       streamIssueMsgBuffer(_streamIssueMsgBuffer),
       streamIndirectIssueMsgBuffer(_streamIndirectIssueMsgBuffer),
-      streamResponseMsgBuffer(_streamResponseMsgBuffer), issueWidth(1),
-      migrateWidth(1), maxInflyRequests(8), maxInqueueRequests(2),
-      translationBuffer(nullptr) {}
+      streamResponseMsgBuffer(_streamResponseMsgBuffer),
+      issueWidth(_controller->getLLCStreamEngineIssueWidth()),
+      migrateWidth(_controller->getLLCStreamEngineMigrateWidth()),
+      maxInflyRequests(8), maxInqueueRequests(2), translationBuffer(nullptr) {
+  this->controller->registerLLCStreamEngine(this);
+}
 
 LLCStreamEngine::~LLCStreamEngine() {
   for (auto &s : this->streams) {
@@ -155,10 +161,12 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
   assert(this->isPAddrHandledByMe(paddrLine) &&
          "Stream migrated to wrong LLC bank.\n");
 
-  assert(stream->waitingDataBaseRequests == 0 &&
-         "Stream migrated with waitingDataBaseRequests.");
-  assert(stream->readyIndirectElements.empty() &&
-         "Stream migrated with readyIndirectElements.");
+  if (!this->controller->isStreamAdvanceMigrateEnabled()) {
+    assert(stream->waitingDataBaseRequests == 0 &&
+           "Stream migrated with waitingDataBaseRequests.");
+    assert(stream->readyIndirectElements.empty() &&
+           "Stream migrated with readyIndirectElements.");
+  }
 
   LLC_S_DPRINTF(stream->getDynamicStreamId(), "Received migrate.\n");
   // Set the controller and clear the per controller states.
@@ -185,8 +193,8 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
 void LLCStreamEngine::receiveStreamFlow(const DynamicStreamSliceId &sliceId) {
   // Simply append it to the list.
-  LLCSE_DPRINTF("Received stream flow [%lu, +%lu).\n", sliceId.lhsElementIdx,
-                sliceId.getNumElements());
+  LLC_SLICE_DPRINTF(sliceId, "Received stream flow [%lu, +%lu).\n",
+                    sliceId.lhsElementIdx, sliceId.getNumElements());
   this->pendingStreamFlowControlMsgs.push_back(sliceId);
   this->scheduleEvent(Cycles(1));
 }
@@ -207,13 +215,6 @@ void LLCStreamEngine::receiveStreamElementData(
   for (auto S : this->streams) {
     if (S->getDynamicStreamId() == sliceId.streamId) {
       stream = S;
-      // Check if we need to track waitingDataBaseRequests.
-      if (stream->hasIndirectDependent()) {
-        stream->waitingDataBaseRequests--;
-        if (stream->waitingDataBaseRequests < 0) {
-          LLC_SLICE_PANIC(sliceId, "Negative waitingDataBaseRequests.\n");
-        }
-      }
       break;
     }
   }
@@ -229,6 +230,13 @@ void LLCStreamEngine::receiveStreamElementData(
       stream = LLCDynamicStream::GlobalLLCDynamicStreamMap.at(sliceId.streamId);
     } else {
       return;
+    }
+  }
+  // Check if we need to track waitingDataBaseRequests.
+  if (stream->hasIndirectDependent()) {
+    stream->waitingDataBaseRequests--;
+    if (stream->waitingDataBaseRequests < 0) {
+      LLC_SLICE_PANIC(sliceId, "Negative waitingDataBaseRequests.\n");
     }
   }
 
@@ -292,24 +300,27 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
     // Still here.
     return false;
   }
-  if (stream->hasIndirectDependent() && stream->waitingDataBaseRequests > 0) {
-    // We are still waiting data for indirect usages:
-    // 1. Indirect streams.
-    // 2. Update request.
-    // 3. Pointer chasing.
-    return false;
-  }
-  if (!stream->readyIndirectElements.empty()) {
-    // We are still waiting for some indirect streams to be issued.
-    return false;
-  }
-  /**
-   * ! A hack to delay migrate if there is waitingPredicatedElements for any
-   * ! indirect stream.
-   */
-  for (auto IS : stream->indirectStreams) {
-    if (!IS->waitingPredicatedElements.empty()) {
+  // Only migrate if we enabled advance migrate.
+  if (!this->controller->isStreamAdvanceMigrateEnabled()) {
+    if (stream->hasIndirectDependent() && stream->waitingDataBaseRequests > 0) {
+      // We are still waiting data for indirect usages:
+      // 1. Indirect streams.
+      // 2. Update request.
+      // 3. Pointer chasing.
       return false;
+    }
+    if (!stream->readyIndirectElements.empty()) {
+      // We are still waiting for some indirect streams to be issued.
+      return false;
+    }
+    /**
+     * ! A hack to delay migrate if there is waitingPredicatedElements for any
+     * ! indirect stream.
+     */
+    for (auto IS : stream->indirectStreams) {
+      if (!IS->waitingPredicatedElements.empty()) {
+        return false;
+      }
     }
   }
   return true;
@@ -749,15 +760,21 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   /**
    * Prioritize indirect elements.
    */
-  if (this->issueStreamIndirect(stream)) {
-    // We successfully issued an indirect element of this stream.
-    // NOTE: Indirect stream issue is not counted in ClearIssueCycle.
-    return true;
-  }
+  auto &statistic = stream->getStaticStream()->statistic;
+  bool issuedIndirect = this->issueStreamIndirect(stream);
+  // if (issuedIndirect) {
+  //   // We successfully issued an indirect element of this stream.
+  //   // NOTE: Indirect stream issue is not counted in ClearIssueCycle.
+  //   statistic.sampleLLCStreamEngineIssueReason(
+  //       StreamStatistic::LLCStreamEngineIssueReason::IndirectPriority);
+  //   return true;
+  // }
 
   if (!stream->isNextSliceAllocated()) {
-    // LLC_S_DPRINTF(stream->getDynamicStreamId(),
-    //               "Not issue: NextSliceNotAllocated.\n");
+    LLC_S_DPRINTF_(LLCRubyStreamNotIssue, stream->getDynamicStreamId(),
+                   "Not issue: NextSliceNotAllocated.\n");
+    statistic.sampleLLCStreamEngineIssueReason(
+        StreamStatistic::LLCStreamEngineIssueReason::NextSliceNotAllocated);
     return false;
   }
 
@@ -770,6 +787,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   bool checkIssueCycleLimit = true;
   if (this->controller->isStreamMulticastEnabled()) {
     if (!this->canIssueByMulticastPolicy(stream)) {
+      statistic.sampleLLCStreamEngineIssueReason(
+          StreamStatistic::LLCStreamEngineIssueReason::MulticastPolicy);
       return false;
     }
     /**
@@ -786,6 +805,12 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   if (checkIssueCycleLimit) {
     if (curCycle < stream->prevIssuedCycle + stream->issueClearCycle) {
       // We can not issue yet.
+      LLC_S_DPRINTF_(LLCRubyStreamNotIssue, stream->getDynamicStreamId(),
+                     "Not issue: IssueClearCycle %s Current %s.\n",
+                     stream->issueClearCycle,
+                     curCycle - stream->prevIssuedCycle);
+      statistic.sampleLLCStreamEngineIssueReason(
+          StreamStatistic::LLCStreamEngineIssueReason::IssueClearCycle);
       return false;
     }
   }
@@ -796,6 +821,11 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
   // Enforce the per stream maxWaitingDataBaseRequests constraint.
   if (stream->waitingDataBaseRequests == stream->maxWaitingDataBaseRequests) {
+    LLC_S_DPRINTF_(LLCRubyStreamNotIssue, stream->getDynamicStreamId(),
+                   "Not issue: MaxWaitingDataBaseRequests %d.\n",
+                   stream->maxWaitingDataBaseRequests);
+    statistic.sampleLLCStreamEngineIssueReason(
+        StreamStatistic::LLCStreamEngineIssueReason::MaxWaitingDataBaseRequest);
     return false;
   }
 
@@ -816,11 +846,13 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
      * handled here. In such case, we simply give up and return false.
      */
     if (!this->isPAddrHandledByMe(paddr)) {
+      statistic.sampleLLCStreamEngineIssueReason(
+          StreamStatistic::LLCStreamEngineIssueReason::PendingMigrate);
       return false;
     }
 
     auto sliceId = stream->consumeNextSlice();
-    stream->getStaticStream()->statistic.numLLCIssueSlice++;
+    statistic.numLLCIssueSlice++;
 
     // Register the waiting indirect elements.
     if (!stream->indirectStreams.empty()) {
@@ -836,10 +868,10 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
             ? CoherenceRequestType_GETU
             : CoherenceRequestType_GETH;
     if (reqType == CoherenceRequestType_GETU) {
-      stream->getStaticStream()->statistic.numLLCSentSlice++;
+      statistic.numLLCSentSlice++;
       stream->getStaticStream()->se->numLLCSentSlice++;
       if (this->hasMergedAsMulticast(stream)) {
-        stream->getStaticStream()->statistic.numLLCCanMulticastSlice++;
+        statistic.numLLCCanMulticastSlice++;
       }
     }
     auto requestIter = this->enqueueRequest(
@@ -867,6 +899,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     if (!hasIndirectDependent && this->controller->isStreamMulticastEnabled()) {
       this->generateMulticastRequest(requestIter, stream);
     }
+    statistic.sampleLLCStreamEngineIssueReason(
+        StreamStatistic::LLCStreamEngineIssueReason::Issued);
     return true;
 
   } else {
@@ -879,11 +913,13 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
     assert(stream->indirectStreams.empty() &&
            "Faulted stream with indirect streams.");
-    stream->getStaticStream()->statistic.numLLCFaultSlice++;
+    statistic.numLLCFaultSlice++;
 
     // This is also considered issued.
     stream->prevIssuedCycle = curCycle;
     stream->updateIssueClearCycle();
+    statistic.sampleLLCStreamEngineIssueReason(
+        StreamStatistic::LLCStreamEngineIssueReason::Issued);
     return true;
   }
 }
@@ -958,9 +994,9 @@ void LLCStreamEngine::generateIndirectStreamRequest(
     };
     auto newReductionValue = indirectConfig.addrGenCallback->genAddr(
         elementIdx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
-    LLC_SLICE_DPRINTF(sliceId, "Do reduction %#x, %#x -> %#x.\n",
-                      dynIS->reductionValue, baseElement->getUint64_t(),
-                      newReductionValue);
+    LLC_SLICE_DPRINTF_(LLCRubyStreamReduce, sliceId,
+                       "Do reduction %#x, %#x -> %#x.\n", dynIS->reductionValue,
+                       baseElement->getUint64_t(), newReductionValue);
     dynIS->reductionValue = newReductionValue;
 
     /**
@@ -975,6 +1011,8 @@ void LLCStreamEngine::generateIndirectStreamRequest(
              "FinalReductionValue is already ready.");
       dynCoreIS->finalReductionValue = dynIS->reductionValue;
       dynCoreIS->finalReductionValueReady = true;
+      LLC_SLICE_DPRINTF_(LLCRubyStreamReduce, sliceId,
+                         "Notifiy final reduction.\n");
     }
 
     // Do not issue any indirect request.
@@ -1035,8 +1073,42 @@ void LLCStreamEngine::generateIndirectStreamRequest(
       LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                          "StreamStore -> RequestQueue, StoreValue %lu.\n",
                          storeValue);
-      this->enqueueRequest(dynIS, sliceId, vaddrLine, paddrLine,
-                           CoherenceRequestType_STREAM_STORE, storeValue);
+      bool isIdeaStore = false;
+      if (this->controller->isStreamIdeaStoreEnabled()) {
+        isIdeaStore = true;
+      } else if (this->controller->isStreamCompactStoreEnabled()) {
+        /**
+         * Check if we can compact.
+         * This is just an approximation, as the request is sending
+         * out immediately.
+         * TODO: Implement a realistic compact scheme.
+         */
+        if (dynIS->prevStorePAddrLine == paddrLine) {
+          // We can compact.
+          isIdeaStore = true;
+        }
+      }
+
+      dynIS->prevStorePAddrLine = paddrLine;
+      dynIS->prevStoreCycle = this->controller->curCycle();
+      if (isIdeaStore) {
+        this->performStore(elementPAddr, elementSize,
+                           reinterpret_cast<uint8_t *>(&storeValue));
+        LLC_SLICE_DPRINTF_(
+            LLCRubyStreamStore, sliceId,
+            "Ideal StreamStore done with value %llu, send back StreamAck.\n",
+            storeValue);
+
+        const bool forceIdeaAck = true;
+        this->issueStreamAckToMLC(sliceId, forceIdeaAck);
+        if (!this->requestQueue.empty()) {
+          this->scheduleEvent(Cycles(1));
+        }
+      } else {
+        this->enqueueRequest(dynIS, sliceId, vaddrLine, paddrLine,
+                             CoherenceRequestType_STREAM_STORE, storeValue);
+      }
+
     } else {
       panic("Faulted merged store stream.");
     }
@@ -1189,7 +1261,8 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
   }
 }
 
-void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId) {
+void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
+                                          bool forceIdea) {
 
   auto selfMachineId = this->controller->getMachineID();
   MachineID mlcMachineId(static_cast<MachineType>(selfMachineId.type - 1),
@@ -1204,14 +1277,23 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId) {
   msg->m_MessageSize = MessageSizeType_Response_Control;
   msg->m_sliceIds.add(sliceId);
 
-  /**
-   * This should match with LLC controller l2_response_latency.
-   * TODO: Really get this value from the controller.
-   */
-  Cycles latency(2);
-  this->streamResponseMsgBuffer->enqueue(
-      msg, this->controller->clockEdge(),
-      this->controller->cyclesToTicks(latency));
+  // Check if we enabled ideal stream ack.
+  if (this->controller->isStreamIdeaAckEnabled() || forceIdea) {
+    auto mlcController =
+        AbstractStreamAwareController::getController(mlcMachineId);
+    auto mlcSE = mlcController->getMLCStreamEngine();
+    // StreamAck is also disguised as StreamData.
+    mlcSE->receiveStreamData(*msg);
+  } else {
+    /**
+     * This should match with LLC controller l2_response_latency.
+     * TODO: Really get this value from the controller.
+     */
+    Cycles latency(2);
+    this->streamResponseMsgBuffer->enqueue(
+        msg, this->controller->clockEdge(),
+        this->controller->cyclesToTicks(latency));
+  }
 }
 
 void LLCStreamEngine::migrateStreams() {

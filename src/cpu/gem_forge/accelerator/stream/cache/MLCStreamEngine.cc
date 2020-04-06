@@ -29,7 +29,9 @@ MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_requestToLLCMsgBuffer)
     : controller(_controller),
       responseToUpperMsgBuffer(_responseToUpperMsgBuffer),
-      requestToLLCMsgBuffer(_requestToLLCMsgBuffer) {}
+      requestToLLCMsgBuffer(_requestToLLCMsgBuffer) {
+  this->controller->registerMLCStreamEngine(this);
+}
 
 MLCStreamEngine::~MLCStreamEngine() {
   for (auto &stream : this->streams) {

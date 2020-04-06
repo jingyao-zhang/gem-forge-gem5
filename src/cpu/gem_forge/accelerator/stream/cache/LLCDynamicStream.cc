@@ -41,8 +41,9 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
                                    CacheStreamConfigureData *_configData)
     : configData(*_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      maxWaitingDataBaseRequests(8), controller(_controller),
-      sliceIdx(0), allocatedSliceIdx(_configData->initAllocatedIdx),
+      maxWaitingDataBaseRequests(_controller->getLLCStreamMaxInflyRequest()),
+      controller(_controller), sliceIdx(0),
+      allocatedSliceIdx(_configData->initAllocatedIdx),
       waitingDataBaseRequests(0) {
   if (this->configData.isPointerChase) {
     // Pointer chase stream can only have at most one base requests waiting for
@@ -157,7 +158,13 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
     if (!this->getStaticStream()->hasCoreUser()) {
       bool hasCoreUser = false;
       for (auto dynIS : this->indirectStreams) {
+        // Merged store stream should not be considered has core user.
+        // TODO: The compiler currently failed to set noCoreUser correctly for
+        // MergedStore stream, so we ignore it here manually.
         auto IS = dynIS->getStaticStream();
+        if (IS->isMerged() && IS->getStreamType() == "store") {
+          continue;
+        }
         if (IS->hasCoreUser()) {
           hasCoreUser = true;
           break;
@@ -167,6 +174,10 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
         // No core user. Turn off the IssueClearCycle.
         this->shouldUpdateIssueClearCycleMemorized = false;
       }
+    }
+    if (this->getStaticId() == 16) {
+      hack("Should update set to %d.\n",
+           this->shouldUpdateIssueClearCycleMemorized);
     }
   }
 

@@ -3,12 +3,17 @@
 
 #include "AbstractController.hh"
 #include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
+#include "mem/ruby/structures/CacheMemory.hh"
 #include "params/RubyStreamAwareController.hh"
 
 /**
  * ! Sean: StreamAwareCache.
  * ! An abstract cache controller with stream information.
  */
+
+class MLCStreamEngine;
+class LLCStreamEngine;
+
 class AbstractStreamAwareController : public AbstractController {
 public:
   typedef RubyStreamAwareControllerParams Params;
@@ -27,9 +32,26 @@ public:
   int getNumCoresPerRow() const { return this->numCoresPerRow; }
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
   bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
+  bool isStreamIdeaAckEnabled() const { return this->enableStreamIdeaAck; }
+  bool isStreamIdeaStoreEnabled() const { return this->enableStreamIdeaStore; }
+  bool isStreamCompactStoreEnabled() const {
+    return myParams->enable_stream_compact_store;
+  }
+  bool isStreamAdvanceMigrateEnabled() const {
+    return this->enableStreamAdvanceMigrate;
+  }
   bool isStreamMulticastEnabled() const { return this->enableStreamMulticast; }
   int getStreamMulticastGroupSize() const {
     return this->streamMulticastGroupSize;
+  }
+  int getLLCStreamEngineIssueWidth() const {
+    return this->myParams->llc_stream_engine_issue_width;
+  }
+  int getLLCStreamEngineMigrateWidth() const {
+    return this->myParams->llc_stream_engine_migrate_width;
+  }
+  int getLLCStreamMaxInflyRequest() const {
+    return this->myParams->llc_stream_max_infly_request;
   }
 
   /**
@@ -92,6 +114,9 @@ public:
     }
   }
 
+  void recordDeallocateReqStats(const RequestStatisticPtr &reqStat,
+                                CacheMemory &cache) const;
+
   void addNoCControlMsgs(RequestStatisticPtr statistic, int msgs) const {
     if (statistic != nullptr) {
       statistic->addNoCControlMessages(msgs);
@@ -131,27 +156,61 @@ public:
     return pkt->req->getStatistic();
   }
 
-  void addToStat(Stats::Scalar &s, int v) const {
-    s += v;
-  }
+  void addToStat(Stats::Scalar &s, int v) const { s += v; }
 
   GemForgeCPUDelegator *getCPUDelegator();
 
+  static AbstractStreamAwareController *getController(MachineID machineId);
+
+  void registerMLCStreamEngine(MLCStreamEngine *mlc) {
+    assert(!this->mlcSE);
+    this->mlcSE = mlc;
+  }
+  MLCStreamEngine *getMLCStreamEngine() {
+    assert(this->mlcSE);
+    return this->mlcSE;
+  }
+
+  void registerLLCStreamEngine(LLCStreamEngine *llc) {
+    assert(!this->llcSE);
+    this->llcSE = llc;
+  }
+  LLCStreamEngine *getLLCStreamEngine() {
+    assert(this->llcSE);
+    return this->llcSE;
+  }
+
 private:
+  const Params *myParams;
+  BaseCPU *cpu = nullptr;
   /**
    * Store the bits used in S-NUCA to find the LLC bank.
    */
-  BaseCPU *cpu = nullptr;
   const int llcSelectLowBit;
   const int llcSelectNumBits;
   const int numCoresPerRow;
   const bool enableStreamFloat;
   const bool enableStreamSubline;
+  const bool enableStreamIdeaAck;
+  const bool enableStreamIdeaStore;
+  const bool enableStreamAdvanceMigrate;
   const bool enableStreamMulticast;
   const int streamMulticastGroupSize;
   int streamMulticastGroupPerRow;
   MulticastIssuePolicy streamMulticastIssuePolicy;
   const int mlcStreamBufferInitNumEntries;
+
+  MLCStreamEngine *mlcSE = nullptr;
+  LLCStreamEngine *llcSE = nullptr;
+
+  /**
+   * Get the global StreamAwareCacheController map.
+   */
+  using GlobalMap =
+      std::map<MachineType, std::map<NodeID, AbstractStreamAwareController *>>;
+  static GlobalMap globalMap;
+  static std::list<AbstractStreamAwareController *> globalList;
+  static void registerController(AbstractStreamAwareController *controller);
 };
 
 #endif

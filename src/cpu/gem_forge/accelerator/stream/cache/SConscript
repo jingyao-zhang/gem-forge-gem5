@@ -5,6 +5,8 @@ DebugFlag('MLCRubyStream')
 DebugFlag('LLCRubyStream')
 DebugFlag('LLCRubyStreamMulticast')
 DebugFlag('LLCRubyStreamStore')
+DebugFlag('LLCRubyStreamReduce')
+DebugFlag('LLCRubyStreamNotIssue')
 DebugFlag('SlicedDynamicStream')
 
 Source('DynamicStreamId.cc')

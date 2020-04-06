@@ -26,6 +26,7 @@ struct RequestStatistic {
   /**
    * A bad way to snick some information here.
    */
+  uint64_t pc = 0;
   bool isStream = false;
   HitPlaceE hitCacheLevel;
   /**

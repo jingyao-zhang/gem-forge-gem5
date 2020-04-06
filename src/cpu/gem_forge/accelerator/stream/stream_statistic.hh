@@ -1,6 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_STATISTIC_HH__
 #define __CPU_TDG_ACCELERATOR_STREAM_STATISTIC_HH__
 
+#include <array>
 #include <ostream>
 
 /**
@@ -64,6 +65,24 @@ public:
   size_t numMissL0 = 0;
   size_t numMissL1 = 0;
   size_t numMissL2 = 0;
+
+  // LLCStreamEngine issue statistics.
+  enum LLCStreamEngineIssueReason {
+    Issued = 0,
+    IndirectPriority,
+    NextSliceNotAllocated,
+    MulticastPolicy,
+    IssueClearCycle,
+    MaxWaitingDataBaseRequest,
+    PendingMigrate,
+    NumLLCStreamEngineIssueReason,
+  };
+  // Will be default initialized.
+  std::array<size_t, NumLLCStreamEngineIssueReason> llcIssueReasons = {};
+
+  void sampleLLCStreamEngineIssueReason(LLCStreamEngineIssueReason reason) {
+    this->llcIssueReasons.at(reason)++;
+  }
 
   StreamStatistic() = default;
   void dump(std::ostream &os) const;

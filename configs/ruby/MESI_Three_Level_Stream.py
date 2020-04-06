@@ -139,6 +139,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_prefetch=(options.gem_forge_prefetcher == 'stride'),
                 enable_stream_float = options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack,
                 enable_stream_multicast = \
                     options.gem_forge_stream_engine_enable_float_multicast,
                 stream_multicast_group_size = \
@@ -179,6 +180,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 llc_select_low_bit = l2_select_low_bit,
                 enable_stream_float = options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack,
                 enable_stream_multicast = \
                     options.gem_forge_stream_engine_enable_float_multicast,
                 stream_multicast_group_size = \
@@ -252,6 +254,13 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 num_cores_per_row = num_cores_per_row,
                 enable_stream_float=options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_store=\
+                    options.gem_forge_stream_engine_enable_float_idea_store,
+                enable_stream_compact_store=\
+                    options.gem_forge_stream_engine_enable_float_compact_store,
+                enable_stream_advance_migrate=\
+                    options.gem_forge_stream_engine_enable_float_advance_migrate,
                 enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
                 stream_multicast_group_size=\
@@ -260,6 +269,12 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
                 mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                llc_stream_engine_issue_width=\
+                    options.gem_forge_stream_engine_llc_stream_engine_issue_width,
+                llc_stream_engine_migrate_width=\
+                    options.gem_forge_stream_engine_llc_stream_engine_migrate_width,
+                llc_stream_max_infly_request=\
+                    options.gem_forge_stream_engine_llc_stream_max_infly_request,
                 )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"

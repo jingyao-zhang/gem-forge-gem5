@@ -20,7 +20,7 @@ def run(options, root, system, future_cpus):
         m5.switchCpus(system, switch_cpu_list)
         m5.stats.reset()
     print('**** REAL SIMULATION ****')
-    exit_event = m5.simulate()
+    exit_event = m5.simulate(options.abs_max_tick)
     print('**** Exit @ tick {t} as {s} ****'.format(
         t=m5.curTick(), s=exit_event.getCause()))
     if exit_event.getCode() != 0:

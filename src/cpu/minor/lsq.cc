@@ -77,6 +77,9 @@ LSQ::LSQRequest::LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
      * Add RequestStatistic here.
      */
     request->setStatistic(std::make_shared<RequestStatistic>());
+    if (this->inst->isInst()) {
+        request->getStatistic()->pc = this->inst->pc.pc();
+    }
 }
 
 void
@@ -497,6 +500,9 @@ LSQ::SplitDataRequest::makeFragmentRequests()
          * Add RequestStatistic here.
          */
         fragment->setStatistic(std::make_shared<RequestStatistic>());
+        if (this->inst->isInst()) {
+            fragment->getStatistic()->pc = this->inst->pc.pc();
+        }
         bool disabled_fragment = false;
 
         fragment->setContext(request->contextId());

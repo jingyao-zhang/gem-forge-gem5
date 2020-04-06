@@ -183,7 +183,8 @@ private:
   /**
    * Helper function to issue stream ack back to MLC at request core.
    */
-  void issueStreamAckToMLC(const DynamicStreamSliceId &sliceId);
+  void issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
+                           bool forceIdea = false);
 
   /**
    * Migrate streams.

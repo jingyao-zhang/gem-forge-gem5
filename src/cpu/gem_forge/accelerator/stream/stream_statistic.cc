@@ -66,6 +66,11 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numMissL0);
   dumpScalar(numMissL1);
   dumpScalar(numMissL2);
+
+  for (const auto &llcIssueReason : this->llcIssueReasons) {
+    dumpScalar(llcIssueReason);
+  }
+
 #undef dumpScalar
 #undef dumpAvg
 }

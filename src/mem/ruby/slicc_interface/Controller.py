@@ -89,9 +89,19 @@ class RubyStreamAwareController(RubyController):
     num_cores_per_row = Param.UInt32(0, "Num of cores per row for Mesh Topology")
     enable_stream_float = Param.Bool(False, "Whether to enable stream float")
     enable_stream_subline = Param.Bool(False, "Whether to enable stream float subline transmission")
+    enable_stream_idea_ack = Param.Bool(False, "Whether to enable immediate stream ack.")
+    enable_stream_idea_store = Param.Bool(False, "Whether to enable immediate stream store.")
+    enable_stream_compact_store = Param.Bool(False, "Whether to enable compact stream store.")
+    enable_stream_advance_migrate = Param.Bool(False, "Whether to enable advance stream migrate.")
     enable_stream_multicast = Param.Bool(False, "Whether to enable multicast stream")
     stream_multicast_group_size = Param.UInt32(0, "MulticastGroup is Size x Size, 0 means all")
     stream_multicast_issue_policy = \
         Param.String("any", "Multicast issue policy, default is the relaxed")
     mlc_stream_buffer_init_num_entries = \
         Param.UInt32(16, "Initial number of entries of MLC stream buffer")
+    llc_stream_engine_issue_width = \
+        Param.UInt32(1, "Issue width of LLCStreamEngine")
+    llc_stream_engine_migrate_width = \
+        Param.UInt32(1, "Issue width of LLCStreamEngine")
+    llc_stream_max_infly_request = \
+        Param.UInt32(8, "Max infly requests per LLC stream")

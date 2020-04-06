@@ -91,10 +91,14 @@ void MLCDynamicIndirectStream::receiveStreamData(
     if (sliceId.lhsElementIdx < frontElementIdx) {
       // Definitely behind.
       return;
-    } else if (sliceId.lhsElementIdx == frontElementIdx &&
-               sliceId.vaddr < frontVAddr) {
-      // Still behind.
-      return;
+    } else if (sliceId.lhsElementIdx == frontElementIdx) {
+      if (!this->isWaitingAck() && sliceId.vaddr < frontVAddr) {
+        // Still behind.
+        return;
+      } else {
+        // For stream waiting for Ack, there is no address associated with addr,
+        // so we do not check for that.
+      }
     }
   }
 
@@ -106,16 +110,19 @@ void MLCDynamicIndirectStream::receiveStreamData(
   auto slicesEnd = elementSlices.second;
 
   auto sliceIter = slicesBegin;
-  auto targetLineAddr = makeLineAddress(sliceId.vaddr);
-  while (sliceIter != slicesEnd) {
-    assert(sliceIter->sliceId.lhsElementIdx == sliceId.lhsElementIdx);
-    auto sliceLineAddr = makeLineAddress(sliceIter->sliceId.vaddr);
-    if (sliceLineAddr == targetLineAddr) {
-      break;
-    } else if (sliceLineAddr < targetLineAddr) {
-      ++sliceIter;
-    } else {
-      MLC_SLICE_PANIC(sliceId, "Failed to find slice.\n");
+  // We only check for the address if we are not waiting for Ack.
+  if (!this->isWaitingAck()) {
+    auto targetLineAddr = makeLineAddress(sliceId.vaddr);
+    while (sliceIter != slicesEnd) {
+      assert(sliceIter->sliceId.lhsElementIdx == sliceId.lhsElementIdx);
+      auto sliceLineAddr = makeLineAddress(sliceIter->sliceId.vaddr);
+      if (sliceLineAddr == targetLineAddr) {
+        break;
+      } else if (sliceLineAddr < targetLineAddr) {
+        ++sliceIter;
+      } else {
+        MLC_SLICE_PANIC(sliceId, "Failed to find slice.\n");
+      }
     }
   }
   if (sliceIter == slicesEnd) {
@@ -231,9 +238,12 @@ void MLCDynamicIndirectStream::advanceStream() {
 
   // We may need to schedule advance stream if the first slice is FAULTED,
   // as no other event will cause it to be released.
-  if (!this->slices.empty() &&
-      this->slices.front().coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
-    this->scheduleAdvanceStream();
+  if (!this->slices.empty()) {
+    auto frontCoreStatus = this->slices.front().coreStatus;
+    if (frontCoreStatus == MLCStreamSlice::CoreStatusE::FAULTED ||
+        frontCoreStatus == MLCStreamSlice::CoreStatusE::DONE) {
+      this->scheduleAdvanceStream();
+    }
   }
 
   // Let's try to schedule advanceStream for the baseStream.
@@ -258,7 +268,7 @@ void MLCDynamicIndirectStream::allocateSlice() {
    * the LLC. So far this is done with hack.
    * It would not issue request for reduction stream.
    */
-  if (this->stream->isMerged() && this->stream->getStreamType() == "store") {
+  if (this->isWaitingAck()) {
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::WAIT_ACK;
   } else if (this->stream->isReduction()) {
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;

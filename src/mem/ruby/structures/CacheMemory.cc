@@ -534,6 +534,9 @@ CacheMemory::regStats()
     m_deallocated_no_reuse
         .name(name() + ".deallocated_no_reuse")
         .desc("Number of cache line deallocated before any reuse");
+    m_deallocated_no_reuse_no_req_stat
+        .name(name() + ".deallocated_no_reuse_no_req_stat")
+        .desc("Number of cache line without ReqStat deallocated before any reuse");
     m_deallocated_no_reuse_noc_control_message
         .name(name() + ".deallocated_no_reuse_noc_ctrl_msg")
         .desc("Number of NoC control messages of no reuse data");

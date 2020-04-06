@@ -216,6 +216,7 @@ structure (CacheMemory, external = "yes") {
   Scalar demand_hits;
   Scalar deallocated;
   Scalar deallocated_no_reuse;
+  Scalar deallocated_no_reuse_no_req_stat;
   Scalar deallocated_no_reuse_noc_control_message;
   Scalar deallocated_no_reuse_noc_data_message;
   Scalar deallocated_no_reuse_stream;

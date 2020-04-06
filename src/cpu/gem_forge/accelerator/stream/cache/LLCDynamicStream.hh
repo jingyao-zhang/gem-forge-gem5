@@ -164,6 +164,13 @@ public:
   Cycles prevMigrateCycle = Cycles(0);
 
   /**
+   * Used to implement CompactStore.
+   * ! Only valid for floating MergedStoreStream.
+   */
+  Addr prevStorePAddrLine = 0;
+  Cycles prevStoreCycle = Cycles(0);
+
+  /**
    * Transient states that should be reset after migration.
    * ! Only valid for DirectStream.
    */

@@ -101,9 +101,14 @@ void MLCDynamicDirectStream::advanceStream() {
 
   // We may need to schedule advance stream if the first slice is FAULTED,
   // as no other event will cause it to be released.
-  if (!this->slices.empty() &&
-      this->slices.front().coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
-    this->scheduleAdvanceStream();
+  // Same for DONE elements because we may have no core user and not receive
+  // data From LLC.
+  if (!this->slices.empty()) {
+    auto frontCoreStatus = this->slices.front().coreStatus;
+    if (frontCoreStatus == MLCStreamSlice::CoreStatusE::FAULTED ||
+        frontCoreStatus == MLCStreamSlice::CoreStatusE::DONE) {
+      this->scheduleAdvanceStream();
+    }
   }
 
   /**

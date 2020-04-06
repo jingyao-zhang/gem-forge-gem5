@@ -200,9 +200,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   void setHitCacheLevel(RequestStatisticPtr, int);
   void addNoCControlMsgs(RequestStatisticPtr, int);
   void addNoCDataMsgs(RequestStatisticPtr, int);
-  int getNoCControlMsgs(RequestStatisticPtr);
-  int getNoCDataMsgs(RequestStatisticPtr);
-  void addToStat(Scalar, int);
+  void recordDeallocateReqStats(RequestStatisticPtr, CacheMemory);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
   bool isRequestStatisticStream(RequestStatisticPtr);
   bool isRequestStatisticValid(RequestStatisticPtr);
@@ -926,18 +924,12 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
       bool reused := cache_entry.Reused || cache_entry.Dirty;
       if (!reused) {
         ++cache.deallocated_no_reuse;
+
         if (isRequestStatisticValid(cache_entry.ReqStat)) {
           // Record msg stats.
-          int nocCtrl := getNoCControlMsgs(cache_entry.ReqStat);
-          int nocData := getNoCDataMsgs(cache_entry.ReqStat);
-          addToStat(cache.deallocated_no_reuse_noc_control_message, nocCtrl);
-          addToStat(cache.deallocated_no_reuse_noc_data_message, nocData);
-          if (isRequestStatisticStream(cache_entry.ReqStat)) {
-            // Record this is from stream.
-            ++cache.deallocated_no_reuse_stream;
-            addToStat(cache.deallocated_no_reuse_stream_noc_control_message, nocCtrl);
-            addToStat(cache.deallocated_no_reuse_stream_noc_data_message, nocData);
-          }
+          recordDeallocateReqStats(cache_entry.ReqStat, cache);
+        } else {
+          ++cache.deallocated_no_reuse_no_req_stat;
         }
       }
     }
