@@ -1385,7 +1385,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     jj_popL1RequestQueue;
   }
   // The data is in TBE now.
-  transition(S_I, L1_GETV, S_I) {
+  transition({S_I, I_I}, L1_GETV) {
     nert_notifyStreamEngineFromL1ReqFromTBE;
     dut_sendUncacheDataToRequestorsFromTBE;
     uu_profileHit;
