@@ -24,6 +24,7 @@ struct LLCStreamRequest {
   bool translationDone = false;
   // Optional for StreamStore request.
   uint64_t storeData;
+  int storeSize = 8;
   // Optional for Multicast streams, excluding the original stream
   std::vector<DynamicStreamSliceId> multicastSliceIds;
   LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,

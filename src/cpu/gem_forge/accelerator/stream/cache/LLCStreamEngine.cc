@@ -1074,6 +1074,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
                          "StreamStore -> RequestQueue, StoreValue %lu.\n",
                          storeValue);
       bool isIdeaStore = false;
+      int storeSize = sliceId.size;
       if (this->controller->isStreamIdeaStoreEnabled()) {
         isIdeaStore = true;
       } else if (this->controller->isStreamCompactStoreEnabled()) {
@@ -1086,6 +1087,11 @@ void LLCStreamEngine::generateIndirectStreamRequest(
         if (dynIS->prevStorePAddrLine == paddrLine) {
           // We can compact.
           isIdeaStore = true;
+        } else {
+          // As an overhead, we set StoreSize to 64 due to compaction.
+          if (IS->isDirectMemStream()) {
+            storeSize = RubySystem::getBlockSizeBytes();
+          }
         }
       }
 
@@ -1105,8 +1111,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(
           this->scheduleEvent(Cycles(1));
         }
       } else {
-        this->enqueueRequest(dynIS, sliceId, vaddrLine, paddrLine,
-                             CoherenceRequestType_STREAM_STORE, storeValue);
+        auto reqIter =
+            this->enqueueRequest(dynIS, sliceId, vaddrLine, paddrLine,
+                                 CoherenceRequestType_STREAM_STORE, storeValue);
+        reqIter->storeSize = storeSize;
       }
 
     } else {
@@ -1237,6 +1245,10 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
     msg->m_streamStoreBlk.setData(
         reinterpret_cast<const uint8_t *>(&req.storeData), lineOffset,
         sliceId.size);
+    if (req.storeSize > 8) {
+      // We model this as a whole cache line put back.
+      msg->m_MessageSize = MessageSizeType_Response_Data;
+    }
   }
 
   for (const auto &multicastSliceId : req.multicastSliceIds) {
