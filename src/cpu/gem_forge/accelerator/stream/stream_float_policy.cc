@@ -159,20 +159,20 @@ bool StreamFloatPolicy::checkReuseWithinStream(Stream *S, DynamicStream &dynS) {
     return true;
   }
   auto privateCacheSize = this->privateCacheCapacity.back();
-  if (reuseFootprint > privateCacheSize) {
-    S_DPRINTF(S, "ReuseSize %lu ReuseCount %d > PrivateCacheSize %lu.\n",
+  if (reuseFootprint >= privateCacheSize) {
+    S_DPRINTF(S, "ReuseSize %lu ReuseCount %d >= PrivateCacheSize %lu.\n",
               reuseFootprint, reuseCount, privateCacheSize);
     logStream(S) << "ReuseSize " << reuseFootprint << " ReuseCount "
-                 << reuseCount << " > PrivateCacheSize " << privateCacheSize
+                 << reuseCount << " >= PrivateCacheSize " << privateCacheSize
                  << '\n'
                  << std::flush;
     return true;
   } else {
     S_DPRINTF(
-        S, "[Not Float] ReuseSize %lu ReuseCount %d <= PrivateCacheSize %lu.\n",
+        S, "[Not Float] ReuseSize %lu ReuseCount %d < PrivateCacheSize %lu.\n",
         reuseFootprint, reuseCount, privateCacheSize);
     logStream(S) << "[Not Float] ReuseSize " << reuseFootprint << " ReuseCount "
-                 << reuseCount << " <= PrivateCacheSize " << privateCacheSize
+                 << reuseCount << " < PrivateCacheSize " << privateCacheSize
                  << '\n'
                  << std::flush;
     return false;
@@ -255,6 +255,16 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(Stream *S, DynamicStream &dynS) {
   }
 
   if (!this->checkAggregateHistory(S, dynS)) {
+    return false;
+  }
+
+  if (S->getStreamName() ==
+          "(kernel_query.c::30(.omp_outlined..33) 50 bb87 bb87::tmp91(load))" ||
+      S->getStreamName() == "(kernel_range.c::28(.omp_outlined..37) 62 bb104 "
+                            "bb104::tmp109(load))" ||
+      S->getStreamName() == "(kernel_range.c::28(.omp_outlined..37) 67 bb104 "
+                            "bb118::tmp121(load))") {
+    logStream(S) << "[NotFloated]: explicitly.\n" << std::flush;
     return false;
   }
 
