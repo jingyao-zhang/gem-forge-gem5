@@ -61,6 +61,12 @@
                         0x1: VINSERT128H(VYdo, Wo, Ib);
                     }
                 }
+                0x19: decode EVEX_L {
+                    0x1: decode IMMEDIATE {
+                        0x0: VEXTRACT128L(Wo, VYdo, Ib);
+                        0x1: VEXTRACT128H(Wo, VYdo, Ib);
+                    }
+                }
                 0x21: decode EVEX_L {
                     0x0: VINSERTPS(Vo, Wo, Ib);
                 }

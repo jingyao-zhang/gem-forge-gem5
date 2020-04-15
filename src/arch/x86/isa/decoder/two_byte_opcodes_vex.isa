@@ -210,6 +210,9 @@
             }
         }
         0x0E: decode LEGACY_DECODEVAL {
+            0x0: decode OPCODE_OP_BOTTOM3 {
+                0x7: VZEROUPPER();
+            }
             0x1: decode OPCODE_OP_BOTTOM3 {
                 0x0: decode EVEX_L {
                     0x1: VPSHUFD(VYdo, WYdo, Ib);
