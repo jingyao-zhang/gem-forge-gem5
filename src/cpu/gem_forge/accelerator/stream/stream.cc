@@ -112,8 +112,13 @@ void Stream::registerStepDependentStreamToRoot(Stream *newStepDependentStream) {
 void Stream::initializeAliasStreamsFromProtobuf(
     const ::LLVM::TDG::StaticStreamInfo &info) {
   auto aliasBaseStreamId = info.alias_base_stream().id();
-  this->aliasBaseStream = this->se->getStream(aliasBaseStreamId);
-  assert(this->aliasBaseStream && "Failed to find the AliasBaseStream.");
+  this->aliasBaseStream = this->se->tryGetStream(aliasBaseStreamId);
+  /**
+   * If can not find the alias base stream, simply use myself.
+   */
+  if (!this->aliasBaseStream) {
+    this->aliasBaseStream = this;
+  }
   this->aliasOffset = info.alias_offset();
   /**
    * Inform the AliasBaseStream that whether I am store.
