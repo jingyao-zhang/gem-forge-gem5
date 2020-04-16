@@ -3,6 +3,7 @@
 
 #include "AbstractController.hh"
 #include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceIdVec.hh"
 #include "mem/ruby/structures/CacheMemory.hh"
 #include "params/RubyStreamAwareController.hh"
 
@@ -18,6 +19,8 @@ class AbstractStreamAwareController : public AbstractController {
 public:
   typedef RubyStreamAwareControllerParams Params;
   AbstractStreamAwareController(const Params *p);
+
+  void regStats() override;
 
   /**
    * Map an address to a LLC bank (or other type of controller).
@@ -41,6 +44,9 @@ public:
     return this->enableStreamAdvanceMigrate;
   }
   bool isStreamMulticastEnabled() const { return this->enableStreamMulticast; }
+  bool isStreamLLCIssueClearEnabled() const {
+    return myParams->enable_stream_llc_issue_clear;
+  }
   int getStreamMulticastGroupSize() const {
     return this->streamMulticastGroupSize;
   }
@@ -116,6 +122,9 @@ public:
 
   void recordDeallocateReqStats(const RequestStatisticPtr &reqStat,
                                 CacheMemory &cache) const;
+  void recordLLCReqQueueStats(const RequestStatisticPtr &reqStat,
+                              const DynamicStreamSliceIdVec &sliceIds);
+  void incrementLLCIndReqQueueStats() { this->m_statLLCIndStreamReq++; }
 
   void addNoCControlMsgs(RequestStatisticPtr statistic, int msgs) const {
     if (statistic != nullptr) {
@@ -211,6 +220,14 @@ private:
   static GlobalMap globalMap;
   static std::list<AbstractStreamAwareController *> globalList;
   static void registerController(AbstractStreamAwareController *controller);
+
+protected:
+  // Stats exposed to the controller.
+  Stats::Scalar m_statCoreReq;
+  Stats::Scalar m_statCoreStreamReq;
+  Stats::Scalar m_statLLCStreamReq;
+  Stats::Scalar m_statLLCIndStreamReq;
+  Stats::Scalar m_statLLCMulticastStreamReq;
 };
 
 #endif

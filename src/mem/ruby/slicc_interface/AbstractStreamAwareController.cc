@@ -42,6 +42,25 @@ AbstractStreamAwareController::AbstractStreamAwareController(const Params *p)
   registerController(this);
 }
 
+void AbstractStreamAwareController::regStats() {
+  AbstractController::regStats();
+  m_statCoreReq.name(name() + ".coreRequests")
+      .desc("number of core requests seen")
+      .flags(Stats::nozero);
+  m_statCoreStreamReq.name(name() + ".coreStreamRequests")
+      .desc("number of core stream requests seen")
+      .flags(Stats::nozero);
+  m_statLLCStreamReq.name(name() + ".llcStreamRequests")
+      .desc("number of llc stream requests seen")
+      .flags(Stats::nozero);
+  m_statLLCIndStreamReq.name(name() + ".llcIndStreamRequests")
+      .desc("number of llc indirect stream requests seen")
+      .flags(Stats::nozero);
+  m_statLLCMulticastStreamReq.name(name() + ".llcMulticastStreamRequests")
+      .desc("number of llc multicast stream requests seen")
+      .flags(Stats::nozero);
+}
+
 MachineID
 AbstractStreamAwareController::mapAddressToLLC(Addr addr,
                                                MachineType mtype) const {
@@ -134,5 +153,25 @@ void AbstractStreamAwareController::recordDeallocateReqStats(
   } else {
     // Jesus what is this?
     // hack("Deallocated NoReuse NonStream Line from PC %#x.\n", reqStat->pc);
+  }
+}
+
+void AbstractStreamAwareController::recordLLCReqQueueStats(
+    const RequestStatisticPtr &reqStat,
+    const DynamicStreamSliceIdVec &sliceIds) {
+  if (sliceIds.isValid()) {
+    // An LLC stream request.
+    ++m_statLLCStreamReq;
+    if (sliceIds.sliceIds.size() > 1) {
+      // Multicast LLC stream request.
+      ++m_statLLCMulticastStreamReq;
+    }
+  } else {
+    // A core request.
+    ++m_statCoreReq;
+    if (reqStat && reqStat->isStream) {
+      // A normal stream req from core.
+      ++m_statCoreStreamReq;
+    }
   }
 }

@@ -218,6 +218,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   MachineID mapAddressToMachine(Addr addr, MachineType mtype);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
+  void recordLLCReqQueueStats(RequestStatisticPtr, DynamicStreamSliceIdVec);
+  void incrementLLCIndReqQueueStats();
 
   bool isStreamSublineEnabled();
   MessageSizeType getMessageSizeType(int);
@@ -539,6 +541,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         se.receiveStreamIndirectRequest(in_msg);
 
         // Dequeue from the indirect message buffer.
+        incrementLLCIndReqQueueStats();
         Tick delay := streamIndirectFromL2Cache_in.dequeue(clockEdge());
         profileMsgDelay(3, ticksToCycles(delay));
       }
@@ -910,6 +913,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   action(jj_popL1RequestQueue, "\j", desc="Pop incoming L1 request queue") {
+    peek(L1RequestL2Network_in, RequestMsg) { 
+      recordLLCReqQueueStats(in_msg.requestStatistic, in_msg.sliceIds);
+    }
     Tick delay := L1RequestL2Network_in.dequeue(clockEdge());
     profileMsgDelay(0, ticksToCycles(delay));
   }
