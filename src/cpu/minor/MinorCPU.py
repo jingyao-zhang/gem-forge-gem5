@@ -208,11 +208,19 @@ class MinorGemForgeFloatSqrt(MinorFU):
     opLat = 24
     issueLat = 24
 
-class MinorGemForgeSimdFU(MinorFU):
+class MinorGemForgeIntSimdFU(MinorFU):
     opClasses = minorMakeOpClassSet([
         'SimdAdd', 'SimdAddAcc', 'SimdAlu', 'SimdCmp', 'SimdCvt',
         'SimdMisc', 'SimdMult', 'SimdMultAcc', 'SimdShift', 'SimdShiftAcc',
-        'SimdDiv', 'SimdSqrt', 'SimdFloatAdd', 'SimdFloatAlu', 'SimdFloatCmp',
+        'SimdDiv', 'SimdSqrt'])
+
+    timings = [MinorFUTiming(description='IntSimd',
+        srcRegsRelativeLats=[0])]
+    opLat = 1
+
+class MinorGemForgeFpSimdFU(MinorFU):
+    opClasses = minorMakeOpClassSet([
+        'SimdFloatAdd', 'SimdFloatAlu', 'SimdFloatCmp',
         'SimdFloatCvt', 'SimdFloatDiv', 'SimdFloatMisc', 'SimdFloatMult',
         'SimdFloatMultAcc', 'SimdFloatSqrt', 'SimdReduceAdd', 'SimdReduceAlu',
         'SimdReduceCmp', 'SimdFloatReduceAdd', 'SimdFloatReduceCmp',
@@ -222,7 +230,7 @@ class MinorGemForgeSimdFU(MinorFU):
 
     timings = [MinorFUTiming(description='FloatSimd',
         srcRegsRelativeLats=[0])]
-    opLat = 1
+    opLat = 2
 
 class MinorDefaultPredFU(MinorFU):
     opClasses = minorMakeOpClassSet(['SimdPredAlu'])
@@ -267,8 +275,8 @@ class MinorGemForgeI4FUPool(MinorFUPool):
         MinorGemForgeFloatMult(), MinorGemForgeFloatMult(),
         MinorGemForgeFloatDiv(), MinorGemForgeFloatDiv(),
         MinorGemForgeFloatSqrt(),
-        MinorGemForgeSimdFU(), MinorGemForgeSimdFU(),
-        MinorGemForgeSimdFU(), MinorGemForgeSimdFU(),
+        MinorGemForgeIntSimdFU(), MinorGemForgeIntSimdFU(),
+        MinorGemForgeFpSimdFU(), MinorGemForgeFpSimdFU(),
         MinorDefaultPredFU(), MinorDefaultPredFU(),
         MinorDefaultMemFU(), MinorDefaultMiscFU(),
         MinorDefaultMemFU(), MinorDefaultMiscFU(),
