@@ -175,7 +175,8 @@ def create_system(options, full_system, system, piobus = None, dma_ports = [],
              eval("%s.create_system(options, full_system, system, dma_ports,\
                                     bootmem, ruby)"
                   % protocol)
-    except:
+    except Exception as e:
+        print(e)
         print("Error: could not create sytem for ruby protocol %s" % protocol)
         raise
 
