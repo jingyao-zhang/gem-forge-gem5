@@ -41,8 +41,6 @@
 #include "base/types.hh"
 #include "mem/page_table.hh"
 
-class System;
-
 /**
  * This class implements an in-memory multi-level page table that can be
  * configured to follow ISA specifications. It can be used instead of the
@@ -184,11 +182,6 @@ class MultiLevelPageTable : public EmulationPageTable
     typedef typename LastType<EntryTypes...>::type Final;
 
     /**
-     * Pointer to System object
-     */
-    System *system;
-
-    /**
      * Physical address to the last level of the page table
      */
     Addr _basePtr;
@@ -196,7 +189,7 @@ class MultiLevelPageTable : public EmulationPageTable
 public:
     MultiLevelPageTable(const std::string &__name, uint64_t _pid,
                         System *_sys, Addr pageSize) :
-            EmulationPageTable(__name, _pid, pageSize), system(_sys)
+            EmulationPageTable(__name, _pid, _sys, pageSize)
     {}
 
     ~MultiLevelPageTable() {}
@@ -215,6 +208,7 @@ public:
     void
     map(Addr vaddr, Addr paddr, int64_t size, uint64_t flags = 0) override
     {
+        assert(!(flags & NoPhysBack) && "No LazyAllocation in MultiLevelPageTable.");
         EmulationPageTable::map(vaddr, paddr, size, flags);
 
         Final entry;

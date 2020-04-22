@@ -46,6 +46,7 @@
 #include "sim/serialize.hh"
 
 class ThreadContext;
+class System;
 
 class EmulationPageTable : public Serializable
 {
@@ -64,6 +65,12 @@ class EmulationPageTable : public Serializable
     typedef PTable::iterator PTableItr;
     PTable pTable;
 
+    /**
+     * Pointer to System object
+     * For lazy allocation.
+     */
+    System *system;
+
     const Addr pageSize;
     const Addr offsetMask;
 
@@ -73,8 +80,9 @@ class EmulationPageTable : public Serializable
   public:
 
     EmulationPageTable(
-            const std::string &__name, uint64_t _pid, Addr _pageSize) :
-            pageSize(_pageSize), offsetMask(mask(floorLog2(_pageSize))),
+            const std::string &__name, uint64_t _pid,
+            System* _system, Addr _pageSize) :
+            system(_system), pageSize(_pageSize), offsetMask(mask(floorLog2(_pageSize))),
             _pid(_pid), _name(__name), shared(false)
     {
         assert(isPowerOf2(pageSize));
@@ -89,11 +97,13 @@ class EmulationPageTable : public Serializable
      * bit 0 - no-clobber | clobber
      * bit 2 - cacheable  | uncacheable
      * bit 3 - read-write | read-only
+     * bit 8 - phys-back  | non-phys-back
      */
     enum MappingFlags : uint32_t {
         Clobber     = 1,
         Uncacheable = 4,
         ReadOnly    = 8,
+        NoPhysBack  = (1 << 8),
     };
 
     // flag which marks the page table as shared among software threads
@@ -132,7 +142,7 @@ class EmulationPageTable : public Serializable
      * @param vaddr The virtual address.
      * @return The page table entry corresponding to vaddr.
      */
-    const Entry *lookup(Addr vaddr);
+    Entry *lookup(Addr vaddr);
 
     /**
      * Translate function

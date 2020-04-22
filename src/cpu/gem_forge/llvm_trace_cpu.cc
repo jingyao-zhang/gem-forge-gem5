@@ -14,7 +14,8 @@
 
 LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
     : BaseCPU(params), cpuParams(params),
-      pageTable(params->name + ".page_table", 0, TheISA::PageBytes),
+      pageTable(params->name + ".page_table", 0, params->system,
+                TheISA::PageBytes),
       instPort(params->name + ".inst_port", this),
       dataPort(params->name + ".data_port", this),
       traceFileName(params->traceFile),

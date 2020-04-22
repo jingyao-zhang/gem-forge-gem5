@@ -64,7 +64,7 @@ using namespace ArmISA;
 ArmProcess::ArmProcess(ProcessParams *params, ObjectFile *objFile,
                        ObjectFile::Arch _arch)
     : Process(params,
-              new EmulationPageTable(params->name, params->pid, PageBytes),
+              new EmulationPageTable(params->name, params->pid, params->system, PageBytes),
               objFile),
       arch(_arch)
 {

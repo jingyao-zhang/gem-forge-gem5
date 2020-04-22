@@ -112,7 +112,7 @@ X86Process::X86Process(ProcessParams *params, ObjectFile *objFile,
                               new ArchPageTable(params->name, params->pid,
                                                 params->system, PageBytes)) :
                       new EmulationPageTable(params->name, params->pid,
-                                             PageBytes),
+                                             params->system, PageBytes),
               objFile),
       syscallDescs(_syscallDescs), numSyscallDescs(_numSyscallDescs)
 {

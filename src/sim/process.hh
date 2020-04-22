@@ -168,6 +168,9 @@ class Process : public SimObject
     // system object which owns this process
     System *system;
 
+    // Enable lazy allocation.
+    std::shared_ptr<bool> lazyAllocation;
+
     Stats::Scalar numSyscalls;  // track how many system calls are executed
 
     // flag for using architecture specific page table

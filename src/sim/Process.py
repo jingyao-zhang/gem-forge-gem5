@@ -66,6 +66,7 @@ class Process(SimObject):
 
     exitGroup = Param.Bool('false', "whether exit thread group when syscall \
                             exitGroup is called.")
+    lazyAllocation = Param.Bool(False, "Enable lazy allocation")
 
     @classmethod
     def export_methods(cls, code):

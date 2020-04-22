@@ -63,7 +63,7 @@ using namespace RiscvISA;
 
 RiscvProcess::RiscvProcess(ProcessParams *params, ObjectFile *objFile) :
         Process(params,
-                new EmulationPageTable(params->name, params->pid, PageBytes),
+                new EmulationPageTable(params->name, params->pid, params->system, PageBytes),
                 objFile)
 {
     fatal_if(params->useArchPT, "Arch page tables not implemented.");

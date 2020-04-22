@@ -86,6 +86,7 @@ normalize(std::string& directory)
 Process::Process(ProcessParams *params, EmulationPageTable *pTable,
                  ObjectFile *obj_file)
     : SimObject(params), system(params->system),
+      lazyAllocation(new bool(params->lazyAllocation)),
       useArchPT(params->useArchPT),
       kvmInSE(params->kvmInSE),
       useForClone(false),
@@ -228,6 +229,7 @@ Process::clone(ThreadContext *otc, ThreadContext *ntc,
         np->_tgid = _tgid;
         delete np->exitGroup;
         np->exitGroup = exitGroup;
+        np->lazyAllocation = lazyAllocation;
     }
 
     np->argv.insert(np->argv.end(), argv.begin(), argv.end());
@@ -296,10 +298,16 @@ void
 Process::allocateMem(Addr vaddr, int64_t size, bool clobber)
 {
     int npages = divCeil(size, (int64_t)PageBytes);
-    Addr paddr = system->allocPhysPages(npages);
-    pTable->map(vaddr, paddr, size,
-                clobber ? EmulationPageTable::Clobber :
-                          EmulationPageTable::MappingFlags(0));
+    if (this->lazyAllocation && !clobber) {
+        // Lazy allocation only for non-clobber pages.
+        Addr paddr = system->getInvalidPhysPage();
+        pTable->map(vaddr, paddr, size, EmulationPageTable::NoPhysBack);
+    } else {
+        Addr paddr = system->allocPhysPages(npages);
+        pTable->map(vaddr, paddr, size,
+                    clobber ? EmulationPageTable::Clobber :
+                              EmulationPageTable::MappingFlags(0));
+    }
 }
 
 void

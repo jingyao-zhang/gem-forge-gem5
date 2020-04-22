@@ -396,6 +396,16 @@ System::allocPhysPages(int npages)
     return return_addr;
 }
 
+Addr System::getInvalidPhysPage() const {
+    Addr paddr = physmem.totalSize();
+    AddrRange m5opRange(0xffff0000, 0xffffffff);
+    if (m5opRange.contains(paddr)) {
+        warn("Skip m5ops MMIO region\n");
+        paddr = 0xffffffff;
+    }
+    return paddr;
+}
+
 Addr
 System::memSize() const
 {

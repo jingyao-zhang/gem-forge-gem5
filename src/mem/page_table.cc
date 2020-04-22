@@ -44,6 +44,7 @@
 #include "debug/MMU.hh"
 #include "sim/faults.hh"
 #include "sim/serialize.hh"
+#include "sim/system.hh"
 
 void
 EmulationPageTable::map(Addr vaddr, Addr paddr, int64_t size, uint64_t flags)
@@ -52,7 +53,8 @@ EmulationPageTable::map(Addr vaddr, Addr paddr, int64_t size, uint64_t flags)
     // starting address must be page aligned
     assert(pageOffset(vaddr) == 0);
 
-    DPRINTF(MMU, "Allocating Page: %#x-%#x\n", vaddr, vaddr + size);
+    DPRINTF(MMU, "Allocating Page: %#x-%#x, NoPhysBack %d.\n",
+        vaddr, vaddr + size, static_cast<bool>(flags & NoPhysBack));
 
     while (size > 0) {
         auto it = pTable.find(vaddr);
@@ -130,13 +132,19 @@ EmulationPageTable::isUnmapped(Addr vaddr, int64_t size)
     return true;
 }
 
-const EmulationPageTable::Entry *
+EmulationPageTable::Entry *
 EmulationPageTable::lookup(Addr vaddr)
 {
     Addr page_addr = pageAlign(vaddr);
     PTableItr iter = pTable.find(page_addr);
     if (iter == pTable.end())
         return nullptr;
+    // Lazy allocation.
+    if (iter->second.flags & NoPhysBack) {
+        iter->second.paddr = system->allocPhysPages(1);
+        iter->second.flags &= (~NoPhysBack);
+        DPRINTF(MMU, "LazyAllocate: %#x->%#x\n", vaddr, iter->second.paddr);
+    }
     return &(iter->second);
 }
 

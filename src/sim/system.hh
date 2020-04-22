@@ -598,6 +598,10 @@ class System : public SimObject
     /// @return Starting address of first page
     Addr allocPhysPages(int npages);
 
+    /// Get a invalid physical page.
+    /// Used for lazy allocation.
+    Addr getInvalidPhysPage() const;
+
     ContextID registerThreadContext(ThreadContext *tc,
                                     ContextID assigned = InvalidContextID);
     void replaceThreadContext(ThreadContext *tc, ContextID context_id);
