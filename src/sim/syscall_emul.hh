@@ -284,6 +284,9 @@ SyscallReturn pipeImpl(SyscallDesc *desc, int num, ThreadContext *tc,
 /// Target pipe() handler.
 SyscallReturn pipe2Func(SyscallDesc *desc, int num, ThreadContext *tc);
 
+/// Target sched_yield() handler.
+SyscallReturn schedyieldFunc(SyscallDesc *desc, int num, ThreadContext *tc);
+
 /// Target getpid() handler.
 SyscallReturn getpidFunc(SyscallDesc *desc, int num, ThreadContext *tc);
 

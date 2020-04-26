@@ -1059,6 +1059,43 @@ pipe2Func(SyscallDesc *desc, int callnum, ThreadContext *tc)
     return pipeImpl(desc, callnum, tc, false, true);
 }
 
+
+class GlobalYieldWakeupEvent : public GlobalEvent {
+  protected:
+    ThreadContext *tc;
+
+  public:
+    GlobalYieldWakeupEvent(Tick when, ThreadContext *_tc)
+        : GlobalEvent(when, Default_Pri, AutoDelete), tc(_tc) {}
+
+    void process() override {
+        DPRINTF(SyscallBase, "Wakeup shed_yield thread %d-%d.\n",
+            tc->cpuId(), tc->threadId());
+        tc->activate();
+    }
+
+    const char *description() const override {
+        return "sched_yield() wake up";
+    }
+};
+
+SyscallReturn schedyieldFunc(SyscallDesc *desc, int num, ThreadContext *tc) {
+    // Simply suspend the thread and schedule activate later.
+    auto wakeupTick = *(tc->getProcessPtr()->yieldWakeupTick);
+    DPRINTF(SyscallBase, "Thread sched_yield %d-%d, PC %#x, lat %lu.\n",
+        tc->cpuId(), tc->threadId(), tc->pcState().pc(), wakeupTick);
+    if (wakeupTick == 0) {
+        return 0;
+    }
+    tc->suspend();
+
+    // Schedule wakeup.
+    new GlobalYieldWakeupEvent(curTick() + wakeupTick, tc);
+
+    // Always succeed.
+    return 0;
+}
+
 SyscallReturn
 getpgrpFunc(SyscallDesc *desc, int callnum, ThreadContext *tc)
 {

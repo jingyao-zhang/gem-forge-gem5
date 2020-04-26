@@ -67,6 +67,8 @@ class Process(SimObject):
     exitGroup = Param.Bool('false', "whether exit thread group when syscall \
                             exitGroup is called.")
     lazyAllocation = Param.Bool(False, "Enable lazy allocation")
+    yieldWakeup = Param.Latency('0ns',
+        "Latency to wakeup sched_yield, 0 means immediately.")
 
     @classmethod
     def export_methods(cls, code):

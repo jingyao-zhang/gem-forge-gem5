@@ -87,6 +87,7 @@ Process::Process(ProcessParams *params, EmulationPageTable *pTable,
                  ObjectFile *obj_file)
     : SimObject(params), system(params->system),
       lazyAllocation(new bool(params->lazyAllocation)),
+      yieldWakeupTick(new Tick(params->yieldWakeup)),
       useArchPT(params->useArchPT),
       kvmInSE(params->kvmInSE),
       useForClone(false),
@@ -230,6 +231,7 @@ Process::clone(ThreadContext *otc, ThreadContext *ntc,
         delete np->exitGroup;
         np->exitGroup = exitGroup;
         np->lazyAllocation = lazyAllocation;
+        np->yieldWakeupTick = yieldWakeupTick;
     }
 
     np->argv.insert(np->argv.end(), argv.begin(), argv.end());

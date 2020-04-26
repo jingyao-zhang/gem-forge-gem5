@@ -170,6 +170,7 @@ class Process : public SimObject
 
     // Enable lazy allocation.
     std::shared_ptr<bool> lazyAllocation;
+    std::shared_ptr<Tick> yieldWakeupTick;
 
     Stats::Scalar numSyscalls;  // track how many system calls are executed
 

@@ -37,6 +37,8 @@ def get_processes(options):
         process.cwd = os.getcwd()
         process.exitGroup = True
         process.lazyAllocation = True
+        # Yield wakeup every 10us.
+        process.yieldWakeup = '2us'
 
         if len(pargs) > idx:
             process.cmd = [wrkld] + pargs[idx].split()

@@ -282,7 +282,7 @@ static SyscallDesc syscallDescs64[] = {
     /*  21 */ SyscallDesc("access", ignoreFunc),
     /*  22 */ SyscallDesc("pipe", pipeFunc),
     /*  23 */ SyscallDesc("select", selectFunc<X86Linux64>),
-    /*  24 */ SyscallDesc("sched_yield", ignoreFunc),
+    /*  24 */ SyscallDesc("sched_yield", schedyieldFunc),
     /*  25 */ SyscallDesc("mremap", mremapFunc<X86Linux64>),
     /*  26 */ SyscallDesc("msync", unimplementedFunc),
     /*  27 */ SyscallDesc("mincore", unimplementedFunc),
