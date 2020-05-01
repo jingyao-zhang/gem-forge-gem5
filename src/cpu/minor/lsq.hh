@@ -106,9 +106,10 @@ class LSQ : public Named
         /**
          * ! GemForge
          * Make this virtual to be override.
+         * @param isCore: Is the packet from the core.
          * MasterPort::sendTimingReq is not virtual.
          */
-        virtual bool sendTimingReqVirtual(PacketPtr pkt) {
+        virtual bool sendTimingReqVirtual(PacketPtr pkt, bool isCore = true) {
           return this->sendTimingReq(pkt);
         }
 
@@ -142,14 +143,19 @@ class LSQ : public Named
             curCycle(0),
             numUsedPorts(0),
             drainEvent([this]()->void { this->drain(); }, name()) {}
-        bool sendTimingReqVirtual(PacketPtr pkt) override;
+        bool sendTimingReqVirtual(PacketPtr pkt, bool isCore) override;
       protected:
         bool recvTimingResp(PacketPtr pkt) override;
         void recvReqRetry() override;
 
         const int numPorts = 2;
-        std::queue<PacketPtr> blockedQueue;
+        std::list<std::pair<PacketPtr, bool>> blockedQueue;
         bool blocked;
+        /**
+         * If we have seen a lock RMWRead, the port should be blocked
+         * until a RMWWrite comes in.
+         */
+        std::set<Addr> lockedRMWLinePAddr;
         Cycles curCycle;
         int numUsedPorts;
 

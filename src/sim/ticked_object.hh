@@ -91,6 +91,7 @@ class Ticked : public Serializable
 
   public:
     Ticked(ClockedObject &object_,
+        const std::string &name_,
         Stats::Scalar *imported_num_cycles = NULL,
         Event::Priority priority = Event::CPU_Tick_Pri);
 

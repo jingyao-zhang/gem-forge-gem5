@@ -43,10 +43,11 @@
 #include "sim/clocked_object.hh"
 
 Ticked::Ticked(ClockedObject &object_,
+    const std::string &name_,
     Stats::Scalar *imported_num_cycles,
     Event::Priority priority) :
     object(object_),
-    event([this]{ processClockEvent(); }, name(), false, priority),
+    event([this]{ processClockEvent(); }, name_ + ".tick", false, priority),
     running(false),
     lastStopped(0),
     /* Allocate numCycles if an external stat wasn't passed in */
@@ -112,7 +113,7 @@ TickedObject::TickedObject(const TickedObjectParams *params,
     Event::Priority priority) :
     ClockedObject(params),
     /* Make numCycles in Ticked */
-    Ticked(*this, NULL, priority)
+    Ticked(*this, this->name(), NULL, priority)
 { }
 
 void

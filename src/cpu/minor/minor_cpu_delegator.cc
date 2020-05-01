@@ -548,10 +548,10 @@ bool MinorCPUDelegator::translateVAddrOracle(Addr vaddr, Addr &paddr) {
 
 void MinorCPUDelegator::sendRequest(PacketPtr pkt) {
   // If this is not a load request, we should send immediately.
-  // e.g. StreamConfit/End packet.
+  // e.g. StreamConfig/End packet.
   if (pkt->cmd != MemCmd::ReadReq) {
     auto &lsq = pimpl->cpu->pipeline->execute.getLSQ();
-    assert(lsq.dcachePort->sendTimingReqVirtual(pkt));
+    assert(lsq.dcachePort->sendTimingReqVirtual(pkt, false /* isCore */));
     return;
   }
 
@@ -636,7 +636,7 @@ void MinorCPUDelegator::drainPendingPackets() {
     switch (addrRange) {
     case Minor::LSQ::AddrRangeCoverage::NoAddrRangeCoverage: {
       // This packet can be sent to dcache port.
-      assert(lsq.dcachePort->sendTimingReqVirtual(pkt));
+      assert(lsq.dcachePort->sendTimingReqVirtual(pkt, false /* isCore */));
       issued = true;
       break;
     }

@@ -558,6 +558,8 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
   const auto &configSeqNum = args.seqNum;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
+  SE_DPRINTF("Rewind StreamConfig %s.\n", infoRelativePath);
+
   auto configStreams = this->getConfigStreamsInRegion(streamRegion);
   for (auto &S : configStreams) {
     // This file is already too long, move this to stream.cc.
@@ -1204,10 +1206,13 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     }
     endedStreams.insert(S);
 
+    assert(!S->dynamicStreams.empty() &&
+           "Failed to find ended DynamicInstanceState.");
+    auto &endedDynS= S->dynamicStreams.front();
     /**
      * Release all unstepped element until there is none.
      */
-    while (this->releaseElementUnstepped(S)) {
+    while (this->releaseElementUnstepped(endedDynS)) {
     }
 
     /**
@@ -1222,11 +1227,8 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
      * Check if this stream is offloaded and if so, send the StreamEnd
      * packet.
      */
-    assert(!S->dynamicStreams.empty() &&
-           "Failed to find ended DynamicInstanceState.");
-    auto &endedDynamicStream = S->dynamicStreams.front();
-    if (endedDynamicStream.offloadedToCacheAsRoot) {
-      endedFloatRootIds.push_back(endedDynamicStream.dynamicStreamId);
+    if (endedDynS.offloadedToCacheAsRoot) {
+      endedFloatRootIds.push_back(endedDynS.dynamicStreamId);
     }
     // Notify the stream.
     S->commitStreamEnd(args.seqNum);
@@ -1896,8 +1898,9 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
   this->addFreeElement(releaseElement);
 }
 
-bool StreamEngine::releaseElementUnstepped(Stream *S) {
-  auto releaseElement = S->releaseElementUnstepped();
+bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
+  auto S = dynS.stream;
+  auto releaseElement = S->releaseElementUnstepped(dynS);
   if (releaseElement) {
     if (S->getStreamType() == "load" && !S->getFloatManual()) {
       if (releaseElement->isAddrReady) {

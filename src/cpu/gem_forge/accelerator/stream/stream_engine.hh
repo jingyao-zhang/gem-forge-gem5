@@ -382,7 +382,7 @@ private:
    * Release an unstepped stream element.
    * Used to clear ended stream.
    */
-  bool releaseElementUnstepped(Stream *S);
+  bool releaseElementUnstepped(DynamicStream &dynS);
   /**
    * Release a stepped stream element.
    */

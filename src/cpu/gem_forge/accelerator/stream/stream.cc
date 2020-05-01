@@ -244,10 +244,10 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   }
 
   /**
-   * Get rid of any unstepped elements.
+   * Get rid of any unstepped elements of the dynamic stream.
    */
-  while (this->allocSize > this->stepSize) {
-    this->se->releaseElementUnstepped(this);
+  while (dynStream.allocSize > dynStream.stepSize) {
+    this->se->releaseElementUnstepped(dynStream);
   }
 
   /**
@@ -259,7 +259,7 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   // Get rid of the dynamicStream.
   this->dynamicStreams.pop_back();
 
-  assert(this->allocSize == this->stepSize &&
+  assert(dynStream.allocSize == dynStream.stepSize &&
          "Unstepped elements when rewind StreamConfig.");
   this->statistic.numMisConfigured++;
   this->configured = false;
@@ -892,22 +892,11 @@ StreamElement *Stream::releaseElementStepped() {
   return releaseElement;
 }
 
-StreamElement *Stream::releaseElementUnstepped() {
-  assert(!this->dynamicStreams.empty() && "No dynamic stream.");
-  auto &dynS = this->dynamicStreams.front();
-  if (dynS.allocSize == dynS.stepSize) {
-    return nullptr;
-  }
-  // Check if the element is faulted.
+StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {
   auto element = dynS.releaseElementUnstepped();
-  S_ELEMENT_DPRINTF(element, "ReleaseElementUnstepped, isAddrReady %d.\n",
-                    element->isAddrReady);
-  if (this->isMemStream() && element->isAddrReady) {
-    if (element->isValueFaulted(element->addr, element->size)) {
-      this->statistic.numFaulted++;
-    }
+  if (element) {
+    this->allocSize--;
   }
-  this->allocSize--;
   return element;
 }
 

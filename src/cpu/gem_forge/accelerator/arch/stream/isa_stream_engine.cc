@@ -262,7 +262,7 @@ void ISAStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
   se->commitStreamConfig(args);
-  ISA_SE_DPRINTF("Commit StreamReady %s.\n", infoRelativePath.c_str());
+  ISA_SE_DPRINTF("Commit StreamReady %s.\n", infoRelativePath);
 
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
@@ -273,6 +273,8 @@ void ISAStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
   auto &regionInfo = configInfo.dynStreamRegionInfo;
   assert(regionInfo->streamReadyDispatched &&
          "StreamReady must be dispatched.");
+
+  ISA_SE_DPRINTF("Rewind StreamReady %s.\n", regionInfo->infoRelativePath);
 
   // Check if the StreamReady is actually executed.
   if (regionInfo->numExecutedInsts == regionInfo->numDispatchedInsts) {

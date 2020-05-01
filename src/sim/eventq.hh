@@ -826,12 +826,12 @@ class EventFunctionWrapper : public Event
     EventFunctionWrapper(const std::function<void(void)> &callback,
                          const std::string &name,
                          bool del = false,
-                         Priority p = Default_Pri)
-        : Event(p), callback(callback), _name(name)
-    {
-        if (del)
-            setFlags(AutoDelete);
-    }
+                         Priority p = Default_Pri);
+    //     : Event(p), callback(callback), _name(name)
+    // {
+    //     if (del)
+    //         setFlags(AutoDelete);
+    // }
 
     void process() { callback(); }
 

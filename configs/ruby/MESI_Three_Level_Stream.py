@@ -110,7 +110,11 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 replacement_policy = LRUReplacementPolicy(),
                 dataAccessLatency = options.l1d_lat)
 
-            prefetcher = RubyPrefetcher.Prefetcher()
+            prefetcher = RubyPrefetcher.Prefetcher(
+                num_streams=8,
+                pf_per_stream=8,
+                cross_page=True,
+            )
 
             # the ruby random tester reuses num_cpus to specify the
             # number of cpu ports connected to the tester object, which

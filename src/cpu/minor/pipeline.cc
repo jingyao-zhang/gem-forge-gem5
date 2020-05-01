@@ -54,7 +54,7 @@ namespace Minor
 {
 
 Pipeline::Pipeline(MinorCPU &cpu_, MinorCPUParams &params) :
-    Ticked(cpu_, &(cpu_.BaseCPU::numCycles)),
+    Ticked(cpu_, cpu_.name() + ".pipeline", &(cpu_.BaseCPU::numCycles)),
     cpu(cpu_),
     allow_idling(params.enableIdling),
     f1ToF2(cpu.name() + ".f1ToF2", "lines",
@@ -134,19 +134,28 @@ Pipeline::evaluate()
     /* Note that it's important to evaluate the stages in order to allow
      *  'immediate', 0-time-offset TimeBuffer activity to be visible from
      *  later stages to earlier ones in the same cycle */
+    DPRINTF(Event, "Evaluate execute.\n");
     execute.evaluate();
+    DPRINTF(Event, "Evaluate decode.\n");
     decode.evaluate();
+    DPRINTF(Event, "Evaluate fetch2.\n");
     fetch2.evaluate();
+    DPRINTF(Event, "Evaluate fetch1.\n");
     fetch1.evaluate();
 
     if (DTRACE(MinorTrace))
         minorTrace();
 
     /* Update the time buffers after the stages */
+    DPRINTF(Event, "Evaluate f1ToF2.\n");
     f1ToF2.evaluate();
+    DPRINTF(Event, "Evaluate f2ToF1.\n");
     f2ToF1.evaluate();
+    DPRINTF(Event, "Evaluate f2ToD.\n");
     f2ToD.evaluate();
+    DPRINTF(Event, "Evaluate dToE.\n");
     dToE.evaluate();
+    DPRINTF(Event, "Evaluate eToF1.\n");
     eToF1.evaluate();
 
     /* The activity recorder must be be called after all the stages and

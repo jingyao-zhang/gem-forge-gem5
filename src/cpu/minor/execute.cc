@@ -318,6 +318,7 @@ Execute::updateBranchData(
              * Notify GemForge the control misspeculation.
              */
             if (cpu.cpuDelegator) {
+                DPRINTF(Branch, "Delegator StreamChange.\n");
                 cpu.cpuDelegator->streamChange(executeInfo[tid].streamSeqNum);
             }
         }
@@ -685,9 +686,6 @@ Execute::issue(ThreadID thread_id)
 
                 FUPipeline *fu = funcUnits[fu_index];
 
-                DPRINTF(MinorExecute, "Trying to issue inst: %s to FU: %d\n",
-                    *inst, fu_index);
-
                 /* Does the examined fu have the OpClass-related capability
                  *  needed to execute this instruction?  Faults can always
                  *  issue to any FU but probably should just 'live' in the
@@ -708,7 +706,7 @@ Execute::issue(ThreadID thread_id)
                     scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
                         Cycles(0), cpu.getContext(thread_id), false);
 
-                    DPRINTF(MinorExecute, "Issuing %s to %d\n", *inst, noCostFUIndex);
+                    DPRINTF(MinorExecute, "Issuing NoOp %s to %d\n", *inst, noCostFUIndex);
                     inst->fuIndex = noCostFUIndex;
                     inst->extraCommitDelay = Cycles(0);
                     inst->extraCommitDelayExpr = NULL;
@@ -727,17 +725,14 @@ Execute::issue(ThreadID thread_id)
                     }
                     issued = true;
 
-                } else if (!fu_is_capable || fu->alreadyPushed()) {
-                    /* Skip */
-                    if (!fu_is_capable) {
-                        DPRINTF(MinorExecute, "Can't issue as FU: %d isn't"
-                            " capable\n", fu_index);
-                    } else {
-                        DPRINTF(MinorExecute, "Can't issue as FU: %d is"
-                            " already busy\n", fu_index);
-                    }
+                } else if (!fu_is_capable) {
+                    /* Skip (No DPRINTF) */
+                } else if (fu->alreadyPushed()) {
+                    DPRINTF(MinorExecute, "Can't issue inst: %s into FU %d,"
+                        " it's busy\n",
+                        *inst, fu_index);
                 } else if (fu->stalled) {
-                    DPRINTF(MinorExecute, "Can't issue inst: %s into FU: %d,"
+                    DPRINTF(MinorExecute, "Can't issue inst: %s into FU %d,"
                         " it's stalled\n",
                         *inst, fu_index);
                 } else if (!fu->canInsert()) {
@@ -793,9 +788,8 @@ Execute::issue(ThreadID thread_id)
                             *inst, isLoadBlocked);
                     } else {
                         /* Can insert the instruction into this FU */
-                        DPRINTF(MinorExecute, "Issuing inst: %s"
-                            " into FU %d\n", *inst,
-                            fu_index);
+                        DPRINTF(MinorExecute, "Issuing inst %s into FU %d\n",
+                            *inst, fu_index);
 
                         /**
                          * ! GemForge
@@ -1203,9 +1197,11 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         if (cpu.cpuDelegator) {
             assert(cpu.cpuDelegator->canExecute(inst) &&
                 "Cannot execute.");
+            DPRINTF(MinorExecute, "Delegator Execute inst: %s\n", *inst);
             cpu.cpuDelegator->execute(inst, context);
         }
 
+        DPRINTF(MinorExecute, "Execute inst: %s\n", *inst);
         fault = inst->staticInst->execute(&context,
             inst->traceData);
 
@@ -1214,6 +1210,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
          * Notify that inst is committed.
          */
         if (cpu.cpuDelegator) {
+            DPRINTF(MinorExecute, "Delegator Commit inst: %s\n", *inst);
             cpu.cpuDelegator->commit(inst);
         }
 
@@ -1230,7 +1227,9 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         }
 
         doInstCommitAccounting(inst);
+        DPRINTF(MinorExecute, "Try to branch\n");
         tryToBranch(inst, fault, branch);
+        DPRINTF(MinorExecute, "Committing inst done\n");
     }
 
     if (completed_inst) {
@@ -1677,6 +1676,7 @@ Execute::evaluate()
 
     /* Do all the cycle-wise activities for dcachePort here to potentially
      *  free up input spaces in the LSQ's requests queue */
+    DPRINTF(Event, "Step LSQ.\n");
     lsq.step();
 
     /* Check interrupts first.  Will halt commit if interrupt found */

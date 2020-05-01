@@ -3,8 +3,8 @@
 #include "stream_element.hh"
 #include "stream_engine.hh"
 
-#include "debug/StreamEngine.hh"
-#define DEBUG_TYPE StreamEngine
+#include "debug/StreamBase.hh"
+#define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
 
 DynamicStream::DynamicStream(Stream *_stream,
@@ -66,6 +66,9 @@ StreamElement *DynamicStream::getFirstUnsteppedElement() {
 }
 
 StreamElement *DynamicStream::releaseElementUnstepped() {
+  if (this->allocSize == this->stepSize) {
+    return nullptr;
+  }
   /**
    * Make sure we release in reverse order.
    */
@@ -87,6 +90,17 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
   prevElement->next = releaseElement->next;
   this->allocSize--;
   this->head = prevElement;
+
+  S_ELEMENT_DPRINTF(releaseElement,
+                    "ReleaseElementUnstepped, isAddrReady %d.\n",
+                    releaseElement->isAddrReady);
+  // Check if the element is faulted.
+  if (this->stream->isMemStream() && releaseElement->isAddrReady) {
+    if (releaseElement->isValueFaulted(releaseElement->addr,
+                                       releaseElement->size)) {
+      this->stream->statistic.numFaulted++;
+    }
+  }
   /**
    * Since this element is released as unstepped,
    * we need to reverse the FIFOIdx so that if we misspeculated,

@@ -204,9 +204,11 @@ public:
    */
   StreamElement *releaseElementStepped();
   /**
-   * Remove one unstepped element from the first dynamic stream.
+   * Remove one unstepped element from the dynamic stream.
+   * CommitStreamEnd will release from the first dynamic stream.
+   * RewindStreamConfig will release from the last one.
    */
-  StreamElement *releaseElementUnstepped();
+  StreamElement *releaseElementUnstepped(DynamicStream &dynS);
   /**
    * Check if the last dynamic stream can be stepped.
    */

@@ -797,6 +797,21 @@ LSQ::StoreBuffer::canForwardDataToLoad(LSQRequestPtr request,
             AddrRangeCoverage coverage = slot->containsAddrRangeOf(request);
 
             if (coverage != NoAddrRangeCoverage) {
+
+                /**
+                 * ! GemForge
+                 * The current implementation will try to forward to x86 RMWRead,
+                 * which I think is wrong? Similar to LLSC, forwarding should be
+                 * disabled. My solution here so far is to set this as partial
+                 * overlap so that the RMWRead will be blocked until the store
+                 * is done.
+                 */
+                if (request->request->isLockedRMW()) {
+                    DPRINTF(MinorMem, "Disable forwarding for RMWRead to %#x.\n",
+                        request->request->getPaddr());
+                    coverage = PartialAddrRangeCoverage;
+                }
+
                 DPRINTF(MinorMem, "Forwarding: slot: %d result: %s thisAddr:"
                     " 0x%x thisSize: %d slotAddr: 0x%x slotSize: %d\n",
                     slot_index, coverage,
@@ -1274,7 +1289,7 @@ LSQ::tryToSend(LSQRequestPtr request)
                 request->setState(LSQRequest::Complete);
             else
                 request->setState(LSQRequest::RequestIssuing);
-        } else if (dcachePort->sendTimingReqVirtual(packet)) {
+        } else if (dcachePort->sendTimingReqVirtual(packet, true /* isCore */)) {
             DPRINTF(MinorMem, "Sent data memory request\n");
 
             numAccessesInMemorySystem++;

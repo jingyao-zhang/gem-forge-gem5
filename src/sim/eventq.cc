@@ -225,7 +225,9 @@ EventQueue::serviceOne()
         // forward current cycle to the time when this event occurs.
         setCurTick(event->when());
 
+        DPRINTF(Event, "Process Event %s.\n", event->name());
         event->process();
+        DPRINTF(Event, "Process Event %s: Done.\n", event->name());
         if (event->isExitEvent()) {
             assert(!event->flags.isSet(Event::Managed) ||
                    !event->flags.isSet(Event::IsMainQueue)); // would be silly
@@ -438,4 +440,21 @@ EventQueue::handleAsyncInsertions()
     }
 
     async_queue_mutex.unlock();
+}
+
+EventFunctionWrapper::EventFunctionWrapper(
+    const std::function<void(void)> &callback,
+    const std::string &name,
+    bool del,
+    Priority p)
+    : Event(p), callback(callback), _name(name)
+{
+    // if (Debug::Event) {
+        if (name == "global") {
+            // For debug purpose.
+            assert(false && "Global FuncWrapperEvent.");
+        }
+    // }
+    if (del)
+        setFlags(AutoDelete);
 }
