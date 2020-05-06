@@ -988,9 +988,7 @@ DefaultIEW<Impl>::dispatchInsts(ThreadID tid)
         // Make sure there's a valid instruction there.
         assert(inst);
 
-        DPRINTF(IEW, "[tid:%i] Issue: Adding PC %s [sn:%lli] [tid:%i] to "
-                "IQ.\n",
-                tid, inst->pcState(), inst->seqNum, inst->threadNumber);
+        DPRINTF(IEW, "[tid:%i] Issue: Adding to IQ %s.\n", tid, *inst);
 
         // Be sure to mark these instructions as ready so that the
         // commit stage can go ahead and execute them, and mark
@@ -1227,12 +1225,9 @@ DefaultIEW<Impl>::executeInsts()
     for (; inst_num < insts_to_execute;
           ++inst_num) {
 
-        DPRINTF(IEW, "Execute: Executing instructions from IQ.\n");
-
         DynInstPtr inst = instQueue.getInstToExecute();
 
-        DPRINTF(IEW, "Execute: Processing PC %s, [tid:%i] [sn:%llu].\n",
-                inst->pcState(), inst->threadNumber,inst->seqNum);
+        DPRINTF(IEW, "Execute: Processing in IQ %s.\n", *inst);
 
         // Notify potential listeners that this instruction has started
         // executing
@@ -1240,9 +1235,7 @@ DefaultIEW<Impl>::executeInsts()
 
         // Check if the instruction is squashed; if so then skip it
         if (inst->isSquashed()) {
-            DPRINTF(IEW, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
-                         " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
-                         inst->seqNum);
+            DPRINTF(IEW, "Execute: Was squashed %s.\n", *inst);
 
             // Consider this instruction executed so that commit can go
             // ahead and retire the instruction.
@@ -1463,8 +1456,7 @@ DefaultIEW<Impl>::writebackInsts()
         DynInstPtr inst = toCommit->insts[inst_num];
         ThreadID tid = inst->threadNumber;
 
-        DPRINTF(IEW, "Sending instructions to commit, [sn:%lli] PC %s.\n",
-                inst->seqNum, inst->pcState());
+        DPRINTF(IEW, "Writeback: To commit %s.\n", *inst);
 
         iewInstsToCommit[tid]++;
         // Notify potential listeners that execution is complete for this

@@ -678,13 +678,10 @@ DefaultDecode<Impl>::decodeInsts(ThreadID tid)
 
         insts_to_decode.pop();
 
-        DPRINTF(Decode, "[tid:%i] Processing instruction [sn:%lli] with "
-                "PC %s\n", tid, inst->seqNum, inst->pcState());
+        DPRINTF(Decode, "Decode: Processing %s\n", *inst);
 
         if (inst->isSquashed()) {
-            DPRINTF(Decode, "[tid:%i] Instruction %i with PC %s is "
-                    "squashed, skipping.\n",
-                    tid, inst->seqNum, inst->pcState());
+            DPRINTF(Decode, "Decode: Skip squashed %s\n", *inst);
 
             ++decodeSquashedInsts;
 

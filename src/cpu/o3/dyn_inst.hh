@@ -428,5 +428,15 @@ class BaseO3DynInst : public BaseDynInst<Impl>
     }
 };
 
+template<class Impl>
+std::ostream &operator<<(std::ostream &os, const BaseO3DynInst<Impl> &inst)
+{
+    os << "[tid:" << inst.threadNumber << ']';
+    os << "[sn:" << inst.seqNum << ']';
+    os << "[op:" << inst.staticInst->getName() << ']';
+    os << std::hex << inst.pcState() << std::dec;
+    return os;
+}
+
 #endif // __CPU_O3_ALPHA_DYN_INST_HH__
 

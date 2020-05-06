@@ -704,18 +704,14 @@ DefaultCommit<Impl>::tick()
 
             const DynInstPtr &inst M5_VAR_USED = rob->readHeadInst(tid);
 
-            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] PC %s is head of"
-                    " ROB and ready to commit\n",
-                    tid, inst->seqNum, inst->pcState());
+            DPRINTF(Commit,"Head of ROB ready %s\n", *inst);
 
         } else if (!rob->isEmpty(tid)) {
             const DynInstPtr &inst = rob->readHeadInst(tid);
 
             ppCommitStall->notify(inst);
 
-            DPRINTF(Commit,"[tid:%i] Can't commit, Instruction [sn:%llu] PC "
-                    "%s is head of ROB and not ready\n",
-                    tid, inst->seqNum, inst->pcState());
+            DPRINTF(Commit,"Head of ROB not ready %s\n", *inst);
         }
 
         DPRINTF(Commit, "[tid:%i] ROB has %d insts & %d free entries.\n",
@@ -1133,9 +1129,7 @@ DefaultCommit<Impl>::commitInsts()
                     onInstBoundary && cpu->checkInterrupts(cpu->tcBase(0)))
                     squashAfter(tid, head_inst);
             } else {
-                DPRINTF(Commit, "Unable to commit head instruction PC:%s "
-                        "[tid:%i] [sn:%llu].\n",
-                        head_inst->pcState(), tid ,head_inst->seqNum);
+                DPRINTF(Commit, "Unable to commit head of ROB %s\n", *head_inst);
                 break;
             }
         }
@@ -1171,17 +1165,12 @@ DefaultCommit<Impl>::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                || head_inst->isAtomic()
                || (head_inst->isLoad() && head_inst->strictlyOrdered()));
 
-        DPRINTF(Commit,
-                "Encountered a barrier or non-speculative "
-                "instruction [tid:%i] [sn:%llu] "
-                "at the head of the ROB, PC %s.\n",
-                tid, head_inst->seqNum, head_inst->pcState());
+        DPRINTF(Commit, "Barrier of Non-Speculative Head of ROB %s\n",
+            *head_inst);
 
         if (inst_num > 0 || iewStage->hasStoresToWB(tid)) {
-            DPRINTF(Commit,
-                    "[tid:%i] [sn:%llu] "
-                    "Waiting for all stores to writeback.\n",
-                    tid, head_inst->seqNum);
+            DPRINTF(Commit, "Waiting for writeback stores %s\n",
+                *head_inst);
             return false;
         }
 
@@ -1192,9 +1181,7 @@ DefaultCommit<Impl>::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         head_inst->clearCanCommit();
 
         if (head_inst->isLoad() && head_inst->strictlyOrdered()) {
-            DPRINTF(Commit, "[tid:%i] [sn:%llu] "
-                    "Strictly ordered load, PC %s.\n",
-                    tid, head_inst->seqNum, head_inst->pcState());
+            DPRINTF(Commit, "Strictly ordered load %s\n", *head_inst);
             toIEW->commitInfo[tid].strictlyOrdered = true;
             toIEW->commitInfo[tid].strictlyOrderedLoad = head_inst;
         } else {
@@ -1260,9 +1247,7 @@ DefaultCommit<Impl>::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
         commitStatus[tid] = TrapPending;
 
-        DPRINTF(Commit,
-            "[tid:%i] [sn:%llu] Committing instruction with fault\n",
-            tid, head_inst->seqNum);
+        DPRINTF(Commit, "Committing with fault %s.\n", *head_inst);
         if (head_inst->traceData) {
             if (DTRACE(ExecFaulting)) {
                 head_inst->traceData->setFetchSeq(head_inst->seqNum);
@@ -1296,9 +1281,7 @@ DefaultCommit<Impl>::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             }
         }
     }
-    DPRINTF(Commit,
-            "[tid:%i] [sn:%llu] Committing instruction with PC %s\n",
-            tid, head_inst->seqNum, head_inst->pcState());
+    DPRINTF(Commit, "Committing %s\n", *head_inst);
     if (head_inst->traceData) {
         head_inst->traceData->setFetchSeq(head_inst->seqNum);
         head_inst->traceData->setCPSeq(thread[tid]->numOp);
@@ -1307,9 +1290,7 @@ DefaultCommit<Impl>::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         head_inst->traceData = NULL;
     }
     if (head_inst->isReturn()) {
-        DPRINTF(Commit,
-                "[tid:%i] [sn:%llu] Return Instruction Committed PC %s \n",
-                tid, head_inst->seqNum, head_inst->pcState());
+        DPRINTF(Commit, "Committed return instruction.\n");
     }
 
     // Update the commit rename map

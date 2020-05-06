@@ -619,8 +619,7 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
     assert(load_inst);
 
     if (load_inst->isExecuted()) {
-      DPRINTF(LSQUnit, "Already executed load [sn:%llu] PC %s\n.",
-              load_inst->seqNum, load_inst->pcState());
+      DPRINTF(LSQUnit, "Already executed load %s\n", *load_inst);
     }
     assert(!load_inst->isExecuted());
 

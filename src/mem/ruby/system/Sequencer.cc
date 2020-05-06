@@ -399,10 +399,10 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
         // the specified queue. In this case, a Locked_RMW_Write must go to
         // the mandatory_q before unblocking the first-level controller.
         // This will block standard loads, stores, ifetches, etc.
-        DPRINTF(RubySequencer, "Block l0 on addr %#x.\n", address);
+        DPRINTF(RubySequencer, "Block l0 on LockRMW Read addr %#x.\n", address);
         m_controller->blockOnQueue(address, m_mandatory_q_ptr);
     } else if (request->m_type == RubyRequestType_Locked_RMW_Write) {
-        DPRINTF(RubySequencer, "Unblock l0 on addr %#x.\n", address);
+        DPRINTF(RubySequencer, "Unblock l0 on LockRMWWrite addr %#x.\n", address);
         m_controller->unblock(address);
     }
 

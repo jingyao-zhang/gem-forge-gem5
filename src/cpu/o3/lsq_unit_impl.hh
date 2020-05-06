@@ -295,8 +295,7 @@ LSQUnit<Impl>::insertLoad(const DynInstPtr &load_inst)
     assert(!loadQueue.full());
     assert(loads < loadQueue.capacity());
 
-    DPRINTF(LSQUnit, "Inserting load PC %s, idx:%i [sn:%lli]\n",
-            load_inst->pcState(), loadQueue.tail(), load_inst->seqNum);
+    DPRINTF(LSQUnit, "Inserting load idx:%i, %s\n", loadQueue.tail(), *load_inst);
 
     /* Grow the queue. */
     loadQueue.advance_tail();
@@ -535,8 +534,7 @@ LSQUnit<Impl>::executeLoad(const DynInstPtr &inst)
     // Execute a specific load.
     Fault load_fault = NoFault;
 
-    DPRINTF(LSQUnit, "Executing load PC %s, [sn:%lli]\n",
-            inst->pcState(), inst->seqNum);
+    DPRINTF(LSQUnit, "Executing load %s\n", *inst);
 
     assert(!inst->isSquashed());
 
@@ -610,8 +608,7 @@ LSQUnit<Impl>::executeStore(const DynInstPtr &store_inst)
 
     int store_idx = store_inst->sqIdx;
 
-    DPRINTF(LSQUnit, "Executing store PC %s [sn:%lli]\n",
-            store_inst->pcState(), store_inst->seqNum);
+    DPRINTF(LSQUnit, "Executing store %s\n", *store_inst);
 
     assert(!store_inst->isSquashed());
 
@@ -626,8 +623,7 @@ LSQUnit<Impl>::executeStore(const DynInstPtr &store_inst)
         return store_fault;
 
     if (!store_inst->readPredicate()) {
-        DPRINTF(LSQUnit, "Store [sn:%lli] not executed from predication\n",
-                store_inst->seqNum);
+        DPRINTF(LSQUnit, "Store not executed from predication %s\n", *store_inst);
         store_inst->forwardOldRegs();
         return store_fault;
     }
@@ -659,8 +655,7 @@ LSQUnit<Impl>::commitLoad()
 {
     assert(loadQueue.front().valid());
 
-    DPRINTF(LSQUnit, "Committing head load instruction, PC %s\n",
-            loadQueue.front().instruction()->pcState());
+    DPRINTF(LSQUnit, "Committing head load %s\n", *loadQueue.front().instruction());
 
     loadQueue.front().clear();
     loadQueue.pop_front();
@@ -695,10 +690,7 @@ LSQUnit<Impl>::commitStores(InstSeqNum &youngest_inst)
             if (x.instruction()->seqNum > youngest_inst) {
                 break;
             }
-            DPRINTF(LSQUnit, "Marking store as able to write back, PC "
-                    "%s [sn:%lli]\n",
-                    x.instruction()->pcState(),
-                    x.instruction()->seqNum);
+            DPRINTF(LSQUnit, "Store writeback-able %s\n", *x.instruction());
 
             x.canWB() = true;
 
@@ -785,11 +777,8 @@ LSQUnit<Impl>::writebackStores()
         }
         req->buildPackets();
 
-        DPRINTF(LSQUnit, "D-Cache: Writing back store idx:%i PC:%s "
-                "to Addr:%#x, data:%#x [sn:%lli]\n",
-                storeWBIt.idx(), inst->pcState(),
-                req->request()->getPaddr(), (int)*(inst->memData),
-                inst->seqNum);
+        DPRINTF(LSQUnit, "DCache: Writing back store Idx %d Addr %#x Data %#x %s\n",
+            storeWBIt.idx(), req->request()->getPaddr(), (int)*(inst->memData), *inst);
 
         // @todo: Remove this SC hack once the memory system handles it.
         if (inst->isStoreConditional()) {
@@ -840,9 +829,8 @@ LSQUnit<Impl>::writebackStores()
         if (req->isSent()) {
             storePostSend();
         } else {
-            DPRINTF(LSQUnit, "D-Cache became blocked when writing [sn:%lli], "
-                    "will retry later\n",
-                    inst->seqNum);
+            DPRINTF(LSQUnit, "DCache became blocked when writing %s, retry later\n",
+                *inst);
         }
     }
     assert(stores >= 0 && storesToWB >= 0);
