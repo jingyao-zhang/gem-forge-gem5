@@ -689,6 +689,13 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
         assert(store_it->valid());
         assert(store_it->instruction()->seqNum < load_inst->seqNum);
         int store_size = store_it->size();
+        // bool isMaintainance =
+        //     !(store_it->request()->mainRequest() &&
+        //       store_it->request()->mainRequest()->isCacheMaintenance());
+        DPRINTF(LSQUnit, "Check Store-Load Forward size %d StrictlyOrdered %d %s.\n",
+          store_size, store_it->instruction()->strictlyOrdered(), *store_it->instruction());
+
+        bool block_on_store = false;
 
         // Cache maintenance instructions go down via the store
         // path but they carry no data and they shouldn't be
@@ -709,6 +716,23 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
             bool store_has_upper_limit = req_e <= st_e;
             bool lower_load_has_store_part = req_s < st_e;
             bool upper_load_has_store_part = req_e > st_s;
+
+            /**
+             * ! GemForge
+             * The current implementation do not work well with LockedRMW in Ruby.
+             * 1. Enforce order between RMWWrite and future loads to the
+             * same cache line. This causes deadlock when working with Ruby,
+             * as the Sequencer is blocked if it sees the load before the RMWWrite.
+             * If there is a previous RMWWrite to the same cache line,
+             * we always block the load.
+             */
+            const auto line_size = cacheLineSize();
+            const auto line_mask = ~(line_size - 1);
+            const auto req_s_line = req_s & line_mask;
+            const auto req_e_line = (req_e + line_size - 1) & line_mask;
+            const auto st_s_line = st_s & line_mask;
+            const auto st_e_line = (st_e + line_size - 1) & line_mask;
+            bool line_overlap = !(req_e_line <= st_s_line || st_e_line <= req_s_line);
 
             // If the store entry is not atomic (atomic does not have valid
             // data), the store has all of the data needed, and
@@ -735,9 +759,8 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
                         store_it->data() + shift_amt,
                         req->mainRequest()->getSize());
 
-                DPRINTF(LSQUnit, "Forwarding from store idx %i to load to "
-                        "addr %#x\n", store_it._idx,
-                        req->mainRequest()->getVaddr());
+                DPRINTF(LSQUnit, "Store-Load Forward Addr %#x, SQ %i %s\n",
+                        req->mainRequest()->getVaddr(), store_it._idx, *store_it->instruction());
 
                 PacketPtr data_pkt = new Packet(req->mainRequest(),
                         MemCmd::ReadReq);
@@ -780,44 +803,55 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
                 // data
                 (store_it->instruction()->isAtomic() &&
                  ((store_has_lower_limit || upper_load_has_store_part) &&
-                  (store_has_upper_limit || lower_load_has_store_part)))) {
-
-                // If it's already been written back, then don't worry about
-                // stalling on it.
-                if (store_it->completed()) {
-                    panic("Should not check one of these");
-                    continue;
-                }
-
-                // Must stall load and force it to retry, so long as it's the
-                // oldest load that needs to do so.
-                if (!stalled ||
-                    (stalled &&
-                     load_inst->seqNum <
-                     loadQueue[stallingLoadIdx].instruction()->seqNum)) {
-                    stalled = true;
-                    stallingStoreIsn = store_it->instruction()->seqNum;
-                    stallingLoadIdx = load_idx;
-                }
-
-                // Tell IQ/mem dep unit that this instruction will need to be
-                // rescheduled eventually
-                iewStage->rescheduleMemInst(load_inst);
-                load_inst->clearIssued();
-                load_inst->effAddrValid(false);
-                ++lsqRescheduledLoads;
-
-                // Do not generate a writeback event as this instruction is not
-                // complete.
-                DPRINTF(LSQUnit, "Load-store forwarding mis-match. "
-                        "Store idx %i to load addr %#x\n",
-                        store_it._idx, req->mainRequest()->getVaddr());
-
-                // Must discard the request.
-                req->discard();
-                load_req.setRequest(nullptr);
-                return NoFault;
+                  (store_has_upper_limit || lower_load_has_store_part))) ||
+                // The store is LockedRMW and goes to the same cache line of the load.
+                (store_it->instruction()->isLockedRMW() && line_overlap))
+            {
+                block_on_store = true;
             }
+        } else if (store_size == 0) {
+          // This store is not ready? Block if this is LockedRMW?
+          if (store_it->instruction()->isLockedRMW()) {
+            block_on_store = true;
+          }
+        }
+
+        if (block_on_store) {
+            // If it's already been written back, then don't worry about
+            // stalling on it.
+            if (store_it->completed()) {
+                panic("Should not check one of these");
+                continue;
+            }
+
+            // Must stall load and force it to retry, so long as it's the
+            // oldest load that needs to do so.
+            if (!stalled ||
+                (stalled &&
+                 load_inst->seqNum <
+                 loadQueue[stallingLoadIdx].instruction()->seqNum)) {
+                stalled = true;
+                stallingStoreIsn = store_it->instruction()->seqNum;
+                stallingLoadIdx = load_idx;
+            }
+
+            // Tell IQ/mem dep unit that this instruction will need to be
+            // rescheduled eventually
+            iewStage->rescheduleMemInst(load_inst);
+            load_inst->clearIssued();
+            load_inst->effAddrValid(false);
+            ++lsqRescheduledLoads;
+
+            // Do not generate a writeback event as this instruction is not
+            // complete.
+            DPRINTF(LSQUnit, "Store-Load Forward Mismatch Addr %#x, SQ %i %s\n",
+                req->mainRequest()->getVaddr(), store_it._idx,
+                *store_it->instruction());
+
+            // Must discard the request.
+            req->discard();
+            load_req.setRequest(nullptr);
+            return NoFault;
         }
     }
 

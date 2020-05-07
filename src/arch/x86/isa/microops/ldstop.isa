@@ -429,7 +429,7 @@ let {{
 
     def defineMicroLoadOp(mnemonic, code, bigCode='',
                           mem_flags="0", big=True, nonSpec=False,
-                          implicitStack=False):
+                          implicitStack=False, extra_flags=[]):
         global header_output
         global decoder_output
         global exec_output
@@ -438,15 +438,23 @@ let {{
         name = mnemonic.lower()
 
         # Build up the all register version of this micro op
-        iops = [InstObjParams(name, Name, 'X86ISA::LdStOp',
-                              { "code": code,
-                                "ea_code": calculateEA,
-                                "memDataSize": "dataSize" })]
+        iops = [
+            InstObjParams(name, Name, 'X86ISA::LdStOp',
+                {
+                    "code": code,
+                    "ea_code": calculateEA,
+                    "memDataSize": "dataSize"
+                },
+                extra_flags)]
         if big:
-            iops += [InstObjParams(name, Name + "Big", 'X86ISA::LdStOp',
-                                   { "code": bigCode,
-                                     "ea_code": calculateEA,
-                                     "memDataSize": "dataSize" })]
+            iops += [
+                InstObjParams(name, Name + "Big", 'X86ISA::LdStOp',
+                    {
+                        "code": bigCode,
+                        "ea_code": calculateEA,
+                        "memDataSize": "dataSize"
+                    },
+                    extra_flags)]
         for iop in iops:
             header_output += MicroLdStOpDeclare.subst(iop)
             decoder_output += MicroLdStOpConstructor.subst(iop)
@@ -490,7 +498,7 @@ let {{
     defineMicroLoadOp('Ldstl', 'Data = merge(Data, Mem, dataSize);',
                                'Data = Mem & mask(dataSize * 8);',
                       '(StoreCheck << FlagShift) | Request::LOCKED_RMW',
-                      nonSpec=True)
+                      nonSpec=True, extra_flags=['IsLockedRMW'])
 
     defineMicroLoadOp('Ldfp', code='FpData_uqw = Mem', big = False)
 
@@ -527,7 +535,7 @@ let {{
         }
     ''', big = False)
 
-    def defineMicroLoadSplitOp(mnemonic, code, mem_flags="0", nonSpec=False):
+    def defineMicroLoadSplitOp(mnemonic, code, mem_flags="0", nonSpec=False, extra_flags=[]):
         global header_output
         global decoder_output
         global exec_output
@@ -538,7 +546,7 @@ let {{
         iop = InstObjParams(name, Name, 'X86ISA::LdStSplitOp',
                             { "code": code,
                               "ea_code": calculateEA,
-                              "memDataSize": "2 * dataSize" })
+                              "memDataSize": "2 * dataSize" }, extra_flags)
 
         header_output += MicroLdStSplitOpDeclare.subst(iop)
         decoder_output += MicroLdStSplitOpConstructor.subst(iop)
@@ -570,10 +578,10 @@ let {{
 
     defineMicroLoadSplitOp('LdSplitl', code,
                            '(StoreCheck << FlagShift) | Request::LOCKED_RMW',
-                           nonSpec=True)
+                           nonSpec=True, extra_flags=['IsLockedRMW'])
 
     def defineMicroStoreOp(mnemonic, code, completeCode="", mem_flags="0",
-                           implicitStack=False):
+                           implicitStack=False, extra_flags=[]):
         global header_output
         global decoder_output
         global exec_output
@@ -586,7 +594,7 @@ let {{
                             { "code": code,
                               "complete_code": completeCode,
                               "ea_code": calculateEA,
-                              "memDataSize": "dataSize" })
+                              "memDataSize": "dataSize" }, extra_flags)
         header_output += MicroLdStOpDeclare.subst(iop)
         decoder_output += MicroLdStOpConstructor.subst(iop)
         exec_output += MicroStoreExecute.subst(iop)
@@ -619,7 +627,7 @@ let {{
     defineMicroStoreOp('Stis', 'Mem = pick(Data, 2, dataSize);',
                        implicitStack=True)
     defineMicroStoreOp('Stul', 'Mem = pick(Data, 2, dataSize);',
-            mem_flags="Request::LOCKED_RMW")
+        mem_flags="Request::LOCKED_RMW", extra_flags=['IsLockedRMW'])
 
     defineMicroStoreOp('Stfp', code='Mem = FpData_uqw;')
 
@@ -646,7 +654,7 @@ let {{
                        mem_flags="Request::CLEAN | Request::DST_POC")
 
     def defineMicroStoreSplitOp(mnemonic, code,
-                                completeCode="", mem_flags="0"):
+        completeCode="", mem_flags="0", extra_flags=[]):
         global header_output
         global decoder_output
         global exec_output
@@ -658,7 +666,7 @@ let {{
                             { "code": code,
                               "complete_code": completeCode,
                               "ea_code": calculateEA,
-                              "memDataSize": "2 * dataSize" })
+                              "memDataSize": "2 * dataSize" }, extra_flags)
 
         header_output += MicroLdStSplitOpDeclare.subst(iop)
         decoder_output += MicroLdStSplitOpConstructor.subst(iop)
@@ -688,7 +696,7 @@ let {{
     defineMicroStoreSplitOp('StSplit', code);
 
     defineMicroStoreSplitOp('StSplitul', code,
-                            mem_flags='Request::LOCKED_RMW')
+        mem_flags='Request::LOCKED_RMW', extra_flags=['IsLockedRMW'])
 
     iop = InstObjParams("lea", "Lea", 'X86ISA::LdStOp',
                         { "code": "Data = merge(Data, EA, dataSize);",

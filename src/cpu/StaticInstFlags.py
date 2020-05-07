@@ -112,5 +112,6 @@ class StaticInstFlags(Enum):
                             # a macroop
         'IsDspOp',
         'IsSquashAfter',    # Squash all uncommitted state after executed
-        'IsGemForge',       # Squash all uncommitted state after executed
+        "IsLockedRMW",      # X86 LockedRMW
+        'IsGemForge',       # A GemForge instruction
         ]
