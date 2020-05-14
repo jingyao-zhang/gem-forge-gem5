@@ -53,7 +53,7 @@ RubySequencerParams::create()
 }
 
 Sequencer::Sequencer(const Params *p)
-    : RubyPort(p), m_IncompleteTimes(MachineType_NUM),
+    : RubyPort(p), m_isIdeal(p->is_ideal), m_IncompleteTimes(MachineType_NUM),
       deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check")
 {
     m_outstanding_count = 0;
@@ -70,6 +70,12 @@ Sequencer::Sequencer(const Params *p)
     assert(m_dataCache_ptr != NULL);
 
     m_runningGarnetStandalone = p->garnet_standalone;
+
+    if (m_isIdeal) {
+        this->m_idealSeq = m5::make_unique<IdealSequencer>(this);
+        assert(p->ruby_system->getAccessBackingStore() &&
+            "Ideal mode only works with backing store.");
+    }
 }
 
 Sequencer::~Sequencer()
@@ -681,7 +687,12 @@ Sequencer::issueRequest(PacketPtr pkt, RubyRequestType secondary_type)
     assert(latency > 0);
 
     assert(m_mandatory_q_ptr != NULL);
-    m_mandatory_q_ptr->enqueue(msg, clockEdge(), latency);
+
+    if (this->m_isIdeal) {
+        this->m_idealSeq->pushRequest(msg);
+    } else {
+        m_mandatory_q_ptr->enqueue(msg, clockEdge(), latency);
+    }
 }
 
 template <class KEY, class VALUE>

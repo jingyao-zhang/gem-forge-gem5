@@ -72,6 +72,7 @@ class RubySequencer(RubyPort):
    # id used by protocols that support multiple sequencers per controller
    # 99 is the dummy default value
    coreid = Param.Int(99, "CorePair core id")
+   is_ideal = Param.Bool(False, "Enable ideal memory mode, only work for x86 cpu")
 
 class DMASequencer(RubyPort):
    type = 'DMASequencer'

@@ -38,6 +38,7 @@
 #include "mem/ruby/protocol/SequencerRequestType.hh"
 #include "mem/ruby/structures/CacheMemory.hh"
 #include "mem/ruby/system/RubyPort.hh"
+#include "mem/ruby/system/IdealSequencer.hh"
 #include "params/RubySequencer.hh"
 
 struct SequencerRequest
@@ -202,6 +203,9 @@ class Sequencer : public RubyPort
     int m_coreId;
 
     bool m_runningGarnetStandalone;
+
+    bool m_isIdeal;
+    std::unique_ptr<IdealSequencer> m_idealSeq;
 
     //! Histogram for number of outstanding requests per cycle.
     Stats::Histogram m_outstandReqHist;

@@ -34,6 +34,9 @@ parser.add_option("--gem-forge-num-active-cpus", action="store", type="int",
 parser.add_option("--gem-forge-empty-mem", action="store_true",
                   help="""start simulation without installing the memory snapshot.""",
                   default=False)
+parser.add_option("--gem-forge-ideal-ruby", action="store_true",
+                  help="""simulate with ideal ruby cache (see Sequencer).""",
+                  default=False)
 parser.add_option("--gem-forge-cold-cache", action="store_true",
                   help="""start simulation without warming up the cache.""", default=False)
 parser.add_option("--llvm-standalone", action="store_true",

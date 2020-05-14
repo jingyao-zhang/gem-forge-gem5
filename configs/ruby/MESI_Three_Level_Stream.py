@@ -158,7 +158,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                     icache = l0i_cache,
                                     clk_domain = clk_domain,
                                     dcache = l0d_cache,
-                                    ruby_system = ruby_system)
+                                    ruby_system = ruby_system,
+                                    is_ideal = options.gem_forge_ideal_ruby)
 
             l0_cntrl.sequencer = cpu_seq
 
