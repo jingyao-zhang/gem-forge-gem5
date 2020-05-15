@@ -6,8 +6,7 @@ def macroop VMOVSHDUP_XMM_XMM {
 };
 
 def macroop VMOVSHDUP_XMM_M {
-    ldfp ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
+    ldfp128 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=16
     mmovsdup dest=xmm0, src1=ufp1, size=4, ext=1
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=1
     vclear dest=xmm2, destVL=16
@@ -15,8 +14,7 @@ def macroop VMOVSHDUP_XMM_M {
 
 def macroop VMOVSHDUP_XMM_P {
     rdip t7
-    ldfp ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
+    ldfp128 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=16
     mmovsdup dest=xmm0, src1=ufp1, size=4, ext=1
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=1
     vclear dest=xmm2, destVL=16
@@ -31,10 +29,7 @@ def macroop VMOVSHDUP_YMM_YMM {
 };
 
 def macroop VMOVSHDUP_YMM_M {
-    ldfp ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
-    ldfp ufp3, seg, sib, "DISPLACEMENT + 16", dataSize=8
-    ldfp ufp4, seg, sib, "DISPLACEMENT + 24", dataSize=8
+    ldfp256 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=32
     mmovsdup dest=xmm0, src1=ufp1, size=4, ext=1
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=1
     mmovsdup dest=xmm2, src1=ufp3, size=4, ext=1
@@ -44,10 +39,7 @@ def macroop VMOVSHDUP_YMM_M {
 
 def macroop VMOVSHDUP_YMM_P {
     rdip t7
-    ldfp ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
-    ldfp ufp3, seg, riprel, "DISPLACEMENT + 16", dataSize=8
-    ldfp ufp4, seg, riprel, "DISPLACEMENT + 24", dataSize=8
+    ldfp256 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=32
     mmovsdup dest=xmm0, src1=ufp1, size=4, ext=1
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=1
     mmovsdup dest=xmm2, src1=ufp3, size=4, ext=1
@@ -67,14 +59,7 @@ def macroop VMOVSHDUP_ZMM_ZMM {
 };
 
 def macroop VMOVSHDUP_ZMM_M {
-    ldfp ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
-    ldfp ufp3, seg, sib, "DISPLACEMENT + 16", dataSize=8
-    ldfp ufp4, seg, sib, "DISPLACEMENT + 24", dataSize=8
-    ldfp ufp5, seg, sib, "DISPLACEMENT + 32", dataSize=8
-    ldfp ufp6, seg, sib, "DISPLACEMENT + 40", dataSize=8
-    ldfp ufp7, seg, sib, "DISPLACEMENT + 48", dataSize=8
-    ldfp ufp8, seg, sib, "DISPLACEMENT + 56", dataSize=8
+    ldfp512 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=64
     mmovsdup dest=xmm0, src1=ufp1, size=4, ext=1
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=1
     mmovsdup dest=xmm2, src1=ufp3, size=4, ext=1
@@ -87,14 +72,7 @@ def macroop VMOVSHDUP_ZMM_M {
 
 def macroop VMOVSHDUP_ZMM_P {
     rdip t7
-    ldfp ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
-    ldfp ufp3, seg, riprel, "DISPLACEMENT + 16", dataSize=8
-    ldfp ufp4, seg, riprel, "DISPLACEMENT + 24", dataSize=8
-    ldfp ufp5, seg, riprel, "DISPLACEMENT + 32", dataSize=8
-    ldfp ufp6, seg, riprel, "DISPLACEMENT + 40", dataSize=8
-    ldfp ufp7, seg, riprel, "DISPLACEMENT + 48", dataSize=8
-    ldfp ufp8, seg, riprel, "DISPLACEMENT + 56", dataSize=8
+    ldfp512 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=64
     mmovsdup dest=xmm0, src1=ufp1, size=4, ext=1
     mmovsdup dest=xmm1, src1=ufp2, size=4, ext=1
     mmovsdup dest=xmm2, src1=ufp3, size=4, ext=1

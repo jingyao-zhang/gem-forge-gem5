@@ -280,6 +280,61 @@ let {{
                                      ecfBit | ezfBit, src2)"
         op_class = 'IntAluOp'
 
+    class Movfp128(FpUnaryOp):
+        code = '''
+            FpDestReg0_uqw = FpSrcReg1x0_uqw;
+            FpDestReg1_uqw = FpSrcReg1x1_uqw;
+        '''
+        else_code = '''
+            FpDestReg0_uqw = FpDestReg0_uqw;
+            FpDestReg1_uqw = FpDestReg1_uqw;
+        '''
+        cond_check = "checkCondition(ccFlagBits | cfofBits | dfBit | \
+                                     ecfBit | ezfBit, src2)"
+        op_class = 'IntAluOp'
+
+    class Movfp256(FpUnaryOp):
+        code = '''
+            FpDestReg0_uqw = FpSrcReg1x0_uqw;
+            FpDestReg1_uqw = FpSrcReg1x1_uqw;
+            FpDestReg2_uqw = FpSrcReg1x2_uqw;
+            FpDestReg3_uqw = FpSrcReg1x3_uqw;
+        '''
+        else_code = '''
+            FpDestReg0_uqw = FpDestReg0_uqw;
+            FpDestReg1_uqw = FpDestReg1_uqw;
+            FpDestReg2_uqw = FpDestReg2_uqw;
+            FpDestReg3_uqw = FpDestReg3_uqw;
+        '''
+        cond_check = "checkCondition(ccFlagBits | cfofBits | dfBit | \
+                                     ecfBit | ezfBit, src2)"
+        op_class = 'IntAluOp'
+
+    class Movfp512(FpUnaryOp):
+        code = '''
+            FpDestReg0_uqw = FpSrcReg1x0_uqw;
+            FpDestReg1_uqw = FpSrcReg1x1_uqw;
+            FpDestReg2_uqw = FpSrcReg1x2_uqw;
+            FpDestReg3_uqw = FpSrcReg1x3_uqw;
+            FpDestReg4_uqw = FpSrcReg1x4_uqw;
+            FpDestReg5_uqw = FpSrcReg1x5_uqw;
+            FpDestReg6_uqw = FpSrcReg1x6_uqw;
+            FpDestReg7_uqw = FpSrcReg1x7_uqw;
+        '''
+        else_code = '''
+            FpDestReg0_uqw = FpDestReg0_uqw;
+            FpDestReg1_uqw = FpDestReg1_uqw;
+            FpDestReg2_uqw = FpDestReg2_uqw;
+            FpDestReg3_uqw = FpDestReg3_uqw;
+            FpDestReg4_uqw = FpDestReg4_uqw;
+            FpDestReg5_uqw = FpDestReg5_uqw;
+            FpDestReg6_uqw = FpDestReg6_uqw;
+            FpDestReg7_uqw = FpDestReg7_uqw;
+        '''
+        cond_check = "checkCondition(ccFlagBits | cfofBits | dfBit | \
+                                     ecfBit | ezfBit, src2)"
+        op_class = 'IntAluOp'
+
     class Xorfp(FpBinaryOp):
         code = 'FpDestReg_uqw = FpSrcReg1_uqw ^ FpSrcReg2_uqw;'
 

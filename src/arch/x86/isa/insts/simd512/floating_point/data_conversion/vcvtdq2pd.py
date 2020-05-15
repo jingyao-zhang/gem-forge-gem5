@@ -30,8 +30,7 @@ def macroop VCVTDQ2PD_YMM_XMM {
 };
 
 def macroop VCVTDQ2PD_YMM_M {
-    ldfp ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
+    ldfp128 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=16
     cvti2f xmm0, ufp1, destSize=8, srcSize=4, ext=0
     cvti2f xmm1, ufp1, destSize=8, srcSize=4, ext=2
     cvti2f xmm2, ufp2, destSize=8, srcSize=4, ext=0
@@ -41,8 +40,7 @@ def macroop VCVTDQ2PD_YMM_M {
 
 def macroop VCVTDQ2PD_YMM_P {
     rdip t7
-    ldfp ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
+    ldfp128 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=16
     cvti2f xmm0, ufp1, destSize=8, srcSize=4, ext=0
     cvti2f xmm1, ufp1, destSize=8, srcSize=4, ext=2
     cvti2f xmm2, ufp2, destSize=8, srcSize=4, ext=0
@@ -62,10 +60,7 @@ def macroop VCVTDQ2PD_ZMM_YMM {
 };
 
 def macroop VCVTDQ2PD_ZMM_M {
-    ldfp ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
-    ldfp ufp3, seg, sib, "DISPLACEMENT + 16", dataSize=8
-    ldfp ufp4, seg, sib, "DISPLACEMENT + 24", dataSize=8
+    ldfp256 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=32
     cvti2f xmm0, ufp1, destSize=8, srcSize=4, ext=0
     cvti2f xmm1, ufp1, destSize=8, srcSize=4, ext=2
     cvti2f xmm2, ufp2, destSize=8, srcSize=4, ext=0
@@ -78,10 +73,7 @@ def macroop VCVTDQ2PD_ZMM_M {
 
 def macroop VCVTDQ2PD_ZMM_P {
     rdip t7
-    ldfp ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
-    ldfp ufp3, seg, riprel, "DISPLACEMENT + 16", dataSize=8
-    ldfp ufp4, seg, riprel, "DISPLACEMENT + 24", dataSize=8
+    ldfp256 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=32
     cvti2f xmm0, ufp1, destSize=8, srcSize=4, ext=0
     cvti2f xmm1, ufp1, destSize=8, srcSize=4, ext=2
     cvti2f xmm2, ufp2, destSize=8, srcSize=4, ext=0

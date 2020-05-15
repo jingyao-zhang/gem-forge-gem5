@@ -9,18 +9,12 @@ def macroop VEXTRACT256L_YMM_ZMM_I {
 };
 
 def macroop VEXTRACT256L_M_ZMM_I {
-    stfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    stfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
-    stfp xmm2, seg, sib, "DISPLACEMENT + 16", dataSize=8
-    stfp xmm3, seg, sib, "DISPLACEMENT + 24", dataSize=8
+    stfp256 xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=32
 };
 
 def macroop VEXTRACT256L_P_ZMM_I {
     rdip t7
-    stfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    stfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
-    stfp xmm2, seg, riprel, "DISPLACEMENT + 16", dataSize=8
-    stfp xmm3, seg, riprel, "DISPLACEMENT + 24", dataSize=8
+    stfp256 xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=32
 };
 
 def macroop VEXTRACT256H_YMM_ZMM_I {
@@ -53,14 +47,12 @@ def macroop VEXTRACT128L_XMM_YMM_I {
 };
 
 def macroop VEXTRACT128L_M_YMM_I {
-    stfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    stfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
+    stfp128 xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=16
 };
 
 def macroop VEXTRACT128L_P_YMM_I {
     rdip t7
-    stfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    stfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
+    stfp128 xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=16
 };
 
 def macroop VEXTRACT128H_XMM_YMM_I {

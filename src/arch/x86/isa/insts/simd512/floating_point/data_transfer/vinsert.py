@@ -9,8 +9,7 @@ def macroop VINSERT128L_YMM_XMM_I {
 };
 
 def macroop VINSERT128L_YMM_M_I {
-    ldfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    ldfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
+    ldfp128 xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=16
     movfp xmm2, xmm2v, dataSize=8
     movfp xmm3, xmm3v, dataSize=8
     vclear dest=xmm4, destVL=32
@@ -18,8 +17,7 @@ def macroop VINSERT128L_YMM_M_I {
 
 def macroop VINSERT128L_YMM_P_I {
     rdip t7
-    ldfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    ldfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
+    ldfp128 xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=16
     movfp xmm2, xmm2v, dataSize=8
     movfp xmm3, xmm3v, dataSize=8
     vclear dest=xmm4, destVL=32
@@ -62,10 +60,7 @@ def macroop VINSERT256L_ZMM_YMM_I {
 };
 
 def macroop VINSERT256L_ZMM_M_I {
-    ldfp xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=8
-    ldfp xmm1, seg, sib, "DISPLACEMENT + 8", dataSize=8
-    ldfp xmm2, seg, sib, "DISPLACEMENT + 16", dataSize=8
-    ldfp xmm3, seg, sib, "DISPLACEMENT + 24", dataSize=8
+    ldfp256 xmm0, seg, sib, "DISPLACEMENT + 0", dataSize=32
     movfp xmm4, xmm4v, dataSize=8
     movfp xmm5, xmm5v, dataSize=8
     movfp xmm6, xmm6v, dataSize=8
@@ -74,10 +69,7 @@ def macroop VINSERT256L_ZMM_M_I {
 
 def macroop VINSERT256L_ZMM_P_I {
     rdip t7
-    ldfp xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=8
-    ldfp xmm1, seg, riprel, "DISPLACEMENT + 8", dataSize=8
-    ldfp xmm2, seg, riprel, "DISPLACEMENT + 16", dataSize=8
-    ldfp xmm3, seg, riprel, "DISPLACEMENT + 24", dataSize=8
+    ldfp256 xmm0, seg, riprel, "DISPLACEMENT + 0", dataSize=32
     movfp xmm4, xmm4v, dataSize=8
     movfp xmm5, xmm5v, dataSize=8
     movfp xmm6, xmm6v, dataSize=8
