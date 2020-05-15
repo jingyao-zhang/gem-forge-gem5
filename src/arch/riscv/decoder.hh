@@ -48,6 +48,9 @@ class ISA;
 class Decoder
 {
   private:
+    // For DPRINTF.
+    const std::string _name;
+    const std::string &name() const { return _name; }
     DecodeCache::InstMap<ExtMachInst> instMap;
     bool aligned;
     bool mid;
@@ -59,7 +62,8 @@ class Decoder
     bool instDone;
 
   public:
-    Decoder(ISA* isa=nullptr) { reset(); }
+    Decoder(ISA* isa = nullptr, int thread_id = 0)
+        : _name(std::string("decoder") + std::to_string(thread_id)) { reset(); }
 
     void process() {}
     void reset();

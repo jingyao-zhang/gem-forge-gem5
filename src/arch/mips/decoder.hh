@@ -49,8 +49,12 @@ class Decoder
     bool instDone;
 
   public:
-    Decoder(ISA* isa = nullptr) : instDone(false)
-    {}
+    // For DPRINTF.
+    const std::string _name;
+    const std::string &name() const { return _name; }
+
+    Decoder(ISA* isa = nullptr, int thread_id = 0)
+        : _name(std::string("decoder") + std::to_string(thread_id)), instDone(false) {}
 
     void
     process()

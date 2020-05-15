@@ -84,6 +84,10 @@ class Decoder
 
     static InstBytes dummy;
 
+    // For DPRINTF.
+    const std::string _name;
+    const std::string &name() const { return _name; }
+
     //The bytes to be predecoded
     MachInst fetchChunk;
     InstBytes *instBytes;
@@ -248,7 +252,9 @@ class Decoder
     static InstCacheMap instCacheMap;
 
   public:
-    Decoder(ISA* isa = nullptr) : basePC(0), origPC(0), offset(0),
+    Decoder(ISA* isa = nullptr, int thread_id = 0)
+        : _name(std::string("decoder") + std::to_string(thread_id)),
+        basePC(0), origPC(0), offset(0),
         outOfBytes(true), instDone(false),
         state(ResetState)
     {

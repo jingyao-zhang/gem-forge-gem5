@@ -47,6 +47,8 @@ Decoder::doResetState()
     instBytes = &decodePages->lookup(origPC);
     chunkIdx = 0;
 
+    name();
+
     emi.rex = 0;
     emi.legacy = 0;
     emi.evex = 0;
@@ -816,7 +818,7 @@ Decoder::decode(ExtMachInst mach_inst, Addr addr)
     StaticInstPtr si = decodeInst(mach_inst);
     if (mach_inst.evex.present) {
         if (si->getName() == "ud2" || si->getName() == "unknown") {
-            panic("Invalid op decoded at %#x %s.\n", origPC, mach_inst);
+            warn("Invalid op decoded at %#x %s.\n", origPC, mach_inst);
         }
     }
 

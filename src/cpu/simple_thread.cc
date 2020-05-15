@@ -78,7 +78,7 @@ SimpleThread::SimpleThread(BaseCPU *_cpu, int _thread_num, System *_sys,
                            BaseTLB *_dtb, TheISA::ISA *_isa)
     : ThreadState(_cpu, _thread_num, _process), isa(_isa),
       predicate(true), memAccPredicate(true), system(_sys),
-      itb(_itb), dtb(_dtb), decoder(TheISA::Decoder(_isa))
+      itb(_itb), dtb(_dtb), decoder(TheISA::Decoder(_isa, _cpu->cpuId()))
 {
     clearArchRegs();
     quiesceEvent = new EndQuiesceEvent(this);

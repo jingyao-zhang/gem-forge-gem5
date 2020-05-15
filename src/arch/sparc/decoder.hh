@@ -43,14 +43,18 @@ class ISA;
 class Decoder
 {
   protected:
+    // For DPRINTF.
+    const std::string _name;
+    const std::string &name() const { return _name; }
     // The extended machine instruction being generated
     ExtMachInst emi;
     bool instDone;
     RegVal asi;
 
   public:
-    Decoder(ISA* isa = nullptr) : instDone(false), asi(0)
-    {}
+    Decoder(ISA* isa = nullptr, int thread_id = 0)
+        : _name(std::string("decoder") + std::to_string(thread_id)), instDone(false),
+        asi(0) {}
 
     void process() {}
 

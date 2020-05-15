@@ -54,8 +54,9 @@ namespace ArmISA
 
 GenericISA::BasicDecodeCache Decoder::defaultCache;
 
-Decoder::Decoder(ISA* isa)
-    : data(0), fpscrLen(0), fpscrStride(0),
+Decoder::Decoder(ISA* isa = nullptr, int thread_id = 0)
+    : _name(std::string("decoder") + std::to_string(thread_id)),
+      data(0), fpscrLen(0), fpscrStride(0),
       decoderFlavour(isa->decoderFlavour())
 {
     reset();

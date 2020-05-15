@@ -59,6 +59,9 @@ class ISA;
 class Decoder
 {
   protected:
+    // For DPRINTF.
+    const std::string _name;
+    const std::string &name() const { return _name; }
     //The extended machine instruction being generated
     ExtMachInst emi;
     MachInst data;
@@ -96,7 +99,7 @@ class Decoder
     void consumeBytes(int numBytes);
 
   public: // Decoder API
-    Decoder(ISA* isa = nullptr);
+    Decoder(ISA* isa = nullptr, int thread_id = 0);
 
     /** Reset the decoders internal state. */
     void reset();
