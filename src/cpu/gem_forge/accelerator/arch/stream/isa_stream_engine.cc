@@ -143,7 +143,7 @@ void ISAStreamEngine::dispatchStreamInput(
   inputInfo.inputIdx = inputVec.size();
   ISA_SE_DPRINTF("Dispatch StreamInput #%d %llu.\n", inputInfo.inputIdx,
                  inputInfo.translatedStreamId);
-  inputVec.push_back(0);
+  inputVec.emplace_back(DynStreamRegionInfo::StreamInputValue{0});
 }
 
 bool ISAStreamEngine::canExecuteStreamInput(
@@ -159,11 +159,22 @@ void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
   auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
   auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
   auto &inputVec = inputMap.at(inputInfo.translatedStreamId);
-  auto rs1 = xc.readIntRegOperand(dynInfo.staticInst, 0);
-  ISA_SE_DPRINTF("Record input #%d %llu %llu.\n", inputInfo.inputIdx,
-                 inputInfo.translatedStreamId, rs1);
 
-  inputVec.at(inputInfo.inputIdx) = rs1;
+  auto &inputValue = inputVec.at(inputInfo.inputIdx);
+  for (int srcIdx = 0; srcIdx < dynInfo.staticInst->numSrcRegs(); ++srcIdx) {
+    const auto &regId = dynInfo.staticInst->srcRegIdx(srcIdx);
+    RegVal regValue = 0;
+    if (regId.isIntReg()) {
+      regValue = xc.readIntRegOperand(dynInfo.staticInst, srcIdx);
+    } else {
+      assert(regId.isFloatReg());
+      regValue = xc.readFloatRegOperandBits(dynInfo.staticInst, srcIdx);
+    }
+    ISA_SE_DPRINTF("Record input %llu #%d-%d %llu.\n",
+                   inputInfo.translatedStreamId, inputInfo.inputIdx, srcIdx,
+                   regValue);
+    inputValue[srcIdx] = regValue;
+  }
   inputInfo.executed = true;
 
   this->increamentStreamRegionInfoNumExecutedInsts(

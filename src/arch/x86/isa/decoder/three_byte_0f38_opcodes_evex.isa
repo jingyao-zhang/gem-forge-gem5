@@ -94,6 +94,9 @@
                     0x2: SSP_STREAM_LOAD(WZqo, Ib);
                     0x1: SSP_STREAM_LOAD(WYdo, Ib);
                 }
+                0x44: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_INPUT(WZqo, Ib);
+                }
             }
             // 0xF3
             0x4: decode OPCODE_OP {

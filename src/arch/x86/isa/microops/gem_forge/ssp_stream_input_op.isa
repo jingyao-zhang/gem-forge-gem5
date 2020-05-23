@@ -63,6 +63,27 @@ def template MicroSSPInputOpConstructor {{
     {
         foldOBit = (dataSize == 1 && !machInst.rex.present) ? 1 << 6 : 0;
         %(constructor)s;
+        // Manually mark all the source register.
+        switch(dataSize) {
+        case 4:
+        case 8:
+                _srcRegIdx[_numSrcRegs++] = RegId(IntRegClass, INTREG_FOLDED(src1, foldOBit));
+            break;
+        case 64:
+            // zmm
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 0);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 1);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 2);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 3);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 4);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 5);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 6);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 7);
+            break;
+        default:
+            panic("Unsupported dataSize %d for SSPStreamInput.\n", dataSize);
+            break;
+        }
     }
 }};
 
@@ -104,7 +125,7 @@ let {{
             "SSPStreamInput",
             'X86MicroopBase',
             {
-                'code' : '(void)SrcReg1',
+                'code' : '',
             },
             ['No_OpClass', 'IsGemForge']
         ),

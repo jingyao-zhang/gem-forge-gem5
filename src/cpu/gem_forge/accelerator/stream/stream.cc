@@ -173,8 +173,7 @@ void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
                                     this->se);
 }
 
-void Stream::executeStreamConfig(uint64_t seqNum,
-                                 const std::vector<uint64_t> *inputVec) {
+void Stream::executeStreamConfig(uint64_t seqNum, const InputVecT *inputVec) {
   auto &dynStream = this->getDynamicStream(seqNum);
   assert(!dynStream.configExecuted && "StreamConfig already executed.");
   dynStream.configExecuted = true;
@@ -182,7 +181,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   /**
    * We intercept the constant update value here.
    */
-  std::vector<uint64_t> inputVecCopy(*inputVec);
+  InputVecT inputVecCopy(*inputVec);
   this->extractExtraInputValues(dynStream, inputVecCopy);
   this->setupAddrGen(dynStream, &inputVecCopy);
 
@@ -367,7 +366,7 @@ DynamicStream *Stream::getDynamicStream(const DynamicStreamId &dynId) {
 }
 
 void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
-                                 const std::vector<uint64_t> *inputVec,
+                                 const InputVecT *inputVec,
                                  const LLVM::TDG::StreamInfo &info) {
   assert(inputVec && "Missing InputVec.");
   const auto &staticInfo = info.static_info();
@@ -400,7 +399,7 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
       }
       // hack("Find input param #%d, val %llu.\n", formalParams.size(),
       //      inputVec->at(inputIdx));
-      formalParam.param.invariant = inputVec->at(inputIdx);
+      formalParam.param.invariant = inputVec->at(inputIdx).at(0);
       inputIdx++;
     }
   }
@@ -415,7 +414,7 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
    */
   STREAM_DPRINTF("Setup LinearAddrGenCallback with Input params --------\n");
   for (auto param : *inputVec) {
-    STREAM_DPRINTF("%llu\n", param);
+    STREAM_DPRINTF("%llu\n", param.at(0));
   }
   STREAM_DPRINTF("Setup LinearAddrGenCallback with params --------\n");
   for (auto param : formalParams) {
@@ -454,7 +453,7 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
 }
 
 void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
-                               const std::vector<uint64_t> *inputVec,
+                               const InputVecT *inputVec,
                                const LLVM::TDG::StreamInfo &info) {
 
   const auto &addrFuncInfo = info.addr_func_info();
@@ -472,7 +471,7 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
   dynStream.addrGenCallback = this->addrGenCallback;
 }
 
-int Stream::setupFormalParams(const std::vector<uint64_t> *inputVec,
+int Stream::setupFormalParams(const InputVecT *inputVec,
                               const LLVM::TDG::ExecFuncInfo &info,
                               DynamicStreamFormalParamV &formalParams) {
   assert(info.name() != "" && "Missing AddrFuncInfo.");
@@ -495,7 +494,7 @@ int Stream::setupFormalParams(const std::vector<uint64_t> *inputVec,
       formalParams.emplace_back();
       auto &formalParam = formalParams.back();
       formalParam.isInvariant = true;
-      formalParam.param.invariant = inputVec->at(inputIdx);
+      formalParam.param.invariant = inputVec->at(inputIdx).at(0);
       inputIdx++;
     }
   }
@@ -505,8 +504,7 @@ int Stream::setupFormalParams(const std::vector<uint64_t> *inputVec,
 /**
  * Extract extra input values from the inputVec. May modify inputVec.
  */
-void Stream::extractExtraInputValues(DynamicStream &dynS,
-                                     std::vector<uint64_t> &inputVec) {
+void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
 
   /**
    * If this is a load stream upgraded to update stream.
@@ -519,7 +517,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
     } else {
       // Dynamic input.
       assert(!inputVec.empty() && "Missing dynamic const update value.");
-      dynS.constUpdateValue = inputVec.front();
+      dynS.constUpdateValue = inputVec.front().at(0);
       inputVec.erase(inputVec.begin());
     }
   }
@@ -536,7 +534,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
       } else {
         // Dynamic input.
         assert(!inputVec.empty() && "Missing dynamic const update value.");
-        dynS.constUpdateValue = inputVec.front();
+        dynS.constUpdateValue = inputVec.front().at(0);
         inputVec.erase(inputVec.begin());
       }
     }
@@ -581,7 +579,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
    */
   if (this->isReduction()) {
     assert(!inputVec.empty() && "Missing initial value for reduction stream.");
-    dynS.initialValue = inputVec.front();
+    dynS.initialValue = inputVec.front().at(0);
     inputVec.erase(inputVec.begin());
   }
 }

@@ -40,7 +40,7 @@ public:
    */
 
   struct StreamConfigArgs {
-    using InputVec = std::vector<uint64_t>;
+    using InputVec = Stream::InputVecT;
     using InputMap = std::unordered_map<uint64_t, InputVec>;
     uint64_t seqNum; // Just the instruction sequence number.
     const std::string &infoRelativePath; // Where to find the info.

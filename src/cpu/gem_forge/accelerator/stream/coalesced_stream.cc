@@ -276,7 +276,7 @@ bool CoalescedStream::isContinuous() const {
 }
 
 void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
-                                   const std::vector<uint64_t> *inputVec) {
+                                   const InputVecT *inputVec) {
 
   if (this->staticCoalesced) {
     // We generate the address based on the primeLStream.

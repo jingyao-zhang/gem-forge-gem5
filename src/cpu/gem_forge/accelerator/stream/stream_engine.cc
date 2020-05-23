@@ -1208,7 +1208,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
 
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
-    auto &endedDynS= S->dynamicStreams.front();
+    auto &endedDynS = S->dynamicStreams.front();
     /**
      * Release all unstepped element until there is none.
      */
@@ -1954,14 +1954,20 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
       }
     }
     bool ready = true;
+    S_ELEMENT_DPRINTF(element, "Check if base element is ready.\n");
     for (const auto &baseElement : element->baseElements) {
       if (baseElement->stream == nullptr) {
         // ! Some bug here that the base element is already released.
+        S_ELEMENT_DPRINTF(element, "BaseElement has no stream.\n");
         continue;
       }
       if (element->stream->baseStreams.count(baseElement->stream) == 0 &&
           element->stream->backBaseStreams.count(baseElement->stream) == 0) {
-        continue;
+        // ! For reduction stream, myself is not in baseStreams.
+        if (!element->stream->isReduction()) {
+          S_ELEMENT_DPRINTF(baseElement, "Different base streams.\n");
+          continue;
+        }
       }
       if (baseElement->FIFOIdx.entryIdx > element->FIFOIdx.entryIdx) {
         // ! Some bug here that the base element is already used by others.
@@ -1976,6 +1982,8 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         }
         ready = false;
         break;
+      } else {
+        S_ELEMENT_DPRINTF(baseElement, "Base element is ready.\n");
       }
     }
     return ready;
@@ -2120,7 +2128,7 @@ void StreamEngine::issueElements() {
        * This is an IV stream. We assume their size be less than 8 bytes
        * and copy the address directly as the value.
        * TODO: This is not enough to support other type of IV stream, like
-       * TODO: the back dependence of pointer chasing stream.
+       * TODO: the back dependence of pointer chasing stream, reduce stream.
        */
       assert(element->size <= 8 && "IV Stream size greater than 8 bytes.");
       element->setValue(element->addr, element->size,

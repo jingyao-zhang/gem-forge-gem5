@@ -15,6 +15,11 @@ def macroop SSP_STREAM_INPUT_R_I
     ssp_stream_input reg, imm
 };
 
+def macroop SSP_STREAM_INPUT_ZMM_I
+{
+    ssp_stream_input xmm0, imm, dataSize=64
+};
+
 def macroop SSP_STREAM_INPUT_M_I
 {
     panic "SSP_STREAM_INPUT with memory operand in R/M."

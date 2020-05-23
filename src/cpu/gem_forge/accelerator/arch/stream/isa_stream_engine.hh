@@ -104,12 +104,13 @@ private:
    * 3. When ssp.stream.ready commits, we call StreamEngine::commitStreamEngine.
    */
   struct DynStreamRegionInfo {
+    using StreamInputValue = std::array<uint64_t, 8>;
     const std::string infoRelativePath;
     bool streamReadyDispatched = false;
     uint64_t streamReadySeqNum = 0;
     int numDispatchedInsts = 0;
     int numExecutedInsts = 0;
-    std::unordered_map<uint64_t, std::vector<uint64_t>> inputMap;
+    std::unordered_map<uint64_t, std::vector<StreamInputValue>> inputMap;
     DynStreamRegionInfo(const std::string &_infoRelativePath)
         : infoRelativePath(_infoRelativePath) {}
   };

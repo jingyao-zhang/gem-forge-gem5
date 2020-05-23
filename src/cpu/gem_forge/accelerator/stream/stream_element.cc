@@ -126,7 +126,9 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
       hitInPrivateCache = true;
       break;
     }
-    default: { panic("Invalid hitCacheLevel %d.\n", statistic->hitCacheLevel); }
+    default: {
+      panic("Invalid hitCacheLevel %d.\n", statistic->hitCacheLevel);
+    }
     }
     // We just use the last dynamic stream.
     // Not 100% accurate but should be fine.
@@ -329,6 +331,7 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
           CS->getCoalescedOffsetAndSize(baseStreamId, offset, size);
           vaddr += offset;
         }
+        // TODO: Fix this for reduction stream.
         assert(size <= sizeof(uint64_t) &&
                "Base element too large, maybe coalesced?");
         // ! This effectively does zero extension.

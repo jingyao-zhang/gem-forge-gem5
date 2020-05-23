@@ -84,7 +84,7 @@ public:
   uint64_t getFootprint(unsigned cacheBlockSize) const override;
 
   void setupAddrGen(DynamicStream &dynStream,
-                    const std::vector<uint64_t> *inputVec) override;
+                    const InputVecT *inputVec) override;
 
   bool isPointerChaseLoadStream() const override;
   uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const override;
