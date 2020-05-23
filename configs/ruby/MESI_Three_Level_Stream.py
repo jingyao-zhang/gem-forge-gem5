@@ -144,6 +144,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_float = options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
                 enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_flow = options.gem_forge_stream_engine_enable_float_idea_flow,
                 enable_stream_multicast = \
                     options.gem_forge_stream_engine_enable_float_multicast,
                 stream_multicast_group_size = \
@@ -186,6 +187,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_float = options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
                 enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_flow = options.gem_forge_stream_engine_enable_float_idea_flow,
                 enable_stream_multicast = \
                     options.gem_forge_stream_engine_enable_float_multicast,
                 stream_multicast_group_size = \
@@ -260,6 +262,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_float=options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
                 enable_stream_idea_store=\
                     options.gem_forge_stream_engine_enable_float_idea_store,
                 enable_stream_compact_store=\

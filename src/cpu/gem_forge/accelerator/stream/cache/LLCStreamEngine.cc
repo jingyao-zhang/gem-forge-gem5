@@ -799,9 +799,13 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   }
 
   /**
-   * Check if we have reached issue limit for this stream.
+   * Check if we have reached issue limit for this stream. Only do this for
+   * streams with core user.
    */
   const auto curCycle = this->controller->curCycle();
+  if (!stream->getStaticStream()->hasCoreUser()) {
+    checkIssueCycleLimit = false;
+  }
   if (checkIssueCycleLimit) {
     if (curCycle < stream->prevIssuedCycle + stream->issueClearCycle) {
       // We can not issue yet.

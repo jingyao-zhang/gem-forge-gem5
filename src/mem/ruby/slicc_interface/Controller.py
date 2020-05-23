@@ -90,6 +90,7 @@ class RubyStreamAwareController(RubyController):
     enable_stream_float = Param.Bool(False, "Whether to enable stream float")
     enable_stream_subline = Param.Bool(False, "Whether to enable stream float subline transmission")
     enable_stream_idea_ack = Param.Bool(False, "Whether to enable immediate stream ack.")
+    enable_stream_idea_flow = Param.Bool(False, "Whether to enable immediate stream flow control.")
     enable_stream_idea_store = Param.Bool(False, "Whether to enable immediate stream store.")
     enable_stream_compact_store = Param.Bool(False, "Whether to enable compact stream store.")
     enable_stream_advance_migrate = Param.Bool(False, "Whether to enable advance stream migrate.")
