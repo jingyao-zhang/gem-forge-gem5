@@ -51,7 +51,8 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
   /**
    * Note: At this point the primary logical stream may not be created yet!
    */
-  assert(info.type() != "phi" && "Never coalesce phi stream.");
+  assert(info.type() != ::LLVM::TDG::StreamInfo_Type_IV &&
+         "Never coalesce iv stream.");
   this->coalescedStreams.emplace_back(
       new LogicalStream(cpuDelegator->getTraceExtraFolder(), info));
 }
@@ -104,14 +105,22 @@ void CoalescedStream::selectPrimeLogicalStream() {
     assert(LS->info.config_loop_level() == this->getConfigLoopLevel());
     assert(LS->info.static_info().has_upgraded_to_update() ==
            this->hasUpgradedToUpdate());
-    assert(
-        LS->info.static_info().is_merged_predicated_stream() ==
-        this->primeLStream->info.static_info().is_merged_predicated_stream());
-    assert(LS->info.static_info().no_core_user() ==
-           this->primeLStream->info.static_info().no_core_user());
-    assert(LS->info.static_info().merged_load_store_base_streams_size() ==
-           this->primeLStream->info.static_info()
-               .merged_load_store_base_streams_size());
+    const auto &LSStaticInfo = LS->info.static_info();
+    const auto &PSStaticInfo = this->primeLStream->info.static_info();
+#define CHECK_INFO(field)                                                      \
+  do {                                                                         \
+    auto A = LSStaticInfo.field();                                             \
+    auto B = PSStaticInfo.field();                                             \
+    if (A != B) {                                                              \
+      panic("Mismatch in %s, %s, %s.", #field, LS->info.name(),                \
+            primeLStream->info.name());                                        \
+    }                                                                          \
+  } while (false);
+    CHECK_INFO(is_merged_predicated_stream);
+    CHECK_INFO(no_core_user);
+    CHECK_INFO(merged_load_store_base_streams_size);
+    CHECK_INFO(enabled_store_func);
+#undef CHECK_INFO
     for (const auto &sid : LS->getMergedLoadStoreBaseStreams()) {
       bool matched = false;
       for (const auto &tid :
@@ -178,7 +187,7 @@ void CoalescedStream::initializeAliasStreams() {
     const auto &SSI = LS->info.static_info();
     assert(SSI.alias_base_stream().id() == aliasBaseStreamId.id() &&
            "Mismatch AliasBaseStream.");
-    if (this->getStreamType() == "load") {
+    if (this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
       /**
        * Only check this for LoadStream. This is because coalescing
        * is not performed between different stream types, but alias
@@ -204,7 +213,7 @@ void CoalescedStream::configure(uint64_t seqNum, ThreadContext *tc) {
   }
 }
 
-const std::string &CoalescedStream::getStreamType() const {
+::LLVM::TDG::StreamInfo_Type CoalescedStream::getStreamType() const {
   return this->primeLStream->info.type();
 }
 
@@ -247,6 +256,9 @@ bool CoalescedStream::isMergedPredicated() const {
 bool CoalescedStream::isMergedLoadStoreDepStream() const {
   return this->primeLStream->info.static_info()
              .merged_load_store_base_streams_size() > 0;
+}
+bool CoalescedStream::enabledStoreFunc() const {
+  return this->primeLStream->info.static_info().enabled_store_func();
 }
 
 const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {

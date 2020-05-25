@@ -368,7 +368,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
        */
       if (this->enableStreamFloatIndirect) {
         for (auto depS : S->dependentStreams) {
-          if (depS->getStreamType() == "load") {
+          if (depS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
             if (depS->baseStreams.size() == 1) {
               // Only dependent on this direct stream.
               auto depConfig = depS->allocateCacheConfigureData(
@@ -659,13 +659,23 @@ bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
       return false;
     }
     auto stepElement = dynS.tail->next;
-    // Check for StreamAck. So far that's only merged store stream.
-    if (S->isMerged() && S->getStreamType() == "store") {
-      // Check if the first element is acked.
-      if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
-        // S_DPRINTF(S, "Can not step as no Ack for %llu.\n",
-        //           stepElement->FIFOIdx.entryIdx);
-        return false;
+    /**
+     * For streams enabled StoreFunc:
+     * 1. If not offloaded, we have to make sure the address is ready so that
+     *    we can issue packet to memory when release.
+     * 2. If offloaded, we have to check for StreamAck.
+     */
+    if (S->enabledStoreFunc()) {
+      if (dynS.offloadedToCache) {
+        if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
+          // S_DPRINTF(S, "Can not step as no Ack for %llu.\n",
+          //           stepElement->FIFOIdx.entryIdx);
+          return false;
+        }
+      } else {
+        if (!stepElement->isAddrReady) {
+          return false;
+        }
       }
     }
     // Check for unoffloaded ReductionStream. The next steped element should be
@@ -686,8 +696,9 @@ bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
         return false;
       }
     }
-    if (S->getStreamType() == "load" && !dynS.offloadedToCache &&
-        !S->hasCoreUser() && S->hasBackDepReductionStream) {
+    if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
+        !dynS.offloadedToCache && !S->hasCoreUser() &&
+        S->hasBackDepReductionStream) {
       /**
        * S is a load stream that is not offloaded, with no core user and
        * reduction stream. We have to make sure the element is value ready so
@@ -762,7 +773,7 @@ int StreamEngine::getStreamUserLQEntries(const StreamUserArgs &args) const {
    */
   auto firstUsedLoadStreamElement = 0;
   for (auto &element : usedElementSet) {
-    if (element->stream->getStreamType() != "load") {
+    if (element->stream->getStreamType() != ::LLVM::TDG::StreamInfo_Type_LD) {
       // Not a load stream. Ignore it.
       continue;
     }
@@ -785,7 +796,7 @@ int StreamEngine::createStreamUserLQCallbacks(
     if (element == nullptr) {
       continue;
     }
-    if (element->stream->getStreamType() != "load") {
+    if (element->stream->getStreamType() != ::LLVM::TDG::StreamInfo_Type_LD) {
       // Not a load stream.
       continue;
     }
@@ -887,8 +898,8 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
       // Mark the first user sequence number.
       if (!element->isFirstUserDispatched()) {
         element->firstUserSeqNum = seqNum;
-        if (S->getStreamType() == "load" && !S->getFloatManual() &&
-            element->isAddrReady) {
+        if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
+            !S->getFloatManual() && element->isAddrReady) {
           // The element should already be in peb, remove it.
           this->peb.removeElement(element);
         }
@@ -923,7 +934,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
                         cpuDelegator->curCycle());
       element->firstCheckCycle = cpuDelegator->curCycle();
     }
-    if (element->stream->getStreamType() == "store") {
+    if (element->stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
       /**
        * Basically this is a stream store.
        * Make sure the stored element is AddrReady.
@@ -973,7 +984,7 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * Make sure we zero out the data.
      */
     args.values->back().fill(0);
-    if (element->stream->getStreamType() == "store") {
+    if (element->stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
       /**
        * This should be a stream store. Just leave it there.
        */
@@ -1050,8 +1061,9 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
       // I am the first user.
       element->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
       // Check if the element should go back to PEB.
-      if (element->stream->getStreamType() == "load" && element->isAddrReady &&
-          element->shouldIssue() && !element->stream->getFloatManual()) {
+      if (element->stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
+          element->isAddrReady && element->shouldIssue() &&
+          !element->stream->getFloatManual()) {
         this->peb.addElement(element);
       }
     }
@@ -1133,7 +1145,8 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
     }
     endedStreams.insert(S);
     // Check for StreamAck. So far that's only merged store stream.
-    if (S->isMerged() && S->getStreamType() == "store") {
+    if (S->isMerged() &&
+        S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
       const auto &dynS = S->getLastDynamicStream();
       if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
         return false;
@@ -1804,9 +1817,9 @@ void StreamEngine::allocateElement(Stream *S) {
   assert(this->hasFreeElement());
   auto newElement = this->removeFreeElement();
   this->numElementsAllocated++;
-  if (S->getStreamType() == "load") {
+  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
     this->numLoadElementsAllocated++;
-  } else if (S->getStreamType() == "store") {
+  } else if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
     this->numStoreElementsAllocated++;
   }
 
@@ -1847,7 +1860,7 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
            "Some unreleased user instruction.");
   }
 
-  if (S->getStreamType() == "load") {
+  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
     this->numLoadElementsStepped++;
     /**
      * For a stepped load element, it should be removed from the PEB.
@@ -1865,7 +1878,7 @@ void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
       }
       this->numLoadElementWaitCycles += waitedCycles;
     }
-  } else if (S->getStreamType() == "store") {
+  } else if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
     this->numStoreElementsStepped++;
     if (used) {
       this->numStoreElementsUsed++;
@@ -1902,7 +1915,8 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
   auto S = dynS.stream;
   auto releaseElement = S->releaseElementUnstepped(dynS);
   if (releaseElement) {
-    if (S->getStreamType() == "load" && !S->getFloatManual()) {
+    if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
+        !S->getFloatManual()) {
       if (releaseElement->isAddrReady) {
         // This should be in PEB.
         this->peb.removeElement(releaseElement);
@@ -1915,7 +1929,8 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
 
 void StreamEngine::stepElement(Stream *S) {
   auto element = S->stepElement();
-  if (S->getStreamType() == "load" && !S->getFloatManual()) {
+  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
+      !S->getFloatManual()) {
     if (!element->isFirstUserDispatched() && element->isAddrReady &&
         element->shouldIssue()) {
       // This issued element is stepped but not used, remove from PEB.
@@ -1927,7 +1942,8 @@ void StreamEngine::stepElement(Stream *S) {
 void StreamEngine::unstepElement(Stream *S) {
   auto element = S->unstepElement();
   // We may need to add this back to PEB.
-  if (S->getStreamType() == "load" && !S->getFloatManual()) {
+  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
+      !S->getFloatManual()) {
     if (!element->isFirstUserDispatched() && element->isAddrReady &&
         element->shouldIssue()) {
       this->peb.addElement(element);
@@ -2166,7 +2182,7 @@ void StreamEngine::issueElement(StreamElement *element) {
   S_ELEMENT_DPRINTF(element, "Issue.\n");
 
   auto S = element->stream;
-  if (S->getStreamType() == "load") {
+  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
     if (element->flushed) {
       S_ELEMENT_DPRINTF(element, "Reissue.\n");
     }
@@ -2204,7 +2220,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto packetSize = cpuDelegator->cacheLineSize();
     Addr paddr;
     if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
-      S_ELEMENT_DPRINTF(element, "Fault on vaddr %#x,\n", vaddr);
+      S_ELEMENT_DPRINTF(element, "Fault on vaddr %#x.\n", vaddr);
       cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Faulted;
       /**
        * The current mechanism to mark value ready is too hacky.
@@ -2245,7 +2261,7 @@ void StreamEngine::writebackElement(StreamElement *element,
                                     StreamStoreInst *inst) {
   assert(element->isAddrReady && "Address should be ready.");
   auto S = element->stream;
-  assert(S->getStreamType() == "store" &&
+  assert(S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST &&
          "Should never writeback element for non store stream.");
 
   // Check the bookkeeping for infly writeback memory accesses.
@@ -2355,7 +2371,7 @@ void StreamEngine::throttleStream(Stream *S, StreamElement *element) {
     // Static means no throttling.
     return;
   }
-  if (S->getStreamType() == "store") {
+  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
     // No need to throttle for store stream.
     return;
   }
@@ -2742,6 +2758,34 @@ void StreamEngine::sendStreamFloatEndPacket(
     DPRINTF(RubyStream, "Send StreamFloatEndPacket for %s.\n", ss.str());
   }
   cpuDelegator->sendRequest(pkt);
+}
+
+void StreamEngine::sendAtomicPacket(StreamElement *element,
+                                    AtomicOpFunctor *atomicOp) {
+  if (!element->isAddrReady) {
+    S_ELEMENT_PANIC(element,
+                    "Element should be address ready to send AtomicOp.");
+  }
+  if (element->cacheBlocks != 1) {
+    S_ELEMENT_PANIC(element, "Illegal # of CacheBlocks %d for AtomicOp.",
+                    element->cacheBlocks);
+  }
+  const auto &cacheBlockBreakdownAccess =
+      element->cacheBlockBreakdownAccesses[0];
+  auto vaddr = cacheBlockBreakdownAccess.virtualAddr;
+  auto size = cacheBlockBreakdownAccess.size;
+  Addr paddr;
+  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+    S_ELEMENT_PANIC(element, "Fault on AtomicOp vaddr %#x.", vaddr);
+  }
+  auto pkt = GemForgePacketHandler::createGemForgeAMOPacket(
+      vaddr, paddr, size, cpuDelegator->dataMasterId(), 0 /* ContextId */,
+      0 /* PC */, atomicOp);
+  auto S = element->stream;
+  S->statistic.numIssuedRequest++;
+  // Send the packet to translation.
+  this->translationBuffer->addTranslation(
+      pkt, cpuDelegator->getSingleThreadContext(), nullptr);
 }
 
 void StreamEngine::flushPEB() {

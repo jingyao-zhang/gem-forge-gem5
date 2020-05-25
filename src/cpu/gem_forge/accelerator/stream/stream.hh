@@ -66,7 +66,7 @@ public:
   void initializeCoalesceGroupStreams();
 
   const std::string &getStreamName() const { return this->streamName; }
-  virtual const std::string &getStreamType() const = 0;
+  virtual ::LLVM::TDG::StreamInfo_Type getStreamType() const = 0;
   bool isMemStream() const;
   virtual uint32_t getLoopLevel() const = 0;
   virtual uint32_t getConfigLoopLevel() const = 0;
@@ -95,6 +95,7 @@ public:
   }
   virtual bool isMergedPredicated() const = 0;
   virtual bool isMergedLoadStoreDepStream() const = 0;
+  virtual bool enabledStoreFunc() const = 0;
   virtual const ::LLVM::TDG::StreamParam &getConstUpdateParam() const = 0;
   /**
    * Get coalesce base stream, 0 for invalid.
@@ -235,6 +236,7 @@ public:
    * Perform const update for stepped && used element.
    */
   void handleConstUpdate(const DynamicStream &dynS, StreamElement *element);
+  void handleStoreFunc(const DynamicStream &dynS, StreamElement *element);
   void handleMergedPredicate(const DynamicStream &dynS, StreamElement *element);
   void performConstStore(const DynamicStream &dynS, StreamElement *element);
 
@@ -323,8 +325,10 @@ protected:
   std::list<Stream *> stepStreamList;
 
   bool isStepRoot() const {
-    const auto &type = this->getStreamType();
-    return this->baseStepStreams.empty() && (type == "phi" || type == "store");
+    auto type = this->getStreamType();
+    return this->baseStepStreams.empty() &&
+           (type == ::LLVM::TDG::StreamInfo_Type_IV ||
+            type == ::LLVM::TDG::StreamInfo_Type_ST);
   }
 
   /**

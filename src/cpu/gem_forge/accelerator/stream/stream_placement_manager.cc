@@ -248,7 +248,7 @@ bool StreamPlacementManager::accessExpressFootprint(
     StreamElement *element, bool isWrite) {
 
   if (this->se->isPlacementNoBypassingStore()) {
-    if (stream->getStreamType() == "store") {
+    if (stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
       return false;
     }
   }

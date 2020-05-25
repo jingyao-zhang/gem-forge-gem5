@@ -8,7 +8,7 @@ void PrefetchElementBuffer::addElement(StreamElement *element) {
   assert(!element->isStepped && "Insert stepped element into PEB.");
   assert(!element->isFirstUserDispatched() &&
          "Insert element with first user dispatched.");
-  assert(element->stream->getStreamType() == "load" &&
+  assert(element->stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
          "Only load stream should be in PEB.");
   assert(!element->stream->getFloatManual() &&
          "FloatManual stream is alias-free and should not be added to PEB.");

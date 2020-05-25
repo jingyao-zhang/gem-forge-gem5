@@ -63,7 +63,7 @@ public:
   /*******************************************************************************
    * Static information accessor.
    *******************************************************************************/
-  const std::string &getStreamType() const override;
+  ::LLVM::TDG::StreamInfo_Type getStreamType() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;
   int32_t getElementSize() const override {
@@ -88,6 +88,7 @@ public:
 
   bool isMergedPredicated() const override;
   bool isMergedLoadStoreDepStream() const override;
+  bool enabledStoreFunc() const override;
   const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override;
   bool isReduction() const override;
   bool hasCoreUser() const override;

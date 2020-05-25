@@ -244,7 +244,7 @@ void LLCStreamEngine::receiveStreamElementData(
    * Check if this is a StreamStore stream. If so, we send ack back to the core.
    */
   auto S = stream->getStaticStream();
-  if (S->isMerged() && S->getStreamType() == "store") {
+  if (S->isMerged() && S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
     // Perform the store.
     auto elementSize = S->getElementSize();
     auto elementVAddr = sliceId.vaddr;
@@ -982,7 +982,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
         assert(coreDynIS && "Failed to get CoreDynIS.");
 
         auto baseS = IS->se->getStream(baseStreamId);
-        assert(baseS->getStreamType() == "phi" &&
+        assert(baseS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV &&
                "Extra MemStream Input for ReductionStream.");
         auto &baseDynS = baseS->getDynamicStream(coreDynIS->configSeqNum);
         assert(baseDynS.configExecuted && "Extra IVBaseStream is configured.");
@@ -1035,7 +1035,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
-  if (IS->isMerged() && IS->getStreamType() == "store") {
+  if (IS->isMerged() && IS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
     // This is a merged store, we need to issue STREAM_STORE request.
     assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
     if (dynIS->hasTotalTripCount()) {
@@ -1513,7 +1513,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
           } else {
             // This element is predicated off.
             predS->statistic.numLLCPredNSlice++;
-            if (predS->isMerged() && predS->getStreamType() == "store") {
+            if (predS->isMerged() && predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
               /**
                * This is a predicated off merged store, we have to send
                * STREAM_ACK. We still have to set the vaddr as the MLC

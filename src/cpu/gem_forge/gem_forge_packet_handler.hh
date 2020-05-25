@@ -26,6 +26,9 @@ public:
                                         GemForgePacketHandler *handler,
                                         uint8_t *data, MasterID masterID,
                                         int contextId, Addr pc);
+  static PacketPtr createGemForgeAMOPacket(Addr vaddr, Addr paddr, int size,
+                                           MasterID masterID, int contextId,
+                                           Addr pc, AtomicOpFunctor *atomicOp);
   static PacketPtr createStreamControlPacket(Addr paddr, MasterID masterID,
                                              int contextId, MemCmd::Command cmd,
                                              uint64_t data);
@@ -39,6 +42,25 @@ public:
    * TODO: Improve this to support other CPU model.
    */
   static bool needResponse(PacketPtr pkt);
+};
+
+/**
+ * A dummy singleton packet handler that release the packet when done.
+ * This is used to prevent memory leak.
+ */
+class GemForgePacketReleaseHandler : public GemForgePacketHandler {
+public:
+  void handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
+                            PacketPtr packet) override {
+    delete packet;
+  }
+  void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override {}
+
+  static GemForgePacketReleaseHandler *get() { return &instance; }
+
+private:
+  GemForgePacketReleaseHandler() {}
+  static GemForgePacketReleaseHandler instance;
 };
 
 #endif

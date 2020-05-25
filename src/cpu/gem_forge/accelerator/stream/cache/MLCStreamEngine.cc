@@ -283,7 +283,7 @@ bool MLCStreamEngine::isStreamOffloaded(const DynamicStreamSliceId &slice) {
   auto stream = this->getMLCDynamicStreamFromSlice(slice);
   auto staticStream = stream->getStaticStream();
   // So far always offload for load stream.
-  if (staticStream->getStreamType() == "load") {
+  if (staticStream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
     return true;
   }
   return false;
@@ -294,7 +294,7 @@ bool MLCStreamEngine::isStreamCached(const DynamicStreamSliceId &slice) {
   auto stream = this->getMLCDynamicStreamFromSlice(slice);
   auto staticStream = stream->getStaticStream();
   // So far do not cache for load stream.
-  if (staticStream->getStreamType() == "load") {
+  if (staticStream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
     return false;
   }
   return true;

@@ -130,6 +130,11 @@ public:
    */
   void sendStreamFloatEndPacket(const std::vector<DynamicStreamId> &endedIds);
 
+  /**
+   * Send atomic operation packet.
+   */
+  void sendAtomicPacket(StreamElement *element, AtomicOpFunctor *atomicOp);
+
   StreamPlacementManager *getStreamPlacementManager() {
     return this->streamPlacementManager;
   }
@@ -237,14 +242,6 @@ private:
 
   LLVMTraceCPU *cpu;
 
-  // struct InflyTranslation {
-  //   PacketPtr pkt;
-  //   bool doneTranslation = false;
-  //   InflyTranslation(PacketPtr _pkt) : pkt(_pkt) {}
-  // };
-  // using InflyTranslationQueue = std::list<InflyTranslation>;
-  // using InflyTranslationQueueIter = InflyTranslationQueue::iterator;
-  // InflyTranslationQueue inflyTranslationQueue;
   std::unique_ptr<StreamTranslationBuffer<void *>> translationBuffer;
   StreamPlacementManager *streamPlacementManager;
   std::unique_ptr<StreamFloatPolicy> streamFloatPolicy;

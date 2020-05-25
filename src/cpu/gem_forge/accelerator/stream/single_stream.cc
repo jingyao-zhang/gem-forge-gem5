@@ -43,7 +43,8 @@ void SingleStream::initializeBaseStreams() {
     this->addBaseStream(baseStream);
   }
 
-  if (this->baseStreams.empty() && this->info.type() == "phi") {
+  if (this->baseStreams.empty() &&
+      this->info.type() == ::LLVM::TDG::StreamInfo_Type_IV) {
     this->stepRootStream = this;
   }
 
@@ -64,7 +65,7 @@ void SingleStream::initializeBaseStreams() {
 
 void SingleStream::initializeBackBaseStreams() {
   for (const auto &backBaseStreamId : this->info.chosen_back_base_streams()) {
-    assert(this->getStreamType() == "phi" &&
+    assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV &&
            "Only phi node can have back edge dependence.");
     auto backBaseStream = this->se->getStream(backBaseStreamId.id());
     this->addBackBaseStream(backBaseStream);
@@ -72,7 +73,7 @@ void SingleStream::initializeBackBaseStreams() {
 }
 
 void SingleStream::initializeAliasStreams() {
-  if (this->getStreamType() == "phi") {
+  if (this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV) {
     // Not MemStream.
     return;
   }
@@ -81,7 +82,7 @@ void SingleStream::initializeAliasStreams() {
 }
 
 bool SingleStream::isPointerChaseLoadStream() const {
-  if (this->getStreamType() != "load") {
+  if (this->getStreamType() != ::LLVM::TDG::StreamInfo_Type_LD) {
     return false;
   }
   // So far only only one base stream of phi type.
@@ -89,7 +90,7 @@ bool SingleStream::isPointerChaseLoadStream() const {
     return false;
   }
   auto baseStream = *(this->baseStreams.begin());
-  if (baseStream->getStreamType() != "phi") {
+  if (baseStream->isMemStream()) {
     return false;
   }
   // The base iv stream should have only one back dependence of myself.
@@ -109,7 +110,7 @@ bool SingleStream::isPointerChaseLoadStream() const {
   return true;
 }
 
-const std::string &SingleStream::getStreamType() const {
+::LLVM::TDG::StreamInfo_Type SingleStream::getStreamType() const {
   return this->info.type();
 }
 

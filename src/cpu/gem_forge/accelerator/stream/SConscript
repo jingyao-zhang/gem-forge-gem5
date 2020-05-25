@@ -7,6 +7,7 @@ DebugFlag('StreamFloatPolicy')
 DebugFlag('CoalescedStream')
 DebugFlag('SingleStream')
 DebugFlag('AddrGenCallback')
+DebugFlag('StreamAtomicOp')
 
 ProtoBuf('StreamMessage.proto')
 
@@ -24,4 +25,5 @@ Source('stream_pattern.cc')
 Source('stream_placement_manager.cc')
 Source('stream_float_policy.cc')
 Source('stream_float_tracer.cc')
+Source('stream_atomic_op.cc')
 Source('insts.cc')

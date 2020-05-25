@@ -1,5 +1,7 @@
 #include "gem_forge_packet_handler.hh"
 
+GemForgePacketReleaseHandler GemForgePacketReleaseHandler::instance;
+
 PacketPtr GemForgePacketHandler::createGemForgePacket(
     Addr paddr, int size, GemForgePacketHandler *handler, uint8_t *data,
     MasterID masterID, int contextId, Addr pc) {
@@ -21,6 +23,28 @@ PacketPtr GemForgePacketHandler::createGemForgePacket(
   }
   pkt->dataDynamic(pkt_data);
   // Push the handler as the SenderState.
+  pkt->pushSenderState(handler);
+  return pkt;
+}
+
+PacketPtr GemForgePacketHandler::createGemForgeAMOPacket(
+    Addr vaddr, Addr paddr, int size, MasterID masterID, int contextId, Addr pc,
+    AtomicOpFunctor *atomicOp) {
+  Request::Flags flags;
+  flags.set(Request::ATOMIC_RETURN_OP);
+
+  int asid = 0;
+  RequestPtr req = std::make_shared<Request>(asid, vaddr, size, flags, masterID,
+                                             pc, contextId, atomicOp);
+  req->setPaddr(paddr);
+  // For our request, we always track the request statistic.
+  req->setStatistic(std::make_shared<RequestStatistic>());
+  PacketPtr pkt = Packet::createWrite(req);
+  // Fake some data.
+  uint8_t *pkt_data = new uint8_t[req->getSize()];
+  pkt->dataDynamic(pkt_data);
+  // Push the dummy release handler as the SenderState.
+  auto handler = GemForgePacketReleaseHandler::get();
   pkt->pushSenderState(handler);
   return pkt;
 }

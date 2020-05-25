@@ -18,7 +18,7 @@ public:
   /*******************************************************************************
    * Static information accessor.
    *******************************************************************************/
-  const std::string &getStreamType() const override;
+  ::LLVM::TDG::StreamInfo_Type getStreamType() const override;
 
   uint32_t getLoopLevel() const override { return this->info.loop_level(); }
 
@@ -62,6 +62,9 @@ public:
   }
   bool isMergedLoadStoreDepStream() const override {
     return this->info.static_info().merged_load_store_base_streams_size() > 0;
+  }
+  bool enabledStoreFunc() const override {
+    return this->info.static_info().enabled_store_func();
   }
 
   const ::LLVM::TDG::StreamParam &getConstUpdateParam() const override {

@@ -350,7 +350,7 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
      */
     if (this->stream->isReduction()) {
       auto baseS = this->se->getStream(baseStreamId);
-      assert(baseS->getStreamType() == "phi" &&
+      assert(baseS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV &&
              "Extra MemStream Input for ReductionStream.");
       auto &baseDynS = baseS->getDynamicStream(this->dynS->configSeqNum);
       assert(baseDynS.configExecuted && "Extra IVBaseStream is configured.");

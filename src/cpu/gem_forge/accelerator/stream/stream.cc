@@ -1,5 +1,6 @@
 #include "stream.hh"
 #include "insts.hh"
+#include "stream_atomic_op.hh"
 #include "stream_engine.hh"
 
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
@@ -59,7 +60,16 @@ void Stream::dumpStreamStats(std::ostream &os) const {
 }
 
 bool Stream::isMemStream() const {
-  return this->getStreamType() == "load" || this->getStreamType() == "store";
+  switch (this->getStreamType()) {
+  case ::LLVM::TDG::StreamInfo_Type_LD:
+  case ::LLVM::TDG::StreamInfo_Type_ST:
+  case ::LLVM::TDG::StreamInfo_Type_AT:
+    return true;
+  case ::LLVM::TDG::StreamInfo_Type_IV:
+    return false;
+  default:
+    STREAM_PANIC("Invalid stream type.");
+  }
 }
 
 void Stream::addBaseStream(Stream *baseStream) {
@@ -126,7 +136,7 @@ void Stream::initializeAliasStreamsFromProtobuf(
    * AliasedStream may not be finalized yet, and getStreamType() may not be
    * available.
    */
-  if (this->getStreamType() == "store") {
+  if (this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
     this->aliasBaseStream->hasAliasedStoreStream = true;
   }
   /**
@@ -149,7 +159,7 @@ void Stream::initializeAliasStreamsFromProtobuf(
 }
 
 void Stream::initializeCoalesceGroupStreams() {
-  if (this->getStreamType() == "phi") {
+  if (this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV) {
     // Not MemStream.
     return;
   }
@@ -525,8 +535,8 @@ void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
    * If this is a merged store stream, we only support const store so far.
    */
   if (this->isMergedPredicated()) {
-    const auto &type = this->getStreamType();
-    if (type == "store") {
+    auto type = this->getStreamType();
+    if (type == ::LLVM::TDG::StreamInfo_Type_ST) {
       const auto &updateParam = this->getConstUpdateParam();
       if (updateParam.is_static()) {
         // Static input.
@@ -558,10 +568,11 @@ void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
     inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
   }
   /**
-   * If this is a MergedLoadStoreDepStream, check for the StoreFunc.
+   * Handle StoreFunc.
    */
-  if (this->isMergedLoadStoreDepStream()) {
-    assert(this->getStreamType() == "store");
+  if (this->enabledStoreFunc()) {
+    assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST ||
+           this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT);
     const auto &storeFuncInfo = this->getStoreFuncInfo();
     if (!this->storeCallback) {
       this->storeCallback =
@@ -646,7 +657,8 @@ bool Stream::isDirectMemStream() const {
       // Ignore streams from different loop level.
       continue;
     }
-    if (baseS->getStreamType() != "phi") {
+    if (baseS->isMemStream()) {
+      // I depend on a MemStream and am indirect MemStream.
       return false;
     }
     if (!baseS->backBaseStreams.empty()) {
@@ -657,7 +669,7 @@ bool Stream::isDirectMemStream() const {
 }
 
 bool Stream::isDirectLoadStream() const {
-  if (this->getStreamType() != "load") {
+  if (this->getStreamType() != ::LLVM::TDG::StreamInfo_Type_LD) {
     return false;
   }
   return this->isDirectMemStream();
@@ -875,6 +887,9 @@ StreamElement *Stream::releaseElementStepped() {
     // this->handleMergedPredicate(dynS, releaseElement);
   }
 
+  // Handle store func without load stream.
+  this->handleStoreFunc(dynS, releaseElement);
+
   dynS.tail->next = releaseElement->next;
   if (dynS.stepped == releaseElement) {
     dynS.stepped = dynS.tail;
@@ -945,6 +960,39 @@ void Stream::handleConstUpdate(const DynamicStream &dynS,
   this->performConstStore(dynS, element);
 }
 
+void Stream::handleStoreFunc(const DynamicStream &dynS,
+                             StreamElement *element) {
+  if (!this->enabledStoreFunc()) {
+    return;
+  }
+  if (this->isMergedLoadStoreDepStream()) {
+    // The store func is called at the load stream, not me.
+    return;
+  }
+  assert(element->isAddrReady && "StoreFunc with element not addr ready.");
+  // First turn the FormalParams to ActualParams, except the last atomic
+  // operand.
+  assert(!dynS.storeFormalParams.empty() &&
+         "AtomicOp has at least one operand.");
+  DynamicStreamParamV params;
+  for (int i = 0; i + 1 < dynS.storeFormalParams.size(); ++i) {
+    const auto &formalParam = dynS.storeFormalParams.at(i);
+    assert(formalParam.isInvariant &&
+           "Can only handle invariant params for AtomicOp.");
+    params.push_back(formalParam.param.invariant);
+  }
+  // Push the final atomic operand as a dummy 0.
+  const auto &formalAtomicParam = dynS.storeFormalParams.back();
+  assert(!formalAtomicParam.isInvariant && "AtomicOperand should be a stream.");
+  assert(formalAtomicParam.param.baseStreamId == this->staticId &&
+         "AtomicOperand should be myself.");
+  params.push_back(0);
+  // Create the AtomicOp, which will be released in ~Request.
+  auto atomicOp = new StreamAtomicOp(this, element->FIFOIdx, element->size,
+                                     params, dynS.storeCallback);
+  this->se->sendAtomicPacket(element, atomicOp);
+}
+
 void Stream::handleMergedPredicate(const DynamicStream &dynS,
                                    StreamElement *element) {
   auto mergedPredicatedStreamIds = this->getMergedPredicatedStreams();
@@ -973,7 +1021,7 @@ void Stream::handleMergedPredicate(const DynamicStream &dynS,
     auto predS = this->se->getStream(predStreamId.id().id());
     // They should be configured by the same configure instruction.
     const auto &predDynS = predS->getDynamicStream(dynS.configSeqNum);
-    if (predS->getStreamType() == "store") {
+    if (predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
       auto predElement = predDynS.getElementByIdx(element->FIFOIdx.entryIdx);
       if (!predElement) {
         S_ELEMENT_PANIC(element, "Failed to get predicated element.");
