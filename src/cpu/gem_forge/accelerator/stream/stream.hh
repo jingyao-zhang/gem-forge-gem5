@@ -202,8 +202,9 @@ public:
   void allocateElement(StreamElement *newElement);
   /**
    * Remove one stepped element from the first dynamic stream.
+   * @param isEnd: This element is stepped by StreamEnd, not StreamStep.
    */
-  StreamElement *releaseElementStepped();
+  StreamElement *releaseElementStepped(bool isEnd);
   /**
    * Remove one unstepped element from the dynamic stream.
    * CommitStreamEnd will release from the first dynamic stream.
@@ -304,6 +305,9 @@ public:
   void recordAggregateHistory(const DynamicStream &dynS);
 
   AddrGenCallbackPtr &getAddrGenCallback() { return this->addrGenCallback; }
+
+  DynamicStreamParamV
+  setupAtomicRMWParamV(const DynamicStreamFormalParamV formalParams) const;
 
 protected:
   StreamSet baseStepStreams;

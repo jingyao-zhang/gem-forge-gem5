@@ -32,6 +32,11 @@ public:
   void dump() override;
   void regStats() override;
 
+  // Override the name as we don't want the default long name().
+  const std::string name() const override {
+    return "global";
+  }
+
   /**
    * To prepare for execution-driven simulation,
    * decouple StreamEngine from StreamInstruction, but
@@ -382,8 +387,10 @@ private:
   bool releaseElementUnstepped(DynamicStream &dynS);
   /**
    * Release a stepped stream element.
+   * @param isEnd: this element is stepped by StreamEnd, not StreamStep.
+   * @param toThrottle: perform stream throttling.
    */
-  void releaseElementStepped(Stream *S, bool doThrottle);
+  void releaseElementStepped(Stream *S, bool isEnd, bool doThrottle);
   /**
    * Step one element.
    */

@@ -364,42 +364,59 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       }
 
       /**
-       * If we enable indirect stream to float.
+       * If we enable these indirect streams to float:
+       * 1. LoadStream.
+       * 2. Store/AtomicRMWStream with StoreFunc enabled, and has not been
+       * merged.
        */
       if (this->enableStreamFloatIndirect) {
         for (auto depS : S->dependentStreams) {
-          if (depS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
-            if (depS->baseStreams.size() == 1) {
-              // Only dependent on this direct stream.
-              auto depConfig = depS->allocateCacheConfigureData(
+          bool canFloatIndirect = false;
+          auto depSType = depS->getStreamType();
+          switch (depSType) {
+          case ::LLVM::TDG::StreamInfo_Type_LD:
+            canFloatIndirect = true;
+            break;
+          case ::LLVM::TDG::StreamInfo_Type_AT:
+          case ::LLVM::TDG::StreamInfo_Type_ST:
+            if (depS->enabledStoreFunc() &&
+                !depS->isMergedLoadStoreDepStream()) {
+              canFloatIndirect = true;
+            }
+            break;
+          default:
+            break;
+          }
+          if (canFloatIndirect && depS->baseStreams.size() == 1) {
+            // Only dependent on this direct stream.
+            auto depConfig = depS->allocateCacheConfigureData(
+                args.seqNum, true /* isIndirect */);
+            streamConfigureData->indirectStreams.emplace_back(depConfig);
+            // Remember the decision.
+            auto &depDynS = depS->getDynamicStream(args.seqNum);
+            depDynS.offloadedToCache = true;
+            this->numFloated++;
+            S_DPRINTF(depS, "Offload as indirect.\n");
+            assert(offloadedStreamConfigMap.emplace(depS, depConfig).second &&
+                   "Already offloaded this indirect stream.");
+            // ! Pure hack here to indclude merged stream of this indirect
+            // ! stream.
+            for (auto mergedStreamId : depS->getMergedPredicatedStreams()) {
+              auto mergedS = this->getStream(mergedStreamId.id().id());
+              auto mergedConfig = mergedS->allocateCacheConfigureData(
                   args.seqNum, true /* isIndirect */);
-              streamConfigureData->indirectStreams.emplace_back(depConfig);
-              // Remember the decision.
-              auto &depDynS = depS->getDynamicStream(args.seqNum);
-              depDynS.offloadedToCache = true;
+              mergedConfig->isPredicated = true;
+              mergedConfig->isPredicatedTrue = mergedStreamId.pred_true();
+              mergedConfig->predicateStreamId = depDynS.dynamicStreamId;
+              /**
+               * Remember the decision.
+               */
+              mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
               this->numFloated++;
-              S_DPRINTF(depS, "Offload as indirect.\n");
-              assert(offloadedStreamConfigMap.emplace(depS, depConfig).second &&
-                     "Already offloaded this indirect stream.");
-              // ! Pure hack here to indclude merged stream of this indirect
-              // ! stream.
-              for (auto mergedStreamId : depS->getMergedPredicatedStreams()) {
-                auto mergedS = this->getStream(mergedStreamId.id().id());
-                auto mergedConfig = mergedS->allocateCacheConfigureData(
-                    args.seqNum, true /* isIndirect */);
-                mergedConfig->isPredicated = true;
-                mergedConfig->isPredicatedTrue = mergedStreamId.pred_true();
-                mergedConfig->predicateStreamId = depDynS.dynamicStreamId;
-                /**
-                 * Remember the decision.
-                 */
-                mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
-                this->numFloated++;
-                assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig)
-                           .second &&
-                       "Merged stream already offloaded.");
-                streamConfigureData->indirectStreams.emplace_back(mergedConfig);
-              }
+              assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig)
+                         .second &&
+                     "Merged stream already offloaded.");
+              streamConfigureData->indirectStreams.emplace_back(mergedConfig);
             }
           }
         }
@@ -730,7 +747,7 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
      *
      * To solve this, we only do throttling for streamStep.
      */
-    this->releaseElementStepped(S, true /* doThrottle */);
+    this->releaseElementStepped(S, false /* isEnd */, true /* doThrottle */);
   }
 
   // ! Do not allocate here.
@@ -1231,7 +1248,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     /**
      * Release the last element we stepped at dispatch.
      */
-    this->releaseElementStepped(S, false /* doThrottle */);
+    this->releaseElementStepped(S, true /* isEnd */, false /* doThrottle */);
     if (isDebugStream(S)) {
       S_DPRINTF(S, "Commit End");
     }
@@ -1826,14 +1843,15 @@ void StreamEngine::allocateElement(Stream *S) {
   S->allocateElement(newElement);
 }
 
-void StreamEngine::releaseElementStepped(Stream *S, bool doThrottle) {
+void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
+                                         bool doThrottle) {
 
   /**
    * This function performs a normal release, i.e. release a stepped
    * element.
    */
 
-  auto releaseElement = S->releaseElementStepped();
+  auto releaseElement = S->releaseElementStepped(isEnd);
   /**
    * How to handle short streams?
    * There is a pathological case when the streams are short, and
@@ -2240,7 +2258,7 @@ void StreamEngine::issueElement(StreamElement *element) {
         0 /* ContextId */, 0 /* PC */);
     pkt->req->setVirt(vaddr);
     pkt->req->getStatistic()->isStream = true;
-    S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i, vaddr,
+    S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1, vaddr,
                       packetSize);
     S->statistic.numIssuedRequest++;
     element->dynS->incrementNumIssuedRequests();
@@ -2688,10 +2706,11 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
   // Get the previous element.
   auto prevElement = S->getPrevElement(element);
   // We found the previous element. Check if completely overlap.
-  assert(prevElement->FIFOIdx.entryIdx + 1 == element->FIFOIdx.entryIdx &&
-         "Mismatch entryIdx for prevElement.");
-  assert(prevElement->FIFOIdx.streamId == element->FIFOIdx.streamId &&
-         "Mismatch streamId for prevElement.");
+  if ((prevElement->FIFOIdx.streamId != element->FIFOIdx.streamId) ||
+      (prevElement->FIFOIdx.entryIdx + 1 != element->FIFOIdx.entryIdx)) {
+    S_ELEMENT_PANIC(element, "Mismatch FIFOIdx for prevElement %s.\n",
+                    prevElement->FIFOIdx);
+  }
 
   // Check if the previous element has the cache line.
   if (!prevElement->isCacheBlockedValue) {

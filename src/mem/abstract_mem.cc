@@ -436,7 +436,17 @@ AbstractMemory::functionalAccess(PacketPtr pkt)
 
     uint8_t *hostAddr = pmemAddr + pkt->getAddr() - range.start();
 
-    if (pkt->isRead()) {
+    if (pkt->isAtomicOp()) {
+        /**
+         * ! GemForge
+         * Try to support functional access for atomic operation.
+         */
+        if (pmemAddr) {
+            (*pkt->req->getAtomicOpFunctor())(hostAddr);
+        }
+        TRACE_PACKET("Atomic");
+        pkt->makeResponse();
+    } else if (pkt->isRead()) {
         if (pmemAddr) {
             pkt->setData(hostAddr);
         }

@@ -176,6 +176,14 @@ protected:
    */
   void popStream();
 
+  bool isWaitingAck() const {
+    // This is stream is waiting for Ack, not Data.
+    // So far only for offloaded store and atomicrmw streams.
+    auto streamType = this->stream->getStreamType();
+    return streamType == ::LLVM::TDG::StreamInfo_Type_ST ||
+           streamType == ::LLVM::TDG::StreamInfo_Type_AT;
+  }
+
   /**
    * A helper function to dump some basic status of the stream when panic.
    */

@@ -113,11 +113,6 @@ private:
                                        const SliceIter &end,
                                        const DynamicStreamSliceId &sliceId);
 
-  bool isWaitingAck() const {
-    // This is stream is waiting for Ack, not Data.
-    return this->stream->isMerged() &&
-           this->stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST;
-  }
 };
 
 #endif

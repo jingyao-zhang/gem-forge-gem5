@@ -3,8 +3,8 @@
  */
 
 #define S_MSG(S, format, args...)                                              \
-  "[SE%d][%s]: " format, S->getCPUDelegator()->cpuId(),                        \
-      S->getStreamName().c_str(), ##args
+  "[SE%d][%lu][%s]: " format, S->getCPUDelegator()->cpuId(), S->staticId,      \
+      S->getStreamName(), ##args
 
 #define S_DPRINTF(S, format, args...)                                          \
   DPRINTF(DEBUG_TYPE, S_MSG(S, format, ##args))
@@ -31,7 +31,7 @@
   panic(S_FIFO_ENTRY_MSG((E), format, ##args))
 
 #define DYN_S_MSG(dynamicStreamId, format, args...)                            \
-  "[%lu-%lu]" format, (dynamicStreamId).staticId,                              \
+  "[%d-%lu-%lu]" format, (dynamicStreamId).coreId, (dynamicStreamId).staticId, \
       (dynamicStreamId).streamInstance, ##args
 #define DYN_S_DPRINTF(dynamicStreamId, format, args...)                        \
   DPRINTF(DEBUG_TYPE, DYN_S_MSG((dynamicStreamId), format, ##args))

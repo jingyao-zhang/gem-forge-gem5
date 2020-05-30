@@ -231,6 +231,12 @@ private:
    * Perform store to the BackingStorage.
    */
   void performStore(Addr paddr, int size, const uint8_t *value);
+
+  /**
+   * Perform AtomicRMWStream to the BackingStorage.
+   */
+  void performStreamAtomicRMW(LLCDynamicStreamPtr stream,
+                              const DynamicStreamSliceId &sliceId);
 };
 
 #endif

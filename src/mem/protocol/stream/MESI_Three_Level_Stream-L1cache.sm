@@ -436,7 +436,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
            * offloaded, so we should notify the stream engine.
            */
            assert(in_msg.slice.isValid());
-           assert(se.isStreamOffloaded(in_msg.slice));
            se.receiveOffloadStreamRequestHit(in_msg.slice);
            trigger(Event:L0_FwdStreamReq, in_msg.addr, cache_entry, tbe);
         } else {

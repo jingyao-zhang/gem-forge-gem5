@@ -80,8 +80,21 @@ bool StreamFloatPolicy::shouldFloatStream(Stream *S, DynamicStream &dynS) {
   if (this->privateCacheCapacity.empty()) {
     this->privateCacheCapacity = getPrivateCacheCapacity(S->se);
   }
-  if (!S->isDirectLoadStream() && !S->isPointerChaseLoadStream()) {
-    return false;
+  /**
+   * This is the root of floating streams:
+   * 1. DirectLoadStream.
+   * 2. PointerChaseLoadStream.
+   * 3. DirectAtomicRMWStream without being merged, and StoreFunc enabled.
+   */
+  {
+    bool isUnmergedDirectAtomicRMW =
+        (!S->isMerged()) && S->isDirectMemStream() &&
+        (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT) &&
+        S->enabledStoreFunc();
+    if (!S->isDirectLoadStream() && !S->isPointerChaseLoadStream() &&
+        !isUnmergedDirectAtomicRMW) {
+      return false;
+    }
   }
   /**
    * Make sure we do not offload empty stream.
@@ -107,7 +120,9 @@ bool StreamFloatPolicy::shouldFloatStream(Stream *S, DynamicStream &dynS) {
   case PolicyE::SMART: {
     return this->shouldFloatStreamSmart(S, dynS);
   }
-  default: { return false; }
+  default: {
+    return false;
+  }
   }
 
   // Let's use the previous staistic of the average stream.

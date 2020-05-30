@@ -33,6 +33,28 @@ DynamicStream::~DynamicStream() {
   this->stepped = nullptr;
 }
 
+bool DynamicStream::shouldCoreSEIssue() const {
+  /**
+   * If the stream has floated, and no core user/dependent streams here,
+   * then we don't have to issue for the data.
+   */
+  if (!this->stream->hasCoreUser() && this->offloadedToCache) {
+    // Check that dependent dynS all offloaded to cache.
+    bool allDepSFloated = true;
+    for (auto depS : this->stream->dependentStreams) {
+      const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
+      if (!depDynS.offloadedToCache) {
+        allDepSFloated = false;
+        break;
+      }
+    }
+    if (allDepSFloated) {
+      return false;
+    }
+  }
+  return true;
+}
+
 StreamElement *DynamicStream::getElementByIdx(uint64_t elementIdx) const {
   for (auto element = this->tail->next; element != nullptr;
        element = element->next) {

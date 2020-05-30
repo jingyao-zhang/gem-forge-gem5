@@ -311,8 +311,9 @@ bool MLCStreamEngine::receiveOffloadStreamRequest(
 
 void MLCStreamEngine::receiveOffloadStreamRequestHit(
     const DynamicStreamSliceId &sliceId) {
-  assert(this->isStreamOffloaded(sliceId) &&
-         "Should be an offloaded stream request.");
+  if (!this->isStreamOffloaded(sliceId)) {
+    panic(MLC_SLICE_MSG(sliceId, "Receive hit request, but not floated."));
+  }
   auto stream = this->getMLCDynamicStreamFromSlice(sliceId);
   stream->receiveStreamRequestHit(sliceId);
 }

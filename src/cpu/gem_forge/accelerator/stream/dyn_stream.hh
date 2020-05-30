@@ -95,6 +95,11 @@ struct DynamicStream {
 
   ~DynamicStream();
 
+  /**
+   * Should the CoreSE try to issue for the data.
+   */
+  bool shouldCoreSEIssue() const;
+
   Cycles getAvgTurnAroundCycle() const { return this->avgTurnAroundCycle; }
   int getNumLateElement() const { return this->numLateElement; }
 

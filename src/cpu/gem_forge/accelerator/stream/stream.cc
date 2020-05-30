@@ -497,7 +497,10 @@ int Stream::setupFormalParams(const InputVecT *inputVec,
       formalParam.isInvariant = false;
       formalParam.param.baseStreamId = arg.stream_id();
     } else {
-      assert(inputIdx < inputVec->size() && "Overflow of inputVec.");
+      if (inputIdx >= inputVec->size()) {
+        S_PANIC(this, "Missing input for %s: Given %llu, inputIdx %d.",
+                info.name(), inputVec->size(), inputIdx);
+      }
       // hack("Find invariant param #%d, val %llu.\n",
       // formalParams.size(),
       //      inputVec->at(inputIdx));
@@ -819,7 +822,7 @@ void Stream::allocateElement(StreamElement *newElement) {
   S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
 }
 
-StreamElement *Stream::releaseElementStepped() {
+StreamElement *Stream::releaseElementStepped(bool isEnd) {
 
   /**
    * This function performs a normal release, i.e. release a stepped
@@ -887,8 +890,15 @@ StreamElement *Stream::releaseElementStepped() {
     // this->handleMergedPredicate(dynS, releaseElement);
   }
 
-  // Handle store func without load stream.
-  this->handleStoreFunc(dynS, releaseElement);
+  /**
+   * Handle store func without load stream.
+   * This is tricky because the is not used by the core, we want
+   * to distinguish the last element stepped by StreamEnd, which
+   * should not perform computation.
+   */
+  if (!isEnd) {
+    this->handleStoreFunc(dynS, releaseElement);
+  }
 
   dynS.tail->next = releaseElement->next;
   if (dynS.stepped == releaseElement) {
@@ -969,28 +979,41 @@ void Stream::handleStoreFunc(const DynamicStream &dynS,
     // The store func is called at the load stream, not me.
     return;
   }
-  assert(element->isAddrReady && "StoreFunc with element not addr ready.");
-  // First turn the FormalParams to ActualParams, except the last atomic
+  if (dynS.offloadedToCache) {
+    // This stream is offloaded to cache.
+    return;
+  }
+  if (!element->isAddrReady) {
+    S_ELEMENT_PANIC(element, "StoreFunc should have addr ready.");
+  }
+  S_ELEMENT_DPRINTF(element, "Send AtomicPacket.\n");
+  DynamicStreamParamV params =
+      this->setupAtomicRMWParamV(dynS.storeFormalParams);
+  // Create the AtomicOp, which will be released in ~Request.
+  auto atomicOp = new StreamAtomicOp(this, element->FIFOIdx, element->size,
+                                     params, dynS.storeCallback);
+  this->se->sendAtomicPacket(element, atomicOp);
+}
+
+DynamicStreamParamV Stream::setupAtomicRMWParamV(
+    const DynamicStreamFormalParamV formalParams) const {
+  // Turn the FormalParams to ActualParams, except the last atomic
   // operand.
-  assert(!dynS.storeFormalParams.empty() &&
-         "AtomicOp has at least one operand.");
+  assert(!formalParams.empty() && "AtomicOp has at least one operand.");
   DynamicStreamParamV params;
-  for (int i = 0; i + 1 < dynS.storeFormalParams.size(); ++i) {
-    const auto &formalParam = dynS.storeFormalParams.at(i);
+  for (int i = 0; i + 1 < formalParams.size(); ++i) {
+    const auto &formalParam = formalParams.at(i);
     assert(formalParam.isInvariant &&
            "Can only handle invariant params for AtomicOp.");
     params.push_back(formalParam.param.invariant);
   }
   // Push the final atomic operand as a dummy 0.
-  const auto &formalAtomicParam = dynS.storeFormalParams.back();
+  const auto &formalAtomicParam = formalParams.back();
   assert(!formalAtomicParam.isInvariant && "AtomicOperand should be a stream.");
   assert(formalAtomicParam.param.baseStreamId == this->staticId &&
          "AtomicOperand should be myself.");
   params.push_back(0);
-  // Create the AtomicOp, which will be released in ~Request.
-  auto atomicOp = new StreamAtomicOp(this, element->FIFOIdx, element->size,
-                                     params, dynS.storeCallback);
-  this->se->sendAtomicPacket(element, atomicOp);
+  return params;
 }
 
 void Stream::handleMergedPredicate(const DynamicStream &dynS,

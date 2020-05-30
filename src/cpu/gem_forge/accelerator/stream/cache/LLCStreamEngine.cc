@@ -8,6 +8,7 @@
 #include "mem/ruby/protocol/StreamMigrateRequestMsg.hh"
 #include "mem/simple_mem.hh"
 
+#include "cpu/gem_forge/accelerator/stream/stream_atomic_op.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
@@ -210,6 +211,7 @@ void LLCStreamEngine::receiveStreamElementDataVec(
 void LLCStreamEngine::receiveStreamElementData(
     const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
     const DataBlock &storeValueBlock) {
+  LLC_SLICE_DPRINTF(sliceId, "Received element data.\n");
   // Search through the direct streams.
   LLCDynamicStream *stream = nullptr;
   for (auto S : this->streams) {
@@ -241,24 +243,34 @@ void LLCStreamEngine::receiveStreamElementData(
   }
 
   /**
-   * Check if this is a StreamStore stream. If so, we send ack back to the core.
+   * Check if this is a Store/AtomicRMW stream. If so, we send ack back to the
+   * core.
    */
   auto S = stream->getStaticStream();
-  if (S->isMerged() && S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
-    // Perform the store.
+  auto streamType = S->getStreamType();
+  if (streamType == ::LLVM::TDG::StreamInfo_Type_ST ||
+      streamType == ::LLVM::TDG::StreamInfo_Type_AT) {
+    // Perform the operation.
     auto elementSize = S->getElementSize();
     auto elementVAddr = sliceId.vaddr;
     Addr elementPAddr;
     assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
-           "Failed to translate vaddr for LLCStoreStream.");
-    // Extract the store value.
-    auto lineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
-    auto storeValue = storeValueBlock.getData(lineOffset, elementSize);
-    this->performStore(elementPAddr, elementSize, storeValue);
-    LLC_SLICE_DPRINTF_(
-        LLCRubyStreamStore, sliceId,
-        "StreamStore done with value %llu, send back StreamAck.\n",
-        *reinterpret_cast<const uint64_t *>(storeValue));
+           "Fault on vaddr of LLCStore/AtomicRMWStream.");
+    if (streamType == ::LLVM::TDG::StreamInfo_Type_ST) {
+      // Extract the store value.
+      auto lineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
+      auto storeValue = storeValueBlock.getData(lineOffset, elementSize);
+      this->performStore(elementPAddr, elementSize, storeValue);
+      LLC_SLICE_DPRINTF_(
+          LLCRubyStreamStore, sliceId,
+          "StreamStore done with value %llu, send back StreamAck.\n",
+          *reinterpret_cast<const uint64_t *>(storeValue));
+    } else {
+      // Very limited AtomicRMW support.
+      LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                         "Perform StreamAtomicRMW.\n");
+      this->performStreamAtomicRMW(stream, sliceId);
+    }
 
     this->issueStreamAckToMLC(sliceId);
     if (!this->requestQueue.empty()) {
@@ -867,10 +879,13 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
 
     // Push to the request queue.
-    auto reqType =
-        (stream->getStaticStream()->hasCoreUser() && !stream->isPseudoOffload())
-            ? CoherenceRequestType_GETU
-            : CoherenceRequestType_GETH;
+    auto reqType = CoherenceRequestType_GETH;
+    auto SS = stream->getStaticStream();
+    if (SS->hasCoreUser() && !stream->isPseudoOffload()) {
+      reqType = CoherenceRequestType_GETU;
+    } else if (SS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT) {
+      reqType = CoherenceRequestType_STREAM_STORE;
+    }
     if (reqType == CoherenceRequestType_GETU) {
       statistic.numLLCSentSlice++;
       stream->getStaticStream()->se->numLLCSentSlice++;
@@ -1035,8 +1050,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
-  if (IS->isMerged() && IS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
-    // This is a merged store, we need to issue STREAM_STORE request.
+  auto ISType = IS->getStreamType();
+  if (ISType == ::LLVM::TDG::StreamInfo_Type_ST ||
+      ISType == ::LLVM::TDG::StreamInfo_Type_AT) {
+    // This is a store/atomicrmw, we need to issue STREAM_STORE request.
     assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
     if (dynIS->hasTotalTripCount()) {
       assert(elementIdx < dynIS->getTotalTripCount() &&
@@ -1181,9 +1198,9 @@ LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
   auto S = dynS->getStaticStream();
   auto cpuDelegator = S->getCPUDelegator();
   auto tc = cpuDelegator->getSingleThreadContext();
-  RequestPtr req(new Request(paddrLine, sliceId.getSize(), 0,
-                             cpuDelegator->dataMasterId(), 0 /* InstSeqNum */,
-                             0 /* contextId */));
+  RequestPtr req = std::make_shared<Request>(
+      paddrLine, sliceId.getSize(), 0, cpuDelegator->dataMasterId(),
+      0 /* InstSeqNum */, 0 /* contextId */);
   // Set the vaddrLine as this is what we want to translate.
   req->setVirt(vaddrLine);
   // Simply always read request, since this is a fake request.
@@ -1300,6 +1317,7 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
     auto mlcSE = mlcController->getMLCStreamEngine();
     // StreamAck is also disguised as StreamData.
     mlcSE->receiveStreamData(*msg);
+    LLC_SLICE_DPRINTF(sliceId, "Send ideal StreamAck to MLC.\n");
   } else {
     /**
      * This should match with LLC controller l2_response_latency.
@@ -1309,6 +1327,7 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
     this->streamResponseMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
+    LLC_SLICE_DPRINTF(sliceId, "Send StreamAck to MLC.\n");
   }
 }
 
@@ -1513,7 +1532,8 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
           } else {
             // This element is predicated off.
             predS->statistic.numLLCPredNSlice++;
-            if (predS->isMerged() && predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
+            if (predS->isMerged() &&
+                predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
               /**
                * This is a predicated off merged store, we have to send
                * STREAM_ACK. We still have to set the vaddr as the MLC
@@ -1673,10 +1693,78 @@ void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
   assert((paddr % RubySystem::getBlockSizeBytes()) + size <=
              RubySystem::getBlockSizeBytes() &&
          "Can not store to multi-line elements.");
-  RequestPtr req(new Request(paddr, size, 0, 0 /* MasterId */,
-                             0 /* InstSeqNum */, 0 /* contextId */));
+  RequestPtr req = std::make_shared<Request>(
+      paddr, size, 0, 0 /* MasterId */, 0 /* InstSeqNum */, 0 /* contextId */);
   PacketPtr pkt = Packet::createWrite(req);
   pkt->dataStaticConst(value);
   rubySystem->getPhysMem()->functionalAccess(pkt);
+  delete pkt;
+}
+
+void LLCStreamEngine::performStreamAtomicRMW(
+    LLCDynamicStreamPtr stream, const DynamicStreamSliceId &sliceId) {
+  assert(sliceId.getNumElements() == 1 &&
+         "Can not support multi-element atomic op.");
+  auto S = stream->getStaticStream();
+  auto elementSize = S->getElementSize();
+
+  /**
+   * Hack: Due to my stupid implementation, for sliced stream, sliceId.vaddr
+   * is always line address. To get the real element vaddr, I have to be
+   * careful.
+   */
+  auto elementVAddr = sliceId.vaddr;
+  if (S->isDirectMemStream()) {
+    elementVAddr = stream->slicedStream.getElementVAddr(sliceId.lhsElementIdx);
+  }
+  Addr elementPAddr;
+  assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
+         "Fault on vaddr of LLCAtomicRMWStream.");
+
+  auto rubySystem = this->controller->params()->ruby_system;
+  assert(rubySystem->getAccessBackingStore() &&
+         "Do not support atomicrmw stream without BackingStore.");
+  assert(elementSize <= 8 && "At most 8 byte data.");
+  assert((elementPAddr % RubySystem::getBlockSizeBytes()) + elementSize <=
+             RubySystem::getBlockSizeBytes() &&
+         "Can not atomicrmw to multi-line elements.");
+
+  /**
+   * Create the atomic op.
+   */
+  const auto &formalParams = stream->configData.storeFormalParams;
+  auto params = S->setupAtomicRMWParamV(formalParams);
+  FIFOEntryIdx entryIdx(sliceId.streamId);
+  entryIdx.entryIdx = sliceId.lhsElementIdx;
+  auto atomicOp = new StreamAtomicOp(S, entryIdx, elementSize, params,
+                                     stream->configData.storeCallback);
+
+  /**
+   * Create the packet.
+   */
+  int asid = 0;
+  MasterID masterId = 0;
+  Addr pc = 0;
+  int contextId = 0;
+
+  Request::Flags flags;
+  flags.set(Request::ATOMIC_RETURN_OP);
+  RequestPtr req =
+      std::make_shared<Request>(asid, elementVAddr, elementSize, flags,
+                                masterId, pc, contextId, atomicOp);
+  req->setPaddr(elementPAddr);
+  PacketPtr pkt = Packet::createWrite(req);
+  // Fake some data.
+  uint8_t *pkt_data = new uint8_t[req->getSize()];
+  pkt->dataDynamic(pkt_data);
+
+  /**
+   * Send to backing store to perform atomic op.
+   */
+  rubySystem->getPhysMem()->functionalAccess(pkt);
+  LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                     "Functional accessed pkt, isWrite %d.\n", pkt->isWrite());
+
+  // Don't forget to release the packet.
   delete pkt;
 }

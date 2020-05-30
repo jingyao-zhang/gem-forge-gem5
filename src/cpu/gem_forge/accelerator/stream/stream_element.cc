@@ -189,15 +189,14 @@ bool StreamElement::isLastElement() const {
 bool StreamElement::shouldIssue() const {
   /**
    * So far there are two cases when we do not issue requests:
-   * 1. LastElement that only uses to deal with StreamEnd.
-   * 2. Offloaded streams with no core user.
+   * 1. DynamicStream says so.
+   * 2. LastElement that only uses to deal with StreamEnd.
    */
-  if (this->isLastElement()) {
-    // Last element should never be issued.
+  if (!this->dynS->shouldCoreSEIssue()) {
     return false;
   }
-  if (!this->stream->hasCoreUser() && this->dynS->offloadedToCache) {
-    // If this has no core user and is offloaded to cache, we should not issue.
+  if (this->isLastElement()) {
+    // Last element should never be issued.
     return false;
   }
   return true;
