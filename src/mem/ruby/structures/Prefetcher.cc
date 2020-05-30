@@ -307,6 +307,8 @@ Prefetcher::initializeStream(Addr address, int stride,
     // create a number of initial prefetches for this stream
     Addr page_addr = pageAddress(mystream->m_address);
     Addr line_addr = makeLineAddress(mystream->m_address);
+    DPRINTF(RubyPrefetcher, "Initialize stream, line %#x, page %#x, stride %d.\n",
+        line_addr, page_addr, stride);
 
     // insert a number of prefetches into the prefetch table
     for (int k = 0; k < m_num_startup_pfs; k++) {
@@ -319,6 +321,16 @@ Prefetcher::initializeStream(Addr address, int stride,
                 mystream->m_is_valid = false;
                 return;
             }
+        }
+        /**
+         * ! GemForge
+         * When cross-page enabled, we have to make sure this is a valid address.
+         */
+        auto sys = reinterpret_cast<const Params *>(params())->sys;
+        if (!sys->isMemAddr(line_addr)) {
+            DPRINTF(RubyPrefetcher, "NonMem prefetching line %#x\n", line_addr);
+            mystream->m_is_valid = false;
+            return;
         }
 
         // launch prefetch

@@ -225,5 +225,7 @@ Network::addressToNodeID(Addr addr, MachineType mtype)
             }
         }
     }
+    warn("Failed to map address %#x to machine %s.\n", addr,
+        MachineType_to_string(mtype));
     return MachineType_base_count(mtype);
 }
