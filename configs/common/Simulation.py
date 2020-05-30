@@ -36,30 +36,31 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Lisa Hsu
 
 from __future__ import print_function
 from __future__ import absolute_import
 
+import six
 import sys
 from os import getcwd
 from os.path import join as joinpath
 
-from . import CpuConfig
-from . import BPConfig
-from . import MemConfig
+from common import CpuConfig
+from common import ObjectList
 
 import m5
 from m5.defines import buildEnv
 from m5.objects import *
 from m5.util import *
 
+if six.PY3:
+    long = int
+
 addToPath('../common')
 
 def getCPUClass(cpu_type):
     """Returns the required cpu class and the mode of operation."""
-    cls = CpuConfig.get(cpu_type)
+    cls = ObjectList.cpu_list.get(cpu_type)
     return cls, cls.memory_mode()
 
 def setCPUClass(options):
@@ -97,7 +98,7 @@ def setCPUClass(options):
 def setMemClass(options):
     """Returns a memory controller class."""
 
-    return MemConfig.get(options.mem_type)
+    return ObjectList.mem_list.get(options.mem_type)
 
 def setWorkCountOptions(system, options):
     if options.work_item_id != None:
@@ -481,11 +482,11 @@ def run(options, root, testsys, cpu_class):
             if options.checker:
                 switch_cpus[i].addCheckerCpu()
             if options.bp_type:
-                bpClass = BPConfig.get(options.bp_type)
+                bpClass = ObjectList.bp_list.get(options.bp_type)
                 switch_cpus[i].branchPred = bpClass()
             if options.indirect_bp_type:
-                IndirectBPClass = \
-                    BPConfig.get_indirect(options.indirect_bp_type)
+                IndirectBPClass = ObjectList.indirect_bp_list.get(
+                    options.indirect_bp_type)
                 switch_cpus[i].branchPred.indirectBranchPred = \
                     IndirectBPClass()
 

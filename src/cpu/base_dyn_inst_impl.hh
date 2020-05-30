@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
  */
 
 #ifndef __CPU_BASE_DYN_INST_IMPL_HH__
@@ -110,9 +108,6 @@ BaseDynInst<Impl>::initVars()
 
     // Eventually make this a parameter.
     threadNumber = 0;
-
-    // Also make this a parameter, or perhaps get it from xc or cpu.
-    asid = 0;
 
     // Initialize the fault to be NoFault.
     fault = NoFault;

@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Radhika Jagtap
- *          Andreas Hansson
- *          Thomas Grass
  */
 
 #ifndef __CPU_TRACE_TRACE_CPU_HH__
@@ -605,9 +601,6 @@ class TraceCPU : public BaseCPU
 
             /** The virtual address for the request if any */
             Addr virtAddr;
-
-            /** The address space id which is set if the virtual address is set */
-            uint32_t asid;
 
             /** Size of request if any */
             uint32_t size;

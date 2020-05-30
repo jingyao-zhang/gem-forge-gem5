@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Jairo Balart
  */
 
 #include "dev/arm/gic_v3_redistributor.hh"
@@ -46,10 +44,9 @@
 #include "debug/GIC.hh"
 #include "dev/arm/gic_v3_cpu_interface.hh"
 #include "dev/arm/gic_v3_distributor.hh"
-#include "mem/fs_translating_port_proxy.hh"
 
 const AddrRange Gicv3Redistributor::GICR_IPRIORITYR(SGI_base + 0x0400,
-                                                    SGI_base + 0x041f);
+                                                    SGI_base + 0x0420);
 
 Gicv3Redistributor::Gicv3Redistributor(Gicv3 * gic, uint32_t cpu_id)
     : gic(gic),
@@ -420,22 +417,25 @@ Gicv3Redistributor::write(Addr addr, uint64_t data, size_t size,
       }
 
       case GICR_WAKER: // Wake Register
+      {
         if (!distributor->DS && !is_secure_access) {
             // RAZ/WI for non-secure accesses
             return;
         }
 
-        if (not peInLowPowerState and
-            (data & GICR_WAKER_ProcessorSleep)) {
+        bool pe_was_low_power = peInLowPowerState;
+        peInLowPowerState = data & GICR_WAKER_ProcessorSleep;
+        if (!pe_was_low_power && peInLowPowerState) {
             DPRINTF(GIC, "Gicv3Redistributor::write(): "
                     "PE entering in low power state\n");
-        } else if (peInLowPowerState and
-                   not(data & GICR_WAKER_ProcessorSleep)) {
+            updateDistributor();
+        } else if (pe_was_low_power && !peInLowPowerState) {
             DPRINTF(GIC, "Gicv3Redistributor::write(): powering up PE\n");
+            cpuInterface->deassertWakeRequest();
+            updateDistributor();
         }
-
-        peInLowPowerState = data & GICR_WAKER_ProcessorSleep;
         break;
+      }
 
       case GICR_IGROUPR0: // Interrupt Group Register 0
         if (!distributor->DS && !is_secure_access) {
@@ -579,6 +579,9 @@ Gicv3Redistributor::write(Addr addr, uint64_t data, size_t size,
 
         break;
 
+      case GICR_ICFGR0: // SGI Configuration Register
+        // WI
+        return;
       case GICR_ICFGR1: { // PPI Configuration Register
           int first_intid = Gicv3::SGI_MAX;
 
@@ -850,7 +853,14 @@ Gicv3Redistributor::update()
         }
     }
 
-    cpuInterface->update();
+    if (peInLowPowerState) {
+        if (cpuInterface->havePendingInterrupts()) {
+            cpuInterface->assertWakeRequest();
+            cpuInterface->clearPendingInterrupts();
+        }
+    } else {
+        cpuInterface->update();
+    }
 }
 
 uint8_t

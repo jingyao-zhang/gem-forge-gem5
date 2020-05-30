@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
- *          Stephen Hines
  */
 
 #ifndef __ARCH_ARM_INSTS_PSEUDO_HH__
@@ -60,7 +57,7 @@ class DecoderFaultInst : public ArmStaticInst
                   Trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -86,7 +83,7 @@ class FailUnimplemented : public ArmStaticInst
                   Trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -116,7 +113,7 @@ class WarnUnimplemented : public ArmStaticInst
                   Trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**

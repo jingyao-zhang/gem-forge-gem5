@@ -34,8 +34,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 let {{
     svcCode = '''
@@ -188,7 +186,7 @@ let {{
     hltCode = '''
     ThreadContext *tc = xc->tcBase();
     if (ArmSystem::haveSemihosting(tc) && imm == 0xF000) {
-        X0 = ArmSystem::callSemihosting64(tc, X0 & mask(32), X1);
+        ArmSystem::callSemihosting64(tc);
     } else {
         // HLT instructions aren't implemented, so treat them as undefined
         // instructions.
@@ -199,7 +197,7 @@ let {{
     '''
 
     hltIop = InstObjParams("hlt", "Hlt64", "ImmOp64",
-                           hltCode, ["IsNonSpeculative"])
+                           hltCode, ["IsNonSpeculative", "IsSerializeAfter"])
     header_output += ImmOp64Declare.subst(hltIop)
     decoder_output += SemihostConstructor64.subst(hltIop)
     exec_output += BasicExecute.subst(hltIop)

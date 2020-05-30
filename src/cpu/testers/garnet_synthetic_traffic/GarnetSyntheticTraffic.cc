@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Tushar Krishna
  */
 
 #include "cpu/testers/garnet_synthetic_traffic/GarnetSyntheticTraffic.hh"
@@ -298,7 +296,7 @@ GarnetSyntheticTraffic::generatePkt()
         requestType = MemCmd::ReadReq;
         flags.set(Request::INST_FETCH);
         req = std::make_shared<Request>(
-            0, 0x0, access_size, flags, masterId, 0x0, 0);
+            0x0, access_size, flags, masterId, 0x0, 0);
         req->setPaddr(paddr);
     } else {  // if (injReqType == 2)
         // generate packet for virtual network 2

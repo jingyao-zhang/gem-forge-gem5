@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Arm Limited
+ * Copyright (c) 2019-2020 Arm Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #include "base/statistics.hh"
@@ -56,6 +54,7 @@
 #include "base/str.hh"
 #include "base/time.hh"
 #include "base/trace.hh"
+#include "sim/root.hh"
 
 using namespace std;
 
@@ -579,6 +578,17 @@ reset()
         resetHandler();
     else
         fatal("No registered Stats::reset handler");
+}
+
+const Info *
+resolve(const std::string &name)
+{
+    const auto &it = nameMap().find(name);
+    if (it != nameMap().cend()) {
+        return it->second;
+    } else {
+        return Root::root()->resolveStat(name);
+    }
 }
 
 void

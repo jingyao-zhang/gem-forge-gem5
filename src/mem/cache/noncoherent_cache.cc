@@ -37,14 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Erik Hallnor
- *          Dave Greene
- *          Nathan Binkert
- *          Steve Reinhardt
- *          Ron Dreslinski
- *          Andreas Sandberg
- *          Nikos Nikoleris
  */
 
 /**
@@ -278,7 +270,7 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
                 (transfer_offset ? pkt->payloadDelay : 0);
 
             assert(tgt_pkt->req->masterId() < system->maxMasters());
-            missLatency[tgt_pkt->cmdToIndex()][tgt_pkt->req->masterId()] +=
+            stats.cmdStats(tgt_pkt).missLatency[tgt_pkt->req->masterId()] +=
                 completion_time - target.recvTime;
 
             tgt_pkt->makeTimingResponse();

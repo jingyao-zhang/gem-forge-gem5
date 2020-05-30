@@ -33,9 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Giacomo Gabrielli
  */
 
 #ifndef __ARCH_ARM_TABLE_WALKER_HH__
@@ -755,6 +752,9 @@ class TableWalker : public ClockedObject
 
         /** If the access comes from the secure state. */
         bool isSecure;
+
+        /** True if table walks are uncacheable (for table descriptors) */
+        bool isUncacheable;
 
         /** Helper variables used to implement hierarchical access permissions
          * when the long-desc. format is used (LPAE only) */

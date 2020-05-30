@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Stan Czerniawski
  */
 
 #include "dev/arm/smmu_v3_transl.hh"
@@ -226,7 +224,10 @@ SMMUTranslationProcess::main(Yield &yield)
         hazardIdRelease();
 
         if (tr.fault != FAULT_NONE)
-            panic("fault\n");
+            panic("Translation Fault (addr=%#x, size=%#x, sid=%d, ssid=%d, "
+                    "isWrite=%d, isPrefetch=%d, isAtsRequest=%d)\n",
+                    request.addr, request.size, request.sid, request.ssid,
+                    request.isWrite, request.isPrefetch, request.isAtsRequest);
 
         completeTransaction(yield, tr);
     }
@@ -803,7 +804,7 @@ SMMUTranslationProcess::walkStage1And2(Yield &yield, Addr addr,
         tr = combineTranslations(tr, s2tr);
     }
 
-    walkCacheUpdate(yield, addr, tr.addrMask, tr.addr,
+    walkCacheUpdate(yield, addr, tr.addrMask, walkPtr,
                     1, level, true, tr.writable);
 
     return tr;

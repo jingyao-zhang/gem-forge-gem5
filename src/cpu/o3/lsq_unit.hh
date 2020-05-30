@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014,2017-2018 ARM Limited
+ * Copyright (c) 2012-2014,2017-2018,2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -37,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Korey Sewell
  */
 
 #ifndef __CPU_O3_LSQ_UNIT_HH__
@@ -54,7 +51,6 @@
 #include "arch/generic/vec_reg.hh"
 #include "arch/isa_traits.hh"
 #include "arch/locked_mem.hh"
-#include "arch/mmapped_ipr.hh"
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/timebuf.hh"
@@ -208,6 +204,14 @@ class LSQUnit
         /** @} */
     };
     using LQEntry = LSQEntry;
+
+    /** Coverage of one address range with another */
+    enum class AddrRangeCoverage
+    {
+        PartialAddrRangeCoverage, /* Two ranges partly overlap */
+        FullAddrRangeCoverage, /* One range fully covers another */
+        NoAddrRangeCoverage /* Two ranges are disjoint */
+    };
 
   public:
     using LoadQueue = CircularQueue<LQEntry>;
@@ -663,7 +667,7 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
         load_inst->recordResult(true);
     }
 
-    if (req->mainRequest()->isMmappedIpr()) {
+    if (req->mainRequest()->isLocalAccess()) {
         assert(!load_inst->memData);
         load_inst->memData = new uint8_t[MaxDataBytes];
 
@@ -672,7 +676,7 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
 
         main_pkt->dataStatic(load_inst->memData);
 
-        Cycles delay = req->handleIprRead(thread, main_pkt);
+        Cycles delay = req->mainRequest()->localAccessor(thread, main_pkt);
 
         WritebackEvent *wb = new WritebackEvent(load_inst, main_pkt, this);
         cpu->schedule(wb, cpu->clockEdge(delay));
@@ -733,6 +737,7 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
             const auto st_s_line = st_s & line_mask;
             const auto st_e_line = (st_e + line_size - 1) & line_mask;
             bool line_overlap = !(req_e_line <= st_s_line || st_e_line <= req_s_line);
+            auto coverage = AddrRangeCoverage::NoAddrRangeCoverage;
 
             // If the store entry is not atomic (atomic does not have valid
             // data), the store has all of the data needed, and
@@ -742,6 +747,35 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
                 store_has_lower_limit && store_has_upper_limit &&
                 !req->mainRequest()->isLLSC()) {
 
+                const auto& store_req = store_it->request()->mainRequest();
+                coverage = store_req->isMasked() ?
+                    AddrRangeCoverage::PartialAddrRangeCoverage :
+                    AddrRangeCoverage::FullAddrRangeCoverage;
+            } else if (
+                // This is the partial store-load forwarding case where a store
+                // has only part of the load's data and the load isn't LLSC
+                (!req->mainRequest()->isLLSC() &&
+                 ((store_has_lower_limit && lower_load_has_store_part) ||
+                  (store_has_upper_limit && upper_load_has_store_part) ||
+                  (lower_load_has_store_part && upper_load_has_store_part))) ||
+                // The load is LLSC, and the store has all or part of the
+                // load's data
+                (req->mainRequest()->isLLSC() &&
+                 ((store_has_lower_limit || upper_load_has_store_part) &&
+                  (store_has_upper_limit || lower_load_has_store_part))) ||
+                // The store entry is atomic and has all or part of the load's
+                // data
+                (store_it->instruction()->isAtomic() &&
+                 ((store_has_lower_limit || upper_load_has_store_part) &&
+                  (store_has_upper_limit || lower_load_has_store_part))) ||
+                // The store is LockedRMW and goes to the same cache line of the load.
+                (store_it->instruction()->isLockedRMW() && line_overlap)) {
+
+                coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                block_on_store = true;
+            }
+
+            if (coverage == AddrRangeCoverage::FullAddrRangeCoverage) {
                 // Get shift amount for offset into the store's data.
                 int shift_amt = req->mainRequest()->getVaddr() -
                     store_it->instruction()->effAddr;
@@ -787,27 +821,6 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
                 ++lsqForwLoads;
 
                 return NoFault;
-            } else if (
-                // This is the partial store-load forwarding case where a store
-                // has only part of the load's data and the load isn't LLSC
-                (!req->mainRequest()->isLLSC() &&
-                 ((store_has_lower_limit && lower_load_has_store_part) ||
-                  (store_has_upper_limit && upper_load_has_store_part) ||
-                  (lower_load_has_store_part && upper_load_has_store_part))) ||
-                // The load is LLSC, and the store has all or part of the
-                // load's data
-                (req->mainRequest()->isLLSC() &&
-                 ((store_has_lower_limit || upper_load_has_store_part) &&
-                  (store_has_upper_limit || lower_load_has_store_part))) ||
-                // The store entry is atomic and has all or part of the load's
-                // data
-                (store_it->instruction()->isAtomic() &&
-                 ((store_has_lower_limit || upper_load_has_store_part) &&
-                  (store_has_upper_limit || lower_load_has_store_part))) ||
-                // The store is LockedRMW and goes to the same cache line of the load.
-                (store_it->instruction()->isLockedRMW() && line_overlap))
-            {
-                block_on_store = true;
             }
         } else if (store_size == 0) {
           // This store is not ready? Block if this is LockedRMW?

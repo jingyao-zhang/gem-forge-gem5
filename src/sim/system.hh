@@ -37,11 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Lisa Hsu
- *          Nathan Binkert
- *          Rick Strong
  */
 
 #ifndef __SYSTEM_HH__
@@ -53,9 +48,11 @@
 #include <vector>
 
 #include "arch/isa_traits.hh"
+#include "base/loader/memory_image.hh"
 #include "base/loader/symtab.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
+#include "cpu/pc_event.hh"
 #include "enums/MemoryMode.hh"
 #include "mem/mem_master.hh"
 #include "mem/physical.hh"
@@ -66,22 +63,13 @@
 #include "sim/redirect_path.hh"
 #include "sim/se_signal.hh"
 #include "sim/sim_object.hh"
-
-/**
- * To avoid linking errors with LTO, only include the header if we
- * actually have the definition.
- */
-#if THE_ISA != NULL_ISA
-#include "cpu/pc_event.hh"
-
-#endif
+#include "sim/workload.hh"
 
 class BaseRemoteGDB;
 class KvmVM;
-class ObjectFile;
 class ThreadContext;
 
-class System : public SimObject
+class System : public SimObject, public PCEventScope
 {
   private:
 
@@ -106,15 +94,13 @@ class System : public SimObject
         { panic("SystemPort does not expect retry!\n"); }
     };
 
+    std::list<PCEvent *> liveEvents;
     SystemPort _systemPort;
 
   public:
 
-    /**
-     * After all objects have been created and all ports are
-     * connected, check that the system port is connected.
-     */
     void init() override;
+    void startup() override;
 
     /**
      * Get a reference to the system port that can be used by
@@ -193,17 +179,21 @@ class System : public SimObject
      */
     unsigned int cacheLineSize() const { return _cacheLineSize; }
 
-#if THE_ISA != NULL_ISA
-    PCEventQueue pcEventQueue;
-#endif
-
     std::vector<ThreadContext *> threadContexts;
-    const bool multiThread;
+    ThreadContext *findFreeContext();
 
-    ThreadContext *getThreadContext(ContextID tid)
+    ThreadContext *
+    getThreadContext(ContextID tid) const
     {
         return threadContexts[tid];
     }
+
+    const bool multiThread;
+
+    using SimObject::schedule;
+
+    bool schedule(PCEvent *event) override;
+    bool remove(PCEvent *event) override;
 
     unsigned numContexts() const { return threadContexts.size(); }
 
@@ -219,38 +209,8 @@ class System : public SimObject
      * boot.*/
     PortProxy physProxy;
 
-    /** kernel symbol table */
-    SymbolTable *kernelSymtab;
-
-    /** Object pointer for the kernel code */
-    ObjectFile *kernel;
-
-    /** Additional object files */
-    std::vector<ObjectFile *> kernelExtras;
-
-    /** Beginning of kernel code */
-    Addr kernelStart;
-
-    /** End of kernel code */
-    Addr kernelEnd;
-
-    /** Entry point in the kernel to start at */
-    Addr kernelEntry;
-
-    /** Mask that should be anded for binary/symbol loading.
-     * This allows one two different OS requirements for the same ISA to be
-     * handled.  Some OSes are compiled for a virtual address and need to be
-     * loaded into physical memory that starts at address 0, while other
-     * bare metal tools generate images that start at address 0.
-     */
-    Addr loadAddrMask;
-
-    /** Offset that should be used for binary/symbol loading.
-     * This further allows more flexibility than the loadAddrMask allows alone
-     * in loading kernels and similar. The loadAddrOffset is applied after the
-     * loadAddrMask.
-     */
-    Addr loadAddrOffset;
+    /** OS kernel */
+    Workload *workload = nullptr;
 
   public:
     /**
@@ -286,6 +246,19 @@ class System : public SimObject
      * Get the architecture.
      */
     Arch getArch() const { return Arch::TheISA; }
+
+    /**
+     * Get the guest byte order.
+     */
+    ByteOrder
+    getGuestByteOrder() const
+    {
+#if THE_ISA != NULL_ISA
+        return TheISA::GuestByteOrder;
+#else
+        panic("The NULL ISA has no endianness.");
+#endif
+    }
 
      /**
      * Get the page bytes for the ISA.
@@ -466,96 +439,6 @@ class System : public SimObject
 
     void workItemEnd(uint32_t tid, uint32_t workid);
 
-    /**
-     * Fix up an address used to match PCs for hooking simulator
-     * events on to target function executions.  See comment in
-     * system.cc for details.
-     */
-    virtual Addr fixFuncEventAddr(Addr addr)
-    {
-        panic("Base fixFuncEventAddr not implemented.\n");
-    }
-
-    /** @{ */
-    /**
-     * Add a function-based event to the given function, to be looked
-     * up in the specified symbol table.
-     *
-     * The ...OrPanic flavor of the method causes the simulator to
-     * panic if the symbol can't be found.
-     *
-     * @param symtab Symbol table to use for look up.
-     * @param lbl Function to hook the event to.
-     * @param desc Description to be passed to the event.
-     * @param args Arguments to be forwarded to the event constructor.
-     */
-    template <class T, typename... Args>
-    T *addFuncEvent(const SymbolTable *symtab, const char *lbl,
-                    const std::string &desc, Args... args)
-    {
-        Addr addr M5_VAR_USED = 0; // initialize only to avoid compiler warning
-
-#if THE_ISA != NULL_ISA
-        if (symtab->findAddress(lbl, addr)) {
-            T *ev = new T(&pcEventQueue, desc, fixFuncEventAddr(addr),
-                          std::forward<Args>(args)...);
-            return ev;
-        }
-#endif
-
-        return NULL;
-    }
-
-    template <class T>
-    T *addFuncEvent(const SymbolTable *symtab, const char *lbl)
-    {
-        return addFuncEvent<T>(symtab, lbl, lbl);
-    }
-
-    template <class T, typename... Args>
-    T *addFuncEventOrPanic(const SymbolTable *symtab, const char *lbl,
-                           Args... args)
-    {
-        T *e(addFuncEvent<T>(symtab, lbl, std::forward<Args>(args)...));
-        if (!e)
-            panic("Failed to find symbol '%s'", lbl);
-        return e;
-    }
-    /** @} */
-
-    /** @{ */
-    /**
-     * Add a function-based event to a kernel symbol.
-     *
-     * These functions work like their addFuncEvent() and
-     * addFuncEventOrPanic() counterparts. The only difference is that
-     * they automatically use the kernel symbol table. All arguments
-     * are forwarded to the underlying method.
-     *
-     * @see addFuncEvent()
-     * @see addFuncEventOrPanic()
-     *
-     * @param lbl Function to hook the event to.
-     * @param args Arguments to be passed to addFuncEvent
-     */
-    template <class T, typename... Args>
-    T *addKernelFuncEvent(const char *lbl, Args... args)
-    {
-        return addFuncEvent<T>(kernelSymtab, lbl,
-                               std::forward<Args>(args)...);
-    }
-
-    template <class T, typename... Args>
-    T *addKernelFuncEventOrPanic(const char *lbl, Args... args)
-    {
-        T *e(addFuncEvent<T>(kernelSymtab, lbl,
-                             std::forward<Args>(args)...));
-        if (!e)
-            panic("Failed to find kernel symbol '%s'", lbl);
-        return e;
-    }
-    /** @} */
-
   public:
     std::vector<BaseRemoteGDB *> remoteGDB;
     bool breakpoint();
@@ -566,33 +449,25 @@ class System : public SimObject
   protected:
     Params *_params;
 
+    /**
+     * Range for memory-mapped m5 pseudo ops. The range will be
+     * invalid/empty if disabled.
+     */
+    const AddrRange _m5opRange;
+
   public:
     System(Params *p);
     ~System();
 
-    void initState() override;
-
     const Params *params() const { return (const Params *)_params; }
 
+    /**
+     * Range used by memory-mapped m5 pseudo-ops if enabled. Returns
+     * an invalid/empty range if disabled.
+     */
+    const AddrRange &m5opRange() const { return _m5opRange; }
+
   public:
-
-    /**
-     * Returns the address the kernel starts at.
-     * @return address the kernel starts at
-     */
-    Addr getKernelStart() const { return kernelStart; }
-
-    /**
-     * Returns the address the kernel ends at.
-     * @return address the kernel ends at
-     */
-    Addr getKernelEnd() const { return kernelEnd; }
-
-    /**
-     * Returns the address the entry point to the kernel code.
-     * @return entry point of the kernel code
-     */
-    Addr getKernelEntry() const { return kernelEntry; }
 
     /// Allocate npages contiguous unused physical pages
     /// @return Starting address of first page
@@ -613,7 +488,6 @@ class System : public SimObject
 
   public:
     Counter totalNumInsts;
-    EventQueue instEventQueue;
     std::map<std::pair<uint32_t,uint32_t>, Tick>  lastWorkItemStarted;
     std::map<uint32_t, Stats::Histogram *> workItemTickHistogram;
     std::map<uint32_t, Stats::Scalar *> workItemTickSum;
@@ -644,26 +518,6 @@ class System : public SimObject
     // to be redirected to the faux-filesystem (a duplicate filesystem
     // intended to replace certain files on the host filesystem).
     std::vector<RedirectPath*> redirectPaths;
-
-  protected:
-
-    /**
-     * If needed, serialize additional symbol table entries for a
-     * specific subclass of this system. Currently this is used by
-     * Alpha and MIPS.
-     *
-     * @param os stream to serialize to
-     */
-    virtual void serializeSymtab(CheckpointOut &os) const {}
-
-    /**
-     * If needed, unserialize additional symbol table entries for a
-     * specific subclass of this system.
-     *
-     * @param cp checkpoint to unserialize from
-     * @param section relevant section in the checkpoint
-     */
-    virtual void unserializeSymtab(CheckpointIn &cp) {}
 };
 
 void printSystems();

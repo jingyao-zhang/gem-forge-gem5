@@ -37,8 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Korey Sewell
  */
 
 #ifndef __CPU_O3_LSQ_IMPL_HH__
@@ -687,8 +685,8 @@ template<class Impl>
 Fault
 LSQ<Impl>::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
                        unsigned int size, Addr addr, Request::Flags flags,
-                       uint64_t *res, AtomicOpFunctor *amo_op,
-                       const std::vector<bool>& byteEnable)
+                       uint64_t *res, AtomicOpFunctorPtr amo_op,
+                       const std::vector<bool>& byte_enable)
 {
     // This comming request can be either load, store or atomic.
     // Atomic request has a corresponding pointer to its atomic memory
@@ -717,11 +715,11 @@ LSQ<Impl>::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
                     size, flags, data, res);
         } else {
             req = new SingleDataRequest(&thread[tid], inst, isLoad, addr,
-                    size, flags, data, res, amo_op);
+                    size, flags, data, res, std::move(amo_op));
         }
         assert(req);
-        if (!byteEnable.empty()) {
-            req->_byteEnable = byteEnable;
+        if (!byte_enable.empty()) {
+            req->_byteEnable = byte_enable;
         }
         inst->setRequest();
         req->taskId(cpu->taskId());
@@ -913,7 +911,7 @@ LSQ<Impl>::SplitDataRequest::initiateTranslation()
     Addr final_addr = addrBlockAlign(_addr + _size, cacheLineSize);
     uint32_t size_so_far = 0;
 
-    mainReq = std::make_shared<Request>(_inst->getASID(), base_addr,
+    mainReq = std::make_shared<Request>(base_addr,
                 _size, _flags, _inst->masterId(),
                 _inst->instAddr(), _inst->contextId());
     if (!_byteEnable.empty()) {
@@ -1112,48 +1110,26 @@ LSQ<Impl>::SplitDataRequest::sendPacketToCache()
 }
 
 template<class Impl>
-void
-LSQ<Impl>::SingleDataRequest::handleIprWrite(ThreadContext *thread,
-                                             PacketPtr pkt)
+Cycles
+LSQ<Impl>::SingleDataRequest::handleLocalAccess(
+        ThreadContext *thread, PacketPtr pkt)
 {
-    TheISA::handleIprWrite(thread, pkt);
-}
-
-template<class Impl>
-void
-LSQ<Impl>::SplitDataRequest::handleIprWrite(ThreadContext *thread,
-                                            PacketPtr mainPkt)
-{
-    unsigned offset = 0;
-    for (auto r: _requests) {
-        PacketPtr pkt = new Packet(r, MemCmd::WriteReq);
-        pkt->dataStatic(mainPkt->getPtr<uint8_t>() + offset);
-        TheISA::handleIprWrite(thread, pkt);
-        offset += r->getSize();
-        delete pkt;
-    }
+    return pkt->req->localAccessor(thread, pkt);
 }
 
 template<class Impl>
 Cycles
-LSQ<Impl>::SingleDataRequest::handleIprRead(ThreadContext *thread,
-                                            PacketPtr pkt)
-{
-    return TheISA::handleIprRead(thread, pkt);
-}
-
-template<class Impl>
-Cycles
-LSQ<Impl>::SplitDataRequest::handleIprRead(ThreadContext *thread,
-                                           PacketPtr mainPkt)
+LSQ<Impl>::SplitDataRequest::handleLocalAccess(
+        ThreadContext *thread, PacketPtr mainPkt)
 {
     Cycles delay(0);
     unsigned offset = 0;
 
     for (auto r: _requests) {
-        PacketPtr pkt = new Packet(r, MemCmd::ReadReq);
+        PacketPtr pkt =
+            new Packet(r, isLoad() ? MemCmd::ReadReq : MemCmd::WriteReq);
         pkt->dataStatic(mainPkt->getPtr<uint8_t>() + offset);
-        Cycles d = TheISA::handleIprRead(thread, pkt);
+        Cycles d = r->localAccessor(thread, pkt);
         if (d > delay)
             delay = d;
         offset += r->getSize();
@@ -1169,13 +1145,37 @@ LSQ<Impl>::SingleDataRequest::isCacheBlockHit(Addr blockAddr, Addr blockMask)
     return ( (LSQRequest::_requests[0]->getPaddr() & blockMask) == blockAddr);
 }
 
+/**
+ * Caches may probe into the load-store queue to enforce memory ordering
+ * guarantees. This method supports probes by providing a mechanism to compare
+ * snoop messages with requests tracked by the load-store queue.
+ *
+ * Consistency models must enforce ordering constraints. TSO, for instance,
+ * must prevent memory reorderings except stores which are reordered after
+ * loads. The reordering restrictions negatively impact performance by
+ * cutting down on memory level parallelism. However, the core can regain
+ * performance by generating speculative loads. Speculative loads may issue
+ * without affecting correctness if precautions are taken to handle invalid
+ * memory orders. The load queue must squash under memory model violations.
+ * Memory model violations may occur when block ownership is granted to
+ * another core or the block cannot be accurately monitored by the load queue.
+ */
 template<class Impl>
 bool
 LSQ<Impl>::SplitDataRequest::isCacheBlockHit(Addr blockAddr, Addr blockMask)
 {
     bool is_hit = false;
     for (auto &r: _requests) {
-        if ((r->getPaddr() & blockMask) == blockAddr) {
+       /**
+        * The load-store queue handles partial faults which complicates this
+        * method. Physical addresses must be compared between requests and
+        * snoops. Some requests will not have a valid physical address, since
+        * partial faults may have outstanding translations. Therefore, the
+        * existence of a valid request address must be checked before
+        * comparing block hits. We assume no pipeline squash is needed if a
+        * valid request address does not exist.
+        */
+        if (r->hasPaddr() && (r->getPaddr() & blockMask) == blockAddr) {
             is_hit = true;
             break;
         }

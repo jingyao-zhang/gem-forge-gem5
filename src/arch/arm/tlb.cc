@@ -36,10 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Nathan Binkert
- *          Steve Reinhardt
  */
 
 #include "arch/arm/tlb.hh"
@@ -55,7 +51,6 @@
 #include "arch/arm/system.hh"
 #include "arch/arm/table_walker.hh"
 #include "arch/arm/utility.hh"
-#include "arch/generic/mmapped_ipr.hh"
 #include "base/inifile.hh"
 #include "base/str.hh"
 #include "base/trace.hh"
@@ -64,11 +59,13 @@
 #include "debug/Checkpoint.hh"
 #include "debug/TLB.hh"
 #include "debug/TLBVerbose.hh"
+#include "mem/packet_access.hh"
 #include "mem/page_table.hh"
 #include "mem/request.hh"
 #include "params/ArmTLB.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
+#include "sim/pseudo_inst.hh"
 
 using namespace std;
 using namespace ArmISA;
@@ -139,10 +136,18 @@ TLB::finalizePhysical(const RequestPtr &req,
     const Addr paddr = req->getPaddr();
 
     if (m5opRange.contains(paddr)) {
-        req->setFlags(Request::MMAPPED_IPR | Request::GENERIC_IPR);
-        req->setPaddr(GenericISA::iprAddressPseudoInst(
-                          (paddr >> 8) & 0xFF,
-                          paddr & 0xFF));
+        uint8_t func;
+        PseudoInst::decodeAddrOffset(paddr - m5opRange.start(), func);
+        req->setLocalAccessor(
+            [func, mode](ThreadContext *tc, PacketPtr pkt) -> Cycles
+            {
+                uint64_t ret;
+                PseudoInst::pseudoInst<PseudoInstABI>(tc, func, ret);
+                if (mode == Read)
+                    pkt->setLE(ret);
+                return Cycles(1);
+            }
+        );
     }
 
     return NoFault;
@@ -405,40 +410,6 @@ TLB::takeOverFrom(BaseTLB *_otlb)
 }
 
 void
-TLB::serialize(CheckpointOut &cp) const
-{
-    DPRINTF(Checkpoint, "Serializing Arm TLB\n");
-
-    SERIALIZE_SCALAR(_attr);
-    SERIALIZE_SCALAR(haveLPAE);
-    SERIALIZE_SCALAR(directToStage2);
-    SERIALIZE_SCALAR(stage2Req);
-    SERIALIZE_SCALAR(stage2DescReq);
-
-    int num_entries = size;
-    SERIALIZE_SCALAR(num_entries);
-    for (int i = 0; i < size; i++)
-        table[i].serializeSection(cp, csprintf("TlbEntry%d", i));
-}
-
-void
-TLB::unserialize(CheckpointIn &cp)
-{
-    DPRINTF(Checkpoint, "Unserializing Arm TLB\n");
-
-    UNSERIALIZE_SCALAR(_attr);
-    UNSERIALIZE_SCALAR(haveLPAE);
-    UNSERIALIZE_SCALAR(directToStage2);
-    UNSERIALIZE_SCALAR(stage2Req);
-    UNSERIALIZE_SCALAR(stage2DescReq);
-
-    int num_entries;
-    UNSERIALIZE_SCALAR(num_entries);
-    for (int i = 0; i < min(size, num_entries); i++)
-        table[i].unserializeSection(cp, csprintf("TlbEntry%d", i));
-}
-
-void
 TLB::regStats()
 {
     BaseTLB::regStats();
@@ -569,7 +540,8 @@ TLB::translateSe(const RequestPtr &req, ThreadContext *tc, Mode mode,
     Addr vaddr_tainted = req->getVaddr();
     Addr vaddr = 0;
     if (aarch64)
-        vaddr = purifyTaggedAddr(vaddr_tainted, tc, aarch64EL, ttbcr);
+        vaddr = purifyTaggedAddr(vaddr_tainted, tc, aarch64EL, (TCR)ttbcr,
+                                 mode==Execute);
     else
         vaddr = vaddr_tainted;
     Request::Flags flags = req->getFlags();
@@ -578,7 +550,6 @@ TLB::translateSe(const RequestPtr &req, ThreadContext *tc, Mode mode,
     bool is_write = (mode == Write);
 
     if (!is_fetch) {
-        assert(flags & MustBeOne || req->isPrefetch());
         if (sctlr.a || !(flags & AllowUnaligned)) {
             if (vaddr & mask(flags & AlignmentMask)) {
                 // LPAE is always disabled in SE mode
@@ -795,7 +766,8 @@ TLB::checkPermissions64(TlbEntry *te, const RequestPtr &req, Mode mode,
     }
 
     Addr vaddr_tainted = req->getVaddr();
-    Addr vaddr = purifyTaggedAddr(vaddr_tainted, tc, aarch64EL, ttbcr);
+    Addr vaddr = purifyTaggedAddr(vaddr_tainted, tc, aarch64EL, (TCR)ttbcr,
+                                  mode==Execute);
 
     Request::Flags flags = req->getFlags();
     bool is_fetch  = (mode == Execute);
@@ -1033,112 +1005,67 @@ TLB::checkPAN(ThreadContext *tc, uint8_t ap, const RequestPtr &req, Mode mode)
 }
 
 Fault
-TLB::translateFs(const RequestPtr &req, ThreadContext *tc, Mode mode,
-        Translation *translation, bool &delay, bool timing,
-        TLB::ArmTranslationType tranType, bool functional)
+TLB::translateMmuOff(ThreadContext *tc, const RequestPtr &req, Mode mode,
+        TLB::ArmTranslationType tranType, Addr vaddr, bool long_desc_format)
 {
-    // No such thing as a functional timing access
-    assert(!(timing && functional));
-
-    updateMiscReg(tc, tranType);
-
-    Addr vaddr_tainted = req->getVaddr();
-    Addr vaddr = 0;
-    if (aarch64)
-        vaddr = purifyTaggedAddr(vaddr_tainted, tc, aarch64EL, ttbcr);
-    else
-        vaddr = vaddr_tainted;
-    Request::Flags flags = req->getFlags();
-
     bool is_fetch  = (mode == Execute);
-    bool is_write  = (mode == Write);
-    bool long_desc_format = aarch64 || longDescFormatInUse(tc);
-    ArmFault::TranMethod tranMethod = long_desc_format ? ArmFault::LpaeTran
-                                                       : ArmFault::VmsaTran;
+    req->setPaddr(vaddr);
+    // When the MMU is off the security attribute corresponds to the
+    // security state of the processor
+    if (isSecure)
+        req->setFlags(Request::SECURE);
 
-    req->setAsid(asid);
-
-    DPRINTF(TLBVerbose, "CPSR is priv:%d UserMode:%d secure:%d S1S2NsTran:%d\n",
-            isPriv, flags & UserMode, isSecure, tranType & S1S2NsTran);
-
-    DPRINTF(TLB, "translateFs addr %#x, mode %d, st2 %d, scr %#x sctlr %#x "
-                 "flags %#lx tranType 0x%x\n", vaddr_tainted, mode, isStage2,
-                 scr, sctlr, flags, tranType);
-
-    if ((req->isInstFetch() && (!sctlr.i)) ||
-        ((!req->isInstFetch()) && (!sctlr.c))){
+    // @todo: double check this (ARM ARM issue C B3.2.1)
+    if (long_desc_format || sctlr.tre == 0 || nmrr.ir0 == 0 ||
+        nmrr.or0 == 0 || prrr.tr0 != 0x2) {
         if (!req->isCacheMaintenance()) {
             req->setFlags(Request::UNCACHEABLE);
         }
         req->setFlags(Request::STRICT_ORDER);
     }
-    if (!is_fetch) {
-        assert(flags & MustBeOne || req->isPrefetch());
-        if (sctlr.a || !(flags & AllowUnaligned)) {
-            if (vaddr & mask(flags & AlignmentMask)) {
-                alignFaults++;
-                return std::make_shared<DataAbort>(
-                    vaddr_tainted,
-                    TlbEntry::DomainType::NoAccess, is_write,
-                    ArmFault::AlignmentFault, isStage2,
-                    tranMethod);
-            }
-        }
+
+    // Set memory attributes
+    TlbEntry temp_te;
+    temp_te.ns = !isSecure;
+    if (isStage2 || hcr.dc == 0 || isSecure ||
+       (isHyp && !(tranType & S1CTran))) {
+
+        temp_te.mtype      = is_fetch ? TlbEntry::MemoryType::Normal
+                                      : TlbEntry::MemoryType::StronglyOrdered;
+        temp_te.innerAttrs = 0x0;
+        temp_te.outerAttrs = 0x0;
+        temp_te.shareable  = true;
+        temp_te.outerShareable = true;
+    } else {
+        temp_te.mtype      = TlbEntry::MemoryType::Normal;
+        temp_te.innerAttrs = 0x3;
+        temp_te.outerAttrs = 0x3;
+        temp_te.shareable  = false;
+        temp_te.outerShareable = false;
     }
+    temp_te.setAttributes(long_desc_format);
+    DPRINTF(TLBVerbose, "(No MMU) setting memory attributes: shareable: "
+            "%d, innerAttrs: %d, outerAttrs: %d, isStage2: %d\n",
+            temp_te.shareable, temp_te.innerAttrs, temp_te.outerAttrs,
+            isStage2);
+    setAttr(temp_te.attributes);
 
-    // If guest MMU is off or hcr.vm=0 go straight to stage2
-    if ((isStage2 && !hcr.vm) || (!isStage2 && !sctlr.m)) {
+    return testTranslation(req, mode, TlbEntry::DomainType::NoAccess);
+}
 
-        req->setPaddr(vaddr);
-        // When the MMU is off the security attribute corresponds to the
-        // security state of the processor
-        if (isSecure)
-            req->setFlags(Request::SECURE);
-
-        // @todo: double check this (ARM ARM issue C B3.2.1)
-        if (long_desc_format || sctlr.tre == 0 || nmrr.ir0 == 0 ||
-            nmrr.or0 == 0 || prrr.tr0 != 0x2) {
-            if (!req->isCacheMaintenance()) {
-                req->setFlags(Request::UNCACHEABLE);
-            }
-            req->setFlags(Request::STRICT_ORDER);
-        }
-
-        // Set memory attributes
-        TlbEntry temp_te;
-        temp_te.ns = !isSecure;
-        if (isStage2 || hcr.dc == 0 || isSecure ||
-           (isHyp && !(tranType & S1CTran))) {
-
-            temp_te.mtype      = is_fetch ? TlbEntry::MemoryType::Normal
-                                          : TlbEntry::MemoryType::StronglyOrdered;
-            temp_te.innerAttrs = 0x0;
-            temp_te.outerAttrs = 0x0;
-            temp_te.shareable  = true;
-            temp_te.outerShareable = true;
-        } else {
-            temp_te.mtype      = TlbEntry::MemoryType::Normal;
-            temp_te.innerAttrs = 0x3;
-            temp_te.outerAttrs = 0x3;
-            temp_te.shareable  = false;
-            temp_te.outerShareable = false;
-        }
-        temp_te.setAttributes(long_desc_format);
-        DPRINTF(TLBVerbose, "(No MMU) setting memory attributes: shareable: "
-                "%d, innerAttrs: %d, outerAttrs: %d, isStage2: %d\n",
-                temp_te.shareable, temp_te.innerAttrs, temp_te.outerAttrs,
-                isStage2);
-        setAttr(temp_te.attributes);
-
-        return testTranslation(req, mode, TlbEntry::DomainType::NoAccess);
-    }
-
-    DPRINTF(TLBVerbose, "Translating %s=%#x context=%d\n",
-            isStage2 ? "IPA" : "VA", vaddr_tainted, asid);
-    // Translation enabled
-
+Fault
+TLB::translateMmuOn(ThreadContext* tc, const RequestPtr &req, Mode mode,
+                    Translation *translation, bool &delay, bool timing,
+                    bool functional, Addr vaddr,
+                    ArmFault::TranMethod tranMethod)
+{
     TlbEntry *te = NULL;
+    bool is_fetch  = (mode == Execute);
     TlbEntry mergeTe;
+
+    Request::Flags flags = req->getFlags();
+    Addr vaddr_tainted = req->getVaddr();
+
     Fault fault = getResultTe(&te, req, tc, mode, translation, timing,
                               functional, &mergeTe);
     // only proceed if we have a valid table entry
@@ -1175,6 +1102,7 @@ TLB::translateFs(const RequestPtr &req, ThreadContext *tc, Mode mode,
                 // Unaligned accesses to Device memory should always cause an
                 // abort regardless of sctlr.a
                 alignFaults++;
+                bool is_write  = (mode == Write);
                 return std::make_shared<DataAbort>(
                     vaddr_tainted,
                     TlbEntry::DomainType::NoAccess, is_write,
@@ -1193,6 +1121,72 @@ TLB::translateFs(const RequestPtr &req, ThreadContext *tc, Mode mode,
         return te ? finalizePhysical(req, tc, mode) : NoFault;
     } else {
         return fault;
+    }
+}
+
+Fault
+TLB::translateFs(const RequestPtr &req, ThreadContext *tc, Mode mode,
+        Translation *translation, bool &delay, bool timing,
+        TLB::ArmTranslationType tranType, bool functional)
+{
+    // No such thing as a functional timing access
+    assert(!(timing && functional));
+
+    updateMiscReg(tc, tranType);
+
+    Addr vaddr_tainted = req->getVaddr();
+    Addr vaddr = 0;
+    if (aarch64)
+        vaddr = purifyTaggedAddr(vaddr_tainted, tc, aarch64EL, (TCR)ttbcr,
+                                 mode==Execute);
+    else
+        vaddr = vaddr_tainted;
+    Request::Flags flags = req->getFlags();
+
+    bool is_fetch  = (mode == Execute);
+    bool is_write  = (mode == Write);
+    bool long_desc_format = aarch64 || longDescFormatInUse(tc);
+    ArmFault::TranMethod tranMethod = long_desc_format ? ArmFault::LpaeTran
+                                                       : ArmFault::VmsaTran;
+
+    DPRINTF(TLBVerbose,
+            "CPSR is priv:%d UserMode:%d secure:%d S1S2NsTran:%d\n",
+            isPriv, flags & UserMode, isSecure, tranType & S1S2NsTran);
+
+    DPRINTF(TLB, "translateFs addr %#x, mode %d, st2 %d, scr %#x sctlr %#x "
+                 "flags %#lx tranType 0x%x\n", vaddr_tainted, mode, isStage2,
+                 scr, sctlr, flags, tranType);
+
+    if ((req->isInstFetch() && (!sctlr.i)) ||
+        ((!req->isInstFetch()) && (!sctlr.c))){
+        if (!req->isCacheMaintenance()) {
+            req->setFlags(Request::UNCACHEABLE);
+        }
+        req->setFlags(Request::STRICT_ORDER);
+    }
+    if (!is_fetch) {
+        if (sctlr.a || !(flags & AllowUnaligned)) {
+            if (vaddr & mask(flags & AlignmentMask)) {
+                alignFaults++;
+                return std::make_shared<DataAbort>(
+                    vaddr_tainted,
+                    TlbEntry::DomainType::NoAccess, is_write,
+                    ArmFault::AlignmentFault, isStage2,
+                    tranMethod);
+            }
+        }
+    }
+
+    // If guest MMU is off or hcr.vm=0 go straight to stage2
+    if ((isStage2 && !hcr.vm) || (!isStage2 && !sctlr.m)) {
+        return translateMmuOff(tc, req, mode, tranType, vaddr,
+                               long_desc_format);
+    } else {
+        DPRINTF(TLBVerbose, "Translating %s=%#x context=%d\n",
+                isStage2 ? "IPA" : "VA", vaddr_tainted, asid);
+        // Translation enabled
+        return translateMmuOn(tc, req, mode, translation, delay, timing,
+                              functional, vaddr, tranMethod);
     }
 }
 
@@ -1465,7 +1459,8 @@ TLB::getTE(TlbEntry **te, const RequestPtr &req, ThreadContext *tc, Mode mode,
     Addr vaddr = 0;
     ExceptionLevel target_el = aarch64 ? aarch64EL : EL1;
     if (aarch64) {
-        vaddr = purifyTaggedAddr(vaddr_tainted, tc, target_el, ttbcr);
+        vaddr = purifyTaggedAddr(vaddr_tainted, tc, target_el, (TCR)ttbcr,
+                                 mode==Execute);
     } else {
         vaddr = vaddr_tainted;
     }

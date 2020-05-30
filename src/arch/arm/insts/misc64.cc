@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013,2017-2019 ARM Limited
+ * Copyright (c) 2011-2013,2017-2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,16 +33,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Giacomo Travaglini
  */
 
 #include "arch/arm/insts/misc64.hh"
 #include "arch/arm/isa.hh"
 
 std::string
-ImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+ImmOp64::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -51,7 +48,7 @@ ImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-ImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+ImmOp64::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -59,8 +56,8 @@ ImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
     return ss.str();
 }
 
-std::string
-RegRegImmImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegRegImmImmOp64::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -73,7 +70,7 @@ RegRegImmImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 
 std::string
 RegRegRegImmOp64::generateDisassembly(
-    Addr pc, const SymbolTable *symtab) const
+    Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -87,7 +84,8 @@ RegRegRegImmOp64::generateDisassembly(
 }
 
 std::string
-UnknownOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+UnknownOp64::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     return csprintf("%-10s (inst %#08x)", "unknown", encoding());
 }
@@ -96,32 +94,23 @@ Fault
 MiscRegOp64::trap(ThreadContext *tc, MiscRegIndex misc_reg,
                   ExceptionLevel el, uint32_t immediate) const
 {
-    bool is_vfp_neon = false;
+    ExceptionClass ec = EC_TRAPPED_MSR_MRS_64;
 
     // Check for traps to supervisor (FP/SIMD regs)
-    if (el <= EL1 && checkEL1Trap(tc, misc_reg, el)) {
-
-        return std::make_shared<SupervisorTrap>(machInst, 0x1E00000,
-                                                EC_TRAPPED_SIMD_FP);
+    if (el <= EL1 && checkEL1Trap(tc, misc_reg, el, ec, immediate)) {
+        return std::make_shared<SupervisorTrap>(machInst, immediate, ec);
     }
 
     // Check for traps to hypervisor
     if ((ArmSystem::haveVirtualization(tc) && el <= EL2) &&
-        checkEL2Trap(tc, misc_reg, el, &is_vfp_neon)) {
-
-        return std::make_shared<HypervisorTrap>(
-            machInst, is_vfp_neon ? 0x1E00000 : immediate,
-            is_vfp_neon ? EC_TRAPPED_SIMD_FP : EC_TRAPPED_MSR_MRS_64);
+        checkEL2Trap(tc, misc_reg, el, ec, immediate)) {
+        return std::make_shared<HypervisorTrap>(machInst, immediate, ec);
     }
 
     // Check for traps to secure monitor
     if ((ArmSystem::haveSecurity(tc) && el <= EL3) &&
-        checkEL3Trap(tc, misc_reg, el, &is_vfp_neon)) {
-
-        return std::make_shared<SecureMonitorTrap>(
-            machInst,
-            is_vfp_neon ? 0x1E00000 : immediate,
-            is_vfp_neon ? EC_TRAPPED_SIMD_FP : EC_TRAPPED_MSR_MRS_64);
+        checkEL3Trap(tc, misc_reg, el, ec, immediate)) {
+        return std::make_shared<SecureMonitorTrap>(machInst, immediate, ec);
     }
 
     return NoFault;
@@ -129,7 +118,8 @@ MiscRegOp64::trap(ThreadContext *tc, MiscRegIndex misc_reg,
 
 bool
 MiscRegOp64::checkEL1Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
-                          ExceptionLevel el) const
+                          ExceptionLevel el, ExceptionClass &ec,
+                          uint32_t &immediate) const
 {
     const CPACR cpacr = tc->readMiscReg(MISCREG_CPACR_EL1);
 
@@ -139,8 +129,16 @@ MiscRegOp64::checkEL1Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
       case MISCREG_FPSR:
       case MISCREG_FPEXC32_EL2:
         if ((el == EL0 && cpacr.fpen != 0x3) ||
-            (el == EL1 && !(cpacr.fpen & 0x1)))
+            (el == EL1 && !(cpacr.fpen & 0x1))) {
             trap_to_sup = true;
+            ec = EC_TRAPPED_SIMD_FP;
+            immediate = 0x1E00000;
+        }
+        break;
+      // Generic Timer
+      case MISCREG_CNTFRQ_EL0 ... MISCREG_CNTVOFF_EL2:
+        trap_to_sup = el == EL0 &&
+                      isGenericTimerSystemAccessTrapEL1(misc_reg, tc);
         break;
       default:
         break;
@@ -150,7 +148,8 @@ MiscRegOp64::checkEL1Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
 
 bool
 MiscRegOp64::checkEL2Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
-                          ExceptionLevel el, bool * is_vfp_neon) const
+                          ExceptionLevel el, ExceptionClass &ec,
+                          uint32_t &immediate) const
 {
     const CPTR cptr = tc->readMiscReg(MISCREG_CPTR_EL2);
     const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
@@ -158,7 +157,6 @@ MiscRegOp64::checkEL2Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
     const CPSR cpsr = tc->readMiscReg(MISCREG_CPSR);
 
     bool trap_to_hyp = false;
-    *is_vfp_neon = false;
 
     if (!inSecureState(scr, cpsr) && (el != EL2)) {
         switch (misc_reg) {
@@ -167,7 +165,8 @@ MiscRegOp64::checkEL2Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
           case MISCREG_FPSR:
           case MISCREG_FPEXC32_EL2:
             trap_to_hyp = cptr.tfp;
-            *is_vfp_neon = true;
+            ec = EC_TRAPPED_SIMD_FP;
+            immediate = 0x1E00000;
             break;
           // CPACR
           case MISCREG_CPACR_EL1:
@@ -229,6 +228,18 @@ MiscRegOp64::checkEL2Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
             trap_to_hyp = hcr.tacr && el == EL1;
             break;
 
+          case MISCREG_APDAKeyHi_EL1:
+          case MISCREG_APDAKeyLo_EL1:
+          case MISCREG_APDBKeyHi_EL1:
+          case MISCREG_APDBKeyLo_EL1:
+          case MISCREG_APGAKeyHi_EL1:
+          case MISCREG_APGAKeyLo_EL1:
+          case MISCREG_APIAKeyHi_EL1:
+          case MISCREG_APIAKeyLo_EL1:
+          case MISCREG_APIBKeyHi_EL1:
+          case MISCREG_APIBKeyLo_EL1:
+            trap_to_hyp = el==EL1 && hcr.apk == 0;
+            break;
           // @todo: Trap implementation-dependent functionality based on
           // hcr.tidcp
 
@@ -282,13 +293,24 @@ MiscRegOp64::checkEL2Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
             break;
           // GICv3 regs
           case MISCREG_ICC_SGI0R_EL1:
-            if (tc->getIsaPtr()->haveGICv3CpuIfc())
-                trap_to_hyp = hcr.fmo && el == EL1;
+            {
+                auto *isa = static_cast<ArmISA::ISA *>(tc->getIsaPtr());
+                if (isa->haveGICv3CpuIfc())
+                    trap_to_hyp = hcr.fmo && el == EL1;
+            }
             break;
           case MISCREG_ICC_SGI1R_EL1:
           case MISCREG_ICC_ASGI1R_EL1:
-            if (tc->getIsaPtr()->haveGICv3CpuIfc())
-                trap_to_hyp = hcr.imo && el == EL1;
+            {
+                auto *isa = static_cast<ArmISA::ISA *>(tc->getIsaPtr());
+                if (isa->haveGICv3CpuIfc())
+                    trap_to_hyp = hcr.imo && el == EL1;
+            }
+            break;
+          // Generic Timer
+          case MISCREG_CNTFRQ_EL0 ... MISCREG_CNTVOFF_EL2:
+            trap_to_hyp = el <= EL1 &&
+                          isGenericTimerSystemAccessTrapEL2(misc_reg, tc);
             break;
           default:
             break;
@@ -299,12 +321,12 @@ MiscRegOp64::checkEL2Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
 
 bool
 MiscRegOp64::checkEL3Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
-                          ExceptionLevel el, bool * is_vfp_neon) const
+                          ExceptionLevel el, ExceptionClass &ec,
+                          uint32_t &immediate) const
 {
     const CPTR cptr = tc->readMiscReg(MISCREG_CPTR_EL3);
-
+    const SCR scr = tc->readMiscReg(MISCREG_SCR_EL3);
     bool trap_to_mon = false;
-    *is_vfp_neon = false;
 
     switch (misc_reg) {
       // FP/SIMD regs
@@ -312,7 +334,8 @@ MiscRegOp64::checkEL3Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
       case MISCREG_FPSR:
       case MISCREG_FPEXC32_EL2:
         trap_to_mon = cptr.tfp;
-        *is_vfp_neon = true;
+        ec = EC_TRAPPED_SIMD_FP;
+        immediate = 0x1E00000;
         break;
       // CPACR, CPTR
       case MISCREG_CPACR_EL1:
@@ -324,6 +347,23 @@ MiscRegOp64::checkEL3Trap(ThreadContext *tc, const MiscRegIndex misc_reg,
         if (el == EL2) {
             trap_to_mon = cptr.tcpac;
         }
+        break;
+      case MISCREG_APDAKeyHi_EL1:
+      case MISCREG_APDAKeyLo_EL1:
+      case MISCREG_APDBKeyHi_EL1:
+      case MISCREG_APDBKeyLo_EL1:
+      case MISCREG_APGAKeyHi_EL1:
+      case MISCREG_APGAKeyLo_EL1:
+      case MISCREG_APIAKeyHi_EL1:
+      case MISCREG_APIAKeyLo_EL1:
+      case MISCREG_APIBKeyHi_EL1:
+      case MISCREG_APIBKeyLo_EL1:
+        trap_to_mon = (el==EL1 || el==EL2) && scr.apk==0 && ELIs64(tc, EL3);
+        break;
+      // Generic Timer
+      case MISCREG_CNTFRQ_EL0 ... MISCREG_CNTVOFF_EL2:
+        trap_to_mon = el == EL1 &&
+                      isGenericTimerSystemAccessTrapEL3(misc_reg, tc);
         break;
       default:
         break;
@@ -344,7 +384,8 @@ MiscRegImmOp64::miscRegImm() const
 }
 
 std::string
-MiscRegImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+MiscRegImmOp64::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -356,7 +397,7 @@ MiscRegImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 
 std::string
 MiscRegRegImmOp64::generateDisassembly(
-    Addr pc, const SymbolTable *symtab) const
+    Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -368,7 +409,7 @@ MiscRegRegImmOp64::generateDisassembly(
 
 std::string
 RegMiscRegImmOp64::generateDisassembly(
-    Addr pc, const SymbolTable *symtab) const
+    Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -402,8 +443,8 @@ MiscRegImplDefined64::execute(ExecContext *xc,
 }
 
 std::string
-MiscRegImplDefined64::generateDisassembly(Addr pc,
-                                          const SymbolTable *symtab) const
+MiscRegImplDefined64::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     return csprintf("%-10s (implementation defined)", fullMnemonic.c_str());
 }

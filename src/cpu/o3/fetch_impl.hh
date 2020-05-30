@@ -37,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Korey Sewell
  */
 
 #ifndef __CPU_O3_FETCH_IMPL_HH__
@@ -54,7 +51,6 @@
 #include "arch/generic/tlb.hh"
 #include "arch/isa_traits.hh"
 #include "arch/utility.hh"
-#include "arch/vtophys.hh"
 #include "base/random.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
@@ -142,7 +138,8 @@ DefaultFetch<Impl>::DefaultFetch(O3CPU *_cpu, DerivO3CPUParams *params)
     branchPred = params->branchPred;
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        decoder[tid] = new TheISA::Decoder(params->isa[tid]);
+        decoder[tid] = new TheISA::Decoder(
+                dynamic_cast<TheISA::ISA *>(params->isa[tid]));
         // Create space to buffer the cache line data,
         // which may not hold the entire cache line.
         fetchBuffer[tid] = new uint8_t[fetchBufferSize];
@@ -633,7 +630,7 @@ DefaultFetch<Impl>::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     // Set the appropriate read size and flags as well.
     // Build request here.
     RequestPtr mem_req = std::make_shared<Request>(
-        tid, fetchBufferBlockPC, fetchBufferSize,
+        fetchBufferBlockPC, fetchBufferSize,
         Request::INST_FETCH, cpu->instMasterId(), pc,
         cpu->thread[tid]->contextId());
 
@@ -1113,8 +1110,6 @@ DefaultFetch<Impl>::buildInst(ThreadID tid, StaticInstPtr staticInst,
         new DynInst(staticInst, curMacroop, thisPC, nextPC, seq, cpu);
     instruction->setTid(tid);
 
-    instruction->setASID(tid);
-
     instruction->setThreadState(cpu->thread[tid]);
 
     DPRINTF(Fetch, "[tid:%i] Instruction PC %#x (%d) created "
@@ -1285,8 +1280,7 @@ DefaultFetch<Impl>::fetch(bool &status_change)
                 break;
             }
 
-            MachInst inst = TheISA::gtoh(cacheInsts[blkOffset]);
-            decoder[tid]->moreBytes(thisPC, fetchAddr, inst);
+            decoder[tid]->moreBytes(thisPC, fetchAddr, cacheInsts[blkOffset]);
 
             if (decoder[tid]->needMoreBytes()) {
                 blkOffset++;

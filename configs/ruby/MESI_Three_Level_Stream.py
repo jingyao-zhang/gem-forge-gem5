@@ -103,16 +103,15 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l0i_cache = L0Cache(size=options.l1i_size, assoc=options.l1i_assoc,
                 is_icache = True,
                 start_index_bit = block_size_bits,
-                replacement_policy = LRUReplacementPolicy())
+                replacement_policy = TreePLRURP())
 
             l0d_cache = L0Cache(size=options.l1d_size, assoc=options.l1d_assoc, is_icache = False,
                 start_index_bit = block_size_bits,
-                replacement_policy = LRUReplacementPolicy(),
+                replacement_policy = TreePLRURP(),
                 dataAccessLatency = options.l1d_lat)
 
-            prefetcher = RubyPrefetcher.Prefetcher(
+            prefetcher = RubyPrefetcher(
                 num_streams=8,
-                pf_per_stream=8,
                 cross_page=True,
             )
 
@@ -334,6 +333,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.responseToDir.slave = ruby_system.network.master
         dir_cntrl.responseFromDir = MessageBuffer()
         dir_cntrl.responseFromDir.master = ruby_system.network.slave
+        dir_cntrl.requestToMemory = MessageBuffer()
         dir_cntrl.responseFromMemory = MessageBuffer()
 
     for i, dma_port in enumerate(dma_ports):

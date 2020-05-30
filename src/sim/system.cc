@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014,2017-2018 ARM Limited
+ * Copyright (c) 2011-2014,2017-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -37,12 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Lisa Hsu
- *          Nathan Binkert
- *          Ali Saidi
- *          Rick Strong
  */
 
 #include "sim/system.hh"
@@ -94,10 +88,7 @@ System::System(Params *p)
       pagePtr(0),
       init_param(p->init_param),
       physProxy(_systemPort, p->cache_line_size),
-      kernelSymtab(nullptr),
-      kernel(nullptr),
-      loadAddrMask(p->load_addr_mask),
-      loadAddrOffset(p->load_offset),
+      workload(p->workload),
 #if USE_KVM
       kvmVM(p->kvm_vm),
 #else
@@ -111,10 +102,14 @@ System::System(Params *p)
       numWorkIds(p->num_work_ids),
       thermalModel(p->thermal_model),
       _params(p),
+      _m5opRange(p->m5ops_base ?
+                 RangeSize(p->m5ops_base, 0x10000) :
+                 AddrRange(1, 0)), // Create an empty range if disabled
       totalNumInsts(0),
-      instEventQueue("system instruction-based event queue"),
       redirectPaths(p->redirect_paths)
 {
+    if (workload)
+        workload->system = this;
 
     // add self to global system list
     systemList.push_back(this);
@@ -124,12 +119,6 @@ System::System(Params *p)
         kvmVM->setSystem(this);
     }
 #endif
-
-    if (FullSystem) {
-        kernelSymtab = new SymbolTable;
-        if (!debugSymbolTable)
-            debugSymbolTable = new SymbolTable;
-    }
 
     // check if the cache line size is a value known to work
     if (!(_cacheLineSize == 16 || _cacheLineSize == 32 ||
@@ -145,57 +134,6 @@ System::System(Params *p)
     tmp_id = getMasterId(this, "interrupt");
     assert(tmp_id == Request::intMasterId);
 
-    if (FullSystem) {
-        if (params()->kernel == "") {
-            inform("No kernel set for full system simulation. "
-                   "Assuming you know what you're doing\n");
-        } else {
-            // Get the kernel code
-            kernel = createObjectFile(params()->kernel);
-            inform("kernel located at: %s", params()->kernel);
-
-            if (kernel == NULL)
-                fatal("Could not load kernel file %s", params()->kernel);
-
-            // setup entry points
-            kernelStart = kernel->textBase();
-            kernelEnd = kernel->bssBase() + kernel->bssSize();
-            kernelEntry = kernel->entryPoint();
-
-            // If load_addr_mask is set to 0x0, then auto-calculate
-            // the smallest mask to cover all kernel addresses so gem5
-            // can relocate the kernel to a new offset.
-            if (loadAddrMask == 0) {
-                Addr shift_amt = findMsbSet(kernelEnd - kernelStart) + 1;
-                loadAddrMask = ((Addr)1 << shift_amt) - 1;
-            }
-
-            // load symbols
-            if (!kernel->loadGlobalSymbols(kernelSymtab))
-                fatal("could not load kernel symbols\n");
-
-            if (!kernel->loadLocalSymbols(kernelSymtab))
-                fatal("could not load kernel local symbols\n");
-
-            if (!kernel->loadGlobalSymbols(debugSymbolTable))
-                fatal("could not load kernel symbols\n");
-
-            if (!kernel->loadLocalSymbols(debugSymbolTable))
-                fatal("could not load kernel local symbols\n");
-
-            // Loading only needs to happen once and after memory system is
-            // connected so it will happen in initState()
-        }
-
-        for (const auto &obj_name : p->kernel_extras) {
-            inform("Loading additional kernel object: %s", obj_name);
-            ObjectFile *obj = createObjectFile(obj_name);
-            fatal_if(!obj, "Failed to additional kernel object '%s'.\n",
-                     obj_name);
-            kernelExtras.push_back(obj);
-        }
-    }
-
     // increment the number of running systems
     numSystemsRunning++;
 
@@ -206,9 +144,6 @@ System::System(Params *p)
 
 System::~System()
 {
-    delete kernelSymtab;
-    delete kernel;
-
     for (uint32_t j = 0; j < numWorkIds; j++) {
         delete workItemTickHistogram[j];
         delete workItemTickSum[j];
@@ -221,6 +156,31 @@ System::init()
     // check that the system port is connected
     if (!_systemPort.isConnected())
         panic("System port on %s is not connected.\n", name());
+}
+
+void
+System::startup()
+{
+    SimObject::startup();
+
+    // Now that we're about to start simulation, wait for GDB connections if
+    // requested.
+#if THE_ISA != NULL_ISA
+    for (auto *tc: threadContexts) {
+        auto *cpu = tc->getCpuPtr();
+        auto id = tc->contextId();
+        if (remoteGDB.size() <= id)
+            continue;
+        auto *rgdb = remoteGDB[id];
+
+        if (cpu->waitForRemoteGDB()) {
+            inform("%s: Waiting for a remote GDB connection on port %d.\n",
+                   cpu->name(), rgdb->port());
+
+            rgdb->connect();
+        }
+    }
+#endif
 }
 
 Port &
@@ -262,6 +222,8 @@ System::registerThreadContext(ThreadContext *tc, ContextID assigned)
              "Cannot have two CPUs with the same id (%d)\n", id);
 
     threadContexts[id] = tc;
+    for (auto *e: liveEvents)
+        tc->schedule(e);
 
 #if THE_ISA != NULL_ISA
     int port = getRemoteGDBPort();
@@ -269,16 +231,8 @@ System::registerThreadContext(ThreadContext *tc, ContextID assigned)
         RemoteGDB *rgdb = new RemoteGDB(this, tc, port + id);
         rgdb->listen();
 
-        BaseCPU *cpu = tc->getCpuPtr();
-        if (cpu->waitForRemoteGDB()) {
-            inform("%s: Waiting for a remote GDB connection on port %d.\n",
-                   cpu->name(), rgdb->port());
-
-            rgdb->connect();
-        }
-        if (remoteGDB.size() <= id) {
+        if (remoteGDB.size() <= id)
             remoteGDB.resize(id + 1);
-        }
 
         remoteGDB[id] = rgdb;
     }
@@ -287,6 +241,36 @@ System::registerThreadContext(ThreadContext *tc, ContextID assigned)
     activeCpus.push_back(false);
 
     return id;
+}
+
+ThreadContext *
+System::findFreeContext()
+{
+    for (auto &it : threadContexts) {
+        if (ThreadContext::Halted == it->status())
+            return it;
+    }
+    return nullptr;
+}
+
+bool
+System::schedule(PCEvent *event)
+{
+    bool all = true;
+    liveEvents.push_back(event);
+    for (auto *tc: threadContexts)
+        all = tc->schedule(event) && all;
+    return all;
+}
+
+bool
+System::remove(PCEvent *event)
+{
+    bool all = true;
+    liveEvents.remove(event);
+    for (auto *tc: threadContexts)
+        all = tc->remove(event) && all;
+    return all;
 }
 
 int
@@ -303,47 +287,6 @@ System::numRunningContexts()
 }
 
 void
-System::initState()
-{
-    if (FullSystem) {
-        for (int i = 0; i < threadContexts.size(); i++)
-            TheISA::startupCPU(threadContexts[i], i);
-        // Moved from the constructor to here since it relies on the
-        // address map being resolved in the interconnect
-        /**
-         * Load the kernel code into memory
-         */
-        if (params()->kernel != "")  {
-            if (params()->kernel_addr_check) {
-                // Validate kernel mapping before loading binary
-                if (!(isMemAddr((kernelStart & loadAddrMask) +
-                                loadAddrOffset) &&
-                      isMemAddr((kernelEnd & loadAddrMask) +
-                                loadAddrOffset))) {
-                    fatal("Kernel is mapped to invalid location (not memory). "
-                          "kernelStart 0x(%x) - kernelEnd 0x(%x) %#x:%#x\n",
-                          kernelStart,
-                          kernelEnd, (kernelStart & loadAddrMask) +
-                          loadAddrOffset,
-                          (kernelEnd & loadAddrMask) + loadAddrOffset);
-                }
-            }
-            // Load program sections into memory
-            kernel->loadSections(physProxy, loadAddrMask, loadAddrOffset);
-            for (const auto &extra_kernel : kernelExtras) {
-                extra_kernel->loadSections(physProxy, loadAddrMask,
-                                           loadAddrOffset);
-            }
-
-            DPRINTF(Loader, "Kernel start = %#x\n", kernelStart);
-            DPRINTF(Loader, "Kernel end   = %#x\n", kernelEnd);
-            DPRINTF(Loader, "Kernel entry = %#x\n", kernelEntry);
-            DPRINTF(Loader, "Kernel loaded...\n");
-        }
-    }
-}
-
-void
 System::replaceThreadContext(ThreadContext *tc, ContextID context_id)
 {
     if (context_id >= threadContexts.size()) {
@@ -351,6 +294,10 @@ System::replaceThreadContext(ThreadContext *tc, ContextID context_id)
               context_id, threadContexts.size());
     }
 
+    for (auto *e: liveEvents) {
+        threadContexts[context_id]->remove(e);
+        tc->schedule(e);
+    }
     threadContexts[context_id] = tc;
     if (context_id < remoteGDB.size())
         remoteGDB[context_id]->replaceThreadContext(tc);
@@ -382,8 +329,7 @@ System::allocPhysPages(int npages)
 
     Addr next_return_addr = pagePtr << PageShift;
 
-    AddrRange m5opRange(0xffff0000, 0xffffffff);
-    if (m5opRange.contains(next_return_addr)) {
+    if (_m5opRange.contains(next_return_addr)) {
         warn("Reached m5ops MMIO region\n");
         return_addr = 0xffffffff;
         pagePtr = 0xffffffff >> PageShift;
@@ -433,10 +379,7 @@ System::drainResume()
 void
 System::serialize(CheckpointOut &cp) const
 {
-    if (FullSystem)
-        kernelSymtab->serialize("kernel_symtab", cp);
     SERIALIZE_SCALAR(pagePtr);
-    serializeSymtab(cp);
 
     // also serialize the memories in the system
     physmem.serializeSection(cp, "physmem");
@@ -446,10 +389,7 @@ System::serialize(CheckpointOut &cp) const
 void
 System::unserialize(CheckpointIn &cp)
 {
-    if (FullSystem)
-        kernelSymtab->unserialize("kernel_symtab", cp);
     UNSERIALIZE_SCALAR(pagePtr);
-    unserializeSymtab(cp);
 
     // also unserialize the memories in the system
     physmem.unserializeSection(cp, "physmem");

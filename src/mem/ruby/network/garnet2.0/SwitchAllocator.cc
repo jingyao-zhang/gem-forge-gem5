@@ -1,6 +1,7 @@
 /*
- * Copyright (c) 2008 Princeton University
+ * Copyright (c) 2020 Inria
  * Copyright (c) 2016 Georgia Institute of Technology
+ * Copyright (c) 2008 Princeton University
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,9 +26,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Niket Agarwal
- *          Tushar Krishna
  */
 
 
@@ -53,9 +51,6 @@ SwitchAllocator::SwitchAllocator(Router *router)
 void
 SwitchAllocator::init()
 {
-    m_input_unit = m_router->get_inputUnit_ref();
-    m_output_unit = m_router->get_outputUnit_ref();
-
     m_num_inports = m_router->get_num_inports();
     m_num_outports = m_router->get_num_outports();
     m_round_robin_inport.resize(m_num_outports);
@@ -117,14 +112,14 @@ SwitchAllocator::arbitrate_inports()
         int invc = m_round_robin_invc[inport];
 
         for (int invc_iter = 0; invc_iter < m_num_vcs; invc_iter++) {
+            auto input_unit = m_router->getInputUnit(inport);
 
-            if (m_input_unit[inport]->need_stage(invc, SA_,
-                m_router->curCycle())) {
-
+            if (input_unit->need_stage(invc, SA_, m_router->curCycle())) {
                 // This flit is in SA stage
 
-                int  outport = m_input_unit[inport]->get_outport(invc);
-                int  outvc   = m_input_unit[inport]->get_outvc(invc);
+                int outport = input_unit->get_outport(invc);
+                int outvc = input_unit->get_outvc(invc);
+                auto output_unit = m_router->getOutputUnit(outport);
 
                 // check if the flit in this InputVC is allowed to be sent
                 // send_allowed conditions described in that function.
@@ -138,9 +133,9 @@ SwitchAllocator::arbitrate_inports()
 
                     DPRINTF(RubyNetwork, "SA[%d] Arbitrate inport [%s][%d] -> [%s][%d].\n",
                         m_router->get_id(),
-                        m_router->getPortDirectionName(m_input_unit[inport]->get_direction()),
+                        m_router->getPortDirectionName(input_unit->get_direction()),
                         invc,
-                        m_router->getPortDirectionName(m_output_unit[outport]->get_direction()),
+                        m_router->getPortDirectionName(output_unit->get_direction()),
                         outvc);
 
                     // Update Round Robin pointer to the next VC
@@ -187,28 +182,28 @@ SwitchAllocator::arbitrate_outports()
 
             // inport has a request this cycle for outport
             if (m_port_requests[outport][inport]) {
+                auto output_unit = m_router->getOutputUnit(outport);
+                auto input_unit = m_router->getInputUnit(inport);
 
                 // grant this outport to this inport
                 int invc = m_vc_winners[outport][inport];
 
-                int outvc = m_input_unit[inport]->get_outvc(invc);
+                int outvc = input_unit->get_outvc(invc);
                 if (outvc == -1) {
                     // VC Allocation - select any free VC from outport
                     outvc = vc_allocate(outport, inport, invc);
                 }
 
                 // remove flit from Input VC
-                flit *t_flit = m_input_unit[inport]->getTopFlit(invc);
+                flit *t_flit = input_unit->getTopFlit(invc);
 
                 DPRINTF(RubyNetwork, "SA[%d] "
                                      "Grant [%s][%d] -> [%s][%d] to flit %s at "
                                      "time %lld, %d of %s.\n",
                         m_router->get_id(),
-                        m_router->getPortDirectionName(
-                            m_input_unit[inport]->get_direction()),
+                        m_router->getPortDirectionName(input_unit->get_direction()),
                         invc,
-                        m_router->getPortDirectionName(
-                            m_output_unit[outport]->get_direction()),
+                        m_router->getPortDirectionName(output_unit->get_direction()),
                         outvc,
                         *t_flit,
                         m_router->curCycle(),
@@ -228,7 +223,7 @@ SwitchAllocator::arbitrate_outports()
                 t_flit->set_vc(outvc);
 
                 // decrement credit in outvc
-                m_output_unit[outport]->decrement_credit(outvc);
+                output_unit->decrement_credit(outvc);
 
                 // flit ready for Switch Traversal
                 t_flit->advance_stage(ST_, m_router->curCycle());
@@ -239,24 +234,22 @@ SwitchAllocator::arbitrate_outports()
                     t_flit->get_type() == HEAD_TAIL_) {
 
                     // This Input VC should now be empty
-                    assert(!(m_input_unit[inport]->isReady(invc,
-                        m_router->curCycle())));
+                    assert(!(input_unit->isReady(invc, m_router->curCycle())));
 
                     // Free this VC
-                    m_input_unit[inport]->set_vc_idle(invc,
-                        m_router->curCycle());
+                    input_unit->set_vc_idle(invc, m_router->curCycle());
 
                     // Send a credit back along with the information that this VC is now idle
                     // Only do this for Non-MulticastDuplicate flit.
                     if (!t_flit->isMulticastDuplicate()) {
-                        m_input_unit[inport]->increment_credit(invc, true,
+                        input_unit->increment_credit(invc, true,
                             m_router->curCycle());
                     }
                 } else {
                     // Send a credit back but do not indicate that the VC is idle
                     // Only do this for Non-MulticastDuplicate flit.
                     if (!t_flit->isMulticastDuplicate()) {
-                        m_input_unit[inport]->increment_credit(invc, false,
+                        input_unit->increment_credit(invc, false,
                             m_router->curCycle());
                     }
                 }
@@ -305,12 +298,14 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
     bool has_outvc = (outvc != -1);
     bool has_credit = false;
 
+    auto input_unit = m_router->getInputUnit(inport);
+    auto output_unit = m_router->getOutputUnit(outport);
     if (!has_outvc) {
 
         // needs outvc
         // this is only true for HEAD and HEAD_TAIL flits.
 
-        if (m_output_unit[outport]->has_free_vc(vnet)) {
+        if (output_unit->has_free_vc(vnet)) {
 
             has_outvc = true;
 
@@ -319,7 +314,7 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
             has_credit = true;
         }
     } else {
-        has_credit = m_output_unit[outport]->has_credit(outvc);
+        has_credit = output_unit->has_credit(outvc);
     }
 
     // cannot send if no outvc or no credit.
@@ -327,11 +322,9 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
         DPRINTF(RubyNetwork, "SA[%d] Decline [%s][%d] -> [%s][%d] "
             "has_outvc %d has_credit %d.\n",
             m_router->get_id(),
-            m_router->getPortDirectionName(
-                m_input_unit[inport]->get_direction()),
+            m_router->getPortDirectionName(input_unit->get_direction()),
             invc,
-            m_router->getPortDirectionName(
-                m_output_unit[outport]->get_direction()),
+            m_router->getPortDirectionName(output_unit->get_direction()),
             outvc,
             has_outvc,
             has_credit
@@ -342,34 +335,30 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
 
     // protocol ordering check
     if ((m_router->get_net_ptr())->isVNetOrdered(vnet)) {
+        auto input_unit = m_router->getInputUnit(inport);
 
         // enqueue time of this flit
-        Cycles t_enqueue_time = m_input_unit[inport]->get_enqueue_time(invc);
+        Cycles t_enqueue_time = input_unit->get_enqueue_time(invc);
 
         // check if any other flit is ready for SA and for same output port
         // and was enqueued before this flit
         int vc_base = vnet*m_vc_per_vnet;
         for (int vc_offset = 0; vc_offset < m_vc_per_vnet; vc_offset++) {
             int temp_vc = vc_base + vc_offset;
-            if (m_input_unit[inport]->need_stage(temp_vc, SA_,
-                                                 m_router->curCycle()) &&
-               (m_input_unit[inport]->get_outport(temp_vc) == outport) &&
-               (m_input_unit[inport]->get_enqueue_time(temp_vc) <
-                    t_enqueue_time)) {
+            if (input_unit->need_stage(temp_vc, SA_, m_router->curCycle()) &&
+               (input_unit->get_outport(temp_vc) == outport) &&
+               (input_unit->get_enqueue_time(temp_vc) < t_enqueue_time)) {
                 DPRINTF(RubyNetwork, "SA[%d] Decline [%s][%d] -> [%s][%d] "
                     "due to order violation from [%s][%d], enqueue time"
                     "%lu < %lu.\n",
                     m_router->get_id(),
-                    m_router->getPortDirectionName(
-                        m_input_unit[inport]->get_direction()),
+                    m_router->getPortDirectionName(input_unit->get_direction()),
                     invc,
-                    m_router->getPortDirectionName(
-                        m_output_unit[outport]->get_direction()),
+                    m_router->getPortDirectionName(output_unit->get_direction()),
                     outvc,
-                    m_router->getPortDirectionName(
-                        m_input_unit[inport]->get_direction()),
+                    m_router->getPortDirectionName(input_unit->get_direction()),
                     temp_vc,
-                    m_input_unit[inport]->get_enqueue_time(temp_vc),
+                    input_unit->get_enqueue_time(temp_vc),
                     t_enqueue_time
                     );
                 return false;
@@ -385,11 +374,12 @@ int
 SwitchAllocator::vc_allocate(int outport, int inport, int invc)
 {
     // Select a free VC from the output port
-    int outvc = m_output_unit[outport]->select_free_vc(get_vnet(invc));
+    int outvc =
+        m_router->getOutputUnit(outport)->select_free_vc(get_vnet(invc));
 
     // has to get a valid VC since it checked before performing SA
     assert(outvc != -1);
-    m_input_unit[inport]->grant_outvc(invc, outvc);
+    m_router->getInputUnit(inport)->grant_outvc(invc, outvc);
     return outvc;
 }
 
@@ -402,7 +392,7 @@ SwitchAllocator::check_for_wakeup()
 
     for (int i = 0; i < m_num_inports; i++) {
         for (int j = 0; j < m_num_vcs; j++) {
-            if (m_input_unit[i]->need_stage(j, SA_, nextCycle)) {
+            if (m_router->getInputUnit(i)->need_stage(j, SA_, nextCycle)) {
                 m_router->schedule_wakeup(Cycles(1));
                 return;
             }

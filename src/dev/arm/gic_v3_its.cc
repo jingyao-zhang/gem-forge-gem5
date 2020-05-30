@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Giacomo Travaglini
  */
 
 #include "dev/arm/gic_v3_its.hh"
@@ -50,7 +48,7 @@
 
 #define COMMAND(x, method) { x, DispatchEntry(#x, method) }
 
-const AddrRange Gicv3Its::GITS_BASER(0x0100, 0x0138);
+const AddrRange Gicv3Its::GITS_BASER(0x0100, 0x0140);
 
 const uint32_t Gicv3Its::CTLR_QUIESCENT = 0x80000000;
 

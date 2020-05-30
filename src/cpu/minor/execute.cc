@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014,2018 ARM Limited
+ * Copyright (c) 2013-2014,2018-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 #include "cpu/minor/execute.hh"
@@ -563,12 +561,15 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
             if (inst->traceData)
                 inst->traceData->setPredicate(passed_predicate);
 
-            /* If the instruction didn't pass its predicate (and so will not
-             *  progress from here)  Try to branch to correct and branch
-             *  mis-prediction. */
-            if (!passed_predicate) {
+            /* If the instruction didn't pass its predicate
+             * or it is a predicated vector instruction and the
+             * associated predicate register is all-false (and so will not
+             * progress from here)  Try to branch to correct and branch
+             * mis-prediction. */
+            if (!inst->inLSQ) {
                 /* Leave it up to commit to handle the fault */
                 lsq.pushFailedRequest(inst);
+                inst->inLSQ = true;
             }
         }
 
@@ -1028,7 +1029,7 @@ Execute::tryPCEvents(ThreadID thread_id)
     Addr oldPC;
     do {
         oldPC = thread->instAddr();
-        cpu.system->pcEventQueue.service(thread);
+        cpu.threads[thread_id]->pcEventQueue.service(oldPC, thread);
         num_pc_event_checks++;
     } while (oldPC != thread->instAddr());
 
@@ -1061,8 +1062,7 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
         }
 
         /* Act on events related to instruction counts */
-        cpu.comInstEventQueue[inst->id.threadId]->serviceEvents(thread->numInst);
-        cpu.system->instEventQueue.serviceEvents(cpu.system->totalNumInsts);
+        thread->comInstEventQueue.serviceEvents(thread->numInst);
     }
     thread->numOp++;
     thread->numOps++;

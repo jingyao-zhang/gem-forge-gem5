@@ -32,8 +32,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Gabe Black
 
 from m5.params import *
 from m5.proxy import *
@@ -62,5 +60,6 @@ class X86TLB(BaseTLB):
     walker_se_lat = Param.Unsigned(17, "Page walker latency in SE mode")
     walker_se_port = Param.Unsigned(2, "Number of simultaneous page walk in SE mode")
     timing_se = Param.Bool(False, "Enable TLB miss timing in SE mode")
+    system = Param.System(Parent.any, "system object")
     walker = Param.X86PagetableWalker(\
             X86PagetableWalker(), "page table walker")

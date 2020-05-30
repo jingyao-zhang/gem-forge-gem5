@@ -38,10 +38,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Korey Sewell
- *          Rick Strong
  */
 
 #ifndef __CPU_O3_CPU_HH__
@@ -284,7 +280,7 @@ class FullO3CPU : public BaseO3CPU
     /** Executes a syscall.
      * @todo: Determine if this needs to be virtual.
      */
-    void syscall(int64_t callnum, ThreadID tid, Fault *fault);
+    void syscall(ThreadID tid, Fault *fault);
 
     /** Starts draining the CPU's pipeline of all instructions in
      * order to stop all memory accesses. */
@@ -316,6 +312,12 @@ class FullO3CPU : public BaseO3CPU
 
     /** Traps to handle given fault. */
     void trap(const Fault &fault, ThreadID tid, const StaticInstPtr &inst);
+
+    /**
+     * Mark vector fields in scoreboard as ready right after switching
+     * vector mode, since software may read vectors at this time.
+     */
+    void setVectorsAsReady(ThreadID tid);
 
     /** Check if a change in renaming is needed for vector registers.
      * The vecMode variable is updated and propagated to rename maps.
@@ -713,13 +715,13 @@ class FullO3CPU : public BaseO3CPU
     /** CPU pushRequest function, forwards request to LSQ. */
     Fault pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,
-                      uint64_t *res, AtomicOpFunctor *amo_op = nullptr,
-                      const std::vector<bool>& byteEnable =
+                      uint64_t *res, AtomicOpFunctorPtr amo_op = nullptr,
+                      const std::vector<bool>& byte_enable =
                           std::vector<bool>())
 
     {
         return iew.ldstQueue.pushRequest(inst, isLoad, data, size, addr,
-                flags, res, amo_op, byteEnable);
+                flags, res, std::move(amo_op), byte_enable);
     }
 
     /** CPU read function, forwards read to LSQ. */

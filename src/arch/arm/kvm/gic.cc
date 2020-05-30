@@ -33,9 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
- *          Curtis Dunham
  */
 
 #include "arch/arm/kvm/gic.hh"
@@ -115,8 +112,8 @@ KvmKernelGicV2::getGicReg(unsigned group, unsigned vcpu, unsigned offset)
     uint64_t reg;
 
     assert(vcpu <= KVM_ARM_IRQ_VCPU_MASK);
-    const uint32_t attr(
-        (vcpu << KVM_DEV_ARM_VGIC_CPUID_SHIFT) |
+    const uint64_t attr(
+        ((uint64_t)vcpu << KVM_DEV_ARM_VGIC_CPUID_SHIFT) |
         (offset << KVM_DEV_ARM_VGIC_OFFSET_SHIFT));
 
     kdev.getAttrPtr(group, attr, &reg);
@@ -130,8 +127,8 @@ KvmKernelGicV2::setGicReg(unsigned group, unsigned vcpu, unsigned offset,
     uint64_t reg = value;
 
     assert(vcpu <= KVM_ARM_IRQ_VCPU_MASK);
-    const uint32_t attr(
-        (vcpu << KVM_DEV_ARM_VGIC_CPUID_SHIFT) |
+    const uint64_t attr(
+        ((uint64_t)vcpu << KVM_DEV_ARM_VGIC_CPUID_SHIFT) |
         (offset << KVM_DEV_ARM_VGIC_OFFSET_SHIFT));
 
     kdev.setAttrPtr(group, attr, &reg);

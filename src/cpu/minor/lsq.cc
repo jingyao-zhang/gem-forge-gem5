@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 #include "cpu/minor/lsq.hh"
@@ -43,7 +41,6 @@
 #include <sstream>
 
 #include "arch/locked_mem.hh"
-#include "arch/mmapped_ipr.hh"
 #include "base/logging.hh"
 #include "cpu/minor/cpu.hh"
 #include "cpu/minor/exec_context.hh"
@@ -150,9 +147,17 @@ LSQ::LSQRequest::containsAddrRangeOf(
 LSQ::AddrRangeCoverage
 LSQ::LSQRequest::containsAddrRangeOf(LSQRequestPtr other_request)
 {
-    return containsAddrRangeOf(request->getPaddr(), request->getSize(),
+    AddrRangeCoverage ret = containsAddrRangeOf(
+        request->getPaddr(), request->getSize(),
         other_request->request->getPaddr(), other_request->request->getSize());
+    /* If there is a strobe mask then store data forwarding might not be
+     * correct. Instead of checking enablemant of every byte we just fall back
+     * to PartialAddrRangeCoverage to prohibit store data forwarding */
+    if (ret == FullAddrRangeCoverage && request->isMasked())
+        ret = PartialAddrRangeCoverage;
+    return ret;
 }
+
 
 bool
 LSQ::LSQRequest::isBarrier()
@@ -303,9 +308,9 @@ LSQ::SingleDataRequest::startAddrTranslation()
     ThreadContext *thread = port.cpu.getContext(
         inst->id.threadId);
 
-    const auto &byteEnable = request->getByteEnable();
-    if (byteEnable.size() == 0 ||
-        isAnyActiveElement(byteEnable.cbegin(), byteEnable.cend())) {
+    const auto &byte_enable = request->getByteEnable();
+    if (byte_enable.size() == 0 ||
+        isAnyActiveElement(byte_enable.cbegin(), byte_enable.cend())) {
         port.numAccessesInDTLB++;
 
         setState(LSQ::LSQRequest::InTranslation);
@@ -507,10 +512,9 @@ LSQ::SplitDataRequest::makeFragmentRequests()
 
         fragment->setContext(request->contextId());
         if (byte_enable.empty()) {
-            fragment->setVirt(0 /* asid */,
+            fragment->setVirt(
                 fragment_addr, fragment_size, request->getFlags(),
-                request->masterId(),
-                request->getPC());
+                request->masterId(), request->getPC());
         } else {
             // Set up byte-enable mask for the current fragment
             auto it_start = byte_enable.begin() +
@@ -518,10 +522,9 @@ LSQ::SplitDataRequest::makeFragmentRequests()
             auto it_end = byte_enable.begin() +
                 (fragment_addr - base_addr) + fragment_size;
             if (isAnyActiveElement(it_start, it_end)) {
-                fragment->setVirt(0 /* asid */,
+                fragment->setVirt(
                     fragment_addr, fragment_size, request->getFlags(),
-                    request->masterId(),
-                    request->getPC());
+                    request->masterId(), request->getPC());
                 fragment->setByteEnable(std::vector<bool>(it_start, it_end));
             } else {
                 disabled_fragment = true;
@@ -1106,7 +1109,7 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
         }
     } else {
         /* Store.  Can it be sent to the store buffer? */
-        if (bufferable && !request->request->isMmappedIpr()) {
+        if (bufferable && !request->request->isLocalAccess()) {
             request->setState(LSQRequest::StoreToStoreBuffer);
             moveFromRequestsToTransfers(request);
             DPRINTF(MinorMem, "Moving store into transfers queue\n");
@@ -1264,18 +1267,17 @@ LSQ::tryToSend(LSQRequestPtr request)
          *  so the response can be correctly handled */
         assert(packet->findNextSenderState<LSQRequest>());
 
-        if (request->request->isMmappedIpr()) {
+        if (request->request->isLocalAccess()) {
             ThreadContext *thread =
                 cpu.getContext(cpu.contextToThread(
                                 request->request->contextId()));
 
-            if (request->isLoad) {
+            if (request->isLoad)
                 DPRINTF(MinorMem, "IPR read inst: %s\n", *(request->inst));
-                TheISA::handleIprRead(thread, packet);
-            } else {
+            else
                 DPRINTF(MinorMem, "IPR write inst: %s\n", *(request->inst));
-                TheISA::handleIprWrite(thread, packet);
-            }
+
+            request->request->localAccessor(thread, packet);
 
             request->stepToNextPacket();
             ret = request->sentAllPackets();
@@ -1696,8 +1698,8 @@ LSQ::needsToTick()
 Fault
 LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                  unsigned int size, Addr addr, Request::Flags flags,
-                 uint64_t *res, AtomicOpFunctor *amo_op,
-                 const std::vector<bool>& byteEnable)
+                 uint64_t *res, AtomicOpFunctorPtr amo_op,
+                 const std::vector<bool>& byte_enable)
 {
     assert(inst->translationFault == NoFault || inst->inLSQ);
 
@@ -1755,11 +1757,11 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
 
     int cid = cpu.threads[inst->id.threadId]->getTC()->contextId();
     request->request->setContext(cid);
-    request->request->setVirt(0 /* asid */,
+    request->request->setVirt(
         addr, size, flags, cpu.dataMasterId(),
         /* I've no idea why we need the PC, but give it */
-        inst->pc.instAddr(), amo_op);
-    request->request->setByteEnable(byteEnable);
+        inst->pc.instAddr(), std::move(amo_op));
+    request->request->setByteEnable(byte_enable);
 
     requests.push(request);
     inst->inLSQ = true;

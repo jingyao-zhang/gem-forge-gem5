@@ -27,7 +27,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-machine(MachineType:Directory, "Directory protocol") 
+machine(MachineType:Directory, "Directory protocol")
     : DirectoryMemory * directory;
       Cycles directory_latency := 12;
       Cycles to_memory_controller_latency := 1;
@@ -43,6 +43,8 @@ machine(MachineType:Directory, "Directory protocol")
             vnet_type="request";
       MessageBuffer * dmaRequestToDir, network="From", virtual_network="0",
             vnet_type="request";
+
+      MessageBuffer * requestToMemory;
       MessageBuffer * responseFromMemory;
 {
   // STATES
@@ -54,7 +56,7 @@ machine(MachineType:Directory, "Directory protocol")
     M_DRD, AccessPermission:Busy, desc="Blocked on an invalidation for a DMA read";
     M_DWR, AccessPermission:Busy, desc="Blocked on an invalidation for a DMA write";
 
-    M_DWRI, AccessPermission:Busy, desc="Intermediate state M_DWR-->I"; 
+    M_DWRI, AccessPermission:Busy, desc="Intermediate state M_DWR-->I";
     M_DRDI, AccessPermission:Busy, desc="Intermediate state M_DRD-->I";
 
     IM, AccessPermission:Busy, desc="Intermediate state I-->M";
@@ -83,7 +85,7 @@ machine(MachineType:Directory, "Directory protocol")
   // TYPES
 
   // DirectoryEntry
-  structure(Entry, desc="...", interface="AbstractEntry") {
+  structure(Entry, desc="...", interface="AbstractCacheEntry", main="false") {
     State DirectoryState,          desc="Directory state";
     NetDest Sharers,                   desc="Sharers for this block";
     NetDest Owner,                     desc="Owner of this block";
@@ -125,7 +127,7 @@ machine(MachineType:Directory, "Directory protocol")
                               directory.allocate(addr, new Entry));
     return dir_entry;
   }
- 
+
   State getState(TBE tbe, Addr addr) {
     if (is_valid(tbe)) {
       return tbe.TBEState;
@@ -150,7 +152,7 @@ machine(MachineType:Directory, "Directory protocol")
       }
 
       getDirectoryEntry(addr).DirectoryState := state;
-    
+
       if (state == State:I)  {
         assert(getDirectoryEntry(addr).Owner.count() == 0);
         assert(getDirectoryEntry(addr).Sharers.count() == 0);
@@ -204,6 +206,7 @@ machine(MachineType:Directory, "Directory protocol")
   out_port(responseNetwork_out, ResponseMsg, responseFromDir);
   out_port(requestQueue_out, ResponseMsg, requestToDir); // For recycling requests
   out_port(dmaResponseNetwork_out, DMAResponseMsg, dmaResponseFromDir);
+  out_port(memQueue_out, MemoryMsg, requestToMemory);
 
   // ** IN_PORTS **
   in_port(dmaRequestQueue_in, DMARequestMsg, dmaRequestToDir) {
@@ -354,7 +357,7 @@ machine(MachineType:Directory, "Directory protocol")
         out_msg.PhysicalAddress := address;
         out_msg.LineAddress := address;
         out_msg.Type := DMAResponseType:ACK;
-        out_msg.Destination.add(tbe.DmaRequestor); 
+        out_msg.Destination.add(tbe.DmaRequestor);
         out_msg.MessageSize := MessageSizeType:Writeback_Control;
       }
   }
@@ -401,7 +404,7 @@ machine(MachineType:Directory, "Directory protocol")
   action(p_popIncomingDMARequestQueue, "p", desc="Pop incoming DMA queue") {
     dmaRequestQueue_in.dequeue(clockEdge());
   }
-  
+
   action(v_allocateTBE, "v", desc="Allocate TBE") {
     peek(dmaRequestQueue_in, DMARequestMsg) {
       TBEs.allocate(address);
@@ -445,36 +448,64 @@ machine(MachineType:Directory, "Directory protocol")
 
   action(qf_queueMemoryFetchRequest, "qf", desc="Queue off-chip fetch request") {
     peek(requestQueue_in, RequestMsg) {
-      queueMemoryRead(in_msg.Requestor, address, to_memory_controller_latency);
+      enqueue(memQueue_out, MemoryMsg, to_memory_controller_latency) {
+        out_msg.addr := address;
+        out_msg.Type := MemoryRequestType:MEMORY_READ;
+        out_msg.Sender := in_msg.Requestor;
+        out_msg.MessageSize := MessageSizeType:Request_Control;
+        out_msg.Len := 0;
+      }
     }
   }
 
   action(qf_queueMemoryFetchRequestDMA, "qfd", desc="Queue off-chip fetch request") {
     peek(dmaRequestQueue_in, DMARequestMsg) {
-      queueMemoryRead(in_msg.Requestor, address, to_memory_controller_latency);
+      enqueue(memQueue_out, MemoryMsg, to_memory_controller_latency) {
+        out_msg.addr := address;
+        out_msg.Type := MemoryRequestType:MEMORY_READ;
+        out_msg.Sender := in_msg.Requestor;
+        out_msg.MessageSize := MessageSizeType:Request_Control;
+        out_msg.Len := 0;
+      }
     }
   }
 
   action(qw_queueMemoryWBRequest_partial, "qwp", desc="Queue off-chip writeback request") {
     peek(dmaRequestQueue_in, DMARequestMsg) {
-      queueMemoryWritePartial(in_msg.Requestor, address,
-                              to_memory_controller_latency, in_msg.DataBlk,
-                              in_msg.Len);
+      enqueue(memQueue_out, MemoryMsg, to_memory_controller_latency) {
+        out_msg.addr := address;
+        out_msg.Type := MemoryRequestType:MEMORY_WB;
+        out_msg.Sender := in_msg.Requestor;
+        out_msg.MessageSize := MessageSizeType:Writeback_Data;
+        out_msg.DataBlk := in_msg.DataBlk;
+        out_msg.Len := in_msg.Len;
+      }
     }
   }
 
   action(qw_queueMemoryWBRequest_partialTBE, "qwt", desc="Queue off-chip writeback request") {
     peek(requestQueue_in, RequestMsg) {
-      queueMemoryWritePartial(in_msg.Requestor, address,
-                              to_memory_controller_latency, tbe.DataBlk,
-                              tbe.Len);
+      enqueue(memQueue_out, MemoryMsg, to_memory_controller_latency) {
+        out_msg.addr := address;
+        out_msg.Type := MemoryRequestType:MEMORY_WB;
+        out_msg.Sender := in_msg.Requestor;
+        out_msg.MessageSize := MessageSizeType:Writeback_Data;
+        out_msg.DataBlk := tbe.DataBlk;
+        out_msg.Len := tbe.Len;
+      }
     }
   }
 
   action(l_queueMemoryWBRequest, "lq", desc="Write PUTX data to memory") {
     peek(requestQueue_in, RequestMsg) {
-      queueMemoryWrite(in_msg.Requestor, address, to_memory_controller_latency,
-                       in_msg.DataBlk);
+      enqueue(memQueue_out, MemoryMsg, to_memory_controller_latency) {
+        out_msg.addr := address;
+        out_msg.Type := MemoryRequestType:MEMORY_WB;
+        out_msg.Sender := in_msg.Requestor;
+        out_msg.MessageSize := MessageSizeType:Writeback_Data;
+        out_msg.DataBlk := in_msg.DataBlk;
+        out_msg.Len := 0;
+      }
     }
   }
 
@@ -490,7 +521,7 @@ machine(MachineType:Directory, "Directory protocol")
   transition({IM, MI, ID, ID_W}, {GETX, GETS, PUTX, PUTX_NotOwner} ) {
     z_recycleRequestQueue;
   }
- 
+
   transition({IM, MI, ID, ID_W}, {DMA_READ, DMA_WRITE} ) {
     y_recycleDMARequestQueue;
   }
@@ -546,7 +577,7 @@ machine(MachineType:Directory, "Directory protocol")
     p_popIncomingDMARequestQueue;
   }
 
-  transition(M_DRD, PUTX, M_DRDI) {     
+  transition(M_DRD, PUTX, M_DRDI) {
     drp_sendDMAData;
     c_clearOwner;
     l_queueMemoryWBRequest;
@@ -555,7 +586,7 @@ machine(MachineType:Directory, "Directory protocol")
 
   transition(M_DRDI, Memory_Ack, I) {
     l_sendWriteBackAck;
-    w_deallocateTBE;   
+    w_deallocateTBE;
     l_popMemQueue;
   }
 

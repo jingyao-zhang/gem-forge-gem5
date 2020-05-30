@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2020 ARM Limited
+ * All rights reserved
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 1999-2013 Mark D. Hill and David A. Wood
  * All rights reserved.
  *
@@ -30,7 +42,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
  : Sequencer * sequencer;
    CacheMemory * L1Icache;
    CacheMemory * L1Dcache;
-   Prefetcher * prefetcher;
+   RubyPrefetcher * prefetcher;
    int l2_select_num_bits;
    Cycles l1_request_latency := 2;
    Cycles l1_response_latency := 2;
@@ -330,10 +342,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
                               L1Icache_entry, TBEs[in_msg.LineAddress]);
                   } else {
                       // No room in the L1, so we need to make room in the L1
+                      Addr victim := L1Icache.cacheProbe(in_msg.LineAddress);
                       trigger(Event:PF_L1_Replacement,
-                              L1Icache.cacheProbe(in_msg.LineAddress),
-                              getL1ICacheEntry(L1Icache.cacheProbe(in_msg.LineAddress)),
-                              TBEs[L1Icache.cacheProbe(in_msg.LineAddress)]);
+                              victim, getL1ICacheEntry(victim), TBEs[victim]);
                   }
               } else {
                   // Data prefetch
@@ -364,10 +375,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
                               L1Dcache_entry, TBEs[in_msg.LineAddress]);
                   } else {
                       // No room in the L1, so we need to make room in the L1
+                      Addr victim := L1Dcache.cacheProbe(in_msg.LineAddress);
                       trigger(Event:PF_L1_Replacement,
-                              L1Dcache.cacheProbe(in_msg.LineAddress),
-                              getL1DCacheEntry(L1Dcache.cacheProbe(in_msg.LineAddress)),
-                              TBEs[L1Dcache.cacheProbe(in_msg.LineAddress)]);
+                              victim, getL1DCacheEntry(victim), TBEs[victim]);
                   }
               }
           }
@@ -816,11 +826,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
       DPRINTF(RubySlicc, "%#x\n", address);
 
     }
-  }
-
-  action(dg_invalidate_sc, "dg",
-         desc="Invalidate store conditional as the cache lost permissions") {
-    sequencer.invalidateSC(address);
   }
 
   action(h_load_hit, "hd",
@@ -1396,7 +1401,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP")
   transition(SM, Inv, IM) {
     forward_eviction_to_cpu;
     fi_sendInvAck;
-    dg_invalidate_sc;
     l_popRequestQueue;
   }
 

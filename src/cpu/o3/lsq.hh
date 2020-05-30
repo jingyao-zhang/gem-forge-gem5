@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, 2014, 2018 ARM Limited
+ * Copyright (c) 2011-2012, 2014, 2018-2019 ARM Limited
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
  * All rights reserved
  *
@@ -37,8 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Korey Sewell
  */
 
 #ifndef __CPU_O3_LSQ_HH__
@@ -299,7 +297,7 @@ class LSQ
         const Request::Flags _flags;
         std::vector<bool> _byteEnable;
         uint32_t _numOutstandingPackets;
-        AtomicOpFunctor *_amo_op;
+        AtomicOpFunctorPtr _amo_op;
       protected:
         LSQUnit* lsqUnit() { return &_port; }
         LSQRequest(LSQUnit* port, const DynInstPtr& inst, bool isLoad) :
@@ -318,7 +316,7 @@ class LSQ
                    const Addr& addr, const uint32_t& size,
                    const Request::Flags& flags_,
                    PacketDataPtr data = nullptr, uint64_t* res = nullptr,
-                   AtomicOpFunctor* amo_op = nullptr)
+                   AtomicOpFunctorPtr amo_op = nullptr)
             : _state(State::NotIssued), _senderState(nullptr),
             numTranslatedFragments(0),
             numInTranslationFragments(0),
@@ -326,7 +324,7 @@ class LSQ
             _res(res), _addr(addr), _size(size),
             _flags(flags_),
             _numOutstandingPackets(0),
-            _amo_op(amo_op)
+            _amo_op(std::move(amo_op))
         {
             flags.set(Flag::IsLoad, isLoad);
             flags.set(Flag::WbStore,
@@ -406,15 +404,16 @@ class LSQ
          */
         void
         addRequest(Addr addr, unsigned size,
-                   const std::vector<bool>& byteEnable)
+                   const std::vector<bool>& byte_enable)
         {
-            if (byteEnable.empty() ||
-                isAnyActiveElement(byteEnable.begin(), byteEnable.end())) {
-                auto request = std::make_shared<Request>(_inst->getASID(),
+            if (byte_enable.empty() ||
+                isAnyActiveElement(byte_enable.begin(), byte_enable.end())) {
+                auto request = std::make_shared<Request>(
                         addr, size, _flags, _inst->masterId(),
-                        _inst->instAddr(), _inst->contextId(), _amo_op);
-                if (!byteEnable.empty()) {
-                    request->setByteEnable(byteEnable);
+                        _inst->instAddr(), _inst->contextId(),
+                        std::move(_amo_op));
+                if (!byte_enable.empty()) {
+                    request->setByteEnable(byte_enable);
                 }
                 _requests.push_back(request);
             }
@@ -456,10 +455,10 @@ class LSQ
          * For a previously allocated Request objects.
          */
         void
-        setVirt(int asid, Addr vaddr, unsigned size, Request::Flags flags_,
+        setVirt(Addr vaddr, unsigned size, Request::Flags flags_,
                 MasterID mid, Addr pc)
         {
-            request()->setVirt(asid, vaddr, size, flags_, mid, pc);
+            request()->setVirt(vaddr, size, flags_, mid, pc);
         }
 
         void
@@ -550,8 +549,8 @@ class LSQ
         /**
          * Memory mapped IPR accesses
          */
-        virtual void handleIprWrite(ThreadContext *thread, PacketPtr pkt) = 0;
-        virtual Cycles handleIprRead(ThreadContext *thread, PacketPtr pkt) = 0;
+        virtual Cycles handleLocalAccess(
+                ThreadContext *thread, PacketPtr pkt) = 0;
 
         /**
          * Test if the request accesses a particular cache line.
@@ -620,6 +619,12 @@ class LSQ
         {
             return (_state == State::Request ||
                     (isPartialFault() && isLoad()));
+        }
+
+        void
+        setStateToFault()
+        {
+            setState(State::Fault);
         }
 
         /**
@@ -721,9 +726,9 @@ class LSQ
                           const Request::Flags& flags_,
                           PacketDataPtr data = nullptr,
                           uint64_t* res = nullptr,
-                          AtomicOpFunctor* amo_op = nullptr) :
+                          AtomicOpFunctorPtr amo_op = nullptr) :
             LSQRequest(port, inst, isLoad, addr, size, flags_, data, res,
-                       amo_op) {}
+                       std::move(amo_op)) {}
 
         inline virtual ~SingleDataRequest() {}
         virtual void initiateTranslation();
@@ -732,8 +737,7 @@ class LSQ
         virtual bool recvTimingResp(PacketPtr pkt);
         virtual void sendPacketToCache();
         virtual void buildPackets();
-        virtual void handleIprWrite(ThreadContext *thread, PacketPtr pkt);
-        virtual Cycles handleIprRead(ThreadContext *thread, PacketPtr pkt);
+        virtual Cycles handleLocalAccess(ThreadContext *thread, PacketPtr pkt);
         virtual bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask);
     };
 
@@ -806,8 +810,7 @@ class LSQ
         virtual void sendPacketToCache();
         virtual void buildPackets();
 
-        virtual void handleIprWrite(ThreadContext *thread, PacketPtr pkt);
-        virtual Cycles handleIprRead(ThreadContext *thread, PacketPtr pkt);
+        virtual Cycles handleLocalAccess(ThreadContext *thread, PacketPtr pkt);
         virtual bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask);
 
         virtual RequestPtr mainRequest();
@@ -1032,8 +1035,8 @@ class LSQ
 
     Fault pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,
-                      uint64_t *res, AtomicOpFunctor *amo_op,
-                      const std::vector<bool>& byteEnable);
+                      uint64_t *res, AtomicOpFunctorPtr amo_op,
+                      const std::vector<bool>& byte_enable);
 
     /** The CPU pointer. */
     O3CPU *cpu;

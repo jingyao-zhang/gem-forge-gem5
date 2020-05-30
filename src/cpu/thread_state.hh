@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
  */
 
 #ifndef __CPU_THREAD_STATE_HH__
@@ -46,9 +44,6 @@ namespace Kernel {
 }
 
 class Checkpoint;
-
-class FSTranslatingPortProxy;
-class SETranslatingPortProxy;
 
 /**
  *  Struct for holding general thread state that is needed across CPU
@@ -107,20 +102,7 @@ struct ThreadState : public Serializable {
 
     Process *getProcessPtr() { return process; }
 
-    void setProcessPtr(Process *p)
-    {
-        process = p;
-        /**
-         * When the process pointer changes while operating in SE Mode,
-         * the se translating port proxy needs to be reinitialized since it
-         * holds a pointer to the process class.
-         */
-        if (virtProxy) {
-            delete virtProxy;
-            virtProxy = NULL;
-            initMemProxies(NULL);
-        }
-    }
+    void setProcessPtr(Process *p) { process = p; }
 
     /** Reads the number of instructions functionally executed and
      * committed.

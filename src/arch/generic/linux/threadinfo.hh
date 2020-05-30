@@ -24,10 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Nathan Binkert
- *          Dam Sunwoo
  */
 
 #ifndef __ARCH_GENERIC_LINUX_THREADINFO_HH__
@@ -51,7 +47,7 @@ class ThreadInfo
     get_data(const char *symbol, T &data)
     {
         Addr addr = 0;
-        if (!sys->kernelSymtab->findAddress(symbol, addr)) {
+        if (!sys->workload->symtab(tc)->findAddress(symbol, addr)) {
             warn_once("Unable to find kernel symbol %s\n", symbol);
             warn_once("Kernel not compiled with task_struct info; can't get "
                       "currently executing task/process/thread name/ids!\n");

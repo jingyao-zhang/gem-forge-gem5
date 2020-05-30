@@ -37,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Korey Sewell
  */
 
 #ifndef __CPU_O3_THREAD_CONTEXT_IMPL_HH__
@@ -72,6 +69,9 @@ void
 O3ThreadContext<Impl>::takeOverFrom(ThreadContext *old_context)
 {
     ::takeOverFrom(*this, *old_context);
+
+    this->getIsaPtr()->takeOverFrom(this, old_context);
+
     TheISA::Decoder *newDecoder = getDecoderPtr();
     TheISA::Decoder *oldDecoder = old_context->getDecoderPtr();
     newDecoder->takeOverFrom(oldDecoder);
@@ -200,7 +200,7 @@ template <class Impl>
 void
 O3ThreadContext<Impl>::clearArchRegs()
 {
-    cpu->isa[thread->threadId()]->clear();
+    cpu->isa[thread->threadId()]->clear(this);
 }
 
 template <class Impl>

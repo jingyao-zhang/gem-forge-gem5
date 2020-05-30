@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Mitch Hayenga
  */
 
 #ifndef __MEM_CACHE_PREFETCH_QUEUED_HH__
@@ -51,12 +49,14 @@
 
 struct QueuedPrefetcherParams;
 
-class QueuedPrefetcher : public BasePrefetcher
+namespace Prefetcher {
+
+class Queued : public Base
 {
   protected:
     struct DeferredPacket : public BaseTLB::Translation {
         /** Owner of the packet */
-        QueuedPrefetcher *owner;
+        Queued *owner;
         /** Prefetch info corresponding to this packet */
         PrefetchInfo pfInfo;
         /** Time when this prefetch becomes ready */
@@ -78,9 +78,10 @@ class QueuedPrefetcher : public BasePrefetcher
          * @param p PacketPtr with the memory request of the prefetch
          * @param prio This prefetch priority
          */
-        DeferredPacket(QueuedPrefetcher *o, PrefetchInfo const &pfi, Tick t,
+        DeferredPacket(Queued *o, PrefetchInfo const &pfi, Tick t,
             int32_t prio) : owner(o), pfInfo(pfi), tick(t), pkt(nullptr),
-            priority(prio), translationRequest() {
+            priority(prio), translationRequest(), tc(nullptr),
+            ongoingTranslation(false) {
         }
 
         bool operator>(const DeferredPacket& that) const
@@ -176,8 +177,8 @@ class QueuedPrefetcher : public BasePrefetcher
   public:
     using AddrPriority = std::pair<Addr, int32_t>;
 
-    QueuedPrefetcher(const QueuedPrefetcherParams *p);
-    virtual ~QueuedPrefetcher();
+    Queued(const QueuedPrefetcherParams *p);
+    virtual ~Queued();
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
@@ -245,6 +246,8 @@ class QueuedPrefetcher : public BasePrefetcher
     RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi,
                                         PacketPtr pkt);
 };
+
+} // namespace Prefetcher
 
 #endif //__MEM_CACHE_PREFETCH_QUEUED_HH__
 

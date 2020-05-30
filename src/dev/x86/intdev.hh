@@ -36,19 +36,16 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __DEV_X86_INTDEV_HH__
 #define __DEV_X86_INTDEV_HH__
 
 #include <cassert>
-#include <list>
+#include <functional>
 #include <string>
 
-#include "arch/x86/intmessage.hh"
-#include "arch/x86/x86_traits.hh"
+#include "base/cast.hh"
 #include "mem/tport.hh"
 #include "sim/sim_object.hh"
 
@@ -76,7 +73,7 @@ class IntSlavePort : public SimpleTimingPort
     Tick
     recvAtomic(PacketPtr pkt)
     {
-        panic_if(pkt->cmd != MemCmd::MessageReq,
+        panic_if(pkt->cmd != MemCmd::WriteReq,
                 "%s received unexpected command %s from %s.\n",
                 name(), pkt->cmd.toString(), getPeer());
         pkt->headerDelay = pkt->payloadDelay = 0;
@@ -84,16 +81,36 @@ class IntSlavePort : public SimpleTimingPort
     }
 };
 
-typedef std::list<int> ApicList;
+template<class T>
+PacketPtr
+buildIntPacket(Addr addr, T payload)
+{
+    RequestPtr req = std::make_shared<Request>(
+        addr, sizeof(T), Request::UNCACHEABLE, Request::intMasterId);
+    PacketPtr pkt = new Packet(req, MemCmd::WriteReq);
+    pkt->allocate();
+    pkt->setRaw<T>(payload);
+    return pkt;
+}
 
 template <class Device>
 class IntMasterPort : public QueuedMasterPort
 {
+  private:
     ReqPacketQueue reqQueue;
     SnoopRespPacketQueue snoopRespQueue;
 
     Device* device;
     Tick latency;
+
+    typedef std::function<void(PacketPtr)> OnCompletionFunc;
+    struct OnCompletion : public Packet::SenderState
+    {
+        OnCompletionFunc func;
+        OnCompletion(OnCompletionFunc _func) : func(_func) {}
+    };
+    // If nothing extra needs to happen, just clean up the packet.
+    static void defaultOnCompletion(PacketPtr pkt) { delete pkt; }
 
   public:
     IntMasterPort(const std::string& _name, SimObject* _parent,
@@ -107,51 +124,26 @@ class IntMasterPort : public QueuedMasterPort
     bool
     recvTimingResp(PacketPtr pkt) override
     {
-        return device->recvResponse(pkt);
+        assert(pkt->isResponse());
+        auto *oc = safe_cast<OnCompletion *>(pkt->popSenderState());
+        oc->func(pkt);
+        delete oc;
+        return true;
     }
 
-    // This is x86 focused, so if this class becomes generic, this would
-    // need to be moved into a subclass.
     void
-    sendMessage(X86ISA::ApicList apics, TriggerIntMessage message, bool timing)
+    sendMessage(PacketPtr pkt, bool timing,
+            OnCompletionFunc func=defaultOnCompletion)
     {
-        for (auto id: apics) {
-            PacketPtr pkt = buildIntRequest(id, message);
-            if (timing) {
-                schedTimingReq(pkt, curTick() + latency);
-                // The target handles cleaning up the packet in timing mode.
-            } else {
-                // ignore the latency involved in the atomic transaction
-                sendAtomic(pkt);
-                assert(pkt->isResponse());
-                // also ignore the latency in handling the response
-                device->recvResponse(pkt);
-            }
+        if (timing) {
+            pkt->pushSenderState(new OnCompletion(func));
+            schedTimingReq(pkt, curTick() + latency);
+            // The target handles cleaning up the packet in timing mode.
+        } else {
+            // ignore the latency involved in the atomic transaction
+            sendAtomic(pkt);
+            func(pkt);
         }
-    }
-};
-
-class IntDevice
-{
-  protected:
-
-    IntMasterPort<IntDevice> intMasterPort;
-
-  public:
-    IntDevice(SimObject * parent, Tick latency = 0) :
-        intMasterPort(parent->name() + ".int_master", parent, this, latency)
-    {
-    }
-
-    virtual ~IntDevice()
-    {}
-
-    virtual void init();
-
-    virtual bool
-    recvResponse(PacketPtr pkt)
-    {
-        panic("recvResponse not implemented.\n");
     }
 };
 

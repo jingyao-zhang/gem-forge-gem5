@@ -36,10 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Nathan Binkert
- *          Giacomo Travaglini
  */
 
 #ifndef __BASE_BITFIELD_HH__
@@ -54,12 +50,15 @@
 extern const uint8_t reverseLookUpTable[];
 
 /**
- * Generate a 64-bit mask of 'nbits' 1s, right justified.
+ * Generate a 64-bit mask of 'nbits' 1s, right justified. If a number of bits
+ * greater than 64 is given, it is truncated to 64.
+ *
+ * @param nbits The number of bits set in the mask.
  */
 inline uint64_t
 mask(int nbits)
 {
-    return (nbits == 64) ? (uint64_t)-1LL : (1ULL << nbits) - 1;
+    return (nbits >= 64) ? (uint64_t)-1LL : (1ULL << nbits) - 1;
 }
 
 /**
@@ -117,7 +116,14 @@ sext(uint64_t val)
 }
 
 /**
- * Return val with bits first to last set to bit_val
+ * Returns val with bits first to last set to the LSBs of bit_val
+ *
+ * E.g.:
+ * first: 7
+ * last:  4
+ * val:      0xFFFF
+ * bit_val:  0x0000
+ * returned: 0xFF0F
  */
 template <class T, class B>
 inline

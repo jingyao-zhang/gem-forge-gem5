@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
  */
 
 #ifndef __CPU_SIMPLE_TIMING_HH__
@@ -343,16 +341,16 @@ class TimingSimpleCPU : public BaseSimpleCPU
 
     Fault initiateMemRead(Addr addr, unsigned size,
             Request::Flags flags,
-            const std::vector<bool>& byteEnable =std::vector<bool>())
+            const std::vector<bool>& byte_enable =std::vector<bool>())
         override;
 
     Fault writeMem(uint8_t *data, unsigned size,
                    Addr addr, Request::Flags flags, uint64_t *res,
-                   const std::vector<bool>& byteEnable = std::vector<bool>())
+                   const std::vector<bool>& byte_enable = std::vector<bool>())
         override;
 
     Fault initiateMemAMO(Addr addr, unsigned size, Request::Flags flags,
-                         AtomicOpFunctor *amo_op) override;
+                         AtomicOpFunctorPtr amo_op) override;
 
     void fetch();
     void sendFetch(const Fault &fault,

@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
  */
 
 #include "cpu/thread_state.hh"
@@ -35,10 +33,10 @@
 #include "cpu/profile.hh"
 #include "cpu/quiesce_event.hh"
 #include "kern/kernel_stats.hh"
-#include "mem/fs_translating_port_proxy.hh"
 #include "mem/port.hh"
 #include "mem/port_proxy.hh"
 #include "mem/se_translating_port_proxy.hh"
+#include "mem/translating_port_proxy.hh"
 #include "sim/full_system.hh"
 #include "sim/serialize.hh"
 #include "sim/system.hh"
@@ -114,12 +112,11 @@ ThreadState::initMemProxies(ThreadContext *tc)
                                   baseCpu->cacheLineSize());
 
         assert(virtProxy == NULL);
-        virtProxy = new FSTranslatingPortProxy(tc);
+        virtProxy = new TranslatingPortProxy(tc);
     } else {
         assert(virtProxy == NULL);
-        virtProxy = new SETranslatingPortProxy(baseCpu->getSendFunctional(),
-                                           process,
-                                           SETranslatingPortProxy::NextPage);
+        virtProxy = new SETranslatingPortProxy(
+                tc, SETranslatingPortProxy::NextPage);
     }
 }
 

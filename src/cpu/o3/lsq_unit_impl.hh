@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2010-2014, 2017-2018 ARM Limited
+ * Copyright (c) 2010-2014, 2017-2019 ARM Limited
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
  * All rights reserved
  *
@@ -38,9 +38,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Korey Sewell
  */
 
 #ifndef __CPU_O3_LSQ_UNIT_IMPL_HH__
@@ -425,6 +422,7 @@ LSQUnit<Impl>::checkSnoop(PacketPtr pkt)
 
                 // Mark the load for re-execution
                 ld_inst->fault = std::make_shared<ReExec>();
+                req->setStateToFault();
             } else {
                 DPRINTF(LSQUnit, "HitExternal Snoop for addr %#x [sn:%lli]\n",
                         pkt->getAddr(), ld_inst->seqNum);
@@ -810,13 +808,13 @@ LSQUnit<Impl>::writebackStores()
             }
         }
 
-        if (req->request()->isMmappedIpr()) {
+        if (req->request()->isLocalAccess()) {
             assert(!inst->isStoreConditional());
             ThreadContext *thread = cpu->tcBase(lsqID);
             PacketPtr main_pkt = new Packet(req->mainRequest(),
                                             MemCmd::WriteReq);
             main_pkt->dataStatic(inst->memData);
-            req->handleIprWrite(thread, main_pkt);
+            req->request()->localAccessor(thread, main_pkt);
             delete main_pkt;
             completeStore(storeWBIt);
             storeWBIt++;

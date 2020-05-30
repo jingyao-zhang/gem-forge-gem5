@@ -38,10 +38,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Korey Sewell
- *          Rick Strong
  */
 
 #include "cpu/o3/cpu.hh"
@@ -67,12 +63,6 @@
 #include "sim/process.hh"
 #include "sim/stat_control.hh"
 #include "sim/system.hh"
-
-#if THE_ISA == ALPHA_ISA
-#include "arch/alpha/osfpal.hh"
-#include "debug/Activity.hh"
-
-#endif
 
 struct BaseCPUParams;
 
@@ -220,21 +210,19 @@ FullO3CPU<Impl>::FullO3CPU(DerivO3CPUParams *params)
 
     // Setup the rename map for whichever stages need it.
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        isa[tid] = params->isa[tid];
+        isa[tid] = dynamic_cast<TheISA::ISA *>(params->isa[tid]);
+        assert(isa[tid]);
         assert(RenameMode<TheISA::ISA>::equalsInit(isa[tid], isa[0]));
 
         // Only Alpha has an FP zero register, so for other ISAs we
         // use an invalid FP register index to avoid special treatment
         // of any valid FP reg.
         RegIndex invalidFPReg = TheISA::NumFloatRegs + 1;
-        RegIndex fpZeroReg =
-            (THE_ISA == ALPHA_ISA) ? TheISA::ZeroReg : invalidFPReg;
 
-        commitRenameMap[tid].init(&regFile, TheISA::ZeroReg, fpZeroReg,
-                                  &freeList,
-                                  vecMode);
+        commitRenameMap[tid].init(&regFile, TheISA::ZeroReg, invalidFPReg,
+                                  &freeList, vecMode);
 
-        renameMap[tid].init(&regFile, TheISA::ZeroReg, fpZeroReg,
+        renameMap[tid].init(&regFile, TheISA::ZeroReg, invalidFPReg,
                             &freeList, vecMode);
     }
 
@@ -599,13 +587,6 @@ FullO3CPU<Impl>::init()
         thread[tid]->initMemProxies(thread[tid]->getTC());
     }
 
-    if (FullSystem && !params()->switched_out) {
-        for (ThreadID tid = 0; tid < numThreads; tid++) {
-            ThreadContext *src_tc = threadContexts[tid];
-            TheISA::initCPU(src_tc, src_tc->contextId());
-        }
-    }
-
     // Clear noSquashFromTC.
     for (int tid = 0; tid < numThreads; ++tid)
         thread[tid]->noSquashFromTC = false;
@@ -865,6 +846,28 @@ FullO3CPU<Impl>::removeThread(ThreadID tid)
 
 template <class Impl>
 void
+FullO3CPU<Impl>::setVectorsAsReady(ThreadID tid)
+{
+    if (vecMode == Enums::Elem) {
+        for (auto v = 0; v < TheISA::NumVecRegs; v++)
+            for (auto e = 0; e < TheISA::NumVecElemPerVecReg; e++)
+                scoreboard.setReg(
+                    commitRenameMap[tid].lookup(
+                        RegId(VecElemClass, v, e)
+                    )
+                );
+    } else if (vecMode == Enums::Full) {
+        for (auto v = 0; v < TheISA::NumVecRegs; v++)
+            scoreboard.setReg(
+                commitRenameMap[tid].lookup(
+                    RegId(VecRegClass, v)
+                )
+            );
+    }
+}
+
+template <class Impl>
+void
 FullO3CPU<Impl>::switchRenameMode(ThreadID tid, UnifiedFreeList* freelist)
 {
     auto pc = this->pcState(tid);
@@ -879,6 +882,7 @@ FullO3CPU<Impl>::switchRenameMode(ThreadID tid, UnifiedFreeList* freelist)
         renameMap[tid].switchMode(vecMode);
         commitRenameMap[tid].switchMode(vecMode);
         renameMap[tid].switchFreeList(freelist);
+        setVectorsAsReady(tid);
     }
 }
 
@@ -918,7 +922,7 @@ FullO3CPU<Impl>::trap(const Fault &fault, ThreadID tid,
 
 template <class Impl>
 void
-FullO3CPU<Impl>::syscall(int64_t callnum, ThreadID tid, Fault *fault)
+FullO3CPU<Impl>::syscall(ThreadID tid, Fault *fault)
 {
     DPRINTF(O3CPU, "[tid:%i] Executing syscall().\n\n", tid);
 
@@ -929,7 +933,7 @@ FullO3CPU<Impl>::syscall(int64_t callnum, ThreadID tid, Fault *fault)
     ++(this->thread[tid]->funcExeInst);
 
     // Execute the actual syscall.
-    this->thread[tid]->syscall(callnum, fault);
+    this->thread[tid]->syscall(fault);
 
     // Decrease funcExeInst by one as the normal commit will handle
     // incrementing it.
@@ -1521,8 +1525,7 @@ FullO3CPU<Impl>::instDone(ThreadID tid, const DynInstPtr &inst)
         system->totalNumInsts++;
 
         // Check for instruction-count-based events.
-        comInstEventQueue[tid]->serviceEvents(thread[tid]->numInst);
-        system->instEventQueue.serviceEvents(system->totalNumInsts);
+        thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
     }
     thread[tid]->numOp++;
     thread[tid]->numOps++;

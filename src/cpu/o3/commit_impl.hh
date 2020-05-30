@@ -37,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Korey Sewell
  */
 #ifndef __CPU_O3_COMMIT_IMPL_HH__
 #define __CPU_O3_COMMIT_IMPL_HH__
@@ -1049,11 +1046,8 @@ DefaultCommit<Impl>::commitInsts()
                 // Set the doneSeqNum to the youngest committed instruction.
                 toIEW->commitInfo[tid].doneSeqNum = head_inst->seqNum;
 
-                if (tid == 0) {
-                    canHandleInterrupts =  (!head_inst->isDelayedCommit()) &&
-                                           ((THE_ISA != ALPHA_ISA) ||
-                                             (!(pc[0].instAddr() & 0x3)));
-                }
+                if (tid == 0)
+                    canHandleInterrupts = !head_inst->isDelayedCommit();
 
                 // at this point store conditionals should either have
                 // been completed or predicated false
@@ -1108,7 +1102,8 @@ DefaultCommit<Impl>::commitInsts()
                            !thread[tid]->trapPending);
                     do {
                         oldpc = pc[tid].instAddr();
-                        cpu->system->pcEventQueue.service(thread[tid]->getTC());
+                        thread[tid]->pcEventQueue.service(
+                                oldpc, thread[tid]->getTC());
                         count++;
                     } while (oldpc != pc[tid].instAddr());
                     if (count > 1) {

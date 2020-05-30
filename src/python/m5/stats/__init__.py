@@ -36,9 +36,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
-#          Andreas Sandberg
 
 from __future__ import print_function
 from __future__ import absolute_import
@@ -258,8 +255,11 @@ def _bindStatHierarchy(root):
         if isNullPointer(obj):
             return
         if m5.SimObject.isSimObjectVector(obj):
-            for idx, obj in enumerate(obj):
-                _bind_obj("{}{}".format(name, idx), obj)
+            if len(obj) == 1:
+                _bind_obj(name, obj[0])
+            else:
+                for idx, obj in enumerate(obj):
+                    _bind_obj("{}{}".format(name, idx), obj)
         else:
             # We need this check because not all obj.getCCObject() is an
             # instance of Stat::Group. For example, sc_core::sc_module, the C++
@@ -369,6 +369,10 @@ def dump(root=None):
     # Only prepare stats the first time we dump them in the same tick.
     if new_dump:
         _m5.stats.processDumpQueue()
+        # Notify new-style stats group that we are about to dump stats.
+        sim_root = Root.getInstance()
+        if sim_root:
+            sim_root.preDumpStats();
         prepare()
 
     for output in outputList:

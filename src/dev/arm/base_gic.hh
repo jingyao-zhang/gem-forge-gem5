@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 
 /** @file
@@ -65,6 +63,7 @@ class BaseGic :  public PioDevice
 {
   public:
     typedef BaseGicParams Params;
+    enum class GicVersion { GIC_V2, GIC_V3, GIC_V4 };
 
     BaseGic(const Params *p);
     virtual ~BaseGic();
@@ -106,6 +105,9 @@ class BaseGic :  public PioDevice
     {
         return (ArmSystem *) sys;
     }
+
+    /** Check if version supported */
+    virtual bool supportsVersion(GicVersion version) = 0;
 
   protected:
     /** Platform this GIC belongs to. */

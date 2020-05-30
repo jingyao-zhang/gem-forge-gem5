@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
  */
 
 #ifndef __CPU_SIMPLE_ATOMIC_HH__
@@ -218,16 +216,16 @@ class AtomicSimpleCPU : public BaseSimpleCPU
 
     Fault readMem(Addr addr, uint8_t *data, unsigned size,
                   Request::Flags flags,
-                  const std::vector<bool>& byteEnable = std::vector<bool>())
+                  const std::vector<bool>& byte_enable = std::vector<bool>())
         override;
 
     Fault writeMem(uint8_t *data, unsigned size,
                    Addr addr, Request::Flags flags, uint64_t *res,
-                   const std::vector<bool>& byteEnable = std::vector<bool>())
+                   const std::vector<bool>& byte_enable = std::vector<bool>())
         override;
 
     Fault amoMem(Addr addr, uint8_t* data, unsigned size,
-                 Request::Flags flags, AtomicOpFunctor *amo_op) override;
+                 Request::Flags flags, AtomicOpFunctorPtr amo_op) override;
 
     void regProbePoints() override;
 

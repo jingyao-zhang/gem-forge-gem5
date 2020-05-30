@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Radhika Jagtap
- *          Andreas Hansson
- *          Thomas Grass
  */
 
 /**
@@ -293,8 +289,6 @@ class ElasticTrace : public ProbeListenerObject
         Addr physAddr;
         /* Request virtual address in case of a load/store instruction */
         Addr virtAddr;
-        /* Address space id in case of a load/store instruction */
-        uint32_t asid;
         /* Request size in case of a load/store instruction */
         unsigned size;
         /** Default Constructor */

@@ -36,9 +36,8 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Stephen Hines
  */
+
 #ifndef __ARCH_ARM_INSTS_STATICINST_HH__
 #define __ARCH_ARM_INSTS_STATICINST_HH__
 
@@ -170,10 +169,10 @@ class ArmStaticInst : public StaticInst
                        bool withCond64 = false,
                        ConditionCode cond64 = COND_UC) const;
     void printTarget(std::ostream &os, Addr target,
-                     const SymbolTable *symtab) const;
+                     const Loader::SymbolTable *symtab) const;
     void printCondition(std::ostream &os, unsigned code,
                         bool noImplicit=false) const;
-    void printMemSymbol(std::ostream &os, const SymbolTable *symtab,
+    void printMemSymbol(std::ostream &os, const Loader::SymbolTable *symtab,
                         const std::string &prefix, const Addr addr,
                         const std::string &suffix) const;
     void printShiftOperand(std::ostream &os, IntRegIndex rm,
@@ -197,7 +196,7 @@ class ArmStaticInst : public StaticInst
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 
     static inline uint32_t
     cpsrWriteByInstr(CPSR cpsr, uint32_t val, SCR scr, NSACR nsacr,
@@ -314,9 +313,9 @@ class ArmStaticInst : public StaticInst
     cSwap(T val, bool big)
     {
         if (big) {
-            return gtobe(val);
+            return letobe(val);
         } else {
-            return gtole(val);
+            return val;
         }
     }
 
@@ -329,17 +328,17 @@ class ArmStaticInst : public StaticInst
             T tVal;
             E eVals[count];
         } conv;
-        conv.tVal = htog(val);
+        conv.tVal = htole(val);
         if (big) {
             for (unsigned i = 0; i < count; i++) {
-                conv.eVals[i] = gtobe(conv.eVals[i]);
+                conv.eVals[i] = letobe(conv.eVals[i]);
             }
         } else {
             for (unsigned i = 0; i < count; i++) {
-                conv.eVals[i] = gtole(conv.eVals[i]);
+                conv.eVals[i] = conv.eVals[i];
             }
         }
-        return gtoh(conv.tVal);
+        return letoh(conv.tVal);
     }
 
     // Perform an interworking branch.

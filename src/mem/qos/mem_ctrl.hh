@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 ARM Limited
+ * Copyright (c) 2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Matteo Andreozzi
  */
 
 #include "debug/QOS.hh"
@@ -123,26 +121,35 @@ class MemCtrl: public AbstractMemory
     /** bus state for next request event triggered */
     BusState busStateNext;
 
-    /** per-master average QoS priority */
-    Stats::VectorStandardDeviation avgPriority;
-    /** per-master average QoS distance between assigned and queued values */
-    Stats::VectorStandardDeviation avgPriorityDistance;
+    struct MemCtrlStats : public Stats::Group
+    {
+        MemCtrlStats(MemCtrl &mc);
 
-    /** per-priority minimum latency */
-    Stats::Vector priorityMinLatency;
-    /** per-priority maximum latency */
-    Stats::Vector priorityMaxLatency;
-    /** Count the number of turnarounds READ to WRITE */
-    Stats::Scalar numReadWriteTurnArounds;
-    /** Count the number of turnarounds WRITE to READ */
-    Stats::Scalar numWriteReadTurnArounds;
-    /** Count the number of times bus staying in READ state */
-    Stats::Scalar numStayReadState;
-    /** Count the number of times bus staying in WRITE state */
-    Stats::Scalar numStayWriteState;
+        void regStats() override;
 
-    /** registers statistics */
-    void regStats() override;
+        const MemCtrl &memCtrl;
+
+        /** per-master average QoS priority */
+        Stats::VectorStandardDeviation avgPriority;
+        /**
+         * per-master average QoS distance between assigned and
+         * queued values
+         */
+        Stats::VectorStandardDeviation avgPriorityDistance;
+
+        /** per-priority minimum latency */
+        Stats::Vector priorityMinLatency;
+        /** per-priority maximum latency */
+        Stats::Vector priorityMaxLatency;
+        /** Count the number of turnarounds READ to WRITE */
+        Stats::Scalar numReadWriteTurnArounds;
+        /** Count the number of turnarounds WRITE to READ */
+        Stats::Scalar numWriteReadTurnArounds;
+        /** Count the number of times bus staying in READ state */
+        Stats::Scalar numStayReadState;
+        /** Count the number of times bus staying in WRITE state */
+        Stats::Scalar numStayWriteState;
+    } stats;
 
     /**
      * Initializes dynamically counters and

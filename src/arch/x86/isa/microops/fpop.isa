@@ -35,9 +35,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
-//          Nilay Vaish
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -103,6 +100,9 @@ def template MicroFpOpConstructor {{
 }};
 
 let {{
+
+    import six
+
     # Make these empty strings so that concatenating onto
     # them will always work.
     header_output = ""
@@ -195,8 +195,8 @@ let {{
 
             return cls
 
+    @six.add_metaclass(FpOpMeta)
     class FpUnaryOp(X86Microop):
-        __metaclass__ = FpOpMeta
         # This class itself doesn't act as a microop
         abstract = True
 
@@ -231,8 +231,8 @@ let {{
                 "dataSize" : self.dataSize,
                 "spm" : self.spm}
 
+    @six.add_metaclass(FpOpMeta)
     class FpBinaryOp(X86Microop):
-        __metaclass__ = FpOpMeta
         # This class itself doesn't act as a microop
         abstract = True
 

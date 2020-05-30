@@ -35,8 +35,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 from __future__ import print_function
 
@@ -229,6 +227,7 @@ def main(*args):
     from . import trace
 
     from .util import inform, fatal, panic, isInteractive
+    from m5.util.terminal_formatter import TerminalFormatter
 
     if len(args) == 0:
         options, arguments = parse_options()
@@ -276,6 +275,7 @@ def main(*args):
         done = True
         print('Build information:')
         print()
+        print('gem5 version %s' % defines.gem5Version)
         print('compiled %s' % defines.compileDate)
         print('build options:')
         keys = list(defines.buildEnv.keys())
@@ -308,18 +308,21 @@ def main(*args):
         print("SimObjects:")
         objects = list(SimObject.allClasses.keys())
         objects.sort()
+        terminal_formatter = TerminalFormatter()
         for name in objects:
             obj = SimObject.allClasses[name]
-            print("    %s" % obj)
+            print(terminal_formatter.format_output(str(obj), indent=4))
             params = list(obj._params.keys())
             params.sort()
             for pname in params:
                 param = obj._params[pname]
                 default = getattr(param, 'default', '')
-                print("        %s" % pname)
+                print(terminal_formatter.format_output(pname, indent=8))
                 if default:
-                    print("            default: %s" % default)
-                print("            desc: %s" % param.desc)
+                    print(terminal_formatter.format_output(
+                        str(default), label="default: ", indent=21))
+                print(terminal_formatter.format_output(
+                    param.desc, label="desc: ", indent=21))
                 print()
             print()
 
@@ -336,6 +339,7 @@ def main(*args):
         print(brief_copyright)
         print()
 
+        print("gem5 version %s" % defines.gem5Version)
         print("gem5 compiled %s" % defines.compileDate)
 
         print("gem5 started %s" %

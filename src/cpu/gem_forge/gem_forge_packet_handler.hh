@@ -28,7 +28,8 @@ public:
                                         int contextId, Addr pc);
   static PacketPtr createGemForgeAMOPacket(Addr vaddr, Addr paddr, int size,
                                            MasterID masterID, int contextId,
-                                           Addr pc, AtomicOpFunctor *atomicOp);
+                                           Addr pc,
+                                           AtomicOpFunctorPtr atomicOp);
   static PacketPtr createStreamControlPacket(Addr paddr, MasterID masterID,
                                              int contextId, MemCmd::Command cmd,
                                              uint64_t data);

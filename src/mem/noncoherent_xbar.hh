@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2015 ARM Limited
+ * Copyright (c) 2011-2015, 2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -36,11 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ron Dreslinski
- *          Ali Saidi
- *          Andreas Hansson
- *          William Wang
  */
 
 /**
@@ -187,9 +182,6 @@ class NoncoherentXBar : public BaseXBar
     NoncoherentXBar(const NoncoherentXBarParams *p);
 
     virtual ~NoncoherentXBar();
-
-    void regStats() override;
-    Stats::Scalar totPktSize;
 };
 
 #endif //__MEM_NONCOHERENT_XBAR_HH__

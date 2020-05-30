@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_X86_DECODER_HH__
@@ -338,7 +336,7 @@ class Decoder
         DPRINTF(Decoder, "Getting more bytes.\n");
         basePC = fetchPC;
         offset = (fetchPC >= pc.instAddr()) ? 0 : pc.instAddr() - fetchPC;
-        fetchChunk = data;
+        fetchChunk = letoh(data);
         outOfBytes = false;
         process();
     }

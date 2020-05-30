@@ -37,8 +37,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 Import('*')
 
@@ -72,10 +70,10 @@ Source('port.cc')
 Source('packet_queue.cc')
 Source('port_proxy.cc')
 Source('physical.cc')
-Source('secure_port_proxy.cc')
 Source('simple_mem.cc')
 Source('snoop_filter.cc')
 Source('stack_dist_calc.cc')
+Source('token_port.cc')
 Source('tport.cc')
 Source('xbar.cc')
 Source('hmc_controller.cc')
@@ -83,7 +81,7 @@ Source('serial_link.cc')
 Source('mem_delay.cc')
 
 if env['TARGET_ISA'] != 'null':
-    Source('fs_translating_port_proxy.cc')
+    Source('translating_port_proxy.cc')
     Source('se_translating_port_proxy.cc')
     Source('page_table.cc')
 
@@ -118,6 +116,7 @@ DebugFlag('StackDist')
 DebugFlag("DRAMSim2")
 DebugFlag('HMCController')
 DebugFlag('SerialLink')
+DebugFlag('TokenPort')
 
 DebugFlag("MemChecker")
 DebugFlag("MemCheckerMonitor")

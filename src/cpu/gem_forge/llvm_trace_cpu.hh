@@ -227,7 +227,7 @@ private:
   // Process and ThreadContext for the simulation program.
   Process *process;
   ThreadContext *thread_context;
-  SymbolTable symbol_table;
+  ::Loader::SymbolTable symbol_table;
   // The top of the stack for this replay.
   Addr stackMin;
 

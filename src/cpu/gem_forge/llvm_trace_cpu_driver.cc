@@ -30,18 +30,16 @@ int LLVMTraceCPUDriver::open(ThreadContext *tc, int mode, int flags) {
   return tgt_fd;
 }
 
-int LLVMTraceCPUDriver::ioctl(ThreadContext *tc, unsigned req) {
+int LLVMTraceCPUDriver::ioctl(ThreadContext *tc, unsigned req, Addr buf) {
   DPRINTF(LLVMTraceCPU, "ioctl called with req %u\n", req);
   auto &memProxy = tc->getVirtProxy();
   auto p = tc->getProcessPtr();
   switch (req) {
   case IOCTL_REQUEST_REPLAY: {
-    int index = 2;
-    Addr args_vaddr = p->getSyscallArg(tc, index);
     // Deserialize the arguments.
     const int NUM_ARGS = 23;
     uint64_t args[NUM_ARGS];
-    memProxy.readBlob(args_vaddr, reinterpret_cast<uint8_t *>(args),
+    memProxy.readBlob(buf, reinterpret_cast<uint8_t *>(args),
                       NUM_ARGS * sizeof(args[0]));
     Addr trace_vaddr = reinterpret_cast<Addr>(args[0]);
     std::string trace;
@@ -62,7 +60,9 @@ int LLVMTraceCPUDriver::ioctl(ThreadContext *tc, unsigned req) {
                                        std::move(maps));
     break;
   }
-  default: { panic("Unknown request code: %u\n", req); }
+  default: {
+    panic("Unknown request code: %u\n", req);
+  }
   }
   return 0;
 }

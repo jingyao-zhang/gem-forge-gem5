@@ -36,10 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Schultz
- *          Ali Saidi
- *          Miguel Serrano
  */
 
 #include "dev/storage/ide_ctrl.hh"
@@ -124,7 +120,7 @@ IdeController::IdeController(Params *p)
             panic("IDE controllers support a maximum "
                   "of 4 devices attached!\n");
         }
-        params()->disks[i]->setController(this);
+        params()->disks[i]->setController(this, sys->getPageBytes());
     }
 
     primary.select(false);

@@ -29,8 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Sooraj Puthoor
  */
 
 #ifndef __MEM_RUBY_SYSTEM_GPU_COALESCER_HH__
@@ -104,9 +102,9 @@ class GPUCoalescer : public RubyPort
     void wakeup(); // Used only for deadlock detection
 
     void printProgress(std::ostream& out) const;
-    void resetStats();
+    void resetStats() override;
     void collateStats();
-    void regStats();
+    void regStats() override;
 
     void writeCallback(Addr address, DataBlock& data);
 
@@ -159,18 +157,18 @@ class GPUCoalescer : public RubyPort
     void recordCPWriteCallBack(MachineID myMachID, MachineID senderMachID);
 
     // Alternate implementations in VIPER Coalescer
-    virtual RequestStatus makeRequest(PacketPtr pkt);
+    virtual RequestStatus makeRequest(PacketPtr pkt) override;
 
-    int outstandingCount() const { return m_outstanding_count; }
+    int outstandingCount() const override { return m_outstanding_count; }
 
     bool
-    isDeadlockEventScheduled() const
+    isDeadlockEventScheduled() const override
     {
         return deadlockCheckEvent.scheduled();
     }
 
     void
-    descheduleDeadlockEvent()
+    descheduleDeadlockEvent() override
     {
         deschedule(deadlockCheckEvent);
     }

@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Daniel Carvalho
  */
 
 /** @file
@@ -35,6 +33,7 @@
 #include "mem/cache/compressors/base.hh"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -73,8 +72,10 @@ BaseCacheCompressor::CompressionData::getSize() const
 }
 
 BaseCacheCompressor::BaseCacheCompressor(const Params *p)
-    : SimObject(p), blkSize(p->block_size)
+  : SimObject(p), blkSize(p->block_size), sizeThreshold(p->size_threshold),
+    stats(*this)
 {
+    fatal_if(blkSize < sizeThreshold, "Compressed data must fit in a block");
 }
 
 void
@@ -98,11 +99,17 @@ BaseCacheCompressor::compress(const uint64_t* data, Cycles& comp_lat,
              "Decompressed line does not match original line.");
     #endif
 
-    // Get compression size
+    // Get compression size. If compressed size is greater than the size
+    // threshold, the compression is seen as unsuccessful
     comp_size_bits = comp_data->getSizeBits();
+    if (comp_size_bits >= sizeThreshold * 8) {
+        comp_size_bits = blkSize * 8;
+    }
 
     // Update stats
-    compressionSize[std::ceil(std::log2(comp_size_bits))]++;
+    stats.compressions++;
+    stats.compressionSizeBits += comp_size_bits;
+    stats.compressionSize[std::ceil(std::log2(comp_size_bits))]++;
 
     // Print debug information
     DPRINTF(CacheComp, "Compressed cache line from %d to %d bits. " \
@@ -111,7 +118,7 @@ BaseCacheCompressor::compress(const uint64_t* data, Cycles& comp_lat,
 }
 
 Cycles
-BaseCacheCompressor::getDecompressionLatency(const CacheBlk* blk) const
+BaseCacheCompressor::getDecompressionLatency(const CacheBlk* blk)
 {
     const CompressionBlk* comp_blk = static_cast<const CompressionBlk*>(blk);
 
@@ -120,6 +127,7 @@ BaseCacheCompressor::getDecompressionLatency(const CacheBlk* blk) const
         const Cycles decomp_lat = comp_blk->getDecompressionLatency();
         DPRINTF(CacheComp, "Decompressing block: %s (%d cycles)\n",
                 comp_blk->print(), decomp_lat);
+        stats.decompressions += 1;
         return decomp_lat;
     }
 
@@ -147,23 +155,36 @@ BaseCacheCompressor::setSizeBits(CacheBlk* blk, const std::size_t size_bits)
     static_cast<CompressionBlk*>(blk)->setSizeBits(size_bits);
 }
 
-void
-BaseCacheCompressor::regStats()
+BaseCacheCompressor::BaseCacheCompressorStats::BaseCacheCompressorStats(
+    BaseCacheCompressor& _compressor)
+  : Stats::Group(&_compressor), compressor(_compressor),
+    compressions(this, "compressions",
+        "Total number of compressions"),
+    compressionSize(this, "compression_size",
+        "Number of blocks that were compressed to this power of two size"),
+    compressionSizeBits(this, "compression_size_bits",
+        "Total compressed data size, in bits"),
+    avgCompressionSizeBits(this, "avg_compression_size_bits",
+        "Average compression size, in bits"),
+    decompressions(this, "total_decompressions",
+        "Total number of decompressions")
 {
-    SimObject::regStats();
+}
 
-    // We also store when compression is bigger than original block size
-    compressionSize
-        .init(std::log2(blkSize*8) + 2)
-        .name(name() + ".compression_size")
-        .desc("Number of blocks that were compressed to this power of" \
-              "two size.")
-        ;
+void
+BaseCacheCompressor::BaseCacheCompressorStats::regStats()
+{
+    Stats::Group::regStats();
 
-    for (unsigned i = 0; i <= std::log2(blkSize*8) + 1; ++i) {
-        compressionSize.subname(i, std::to_string(1 << i));
-        compressionSize.subdesc(i, "Number of blocks that compressed to fit " \
-                                   "in " + std::to_string(1 << i) + " bits");
+    compressionSize.init(std::log2(compressor.blkSize*8) + 1);
+    for (unsigned i = 0; i <= std::log2(compressor.blkSize*8); ++i) {
+        std::string str_i = std::to_string(1 << i);
+        compressionSize.subname(i, str_i);
+        compressionSize.subdesc(i,
+            "Number of blocks that compressed to fit in " + str_i + " bits");
     }
+
+    avgCompressionSizeBits.flags(Stats::total | Stats::nozero | Stats::nonan);
+    avgCompressionSizeBits = compressionSizeBits / compressions;
 }
 

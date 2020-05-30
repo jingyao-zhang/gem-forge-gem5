@@ -33,9 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Giacomo Gabrielli
  */
 #include "arch/arm/table_walker.hh"
 
@@ -134,6 +131,7 @@ TableWalker::WalkerState::WalkerState() :
     sctlr(0), scr(0), cpsr(0), tcr(0),
     htcr(0), hcr(0), vtcr(0),
     isWrite(false), isFetch(false), isSecure(false),
+    isUncacheable(false),
     secureLookup(false), rwTable(false), userTable(false), xnTable(false),
     pxnTable(false), hpd(false), stage2Req(false),
     stage2Tran(nullptr), timing(false), functional(false),
@@ -260,7 +258,8 @@ TableWalker::walk(const RequestPtr &_req, ThreadContext *_tc, uint16_t _asid,
     currState->vaddr_tainted = currState->req->getVaddr();
     if (currState->aarch64)
         currState->vaddr = purifyTaggedAddr(currState->vaddr_tainted,
-                                            currState->tc, currState->el);
+                                            currState->tc, currState->el,
+                                            currState->mode==TLB::Execute);
     else
         currState->vaddr = currState->vaddr_tainted;
 
@@ -455,6 +454,15 @@ TableWalker::processWalk()
 {
     Addr ttbr = 0;
 
+    // For short descriptors, translation configs are held in
+    // TTBR1.
+    RegVal ttbr1 = currState->tc->readMiscReg(snsBankedIndex(
+        MISCREG_TTBR1, currState->tc, !currState->isSecure));
+
+    const auto irgn0_mask = 0x1;
+    const auto irgn1_mask = 0x40;
+    currState->isUncacheable = (ttbr1 & (irgn0_mask | irgn1_mask)) == 0;
+
     // If translation isn't enabled, we shouldn't be here
     assert(currState->sctlr.m || isStage2);
     const bool is_atomic = currState->req->isAtomic();
@@ -504,8 +512,7 @@ TableWalker::processWalk()
                     ArmFault::TranslationLL + L1, isStage2,
                     ArmFault::VmsaTran);
         }
-        ttbr = currState->tc->readMiscReg(snsBankedIndex(
-            MISCREG_TTBR1, currState->tc, !currState->isSecure));
+        ttbr = ttbr1;
         currState->ttbcr.n = 0;
     }
 
@@ -532,7 +539,7 @@ TableWalker::processWalk()
     }
 
     Request::Flags flag = Request::PT_WALK;
-    if (currState->sctlr.c == 0) {
+    if (currState->sctlr.c == 0 || currState->isUncacheable) {
         flag.set(Request::UNCACHEABLE);
     }
 
@@ -574,10 +581,12 @@ TableWalker::processWalkLPAE()
         ttbr = currState->tc->readMiscReg(MISCREG_VTTBR);
         tsz  = sext<4>(currState->vtcr.t0sz);
         start_lookup_level = currState->vtcr.sl0 ? L1 : L2;
+        currState->isUncacheable = currState->vtcr.irgn0 == 0;
     } else if (currState->isHyp) {
         DPRINTF(TLB, " - Selecting HTTBR (long-desc.)\n");
         ttbr = currState->tc->readMiscReg(MISCREG_HTTBR);
         tsz  = currState->htcr.t0sz;
+        currState->isUncacheable = currState->htcr.irgn0 == 0;
     } else {
         assert(longDescFormatInUse(currState->tc));
 
@@ -622,6 +631,7 @@ TableWalker::processWalkLPAE()
             ttbr = currState->tc->readMiscReg(snsBankedIndex(
                 MISCREG_TTBR0, currState->tc, !currState->isSecure));
             tsz = currState->ttbcr.t0sz;
+            currState->isUncacheable = currState->ttbcr.irgn0 == 0;
             if (ttbr0_max < (1ULL << 30))  // Upper limit < 1 GB
                 start_lookup_level = L2;
         } else if (currState->vaddr >= ttbr1_min) {
@@ -646,7 +656,9 @@ TableWalker::processWalkLPAE()
             ttbr = currState->tc->readMiscReg(snsBankedIndex(
                 MISCREG_TTBR1, currState->tc, !currState->isSecure));
             tsz = currState->ttbcr.t1sz;
-            if (ttbr1_min >= (1ULL << 31) + (1ULL << 30))  // Lower limit >= 3 GB
+            currState->isUncacheable = currState->ttbcr.irgn1 == 0;
+            // Lower limit >= 3 GB
+            if (ttbr1_min >= (1ULL << 31) + (1ULL << 30))
                 start_lookup_level = L2;
         } else {
             // Out of boundaries -> translation fault
@@ -699,7 +711,7 @@ TableWalker::processWalkLPAE()
         return f;
     }
 
-    if (currState->sctlr.c == 0) {
+    if (currState->sctlr.c == 0 || currState->isUncacheable) {
         flag.set(Request::UNCACHEABLE);
     }
 
@@ -781,6 +793,7 @@ TableWalker::processWalkAArch64()
             panic_if(start_lookup_level == MAX_LOOKUP_LEVELS,
                      "Cannot discern lookup level from vtcr.{sl0,tg0}");
             ps = currState->vtcr.ps;
+            currState->isUncacheable = currState->vtcr.irgn0 == 0;
         } else {
             switch (bits(currState->vaddr, 63,48)) {
               case 0:
@@ -789,6 +802,7 @@ TableWalker::processWalkAArch64()
                 tsz = adjustTableSizeAArch64(64 - currState->tcr.t0sz);
                 tg = GrainMap_tg0[currState->tcr.tg0];
                 currState->hpd = currState->tcr.hpd0;
+                currState->isUncacheable = currState->tcr.irgn0 == 0;
                 if (bits(currState->vaddr, 63, tsz) != 0x0 ||
                     currState->tcr.epd0)
                   fault = true;
@@ -799,6 +813,7 @@ TableWalker::processWalkAArch64()
                 tsz = adjustTableSizeAArch64(64 - currState->tcr.t1sz);
                 tg = GrainMap_tg1[currState->tcr.tg1];
                 currState->hpd = currState->tcr.hpd1;
+                currState->isUncacheable = currState->tcr.irgn1 == 0;
                 if (bits(currState->vaddr, 63, tsz) != mask(64-tsz) ||
                     currState->tcr.epd1)
                   fault = true;
@@ -819,6 +834,7 @@ TableWalker::processWalkAArch64()
             tg = GrainMap_tg0[currState->tcr.tg0];
             currState->hpd = currState->hcr.e2h ?
                 currState->tcr.hpd0 : currState->tcr.hpd;
+            currState->isUncacheable = currState->tcr.irgn0 == 0;
             break;
 
           case 0xffff:
@@ -827,6 +843,7 @@ TableWalker::processWalkAArch64()
             tsz = adjustTableSizeAArch64(64 - currState->tcr.t1sz);
             tg = GrainMap_tg1[currState->tcr.tg1];
             currState->hpd = currState->tcr.hpd1;
+            currState->isUncacheable = currState->tcr.irgn1 == 0;
             if (bits(currState->vaddr, 63, tsz) != mask(64-tsz) ||
                 currState->tcr.epd1 || !currState->hcr.e2h)
               fault = true;
@@ -846,6 +863,7 @@ TableWalker::processWalkAArch64()
                 tsz = adjustTableSizeAArch64(64 - currState->tcr.t0sz);
                 tg = GrainMap_tg0[currState->tcr.tg0];
                 currState->hpd = currState->tcr.hpd;
+                currState->isUncacheable = currState->tcr.irgn0 == 0;
                 break;
             default:
                 // invalid addr if top two bytes are not all 0s
@@ -994,7 +1012,7 @@ TableWalker::processWalkAArch64()
     }
 
     Request::Flags flag = Request::PT_WALK;
-    if (currState->sctlr.c == 0) {
+    if (currState->sctlr.c == 0 || currState->isUncacheable) {
         flag.set(Request::UNCACHEABLE);
     }
 
@@ -1533,6 +1551,11 @@ TableWalker::doL1Descriptor()
             }
 
             Request::Flags flag = Request::PT_WALK;
+
+            if (currState->sctlr.c == 0 || currState->isUncacheable) {
+                flag.set(Request::UNCACHEABLE);
+            }
+
             if (currState->isSecure)
                 flag.set(Request::SECURE);
 
@@ -1700,6 +1723,10 @@ TableWalker::doLongDescriptor()
             Request::Flags flag = Request::PT_WALK;
             if (currState->secureLookup)
                 flag.set(Request::SECURE);
+
+            if (currState->sctlr.c == 0 || currState->isUncacheable) {
+                flag.set(Request::UNCACHEABLE);
+            }
 
             LookupLevel L = currState->longDesc.lookupLevel =
                 (LookupLevel) (currState->longDesc.lookupLevel + 1);
@@ -1987,7 +2014,6 @@ TableWalker::fetchDescriptor(Addr descAddr, uint8_t *data, int numBytes,
     // check here.
     if (currState->stage2Req) {
         Fault fault;
-        flags = flags | TLB::MustBeOne;
 
         if (isTiming) {
             Stage2MMU::Stage2Translation *tran = new

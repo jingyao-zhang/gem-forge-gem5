@@ -37,14 +37,10 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Steve Reinhardt
-#          Nathan Binkert
-#          Andreas Hansson
-#          Andreas Sandberg
 
 from __future__ import print_function
 from __future__ import absolute_import
+from six import add_metaclass
 import six
 if six.PY3:
     long = int
@@ -690,7 +686,7 @@ class MetaSimObject(type):
         # the object itself, not including inherited params (which
         # will also be inherited from the base class's param struct
         # here). Sort the params based on their key
-        params = map(lambda k_v: k_v[1], sorted(cls._params.local.items()))
+        params = list(map(lambda k_v: k_v[1], sorted(cls._params.local.items())))
         ports = cls._ports.local
 
         code('''#include "pybind11/pybind11.h"
@@ -787,7 +783,7 @@ module_init(py::module &m_internal)
         # the object itself, not including inherited params (which
         # will also be inherited from the base class's param struct
         # here). Sort the params based on their key
-        params = map(lambda k_v: k_v[1], sorted(cls._params.local.items()))
+        params = list(map(lambda k_v: k_v[1], sorted(cls._params.local.items())))
         ports = cls._ports.local
         try:
             ptypes = [p.ptype for p in params]
@@ -1078,10 +1074,10 @@ class SimObjectCliWrapper(object):
 # The SimObject class is the root of the special hierarchy.  Most of
 # the code in this class deals with the configuration hierarchy itself
 # (parent/child node relationships).
+@add_metaclass(MetaSimObject)
 class SimObject(object):
     # Specify metaclass.  Any class inheriting from SimObject will
     # get this metaclass.
-    __metaclass__ = MetaSimObject
     type = 'SimObject'
     abstract = True
 

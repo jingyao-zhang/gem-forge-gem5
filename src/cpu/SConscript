@@ -25,8 +25,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Steve Reinhardt
 
 Import('*')
 
@@ -46,7 +44,6 @@ DebugFlag('ExecRegDelta')
 DebugFlag('ExecResult', 'Format: Include results from execution')
 DebugFlag('ExecSymbol', 'Format: Try to include symbol names')
 DebugFlag('ExecThread', 'Format: Include thread ID in trace')
-DebugFlag('ExecTicks', 'Format: Include tick count')
 DebugFlag('ExecMicro', 'Filter: Include microops')
 DebugFlag('ExecMacro', 'Filter: Include macroops')
 DebugFlag('ExecUser', 'Filter: Trace user mode instructions')
@@ -63,14 +60,14 @@ DebugFlag('Mwait')
 CompoundFlag('ExecAll', [ 'ExecEnable', 'ExecCPSeq', 'ExecEffAddr',
     'ExecFaulting', 'ExecFetchSeq', 'ExecOpClass', 'ExecRegDelta',
     'ExecResult', 'ExecSymbol', 'ExecThread',
-    'ExecTicks', 'ExecMicro', 'ExecMacro', 'ExecUser', 'ExecKernel',
+    'ExecMicro', 'ExecMacro', 'ExecUser', 'ExecKernel',
     'ExecAsid', 'ExecFlags' ])
-CompoundFlag('Exec', [ 'ExecEnable', 'ExecTicks', 'ExecOpClass', 'ExecThread',
+CompoundFlag('Exec', [ 'ExecEnable', 'ExecOpClass', 'ExecThread',
     'ExecEffAddr', 'ExecResult', 'ExecSymbol', 'ExecMicro', 'ExecMacro',
     'ExecFaulting', 'ExecUser', 'ExecKernel' ])
-CompoundFlag('ExecNoTicks', [ 'ExecEnable', 'ExecOpClass', 'ExecThread',
-    'ExecEffAddr', 'ExecResult', 'ExecMicro', 'ExecMacro', 'ExecFaulting',
-    'ExecUser', 'ExecKernel' ])
+CompoundFlag('ExecNoTicks', [ 'Exec', 'FmtTicksOff' ])
+
+Source('pc_event.cc')
 
 if env['TARGET_ISA'] == 'null':
     SimObject('IntrControl.py')
@@ -99,7 +96,6 @@ Source('func_unit.cc')
 Source('inteltrace.cc')
 Source('intr_control.cc')
 Source('nativetrace.cc')
-Source('pc_event.cc')
 Source('profile.cc')
 Source('quiesce_event.cc')
 Source('reg_class.cc')

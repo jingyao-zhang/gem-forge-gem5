@@ -539,7 +539,7 @@ Addr LLVMTraceCPU::allocateStack(Addr size, Addr align) {
   Addr paddr;
   if (!this->process->pTable->translate(bottom, paddr)) {
     // We need to allocate more page for the stack.
-    if (!this->process->fixupStackFault(bottom)) {
+    if (!this->process->fixupFault(bottom)) {
       panic("Failed to allocate stack until %ull\n", bottom);
     }
   }

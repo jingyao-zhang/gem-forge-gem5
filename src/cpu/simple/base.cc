@@ -37,15 +37,12 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
  */
 
 #include "cpu/simple/base.hh"
 
 #include "arch/stacktrace.hh"
 #include "arch/utility.hh"
-#include "arch/vtophys.hh"
 #include "base/cp_annotate.hh"
 #include "base/cprintf.hh"
 #include "base/inifile.hh"
@@ -130,11 +127,6 @@ BaseSimpleCPU::init()
     for (auto tc : threadContexts) {
         // Initialise the ThreadContext's memory proxies
         tc->initMemProxies(tc);
-
-        if (FullSystem && !params()->switched_out) {
-            // initialize CPU, including PC
-            TheISA::initCPU(tc, tc->contextId());
-        }
     }
 }
 
@@ -144,7 +136,8 @@ BaseSimpleCPU::checkPcEventQueue()
     Addr oldpc, pc = threadInfo[curThread]->thread->instAddr();
     do {
         oldpc = pc;
-        system->pcEventQueue.service(threadContexts[curThread]);
+        threadInfo[curThread]->thread->pcEventQueue.service(
+                oldpc, threadContexts[curThread]);
         pc = threadInfo[curThread]->thread->instAddr();
     } while (oldpc != pc);
 }
@@ -428,12 +421,6 @@ change_thread_state(ThreadID tid, int activate, int priority)
 {
 }
 
-Addr
-BaseSimpleCPU::dbg_vtophys(Addr addr)
-{
-    return vtophys(threadContexts[curThread], addr);
-}
-
 void
 BaseSimpleCPU::wakeup(ThreadID tid)
 {
@@ -477,7 +464,7 @@ BaseSimpleCPU::setupFetchRequest(const RequestPtr &req)
     // set up memory request for instruction fetch
     DPRINTF(Fetch, "Fetch: Inst PC:%08p, Fetch PC:%08p\n", instAddr, fetchPC);
 
-    req->setVirt(0, fetchPC, sizeof(MachInst), Request::INST_FETCH,
+    req->setVirt(fetchPC, sizeof(MachInst), Request::INST_FETCH,
                  instMasterId(), instAddr);
 }
 
@@ -490,21 +477,15 @@ BaseSimpleCPU::preExecute()
 
     // maintain $r0 semantics
     thread->setIntReg(ZeroReg, 0);
-#if THE_ISA == ALPHA_ISA
-    thread->setFloatReg(ZeroReg, 0);
-#endif // ALPHA_ISA
 
     // resets predicates
     t_info.setPredicate(true);
     t_info.setMemAccPredicate(true);
 
     // check for instruction-count-based events
-    comInstEventQueue[curThread]->serviceEvents(t_info.numInst);
-    system->instEventQueue.serviceEvents(system->totalNumInsts);
+    thread->comInstEventQueue.serviceEvents(t_info.numInst);
 
     // decode the instruction
-    inst = gtoh(inst);
-
     TheISA::PCState pcState = thread->pcState();
 
     if (isRomMicroPC(pcState.microPC())) {
@@ -601,7 +582,6 @@ BaseSimpleCPU::postExecute()
 
     if (curStaticInst->isLoad()) {
         ++t_info.numLoad;
-        comLoadEventQueue[curThread]->serviceEvents(t_info.numLoad);
     }
 
     if (CPA::available()) {

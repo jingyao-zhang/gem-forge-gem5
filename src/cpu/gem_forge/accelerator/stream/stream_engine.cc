@@ -2780,7 +2780,7 @@ void StreamEngine::sendStreamFloatEndPacket(
 }
 
 void StreamEngine::sendAtomicPacket(StreamElement *element,
-                                    AtomicOpFunctor *atomicOp) {
+                                    AtomicOpFunctorPtr atomicOp) {
   if (!element->isAddrReady) {
     S_ELEMENT_PANIC(element,
                     "Element should be address ready to send AtomicOp.");
@@ -2799,7 +2799,7 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
   }
   auto pkt = GemForgePacketHandler::createGemForgeAMOPacket(
       vaddr, paddr, size, cpuDelegator->dataMasterId(), 0 /* ContextId */,
-      0 /* PC */, atomicOp);
+      0 /* PC */, std::move(atomicOp));
   auto S = element->stream;
   S->statistic.numIssuedRequest++;
   // Send the packet to translation.

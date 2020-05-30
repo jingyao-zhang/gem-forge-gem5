@@ -24,7 +24,7 @@ def template GemForgeLoadDeclare {{
             Trace::InstRecord *) const override;
         std::string generateDisassembly(
             Addr pc,
-            const SymbolTable *symtab) const override;
+            const ::Loader::SymbolTable *symtab) const override;
     };
 }};
 
@@ -72,7 +72,7 @@ def template GemForgeLoadExecute {{
 
     std::string
     %(class_name)s::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const {
+            const ::Loader::SymbolTable *symtab) const {
         std::vector<RegId> indices = {%(regs)s};
         std::stringstream ss;
         ss << mnemonic << ' ';

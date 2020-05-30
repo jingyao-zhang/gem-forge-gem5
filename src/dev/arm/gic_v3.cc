@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 ARM Limited
+ * Copyright (c) 2019-2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Jairo Balart
  */
 
 #include "dev/arm/gic_v3.hh"
@@ -91,7 +89,9 @@ Gicv3::init()
         cpuInterfaces[i]->init();
     }
 
-    params()->its->setGIC(this);
+    Gicv3Its *its = params()->its;
+    if (its)
+        its->setGIC(this);
 
     BaseGic::init();
 }
@@ -205,12 +205,32 @@ void
 Gicv3::postInt(uint32_t cpu, ArmISA::InterruptTypes int_type)
 {
     platform->intrctrl->post(cpu, int_type, 0);
+    ArmSystem::callClearStandByWfi(sys->getThreadContext(cpu));
+}
+
+bool
+Gicv3::supportsVersion(GicVersion version)
+{
+    return (version == GicVersion::GIC_V3) ||
+           (version == GicVersion::GIC_V4 && params()->gicv4);
 }
 
 void
 Gicv3::deassertInt(uint32_t cpu, ArmISA::InterruptTypes int_type)
 {
     platform->intrctrl->clear(cpu, int_type, 0);
+}
+
+void
+Gicv3::deassertAll(uint32_t cpu)
+{
+    platform->intrctrl->clearAll(cpu);
+}
+
+bool
+Gicv3::haveAsserted(uint32_t cpu) const
+{
+    return platform->intrctrl->havePosted(cpu);
 }
 
 Gicv3Redistributor *

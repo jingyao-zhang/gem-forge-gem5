@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_X86_TLB_HH__
@@ -50,6 +48,7 @@
 #include "base/trie.hh"
 #include "mem/request.hh"
 #include "params/X86TLB.hh"
+#include "sim/stats.hh"
 
 #include <memory>
 
@@ -123,6 +122,8 @@ namespace X86ISA
         std::unique_ptr<TLBCache> l2tlb;
         std::unique_ptr<SEPageWalker> sePageWalker;
 
+        AddrRange m5opRange;
+
         // Statistics
         Stats::Scalar rdAccesses;
         Stats::Scalar wrAccesses;
@@ -133,7 +134,7 @@ namespace X86ISA
         Stats::Scalar l2Accesses;
         Stats::Scalar l2Misses;
 
-        Fault translateInt(const RequestPtr &req, ThreadContext *tc);
+        Fault translateInt(bool read, RequestPtr req, ThreadContext *tc);
 
         /**
          * Perform the translation and serve the TLB miss.
@@ -151,6 +152,8 @@ namespace X86ISA
       public:
 
         Fault translateAtomic(
+            const RequestPtr &req, ThreadContext *tc, Mode mode) override;
+        Fault translateFunctional(
             const RequestPtr &req, ThreadContext *tc, Mode mode) override;
         void translateTiming(
             const RequestPtr &req, ThreadContext *tc,

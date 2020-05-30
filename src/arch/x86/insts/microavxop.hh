@@ -42,7 +42,8 @@ protected:
     assert((srcVL % sizeof(uint64_t) == 0) && "Invalid srcVL.\n");
   }
 
-  std::string generateDisassembly(Addr pc, const SymbolTable *symtab) const;
+  std::string generateDisassembly(Addr pc,
+                                  const ::Loader::SymbolTable *symtab) const;
 
   union FloatInt {
     struct __attribute__((packed)) {

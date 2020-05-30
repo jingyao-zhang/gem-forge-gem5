@@ -36,8 +36,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 ////////////////////////////////////////////////////////////////////
 //
@@ -241,7 +239,7 @@
                 }
             }
             0x05: decode FullSystemInt {
-                0: SyscallInst::syscall('xc->syscall(Rax, &fault)',
+                0: SyscallInst::syscall('xc->syscall(&fault)',
                                         IsSyscall, IsNonSpeculative,
                                         IsSerializeAfter);
                 default: decode MODE_MODE {
@@ -435,7 +433,7 @@
             0x2: Inst::RDMSR();
             0x3: rdpmc();
             0x4: decode FullSystemInt {
-                0: SyscallInst::sysenter('xc->syscall(Rax, &fault)',
+                0: SyscallInst::sysenter('xc->syscall(&fault)',
                                          IsSyscall, IsNonSpeculative,
                                          IsSerializeAfter);
                 default: sysenter();
@@ -699,7 +697,7 @@
                 // operand size (0x66)
                 0x1: decode OPCODE_OP_BOTTOM3 {
                     0x4: HADDPD(Vo,Wo);
-                    0x5: WarnUnimpl::hsubpd_Vo_Wo();
+                    0x5: HSUBPD(Vo, Wo);
                     0x6: MOVD(Edp,Vd);
                     0x7: MOVDQA(Wo,Vo);
                     default: UD2();
@@ -707,7 +705,7 @@
                 // repne (0xF2)
                 0x8: decode OPCODE_OP_BOTTOM3 {
                     0x4: HADDPS(Vo,Wo);
-                    0x5: WarnUnimpl::hsubps_Vo_Wo();
+                    0x5: HSUBPS(Vo, Wo);
                     default: UD2();
                 }
                 default: UD2();
@@ -791,7 +789,8 @@
             0x6: decode MODRM_MOD {
                 0x3: decode MODRM_REG {
                     0x5: BasicOperate::LFENCE(
-                                 {{/*Nothing*/}}, IsReadBarrier);
+                                 {{/*Nothing*/}}, IsReadBarrier,
+                                 IsSerializeAfter);
                     0x6: BasicOperate::MFENCE(
                                  {{/*Nothing*/}}, IsMemBarrier);
                     0x7: BasicOperate::SFENCE(
@@ -1072,7 +1071,7 @@
                 }
                 // repne (0xF2)
                 0x8: decode OPCODE_OP_BOTTOM3 {
-                    0x0: WarnUnimpl::lddqu_Vo_Mo();
+                    0x0: LDDQU(Vo,Mq);
                     default: UD2();
                 }
                 default: UD2();

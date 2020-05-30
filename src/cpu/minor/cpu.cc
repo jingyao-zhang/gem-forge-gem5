@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 #include "cpu/minor/cpu.hh"
@@ -119,17 +117,6 @@ MinorCPU::init()
 
         tc->initMemProxies(tc);
     }
-
-    /* Initialise CPUs (== threads in the ISA) */
-    if (FullSystem && !params()->switched_out) {
-        for (ThreadID thread_id = 0; thread_id < threads.size(); thread_id++)
-        {
-            ThreadContext *tc = getContext(thread_id);
-
-            /* Initialize CPU, including PC */
-            TheISA::initCPU(tc, cpuId());
-        }
-    }
 }
 
 /** Stats interface from SimObject (by way of BaseCPU) */
@@ -165,15 +152,6 @@ MinorCPU::unserialize(CheckpointIn &cp)
 {
     pipeline->unserialize(cp);
     BaseCPU::unserialize(cp);
-}
-
-Addr
-MinorCPU::dbg_vtophys(Addr addr)
-{
-    /* Note that this gives you the translation for thread 0 */
-    panic("No implementation for vtophy\n");
-
-    return 0;
 }
 
 void

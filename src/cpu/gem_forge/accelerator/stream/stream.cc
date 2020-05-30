@@ -990,9 +990,9 @@ void Stream::handleStoreFunc(const DynamicStream &dynS,
   DynamicStreamParamV params =
       this->setupAtomicRMWParamV(dynS.storeFormalParams);
   // Create the AtomicOp, which will be released in ~Request.
-  auto atomicOp = new StreamAtomicOp(this, element->FIFOIdx, element->size,
-                                     params, dynS.storeCallback);
-  this->se->sendAtomicPacket(element, atomicOp);
+  auto atomicOp = m5::make_unique<StreamAtomicOp>(
+      this, element->FIFOIdx, element->size, params, dynS.storeCallback);
+  this->se->sendAtomicPacket(element, std::move(atomicOp));
 }
 
 DynamicStreamParamV Stream::setupAtomicRMWParamV(

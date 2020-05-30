@@ -24,10 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Brandon Potter
- *          Steve Reinhardt
- *          Alexandru Dutu
  */
 
 #ifndef __FUTEX_MAP_HH__
@@ -153,9 +149,16 @@ class FutexMap : public std::unordered_map<FutexKey, WaiterList>
         auto &waiterList = it->second;
 
         while (!waiterList.empty() && woken_up < count) {
-            waiterList.front().tc->activate();
+            // Threads may be woken up by access to locked
+            // memory addresses outside of syscalls, so we
+            // must only count threads that were actually
+            // woken up by this syscall.
+            auto& tc = waiterList.front().tc;
+            if (tc->status() == ThreadContext::Suspended) {
+                tc->activate();
+                woken_up++;
+            }
             waiterList.pop_front();
-            woken_up++;
         }
 
         if (waiterList.empty())

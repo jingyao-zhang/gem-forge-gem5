@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013,2017 ARM Limited
+ * Copyright (c) 2011-2013,2017-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,9 +33,8 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
+
 #ifndef __ARCH_ARM_MEM64_HH__
 #define __ARCH_ARM_MEM64_HH__
 
@@ -52,20 +51,17 @@ class SysDC64 : public MiscRegOp64
     MiscRegIndex dest;
     uint64_t imm;
 
+    // This is used for fault handling only
+    mutable Addr faultAddr;
+
     SysDC64(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
-<<<<<<< HEAD
-            IntRegIndex _base, MiscRegIndex miscReg, uint64_t _imm)
-        : MiscRegOp64(mnem, _machInst, __opClass, false),
-          base(_base), dest((IntRegIndex)miscReg), imm(_imm)
-=======
             IntRegIndex _base, MiscRegIndex _dest, uint64_t _imm)
         : MiscRegOp64(mnem, _machInst, __opClass, false),
-          base(_base), dest(_dest), imm(_imm)
->>>>>>> a56ab04598be184427e8dd71fa5528b016738306
+          base(_base), dest(_dest), imm(_imm), faultAddr(0)
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MightBeMicro64 : public ArmStaticInst
@@ -146,7 +142,7 @@ class MemoryImm64 : public Memory64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MemoryDImm64 : public MemoryImm64
@@ -162,7 +158,7 @@ class MemoryDImm64 : public MemoryImm64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MemoryDImmEx64 : public MemoryDImm64
@@ -178,7 +174,7 @@ class MemoryDImmEx64 : public MemoryDImm64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MemoryPreIndex64 : public MemoryImm64
@@ -191,7 +187,7 @@ class MemoryPreIndex64 : public MemoryImm64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MemoryPostIndex64 : public MemoryImm64
@@ -204,7 +200,7 @@ class MemoryPostIndex64 : public MemoryImm64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MemoryReg64 : public Memory64
@@ -223,7 +219,7 @@ class MemoryReg64 : public Memory64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MemoryRaw64 : public Memory64
@@ -235,7 +231,7 @@ class MemoryRaw64 : public Memory64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MemoryEx64 : public Memory64
@@ -250,7 +246,7 @@ class MemoryEx64 : public Memory64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MemoryLiteral64 : public Memory64
@@ -264,74 +260,7 @@ class MemoryLiteral64 : public Memory64
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
-};
-
-/**
- * A generic atomic op class
- */
-
-template<typename T>
-class AtomicGeneric2Op : public TypedAtomicOpFunctor<T>
-{
-  public:
-    AtomicGeneric2Op(T _a, std::function<void(T*,T)> _op)
-        : a(_a), op(_op)
-    {}
-    AtomicOpFunctor* clone() override
-    {
-        return new AtomicGeneric2Op<T>(*this);
-    }
-    void execute(T *b) override
-    {
-        op(b, a);
-    }
-  private:
-    T a;
-    std::function<void(T*,T)> op;
- };
-
-template<typename T>
-class AtomicGeneric3Op : public TypedAtomicOpFunctor<T>
-{
-  public:
-    AtomicGeneric3Op(T _a, T _c, std::function<void(T*, T, T)> _op)
-        : a(_a), c(_c), op(_op)
-    {}
-    AtomicOpFunctor* clone() override
-    {
-        return new AtomicGeneric3Op<T>(*this);
-    }
-    void execute(T *b) override
-    {
-        op(b, a, c);
-    }
-  private:
-    T a;
-    T c;
-    std::function<void(T*, T, T)> op;
-};
-
-template<typename T>
-class AtomicGenericPair3Op : public TypedAtomicOpFunctor<T>
-{
-  public:
-    AtomicGenericPair3Op(std::array<T, 2>& _a, std::array<T, 2> _c,
-           std::function<void(T*, std::array<T, 2>&, std::array<T, 2>)> _op)
-        : a(_a), c(_c), op(_op)
-    {}
-    AtomicOpFunctor* clone() override
-    {
-        return new AtomicGenericPair3Op<T>(*this);
-    }
-    void execute(T* b) override
-    {
-        op(b, a, c);
-    }
-  private:
-    std::array<T, 2> a;
-    std::array<T, 2> c;
-    std::function<void(T*, std::array<T, 2>&, std::array<T, 2>)> op;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 }

@@ -30,7 +30,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
  : Sequencer * sequencer;
    CacheMemory * Icache;
    CacheMemory * Dcache;
-   Prefetcher * prefetcher;
+   RubyPrefetcher * prefetcher;
    Cycles request_latency := 2;
    Cycles response_latency := 2;
    bool send_evictions;
@@ -929,12 +929,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     }
   }
 
-  action(ppa_observePfAccepted, "\ppa", desc="The prefetch request is accepted") {
-    peek(prefetchQueue_in, RubyRequest) {
-      prefetcher.observePfAccept(in_msg.LineAddress);
-    }
-  }
-
   action(pq_popPrefetchQueue, "\pq", desc="Pop the prefetch request queue") {
       prefetchQueue_in.dequeue(clockEdge());
   }
@@ -1034,7 +1028,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     oo_allocateDCacheBlock;
     i_allocateTBE;
     pa_issuePfGETS;
-    ppa_observePfAccepted;
     pq_popPrefetchQueue;
   }
 
@@ -1064,7 +1057,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     pp_allocateICacheBlock;
     i_allocateTBE;
     pa_issuePfGETS;
-    ppa_observePfAccepted;
     pq_popPrefetchQueue;
   }
 
@@ -1089,7 +1081,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     oo_allocateDCacheBlock;
     i_allocateTBE;
     pb_issuePfGETX;
-    ppa_observePfAccepted;
     pq_popPrefetchQueue;
   }
 

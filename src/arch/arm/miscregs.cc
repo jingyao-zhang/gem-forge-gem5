@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013, 2015-2019 ARM Limited
+ * Copyright (c) 2010-2013, 2015-2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Ali Saidi
- *          Giacomo Gabrielli
  */
 
 #include "arch/arm/miscregs.hh"
@@ -257,6 +253,8 @@ decodeCP15Reg(unsigned crn, unsigned opc1, unsigned crm, unsigned opc2)
                     return MISCREG_HDCR;
                   case 2:
                     return MISCREG_HCPTR;
+                  case 4:
+                    return MISCREG_HCR2;
                   case 3:
                     return MISCREG_HSTR;
                   case 7:
@@ -986,7 +984,7 @@ decodeCP15Reg64(unsigned crm, unsigned opc1)
 }
 
 std::tuple<bool, bool>
-canReadCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr)
+canReadCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
 {
     bool secure = !scr.ns;
     bool canRead = false;
@@ -1016,13 +1014,23 @@ canReadCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr)
       default:
         undefined = true;
     }
+
+    switch (reg) {
+      case MISCREG_CNTFRQ ... MISCREG_CNTVOFF:
+        if (!undefined)
+            undefined = AArch32isUndefinedGenericTimer(reg, tc);
+        break;
+      default:
+        break;
+    }
+
     // can't do permissions checkes on the root of a banked pair of regs
     assert(!miscRegInfo[reg][MISCREG_BANKED]);
     return std::make_tuple(canRead, undefined);
 }
 
 std::tuple<bool, bool>
-canWriteCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr)
+canWriteCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
 {
     bool secure = !scr.ns;
     bool canWrite = false;
@@ -1052,9 +1060,31 @@ canWriteCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr)
       default:
         undefined = true;
     }
+
+    switch (reg) {
+      case MISCREG_CNTFRQ ... MISCREG_CNTVOFF:
+        if (!undefined)
+            undefined = AArch32isUndefinedGenericTimer(reg, tc);
+        break;
+      default:
+        break;
+    }
+
     // can't do permissions checkes on the root of a banked pair of regs
     assert(!miscRegInfo[reg][MISCREG_BANKED]);
     return std::make_tuple(canWrite, undefined);
+}
+
+bool
+AArch32isUndefinedGenericTimer(MiscRegIndex reg, ThreadContext *tc)
+{
+    if (currEL(tc) == EL0 && ELIs32(tc, EL1)) {
+        const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+        bool trap_cond = condGenericTimerSystemAccessTrapEL1(reg, tc);
+        if (trap_cond && (!EL2Enabled(tc) || !hcr.tge))
+            return true;
+    }
+    return false;
 }
 
 int
@@ -1078,8 +1108,9 @@ snsBankedIndex(MiscRegIndex reg, ThreadContext *tc, bool ns)
 int
 snsBankedIndex64(MiscRegIndex reg, ThreadContext *tc)
 {
+    auto *isa = static_cast<ArmISA::ISA *>(tc->getIsaPtr());
     SCR scr = tc->readMiscReg(MISCREG_SCR);
-    return tc->getIsaPtr()->snsBankedIndex64(reg, scr.ns);
+    return isa->snsBankedIndex64(reg, scr.ns);
 }
 
 /**
@@ -1115,7 +1146,8 @@ unflattenMiscReg(int reg)
 }
 
 bool
-canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
+canReadAArch64SysReg(MiscRegIndex reg, HCR hcr, SCR scr, CPSR cpsr,
+                     ThreadContext *tc)
 {
     // Check for SP_EL0 access while SPSEL == 0
     if ((reg == MISCREG_SP_EL0) && (tc->readMiscReg(MISCREG_SPSEL) == 0))
@@ -1134,6 +1166,7 @@ canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
     }
 
     bool secure = ArmSystem::haveSecurity(tc) && !scr.ns;
+    bool el2_host = EL2Enabled(tc) && hcr.e2h;
 
     switch (currEL(cpsr)) {
       case EL0:
@@ -1143,9 +1176,11 @@ canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
         return secure ? miscRegInfo[reg][MISCREG_PRI_S_RD] :
             miscRegInfo[reg][MISCREG_PRI_NS_RD];
       case EL2:
-        return miscRegInfo[reg][MISCREG_HYP_RD];
+        return el2_host ? miscRegInfo[reg][MISCREG_HYP_E2H_RD] :
+            miscRegInfo[reg][MISCREG_HYP_RD];
       case EL3:
-        return secure ? miscRegInfo[reg][MISCREG_MON_NS0_RD] :
+        return el2_host ? miscRegInfo[reg][MISCREG_MON_E2H_RD] :
+            secure ? miscRegInfo[reg][MISCREG_MON_NS0_RD] :
             miscRegInfo[reg][MISCREG_MON_NS1_RD];
       default:
         panic("Invalid exception level");
@@ -1153,7 +1188,8 @@ canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
 }
 
 bool
-canWriteAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
+canWriteAArch64SysReg(MiscRegIndex reg, HCR hcr, SCR scr, CPSR cpsr,
+                      ThreadContext *tc)
 {
     // Check for SP_EL0 access while SPSEL == 0
     if ((reg == MISCREG_SP_EL0) && (tc->readMiscReg(MISCREG_SPSEL) == 0))
@@ -1178,6 +1214,7 @@ canWriteAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
     }
 
     bool secure = ArmSystem::haveSecurity(tc) && !scr.ns;
+    bool el2_host = EL2Enabled(tc) && hcr.e2h;
 
     switch (el) {
       case EL0:
@@ -1187,9 +1224,11 @@ canWriteAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
         return secure ? miscRegInfo[reg][MISCREG_PRI_S_WR] :
             miscRegInfo[reg][MISCREG_PRI_NS_WR];
       case EL2:
-        return miscRegInfo[reg][MISCREG_HYP_WR];
+        return el2_host ? miscRegInfo[reg][MISCREG_HYP_E2H_WR] :
+            miscRegInfo[reg][MISCREG_HYP_WR];
       case EL3:
-        return secure ? miscRegInfo[reg][MISCREG_MON_NS0_WR] :
+        return el2_host ? miscRegInfo[reg][MISCREG_MON_E2H_WR] :
+            secure ? miscRegInfo[reg][MISCREG_MON_NS0_WR] :
             miscRegInfo[reg][MISCREG_MON_NS1_WR];
       default:
         panic("Invalid exception level");
@@ -1924,6 +1963,39 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_TTBR1_EL1;
                       case 2:
                         return MISCREG_TCR_EL1;
+                    }
+                    break;
+                  case 0x1:
+                    switch (op2) {
+                      case 0x0:
+                        return MISCREG_APIAKeyLo_EL1;
+                      case 0x1:
+                        return MISCREG_APIAKeyHi_EL1;
+                      case 0x2:
+                        return MISCREG_APIBKeyLo_EL1;
+                      case 0x3:
+                        return MISCREG_APIBKeyHi_EL1;
+                    }
+                    break;
+                  case 0x2:
+                    switch (op2) {
+                      case 0x0:
+                        return MISCREG_APDAKeyLo_EL1;
+                      case 0x1:
+                        return MISCREG_APDAKeyHi_EL1;
+                      case 0x2:
+                        return MISCREG_APDBKeyLo_EL1;
+                      case 0x3:
+                        return MISCREG_APDBKeyHi_EL1;
+                    }
+                    break;
+
+                  case 0x3:
+                    switch (op2) {
+                      case 0x0:
+                        return MISCREG_APGAKeyLo_EL1;
+                      case 0x1:
+                        return MISCREG_APGAKeyHi_EL1;
                     }
                     break;
                 }
@@ -2760,6 +2832,36 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                     break;
                 }
                 break;
+              case 5:
+                switch (crm) {
+                  case 1:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_CNTKCTL_EL12;
+                    }
+                    break;
+                  case 2:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_CNTP_TVAL_EL02;
+                      case 1:
+                        return MISCREG_CNTP_CTL_EL02;
+                      case 2:
+                        return MISCREG_CNTP_CVAL_EL02;
+                    }
+                    break;
+                  case 3:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_CNTV_TVAL_EL02;
+                      case 1:
+                        return MISCREG_CNTV_CTL_EL02;
+                      case 2:
+                        return MISCREG_CNTV_CVAL_EL02;
+                    }
+                    break;
+                }
+                break;
               case 7:
                 switch (crm) {
                   case 2:
@@ -2878,10 +2980,10 @@ ISA::initializeMiscRegMetadata()
     bool nTLSMD = false;
 
     // Pointer authentication (Arm 8.3+), unsupported
-    bool EnDA = false; // using APDAKey_EL1 key of instr addrs in ELs 0,1
-    bool EnDB = false; // using APDBKey_EL1 key of instr addrs in ELs 0,1
-    bool EnIA = false; // using APIAKey_EL1 key of instr addrs in ELs 0,1
-    bool EnIB = false; // using APIBKey_EL1 key of instr addrs in ELs 0,1
+    bool EnDA = true; // using APDAKey_EL1 key of instr addrs in ELs 0,1
+    bool EnDB = true; // using APDBKey_EL1 key of instr addrs in ELs 0,1
+    bool EnIA = true; // using APIAKey_EL1 key of instr addrs in ELs 0,1
+    bool EnIB = true; // using APIBKey_EL1 key of instr addrs in ELs 0,1
 
     /**
      * Some registers alias with others, and therefore need to be translated.
@@ -3221,7 +3323,11 @@ ISA::initializeMiscRegMetadata()
     InitReg(MISCREG_HACTLR)
       .hyp().monNonSecure();
     InitReg(MISCREG_HCR)
-      .hyp().monNonSecure();
+      .hyp().monNonSecure()
+      .res0(0x90000000);
+    InitReg(MISCREG_HCR2)
+      .hyp().monNonSecure()
+      .res0(0xffa9ff8c);
     InitReg(MISCREG_HDCR)
       .hyp().monNonSecure();
     InitReg(MISCREG_HCPTR)
@@ -3664,41 +3770,78 @@ ISA::initializeMiscRegMetadata()
       .secure().exceptUserMode();
     InitReg(MISCREG_HTPIDR)
       .hyp().monNonSecure();
+    // BEGIN Generic Timer (AArch32)
     InitReg(MISCREG_CNTFRQ)
+      .reads(1)
+      .highest(system)
+      .privSecureWrite(aarch32EL3);
+    InitReg(MISCREG_CNTPCT)
       .unverifiable()
-      .reads(1).mon();
-    InitReg(MISCREG_CNTKCTL)
-      .allPrivileges().exceptUserMode();
-    InitReg(MISCREG_CNTP_TVAL)
-      .banked();
-    InitReg(MISCREG_CNTP_TVAL_NS)
-      .bankedChild()
-      .allPrivileges()
-      .privSecure(!aarch32EL3)
-      .monSecure(0);
-    InitReg(MISCREG_CNTP_TVAL_S)
-      .bankedChild()
-      .secure().user(1);
+      .reads(1);
+    InitReg(MISCREG_CNTVCT)
+      .unverifiable()
+      .reads(1);
     InitReg(MISCREG_CNTP_CTL)
       .banked();
     InitReg(MISCREG_CNTP_CTL_NS)
       .bankedChild()
-      .allPrivileges()
+      .nonSecure()
       .privSecure(!aarch32EL3)
-      .monSecure(0);
+      .res0(0xfffffff8);
     InitReg(MISCREG_CNTP_CTL_S)
       .bankedChild()
-      .secure().user(1);
+      .secure()
+      .privSecure(aarch32EL3)
+      .res0(0xfffffff8);
+    InitReg(MISCREG_CNTP_CVAL)
+      .banked();
+    InitReg(MISCREG_CNTP_CVAL_NS)
+      .bankedChild()
+      .nonSecure()
+      .privSecure(!aarch32EL3);
+    InitReg(MISCREG_CNTP_CVAL_S)
+      .bankedChild()
+      .secure()
+      .privSecure(aarch32EL3);
+    InitReg(MISCREG_CNTP_TVAL)
+      .banked();
+    InitReg(MISCREG_CNTP_TVAL_NS)
+      .bankedChild()
+      .nonSecure()
+      .privSecure(!aarch32EL3);
+    InitReg(MISCREG_CNTP_TVAL_S)
+      .bankedChild()
+      .secure()
+      .privSecure(aarch32EL3);
+    InitReg(MISCREG_CNTV_CTL)
+      .allPrivileges()
+      .res0(0xfffffff8);
+    InitReg(MISCREG_CNTV_CVAL)
+      .allPrivileges();
     InitReg(MISCREG_CNTV_TVAL)
       .allPrivileges();
-    InitReg(MISCREG_CNTV_CTL)
-      .allPrivileges();
+    InitReg(MISCREG_CNTKCTL)
+      .allPrivileges()
+      .exceptUserMode()
+      .res0(0xfffdfc00);
     InitReg(MISCREG_CNTHCTL)
-      .hypWrite().monNonSecureRead();
-    InitReg(MISCREG_CNTHP_TVAL)
-      .hypWrite().monNonSecureRead();
+      .monNonSecure()
+      .hyp()
+      .res0(0xfffdff00);
     InitReg(MISCREG_CNTHP_CTL)
-      .hypWrite().monNonSecureRead();
+      .monNonSecure()
+      .hyp()
+      .res0(0xfffffff8);
+    InitReg(MISCREG_CNTHP_CVAL)
+      .monNonSecure()
+      .hyp();
+    InitReg(MISCREG_CNTHP_TVAL)
+      .monNonSecure()
+      .hyp();
+    InitReg(MISCREG_CNTVOFF)
+      .monNonSecure()
+      .hyp();
+    // END Generic Timer (AArch32)
     InitReg(MISCREG_IL1DATA0)
       .unimplemented()
       .allPrivileges().exceptUserMode();
@@ -3739,27 +3882,6 @@ ISA::initializeMiscRegMetadata()
       .hyp().monNonSecure();
     InitReg(MISCREG_VTTBR)
       .hyp().monNonSecure();
-    InitReg(MISCREG_CNTPCT)
-      .reads(1);
-    InitReg(MISCREG_CNTVCT)
-      .unverifiable()
-      .reads(1);
-    InitReg(MISCREG_CNTP_CVAL)
-      .banked();
-    InitReg(MISCREG_CNTP_CVAL_NS)
-      .bankedChild()
-      .allPrivileges()
-      .privSecure(!aarch32EL3)
-      .monSecure(0);
-    InitReg(MISCREG_CNTP_CVAL_S)
-      .bankedChild()
-      .secure().user(1);
-    InitReg(MISCREG_CNTV_CVAL)
-      .allPrivileges();
-    InitReg(MISCREG_CNTVOFF)
-      .hyp().monNonSecure();
-    InitReg(MISCREG_CNTHP_CVAL)
-      .hypWrite().monNonSecureRead();
     InitReg(MISCREG_CPUMERRSR)
       .unimplemented()
       .allPrivileges().exceptUserMode();
@@ -3959,6 +4081,28 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_ID_AA64MMFR2_EL1)
       .allPrivileges().exceptUserMode().writes(0);
+
+    InitReg(MISCREG_APDAKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APDAKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APDBKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APDBKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APGAKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APGAKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APIAKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APIAKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APIBKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APIBKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+
     InitReg(MISCREG_CCSIDR_EL1)
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_CLIDR_EL1)
@@ -4009,7 +4153,7 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_HACTLR);
     InitReg(MISCREG_HCR_EL2)
       .hyp().mon()
-      .mapsTo(MISCREG_HCR /*, MISCREG_HCR2*/);
+      .mapsTo(MISCREG_HCR, MISCREG_HCR2);
     InitReg(MISCREG_MDCR_EL2)
       .hyp().mon()
       .mapsTo(MISCREG_HDCR);
@@ -4385,37 +4529,128 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_HTPIDR);
     InitReg(MISCREG_TPIDR_EL3)
       .mon();
-    InitReg(MISCREG_CNTKCTL_EL1)
-      .allPrivileges().exceptUserMode()
-      .mapsTo(MISCREG_CNTKCTL);
+    // BEGIN Generic Timer (AArch64)
     InitReg(MISCREG_CNTFRQ_EL0)
-      .reads(1).mon()
+      .reads(1)
+      .highest(system)
+      .privSecureWrite(aarch32EL3)
       .mapsTo(MISCREG_CNTFRQ);
     InitReg(MISCREG_CNTPCT_EL0)
+      .unverifiable()
       .reads(1)
-      .mapsTo(MISCREG_CNTPCT); /* 64b */
+      .mapsTo(MISCREG_CNTPCT);
     InitReg(MISCREG_CNTVCT_EL0)
       .unverifiable()
       .reads(1)
-      .mapsTo(MISCREG_CNTVCT); /* 64b */
-    InitReg(MISCREG_CNTP_TVAL_EL0)
-      .allPrivileges()
-      .mapsTo(MISCREG_CNTP_TVAL_NS);
+      .mapsTo(MISCREG_CNTVCT);
     InitReg(MISCREG_CNTP_CTL_EL0)
       .allPrivileges()
+      .res0(0xfffffffffffffff8)
       .mapsTo(MISCREG_CNTP_CTL_NS);
     InitReg(MISCREG_CNTP_CVAL_EL0)
       .allPrivileges()
-      .mapsTo(MISCREG_CNTP_CVAL_NS); /* 64b */
-    InitReg(MISCREG_CNTV_TVAL_EL0)
+      .mapsTo(MISCREG_CNTP_CVAL_NS);
+    InitReg(MISCREG_CNTP_TVAL_EL0)
       .allPrivileges()
-      .mapsTo(MISCREG_CNTV_TVAL);
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTP_TVAL_NS);
     InitReg(MISCREG_CNTV_CTL_EL0)
       .allPrivileges()
+      .res0(0xfffffffffffffff8)
       .mapsTo(MISCREG_CNTV_CTL);
     InitReg(MISCREG_CNTV_CVAL_EL0)
       .allPrivileges()
-      .mapsTo(MISCREG_CNTV_CVAL); /* 64b */
+      .mapsTo(MISCREG_CNTV_CVAL);
+    InitReg(MISCREG_CNTV_TVAL_EL0)
+      .allPrivileges()
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTV_TVAL);
+    InitReg(MISCREG_CNTP_CTL_EL02)
+      .monE2H()
+      .hypE2H()
+      .res0(0xfffffffffffffff8)
+      .mapsTo(MISCREG_CNTP_CTL_NS);
+    InitReg(MISCREG_CNTP_CVAL_EL02)
+      .monE2H()
+      .hypE2H()
+      .mapsTo(MISCREG_CNTP_CVAL_NS);
+    InitReg(MISCREG_CNTP_TVAL_EL02)
+      .monE2H()
+      .hypE2H()
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTP_TVAL_NS);
+    InitReg(MISCREG_CNTV_CTL_EL02)
+      .monE2H()
+      .hypE2H()
+      .res0(0xfffffffffffffff8)
+      .mapsTo(MISCREG_CNTV_CTL);
+    InitReg(MISCREG_CNTV_CVAL_EL02)
+      .monE2H()
+      .hypE2H()
+      .mapsTo(MISCREG_CNTV_CVAL);
+    InitReg(MISCREG_CNTV_TVAL_EL02)
+      .monE2H()
+      .hypE2H()
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTV_TVAL);
+    InitReg(MISCREG_CNTKCTL_EL1)
+      .allPrivileges()
+      .exceptUserMode()
+      .res0(0xfffffffffffdfc00)
+      .mapsTo(MISCREG_CNTKCTL);
+    InitReg(MISCREG_CNTKCTL_EL12)
+      .monE2H()
+      .hypE2H()
+      .res0(0xfffffffffffdfc00)
+      .mapsTo(MISCREG_CNTKCTL);
+    InitReg(MISCREG_CNTPS_CTL_EL1)
+      .mon()
+      .privSecure()
+      .res0(0xfffffffffffffff8);
+    InitReg(MISCREG_CNTPS_CVAL_EL1)
+      .mon()
+      .privSecure();
+    InitReg(MISCREG_CNTPS_TVAL_EL1)
+      .mon()
+      .privSecure()
+      .res0(0xffffffff00000000);
+    InitReg(MISCREG_CNTHCTL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xfffffffffffc0000)
+      .mapsTo(MISCREG_CNTHCTL);
+    InitReg(MISCREG_CNTHP_CTL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xfffffffffffffff8)
+      .mapsTo(MISCREG_CNTHP_CTL);
+    InitReg(MISCREG_CNTHP_CVAL_EL2)
+      .mon()
+      .hyp()
+      .mapsTo(MISCREG_CNTHP_CVAL);
+    InitReg(MISCREG_CNTHP_TVAL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTHP_TVAL);
+    // IF Armv8.1-VHE
+    InitReg(MISCREG_CNTHV_CTL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xfffffffffffffff8);
+    InitReg(MISCREG_CNTHV_CVAL_EL2)
+      .mon()
+      .hyp();
+    InitReg(MISCREG_CNTHV_TVAL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xffffffff00000000);
+    // ENDIF Armv8.1-VHE
+    InitReg(MISCREG_CNTVOFF_EL2)
+      .mon()
+      .hyp()
+      .mapsTo(MISCREG_CNTVOFF);
+    // END Generic Timer (AArch64)
     InitReg(MISCREG_PMEVCNTR0_EL0)
       .allPrivileges();
 //    .mapsTo(MISCREG_PMEVCNTR0);
@@ -4452,27 +4687,6 @@ ISA::initializeMiscRegMetadata()
     InitReg(MISCREG_PMEVTYPER5_EL0)
       .allPrivileges();
 //    .mapsTo(MISCREG_PMEVTYPER5);
-    InitReg(MISCREG_CNTVOFF_EL2)
-      .hyp().mon()
-      .mapsTo(MISCREG_CNTVOFF); /* 64b */
-    InitReg(MISCREG_CNTHCTL_EL2)
-      .mon().hyp()
-      .mapsTo(MISCREG_CNTHCTL);
-    InitReg(MISCREG_CNTHP_TVAL_EL2)
-      .mon().hyp()
-      .mapsTo(MISCREG_CNTHP_TVAL);
-    InitReg(MISCREG_CNTHP_CTL_EL2)
-      .mon().hyp()
-      .mapsTo(MISCREG_CNTHP_CTL);
-    InitReg(MISCREG_CNTHP_CVAL_EL2)
-      .mon().hyp()
-      .mapsTo(MISCREG_CNTHP_CVAL); /* 64b */
-    InitReg(MISCREG_CNTPS_TVAL_EL1)
-      .mon().privSecure();
-    InitReg(MISCREG_CNTPS_CTL_EL1)
-      .mon().privSecure();
-    InitReg(MISCREG_CNTPS_CVAL_EL1)
-      .mon().privSecure();
     InitReg(MISCREG_IL1DATA0_EL1)
       .allPrivileges().exceptUserMode();
     InitReg(MISCREG_IL1DATA1_EL1)
@@ -4976,13 +5190,6 @@ ISA::initializeMiscRegMetadata()
     InitReg(MISCREG_ICH_LRC15)
         .mapsTo(MISCREG_ICH_LR15)
         .hyp().mon();
-
-    InitReg(MISCREG_CNTHV_CTL_EL2)
-      .mon().hyp();
-    InitReg(MISCREG_CNTHV_CVAL_EL2)
-      .mon().hyp();
-    InitReg(MISCREG_CNTHV_TVAL_EL2)
-      .mon().hyp();
 
     // SVE
     InitReg(MISCREG_ID_AA64ZFR0_EL1)

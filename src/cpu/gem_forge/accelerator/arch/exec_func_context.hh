@@ -181,23 +181,15 @@ public:
    * Condition Code Registers
    */
   RegVal readCCRegOperand(const StaticInst *si, int idx) override {
-#ifdef ISA_HAS_CC_REGS
     const RegId &reg = si->srcRegIdx(idx);
     assert(reg.isCCReg());
     return this->ccRegs[this->flattenCCRegIdx(reg.index())];
-#else
-    panic("Tried to read a CC register.");
-#endif
   }
 
   void setCCRegOperand(const StaticInst *si, int idx, RegVal val) override {
-#ifdef ISA_HAS_CC_REGS
     const RegId &reg = si->destRegIdx(idx);
     assert(reg.isCCReg());
     this->ccRegs[this->flattenCCRegIdx(reg.index())] = val;
-#else
-    panic("Tried to set a CC register.");
-#endif
   }
 
   /**
@@ -338,14 +330,14 @@ public:
   /**
    * Executes a syscall specified by the callnum.
    */
-  void syscall(int64_t callnum, Fault *fault) override {
+  void syscall(Fault *fault) override {
     panic("FuncAddrExecContext does not implement this.");
   }
 
   /** @} */
 
   /** Returns a pointer to the ThreadContext. */
-  ThreadContext *tcBase() override {
+  ThreadContext *tcBase() const override {
     panic("FuncAddrExecContext does not implement this.");
   }
 
@@ -414,7 +406,6 @@ public:
 protected:
   RegVal intRegs[TheISA::NumIntRegs];
   RegVal floatRegs[TheISA::NumFloatRegs];
-#ifdef ISA_HAS_CC_REGS
   RegVal ccRegs[TheISA::NumCCRegs];
   int flattenCCRegIdx(int regIdx) const {
 #if THE_ISA == X86_ISA
@@ -427,7 +418,6 @@ protected:
     assert(flatIndex < TheISA::NumCCRegs);
     return flatIndex;
   }
-#endif
   TheISA::PCState pc;
   PortProxy *virtProxy = nullptr;
 };

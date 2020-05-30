@@ -1736,13 +1736,12 @@ void LLCStreamEngine::performStreamAtomicRMW(
   auto params = S->setupAtomicRMWParamV(formalParams);
   FIFOEntryIdx entryIdx(sliceId.streamId);
   entryIdx.entryIdx = sliceId.lhsElementIdx;
-  auto atomicOp = new StreamAtomicOp(S, entryIdx, elementSize, params,
-                                     stream->configData.storeCallback);
+  auto atomicOp = m5::make_unique<StreamAtomicOp>(
+      S, entryIdx, elementSize, params, stream->configData.storeCallback);
 
   /**
    * Create the packet.
    */
-  int asid = 0;
   MasterID masterId = 0;
   Addr pc = 0;
   int contextId = 0;
@@ -1750,8 +1749,8 @@ void LLCStreamEngine::performStreamAtomicRMW(
   Request::Flags flags;
   flags.set(Request::ATOMIC_RETURN_OP);
   RequestPtr req =
-      std::make_shared<Request>(asid, elementVAddr, elementSize, flags,
-                                masterId, pc, contextId, atomicOp);
+      std::make_shared<Request>(elementVAddr, elementSize, flags, masterId, pc,
+                                contextId, std::move(atomicOp));
   req->setPaddr(elementPAddr);
   PacketPtr pkt = Packet::createWrite(req);
   // Fake some data.

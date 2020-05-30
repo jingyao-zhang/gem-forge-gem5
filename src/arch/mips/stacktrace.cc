@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #include "arch/mips/stacktrace.hh"
@@ -33,12 +31,11 @@
 #include <string>
 
 #include "arch/mips/isa_traits.hh"
-#include "arch/mips/vtophys.hh"
 #include "base/bitfield.hh"
 #include "base/trace.hh"
 #include "cpu/base.hh"
 #include "cpu/thread_context.hh"
-#include "mem/fs_translating_port_proxy.hh"
+#include "mem/port_proxy.hh"
 #include "sim/system.hh"
 
 using namespace MipsISA;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, 2015-2016 ARM Limited
+ * Copyright (c) 2012-2013, 2015-2017, 2019-2020 ARM Limited
  * Copyright (c) 2013 Cornell University
  * All rights reserved
  *
@@ -34,11 +34,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Hansson
- *          Christopher Torng
- *          Akash Bagdia
- *          David Guillen Fandos
  */
 
 /**
@@ -49,12 +44,11 @@
 #ifndef __SIM_CLOCKED_OBJECT_HH__
 #define __SIM_CLOCKED_OBJECT_HH__
 
-#include "base/callback.hh"
-#include "base/intmath.hh"
-#include "enums/PwrState.hh"
+
 #include "params/ClockedObject.hh"
 #include "sim/core.hh"
 #include "sim/clock_domain.hh"
+#include "sim/power_state.hh"
 #include "sim/sim_object.hh"
 
 /**
@@ -250,47 +244,7 @@ class ClockedObject : public SimObject, public Clocked
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
 
-    Enums::PwrState pwrState() const { return _currPwrState; }
-
-    std::string
-    pwrStateName() const
-    {
-        return Enums::PwrStateStrings[_currPwrState];
-    }
-
-    /** Returns the percentage residency for each power state */
-    std::vector<double> pwrStateWeights() const;
-
-    /**
-     * Record stats values like state residency by computing the time
-     * difference from previous update. Also, updates the previous evaluation
-     * tick once all stats are recorded.
-     * Usually called on power state change and stats dump callback.
-     */
-    void computeStats();
-
-    void pwrState(Enums::PwrState);
-    void regStats() override;
-
-  protected:
-
-    /** To keep track of the current power state */
-    Enums::PwrState _currPwrState;
-
-    Tick prvEvalTick;
-
-    Stats::Scalar numPwrStateTransitions;
-    Stats::Distribution pwrStateClkGateDist;
-    Stats::Vector pwrStateResidencyTicks;
-
-};
-
-class ClockedObjectDumpCallback : public Callback
-{
-    ClockedObject *co;
-  public:
-    ClockedObjectDumpCallback(ClockedObject *co_t) : co(co_t) {}
-    virtual void process() { co->computeStats(); };
+    PowerState *powerState;
 };
 
 #endif //__SIM_CLOCKED_OBJECT_HH__

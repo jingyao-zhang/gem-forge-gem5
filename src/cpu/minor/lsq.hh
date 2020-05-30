@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 /**
@@ -784,8 +782,8 @@ class LSQ : public Named
      *  the LSQ */
     Fault pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,
-                      uint64_t *res, AtomicOpFunctor *amo_op,
-                      const std::vector<bool>& byteEnable =
+                      uint64_t *res, AtomicOpFunctorPtr amo_op,
+                      const std::vector<bool>& byte_enable =
                           std::vector<bool>());
 
     /** Push a predicate failed-representing request into the queues just

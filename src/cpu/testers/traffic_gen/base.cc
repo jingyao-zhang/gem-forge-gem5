@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Thomas Grass
- *          Andreas Hansson
- *          Sascha Bischoff
  */
 #include "cpu/testers/traffic_gen/base.hh"
 
@@ -55,6 +51,7 @@
 #include "cpu/testers/traffic_gen/stream_gen.hh"
 #include "debug/Checkpoint.hh"
 #include "debug/TrafficGen.hh"
+#include "enums/AddrMap.hh"
 #include "params/BaseTrafficGen.hh"
 #include "sim/sim_exit.hh"
 #include "sim/stats.hh"
@@ -404,7 +401,7 @@ BaseTrafficGen::createDram(Tick duration,
                            unsigned int num_seq_pkts, unsigned int page_size,
                            unsigned int nbr_of_banks_DRAM,
                            unsigned int nbr_of_banks_util,
-                           unsigned int addr_mapping,
+                           Enums::AddrMap addr_mapping,
                            unsigned int nbr_of_ranks)
 {
     return std::shared_ptr<BaseGen>(new DramGen(*this, masterID,
@@ -429,7 +426,7 @@ BaseTrafficGen::createDramRot(Tick duration,
                               unsigned int page_size,
                               unsigned int nbr_of_banks_DRAM,
                               unsigned int nbr_of_banks_util,
-                              unsigned int addr_mapping,
+                              Enums::AddrMap addr_mapping,
                               unsigned int nbr_of_ranks,
                               unsigned int max_seq_count_per_rank)
 {

@@ -36,8 +36,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Brad Beckmann
 
 from __future__ import print_function
 
@@ -49,6 +47,7 @@ from m5.util import addToPath, fatal
 
 addToPath('../')
 
+from common import ObjectList
 from common import MemConfig
 from common import FileSystemConfig
 
@@ -115,9 +114,10 @@ def setup_memory_controllers(system, ruby, dir_cntrls, options):
 
         dir_ranges = []
         for r in system.mem_ranges:
-            mem_ctrl = MemConfig.create_mem_ctrl(
-                MemConfig.get(options.mem_type), r, index, options.num_dirs,
-                int(math.log(options.num_dirs, 2)), intlv_size)
+            mem_type = ObjectList.mem_list.get(options.mem_type)
+            mem_ctrl = MemConfig.create_mem_ctrl(mem_type, r, index,
+                options.num_dirs, int(math.log(options.num_dirs, 2)),
+                intlv_size)
 
             if options.access_backing_store:
                 mem_ctrl.kvm_map=False
@@ -131,7 +131,7 @@ def setup_memory_controllers(system, ruby, dir_cntrls, options):
                 mem_ctrl.port = dir_cntrl.memory
 
             # Enable low-power DRAM states if option is set
-            if issubclass(MemConfig.get(options.mem_type), DRAMCtrl):
+            if issubclass(mem_type, DRAMCtrl):
                 mem_ctrl.enable_dram_powerdown = \
                         options.enable_dram_powerdown
 

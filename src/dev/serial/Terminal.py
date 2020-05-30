@@ -35,8 +35,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 from m5.SimObject import SimObject
 from m5.params import *
@@ -44,7 +42,8 @@ from m5.proxy import *
 
 from m5.objects.Serial import SerialDevice
 
-class TerminalDump(Enum): vals = ["none", "stdoutput", "stderror", "file"]
+class TerminalDump(ScopedEnum): vals = [
+        "none", "stdoutput", "stderror", "file"]
 
 class Terminal(SerialDevice):
     type = 'Terminal'

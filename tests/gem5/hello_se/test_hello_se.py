@@ -1,3 +1,18 @@
+# Copyright (c) 2020 The Regents of the University of California
+# All Rights Reserved.
+#
+# Copyright (c) 2020 ARM Limited
+# All rights reserved
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
 # Copyright (c) 2017 Mark D. Hill and David A. Wood
 # All rights reserved.
 #
@@ -23,26 +38,34 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Sean Wilson
 
 '''
 Test file for the util m5 exit assembly instruction.
 '''
 from testlib import *
 
-test_progs = {
-    'x86': ('hello64-static', 'hello64-dynamic', 'hello32-static'),
+static_progs = {
+    'x86': ('hello64-static', 'hello32-static'),
     'arm': ('hello64-static', 'hello32-static'),
+    'alpha': ('hello',),
+    'mips': ('hello',),
+    'riscv': ('hello',),
+    'sparc': ('hello',)
 }
 
-<<<<<<< HEAD
-for isa in test_progs:
-    for binary in test_progs[isa]:
-        import os
-        path = os.path.join('test-progs', 'hello', 'bin', isa, 'linux')
-        hello_program = DownloadedProgram(path, binary)
-=======
+dynamic_progs = {
+    'x86': ('hello64-dynamic',)
+}
+
+cpu_types = {
+    'x86': ('TimingSimpleCPU', 'AtomicSimpleCPU', 'DerivO3CPU'),
+    'arm' :  ('TimingSimpleCPU', 'AtomicSimpleCPU','DerivO3CPU'),
+    'alpha': ('TimingSimpleCPU', 'AtomicSimpleCPU', 'DerivO3CPU', 'MinorCPU'),
+    'mips' : ('TimingSimpleCPU', 'AtomicSimpleCPU', 'DerivO3CPU'),
+    'riscv' : ('TimingSimpleCPU', 'AtomicSimpleCPU', 'DerivO3CPU', 'MinorCPU'),
+    'sparc' : ('TimingSimpleCPU', 'AtomicSimpleCPU')
+}
+
 urlbase = 'http://gem5.org/dist/current/test-progs/hello/bin/'
 for isa in test_progs:
     for binary in test_progs[isa]:
@@ -51,7 +74,6 @@ for isa in test_progs:
         path = joinpath(absdirpath(__file__), '..', 'test-progs', 'hello',
                         'bin', isa, 'linux')
         hello_program = DownloadedProgram(url, path, binary)
->>>>>>> a56ab04598be184427e8dd71fa5528b016738306
 
         ref_path = joinpath(getcwd(), 'ref')
 
@@ -64,10 +86,60 @@ for isa in test_progs:
                 fixtures=(hello_program,),
                 verifiers=verifiers,
                 config=joinpath(config.base_dir, 'configs', 'example','se.py'),
-<<<<<<< HEAD
-                config_args=['--cmd', hello_program.path],
-=======
                 config_args=['--cmd', joinpath(path, binary)],
->>>>>>> a56ab04598be184427e8dd71fa5528b016738306
                 valid_isas=(isa.upper(),),
         )
+supported_os = {
+    'x86': ('linux',),
+    'arm' : ('linux',),
+    'alpha' : ('linux',),
+    'mips' : ('linux',),
+    'riscv' : ('linux',),
+    'sparc' : ('linux',)
+}
+
+if config.bin_path:
+    base_path = config.bin_path
+else:
+    base_path = joinpath(absdirpath(__file__), '..', 'test-progs', 'hello',
+        'bin')
+
+urlbase = config.resource_url + '/test-progs/hello/bin/'
+
+ref_path = joinpath(getcwd(), 'ref')
+verifiers = (
+    verifier.MatchStdoutNoPerf(joinpath(ref_path, 'simout')),
+)
+
+def verify_config(isa, binary, operating_s, cpu, hosts):
+    url = urlbase + isa + '/' + operating_s + '/' + binary
+    path = joinpath(base_path, isa, operating_s)
+    hello_program = DownloadedProgram(url, path, binary)
+
+    gem5_verify_config(
+        name='test-' + binary + '-' + operating_s + "-" + cpu,
+        fixtures=(hello_program,),
+        verifiers=verifiers,
+        config=joinpath(config.base_dir, 'configs', 'example','se.py'),
+        config_args=['--cmd', joinpath(path, binary), '--cpu-type', cpu,
+            '--caches'],
+        valid_isas=(isa.upper(),),
+        valid_hosts=hosts,
+    )
+
+# Run statically linked hello worlds
+for isa in static_progs:
+    for binary in static_progs[isa]:
+        for operating_s in supported_os[isa]:
+            for cpu in cpu_types[isa]:
+                verify_config(isa, binary, operating_s, cpu,
+                        constants.supported_hosts)
+
+# Run dynamically linked hello worlds
+for isa in dynamic_progs:
+    for binary in dynamic_progs[isa]:
+        for operating_s in supported_os[isa]:
+            for cpu in cpu_types[isa]:
+               verify_config(isa, binary, operating_s, cpu,
+                       constants.target_host[isa.upper()])
+>>>>>>> master

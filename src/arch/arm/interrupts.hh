@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
  */
 
 #ifndef __ARCH_ARM_INTERRUPT_HH__
@@ -48,15 +46,15 @@
 #include "arch/arm/miscregs.hh"
 #include "arch/arm/registers.hh"
 #include "arch/arm/utility.hh"
+#include "arch/generic/interrupts.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Interrupt.hh"
 #include "params/ArmInterrupts.hh"
-#include "sim/sim_object.hh"
 
 namespace ArmISA
 {
 
-class Interrupts : public SimObject
+class Interrupts : public BaseInterrupts
 {
   private:
     BaseCPU * cpu;
@@ -80,7 +78,7 @@ class Interrupts : public SimObject
         return dynamic_cast<const Params *>(_params);
     }
 
-    Interrupts(Params * p) : SimObject(p), cpu(NULL)
+    Interrupts(Params * p) : BaseInterrupts(p), cpu(NULL)
     {
         clearAll();
     }

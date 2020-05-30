@@ -287,7 +287,9 @@ bool LLVMDynamicInst::isFloatInst() const {
   case FloatCmpOp: {
     return true;
   }
-  default: { return false; }
+  default: {
+    return false;
+  }
   }
 }
 
@@ -369,13 +371,11 @@ void LLVMDynamicInstMem::execute(LLVMTraceCPU *cpu) {
           packet.paddr, packet.size, this, packet.data, cpu->dataMasterId(), 0,
           this->TDG.pc());
       // We want to set up the virtual address.
-      // Use the ThreadID as the ASID.
       // ! This currently does not work, as ADFA does not has a thread
       // ! associated with it. I need to improve the design.
-      auto asid = 0;
       // auto thread = cpu->getInflyInstThread(this->TDG.id());
       // asid = thread->getThreadId();
-      pkt->req->setVirt(asid, packet.vaddr, packet.size, 0, cpu->dataMasterId(),
+      pkt->req->setVirt(packet.vaddr, packet.size, 0, cpu->dataMasterId(),
                         this->TDG.pc());
       // ! setVirt will clear the physical address.
       pkt->req->setPaddr(packet.paddr);
@@ -516,7 +516,7 @@ void LLVMDynamicInstMem::handlePacketResponse(
   // Check if the load will produce a new base.
   // ! This is very fragile to ISA.
   if (this->type == Type::LOAD && this->TDG.load().new_base() != "") {
-    uint64_t vaddr = TheISA::gtoh(packet->getRaw<uint64_t>());
+    uint64_t vaddr = packet->getRaw<uint64_t>();
     cpu->mapBaseNameToVAddr(this->TDG.load().new_base(), vaddr);
   }
   // if (this->TDG.pc() == 4195584 && this->TDG.load().addr() == 0x88707c) {

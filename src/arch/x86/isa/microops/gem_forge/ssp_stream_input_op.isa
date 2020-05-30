@@ -27,7 +27,7 @@ def template MicroSSPInputOpDeclare {{
         RegIndex foldOBit;
 
         std::string generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const;
+            const ::Loader::SymbolTable *symtab) const;
 
       public:
         %(class_name)s(ExtMachInst _machInst,
@@ -41,7 +41,7 @@ def template MicroSSPInputOpDeclare {{
 
 def template MicroSSPInputOpDisassembly {{
     std::string %(class_name)s::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+            const ::Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 

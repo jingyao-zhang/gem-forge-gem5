@@ -38,11 +38,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Erik Hallnor
- *          Steve Reinhardt
- *          Andreas Sandberg
  */
 
 #include "sim/serialize.hh"
@@ -71,9 +66,9 @@
 
 using namespace std;
 
-int Serializable::ckptMaxCount = 0;
-int Serializable::ckptCount = 0;
-int Serializable::ckptPrevCount = -1;
+int ckptMaxCount = 0;
+int ckptCount = 0;
+int ckptPrevCount = -1;
 std::stack<std::string> Serializable::path;
 
 /////////////////////////////
@@ -271,9 +266,9 @@ CheckpointIn::dir()
 }
 
 CheckpointIn::CheckpointIn(const string &cpt_dir, SimObjectResolver &resolver)
-    : db(new IniFile), objNameResolver(resolver), cptDir(setDir(cpt_dir))
+    : db(new IniFile), objNameResolver(resolver), _cptDir(setDir(cpt_dir))
 {
-    string filename = cptDir + "/" + CheckpointIn::baseFilename;
+    string filename = getCptDir() + "/" + CheckpointIn::baseFilename;
     if (!db->load(filename)) {
         fatal("Can't load checkpoint file '%s'\n", filename);
     }

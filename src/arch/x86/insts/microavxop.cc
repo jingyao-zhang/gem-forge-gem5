@@ -7,7 +7,7 @@
 
 namespace X86ISA {
 std::string AVXOpBase::generateDisassembly(Addr pc,
-                                           const SymbolTable *symtab) const {
+                                           const ::Loader::SymbolTable *symtab) const {
   std::stringstream response;
 
   printMnemonic(response, instMnem, mnemonic);

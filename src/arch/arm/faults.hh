@@ -37,11 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Gabe Black
- *          Giacomo Gabrielli
- *          Thomas Grocutt
  */
 
 #ifndef __ARM_FAULTS_HH__
@@ -136,6 +131,11 @@ class ArmFault : public FaultBase
         SAS,   // DataAbort: Syndrome Access Size
         SSE,   // DataAbort: Syndrome Sign Extend
         SRT,   // DataAbort: Syndrome Register Transfer
+        CM,    // DataAbort: Cache Maintenance/Address Translation Op
+        OFA,   // DataAbort: Override fault Address. This is needed when
+               // the abort is triggered by a CMO. The faulting address is
+               // then the address specified in the register argument of the
+               // instruction and not the cacheline address (See FAR doc)
 
         // AArch64 only
         SF,    // DataAbort: width of the accessed register is SixtyFour
@@ -482,6 +482,7 @@ class DataAbort : public AbortFault<DataAbort>
     uint8_t sas;
     uint8_t sse;
     uint8_t srt;
+    uint8_t cm;
 
     // AArch64 only
     bool sf;
@@ -491,7 +492,7 @@ class DataAbort : public AbortFault<DataAbort>
               bool _stage2 = false, ArmFault::TranMethod _tranMethod = ArmFault::UnknownTran) :
         AbortFault<DataAbort>(_addr, _write, _domain, _source, _stage2,
                               _tranMethod),
-        isv(false), sas (0), sse(0), srt(0), sf(false), ar(false)
+        isv(false), sas (0), sse(0), srt(0), cm(0), sf(false), ar(false)
     {}
 
     ExceptionClass ec(ThreadContext *tc) const override;
@@ -565,6 +566,7 @@ class SPAlignmentFault : public ArmFaultVals<SPAlignmentFault>
 {
   public:
     SPAlignmentFault();
+    bool routeToHyp(ThreadContext *tc) const override;
 };
 
 /// System error (AArch64 only)

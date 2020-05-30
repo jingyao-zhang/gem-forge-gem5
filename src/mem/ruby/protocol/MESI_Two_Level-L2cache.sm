@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2020 ARM Limited
+ * All rights reserved
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 1999-2013 Mark D. Hill and David A. Wood
  * All rights reserved.
  *
@@ -378,13 +390,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
                     in_msg.addr, cache_entry, tbe);
           } else {
             // No room in the L2, so we need to make room before handling the request
-            Entry L2cache_entry := getCacheEntry(L2cache.cacheProbe(in_msg.addr));
+            Addr victim := L2cache.cacheProbe(in_msg.addr);
+            Entry L2cache_entry := getCacheEntry(victim);
             if (isDirty(L2cache_entry)) {
-              trigger(Event:L2_Replacement, L2cache.cacheProbe(in_msg.addr),
-                      L2cache_entry, TBEs[L2cache.cacheProbe(in_msg.addr)]);
+              trigger(Event:L2_Replacement, victim, L2cache_entry, TBEs[victim]);
             } else {
-              trigger(Event:L2_Replacement_clean, L2cache.cacheProbe(in_msg.addr),
-                      L2cache_entry, TBEs[L2cache.cacheProbe(in_msg.addr)]);
+              trigger(Event:L2_Replacement_clean,
+                      victim, L2cache_entry, TBEs[victim]);
             }
           }
         }
@@ -403,6 +415,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
         out_msg.Requestor := machineID;
         out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
         out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.Prefetch := in_msg.Prefetch;
       }
     }
   }

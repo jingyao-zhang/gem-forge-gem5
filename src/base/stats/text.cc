@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #if defined(__APPLE__)
@@ -407,8 +405,9 @@ DistPrint::DistPrint(const Text *text, const VectorDistInfo &info, int i)
 {
     init(text, info);
 
-    name = info.name + "_" +
-        (info.subnames[i].empty() ? (std::to_string(i)) : info.subnames[i]);
+    name = text->statName(
+        info.name + "_" +
+        (info.subnames[i].empty() ? (std::to_string(i)) : info.subnames[i]));
 
     if (!info.subdescs[i].empty())
         desc = info.subdescs[i];

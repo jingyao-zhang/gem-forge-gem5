@@ -45,17 +45,15 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "arch/x86/pagetable_walker.hh"
 
 #include <memory>
 
+#include "arch/x86/faults.hh"
 #include "arch/x86/pagetable.hh"
 #include "arch/x86/tlb.hh"
-#include "arch/x86/vtophys.hh"
 #include "base/bitfield.hh"
 #include "base/trie.hh"
 #include "cpu/base.hh"

@@ -33,13 +33,12 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Stan Czerniawski
  */
 
 #ifndef __DEV_ARM_SMMU_V3_TRANSL_HH__
 #define __DEV_ARM_SMMU_V3_TRANSL_HH__
 
+#include "base/compiler.hh"
 #include "dev/arm/smmu_v3_proc.hh"
 #include "dev/arm/smmu_v3_ptops.hh"
 #include "dev/arm/smmu_v3_slaveifc.hh"
@@ -98,7 +97,7 @@ class SMMUTranslationProcess : public SMMUProcess
     TranslContext context;
 
     Tick recvTick;
-    Tick faultTick;
+    Tick M5_CLASS_VAR_USED faultTick;
 
     virtual void main(Yield &yield);
 

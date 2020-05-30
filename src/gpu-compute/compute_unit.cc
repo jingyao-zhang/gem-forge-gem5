@@ -29,9 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: John Kalamatianos,
- *          Anthony Gutierrez
  */
 
 #include "gpu-compute/compute_unit.hh"
@@ -785,7 +782,7 @@ ComputeUnit::sendRequest(GPUDynInstPtr gpuDynInst, int index, PacketPtr pkt)
             Addr paddr;
 
             if (!p->pTable->translate(vaddr, paddr)) {
-                if (!p->fixupStackFault(vaddr)) {
+                if (!p->fixupFault(vaddr)) {
                     panic("CU%d: WF[%d][%d]: Fault on addr %#x!\n",
                           cu_id, gpuDynInst->simdId, gpuDynInst->wfSlotId,
                           vaddr);
@@ -945,7 +942,7 @@ ComputeUnit::injectGlobalMemFence(GPUDynInstPtr gpuDynInst, bool kernelLaunch,
 
     if (!req) {
         req = std::make_shared<Request>(
-            0, 0, 0, 0, masterId(), 0, gpuDynInst->wfDynId);
+            0, 0, 0, masterId(), 0, gpuDynInst->wfDynId);
     }
     req->setPaddr(0);
     if (kernelLaunch) {
@@ -1177,7 +1174,7 @@ ComputeUnit::DTLBPort::recvTimingResp(PacketPtr pkt)
                 break;
 
             RequestPtr prefetch_req = std::make_shared<Request>(
-                0, vaddr + stride * pf * TheISA::PageBytes,
+                vaddr + stride * pf * TheISA::PageBytes,
                 sizeof(uint8_t), 0,
                 computeUnit->masterId(),
                 0, 0, nullptr);

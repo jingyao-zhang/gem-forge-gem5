@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Hansson
  */
 
 #include "mem/physical.hh"
@@ -403,7 +401,7 @@ PhysicalMemory::unserializeStore(CheckpointIn &cp)
 
     string filename;
     UNSERIALIZE_SCALAR(filename);
-    string filepath = cp.cptDir + "/" + filename;
+    string filepath = cp.getCptDir() + "/" + filename;
 
     // mmap memoryfile
     gzFile compressed_mem = gzopen(filepath.c_str(), "rb");

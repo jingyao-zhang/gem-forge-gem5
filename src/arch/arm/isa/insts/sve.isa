@@ -32,8 +32,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Giacomo Gabrielli
 
 // @file Definition of SVE instructions.
 
@@ -2434,7 +2432,16 @@ let {{
             elif destType == DstRegType.SimdFpScalar:
                 code += ''' else {
             AA64FpDest_x[0] = AA64FpDestMerge_x[0];
-        }'''
+        }
+        '''
+        if destType == DstRegType.SimdFpScalar:
+            # This section will extend zeros to the simdFP scalar
+            # intructions for lasta/b and Clasta/b
+            code += '''
+                for (int i = 1; i < eCount; ++i) {
+                    AA64FpDest_x[i] = (Element)0x0;
+                }
+                '''
         iop = InstObjParams(name, 'Sve' + Name, 'SveSelectOp',
                             {'code': code, 'op_class': opClass,
                              'isCond': 'true' if isCond else 'false',
@@ -2951,7 +2958,7 @@ let {{
                 if (sub_i) {
                     elt2_i = fplibNeg<Element>(elt2_i);
                 }
-                fpscr =  (FPSCR) FpscrExc;
+                fpscr = FpscrExc & ~FpscrAhpMask;
                 acc_r = fplibAdd<Element>(acc_r, elt2_i, fpscr);
                 FpscrExc = fpscr;
             }
@@ -2959,7 +2966,7 @@ let {{
                 if (sub_r) {
                     elt2_r = fplibNeg<Element>(elt2_r);
                 }
-                fpscr =  (FPSCR) FpscrExc;
+                fpscr = FpscrExc & ~FpscrAhpMask;
                 acc_i = fplibAdd<Element>(acc_i, elt2_r, fpscr);
                 FpscrExc = fpscr;
             }
@@ -2986,10 +2993,10 @@ let {{
         unsigned eCount = ArmStaticInst::getCurSveVecLen<Element>(
                 xc->tcBase());'''
         code += '''
-        uint32_t sel_a = rot & 0x1;
+        uint32_t sel_a = bits(rot, 0);
         uint32_t sel_b = sel_a ? 0 : 1;
-        bool neg_i = (rot & 0x2) == 1;
-        bool neg_r = (rot & 0x1) != (rot & 0x2);'''
+        bool neg_i = bits(rot, 1);
+        bool neg_r = bits(rot, 0) != bits(rot, 1);'''
         if predType == PredType.NONE:
             code += '''
         uint32_t eltspersegment = 16 / (2 * sizeof(Element));'''
@@ -3017,7 +3024,7 @@ let {{
             if (neg_r) {
                 elt2_a = fplibNeg<Element>(elt2_a);
             }
-            fpscr =  (FPSCR) FpscrExc;
+            fpscr = FpscrExc & ~FpscrAhpMask;
             addend_r = fplibMulAdd<Element>(addend_r, elt1_a, elt2_a, fpscr);
             FpscrExc = fpscr;'''
         if predType != PredType.NONE:
@@ -3030,7 +3037,7 @@ let {{
             if (neg_i) {
                 elt2_b = fplibNeg<Element>(elt2_b);
             }
-            fpscr =  (FPSCR) FpscrExc;
+            fpscr = FpscrExc & ~FpscrAhpMask;
             addend_i = fplibMulAdd<Element>(addend_i, elt1_a, elt2_b, fpscr);
             FpscrExc = fpscr;'''
         if predType != PredType.NONE:
@@ -3468,7 +3475,7 @@ let {{
     sveExtInst('ext', 'Ext', 'SimdAluOp')
     # FABD
     fpOp = '''
-            FPSCR fpscr = (FPSCR) FpscrExc;
+            FPSCR fpscr = FpscrExc & ~FpscrAhpMask;
             destElem = %s;
             FpscrExc = fpscr;
     '''
@@ -3499,7 +3506,7 @@ let {{
     sveBinInst('fadd', 'FaddUnpred', 'SimdFloatAddOp', floatTypes, faddCode)
     # FADDA
     fpAddaOp = '''
-            FPSCR fpscr = (FPSCR) FpscrExc;
+            FPSCR fpscr = FpscrExc & ~FpscrAhpMask;
             destElem = fplibAdd<Element>(destElem, srcElem1, fpscr);
             FpscrExc = FpscrExc | fpscr;
     '''
@@ -3507,7 +3514,7 @@ let {{
             fpAddaOp)
     # FADDV
     fpReduceOp = '''
-            FPSCR fpscr = (FPSCR) FpscrExc;
+            FPSCR fpscr = FpscrExc & ~FpscrAhpMask;
             destElem = fplib%s<Element>(srcElem1, srcElem2, fpscr);
             FpscrExc = FpscrExc | fpscr;
     '''
@@ -3560,7 +3567,7 @@ let {{
     sveCmpInst('fcmuo', 'Fcmuo', 'SimdFloatCmpOp', fpTypes, fcmuoCode)
     # FCMLA (indexed)
     sveComplexMulAddInst('fcmla', 'Fcmlai', 'SimdFloatMultAccOp',
-            fpTypes[1:], predType = PredType.NONE)
+            fpTypes[:2], predType = PredType.NONE)
     # FCMLA (vectors)
     sveComplexMulAddInst('fcmla', 'Fcmlav', 'SimdFloatMultAccOp',
             fpTypes, predType = PredType.MERGE)

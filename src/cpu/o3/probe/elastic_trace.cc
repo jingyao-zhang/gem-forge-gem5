@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Radhika Jagtap
- *          Andreas Hansson
- *          Thomas Grass
  */
 
 #include "cpu/o3/probe/elastic_trace.hh"
@@ -109,8 +105,8 @@ ElasticTrace::regProbeListeners()
     } else {
         // Schedule an event to register all elastic trace probes when
         // specified no. of instructions are committed.
-        cpu->comInstEventQueue[(ThreadID)0]->schedule(&regEtraceListenersEvent,
-                                                      startTraceInst);
+        cpu->getContext(0)->scheduleInstCountEvent(
+                &regEtraceListenersEvent, startTraceInst);
     }
 }
 
@@ -408,7 +404,6 @@ ElasticTrace::addDepTraceRecord(const DynInstConstPtr& head_inst,
     // Assign fields for creating a request in case of a load/store
     new_record->reqFlags = head_inst->memReqFlags;
     new_record->virtAddr = head_inst->effAddr;
-    new_record->asid = head_inst->asid;
     new_record->physAddr = head_inst->physEffAddr;
     // Currently the tracing does not support split requests.
     new_record->size = head_inst->effSize;
@@ -834,10 +829,8 @@ ElasticTrace::writeDepTrace(uint32_t num_to_write)
                 dep_pkt.set_p_addr(temp_ptr->physAddr);
                 // If tracing of virtual addresses is enabled, set the optional
                 // field for it
-                if (traceVirtAddr) {
+                if (traceVirtAddr)
                     dep_pkt.set_v_addr(temp_ptr->virtAddr);
-                    dep_pkt.set_asid(temp_ptr->asid);
-                }
                 dep_pkt.set_size(temp_ptr->size);
             }
             dep_pkt.set_comp_delay(temp_ptr->compDelay);

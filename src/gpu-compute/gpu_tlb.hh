@@ -29,8 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Lisa Hsu
  */
 
 #ifndef __GPU_TLB_HH__
@@ -177,7 +175,8 @@ namespace X86ISA
          */
         std::vector<EntryList> entryList;
 
-        Fault translateInt(const RequestPtr &req, ThreadContext *tc);
+        Fault translateInt(bool read, const RequestPtr &req,
+                           ThreadContext *tc);
 
         Fault translate(const RequestPtr &req, ThreadContext *tc,
                 Translation *translation, Mode mode, bool &delayedResponse,

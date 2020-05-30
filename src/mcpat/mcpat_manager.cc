@@ -185,7 +185,8 @@ void McPATManager::configureMemoryControl(const DRAMCtrlParams *params) {
   auto &mc = this->xml->sys.mc;
 
   mc.mc_clock = 1e6 / params->clk_domain->clockPeriod();
-  mc.memory_channels_per_mc = params->channels;
+  // DRAMCtrl is a single-channel.
+  mc.memory_channels_per_mc = 1;
   mc.number_ranks = params->ranks_per_channel;
 
   /**

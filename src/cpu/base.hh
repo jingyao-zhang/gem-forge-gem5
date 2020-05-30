@@ -37,10 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Nathan Binkert
- *          Rick Strong
  */
 
 #ifndef __CPU_BASE_HH__
@@ -54,7 +50,7 @@
 #if THE_ISA == NULL_ISA
 #include "arch/null/cpu_dummy.hh"
 #else
-#include "arch/interrupts.hh"
+#include "arch/generic/interrupts.hh"
 #include "arch/isa_traits.hh"
 #include "arch/microcode_rom.hh"
 #include "base/statistics.hh"
@@ -230,10 +226,10 @@ class BaseCPU : public ClockedObject
     TheISA::MicrocodeRom microcodeRom;
 
   protected:
-    std::vector<TheISA::Interrupts*> interrupts;
+    std::vector<BaseInterrupts*> interrupts;
 
   public:
-    TheISA::Interrupts *
+    BaseInterrupts *
     getInterruptController(ThreadID tid)
     {
         if (interrupts.empty())
@@ -394,20 +390,6 @@ class BaseCPU : public ClockedObject
      */
     ThreadID numThreads;
 
-    /**
-     * Vector of per-thread instruction-based event queues.  Used for
-     * scheduling events based on number of instructions committed by
-     * a particular thread.
-     */
-    EventQueue **comInstEventQueue;
-
-    /**
-     * Vector of per-thread load-based event queues.  Used for
-     * scheduling events based on number of loads committed by
-     *a particular thread.
-     */
-    EventQueue **comLoadEventQueue;
-
     System *system;
 
     /**
@@ -473,21 +455,6 @@ class BaseCPU : public ClockedObject
      * @param cause Cause to signal in the exit event.
      */
     void scheduleInstStop(ThreadID tid, Counter insts, const char *cause);
-
-    /**
-     * Schedule an event that exits the simulation loops after a
-     * predefined number of load operations.
-     *
-     * This method is usually called from the configuration script to
-     * get an exit event some time in the future. It is typically used
-     * when the script wants to simulate for a specific number of
-     * loads rather than ticks.
-     *
-     * @param tid Thread monitor.
-     * @param loads Number of load instructions into the future.
-     * @param cause Cause to signal in the exit event.
-     */
-    void scheduleLoadStop(ThreadID tid, Counter loads, const char *cause);
 
     /**
      * Get the number of instructions executed by the specified thread

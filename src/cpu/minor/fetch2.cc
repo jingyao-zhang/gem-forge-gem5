@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 #include "cpu/minor/fetch2.hh"
@@ -390,12 +388,10 @@ Fetch2::evaluate()
             } else {
                 uint8_t *line = line_in->line;
 
-                TheISA::MachInst inst_word;
                 /* The instruction is wholly in the line, can just
                  *  assign */
-                inst_word = TheISA::gtoh(
-                    *(reinterpret_cast<TheISA::MachInst *>
-                    (line + fetch_info.inputIndex)));
+                auto inst_word = *reinterpret_cast<TheISA::MachInst *>
+                                  (line + fetch_info.inputIndex);
 
                 if (!decoder->instReady()) {
                     decoder->moreBytes(fetch_info.pc,

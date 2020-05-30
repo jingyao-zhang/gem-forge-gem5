@@ -37,8 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
  */
 
 #include "cpu/simple/timing.hh"
@@ -48,7 +46,6 @@
 #include "cpu/gem_forge/gem_forge_packet_handler.hh"
 
 #include "arch/locked_mem.hh"
-#include "arch/mmapped_ipr.hh"
 #include "arch/utility.hh"
 #include "config/the_isa.hh"
 #include "cpu/exetrace.hh"
@@ -282,8 +279,8 @@ TimingSimpleCPU::handleReadPacket(PacketPtr pkt)
     if (pkt->isRead() && pkt->req->isLLSC()) {
         TheISA::handleLockedRead(thread, pkt->req);
     }
-    if (req->isMmappedIpr()) {
-        Cycles delay = TheISA::handleIprRead(thread->getTC(), pkt);
+    if (req->isLocalAccess()) {
+        Cycles delay = req->localAccessor(thread->getTC(), pkt);
         new IprEvent(pkt, this, clockEdge(delay));
         _status = DcacheWaitResponse;
         dcache_pkt = NULL;
@@ -405,7 +402,7 @@ TimingSimpleCPU::buildSplitPacket(PacketPtr &pkt1, PacketPtr &pkt2,
 {
     pkt1 = pkt2 = NULL;
 
-    assert(!req1->isMmappedIpr() && !req2->isMmappedIpr());
+    assert(!req1->isLocalAccess() && !req2->isLocalAccess());
 
     if (req->getFlags().isSet(Request::NO_ACCESS)) {
         pkt1 = buildPacket(req, read);
@@ -433,13 +430,12 @@ TimingSimpleCPU::buildSplitPacket(PacketPtr &pkt1, PacketPtr &pkt2,
 Fault
 TimingSimpleCPU::initiateMemRead(Addr addr, unsigned size,
                                  Request::Flags flags,
-                                 const std::vector<bool>& byteEnable)
+                                 const std::vector<bool>& byte_enable)
 {
     SimpleExecContext &t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
 
     Fault fault;
-    const int asid = 0;
     const Addr pc = thread->instAddr();
     unsigned block_size = cacheLineSize();
     BaseTLB::Mode mode = BaseTLB::Read;
@@ -448,10 +444,9 @@ TimingSimpleCPU::initiateMemRead(Addr addr, unsigned size,
         traceData->setMem(addr, size, flags);
 
     RequestPtr req = std::make_shared<Request>(
-        asid, addr, size, flags, dataMasterId(), pc,
-        thread->contextId());
-    if (!byteEnable.empty()) {
-        req->setByteEnable(byteEnable);
+        addr, size, flags, dataMasterId(), pc, thread->contextId());
+    if (!byte_enable.empty()) {
+        req->setByteEnable(byte_enable);
     }
 
     req->taskId(taskId());
@@ -493,8 +488,8 @@ TimingSimpleCPU::handleWritePacket()
     SimpleThread* thread = t_info.thread;
 
     const RequestPtr &req = dcache_pkt->req;
-    if (req->isMmappedIpr()) {
-        Cycles delay = TheISA::handleIprWrite(thread->getTC(), dcache_pkt);
+    if (req->isLocalAccess()) {
+        Cycles delay = req->localAccessor(thread->getTC(), dcache_pkt);
         new IprEvent(dcache_pkt, this, clockEdge(delay));
         _status = DcacheWaitResponse;
         dcache_pkt = NULL;
@@ -519,13 +514,12 @@ TimingSimpleCPU::handleWritePacket()
 Fault
 TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
                           Addr addr, Request::Flags flags, uint64_t *res,
-                          const std::vector<bool>& byteEnable)
+                          const std::vector<bool>& byte_enable)
 {
     SimpleExecContext &t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
 
     uint8_t *newData = new uint8_t[size];
-    const int asid = 0;
     const Addr pc = thread->instAddr();
     unsigned block_size = cacheLineSize();
     BaseTLB::Mode mode = BaseTLB::Write;
@@ -542,10 +536,9 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
         traceData->setMem(addr, size, flags);
 
     RequestPtr req = std::make_shared<Request>(
-        asid, addr, size, flags, dataMasterId(), pc,
-        thread->contextId());
-    if (!byteEnable.empty()) {
-        req->setByteEnable(byteEnable);
+        addr, size, flags, dataMasterId(), pc, thread->contextId());
+    if (!byte_enable.empty()) {
+        req->setByteEnable(byte_enable);
     }
 
     req->taskId(taskId());
@@ -587,13 +580,12 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
 Fault
 TimingSimpleCPU::initiateMemAMO(Addr addr, unsigned size,
                                 Request::Flags flags,
-                                AtomicOpFunctor *amo_op)
+                                AtomicOpFunctorPtr amo_op)
 {
     SimpleExecContext &t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
 
     Fault fault;
-    const int asid = 0;
     const Addr pc = thread->instAddr();
     unsigned block_size = cacheLineSize();
     BaseTLB::Mode mode = BaseTLB::Write;
@@ -601,8 +593,9 @@ TimingSimpleCPU::initiateMemAMO(Addr addr, unsigned size,
     if (traceData)
         traceData->setMem(addr, size, flags);
 
-    RequestPtr req = make_shared<Request>(asid, addr, size, flags,
-                            dataMasterId(), pc, thread->contextId(), amo_op);
+    RequestPtr req = make_shared<Request>(addr, size, flags,
+                            dataMasterId(), pc, thread->contextId(),
+                            std::move(amo_op));
 
     assert(req->hasAtomicOpFunctor());
 

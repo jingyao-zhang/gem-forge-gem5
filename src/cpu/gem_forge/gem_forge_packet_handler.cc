@@ -5,11 +5,12 @@ GemForgePacketReleaseHandler GemForgePacketReleaseHandler::instance;
 PacketPtr GemForgePacketHandler::createGemForgePacket(
     Addr paddr, int size, GemForgePacketHandler *handler, uint8_t *data,
     MasterID masterID, int contextId, Addr pc) {
-  RequestPtr req(new Request(paddr, size, 0, masterID,
-                             reinterpret_cast<InstSeqNum>(handler), contextId));
+  RequestPtr req =
+      std::make_shared<Request>(paddr, size, 0 /* Flags */, masterID);
   if (pc != 0) {
     req->setPC(pc);
   }
+  req->setContext(contextId);
   // For our request, we always track the request statistic.
   req->setStatistic(std::make_shared<RequestStatistic>());
   PacketPtr pkt;
@@ -29,13 +30,12 @@ PacketPtr GemForgePacketHandler::createGemForgePacket(
 
 PacketPtr GemForgePacketHandler::createGemForgeAMOPacket(
     Addr vaddr, Addr paddr, int size, MasterID masterID, int contextId, Addr pc,
-    AtomicOpFunctor *atomicOp) {
+    AtomicOpFunctorPtr atomicOp) {
   Request::Flags flags;
   flags.set(Request::ATOMIC_RETURN_OP);
 
-  int asid = 0;
-  RequestPtr req = std::make_shared<Request>(asid, vaddr, size, flags, masterID,
-                                             pc, contextId, atomicOp);
+  RequestPtr req = std::make_shared<Request>(vaddr, size, flags, masterID, pc,
+                                             contextId, std::move(atomicOp));
   req->setPaddr(paddr);
   // For our request, we always track the request statistic.
   req->setStatistic(std::make_shared<RequestStatistic>());

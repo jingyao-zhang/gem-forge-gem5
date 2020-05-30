@@ -1,4 +1,4 @@
-# Copyright (c) 2013, 2018-2019 ARM Limited
+# Copyright (c) 2013, 2018-2020 ARM Limited
 # All rights reserved
 #
 # The license below extends only to copyright in the software and shall
@@ -32,9 +32,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Stan Czerniawski
-#          Giacomo Travaglini
 
 from m5.params import *
 from m5.proxy import *
@@ -185,16 +182,13 @@ class SMMUv3(ClockedObject):
         node.appendPhandle(self)
         yield node
 
-    def connect(self, device, bus):
+    def connect(self, device):
         """
         Helper method used to connect the SMMU. The master could
         be either a dma port (if the SMMU is attached directly to a
         dma device), or to a master port (this is the case where the SMMU
         is attached to a bridge).
         """
-
-        self.master = bus.slave
-        self.control = bus.master
 
         slave_interface = SMMUv3SlaveInterface()
 

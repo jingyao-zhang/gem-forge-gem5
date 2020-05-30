@@ -37,8 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Stephen Hines
  */
 
 #include "arch/arm/insts/static_inst.hh"
@@ -393,7 +391,7 @@ ArmStaticInst::printMnemonic(std::ostream &os,
 
 void
 ArmStaticInst::printTarget(std::ostream &os, Addr target,
-                           const SymbolTable *symtab) const
+                           const Loader::SymbolTable *symtab) const
 {
     Addr symbolAddr;
     std::string symbol;
@@ -474,7 +472,7 @@ ArmStaticInst::printCondition(std::ostream &os,
 
 void
 ArmStaticInst::printMemSymbol(std::ostream &os,
-                              const SymbolTable *symtab,
+                              const Loader::SymbolTable *symtab,
                               const std::string &prefix,
                               const Addr addr,
                               const std::string &suffix) const
@@ -619,7 +617,7 @@ ArmStaticInst::printDataInst(std::ostream &os, bool withImm,
 
 std::string
 ArmStaticInst::generateDisassembly(Addr pc,
-                                   const SymbolTable *symtab) const
+                                   const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -1166,7 +1164,8 @@ ArmStaticInst::generalExceptionsToAArch64(ThreadContext *tc,
 unsigned
 ArmStaticInst::getCurSveVecLenInBits(ThreadContext *tc)
 {
-    return tc->getIsaPtr()->getCurSveVecLenInBits(tc);
+    auto *isa = static_cast<ArmISA::ISA *>(tc->getIsaPtr());
+    return isa->getCurSveVecLenInBits(tc);
 }
 
 }

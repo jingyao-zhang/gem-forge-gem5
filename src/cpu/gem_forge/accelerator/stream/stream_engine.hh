@@ -33,9 +33,7 @@ public:
   void regStats() override;
 
   // Override the name as we don't want the default long name().
-  const std::string name() const override {
-    return "global";
-  }
+  const std::string name() const override { return "global"; }
 
   /**
    * To prepare for execution-driven simulation,
@@ -138,7 +136,7 @@ public:
   /**
    * Send atomic operation packet.
    */
-  void sendAtomicPacket(StreamElement *element, AtomicOpFunctor *atomicOp);
+  void sendAtomicPacket(StreamElement *element, AtomicOpFunctorPtr atomicOp);
 
   StreamPlacementManager *getStreamPlacementManager() {
     return this->streamPlacementManager;

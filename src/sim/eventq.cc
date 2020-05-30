@@ -26,10 +26,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Nathan Binkert
- *          Steve Raasch
  */
 
 #include <cassert>
@@ -85,11 +81,7 @@ Event::~Event()
 const std::string
 Event::name() const
 {
-#ifndef NDEBUG
-    return csprintf("Event_%d", instance);
-#else
-    return csprintf("Event_%x", (uintptr_t)this);
-#endif
+    return csprintf("Event_%s", instanceString());
 }
 
 
@@ -226,6 +218,8 @@ EventQueue::serviceOne()
         setCurTick(event->when());
 
         DPRINTF(Event, "Process Event %s.\n", event->name());
+        if (DTRACE(Event))
+            event->trace("executed");
         event->process();
         DPRINTF(Event, "Process Event %s: Done.\n", event->name());
         if (event->isExitEvent()) {
@@ -394,7 +388,18 @@ Event::trace(const char *action)
     // more informative message in the trace, override this method on
     // the particular subclass where you have the information that
     // needs to be printed.
-    DPRINTFN("%s event %s @ %d\n", description(), action, when());
+    DPRINTF_UNCONDITIONAL(Event, "%s %s %s @ %d\n",
+            description(), instanceString(), action, when());
+}
+
+const std::string
+Event::instanceString() const
+{
+#ifndef NDEBUG
+    return csprintf("%d", instance);
+#else
+    return csprintf("%#x", (uintptr_t)this);
+#endif
 }
 
 void

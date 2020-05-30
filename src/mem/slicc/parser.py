@@ -24,9 +24,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
-#          Lena Olson
 
 import os.path
 import re
@@ -49,7 +46,7 @@ class SLICC(Grammar):
 
         try:
             self.decl_list = self.parse_file(filename, **kwargs)
-        except ParseError, e:
+        except ParseError as e:
             if not self.traceback:
                 sys.exit(str(e))
             raise

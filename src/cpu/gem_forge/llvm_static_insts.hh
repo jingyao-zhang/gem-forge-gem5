@@ -46,8 +46,9 @@ public:
     panic("execute not defined!");
   }
 
-  std::string generateDisassembly(Addr pc,
-                                  const SymbolTable *symtab) const override {
+  std::string
+  generateDisassembly(Addr pc,
+                      const ::Loader::SymbolTable *symtab) const override {
     panic("generateDisassembly not defined!");
   }
 

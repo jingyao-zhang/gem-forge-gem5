@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Giacomo Gabrielli
  */
 
 #ifndef __ARCH_ARM_SVE_MACROMEM_HH__
@@ -95,7 +93,7 @@ class SveLdStructSS : public PredMacroOp
     }
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
         printMnemonic(ss, "", false);
@@ -167,7 +165,7 @@ class SveStStructSS : public PredMacroOp
     }
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
         printMnemonic(ss, "", false);
@@ -239,7 +237,7 @@ class SveLdStructSI : public PredMacroOp
     }
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
         printMnemonic(ss, "", false);
@@ -312,7 +310,7 @@ class SveStStructSI : public PredMacroOp
     }
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
         printMnemonic(ss, "", false);
@@ -411,7 +409,7 @@ class SveIndexedMemVI : public PredMacroOp
     }
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         // TODO: add suffix to transfer and base registers
         std::stringstream ss;
@@ -515,7 +513,7 @@ class SveIndexedMemSV : public PredMacroOp
     }
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         // TODO: add suffix to transfer and base registers
         std::stringstream ss;

@@ -32,8 +32,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Giacomo Gabrielli
 
 // @file Definition of SVE memory access instructions.
 
@@ -774,7 +772,7 @@ let {{
         EA = XBase + ((int64_t) imm * %(memacc_size)s)''' % {
             'memacc_size': 'eCount / 8' if isPred else 'eCount'}
         loadRdEnableCode = '''
-        auto rdEn = std::vector<bool>();
+        auto rdEn = std::vector<bool>(memAccessSize, true);
         '''
         if isPred:
             loadMemAccCode = '''

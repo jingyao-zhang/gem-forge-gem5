@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Arm Limited
+ * Copyright (c) 2019-2020 Arm Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -37,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Pierre-Yves Peneau
  */
 
 /** @file
@@ -1729,9 +1726,8 @@ class SampleStor
     void
     sample(Counter val, int number)
     {
-        Counter value = val * number;
-        sum += value;
-        squares += value * value;
+        sum += val * number;
+        squares += val * val * number;
         samples += number;
     }
 
@@ -1806,9 +1802,8 @@ class AvgSampleStor
     void
     sample(Counter val, int number)
     {
-        Counter value = val * number;
-        sum += value;
-        squares += value * value;
+        sum += val * number;
+        squares += val * val * number;
     }
 
     /**
@@ -3359,6 +3354,7 @@ void dump();
 void reset();
 void enable();
 bool enabled();
+const Info* resolve(const std::string &name);
 
 /**
  * Register reset and dump handlers.  These are the functions which

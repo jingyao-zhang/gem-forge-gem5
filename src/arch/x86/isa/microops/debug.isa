@@ -32,8 +32,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -59,7 +57,7 @@ output header {{
         }
 
         std::string
-        generateDisassembly(Addr pc, const SymbolTable *symtab) const
+        generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
         {
             std::stringstream response;
 
@@ -139,7 +137,7 @@ let {{
             self.once = once
             self.flags = flags
             if flags and not isinstance(flags, (list, tuple)):
-                raise Exception, "flags must be a list or tuple of flags"
+                raise Exception("flags must be a list or tuple of flags")
 
             self.className = "MicroDebugFlags" if flags else "MicroDebug"
 

@@ -36,8 +36,6 @@
 #include "base/types.hh"
 
 Addr maskLowOrderBits(Addr addr, unsigned int number);
-Addr maskHighOrderBits(Addr addr, unsigned int number);
-Addr shiftLowOrderBits(Addr addr, unsigned int number);
 Addr getOffset(Addr addr);
 Addr makeLineAddress(Addr addr);
 Addr makeNextStrideAddress(Addr addr, int stride);

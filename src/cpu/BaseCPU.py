@@ -1,4 +1,5 @@
 # Copyright (c) 2012-2013, 2015-2017 ARM Limited
+# Copyright (c) 2020 Barkhausen Institut
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -36,11 +37,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
-#          Rick Strong
-#          Andreas Hansson
-#          Glenn Bergmans
 
 from __future__ import print_function
 
@@ -62,49 +58,30 @@ from m5.objects.Platform import Platform
 
 default_tracer = ExeTracer()
 
-if buildEnv['TARGET_ISA'] == 'alpha':
-    from m5.objects.AlphaTLB import AlphaDTB as ArchDTB, AlphaITB as ArchITB
-    from m5.objects.AlphaInterrupts import AlphaInterrupts as ArchInterrupts
-    from m5.objects.AlphaISA import AlphaISA as ArchISA
-    ArchInterruptsParam = VectorParam.AlphaInterrupts
-    ArchISAsParam = VectorParam.AlphaISA
-elif buildEnv['TARGET_ISA'] == 'sparc':
+if buildEnv['TARGET_ISA'] == 'sparc':
     from m5.objects.SparcTLB import SparcTLB as ArchDTB, SparcTLB as ArchITB
     from m5.objects.SparcInterrupts import SparcInterrupts as ArchInterrupts
     from m5.objects.SparcISA import SparcISA as ArchISA
-    ArchInterruptsParam = VectorParam.SparcInterrupts
-    ArchISAsParam = VectorParam.SparcISA
 elif buildEnv['TARGET_ISA'] == 'x86':
     from m5.objects.X86TLB import X86TLB as ArchDTB, X86TLB as ArchITB
     from m5.objects.X86LocalApic import X86LocalApic as ArchInterrupts
     from m5.objects.X86ISA import X86ISA as ArchISA
-    ArchInterruptsParam = VectorParam.X86LocalApic
-    ArchISAsParam = VectorParam.X86ISA
 elif buildEnv['TARGET_ISA'] == 'mips':
     from m5.objects.MipsTLB import MipsTLB as ArchDTB, MipsTLB as ArchITB
     from m5.objects.MipsInterrupts import MipsInterrupts as ArchInterrupts
     from m5.objects.MipsISA import MipsISA as ArchISA
-    ArchInterruptsParam = VectorParam.MipsInterrupts
-    ArchISAsParam = VectorParam.MipsISA
 elif buildEnv['TARGET_ISA'] == 'arm':
-    from m5.objects.ArmTLB import ArmTLB as ArchDTB, ArmTLB as ArchITB
-    from m5.objects.ArmTLB import ArmStage2IMMU, ArmStage2DMMU
+    from m5.objects.ArmTLB import ArmDTB as ArchDTB, ArmITB as ArchITB
     from m5.objects.ArmInterrupts import ArmInterrupts as ArchInterrupts
     from m5.objects.ArmISA import ArmISA as ArchISA
-    ArchInterruptsParam = VectorParam.ArmInterrupts
-    ArchISAsParam = VectorParam.ArmISA
 elif buildEnv['TARGET_ISA'] == 'power':
     from m5.objects.PowerTLB import PowerTLB as ArchDTB, PowerTLB as ArchITB
     from m5.objects.PowerInterrupts import PowerInterrupts as ArchInterrupts
     from m5.objects.PowerISA import PowerISA as ArchISA
-    ArchInterruptsParam = VectorParam.PowerInterrupts
-    ArchISAsParam = VectorParam.PowerISA
 elif buildEnv['TARGET_ISA'] == 'riscv':
     from m5.objects.RiscvTLB import RiscvTLB as ArchDTB, RiscvTLB as ArchITB
     from m5.objects.RiscvInterrupts import RiscvInterrupts as ArchInterrupts
     from m5.objects.RiscvISA import RiscvISA as ArchISA
-    ArchInterruptsParam = VectorParam.RiscvInterrupts
-    ArchISAsParam = VectorParam.RiscvISA
 else:
     print("Don't know what object types to use for ISA %s" %
             buildEnv['TARGET_ISA'])
@@ -122,7 +99,6 @@ class BaseCPU(ClockedObject):
         PyBindMethod("flushTLBs"),
         PyBindMethod("totalInsts"),
         PyBindMethod("scheduleInstStop"),
-        PyBindMethod("scheduleLoadStop"),
         PyBindMethod("getCurrentInstCount"),
     ]
 
@@ -182,13 +158,10 @@ class BaseCPU(ClockedObject):
 
     dtb = Param.BaseTLB(ArchDTB(), "Data TLB")
     itb = Param.BaseTLB(ArchITB(), "Instruction TLB")
-    if buildEnv['TARGET_ISA'] == 'arm':
-        istage2_mmu = Param.ArmStage2MMU(ArmStage2IMMU(), "Stage 2 trans")
-        dstage2_mmu = Param.ArmStage2MMU(ArmStage2DMMU(), "Stage 2 trans")
-    elif buildEnv['TARGET_ISA'] == 'power':
+    if buildEnv['TARGET_ISA'] == 'power':
         UnifiedTLB = Param.Bool(True, "Is this a Unified TLB?")
-    interrupts = ArchInterruptsParam([], "Interrupt Controller")
-    isa = ArchISAsParam([], "ISA instance")
+    interrupts = VectorParam.BaseInterrupts([], "Interrupt Controller")
+    isa = VectorParam.BaseISA([], "ISA instance")
 
     max_insts_all_threads = Param.Counter(0,
         "terminate when all threads have reached this inst count")
@@ -196,10 +169,6 @@ class BaseCPU(ClockedObject):
         "terminate when any thread reaches this inst count")
     simpoint_start_insts = VectorParam.Counter([],
         "starting instruction counts of simpoints")
-    max_loads_all_threads = Param.Counter(0,
-        "terminate when all threads have reached this load count")
-    max_loads_any_thread = Param.Counter(0,
-        "terminate when any thread reaches this load count")
     progress_interval = Param.Frequency('0Hz',
         "frequency to print out the progress message")
 
@@ -218,7 +187,7 @@ class BaseCPU(ClockedObject):
     dcache_port = MasterPort("Data Port")
     _cached_ports = ['icache_port', 'dcache_port']
 
-    if buildEnv['TARGET_ISA'] in ['x86', 'arm']:
+    if buildEnv['TARGET_ISA'] in ['x86', 'arm', 'riscv']:
         _cached_ports += ["itb.walker.port", "dtb.walker.port"]
 
     _uncached_slave_ports = []
@@ -283,7 +252,7 @@ class BaseCPU(ClockedObject):
         if l1_5dc is not None:
             self.l1_5dcache = l1_5dc
             self._cached_ports.append('l1_5dcache.mem_side')
-        if buildEnv['TARGET_ISA'] in ['x86', 'arm']:
+        if buildEnv['TARGET_ISA'] in ['x86', 'arm', 'riscv']:
             if iwc and dwc:
                 self.itb_walker_cache = iwc
                 self.dtb_walker_cache = dwc
@@ -369,3 +338,7 @@ class BaseCPU(ClockedObject):
             cpus_node.append(node)
 
         yield cpus_node
+
+    def __init__(self, **kwargs):
+        super(BaseCPU, self).__init__(**kwargs)
+        self.power_state.possible_states=['ON', 'CLK_GATED', 'OFF']

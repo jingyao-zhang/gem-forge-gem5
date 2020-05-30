@@ -66,7 +66,7 @@ def template MicroSSPRawOpDeclare {{
         RegIndex foldOBit;
 
         std::string generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const;
+            const ::Loader::SymbolTable *symtab) const;
 
       public:
         %(class_name)s(ExtMachInst _machInst,
@@ -80,7 +80,7 @@ def template MicroSSPRawOpDeclare {{
 
 def template MicroSSPRawOpDisassembly {{
     std::string %(class_name)s::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+            const ::Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
@@ -129,7 +129,7 @@ def template MicroSSPImmOpDeclare {{
         RegIndex foldOBit;
 
         std::string generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const;
+            const ::Loader::SymbolTable *symtab) const;
 
       public:
         %(class_name)s(ExtMachInst _machInst,
@@ -144,7 +144,7 @@ def template MicroSSPImmOpDeclare {{
 
 def template MicroSSPImmOpDisassembly {{
     std::string %(class_name)s::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+            const ::Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
