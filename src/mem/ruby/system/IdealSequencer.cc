@@ -2,6 +2,8 @@
 
 #include "Sequencer.hh"
 
+#include <unordered_set>
+
 std::queue<IdealSequencer::IdealRubyRequest> IdealSequencer::globalQueue;
 std::unordered_map<Addr, IdealSequencer *> IdealSequencer::globalLockedMap;
 std::unordered_map<Addr, std::queue<IdealSequencer::IdealRubyRequest>>
@@ -54,7 +56,7 @@ const char *IdealSequencer::IdealDrainEvent::description() const {
 }
 
 void IdealSequencer::IdealDrainEvent::process() {
-  std::vector<Addr> unlockedAddrs;
+  std::unordered_set<Addr> unlockedAddrs;
   auto currentTick = curTick();
   while (!globalQueue.empty()) {
     const auto &req = globalQueue.front();
@@ -67,7 +69,7 @@ void IdealSequencer::IdealDrainEvent::process() {
      */
     if (req.req->m_pkt->req->isLockedRMW() && req.req->m_pkt->isWrite()) {
       if (globalLockedMap.count(paddrLine)) {
-        unlockedAddrs.push_back(paddrLine);
+        unlockedAddrs.insert(paddrLine);
       }
     }
     // Call the sequencer's callback. Just use the WTData as the dummy block,
