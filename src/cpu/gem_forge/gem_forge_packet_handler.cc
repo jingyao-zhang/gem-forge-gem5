@@ -58,8 +58,8 @@ PacketPtr GemForgePacketHandler::createStreamControlPacket(Addr paddr,
    * ! Pure evil hack here.
    * ! Pass the data in pktData.
    */
-  RequestPtr req(
-      new Request(paddr, sizeof(uint64_t), 0, masterID, 1, contextId));
+  RequestPtr req = std::make_shared<Request>(paddr, sizeof(uint64_t),
+                                             0 /* Flags */, masterID);
   PacketPtr pkt = new Packet(req, cmd);
   uint8_t *pktData = new uint8_t[req->getSize()];
   *(reinterpret_cast<uint64_t *>(pktData)) = data;

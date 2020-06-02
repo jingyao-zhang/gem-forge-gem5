@@ -373,8 +373,8 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
     if (rubySystem->getAccessBackingStore()) {
       // Get the data from backing store.
       Addr elementPAddr = this->translateVAddr(elementVAddr);
-      RequestPtr req(new Request(elementPAddr, elementSize, 0, 0 /* MasterId */,
-                                 0 /* InstSeqNum */, 0 /* contextId */));
+      RequestPtr req = std::make_shared<Request>(elementPAddr, elementSize, 0,
+                                                 0 /* MasterId */);
       PacketPtr pkt = Packet::createRead(req);
       uint8_t *pktData = new uint8_t[req->getSize()];
       pkt->dataDynamic(pktData);

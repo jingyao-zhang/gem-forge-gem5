@@ -1198,9 +1198,8 @@ LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
   auto S = dynS->getStaticStream();
   auto cpuDelegator = S->getCPUDelegator();
   auto tc = cpuDelegator->getSingleThreadContext();
-  RequestPtr req = std::make_shared<Request>(
-      paddrLine, sliceId.getSize(), 0, cpuDelegator->dataMasterId(),
-      0 /* InstSeqNum */, 0 /* contextId */);
+  RequestPtr req = std::make_shared<Request>(paddrLine, sliceId.getSize(), 0,
+                                             cpuDelegator->dataMasterId());
   // Set the vaddrLine as this is what we want to translate.
   req->setVirt(vaddrLine);
   // Simply always read request, since this is a fake request.
@@ -1639,8 +1638,8 @@ void LLCStreamEngine::extractElementDataFromSlice(
     Addr paddr;
     assert(stream->translateToPAddr(overlapLHS, paddr) &&
            "Failed to translate address for accessing backing storage.");
-    RequestPtr req(new Request(paddr, overlapSize, 0, 0 /* MasterId */,
-                               0 /* InstSeqNum */, 0 /* contextId */));
+    RequestPtr req = std::make_shared<Request>(paddr, overlapSize,
+                                               0 /* Flags */, 0 /* MasterId */);
     PacketPtr pkt = Packet::createRead(req);
     pkt->dataStatic(element->data.data() + elementOffset);
     rubySystem->getPhysMem()->functionalAccess(pkt);
@@ -1693,8 +1692,8 @@ void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
   assert((paddr % RubySystem::getBlockSizeBytes()) + size <=
              RubySystem::getBlockSizeBytes() &&
          "Can not store to multi-line elements.");
-  RequestPtr req = std::make_shared<Request>(
-      paddr, size, 0, 0 /* MasterId */, 0 /* InstSeqNum */, 0 /* contextId */);
+  RequestPtr req =
+      std::make_shared<Request>(paddr, size, 0 /* Flags */, 0 /* MasterId */);
   PacketPtr pkt = Packet::createWrite(req);
   pkt->dataStaticConst(value);
   rubySystem->getPhysMem()->functionalAccess(pkt);

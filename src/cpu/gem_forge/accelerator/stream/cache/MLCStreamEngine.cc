@@ -116,8 +116,8 @@ void MLCStreamEngine::configureStream(
   }
 
   // Create a new packet.
-  RequestPtr req(new Request(streamConfigureData->initPAddr,
-                             sizeof(streamConfigureData), 0, masterId));
+  RequestPtr req = std::make_shared<Request>(
+      streamConfigureData->initPAddr, sizeof(streamConfigureData), 0, masterId);
   PacketPtr pkt = new Packet(req, MemCmd::StreamConfigReq);
   uint8_t *pktData = new uint8_t[req->getSize()];
   *(reinterpret_cast<uint64_t *>(pktData)) =
@@ -197,8 +197,8 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
   // Create a new packet and send to LLC bank to terminate the stream.
   auto rootLLCStreamPAddrLine = makeLineAddress(rootLLCStreamPAddr);
   auto copyEndId = new DynamicStreamId(endId);
-  RequestPtr req(
-      new Request(rootLLCStreamPAddrLine, sizeof(copyEndId), 0, masterId));
+  RequestPtr req = std::make_shared<Request>(rootLLCStreamPAddrLine,
+                                             sizeof(copyEndId), 0, masterId);
   PacketPtr pkt = new Packet(req, MemCmd::StreamEndReq);
   uint8_t *pktData = new uint8_t[req->getSize()];
   *(reinterpret_cast<uint64_t *>(pktData)) =
