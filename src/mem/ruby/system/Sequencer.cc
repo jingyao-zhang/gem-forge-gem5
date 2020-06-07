@@ -374,7 +374,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             (seq_req.m_type != RubyRequestType_Load_Linked) &&
             (seq_req.m_type != RubyRequestType_IFETCH)) {
             // LL/SC support (tested with ARMv8)
-            bool success = false;
+            bool success = true;
 
             if (seq_req.m_type != RubyRequestType_Store_Conditional) {
                 // Regular stores to addresses being monitored
@@ -399,9 +399,13 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
                 // etc.
                 DPRINTF(RubySequencer, "Block l0 on LockRMW Read addr %#x.\n", address);
                 m_controller->blockOnQueue(address, m_mandatory_q_ptr);
+                if (!this->m_isIdeal)
+                    m_dataCache_ptr->setLockedRMW(address);
             } else if (seq_req.m_type == RubyRequestType_Locked_RMW_Write) {
                 DPRINTF(RubySequencer, "Unblock l0 on LockRMWWrite addr %#x.\n", address);
                 m_controller->unblock(address);
+                if (!this->m_isIdeal)
+                    m_dataCache_ptr->clearLockedRMW(address);
             }
 
             if (ruby_request) {

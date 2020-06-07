@@ -76,11 +76,20 @@ class AbstractCacheEntry : public ReplaceableEntry
     void clearLocked();
     bool isLocked(int context) const;
 
+    // ! GemForge
+    void setLockedRMW();
+    void clearLockedRMW();
+    bool isLockedRMW() const;
+
     // Address of this block, required by CacheMemory
     Addr m_Address;
     // Holds info whether the address is locked.
     // Required for implementing LL/SC operations.
     int m_locked;
+    // ! GemForge
+    // Holds info whether the address is LockedRMW.
+    // Required for implementing x86 LockedRMW.
+    bool m_lockedRMW;
 
     AccessPermission m_Permission; // Access permission for this
                                    // block, required by CacheMemory

@@ -36,6 +36,7 @@ AbstractCacheEntry::AbstractCacheEntry() : ReplaceableEntry()
     m_Permission = AccessPermission_NotPresent;
     m_Address = 0;
     m_locked = -1;
+    m_lockedRMW = false;
     m_last_touch_tick = 0;
 }
 
@@ -80,4 +81,22 @@ AbstractCacheEntry::isLocked(int context) const
     DPRINTF(RubyCache, "Testing Lock for addr: %#llx cur %d con %d\n",
             m_Address, m_locked, context);
     return m_locked == context;
+}
+
+void AbstractCacheEntry::setLockedRMW() {
+    DPRINTF(RubyCache, "Setting LockedRMW for addr: %#x, old lockedRMW %d\n",
+        m_Address, m_lockedRMW);
+    m_lockedRMW = true;
+}
+
+void AbstractCacheEntry::clearLockedRMW() {
+    DPRINTF(RubyCache, "Clear LockedRMW for addr: %#x, old lockedRMW %d\n",
+        m_Address, m_lockedRMW);
+    m_lockedRMW = false;
+}
+
+bool AbstractCacheEntry::isLockedRMW() const {
+    DPRINTF(RubyCache, "Testing LockedRMW for addr: %#llx cur %d\n",
+            m_Address, m_lockedRMW);
+    return m_lockedRMW;
 }

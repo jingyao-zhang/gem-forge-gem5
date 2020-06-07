@@ -123,6 +123,12 @@ class CacheMemory : public SimObject
     void clearLocked (Addr addr);
     bool isLocked (Addr addr, int context);
 
+    // ! GemForge
+    // Used for x86 LockedRMW.
+    void setLockedRMW(Addr addr);
+    void clearLockedRMW(Addr addr);
+    bool isLockedRMW(Addr addr);
+
     // Print cache contents
     void print(std::ostream& out) const;
     void printData(std::ostream& out) const;

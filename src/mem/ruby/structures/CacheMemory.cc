@@ -346,6 +346,14 @@ CacheMemory::cacheProbe(Addr address) const
     int64_t cacheSet = addressToCacheSet(address);
     std::vector<ReplaceableEntry*> candidates;
     for (int i = 0; i < m_cache_assoc; i++) {
+        // ! GemForge
+        // To avoid deadlock, we have to avoid replacing lockedRMW line.
+        if (m_cache[cacheSet][i]->isLockedRMW()) {
+            DPRINTF(RubyCache, "Avoid replacing LockedRMW addr %#x way %d.\n",
+                m_cache[cacheSet][i]->m_Address, i);
+            continue;
+        }
+
         // Pass the value of replacement_data to the cache entry so that we
         // can use it in the getVictim() function.
         m_cache[cacheSet][i]->replacementData = replacement_data[cacheSet][i];
@@ -396,6 +404,7 @@ CacheMemory::setMRU(const AbstractCacheEntry *e)
 {
     uint32_t cacheSet = e->getSet();
     uint32_t loc = e->getWay();
+    DPRINTF(RubyCache, "SetMRU set %u way %u.\n", cacheSet, loc);
     m_replacementPolicy_ptr->touch(replacement_data[cacheSet][loc]);
     m_cache[cacheSet][loc]->setLastAccess(curTick());
 }
@@ -531,6 +540,34 @@ CacheMemory::isLocked(Addr address, int context)
     DPRINTF(RubyCache, "Testing Lock for addr: %#llx cur %d con %d\n",
             address, m_cache[cacheSet][loc]->m_locked, context);
     return m_cache[cacheSet][loc]->isLocked(context);
+}
+
+void CacheMemory::setLockedRMW(Addr address) {
+    DPRINTF(RubyCache, "Setting LockRMW for addr: %#x\n", address);
+    assert(address == makeLineAddress(address));
+    int64_t cacheSet = addressToCacheSet(address);
+    int loc = findTagInSet(cacheSet, address);
+    assert(loc != -1);
+    m_cache[cacheSet][loc]->setLockedRMW();
+}
+
+void CacheMemory::clearLockedRMW(Addr address) {
+    DPRINTF(RubyCache, "Clear Lock for addr: %#x\n", address);
+    assert(address == makeLineAddress(address));
+    int64_t cacheSet = addressToCacheSet(address);
+    int loc = findTagInSet(cacheSet, address);
+    assert(loc != -1);
+    m_cache[cacheSet][loc]->clearLockedRMW();
+}
+
+bool CacheMemory::isLockedRMW(Addr address) {
+    assert(address == makeLineAddress(address));
+    int64_t cacheSet = addressToCacheSet(address);
+    int loc = findTagInSet(cacheSet, address);
+    assert(loc != -1);
+    DPRINTF(RubyCache, "Testing Lock for addr: %#llx cur %d\n",
+            address, m_cache[cacheSet][loc]->m_lockedRMW);
+    return m_cache[cacheSet][loc]->isLockedRMW();
 }
 
 void
