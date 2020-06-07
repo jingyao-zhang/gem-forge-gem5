@@ -30,10 +30,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
  : Sequencer * sequencer;
    CacheMemory * Icache;
    CacheMemory * Dcache;
-   RubyPrefetcher * prefetcher;
    Cycles request_latency := 2;
    Cycles response_latency := 2;
    bool send_evictions;
+   
+   RubyPrefetcher * prefetcher;
    bool enable_prefetch := "False";
 
    // From this node's L0 cache to the network
@@ -92,9 +93,9 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     SM, AccessPermission:Read_Only;
 
     // Transient States in which block is being prefetched
+    PF_Inst_IS, AccessPermission:Busy, desc="Issued GETS, have not seen response yet";
     PF_IS, AccessPermission:Busy, desc="Issued GETS, have not seen response yet";
     PF_IM, AccessPermission:Busy, desc="Issued GETX, have not seen response yet";
-    PF_SM, AccessPermission:Busy, desc="Issued GETX, received data, waiting for acks";
   }
 
   // EVENTS
@@ -997,19 +998,19 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     z_stallAndWaitMandatoryQueue;
   }
 
-  transition({PF_IS}, {Store, L0_Replacement}) {
+  transition({PF_Inst_IS, PF_IS}, {Store, L0_Replacement}) {
     z_stallAndWaitMandatoryQueue;
   }
 
-  transition({PF_IM, PF_SM}, {Load, Ifetch, L0_Replacement}) {
+  transition(PF_IM, {Load, Ifetch, L0_Replacement}) {
     z_stallAndWaitMandatoryQueue;
   }
 
-  transition({IS, IM, SM, PF_IS, PF_IM, PF_SM}, PF_L0_Replacement) {
+  transition({Inst_IS, IS, IM, SM, PF_Inst_IS, PF_IS, PF_IM}, PF_L0_Replacement) {
     z_stallAndWaitPrefetchQueue;
   }
 
-  transition({S, E, M, IS, Inst_IS, IM, SM, PF_IS, PF_IM},
+  transition({S, E, M, IS, Inst_IS, IM, SM, PF_Inst_IS, PF_IS, PF_IM},
              {PF_Load, PF_Store, PF_Ifetch}) {
     pq_popPrefetchQueue;
   }
@@ -1053,19 +1054,30 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     k_popMandatoryQueue;
   }
 
-  transition(I, PF_Ifetch, PF_IS) {
+  transition(I, PF_Ifetch, PF_Inst_IS) {
     pp_allocateICacheBlock;
     i_allocateTBE;
     pa_issuePfGETS;
     pq_popPrefetchQueue;
   }
-
-  // We proactively assume that the prefetch is in to
-  // the instruction cache
-  transition(PF_IS, Ifetch, IS) {
+  transition(PF_Inst_IS, Ifetch, Inst_IS) {
     uu_profileInstMiss;
     ppm_observePfMiss;
     k_popMandatoryQueue;
+  }
+  transition(PF_Inst_IS, Data, S) {
+    u_writeInstToCache;
+    s_deallocateTBE;
+    mp_markPrefetched;
+    o_popIncomingResponseQueue;
+    kd_wakeUpDependents;
+  }
+  transition(PF_Inst_IS, Data_Exclusive, E) {
+    u_writeInstToCache;
+    s_deallocateTBE;
+    mp_markPrefetched;
+    o_popIncomingResponseQueue;
+    kd_wakeUpDependents;
   }
 
   transition(I, Store, IM) {
@@ -1090,13 +1102,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     k_popMandatoryQueue;
   }
 
-  transition(PF_SM, Store, SM) {
-    uu_profileDataMiss;
-    ppm_observePfMiss;
-    k_popMandatoryQueue;
-  }
-
-  transition({I, IS, IU, IM, PF_IS, PF_IM, Inst_IS}, Inv) {
+  transition({I, IS, IU, IM, PF_Inst_IS, PF_IS, PF_IM, Inst_IS}, Inv) {
     fi_sendInvAck;
     l_popRequestQueue;
   }
@@ -1284,7 +1290,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     kd_wakeUpDependents;
   }
 
-  transition({PF_IM, PF_SM}, Data_Exclusive, M) {
+  transition(PF_IM, Data_Exclusive, M) {
     u_writeDataToCache;
     s_deallocateTBE;
     mp_markPrefetched;
