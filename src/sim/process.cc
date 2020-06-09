@@ -330,7 +330,8 @@ void
 Process::allocateMem(Addr vaddr, int64_t size, bool clobber)
 {
     int npages = divCeil(size, (int64_t)PageBytes);
-    if (this->lazyAllocation && !clobber) {
+    if (false) {
+    // if (this->lazyAllocation && !clobber) {
         // Lazy allocation only for non-clobber pages.
         Addr paddr = system->getInvalidPhysPage();
         pTable->map(vaddr, paddr, size, EmulationPageTable::NoPhysBack);
@@ -364,6 +365,12 @@ Process::replicatePage(Addr vaddr, Addr new_paddr, ThreadContext *old_tc,
 bool
 Process::fixupFault(Addr vaddr)
 {
+    // ! GemForge
+    // In multi-thread case, it is possible that other thread has already
+    // fixed this fault.
+    if (pTable->translate(vaddr)) {
+        return true;
+    }
     return memState->fixupFault(vaddr);
 }
 

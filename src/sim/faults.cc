@@ -65,6 +65,8 @@ void GenericPageTableFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 {
     bool handled = false;
     if (!FullSystem) {
+        DPRINTF(Fault, "PageFault cpu %d %#x at PC: %s\n",
+            tc->cpuId(), vaddr, tc->pcState());
         Process *p = tc->getProcessPtr();
         handled = p->fixupFault(vaddr);
     }
