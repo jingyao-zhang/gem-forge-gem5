@@ -799,22 +799,22 @@ LSQ::StoreBuffer::canForwardDataToLoad(LSQRequestPtr request,
             !slot->packet->req->isCacheMaintenance()) {
             AddrRangeCoverage coverage = slot->containsAddrRangeOf(request);
 
+            /**
+             * ! GemForge
+             * The current implementation will try to forward to x86 LockedRMWRead,
+             * However, we have to send this read to cache to correctly lock the
+             * line in Ruby. Also, we should only send this when the StoreBuffer
+             * is empty. Otherwise there may be deadlock.
+             *
+             * Thus we set PartialOverlap to fully enforce barrier.
+             */
+            if (request->request->isLockedRMW()) {
+                DPRINTF(MinorMem, "Enforce barrier for RMWRead to %#x.\n",
+                    request->request->getPaddr());
+                coverage = PartialAddrRangeCoverage;
+            }
+
             if (coverage != NoAddrRangeCoverage) {
-
-                /**
-                 * ! GemForge
-                 * The current implementation will try to forward to x86 RMWRead,
-                 * which I think is wrong? Similar to LLSC, forwarding should be
-                 * disabled. My solution here so far is to set this as partial
-                 * overlap so that the RMWRead will be blocked until the store
-                 * is done.
-                 */
-                if (request->request->isLockedRMW()) {
-                    DPRINTF(MinorMem, "Disable forwarding for RMWRead to %#x.\n",
-                        request->request->getPaddr());
-                    coverage = PartialAddrRangeCoverage;
-                }
-
                 DPRINTF(MinorMem, "Forwarding: slot: %d result: %s thisAddr:"
                     " 0x%x thisSize: %d slotAddr: 0x%x slotSize: %d\n",
                     slot_index, coverage,
