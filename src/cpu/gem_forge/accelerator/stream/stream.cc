@@ -1,6 +1,5 @@
 #include "stream.hh"
 #include "insts.hh"
-#include "stream_atomic_op.hh"
 #include "stream_engine.hh"
 
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
@@ -57,6 +56,19 @@ void Stream::dumpStreamStats(std::ostream &os) const {
   os << this->getStreamName() << '\n';
   this->statistic.dump(os);
   this->floatTracer.dump();
+}
+
+bool Stream::isAtomicStream() const {
+  switch (this->getStreamType()) {
+  case ::LLVM::TDG::StreamInfo_Type_AT:
+    return true;
+  case ::LLVM::TDG::StreamInfo_Type_LD:
+  case ::LLVM::TDG::StreamInfo_Type_ST:
+  case ::LLVM::TDG::StreamInfo_Type_IV:
+    return false;
+  default:
+    STREAM_PANIC("Invalid stream type.");
+  }
 }
 
 bool Stream::isMemStream() const {
@@ -589,6 +601,18 @@ void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
     inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
   }
   /**
+   * LoadFunc shares the same input as StoreFunc, for now.
+   */
+  if (this->enabledLoadFunc()) {
+    assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT);
+    const auto &info = this->getLoadFuncInfo();
+    if (!this->loadCallback) {
+      hack("setup loadcallback.");
+      this->loadCallback = std::make_shared<TheISA::ExecFunc>(dynS.tc, info);
+    }
+    // No additional input. All inputs are the same as StoreFunc.
+  }
+  /**
    * If this is a reduction stream, check for the initial value.
    */
   if (this->isReduction()) {
@@ -602,7 +626,7 @@ CacheStreamConfigureData *
 Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   auto &dynStream = this->getDynamicStream(configSeqNum);
   auto configData = new CacheStreamConfigureData(
-      this, dynStream.dynamicStreamId, this->getElementSize(),
+      this, dynStream.dynamicStreamId, this->getMemElementSize(),
       dynStream.addrGenFormalParams, dynStream.addrGenCallback);
 
   // Set the totalTripCount.
@@ -896,9 +920,9 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
    * to distinguish the last element stepped by StreamEnd, which
    * should not perform computation.
    */
-  if (!isEnd) {
-    this->handleStoreFunc(dynS, releaseElement);
-  }
+  // if (!isEnd) {
+  //   this->handleStoreFunc(dynS, releaseElement);
+  // }
 
   dynS.tail->next = releaseElement->next;
   if (dynS.stepped == releaseElement) {
@@ -987,16 +1011,12 @@ void Stream::handleStoreFunc(const DynamicStream &dynS,
     S_ELEMENT_PANIC(element, "StoreFunc should have addr ready.");
   }
   S_ELEMENT_DPRINTF(element, "Send AtomicPacket.\n");
-  DynamicStreamParamV params =
-      this->setupAtomicRMWParamV(dynS.storeFormalParams);
-  // Create the AtomicOp, which will be released in ~Request.
-  auto atomicOp = m5::make_unique<StreamAtomicOp>(
-      this, element->FIFOIdx, element->size, params, dynS.storeCallback);
-  this->se->sendAtomicPacket(element, std::move(atomicOp));
+  panic("Deprecated function.\n");
 }
 
-DynamicStreamParamV Stream::setupAtomicRMWParamV(
-    const DynamicStreamFormalParamV formalParams) const {
+std::unique_ptr<StreamAtomicOp>
+Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
+                      const DynamicStreamFormalParamV &formalParams) {
   // Turn the FormalParams to ActualParams, except the last atomic
   // operand.
   assert(!formalParams.empty() && "AtomicOp has at least one operand.");
@@ -1013,7 +1033,10 @@ DynamicStreamParamV Stream::setupAtomicRMWParamV(
   assert(formalAtomicParam.param.baseStreamId == this->staticId &&
          "AtomicOperand should be myself.");
   params.push_back(0);
-  return params;
+  auto atomicOp =
+      m5::make_unique<StreamAtomicOp>(this, idx, memElementsize, params,
+                                      this->storeCallback, this->loadCallback);
+  return atomicOp;
 }
 
 void Stream::handleMergedPredicate(const DynamicStream &dynS,

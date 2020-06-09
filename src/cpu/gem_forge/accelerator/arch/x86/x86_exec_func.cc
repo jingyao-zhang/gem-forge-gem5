@@ -41,7 +41,8 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
   assert(dsEffBase == 0 && "We cannot handle this DS.\n");
   assert(csEffBase == 0 && "We cannot handle this CS.\n");
 
-  EXEC_FUNC_DPRINTF("======= Start decoding from %#x.\n", funcStartVAddr);
+  EXEC_FUNC_DPRINTF("======= Start decoding %s from %#x.\n", this->func.name(),
+                    funcStartVAddr);
 
   auto &prox = this->tc->getVirtProxy();
 
@@ -121,8 +122,10 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
    * The exec function should never use stack.
    */
   assert(params.size() <= 6 && "Too many arguments for exec function.");
-  assert(params.size() == this->func.args_size() &&
-         "Mismatch with number of args.");
+  if (params.size() != this->func.args_size()) {
+    panic("Invoke %s: Mismatch in # args, given %d, expected.\n",
+          this->func.name(), params.size(), this->func.args_size());
+  }
   execFuncXC.clear();
 
   const RegId intRegParams[6] = {

@@ -293,6 +293,9 @@ RubyPrefetcher::initializeStream(Addr address, int stride,
      uint32_t index, const RubyRequestType& type)
 {
     numAllocatedStreams++;
+    DPRINTF(RubyPrefetcher,
+        "Initialize stream, line %#x, page %#x, stride %d, index %u.\n",
+        makeLineAddress(address), pageAddress(address), stride, index);
 
     // initialize the stream prefetcher
     PrefetchEntry *mystream = &(m_array[index]);
@@ -305,8 +308,6 @@ RubyPrefetcher::initializeStream(Addr address, int stride,
     // create a number of initial prefetches for this stream
     Addr page_addr = pageAddress(mystream->m_address);
     Addr line_addr = makeLineAddress(mystream->m_address);
-    DPRINTF(RubyPrefetcher, "Initialize stream, line %#x, page %#x, stride %d.\n",
-        line_addr, page_addr, stride);
 
     // insert a number of prefetches into the prefetch table
     for (int k = 0; k < m_num_startup_pfs; k++) {

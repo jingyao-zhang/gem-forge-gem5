@@ -36,7 +36,7 @@ def get_processes(options):
         process.executable = wrkld
         process.cwd = os.getcwd()
         process.exitGroup = True
-        process.lazyAllocation = True
+        process.lazyAllocation = False
         # Yield wakeup every 10us.
         process.yieldWakeup = '2us'
 

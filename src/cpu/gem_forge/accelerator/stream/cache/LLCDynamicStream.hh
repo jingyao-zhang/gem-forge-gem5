@@ -70,7 +70,7 @@ public:
     return this->configData.dynamicId;
   }
 
-  int32_t getElementSize() const { return this->configData.elementSize; }
+  int32_t getMemElementSize() const { return this->configData.elementSize; }
   bool isPointerChase() const { return this->configData.isPointerChase; }
   bool isPseudoOffload() const { return this->configData.isPseudoOffload; }
   bool isOneIterationBehind() const {
@@ -156,7 +156,7 @@ public:
    * Maximum number of issued requests of the base stream that are waiting for
    * the data.
    */
-  int maxWaitingDataBaseRequests;
+  int maxInflyRequests;
 
   Cycles issueClearCycle = Cycles(4);
   // Last issued cycle.
@@ -183,12 +183,10 @@ public:
   // For flow control.
   uint64_t allocatedSliceIdx;
   /**
-   * Number of requests of the base stream (not including indirect streams)
+   * Number of requests of this stream (not including indirect streams)
    * issued but data not ready.
-   * Notice that this number only tracks requests in the current LLC bank and
-   * will be cleared when migrating.
    */
-  int waitingDataBaseRequests;
+  int inflyRequests;
 
   /**
    * Map from ElementIdx to LLCStreamElement.

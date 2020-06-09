@@ -1,10 +1,13 @@
 #include "stream_statistic.hh"
 
+#include <cassert>
 #include <iomanip>
 
 void StreamStatistic::dump(std::ostream &os) const {
 #define dumpScalar(stat)                                                       \
   os << std::setw(40) << "  " #stat << ' ' << stat << '\n'
+#define dumpNamedScalar(name, stat)                                            \
+  os << std::setw(40) << (name) << ' ' << (stat) << '\n'
 #define dumpAvg(name, dividend, divisor)                                       \
   {                                                                            \
     auto avg = (divisor > 0) ? dividend / divisor : 0;                         \
@@ -67,10 +70,32 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numMissL1);
   dumpScalar(numMissL2);
 
-  for (const auto &llcIssueReason : this->llcIssueReasons) {
-    dumpScalar(llcIssueReason);
+  for (auto idx = 0; idx < this->llcIssueReasons.size(); ++idx) {
+    dumpNamedScalar(
+        llcSEIssueReasonToString(static_cast<LLCStreamEngineIssueReason>(idx)),
+        this->llcIssueReasons.at(idx));
   }
 
 #undef dumpScalar
 #undef dumpAvg
+}
+
+const char *
+StreamStatistic::llcSEIssueReasonToString(LLCStreamEngineIssueReason reason) {
+#define Case(x)                                                                \
+  case x:                                                                      \
+    return #x
+  switch (reason) {
+    Case(Issued);
+    Case(IndirectPriority);
+    Case(NextSliceNotAllocated);
+    Case(MulticastPolicy);
+    Case(IssueClearCycle);
+    Case(MaxInflyRequest);
+    Case(PendingMigrate);
+    Case(NumLLCStreamEngineIssueReason);
+#undef Case
+  default:
+    assert(false && "Invalid LLCStreamEngineIssueReason.");
+  }
 }

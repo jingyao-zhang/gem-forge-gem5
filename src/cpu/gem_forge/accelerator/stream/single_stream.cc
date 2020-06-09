@@ -114,10 +114,6 @@ bool SingleStream::isPointerChaseLoadStream() const {
   return this->info.type();
 }
 
-int32_t SingleStream::getElementSize() const {
-  return this->info.element_size();
-}
-
 void SingleStream::configure(uint64_t seqNum, ThreadContext *tc) {
   this->dispatchStreamConfig(seqNum, tc);
   // ! We are removing the hacky state machine inside the history.

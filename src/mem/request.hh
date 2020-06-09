@@ -190,6 +190,21 @@ class Request
         DST_BITS                    = 0x0000003000000000,
 
         /**
+         * ! GemForge
+         * This request should bypass RubySequencer's backing storage.
+         * Used to implement atomic stream.
+         */
+        NO_RUBY_BACK_STORE          = 0x0100000000000000,
+
+        /**
+         * ! GemForge
+         * This request should not be coalesced by RubySequencer and
+         * always sent to cache. Used to implement stream requests
+         * that as a load but must be served by MLC.
+         */
+        NO_RUBY_SEQUENCER_COALESCE  = 0x0200000000000000,
+
+        /**
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
          */
@@ -842,6 +857,11 @@ class Request
     bool isKernel() const { return _flags.isSet(KERNEL); }
     bool isAtomicReturn() const { return _flags.isSet(ATOMIC_RETURN_OP); }
     bool isAtomicNoReturn() const { return _flags.isSet(ATOMIC_NO_RETURN_OP); }
+
+    bool noRubyBackingStore() const { return _flags.isSet(NO_RUBY_BACK_STORE); }
+    bool noRubySequencerCoalesce() const {
+        return _flags.isSet(NO_RUBY_SEQUENCER_COALESCE);
+    }
 
     bool
     isAtomic() const

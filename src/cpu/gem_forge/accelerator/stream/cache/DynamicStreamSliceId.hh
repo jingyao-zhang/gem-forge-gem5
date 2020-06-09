@@ -24,6 +24,11 @@ struct DynamicStreamSliceId {
   DynamicStreamId streamId;
   uint64_t lhsElementIdx;
   uint64_t rhsElementIdx;
+  /**
+   * Hack: This is element vaddr for indirect streams,
+   * but line vaddr for direct sliced streams.
+   * TODO: Fix this.
+   */
   Addr vaddr;
   int size;
 

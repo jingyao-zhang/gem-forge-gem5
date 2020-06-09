@@ -362,7 +362,7 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
 
     // Try to extract the stream data.
     auto elementVAddr = this->slicedStream.getElementVAddr(elementIdx);
-    auto elementSize = this->slicedStream.getElementSize();
+    auto elementSize = this->slicedStream.getMemElementSize();
     auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
     assert(elementLineOffset + elementSize <= RubySystem::getBlockSizeBytes() &&
            "Cannot support multi-line element with indirect streams yet.");
@@ -405,8 +405,9 @@ MLCDynamicDirectStream::SliceIter
 MLCDynamicDirectStream::findSliceForCoreRequest(
     const DynamicStreamSliceId &sliceId) {
   if (this->slices.empty()) {
-    MLC_S_PANIC("No slices for request, overflowed %d, totalTripCount %lu.\n",
-                this->hasOverflowed(), this->getTotalTripCount());
+    MLC_SLICE_PANIC(
+        sliceId, "No slices for request, overflowed %d, totalTripCount %lu.\n",
+        this->hasOverflowed(), this->getTotalTripCount());
   }
   // Try to allocate more slices.
   while (!this->hasOverflowed() &&

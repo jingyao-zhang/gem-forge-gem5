@@ -26,7 +26,12 @@ public:
     return this->info.config_loop_level();
   }
 
-  int32_t getElementSize() const override;
+  int32_t getMemElementSize() const override {
+    return this->info.static_info().mem_element_size();
+  }
+  int32_t getCoreElementSize() const override {
+    return this->info.static_info().core_element_size();
+  }
 
   bool getFloatManual() const override {
     return this->info.static_info().float_manual();
@@ -55,6 +60,9 @@ public:
   }
   const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const override {
     return this->info.static_info().store_func_info();
+  }
+  const ::LLVM::TDG::ExecFuncInfo &getLoadFuncInfo() const override {
+    return this->info.static_info().load_func_info();
   }
 
   bool isMergedPredicated() const override {

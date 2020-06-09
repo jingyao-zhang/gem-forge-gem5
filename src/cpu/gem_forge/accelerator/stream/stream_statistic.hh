@@ -73,12 +73,14 @@ public:
     NextSliceNotAllocated,
     MulticastPolicy,
     IssueClearCycle,
-    MaxWaitingDataBaseRequest,
+    MaxInflyRequest,
     PendingMigrate,
     NumLLCStreamEngineIssueReason,
   };
   // Will be default initialized.
   std::array<size_t, NumLLCStreamEngineIssueReason> llcIssueReasons = {};
+
+  static const char *llcSEIssueReasonToString(LLCStreamEngineIssueReason r);
 
   void sampleLLCStreamEngineIssueReason(LLCStreamEngineIssueReason reason) {
     this->llcIssueReasons.at(reason)++;

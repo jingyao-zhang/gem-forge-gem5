@@ -150,8 +150,26 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
   msg->m_Sender = selfMachineId;
   msg->m_Dest = upperMachineId;
   msg->m_MessageSize = MessageSizeType_Response_Data;
+  msg->m_DataBlk = slice.dataBlock;
 
-  MLC_SLICE_DPRINTF(slice.sliceId, "Make response.\n");
+  // If this is atomic stream, we have to use STREAM_FROM_MLC type.
+  if (this->stream->isAtomicStream()) {
+    msg->m_Class = CoherenceClass_STREAM_FROM_MLC;
+  }
+
+  // Show the data.
+  if (Debug::DEBUG_TYPE) {
+    std::stringstream ss;
+    auto lineOffset = slice.sliceId.vaddr % RubySystem::getBlockSizeBytes();
+    for (int i = 0; i < slice.sliceId.getSize(); ++i) {
+      ss << ' ' << std::hex
+         << static_cast<int>(slice.dataBlock.getByte(lineOffset + i))
+         << std::dec;
+    }
+    MLC_SLICE_DPRINTF(slice.sliceId,
+                      "Make response vaddr %#x size %d data 0x%s.\n",
+                      slice.sliceId.vaddr, slice.sliceId.getSize(), ss.str());
+  }
   // The latency should be consistency with the cache controller.
   // However, I still failed to find a clean way to exponse this info
   // to the stream engine. So far I manually set it to the default

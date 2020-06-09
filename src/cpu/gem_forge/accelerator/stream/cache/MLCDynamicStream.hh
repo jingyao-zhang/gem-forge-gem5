@@ -180,8 +180,21 @@ protected:
     // This is stream is waiting for Ack, not Data.
     // So far only for offloaded store and atomicrmw streams.
     auto streamType = this->stream->getStreamType();
-    return streamType == ::LLVM::TDG::StreamInfo_Type_ST ||
-           streamType == ::LLVM::TDG::StreamInfo_Type_AT;
+    if (streamType == ::LLVM::TDG::StreamInfo_Type_ST) {
+      return true;
+    } else if (streamType == ::LLVM::TDG::StreamInfo_Type_AT) {
+      // We need to check if there the core is issuing.
+      auto dynS = this->stream->getDynamicStream(this->dynamicStreamId);
+      if (dynS) {
+        return !dynS->shouldCoreSEIssue();
+      } else {
+        // The dynamic stream is already released, we don't really care.
+        return false;
+      }
+    } else {
+      // Load stream has no ack for now.
+      return false;
+    }
   }
 
   /**

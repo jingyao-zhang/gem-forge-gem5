@@ -13,11 +13,18 @@ void StreamAtomicOp::operator()(uint8_t *p) {
     reinterpret_cast<uint8_t *>(&operand)[i] = p[i];
   }
   this->params.back() = operand;
-  auto result = func->invoke(params);
+  auto result = this->storeFunc->invoke(params);
 
-  S_DPRINTF(stream, "Entry (%lu, %lu): AtomicOp %lu -> %lu.\n",
+  if (this->loadFunc) {
+    this->loadedValue = this->loadFunc->invoke(params);
+  } else {
+    // By default return the old value.
+    this->loadedValue = operand;
+  }
+
+  S_DPRINTF(stream, "Entry (%lu, %lu): AtomicOp %lu -> %lu, Loaded? %d %lu.\n",
             entryIdx.streamId.streamInstance, entryIdx.entryIdx, operand,
-            result);
+            result, this->loadFunc != nullptr, this->loadedValue);
 
   for (size_t i = 0; i < this->size; ++i) {
     p[i] = reinterpret_cast<uint8_t *>(&result)[i];

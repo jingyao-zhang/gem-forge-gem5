@@ -103,16 +103,20 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l0i_cache = L0Cache(size=options.l1i_size, assoc=options.l1i_assoc,
                 is_icache = True,
                 start_index_bit = block_size_bits,
-                replacement_policy = TreePLRURP())
+                replacement_policy = BRRIPRP())
 
             l0d_cache = L0Cache(size=options.l1d_size, assoc=options.l1d_assoc, is_icache = False,
                 start_index_bit = block_size_bits,
-                replacement_policy = TreePLRURP(),
+                replacement_policy = BRRIPRP(),
                 dataAccessLatency = options.l1d_lat)
 
             prefetcher = RubyPrefetcher(
-                num_streams=8,
-                cross_page=True,
+                num_streams=16,
+                unit_filter = 256,
+                nonunit_filter = 256,
+                train_misses = 5,
+                num_startup_pfs = 4,
+                cross_page = True
             )
 
             # the ruby random tester reuses num_cpus to specify the
@@ -244,7 +248,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                assoc = options.l2_assoc,
                                start_index_bit=block_size_bits,
                                skip_index_start_bit=l2_select_low_bit,
-                               skip_index_num_bits=l2_bits
+                               skip_index_num_bits=l2_bits,
+                               replacement_policy=BRRIPRP(),
                                )
 
             l2_cntrl = L2Cache_Controller(

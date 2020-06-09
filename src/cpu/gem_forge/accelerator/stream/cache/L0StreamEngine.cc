@@ -142,6 +142,15 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
   return true;
 }
 
+bool L0StreamEngine::mustServedByMLCSE(PacketPtr pkt) {
+  auto memAccess = this->getStreamMemAccessFromPacket(pkt);
+  // Only atomic stream must be served by MLC_SE.
+  if (memAccess->getStream()->isAtomicStream()) {
+    return true;
+  }
+  return false;
+}
+
 StreamMemAccess *
 L0StreamEngine::getStreamMemAccessFromPacket(PacketPtr pkt) const {
   if (pkt == nullptr) {

@@ -350,6 +350,8 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
     //
     // Free the whole list as we assume we have had the exclusive access
     // to this cache line when response for the write comes back
+    // ! GemForge
+    // Except for request with NO_RUBY_SEQUENCER_COALESCE set.
     //
     assert(address == makeLineAddress(address));
     assert(m_RequestTable.find(address) != m_RequestTable.end());
@@ -367,6 +369,18 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             assert(seq_req.m_type != RubyRequestType_LD);
             assert(seq_req.m_type != RubyRequestType_Load_Linked);
             assert(seq_req.m_type != RubyRequestType_IFETCH);
+        }
+
+        // ! GemForge
+        // Disable coalesce for certain requests.
+        bool shouldIssue = false;
+        if (!ruby_request && seq_req.pkt->req->noRubySequencerCoalesce()) {
+            // This is not the issued request, and user disabled coalesce.
+            shouldIssue = true;
+        }
+        if (shouldIssue) {
+            this->issueRequest(seq_req.pkt, seq_req.m_second_type);
+            break;
         }
 
         // handle write request
@@ -468,10 +482,22 @@ Sequencer::readCallback(Addr address, DataBlock& data,
         } else {
             aliased_loads++;
         }
-        if ((seq_req.m_type != RubyRequestType_LD) &&
-            (seq_req.m_type != RubyRequestType_Load_Linked) &&
-            (seq_req.m_type != RubyRequestType_IFETCH)) {
-            // Write request: reissue request to the cache hierarchy
+        // ! GemForge
+        // Disable coalescing for certain requests.
+        // Used in StreamFloating.
+        bool shouldIssue = false;
+        if (!ruby_request) {
+            // This is not the issued request.
+            if ((seq_req.m_type != RubyRequestType_LD) &&
+                (seq_req.m_type != RubyRequestType_Load_Linked) &&
+                (seq_req.m_type != RubyRequestType_IFETCH)) {
+                // Write request: reissue request to the cache hierarchy
+                shouldIssue = true;
+            } else if (seq_req.pkt->req->noRubySequencerCoalesce()) {
+                shouldIssue = true;
+            }
+        }
+        if (shouldIssue) {
             issueRequest(seq_req.pkt, seq_req.m_second_type);
             break;
         }

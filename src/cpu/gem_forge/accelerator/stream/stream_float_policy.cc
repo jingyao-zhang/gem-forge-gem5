@@ -164,7 +164,7 @@ bool StreamFloatPolicy::checkReuseWithinStream(Stream *S, DynamicStream &dynS) {
     // Non linear addr gen.
     return true;
   }
-  auto elementSize = S->getElementSize();
+  auto elementSize = S->getMemElementSize();
   uint64_t reuseFootprint;
   uint64_t reuseCount;
   auto hasReuse = linearAddrGen->estimateReuse(

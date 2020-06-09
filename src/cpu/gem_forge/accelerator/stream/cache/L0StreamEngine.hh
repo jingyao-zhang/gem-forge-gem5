@@ -56,6 +56,7 @@ public:
   void receiveStreamEnd(PacketPtr pkt);
   bool shouldForward(PacketPtr pkt);
   bool shouldCache(PacketPtr pkt);
+  bool mustServedByMLCSE(PacketPtr pkt);
 
   DynamicStreamSliceId getSliceId(PacketPtr pkt) const;
 

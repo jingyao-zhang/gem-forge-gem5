@@ -68,8 +68,8 @@ void CoalescedStream::finalize() {
       "Finalized, StaticCoalesced %d, ElementSize %d, LStreams: =========.\n",
       this->staticCoalesced, this->coalescedElementSize);
   for (auto LS : this->coalescedStreams) {
-    LS_DPRINTF(LS, "Offset %d, ElementSize %d.\n", LS->getCoalesceOffset(),
-               LS->getElementSize());
+    LS_DPRINTF(LS, "Offset %d, MemElementSize %d.\n", LS->getCoalesceOffset(),
+               LS->getMemElementSize());
   }
   STREAM_DPRINTF("Finalized ====================================.\n");
 }
@@ -85,7 +85,7 @@ void CoalescedStream::selectPrimeLogicalStream() {
               });
     this->primeLStream = this->coalescedStreams.front();
     this->baseOffset = this->primeLStream->getCoalesceOffset();
-    this->coalescedElementSize = this->primeLStream->getElementSize();
+    this->coalescedElementSize = this->primeLStream->getMemElementSize();
     assert(this->baseOffset >= 0 && "Illegal BaseOffset.");
     // Make sure we have the currect base_stream.
     for (const auto &LS : this->coalescedStreams) {
@@ -94,7 +94,7 @@ void CoalescedStream::selectPrimeLogicalStream() {
       // Compute the element size.
       this->coalescedElementSize = std::max(
           this->coalescedElementSize,
-          LS->getCoalesceOffset() - this->baseOffset + LS->getElementSize());
+          LS->getCoalesceOffset() - this->baseOffset + LS->getMemElementSize());
     }
   } else {
     this->primeLStream = this->coalescedStreams.front();
@@ -121,6 +121,15 @@ void CoalescedStream::selectPrimeLogicalStream() {
     CHECK_INFO(merged_load_store_base_streams_size);
     CHECK_INFO(enabled_store_func);
 #undef CHECK_INFO
+    // If more than one coalesced stream, then CoreElementSize must be
+    // the same as the MemElementSize.
+    if (this->coalescedStreams.size() > 1) {
+      if (LS->getCoreElementSize() != LS->getMemElementSize()) {
+        panic("Mismatch in %s CoreElementSize %d and MemElementSize %d.\n",
+              LS->info.name(), LS->getCoreElementSize(),
+              LS->getMemElementSize());
+      }
+    }
     for (const auto &sid : LS->getMergedLoadStoreBaseStreams()) {
       bool matched = false;
       for (const auto &tid :
@@ -284,7 +293,7 @@ bool CoalescedStream::isContinuous() const {
   if (pattern.val_pattern() != "LINEAR") {
     return false;
   }
-  return this->getElementSize() == pattern.stride_i();
+  return this->getMemElementSize() == pattern.stride_i();
 }
 
 void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
@@ -331,7 +340,8 @@ uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
     return totalElements * pattern.stride_i() / cacheBlockSize;
   } else if (pattern.val_pattern() == "QUARDRIC") {
     // For 2 dimention linear stream, first compute footprint of one row.
-    auto rowFootprint = pattern.ni() * this->getElementSize() / cacheBlockSize;
+    auto rowFootprint =
+        pattern.ni() * this->getMemElementSize() / cacheBlockSize;
     if (pattern.stride_i() > cacheBlockSize) {
       rowFootprint = pattern.ni();
     }
@@ -364,7 +374,7 @@ void CoalescedStream::getCoalescedOffsetAndSize(uint64_t streamId,
   for (auto LS : this->coalescedStreams) {
     if (LS->getStreamId() == streamId) {
       offset = LS->getCoalesceOffset() - this->baseOffset;
-      size = LS->getElementSize();
+      size = LS->getMemElementSize();
       return;
     }
   }

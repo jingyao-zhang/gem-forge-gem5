@@ -180,11 +180,26 @@ private:
    */
   void issueStreamRequestToLLCBank(const LLCStreamRequest &req);
 
+  using ResponseMsgPtr = std::shared_ptr<ResponseMsg>;
+  ResponseMsgPtr createStreamMsgToMLC(const DynamicStreamSliceId &sliceId,
+                                      CoherenceResponseType type,
+                                      Addr paddrLine, uint8_t *data, int size,
+                                      int lineOffset);
+  void issueStreamMsgToMLC(ResponseMsgPtr msg, bool forceIdea = false);
+
   /**
    * Helper function to issue stream ack back to MLC at request core.
    */
   void issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
                            bool forceIdea = false);
+
+  /**
+   * Helper function to issue stream data back to MLC at request core.
+   * Mostly used for atomic streams.
+   */
+  void issueStreamDataToMLC(const DynamicStreamSliceId &sliceId, Addr paddrLine,
+                            uint8_t *data, int size, int lineOffset,
+                            bool forceIdea = false);
 
   /**
    * Migrate streams.
@@ -234,9 +249,11 @@ private:
 
   /**
    * Perform AtomicRMWStream to the BackingStorage.
+   * Return the loaded value.
    */
-  void performStreamAtomicRMW(LLCDynamicStreamPtr stream,
-                              const DynamicStreamSliceId &sliceId);
+  uint64_t performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
+                                 LLCDynamicStreamPtr stream,
+                                 const DynamicStreamSliceId &sliceId);
 };
 
 #endif

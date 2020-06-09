@@ -78,7 +78,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     configuredStreamMap.emplace(IS->getDynamicStreamId(), IS);
     LLC_S_DPRINTF(IS->getDynamicStreamId(),
                   "Configure IndirectStream size %d, config size %d.\n",
-                  IS->getElementSize(), ISConfig->elementSize);
+                  IS->getMemElementSize(), ISConfig->elementSize);
     S->indirectStreams.push_back(IS);
     IS->baseStream = S;
   }
@@ -163,8 +163,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
          "Stream migrated to wrong LLC bank.\n");
 
   if (!this->controller->isStreamAdvanceMigrateEnabled()) {
-    assert(stream->waitingDataBaseRequests == 0 &&
-           "Stream migrated with waitingDataBaseRequests.");
+    assert(stream->inflyRequests == 0 && "Stream migrated with inflyRequests.");
     assert(stream->readyIndirectElements.empty() &&
            "Stream migrated with readyIndirectElements.");
   }
@@ -234,12 +233,10 @@ void LLCStreamEngine::receiveStreamElementData(
       return;
     }
   }
-  // Check if we need to track waitingDataBaseRequests.
-  if (stream->hasIndirectDependent()) {
-    stream->waitingDataBaseRequests--;
-    if (stream->waitingDataBaseRequests < 0) {
-      LLC_SLICE_PANIC(sliceId, "Negative waitingDataBaseRequests.\n");
-    }
+  // Update inflyRequests.
+  stream->inflyRequests--;
+  if (stream->inflyRequests < 0) {
+    LLC_SLICE_PANIC(sliceId, "Negative inflyRequests.\n");
   }
 
   /**
@@ -247,20 +244,37 @@ void LLCStreamEngine::receiveStreamElementData(
    * core.
    */
   auto S = stream->getStaticStream();
-  auto streamType = S->getStreamType();
-  if (streamType == ::LLVM::TDG::StreamInfo_Type_ST ||
-      streamType == ::LLVM::TDG::StreamInfo_Type_AT) {
+  auto SType = S->getStreamType();
+  if (SType == ::LLVM::TDG::StreamInfo_Type_ST ||
+      SType == ::LLVM::TDG::StreamInfo_Type_AT) {
     // Perform the operation.
-    auto elementSize = S->getElementSize();
+    auto elementMemSize = S->getMemElementSize();
+    auto elementCoreSize = S->getCoreElementSize();
+    assert(elementCoreSize <= elementMemSize &&
+           "CoreElementSize should not exceed MemElementSize.");
     auto elementVAddr = sliceId.vaddr;
+
+    /**
+     * Hack: Due to my stupid implementation, for sliced stream, sliceId.vaddr
+     * is always line address. To get the real element vaddr, I have to be
+     * careful.
+     */
+    if (S->isDirectMemStream()) {
+      elementVAddr =
+          stream->slicedStream.getElementVAddr(sliceId.lhsElementIdx);
+    }
     Addr elementPAddr;
     assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
            "Fault on vaddr of LLCStore/AtomicRMWStream.");
-    if (streamType == ::LLVM::TDG::StreamInfo_Type_ST) {
+    auto lineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
+
+    // Whether we should send value back to core.
+    bool coreNeedValue = false;
+    uint64_t loadedValue = 0;
+    if (SType == ::LLVM::TDG::StreamInfo_Type_ST) {
       // Extract the store value.
-      auto lineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
-      auto storeValue = storeValueBlock.getData(lineOffset, elementSize);
-      this->performStore(elementPAddr, elementSize, storeValue);
+      auto storeValue = storeValueBlock.getData(lineOffset, elementMemSize);
+      this->performStore(elementPAddr, elementMemSize, storeValue);
       LLC_SLICE_DPRINTF_(
           LLCRubyStreamStore, sliceId,
           "StreamStore done with value %llu, send back StreamAck.\n",
@@ -269,19 +283,29 @@ void LLCStreamEngine::receiveStreamElementData(
       // Very limited AtomicRMW support.
       LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                          "Perform StreamAtomicRMW.\n");
-      this->performStreamAtomicRMW(stream, sliceId);
+      loadedValue = this->performStreamAtomicOp(elementVAddr, elementPAddr,
+                                                stream, sliceId);
+      if (S->hasCoreUser()) {
+        coreNeedValue = true;
+      }
     }
 
-    this->issueStreamAckToMLC(sliceId);
+    if (coreNeedValue) {
+      auto paddrLine = makeLineAddress(elementPAddr);
+      this->issueStreamDataToMLC(sliceId, paddrLine,
+                                 reinterpret_cast<uint8_t *>(&loadedValue),
+                                 elementCoreSize, lineOffset);
+    } else {
+      this->issueStreamAckToMLC(sliceId);
+    }
     if (!this->requestQueue.empty()) {
       this->scheduleEvent(Cycles(1));
     }
     return;
   }
 
-  LLC_SLICE_DPRINTF(sliceId,
-                    "Received ElementData, WaitingDataBaseRequests %d.\n",
-                    stream->waitingDataBaseRequests);
+  LLC_SLICE_DPRINTF(sliceId, "Received ElementData, InflyRequests %d.\n",
+                    stream->inflyRequests);
   // Indirect streams.
   this->processStreamDataForIndirectStreams(stream, sliceId, dataBlock);
   // Update streams.
@@ -314,7 +338,7 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
   }
   // Only migrate if we enabled advance migrate.
   if (!this->controller->isStreamAdvanceMigrateEnabled()) {
-    if (stream->hasIndirectDependent() && stream->waitingDataBaseRequests > 0) {
+    if (stream->hasIndirectDependent() && stream->inflyRequests > 0) {
       // We are still waiting data for indirect usages:
       // 1. Indirect streams.
       // 2. Update request.
@@ -669,6 +693,8 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
     }
     dynS->prevIssuedCycle = this->controller->curCycle();
     dynS->updateIssueClearCycle();
+    // Track infly requests.
+    dynS->inflyRequests++;
 
     reqIter->multicastSliceIds.push_back(sliceId);
   }
@@ -835,13 +861,13 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
    * After this point, try to issue base stream element.
    */
 
-  // Enforce the per stream maxWaitingDataBaseRequests constraint.
-  if (stream->waitingDataBaseRequests == stream->maxWaitingDataBaseRequests) {
+  // Enforce the per stream maxInflyRequests constraint.
+  if (stream->inflyRequests == stream->maxInflyRequests) {
     LLC_S_DPRINTF_(LLCRubyStreamNotIssue, stream->getDynamicStreamId(),
-                   "Not issue: MaxWaitingDataBaseRequests %d.\n",
-                   stream->maxWaitingDataBaseRequests);
+                   "Not issue: MaxInflyRequests %d.\n",
+                   stream->maxInflyRequests);
     statistic.sampleLLCStreamEngineIssueReason(
-        StreamStatistic::LLCStreamEngineIssueReason::MaxWaitingDataBaseRequest);
+        StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
     return false;
   }
 
@@ -881,10 +907,19 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     // Push to the request queue.
     auto reqType = CoherenceRequestType_GETH;
     auto SS = stream->getStaticStream();
-    if (SS->hasCoreUser() && !stream->isPseudoOffload()) {
-      reqType = CoherenceRequestType_GETU;
-    } else if (SS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT) {
+    switch (SS->getStreamType()) {
+    case ::LLVM::TDG::StreamInfo_Type_AT:
+    case ::LLVM::TDG::StreamInfo_Type_ST:
       reqType = CoherenceRequestType_STREAM_STORE;
+      break;
+    case ::LLVM::TDG::StreamInfo_Type_LD: {
+      if (SS->hasCoreUser() && !stream->isPseudoOffload()) {
+        reqType = CoherenceRequestType_GETU;
+      }
+      break;
+    }
+    default:
+      panic("Invalid offloaded stream type.\n");
     }
     if (reqType == CoherenceRequestType_GETU) {
       statistic.numLLCSentSlice++;
@@ -895,17 +930,11 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
     auto requestIter = this->enqueueRequest(
         stream, sliceId, vaddrLine, paddrLine, reqType, 0 /* StoreValue */);
-    // Check if we track waitingDataBaseRequests.
+    // Check if we track inflyRequests.
     bool hasIndirectDependent = stream->hasIndirectDependent();
-    if (hasIndirectDependent) {
-      stream->waitingDataBaseRequests++;
-      LLC_SLICE_DPRINTF(sliceId, "Issue, WaitingDataBaseRequests++ %d.\n",
-                        stream->waitingDataBaseRequests);
-    } else {
-      LLC_SLICE_DPRINTF(sliceId,
-                        "Issue, WaitingDataBaseRequests Unchange %d.\n",
-                        stream->waitingDataBaseRequests);
-    }
+    stream->inflyRequests++;
+    LLC_SLICE_DPRINTF(sliceId, "Issue, InflyRequests++ %d.\n",
+                      stream->inflyRequests);
 
     stream->prevIssuedCycle = curCycle;
     stream->updateIssueClearCycle();
@@ -955,6 +984,16 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   auto dynIS = firstIndirectIter->second.first;
   const auto &baseElement = firstIndirectIter->second.second;
 
+  // Enforce the per stream maxInflyRequests constraint.
+  if (dynIS->inflyRequests == dynIS->maxInflyRequests) {
+    LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynIS->getDynamicStreamId(),
+                   "Not issue: MaxInflyRequests %d.\n",
+                   dynIS->maxInflyRequests);
+    dynIS->getStaticStream()->statistic.sampleLLCStreamEngineIssueReason(
+        StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
+    return false;
+  }
+
   this->generateIndirectStreamRequest(dynIS, idx, baseElement);
   // Don't forget to release the indirect element.
   stream->readyIndirectElements.erase(firstIndirectIter);
@@ -972,7 +1011,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
   sliceId.streamId = dynIS->getDynamicStreamId();
   sliceId.lhsElementIdx = elementIdx;
   sliceId.rhsElementIdx = elementIdx + 1;
-  auto elementSize = dynIS->getElementSize();
+  auto elementSize = dynIS->getMemElementSize();
   LLC_SLICE_DPRINTF(sliceId, "Issue indirect slice baseElementData.\n");
 
   auto IS = dynIS->getStaticStream();
@@ -1053,7 +1092,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
   auto ISType = IS->getStreamType();
   if (ISType == ::LLVM::TDG::StreamInfo_Type_ST ||
       ISType == ::LLVM::TDG::StreamInfo_Type_AT) {
-    // This is a store/atomicrmw, we need to issue STREAM_STORE request.
+    // This is a store/atomic, we need to issue STREAM_STORE request.
     assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
     if (dynIS->hasTotalTripCount()) {
       assert(elementIdx < dynIS->getTotalTripCount() &&
@@ -1135,6 +1174,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
         auto reqIter =
             this->enqueueRequest(dynIS, sliceId, vaddrLine, paddrLine,
                                  CoherenceRequestType_STREAM_STORE, storeValue);
+        dynIS->inflyRequests++;
         reqIter->storeSize = storeSize;
       }
 
@@ -1175,6 +1215,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
       // Push to the request queue.
       this->enqueueRequest(dynIS, sliceId, curSliceVAddrLine, curSlicePAddrLine,
                            reqType, 0 /* StoreValue */);
+      dynIS->inflyRequests++;
     } else {
       // For faulted slices, we simply ignore it.
       LLC_SLICE_DPRINTF(sliceId, "Discard due to fault, vaddr %#x.\n",
@@ -1293,30 +1334,43 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
   }
 }
 
-void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
-                                          bool forceIdea) {
-
+LLCStreamEngine::ResponseMsgPtr LLCStreamEngine::createStreamMsgToMLC(
+    const DynamicStreamSliceId &sliceId, CoherenceResponseType type,
+    Addr paddrLine, uint8_t *data, int size, int lineOffset) {
   auto selfMachineId = this->controller->getMachineID();
   MachineID mlcMachineId(static_cast<MachineType>(selfMachineId.type - 1),
                          sliceId.streamId.coreId);
 
   auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
   // For StreamAck, we do not care about the address?
-  msg->m_addr = 0;
-  msg->m_Type = CoherenceResponseType_STREAM_ACK;
+  msg->m_addr = paddrLine;
+  msg->m_Type = type;
   msg->m_Sender = selfMachineId;
   msg->m_Destination.add(mlcMachineId);
   msg->m_MessageSize = MessageSizeType_Response_Control;
   msg->m_sliceIds.add(sliceId);
+  // Try to copy data.
+  if (data) {
+    assert(lineOffset + size <= RubySystem::getBlockSizeBytes());
+    msg->m_DataBlk.setData(data, lineOffset, size);
+    msg->m_MessageSize = this->controller->getMessageSizeType(size);
+  }
+  return msg;
+}
 
-  // Check if we enabled ideal stream ack.
+void LLCStreamEngine::issueStreamMsgToMLC(ResponseMsgPtr msg, bool forceIdea) {
+
+  auto mlcMachineId = msg->m_Destination.singleElement();
+  const auto &sliceId = msg->m_sliceIds.singleSliceId();
+
   if (this->controller->isStreamIdeaAckEnabled() || forceIdea) {
     auto mlcController =
         AbstractStreamAwareController::getController(mlcMachineId);
     auto mlcSE = mlcController->getMLCStreamEngine();
     // StreamAck is also disguised as StreamData.
     mlcSE->receiveStreamData(*msg);
-    LLC_SLICE_DPRINTF(sliceId, "Send ideal StreamAck to MLC.\n");
+    LLC_SLICE_DPRINTF(sliceId, "Send ideal %s to MLC.\n",
+                      CoherenceResponseType_to_string(msg->m_Type));
   } else {
     /**
      * This should match with LLC controller l2_response_latency.
@@ -1326,8 +1380,29 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
     this->streamResponseMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
-    LLC_SLICE_DPRINTF(sliceId, "Send StreamAck to MLC.\n");
+    LLC_SLICE_DPRINTF(sliceId, "Send %s to MLC.\n",
+                      CoherenceResponseType_to_string(msg->m_Type));
   }
+}
+
+void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
+                                          bool forceIdea) {
+
+  // For StreamAck, we do not care about the address?
+  auto paddrLine = 0;
+  auto msg = this->createStreamMsgToMLC(
+      sliceId, CoherenceResponseType_STREAM_ACK, paddrLine, nullptr, 0, 0);
+  this->issueStreamMsgToMLC(msg, forceIdea);
+}
+
+void LLCStreamEngine::issueStreamDataToMLC(const DynamicStreamSliceId &sliceId,
+                                           Addr paddrLine, uint8_t *data,
+                                           int size, int lineOffset,
+                                           bool forceIdea) {
+  auto msg =
+      this->createStreamMsgToMLC(sliceId, CoherenceResponseType_DATA_EXCLUSIVE,
+                                 paddrLine, data, size, lineOffset);
+  this->issueStreamMsgToMLC(msg, forceIdea);
 }
 
 void LLCStreamEngine::migrateStreams() {
@@ -1556,7 +1631,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
               Addr elementVAddr = predConfig.addrGenCallback->genAddr(
                   idx, predConfig.addrGenFormalParams, getBaseStreamValue);
               sliceId.vaddr = elementVAddr;
-              sliceId.size = dynPredS->getElementSize();
+              sliceId.size = dynPredS->getMemElementSize();
               LLC_SLICE_DPRINTF_(
                   LLCRubyStreamStore, sliceId,
                   "StreamStore predicated off, send back StreamAck.\n");
@@ -1606,7 +1681,7 @@ void LLCStreamEngine::extractElementDataFromSlice(
   } else {
     elementVAddr = stream->slicedStream.getElementVAddr(elementIdx);
   }
-  auto elementSize = stream->getElementSize();
+  auto elementSize = stream->getMemElementSize();
 
   // Get the LLCStreamElement.
   if (stream->idxToElementMap.count(elementIdx) == 0) {
@@ -1660,7 +1735,7 @@ void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,
                                         uint64_t updateValue) {
   // TODO: Handle multi-line element.
   auto elementVAddr = stream->slicedStream.getElementVAddr(elementIdx);
-  auto elementSize = stream->getElementSize();
+  auto elementSize = stream->getMemElementSize();
   auto elementLineOffset = elementVAddr % RubySystem::getBlockSizeBytes();
   assert(elementLineOffset + elementSize <= RubySystem::getBlockSizeBytes() &&
          "Cannot support multi-line element with indirect streams yet.");
@@ -1700,25 +1775,14 @@ void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
   delete pkt;
 }
 
-void LLCStreamEngine::performStreamAtomicRMW(
-    LLCDynamicStreamPtr stream, const DynamicStreamSliceId &sliceId) {
+uint64_t
+LLCStreamEngine::performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
+                                       LLCDynamicStreamPtr stream,
+                                       const DynamicStreamSliceId &sliceId) {
   assert(sliceId.getNumElements() == 1 &&
          "Can not support multi-element atomic op.");
   auto S = stream->getStaticStream();
-  auto elementSize = S->getElementSize();
-
-  /**
-   * Hack: Due to my stupid implementation, for sliced stream, sliceId.vaddr
-   * is always line address. To get the real element vaddr, I have to be
-   * careful.
-   */
-  auto elementVAddr = sliceId.vaddr;
-  if (S->isDirectMemStream()) {
-    elementVAddr = stream->slicedStream.getElementVAddr(sliceId.lhsElementIdx);
-  }
-  Addr elementPAddr;
-  assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
-         "Fault on vaddr of LLCAtomicRMWStream.");
+  auto elementSize = S->getMemElementSize();
 
   auto rubySystem = this->controller->params()->ruby_system;
   assert(rubySystem->getAccessBackingStore() &&
@@ -1732,11 +1796,9 @@ void LLCStreamEngine::performStreamAtomicRMW(
    * Create the atomic op.
    */
   const auto &formalParams = stream->configData.storeFormalParams;
-  auto params = S->setupAtomicRMWParamV(formalParams);
   FIFOEntryIdx entryIdx(sliceId.streamId);
   entryIdx.entryIdx = sliceId.lhsElementIdx;
-  auto atomicOp = m5::make_unique<StreamAtomicOp>(
-      S, entryIdx, elementSize, params, stream->configData.storeCallback);
+  auto atomicOp = S->setupAtomicOp(entryIdx, elementSize, formalParams);
 
   /**
    * Create the packet.
@@ -1763,6 +1825,15 @@ void LLCStreamEngine::performStreamAtomicRMW(
   LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                      "Functional accessed pkt, isWrite %d.\n", pkt->isWrite());
 
+  // Get the loaded value.
+  uint64_t loadedValue = 0;
+  {
+    auto atomicOp = dynamic_cast<StreamAtomicOp *>(pkt->getAtomicOp());
+    loadedValue = atomicOp->getLoadedValue();
+  }
+
   // Don't forget to release the packet.
   delete pkt;
+
+  return loadedValue;
 }

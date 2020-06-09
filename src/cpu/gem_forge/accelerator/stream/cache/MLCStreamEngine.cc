@@ -241,7 +241,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
 void MLCStreamEngine::receiveStreamDataForSingleSlice(
     const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
     Addr paddrLine) {
-  MLC_SLICE_DPRINTF(sliceId, "SE received data %#x.\n", sliceId.vaddr);
+  MLC_SLICE_DPRINTF(sliceId, "SE received data vaddr %#x.\n", sliceId.vaddr);
   for (auto &iter : this->idToStreamMap) {
     if (iter.second->getDynamicStreamId() == sliceId.streamId) {
       // Found the stream.
@@ -280,24 +280,27 @@ bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {
 
 bool MLCStreamEngine::isStreamOffloaded(const DynamicStreamSliceId &slice) {
   assert(this->isStreamRequest(slice) && "Should be a stream request.");
-  auto stream = this->getMLCDynamicStreamFromSlice(slice);
-  auto staticStream = stream->getStaticStream();
-  // So far always offload for load stream.
-  if (staticStream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
-    return true;
-  }
-  return false;
+  return true;
+  // auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  // auto staticStream = stream->getStaticStream();
+  // // So far always offload for load stream.
+  // if (staticStream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
+  //   return true;
+  // }
+  // return false;
 }
 
 bool MLCStreamEngine::isStreamCached(const DynamicStreamSliceId &slice) {
   assert(this->isStreamRequest(slice) && "Should be a stream request.");
-  auto stream = this->getMLCDynamicStreamFromSlice(slice);
-  auto staticStream = stream->getStaticStream();
-  // So far do not cache for load stream.
-  if (staticStream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
-    return false;
-  }
-  return true;
+  // So far no stream is cached.
+  return false;
+  // auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  // auto staticStream = stream->getStaticStream();
+  // // So far do not cache for load stream.
+  // if (staticStream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
+  //   return false;
+  // }
+  // return true;
 }
 
 bool MLCStreamEngine::receiveOffloadStreamRequest(

@@ -41,14 +41,14 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
                                    CacheStreamConfigureData *_configData)
     : configData(*_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      maxWaitingDataBaseRequests(_controller->getLLCStreamMaxInflyRequest()),
+      maxInflyRequests(_controller->getLLCStreamMaxInflyRequest()),
       controller(_controller), sliceIdx(0),
       allocatedSliceIdx(_configData->initAllocatedIdx),
-      waitingDataBaseRequests(0) {
+      inflyRequests(0) {
   if (this->configData.isPointerChase) {
     // Pointer chase stream can only have at most one base requests waiting for
     // data.
-    this->maxWaitingDataBaseRequests = 1;
+    this->maxInflyRequests = 1;
   }
   if (this->getStaticStream()->isReduction()) {
     // Copy the initial reduction value.

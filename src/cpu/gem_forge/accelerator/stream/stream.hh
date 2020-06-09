@@ -4,6 +4,7 @@
 #include "cache/CacheStreamConfigureData.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
 #include "dyn_stream.hh"
+#include "stream_atomic_op.hh"
 #include "stream_element.hh"
 #include "stream_float_tracer.hh"
 #include "stream_statistic.hh"
@@ -67,10 +68,12 @@ public:
 
   const std::string &getStreamName() const { return this->streamName; }
   virtual ::LLVM::TDG::StreamInfo_Type getStreamType() const = 0;
+  bool isAtomicStream() const;
   bool isMemStream() const;
   virtual uint32_t getLoopLevel() const = 0;
   virtual uint32_t getConfigLoopLevel() const = 0;
-  virtual int32_t getElementSize() const = 0;
+  virtual int32_t getMemElementSize() const = 0;
+  virtual int32_t getCoreElementSize() const = 0;
   virtual bool getFloatManual() const = 0;
 
   virtual bool hasUpdate() const = 0;
@@ -90,12 +93,16 @@ public:
   virtual const StreamIdList &getMergedLoadStoreDepStreams() const = 0;
   virtual const StreamIdList &getMergedLoadStoreBaseStreams() const = 0;
   virtual const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const = 0;
+  virtual bool enabledStoreFunc() const = 0;
+  virtual const ::LLVM::TDG::ExecFuncInfo &getLoadFuncInfo() const = 0;
+  virtual bool enabledLoadFunc() const {
+    return this->getLoadFuncInfo().name() != "";
+  }
   virtual bool isMerged() const {
     return this->isMergedPredicated() || this->isMergedLoadStoreDepStream();
   }
   virtual bool isMergedPredicated() const = 0;
   virtual bool isMergedLoadStoreDepStream() const = 0;
-  virtual bool enabledStoreFunc() const = 0;
   virtual const ::LLVM::TDG::StreamParam &getConstUpdateParam() const = 0;
   /**
    * Get coalesce base stream, 0 for invalid.
@@ -306,8 +313,9 @@ public:
 
   AddrGenCallbackPtr &getAddrGenCallback() { return this->addrGenCallback; }
 
-  DynamicStreamParamV
-  setupAtomicRMWParamV(const DynamicStreamFormalParamV formalParams) const;
+  std::unique_ptr<StreamAtomicOp>
+  setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
+                const DynamicStreamFormalParamV &formalParams);
 
 protected:
   StreamSet baseStepStreams;
@@ -317,6 +325,7 @@ protected:
   AddrGenCallbackPtr addrGenCallback;
   ExecFuncPtr predCallback;
   ExecFuncPtr storeCallback;
+  ExecFuncPtr loadCallback;
 
   /**
    * Total allocated elements among all dynamic streams.

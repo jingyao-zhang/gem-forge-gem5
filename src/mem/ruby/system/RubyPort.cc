@@ -351,6 +351,8 @@ RubyPort::MemSlavePort::recvAtomic(PacketPtr pkt)
         // This line should be removed once Ruby supplies the official version
         // of data.
         auto backStore = ruby_port->m_ruby_system->getPhysMem();
+        assert(!pkt->req->noRubyBackingStore()
+            && "Cannot diable RubyBackingStore in AtomicAccess.");
         return backStore->recvAtomic(pkt);
     }
 
@@ -409,6 +411,8 @@ RubyPort::MemSlavePort::recvFunctional(PacketPtr pkt)
         // The following command performs the real functional access.
         // This line should be removed once Ruby supplies the official version
         // of data.
+        assert(!pkt->req->noRubyBackingStore()
+            && "Cannot diable RubyBackingStore in FunctionalAccess.");
         rs->getPhysMem()->functionalAccess(pkt);
     } else {
         bool accessSucceeded = false;
@@ -576,7 +580,13 @@ RubyPort::MemSlavePort::hitCallback(PacketPtr pkt)
     RubyPort *ruby_port = static_cast<RubyPort *>(&owner);
     RubySystem *rs = ruby_port->m_ruby_system;
     if (accessPhysMem) {
-        rs->getPhysMem()->access(pkt);
+        // ! GemForge
+        if (!pkt->req->noRubyBackingStore()) {
+            // Sometimes we don't want to access backing store.
+            rs->getPhysMem()->access(pkt);
+        } else if (needsResponse) {
+            pkt->makeResponse();
+        }
     } else if (needsResponse) {
         pkt->makeResponse();
     }

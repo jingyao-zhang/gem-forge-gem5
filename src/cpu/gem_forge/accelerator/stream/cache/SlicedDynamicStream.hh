@@ -40,7 +40,7 @@ public:
    * Helper function to get element vaddr and size.
    */
   Addr getElementVAddr(uint64_t elementIdx) const;
-  int32_t getElementSize() const { return this->elementSize; }
+  int32_t getMemElementSize() const { return this->elementSize; }
   float getElementPerSlice() const { return this->elementPerSlice; }
 
 private:

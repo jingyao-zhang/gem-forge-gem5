@@ -286,7 +286,21 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
    * ! So far all requests are in cache line size.
    */
   auto data = pkt->getPtr<uint8_t>();
-  this->setValue(vaddr, size, data);
+  /**
+   * For atomic stream, we have to use the StreamAtomicOp' s LoadedValue.
+   */
+  auto S = this->stream;
+  if (S->isAtomicStream() && pkt->isAtomicOp()) {
+    auto atomicOp = pkt->getAtomicOp();
+    auto streamAtomicOp = dynamic_cast<StreamAtomicOp *>(atomicOp);
+    assert(streamAtomicOp && "Missing StreamAtomicOp.");
+    auto loadedValue = streamAtomicOp->getLoadedValue();
+    // * We should not use block addr/size for atomic op.
+    this->setValue(memAccess->vaddr, S->getCoreElementSize(),
+                   reinterpret_cast<uint8_t *>(&loadedValue));
+  } else {
+    this->setValue(vaddr, size, data);
+  }
 
   // Clear the receiver.
   block.memAccess = nullptr;
@@ -381,7 +395,7 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
         this->FIFOIdx.entryIdx, dynStream.addrGenFormalParams, getStreamValue);
   }
 
-  this->size = stream->getElementSize();
+  this->size = stream->getMemElementSize();
 
   S_ELEMENT_DPRINTF(this, "MarkAddrReady vaddr %#x size %d.\n", this->addr,
                     this->size);
@@ -485,8 +499,14 @@ void StreamElement::setValue(StreamElement *prevElement) {
 void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
   // Copy the data.
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
-  S_ELEMENT_DPRINTF(this, "SetValue [%#x, %#x), initOffset %d.\n", vaddr,
-                    vaddr + size, initOffset);
+  if (Debug::DEBUG_TYPE) {
+    std::stringstream ss;
+    for (auto i = 0; i < size; ++i) {
+      ss << ' ' << std::hex << static_cast<int>(val[i]) << std::dec;
+    }
+    S_ELEMENT_DPRINTF(this, "SetValue [%#x, %#x), initOffset %d, data 0x%s.\n",
+                      vaddr, vaddr + size, initOffset, ss.str());
+  }
   for (int i = 0; i < size; ++i) {
     this->value.at(i + initOffset) = val[i];
   }
@@ -512,6 +532,15 @@ void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
 void StreamElement::getValue(Addr vaddr, int size, uint8_t *val) const {
   // Copy the data.
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
+  if (Debug::DEBUG_TYPE) {
+    std::stringstream ss;
+    for (auto i = 0; i < size; ++i) {
+      ss << ' ' << std::hex << static_cast<int>(this->value.at(i + initOffset))
+         << std::dec;
+    }
+    S_ELEMENT_DPRINTF(this, "GetValue [%#x, %#x), initOffset %d, data 0x%s.\n",
+                      vaddr, vaddr + size, initOffset, ss.str());
+  }
   for (int i = 0; i < size; ++i) {
     val[i] = this->value.at(i + initOffset);
   }

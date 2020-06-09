@@ -29,7 +29,12 @@ public:
   int32_t getCoalesceOffset() const {
     return this->info.coalesce_info().offset();
   }
-  int32_t getElementSize() const { return this->info.element_size(); }
+  int32_t getMemElementSize() const {
+    return this->info.static_info().mem_element_size();
+  }
+  int32_t getCoreElementSize() const {
+    return this->info.static_info().core_element_size();
+  }
   uint64_t getStreamId() const { return this->info.id(); }
   const Stream::StreamIdList &getMergedLoadStoreDepStreams() const {
     return this->info.static_info().merged_load_store_dep_streams();
@@ -39,6 +44,9 @@ public:
   }
   const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const {
     return this->info.static_info().store_func_info();
+  }
+  const ::LLVM::TDG::ExecFuncInfo &getLoadFuncInfo() const {
+    return this->info.static_info().load_func_info();
   }
 
   LLVM::TDG::StreamInfo info;
@@ -66,9 +74,16 @@ public:
   ::LLVM::TDG::StreamInfo_Type getStreamType() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;
-  int32_t getElementSize() const override {
+  int32_t getMemElementSize() const override {
     assert(this->coalescedElementSize > 0 && "Invalid element size.");
     return this->coalescedElementSize;
+  }
+  int32_t getCoreElementSize() const override {
+    if (this->coalescedStreams.size() == 1) {
+      return this->primeLStream->getCoreElementSize();
+    }
+    // For coalesced stream CoreElementSize is the same as MemElementSize.
+    return this->getMemElementSize();
   }
   bool getFloatManual() const override;
   bool hasUpdate() const override;
@@ -84,6 +99,9 @@ public:
   }
   const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const override {
     return this->primeLStream->getStoreFuncInfo();
+  }
+  const ::LLVM::TDG::ExecFuncInfo &getLoadFuncInfo() const override {
+    return this->primeLStream->getLoadFuncInfo();
   }
 
   bool isMergedPredicated() const override;

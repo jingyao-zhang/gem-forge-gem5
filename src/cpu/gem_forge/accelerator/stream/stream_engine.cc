@@ -683,7 +683,7 @@ bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
      * 2. If offloaded, we have to check for StreamAck.
      */
     if (S->enabledStoreFunc()) {
-      if (dynS.offloadedToCache) {
+      if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue()) {
         if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
           // S_DPRINTF(S, "Can not step as no Ack for %llu.\n",
           //           stepElement->FIFOIdx.entryIdx);
@@ -1485,7 +1485,8 @@ void StreamEngine::generateCoalescedStreamIdMap(
         break;
       } else {
         // The expansion keeps going.
-        endOffset = std::max(endOffset, offset + streamInfo->element_size());
+        endOffset = std::max(
+            endOffset, offset + streamInfo->static_info().mem_element_size());
       }
     }
   }
@@ -2200,6 +2201,7 @@ void StreamEngine::issueElement(StreamElement *element) {
   S_ELEMENT_DPRINTF(element, "Issue.\n");
 
   auto S = element->stream;
+  auto dynS = element->dynS;
   if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
     if (element->flushed) {
       S_ELEMENT_DPRINTF(element, "Reissue.\n");
@@ -2253,10 +2255,56 @@ void StreamEngine::issueElement(StreamElement *element) {
 
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
-    auto pkt = GemForgePacketHandler::createGemForgePacket(
-        paddr, packetSize, memAccess, nullptr, cpuDelegator->dataMasterId(),
-        0 /* ContextId */, 0 /* PC */);
-    pkt->req->setVirt(vaddr);
+    PacketPtr pkt = nullptr;
+    if (S->isAtomicStream() && S->enabledStoreFunc()) {
+      // Special case to handle computation for atomic stream at CoreSE.
+      if (element->cacheBlocks != 1) {
+        S_ELEMENT_PANIC(element, "Illegal # of CacheBlocks %d for AtomicOp.",
+                        element->cacheBlocks);
+      }
+      if (!dynS->offloadedToCache) {
+        auto atomicOp = S->setupAtomicOp(element->FIFOIdx, element->size,
+                                         dynS->storeFormalParams);
+        /**
+         * * We should use element address here, not line address.
+         */
+        auto elementVAddr = cacheBlockBreakdown.virtualAddr;
+        auto lineOffset = elementVAddr % cpuDelegator->cacheLineSize();
+        auto elementPAddr = paddr + lineOffset;
+
+        pkt = GemForgePacketHandler::createGemForgeAMOPacket(
+            elementVAddr, elementPAddr, element->size, memAccess,
+            cpuDelegator->dataMasterId(), 0 /* ContextId */, 0 /* PC */,
+            std::move(atomicOp));
+      } else {
+        /**
+         * For offloaded atomic stream, we issue normal load requests,
+         * but marked NO_RUBY_BACK_STORE to avoid RubySequencer overwrite
+         * the result with backing storage, and NO_RUBY_SEQUENCER_COALESCE
+         * to avoid being load-to-load forwarded.
+         */
+        Request::Flags flags;
+        flags.set(Request::NO_RUBY_BACK_STORE);
+        flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
+        pkt = GemForgePacketHandler::createGemForgePacket(
+            paddr, packetSize, memAccess, nullptr /* Data */,
+            cpuDelegator->dataMasterId(), 0 /* ContextId */, 0 /* PC */, flags);
+        pkt->req->setVirt(vaddr);
+      }
+    } else {
+      /**
+       * For offloaded streams, they rely on this request to advance in MLC.
+       * Disable RubySequencer coalescing for that.
+       */
+      Request::Flags flags;
+      if (dynS->offloadedToCache) {
+        flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
+      }
+      pkt = GemForgePacketHandler::createGemForgePacket(
+          paddr, packetSize, memAccess, nullptr /* Data */,
+          cpuDelegator->dataMasterId(), 0 /* ContextId */, 0 /* PC */, flags);
+      pkt->req->setVirt(vaddr);
+    }
     pkt->req->getStatistic()->isStream = true;
     S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1, vaddr,
                       packetSize);
@@ -2700,6 +2748,10 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
     return;
   }
   auto S = element->stream;
+  // Never do this for atomic streams.
+  if (S->isAtomicStream()) {
+    return;
+  }
   if (!S->isDirectMemStream()) {
     return;
   }
@@ -2798,8 +2850,8 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
     S_ELEMENT_PANIC(element, "Fault on AtomicOp vaddr %#x.", vaddr);
   }
   auto pkt = GemForgePacketHandler::createGemForgeAMOPacket(
-      vaddr, paddr, size, cpuDelegator->dataMasterId(), 0 /* ContextId */,
-      0 /* PC */, std::move(atomicOp));
+      vaddr, paddr, size, nullptr /* Handler */, cpuDelegator->dataMasterId(),
+      0 /* ContextId */, 0 /* PC */, std::move(atomicOp));
   auto S = element->stream;
   S->statistic.numIssuedRequest++;
   // Send the packet to translation.

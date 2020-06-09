@@ -438,6 +438,15 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
            assert(in_msg.slice.isValid());
            se.receiveOffloadStreamRequestHit(in_msg.slice);
            trigger(Event:L0_FwdStreamReq, in_msg.addr, cache_entry, tbe);
+        } else if (in_msg.Class == CoherenceClass:STREAM_TO_MLC) {
+          /**
+           * This stream request should directly be served by MLC SE.
+           * Bypass our cache level.
+           */
+           assert(in_msg.slice.isValid());
+           se.receiveOffloadStreamRequest(in_msg.slice);
+           // We reuse this event to release the incoming message.
+           trigger(Event:L0_FwdStreamReq, in_msg.addr, cache_entry, tbe);
         } else {
 
           // Stream-aware logic.

@@ -4,9 +4,8 @@ GemForgePacketReleaseHandler GemForgePacketReleaseHandler::instance;
 
 PacketPtr GemForgePacketHandler::createGemForgePacket(
     Addr paddr, int size, GemForgePacketHandler *handler, uint8_t *data,
-    MasterID masterID, int contextId, Addr pc) {
-  RequestPtr req =
-      std::make_shared<Request>(paddr, size, 0 /* Flags */, masterID);
+    MasterID masterID, int contextId, Addr pc, Request::Flags flags) {
+  RequestPtr req = std::make_shared<Request>(paddr, size, flags, masterID);
   if (pc != 0) {
     req->setPC(pc);
   }
@@ -29,8 +28,8 @@ PacketPtr GemForgePacketHandler::createGemForgePacket(
 }
 
 PacketPtr GemForgePacketHandler::createGemForgeAMOPacket(
-    Addr vaddr, Addr paddr, int size, MasterID masterID, int contextId, Addr pc,
-    AtomicOpFunctorPtr atomicOp) {
+    Addr vaddr, Addr paddr, int size, GemForgePacketHandler *handler,
+    MasterID masterID, int contextId, Addr pc, AtomicOpFunctorPtr atomicOp) {
   Request::Flags flags;
   flags.set(Request::ATOMIC_RETURN_OP);
 
@@ -44,7 +43,9 @@ PacketPtr GemForgePacketHandler::createGemForgeAMOPacket(
   uint8_t *pkt_data = new uint8_t[req->getSize()];
   pkt->dataDynamic(pkt_data);
   // Push the dummy release handler as the SenderState.
-  auto handler = GemForgePacketReleaseHandler::get();
+  if (!handler) {
+    handler = GemForgePacketReleaseHandler::get();
+  }
   pkt->pushSenderState(handler);
   return pkt;
 }
