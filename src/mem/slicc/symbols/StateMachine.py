@@ -62,6 +62,7 @@ python_class_map = {
                     "MessageBuffer": "MessageBuffer",
                     "DMASequencer": "DMASequencer",
                     "RubyPrefetcher":"RubyPrefetcher",
+                    "RubyBingoPrefetcher": "RubyBingoPrefetcher",
                     "Cycles":"Cycles",
                    }
 
@@ -97,7 +98,8 @@ class StateMachine(Symbol):
 
             self.symtab.registerSym(param.ident, var)
 
-            if str(param.type_ast.type) == "RubyPrefetcher":
+            typeStr = str(param.type_ast.type)
+            if typeStr == "RubyPrefetcher" or typeStr == 'RubyBingoPrefetcher':
                 self.prefetchers.append(var)
 
         self.states = OrderedDict()
@@ -693,7 +695,11 @@ $c_ident::init()
         # Set the prefetchers
         code()
         for prefetcher in self.prefetchers:
-            code('${{prefetcher.code}}.setController(this);')
+            code('''
+if (m_${{prefetcher.ident}}_ptr != NULL) {
+    m_${{prefetcher.ident}}_ptr->setController(this);
+}''')
+            # code('${{prefetcher.code}}.setController(this);')
 
         code()
         for port in self.in_ports:

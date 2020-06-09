@@ -35,6 +35,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
    bool send_evictions;
    
    RubyPrefetcher * prefetcher;
+   RubyBingoPrefetcher * bingoPrefetcher;
    bool enable_prefetch := "False";
 
    // From this node's L0 cache to the network
@@ -193,6 +194,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
+  Addr getPC(PacketPtr);
 
   // inclusive cache returns L0 entries only
   Entry getCacheEntry(Addr addr), return_by_pointer="yes" {
@@ -867,6 +869,15 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
          desc="Deallocate L1 cache block.") {
     if (Dcache.isTagPresent(address)) {
       Dcache.deallocate(address);
+      /**
+       * ! GemForge
+       * Although it's called observeFill, BingoPrefetcher only
+       * cares about evicted address, so we call it here.
+       */
+      if (bingoPrefetcher.isEnabled()) {
+        Addr evictedAddr := address;
+        bingoPrefetcher.observeEvict(evictedAddr);
+      }
     } else {
       Icache.deallocate(address);
     }
@@ -919,17 +930,29 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
    */
   action(ph_observeHit, "\ph", desc="Inform the prefetcher about the hit") {
     peek(mandatoryQueue_in, RubyRequest) {
+      Addr req_address := in_msg.LineAddress;
+      RubyRequestType type := in_msg.Type;
+      Addr pc := getPC(in_msg.pkt);
       if (cache_entry.isPrefetch) {
-        prefetcher.observePfHit(in_msg.LineAddress);
+        prefetcher.observePfHit(req_address);
         cache_entry.isPrefetch := false;
+      }
+      if (bingoPrefetcher.isEnabled()) {
+        bingoPrefetcher.observeReq(req_address, pc, true, type);
       }
     }
   }
 
   action(pm_observeMiss, "\po", desc="Inform the prefetcher about the miss") {
     peek(mandatoryQueue_in, RubyRequest) {
+      Addr req_address := in_msg.LineAddress;
+      RubyRequestType type := in_msg.Type;
+      Addr pc := getPC(in_msg.pkt);
       if (enable_prefetch) {
-        prefetcher.observeMiss(in_msg.LineAddress, in_msg.Type);
+        prefetcher.observeMiss(req_address, in_msg.Type);
+      }
+      if (bingoPrefetcher.isEnabled()) {
+        bingoPrefetcher.observeReq(req_address, pc, false, type);
       }
     }
   }

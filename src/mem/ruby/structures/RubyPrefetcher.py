@@ -62,3 +62,22 @@ class RubyPrefetcher(SimObject):
 class Prefetcher(RubyPrefetcher):
     """DEPRECATED"""
     pass
+
+
+class RubyBingoPrefetcher(SimObject):
+    type = 'RubyBingoPrefetcher'
+    cxx_class = 'RubyBingoPrefetcher'
+    cxx_header = 'mem/ruby/structures/RubyBingoPrefetcher.hh'
+
+    sys = Param.System(Parent.any, "System this prefetcher belongs to")
+
+    enabled = Param.Bool(False, 'Enable this prefetcher')
+    region_size = Param.UInt32(2 * 1024, 'Size of spatial region, default 2kB')
+    pc_width = Param.UInt32(16, '# of PC bits used in PHT')
+    min_addr_width = Param.UInt32(5, '# of Address bits used for PC+Offset matching')
+    max_addr_width = Param.UInt32(16, '# of Address bits used for PC+Address matching')
+    ft_size = Param.UInt32(64, 'size of filter table')
+    at_size = Param.UInt32(128, 'size of accumulation table')
+    pht_size = Param.UInt32(8 * 1024, 'size of pattern history table (PHT)')
+    pht_ways = Param.UInt32(16, 'associativity of PHT')
+    pf_streamer_size = Param.UInt32(128, 'size of prefetch streamer')

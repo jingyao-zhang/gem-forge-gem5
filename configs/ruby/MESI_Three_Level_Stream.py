@@ -119,6 +119,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 cross_page = True
             )
 
+            bingo_prefetcher = RubyBingoPrefetcher(
+                enabled=(options.gem_forge_prefetcher == 'bingo'),
+            )
+
             # the ruby random tester reuses num_cpus to specify the
             # number of cpu ports connected to the tester object, which
             # is stored in system.cpu. because there is only ever one
@@ -133,7 +137,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
             l0_cntrl = L0Cache_Controller(
                 version = i * num_cpus_per_cluster + j, Icache = l0i_cache,
-                Dcache = l0d_cache, prefetcher=prefetcher,
+                Dcache = l0d_cache,
+                prefetcher=prefetcher,
+                bingoPrefetcher=bingo_prefetcher,
                 send_evictions = send_evicts(options),
                 clk_domain = clk_domain, ruby_system = ruby_system,
                 # ! Sean: l0_cntrl is actually L1 cache.

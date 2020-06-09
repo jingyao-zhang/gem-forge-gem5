@@ -46,7 +46,7 @@ parser.add_option("--llvm-prefetch", action="store", type="int",
 parser.add_option("--gem-forge-ideal-prefetcher-distance", action="store",
                   type="int", help="""whether to use an ideal prefetcher""", default=400)
 parser.add_option("--gem-forge-prefetcher", type="choice", default="none",
-                  choices=['none', 'stride', 'imp', 'isb'],
+                  choices=['none', 'stride', 'imp', 'isb', 'bingo'],
                   help="Type of prefetcher we are using.")
 parser.add_option("--gem-forge-prefetch-on-access", action="store_true",
                   help="""whether to prefetch on every access""", default=False)

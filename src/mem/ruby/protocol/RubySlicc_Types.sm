@@ -260,5 +260,11 @@ structure (RubyPrefetcher, external = "yes") {
     void observePfMiss(Addr);
 }
 
+structure (RubyBingoPrefetcher, external = "yes") {
+  bool isEnabled();
+  void observeReq(Addr, Addr, bool, RubyRequestType);
+  void observeEvict(Addr);
+}
+
 structure (RequestStatisticPtr, external="yes") {
 }
