@@ -135,6 +135,8 @@ namespace X86ISA
 
     void PageFault::invoke(ThreadContext * tc, const StaticInstPtr &inst)
     {
+        DPRINTF(Faults, "PageFault cpu %d %#x at PC: %s\n",
+            tc->cpuId(), addr, tc->pcState());
         if (FullSystem) {
             /* Invalidate any matching TLB entries before handling the page fault */
             tc->getITBPtr()->demapPage(addr, 0);

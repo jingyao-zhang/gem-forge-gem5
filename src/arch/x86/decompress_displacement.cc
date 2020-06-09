@@ -358,8 +358,9 @@ void Decoder::processCompressedDisplacement() {
       break;
     }
     default: {
-      panic("Don't know how to expand displacement for %#x %s.\n", this->origPC,
+      warn("Don't know how to expand displacement for %#x %s.\n", this->origPC,
             emi);
+      break;
     }
   }
   DPRINTF(Decoder, "Expand displacement pc %#x op %x %lld x %lld = %lld.\n",
