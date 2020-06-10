@@ -194,6 +194,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
+  bool hasPC(PacketPtr);
   Addr getPC(PacketPtr);
 
   // inclusive cache returns L0 entries only
@@ -932,12 +933,12 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     peek(mandatoryQueue_in, RubyRequest) {
       Addr req_address := in_msg.LineAddress;
       RubyRequestType type := in_msg.Type;
-      Addr pc := getPC(in_msg.pkt);
       if (cache_entry.isPrefetch) {
         prefetcher.observePfHit(req_address);
         cache_entry.isPrefetch := false;
       }
-      if (bingoPrefetcher.isEnabled()) {
+      if (bingoPrefetcher.isEnabled() && hasPC(in_msg.pkt)) {
+        Addr pc := getPC(in_msg.pkt);
         bingoPrefetcher.observeReq(req_address, pc, true, type);
       }
     }
@@ -947,11 +948,11 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     peek(mandatoryQueue_in, RubyRequest) {
       Addr req_address := in_msg.LineAddress;
       RubyRequestType type := in_msg.Type;
-      Addr pc := getPC(in_msg.pkt);
       if (enable_prefetch) {
         prefetcher.observeMiss(req_address, in_msg.Type);
       }
-      if (bingoPrefetcher.isEnabled()) {
+      if (bingoPrefetcher.isEnabled() && hasPC(in_msg.pkt)) {
+        Addr pc := getPC(in_msg.pkt);
         bingoPrefetcher.observeReq(req_address, pc, false, type);
       }
     }

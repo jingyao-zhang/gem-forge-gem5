@@ -146,6 +146,9 @@ class AbstractController : public ClockedObject, public Consumer
     const AddrRangeList &getAddrRanges() const { return addrRanges; }
 
     /** Used to get pc from packet. */
+    bool hasPC(PacketPtr pkt) const {
+      return pkt->req->hasPC();
+    }
     Addr getPC(PacketPtr pkt) const {
       return pkt->req->getPC();
     }
