@@ -2308,6 +2308,11 @@ void StreamEngine::issueElement(StreamElement *element) {
     pkt->req->getStatistic()->isStream = true;
     S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1, vaddr,
                       packetSize);
+    auto lineOffset = vaddr % cpuDelegator->cacheLineSize();
+    if (lineOffset + packetSize > cpuDelegator->cacheLineSize()) {
+      S_ELEMENT_PANIC(element, "Issued Multi-Line request to %#x size %d.",
+          vaddr, packetSize);
+    }
     S->statistic.numIssuedRequest++;
     element->dynS->incrementNumIssuedRequests();
     S->incrementInflyStreamRequest();

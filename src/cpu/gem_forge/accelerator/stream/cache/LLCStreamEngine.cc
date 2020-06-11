@@ -163,7 +163,10 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
          "Stream migrated to wrong LLC bank.\n");
 
   if (!this->controller->isStreamAdvanceMigrateEnabled()) {
-    assert(stream->inflyRequests == 0 && "Stream migrated with inflyRequests.");
+    if (!stream->hasIndirectDependent()) {
+      // This is only enforced when there is dependent streams.
+      assert(stream->inflyRequests == 0 && "Stream migrated with inflyRequests.");
+    }
     assert(stream->readyIndirectElements.empty() &&
            "Stream migrated with readyIndirectElements.");
   }

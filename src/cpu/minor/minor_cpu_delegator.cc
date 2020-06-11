@@ -561,6 +561,10 @@ void MinorCPUDelegator::sendRequest(PacketPtr pkt) {
     assert(lsq.dcachePort->sendTimingReqVirtual(pkt, false /* isCore */));
     return;
   }
+  auto lineBytes = this->cacheLineSize();
+  if ((pkt->getAddr() % lineBytes) + pkt->getSize() > lineBytes) {
+    panic("Multi-line packet paddr %#x size %d.", pkt->getAddr(), pkt->getSize());
+  }
 
   pimpl->pendingPkts.push_back(pkt);
   if (!pimpl->drainPendingPacketsEvent.scheduled()) {
