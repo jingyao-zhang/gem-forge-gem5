@@ -124,11 +124,17 @@ const std::string &TimingSimpleCPUDelegator::getTraceExtraFolder() const {
 bool TimingSimpleCPUDelegator::translateVAddrOracle(Addr vaddr, Addr &paddr) {
   auto process = pimpl->getProcess();
   auto pTable = process->pTable;
-  if (pTable->translate(vaddr, paddr)) {
-    return true;
-    return paddr;
+  if (!pTable->translate(vaddr, paddr)) {
+    // Due to the new MemState class and lazy allocation, it's possible
+    // that this page has not allocated. However, we want to simplify
+    // our life as before, so try to fix it?
+    if (process->fixupFault(vaddr)) {
+      // Try again.
+      return pTable->translate(vaddr, vaddr);
+    }
+    return false;
   }
-  return false;
+  return true;
 }
 
 void TimingSimpleCPUDelegator::sendRequest(PacketPtr pkt) {
