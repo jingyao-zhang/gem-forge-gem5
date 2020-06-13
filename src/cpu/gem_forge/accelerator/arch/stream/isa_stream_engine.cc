@@ -30,21 +30,42 @@ void ISAStreamEngine::dispatchStreamConfig(
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
 
-  ISA_SE_DPRINTF("Dispatch StreamConfig %llu, %s.\n", configIdx,
-                 infoRelativePath.c_str());
+  ISA_SE_DPRINTF("[dispatch] StreamConfig %llu, %s.\n", configIdx,
+                 infoRelativePath);
 
   // Initialize the regionStreamId translation table.
   const auto &info = this->getStreamRegion(configIdx);
-  this->insertRegionStreamIds(info);
 
   /**
    * Allocate the current DynStreamRegionInfo.
    */
-  assert(this->curStreamRegionInfo == nullptr &&
-         "Previous DynStreamRegionInfo is not released yet.");
-  this->curStreamRegionInfo =
-      std::make_shared<DynStreamRegionInfo>(infoRelativePath);
+  // Remember the inst info.
+  auto &instInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
+  auto &configInfo = instInfo.configInfo;
+  configInfo.dynStreamRegionInfo = std::make_shared<DynStreamRegionInfo>(
+      infoRelativePath, this->curStreamRegionInfo);
+  this->curStreamRegionInfo = configInfo.dynStreamRegionInfo;
+
   this->curStreamRegionInfo->numDispatchedInsts++;
+
+  if (configInfo.dynStreamRegionInfo->prevRegion) {
+    ISA_SE_DPRINTF("[dispatch] MustMisspeculated StreamConfig %llu, %s: Has "
+                   "previous region.\n",
+                   configIdx, infoRelativePath);
+    instInfo.mustBeMisspeculated = true;
+    instInfo.configInfo.dynStreamRegionInfo->mustBeMisspeculated = true;
+    return;
+  }
+
+  if (!this->canSetRegionStreamIds(info)) {
+    ISA_SE_DPRINTF("[dispatch] MustMisspeculated StreamConfig %llu, %s: Cannot "
+                   "set region stream table.\n",
+                   configIdx, infoRelativePath);
+    instInfo.mustBeMisspeculated = true;
+    instInfo.configInfo.dynStreamRegionInfo->mustBeMisspeculated = true;
+    return;
+  }
+  this->insertRegionStreamIds(info);
 
   // Initialize an empty InputVector for each configured stream.
   for (const auto &streamInfo : info.streams()) {
@@ -56,10 +77,6 @@ void ISAStreamEngine::dispatchStreamConfig(
             .second;
     assert(inserted && "InputVector already initialized.");
   }
-
-  // Remember the inst info.
-  auto &configInfo = this->createDynStreamInstInfo(dynInfo.seqNum).configInfo;
-  configInfo.dynStreamRegionInfo = this->curStreamRegionInfo;
 }
 
 bool ISAStreamEngine::canExecuteStreamConfig(
@@ -69,23 +86,40 @@ bool ISAStreamEngine::canExecuteStreamConfig(
 
 void ISAStreamEngine::executeStreamConfig(const GemForgeDynInstInfo &dynInfo,
                                           ExecContext &xc) {
-  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    return;
+  }
+  auto &configInfo = instInfo.configInfo;
   this->increamentStreamRegionInfoNumExecutedInsts(
       *(configInfo.dynStreamRegionInfo));
 }
 
 void ISAStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
+  auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
+  auto infoRelativePath = this->getRelativePath(configIdx);
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    panic("[commit] MustMisspeculated StreamConfig %llu, %s.", configIdx,
+          infoRelativePath);
+  }
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 void ISAStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
-
-  ISA_SE_DPRINTF("Rewind StreamConfig %llu, %s.\n", configIdx,
-                 infoRelativePath.c_str());
+  ISA_SE_DPRINTF("[rewind] StreamConfig MustMisspeculated %d %llu, %s.\n",
+                 instInfo.mustBeMisspeculated, configIdx, infoRelativePath);
+  if (instInfo.mustBeMisspeculated) {
+    // Simply do nothing.
+    this->curStreamRegionInfo = configInfo.dynStreamRegionInfo->prevRegion;
+    this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
+    return;
+  }
 
   // Check the current DynStreamRegionInfo.
   assert(this->curStreamRegionInfo == configInfo.dynStreamRegionInfo &&
@@ -99,7 +133,8 @@ void ISAStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
    * No need to notify the StreamEngine. It's StreamReady's job.
    * Just clear the curStreamRegionInfo.
    */
-  this->curStreamRegionInfo = nullptr;
+  this->curStreamRegionInfo = configInfo.dynStreamRegionInfo->prevRegion;
+  assert(!this->curStreamRegionInfo && "Has previous stream region?");
 
   // Clear the regionStreamId translation table.
   const auto &info = this->getStreamRegion(configIdx);
@@ -127,8 +162,16 @@ void ISAStreamEngine::dispatchStreamInput(
   this->curStreamRegionInfo->numDispatchedInsts++;
 
   // Remember the current DynStreamRegionInfo.
-  auto &configInfo = this->createDynStreamInstInfo(dynInfo.seqNum).configInfo;
+  auto &instInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
+  auto &configInfo = instInfo.configInfo;
   configInfo.dynStreamRegionInfo = this->curStreamRegionInfo;
+
+  // Check if the previous StreamConfig is misspeculated.
+  if (this->curStreamRegionInfo->mustBeMisspeculated) {
+    ISA_SE_DPRINTF("[dispatch] MustMisspeculated StreamInput.\n");
+    instInfo.mustBeMisspeculated = true;
+    return;
+  }
 
   // Remember the input info.
   auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
@@ -141,7 +184,7 @@ void ISAStreamEngine::dispatchStreamInput(
   auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
   auto &inputVec = inputMap.at(streamId);
   inputInfo.inputIdx = inputVec.size();
-  ISA_SE_DPRINTF("Dispatch StreamInput #%d %llu.\n", inputInfo.inputIdx,
+  ISA_SE_DPRINTF("[dispatch] StreamInput #%d %llu.\n", inputInfo.inputIdx,
                  inputInfo.translatedStreamId);
   inputVec.emplace_back(DynStreamRegionInfo::StreamInputValue{0});
 }
@@ -153,7 +196,14 @@ bool ISAStreamEngine::canExecuteStreamInput(
 
 void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
                                          ExecContext &xc) {
-  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    ISA_SE_DPRINTF("[execute] MustMisspeculated StreamInput.\n");
+    return;
+  }
+
+  auto &configInfo = instInfo.configInfo;
 
   // Record the live input.
   auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
@@ -183,12 +233,22 @@ void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
 
 void ISAStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    panic("[commit] MustMisspeculated StreamInput.\n");
+  }
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 void ISAStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
-  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
-  auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    ISA_SE_DPRINTF("[rewind] MustMisspeculated StreamInput.\n");
+    this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
+    return;
+  }
+  auto &configInfo = instInfo.configInfo;
+  auto &inputInfo = instInfo.inputInfo;
   auto &regionInfo = configInfo.dynStreamRegionInfo;
 
   // Check if I executed.
@@ -200,7 +260,7 @@ void ISAStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
   regionInfo->numDispatchedInsts--;
 
   // Release the inputVec.
-  ISA_SE_DPRINTF("Rewind StreamInput #%d %llu.\n", inputInfo.inputIdx,
+  ISA_SE_DPRINTF("[rewind] StreamInput #%d %llu.\n", inputInfo.inputIdx,
                  inputInfo.translatedStreamId);
   auto &inputVec = regionInfo->inputMap.at(inputInfo.translatedStreamId);
   assert(inputVec.size() == inputInfo.inputIdx + 1 && "Mismatch input index.");
@@ -222,8 +282,12 @@ bool ISAStreamEngine::canDispatchStreamReady(
    * dispatchStreamConfig should have allocated curStreamRegionInfo.
    */
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
+  if (this->curStreamRegionInfo->mustBeMisspeculated) {
+    ISA_SE_DPRINTF("[canDispatch] MustMisspeculated StreamReady.\n");
+    return true;
+  }
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
-  ISA_SE_DPRINTF("CanDispatch StreamReady %s.\n", infoRelativePath);
+  ISA_SE_DPRINTF("[canDispatch] StreamReady %s.\n", infoRelativePath);
 
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
@@ -234,21 +298,30 @@ void ISAStreamEngine::dispatchStreamReady(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
+  auto &instInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
+  // Remember the current DynStreamRegionInfo.
+  auto &configInfo = instInfo.configInfo;
+  configInfo.dynStreamRegionInfo = this->curStreamRegionInfo;
+
+  if (this->curStreamRegionInfo->mustBeMisspeculated) {
+    // Handle must be misspeculated.
+    ISA_SE_DPRINTF("[dispatch] MustMisspeculated StreamReady.\n");
+    instInfo.mustBeMisspeculated = true;
+    // Release the current DynStreamRegionInfo.
+    this->curStreamRegionInfo = nullptr;
+    return;
+  }
+
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath,
                                         nullptr /* InputVec */, dynInfo.tc);
   auto se = this->getStreamEngine();
   se->dispatchStreamConfig(args);
-  ISA_SE_DPRINTF("Dispatch StreamReady %s.\n", infoRelativePath.c_str());
+  ISA_SE_DPRINTF("[dispatch] StreamReady %s.\n", infoRelativePath.c_str());
 
   this->curStreamRegionInfo->numDispatchedInsts++;
   this->curStreamRegionInfo->streamReadyDispatched = true;
   this->curStreamRegionInfo->streamReadySeqNum = dynInfo.seqNum;
-
-  // Remember the current DynStreamRegionInfo.
-  auto &configInfo = this->createDynStreamInstInfo(dynInfo.seqNum).configInfo;
-  configInfo.dynStreamRegionInfo = this->curStreamRegionInfo;
-
   // Release the current DynStreamRegionInfo.
   this->curStreamRegionInfo = nullptr;
 }
@@ -260,32 +333,55 @@ bool ISAStreamEngine::canExecuteStreamReady(
 
 void ISAStreamEngine::executeStreamReady(const GemForgeDynInstInfo &dynInfo,
                                          ExecContext &xc) {
-  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    ISA_SE_DPRINTF("[execute] MustMisspeculated StreamReady.\n");
+    return;
+  }
+
+  auto &configInfo = instInfo.configInfo;
   this->increamentStreamRegionInfoNumExecutedInsts(
       *(configInfo.dynStreamRegionInfo));
 }
 
 void ISAStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    panic("[commit] MustMisspeculated StreamReady.\n");
+  }
+
   // Notifiy the StreamEngine.
-  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+  auto &configInfo = instInfo.configInfo;
   auto infoRelativePath = configInfo.dynStreamRegionInfo->infoRelativePath;
 
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
   se->commitStreamConfig(args);
-  ISA_SE_DPRINTF("Commit StreamReady %s.\n", infoRelativePath);
+  ISA_SE_DPRINTF("[commit] StreamReady %s.\n", infoRelativePath);
 
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
 void ISAStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
-  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &configInfo = instInfo.configInfo;
   auto &regionInfo = configInfo.dynStreamRegionInfo;
+
+  if (instInfo.mustBeMisspeculated) {
+    ISA_SE_DPRINTF("[rewind] MustMisspeculated StreamReady.\n");
+    // Restore the currentStreamRegion.
+    this->curStreamRegionInfo = regionInfo;
+
+    // Release the InstInfo.
+    this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
+    return;
+  }
+
   assert(regionInfo->streamReadyDispatched &&
          "StreamReady must be dispatched.");
 
-  ISA_SE_DPRINTF("Rewind StreamReady %s.\n", regionInfo->infoRelativePath);
+  ISA_SE_DPRINTF("[rewind] StreamReady %s.\n", regionInfo->infoRelativePath);
 
   // Check if the StreamReady is actually executed.
   if (regionInfo->numExecutedInsts == regionInfo->numDispatchedInsts) {
@@ -348,7 +444,7 @@ void ISAStreamEngine::dispatchStreamEnd(
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   const auto &infoRelativePath = this->getRelativePath(configIdx);
 
-  ISA_SE_DPRINTF("Dispatch StreamEnd %llu, %s.\n", configIdx,
+  ISA_SE_DPRINTF("[dispatch] StreamEnd %llu, %s.\n", configIdx,
                  infoRelativePath.c_str());
 
   const auto &info = this->getStreamRegion(configIdx);
@@ -372,7 +468,7 @@ bool ISAStreamEngine::canExecuteStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   const auto &infoRelativePath = this->getRelativePath(configIdx);
 
-  ISA_SE_DPRINTF("CanExecuteStreamEnd %llu, %s.\n", configIdx,
+  ISA_SE_DPRINTF("[canExecute] StreamEnd %llu, %s.\n", configIdx,
                  infoRelativePath.c_str());
 
   auto se = this->getStreamEngine();
@@ -392,7 +488,7 @@ void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   const auto &infoRelativePath = this->getRelativePath(configIdx);
 
-  ISA_SE_DPRINTF("Commit StreamEnd %llu, %s.\n", configIdx,
+  ISA_SE_DPRINTF("[commit] StreamEnd %llu, %s.\n", configIdx,
                  infoRelativePath.c_str());
 
   auto se = this->getStreamEngine();
@@ -432,7 +528,7 @@ bool ISAStreamEngine::canDispatchStreamStep(
     const GemForgeDynInstInfo &dynInfo) {
   // First create the memorized info.
   auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
-  ISA_SE_DPRINTF("CanDispatch StreamStep PC %#x RegionStream %lu.\n",
+  ISA_SE_DPRINTF("[canDispatch] StreamStep PC %#x RegionStream %lu.\n",
                  dynInfo.pc, regionStreamId);
   auto emplaceRet = this->seqNumToDynInfoMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(dynInfo.seqNum),
@@ -442,8 +538,9 @@ bool ISAStreamEngine::canDispatchStreamStep(
   if (emplaceRet.second) {
     // First time. Translate the regionStreamId.
     if (!this->isValidRegionStreamId(regionStreamId)) {
-      ISA_SE_DPRINTF("MustMisspeculated StreamStep RegionStream %llu.\n",
-                     regionStreamId);
+      ISA_SE_DPRINTF(
+          "[canDispatch] MustMisspeculated StreamStep RegionStream %llu.\n",
+          regionStreamId);
       instInfo.mustBeMisspeculated = true;
     } else {
       auto streamId = this->lookupRegionStreamId(regionStreamId);
@@ -473,7 +570,10 @@ void ISAStreamEngine::dispatchStreamStep(
   auto se = this->getStreamEngine();
   if (!se->hasUnsteppedElement(streamId)) {
     // This must be wrong.
-    ISA_SE_DPRINTF("MustMisspeculated StreamStep: No unstepped elements.\n");
+    auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
+    ISA_SE_DPRINTF("[dispatch] MustMisspeculated StreamStep RegionStream %llu: "
+                   "No unstepped elements.\n",
+                   regionStreamId);
     instInfo.mustBeMisspeculated = true;
     return;
   }
@@ -497,7 +597,8 @@ void ISAStreamEngine::executeStreamStep(const GemForgeDynInstInfo &dynInfo,
 void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
-    panic("Commit a MustBeMisspeculated StreamStep.\n");
+    auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
+    panic("Commit a MustBeMisspeculated StreamStep %llu.\n", regionStreamId);
   }
   const auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
@@ -778,11 +879,36 @@ void ISAStreamEngine::insertRegionStreamIds(
     const int MaxRegionStreamId = 128;
     assert(regionStreamId < MaxRegionStreamId &&
            "More than 128 streams in a region.");
-    while (this->regionStreamIdTable.size() <= regionStreamId) {
-      this->regionStreamIdTable.push_back(InvalidStreamId);
-    }
     this->regionStreamIdTable.at(regionStreamId) = streamId;
   }
+  if (Debug::ISAStreamEngine) {
+    std::stringstream ss;
+    ss << "Set RegionStreamId";
+    for (const auto &streamInfo : region.streams()) {
+      // Perform the removal.
+      auto regionStreamId = streamInfo.region_stream_id();
+      ss << ' ' << regionStreamId << "->"
+         << this->regionStreamIdTable.at(regionStreamId);
+    }
+    ISA_SE_DPRINTF("%s.\n", ss.str());
+  }
+}
+
+bool ISAStreamEngine::canSetRegionStreamIds(
+    const ::LLVM::TDG::StreamRegion &region) {
+  for (const auto &streamInfo : region.streams()) {
+    // Check if valid to be removed.
+    auto regionStreamId = streamInfo.region_stream_id();
+    if (this->regionStreamIdTable.size() <= regionStreamId) {
+      // Overflow RegionStreamId.
+      return false;
+    }
+    if (this->regionStreamIdTable.at(regionStreamId) != InvalidStreamId) {
+      // RegionStreamId Compromised.
+      return false;
+    }
+  }
+  return true;
 }
 
 bool ISAStreamEngine::canRemoveRegionStreamIds(
@@ -807,6 +933,17 @@ void ISAStreamEngine::removeRegionStreamIds(
     const ::LLVM::TDG::StreamRegion &region) {
   assert(this->canRemoveRegionStreamIds(region) &&
          "Can not remove region stream ids.");
+  if (Debug::ISAStreamEngine) {
+    std::stringstream ss;
+    ss << "Clear RegionStreamId";
+    for (const auto &streamInfo : region.streams()) {
+      // Perform the removal.
+      auto regionStreamId = streamInfo.region_stream_id();
+      ss << ' ' << regionStreamId << "->"
+         << this->regionStreamIdTable.at(regionStreamId);
+    }
+    ISA_SE_DPRINTF("%s.\n", ss.str());
+  }
   for (const auto &streamInfo : region.streams()) {
     // Perform the removal.
     auto regionStreamId = streamInfo.region_stream_id();
