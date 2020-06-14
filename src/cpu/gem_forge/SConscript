@@ -17,6 +17,7 @@ ProtoBuf('TDGInstruction.proto')
 
 SimObject('LLVMTraceCPU.py')
 Source('bank_manager.cc')
+Source('gem_forge_utils.cc')
 Source('gem_forge_packet_handler.cc')
 Source('gem_forge_cpu_delegator.cc')
 Source('gem_forge_idea_inorder_cpu.cc')

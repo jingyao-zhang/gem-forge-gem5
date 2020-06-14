@@ -84,12 +84,13 @@ bool Stream::isMemStream() const {
   }
 }
 
-void Stream::addBaseStream(Stream *baseStream) {
+void Stream::addBaseStream(StaticId baseId, Stream *baseStream) {
   if (baseStream == this) {
     STREAM_PANIC("Base stream should not be self.");
   }
   this->baseStreams.insert(baseStream);
   baseStream->dependentStreams.insert(this);
+  this->baseStreamIds.insert(baseId);
 }
 
 void Stream::addBackBaseStream(Stream *backBaseStream) {

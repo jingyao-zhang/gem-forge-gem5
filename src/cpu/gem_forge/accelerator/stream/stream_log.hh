@@ -1,3 +1,5 @@
+#ifndef __CPU_TDG_ACCELERATOR_STREAM_LOG_HH__
+#define __CPU_TDG_ACCELERATOR_STREAM_LOG_HH__
 /**
  * Include this in .cc and define DEBUG_TYPE
  */
@@ -85,6 +87,8 @@
   LLC_S_DPRINTF_(DEBUG_TYPE, streamId, format, ##args)
 #define LLC_S_HACK(streamId, format, args...)                                  \
   hack(LLC_S_MSG(streamId, format, ##args))
+#define LLC_S_PANIC(streamId, format, args...)                                 \
+  panic(LLC_S_MSG(streamId, format, ##args))
 
 #define LLC_SLICE_DPRINTF_(X, sliceId, format, args...)                        \
   DPRINTF(X, LLC_SLICE_MSG(sliceId, format, ##args))
@@ -92,3 +96,5 @@
   LLC_SLICE_DPRINTF_(DEBUG_TYPE, sliceId, format, ##args)
 #define LLC_SLICE_PANIC(sliceId, format, args...)                              \
   panic(LLC_SLICE_MSG(sliceId, format, ##args))
+
+#endif

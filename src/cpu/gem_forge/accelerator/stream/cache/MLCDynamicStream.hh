@@ -167,6 +167,11 @@ protected:
   Addr translateVAddr(Addr vaddr) const;
 
   /**
+   * Helper function to direct read data from memory.
+   */
+  void readBlob(Addr vaddr, uint8_t *data, int size) const;
+
+  /**
    * Map paddr line to LLC bank.
    */
   MachineID mapPAddrToLLCBank(Addr paddr) const;

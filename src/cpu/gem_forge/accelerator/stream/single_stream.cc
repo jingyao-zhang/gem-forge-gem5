@@ -40,7 +40,7 @@ void SingleStream::finalize() {
 void SingleStream::initializeBaseStreams() {
   for (const auto &baseStreamId : this->info.chosen_base_streams()) {
     auto baseStream = this->se->getStream(baseStreamId.id());
-    this->addBaseStream(baseStream);
+    this->addBaseStream(baseStreamId.id(), baseStream);
   }
 
   if (this->baseStreams.empty() &&

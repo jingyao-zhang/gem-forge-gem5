@@ -10,17 +10,18 @@
  * I try to define it as independent as implementation of stream.
  */
 struct DynamicStreamId {
+  using StaticId = uint64_t;
   // Use coreId to distinguish streams in multi-core context.
   // TODO: ThreadID may be a better option.
   int coreId = -1;
-  uint64_t staticId = 0;
+  StaticId staticId = 0;
   uint64_t streamInstance = 0;
   // Used for debug purpose. User should guarantee the life cycle of name.
   // TODO: How to improve this?
   const char *streamName = "Unknown_Stream";
 
   DynamicStreamId() = default;
-  DynamicStreamId(int _coreId, uint64_t _staticId, uint64_t _streamInstance)
+  DynamicStreamId(int _coreId, StaticId _staticId, uint64_t _streamInstance)
       : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance) {}
   DynamicStreamId(const DynamicStreamId &other)
       : coreId(other.coreId), staticId(other.staticId),

@@ -65,6 +65,11 @@ public:
   std::string readStringFromMem(Addr vaddr);
 
   /**
+   * Read from memory.
+   */
+  void readFromMem(Addr vaddr, int size, uint8_t *data);
+
+  /**
    * Write to memory.
    */
   void writeToMem(Addr vaddr, int size, const uint8_t *data);
