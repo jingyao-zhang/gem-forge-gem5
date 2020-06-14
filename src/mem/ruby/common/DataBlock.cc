@@ -84,9 +84,20 @@ DataBlock::print(std::ostream& out) const
 
     int size = RubySystem::getBlockSizeBytes();
     out << "[ ";
+    bool allZero = true;
     for (int i = 0; i < size; i++) {
-        out << setw(2) << setfill('0') << hex << "0x" << (int)m_data[i] << " ";
-        out << setfill(' ');
+        if (m_data[i] != 0) {
+            allZero = false;
+            break;
+        }
+    }
+    if (allZero) {
+        out << "Size " << size << " AllZero ";
+    } else {
+        for (int i = 0; i < size; i++) {
+            out << setw(2) << setfill('0') << hex << "0x" << (int)m_data[i] << " ";
+            out << setfill(' ');
+        }
     }
     out << dec << "]" << flush;
 }
