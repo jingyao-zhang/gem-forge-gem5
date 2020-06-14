@@ -79,7 +79,7 @@ class NetDest
     bool isEmpty() const;
 
     // For Princeton Network
-    std::vector<NodeID> getAllDest();
+    std::vector<NodeID> getAllDest() const;
 
     MachineID smallestElement() const;
     MachineID smallestElement(MachineType machine) const;

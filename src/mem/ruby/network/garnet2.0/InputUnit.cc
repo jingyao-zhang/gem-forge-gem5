@@ -471,6 +471,19 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
     // Inject the message.
     localNI->injectMulticastDuplicateMsg(msg);
 
+    if (Debug::RubyMulticast) {
+        std::stringstream ss;
+        for (const auto &destNodeId : msg->getDestination().getAllDest()){
+            auto destMachineId = MachineID::getMachineIDFromRawNodeID(destNodeId);
+            ss << ' ' << destMachineId;
+        }
+        DPRINTF(RubyMulticast, "InputUnit[%d][%s] Inject Duplicated Multicast from %s to %s.\n",
+            m_router->get_id(),
+            m_router->getPortDirectionName(this->get_direction()),
+            senderMachineId,
+            msg->getDestination());
+    }
+
     // Release all flits.
     auto size = f->get_size();
     for (int i = 0; i < size; ++i) {

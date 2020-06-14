@@ -1315,6 +1315,18 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
     }
   }
 
+  if (Debug::LLCRubyStreamMulticast) {
+    std::stringstream ss;
+    for (const auto &multicastSliceId : req.multicastSliceIds) {
+      auto mlcMachineID =
+          MachineID(static_cast<MachineType>(selfMachineId.type - 1),
+                    multicastSliceId.streamId.coreId);
+      ss << ' ' << mlcMachineID;
+    }
+    LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast, sliceId, "Multicast to %s.\n",
+      ss.str());
+  }
+
   for (const auto &multicastSliceId : req.multicastSliceIds) {
     // TODO: We should really also pass on the sliceId.
     auto mlcMachineID =

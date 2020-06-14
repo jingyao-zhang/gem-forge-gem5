@@ -104,7 +104,7 @@ NetDest::broadcast(MachineType machineType)
 
 //For Princeton Network
 std::vector<NodeID>
-NetDest::getAllDest()
+NetDest::getAllDest() const
 {
     std::vector<NodeID> dest;
     dest.clear();
@@ -264,15 +264,22 @@ NetDest::resize()
 void
 NetDest::print(std::ostream& out) const
 {
-    out << "[NetDest (" << m_bits.size() << ") ";
+    // out << "[NetDest (" << m_bits.size() << ") ";
 
-    for (int i = 0; i < m_bits.size(); i++) {
-        for (int j = 0; j < m_bits[i].getSize(); j++) {
-            out << (bool) m_bits[i].isElement(j) << " ";
-        }
-        out << " - ";
+    // for (int i = 0; i < m_bits.size(); i++) {
+    //     for (int j = 0; j < m_bits[i].getSize(); j++) {
+    //         out << (bool) m_bits[i].isElement(j) << " ";
+    //     }
+    //     out << " - ";
+    // }
+    // out << "]";
+
+    out << "[NetDest";
+    for (const auto &destNodeId : this->getAllDest()){
+        auto destMachineId = MachineID::getMachineIDFromRawNodeID(destNodeId);
+        out << ' ' << destMachineId;
     }
-    out << "]";
+    out << ']';
 }
 
 bool
