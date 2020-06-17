@@ -55,21 +55,50 @@ public:
    */
   int prefetchLine(Addr pc, Addr baseAddr, Addr pfAddr, int pfFillLevel);
 
+  /**
+   * This is only used for stats.
+   * Implement the prefetch hit(miss) callback interface.
+   * These functions are called by the cache when it hits(misses)
+   * on a line with the line's prefetch bit set. If this address
+   * hits in m_array we will continue prefetching the stream.
+   */
+  void observePfHit(Addr address) {
+    this->numHits++;
+  }
+  void observePfMiss(Addr address) {
+    this->numPartialHits++;
+  }
+
+  /**
+   * API for the controller to manage the infly requests.
+   */
+  void incrementInflyRequests() { inflyRequests++; }
+  void decrementInflyRequests() { inflyRequests--; }
+  int getInflyRequests() const { return inflyRequests; }
+  void incrementInqueuePfRequests() { inqueuePfRequests++; }
+  void decrementInqueuePfRequests() { inqueuePfRequests--; }
+  int getInqueuePfRequests() const { return inqueuePfRequests; }
+
 private:
   bool enabled;
   AbstractController *m_controller;
 
   const Addr m_page_shift;
 
+  int inflyRequests = 0;
+  int inqueuePfRequests = 0;
+
   //! Count of accesses to the prefetcher
   Stats::Scalar numMissObserved;
+  //! Count of accesses to the prefetcher
+  Stats::Scalar numReqObserved;
   //! Count of prefetch streams allocated
   Stats::Scalar numAllocatedStreams;
   //! Count of prefetch requests made
   Stats::Scalar numPrefetchRequested;
   //! Count of successful prefetches
   Stats::Scalar numHits;
-  //! Count of partial successful prefetches
+  // Prefetched too late, so still missed.
   Stats::Scalar numPartialHits;
   //! Count of pages crossed
   Stats::Scalar numPagesCrossed;
