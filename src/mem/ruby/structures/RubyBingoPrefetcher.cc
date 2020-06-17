@@ -101,15 +101,15 @@ public:
   }
 
   static string top_line(const vector<int> &widths) {
-    return Table::line(widths, "┌", "┬", "┐");
+    return Table::line(widths, "-", "-", "-");
   }
 
   static string mid_line(const vector<int> &widths) {
-    return Table::line(widths, "├", "┼", "┤");
+    return Table::line(widths, "|", "-", "|");
   }
 
   static string bot_line(const vector<int> &widths) {
-    return Table::line(widths, "└", "┴", "┘");
+    return Table::line(widths, "-", "-", "-");
   }
 
   static string line(const vector<int> &widths, string left, string mid,
@@ -681,10 +681,8 @@ public:
   }
 
   void insert(uint64_t region_number, vector<int> pattern) {
-    if (this->debug_level >= 2)
-      cerr << "PrefetchStreamer::insert(region_number=0x" << hex
-           << region_number << ", pattern=" << pattern_to_string(pattern) << ")"
-           << dec << endl;
+    DPRINTF(RubyPrefetcher, "PrefetchStreamer::insert(region_number=%#x, pattern=%s)\n",
+      region_number, pattern_to_string(pattern));
     uint64_t key = this->build_key(region_number);
     Super::insert(key, {pattern});
     Super::set_mru(key);
@@ -731,6 +729,8 @@ public:
           //       cache->PQ.occupancy < cache->PQ.SIZE) {
           if (true) {
             // ! So far we always consider it possible to prefetch.
+          // if (pf->getInqueuePfRequests() + pf->getInflyRequests() < 4) {
+          //   // Put an upper limit on number of requests.
             int ok =
                 pf->prefetchLine(0, base_addr, pf_address, pattern[pf_offset]);
             assert(ok == 1);
@@ -1027,11 +1027,9 @@ private:
     uint64_t region_number =
         hash_index(entry.key, this->accumulation_table.get_index_len());
     uint64_t address = region_number * this->pattern_len + entry.data.offset;
-    if (this->debug_level >= 2) {
-      cerr << "[Bingo] insert_in_pht(pc=0x" << hex << pc << ", address=0x"
-           << address << ")" << dec << endl;
-    }
     const vector<bool> &pattern = entry.data.pattern;
+    DPRINTF(RubyPrefetcher, "[Bingo] insert_in_pht pc=%#x, address %#x, pattern %s.\n",
+      pc, address, pattern_to_string(pattern));
     this->pht.insert(pc, address, pattern);
   }
 
@@ -1159,6 +1157,8 @@ void RubyBingoPrefetcher::regStats() {
 
   numMissObserved.name(name() + ".miss_observed")
       .desc("number of misses observed");
+  numReqObserved.name(name() + ".req_observed")
+      .desc("number of requests observed");
 
   numAllocatedStreams.name(name() + ".allocated_streams")
       .desc("number of streams allocated for prefetching");
@@ -1182,11 +1182,17 @@ void RubyBingoPrefetcher::regStats() {
 void RubyBingoPrefetcher::observeReq(Addr address, Addr pc, bool hit,
                                      const RubyRequestType &type) {
 
+  if (type != RubyRequestType_LD && type != RubyRequestType_ST) {
+    return;
+  }
+
   DPRINTF(RubyPrefetcher, "Bingo::observeReq addr %#x pc %#x hit %d type %s.\n",
           address, pc, hit, RubyRequestType_to_string(type));
 
-  if (type != RubyRequestType_LD) {
-    return;
+
+  this->numReqObserved++;
+  if (!hit) {
+    this->numMissObserved++;
   }
 
   uint64_t blockNumber = address >> RubySystem::getBlockSizeBytesLog2();
@@ -1215,7 +1221,9 @@ int RubyBingoPrefetcher::prefetchLine(Addr pc, Addr baseAddr, Addr pfAddr,
   DPRINTF(RubyPrefetcher,
           "Prefetching line pc %#x baseAddr %#x pfAddr %#x type %s.\n", pc,
           baseAddr, pfAddrLine, RubyRequestType_to_string(type));
+  this->numPrefetchRequested++;
   this->m_controller->enqueuePrefetch(pfAddrLine, type);
+  this->incrementInqueuePfRequests();
   // We always succeed.
   return 1;
 }

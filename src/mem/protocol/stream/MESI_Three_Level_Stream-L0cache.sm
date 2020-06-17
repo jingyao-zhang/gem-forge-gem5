@@ -815,6 +815,9 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     set_tbe(TBEs[address]);
     tbe.Dirty := cache_entry.Dirty;
     tbe.DataBlk := cache_entry.DataBlk;
+    if (bingoPrefetcher.isEnabled()) {
+      bingoPrefetcher.incrementInflyRequests();
+    }
   }
 
   action(iu_allocateTBENoCacheBlock, "iu", desc="Allocate TBE (number of invalidates=0) without CacheBlock") {
@@ -822,6 +825,9 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     TBEs.allocate(address);
     set_tbe(TBEs[address]);
     tbe.Dirty := false;
+    if (bingoPrefetcher.isEnabled()) {
+      bingoPrefetcher.incrementInflyRequests();
+    }
   }
 
   action(k_popMandatoryQueue, "k", desc="Pop mandatory queue.") {
@@ -843,6 +849,9 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   action(s_deallocateTBE, "s", desc="Deallocate TBE") {
     TBEs.deallocate(address);
     unset_tbe();
+    if (bingoPrefetcher.isEnabled()) {
+      bingoPrefetcher.decrementInflyRequests();
+    }
   }
 
   action(u_writeDataToCache, "u", desc="Write data to cache") {
@@ -936,6 +945,9 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
       if (cache_entry.isPrefetch) {
         prefetcher.observePfHit(req_address);
         cache_entry.isPrefetch := false;
+        if (bingoPrefetcher.isEnabled()) {
+          bingoPrefetcher.observePfHit(req_address);
+        }
       }
       if (bingoPrefetcher.isEnabled() && hasPC(in_msg.pkt)) {
         Addr pc := getPC(in_msg.pkt);
@@ -961,11 +973,17 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   action(ppm_observePfMiss, "\ppm", desc="Inform the prefetcher about the partial miss") {
     peek(mandatoryQueue_in, RubyRequest) {
       prefetcher.observePfMiss(in_msg.LineAddress);
+      if (bingoPrefetcher.isEnabled()) {
+        bingoPrefetcher.observePfMiss(in_msg.LineAddress);
+      }
     }
   }
 
   action(pq_popPrefetchQueue, "\pq", desc="Pop the prefetch request queue") {
       prefetchQueue_in.dequeue(clockEdge());
+      if (bingoPrefetcher.isEnabled()) {
+        bingoPrefetcher.decrementInqueuePfRequests();
+      }
   }
 
   action(mp_markPrefetched, "mp", desc="Set the isPrefetch flag") {
