@@ -308,8 +308,9 @@ public:
    */
   struct StreamAggregateHistory {
     DynamicStreamFormalParamV addrGenFormalParams;
-    uint64_t numReleasedElements;
-    uint64_t numIssuedRequests;
+    uint64_t numReleasedElements = 0;
+    uint64_t numIssuedRequests = 0;
+    uint64_t numPrivateCacheHits = 0;
   };
   static constexpr int AggregateHistorySize = 4;
   std::list<StreamAggregateHistory> aggregateHistory;

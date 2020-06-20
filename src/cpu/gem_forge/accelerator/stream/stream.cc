@@ -355,6 +355,7 @@ void Stream::recordAggregateHistory(const DynamicStream &dynS) {
   history.addrGenFormalParams = dynS.addrGenFormalParams;
   history.numReleasedElements = dynS.getNumReleasedElements();
   history.numIssuedRequests = dynS.getNumIssuedRequests();
+  history.numPrivateCacheHits = dynS.getTotalHitPrivateCache();
 }
 
 DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
