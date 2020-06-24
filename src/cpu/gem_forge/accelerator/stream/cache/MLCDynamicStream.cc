@@ -212,6 +212,11 @@ Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
   return paddr;
 }
 
+void MLCDynamicStream::readBlob(Addr vaddr, uint8_t *data, int size) const {
+  auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
+  cpuDelegator->readFromMem(vaddr, size, data);
+}
+
 MachineID MLCDynamicStream::mapPAddrToLLCBank(Addr paddr) const {
   auto selfMachineId = this->controller->getMachineID();
   auto llcMachineId = this->controller->mapAddressToLLC(

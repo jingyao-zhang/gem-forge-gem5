@@ -2,6 +2,7 @@
 #define __GEM_FORGE_ACCELERATOR_STREAM_HH__
 
 #include "cache/CacheStreamConfigureData.hh"
+#include "cpu/gem_forge/gem_forge_utils.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
 #include "dyn_stream.hh"
 #include "stream_atomic_op.hh"
@@ -33,13 +34,14 @@ class StreamEndInst;
  */
 class Stream {
 public:
+  using StaticId = DynamicStreamId::StaticId;
   struct StreamArguments {
     LLVMTraceCPU *cpu;
     GemForgeCPUDelegator *cpuDelegator;
     StreamEngine *se;
     int maxSize;
     const ::LLVM::TDG::StreamRegion *streamRegion;
-    uint64_t staticId;
+    StaticId staticId;
     const char *name;
   };
 
@@ -58,7 +60,7 @@ public:
    * StreamName, StaticId.
    */
   virtual void finalize() = 0;
-  void addBaseStream(Stream *baseStream);
+  void addBaseStream(StaticId baseId, Stream *baseStream);
   void addBaseStepStream(Stream *baseStepStream);
   void addBackBaseStream(Stream *backBaseStream);
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
@@ -131,7 +133,7 @@ public:
   }
 
   const ::LLVM::TDG::StreamRegion *streamRegion;
-  uint64_t staticId;
+  StaticId staticId;
   std::string streamName;
 
   /**
@@ -142,8 +144,10 @@ public:
    */
   Stream *stepRootStream;
   using StreamSet = std::unordered_set<Stream *>;
+  using StreamIdSet = std::unordered_set<StaticId>;
   using StreamVec = std::vector<Stream *>;
   StreamSet baseStreams;
+  StreamIdSet baseStreamIds;
   StreamSet dependentStreams;
   /**
    * Back edge dependence on previous iteration.
@@ -182,7 +186,7 @@ public:
 
   LLVMTraceCPU *getCPU() { return this->cpu; }
   int getCPUId() { return this->cpuDelegator->cpuId(); }
-  GemForgeCPUDelegator *getCPUDelegator() { return this->cpuDelegator; }
+  GemForgeCPUDelegator *getCPUDelegator() const { return this->cpuDelegator; }
 
   virtual void configure(uint64_t seqNum, ThreadContext *tc) = 0;
 
@@ -305,8 +309,9 @@ public:
    */
   struct StreamAggregateHistory {
     DynamicStreamFormalParamV addrGenFormalParams;
-    uint64_t numReleasedElements;
-    uint64_t numIssuedRequests;
+    uint64_t numReleasedElements = 0;
+    uint64_t numIssuedRequests = 0;
+    uint64_t numPrivateCacheHits = 0;
   };
   static constexpr int AggregateHistorySize = 4;
   std::list<StreamAggregateHistory> aggregateHistory;

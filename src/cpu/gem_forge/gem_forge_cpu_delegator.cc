@@ -20,6 +20,18 @@ std::string GemForgeCPUDelegator::readStringFromMem(Addr vaddr) {
   return s;
 }
 
+void GemForgeCPUDelegator::readFromMem(Addr vaddr, int size, uint8_t *data) {
+  PortProxy proxy(this->baseCPU->getSendFunctional(),
+                  this->baseCPU->cacheLineSize());
+  for (int i = 0; i < size; ++i) {
+    Addr paddr;
+    if (!this->translateVAddrOracle(vaddr + i, paddr)) {
+      panic("Failed translate vaddr %#x.\n", vaddr + i);
+    }
+    proxy.readBlob(paddr, data + i, 1);
+  }
+}
+
 void GemForgeCPUDelegator::writeToMem(Addr vaddr, int size,
                                       const uint8_t *data) {
   PortProxy proxy(this->baseCPU->getSendFunctional(),

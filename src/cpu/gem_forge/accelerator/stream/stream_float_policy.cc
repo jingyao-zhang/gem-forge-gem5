@@ -217,6 +217,23 @@ bool StreamFloatPolicy::checkAggregateHistory(Stream *S, DynamicStream &dynS) {
     auto currStartAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
     auto prevStartAddr =
         linearAddrGen->getStartAddr(prevHistory.addrGenFormalParams);
+
+    // Check if previous stream has more than 50% change of hit in private
+    // cache?
+    auto prevIssuedRequests = prevHistory.numIssuedRequests;
+    auto prevPrivateCacheHits = prevHistory.numPrivateCacheHits;
+    auto prevPrivateCacheHitRate = static_cast<float>(prevPrivateCacheHits) /
+                                   static_cast<float>(prevIssuedRequests);
+    if (prevPrivateCacheHitRate > 0.5f) {
+      // Hit rate too high.
+      S_DPRINTF(S, "[Not Float] Hist PrevIssed %llu, PrivateCacheHitRate %f.\n",
+                prevIssuedRequests, prevPrivateCacheHitRate);
+      logStream(S) << "[Not Float] Hist PrevIssued " << prevIssuedRequests
+                   << " PrivateCacheHitRate " << prevPrivateCacheHitRate << '\n'
+                   << std::flush;
+      return false;
+    }
+
     if (currStartAddr != prevStartAddr) {
       // Not match.
       S_DPRINTF(S, "Hist %d StartAddr %#x != PrevStartAddr %#x.\n",

@@ -26,7 +26,11 @@ class GemForgeCPUDelegator;
 class ISAStreamEngine {
 public:
   ISAStreamEngine(GemForgeCPUDelegator *_cpuDelegator)
-      : cpuDelegator(_cpuDelegator) {}
+      : cpuDelegator(_cpuDelegator) {
+    for (auto i = 0; i < MaxNumRegionStreams; ++i) {
+      this->regionStreamIdTable.at(i) = InvalidStreamId;
+    }
+  }
 
 #define DeclareStreamInstHandler(Inst)                                         \
   bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);            \
@@ -76,14 +80,12 @@ private:
    * we want to translate the regional stream id to it.
    * This is performed to reduce the complexity of the stream engine.
    */
-  std::vector<uint64_t> regionStreamIdTable;
+  static constexpr int MaxNumRegionStreams = 128;
+  std::array<uint64_t, MaxNumRegionStreams> regionStreamIdTable;
   static constexpr uint64_t InvalidStreamId = 0;
   void insertRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
 
-  /**
-   * Try to remove RegionStreamIds.
-   * @return if succeed.
-   */
+  bool canSetRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
   bool canRemoveRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
   void removeRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
   uint64_t lookupRegionStreamId(int regionStreamId) const;
@@ -101,7 +103,10 @@ private:
    * and StreamEngine::dispatchStreamConfig.
    * 2. When all the instructions are executed, we inform the
    * StreamEngine::executeStreamConfig.
-   * 3. When ssp.stream.ready commits, we call StreamEngine::commitStreamEngine.
+   * 3. When ssp.stream.ready commits, we call StreamEngine::commitStreamConfig.
+   *
+   * ssp.stream.config may set MustMisspeculated, which will be propagated to
+   * later instructions.
    */
   struct DynStreamRegionInfo {
     using StreamInputValue = std::array<uint64_t, 8>;
@@ -110,9 +115,13 @@ private:
     uint64_t streamReadySeqNum = 0;
     int numDispatchedInsts = 0;
     int numExecutedInsts = 0;
+    bool mustBeMisspeculated = false;
     std::unordered_map<uint64_t, std::vector<StreamInputValue>> inputMap;
-    DynStreamRegionInfo(const std::string &_infoRelativePath)
-        : infoRelativePath(_infoRelativePath) {}
+    // Mainly used for misspeculation recover.
+    std::shared_ptr<DynStreamRegionInfo> prevRegion = nullptr;
+    DynStreamRegionInfo(const std::string &_infoRelativePath,
+                        std::shared_ptr<DynStreamRegionInfo> _prevRegion)
+        : infoRelativePath(_infoRelativePath), prevRegion(_prevRegion) {}
   };
 
   /**

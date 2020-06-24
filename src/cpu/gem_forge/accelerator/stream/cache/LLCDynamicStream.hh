@@ -39,14 +39,10 @@ struct LLCStreamElement {
   const Addr vaddr;
   const int size;
   int readyBytes;
-  static constexpr int MAX_SIZE = 16;
+  static constexpr int MAX_SIZE = 64;
   std::array<uint8_t, MAX_SIZE> data;
   LLCStreamElement(LLCDynamicStream *_dynS, uint64_t _idx, Addr _vaddr,
-                   int _size)
-      : dynS(_dynS), idx(_idx), vaddr(_vaddr), size(_size), readyBytes(0) {
-    assert(this->size <= MAX_SIZE && "Can not support this large element.\n");
-    this->data.fill(0);
-  }
+                   int _size);
   bool isReady() const { return this->readyBytes == this->size; }
   uint64_t getUint64_t() const {
     assert(this->isReady());

@@ -524,8 +524,9 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
             numOffloadedLoadStoreDepStreams) {
           if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
             if (CS->getNumCoalescedStreams() > 1) {
-              S_PANIC(
-                  S, "CoalescedStream cannot be floated with indirect stream.");
+              // This should work now?
+              // S_PANIC(
+              //     S, "CoalescedStream cannot be floated with indirect stream.");
             }
           }
         }

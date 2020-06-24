@@ -161,7 +161,7 @@ void CoalescedStream::initializeBaseStreams() {
     for (const auto &baseStreamId : info.chosen_base_streams()) {
       auto baseStream = this->se->getStream(baseStreamId.id());
       assert(baseStream != this && "Should never have circular dependency.");
-      this->addBaseStream(baseStream);
+      this->addBaseStream(baseStreamId.id(), baseStream);
     }
 
     // Try to update the step root stream.
@@ -378,6 +378,5 @@ void CoalescedStream::getCoalescedOffsetAndSize(uint64_t streamId,
       return;
     }
   }
-  STREAM_DPRINTF("Failed to find logical stream %llu.\n", streamId);
-  assert(false);
+  S_PANIC(this, "Failed to find logical stream %llu.\n", streamId);
 }

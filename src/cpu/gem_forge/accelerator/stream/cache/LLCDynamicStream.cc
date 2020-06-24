@@ -12,6 +12,16 @@
 std::unordered_map<DynamicStreamId, LLCDynamicStream *, DynamicStreamIdHasher>
     LLCDynamicStream::GlobalLLCDynamicStreamMap;
 
+LLCStreamElement::LLCStreamElement(LLCDynamicStream *_dynS, uint64_t _idx,
+                                   Addr _vaddr, int _size)
+    : dynS(_dynS), idx(_idx), vaddr(_vaddr), size(_size), readyBytes(0) {
+  if (this->size > MAX_SIZE) {
+    panic("LLCStreamElement size overflow %d, %s.\n", this->size,
+          this->dynS->getDynamicStreamId().streamName);
+  }
+  this->data.fill(0);
+}
+
 uint64_t LLCStreamElement::getData(uint64_t streamId) const {
   assert(this->isReady());
   auto S = this->dynS->getStaticStream();
@@ -23,17 +33,7 @@ uint64_t LLCStreamElement::getData(uint64_t streamId) const {
   }
   assert(size <= sizeof(uint64_t) && "ElementSize overflow.");
   assert(offset + size <= this->size && "Size overflow.");
-  switch (size) {
-  case 8:
-    return *reinterpret_cast<const uint64_t *>(this->data.data() + offset);
-  case 4:
-    return *reinterpret_cast<const uint32_t *>(this->data.data() + offset);
-  case 2:
-    return *reinterpret_cast<const uint16_t *>(this->data.data() + offset);
-  case 1:
-    return *reinterpret_cast<const uint8_t *>(this->data.data() + offset);
-  default: { panic("Unsupported element size %d.\n", size); }
-  }
+  return GemForgeUtils::rebuildData(this->data.data() + offset, size);
 }
 
 // TODO: Support real flow control.
@@ -43,8 +43,7 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
       slicedStream(_configData, true /* coalesceContinuousElements */),
       maxInflyRequests(_controller->getLLCStreamMaxInflyRequest()),
       controller(_controller), sliceIdx(0),
-      allocatedSliceIdx(_configData->initAllocatedIdx),
-      inflyRequests(0) {
+      allocatedSliceIdx(_configData->initAllocatedIdx), inflyRequests(0) {
   if (this->configData.isPointerChase) {
     // Pointer chase stream can only have at most one base requests waiting for
     // data.
@@ -162,7 +161,8 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
         // TODO: The compiler currently failed to set noCoreUser correctly for
         // MergedStore stream, so we ignore it here manually.
         auto IS = dynIS->getStaticStream();
-        if (IS->isMerged() && IS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
+        if (IS->isMerged() &&
+            IS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
           continue;
         }
         if (IS->hasCoreUser()) {
