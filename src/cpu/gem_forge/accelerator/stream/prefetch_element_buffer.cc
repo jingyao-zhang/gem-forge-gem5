@@ -22,14 +22,13 @@ void PrefetchElementBuffer::removeElement(StreamElement *element) {
   this->elements.erase(element);
 }
 
-bool PrefetchElementBuffer::isHit(Addr vaddr, int size) const {
+StreamElement *PrefetchElementBuffer::isHit(Addr vaddr, int size) const {
   for (auto element : this->elements) {
     if (element->addr >= vaddr + size ||
         element->addr + element->size <= vaddr) {
       continue;
     }
-    element->isAddrAliased = true;
-    return true;
+    return element;
   }
-  return false;
+  return nullptr;
 }

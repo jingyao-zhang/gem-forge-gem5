@@ -59,16 +59,10 @@ void Stream::dumpStreamStats(std::ostream &os) const {
 }
 
 bool Stream::isAtomicStream() const {
-  switch (this->getStreamType()) {
-  case ::LLVM::TDG::StreamInfo_Type_AT:
-    return true;
-  case ::LLVM::TDG::StreamInfo_Type_LD:
-  case ::LLVM::TDG::StreamInfo_Type_ST:
-  case ::LLVM::TDG::StreamInfo_Type_IV:
-    return false;
-  default:
-    STREAM_PANIC("Invalid stream type.");
-  }
+  return this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT;
+}
+bool Stream::isLoadStream() const {
+  return this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD;
 }
 
 bool Stream::isMemStream() const {

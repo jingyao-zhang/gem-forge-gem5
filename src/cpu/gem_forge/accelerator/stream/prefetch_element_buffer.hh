@@ -29,8 +29,9 @@ public:
 
   /**
    * Check if there is store hit in PEB.
+   * @return the first hit element.
    */
-  bool isHit(Addr vaddr, int size) const;
+  StreamElement *isHit(Addr vaddr, int size) const;
 
   std::unordered_set<StreamElement *> elements;
 };

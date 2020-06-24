@@ -1340,7 +1340,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     zz_stallAndWaitL1RequestQueue;
   }
 
-  transition({IM, NP_M}, {L1_GETX, STREAM_STORE, L1_GETS, L1_GET_INSTR}) {
+  transition({IM, NP_M}, {L1_GETV, L1_GETX, STREAM_STORE, L1_GETS, L1_GET_INSTR}) {
     zz_stallAndWaitL1RequestQueue;
   }
 

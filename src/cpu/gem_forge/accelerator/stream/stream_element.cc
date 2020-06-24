@@ -13,7 +13,8 @@
 StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
                                  Addr _cacheBlockVAddr, Addr _vaddr, int _size,
                                  int _additionalDelay)
-    : stream(_stream), element(_element), FIFOIdx(_element->FIFOIdx),
+    : stream(_stream), element(_element), isReissue(_element->flushed),
+      FIFOIdx(_element->FIFOIdx),
       cacheBlockVAddr(_cacheBlockVAddr), vaddr(_vaddr), size(_size),
       additionalDelay(_additionalDelay) {
   // Initialize it fairly simply.

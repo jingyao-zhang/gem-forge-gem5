@@ -69,6 +69,7 @@ public:
   const std::string &getStreamName() const { return this->streamName; }
   virtual ::LLVM::TDG::StreamInfo_Type getStreamType() const = 0;
   bool isAtomicStream() const;
+  bool isLoadStream() const;
   bool isMemStream() const;
   virtual uint32_t getLoopLevel() const = 0;
   virtual uint32_t getConfigLoopLevel() const = 0;

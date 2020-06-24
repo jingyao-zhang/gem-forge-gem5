@@ -87,6 +87,10 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
   if (streamMemAccess == nullptr) {
     return false;
   }
+  // If this is reissue access, ignore it.
+  if (streamMemAccess->isReissue) {
+    return false;
+  }
   // So far let's only consider offloaded stream.
   const auto &dynamicId = streamMemAccess->getDynamicStreamId();
   auto streamIter = this->offloadedStreams.find(dynamicId);
@@ -115,6 +119,10 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
 }
 
 DynamicStreamSliceId L0StreamEngine::getSliceId(PacketPtr pkt) const {
+  if (!this->isStreamAccess(pkt)) {
+    // Do not pass along the slice id if this is not offloaded stream.
+    return DynamicStreamSliceId();
+  }
   auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
   if (streamMemAccess == nullptr) {
     return DynamicStreamSliceId();

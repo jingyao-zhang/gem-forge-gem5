@@ -119,6 +119,8 @@ public:
    * Leading element.
    */
   StreamElement *const element;
+  // Whether this is a reissue access in case element is released/flushed.
+  const bool isReissue;
   // Make a copy of the FIFOIdx in case element is released.
   const FIFOEntryIdx FIFOIdx;
 

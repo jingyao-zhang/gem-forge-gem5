@@ -1343,8 +1343,12 @@ void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
   if (this->numInflyStreamConfigurations == 0) {
     return;
   }
-  if (this->peb.isHit(vaddr, size)) {
+  if (auto element = this->peb.isHit(vaddr, size)) {
     // hack("CPU stores to (%#x, %d), hits in PEB.\n", vaddr, size);
+    S_ELEMENT_DPRINTF(element, "CPUStoreTo aliased %#x, +%d.\n", 
+      vaddr, size);
+    // Remember that this element's address is aliased.
+    element->isAddrAliased = true;
     this->flushPEB();
   }
 }
@@ -2202,10 +2206,13 @@ void StreamEngine::issueElement(StreamElement *element) {
 
   auto S = element->stream;
   auto dynS = element->dynS;
-  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
-    if (element->flushed) {
-      S_ELEMENT_DPRINTF(element, "Reissue.\n");
+  if (element->flushed) {
+    if (!S->isLoadStream()) {
+      S_ELEMENT_PANIC(element, "Flushed non-load stream element.");
     }
+    S_ELEMENT_DPRINTF(element, "Reissue.\n");
+  }
+  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
     this->numLoadElementsFetched++;
     S->statistic.numFetched++;
     // Add to the PEB if the first user has not been dispatched.
@@ -2257,12 +2264,19 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     PacketPtr pkt = nullptr;
     if (S->isAtomicStream() && S->enabledStoreFunc()) {
-      // Special case to handle computation for atomic stream at CoreSE.
       if (element->cacheBlocks != 1) {
         S_ELEMENT_PANIC(element, "Illegal # of CacheBlocks %d for AtomicOp.",
                         element->cacheBlocks);
       }
+      /**
+       * It is the programmer/compiler's job to make sure no aliasing for
+       * computation (i.e. StoreFunc), so the element should be flushed.
+       */
+      if (element->flushed) {
+        S_ELEMENT_PANIC(element, "AtomicStream with StoreFunc should not be flushed.");
+      }
       if (!dynS->offloadedToCache) {
+        // Special case to handle computation for atomic stream at CoreSE.
         auto atomicOp = S->setupAtomicOp(element->FIFOIdx, element->size,
                                          dynS->storeFormalParams);
         /**
@@ -2295,9 +2309,10 @@ void StreamEngine::issueElement(StreamElement *element) {
       /**
        * For offloaded streams, they rely on this request to advance in MLC.
        * Disable RubySequencer coalescing for that.
+       * Unless this is a reissue request, which should be treated normally.
        */
       Request::Flags flags;
-      if (dynS->offloadedToCache) {
+      if (dynS->offloadedToCache && !element->flushed) {
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
       }
       pkt = GemForgePacketHandler::createGemForgePacket(
@@ -2734,11 +2749,6 @@ void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
 void StreamEngine::coalesceContinuousDirectMemStreamElement(
     StreamElement *element) {
 
-  /**
-   * ! Disable this feature for now cause the previous element
-   * ! may be stepped without value ready for conditionally
-   * ! used streams.
-   */
   const bool enableCoalesceContinuousElement = true;
   if (!enableCoalesceContinuousElement) {
     return;
@@ -2871,7 +2881,11 @@ void StreamEngine::flushPEB() {
     assert(!element->isStepped);
     assert(!element->isFirstUserDispatched());
     if (element->dynS->offloadedToCache) {
-      S_ELEMENT_PANIC(element, "Cannot flush offloaded stream element.\n");
+      if (element->getStream()->getStreamType() != ::LLVM::TDG::StreamInfo_Type_LD) {
+        // This must be computation offloading.
+        S_ELEMENT_PANIC(element,
+          "Cannot flush offloaded non-load stream element.\n");
+      }
     }
 
     // Clear the element to just allocate state.
@@ -2896,6 +2910,8 @@ void StreamEngine::flushPEB() {
 void StreamEngine::RAWMisspeculate(StreamElement *element) {
   assert(!this->peb.contains(element) && "RAWMisspeculate on PEB element.");
   S_ELEMENT_DPRINTF(element, "RAWMisspeculated.\n");
+  // Remember that this element aliased and caused flush.
+  element->isAddrAliased = true;
   // Still, we flush the PEB when LQ misspeculate happens.
   this->flushPEB();
 
