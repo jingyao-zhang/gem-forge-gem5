@@ -65,13 +65,7 @@ struct DynamicStream {
   DynamicStreamFormalParamV storeFormalParams;
   ExecFuncPtr storeCallback;
 
-  /**
-   * Optional constant update value.
-   * 1. If the load stream is upgraded to an update stream.
-   * 2. If the store stream is merged into load and is constant store.
-   */
   using StreamValueT = std::array<uint64_t, 8>;
-  uint64_t constUpdateValue = 0;
 
   /**
    * Optional initial/final value for reduction stream.

@@ -344,7 +344,7 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
   auto S = this->getStaticStream();
   for (auto dynIS : this->indirectStreams) {
     auto IS = dynIS->getStaticStream();
-    if (S->dependentStreams.count(IS)) {
+    if (S->addrDepStreams.count(IS)) {
       hasIndirectAddrStreams = true;
       break;
     }
@@ -382,7 +382,8 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
       // Using this API to handle page crossing.
       this->readBlob(elementVAddr, elementData.data(), elementData.size());
       // Addr elementPAddr = this->translateVAddr(elementVAddr);
-      // RequestPtr req = std::make_shared<Request>(elementPAddr, elementSize, 0,
+      // RequestPtr req = std::make_shared<Request>(elementPAddr, elementSize,
+      // 0,
       //                                            0 /* MasterId */);
       // PacketPtr pkt = Packet::createRead(req);
       // pkt->dataStatic(elementData.data());
@@ -403,32 +404,34 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
         sliceId, "Extract element %lu data %s.\n", elementIdx,
         GemForgeUtils::dataToString(elementData.data(), elementData.size()));
     auto CS = dynamic_cast<CoalescedStream *>(S);
+    assert(CS && "Every stream should be coalesce stream now.");
     for (auto indirectStream : this->indirectStreams) {
       auto IS = indirectStream->getStaticStream();
-      if (S->dependentStreams.count(IS) == 0) {
+      if (S->addrDepStreams.count(IS) == 0) {
         // This indirect stream does not use my data to generate address.
         continue;
       }
       uint64_t baseData = 0;
       int32_t subOffset = 0;
       int32_t subSize = elementSize;
-      if (CS) {
-        /**
-         * In case the base stream is coalesced, we have to translate the offset
-         * for the indirect streams.
-         */
-        const auto &baseIds = IS->baseStreamIds;
-        if (baseIds.size() != 1) {
-          MLC_SLICE_PANIC(sliceId, "IS has %d base streams.", baseIds.size());
-        }
-        auto baseId = *(baseIds.begin());
-        CS->getCoalescedOffsetAndSize(baseId, subOffset, subSize);
-        assert(subOffset + subSize <= elementSize &&
-               "Overflow of coalesced base element.");
-      } else {
-        assert(elementData.size() << sizeof(uint64_t) &&
-               "At most 8 byte base element size.");
+      /**
+       * In case the base stream is coalesced, we have to translate the offset
+       * for the indirect streams.
+       */
+      const auto &baseEdges = IS->addrBaseEdges;
+      if (baseEdges.empty()) {
+        MLC_SLICE_PANIC(sliceId, "IS has no base edges.", baseEdges.size());
       }
+      auto baseId = baseEdges.front().toStaticId;
+      for (const auto &baseEdge : baseEdges) {
+        if (baseEdge.toStaticId != baseId) {
+          MLC_SLICE_PANIC(sliceId, "IS has multiple base streams.",
+                          baseEdges.size());
+        }
+      }
+      CS->getCoalescedOffsetAndSize(baseId, subOffset, subSize);
+      assert(subOffset + subSize <= elementSize &&
+             "Overflow of coalesced base element.");
       baseData =
           GemForgeUtils::rebuildData(elementData.data() + subOffset, subSize);
       MLC_SLICE_DPRINTF(sliceId,

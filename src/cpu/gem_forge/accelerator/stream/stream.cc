@@ -61,8 +61,14 @@ void Stream::dumpStreamStats(std::ostream &os) const {
 bool Stream::isAtomicStream() const {
   return this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT;
 }
+bool Stream::isStoreStream() const {
+  return this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST;
+}
 bool Stream::isLoadStream() const {
   return this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD;
+}
+bool Stream::isUpdateStream() const {
+  return this->isLoadStream() && this->enabledStoreFunc();
 }
 
 bool Stream::isMemStream() const {
@@ -78,13 +84,28 @@ bool Stream::isMemStream() const {
   }
 }
 
-void Stream::addBaseStream(StaticId baseId, Stream *baseStream) {
+void Stream::addAddrBaseStream(StaticId baseId, StaticId depId,
+                               Stream *baseStream) {
   if (baseStream == this) {
-    STREAM_PANIC("Base stream should not be self.");
+    STREAM_PANIC("AddrBaseStream should not be self.");
   }
-  this->baseStreams.insert(baseStream);
-  baseStream->dependentStreams.insert(this);
-  this->baseStreamIds.insert(baseId);
+  this->addrBaseStreams.insert(baseStream);
+  this->addrBaseEdges.emplace_back(depId, baseId, baseStream);
+
+  baseStream->addrDepStreams.insert(this);
+  baseStream->addrDepEdges.emplace_back(baseId, depId, this);
+}
+
+void Stream::addValueBaseStream(StaticId baseId, StaticId depId,
+                                Stream *baseStream) {
+  if (baseStream == this) {
+    STREAM_PANIC("ValueBasetream should not be self.");
+  }
+  this->valueBaseStreams.insert(baseStream);
+  this->valueBaseEdges.emplace_back(depId, baseId, baseStream);
+
+  baseStream->valueDepStreams.insert(this);
+  baseStream->valueDepEdges.emplace_back(baseId, depId, this);
 }
 
 void Stream::addBackBaseStream(Stream *backBaseStream) {
@@ -149,7 +170,7 @@ void Stream::initializeAliasStreamsFromProtobuf(
   /**
    * Same thing for update stream.
    */
-  if (this->hasUpdate() && !this->hasUpgradedToUpdate()) {
+  if (this->hasUpdate() && !this->enabledStoreFunc()) {
     // There are StoreStream that update this LoadStream.
     this->aliasBaseStream->hasAliasedStoreStream = true;
   }
@@ -528,39 +549,6 @@ int Stream::setupFormalParams(const InputVecT *inputVec,
 void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
 
   /**
-   * If this is a load stream upgraded to update stream.
-   */
-  if (this->hasUpgradedToUpdate()) {
-    const auto &updateParam = this->getConstUpdateParam();
-    if (updateParam.is_static()) {
-      // Static input.
-      dynS.constUpdateValue = updateParam.value();
-    } else {
-      // Dynamic input.
-      assert(!inputVec.empty() && "Missing dynamic const update value.");
-      dynS.constUpdateValue = inputVec.front().at(0);
-      inputVec.erase(inputVec.begin());
-    }
-  }
-  /**
-   * If this is a merged store stream, we only support const store so far.
-   */
-  if (this->isMergedPredicated()) {
-    auto type = this->getStreamType();
-    if (type == ::LLVM::TDG::StreamInfo_Type_ST) {
-      const auto &updateParam = this->getConstUpdateParam();
-      if (updateParam.is_static()) {
-        // Static input.
-        dynS.constUpdateValue = updateParam.value();
-      } else {
-        // Dynamic input.
-        assert(!inputVec.empty() && "Missing dynamic const update value.");
-        dynS.constUpdateValue = inputVec.front().at(0);
-        inputVec.erase(inputVec.begin());
-      }
-    }
-  }
-  /**
    * If this has is load stream with merged predicated stream, check for
    * any inputs for the predication function.
    */
@@ -582,8 +570,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
    * Handle StoreFunc.
    */
   if (this->enabledStoreFunc()) {
-    assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST ||
-           this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT);
+    assert(this->getStreamType() != ::LLVM::TDG::StreamInfo_Type_IV);
     const auto &storeFuncInfo = this->getStoreFuncInfo();
     if (!this->storeCallback) {
       this->storeCallback =
@@ -627,9 +614,6 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
 
   // Set the totalTripCount.
   configData->totalTripCount = dynStream.totalTripCount;
-
-  // Set the ConstUpdateValue.
-  configData->constUpdateValue = dynStream.constUpdateValue;
 
   // Set the predication function.
   configData->predFormalParams = dynStream.predFormalParams;
@@ -675,7 +659,7 @@ bool Stream::isDirectMemStream() const {
     return false;
   }
   // So far only only one base stream of phi type of the same loop level.
-  for (auto baseS : this->baseStreams) {
+  for (auto baseS : this->addrBaseStreams) {
     if (baseS->getLoopLevel() != this->getLoopLevel()) {
       // Ignore streams from different loop level.
       continue;
@@ -729,8 +713,33 @@ void Stream::allocateElement(StreamElement *newElement) {
         newElement->FIFOIdx.entryIdx);
   }
 
-  // Find the base element.
-  for (auto baseS : this->baseStreams) {
+  // Add addr/value base elements
+  this->addAddrBaseElements(newElement);
+  this->addValueBaseElements(newElement);
+
+  newElement->allocateCycle = cpuDelegator->curCycle();
+
+  // Append to the list.
+  dynS.head->next = newElement;
+  dynS.head = newElement;
+  dynS.allocSize++;
+  this->allocSize++;
+
+  if (newElement->FIFOIdx.entryIdx == 1) {
+    if (newElement->FIFOIdx.streamId.coreId == 8 &&
+        newElement->FIFOIdx.streamId.streamInstance == 1 &&
+        newElement->FIFOIdx.streamId.staticId == 11704592) {
+      S_ELEMENT_HACK(newElement, "Allocated.\n");
+    }
+  }
+
+  S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
+}
+
+void Stream::addAddrBaseElements(StreamElement *newElement) {
+
+  const auto &dynS = *newElement->dynS;
+  for (auto baseS : this->addrBaseStreams) {
     if (baseS->getLoopLevel() != this->getLoopLevel()) {
       continue;
     }
@@ -761,14 +770,14 @@ void Stream::allocateElement(StreamElement *newElement) {
                 baseS->getStreamName());
       }
       assert(baseElement != nullptr && "Failed to find base element.");
-      newElement->baseElements.insert(baseElement);
+      newElement->addrBaseElements.insert(baseElement);
     } else {
       // The other one must be a constant stream.
       assert(baseS->stepRootStream == nullptr &&
              "Should be a constant stream.");
       auto baseElement = baseDynS.stepped->next;
       assert(baseElement != nullptr && "Missing base element.");
-      newElement->baseElements.insert(baseElement);
+      newElement->addrBaseElements.insert(baseElement);
     }
   }
 
@@ -785,7 +794,7 @@ void Stream::allocateElement(StreamElement *newElement) {
       assert(dynS.head != dynS.tail &&
              "Failed to find previous element for reduction stream.");
       S_ELEMENT_DPRINTF(newElement, "Found reduction dependence.");
-      newElement->baseElements.insert(dynS.head);
+      newElement->addrBaseElements.insert(dynS.head);
     } else {
       // This is the first element. Let StreamElement::markAddrReady() set up
       // the initial value.
@@ -811,7 +820,7 @@ void Stream::allocateElement(StreamElement *newElement) {
         if (baseElement->FIFOIdx.streamId.streamInstance ==
             newElement->FIFOIdx.streamId.streamInstance) {
           S_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
-          newElement->baseElements.insert(baseElement);
+          newElement->addrBaseElements.insert(baseElement);
         } else {
           // S_ELEMENT_PANIC(newElement,
           //                      "The base element has wrong
@@ -822,24 +831,33 @@ void Stream::allocateElement(StreamElement *newElement) {
       }
     }
   }
+}
 
-  newElement->allocateCycle = cpuDelegator->curCycle();
+void Stream::addValueBaseElements(StreamElement *newElement) {
 
-  // Append to the list.
-  dynS.head->next = newElement;
-  dynS.head = newElement;
-  dynS.allocSize++;
-  this->allocSize++;
+  const auto &dynS = *newElement->dynS;
+  auto newElementIdx = newElement->FIFOIdx.entryIdx;
+  for (auto baseS : this->valueBaseStreams) {
+    assert(baseS->getLoopLevel() == this->getLoopLevel());
 
-  if (newElement->FIFOIdx.entryIdx == 1) {
-    if (newElement->FIFOIdx.streamId.coreId == 8 &&
-        newElement->FIFOIdx.streamId.streamInstance == 1 &&
-        newElement->FIFOIdx.streamId.staticId == 11704592) {
-      S_ELEMENT_HACK(newElement, "Allocated.\n");
+    auto &baseDynS = baseS->getLastDynamicStream();
+    DYN_S_DPRINTF(baseDynS.dynamicStreamId, "BaseDynS.\n");
+    assert(baseS->stepRootStream == this->stepRootStream &&
+           "ValueDep must have same StepRootStream.");
+    if (baseDynS.allocSize - baseDynS.stepSize <=
+        dynS.allocSize - dynS.stepSize) {
+      this->se->dumpFIFO();
+      S_PANIC(this, "Base %s has not enough allocated element.",
+              baseS->getStreamName());
     }
-  }
 
-  S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
+    auto baseElement = baseDynS.getElementByIdx(newElementIdx);
+    if (!baseElement) {
+      S_PANIC(this, "Failed to find value base element from %s.",
+              baseS->getStreamName());
+    }
+    newElement->valueBaseElements.emplace_back(baseElement);
+  }
 }
 
 StreamElement *Stream::releaseElementStepped(bool isEnd) {
@@ -904,21 +922,15 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
     }
   }
 
-  // Only do this for used elements.
-  if (used) {
-    this->handleConstUpdate(dynS, releaseElement);
-    // this->handleMergedPredicate(dynS, releaseElement);
-  }
-
   /**
-   * Handle store func without load stream.
+   * Handle store func load stream.
    * This is tricky because the is not used by the core, we want
    * to distinguish the last element stepped by StreamEnd, which
    * should not perform computation.
    */
-  // if (!isEnd) {
-  //   this->handleStoreFunc(dynS, releaseElement);
-  // }
+  if (!isEnd) {
+    // this->handleMergedPredicate(dynS, releaseElement);
+  }
 
   dynS.tail->next = releaseElement->next;
   if (dynS.stepped == releaseElement) {
@@ -982,23 +994,16 @@ StreamElement *Stream::getPrevElement(StreamElement *element) {
   return dynS.getPrevElement(element);
 }
 
-void Stream::handleConstUpdate(const DynamicStream &dynS,
-                               StreamElement *element) {
-  if (!(this->hasUpgradedToUpdate() && dynS.offloadedToCacheAsRoot)) {
-    return;
-  }
-  this->performConstStore(dynS, element);
-}
-
-void Stream::handleStoreFunc(const DynamicStream &dynS,
-                             StreamElement *element) {
+void Stream::handleStoreFuncAtRelease() {
   if (!this->enabledStoreFunc()) {
     return;
   }
-  if (this->isMergedLoadStoreDepStream()) {
-    // The store func is called at the load stream, not me.
-    return;
-  }
+  assert(!this->dynamicStreams.empty() && "No dynamic stream.");
+  auto &dynS = this->dynamicStreams.front();
+
+  assert(dynS.stepSize > 0 && "No element to release.");
+  auto element = dynS.tail->next;
+  assert(element->isStepped && "Release unstepped element.");
   if (dynS.offloadedToCache) {
     // This stream is offloaded to cache.
     return;
@@ -1006,8 +1011,43 @@ void Stream::handleStoreFunc(const DynamicStream &dynS,
   if (!element->isAddrReady) {
     S_ELEMENT_PANIC(element, "StoreFunc should have addr ready.");
   }
-  S_ELEMENT_DPRINTF(element, "Send AtomicPacket.\n");
-  panic("Deprecated function.\n");
+  // Check for value base element.
+  if (!element->areValueBaseElementsValueReady()) {
+    S_ELEMENT_PANIC(element,
+                    "StoreFunc with ValueBaseElement not value ready.");
+  }
+  if (this->isUpdateStream()) {
+    // For update stream, myself should also be value ready.
+    if (!element->isValueReady) {
+      S_ELEMENT_PANIC(element, "StoreFunc input is not ready.");
+    }
+  }
+  // Get value for store func.
+  auto getStoreFuncInput = [this, element](StaticId id) -> uint64_t {
+    uint64_t elementValue = 0;
+    if (id == this->staticId) {
+      // Update stream using myself.
+      element->getValueByStreamId(id, &elementValue);
+      return elementValue;
+    } else {
+      // Search the ValueBaseElements.
+      auto baseS = this->se->getStream(id);
+      for (const auto &baseE : element->valueBaseElements) {
+        if (baseE.element->stream == baseS) {
+          // Found it.
+          baseE.element->getValueByStreamId(id, &elementValue);
+          return elementValue;
+        }
+      }
+      assert(false && "Failed to find value base element.");
+    }
+  };
+  auto params =
+      convertFormalParamToParam(dynS.storeFormalParams, getStoreFuncInput);
+  auto storeValue = dynS.storeCallback->invoke(params);
+
+  S_ELEMENT_DPRINTF(element, "StoreValue %llu.\n", storeValue);
+  this->performStore(dynS, element, storeValue);
 }
 
 std::unique_ptr<StreamAtomicOp>
@@ -1041,42 +1081,44 @@ void Stream::handleMergedPredicate(const DynamicStream &dynS,
   if (!(mergedPredicatedStreamIds.size() > 0 && dynS.offloadedToCache)) {
     return;
   }
-  // Prepare the predicate actual params.
-  uint64_t elementVal = 0;
-  element->getValue(element->addr, element->size,
-                    reinterpret_cast<uint8_t *>(&elementVal));
-  GetStreamValueFunc getStreamValue = [elementVal,
-                                       element](uint64_t streamId) -> uint64_t {
-    assert(streamId == element->FIFOIdx.streamId.staticId &&
-           "Mismatch stream id for predication.");
-    return elementVal;
-  };
-  auto params =
-      convertFormalParamToParam(dynS.predFormalParams, getStreamValue);
-  bool predTrue = dynS.predCallback->invoke(params) & 0x1;
-  for (auto predStreamId : mergedPredicatedStreamIds) {
-    S_ELEMENT_DPRINTF(element, "Predicate %d %d: %s.\n", predTrue,
-                      predStreamId.pred_true(), predStreamId.id().name());
-    if (predTrue != predStreamId.pred_true()) {
-      continue;
-    }
-    auto predS = this->se->getStream(predStreamId.id().id());
-    // They should be configured by the same configure instruction.
-    const auto &predDynS = predS->getDynamicStream(dynS.configSeqNum);
-    if (predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
-      auto predElement = predDynS.getElementByIdx(element->FIFOIdx.entryIdx);
-      if (!predElement) {
-        S_ELEMENT_PANIC(element, "Failed to get predicated element.");
-      }
-      this->performConstStore(predDynS, predElement);
-    } else {
-      S_ELEMENT_PANIC(element, "Can only handle merged store stream.");
-    }
-  }
+  panic("Deprecated, need refactor.");
+  // // Prepare the predicate actual params.
+  // uint64_t elementVal = 0;
+  // element->getValue(element->addr, element->size,
+  //                   reinterpret_cast<uint8_t *>(&elementVal));
+  // GetStreamValueFunc getStreamValue = [elementVal,
+  //                                      element](uint64_t streamId) ->
+  //                                      uint64_t {
+  //   assert(streamId == element->FIFOIdx.streamId.staticId &&
+  //          "Mismatch stream id for predication.");
+  //   return elementVal;
+  // };
+  // auto params =
+  //     convertFormalParamToParam(dynS.predFormalParams, getStreamValue);
+  // bool predTrue = dynS.predCallback->invoke(params) & 0x1;
+  // for (auto predStreamId : mergedPredicatedStreamIds) {
+  //   S_ELEMENT_DPRINTF(element, "Predicate %d %d: %s.\n", predTrue,
+  //                     predStreamId.pred_true(), predStreamId.id().name());
+  //   if (predTrue != predStreamId.pred_true()) {
+  //     continue;
+  //   }
+  //   auto predS = this->se->getStream(predStreamId.id().id());
+  //   // They should be configured by the same configure instruction.
+  //   const auto &predDynS = predS->getDynamicStream(dynS.configSeqNum);
+  //   if (predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
+  //     auto predElement = predDynS.getElementByIdx(element->FIFOIdx.entryIdx);
+  //     if (!predElement) {
+  //       S_ELEMENT_PANIC(element, "Failed to get predicated element.");
+  //     }
+  //     this->performStore(predDynS, predElement, predDynS.constUpdateValue);
+  //   } else {
+  //     S_ELEMENT_PANIC(element, "Can only handle merged store stream.");
+  //   }
+  // }
 }
 
-void Stream::performConstStore(const DynamicStream &dynS,
-                               StreamElement *element) {
+void Stream::performStore(const DynamicStream &dynS, StreamElement *element,
+                          uint64_t storeValue) {
   /**
    * * Perform const store here.
    * We can not do that in the Ruby because it uses BackingStore, which
@@ -1093,9 +1135,8 @@ void Stream::performConstStore(const DynamicStream &dynS,
   assert(cpuDelegator->translateVAddrOracle(elementVAddr, elementPAddr) &&
          "Failed to translate address for const update.");
   // ! Hack: Just do a functional write.
-  cpuDelegator->writeToMem(
-      elementVAddr, elementSize,
-      reinterpret_cast<const uint8_t *>(&dynS.constUpdateValue));
+  cpuDelegator->writeToMem(elementVAddr, elementSize,
+                           reinterpret_cast<const uint8_t *>(&storeValue));
 }
 
 void Stream::dump() const {

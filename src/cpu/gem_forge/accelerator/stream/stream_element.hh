@@ -147,7 +147,19 @@ public:
 };
 
 struct StreamElement {
-  std::unordered_set<StreamElement *> baseElements;
+  using StaticId = DynamicStreamId::StaticId;
+  struct BaseElement {
+    StreamElement *element;
+    FIFOEntryIdx idx;
+    BaseElement(StreamElement *_element)
+        : element(_element), idx(_element->FIFOIdx) {
+      assert(this->element->stream && "This is element has not allocated.");
+    }
+    bool isValid() const { return this->element->FIFOIdx == this->idx; }
+  };
+  // TODO: AddrBaseElement should also be tracked with BaseElement.
+  std::unordered_set<StreamElement *> addrBaseElements;
+  std::vector<BaseElement> valueBaseElements;
   StreamElement *next;
   Stream *stream;
   DynamicStream *dynS;
@@ -203,6 +215,7 @@ struct StreamElement {
   void setValue(StreamElement *prevElement);
   void setValue(Addr vaddr, int size, const uint8_t *val);
   void getValue(Addr vaddr, int size, uint8_t *val) const;
+  void getValueByStreamId(StaticId streamId, uint8_t *val, int valLen) const;
   uint64_t mapVAddrToValueOffset(Addr vaddr, int size) const;
   uint64_t mapVAddrToBlockOffset(Addr vaddr, int size) const;
   // Some helper template.
@@ -212,7 +225,13 @@ struct StreamElement {
   template <typename T> void getValue(Addr vaddr, T *val) {
     this->getValue(vaddr, sizeof(*val), reinterpret_cast<uint8_t *>(val));
   }
+  template <typename T> void getValueByStreamId(StaticId streamId, T *val) {
+    this->getValueByStreamId(streamId, reinterpret_cast<uint8_t *>(val),
+                             sizeof(T));
+  }
   bool isValueFaulted(Addr vaddr, int size) const;
+
+  bool areValueBaseElementsValueReady() const;
 
   // Store the infly writeback memory accesses.
   std::unordered_map<StreamStoreInst *, std::unordered_set<StreamMemAccess *>>

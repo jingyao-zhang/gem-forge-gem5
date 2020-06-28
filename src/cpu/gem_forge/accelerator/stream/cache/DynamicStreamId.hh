@@ -11,6 +11,7 @@
  */
 struct DynamicStreamId {
   using StaticId = uint64_t;
+  static constexpr StaticId InvalidStaticStreamId = 0;
   // Use coreId to distinguish streams in multi-core context.
   // TODO: ThreadID may be a better option.
   int coreId = -1;

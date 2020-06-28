@@ -41,7 +41,7 @@ bool DynamicStream::shouldCoreSEIssue() const {
   if (!this->stream->hasCoreUser() && this->offloadedToCache) {
     // Check that dependent dynS all offloaded to cache.
     bool allDepSFloated = true;
-    for (auto depS : this->stream->dependentStreams) {
+    for (auto depS : this->stream->addrDepStreams) {
       const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
       if (!depDynS.offloadedToCache) {
         allDepSFloated = false;
@@ -186,10 +186,10 @@ void DynamicStream::tryCancelFloat() {
     // This feature is not enabled.
     return;
   }
-  if (!S->dependentStreams.empty()) {
+  if (!S->addrDepStreams.empty()) {
     return;
   }
-  if (S->hasUpgradedToUpdate()) {
+  if (S->enabledStoreFunc()) {
     return;
   }
   if (this->offloadedWithDependent) {
@@ -245,7 +245,7 @@ void DynamicStream::dump() const {
     ss << element->FIFOIdx.entryIdx << '('
        << static_cast<int>(element->isAddrReady)
        << static_cast<int>(element->isValueReady) << ')';
-    for (auto baseElement : element->baseElements) {
+    for (auto baseElement : element->addrBaseElements) {
       ss << '.' << baseElement->FIFOIdx.entryIdx;
     }
     ss << ' ';

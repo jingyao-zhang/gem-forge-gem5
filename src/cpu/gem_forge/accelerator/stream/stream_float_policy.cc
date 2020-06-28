@@ -84,15 +84,14 @@ bool StreamFloatPolicy::shouldFloatStream(Stream *S, DynamicStream &dynS) {
    * This is the root of floating streams:
    * 1. DirectLoadStream.
    * 2. PointerChaseLoadStream.
-   * 3. DirectAtomicRMWStream without being merged, and StoreFunc enabled.
+   * 3. Direct Atomic/StoreStream without being merged, and StoreFunc enabled.
    */
   {
-    bool isUnmergedDirectAtomicRMW =
+    bool isUnmergedDirectAtomicOrStore =
         (!S->isMerged()) && S->isDirectMemStream() &&
-        (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT) &&
-        S->enabledStoreFunc();
+        (S->isAtomicStream() || S->isStoreStream()) && S->enabledStoreFunc();
     if (!S->isDirectLoadStream() && !S->isPointerChaseLoadStream() &&
-        !isUnmergedDirectAtomicRMW) {
+        !isUnmergedDirectAtomicOrStore) {
       return false;
     }
   }
@@ -277,9 +276,13 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(Stream *S, DynamicStream &dynS) {
    * 1. Check if there are aliased store stream.
    */
   if (S->aliasBaseStream->hasAliasedStoreStream) {
-    S_DPRINTF(S, "[Not Float] due to aliased store stream.\n");
-    logStream(S) << "[Not Float] due to aliased store stream.\n" << std::flush;
-    return false;
+    // Unless the alias store is myself.
+    if (S->aliasBaseStream->aliasedStreams.size() > 1) {
+      S_DPRINTF(S, "[Not Float] due to aliased store stream.\n");
+      logStream(S) << "[Not Float] due to aliased store stream.\n"
+                   << std::flush;
+      return false;
+    }
   }
 
   if (!this->checkReuseWithinStream(S, dynS)) {
@@ -313,7 +316,7 @@ bool StreamFloatPolicy::shouldPseudoFloatStream(Stream *S,
    * 2. Its TotalTripCount is known and shorter than a threshold.
    * 3. TODO: Use history hit information.
    */
-  if (S->dependentStreams.empty()) {
+  if (S->addrDepStreams.empty()) {
     return false;
   }
   if (!dynS.hasTotalTripCount()) {

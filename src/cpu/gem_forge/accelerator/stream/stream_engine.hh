@@ -4,7 +4,6 @@
 #include "coalesced_stream.hh"
 #include "insts.hh"
 #include "prefetch_element_buffer.hh"
-#include "single_stream.hh"
 #include "stream_element.hh"
 #include "stream_translation_buffer.hh"
 
@@ -125,8 +124,8 @@ public:
    ************************************************************************/
   void cpuStoreTo(Addr vaddr, int size);
 
-  Stream *getStream(uint64_t streamId) const;
-  Stream *tryGetStream(uint64_t streamId) const;
+  CoalescedStream *getStream(uint64_t streamId) const;
+  CoalescedStream *tryGetStream(uint64_t streamId) const;
 
   /**
    * Send StreamEnd packet for all the ended dynamic stream ids.
@@ -285,7 +284,7 @@ private:
   PrefetchElementBuffer peb;
 
   using StreamId = uint64_t;
-  std::unordered_map<StreamId, Stream *> streamMap;
+  std::unordered_map<StreamId, CoalescedStream *> streamMap;
 
   /**
    * One level indirection for from the original stream id to coalesced stream
@@ -369,7 +368,7 @@ private:
   const std::list<Stream *> &getStepStreamList(Stream *stepS) const;
 
   // Helper function to get streams configured in the region.
-  std::list<Stream *>
+  std::list<CoalescedStream *>
   getConfigStreamsInRegion(const LLVM::TDG::StreamRegion &streamRegion);
 
   // Called every cycle to allocate elements.

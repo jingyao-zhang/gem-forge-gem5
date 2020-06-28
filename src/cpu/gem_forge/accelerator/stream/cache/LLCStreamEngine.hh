@@ -183,8 +183,8 @@ private:
   using ResponseMsgPtr = std::shared_ptr<ResponseMsg>;
   ResponseMsgPtr createStreamMsgToMLC(const DynamicStreamSliceId &sliceId,
                                       CoherenceResponseType type,
-                                      Addr paddrLine, uint8_t *data, int size,
-                                      int lineOffset);
+                                      Addr paddrLine, const uint8_t *data,
+                                      int size, int lineOffset);
   void issueStreamMsgToMLC(ResponseMsgPtr msg, bool forceIdea = false);
 
   /**
@@ -198,7 +198,7 @@ private:
    * Mostly used for atomic streams.
    */
   void issueStreamDataToMLC(const DynamicStreamSliceId &sliceId, Addr paddrLine,
-                            uint8_t *data, int size, int lineOffset,
+                            const uint8_t *data, int size, int lineOffset,
                             bool forceIdea = false);
 
   /**
@@ -231,11 +231,11 @@ private:
    * Helper function to process stream data for indirect/update.
    */
   void processStreamDataForIndirectStreams(LLCDynamicStreamPtr stream,
-                                           const DynamicStreamSliceId &sliceId,
-                                           const DataBlock &dataBlock);
-  void processStreamDataForUpdateStream(LLCDynamicStreamPtr stream,
-                                        const DynamicStreamSliceId &sliceId,
-                                        const DataBlock &dataBlock);
+                                           LLCStreamElementPtr element);
+  void processStreamDataForUpdate(LLCDynamicStreamPtr stream,
+                                  LLCStreamElementPtr element,
+                                  const DataBlock &storeValueBlock,
+                                  DataBlock &loadValueBlock);
   void extractElementDataFromSlice(LLCDynamicStreamPtr stream,
                                    const DynamicStreamSliceId &sliceId,
                                    uint64_t elementIdx,

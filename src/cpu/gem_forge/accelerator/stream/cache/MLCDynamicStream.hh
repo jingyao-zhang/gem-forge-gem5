@@ -184,10 +184,10 @@ protected:
   bool isWaitingAck() const {
     // This is stream is waiting for Ack, not Data.
     // So far only for offloaded store and atomicrmw streams.
-    auto streamType = this->stream->getStreamType();
-    if (streamType == ::LLVM::TDG::StreamInfo_Type_ST) {
+    if (this->stream->isStoreStream()) {
       return true;
-    } else if (streamType == ::LLVM::TDG::StreamInfo_Type_AT) {
+    } else if (this->stream->isAtomicStream() ||
+               this->stream->isUpdateStream()) {
       // We need to check if there the core is issuing.
       auto dynS = this->stream->getDynamicStream(this->dynamicStreamId);
       if (dynS) {

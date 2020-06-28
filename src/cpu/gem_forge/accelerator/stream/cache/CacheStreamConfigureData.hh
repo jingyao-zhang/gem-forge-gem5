@@ -41,7 +41,6 @@ public:
   DynamicStreamFormalParamV predFormalParams;
   ExecFuncPtr predCallback;
   int64_t totalTripCount = -1;
-  uint64_t constUpdateValue = 0;
   bool isPredicated = false;
   bool isPredicatedTrue = false;
   DynamicStreamId predicateStreamId;

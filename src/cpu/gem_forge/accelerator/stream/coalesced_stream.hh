@@ -37,16 +37,16 @@ public:
   }
   uint64_t getStreamId() const { return this->info.id(); }
   const Stream::StreamIdList &getMergedLoadStoreDepStreams() const {
-    return this->info.static_info().merged_load_store_dep_streams();
+    return this->info.static_info().compute_info().value_dep_streams();
   }
   const Stream::StreamIdList &getMergedLoadStoreBaseStreams() const {
-    return this->info.static_info().merged_load_store_base_streams();
+    return this->info.static_info().compute_info().value_base_streams();
   }
   const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const {
-    return this->info.static_info().store_func_info();
+    return this->info.static_info().compute_info().store_func_info();
   }
   const ::LLVM::TDG::ExecFuncInfo &getLoadFuncInfo() const {
-    return this->info.static_info().load_func_info();
+    return this->info.static_info().compute_info().load_func_info();
   }
 
   LLVM::TDG::StreamInfo info;
@@ -87,7 +87,6 @@ public:
   }
   bool getFloatManual() const override;
   bool hasUpdate() const override;
-  bool hasUpgradedToUpdate() const override;
   const PredicatedStreamIdList &getMergedPredicatedStreams() const override;
   const ::LLVM::TDG::ExecFuncInfo &getPredicateFuncInfo() const override;
 

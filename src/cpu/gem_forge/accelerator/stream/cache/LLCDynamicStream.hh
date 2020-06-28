@@ -84,8 +84,9 @@ public:
   bool hasTotalTripCount() const;
   uint64_t getTotalTripCount() const;
   bool hasIndirectDependent() const {
+    auto S = this->getStaticStream();
     return !this->indirectStreams.empty() || this->isPointerChase() ||
-           this->getStaticStream()->hasUpgradedToUpdate();
+           (S->isLoadStream() && S->enabledStoreFunc());
   }
 
   void setController(AbstractStreamAwareController *controller) {

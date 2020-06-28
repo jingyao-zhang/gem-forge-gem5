@@ -51,14 +51,15 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
   /**
    * Note: At this point the primary logical stream may not be created yet!
    */
-  assert(info.type() != ::LLVM::TDG::StreamInfo_Type_IV &&
-         "Never coalesce iv stream.");
   this->coalescedStreams.emplace_back(
       new LogicalStream(cpuDelegator->getTraceExtraFolder(), info));
 }
 
 void CoalescedStream::finalize() {
   this->selectPrimeLogicalStream();
+  if (this->primeLStream->info.type() == ::LLVM::TDG::StreamInfo_Type_IV) {
+    assert(this->getNumCoalescedStreams() == 1 && "Never coalesce IVStream");
+  }
   // Initialize the dependence graph.
   this->initializeBaseStreams();
   this->initializeBackBaseStreams();
@@ -103,8 +104,6 @@ void CoalescedStream::selectPrimeLogicalStream() {
   for (const auto &LS : this->coalescedStreams) {
     assert(LS->info.loop_level() == this->getLoopLevel());
     assert(LS->info.config_loop_level() == this->getConfigLoopLevel());
-    assert(LS->info.static_info().has_upgraded_to_update() ==
-           this->hasUpgradedToUpdate());
     const auto &LSStaticInfo = LS->info.static_info();
     const auto &PSStaticInfo = this->primeLStream->info.static_info();
 #define CHECK_INFO(field)                                                      \
@@ -118,8 +117,8 @@ void CoalescedStream::selectPrimeLogicalStream() {
   } while (false);
     CHECK_INFO(is_merged_predicated_stream);
     CHECK_INFO(no_core_user);
-    CHECK_INFO(merged_load_store_base_streams_size);
-    CHECK_INFO(enabled_store_func);
+    CHECK_INFO(compute_info().value_base_streams_size);
+    CHECK_INFO(compute_info().enabled_store_func);
 #undef CHECK_INFO
     // If more than one coalesced stream, then CoreElementSize must be
     // the same as the MemElementSize.
@@ -157,15 +156,23 @@ void CoalescedStream::selectPrimeLogicalStream() {
 void CoalescedStream::initializeBaseStreams() {
   for (auto LS : this->coalescedStreams) {
     const auto &info = LS->info;
-    // Update the dependence information.
+    // Update the address dependence information.
     for (const auto &baseStreamId : info.chosen_base_streams()) {
-      auto baseStream = this->se->getStream(baseStreamId.id());
-      assert(baseStream != this && "Should never have circular dependency.");
-      this->addBaseStream(baseStreamId.id(), baseStream);
+      auto baseS = this->se->getStream(baseStreamId.id());
+      assert(baseS != this && "Should never have circular address dependency.");
+      this->addAddrBaseStream(baseStreamId.id(), info.id(), baseS);
+    }
+
+    // Update the value dependence information.
+    for (const auto &baseId :
+         info.static_info().compute_info().value_base_streams()) {
+      auto baseS = this->se->getStream(baseId.id());
+      assert(baseS != this && "Should never have circular value dependency.");
+      this->addValueBaseStream(baseId.id(), info.id(), baseS);
     }
 
     // Try to update the step root stream.
-    for (auto &baseS : this->baseStreams) {
+    for (auto &baseS : this->addrBaseStreams) {
       if (baseS->getLoopLevel() != info.loop_level()) {
         continue;
       }
@@ -177,6 +184,11 @@ void CoalescedStream::initializeBaseStreams() {
         this->stepRootStream = baseS->stepRootStream;
       }
     }
+  }
+  // Remember to set step root stream.
+  if (this->addrBaseStreams.empty() &&
+      this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV) {
+    this->stepRootStream = this;
   }
 }
 
@@ -196,15 +208,6 @@ void CoalescedStream::initializeAliasStreams() {
     const auto &SSI = LS->info.static_info();
     assert(SSI.alias_base_stream().id() == aliasBaseStreamId.id() &&
            "Mismatch AliasBaseStream.");
-    if (this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
-      /**
-       * Only check this for LoadStream. This is because coalescing
-       * is not performed between different stream types, but alias
-       * is.
-       */
-      assert(SSI.alias_offset() == LS->getCoalesceOffset() &&
-             "Mismatch between CoalesceOffset and AliasOffset.");
-    }
   }
   this->initializeAliasStreamsFromProtobuf(primeSSI);
 }
@@ -244,10 +247,10 @@ bool CoalescedStream::getFloatManual() const {
 }
 
 bool CoalescedStream::hasUpdate() const {
-  return this->primeLStream->info.static_info().has_update();
-}
-bool CoalescedStream::hasUpgradedToUpdate() const {
-  return this->primeLStream->info.static_info().has_upgraded_to_update();
+  return this->primeLStream->info.static_info()
+             .compute_info()
+             .update_stream()
+             .id() != DynamicStreamId::InvalidStaticStreamId;
 }
 
 const Stream::PredicatedStreamIdList &
@@ -264,10 +267,13 @@ bool CoalescedStream::isMergedPredicated() const {
 }
 bool CoalescedStream::isMergedLoadStoreDepStream() const {
   return this->primeLStream->info.static_info()
-             .merged_load_store_base_streams_size() > 0;
+             .compute_info()
+             .value_base_streams_size() > 0;
 }
 bool CoalescedStream::enabledStoreFunc() const {
-  return this->primeLStream->info.static_info().enabled_store_func();
+  return this->primeLStream->info.static_info()
+      .compute_info()
+      .enabled_store_func();
 }
 
 const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {

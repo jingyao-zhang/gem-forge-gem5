@@ -14,9 +14,8 @@ StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
                                  Addr _cacheBlockVAddr, Addr _vaddr, int _size,
                                  int _additionalDelay)
     : stream(_stream), element(_element), isReissue(_element->flushed),
-      FIFOIdx(_element->FIFOIdx),
-      cacheBlockVAddr(_cacheBlockVAddr), vaddr(_vaddr), size(_size),
-      additionalDelay(_additionalDelay) {
+      FIFOIdx(_element->FIFOIdx), cacheBlockVAddr(_cacheBlockVAddr),
+      vaddr(_vaddr), size(_size), additionalDelay(_additionalDelay) {
   // Initialize it fairly simply.
   this->sliceId.streamId = this->FIFOIdx.streamId;
   this->sliceId.lhsElementIdx = this->FIFOIdx.entryIdx;
@@ -213,7 +212,8 @@ void StreamElement::clear() {
     }
   }
 
-  this->baseElements.clear();
+  this->addrBaseElements.clear();
+  this->valueBaseElements.clear();
   this->next = nullptr;
   this->stream = nullptr;
   this->dynS = nullptr;
@@ -329,7 +329,7 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
   GetStreamValueFunc getStreamValue =
       [this](uint64_t baseStreamId) -> uint64_t {
     auto baseStream = this->se->getStream(baseStreamId);
-    for (auto baseElement : this->baseElements) {
+    for (auto baseElement : this->addrBaseElements) {
       if (baseElement->stream == baseStream) {
         // TODO: Check the FIFOIdx to make sure that the element is correct to
         // TODO: use.
@@ -547,6 +547,20 @@ void StreamElement::getValue(Addr vaddr, int size, uint8_t *val) const {
   }
 }
 
+void StreamElement::getValueByStreamId(StaticId streamId, uint8_t *val,
+                                       int valLen) const {
+  auto vaddr = this->addr;
+  int size = this->size;
+  // Handle offset for coalesced stream.
+  int32_t offset;
+  auto CS = dynamic_cast<CoalescedStream *>(this->stream);
+  assert(CS && "All stream should be Coalesced stream now.");
+  CS->getCoalescedOffsetAndSize(streamId, offset, size);
+  assert(size <= valLen && "ElementSize overflow.");
+  vaddr += offset;
+  this->getValue(vaddr, size, val);
+}
+
 bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
   auto blockIdx = this->mapVAddrToBlockOffset(vaddr, size);
   auto blockEnd = this->mapVAddrToBlockOffset(vaddr + size - 1, 1);
@@ -558,6 +572,18 @@ bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
     blockIdx++;
   }
   return false;
+}
+
+bool StreamElement::areValueBaseElementsValueReady() const {
+  for (const auto &baseE : this->valueBaseElements) {
+    if (!baseE.isValid()) {
+      S_ELEMENT_PANIC(this, "ValueBaseElement released early: %s.", baseE.idx);
+    }
+    if (!baseE.element->isValueReady) {
+      return false;
+    }
+  }
+  return true;
 }
 
 uint64_t StreamElement::mapVAddrToValueOffset(Addr vaddr, int size) const {

@@ -66,14 +66,6 @@ StreamEngine::~StreamEngine() {
 
   // Clear all the allocated streams.
   for (auto &streamIdStreamPair : this->streamMap) {
-    /**
-     * Be careful here as CoalescedStream are not newed, no need to delete
-     * them.
-     */
-    if (dynamic_cast<CoalescedStream *>(streamIdStreamPair.second) != nullptr) {
-      continue;
-    }
-
     delete streamIdStreamPair.second;
     streamIdStreamPair.second = nullptr;
   }
@@ -370,7 +362,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
        * merged.
        */
       if (this->enableStreamFloatIndirect) {
-        for (auto depS : S->dependentStreams) {
+        for (auto depS : S->addrDepStreams) {
           bool canFloatIndirect = false;
           auto depSType = depS->getStreamType();
           switch (depSType) {
@@ -387,7 +379,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
           default:
             break;
           }
-          if (canFloatIndirect && depS->baseStreams.size() == 1) {
+          if (canFloatIndirect && depS->addrBaseStreams.size() == 1) {
             // Only dependent on this direct stream.
             auto depConfig = depS->allocateCacheConfigureData(
                 args.seqNum, true /* isIndirect */);
@@ -431,7 +423,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         //     if (backDependentStream->backBaseStreams.size() != 1) {
         //       continue;
         //     }
-        //     for (auto indirectStream : backDependentStream->dependentStreams)
+        //     for (auto indirectStream : backDependentStream->addrDepStreams)
         //     {
         //       if (indirectStream == S) {
         //         continue;
@@ -439,7 +431,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         //       if (indirectStream->getStreamType() != "load") {
         //         continue;
         //       }
-        //       if (indirectStream->baseStreams.size() != 1) {
+        //       if (indirectStream->addrBaseStreams.size() != 1) {
         //         continue;
         //       }
         //       // We found one valid indirect stream that is one iteration
@@ -478,22 +470,22 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         streamConfigureData->indirectStreams.emplace_back(mergedConfig);
       }
       /**
-       * Merged LoadStore dep streams are always offloaded.
+       * ValueDepStreams are always offloaded.
        */
-      int numOffloadedLoadStoreDepStreams = 0;
-      for (auto mergedStreamId : S->getMergedLoadStoreDepStreams()) {
-        auto mergedS = this->getStream(mergedStreamId.id());
-        auto mergedConfig = mergedS->allocateCacheConfigureData(
+      int numOffloadedValueDepStreams = 0;
+      for (auto valueDepS : S->valueDepStreams) {
+        auto valueDepConfig = valueDepS->allocateCacheConfigureData(
             args.seqNum, true /* isIndirect */);
         /**
          * Remember the decision.
          */
-        mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
+        valueDepS->getDynamicStream(args.seqNum).offloadedToCache = true;
         this->numFloated++;
-        assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig).second &&
-               "Merged stream already offloaded.");
-        streamConfigureData->indirectStreams.emplace_back(mergedConfig);
-        numOffloadedLoadStoreDepStreams++;
+        assert(offloadedStreamConfigMap.emplace(valueDepS, valueDepConfig)
+                   .second &&
+               "ValueDepStream already offloaded.");
+        streamConfigureData->indirectStreams.emplace_back(valueDepConfig);
+        numOffloadedValueDepStreams++;
       }
 
       /**
@@ -515,22 +507,6 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         }
       }
 
-      // ! Sanity check that the base stream is not coaleasced.
-      if (!streamConfigureData->indirectStreams.empty()) {
-        dynStream.offloadedWithDependent = true;
-        // We allow for LoadStore stream to be offloaded with coalesced base
-        // stream.
-        if (streamConfigureData->indirectStreams.size() >
-            numOffloadedLoadStoreDepStreams) {
-          if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
-            if (CS->getNumCoalescedStreams() > 1) {
-              // This should work now?
-              // S_PANIC(
-              //     S, "CoalescedStream cannot be floated with indirect stream.");
-            }
-          }
-        }
-      }
       cacheStreamConfigVec->push_back(streamConfigureData);
     }
   }
@@ -539,13 +515,10 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   for (auto &S : configStreams) {
     auto &dynS = S->getDynamicStream(args.seqNum);
     if (!dynS.offloadedToCache) {
-      if (S->hasUpgradedToUpdate()) {
-        S_PANIC(S, "UpdateStream not offloaded.\n");
-      }
       if (S->getMergedPredicatedStreams().size() > 0) {
         S_PANIC(S, "Should offload streams with merged streams.");
       }
-      if (S->isMerged()) {
+      if (S->isMergedPredicated()) {
         S_PANIC(S, "MergedStream not offloaded.");
       }
     }
@@ -681,6 +654,7 @@ bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
      * For streams enabled StoreFunc:
      * 1. If not offloaded, we have to make sure the address is ready so that
      *    we can issue packet to memory when release.
+     *   a. If this is update stream, we have to further ensure value is ready.
      * 2. If offloaded, we have to check for StreamAck.
      */
     if (S->enabledStoreFunc()) {
@@ -693,6 +667,16 @@ bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
       } else {
         if (!stepElement->isAddrReady) {
           return false;
+        }
+        // Check for all value base elements.
+        if (!stepElement->areValueBaseElementsValueReady()) {
+          return false;
+        }
+        if (S->isLoadStream()) {
+          // LoadStream + StoreFunc = UpdateStream.
+          if (!stepElement->isValueReady) {
+            return false;
+          }
         }
       }
     }
@@ -734,6 +718,14 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   auto stepStream = this->getStream(stepStreamId);
 
   const auto &stepStreams = this->getStepStreamList(stepStream);
+
+  for (auto S : stepStreams) {
+    /**
+     * We handle all possible value dependence for stream computation
+     * before actually release the elements.
+     */
+    S->handleStoreFuncAtRelease();
+  }
 
   for (auto S : stepStreams) {
     /**
@@ -1011,17 +1003,8 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
       /**
        * Read in the value.
        */
-      auto vaddr = element->addr;
-      int size = element->size;
-      if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
-        // Handle offset for coalesced stream.
-        int32_t offset;
-        CS->getCoalescedOffsetAndSize(streamId, offset, size);
-        vaddr += offset;
-      }
-      assert(size <= StreamUserArgs::MaxElementSize &&
-             "Do we really have such huge register.");
-      element->getValue(vaddr, size, args.values->back().data());
+      element->getValueByStreamId(streamId, args.values->back().data(),
+                                  StreamUserArgs::MaxElementSize);
     }
   }
 }
@@ -1052,12 +1035,12 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
       }
       auto vaddr = element->addr;
       int32_t size = element->size;
-      if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
-        // Handle offset for coalesced stream.
-        int32_t offset;
-        CS->getCoalescedOffsetAndSize(streamId, offset, size);
-        vaddr += offset;
-      }
+      auto CS = dynamic_cast<CoalescedStream *>(S);
+      assert(CS && "Every stream should be CoalescedStream now.");
+      // Handle offset for coalesced stream.
+      int32_t offset;
+      CS->getCoalescedOffsetAndSize(streamId, offset, size);
+      vaddr += offset;
       if (element->isValueFaulted(vaddr, size)) {
         S_ELEMENT_PANIC(element, "Commit user of faulted value.");
       }
@@ -1163,13 +1146,13 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
     }
     endedStreams.insert(S);
     // Check for StreamAck. So far that's only merged store stream.
-    if (S->isMerged() &&
-        S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
-      const auto &dynS = S->getLastDynamicStream();
+    const auto &dynS = S->getLastDynamicStream();
+    if (S->isMerged() && S->isStoreStream()) {
       if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
         return false;
       }
-      if (dynS.cacheAcked + 1 < dynS.FIFOIdx.entryIdx) {
+      if (dynS.offloadedToCache &&
+          dynS.cacheAcked + 1 < dynS.FIFOIdx.entryIdx) {
         // We are not ack the LastElement.
         hack("not enough ack %llu %llu.\n", dynS.cacheAcked,
              dynS.FIFOIdx.entryIdx);
@@ -1346,8 +1329,7 @@ void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
   }
   if (auto element = this->peb.isHit(vaddr, size)) {
     // hack("CPU stores to (%#x, %d), hits in PEB.\n", vaddr, size);
-    S_ELEMENT_DPRINTF(element, "CPUStoreTo aliased %#x, +%d.\n", 
-      vaddr, size);
+    S_ELEMENT_DPRINTF(element, "CPUStoreTo aliased %#x, +%d.\n", vaddr, size);
     // Remember that this element's address is aliased.
     element->isAddrAliased = true;
     this->flushPEB();
@@ -1390,24 +1372,16 @@ void StreamEngine::initializeStreams(
 
     // Check if this stream belongs to CoalescedStream.
     auto coalescedIter = this->coalescedStreamIdMap.find(streamId);
-    if (coalescedIter != this->coalescedStreamIdMap.end()) {
-      auto coalescedStreamId = coalescedIter->second;
-      auto coalescedStream = dynamic_cast<CoalescedStream *>(
-          this->streamMap.at(coalescedStreamId));
-      assert(coalescedStream && "Illegal type for CoalescedStream.");
-      coalescedStream->addStreamInfo(streamInfo);
-      // Don't forget to push into created streams.
-      if (std::find(createdStreams.begin(), createdStreams.end(),
-                    coalescedStream) == createdStreams.end()) {
-        createdStreams.push_back(coalescedStream);
-      }
-    } else {
-      // This is single stream.
-      assert(this->streamMap.count(streamId) == 0 &&
-             "Stream is already initialized.");
-      auto newStream = new SingleStream(args, streamInfo);
-      createdStreams.push_back(newStream);
-      this->streamMap.emplace(streamId, newStream);
+    assert(coalescedIter != this->coalescedStreamIdMap.end() &&
+           "Every stream should be a coalesced stream.");
+    auto coalescedStreamId = coalescedIter->second;
+    auto coalescedStream = this->streamMap.at(coalescedStreamId);
+    assert(coalescedStream && "Illegal type for CoalescedStream.");
+    coalescedStream->addStreamInfo(streamInfo);
+    // Don't forget to push into created streams.
+    if (std::find(createdStreams.begin(), createdStreams.end(),
+                  coalescedStream) == createdStreams.end()) {
+      createdStreams.push_back(coalescedStream);
     }
   }
 
@@ -1423,11 +1397,6 @@ void StreamEngine::generateCoalescedStreamIdMap(
     const ::LLVM::TDG::StreamRegion &streamRegion,
     Stream::StreamArguments &args) {
 
-  if (!this->enableCoalesce) {
-    // Simply return empty coalesce group.
-    return;
-  }
-
   /**
    * The compiler would provide coalesce info based on offset, however,
    * we would like to split large offset into multiple streams.
@@ -1441,20 +1410,19 @@ void StreamEngine::generateCoalescedStreamIdMap(
     const auto &coalesceInfo = streamInfo.coalesce_info();
     auto coalesceGroup = coalesceInfo.base_stream();
     constexpr uint64_t InvalidCoalesceGroup = 0;
-    if (coalesceGroup != InvalidCoalesceGroup) {
-      // Search for the group. This is O(N^2).
-      bool found = false;
-      for (auto &group : coalescedGroup) {
-        if (group.front()->coalesce_info().base_stream() == coalesceGroup) {
-          group.push_back(&streamInfo);
-          found = true;
-          break;
-        }
+    assert(coalesceGroup != InvalidCoalesceGroup && "Invalid CoalesceGroup.");
+    // Search for the group. This is O(N^2).
+    bool found = false;
+    for (auto &group : coalescedGroup) {
+      if (group.front()->coalesce_info().base_stream() == coalesceGroup) {
+        group.push_back(&streamInfo);
+        found = true;
+        break;
       }
-      if (!found) {
-        coalescedGroup.emplace_back();
-        coalescedGroup.back().push_back(&streamInfo);
-      }
+    }
+    if (!found) {
+      coalescedGroup.emplace_back();
+      coalescedGroup.back().push_back(&streamInfo);
     }
   }
   // Sort each group with increasing order of offset.
@@ -1482,8 +1450,10 @@ void StreamEngine::generateCoalescedStreamIdMap(
          streamIter != streamEnd; ++streamIter, ++nStream) {
       const auto *streamInfo = *streamIter;
       auto offset = streamInfo->coalesce_info().offset();
-      if (offset > endOffset) {
-        // The expansion is broken, split the group.
+      if ((!this->enableCoalesce && nStream == 1) || offset > endOffset) {
+        /**
+         * Split the group if disabled coalescing, or expansion broken.
+         */
         assert(nStream != 0 && "Emplty LHS group.");
         coalescedGroup.emplace_back(streamIter, streamEnd);
         groupIter->resize(nStream);
@@ -1528,7 +1498,7 @@ void StreamEngine::generateCoalescedStreamIdMap(
   }
 }
 
-Stream *StreamEngine::getStream(uint64_t streamId) const {
+CoalescedStream *StreamEngine::getStream(uint64_t streamId) const {
   if (this->coalescedStreamIdMap.count(streamId)) {
     streamId = this->coalescedStreamIdMap.at(streamId);
   }
@@ -1539,7 +1509,7 @@ Stream *StreamEngine::getStream(uint64_t streamId) const {
   return iter->second;
 }
 
-Stream *StreamEngine::tryGetStream(uint64_t streamId) const {
+CoalescedStream *StreamEngine::tryGetStream(uint64_t streamId) const {
   if (this->coalescedStreamIdMap.count(streamId)) {
     streamId = this->coalescedStreamIdMap.at(streamId);
   }
@@ -1656,7 +1626,14 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
     auto S = stack.back();
     if (stackStatusMap.at(S) == 0) {
       // First time.
-      for (auto depS : S->dependentStreams) {
+      for (auto depS : S->addrDepStreams) {
+        if (depS->getLoopLevel() != stepS->getLoopLevel()) {
+          continue;
+        }
+        pushToStack(depS);
+      }
+      // Value dep stream.
+      for (auto depS : S->valueDepStreams) {
         if (depS->getLoopLevel() != stepS->getLoopLevel()) {
           continue;
         }
@@ -1689,13 +1666,13 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
       .first->second;
 }
 
-std::list<Stream *> StreamEngine::getConfigStreamsInRegion(
+std::list<CoalescedStream *> StreamEngine::getConfigStreamsInRegion(
     const LLVM::TDG::StreamRegion &streamRegion) {
   /**
    * Get all the configured streams.
    */
-  std::list<Stream *> configStreams;
-  std::unordered_set<Stream *> dedupSet;
+  std::list<CoalescedStream *> configStreams;
+  std::unordered_set<CoalescedStream *> dedupSet;
   for (const auto &streamInfo : streamRegion.streams()) {
     // Deduplicate the streams due to coalescing.
     const auto &streamId = streamInfo.id();
@@ -1808,7 +1785,7 @@ void StreamEngine::allocateElements() {
 
 bool StreamEngine::areBaseElementAllocated(Stream *S) {
   // Find the base element.
-  for (auto baseS : S->baseStreams) {
+  for (auto baseS : S->addrBaseStreams) {
     if (baseS->getLoopLevel() != S->getLoopLevel()) {
       continue;
     }
@@ -1995,13 +1972,13 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
     }
     bool ready = true;
     S_ELEMENT_DPRINTF(element, "Check if base element is ready.\n");
-    for (const auto &baseElement : element->baseElements) {
+    for (const auto &baseElement : element->addrBaseElements) {
       if (baseElement->stream == nullptr) {
         // ! Some bug here that the base element is already released.
         S_ELEMENT_DPRINTF(element, "BaseElement has no stream.\n");
         continue;
       }
-      if (element->stream->baseStreams.count(baseElement->stream) == 0 &&
+      if (element->stream->addrBaseStreams.count(baseElement->stream) == 0 &&
           element->stream->backBaseStreams.count(baseElement->stream) == 0) {
         // ! For reduction stream, myself is not in baseStreams.
         if (!element->stream->isReduction()) {
@@ -2062,7 +2039,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          */
         if (element->isAddrAliased && !element->isFirstUserDispatched()) {
           bool hasIndirectUserDispatched = false;
-          for (auto depS : S->dependentStreams) {
+          for (auto depS : S->addrDepStreams) {
             auto &dynDepS = depS->getDynamicStream(dynS.configSeqNum);
             auto depElement =
                 dynDepS.getElementByIdx(element->FIFOIdx.entryIdx);
@@ -2274,7 +2251,8 @@ void StreamEngine::issueElement(StreamElement *element) {
        * computation (i.e. StoreFunc), so the element should be flushed.
        */
       if (element->flushed) {
-        S_ELEMENT_PANIC(element, "AtomicStream with StoreFunc should not be flushed.");
+        S_ELEMENT_PANIC(element,
+                        "AtomicStream with StoreFunc should not be flushed.");
       }
       if (!dynS->offloadedToCache) {
         // Special case to handle computation for atomic stream at CoreSE.
@@ -2327,7 +2305,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     auto lineOffset = vaddr % cpuDelegator->cacheLineSize();
     if (lineOffset + packetSize > cpuDelegator->cacheLineSize()) {
       S_ELEMENT_PANIC(element, "Issued Multi-Line request to %#x size %d.",
-          vaddr, packetSize);
+                      vaddr, packetSize);
     }
     S->statistic.numIssuedRequest++;
     element->dynS->incrementNumIssuedRequests();
@@ -2882,10 +2860,11 @@ void StreamEngine::flushPEB() {
     assert(!element->isStepped);
     assert(!element->isFirstUserDispatched());
     if (element->dynS->offloadedToCache) {
-      if (element->getStream()->getStreamType() != ::LLVM::TDG::StreamInfo_Type_LD) {
+      if (element->getStream()->getStreamType() !=
+          ::LLVM::TDG::StreamInfo_Type_LD) {
         // This must be computation offloading.
         S_ELEMENT_PANIC(element,
-          "Cannot flush offloaded non-load stream element.\n");
+                        "Cannot flush offloaded non-load stream element.\n");
       }
     }
 

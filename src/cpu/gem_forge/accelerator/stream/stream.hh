@@ -60,7 +60,8 @@ public:
    * StreamName, StaticId.
    */
   virtual void finalize() = 0;
-  void addBaseStream(StaticId baseId, Stream *baseStream);
+  void addAddrBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
+  void addValueBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
   void addBaseStepStream(Stream *baseStepStream);
   void addBackBaseStream(Stream *backBaseStream);
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
@@ -71,7 +72,9 @@ public:
   const std::string &getStreamName() const { return this->streamName; }
   virtual ::LLVM::TDG::StreamInfo_Type getStreamType() const = 0;
   bool isAtomicStream() const;
+  bool isStoreStream() const;
   bool isLoadStream() const;
+  bool isUpdateStream() const;
   bool isMemStream() const;
   virtual uint32_t getLoopLevel() const = 0;
   virtual uint32_t getConfigLoopLevel() const = 0;
@@ -80,7 +83,6 @@ public:
   virtual bool getFloatManual() const = 0;
 
   virtual bool hasUpdate() const = 0;
-  virtual bool hasUpgradedToUpdate() const = 0;
 
   virtual bool isReduction() const = 0;
   virtual bool hasCoreUser() const = 0;
@@ -144,11 +146,31 @@ public:
    */
   Stream *stepRootStream;
   using StreamSet = std::unordered_set<Stream *>;
-  using StreamIdSet = std::unordered_set<StaticId>;
   using StreamVec = std::vector<Stream *>;
-  StreamSet baseStreams;
-  StreamIdSet baseStreamIds;
-  StreamSet dependentStreams;
+
+  /**
+   * Represent stream dependence. Due to coalescing, there maybe multiple
+   * edges between two streams. e.g. b[i] = a[i] + a[i - 1].
+   */
+  struct StreamDepEdge {
+    const StaticId fromStaticId = DynamicStreamId::InvalidStaticStreamId;
+    const StaticId toStaticId = DynamicStreamId::InvalidStaticStreamId;
+    Stream *const toStream = nullptr;
+    StreamDepEdge(StaticId _fromId, StaticId _toId, Stream *_toStream)
+        : fromStaticId(_fromId), toStaticId(_toId), toStream(_toStream) {}
+  };
+  using StreamEdges = std::vector<StreamDepEdge>;
+
+  StreamSet addrBaseStreams;
+  StreamEdges addrBaseEdges;
+  StreamSet addrDepStreams;
+  StreamEdges addrDepEdges;
+
+  StreamSet valueBaseStreams;
+  StreamEdges valueBaseEdges;
+  StreamSet valueDepStreams;
+  StreamEdges valueDepEdges;
+
   /**
    * Back edge dependence on previous iteration.
    */
@@ -213,10 +235,22 @@ public:
    */
   void allocateElement(StreamElement *newElement);
   /**
+   * Add address base elements to new element.
+   */
+  void addAddrBaseElements(StreamElement *newElement);
+  /**
+   * Add value base elements for stream computation.
+   */
+  void addValueBaseElements(StreamElement *newElement);
+  /**
    * Remove one stepped element from the first dynamic stream.
    * @param isEnd: This element is stepped by StreamEnd, not StreamStep.
    */
   StreamElement *releaseElementStepped(bool isEnd);
+  /**
+   * Handle store function for released element.
+   */
+  void handleStoreFuncAtRelease();
   /**
    * Remove one unstepped element from the dynamic stream.
    * CommitStreamEnd will release from the first dynamic stream.
@@ -245,13 +279,9 @@ public:
    * the first element for that stream.
    */
   StreamElement *getPrevElement(StreamElement *element);
-  /**
-   * Perform const update for stepped && used element.
-   */
-  void handleConstUpdate(const DynamicStream &dynS, StreamElement *element);
-  void handleStoreFunc(const DynamicStream &dynS, StreamElement *element);
   void handleMergedPredicate(const DynamicStream &dynS, StreamElement *element);
-  void performConstStore(const DynamicStream &dynS, StreamElement *element);
+  void performStore(const DynamicStream &dynS, StreamElement *element,
+                    uint64_t storeValue);
 
   /**
    * Called by executeStreamConfig() to allow derived class to set up the

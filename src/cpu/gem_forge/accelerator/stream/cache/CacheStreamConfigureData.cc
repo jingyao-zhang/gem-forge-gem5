@@ -21,7 +21,6 @@ CacheStreamConfigureData::CacheStreamConfigureData(
       addrGenCallback(other.addrGenCallback),
       predFormalParams(other.predFormalParams),
       predCallback(other.predCallback), totalTripCount(other.totalTripCount),
-      constUpdateValue(other.constUpdateValue),
       isPredicated(other.isPredicated),
       isPredicatedTrue(other.isPredicatedTrue),
       predicateStreamId(other.predicateStreamId),
