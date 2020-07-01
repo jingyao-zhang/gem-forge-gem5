@@ -85,6 +85,8 @@ class LSQUnit
     typedef typename Impl::CPUPol::LSQ LSQ;
     typedef typename Impl::CPUPol::IssueStruct IssueStruct;
 
+    using DcachePortPtr = std::shared_ptr<typename LSQ::DcachePort>;
+
     using LSQSenderState = typename LSQ::LSQSenderState;
     using LSQRequest = typename Impl::CPUPol::LSQ::LSQRequest;
   private:
@@ -238,7 +240,7 @@ class LSQUnit
     void regStats();
 
     /** Sets the pointer to the dcache port. */
-    void setDcachePort(MasterPort *dcache_port);
+    void setDcachePort(DcachePortPtr dcache_port);
 
     /** Perform sanity checks after a drain. */
     void drainSanityCheck() const;
@@ -398,7 +400,7 @@ class LSQUnit
     LSQ *lsq;
 
     /** Pointer to the dcache port.  Used only for sending. */
-    MasterPort *dcachePort;
+    DcachePortPtr dcachePort;
 
     /** Particularisation of the LSQSenderState to the LQ. */
     class LQSenderState : public LSQSenderState

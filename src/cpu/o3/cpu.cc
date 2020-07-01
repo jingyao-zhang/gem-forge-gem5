@@ -64,6 +64,9 @@
 #include "sim/stat_control.hh"
 #include "sim/system.hh"
 
+// ! GemForge
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
+
 struct BaseCPUParams;
 
 using namespace TheISA;
@@ -592,6 +595,12 @@ FullO3CPU<Impl>::init()
         thread[tid]->noSquashFromTC = false;
 
     commit.setThreads(thread);
+
+    // ! GemForge
+    if (this->accelManager) {
+        this->cpuDelegator = m5::make_unique<typename CPUPolicy::O3CPUDelegator>(this);
+        this->accelManager->handshake(this->cpuDelegator.get());
+    }
 }
 
 template <class Impl>
@@ -1833,6 +1842,12 @@ FullO3CPU<Impl>::exitThreads()
             it++;
         }
     }
+}
+
+// ! GemForge
+template <class Impl>
+GemForgeCPUDelegator *FullO3CPU<Impl>::getCPUDelegator() {
+    return this->cpuDelegator.get();
 }
 
 // Forward declaration of FullO3CPU.

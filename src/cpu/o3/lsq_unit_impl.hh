@@ -245,7 +245,7 @@ LSQUnit<Impl>::regStats()
 
 template<class Impl>
 void
-LSQUnit<Impl>::setDcachePort(MasterPort *dcache_port)
+LSQUnit<Impl>::setDcachePort(DcachePortPtr dcache_port)
 {
     dcachePort = dcache_port;
 }
@@ -1054,7 +1054,7 @@ LSQUnit<Impl>::trySendPacket(bool isLoad, PacketPtr data_pkt)
 
     if (!lsq->cacheBlocked() &&
         lsq->cachePortAvailable(isLoad)) {
-        if (!dcachePort->sendTimingReq(data_pkt)) {
+        if (!dcachePort->sendTimingReqVirtual(data_pkt, true /* isCore */)) {
             ret = false;
             cache_got_blocked = true;
         }

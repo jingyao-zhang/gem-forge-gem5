@@ -40,6 +40,7 @@
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/lsq_unit.hh"
 #include "cpu/o3/mem_dep_unit.hh"
+#include "cpu/o3/o3_cpu_delegator.hh"
 #include "cpu/o3/regfile.hh"
 #include "cpu/o3/rename.hh"
 #include "cpu/o3/rename_map.hh"
@@ -101,6 +102,9 @@ struct SimpleCPUPolicy
 
     /** The struct for all backwards communication. */
     typedef TimeBufStruct<Impl> TimeStruct;
+
+    /** The struct GemForgeCPUDelegator. */
+    typedef DefaultO3CPUDelegator<Impl> O3CPUDelegator;
 
 };
 

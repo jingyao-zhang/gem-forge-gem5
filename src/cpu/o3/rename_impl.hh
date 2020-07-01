@@ -708,6 +708,19 @@ DefaultRename<Impl>::renameInsts(ThreadID tid)
             break;
         }
 
+        /**
+         * ! GemForge
+         * Final check for GemForge.
+         */
+        if (cpu->cpuDelegator) {
+            if (!cpu->cpuDelegator->canDispatch(inst)) {
+                DPRINTF(Rename, "Blocking due to GemForge.\n");
+                blockThisCycle = true;
+                insts_to_rename.push_front(inst);
+                break;
+            }
+        }
+
         // Handle serializeAfter/serializeBefore instructions.
         // serializeAfter marks the next instruction as serializeBefore.
         // serializeBefore makes the instruction wait in rename until the ROB
@@ -747,6 +760,14 @@ DefaultRename<Impl>::renameInsts(ThreadID tid)
             inst->setSerializeHandled();
 
             serializeAfter(insts_to_rename, tid);
+        }
+
+        /**
+         * ! GemForge
+         * Dispatch hooker here.
+         */
+        if (cpu->cpuDelegator) {
+            cpu->cpuDelegator->dispatch(inst);
         }
 
         renameSrcRegs(inst, inst->threadNumber);

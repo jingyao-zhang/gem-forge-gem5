@@ -1250,6 +1250,14 @@ DefaultIEW<Impl>::executeInsts()
 
         Fault fault = NoFault;
 
+        /**
+         * ! GemForge
+         * Execute hook here.
+         */
+        if (cpu->cpuDelegator) {
+            cpu->cpuDelegator->execute(inst);
+        }
+
         // Execute instruction.
         // Note that if the instruction faults, it will be handled
         // at the commit stage.

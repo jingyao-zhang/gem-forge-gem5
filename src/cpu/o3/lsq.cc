@@ -28,6 +28,7 @@
 
 #include "cpu/o3/isa_specific.hh"
 #include "cpu/o3/lsq_impl.hh"
+#include "cpu/o3/gem_forge_dcache_port.hh"
 
 // Force the instantiation of LDSTQ for all the implementations we care about.
 template class LSQ<O3CPUImpl>;

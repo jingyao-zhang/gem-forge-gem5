@@ -492,6 +492,14 @@ ROB<Impl>::squash(InstSeqNum squash_num, ThreadID tid)
 
     squashedSeqNum[tid] = squash_num;
 
+    /**
+     * ! GemForge
+     * Squash hook here.
+     */
+    if (cpu->cpuDelegator) {
+        cpu->cpuDelegator->squash(squash_num);
+    }
+
     if (!instList[tid].empty()) {
         InstIt tail_thread = instList[tid].end();
         tail_thread--;

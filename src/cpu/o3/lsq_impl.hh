@@ -70,7 +70,10 @@ LSQ<Impl>::LSQ(O3CPU *cpu_ptr, IEW *iew_ptr, DerivO3CPUParams *params)
                   params->smtLSQThreshold)),
       maxSQEntries(maxLSQAllocation(lsqPolicy, SQEntries, params->numThreads,
                   params->smtLSQThreshold)),
-      dcachePort(this, cpu_ptr),
+      dcachePort(
+          cpu_ptr->getAccelManager()
+          ? (new GemForgeDcachePort(this, cpu_ptr))
+          : (new DcachePort(this, cpu_ptr))),
       numThreads(params->numThreads)
 {
     assert(numThreads > 0 && numThreads <= Impl::MaxThreads);
@@ -103,7 +106,7 @@ LSQ<Impl>::LSQ(O3CPU *cpu_ptr, IEW *iew_ptr, DerivO3CPUParams *params)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread.emplace_back(maxLQEntries, maxSQEntries);
         thread[tid].init(cpu, iew_ptr, params, this, tid);
-        thread[tid].setDcachePort(&dcachePort);
+        thread[tid].setDcachePort(dcachePort);
     }
 }
 

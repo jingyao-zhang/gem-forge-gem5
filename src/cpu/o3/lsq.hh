@@ -53,6 +53,8 @@
 #include "mem/port.hh"
 #include "sim/sim_object.hh"
 
+#include "cpu/gem_forge/gem_forge_dcache_port_impl.hh"
+
 struct DerivO3CPUParams;
 
 template <class Impl>
@@ -134,6 +136,16 @@ class LSQ
               cpu(_cpu)
         { }
 
+        /**
+         * ! GemForge
+         * Make this virtual to be override.
+         * @param isCore: Is the packet from the core.
+         * MasterPort::sendTimingReq is not virtual.
+         */
+        virtual bool sendTimingReqVirtual(PacketPtr pkt, bool isCore = true) {
+          return this->sendTimingReq(pkt);
+        }
+
       protected:
 
         /** Timing version of receive.  Handles writing back and
@@ -158,6 +170,32 @@ class LSQ
          */
         virtual bool isSnooping() const { return true; }
     };
+
+    /**
+     * ! GemForge
+     */
+    class GemForgeDcachePort : public DcachePort
+    {
+      public:
+        GemForgeDcachePort(LSQ<Impl> *_lsq, FullO3CPU<Impl> *_cpu)
+          : DcachePort(_lsq, _cpu),
+            impl(_cpu, this) {}
+        bool sendTimingReqVirtual(PacketPtr pkt, bool isCore) override {
+          return impl.sendTimingReqVirtual(pkt, isCore);
+        }
+      protected:
+        /**
+         * This can not be moved into Impl, as it calls Base::recvTimingResp
+         * which would result in infinite recursion.
+         */
+        bool recvTimingResp(PacketPtr pkt) override;
+        void recvReqRetry() override {
+          impl.recvReqRetry();
+        }
+
+        ::GemForge::GemForgeDcachePortImpl impl;
+    };
+
 
     /** Memory operation metadata.
      * This class holds the information about a memory operation. It lives
@@ -1053,7 +1091,8 @@ class LSQ
     /** Another store port is in use */
     void cachePortBusy(bool is_load);
 
-    MasterPort &getDataPort() { return dcachePort; }
+    MasterPort &getDataPort() { return *dcachePort; }
+    std::shared_ptr<DcachePort> &getDataPortPtr() { return dcachePort; }
 
   protected:
     /** D-cache is blocked */
@@ -1109,7 +1148,7 @@ class LSQ
     unsigned maxSQEntries;
 
     /** Data port. */
-    DcachePort dcachePort;
+    std::shared_ptr<DcachePort> dcachePort;
 
     /** The LSQ units for individual threads. */
     std::vector<LSQUnit> thread;

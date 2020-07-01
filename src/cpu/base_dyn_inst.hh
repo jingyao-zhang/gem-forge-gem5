@@ -497,12 +497,15 @@ class BaseDynInst : public ExecContext, public RefCounted
 
     //
     //  Instruction types.  Forward checks to StaticInst object.
+    // ! GemForge
+    // GemForge has permission to dynamically turn off mem-ref flags.
     //
+    bool forceNotMemRef = false;
     bool isNop()          const { return staticInst->isNop(); }
-    bool isMemRef()       const { return staticInst->isMemRef(); }
-    bool isLoad()         const { return staticInst->isLoad(); }
-    bool isStore()        const { return staticInst->isStore(); }
-    bool isAtomic()       const { return staticInst->isAtomic(); }
+    bool isMemRef()       const { return !forceNotMemRef && staticInst->isMemRef(); }
+    bool isLoad()         const { return !forceNotMemRef && staticInst->isLoad(); }
+    bool isStore()        const { return !forceNotMemRef && staticInst->isStore(); }
+    bool isAtomic()       const { return !forceNotMemRef && staticInst->isAtomic(); }
     bool isStoreConditional() const
     { return staticInst->isStoreConditional(); }
     bool isLockedRMW()    const { return staticInst->isLockedRMW(); }

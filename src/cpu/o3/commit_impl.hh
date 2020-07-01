@@ -1258,6 +1258,17 @@ DefaultCommit<Impl>::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         return false;
     }
 
+    /**
+     * ! GemForge
+     * CanCommit hook here.
+     */
+    if (cpu->cpuDelegator) {
+        if (!cpu->cpuDelegator->canCommit(head_inst)) {
+            DPRINTF(Commit, "GemForge cannot commit %s.\n", *head_inst);
+            return false;
+        }
+    }
+
     updateComInstStats(head_inst);
 
     if (FullSystem) {
@@ -1277,6 +1288,15 @@ DefaultCommit<Impl>::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         }
     }
     DPRINTF(Commit, "Committing %s\n", *head_inst);
+
+    /**
+     * ! GemForge
+     * Commit hook here.
+     */
+    if (cpu->cpuDelegator) {
+        cpu->cpuDelegator->commit(head_inst);
+    }
+
     if (head_inst->traceData) {
         head_inst->traceData->setFetchSeq(head_inst->seqNum);
         head_inst->traceData->setCPSeq(thread[tid]->numOp);

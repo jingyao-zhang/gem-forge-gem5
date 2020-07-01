@@ -57,6 +57,7 @@ if 'O3CPU' in env['CPU_MODELS']:
     Source('scoreboard.cc')
     Source('store_set.cc')
     Source('thread_context.cc')
+    Source('o3_cpu_delegator.cc')
 
     DebugFlag('CommitRate')
     DebugFlag('IEW')
@@ -70,6 +71,8 @@ if 'O3CPU' in env['CPU_MODELS']:
     DebugFlag('Scoreboard')
     DebugFlag('StoreSet')
     DebugFlag('Writeback')
+    DebugFlag('O3CPUDelegator')
+    DebugFlag('O3CPUDelegatorDump')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',

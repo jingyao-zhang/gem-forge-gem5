@@ -99,6 +99,8 @@ class FullO3CPU : public BaseO3CPU
     typedef typename Impl::DynInstPtr DynInstPtr;
     typedef typename Impl::O3CPU O3CPU;
 
+    using IEW = typename Impl::CPUPol::IEW;
+
     using VecElem =  TheISA::VecElem;
     using VecRegContainer =  TheISA::VecRegContainer;
 
@@ -607,6 +609,14 @@ class FullO3CPU : public BaseO3CPU
     std::vector<TheISA::ISA *> isa;
 
   public:
+    /**
+     * ! GemForge
+     * CPUDelegator.
+     */
+    std::unique_ptr<typename CPUPolicy::O3CPUDelegator> cpuDelegator;
+    GemForgeCPUDelegator *getCPUDelegator() override;
+    IEW *getIEW() { return &this->iew; }
+
     /** Enum to give each stage a specific index, so when calling
      *  activateStage() or deactivateStage(), they can specify which stage
      *  is being activated/deactivated.

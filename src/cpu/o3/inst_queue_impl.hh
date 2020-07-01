@@ -819,6 +819,9 @@ InstructionQueue<Impl>::scheduleReadyInsts()
         assert(issuing_inst->seqNum == (*order_it).oldestInst);
 
         if (issuing_inst->isSquashed()) {
+
+            DPRINTF(IQ, "Schedule squashed inst %s.\n", *issuing_inst);
+
             readyInsts[op_class].pop();
 
             if (!readyInsts[op_class].empty()) {
@@ -838,6 +841,21 @@ InstructionQueue<Impl>::scheduleReadyInsts()
         int idx = FUPool::NoCapableFU;
         Cycles op_latency = Cycles(1);
         ThreadID tid = issuing_inst->threadNumber;
+
+        /**
+         * ! GemForge
+         * CanExecute hook here.
+         * This must happen before fuPool->getUnit(), which will
+         * actually mark the FU busy if found available FU, and
+         * we must issue.
+         */
+        if (cpu->cpuDelegator) {
+            if (!cpu->cpuDelegator->canExecute(issuing_inst)) {
+                DPRINTF(IQ, "GemForge cannot execute: %s.\n", *issuing_inst);
+                ++order_it;
+                continue;
+            }
+        }
 
         if (op_class != No_OpClass) {
             idx = fuPool->getUnit(op_class);
@@ -884,10 +902,7 @@ InstructionQueue<Impl>::scheduleReadyInsts()
                 }
             }
 
-            DPRINTF(IQ, "Thread %i: Issuing instruction PC %s "
-                    "[sn:%llu]\n",
-                    tid, issuing_inst->pcState(),
-                    issuing_inst->seqNum);
+            DPRINTF(IQ, "Issuing: %s.\n", *issuing_inst);
 
             readyInsts[op_class].pop();
 
@@ -918,6 +933,7 @@ InstructionQueue<Impl>::scheduleReadyInsts()
             listOrder.erase(order_it++);
             statIssuedInstType[tid][op_class]++;
         } else {
+            DPRINTF(IQ, "NoFreeFU: %s.\n", *issuing_inst);
             statFuBusy[op_class]++;
             fuBusy[tid]++;
             ++order_it;
