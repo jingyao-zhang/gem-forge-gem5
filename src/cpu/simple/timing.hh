@@ -362,7 +362,7 @@ class TimingSimpleCPU : public BaseSimpleCPU
     /**
      * Resume the execution if possible.
      */
-    void tryResumeExecute();
+    void tryResumeGemForge();
 
     /** This function is used by the page table walker to determine if it could
      * translate the a pending request or if the underlying request has been
@@ -387,8 +387,20 @@ class TimingSimpleCPU : public BaseSimpleCPU
   private:
 
     EventFunctionWrapper fetchEvent;
-    // ! GemForge
-    EventFunctionWrapper tryResumeExecuteEvent;
+    /**
+     * ! GemForge
+     * This event is used to handle GemForge block.
+     * There are two possible reason for block:
+     * Cannot execute/commit.
+     */
+    enum GemForgeBlockReason {
+      GemForgeNoBlock,
+      GemForgeExecuteBlock,
+      GemForgeCommitBlock,
+    };
+    GemForgeBlockReason gemForgeBlockReason = GemForgeNoBlock;
+    Fault executeFault = NoFault;
+    EventFunctionWrapper tryResumeGemForgeEvent;
 
     struct IprEvent : Event {
         Packet *pkt;

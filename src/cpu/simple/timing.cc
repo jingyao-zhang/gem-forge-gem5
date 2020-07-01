@@ -90,7 +90,7 @@ TimingSimpleCPU::TimingSimpleCPU(TimingSimpleCPUParams *p)
       ),
       ifetch_pkt(NULL), dcache_pkt(NULL), previousCycle(0),
       fetchEvent([this]{ fetch(); }, name()),
-      tryResumeExecuteEvent([this]{ tryResumeExecute(); }, name())
+      tryResumeGemForgeEvent([this]{ tryResumeGemForge(); }, name())
 {
     _status = Idle;
 }
@@ -808,7 +808,18 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
 
 
     preExecute();
-    if (curStaticInst && curStaticInst->isMemRef()) {
+
+    /**
+     * ! GemForge.
+     * So far the only MemRef GemForge instruction is StreamLoad.
+     * Since in SimpleTimingCPU, this can be treated as simple ComputeInst.
+     */
+    bool isMemRef = curStaticInst && curStaticInst->isMemRef();
+    if (isMemRef && curStaticInst->isGemForge()) {
+        isMemRef = false;
+    }
+
+    if (curStaticInst && isMemRef) {
         // load or store: just send to dcache
         Fault fault = curStaticInst->initiateAcc(&t_info, traceData);
 
@@ -838,7 +849,9 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
             if (!this->cpuDelegator->canExecute(curStaticInst, t_info))
             {
                 // Recheck next cycle.
-                schedule(tryResumeExecuteEvent, clockEdge(Cycles(1)));
+                assert(this->gemForgeBlockReason == GemForgeNoBlock);
+                this->gemForgeBlockReason = GemForgeExecuteBlock;
+                schedule(tryResumeGemForgeEvent, clockEdge(Cycles(1)));
                 if (pkt) {
                     delete pkt;
                 }
@@ -847,15 +860,25 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
             this->cpuDelegator->execute(curStaticInst, t_info);
         }
         // non-memory instruction: execute completely now
-        Fault fault = curStaticInst->execute(&t_info, traceData);
+        this->executeFault = curStaticInst->execute(&t_info, traceData);
 
         // ! GemForge.
         if (this->cpuDelegator) {
+            if (!this->cpuDelegator->canCommit(curStaticInst, t_info)) {
+                // Recheck next cycle.
+                assert(this->gemForgeBlockReason == GemForgeNoBlock);
+                this->gemForgeBlockReason = GemForgeCommitBlock;
+                schedule(tryResumeGemForgeEvent, clockEdge(Cycles(1)));
+                if (pkt) {
+                    delete pkt;
+                }
+                return;
+            }
             this->cpuDelegator->commit(curStaticInst, t_info);
         }
 
         // keep an instruction count
-        if (fault == NoFault)
+        if (this->executeFault == NoFault)
             countInst();
         else if (traceData && !DTRACE(ExecFaulting)) {
             delete traceData;
@@ -867,7 +890,7 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
         if (curStaticInst && (!curStaticInst->isMicroop() ||
                 curStaticInst->isFirstMicroop()))
             instCnt++;
-        advanceInst(fault);
+        advanceInst(this->executeFault);
     } else {
         advanceInst(NoFault);
     }
@@ -878,27 +901,35 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
 }
 
 void
-TimingSimpleCPU::tryResumeExecute()
+TimingSimpleCPU::tryResumeGemForge()
 {
     assert(this->cpuDelegator);
     SimpleExecContext& t_info = *threadInfo[curThread];
 
-    if (!this->cpuDelegator->canExecute(curStaticInst, t_info))
-    {
-        // Recheck next cycle.
-        schedule(tryResumeExecuteEvent, clockEdge(Cycles(1)));
-        return;
+    assert(this->gemForgeBlockReason != GemForgeNoBlock);
+
+    if (this->gemForgeBlockReason == GemForgeExecuteBlock) {
+        if (!this->cpuDelegator->canExecute(curStaticInst, t_info)) {
+            // Recheck next cycle.
+            schedule(tryResumeGemForgeEvent, clockEdge(Cycles(1)));
+            return;
+        }
+        this->cpuDelegator->execute(curStaticInst, t_info);
+        // non-memory instruction: execute completely now
+        this->executeFault = curStaticInst->execute(&t_info, traceData);
     }
 
-    this->cpuDelegator->execute(curStaticInst, t_info);
-
-    // non-memory instruction: execute completely now
-    Fault fault = curStaticInst->execute(&t_info, traceData);
-
+    if (!this->cpuDelegator->canCommit(curStaticInst, t_info)) {
+        this->gemForgeBlockReason = GemForgeCommitBlock;
+        schedule(tryResumeGemForgeEvent, clockEdge(Cycles(1)));
+        return;
+    }
+    // Clear GemForgeBlockReason.
+    this->gemForgeBlockReason = GemForgeNoBlock;
     this->cpuDelegator->commit(curStaticInst, t_info);
 
     // keep an instruction count
-    if (fault == NoFault)
+    if (this->executeFault == NoFault)
         countInst();
     else if (traceData && !DTRACE(ExecFaulting)) {
         delete traceData;
@@ -910,7 +941,7 @@ TimingSimpleCPU::tryResumeExecute()
     if (curStaticInst && (!curStaticInst->isMicroop() ||
             curStaticInst->isFirstMicroop()))
         instCnt++;
-    advanceInst(fault);
+    advanceInst(executeFault);
 }
 
 void

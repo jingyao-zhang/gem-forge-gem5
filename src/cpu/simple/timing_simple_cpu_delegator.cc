@@ -91,6 +91,14 @@ void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
   pimpl->state = Impl::StateE::BEFORE_COMMIT;
 }
 
+bool TimingSimpleCPUDelegator::canCommit(StaticInstPtr staticInst,
+                                         ExecContext &xc) {
+  assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
+  GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
+                              xc.tcBase());
+  return pimpl->isaHandler.canCommit(dynInfo);
+}
+
 void TimingSimpleCPUDelegator::commit(StaticInstPtr staticInst,
                                       ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);

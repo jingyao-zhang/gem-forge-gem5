@@ -39,6 +39,7 @@ public:
   bool canExecuteStream##Inst(const GemForgeDynInstInfo &dynInfo);             \
   void executeStream##Inst(const GemForgeDynInstInfo &dynInfo,                 \
                            ExecContext &xc);                                   \
+  bool canCommitStream##Inst(const GemForgeDynInstInfo &dynInfo);              \
   void commitStream##Inst(const GemForgeDynInstInfo &dynInfo);                 \
   void rewindStream##Inst(const GemForgeDynInstInfo &dynInfo);
 

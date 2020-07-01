@@ -64,7 +64,9 @@ bool GemForgeISAHandler::shouldCountInFrontend(
   case GemForgeStaticInstOpE::STREAM_FLOAD: {
     return false;
   }
-  default: { return true; }
+  default: {
+    return true;
+  }
   }
 }
 
@@ -75,7 +77,9 @@ bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo) {
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstRetCase(canDispatch);
-  default: { return true; }
+  default: {
+    return true;
+  }
   }
 }
 
@@ -88,7 +92,9 @@ void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(dispatch, extraLQCallbacks);
-  default: { break; }
+  default: {
+    break;
+  }
   }
   if (staticInstInfo.op == GemForgeStaticInstOpE::STREAM_LOAD) {
     isGemForgeLoad = true;
@@ -104,7 +110,9 @@ bool GemForgeISAHandler::canExecute(const GemForgeDynInstInfo &dynInfo) {
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstRetCase(canExecute);
-  default: { return true; }
+  default: {
+    return true;
+  }
   }
 }
 
@@ -116,7 +124,22 @@ void GemForgeISAHandler::execute(const GemForgeDynInstInfo &dynInfo,
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(execute, xc);
-  default: { break; }
+  default: {
+    break;
+  }
+  }
+}
+
+bool GemForgeISAHandler::canCommit(const GemForgeDynInstInfo &dynInfo) {
+  if (!dynInfo.staticInst->isGemForge()) {
+    return true;
+  }
+  auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
+  switch (staticInstInfo.op) {
+    StreamInstRetCase(canCommit);
+  default: {
+    return true;
+  }
   }
 }
 
@@ -127,7 +150,9 @@ void GemForgeISAHandler::commit(const GemForgeDynInstInfo &dynInfo) {
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(commit);
-  default: { break; }
+  default: {
+    break;
+  }
   }
 }
 
@@ -138,7 +163,9 @@ void GemForgeISAHandler::rewind(const GemForgeDynInstInfo &dynInfo) {
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
     StreamInstCase(rewind);
-  default: { break; }
+  default: {
+    break;
+  }
   }
 }
 

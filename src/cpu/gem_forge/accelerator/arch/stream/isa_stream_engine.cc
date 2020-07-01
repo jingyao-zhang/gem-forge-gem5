@@ -95,6 +95,11 @@ void ISAStreamEngine::executeStreamConfig(const GemForgeDynInstInfo &dynInfo,
       *(configInfo.dynStreamRegionInfo));
 }
 
+bool ISAStreamEngine::canCommitStreamConfig(
+    const GemForgeDynInstInfo &dynInfo) {
+  return true;
+}
+
 void ISAStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
@@ -231,6 +236,10 @@ void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
       *(configInfo.dynStreamRegionInfo));
 }
 
+bool ISAStreamEngine::canCommitStreamInput(const GemForgeDynInstInfo &dynInfo) {
+  return true;
+}
+
 void ISAStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
   auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
@@ -280,6 +289,7 @@ bool ISAStreamEngine::canDispatchStreamReady(
    * Although confusing, but ssp.stream.ready is used as the synchronization
    * point with the StreamEngine.
    * dispatchStreamConfig should have allocated curStreamRegionInfo.
+   * Notice that this assumes canDispatch() and dispatch() follows each other.
    */
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
   if (this->curStreamRegionInfo->mustBeMisspeculated) {
@@ -342,6 +352,10 @@ void ISAStreamEngine::executeStreamReady(const GemForgeDynInstInfo &dynInfo,
   auto &configInfo = instInfo.configInfo;
   this->increamentStreamRegionInfoNumExecutedInsts(
       *(configInfo.dynStreamRegionInfo));
+}
+
+bool ISAStreamEngine::canCommitStreamReady(const GemForgeDynInstInfo &dynInfo) {
+  return true;
 }
 
 void ISAStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
@@ -479,6 +493,10 @@ bool ISAStreamEngine::canExecuteStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 void ISAStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
                                        ExecContext &xc) {}
 
+bool ISAStreamEngine::canCommitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
+  return true;
+}
+
 void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
   auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
@@ -581,6 +599,13 @@ void ISAStreamEngine::dispatchStreamStep(
 }
 
 bool ISAStreamEngine::canExecuteStreamStep(const GemForgeDynInstInfo &dynInfo) {
+  return true;
+}
+
+void ISAStreamEngine::executeStreamStep(const GemForgeDynInstInfo &dynInfo,
+                                        ExecContext &xc) {}
+
+bool ISAStreamEngine::canCommitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     return true;
@@ -588,11 +613,8 @@ bool ISAStreamEngine::canExecuteStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
-  return se->canExecuteStreamStep(streamId);
+  return se->canCommitStreamStep(streamId);
 }
-
-void ISAStreamEngine::executeStreamStep(const GemForgeDynInstInfo &dynInfo,
-                                        ExecContext &xc) {}
 
 void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
@@ -773,6 +795,10 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
       xc.setIntRegOperand(dynInfo.staticInst, destIdx, loadedValue);
     }
   }
+}
+
+bool ISAStreamEngine::canCommitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
+  return true;
 }
 
 void ISAStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {

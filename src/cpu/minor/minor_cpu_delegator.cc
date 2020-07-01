@@ -329,6 +329,15 @@ void MinorCPUDelegator::execute(Minor::MinorDynInstPtr &dynInstPtr,
   pimpl->isaHandler.execute(dynInfo, xc);
 }
 
+bool MinorCPUDelegator::canCommit(Minor::MinorDynInstPtr &dynInstPtr) {
+  auto dynInfo = pimpl->createDynInfo(dynInstPtr);
+  auto ret = pimpl->isaHandler.canCommit(dynInfo);
+  if (!ret) {
+    INST_DPRINTF(dynInstPtr, "Cannot commit.\n");
+  }
+  return ret;
+}
+
 void MinorCPUDelegator::commit(Minor::MinorDynInstPtr &dynInstPtr) {
   INST_DPRINTF(dynInstPtr, "Commit.\n");
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
@@ -349,7 +358,7 @@ void MinorCPUDelegator::commit(Minor::MinorDynInstPtr &dynInstPtr) {
   }
 
   auto &frontInst = pimpl->inflyInstQueue.front();
-  if (pimpl->inflyInstQueue.front() != dynInstPtr) {
+  if (frontInst != dynInstPtr) {
     INST_LOG(panic, dynInstPtr, "Commit mismatch inflyInstQueue front %s.",
              *frontInst);
   }
@@ -563,7 +572,8 @@ void MinorCPUDelegator::sendRequest(PacketPtr pkt) {
   }
   auto lineBytes = this->cacheLineSize();
   if ((pkt->getAddr() % lineBytes) + pkt->getSize() > lineBytes) {
-    panic("Multi-line packet paddr %#x size %d.", pkt->getAddr(), pkt->getSize());
+    panic("Multi-line packet paddr %#x size %d.", pkt->getAddr(),
+          pkt->getSize());
   }
 
   pimpl->pendingPkts.push_back(pkt);

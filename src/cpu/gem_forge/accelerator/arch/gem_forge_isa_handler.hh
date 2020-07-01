@@ -28,6 +28,7 @@ public:
                 GemForgeLQCallbackList &extraLQCallbacks, bool &isGemForgeLoad);
   bool canExecute(const GemForgeDynInstInfo &dynInfo);
   void execute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
+  bool canCommit(const GemForgeDynInstInfo &dynInfo);
   void commit(const GemForgeDynInstInfo &dynInfo);
   void rewind(const GemForgeDynInstInfo &dynInfo);
 

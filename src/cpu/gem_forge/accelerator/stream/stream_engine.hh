@@ -65,7 +65,7 @@ public:
   bool canStreamStep(uint64_t stepStreamId) const;
   bool hasUnsteppedElement(uint64_t stepStreamId) const;
   void dispatchStreamStep(uint64_t stepStreamId);
-  bool canExecuteStreamStep(uint64_t stepStreamId);
+  bool canCommitStreamStep(uint64_t stepStreamId);
   void commitStreamStep(uint64_t stepStreamId);
   void rewindStreamStep(uint64_t stepStreamId);
 

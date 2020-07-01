@@ -1,9 +1,9 @@
 #ifndef __MINOR_CPU_DELEGATOR_HH__
 #define __MINOR_CPU_DELEGATOR_HH__
 
-#include "cpu.hh"
 #include "cpu/gem_forge/gem_forge_cpu_delegator.hh"
-#include "dyn_inst.hh"
+#include "cpu/minor/cpu.hh"
+#include "cpu/minor/dyn_inst.hh"
 
 /*************************************************************************
  * This provides the interface between MinorCPU and GemForge.
@@ -92,6 +92,7 @@ public:
 
   bool canExecute(Minor::MinorDynInstPtr &dynInstPtr);
   void execute(Minor::MinorDynInstPtr &dynInstPtr, ExecContext &xc);
+  bool canCommit(Minor::MinorDynInstPtr &dynInstPtr);
   void commit(Minor::MinorDynInstPtr &dynInstPtr);
 
   /**

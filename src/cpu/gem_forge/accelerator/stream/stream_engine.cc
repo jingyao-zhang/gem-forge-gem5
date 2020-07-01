@@ -629,7 +629,7 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
   }
 }
 
-bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
+bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
   auto stepStream = this->getStream(stepStreamId);
 
   const auto &stepStreams = this->getStepStreamList(stepStream);
@@ -698,8 +698,7 @@ bool StreamEngine::canExecuteStreamStep(uint64_t stepStreamId) {
         return false;
       }
     }
-    if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
-        !dynS.offloadedToCache && !S->hasCoreUser() &&
+    if (S->isLoadStream() && !dynS.offloadedToCache && !S->hasCoreUser() &&
         S->hasBackDepReductionStream) {
       /**
        * S is a load stream that is not offloaded, with no core user and

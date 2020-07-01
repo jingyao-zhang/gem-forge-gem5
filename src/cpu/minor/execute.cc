@@ -445,8 +445,10 @@ Execute::handleMemResponse(MinorDynInstPtr inst,
     /**
      * ! GemForge
      * We have to commit it before the branch.
+     * So far for stream load this can always commit.
      */
     if (cpu.cpuDelegator) {
+        assert(cpu.cpuDelegator->canCommit(inst));
         cpu.cpuDelegator->commit(inst);
     }
 
@@ -1181,6 +1183,12 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
          */
         DPRINTF(MinorExecute, "Can't execute GemForge inst: %s.\n", *inst);
         completed_inst = false;
+    } else if (cpu.cpuDelegator && !cpu.cpuDelegator->canCommit(inst)) {
+        /**
+         * ! GemForge complains that this inst can not commit for now.
+         */
+        DPRINTF(MinorExecute, "Can't commit GemForge inst: %s.\n", *inst);
+        completed_inst = false;
     } else {
         ExecContext context(cpu, *cpu.threads[thread_id], *this, inst);
 
@@ -1191,8 +1199,6 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
          * This is where MinorCPU execute and commit non-mem-ref inst.
          * Execute and commit happens at the same place.
          * StreamLoad will be handled as a special MemRef in LSQ.
-         * So far canExecute() only matters for StreamLoad, which is
-         * not handled here.
          */
         if (cpu.cpuDelegator) {
             assert(cpu.cpuDelegator->canExecute(inst) &&

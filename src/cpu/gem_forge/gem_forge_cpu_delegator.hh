@@ -23,6 +23,7 @@ public:
     LLVM_TRACE,
     TIMING_SIMPLE,
     MINOR,
+    O3,
   };
   const CPUTypeE cpuType;
   GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU);
