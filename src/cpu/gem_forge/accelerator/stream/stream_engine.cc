@@ -635,16 +635,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
   const auto &stepStreams = this->getStepStreamList(stepStream);
 
   for (auto S : stepStreams) {
-    /**
-     * It's tricky to get the correct StepElement when we check if
-     * we can execute a StreamStep. For MinorCPU, execution comes
-     * in order, so we hack here to get the first DynamicStream.
-     *
-     * ! This only works for inorder execution cpus.
-     */
-    assert(cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::MINOR ||
-           cpuDelegator->cpuType ==
-               GemForgeCPUDelegator::CPUTypeE::TIMING_SIMPLE);
+    // Since commit happens in-order, we know it's the FirstDynamicStream.
     const auto &dynS = S->getFirstDynamicStream();
     if (!dynS.configExecuted) {
       return false;

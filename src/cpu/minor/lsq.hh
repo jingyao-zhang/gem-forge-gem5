@@ -50,6 +50,8 @@
 #include "cpu/minor/pipe_data.hh"
 #include "cpu/minor/trace.hh"
 
+#include "cpu/gem_forge/gem_forge_dcache_port_impl.hh"
+
 class MinorCPUDelegator;
 
 namespace Minor
@@ -137,29 +139,21 @@ class LSQ : public Named
       public:
         GemForgeDcachePort(std::string _name, LSQ &_lsq, MinorCPU &_cpu)
           : DcachePort(_name, _lsq, _cpu),
-            blocked(false),
-            curCycle(0),
-            numUsedPorts(0),
-            drainEvent([this]()->void { this->drain(); }, name()) {}
-        bool sendTimingReqVirtual(PacketPtr pkt, bool isCore) override;
+            impl(&_cpu, this) {}
+        bool sendTimingReqVirtual(PacketPtr pkt, bool isCore) override {
+          return impl.sendTimingReqVirtual(pkt, isCore);
+        }
       protected:
-        bool recvTimingResp(PacketPtr pkt) override;
-        void recvReqRetry() override;
-
-        const int numPorts = 2;
-        std::list<std::pair<PacketPtr, bool>> blockedQueue;
-        bool blocked;
         /**
-         * If we have seen a lock RMWRead, the port should be blocked
-         * until a RMWWrite comes in.
+         * This can not be moved into Impl, as it calls Base::recvTimingResp
+         * which would result in infinite recursion.
          */
-        std::set<Addr> lockedRMWLinePAddr;
-        Cycles curCycle;
-        int numUsedPorts;
+        bool recvTimingResp(PacketPtr pkt) override;
+        void recvReqRetry() override {
+          impl.recvReqRetry();
+        }
 
-        EventFunctionWrapper drainEvent;
-
-        void drain();
+        ::GemForge::GemForgeDcachePortImpl impl;
     };
 
     /**
