@@ -1250,14 +1250,6 @@ DefaultIEW<Impl>::executeInsts()
 
         Fault fault = NoFault;
 
-        /**
-         * ! GemForge
-         * Execute hook here.
-         */
-        if (cpu->cpuDelegator) {
-            cpu->cpuDelegator->execute(inst);
-        }
-
         // Execute instruction.
         // Note that if the instruction faults, it will be handled
         // at the commit stage.
@@ -1335,7 +1327,31 @@ DefaultIEW<Impl>::executeInsts()
             // If we execute the instruction (even if it's a nop) the fault
             // will be replaced and we will lose it.
             if (inst->getFault() == NoFault) {
+                /**
+                 * ! GemForge
+                 * Due to the latency between scheduling and issuing, it is
+                 * possible that GemForge now regrets about canExecution, e.g
+                 * the data being flushed due to RAWMisspeculation.
+                 * In such case, we add the instruction back to IQ.
+                 */
+                if (cpu->cpuDelegator) {
+                    if (!cpu->cpuDelegator->canExecute(inst)) {
+                        DPRINTF(IEW,
+                            "Execute: Reschedule GemForgeCompute: %s.\n",
+                            *inst);
+                        instQueue.rescheduleGemForgeComputeInst(inst);
+                        continue;
+                    }
+                }
                 inst->execute();
+                /**
+                 * ! GemForge
+                 * Execute hook here (NonMemRef inst).
+                 */
+                if (cpu->cpuDelegator) {
+                    cpu->cpuDelegator->execute(inst);
+                }
+
                 if (!inst->readPredicate())
                     inst->forwardOldRegs();
             }

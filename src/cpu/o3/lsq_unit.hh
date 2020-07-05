@@ -750,9 +750,16 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
                 !req->mainRequest()->isLLSC()) {
 
                 const auto& store_req = store_it->request()->mainRequest();
-                coverage = store_req->isMasked() ?
-                    AddrRangeCoverage::PartialAddrRangeCoverage :
-                    AddrRangeCoverage::FullAddrRangeCoverage;
+                /**
+                 * ! GemForge
+                 * We also disable forwarding for GemForge.
+                 */
+                if (store_req->isMasked() || req->isGemForgeLoadRequest()) {
+                  coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
+                  block_on_store = true;
+                } else {
+                  coverage = AddrRangeCoverage::FullAddrRangeCoverage;
+                }
             } else if (
                 // This is the partial store-load forwarding case where a store
                 // has only part of the load's data and the load isn't LLSC

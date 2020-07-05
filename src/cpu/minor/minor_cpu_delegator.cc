@@ -476,7 +476,7 @@ void MinorCPUDelegator::storeTo(Addr vaddr, int size) {
       if (callback->bypassAliasCheck()) {
         panic("Bypassed LQCallback is aliased: %s.\n", callback.get());
       }
-      if (seqNum > oldestMisspeculatedSeqNum) {
+      if (seqNum < oldestMisspeculatedSeqNum) {
         oldestMisspeculatedSeqNum = seqNum;
       }
       foundMisspeculated = true;

@@ -81,7 +81,7 @@ public:
   virtual const std::string &getTraceExtraFolder() const = 0;
 
   /**
-   * Immediately translate a vaddr to paddr. Panic when not possible.
+   * Immediately translate a vaddr to paddr.
    * TODO: Move this the some Process delegator.
    */
   virtual bool translateVAddrOracle(Addr vaddr, Addr &paddr) = 0;

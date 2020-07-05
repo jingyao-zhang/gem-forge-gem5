@@ -421,7 +421,7 @@ class LSQ
          * but there is any in-flight translation request to the TLB or access
          * request to the memory.
          */
-        void release(Flag reason)
+        virtual void release(Flag reason)
         {
             assert(reason == Flag::LSQEntryFreed || reason == Flag::Discarded);
             if (!isAnyOutstandingRequest()) {
@@ -594,6 +594,11 @@ class LSQ
          * Test if the request accesses a particular cache line.
          */
         virtual bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask) = 0;
+
+        /**
+         * Test if the request is a special GemForge request.
+         */
+        virtual bool isGemForgeLoadRequest() const { return false; }
 
         /** Update the status to reflect that a packet was sent. */
         void

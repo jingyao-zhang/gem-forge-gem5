@@ -502,6 +502,7 @@ class BaseDynInst : public ExecContext, public RefCounted
     //
     bool forceNotMemRef = false;
     bool isNop()          const { return staticInst->isNop(); }
+    bool isGemForge()     const { return staticInst->isGemForge(); }
     bool isMemRef()       const { return !forceNotMemRef && staticInst->isMemRef(); }
     bool isLoad()         const { return !forceNotMemRef && staticInst->isLoad(); }
     bool isStore()        const { return !forceNotMemRef && staticInst->isStore(); }

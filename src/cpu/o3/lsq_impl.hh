@@ -55,6 +55,8 @@
 #include "debug/Writeback.hh"
 #include "params/DerivO3CPU.hh"
 
+#include "gem_forge_load_request.hh"
+
 using namespace std;
 
 template <class Impl>
@@ -713,12 +715,22 @@ LSQ<Impl>::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         req = inst->savedReq;
         assert(req);
     } else {
-        if (needs_burst) {
-            req = new SplitDataRequest(&thread[tid], inst, isLoad, addr,
-                    size, flags, data, res);
-        } else {
-            req = new SingleDataRequest(&thread[tid], inst, isLoad, addr,
-                    size, flags, data, res, std::move(amo_op));
+        /**
+         * ! GemForge
+         * Try to get special GemForgeLoadRequest here.
+         */
+        if (cpu->cpuDelegator) {
+            req = cpu->cpuDelegator->allocateGemForgeLoadRequest(
+                &thread[tid], inst);
+        }
+        if (!req) {
+            if (needs_burst) {
+                req = new SplitDataRequest(&thread[tid], inst, isLoad, addr,
+                        size, flags, data, res);
+            } else {
+                req = new SingleDataRequest(&thread[tid], inst, isLoad, addr,
+                        size, flags, data, res, std::move(amo_op));
+            }
         }
         assert(req);
         if (!byte_enable.empty()) {

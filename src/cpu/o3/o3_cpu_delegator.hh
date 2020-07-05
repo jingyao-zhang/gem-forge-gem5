@@ -2,6 +2,7 @@
 #define __O3_CPU_DELEGATOR_HH__
 
 #include "cpu/gem_forge/gem_forge_cpu_delegator.hh"
+#include "cpu/o3/gem_forge_load_request.hh"
 
 /******************************************************************
  * This provides the interface between O3CPU and GemForge.
@@ -17,14 +18,32 @@
  *    of conventional issue stage, as reanmed instructions are pushed
  *    into IQ by issue stage, and ROB by commit stage (wierd design),
  *    and there is no break point once in commit stage.
- * 2.
+ * 2. In-order dispatch -- Here the mem-ref instructions are inserted
+ *    into the LSQ. And the instruction queue will monity ready insts
+ *    and schedule them.
+ * 3. Out-of-order execute/writeback -- Once scheduled, the instruction
+ *    will be executed. For mem-ref instructions, this means the
+ *    address is computed and start to translate/access memory.
+ * 4. In-order commit.
+ *
+ * Similar to MinorCPU, we use a PreLSQ to track instructions from
+ * dispatched to have LSQRequest in the LSQ. In short, GemForgeLoad
+ * instructions with GemForgeLoadCallback will be:
+ * 1. At dispatch, insert into PreLSQ.
+ * 2. When the address is ready, mark canExecute.
+ * 3. In LSQ::executeLoad, when the LSQ can track the address, we remove
+ *    it from the PreLSQ.
+ * 4. We have a special event to check if GemForge says the load is
+ *    ready to writeback.
  *******************************************************************/
 
 template <class CPUImpl>
 class DefaultO3CPUDelegator : public GemForgeCPUDelegator {
 public:
   using O3CPU = typename CPUImpl::O3CPU;
+  using LSQUnit = typename CPUImpl::CPUPol::LSQUnit;
   using DynInstPtr = typename CPUImpl::DynInstPtr;
+  using GFLoadReq = GemForgeLoadRequest<CPUImpl>;
 
   DefaultO3CPUDelegator(O3CPU *_cpu);
   ~DefaultO3CPUDelegator() override;
@@ -41,6 +60,8 @@ public:
   void dispatch(DynInstPtr &dynInstPtr);
   bool canExecute(DynInstPtr &dynInstPtr);
   void execute(DynInstPtr &dynInstPtr);
+  bool canWriteback(const DynInstPtr &dynInstPtr);
+  void writeback(const DynInstPtr &dynInstPtr);
   bool canCommit(const DynInstPtr &dynInstPtr);
   void commit(const DynInstPtr &dynInstPtr);
 
@@ -48,6 +69,33 @@ public:
    * Squash all instructions younger than this SeqNum.
    */
   void squash(InstSeqNum squashSeqNum);
+
+  /**
+   * CPU commit a store to this address. We need to:
+   * 1. Notify GemForge.
+   * 2. Invalid any aliased load in PreLSQ.
+   */
+  void storeTo(Addr vaddr, int size);
+
+  /**
+   * This is the real initiateAcc for GemForgeLoad.
+   */
+  Fault initiateGemForgeLoad(const DynInstPtr &dynInstPtr);
+
+  /**
+   * When the core execute a GemForgeLoad, it calls this
+   * to get a special GemForgeLoadRequest.
+   * @return nullptr if this is not a GemForgeLoad.
+   */
+  GFLoadReq *allocateGemForgeLoadRequest(LSQUnit *lsq,
+                                         const DynInstPtr &dynInstPtr);
+
+  /**
+   * The GemForgeLoadRequest is discarded by the LSQ, we
+   * should add it back to PreLSQ.
+   */
+  void discardGemForgeLoad(const DynInstPtr &dynInstPtr,
+                           GemForgeLQCallbackPtr callback);
 
 private:
   class Impl;

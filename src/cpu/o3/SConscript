@@ -58,6 +58,7 @@ if 'O3CPU' in env['CPU_MODELS']:
     Source('store_set.cc')
     Source('thread_context.cc')
     Source('o3_cpu_delegator.cc')
+    Source('gem_forge_load_request.cc')
 
     DebugFlag('CommitRate')
     DebugFlag('IEW')

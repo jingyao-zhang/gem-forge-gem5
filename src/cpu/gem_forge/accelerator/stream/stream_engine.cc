@@ -934,7 +934,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
                         cpuDelegator->curCycle());
       element->firstCheckCycle = cpuDelegator->curCycle();
     }
-    if (element->stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
+    if (element->stream->isStoreStream()) {
       /**
        * Basically this is a stream store.
        * Make sure the stored element is AddrReady.
@@ -945,6 +945,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
       continue;
     }
     if (!element->isValueReady) {
+      S_ELEMENT_DPRINTF(element, "Value not ready.\n");
       ready = false;
     }
   }

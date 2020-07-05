@@ -538,6 +538,14 @@ LSQUnit<Impl>::executeLoad(const DynInstPtr &inst)
 
     load_fault = inst->initiateAcc();
 
+    /**
+     * ! GemForge
+     * GemForgeLoad is initiated here, not in initiateAcc().
+     */
+    if (cpu->cpuDelegator && inst->isGemForge() && inst->isLoad()) {
+        load_fault = cpu->cpuDelegator->initiateGemForgeLoad(inst);
+    }
+
     if (load_fault == NoFault && !inst->readMemAccPredicate()) {
         assert(inst->readPredicate());
         inst->setExecuted();
@@ -907,6 +915,15 @@ template <class Impl>
 void
 LSQUnit<Impl>::storePostSend()
 {
+    /**
+     * ! GemForge
+     * At this point, we know CPU stores to someplace.
+     */
+    if (cpu->cpuDelegator) {
+        Addr vaddr = storeWBIt->request()->getVaddr();
+        int size = storeWBIt->size();
+        cpu->cpuDelegator->storeTo(vaddr, size);
+    }
     if (isStalled() &&
         storeWBIt->instruction()->seqNum == stallingStoreIsn) {
         DPRINTF(LSQUnit, "Unstalling, stalling store [sn:%lli] "
@@ -954,6 +971,15 @@ LSQUnit<Impl>::writeback(const DynInstPtr &inst, PacketPtr pkt)
         if (inst->fault == NoFault) {
             // Complete access to copy data to proper place.
             inst->completeAcc(pkt);
+
+            /**
+             * ! GemForge
+             * We have to handle GemForgeLoad here.
+             */
+            if (cpu->cpuDelegator) {
+                assert(cpu->cpuDelegator->canWriteback(inst));
+                cpu->cpuDelegator->writeback(inst);
+            }
         } else {
             // If the instruction has an outstanding fault, we cannot complete
             // the access as this discards the current fault.

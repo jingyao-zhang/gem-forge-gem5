@@ -20,6 +20,18 @@ struct GemForgeLQCallback {
    * @return true if the address is ready.
    */
   virtual bool getAddrSize(Addr &addr, uint32_t &size) const = 0;
+  Addr getAddr() const {
+    Addr addr;
+    uint32_t size;
+    assert(this->getAddrSize(addr, size));
+    return addr;
+  }
+  uint32_t getSize() const {
+    Addr addr;
+    uint32_t size;
+    assert(this->getAddrSize(addr, size));
+    return size;
+  }
   /**
    * Check if the load request has been issued to memory.
    */

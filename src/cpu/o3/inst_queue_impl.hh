@@ -807,6 +807,7 @@ InstructionQueue<Impl>::scheduleReadyInsts()
         assert(!readyInsts[op_class].empty());
 
         DynInstPtr issuing_inst = readyInsts[op_class].top();
+        DPRINTF(IQ, "Try schedule %s.\n", *issuing_inst);
 
         if (issuing_inst->isFloating()) {
             fpInstQueueReads++;
@@ -1116,6 +1117,21 @@ InstructionQueue<Impl>::addReadyMemInst(const DynInstPtr &ready_inst)
     DPRINTF(IQ, "Mem inst is ready to issue, putting it onto "
             "the ready list, PC %s opclass:%i [sn:%llu].\n",
             ready_inst->pcState(), op_class, ready_inst->seqNum);
+}
+
+template <class Impl>
+void
+InstructionQueue<Impl>::rescheduleGemForgeComputeInst(
+    const DynInstPtr &resched_inst)
+{
+    DPRINTF(IQ, "Rescheduling GemForgeCompute inst [sn:%llu]\n",
+        resched_inst->seqNum);
+    assert(resched_inst->isGemForge() && !resched_inst->isMemRef()
+        && "This is not GemForgeComputeInst.");
+    assert(resched_inst->readyToIssue()
+        && "Rescheduled GemForgeComputeInst should be ready.");
+
+    this->addIfReady(resched_inst);
 }
 
 template <class Impl>
