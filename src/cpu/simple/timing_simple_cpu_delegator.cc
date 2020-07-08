@@ -138,7 +138,7 @@ bool TimingSimpleCPUDelegator::translateVAddrOracle(Addr vaddr, Addr &paddr) {
     // our life as before, so try to fix it?
     if (process->fixupFault(vaddr)) {
       // Try again.
-      return pTable->translate(vaddr, vaddr);
+      return pTable->translate(vaddr, paddr);
     }
     return false;
   }

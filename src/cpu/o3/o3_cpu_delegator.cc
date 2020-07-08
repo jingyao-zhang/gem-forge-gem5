@@ -185,7 +185,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::translateVAddrOracle(Addr vaddr,
     // our life as before, so try to fix it?
     if (process->fixupFault(vaddr)) {
       // Try again.
-      return pTable->translate(vaddr, vaddr);
+      return pTable->translate(vaddr, paddr);
     }
     return false;
   }
@@ -194,7 +194,11 @@ bool DefaultO3CPUDelegator<CPUImpl>::translateVAddrOracle(Addr vaddr,
 
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::sendRequest(PacketPtr pkt) {
-  // So far we don't handle aliasing, so just send.
+  auto lineBytes = this->cacheLineSize();
+  if ((pkt->getAddr() % lineBytes) + pkt->getSize() > lineBytes) {
+    panic("Multi-line packet paddr %#x size %d.", pkt->getAddr(),
+          pkt->getSize());
+  }
   auto &lsq = pimpl->cpu->getIEW()->ldstQueue;
   assert(lsq.getDataPortPtr()->sendTimingReqVirtual(pkt, false /* isCore */));
 

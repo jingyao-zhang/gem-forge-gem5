@@ -2212,11 +2212,16 @@ void StreamEngine::issueElement(StreamElement *element) {
       continue;
     }
 
-    auto vaddr = cacheBlockBreakdown.cacheBlockVAddr;
-    auto packetSize = cpuDelegator->cacheLineSize();
-    Addr paddr;
-    if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
-      S_ELEMENT_DPRINTF(element, "Fault on vaddr %#x.\n", vaddr);
+    const auto cacheLineVAddr = cacheBlockBreakdown.cacheBlockVAddr;
+    const auto cacheLineSize = cpuDelegator->cacheLineSize();
+    if ((cacheLineVAddr % cacheLineSize) != 0) {
+      S_ELEMENT_PANIC(element,
+        "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n",
+        i, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+    }
+    Addr cacheLinePAddr;
+    if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
+      S_ELEMENT_DPRINTF(element, "Fault on vaddr %#x.\n", cacheLineVAddr);
       cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Faulted;
       /**
        * The current mechanism to mark value ready is too hacky.
@@ -2227,6 +2232,11 @@ void StreamEngine::issueElement(StreamElement *element) {
        */
       element->tryMarkValueReady();
       continue;
+    }
+    if ((cacheLinePAddr % cacheLineSize) != 0) {
+      S_ELEMENT_PANIC(element,
+        "LinePAddr %#x invalid, LineVAddr %#x, VAddr %#x.\n",
+        cacheLinePAddr, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
     }
 
     // Allocate the book-keeping StreamMemAccess.
@@ -2253,8 +2263,8 @@ void StreamEngine::issueElement(StreamElement *element) {
          * * We should use element address here, not line address.
          */
         auto elementVAddr = cacheBlockBreakdown.virtualAddr;
-        auto lineOffset = elementVAddr % cpuDelegator->cacheLineSize();
-        auto elementPAddr = paddr + lineOffset;
+        auto lineOffset = elementVAddr % cacheLineSize;
+        auto elementPAddr = cacheLinePAddr + lineOffset;
 
         pkt = GemForgePacketHandler::createGemForgeAMOPacket(
             elementVAddr, elementPAddr, element->size, memAccess,
@@ -2271,9 +2281,9 @@ void StreamEngine::issueElement(StreamElement *element) {
         flags.set(Request::NO_RUBY_BACK_STORE);
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
         pkt = GemForgePacketHandler::createGemForgePacket(
-            paddr, packetSize, memAccess, nullptr /* Data */,
+            cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
             cpuDelegator->dataMasterId(), 0 /* ContextId */, 0 /* PC */, flags);
-        pkt->req->setVirt(vaddr);
+        pkt->req->setVirt(cacheLineVAddr);
       }
     } else {
       /**
@@ -2286,17 +2296,22 @@ void StreamEngine::issueElement(StreamElement *element) {
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
       }
       pkt = GemForgePacketHandler::createGemForgePacket(
-          paddr, packetSize, memAccess, nullptr /* Data */,
+          cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
           cpuDelegator->dataMasterId(), 0 /* ContextId */, 0 /* PC */, flags);
-      pkt->req->setVirt(vaddr);
+      pkt->req->setVirt(cacheLineVAddr);
     }
     pkt->req->getStatistic()->isStream = true;
-    S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1, vaddr,
-                      packetSize);
-    auto lineOffset = vaddr % cpuDelegator->cacheLineSize();
-    if (lineOffset + packetSize > cpuDelegator->cacheLineSize()) {
-      S_ELEMENT_PANIC(element, "Issued Multi-Line request to %#x size %d.",
-                      vaddr, packetSize);
+    S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1, 
+                      pkt->getAddr(), pkt->getSize());
+    
+    {
+      // Sanity check that no multi-line element.
+      auto lineOffset = pkt->getAddr() % cacheLineSize;
+      if (lineOffset + pkt->getSize() > cacheLineSize) {
+        S_ELEMENT_PANIC(element, "Issued Multi-Line request to %#x size %d, "
+          "lineVAddr %#x linePAddr %#x.",
+          pkt->getAddr(), pkt->getSize(), cacheLineVAddr, cacheLinePAddr);
+      }
     }
     S->statistic.numIssuedRequest++;
     element->dynS->incrementNumIssuedRequests();
