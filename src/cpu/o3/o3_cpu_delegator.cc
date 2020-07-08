@@ -13,6 +13,8 @@
 
 template <class CPUImpl> class DefaultO3CPUDelegator<CPUImpl>::Impl {
 public:
+  using GFLoadReq = typename DefaultO3CPUDelegator<CPUImpl>::GFLoadReq;
+
   Impl(O3CPU *_cpu, DefaultO3CPUDelegator *_cpuDelegator)
       : cpu(_cpu), cpuDelegator(_cpuDelegator), isaHandler(_cpuDelegator) {}
 
@@ -30,10 +32,23 @@ public:
   std::deque<DynInstPtr> inflyInstQueue;
 
   /**
+   * Remember if the inst has been squashed in GemForge.
+   * Due to ROB squashWidth, the instruction itself may not been marked
+   * as squashed yet.
+   */
+  std::map<InstSeqNum, bool> inflyInstSquashedMap;
+
+  /**
    * Store the LQ callbacks before they are really marked vaddr ready
    * and tracked by the LSQ.
    */
   std::unordered_map<InstSeqNum, GemForgeLQCallbackList> preLSQ;
+
+  /**
+   * Store the LQ requests that are tracked by the LSQ.
+   * This is used for squashing.
+   */
+  std::unordered_map<InstSeqNum, GFLoadReq *> inLSQ;
 
   Process *getProcess() {
     assert(this->cpu->thread.size() == 1 &&
@@ -54,6 +69,34 @@ public:
     ThreadID threadId = dynInstPtr->threadNumber;
     ThreadContext *thread = cpu->getContext(threadId);
     return thread;
+  }
+
+  bool isSquashedInGemForge(const DynInstPtr &dynInstPtr) const {
+    auto seqNum = this->getInstSeqNum(dynInstPtr);
+    auto iter = this->inflyInstSquashedMap.find(seqNum);
+    if (iter == this->inflyInstSquashedMap.end()) {
+      INST_PANIC(dynInstPtr, "Missed in InflyInstSquashedMap.");
+    }
+    return iter->second;
+  }
+
+  void squashInGemForge(const DynInstPtr &dynInstPtr) {
+    auto seqNum = this->getInstSeqNum(dynInstPtr);
+    auto iter = this->inflyInstSquashedMap.find(seqNum);
+    if (iter == this->inflyInstSquashedMap.end()) {
+      INST_PANIC(dynInstPtr, "Missed in InflyInstSquashedMap.");
+    }
+    if (iter->second) {
+      INST_PANIC(dynInstPtr, "Already SquashedInGemForge.");
+    }
+    iter->second = true;
+  }
+
+  void releaseInflyInstSquashedMap(InstSeqNum committedSeqNum) {
+    // Release all entries that are older than (<=) committedSeqNum.
+    auto upperBound = this->inflyInstSquashedMap.upper_bound(committedSeqNum);
+    this->inflyInstSquashedMap.erase(this->inflyInstSquashedMap.begin(),
+                                     upperBound);
   }
 
   GemForgeDynInstInfo createDynInfo(const DynInstPtr &dynInstPtr) const {
@@ -192,6 +235,7 @@ void DefaultO3CPUDelegator<CPUImpl>::dispatch(DynInstPtr &dynInstPtr) {
   bool isGemForgeLoad = false;
   pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
   pimpl->inflyInstQueue.push_back(dynInstPtr);
+  pimpl->inflyInstSquashedMap.emplace(dynInfo.seqNum, false);
   if (isGemForgeLoad) {
     assert(dynInstPtr->isMemRef() && "Should be MemRef for GemForgeLoad.");
     assert(dynInstPtr->isLoad() && "Should be Load for GemForgeLoad.");
@@ -214,6 +258,10 @@ bool DefaultO3CPUDelegator<CPUImpl>::canExecute(DynInstPtr &dynInstPtr) {
    * addr/size is ready. Their GemForgeExecute hook is actually the
    * writeback event.
    */
+  if (pimpl->isSquashedInGemForge(dynInstPtr)) {
+    // Already squashed, not exposed to GemForge.
+    return true;
+  }
   if (pimpl->isInPreLSQ(dynInstPtr)) {
     return pimpl->isAddrSizeReady(dynInstPtr);
   }
@@ -227,6 +275,10 @@ bool DefaultO3CPUDelegator<CPUImpl>::canExecute(DynInstPtr &dynInstPtr) {
 
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::execute(DynInstPtr &dynInstPtr) {
+  if (pimpl->isSquashedInGemForge(dynInstPtr)) {
+    // Already squashed, not exposed to GemForge.
+    return;
+  }
   INST_DPRINTF(dynInstPtr, "Execute.\n");
   if (pimpl->isInPreLSQ(dynInstPtr)) {
     // GemForgeLoad really happens at writeback.
@@ -240,6 +292,10 @@ void DefaultO3CPUDelegator<CPUImpl>::execute(DynInstPtr &dynInstPtr) {
 template <class CPUImpl>
 bool DefaultO3CPUDelegator<CPUImpl>::canWriteback(
     const DynInstPtr &dynInstPtr) {
+  if (pimpl->isSquashedInGemForge(dynInstPtr)) {
+    // Already squashed, not exposed to GemForge.
+    return true;
+  }
   /**
    * Special case for GemForgeLoad: they can execute when
    * addr/size is ready. Their GemForgeExecute hook is actually the
@@ -258,6 +314,10 @@ bool DefaultO3CPUDelegator<CPUImpl>::canWriteback(
 
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::writeback(const DynInstPtr &dynInstPtr) {
+  if (pimpl->isSquashedInGemForge(dynInstPtr)) {
+    // Already squashed, not exposed to GemForge.
+    return;
+  }
   if (dynInstPtr->isGemForge() && dynInstPtr->isLoad()) {
     INST_DPRINTF(dynInstPtr, "Writeback.\n");
     auto dynInfo = pimpl->createDynInfo(dynInstPtr);
@@ -267,6 +327,10 @@ void DefaultO3CPUDelegator<CPUImpl>::writeback(const DynInstPtr &dynInstPtr) {
 
 template <class CPUImpl>
 bool DefaultO3CPUDelegator<CPUImpl>::canCommit(const DynInstPtr &dynInstPtr) {
+  if (pimpl->isSquashedInGemForge(dynInstPtr)) {
+    // Already squashed, not exposed to GemForge.
+    return true;
+  }
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   auto ret = pimpl->isaHandler.canCommit(dynInfo);
   if (!ret) {
@@ -291,7 +355,18 @@ void DefaultO3CPUDelegator<CPUImpl>::commit(const DynInstPtr &dynInstPtr) {
   if (pimpl->isInPreLSQ(dynInstPtr)) {
     INST_PANIC(dynInstPtr, "Still in PreLSQ when commit.");
   }
+
+  auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
+  if (pimpl->isSquashedInGemForge(dynInstPtr)) {
+    // Already squashed, not exposed to GemForge.
+    INST_PANIC(dynInstPtr, "Commit SquashedInGemForge inst.");
+  }
+
+  // Clear InLSQ.
+  pimpl->inLSQ.erase(seqNum);
+
   pimpl->inflyInstQueue.pop_front();
+  pimpl->releaseInflyInstSquashedMap(seqNum);
   pimpl->isaHandler.commit(dynInfo);
 }
 
@@ -299,6 +374,7 @@ template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
   auto &inflyInstQueue = pimpl->inflyInstQueue;
   auto &preLSQ = pimpl->preLSQ;
+  auto &inLSQ = pimpl->inLSQ;
   while (!inflyInstQueue.empty()) {
     auto &inst = inflyInstQueue.back();
     auto seqNum = pimpl->getInstSeqNum(inst);
@@ -314,29 +390,22 @@ void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
      * Rewinding a instruction with GemForgeLQCallback involves 3 cases:
      *
      * 1. If the instruction is still in PreLSQ, we can simply discard it.
-     *
-     * 2. If the instruction is in the LSQ's request queue, it will be
-     * marked complete in LSQ::tryToSendToTransfers() and moved to
-     * transfers. Since it's already complete, it will eventually be
-     * discarded in Execute::commit().
-     *
-     * 3. If the instruction is already in LSQ's transfer queue, normally
-     * LSQ::findResponse() will call request->checkIsComplete(), which
-     * eventually calls GemForgeLQCallback::isValueReady() and mark it
-     * complete. After rewinding, we assume the callback is invalid to
-     * use, therefore we explicitly mark the GemForgeLoadRequest discarded.
-     *    We need explicitly marking it discarded because requests in
-     * transfer queue is only marked complete when response comes back,
-     * and Execute::commit() requires it to be completed before discarded.
-     *
-     * If the instruction is out of the transfer queue, it should already
-     * be committed and not possible for it to be rewinded.
+     * 2. If the instruction is already in LSQ, we mark it squashed.
      */
 
     // 1. Release PreLSQ, if any.
     preLSQ.erase(seqNum);
 
+    // 2. Mark InLSQ squshed.
+    auto inLSQIter = inLSQ.find(seqNum);
+    if (inLSQIter != inLSQ.end()) {
+      inLSQIter->second->squashInGemForge();
+      inLSQ.erase(inLSQIter);
+    }
+
     inflyInstQueue.pop_back();
+    // Remember the squash decision.
+    pimpl->squashInGemForge(inst);
   }
 }
 
@@ -448,6 +517,7 @@ typename DefaultO3CPUDelegator<CPUImpl>::GFLoadReq *
 DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLoadRequest(
     LSQUnit *lsq, const DynInstPtr &dynInstPtr) {
   auto &preLSQ = pimpl->preLSQ;
+  auto &inLSQ = pimpl->inLSQ;
   auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
   auto iter = preLSQ.find(seqNum);
   if (iter == preLSQ.end()) {
@@ -462,6 +532,12 @@ DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLoadRequest(
   // Simply allocate the request.
   auto req = new GFLoadReq(lsq, dynInstPtr, this, std::move(callbacks.front()));
 
+  // Push to inLSQ.
+  auto ret =
+      inLSQ.emplace(std::piecewise_construct, std::forward_as_tuple(seqNum),
+                    std::forward_as_tuple(req));
+  assert(ret.second && "Already inLSQ.");
+
   // Release the preLSQ.
   preLSQ.erase(iter);
   return req;
@@ -473,6 +549,7 @@ void DefaultO3CPUDelegator<CPUImpl>::discardGemForgeLoad(
   assert(!dynInstPtr->isSquashed());
   INST_DPRINTF(dynInstPtr, "Back to PreLSQ.\n");
   auto &preLSQ = pimpl->preLSQ;
+  auto &inLSQ = pimpl->inLSQ;
   auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
 
   auto result =
@@ -480,6 +557,11 @@ void DefaultO3CPUDelegator<CPUImpl>::discardGemForgeLoad(
                      std::forward_as_tuple());
   assert(result.second && "Callback already in PreLSQ.");
   result.first->second.front() = std::move(callback);
+
+  // Erase from inLSQ.
+  auto inLSQIter = inLSQ.find(seqNum);
+  assert(inLSQIter != inLSQ.end() && "Missed inLSQ.");
+  inLSQ.erase(inLSQIter);
 }
 
 #undef INST_PANIC

@@ -86,7 +86,7 @@ bool ISAStreamEngine::canExecuteStreamConfig(
 
 void ISAStreamEngine::executeStreamConfig(const GemForgeDynInstInfo &dynInfo,
                                           ExecContext &xc) {
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     return;
   }
@@ -104,7 +104,7 @@ void ISAStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     panic("[commit] MustMisspeculated StreamConfig %llu, %s.", configIdx,
           infoRelativePath);
@@ -115,8 +115,8 @@ void ISAStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
 void ISAStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
-  auto &configInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).configInfo;
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
+  auto &configInfo = this->getDynStreamInstInfo(dynInfo.seqNum).configInfo;
   ISA_SE_DPRINTF("[rewind] StreamConfig MustMisspeculated %d %llu, %s.\n",
                  instInfo.mustBeMisspeculated, configIdx, infoRelativePath);
   if (instInfo.mustBeMisspeculated) {
@@ -179,7 +179,7 @@ void ISAStreamEngine::dispatchStreamInput(
   }
 
   // Remember the input info.
-  auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
+  auto &inputInfo = this->getDynStreamInstInfo(dynInfo.seqNum).inputInfo;
   // Translate the regionStreamId.
   auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto streamId = this->lookupRegionStreamId(regionStreamId);
@@ -202,7 +202,7 @@ bool ISAStreamEngine::canExecuteStreamInput(
 void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
                                          ExecContext &xc) {
 
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     ISA_SE_DPRINTF("[execute] MustMisspeculated StreamInput.\n");
     return;
@@ -211,7 +211,7 @@ void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
   auto &configInfo = instInfo.configInfo;
 
   // Record the live input.
-  auto &inputInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum).inputInfo;
+  auto &inputInfo = this->getDynStreamInstInfo(dynInfo.seqNum).inputInfo;
   auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
   auto &inputVec = inputMap.at(inputInfo.translatedStreamId);
 
@@ -242,7 +242,7 @@ bool ISAStreamEngine::canCommitStreamInput(const GemForgeDynInstInfo &dynInfo) {
 
 void ISAStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
   // Release the InstInfo.
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     panic("[commit] MustMisspeculated StreamInput.\n");
   }
@@ -250,7 +250,7 @@ void ISAStreamEngine::commitStreamInput(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void ISAStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     ISA_SE_DPRINTF("[rewind] MustMisspeculated StreamInput.\n");
     this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
@@ -343,7 +343,7 @@ bool ISAStreamEngine::canExecuteStreamReady(
 
 void ISAStreamEngine::executeStreamReady(const GemForgeDynInstInfo &dynInfo,
                                          ExecContext &xc) {
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     ISA_SE_DPRINTF("[execute] MustMisspeculated StreamReady.\n");
     return;
@@ -359,7 +359,7 @@ bool ISAStreamEngine::canCommitStreamReady(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void ISAStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     panic("[commit] MustMisspeculated StreamReady.\n");
   }
@@ -378,7 +378,7 @@ void ISAStreamEngine::commitStreamReady(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void ISAStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   auto &configInfo = instInfo.configInfo;
   auto &regionInfo = configInfo.dynStreamRegionInfo;
 
@@ -475,7 +475,7 @@ void ISAStreamEngine::dispatchStreamEnd(
 }
 
 bool ISAStreamEngine::canExecuteStreamEnd(const GemForgeDynInstInfo &dynInfo) {
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     return true;
   }
@@ -499,7 +499,7 @@ bool ISAStreamEngine::canCommitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
 void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   assert(!instInfo.mustBeMisspeculated &&
          "Try to commit a MustBeMisspeculated inst.");
 
@@ -519,7 +519,7 @@ void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
 void ISAStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (!instInfo.mustBeMisspeculated) {
     // Really rewind the StreamEnd.
     auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
@@ -579,7 +579,7 @@ void ISAStreamEngine::dispatchStreamStep(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
 
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     return;
   }
@@ -606,7 +606,7 @@ void ISAStreamEngine::executeStreamStep(const GemForgeDynInstInfo &dynInfo,
                                         ExecContext &xc) {}
 
 bool ISAStreamEngine::canCommitStreamStep(const GemForgeDynInstInfo &dynInfo) {
-  const auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     return true;
   }
@@ -617,7 +617,7 @@ bool ISAStreamEngine::canCommitStreamStep(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
-  const auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
     panic("Commit a MustBeMisspeculated StreamStep %llu.\n", regionStreamId);
@@ -632,7 +632,7 @@ void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void ISAStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
-  const auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     // Nothing to do.
   } else {
@@ -705,7 +705,7 @@ void ISAStreamEngine::dispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLQCallbackList &extraLQCallbacks) {
 
-  auto &instInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   auto &userInfo = instInfo.userInfo;
 
   if (instInfo.mustBeMisspeculated) {
@@ -735,7 +735,7 @@ void ISAStreamEngine::dispatchStreamLoad(
 }
 
 bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
 
   if (dynStreamInstInfo.mustBeMisspeculated) {
@@ -756,7 +756,7 @@ bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
 
 void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
                                         ExecContext &xc) {
-  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
 
   if (dynStreamInstInfo.mustBeMisspeculated) {
@@ -802,7 +802,7 @@ bool ISAStreamEngine::canCommitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void ISAStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   if (dynStreamInstInfo.mustBeMisspeculated) {
     // This must be a misspeculated instruction.
@@ -822,7 +822,7 @@ void ISAStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void ISAStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  const auto &dynStreamInstInfo = this->seqNumToDynInfoMap.at(dynInfo.seqNum);
+  const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   if (dynStreamInstInfo.mustBeMisspeculated) {
     // This must be a misspeculated instruction.
@@ -1010,6 +1010,16 @@ ISAStreamEngine::getOrCreateDynStreamInstInfo(uint64_t seqNum) {
       std::piecewise_construct, std::forward_as_tuple(seqNum),
       std::forward_as_tuple());
   return emplaceRet.first->second;
+}
+
+ISAStreamEngine::DynStreamInstInfo &
+ISAStreamEngine::getDynStreamInstInfo(uint64_t seqNum) {
+  auto iter = this->seqNumToDynInfoMap.find(seqNum);
+  if (iter == this->seqNumToDynInfoMap.end()) {
+    inform("Failed to get DynStreamInstInfo for %llu.", seqNum);
+    assert(false && "Failed to get DynStreamInstInfo.");
+  }
+  return iter->second;
 }
 
 void ISAStreamEngine::increamentStreamRegionInfoNumExecutedInsts(

@@ -45,6 +45,8 @@ public:
   Cycles handleLocalAccess(ThreadContext *thread, PacketPtr pkt) override;
   bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask) override;
 
+  void squashInGemForge();
+
 protected:
   O3CPUDelegator *cpuDelegator;
   // The GemForgeLQCallback.
@@ -55,5 +57,11 @@ protected:
    */
   EventFunctionWrapper checkValueReadyEvent;
   void checkValueReady();
+
+  /**
+   * ROB has a squash width, while GemForge will squash immediately.
+   * This flag remembers that the instruction is squashed in GemForge.
+   */
+  bool squashedInGemForge = false;
 };
 #endif

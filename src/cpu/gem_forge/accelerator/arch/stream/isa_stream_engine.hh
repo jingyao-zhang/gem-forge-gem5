@@ -182,6 +182,7 @@ private:
 
   DynStreamInstInfo &createDynStreamInstInfo(uint64_t seqNum);
   DynStreamInstInfo &getOrCreateDynStreamInstInfo(uint64_t seqNum);
+  DynStreamInstInfo &getDynStreamInstInfo(uint64_t seqNum);
 
   /**
    * Mark one stream config inst executed.

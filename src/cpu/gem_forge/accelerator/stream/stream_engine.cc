@@ -985,7 +985,7 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * Make sure we zero out the data.
      */
     args.values->back().fill(0);
-    if (element->stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
+    if (element->stream->isStoreStream()) {
       /**
        * This should be a stream store. Just leave it there.
        */

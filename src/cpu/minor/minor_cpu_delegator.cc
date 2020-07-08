@@ -8,6 +8,7 @@
 #include "debug/MinorCPUDelegatorDump.hh"
 
 #include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
+#include "cpu/gem_forge/gem_forge_translation_fault.hh"
 
 #define INST_DPRINTF(inst, format, args...)                                    \
   DPRINTF(MinorCPUDelegator, "[%s]: " format, *(inst), ##args)
@@ -264,7 +265,7 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
                    vaddr, size);
       if (dynInstPtr->translationFault == NoFault) {
         dynInstPtr->translationFault =
-            std::make_shared<Minor::GemForgeLoadTranslationFault>();
+            std::make_shared<GemForge::GemForgeLoadTranslationFault>();
       }
       /**
        * Request the state of the request to Translated.

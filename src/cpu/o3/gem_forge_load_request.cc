@@ -1,6 +1,7 @@
 #include "gem_forge_load_request.hh"
 #include "cpu/o3/isa_specific.hh"
 
+#include "cpu/gem_forge/gem_forge_translation_fault.hh"
 #include "debug/O3CPUDelegator.hh"
 
 #define INST_DPRINTF(format, args...)                                          \
@@ -68,17 +69,28 @@ template <class Impl> void GemForgeLoadRequest<Impl>::initiateTranslation() {
   if (this->_inst->isSquashed()) {
     this->squashTranslation();
   } else {
+    Fault fault = NoFault;
     this->flags.set(Flag::TranslationFinished);
     // I get addr directly from CPUDelegator.
-    Addr paddr;
-    assert(this->cpuDelegator->translateVAddrOracle(this->_addr, paddr) &&
-           "Failed translation for GemForgeLoad.");
-    this->_requests.back()->setPaddr(paddr);
-    this->_inst->physEffAddr = this->_requests.back()->getPaddr();
-    this->_inst->memReqFlags = this->_requests.back()->getFlags();
-    this->setState(State::Request);
+    Addr paddrLHS;
+    Addr paddrRHS;
+    if (!this->cpuDelegator->translateVAddrOracle(this->_addr, paddrLHS) ||
+        !this->cpuDelegator->translateVAddrOracle(this->_addr + this->_size - 1,
+                                                  paddrRHS)) {
+      // There is translation fault.
+      INST_DPRINTF("GFLoadReq: Translation fault on vaddr %#x size %d.\n",
+                   this->_addr, this->_size);
 
-    this->_inst->fault = NoFault;
+      fault = std::make_shared<GemForge::GemForgeLoadTranslationFault>();
+      this->setState(State::Fault);
+    } else {
+      // No translation fault.
+      this->_requests.back()->setPaddr(paddrLHS);
+      this->_inst->physEffAddr = this->_requests.back()->getPaddr();
+      this->_inst->memReqFlags = this->_requests.back()->getFlags();
+      this->setState(State::Request);
+    }
+    this->_inst->fault = fault;
     this->_inst->translationCompleted(true);
   }
 }
@@ -110,6 +122,7 @@ template <class Impl> void GemForgeLoadRequest<Impl>::sendPacketToCache() {
    * We just update my state to sent.
    */
   INST_DPRINTF("GFLoadReq: sendPacketToCache.\n");
+  assert(!this->squashedInGemForge);
   auto *packet = this->_packets.at(0);
   auto state = dynamic_cast<LSQSenderState *>(packet->senderState);
   state->outstanding++;
@@ -132,29 +145,43 @@ bool GemForgeLoadRequest<Impl>::isCacheBlockHit(Addr blockAddr,
 }
 
 template <class Impl> void GemForgeLoadRequest<Impl>::checkValueReady() {
-  if (this->_numOutstandingPackets == 0) {
-    // We don't have to check the result.
-    return;
-  }
+  assert(this->_numOutstandingPackets == 1);
+  assert(!this->squashedInGemForge && "CheckValueReady after squashed.");
+  assert(!this->_inst->isSquashed());
+  // Not squashed, check if value is ready.
   assert(this->callback && "No callback to checkValueReady.");
   // Check the LQ callback.
   bool completed = this->callback->isValueLoaded();
+  INST_DPRINTF("GFLoadReq: %s.\n", completed ? "Ready" : "NotReady");
   if (!completed) {
     // Recheck next cycle.
-    INST_DPRINTF("GFLoadReq: checkValueReady rescheduled.\n");
     this->cpuDelegator->schedule(&this->checkValueReadyEvent, Cycles(1));
     return;
+  } else {
+    auto pkt = this->_packets.front();
+    auto state = dynamic_cast<LSQSenderState *>(pkt->senderState);
+    this->flags.set(Flag::Complete);
+    state->outstanding--;
+    // Remember to decrease _numOutstandingPackets here, otherwise myself
+    // will not be released later.
+    this->packetReplied();
+    this->_port.completeDataAccess(pkt);
   }
-  INST_DPRINTF("GFLoadReq: value ready.\n");
-  assert(this->_numOutstandingPackets == 1);
-  auto pkt = this->_packets.front();
-  auto state = dynamic_cast<LSQSenderState *>(pkt->senderState);
-  this->flags.set(Flag::Complete);
-  state->outstanding--;
-  // Remember to decrease _numOutstandingPackets here, otherwise myself
-  // will not be released later.
-  this->packetReplied();
-  this->_port.completeDataAccess(pkt);
+}
+
+template <class Impl> void GemForgeLoadRequest<Impl>::squashInGemForge() {
+  assert(!this->squashedInGemForge && "Already squashed in GemForge.");
+  this->squashedInGemForge = true;
+  if (this->isAnyOutstandingRequest()) {
+    // 1. Deschedule check value ready event.
+    assert(this->checkValueReadyEvent.scheduled());
+    this->cpuDelegator->deschedule(&this->checkValueReadyEvent);
+    // 2. Fake response so that later we will be released.
+    assert(this->_senderState);
+    this->_senderState->deleteRequest();
+    this->_senderState->outstanding--;
+    this->packetReplied();
+  }
 }
 
 #undef INST_PANIC
