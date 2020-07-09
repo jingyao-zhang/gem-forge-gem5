@@ -472,6 +472,15 @@ LSQUnit<Impl>::checkViolations(typename LoadQueue::iterator& loadIt,
                 // If this load is to the same block as an external snoop
                 // invalidate that we've observed then the load needs to be
                 // squashed as it could have newer data
+                /**
+                 * ! GemForge
+                 * Notify GemForge about this RAWMisspeculation. Otherwise the
+                 * InLSQ is not correctly handled.
+                 */
+                if (cpu->cpuDelegator) {
+                    cpu->cpuDelegator->foundRAWMisspeculationInLSQ(
+                        ld_inst->seqNum);
+                }
                 if (ld_inst->hitExternalSnoop()) {
                     if (!memDepViolator ||
                             ld_inst->seqNum < memDepViolator->seqNum) {
@@ -499,6 +508,17 @@ LSQUnit<Impl>::checkViolations(typename LoadQueue::iterator& loadIt,
                 // A load/store incorrectly passed this store.
                 // Check if we already have a violator, or if it's newer
                 // squash and refetch.
+
+                /**
+                 * ! GemForge
+                 * Notify GemForge about this RAWMisspeculation. Otherwise the
+                 * InLSQ is not correctly handled.
+                 */
+                if (cpu->cpuDelegator) {
+                    cpu->cpuDelegator->foundRAWMisspeculationInLSQ(
+                        ld_inst->seqNum);
+                }
+
                 if (memDepViolator && ld_inst->seqNum > memDepViolator->seqNum)
                     break;
 

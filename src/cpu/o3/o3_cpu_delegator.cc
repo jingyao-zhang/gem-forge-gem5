@@ -464,7 +464,7 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
     }
   }
 
-  // No misspeculation found in LSQ.
+  // No misspeculation found in PreLSQ.
   if (!foundMisspeculated) {
     DPRINTF(O3CPUDelegator, "CPU storeTo %#x, %d, No Alias in PreLSQ.\n", vaddr,
             size);
@@ -484,6 +484,24 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
         }
       }
     }
+  }
+}
+
+template <class CPUImpl>
+void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
+    InstSeqNum squashSeqNum) {
+  // Flush all callbacks in LSQ that is >= squashSeqNum.
+  if (pimpl->inflyInstQueue.empty()) {
+    return;
+  }
+
+  // There should only be a few InLSQ callbacks, so I directly search in it.
+  for (const auto &inLSQEntry: pimpl->inLSQ) {
+    auto seqNum = inLSQEntry.first;
+    if (seqNum < squashSeqNum) {
+      continue;
+    }
+    inLSQEntry.second->foundRAWMisspeculation();
   }
 }
 

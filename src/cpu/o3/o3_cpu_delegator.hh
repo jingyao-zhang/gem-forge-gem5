@@ -32,9 +32,11 @@
  * 1. At dispatch, insert into PreLSQ.
  * 2. When the address is ready, mark canExecute.
  * 3. In LSQ::executeLoad, when the LSQ can track the address, we remove
- *    it from the PreLSQ.
- * 4. We have a special event to check if GemForge says the load is
- *    ready to writeback.
+ *    it from the PreLSQ and allocate GemForgeLoadRequest and insert
+ *    into the LSQ.
+ * 4. For each InLSQ GemForgeLoadReq, we have a special event to check if
+ *    GemForge say the value is ready.
+ * 5. If found a misspeculation, we flush everything.
  *******************************************************************/
 
 template <class CPUImpl>
@@ -76,6 +78,18 @@ public:
    * 2. Invalid any aliased load in PreLSQ.
    */
   void storeTo(Addr vaddr, int size);
+
+  /**
+   * CPU LSQ found a RAWMisspuclation at SeqNum. We need to:
+   * 1. Call RAWMisspeculation on every callback in LSQ >= SeqNum.
+   * 2. Call RAWMisspeculation on every callback in PreLSQ.
+   *
+   * Later these instruction will be squshed by the CPU.
+   *
+   * This is overconservative, as some data may be dependent
+   * on the misspeculated data. But we take it seriously.
+   */
+  void foundRAWMisspeculationInLSQ(InstSeqNum squashSeqNum);
 
   /**
    * This is the real initiateAcc for GemForgeLoad.

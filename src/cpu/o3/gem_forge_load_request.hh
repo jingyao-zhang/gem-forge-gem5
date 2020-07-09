@@ -47,6 +47,10 @@ public:
 
   void squashInGemForge();
 
+  void foundRAWMisspeculation() {
+    this->callback->RAWMisspeculate();
+  }
+
 protected:
   O3CPUDelegator *cpuDelegator;
   // The GemForgeLQCallback.
