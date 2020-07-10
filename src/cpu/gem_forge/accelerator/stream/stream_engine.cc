@@ -1923,27 +1923,9 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
   return releaseElement != nullptr;
 }
 
-void StreamEngine::stepElement(Stream *S) {
-  auto element = S->stepElement();
-  // if (S->isLoadStream() && !S->getFloatManual()) {
-  //   if (!element->isFirstUserDispatched() && element->isAddrReady &&
-  //       element->shouldIssue()) {
-  //     // This issued element is stepped but not used, remove from PEB.
-  //     this->peb.removeElement(element);
-  //   }
-  // }
-}
+void StreamEngine::stepElement(Stream *S) { S->stepElement(); }
 
-void StreamEngine::unstepElement(Stream *S) {
-  auto element = S->unstepElement();
-  // We may need to add this back to PEB.
-  // if (S->isLoadStream() && !S->getFloatManual()) {
-  //   if (!element->isFirstUserDispatched() && element->isAddrReady &&
-  //       element->shouldIssue()) {
-  //     this->peb.addElement(element);
-  //   }
-  // }
-}
+void StreamEngine::unstepElement(Stream *S) { S->unstepElement(); }
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElements;
