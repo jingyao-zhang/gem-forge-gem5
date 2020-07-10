@@ -8,6 +8,7 @@ DebugFlag('CoalescedStream')
 DebugFlag('SingleStream')
 DebugFlag('AddrGenCallback')
 DebugFlag('StreamAtomicOp')
+DebugFlag('PrefetchElementBuffer')
 
 ProtoBuf('StreamMessage.proto')
 

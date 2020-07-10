@@ -898,8 +898,7 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
       // Mark the first user sequence number.
       if (!element->isFirstUserDispatched()) {
         element->firstUserSeqNum = seqNum;
-        if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
-            !S->getFloatManual() && element->isAddrReady) {
+        if (S->isLoadStream() && !S->getFloatManual() && element->isAddrReady) {
           // The element should already be in peb, remove it.
           this->peb.removeElement(element);
         }
@@ -1053,9 +1052,8 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
       // I am the first user.
       element->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
       // Check if the element should go back to PEB.
-      if (element->stream->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
-          element->isAddrReady && element->shouldIssue() &&
-          !element->stream->getFloatManual()) {
+      if (element->stream->isLoadStream() && element->isAddrReady &&
+          element->shouldIssue() && !element->stream->getFloatManual()) {
         this->peb.addElement(element);
       }
     }
@@ -1852,14 +1850,21 @@ void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
            "Some unreleased user instruction.");
   }
 
-  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
+  if (S->isLoadStream()) {
     this->numLoadElementsStepped++;
     /**
-     * For a stepped load element, it should be removed from the PEB.
-     * Except it's the last element.
+     * For a stepped load element, it should be removed from the PEB
+     * if not used.
      */
-    assert(!this->peb.contains(releaseElement) &&
-           "Used load element still in PEB when released.");
+    if (!S->getFloatManual() && releaseElement->isAddrReady &&
+        releaseElement->shouldIssue()) {
+      if (used) {
+        assert(!this->peb.contains(releaseElement) &&
+               "Used load element still in PEB when released.");
+      } else {
+        this->peb.removeElement(releaseElement);
+      }
+    }
     if (used) {
       this->numLoadElementsUsed++;
       // Update waited cycle information.
@@ -1870,7 +1875,7 @@ void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
       }
       this->numLoadElementWaitCycles += waitedCycles;
     }
-  } else if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
+  } else if (S->isStoreStream()) {
     this->numStoreElementsStepped++;
     if (used) {
       this->numStoreElementsUsed++;
@@ -1907,8 +1912,7 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
   auto S = dynS.stream;
   auto releaseElement = S->releaseElementUnstepped(dynS);
   if (releaseElement) {
-    if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
-        !S->getFloatManual()) {
+    if (S->isLoadStream() && !S->getFloatManual()) {
       if (releaseElement->isAddrReady) {
         // This should be in PEB.
         this->peb.removeElement(releaseElement);
@@ -1921,26 +1925,24 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
 
 void StreamEngine::stepElement(Stream *S) {
   auto element = S->stepElement();
-  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
-      !S->getFloatManual()) {
-    if (!element->isFirstUserDispatched() && element->isAddrReady &&
-        element->shouldIssue()) {
-      // This issued element is stepped but not used, remove from PEB.
-      this->peb.removeElement(element);
-    }
-  }
+  // if (S->isLoadStream() && !S->getFloatManual()) {
+  //   if (!element->isFirstUserDispatched() && element->isAddrReady &&
+  //       element->shouldIssue()) {
+  //     // This issued element is stepped but not used, remove from PEB.
+  //     this->peb.removeElement(element);
+  //   }
+  // }
 }
 
 void StreamEngine::unstepElement(Stream *S) {
   auto element = S->unstepElement();
   // We may need to add this back to PEB.
-  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD &&
-      !S->getFloatManual()) {
-    if (!element->isFirstUserDispatched() && element->isAddrReady &&
-        element->shouldIssue()) {
-      this->peb.addElement(element);
-    }
-  }
+  // if (S->isLoadStream() && !S->getFloatManual()) {
+  //   if (!element->isFirstUserDispatched() && element->isAddrReady &&
+  //       element->shouldIssue()) {
+  //     this->peb.addElement(element);
+  //   }
+  // }
 }
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
@@ -2181,12 +2183,11 @@ void StreamEngine::issueElement(StreamElement *element) {
     }
     S_ELEMENT_DPRINTF(element, "Reissue.\n");
   }
-  if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
+  if (S->isLoadStream()) {
     this->numLoadElementsFetched++;
     S->statistic.numFetched++;
     // Add to the PEB if the first user has not been dispatched.
-    if (!S->getFloatManual() && !element->isFirstUserDispatched() &&
-        !element->isStepped) {
+    if (!S->getFloatManual() && !element->isFirstUserDispatched()) {
       this->peb.addElement(element);
     }
   }
@@ -2216,8 +2217,8 @@ void StreamEngine::issueElement(StreamElement *element) {
     const auto cacheLineSize = cpuDelegator->cacheLineSize();
     if ((cacheLineVAddr % cacheLineSize) != 0) {
       S_ELEMENT_PANIC(element,
-        "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n",
-        i, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+                      "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n", i,
+                      cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
     }
     Addr cacheLinePAddr;
     if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
@@ -2234,9 +2235,9 @@ void StreamEngine::issueElement(StreamElement *element) {
       continue;
     }
     if ((cacheLinePAddr % cacheLineSize) != 0) {
-      S_ELEMENT_PANIC(element,
-        "LinePAddr %#x invalid, LineVAddr %#x, VAddr %#x.\n",
-        cacheLinePAddr, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+      S_ELEMENT_PANIC(
+          element, "LinePAddr %#x invalid, LineVAddr %#x, VAddr %#x.\n",
+          cacheLinePAddr, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
     }
 
     // Allocate the book-keeping StreamMemAccess.
@@ -2301,16 +2302,18 @@ void StreamEngine::issueElement(StreamElement *element) {
       pkt->req->setVirt(cacheLineVAddr);
     }
     pkt->req->getStatistic()->isStream = true;
-    S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1, 
+    S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1,
                       pkt->getAddr(), pkt->getSize());
-    
+
     {
       // Sanity check that no multi-line element.
       auto lineOffset = pkt->getAddr() % cacheLineSize;
       if (lineOffset + pkt->getSize() > cacheLineSize) {
-        S_ELEMENT_PANIC(element, "Issued Multi-Line request to %#x size %d, "
-          "lineVAddr %#x linePAddr %#x.",
-          pkt->getAddr(), pkt->getSize(), cacheLineVAddr, cacheLinePAddr);
+        S_ELEMENT_PANIC(element,
+                        "Issued Multi-Line request to %#x size %d, "
+                        "lineVAddr %#x linePAddr %#x.",
+                        pkt->getAddr(), pkt->getSize(), cacheLineVAddr,
+                        cacheLinePAddr);
       }
     }
     S->statistic.numIssuedRequest++;
@@ -2863,7 +2866,6 @@ void StreamEngine::flushPEB() {
   for (auto element : this->peb.elements) {
     S_ELEMENT_DPRINTF(element, "Flushed in PEB.\n");
     assert(element->isAddrReady);
-    assert(!element->isStepped);
     assert(!element->isFirstUserDispatched());
     if (element->dynS->offloadedToCache) {
       if (element->getStream()->getStreamType() !=
