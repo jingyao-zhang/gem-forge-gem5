@@ -54,6 +54,7 @@
 #include "arch/isa_traits.hh"
 #include "arch/microcode_rom.hh"
 #include "base/statistics.hh"
+#include "cpu/function_tracer.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
 #include "sim/full_system.hh"
@@ -564,13 +565,7 @@ class BaseCPU : public ClockedObject
 
     // Function tracing
   private:
-    bool functionTracingEnabled;
-    std::ostream *functionTraceStream;
-    Addr currentFunctionStart;
-    Addr currentFunctionEnd;
-    Tick functionEntryTick;
-    void enableFunctionTrace();
-    void traceFunctionsInternal(Addr pc);
+    std::unique_ptr<FunctionTracer> funcTracer;
 
   private:
     static std::vector<BaseCPU *> cpuList;   //!< Static global cpu list
@@ -578,8 +573,8 @@ class BaseCPU : public ClockedObject
   public:
     void traceFunctions(Addr pc)
     {
-        if (functionTracingEnabled)
-            traceFunctionsInternal(pc);
+        if (funcTracer)
+            funcTracer->traceFunctions(pc);
     }
 
     static int numSimulatedCPUs() { return cpuList.size(); }

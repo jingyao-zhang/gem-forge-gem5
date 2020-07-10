@@ -138,6 +138,7 @@ class BaseCPU(ClockedObject):
 
     function_trace = Param.Bool(False, "Enable function trace")
     function_trace_start = Param.Tick(0, "Tick to start function trace")
+    function_acc_tick = Param.Bool(False, "Enable function accumulate tick")
 
     checker = Param.BaseCPU(NULL, "checker CPU")
 

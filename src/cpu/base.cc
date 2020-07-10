@@ -153,8 +153,6 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
       interrupts(p->interrupts), profileEvent(NULL),
       numThreads(p->numThreads), system(p->system),
       previousCycle(0), previousState(CPU_STATE_SLEEP),
-      functionTraceStream(nullptr), currentFunctionStart(0),
-      currentFunctionEnd(0), functionEntryTick(0),
       addressMonitor(p->numThreads),
       syscallRetryLatency(p->syscallRetryLatency),
       pwrGatingLatency(p->pwr_gating_latency),
@@ -189,19 +187,23 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
     if (numThreads > maxThreadsPerCPU)
         maxThreadsPerCPU = numThreads;
 
-    functionTracingEnabled = false;
-    if (p->function_trace) {
-        const string fname = csprintf("ftrace.%s", name());
-        functionTraceStream = simout.findOrCreate(fname)->stream();
-
-        currentFunctionStart = currentFunctionEnd = 0;
-        functionEntryTick = p->function_trace_start;
+    if (p->function_trace || p->function_acc_tick) {
+        this->funcTracer = m5::make_unique<FunctionTracer>(name());
 
         if (p->function_trace_start == 0) {
-            functionTracingEnabled = true;
+            if (p->function_trace)
+                funcTracer->enableFunctionTrace();
+            if (p->function_acc_tick)
+                funcTracer->enableFunctionAccumulateTick();
         } else {
             Event *event = new EventFunctionWrapper(
-                [this]{ enableFunctionTrace(); }, name(), true);
+                [this, p]() -> void {
+                    if (p->function_trace)
+                        this->funcTracer->enableFunctionTrace();
+                    if (p->function_acc_tick)
+                        this->funcTracer->enableFunctionAccumulateTick();
+                },
+                name(), true);
             schedule(event, p->function_trace_start);
         }
     }
@@ -229,12 +231,6 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
         fatal("Number of ISAs (%i) assigned to the CPU does not equal number "
               "of threads (%i).\n", params()->isa.size(), numThreads);
     }
-}
-
-void
-BaseCPU::enableFunctionTrace()
-{
-    functionTracingEnabled = true;
 }
 
 BaseCPU::~BaseCPU()
@@ -414,6 +410,8 @@ BaseCPU::probeInstCommit(const StaticInstPtr &inst, Addr pc)
 
     if (inst->isControl())
         ppRetiredBranches->notify(1);
+
+    this->traceFunctions(pc);
 }
 
 void
@@ -781,33 +779,6 @@ bool AddressMonitor::doMonitor(PacketPtr pkt) {
         }
     }
     return false;
-}
-
-
-void
-BaseCPU::traceFunctionsInternal(Addr pc)
-{
-    if (!Loader::debugSymbolTable)
-        return;
-
-    // if pc enters different function, print new function symbol and
-    // update saved range.  Otherwise do nothing.
-    if (pc < currentFunctionStart || pc >= currentFunctionEnd) {
-        string sym_str;
-        bool found = Loader::debugSymbolTable->findNearestSymbol(
-                pc, sym_str, currentFunctionStart, currentFunctionEnd);
-
-        if (!found) {
-            // no symbol found: use addr as label
-            sym_str = csprintf("0x%x", pc);
-            currentFunctionStart = pc;
-            currentFunctionEnd = pc + 1;
-        }
-
-        ccprintf(*functionTraceStream, " (%d)\n%d: %s",
-                 curTick() - functionEntryTick, curTick(), sym_str);
-        functionEntryTick = curTick();
-    }
 }
 
 bool

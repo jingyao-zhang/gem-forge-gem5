@@ -31,6 +31,8 @@ def parse_tdg_files(option, opt, value, parser):
 
 parser.add_option("--gem-forge-num-active-cpus", action="store", type="int",
                   help="""number of active cpus.""", default="1")
+parser.add_option("--gem-forge-enable-func-acc-tick", action="store_true",
+                  help="""enable func accumulate ticks.""", default=False)
 parser.add_option("--gem-forge-empty-mem", action="store_true",
                   help="""start simulation without installing the memory snapshot.""",
                   default=False)
