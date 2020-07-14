@@ -49,7 +49,10 @@ parser.add_option("--gem-forge-ideal-prefetcher-distance", action="store",
                   type="int", help="""whether to use an ideal prefetcher""", default=400)
 parser.add_option("--gem-forge-prefetcher", type="choice", default="none",
                   choices=['none', 'stride', 'imp', 'isb', 'bingo'],
-                  help="Type of prefetcher we are using.")
+                  help="Type of L1 prefetcher we are using.")
+parser.add_option("--gem-forge-l2-prefetcher", type="choice", default="none",
+                  choices=['none', 'stride'],
+                  help="Type of L2 prefetcher we are using.")
 parser.add_option("--gem-forge-prefetch-on-access", action="store_true",
                   help="""whether to prefetch on every access""", default=False)
 parser.add_option("--llvm-trace-file", action="callback", type="string",

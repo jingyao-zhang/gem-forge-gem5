@@ -28,6 +28,8 @@
 
 machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractStreamAwareController")
  : CacheMemory * cache;
+   RubyPrefetcher * prefetcher;
+   bool enable_prefetch := "False";
    int l2_select_num_bits;
    int l2_select_low_bit;
    Cycles l1_request_latency := 2;
@@ -43,6 +45,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
    // From the L0 cache to the L1 cache
    MessageBuffer * bufferFromL0, network="From";
+
+   // From the prefetcher to the L1 cache
+   MessageBuffer * prefetchQueue;
 
    // Message queue from this L1 cache TO the network / L2
    MessageBuffer * requestToL2, network="To", virtual_network="0",
@@ -88,6 +93,10 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     M_IL0, AccessPermission:Busy;
     MM_IL0, AccessPermission:Read_Write;
     SM_IL0, AccessPermission:Busy;
+
+    // Transient states in which block is being prefetched.
+    PF_IS, AccessPermission:Busy, desc="Issued GETS, have not seen response yet";
+    PF_IS_I, AccessPermission:Busy, desc="Issued GETS, saw INV before data";
   }
 
   // EVENTS
@@ -112,10 +121,14 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     // internal generated request
     // Invalidate the line in L0 due to own requirements
     L0_Invalidate_Own;
+    // Invalidate the line in L0 due to own prefetch requirements
+    PF_L0_Invalidate_Own;
     // Invalidate the line in L0 due to some other cache's requirements
     L0_Invalidate_Else;
     // Invalidate the line in the cache due to some one else / space needs.
     L1_Replacement;
+    // Invalidate the line in the cache due to prefetch.
+    PF_L1_Replacement;
 
     // other requests
     Fwd_GETX,   desc="GETX from other processor";
@@ -133,6 +146,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
     WB_Ack,        desc="Ack for replacement";
 
+    // ! Sean: Add prefetcher at L2.
+    PF_Load,         desc="load request from prefetcher.";
+
     // ! Sean: StreamAwareCache
     L0_StreamConfig, desc="StreamConfig from L0";
     L0_StreamEnd,    desc="StreamEnd from L0";
@@ -149,6 +165,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     DataBlock DataBlk,             desc="data for the block";
     bool Dirty, default="false",   desc="data is dirty";
     bool Reused, default="false",  desc="data is reused";
+    bool isPrefetch, default="false", desc="data is prefetched & not accessed";
     RequestStatisticPtr ReqStat, default="nullptr", desc="stats of init req for data";
   }
 
@@ -310,10 +327,25 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     return false;
   }
 
+  Event prefetch_request_type_to_event(RubyRequestType type) {
+    if (type == RubyRequestType:LD) {
+      return Event:PF_Load;
+    } else if (type == RubyRequestType:IFETCH) {
+      error ("Never Inst Prefetch at L2.");
+    } else if ((type == RubyRequestType:ST) ||
+               (type == RubyRequestType:ATOMIC)) {
+      // So far let's only handle load.
+      return Event:PF_Load;
+    } else {
+      error("Invalid RubyRequestType");
+    }
+  }
+
   out_port(requestNetwork_out, RequestMsg, requestToL2);
   out_port(responseNetwork_out, ResponseMsg, responseToL2);
   out_port(unblockNetwork_out, ResponseMsg, unblockToL2);
   out_port(bufferToL0_out, CoherenceMsg, bufferToL0);
+  out_port(prefetchQueue_out, RubyRequest, prefetchQueue);
 
   // Response From the L2 Cache to this L1 cache
   in_port(responseNetwork_in, ResponseMsg, responseFromL2, rank = 3) {
@@ -348,7 +380,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
           }
         } else if(in_msg.Type == CoherenceResponseType:DATA) {
           if ((getState(tbe, cache_entry, in_msg.addr) == State:IS ||
-               getState(tbe, cache_entry, in_msg.addr) == State:IS_I) &&
+               getState(tbe, cache_entry, in_msg.addr) == State:IS_I ||
+               getState(tbe, cache_entry, in_msg.addr) == State:PF_IS ||
+               getState(tbe, cache_entry, in_msg.addr) == State:PF_IS_I) &&
               machineIDToMachineType(in_msg.Sender) == MachineType:L1Cache) {
 
               trigger(Event:DataS_fromL1, in_msg.addr, cache_entry, tbe);
@@ -413,7 +447,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   }
 
   // Requests to this L1 cache from the L0 cache.
-  in_port(messageBufferFromL0_in, CoherenceMsg, bufferFromL0, rank = 0) {
+  in_port(messageBufferFromL0_in, CoherenceMsg, bufferFromL0, rank = 1) {
     if (messageBufferFromL0_in.isReady(clockEdge())) {
       peek(messageBufferFromL0_in, CoherenceMsg) {
         Entry cache_entry := getCacheEntry(in_msg.addr);
@@ -514,6 +548,46 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     }
   }
 
+  // Prefetch queue between the controller and the prefetcher.
+  in_port(prefetchQueue_in, RubyRequest, prefetchQueue, desc="...", rank=0) {
+    if (prefetchQueue_in.isReady(clockEdge())) {
+      peek(prefetchQueue_in, RubyRequest) {
+        Entry cache_entry := getCacheEntry(in_msg.LineAddress);
+        TBE tbe := TBEs[in_msg.LineAddress];
+        if (is_valid(cache_entry)) {
+          // The block to be prefetched is already cached.
+          trigger(prefetch_request_type_to_event(in_msg.Type),
+                  in_msg.LineAddress,
+                  cache_entry, tbe);
+        }
+        // Miss.
+        if (cache.cacheAvail(in_msg.LineAddress)) {
+          // We have space for it.
+          trigger(prefetch_request_type_to_event(in_msg.Type),
+                  in_msg.LineAddress, cache_entry, tbe);
+        } else {
+          // Find a victim.
+          Addr victim := cache.cacheProbe(in_msg.LineAddress);
+          Entry victim_entry := getCacheEntry(victim);
+          TBE victim_tbe := TBEs[victim];
+          if (is_valid(victim_entry) && inL0Cache(victim_entry.CacheState)) {
+            trigger(Event:PF_L0_Invalidate_Own, victim, victim_entry, victim_tbe);
+          } else {
+            trigger(Event:PF_L1_Replacement, victim, victim_entry, victim_tbe);
+          }
+        }
+      }
+    }
+  }
+
+  void enqueuePrefetch(Addr address, RubyRequestType type) {
+    enqueue(prefetchQueue_out, RubyRequest, 1) {
+      out_msg.LineAddress := address;
+      out_msg.Type := type;
+      out_msg.AccessMode := RubyAccessMode:Supervisor;
+    }
+  }
+
   // ACTIONS
   action(a_issueGETS, "a", desc="Issue GETS") {
     peek(messageBufferFromL0_in, CoherenceMsg) {
@@ -529,6 +603,23 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         out_msg.AccessMode := in_msg.AccessMode;
         // Remember to copy the statistic hook.
         out_msg.requestStatistic := in_msg.requestStatistic;
+      }
+    }
+  }
+
+  action(ap_issuePfGETS, "ap", desc="Issue prefetch GETS") {
+    peek(prefetchQueue_in, RubyRequest) {
+      enqueue(requestNetwork_out, RequestMsg, l1_request_latency) {
+        out_msg.addr := address;
+        out_msg.Type := CoherenceRequestType:GETS;
+        out_msg.XXNewRewquestor.add(machineID);
+        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
+                          l2_select_low_bit, l2_select_num_bits, clusterID));
+        DPRINTF(RubySlicc, "address: %#x, destination: %s\n",
+                address, out_msg.Destination);
+        out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.Prefetch := in_msg.Prefetch;
+        out_msg.AccessMode := in_msg.AccessMode;
       }
     }
   }
@@ -855,6 +946,10 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     messageBufferFromL0_in.dequeue(clockEdge());
   }
 
+  action(kp_popPrefetchQueue, "kp", desc="Pop prefetch queue.") {
+    prefetchQueue_in.dequeue(clockEdge());
+  }
+
   action(l_popL2RequestQueue, "l",
          desc="Pop incoming request queue and profile the delay within this virtual network") {
     Tick delay := requestNetwork_in.dequeue(clockEdge());
@@ -954,6 +1049,10 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     stall_and_wait(messageBufferFromL0_in, address);
   }
 
+  action(zp_stallAndWaitPrefetchQueue, "\zp", desc="recycle prefetch queue") {
+    stall_and_wait(prefetchQueue_in, address);
+  }
+
   action(z2_stallAndWaitL2Queue, "\z2", desc="recycle L2 request queue") {
     stall_and_wait(requestNetwork_in, address);
   }
@@ -971,6 +1070,29 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     if (is_valid(cache_entry)) {
       cache_entry.Reused := true;
     }
+  }
+
+  action(ph_observeHit, "\ph", desc="Inform the prefetcher about the hit") {
+    if (enable_prefetch && cache_entry.isPrefetch) {
+      prefetcher.observePfHit(address);
+      cache_entry.isPrefetch := false;
+    }
+  }
+  action(pm_observeMiss, "\pm", desc="Inform the prefetcher about the miss") {
+    if (enable_prefetch) {
+      // We always use LD as the prefetch type.
+      prefetcher.observeMiss(address, RubyRequestType:LD);
+    }
+  }
+  action(ppm_observePfMiss, "\ppm",
+         desc="Inform the prefetcher about the partial miss") {
+    if (enable_prefetch) {
+      prefetcher.observePfMiss(address);
+    }
+  }
+  action(mp_markPrefetched, "mp", desc="Set the isPrefetch flag") {
+    assert(is_valid(cache_entry));
+    cache_entry.isPrefetch := true;
   }
 
   /**
@@ -1001,6 +1123,12 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
              {Load, LoadV, HitStreamLoadV, LoadU, Store, L1_Replacement}) {
     z0_stallAndWaitL0Queue;
   }
+  transition({PF_IS,PF_IS_I}, {Store, L1_Replacement}) {
+    z0_stallAndWaitL0Queue;
+  }
+  transition({IS,IM,IS_I,M_I,SM,SINK_WB_ACK,PF_IS,PF_IS_I}, PF_L1_Replacement) {
+    zp_stallAndWaitPrefetchQueue;
+  }
 
   transition(I, Load, IS) {
     oo_allocateCacheBlock;
@@ -1008,6 +1136,26 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     trs_copyReqStatToTBE;
     a_issueGETS;
     uu_profileMiss;
+    pm_observeMiss;
+    k_popL0RequestQueue;
+  }
+
+  transition(I, PF_Load, PF_IS) {
+    oo_allocateCacheBlock;
+    i_allocateTBE;
+    ap_issuePfGETS;
+    kp_popPrefetchQueue;
+  }
+  transition(PF_IS, Load, IS) {
+    trs_copyReqStatToTBE;
+    uu_profileMiss,
+    ppm_observePfMiss;
+    k_popL0RequestQueue;
+  }
+  transition(PF_IS_I, Load, IS_I) {
+    trs_copyReqStatToTBE;
+    uu_profileMiss;
+    ppm_observePfMiss;
     k_popL0RequestQueue;
   }
 
@@ -1018,6 +1166,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     trs_copyReqStatToTBE;
     a_issueGETS;
     uu_profileMiss;
+    pm_observeMiss;
     k_popL0RequestQueue;
   }
 
@@ -1027,6 +1176,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     trs_copyReqStatToTBE;
     au_issueGETU;
     uu_profileMiss;
+    pm_observeMiss;
     k_popL0RequestQueue;
   }
 
@@ -1036,6 +1186,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     trs_copyReqStatToTBE;
     b_issueGETX;
     uu_profileMiss;
+    pm_observeMiss;
     k_popL0RequestQueue;
   }
 
@@ -1053,57 +1204,67 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition({S,SS}, Load, S) {
     h_data_to_l0;
     uu_profileHit;
+    ph_observeHit;
     k_popL0RequestQueue;
   }
 
   transition(EE, Load, E) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     k_popL0RequestQueue;
   }
 
   transition(EE, LoadV, EE) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     k_popL0RequestQueue;
   }
   transition(SS, LoadV, SS) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     k_popL0RequestQueue;
   }
   transition(S, LoadV, S) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     k_popL0RequestQueue;
   }
   transition(MM, LoadV, MM) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     k_popL0RequestQueue;
   }
 
   transition(EE, HitStreamLoadV, EE) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     nhs_notifyHitStreamLoadV;
     k_popL0RequestQueue;
   }
   transition(SS, HitStreamLoadV, SS) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     nhs_notifyHitStreamLoadV;
     k_popL0RequestQueue;
   }
   transition(S, HitStreamLoadV, S) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     nhs_notifyHitStreamLoadV;
     k_popL0RequestQueue;
   }
   transition(MM, HitStreamLoadV, MM) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     nhs_notifyHitStreamLoadV;
     k_popL0RequestQueue;
   }
@@ -1111,6 +1272,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(MM, Load, M) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     k_popL0RequestQueue;
   }
 
@@ -1122,11 +1284,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     k_popL0RequestQueue;
   }
 
-  transition(SS, L1_Replacement, I) {
+  transition(SS, {L1_Replacement, PF_L1_Replacement}, I) {
     ff_deallocateCacheBlock;
   }
 
-  transition(S, {L0_Invalidate_Own, L0_Invalidate_Else}, S_IL0) {
+  transition(S, {L0_Invalidate_Own, PF_L0_Invalidate_Own, L0_Invalidate_Else}, S_IL0) {
     forward_eviction_to_L0;
   }
 
@@ -1142,10 +1304,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition({EE,MM}, Store, M) {
     hh_xdata_to_l0;
     uu_profileHit;
+    ph_observeHit;
     k_popL0RequestQueue;
   }
 
-  transition(EE, L1_Replacement, M_I) {
+  transition(EE, {L1_Replacement, PF_L1_Replacement}, M_I) {
     // silent E replacement??
     i_allocateTBE;
     g_issuePUTX;   // send data, but hold in case forwarded request
@@ -1172,12 +1335,13 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     l_popL2RequestQueue;
   }
 
-  transition(E, {L0_Invalidate_Own, L0_Invalidate_Else}, E_IL0) {
+  transition(E,
+    {L0_Invalidate_Own, PF_L0_Invalidate_Own, L0_Invalidate_Else}, E_IL0) {
     forward_eviction_to_L0;
   }
 
   // Transitions from Modified
-  transition(MM, L1_Replacement, M_I) {
+  transition(MM, {L1_Replacement, PF_L1_Replacement}, M_I) {
     i_allocateTBE;
     g_issuePUTX;   // send data, but hold in case forwarded request
     ff_deallocateCacheBlock;
@@ -1218,7 +1382,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     l_popL2RequestQueue;
   }
 
-  transition(M, {L0_Invalidate_Own, L0_Invalidate_Else}, M_IL0) {
+  transition(M,
+    {L0_Invalidate_Own, PF_L0_Invalidate_Own, L0_Invalidate_Else}, M_IL0) {
     forward_eviction_to_L0;
   }
 
@@ -1238,12 +1403,25 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     fi_sendInvAck;
     l_popL2RequestQueue;
   }
+  
+  transition({PF_IS, PF_IS_I}, Inv, PF_IS_I) {
+    fi_sendInvAck;
+    l_popL2RequestQueue;
+  }
 
   transition(IS, Data_all_Acks, S) {
     u_writeDataFromL2Response;
     h_data_to_l0;
     crs_copyReqStatFromTBEToCacheEntry;
     s_deallocateTBE;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
+
+  transition(PF_IS, Data_all_Acks, SS) {
+    u_writeDataFromL2Response;
+    s_deallocateTBE;
+    mp_markPrefetched;
     o_popL2ResponseQueue;
     kd_wakeUpDependents;
   }
@@ -1258,11 +1436,29 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     kd_wakeUpDependents;
   }
 
+  transition(PF_IS_I, Data_all_Acks, I) {
+    s_deallocateTBE;
+    ff_deallocateCacheBlock;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
+
   transition(IS, DataS_fromL1, S) {
     u_writeDataFromL2Response;
     j_sendUnblock;
     h_data_to_l0;
     crs_copyReqStatFromTBEToCacheEntry;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
+    s_deallocateTBE;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
+
+  transition(PF_IS, DataS_fromL1, SS) {
+    u_writeDataFromL2Response;
+    mp_markPrefetched;
+    j_sendUnblock;
     // Unblock is also a control message.
     drsc_addNoCCtrlMsgToCacheEntry;
     s_deallocateTBE;
@@ -1283,12 +1479,34 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     kd_wakeUpDependents;
   }
 
+  transition(PF_IS_I, DataS_fromL1, I) {
+    j_sendUnblock;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
+    s_deallocateTBE;
+    ff_deallocateCacheBlock;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
+
   // directory is blocked when sending exclusive data
   transition({IS,IS_I}, Data_Exclusive, E) {
     u_writeDataFromL2Response;
     hh_xdata_to_l0;
     jj_sendExclusiveUnblock;
     crs_copyReqStatFromTBEToCacheEntry;
+    // Unblock is also a control message.
+    drsc_addNoCCtrlMsgToCacheEntry;
+    s_deallocateTBE;
+    o_popL2ResponseQueue;
+    kd_wakeUpDependents;
+  }
+
+  // directory is blocked when sending exclusive data
+  transition({PF_IS,PF_IS_I}, Data_Exclusive, EE) {
+    u_writeDataFromL2Response;
+    mp_markPrefetched;
+    jj_sendExclusiveUnblock;
     // Unblock is also a control message.
     drsc_addNoCCtrlMsgToCacheEntry;
     s_deallocateTBE;
@@ -1406,6 +1624,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition({S_IL0, M_IL0, E_IL0, SM_IL0, SM}, L0_Invalidate_Own) {
     z0_stallAndWaitL0Queue;
   }
+  transition({S_IL0, M_IL0, E_IL0, SM_IL0, SM}, PF_L0_Invalidate_Own) {
+    zp_stallAndWaitPrefetchQueue;
+  }
 
   transition({S_IL0, M_IL0, E_IL0, SM_IL0}, L0_Invalidate_Else) {
     z2_stallAndWaitL2Queue;
@@ -1413,6 +1634,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   transition({S_IL0, M_IL0, E_IL0, MM_IL0}, {Inv, Fwd_GETX, Fwd_GETS}) {
     z2_stallAndWaitL2Queue;
+  }
+
+  transition({S,SS,E,EE,M,MM,IS,PF_IS,IU,IM,SM,IS_I,PF_IS_I,M_I,SINK_WB_ACK,S_IL0,E_IL0,M_IL0,MM_IL0,SM_IL0},
+             {PF_Load}) {
+    kp_popPrefetchQueue;
   }
 
   transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamConfig) {

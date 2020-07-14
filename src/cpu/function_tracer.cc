@@ -76,8 +76,13 @@ void FunctionTracer::resetFuncAccumulateTick() {
 
 void FunctionTracer::dumpFuncAccumulateTick() {
 
-  if (!Loader::debugSymbolTable)
+  if (!Loader::debugSymbolTable) {
     return;
+  }
+
+  if (this->funcAccumulateTicks.empty()) {
+    return;
+  }
 
   if (!this->functionAccumulateTickStream) {
     const std::string fname = csprintf("ftick.%s", this->name);

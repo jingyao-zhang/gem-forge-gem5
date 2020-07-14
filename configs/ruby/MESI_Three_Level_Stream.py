@@ -178,9 +178,20 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                start_index_bit = block_size_bits,
                                is_icache = False)
 
+            l1_prefetcher = RubyPrefetcher(
+                num_streams=16,
+                unit_filter = 256,
+                nonunit_filter = 256,
+                train_misses = 5,
+                num_startup_pfs = 4,
+                cross_page = True
+            )
+
             l1_cntrl = L1Cache_Controller(
                 version = i * num_cpus_per_cluster + j,
                 cache = l1_cache,
+                prefetcher = l1_prefetcher,
+                enable_prefetch = (options.gem_forge_l2_prefetcher == 'stride'),
                 # ! Sean: l1_cntrl is actually L2 cache.
                 # ! And l1_request_latency is the enqueue latency for request from L2 -> L3.
                 # ! So we charge L3 tag lookup latency here.
@@ -239,6 +250,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l1_cntrl.requestFromL2.slave = ruby_system.network.master
             l1_cntrl.responseFromL2 = MessageBuffer()
             l1_cntrl.responseFromL2.slave = ruby_system.network.master
+            l1_cntrl.prefetchQueue = MessageBuffer()
 
 
         for j in range(num_l2caches_per_cluster):
