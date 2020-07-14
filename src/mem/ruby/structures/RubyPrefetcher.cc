@@ -348,13 +348,21 @@ RubyPrefetcher::getPrefetchEntry(Addr address, uint32_t &index)
     // search all streams for a match
     for (int i = 0; i < m_num_streams; i++) {
         // search all the outstanding prefetches for this stream
-        if (m_array[i].m_is_valid) {
+        auto &stream = m_array[i];
+        if (stream.m_is_valid) {
             for (int j = 0; j < m_num_startup_pfs; j++) {
-                if (makeNextStrideAddress(m_array[i].m_address,
-                    -(m_array[i].m_stride*j)) == address) {
-                    return &(m_array[i]);
+                Addr pfAddr = makeNextStrideAddress(stream.m_address,
+                    -(stream.m_stride * j));
+                if (pfAddr == address) {
+                    DPRINTF(RubyPrefetcher,
+                        "Match Stream %#x, Stride %d, Index %u.\n",
+                        stream.m_address, stream.m_stride, j);
+                    return &stream;
                 }
             }
+            DPRINTF(RubyPrefetcher,
+                "Unmatch Stream %#x, Stride %d, Addr %#x.\n",
+                stream.m_address, stream.m_stride, address);
         }
     }
     return NULL;

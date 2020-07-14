@@ -53,7 +53,8 @@ makeLineAddress(Addr addr)
 Addr
 makeNextStrideAddress(Addr addr, int stride)
 {
-    return makeLineAddress(addr) + RubySystem::getBlockSizeBytes() * stride;
+    return makeLineAddress(addr) +
+        static_cast<int>(RubySystem::getBlockSizeBytes()) * stride;
 }
 
 std::string
