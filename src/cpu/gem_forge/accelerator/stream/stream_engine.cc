@@ -98,7 +98,8 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
       [this](PacketPtr pkt, ThreadContext *tc, void *) -> void {
         this->cpuDelegator->sendRequest(pkt);
       },
-      false /* AccessLastLevelTLBOnly */);
+      false /* AccessLastLevelTLBOnly */, 
+      true /* MustDoneInOrder */);
 }
 
 void StreamEngine::regStats() {

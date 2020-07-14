@@ -5,7 +5,7 @@
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 
 #include <functional>
-#include <unordered_set>
+#include <queue>
 
 /**
  * Represent a simple translation buffer for each stream.
@@ -17,13 +17,15 @@ public:
       std::function<void(PacketPtr, ThreadContext *, T)>;
 
   StreamTranslationBuffer(BaseTLB *_tlb, TranslationDoneCallback _doneCallback,
-                          bool _accessLastLevelTLBOnly)
+                          bool _accessLastLevelTLBOnly,
+                          bool _mustDoneInOrder = false)
       : tlb(_tlb), doneCallback(_doneCallback),
-        accessLastLevelTLBOnly(_accessLastLevelTLBOnly) {}
+        accessLastLevelTLBOnly(_accessLastLevelTLBOnly),
+        mustDoneInOrder(_mustDoneInOrder) {}
 
   void addTranslation(PacketPtr pkt, ThreadContext *tc, T data) {
     auto translation = new StreamTranslation(pkt, tc, data, this);
-    this->inflyTranslationSet.insert(translation);
+    this->inflyTranslationQueue.push(translation);
 
     // Start translation.
     this->startTranslation(translation);
@@ -36,9 +38,15 @@ private:
    * Whether we only go to last level TLB.
    */
   bool accessLastLevelTLBOnly;
+  /**
+   * Whether the doneCallback has to be called in order.
+   */
+  bool mustDoneInOrder;
   struct StreamTranslation;
 
   void startTranslation(StreamTranslation *translation) {
+    assert(translation->state == StreamTranslation::State::INITIATED);
+    translation->state = StreamTranslation::State::STARTED;
     BaseTLB::Mode mode =
         translation->pkt->isRead() ? BaseTLB::Mode::Read : BaseTLB::Mode::Write;
     if (this->accessLastLevelTLBOnly) {
@@ -50,13 +58,35 @@ private:
     }
   }
   void finishTranslation(StreamTranslation *translation) {
-    assert(this->inflyTranslationSet.count(translation));
+    assert(translation->state == StreamTranslation::State::STARTED);
+    translation->state = StreamTranslation::State::TRANSLATED;
+    if (!this->mustDoneInOrder) {
+      this->doneTranslation(translation);
+    }
+    this->releaseTranslationQueue();
+  }
+  void doneTranslation(StreamTranslation *translation) {
+    assert(translation->state == StreamTranslation::State::TRANSLATED);
     auto pkt = translation->pkt;
     auto tc = translation->tc;
     auto data = translation->data;
     this->doneCallback(pkt, tc, data);
-    this->inflyTranslationSet.erase(translation);
-    delete translation;
+    translation->state = StreamTranslation::State::DONE;
+  }
+  void releaseTranslationQueue() {
+    while (!this->inflyTranslationQueue.empty()) {
+      auto translation = this->inflyTranslationQueue.front();
+      if (translation->state == StreamTranslation::State::DONE) {
+        delete translation;
+        this->inflyTranslationQueue.pop();
+      } else if (translation->state == StreamTranslation::State::TRANSLATED) {
+        this->doneTranslation(translation);
+        delete translation;
+        this->inflyTranslationQueue.pop();
+      } else {
+        break;
+      }
+    }
   }
 
   struct StreamTranslation : public BaseTLB::Translation {
@@ -64,6 +94,13 @@ private:
     ThreadContext *tc;
     T data;
     StreamTranslationBuffer *buffer;
+    enum State {
+      INITIATED,
+      STARTED,
+      TRANSLATED,
+      DONE,
+    };
+    State state = INITIATED;
     StreamTranslation(PacketPtr _pkt, ThreadContext *_tc, T _data,
                       StreamTranslationBuffer *_buffer)
         : pkt(_pkt), tc(_tc), data(_data), buffer(_buffer) {}
@@ -87,7 +124,7 @@ private:
     }
   };
 
-  std::unordered_set<StreamTranslation *> inflyTranslationSet;
+  std::queue<StreamTranslation *> inflyTranslationQueue;
 };
 
 #endif

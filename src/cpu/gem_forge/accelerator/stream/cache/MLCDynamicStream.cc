@@ -161,14 +161,11 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
   if (Debug::DEBUG_TYPE) {
     std::stringstream ss;
     auto lineOffset = slice.sliceId.vaddr % RubySystem::getBlockSizeBytes();
-    for (int i = 0; i < slice.sliceId.getSize(); ++i) {
-      ss << ' ' << std::hex
-         << static_cast<int>(slice.dataBlock.getByte(lineOffset + i))
-         << std::dec;
-    }
+    auto dataStr = GemForgeUtils::dataToString(slice.dataBlock.getData(lineOffset,
+      slice.sliceId.getSize()), slice.sliceId.getSize());
     MLC_SLICE_DPRINTF(slice.sliceId,
                       "Make response vaddr %#x size %d data 0x%s.\n",
-                      slice.sliceId.vaddr, slice.sliceId.getSize(), ss.str());
+                      slice.sliceId.vaddr, slice.sliceId.getSize(), dataStr);
   }
   // The latency should be consistency with the cache controller.
   // However, I still failed to find a clean way to exponse this info
