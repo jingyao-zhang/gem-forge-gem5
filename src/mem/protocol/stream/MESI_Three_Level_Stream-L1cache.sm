@@ -1126,7 +1126,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition({PF_IS,PF_IS_I}, {Store, L1_Replacement}) {
     z0_stallAndWaitL0Queue;
   }
-  transition({IS,IM,IS_I,M_I,SM,SINK_WB_ACK,PF_IS,PF_IS_I}, PF_L1_Replacement) {
+  transition({IS,IM,IS_I,M_I,SM,SINK_WB_ACK,S_IL0,M_IL0,E_IL0,MM_IL0,PF_IS,PF_IS_I},
+             PF_L1_Replacement) {
     zp_stallAndWaitPrefetchQueue;
   }
 
