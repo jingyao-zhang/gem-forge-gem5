@@ -56,6 +56,7 @@
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/protocol/AccessPermission.hh"
+#include "mem/ruby/slicc_interface/RubyAddressBulk.hh"
 #include "mem/ruby/system/CacheRecorder.hh"
 #include "params/RubyController.hh"
 #include "sim/clocked_object.hh"
@@ -126,6 +127,9 @@ class AbstractController : public ClockedObject, public Consumer
     //! Function for enqueuing a prefetch request
     virtual void enqueuePrefetch(const Addr &, const RubyRequestType&)
     { fatal("Prefetches not implemented!");}
+    virtual void enqueueBulkPrefetch(const Addr &, const RubyRequestType&,
+      const RubyAddressBulk&)
+    { fatal("Bulk Prefetches not implemented!");}
 
     //! Function for collating statistics from all the controllers of this
     //! particular type. This function should only be called from the
@@ -175,6 +179,14 @@ class AbstractController : public ClockedObject, public Consumer
      */
     MachineID mapAddressToMachine(Addr addr, MachineType mtype) const;
 
+    /**
+     * Get remaining transistion of this cycle, including the current
+     * transistion.
+     */
+    int getRemainTransitions() const {
+      return this->m_transitions_per_cycle - this->m_used_transitions;
+    }
+
   protected:
     //! Profiles original cache requests including PUTs
     void profileRequest(const std::string &request);
@@ -208,6 +220,7 @@ class AbstractController : public ClockedObject, public Consumer
     unsigned int m_cur_in_port;
     const int m_number_of_TBEs;
     const int m_transitions_per_cycle;
+    int m_used_transitions;
     const unsigned int m_buffer_size;
     Cycles m_recycle_latency;
     const Cycles m_mandatory_queue_latency;

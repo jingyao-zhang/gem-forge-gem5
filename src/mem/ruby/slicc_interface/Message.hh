@@ -46,15 +46,21 @@ class Message
     Message(Tick curTime)
         : m_time(curTime),
           m_LastEnqueueTime(curTime),
-          m_DelayedTicks(0), m_msg_counter(0)
+          m_DelayedTicks(0), m_msg_counter(0),
+          m_chainMsg(nullptr)
     { }
 
     Message(const Message &other)
         : m_time(other.m_time),
           m_LastEnqueueTime(other.m_LastEnqueueTime),
           m_DelayedTicks(other.m_DelayedTicks),
-          m_msg_counter(other.m_msg_counter)
-    { }
+          m_msg_counter(other.m_msg_counter),
+          m_chainMsg(nullptr)
+    {
+      if (other.m_chainMsg) {
+        m_chainMsg = other.m_chainMsg->clone();
+      }
+    }
 
     virtual ~Message() { }
 
@@ -109,11 +115,29 @@ class Message
     int getVnet() const { return vnet; }
     void setVnet(int net) { vnet = net; }
 
+    void chainMsg(MsgPtr msg) {
+      assert(!msg->m_chainMsg && "Already chained.");
+      const auto &dest1 = this->getDestination();
+      const auto &dest2 = msg->getDestination();
+      assert(dest1.count() == 1 && dest1.isEqual(dest2) &&
+             "Can't chain multicast or different destination message.");
+      msg->m_chainMsg = this->m_chainMsg;
+      this->m_chainMsg = msg;
+    }
+    MsgPtr getChainMsg() {
+      return this->m_chainMsg;
+    }
+    void clearChainMsg() {
+      assert(this->m_chainMsg);
+      this->m_chainMsg = nullptr;
+    }
+
   private:
     Tick m_time;
     Tick m_LastEnqueueTime; // my last enqueue time
     Tick m_DelayedTicks; // my delayed cycles
     uint64_t m_msg_counter; // FIXME, should this be a 64-bit value?
+    MsgPtr m_chainMsg; // Used to implement bulk prefetch.
 
     // Variables for required network traversal
     int incoming_link;

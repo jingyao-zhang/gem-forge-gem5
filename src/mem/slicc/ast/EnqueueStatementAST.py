@@ -28,14 +28,16 @@
 
 from slicc.ast.StatementAST import StatementAST
 from slicc.symbols import Var
+from slicc.symbols import Type
 
 class EnqueueStatementAST(StatementAST):
-    def __init__(self, slicc, queue_name, type_ast, lexpr, statements):
+    def __init__(self, slicc, queue_name, type_ast, lexpr, cond, statements):
         super(EnqueueStatementAST, self).__init__(slicc)
 
         self.queue_name = queue_name
         self.type_ast = type_ast
         self.latexpr = lexpr
+        self.condvar = cond
         self.statements = statements
 
     def __repr__(self):
@@ -53,6 +55,11 @@ class EnqueueStatementAST(StatementAST):
         v = Var(self.symtab, "out_msg", self.location, msg_type, "*out_msg",
                 self.pairs)
         self.symtab.newSymbol(v)
+        v_ptr = Var(self.symtab, "out_msg_ptr", self.location,
+                    self.symtab.find("MsgPtr", Type),
+                    "out_msg",
+                    self.pairs)
+        self.symtab.newSymbol(v_ptr)
 
         # Declare message
         code("std::shared_ptr<${{msg_type.c_ident}}> out_msg = "\
@@ -62,6 +69,9 @@ class EnqueueStatementAST(StatementAST):
         t = self.statements.generate(code, None)
         self.queue_name.assertType("OutPort")
 
+        if self.condvar is not None:
+            code("if (${{self.condvar.var.code}})")
+            code.indent()
         if self.latexpr != None:
             ret_type, rcode = self.latexpr.inline(True)
             code("(${{self.queue_name.var.code}}).enqueue(" \
@@ -69,6 +79,8 @@ class EnqueueStatementAST(StatementAST):
         else:
             code("(${{self.queue_name.var.code}}).enqueue(out_msg, "\
                  "clockEdge(), cyclesToTicks(Cycles(1)));")
+        if self.condvar is not None:
+            code.dedent()
 
         # End scope
         self.symtab.popFrame()

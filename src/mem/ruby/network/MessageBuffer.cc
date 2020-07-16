@@ -231,6 +231,13 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
     assert(m_consumer != NULL);
     m_consumer->scheduleEventAbsolute(arrival_time);
     m_consumer->storeEventInfo(m_vnet_id);
+
+    // Handle chained message.
+    MsgPtr chainMsg = message->getChainMsg();
+    if (chainMsg) {
+        message->clearChainMsg();
+        this->enqueue(chainMsg, current_time, delta);
+    }
 }
 
 Tick

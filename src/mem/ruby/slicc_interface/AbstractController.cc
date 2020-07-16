@@ -58,6 +58,7 @@ AbstractController::AbstractController(const Params *p)
       m_masterId(p->system->getMasterId(this)), m_is_blocking(false),
       m_number_of_TBEs(p->number_of_TBEs),
       m_transitions_per_cycle(p->transitions_per_cycle),
+      m_used_transitions(0),
       m_buffer_size(p->buffer_size), m_recycle_latency(p->recycle_latency),
       m_mandatory_queue_latency(p->mandatory_queue_latency),
       memoryPort(csprintf("%s.memory", name()), this, ""),

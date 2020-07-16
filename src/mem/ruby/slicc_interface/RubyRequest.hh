@@ -41,6 +41,7 @@
 #include "mem/ruby/protocol/PrefetchBit.hh"
 #include "mem/ruby/protocol/RubyAccessMode.hh"
 #include "mem/ruby/protocol/RubyRequestType.hh"
+#include "mem/ruby/slicc_interface/RubyAddressBulk.hh"
 
 class RubyRequest : public Message
 {
@@ -61,6 +62,10 @@ class RubyRequest : public Message
     HSAScope m_scope;
     HSASegment m_segment;
 
+    /**
+     * Used for bulk prefetch.
+     */
+    mutable RubyAddressBulk m_addrBulk;
 
     RubyRequest(Tick curTime, uint64_t _paddr, uint8_t* _data, int _len,
         uint64_t _pc, RubyRequestType _type, RubyAccessMode _access_mode,

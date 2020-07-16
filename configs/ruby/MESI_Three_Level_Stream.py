@@ -115,7 +115,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 unit_filter = 256,
                 nonunit_filter = 256,
                 train_misses = 5,
-                num_startup_pfs = 4,
+                num_startup_pfs = options.gem_forge_prefetch_dist,
                 cross_page = True
             )
 
@@ -183,8 +183,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 unit_filter = 256,
                 nonunit_filter = 256,
                 train_misses = 5,
-                num_startup_pfs = 4,
-                cross_page = True
+                num_startup_pfs=options.gem_forge_l2_prefetch_dist,
+                cross_page = True,
+                enable_bulk_prefetch=options.gem_forge_l2_bulk_prefetch,
             )
 
             l1_cntrl = L1Cache_Controller(

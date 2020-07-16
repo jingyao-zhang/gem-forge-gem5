@@ -214,6 +214,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   void wakeUpBuffers(Addr a);
   void wakeUpAllBuffers(Addr a);
   void profileMsgDelay(int virtualNetworkType, Cycles c);
+  int  getRemainTransitions();
   void setHitCacheLevel(RequestStatisticPtr, int);
   void addNoCControlMsgs(RequestStatisticPtr, int);
   void addNoCDataMsgs(RequestStatisticPtr, int);
@@ -548,32 +549,117 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     }
   }
 
+  structure(CanStartBulkPrefetchRet, desc="Ret of tryStartBulkPrefetch.") {
+    bool canStart, default="false", desc="The bulk prefetch can start";
+    Addr blockLine, desc="We have to find space for this line.";
+  }
+
+  bool isReadyForBulkPrefetch(Addr lineAddr) {
+    // A line is considered ready if it's in cache, or has space for prefetching.
+    Entry cache_entry := getCacheEntry(lineAddr);
+    return is_valid(cache_entry) || cache.cacheAvail(lineAddr);
+  }
+
+  CanStartBulkPrefetchRet canStartBulkPrefetch(RubyRequest in_msg) {
+    // Slicc has no loop, I manually unroll it...
+    int bulkSize := in_msg.addrBulk.size();
+    assert(bulkSize <= 4);
+    CanStartBulkPrefetchRet ret;
+    int idx := 0;
+    if (idx < bulkSize) {
+      Addr lineAddr := in_msg.addrBulk.getAt(idx);
+      if (!isReadyForBulkPrefetch(lineAddr)) {
+        ret.blockLine := lineAddr;
+        return ret;
+      }
+    }
+    idx := idx + 1;
+    if (idx < bulkSize) {
+      Addr lineAddr := in_msg.addrBulk.getAt(idx);
+      if (!isReadyForBulkPrefetch(lineAddr)) {
+        ret.blockLine := lineAddr;
+        return ret;
+      }
+    }
+    idx := idx + 1;
+    if (idx < bulkSize) {
+      Addr lineAddr := in_msg.addrBulk.getAt(idx);
+      if (!isReadyForBulkPrefetch(lineAddr)) {
+        ret.blockLine := lineAddr;
+        return ret;
+      }
+    }
+    idx := idx + 1;
+    if (idx < bulkSize) {
+      Addr lineAddr := in_msg.addrBulk.getAt(idx);
+      if (!isReadyForBulkPrefetch(lineAddr)) {
+        ret.blockLine := lineAddr;
+        return ret;
+      }
+    }
+    idx := idx + 1;
+    // All lines in the bulk are ready.
+    // So far we always assume we have enough transitions.
+    assert(getRemainTransitions() >= bulkSize);
+    ret.canStart := true;
+    return ret;
+  }
+
   // Prefetch queue between the controller and the prefetcher.
   in_port(prefetchQueue_in, RubyRequest, prefetchQueue, desc="...", rank=0) {
     if (prefetchQueue_in.isReady(clockEdge())) {
       peek(prefetchQueue_in, RubyRequest) {
-        Entry cache_entry := getCacheEntry(in_msg.LineAddress);
-        TBE tbe := TBEs[in_msg.LineAddress];
+        /**
+         * We add support for bulk prefetch.
+         * NOTE: always use in_msg.addrBulk, as we can't get a reference to it.
+         */
+        Addr lineAddr := in_msg.LineAddress;
+        bool isInBulk := false;
+        if (!in_msg.addrBulk.empty()) {
+          // This is a bulk prefetch request.
+          // First check if we are already in BulkTransition.
+          isInBulk := in_msg.addrBulk.isInBulkTransition(); 
+          if (!isInBulk) {
+            // We are not in bulk transistion yet. Check if we can start.
+            CanStartBulkPrefetchRet ret := canStartBulkPrefetch(in_msg);
+            if (ret.canStart) {
+              // We can start bulk prefetch.
+              in_msg.addrBulk.startBulkTransition();
+              lineAddr := in_msg.addrBulk.getCurrentLineInBulk();
+            } else {
+              // We are blocked by this line. So start to process it.
+              lineAddr := ret.blockLine;
+            }
+          } else {
+            // We are already in bulk transistion, get the current line.
+            lineAddr := in_msg.addrBulk.getCurrentLineInBulk();
+          }
+        }
+        Entry cache_entry := getCacheEntry(lineAddr);
+        TBE tbe := TBEs[lineAddr];
         if (is_valid(cache_entry)) {
           // The block to be prefetched is already cached.
           trigger(prefetch_request_type_to_event(in_msg.Type),
-                  in_msg.LineAddress,
-                  cache_entry, tbe);
+                  lineAddr, cache_entry, tbe);
         }
         // Miss.
-        if (cache.cacheAvail(in_msg.LineAddress)) {
+        if (cache.cacheAvail(lineAddr)) {
           // We have space for it.
           trigger(prefetch_request_type_to_event(in_msg.Type),
-                  in_msg.LineAddress, cache_entry, tbe);
+                  lineAddr, cache_entry, tbe);
         } else {
           // Find a victim.
-          Addr victim := cache.cacheProbe(in_msg.LineAddress);
-          Entry victim_entry := getCacheEntry(victim);
-          TBE victim_tbe := TBEs[victim];
-          if (is_valid(victim_entry) && inL0Cache(victim_entry.CacheState)) {
-            trigger(Event:PF_L0_Invalidate_Own, victim, victim_entry, victim_tbe);
+          // This should never happen in bulk transistion.
+          assert(!isInBulk);
+          Addr victimAddr := cache.cacheProbe(lineAddr);
+          Entry victimEntry := getCacheEntry(victimAddr);
+          TBE victimTBE := TBEs[victimAddr];
+          if (is_valid(victimEntry) && inL0Cache(victimEntry.CacheState)) {
+            trigger(Event:PF_L0_Invalidate_Own,
+                    victimAddr, victimEntry, victimTBE);
           } else {
-            trigger(Event:PF_L1_Replacement, victim, victim_entry, victim_tbe);
+            trigger(Event:PF_L1_Replacement,
+                    victimAddr, victimEntry, victimTBE);
           }
         }
       }
@@ -585,6 +671,15 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
       out_msg.LineAddress := address;
       out_msg.Type := type;
       out_msg.AccessMode := RubyAccessMode:Supervisor;
+    }
+  }
+  void enqueueBulkPrefetch(Addr address, RubyRequestType type,
+                           RubyAddressBulk addrBulk) {
+    enqueue(prefetchQueue_out, RubyRequest, 1) {
+      out_msg.LineAddress := address;
+      out_msg.Type := type;
+      out_msg.AccessMode := RubyAccessMode:Supervisor;
+      out_msg.addrBulk := addrBulk;
     }
   }
 
@@ -603,23 +698,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         out_msg.AccessMode := in_msg.AccessMode;
         // Remember to copy the statistic hook.
         out_msg.requestStatistic := in_msg.requestStatistic;
-      }
-    }
-  }
-
-  action(ap_issuePfGETS, "ap", desc="Issue prefetch GETS") {
-    peek(prefetchQueue_in, RubyRequest) {
-      enqueue(requestNetwork_out, RequestMsg, l1_request_latency) {
-        out_msg.addr := address;
-        out_msg.Type := CoherenceRequestType:GETS;
-        out_msg.XXNewRewquestor.add(machineID);
-        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
-                          l2_select_low_bit, l2_select_num_bits, clusterID));
-        DPRINTF(RubySlicc, "address: %#x, destination: %s\n",
-                address, out_msg.Destination);
-        out_msg.MessageSize := MessageSizeType:Control;
-        out_msg.Prefetch := in_msg.Prefetch;
-        out_msg.AccessMode := in_msg.AccessMode;
       }
     }
   }
@@ -946,10 +1024,6 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     messageBufferFromL0_in.dequeue(clockEdge());
   }
 
-  action(kp_popPrefetchQueue, "kp", desc="Pop prefetch queue.") {
-    prefetchQueue_in.dequeue(clockEdge());
-  }
-
   action(l_popL2RequestQueue, "l",
          desc="Pop incoming request queue and profile the delay within this virtual network") {
     Tick delay := requestNetwork_in.dequeue(clockEdge());
@@ -1072,6 +1146,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     }
   }
 
+  /**
+   * Actions for prefetcher.
+   */
   action(ph_observeHit, "\ph", desc="Inform the prefetcher about the hit") {
     if (enable_prefetch && cache_entry.isPrefetch) {
       prefetcher.observePfHit(address);
@@ -1094,6 +1171,50 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     assert(is_valid(cache_entry));
     cache_entry.isPrefetch := true;
   }
+  action(ap_issuePfGETS, "ap", desc="Issue prefetch GETS") {
+    peek(prefetchQueue_in, RubyRequest) {
+      bool shouldEnqueue := true;
+      enqueue(requestNetwork_out, RequestMsg, l1_request_latency, shouldEnqueue) {
+        out_msg.addr := address;
+        out_msg.Type := CoherenceRequestType:GETS;
+        out_msg.XXNewRewquestor.add(machineID);
+        out_msg.Destination.add(mapAddressToRange(address, MachineType:L2Cache,
+                          l2_select_low_bit, l2_select_num_bits, clusterID));
+        DPRINTF(RubySlicc, "address: %#x, destination: %s\n",
+                address, out_msg.Destination);
+        out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.Prefetch := in_msg.Prefetch;
+        out_msg.AccessMode := in_msg.AccessMode;
+        // Now we decide if we have to do bulk prefetch.
+        bool isBulk := !in_msg.addrBulk.empty();
+        if (isBulk) {
+          assert(in_msg.addrBulk.isInBulkTransition());
+          if (in_msg.addrBulk.mergeToBulkMessage(out_msg_ptr)) {
+            // This message is chained to previous bulk message.
+            shouldEnqueue := false;
+          }
+        }
+      }
+    }
+  }
+  action(kp_popPrefetchQueue, "kp", desc="Pop prefetch queue.") {
+    peek(prefetchQueue_in, RubyRequest) {
+      bool isBulk := !in_msg.addrBulk.empty();
+      if (isBulk) {
+        // Bulk prefetch request if this is the last line
+        assert(in_msg.addrBulk.isInBulkTransition());
+        if (in_msg.addrBulk.isLastLineInBulk()) {
+          prefetchQueue_in.dequeue(clockEdge());
+        } else {
+          in_msg.addrBulk.stepLineInBulk();
+        }
+      } else {
+        // Normal prefetch request.
+        prefetchQueue_in.dequeue(clockEdge());
+      }
+    }
+  }
+
 
   /**
    * ! Sean: StreamAwareCache

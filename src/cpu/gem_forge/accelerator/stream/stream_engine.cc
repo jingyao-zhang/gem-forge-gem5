@@ -2402,6 +2402,9 @@ void StreamEngine::exitDump() const {
   if (streamPlacementManager != nullptr) {
     this->streamPlacementManager->dumpStreamCacheStats();
   }
+  if (this->streamMap.empty()) {
+    return;
+  }
   std::vector<Stream *> allStreams;
   for (auto &pair : this->streamMap) {
     allStreams.push_back(pair.second);

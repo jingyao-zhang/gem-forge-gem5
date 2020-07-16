@@ -56,6 +56,7 @@ RubyPrefetcher::RubyPrefetcher(const Params *p)
     m_array(p->num_streams), m_train_misses(p->train_misses),
     m_num_startup_pfs(p->num_startup_pfs), m_num_unit_filters(p->unit_filter),
     m_num_nonunit_filters(p->nonunit_filter),
+    m_enable_bulk_prefetch(p->enable_bulk_prefetch),
     m_unit_filter(p->unit_filter, 0),
     m_negative_filter(p->unit_filter, 0),
     m_nonunit_filter(p->nonunit_filter, 0),
@@ -237,28 +238,62 @@ RubyPrefetcher::issueNextPrefetch(Addr address, PrefetchEntry *stream)
         return;
     }
 
-    // extend this prefetching stream by 1 (or more)
-    Addr page_addr = pageAddress(stream->m_address);
-    Addr line_addr = makeNextStrideAddress(stream->m_address,
-                                         stream->m_stride);
+    /**
+     * If we are using bulk prefetching, we delay prefetches
+     * until we have half the prefetch distance.
+     */
+    stream->m_num_delayed_prefetches++;
+    if (this->m_enable_bulk_prefetch &&
+        stream->m_num_delayed_prefetches * 2 < this->m_num_startup_pfs) {
+        DPRINTF(RubyPrefetcher, "Delayed %d pfs, returning\n",
+            stream->m_num_delayed_prefetches);
+        return;
+    }
 
-    // possibly stop prefetching at page boundaries
-    if (page_addr != pageAddress(line_addr)) {
-        if (!m_prefetch_cross_pages) {
-            // Deallocate the stream since we are not prefetching
-            // across page boundries
-            stream->m_is_valid = false;
-            return;
+    RubyAddressBulk addrBulk;
+    // First is our base addr.
+    for (int i = 0; i < stream->m_num_delayed_prefetches; ++i) {
+        // extend this prefetching stream by 1
+        Addr page_addr = pageAddress(stream->m_address);
+        Addr line_addr = makeNextStrideAddress(stream->m_address,
+                                               stream->m_stride);
+
+        // possibly stop prefetching at page boundaries
+        if (page_addr != pageAddress(line_addr)) {
+            if (!m_prefetch_cross_pages) {
+                // Deallocate the stream since we are not prefetching
+                // across page boundries
+                stream->m_is_valid = false;
+                break;
+            }
+            numPagesCrossed++;
         }
-        numPagesCrossed++;
+
+        // This line address should be prefetched.
+        addrBulk.push(line_addr);
+        stream->m_address = line_addr;
+    }
+
+    if (addrBulk.empty()) {
+        return;
     }
 
     // launch next prefetch
-    numPrefetchRequested++;
-    stream->m_address = line_addr;
+    numPrefetchRequested += addrBulk.size();
     stream->m_use_time = m_controller->curCycle();
-    DPRINTF(RubyPrefetcher, "Requesting prefetch for %#x\n", line_addr);
-    m_controller->enqueuePrefetch(line_addr, stream->m_type);
+    stream->m_num_delayed_prefetches = 0;
+    auto line_addr = addrBulk.getAt(0);
+    if (addrBulk.size() == 1) {
+        // Normal case.
+        DPRINTF(RubyPrefetcher, "Requesting prefetch for %#x\n", line_addr);
+        m_controller->enqueuePrefetch(line_addr, stream->m_type);
+    } else {
+        // Bulk prefetch.
+        DPRINTF(RubyPrefetcher,
+            "Requesting bulk prefetch (size %d) for %#x\n",
+            addrBulk.size(), line_addr);
+        m_controller->enqueueBulkPrefetch(line_addr, stream->m_type, addrBulk);
+    }
 }
 
 uint32_t
@@ -340,6 +375,7 @@ RubyPrefetcher::initializeStream(Addr address, int stride,
 
     // update the address to be the last address prefetched
     mystream->m_address = line_addr;
+    mystream->m_num_delayed_prefetches = 0;
 }
 
 PrefetchEntry *

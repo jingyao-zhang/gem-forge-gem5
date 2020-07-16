@@ -577,11 +577,15 @@ class SLICC(Grammar):
 
     def p_statement__enqueue(self, p):
         "statement : ENQUEUE '(' var ',' type ')' statements"
-        p[0] = ast.EnqueueStatementAST(self, p[3], p[5], None, p[7])
+        p[0] = ast.EnqueueStatementAST(self, p[3], p[5], None, None, p[7])
 
     def p_statement__enqueue_latency(self, p):
         "statement : ENQUEUE '(' var ',' type ',' expr ')' statements"
-        p[0] = ast.EnqueueStatementAST(self, p[3], p[5], p[7], p[9])
+        p[0] = ast.EnqueueStatementAST(self, p[3], p[5], p[7], None, p[9])
+
+    def p_statement__enqueue_latency_condition(self, p):
+        "statement : ENQUEUE '(' var ',' type ',' expr ',' var ')' statements"
+        p[0] = ast.EnqueueStatementAST(self, p[3], p[5], p[7], p[9], p[11])
 
     def p_statement__stall_and_wait(self, p):
         "statement : STALL_AND_WAIT '(' var ',' var ')' SEMI"

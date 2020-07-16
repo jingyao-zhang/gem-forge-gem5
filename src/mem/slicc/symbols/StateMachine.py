@@ -1212,13 +1212,13 @@ ${ident}_Controller::wakeup()
         serviceMemoryQueue();
     }
 
-    int counter = 0;
+    m_used_transitions = 0;
     while (true) {
         unsigned char rejected[${{len(msg_bufs)}}];
         memset(rejected, 0, sizeof(unsigned char)*${{len(msg_bufs)}});
         // Some cases will put us into an infinite loop without this limit
-        assert(counter <= m_transitions_per_cycle);
-        if (counter == m_transitions_per_cycle) {
+        assert(m_used_transitions <= m_transitions_per_cycle);
+        if (m_used_transitions == m_transitions_per_cycle) {
             // Count how often we are fully utilized
             m_fully_busy_cycles++;
 

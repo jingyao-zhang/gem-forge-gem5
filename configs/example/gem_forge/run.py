@@ -50,9 +50,15 @@ parser.add_option("--gem-forge-ideal-prefetcher-distance", action="store",
 parser.add_option("--gem-forge-prefetcher", type="choice", default="none",
                   choices=['none', 'stride', 'imp', 'isb', 'bingo'],
                   help="Type of L1 prefetcher we are using.")
+parser.add_option("--gem-forge-prefetch-dist", action="store", type="int",
+                  help="L1 prefetcher distance", default="8")
 parser.add_option("--gem-forge-l2-prefetcher", type="choice", default="none",
                   choices=['none', 'stride'],
                   help="Type of L2 prefetcher we are using.")
+parser.add_option("--gem-forge-l2-prefetch-dist", action="store", type="int",
+                  help="L2 prefetcher distance", default="8")
+parser.add_option("--gem-forge-l2-bulk-prefetch", action="store_true",
+                  help="Enable bulk prefetch at L2.", default=False)
 parser.add_option("--gem-forge-prefetch-on-access", action="store_true",
                   help="""whether to prefetch on every access""", default=False)
 parser.add_option("--llvm-trace-file", action="callback", type="string",

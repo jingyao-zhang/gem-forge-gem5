@@ -51,6 +51,7 @@
 external_type(MessageBuffer, buffer="yes", inport="yes", outport="yes");
 external_type(OutPort, primitive="yes");
 external_type(Scalar, primitive="yes");
+external_type(MsgPtr, primitive="yes");
 
 structure(InPort, external = "yes", primitive="yes") {
   bool isReady(Tick current_time);
@@ -173,6 +174,18 @@ structure (VIPERCoalescer, external = "yes") {
   void evictionCallback(Addr);
 }
 
+structure(RubyAddressBulk, desc="...", external="yes") {
+  bool empty();
+  int  size();
+  Addr getAt(int);
+  bool isInBulkTransition();
+  void startBulkTransition();
+  Addr getCurrentLineInBulk();
+  bool isLastLineInBulk();
+  void stepLineInBulk();
+  bool mergeToBulkMessage(MsgPtr);
+}
+
 structure(RubyRequest, desc="...", interface="Message", external="yes") {
   Addr LineAddress,       desc="Line address for this request";
   Addr PhysicalAddress,   desc="Physical address for this request";
@@ -188,6 +201,7 @@ structure(RubyRequest, desc="...", interface="Message", external="yes") {
   HSAScope scope,            desc="HSA scope";
   HSASegment segment,        desc="HSA segment";
   PacketPtr pkt,             desc="Packet associated with this request";
+  RubyAddressBulk addrBulk,  desc="Address bulk with this request";
 }
 
 structure(AbstractCacheEntry, primitive="yes", external = "yes") {

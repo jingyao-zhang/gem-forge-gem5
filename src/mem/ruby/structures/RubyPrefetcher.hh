@@ -67,6 +67,7 @@ class PrefetchEntry
             m_stride   = (1 << RubySystem::getBlockSizeBits());
             m_use_time = Cycles(0);
             m_is_valid = false;
+            m_num_delayed_prefetches = 0;
         }
 
         //! The base address for the stream prefetch
@@ -83,6 +84,9 @@ class PrefetchEntry
 
         //! L1D prefetches loads and stores
         RubyRequestType m_type;
+
+        //! Delayed prefetches, used for bulk prefetching.
+        int m_num_delayed_prefetches;
 
         //! Bitset for tracking prefetches for which addresses have been
         //! issued, which ones have completed.
@@ -168,6 +172,8 @@ class RubyPrefetcher : public SimObject
         uint32_t m_num_unit_filters;
         //! number of non-stride filters
         uint32_t m_num_nonunit_filters;
+        //! enable bulk prefetch
+        bool m_enable_bulk_prefetch;
 
         /// a unit stride filter array: helps reduce BW requirement of
         /// prefetching

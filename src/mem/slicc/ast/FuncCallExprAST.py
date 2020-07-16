@@ -150,7 +150,7 @@ class FuncCallExprAST(ExprAST):
 
             code('''
     if (result == TransitionResult_Valid) {
-        counter++;
+        m_used_transitions++;
         continue; // Check the first port again
     }
 
