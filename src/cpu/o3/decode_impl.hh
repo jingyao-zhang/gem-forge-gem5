@@ -72,7 +72,7 @@ DefaultDecode<Impl>::DefaultDecode(O3CPU *_cpu, DerivO3CPUParams *params)
              decodeWidth, static_cast<int>(Impl::MaxWidth));
 
     // @todo: Make into a parameter
-    skidBufferMax = (fetchToDecodeDelay + 1) *  params->fetchWidth;
+    skidBufferMax = (fetchToDecodeDelay + 1) *  params->fetchWidth * 2;
     for (int tid = 0; tid < Impl::MaxThreads; tid++) {
         stalls[tid] = {false};
         decodeStatus[tid] = Idle;
@@ -568,6 +568,7 @@ DefaultDecode<Impl>::tick()
     bool status_change = false;
 
     toRenameIndex = 0;
+    decodedInstThisCycle = 0;
 
     list<ThreadID>::iterator threads = activeThreads->begin();
     list<ThreadID>::iterator end = activeThreads->end();
@@ -669,7 +670,7 @@ DefaultDecode<Impl>::decodeInsts(ThreadID tid)
 
     DPRINTF(Decode, "[tid:%i] Sending instruction to rename.\n",tid);
 
-    while (insts_available > 0 && toRenameIndex < decodeWidth) {
+    while (insts_available > 0 && decodedInstThisCycle < decodeWidth) {
         assert(!insts_to_decode.empty());
 
         DynInstPtr inst = std::move(insts_to_decode.front());
@@ -699,12 +700,20 @@ DefaultDecode<Impl>::decodeInsts(ThreadID tid)
         // This current instruction is valid, so add it into the decode
         // queue.  The next instruction may not be valid, so check to
         // see if branches were predicted correctly.
+        assert(toRenameIndex < Impl::MaxWidth && "Decode overflow.");
         toRename->insts[toRenameIndex] = inst;
 
         ++(toRename->size);
         ++toRenameIndex;
+        ++decodedInstThisCycle;
         ++decodeDecodedInsts;
         --insts_available;
+
+        if (cpu->cpuDelegator) {
+            if (!cpu->cpuDelegator->shouldCountInPipeline(inst)) {
+                --decodedInstThisCycle;
+            }
+        }
 
 #if TRACING_ON
         if (DTRACE(O3PipeView)) {

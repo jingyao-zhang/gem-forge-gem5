@@ -16,7 +16,7 @@ public:
   GemForgeISAHandler(GemForgeCPUDelegator *_cpuDelegaor)
       : cpuDelegator(_cpuDelegaor), se(_cpuDelegaor) {}
 
-  bool shouldCountInFrontend(const GemForgeDynInstInfo &dynInfo);
+  bool shouldCountInPipeline(const GemForgeDynInstInfo &dynInfo);
   bool canDispatch(const GemForgeDynInstInfo &dynInfo);
 
   /**

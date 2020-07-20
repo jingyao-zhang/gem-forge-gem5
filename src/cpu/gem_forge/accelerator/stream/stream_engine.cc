@@ -98,8 +98,7 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
       [this](PacketPtr pkt, ThreadContext *tc, void *) -> void {
         this->cpuDelegator->sendRequest(pkt);
       },
-      false /* AccessLastLevelTLBOnly */, 
-      true /* MustDoneInOrder */);
+      false /* AccessLastLevelTLBOnly */, true /* MustDoneInOrder */);
 }
 
 void StreamEngine::regStats() {
@@ -1914,7 +1913,7 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
   auto releaseElement = S->releaseElementUnstepped(dynS);
   if (releaseElement) {
     if (S->isLoadStream() && !S->getFloatManual()) {
-      if (releaseElement->isAddrReady) {
+      if (releaseElement->isAddrReady && releaseElement->shouldIssue()) {
         // This should be in PEB.
         this->peb.removeElement(releaseElement);
       }

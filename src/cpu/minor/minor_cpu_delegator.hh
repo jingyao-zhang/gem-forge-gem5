@@ -52,7 +52,7 @@ public:
    * Whether this instruction should be count in Fetch2 and Decode.
    * Note that these are macroinstructions.
    */
-  bool shouldCountInFrontend(Minor::MinorDynInstPtr &dynInstPtr);
+  bool shouldCountInPipeline(Minor::MinorDynInstPtr &dynInstPtr);
 
   bool canDispatch(Minor::MinorDynInstPtr &dynInstPtr);
   void dispatch(Minor::MinorDynInstPtr &dynInstPtr);

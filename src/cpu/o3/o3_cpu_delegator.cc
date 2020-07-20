@@ -375,6 +375,16 @@ void DefaultO3CPUDelegator<CPUImpl>::commit(const DynInstPtr &dynInstPtr) {
 }
 
 template <class CPUImpl>
+bool DefaultO3CPUDelegator<CPUImpl>::shouldCountInPipeline(
+    const DynInstPtr &dynInstPtr) {
+  if (dynInstPtr->isSquashed()) {
+    return true;
+  }
+  auto dynInfo = pimpl->createDynInfo(dynInstPtr);
+  return pimpl->isaHandler.shouldCountInPipeline(dynInfo);
+}
+
+template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
   auto &inflyInstQueue = pimpl->inflyInstQueue;
   auto &preLSQ = pimpl->preLSQ;
@@ -496,7 +506,7 @@ void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
   }
 
   // There should only be a few InLSQ callbacks, so I directly search in it.
-  for (const auto &inLSQEntry: pimpl->inLSQ) {
+  for (const auto &inLSQEntry : pimpl->inLSQ) {
     auto seqNum = inLSQEntry.first;
     if (seqNum < squashSeqNum) {
       continue;

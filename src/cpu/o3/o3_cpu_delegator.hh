@@ -67,6 +67,8 @@ public:
   bool canCommit(const DynInstPtr &dynInstPtr);
   void commit(const DynInstPtr &dynInstPtr);
 
+  bool shouldCountInPipeline(const DynInstPtr &dynInstPtr);
+
   /**
    * Squash all instructions younger than this SeqNum.
    */

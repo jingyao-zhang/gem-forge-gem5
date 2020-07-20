@@ -132,7 +132,7 @@ void MinorCPUDelegator::startup() {
   this->schedule(&pimpl->dumpInflyInstsEvent, Cycles(1));
 }
 
-bool MinorCPUDelegator::shouldCountInFrontend(
+bool MinorCPUDelegator::shouldCountInPipeline(
     Minor::MinorDynInstPtr &dynInstPtr) {
   if (!dynInstPtr->isInst()) {
     // This is not handled by me, should always count.
@@ -143,7 +143,7 @@ bool MinorCPUDelegator::shouldCountInFrontend(
   // pimpl->createDynInfo().
   GemForgeDynInstInfo dynInfo(0, dynInstPtr->pc, dynInstPtr->staticInst.get(),
                               pimpl->getThreadContext(dynInstPtr));
-  return pimpl->isaHandler.shouldCountInFrontend(dynInfo);
+  return pimpl->isaHandler.shouldCountInPipeline(dynInfo);
 }
 
 bool MinorCPUDelegator::canDispatch(Minor::MinorDynInstPtr &dynInstPtr) {

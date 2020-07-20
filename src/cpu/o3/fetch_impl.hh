@@ -964,6 +964,7 @@ DefaultFetch<Impl>::tick()
         ThreadID tid = *tid_itr;
         if (!stalls[tid].decode && !fetchQueue[tid].empty()) {
             const auto& inst = fetchQueue[tid].front();
+            assert(toDecode->size < Impl::MaxWidth && "Fetch Overflow.");
             toDecode->insts[toDecode->size++] = inst;
             DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
                     "from fetch queue. Fetch queue size: %i.\n",
@@ -972,6 +973,11 @@ DefaultFetch<Impl>::tick()
             wroteToTimeBuffer = true;
             fetchQueue[tid].pop_front();
             insts_to_decode++;
+            if (cpu->cpuDelegator) {
+                if (!cpu->cpuDelegator->shouldCountInPipeline(inst)) {
+                    insts_to_decode--;
+                }
+            }
             available_insts--;
         }
 
@@ -1330,6 +1336,11 @@ DefaultFetch<Impl>::fetch(bool &status_change)
 
             ppFetch->notify(instruction);
             numInst++;
+            if (cpu->cpuDelegator) {
+                if (!cpu->cpuDelegator->shouldCountInPipeline(instruction)) {
+                    numInst--;
+                }
+            }
 
 #if TRACING_ON
             if (DTRACE(O3PipeView)) {

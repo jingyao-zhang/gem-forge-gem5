@@ -72,7 +72,7 @@ DefaultRename<Impl>::DefaultRename(O3CPU *_cpu, DerivO3CPUParams *params)
              renameWidth, static_cast<int>(Impl::MaxWidth));
 
     // @todo: Make into a parameter.
-    skidBufferMax = (decodeToRenameDelay + 1) * params->decodeWidth;
+    skidBufferMax = (decodeToRenameDelay + 1) * params->decodeWidth * 2;
     for (uint32_t tid = 0; tid < Impl::MaxThreads; tid++) {
         renameStatus[tid] = Idle;
         renameMap[tid] = nullptr;
@@ -632,8 +632,9 @@ DefaultRename<Impl>::renameInsts(ThreadID tid)
     }
 
     int renamed_insts = 0;
+    int renamed_real_insts = 0;
 
-    while (insts_available > 0 &&  toIEWIndex < renameWidth) {
+    while (insts_available > 0 &&  renamed_real_insts < renameWidth) {
         DPRINTF(Rename, "[tid:%i] Sending instructions to IEW.\n", tid);
 
         assert(!insts_to_rename.empty());
@@ -786,6 +787,7 @@ DefaultRename<Impl>::renameInsts(ThreadID tid)
         ppRename->notify(inst);
 
         // Put instruction in rename queue.
+        assert(toIEWIndex < Impl::MaxWidth && "Rename Overflow.");
         toIEW->insts[toIEWIndex] = inst;
         ++(toIEW->size);
 
@@ -794,6 +796,13 @@ DefaultRename<Impl>::renameInsts(ThreadID tid)
 
         // Decrement how many instructions are available.
         --insts_available;
+
+        ++renamed_real_insts;
+        if (cpu->cpuDelegator) {
+            if (!cpu->cpuDelegator->shouldCountInPipeline(inst)) {
+                --renamed_real_insts;
+            }
+        }
     }
 
     instsInProgress[tid] += renamed_insts;

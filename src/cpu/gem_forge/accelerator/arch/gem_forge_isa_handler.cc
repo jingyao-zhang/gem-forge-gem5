@@ -51,14 +51,14 @@
     return se.stage##StreamLoad(dynInfo, ##xc);                                \
   }
 
-bool GemForgeISAHandler::shouldCountInFrontend(
+bool GemForgeISAHandler::shouldCountInPipeline(
     const GemForgeDynInstInfo &dynInfo) {
   if (!dynInfo.staticInst->isGemForge()) {
     return true;
   }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
-  // Only step and load are considered no overhead in front end.
+  // Only step and load are considered no overhead in pipeline.
   case GemForgeStaticInstOpE::STREAM_STEP:
   case GemForgeStaticInstOpE::STREAM_LOAD:
   case GemForgeStaticInstOpE::STREAM_FLOAD: {

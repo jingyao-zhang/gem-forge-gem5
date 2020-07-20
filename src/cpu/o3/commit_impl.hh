@@ -982,12 +982,13 @@ DefaultCommit<Impl>::commitInsts()
     DPRINTF(Commit, "Trying to commit instructions in the ROB.\n");
 
     unsigned num_committed = 0;
+    unsigned num_committed_real = 0;
 
     DynInstPtr head_inst;
 
     // Commit as many instructions as possible until the commit bandwidth
     // limit is reached, or it becomes impossible to commit any more.
-    while (num_committed < commitWidth) {
+    while (num_committed_real < commitWidth) {
         // Check for any interrupt that we've already squashed for
         // and start processing it.
         if (interrupt != NoFault)
@@ -1038,6 +1039,12 @@ DefaultCommit<Impl>::commitInsts()
 
             if (commit_success) {
                 ++num_committed;
+                ++num_committed_real;
+                if (cpu->cpuDelegator) {
+                    if (!cpu->cpuDelegator->shouldCountInPipeline(head_inst)) {
+                        num_committed_real--;
+                    }
+                }
                 statCommittedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);
 
@@ -1336,7 +1343,12 @@ DefaultCommit<Impl>::getInsts()
     DPRINTF(Commit, "Getting instructions from Rename stage.\n");
 
     // Read any renamed instructions and place them into the ROB.
-    int insts_to_process = std::min((int)renameWidth, fromRename->size);
+    // ! GemForge
+    // Due to GemForge, some instructions may not be counted in the pipeline,
+    // therefore it's possible fromRename->size > renameWidth.
+    // Make sure we don't drop any instruction here.
+    // int insts_to_process = std::min((int)renameWidth, fromRename->size);
+    int insts_to_process = fromRename->size;
 
     for (int inst_num = 0; inst_num < insts_to_process; ++inst_num) {
         const DynInstPtr &inst = fromRename->insts[inst_num];

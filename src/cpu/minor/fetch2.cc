@@ -519,7 +519,7 @@ Fetch2::evaluate()
                      * ! GemForge
                      * Check if this instruction should count.
                      */
-                    if (!cpu.cpuDelegator->shouldCountInFrontend(dyn_inst)) {
+                    if (!cpu.cpuDelegator->shouldCountInPipeline(dyn_inst)) {
                         fetchedInst--;
                     }
                 }

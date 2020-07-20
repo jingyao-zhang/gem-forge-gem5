@@ -109,7 +109,7 @@ DefaultIEW<Impl>::DefaultIEW(O3CPU *_cpu, DerivO3CPUParams *params)
 
     updateLSQNextCycle = false;
 
-    skidBufferMax = (renameToIEWDelay + 1) * params->renameWidth;
+    skidBufferMax = (renameToIEWDelay + 1) * params->renameWidth * 2;
 }
 
 template <class Impl>
@@ -969,11 +969,12 @@ DefaultIEW<Impl>::dispatchInsts(ThreadID tid)
     DynInstPtr inst;
     bool add_to_iq = false;
     int dis_num_inst = 0;
+    int dis_num_real_inst = 0;
 
     // Loop through the instructions, putting them in the instruction
     // queue.
     for ( ; dis_num_inst < insts_to_add &&
-              dis_num_inst < dispatchWidth;
+              dis_num_real_inst < dispatchWidth;
           ++dis_num_inst)
     {
         inst = insts_to_dispatch.front();
@@ -1158,6 +1159,13 @@ DefaultIEW<Impl>::dispatchInsts(ThreadID tid)
         inst->dispatchTick = curTick() - inst->fetchTick;
 #endif
         ppDispatch->notify(inst);
+
+        dis_num_real_inst++;
+        if (cpu->cpuDelegator) {
+            if (!cpu->cpuDelegator->shouldCountInPipeline(inst)) {
+                dis_num_real_inst--;
+            }
+        }
     }
 
     if (!insts_to_dispatch.empty()) {

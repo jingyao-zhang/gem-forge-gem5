@@ -798,10 +798,11 @@ InstructionQueue<Impl>::scheduleReadyInsts()
     // This will avoid trying to schedule a certain op class if there are no
     // FUs that handle it.
     int total_issued = 0;
+    int total_issued_real = 0;
     ListOrderIt order_it = listOrder.begin();
     ListOrderIt order_end_it = listOrder.end();
 
-    while (total_issued < totalWidth && order_it != order_end_it) {
+    while (total_issued_real < totalWidth && order_it != order_end_it) {
         OpClass op_class = (*order_it).queueType;
 
         assert(!readyInsts[op_class].empty());
@@ -916,6 +917,12 @@ InstructionQueue<Impl>::scheduleReadyInsts()
 
             issuing_inst->setIssued();
             ++total_issued;
+            ++total_issued_real;
+            if (cpu->cpuDelegator) {
+                if (!cpu->cpuDelegator->shouldCountInPipeline(issuing_inst)) {
+                    total_issued_real--;
+                }
+            }
 
 #if TRACING_ON
             issuing_inst->issueTick = curTick() - issuing_inst->fetchTick;

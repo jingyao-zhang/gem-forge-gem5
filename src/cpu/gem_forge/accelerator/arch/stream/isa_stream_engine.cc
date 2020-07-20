@@ -402,16 +402,17 @@ void ISAStreamEngine::rewindStreamReady(const GemForgeDynInstInfo &dynInfo) {
     // Too bad, we already called StreamEngine::executeStreamConfig().
     // This may be a little bit complicate to rewind.
     // ! This should never happen for MinorCPU.
-    panic("%s when executeStreamConfig has been called is not implemented.",
-          __PRETTY_FUNCTION__);
+    // panic("%s when executeStreamConfig has been called is not implemented.",
+    //       __PRETTY_FUNCTION__);
     regionInfo->numExecutedInsts--;
-  } else {
-    ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum,
-                                          regionInfo->infoRelativePath,
-                                          nullptr /* InputVec */, dynInfo.tc);
-    auto se = this->getStreamEngine();
-    se->rewindStreamConfig(args);
   }
+  // } else {
+  ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum,
+                                        regionInfo->infoRelativePath,
+                                        nullptr /* InputVec */, dynInfo.tc);
+  auto se = this->getStreamEngine();
+  se->rewindStreamConfig(args);
+  // }
 
   // Decrease numDispatchedInst.
   regionInfo->streamReadyDispatched = false;
@@ -777,7 +778,8 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
                  dynInfo.staticInst->numDestRegs());
 
   /**
-   * We handle wider registers by checking the number of destination registers.
+   * We handle wider registers by checking the number of destination
+   * registers.
    */
   RegVal *loadedPtr = reinterpret_cast<uint64_t *>(values.at(0).data());
   for (int destIdx = 0; destIdx < dynInfo.staticInst->numDestRegs();

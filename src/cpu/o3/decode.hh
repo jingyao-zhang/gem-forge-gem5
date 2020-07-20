@@ -274,6 +274,9 @@ class DefaultDecode
     /** Index of instructions being sent to rename. */
     unsigned toRenameIndex;
 
+    /** Number of instructions decoded in this cycle. */
+    unsigned decodedInstThisCycle;
+
     /** number of Active Threads*/
     ThreadID numThreads;
 

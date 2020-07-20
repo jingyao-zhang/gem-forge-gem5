@@ -285,7 +285,7 @@ Decode::evaluate()
                      * ! GemForge.
                      * Check if this instruction should count.
                      */
-                    if (!cpu.cpuDelegator->shouldCountInFrontend(output_inst)) {
+                    if (!cpu.cpuDelegator->shouldCountInPipeline(output_inst)) {
                         decodedInst--;
                     }
                 }
