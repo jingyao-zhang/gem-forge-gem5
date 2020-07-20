@@ -186,6 +186,12 @@ class AbstractController : public ClockedObject, public Consumer
     int getRemainTransitions() const {
       return this->m_transitions_per_cycle - this->m_used_transitions;
     }
+    void guaranteeTransition(int n) {
+      assert(n <= this->m_transitions_per_cycle);
+      if (this->m_used_transitions + n > this->m_transitions_per_cycle) {
+        this->m_used_transitions = this->m_transitions_per_cycle - n;
+      }
+    }
 
   protected:
     //! Profiles original cache requests including PUTs

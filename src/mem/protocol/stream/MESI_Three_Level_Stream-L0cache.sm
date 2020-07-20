@@ -1325,7 +1325,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     kd_wakeUpDependents;
   }
 
-  transition(PF_IS, Data_Stale, I) {
+  transition({PF_IS,PF_Inst_IS}, Data_Stale, I) {
     u_writeDataToCache;
     s_deallocateTBE;
     ff_deallocateCacheBlock;

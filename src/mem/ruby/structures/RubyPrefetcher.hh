@@ -55,7 +55,7 @@
 #include "sim/sim_object.hh"
 #include "sim/system.hh"
 
-#define MAX_PF_INFLIGHT 8
+#define MAX_PF_INFLIGHT 16
 
 class PrefetchEntry
 {

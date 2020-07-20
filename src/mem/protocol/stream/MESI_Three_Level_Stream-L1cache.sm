@@ -215,6 +215,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   void wakeUpAllBuffers(Addr a);
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   int  getRemainTransitions();
+  void guaranteeTransition(int);
   void setHitCacheLevel(RequestStatisticPtr, int);
   void addNoCControlMsgs(RequestStatisticPtr, int);
   void addNoCDataMsgs(RequestStatisticPtr, int);
@@ -551,6 +552,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   structure(CanStartBulkPrefetchRet, desc="Ret of tryStartBulkPrefetch.") {
     bool canStart, default="false", desc="The bulk prefetch can start";
+    bool needTransistion, default="false", desc="It need more transistion";
     Addr blockLine, desc="We have to find space for this line.";
   }
 
@@ -599,7 +601,10 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     }
     idx := idx + 1;
     // All lines in the bulk are ready.
-    // So far we always assume we have enough transitions.
+    if (getRemainTransitions() < bulkSize) {
+      // We hack here to make sure we have enough transistions.
+      guaranteeTransition(bulkSize);
+    }
     assert(getRemainTransitions() >= bulkSize);
     ret.canStart := true;
     return ret;
