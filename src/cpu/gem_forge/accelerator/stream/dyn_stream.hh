@@ -25,7 +25,6 @@ struct DynamicStream {
   const uint64_t configSeqNum;
   const Cycles configCycle;
   ThreadContext *tc;
-  const FIFOEntryIdx prevFIFOIdx;
 
   /**
    * Head is the newest element.
@@ -81,7 +80,7 @@ struct DynamicStream {
 
   DynamicStream(Stream *_stream, const DynamicStreamId &_dynamicStreamId,
                 uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,
-                const FIFOEntryIdx &_prevFIFOIdx, StreamEngine *_se);
+                StreamEngine *_se);
   DynamicStream(const DynamicStream &other) = delete;
   DynamicStream(DynamicStream &&other) = delete;
   DynamicStream &operator=(const DynamicStream &other) = delete;

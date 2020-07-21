@@ -1877,7 +1877,9 @@ LLCStreamEngine::performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
    * Create the atomic op.
    */
   const auto &formalParams = stream->configData.storeFormalParams;
-  FIFOEntryIdx entryIdx(sliceId.streamId);
+  FIFOEntryIdx entryIdx(
+      sliceId.streamId,
+      LLVMDynamicInst::INVALID_SEQ_NUM /* Fake ConfigSeqNum */);
   entryIdx.entryIdx = sliceId.lhsElementIdx;
   auto atomicOp = S->setupAtomicOp(entryIdx, elementSize, formalParams);
 

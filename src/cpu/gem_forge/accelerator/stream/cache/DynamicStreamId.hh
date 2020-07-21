@@ -24,6 +24,10 @@ struct DynamicStreamId {
   DynamicStreamId() = default;
   DynamicStreamId(int _coreId, StaticId _staticId, uint64_t _streamInstance)
       : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance) {}
+  DynamicStreamId(int _coreId, StaticId _staticId, uint64_t _streamInstance,
+                  const char *_streamName)
+      : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance),
+        streamName(_streamName) {}
   DynamicStreamId(const DynamicStreamId &other)
       : coreId(other.coreId), staticId(other.staticId),
         streamInstance(other.streamInstance), streamName(other.streamName) {}

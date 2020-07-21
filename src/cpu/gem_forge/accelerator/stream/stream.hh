@@ -125,7 +125,6 @@ public:
    */
   size_t stepSize;
   size_t maxSize;
-  FIFOEntryIdx FIFOIdx;
   int lateFetchCount;
   int numInflyStreamRequests = 0;
   void incrementInflyStreamRequest() { this->numInflyStreamRequests++; }
@@ -137,6 +136,7 @@ public:
   const ::LLVM::TDG::StreamRegion *streamRegion;
   StaticId staticId;
   std::string streamName;
+  size_t dynInstance;
 
   /**
    * Step root stream, three possible cases:
@@ -229,6 +229,11 @@ public:
    * Get the total number of allocated elements among all dynamic streams.
    */
   int getAllocSize() const { return this->allocSize; }
+
+  /**
+   * Allocate a new dynamic instance with FIFOIdx.
+   */
+  DynamicStreamId allocateNewInstance();
 
   /**
    * Add one element to the last dynamic stream.

@@ -149,8 +149,6 @@ void CoalescedStream::selectPrimeLogicalStream() {
    */
   this->streamName = this->primeLStream->info.name();
   this->staticId = this->primeLStream->info.id();
-  this->FIFOIdx.streamId.streamName = this->streamName.c_str();
-  this->FIFOIdx.streamId.staticId = this->staticId;
 }
 
 void CoalescedStream::initializeBaseStreams() {

@@ -552,6 +552,24 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
   SE_DPRINTF("Rewind StreamConfig %s.\n", infoRelativePath);
 
   auto configStreams = this->getConfigStreamsInRegion(streamRegion);
+
+  /**
+   * First we need to rewind any floated streams.
+   */
+  std::vector<DynamicStreamId> floatedIds;
+  for (auto &S : configStreams) {
+    auto &dynS = S->getLastDynamicStream();
+    if (dynS.offloadedToCache) {
+      floatedIds.push_back(dynS.dynamicStreamId);
+      dynS.offloadedToCache = false;
+      dynS.offloadedToCacheAsRoot = false;
+      S->statistic.numFloatRewinded++;
+    }
+  }
+  if (!floatedIds.empty()) {
+    this->sendStreamFloatEndPacket(floatedIds);
+  }
+
   for (auto &S : configStreams) {
     // This file is already too long, move this to stream.cc.
     S->rewindStreamConfig(configSeqNum);

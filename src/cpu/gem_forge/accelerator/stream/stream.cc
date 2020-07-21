@@ -32,10 +32,9 @@
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(const StreamArguments &args)
-    : FIFOIdx(DynamicStreamId(args.cpuDelegator->cpuId(), args.staticId,
-                              0 /*StreamInstance*/)),
-      staticId(args.staticId), streamName(args.name), floatTracer(this),
-      cpu(args.cpu), cpuDelegator(args.cpuDelegator), se(args.se) {
+    : staticId(args.staticId), streamName(args.name), dynInstance(0),
+      floatTracer(this), cpu(args.cpu), cpuDelegator(args.cpuDelegator),
+      se(args.se) {
 
   this->configured = false;
   this->allocSize = 0;
@@ -44,10 +43,6 @@ Stream::Stream(const StreamArguments &args)
   this->stepRootStream = nullptr;
   this->lateFetchCount = 0;
   this->streamRegion = args.streamRegion;
-
-  // The name field in the dynamic id has to be set here after we initialize
-  // streamName.
-  this->FIFOIdx.streamId.streamName = this->streamName.c_str();
 }
 
 Stream::~Stream() {}
@@ -201,14 +196,9 @@ void Stream::initializeCoalesceGroupStreams() {
 }
 
 void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
-  // Remember to old index for rewinding.
-  auto prevFIFOIdx = this->FIFOIdx;
-  // Create new index.
-  this->FIFOIdx.newInstance(seqNum);
   // Allocate the new DynamicStream.
-  this->dynamicStreams.emplace_back(this, this->FIFOIdx.streamId, seqNum,
-                                    cpuDelegator->curCycle(), tc, prevFIFOIdx,
-                                    this->se);
+  this->dynamicStreams.emplace_back(this, this->allocateNewInstance(), seqNum,
+                                    cpuDelegator->curCycle(), tc, this->se);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum, const InputVecT *inputVec) {
@@ -275,8 +265,8 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   assert(dynStream.configSeqNum == seqNum && "Mismatch configSeqNum.");
 
   // Check if we have offloaded this.
-  if (dynStream.offloadedToCacheAsRoot) {
-    // ! Jesus, donot know how to rewind an offloaded stream yet.
+  if (dynStream.offloadedToCache) {
+    // Sink streams should have already been taken care of.
     panic("Don't support rewind StreamConfig for offloaded stream.");
   }
 
@@ -286,12 +276,6 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   while (dynStream.allocSize > dynStream.stepSize) {
     this->se->releaseElementUnstepped(dynStream);
   }
-
-  /**
-   * Reset the FIFOIdx.
-   * ! This is required as StreamEnd does not remember it.
-   */
-  this->FIFOIdx = dynStream.prevFIFOIdx;
 
   // Get rid of the dynamicStream.
   this->dynamicStreams.pop_back();
@@ -680,6 +664,12 @@ bool Stream::isDirectLoadStream() const {
     return false;
   }
   return this->isDirectMemStream();
+}
+
+DynamicStreamId Stream::allocateNewInstance() {
+  this->dynInstance++;
+  return DynamicStreamId(cpuDelegator->cpuId(), this->staticId,
+                         this->dynInstance, this->streamName.c_str());
 }
 
 void Stream::allocateElement(StreamElement *newElement) {

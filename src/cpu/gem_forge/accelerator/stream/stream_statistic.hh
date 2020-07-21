@@ -19,6 +19,7 @@ public:
   size_t numConfigured = 0;
   size_t numMisConfigured = 0;
   size_t numFloated = 0;
+  size_t numFloatRewinded = 0;
   size_t numFloatCancelled = 0;
   size_t numPseudoFloated = 0;
   size_t numAllocated = 0;

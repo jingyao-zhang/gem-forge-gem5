@@ -217,7 +217,7 @@ bool StreamFloatPolicy::checkAggregateHistory(Stream *S, DynamicStream &dynS) {
     auto prevStartAddr =
         linearAddrGen->getStartAddr(prevHistory.addrGenFormalParams);
 
-    // Check if previous stream has more than 50% change of hit in private
+    // Check if previous stream has more than 50% chance of hit in private
     // cache?
     auto prevIssuedRequests = prevHistory.numIssuedRequests;
     auto prevPrivateCacheHits = prevHistory.numPrivateCacheHits;

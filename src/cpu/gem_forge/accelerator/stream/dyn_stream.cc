@@ -10,12 +10,10 @@
 DynamicStream::DynamicStream(Stream *_stream,
                              const DynamicStreamId &_dynamicStreamId,
                              uint64_t _configSeqNum, Cycles _configCycle,
-                             ThreadContext *_tc,
-                             const FIFOEntryIdx &_prevFIFOIdx,
-                             StreamEngine *_se)
+                             ThreadContext *_tc, StreamEngine *_se)
     : stream(_stream), dynamicStreamId(_dynamicStreamId),
       configSeqNum(_configSeqNum), configCycle(_configCycle), tc(_tc),
-      prevFIFOIdx(_prevFIFOIdx), FIFOIdx(_dynamicStreamId, _configSeqNum) {
+      FIFOIdx(_dynamicStreamId, _configSeqNum) {
   this->tail = new StreamElement(_se);
   this->head = this->tail;
   this->stepped = this->tail;
