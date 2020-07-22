@@ -565,7 +565,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   CanStartBulkPrefetchRet canStartBulkPrefetch(RubyRequest in_msg) {
     // Slicc has no loop, I manually unroll it...
     int bulkSize := in_msg.addrBulk.size();
-    assert(bulkSize <= 4);
+    assert(bulkSize <= 8);
     CanStartBulkPrefetchRet ret;
     int idx := 0;
     if (idx < bulkSize) {
