@@ -560,10 +560,12 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
   for (auto &S : configStreams) {
     auto &dynS = S->getLastDynamicStream();
     if (dynS.offloadedToCache) {
-      floatedIds.push_back(dynS.dynamicStreamId);
       dynS.offloadedToCache = false;
-      dynS.offloadedToCacheAsRoot = false;
       S->statistic.numFloatRewinded++;
+      if (dynS.offloadedToCacheAsRoot) {
+        floatedIds.push_back(dynS.dynamicStreamId);
+        dynS.offloadedToCacheAsRoot = false;
+      }
     }
   }
   if (!floatedIds.empty()) {
