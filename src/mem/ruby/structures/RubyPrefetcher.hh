@@ -173,7 +173,7 @@ class RubyPrefetcher : public SimObject
         //! number of non-stride filters
         uint32_t m_num_nonunit_filters;
         //! enable bulk prefetch
-        bool m_enable_bulk_prefetch;
+        uint32_t m_bulk_prefetch_size;
 
         /// a unit stride filter array: helps reduce BW requirement of
         /// prefetching

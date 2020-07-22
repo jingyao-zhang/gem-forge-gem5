@@ -185,7 +185,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 train_misses = 5,
                 num_startup_pfs=options.gem_forge_l2_prefetch_dist,
                 cross_page = True,
-                enable_bulk_prefetch=options.gem_forge_l2_bulk_prefetch,
+                bulk_prefetch_size=options.gem_forge_l2_bulk_prefetch_size,
             )
 
             l1_cntrl = L1Cache_Controller(

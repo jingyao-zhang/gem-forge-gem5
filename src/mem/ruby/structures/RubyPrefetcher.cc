@@ -56,7 +56,7 @@ RubyPrefetcher::RubyPrefetcher(const Params *p)
     m_array(p->num_streams), m_train_misses(p->train_misses),
     m_num_startup_pfs(p->num_startup_pfs), m_num_unit_filters(p->unit_filter),
     m_num_nonunit_filters(p->nonunit_filter),
-    m_enable_bulk_prefetch(p->enable_bulk_prefetch),
+    m_bulk_prefetch_size(p->bulk_prefetch_size),
     m_unit_filter(p->unit_filter, 0),
     m_negative_filter(p->unit_filter, 0),
     m_nonunit_filter(p->nonunit_filter, 0),
@@ -243,8 +243,8 @@ RubyPrefetcher::issueNextPrefetch(Addr address, PrefetchEntry *stream)
      * until we have half the prefetch distance.
      */
     stream->m_num_delayed_prefetches++;
-    if (this->m_enable_bulk_prefetch &&
-        stream->m_num_delayed_prefetches * 2 < this->m_num_startup_pfs) {
+    if (this->m_bulk_prefetch_size > 1 &&
+        stream->m_num_delayed_prefetches < this->m_bulk_prefetch_size) {
         DPRINTF(RubyPrefetcher, "Delayed %d pfs, returning\n",
             stream->m_num_delayed_prefetches);
         return;
