@@ -175,10 +175,6 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
         this->shouldUpdateIssueClearCycleMemorized = false;
       }
     }
-    if (this->getStaticId() == 16) {
-      hack("Should update set to %d.\n",
-           this->shouldUpdateIssueClearCycleMemorized);
-    }
   }
 
   this->shouldUpdateIssueClearCycleInitialized = true;
