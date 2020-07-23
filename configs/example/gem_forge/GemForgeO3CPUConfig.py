@@ -21,8 +21,6 @@ def initializeO3CPU(options, o3cpu):
     elif options.branch_predictor == 'ltage':
         o3cpu.branchPred = LTAGE(
             numThreads=options.gem_forge_hardware_contexts_per_core)
-    # Use our FU pool.
-    o3cpu.fuPool = GemForgeO4FUPool()
 
     o3cpu.SQEntries = options.llvm_store_queue_size
     o3cpu.LQEntries = options.llvm_load_queue_size
@@ -31,13 +29,22 @@ def initializeO3CPU(options, o3cpu):
         o3cpu.numIQEntries = 16
         o3cpu.LQEntries = 16
         o3cpu.SQEntries = 20
+        o3cpu.fuPool = GemForgeO4FUPool()
     elif options.llvm_issue_width == 4:
         o3cpu.numROBEntries = 96
         o3cpu.numIQEntries = 24
         o3cpu.LQEntries = 24
         o3cpu.SQEntries = 30
+        o3cpu.fuPool = GemForgeO4FUPool()
     elif options.llvm_issue_width == 6:
         o3cpu.numROBEntries = 192
         o3cpu.numIQEntries = 28
         o3cpu.LQEntries = 42
         o3cpu.SQEntries = 36
+        o3cpu.fuPool = GemForgeO4FUPool()
+    elif options.llvm_issue_width == 8:
+        o3cpu.numROBEntries = 224
+        o3cpu.numIQEntries = 64
+        o3cpu.LQEntries = 72
+        o3cpu.SQEntries = 56
+        o3cpu.fuPool = GemForgeO8FUPool()

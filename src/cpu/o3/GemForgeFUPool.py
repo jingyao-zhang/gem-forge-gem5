@@ -80,3 +80,14 @@ class GemForgeO4FUPool(FUPool):
     FUList = [ IntALU(), IntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
                GemForgeIntSIMDUnit(), GemForgeFpSIMDUnit(),
                PredALU(), WritePort(), RdWrPort(), IprPort() ]
+
+class GemForgeO8FUPool(FUPool):
+    FUList = [ IntALU(), IntMultDiv(), FP_ALU(), FP_MultDiv(), ReadPort(),
+               GemForgeIntSIMDUnit(), GemForgeFpSIMDUnit(),
+               PredALU(), WritePort(), RdWrPort(), IprPort() ]
+    FUList[0].count = 8
+    FUList[1].count = 4
+    FUList[2].count = 4
+    FUList[3].count = 4
+    FUList[5].count = 4
+    FUList[6].count = 4
