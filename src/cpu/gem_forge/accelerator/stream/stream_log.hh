@@ -17,8 +17,10 @@
   S_MSG((E)->getStream(), "[%lu-%lu]: " format,                                \
         (E)->FIFOIdx.streamId.streamInstance, (E)->FIFOIdx.entryIdx, ##args)
 
+#define S_ELEMENT_DPRINTF_(X, E, format, args...)                              \
+  DPRINTF(X, S_ELEMENT_MSG(E, format, ##args))
 #define S_ELEMENT_DPRINTF(E, format, args...)                                  \
-  DPRINTF(DEBUG_TYPE, S_ELEMENT_MSG(E, format, ##args))
+  S_ELEMENT_DPRINTF_(DEBUG_TYPE, E, format, ##args)
 #define S_ELEMENT_HACK(E, format, args...)                                     \
   hack(S_ELEMENT_MSG(E, format, ##args))
 #define S_ELEMENT_PANIC(E, format, args...)                                    \

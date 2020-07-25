@@ -9,6 +9,7 @@
 #include "proto/protoio.hh"
 
 #include "debug/StreamBase.hh"
+#include "debug/StreamCritical.hh"
 #define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
 
@@ -880,8 +881,6 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
           releaseElement->firstCheckCycle - releaseElement->valueReadyCycle;
       this->statistic.numCoreEarlyElement++;
       this->statistic.numCoreEarlyCycle += earlyCycles;
-      S_ELEMENT_DPRINTF(releaseElement, "Release Early Cycle %lu.\n",
-                        earlyCycles);
     } else {
       // The element makes the core's user wait.
       auto lateCycles =
@@ -889,11 +888,17 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
       this->statistic.numCoreLateElement++;
       this->statistic.numCoreLateCycle += lateCycles;
       late = true;
-      S_ELEMENT_DPRINTF(releaseElement, "Release Late Cycle %lu.\n",
-                        lateCycles);
       if (lateCycles > 1000) {
-        S_ELEMENT_HACK(releaseElement, "Release Extremely Late Cycle %lu.\n",
-                       lateCycles);
+        S_ELEMENT_DPRINTF_(
+            StreamCritical, releaseElement,
+            "Extreme Late %lu, Request Lat %lu, AddrReady %lu Issue %lu "
+            "ValReady %lu FirstCheck %lu.\n",
+            lateCycles,
+            releaseElement->valueReadyCycle - releaseElement->issueCycle,
+            releaseElement->addrReadyCycle - releaseElement->allocateCycle,
+            releaseElement->issueCycle - releaseElement->allocateCycle,
+            releaseElement->valueReadyCycle - releaseElement->allocateCycle,
+            releaseElement->firstCheckCycle - releaseElement->allocateCycle);
       }
     }
   }

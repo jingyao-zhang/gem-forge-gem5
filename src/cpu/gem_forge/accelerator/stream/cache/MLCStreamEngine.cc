@@ -9,6 +9,7 @@
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStream.hh"
+#include "debug/MLCRubyStreamReuse.hh"
 
 #define DEBUG_TYPE MLCRubyStream
 #include "../stream_log.hh"
@@ -17,9 +18,11 @@
   DPRINTF(MLCRubyStream, "[MLC_SE%d]: " format,                                \
           this->controller->getMachineID().num, ##args)
 
-#define MLC_STREAM_DPRINTF(streamId, format, args...)                          \
-  DPRINTF(MLCRubyStream, "[MLC_SE%d][%llu]: " format,                          \
+#define MLC_STREAM_DPRINTF_(X, streamId, format, args...)                      \
+  DPRINTF(X, "[MLC_SE%d][%llu]: " format,                                      \
           this->controller->getMachineID().num, streamId, ##args)
+#define MLC_STREAM_DPRINTF(streamId, format, args...)                          \
+  MLC_STREAM_DPRINTF_(MLCRubyStream, streamId, format, ##args)
 #define MLC_STREAM_HACK(streamId, format, args...)                             \
   hack("[MLC_SE%d][%llu]: " format, this->controller->getMachineID().num,      \
        streamId, ##args)
@@ -338,20 +341,26 @@ void MLCStreamEngine::computeReuseInformation(
     auto S = config->stream;
     auto groupId = S->getCoalesceBaseStreamId();
     if (groupId == 0) {
+      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
+                          "Ignored as no coalesce group.\n");
       continue;
     }
     // Check if continuous.
     auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
         config->addrGenCallback);
     if (!linearAddrGen) {
+      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
+                          "Ignored as not linear addr gen.\n");
       continue;
     }
     if (!linearAddrGen->isContinuous(config->addrGenFormalParams,
                                      config->elementSize)) {
-      MLC_STREAM_DPRINTF(config->dynamicId.staticId,
-                         "Address pattern not continuous.\n");
+      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
+                          "Address pattern not continuous.\n");
       continue;
     }
+    MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
+                        "Add to group %llu.\n", groupId);
     groups
         .emplace(std::piecewise_construct, std::forward_as_tuple(groupId),
                  std::forward_as_tuple())
@@ -387,9 +396,9 @@ void MLCStreamEngine::computeReuseInformation(
       assert(rhsStartAddr > lhsStartAddr && "Illegal reversed startAddr.");
       auto startOffset = rhsStartAddr - lhsStartAddr;
       if (startOffset > ReuseThreshold) {
-        MLC_STREAM_DPRINTF(lhsConfig->dynamicId.staticId,
-                           "Ingore large reuse distance -> %lu offset %lu.\n",
-                           rhsConfig->dynamicId.staticId, startOffset);
+        MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, lhsConfig->dynamicId.staticId,
+                            "Ingore large reuse distance to %lu offset %lu.\n",
+                            rhsConfig->dynamicId.staticId, startOffset);
         continue;
       }
       auto rhsStartLindAddr = makeLineAddress(rhsStartAddr);
@@ -405,9 +414,9 @@ void MLCStreamEngine::computeReuseInformation(
           std::piecewise_construct, std::forward_as_tuple(lhsConfig->dynamicId),
           std::forward_as_tuple(rhsConfig->dynamicId, lhsCutElementIdx,
                                 rhsStartLindAddr));
-      MLC_STREAM_DPRINTF(lhsConfig->dynamicId.staticId,
-                         "Add reuse chain -> %lu cut %lu.\n",
-                         rhsConfig->dynamicId.staticId, lhsCutElementIdx);
+      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, lhsConfig->dynamicId.staticId,
+                          "Add reuse chain -> %lu cut %lu.\n",
+                          rhsConfig->dynamicId.staticId, lhsCutElementIdx);
     }
   }
 }

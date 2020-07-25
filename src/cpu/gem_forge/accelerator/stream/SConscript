@@ -1,6 +1,7 @@
 Import('*')
 
 DebugFlag('StreamBase')
+DebugFlag('StreamCritical')
 DebugFlag('StreamEngine')
 DebugFlag('StreamElement')
 DebugFlag('StreamFloatPolicy')

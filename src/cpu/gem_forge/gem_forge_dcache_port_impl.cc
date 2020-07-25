@@ -18,7 +18,7 @@ bool GemForgeDcachePortImpl::sendTimingReqVirtual(PacketPtr pkt, bool isCore) {
   }
 
   DPRINTF(GemForgeDcachePort, "Receive isCore %d, %s.\n", isCore, pkt->print());
-  assert(this->blockedQueue.size() < 1024 && "Too many blocked packets.");
+  assert(this->blockedQueue.size() < 2048 && "Too many blocked packets.");
 
   /**
    * Priortize the core request, as it involves some deadlocks.
