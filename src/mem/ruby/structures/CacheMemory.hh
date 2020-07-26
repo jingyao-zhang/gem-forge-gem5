@@ -153,9 +153,11 @@ class CacheMemory : public SimObject
     Stats::Scalar m_deallocated_no_reuse;
     Stats::Scalar m_deallocated_no_reuse_no_req_stat;
     Stats::Scalar m_deallocated_no_reuse_noc_control_message;
+    Stats::Scalar m_deallocated_no_reuse_noc_control_evict_message;
     Stats::Scalar m_deallocated_no_reuse_noc_data_message;
     Stats::Scalar m_deallocated_no_reuse_stream;
     Stats::Scalar m_deallocated_no_reuse_stream_noc_control_message;
+    Stats::Scalar m_deallocated_no_reuse_stream_noc_control_evict_message;
     Stats::Scalar m_deallocated_no_reuse_stream_noc_data_message;
 
     Stats::Scalar numDataArrayReads;

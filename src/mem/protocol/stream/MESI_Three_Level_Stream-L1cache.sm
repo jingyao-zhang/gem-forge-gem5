@@ -218,8 +218,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   void guaranteeTransition(int);
   void setHitCacheLevel(RequestStatisticPtr, int);
   void addNoCControlMsgs(RequestStatisticPtr, int);
+  void addNoCControlEvictMsgs(RequestStatisticPtr, int);
   void addNoCDataMsgs(RequestStatisticPtr, int);
-  void recordDeallocateReqStats(RequestStatisticPtr, CacheMemory);
+  void recordDeallocateNoReuseReqStats(RequestStatisticPtr, CacheMemory);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
   bool isRequestStatisticStream(RequestStatisticPtr);
   bool isRequestStatisticValid(RequestStatisticPtr);
@@ -901,8 +902,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         out_msg.DataBlk := cache_entry.DataBlk;
       } else {
         out_msg.MessageSize := MessageSizeType:Writeback_Control;
-        // This is considered a control message.
+        // This is considered a control evict message.
         addNoCControlMsgs(cache_entry.ReqStat, 1);
+        addNoCControlEvictMsgs(cache_entry.ReqStat, 1);
       }
     }
   }
@@ -1094,6 +1096,10 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     assert(is_valid(cache_entry));
     addNoCControlMsgs(cache_entry.ReqStat, 1);
   }
+  action(drse_addNoCCtrlEvictMsgToCacheEntry, "drse", desc="Add one ctrl evict msg to cache ReqStat") {
+    assert(is_valid(cache_entry));
+    addNoCControlEvictMsgs(cache_entry.ReqStat, 1);
+  }
 
   action(ff_deallocateCacheBlock, "\f",
          desc="Deallocate L1 cache block.") {
@@ -1109,7 +1115,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
         if (isRequestStatisticValid(cache_entry.ReqStat)) {
           // Record msg stats.
-          recordDeallocateReqStats(cache_entry.ReqStat, cache);
+          recordDeallocateNoReuseReqStats(cache_entry.ReqStat, cache);
         } else {
           ++cache.deallocated_no_reuse_no_req_stat;
         }
@@ -1421,7 +1427,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   transition(SS, Inv, I) {
     fi_sendInvAck;
+    // We consider Inv and InvAck as 2 msgs.
     drsc_addNoCCtrlMsgToCacheEntry;
+    drsc_addNoCCtrlMsgToCacheEntry;
+    drse_addNoCCtrlEvictMsgToCacheEntry;
+    drse_addNoCCtrlEvictMsgToCacheEntry;
     ff_deallocateCacheBlock;
     l_popL2RequestQueue;
   }
@@ -1445,7 +1455,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   transition(EE, Inv, I) {
     // don't send data
     fi_sendInvAck;
+    // We considier Inv and InvAck as 2 msgs.
     drsc_addNoCCtrlMsgToCacheEntry;
+    drsc_addNoCCtrlMsgToCacheEntry;
+    drse_addNoCCtrlEvictMsgToCacheEntry;
+    drse_addNoCCtrlEvictMsgToCacheEntry;
     ff_deallocateCacheBlock;
     l_popL2RequestQueue;
   }

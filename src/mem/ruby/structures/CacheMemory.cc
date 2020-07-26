@@ -604,6 +604,9 @@ CacheMemory::regStats()
     m_deallocated_no_reuse_noc_control_message
         .name(name() + ".deallocated_no_reuse_noc_ctrl_msg")
         .desc("Number of NoC control messages of no reuse data");
+    m_deallocated_no_reuse_noc_control_evict_message
+        .name(name() + ".deallocated_no_reuse_noc_ctrl_evict_msg")
+        .desc("Number of NoC control evict messages of no reuse data");
     m_deallocated_no_reuse_noc_data_message
         .name(name() + ".deallocated_no_reuse_noc_data_msg")
         .desc("Number of NoC data messages of no reuse data");

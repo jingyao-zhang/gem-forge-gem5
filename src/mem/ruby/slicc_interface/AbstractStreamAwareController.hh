@@ -123,8 +123,8 @@ public:
     }
   }
 
-  void recordDeallocateReqStats(const RequestStatisticPtr &reqStat,
-                                CacheMemory &cache) const;
+  void recordDeallocateNoReuseReqStats(const RequestStatisticPtr &reqStat,
+                                       CacheMemory &cache) const;
   void recordLLCReqQueueStats(const RequestStatisticPtr &reqStat,
                               const DynamicStreamSliceIdVec &sliceIds);
   void incrementLLCIndReqQueueStats() { this->m_statLLCIndStreamReq++; }
@@ -134,17 +134,15 @@ public:
       statistic->addNoCControlMessages(msgs);
     }
   }
-  int getNoCControlMsgs(const RequestStatisticPtr &statistic) const {
-    return statistic ? statistic->nocControlMessages : 0;
+  void addNoCControlEvictMsgs(RequestStatisticPtr statistic, int msgs) const {
+    if (statistic != nullptr) {
+      statistic->addNoCControlEvictMessages(msgs);
+    }
   }
-
   void addNoCDataMsgs(RequestStatisticPtr statistic, int msgs) const {
     if (statistic != nullptr) {
       statistic->addNoCDataMessages(msgs);
     }
-  }
-  int getNoCDataMsgs(const RequestStatisticPtr &statistic) const {
-    return statistic ? statistic->nocDataMessages : 0;
   }
 
   bool isRequestStatisticStream(const RequestStatisticPtr &reqStat) const {

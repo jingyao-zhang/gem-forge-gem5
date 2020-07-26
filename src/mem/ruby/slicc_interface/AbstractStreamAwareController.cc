@@ -138,21 +138,21 @@ void AbstractStreamAwareController::registerController(
   globalList.emplace_back(controller);
 }
 
-void AbstractStreamAwareController::recordDeallocateReqStats(
+void AbstractStreamAwareController::recordDeallocateNoReuseReqStats(
     const RequestStatisticPtr &reqStat, CacheMemory &cache) const {
   // Record msg stats.
   auto nocCtrl = reqStat->nocControlMessages;
+  auto nocCtrlEvict = reqStat->nocControlEvictMessages;
   auto nocData = reqStat->nocDataMessages;
   cache.m_deallocated_no_reuse_noc_control_message += nocCtrl;
+  cache.m_deallocated_no_reuse_noc_control_evict_message += nocCtrlEvict;
   cache.m_deallocated_no_reuse_noc_data_message += nocData;
   if (reqStat->isStream) {
     // Record this is from stream.
     cache.m_deallocated_no_reuse_stream++;
     cache.m_deallocated_no_reuse_stream_noc_control_message += nocCtrl;
+    cache.m_deallocated_no_reuse_stream_noc_control_evict_message += nocCtrlEvict;
     cache.m_deallocated_no_reuse_stream_noc_data_message += nocData;
-  } else {
-    // Jesus what is this?
-    // hack("Deallocated NoReuse NonStream Line from PC %#x.\n", reqStat->pc);
   }
 }
 

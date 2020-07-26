@@ -31,14 +31,21 @@ struct RequestStatistic {
   HitPlaceE hitCacheLevel;
   /**
    * If this request caused NoC traffic, here is the basic breakdown.
+   * 1. Control messages.
+   *   1.1 Control messages due eviction.
+   * 2. Data messages.
    */
   int nocControlMessages = 0;
+  int nocControlEvictMessages = 0;
   int nocDataMessages = 0;
   RequestStatistic() : hitCacheLevel(HitPlaceE::INVALID) {}
   void setHitCacheLevel(int hitCacheLevel) {
     this->hitCacheLevel = static_cast<HitPlaceE>(hitCacheLevel);
   }
   void addNoCControlMessages(int msgs) { this->nocControlMessages += msgs; }
+  void addNoCControlEvictMessages(int msgs) {
+    this->nocControlEvictMessages += msgs;
+  }
   void addNoCDataMessages(int msgs) { this->nocDataMessages += msgs; }
 };
 

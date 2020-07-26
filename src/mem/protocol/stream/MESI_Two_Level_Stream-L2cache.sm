@@ -913,9 +913,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   action(jj_popL1RequestQueue, "\j", desc="Pop incoming L1 request queue") {
-    peek(L1RequestL2Network_in, RequestMsg) { 
-      recordLLCReqQueueStats(in_msg.requestStatistic, in_msg.sliceIds);
-    }
     Tick delay := L1RequestL2Network_in.dequeue(clockEdge());
     profileMsgDelay(0, ticksToCycles(delay));
   }
@@ -1037,6 +1034,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   action(uu_profileHit, "\uh", desc="Profile the demand hit") {
       ++L2cache.demand_hits;
+  }
+
+  action(ur_profileReq, "\ur", desc="Profile the demand request") {
+    peek(L1RequestL2Network_in, RequestMsg) { 
+      recordLLCReqQueueStats(in_msg.requestStatistic, in_msg.sliceIds);
+    }
   }
 
   action(nn_addSharer, "\n", desc="Add L1 sharer to list") {
@@ -1216,6 +1219,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ss_recordGetSL1ID;
     a_issueFetchToMemory;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(NP, L1_GETV, IVV) {
@@ -1226,6 +1230,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     sv_recordGetVL1ID;
     a_issueFetchToMemory;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(NP, L1_GETH, IVV) {
@@ -1236,6 +1241,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     css_copyStreamSliceId;
     a_issueFetchToMemory;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(NP, STREAM_STORE, NP_M) {
@@ -1246,6 +1252,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     csv_copyStreamStoreValue;
     a_issueFetchToMemory;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(NP, L1_GET_INSTR, IS) {
@@ -1256,6 +1263,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ss_recordGetSL1ID;
     a_issueFetchToMemory;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(NP, L1_GETX, IM) {
@@ -1266,6 +1274,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     xx_recordGetXL1ID;
     a_issueFetchToMemory;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1276,6 +1285,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     nn_addSharer;
     ss_recordGetSL1ID;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1328,6 +1338,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     nn_addSharer;
     ss_recordGetSL1ID;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1350,6 +1361,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     nn_addSharer;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1360,6 +1372,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     fwm_sendFwdInvToSharersMinusRequestor;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1368,6 +1381,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ts_sendInvAckToUpgrader;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1388,6 +1402,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     du_sendUncacheDataToRequestors;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   // The data is in TBE now.
@@ -1395,12 +1410,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     nert_notifyStreamEngineFromL1ReqFromTBE;
     dut_sendUncacheDataToRequestorsFromTBE;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(SS, L1_GETH, SS) {
     ner_notifyStreamEngineFromL1Req;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(SS, STREAM_STORE, SS_M) {
@@ -1410,6 +1427,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     f_sendInvToSharers;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1436,6 +1454,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     d_sendDataToRequestor;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1444,6 +1463,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     nn_addSharer;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1451,6 +1471,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     dd_sendExclusiveDataToRequestor;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
 
@@ -1460,18 +1481,21 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     du_sendUncacheDataToRequestors;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(M, L1_GETH, M) {
     ner_notifyStreamEngineFromL1Req;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(M, STREAM_STORE, M) {
     ner_notifyStreamEngineFromL1Req;
     set_setMRU;
     uu_profileHit;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(M, {L2_Replacement, MEM_Inv}, M_I) {
@@ -1492,12 +1516,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   transition(MT, L1_GETX, MT_MB) {
     b_forwardRequestToExclusive;
     uu_profileMiss;
+    ur_profileReq;
     set_setMRU;
     jj_popL1RequestQueue;
   }
   transition(MT, {L1_GETS, L1_GET_INSTR}, MT_IIB) {
     b_forwardRequestToExclusive;
     uu_profileMiss;
+    ur_profileReq;
     set_setMRU;
     jj_popL1RequestQueue;
   }
@@ -1509,6 +1535,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     b_forwardRequestToExclusive;
     ns_recordMTGetVInfoFromRequest;
     uu_profileMiss;
+    ur_profileReq;
     set_setMRU;
     jj_popL1RequestQueue;
   }
@@ -1519,6 +1546,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     f_sendInvToSharers;
     set_setMRU;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   /**
@@ -1533,6 +1561,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     f_sendInvToSharers;
     set_setMRU;
     uu_profileMiss;
+    ur_profileReq;
     jj_popL1RequestQueue;
   }
   transition(MT, {L2_Replacement, MEM_Inv}, MT_I) {
