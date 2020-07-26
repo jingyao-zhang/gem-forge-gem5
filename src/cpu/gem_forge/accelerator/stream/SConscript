@@ -1,6 +1,7 @@
 Import('*')
 
 DebugFlag('StreamBase')
+DebugFlag('StreamAlias')
 DebugFlag('StreamCritical')
 DebugFlag('StreamEngine')
 DebugFlag('StreamElement')

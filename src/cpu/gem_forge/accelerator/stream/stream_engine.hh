@@ -401,9 +401,9 @@ private:
   void writebackElement(StreamElement *element, StreamStoreInst *inst);
 
   /**
-   * Flush all the PEB entries.
+   * Flush the PEB entries.
    */
-  void flushPEB();
+  void flushPEB(Addr vaddr, int size);
 
   /**
    * LoadQueue RAW misspeculation.

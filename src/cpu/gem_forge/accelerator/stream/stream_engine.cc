@@ -3,6 +3,7 @@
 
 #include "base/trace.hh"
 #include "debug/RubyStream.hh"
+#include "debug/StreamAlias.hh"
 #include "debug/StreamEngine.hh"
 
 namespace {
@@ -1338,10 +1339,11 @@ void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
   }
   if (auto element = this->peb.isHit(vaddr, size)) {
     // hack("CPU stores to (%#x, %d), hits in PEB.\n", vaddr, size);
-    S_ELEMENT_DPRINTF(element, "CPUStoreTo aliased %#x, +%d.\n", vaddr, size);
+    S_ELEMENT_DPRINTF_(StreamAlias, element, "CPUStoreTo aliased %#x, +%d.\n",
+                       vaddr, size);
     // Remember that this element's address is aliased.
     element->isAddrAliased = true;
-    this->flushPEB();
+    this->flushPEB(vaddr, size);
   }
 }
 
@@ -2867,11 +2869,39 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
       pkt, cpuDelegator->getSingleThreadContext(), nullptr);
 }
 
-void StreamEngine::flushPEB() {
+void StreamEngine::flushPEB(Addr vaddr, int size) {
+  bool foundAliasedIndirect = false;
   for (auto element : this->peb.elements) {
-    S_ELEMENT_DPRINTF(element, "Flushed in PEB.\n");
     assert(element->isAddrReady);
     assert(!element->isFirstUserDispatched());
+    if (element->addr >= vaddr + size ||
+        element->addr + element->size <= vaddr) {
+      // Not aliased.
+      continue;
+    }
+    if (element->stream->addrDepStreams.empty() &&
+        element->stream->valueDepStreams.empty() &&
+        element->stream->backDependentStreams.empty()) {
+      // No dependent streams.
+      continue;
+    }
+    S_ELEMENT_DPRINTF_(StreamAlias, element,
+                       "Found AliasedIndrect PEB %#x, +%d.\n", vaddr, size);
+    foundAliasedIndirect = true;
+  }
+  for (auto elementIter = this->peb.elements.begin(),
+            elementEnd = this->peb.elements.end();
+       elementIter != elementEnd;) {
+    auto element = *elementIter;
+    bool aliased =
+        element->addr >= vaddr + size || element->addr + element->size <= vaddr;
+    if (!aliased && !foundAliasedIndirect) {
+      // Not aliased, and we are selectively flushing.
+      S_ELEMENT_DPRINTF_(StreamAlias, element, "Skip flush in PEB.\n");
+      ++elementIter;
+      continue;
+    }
+    S_ELEMENT_DPRINTF_(StreamAlias, element, "Flushed in PEB.\n");
     if (element->dynS->offloadedToCache) {
       if (element->getStream()->getStreamType() !=
           ::LLVM::TDG::StreamInfo_Type_LD) {
@@ -2887,6 +2917,9 @@ void StreamEngine::flushPEB() {
 
     // Raise the flush flag.
     element->flushed = true;
+    if (aliased) {
+      element->isAddrAliased = true;
+    }
 
     element->valueReadyCycle = Cycles(0);
     element->firstCheckCycle = Cycles(0);
@@ -2896,17 +2929,17 @@ void StreamEngine::flushPEB() {
     element->clearInflyMemAccesses();
     element->clearCacheBlocks();
     std::fill(element->value.begin(), element->value.end(), 0);
+    elementIter = this->peb.elements.erase(elementIter);
   }
-  this->peb.elements.clear();
 }
 
 void StreamEngine::RAWMisspeculate(StreamElement *element) {
   assert(!this->peb.contains(element) && "RAWMisspeculate on PEB element.");
-  S_ELEMENT_DPRINTF(element, "RAWMisspeculated.\n");
+  S_ELEMENT_DPRINTF_(StreamAlias, element, "RAWMisspeculated.\n");
   // Remember that this element aliased and caused flush.
   element->isAddrAliased = true;
   // Still, we flush the PEB when LQ misspeculate happens.
-  this->flushPEB();
+  this->flushPEB(element->addr, element->size);
 
   // Revert this element to just allocate state.
   element->flushed = true;
