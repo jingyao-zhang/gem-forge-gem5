@@ -455,6 +455,7 @@ private:
         : element(_element), FIFOIdx(_element->FIFOIdx),
           usedStreamIds(_usedStreamIds), args(_userSeqNum, usedStreamIds) {}
     bool getAddrSize(Addr &addr, uint32_t &size) const override;
+    bool hasNonCoreDependent() const override;
     bool isIssued() const override;
     bool isValueLoaded() override;
     void RAWMisspeculate() override;

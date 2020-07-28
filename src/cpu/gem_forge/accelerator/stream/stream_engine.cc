@@ -16,8 +16,9 @@ bool isDebugStream(Stream *S) {
 
 } // namespace
 
-#define SE_DPRINTF(format, args...)                                            \
-  DPRINTF(StreamEngine, "[SE%d]: " format, this->cpuDelegator->cpuId(), ##args)
+#define SE_DPRINTF_(X, format, args...)                                        \
+  DPRINTF(X, "[SE%d]: " format, this->cpuDelegator->cpuId(), ##args)
+#define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamEngine, format, ##args)
 
 #define DEBUG_TYPE StreamEngine
 #include "stream_log.hh"
@@ -2666,6 +2667,12 @@ bool StreamEngine::GemForgeStreamEngineLQCallback::getAddrSize(
   return true;
 }
 
+bool StreamEngine::GemForgeStreamEngineLQCallback::hasNonCoreDependent() const {
+  assert(this->FIFOIdx == this->element->FIFOIdx &&
+         "Element already released.");
+  return this->element->stream->hasNonCoreDependent();
+}
+
 bool StreamEngine::GemForgeStreamEngineLQCallback::isIssued() const {
   /**
    * So far the element is considered issued when its address is ready.
@@ -2870,6 +2877,7 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
 }
 
 void StreamEngine::flushPEB(Addr vaddr, int size) {
+  SE_DPRINTF_(StreamAlias, "====== Flush PEB %#x, +%d.\n", vaddr, size);
   bool foundAliasedIndirect = false;
   for (auto element : this->peb.elements) {
     assert(element->isAddrReady);
@@ -2879,9 +2887,7 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
       // Not aliased.
       continue;
     }
-    if (element->stream->addrDepStreams.empty() &&
-        element->stream->valueDepStreams.empty() &&
-        element->stream->backDependentStreams.empty()) {
+    if (!element->stream->hasNonCoreDependent()) {
       // No dependent streams.
       continue;
     }
@@ -2893,18 +2899,18 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
             elementEnd = this->peb.elements.end();
        elementIter != elementEnd;) {
     auto element = *elementIter;
-    bool aliased =
-        element->addr >= vaddr + size || element->addr + element->size <= vaddr;
+    bool aliased = !(element->addr >= vaddr + size ||
+                     element->addr + element->size <= vaddr);
     if (!aliased && !foundAliasedIndirect) {
       // Not aliased, and we are selectively flushing.
       S_ELEMENT_DPRINTF_(StreamAlias, element, "Skip flush in PEB.\n");
       ++elementIter;
       continue;
     }
-    S_ELEMENT_DPRINTF_(StreamAlias, element, "Flushed in PEB.\n");
+    S_ELEMENT_DPRINTF_(StreamAlias, element, "Flushed in PEB %#x, +%d.\n",
+                       element->addr, element->size);
     if (element->dynS->offloadedToCache) {
-      if (element->getStream()->getStreamType() !=
-          ::LLVM::TDG::StreamInfo_Type_LD) {
+      if (!element->getStream()->isLoadStream()) {
         // This must be computation offloading.
         S_ELEMENT_PANIC(element,
                         "Cannot flush offloaded non-load stream element.\n");

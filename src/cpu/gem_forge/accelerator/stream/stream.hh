@@ -177,6 +177,18 @@ public:
   StreamSet backBaseStreams;
   StreamSet backDependentStreams;
   bool hasBackDepReductionStream;
+
+  /**
+   * Whether we have non-core dependents.
+   * This is used to determine if we can do selective flush.
+   */
+  bool hasNonCoreDependent() const {
+    if (this->addrDepStreams.empty() && this->valueDepStreams.empty() &&
+        this->backDependentStreams.empty()) {
+      return false;
+    }
+    return true;
+  }
   /**
    * Alias stream information.
    * AliasBaseStream can be:
