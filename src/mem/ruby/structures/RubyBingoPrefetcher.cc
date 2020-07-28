@@ -681,8 +681,9 @@ public:
   }
 
   void insert(uint64_t region_number, vector<int> pattern) {
-    DPRINTF(RubyPrefetcher, "PrefetchStreamer::insert(region_number=%#x, pattern=%s)\n",
-      region_number, pattern_to_string(pattern));
+    DPRINTF(RubyPrefetcher,
+            "PrefetchStreamer::insert(region_number=%#x, pattern=%s)\n",
+            region_number, pattern_to_string(pattern));
     uint64_t key = this->build_key(region_number);
     Super::insert(key, {pattern});
     Super::set_mru(key);
@@ -727,10 +728,11 @@ public:
           //   if (cache->PQ.occupancy + cache->MSHR.occupancy <
           //           cache->MSHR.SIZE - 1 &&
           //       cache->PQ.occupancy < cache->PQ.SIZE) {
-          if (true) {
-            // ! So far we always consider it possible to prefetch.
-          // if (pf->getInqueuePfRequests() + pf->getInflyRequests() < 4) {
-          //   // Put an upper limit on number of requests.
+          // ! So far we always consider it possible to prefetch.
+          // if (true) {
+          if (pf->getInqueuePfRequests() < pf->getPfQueueSize()) {
+            // if (pf->getInqueuePfRequests() + pf->getInflyRequests() < 4) {
+            //   // Put an upper limit on number of requests.
             int ok =
                 pf->prefetchLine(0, base_addr, pf_address, pattern[pf_offset]);
             assert(ok == 1);
@@ -1028,8 +1030,9 @@ private:
         hash_index(entry.key, this->accumulation_table.get_index_len());
     uint64_t address = region_number * this->pattern_len + entry.data.offset;
     const vector<bool> &pattern = entry.data.pattern;
-    DPRINTF(RubyPrefetcher, "[Bingo] insert_in_pht pc=%#x, address %#x, pattern %s.\n",
-      pc, address, pattern_to_string(pattern));
+    DPRINTF(RubyPrefetcher,
+            "[Bingo] insert_in_pht pc=%#x, address %#x, pattern %s.\n", pc,
+            address, pattern_to_string(pattern));
     this->pht.insert(pc, address, pattern);
   }
 
@@ -1139,7 +1142,8 @@ RubyBingoPrefetcher *RubyBingoPrefetcherParams::create() {
 }
 
 RubyBingoPrefetcher::RubyBingoPrefetcher(const Params *p)
-    : SimObject(p), enabled(p->enabled), m_page_shift(p->sys->getPageShift()) {
+    : SimObject(p), enabled(p->enabled), m_page_shift(p->sys->getPageShift()),
+      m_pf_queue_size(p->pf_queue_size) {
   this->bingo = m5::make_unique<L1D_PREF::Bingo>(
       p->region_size >> RubySystem::getBlockSizeBytesLog2(), p->min_addr_width,
       p->max_addr_width, p->pc_width, p->ft_size, p->at_size, p->pht_size,
@@ -1188,7 +1192,6 @@ void RubyBingoPrefetcher::observeReq(Addr address, Addr pc, bool hit,
 
   DPRINTF(RubyPrefetcher, "Bingo::observeReq addr %#x pc %#x hit %d type %s.\n",
           address, pc, hit, RubyRequestType_to_string(type));
-
 
   this->numReqObserved++;
   if (!hit) {

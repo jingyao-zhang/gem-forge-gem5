@@ -62,12 +62,8 @@ public:
    * on a line with the line's prefetch bit set. If this address
    * hits in m_array we will continue prefetching the stream.
    */
-  void observePfHit(Addr address) {
-    this->numHits++;
-  }
-  void observePfMiss(Addr address) {
-    this->numPartialHits++;
-  }
+  void observePfHit(Addr address) { this->numHits++; }
+  void observePfMiss(Addr address) { this->numPartialHits++; }
 
   /**
    * API for the controller to manage the infly requests.
@@ -78,12 +74,14 @@ public:
   void incrementInqueuePfRequests() { inqueuePfRequests++; }
   void decrementInqueuePfRequests() { inqueuePfRequests--; }
   int getInqueuePfRequests() const { return inqueuePfRequests; }
+  int getPfQueueSize() const { return m_pf_queue_size; }
 
 private:
   bool enabled;
   AbstractController *m_controller;
 
   const Addr m_page_shift;
+  const int m_pf_queue_size;
 
   int inflyRequests = 0;
   int inqueuePfRequests = 0;

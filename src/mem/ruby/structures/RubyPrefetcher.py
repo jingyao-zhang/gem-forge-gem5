@@ -83,3 +83,4 @@ class RubyBingoPrefetcher(SimObject):
     pht_size = Param.UInt32(8 * 1024, 'size of pattern history table (PHT)')
     pht_ways = Param.UInt32(16, 'associativity of PHT')
     pf_streamer_size = Param.UInt32(128, 'size of prefetch streamer')
+    pf_queue_size = Param.UInt32(8, 'size of prefetch queue')
