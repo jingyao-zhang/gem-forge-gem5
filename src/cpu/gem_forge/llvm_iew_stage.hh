@@ -196,6 +196,7 @@ private:
       size = inst->getTDG().load().size();
       return true;
     }
+    bool hasNonCoreDependent() const override { return false; }
     bool isIssued() const override;
     bool isValueLoaded() override;
     void RAWMisspeculate() override;

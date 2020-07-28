@@ -33,6 +33,11 @@ struct GemForgeLQCallback {
     return size;
   }
   /**
+   * Check if the load request has non core user, i.e.
+   * deps that is not tracked by normal register read/write.
+   */
+  virtual bool hasNonCoreDependent() const = 0;
+  /**
    * Check if the load request has been issued to memory.
    */
   virtual bool isIssued() const = 0;
