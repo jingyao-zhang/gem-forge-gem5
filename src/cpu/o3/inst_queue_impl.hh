@@ -1128,13 +1128,12 @@ InstructionQueue<Impl>::addReadyMemInst(const DynInstPtr &ready_inst)
 
 template <class Impl>
 void
-InstructionQueue<Impl>::rescheduleGemForgeComputeInst(
+InstructionQueue<Impl>::rescheduleGemForgeInst(
     const DynInstPtr &resched_inst)
 {
-    DPRINTF(IQ, "Rescheduling GemForgeCompute inst [sn:%llu]\n",
+    DPRINTF(IQ, "Rescheduling GemForge inst [sn:%llu]\n",
         resched_inst->seqNum);
-    assert(resched_inst->isGemForge() && !resched_inst->isMemRef()
-        && "This is not GemForgeComputeInst.");
+    assert(resched_inst->isGemForge() && "This is not GemForgeInst.");
     assert(resched_inst->readyToIssue()
         && "Rescheduled GemForgeComputeInst should be ready.");
 

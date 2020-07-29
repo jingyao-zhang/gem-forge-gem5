@@ -1280,6 +1280,22 @@ DefaultIEW<Impl>::executeInsts()
                     continue;
                 }
             } else if (inst->isLoad()) {
+                /**
+                 * ! GemForge
+                 * Due to the latency between scheduling and issuing, it is
+                 * possible that GemForge now regrets about canExecution, e.g
+                 * the data being flushed due to RAWMisspeculation.
+                 * In such case, we add the instruction back to IQ.
+                 */
+                if (cpu->cpuDelegator) {
+                    if (!cpu->cpuDelegator->canExecute(inst)) {
+                        DPRINTF(IEW,
+                            "Execute: Reschedule GemForgeCompute: %s.\n",
+                            *inst);
+                        instQueue.rescheduleGemForgeInst(inst);
+                        continue;
+                    }
+                }
                 // Loads will mark themselves as executed, and their writeback
                 // event adds the instruction to the queue to commit
                 fault = ldstQueue.executeLoad(inst);
@@ -1347,7 +1363,7 @@ DefaultIEW<Impl>::executeInsts()
                         DPRINTF(IEW,
                             "Execute: Reschedule GemForgeCompute: %s.\n",
                             *inst);
-                        instQueue.rescheduleGemForgeComputeInst(inst);
+                        instQueue.rescheduleGemForgeInst(inst);
                         continue;
                     }
                 }

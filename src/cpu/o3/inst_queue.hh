@@ -235,7 +235,7 @@ class InstructionQueue
      * Reschedules a GemForge compute instruction. It will be
      * immediately add back to ready list.
      */
-    void rescheduleGemForgeComputeInst(const DynInstPtr &resched_inst);
+    void rescheduleGemForgeInst(const DynInstPtr &resched_inst);
 
     /**
      * Reschedules a memory instruction. It will be ready to issue once
