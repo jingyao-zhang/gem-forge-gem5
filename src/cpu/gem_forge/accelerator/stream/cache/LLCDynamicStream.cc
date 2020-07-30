@@ -6,6 +6,7 @@
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include "debug/LLCRubyStream.hh"
+#include "debug/RubyStreamLife.hh"
 #define DEBUG_TYPE LLCRubyStream
 #include "../stream_log.hh"
 
@@ -42,8 +43,9 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
     : configData(*_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
       maxInflyRequests(_controller->getLLCStreamMaxInflyRequest()),
-      controller(_controller), sliceIdx(0),
-      allocatedSliceIdx(_configData->initAllocatedIdx), inflyRequests(0) {
+      configureCycle(_controller->curCycle()), controller(_controller),
+      sliceIdx(0), allocatedSliceIdx(_configData->initAllocatedIdx),
+      inflyRequests(0) {
   if (this->configData.isPointerChase) {
     // Pointer chase stream can only have at most one base requests waiting for
     // data.
@@ -55,6 +57,7 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
   }
   assert(GlobalLLCDynamicStreamMap.emplace(this->getDynamicStreamId(), this)
              .second);
+  this->sanityCheckStreamLife();
 }
 
 LLCDynamicStream::~LLCDynamicStream() {
@@ -191,4 +194,29 @@ void LLCDynamicStream::traceEvent(
   for (auto IS : this->indirectStreams) {
     IS->traceEvent(type);
   }
+}
+
+void LLCDynamicStream::sanityCheckStreamLife() {
+  if (!Debug::RubyStreamLife) {
+    return;
+  }
+  if (GlobalLLCDynamicStreamMap.size() <= 1024) {
+    return;
+  }
+  std::vector<LLCDynamicStreamPtr> sortedStreams;
+  for (auto &S : GlobalLLCDynamicStreamMap) {
+    sortedStreams.push_back(S.second);
+  }
+  std::sort(sortedStreams.begin(), sortedStreams.end(),
+            [](LLCDynamicStreamPtr sa, LLCDynamicStreamPtr sb) -> bool {
+              return sa->getDynamicStreamId() < sb->getDynamicStreamId();
+            });
+  for (auto S : sortedStreams) {
+    LLC_S_DPRINTF_(RubyStreamLife, S->getDynamicStreamId(),
+                   "Configure %llu LastIssue %llu LastMigrate %llu.\n",
+                   S->configureCycle, S->prevIssuedCycle, S->prevMigrateCycle);
+  }
+  DPRINTF(RubyStreamLife, "Too many streams at %llu.\n",
+          this->controller->curCycle());
+  assert(false);
 }

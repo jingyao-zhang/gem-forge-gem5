@@ -156,6 +156,8 @@ public:
   int maxInflyRequests;
 
   Cycles issueClearCycle = Cycles(4);
+  // Configure cycle.
+  const Cycles configureCycle;
   // Last issued cycle.
   Cycles prevIssuedCycle = Cycles(0);
   // Last migrate cycle.
@@ -217,6 +219,11 @@ public:
   bool shouldUpdateIssueClearCycleMemorized = true;
   bool shouldUpdateIssueClearCycleInitialized = false;
   bool shouldUpdateIssueClearCycle();
+
+  /**
+   * Sanity check that stream should be correctly terminated.
+   */
+  void sanityCheckStreamLife();
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

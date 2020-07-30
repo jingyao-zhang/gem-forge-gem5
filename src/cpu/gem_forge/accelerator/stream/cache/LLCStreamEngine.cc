@@ -18,6 +18,7 @@
 #include "debug/LLCRubyStreamNotIssue.hh"
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
+#include "debug/RubyStreamLife.hh"
 #define DEBUG_TYPE LLCRubyStream
 #include "../stream_log.hh"
 
@@ -65,9 +66,9 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
   // Create the stream.
   auto S = new LLCDynamicStream(this->controller, streamConfigureData);
-  LLC_S_DPRINTF(S->getDynamicStreamId(),
-                "Configure DirectStream InitAllocatedSlice %d.\n",
-                streamConfigureData->initAllocatedIdx);
+  LLC_S_DPRINTF_(RubyStreamLife, S->getDynamicStreamId(),
+                 "Configure DirectStream InitAllocatedSlice %d.\n",
+                 streamConfigureData->initAllocatedIdx);
   configuredStreamMap.emplace(S->getDynamicStreamId(), S);
 
   // Check if we have indirect streams.
@@ -76,9 +77,9 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     ISConfig->initAllocatedIdx = streamConfigureData->initAllocatedIdx;
     auto IS = new LLCDynamicStream(this->controller, ISConfig.get());
     configuredStreamMap.emplace(IS->getDynamicStreamId(), IS);
-    LLC_S_DPRINTF(IS->getDynamicStreamId(),
-                  "Configure IndirectStream size %d, config size %d.\n",
-                  IS->getMemElementSize(), ISConfig->elementSize);
+    LLC_S_DPRINTF_(RubyStreamLife, IS->getDynamicStreamId(),
+                   "Configure IndirectStream size %d, config size %d.\n",
+                   IS->getMemElementSize(), ISConfig->elementSize);
     S->indirectStreams.push_back(IS);
     IS->baseStream = S;
   }
@@ -111,7 +112,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
 void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   auto endStreamDynamicId = *(pkt->getPtr<DynamicStreamId *>());
-  LLC_S_DPRINTF(*endStreamDynamicId, "Received StreamEnd.\n");
+  LLC_S_DPRINTF_(RubyStreamLife, *endStreamDynamicId, "Received StreamEnd.\n");
   // Search for this stream.
   for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
        streamIter != streamEnd; ++streamIter) {
@@ -119,7 +120,7 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
     if (stream->getDynamicStreamId() == (*endStreamDynamicId)) {
       // Found it.
       // ? Can we just sliently release it?
-      LLC_S_DPRINTF(*endStreamDynamicId, "Ended.\n");
+      LLC_S_DPRINTF_(RubyStreamLife, *endStreamDynamicId, "Ended.\n");
       this->removeStreamFromMulticastTable(stream);
       stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
       delete stream;
@@ -184,7 +185,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
-    LLC_S_DPRINTF(stream->getDynamicStreamId(), "Ended.\n");
+    LLC_S_DPRINTF_(RubyStreamLife, stream->getDynamicStreamId(), "Ended.\n");
     stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
     delete stream;
     return;

@@ -46,6 +46,15 @@ struct DynamicStreamId {
   bool operator!=(const DynamicStreamId &other) const {
     return !(this->operator==(other));
   }
+  bool operator<(const DynamicStreamId &other) const {
+    if (this->coreId != other.coreId) {
+      return this->coreId < other.coreId;
+    }
+    if (this->staticId != other.staticId) {
+      return this->staticId < other.staticId;
+    }
+    return this->streamInstance < other.streamInstance;
+  }
 };
 
 std::ostream &operator<<(std::ostream &os, const DynamicStreamId &streamId);

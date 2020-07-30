@@ -1,5 +1,6 @@
 Import('*')
 
+DebugFlag('RubyStreamLife')
 DebugFlag('L0RubyStream')
 DebugFlag('MLCRubyStream')
 DebugFlag('MLCRubyStreamReuse')
