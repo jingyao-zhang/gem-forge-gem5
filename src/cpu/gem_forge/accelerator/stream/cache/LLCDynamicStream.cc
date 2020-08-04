@@ -200,7 +200,7 @@ void LLCDynamicStream::sanityCheckStreamLife() {
   if (!Debug::RubyStreamLife) {
     return;
   }
-  if (GlobalLLCDynamicStreamMap.size() <= 1024) {
+  if (GlobalLLCDynamicStreamMap.size() <= 32) {
     return;
   }
   std::vector<LLCDynamicStreamPtr> sortedStreams;
