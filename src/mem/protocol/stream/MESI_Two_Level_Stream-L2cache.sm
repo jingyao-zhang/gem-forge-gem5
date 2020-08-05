@@ -1062,7 +1062,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       assert(is_valid(cache_entry));
       assert(!cache_entry.sliceIds.isValid());
       assert(in_msg.sliceIds.isValid());
-      DPRINTF(LLCRubyStream, "%s: Add to LLC cache entry.\n", in_msg.sliceIds);
+      DPRINTF(LLCRubyStreamBase, "%s: Add to LLC cache entry.\n", in_msg.sliceIds);
       cache_entry.sliceIds := in_msg.sliceIds;
       cache_entry.pendingUnblocks := in_msg.XXNewRewquestor.count();
     }

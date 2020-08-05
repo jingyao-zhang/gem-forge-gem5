@@ -11,6 +11,7 @@ DebugFlag('SingleStream')
 DebugFlag('AddrGenCallback')
 DebugFlag('StreamAtomicOp')
 DebugFlag('PrefetchElementBuffer')
+DebugFlag('CoreRubyStreamLife')
 
 ProtoBuf('StreamMessage.proto')
 

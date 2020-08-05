@@ -5,9 +5,9 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
-#include "debug/LLCRubyStream.hh"
-#include "debug/RubyStreamLife.hh"
-#define DEBUG_TYPE LLCRubyStream
+#include "debug/LLCRubyStreamBase.hh"
+#include "debug/LLCRubyStreamLife.hh"
+#define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
 std::unordered_map<DynamicStreamId, LLCDynamicStream *, DynamicStreamIdHasher>
@@ -197,11 +197,13 @@ void LLCDynamicStream::traceEvent(
 }
 
 void LLCDynamicStream::sanityCheckStreamLife() {
-  if (!Debug::RubyStreamLife) {
+  if (!Debug::LLCRubyStreamLife) {
     return;
   }
-  if (GlobalLLCDynamicStreamMap.size() <= 32) {
-    return;
+  auto curCycle = this->controller->curCycle();
+  bool failed = false;
+  if (GlobalLLCDynamicStreamMap.size() > 32) {
+    failed = true;
   }
   std::vector<LLCDynamicStreamPtr> sortedStreams;
   for (auto &S : GlobalLLCDynamicStreamMap) {
@@ -211,12 +213,35 @@ void LLCDynamicStream::sanityCheckStreamLife() {
             [](LLCDynamicStreamPtr sa, LLCDynamicStreamPtr sb) -> bool {
               return sa->getDynamicStreamId() < sb->getDynamicStreamId();
             });
+  const Cycles threshold = Cycles(10000);
+  for (int i = 0; i < sortedStreams.size(); ++i) {
+    auto S = sortedStreams[i];
+    auto configCycle = S->configureCycle;
+    auto prevIssuedCycle = S->prevIssuedCycle;
+    auto prevMigrateCycle = S->prevMigrateCycle;
+    if (curCycle - configCycle > threshold &&
+        curCycle - prevIssuedCycle > threshold &&
+        curCycle - prevMigrateCycle > threshold) {
+      if (i + 1 < sortedStreams.size()) {
+        // Check if we have new instance of the same static stream.
+        auto nextS = sortedStreams.at(i + 1);
+        if (nextS->getDynamicStreamId().isSameStaticStream(
+                S->getDynamicStreamId())) {
+          failed = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!failed) {
+    return;
+  }
   for (auto S : sortedStreams) {
-    LLC_S_DPRINTF_(RubyStreamLife, S->getDynamicStreamId(),
+    LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynamicStreamId(),
                    "Configure %llu LastIssue %llu LastMigrate %llu.\n",
                    S->configureCycle, S->prevIssuedCycle, S->prevMigrateCycle);
   }
-  DPRINTF(RubyStreamLife, "Too many streams at %llu.\n",
+  DPRINTF(LLCRubyStreamLife, "Failed StreamLifeCheck at %llu.\n",
           this->controller->curCycle());
   assert(false);
 }

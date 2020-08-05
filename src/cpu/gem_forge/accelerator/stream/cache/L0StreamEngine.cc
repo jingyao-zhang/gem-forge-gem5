@@ -1,4 +1,3 @@
-
 #include "L0StreamEngine.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
@@ -6,20 +5,24 @@
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include "base/trace.hh"
-#include "debug/L0RubyStream.hh"
+#include "debug/L0RubyStreamBase.hh"
+#include "debug/L0RubyStreamLife.hh"
 
 #define L0SE_DPRINTF(format, args...)                                          \
-  DPRINTF(L0RubyStream, "[L0_SE%d]: " format,                                  \
+  DPRINTF(L0RubyStreamBase, "[L0_SE%d]: " format,                              \
           this->controller->getMachineID().num, ##args)
 
+#define L0_STREAM_DPRINTF_(X, streamId, format, args...)                       \
+  DPRINTF(X, "[L0_SE%d][%d-%lu-%d]: " format,                                  \
+          this->controller->getMachineID().num, (streamId).coreId,             \
+          (streamId).staticId, (streamId).streamInstance, ##args)
+
 #define L0_STREAM_DPRINTF(streamId, format, args...)                           \
-  DPRINTF(L0RubyStream, "[L0_SE%d][%lu-%d]: " format,                          \
-          this->controller->getMachineID().num, (streamId).staticId,           \
-          (streamId).streamInstance, ##args)
+  L0_STREAM_DPRINTF_(L0RubyStreamBase, (streamId), format, ##args)
 
 #define L0_ELEMENT_DPRINTF(streamId, lhsElementIdx, numElements, format,       \
                            args...)                                            \
-  DPRINTF(L0RubyStream, "[L0_SE%d][%lu-%d][%lu, +%d): " format,                \
+  DPRINTF(L0RubyStreamBase, "[L0_SE%d][%lu-%d][%lu, +%d): " format,            \
           this->controller->getMachineID().num, (streamId).staticId,           \
           (streamId).streamInstance, lhsElementIdx, numElements, ##args)
 
@@ -31,8 +34,9 @@ L0StreamEngine::~L0StreamEngine() {}
 void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto streamConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
   for (auto streamConfigureData : *streamConfigs) {
-    L0SE_DPRINTF("Received StreamConfigure %s.\n",
-                 streamConfigureData->dynamicId.streamName);
+    L0_STREAM_DPRINTF_(L0RubyStreamLife, streamConfigureData->dynamicId,
+                       "Config Direct %s.\n",
+                       streamConfigureData->dynamicId.streamName);
     // Add to offloaded stream set.
     assert(!streamConfigureData->isOneIterationBehind &&
            "Only indirect stream can be one iteration behind.");
@@ -42,8 +46,9 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                             streamConfigureData));
     for (auto &indirectStreamConfig : streamConfigureData->indirectStreams) {
       // We have an indirect stream.
-      L0SE_DPRINTF("Received StreamConfigure for indirect %s.\n",
-                   indirectStreamConfig->dynamicId.streamName);
+      L0_STREAM_DPRINTF_(L0RubyStreamLife, indirectStreamConfig->dynamicId,
+                         "Config Indirect %s.\n",
+                         indirectStreamConfig->dynamicId.streamName);
       this->offloadedStreams.emplace(
           indirectStreamConfig->dynamicId,
           new L0DynamicStream(
@@ -56,7 +61,7 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 void L0StreamEngine::receiveStreamEnd(PacketPtr pkt) {
   auto endIds = *(pkt->getPtr<std::vector<DynamicStreamId> *>());
   for (const auto &endId : *endIds) {
-    L0_STREAM_DPRINTF(endId, "Received StreamEnd.\n");
+    L0_STREAM_DPRINTF_(L0RubyStreamLife, endId, "Received StreamEnd.\n");
 
     auto rootStreamIter = this->offloadedStreams.find(endId);
     assert(rootStreamIter != this->offloadedStreams.end() &&
@@ -72,6 +77,8 @@ void L0StreamEngine::receiveStreamEnd(PacketPtr pkt) {
          * ? Can we release right now?
          * Let's keep the ended id for sanity check purpose.
          */
+        L0_STREAM_DPRINTF_(L0RubyStreamLife, stream->getDynamicStreamId(),
+                           "End.\n");
         delete stream;
         streamIter->second = nullptr;
         streamIter = this->offloadedStreams.erase(streamIter);

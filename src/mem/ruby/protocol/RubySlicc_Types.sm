@@ -180,6 +180,8 @@ structure(RubyAddressBulk, desc="...", external="yes") {
   Addr getAt(int);
   bool isInBulkTransition();
   void startBulkTransition();
+  void exitBulkTransition();
+  int  getCurrentIdxInBulk();
   Addr getCurrentLineInBulk();
   bool isLastLineInBulk();
   void stepLineInBulk();

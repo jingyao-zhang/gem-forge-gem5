@@ -2,6 +2,7 @@
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 
 #include "base/trace.hh"
+#include "debug/CoreRubyStreamLife.hh"
 #include "debug/RubyStream.hh"
 #include "debug/StreamAlias.hh"
 #include "debug/StreamEngine.hh"
@@ -534,7 +535,10 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
         initPAddr, cpuDelegator->dataMasterId(), 0,
         MemCmd::Command::StreamConfigReq,
         reinterpret_cast<uint64_t>(cacheStreamConfigVec));
-    DPRINTF(RubyStream, "Create StreamConfig pkt %#x.\n", pkt);
+    for (const auto &config : *cacheStreamConfigVec) {
+      SE_DPRINTF_(CoreRubyStreamLife, "%s: Send FloatConfig.\n",
+                  config->dynamicId);
+    }
     cpuDelegator->sendRequest(pkt);
   } else {
     delete cacheStreamConfigVec;
@@ -1033,6 +1037,10 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
      */
     if (!element) {
       continue;
+    }
+
+    if (!element->isValueReady) {
+      S_ELEMENT_PANIC(element, "Commit user, but value not ready.");
     }
 
     /**
@@ -2838,12 +2846,11 @@ void StreamEngine::sendStreamFloatEndPacket(
   auto pkt = GemForgePacketHandler::createStreamControlPacket(
       initPAddr, cpuDelegator->dataMasterId(), 0, MemCmd::Command::StreamEndReq,
       reinterpret_cast<uint64_t>(endedIdsCopy));
-  if (Debug::RubyStream) {
+  if (Debug::CoreRubyStreamLife) {
     std::stringstream ss;
     for (const auto &id : endedIds) {
-      ss << ' ' << id;
+      SE_DPRINTF_(CoreRubyStreamLife, "%s: Send FloatEnd.\n", id);
     }
-    DPRINTF(RubyStream, "Send StreamFloatEndPacket for %s.\n", ss.str());
   }
   cpuDelegator->sendRequest(pkt);
 }

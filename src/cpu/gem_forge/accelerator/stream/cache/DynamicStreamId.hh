@@ -39,6 +39,9 @@ struct DynamicStreamId {
     return *this;
   }
 
+  bool isSameStaticStream(const DynamicStreamId &other) const {
+    return this->coreId == other.coreId && this->staticId == other.staticId;
+  }
   bool operator==(const DynamicStreamId &other) const {
     return this->coreId == other.coreId && this->staticId == other.staticId &&
            this->streamInstance == other.streamInstance;

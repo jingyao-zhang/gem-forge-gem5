@@ -553,7 +553,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   structure(CanStartBulkPrefetchRet, desc="Ret of tryStartBulkPrefetch.") {
     bool canStart, default="false", desc="The bulk prefetch can start";
-    bool needTransistion, default="false", desc="It need more transistion";
+    bool blockedByLine, default="false", desc="It is blocked by blockLine";
     Addr blockLine, desc="We have to find space for this line.";
   }
 
@@ -566,12 +566,13 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
   CanStartBulkPrefetchRet canStartBulkPrefetch(RubyRequest in_msg) {
     // Slicc has no loop, I manually unroll it...
     int bulkSize := in_msg.addrBulk.size();
-    assert(bulkSize <= 8);
+    assert(bulkSize <= 4);
     CanStartBulkPrefetchRet ret;
-    int idx := 0;
+    int idx := in_msg.addrBulk.getCurrentIdxInBulk();
     if (idx < bulkSize) {
       Addr lineAddr := in_msg.addrBulk.getAt(idx);
       if (!isReadyForBulkPrefetch(lineAddr)) {
+        ret.blockedByLine := true;
         ret.blockLine := lineAddr;
         return ret;
       }
@@ -580,6 +581,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     if (idx < bulkSize) {
       Addr lineAddr := in_msg.addrBulk.getAt(idx);
       if (!isReadyForBulkPrefetch(lineAddr)) {
+        ret.blockedByLine := true;
         ret.blockLine := lineAddr;
         return ret;
       }
@@ -588,6 +590,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     if (idx < bulkSize) {
       Addr lineAddr := in_msg.addrBulk.getAt(idx);
       if (!isReadyForBulkPrefetch(lineAddr)) {
+        ret.blockedByLine := true;
         ret.blockLine := lineAddr;
         return ret;
       }
@@ -596,17 +599,28 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     if (idx < bulkSize) {
       Addr lineAddr := in_msg.addrBulk.getAt(idx);
       if (!isReadyForBulkPrefetch(lineAddr)) {
+        ret.blockedByLine := true;
         ret.blockLine := lineAddr;
         return ret;
       }
     }
     idx := idx + 1;
     // All lines in the bulk are ready.
-    if (getRemainTransitions() < bulkSize) {
+    int numLinesInBulk := bulkSize - idx;
+    if (getRemainTransitions() < numLinesInBulk) {
       // We hack here to make sure we have enough transistions.
       guaranteeTransition(bulkSize);
     }
-    assert(getRemainTransitions() >= bulkSize);
+    assert(getRemainTransitions() >= numLinesInBulk);
+    // // Check for TBEs and RequestQueue.
+    // if (!TBEs.areNSlotsAvailable(numLinesInBulk, clockEdge())) {
+    //   ret.canStart := false;
+    //   return ret;
+    // }
+    // if (!requestToL2.areNSlotsAvailable(numLinesInBulk, clockEdge())) {
+    //   ret.canStart := false;
+    //   return ret;
+    // }
     ret.canStart := true;
     return ret;
   }
@@ -618,6 +632,15 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         /**
          * We add support for bulk prefetch.
          * NOTE: always use in_msg.addrBulk, as we can't get a reference to it.
+         * 1. If this is a bulk prefetch, we first check if we are in bulk transition.
+         *   a. If not, check if we can start bulk transition.
+         *     i. If can't, we start eviction for blocked line.
+         *     ii. If can, we start bulk transition to process the current line.
+         *   b. If we are already in bulk transition, we just processing the current line.
+         *      It is possible that we find no space for the current line, (two lines
+         *      mapped to the same cache set, but we can only check for one line
+         *      availability). In such case, we have to exit bulk transition and start
+         *      eviction again.
          */
         Addr lineAddr := in_msg.LineAddress;
         bool isInBulk := false;
@@ -632,9 +655,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
               // We can start bulk prefetch.
               in_msg.addrBulk.startBulkTransition();
               lineAddr := in_msg.addrBulk.getCurrentLineInBulk();
-            } else {
+            } else if (ret.blockedByLine) {
               // We are blocked by this line. So start to process it.
               lineAddr := ret.blockLine;
+            } else {
+              // This is resource stall.
             }
           } else {
             // We are already in bulk transistion, get the current line.
@@ -655,8 +680,19 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
                   lineAddr, cache_entry, tbe);
         } else {
           // Find a victim.
-          // This should never happen in bulk transistion.
-          assert(!isInBulk);
+          if (isInBulk) {
+            /**
+             * Somehow we don't have space for bulk transistion, even
+             * though we guarantee that in canStartBulkPrefetch. This
+             * is because if two lines are mapped to the same cache set,
+             * the current API only allows us to check for one line
+             * availability, and thus we wrongly thought that we have
+             * enough space.
+             * In such case, we quit bulk transistion and start normal
+             * eviction so that we can restart bulk transistion later.
+             */
+             in_msg.addrBulk.exitBulkTransition();
+          }
           Addr victimAddr := cache.cacheProbe(lineAddr);
           Entry victimEntry := getCacheEntry(victimAddr);
           TBE victimTBE := TBEs[victimAddr];

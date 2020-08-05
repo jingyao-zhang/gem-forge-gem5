@@ -47,8 +47,14 @@ public:
 
   void squashInGemForge();
 
-  void foundRAWMisspeculation() {
-    this->callback->RAWMisspeculate();
+  void foundRAWMisspeculation() { this->callback->RAWMisspeculate(); }
+
+  bool bypassAliasCheck() const {
+    return this->callback->bypassAliasCheck();
+  }
+  bool hasOverlap(Addr vaddr, int size) const;
+  bool hasNonCoreDependent() const {
+    return this->callback->hasNonCoreDependent();
   }
 
 protected:

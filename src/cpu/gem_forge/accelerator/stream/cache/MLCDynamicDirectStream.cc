@@ -13,9 +13,9 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
 #include "base/trace.hh"
-#include "debug/MLCRubyStream.hh"
+#include "debug/MLCRubyStreamBase.hh"
 
-#define DEBUG_TYPE MLCRubyStream
+#define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
 MLCDynamicDirectStream::MLCDynamicDirectStream(

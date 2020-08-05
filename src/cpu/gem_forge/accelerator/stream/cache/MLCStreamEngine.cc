@@ -8,10 +8,11 @@
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include "base/trace.hh"
-#include "debug/MLCRubyStream.hh"
+#include "debug/MLCRubyStreamBase.hh"
 #include "debug/MLCRubyStreamReuse.hh"
+#include "debug/MLCRubyStreamLife.hh"
 
-#define DEBUG_TYPE MLCRubyStream
+#define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
 #define MLCSE_DPRINTF(format, args...)                                         \
@@ -59,9 +60,9 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
 void MLCStreamEngine::configureStream(
     CacheStreamConfigureData *streamConfigureData, MasterID masterId) {
-  MLC_STREAM_DPRINTF(streamConfigureData->dynamicId.staticId,
-                     "Received StreamConfigure, totalTripCount %lu.\n",
-                     streamConfigureData->totalTripCount);
+  MLC_STREAM_DPRINTF_(MLCRubyStreamLife, streamConfigureData->dynamicId.staticId,
+                      "Received StreamConfigure, totalTripCount %lu.\n",
+                      streamConfigureData->totalTripCount);
   /**
    * Do not release the pkt and streamConfigureData as they should be forwarded
    * to the LLC bank and released there. However, we do need to fix up the
@@ -158,7 +159,7 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
                                 MasterID masterId) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
-  MLC_STREAM_DPRINTF(endId.staticId, "Received StreamEnd.\n");
+  MLC_STREAM_DPRINTF_(MLCRubyStreamLife, endId.staticId, "Received StreamEnd.\n");
 
   // The PAddr of the llc stream. The cache controller uses this to find which
   // LLC bank to forward this StreamEnd message.

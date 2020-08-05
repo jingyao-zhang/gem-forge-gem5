@@ -1,14 +1,27 @@
 Import('*')
 
-DebugFlag('RubyStreamLife')
-DebugFlag('L0RubyStream')
-DebugFlag('MLCRubyStream')
+DebugFlag('L0RubyStreamBase')
+DebugFlag('L0RubyStreamLife')
+CompoundFlag('L0RubyStream',
+    ['L0RubyStreamBase', 'L0RubyStreamLife'])
+
+DebugFlag('MLCRubyStreamBase')
+DebugFlag('MLCRubyStreamLife')
 DebugFlag('MLCRubyStreamReuse')
-DebugFlag('LLCRubyStream')
+CompoundFlag('MLCRubyStream',
+    ['MLCRubyStreamBase', 'MLCRubyStreamLife', 'MLCRubyStreamReuse'])
+DebugFlag('LLCRubyStreamBase')
+DebugFlag('LLCRubyStreamLife')
+DebugFlag('LLCRubyStreamReduce')
 DebugFlag('LLCRubyStreamMulticast')
 DebugFlag('LLCRubyStreamStore')
-DebugFlag('LLCRubyStreamReduce')
 DebugFlag('LLCRubyStreamNotIssue')
+CompoundFlag('LLCRubyStream',
+    ['LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
+     'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
+     'LLCRubyStreamNotIssue'])
+CompoundFlag('RubyStreamLife',
+    ['CoreRubyStreamLife', 'L0RubyStreamLife', 'MLCRubyStreamLife', 'LLCRubyStreamLife'])
 DebugFlag('SlicedDynamicStream')
 
 Source('DynamicStreamId.cc')

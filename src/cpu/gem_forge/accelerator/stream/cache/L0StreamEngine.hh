@@ -29,10 +29,14 @@ class L0DynamicStream {
 public:
   L0DynamicStream(const DynamicStreamId &_rootDynamicStreamId,
                   CacheStreamConfigureData *_configData)
-      : rootDynamicStreamId(_rootDynamicStreamId),
+      : dynamicStreamId(_configData->dynamicId),
+        rootDynamicStreamId(_rootDynamicStreamId),
         isOneIterationBehind(_configData->isOneIterationBehind),
         isPseudoOffload(_configData->isPseudoOffload) {}
 
+  const DynamicStreamId &getDynamicStreamId() const {
+    return this->dynamicStreamId;
+  }
   const DynamicStreamId &getRootDynamicStreamId() const {
     return this->rootDynamicStreamId;
   }
@@ -41,7 +45,8 @@ public:
   bool getIsPseudoOffload() const { return this->isPseudoOffload; }
 
 private:
-  DynamicStreamId rootDynamicStreamId;
+  const DynamicStreamId dynamicStreamId;
+  const DynamicStreamId rootDynamicStreamId;
   bool isOneIterationBehind;
   bool isPseudoOffload;
 };

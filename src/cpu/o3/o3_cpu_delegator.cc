@@ -5,6 +5,7 @@
 #include "cpu/o3/impl.hh"
 #include "debug/O3CPUDelegator.hh"
 #include "debug/O3CPUDelegatorDump.hh"
+#include "debug/StreamAlias.hh"
 
 #define INST_DPRINTF(inst, format, args...)                                    \
   DPRINTF(O3CPUDelegator, "[%s]: " format, *(inst), ##args)
@@ -437,10 +438,12 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
   auto oldestMisspeculatedSeqNum =
       pimpl->getInstSeqNum(pimpl->inflyInstQueue.back());
   bool foundMisspeculated = false;
+  bool misspeculatedHasNonCoreDep = false;
 
   auto checkMisspeculated =
-      [vaddr, size, &foundMisspeculated, &oldestMisspeculatedSeqNum](
-          InstSeqNum seqNum, GemForgeLQCallbackPtr &callback) -> void {
+      [vaddr, size, &foundMisspeculated, &misspeculatedHasNonCoreDep,
+       &oldestMisspeculatedSeqNum](InstSeqNum seqNum,
+                                   GemForgeLQCallbackPtr &callback) -> void {
     if (!callback->isIssued()) {
       // This load is not issued yet, ignore it.
       return;
@@ -461,6 +464,9 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
         oldestMisspeculatedSeqNum = seqNum;
       }
       foundMisspeculated = true;
+      if (callback->hasNonCoreDependent()) {
+        misspeculatedHasNonCoreDep = true;
+      }
     }
   };
 
@@ -481,14 +487,28 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
     return;
   }
 
-  DPRINTF(O3CPUDelegator, "CPU storeTo %#x, %d, Oldest Alias in PreLSQ %llu.\n",
-          vaddr, size, oldestMisspeculatedSeqNum);
+  DPRINTF(
+      O3CPUDelegator,
+      "CPU storeTo %#x, %d, Oldest Alias in PreLSQ %llu, HasNonCoreDep %d.\n",
+      vaddr, size, oldestMisspeculatedSeqNum, misspeculatedHasNonCoreDep);
   // We have to mark all younger LQ callback as misspeculated.
   for (auto &preLSQSeqNumRequest : preLSQ) {
     auto &seqNum = preLSQSeqNumRequest.first;
     if (seqNum >= oldestMisspeculatedSeqNum) {
       for (auto &callback : preLSQSeqNumRequest.second) {
-        if (callback && !callback->bypassAliasCheck()) {
+        if (callback && callback->isIssued() && !callback->bypassAliasCheck()) {
+          Addr ldVaddr;
+          uint32_t ldSize;
+          assert(callback->getAddrSize(ldVaddr, ldSize) &&
+                 "Issued LQCallback should have Addr/Size.");
+          bool aliased = vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr;
+          if (!aliased && !misspeculatedHasNonCoreDep) {
+            // This is not aliased, and misspeculation has no non-core dep.
+            // We can perform selective flush.
+            DPRINTF(O3CPUDelegator, "Skip Flush PreLSQ AliasSeqNum %llu.\n",
+                    seqNum);
+            continue;
+          }
           DPRINTF(O3CPUDelegator, "Flush PreLSQ AliasSeqNum %llu.\n", seqNum);
           callback->RAWMisspeculate();
         }
@@ -499,19 +519,42 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
 
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
-    InstSeqNum squashSeqNum) {
+    InstSeqNum squashSeqNum, Addr vaddr, int size) {
   // Flush all callbacks in LSQ that is >= squashSeqNum.
   if (pimpl->inflyInstQueue.empty()) {
     return;
   }
 
   // There should only be a few InLSQ callbacks, so I directly search in it.
+  bool foundMisspeculated = false;
+  bool misspeculatedHasNonCoreDep = false;
   for (const auto &inLSQEntry : pimpl->inLSQ) {
     auto seqNum = inLSQEntry.first;
-    if (seqNum < squashSeqNum) {
-      continue;
+    auto entry = inLSQEntry.second;
+    if (seqNum > squashSeqNum && !entry->bypassAliasCheck()) {
+      if (entry->hasOverlap(vaddr, size)) {
+        foundMisspeculated = true;
+        if (inLSQEntry.second->hasNonCoreDependent()) {
+          misspeculatedHasNonCoreDep = true;
+        }
+      }
     }
-    inLSQEntry.second->foundRAWMisspeculation();
+  }
+  if (!foundMisspeculated) {
+    return;
+  }
+  for (const auto &inLSQEntry : pimpl->inLSQ) {
+    auto seqNum = inLSQEntry.first;
+    auto entry = inLSQEntry.second;
+    if (seqNum > squashSeqNum) {
+      bool aliased =
+          (!entry->bypassAliasCheck()) && entry->hasOverlap(vaddr, size);
+      if (!aliased && !misspeculatedHasNonCoreDep) {
+        // Selectively flush.
+        continue;
+      }
+      entry->foundRAWMisspeculation();
+    }
   }
 }
 

@@ -194,6 +194,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
+  void recordLLCReqQueueStats(RequestStatisticPtr, DynamicStreamSliceIdVec);
   bool hasPC(PacketPtr);
   Addr getPC(PacketPtr);
 
@@ -834,6 +835,13 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     mandatoryQueue_in.dequeue(clockEdge());
   }
 
+  action(ur_profileDataReq, "\ur", desc="Profile the data request") {
+    peek(mandatoryQueue_in, RubyRequest) { 
+      DynamicStreamSliceIdVec sliceIdVec;
+      recordLLCReqQueueStats(getRequestStatistic(in_msg.pkt), sliceIdVec);
+    }
+  }
+
   action(l_popRequestQueue, "l",
          desc="Pop incoming request queue and profile the delay within this virtual network") {
     Tick delay := messgeBuffer_in.dequeue(clockEdge());
@@ -1098,6 +1106,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     a_issueGETS;
     uu_profileDataMiss;
     pm_observeMiss;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1111,6 +1120,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   transition(PF_IS, Load, IS) {
     uu_profileDataMiss;
     ppm_observePfMiss;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1118,6 +1128,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     iu_allocateTBENoCacheBlock;
     au_issueGETU;
     uu_profileDataMiss;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1162,6 +1173,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     b_issueGETX;
     uu_profileDataMiss;
     pm_observeMiss;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1175,6 +1187,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   transition(PF_IM, Store, IM) {
     uu_profileDataMiss;
     ppm_observePfMiss;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1193,6 +1206,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     h_load_hit;
     uu_profileDataHit;
     ph_observeHit;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1200,6 +1214,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     h_load_hit;
     fsa_forwardStreamAccess;
     uu_profileDataHit;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1214,6 +1229,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     i_allocateTBE;
     c_issueUPGRADE;
     uu_profileDataMiss;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1234,6 +1250,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     hh_store_hit;
     uu_profileDataHit;
     ph_observeHit;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1388,6 +1405,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   }
   transition({I, S, E, M, Inst_IS, IS, IM, SM, IU}, StreamToMLC) {
     fsr_forwardStreamReq;
+    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 

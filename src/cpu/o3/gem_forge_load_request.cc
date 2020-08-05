@@ -169,6 +169,17 @@ template <class Impl> void GemForgeLoadRequest<Impl>::checkValueReady() {
   }
 }
 
+template <class Impl>
+bool GemForgeLoadRequest<Impl>::hasOverlap(Addr vaddr, int size) const {
+  Addr myVAddr;
+  uint32_t mySize;
+  assert(this->callback->getAddrSize(myVAddr, mySize));
+  if (myVAddr + mySize <= vaddr || myVAddr >= vaddr + size) {
+    return false;
+  }
+  return true;
+}
+
 template <class Impl> void GemForgeLoadRequest<Impl>::squashInGemForge() {
   assert(!this->squashedInGemForge && "Already squashed in GemForge.");
   this->squashedInGemForge = true;

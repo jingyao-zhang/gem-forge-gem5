@@ -57,6 +57,8 @@
 #include "mem/packet.hh"
 #include "mem/request.hh"
 
+#include "debug/StreamAlias.hh"
+
 template<class Impl>
 LSQUnit<Impl>::WritebackEvent::WritebackEvent(const DynInstPtr &_inst,
         PacketPtr _pkt, LSQUnit *lsq_ptr)
@@ -472,16 +474,21 @@ LSQUnit<Impl>::checkViolations(typename LoadQueue::iterator& loadIt,
                 // If this load is to the same block as an external snoop
                 // invalidate that we've observed then the load needs to be
                 // squashed as it could have newer data
-                /**
-                 * ! GemForge
-                 * Notify GemForge about this RAWMisspeculation. Otherwise the
-                 * InLSQ is not correctly handled.
-                 */
-                if (cpu->cpuDelegator) {
-                    cpu->cpuDelegator->foundRAWMisspeculationInLSQ(
-                        ld_inst->seqNum);
-                }
                 if (ld_inst->hitExternalSnoop()) {
+                    /**
+                     * ! GemForge
+                     * Notify GemForge about this RAWMisspeculation. Otherwise the
+                     * InLSQ is not correctly handled.
+                     */
+                    if (cpu->cpuDelegator) {
+                        hack("Detected GemForge Consistency Misspec with inst [sn:%lli] and "
+                             "[sn:%lli] at address %#x +%d, %#x +%d\n",
+                             inst->seqNum, ld_inst->seqNum,
+                             ld_inst->effAddr, ld_inst->effSize, 
+                             inst->effAddr, inst->effSize);
+                        cpu->cpuDelegator->foundRAWMisspeculationInLSQ(
+                            inst->seqNum, inst->effAddr, inst->effSize);
+                    }
                     if (!memDepViolator ||
                             ld_inst->seqNum < memDepViolator->seqNum) {
                         DPRINTF(LSQUnit, "Detected fault with inst [sn:%lli] "
@@ -515,8 +522,13 @@ LSQUnit<Impl>::checkViolations(typename LoadQueue::iterator& loadIt,
                  * InLSQ is not correctly handled.
                  */
                 if (cpu->cpuDelegator) {
+                    DPRINTF(StreamAlias, "Detected GemForge RAWMisspec with inst [sn:%lli] and "
+                         "[sn:%lli] at address %#x +%d, %#x +%d\n",
+                         inst->seqNum, ld_inst->seqNum,
+                         ld_inst->effAddr, ld_inst->effSize, 
+                         inst->effAddr, inst->effSize);
                     cpu->cpuDelegator->foundRAWMisspeculationInLSQ(
-                        ld_inst->seqNum);
+                        inst->seqNum, inst->effAddr, inst->effSize);
                 }
 
                 if (memDepViolator && ld_inst->seqNum > memDepViolator->seqNum)

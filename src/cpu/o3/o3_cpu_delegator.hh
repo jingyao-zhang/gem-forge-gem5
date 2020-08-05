@@ -91,7 +91,8 @@ public:
    * This is overconservative, as some data may be dependent
    * on the misspeculated data. But we take it seriously.
    */
-  void foundRAWMisspeculationInLSQ(InstSeqNum squashSeqNum);
+  void foundRAWMisspeculationInLSQ(InstSeqNum squashSeqNum, Addr vaddr,
+                                   int size);
 
   /**
    * This is the real initiateAcc for GemForgeLoad.

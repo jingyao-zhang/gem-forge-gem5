@@ -13,17 +13,17 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
 #include "base/trace.hh"
-#include "debug/LLCRubyStream.hh"
+#include "debug/LLCRubyStreamBase.hh"
+#include "debug/LLCRubyStreamLife.hh"
 #include "debug/LLCRubyStreamMulticast.hh"
 #include "debug/LLCRubyStreamNotIssue.hh"
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
-#include "debug/RubyStreamLife.hh"
-#define DEBUG_TYPE LLCRubyStream
+#define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
 #define LLCSE_DPRINTF(format, args...)                                         \
-  DPRINTF(LLCRubyStream, "[LLC_SE%d]: " format,                                \
+  DPRINTF(LLCRubyStreamBase, "[LLC_SE%d]: " format,                            \
           this->controller->getMachineID().num, ##args)
 
 LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
@@ -66,7 +66,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
   // Create the stream.
   auto S = new LLCDynamicStream(this->controller, streamConfigureData);
-  LLC_S_DPRINTF_(RubyStreamLife, S->getDynamicStreamId(),
+  LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynamicStreamId(),
                  "Configure DirectStream InitAllocatedSlice %d.\n",
                  streamConfigureData->initAllocatedIdx);
   configuredStreamMap.emplace(S->getDynamicStreamId(), S);
@@ -77,7 +77,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     ISConfig->initAllocatedIdx = streamConfigureData->initAllocatedIdx;
     auto IS = new LLCDynamicStream(this->controller, ISConfig.get());
     configuredStreamMap.emplace(IS->getDynamicStreamId(), IS);
-    LLC_S_DPRINTF_(RubyStreamLife, IS->getDynamicStreamId(),
+    LLC_S_DPRINTF_(LLCRubyStreamLife, IS->getDynamicStreamId(),
                    "Configure IndirectStream size %d, config size %d.\n",
                    IS->getMemElementSize(), ISConfig->elementSize);
     S->indirectStreams.push_back(IS);
@@ -99,20 +99,28 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     }
   }
 
-  this->streams.emplace_back(S);
-  this->addStreamToMulticastTable(S);
-  S->traceEvent(::LLVM::TDG::StreamFloatEvent::CONFIG);
   // Release memory.
   delete streamConfigureData;
   delete pkt;
 
-  // Let's schedule a wakeup event.
-  this->scheduleEvent(Cycles(1));
+  S->traceEvent(::LLVM::TDG::StreamFloatEvent::CONFIG);
+  // Let's check if StreamEnd packet has arrived earlier.
+  if (this->pendingStreamEndMsgs.count(S->getDynamicStreamId())) {
+    LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynamicStreamId(), "Ended.\n");
+    S->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
+    delete S;
+  } else {
+    this->streams.emplace_back(S);
+    this->addStreamToMulticastTable(S);
+    // Let's schedule a wakeup event.
+    this->scheduleEvent(Cycles(1));
+  }
 }
 
 void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   auto endStreamDynamicId = *(pkt->getPtr<DynamicStreamId *>());
-  LLC_S_DPRINTF_(RubyStreamLife, *endStreamDynamicId, "Received StreamEnd.\n");
+  LLC_S_DPRINTF_(LLCRubyStreamLife, *endStreamDynamicId,
+                 "Received StreamEnd.\n");
   // Search for this stream.
   for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
        streamIter != streamEnd; ++streamIter) {
@@ -120,7 +128,7 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
     if (stream->getDynamicStreamId() == (*endStreamDynamicId)) {
       // Found it.
       // ? Can we just sliently release it?
-      LLC_S_DPRINTF_(RubyStreamLife, *endStreamDynamicId, "Ended.\n");
+      LLC_S_DPRINTF_(LLCRubyStreamLife, *endStreamDynamicId, "Ended.\n");
       this->removeStreamFromMulticastTable(stream);
       stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
       delete stream;
@@ -185,7 +193,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
-    LLC_S_DPRINTF_(RubyStreamLife, stream->getDynamicStreamId(), "Ended.\n");
+    LLC_S_DPRINTF_(LLCRubyStreamLife, stream->getDynamicStreamId(), "Ended.\n");
     stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
     delete stream;
     return;

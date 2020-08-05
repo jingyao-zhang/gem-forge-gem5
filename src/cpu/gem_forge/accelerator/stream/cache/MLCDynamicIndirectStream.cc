@@ -3,9 +3,9 @@
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include "base/trace.hh"
-#include "debug/MLCRubyStream.hh"
+#include "debug/MLCRubyStreamBase.hh"
 
-#define DEBUG_TYPE MLCRubyStream
+#define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
 MLCDynamicIndirectStream::MLCDynamicIndirectStream(
