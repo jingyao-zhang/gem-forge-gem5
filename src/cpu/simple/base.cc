@@ -397,6 +397,7 @@ BaseSimpleCPU::regStats()
 void
 BaseSimpleCPU::resetStats()
 {
+    Stats::Group::resetStats();
     for (auto &thread_info : threadInfo) {
         thread_info->notIdleFraction = (_status != Idle);
     }
