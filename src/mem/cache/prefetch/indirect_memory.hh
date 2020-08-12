@@ -198,6 +198,20 @@ class IndirectMemory : public Queued
 
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override;
+
+    void regStats() override;
+
+    Stats::Scalar ptAllocations;
+    Stats::Scalar ptHits;
+    Stats::Scalar ptHitsWithCacheMiss;
+    Stats::Scalar streamPfPushed;
+    Stats::Scalar ipdAllocations;
+    Stats::Scalar ipdSecondAccess;
+    Stats::Scalar ipdThirdAccessNoPattern;
+    Stats::Scalar ipdTrackMiss1;
+    Stats::Scalar ipdTrackMiss2;
+    Stats::Scalar ipdFindPattern;
+    Stats::Scalar indirectPfPushed;
 };
 
 } // namespace Prefetcher

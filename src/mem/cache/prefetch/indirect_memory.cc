@@ -87,6 +87,10 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
             prefetchTable.findEntry(pc, false /* unused */);
         if (pt_entry != nullptr) {
             prefetchTable.accessEntry(pt_entry);
+            ptHits++;
+            if (miss) {
+                ptHitsWithCacheMiss++;
+            }
 
             if (pt_entry->address != addr) {
                 // Streaming access found
@@ -95,6 +99,7 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
                     int64_t delta = addr - pt_entry->address;
                     for (unsigned int i = 1; i <= streamingDistance; i += 1) {
                         addresses.push_back(AddrPriority(addr + delta * i, 0));
+                        streamPfPushed++;
                     }
                 }
                 pt_entry->address = addr;
@@ -150,6 +155,7 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
                                 Addr pf_addr = pt_entry->baseAddr +
                                     (pt_entry->index << pt_entry->shift);
                                 addresses.push_back(AddrPriority(pf_addr, 0));
+                                indirectPfPushed++;
                             }
                         }
                     }
@@ -161,6 +167,7 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
             prefetchTable.insertEntry(pc, false /* unused */, pt_entry);
             pt_entry->address = addr;
             pt_entry->secure = is_secure;
+            ptAllocations++;
         }
     }
 }
@@ -180,11 +187,13 @@ IndirectMemory::allocateOrUpdateIPDEntry(
             ipd_entry->idx2 = index;
             ipd_entry->secondIndexSet = true;
             ipdEntryTrackingMisses = ipd_entry;
+            ipdSecondAccess++;
         } else {
             // Third access! no pattern has been found so far,
             // release the IPD entry
             ipd.invalidate(ipd_entry);
             ipdEntryTrackingMisses = nullptr;
+            ipdThirdAccessNoPattern++;
         }
     } else {
         ipd_entry = ipd.findVictim(ipd_entry_addr);
@@ -192,6 +201,7 @@ IndirectMemory::allocateOrUpdateIPDEntry(
         ipd.insertEntry(ipd_entry_addr, false /* unused */, ipd_entry);
         ipd_entry->idx1 = index;
         ipdEntryTrackingMisses = ipd_entry;
+        ipdAllocations++;
     }
 }
 
@@ -204,6 +214,7 @@ IndirectMemory::trackMissIndex1(Addr miss_addr)
     assert(entry->numMisses < entry->baseAddr.size());
     std::vector<Addr> &ba_array = entry->baseAddr[entry->numMisses];
     int idx = 0;
+    ipdTrackMiss1++;
     for (int shift : shiftValues) {
         ba_array[idx] = miss_addr - (entry->idx1 << shift);
         idx += 1;
@@ -222,6 +233,7 @@ IndirectMemory::trackMissIndex2(Addr miss_addr)
     // the previous misses (using idx1) against newly generated values
     // using idx2, if a match is found, fill the additional fields
     // of the PT entry
+    ipdTrackMiss2++;
     for (int midx = 0; midx < entry->numMisses; midx += 1)
     {
         std::vector<Addr> &ba_array = entry->baseAddr[midx];
@@ -240,6 +252,7 @@ IndirectMemory::trackMissIndex2(Addr miss_addr)
                 ipd.invalidate(entry);
                 // Do not track more misses
                 ipdEntryTrackingMisses = nullptr;
+                ipdFindPattern++;
                 return;
             }
             idx += 1;
@@ -259,6 +272,57 @@ IndirectMemory::checkAccessMatchOnActiveEntries(Addr addr)
             }
         }
     }
+}
+
+void
+IndirectMemory::regStats()
+{
+    Queued::regStats();
+
+    ptAllocations
+        .name(name() + ".imp_num_pt_alloc")
+        .desc("number of IMP prefetch table allocation")
+        ;
+    ptHits
+        .name(name() + ".imp_num_pt_hit")
+        .desc("number of IMP prefetch table hit")
+        ;
+    ptHitsWithCacheMiss
+        .name(name() + ".imp_num_pt_hit_with_cache_miss")
+        .desc("number of IMP prefetch table hit with cache miss")
+        ;
+    streamPfPushed 
+        .name(name() + ".imp_num_stream_pf_pushed")
+        .desc("number of IMP stream prefetch pushed")
+        ;
+    ipdAllocations
+        .name(name() + ".imp_num_ipd_alloc")
+        .desc("number of IMP IPD allocation (First Idx)")
+        ;
+    ipdSecondAccess
+        .name(name() + ".imp_num_ipd_second_idx")
+        .desc("number of IMP IPD second access (Second Idx)")
+        ;
+    ipdThirdAccessNoPattern
+        .name(name() + ".imp_num_ipd_third_idx_no_pattern")
+        .desc("number of IMP IPD third access (Third Idx No Pattern)")
+        ;
+    ipdTrackMiss1
+        .name(name() + ".imp_num_ipd_track_miss1")
+        .desc("number of IMP IPD track miss 1")
+        ;
+    ipdTrackMiss2
+        .name(name() + ".imp_num_ipd_track_miss2")
+        .desc("number of IMP IPD track miss 2")
+        ;
+    ipdFindPattern
+        .name(name() + ".imp_num_ipd_find_pattern")
+        .desc("number of IMP IPD recognizes a pattern")
+        ;
+    indirectPfPushed 
+        .name(name() + ".imp_num_indirect_pf_pushed")
+        .desc("number of IMP indirect prefetch pushed")
+        ;
 }
 
 } // namespace Prefetcher
