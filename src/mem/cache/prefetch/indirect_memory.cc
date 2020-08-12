@@ -31,6 +31,7 @@
  #include "mem/cache/base.hh"
  #include "mem/cache/prefetch/associative_set_impl.hh"
  #include "params/IndirectMemoryPrefetcher.hh"
+ #include "debug/HWPrefetch.hh"
 
 namespace Prefetcher {
 
@@ -42,7 +43,8 @@ IndirectMemory::IndirectMemory(const IndirectMemoryPrefetcherParams *p)
     streamingDistance(p->streaming_distance),
     prefetchTable(p->pt_table_assoc, p->pt_table_entries,
                   p->pt_table_indexing_policy, p->pt_table_replacement_policy,
-                  PrefetchTableEntry(p->num_indirect_counter_bits)),
+                  PrefetchTableEntry(p->num_stream_counter_bits,
+                                     p->num_indirect_counter_bits)),
     ipd(p->ipd_table_assoc, p->ipd_table_entries, p->ipd_table_indexing_policy,
         p->ipd_table_replacement_policy,
         IndirectPatternDetectorEntry(p->addr_array_len, shiftValues.size())),
@@ -93,15 +95,33 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
             }
 
             if (pt_entry->address != addr) {
-                // Streaming access found
-                pt_entry->streamCounter += 1;
+                int new_stride = addr - pt_entry->address;
+                bool stride_match = (new_stride == pt_entry->stride);
+                if (stride_match && new_stride != 0) {
+                    // Streaming access found
+                    pt_entry->streamCounter++;
+                } else {
+                    pt_entry->streamCounter--;
+                    if (pt_entry->streamCounter < streamCounterThreshold) {
+                        pt_entry->stride = new_stride;
+                    }
+                }
                 if (pt_entry->streamCounter >= streamCounterThreshold) {
-                    int64_t delta = addr - pt_entry->address;
                     for (unsigned int i = 1; i <= streamingDistance; i += 1) {
-                        addresses.push_back(AddrPriority(addr + delta * i, 0));
+                        // Round strides up to atleast 1 cacheline
+                        int pf_stride = pt_entry->stride;
+                        if (abs(pf_stride) < blkSize) {
+                            pf_stride = (pf_stride < 0) ? -blkSize : blkSize;
+                        }
+
+                        Addr new_addr = addr + i * pf_stride;
+                        addresses.push_back(AddrPriority(new_addr, 0));
                         streamPfPushed++;
                     }
                 }
+                DPRINTF(HWPrefetch, "pc %#x addr %#x stride %d conf %d.\n",
+                    pc, addr, pt_entry->stride,
+                    static_cast<int>(pt_entry->streamCounter));
                 pt_entry->address = addr;
                 pt_entry->secure = is_secure;
 

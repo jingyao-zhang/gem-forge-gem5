@@ -195,6 +195,8 @@ class IndirectMemoryPrefetcher(QueuedPrefetcher):
     max_prefetch_distance = Param.Unsigned(16, "Maximum prefetch distance")
     num_indirect_counter_bits = Param.Unsigned(3,
         "Number of bits of the indirect counter")
+    num_stream_counter_bits = Param.Unsigned(3,
+        "Number of bits of the stream counter")
     ipd_table_entries = Param.MemorySize("4",
         "Number of entries of the Indirect Pattern Detector")
     ipd_table_assoc = Param.Unsigned(4,

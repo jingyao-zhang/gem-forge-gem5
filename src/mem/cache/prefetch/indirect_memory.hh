@@ -69,10 +69,12 @@ class IndirectMemory : public Queued
 
         /** Accessed address */
         Addr address;
+        /** Observed stride */
+        int stride;
         /** Whether this address is in the secure region */
         bool secure;
         /** Confidence counter of the stream */
-        unsigned int streamCounter;
+        SatCounter streamCounter;
 
         /* Indirect table fields */
 
@@ -94,8 +96,9 @@ class IndirectMemory : public Queued
          */
         bool increasedIndirectCounter;
 
-        PrefetchTableEntry(unsigned indirect_counter_bits)
-            : TaggedEntry(), address(0), secure(false), streamCounter(0),
+        PrefetchTableEntry(unsigned stream_counter_bits, unsigned indirect_counter_bits)
+            : TaggedEntry(), address(0), stride(0), secure(false),
+              streamCounter(stream_counter_bits),
               enabled(false), index(0), baseAddr(0), shift(0),
               indirectCounter(indirect_counter_bits),
               increasedIndirectCounter(false)
@@ -106,8 +109,9 @@ class IndirectMemory : public Queued
         {
             TaggedEntry::invalidate();
             address = 0;
+            stride = 0;
             secure = false;
-            streamCounter = 0;
+            streamCounter.reset();
             enabled = false;
             index = 0;
             baseAddr = 0;
