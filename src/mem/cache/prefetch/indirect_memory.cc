@@ -216,6 +216,8 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
                     } else if (read_index) {
                         // Enabled entry, update the index
                         insertIndex(index, *pt_entry);
+                        // Update index width.
+                        pt_entry->indexWidth = pfi.getSize();
 
                         DPRINTF(IMPrefetcher,
                             "Reset idx: pc %#x (%#x + %d << %d = %#x) conf %d.\n",
@@ -346,6 +348,87 @@ IndirectMemory::checkAccessMatchOnActiveEntries(Addr pc, Addr addr)
             checkAccessMatchOnIndex(pc, addr, pt_entry);
         }
     }
+}
+
+void
+IndirectMemory::notifyFill(const PacketPtr &pkt)
+{
+    if (!pkt->req->hasPC()) {
+        return;
+    }
+    auto pc = pkt->req->getPC();
+    auto pt_entry = prefetchTable.findEntry(pc, false /* unused */);
+    if (!pt_entry) {
+        // We are not tracking this pc.
+        return;
+    }
+    if (!pt_entry->enabled || pt_entry->indirectCounter < prefetchThreshold) {
+        // We have not enabled indirect prefetching for this pc.
+        return;
+    }
+    DPRINTF(IMPrefetcher, "Fill: pc %#x cmd %s size %u stride %d index_width %u.\n",
+        pc, pkt->cmdString(), pkt->getSize(), pt_entry->stride, pt_entry->indexWidth);
+
+    auto stride_abs = abs(pt_entry->stride);
+    auto index_width = pt_entry->indexWidth;
+    if (stride_abs == 0 || index_width == 0) {
+        // We don't know the stride or index width.
+        return;
+    }
+    if (stride_abs != index_width) {
+        // This is not continuous, we don't know how to extract index.
+        return;
+    }
+    // Create a PrefetchInfo.
+    Addr pfi_addr = 0;
+    if (useVirtualAddresses && pkt->req->hasVaddr()) {
+        pfi_addr = pkt->req->getVaddr();
+    } else if (!useVirtualAddresses) {
+        pfi_addr = pkt->req->getPaddr();
+    }
+    PrefetchInfo pfi(pkt, pfi_addr, false /* miss */);
+    std::vector<AddrPriority> addresses;
+    for (int i = 0; i + index_width <= pkt->getSize(); i += stride_abs) {
+        auto raw_ptr = pkt->getPtr<uint8_t>() + i;
+        uint64_t raw_index = 0;
+        int64_t index = 0;
+        bool read_index = true;
+        switch(index_width) {
+            case sizeof(uint8_t):
+                raw_index = *reinterpret_cast<uint8_t *>(raw_ptr);
+                index = gtoh<uint8_t>(raw_index, byteOrder);
+                break;
+            case sizeof(uint16_t):
+                raw_index = *reinterpret_cast<uint16_t *>(raw_ptr);
+                index = gtoh<uint16_t>(raw_index, byteOrder);
+                break;
+            case sizeof(uint32_t):
+                raw_index = *reinterpret_cast<uint32_t *>(raw_ptr);
+                index = gtoh<uint32_t>(raw_index, byteOrder);
+                break;
+            case sizeof(uint64_t):
+                raw_index = *reinterpret_cast<uint64_t *>(raw_ptr);
+                index = gtoh<uint64_t>(raw_index, byteOrder);
+                break;
+            default:
+                // Ignore non-power-of-two sizes
+                read_index = false;
+        }
+        if (read_index) {
+            // We got the index.
+            Addr indirect_addr = pt_entry->baseAddr + (index << pt_entry->shift);
+            DPRINTF(IMPrefetcher,
+                "Fill-Extract: %d raw %llu (%#x + %lld << %d = %#x).\n",
+                i, raw_index, pt_entry->baseAddr, index, pt_entry->shift, indirect_addr);
+            addresses.emplace_back(indirect_addr, 0);
+        }
+    }
+
+    if (!addresses.empty()) {
+        queueUpGeneratedPrefetch(pkt, pfi, addresses);
+    }
+
+    return;
 }
 
 void

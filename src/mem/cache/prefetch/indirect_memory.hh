@@ -96,6 +96,8 @@ class IndirectMemory : public Queued
         Addr baseAddr;
         /** Shift detected */
         int shift;
+        /** Index width in bytes */
+        unsigned int indexWidth;
         /** Confidence counter of the indirect fields */
         SatCounter indirectCounter;
         /**
@@ -109,7 +111,7 @@ class IndirectMemory : public Queued
         PrefetchTableEntry(unsigned stream_counter_bits, unsigned indirect_counter_bits)
             : TaggedEntry(), address(0), stride(0), secure(false),
               streamCounter(stream_counter_bits),
-              enabled(false), baseAddr(0), shift(0),
+              enabled(false), baseAddr(0), shift(0), indexWidth(0),
               indirectCounter(indirect_counter_bits),
               increasedIndirectCounter(false)
         {
@@ -128,6 +130,7 @@ class IndirectMemory : public Queued
             index_queue.clear();
             baseAddr = 0;
             shift = 0;
+            indexWidth = 0;
             indirectCounter.reset();
             increasedIndirectCounter = false;
         }
@@ -219,6 +222,11 @@ class IndirectMemory : public Queued
                            std::vector<AddrPriority> &addresses) override;
 
     void regStats() override;
+
+    /**
+     * IMP need the data for indirect prefetch.
+     */
+    void notifyFill(const PacketPtr &pkt) override;
 
     Stats::Scalar ptAllocations;
     Stats::Scalar ptHits;
