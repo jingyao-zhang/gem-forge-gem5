@@ -58,7 +58,7 @@
 #include "sim/clocked_object.hh"
 #include "sim/probe/probe.hh"
 
-class BaseCache;
+class CachePrefetcherView;
 struct BasePrefetcherParams;
 
 namespace Prefetcher {
@@ -257,7 +257,7 @@ class Base : public ClockedObject
     // PARAMETERS
 
     /** Pointr to the parent cache. */
-    BaseCache* cache;
+    CachePrefetcherView* cache;
 
     /** The block size of the parent cache. */
     unsigned blkSize;
@@ -333,7 +333,7 @@ class Base : public ClockedObject
     Base(const BasePrefetcherParams *p);
     virtual ~Base() = default;
 
-    virtual void setCache(BaseCache *_cache);
+    virtual void setCache(CachePrefetcherView *_cache);
 
     /**
      * Notify prefetcher of cache access (may be any access or just

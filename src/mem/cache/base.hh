@@ -58,6 +58,7 @@
 #include "debug/CachePort.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/cache_blk.hh"
+#include "mem/cache/cache_prefetcher_view.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
 #include "mem/cache/tags/base.hh"
@@ -93,7 +94,7 @@ struct BaseCacheParams;
 /**
  * A basic cache interface. Implements some common functions for speed.
  */
-class BaseCache : public ClockedObject
+class BaseCache : public ClockedObject, public CachePrefetcherView
 {
   protected:
     /**
@@ -1108,7 +1109,7 @@ class BaseCache : public ClockedObject
      * @return  The block size
      */
     unsigned
-    getBlockSize() const
+    getBlockSize() const override
     {
         return blkSize;
     }
@@ -1221,11 +1222,11 @@ class BaseCache : public ClockedObject
         memSidePort.schedSendEvent(time);
     }
 
-    bool inCache(Addr addr, bool is_secure) const {
+    bool inCache(Addr addr, bool is_secure) const override {
         return tags->findBlock(addr, is_secure);
     }
 
-    bool hasBeenPrefetched(Addr addr, bool is_secure) const {
+    bool hasBeenPrefetched(Addr addr, bool is_secure) const override {
         CacheBlk *block = tags->findBlock(addr, is_secure);
         if (block) {
             return block->wasPrefetched();
@@ -1234,7 +1235,7 @@ class BaseCache : public ClockedObject
         }
     }
 
-    bool inMissQueue(Addr addr, bool is_secure) const {
+    bool inMissQueue(Addr addr, bool is_secure) const override {
         return mshrQueue.findMatch(addr, is_secure);
     }
 
@@ -1260,8 +1261,15 @@ class BaseCache : public ClockedObject
      *
      * @return True if the cache is coalescing writes
      */
-    bool coalesce() const;
+    bool coalesce() const override;
 
+    ProbeManager *getCacheProbeManager() override {
+        return this->getProbeManager();
+    }
+
+    ThreadContext *getThreadContext(ContextID contextId) override {
+        return this->system->getThreadContext(contextId);
+    }
 
     /**
      * Cache block visitor that writes back dirty cache blocks using

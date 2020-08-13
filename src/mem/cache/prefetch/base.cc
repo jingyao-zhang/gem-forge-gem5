@@ -49,7 +49,7 @@
 
 #include "base/intmath.hh"
 #include "cpu/base.hh"
-#include "mem/cache/base.hh"
+#include "mem/cache/cache_prefetcher_view.hh"
 #include "params/BasePrefetcher.hh"
 #include "sim/system.hh"
 
@@ -100,7 +100,7 @@ Base::Base(const BasePrefetcherParams *p)
 }
 
 void
-Base::setCache(BaseCache *_cache)
+Base::setCache(CachePrefetcherView *_cache)
 {
     assert(!cache);
     cache = _cache;
@@ -235,7 +235,7 @@ Base::regProbeListeners()
      * cache is configured to prefetch on accesses.
      */
     if (listeners.empty() && cache != nullptr) {
-        ProbeManager *pm(cache->getProbeManager());
+        ProbeManager *pm(cache->getCacheProbeManager());
         listeners.push_back(new PrefetchListener(*this, pm, "Miss", false,
                                                 true));
         listeners.push_back(new PrefetchListener(*this, pm, "Fill", true,

@@ -50,7 +50,7 @@ class Multi : public Base
     Multi(const MultiPrefetcherParams *p);
 
   public:
-    void setCache(BaseCache *_cache) override;
+    void setCache(CachePrefetcherView *_cache) override;
     PacketPtr getPacket() override;
     Tick nextPrefetchReadyTime() const override;
 

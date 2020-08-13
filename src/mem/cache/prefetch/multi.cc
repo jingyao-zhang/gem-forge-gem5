@@ -48,7 +48,7 @@ Multi::Multi(const MultiPrefetcherParams *p)
 }
 
 void
-Multi::setCache(BaseCache *_cache)
+Multi::setCache(CachePrefetcherView *_cache)
 {
     for (auto pf : prefetchers)
         pf->setCache(_cache);
