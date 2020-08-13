@@ -12,7 +12,14 @@ def initializePrefetch(options, system):
         if options.gem_forge_prefetcher == 'imp':
             cpu.dcache.prefetcher = IndirectMemoryPrefetcher(
                 streaming_distance=8,
+                use_virtual_addresses=True,
+                index_queue_size=16,
             )
+            if not cpu.dcache.prefetch_on_access:
+                raise ValueError('IMP must be used with PrefetchOnAccess.')
+            if not hasattr(cpu, 'dtb'):
+                raise ValueError('IMP requires TLB to work with virtual address.')
+            cpu.dcache.prefetcher.registerTLB(cpu.dtb)
         else:
             cpu.dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
         if options.l1_5dcache:

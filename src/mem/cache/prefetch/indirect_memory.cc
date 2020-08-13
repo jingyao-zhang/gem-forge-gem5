@@ -31,9 +31,64 @@
  #include "mem/cache/base.hh"
  #include "mem/cache/prefetch/associative_set_impl.hh"
  #include "params/IndirectMemoryPrefetcher.hh"
- #include "debug/HWPrefetch.hh"
+ #include "debug/IMPrefetcher.hh"
 
 namespace Prefetcher {
+
+void
+IndirectMemory::insertIndex(int64_t index, PrefetchTableEntry &entry)
+{
+    // Enabled entry, update the index
+    // this->index = index;
+    // if (!this->increasedIndirectCounter) {
+    //     this->indirectCounter--;
+    // } else {
+    //     // Set this to false, to see if the new index
+    //     // has any match
+    //     this->increasedIndirectCounter = false;
+    // }
+    auto &index_queue = entry.index_queue;
+    if (index_queue.size() == this->indexQueueSize) {
+        const auto &retire_index = index_queue.front();
+        if (!retire_index.matched) {
+            // This index has no match found.
+            entry.indirectCounter--;
+        }
+        index_queue.pop_front();
+    }
+    index_queue.emplace_back(index, false /* matched */);
+}
+
+void
+IndirectMemory::checkAccessMatchOnIndex(Addr pc, Addr addr, PrefetchTableEntry &entry)
+{
+    // Addr indirect_addr = entry.baseAddr + (entry.index << entry.shift);
+    // bool match = indirect_addr == addr;
+    // DPRINTF(IMPrefetcher,
+    //     "pc %#x pt_pc %#x %#x %s %#x(%#x + %d << %d) counter %d.\n",
+    //     pc, entry.getTag(), addr, match ? "==" : "!=", indirect_addr,
+    //     entry.baseAddr, entry.index, entry.shift,
+    //     static_cast<int>(entry.indirectCounter));
+    // if (match) {
+    //     entry.indirectCounter++;
+    //     entry.increasedIndirectCounter = true;
+    // }
+    for (auto &index_match : entry.index_queue) {
+        auto index = index_match.index;
+        Addr indirect_addr = entry.baseAddr + (index << entry.shift);
+        bool match = indirect_addr == addr;
+        DPRINTF(IMPrefetcher,
+            "pc %#x pt_pc %#x %#x %s %#x(%#x + %d << %d) counter %d.\n",
+            pc, entry.getTag(), addr, match ? "==" : "!=", indirect_addr,
+            entry.baseAddr, index, entry.shift,
+            static_cast<int>(entry.indirectCounter));
+        if (match) {
+            entry.indirectCounter++;
+            entry.increasedIndirectCounter = true;
+            index_match.matched = true;
+        }
+    }
+}
 
 IndirectMemory::IndirectMemory(const IndirectMemoryPrefetcherParams *p)
   : Queued(p),
@@ -41,6 +96,7 @@ IndirectMemory::IndirectMemory(const IndirectMemoryPrefetcherParams *p)
     shiftValues(p->shift_values), prefetchThreshold(p->prefetch_threshold),
     streamCounterThreshold(p->stream_counter_threshold),
     streamingDistance(p->streaming_distance),
+    indexQueueSize(p->index_queue_size),
     prefetchTable(p->pt_table_assoc, p->pt_table_entries,
                   p->pt_table_indexing_policy, p->pt_table_replacement_policy,
                   PrefetchTableEntry(p->num_stream_counter_bits,
@@ -73,7 +129,7 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
     Addr addr = pfi.getAddr();
     bool miss = pfi.isCacheMiss();
 
-    checkAccessMatchOnActiveEntries(addr);
+    checkAccessMatchOnActiveEntries(pc, addr);
 
     // First check if this is a miss, if the prefetcher is tracking misses
     if (ipdEntryTrackingMisses != nullptr && miss) {
@@ -119,8 +175,9 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
                         streamPfPushed++;
                     }
                 }
-                DPRINTF(HWPrefetch, "pc %#x addr %#x stride %d conf %d.\n",
-                    pc, addr, pt_entry->stride,
+                DPRINTF(IMPrefetcher,
+                    "pc %#x addr %#x (%s) stride %d new_stride %d conf %d.\n",
+                    pc, addr, miss ? "miss" : "hit", pt_entry->stride, new_stride,
                     static_cast<int>(pt_entry->streamCounter));
                 pt_entry->address = addr;
                 pt_entry->secure = is_secure;
@@ -155,28 +212,25 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
                         // Not enabled (no pattern detected in this stream),
                         // add or update an entry in the pattern detector and
                         // start tracking misses
-                        allocateOrUpdateIPDEntry(pt_entry, index);
+                        allocateOrUpdateIPDEntry(pt_entry, pc, index);
                     } else if (read_index) {
                         // Enabled entry, update the index
-                        pt_entry->index = index;
-                        if (!pt_entry->increasedIndirectCounter) {
-                            pt_entry->indirectCounter--;
-                        } else {
-                            // Set this to false, to see if the new index
-                            // has any match
-                            pt_entry->increasedIndirectCounter = false;
-                        }
+                        insertIndex(index, *pt_entry);
+
+                        DPRINTF(IMPrefetcher,
+                            "Reset idx: pc %#x (%#x + %d << %d = %#x) conf %d.\n",
+                            pc, pt_entry->baseAddr, index, pt_entry->shift,
+                            pt_entry->baseAddr + (index << pt_entry->shift),
+                            static_cast<int>(pt_entry->indirectCounter));
 
                         // If the counter is high enough, start prefetching
                         if (pt_entry->indirectCounter > prefetchThreshold) {
-                            unsigned distance = maxPrefetchDistance *
-                                pt_entry->indirectCounter.calcSaturation();
-                            for (int delta = 1; delta < distance; delta += 1) {
-                                Addr pf_addr = pt_entry->baseAddr +
-                                    (pt_entry->index << pt_entry->shift);
-                                addresses.push_back(AddrPriority(pf_addr, 0));
-                                indirectPfPushed++;
-                            }
+                            // This does not make sense to generate multiple
+                            // indirect prefetch request for a single indes.
+                            Addr pf_addr = pt_entry->baseAddr +
+                                (index << pt_entry->shift);
+                            addresses.push_back(AddrPriority(pf_addr, 0));
+                            indirectPfPushed++;
                         }
                     }
                 }
@@ -194,7 +248,7 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
 
 void
 IndirectMemory::allocateOrUpdateIPDEntry(
-    const PrefetchTableEntry *pt_entry, int64_t index)
+    const PrefetchTableEntry *pt_entry, Addr stream_pc, int64_t index)
 {
     // The address of the pt_entry is used to index the IPD
     Addr ipd_entry_addr = (Addr) pt_entry;
@@ -208,12 +262,14 @@ IndirectMemory::allocateOrUpdateIPDEntry(
             ipd_entry->secondIndexSet = true;
             ipdEntryTrackingMisses = ipd_entry;
             ipdSecondAccess++;
+            DPRINTF(IMPrefetcher, "IPD 2nd: pc %#x idx2 %d.\n", stream_pc, index);
         } else {
             // Third access! no pattern has been found so far,
             // release the IPD entry
             ipd.invalidate(ipd_entry);
             ipdEntryTrackingMisses = nullptr;
             ipdThirdAccessNoPattern++;
+            DPRINTF(IMPrefetcher, "IPD 3rd: pc %#x released.\n", stream_pc);
         }
     } else {
         ipd_entry = ipd.findVictim(ipd_entry_addr);
@@ -222,6 +278,7 @@ IndirectMemory::allocateOrUpdateIPDEntry(
         ipd_entry->idx1 = index;
         ipdEntryTrackingMisses = ipd_entry;
         ipdAllocations++;
+        DPRINTF(IMPrefetcher, "IPD 1st: pc %#x idx1 %d.\n", stream_pc, index);
     }
 }
 
@@ -281,15 +338,12 @@ IndirectMemory::trackMissIndex2(Addr miss_addr)
 }
 
 void
-IndirectMemory::checkAccessMatchOnActiveEntries(Addr addr)
+IndirectMemory::checkAccessMatchOnActiveEntries(Addr pc, Addr addr)
 {
     for (auto &pt_entry : prefetchTable) {
-        if (pt_entry.enabled) {
-            if (addr == pt_entry.baseAddr +
-                       (pt_entry.index << pt_entry.shift)) {
-                pt_entry.indirectCounter++;
-                pt_entry.increasedIndirectCounter = true;
-            }
+        // We should not try to check for the same pc.
+        if (pt_entry.enabled && pt_entry.getTag() != pc) {
+            checkAccessMatchOnIndex(pc, addr, pt_entry);
         }
     }
 }

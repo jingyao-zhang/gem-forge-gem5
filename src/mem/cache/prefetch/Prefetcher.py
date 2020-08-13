@@ -197,6 +197,8 @@ class IndirectMemoryPrefetcher(QueuedPrefetcher):
         "Number of bits of the indirect counter")
     num_stream_counter_bits = Param.Unsigned(3,
         "Number of bits of the stream counter")
+    index_queue_size = Param.Unsigned(1,
+        "Index queue size used for index match")
     ipd_table_entries = Param.MemorySize("4",
         "Number of entries of the Indirect Pattern Detector")
     ipd_table_assoc = Param.Unsigned(4,

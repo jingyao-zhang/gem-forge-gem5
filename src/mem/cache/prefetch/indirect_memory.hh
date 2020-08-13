@@ -40,6 +40,7 @@
 #define __MEM_CACHE_PREFETCH_INDIRECT_MEMORY_HH__
 
 #include <vector>
+#include <deque>
 
 #include "base/sat_counter.hh"
 #include "mem/cache/prefetch/associative_set.hh"
@@ -61,6 +62,8 @@ class IndirectMemory : public Queued
     const int streamCounterThreshold;
     /** Number of prefetches generated when using the streaming prefetcher */
     const int streamingDistance;
+    /** Number of index queue entries */
+    const int indexQueueSize;
 
     /** Prefetch Table Entry */
     struct PrefetchTableEntry : public TaggedEntry
@@ -81,7 +84,14 @@ class IndirectMemory : public Queued
         /** Enable bit of the indirect fields */
         bool enabled;
         /** Current index value */
-        int64_t index;
+        struct IndexMatched {
+            int64_t index = 0;
+            bool matched = false;
+            IndexMatched(int64_t _index, bool _matched)
+                : index(_index), matched(_matched) {}
+            IndexMatched() = default;
+        };
+        std::deque<IndexMatched> index_queue;
         /** BaseAddr detected */
         Addr baseAddr;
         /** Shift detected */
@@ -99,10 +109,12 @@ class IndirectMemory : public Queued
         PrefetchTableEntry(unsigned stream_counter_bits, unsigned indirect_counter_bits)
             : TaggedEntry(), address(0), stride(0), secure(false),
               streamCounter(stream_counter_bits),
-              enabled(false), index(0), baseAddr(0), shift(0),
+              enabled(false), baseAddr(0), shift(0),
               indirectCounter(indirect_counter_bits),
               increasedIndirectCounter(false)
-        {}
+        {
+            invalidate();
+        }
 
         void
         invalidate() override
@@ -113,7 +125,7 @@ class IndirectMemory : public Queued
             secure = false;
             streamCounter.reset();
             enabled = false;
-            index = 0;
+            index_queue.clear();
             baseAddr = 0;
             shift = 0;
             indirectCounter.reset();
@@ -171,10 +183,11 @@ class IndirectMemory : public Queued
     /**
      * Allocate or update an entry in the IPD
      * @param pt_entry Pointer to the associated page table entry
+     * @param stream_pc PC of the stream access
      * @param index Detected first index value
      */
     void allocateOrUpdateIPDEntry(const PrefetchTableEntry *pt_entry,
-                                  int64_t index);
+                                  Addr stream_pc, int64_t index);
     /**
      * Update an IPD entry with a detected miss address, when the first index
      * is being tracked
@@ -194,7 +207,9 @@ class IndirectMemory : public Queued
      * the indirect confidence counter is incremented
      * @param addr address of the access
      */
-    void checkAccessMatchOnActiveEntries(Addr addr);
+    void checkAccessMatchOnActiveEntries(Addr pc, Addr addr);
+    void checkAccessMatchOnIndex(Addr pc, Addr addr, PrefetchTableEntry &entry);
+    void insertIndex(int64_t index, PrefetchTableEntry &entry);
 
   public:
     IndirectMemory(const IndirectMemoryPrefetcherParams *p);
