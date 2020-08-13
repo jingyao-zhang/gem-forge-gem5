@@ -51,10 +51,14 @@ namespace Prefetcher {
 
 void
 Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size,
-                                            MasterID mid, bool tag_prefetch,
-                                            Tick t) {
+                                  MasterID mid, bool tag_prefetch,
+                                  Tick t, Addr vaddr, ContextID contextId) {
     /* Create a prefetch memory request */
     RequestPtr req = std::make_shared<Request>(paddr, blk_size, 0, mid);
+    if (vaddr != 0) {
+        req->setVirt(vaddr);
+    }
+    req->setContext(contextId);
 
     if (pfInfo.isSecure()) {
         req->setFlags(Request::SECURE);
@@ -163,6 +167,14 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     std::vector<AddrPriority> addresses;
     calculatePrefetch(pfi, addresses);
 
+    queueUpGeneratedPrefetch(pkt, pfi, addresses);
+}
+
+
+void
+Queued::queueUpGeneratedPrefetch(const PacketPtr &pkt, const PrefetchInfo &pfi,
+                                 std::vector<AddrPriority> &addresses)
+{
     // Get the maximu number of prefetches that we are allowed to generate
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
 
@@ -291,7 +303,9 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
         } else {
             Tick pf_time = curTick() + clockPeriod() * latency;
             it->createPkt(it->translationRequest->getPaddr(), blkSize,
-                    masterId, tagPrefetch, pf_time);
+                masterId, tagPrefetch, pf_time, 
+                it->translationRequest->getVaddr(),
+                it->translationRequest->contextId());
             addToQueue(pfq, *it);
         }
     } else {
@@ -431,7 +445,12 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi,
     DeferredPacket dpp(this, new_pfi, 0, priority);
     if (has_target_pa) {
         Tick pf_time = curTick() + clockPeriod() * latency;
-        dpp.createPkt(target_paddr, blkSize, masterId, tagPrefetch, pf_time);
+        Addr target_vaddr = 0;
+        if (useVirtualAddresses) {
+            target_vaddr = orig_addr;
+        }
+        dpp.createPkt(target_paddr, blkSize, masterId, tagPrefetch, pf_time,
+            target_vaddr, pkt->req->contextId());
         DPRINTF(HWPrefetch, "Prefetch queued. "
                 "addr:%#x priority: %3d tick:%lld.\n",
                 new_pfi.getAddr(), priority, pf_time);

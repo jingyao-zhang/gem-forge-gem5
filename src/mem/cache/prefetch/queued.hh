@@ -107,7 +107,8 @@ class Queued : public Base
          * @param t time when the prefetch becomes ready
          */
         void createPkt(Addr paddr, unsigned blk_size, MasterID mid,
-                       bool tag_prefetch, Tick t);
+                       bool tag_prefetch, Tick t, Addr vaddr,
+                       ContextID conextId);
 
         /**
          * Sets the translation request needed to obtain the physical address
@@ -181,6 +182,8 @@ class Queued : public Base
     virtual ~Queued();
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
+    void queueUpGeneratedPrefetch(const PacketPtr &pkt, const PrefetchInfo &pfi,
+                                  std::vector<AddrPriority> &addresses);
 
     void insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, int32_t priority);
 
