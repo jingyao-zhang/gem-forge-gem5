@@ -297,6 +297,26 @@ Sequencer::recordMissLatency(SequencerRequest* srequest, bool llscSuccess,
     m_latencyHist.sample(total_lat);
     m_typeLatencyHist[type]->sample(total_lat);
 
+    /**
+     * ! GemForge
+     * Record the latency for this PC.
+     * We don't care about IFETCH.
+     */
+    auto pkt = srequest->pkt;
+    if (pkt && pkt->req->hasPC() && type != RubyRequestType_IFETCH) {
+        auto pc = pkt->req->getPC();
+        auto isStream = false;
+        const char *streamName = nullptr;
+        if (pkt->req->hasStatistic()) {
+            isStream = pkt->req->getStatistic()->isStream;
+            streamName = pkt->req->getStatistic()->streamName;
+        }
+        auto stat = this->pcLatencySet.emplace(pc, type, isStream, streamName).first;
+        assert(stat->isStream == isStream && "Changed isStream.");
+        stat->totalReqs++;
+        stat->totalLatency += completion_time - issued_time;
+    }
+
     if (isExternalHit) {
         m_missLatencyHist.sample(total_lat);
         m_missTypeLatencyHist[type]->sample(total_lat);
@@ -885,5 +905,57 @@ Sequencer::regStats()
             m_missTypeMachLatencyHist[i].push_back(new Stats::Histogram());
             m_missTypeMachLatencyHist[i][j]->init(10);
         }
+    }
+
+    // Register stats callback.
+    Stats::registerResetCallback(
+        new MakeCallback<Sequencer, &Sequencer::resetPCLatStats>(
+            this, true /* auto delete */));
+    Stats::registerDumpCallback(
+        new MakeCallback<Sequencer, &Sequencer::dumpPCLatStats>(
+            this, true /* auto delete */));
+}
+
+void Sequencer::resetPCLatStats() {
+    this->pcLatencySet.clear();
+}
+
+void Sequencer::dumpPCLatStats() {
+    if (this->pcLatencySet.empty()) {
+        return;
+    }
+    std::vector<const RequestLatencyStats *> sortedStats;
+    sortedStats.reserve(this->pcLatencySet.size());
+    uint64_t totalReqs = 0;
+    uint64_t totalLatency = 0;
+    for (const auto &stat : this->pcLatencySet) {
+        sortedStats.emplace_back(&stat);
+        totalReqs += stat.totalReqs;
+        totalLatency += stat.totalLatency;
+    }
+    std::sort(sortedStats.begin(), sortedStats.end(),
+        [this](const RequestLatencyStats *a, const RequestLatencyStats *b) -> bool {
+            auto reqs0 = a->totalReqs;
+            auto reqs1 = b->totalReqs;
+            if (reqs0 != reqs1) {
+                return reqs0 > reqs1;
+            }
+            return a->operator<(*b);
+        });
+    
+    if (!this->pcLatencyStream) {
+      const std::string fname = csprintf("pclat.%s", this->name());
+      this->pcLatencyStream = simout.findOrCreate(fname)->stream();
+    }
+    ccprintf(*this->pcLatencyStream, "---------------------------\n");
+    for (const auto &stat : sortedStats) {
+        ccprintf(*this->pcLatencyStream,
+            "%10#x %4s %4s %10llu (%05.2f) %12llu (%05.2f) %s\n",
+            stat->pc, stat->isStream ? "SSP" : "Core",
+            RubyRequestType_to_string(stat->type),
+            stat->totalReqs, static_cast<double>(stat->totalReqs * 100) / totalReqs,
+            stat->totalLatency, static_cast<double>(stat->totalLatency * 100) / totalLatency,
+            stat->streamName ? stat->streamName : ""
+        );
     }
 }

@@ -137,6 +137,13 @@ public:
   StaticId staticId;
   std::string streamName;
   size_t dynInstance;
+  // Used to remember first core user pc.
+  Addr firstCoreUserPC = 0;
+  bool hasFirstCoreUserPC() const { return this->firstCoreUserPC != 0; }
+  Addr getFirstCoreUserPC() const { return this->firstCoreUserPC; }
+  void setFirstCoreUserPC(Addr firstCoreUserPC) {
+    this->firstCoreUserPC = firstCoreUserPC;
+  }
 
   /**
    * Step root stream, three possible cases:

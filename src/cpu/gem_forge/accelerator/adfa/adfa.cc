@@ -250,7 +250,8 @@ void AbstractDataFlowCore::markReady() {
       }
     }
     if (inst->hasStreamUse()) {
-      StreamEngine::StreamUserArgs args(inst->getSeqNum(), inst->usedStreamIds);
+      StreamEngine::StreamUserArgs args(inst->getSeqNum(), inst->getPC(),
+                                        inst->usedStreamIds);
       auto SE = cpu->getAcceleratorManager()->getStreamEngine();
       if (!SE->areUsedStreamsReady(args)) {
         ready = false;
@@ -592,7 +593,9 @@ void AbstractDataFlowAccelerator::tick() {
     this->manager->scheduleTickNextCycle();
     break;
   }
-  default: { panic("Unknown handling instruction."); }
+  default: {
+    panic("Unknown handling instruction.");
+  }
   }
 }
 

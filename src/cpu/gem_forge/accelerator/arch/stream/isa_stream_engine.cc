@@ -684,7 +684,8 @@ bool ISAStreamEngine::canDispatchStreamLoad(
     std::vector<uint64_t> usedStreamIds{
         userInfo.translatedUsedStreamIds.at(0),
     };
-    StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+    StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                      usedStreamIds);
     auto se = this->getStreamEngine();
     // It's possible that we don't have element if we have reached the limit.
     if (!se->hasUnsteppedElement(args)) {
@@ -717,7 +718,8 @@ void ISAStreamEngine::dispatchStreamLoad(
   std::vector<uint64_t> usedStreamIds{
       userInfo.translatedUsedStreamIds.at(0),
   };
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                    usedStreamIds);
   auto se = this->getStreamEngine();
   // It's possible that this is misspeculated and we don't have element.
   if (!se->hasUnsteppedElement(args)) {
@@ -747,7 +749,8 @@ bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   std::vector<uint64_t> usedStreamIds{
       userInfo.translatedUsedStreamIds.at(0),
   };
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                    usedStreamIds);
   auto se = this->getStreamEngine();
   bool canExecute = se->areUsedStreamsReady(args);
   ISA_SE_DPRINTF("CanExecute StreamLoad %llu, %d.\n",
@@ -770,7 +773,8 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   };
   StreamEngine::StreamUserArgs::ValueVec values;
   values.reserve(usedStreamIds.size());
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds, &values);
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                    usedStreamIds, &values);
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
   ISA_SE_DPRINTF("Execute StreamLoad RegionStream %llu destRegs %d.\n",
@@ -815,7 +819,8 @@ void ISAStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   std::vector<uint64_t> usedStreamIds{
       userInfo.translatedUsedStreamIds.at(0),
   };
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                    usedStreamIds);
   auto se = this->getStreamEngine();
   se->commitStreamUser(args);
 
@@ -833,7 +838,8 @@ void ISAStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
     std::vector<uint64_t> usedStreamIds{
         userInfo.translatedUsedStreamIds.at(0),
     };
-    StreamEngine::StreamUserArgs args(dynInfo.seqNum, usedStreamIds);
+    StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                      usedStreamIds);
     auto se = this->getStreamEngine();
     se->rewindStreamUser(args);
   }

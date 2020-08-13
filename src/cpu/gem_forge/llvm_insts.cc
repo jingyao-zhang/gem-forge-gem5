@@ -121,7 +121,8 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
     // control dependence or PDF/unrollable dependence.
   }
   if (this->hasStreamUse()) {
-    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->getPC(),
+                                      this->usedStreamIds);
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     if (!SE->areUsedStreamsReady(args)) {
       return false;
@@ -143,7 +144,8 @@ bool LLVMDynamicInst::hasStreamUse() const {
 
 void LLVMDynamicInst::dispatchStreamUser(LLVMTraceCPU *cpu) {
   if (this->hasStreamUse()) {
-    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->getPC(),
+                                      this->usedStreamIds);
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     SE->dispatchStreamUser(args);
   }
@@ -151,7 +153,8 @@ void LLVMDynamicInst::dispatchStreamUser(LLVMTraceCPU *cpu) {
 
 void LLVMDynamicInst::executeStreamUser(LLVMTraceCPU *cpu) {
   if (this->hasStreamUse()) {
-    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->getPC(),
+                                      this->usedStreamIds);
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     SE->executeStreamUser(args);
   }
@@ -159,7 +162,8 @@ void LLVMDynamicInst::executeStreamUser(LLVMTraceCPU *cpu) {
 
 void LLVMDynamicInst::commitStreamUser(LLVMTraceCPU *cpu) {
   if (this->hasStreamUse()) {
-    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->getPC(),
+                                      this->usedStreamIds);
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     SE->commitStreamUser(args);
   }
@@ -228,7 +232,8 @@ int LLVMDynamicInst::getNumLQEntries(LLVMTraceCPU *cpu) const {
   int entries = 0;
   if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->getPC(),
+                                      this->usedStreamIds);
     entries += SE->getStreamUserLQEntries(args);
   }
 
@@ -251,7 +256,8 @@ void LLVMDynamicInst::createAdditionalLQCallbacks(
     LLVMTraceCPU *cpu, GemForgeLQCallbackList &callbacks) {
   if (this->hasStreamUse()) {
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->usedStreamIds);
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->getPC(),
+                                      this->usedStreamIds);
     this->numAdditionalLQCallbacks =
         SE->createStreamUserLQCallbacks(args, callbacks);
   } else {

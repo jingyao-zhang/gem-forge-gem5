@@ -74,14 +74,16 @@ public:
     using Value = std::array<uint8_t, MaxElementSize>;
     using ValueVec = std::vector<Value>;
     uint64_t seqNum;
+    Addr pc;
     const std::vector<uint64_t> &usedStreamIds;
     // Used to return the stream values.
     // Only used in executeStreamUser().
     ValueVec *values;
-    StreamUserArgs(uint64_t _seqNum,
+    StreamUserArgs(uint64_t _seqNum, Addr _pc,
                    const std::vector<uint64_t> &_usedStreamIds,
                    ValueVec *_values = nullptr)
-        : seqNum(_seqNum), usedStreamIds(_usedStreamIds), values(_values) {}
+        : seqNum(_seqNum), pc(_pc), usedStreamIds(_usedStreamIds),
+          values(_values) {}
   };
 
   int getStreamUserLQEntries(const StreamUserArgs &args) const;
@@ -450,10 +452,11 @@ private:
     std::vector<uint64_t> usedStreamIds;
     StreamUserArgs args;
     GemForgeStreamEngineLQCallback(StreamElement *_element,
-                                   uint64_t _userSeqNum,
+                                   uint64_t _userSeqNum, Addr _userPC,
                                    const std::vector<uint64_t> &_usedStreamIds)
         : element(_element), FIFOIdx(_element->FIFOIdx),
-          usedStreamIds(_usedStreamIds), args(_userSeqNum, usedStreamIds) {}
+          usedStreamIds(_usedStreamIds),
+          args(_userSeqNum, _userPC, usedStreamIds) {}
     bool getAddrSize(Addr &addr, uint32_t &size) const override;
     bool hasNonCoreDependent() const override;
     bool isIssued() const override;

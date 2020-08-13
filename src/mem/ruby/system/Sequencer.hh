@@ -44,6 +44,7 @@
 #include <iostream>
 #include <list>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/protocol/MachineType.hh"
@@ -264,6 +265,45 @@ class Sequencer : public RubyPort
     std::vector<Stats::Histogram *> m_ForwardToFirstResponseDelayHist;
     std::vector<Stats::Histogram *> m_FirstResponseToCompletionDelayHist;
     std::vector<Stats::Counter> m_IncompleteTimes;
+
+    //! Stats for recording latency by PC.
+    struct RequestLatencyStats {
+      RequestLatencyStats(Addr _pc, RubyRequestType _type, bool _isStream,
+        const char *_streamName)
+        : pc(_pc), type(_type), isStream(_isStream), streamName(_streamName) {}
+      const Addr pc;
+      const RubyRequestType type;
+      const bool isStream;
+      const char *streamName = nullptr;
+      mutable uint64_t totalReqs = 0;
+      mutable uint64_t totalLatency = 0;
+      bool operator==(const RequestLatencyStats &other) const {
+        return pc == other.pc && type == other.type && isStream == other.isStream;
+      }
+      bool operator!=(const RequestLatencyStats &other) const {
+        return !(this->operator==(other));
+      }
+      bool operator<(const RequestLatencyStats &other) const {
+        if (pc != other.pc) {
+          return pc < other.pc;
+        }
+        if (type != other.type) {
+          return type < other.type;
+        }
+        return isStream < other.isStream;
+      }
+    };
+    struct RequestLatencyStatsHasher {
+      std::size_t operator()(const RequestLatencyStats &key) const {
+        return (std::hash<int>()(key.type)) ^ (std::hash<uint64_t>()(key.pc))
+          ^ (std::hash<bool>()(key.isStream));
+      }
+    };
+    std::unordered_set<RequestLatencyStats, RequestLatencyStatsHasher> pcLatencySet;
+    std::ostream *pcLatencyStream = nullptr;
+
+    void resetPCLatStats();
+    void dumpPCLatStats();
 
     EventFunctionWrapper deadlockCheckEvent;
 

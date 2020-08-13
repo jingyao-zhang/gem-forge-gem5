@@ -831,8 +831,8 @@ int StreamEngine::createStreamUserLQCallbacks(
       if (this->enableLSQ) {
         assert(numCallbacks < callbacks.size() && "LQCallback overflows.");
         callbacks.at(numCallbacks) =
-            m5::make_unique<GemForgeStreamEngineLQCallback>(element, seqNum,
-                                                            args.usedStreamIds);
+            m5::make_unique<GemForgeStreamEngineLQCallback>(
+                element, seqNum, args.pc, args.usedStreamIds);
         numCallbacks++;
       }
     }
@@ -924,6 +924,8 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
       // Mark the first user sequence number.
       if (!element->isFirstUserDispatched()) {
         element->firstUserSeqNum = seqNum;
+        // Remember the first core user pc.
+        S->setFirstCoreUserPC(args.pc);
         if (S->isLoadStream() && !S->getFloatManual() && element->isAddrReady) {
           // The element should already be in peb, remove it.
           this->peb.removeElement(element);
@@ -2282,8 +2284,8 @@ void StreamEngine::issueElement(StreamElement *element) {
 
         pkt = GemForgePacketHandler::createGemForgeAMOPacket(
             elementVAddr, elementPAddr, element->size, memAccess,
-            cpuDelegator->dataMasterId(), 0 /* ContextId */, 0 /* PC */,
-            std::move(atomicOp));
+            cpuDelegator->dataMasterId(), 0 /* ContextId */,
+            S->getFirstCoreUserPC() /* PC */, std::move(atomicOp));
       } else {
         /**
          * For offloaded atomic stream, we issue normal load requests,
@@ -2296,7 +2298,8 @@ void StreamEngine::issueElement(StreamElement *element) {
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
         pkt = GemForgePacketHandler::createGemForgePacket(
             cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
-            cpuDelegator->dataMasterId(), 0 /* ContextId */, 0 /* PC */, flags);
+            cpuDelegator->dataMasterId(), 0 /* ContextId */,
+            S->getFirstCoreUserPC() /* PC */, flags);
         pkt->req->setVirt(cacheLineVAddr);
       }
     } else {
@@ -2311,10 +2314,12 @@ void StreamEngine::issueElement(StreamElement *element) {
       }
       pkt = GemForgePacketHandler::createGemForgePacket(
           cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
-          cpuDelegator->dataMasterId(), 0 /* ContextId */, 0 /* PC */, flags);
+          cpuDelegator->dataMasterId(), 0 /* ContextId */,
+          S->getFirstCoreUserPC() /* PC */, flags);
       pkt->req->setVirt(cacheLineVAddr);
     }
     pkt->req->getStatistic()->isStream = true;
+    pkt->req->getStatistic()->streamName = S->streamName.c_str();
     S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1,
                       pkt->getAddr(), pkt->getSize());
 

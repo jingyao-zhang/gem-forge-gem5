@@ -28,6 +28,7 @@ struct RequestStatistic {
    */
   uint64_t pc = 0;
   bool isStream = false;
+  const char *streamName = nullptr;
   HitPlaceE hitCacheLevel;
   /**
    * If this request caused NoC traffic, here is the basic breakdown.
