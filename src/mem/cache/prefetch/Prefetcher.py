@@ -99,11 +99,15 @@ class BasePrefetcher(ClockedObject):
         if len(probeNames) <= 0:
             raise TypeError("probeNames must have at least one element")
         self.addEvent(HWPProbeEvent(self, simObj, *probeNames))
-    _tlbs = []
+
     def registerTLB(self, simObj):
         if not isinstance(simObj, SimObject):
             raise TypeError("argument must be a SimObject type")
-        self._tlbs.append(simObj)
+        # Initialize _tlbs as instance variable.
+        try:
+            self._tlbs.append(simObj)
+        except AttributeError:
+            self._tlbs = [simObj]
 
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'
