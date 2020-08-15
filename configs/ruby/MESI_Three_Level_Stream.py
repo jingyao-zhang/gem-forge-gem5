@@ -142,6 +142,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 bingoPrefetcher=bingo_prefetcher,
                 send_evictions = send_evicts(options),
                 clk_domain = clk_domain, ruby_system = ruby_system,
+                transitions_per_cycle = 8,
+                number_of_TBEs = 32,
                 # ! Sean: l0_cntrl is actually L1 cache.
                 # ! And request_latency is the enqueue latency for request from L1 -> L2.
                 # ! So we charge L2 tag lookup latency here.
@@ -170,6 +172,23 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                     dcache = l0d_cache,
                                     ruby_system = ruby_system,
                                     is_ideal = options.gem_forge_ideal_ruby)
+            if options.gem_forge_prefetcher == 'imp':
+                if not options.gem_forge_prefetch_on_access:
+                    raise ValueError('IMP must be used with PrefetchOnAccess.')
+                cpu = system.cpu[i * num_cpus_per_cluster + j]
+                if not hasattr(cpu, 'dtb'):
+                    raise ValueError('IMP requires TLB to work with virtual address.')
+                # IMP can be used with RubySequencer.
+                cpu_seq.prefetcher = IndirectMemoryPrefetcher(
+                    streaming_distance=8,
+                    use_virtual_addresses=True,
+                    index_queue_size=16,
+                    on_inst=False,
+                    prefetch_on_access=options.gem_forge_prefetch_on_access,
+                    max_prefetch_distance=options.gem_forge_prefetch_dist,
+                    streaming_distance=options.gem_forge_prefetch_dist,
+                )
+                cpu_seq.prefetcher.registerTLB(cpu.dtb)
 
             l0_cntrl.sequencer = cpu_seq
 
@@ -193,6 +212,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 cache = l1_cache,
                 prefetcher = l1_prefetcher,
                 enable_prefetch = (options.gem_forge_l2_prefetcher == 'stride'),
+                transitions_per_cycle = 16,
+                number_of_TBEs = 64,
                 # ! Sean: l1_cntrl is actually L2 cache.
                 # ! And l1_request_latency is the enqueue latency for request from L2 -> L3.
                 # ! So we charge L3 tag lookup latency here.
@@ -276,6 +297,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 L2cache = l2_cache, cluster_id = i,
                 transitions_per_cycle = options.ports,
                 ruby_system = ruby_system,
+                # transitions_per_cycle = 32,
+                number_of_TBEs = 128,
                 # ! Sean: StreamAwareCache.
                 # ! For the LLCSelect bits.
                 # ! So far do block interleaving.

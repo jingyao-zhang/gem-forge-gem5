@@ -465,10 +465,11 @@ RubyPort::ruby_hit_callback(PacketPtr pkt)
     RubyPort::SenderState *senderState =
         safe_cast<RubyPort::SenderState *>(pkt->popSenderState());
     MemSlavePort *port = senderState->port;
+    bool noTimingResponse = senderState->noTimingResponse;
     assert(port != NULL);
     delete senderState;
 
-    port->hitCallback(pkt);
+    port->hitCallback(pkt, noTimingResponse);
 
     trySendRetries();
 }
@@ -534,7 +535,7 @@ RubyPort::drain()
 }
 
 void
-RubyPort::MemSlavePort::hitCallback(PacketPtr pkt)
+RubyPort::MemSlavePort::hitCallback(PacketPtr pkt, bool noTimingResponse)
 {
     bool needsResponse = pkt->needsResponse();
 
@@ -594,10 +595,17 @@ RubyPort::MemSlavePort::hitCallback(PacketPtr pkt)
     // turn packet around to go back to requester if response expected
     if (needsResponse) {
         DPRINTF(RubyPort, "Sending packet back over port\n");
+        // Just invoke the callback.
+        ruby_port->justBeforeResponseCallback(pkt);
         // Send a response in the same cycle. There is no need to delay the
         // response because the response latency is already incurred in the
         // Ruby protocol.
-        schedTimingResp(pkt, curTick());
+        if (!noTimingResponse) {
+            schedTimingResp(pkt, curTick());
+        } else {
+            assert(pkt->cmd.isHWPrefetch());
+            delete pkt;
+        }
     } else {
         delete pkt;
     }

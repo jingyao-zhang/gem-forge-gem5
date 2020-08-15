@@ -838,7 +838,8 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   action(ur_profileDataReq, "\ur", desc="Profile the data request") {
     peek(mandatoryQueue_in, RubyRequest) { 
       DynamicStreamSliceIdVec sliceIdVec;
-      recordLLCReqQueueStats(getRequestStatistic(in_msg.pkt), sliceIdVec);
+      RequestStatisticPtr reqStats := getRequestStatistic(in_msg.pkt);
+      recordLLCReqQueueStats(reqStats, sliceIdVec);
     }
   }
 
@@ -1203,18 +1204,19 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
 
   // Transitions from Shared
   transition({S,E,M}, Load) {
+    // Must call this as h_load_hit may release the pkt.
+    ur_profileDataReq;
     h_load_hit;
     uu_profileDataHit;
     ph_observeHit;
-    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
   transition({S, E, M}, LoadHitAndForward) {
+    ur_profileDataReq;
     h_load_hit;
     fsa_forwardStreamAccess;
     uu_profileDataHit;
-    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1247,10 +1249,10 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
 
   // Transitions from Exclusive
   transition({E,M}, Store, M) {
+    ur_profileDataReq;
     hh_store_hit;
     uu_profileDataHit;
     ph_observeHit;
-    ur_profileDataReq;
     k_popMandatoryQueue;
   }
 
@@ -1404,8 +1406,8 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     k_popMandatoryQueue;
   }
   transition({I, S, E, M, Inst_IS, IS, IM, SM, IU}, StreamToMLC) {
-    fsr_forwardStreamReq;
     ur_profileDataReq;
+    fsr_forwardStreamReq;
     k_popMandatoryQueue;
   }
 

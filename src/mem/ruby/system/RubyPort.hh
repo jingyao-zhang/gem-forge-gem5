@@ -83,7 +83,7 @@ class RubyPort : public ClockedObject
         MemSlavePort(const std::string &_name, RubyPort *_port,
                      bool _access_backing_store,
                      PortID id, bool _no_retry_on_stall);
-        void hitCallback(PacketPtr pkt);
+        void hitCallback(PacketPtr pkt, bool noTimingResponse);
         void evictionCallback(Addr address);
 
       protected:
@@ -138,6 +138,13 @@ class RubyPort : public ClockedObject
     struct SenderState : public Packet::SenderState
     {
         MemSlavePort *port;
+        /**
+         * ! GemForge
+         * This packet is injected directly, not through sendTimingReq.
+         * Therefore, there is no need to send timing resp.
+         * This is used to implement hardware prefetch in RubySequencer.
+         */
+        bool noTimingResponse = false;
         SenderState(MemSlavePort * _port) : port(_port)
         {}
      };
@@ -171,6 +178,14 @@ class RubyPort : public ClockedObject
   protected:
     void trySendRetries();
     void ruby_hit_callback(PacketPtr pkt);
+    /**
+     * This is the callback just before the MemSlavePort
+     * schedule response to master.
+     * We required this to implement Sequencer probe point
+     * of hit and fill, as only at this point the data
+     * is truly ready (with backing store accessed).
+     */
+    virtual void justBeforeResponseCallback(PacketPtr pkt) {}
     void testDrainComplete();
     void ruby_eviction_callback(Addr address);
 

@@ -11,9 +11,11 @@ def initializePrefetch(options, system):
         cpu.dcache.prefetch_on_access = options.gem_forge_prefetch_on_access
         if options.gem_forge_prefetcher == 'imp':
             cpu.dcache.prefetcher = IndirectMemoryPrefetcher(
-                streaming_distance=8,
                 use_virtual_addresses=True,
                 index_queue_size=16,
+                on_inst=False,
+                max_prefetch_distance=options.gem_forge_prefetch_dist,
+                streaming_distance=options.gem_forge_prefetch_dist,
             )
             if not cpu.dcache.prefetch_on_access:
                 raise ValueError('IMP must be used with PrefetchOnAccess.')
@@ -31,6 +33,7 @@ def initializePrefetch(options, system):
                     address_map_cache_entries="65536",
                     # training_unit_assoc=8,
                     training_unit_entries="65536",
+                    on_inst=False,
                 )
             else:
                 cpu.l1_5dcache.prefetcher = StridePrefetcher(degree=8, latency=1)
@@ -43,6 +46,7 @@ def initializePrefetch(options, system):
             address_map_cache_entries="65536",
             # training_unit_assoc=8,
             training_unit_entries="65536",
+            on_inst=False,
         )
     else:
         system.l2.prefetcher = StridePrefetcher(degree=8, latency=1)

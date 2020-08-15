@@ -27,6 +27,7 @@
 from m5.params import *
 from m5.proxy import *
 from m5.objects.ClockedObject import ClockedObject
+from m5.objects.Prefetcher import BasePrefetcher
 
 class RubyPort(ClockedObject):
    type = 'RubyPort'
@@ -70,6 +71,11 @@ class RubySequencer(RubyPort):
    # 99 is the dummy default value
    coreid = Param.Int(99, "CorePair core id")
    is_ideal = Param.Bool(False, "Enable ideal memory mode, only work for x86 cpu")
+
+   # Support classical cache prefetcher.
+   prefetcher = Param.BasePrefetcher(NULL,"Prefetcher attached to cache")
+   prefetch_on_access = Param.Bool(False,
+        "Notify the hardware prefetcher on every access (not just misses)")
 
 class DMASequencer(RubyPort):
    type = 'DMASequencer'

@@ -46,6 +46,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "mem/cache/cache_prefetcher_view.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/protocol/MachineType.hh"
 #include "mem/ruby/protocol/RubyRequestType.hh"
@@ -54,6 +55,11 @@
 #include "mem/ruby/system/RubyPort.hh"
 #include "mem/ruby/system/IdealSequencer.hh"
 #include "params/RubySequencer.hh"
+#include "sim/probe/probe.hh"
+
+namespace Prefetcher {
+  class Base;
+};
 
 struct SequencerRequest
 {
@@ -79,7 +85,7 @@ struct SequencerRequest
 
 std::ostream& operator<<(std::ostream& out, const SequencerRequest& obj);
 
-class Sequencer : public RubyPort
+class Sequencer : public RubyPort, public CachePrefetcherView
 {
   public:
     typedef RubySequencerParams Params;
@@ -189,7 +195,8 @@ class Sequencer : public RubyPort
                      const MachineType mach, const bool externalHit,
                      const Cycles initialRequestTime,
                      const Cycles forwardRequestTime,
-                     const Cycles firstResponseTime);
+                     const Cycles firstResponseTime,
+                     bool issuedToCache);
 
     void recordMissLatency(SequencerRequest* srequest, bool llscSuccess,
                            const MachineType respondingMach,
@@ -330,6 +337,43 @@ class Sequencer : public RubyPort
      * @return a boolean indicating if the line address was found.
      */
     bool llscStoreConditional(const Addr);
+
+    Prefetcher::Base *prefetcher;
+
+    /** To probe when a cache hit occurs */
+    ProbePointArg<PacketPtr> *ppHit;
+
+    /** To probe when a cache miss occurs */
+    ProbePointArg<PacketPtr> *ppMiss;
+
+    /** To probe when a cache fill occurs */
+    ProbePointArg<PacketPtr> *ppFill;
+
+  public:
+    /**
+     * Implement the CachePrefetcherView interface.
+     */
+    unsigned getBlockSize() const override;
+    bool inCache(Addr addr, bool is_secure) const override;
+    bool inMissQueue(Addr addr, bool is_secure) const override;
+    bool hasBeenPrefetched(Addr addr, bool is_secure) const override;
+    bool coalesce() const override;
+    ProbeManager *getCacheProbeManager() override;
+    ThreadContext *getThreadContext(ContextID contextId) override;
+    void regProbePoints() override;
+  
+  protected:
+    /**
+     * This is a very hacky way to implement probe point for hit
+     * and fill. We set hasIssuedToCache in hitCallback(), which
+     * will be used by justBeforeResponseCallback() when RubyPort
+     * schedules the response.
+     */
+    bool hasIssuedToCache;
+    void justBeforeResponseCallback(PacketPtr pkt) override;
+
+    void issuePrefetch();
+    EventFunctionWrapper issuePrefetchEvent;
 
   public:
     /**

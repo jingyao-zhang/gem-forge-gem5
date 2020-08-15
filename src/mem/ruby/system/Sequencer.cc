@@ -50,6 +50,7 @@
 #include "debug/ProtocolTrace.hh"
 #include "debug/RubySequencer.hh"
 #include "debug/RubyStats.hh"
+#include "mem/cache/prefetch/base.hh"
 #include "mem/packet.hh"
 #include "mem/ruby/profiler/Profiler.hh"
 #include "mem/ruby/protocol/PrefetchBit.hh"
@@ -68,7 +69,9 @@ RubySequencerParams::create()
 
 Sequencer::Sequencer(const Params *p)
     : RubyPort(p), m_isIdeal(p->is_ideal), m_IncompleteTimes(MachineType_NUM),
-      deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check")
+      deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check"),
+      prefetcher(p->prefetcher),
+      issuePrefetchEvent([this]{ issuePrefetch(); }, "Sequencer issue prefetch")
 {
     m_outstanding_count = 0;
 
@@ -89,6 +92,11 @@ Sequencer::Sequencer(const Params *p)
         this->m_idealSeq = m5::make_unique<IdealSequencer>(this);
         assert(p->ruby_system->getAccessBackingStore() &&
             "Ideal mode only works with backing store.");
+    }
+
+    if (prefetcher) {
+        assert(!m_isIdeal && "Can not use prefetcher in ideal mode.");
+        prefetcher->setCache(this);
     }
 }
 
@@ -450,19 +458,19 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
                 aliased_stores++;
             }
             markRemoved();
-            ruby_request = false;
             hitCallback(&seq_req, data, success, mach, externalHit,
                         initialRequestTime, forwardRequestTime,
-                        firstResponseTime);
+                        firstResponseTime, ruby_request);
+            ruby_request = false;
         } else {
             // handle read request
             assert(!ruby_request);
             markRemoved();
-            ruby_request = false;
             aliased_loads++;
             hitCallback(&seq_req, data, true, mach, externalHit,
                         initialRequestTime, forwardRequestTime,
-                        firstResponseTime);
+                        firstResponseTime, ruby_request);
+            ruby_request = false;
         }
         seq_req_list.pop_front();
     }
@@ -527,10 +535,10 @@ Sequencer::readCallback(Addr address, DataBlock& data,
                               firstResponseTime);
         }
         markRemoved();
-        ruby_request = false;
         hitCallback(&seq_req, data, true, mach, externalHit,
                     initialRequestTime, forwardRequestTime,
-                    firstResponseTime);
+                    firstResponseTime, ruby_request);
+        ruby_request = false;
         seq_req_list.pop_front();
     }
 
@@ -546,7 +554,8 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
                        const MachineType mach, const bool externalHit,
                        const Cycles initialRequestTime,
                        const Cycles forwardRequestTime,
-                       const Cycles firstResponseTime)
+                       const Cycles firstResponseTime,
+                       bool issuedToCache)
 {
     warn_once("Replacement policy updates recently became the responsibility "
               "of SLICC state machines. Make sure to setMRU() near callbacks "
@@ -625,6 +634,7 @@ Sequencer::hitCallback(SequencerRequest* srequest, DataBlock& data,
         delete pkt;
         rs->m_cache_recorder->enqueueNextFlushRequest();
     } else {
+        this->hasIssuedToCache = issuedToCache;
         ruby_hit_callback(pkt);
         testDrainComplete();
     }
@@ -957,5 +967,128 @@ void Sequencer::dumpPCLatStats() {
             stat->totalLatency, static_cast<double>(stat->totalLatency * 100) / totalLatency,
             stat->streamName ? stat->streamName : ""
         );
+    }
+}
+
+unsigned Sequencer::getBlockSize() const {
+    return RubySystem::getBlockSizeBytes();
+}
+
+bool Sequencer::inCache(Addr addr, bool is_secure) const {
+    // So far not sure how to implement this.
+    return false;
+}
+
+bool Sequencer::inMissQueue(Addr addr, bool is_secure) const {
+    // Should be able to impelemen this with Sequencer.
+    return false;
+}
+
+bool Sequencer::hasBeenPrefetched(Addr addr, bool is_secure) const {
+    // Not sure how to support this in sequencer.
+    return false;
+}
+
+bool Sequencer::coalesce() const {
+    return false;
+}
+
+ProbeManager *Sequencer::getCacheProbeManager() {
+    return getProbeManager();
+}
+
+ThreadContext *Sequencer::getThreadContext(ContextID contextId) {
+    return system->getThreadContext(contextId);
+}
+
+void Sequencer::regProbePoints() {
+    ppHit = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Hit");
+    ppMiss = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Miss");
+    ppFill = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Fill");
+}
+
+void Sequencer::justBeforeResponseCallback(PacketPtr pkt) {
+    if (pkt->cmd.isHWPrefetch()) {
+        // This is prefetch request, just notify fill.
+        ppFill->notify(pkt);
+    } else {
+        // This is core request.
+        if (this->hasIssuedToCache) {
+            bool missedInHighestCache = false;
+            if (pkt->req->hasStatistic()) {
+                const auto &statistic = pkt->req->getStatistic();
+                if (statistic->hitCacheLevel >
+                    RequestStatistic::HitPlaceE::L0_CACHE) {
+                    missedInHighestCache = true;
+                }
+            }
+            if (missedInHighestCache) {
+                ppMiss->notify(pkt);
+                ppFill->notify(pkt);
+            } else {
+                ppHit->notify(pkt);
+            }
+        } else {
+            ppHit->notify(pkt);
+        }
+    }
+    // We also schedule future prefetches here.
+    if (prefetcher) {
+        Tick next_pf_time = std::max(prefetcher->nextPrefetchReadyTime(),
+                                     clockEdge());
+        if (next_pf_time != MaxTick && !issuePrefetchEvent.scheduled()) {
+            schedule(issuePrefetchEvent, next_pf_time);
+        }
+    }
+}
+
+void Sequencer::issuePrefetch() {
+    assert(prefetcher && "This should not be scheduled if no prefetcher.");
+    if (m_outstanding_count < m_max_outstanding_requests) {
+        // If we have a miss queue slot, we can try a prefetch
+        PacketPtr pkt = prefetcher->getPacket();
+        if (pkt) {
+            Addr pf_addr = makeLineAddress(pkt->getAddr());
+            if (m_RequestTable.count(pf_addr)) {
+                // There is already a request to that line. Ignore it.
+                delete pkt;
+            } else if (inCache(pf_addr, pkt->isSecure())) {
+                // The data is already in the cache.
+                delete pkt;
+            } else {
+                // We try to issue this.
+                if (makeRequest(pkt) == RequestStatus_Issued) {
+                    // ! Issued, pick a random port for fake hitCallback.
+                    auto senderState = new SenderState(slave_ports.front());
+                    senderState->noTimingResponse = true;
+                    pkt->pushSenderState(senderState);
+                } else {
+                    // Somehow we are not issuing, just drop it.
+                    delete pkt;
+                }
+            }
+            // Addr pf_addr = pkt->getBlockAddr(blkSize);
+            // if (!tags->findBlock(pf_addr, pkt->isSecure()) &&
+            //     !mshrQueue.findMatch(pf_addr, pkt->isSecure()) &&
+            //     !writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
+            //     // Update statistic on number of prefetches issued
+            //     // (hwpf_mshr_misses)
+            //     assert(pkt->req->masterId() < system->maxMasters());
+            //     stats.cmdStats(pkt).mshr_misses[pkt->req->masterId()]++;
+
+            //     // allocate an MSHR and return it, note
+            //     // that we send the packet straight away, so do not
+            //     // schedule the send
+            //     return allocateMissBuffer(pkt, curTick(), false);
+            // } else {
+            //     // free the request and packet
+            //     delete pkt;
+            // }
+        }
+    }
+    Tick next_pf_time = std::max(prefetcher->nextPrefetchReadyTime(),
+                                 nextCycle());
+    if (next_pf_time != MaxTick && !issuePrefetchEvent.scheduled()) {
+        schedule(issuePrefetchEvent, next_pf_time);
     }
 }
