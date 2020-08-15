@@ -180,7 +180,6 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     raise ValueError('IMP requires TLB to work with virtual address.')
                 # IMP can be used with RubySequencer.
                 cpu_seq.prefetcher = IndirectMemoryPrefetcher(
-                    streaming_distance=8,
                     use_virtual_addresses=True,
                     index_queue_size=16,
                     on_inst=False,
