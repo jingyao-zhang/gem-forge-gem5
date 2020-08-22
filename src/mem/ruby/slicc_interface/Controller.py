@@ -39,6 +39,7 @@
 from m5.params import *
 from m5.proxy import *
 from m5.objects.ClockedObject import ClockedObject
+from m5.objects.Sequencer import RubySequencer
 
 class RubyController(ClockedObject):
     type = 'RubyController'
@@ -68,6 +69,7 @@ class RubyController(ClockedObject):
 
     memory = MasterPort("Port for attaching a memory controller")
     system = Param.System(Parent.any, "system object parameter")
+    sequencer = Param.RubySequencer(NULL,"CPU sequencer attached to cache")
 
 # ! Sean: StreamAwareCache
 class RubyStreamAwareController(RubyController):

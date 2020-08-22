@@ -193,6 +193,14 @@ class AbstractController : public ClockedObject, public Consumer
       }
     }
 
+    /**
+     * Check if an address has been prefetched.
+     * Used to implement a prefetcher at RubySequencer.
+     */
+    virtual bool hasBeenPrefetched(Addr addr) const {
+      panic("AbstractController::hasBeenPrefetched() not implemented.");
+    }
+
   protected:
     //! Profiles original cache requests including PUTs
     void profileRequest(const std::string &request);

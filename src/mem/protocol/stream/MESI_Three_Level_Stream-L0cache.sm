@@ -318,6 +318,15 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     }
   }
 
+  bool hasBeenPrefetched(Addr addr) {
+    Entry entry := getCacheEntry(addr);
+    if (is_valid(entry)) {
+      return entry.isPrefetch;
+    } else {
+      return false;
+    }
+  }
+
   int getPendingAcks(TBE tbe) {
     return tbe.pendingAcks;
   }

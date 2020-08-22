@@ -55,6 +55,7 @@
 #include "mem/ruby/profiler/Profiler.hh"
 #include "mem/ruby/protocol/PrefetchBit.hh"
 #include "mem/ruby/protocol/RubyAccessMode.hh"
+#include "mem/ruby/slicc_interface/AbstractController.hh"
 #include "mem/ruby/slicc_interface/RubyRequest.hh"
 #include "mem/ruby/system/RubySystem.hh"
 #include "sim/system.hh"
@@ -975,18 +976,19 @@ unsigned Sequencer::getBlockSize() const {
 }
 
 bool Sequencer::inCache(Addr addr, bool is_secure) const {
-    // So far not sure how to implement this.
-    return false;
+    // For now just check data cache.
+    return m_dataCache_ptr->isTagPresent(addr);
 }
 
 bool Sequencer::inMissQueue(Addr addr, bool is_secure) const {
-    // Should be able to impelemen this with Sequencer.
-    return false;
+    // So far just check our request table.
+    return m_RequestTable.count(makeLineAddress(addr));
 }
 
 bool Sequencer::hasBeenPrefetched(Addr addr, bool is_secure) const {
-    // Not sure how to support this in sequencer.
-    return false;
+    // Invoke the controller to see this.
+    assert(this->m_controller);
+    return this->m_controller->hasBeenPrefetched(makeLineAddress(addr));
 }
 
 bool Sequencer::coalesce() const {
