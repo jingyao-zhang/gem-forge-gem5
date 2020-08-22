@@ -43,6 +43,24 @@ def macroop VPBROADCASTD_YMM_XMM {
     vclear dest=xmm4, destVL=32
 };
 
+def macroop VPBROADCASTB_YMM_XMM {
+    vbroadcast8 dest=xmm0, src=xmm0m, destVL=32
+    vclear dest=xmm4, destVL=32
+};
+
+def macroop VPBROADCASTB_YMM_M {
+    ldfp ufp1, seg, sib, disp, dataSize=1
+    vbroadcast8 dest=xmm0, src=ufp1, destVL=32
+    vclear dest=xmm4, destVL=32
+};
+
+def macroop VPBROADCASTB_YMM_P {
+    rdip t7
+    ldfp ufp1, seg, riprel, disp, dataSize=1
+    vbroadcast8 dest=xmm0, src=ufp1, destVL=32
+    vclear dest=xmm4, destVL=32
+};
+
 def macroop VPBROADCASTD_YMM_M {
     ldfp ufp1, seg, sib, disp, dataSize=4
     vbroadcast32 dest=xmm0, src=ufp1, destVL=32

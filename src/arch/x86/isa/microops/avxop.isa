@@ -248,6 +248,33 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::SIntMin);
         '''
 
+    class Vbroadcast8(AVXOp):
+        def __init__(self, dest, src, destVL):
+            super(Vbroadcast8, self).__init__(
+                dest=dest, src1=src, destVL=destVL
+            )
+        srcType = 'AVXOpBase::SrcType::Reg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            _numSrcRegs = 1;
+            _srcRegIdx[0] = RegId(FloatRegClass, src1);
+        '''
+        code = '''
+            FloatInt src;
+            src.ul = xc->readFloatRegOperandBits(this, 0);
+            src.uc.i2 = src.uc.i1;
+            src.uc.i3 = src.uc.i1;
+            src.uc.i4 = src.uc.i1;
+            src.uc.i5 = src.uc.i1;
+            src.uc.i6 = src.uc.i1;
+            src.uc.i7 = src.uc.i1;
+            src.uc.i8 = src.uc.i1;
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            for (int i = 0; i < vDestRegs; ++i) {
+                xc->setFloatRegOperandBits(this, i, src.ul);
+            }
+        '''
+
     class Vbroadcast32(AVXOp):
         def __init__(self, dest, src, destVL):
             super(Vbroadcast32, self).__init__(

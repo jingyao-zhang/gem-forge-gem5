@@ -59,6 +59,26 @@ protected:
       int32_t i1;
       int32_t i2;
     } si;
+    struct __attribute__((packed)) {
+      uint8_t i1;
+      uint8_t i2;
+      uint8_t i3;
+      uint8_t i4;
+      uint8_t i5;
+      uint8_t i6;
+      uint8_t i7;
+      uint8_t i8;
+    } uc;
+    struct __attribute__((packed)) {
+      int8_t i1;
+      int8_t i2;
+      int8_t i3;
+      int8_t i4;
+      int8_t i5;
+      int8_t i6;
+      int8_t i7;
+      int8_t i8;
+    } sc;
     uint64_t ul;
     int64_t sl;
   };
