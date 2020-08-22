@@ -197,7 +197,7 @@ struct StreamElement {
    */
   uint64_t addr = 0;
   uint64_t size = 0;
-  static constexpr int MAX_CACHE_BLOCKS = 10;
+  static constexpr int MAX_CACHE_BLOCKS = 24;
   int cacheBlocks = 0;
   CacheBlockBreakdownAccess cacheBlockBreakdownAccesses[MAX_CACHE_BLOCKS];
   /**

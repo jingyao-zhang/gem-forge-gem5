@@ -501,12 +501,9 @@ void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
   // Copy the data.
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
   if (Debug::DEBUG_TYPE) {
-    std::stringstream ss;
-    for (auto i = 0; i < size; ++i) {
-      ss << ' ' << std::hex << static_cast<int>(val[i]) << std::dec;
-    }
-    S_ELEMENT_DPRINTF(this, "SetValue [%#x, %#x), initOffset %d, data 0x%s.\n",
-                      vaddr, vaddr + size, initOffset, ss.str());
+    S_ELEMENT_DPRINTF(this, "SetValue [%#x, %#x), initOffset %d, data %s.\n",
+                      vaddr, vaddr + size, initOffset,
+                      GemForgeUtils::dataToString(val, size));
   }
   for (int i = 0; i < size; ++i) {
     this->value.at(i + initOffset) = val[i];
@@ -533,15 +530,10 @@ void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
 void StreamElement::getValue(Addr vaddr, int size, uint8_t *val) const {
   // Copy the data.
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
-  if (Debug::DEBUG_TYPE) {
-    std::stringstream ss;
-    for (auto i = 0; i < size; ++i) {
-      ss << ' ' << std::hex << static_cast<int>(this->value.at(i + initOffset))
-         << std::dec;
-    }
-    S_ELEMENT_DPRINTF(this, "GetValue [%#x, %#x), initOffset %d, data 0x%s.\n",
-                      vaddr, vaddr + size, initOffset, ss.str());
-  }
+  S_ELEMENT_DPRINTF(
+      this, "GetValue [%#x, +%d), initOffset %d, data 0x%s.\n", vaddr, size,
+      initOffset,
+      GemForgeUtils::dataToString(&this->value.at(initOffset), size));
   for (int i = 0; i < size; ++i) {
     val[i] = this->value.at(i + initOffset);
   }

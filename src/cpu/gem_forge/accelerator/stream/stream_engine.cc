@@ -1023,6 +1023,19 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
        */
       element->getValueByStreamId(streamId, args.values->back().data(),
                                   StreamUserArgs::MaxElementSize);
+      // if (element->FIFOIdx.entryIdx >= 0) {
+      //   if (S->getStreamName() ==
+      //       "(mser.c::68(mser) 163 bb68 bb68::tmp74(load))") {
+      //     S_ELEMENT_HACK(element, "Returned Value %s.\n",
+      //                    GemForgeUtils::rebuildData(args.values->back().data(),
+      //                                               sizeof(int64_t)));
+      //   } else if (S->getStreamName() ==
+      //              "(mser.c::68(mser) 162 bb68 bb68::tmp71(load))") {
+      //     S_ELEMENT_HACK(element, "Returned Value %s.\n",
+      //                    GemForgeUtils::rebuildData(args.values->back().data(),
+      //                                               sizeof(int)));
+      //   }
+      // }
     }
   }
 }
@@ -1413,6 +1426,22 @@ void StreamEngine::initializeStreams(
   for (auto newStream : createdStreams) {
     newStream->finalize();
   }
+  /**
+   * ! Hack: Some stream has crazy large element size, e.g. vectorized
+   * ! stream_memset, we should limit the maxSize for them to 2.
+   * Notice that this doesn't work with throttling so far, but stream_memset
+   * has only StoreStream (which is currently not throttled), this should
+   * be fine.
+   * Currently the threshold is 8 cache lines.
+   */
+  for (auto newStream : createdStreams) {
+    size_t memElementSize = newStream->getMemElementSize();
+    if (memElementSize >= cpuDelegator->cacheLineSize() * 8) {
+      // For now I just updat
+      newStream->maxSize =
+          std::min(newStream->maxSize, static_cast<size_t>(2ull));
+    }
+  }
 }
 
 void StreamEngine::generateCoalescedStreamIdMap(
@@ -1729,16 +1758,16 @@ void StreamEngine::allocateElements() {
               return SA->getAllocSize() < SB->getAllocSize();
             });
 
-  for (auto stepStream : configuredStepRootStreams) {
+  for (auto stepRootStream : configuredStepRootStreams) {
 
     /**
      * ! A hack here to delay the allocation if the back base stream has
      * ! not caught up.
      */
-    auto maxAllocSize = stepStream->maxSize;
-    if (!stepStream->backBaseStreams.empty()) {
-      for (auto backBaseS : stepStream->backBaseStreams) {
-        if (backBaseS->stepRootStream == stepStream) {
+    auto maxAllocSize = stepRootStream->maxSize;
+    if (!stepRootStream->backBaseStreams.empty()) {
+      for (auto backBaseS : stepRootStream->backBaseStreams) {
+        if (backBaseS->stepRootStream == stepRootStream) {
           // ! This is acutally a pointer chasing pattern.
           // ! No constraint should be enforced here.
           continue;
@@ -1764,8 +1793,8 @@ void StreamEngine::allocateElements() {
      * ! element.
      */
     {
-      auto allocSize = stepStream->getAllocSize();
-      auto &stepRootDynStream = stepStream->getLastDynamicStream();
+      auto allocSize = stepRootStream->getAllocSize();
+      auto &stepRootDynStream = stepRootStream->getLastDynamicStream();
       if (stepRootDynStream.totalTripCount > 0 && maxAllocSize > allocSize) {
         auto nextEntryIdx = stepRootDynStream.FIFOIdx.entryIdx;
         auto maxTripCount = stepRootDynStream.totalTripCount + 1;
@@ -1780,7 +1809,8 @@ void StreamEngine::allocateElements() {
       }
     }
 
-    const auto &stepStreams = this->getStepStreamList(stepStream);
+    const auto &stepStreams = this->getStepStreamList(stepRootStream);
+    const auto &stepRootDynStream = stepRootStream->getLastDynamicStream();
     for (size_t targetSize = 1;
          targetSize <= maxAllocSize && this->hasFreeElement(); ++targetSize) {
       for (auto S : stepStreams) {
@@ -1793,9 +1823,17 @@ void StreamEngine::allocateElements() {
         if (S->getAllocSize() >= targetSize) {
           continue;
         }
-        if (S != stepStream) {
-          if (S->getAllocSize() >= stepStream->getAllocSize()) {
+        if (S->getAllocSize() >= S->maxSize) {
+          continue;
+        }
+        if (S != stepRootStream) {
+          if (S->getAllocSize() >= stepRootStream->getAllocSize()) {
             // It doesn't make sense to allocate ahead than the step root.
+            continue;
+          }
+          const auto &dynS = S->getLastDynamicStream();
+          if (dynS.allocSize >= stepRootDynStream.allocSize) {
+            // It also doesn't make sense to allocate ahead than roo dynS.
             continue;
           }
         }
@@ -2188,15 +2226,15 @@ void StreamEngine::issueElement(StreamElement *element) {
          "Should never issue element for IVStream.");
   assert(element->shouldIssue() && "Should not issue this element.");
 
-  S_ELEMENT_DPRINTF(element, "Issue.\n");
-
   auto S = element->stream;
   auto dynS = element->dynS;
   if (element->flushed) {
     if (!S->isLoadStream()) {
       S_ELEMENT_PANIC(element, "Flushed non-load stream element.");
     }
-    S_ELEMENT_DPRINTF(element, "Reissue.\n");
+    S_ELEMENT_DPRINTF(element, "Issue - Reissue.\n");
+  } else {
+    S_ELEMENT_DPRINTF(element, "Issue.\n");
   }
   if (S->isLoadStream()) {
     this->numLoadElementsFetched++;

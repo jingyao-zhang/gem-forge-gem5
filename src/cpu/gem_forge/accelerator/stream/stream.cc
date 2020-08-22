@@ -741,8 +741,8 @@ void Stream::addAddrBaseElements(StreamElement *newElement) {
       if (baseDynS.allocSize - baseDynS.stepSize <=
           dynS.allocSize - dynS.stepSize) {
         this->se->dumpFIFO();
-        panic("Base %s has not enough allocated element for %s.",
-              baseS->getStreamName().c_str(), this->getStreamName().c_str());
+        S_PANIC(this, "Base %s has not enough allocated element.",
+                baseS->getStreamName());
       }
 
       auto baseElement = baseDynS.stepped;
