@@ -501,7 +501,8 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
           uint32_t ldSize;
           assert(callback->getAddrSize(ldVaddr, ldSize) &&
                  "Issued LQCallback should have Addr/Size.");
-          bool aliased = vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr;
+          bool aliased =
+              !(vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr);
           if (!aliased && !misspeculatedHasNonCoreDep) {
             // This is not aliased, and misspeculation has no non-core dep.
             // We can perform selective flush.
@@ -519,8 +520,8 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
 
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
-    InstSeqNum squashSeqNum, Addr vaddr, int size) {
-  // Flush all callbacks in LSQ that is >= squashSeqNum.
+    InstSeqNum checkSeqNum, Addr vaddr, int size) {
+  // Check for all callbacks in LSQ that is >= aliasSeqNum.
   if (pimpl->inflyInstQueue.empty()) {
     return;
   }
@@ -528,12 +529,20 @@ void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
   // There should only be a few InLSQ callbacks, so I directly search in it.
   bool foundMisspeculated = false;
   bool misspeculatedHasNonCoreDep = false;
+  InstSeqNum oldestAliasSeqNum = 0;
   for (const auto &inLSQEntry : pimpl->inLSQ) {
     auto seqNum = inLSQEntry.first;
     auto entry = inLSQEntry.second;
-    if (seqNum > squashSeqNum && !entry->bypassAliasCheck()) {
+    if (seqNum > checkSeqNum && !entry->bypassAliasCheck() &&
+        !entry->hasRAWMisspeculated()) {
       if (entry->hasOverlap(vaddr, size)) {
-        foundMisspeculated = true;
+        if (!foundMisspeculated) {
+          // First time.
+          oldestAliasSeqNum = seqNum;
+          foundMisspeculated = true;
+        } else {
+          oldestAliasSeqNum = std::min(oldestAliasSeqNum, seqNum);
+        }
         if (inLSQEntry.second->hasNonCoreDependent()) {
           misspeculatedHasNonCoreDep = true;
         }
@@ -543,16 +552,22 @@ void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
   if (!foundMisspeculated) {
     return;
   }
+  DPRINTF(O3CPUDelegator,
+          "Found RAWMisspeculation in LSQ: CheckSeq %llu OldestAliasSeq %llu "
+          "HasNonCoreUser %d.\n",
+          checkSeqNum, oldestAliasSeqNum, misspeculatedHasNonCoreDep);
+  // Flush those after oldestAliasSeqNum.
   for (const auto &inLSQEntry : pimpl->inLSQ) {
     auto seqNum = inLSQEntry.first;
     auto entry = inLSQEntry.second;
-    if (seqNum > squashSeqNum) {
-      bool aliased =
-          (!entry->bypassAliasCheck()) && entry->hasOverlap(vaddr, size);
+    if (seqNum >= oldestAliasSeqNum && !entry->bypassAliasCheck() &&
+        !entry->hasRAWMisspeculated()) {
+      bool aliased = entry->hasOverlap(vaddr, size);
       if (!aliased && !misspeculatedHasNonCoreDep) {
         // Selectively flush.
         continue;
       }
+      DPRINTF(O3CPUDelegator, "Flush InLSQ AliasSeqNum %llu.\n", seqNum);
       entry->foundRAWMisspeculation();
     }
   }

@@ -47,11 +47,10 @@ public:
 
   void squashInGemForge();
 
-  void foundRAWMisspeculation() { this->callback->RAWMisspeculate(); }
+  void foundRAWMisspeculation();
+  bool hasRAWMisspeculated() const { return this->rawMisspeculated; }
 
-  bool bypassAliasCheck() const {
-    return this->callback->bypassAliasCheck();
-  }
+  bool bypassAliasCheck() const { return this->callback->bypassAliasCheck(); }
   bool hasOverlap(Addr vaddr, int size) const;
   bool hasNonCoreDependent() const {
     return this->callback->hasNonCoreDependent();
@@ -73,5 +72,15 @@ protected:
    * This flag remembers that the instruction is squashed in GemForge.
    */
   bool squashedInGemForge = false;
+
+  /**
+   * This load request has triggered RAWMisspeculated. It should be
+   * squashed in O3, but ROB has a squash width, and may still trying
+   * to consult the callback about address/size, even in the same
+   * cycle.
+   * We remember this flag and O3CPUDelegator should considered me
+   * like squashed.
+   */
+  bool rawMisspeculated = false;
 };
 #endif

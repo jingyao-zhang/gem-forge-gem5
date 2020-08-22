@@ -123,6 +123,7 @@ template <class Impl> void GemForgeLoadRequest<Impl>::sendPacketToCache() {
    */
   INST_DPRINTF("GFLoadReq: sendPacketToCache.\n");
   assert(!this->squashedInGemForge);
+  assert(!this->rawMisspeculated);
   auto *packet = this->_packets.at(0);
   auto state = dynamic_cast<LSQSenderState *>(packet->senderState);
   state->outstanding++;
@@ -147,6 +148,7 @@ bool GemForgeLoadRequest<Impl>::isCacheBlockHit(Addr blockAddr,
 template <class Impl> void GemForgeLoadRequest<Impl>::checkValueReady() {
   assert(this->_numOutstandingPackets == 1);
   assert(!this->squashedInGemForge && "CheckValueReady after squashed.");
+  assert(!this->rawMisspeculated && "CheckValueReady after RAWMisspeculation.");
   assert(!this->_inst->isSquashed());
   // Not squashed, check if value is ready.
   assert(this->callback && "No callback to checkValueReady.");
@@ -173,7 +175,10 @@ template <class Impl>
 bool GemForgeLoadRequest<Impl>::hasOverlap(Addr vaddr, int size) const {
   Addr myVAddr;
   uint32_t mySize;
-  assert(this->callback->getAddrSize(myVAddr, mySize));
+  if (!this->callback->getAddrSize(myVAddr, mySize)) {
+    INST_PANIC("GFLoadReq: Failed to getAddrSize on LSQCallback: %s.\n",
+               *this->callback);
+  }
   if (myVAddr + mySize <= vaddr || myVAddr >= vaddr + size) {
     return false;
   }
@@ -183,6 +188,25 @@ bool GemForgeLoadRequest<Impl>::hasOverlap(Addr vaddr, int size) const {
 template <class Impl> void GemForgeLoadRequest<Impl>::squashInGemForge() {
   assert(!this->squashedInGemForge && "Already squashed in GemForge.");
   this->squashedInGemForge = true;
+  if (this->isAnyOutstandingRequest()) {
+    // 1. Deschedule check value ready event.
+    assert(this->checkValueReadyEvent.scheduled());
+    this->cpuDelegator->deschedule(&this->checkValueReadyEvent);
+    // 2. Fake response so that later we will be released.
+    assert(this->_senderState);
+    this->_senderState->deleteRequest();
+    this->_senderState->outstanding--;
+    this->packetReplied();
+  }
+}
+
+template <class Impl> void GemForgeLoadRequest<Impl>::foundRAWMisspeculation() {
+  if (this->rawMisspeculated) {
+    INST_PANIC("GFLoadReq: Multiple RAWMisspeculation on LSQCallback: %s.\n",
+               *this->callback);
+  }
+  this->callback->RAWMisspeculate();
+  this->rawMisspeculated = true;
   if (this->isAnyOutstandingRequest()) {
     // 1. Deschedule check value ready event.
     assert(this->checkValueReadyEvent.scheduled());
