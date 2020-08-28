@@ -26,11 +26,7 @@ class GemForgeCPUDelegator;
 class ISAStreamEngine {
 public:
   ISAStreamEngine(GemForgeCPUDelegator *_cpuDelegator)
-      : cpuDelegator(_cpuDelegator) {
-    for (auto i = 0; i < MaxNumRegionStreams; ++i) {
-      this->regionStreamIdTable.at(i) = InvalidStreamId;
-    }
-  }
+      : cpuDelegator(_cpuDelegator) {}
 
 #define DeclareStreamInstHandler(Inst)                                         \
   bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);            \
@@ -80,17 +76,32 @@ private:
    * Since the stream engine uses the full stream id,
    * we want to translate the regional stream id to it.
    * This is performed to reduce the complexity of the stream engine.
+   * Also we maintain a stack of RegionStreamIdTable to support inter-procedure
+   * stream configuration/termination.
    */
   static constexpr int MaxNumRegionStreams = 128;
-  std::array<uint64_t, MaxNumRegionStreams> regionStreamIdTable;
+  using RegionStreamIdTable = std::array<uint64_t, MaxNumRegionStreams>;
+  std::vector<RegionStreamIdTable> regionStreamIdTableStack;
   static constexpr uint64_t InvalidStreamId = 0;
   void insertRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
 
   bool canSetRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
   bool canRemoveRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
   void removeRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
+  uint64_t searchRegionStreamId(int regionStreamId) const;
   uint64_t lookupRegionStreamId(int regionStreamId) const;
   bool isValidRegionStreamId(int regionStreamId) const;
+
+  /**
+   * Remembers the mustBeMisspeculatedReason.
+   */
+  enum MustBeMisspeculatedReason {
+    CONFIG_HAS_PREV_REGION = 0,
+    CONFIG_CANNOT_SET_REGION_ID,
+  };
+
+  static std::string
+  mustBeMisspeculatedString(MustBeMisspeculatedReason reason);
 
   /**
    * StreamEngine is configured through a sequence of instructions:
@@ -177,6 +188,7 @@ private:
      * Sometimes it is for sure this instruction is misspeculated.
      */
     bool mustBeMisspeculated = false;
+    MustBeMisspeculatedReason mustBeMisspeculatedReason;
   };
   std::unordered_map<uint64_t, DynStreamInstInfo> seqNumToDynInfoMap;
 

@@ -53,6 +53,7 @@ void ISAStreamEngine::dispatchStreamConfig(
                    "previous region.\n",
                    configIdx, infoRelativePath);
     instInfo.mustBeMisspeculated = true;
+    instInfo.mustBeMisspeculatedReason = CONFIG_HAS_PREV_REGION;
     instInfo.configInfo.dynStreamRegionInfo->mustBeMisspeculated = true;
     return;
   }
@@ -62,6 +63,7 @@ void ISAStreamEngine::dispatchStreamConfig(
                    "set region stream table.\n",
                    configIdx, infoRelativePath);
     instInfo.mustBeMisspeculated = true;
+    instInfo.mustBeMisspeculatedReason = CONFIG_CANNOT_SET_REGION_ID;
     instInfo.configInfo.dynStreamRegionInfo->mustBeMisspeculated = true;
     return;
   }
@@ -106,8 +108,9 @@ void ISAStreamEngine::commitStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   auto infoRelativePath = this->getRelativePath(configIdx);
   auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
-    panic("[commit] MustMisspeculated StreamConfig %llu, %s.", configIdx,
-          infoRelativePath);
+    panic("[commit] MustMisspeculated StreamConfig %llu, %s, Reason %s.",
+          configIdx, infoRelativePath,
+          mustBeMisspeculatedString(instInfo.mustBeMisspeculatedReason));
   }
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
@@ -907,13 +910,16 @@ ISAStreamEngine::getStreamRegion(uint64_t configIdx) const {
 
 void ISAStreamEngine::insertRegionStreamIds(
     const ::LLVM::TDG::StreamRegion &region) {
+  // Add one region table to the stack.
+  this->regionStreamIdTableStack.emplace_back();
+  auto &regionStreamIdTable = this->regionStreamIdTableStack.back();
+  regionStreamIdTable.fill(InvalidStreamId);
   for (const auto &streamInfo : region.streams()) {
     auto streamId = streamInfo.id();
     auto regionStreamId = streamInfo.region_stream_id();
-    const int MaxRegionStreamId = 128;
-    assert(regionStreamId < MaxRegionStreamId &&
+    assert(regionStreamId < MaxNumRegionStreams &&
            "More than 128 streams in a region.");
-    this->regionStreamIdTable.at(regionStreamId) = streamId;
+    regionStreamIdTable.at(regionStreamId) = streamId;
   }
   if (Debug::ISAStreamEngine) {
     std::stringstream ss;
@@ -922,7 +928,7 @@ void ISAStreamEngine::insertRegionStreamIds(
       // Perform the removal.
       auto regionStreamId = streamInfo.region_stream_id();
       ss << ' ' << regionStreamId << "->"
-         << this->regionStreamIdTable.at(regionStreamId);
+         << regionStreamIdTable.at(regionStreamId);
     }
     ISA_SE_DPRINTF("%s.\n", ss.str());
   }
@@ -930,15 +936,14 @@ void ISAStreamEngine::insertRegionStreamIds(
 
 bool ISAStreamEngine::canSetRegionStreamIds(
     const ::LLVM::TDG::StreamRegion &region) {
+  // Since we are now using a stack of RegionStreamTable, we allow
+  // overriding previous RegionStreamId. This is for inter-procedure
+  // streams.
   for (const auto &streamInfo : region.streams()) {
     // Check if valid to be removed.
     auto regionStreamId = streamInfo.region_stream_id();
-    if (this->regionStreamIdTable.size() <= regionStreamId) {
+    if (regionStreamId >= MaxNumRegionStreams) {
       // Overflow RegionStreamId.
-      return false;
-    }
-    if (this->regionStreamIdTable.at(regionStreamId) != InvalidStreamId) {
-      // RegionStreamId Compromised.
       return false;
     }
   }
@@ -947,15 +952,20 @@ bool ISAStreamEngine::canSetRegionStreamIds(
 
 bool ISAStreamEngine::canRemoveRegionStreamIds(
     const ::LLVM::TDG::StreamRegion &region) {
+  if (this->regionStreamIdTableStack.empty()) {
+    return false;
+  }
+  // Check that the last table matches with the region.
+  const auto &regionStreamIdTable = this->regionStreamIdTableStack.back();
   for (const auto &streamInfo : region.streams()) {
     // Check if valid to be removed.
     auto streamId = streamInfo.id();
     auto regionStreamId = streamInfo.region_stream_id();
-    if (this->regionStreamIdTable.size() <= regionStreamId) {
+    if (regionStreamId >= MaxNumRegionStreams) {
       // Overflow RegionStreamId.
       return false;
     }
-    if (this->regionStreamIdTable.at(regionStreamId) != streamId) {
+    if (regionStreamIdTable.at(regionStreamId) != streamId) {
       // RegionStreamId Compromised.
       return false;
     }
@@ -970,37 +980,48 @@ void ISAStreamEngine::removeRegionStreamIds(
   if (Debug::ISAStreamEngine) {
     std::stringstream ss;
     ss << "Clear RegionStreamId";
+    const auto &regionStreamIdTable = this->regionStreamIdTableStack.back();
     for (const auto &streamInfo : region.streams()) {
       // Perform the removal.
       auto regionStreamId = streamInfo.region_stream_id();
       ss << ' ' << regionStreamId << "->"
-         << this->regionStreamIdTable.at(regionStreamId);
+         << regionStreamIdTable.at(regionStreamId);
     }
     ISA_SE_DPRINTF("%s.\n", ss.str());
   }
-  for (const auto &streamInfo : region.streams()) {
-    // Perform the removal.
-    auto regionStreamId = streamInfo.region_stream_id();
-    this->regionStreamIdTable.at(regionStreamId) = InvalidStreamId;
+  // Simply pop the table stack.
+  this->regionStreamIdTableStack.pop_back();
+}
+
+uint64_t ISAStreamEngine::searchRegionStreamId(int regionStreamId) const {
+  if (regionStreamId >= MaxNumRegionStreams) {
+    return InvalidStreamId;
   }
+  if (this->regionStreamIdTableStack.empty()) {
+    return InvalidStreamId;
+  }
+  // Search backwards.
+  for (auto iter = this->regionStreamIdTableStack.crbegin(),
+            end = this->regionStreamIdTableStack.crend();
+       iter != end; ++iter) {
+    auto streamId = iter->at(regionStreamId);
+    if (streamId != InvalidStreamId) {
+      return streamId;
+    }
+  }
+  return InvalidStreamId;
 }
 
 bool ISAStreamEngine::isValidRegionStreamId(int regionStreamId) const {
-  if (this->regionStreamIdTable.size() <= regionStreamId) {
-    return false;
-  }
-  auto streamId = this->regionStreamIdTable.at(regionStreamId);
-  if (streamId == InvalidStreamId) {
-    return false;
-  }
-  return true;
+  return this->searchRegionStreamId(regionStreamId) != InvalidStreamId;
 }
 
 uint64_t ISAStreamEngine::lookupRegionStreamId(int regionStreamId) const {
-  if (!this->isValidRegionStreamId(regionStreamId)) {
+  auto streamId = this->searchRegionStreamId(regionStreamId);
+  if (streamId == InvalidStreamId) {
     panic("RegionStreamId %d translated to InvalidStreamId.", regionStreamId);
   }
-  return this->regionStreamIdTable.at(regionStreamId);
+  return streamId;
 }
 
 ISAStreamEngine::DynStreamInstInfo &
@@ -1059,4 +1080,18 @@ const std::string &ISAStreamEngine::getRelativePath(int configIdx) const {
   assert(configIdx < this->allStreamRegions->relative_paths_size() &&
          "ConfigIdx overflow.");
   return this->allStreamRegions->relative_paths(configIdx);
+}
+
+std::string
+ISAStreamEngine::mustBeMisspeculatedString(MustBeMisspeculatedReason reason) {
+#define CASE_REASON(reason)                                                    \
+  case reason:                                                                 \
+    return #reason
+  switch (reason) {
+    CASE_REASON(CONFIG_HAS_PREV_REGION);
+    CASE_REASON(CONFIG_CANNOT_SET_REGION_ID);
+  default:
+    return "UNKNOWN_REASON";
+  }
+#undef CASE_REASON
 }
