@@ -986,7 +986,13 @@ StreamElement *Stream::getFirstUnsteppedElement() {
 
 StreamElement *Stream::getPrevElement(StreamElement *element) {
   auto &dynS = this->getDynamicStream(element->FIFOIdx.configSeqNum);
-  return dynS.getPrevElement(element);
+  // Check if there is no previous element
+  auto prevElement = dynS.getPrevElement(element);
+  if (prevElement == dynS.tail) {
+    // There is no valid previous element.
+    return nullptr;
+  }
+  return prevElement;
 }
 
 void Stream::handleStoreFuncAtRelease() {

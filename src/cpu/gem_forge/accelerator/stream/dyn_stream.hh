@@ -114,7 +114,7 @@ struct DynamicStream {
   StreamElement *getFirstUnsteppedElement();
   /**
    * Get previous element in the chain of the stream.
-   * Notice that it may return the (dummy) element->stream->tail if this is
+   * Notice that it may return the (dummy) element->dynS->tail if this is
    * the first element for that stream.
    */
   StreamElement *getPrevElement(StreamElement *element);

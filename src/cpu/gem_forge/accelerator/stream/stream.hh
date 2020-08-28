@@ -299,7 +299,7 @@ public:
   StreamElement *getFirstUnsteppedElement();
   /**
    * Get previous element in the chain of the stream.
-   * Notice that it may return the (dummy) element->stream->tail if this is
+   * Notice that it may return nullptr if this is
    * the first element for that stream.
    */
   StreamElement *getPrevElement(StreamElement *element);

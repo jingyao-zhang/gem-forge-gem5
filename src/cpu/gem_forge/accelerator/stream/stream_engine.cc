@@ -2825,6 +2825,10 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
   }
   // Get the previous element.
   auto prevElement = S->getPrevElement(element);
+  // Bail out if we have no previous element (we are the first).
+  if (!prevElement) {
+    return;
+  }
   // We found the previous element. Check if completely overlap.
   if ((prevElement->FIFOIdx.streamId != element->FIFOIdx.streamId) ||
       (prevElement->FIFOIdx.entryIdx + 1 != element->FIFOIdx.entryIdx)) {

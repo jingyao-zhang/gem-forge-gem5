@@ -121,7 +121,7 @@ void MLCDynamicIndirectStream::receiveStreamData(
       } else if (sliceLineAddr < targetLineAddr) {
         ++sliceIter;
       } else {
-        MLC_SLICE_PANIC(sliceId, "Failed to find slice.\n");
+        MLC_SLICE_PANIC(sliceId, "Failed to find slice %#x.\n", targetLineAddr);
       }
     }
   }
