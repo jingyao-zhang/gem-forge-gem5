@@ -783,6 +783,9 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   ISA_SE_DPRINTF("Execute StreamLoad RegionStream %llu destRegs %d.\n",
                  userInfo.translatedUsedStreamIds.at(0),
                  dynInfo.staticInst->numDestRegs());
+  if (dynInfo.staticInst->numDestRegs() == 0) {
+    panic("No DestRegs for StreamLoad at PC %#x.\n", dynInfo.pc.pc());
+  }
 
   /**
    * We handle wider registers by checking the number of destination

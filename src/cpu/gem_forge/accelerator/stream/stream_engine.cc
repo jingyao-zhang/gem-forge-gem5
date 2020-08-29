@@ -1023,18 +1023,11 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
        */
       element->getValueByStreamId(streamId, args.values->back().data(),
                                   StreamUserArgs::MaxElementSize);
-      // if (element->FIFOIdx.entryIdx >= 0) {
-      //   if (S->getStreamName() ==
-      //       "(mser.c::68(mser) 163 bb68 bb68::tmp74(load))") {
-      //     S_ELEMENT_HACK(element, "Returned Value %s.\n",
-      //                    GemForgeUtils::rebuildData(args.values->back().data(),
-      //                                               sizeof(int64_t)));
-      //   } else if (S->getStreamName() ==
-      //              "(mser.c::68(mser) 162 bb68 bb68::tmp71(load))") {
-      //     S_ELEMENT_HACK(element, "Returned Value %s.\n",
-      //                    GemForgeUtils::rebuildData(args.values->back().data(),
-      //                                               sizeof(int)));
-      //   }
+      // if (S->getStreamName() == "(cal_learned_func.c::7(cal_learned_"
+      //                           "func) 29 bb27 bb52::tmp56(load))" &&
+      //     element->FIFOIdx.streamId.streamInstance > 21) {
+      //   S_ELEMENT_HACK(element, "Used Value %llu: %f.\n", streamId,
+      //                  *reinterpret_cast<float *>(args.values->back().data()));
       // }
     }
   }

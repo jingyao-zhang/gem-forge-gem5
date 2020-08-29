@@ -420,7 +420,47 @@ void StreamElement::markValueReady() {
   assert(!this->isValueReady && "Value is already ready.");
   this->isValueReady = true;
   this->valueReadyCycle = this->getStream()->getCPUDelegator()->curCycle();
-  S_ELEMENT_DPRINTF(this, "Value ready.\n");
+  // if (this->stream->getStreamName() == "(cal_learned_func.c::7(cal_learned_"
+  //                                      "func) 29 bb27 bb52::tmp56(load))" &&
+  //     this->FIFOIdx.streamId.streamInstance > 21) {
+  //   if (auto CS = dynamic_cast<CoalescedStream *>(this->stream)) {
+  //     // Now everything should be coalesced stream.
+  //     constexpr int maxElementSize = 64;
+  //     std::array<uint8_t, maxElementSize> elementValue;
+  //     for (auto LS : CS->getLogicalStreams()) {
+  //       auto LSId = LS->getStreamId();
+  //       this->getValueByStreamId(LSId, elementValue.data(),
+  //                                elementValue.size());
+  //       S_ELEMENT_HACK(this, "Value ready %llu: %f.\n", LSId,
+  //                      *reinterpret_cast<float *>(elementValue.data()));
+  //     }
+  //   }
+  // }
+  if (Debug::DEBUG_TYPE) {
+    bool faulted = false;
+    for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
+      const auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
+      if (block.state == CacheBlockBreakdownAccess::StateE::Faulted) {
+        faulted = true;
+        break;
+      }
+    }
+    if (faulted) {
+      S_ELEMENT_DPRINTF(this, "Value ready: faulted.\n");
+    } else {
+      S_ELEMENT_DPRINTF(this, "Value ready.\n");
+      // if (auto CS = dynamic_cast<CoalescedStream *>(this->stream)) {
+      //   // Now everything should be coalesced stream.
+      //   constexpr int maxElementSize = 64;
+      //   std::array<uint8_t, maxElementSize> elementValue;
+      //   for (auto LS : CS->getLogicalStreams()) {
+      //     auto LSId = LS->getStreamId();
+      //     this->getValueByStreamId(LSId, elementValue.data(),
+      //                              elementValue.size());
+      //   }
+      // }
+    }
+  }
 
   // Notify the stream for statistics.
   if (this->issueCycle >= this->addrReadyCycle &&
@@ -500,11 +540,9 @@ void StreamElement::setValue(StreamElement *prevElement) {
 void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
   // Copy the data.
   auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
-  if (Debug::DEBUG_TYPE) {
-    S_ELEMENT_DPRINTF(this, "SetValue [%#x, %#x), initOffset %d, data %s.\n",
-                      vaddr, vaddr + size, initOffset,
-                      GemForgeUtils::dataToString(val, size));
-  }
+  S_ELEMENT_DPRINTF(this, "SetValue [%#x, %#x), initOffset %d, data %s.\n",
+                    vaddr, vaddr + size, initOffset,
+                    GemForgeUtils::dataToString(val, size));
   for (int i = 0; i < size; ++i) {
     this->value.at(i + initOffset) = val[i];
   }

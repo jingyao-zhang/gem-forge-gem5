@@ -120,6 +120,9 @@ public:
   size_t getNumCoalescedStreams() const {
     return this->coalescedStreams.size();
   }
+  const std::vector<LogicalStream *> getLogicalStreams() const {
+    return this->coalescedStreams;
+  }
 
   /**
    * Get the number of unique cache blocks the stream touches.
