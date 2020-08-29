@@ -151,8 +151,9 @@ let {{
                     /**
                      * ! GemForge
                      * Hack to also mark higher bits as my destination.
+                     * Make sure we correctly handle case when dataSize < 64.
                      */
-                    for (int i = 0; i < dataSize / sizeof(uint64_t); i++) {
+                    for (int i = 0; i < (dataSize + sizeof(uint64_t) - 1) / sizeof(uint64_t); i++) {
                         assert(_numDestRegs < MaxInstDestRegs && "DestRegs overflow.");
                         _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest + i);
                         _numFPDestRegs++;
