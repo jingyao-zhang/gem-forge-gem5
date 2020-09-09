@@ -599,6 +599,15 @@ workend(ThreadContext *tc, uint64_t workid, uint64_t threadid)
     }
 }
 
+//
+// This is function is executed when we reached a work mark.
+//
+void
+workmark(ThreadContext *tc, uint64_t workid, uint64_t threadid)
+{
+    DPRINTF(PseudoInst, "PseudoInst::workmark(%i, %i)\n", workid, threadid);
+}
+
 void
 llvmtracemap(ThreadContext *tc, uint64_t base_ptr, uint64_t vaddr)
 {

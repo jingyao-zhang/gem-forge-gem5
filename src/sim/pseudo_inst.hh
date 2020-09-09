@@ -118,6 +118,7 @@ void debugbreak(ThreadContext *tc);
 void switchcpu(ThreadContext *tc);
 void workbegin(ThreadContext *tc, uint64_t workid, uint64_t threadid);
 void workend(ThreadContext *tc, uint64_t workid, uint64_t threadid);
+void workmark(ThreadContext *tc, uint64_t workid, uint64_t threadid);
 void m5Syscall(ThreadContext *tc);
 void togglesync(ThreadContext *tc);
 void llvmtracemap(ThreadContext *tc, uint64_t base_ptr, uint64_t vaddr);
@@ -234,6 +235,10 @@ pseudoInst(ThreadContext *tc, uint8_t func, uint64_t &result)
 
       case M5OP_WORK_END:
         invokeSimcall<ABI>(tc, workend);
+        return true;
+
+      case M5OP_WORK_MARK:
+        invokeSimcall<ABI>(tc, workmark);
         return true;
 
       case M5OP_RESERVED1:
