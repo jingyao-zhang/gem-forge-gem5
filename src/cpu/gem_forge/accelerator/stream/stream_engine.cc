@@ -1027,7 +1027,8 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
       //                           "func) 29 bb27 bb52::tmp56(load))" &&
       //     element->FIFOIdx.streamId.streamInstance > 21) {
       //   S_ELEMENT_HACK(element, "Used Value %llu: %f.\n", streamId,
-      //                  *reinterpret_cast<float *>(args.values->back().data()));
+      //                  *reinterpret_cast<float
+      //                  *>(args.values->back().data()));
       // }
     }
   }
@@ -2369,14 +2370,20 @@ void StreamEngine::issueElement(StreamElement *element) {
     element->dynS->incrementNumIssuedRequests();
     S->incrementInflyStreamRequest();
     this->incrementInflyStreamRequest();
-    // Send the pkt to translation.
-    this->translationBuffer->addTranslation(
-        pkt, cpuDelegator->getSingleThreadContext(), nullptr);
 
     // Mark the state.
     cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
     cacheBlockBreakdown.memAccess = memAccess;
     memAccess->registerReceiver(element);
+
+    if (cpuDelegator->cpuType == GemForgeCPUDelegator::ATOMIC_SIMPLE) {
+      // Directly send to memory for atomic cpu.
+      this->cpuDelegator->sendRequest(pkt);
+    } else {
+      // Send the pkt to translation.
+      this->translationBuffer->addTranslation(
+          pkt, cpuDelegator->getSingleThreadContext(), nullptr);
+    }
   }
 }
 
@@ -2919,8 +2926,13 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
   auto S = element->stream;
   S->statistic.numIssuedRequest++;
   // Send the packet to translation.
-  this->translationBuffer->addTranslation(
-      pkt, cpuDelegator->getSingleThreadContext(), nullptr);
+  if (cpuDelegator->cpuType == GemForgeCPUDelegator::ATOMIC_SIMPLE) {
+    // Directly send to memory for atomic cpu.
+    this->cpuDelegator->sendRequest(pkt);
+  } else {
+    this->translationBuffer->addTranslation(
+        pkt, cpuDelegator->getSingleThreadContext(), nullptr);
+  }
 }
 
 void StreamEngine::flushPEB(Addr vaddr, int size) {

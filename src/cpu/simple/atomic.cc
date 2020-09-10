@@ -40,6 +40,10 @@
  */
 
 #include "cpu/simple/atomic.hh"
+// ! GemForge
+#include "cpu/simple/atomic_simple_cpu_delegator.hh"
+#include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
+#include "cpu/gem_forge/gem_forge_packet_handler.hh"
 
 #include "arch/locked_mem.hh"
 #include "arch/utility.hh"
@@ -71,6 +75,11 @@ AtomicSimpleCPU::init()
     data_read_req->setContext(cid);
     data_write_req->setContext(cid);
     data_amo_req->setContext(cid);
+
+    if (this->accelManager) {
+        this->cpuDelegator = m5::make_unique<AtomicSimpleCPUDelegator>(this);
+        this->accelManager->handshake(this->cpuDelegator.get());
+    }
 }
 
 AtomicSimpleCPU::AtomicSimpleCPU(AtomicSimpleCPUParams *p)
@@ -83,7 +92,8 @@ AtomicSimpleCPU::AtomicSimpleCPU(AtomicSimpleCPUParams *p)
       icachePort(name() + ".icache_port", this),
       dcachePort(name() + ".dcache_port", this),
       dcache_access(false), dcache_latency(0),
-      ppCommit(nullptr)
+      ppCommit(nullptr),
+      tryResumeGemForgeEvent([this]{ tryResumeGemForge(); }, name())
 {
     _status = Idle;
     ifetch_req = std::make_shared<Request>();
@@ -545,6 +555,16 @@ AtomicSimpleCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
             if (fault != NoFault && req->isPrefetch()) {
                 return NoFault;
             } else {
+                if (fault == NoFault) {
+                    /**
+                     * ! GemForge
+                     * We successfully performed the store.
+                     * Notify the delegator.
+                     */
+                    if (this->cpuDelegator) {
+                        this->cpuDelegator->storeTo(addr, size);
+                    }
+                }
                 return fault;
             }
         }
@@ -610,6 +630,13 @@ AtomicSimpleCPU::amoMem(Addr addr, uint8_t* data, unsigned size,
             dcache_latency += req->localAccessor(thread->getTC(), &pkt);
         else {
             dcache_latency += sendPacket(dcachePort, &pkt);
+            /**
+             * ! GemForge.
+             * Notify the delegator. AMO is considered as store.
+             */ 
+            if (this->cpuDelegator) {
+                this->cpuDelegator->storeTo(addr, size);
+            }
         }
 
         dcache_access = true;
@@ -664,7 +691,7 @@ AtomicSimpleCPU::tick()
             return;
         }
 
-        Fault fault = NoFault;
+        this->executeFault = NoFault;
 
         TheISA::PCState pcState = thread->pcState();
 
@@ -673,11 +700,11 @@ AtomicSimpleCPU::tick()
         if (needToFetch) {
             ifetch_req->taskId(taskId());
             setupFetchRequest(ifetch_req);
-            fault = thread->itb->translateAtomic(ifetch_req, thread->getTC(),
-                                                 BaseTLB::Execute);
+            this->executeFault = thread->itb->translateAtomic(
+                ifetch_req, thread->getTC(), BaseTLB::Execute);
         }
 
-        if (fault == NoFault) {
+        if (this->executeFault == NoFault) {
             Tick icache_latency = 0;
             bool icache_access = false;
             dcache_access = false; // assume no dcache access
@@ -707,10 +734,36 @@ AtomicSimpleCPU::tick()
 
             Tick stall_ticks = 0;
             if (curStaticInst) {
-                fault = curStaticInst->execute(&t_info, traceData);
+
+                // ! GemForge.
+                if (this->cpuDelegator) {
+                    assert(this->cpuDelegator->canDispatch(curStaticInst, t_info));
+                    this->cpuDelegator->dispatch(curStaticInst, t_info);
+                    if (!this->cpuDelegator->canExecute(curStaticInst, t_info)) {
+                        // Schedule recheck for next cycle.
+                        assert(this->gemForgeBlockReason == GemForgeNoBlock);
+                        this->gemForgeBlockReason = GemForgeExecuteBlock;
+                        schedule(tryResumeGemForgeEvent, clockEdge(Cycles(1)));
+                        return;
+                    }
+                    this->cpuDelegator->execute(curStaticInst, t_info);
+                }
+
+                this->executeFault = curStaticInst->execute(&t_info, traceData);
+
+                // ! GemForge.
+                if (this->cpuDelegator) {
+                    if (!this->cpuDelegator->canCommit(curStaticInst, t_info)) {
+                        assert(this->gemForgeBlockReason == GemForgeNoBlock);
+                        this->gemForgeBlockReason = GemForgeCommitBlock;
+                        schedule(tryResumeGemForgeEvent, clockEdge(Cycles(1)));
+                        return;
+                    }
+                    this->cpuDelegator->commit(curStaticInst, t_info);
+                }
 
                 // keep an instruction count
-                if (fault == NoFault) {
+                if (this->executeFault == NoFault) {
                     countInst();
                     ppCommit->notify(std::make_pair(thread, curStaticInst));
                 }
@@ -719,8 +772,8 @@ AtomicSimpleCPU::tick()
                     traceData = NULL;
                 }
 
-                if (fault != NoFault &&
-                    dynamic_pointer_cast<SyscallRetryFault>(fault)) {
+                if (this->executeFault != NoFault &&
+                    dynamic_pointer_cast<SyscallRetryFault>(this->executeFault)) {
                     // Retry execution of system calls after a delay.
                     // Prevents immediate re-execution since conditions which
                     // caused the retry are unlikely to change every tick.
@@ -750,8 +803,8 @@ AtomicSimpleCPU::tick()
             }
 
         }
-        if (fault != NoFault || !t_info.stayAtPC)
-            advancePC(fault);
+        if (this->executeFault != NoFault || !t_info.stayAtPC)
+            advancePC(this->executeFault);
     }
 
     if (tryCompleteDrain())
@@ -778,6 +831,99 @@ void
 AtomicSimpleCPU::printAddr(Addr a)
 {
     dcachePort.printAddr(a);
+}
+
+//
+// ! GemForge
+//
+GemForgeCPUDelegator *
+AtomicSimpleCPU::getCPUDelegator()
+{
+  return cpuDelegator.get();
+}
+
+void
+AtomicSimpleCPU::tryResumeGemForge()
+{
+    assert(this->cpuDelegator);
+    SimpleExecContext& t_info = *threadInfo[curThread];
+
+    assert(this->gemForgeBlockReason != GemForgeNoBlock);
+
+    if (this->gemForgeBlockReason == GemForgeExecuteBlock) {
+        if (!this->cpuDelegator->canExecute(curStaticInst, t_info)) {
+            // Recheck next cycle.
+            schedule(tryResumeGemForgeEvent, clockEdge(Cycles(1)));
+            return;
+        }
+        this->cpuDelegator->execute(curStaticInst, t_info);
+        // non-memory instruction: execute completely now
+        this->executeFault = curStaticInst->execute(&t_info, traceData);
+    }
+
+    if (!this->cpuDelegator->canCommit(curStaticInst, t_info)) {
+        this->gemForgeBlockReason = GemForgeCommitBlock;
+        schedule(tryResumeGemForgeEvent, clockEdge(Cycles(1)));
+        return;
+    }
+    // Clear GemForgeBlockReason.
+    this->gemForgeBlockReason = GemForgeNoBlock;
+    this->cpuDelegator->commit(curStaticInst, t_info);
+
+    if (this->executeFault == NoFault) {
+        countInst();
+        ppCommit->notify(std::make_pair(t_info.thread, curStaticInst));
+    }
+    else if (traceData && !DTRACE(ExecFaulting)) {
+        delete traceData;
+        traceData = NULL;
+    }
+
+    // Let's just assume stall_ticks are 0 for now.
+    Tick stall_ticks = 0;
+    if (this->executeFault != NoFault &&
+        dynamic_pointer_cast<SyscallRetryFault>(this->executeFault)) {
+        // Retry execution of system calls after a delay.
+        // Prevents immediate re-execution since conditions which
+        // caused the retry are unlikely to change every tick.
+        stall_ticks += clockEdge(syscallRetryLatency) - curTick();
+    }
+
+    postExecute();
+
+    // @todo remove me after debugging with legion done
+    if (curStaticInst && (!curStaticInst->isMicroop() ||
+                curStaticInst->isFirstMicroop()))
+        instCnt++;
+
+    // ! For GemForge blocked instruction,
+    // ! we do not care about stall_ticks.
+    // if (simulate_inst_stalls && icache_access)
+    //     stall_ticks += icache_latency;
+
+    // if (simulate_data_stalls && dcache_access)
+    //     stall_ticks += dcache_latency;
+
+    // if (stall_ticks) {
+    //     // the atomic cpu does its accounting in ticks, so
+    //     // keep counting in ticks but round to the clock
+    //     // period
+    //     latency += divCeil(stall_ticks, clockPeriod()) *
+    //         clockPeriod();
+    // }
+
+    if (this->executeFault != NoFault || !t_info.stayAtPC)
+        advancePC(this->executeFault);
+
+    if (tryCompleteDrain())
+        return;
+
+    // // instruction takes at least one cycle
+    // if (latency < clockPeriod())
+    //     latency = clockPeriod();
+
+    if (_status != Idle)
+        reschedule(tickEvent, curTick() + clockPeriod(), true);
 }
 
 ////////////////////////////////////////////////////////////////////////

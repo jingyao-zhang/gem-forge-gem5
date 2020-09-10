@@ -47,6 +47,8 @@
 #include "params/AtomicSimpleCPU.hh"
 #include "sim/probe/probe.hh"
 
+class AtomicSimpleCPUDelegator;
+
 class AtomicSimpleCPU : public BaseSimpleCPU
 {
   public:
@@ -55,6 +57,13 @@ class AtomicSimpleCPU : public BaseSimpleCPU
     virtual ~AtomicSimpleCPU();
 
     void init() override;
+
+    /**
+     * GemForgeCPUDelegator.
+     */
+    friend class AtomicSimpleCPUDelegator;
+    std::unique_ptr<AtomicSimpleCPUDelegator> cpuDelegator;
+    GemForgeCPUDelegator *getCPUDelegator() override;
 
   protected:
 
@@ -194,6 +203,11 @@ class AtomicSimpleCPU : public BaseSimpleCPU
     void suspendContext(ThreadID thread_num) override;
 
     /**
+     * Resume the execution is possible.
+     */
+    void tryResumeGemForge();
+
+    /**
      * Helper function used to set up the request for a single fragment of a
      * memory access.
      *
@@ -234,6 +248,22 @@ class AtomicSimpleCPU : public BaseSimpleCPU
      * debugging).
      */
     void printAddr(Addr a);
+
+  private:
+    /**
+     * ! GemForge
+     * This event is used to handle GemForge block.
+     * There are two possible reason for block:
+     * Cannot execute/commit.
+     */
+    enum GemForgeBlockReason {
+      GemForgeNoBlock,
+      GemForgeExecuteBlock,
+      GemForgeCommitBlock,
+    };
+    GemForgeBlockReason gemForgeBlockReason = GemForgeNoBlock;
+    Fault executeFault = NoFault;
+    EventFunctionWrapper tryResumeGemForgeEvent;
 };
 
 #endif // __CPU_SIMPLE_ATOMIC_HH__

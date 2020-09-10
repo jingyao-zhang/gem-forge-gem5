@@ -21,6 +21,7 @@ class GemForgeCPUDelegator {
 public:
   enum CPUTypeE {
     LLVM_TRACE,
+    ATOMIC_SIMPLE,
     TIMING_SIMPLE,
     MINOR,
     O3,
