@@ -64,6 +64,7 @@
 #include "sim/fd_array.hh"
 #include "sim/fd_entry.hh"
 #include "sim/redirect_path.hh"
+#include "sim/sim_exit.hh"
 #include "sim/syscall_desc.hh"
 #include "sim/system.hh"
 
@@ -529,6 +530,29 @@ Process::absolutePath(const std::string &filename, bool host_filesystem)
     auto absolute_path = path_base + filename;
 
     return absolute_path;
+}
+
+void
+Process::encounterWorkMark(uint64_t markId) {
+    auto p = dynamic_cast<const ProcessParams *>(this->params());
+    const auto &workMarkHistory = p->markHistory;
+    if (this->workMarkIndex == workMarkHistory.size()) {
+        // Either we have no history or we are done.
+        return;
+    }
+    const auto expectedMarkId = workMarkHistory.at(this->workMarkIndex);
+    if (expectedMarkId != markId) {
+        panic("Mismatch work mark #%llu, got %llu, expected %llu.\n",
+            this->workMarkIndex, markId, expectedMarkId);
+    }
+    // Check if we want to switch cpu or exit.
+    if (p->markSwitchcpu != -1 && this->workMarkIndex == p->markSwitchcpu) {
+        exitSimLoop("markswitchcpu", static_cast<int>(markId));
+    }
+    if (p->markEnd != -1 && this->workMarkIndex == p->markEnd) {
+        exitSimLoop("markend", static_cast<int>(markId));
+    }
+    this->workMarkIndex++;
 }
 
 Process *

@@ -52,6 +52,19 @@ def get_processes(options):
         if len(errouts) > idx:
             process.errout = errouts[idx]
 
+        if options.gem_forge_work_mark_history:
+            history = list()
+            with open(options.gem_forge_work_mark_history) as f:
+                for line in f:
+                    if line.startswith('#'):
+                        continue
+                    history.append(int(line))
+            process.markHistory = history
+        if options.gem_forge_work_mark_switch_cpu:
+            process.markSwitchcpu = options.gem_forge_work_mark_switch_cpu
+        if options.gem_forge_work_mark_end:
+            process.markEnd = options.gem_forge_work_mark_end
+
         multiprocesses.append(process)
         idx += 1
 

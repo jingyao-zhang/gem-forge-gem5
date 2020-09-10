@@ -29,6 +29,12 @@ def parse_tdg_files(option, opt, value, parser):
     vs = value.split(',')
     setattr(parser.values, option.dest, vs)
 
+parser.add_option("--gem-forge-work-mark-history", action="store", type="string",
+                  help="""work mark history""")
+parser.add_option("--gem-forge-work-mark-switch-cpu", action="store", type="int",
+                  help="""switch cpu at this work mark (overrides m5_switch_cpu)""")
+parser.add_option("--gem-forge-work-mark-end", action="store", type="int",
+                  help="""stop at this work mark (overrides work_item_end)""")
 parser.add_option("--gem-forge-num-active-cpus", action="store", type="int",
                   help="""number of active cpus.""", default="1")
 parser.add_option("--gem-forge-enable-func-acc-tick", action="store_true",

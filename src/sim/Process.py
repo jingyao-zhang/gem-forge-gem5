@@ -68,6 +68,12 @@ class Process(SimObject):
     yieldWakeup = Param.Latency('0ns',
         "Latency to wakeup sched_yield, 0 means immediately.")
 
+    markHistory = VectorParam.UInt64([], 'Simulation mark history.')
+    markSwitchcpu = Param.Int64(-1,
+        "switch cpu when encounter this mark")
+    markEnd = Param.Int64(-1,
+        "end when encounter this mark")
+
     @classmethod
     def export_methods(cls, code):
         code('bool map(Addr vaddr, Addr paddr, int sz, bool cacheable=true);')

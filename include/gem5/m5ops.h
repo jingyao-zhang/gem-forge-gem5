@@ -70,7 +70,6 @@ void m5_se_syscall();
 void m5_se_page_fault();
 
 #define m5_detail_sim_start()                                                  \
-  m5_reset_stats(0, 0);                                                        \
   m5_switch_cpu();
 
 #define m5_detail_sim_end()                                                    \

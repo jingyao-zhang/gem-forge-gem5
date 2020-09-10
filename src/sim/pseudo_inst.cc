@@ -606,6 +606,9 @@ void
 workmark(ThreadContext *tc, uint64_t workid, uint64_t threadid)
 {
     DPRINTF(PseudoInst, "PseudoInst::workmark(%i, %i)\n", workid, threadid);
+    assert(threadid == 0 && "workmark only supports threadid == 0");
+    Process *p = tc->getProcessPtr();
+    p->encounterWorkMark(workid);
 }
 
 void

@@ -156,6 +156,8 @@ class Process : public SimObject
     virtual void clone(ThreadContext *old_tc, ThreadContext *new_tc,
                        Process *new_p, RegVal flags);
 
+    void encounterWorkMark(uint64_t markId);
+
     // thread contexts associated with this process
     std::vector<ContextID> contextIds;
 
@@ -278,6 +280,9 @@ class Process : public SimObject
     std::vector<EmulatedDriver *> drivers;
 
     std::shared_ptr<FDArray> fds;
+
+    // Current work mark index.
+    uint64_t workMarkIndex = 0;
 
     bool *exitGroup;
     std::shared_ptr<MemState> memState;
