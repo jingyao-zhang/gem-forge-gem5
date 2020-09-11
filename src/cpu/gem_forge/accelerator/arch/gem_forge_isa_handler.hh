@@ -16,6 +16,8 @@ public:
   GemForgeISAHandler(GemForgeCPUDelegator *_cpuDelegaor)
       : cpuDelegator(_cpuDelegaor), se(_cpuDelegaor) {}
 
+  void takeOverBy(GemForgeCPUDelegator *newDelegator);
+
   bool shouldCountInPipeline(const GemForgeDynInstInfo &dynInfo);
   bool canDispatch(const GemForgeDynInstInfo &dynInfo);
 

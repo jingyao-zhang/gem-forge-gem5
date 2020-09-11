@@ -2,6 +2,7 @@
 #ifndef __GEM_FORGE_CPU_DELEGATOR_HH__
 #define __GEM_FORGE_CPU_DELEGATOR_HH__
 
+#include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
 #include "gem_forge_idea_inorder_cpu.hh"
 #include "gem_forge_lsq_callback.hh"
 
@@ -26,9 +27,27 @@ public:
     MINOR,
     O3,
   };
+  static const char *CPUTypeToString(CPUTypeE t) {
+    switch (t) {
+    default:
+      return "unknown";
+    case CPUTypeE::LLVM_TRACE:
+      return "LLVMTrace";
+    case CPUTypeE::ATOMIC_SIMPLE:
+      return "AtomicSimple";
+    case CPUTypeE::TIMING_SIMPLE:
+      return "TimingSimple";
+    case CPUTypeE::MINOR:
+      return "Minor";
+    case CPUTypeE::O3:
+      return "O3";
+    }
+  }
   const CPUTypeE cpuType;
   GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU);
   virtual ~GemForgeCPUDelegator() {}
+
+  void takeOverFrom(GemForgeCPUDelegator *oldDelegator);
 
   unsigned int cacheLineSize() const {
     return this->baseCPU->system->cacheLineSize();
@@ -101,6 +120,19 @@ public:
   std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPU;
   std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPUNoFUTiming;
   std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPUNoLDTiming;
+
+protected:
+  std::shared_ptr<GemForgeISAHandler> isaHandler;
+  void takeOverISAHandlerFrom(GemForgeCPUDelegator *oldDelegator);
+
+  /**
+   * GemForge requires an monotonic increasing SeqNum for instructions,
+   * which is part of the TakeOver state.
+   * We require each derived class to implement these functions to get
+   * and set the InstSeqNum.
+   */
+  virtual InstSeqNum getInstSeqNum() const = 0;
+  virtual void setInstSeqNum(InstSeqNum seqNum) = 0;
 };
 
 #endif

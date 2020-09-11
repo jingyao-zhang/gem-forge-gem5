@@ -1109,7 +1109,7 @@ DefaultFetch<Impl>::buildInst(ThreadID tid, StaticInstPtr staticInst,
                               TheISA::PCState nextPC, bool trace)
 {
     // Get a sequence number.
-    InstSeqNum seq = cpu->getAndIncrementInstSeq();
+    InstSeqNum seq = cpu->getAndIncrementGlobalInstSeq();
 
     // Create a new DynInst from the instruction fetched.
     DynInstPtr instruction =

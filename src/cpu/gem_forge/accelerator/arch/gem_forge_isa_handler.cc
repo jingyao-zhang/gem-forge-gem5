@@ -215,3 +215,8 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
   }
   return emplaceRet.first->second;
 }
+
+void GemForgeISAHandler::takeOverBy(GemForgeCPUDelegator *newDelegator) {
+  this->cpuDelegator = newDelegator;
+  this->se.takeOverBy(newDelegator);
+}

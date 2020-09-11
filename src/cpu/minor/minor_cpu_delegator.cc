@@ -7,7 +7,6 @@
 #include "debug/MinorCPUDelegator.hh"
 #include "debug/MinorCPUDelegatorDump.hh"
 
-#include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
 #include "cpu/gem_forge/gem_forge_translation_fault.hh"
 
 #define INST_DPRINTF(inst, format, args...)                                    \
@@ -21,7 +20,7 @@
 class MinorCPUDelegator::Impl {
 public:
   Impl(MinorCPU *_cpu, MinorCPUDelegator *_cpuDelegator)
-      : cpu(_cpu), cpuDelegator(_cpuDelegator), isaHandler(_cpuDelegator),
+      : cpu(_cpu), cpuDelegator(_cpuDelegator),
         drainPendingPacketsEvent(
             [this]() -> void { this->cpuDelegator->drainPendingPackets(); },
             _cpu->name()),
@@ -38,8 +37,6 @@ public:
 
   MinorCPU *cpu;
   MinorCPUDelegator *cpuDelegator;
-
-  GemForgeISAHandler isaHandler;
 
   // Cache of the traceExtraFolder.
   std::string traceExtraFolder;
@@ -143,12 +140,12 @@ bool MinorCPUDelegator::shouldCountInPipeline(
   // pimpl->createDynInfo().
   GemForgeDynInstInfo dynInfo(0, dynInstPtr->pc, dynInstPtr->staticInst.get(),
                               pimpl->getThreadContext(dynInstPtr));
-  return pimpl->isaHandler.shouldCountInPipeline(dynInfo);
+  return isaHandler->shouldCountInPipeline(dynInfo);
 }
 
 bool MinorCPUDelegator::canDispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-  auto ret = pimpl->isaHandler.canDispatch(dynInfo);
+  auto ret = isaHandler->canDispatch(dynInfo);
   if (!ret) {
     INST_DPRINTF(dynInstPtr, "Cannot dispatch.\n");
   }
@@ -160,7 +157,7 @@ void MinorCPUDelegator::dispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   INST_DPRINTF(dynInstPtr, "Dispatch.\n");
   GemForgeLQCallbackList extraLQCallbacks;
   bool isGemForgeLoad = false;
-  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
+  isaHandler->dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
   pimpl->inflyInstQueue.push_back(dynInstPtr);
   if (extraLQCallbacks.front()) {
     // There are at least one extra LQ callbacks.
@@ -316,7 +313,7 @@ InstSeqNum MinorCPUDelegator::getEarlyIssueMustWaitSeqNum(
 
 bool MinorCPUDelegator::canExecute(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-  auto ret = pimpl->isaHandler.canExecute(dynInfo);
+  auto ret = isaHandler->canExecute(dynInfo);
   if (!ret) {
     INST_DPRINTF(dynInstPtr, "Cannot execute.\n");
   }
@@ -327,12 +324,12 @@ void MinorCPUDelegator::execute(Minor::MinorDynInstPtr &dynInstPtr,
                                 ExecContext &xc) {
   INST_DPRINTF(dynInstPtr, "Execute.\n");
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-  pimpl->isaHandler.execute(dynInfo, xc);
+  isaHandler->execute(dynInfo, xc);
 }
 
 bool MinorCPUDelegator::canCommit(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-  auto ret = pimpl->isaHandler.canCommit(dynInfo);
+  auto ret = isaHandler->canCommit(dynInfo);
   if (!ret) {
     INST_DPRINTF(dynInstPtr, "Cannot commit.\n");
   }
@@ -372,7 +369,7 @@ void MinorCPUDelegator::commit(Minor::MinorDynInstPtr &dynInstPtr) {
    */
   pimpl->inLSQ.erase(dynInstPtr->id.execSeqNum);
   pimpl->inflyInstQueue.pop_front();
-  pimpl->isaHandler.commit(dynInfo);
+  isaHandler->commit(dynInfo);
 }
 
 void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
@@ -390,7 +387,7 @@ void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
     auto &misspeculatedInst = inflyInstQueue.back();
     INST_DPRINTF(misspeculatedInst, "Rewind.\n");
     auto dynInfo = pimpl->createDynInfo(misspeculatedInst);
-    pimpl->isaHandler.rewind(dynInfo);
+    isaHandler->rewind(dynInfo);
 
     /**
      * Rewinding a instruction with GemForgeLQCallback involves 3 cases:
@@ -446,7 +443,7 @@ void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
 
 void MinorCPUDelegator::storeTo(Addr vaddr, int size) {
   // First notify the IsaHandler.
-  pimpl->isaHandler.storeTo(vaddr, size);
+  isaHandler->storeTo(vaddr, size);
   // Find the oldest seqNum that aliased with this store.
   if (pimpl->inflyInstQueue.empty()) {
     // This should actually never happen.
@@ -681,4 +678,16 @@ void MinorCPUDelegator::drainPendingPackets() {
     // Reschedule for next cycle.
     this->schedule(&pimpl->drainPendingPacketsEvent, Cycles(1));
   }
+}
+
+InstSeqNum MinorCPUDelegator::getInstSeqNum() const {
+  // Make sure this is not SMT.
+  assert(pimpl->cpu->numThreads == 1 && "GemForge doest not support SMT.");
+  return pimpl->cpu->pipeline->decode.getFirstThreadExecSeqNum();
+}
+
+void MinorCPUDelegator::setInstSeqNum(InstSeqNum seqNum) {
+  // Make sure this is not SMT.
+  assert(pimpl->cpu->numThreads == 1 && "GemForge doest not support SMT.");
+  pimpl->cpu->pipeline->decode.setFirstThreadExecSeqNum(seqNum);
 }

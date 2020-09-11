@@ -21,6 +21,10 @@ public:
   void sendRequest(PacketPtr pkt) override { this->cpu->sendRequest(pkt); }
 
   LLVMTraceCPU *cpu;
+
+protected:
+  InstSeqNum getInstSeqNum() const override;
+  void setInstSeqNum(InstSeqNum seqNum) override;
 };
 
 #endif

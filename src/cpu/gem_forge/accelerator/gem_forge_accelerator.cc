@@ -15,6 +15,12 @@ void GemForgeAccelerator::handshake(GemForgeCPUDelegator *_cpuDelegator,
   this->manager = _manager;
 }
 
+void GemForgeAccelerator::takeOverBy(GemForgeCPUDelegator *newCpuDelegator,
+                                     GemForgeAcceleratorManager *newManager) {
+  this->cpuDelegator = newCpuDelegator;
+  this->manager = newManager;
+}
+
 GemForgeAcceleratorManager::GemForgeAcceleratorManager(
     GemForgeAcceleratorManagerParams *params)
     : SimObject(params), accelerators(params->accelerators),
@@ -83,6 +89,27 @@ GemForgeAcceleratorManager::getSpeculativePrecomputationManager() {
     }
   }
   panic("Failed to find the SpeculativePrecomputationManager.");
+}
+
+void GemForgeAcceleratorManager::takeOverFrom(
+    GemForgeAcceleratorManager *oldManager) {
+  assert(this->accelerators.empty() && "I already have accelerators.");
+  this->accelerators.insert(this->accelerators.begin(),
+                            oldManager->accelerators.begin(),
+                            oldManager->accelerators.end());
+  oldManager->accelerators.clear();
+
+  // Reset the cpuDelegator for all accelerators.
+  for (auto accelerator : this->accelerators) {
+    accelerator->takeOverBy(this->cpuDelegator, this);
+  }
+
+  // Take care of schedule tick event.
+  if (oldManager->tickEvent.scheduled()) {
+    // Simply schedule for myself.
+    this->scheduleTickNextCycle();
+    oldManager->cpuDelegator->deschedule(&oldManager->tickEvent);
+  }
 }
 
 GemForgeAcceleratorManager *GemForgeAcceleratorManagerParams::create() {

@@ -112,7 +112,7 @@ CPUProgressEvent::process()
             // Debug::MinorExecute.enable();
             this->_stucked = true;
         } else {
-            // panic("Deadlock found!");
+            panic("Deadlock found!");
         }
     } else {
         this->_stucked = false;
@@ -680,6 +680,18 @@ BaseCPU::takeOverFrom(BaseCPU *oldCPU)
     // we are switching to.
     getInstPort().takeOverFrom(&oldCPU->getInstPort());
     getDataPort().takeOverFrom(&oldCPU->getDataPort());
+
+    /**
+     * ! GemForge
+     * Take over the accelerator manager.
+     */
+    if (oldCPU->accelManager) {
+        assert(this->accelManager && "NewCPU missed AcceleratorManager.");
+        this->accelManager->takeOverFrom(oldCPU->accelManager);
+        this->getCPUDelegator()->takeOverFrom(oldCPU->getCPUDelegator());
+    } else {
+        assert(!this->accelManager && "NewCPU should have no AcceleratorManager.");
+    }
 }
 
 void

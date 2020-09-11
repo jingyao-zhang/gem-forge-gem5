@@ -8,9 +8,8 @@
 #include "mem/cache/cache.hh"
 #include "mem/coherent_xbar.hh"
 
-StreamPlacementManager::StreamPlacementManager(
-    GemForgeCPUDelegator *_cpuDelegator, StreamEngine *_se)
-    : cpuDelegator(_cpuDelegator), se(_se), L2Bus(nullptr), L2BusWidth(0) {
+StreamPlacementManager::StreamPlacementManager(StreamEngine *_se)
+    : se(_se), L2Bus(nullptr), L2BusWidth(0) {
 
   Cache *L2 = nullptr;
   Cache *L1D = nullptr;
@@ -58,8 +57,8 @@ StreamPlacementManager::StreamPlacementManager(
 }
 
 bool StreamPlacementManager::access(
-    CacheBlockBreakdownAccess &cacheBlockBreakdown,
-    StreamElement *element, bool isWrite) {
+    CacheBlockBreakdownAccess &cacheBlockBreakdown, StreamElement *element,
+    bool isWrite) {
 
   if (!this->se->isPlacementEnabled()) {
     return false;
@@ -105,7 +104,7 @@ bool StreamPlacementManager::accessNoMSHR(
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
-  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+  if (!se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr)) {
     panic("Failed translate vaddr %#x.\n", vaddr);
   }
 
@@ -146,7 +145,7 @@ bool StreamPlacementManager::accessExpress(
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
-  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+  if (!se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr)) {
     panic("Failed translate vaddr %#x.\n", vaddr);
   }
 
@@ -256,7 +255,7 @@ bool StreamPlacementManager::accessExpressFootprint(
   auto vaddr = cacheBlockBreakdown.virtualAddr;
   auto packetSize = cacheBlockBreakdown.size;
   Addr paddr;
-  if (!cpuDelegator->translateVAddrOracle(vaddr, paddr)) {
+  if (!se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr)) {
     panic("Failed translate vaddr %#x.\n", vaddr);
   }
 
@@ -382,9 +381,9 @@ void StreamPlacementManager::scheduleResponse(Cycles latency,
                                               StreamElement *element,
                                               PacketPtr pkt) {
   auto responseEvent = new ResponseEvent(
-      cpuDelegator,
+      se->getCPUDelegator(),
       reinterpret_cast<StreamMemAccess *>(pkt->req->getReqInstSeqNum()), pkt);
-  cpuDelegator->schedule(responseEvent, latency);
+  se->getCPUDelegator()->schedule(responseEvent, latency);
 }
 
 void StreamPlacementManager::sendTimingRequest(PacketPtr pkt, Cache *cache) {
@@ -428,14 +427,15 @@ void StreamPlacementManager::dumpCacheStreamAwarePortStatus() {
 
 int StreamPlacementManager::getPlacedCacheLevelByFootprint(
     Stream *stream) const {
-  auto footprint = stream->getFootprint(cpuDelegator->cacheLineSize());
+  auto footprint = stream->getFootprint(se->getCPUDelegator()->cacheLineSize());
   if (this->se->getPlacement() == "placement-footprint") {
     footprint = stream->getTrueFootprint();
   }
   auto placeCacheLevel = this->caches.size() - 1;
   for (size_t cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     auto cache = this->caches[cacheLevel];
-    auto cacheCapacity = cache->getCacheSize() / cpuDelegator->cacheLineSize();
+    auto cacheCapacity =
+        cache->getCacheSize() / se->getCPUDelegator()->cacheLineSize();
     if (footprint < cacheCapacity) {
       placeCacheLevel = cacheLevel;
       break;
@@ -495,14 +495,15 @@ void StreamPlacementManager::updatePlacedCacheLevel(Stream *stream) {
 }
 
 size_t StreamPlacementManager::whichCacheLevelToPlace(Stream *stream) const {
-  auto footprint = stream->getFootprint(cpuDelegator->cacheLineSize());
+  auto footprint = stream->getFootprint(se->getCPUDelegator()->cacheLineSize());
   if (this->se->getPlacement() == "placement-footprint") {
     footprint = stream->getTrueFootprint();
   }
   auto placeCacheLevel = this->caches.size() - 1;
   for (size_t cacheLevel = 0; cacheLevel < this->caches.size(); ++cacheLevel) {
     auto cache = this->caches[cacheLevel];
-    auto cacheCapacity = cache->getCacheSize() / cpuDelegator->cacheLineSize();
+    auto cacheCapacity =
+        cache->getCacheSize() / se->getCPUDelegator()->cacheLineSize();
     if (footprint < cacheCapacity) {
       placeCacheLevel = cacheLevel;
       break;

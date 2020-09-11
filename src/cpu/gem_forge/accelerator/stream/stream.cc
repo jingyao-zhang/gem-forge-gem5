@@ -34,8 +34,7 @@
 
 Stream::Stream(const StreamArguments &args)
     : staticId(args.staticId), streamName(args.name), dynInstance(0),
-      floatTracer(this), cpu(args.cpu), cpuDelegator(args.cpuDelegator),
-      se(args.se) {
+      floatTracer(this), cpu(args.cpu), se(args.se) {
 
   this->configured = false;
   this->allocSize = 0;
@@ -52,6 +51,10 @@ void Stream::dumpStreamStats(std::ostream &os) const {
   os << this->getStreamName() << '\n';
   this->statistic.dump(os);
   this->floatTracer.dump();
+}
+
+GemForgeCPUDelegator *Stream::getCPUDelegator() const {
+  return this->se->getCPUDelegator();
 }
 
 bool Stream::isAtomicStream() const {
@@ -199,7 +202,8 @@ void Stream::initializeCoalesceGroupStreams() {
 void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
   // Allocate the new DynamicStream.
   this->dynamicStreams.emplace_back(this, this->allocateNewInstance(), seqNum,
-                                    cpuDelegator->curCycle(), tc, this->se);
+                                    this->getCPUDelegator()->curCycle(), tc,
+                                    this->se);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum, const InputVecT *inputVec) {
@@ -324,7 +328,7 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   assert(dynS.allocSize == 0 && "Unreleased element.");
 
   // Update stats of cycles.
-  auto endCycle = cpuDelegator->curCycle();
+  auto endCycle = this->getCPUDelegator()->curCycle();
   this->statistic.numCycle += endCycle - dynS.configCycle;
 
   // Update float stats.
@@ -617,11 +621,11 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
         0, dynStream.addrGenFormalParams, getStreamValueFail);
     // Remember to make line address.
     configData->initVAddr -=
-        configData->initVAddr % this->cpuDelegator->cacheLineSize();
+        configData->initVAddr % this->getCPUDelegator()->cacheLineSize();
 
     Addr initPAddr;
-    if (this->cpuDelegator->translateVAddrOracle(configData->initVAddr,
-                                                 initPAddr)) {
+    if (this->getCPUDelegator()->translateVAddrOracle(configData->initVAddr,
+                                                      initPAddr)) {
       configData->initPAddr = initPAddr;
       configData->initPAddrValid = true;
     } else {
@@ -669,8 +673,8 @@ bool Stream::isDirectLoadStream() const {
 
 DynamicStreamId Stream::allocateNewInstance() {
   this->dynInstance++;
-  return DynamicStreamId(cpuDelegator->cpuId(), this->staticId,
-                         this->dynInstance, this->streamName.c_str());
+  return DynamicStreamId(this->getCPUId(), this->staticId, this->dynInstance,
+                         this->streamName.c_str());
 }
 
 void Stream::allocateElement(StreamElement *newElement) {
@@ -708,7 +712,7 @@ void Stream::allocateElement(StreamElement *newElement) {
   this->addAddrBaseElements(newElement);
   this->addValueBaseElements(newElement);
 
-  newElement->allocateCycle = cpuDelegator->curCycle();
+  newElement->allocateCycle = this->getCPUDelegator()->curCycle();
 
   // Append to the list.
   dynS.head->next = newElement;
@@ -902,7 +906,7 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
       }
     }
   }
-  dynS.updateReleaseCycle(this->cpuDelegator->curCycle(), late);
+  dynS.updateReleaseCycle(this->getCPUDelegator()->curCycle(), late);
 
   // Update the aliased statistic.
   if (releaseElement->isAddrAliased) {
@@ -1127,17 +1131,19 @@ void Stream::performStore(const DynamicStream &dynS, StreamElement *element,
    */
   auto elementVAddr = element->addr;
   auto elementSize = element->size;
-  auto blockSize = cpuDelegator->cacheLineSize();
+  auto blockSize = this->getCPUDelegator()->cacheLineSize();
   auto elementLineOffset = elementVAddr % blockSize;
   assert(elementLineOffset + elementSize <= blockSize &&
          "Cannot support multi-line element with const update yet.");
   assert(elementSize <= sizeof(uint64_t) && "At most 8 byte element size.");
   Addr elementPAddr;
-  assert(cpuDelegator->translateVAddrOracle(elementVAddr, elementPAddr) &&
+  assert(this->getCPUDelegator()->translateVAddrOracle(elementVAddr,
+                                                       elementPAddr) &&
          "Failed to translate address for const update.");
   // ! Hack: Just do a functional write.
-  cpuDelegator->writeToMem(elementVAddr, elementSize,
-                           reinterpret_cast<const uint8_t *>(&storeValue));
+  this->getCPUDelegator()->writeToMem(
+      elementVAddr, elementSize,
+      reinterpret_cast<const uint8_t *>(&storeValue));
 }
 
 void Stream::dump() const {

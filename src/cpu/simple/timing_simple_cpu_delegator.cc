@@ -1,12 +1,9 @@
 #include "timing_simple_cpu_delegator.hh"
 
-#include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
-
 class TimingSimpleCPUDelegator::Impl {
 public:
   Impl(TimingSimpleCPU *_cpu, TimingSimpleCPUDelegator *_cpuDelegator)
-      : cpu(_cpu), state(StateE::BEFORE_DISPATCH), curSeqNum(1),
-        isaHandler(_cpuDelegator) {}
+      : cpu(_cpu), state(StateE::BEFORE_DISPATCH), curSeqNum(1) {}
 
   TimingSimpleCPU *cpu;
   /**
@@ -23,8 +20,6 @@ public:
    * This starts from 1, as 0 is reserved for invalid.
    */
   uint64_t curSeqNum;
-
-  GemForgeISAHandler isaHandler;
 
   std::string traceExtraFolder;
 
@@ -54,7 +49,7 @@ bool TimingSimpleCPUDelegator::canDispatch(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_DISPATCH);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  return pimpl->isaHandler.canDispatch(dynInfo);
+  return isaHandler->canDispatch(dynInfo);
 }
 
 void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
@@ -70,7 +65,7 @@ void TimingSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
    */
   GemForgeLQCallbackList extraLQCallbacks;
   bool isGemForgeLoad;
-  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
+  isaHandler->dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
 
@@ -79,7 +74,7 @@ bool TimingSimpleCPUDelegator::canExecute(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  return pimpl->isaHandler.canExecute(dynInfo);
+  return isaHandler->canExecute(dynInfo);
 }
 
 void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
@@ -87,7 +82,7 @@ void TimingSimpleCPUDelegator::execute(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  pimpl->isaHandler.execute(dynInfo, xc);
+  isaHandler->execute(dynInfo, xc);
   pimpl->state = Impl::StateE::BEFORE_COMMIT;
 }
 
@@ -96,7 +91,7 @@ bool TimingSimpleCPUDelegator::canCommit(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  return pimpl->isaHandler.canCommit(dynInfo);
+  return isaHandler->canCommit(dynInfo);
 }
 
 void TimingSimpleCPUDelegator::commit(StaticInstPtr staticInst,
@@ -104,13 +99,13 @@ void TimingSimpleCPUDelegator::commit(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  pimpl->isaHandler.commit(dynInfo);
+  isaHandler->commit(dynInfo);
   pimpl->state = Impl::StateE::BEFORE_DISPATCH;
   pimpl->curSeqNum++;
 }
 
 void TimingSimpleCPUDelegator::storeTo(Addr vaddr, int size) {
-  pimpl->isaHandler.storeTo(vaddr, size);
+  isaHandler->storeTo(vaddr, size);
 }
 
 const std::string &TimingSimpleCPUDelegator::getTraceExtraFolder() const {
@@ -153,4 +148,12 @@ void TimingSimpleCPUDelegator::sendRequest(PacketPtr pkt) {
          "a GemForge port.");
   auto succeed = pimpl->cpu->dcachePort->sendTimingReqVirtual(pkt);
   assert(succeed && "GemForgePort should always succeed on sending TimingReq.");
+}
+
+InstSeqNum TimingSimpleCPUDelegator::getInstSeqNum() const {
+  return pimpl->curSeqNum;
+}
+
+void TimingSimpleCPUDelegator::setInstSeqNum(InstSeqNum seqNum) {
+  pimpl->curSeqNum = seqNum;
 }

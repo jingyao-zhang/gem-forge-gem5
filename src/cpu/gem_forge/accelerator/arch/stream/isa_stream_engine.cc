@@ -563,6 +563,8 @@ bool ISAStreamEngine::canDispatchStreamStep(
       ISA_SE_DPRINTF(
           "[canDispatch] MustMisspeculated StreamStep RegionStream %llu.\n",
           regionStreamId);
+      instInfo.mustBeMisspeculatedReason =
+          MustBeMisspeculatedReason::STEP_INVALID_REGION_ID;
       instInfo.mustBeMisspeculated = true;
     } else {
       auto streamId = this->lookupRegionStreamId(regionStreamId);
@@ -624,7 +626,9 @@ void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   if (instInfo.mustBeMisspeculated) {
     auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
-    panic("Commit a MustBeMisspeculated StreamStep %llu.\n", regionStreamId);
+    panic("Commit a MustBeMisspeculated StreamStep %llu, Reason: %s.\n",
+          regionStreamId,
+          mustBeMisspeculatedString(instInfo.mustBeMisspeculatedReason));
   }
   const auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
@@ -863,7 +867,6 @@ void ISAStreamEngine::storeTo(Addr vaddr, int size) {
     se->cpuStoreTo(vaddr, size);
   }
 }
-
 /********************************************************************************
  * StreamEngine Helpers.
  *******************************************************************************/
@@ -1093,8 +1096,17 @@ ISAStreamEngine::mustBeMisspeculatedString(MustBeMisspeculatedReason reason) {
   switch (reason) {
     CASE_REASON(CONFIG_HAS_PREV_REGION);
     CASE_REASON(CONFIG_CANNOT_SET_REGION_ID);
+    CASE_REASON(STEP_INVALID_REGION_ID);
   default:
     return "UNKNOWN_REASON";
   }
 #undef CASE_REASON
+}
+
+void ISAStreamEngine::takeOverBy(GemForgeCPUDelegator *newDelegator) {
+  this->cpuDelegator = newDelegator;
+  // Clear memorized StreamEngine, even though by our design this should not
+  // change.
+  this->SE = nullptr;
+  this->SEMemorized = false;
 }

@@ -26,6 +26,8 @@ public:
 
   void handshake(GemForgeCPUDelegator *_cpuDelegator,
                  GemForgeAcceleratorManager *_manager) override;
+  void takeOverBy(GemForgeCPUDelegator *newCpuDelegator,
+                  GemForgeAcceleratorManager *newManager) override;
 
   void tick() override;
   void dump() override;

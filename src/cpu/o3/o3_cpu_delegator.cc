@@ -1,6 +1,5 @@
 #include "o3_cpu_delegator.hh"
 
-#include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/impl.hh"
 #include "debug/O3CPUDelegator.hh"
@@ -17,12 +16,10 @@ public:
   using GFLoadReq = typename DefaultO3CPUDelegator<CPUImpl>::GFLoadReq;
 
   Impl(O3CPU *_cpu, DefaultO3CPUDelegator *_cpuDelegator)
-      : cpu(_cpu), cpuDelegator(_cpuDelegator), isaHandler(_cpuDelegator) {}
+      : cpu(_cpu), cpuDelegator(_cpuDelegator) {}
 
   O3CPU *cpu;
   DefaultO3CPUDelegator<CPUImpl> *cpuDelegator;
-
-  GemForgeISAHandler isaHandler;
 
   // Cache of the traceExtraFolder.
   std::string traceExtraFolder;
@@ -225,7 +222,7 @@ void DefaultO3CPUDelegator<CPUImpl>::sendRequest(PacketPtr pkt) {
 template <class CPUImpl>
 bool DefaultO3CPUDelegator<CPUImpl>::canDispatch(DynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-  auto ret = pimpl->isaHandler.canDispatch(dynInfo);
+  auto ret = isaHandler->canDispatch(dynInfo);
   if (!ret) {
     INST_DPRINTF(dynInstPtr, "Cannot dispatch.\n");
   }
@@ -238,7 +235,7 @@ void DefaultO3CPUDelegator<CPUImpl>::dispatch(DynInstPtr &dynInstPtr) {
   INST_DPRINTF(dynInstPtr, "Dispatch.\n");
   GemForgeLQCallbackList extraLQCallbacks;
   bool isGemForgeLoad = false;
-  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
+  isaHandler->dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
   pimpl->inflyInstQueue.push_back(dynInstPtr);
   pimpl->inflyInstSquashedMap.emplace(dynInfo.seqNum, false);
   if (isGemForgeLoad) {
@@ -271,7 +268,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canExecute(DynInstPtr &dynInstPtr) {
     return pimpl->isAddrSizeReady(dynInstPtr);
   }
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-  auto ret = pimpl->isaHandler.canExecute(dynInfo);
+  auto ret = isaHandler->canExecute(dynInfo);
   if (!ret) {
     INST_DPRINTF(dynInstPtr, "Cannot execute.\n");
   }
@@ -291,7 +288,7 @@ void DefaultO3CPUDelegator<CPUImpl>::execute(DynInstPtr &dynInstPtr) {
   }
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   // DynInst is also ExecContext.
-  pimpl->isaHandler.execute(dynInfo, *dynInstPtr);
+  isaHandler->execute(dynInfo, *dynInstPtr);
 }
 
 template <class CPUImpl>
@@ -308,7 +305,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canWriteback(
    */
   if (dynInstPtr->isGemForge() && dynInstPtr->isLoad()) {
     auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-    auto ret = pimpl->isaHandler.canExecute(dynInfo);
+    auto ret = isaHandler->canExecute(dynInfo);
     if (!ret) {
       INST_DPRINTF(dynInstPtr, "Cannot writeback.\n");
     }
@@ -326,7 +323,7 @@ void DefaultO3CPUDelegator<CPUImpl>::writeback(const DynInstPtr &dynInstPtr) {
   if (dynInstPtr->isGemForge() && dynInstPtr->isLoad()) {
     INST_DPRINTF(dynInstPtr, "Writeback.\n");
     auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-    pimpl->isaHandler.execute(dynInfo, *dynInstPtr);
+    isaHandler->execute(dynInfo, *dynInstPtr);
   }
 }
 
@@ -337,7 +334,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canCommit(const DynInstPtr &dynInstPtr) {
     return true;
   }
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-  auto ret = pimpl->isaHandler.canCommit(dynInfo);
+  auto ret = isaHandler->canCommit(dynInfo);
   if (!ret) {
     INST_DPRINTF(dynInstPtr, "Cannot commit.\n");
   }
@@ -372,7 +369,7 @@ void DefaultO3CPUDelegator<CPUImpl>::commit(const DynInstPtr &dynInstPtr) {
 
   pimpl->inflyInstQueue.pop_front();
   pimpl->releaseInflyInstSquashedMap(seqNum);
-  pimpl->isaHandler.commit(dynInfo);
+  isaHandler->commit(dynInfo);
 }
 
 template <class CPUImpl>
@@ -382,7 +379,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::shouldCountInPipeline(
     return true;
   }
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
-  return pimpl->isaHandler.shouldCountInPipeline(dynInfo);
+  return isaHandler->shouldCountInPipeline(dynInfo);
 }
 
 template <class CPUImpl>
@@ -399,7 +396,7 @@ void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
     }
     INST_DPRINTF(inst, "Rewind.\n");
     auto dynInfo = pimpl->createDynInfo(inst);
-    pimpl->isaHandler.rewind(dynInfo);
+    isaHandler->rewind(dynInfo);
 
     /**
      * Rewinding a instruction with GemForgeLQCallback involves 3 cases:
@@ -427,7 +424,7 @@ void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
   // 1. Notify GemForge.
-  pimpl->isaHandler.storeTo(vaddr, size);
+  isaHandler->storeTo(vaddr, size);
 
   // 2. Find the oldest seqNum that aliased with this store.
   if (pimpl->inflyInstQueue.empty()) {
@@ -652,6 +649,16 @@ void DefaultO3CPUDelegator<CPUImpl>::discardGemForgeLoad(
   auto inLSQIter = inLSQ.find(seqNum);
   assert(inLSQIter != inLSQ.end() && "Missed inLSQ.");
   inLSQ.erase(inLSQIter);
+}
+
+template <class CPUImpl>
+InstSeqNum DefaultO3CPUDelegator<CPUImpl>::getInstSeqNum() const {
+  return pimpl->cpu->getGlobalInstSeq();
+}
+
+template <class CPUImpl>
+void DefaultO3CPUDelegator<CPUImpl>::setInstSeqNum(InstSeqNum seqNum) {
+  pimpl->cpu->setGlobalInstSeq(seqNum);
 }
 
 #undef INST_PANIC

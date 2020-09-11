@@ -91,8 +91,7 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
 
   this->writebackCacheLine = new uint8_t[cpuDelegator->cacheLineSize()];
   if (this->enableStreamPlacement) {
-    this->streamPlacementManager =
-        new StreamPlacementManager(cpuDelegator, this);
+    this->streamPlacementManager = new StreamPlacementManager(this);
   }
 
   // Set up the translation buffer.
@@ -102,6 +101,11 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
         this->cpuDelegator->sendRequest(pkt);
       },
       false /* AccessLastLevelTLBOnly */, true /* MustDoneInOrder */);
+}
+
+void StreamEngine::takeOverBy(GemForgeCPUDelegator *newCpuDelegator,
+                              GemForgeAcceleratorManager *newManager) {
+  GemForgeAccelerator::takeOverBy(newCpuDelegator, newManager);
 }
 
 void StreamEngine::regStats() {

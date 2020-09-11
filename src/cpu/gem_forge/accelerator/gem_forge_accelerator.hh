@@ -28,6 +28,8 @@ public:
 
   virtual void handshake(GemForgeCPUDelegator *_cpuDelegator,
                          GemForgeAcceleratorManager *_manager);
+  virtual void takeOverBy(GemForgeCPUDelegator *newCpuDelegator,
+                          GemForgeAcceleratorManager *newManager);
 
   /**
    * TODO: Finally decouple accelerator model from instruction.
@@ -42,6 +44,8 @@ public:
    * Default does nothing.
    */
   void regStats() override { SimObject::regStats(); }
+
+  GemForgeCPUDelegator *getCPUDelegator() { return this->cpuDelegator; }
 
 protected:
   GemForgeCPUDelegator *cpuDelegator;
@@ -67,6 +71,8 @@ public:
   void handshake(GemForgeCPUDelegator *_cpuDelegator);
   void handle(LLVMDynamicInst *inst);
   void tick();
+  // Take all accelerators from old one.
+  void takeOverFrom(GemForgeAcceleratorManager *oldManager);
   // Allow the accelerator to schedule tick() in next event.
   void scheduleTickNextCycle();
   void dump();

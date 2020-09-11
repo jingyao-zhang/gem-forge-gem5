@@ -207,14 +207,21 @@ def initializeCPUs(options):
             dtb.walker_se_port = options.walker_se_port
             dtb.timing_se = options.tlb_timing_se
 
-    # We assume initial_cpu does not have GemForge accelerators if future_cpu is valid.
-    for cpu in future_cpus if future_cpus else initial_cpus:
+    # We initialize GemForge for initial_cpus.
+    for cpu in initial_cpus:
         cpu.accelManager = \
             GemForgeAccConfig.initializeGemForgeAcceleratorManager(options)
-        if options.gem_forge_idea_inorder_cpu:
-            cpu.enableIdeaInorderCPU = True
+        if options.prog_interval:
+            cpu.progress_interval = '100' # Hz
+    # We initialize empty GemForge for future_cpus.
+    for cpu in future_cpus:
+        cpu.accelManager = GemForgeAcceleratorManager(accelerators=list())
         if options.prog_interval:
             cpu.progress_interval = options.prog_interval
+
+    for cpu in future_cpus if future_cpus else initial_cpus:
+        if options.gem_forge_idea_inorder_cpu:
+            cpu.enableIdeaInorderCPU = True
     for cpu in future_cpus:
         cpu.switched_out = True
     # Update the progress count.

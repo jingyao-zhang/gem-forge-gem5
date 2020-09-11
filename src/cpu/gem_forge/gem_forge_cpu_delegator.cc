@@ -56,4 +56,29 @@ GemForgeCPUDelegator::GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU)
     this->ideaInorderCPUNoLDTiming = m5::make_unique<GemForgeIdeaInorderCPU>(
         baseCPU->cpuId(), 4, true, false);
   }
+  this->isaHandler = std::make_shared<GemForgeISAHandler>(this);
+}
+
+void GemForgeCPUDelegator::takeOverFrom(GemForgeCPUDelegator *oldDelegator) {
+  // Take over the ISA handler.
+  this->takeOverISAHandlerFrom(oldDelegator);
+  // Take over the InstSeqNum.
+  auto mySeqNum = this->getInstSeqNum();
+  auto oldSeqNum = oldDelegator->getInstSeqNum();
+  if (mySeqNum > oldSeqNum) {
+    panic("%s-%d MySeqNum %llu >= %s-%d OldSeqNum %llu.\n",
+          CPUTypeToString(this->cpuType), this->cpuId(), mySeqNum,
+          CPUTypeToString(oldDelegator->cpuType), oldDelegator->cpuId(),
+          oldSeqNum);
+  }
+  this->setInstSeqNum(oldSeqNum);
+}
+
+void GemForgeCPUDelegator::takeOverISAHandlerFrom(
+    GemForgeCPUDelegator *oldDelegator) {
+  // For now we just seize the pointer.
+  this->isaHandler = oldDelegator->isaHandler;
+  oldDelegator->isaHandler = nullptr;
+  // Make sure it now has myself as the new delegator.
+  this->isaHandler->takeOverBy(this);
 }

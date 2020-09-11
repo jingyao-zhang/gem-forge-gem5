@@ -226,8 +226,8 @@ public:
   virtual bool isContinuous() const = 0;
 
   LLVMTraceCPU *getCPU() { return this->cpu; }
-  int getCPUId() { return this->cpuDelegator->cpuId(); }
-  GemForgeCPUDelegator *getCPUDelegator() const { return this->cpuDelegator; }
+  GemForgeCPUDelegator *getCPUDelegator() const;
+  int getCPUId() { return this->getCPUDelegator()->cpuId(); }
 
   virtual void configure(uint64_t seqNum, ThreadContext *tc) = 0;
 
@@ -354,7 +354,6 @@ public:
   }
 
   LLVMTraceCPU *cpu;
-  GemForgeCPUDelegator *cpuDelegator;
   StreamEngine *se;
 
   /**

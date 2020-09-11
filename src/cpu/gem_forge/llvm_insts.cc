@@ -62,10 +62,16 @@ std::unordered_map<std::string, LLVMInstInfo> LLVMDynamicInst::instInfo = {
 };
 
 LLVMDynamicInstId LLVMDynamicInst::currentDynamicInstId = 10000000000;
-uint64_t LLVMDynamicInst::currentSeqNum = 0;
-uint64_t LLVMDynamicInst::allocateSeqNum() {
-  // 0 is reserved for invalid seq num.
-  return ++LLVMDynamicInst::currentSeqNum;
+// 0 is reserved for invalid seq num.
+InstSeqNum LLVMDynamicInst::currentSeqNum = 1;
+InstSeqNum LLVMDynamicInst::allocateGlobalSeqNum() {
+  return LLVMDynamicInst::currentSeqNum++;
+}
+InstSeqNum LLVMDynamicInst::getGlobalSeqNum() {
+  return LLVMDynamicInst::currentSeqNum;
+}
+void LLVMDynamicInst::setGlobalSeqNum(InstSeqNum seqNum) {
+  LLVMDynamicInst::currentSeqNum = seqNum;
 }
 
 uint64_t LLVMDynamicInst::getDynamicNextPC() const {

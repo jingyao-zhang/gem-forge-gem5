@@ -46,7 +46,7 @@ public:
 class LLVMDynamicInst : public GemForgePacketHandler {
 public:
   LLVMDynamicInst(const LLVM::TDG::TDGInstruction &_TDG, uint8_t _numMicroOps)
-      : seqNum(allocateSeqNum()), TDG(_TDG), numMicroOps(_numMicroOps),
+      : seqNum(allocateGlobalSeqNum()), TDG(_TDG), numMicroOps(_numMicroOps),
         remainingMicroOps(_numMicroOps - 1), serializeBefore(false),
         numAdditionalLQCallbacks(0) {
     // Extrace used stream ids.
@@ -207,8 +207,12 @@ protected:
   static std::unordered_map<std::string, LLVMInstInfo> instInfo;
 
   static LLVMDynamicInstId currentDynamicInstId;
-  static uint64_t currentSeqNum;
-  static uint64_t allocateSeqNum();
+  static InstSeqNum currentSeqNum;
+  static InstSeqNum allocateGlobalSeqNum();
+
+public:
+  static InstSeqNum getGlobalSeqNum();
+  static void setGlobalSeqNum(InstSeqNum seqNum);
 };
 
 // Memory access inst.

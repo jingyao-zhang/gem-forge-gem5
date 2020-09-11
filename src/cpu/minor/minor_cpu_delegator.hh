@@ -117,6 +117,10 @@ private:
    * the LSQ private data.
    */
   void drainPendingPackets();
+
+protected:
+  InstSeqNum getInstSeqNum() const override;
+  void setInstSeqNum(InstSeqNum seqNum) override;
 };
 
 #endif

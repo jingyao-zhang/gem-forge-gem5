@@ -1,13 +1,11 @@
 #include "atomic_simple_cpu_delegator.hh"
 
-#include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
 #include "cpu/gem_forge/gem_forge_packet_handler.hh"
 
 class AtomicSimpleCPUDelegator::Impl {
 public:
   Impl(AtomicSimpleCPU *_cpu, AtomicSimpleCPUDelegator *_cpuDelegator)
-      : cpu(_cpu), state(StateE::BEFORE_DISPATCH), curSeqNum(1),
-        isaHandler(_cpuDelegator) {}
+      : cpu(_cpu), state(StateE::BEFORE_DISPATCH), curSeqNum(1) {}
 
   AtomicSimpleCPU *cpu;
   /**
@@ -24,8 +22,6 @@ public:
    * This starts from 1, as 0 is reserved for invalid.
    */
   uint64_t curSeqNum;
-
-  GemForgeISAHandler isaHandler;
 
   std::string traceExtraFolder;
 
@@ -55,7 +51,7 @@ bool AtomicSimpleCPUDelegator::canDispatch(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_DISPATCH);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  return pimpl->isaHandler.canDispatch(dynInfo);
+  return isaHandler->canDispatch(dynInfo);
 }
 
 void AtomicSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
@@ -71,7 +67,7 @@ void AtomicSimpleCPUDelegator::dispatch(StaticInstPtr staticInst,
    */
   GemForgeLQCallbackList extraLQCallbacks;
   bool isGemForgeLoad;
-  pimpl->isaHandler.dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
+  isaHandler->dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
 
@@ -80,7 +76,7 @@ bool AtomicSimpleCPUDelegator::canExecute(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  return pimpl->isaHandler.canExecute(dynInfo);
+  return isaHandler->canExecute(dynInfo);
 }
 
 void AtomicSimpleCPUDelegator::execute(StaticInstPtr staticInst,
@@ -88,7 +84,7 @@ void AtomicSimpleCPUDelegator::execute(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_EXECUTE);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  pimpl->isaHandler.execute(dynInfo, xc);
+  isaHandler->execute(dynInfo, xc);
   pimpl->state = Impl::StateE::BEFORE_COMMIT;
 }
 
@@ -97,7 +93,7 @@ bool AtomicSimpleCPUDelegator::canCommit(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  return pimpl->isaHandler.canCommit(dynInfo);
+  return isaHandler->canCommit(dynInfo);
 }
 
 void AtomicSimpleCPUDelegator::commit(StaticInstPtr staticInst,
@@ -105,13 +101,13 @@ void AtomicSimpleCPUDelegator::commit(StaticInstPtr staticInst,
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
-  pimpl->isaHandler.commit(dynInfo);
+  isaHandler->commit(dynInfo);
   pimpl->state = Impl::StateE::BEFORE_DISPATCH;
   pimpl->curSeqNum++;
 }
 
 void AtomicSimpleCPUDelegator::storeTo(Addr vaddr, int size) {
-  pimpl->isaHandler.storeTo(vaddr, size);
+  isaHandler->storeTo(vaddr, size);
 }
 
 const std::string &AtomicSimpleCPUDelegator::getTraceExtraFolder() const {
@@ -155,4 +151,12 @@ void AtomicSimpleCPUDelegator::sendRequest(PacketPtr pkt) {
   (void)latency;
   // For simplicity now we immediately send back response.
   GemForgePacketHandler::handleGemForgePacketResponse(this, pkt);
+}
+
+InstSeqNum AtomicSimpleCPUDelegator::getInstSeqNum() const {
+  return pimpl->curSeqNum;
+}
+
+void AtomicSimpleCPUDelegator::setInstSeqNum(InstSeqNum seqNum) {
+  pimpl->curSeqNum = seqNum;
 }

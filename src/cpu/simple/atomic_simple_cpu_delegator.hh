@@ -33,6 +33,10 @@ public:
 private:
   class Impl;
   std::unique_ptr<Impl> pimpl;
+
+protected:
+  InstSeqNum getInstSeqNum() const override;
+  void setInstSeqNum(InstSeqNum seqNum) override;
 };
 
 #endif

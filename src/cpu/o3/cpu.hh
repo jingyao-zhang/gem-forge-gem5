@@ -309,8 +309,12 @@ class FullO3CPU : public BaseO3CPU
     void verifyMemoryMode() const override;
 
     /** Get the current instruction sequence number, and increment it. */
-    InstSeqNum getAndIncrementInstSeq()
+    InstSeqNum getAndIncrementGlobalInstSeq()
     { return globalSeqNum++; }
+    InstSeqNum getGlobalInstSeq() const
+    { return globalSeqNum; }
+    void setGlobalInstSeq(InstSeqNum seqNum)
+    { globalSeqNum = seqNum; }
 
     /** Traps to handle given fault. */
     void trap(const Fault &fault, ThreadID tid, const StaticInstPtr &inst);

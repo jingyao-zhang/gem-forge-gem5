@@ -154,6 +154,14 @@ class Decode : public Named
      *  into Decode and on to Execute which is responsible for
      *  actually killing instructions */
     bool isDrained();
+
+    InstSeqNum getFirstThreadExecSeqNum() const {
+      return this->decodeInfo.front().execSeqNum;
+    }
+
+    void setFirstThreadExecSeqNum(InstSeqNum seqNum) {
+      this->decodeInfo.front().execSeqNum = seqNum;
+    }
 };
 
 }

@@ -28,6 +28,8 @@ public:
   ISAStreamEngine(GemForgeCPUDelegator *_cpuDelegator)
       : cpuDelegator(_cpuDelegator) {}
 
+  void takeOverBy(GemForgeCPUDelegator *newDelegator);
+
 #define DeclareStreamInstHandler(Inst)                                         \
   bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);            \
   void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,                \
@@ -98,6 +100,7 @@ private:
   enum MustBeMisspeculatedReason {
     CONFIG_HAS_PREV_REGION = 0,
     CONFIG_CANNOT_SET_REGION_ID,
+    STEP_INVALID_REGION_ID,
   };
 
   static std::string

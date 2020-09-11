@@ -52,7 +52,7 @@ void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
    * Note: At this point the primary logical stream may not be created yet!
    */
   this->coalescedStreams.emplace_back(
-      new LogicalStream(cpuDelegator->getTraceExtraFolder(), info));
+      new LogicalStream(this->getCPUDelegator()->getTraceExtraFolder(), info));
 }
 
 void CoalescedStream::finalize() {
