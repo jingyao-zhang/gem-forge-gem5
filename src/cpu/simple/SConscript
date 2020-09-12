@@ -53,4 +53,5 @@ if 'AtomicSimpleCPU' in env['CPU_MODELS'] or \
 
 if need_simple_base:
     Source('base.cc')
+    Source('simple_cpu_delegator.cc')
     SimObject('BaseSimpleCPU.py')
