@@ -52,6 +52,25 @@ def initializeStreamEngine(options):
 
     return se
 
+def initializeEmptyGemForgeAcceleratorManager(options):
+    has_accelerator = False
+    if options.gem_forge_adfa_enable:
+        has_accelerator = True
+    if options.gem_forge_ideal_prefetcher:
+        has_accelerator = True
+    # accelerators.append(SpeculativePrecomputationManager(options))
+    if options.gem_forge_stream_engine_enable:
+        has_accelerator = True
+    if has_accelerator:
+        return GemForgeAcceleratorManager(accelerators=list())
+    elif options.gem_forge_idea_inorder_cpu:
+        # IdeaInorderCPU is implemented in CPU delegator, which is
+        # dependent on accelManaguer.
+        return GemForgeAcceleratorManager(accelerators=list())
+    else:
+        # Disable this in default.
+        return NULL
+
 def initializeGemForgeAcceleratorManager(options):
     accelerators = list()
     if options.gem_forge_adfa_enable:
