@@ -100,8 +100,8 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
 
   // Initialize the cache warmer.
   if (this->cpuParams->warmCache) {
-    this->cacheWarmer =
-        new CacheWarmer(this, this->traceFileName + ".cache", 1);
+    // this->cacheWarmer =
+    //     new CacheWarmer(this, this->traceFileName + ".cache", 1);
   }
 
   // Schedule the first event.
@@ -688,4 +688,12 @@ size_t LLVMTraceCPU::getNumActiveNonIdealThreads() const {
     }
   }
   return activeThreads;
+}
+
+Counter LLVMTraceCPU::totalInsts() const {
+  return this->commitStage.instsCommitted.total();
+}
+
+Counter LLVMTraceCPU::totalOps() const {
+  return this->commitStage.opsCommitted.total();
 }

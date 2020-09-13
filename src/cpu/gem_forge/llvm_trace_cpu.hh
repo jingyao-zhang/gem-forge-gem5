@@ -34,12 +34,13 @@ public:
   ~LLVMTraceCPU();
 
   MasterPort &getDataPort() override { return this->dataPort; }
-
   MasterPort &getInstPort() override { return this->instPort; }
-
-  Counter totalInsts() const override { return 0; }
-
-  Counter totalOps() const override { return 0; }
+  Counter totalInsts() const override;
+  Counter totalOps() const override;
+  bool shouldCheckDeadlock() const override {
+    // We only enable deadlock check when executing.
+    return this->cpuStatus == CPUStatusE::EXECUTING;
+  }
 
   void wakeup(ThreadID tid) override {}
 
