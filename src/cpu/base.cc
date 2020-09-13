@@ -106,7 +106,8 @@ CPUProgressEvent::process()
     }
 
     // ! Hack some deadlock check here.
-    if (cpu->cpuId() == 0 && temp == lastNumInst) {
+    if (cpu->shouldCheckDeadlock() && cpu->cpuId() == 0 &&
+        temp == lastNumInst) {
         if (!this->_stucked) {
             // Enable the debug flag after we found deadlock.
             // Debug::MinorExecute.enable();

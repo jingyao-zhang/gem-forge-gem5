@@ -224,6 +224,11 @@ class BaseCPU : public ClockedObject
       return nullptr;
     }
 
+    /**
+     * Whether we should check deadlock for this cpu.
+     */
+    virtual bool shouldCheckDeadlock() const { return true; }
+
     TheISA::MicrocodeRom microcodeRom;
 
   protected:
