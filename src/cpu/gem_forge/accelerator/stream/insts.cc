@@ -28,7 +28,7 @@ bool StreamConfigInst::canDispatch(LLVMTraceCPU *cpu) const {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   StreamEngine::StreamConfigArgs args(this->getSeqNum(),
                                       this->TDG.stream_config().info_path());
-  return SE->canStreamConfig(args);
+  return SE->canStreamConfig(args) && this->canDispatchStreamUser(cpu);
 }
 
 void StreamConfigInst::dispatch(LLVMTraceCPU *cpu) {
@@ -121,7 +121,7 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
 bool StreamStoreInst::canDispatch(LLVMTraceCPU *cpu) const {
   // StreamStore may also be a stream user.
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
-  return SE->canStreamStoreDispatch(this);
+  return SE->canStreamStoreDispatch(this) && this->canDispatchStreamUser(cpu);
 }
 
 std::list<std::unique_ptr<GemForgeSQCallback>>
@@ -197,7 +197,9 @@ LLVMDynamicInst *parseStreamInst(LLVM::TDG::TDGInstruction &TDGInst) {
   case LLVM::TDG::TDGInstruction::ExtraCase::kStreamEnd: {
     return new StreamEndInst(TDGInst);
   }
-  default: { break; }
+  default: {
+    break;
+  }
   }
 
   return nullptr;

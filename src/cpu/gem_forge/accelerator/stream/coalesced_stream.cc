@@ -99,6 +99,8 @@ void CoalescedStream::selectPrimeLogicalStream() {
     }
   } else {
     this->primeLStream = this->coalescedStreams.front();
+    this->baseOffset = 0;
+    this->coalescedElementSize = this->primeLStream->getMemElementSize();
   }
   // Sanity check for consistency between logical streams.
   for (const auto &LS : this->coalescedStreams) {
@@ -204,8 +206,13 @@ void CoalescedStream::initializeAliasStreams() {
   const auto &aliasBaseStreamId = primeSSI.alias_base_stream();
   for (auto &LS : this->coalescedStreams) {
     const auto &SSI = LS->info.static_info();
-    assert(SSI.alias_base_stream().id() == aliasBaseStreamId.id() &&
-           "Mismatch AliasBaseStream.");
+    if (SSI.alias_base_stream().id() != aliasBaseStreamId.id()) {
+      S_PANIC(
+          this,
+          "Mismatch AliasBaseStream %llu (prime %llu) %llu (logical %llu).\n",
+          aliasBaseStreamId.id(), this->primeLStream->getStreamId(),
+          SSI.alias_base_stream().id(), LS->getStreamId());
+    }
   }
   this->initializeAliasStreamsFromProtobuf(primeSSI);
 }

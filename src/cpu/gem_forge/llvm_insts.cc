@@ -138,6 +138,10 @@ bool LLVMDynamicInst::isDependenceReady(LLVMTraceCPU *cpu) const {
   return true;
 }
 
+bool LLVMDynamicInst::canDispatch(LLVMTraceCPU *cpu) const {
+  return this->canDispatchStreamUser(cpu);
+}
+
 void LLVMDynamicInst::dispatch(LLVMTraceCPU *cpu) {
   this->dispatchStreamUser(cpu);
 }
@@ -146,6 +150,27 @@ void LLVMDynamicInst::commit(LLVMTraceCPU *cpu) { this->commitStreamUser(cpu); }
 
 bool LLVMDynamicInst::hasStreamUse() const {
   return !this->usedStreamIds.empty();
+}
+
+bool LLVMDynamicInst::canDispatchStreamUser(LLVMTraceCPU *cpu) const {
+  if (this->hasStreamUse()) {
+    StreamEngine::StreamUserArgs args(this->getSeqNum(), this->getPC(),
+                                      this->usedStreamIds);
+    auto SE = cpu->getAcceleratorManager()->getStreamEngine();
+    if (!SE->hasUnsteppedElement(args)) {
+      // We must wait.
+      return false;
+    } else {
+      if (SE->hasIllegalUsedLastElement(args)) {
+        // This is a use beyond the last element. Must be misspeculated.
+        assert(false && "This should not happen in trace simulation.");
+        return true;
+      }
+      // TODO: Check LSQ entry if this is the first use of the element.
+      return true;
+    }
+  }
+  return true;
 }
 
 void LLVMDynamicInst::dispatchStreamUser(LLVMTraceCPU *cpu) {

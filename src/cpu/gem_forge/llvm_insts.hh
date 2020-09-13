@@ -60,7 +60,7 @@ public:
   virtual ~LLVMDynamicInst() {}
 
   // Interface.
-  virtual bool canDispatch(LLVMTraceCPU *cpu) const { return true; }
+  virtual bool canDispatch(LLVMTraceCPU *cpu) const;
   virtual void dispatch(LLVMTraceCPU *cpu);
   virtual void execute(LLVMTraceCPU *cpu) = 0;
   virtual void writeback(LLVMTraceCPU *cpu) {
@@ -96,6 +96,7 @@ public:
    */
   std::vector<uint64_t> usedStreamIds;
   bool hasStreamUse() const;
+  bool canDispatchStreamUser(LLVMTraceCPU *cpu) const;
   void dispatchStreamUser(LLVMTraceCPU *cpu);
   void executeStreamUser(LLVMTraceCPU *cpu);
   void commitStreamUser(LLVMTraceCPU *cpu);

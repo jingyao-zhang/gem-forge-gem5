@@ -270,7 +270,8 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
-  SE_DPRINTF("Dispatch StreamConfig for %s.\n", streamRegion.region().c_str());
+  SE_DPRINTF("Dispatch StreamConfig for %s, %s.\n", streamRegion.region(),
+             args.infoRelativePath);
 
   // Initialize all the streams if this is the first time we encounter the
   // loop.
@@ -331,6 +332,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   auto *cacheStreamConfigVec = new CacheStreamConfigureVec();
   std::unordered_map<Stream *, CacheStreamConfigureData *>
       offloadedStreamConfigMap;
+  SE_DPRINTF("Consider StreamFloat for %s.\n", streamRegion.region());
   for (auto &S : configStreams) {
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
@@ -854,6 +856,7 @@ bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
     if (!dynS.configExecuted) {
       // So far we will not try to allocate element until the configuration is
       // executed.
+      S_DPRINTF(S, "No unstepped element as config not executed.\n");
       return false;
     }
     auto element = dynS.getFirstUnsteppedElement();
@@ -1527,12 +1530,11 @@ void StreamEngine::generateCoalescedStreamIdMap(
         // The first stream is the leading stream.
         /**
          * I know this is confusing. But there are two possible interpretation
-         * of coalesce group. In both case, 0 is used as the invalid coalesce
-         * group.
-         * 1. In the old trace based implementation, this is some arbitrarily
-         *    allocated number. The offset should be -1.
-         * 2. In the static transform implementation, this is the base stream
-         *    id, and the offset should be >= 0.
+         * of coalesce group: trace-based ane execution-based.
+         * Both version uses coalesce base stream id as the coalesce group.
+         * 1. In the old trace based implementation, coalesced stream will have
+         *    offset -1 (we don't calculate the offset in transformation).
+         * 2. In the static transform implementation, the offset should be >= 0.
          */
         auto staticCoalesced = streamInfo.coalesce_info().offset() != -1;
 
