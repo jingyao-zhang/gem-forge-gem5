@@ -53,7 +53,7 @@ if int(hoffman2):
 # mcpat relies on the fact that undefined preprocessor symbols are
 # explanded to 0 but since we use -Wundef they end up generating
 # warnings. Here we remove -Wundef.
-print mcpat_env['CCFLAGS']
+print(mcpat_env['CCFLAGS'])
 
 def remove_flag(env, variable, flag):
     if flag in env[variable]:
@@ -69,7 +69,7 @@ mcpat_env.Append(CPPFLAGS=['-Wno-unused-variable', '-Wno-unused-but-set-variable
 # Use SSE2.
 mcpat_env.Append(CPPFLAGS=['-msse2', '-mfpmath=sse'])
 
-print mcpat_env['CCFLAGS']
+print(mcpat_env['CCFLAGS'])
 
 # Build McPAT as a static library with PIC code so it can be linked.
 mcpat_objects = [mcpat_env.SharedObject(f) for f in mcpat_files]
