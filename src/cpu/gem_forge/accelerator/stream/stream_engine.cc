@@ -1535,12 +1535,13 @@ void StreamEngine::generateCoalescedStreamIdMap(
          * 1. In the old trace based implementation, coalesced stream will have
          *    offset -1 (we don't calculate the offset in transformation).
          * 2. In the static transform implementation, the offset should be >= 0.
+         * NOTE: Now we always use new execution-based coalescing, even in trace
+         * simulation.
          */
-        auto staticCoalesced = streamInfo.coalesce_info().offset() != -1;
 
         // TODO: I don't like this design, all initialization should happen
         // TODO: in the function initializeStreams().
-        coalescedStream = new CoalescedStream(args, staticCoalesced);
+        coalescedStream = new CoalescedStream(args);
         coalescedStreamId = streamId;
         this->streamMap.emplace(coalescedStreamId, coalescedStream);
       }

@@ -317,7 +317,7 @@ public:
   /**
    * Extract extra input values from the inputVec. May modify inputVec.
    */
-  void extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec);
+  void extractExtraInputValues(DynamicStream &dynS, InputVecT *inputVec);
 
   /**
    * For debug.

@@ -35,9 +35,8 @@ LogicalStream::LogicalStream(const std::string &_traceExtraFolder,
 
 LogicalStream::~LogicalStream() {}
 
-CoalescedStream::CoalescedStream(const StreamArguments &args,
-                                 bool _staticCoalesced)
-    : Stream(args), staticCoalesced(_staticCoalesced), primeLStream(nullptr) {}
+CoalescedStream::CoalescedStream(const StreamArguments &args)
+    : Stream(args), primeLStream(nullptr) {}
 
 CoalescedStream::~CoalescedStream() {
   for (auto &LS : this->coalescedStreams) {
@@ -65,9 +64,8 @@ void CoalescedStream::finalize() {
   this->initializeBackBaseStreams();
   this->initializeAliasStreams();
   this->initializeCoalesceGroupStreams();
-  STREAM_DPRINTF(
-      "Finalized, StaticCoalesced %d, ElementSize %d, LStreams: =========.\n",
-      this->staticCoalesced, this->coalescedElementSize);
+  STREAM_DPRINTF("Finalized, ElementSize %d, LStreams: =========.\n",
+                 this->coalescedElementSize);
   for (auto LS : this->coalescedStreams) {
     LS_DPRINTF(LS, "Offset %d, MemElementSize %d.\n", LS->getCoalesceOffset(),
                LS->getMemElementSize());
@@ -77,31 +75,26 @@ void CoalescedStream::finalize() {
 
 void CoalescedStream::selectPrimeLogicalStream() {
   assert(!this->coalescedStreams.empty());
-  // Other sanity check for statically coalesced streams.
-  if (this->staticCoalesced) {
-    // Sort the streams with offset.
-    std::sort(this->coalescedStreams.begin(), this->coalescedStreams.end(),
-              [](const LogicalStream *LA, const LogicalStream *LB) -> bool {
-                return LA->getCoalesceOffset() <= LB->getCoalesceOffset();
-              });
-    this->primeLStream = this->coalescedStreams.front();
-    this->baseOffset = this->primeLStream->getCoalesceOffset();
-    this->coalescedElementSize = this->primeLStream->getMemElementSize();
-    assert(this->baseOffset >= 0 && "Illegal BaseOffset.");
-    // Make sure we have the currect base_stream.
-    for (const auto &LS : this->coalescedStreams) {
-      assert(LS->getCoalesceBaseStreamId() ==
-             this->primeLStream->getCoalesceBaseStreamId());
-      // Compute the element size.
-      this->coalescedElementSize = std::max(
-          this->coalescedElementSize,
-          LS->getCoalesceOffset() - this->baseOffset + LS->getMemElementSize());
-    }
-  } else {
-    this->primeLStream = this->coalescedStreams.front();
-    this->baseOffset = 0;
-    this->coalescedElementSize = this->primeLStream->getMemElementSize();
+  // Other sanity check for coalesced streams.
+  // Sort the streams with offset.
+  std::sort(this->coalescedStreams.begin(), this->coalescedStreams.end(),
+            [](const LogicalStream *LA, const LogicalStream *LB) -> bool {
+              return LA->getCoalesceOffset() <= LB->getCoalesceOffset();
+            });
+  this->primeLStream = this->coalescedStreams.front();
+  this->baseOffset = this->primeLStream->getCoalesceOffset();
+  this->coalescedElementSize = this->primeLStream->getMemElementSize();
+  assert(this->baseOffset >= 0 && "Illegal BaseOffset.");
+  // Make sure we have the currect base_stream.
+  for (const auto &LS : this->coalescedStreams) {
+    assert(LS->getCoalesceBaseStreamId() ==
+           this->primeLStream->getCoalesceBaseStreamId());
+    // Compute the element size.
+    this->coalescedElementSize = std::max(
+        this->coalescedElementSize,
+        LS->getCoalesceOffset() - this->baseOffset + LS->getMemElementSize());
   }
+
   // Sanity check for consistency between logical streams.
   for (const auto &LS : this->coalescedStreams) {
     assert(LS->info.loop_level() == this->getLoopLevel());
@@ -219,10 +212,8 @@ void CoalescedStream::initializeAliasStreams() {
 
 void CoalescedStream::configure(uint64_t seqNum, ThreadContext *tc) {
   this->dispatchStreamConfig(seqNum, tc);
-  if (!this->staticCoalesced) {
+  if (se->isTraceSim()) {
     // We still use the trace based history address.
-    assert(this->staticCoalesced &&
-           "Trace based coalesced stream is disabled.");
     for (auto &S : this->coalescedStreams) {
       S->history->configure();
       S->patternStream->configure();
@@ -310,7 +301,16 @@ bool CoalescedStream::isContinuous() const {
 void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
                                    const InputVecT *inputVec) {
 
-  if (this->staticCoalesced) {
+  if (se->isTraceSim()) {
+    if (this->getNumCoalescedStreams() == 1) {
+      // For simplicity.
+      dynStream.addrGenCallback =
+          this->primeLStream->history->allocateCallbackAtInstance(
+              dynStream.dynamicStreamId.streamInstance);
+    } else {
+      S_PANIC(this, "Cannot setup addr gen for trace coalesced stream so far.");
+    }
+  } else {
     // We generate the address based on the primeLStream.
     assert(inputVec && "Missing InputVec.");
     const auto &info = this->primeLStream->info;
@@ -328,8 +328,6 @@ void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
       }
     }
   }
-
-  S_PANIC(this, "Cannot setup addr gen for trace coalesced stream so far.");
 }
 
 uint64_t

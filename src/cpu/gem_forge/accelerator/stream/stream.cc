@@ -214,9 +214,16 @@ void Stream::executeStreamConfig(uint64_t seqNum, const InputVecT *inputVec) {
   /**
    * We intercept the constant update value here.
    */
-  InputVecT inputVecCopy(*inputVec);
-  this->extractExtraInputValues(dynStream, inputVecCopy);
-  this->setupAddrGen(dynStream, &inputVecCopy);
+  if (inputVec) {
+    assert(!se->isTraceSim());
+    InputVecT inputVecCopy(*inputVec);
+    this->extractExtraInputValues(dynStream, &inputVecCopy);
+    this->setupAddrGen(dynStream, &inputVecCopy);
+  } else {
+    assert(se->isTraceSim());
+    this->extractExtraInputValues(dynStream, nullptr);
+    this->setupAddrGen(dynStream, nullptr);
+  }
 
   /**
    * We are going to copy the total trip count from the step root stream.
@@ -535,12 +542,26 @@ int Stream::setupFormalParams(const InputVecT *inputVec,
 /**
  * Extract extra input values from the inputVec. May modify inputVec.
  */
-void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
+void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT *inputVec) {
+
+  /**
+   * For trace simulation, we have no input.
+   */
+  if (se->isTraceSim()) {
+    assert(this->getMergedPredicatedStreams().empty() &&
+           "MergedPredicatedStreams in TraceSim.");
+    assert(!this->enabledStoreFunc() && "StoreFunc in TraceSim.");
+    assert(!this->enabledLoadFunc() && "LoadFunc in TraceSim.");
+    assert(!this->isReduction() && "Reduction in TraceSim.");
+    assert(!inputVec && "InputVec in TraceSim.");
+    return;
+  }
 
   /**
    * If this has is load stream with merged predicated stream, check for
    * any inputs for the predication function.
    */
+  assert(inputVec && "Missing InputVec.");
   const auto &mergedPredicatedStreams = this->getMergedPredicatedStreams();
   if (mergedPredicatedStreams.size() > 0) {
     const auto &predFuncInfo = this->getPredicateFuncInfo();
@@ -551,9 +572,9 @@ void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
     dynS.predCallback = this->predCallback;
     auto &predFormalParams = dynS.predFormalParams;
     auto usedInputs =
-        this->setupFormalParams(&inputVec, predFuncInfo, predFormalParams);
+        this->setupFormalParams(inputVec, predFuncInfo, predFormalParams);
     // Consume these inputs.
-    inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
+    inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
   }
   /**
    * Handle StoreFunc.
@@ -568,9 +589,9 @@ void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
     dynS.storeCallback = this->storeCallback;
     auto &storeFormalParams = dynS.storeFormalParams;
     auto usedInputs =
-        this->setupFormalParams(&inputVec, storeFuncInfo, storeFormalParams);
+        this->setupFormalParams(inputVec, storeFuncInfo, storeFormalParams);
     // Consume these inputs.
-    inputVec.erase(inputVec.begin(), inputVec.begin() + usedInputs);
+    inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
   }
   /**
    * LoadFunc shares the same input as StoreFunc, for now.
@@ -588,9 +609,9 @@ void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT &inputVec) {
    * If this is a reduction stream, check for the initial value.
    */
   if (this->isReduction()) {
-    assert(!inputVec.empty() && "Missing initial value for reduction stream.");
-    dynS.initialValue = inputVec.front().at(0);
-    inputVec.erase(inputVec.begin());
+    assert(!inputVec->empty() && "Missing initial value for reduction stream.");
+    dynS.initialValue = inputVec->front().at(0);
+    inputVec->erase(inputVec->begin());
   }
 }
 
@@ -958,6 +979,7 @@ StreamElement *Stream::stepElement() {
   auto &dynS = this->getLastDynamicStream();
   auto element = dynS.stepped->next;
   assert(!element->isStepped && "Element already stepped.");
+  S_ELEMENT_DPRINTF(element, "Stepped.\n");
   element->isStepped = true;
   dynS.stepped = element;
   dynS.stepSize++;

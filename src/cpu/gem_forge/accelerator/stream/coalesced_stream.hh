@@ -56,7 +56,7 @@ public:
 
 class CoalescedStream : public Stream {
 public:
-  CoalescedStream(const StreamArguments &args, bool _staticCoalesced);
+  CoalescedStream(const StreamArguments &args);
 
   ~CoalescedStream();
 
@@ -146,9 +146,7 @@ protected:
    * Represented all the streams coalesced within this one.
    * The first one is "prime stream", whose stream id is used to represent
    * this coalesced stream.
-   * In statically coalesced streams, this is the base stream with offset 0.
    */
-  bool staticCoalesced;
   std::vector<LogicalStream *> coalescedStreams;
   LogicalStream *primeLStream;
   int32_t coalescedElementSize = -1;

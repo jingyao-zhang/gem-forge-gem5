@@ -412,6 +412,12 @@ void LLVMIEWStage::dispatch() {
       break;
     }
 
+    // Some other instruction specific reason.
+    // NOTE: This should happen before getNumLQ/SQEntries().
+    if (!inst->canDispatch(cpu)) {
+      break;
+    }
+
     // Store queue full.
     if (inst->getNumSQEntries(cpu) + this->lsq->stores() >
         this->storeQueueSize) {
@@ -420,11 +426,6 @@ void LLVMIEWStage::dispatch() {
 
     // Load queue full.
     if (inst->getNumLQEntries(cpu) + this->lsq->loads() > this->loadQueueSize) {
-      break;
-    }
-
-    // Some other instruction specific reason.
-    if (!inst->canDispatch(cpu)) {
       break;
     }
 
