@@ -94,6 +94,11 @@ LLVMTraceCPU::LLVMTraceCPU(LLVMTraceCPUParams *params)
   }
   this->activateThread(mainThread);
 
+  // // Initialize the thread.
+  // for (unsigned i = 0; i < numThreads; i++) {
+  //   assert(!FullSystem && "LLVMTraceCPU only works ")
+  // }
+
   // Reset the initializeMemorySnapshotDone so that we will initialize the
   // memory.
   this->initializeMemorySnapshotDone = !params->installMemorySnapshot;

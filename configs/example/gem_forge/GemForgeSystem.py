@@ -26,9 +26,12 @@ def run(options, root, system, future_cpus):
                     print('--- Switch cpu from m5_switchcpu()')
                     break
             elif exit_cause == 'markswitchcpu':
-                assert(options.gem_forge_work_mark_switch_cpu)
+                assert(options.gem_forge_work_mark_switch_cpu != -1)
                 print('--- Switch cpu from m5_workmark()')
                 break
+            elif exit_cause == 'markend':
+                print('--- Fast forward reached work mark end')
+                assert(False)
             else:
                 # For other reasons, we directly return.
                 if exit_event.getCode() != 0:
@@ -43,8 +46,13 @@ def run(options, root, system, future_cpus):
     print('**** REAL SIMULATION ****')
     assert(max_tick > m5.curTick())
     exit_event = m5.simulate(max_tick - m5.curTick())
+    exit_cause = exit_event.getCause()
     print('**** Exit @ tick {t} as {s} ****'.format(
         t=m5.curTick(), s=exit_event.getCause()))
+    if options.gem_forge_work_mark_end != -1:
+        if exit_cause != "markend":
+            print('Simulation should terminate with mark end')
+            assert(False)
     if exit_event.getCode() != 0:
         print('Simulated exit code ({s})'.format(
             s=exit_event.getCode()))

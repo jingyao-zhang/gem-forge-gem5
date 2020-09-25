@@ -60,10 +60,8 @@ def get_processes(options):
                         continue
                     history.append(int(line))
             process.markHistory = history
-        if options.gem_forge_work_mark_switch_cpu:
-            process.markSwitchcpu = options.gem_forge_work_mark_switch_cpu
-        if options.gem_forge_work_mark_end:
-            process.markEnd = options.gem_forge_work_mark_end
+        process.markSwitchcpu = options.gem_forge_work_mark_switch_cpu
+        process.markEnd = options.gem_forge_work_mark_end
 
         multiprocesses.append(process)
         idx += 1
@@ -135,7 +133,7 @@ def createCPUNonStandalone(options, CPUClass, multiprocesses, numThreads):
     options.num_cpus = len(cpus)
     return cpus
 
-def createCPUStandalone(options):
+def createCPUStandalone(options, multiprocesses, numThreads):
     # Standalone mode, just the LLVMTraceCPU.
     # There should be a trace file for replay.
     assert(options.llvm_trace_file != '')
@@ -146,6 +144,7 @@ def createCPUStandalone(options):
     #gem_forge_num_active_cpus to the same trace.
     Otherwise, panic.
     """
+    assert(len(multiprocesses) == len(options.llvm_trace_file))
     assert(options.gem_forge_num_active_cpus <= options.num_cpus)
     if len(options.llvm_trace_file) == 1:
         # Duplicate the traces to num_cpus.
@@ -159,7 +158,9 @@ def createCPUStandalone(options):
     else:
         assert(options.num_cpus == len(options.llvm_trace_file))
         options.gem_forge_num_active_cpus = options.num_cpus
-    for tdg_fn in options.llvm_trace_file:
+
+    for i in range(len(options.llvm_trace_file)):
+        tdg_fn = options.llvm_trace_file[i]
 
         # For each process, add a LLVMTraceCPU for simulation.
         llvm_trace_cpu = \
@@ -172,6 +173,11 @@ def createCPUStandalone(options):
         llvm_trace_cpu.traceFile = tdg_fn
         llvm_trace_cpu.driver = NULL
         llvm_trace_cpu.totalActiveCPUs = options.gem_forge_num_active_cpus
+
+        if tdg_fn != '':
+            process = multiprocesses[i]
+            llvm_trace_cpu.workload = process
+
         cpus.append(llvm_trace_cpu)
     assert(options.num_cpus == len(cpus))
     return cpus
@@ -183,12 +189,14 @@ Notice that it supported fast forward.
 def initializeCPUs(options):
     (InitialCPUClass, test_mem_mode, FutureCPUClass) = \
         Simulation.setCPUClass(options)
+    multiprocesses, numThreads = get_processes(options)
+    assert(numThreads == 1)
     if options.llvm_standalone:
         assert(FutureCPUClass is None)
-        initial_cpus = createCPUStandalone(options)
+        initial_cpus = createCPUStandalone(
+            options, multiprocesses, numThreads)
         future_cpus = list()
     else:
-        multiprocesses, numThreads = get_processes(options)
         initial_cpus = createCPUNonStandalone(
             options, InitialCPUClass, multiprocesses, numThreads)
         future_cpus = createCPUNonStandalone(
