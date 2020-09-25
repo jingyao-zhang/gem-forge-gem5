@@ -172,6 +172,11 @@ BaseCPU::BaseCPU(Params *p, bool is_checker)
                 GemForgeAcceleratorManager,
                 &GemForgeAcceleratorManager::exitDump>(
                     &*this->accelManager, true));
+        Stats::registerResetCallback(
+            new MakeCallback<
+                GemForgeAcceleratorManager,
+                &GemForgeAcceleratorManager::resetStats>(
+                    &*this->accelManager, true));
     }
 
     // if Python did not provide a valid ID, do it here

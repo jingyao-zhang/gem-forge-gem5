@@ -44,6 +44,10 @@ public:
    * Default does nothing.
    */
   void regStats() override { SimObject::regStats(); }
+  /**
+   * Will be invoked if you have self-defined stats (not from stats namespace).
+   */
+  virtual void resetStats() {}
 
   GemForgeCPUDelegator *getCPUDelegator() { return this->cpuDelegator; }
 
@@ -76,6 +80,7 @@ public:
   // Allow the accelerator to schedule tick() in next event.
   void scheduleTickNextCycle();
   void dump();
+  void resetStats();
 
   void exitDump();
 

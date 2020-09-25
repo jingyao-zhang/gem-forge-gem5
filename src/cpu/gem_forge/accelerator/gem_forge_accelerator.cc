@@ -121,3 +121,9 @@ void GemForgeAcceleratorManager::exitDump() {
     se->exitDump();
   }
 }
+
+void GemForgeAcceleratorManager::resetStats() {
+  for (auto accelerator : this->accelerators) {
+    accelerator->resetStats();
+  }
+}
