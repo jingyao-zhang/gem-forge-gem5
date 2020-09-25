@@ -100,3 +100,47 @@ StreamStatistic::llcSEIssueReasonToString(LLCStreamEngineIssueReason reason) {
     assert(false && "Invalid LLCStreamEngineIssueReason.");
   }
 }
+
+void StreamStatistic::clear() {
+  this->numConfigured = 0;
+  this->numMisConfigured = 0;
+  this->numFloated = 0;
+  this->numFloatRewinded = 0;
+  this->numFloatCancelled = 0;
+  this->numPseudoFloated = 0;
+  this->numAllocated = 0;
+  this->numFetched = 0;
+  this->numStepped = 0;
+  this->numUsed = 0;
+  this->numAliased = 0;
+  this->numFaulted = 0;
+  this->numCycle = 0;
+  this->numInflyRequest = 0;
+  this->numInflyRequestSample = 0;
+  this->numMLCAllocatedSlice = 0;
+  this->numLLCIssueSlice = 0;
+  this->numLLCSentSlice = 0;
+  this->numLLCMulticastSlice = 0;
+  this->numLLCCanMulticastSlice = 0;
+  this->numLLCFaultSlice = 0;
+  this->numLLCPredYSlice = 0;
+  this->numLLCPredNSlice = 0;
+  this->numLLCMigrate = 0;
+  this->numLLCMigrateCycle = 0;
+  this->numCoreEarlyElement = 0;
+  this->numCoreEarlyCycle = 0;
+  this->numCoreLateElement = 0;
+  this->numCoreLateCycle = 0;
+  this->numMLCEarlySlice = 0;
+  this->numMLCEarlyCycle = 0;
+  this->numMLCLateSlice = 0;
+  this->numMLCLateCycle = 0;
+  this->numIssuedRequest = 0;
+  this->numCycleRequestLatency = 0;
+  this->numMissL0 = 0;
+  this->numMissL1 = 0;
+  this->numMissL2 = 0;
+  for (auto &reasons : this->llcIssueReasons) {
+    reasons = 0;
+  }
+}

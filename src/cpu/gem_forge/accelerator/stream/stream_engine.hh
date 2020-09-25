@@ -32,6 +32,7 @@ public:
   void tick() override;
   void dump() override;
   void regStats() override;
+  void resetStats() override;
 
   // Override the name as we don't want the default long name().
   const std::string name() const override { return "global"; }

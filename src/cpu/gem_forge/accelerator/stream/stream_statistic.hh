@@ -89,6 +89,7 @@ public:
 
   StreamStatistic() = default;
   void dump(std::ostream &os) const;
+  void clear();
 };
 
 #endif

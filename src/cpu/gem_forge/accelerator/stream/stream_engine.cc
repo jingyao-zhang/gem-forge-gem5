@@ -3027,4 +3027,11 @@ void StreamEngine::RAWMisspeculate(StreamElement *element) {
   std::fill(element->value.begin(), element->value.end(), 0);
 }
 
+void StreamEngine::resetStats() {
+  for (auto &idStream : this->streamMap) {
+    auto S = idStream.second;
+    S->statistic.clear();
+  }
+}
+
 StreamEngine *StreamEngineParams::create() { return new StreamEngine(this); }
