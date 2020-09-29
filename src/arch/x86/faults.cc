@@ -128,8 +128,9 @@ namespace X86ISA
         if (FullSystem) {
             X86Fault::invoke(tc, inst);
         } else {
-            panic("Unrecognized/invalid instruction executed:\n %s",
-                    inst->machInst);
+            panic("Unrecognized/invalid instruction executed at PC %#x:\n %s",
+                  tc->pcState().pc(),
+                  inst->machInst);
         }
     }
 

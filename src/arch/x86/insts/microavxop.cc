@@ -70,6 +70,10 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
         dest.si.i1 = src1.si.i1 + src2.si.i1;
         dest.si.i2 = src1.si.i2 + src2.si.i2;
         break;
+      case BinaryOp::IntSub:
+        dest.si.i1 = src1.si.i1 - src2.si.i1;
+        dest.si.i2 = src1.si.i2 - src2.si.i2;
+        break;
       case BinaryOp::SIntMin:
         dest.si.i1 = std::min(src1.si.i1, src2.si.i1);
         dest.si.i2 = std::min(src1.si.i2, src2.si.i2);
@@ -92,6 +96,9 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
         break;
       case BinaryOp::IntAdd:
         dest.sl = src1.sl + src2.sl;
+        break;
+      case BinaryOp::IntSub:
+        dest.sl = src1.sl - src2.sl;
         break;
       case BinaryOp::SIntMin:
         dest.sl = std::min(src1.sl, src2.sl);

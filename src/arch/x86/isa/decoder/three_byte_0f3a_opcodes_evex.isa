@@ -35,6 +35,20 @@
         format Inst {
             // 0x66
             0x1: decode OPCODE_OP {
+                0x03: decode EVEX_L_EXTEND {
+                    0x2: decode REX_W {
+                        0x1: VALIGNQ(VZqo, WZqo, Ib);
+                        0x0: VALIGND(VZqo, WZqo, Ib);
+                    }
+                    0x1: decode REX_W {
+                        0x1: VALIGNQ(VYdo, WYdo, Ib);
+                        0x0: VALIGND(VYdo, WYdo, Ib);
+                    }
+                    0x0: decode REX_W {
+                        0x1: VALIGNQ(Vo, Wo, Ib);
+                        0x0: VALIGND(Vo, Wo, Ib);
+                    }
+                }
                 0x05: decode EVEX_L_EXTEND {
                     0x2: VPERMILPD(VZqo, WZqo, Ib);
                     0x1: VPERMILPD(VYdo, WYdo, Ib);
@@ -66,6 +80,20 @@
                             0x0: VEXTRACT256L(WYdo, VZqo, Ib);
                             0x1: VEXTRACT256H(WYdo, VZqo, Ib);
                         }
+                    }
+                }
+                0x25: decode EVEX_L_EXTEND {
+                    0x2: decode REX_W {
+                        0x1: VPTERNLOGQ(VZqo, WZqo, Ib);
+                        0x0: VPTERNLOGD(VZqo, WZqo, Ib);
+                    }
+                    0x1: decode REX_W {
+                        0x1: VPTERNLOGQ(VYdo, WYdo, Ib);
+                        0x0: VPTERNLOGD(VYdo, WYdo, Ib);
+                    }
+                    0x0: decode REX_W {
+                        0x1: VPTERNLOGQ(Vo, Wo, Ib);
+                        0x0: VPTERNLOGD(Vo, Wo, Ib);
                     }
                 }
                 0x39: decode EVEX_L_EXTEND {

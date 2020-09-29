@@ -255,6 +255,9 @@
         0x1F: decode LEGACY_DECODEVAL {
             // operand size (0x66)
             0x1: decode OPCODE_OP_BOTTOM3 {
+                0x3: decode EVEX_L_EXTEND {
+                    0x2: VPSUBQ(VZqo, WZqo);
+                }
                 0x6: decode EVEX_L_EXTEND {
                     0x2: VPADDD(VZqo, WZqo);
                 }

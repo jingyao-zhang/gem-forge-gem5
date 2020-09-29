@@ -90,6 +90,7 @@ protected:
     FloatDiv,
     // Add/Sub can ignore sign.
     IntAdd,
+    IntSub,
     SIntMin,
   };
 

@@ -36,6 +36,7 @@
 # Authors: Gabe Black
 
 categories = [
+    "valign",
     "vpbroadcast",
     "vbroadcastsd",
     "vbroadcastss",
@@ -61,6 +62,7 @@ categories = [
     "vblendps",
     "vpermilps",
     "vpermilpd",
+    "vpternlog",
     "vpshufd",
     "vpextrq",
     "vzeroupper",

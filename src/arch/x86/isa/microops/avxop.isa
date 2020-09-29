@@ -242,6 +242,12 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::IntAdd);
         '''
 
+    class Vsubi(Varithp):
+        opClass = 'SimdAddOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntSub);
+        '''
+
     class Vminsi(Varithp):
         opClass = 'SimdCmpOp'
         code = '''
@@ -334,4 +340,91 @@ let {{
             }
         '''
 
+    class Valign(AVXOp):
+        def __init__(self, dest, src1, src2, imm8, VL, size):
+            super(Valign, self).__init__(
+                dest=dest, src1=src1, src2=src2, imm8=imm8,
+                srcVL=VL, destVL=VL, srcSize=size, destSize=size,
+            )
+        srcType = 'AVXOpBase::SrcType::RegRegImm'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = srcVL / sizeof(uint64_t);
+            _numSrcRegs = 2 * vRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            // First src1, then src2.
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+                _srcRegIdx[i + vRegs] = RegId(FloatRegClass, src2 + i);
+            }
+        '''
+        code = '''
+            int shift = imm8;
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            FloatInt src;
+            if (srcSize == 8) {
+                for (int i = 0; i < vDestRegs; ++i) {
+                    auto idx = i + shift;
+                    src.ul = xc->readFloatRegOperandBits(this, idx);
+                    xc->setFloatRegOperandBits(this, i, src.ul);
+                }
+            } else if (srcSize == 4) {
+                if (shift % 2 == 0) {
+                    for (int i = 0; i < vDestRegs; ++i) {
+                        auto idx = i + shift / 2;
+                        src.ul = xc->readFloatRegOperandBits(this, idx);
+                        xc->setFloatRegOperandBits(this, i, src.ul);
+                    }
+                } else {
+                    for (int i = 0; i < vDestRegs; ++i) {
+                        auto idx = i + shift / 2;
+                        src.ul = xc->readFloatRegOperandBits(this, idx);
+                        FloatInt result;
+                        result.ui.i1 = src.ui.i2;
+                        src.ul = xc->readFloatRegOperandBits(this, idx + 1);
+                        result.ui.i2 = src.ui.i1;
+                        xc->setFloatRegOperandBits(this, i, result.ul);
+                    }
+                }
+            }
+        '''
+
+    class Vpternlog(AVXOp):
+        def __init__(self, dest, src1, src2, imm8, VL, size):
+            super(Vpternlog, self).__init__(
+                dest=dest, src1=src1, src2=src2, imm8=imm8,
+                srcVL=VL, destVL=VL, srcSize=size, destSize=size,
+            )
+            # So far destSize/srcSize is not used.
+        srcType = 'AVXOpBase::SrcType::RegRegImm'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = srcVL / sizeof(uint64_t);
+            _numSrcRegs = 3 * vRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            // First dest, src1, then src2.
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i * 3 + 0] = RegId(FloatRegClass, dest + i);
+                _srcRegIdx[i * 3 + 1] = RegId(FloatRegClass, src1 + i);
+                _srcRegIdx[i * 3 + 2] = RegId(FloatRegClass, src2 + i);
+            }
+        '''
+        code = '''
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            for (int i = 0; i < vDestRegs; ++i) {
+                uint64_t result = 0;
+                uint64_t destValue = xc->readFloatRegOperandBits(this, i * 3 + 0);
+                uint64_t src1Value = xc->readFloatRegOperandBits(this, i * 3 + 1);
+                uint64_t src2Value = xc->readFloatRegOperandBits(this, i * 3 + 2);
+                for (int bit = 0; bit < sizeof(uint64_t) * 8; ++bit) {
+                    int destBit = (destValue >> bit) & 0x1;
+                    int src1Bit = (src1Value >> bit) & 0x1;
+                    int src2Bit = (src2Value >> bit) & 0x1;
+                    int idx = (destBit << 2) | (src1Bit << 1) | src2Bit;
+                    int resultBit = (imm8 >> idx) & 0x1;
+                    result |= (resultBit << bit);
+                }
+                xc->setFloatRegOperandBits(this, i, result);
+            }
+        '''
 }};
