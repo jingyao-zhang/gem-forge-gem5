@@ -136,6 +136,12 @@ Base::observeAccess(const PacketPtr &pkt, bool miss) const
     if (!fetch && !read && !onWrite) return false;
     if (!fetch && !read && inv) return false;
     if (pkt->cmd == MemCmd::CleanEvict) return false;
+    /**
+     * ! GemForge
+     * I don't observe the split request.
+     */
+    bool isSplit = pkt->req->getFlags() & Request::IS_SPLIT_REQUEST;
+    if (isSplit) return false;
 
     if (onMiss) {
         return miss;

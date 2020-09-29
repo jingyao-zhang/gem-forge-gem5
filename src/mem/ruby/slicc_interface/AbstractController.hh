@@ -196,8 +196,10 @@ class AbstractController : public ClockedObject, public Consumer
     /**
      * Check if an address has been prefetched.
      * Used to implement a prefetcher at RubySequencer.
+     * Note: This is not "const" as SLICC can not generate "const" method.
+     * And we need the function signature to match in order to override.
      */
-    virtual bool hasBeenPrefetched(Addr addr) const {
+    virtual bool hasBeenPrefetched(const Addr &addr) {
       panic("AbstractController::hasBeenPrefetched() not implemented.");
     }
 

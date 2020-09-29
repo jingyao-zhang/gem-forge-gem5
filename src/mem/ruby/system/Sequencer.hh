@@ -272,6 +272,13 @@ class Sequencer : public RubyPort, public CachePrefetcherView
     std::vector<Stats::Histogram *> m_ForwardToFirstResponseDelayHist;
     std::vector<Stats::Histogram *> m_FirstResponseToCompletionDelayHist;
     std::vector<Stats::Counter> m_IncompleteTimes;
+    
+    //! Stats for prefetch request.
+    Stats::Scalar m_IssuedPrefetchReqs;
+    Stats::Scalar m_DroppedPrefetchReqsAliased;
+    Stats::Scalar m_DroppedPrefetchReqsInCache;
+    Stats::Scalar m_DroppedPrefetchReqsOther;
+
 
     //! Stats for recording latency by PC.
     struct RequestLatencyStats {

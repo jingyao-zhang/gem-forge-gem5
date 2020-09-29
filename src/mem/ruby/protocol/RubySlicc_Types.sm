@@ -242,6 +242,7 @@ structure (CacheMemory, external = "yes") {
 
   Scalar demand_misses;
   Scalar demand_hits;
+  Scalar demand_hits_prefetched;
   Scalar deallocated;
   Scalar deallocated_no_reuse;
   Scalar deallocated_no_reuse_no_req_stat;

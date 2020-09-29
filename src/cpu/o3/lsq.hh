@@ -453,6 +453,14 @@ class LSQ
                 if (!byte_enable.empty()) {
                     request->setByteEnable(byte_enable);
                 }
+                /**
+                 * ! GemForge
+                 * Add RequestStatistic.
+                 */
+                request->setStatistic(std::make_shared<RequestStatistic>());
+                if (!_inst->isSquashed()) {
+                    request->getStatistic()->pc = _inst->pcState().pc();
+                }
                 _requests.push_back(request);
             }
         }

@@ -131,6 +131,10 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
 
     checkAccessMatchOnActiveEntries(pc, addr);
 
+    DPRINTF(IMPrefetcher,
+        "Calculate prefetch on %#x PC %#x miss %d ipd tracking %d.\n",
+        addr, pc, miss, ipdEntryTrackingMisses);
+
     // First check if this is a miss, if the prefetcher is tracking misses
     if (ipdEntryTrackingMisses != nullptr && miss) {
         // Check if the entry tracking misses has already set its second index
@@ -152,7 +156,8 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
 
             if (pt_entry->address != addr) {
                 int new_stride = addr - pt_entry->address;
-                bool stride_match = (new_stride == pt_entry->stride);
+                int old_stride = pt_entry->stride;
+                bool stride_match = (new_stride == old_stride);
                 if (stride_match && new_stride != 0) {
                     // Streaming access found
                     pt_entry->streamCounter++;
@@ -176,8 +181,8 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
                     }
                 }
                 DPRINTF(IMPrefetcher,
-                    "pc %#x addr %#x (%s) stride %d new_stride %d conf %d.\n",
-                    pc, addr, miss ? "miss" : "hit", pt_entry->stride, new_stride,
+                    "pc %#x addr %#x (%s) old_stride %d new_stride %d conf %d.\n",
+                    pc, addr, miss ? "miss" : "hit", old_stride, new_stride,
                     static_cast<int>(pt_entry->streamCounter));
                 pt_entry->address = addr;
                 pt_entry->secure = is_secure;
@@ -354,6 +359,10 @@ void
 IndirectMemory::notifyFill(const PacketPtr &pkt)
 {
     if (!pkt->req->hasPC()) {
+        return;
+    }
+    if (pkt->req->getFlags() & Request::IS_SPLIT_REQUEST) {
+        // Ignore split request.
         return;
     }
     auto pc = pkt->req->getPC();

@@ -984,6 +984,14 @@ LSQ<Impl>::SplitDataRequest::initiateTranslation()
             r->taskId(_taskId);
         }
 
+        /**
+         * ! GemForge
+         * Mark the IS_SPLIT_REQUEST flag so that prefetcher can know.
+         */
+        for (int i = 1; i < _requests.size(); ++i) {
+            _requests.at(i)->setFlags(Request::IS_SPLIT_REQUEST);
+        }
+
         _inst->translationStarted(true);
         setState(State::Translation);
         flags.set(Flag::TranslationStarted);

@@ -186,6 +186,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     prefetch_on_access=options.gem_forge_prefetch_on_access,
                     max_prefetch_distance=options.gem_forge_prefetch_dist,
                     streaming_distance=options.gem_forge_prefetch_dist,
+                    pt_table_entries='64',
+                    pt_table_assoc=64,
                 )
                 cpu_seq.prefetcher.registerTLB(cpu.dtb)
 

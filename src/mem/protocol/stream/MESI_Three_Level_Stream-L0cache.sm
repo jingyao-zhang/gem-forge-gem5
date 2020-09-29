@@ -949,7 +949,14 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   }
 
   action(uu_profileDataHit, "\udh", desc="Profile the demand miss") {
-        ++Dcache.demand_hits;
+    ++Dcache.demand_hits;
+    peek(mandatoryQueue_in, RubyRequest) {
+      Addr req_address := in_msg.LineAddress;
+      RubyRequestType type := in_msg.Type;
+      if (cache_entry.isPrefetch) {
+        ++Dcache.demand_hits_prefetched;
+      }
+    }
   }
 
   /**

@@ -351,7 +351,9 @@ class $c_ident : public ${abstract_controller_class_cc}
     bool isPossible(${ident}_State state, ${ident}_Event event);
     uint64_t getTransitionCount(${ident}_State state, ${ident}_Event event);
 
-private:
+// ! GemForge
+// I make them all public.
+public:
 ''')
 
         code.indent()

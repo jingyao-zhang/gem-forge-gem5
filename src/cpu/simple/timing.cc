@@ -460,6 +460,13 @@ TimingSimpleCPU::initiateMemRead(Addr addr, unsigned size,
         assert(!req->isLLSC() && !req->isSwap());
         req->splitOnVaddr(split_addr, req1, req2);
 
+        /**
+         * ! GemForge
+         * Mark IS_SPLIT_REQUEST_FLAG so that prefetcher can decide whether
+         * it wants to prefetch for this request.
+         */
+        req2->setFlags(Request::IS_SPLIT_REQUEST);
+
         WholeTranslationState *state =
             new WholeTranslationState(req, req1, req2, new uint8_t[size],
                                       NULL, mode);

@@ -546,6 +546,14 @@ LSQ::SplitDataRequest::makeFragmentRequests()
     }
     assert(numFragments >= num_disabled_fragments);
     numFragments -= num_disabled_fragments;
+    /**
+     * ! GemForge
+     * Mark IS_SPLIT_REQUEST flag so that prefetcher can decide whether
+     * it wants to prefetch on this.
+     */
+    for (int i = 1; i < fragmentRequests.size(); ++i) {
+        fragmentRequests.at(i)->setFlags(Request::IS_SPLIT_REQUEST);
+    }
 }
 
 void

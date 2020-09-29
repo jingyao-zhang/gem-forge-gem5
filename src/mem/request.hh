@@ -205,6 +205,13 @@ class Request
         NO_RUBY_SEQUENCER_COALESCE  = 0x0200000000000000,
 
         /**
+         * ! GemForge
+         * This request is from a split request. This is used by prefetcher
+         * to decide whether it wants to prefetch on this request.
+         */
+        IS_SPLIT_REQUEST            = 0x0400000000000000,
+
+        /**
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
          */
@@ -654,6 +661,13 @@ class Request
     {
         assert(privateFlags.isSet(VALID_PADDR|VALID_VADDR));
         _flags.set(flags);
+    }
+
+    void
+    clearFlags(Flags flags)
+    {
+        assert(privateFlags.isSet(VALID_PADDR|VALID_VADDR));
+        _flags.clear(flags);
     }
 
     void

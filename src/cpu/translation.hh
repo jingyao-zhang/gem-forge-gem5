@@ -121,6 +121,11 @@ class WholeTranslationState
             }
             mainReq->setFlags(sreqLow->getFlags());
             mainReq->setFlags(sreqHigh->getFlags());
+            /**
+             * ! GemForge
+             * MainReq should never mark IS_SPLIT_REQUEST.
+             */
+            mainReq->clearFlags(Request::IS_SPLIT_REQUEST);
         }
         return outstanding == 0;
     }

@@ -579,6 +579,10 @@ CacheMemory::regStats()
         .name(name() + ".demand_hits")
         .desc("Number of cache demand hits")
         ;
+    m_demand_hits_prefetched
+        .name(name() + ".demand_hits_prefetched")
+        .desc("Number of cache demand hits prefetched")
+        ;
 
     m_demand_misses
         .name(name() + ".demand_misses")

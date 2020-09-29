@@ -918,6 +918,14 @@ Sequencer::regStats()
         }
     }
 
+#define scalar(stat, describe)                                                 \
+  this->stat.name(name() + ("." #stat)).desc(describe).prereq(this->stat)
+    scalar(m_IssuedPrefetchReqs, "Number of issued pf reqs");
+    scalar(m_DroppedPrefetchReqsAliased, "Number of dropped aliased pf reqs");
+    scalar(m_DroppedPrefetchReqsInCache, "Number of dropped in cache pf reqs");
+    scalar(m_DroppedPrefetchReqsOther, "Number of dropped other pf reqs");
+#undef scalar
+
     // Register stats callback.
     Stats::registerResetCallback(
         new MakeCallback<Sequencer, &Sequencer::resetPCLatStats>(
@@ -1012,6 +1020,7 @@ void Sequencer::regProbePoints() {
 void Sequencer::justBeforeResponseCallback(PacketPtr pkt) {
     if (pkt->cmd.isHWPrefetch()) {
         // This is prefetch request, just notify fill.
+        DPRINTF(RubySequencer, "NotifyFill %#x.\n", pkt->getAddr());
         ppFill->notify(pkt);
     } else {
         // This is core request.
@@ -1025,12 +1034,15 @@ void Sequencer::justBeforeResponseCallback(PacketPtr pkt) {
                 }
             }
             if (missedInHighestCache) {
+                DPRINTF(RubySequencer, "NotifyMiss/Fill %#x.\n", pkt->getAddr());
                 ppMiss->notify(pkt);
                 ppFill->notify(pkt);
             } else {
+                DPRINTF(RubySequencer, "NotifyHit %#x.\n", pkt->getAddr());
                 ppHit->notify(pkt);
             }
         } else {
+            DPRINTF(RubySequencer, "NotifyHit %#x.\n", pkt->getAddr());
             ppHit->notify(pkt);
         }
     }
@@ -1049,25 +1061,39 @@ void Sequencer::issuePrefetch() {
     if (m_outstanding_count < m_max_outstanding_requests) {
         // If we have a miss queue slot, we can try a prefetch
         PacketPtr pkt = prefetcher->getPacket();
-        if (pkt) {
+        while (pkt) {
+            // We try to get a useful prefetch request.
             Addr pf_addr = makeLineAddress(pkt->getAddr());
             if (m_RequestTable.count(pf_addr)) {
                 // There is already a request to that line. Ignore it.
+                m_DroppedPrefetchReqsAliased++;
                 delete pkt;
+                pkt = prefetcher->getPacket();
             } else if (inCache(pf_addr, pkt->isSecure())) {
                 // The data is already in the cache.
+                m_DroppedPrefetchReqsInCache++;
                 delete pkt;
+                pkt = prefetcher->getPacket();
             } else {
-                // We try to issue this.
-                if (makeRequest(pkt) == RequestStatus_Issued) {
-                    // ! Issued, pick a random port for fake hitCallback.
-                    auto senderState = new SenderState(slave_ports.front());
-                    senderState->noTimingResponse = true;
-                    pkt->pushSenderState(senderState);
-                } else {
-                    // Somehow we are not issuing, just drop it.
-                    delete pkt;
-                }
+                // We can try issue this one.
+                break;
+            }
+        }
+        if (pkt) {
+            Addr pf_addr = makeLineAddress(pkt->getAddr());
+            assert(!m_RequestTable.count(pf_addr));
+            assert(!inCache(pf_addr, pkt->isSecure()));
+            // We try to issue this.
+            if (makeRequest(pkt) == RequestStatus_Issued) {
+                // ! Issued, pick a random port for fake hitCallback.
+                auto senderState = new SenderState(slave_ports.front());
+                senderState->noTimingResponse = true;
+                pkt->pushSenderState(senderState);
+                m_IssuedPrefetchReqs++;
+            } else {
+                // Somehow we are not issuing, just drop it.
+                m_DroppedPrefetchReqsOther++;
+                delete pkt;
             }
             // Addr pf_addr = pkt->getBlockAddr(blkSize);
             // if (!tags->findBlock(pf_addr, pkt->isSecure()) &&
