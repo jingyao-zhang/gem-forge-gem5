@@ -18,7 +18,7 @@ def run(options, root, system, future_cpus):
                 t=m5.curTick(), s=exit_cause))
 
             if exit_cause == 'switchcpu':
-                if options.gem_forge_work_mark_switch_cpu:
+                if options.gem_forge_work_mark_switch_cpu != -1:
                     print('--- Ignored as we switch at work mark {m}'.format(
                         m=options.gem_forge_work_mark_switch_cpu))
                     continue
