@@ -194,7 +194,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
-  void recordLLCReqQueueStats(RequestStatisticPtr, DynamicStreamSliceIdVec);
+  void recordLLCReqQueueStats(RequestStatisticPtr, DynamicStreamSliceIdVec, bool);
   bool hasPC(PacketPtr);
   Addr getPC(PacketPtr);
 
@@ -848,7 +848,8 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     peek(mandatoryQueue_in, RubyRequest) { 
       DynamicStreamSliceIdVec sliceIdVec;
       RequestStatisticPtr reqStats := getRequestStatistic(in_msg.pkt);
-      recordLLCReqQueueStats(reqStats, sliceIdVec);
+      bool isLoad := in_msg.Type == RubyRequestType:LD;
+      recordLLCReqQueueStats(reqStats, sliceIdVec, isLoad);
     }
   }
 

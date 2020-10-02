@@ -218,7 +218,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   MachineID mapAddressToMachine(Addr addr, MachineType mtype);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
-  void recordLLCReqQueueStats(RequestStatisticPtr, DynamicStreamSliceIdVec);
+  void recordLLCReqQueueStats(RequestStatisticPtr, DynamicStreamSliceIdVec, bool);
   void incrementLLCIndReqQueueStats();
 
   bool isStreamSublineEnabled();
@@ -1038,7 +1038,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   action(ur_profileReq, "\ur", desc="Profile the demand request") {
     peek(L1RequestL2Network_in, RequestMsg) { 
-      recordLLCReqQueueStats(in_msg.requestStatistic, in_msg.sliceIds);
+      CoherenceRequestType type := in_msg.Type;
+      bool isLoad := (type == CoherenceRequestType:GETS ||
+                      type == CoherenceRequestType:GETU);
+      recordLLCReqQueueStats(in_msg.requestStatistic, in_msg.sliceIds, isLoad);
     }
   }
 

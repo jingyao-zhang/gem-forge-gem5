@@ -197,8 +197,7 @@ public:
   mutable Stats::Scalar numUnstepped;
   mutable Stats::Scalar numElementsAllocated;
   mutable Stats::Scalar numElementsUsed;
-  mutable Stats::Scalar numUnconfiguredStreamUse;
-  mutable Stats::Scalar numConfiguredStreamUse;
+  mutable Stats::Scalar numCommittedStreamUser;
   mutable Stats::Scalar entryWaitCycles;
 
   mutable Stats::Scalar numStoreElementsAllocated;

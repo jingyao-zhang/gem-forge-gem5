@@ -126,7 +126,8 @@ public:
   void recordDeallocateNoReuseReqStats(const RequestStatisticPtr &reqStat,
                                        CacheMemory &cache) const;
   void recordLLCReqQueueStats(const RequestStatisticPtr &reqStat,
-                              const DynamicStreamSliceIdVec &sliceIds);
+                              const DynamicStreamSliceIdVec &sliceIds,
+                              bool isLoad);
   void incrementLLCIndReqQueueStats() { this->m_statLLCIndStreamReq++; }
 
   void addNoCControlMsgs(RequestStatisticPtr statistic, int msgs) const {
@@ -225,7 +226,9 @@ private:
 protected:
   // Stats exposed to the controller.
   Stats::Scalar m_statCoreReq;
+  Stats::Scalar m_statCoreLoadReq;
   Stats::Scalar m_statCoreStreamReq;
+  Stats::Scalar m_statCoreStreamLoadReq;
   Stats::Scalar m_statLLCStreamReq;
   Stats::Scalar m_statLLCIndStreamReq;
   Stats::Scalar m_statLLCMulticastStreamReq;

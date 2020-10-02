@@ -47,8 +47,14 @@ void AbstractStreamAwareController::regStats() {
   m_statCoreReq.name(name() + ".coreRequests")
       .desc("number of core requests seen")
       .flags(Stats::nozero);
+  m_statCoreLoadReq.name(name() + ".coreLoadRequests")
+      .desc("number of core load requests seen")
+      .flags(Stats::nozero);
   m_statCoreStreamReq.name(name() + ".coreStreamRequests")
       .desc("number of core stream requests seen")
+      .flags(Stats::nozero);
+  m_statCoreStreamLoadReq.name(name() + ".coreStreamLoadRequests")
+      .desc("number of core stream load requests seen")
       .flags(Stats::nozero);
   m_statLLCStreamReq.name(name() + ".llcStreamRequests")
       .desc("number of llc stream requests seen")
@@ -158,7 +164,8 @@ void AbstractStreamAwareController::recordDeallocateNoReuseReqStats(
 
 void AbstractStreamAwareController::recordLLCReqQueueStats(
     const RequestStatisticPtr &reqStat,
-    const DynamicStreamSliceIdVec &sliceIds) {
+    const DynamicStreamSliceIdVec &sliceIds,
+    bool isLoad) {
   if (sliceIds.isValid()) {
     // An LLC stream request.
     ++m_statLLCStreamReq;
@@ -169,9 +176,15 @@ void AbstractStreamAwareController::recordLLCReqQueueStats(
   } else {
     // A core request.
     ++m_statCoreReq;
+    if (isLoad) {
+      ++m_statCoreLoadReq;
+    }
     if (reqStat && reqStat->isStream) {
       // A normal stream req from core.
       ++m_statCoreStreamReq;
+      if (isLoad) {
+        ++m_statCoreStreamLoadReq;
+      }
     }
   }
 }

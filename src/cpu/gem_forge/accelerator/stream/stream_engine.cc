@@ -122,8 +122,7 @@ void StreamEngine::regStats() {
   scalar(numUnstepped, "Number of streams unstepped.");
   scalar(numElementsAllocated, "Number of stream elements allocated.");
   scalar(numElementsUsed, "Number of stream elements used.");
-  scalar(numUnconfiguredStreamUse, "Number of unconfigured stream use.");
-  scalar(numConfiguredStreamUse, "Number of configured stream use.");
+  scalar(numCommittedStreamUser, "Number of committed StreamUser.");
   scalar(entryWaitCycles, "Number of cycles form first check to ready.");
   scalar(numStoreElementsAllocated,
          "Number of store stream elements allocated.");
@@ -1087,6 +1086,7 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
   }
   // Remove the entry in the userElementMap.
   this->userElementMap.erase(seqNum);
+  this->numCommittedStreamUser++;
 }
 
 void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
