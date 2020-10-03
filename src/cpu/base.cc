@@ -113,7 +113,8 @@ CPUProgressEvent::process()
             // Debug::MinorExecute.enable();
             this->_stucked = true;
         } else {
-            panic("Deadlock found!");
+            panic("Deadlock in CPU %d! LastCommit at %llu\n",
+                cpu->cpuId(), cpu->getLastCommitTick());
         }
     } else {
         this->_stucked = false;
@@ -146,7 +147,8 @@ CPUProgressEvent::description() const
 }
 
 BaseCPU::BaseCPU(Params *p, bool is_checker)
-    : ClockedObject(p), instCnt(0), _cpuId(p->cpu_id), _socketId(p->socket_id),
+    : ClockedObject(p), instCnt(0), lastCommitTick(0),
+      _cpuId(p->cpu_id), _socketId(p->socket_id),
       _instMasterId(p->system->getMasterId(this, "inst")),
       _dataMasterId(p->system->getMasterId(this, "data")),
       _taskId(ContextSwitchTaskId::Unknown), _pid(invldPid),
@@ -406,6 +408,7 @@ BaseCPU::probeInstCommit(const StaticInstPtr &inst, Addr pc)
     if (!inst->isMicroop() || inst->isLastMicroop()) {
         ppRetiredInsts->notify(1);
         ppRetiredInstsPC->notify(pc);
+        lastCommitTick = curTick();
     }
 
     if (inst->isLoad())

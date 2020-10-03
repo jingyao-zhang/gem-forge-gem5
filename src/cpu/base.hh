@@ -113,6 +113,12 @@ class BaseCPU : public ClockedObject
     /// Instruction count used for SPARC misc register
     /// @todo unify this with the counters that cpus individually keep
     Tick instCnt;
+    
+    /**
+     * ! GemForge
+     * Last commit tick. Used to better debug deadlock.
+     */
+    Tick lastCommitTick;
 
     // every cpu has an id, put it in the base cpu
     // Set at initialization, only time a cpuId might change is during a
@@ -181,6 +187,9 @@ class BaseCPU : public ClockedObject
 
     /** Reads this CPU's ID. */
     int cpuId() const { return _cpuId; }
+
+    /** Reads this CPU's last commit tick. */
+    Tick getLastCommitTick() const { return lastCommitTick; }
 
     /** Reads this CPU's Socket ID. */
     uint32_t socketId() const { return _socketId; }
