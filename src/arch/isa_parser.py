@@ -1076,6 +1076,9 @@ class MemOperand(Operand):
 
     def makeDecl(self):
         # Declare memory data variable.
+        if self.ctype.startswith('std::array<'):
+            # Keep this initialized to avoid warning.
+            return '{t} {o} {{}};\n'.format(t=self.ctype, o=self.base_name)
         return '%s %s;\n' % (self.ctype, self.base_name)
 
     def makeRead(self, predRead):
