@@ -435,6 +435,7 @@ private:
     StreamThrottler(StreamEngine *_se);
 
     void throttleStream(Stream *S, StreamElement *element);
+    const std::string name() const { return se->name(); }
   };
 
   StreamThrottler throttler;

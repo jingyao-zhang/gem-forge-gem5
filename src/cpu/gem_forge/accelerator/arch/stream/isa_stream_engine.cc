@@ -662,7 +662,6 @@ bool ISAStreamEngine::canDispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo) {
 
   auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
-  ISA_SE_DPRINTF("CanDispatch StreamLoad RegionStream %llu.\n", regionStreamId);
 
   // First create the memorized info.
   auto emplaceRet = this->seqNumToDynInfoMap.emplace(
@@ -697,14 +696,22 @@ bool ISAStreamEngine::canDispatchStreamLoad(
     // It's possible that we don't have element if we have reached the limit.
     if (!se->hasUnsteppedElement(args)) {
       // We must wait.
+      ISA_SE_DPRINTF("CanNotDispatch StreamLoad RegionStream %llu: No Unstepped Element.\n",
+          regionStreamId);
       return false;
     } else {
       if (se->hasIllegalUsedLastElement(args)) {
         // This is a use beyond the last element. Must be misspeculated.
         dynStreamInstInfo.mustBeMisspeculated = true;
+        ISA_SE_DPRINTF(
+            "MustMisspeculated StreamLoad invalid regionStream %llu: Illegal Used Last Element.\n",
+            regionStreamId);
         return true;
       }
       // TODO: Check LSQ entry if this is the first use of the element.
+      ISA_SE_DPRINTF(
+          "CanDispatch StreamLoad regionStream %llu.\n",
+          regionStreamId);
       return true;
     }
   }

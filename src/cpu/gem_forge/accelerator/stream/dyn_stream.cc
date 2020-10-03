@@ -233,9 +233,9 @@ void DynamicStream::cancelFloat() {
 }
 
 void DynamicStream::dump() const {
-  inform("DynS %llu total %d step %3d allocated %3d. =======\n",
+  inform("DynS %llu total %d step %3d allocated %3d max %3d. =======\n",
          this->dynamicStreamId.streamInstance, this->totalTripCount,
-         this->stepSize, this->allocSize);
+         this->stepSize, this->allocSize, this->stream->maxSize);
   std::stringstream ss;
   auto element = this->tail;
   while (element != this->head) {

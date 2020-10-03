@@ -6,6 +6,7 @@
 #include "debug/RubyStream.hh"
 #include "debug/StreamAlias.hh"
 #include "debug/StreamEngine.hh"
+#include "debug/StreamThrottle.hh"
 
 namespace {
 static std::string DEBUG_STREAM_NAME =
@@ -1396,6 +1397,8 @@ void StreamEngine::initializeStreams(
             this->maxTotalRunAheadLength);
     }
   }
+  SE_DPRINTF_(StreamThrottle, "[Throttle] Initialize MaxSize %d TotalAliveStreasm %d\n",
+      args.maxSize, totalAliveStreams);
 
   this->generateCoalescedStreamIdMap(streamRegion, args);
 
@@ -2691,13 +2694,13 @@ void StreamEngine::StreamThrottler::throttleStream(Stream *S,
     return;
   }
 
-  if (isDebugStream(stepRootStream)) {
-    inform("AssignedEntries %d UnAssignedEntries %d BasicEntries %d "
-           "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries "
-           "%d.\n",
-           assignedEntries, unAssignedEntries, basicEntries,
-           assignedBasicEntries, availableEntries, upperBoundEntries);
-  }
+  S_DPRINTF_(StreamThrottle, S, 
+      "[Throttle] AssignedEntries %d UnAssignedEntries %d BasicEntries %d "
+      "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries %d "
+      "TotalIncrementEntries %d CurrentAliveStreams %d TotalAliveStreams %d.\n",
+      assignedEntries, unAssignedEntries, basicEntries,
+      assignedBasicEntries, availableEntries, upperBoundEntries,
+      totalIncrementEntries, currentAliveStreams, totalAliveStreams);
 
   auto oldMaxSize = S->maxSize;
   for (auto stepS : streamList) {
