@@ -120,7 +120,13 @@ namespace X86ISA
     void
     X86StaticInst::printReg(std::ostream &os, RegId reg, int size) const
     {
-        assert(size == 1 || size == 2 || size == 4 || size == 8);
+        if (reg.isFloatReg()) {
+          // We allow xmm registers to have 128, 256 and 512.
+            assert(size == 1 || size == 2 || size == 4 || size == 8 ||
+                   size == 16 || size == 32 || size == 64);
+        } else {
+            assert(size == 1 || size == 2 || size == 4 || size == 8);
+        }
         static const char * abcdFormats[9] =
             {"", "%s",  "%sx",  "", "e%sx", "", "", "", "r%sx"};
         static const char * piFormats[9] =
@@ -203,8 +209,8 @@ namespace X86ISA
             }
             reg_idx -= NumMMXRegs;
             if (reg_idx < NumXMMRegs * NumXMMSubRegs) {
-                ccprintf(os, "%%xmm%d_%d", reg_idx / NumXMMSubRegs,
-                         reg_idx % NumXMMSubRegs);
+                ccprintf(os, "%%xmm%d_%d(%d)", reg_idx / NumXMMSubRegs,
+                         reg_idx % NumXMMSubRegs, size);
                 return;
             }
             reg_idx -= NumXMMRegs * NumXMMSubRegs;
