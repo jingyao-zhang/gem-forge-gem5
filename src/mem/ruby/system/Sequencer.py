@@ -62,8 +62,12 @@ class RubySequencer(RubyPort):
    icache = Param.RubyCache("")
    dcache = Param.RubyCache("")
 
-   max_outstanding_requests = Param.Int(16,
-       "max requests (incl. prefetches) outstanding")
+   # ! GemForge
+   # I split the max request constraints into data/inst port.
+   max_outstanding_data_requests = Param.Int(16,
+       "max data requests (incl. prefetches) outstanding")
+   max_outstanding_inst_requests = Param.Int(16,
+       "max inst requests (incl. prefetches) outstanding")
    deadlock_threshold = Param.Cycles(500000,
        "max outstanding cycles for a request before deadlock/livelock declared")
    garnet_standalone = Param.Bool(False, "")

@@ -123,7 +123,8 @@ class Sequencer : public RubyPort, public CachePrefetcherView
 
     RequestStatus makeRequest(PacketPtr pkt) override;
     bool empty() const;
-    int outstandingCount() const override { return m_outstanding_count; }
+    int outstandingCount() const override {
+        return m_outstanding_data_count + m_outstanding_inst_count; }
 
     bool isDeadlockEventScheduled() const override
     { return deadlockCheckEvent.scheduled(); }
@@ -134,7 +135,7 @@ class Sequencer : public RubyPort, public CachePrefetcherView
     void print(std::ostream& out) const;
     void checkCoherence(Addr address);
 
-    void markRemoved();
+    void markRemoved(bool isInstFetch);
     void evictionCallback(Addr address);
     int coreId() const { return m_coreId; }
 
@@ -212,7 +213,8 @@ class Sequencer : public RubyPort, public CachePrefetcherView
     Sequencer& operator=(const Sequencer& obj);
 
   private:
-    int m_max_outstanding_requests;
+    int m_max_outstanding_data_requests;
+    int m_max_outstanding_inst_requests;
     Cycles m_deadlock_threshold;
 
     CacheMemory* m_dataCache_ptr;
@@ -229,7 +231,8 @@ class Sequencer : public RubyPort, public CachePrefetcherView
     std::unordered_map<Addr, std::list<SequencerRequest>> m_RequestTable;
 
     // Global outstanding request count, across all request tables
-    int m_outstanding_count;
+    int m_outstanding_data_count;
+    int m_outstanding_inst_count;
     bool m_deadlock_check_scheduled;
 
     int m_coreId;

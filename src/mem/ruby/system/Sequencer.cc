@@ -74,15 +74,18 @@ Sequencer::Sequencer(const Params *p)
       prefetcher(p->prefetcher),
       issuePrefetchEvent([this]{ issuePrefetch(); }, "Sequencer issue prefetch")
 {
-    m_outstanding_count = 0;
+    m_outstanding_data_count = 0;
+    m_outstanding_inst_count = 0;
 
     m_instCache_ptr = p->icache;
     m_dataCache_ptr = p->dcache;
-    m_max_outstanding_requests = p->max_outstanding_requests;
+    m_max_outstanding_data_requests = p->max_outstanding_data_requests;
+    m_max_outstanding_inst_requests = p->max_outstanding_inst_requests;
     m_deadlock_threshold = p->deadlock_threshold;
 
     m_coreId = p->coreid; // for tracking the two CorePair sequencers
-    assert(m_max_outstanding_requests > 0);
+    assert(m_max_outstanding_data_requests > 0);
+    assert(m_max_outstanding_inst_requests > 0);
     assert(m_deadlock_threshold > 0);
     assert(m_instCache_ptr != NULL);
     assert(m_dataCache_ptr != NULL);
@@ -190,9 +193,10 @@ Sequencer::wakeup()
         total_outstanding += table_entry.second.size();
     }
 
-    assert(m_outstanding_count == total_outstanding);
+    assert((m_outstanding_inst_count + m_outstanding_data_count) ==
+           total_outstanding);
 
-    if (m_outstanding_count > 0) {
+    if (total_outstanding > 0) {
         // If there are still outstanding requests, keep checking
         schedule(deadlockCheckEvent, clockEdge(m_deadlock_threshold));
     }
@@ -259,21 +263,31 @@ Sequencer::insertRequest(PacketPtr pkt, RubyRequestType primary_type,
     auto &seq_req_list = m_RequestTable[line_addr];
     // Create a default entry
     seq_req_list.emplace_back(pkt, primary_type, secondary_type, curCycle());
-    m_outstanding_count++;
+    bool isInstFetch = pkt->req->isInstFetch();
+    if (isInstFetch) {
+        m_outstanding_inst_count++;
+    } else {
+        m_outstanding_data_count++;
+    }
 
     if (seq_req_list.size() > 1) {
         return RequestStatus_Aliased;
     }
 
-    m_outstandReqHist.sample(m_outstanding_count);
+    m_outstandReqHist.sample(
+        m_outstanding_data_count + m_outstanding_inst_count);
 
     return RequestStatus_Ready;
 }
 
 void
-Sequencer::markRemoved()
+Sequencer::markRemoved(bool isInstFetch)
 {
-    m_outstanding_count--;
+    if (isInstFetch) {
+        m_outstanding_inst_count--;
+    } else {
+        m_outstanding_data_count--;
+    }
 }
 
 void
@@ -399,6 +413,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             assert(seq_req.m_type != RubyRequestType_Load_Linked);
             assert(seq_req.m_type != RubyRequestType_IFETCH);
         }
+        bool isInstFetch = seq_req.pkt->req->isInstFetch();
 
         // ! GemForge
         // Disable coalesce for certain requests.
@@ -458,7 +473,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
             } else {
                 aliased_stores++;
             }
-            markRemoved();
+            markRemoved(isInstFetch);
             hitCallback(&seq_req, data, success, mach, externalHit,
                         initialRequestTime, forwardRequestTime,
                         firstResponseTime, ruby_request);
@@ -466,7 +481,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
         } else {
             // handle read request
             assert(!ruby_request);
-            markRemoved();
+            markRemoved(isInstFetch);
             aliased_loads++;
             hitCallback(&seq_req, data, true, mach, externalHit,
                         initialRequestTime, forwardRequestTime,
@@ -511,6 +526,7 @@ Sequencer::readCallback(Addr address, DataBlock& data,
         } else {
             aliased_loads++;
         }
+        bool isInstFetch = seq_req.pkt->req->isInstFetch();
         // ! GemForge
         // Disable coalescing for certain requests.
         // Used in StreamFloating.
@@ -535,7 +551,7 @@ Sequencer::readCallback(Addr address, DataBlock& data,
                               initialRequestTime, forwardRequestTime,
                               firstResponseTime);
         }
-        markRemoved();
+        markRemoved(isInstFetch);
         hitCallback(&seq_req, data, true, mach, externalHit,
                     initialRequestTime, forwardRequestTime,
                     firstResponseTime, ruby_request);
@@ -650,7 +666,12 @@ Sequencer::empty() const
 RequestStatus
 Sequencer::makeRequest(PacketPtr pkt)
 {
-    if (m_outstanding_count >= m_max_outstanding_requests) {
+    bool isInstFetch = pkt->req->isInstFetch();
+    if (isInstFetch &&
+        m_outstanding_inst_count >= m_max_outstanding_inst_requests) {
+        return RequestStatus_BufferFull;
+    } else if (!isInstFetch &&
+        m_outstanding_data_count >= m_max_outstanding_data_requests) {
         return RequestStatus_BufferFull;
     }
 
@@ -835,7 +856,8 @@ void
 Sequencer::print(ostream& out) const
 {
     out << "[Sequencer: " << m_version
-        << ", outstanding requests: " << m_outstanding_count
+        << ", out data: " << m_outstanding_data_count
+        << ", out inst: " << m_outstanding_inst_count
         << ", request table: " << m_RequestTable
         << "]";
 }
@@ -1058,7 +1080,7 @@ void Sequencer::justBeforeResponseCallback(PacketPtr pkt) {
 
 void Sequencer::issuePrefetch() {
     assert(prefetcher && "This should not be scheduled if no prefetcher.");
-    if (m_outstanding_count < m_max_outstanding_requests) {
+    if (m_outstanding_data_count < m_max_outstanding_data_requests) {
         // If we have a miss queue slot, we can try a prefetch
         PacketPtr pkt = prefetcher->getPacket();
         while (pkt) {
