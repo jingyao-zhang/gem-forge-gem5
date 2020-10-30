@@ -20,6 +20,9 @@ class Stream;
  */
 struct DynamicStream {
 
+  using StaticId = DynamicStreamId::StaticId;
+  using InstanceId = DynamicStreamId::InstanceId;
+
   Stream *stream;
   const DynamicStreamId dynamicStreamId;
   const uint64_t configSeqNum;
@@ -78,6 +81,57 @@ struct DynamicStream {
   bool hasTotalTripCount() const { return this->totalTripCount != -1; }
   int64_t getTotalTripCount() const { return this->totalTripCount; }
 
+  /**
+   * This remembers the dynamic dependence between streams.
+   * Similar to the static StreamDepEdge, but with more information
+   * to correctly align dependences.
+   * Additional information:
+   * 1. FromInstanceId to get the correct dynamic stream.
+   * 2. Alignment to the base element index.
+   * 3. Reuse count of the base element.
+   */
+  struct StreamDepEdge {
+    const StaticId baseStaticId = DynamicStreamId::InvalidStaticStreamId;
+    const InstanceId baseInstanceId = DynamicStreamId::InvalidInstanceId;
+    const StaticId depStaticId = DynamicStreamId::InvalidStaticStreamId;
+    const uint64_t alignBaseElement = 0;
+    uint64_t reuseBaseElement = 0;
+    StreamDepEdge(StaticId _baseStaticId, InstanceId _baseInstanceId,
+                  StaticId _depStaticId, uint64_t _alignBaseElement,
+                  uint64_t _reuseBaseElement)
+        : baseStaticId(_baseStaticId), baseInstanceId(_baseInstanceId),
+          depStaticId(_depStaticId), alignBaseElement(_alignBaseElement),
+          reuseBaseElement(_reuseBaseElement) {}
+  };
+  using StreamEdges = std::vector<StreamDepEdge>;
+  StreamEdges addrBaseEdges;
+  /**
+   * Add address base DynStream to new DynStream.
+   */
+  void addAddrBaseDynStreams();
+  /**
+   * Compute reuse of the base stream element.
+   * This is further split into two cases:
+   * 1. Base streams from the same loop.
+   * 2. Base streams from outer loops.
+   */
+  void configureAddrBaseDynStreamReuse();
+  void configureAddrBaseDynStreamReuseSameLoop(StreamDepEdge &edge,
+                                               DynamicStream &baseDynS);
+  void configureAddrBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
+                                                DynamicStream &baseDynS);
+  /**
+   * Add address base elements to new element.
+   * This is further split into two cases:
+   * 1. Base streams from edges.
+   * 2. Self dependence for reduction stream.
+   */
+  bool areNextAddrBaseElementsAllocated() const;
+  void addAddrBaseElements(StreamElement *newElement);
+  void addAddrBaseElementEdge(StreamElement *newElement,
+                              const StreamDepEdge &edge);
+  void addAddrBaseElementReduction(StreamElement *newElement);
+
   DynamicStream(Stream *_stream, const DynamicStreamId &_dynamicStreamId,
                 uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,
                 StreamEngine *_se);
@@ -134,6 +188,7 @@ struct DynamicStream {
   }
 
   void dump() const;
+  std::string dumpString() const;
 
 private:
   /**

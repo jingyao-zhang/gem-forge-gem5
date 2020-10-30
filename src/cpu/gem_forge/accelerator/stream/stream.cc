@@ -33,8 +33,9 @@
                (entry).idx.entryIdx, ##args)
 
 Stream::Stream(const StreamArguments &args)
-    : staticId(args.staticId), streamName(args.name), dynInstance(0),
-      floatTracer(this), cpu(args.cpu), se(args.se) {
+    : staticId(args.staticId), streamName(args.name),
+      dynInstance(DynamicStreamId::InvalidInstanceId), floatTracer(this),
+      cpu(args.cpu), se(args.se) {
 
   this->configured = false;
   this->allocSize = 0;
@@ -369,6 +370,15 @@ void Stream::recordAggregateHistory(const DynamicStream &dynS) {
   history.numPrivateCacheHits = dynS.getTotalHitPrivateCache();
 }
 
+DynamicStream &Stream::getDynamicStreamByInstance(InstanceId instance) {
+  for (auto &dynStream : this->dynamicStreams) {
+    if (dynStream.dynamicStreamId.streamInstance == instance) {
+      return dynStream;
+    }
+  }
+  panic("Failed to find DynamicStream by Instance %llu.\n", instance);
+}
+
 DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
   for (auto &dynStream : this->dynamicStreams) {
     if (dynStream.configSeqNum == seqNum) {
@@ -447,13 +457,15 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
    * TripCount[i] = BackEdgeCount[i] + 1;
    * TotalTripCount[i] = TotalTripCount[i - 1] * TripCount[i];
    */
-  STREAM_DPRINTF("Setup LinearAddrGenCallback with Input params --------\n");
+  DYN_S_DPRINTF(dynStream.dynamicStreamId,
+                "Setup LinearAddrGenCallback with Input params --------\n");
   for (auto param : *inputVec) {
-    STREAM_DPRINTF("%llu\n", param.at(0));
+    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%llu\n", param.at(0));
   }
-  STREAM_DPRINTF("Setup LinearAddrGenCallback with params --------\n");
+  DYN_S_DPRINTF(dynStream.dynamicStreamId,
+                "Setup LinearAddrGenCallback with params --------\n");
   for (auto param : formalParams) {
-    STREAM_DPRINTF("%llu\n", param.param.invariant);
+    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%llu\n", param.param.invariant);
   }
 
   for (auto idx = 1; idx < formalParams.size() - 1; idx += 2) {
@@ -469,9 +481,10 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
     formalParam.param.invariant = totalTripCount;
   }
 
-  STREAM_DPRINTF("Finalize LinearAddrGenCallback with params --------\n");
+  DYN_S_DPRINTF(dynStream.dynamicStreamId,
+                "Finalize LinearAddrGenCallback with params --------\n");
   for (auto param : formalParams) {
-    STREAM_DPRINTF("%llu\n", param.param.invariant);
+    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%llu\n", param.param.invariant);
   }
 
   // Set the callback.
@@ -730,7 +743,7 @@ void Stream::allocateElement(StreamElement *newElement) {
   }
 
   // Add addr/value base elements
-  this->addAddrBaseElements(newElement);
+  dynS.addAddrBaseElements(newElement);
   this->addValueBaseElements(newElement);
 
   newElement->allocateCycle = this->getCPUDelegator()->curCycle();
@@ -750,103 +763,6 @@ void Stream::allocateElement(StreamElement *newElement) {
   }
 
   S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
-}
-
-void Stream::addAddrBaseElements(StreamElement *newElement) {
-
-  const auto &dynS = *newElement->dynS;
-  for (auto baseS : this->addrBaseStreams) {
-    if (baseS->getLoopLevel() != this->getLoopLevel()) {
-      continue;
-    }
-
-    auto &baseDynS = baseS->getLastDynamicStream();
-    DYN_S_DPRINTF(baseDynS.dynamicStreamId, "BaseDynS.\n");
-    if (baseS->stepRootStream == this->stepRootStream) {
-      if (baseDynS.allocSize - baseDynS.stepSize <=
-          dynS.allocSize - dynS.stepSize) {
-        this->se->dumpFIFO();
-        S_PANIC(this, "Base %s has not enough allocated element.",
-                baseS->getStreamName());
-      }
-
-      auto baseElement = baseDynS.stepped;
-      auto element = dynS.stepped;
-      while (element != nullptr) {
-        if (!baseElement) {
-          baseDynS.dump();
-          S_PANIC(this, "Failed to find base element from %s.",
-                  baseS->getStreamName());
-        }
-        element = element->next;
-        baseElement = baseElement->next;
-      }
-      if (!baseElement) {
-        S_PANIC(this, "Failed to find base element from %s.",
-                baseS->getStreamName());
-      }
-      assert(baseElement != nullptr && "Failed to find base element.");
-      newElement->addrBaseElements.insert(baseElement);
-    } else {
-      // The other one must be a constant stream.
-      assert(baseS->stepRootStream == nullptr &&
-             "Should be a constant stream.");
-      auto baseElement = baseDynS.stepped->next;
-      assert(baseElement != nullptr && "Missing base element.");
-      newElement->addrBaseElements.insert(baseElement);
-    }
-  }
-
-  auto newElementIdx = newElement->FIFOIdx.entryIdx;
-  /**
-   * Find the previous element of my self for reduction stream.
-   * However, if the reduction stream is offloaded without core user,
-   * we do not try to track its BackMemBaseStream.
-   */
-  bool isOffloadedNoCoreUserReduction =
-      dynS.offloadedToCache && !this->hasCoreUser() && this->isReduction();
-  if (this->isReduction() && !isOffloadedNoCoreUserReduction) {
-    if (newElementIdx > 0) {
-      assert(dynS.head != dynS.tail &&
-             "Failed to find previous element for reduction stream.");
-      S_ELEMENT_DPRINTF(newElement, "Found reduction dependence.");
-      newElement->addrBaseElements.insert(dynS.head);
-    } else {
-      // This is the first element. Let StreamElement::markAddrReady() set up
-      // the initial value.
-    }
-  }
-  if (newElementIdx > 0 && !isOffloadedNoCoreUserReduction) {
-    // Find the back base element, starting from the second element.
-    for (auto backBaseS : this->backBaseStreams) {
-      if (backBaseS->getLoopLevel() != this->getLoopLevel()) {
-        continue;
-      }
-      if (backBaseS->stepRootStream != nullptr) {
-        // Try to find the previous element for the base.
-        auto &baseDynS = backBaseS->getLastDynamicStream();
-        auto baseElement = baseDynS.getElementByIdx(newElementIdx - 1);
-        if (baseElement == nullptr) {
-          S_ELEMENT_PANIC(newElement,
-                          "Failed to find back base element from %s.\n",
-                          backBaseS->getStreamName().c_str());
-        }
-        // ! Try to check the base element should have the previous element.
-        S_ELEMENT_DPRINTF(baseElement, "Consumer for back dependence.\n");
-        if (baseElement->FIFOIdx.streamId.streamInstance ==
-            newElement->FIFOIdx.streamId.streamInstance) {
-          S_ELEMENT_DPRINTF(newElement, "Found back dependence.\n");
-          newElement->addrBaseElements.insert(baseElement);
-        } else {
-          // S_ELEMENT_PANIC(newElement,
-          //                      "The base element has wrong
-          //                      streamInstance.\n");
-        }
-      } else {
-        // ! Should be a constant stream. So far we ignore it.
-      }
-    }
-  }
 }
 
 void Stream::addValueBaseElements(StreamElement *newElement) {

@@ -297,13 +297,22 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     S->configure(args.seqNum, args.tc);
   }
 
-  // 3. Allocate one new entries for all streams.
+  // Handle dynamic stream dependence.
+  // This is split out from S->configure() to ensure all DynS are created
+  // before we handle dynamic dependence.
+  for (auto &S : configStreams) {
+    auto &dynS = S->getLastDynamicStream();
+    dynS.addAddrBaseDynStreams();
+  }
+
+  // Allocate one new entries for all streams.
   for (auto S : configStreams) {
     // hack("Allocate element for stream %s.\n",
     // S->getStreamName().c_str());
     assert(this->hasFreeElement());
     assert(S->getAllocSize() < S->maxSize);
-    assert(this->areBaseElementAllocated(S));
+    const auto &dynS = S->getLastDynamicStream();
+    assert(dynS.areNextAddrBaseElementsAllocated());
     this->allocateElement(S);
   }
 }
@@ -327,6 +336,15 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
       inputVec = &(args.inputMap->at(S->staticId));
     }
     S->executeStreamConfig(args.seqNum, inputVec);
+  }
+
+  /**
+   * Then we try to compute the reuse between streams.
+   * This has to be done after initializing the addr gen function.
+   */
+  for (auto &S : configStreams) {
+    auto &dynS = S->getLastDynamicStream();
+    dynS.configureAddrBaseDynStreamReuse();
   }
 
   auto *cacheStreamConfigVec = new CacheStreamConfigureVec();
@@ -1397,8 +1415,9 @@ void StreamEngine::initializeStreams(
             this->maxTotalRunAheadLength);
     }
   }
-  SE_DPRINTF_(StreamThrottle, "[Throttle] Initialize MaxSize %d TotalAliveStreasm %d\n",
-      args.maxSize, totalAliveStreams);
+  SE_DPRINTF_(StreamThrottle,
+              "[Throttle] Initialize MaxSize %d TotalAliveStreasm %d\n",
+              args.maxSize, totalAliveStreams);
 
   this->generateCoalescedStreamIdMap(streamRegion, args);
 
@@ -1830,14 +1849,17 @@ void StreamEngine::allocateElements() {
         if (S->getAllocSize() >= S->maxSize) {
           continue;
         }
+        const auto &dynS = S->getLastDynamicStream();
+        if (!dynS.areNextAddrBaseElementsAllocated()) {
+          continue;
+        }
         if (S != stepRootStream) {
           if (S->getAllocSize() >= stepRootStream->getAllocSize()) {
             // It doesn't make sense to allocate ahead than the step root.
             continue;
           }
-          const auto &dynS = S->getLastDynamicStream();
           if (dynS.allocSize >= stepRootDynStream.allocSize) {
-            // It also doesn't make sense to allocate ahead than roo dynS.
+            // It also doesn't make sense to allocate ahead than root dynS.
             continue;
           }
         }
@@ -1845,36 +1867,6 @@ void StreamEngine::allocateElements() {
       }
     }
   }
-}
-
-bool StreamEngine::areBaseElementAllocated(Stream *S) {
-  // Find the base element.
-  for (auto baseS : S->addrBaseStreams) {
-    if (baseS->getLoopLevel() != S->getLoopLevel()) {
-      continue;
-    }
-
-    auto allocated = true;
-    if (baseS->stepRootStream == S->stepRootStream) {
-      if (baseS->getAllocSize() <= S->getAllocSize()) {
-        // The base stream has not allocate the element we want.
-        allocated = false;
-      }
-    } else {
-      // The other one must be a constant stream.
-      assert(baseS->stepRootStream == nullptr &&
-             "Should be a constant stream.");
-      // It should always be allocated.
-    }
-    // hack("Check base element from stream %s for stream %s allocated
-    // %d.\n",
-    //      baseS->getStreamName().c_str(), S->getStreamName().c_str(),
-    //      allocated);
-    if (!allocated) {
-      return false;
-    }
-  }
-  return true;
 }
 
 void StreamEngine::allocateElement(Stream *S) {
@@ -2039,18 +2031,14 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
       if (baseElement->FIFOIdx.entryIdx > element->FIFOIdx.entryIdx) {
         // ! Some bug here that the base element is already used by others.
         // TODO: Better handle all these.
+        S_ELEMENT_DPRINTF(baseElement, "Base FIFOIdx too large..\n");
         continue;
       }
+      S_ELEMENT_DPRINTF(baseElement, "BaseElement Ready %d.\n",
+                        baseElement->isValueReady);
       if (!baseElement->isValueReady) {
-        if (isDebugStream(element->stream)) {
-          S_ELEMENT_DPRINTF(element,
-                            "Element is not ready due to base element: \n");
-          S_ELEMENT_DPRINTF(baseElement, "Blocked.\n");
-        }
         ready = false;
         break;
-      } else {
-        S_ELEMENT_DPRINTF(baseElement, "Base element is ready.\n");
       }
     }
     return ready;
@@ -2106,6 +2094,9 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
           S_ELEMENT_DPRINTF(element, "Found ready.\n");
           readyElements.emplace_back(element);
         } else {
+          // We should not check the next one as we should issue inorder.
+          S_ELEMENT_DPRINTF(element, "Not ready, break out.\n");
+          break;
         }
       }
     }
@@ -2694,13 +2685,14 @@ void StreamEngine::StreamThrottler::throttleStream(Stream *S,
     return;
   }
 
-  S_DPRINTF_(StreamThrottle, S, 
+  S_DPRINTF_(
+      StreamThrottle, S,
       "[Throttle] AssignedEntries %d UnAssignedEntries %d BasicEntries %d "
       "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries %d "
       "TotalIncrementEntries %d CurrentAliveStreams %d TotalAliveStreams %d.\n",
-      assignedEntries, unAssignedEntries, basicEntries,
-      assignedBasicEntries, availableEntries, upperBoundEntries,
-      totalIncrementEntries, currentAliveStreams, totalAliveStreams);
+      assignedEntries, unAssignedEntries, basicEntries, assignedBasicEntries,
+      availableEntries, upperBoundEntries, totalIncrementEntries,
+      currentAliveStreams, totalAliveStreams);
 
   auto oldMaxSize = S->maxSize;
   for (auto stepS : streamList) {

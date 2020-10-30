@@ -13,10 +13,18 @@
 #define S_HACK(S, format, args...) hack(S_MSG(S, format, ##args))
 #define S_PANIC(S, format, args...) panic(S_MSG(S, format, ##args))
 
-#define S_ELEMENT_MSG(E, format, args...)                                      \
-  S_MSG((E)->getStream(), "[%lu-%lu]: " format,                                \
-        (E)->FIFOIdx.streamId.streamInstance, (E)->FIFOIdx.entryIdx, ##args)
+#define S_FIFO_ENTRY_MSG(E, format, args...) "%s: " format, (E), ##args
+#define S_FIFO_ENTRY_DPRINTF_(X, E, format, args...)                           \
+  DPRINTF(X, S_FIFO_ENTRY_MSG((E), format, ##args))
+#define S_FIFO_ENTRY_DPRINTF(E, format, args...)                               \
+  S_FIFO_ENTRY_DPRINTF_(DEBUG_TYPE, (E), format, ##args)
+#define S_FIFO_ENTRY_HACK(E, format, args...)                                  \
+  hack(S_FIFO_ENTRY_MSG((E), format, ##args))
+#define S_FIFO_ENTRY_PANIC(E, format, args...)                                 \
+  panic(S_FIFO_ENTRY_MSG((E), format, ##args))
 
+#define S_ELEMENT_MSG(E, format, args...)                                      \
+  S_FIFO_ENTRY_MSG((E)->FIFOIdx, format, ##args)
 #define S_ELEMENT_DPRINTF_(X, E, format, args...)                              \
   DPRINTF(X, S_ELEMENT_MSG(E, format, ##args))
 #define S_ELEMENT_DPRINTF(E, format, args...)                                  \
@@ -26,17 +34,8 @@
 #define S_ELEMENT_PANIC(E, format, args...)                                    \
   panic(S_ELEMENT_MSG(E, format, ##args))
 
-#define S_FIFO_ENTRY_MSG(E, format, args...) "%s: " format, (E), ##args
-#define S_FIFO_ENTRY_DPRINTF(E, format, args...)                               \
-  DPRINTF(DEBUG_TYPE, S_FIFO_ENTRY_MSG((E), format, ##args))
-#define S_FIFO_ENTRY_HACK(E, format, args...)                                  \
-  hack(S_FIFO_ENTRY_MSG((E), format, ##args))
-#define S_FIFO_ENTRY_PANIC(E, format, args...)                                 \
-  panic(S_FIFO_ENTRY_MSG((E), format, ##args))
-
 #define DYN_S_MSG(dynamicStreamId, format, args...)                            \
-  "[%d-%lu-%lu]" format, (dynamicStreamId).coreId, (dynamicStreamId).staticId, \
-      (dynamicStreamId).streamInstance, ##args
+  "%s" format, (dynamicStreamId), ##args
 #define DYN_S_DPRINTF(dynamicStreamId, format, args...)                        \
   DPRINTF(DEBUG_TYPE, DYN_S_MSG((dynamicStreamId), format, ##args))
 

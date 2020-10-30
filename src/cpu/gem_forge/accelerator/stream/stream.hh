@@ -35,6 +35,7 @@ class StreamEndInst;
 class Stream {
 public:
   using StaticId = DynamicStreamId::StaticId;
+  using InstanceId = DynamicStreamId::InstanceId;
   struct StreamArguments {
     LLVMTraceCPU *cpu;
     GemForgeCPUDelegator *cpuDelegator;
@@ -136,7 +137,7 @@ public:
   const ::LLVM::TDG::StreamRegion *streamRegion;
   StaticId staticId;
   std::string streamName;
-  size_t dynInstance;
+  InstanceId dynInstance;
   // Used to remember first core user pc.
   Addr firstCoreUserPC = 0;
   bool hasFirstCoreUserPC() const { return this->firstCoreUserPC != 0; }
@@ -259,10 +260,6 @@ public:
    */
   void allocateElement(StreamElement *newElement);
   /**
-   * Add address base elements to new element.
-   */
-  void addAddrBaseElements(StreamElement *newElement);
-  /**
    * Add value base elements for stream computation.
    */
   void addValueBaseElements(StreamElement *newElement);
@@ -342,6 +339,7 @@ public:
   std::deque<DynamicStream> dynamicStreams;
   bool hasDynamicStream() const { return !this->dynamicStreams.empty(); }
   DynamicStream &getDynamicStream(uint64_t seqNum);
+  DynamicStream &getDynamicStreamByInstance(InstanceId instance);
   DynamicStream &getDynamicStreamBefore(uint64_t seqNum);
   DynamicStream *getDynamicStream(const DynamicStreamId &dynId);
   DynamicStream &getLastDynamicStream() {

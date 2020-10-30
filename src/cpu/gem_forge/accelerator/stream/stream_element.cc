@@ -420,22 +420,6 @@ void StreamElement::markValueReady() {
   assert(!this->isValueReady && "Value is already ready.");
   this->isValueReady = true;
   this->valueReadyCycle = this->getStream()->getCPUDelegator()->curCycle();
-  // if (this->stream->getStreamName() == "(cal_learned_func.c::7(cal_learned_"
-  //                                      "func) 29 bb27 bb52::tmp56(load))" &&
-  //     this->FIFOIdx.streamId.streamInstance > 21) {
-  //   if (auto CS = dynamic_cast<CoalescedStream *>(this->stream)) {
-  //     // Now everything should be coalesced stream.
-  //     constexpr int maxElementSize = 64;
-  //     std::array<uint8_t, maxElementSize> elementValue;
-  //     for (auto LS : CS->getLogicalStreams()) {
-  //       auto LSId = LS->getStreamId();
-  //       this->getValueByStreamId(LSId, elementValue.data(),
-  //                                elementValue.size());
-  //       S_ELEMENT_HACK(this, "Value ready %llu: %f.\n", LSId,
-  //                      *reinterpret_cast<float *>(elementValue.data()));
-  //     }
-  //   }
-  // }
   if (Debug::DEBUG_TYPE) {
     bool faulted = false;
     for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
@@ -449,16 +433,6 @@ void StreamElement::markValueReady() {
       S_ELEMENT_DPRINTF(this, "Value ready: faulted.\n");
     } else {
       S_ELEMENT_DPRINTF(this, "Value ready.\n");
-      // if (auto CS = dynamic_cast<CoalescedStream *>(this->stream)) {
-      //   // Now everything should be coalesced stream.
-      //   constexpr int maxElementSize = 64;
-      //   std::array<uint8_t, maxElementSize> elementValue;
-      //   for (auto LS : CS->getLogicalStreams()) {
-      //     auto LSId = LS->getStreamId();
-      //     this->getValueByStreamId(LSId, elementValue.data(),
-      //                              elementValue.size());
-      //   }
-      // }
     }
   }
 
@@ -547,14 +521,32 @@ void StreamElement::setValue(Addr vaddr, int size, const uint8_t *val) {
     this->value.at(i + initOffset) = val[i];
   }
   // Mark the cache line ready.
+  // Fast path for IV stream with exact match.
+  // This is to avoid overflow for negative IV.
+  if (!this->stream->isMemStream() && vaddr == this->addr &&
+      size == this->size) {
+    for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
+      auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
+      block.state = CacheBlockBreakdownAccess::StateE::Ready;
+    }
+    this->tryMarkValueReady();
+    return;
+  }
   // TODO: Really check that every byte is set.
+  auto vaddrRHS = vaddr + size;
   for (int blockIdx = 0; blockIdx < this->cacheBlocks; ++blockIdx) {
     auto &block = this->cacheBlockBreakdownAccesses[blockIdx];
+    auto blockRHS = block.cacheBlockVAddr + this->cacheBlockSize;
     // So far we just check for overlap.
-    if (vaddr >= block.cacheBlockVAddr + this->cacheBlockSize ||
-        vaddr + size <= block.cacheBlockVAddr) {
-      // No overlap.
-      continue;
+    if (blockRHS >= block.cacheBlockVAddr && vaddrRHS >= vaddr) {
+      // No overflow.
+      if (vaddr >= blockRHS || vaddrRHS <= block.cacheBlockVAddr) {
+        // No overlap.
+        continue;
+      }
+    } else {
+      // Both overflow. Definitely overlap.
+      panic("Overflow in vaddr [%#x, +%d).\n", vaddr, size);
     }
     S_ELEMENT_DPRINTF(this, "Mark block ready: [%#x, %#x).\n",
                       block.cacheBlockVAddr,

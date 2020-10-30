@@ -1,7 +1,7 @@
 #include "DynamicStreamId.hh"
 
 std::ostream &operator<<(std::ostream &os, const DynamicStreamId &streamId) {
-  os << "[" << streamId.coreId << '-' << streamId.staticId << '-'
-     << streamId.streamInstance << "][" << streamId.streamName << "]";
+  os << streamId.streamName << " -" << streamId.coreId << '-'
+     << streamId.staticId << '-' << streamId.streamInstance << "-";
   return os;
 }

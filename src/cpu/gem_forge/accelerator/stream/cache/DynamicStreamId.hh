@@ -11,20 +11,22 @@
  */
 struct DynamicStreamId {
   using StaticId = uint64_t;
+  using InstanceId = uint64_t;
   static constexpr StaticId InvalidStaticStreamId = 0;
+  static constexpr InstanceId InvalidInstanceId = 0;
   // Use coreId to distinguish streams in multi-core context.
   // TODO: ThreadID may be a better option.
   int coreId = -1;
   StaticId staticId = 0;
-  uint64_t streamInstance = 0;
+  InstanceId streamInstance = 0;
   // Used for debug purpose. User should guarantee the life cycle of name.
   // TODO: How to improve this?
   const char *streamName = "Unknown_Stream";
 
   DynamicStreamId() = default;
-  DynamicStreamId(int _coreId, StaticId _staticId, uint64_t _streamInstance)
+  DynamicStreamId(int _coreId, StaticId _staticId, InstanceId _streamInstance)
       : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance) {}
-  DynamicStreamId(int _coreId, StaticId _staticId, uint64_t _streamInstance,
+  DynamicStreamId(int _coreId, StaticId _staticId, InstanceId _streamInstance,
                   const char *_streamName)
       : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance),
         streamName(_streamName) {}
@@ -65,8 +67,8 @@ std::ostream &operator<<(std::ostream &os, const DynamicStreamId &streamId);
 struct DynamicStreamIdHasher {
   std::size_t operator()(const DynamicStreamId &key) const {
     return (std::hash<int>()(key.coreId)) ^
-           (std::hash<uint64_t>()(key.staticId)) ^
-           (std::hash<uint64_t>()(key.streamInstance));
+           (std::hash<DynamicStreamId::StaticId>()(key.staticId)) ^
+           (std::hash<DynamicStreamId::InstanceId>()(key.streamInstance));
   }
 };
 

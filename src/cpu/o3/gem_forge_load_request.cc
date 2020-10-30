@@ -78,8 +78,8 @@ template <class Impl> void GemForgeLoadRequest<Impl>::initiateTranslation() {
         !this->cpuDelegator->translateVAddrOracle(this->_addr + this->_size - 1,
                                                   paddrRHS)) {
       // There is translation fault.
-      INST_DPRINTF("GFLoadReq: Translation fault on vaddr %#x size %d.\n",
-                   this->_addr, this->_size);
+      INST_DPRINTF("GFLoadReq %s: Translation fault on vaddr %#x size %d.\n",
+                   *this->callback, this->_addr, this->_size);
 
       fault = std::make_shared<GemForge::GemForgeLoadTranslationFault>();
       this->setState(State::Fault);

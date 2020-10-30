@@ -85,6 +85,12 @@ public:
   bool estimateReuse(const DynamicStreamFormalParamV &params,
                      uint64_t elementSize, uint64_t &reuseFootprint,
                      uint64_t &reuseCount);
+
+  /**
+   * Get nested trip count.
+   */
+  uint64_t getNestTripCount(const DynamicStreamFormalParamV &params,
+                            int nestLevel);
 };
 
 class FuncAddrGenCallback : public AddrGenCallback {

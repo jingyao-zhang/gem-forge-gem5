@@ -377,8 +377,6 @@ private:
 
   // Called every cycle to allocate elements.
   void allocateElements();
-  // Check if all the base elements are allocated.
-  bool areBaseElementAllocated(Stream *S);
   // Allocate one element to stream.
   void allocateElement(Stream *S);
   /**

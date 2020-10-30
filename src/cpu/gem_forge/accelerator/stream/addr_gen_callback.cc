@@ -184,3 +184,13 @@ bool LinearAddrGenCallback::estimateReuse(
                    : 1;
   return true;
 }
+
+uint64_t
+LinearAddrGenCallback::getNestTripCount(const DynamicStreamFormalParamV &params,
+                                        int nestLevel) {
+  auto knownLevels = (params.size() - 1) / 2;
+  assert(knownLevels >= nestLevel);
+  assert(nestLevel > 0);
+  uint64_t nestTripCount = params.at((nestLevel - 1) * 2 + 1).param.invariant;
+  return nestTripCount;
+}

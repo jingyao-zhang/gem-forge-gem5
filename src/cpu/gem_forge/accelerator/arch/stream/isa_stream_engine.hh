@@ -162,7 +162,6 @@ private:
   struct DynStreamInputInstInfo {
     uint64_t translatedStreamId = InvalidStreamId;
     int inputIdx = -1;
-    bool executed = false;
   };
 
   struct DynStreamStepInstInfo {
@@ -191,6 +190,11 @@ private:
      * Sometimes it is for sure this instruction is misspeculated.
      */
     bool mustBeMisspeculated = false;
+    /**
+     * Whether this instruction has been executed.
+     * Only valid if mustBeMisspeculated is false.
+     */
+    bool executed = false;
     MustBeMisspeculatedReason mustBeMisspeculatedReason;
   };
   std::unordered_map<uint64_t, DynStreamInstInfo> seqNumToDynInfoMap;

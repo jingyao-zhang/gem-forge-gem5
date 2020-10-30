@@ -605,7 +605,7 @@ workend(ThreadContext *tc, uint64_t workid, uint64_t threadid)
 void
 workmark(ThreadContext *tc, uint64_t workid, uint64_t threadid)
 {
-    DPRINTF(PseudoInst, "PseudoInst::workmark(%i, %i)\n", workid, threadid);
+    DPRINTF(PseudoInst, "PseudoInst::workmark %i\n", workid);
     assert(threadid == 0 && "workmark only supports threadid == 0");
     Process *p = tc->getProcessPtr();
     p->encounterWorkMark(workid);

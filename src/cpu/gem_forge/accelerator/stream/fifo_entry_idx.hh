@@ -30,7 +30,7 @@ struct FIFOEntryIdx {
             this->entryIdx > other.entryIdx);
   }
   friend std::ostream &operator<<(std::ostream &os, const FIFOEntryIdx &id) {
-    return os << id.streamId << '[' << id.entryIdx << ']';
+    return os << id.streamId << id.entryIdx << '-';
   }
 };
 
