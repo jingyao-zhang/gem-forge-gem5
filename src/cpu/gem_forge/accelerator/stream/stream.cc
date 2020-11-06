@@ -49,6 +49,11 @@ Stream::Stream(const StreamArguments &args)
 Stream::~Stream() {}
 
 void Stream::dumpStreamStats(std::ostream &os) const {
+  if (this->statistic.numConfigured == 0 &&
+      this->statistic.numMisConfigured == 0) {
+    // I have not been configured at all -- maybe only used in fast forward.
+    return;
+  }
   os << this->getStreamName() << '\n';
   this->statistic.dump(os);
   this->floatTracer.dump();
