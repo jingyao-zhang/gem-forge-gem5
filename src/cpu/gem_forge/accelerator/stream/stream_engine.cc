@@ -281,7 +281,6 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     if (this->streamMap.count(streamId) == 0 &&
         this->coalescedStreamIdMap.count(streamId) == 0) {
       // We haven't initialize streams in this loop.
-      hack("Initialize due to stream %lu.\n", streamId);
       this->initializeStreams(streamRegion);
       break;
     }
@@ -289,7 +288,10 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
 
   auto configStreams = this->getConfigStreamsInRegion(streamRegion);
   for (auto &S : configStreams) {
-    assert(!S->configured && "The stream should not be configured.");
+    if (S->configured) {
+      S_DPRINTF(S, "This stream has already been configured.\n");
+      assert(false && "The stream should not be configured.");
+    }
     S->configured = true;
     S->statistic.numConfigured++;
 

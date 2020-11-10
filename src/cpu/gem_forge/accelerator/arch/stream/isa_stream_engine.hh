@@ -82,14 +82,26 @@ private:
    * stream configuration/termination.
    */
   static constexpr int MaxNumRegionStreams = 128;
-  using RegionStreamIdTable = std::array<uint64_t, MaxNumRegionStreams>;
+  struct RegionStreamIdTable {
+    const uint64_t configIdx;
+    std::array<uint64_t, MaxNumRegionStreams> table;
+    RegionStreamIdTable(uint64_t _configIdx) : configIdx(_configIdx) {
+      this->table.fill(InvalidStreamId);
+    }
+    uint64_t &at(int regionStreamId) { return this->table.at(regionStreamId); }
+    const uint64_t &at(int regionStreamId) const {
+      return this->table.at(regionStreamId);
+    }
+  };
   std::vector<RegionStreamIdTable> regionStreamIdTableStack;
   static constexpr uint64_t InvalidStreamId = 0;
-  void insertRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
-
+  void insertRegionStreamIds(uint64_t configIdx,
+                             const ::LLVM::TDG::StreamRegion &region);
+  bool hasRecursiveRegion(uint64_t configIdx);
   bool canSetRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
   bool canRemoveRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
-  void removeRegionStreamIds(const ::LLVM::TDG::StreamRegion &region);
+  void removeRegionStreamIds(uint64_t configIdx,
+                             const ::LLVM::TDG::StreamRegion &region);
   uint64_t searchRegionStreamId(int regionStreamId) const;
   uint64_t lookupRegionStreamId(int regionStreamId) const;
   bool isValidRegionStreamId(int regionStreamId) const;
@@ -99,6 +111,7 @@ private:
    */
   enum MustBeMisspeculatedReason {
     CONFIG_HAS_PREV_REGION = 0,
+    CONFIG_RECURSIVE,
     CONFIG_CANNOT_SET_REGION_ID,
     STEP_INVALID_REGION_ID,
   };

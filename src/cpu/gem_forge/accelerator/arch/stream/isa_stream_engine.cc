@@ -62,6 +62,16 @@ void ISAStreamEngine::dispatchStreamConfig(
     return;
   }
 
+  if (this->hasRecursiveRegion(configIdx)) {
+    DYN_INST_DPRINTF("[dispatch] MustMisspeculated StreamConfig %llu, %s: "
+                     "Recursive region.\n",
+                     configIdx, infoRelativePath);
+    instInfo.mustBeMisspeculated = true;
+    instInfo.mustBeMisspeculatedReason = CONFIG_RECURSIVE;
+    instInfo.configInfo.dynStreamRegionInfo->mustBeMisspeculated = true;
+    return;
+  }
+
   if (!this->canSetRegionStreamIds(info)) {
     DYN_INST_DPRINTF(
         "[dispatch] MustMisspeculated StreamConfig %llu, %s: Cannot "
@@ -72,7 +82,7 @@ void ISAStreamEngine::dispatchStreamConfig(
     instInfo.configInfo.dynStreamRegionInfo->mustBeMisspeculated = true;
     return;
   }
-  this->insertRegionStreamIds(info);
+  this->insertRegionStreamIds(configIdx, info);
 
   // Initialize an empty InputVector for each configured stream.
   for (const auto &streamInfo : info.streams()) {
@@ -161,7 +171,7 @@ void ISAStreamEngine::rewindStreamConfig(const GemForgeDynInstInfo &dynInfo) {
   const auto &info = this->getStreamRegion(configIdx);
   assert(this->canRemoveRegionStreamIds(info) &&
          "Failed rewinding StreamConfig");
-  this->removeRegionStreamIds(info);
+  this->removeRegionStreamIds(configIdx, info);
 
   // Release the InstInfo.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
@@ -501,7 +511,7 @@ void ISAStreamEngine::dispatchStreamEnd(
   auto se = this->getStreamEngine();
   assert(se->hasUnsteppedElement(args) && "No UnsteppedElement for StreamEnd.");
   // ! Make sure all effects happen as atomic.
-  this->removeRegionStreamIds(info);
+  this->removeRegionStreamIds(configIdx, info);
   se->dispatchStreamEnd(args);
 }
 
@@ -561,7 +571,7 @@ void ISAStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
     // Don't forget to add back the removed region stream ids.
     const auto &info = this->getStreamRegion(configIdx);
-    this->insertRegionStreamIds(info);
+    this->insertRegionStreamIds(configIdx, info);
 
     auto se = this->getStreamEngine();
     ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
@@ -969,11 +979,10 @@ ISAStreamEngine::getStreamRegion(uint64_t configIdx) const {
 }
 
 void ISAStreamEngine::insertRegionStreamIds(
-    const ::LLVM::TDG::StreamRegion &region) {
+    uint64_t configIdx, const ::LLVM::TDG::StreamRegion &region) {
   // Add one region table to the stack.
-  this->regionStreamIdTableStack.emplace_back();
+  this->regionStreamIdTableStack.emplace_back(configIdx);
   auto &regionStreamIdTable = this->regionStreamIdTableStack.back();
-  regionStreamIdTable.fill(InvalidStreamId);
   for (const auto &streamInfo : region.streams()) {
     auto streamId = streamInfo.id();
     auto regionStreamId = streamInfo.region_stream_id();
@@ -992,6 +1001,18 @@ void ISAStreamEngine::insertRegionStreamIds(
     }
     ISA_SE_DPRINTF("%s.\n", ss.str());
   }
+}
+
+bool ISAStreamEngine::hasRecursiveRegion(uint64_t configIdx) {
+  // -- An exception is region with the same configIdx, which means recursion
+  // and we have no support for that yet.
+  for (const auto &regionStreamIdTable : this->regionStreamIdTableStack) {
+    if (regionStreamIdTable.configIdx == configIdx) {
+      // Recursion found.
+      return true;
+    }
+  }
+  return false;
 }
 
 bool ISAStreamEngine::canSetRegionStreamIds(
@@ -1034,7 +1055,7 @@ bool ISAStreamEngine::canRemoveRegionStreamIds(
 }
 
 void ISAStreamEngine::removeRegionStreamIds(
-    const ::LLVM::TDG::StreamRegion &region) {
+    uint64_t configIdx, const ::LLVM::TDG::StreamRegion &region) {
   assert(this->canRemoveRegionStreamIds(region) &&
          "Can not remove region stream ids.");
   if (Debug::ISAStreamEngine) {
@@ -1050,6 +1071,8 @@ void ISAStreamEngine::removeRegionStreamIds(
     ISA_SE_DPRINTF("%s.\n", ss.str());
   }
   // Simply pop the table stack.
+  assert(this->regionStreamIdTableStack.back().configIdx == configIdx &&
+         "Mismatch in poping stream region.");
   this->regionStreamIdTableStack.pop_back();
 }
 
@@ -1148,6 +1171,7 @@ ISAStreamEngine::mustBeMisspeculatedString(MustBeMisspeculatedReason reason) {
     return #reason
   switch (reason) {
     CASE_REASON(CONFIG_HAS_PREV_REGION);
+    CASE_REASON(CONFIG_RECURSIVE);
     CASE_REASON(CONFIG_CANNOT_SET_REGION_ID);
     CASE_REASON(STEP_INVALID_REGION_ID);
   default:
