@@ -546,8 +546,24 @@ Process::encounterWorkMark(uint64_t markId) {
             this->workMarkIndex, markId, expectedMarkId);
     }
     // Check if we want to switch cpu or exit.
-    if (p->markSwitchcpu != -1 && this->workMarkIndex == p->markSwitchcpu) {
-        exitSimLoop("markswitchcpu", static_cast<int>(markId));
+    if (p->markSwitchcpu != -1) {
+        // We allow warm up by one edge before.
+        bool shouldSwitch = false;
+        if (p->markSwitchcpu > 0) {
+            if (this->workMarkIndex + 1 == p->markSwitchcpu) {
+                exitSimLoop("markswitchcpu", static_cast<int>(markId));
+            } else if (this->workMarkIndex == p->markSwitchcpu) {
+                // Simply reset the stats.
+                inform("Reset stats after warming up, edge %llu.\n",
+                    this->workMarkIndex);
+                Stats::reset();
+            }
+        } else {
+            // We switch at the first edge. No warm up.
+            if (this->workMarkIndex == p->markSwitchcpu) {
+                exitSimLoop("markswitchcpu", static_cast<int>(markId));
+            }
+        }
     }
     if (p->markEnd != -1 && this->workMarkIndex == p->markEnd) {
         exitSimLoop("markend", static_cast<int>(markId));
