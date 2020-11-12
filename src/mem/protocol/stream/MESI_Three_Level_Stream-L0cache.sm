@@ -426,7 +426,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
 
           // *** DATA ACCESS ***
           Entry Dcache_entry := getDCacheEntry(in_msg.LineAddress);
-
+          Entry Icache_entry := getICacheEntry(in_msg.LineAddress);
 
           /*************************************************************
            * ! Sean: StreamAwareCache.
@@ -454,14 +454,21 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
                         Dcache_entry, TBEs[in_msg.LineAddress]);
               }
 
+            } else if (is_valid(Icache_entry)) {
+              // Hit in ICache.
+              setHitCacheLevel(getRequestStatistic(in_msg.pkt), 0);
+              if (se.shouldForward(in_msg.pkt)) {
+                // We should forward the request to lower cache level
+                // while serving this request.
+                trigger(Event:LoadHitAndForward, in_msg.LineAddress, 
+                        Icache_entry, TBEs[in_msg.LineAddress]);
+              } else {
+                // No need to forward it, simply serve the request.
+                trigger(Event:Load, in_msg.LineAddress,
+                        Icache_entry, TBEs[in_msg.LineAddress]);
+              }
             } else {
               // Miss.
-              // Sanity check that this is not in ICache.
-              Entry Icache_entry := getICacheEntry(in_msg.LineAddress);
-              if (is_valid(Icache_entry)) {
-                error("Stream access hit in Icache.\n");
-              }
-
               // Do we want to cache it?
               if (se.shouldCache(in_msg.pkt)) {
                 // Check if we have space for this line.
