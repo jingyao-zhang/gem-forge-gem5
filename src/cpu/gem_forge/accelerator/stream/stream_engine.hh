@@ -375,6 +375,13 @@ private:
   std::list<CoalescedStream *>
   getConfigStreamsInRegion(const LLVM::TDG::StreamRegion &streamRegion);
 
+  /**
+   * Decide and float streams. Called in executeStreamConfig().
+   */
+  void floatStreams(const StreamConfigArgs &args,
+                    const ::LLVM::TDG::StreamRegion &streamRegion,
+                    std::list<CoalescedStream *> &configStreams);
+
   // Called every cycle to allocate elements.
   void allocateElements();
   // Allocate one element to stream.
