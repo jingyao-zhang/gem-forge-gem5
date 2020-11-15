@@ -80,6 +80,16 @@ void FunctionTracer::dumpFuncAccumulateTick() {
     return;
   }
 
+  /**
+   * Make sure we record the current accumulated ticks.
+   */
+  if (this->functionAccumulateTickEnabled && this->currentFunctionStart) {
+    auto accumulateTick = curTick() - this->functionEntryTick;
+    this->funcAccumulateTicks.emplace(this->currentFunctionStart, 0)
+        .first->second += accumulateTick;
+    this->functionEntryTick = curTick();
+  }
+
   if (this->funcAccumulateTicks.empty()) {
     return;
   }
