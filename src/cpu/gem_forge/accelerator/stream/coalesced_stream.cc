@@ -27,10 +27,12 @@
 LogicalStream::LogicalStream(const std::string &_traceExtraFolder,
                              const LLVM::TDG::StreamInfo &_info)
     : info(_info) {
-  this->history = std::unique_ptr<StreamHistory>(
-      new StreamHistory(_traceExtraFolder + "/" + this->info.history_path()));
-  this->patternStream = std::unique_ptr<StreamPattern>(
-      new StreamPattern(_traceExtraFolder + "/" + this->info.pattern_path()));
+  if (!this->info.history_path().empty()) {
+    this->history = std::unique_ptr<StreamHistory>(
+        new StreamHistory(_traceExtraFolder + "/" + this->info.history_path()));
+    this->patternStream = std::unique_ptr<StreamPattern>(
+        new StreamPattern(_traceExtraFolder + "/" + this->info.pattern_path()));
+  }
 }
 
 LogicalStream::~LogicalStream() {}
