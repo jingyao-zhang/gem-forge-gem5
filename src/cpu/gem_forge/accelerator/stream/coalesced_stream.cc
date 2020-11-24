@@ -181,8 +181,8 @@ void CoalescedStream::initializeBaseStreams() {
     }
   }
   // Remember to set step root stream.
-  if (this->addrBaseStreams.empty() &&
-      this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV) {
+  // If there are no AddrBaseStreams, we take it as StepRoot.
+  if (this->addrBaseStreams.empty()) {
     this->stepRootStream = this;
   }
 }
