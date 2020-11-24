@@ -44,11 +44,11 @@ class StreamEngine(GemForgeAccelerator):
     cxx_header = 'cpu/gem_forge/accelerator/stream/stream_engine.hh'
     streamEngineIsOracle = Param.Bool(
         False, "Whether the stream engine is oracle.")
-    streamEngineMaxRunAHeadLength = Param.Unsigned(
-        10, "How many elements can a stream run ahead.")
-    streamEngineMaxTotalRunAHeadLength = Param.Unsigned(
+    defaultRunAheadLength = Param.Unsigned(
+        10, "Default (without throttling) nubmer of elements can a stream run ahead.")
+    totalRunAheadLength = Param.Unsigned(
         1000, "How many total elements to run ahead.")
-    streamEngineThrottling = Param.String(
+    throttling = Param.String(
         "Static", "Which throttling technique to use.")
     streamEngineEnableLSQ = Param.Bool(
         False, "Whether the stream engine model inserting into the LSQ.")

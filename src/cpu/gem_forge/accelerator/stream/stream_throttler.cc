@@ -153,33 +153,34 @@ void StreamThrottler::doThrottling(Stream *S, StreamElement *element) {
     assignedEntries += S->maxSize;
   }
   // * UnAssignedEntries.
-  int unAssignedEntries = this->se->maxTotalRunAheadLength - assignedEntries;
+  int unAssignedEntries = this->se->totalRunAheadLength - assignedEntries;
   // * BasicEntries.
   auto streamRegion = S->streamRegion;
   int totalAliveStreams = this->se->enableCoalesce
                               ? streamRegion->total_alive_coalesced_streams()
                               : streamRegion->total_alive_streams();
   int basicEntries = std::max(totalAliveStreams, currentAliveStreams) *
-                     this->se->maxRunAHeadLength;
+                     this->se->defaultRunAheadLength;
   // * AssignedBasicEntries.
-  int assignedBasicEntries = currentAliveStreams * this->se->maxRunAHeadLength;
+  int assignedBasicEntries =
+      currentAliveStreams * this->se->defaultRunAheadLength;
   // * AvailableEntries.
   int availableEntries =
       unAssignedEntries - (basicEntries - assignedBasicEntries);
   // * UpperBoundEntries.
   int upperBoundEntries =
-      (this->se->maxTotalRunAheadLength - basicEntries) / streamList.size() +
-      this->se->maxRunAHeadLength;
+      (this->se->totalRunAheadLength - basicEntries) / streamList.size() +
+      this->se->defaultRunAheadLength;
   const auto incrementStep = 2;
   int totalIncrementEntries = incrementStep * streamList.size();
 
   if (availableEntries < totalIncrementEntries) {
     return;
   }
-  if (totalAliveStreams * this->se->maxRunAHeadLength +
+  if (totalAliveStreams * this->se->defaultRunAheadLength +
           streamList.size() * (stepRootStream->maxSize + incrementStep -
-                               this->se->maxRunAHeadLength) >=
-      this->se->maxTotalRunAheadLength) {
+                               this->se->defaultRunAheadLength) >=
+      this->se->totalRunAheadLength) {
     return;
   }
   if (stepRootStream->maxSize + incrementStep > upperBoundEntries) {

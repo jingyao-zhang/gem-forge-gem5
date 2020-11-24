@@ -188,7 +188,7 @@ public:
   }
 
   int currentTotalRunAheadLength;
-  int maxTotalRunAheadLength;
+  int totalRunAheadLength;
 
   /**
    * Stats
@@ -303,7 +303,7 @@ private:
    * Flags.
    */
   bool isOracle;
-  unsigned maxRunAHeadLength;
+  unsigned defaultRunAheadLength;
   bool enableLSQ;
   bool enableCoalesce;
   bool enableMerge;

@@ -26,13 +26,13 @@ def initializeStreamEngine(options):
     se = StreamEngine()
     se.streamEngineIsOracle = (
         options.gem_forge_stream_engine_is_oracle != 0)
-    se.streamEngineMaxRunAHeadLength = (
-        options.gem_forge_stream_engine_max_run_ahead_length
+    se.defaultRunAheadLength = (
+        options.gem_forge_stream_engine_default_run_ahead_length
     )
-    se.streamEngineMaxTotalRunAHeadLength = (
-        options.gem_forge_stream_engine_max_total_run_ahead_length
+    se.totalRunAheadLength = (
+        options.gem_forge_stream_engine_total_run_ahead_length
     )
-    se.streamEngineThrottling = options.gem_forge_stream_engine_throttling
+    se.throttling = options.gem_forge_stream_engine_throttling
     se.streamEngineEnableLSQ = options.gem_forge_stream_engine_enable_lsq
     se.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
     se.streamEngineEnableMerge = options.gem_forge_stream_engine_enable_merge

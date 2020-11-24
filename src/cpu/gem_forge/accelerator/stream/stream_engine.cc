@@ -29,13 +29,12 @@ bool isDebugStream(Stream *S) {
 StreamEngine::StreamEngine(Params *params)
     : GemForgeAccelerator(params), streamPlacementManager(nullptr),
       isOracle(false), writebackCacheLine(nullptr),
-      throttler(new StreamThrottler(params->streamEngineThrottling, this)) {
+      throttler(new StreamThrottler(params->throttling, this)) {
 
   this->isOracle = params->streamEngineIsOracle;
-  this->maxRunAHeadLength = params->streamEngineMaxRunAHeadLength;
+  this->defaultRunAheadLength = params->defaultRunAheadLength;
   this->currentTotalRunAheadLength = 0;
-  this->maxTotalRunAheadLength = params->streamEngineMaxTotalRunAHeadLength;
-  // this->maxTotalRunAheadLength = this->maxRunAHeadLength * 512;
+  this->totalRunAheadLength = params->totalRunAheadLength;
   this->enableLSQ = params->streamEngineEnableLSQ;
   this->enableCoalesce = params->streamEngineEnableCoalesce;
   this->enableMerge = params->streamEngineEnableMerge;
@@ -54,7 +53,7 @@ StreamEngine::StreamEngine(Params *params)
   this->streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
       this->enableStreamFloat, params->streamEngineFloatPolicy);
 
-  this->initializeFIFO(this->maxTotalRunAheadLength);
+  this->initializeFIFO(this->totalRunAheadLength);
 }
 
 StreamEngine::~StreamEngine() {
@@ -210,10 +209,10 @@ bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
 
   // Sanity check on the number of configured streams.
   {
-    if (configuredStreams * 3 > this->maxTotalRunAheadLength) {
+    if (configuredStreams * 3 > this->totalRunAheadLength) {
       panic("Too many streams configuredStreams for %s %d, FIFOSize %d.\n",
             infoRelativePath.c_str(), configuredStreams,
-            this->maxTotalRunAheadLength);
+            this->totalRunAheadLength);
     }
   }
 
@@ -1179,21 +1178,21 @@ void StreamEngine::initializeStreams(
   args.cpu = cpu;
   args.cpuDelegator = cpuDelegator;
   args.se = this;
-  args.maxSize = this->maxRunAHeadLength;
+  args.maxSize = this->defaultRunAheadLength;
   args.streamRegion = &streamRegion;
 
   // Sanity check that we do not have too many streams.
   auto totalAliveStreams = this->enableCoalesce
                                ? streamRegion.total_alive_coalesced_streams()
                                : streamRegion.total_alive_streams();
-  if (totalAliveStreams * this->maxRunAHeadLength >
-      this->maxTotalRunAheadLength) {
+  if (totalAliveStreams * this->defaultRunAheadLength >
+      this->totalRunAheadLength) {
     // If there are too many streams, we reduce the maxSize.
-    args.maxSize = this->maxTotalRunAheadLength / totalAliveStreams;
+    args.maxSize = this->totalRunAheadLength / totalAliveStreams;
     if (args.maxSize < 3) {
       panic("Too many streams %s TotalAliveStreams %d, FIFOSize %d.\n",
             streamRegion.region().c_str(), totalAliveStreams,
-            this->maxTotalRunAheadLength);
+            this->totalRunAheadLength);
     }
   }
   SE_DPRINTF_(StreamThrottle,
