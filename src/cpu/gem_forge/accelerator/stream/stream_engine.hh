@@ -1,5 +1,5 @@
-#ifndef __CPU_TDG_ACCELERATOR_STREAM_ENGINE_H__
-#define __CPU_TDG_ACCELERATOR_STREAM_ENGINE_H__
+#ifndef __CPU_GEM_FORGE_ACCELERATOR_STREAM_ENGINE_H__
+#define __CPU_GEM_FORGE_ACCELERATOR_STREAM_ENGINE_H__
 
 #include "coalesced_stream.hh"
 #include "insts.hh"
@@ -18,6 +18,7 @@
 
 #include <unordered_map>
 
+class StreamThrottler;
 class StreamEngine : public GemForgeAccelerator {
 public:
   using Params = StreamEngineParams;
@@ -245,6 +246,7 @@ public:
 private:
   // Make the Stream a friend to simplify code.
   friend class Stream;
+  friend class StreamThrottler;
 
   LLVMTraceCPU *cpu;
 
@@ -302,12 +304,6 @@ private:
    */
   bool isOracle;
   unsigned maxRunAHeadLength;
-  enum ThrottlingStrategyE {
-    STATIC,
-    DYNAMIC,
-    GLOBAL,
-  };
-  ThrottlingStrategyE throttlingStrategy;
   bool enableLSQ;
   bool enableCoalesce;
   bool enableMerge;
@@ -419,8 +415,6 @@ private:
    */
   void RAWMisspeculate(StreamElement *element);
 
-  void throttleStream(Stream *S, StreamElement *element);
-
   std::vector<StreamElement *> findReadyElements();
 
   size_t getTotalRunAheadLength() const;
@@ -431,19 +425,7 @@ private:
   void dumpFIFO() const;
   void dumpUser() const;
 
-  /**
-   * Helper class to throttle the stream's maxSize.
-   */
-  class StreamThrottler {
-  public:
-    StreamEngine *se;
-    StreamThrottler(StreamEngine *_se);
-
-    void throttleStream(Stream *S, StreamElement *element);
-    const std::string name() const { return se->name(); }
-  };
-
-  StreamThrottler throttler;
+  std::unique_ptr<StreamThrottler> throttler;
 
   /**
    * Callback structures for LSQ.
