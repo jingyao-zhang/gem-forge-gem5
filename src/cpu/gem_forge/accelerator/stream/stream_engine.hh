@@ -189,6 +189,7 @@ public:
 
   int currentTotalRunAheadLength;
   int totalRunAheadLength;
+  int totalRunAheadBytes;
 
   /**
    * Stats

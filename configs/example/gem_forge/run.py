@@ -101,6 +101,9 @@ parser.add_option("--gem-forge-stream-engine-default-run-ahead-length", action="
 parser.add_option("--gem-forge-stream-engine-total-run-ahead-length",
                   action="store", type="int",
                   help="""How many elements can the stream engine run ahead""", default="10")
+parser.add_option("--gem-forge-stream-engine-total-run-ahead-bytes",
+                  action="store", type="int",
+                  help="""How many bytes can the stream engine run ahead""", default="512")
 parser.add_option("--gem-forge-stream-engine-is-oracle", action="store", type="int",
                   help="""whether make the stream engine oracle""", default="0")
 parser.add_option("--gem-forge-stream-engine-throttling", action="store", type="string",

@@ -35,6 +35,7 @@ StreamEngine::StreamEngine(Params *params)
   this->defaultRunAheadLength = params->defaultRunAheadLength;
   this->currentTotalRunAheadLength = 0;
   this->totalRunAheadLength = params->totalRunAheadLength;
+  this->totalRunAheadBytes = params->totalRunAheadBytes;
   this->enableLSQ = params->streamEngineEnableLSQ;
   this->enableCoalesce = params->streamEngineEnableCoalesce;
   this->enableMerge = params->streamEngineEnableMerge;
@@ -1403,7 +1404,8 @@ void StreamEngine::updateAliveStatistics() {
     if (stream->isMemStream()) {
       totalAliveMemStreams++;
     }
-    stream->statistic.sampleInflyRequest(stream->numInflyStreamRequests);
+    stream->statistic.sampleStats(stream->numInflyStreamRequests,
+                                  stream->maxSize);
   }
   this->numTotalAliveElements.sample(totalAliveElements);
   this->numTotalAliveCacheBlocks.sample(totalAliveCacheBlocks.size());
@@ -1911,7 +1913,7 @@ void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
    * length.
    */
   if (doThrottle) {
-    this->throttler->throttleStream(S, releaseElement);
+    this->throttler->throttleStream(releaseElement);
   }
 
   const bool used = releaseElement->isFirstUserDispatched();

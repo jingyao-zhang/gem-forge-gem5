@@ -82,6 +82,12 @@ struct DynamicStream {
   int64_t getTotalTripCount() const { return this->totalTripCount; }
 
   /**
+   * Compute the number of bytes per element, also considering overlapping
+   * for linear streams.
+   */
+  int32_t getBytesPerMemElement() const;
+
+  /**
    * This remembers the dynamic dependence between streams.
    * Similar to the static StreamDepEdge, but with more information
    * to correctly align dependences.

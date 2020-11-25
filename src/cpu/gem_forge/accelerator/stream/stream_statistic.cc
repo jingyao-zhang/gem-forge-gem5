@@ -28,9 +28,9 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numCycle);
   dumpAvg(avgTurnAroundCycle, numCycle, numStepped);
 
-  dumpScalar(numInflyRequest);
-  dumpScalar(numInflyRequestSample);
-  dumpAvg(avgInflyRequest, numInflyRequest, numInflyRequestSample);
+  dumpScalar(numSample);
+  dumpAvg(avgInflyRequest, numInflyRequest, numSample);
+  dumpAvg(avgMaxSize, maxSize, numSample);
 
   dumpScalar(numMLCAllocatedSlice);
   dumpScalar(numLLCIssueSlice);
@@ -115,8 +115,9 @@ void StreamStatistic::clear() {
   this->numAliased = 0;
   this->numFaulted = 0;
   this->numCycle = 0;
+  this->numSample = 0;
   this->numInflyRequest = 0;
-  this->numInflyRequestSample = 0;
+  this->maxSize = 0;
   this->numMLCAllocatedSlice = 0;
   this->numLLCIssueSlice = 0;
   this->numLLCSentSlice = 0;

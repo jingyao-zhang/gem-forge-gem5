@@ -8,7 +8,8 @@
 
 SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureData *_configData,
                                          bool _coalesceContinuousElements)
-    : streamId(_configData->dynamicId), formalParams(_configData->addrGenFormalParams),
+    : streamId(_configData->dynamicId),
+      formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize),
       totalTripCount(_configData->totalTripCount),
@@ -28,8 +29,8 @@ SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureData *_configData,
       } else {
         this->elementPerSlice =
             static_cast<float>(blockBytes) /
-            static_cast<float>(std::min(
-                static_cast<uint64_t>(this->elementSize), innerStride));
+            static_cast<float>(
+                std::min(static_cast<int64_t>(this->elementSize), innerStride));
         DYN_S_DPRINTF(
             this->streamId,
             "innerStride %lu elementSize %lu block %lu elementPerSlice %f.\n",

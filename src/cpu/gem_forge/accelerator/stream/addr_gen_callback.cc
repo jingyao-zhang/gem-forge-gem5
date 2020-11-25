@@ -111,10 +111,8 @@ bool LinearAddrGenCallback::isContinuous(
   return true;
 }
 
-uint64_t
+int64_t
 LinearAddrGenCallback::getInnerStride(const DynamicStreamFormalParamV &params) {
-  // auto idx = (params.size() % 2 == 0) ? params.size() - 2 : params.size() -
-  // 3;
   auto idx = 0;
   assert(params.at(idx).isInvariant && "Variant inner stride.");
   return params.at(idx).param.invariant;
@@ -170,8 +168,10 @@ bool LinearAddrGenCallback::estimateReuse(
    * Get the number of elements before reuse happens.
    */
   uint64_t adjustedElementSize =
-      (reuseStrideIdx > 0) ? std::min(elementSize, this->getInnerStride(params))
-                           : elementSize;
+      (reuseStrideIdx > 0)
+          ? std::min(elementSize, static_cast<uint64_t>(
+                                      std::abs(this->getInnerStride(params))))
+          : elementSize;
   uint64_t numElementBeforeReuse =
       (reuseStrideIdx > 0) ? params.at(reuseStrideIdx - 1).param.invariant : 1;
   reuseFootprint = numElementBeforeReuse * adjustedElementSize;

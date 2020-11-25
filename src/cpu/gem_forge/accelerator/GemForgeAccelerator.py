@@ -48,6 +48,8 @@ class StreamEngine(GemForgeAccelerator):
         10, "Default (without throttling) nubmer of elements can a stream run ahead.")
     totalRunAheadLength = Param.Unsigned(
         1000, "How many total elements to run ahead.")
+    totalRunAheadBytes = Param.Unsigned(
+        512, "How many bytes to run ahead (default 8 cache lines).")
     throttling = Param.String(
         "Static", "Which throttling technique to use.")
     streamEngineEnableLSQ = Param.Bool(

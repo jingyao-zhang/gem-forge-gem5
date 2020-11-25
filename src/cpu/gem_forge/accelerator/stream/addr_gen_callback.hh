@@ -68,7 +68,7 @@ public:
   /**
    * Get the inner most stride.
    */
-  uint64_t getInnerStride(const DynamicStreamFormalParamV &params);
+  int64_t getInnerStride(const DynamicStreamFormalParamV &params);
   /**
    * Only valid when continuous.
    */

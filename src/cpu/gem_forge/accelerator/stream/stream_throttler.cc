@@ -28,11 +28,12 @@ const std::string StreamThrottler::name() const { return this->se->name(); }
  * Check if we actually want to throttle.
  *******************************************************************/
 
-void StreamThrottler::throttleStream(Stream *S, StreamElement *element) {
+void StreamThrottler::throttleStream(StreamElement *element) {
   if (this->strategy == StrategyE::STATIC) {
     // Static means no throttling.
     return;
   }
+  auto S = element->stream;
   if (S->isStoreStream()) {
     // No need to throttle for store stream.
     return;
@@ -84,7 +85,7 @@ void StreamThrottler::throttleStream(Stream *S, StreamElement *element) {
                  "RunAheadLength is not increased.");
         }
       } else if (this->strategy == StrategyE::GLOBAL) {
-        this->doThrottling(S, element);
+        this->doThrottling(element);
       }
       // No matter what, just clear the lateFetchCount in the whole step
       // group.
@@ -131,9 +132,22 @@ void StreamThrottler::throttleStream(Stream *S, StreamElement *element) {
  * * AvailableEntries >= IncrementSize * StepGroupSize.
  * * CurrentMaxSize + IncrementSize <= UpperBoundEntries
  *
+ * Updates: We used to model the FIFO only by the number of elements,
+ * however, this is not quite accurate as different streams has
+ * different element size, e.g. scalar vs. vectorized. Essentially,
+ * stream elements are part of the core view, and as long as we do not
+ * block core's dispatch due to lack of available elements, we are
+ * fine. The bottleneck is the actual buffer size, which truly determines
+ * the prefetch distance.
+ * In real hardware, this should be split into two parts: one managing
+ * stream elements (core view), and one managing prefetching requests
+ * (memory view). However, it should be sufficient to just impose a
+ * soft upper-bound to the throttler for the buffer size.
  ********************************************************************/
 
-void StreamThrottler::doThrottling(Stream *S, StreamElement *element) {
+void StreamThrottler::doThrottling(StreamElement *element) {
+  auto S = element->stream;
+  auto dynS = element->dynS;
   auto stepRootStream = S->stepRootStream;
   assert(stepRootStream != nullptr &&
          "Do not make sense to throttle for a constant stream.");
@@ -144,6 +158,7 @@ void StreamThrottler::doThrottling(Stream *S, StreamElement *element) {
   // * AssignedEntries.
   auto currentAliveStreams = 0;
   auto assignedEntries = 0;
+  auto assignedBytes = 0;
   for (const auto &IdStream : this->se->streamMap) {
     auto S = IdStream.second;
     if (!S->configured) {
@@ -151,9 +166,12 @@ void StreamThrottler::doThrottling(Stream *S, StreamElement *element) {
     }
     currentAliveStreams++;
     assignedEntries += S->maxSize;
+    assignedBytes +=
+        S->maxSize * S->getLastDynamicStream().getBytesPerMemElement();
   }
   // * UnAssignedEntries.
-  int unAssignedEntries = this->se->totalRunAheadLength - assignedEntries;
+  int unassignedEntries = this->se->totalRunAheadLength - assignedEntries;
+  int unassignedBytes = this->se->totalRunAheadBytes - assignedBytes;
   // * BasicEntries.
   auto streamRegion = S->streamRegion;
   int totalAliveStreams = this->se->enableCoalesce
@@ -166,13 +184,18 @@ void StreamThrottler::doThrottling(Stream *S, StreamElement *element) {
       currentAliveStreams * this->se->defaultRunAheadLength;
   // * AvailableEntries.
   int availableEntries =
-      unAssignedEntries - (basicEntries - assignedBasicEntries);
+      unassignedEntries - (basicEntries - assignedBasicEntries);
   // * UpperBoundEntries.
   int upperBoundEntries =
       (this->se->totalRunAheadLength - basicEntries) / streamList.size() +
       this->se->defaultRunAheadLength;
-  const auto incrementStep = 2;
+  const auto incrementStep = 1;
   int totalIncrementEntries = incrementStep * streamList.size();
+  int totalIncrementBytes = 0;
+  for (auto S : streamList) {
+    totalIncrementBytes +=
+        incrementStep * S->getLastDynamicStream().getBytesPerMemElement();
+  }
 
   if (availableEntries < totalIncrementEntries) {
     return;
@@ -186,14 +209,23 @@ void StreamThrottler::doThrottling(Stream *S, StreamElement *element) {
   if (stepRootStream->maxSize + incrementStep > upperBoundEntries) {
     return;
   }
+  if (assignedBytes + totalIncrementBytes > this->se->totalRunAheadBytes) {
+    return;
+  }
 
   S_DPRINTF_(
       StreamThrottle, S,
-      "[Throttle] AssignedEntries %d UnAssignedEntries %d BasicEntries %d "
+      "[Throttle] +%d AssignedEntries %d AssignedBytes %d "
+      "UnassignedEntries %d "
+      "UnassignedBytes %d "
+      "BasicEntries %d "
       "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries %d "
-      "TotalIncrementEntries %d CurrentAliveStreams %d TotalAliveStreams %d.\n",
-      assignedEntries, unAssignedEntries, basicEntries, assignedBasicEntries,
-      availableEntries, upperBoundEntries, totalIncrementEntries,
+      "TotalIncrementEntries %d TotalIncrementBytes %d CurrentAliveStreams "
+      "%d "
+      "TotalAliveStreams %d.\n",
+      incrementStep, assignedEntries, assignedBytes, unassignedEntries,
+      unassignedBytes, basicEntries, assignedBasicEntries, availableEntries,
+      upperBoundEntries, totalIncrementEntries, totalIncrementBytes,
       currentAliveStreams, totalAliveStreams);
 
   auto oldMaxSize = S->maxSize;

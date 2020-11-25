@@ -434,6 +434,18 @@ void DynamicStream::cancelFloat() {
   S->statistic.numFloatCancelled++;
 }
 
+int32_t DynamicStream::getBytesPerMemElement() const {
+  auto memElementSize = this->stream->getMemElementSize();
+  if (auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+          this->addrGenCallback)) {
+    auto absInnerStride =
+        std::abs(linearAddrGen->getInnerStride(this->addrGenFormalParams));
+    return absInnerStride > memElementSize ? memElementSize : absInnerStride;
+  } else {
+    return memElementSize;
+  }
+}
+
 std::string DynamicStream::dumpString() const {
   std::stringstream ss;
   ss << "===== " << this->dynamicStreamId << " total " << this->totalTripCount

@@ -30,11 +30,13 @@ public:
   size_t numFaulted = 0;
   size_t numCycle = 0;
 
+  size_t numSample = 0;
   size_t numInflyRequest = 0;
-  size_t numInflyRequestSample = 0;
-  void sampleInflyRequest(int numInflyRequest) {
-    this->numInflyRequestSample++;
+  size_t maxSize = 0;
+  void sampleStats(int numInflyRequest, int maxSize) {
+    this->numSample++;
     this->numInflyRequest += numInflyRequest;
+    this->maxSize += maxSize;
   }
 
   // Float statistics.

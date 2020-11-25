@@ -19,11 +19,11 @@ public:
   StreamEngine *se;
   StreamThrottler(const std::string &_strategy, StreamEngine *_se);
 
-  void throttleStream(Stream *S, StreamElement *element);
+  void throttleStream(StreamElement *element);
   const std::string name() const;
 
 private:
-  void doThrottling(Stream *S, StreamElement *element);
+  void doThrottling(StreamElement *element);
 };
 
 #endif
