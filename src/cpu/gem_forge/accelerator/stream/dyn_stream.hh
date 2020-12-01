@@ -159,7 +159,8 @@ struct DynamicStream {
   /**
    * Update step cycle.
    */
-  void updateReleaseCycle(Cycles releaseCycle, bool late);
+  void updateStatsOnReleaseStepElement(Cycles releaseCycle, uint64_t vaddr,
+                                       bool late);
 
   /***********************************************************************
    * API to manage the elements of this stream.
@@ -184,6 +185,7 @@ struct DynamicStream {
   StreamElement *releaseElementUnstepped();
 
   uint64_t getNumReleasedElements() const { return this->numReleaseElement; }
+  uint64_t getStartVAddr() const { return this->startVAddr; }
   uint64_t getNumIssuedRequests() const { return this->numIssuedRequests; }
   void incrementNumIssuedRequests() { this->numIssuedRequests++; }
 
@@ -199,9 +201,11 @@ struct DynamicStream {
 private:
   /**
    * Some statistics for this stream.
+   * Notice that here numReleaseElements is measured in SteppedElements.
    */
   uint64_t numReleaseElement = 0;
   uint64_t numIssuedRequests = 0;
+  uint64_t startVAddr = 0;
 
   /**
    * Used to compute flow control signal.

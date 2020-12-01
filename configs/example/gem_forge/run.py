@@ -97,10 +97,10 @@ parser.add_option("--gem-forge-ideal-prefetcher", action="store_true",
 parser.add_option("--gem-forge-stream-engine-enable", action="store_true", default=False,
                   help="""Enable stream engine.""")
 parser.add_option("--gem-forge-stream-engine-default-run-ahead-length", action="store", type="int",
-                  help="""How many elements can a stream run ahead""", default="10")
+                  help="""How many elements can a stream run ahead""", default="4")
 parser.add_option("--gem-forge-stream-engine-total-run-ahead-length",
                   action="store", type="int",
-                  help="""How many elements can the stream engine run ahead""", default="10")
+                  help="""How many elements can the stream engine run ahead""", default="128")
 parser.add_option("--gem-forge-stream-engine-total-run-ahead-bytes",
                   action="store", type="int",
                   help="""How many bytes can the stream engine run ahead""", default="512")

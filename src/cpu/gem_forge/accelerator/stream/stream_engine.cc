@@ -655,14 +655,16 @@ bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
     if (!dynS.configExecuted) {
       // So far we will not try to allocate element until the configuration is
       // executed.
-      S_DPRINTF(S, "No unstepped element as config not executed.\n");
+      DYN_S_DPRINTF(dynS.dynamicStreamId,
+                    "No unstepped element as config not executed.\n");
       return false;
     }
     auto element = dynS.getFirstUnsteppedElement();
     if (!element) {
       // We don't have element for this used stream.
-      S_DPRINTF(
-          S, "No unstepped element alloc %d stepped %d total %d next %s.\n",
+      DYN_S_DPRINTF(
+          dynS.dynamicStreamId,
+          "No unstepped element alloc %d stepped %d total %d next %s.\n",
           dynS.allocSize, dynS.stepSize, dynS.totalTripCount, dynS.FIFOIdx);
       return false;
     }

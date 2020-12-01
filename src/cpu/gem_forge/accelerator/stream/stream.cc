@@ -373,6 +373,7 @@ void Stream::recordAggregateHistory(const DynamicStream &dynS) {
   history.numReleasedElements = dynS.getNumReleasedElements();
   history.numIssuedRequests = dynS.getNumIssuedRequests();
   history.numPrivateCacheHits = dynS.getTotalHitPrivateCache();
+  history.startVAddr = dynS.getStartVAddr();
 }
 
 DynamicStream &Stream::getDynamicStreamByInstance(InstanceId instance) {
@@ -848,7 +849,8 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
       }
     }
   }
-  dynS.updateReleaseCycle(this->getCPUDelegator()->curCycle(), late);
+  dynS.updateStatsOnReleaseStepElement(this->getCPUDelegator()->curCycle(),
+                                       releaseElement->addr, late);
 
   // Update the aliased statistic.
   if (releaseElement->isAddrAliased) {

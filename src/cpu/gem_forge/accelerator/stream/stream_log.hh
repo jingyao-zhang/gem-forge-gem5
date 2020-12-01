@@ -35,7 +35,7 @@
   panic(S_ELEMENT_MSG(E, format, ##args))
 
 #define DYN_S_MSG(dynamicStreamId, format, args...)                            \
-  "%s" format, (dynamicStreamId), ##args
+  "%s: " format, (dynamicStreamId), ##args
 #define DYN_S_DPRINTF(dynamicStreamId, format, args...)                        \
   DPRINTF(DEBUG_TYPE, DYN_S_MSG((dynamicStreamId), format, ##args))
 

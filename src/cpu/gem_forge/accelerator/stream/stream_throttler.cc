@@ -2,11 +2,6 @@
 
 #include "debug/StreamThrottle.hh"
 
-#define ST_DPRINTF_(X, format, args...)                                        \
-  DPRINTF(X, "[SE%d]-Throttle: " format, this->se->cpuDelegator->cpuId(),      \
-          ##args)
-#define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamThrottle, format, ##args)
-
 #define DEBUG_TYPE StreamThrottle
 #include "stream_log.hh"
 
@@ -52,8 +47,7 @@ void StreamThrottler::throttleStream(StreamElement *element) {
   }
   // This is a late fetch, increase the counter.
   S->lateFetchCount++;
-  S_ELEMENT_DPRINTF_(StreamThrottle, element, "[Throttle] LateCount %d.\n",
-                     S->lateFetchCount);
+  S_ELEMENT_DPRINTF(element, "[Throttle] LateCount %d.\n", S->lateFetchCount);
   if (S->lateFetchCount == 10) {
     // We have reached the threshold to allow the stream to run further
     // ahead.
@@ -143,11 +137,12 @@ void StreamThrottler::throttleStream(StreamElement *element) {
  * stream elements (core view), and one managing prefetching requests
  * (memory view). However, it should be sufficient to just impose a
  * soft upper-bound to the throttler for the buffer size.
+ *
+ * NOTE: The memory view (bytes) only applies to load streams.
  ********************************************************************/
 
 void StreamThrottler::doThrottling(StreamElement *element) {
   auto S = element->stream;
-  auto dynS = element->dynS;
   auto stepRootStream = S->stepRootStream;
   assert(stepRootStream != nullptr &&
          "Do not make sense to throttle for a constant stream.");
@@ -166,8 +161,10 @@ void StreamThrottler::doThrottling(StreamElement *element) {
     }
     currentAliveStreams++;
     assignedEntries += S->maxSize;
-    assignedBytes +=
-        S->maxSize * S->getLastDynamicStream().getBytesPerMemElement();
+    if (S->isLoadStream()) {
+      assignedBytes +=
+          S->maxSize * S->getLastDynamicStream().getBytesPerMemElement();
+    }
   }
   // * UnAssignedEntries.
   int unassignedEntries = this->se->totalRunAheadLength - assignedEntries;
@@ -193,40 +190,44 @@ void StreamThrottler::doThrottling(StreamElement *element) {
   int totalIncrementEntries = incrementStep * streamList.size();
   int totalIncrementBytes = 0;
   for (auto S : streamList) {
-    totalIncrementBytes +=
-        incrementStep * S->getLastDynamicStream().getBytesPerMemElement();
+    if (S->isLoadStream()) {
+      totalIncrementBytes +=
+          incrementStep * S->getLastDynamicStream().getBytesPerMemElement();
+    }
   }
 
-  if (availableEntries < totalIncrementEntries) {
-    return;
-  }
-  if (totalAliveStreams * this->se->defaultRunAheadLength +
-          streamList.size() * (stepRootStream->maxSize + incrementStep -
-                               this->se->defaultRunAheadLength) >=
-      this->se->totalRunAheadLength) {
-    return;
-  }
-  if (stepRootStream->maxSize + incrementStep > upperBoundEntries) {
-    return;
-  }
-  if (assignedBytes + totalIncrementBytes > this->se->totalRunAheadBytes) {
-    return;
-  }
-
-  S_DPRINTF_(
-      StreamThrottle, S,
+  S_ELEMENT_DPRINTF(
+      element,
       "[Throttle] +%d AssignedEntries %d AssignedBytes %d "
       "UnassignedEntries %d "
       "UnassignedBytes %d "
       "BasicEntries %d "
       "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries %d "
-      "TotalIncrementEntries %d TotalIncrementBytes %d CurrentAliveStreams "
-      "%d "
+      "TotalIncrementEntries %d TotalIncrementBytes %d "
+      "CurrentAliveStreams %d "
       "TotalAliveStreams %d.\n",
       incrementStep, assignedEntries, assignedBytes, unassignedEntries,
       unassignedBytes, basicEntries, assignedBasicEntries, availableEntries,
       upperBoundEntries, totalIncrementEntries, totalIncrementBytes,
       currentAliveStreams, totalAliveStreams);
+
+  if (availableEntries < totalIncrementEntries) {
+    S_ELEMENT_DPRINTF(element, "Not Throttle: Not enough available entries.\n");
+    return;
+  } else if (totalAliveStreams * this->se->defaultRunAheadLength +
+                 streamList.size() * (stepRootStream->maxSize + incrementStep -
+                                      this->se->defaultRunAheadLength) >=
+             this->se->totalRunAheadLength) {
+    S_ELEMENT_DPRINTF(element, "Not Throttle: Reserve for other streams.\n");
+    return;
+  } else if (stepRootStream->maxSize + incrementStep > upperBoundEntries) {
+    S_ELEMENT_DPRINTF(element, "Not Throttle: Upperbound overflow.\n");
+    return;
+  } else if (assignedBytes + totalIncrementBytes >
+             this->se->totalRunAheadBytes) {
+    S_ELEMENT_DPRINTF(element, "Not Throttle: Total bytes overflow.\n");
+    return;
+  }
 
   auto oldMaxSize = S->maxSize;
   for (auto stepS : streamList) {

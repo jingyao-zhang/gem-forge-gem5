@@ -209,13 +209,27 @@ bool StreamFloatPolicy::checkAggregateHistory(Stream *S, DynamicStream &dynS) {
     return true;
   }
   int historyOffset = -1;
+  uint64_t historyTotalElements = 0;
+  uint64_t historyStartVAddrMin = UINT64_MAX;
+  uint64_t historyStartVAddrMax = 0;
+  auto currStartAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
+  logStream(S) << "StartVAddr " << std::hex << currStartAddr << std::dec << '\n'
+               << std::flush;
   for (auto historyIter = S->aggregateHistory.rbegin(),
             historyEnd = S->aggregateHistory.rend();
        historyIter != historyEnd; ++historyIter, --historyOffset) {
     const auto &prevHistory = *historyIter;
-    auto currStartAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
-    auto prevStartAddr =
-        linearAddrGen->getStartAddr(prevHistory.addrGenFormalParams);
+    auto prevStartAddr = prevHistory.startVAddr;
+    auto prevNumElements = prevHistory.numReleasedElements;
+
+    historyTotalElements += prevNumElements;
+    historyStartVAddrMax = std::max(historyStartVAddrMax, prevStartAddr);
+    historyStartVAddrMin = std::min(historyStartVAddrMin, prevStartAddr);
+    logStream(S) << "Hist " << historyOffset << " StartAddr " << std::hex
+                 << prevStartAddr << " Range " << historyStartVAddrMin << ", +"
+                 << historyStartVAddrMax - historyStartVAddrMin << std::dec
+                 << " NumElem " << prevNumElements << '\n'
+                 << std::flush;
 
     // Check if previous stream has more than 50% chance of hit in private
     // cache?
@@ -235,12 +249,6 @@ bool StreamFloatPolicy::checkAggregateHistory(Stream *S, DynamicStream &dynS) {
 
     if (currStartAddr != prevStartAddr) {
       // Not match.
-      S_DPRINTF(S, "Hist %d StartAddr %#x != PrevStartAddr %#x.\n",
-                historyOffset, currStartAddr, prevStartAddr);
-      logStream(S) << "Hist " << historyOffset << " StartAddr " << std::hex
-                   << currStartAddr << " != PrevStartAddr " << prevStartAddr
-                   << '\n'
-                   << std::dec << std::flush;
       continue;
     }
     // Make sure that the stream is short.
@@ -268,6 +276,26 @@ bool StreamFloatPolicy::checkAggregateHistory(Stream *S, DynamicStream &dynS) {
                  << std::flush;
     return false;
   }
+
+  /**
+   * If the streams are very short (<5), and all start addresses are from
+   * a narrow range (currently half of the private L2 size), then we
+   * do not float it.
+   */
+  const uint64_t NUM_ELEMENTS_THRESHOLD = 5;
+  const uint64_t START_ADDR_RANGE_MULTIPLIER = 2;
+  if (historyTotalElements <
+      NUM_ELEMENTS_THRESHOLD * S->aggregateHistory.size()) {
+    auto historyStartVAddrRange = historyStartVAddrMax - historyStartVAddrMin;
+    if (historyStartVAddrRange * START_ADDR_RANGE_MULTIPLIER <=
+        this->privateCacheCapacity.back()) {
+      logStream(S) << "[Not Float] Hist TotalElements " << historyTotalElements
+                   << " StartVAddr Range " << historyStartVAddrRange << ".\n"
+                   << std::flush;
+      return false;
+    }
+  }
+
   return true;
 }
 

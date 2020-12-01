@@ -333,8 +333,12 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
   return releaseElement;
 }
 
-void DynamicStream::updateReleaseCycle(Cycles releaseCycle, bool late) {
+void DynamicStream::updateStatsOnReleaseStepElement(Cycles releaseCycle,
+                                                    uint64_t vaddr, bool late) {
   this->numReleaseElement++;
+  if (this->numReleaseElement == 1) {
+    this->startVAddr = vaddr;
+  }
   if (late) {
     this->lateElementCount++;
   }
