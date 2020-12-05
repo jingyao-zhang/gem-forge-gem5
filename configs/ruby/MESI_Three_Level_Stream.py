@@ -45,9 +45,12 @@ class L1Cache(RubyCache): pass
 class L2Cache(RubyCache): pass
 
 def define_options(parser):
-    parser.add_option("--num-clusters", type = "int", default = 1,
-            help = "number of clusters in a design in which there are shared\
+    parser.add_option("--num-clusters", type="int", default=1,
+            help="number of clusters in a design in which there are shared\
             caches private to clusters")
+    parser.add_option("--l0-transitions-per-cycle", type="int", default=32)
+    parser.add_option("--l1-transitions-per-cycle", type="int", default=32)
+    parser.add_option("--l2-transitions-per-cycle", type="int", default=4)
     return
 
 def create_system(options, full_system, system, dma_ports, bootmem,
@@ -101,22 +104,22 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             # First create the Ruby objects associated with this cpu
             #
             l0i_cache = L0Cache(size=options.l1i_size, assoc=options.l1i_assoc,
-                is_icache = True,
-                start_index_bit = block_size_bits,
-                replacement_policy = BRRIPRP())
+                is_icache=True,
+                start_index_bit=block_size_bits,
+                replacement_policy=BRRIPRP())
 
-            l0d_cache = L0Cache(size=options.l1d_size, assoc=options.l1d_assoc, is_icache = False,
-                start_index_bit = block_size_bits,
-                replacement_policy = BRRIPRP(),
-                dataAccessLatency = options.l1d_lat)
+            l0d_cache = L0Cache(size=options.l1d_size, assoc=options.l1d_assoc, is_icache=False,
+                start_index_bit=block_size_bits,
+                replacement_policy=BRRIPRP(),
+                dataAccessLatency=options.l1d_lat)
 
             prefetcher = RubyPrefetcher(
                 num_streams=16,
-                unit_filter = 256,
-                nonunit_filter = 256,
-                train_misses = 5,
-                num_startup_pfs = options.gem_forge_prefetch_dist,
-                cross_page = True
+                unit_filter=256,
+                nonunit_filter=256,
+                train_misses=5,
+                num_startup_pfs=options.gem_forge_prefetch_dist,
+                cross_page=True
             )
 
             bingo_prefetcher = RubyBingoPrefetcher(
@@ -136,42 +139,41 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 clk_domain = system.cpu[i].clk_domain
 
             l0_cntrl = L0Cache_Controller(
-                version = i * num_cpus_per_cluster + j, Icache = l0i_cache,
-                Dcache = l0d_cache,
+                version=i * num_cpus_per_cluster + j, Icache=l0i_cache,
+                Dcache=l0d_cache,
                 prefetcher=prefetcher,
                 bingoPrefetcher=bingo_prefetcher,
-                send_evictions = send_evicts(options),
-                clk_domain = clk_domain, ruby_system = ruby_system,
-                transitions_per_cycle = 8,
-                number_of_TBEs = 32,
-                # ! Sean: l0_cntrl is actually L1 cache.
-                # ! And request_latency is the enqueue latency for request from L1 -> L2.
-                # ! So we charge L2 tag lookup latency here.
-                request_latency = options.l2_lat,
-                llc_select_num_bits = l2_bits,
-                llc_select_low_bit = l2_select_low_bit,
-                num_cores_per_row = num_cores_per_row,
+                send_evictions=send_evicts(options),
+                clk_domain=clk_domain,
+                ruby_system=ruby_system,
+                transitions_per_cycle=options.l0_transitions_per_cycle,
+                number_of_TBEs=32,
+                request_latency=options.l1d_lat,
+                response_latency=options.l1d_lat,
+                llc_select_num_bits=l2_bits,
+                llc_select_low_bit=l2_select_low_bit,
+                num_cores_per_row=num_cores_per_row,
                 enable_prefetch=(options.gem_forge_prefetcher == 'stride'),
-                enable_stream_float = options.gem_forge_stream_engine_enable_float,
-                enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
-                enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack,
-                enable_stream_idea_flow = options.gem_forge_stream_engine_enable_float_idea_flow,
-                enable_stream_multicast = \
+                enable_stream_float=options.gem_forge_stream_engine_enable_float,
+                enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
+                enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
-                stream_multicast_group_size = \
+                stream_multicast_group_size=\
                     options.gem_forge_stream_engine_llc_multicast_group_size,
-                stream_multicast_issue_policy = \
+                stream_multicast_issue_policy=\
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
-                mlc_stream_buffer_init_num_entries = \
+                mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
                 )
 
-            cpu_seq = RubySequencer(version = i * num_cpus_per_cluster + j,
-                                    icache = l0i_cache,
-                                    clk_domain = clk_domain,
-                                    dcache = l0d_cache,
-                                    ruby_system = ruby_system,
-                                    is_ideal = options.gem_forge_ideal_ruby)
+            cpu_seq = RubySequencer(version=i * num_cpus_per_cluster + j,
+                                    icache=l0i_cache,
+                                    clk_domain=clk_domain,
+                                    dcache=l0d_cache,
+                                    ruby_system=ruby_system,
+                                    is_ideal=options.gem_forge_ideal_ruby)
             if options.gem_forge_prefetcher == 'imp':
                 if not options.gem_forge_prefetch_on_access:
                     raise ValueError('IMP must be used with PrefetchOnAccess.')
@@ -193,51 +195,50 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
             l0_cntrl.sequencer = cpu_seq
 
-            l1_cache = L1Cache(size = options.l1_5d_size,
-                               assoc = options.l1_5d_assoc,
-                               start_index_bit = block_size_bits,
-                               is_icache = False)
+            l1_cache = L1Cache(size=options.l1_5d_size,
+                               assoc=options.l1_5d_assoc,
+                               start_index_bit=block_size_bits,
+                               is_icache=False)
 
             l1_prefetcher = RubyPrefetcher(
                 num_streams=16,
-                unit_filter = 256,
-                nonunit_filter = 256,
-                train_misses = 5,
+                unit_filter=256,
+                nonunit_filter=256,
+                train_misses=5,
                 num_startup_pfs=options.gem_forge_l2_prefetch_dist,
-                cross_page = True,
+                cross_page=True,
                 bulk_prefetch_size=options.gem_forge_l2_bulk_prefetch_size,
             )
 
             l1_cntrl = L1Cache_Controller(
-                version = i * num_cpus_per_cluster + j,
-                cache = l1_cache,
-                prefetcher = l1_prefetcher,
-                enable_prefetch = (options.gem_forge_l2_prefetcher == 'stride'),
-                transitions_per_cycle = 16,
-                number_of_TBEs = 64,
-                # ! Sean: l1_cntrl is actually L2 cache.
-                # ! And l1_request_latency is the enqueue latency for request from L2 -> L3.
-                # ! So we charge L3 tag lookup latency here.
-                l1_request_latency = options.l3_lat,
-                l2_select_num_bits = l2_bits,
-                l2_select_low_bit = l2_select_low_bit,
-                num_cores_per_row = num_cores_per_row,
-                cluster_id = i, ruby_system = ruby_system,
-                # ! Sean: Stream-Aware Cache
+                version=i * num_cpus_per_cluster + j,
+                cache=l1_cache,
+                prefetcher=l1_prefetcher,
+                enable_prefetch=(options.gem_forge_l2_prefetcher == 'stride'),
+                transitions_per_cycle=options.l1_transitions_per_cycle,
+                number_of_TBEs=64,
+                l1_request_latency=options.l3_lat,
+                l1_response_latency=options.l2_lat,
+                # This is only used to send Unblock messages, so I kept it 1 cycle.
+                to_l2_latency=1,
+                l2_select_num_bits=l2_bits,
+                l2_select_low_bit=l2_select_low_bit,
+                num_cores_per_row=num_cores_per_row,
+                cluster_id=i, ruby_system=ruby_system,
                 # For the AbstractStreamAwareController
-                llc_select_num_bits = l2_bits,
-                llc_select_low_bit = l2_select_low_bit,
-                enable_stream_float = options.gem_forge_stream_engine_enable_float,
-                enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline,
-                enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack,
-                enable_stream_idea_flow = options.gem_forge_stream_engine_enable_float_idea_flow,
-                enable_stream_multicast = \
+                llc_select_num_bits=l2_bits,
+                llc_select_low_bit=l2_select_low_bit,
+                enable_stream_float=options.gem_forge_stream_engine_enable_float,
+                enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
+                enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
-                stream_multicast_group_size = \
+                stream_multicast_group_size=\
                     options.gem_forge_stream_engine_llc_multicast_group_size,
-                stream_multicast_issue_policy = \
+                stream_multicast_issue_policy=\
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
-                mlc_stream_buffer_init_num_entries = \
+                mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
                 )
 
@@ -254,11 +255,11 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             l1_cntrl_nodes.append(l1_cntrl)
 
             # Connect the L0 and L1 controllers
-            l0_cntrl.mandatoryQueue = MessageBuffer()
+            l0_cntrl.mandatoryQueue=MessageBuffer()
             l0_cntrl.prefetchQueue = MessageBuffer()
             l0_cntrl.bufferToL1 = MessageBuffer(ordered = False)
             l1_cntrl.bufferFromL0 = l0_cntrl.bufferToL1
-            l0_cntrl.bufferFromL1 = MessageBuffer(ordered = False)
+            l0_cntrl.bufferFromL1 = MessageBuffer(ordered=False)
             l1_cntrl.bufferToL0 = l0_cntrl.bufferFromL1
 
             # Connect the L1 controllers and the network
@@ -285,8 +286,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
             Since the index bits are broken down into two pieces, we need
             to inform the cache to skip the bank select bit.
             """
-            l2_cache = L2Cache(size = options.l2_size,
-                               assoc = options.l2_assoc,
+            l2_cache = L2Cache(size=options.l2_size,
+                               assoc=options.l2_assoc,
                                start_index_bit=block_size_bits,
                                skip_index_start_bit=l2_select_low_bit,
                                skip_index_num_bits=l2_bits,
@@ -294,18 +295,18 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                )
 
             l2_cntrl = L2Cache_Controller(
-                version = i * num_l2caches_per_cluster + j,
-                L2cache = l2_cache, cluster_id = i,
-                transitions_per_cycle = options.ports,
-                ruby_system = ruby_system,
-                # transitions_per_cycle = 32,
-                number_of_TBEs = 128,
-                # ! Sean: StreamAwareCache.
-                # ! For the LLCSelect bits.
-                # ! So far do block interleaving.
+                version=i * num_l2caches_per_cluster + j,
+                L2cache=l2_cache,
+                cluster_id=i,
+                transitions_per_cycle=options.l2_transitions_per_cycle,
+                ruby_system=ruby_system,
+                number_of_TBEs=128,
+                l2_request_latency=options.l3_lat,
+                l2_response_latency=options.l3_lat,
+                to_l1_latency=options.l3_lat,
                 llc_select_low_bit=l2_select_low_bit,
                 llc_select_num_bits=l2_bits,
-                num_cores_per_row = num_cores_per_row,
+                num_cores_per_row=num_cores_per_row,
                 enable_stream_float=options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
@@ -366,7 +367,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     # the ruby system
     # clk_divider value is a fix to pass regression.
     ruby_system.memctrl_clk_domain = DerivedClockDomain(
-            clk_domain = ruby_system.clk_domain, clk_divider = 3)
+            clk_domain = ruby_system.clk_domain, clk_divider=3)
 
     mem_dir_cntrl_nodes, rom_dir_cntrl_node = create_directories(
         options, bootmem, ruby_system, system)
@@ -388,12 +389,12 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         #
         # Create the Ruby objects associated with the dma controller
         #
-        dma_seq = DMASequencer(version = i, ruby_system = ruby_system)
+        dma_seq = DMASequencer(version=i, ruby_system=ruby_system)
 
-        dma_cntrl = DMA_Controller(version = i,
-                                   dma_sequencer = dma_seq,
-                                   transitions_per_cycle = options.ports,
-                                   ruby_system = ruby_system)
+        dma_cntrl = DMA_Controller(version=i,
+                                   dma_sequencer=dma_seq,
+                                   transitions_per_cycle=options.ports,
+                                   ruby_system=ruby_system)
 
         exec("ruby_system.dma_cntrl%d = dma_cntrl" % i)
         exec("ruby_system.dma_cntrl%d.dma_sequencer.slave = dma_port" % i)
@@ -401,7 +402,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
         # Connect the dma controller to the network
         dma_cntrl.mandatoryQueue = MessageBuffer()
-        dma_cntrl.responseFromDir = MessageBuffer(ordered = True)
+        dma_cntrl.responseFromDir = MessageBuffer(ordered=True)
         dma_cntrl.responseFromDir.slave = ruby_system.network.master
         dma_cntrl.requestToDir = MessageBuffer()
         dma_cntrl.requestToDir.master = ruby_system.network.slave
@@ -416,14 +417,14 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     if full_system:
         io_seq = DMASequencer(version=len(dma_ports), ruby_system=ruby_system)
         ruby_system._io_port = io_seq
-        io_controller = DMA_Controller(version = len(dma_ports),
-                                       dma_sequencer = io_seq,
-                                       ruby_system = ruby_system)
+        io_controller = DMA_Controller(version=len(dma_ports),
+                                       dma_sequencer=io_seq,
+                                       ruby_system=ruby_system)
         ruby_system.io_controller = io_controller
 
         # Connect the dma controller to the network
         io_controller.mandatoryQueue = MessageBuffer()
-        io_controller.responseFromDir = MessageBuffer(ordered = True)
+        io_controller.responseFromDir = MessageBuffer(ordered=True)
         io_controller.responseFromDir.slave = ruby_system.network.master
         io_controller.requestToDir = MessageBuffer()
         io_controller.requestToDir.master = ruby_system.network.slave
@@ -433,38 +434,38 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     else:
         for i in xrange(options.num_clusters):
             for j in xrange(num_cpus_per_cluster):
-                FileSystemConfig.register_cpu(physical_package_id = 0,
-                                              core_siblings = xrange(options.num_cpus),
-                                              core_id = i*num_cpus_per_cluster+j,
-                                              thread_siblings = [])
+                FileSystemConfig.register_cpu(physical_package_id=0,
+                                              core_siblings=xrange(options.num_cpus),
+                                              core_id=i*num_cpus_per_cluster+j,
+                                              thread_siblings=[])
 
-                FileSystemConfig.register_cache(level = 0,
-                                                idu_type = 'Instruction',
-                                                size = '4096B',
-                                                line_size = options.cacheline_size,
-                                                assoc = 1,
-                                                cpus = [i*num_cpus_per_cluster+j])
-                FileSystemConfig.register_cache(level = 0,
-                                                idu_type = 'Data',
-                                                size = '4096B',
-                                                line_size = options.cacheline_size,
-                                                assoc = 1,
-                                                cpus = [i*num_cpus_per_cluster+j])
+                FileSystemConfig.register_cache(level=0,
+                                                idu_type='Instruction',
+                                                size='4096B',
+                                                line_size=options.cacheline_size,
+                                                assoc=1,
+                                                cpus=[i*num_cpus_per_cluster+j])
+                FileSystemConfig.register_cache(level=0,
+                                                idu_type='Data',
+                                                size='4096B',
+                                                line_size=options.cacheline_size,
+                                                assoc=1,
+                                                cpus=[i*num_cpus_per_cluster+j])
 
-                FileSystemConfig.register_cache(level = 1,
-                                                idu_type = 'Unified',
-                                                size = options.l1d_size,
-                                                line_size = options.cacheline_size,
-                                                assoc = options.l1d_assoc,
-                                                cpus = [i*num_cpus_per_cluster+j])
+                FileSystemConfig.register_cache(level=1,
+                                                idu_type='Unified',
+                                                size=options.l1d_size,
+                                                line_size=options.cacheline_size,
+                                                assoc=options.l1d_assoc,
+                                                cpus=[i*num_cpus_per_cluster+j])
 
-            FileSystemConfig.register_cache(level = 2,
-                                            idu_type = 'Unified',
-                                            size = str(MemorySize(options.l2_size) * \
+            FileSystemConfig.register_cache(level=2,
+                                            idu_type='Unified',
+                                            size=str(MemorySize(options.l2_size) * \
                                                    num_l2caches_per_cluster)+'B',
-                                            line_size = options.cacheline_size,
-                                            assoc = options.l2_assoc,
-                                            cpus = [n for n in xrange(i*num_cpus_per_cluster, \
+                                            line_size=options.cacheline_size,
+                                            assoc=options.l2_assoc,
+                                            cpus=[n for n in xrange(i*num_cpus_per_cluster, \
                                                                      (i+1)*num_cpus_per_cluster)])
 
     # ! Sean: StreamAwareCache

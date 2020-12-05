@@ -1025,7 +1025,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   }
 
   /**
-   * ! Sean: StreamAwareCache
+   * StreamAwareCache.
    */
   action(fsc_forwardStreamConfig, "fsc", desc="Forward the StreamConfig") {
     peek(mandatoryQueue_in, RubyRequest) {
