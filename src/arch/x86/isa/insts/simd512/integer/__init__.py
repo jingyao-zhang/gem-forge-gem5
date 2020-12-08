@@ -7,5 +7,5 @@ microcode = '''
 # AVX512 instructions
 '''
 for category in categories:
-    exec "import %s as cat" % category
+    exec("from . import {s} as cat".format(s=category))
     microcode += cat.microcode
