@@ -123,9 +123,8 @@ let {{
 
             return cls
 
-
+    six.add_metaclass(AVXOpMeta)
     class AVXOp(X86Microop):
-        __metaclass__ = AVXOpMeta
         # This class itself doesn't act as a microop
         abstract = True
 
