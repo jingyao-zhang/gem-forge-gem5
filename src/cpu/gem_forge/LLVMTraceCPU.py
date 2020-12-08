@@ -1,12 +1,12 @@
 from m5.params import *
 from m5.proxy import *
 
-from BaseCPU import BaseCPU
-from FuncUnit import *
-from FuncUnitConfig import *
-from FUPool import FUPool
-from BranchPredictor import *
-from Process import EmulatedDriver
+from m5.objects.BaseCPU import BaseCPU
+from m5.objects.FuncUnit import *
+from m5.objects.FuncUnitConfig import *
+from m5.objects.FUPool import FUPool
+from m5.objects.BranchPredictor import *
+from m5.objects.Process import EmulatedDriver
 
 
 class LLVMAccel(FUDesc):
