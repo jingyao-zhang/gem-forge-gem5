@@ -51,6 +51,9 @@ def template AVXOpConstructor {{
 }};
 
 let {{
+
+    import six
+
     # Make these empty strings so that concatenating onto
     # them will always work.
     header_output = ""
@@ -123,7 +126,7 @@ let {{
 
             return cls
 
-    six.add_metaclass(AVXOpMeta)
+    @six.add_metaclass(AVXOpMeta)
     class AVXOp(X86Microop):
         # This class itself doesn't act as a microop
         abstract = True
