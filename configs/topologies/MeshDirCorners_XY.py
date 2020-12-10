@@ -229,6 +229,6 @@ class MeshDirCorners_XY(SimpleTopology):
         for n in self.numa_nodes:
             if n:
                 FileSystemConfig.register_node(n,
-                    MemorySize(options.mem_size) / self.num_numa_nodes, i)
+                    MemorySize(options.mem_size) // self.num_numa_nodes, i)
             i += 1
 

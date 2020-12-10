@@ -81,10 +81,10 @@ def createCPUNonStandalone(options, CPUClass, multiprocesses, numThreads):
 
     # In this case FutureClass will be None as there is not fast forwarding or
     # switching
-    cpus = [CPUClass(cpu_id=i) for i in xrange(options.num_cpus)]
+    cpus = [CPUClass(cpu_id=i) for i in range(options.num_cpus)]
 
     # Set the workload for normal CPUs.
-    for i in xrange(options.num_cpus):
+    for i in range(options.num_cpus):
         cpu = cpus[i]
         if options.smt:
             cpu.workload = multiprocesses

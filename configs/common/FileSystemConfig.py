@@ -48,6 +48,7 @@ from pwd import getpwuid
 from os.path import join as joinpath
 from os.path import isdir
 from shutil import rmtree, copyfile
+from functools import reduce
 
 def hex_mask(terms):
     dec_mask = reduce(operator.or_, [2**i for i in terms], 0)
