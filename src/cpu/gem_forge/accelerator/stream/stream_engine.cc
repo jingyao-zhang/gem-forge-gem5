@@ -391,33 +391,25 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
   this->numInflyStreamConfigurations--;
 }
 
-bool StreamEngine::canStreamStep(uint64_t stepStreamId) const {
-  // hmm simply check if we have UnsteppedElement.
-  return this->hasUnsteppedElement(stepStreamId);
-  // auto stepStream = this->getStream(stepStreamId);
-
-  // bool canStep = true;
-  // for (auto S : this->getStepStreamList(stepStream)) {
-  //   if (!S->canStep()) {
-  //     canStep = false;
-  //     break;
-  //   }
-  // }
-  // return canStep;
-}
-
-bool StreamEngine::hasUnsteppedElement(uint64_t stepStreamId) const {
+bool StreamEngine::canDispatchStreamStep(uint64_t stepStreamId) const {
+  // We check two things:
+  // 1. We have an unstepped element.
+  // 2. For reduction streams, we need two unstepped elements to ensure
+  //    that values are ready.
   auto stepStream = this->getStream(stepStreamId);
   for (auto S : this->getStepStreamList(stepStream)) {
-    if (!S->configured) {
-      // This must be wrong.
+    if (!S->hasUnsteppedElement()) {
       return false;
     }
-    auto &dynS = S->getLastDynamicStream();
-    auto element = dynS.getFirstUnsteppedElement();
-    if (!element) {
-      // We don't have element for this used stream.
-      return false;
+    if (S->isReduction()) {
+      auto &dynS = S->getLastDynamicStream();
+      auto element = dynS.getFirstUnsteppedElement();
+      assert(element && "We should have unstepped element.");
+      if (!element->next) {
+        S_ELEMENT_DPRINTF(element, "Cannot dispatch Step for ReductionStream: "
+                                   "Missing next UnsteppedElement.\n");
+        return false;
+      }
     }
   }
   return true;
@@ -428,8 +420,8 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
    * For all the streams get stepped, increase the stepped pointer.
    */
 
-  assert(this->canStreamStep(stepStreamId) &&
-         "canStreamStep assertion failed.");
+  assert(this->canDispatchStreamStep(stepStreamId) &&
+         "canDispatchStreamStep assertion failed.");
   this->numStepped++;
 
   auto stepStream = this->getStream(stepStreamId);
@@ -506,16 +498,21 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
     // ValueReady.
     if (S->isReduction() && !dynS.offloadedToCache) {
       auto stepNextElement = stepElement->next;
-      if (!stepNextElement && stepElement->FIFOIdx.entryIdx == 0) {
-        /**
-         * Due to the allocation algorithm, the only case that StepNextElement
-         * is not allocated is at the first element, where we are waiting for
-         * StreamConfig to be executed.
-         */
-        S_ELEMENT_DPRINTF(stepElement, "Failed to find StepNextElement.\n");
-        return false;
+      if (!stepNextElement) {
+        if (stepElement->FIFOIdx.entryIdx == 0) {
+          /**
+           * Due to the allocation algorithm, the only case that StepNextElement
+           * is not allocated is at the first element, where we are waiting for
+           * StreamConfig to be executed.
+           */
+          S_ELEMENT_DPRINTF(stepElement, "Failed to find StepNextElement.\n");
+          return false;
+        }
+        S_ELEMENT_PANIC(
+            stepElement,
+            "No StepNextElement for ReductionStream, TotalTripCount %llu.\n",
+            dynS.getTotalTripCount());
       }
-      assert(stepNextElement && "No StepNextElement for ReductionStream.");
       if (!stepNextElement->isValueReady) {
         return false;
       }
@@ -648,24 +645,7 @@ int StreamEngine::createStreamUserLQCallbacks(
 bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    if (!S->configured) {
-      continue;
-    }
-    auto &dynS = S->getLastDynamicStream();
-    if (!dynS.configExecuted) {
-      // So far we will not try to allocate element until the configuration is
-      // executed.
-      DYN_S_DPRINTF(dynS.dynamicStreamId,
-                    "No unstepped element as config not executed.\n");
-      return false;
-    }
-    auto element = dynS.getFirstUnsteppedElement();
-    if (!element) {
-      // We don't have element for this used stream.
-      DYN_S_DPRINTF(
-          dynS.dynamicStreamId,
-          "No unstepped element alloc %d stepped %d total %d next %s.\n",
-          dynS.allocSize, dynS.stepSize, dynS.totalTripCount, dynS.FIFOIdx);
+    if (!S->hasUnsteppedElement()) {
       return false;
     }
   }
@@ -678,19 +658,21 @@ bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
     if (!S->configured) {
       continue;
     }
+    if (S->isReduction()) {
+      // The only exception is for ReductionStream, whose LastElement is used to
+      // convey back the final value.
+      continue;
+    }
     auto &dynS = S->getLastDynamicStream();
-    assert(dynS.configExecuted && "StreamConfig should be executed before "
-                                  "dispatching any user instruction.");
+    if (!dynS.configExecuted) {
+      continue;
+    }
     auto element = dynS.getFirstUnsteppedElement();
     assert(element && "Has no unstepped element.");
     if (element->isLastElement()) {
       S_ELEMENT_DPRINTF(element, "Used LastElement total %d next %s.\n",
                         dynS.totalTripCount, dynS.FIFOIdx);
-      // The only exception is for ReductionStream, whose LastElement is used to
-      // convey back the final value.
-      if (!S->isReduction()) {
-        return true;
-      }
+      return true;
     }
   }
   return false;
@@ -921,9 +903,7 @@ bool StreamEngine::hasUnsteppedElement(const StreamEndArgs &args) {
     // Release in reverse order.
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
-    auto &dynS = S->getLastDynamicStream();
-    auto element = dynS.getFirstUnsteppedElement();
-    if (!element) {
+    if (!S->hasUnsteppedElement()) {
       // We don't have element for this used stream.
       return false;
     }
@@ -2050,6 +2030,12 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
       }
       S_ELEMENT_DPRINTF(baseElement, "BaseElement Ready %d.\n",
                         baseElement->isValueReady);
+      /**
+       * Stream usage is also considered as first check.
+       */
+      if (baseElement->firstCheckCycle == 0) {
+        baseElement->firstCheckCycle = this->cpuDelegator->curCycle();
+      }
       if (!baseElement->isValueReady) {
         ready = false;
         break;

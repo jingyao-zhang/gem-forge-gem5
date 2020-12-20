@@ -82,7 +82,7 @@ StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
 bool StreamStepInst::canDispatch(LLVMTraceCPU *cpu) const {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   auto stepStreamId = this->getTDG().stream_step().stream_id();
-  return SE->canStreamStep(stepStreamId);
+  return SE->canDispatchStreamStep(stepStreamId);
 }
 
 void StreamStepInst::dispatch(LLVMTraceCPU *cpu) {

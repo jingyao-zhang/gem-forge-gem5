@@ -41,8 +41,9 @@ void StreamThrottler::throttleStream(StreamElement *element) {
     // No valid cycle record, do nothing.
     return;
   }
-  if (element->valueReadyCycle < element->firstCheckCycle) {
+  if (element->valueReadyCycle < element->firstCheckCycle + Cycles(2)) {
     // The element is ready earlier than user, do nothing.
+    // We add 2 cycles buffer here.
     return;
   }
   // This is a late fetch, increase the counter.

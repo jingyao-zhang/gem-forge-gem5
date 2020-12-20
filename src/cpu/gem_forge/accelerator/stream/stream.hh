@@ -79,6 +79,7 @@ public:
   bool isMemStream() const;
   virtual uint32_t getLoopLevel() const = 0;
   virtual uint32_t getConfigLoopLevel() const = 0;
+  virtual bool isInnerMostLoop() const = 0;
   virtual int32_t getMemElementSize() const = 0;
   virtual int32_t getCoreElementSize() const = 0;
   virtual bool getFloatManual() const = 0;
@@ -279,9 +280,9 @@ public:
    */
   StreamElement *releaseElementUnstepped(DynamicStream &dynS);
   /**
-   * Check if the last dynamic stream can be stepped.
+   * Check if the last dynamic stream has an unstepped element.
    */
-  bool canStep() const { return this->allocSize - this->stepSize >= 2; }
+  bool hasUnsteppedElement();
   /**
    * Step one element of the last dynamic stream.
    */

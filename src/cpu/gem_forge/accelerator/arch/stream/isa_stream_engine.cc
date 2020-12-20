@@ -618,7 +618,7 @@ bool ISAStreamEngine::canDispatchStreamStep(
   } else {
     auto streamId = stepInstInfo.translatedStreamId;
     auto se = this->getStreamEngine();
-    bool canStep = se->canStreamStep(streamId);
+    bool canStep = se->canDispatchStreamStep(streamId);
     DYN_INST_DPRINTF(
         "[canDispatch] StreamStep RegionStream %lu CanDispatch %c.\n",
         regionStreamId, canStep ? 'Y' : 'N');
@@ -638,7 +638,7 @@ void ISAStreamEngine::dispatchStreamStep(
   auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
-  if (!se->hasUnsteppedElement(streamId)) {
+  if (!se->canDispatchStreamStep(streamId)) {
     // This must be wrong.
     auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
     DYN_INST_DPRINTF("[dispatch] MustMisspeculated StreamStep RegionStreamId "

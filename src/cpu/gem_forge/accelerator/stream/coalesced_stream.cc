@@ -99,8 +99,6 @@ void CoalescedStream::selectPrimeLogicalStream() {
 
   // Sanity check for consistency between logical streams.
   for (const auto &LS : this->coalescedStreams) {
-    assert(LS->info.loop_level() == this->getLoopLevel());
-    assert(LS->info.config_loop_level() == this->getConfigLoopLevel());
     const auto &LSStaticInfo = LS->info.static_info();
     const auto &PSStaticInfo = this->primeLStream->info.static_info();
 #define CHECK_INFO(field)                                                      \
@@ -114,6 +112,9 @@ void CoalescedStream::selectPrimeLogicalStream() {
   } while (false);
     CHECK_INFO(is_merged_predicated_stream);
     CHECK_INFO(no_core_user);
+    CHECK_INFO(loop_level);
+    CHECK_INFO(config_loop_level);
+    CHECK_INFO(is_inner_most_loop);
     CHECK_INFO(compute_info().value_base_streams_size);
     CHECK_INFO(compute_info().enabled_store_func);
 #undef CHECK_INFO
@@ -168,7 +169,7 @@ void CoalescedStream::initializeBaseStreams() {
 
     // Try to update the step root stream.
     for (auto &baseS : this->addrBaseStreams) {
-      if (baseS->getLoopLevel() != info.loop_level()) {
+      if (baseS->getLoopLevel() != info.static_info().loop_level()) {
         continue;
       }
       if (baseS->stepRootStream != nullptr) {
@@ -190,8 +191,16 @@ void CoalescedStream::initializeBaseStreams() {
 void CoalescedStream::initializeBackBaseStreams() {
   for (auto &logicalStream : this->coalescedStreams) {
     auto &info = logicalStream->info;
-    assert(info.chosen_back_base_streams_size() == 0 &&
-           "No back edge dependence for coalesced stream.");
+    for (const auto &backBaseStreamId : info.chosen_back_base_streams()) {
+      assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV &&
+             "Only phi node can have back edge dependence.");
+      if (this->coalescedStreams.size() != 1) {
+        S_PANIC(this,
+                "More than one logical stream has back edge dependence.\n");
+      }
+      auto backBaseStream = this->se->getStream(backBaseStreamId.id());
+      this->addBackBaseStream(backBaseStream);
+    }
   }
 }
 
@@ -232,12 +241,17 @@ uint32_t CoalescedStream::getLoopLevel() const {
    * * finalize() will make sure that all logical streams ahve the same loop
    * * level.
    */
-  return this->coalescedStreams.front()->info.loop_level();
+  return this->coalescedStreams.front()->info.static_info().loop_level();
 }
 
 uint32_t CoalescedStream::getConfigLoopLevel() const {
-  // See getLoopLevel().
-  return this->coalescedStreams.front()->info.config_loop_level();
+  return this->coalescedStreams.front()->info.static_info().config_loop_level();
+}
+
+bool CoalescedStream::isInnerMostLoop() const {
+  return this->coalescedStreams.front()
+      ->info.static_info()
+      .is_inner_most_loop();
 }
 
 bool CoalescedStream::getFloatManual() const {
@@ -282,9 +296,12 @@ const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {
 }
 
 bool CoalescedStream::isReduction() const {
-  assert(this->primeLStream->info.static_info().val_pattern() !=
-             ::LLVM::TDG::StreamValuePattern::REDUCTION &&
-         "CoalescedStream should never be reduction stream.");
+  if (this->primeLStream->info.static_info().val_pattern() ==
+      ::LLVM::TDG::StreamValuePattern::REDUCTION) {
+    assert(this->coalescedStreams.size() == 1 &&
+           "CoalescedStream should never be reduction stream.");
+    return true;
+  }
   return false;
 }
 

@@ -66,8 +66,7 @@ public:
   void commitStreamConfig(const StreamConfigArgs &args);
   void rewindStreamConfig(const StreamConfigArgs &args);
 
-  bool canStreamStep(uint64_t stepStreamId) const;
-  bool hasUnsteppedElement(uint64_t stepStreamId) const;
+  bool canDispatchStreamStep(uint64_t stepStreamId) const;
   void dispatchStreamStep(uint64_t stepStreamId);
   bool canCommitStreamStep(uint64_t stepStreamId);
   void commitStreamStep(uint64_t stepStreamId);

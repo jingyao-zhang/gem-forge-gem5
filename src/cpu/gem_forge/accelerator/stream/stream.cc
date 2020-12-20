@@ -898,6 +898,25 @@ StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {
   return element;
 }
 
+bool Stream::hasUnsteppedElement() {
+  if (!this->configured) {
+    // This must be wrong.
+    return false;
+  }
+  auto &dynS = this->getLastDynamicStream();
+  auto element = dynS.getFirstUnsteppedElement();
+  if (!element) {
+    // We don't have element for this used stream.
+    DYN_S_DPRINTF(dynS.dynamicStreamId,
+                  "NoUnsteppedElement config executed %d alloc %d stepped %d "
+                  "total %d next %s.\n",
+                  dynS.configExecuted, dynS.allocSize, dynS.stepSize,
+                  dynS.totalTripCount, dynS.FIFOIdx);
+    return false;
+  }
+  return true;
+}
+
 StreamElement *Stream::stepElement() {
   auto &dynS = this->getLastDynamicStream();
   auto element = dynS.stepped->next;

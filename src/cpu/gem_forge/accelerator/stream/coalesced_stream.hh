@@ -74,6 +74,7 @@ public:
   ::LLVM::TDG::StreamInfo_Type getStreamType() const override;
   uint32_t getLoopLevel() const override;
   uint32_t getConfigLoopLevel() const override;
+  bool isInnerMostLoop() const override;
   int32_t getMemElementSize() const override {
     assert(this->coalescedElementSize > 0 && "Invalid element size.");
     return this->coalescedElementSize;
