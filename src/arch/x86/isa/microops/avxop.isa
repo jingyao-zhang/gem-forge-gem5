@@ -220,6 +220,12 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::FloatAdd);
         '''
 
+    class Vandf(Varithp):
+        opClass = 'SimdAddOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntAnd);
+        '''
+
     class Vsubf(Varithp):
         opClass = 'SimdFloatAddOp'
         code = '''
@@ -250,10 +256,43 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::IntSub);
         '''
 
+    class Vandi(Varithp):
+        opClass = 'SimdAddOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntAnd);
+        '''
+
     class Vminsi(Varithp):
         opClass = 'SimdCmpOp'
         code = '''
             this->doPackedBinaryOp(xc, BinaryOp::SIntMin);
+        '''
+
+    class Vfused(AVXOp):
+        # Used in packed arithmetic ops with three operands, e.g. vfmaddps
+        abstract = True
+        def __init__(self, dest, src1, src2, size, VL):
+            super(Vfused, self).__init__(
+                dest=dest, src1=src1, src2=src2,
+                destSize=size, destVL=VL, srcSize=size, srcVL=VL
+            )
+        srcType = 'AVXOpBase::SrcType::RegRegReg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = destVL / sizeof(uint64_t);
+            _numSrcRegs = 3 * vRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i * 3 + 0] = RegId(FloatRegClass, src1 + i);
+                _srcRegIdx[i * 3 + 1] = RegId(FloatRegClass, src2 + i);
+                _srcRegIdx[i * 3 + 2] = RegId(FloatRegClass, dest + i);
+            }
+        '''
+    
+    class Vfmadd231f(Vfused):
+        opClass = 'SimdFloatMultOp'
+        code = '''
+            this->doFusedPackedBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
         '''
 
     class Vbroadcast8(AVXOp):

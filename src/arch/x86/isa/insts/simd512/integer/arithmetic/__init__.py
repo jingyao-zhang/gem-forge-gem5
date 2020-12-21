@@ -1,6 +1,7 @@
 categories = [
     "vpaddd",
     "vpaddq",
+    "vpandd",
     "vpsubq",
     "vpminsd",
     "vpminsq",

@@ -37,6 +37,7 @@
 
 categories = [
     "valign",
+    "vcomiss",
     "vpbroadcast",
     "vbroadcastsd",
     "vbroadcastss",
@@ -45,6 +46,7 @@ categories = [
     "vinsertps",
     "vinsert",
     "vmovd",
+    "vmovlhps",
     "vmovq",
     "vmovhpd",
     "vmovdqa",
@@ -65,6 +67,8 @@ categories = [
     "vpternlog",
     "vpshufd",
     "vpextrq",
+    "vshufps",
+    "vunpcks",
     "vzeroupper",
 ]
 

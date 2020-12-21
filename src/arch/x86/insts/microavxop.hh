@@ -10,10 +10,11 @@ class AVXOpBase : public X86MicroopBase {
 public:
   enum SrcType {
     Non = 0,
-    Reg = 1,
-    RegReg = 2,
-    RegImm = 3,
-    RegRegImm = 4,
+    Reg,
+    RegReg,
+    RegImm,
+    RegRegImm,
+    RegRegReg, // Three opreands.
   };
 
 protected:
@@ -91,11 +92,15 @@ protected:
     // Add/Sub can ignore sign.
     IntAdd,
     IntSub,
+    IntAnd,
     SIntMin,
   };
 
-  // A helper function to perform packed binary op.
+  FloatInt calcPackedBinaryOp(FloatInt src1, FloatInt src2, BinaryOp op) const;
+  // A helper function to perform packed src1 op src2
   void doPackedBinaryOp(ExecContext *xc, BinaryOp op) const;
+  // A helper function to perform packed (src1 op1 src2) op2 src3
+  void doFusedPackedBinaryOp(ExecContext *xc, BinaryOp op1, BinaryOp op2) const;
 
   // A helper function to add dest regs.
   inline void addAVXDestRegs() {
