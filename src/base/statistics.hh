@@ -1166,7 +1166,7 @@ class VectorBase : public DataWrapVec<Derived, VectorInfoProxy>
     Proxy
     operator[](off_type index)
     {
-        assert (index >= 0 && index < size());
+        assert (index < size());
         return Proxy(this->self(), index);
     }
 };
@@ -1240,7 +1240,7 @@ class VectorProxy
     ScalarProxy<Stat>
     operator[](off_type index)
     {
-        assert (index >= 0 && index < size());
+        assert (index < size());
         return ScalarProxy<Stat>(stat, offset + index);
     }
 
@@ -1316,7 +1316,7 @@ class Vector2dBase : public DataWrapVec2d<Derived, Vector2dInfoProxy>
     operator[](off_type index)
     {
         off_type offset = index * y;
-        assert (index >= 0 && offset + y <= size());
+        assert (offset + y <= size());
         return Proxy(this->self(), offset, y);
     }
 
@@ -2000,7 +2000,7 @@ class VectorDistBase : public DataWrapVec<Derived, VectorDistInfoProxy>
 
     Proxy operator[](off_type index)
     {
-        assert(index >= 0 && index < size());
+        assert(index < size());
         return Proxy(this->self(), index);
     }
 
