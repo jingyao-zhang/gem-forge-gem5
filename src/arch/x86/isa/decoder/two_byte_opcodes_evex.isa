@@ -242,6 +242,16 @@
                 }
             }
         }
+        0x1B: decode LEGACY_DECODEVAL {
+            // operand size (0x66)
+            0x1: decode OPCODE_OP_BOTTOM3 {
+                0x3: decode EVEX_L_EXTEND {
+                    0x2: VPANDD(VZqo, WZqo);
+                    0x1: VPANDD(VYdo, WYdo);
+                    0x0: VPANDD(Vo, Wo);
+                }
+            }
+        }
         0x1C: decode LEGACY_DECODEVAL {
             // 0xF3
             0x4: decode OPCODE_OP_BOTTOM3 {

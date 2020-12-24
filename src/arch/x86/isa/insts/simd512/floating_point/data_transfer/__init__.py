@@ -69,6 +69,7 @@ categories = [
     "vpextrq",
     "vshufps",
     "vunpcks",
+    "vucomiss",
     "vzeroupper",
 ]
 

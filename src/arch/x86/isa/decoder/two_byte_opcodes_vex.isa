@@ -11,6 +11,19 @@
                     0x1: VMOVUPS(WYdo, VYdo);
                     0x0: VMOVUPS(Wo, Vo);
                 }
+                0x4: decode EVEX_L {
+                    0x1: VUNPCKLPS(VYdo, WYdo);
+                    0x0: VUNPCKLPS(Vo, Wo);
+                }
+                0x5: decode EVEX_L {
+                    0x1: VUNPCKHPS(VYdo, WYdo);
+                    0x0: VUNPCKHPS(Vo, Wo);
+                }
+                0x6: decode MODRM_MOD {
+                    0x3: decode EVEX_L {
+                        0x0: VMOVLHPS(Vo,VRq);
+                    }
+                }
             }
             // 0x66, packed double
             0x1: decode OPCODE_OP_BOTTOM3 {
@@ -67,6 +80,12 @@
                     0x1: VMOVAPS(WYdo, VYdo);
                     0x0: VMOVAPS(Wq, Vq);
                 }
+                0x6: decode EVEX_L {
+                    0x0: VUCOMISS(Vo, Wo);
+                }
+                0x7: decode EVEX_L {
+                    0x0: VCOMISS(Vo, Wo);
+                }
             }
             // 0x66 packed double
             0x1: decode OPCODE_OP_BOTTOM3 {
@@ -97,6 +116,10 @@
         }
         0x0A: decode LEGACY_DECODEVAL {
             0x0: decode OPCODE_OP_BOTTOM3 {
+                0x4: decode EVEX_L {
+                    0x1: VANDPS(VYdo,WYdo);
+                    0x0: VANDPS(Vo,Wo);
+                }
                 0x7: decode EVEX_L {
                     0x1: VXORPS(VYdo,WYdo);
                     0x0: VXORPS(Vo,Wo);
@@ -249,6 +272,12 @@
                         0x0: STMXCSR(Md);
                     }
                 }
+            }
+        }
+        0x18: decode OPCODE_OP_BOTTOM3 {
+            0x6: decode EVEX_L {
+                0x1: VSHUFPS(VYdo, WYdo, Ib);
+                0x0: VSHUFPS(Vo, Wo, Ib);
             }
         }
         0x1A: decode LEGACY_DECODEVAL {

@@ -73,6 +73,13 @@
                         0x2: VPBROADCASTQ(VZqo, Eqo);
                     }
                 }
+                0xB8: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VFMADD231PS(VZqo, WZqo);
+                        0x1: VFMADD231PS(VYdo, WYdo);
+                        0x0: VFMADD231PS(Vo, Wo);
+                    }
+                }
             }
         }
         0: decode LEGACY_DECODEVAL {
