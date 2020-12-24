@@ -298,7 +298,7 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
     auto loadedValue = streamAtomicOp->getLoadedValue();
     // * We should not use block addr/size for atomic op.
     this->setValue(memAccess->vaddr, S->getCoreElementSize(),
-                   reinterpret_cast<uint8_t *>(loadedValue.data()));
+                   loadedValue.uint8Ptr());
   } else {
     this->setValue(vaddr, size, data);
   }
@@ -348,9 +348,8 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
         assert(size <= sizeof(StreamValue) &&
                "Base element too large, maybe coalesced?");
         // ! This effectively does zero extension.
-        StreamValue baseValue{0};
-        baseElement->getValue(vaddr, size,
-                              reinterpret_cast<uint8_t *>(baseValue.data()));
+        StreamValue baseValue;
+        baseElement->getValue(vaddr, size, baseValue.uint8Ptr());
         S_ELEMENT_DPRINTF(baseElement,
                           "GetStreamValue vaddr %#x size %d value %llu.\n",
                           vaddr, size, baseValue.front());
@@ -409,23 +408,21 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
     if (this->stream->isReduction()) {
       if (this->FIFOIdx.entryIdx == 0) {
         this->setValue(this->addr, this->size,
-                       reinterpret_cast<uint8_t *>(&this->dynS->initialValue));
+                       this->dynS->initialValue.uint8Ptr());
         return;
       } else if (this->isLastElement() && !this->stream->hasCoreUser() &&
                  this->dynS->offloadedToCache) {
         assert(this->dynS->finalReductionValueReady &&
                "FinalReductionValue should be ready.");
-        this->setValue(
-            this->addr, this->size,
-            reinterpret_cast<uint8_t *>(&this->dynS->finalReductionValue));
+        this->setValue(this->addr, this->size,
+                       this->dynS->finalReductionValue.uint8Ptr());
         return;
       }
     }
     auto value = this->dynS->addrGenCallback->genAddr(
         this->FIFOIdx.entryIdx, this->dynS->addrGenFormalParams,
         getStreamValue);
-    this->setValue(this->addr, this->size,
-                   reinterpret_cast<const uint8_t *>(value.data()));
+    this->setValue(this->addr, this->size, value.uint8Ptr());
   }
 }
 

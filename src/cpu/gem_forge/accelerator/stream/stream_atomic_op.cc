@@ -8,10 +8,8 @@
 
 void StreamAtomicOp::operator()(uint8_t *p) {
   // Read in the final atomic operand from p to params.
-  DynamicStreamParamV::value_type operand{0};
-  for (size_t i = 0; i < this->size; ++i) {
-    reinterpret_cast<uint8_t *>(&operand)[i] = p[i];
-  }
+  StreamValue operand;
+  memcpy(operand.uint8Ptr(), p, this->size);
   this->params.back() = operand;
   auto result = this->storeFunc->invoke(params);
 
@@ -27,7 +25,5 @@ void StreamAtomicOp::operator()(uint8_t *p) {
             operand.front(), result.front(), this->loadFunc != nullptr,
             this->loadedValue.front());
 
-  for (size_t i = 0; i < this->size; ++i) {
-    p[i] = reinterpret_cast<uint8_t *>(result.data())[i];
-  }
+  memcpy(p, result.uint8Ptr(), this->size);
 }

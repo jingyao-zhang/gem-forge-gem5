@@ -49,7 +49,7 @@ public:
   DynamicStreamFormalParamV storeFormalParams;
   ExecFuncPtr storeCallback;
 
-  StreamValue reductionInitValue{0};
+  StreamValue reductionInitValue;
 
   /**
    * Whether this is a pointer chase stream.

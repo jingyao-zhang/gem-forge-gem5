@@ -20,7 +20,7 @@ convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
   for (const auto &formalParam : formalParams) {
     if (formalParam.isInvariant) {
       // Promote to StreamValue.
-      StreamValue value{0};
+      StreamValue value;
       value.front() = formalParam.param.invariant;
       params.push_back(value);
     } else {
@@ -89,7 +89,7 @@ StreamValue LinearAddrGenCallback::genAddr(uint64_t idx,
   DPRINTF(AddrGenCallback, "[LinearAddrGen]: Final addr %#x.\n", addr);
 
 #undef getParam
-  StreamValue retAddr{0};
+  StreamValue retAddr;
   retAddr.front() = addr;
   return retAddr;
 }

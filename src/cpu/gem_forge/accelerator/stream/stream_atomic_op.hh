@@ -10,7 +10,7 @@ public:
   StreamAtomicOp(Stream *_stream, const FIFOEntryIdx &_entryIdx, uint8_t _size,
                  const DynamicStreamParamV &_params,
                  const ExecFuncPtr &_storeFunc, const ExecFuncPtr &_loadFunc,
-                 StreamValue _loadedValue = StreamValue{0})
+                 StreamValue _loadedValue = StreamValue())
       : stream(_stream), entryIdx(_entryIdx), size(_size), params(_params),
         storeFunc(_storeFunc), loadFunc(_loadFunc), loadedValue(_loadedValue) {
     assert(!this->params.empty() && "Should at least have one atomic operand.");

@@ -1082,7 +1082,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
             elementIdx - 1, baseDynS.addrGenFormalParams, getStreamValueFail);
       }
       assert(false && "Invalid baseStreamId.");
-      return StreamValue{0};
+      return StreamValue();
     };
     auto newReductionValue = indirectConfig.addrGenCallback->genAddr(
         elementIdx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
@@ -1115,7 +1115,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
   // Compute the address.
   auto getBaseStreamValue = [&baseElement,
                              dynBS](uint64_t baseStreamId) -> StreamValue {
-    StreamValue v{0};
+    StreamValue v;
     v.front() = baseElement->getData(baseStreamId);
     return v;
   };
@@ -1603,7 +1603,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
         [&element, stream](uint64_t streamId) -> StreamValue {
       assert(streamId == stream->getStaticId() &&
              "Mismatch stream id for predication.");
-      StreamValue v{0};
+      StreamValue v;
       v.front() = element->getUInt64();
       return v;
     };
@@ -1667,7 +1667,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
                      "Invalid baseStreamId.");
               assert(predBaseElement->isReady());
               assert(predBaseElement->size <= 8);
-              StreamValue v{0};
+              StreamValue v;
               v.front() = predBaseElement->getUInt64();
               return v;
             };
@@ -1745,7 +1745,7 @@ void LLCStreamEngine::processStreamDataForUpdate(
                            lineOffset, elementCoreSize);
   } else {
     // This is an update stream.
-    StreamValue elementValue{0};
+    StreamValue elementValue;
     elementValue.front() = element->getData(stream->getStaticId());
     auto params = convertFormalParamToParam(
         stream->configData.storeFormalParams,

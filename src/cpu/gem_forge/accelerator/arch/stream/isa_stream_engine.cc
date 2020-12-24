@@ -220,7 +220,7 @@ void ISAStreamEngine::dispatchStreamInput(
       inputInfo.translatedStreamId, inputInfo.inputIdx,
       configInfo.dynStreamRegionInfo->numDispatchedInsts,
       configInfo.dynStreamRegionInfo->numExecutedInsts);
-  inputVec.emplace_back(DynStreamRegionInfo::StreamInputValue{0});
+  inputVec.emplace_back();
 }
 
 bool ISAStreamEngine::canExecuteStreamInput(

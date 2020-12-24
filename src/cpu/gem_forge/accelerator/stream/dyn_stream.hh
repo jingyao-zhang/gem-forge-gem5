@@ -70,8 +70,8 @@ struct DynamicStream {
   /**
    * Optional initial/final value for reduction stream.
    */
-  StreamValue initialValue{0};
-  StreamValue finalReductionValue{0};
+  StreamValue initialValue;
+  StreamValue finalReductionValue;
   bool finalReductionValueReady = false;
 
   // Optional total length of this dynamic stream. -1 as indefinite.

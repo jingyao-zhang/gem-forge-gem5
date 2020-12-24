@@ -53,11 +53,11 @@ struct LLCStreamElement {
   StreamValue &getValue() { return this->value; }
   uint8_t *getUInt8Ptr(int offset = 0) {
     assert(offset < this->size);
-    return reinterpret_cast<uint8_t *>(&this->value[0]) + offset;
+    return this->value.uint8Ptr(offset);
   }
   const uint8_t *getUInt8Ptr(int offset = 0) const {
     assert(offset < this->size);
-    return reinterpret_cast<const uint8_t *>(&this->value[0]) + offset;
+    return this->value.uint8Ptr(offset);
   }
 };
 using LLCStreamElementPtr = std::shared_ptr<LLCStreamElement>;
@@ -144,7 +144,7 @@ public:
 
   const CacheStreamConfigureData configData;
   SlicedDynamicStream slicedStream;
-  StreamValue reductionValue{0};
+  StreamValue reductionValue;
 
   // Dependent indirect streams.
   std::list<LLCDynamicStream *> indirectStreams;

@@ -1001,12 +1001,11 @@ void Stream::handleStoreFuncAtRelease() {
   }
   // Get value for store func.
   auto getStoreFuncInput = [this, element](StaticId id) -> StreamValue {
-    StreamValue elementValue{0};
+    StreamValue elementValue;
     if (id == this->staticId) {
       // Update stream using myself.
-      element->getValueByStreamId(
-          id, reinterpret_cast<uint8_t *>(elementValue.data()),
-          sizeof(elementValue));
+      element->getValueByStreamId(id, elementValue.uint8Ptr(),
+                                  sizeof(elementValue));
       return elementValue;
     } else {
       // Search the ValueBaseElements.
@@ -1014,9 +1013,8 @@ void Stream::handleStoreFuncAtRelease() {
       for (const auto &baseE : element->valueBaseElements) {
         if (baseE.element->stream == baseS) {
           // Found it.
-          baseE.element->getValueByStreamId(
-              id, reinterpret_cast<uint8_t *>(elementValue.data()),
-              sizeof(elementValue));
+          baseE.element->getValueByStreamId(id, elementValue.uint8Ptr(),
+                                            sizeof(elementValue));
           return elementValue;
         }
       }
@@ -1042,7 +1040,7 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
     const auto &formalParam = formalParams.at(i);
     assert(formalParam.isInvariant &&
            "Can only handle invariant params for AtomicOp.");
-    params.push_back(StreamValue{0});
+    params.emplace_back();
     params.back().front() = formalParam.param.invariant;
   }
   // Push the final atomic operand as a dummy 0.
@@ -1050,7 +1048,7 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
   assert(!formalAtomicParam.isInvariant && "AtomicOperand should be a stream.");
   assert(formalAtomicParam.param.baseStreamId == this->staticId &&
          "AtomicOperand should be myself.");
-  params.push_back(StreamValue{0});
+  params.emplace_back();
   auto atomicOp =
       m5::make_unique<StreamAtomicOp>(this, idx, memElementsize, params,
                                       this->storeCallback, this->loadCallback);

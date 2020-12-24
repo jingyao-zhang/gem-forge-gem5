@@ -150,19 +150,21 @@ int ExecFunc::translateToNumRegs(const DataType &type) {
   return numRegs;
 }
 
-std::string ExecFunc::printRegisterValue(const RegisterValue &value,
-                                         const DataType &type) {
+std::string ExecFunc::RegisterValue::print(const DataType &type) const {
   if (type == DataType::INTEGER) {
-    return csprintf("%#x", value.front());
+    return csprintf("%#x", this->front());
   } else if (type == DataType::FLOAT) {
-    return csprintf("%f", static_cast<float>(value.front()));
+    return csprintf("%f", static_cast<float>(this->front()));
   } else if (type == DataType::DOUBLE) {
-    return csprintf("%f", static_cast<double>(value.front()));
+    return csprintf("%f", static_cast<double>(this->front()));
   } else {
     auto numRegs = ExecFunc::translateToNumRegs(type);
-    return GemForgeUtils::dataToString(
-        reinterpret_cast<const uint8_t *>(value.data()), numRegs * 8);
+    return GemForgeUtils::dataToString(this->uint8Ptr(), numRegs * 8);
   }
+}
+
+std::string ExecFunc::RegisterValue::print() const {
+  return GemForgeUtils::dataToString(this->uint8Ptr(), sizeof(*this));
 }
 
 ExecFunc::RegisterValue
@@ -207,8 +209,7 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
       const auto &reg = intRegParams[intParamIdx];
       intParamIdx++;
       execFuncXC.setIntRegOperand(reg, param.front());
-      EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg,
-                        printRegisterValue(param, type));
+      EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
     } else {
       auto numRegs = this->translateToNumRegs(type);
       const auto &baseReg = floatRegParams[floatParamIdx];
@@ -216,8 +217,7 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
       for (int i = 0; i < numRegs; ++i) {
         RegId reg = RegId(RegClass::FloatRegClass, baseReg.index() + i);
         execFuncXC.setFloatRegOperand(reg, param.at(i));
-        EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg,
-                          printRegisterValue(param, type));
+        EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
       }
     }
   }
@@ -234,7 +234,7 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
   }
 
   auto retType = this->func.type();
-  RegisterValue retValue{0};
+  RegisterValue retValue;
   if (retType == ::LLVM::TDG::DataType::INTEGER) {
     // We expect the int result in rax.
     const RegId rax(RegClass::IntRegClass, IntRegIndex::INTREG_RAX);
@@ -248,7 +248,7 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
       retValue.at(i) = execFuncXC.readFloatRegOperand(reg);
     }
   }
-  EXEC_FUNC_DPRINTF("Ret %s.\n", printRegisterValue(retValue, retType));
+  EXEC_FUNC_DPRINTF("Ret %s.\n", retValue.print(retType));
   return retValue;
 }
 
@@ -302,3 +302,9 @@ Addr ExecFunc::invoke(const std::vector<Addr> &params) {
   return retValue;
 }
 } // namespace X86ISA
+
+std::ostream &operator<<(std::ostream &os,
+                         const X86ISA::ExecFunc::RegisterValue &value) {
+  os << value.print();
+  return os;
+}

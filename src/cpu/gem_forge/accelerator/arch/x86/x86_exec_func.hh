@@ -12,6 +12,7 @@
 #include "cpu/thread_context.hh"
 
 #include <array>
+#include <iostream>
 
 namespace X86ISA {
 class ExecFunc {
@@ -20,8 +21,23 @@ public:
    * We make the register value large enough to hold AVX-512.
    */
   static constexpr int MaxRegisterValueSize = 8;
-  using RegisterValue = std::array<uint64_t, MaxRegisterValueSize>;
   using DataType = ::LLVM::TDG::DataType;
+  class RegisterValue : public std::array<uint64_t, MaxRegisterValueSize> {
+  public:
+    RegisterValue() : std::array<uint64_t, MaxRegisterValueSize>() {
+      this->fill(0);
+    }
+    std::string print(const DataType &type) const;
+    std::string print() const;
+    uint8_t *uint8Ptr(int offset = 0) {
+      assert(offset < 64);
+      return reinterpret_cast<uint8_t *>(&this->front());
+    }
+    const uint8_t *uint8Ptr(int offset = 0) const {
+      assert(offset < 64);
+      return reinterpret_cast<const uint8_t *>(&this->front());
+    }
+  };
   static int translateToNumRegs(const DataType &type);
   static std::string printRegisterValue(const RegisterValue &value,
                                         const DataType &type);
@@ -46,5 +62,8 @@ private:
   std::vector<PCState> pcs;
 };
 } // namespace X86ISA
+
+std::ostream &operator<<(std::ostream &os,
+                         const X86ISA::ExecFunc::RegisterValue &value);
 
 #endif

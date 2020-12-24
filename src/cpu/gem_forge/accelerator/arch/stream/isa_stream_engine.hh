@@ -16,6 +16,7 @@
 #endif
 
 #include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
+#include "cpu/gem_forge/accelerator/arch/exec_func.hh"
 
 #include <array>
 #include <unordered_map>
@@ -137,7 +138,7 @@ private:
    * later instructions.
    */
   struct DynStreamRegionInfo {
-    using StreamInputValue = std::array<uint64_t, 8>;
+    using StreamInputValue = TheISA::ExecFunc::RegisterValue;
     const std::string infoRelativePath;
     bool streamReadyDispatched = false;
     uint64_t streamReadySeqNum = 0;
