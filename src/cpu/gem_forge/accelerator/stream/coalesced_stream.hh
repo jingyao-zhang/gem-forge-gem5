@@ -135,7 +135,7 @@ public:
   bool isContinuous() const override;
 
   void setupAddrGen(DynamicStream &dynStream,
-                    const InputVecT *inputVec) override;
+                    const DynamicStreamParamV *inputVec) override;
 
   uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const override;
 

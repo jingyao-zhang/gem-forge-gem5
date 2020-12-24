@@ -166,7 +166,7 @@ public:
     uint64_t index = key % this->num_sets;
     uint64_t tag = key / this->num_sets;
     auto &cam = cams[index];
-    int num_erased = cam.erase(tag);
+    cam.erase(tag);
     if (entry)
       entry->valid = false;
     // assert(entry ? num_erased == 1 : num_erased == 0);
@@ -200,7 +200,7 @@ public:
     victim = {key, index, tag, true, data};
     auto &cam = cams[index];
     if (old_entry.valid) {
-      int num_erased = cam.erase(old_entry.tag);
+      cam.erase(old_entry.tag);
       // assert(num_erased == 1);
     }
     cam[tag] = victim_way;

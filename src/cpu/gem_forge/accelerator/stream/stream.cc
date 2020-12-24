@@ -212,7 +212,8 @@ void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
                                     this->se);
 }
 
-void Stream::executeStreamConfig(uint64_t seqNum, const InputVecT *inputVec) {
+void Stream::executeStreamConfig(uint64_t seqNum,
+                                 const DynamicStreamParamV *inputVec) {
   auto &dynStream = this->getDynamicStream(seqNum);
   assert(!dynStream.configExecuted && "StreamConfig already executed.");
   dynStream.configExecuted = true;
@@ -222,7 +223,7 @@ void Stream::executeStreamConfig(uint64_t seqNum, const InputVecT *inputVec) {
    */
   if (inputVec) {
     assert(!se->isTraceSim());
-    InputVecT inputVecCopy(*inputVec);
+    DynamicStreamParamV inputVecCopy(*inputVec);
     this->extractExtraInputValues(dynStream, &inputVecCopy);
     this->setupAddrGen(dynStream, &inputVecCopy);
   } else {
@@ -417,7 +418,7 @@ DynamicStream *Stream::getDynamicStream(const DynamicStreamId &dynId) {
 }
 
 void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
-                                 const InputVecT *inputVec,
+                                 const DynamicStreamParamV *inputVec,
                                  const LLVM::TDG::StreamInfo &info) {
   assert(inputVec && "Missing InputVec.");
   const auto &staticInfo = info.static_info();
@@ -507,7 +508,7 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
 }
 
 void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
-                               const InputVecT *inputVec,
+                               const DynamicStreamParamV *inputVec,
                                const LLVM::TDG::StreamInfo &info) {
 
   const auto &addrFuncInfo = info.addr_func_info();
@@ -525,7 +526,7 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
   dynStream.addrGenCallback = this->addrGenCallback;
 }
 
-int Stream::setupFormalParams(const InputVecT *inputVec,
+int Stream::setupFormalParams(const DynamicStreamParamV *inputVec,
                               const LLVM::TDG::ExecFuncInfo &info,
                               DynamicStreamFormalParamV &formalParams) {
   assert(info.name() != "" && "Missing AddrFuncInfo.");
@@ -561,7 +562,8 @@ int Stream::setupFormalParams(const InputVecT *inputVec,
 /**
  * Extract extra input values from the inputVec. May modify inputVec.
  */
-void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT *inputVec) {
+void Stream::extractExtraInputValues(DynamicStream &dynS,
+                                     DynamicStreamParamV *inputVec) {
 
   /**
    * For trace simulation, we have no input.
@@ -629,7 +631,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS, InputVecT *inputVec) {
    */
   if (this->isReduction()) {
     assert(!inputVec->empty() && "Missing initial value for reduction stream.");
-    dynS.initialValue = inputVec->front().at(0);
+    dynS.initialValue = inputVec->front();
     inputVec->erase(inputVec->begin());
   }
 }
@@ -653,12 +655,18 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   configData->storeCallback = dynStream.storeCallback;
 
   // Set the reduction information.
+  if (this->isReduction()) {
+    assert(this->getMemElementSize() <= sizeof(StreamValue) &&
+           "Cannot offload reduction stream larger than 64 bytes.");
+  }
   configData->reductionInitValue = dynStream.initialValue;
 
   // Set the initial vaddr if this is not indirect stream.
   if (!isIndirect) {
-    configData->initVAddr = dynStream.addrGenCallback->genAddr(
-        0, dynStream.addrGenFormalParams, getStreamValueFail);
+    configData->initVAddr =
+        dynStream.addrGenCallback
+            ->genAddr(0, dynStream.addrGenFormalParams, getStreamValueFail)
+            .front();
     // Remember to make line address.
     configData->initVAddr -=
         configData->initVAddr % this->getCPUDelegator()->cacheLineSize();
@@ -992,11 +1000,13 @@ void Stream::handleStoreFuncAtRelease() {
     }
   }
   // Get value for store func.
-  auto getStoreFuncInput = [this, element](StaticId id) -> uint64_t {
-    uint64_t elementValue = 0;
+  auto getStoreFuncInput = [this, element](StaticId id) -> StreamValue {
+    StreamValue elementValue{0};
     if (id == this->staticId) {
       // Update stream using myself.
-      element->getValueByStreamId(id, &elementValue);
+      element->getValueByStreamId(
+          id, reinterpret_cast<uint8_t *>(elementValue.data()),
+          sizeof(elementValue));
       return elementValue;
     } else {
       // Search the ValueBaseElements.
@@ -1004,7 +1014,9 @@ void Stream::handleStoreFuncAtRelease() {
       for (const auto &baseE : element->valueBaseElements) {
         if (baseE.element->stream == baseS) {
           // Found it.
-          baseE.element->getValueByStreamId(id, &elementValue);
+          baseE.element->getValueByStreamId(
+              id, reinterpret_cast<uint8_t *>(elementValue.data()),
+              sizeof(elementValue));
           return elementValue;
         }
       }
@@ -1013,7 +1025,7 @@ void Stream::handleStoreFuncAtRelease() {
   };
   auto params =
       convertFormalParamToParam(dynS.storeFormalParams, getStoreFuncInput);
-  auto storeValue = dynS.storeCallback->invoke(params);
+  auto storeValue = dynS.storeCallback->invoke(params).front();
 
   S_ELEMENT_DPRINTF(element, "StoreValue %llu.\n", storeValue);
   this->performStore(dynS, element, storeValue);
@@ -1030,14 +1042,15 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
     const auto &formalParam = formalParams.at(i);
     assert(formalParam.isInvariant &&
            "Can only handle invariant params for AtomicOp.");
-    params.push_back(formalParam.param.invariant);
+    params.push_back(StreamValue{0});
+    params.back().front() = formalParam.param.invariant;
   }
   // Push the final atomic operand as a dummy 0.
   const auto &formalAtomicParam = formalParams.back();
   assert(!formalAtomicParam.isInvariant && "AtomicOperand should be a stream.");
   assert(formalAtomicParam.param.baseStreamId == this->staticId &&
          "AtomicOperand should be myself.");
-  params.push_back(0);
+  params.push_back(StreamValue{0});
   auto atomicOp =
       m5::make_unique<StreamAtomicOp>(this, idx, memElementsize, params,
                                       this->storeCallback, this->loadCallback);

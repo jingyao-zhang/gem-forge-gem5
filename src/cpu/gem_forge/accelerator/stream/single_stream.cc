@@ -130,7 +130,7 @@ uint64_t SingleStream::getFootprint(unsigned cacheBlockSize) const { return 1; }
 bool SingleStream::isContinuous() const { return false; }
 
 void SingleStream::setupAddrGen(DynamicStream &dynStream,
-                                const InputVecT *inputVec) {
+                                const DynamicStreamParamV *inputVec) {
 
   S_DPRINTF(this, "Set up AddrGen for streamInstance %llu.\n",
             dynStream.dynamicStreamId.streamInstance);

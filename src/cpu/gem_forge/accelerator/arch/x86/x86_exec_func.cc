@@ -7,6 +7,7 @@
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/exec_context.hh"
+#include "cpu/gem_forge/gem_forge_utils.hh"
 #include "debug/ExecFunc.hh"
 #include "sim/process.hh"
 
@@ -113,9 +114,59 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     EXEC_FUNC_DPRINTF("Next pc %#x.\n", pc.pc());
   }
   EXEC_FUNC_DPRINTF("Decode done.\n", pc.pc());
+
+  // Check if I am pure integer type.
+  this->isPureInteger = true;
+  for (const auto &arg : this->func.args()) {
+    if (arg.type() != DataType::INTEGER) {
+      this->isPureInteger = false;
+      return;
+    }
+  }
+  if (this->func.type() != DataType::INTEGER) {
+    this->isPureInteger = false;
+  }
 }
 
-uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
+int ExecFunc::translateToNumRegs(const DataType &type) {
+  auto numRegs = 1;
+  switch (type) {
+  case DataType::FLOAT:
+  case DataType::DOUBLE:
+    numRegs = 1;
+    break;
+  case DataType::VECTOR_128:
+    numRegs = 2;
+    break;
+  case DataType::VECTOR_256:
+    numRegs = 4;
+    break;
+  case DataType::VECTOR_512:
+    numRegs = 8;
+    break;
+  default:
+    panic("Invalid data type.");
+  }
+  return numRegs;
+}
+
+std::string ExecFunc::printRegisterValue(const RegisterValue &value,
+                                         const DataType &type) {
+  if (type == DataType::INTEGER) {
+    return csprintf("%#x", value.front());
+  } else if (type == DataType::FLOAT) {
+    return csprintf("%f", static_cast<float>(value.front()));
+  } else if (type == DataType::DOUBLE) {
+    return csprintf("%f", static_cast<double>(value.front()));
+  } else {
+    auto numRegs = ExecFunc::translateToNumRegs(type);
+    return GemForgeUtils::dataToString(
+        reinterpret_cast<const uint8_t *>(value.data()), numRegs * 8);
+  }
+}
+
+ExecFunc::RegisterValue
+ExecFunc::invoke(const std::vector<RegisterValue> &params) {
   /**
    * We are assuming C calling convention.
    * Registers are passed in as $rdi, $rsi, $rdx, $rcx, $r8, $r9.
@@ -151,16 +202,23 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
   int floatParamIdx = 0;
   for (auto idx = 0; idx < params.size(); ++idx) {
     auto param = params.at(idx);
-    if (this->func.args(idx).is_float()) {
-      const auto &reg = floatRegParams[floatParamIdx];
-      floatParamIdx++;
-      execFuncXC.setFloatRegOperand(reg, param);
-      EXEC_FUNC_DPRINTF("Arg %d Reg %s %llu.\n", idx, reg, param);
-    } else {
+    auto type = this->func.args(idx).type();
+    if (type == ::LLVM::TDG::DataType::INTEGER) {
       const auto &reg = intRegParams[intParamIdx];
       intParamIdx++;
-      execFuncXC.setIntRegOperand(reg, param);
-      EXEC_FUNC_DPRINTF("Arg %d Reg %s %llu.\n", idx, reg, param);
+      execFuncXC.setIntRegOperand(reg, param.front());
+      EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg,
+                        printRegisterValue(param, type));
+    } else {
+      auto numRegs = this->translateToNumRegs(type);
+      const auto &baseReg = floatRegParams[floatParamIdx];
+      floatParamIdx++;
+      for (int i = 0; i < numRegs; ++i) {
+        RegId reg = RegId(RegClass::FloatRegClass, baseReg.index() + i);
+        execFuncXC.setFloatRegOperand(reg, param.at(i));
+        EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg,
+                          printRegisterValue(param, type));
+      }
     }
   }
 
@@ -175,18 +233,72 @@ uint64_t ExecFunc::invoke(const std::vector<uint64_t> &params) {
     staticInst->execute(&execFuncXC, nullptr /* traceData. */);
   }
 
-  if (this->func.is_float()) {
-    // We expect the float result in xmm0.
-    const RegId xmm0(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0);
-    auto retValue = execFuncXC.readFloatRegOperand(xmm0);
-    EXEC_FUNC_DPRINTF("Ret %#x.\n", retValue);
-    return retValue;
-  } else {
+  auto retType = this->func.type();
+  RegisterValue retValue{0};
+  if (retType == ::LLVM::TDG::DataType::INTEGER) {
     // We expect the int result in rax.
     const RegId rax(RegClass::IntRegClass, IntRegIndex::INTREG_RAX);
-    auto retValue = execFuncXC.readIntRegOperand(rax);
-    EXEC_FUNC_DPRINTF("Ret %#x.\n", retValue);
-    return retValue;
+    retValue.front() = execFuncXC.readIntRegOperand(rax);
+  } else {
+    // We expect the float result in xmm0.
+    auto numRegs = this->translateToNumRegs(retType);
+    for (int i = 0; i < numRegs; ++i) {
+      RegId reg =
+          RegId(RegClass::FloatRegClass, FloatRegIndex::FLOATREG_XMM0_0 + i);
+      retValue.at(i) = execFuncXC.readFloatRegOperand(reg);
+    }
   }
+  EXEC_FUNC_DPRINTF("Ret %s.\n", printRegisterValue(retValue, retType));
+  return retValue;
+}
+
+Addr ExecFunc::invoke(const std::vector<Addr> &params) {
+  /**
+   * We are assuming C calling convention.
+   * Registers are passed in as $rdi, $rsi, $rdx, $rcx, $r8, $r9.
+   * The exec function should never use stack.
+   */
+  assert(params.size() <= 6 && "Too many arguments for exec function.");
+  if (params.size() != this->func.args_size()) {
+    panic("Invoke %s: Mismatch in # args, given %d, expected.\n",
+          this->func.name(), params.size(), this->func.args_size());
+  }
+  if (!this->isPureInteger) {
+    panic("Invoke %s: Should be pure integer.\n", this->func.name());
+  }
+  execFuncXC.clear();
+
+  const RegId intRegParams[6] = {
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDI),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RSI),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RDX),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_RCX),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R8),
+      RegId(RegClass::IntRegClass, IntRegIndex::INTREG_R9),
+  };
+  EXEC_FUNC_DPRINTF("Set up calling convention.\n");
+  for (auto idx = 0; idx < params.size(); ++idx) {
+    auto param = params.at(idx);
+    const auto &reg = intRegParams[idx];
+    execFuncXC.setIntRegOperand(reg, param);
+    EXEC_FUNC_DPRINTF("Arg %d Reg %s %#x.\n", idx, reg, param);
+  }
+
+  // Set up the virt proxy.
+  execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
+
+  for (auto idx = 0; idx < this->instructions.size(); ++idx) {
+    auto &staticInst = this->instructions.at(idx);
+    auto &pc = this->pcs.at(idx);
+    EXEC_FUNC_DPRINTF("Set PCState %s.\n", pc);
+    execFuncXC.pcState(pc);
+    staticInst->execute(&execFuncXC, nullptr /* traceData. */);
+  }
+
+  // We expect the int result in rax.
+  const RegId rax(RegClass::IntRegClass, IntRegIndex::INTREG_RAX);
+  Addr retValue = execFuncXC.readIntRegOperand(rax);
+  EXEC_FUNC_DPRINTF("Ret %#x.\n", retValue);
+  return retValue;
 }
 } // namespace X86ISA

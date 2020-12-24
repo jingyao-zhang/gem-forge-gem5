@@ -17,24 +17,25 @@ struct DynamicStreamFormalParam {
 };
 
 using DynamicStreamFormalParamV = std::vector<DynamicStreamFormalParam>;
-using DynamicStreamParamV = std::vector<uint64_t>;
-using GetStreamValueFunc = std::function<uint64_t(uint64_t)>;
+using StreamValue = TheISA::ExecFunc::RegisterValue;
+using DynamicStreamParamV = std::vector<StreamValue>;
+using GetStreamValueFunc = std::function<StreamValue(uint64_t)>;
 using ExecFuncPtr = std::shared_ptr<TheISA::ExecFunc>;
 
 /**
  * Use if you expect no base stream.
  */
-uint64_t getStreamValueFail(uint64_t streamId);
+StreamValue getStreamValueFail(uint64_t streamId);
 
 /**
  * Use if you expect only one base stream.
  */
 struct GetSingleStreamValue {
   const uint64_t streamId;
-  const uint64_t streamValue;
-  GetSingleStreamValue(uint64_t _streamId, uint64_t _streamValue)
+  const StreamValue streamValue;
+  GetSingleStreamValue(uint64_t _streamId, const StreamValue &_streamValue)
       : streamId(_streamId), streamValue(_streamValue) {}
-  uint64_t operator()(uint64_t streamId) const;
+  StreamValue operator()(uint64_t streamId) const;
 };
 
 DynamicStreamParamV
@@ -46,23 +47,24 @@ convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
  */
 struct AddrGenCallback {
 protected:
-  virtual uint64_t genAddr(uint64_t idx, const DynamicStreamParamV &params) = 0;
+  virtual StreamValue genAddr(uint64_t idx,
+                              const DynamicStreamParamV &params) = 0;
 
   /**
    * This is a helper function to actually call the address callback.
    * Given a callback to collect base stream value.
    */
 public:
-  uint64_t genAddr(uint64_t idx, const DynamicStreamFormalParamV &formalParams,
-                   GetStreamValueFunc getStreamValue);
+  StreamValue genAddr(uint64_t idx,
+                      const DynamicStreamFormalParamV &formalParams,
+                      GetStreamValueFunc getStreamValue);
 };
 
 using AddrGenCallbackPtr = std::shared_ptr<AddrGenCallback>;
 
 struct LinearAddrGenCallback : public AddrGenCallback {
-  uint64_t genAddr(uint64_t idx, const DynamicStreamParamV &params) override;
+  StreamValue genAddr(uint64_t idx, const DynamicStreamParamV &params) override;
 
-public:
   bool isContinuous(const DynamicStreamFormalParamV &params,
                     int32_t elementSize);
   /**
@@ -97,7 +99,8 @@ class FuncAddrGenCallback : public AddrGenCallback {
 public:
   FuncAddrGenCallback(ExecFuncPtr _execFunc) : execFunc(_execFunc) {}
 
-  uint64_t genAddr(uint64_t idx, const std::vector<uint64_t> &params) override {
+  StreamValue genAddr(uint64_t idx,
+                      const DynamicStreamParamV &params) override {
     // We ignore the idx.
     return this->execFunc->invoke(params);
   }

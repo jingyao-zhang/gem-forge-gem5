@@ -4,11 +4,11 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 
-uint64_t getStreamValueFail(uint64_t streamId) {
+StreamValue getStreamValueFail(uint64_t streamId) {
   assert(false && "Failed to get stream value.");
 }
 
-uint64_t GetSingleStreamValue::operator()(uint64_t streamId) const {
+StreamValue GetSingleStreamValue::operator()(uint64_t streamId) const {
   assert(this->streamId == streamId && "Invalid base stream.");
   return this->streamValue;
 }
@@ -19,7 +19,10 @@ convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
   DynamicStreamParamV params;
   for (const auto &formalParam : formalParams) {
     if (formalParam.isInvariant) {
-      params.push_back(formalParam.param.invariant);
+      // Promote to StreamValue.
+      StreamValue value{0};
+      value.front() = formalParam.param.invariant;
+      params.push_back(value);
     } else {
       auto baseStreamId = formalParam.param.baseStreamId;
       auto baseStreamValue = getStreamValue(baseStreamId);
@@ -29,9 +32,10 @@ convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
   return params;
 }
 
-uint64_t AddrGenCallback::genAddr(uint64_t idx,
-                                  const DynamicStreamFormalParamV &formalParams,
-                                  GetStreamValueFunc getStreamValue) {
+StreamValue
+AddrGenCallback::genAddr(uint64_t idx,
+                         const DynamicStreamFormalParamV &formalParams,
+                         GetStreamValueFunc getStreamValue) {
 
   // 1. Prepare the parameters.
   auto params = convertFormalParamToParam(formalParams, getStreamValue);
@@ -40,8 +44,8 @@ uint64_t AddrGenCallback::genAddr(uint64_t idx,
   return this->genAddr(idx, params);
 }
 
-uint64_t LinearAddrGenCallback::genAddr(uint64_t idx,
-                                        const DynamicStreamParamV &params) {
+StreamValue LinearAddrGenCallback::genAddr(uint64_t idx,
+                                           const DynamicStreamParamV &params) {
   /**
    * LINEAR pattern has 2n or (2n+1) parameters, where n is the difference of
    * loop level between ConfigureLoop and InnerMostLoop. It has the following
@@ -57,19 +61,21 @@ uint64_t LinearAddrGenCallback::genAddr(uint64_t idx,
    */
   assert(params.size() >= 2 && "Invalid number of inputs.");
 
-  auto start = params.at(params.size() - 1);
+#define getParam(i) params.at(i).front()
+
+  auto start = getParam(params.size() - 1);
   auto strideStartIdx =
       (params.size() % 2 == 1) ? (params.size() - 3) : (params.size() - 2);
-  auto stride = params.at(strideStartIdx);
+  auto stride = getParam(strideStartIdx);
   auto nestedIdx = idx;
   DPRINTF(AddrGenCallback,
           "[LinearAddrGen]: idx %llu, start %#x, stride %#x.\n", idx, start,
           stride);
   // ! Be careful to avoid underflow.
   for (auto paramIdx = strideStartIdx; paramIdx > 1; paramIdx -= 2) {
-    auto totalTripCount = params.at(paramIdx - 1);
+    auto totalTripCount = getParam(paramIdx - 1);
     auto newStart = start + stride * (nestedIdx / totalTripCount);
-    auto newStride = params.at(paramIdx - 2);
+    auto newStride = getParam(paramIdx - 2);
     auto newIdx = nestedIdx % totalTripCount;
     start = newStart;
     stride = newStride;
@@ -81,7 +87,11 @@ uint64_t LinearAddrGenCallback::genAddr(uint64_t idx,
   }
   auto addr = start + stride * nestedIdx;
   DPRINTF(AddrGenCallback, "[LinearAddrGen]: Final addr %#x.\n", addr);
-  return addr;
+
+#undef getParam
+  StreamValue retAddr{0};
+  retAddr.front() = addr;
+  return retAddr;
 }
 
 bool LinearAddrGenCallback::isContinuous(

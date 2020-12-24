@@ -2138,7 +2138,6 @@ void StreamEngine::issueElements() {
    * Sort the ready elements by create cycle and relative order within
    * the single stream.
    */
-  // Sort the ready elements, by their create cycle.
   std::sort(readyElements.begin(), readyElements.end(),
             [](const StreamElement *A, const StreamElement *B) -> bool {
               if (A->allocateCycle != B->allocateCycle) {
@@ -2181,16 +2180,6 @@ void StreamEngine::issueElements() {
       }
       // Issue the element.
       this->issueElement(element);
-    } else {
-      /**
-       * This is an IV stream. We assume their size be less than 8 bytes
-       * and copy the address directly as the value.
-       * TODO: This is not enough to support other type of IV stream, like
-       * TODO: the back dependence of pointer chasing stream, reduce stream.
-       */
-      assert(element->size <= 8 && "IV Stream size greater than 8 bytes.");
-      element->setValue(element->addr, element->size,
-                        reinterpret_cast<uint8_t *>(&element->addr));
     }
   }
 }

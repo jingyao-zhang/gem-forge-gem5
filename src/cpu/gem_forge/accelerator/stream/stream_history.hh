@@ -22,8 +22,8 @@ public:
   getHistoryAtInstance(uint64_t streamInstance) const;
 
   struct StreamHistoryAddrGenCallback : public AddrGenCallback {
-    uint64_t genAddr(uint64_t idx,
-                     const std::vector<uint64_t> &params) override;
+    StreamValue genAddr(uint64_t idx,
+                        const DynamicStreamParamV &params) override;
     const ::LLVM::TDG::StreamHistory &history;
     StreamHistoryAddrGenCallback(const ::LLVM::TDG::StreamHistory &_history)
         : history(_history) {}

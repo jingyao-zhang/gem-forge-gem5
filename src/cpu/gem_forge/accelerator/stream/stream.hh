@@ -233,9 +233,8 @@ public:
 
   virtual void configure(uint64_t seqNum, ThreadContext *tc) = 0;
 
-  using InputVecT = std::vector<DynamicStream::StreamValueT>;
   void dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc);
-  void executeStreamConfig(uint64_t seqNum, const InputVecT *inputVec);
+  void executeStreamConfig(uint64_t seqNum, const DynamicStreamParamV *inputVec);
   void rewindStreamConfig(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t seqNum);
 
@@ -310,12 +309,12 @@ public:
    * AddrGenCallback in DynamicStream.
    */
   virtual void setupAddrGen(DynamicStream &dynStream,
-                            const InputVecT *inputVec) = 0;
+                            const DynamicStreamParamV *inputVec) = 0;
 
   /**
    * Extract extra input values from the inputVec. May modify inputVec.
    */
-  void extractExtraInputValues(DynamicStream &dynS, InputVecT *inputVec);
+  void extractExtraInputValues(DynamicStream &dynS, DynamicStreamParamV *inputVec);
 
   /**
    * For debug.
@@ -406,18 +405,18 @@ protected:
   /**
    * Helper function to setup a linear addr func.
    */
-  void setupLinearAddrFunc(DynamicStream &dynStream, const InputVecT *inputVec,
+  void setupLinearAddrFunc(DynamicStream &dynStream, const DynamicStreamParamV *inputVec,
                            const LLVM::TDG::StreamInfo &info);
   /**
    * Helper function to setup an func addr gen.
    */
-  void setupFuncAddrFunc(DynamicStream &dynStream, const InputVecT *inputVec,
+  void setupFuncAddrFunc(DynamicStream &dynStream, const DynamicStreamParamV *inputVec,
                          const LLVM::TDG::StreamInfo &info);
   /**
    * Helper function to setup formal params for an ExecFunc.
    * @return Number of input value consumed.
    */
-  int setupFormalParams(const InputVecT *inputVec,
+  int setupFormalParams(const DynamicStreamParamV *inputVec,
                         const LLVM::TDG::ExecFuncInfo &info,
                         DynamicStreamFormalParamV &formalParams);
 };

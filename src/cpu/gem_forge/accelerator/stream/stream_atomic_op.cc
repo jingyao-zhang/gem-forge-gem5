@@ -8,7 +8,7 @@
 
 void StreamAtomicOp::operator()(uint8_t *p) {
   // Read in the final atomic operand from p to params.
-  DynamicStreamParamV::value_type operand = 0;
+  DynamicStreamParamV::value_type operand{0};
   for (size_t i = 0; i < this->size; ++i) {
     reinterpret_cast<uint8_t *>(&operand)[i] = p[i];
   }
@@ -23,10 +23,11 @@ void StreamAtomicOp::operator()(uint8_t *p) {
   }
 
   S_DPRINTF(stream, "Entry (%lu, %lu): AtomicOp %lu -> %lu, Loaded? %d %lu.\n",
-            entryIdx.streamId.streamInstance, entryIdx.entryIdx, operand,
-            result, this->loadFunc != nullptr, this->loadedValue);
+            entryIdx.streamId.streamInstance, entryIdx.entryIdx,
+            operand.front(), result.front(), this->loadFunc != nullptr,
+            this->loadedValue.front());
 
   for (size_t i = 0; i < this->size; ++i) {
-    p[i] = reinterpret_cast<uint8_t *>(&result)[i];
+    p[i] = reinterpret_cast<uint8_t *>(result.data())[i];
   }
 }

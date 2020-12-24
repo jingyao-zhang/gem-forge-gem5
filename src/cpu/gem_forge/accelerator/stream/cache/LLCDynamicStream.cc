@@ -16,11 +16,11 @@ std::unordered_map<DynamicStreamId, LLCDynamicStream *, DynamicStreamIdHasher>
 LLCStreamElement::LLCStreamElement(LLCDynamicStream *_dynS, uint64_t _idx,
                                    Addr _vaddr, int _size)
     : dynS(_dynS), idx(_idx), vaddr(_vaddr), size(_size), readyBytes(0) {
-  if (this->size > MAX_SIZE) {
+  if (this->size > sizeof(this->value)) {
     panic("LLCStreamElement size overflow %d, %s.\n", this->size,
           this->dynS->getDynamicStreamId().streamName);
   }
-  this->data.fill(0);
+  this->value.fill(0);
 }
 
 uint64_t LLCStreamElement::getData(uint64_t streamId) const {
@@ -34,7 +34,7 @@ uint64_t LLCStreamElement::getData(uint64_t streamId) const {
   }
   assert(size <= sizeof(uint64_t) && "ElementSize overflow.");
   assert(offset + size <= this->size && "Size overflow.");
-  return GemForgeUtils::rebuildData(this->data.data() + offset, size);
+  return GemForgeUtils::rebuildData(this->getUInt8Ptr(offset), size);
 }
 
 // TODO: Support real flow control.

@@ -1055,10 +1055,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(
     assert(elementIdx > 0 && "Reduction stream ElementIdx should start at 1.");
 
     // Perform the reduction.
-    auto getBaseStreamValue = [&baseElement, dynBS, dynIS,
-                               elementIdx](uint64_t baseStreamId) -> uint64_t {
+    auto getBaseStreamValue = [&baseElement, dynBS, dynIS, elementIdx](
+                                  uint64_t baseStreamId) -> StreamValue {
       if (baseStreamId == dynBS->getStaticId()) {
-        return baseElement->getUint64_t();
+        return baseElement->getValue();
       }
       if (baseStreamId == dynIS->getStaticId()) {
         return dynIS->reductionValue;
@@ -1082,13 +1082,14 @@ void LLCStreamEngine::generateIndirectStreamRequest(
             elementIdx - 1, baseDynS.addrGenFormalParams, getStreamValueFail);
       }
       assert(false && "Invalid baseStreamId.");
-      return 0;
+      return StreamValue{0};
     };
     auto newReductionValue = indirectConfig.addrGenCallback->genAddr(
         elementIdx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
     LLC_SLICE_DPRINTF_(LLCRubyStreamReduce, sliceId,
-                       "Do reduction %#x, %#x -> %#x.\n", dynIS->reductionValue,
-                       baseElement->getUint64_t(), newReductionValue);
+                       "Do reduction %#x, %#x -> %#x.\n",
+                       dynIS->reductionValue.front(), baseElement->getUInt64(),
+                       newReductionValue.front());
     dynIS->reductionValue = newReductionValue;
 
     /**
@@ -1113,11 +1114,16 @@ void LLCStreamEngine::generateIndirectStreamRequest(
 
   // Compute the address.
   auto getBaseStreamValue = [&baseElement,
-                             dynBS](uint64_t baseStreamId) -> uint64_t {
-    return baseElement->getData(baseStreamId);
+                             dynBS](uint64_t baseStreamId) -> StreamValue {
+    StreamValue v{0};
+    v.front() = baseElement->getData(baseStreamId);
+    return v;
   };
-  Addr elementVAddr = indirectConfig.addrGenCallback->genAddr(
-      elementIdx, indirectConfig.addrGenFormalParams, getBaseStreamValue);
+  Addr elementVAddr =
+      indirectConfig.addrGenCallback
+          ->genAddr(elementIdx, indirectConfig.addrGenFormalParams,
+                    getBaseStreamValue)
+          .front();
   LLC_SLICE_DPRINTF(sliceId, "Generate indirect vaddr %#x, size %d.\n",
                     elementVAddr, elementSize);
 
@@ -1160,7 +1166,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
         // Compute the value.
         auto params = convertFormalParamToParam(
             indirectConfig.storeFormalParams, getBaseStreamValue);
-        storeValue = indirectConfig.storeCallback->invoke(params);
+        storeValue = indirectConfig.storeCallback->invoke(params).front();
       } else {
         assert("Unknow merged stream type.");
       }
@@ -1594,14 +1600,17 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
   // Now we handle any predication.
   if (stream->configData.predCallback) {
     GetStreamValueFunc getStreamValue =
-        [&element, stream](uint64_t streamId) -> uint64_t {
+        [&element, stream](uint64_t streamId) -> StreamValue {
       assert(streamId == stream->getStaticId() &&
              "Mismatch stream id for predication.");
-      return element->getUint64_t();
+      StreamValue v{0};
+      v.front() = element->getUInt64();
+      return v;
     };
     auto params = convertFormalParamToParam(stream->configData.predFormalParams,
                                             getStreamValue);
-    bool predicatedTrue = stream->configData.predCallback->invoke(params) & 0x1;
+    bool predicatedTrue =
+        stream->configData.predCallback->invoke(params).front() & 0x1;
     auto predicatedIter = stream->waitingPredicatedElements.find(idx);
     if (predicatedIter != stream->waitingPredicatedElements.end()) {
       for (auto &predEntry : predicatedIter->second) {
@@ -1652,16 +1661,22 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
             sliceId.lhsElementIdx = idx;
             sliceId.rhsElementIdx = idx + 1;
             auto getBaseStreamValue =
-                [&predBaseElement, dynBS](uint64_t baseStreamId) -> uint64_t {
+                [&predBaseElement,
+                 dynBS](uint64_t baseStreamId) -> StreamValue {
               assert(baseStreamId == dynBS->getStaticId() &&
                      "Invalid baseStreamId.");
               assert(predBaseElement->isReady());
               assert(predBaseElement->size <= 8);
-              return predBaseElement->getUint64_t();
+              StreamValue v{0};
+              v.front() = predBaseElement->getUInt64();
+              return v;
             };
             auto &predConfig = dynPredS->configData;
-            Addr elementVAddr = predConfig.addrGenCallback->genAddr(
-                idx, predConfig.addrGenFormalParams, getBaseStreamValue);
+            Addr elementVAddr =
+                predConfig.addrGenCallback
+                    ->genAddr(idx, predConfig.addrGenFormalParams,
+                              getBaseStreamValue)
+                    .front();
             sliceId.vaddr = elementVAddr;
             sliceId.size = dynPredS->getMemElementSize();
             LLC_SLICE_DPRINTF_(
@@ -1730,7 +1745,8 @@ void LLCStreamEngine::processStreamDataForUpdate(
                            lineOffset, elementCoreSize);
   } else {
     // This is an update stream.
-    auto elementValue = element->getData(stream->getStaticId());
+    StreamValue elementValue{0};
+    elementValue.front() = element->getData(stream->getStaticId());
     auto params = convertFormalParamToParam(
         stream->configData.storeFormalParams,
         GetSingleStreamValue(stream->getStaticId(), elementValue));
@@ -1740,7 +1756,8 @@ void LLCStreamEngine::processStreamDataForUpdate(
     this->performStore(elementPAddr, elementMemSize,
                        reinterpret_cast<uint8_t *>(&storeValue));
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                       "StreamUpdate done with value %llu.\n", storeValue);
+                       "StreamUpdate done with value %llu.\n",
+                       storeValue.front());
   }
 }
 
@@ -1800,14 +1817,14 @@ void LLCStreamEngine::extractElementDataFromSlice(
     RequestPtr req = std::make_shared<Request>(paddr, overlapSize,
                                                0 /* Flags */, 0 /* MasterId */);
     PacketPtr pkt = Packet::createRead(req);
-    pkt->dataStatic(element->data.data() + elementOffset);
+    pkt->dataStatic(element->getUInt8Ptr(elementOffset));
     rubySystem->getPhysMem()->functionalAccess(pkt);
     delete pkt;
   } else {
     // Get the data from the cache line.
     auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),
                                   overlapSize);
-    memcpy(element->data.data() + elementOffset, data, overlapSize);
+    memcpy(element->getUInt8Ptr(elementOffset), data, overlapSize);
   }
   // Mark these bytes ready.
   element->readyBytes += overlapSize;
@@ -1921,7 +1938,7 @@ LLCStreamEngine::performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
   uint64_t loadedValue = 0;
   {
     auto atomicOp = dynamic_cast<StreamAtomicOp *>(pkt->getAtomicOp());
-    loadedValue = atomicOp->getLoadedValue();
+    loadedValue = atomicOp->getLoadedValue().front();
   }
 
   // Don't forget to release the packet.

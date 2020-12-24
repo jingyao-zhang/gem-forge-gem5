@@ -152,6 +152,7 @@ void CoalescedStream::selectPrimeLogicalStream() {
 void CoalescedStream::initializeBaseStreams() {
   for (auto LS : this->coalescedStreams) {
     const auto &info = LS->info;
+    const auto &loopLevel = info.static_info().loop_level();
     // Update the address dependence information.
     for (const auto &baseStreamId : info.chosen_base_streams()) {
       auto baseS = this->se->getStream(baseStreamId.id());
@@ -169,13 +170,18 @@ void CoalescedStream::initializeBaseStreams() {
 
     // Try to update the step root stream.
     for (auto &baseS : this->addrBaseStreams) {
-      if (baseS->getLoopLevel() != info.static_info().loop_level()) {
+      if (baseS->getLoopLevel() != loopLevel) {
         continue;
       }
       if (baseS->stepRootStream != nullptr) {
         if (this->stepRootStream != nullptr &&
             this->stepRootStream != baseS->stepRootStream) {
-          panic("Double step root stream found.\n");
+          S_PANIC(this,
+                  "Double StepRootStream found in Base %s %u %u: Mine %s vs "
+                  "New %s.\n",
+                  baseS->getStreamName(), baseS->getLoopLevel(), loopLevel,
+                  this->stepRootStream->getStreamName(),
+                  baseS->stepRootStream->getStreamName());
         }
         this->stepRootStream = baseS->stepRootStream;
       }
@@ -318,7 +324,7 @@ bool CoalescedStream::isContinuous() const {
 }
 
 void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
-                                   const InputVecT *inputVec) {
+                                   const DynamicStreamParamV *inputVec) {
 
   if (se->isTraceSim()) {
     if (this->getNumCoalescedStreams() == 1) {

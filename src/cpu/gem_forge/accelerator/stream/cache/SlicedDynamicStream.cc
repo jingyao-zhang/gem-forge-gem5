@@ -63,8 +63,9 @@ const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
 }
 
 Addr SlicedDynamicStream::getElementVAddr(uint64_t elementIdx) const {
-  return this->addrGenCallback->genAddr(elementIdx, this->formalParams,
-                                        getStreamValueFail);
+  return this->addrGenCallback
+      ->genAddr(elementIdx, this->formalParams, getStreamValueFail)
+      .front();
 }
 
 void SlicedDynamicStream::allocateOneElement() const {

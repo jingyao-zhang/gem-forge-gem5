@@ -10,7 +10,7 @@ public:
   StreamAtomicOp(Stream *_stream, const FIFOEntryIdx &_entryIdx, uint8_t _size,
                  const DynamicStreamParamV &_params,
                  const ExecFuncPtr &_storeFunc, const ExecFuncPtr &_loadFunc,
-                 uint64_t _loadedValue = 0)
+                 StreamValue _loadedValue = StreamValue{0})
       : stream(_stream), entryIdx(_entryIdx), size(_size), params(_params),
         storeFunc(_storeFunc), loadFunc(_loadFunc), loadedValue(_loadedValue) {
     assert(!this->params.empty() && "Should at least have one atomic operand.");
@@ -25,7 +25,7 @@ public:
                               loadFunc, loadedValue);
   }
 
-  uint64_t getLoadedValue() const { return this->loadedValue; }
+  const StreamValue &getLoadedValue() const { return this->loadedValue; }
 
 private:
   Stream *stream;
@@ -36,7 +36,7 @@ private:
   ExecFuncPtr storeFunc;
   ExecFuncPtr loadFunc;
   // The final loaded value back to core.
-  uint64_t loadedValue;
+  StreamValue loadedValue;
 };
 
 #endif

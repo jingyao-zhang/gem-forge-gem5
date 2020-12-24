@@ -39,17 +39,26 @@ struct LLCStreamElement {
   const Addr vaddr;
   const int size;
   int readyBytes;
-  static constexpr int MAX_SIZE = 64;
-  std::array<uint8_t, MAX_SIZE> data;
+  StreamValue value;
   LLCStreamElement(LLCDynamicStream *_dynS, uint64_t _idx, Addr _vaddr,
                    int _size);
   bool isReady() const { return this->readyBytes == this->size; }
-  uint64_t getUint64_t() const {
+  uint64_t getUInt64() const {
     assert(this->isReady());
     assert(this->size <= sizeof(uint64_t));
-    return *reinterpret_cast<const uint64_t *>(this->data.data());
+    return this->value.front();
   }
   uint64_t getData(uint64_t streamId) const;
+  const StreamValue &getValue() const { return this->value; }
+  StreamValue &getValue() { return this->value; }
+  uint8_t *getUInt8Ptr(int offset = 0) {
+    assert(offset < this->size);
+    return reinterpret_cast<uint8_t *>(&this->value[0]) + offset;
+  }
+  const uint8_t *getUInt8Ptr(int offset = 0) const {
+    assert(offset < this->size);
+    return reinterpret_cast<const uint8_t *>(&this->value[0]) + offset;
+  }
 };
 using LLCStreamElementPtr = std::shared_ptr<LLCStreamElement>;
 using ConstLLCStreamElementPtr = std::shared_ptr<const LLCStreamElement>;
@@ -135,7 +144,7 @@ public:
 
   const CacheStreamConfigureData configData;
   SlicedDynamicStream slicedStream;
-  uint64_t reductionValue = 0;
+  StreamValue reductionValue{0};
 
   // Dependent indirect streams.
   std::list<LLCDynamicStream *> indirectStreams;

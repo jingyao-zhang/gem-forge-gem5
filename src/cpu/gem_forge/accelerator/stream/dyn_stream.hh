@@ -67,13 +67,11 @@ struct DynamicStream {
   DynamicStreamFormalParamV storeFormalParams;
   ExecFuncPtr storeCallback;
 
-  using StreamValueT = std::array<uint64_t, 8>;
-
   /**
    * Optional initial/final value for reduction stream.
    */
-  uint64_t initialValue{0};
-  uint64_t finalReductionValue{0};
+  StreamValue initialValue{0};
+  StreamValue finalReductionValue{0};
   bool finalReductionValueReady = false;
 
   // Optional total length of this dynamic stream. -1 as indefinite.

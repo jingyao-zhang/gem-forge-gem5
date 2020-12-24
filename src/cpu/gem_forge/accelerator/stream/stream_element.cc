@@ -298,7 +298,7 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
     auto loadedValue = streamAtomicOp->getLoadedValue();
     // * We should not use block addr/size for atomic op.
     this->setValue(memAccess->vaddr, S->getCoreElementSize(),
-                   reinterpret_cast<uint8_t *>(&loadedValue));
+                   reinterpret_cast<uint8_t *>(loadedValue.data()));
   } else {
     this->setValue(vaddr, size, data);
   }
@@ -324,10 +324,9 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
   /**
    * Compute the address.
    */
-  auto &dynStream = this->stream->getDynamicStream(this->FIFOIdx.configSeqNum);
 
   GetStreamValueFunc getStreamValue =
-      [this](uint64_t baseStreamId) -> uint64_t {
+      [this](uint64_t baseStreamId) -> StreamValue {
     auto baseStream = this->se->getStream(baseStreamId);
     for (auto baseElement : this->addrBaseElements) {
       if (baseElement->stream == baseStream) {
@@ -346,15 +345,15 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
           vaddr += offset;
         }
         // TODO: Fix this for reduction stream.
-        assert(size <= sizeof(uint64_t) &&
+        assert(size <= sizeof(StreamValue) &&
                "Base element too large, maybe coalesced?");
         // ! This effectively does zero extension.
-        uint64_t baseValue = 0;
+        StreamValue baseValue{0};
         baseElement->getValue(vaddr, size,
-                              reinterpret_cast<uint8_t *>(&baseValue));
+                              reinterpret_cast<uint8_t *>(baseValue.data()));
         S_ELEMENT_DPRINTF(baseElement,
                           "GetStreamValue vaddr %#x size %d value %llu.\n",
-                          vaddr, size, baseValue);
+                          vaddr, size, baseValue.front());
         return baseValue;
       }
     }
@@ -380,29 +379,54 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
                     baseStreamId);
   };
 
-  if (this->stream->isReduction() && this->FIFOIdx.entryIdx == 0) {
-    // Special case: first element of reduction stream uses the initial value.
-    this->addr = dynStream.initialValue;
-  } else if (this->isLastElement() && this->stream->isReduction() &&
-             !this->stream->hasCoreUser() && this->dynS->offloadedToCache) {
-    // Special case: last element of offloaded reduction stream without core
-    // user.
-    assert(this->dynS->finalReductionValueReady &&
-           "FinalReductionValue should be ready.");
-    this->addr = this->dynS->finalReductionValue;
+  /**
+   * For non-mem streams, we set the address to 0 and directly set the value.
+   * This is because other streams do not have address.
+   */
+  this->size = this->stream->getMemElementSize();
+  if (this->stream->isMemStream()) {
+    this->addr = this->dynS->addrGenCallback
+                     ->genAddr(this->FIFOIdx.entryIdx,
+                               this->dynS->addrGenFormalParams, getStreamValue)
+                     .front();
   } else {
-    // Normal case: use addrGenCallback.
-    this->addr = dynStream.addrGenCallback->genAddr(
-        this->FIFOIdx.entryIdx, dynStream.addrGenFormalParams, getStreamValue);
+    this->addr = 0;
   }
-
-  this->size = stream->getMemElementSize();
 
   S_ELEMENT_DPRINTF(this, "MarkAddrReady vaddr %#x size %d.\n", this->addr,
                     this->size);
 
-  // 3. Split into cache lines.
   this->splitIntoCacheBlocks(cpuDelegator);
+
+  if (!this->stream->isMemStream()) {
+    /**
+     * There are a few special cases for non-mem streams.
+     * 1. The first element of the reduction stream should take the initial
+     * value.
+     * 2. If offloaded, the last element of the reduction stream should take the
+     * final value.
+     */
+    if (this->stream->isReduction()) {
+      if (this->FIFOIdx.entryIdx == 0) {
+        this->setValue(this->addr, this->size,
+                       reinterpret_cast<uint8_t *>(&this->dynS->initialValue));
+        return;
+      } else if (this->isLastElement() && !this->stream->hasCoreUser() &&
+                 this->dynS->offloadedToCache) {
+        assert(this->dynS->finalReductionValueReady &&
+               "FinalReductionValue should be ready.");
+        this->setValue(
+            this->addr, this->size,
+            reinterpret_cast<uint8_t *>(&this->dynS->finalReductionValue));
+        return;
+      }
+    }
+    auto value = this->dynS->addrGenCallback->genAddr(
+        this->FIFOIdx.entryIdx, this->dynS->addrGenFormalParams,
+        getStreamValue);
+    this->setValue(this->addr, this->size,
+                   reinterpret_cast<const uint8_t *>(value.data()));
+  }
 }
 
 void StreamElement::tryMarkValueReady() {

@@ -84,12 +84,15 @@ StreamHistory::allocateCallbackAtInstance(uint64_t streamInstance) {
           this->getHistoryAtInstance(streamInstance)));
 }
 
-uint64_t StreamHistory::StreamHistoryAddrGenCallback::genAddr(
-    uint64_t idx, const std::vector<uint64_t> &params) {
+StreamValue StreamHistory::StreamHistoryAddrGenCallback::genAddr(
+    uint64_t idx, const DynamicStreamParamV &params) {
+  StreamValue ret{0};
   if (idx < this->history.history_size()) {
-    return this->history.history(idx).addr();
+    ret.front() = this->history.history(idx).addr();
   } else {
     // ! Return the last address.
-    return this->history.history(this->history.history_size() - 1).addr();
+    ret.front() =
+        this->history.history(this->history.history_size() - 1).addr();
   }
+  return ret;
 }

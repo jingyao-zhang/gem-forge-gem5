@@ -292,11 +292,13 @@ int64_t MLCDynamicIndirectStream::getTotalTripCount() const {
 
 Addr MLCDynamicIndirectStream::genElementVAddr(uint64_t elementIdx,
                                                uint64_t baseData) {
-  auto getBaseStreamValue = [baseData](uint64_t baseStreamId) -> uint64_t {
-    return baseData;
-  };
-  return this->addrGenCallback->genAddr(elementIdx, this->formalParams,
-                                        getBaseStreamValue);
+  StreamValue baseValue{0};
+  baseValue.front() = baseData;
+  return this->addrGenCallback
+      ->genAddr(elementIdx, this->formalParams,
+                GetSingleStreamValue(
+                    this->baseStream->getDynamicStreamId().staticId, baseValue))
+      .front();
 }
 
 std::pair<MLCDynamicIndirectStream::SliceIter,
