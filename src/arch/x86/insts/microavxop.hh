@@ -93,6 +93,7 @@ protected:
     IntAdd,
     IntSub,
     IntAnd,
+    UIntMul,
     SIntMin,
   };
 

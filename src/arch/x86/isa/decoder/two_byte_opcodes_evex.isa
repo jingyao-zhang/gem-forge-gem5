@@ -75,6 +75,9 @@
                     0x1: VMOVAPD(WYdo, VYdo);
                     0x0: VMOVAPD(Wo, Vo);
                 }
+                0x6: decode EVEX_L_EXTEND {
+                    0x0: VUCOMISD(Vo, Wo);
+                }
             }
             // 0xF3.
             0x4: decode OPCODE_OP_BOTTOM3 {
@@ -259,6 +262,16 @@
                     0x2: VCVTDQ2PD(VZqo, WYdo);
                     0x1: VCVTDQ2PD(VYdo, Wo);
                     0x0: VCVTDQ2PD(Vo, Wq);
+                }
+            }
+        }
+        0x1E: decode LEGACY_DECODEVAL {
+            // operand size (0x66)
+            0x1: decode OPCODE_OP_BOTTOM3 {
+                0x4: decode EVEX_L_EXTEND {
+                    0x2: VPMULUDQ(VZqo, WZqo);
+                    0x1: VPMULUDQ(VYqo, WYo);
+                    0x0: VPMULUDQ(Vo, Wo);
                 }
             }
         }

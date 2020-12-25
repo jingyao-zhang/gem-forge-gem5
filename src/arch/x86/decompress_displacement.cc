@@ -50,6 +50,7 @@ enum EVEXTupleType {
  * 66 11 vmovups(store)       FULL_MEM
  * 66 16 vmovhpd(load)        TUPLE1_SCALAR
  * 66 28 vmovaps(load)        FULL_MEM
+ * 66 2E vucomisd             TUPLE1_SCALAR
  * 66 29 vmovaps(store)       FULL_MEM
  * 66 58 vaddpd         FULL
  * 66 59 vmulpd         FULL
@@ -69,7 +70,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  1 */ FM, FM, O , O , O , O , TS, O , O , O , O , O , O , O , O , O ,
-/*  2 */ O , O , O , O , O , O , O , O , FM, FM, O , O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , FM, FM, O , O , O , O , TS, O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , FU, FU, FU, FU, FU, O , FU, O ,
@@ -82,7 +83,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 /*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  D */ O , O , O , O , FU, O , TS, O , O , O , O , O , O , O , O , O ,
 /*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  F */ O , O , O , O , O , O , O , O , O , O , O , FU, O , O , FU, O
+/*  F */ O , O , O , O , FU, O , O , O , O , O , O , FU, O , O , FU, O
     };
 /****************************************************************
  * Implemeted.

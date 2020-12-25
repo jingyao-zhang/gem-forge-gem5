@@ -81,6 +81,10 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.si.i1 = src1.si.i1 & src2.si.i1;
       dest.si.i2 = src1.si.i2 & src2.si.i2;
       break;
+    case BinaryOp::UIntMul:
+      dest.ui.i1 = src1.ui.i1 * src2.ui.i1;
+      dest.ui.i2 = src1.ui.i2 * src2.ui.i2;
+      break;
     case BinaryOp::SIntMin:
       dest.si.i1 = std::min(src1.si.i1, src2.si.i1);
       dest.si.i2 = std::min(src1.si.i2, src2.si.i2);
@@ -111,6 +115,9 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       break;
     case BinaryOp::IntAnd:
       dest.sl = src1.sl & src2.sl;
+      break;
+    case BinaryOp::UIntMul:
+      dest.ul = src1.ul * src2.ul;
       break;
     case BinaryOp::SIntMin:
       dest.sl = std::min(src1.sl, src2.sl);

@@ -70,6 +70,7 @@ categories = [
     "vshufps",
     "vunpcks",
     "vucomiss",
+    "vucomisd",
     "vzeroupper",
 ]
 

@@ -256,6 +256,12 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::IntSub);
         '''
 
+    class Vmului(Varithp):
+        opClass = 'SimdMultOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntSub);
+        '''
+
     class Vandi(Varithp):
         opClass = 'SimdAddOp'
         code = '''
