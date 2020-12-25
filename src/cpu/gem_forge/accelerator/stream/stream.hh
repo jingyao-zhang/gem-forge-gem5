@@ -64,7 +64,7 @@ public:
   void addAddrBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
   void addValueBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
   void addBaseStepStream(Stream *baseStepStream);
-  void addBackBaseStream(Stream *backBaseStream);
+  void addBackBaseStream(StaticId baseId, StaticId depId, Stream *backBaseStream);
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
   void
   initializeAliasStreamsFromProtobuf(const ::LLVM::TDG::StaticStreamInfo &info);
@@ -184,7 +184,9 @@ public:
    * Back edge dependence on previous iteration.
    */
   StreamSet backBaseStreams;
+  StreamEdges backBaseEdges;
   StreamSet backDependentStreams;
+  StreamEdges backDepEdges;
   bool hasBackDepReductionStream;
 
   /**

@@ -113,12 +113,12 @@ void Stream::addValueBaseStream(StaticId baseId, StaticId depId,
   baseStream->valueDepEdges.emplace_back(baseId, depId, this);
 }
 
-void Stream::addBackBaseStream(Stream *backBaseStream) {
-  if (backBaseStream == this) {
-    STREAM_PANIC("Base stream should not be self.");
-  }
+void Stream::addBackBaseStream(StaticId baseId, StaticId depId,
+                               Stream *backBaseStream) {
   this->backBaseStreams.insert(backBaseStream);
+  this->backBaseEdges.emplace_back(depId, baseId, backBaseStream);
   backBaseStream->backDependentStreams.insert(this);
+  backBaseStream->backDepEdges.emplace_back(baseId, depId, this);
   if (this->isReduction()) {
     backBaseStream->hasBackDepReductionStream = true;
   }
@@ -757,7 +757,7 @@ void Stream::allocateElement(StreamElement *newElement) {
   }
 
   // Add addr/value base elements
-  dynS.addAddrBaseElements(newElement);
+  dynS.addBaseElements(newElement);
   this->addValueBaseElements(newElement);
 
   newElement->allocateCycle = this->getCPUDelegator()->curCycle();

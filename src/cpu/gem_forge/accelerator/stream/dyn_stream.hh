@@ -109,10 +109,10 @@ struct DynamicStream {
   };
   using StreamEdges = std::vector<StreamDepEdge>;
   StreamEdges addrBaseEdges;
-  /**
-   * Add address base DynStream to new DynStream.
-   */
+  StreamEdges backBaseEdges;
+  void addBaseDynStreams();
   void addAddrBaseDynStreams();
+  void addBackBaseDynStreams();
   /**
    * Compute reuse of the base stream element.
    * This is further split into two cases:
@@ -130,11 +130,16 @@ struct DynamicStream {
    * 1. Base streams from edges.
    * 2. Self dependence for reduction stream.
    */
+  bool areNextBaseElementsAllocated() const;
   bool areNextAddrBaseElementsAllocated() const;
+  bool areNextBackBaseElementsAllocated() const;
+  void addBaseElements(StreamElement *newElement);
   void addAddrBaseElements(StreamElement *newElement);
-  void addAddrBaseElementEdge(StreamElement *newElement,
-                              const StreamDepEdge &edge);
-  void addAddrBaseElementReduction(StreamElement *newElement);
+  void addBackBaseElements(StreamElement *newElement);
+  void addAddrOrBackBaseElementEdge(StreamElement *newElement,
+                                    const StreamDepEdge &edge,
+                                    bool isBack = false);
+  // void addAddrBaseElementReduction(StreamElement *newElement);
 
   DynamicStream(Stream *_stream, const DynamicStreamId &_dynamicStreamId,
                 uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,

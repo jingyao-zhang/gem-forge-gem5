@@ -155,7 +155,6 @@ protected:
 
   void selectPrimeLogicalStream();
   void initializeBaseStreams();
-  void initializeBackBaseStreams();
   void initializeAliasStreams();
 };
 

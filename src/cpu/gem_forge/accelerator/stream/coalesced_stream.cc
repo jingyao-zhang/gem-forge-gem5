@@ -63,7 +63,6 @@ void CoalescedStream::finalize() {
   }
   // Initialize the dependence graph.
   this->initializeBaseStreams();
-  this->initializeBackBaseStreams();
   this->initializeAliasStreams();
   this->initializeCoalesceGroupStreams();
   STREAM_DPRINTF("Finalized, ElementSize %d, LStreams: =========.\n",
@@ -168,6 +167,23 @@ void CoalescedStream::initializeBaseStreams() {
       this->addValueBaseStream(baseId.id(), info.id(), baseS);
     }
 
+    // Update the back dependence information.
+    for (const auto &baseId : info.chosen_back_base_streams()) {
+      assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV &&
+             "Only phi node can have back edge dependence.");
+      if (this->coalescedStreams.size() != 1) {
+        S_PANIC(this,
+                "More than one logical stream has back edge dependence.\n");
+      }
+      auto baseS = this->se->getStream(baseId.id());
+      this->addBackBaseStream(baseId.id(), info.id(), baseS);
+    }
+
+    // Reduction stream always has myself as the back base stream.
+    if (this->isReduction()) {
+      this->addBackBaseStream(info.id(), info.id(), this);
+    }
+
     // Try to update the step root stream.
     for (auto &baseS : this->addrBaseStreams) {
       if (baseS->getLoopLevel() != loopLevel) {
@@ -191,22 +207,6 @@ void CoalescedStream::initializeBaseStreams() {
   // If there are no AddrBaseStreams, we take it as StepRoot.
   if (this->addrBaseStreams.empty()) {
     this->stepRootStream = this;
-  }
-}
-
-void CoalescedStream::initializeBackBaseStreams() {
-  for (auto &logicalStream : this->coalescedStreams) {
-    auto &info = logicalStream->info;
-    for (const auto &backBaseStreamId : info.chosen_back_base_streams()) {
-      assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV &&
-             "Only phi node can have back edge dependence.");
-      if (this->coalescedStreams.size() != 1) {
-        S_PANIC(this,
-                "More than one logical stream has back edge dependence.\n");
-      }
-      auto backBaseStream = this->se->getStream(backBaseStreamId.id());
-      this->addBackBaseStream(backBaseStream);
-    }
   }
 }
 

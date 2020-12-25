@@ -299,7 +299,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   // before we handle dynamic dependence.
   for (auto &S : configStreams) {
     auto &dynS = S->getLastDynamicStream();
-    dynS.addAddrBaseDynStreams();
+    dynS.addBaseDynStreams();
   }
 
   // Allocate one new entries for all streams.
@@ -309,7 +309,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     assert(this->hasFreeElement());
     assert(S->getAllocSize() < S->maxSize);
     const auto &dynS = S->getLastDynamicStream();
-    assert(dynS.areNextAddrBaseElementsAllocated());
+    assert(dynS.areNextBaseElementsAllocated());
     this->allocateElement(S);
   }
 }
@@ -1537,6 +1537,10 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
   std::unordered_map<Stream *, CacheStreamConfigureData *>
       offloadedStreamConfigMap;
   SE_DPRINTF("Consider StreamFloat for %s.\n", streamRegion.region());
+
+  /**
+   * Floating decisions are made in multiple phases, first affine, then others.
+   */
   for (auto &S : configStreams) {
     /**
      * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
@@ -1846,7 +1850,7 @@ void StreamEngine::allocateElements() {
           continue;
         }
         const auto &dynS = S->getLastDynamicStream();
-        if (!dynS.areNextAddrBaseElementsAllocated()) {
+        if (!dynS.areNextBaseElementsAllocated()) {
           continue;
         }
         if (S != stepRootStream) {
