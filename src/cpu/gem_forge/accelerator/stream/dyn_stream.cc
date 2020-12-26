@@ -432,7 +432,7 @@ void DynamicStream::tryCancelFloat() {
   if (!S->addrDepStreams.empty()) {
     return;
   }
-  if (S->enabledStoreFunc()) {
+  if (S->getEnabledStoreFunc()) {
     return;
   }
   if (this->offloadedWithDependent) {

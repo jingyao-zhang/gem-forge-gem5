@@ -89,7 +89,7 @@ bool StreamFloatPolicy::shouldFloatStream(Stream *S, DynamicStream &dynS) {
   {
     bool isUnmergedDirectAtomicOrStore =
         (!S->isMerged()) && S->isDirectMemStream() &&
-        (S->isAtomicStream() || S->isStoreStream()) && S->enabledStoreFunc();
+        (S->isAtomicStream() || S->isStoreStream()) && S->getEnabledStoreFunc();
     if (!S->isDirectLoadStream() && !S->isPointerChaseLoadStream() &&
         !isUnmergedDirectAtomicOrStore) {
       return false;

@@ -1,4 +1,4 @@
-#include "coalesced_stream.hh"
+#include "stream.hh"
 #include "stream_engine.hh"
 
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
@@ -35,31 +35,18 @@ LogicalStream::LogicalStream(const std::string &_traceExtraFolder,
   }
 }
 
-LogicalStream::~LogicalStream() {}
-
-CoalescedStream::CoalescedStream(const StreamArguments &args)
-    : Stream(args), primeLStream(nullptr) {}
-
-CoalescedStream::~CoalescedStream() {
-  for (auto &LS : this->coalescedStreams) {
-    delete LS;
-    LS = nullptr;
-  }
-  this->coalescedStreams.clear();
-}
-
-void CoalescedStream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
+void Stream::addStreamInfo(const LLVM::TDG::StreamInfo &info) {
   /**
    * Note: At this point the primary logical stream may not be created yet!
    */
-  this->coalescedStreams.emplace_back(
+  this->logicals.emplace_back(
       new LogicalStream(this->getCPUDelegator()->getTraceExtraFolder(), info));
 }
 
-void CoalescedStream::finalize() {
+void Stream::finalize() {
   this->selectPrimeLogicalStream();
-  if (this->primeLStream->info.type() == ::LLVM::TDG::StreamInfo_Type_IV) {
-    assert(this->getNumCoalescedStreams() == 1 && "Never coalesce IVStream");
+  if (this->primeLogical->info.type() == ::LLVM::TDG::StreamInfo_Type_IV) {
+    assert(this->getNumLogicalStreams() == 1 && "Never coalesce IVStream");
   }
   // Initialize the dependence graph.
   this->initializeBaseStreams();
@@ -67,29 +54,29 @@ void CoalescedStream::finalize() {
   this->initializeCoalesceGroupStreams();
   STREAM_DPRINTF("Finalized, ElementSize %d, LStreams: =========.\n",
                  this->coalescedElementSize);
-  for (auto LS : this->coalescedStreams) {
+  for (auto LS : this->logicals) {
     LS_DPRINTF(LS, "Offset %d, MemElementSize %d.\n", LS->getCoalesceOffset(),
                LS->getMemElementSize());
   }
   STREAM_DPRINTF("Finalized ====================================.\n");
 }
 
-void CoalescedStream::selectPrimeLogicalStream() {
-  assert(!this->coalescedStreams.empty());
+void Stream::selectPrimeLogicalStream() {
+  assert(!this->logicals.empty());
   // Other sanity check for coalesced streams.
   // Sort the streams with offset.
-  std::sort(this->coalescedStreams.begin(), this->coalescedStreams.end(),
+  std::sort(this->logicals.begin(), this->logicals.end(),
             [](const LogicalStream *LA, const LogicalStream *LB) -> bool {
               return LA->getCoalesceOffset() <= LB->getCoalesceOffset();
             });
-  this->primeLStream = this->coalescedStreams.front();
-  this->baseOffset = this->primeLStream->getCoalesceOffset();
-  this->coalescedElementSize = this->primeLStream->getMemElementSize();
+  this->primeLogical = this->logicals.front();
+  this->baseOffset = this->primeLogical->getCoalesceOffset();
+  this->coalescedElementSize = this->primeLogical->getMemElementSize();
   assert(this->baseOffset >= 0 && "Illegal BaseOffset.");
   // Make sure we have the currect base_stream.
-  for (const auto &LS : this->coalescedStreams) {
+  for (const auto &LS : this->logicals) {
     assert(LS->getCoalesceBaseStreamId() ==
-           this->primeLStream->getCoalesceBaseStreamId());
+           this->primeLogical->getCoalesceBaseStreamId());
     // Compute the element size.
     this->coalescedElementSize = std::max(
         this->coalescedElementSize,
@@ -97,16 +84,16 @@ void CoalescedStream::selectPrimeLogicalStream() {
   }
 
   // Sanity check for consistency between logical streams.
-  for (const auto &LS : this->coalescedStreams) {
+  for (const auto &LS : this->logicals) {
     const auto &LSStaticInfo = LS->info.static_info();
-    const auto &PSStaticInfo = this->primeLStream->info.static_info();
+    const auto &PSStaticInfo = this->primeLogical->info.static_info();
 #define CHECK_INFO(field)                                                      \
   do {                                                                         \
     auto A = LSStaticInfo.field();                                             \
     auto B = PSStaticInfo.field();                                             \
     if (A != B) {                                                              \
       panic("Mismatch in %s, %s, %s.", #field, LS->info.name(),                \
-            primeLStream->info.name());                                        \
+            primeLogical->info.name());                                        \
     }                                                                          \
   } while (false);
     CHECK_INFO(is_merged_predicated_stream);
@@ -119,7 +106,7 @@ void CoalescedStream::selectPrimeLogicalStream() {
 #undef CHECK_INFO
     // If more than one coalesced stream, then CoreElementSize must be
     // the same as the MemElementSize.
-    if (this->coalescedStreams.size() > 1) {
+    if (this->logicals.size() > 1) {
       if (LS->getCoreElementSize() != LS->getMemElementSize()) {
         panic("Mismatch in %s CoreElementSize %d and MemElementSize %d.\n",
               LS->info.name(), LS->getCoreElementSize(),
@@ -129,7 +116,7 @@ void CoalescedStream::selectPrimeLogicalStream() {
     for (const auto &sid : LS->getMergedLoadStoreBaseStreams()) {
       bool matched = false;
       for (const auto &tid :
-           this->primeLStream->getMergedLoadStoreBaseStreams()) {
+           this->primeLogical->getMergedLoadStoreBaseStreams()) {
         if (tid.id() == sid.id()) {
           matched = true;
           break;
@@ -144,12 +131,12 @@ void CoalescedStream::selectPrimeLogicalStream() {
    * ! I feel like some day I will pay the price due to this hacky
    * ! implementation.
    */
-  this->streamName = this->primeLStream->info.name();
-  this->staticId = this->primeLStream->info.id();
+  this->streamName = this->primeLogical->info.name();
+  this->staticId = this->primeLogical->info.id();
 }
 
-void CoalescedStream::initializeBaseStreams() {
-  for (auto LS : this->coalescedStreams) {
+void Stream::initializeBaseStreams() {
+  for (auto LS : this->logicals) {
     const auto &info = LS->info;
     const auto &loopLevel = info.static_info().loop_level();
     // Update the address dependence information.
@@ -171,7 +158,7 @@ void CoalescedStream::initializeBaseStreams() {
     for (const auto &baseId : info.chosen_back_base_streams()) {
       assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_IV &&
              "Only phi node can have back edge dependence.");
-      if (this->coalescedStreams.size() != 1) {
+      if (this->logicals.size() != 1) {
         S_PANIC(this,
                 "More than one logical stream has back edge dependence.\n");
       }
@@ -210,135 +197,61 @@ void CoalescedStream::initializeBaseStreams() {
   }
 }
 
-void CoalescedStream::initializeAliasStreams() {
+void Stream::initializeAliasStreams() {
   // First sanity check for alias stream information.
-  const auto &primeSSI = this->primeLStream->info.static_info();
+  const auto &primeSSI = this->primeLogical->info.static_info();
   const auto &aliasBaseStreamId = primeSSI.alias_base_stream();
-  for (auto &LS : this->coalescedStreams) {
+  for (auto &LS : this->logicals) {
     const auto &SSI = LS->info.static_info();
     if (SSI.alias_base_stream().id() != aliasBaseStreamId.id()) {
       S_PANIC(
           this,
           "Mismatch AliasBaseStream %llu (prime %llu) %llu (logical %llu).\n",
-          aliasBaseStreamId.id(), this->primeLStream->getStreamId(),
+          aliasBaseStreamId.id(), this->primeLogical->getStreamId(),
           SSI.alias_base_stream().id(), LS->getStreamId());
     }
   }
   this->initializeAliasStreamsFromProtobuf(primeSSI);
 }
 
-void CoalescedStream::configure(uint64_t seqNum, ThreadContext *tc) {
+/**
+ * Only to configure all the history.
+ */
+void Stream::configure(uint64_t seqNum, ThreadContext *tc) {
   this->dispatchStreamConfig(seqNum, tc);
   if (se->isTraceSim()) {
     // We still use the trace based history address.
-    for (auto &S : this->coalescedStreams) {
+    for (auto &S : this->logicals) {
       S->history->configure();
       S->patternStream->configure();
     }
   }
 }
 
-::LLVM::TDG::StreamInfo_Type CoalescedStream::getStreamType() const {
-  return this->primeLStream->info.type();
-}
-
-uint32_t CoalescedStream::getLoopLevel() const {
-  /**
-   * * finalize() will make sure that all logical streams ahve the same loop
-   * * level.
-   */
-  return this->coalescedStreams.front()->info.static_info().loop_level();
-}
-
-uint32_t CoalescedStream::getConfigLoopLevel() const {
-  return this->coalescedStreams.front()->info.static_info().config_loop_level();
-}
-
-bool CoalescedStream::isInnerMostLoop() const {
-  return this->coalescedStreams.front()
-      ->info.static_info()
-      .is_inner_most_loop();
-}
-
-bool CoalescedStream::getFloatManual() const {
-  return this->primeLStream->info.static_info().float_manual();
-}
-
-bool CoalescedStream::hasUpdate() const {
-  return this->primeLStream->info.static_info()
-             .compute_info()
-             .update_stream()
-             .id() != DynamicStreamId::InvalidStaticStreamId;
-}
-
-const Stream::PredicatedStreamIdList &
-CoalescedStream::getMergedPredicatedStreams() const {
-  return this->primeLStream->info.static_info().merged_predicated_streams();
-}
-
-const ::LLVM::TDG::ExecFuncInfo &CoalescedStream::getPredicateFuncInfo() const {
-  return this->primeLStream->info.static_info().pred_func_info();
-}
-
-bool CoalescedStream::isMergedPredicated() const {
-  return this->primeLStream->info.static_info().is_merged_predicated_stream();
-}
-bool CoalescedStream::isMergedLoadStoreDepStream() const {
-  return this->primeLStream->info.static_info()
-             .compute_info()
-             .value_base_streams_size() > 0;
-}
-bool CoalescedStream::enabledStoreFunc() const {
-  return this->primeLStream->info.static_info()
-      .compute_info()
-      .enabled_store_func();
-}
-
-const ::LLVM::TDG::StreamParam &CoalescedStream::getConstUpdateParam() const {
-  assert(
-      this->coalescedStreams.size() == 1 &&
-      "Do not support constant update for more than 1 coalesced stream yet.");
-  return this->primeLStream->info.static_info().const_update_param();
-}
-
-bool CoalescedStream::isReduction() const {
-  if (this->primeLStream->info.static_info().val_pattern() ==
-      ::LLVM::TDG::StreamValuePattern::REDUCTION) {
-    assert(this->coalescedStreams.size() == 1 &&
-           "CoalescedStream should never be reduction stream.");
-    return true;
-  }
-  return false;
-}
-
-bool CoalescedStream::hasCoreUser() const {
-  return !this->primeLStream->info.static_info().no_core_user();
-}
-
-bool CoalescedStream::isContinuous() const {
-  const auto &pattern = this->primeLStream->patternStream->getPattern();
+bool Stream::isContinuous() const {
+  const auto &pattern = this->primeLogical->patternStream->getPattern();
   if (pattern.val_pattern() != "LINEAR") {
     return false;
   }
   return this->getMemElementSize() == pattern.stride_i();
 }
 
-void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
-                                   const DynamicStreamParamV *inputVec) {
+void Stream::setupAddrGen(DynamicStream &dynStream,
+                          const DynamicStreamParamV *inputVec) {
 
   if (se->isTraceSim()) {
-    if (this->getNumCoalescedStreams() == 1) {
+    if (this->getNumLogicalStreams() == 1) {
       // For simplicity.
       dynStream.addrGenCallback =
-          this->primeLStream->history->allocateCallbackAtInstance(
+          this->primeLogical->history->allocateCallbackAtInstance(
               dynStream.dynamicStreamId.streamInstance);
     } else {
       S_PANIC(this, "Cannot setup addr gen for trace coalesced stream so far.");
     }
   } else {
-    // We generate the address based on the primeLStream.
+    // We generate the address based on the primeLogical.
     assert(inputVec && "Missing InputVec.");
-    const auto &info = this->primeLStream->info;
+    const auto &info = this->primeLogical->info;
     const auto &staticInfo = info.static_info();
     const auto &pattern = staticInfo.iv_pattern();
     if (pattern.val_pattern() == ::LLVM::TDG::StreamValuePattern::LINEAR) {
@@ -355,20 +268,15 @@ void CoalescedStream::setupAddrGen(DynamicStream &dynStream,
   }
 }
 
-uint64_t
-CoalescedStream::getStreamLengthAtInstance(uint64_t streamInstance) const {
-  panic("Coalesced stream length at instance is not supported yet.\n");
-}
-
-uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
+uint64_t Stream::getFootprint(unsigned cacheBlockSize) const {
   /**
    * Estimate the memory footprint for this stream in number of unqiue cache
    * blocks. It is OK for us to under-estimate the footprint, as the cache will
    * try to cache a stream with low-memory footprint.
    */
-  const auto &pattern = this->primeLStream->patternStream->getPattern();
+  const auto &pattern = this->primeLogical->patternStream->getPattern();
   const auto totalElements =
-      this->primeLStream->history->getCurrentStreamLength();
+      this->primeLogical->history->getCurrentStreamLength();
   if (pattern.val_pattern() == "LINEAR") {
     // One dimension linear stream.
     return totalElements * pattern.stride_i() / cacheBlockSize;
@@ -398,14 +306,17 @@ uint64_t CoalescedStream::getFootprint(unsigned cacheBlockSize) const {
   }
 }
 
-uint64_t CoalescedStream::getTrueFootprint() const {
-  return this->primeLStream->history->getNumCacheLines();
+uint64_t Stream::getTrueFootprint() const {
+  return this->primeLogical->history->getNumCacheLines();
 }
 
-void CoalescedStream::getCoalescedOffsetAndSize(uint64_t streamId,
-                                                int32_t &offset,
-                                                int32_t &size) const {
-  for (auto LS : this->coalescedStreams) {
+uint64_t Stream::getStreamLengthAtInstance(uint64_t streamInstance) const {
+  panic("Coalesced stream length at instance is not supported yet.\n");
+}
+
+void Stream::getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
+                                       int32_t &size) const {
+  for (auto LS : this->logicals) {
     if (LS->getStreamId() == streamId) {
       offset = LS->getCoalesceOffset() - this->baseOffset;
       size = LS->getMemElementSize();

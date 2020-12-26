@@ -29,6 +29,16 @@ struct DynamicStream {
   const Cycles configCycle;
   ThreadContext *tc;
 
+  DynamicStream(Stream *_stream, const DynamicStreamId &_dynamicStreamId,
+                uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,
+                StreamEngine *_se);
+  DynamicStream(const DynamicStream &other) = delete;
+  DynamicStream(DynamicStream &&other) = delete;
+  DynamicStream &operator=(const DynamicStream &other) = delete;
+  DynamicStream &operator=(DynamicStream &&other) = delete;
+
+  ~DynamicStream();
+
   /**
    * Head is the newest element.
    * Tail is the dummy node before the oldest element.
@@ -139,18 +149,6 @@ struct DynamicStream {
   void addAddrOrBackBaseElementEdge(StreamElement *newElement,
                                     const StreamDepEdge &edge,
                                     bool isBack = false);
-  // void addAddrBaseElementReduction(StreamElement *newElement);
-
-  DynamicStream(Stream *_stream, const DynamicStreamId &_dynamicStreamId,
-                uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,
-                StreamEngine *_se);
-  DynamicStream(const DynamicStream &other) = delete;
-  DynamicStream(DynamicStream &&other) = delete;
-  DynamicStream &operator=(const DynamicStream &other) = delete;
-  DynamicStream &operator=(DynamicStream &&other) = delete;
-
-  ~DynamicStream();
-
   /**
    * Should the CoreSE try to issue for the data.
    */

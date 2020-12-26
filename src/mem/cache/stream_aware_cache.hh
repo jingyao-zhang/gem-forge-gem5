@@ -5,7 +5,7 @@
 #include <unordered_set>
 
 // #include "base/misc.hh""
-#include "cpu/gem_forge/accelerator/stream/coalesced_stream.hh"
+#include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/base.hh"
 #include "mem/cache/blk.hh"
@@ -497,7 +497,7 @@ public:
   void serialize(CheckpointOut &cp) const override;
   void unserialize(CheckpointIn &cp) override;
 
-  CoalescedStream *getCoalescedStreamFromPacket(PacketPtr pkt) const;
+  Stream *getStreamFromPacket(PacketPtr pkt) const;
 
   bool shouldUseStreamAwareMissPredictionPolicy(PacketPtr pkt);
   bool predictCoalescedStreamRequest(PacketPtr pkt);

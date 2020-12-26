@@ -46,7 +46,13 @@ Stream::Stream(const StreamArguments &args)
   this->streamRegion = args.streamRegion;
 }
 
-Stream::~Stream() {}
+Stream::~Stream() {
+  for (auto &LS : this->logicals) {
+    delete LS;
+    LS = nullptr;
+  }
+  this->logicals.clear();
+}
 
 void Stream::dumpStreamStats(std::ostream &os) const {
   if (this->statistic.numConfigured == 0 &&
@@ -73,7 +79,7 @@ bool Stream::isLoadStream() const {
   return this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD;
 }
 bool Stream::isUpdateStream() const {
-  return this->isLoadStream() && this->enabledStoreFunc();
+  return this->isLoadStream() && this->getEnabledStoreFunc();
 }
 
 bool Stream::isMemStream() const {
@@ -175,7 +181,7 @@ void Stream::initializeAliasStreamsFromProtobuf(
   /**
    * Same thing for update stream.
    */
-  if (this->hasUpdate() && !this->enabledStoreFunc()) {
+  if (this->hasUpdate() && !this->getEnabledStoreFunc()) {
     // There are StoreStream that update this LoadStream.
     this->aliasBaseStream->hasAliasedStoreStream = true;
   }
@@ -571,8 +577,8 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
   if (se->isTraceSim()) {
     assert(this->getMergedPredicatedStreams().empty() &&
            "MergedPredicatedStreams in TraceSim.");
-    assert(!this->enabledStoreFunc() && "StoreFunc in TraceSim.");
-    assert(!this->enabledLoadFunc() && "LoadFunc in TraceSim.");
+    assert(!this->getEnabledStoreFunc() && "StoreFunc in TraceSim.");
+    assert(!this->getEnabledLoadFunc() && "LoadFunc in TraceSim.");
     assert(!this->isReduction() && "Reduction in TraceSim.");
     assert(!inputVec && "InputVec in TraceSim.");
     return;
@@ -600,7 +606,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
   /**
    * Handle StoreFunc.
    */
-  if (this->enabledStoreFunc()) {
+  if (this->getEnabledStoreFunc()) {
     assert(this->getStreamType() != ::LLVM::TDG::StreamInfo_Type_IV);
     const auto &storeFuncInfo = this->getStoreFuncInfo();
     if (!this->storeCallback) {
@@ -617,7 +623,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
   /**
    * LoadFunc shares the same input as StoreFunc, for now.
    */
-  if (this->enabledLoadFunc()) {
+  if (this->getEnabledLoadFunc()) {
     assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT);
     const auto &info = this->getLoadFuncInfo();
     if (!this->loadCallback) {
@@ -972,7 +978,7 @@ StreamElement *Stream::getPrevElement(StreamElement *element) {
 }
 
 void Stream::handleStoreFuncAtRelease() {
-  if (!this->enabledStoreFunc()) {
+  if (!this->getEnabledStoreFunc()) {
     return;
   }
   assert(!this->dynamicStreams.empty() && "No dynamic stream.");

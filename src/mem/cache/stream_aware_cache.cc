@@ -1745,8 +1745,8 @@ CacheBlk *StreamAwareCache::handleFill(PacketPtr pkt, CacheBlk *blk,
     } else {
 
       bool inserted = false;
-      if (auto coalescedStream = this->getCoalescedStreamFromPacket(pkt)) {
-        auto footprint = coalescedStream->getFootprint(this->blkSize);
+      if (auto S = this->getStreamFromPacket(pkt)) {
+        auto footprint = S->getFootprint(this->blkSize);
         if (footprint > (this->size / this->blkSize) * 0.01) {
           // We believe this is not cacheable, thus predict to be miss.
           if (auto streamLRUTag = dynamic_cast<StreamLRU *>(this->tags)) {
@@ -2632,8 +2632,7 @@ StreamAwareCache::MemSidePort::MemSidePort(const std::string &_name,
       _reqQueue(*_cache, *this, _snoopRespQueue, _label),
       _snoopRespQueue(*_cache, *this, _label), cache(_cache) {}
 
-CoalescedStream *
-StreamAwareCache::getCoalescedStreamFromPacket(PacketPtr pkt) const {
+Stream *StreamAwareCache::getStreamFromPacket(PacketPtr pkt) const {
   /**
    * Dangerous pointer casting! Only use stream aware cache with LLVMTraceCPU.
    */
@@ -2641,17 +2640,14 @@ StreamAwareCache::getCoalescedStreamFromPacket(PacketPtr pkt) const {
       reinterpret_cast<TDGPacketHandler *>(pkt->req->getReqInstSeqNum());
 
   if (auto memAccess = dynamic_cast<StreamMemAccess *>(handler)) {
-    auto stream = memAccess->getStream();
-    if (auto coalescedStream = dynamic_cast<CoalescedStream *>(stream)) {
-      return coalescedStream;
-    }
+    return memAccess->getStream();
   }
   return nullptr;
 }
 
 void StreamAwareCache::incCoalescedStreamMissCount(PacketPtr pkt) {
   assert(pkt->req->masterId() < system->maxMasters());
-  if (this->getCoalescedStreamFromPacket(pkt) == nullptr) {
+  if (this->getStreamFromPacket(pkt) == nullptr) {
     return;
   }
   this->coalescedStreamMisses[pkt->cmdToIndex()][pkt->req->masterId()]++;
@@ -2659,7 +2655,7 @@ void StreamAwareCache::incCoalescedStreamMissCount(PacketPtr pkt) {
 
 void StreamAwareCache::incCoalescedStreamHitCount(PacketPtr pkt) {
   assert(pkt->req->masterId() < system->maxMasters());
-  if (this->getCoalescedStreamFromPacket(pkt) == nullptr) {
+  if (this->getStreamFromPacket(pkt) == nullptr) {
     return;
   }
   this->coalescedStreamHits[pkt->cmdToIndex()][pkt->req->masterId()]++;
@@ -2672,15 +2668,15 @@ bool StreamAwareCache::shouldUseStreamAwareReplacementPolicy(MSHR *mshr) {
   }
 
   auto initTarget = mshr->getTarget();
-  auto coalescedStream = this->getCoalescedStreamFromPacket(initTarget->pkt);
-  if (coalescedStream == nullptr) {
+  auto S = this->gettreamFromPacket(initTarget->pkt);
+  if (S == nullptr) {
     // This is not a coalesced stream.
     return false;
   }
 
   // Get the memory footprint of the coalesced stream and decide if we
   // should use stream aware replacement policy for it.
-  auto footprint = coalescedStream->getFootprint(this->blkSize);
+  auto footprint = S->getFootprint(this->blkSize);
   this->coalescedStreamMemFootprint.sample(footprint);
   if (footprint > this->size / this->blkSize) {
     // We believe this is not cacheable.
@@ -2696,9 +2692,9 @@ void StreamAwareCache::recvTimingRespForStream(PacketPtr pkt, MSHR *mshr,
   assert(pkt->isRead());
 
   auto initTarget = mshr->getTarget();
-  auto coalescedStream = this->getCoalescedStreamFromPacket(initTarget->pkt);
+  auto S = this->getStreamFromPacket(initTarget->pkt);
 
-  if (coalescedStream == nullptr) {
+  if (S == nullptr) {
     panic("Failed to get coalesced stream for response.");
   }
 
@@ -2751,7 +2747,9 @@ void StreamAwareCache::recvTimingRespForStream(PacketPtr pkt, MSHR *mshr,
     case MSHR::Target::Source::FromSnoop: {
       panic("FromSnoop target found in the stream mshr.");
     }
-    default: { panic("Illegal target->source enum %d\n", target.source); }
+    default: {
+      panic("Illegal target->source enum %d\n", target.source);
+    }
     }
   }
 
@@ -2778,16 +2776,12 @@ void StreamAwareCache::recvTimingRespForStream(PacketPtr pkt, MSHR *mshr,
 }
 
 bool StreamAwareCache::shouldUseStreamAwareMissPredictionPolicy(PacketPtr pkt) {
-  auto stream = this->getCoalescedStreamFromPacket(pkt);
-  if (stream != nullptr) {
-    return true;
-  }
-  return false;
+  return this->getStreamFromPacket(pkt);
 }
 
 bool StreamAwareCache::predictCoalescedStreamRequest(PacketPtr pkt) {
 
-  auto stream = this->getCoalescedStreamFromPacket(pkt);
+  auto stream = this->getStreamFromPacket(pkt);
   if (stream == nullptr) {
     panic("Failed to get coalesced stream to predict if miss.");
   }

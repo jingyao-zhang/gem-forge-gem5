@@ -8,6 +8,8 @@
 #include "stream_atomic_op.hh"
 #include "stream_element.hh"
 #include "stream_float_tracer.hh"
+#include "stream_history.hh"
+#include "stream_pattern.hh"
 #include "stream_statistic.hh"
 
 #include "base/types.hh"
@@ -21,6 +23,7 @@
 #include "StreamMessage.pb.h"
 
 #include <list>
+#include <vector>
 
 class LLVMTraceCPU;
 class GemForgeCPUDelegator;
@@ -30,7 +33,94 @@ class StreamConfigInst;
 class StreamEndInst;
 
 /**
+ * A LogicalStream is a simple wrap around the StreamInfo,
+ * and is the basic unit of coalescing.
+ */
+class LogicalStream {
+public:
+  LogicalStream(const std::string &_traceExtraFolder,
+                const LLVM::TDG::StreamInfo &_info);
+
+  LogicalStream(const LogicalStream &Other) = delete;
+  LogicalStream(LogicalStream &&Other) = delete;
+  LogicalStream &operator=(const LogicalStream &Other) = delete;
+  LogicalStream &operator=(LogicalStream &&Other) = delete;
+
+  ~LogicalStream() {}
+
+  using PredicatedStreamIdList =
+      ::google::protobuf::RepeatedPtrField<::LLVM::TDG::PredicatedStreamId>;
+  using StreamIdList =
+      ::google::protobuf::RepeatedPtrField<::LLVM::TDG::StreamId>;
+  using StreamInfoType = ::LLVM::TDG::StreamInfo_Type;
+  using ExecFuncInfo = ::LLVM::TDG::ExecFuncInfo;
+
+  uint64_t getStreamId() const { return this->info.id(); }
+  StreamInfoType getStreamType() const { return this->info.type(); }
+  uint32_t getLoopLevel() const {
+    return this->info.static_info().loop_level();
+  }
+  uint32_t getConfigLoopLevel() const {
+    return this->info.static_info().config_loop_level();
+  }
+  bool getIsInnerMostLoop() const {
+    return this->info.static_info().is_inner_most_loop();
+  }
+  bool getFloatManual() const {
+    return this->info.static_info().float_manual();
+  }
+  uint64_t getCoalesceBaseStreamId() const {
+    return this->info.coalesce_info().base_stream();
+  }
+  int32_t getCoalesceOffset() const {
+    return this->info.coalesce_info().offset();
+  }
+  int32_t getMemElementSize() const {
+    return this->info.static_info().mem_element_size();
+  }
+  int32_t getCoreElementSize() const {
+    return this->info.static_info().core_element_size();
+  }
+  const PredicatedStreamIdList &getMergedPredicatedStreams() const {
+    return this->info.static_info().merged_predicated_streams();
+  }
+  const ExecFuncInfo &getPredicateFuncInfo() const {
+    return this->info.static_info().pred_func_info();
+  }
+  bool isMergedPredicated() const {
+    return this->info.static_info().is_merged_predicated_stream();
+  }
+  bool isMergedLoadStoreDepStream() const {
+    return this->info.static_info().compute_info().value_base_streams_size() >
+           0;
+  }
+  const StreamIdList &getMergedLoadStoreDepStreams() const {
+    return this->info.static_info().compute_info().value_dep_streams();
+  }
+  const StreamIdList &getMergedLoadStoreBaseStreams() const {
+    return this->info.static_info().compute_info().value_base_streams();
+  }
+  const ExecFuncInfo &getStoreFuncInfo() const {
+    return this->info.static_info().compute_info().store_func_info();
+  }
+  const ExecFuncInfo &getLoadFuncInfo() const {
+    return this->info.static_info().compute_info().load_func_info();
+  }
+  bool getEnabledStoreFunc() const {
+    return this->info.static_info().compute_info().enabled_store_func();
+  }
+  bool getEnabledLoadFunc() const {
+    return this->getLoadFuncInfo().name() != "";
+  }
+
+  LLVM::TDG::StreamInfo info;
+  std::unique_ptr<StreamHistory> history;
+  std::unique_ptr<StreamPattern> patternStream;
+};
+
+/**
  * Holdes the aggregated stream state, across multiple dynamic streams.
+ * This may also contain multiple coalesced static LogicalStreams.
  */
 class Stream {
 public:
@@ -60,62 +150,24 @@ public:
    * Notice that some information are not valid until finalized, e.g.
    * StreamName, StaticId.
    */
-  virtual void finalize() = 0;
+  void addStreamInfo(const LLVM::TDG::StreamInfo &info);
+  void finalize();
   void addAddrBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
   void addValueBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
   void addBaseStepStream(Stream *baseStepStream);
-  void addBackBaseStream(StaticId baseId, StaticId depId, Stream *backBaseStream);
+  void addBackBaseStream(StaticId baseId, StaticId depId,
+                         Stream *backBaseStream);
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
   void
   initializeAliasStreamsFromProtobuf(const ::LLVM::TDG::StaticStreamInfo &info);
   void initializeCoalesceGroupStreams();
 
   const std::string &getStreamName() const { return this->streamName; }
-  virtual ::LLVM::TDG::StreamInfo_Type getStreamType() const = 0;
   bool isAtomicStream() const;
   bool isStoreStream() const;
   bool isLoadStream() const;
   bool isUpdateStream() const;
   bool isMemStream() const;
-  virtual uint32_t getLoopLevel() const = 0;
-  virtual uint32_t getConfigLoopLevel() const = 0;
-  virtual bool isInnerMostLoop() const = 0;
-  virtual int32_t getMemElementSize() const = 0;
-  virtual int32_t getCoreElementSize() const = 0;
-  virtual bool getFloatManual() const = 0;
-
-  virtual bool hasUpdate() const = 0;
-
-  virtual bool isReduction() const = 0;
-  virtual bool hasCoreUser() const = 0;
-  /**
-   * Whether this stream has been merged, including predicated merge.
-   */
-  using PredicatedStreamIdList =
-      ::google::protobuf::RepeatedPtrField<::LLVM::TDG::PredicatedStreamId>;
-  using StreamIdList =
-      ::google::protobuf::RepeatedPtrField<::LLVM::TDG::StreamId>;
-  virtual const PredicatedStreamIdList &getMergedPredicatedStreams() const = 0;
-  virtual const ::LLVM::TDG::ExecFuncInfo &getPredicateFuncInfo() const = 0;
-  virtual const StreamIdList &getMergedLoadStoreDepStreams() const = 0;
-  virtual const StreamIdList &getMergedLoadStoreBaseStreams() const = 0;
-  virtual const ::LLVM::TDG::ExecFuncInfo &getStoreFuncInfo() const = 0;
-  virtual bool enabledStoreFunc() const = 0;
-  virtual const ::LLVM::TDG::ExecFuncInfo &getLoadFuncInfo() const = 0;
-  virtual bool enabledLoadFunc() const {
-    return this->getLoadFuncInfo().name() != "";
-  }
-  virtual bool isMerged() const {
-    return this->isMergedPredicated() || this->isMergedLoadStoreDepStream();
-  }
-  virtual bool isMergedPredicated() const = 0;
-  virtual bool isMergedLoadStoreDepStream() const = 0;
-  virtual const ::LLVM::TDG::StreamParam &getConstUpdateParam() const = 0;
-  /**
-   * Get coalesce base stream, 0 for invalid.
-   */
-  virtual uint64_t getCoalesceBaseStreamId() const { return 0; }
-  virtual int32_t getCoalesceOffset() const { return 0; }
 
   /**
    * Simple bookkeeping information for the stream engine.
@@ -225,18 +277,15 @@ public:
 
   void tick();
 
-  virtual uint64_t getTrueFootprint() const = 0;
-  virtual uint64_t getFootprint(unsigned cacheBlockSize) const = 0;
-  virtual bool isContinuous() const = 0;
-
   LLVMTraceCPU *getCPU() { return this->cpu; }
   GemForgeCPUDelegator *getCPUDelegator() const;
   int getCPUId() { return this->getCPUDelegator()->cpuId(); }
 
-  virtual void configure(uint64_t seqNum, ThreadContext *tc) = 0;
+  void configure(uint64_t seqNum, ThreadContext *tc);
 
   void dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc);
-  void executeStreamConfig(uint64_t seqNum, const DynamicStreamParamV *inputVec);
+  void executeStreamConfig(uint64_t seqNum,
+                           const DynamicStreamParamV *inputVec);
   void rewindStreamConfig(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t seqNum);
 
@@ -310,13 +359,14 @@ public:
    * Called by executeStreamConfig() to allow derived class to set up the
    * AddrGenCallback in DynamicStream.
    */
-  virtual void setupAddrGen(DynamicStream &dynStream,
-                            const DynamicStreamParamV *inputVec) = 0;
+  void setupAddrGen(DynamicStream &dynStream,
+                    const DynamicStreamParamV *inputVec);
 
   /**
    * Extract extra input values from the inputVec. May modify inputVec.
    */
-  void extractExtraInputValues(DynamicStream &dynS, DynamicStreamParamV *inputVec);
+  void extractExtraInputValues(DynamicStream &dynS,
+                               DynamicStreamParamV *inputVec);
 
   /**
    * For debug.
@@ -324,7 +374,6 @@ public:
   void dump() const;
 
   /**
-   * ! Sean: StreamAwareCache
    * Allocate the CacheStreamConfigureData.
    */
   CacheStreamConfigureData *allocateCacheConfigureData(uint64_t configSeqNum,
@@ -336,7 +385,6 @@ public:
   bool isDirectLoadStream() const;
   bool isDirectMemStream() const;
   virtual bool isPointerChaseLoadStream() const { return false; }
-  virtual uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const = 0;
 
   std::deque<DynamicStream> dynamicStreams;
   bool hasDynamicStream() const { return !this->dynamicStreams.empty(); }
@@ -407,12 +455,14 @@ protected:
   /**
    * Helper function to setup a linear addr func.
    */
-  void setupLinearAddrFunc(DynamicStream &dynStream, const DynamicStreamParamV *inputVec,
+  void setupLinearAddrFunc(DynamicStream &dynStream,
+                           const DynamicStreamParamV *inputVec,
                            const LLVM::TDG::StreamInfo &info);
   /**
    * Helper function to setup an func addr gen.
    */
-  void setupFuncAddrFunc(DynamicStream &dynStream, const DynamicStreamParamV *inputVec,
+  void setupFuncAddrFunc(DynamicStream &dynStream,
+                         const DynamicStreamParamV *inputVec,
                          const LLVM::TDG::StreamInfo &info);
   /**
    * Helper function to setup formal params for an ExecFunc.
@@ -421,6 +471,118 @@ protected:
   int setupFormalParams(const DynamicStreamParamV *inputVec,
                         const LLVM::TDG::ExecFuncInfo &info,
                         DynamicStreamFormalParamV &formalParams);
+
+  /***************************************************************
+   * Managing coalesced LogicalStream within this one.
+   * The first one is "prime stream", whose stream id is used to represent
+   * this stream.
+   ***************************************************************/
+  std::vector<LogicalStream *> logicals;
+  LogicalStream *primeLogical = nullptr;
+  int32_t coalescedElementSize = -1;
+  int32_t baseOffset = -1;
+
+  void selectPrimeLogicalStream();
+  void initializeBaseStreams();
+  void initializeAliasStreams();
+
+public:
+  /********************************************************************
+   * Static information accessor.
+   ********************************************************************/
+  using PredicatedStreamIdList = LogicalStream::PredicatedStreamIdList;
+  using StreamInfoType = LogicalStream::StreamInfoType;
+  using StreamIdList = LogicalStream::StreamIdList;
+  using ExecFuncInfo = LogicalStream::ExecFuncInfo;
+#define Get(T, Name)                                                           \
+  T get##Name() const { return this->primeLogical->get##Name(); }
+#define Is(Name)                                                               \
+  bool is##Name() const { return this->primeLogical->is##Name(); }
+
+  Get(StreamInfoType, StreamType);
+  Get(uint32_t, LoopLevel);
+  Get(uint32_t, ConfigLoopLevel);
+  Get(bool, IsInnerMostLoop);
+  Get(bool, FloatManual);
+  Get(const PredicatedStreamIdList &, MergedPredicatedStreams);
+  Get(const ExecFuncInfo &, PredicateFuncInfo);
+  Get(const StreamIdList &, MergedLoadStoreDepStreams);
+  Get(const StreamIdList &, MergedLoadStoreBaseStreams);
+  Get(const ExecFuncInfo &, StoreFuncInfo);
+  Get(const ExecFuncInfo &, LoadFuncInfo);
+  Get(bool, EnabledStoreFunc);
+  Get(bool, EnabledLoadFunc);
+  Is(MergedPredicated);
+  Is(MergedLoadStoreDepStream);
+
+  /**
+   * Get the coalesce base stream and offset.
+   * NOTE: This stream may not be coalesced into the base due to
+   * NOTE: large offset (see stream_engine.cc).
+   */
+  Get(uint64_t, CoalesceBaseStreamId);
+  Get(int32_t, CoalesceOffset);
+
+#undef Get
+#undef Is
+
+  int32_t getMemElementSize() const {
+    assert(this->coalescedElementSize > 0 && "Invalid element size.");
+    return this->coalescedElementSize;
+  }
+  int32_t getCoreElementSize() const {
+    if (this->logicals.size() == 1) {
+      return this->primeLogical->getCoreElementSize();
+    }
+    // For coalesced stream CoreElementSize is the same as MemElementSize.
+    return this->getMemElementSize();
+  }
+
+  bool isMerged() const {
+    return this->isMergedPredicated() || this->isMergedLoadStoreDepStream();
+  }
+
+  size_t getNumLogicalStreams() const { return this->logicals.size(); }
+  bool isSingle() const { return this->getNumLogicalStreams() == 1; }
+
+  bool hasUpdate() const {
+    return this->primeLogical->info.static_info()
+               .compute_info()
+               .update_stream()
+               .id() != DynamicStreamId::InvalidStaticStreamId;
+  }
+
+  const ::LLVM::TDG::StreamParam &getConstUpdateParam() const {
+    assert(
+        this->isSingle() &&
+        "Do not support constant update for more than 1 coalesced stream yet.");
+    return this->primeLogical->info.static_info().const_update_param();
+  }
+
+  bool isReduction() const {
+    if (this->primeLogical->info.static_info().val_pattern() ==
+        ::LLVM::TDG::StreamValuePattern::REDUCTION) {
+      assert(this->isSingle() &&
+             "CoalescedStream should never be reduction stream.");
+      return true;
+    }
+    return false;
+  }
+
+  bool hasCoreUser() const {
+    return !this->primeLogical->info.static_info().no_core_user();
+  }
+
+  /**
+   * Get the number of unique cache blocks the stream touches.
+   * Used for stream aware cache to determine if it should cache the stream.
+   */
+  uint64_t getFootprint(unsigned cacheBlockSize) const;
+  uint64_t getTrueFootprint() const;
+  bool isContinuous() const;
+  uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const;
+  void getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
+                                 int32_t &size) const;
 };
 
 #endif

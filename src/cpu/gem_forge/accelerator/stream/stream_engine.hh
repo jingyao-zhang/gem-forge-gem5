@@ -1,9 +1,9 @@
 #ifndef __CPU_GEM_FORGE_ACCELERATOR_STREAM_ENGINE_H__
 #define __CPU_GEM_FORGE_ACCELERATOR_STREAM_ENGINE_H__
 
-#include "coalesced_stream.hh"
 #include "insts.hh"
 #include "prefetch_element_buffer.hh"
+#include "stream.hh"
 #include "stream_element.hh"
 #include "stream_translation_buffer.hh"
 
@@ -129,8 +129,8 @@ public:
    ************************************************************************/
   void cpuStoreTo(Addr vaddr, int size);
 
-  CoalescedStream *getStream(uint64_t streamId) const;
-  CoalescedStream *tryGetStream(uint64_t streamId) const;
+  Stream *getStream(uint64_t streamId) const;
+  Stream *tryGetStream(uint64_t streamId) const;
 
   /**
    * Send StreamEnd packet for all the ended dynamic stream ids.
@@ -290,7 +290,7 @@ private:
   PrefetchElementBuffer peb;
 
   using StreamId = uint64_t;
-  std::unordered_map<StreamId, CoalescedStream *> streamMap;
+  std::unordered_map<StreamId, Stream *> streamMap;
 
   /**
    * One level indirection for from the original stream id to coalesced stream
@@ -352,8 +352,8 @@ private:
   generateCoalescedStreamIdMap(const ::LLVM::TDG::StreamRegion &streamRegion,
                                Stream::StreamArguments &args);
 
-  CoalescedStream *getOrInitializeCoalescedStream(uint64_t stepRootStreamId,
-                                                  int32_t coalesceGroup);
+  Stream *getOrInitializeStream(uint64_t stepRootStreamId,
+                                int32_t coalesceGroup);
 
   void updateAliveStatistics();
 
@@ -368,15 +368,21 @@ private:
   const std::list<Stream *> &getStepStreamList(Stream *stepS) const;
 
   // Helper function to get streams configured in the region.
-  std::list<CoalescedStream *>
+  std::list<Stream *>
   getConfigStreamsInRegion(const LLVM::TDG::StreamRegion &streamRegion);
 
   /**
    * Decide and float streams. Called in executeStreamConfig().
    */
+  using StreamCacheConfigMap =
+      std::unordered_map<Stream *, CacheStreamConfigureData *>;
   void floatStreams(const StreamConfigArgs &args,
                     const ::LLVM::TDG::StreamRegion &streamRegion,
-                    std::list<CoalescedStream *> &configStreams);
+                    std::list<Stream *> &configStreams);
+  void floatReductionStreams(const StreamConfigArgs &args,
+                             const ::LLVM::TDG::StreamRegion &streamRegion,
+                             std::list<Stream *> &configStreams,
+                             StreamCacheConfigMap &floatedMap);
 
   // Called every cycle to allocate elements.
   void allocateElements();

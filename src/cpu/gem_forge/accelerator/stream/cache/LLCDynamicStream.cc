@@ -1,6 +1,5 @@
 #include "LLCDynamicStream.hh"
 
-#include "cpu/gem_forge/accelerator/stream/coalesced_stream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
@@ -28,10 +27,7 @@ uint64_t LLCStreamElement::getData(uint64_t streamId) const {
   auto S = this->dynS->getStaticStream();
   int32_t offset = 0;
   int size = this->size;
-  if (auto CS = dynamic_cast<CoalescedStream *>(S)) {
-    // Handle offset for coalesced stream.
-    CS->getCoalescedOffsetAndSize(streamId, offset, size);
-  }
+  S->getCoalescedOffsetAndSize(streamId, offset, size);
   assert(size <= sizeof(uint64_t) && "ElementSize overflow.");
   assert(offset + size <= this->size && "Size overflow.");
   return GemForgeUtils::rebuildData(this->getUInt8Ptr(offset), size);

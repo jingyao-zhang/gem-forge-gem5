@@ -95,7 +95,7 @@ public:
   bool hasIndirectDependent() const {
     auto S = this->getStaticStream();
     return !this->indirectStreams.empty() || this->isPointerChase() ||
-           (S->isLoadStream() && S->enabledStoreFunc());
+           (S->isLoadStream() && S->getEnabledStoreFunc());
   }
 
   void setController(AbstractStreamAwareController *controller) {

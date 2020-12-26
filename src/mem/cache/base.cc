@@ -2578,16 +2578,6 @@ StreamMemAccess *BaseCache::getStreamMemAccessFromPacket(PacketPtr pkt) const {
     return pkt->findNextSenderState<StreamMemAccess>();
 }
 
-CoalescedStream *BaseCache::getCoalescedStreamFromPacket(PacketPtr pkt) const {
-    auto stream = this->getStreamFromPacket(pkt);
-    if (stream != nullptr) {
-        if (auto coalescedStream = dynamic_cast<CoalescedStream *>(stream)) {
-            return coalescedStream;
-        }
-    }
-    return nullptr;
-}
-
 void BaseCache::incMissCountStream(PacketPtr pkt) {
     if (auto stream = this->getStreamFromPacket(pkt)) {
         auto &stat = this->getOrInitializeStreamStats(stream);

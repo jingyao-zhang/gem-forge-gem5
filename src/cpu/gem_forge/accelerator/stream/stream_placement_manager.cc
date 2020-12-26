@@ -1,6 +1,6 @@
 #include "stream_placement_manager.hh"
 
-#include "coalesced_stream.hh"
+#include "stream.hh"
 #include "stream_engine.hh"
 
 #include "base/output.hh"
@@ -90,12 +90,6 @@ bool StreamPlacementManager::access(
 bool StreamPlacementManager::accessNoMSHR(
     Stream *stream, CacheBlockBreakdownAccess &cacheBlockBreakdown,
     StreamElement *element, bool isWrite) {
-
-  auto coalescedStream = dynamic_cast<CoalescedStream *>(stream);
-  if (coalescedStream == nullptr) {
-    // So far we only consider coalesced streams.
-    return false;
-  }
 
   // bool hasHit = false;
   // size_t hitLevel = this->caches.size();

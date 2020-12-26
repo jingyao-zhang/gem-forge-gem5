@@ -471,7 +471,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
      *   a. If this is update stream, we have to further ensure value is ready.
      * 2. If offloaded, we have to check for StreamAck.
      */
-    if (S->enabledStoreFunc()) {
+    if (S->getEnabledStoreFunc()) {
       if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue()) {
         if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
           // S_DPRINTF(S, "Can not step as no Ack for %llu.\n",
@@ -854,11 +854,9 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
       }
       auto vaddr = element->addr;
       int32_t size = element->size;
-      auto CS = dynamic_cast<CoalescedStream *>(S);
-      assert(CS && "Every stream should be CoalescedStream now.");
       // Handle offset for coalesced stream.
       int32_t offset;
-      CS->getCoalescedOffsetAndSize(streamId, offset, size);
+      S->getCoalescedOffsetAndSize(streamId, offset, size);
       vaddr += offset;
       if (element->isValueFaulted(vaddr, size)) {
         S_ELEMENT_PANIC(element, "Commit user of faulted value.");
@@ -1302,9 +1300,9 @@ void StreamEngine::generateCoalescedStreamIdMap(
       }
     }
   }
-  // For each split group, generate a CoalescedStream.
+  // For each split group, generate a Stream.
   for (auto &group : coalescedGroup) {
-    CoalescedStream *coalescedStream = nullptr;
+    Stream *stream = nullptr;
     uint64_t coalescedStreamId = 0;
     for (int i = 0; i < group.size(); ++i) {
       const auto &streamInfo = *(group[i]);
@@ -1326,16 +1324,16 @@ void StreamEngine::generateCoalescedStreamIdMap(
 
         // TODO: I don't like this design, all initialization should happen
         // TODO: in the function initializeStreams().
-        coalescedStream = new CoalescedStream(args);
+        stream = new Stream(args);
         coalescedStreamId = streamId;
-        this->streamMap.emplace(coalescedStreamId, coalescedStream);
+        this->streamMap.emplace(coalescedStreamId, stream);
       }
       this->coalescedStreamIdMap.emplace(streamId, coalescedStreamId);
     }
   }
 }
 
-CoalescedStream *StreamEngine::getStream(uint64_t streamId) const {
+Stream *StreamEngine::getStream(uint64_t streamId) const {
   if (this->coalescedStreamIdMap.count(streamId)) {
     streamId = this->coalescedStreamIdMap.at(streamId);
   }
@@ -1346,7 +1344,7 @@ CoalescedStream *StreamEngine::getStream(uint64_t streamId) const {
   return iter->second;
 }
 
-CoalescedStream *StreamEngine::tryGetStream(uint64_t streamId) const {
+Stream *StreamEngine::tryGetStream(uint64_t streamId) const {
   if (this->coalescedStreamIdMap.count(streamId)) {
     streamId = this->coalescedStreamIdMap.at(streamId);
   }
@@ -1504,13 +1502,13 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
       .first->second;
 }
 
-std::list<CoalescedStream *> StreamEngine::getConfigStreamsInRegion(
+std::list<Stream *> StreamEngine::getConfigStreamsInRegion(
     const LLVM::TDG::StreamRegion &streamRegion) {
   /**
    * Get all the configured streams.
    */
-  std::list<CoalescedStream *> configStreams;
-  std::unordered_set<CoalescedStream *> dedupSet;
+  std::list<Stream *> configStreams;
+  std::unordered_set<Stream *> dedupSet;
   for (const auto &streamInfo : streamRegion.streams()) {
     // Deduplicate the streams due to coalescing.
     const auto &streamId = streamInfo.id();
@@ -1525,7 +1523,7 @@ std::list<CoalescedStream *> StreamEngine::getConfigStreamsInRegion(
 
 void StreamEngine::floatStreams(const StreamConfigArgs &args,
                                 const ::LLVM::TDG::StreamRegion &streamRegion,
-                                std::list<CoalescedStream *> &configStreams) {
+                                std::list<Stream *> &configStreams) {
 
   if (cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::ATOMIC_SIMPLE) {
     SE_DPRINTF("Skip StreamFloat in AtomicSimpleCPU for %s.\n",
@@ -1534,8 +1532,7 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
   }
 
   auto *cacheStreamConfigVec = new CacheStreamConfigureVec();
-  std::unordered_map<Stream *, CacheStreamConfigureData *>
-      offloadedStreamConfigMap;
+  StreamCacheConfigMap offloadedStreamConfigMap;
   SE_DPRINTF("Consider StreamFloat for %s.\n", streamRegion.region());
 
   /**
@@ -1588,7 +1585,7 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
             break;
           case ::LLVM::TDG::StreamInfo_Type_AT:
           case ::LLVM::TDG::StreamInfo_Type_ST:
-            if (depS->enabledStoreFunc() &&
+            if (depS->getEnabledStoreFunc() &&
                 !depS->isMergedLoadStoreDepStream()) {
               canFloatIndirect = true;
             }
@@ -1705,28 +1702,12 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
         numOffloadedValueDepStreams++;
       }
 
-      /**
-       * Reduction streams are always offloaded along with the base stream.
-       */
-      for (auto backDepS : S->backDependentStreams) {
-        if (backDepS->isReduction()) {
-          auto reductionConfig =
-              backDepS->allocateCacheConfigureData(args.seqNum, true);
-          // Reduction stream is always one iteration behind.
-          reductionConfig->isOneIterationBehind = true;
-          streamConfigureData->indirectStreams.emplace_back(reductionConfig);
-          // Remember the decision.
-          backDepS->getDynamicStream(args.seqNum).offloadedToCache = true;
-          this->numFloated++;
-          assert(offloadedStreamConfigMap.emplace(backDepS, reductionConfig)
-                     .second &&
-                 "Reduction stream already offloaded.");
-        }
-      }
-
       cacheStreamConfigVec->push_back(streamConfigureData);
     }
   }
+
+  this->floatReductionStreams(args, streamRegion, configStreams,
+                              offloadedStreamConfigMap);
 
   // Sanity check for some offload decision.
   for (auto &S : configStreams) {
@@ -1756,6 +1737,39 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
     cpuDelegator->sendRequest(pkt);
   } else {
     delete cacheStreamConfigVec;
+  }
+}
+
+void StreamEngine::floatReductionStreams(
+    const StreamConfigArgs &args, const ::LLVM::TDG::StreamRegion &streamRegion,
+    std::list<Stream *> &configStreams, StreamCacheConfigMap &floatedMap) {
+  for (auto &S : configStreams) {
+    /**
+     * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
+     * TODO: Rewrite this bunch of hack.
+     */
+    if (!floatedMap.count(S)) {
+      continue;
+    }
+    auto streamConfigureData = floatedMap.at(S);
+    auto &dynStream = S->getDynamicStream(args.seqNum);
+    /**
+     * Reduction streams are always offloaded along with the base stream.
+     */
+    for (auto backDepS : S->backDependentStreams) {
+      if (backDepS->isReduction()) {
+        auto reductionConfig =
+            backDepS->allocateCacheConfigureData(args.seqNum, true);
+        // Reduction stream is always one iteration behind.
+        reductionConfig->isOneIterationBehind = true;
+        streamConfigureData->indirectStreams.emplace_back(reductionConfig);
+        // Remember the decision.
+        backDepS->getDynamicStream(args.seqNum).offloadedToCache = true;
+        this->numFloated++;
+        assert(floatedMap.emplace(backDepS, reductionConfig).second &&
+               "Reduction stream already offloaded.");
+      }
+    }
   }
 }
 
@@ -2284,7 +2298,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     PacketPtr pkt = nullptr;
-    if (S->isAtomicStream() && S->enabledStoreFunc()) {
+    if (S->isAtomicStream() && S->getEnabledStoreFunc()) {
       if (element->cacheBlocks != 1) {
         S_ELEMENT_PANIC(element, "Illegal # of CacheBlocks %d for AtomicOp.",
                         element->cacheBlocks);

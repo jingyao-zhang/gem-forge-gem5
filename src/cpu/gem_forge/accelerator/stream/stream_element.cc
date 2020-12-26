@@ -1,5 +1,4 @@
 #include "stream_element.hh"
-#include "coalesced_stream.hh"
 #include "stream.hh"
 #include "stream_engine.hh"
 
@@ -338,12 +337,10 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
         }
         auto vaddr = baseElement->addr;
         int32_t size = baseElement->size;
-        if (auto CS = dynamic_cast<CoalescedStream *>(baseStream)) {
-          // Handle offset for coalesced stream.
-          int32_t offset;
-          CS->getCoalescedOffsetAndSize(baseStreamId, offset, size);
-          vaddr += offset;
-        }
+        // Handle offset for coalesced stream.
+        int32_t offset;
+        baseStream->getCoalescedOffsetAndSize(baseStreamId, offset, size);
+        vaddr += offset;
         // TODO: Fix this for reduction stream.
         assert(size <= sizeof(StreamValue) &&
                "Base element too large, maybe coalesced?");
@@ -578,9 +575,7 @@ void StreamElement::getValueByStreamId(StaticId streamId, uint8_t *val,
   int size = this->size;
   // Handle offset for coalesced stream.
   int32_t offset;
-  auto CS = dynamic_cast<CoalescedStream *>(this->stream);
-  assert(CS && "All stream should be Coalesced stream now.");
-  CS->getCoalescedOffsetAndSize(streamId, offset, size);
+  this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
   assert(size <= valLen && "ElementSize overflow.");
   vaddr += offset;
   this->getValue(vaddr, size, val);

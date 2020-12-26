@@ -5,7 +5,6 @@
 
 class Cache;
 class CoherentXBar;
-class CoalescedStream;
 
 class StreamPlacementManager {
 public:

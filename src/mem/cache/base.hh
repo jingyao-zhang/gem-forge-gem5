@@ -79,7 +79,7 @@
 /**********************************************
  * ! Sean: StreamAwareCache
  **********************************************/
-#include "cpu/gem_forge/accelerator/stream/coalesced_stream.hh"
+#include "cpu/gem_forge/accelerator/stream/stream.hh"
 
 class BaseMasterPort;
 class BaseSlavePort;
@@ -1346,7 +1346,6 @@ class BaseCache : public ClockedObject, public CachePrefetcherView
     void dumpStreamStats(std::ostream &os) const;
     Stream* getStreamFromPacket(PacketPtr pkt) const;
     StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;
-    CoalescedStream *getCoalescedStreamFromPacket(PacketPtr pkt) const;
     void incMissCountStream(PacketPtr pkt);
     void incHitCountStream(PacketPtr pkt, CacheBlk *blk);
 };
