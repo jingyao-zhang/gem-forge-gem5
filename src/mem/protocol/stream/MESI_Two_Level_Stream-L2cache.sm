@@ -145,11 +145,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
     MEM_Inv, desc="Invalidation from directory";
 
-    STREAM_CONFIG, desc="StreamConfig req";
-    STREAM_FLOW,   desc="Flow control message for stream";
-    STREAM_REQ,    desc="Received a stream indirect request from other LLC";
-    STREAM_END,    desc="StreamEnd req";
-    STREAM_STORE,  desc="StreamStore req";
+    STREAM_CONFIG,  desc="StreamConfig req";
+    STREAM_FLOW,    desc="Flow control message for stream";
+    STREAM_REQ,     desc="Received a stream indirect request from other LLC";
+    STREAM_END,     desc="StreamEnd req";
+    STREAM_STORE,   desc="StreamStore req";
+    STREAM_FORWARD, desc="StreamForward req";
   }
 
   // TYPES
@@ -201,6 +202,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamElementDataVec(DynamicStreamSliceIdVec, DataBlock, DataBlock);
     void receiveStreamElementData(DynamicStreamSliceId, DataBlock, DataBlock);
     void receiveStreamIndirectRequest(RequestMsg);
+    void receiveStreamForwardRequest(RequestMsg);
   }
 
   LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectToL2Cache_ptr, m_responseFromL2Cache_ptr";
@@ -344,6 +346,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       return Event:STREAM_END;
     } else if (type == CoherenceRequestType:STREAM_STORE) {
       return Event:STREAM_STORE;
+    } else if (type == CoherenceRequestType:STREAM_FORWARD) {
+      return Event:STREAM_FORWARD;
     } else {
       DPRINTF(RubySlicc, "address: %#x, Request Type: %s\n", addr, type);
       error("Invalid L1 forwarded request type");
@@ -1172,6 +1176,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       se.receiveStreamEnd(in_msg.pkt);
     }
   }
+  action(rsfwd_receiveStreamForward, "rsfwd", desc="Receive the StreamForward") {
+    peek(L1RequestL2Network_in, RequestMsg) {
+      se.receiveStreamForwardRequest(in_msg);
+    }
+  }
 
   //*****************************************************
   // TRANSITIONS
@@ -1724,6 +1733,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, STREAM_END) {
     rse_receiveStreamEnd;
+    jj_popL1RequestQueue;
+  }
+
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, STREAM_FORWARD) {
+    rsfwd_receiveStreamForward;
     jj_popL1RequestQueue;
   }
 }

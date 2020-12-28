@@ -48,20 +48,21 @@ enumeration(CoherenceRequestType, desc="...") {
   STREAM_END,     desc="StreamEnd from L1";
   STREAM_STORE,   desc="Stream store";
   STREAM_MIGRATE, desc="Stream migrate";
+  STREAM_FORWARD, desc="Stream data forwarded from L2 to L2";
 }
 
 // CoherenceResponseType
 enumeration(CoherenceResponseType, desc="...") {
-  MEMORY_ACK, desc="Ack from memory controller";
-  DATA, desc="Data block for L1 cache in S state";
-  DATA_EXCLUSIVE, desc="Data block for L1 cache in M/E state";
-  MEMORY_DATA, desc="Data block from / to main memory";
-  ACK, desc="Generic invalidate ack";
-  WB_ACK, desc="writeback ack";
-  UNBLOCK, desc="unblock";
-  EXCLUSIVE_UNBLOCK, desc="exclusive unblock";
-  INV,            desc="Invalidate from directory";
-  STREAM_ACK,     desc="ack the core that the reqired operation is performed";
+  MEMORY_ACK,         desc="Ack from memory controller";
+  DATA,               desc="Data block for L1 cache in S state";
+  DATA_EXCLUSIVE,     desc="Data block for L1 cache in M/E state";
+  MEMORY_DATA,        desc="Data block from / to main memory";
+  ACK,                desc="Generic invalidate ack";
+  WB_ACK,             desc="writeback ack";
+  UNBLOCK,            desc="unblock";
+  EXCLUSIVE_UNBLOCK,  desc="exclusive unblock";
+  INV,                desc="Invalidate from directory";
+  STREAM_ACK,         desc="ack the core that the reqired operation is performed";
 }
 
 // RequestMsg
@@ -73,16 +74,16 @@ structure(RequestMsg, desc="...", interface="Message") {
   NetDest XXNewRewquestor,       desc="What components request, include Multicast";
   NetDest Destination,          desc="What components receive the request, includes MachineType and num";
   MessageSizeType MessageSize,  desc="size category of the message";
-  DataBlock DataBlk,            desc="Data for the cache line (if PUTX)";
+  DataBlock DataBlk,            desc="Data for the cache line (if PUTX or STREAM_FORWARD)";
   int Len;
   bool Dirty, default="false",  desc="Dirty bit";
   PrefetchBit Prefetch,         desc="Is this a prefetch request";
   RequestStatisticPtr requestStatistic, default="nullptr", desc="Hook to update statistic of this core request";
   // ! Sean: StreamAwareCache
-  PacketPtr pkt,                desc="Hack to store packet";
-  // DynamicStreamSliceId sliceId, desc="Stream slice info";
+  PacketPtr pkt,                    desc="Hack to store packet";
   DynamicStreamSliceIdVec sliceIds, desc="Stream slice ids";
-  DataBlock streamStoreBlk,     desc="StreamStore value";
+  DataBlock streamStoreBlk,         desc="StreamStore value";
+  DynamicStreamId sendToStreamId,   desc="StreamForward receiver stream id";
 
   int getStatsType() {
     return Type;

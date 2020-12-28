@@ -15,7 +15,7 @@
 
 class SlicedDynamicStream {
 public:
-  SlicedDynamicStream(CacheStreamConfigureData *_configData,
+  SlicedDynamicStream(CacheStreamConfigureDataPtr _configData,
                       bool _coalesceContinuousElements);
 
   DynamicStreamSliceId getNextSlice();

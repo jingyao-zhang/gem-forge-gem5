@@ -123,7 +123,7 @@ void Stream::addBackBaseStream(StaticId baseId, StaticId depId,
                                Stream *backBaseStream) {
   this->backBaseStreams.insert(backBaseStream);
   this->backBaseEdges.emplace_back(depId, baseId, backBaseStream);
-  backBaseStream->backDependentStreams.insert(this);
+  backBaseStream->backDepStreams.insert(this);
   backBaseStream->backDepEdges.emplace_back(baseId, depId, this);
   if (this->isReduction()) {
     backBaseStream->hasBackDepReductionStream = true;
@@ -273,7 +273,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   }
 
   // Try to set total trip count for back dependent streams.
-  for (auto backDepS : this->backDependentStreams) {
+  for (auto backDepS : this->backDepStreams) {
     auto &backDepDynS = backDepS->getDynamicStream(seqNum);
     backDepDynS.totalTripCount = dynStream.totalTripCount;
     DYN_S_DPRINTF(backDepDynS.dynamicStreamId,
@@ -642,10 +642,10 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
   }
 }
 
-CacheStreamConfigureData *
+CacheStreamConfigureDataPtr
 Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   auto &dynStream = this->getDynamicStream(configSeqNum);
-  auto configData = new CacheStreamConfigureData(
+  auto configData = std::make_shared<CacheStreamConfigureData>(
       this, dynStream.dynamicStreamId, this->getMemElementSize(),
       dynStream.addrGenFormalParams, dynStream.addrGenCallback);
 
@@ -719,7 +719,7 @@ bool Stream::isDirectMemStream() const {
 }
 
 bool Stream::isDirectLoadStream() const {
-  if (this->getStreamType() != ::LLVM::TDG::StreamInfo_Type_LD) {
+  if (!this->isMemStream()) {
     return false;
   }
   return this->isDirectMemStream();

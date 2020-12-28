@@ -46,7 +46,6 @@ convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
  * This represent a stateless addr_gen function.
  */
 struct AddrGenCallback {
-protected:
   virtual StreamValue genAddr(uint64_t idx,
                               const DynamicStreamParamV &params) = 0;
 
@@ -54,7 +53,6 @@ protected:
    * This is a helper function to actually call the address callback.
    * Given a callback to collect base stream value.
    */
-public:
   StreamValue genAddr(uint64_t idx,
                       const DynamicStreamFormalParamV &formalParams,
                       GetStreamValueFunc getStreamValue);

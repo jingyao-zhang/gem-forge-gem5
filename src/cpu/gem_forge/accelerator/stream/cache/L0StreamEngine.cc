@@ -33,7 +33,7 @@ L0StreamEngine::~L0StreamEngine() {}
 
 void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto streamConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
-  for (auto streamConfigureData : *streamConfigs) {
+  for (auto &streamConfigureData : *streamConfigs) {
     L0_STREAM_DPRINTF_(L0RubyStreamLife, streamConfigureData->dynamicId,
                        "Config Direct %s.\n",
                        streamConfigureData->dynamicId.streamName);
@@ -44,16 +44,19 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
         streamConfigureData->dynamicId,
         new L0DynamicStream(streamConfigureData->dynamicId,
                             streamConfigureData));
-    for (auto &indirectStreamConfig : streamConfigureData->indirectStreams) {
-      // We have an indirect stream.
-      L0_STREAM_DPRINTF_(L0RubyStreamLife, indirectStreamConfig->dynamicId,
-                         "Config Indirect %s.\n",
-                         indirectStreamConfig->dynamicId.streamName);
-      this->offloadedStreams.emplace(
-          indirectStreamConfig->dynamicId,
-          new L0DynamicStream(
-              streamConfigureData->dynamicId /* RootDynamicStreamId. */,
-              indirectStreamConfig.get()));
+    for (const auto &edge : streamConfigureData->depEdges) {
+      if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+        const auto &indirectStreamConfig = edge.data;
+        // We have an indirect stream.
+        L0_STREAM_DPRINTF_(L0RubyStreamLife, indirectStreamConfig->dynamicId,
+                           "Config Indirect %s.\n",
+                           indirectStreamConfig->dynamicId.streamName);
+        this->offloadedStreams.emplace(
+            indirectStreamConfig->dynamicId,
+            new L0DynamicStream(
+                streamConfigureData->dynamicId /* RootDynamicStreamId. */,
+                indirectStreamConfig));
+      }
     }
   }
 }

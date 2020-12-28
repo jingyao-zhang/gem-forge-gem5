@@ -28,7 +28,7 @@ class StreamMemAccess;
 class L0DynamicStream {
 public:
   L0DynamicStream(const DynamicStreamId &_rootDynamicStreamId,
-                  CacheStreamConfigureData *_configData)
+                  CacheStreamConfigureDataPtr _configData)
       : dynamicStreamId(_configData->dynamicId),
         rootDynamicStreamId(_rootDynamicStreamId),
         isOneIterationBehind(_configData->isOneIterationBehind),

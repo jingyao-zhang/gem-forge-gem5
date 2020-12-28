@@ -9,8 +9,8 @@
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStreamBase.hh"
-#include "debug/MLCRubyStreamReuse.hh"
 #include "debug/MLCRubyStreamLife.hh"
+#include "debug/MLCRubyStreamReuse.hh"
 
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
@@ -59,8 +59,9 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 }
 
 void MLCStreamEngine::configureStream(
-    CacheStreamConfigureData *streamConfigureData, MasterID masterId) {
-  MLC_STREAM_DPRINTF_(MLCRubyStreamLife, streamConfigureData->dynamicId.staticId,
+    CacheStreamConfigureDataPtr streamConfigureData, MasterID masterId) {
+  MLC_STREAM_DPRINTF_(MLCRubyStreamLife,
+                      streamConfigureData->dynamicId.staticId,
                       "Received StreamConfigure, totalTripCount %lu.\n",
                       streamConfigureData->totalTripCount);
   /**
@@ -82,15 +83,18 @@ void MLCStreamEngine::configureStream(
    */
   // Check if there is indirect stream.
   std::vector<MLCDynamicIndirectStream *> indirectStreams;
-  for (auto &indirectStreamConfig : streamConfigureData->indirectStreams) {
-    // Let's create an indirect stream.
-    auto indirectStream = new MLCDynamicIndirectStream(
-        indirectStreamConfig.get(), this->controller,
-        this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer,
-        streamConfigureData->dynamicId /* Root dynamic stream id. */);
-    this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
-                                indirectStream);
-    indirectStreams.push_back(indirectStream);
+  for (const auto &edge : streamConfigureData->depEdges) {
+    if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+      const auto &indirectStreamConfig = edge.data;
+      // Let's create an indirect stream.
+      auto indirectStream = new MLCDynamicIndirectStream(
+          indirectStreamConfig, this->controller,
+          this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer,
+          streamConfigureData->dynamicId /* Root dynamic stream id. */);
+      this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
+                                  indirectStream);
+      indirectStreams.push_back(indirectStream);
+    }
   }
   // Create the direct stream.
   auto directStream = new MLCDynamicDirectStream(
@@ -113,7 +117,7 @@ void MLCStreamEngine::configureStream(
           streamConfigureData->totalTripCount > cutElementIdx) {
         streamConfigureData->totalTripCount = cutElementIdx;
         directStream->setLLCCutLineVAddr(cutLineVAddr);
-        assert(streamConfigureData->indirectStreams.empty() &&
+        assert(streamConfigureData->depEdges.empty() &&
                "Reuse stream with indirect stream is not supported.");
       }
     }
@@ -123,9 +127,8 @@ void MLCStreamEngine::configureStream(
   RequestPtr req = std::make_shared<Request>(
       streamConfigureData->initPAddr, sizeof(streamConfigureData), 0, masterId);
   PacketPtr pkt = new Packet(req, MemCmd::StreamConfigReq);
-  uint8_t *pktData = new uint8_t[req->getSize()];
-  *(reinterpret_cast<uint64_t *>(pktData)) =
-      reinterpret_cast<uint64_t>(streamConfigureData);
+  uint8_t *pktData = reinterpret_cast<uint8_t *>(
+      new CacheStreamConfigureDataPtr(streamConfigureData));
   pkt->dataDynamic(pktData);
   // Enqueue a configure packet to the target LLC bank.
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
@@ -159,7 +162,8 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
                                 MasterID masterId) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
-  MLC_STREAM_DPRINTF_(MLCRubyStreamLife, endId.staticId, "Received StreamEnd.\n");
+  MLC_STREAM_DPRINTF_(MLCRubyStreamLife, endId.staticId,
+                      "Received StreamEnd.\n");
 
   // The PAddr of the llc stream. The cache controller uses this to find which
   // LLC bank to forward this StreamEnd message.
@@ -337,8 +341,8 @@ void MLCStreamEngine::computeReuseInformation(
     CacheStreamConfigureVec &streamConfigs) {
 
   // 1. Group them by base.
-  std::unordered_map<uint64_t, std::vector<CacheStreamConfigureData *>> groups;
-  for (auto *config : streamConfigs) {
+  std::unordered_map<uint64_t, std::vector<CacheStreamConfigureDataPtr>> groups;
+  for (auto &config : streamConfigs) {
     auto S = config->stream;
     auto groupId = S->getCoalesceBaseStreamId();
     if (groupId == 0) {
@@ -371,8 +375,8 @@ void MLCStreamEngine::computeReuseInformation(
   for (auto &entry : groups) {
     auto &group = entry.second;
     std::sort(group.begin(), group.end(),
-              [](const CacheStreamConfigureData *a,
-                 const CacheStreamConfigureData *b) -> bool {
+              [](const CacheStreamConfigureDataPtr &a,
+                 const CacheStreamConfigureDataPtr &b) -> bool {
                 return a->stream->getCoalesceOffset() <
                        b->stream->getCoalesceOffset();
               });
@@ -381,8 +385,8 @@ void MLCStreamEngine::computeReuseInformation(
   for (auto &entry : groups) {
     auto &group = entry.second;
     for (int i = 1; i < group.size(); ++i) {
-      auto *lhsConfig = group[i - 1];
-      auto *rhsConfig = group[i];
+      auto &lhsConfig = group[i - 1];
+      auto &rhsConfig = group[i];
       auto lhsAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
           lhsConfig->addrGenCallback);
       auto rhsAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(

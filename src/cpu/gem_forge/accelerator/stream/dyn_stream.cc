@@ -279,17 +279,19 @@ bool DynamicStream::shouldCoreSEIssue() const {
    */
   if (!this->stream->hasCoreUser() && this->offloadedToCache) {
     // Check that dependent dynS all offloaded to cache.
-    bool allDepSFloated = true;
     for (auto depS : this->stream->addrDepStreams) {
       const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
       if (!depDynS.offloadedToCache) {
-        allDepSFloated = false;
-        break;
+        return true;
       }
     }
-    if (allDepSFloated) {
-      return false;
+    for (auto backDepS : this->stream->backDepStreams) {
+      const auto &backDepDynS = backDepS->getDynamicStream(this->configSeqNum);
+      if (!backDepDynS.offloadedToCache) {
+        return true;
+      }
     }
+    return false;
   }
   return true;
 }

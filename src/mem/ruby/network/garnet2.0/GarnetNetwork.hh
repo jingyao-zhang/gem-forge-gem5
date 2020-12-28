@@ -109,7 +109,7 @@ class GarnetNetwork : public Network
     void print(std::ostream& out) const;
 
     // increment counters
-    static constexpr int MAX_MSG_TYPES_PER_CATEGORY = 16;
+    static constexpr int MAX_MSG_TYPES_PER_CATEGORY = 20;
     static constexpr int MAX_MSG_CATEGORY = 2;
     void increment_injected_packets(int vnet) { m_packets_injected[vnet]++; }
     void increment_injected_packet_type(int type) { m_packet_types_injected[type]++; }

@@ -3,13 +3,13 @@ Import('*')
 DebugFlag('L0RubyStreamBase')
 DebugFlag('L0RubyStreamLife')
 CompoundFlag('L0RubyStream',
-    ['L0RubyStreamBase', 'L0RubyStreamLife'])
+             ['L0RubyStreamBase', 'L0RubyStreamLife'])
 
 DebugFlag('MLCRubyStreamBase')
 DebugFlag('MLCRubyStreamLife')
 DebugFlag('MLCRubyStreamReuse')
 CompoundFlag('MLCRubyStream',
-    ['MLCRubyStreamBase', 'MLCRubyStreamLife', 'MLCRubyStreamReuse'])
+             ['MLCRubyStreamBase', 'MLCRubyStreamLife', 'MLCRubyStreamReuse'])
 DebugFlag('LLCRubyStreamBase')
 DebugFlag('LLCRubyStreamLife')
 DebugFlag('LLCRubyStreamReduce')
@@ -17,11 +17,11 @@ DebugFlag('LLCRubyStreamMulticast')
 DebugFlag('LLCRubyStreamStore')
 DebugFlag('LLCRubyStreamNotIssue')
 CompoundFlag('LLCRubyStream',
-    ['LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
-     'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
-     'LLCRubyStreamNotIssue'])
+             ['LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
+              'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
+              'LLCRubyStreamNotIssue'])
 CompoundFlag('RubyStreamLife',
-    ['CoreRubyStreamLife', 'L0RubyStreamLife', 'MLCRubyStreamLife', 'LLCRubyStreamLife'])
+             ['CoreRubyStreamLife', 'L0RubyStreamLife', 'MLCRubyStreamLife', 'LLCRubyStreamLife'])
 DebugFlag('SlicedDynamicStream')
 
 Source('DynamicStreamId.cc')
@@ -32,6 +32,7 @@ Source('MLCDynamicStream.cc')
 Source('MLCDynamicDirectStream.cc')
 Source('MLCDynamicIndirectStream.cc')
 Source('MLCStreamEngine.cc')
+Source('LLCStreamElement.cc')
 Source('LLCDynamicStream.cc')
 Source('LLCStreamEngine.cc')
 Source('CacheStreamConfigureData.cc')

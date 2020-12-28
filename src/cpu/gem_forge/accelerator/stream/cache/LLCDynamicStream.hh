@@ -1,6 +1,8 @@
 #ifndef __CPU_TDG_ACCELERATOR_LLC_DYNAMIC_STREAM_H__
 #define __CPU_TDG_ACCELERATOR_LLC_DYNAMIC_STREAM_H__
 
+#include "LLCStreamElement.hh"
+
 #include "SlicedDynamicStream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "mem/ruby/protocol/CoherenceRequestType.hh"
@@ -18,77 +20,53 @@ class AbstractStreamAwareController;
  */
 class LLCDynamicStream;
 struct LLCStreamRequest {
+  LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
+                   CoherenceRequestType _type)
+      : sliceId(_sliceId), paddrLine(_paddrLine), requestType(_type) {}
   DynamicStreamSliceId sliceId;
   Addr paddrLine;
   CoherenceRequestType requestType;
   bool translationDone = false;
-  // Optional for StreamStore request.
-  uint64_t storeData;
-  int storeSize = 8;
-  // Optional for Multicast streams, excluding the original stream
-  std::vector<DynamicStreamSliceId> multicastSliceIds;
-  LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
-                   CoherenceRequestType _type, uint64_t _storeData)
-      : sliceId(_sliceId), paddrLine(_paddrLine), requestType(_type),
-        storeData(_storeData) {}
-};
 
-struct LLCStreamElement {
-  const LLCDynamicStream *dynS;
-  const uint64_t idx;
-  const Addr vaddr;
-  const int size;
-  int readyBytes;
-  StreamValue value;
-  LLCStreamElement(LLCDynamicStream *_dynS, uint64_t _idx, Addr _vaddr,
-                   int _size);
-  bool isReady() const { return this->readyBytes == this->size; }
-  uint64_t getUInt64() const {
-    assert(this->isReady());
-    assert(this->size <= sizeof(uint64_t));
-    return this->value.front();
-  }
-  uint64_t getData(uint64_t streamId) const;
-  const StreamValue &getValue() const { return this->value; }
-  StreamValue &getValue() { return this->value; }
-  uint8_t *getUInt8Ptr(int offset = 0) {
-    assert(offset < this->size);
-    return this->value.uint8Ptr(offset);
-  }
-  const uint8_t *getUInt8Ptr(int offset = 0) const {
-    assert(offset < this->size);
-    return this->value.uint8Ptr(offset);
-  }
+  // Optional fields.
+  DataBlock dataBlock;
+
+  // Optional for StreamStore request.
+  int storeSize = 8;
+
+  // Optional for Multicast request, excluding the original stream
+  std::vector<DynamicStreamSliceId> multicastSliceIds;
+
+  // Optional for StreamForward request, the receiver stream id.
+  DynamicStreamId forwardToStreamId;
 };
-using LLCStreamElementPtr = std::shared_ptr<LLCStreamElement>;
-using ConstLLCStreamElementPtr = std::shared_ptr<const LLCStreamElement>;
 
 class LLCDynamicStream {
 public:
   LLCDynamicStream(AbstractStreamAwareController *_controller,
-                   CacheStreamConfigureData *_configData);
+                   CacheStreamConfigureDataPtr _configData);
   ~LLCDynamicStream();
 
-  Stream *getStaticStream() const { return this->configData.stream; }
-  uint64_t getStaticId() const { return this->configData.dynamicId.staticId; }
+  Stream *getStaticStream() const { return this->configData->stream; }
+  uint64_t getStaticId() const { return this->configData->dynamicId.staticId; }
   const DynamicStreamId &getDynamicStreamId() const {
-    return this->configData.dynamicId;
+    return this->configData->dynamicId;
   }
 
-  int32_t getMemElementSize() const { return this->configData.elementSize; }
-  bool isPointerChase() const { return this->configData.isPointerChase; }
-  bool isPseudoOffload() const { return this->configData.isPseudoOffload; }
+  int32_t getMemElementSize() const { return this->configData->elementSize; }
+  bool isPointerChase() const { return this->configData->isPointerChase; }
+  bool isPseudoOffload() const { return this->configData->isPseudoOffload; }
   bool isOneIterationBehind() const {
-    return this->configData.isOneIterationBehind;
+    return this->configData->isOneIterationBehind;
   }
-  bool isPredicated() const { return this->configData.isPredicated; }
+  bool isPredicated() const { return this->configData->isPredicated; }
   bool isPredicatedTrue() const {
     assert(this->isPredicated());
-    return this->configData.isPredicatedTrue;
+    return this->configData->isPredicatedTrue;
   }
   const DynamicStreamId &getPredicateStreamId() const {
     assert(this->isPredicated());
-    return this->configData.predicateStreamId;
+    return this->configData->predicateStreamId;
   }
   bool hasTotalTripCount() const;
   uint64_t getTotalTripCount() const;
@@ -142,12 +120,27 @@ public:
                             DynamicStreamIdHasher>
       GlobalLLCDynamicStreamMap;
 
-  const CacheStreamConfigureData configData;
+  const CacheStreamConfigureDataPtr configData;
   SlicedDynamicStream slicedStream;
-  StreamValue reductionValue;
 
-  // Dependent indirect streams.
-  std::list<LLCDynamicStream *> indirectStreams;
+  // Remember the last reduction element, avoid auto releasing.
+  LLCStreamElementPtr lastReductionElement;
+
+  /**
+   * Here we remember the dependent streams.
+   * IndirectStreams is just the "UsedBy" dependence.
+   */
+  std::vector<LLCDynamicStream *> indirectStreams;
+  std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
+
+  /**
+   * Remember the basic information for BaseOn information.
+   * Note: Here we are outside of CacheStreamConfigureData, so we can directly
+   * store the shared_ptr without creating circular dependence.
+   * Note: We may use streams from remote LLC bank, so here we just remember the
+   * config.
+   */
+  std::vector<CacheStreamConfigureDataPtr> baseOnConfigs;
 
   // Base stream.
   LLCDynamicStream *baseStream = nullptr;
@@ -202,13 +195,6 @@ public:
   std::map<uint64_t, LLCStreamElementPtr> idxToElementMap;
 
   /**
-   * Indirect elements that has been waiting for
-   * the direct stream element's data.
-   * Indexed by element idx.
-   */
-  std::set<uint64_t> waitingIndirectElements;
-
-  /**
    * Indirect elements that has seen the direct stream element's data
    * and is waiting to be issued.
    * Indexed by element idx.
@@ -233,6 +219,13 @@ public:
    * Sanity check that stream should be correctly terminated.
    */
   void sanityCheckStreamLife();
+
+  /**
+   * Allocate the element for myself and all UsedByStream.
+   * There may already be an element if multiple slices
+   * contain a part of that element.
+   */
+  void allocateElement(uint64_t elementIdx, Addr vaddr);
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

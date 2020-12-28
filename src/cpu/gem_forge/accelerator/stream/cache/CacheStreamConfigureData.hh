@@ -11,13 +11,21 @@
 
 class Stream;
 
-struct CacheStreamConfigureData {
+struct CacheStreamConfigureData;
+using CacheStreamConfigureDataPtr = std::shared_ptr<CacheStreamConfigureData>;
+using CacheStreamConfigureDataWeakPtr = std::weak_ptr<CacheStreamConfigureData>;
+
+struct CacheStreamConfigureData
+    : public std::enable_shared_from_this<CacheStreamConfigureData> {
 public:
   CacheStreamConfigureData(
       Stream *_stream, const DynamicStreamId &_dynamicId, int _elementSize,
       const std::vector<DynamicStreamFormalParam> &_addrGenFormalParams,
       AddrGenCallbackPtr _addrGenCallback);
-  CacheStreamConfigureData(const CacheStreamConfigureData &other);
+  CacheStreamConfigureData(const CacheStreamConfigureData &other) = delete;
+  CacheStreamConfigureData &operator=(const CacheStreamConfigureData &other) = delete;
+  CacheStreamConfigureData(CacheStreamConfigureData &&other) = delete;
+  CacheStreamConfigureData &operator=(CacheStreamConfigureData &&other) = delete;
 
   Stream *stream;
   DynamicStreamId dynamicId;
@@ -67,16 +75,46 @@ public:
   bool isOneIterationBehind;
 
   /**
-   * The above basically represent a direct stream.
-   * We allow one additional indirect stream so far.
-   * TODO: Support multiple indirect streams.
+   * This represents a distributed StreamDepGraph.
+   * NOTE: Keep the graph acyclic to avoid circular dependence for shared_ptr.
    */
-  std::vector<std::shared_ptr<CacheStreamConfigureData>> indirectStreams;
+  struct DepEdge {
+    enum Type {
+      UsedBy,
+      SendTo,
+    };
+    Type type;
+    CacheStreamConfigureDataPtr data;
+    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data)
+        : type(_type), data(_data) {}
+  };
+  struct BaseEdge {
+    enum Type {
+      BaseOn,
+    };
+    Type type;
+    CacheStreamConfigureDataWeakPtr data;
+    BaseEdge(Type _type, const CacheStreamConfigureDataWeakPtr &_data)
+        : type(_type), data(_data) {}
+  };
+  std::vector<DepEdge> depEdges;
+  std::vector<BaseEdge> baseEdges;
+  void addUsedBy(CacheStreamConfigureDataPtr &data) {
+    this->depEdges.emplace_back(DepEdge::Type::UsedBy, data);
+    data->baseEdges.emplace_back(BaseEdge::Type::BaseOn,
+                                 this->shared_from_this());
+  }
+  void addSendTo(CacheStreamConfigureDataPtr &data) {
+    this->depEdges.emplace_back(DepEdge::Type::SendTo, data);
+  }
+  void addBaseOn(CacheStreamConfigureDataPtr &data) {
+    this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data);
+  }
 
   // Set by the MLC stream, for flow control.
   int initAllocatedIdx;
 };
 
-using CacheStreamConfigureVec = std::vector<CacheStreamConfigureData *>;
+using CacheStreamConfigureVec = std::vector<CacheStreamConfigureDataPtr>;
 
 #endif

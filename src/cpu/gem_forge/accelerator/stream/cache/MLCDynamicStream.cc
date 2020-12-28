@@ -14,7 +14,7 @@
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
-MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureData *_configData,
+MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
                                    AbstractStreamAwareController *_controller,
                                    MessageBuffer *_responseMsgBuffer,
                                    MessageBuffer *_requestToLLCMsgBuffer)

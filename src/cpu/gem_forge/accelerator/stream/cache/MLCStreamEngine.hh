@@ -45,7 +45,7 @@ public:
    * In case the first element's virtual address faulted, the MLC StreamEngine
    * will return physical address that maps to the LLC bank of this tile.
    */
-  void configureStream(CacheStreamConfigureData *streamConfigureData,
+  void configureStream(CacheStreamConfigureDataPtr streamConfigureData,
                        MasterID masterId);
   /**
    * Receive a StreamEnd message and end all streams.

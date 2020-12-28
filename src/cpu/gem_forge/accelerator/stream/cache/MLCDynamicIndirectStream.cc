@@ -9,7 +9,7 @@
 #include "../stream_log.hh"
 
 MLCDynamicIndirectStream::MLCDynamicIndirectStream(
-    CacheStreamConfigureData *_configData,
+    CacheStreamConfigureDataPtr _configData,
     AbstractStreamAwareController *_controller,
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
     const DynamicStreamId &_rootStreamId)
@@ -270,10 +270,7 @@ void MLCDynamicIndirectStream::allocateSlice() {
    */
   if (this->isWaitingAck()) {
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::WAIT_ACK;
-  } else if (this->stream->isReduction()) {
-    this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
-  } else if (!this->stream->hasCoreUser()) {
-    // If the load has no core user, we are going to mark it done immediately.
+  } else if (this->isWaitingNothing()) {
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
   }
 

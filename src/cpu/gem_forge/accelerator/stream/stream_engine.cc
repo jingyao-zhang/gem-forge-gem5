@@ -1597,7 +1597,7 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
             // Only dependent on this direct stream.
             auto depConfig = depS->allocateCacheConfigureData(
                 args.seqNum, true /* isIndirect */);
-            streamConfigureData->indirectStreams.emplace_back(depConfig);
+            streamConfigureData->addUsedBy(depConfig);
             // Remember the decision.
             auto &depDynS = depS->getDynamicStream(args.seqNum);
             depDynS.offloadedToCache = true;
@@ -1622,7 +1622,7 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
               assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig)
                          .second &&
                      "Merged stream already offloaded.");
-              streamConfigureData->indirectStreams.emplace_back(mergedConfig);
+              streamConfigureData->addUsedBy(mergedConfig);
             }
           }
         }
@@ -1630,7 +1630,7 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
         // if (streamConfigureData->indirectStreams.empty()) {
         //   // Not found a valid indirect stream, let's try to search for
         //   // a indirect stream that is one iteration behind.
-        //   for (auto backDependentStream : S->backDependentStreams) {
+        //   for (auto backDependentStream : S->backDepStreams) {
         //     if (backDependentStream->getStreamType() != "phi") {
         //       continue;
         //     }
@@ -1650,7 +1650,7 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
         //       }
         //       // We found one valid indirect stream that is one iteration
         //       // behind S.
-        //       streamConfigureData->indirectStreams.emplace_back(
+        //       streamConfigureData->addUsedBy(
         //           indirectStream->allocateCacheConfigureData(args.seqNum));
         //       streamConfigureData->indirectStreams.back()
         //           ->isOneIterationBehind = true;
@@ -1681,7 +1681,7 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
         this->numFloated++;
         assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig).second &&
                "Merged stream already offloaded.");
-        streamConfigureData->indirectStreams.emplace_back(mergedConfig);
+        streamConfigureData->addUsedBy(mergedConfig);
       }
       /**
        * ValueDepStreams are always offloaded.
@@ -1698,7 +1698,7 @@ void StreamEngine::floatStreams(const StreamConfigArgs &args,
         assert(offloadedStreamConfigMap.emplace(valueDepS, valueDepConfig)
                    .second &&
                "ValueDepStream already offloaded.");
-        streamConfigureData->indirectStreams.emplace_back(valueDepConfig);
+        streamConfigureData->addUsedBy(valueDepConfig);
         numOffloadedValueDepStreams++;
       }
 
@@ -1745,30 +1745,47 @@ void StreamEngine::floatReductionStreams(
     std::list<Stream *> &configStreams, StreamCacheConfigMap &floatedMap) {
   for (auto &S : configStreams) {
     /**
-     * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
-     * TODO: Rewrite this bunch of hack.
+     * We only float a ReductionStream if it only uses floated affine stream.
      */
-    if (!floatedMap.count(S)) {
+    if (floatedMap.count(S) || !S->isReduction() ||
+        !S->addrBaseStreams.empty()) {
       continue;
     }
-    auto streamConfigureData = floatedMap.at(S);
-    auto &dynStream = S->getDynamicStream(args.seqNum);
-    /**
-     * Reduction streams are always offloaded along with the base stream.
-     */
-    for (auto backDepS : S->backDependentStreams) {
-      if (backDepS->isReduction()) {
-        auto reductionConfig =
-            backDepS->allocateCacheConfigureData(args.seqNum, true);
-        // Reduction stream is always one iteration behind.
-        reductionConfig->isOneIterationBehind = true;
-        streamConfigureData->indirectStreams.emplace_back(reductionConfig);
-        // Remember the decision.
-        backDepS->getDynamicStream(args.seqNum).offloadedToCache = true;
-        this->numFloated++;
-        assert(floatedMap.emplace(backDepS, reductionConfig).second &&
-               "Reduction stream already offloaded.");
+    bool allBackBaseStreamsAreAffineAndFloated = true;
+    std::vector<CacheStreamConfigureDataPtr> backBaseStreamConfigs;
+    for (auto backBaseS : S->backBaseStreams) {
+      if (backBaseS == S) {
+        continue;
       }
+      if (!backBaseS->isDirectMemStream() || !floatedMap.count(backBaseS)) {
+        allBackBaseStreamsAreAffineAndFloated = false;
+        break;
+      }
+      backBaseStreamConfigs.emplace_back(floatedMap.at(backBaseS));
+    }
+    if (!allBackBaseStreamsAreAffineAndFloated) {
+      continue;
+    }
+    if (backBaseStreamConfigs.empty()) {
+      S_PANIC(S, "ReductionStream without BackBaseStream.");
+    }
+    /**
+     * Okay now we decided to float the ReductionStream. We randomly pick one
+     * affine BackBaseStream A and make all other BackBaseStreams send to that
+     * stream.
+     */
+    auto &dynStream = S->getDynamicStream(args.seqNum);
+    auto reductionConfig = S->allocateCacheConfigureData(args.seqNum, true);
+    // Reduction stream is always one iteration behind.
+    reductionConfig->isOneIterationBehind = true;
+    dynStream.offloadedToCache = true;
+    this->numFloated++;
+    floatedMap.emplace(S, reductionConfig);
+    backBaseStreamConfigs.front()->addUsedBy(reductionConfig);
+    for (int i = 1; i < backBaseStreamConfigs.size(); ++i) {
+      auto &backBaseConfig = backBaseStreamConfigs.at(i);
+      backBaseConfig->addSendTo(backBaseStreamConfigs.front());
+      reductionConfig->addBaseOn(backBaseConfig);
     }
   }
 }

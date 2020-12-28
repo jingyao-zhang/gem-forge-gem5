@@ -15,7 +15,7 @@ class MessageBuffer;
 
 class MLCDynamicStream {
 public:
-  MLCDynamicStream(CacheStreamConfigureData *_configData,
+  MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
                    AbstractStreamAwareController *_controller,
                    MessageBuffer *_responseMsgBuffer,
                    MessageBuffer *_requestToLLCMsgBuffer);
@@ -181,16 +181,21 @@ protected:
    */
   void popStream();
 
+  /**
+   * These function checks if we are waiting for something.
+   */
   bool isWaitingAck() const {
     // This is stream is waiting for Ack, not Data.
     // So far only for offloaded store and atomicrmw streams.
+    if (this->isPseudoOffload) {
+      return false;
+    }
     if (this->stream->isStoreStream()) {
       return true;
     } else if (this->stream->isAtomicStream() ||
                this->stream->isUpdateStream()) {
       // We need to check if there the core is issuing.
-      auto dynS = this->stream->getDynamicStream(this->dynamicStreamId);
-      if (dynS) {
+      if (auto dynS = this->stream->getDynamicStream(this->dynamicStreamId)) {
         return !dynS->shouldCoreSEIssue();
       } else {
         // The dynamic stream is already released, we don't really care.
@@ -200,6 +205,25 @@ protected:
       // Load stream has no ack for now.
       return false;
     }
+  }
+
+  bool isWaitingData() const {
+    if (this->isPseudoOffload) {
+      return false;
+    }
+    if (this->stream->isStoreStream()) {
+      return false;
+    }
+    if (auto dynS = this->stream->getDynamicStream(this->dynamicStreamId)) {
+      return dynS->shouldCoreSEIssue();
+    } else {
+      // The dynamic stream is already released, we don't really care.
+      return false;
+    }
+  }
+
+  bool isWaitingNothing() const {
+    return !this->isWaitingData() && !this->isWaitingAck();
   }
 
   /**

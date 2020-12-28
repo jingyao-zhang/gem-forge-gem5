@@ -6,7 +6,7 @@
 #define DEBUG_TYPE SlicedDynamicStream
 #include "../stream_log.hh"
 
-SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureData *_configData,
+SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureDataPtr _configData,
                                          bool _coalesceContinuousElements)
     : streamId(_configData->dynamicId),
       formalParams(_configData->addrGenFormalParams),

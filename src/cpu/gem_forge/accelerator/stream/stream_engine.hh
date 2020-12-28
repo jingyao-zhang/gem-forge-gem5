@@ -375,7 +375,7 @@ private:
    * Decide and float streams. Called in executeStreamConfig().
    */
   using StreamCacheConfigMap =
-      std::unordered_map<Stream *, CacheStreamConfigureData *>;
+      std::unordered_map<Stream *, CacheStreamConfigureDataPtr>;
   void floatStreams(const StreamConfigArgs &args,
                     const ::LLVM::TDG::StreamRegion &streamRegion,
                     std::list<Stream *> &configStreams);

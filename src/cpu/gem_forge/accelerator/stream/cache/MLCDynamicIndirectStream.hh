@@ -18,7 +18,7 @@
  */
 class MLCDynamicIndirectStream : public MLCDynamicStream {
 public:
-  MLCDynamicIndirectStream(CacheStreamConfigureData *_configData,
+  MLCDynamicIndirectStream(CacheStreamConfigureDataPtr _configData,
                            AbstractStreamAwareController *_controller,
                            MessageBuffer *_responseMsgBuffer,
                            MessageBuffer *_requestToLLCMsgBuffer,

@@ -13,7 +13,7 @@ class MLCDynamicIndirectStream;
 class MLCDynamicDirectStream : public MLCDynamicStream {
 public:
   MLCDynamicDirectStream(
-      CacheStreamConfigureData *_configData,
+      CacheStreamConfigureDataPtr _configData,
       AbstractStreamAwareController *_controller,
       MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
       const std::vector<MLCDynamicIndirectStream *> &_indirectStreams);

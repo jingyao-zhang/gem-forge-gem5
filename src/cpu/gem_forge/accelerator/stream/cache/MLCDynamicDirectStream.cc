@@ -19,7 +19,7 @@
 #include "../stream_log.hh"
 
 MLCDynamicDirectStream::MLCDynamicDirectStream(
-    CacheStreamConfigureData *_configData,
+    CacheStreamConfigureDataPtr _configData,
     AbstractStreamAwareController *_controller,
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
     const std::vector<MLCDynamicIndirectStream *> &_indirectStreams)
@@ -179,7 +179,7 @@ void MLCDynamicDirectStream::allocateSlice() {
      */
     if (this->isWaitingAck()) {
       this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::WAIT_ACK;
-    } else if (!this->stream->hasCoreUser() || this->isPseudoOffload) {
+    } else if (this->isWaitingNothing()) {
       // We mark this slice done.
       this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::DONE;
     }

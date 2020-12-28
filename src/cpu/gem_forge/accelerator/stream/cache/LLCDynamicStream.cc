@@ -12,44 +12,46 @@
 std::unordered_map<DynamicStreamId, LLCDynamicStream *, DynamicStreamIdHasher>
     LLCDynamicStream::GlobalLLCDynamicStreamMap;
 
-LLCStreamElement::LLCStreamElement(LLCDynamicStream *_dynS, uint64_t _idx,
-                                   Addr _vaddr, int _size)
-    : dynS(_dynS), idx(_idx), vaddr(_vaddr), size(_size), readyBytes(0) {
-  if (this->size > sizeof(this->value)) {
-    panic("LLCStreamElement size overflow %d, %s.\n", this->size,
-          this->dynS->getDynamicStreamId().streamName);
-  }
-  this->value.fill(0);
-}
-
-uint64_t LLCStreamElement::getData(uint64_t streamId) const {
-  assert(this->isReady());
-  auto S = this->dynS->getStaticStream();
-  int32_t offset = 0;
-  int size = this->size;
-  S->getCoalescedOffsetAndSize(streamId, offset, size);
-  assert(size <= sizeof(uint64_t) && "ElementSize overflow.");
-  assert(offset + size <= this->size && "Size overflow.");
-  return GemForgeUtils::rebuildData(this->getUInt8Ptr(offset), size);
-}
-
 // TODO: Support real flow control.
 LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
-                                   CacheStreamConfigureData *_configData)
-    : configData(*_configData),
+                                   CacheStreamConfigureDataPtr _configData)
+    : configData(_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
       maxInflyRequests(_controller->getLLCStreamMaxInflyRequest()),
       configureCycle(_controller->curCycle()), controller(_controller),
       sliceIdx(0), allocatedSliceIdx(_configData->initAllocatedIdx),
       inflyRequests(0) {
-  if (this->configData.isPointerChase) {
+
+  // Remember the SendTo configs.
+  for (auto &depEdge : this->configData->depEdges) {
+    if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
+      this->sendToConfigs.emplace_back(depEdge.data);
+    }
+  }
+
+  // Remember the BaseOn configs.
+  for (auto &baseEdge : this->configData->baseEdges) {
+    this->baseOnConfigs.emplace_back(baseEdge.data.lock());
+    assert(this->baseOnConfigs.back() && "BaseStreamConfig already released?");
+  }
+
+  if (this->configData->isPointerChase) {
     // Pointer chase stream can only have at most one base requests waiting for
     // data.
     this->maxInflyRequests = 1;
   }
   if (this->getStaticStream()->isReduction()) {
-    // Copy the initial reduction value.
-    this->reductionValue = this->configData.reductionInitValue;
+    // Initialize the first element for ReductionStream with the initial value.
+    assert(this->isOneIterationBehind() &&
+           "ReductionStream must be OneIterationBehind.");
+
+    auto size = this->getMemElementSize();
+    this->lastReductionElement = std::make_shared<LLCStreamElement>(
+        this->getStaticStream(), this->getDynamicStreamId(), 0, 0, size);
+    this->lastReductionElement->getValue() =
+        this->configData->reductionInitValue;
+    this->lastReductionElement->readyBytes += size;
+    assert(this->lastReductionElement->isReady());
   }
   assert(GlobalLLCDynamicStreamMap.emplace(this->getDynamicStreamId(), this)
              .second);
@@ -69,14 +71,14 @@ bool LLCDynamicStream::hasTotalTripCount() const {
   if (this->baseStream) {
     return this->baseStream->hasTotalTripCount();
   }
-  return this->configData.totalTripCount != -1;
+  return this->configData->totalTripCount != -1;
 }
 
 uint64_t LLCDynamicStream::getTotalTripCount() const {
   if (this->baseStream) {
     return this->baseStream->getTotalTripCount();
   }
-  return this->configData.totalTripCount;
+  return this->configData->totalTripCount;
 }
 
 Addr LLCDynamicStream::peekVAddr() {
@@ -90,7 +92,7 @@ Addr LLCDynamicStream::getVAddr(uint64_t sliceIdx) const {
 
 bool LLCDynamicStream::translateToPAddr(Addr vaddr, Addr &paddr) const {
   // ! Do something reasonable here to translate the vaddr.
-  auto cpuDelegator = this->configData.stream->getCPUDelegator();
+  auto cpuDelegator = this->configData->stream->getCPUDelegator();
   return cpuDelegator->translateVAddrOracle(vaddr, paddr);
 }
 
@@ -106,7 +108,7 @@ void LLCDynamicStream::updateIssueClearCycle() {
     return;
   }
   const auto *dynS =
-      this->configData.stream->getDynamicStream(this->configData.dynamicId);
+      this->configData->stream->getDynamicStream(this->configData->dynamicId);
   if (dynS == nullptr) {
     // The dynS is already released.
     return;
@@ -134,7 +136,7 @@ void LLCDynamicStream::updateIssueClearCycle() {
        * TODO: Improve this.
        */
       const uint64_t IssueClearThreshold = 1024;
-      LLC_S_DPRINTF(this->configData.dynamicId,
+      LLC_S_DPRINTF(this->configData->dynamicId,
                     "Update IssueClearCycle %lu -> %lu (%lu), avgEleTurn %lu, "
                     "avgSliceTurn %lu, avgLateEle %d, elementPerSlice %f.\n",
                     this->issueClearCycle, newIssueClearCycle,
@@ -198,7 +200,7 @@ void LLCDynamicStream::sanityCheckStreamLife() {
   }
   auto curCycle = this->controller->curCycle();
   bool failed = false;
-  if (GlobalLLCDynamicStreamMap.size() > 32) {
+  if (GlobalLLCDynamicStreamMap.size() > 1024) {
     failed = true;
   }
   std::vector<LLCDynamicStreamPtr> sortedStreams;
@@ -240,4 +242,78 @@ void LLCDynamicStream::sanityCheckStreamLife() {
   DPRINTF(LLCRubyStreamLife, "Failed StreamLifeCheck at %llu.\n",
           this->controller->curCycle());
   assert(false);
+}
+
+void LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
+  if (this->idxToElementMap.count(elementIdx)) {
+    // The element is already allocated.
+    return;
+  }
+  LLC_S_DPRINTF(this->getDynamicStreamId(), "Allocate element %llu.\n",
+                elementIdx);
+  auto size = this->getMemElementSize();
+  auto element = std::make_shared<LLCStreamElement>(this->getStaticStream(),
+                                                    this->getDynamicStreamId(),
+                                                    elementIdx, vaddr, size);
+  this->idxToElementMap.emplace(elementIdx, element);
+
+  LLC_S_DPRINTF(this->getDynamicStreamId(), "Allocate element %llu: added.\n",
+                elementIdx);
+
+  /**
+   * We populate the baseElements. If we are one iteration behind, we are
+   * depending on the previous baseElements.
+   */
+  auto baseElementIdx = elementIdx;
+  if (this->isOneIterationBehind()) {
+    assert(elementIdx > 0 && "OneIterationBehind StreamElement begins at 1.");
+    baseElementIdx = elementIdx - 1;
+  }
+  for (const auto &baseConfig : this->baseOnConfigs) {
+    LLC_S_DPRINTF(this->getDynamicStreamId(), "Add BaseElement from %s.\n",
+                  baseConfig->dynamicId);
+    const auto &baseDynStreamId = baseConfig->dynamicId;
+    auto baseS = baseConfig->stream;
+    assert(this->baseStream && "Missing base stream.");
+    if (this->baseStream->getDynamicStreamId() == baseDynStreamId) {
+      // This is from base stream.
+      assert(this->baseStream->idxToElementMap.count(baseElementIdx) &&
+             "Missing BaseElement");
+      element->baseElements.emplace_back(
+          this->baseStream->idxToElementMap.at(baseElementIdx));
+    } else {
+      // This is from another bank, we just create the element here.
+      // So far we just support remote affine streams.
+      auto linearBaseAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+          baseConfig->addrGenCallback);
+      assert(linearBaseAddrGen && "Only support remote affine streams.");
+      auto baseElementVaddr =
+          baseConfig->addrGenCallback
+              ->genAddr(baseElementIdx, baseConfig->addrGenFormalParams,
+                        getStreamValueFail)
+              .front();
+
+      element->baseElements.emplace_back(std::make_shared<LLCStreamElement>(
+          baseS, baseDynStreamId, baseElementIdx, baseElementVaddr,
+          baseS->getMemElementSize()));
+    }
+  }
+  // Remember to add previous element as base element for reduction.
+  if (this->getStaticStream()->isReduction()) {
+    if (this->lastReductionElement->idx != baseElementIdx) {
+      LLC_S_PANIC(
+          this->getDynamicStreamId(),
+          "Missing previous Reduction LLCStreamElement %llu, Current %llu.",
+          baseElementIdx, this->lastReductionElement->idx);
+    }
+    element->baseElements.emplace_back(this->lastReductionElement);
+    this->lastReductionElement = element;
+  }
+
+  // We allocate all indirect streams' element here with vaddr 0.
+  for (auto &usedByS : this->indirectStreams) {
+    auto usedByElementIdx =
+        usedByS->isOneIterationBehind() ? (elementIdx + 1) : elementIdx;
+    usedByS->allocateElement(usedByElementIdx, 0);
+  }
 }

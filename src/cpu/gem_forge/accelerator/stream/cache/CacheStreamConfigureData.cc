@@ -10,24 +10,3 @@ CacheStreamConfigureData::CacheStreamConfigureData(
       isOneIterationBehind(false), initAllocatedIdx(0) {
   assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
-
-CacheStreamConfigureData::CacheStreamConfigureData(
-    const CacheStreamConfigureData &other)
-    : stream(other.stream), dynamicId(other.dynamicId),
-      elementSize(other.elementSize), initVAddr(other.initVAddr),
-      initPAddr(other.initPAddr), initPAddrValid(other.initPAddrValid),
-      isPseudoOffload(other.isPseudoOffload),
-      addrGenFormalParams(other.addrGenFormalParams),
-      addrGenCallback(other.addrGenCallback),
-      predFormalParams(other.predFormalParams),
-      predCallback(other.predCallback), totalTripCount(other.totalTripCount),
-      isPredicated(other.isPredicated),
-      isPredicatedTrue(other.isPredicatedTrue),
-      predicateStreamId(other.predicateStreamId),
-      storeFormalParams(other.storeFormalParams),
-      storeCallback(other.storeCallback),
-      reductionInitValue(other.reductionInitValue),
-      isPointerChase(other.isPointerChase),
-      isOneIterationBehind(other.isOneIterationBehind),
-      indirectStreams(other.indirectStreams),
-      initAllocatedIdx(other.initAllocatedIdx) {}

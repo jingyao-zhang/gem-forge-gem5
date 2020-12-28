@@ -42,6 +42,7 @@ public:
                                 const DataBlock &dataBlock,
                                 const DataBlock &storeValueBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
+  void receiveStreamForwardRequest(const RequestMsg &req);
   void wakeup() override;
   void print(std::ostream &out) const override;
 
@@ -79,17 +80,20 @@ private:
   std::map<LLCDynamicStreamPtr, StreamVec> multicastStreamMap;
 
   /**
-   * Buffered stream flow message waiting for the stream
-   * to migrate here.
+   * Buffered stream flow message waiting for the stream to migrate here.
    */
   std::list<DynamicStreamSliceId> pendingStreamFlowControlMsgs;
 
   /**
-   * Buffered stream end message waiting for the stream
-   * to migrate here.
+   * Buffered stream end message waiting for the stream to migrate here.
    */
   std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>
       pendingStreamEndMsgs;
+
+  /**
+   * Buffered stream forward message waiting for the stream to migrate here.
+   */
+  std::list<RequestMsg> pendingStreamForwardMsgs;
 
   /**
    * Hold the request queue.
@@ -167,11 +171,10 @@ private:
   /**
    * Helper function to enqueue a request and start address translation.
    */
-  RequestQueueIter enqueueRequest(LLCDynamicStreamPtr dynS,
+  RequestQueueIter enqueueRequest(GemForgeCPUDelegator *cpuDelegator,
                                   const DynamicStreamSliceId &sliceId,
                                   Addr vaddrLine, Addr paddrLine,
-                                  CoherenceRequestType type,
-                                  uint64_t storeData);
+                                  CoherenceRequestType type);
   void translationCallback(PacketPtr pkt, ThreadContext *tc,
                            RequestQueueIter reqIter);
 
@@ -200,6 +203,13 @@ private:
   void issueStreamDataToMLC(const DynamicStreamSliceId &sliceId, Addr paddrLine,
                             const uint8_t *data, int size, int lineOffset,
                             bool forceIdea = false);
+  /**
+   * Send the stream data to streams another LLC bank. Used for SendTo edge.
+   */
+  void issueStreamDataToLLC(LLCDynamicStreamPtr stream,
+                            const DynamicStreamSliceId &sliceId,
+                            const DataBlock &dataBlock,
+                            const CacheStreamConfigureDataPtr &recvConfig);
 
   /**
    * Migrate streams.
@@ -240,6 +250,10 @@ private:
                                    const DynamicStreamSliceId &sliceId,
                                    uint64_t elementIdx,
                                    const DataBlock &dataBlock);
+  void extractElementDataFromSlice(GemForgeCPUDelegator *cpuDelegator,
+                                   LLCStreamElementPtr &element,
+                                   const DynamicStreamSliceId &sliceId,
+                                   const DataBlock &dataBlock);
   void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,
                          uint64_t updateValue);
   /**
@@ -254,6 +268,13 @@ private:
   uint64_t performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
                                  LLCDynamicStreamPtr stream,
                                  const DynamicStreamSliceId &sliceId);
+
+  /**
+   * Try to process the request. It may not be able to process it if
+   * the stream lags behind.
+   * @return: whether this message is processed.
+   */
+  bool tryProcessStreamForwardRequest(const RequestMsg &req);
 };
 
 #endif

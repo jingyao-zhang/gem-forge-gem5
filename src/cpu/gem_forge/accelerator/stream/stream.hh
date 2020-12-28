@@ -168,6 +168,9 @@ public:
   bool isLoadStream() const;
   bool isUpdateStream() const;
   bool isMemStream() const;
+  bool isDirectLoadStream() const;
+  bool isDirectMemStream() const;
+  bool isPointerChaseLoadStream() const { return false; }
 
   /**
    * Simple bookkeeping information for the stream engine.
@@ -237,7 +240,7 @@ public:
    */
   StreamSet backBaseStreams;
   StreamEdges backBaseEdges;
-  StreamSet backDependentStreams;
+  StreamSet backDepStreams;
   StreamEdges backDepEdges;
   bool hasBackDepReductionStream;
 
@@ -247,7 +250,7 @@ public:
    */
   bool hasNonCoreDependent() const {
     if (this->addrDepStreams.empty() && this->valueDepStreams.empty() &&
-        this->backDependentStreams.empty()) {
+        this->backDepStreams.empty()) {
       return false;
     }
     return true;
@@ -376,15 +379,8 @@ public:
   /**
    * Allocate the CacheStreamConfigureData.
    */
-  CacheStreamConfigureData *allocateCacheConfigureData(uint64_t configSeqNum,
-                                                       bool isIndirect = false);
-
-  /**
-   * Helper function used in StreamAwareCache.
-   */
-  bool isDirectLoadStream() const;
-  bool isDirectMemStream() const;
-  virtual bool isPointerChaseLoadStream() const { return false; }
+  CacheStreamConfigureDataPtr
+  allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect = false);
 
   std::deque<DynamicStream> dynamicStreams;
   bool hasDynamicStream() const { return !this->dynamicStreams.empty(); }
