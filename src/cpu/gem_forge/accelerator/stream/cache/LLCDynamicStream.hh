@@ -119,6 +119,13 @@ public:
   static std::unordered_map<DynamicStreamId, LLCDynamicStream *,
                             DynamicStreamIdHasher>
       GlobalLLCDynamicStreamMap;
+  static LLCDynamicStream *getLLCStream(const DynamicStreamId &dynId) {
+    if (GlobalLLCDynamicStreamMap.count(dynId)) {
+      return GlobalLLCDynamicStreamMap.at(dynId);
+    } else {
+      return nullptr;
+    }
+  }
 
   const CacheStreamConfigureDataPtr configData;
   SlicedDynamicStream slicedStream;

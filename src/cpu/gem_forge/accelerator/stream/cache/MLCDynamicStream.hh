@@ -71,6 +71,7 @@ public:
 protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;
+  CacheStreamConfigureDataPtr config;
   bool isPointerChase;
   bool isPseudoOffload;
 

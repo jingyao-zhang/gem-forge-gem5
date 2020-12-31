@@ -35,12 +35,10 @@ public:
   void receiveStreamEnd(PacketPtr pkt);
   void receiveStreamMigrate(LLCDynamicStreamPtr stream);
   void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
-  void receiveStreamElementDataVec(const DynamicStreamSliceIdVec &sliceIds,
+  void receiveStreamElementDataVec(Cycles delayCycles,
+                                   const DynamicStreamSliceIdVec &sliceIds,
                                    const DataBlock &dataBlock,
                                    const DataBlock &storeValueBlock);
-  void receiveStreamElementData(const DynamicStreamSliceId &sliceId,
-                                const DataBlock &dataBlock,
-                                const DataBlock &storeValueBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
   void receiveStreamForwardRequest(const RequestMsg &req);
   void wakeup() override;
@@ -72,6 +70,35 @@ private:
    * Streams waiting to be migrated to other LLC bank.
    */
   StreamList migratingStreams;
+
+  /**
+   * Since the LLC controller charge the latency when sending out the response,
+   * we want to make sure that this latency is correctly charged for responses
+   * to the LLC SE. Normally you would create a MessageBuffer from the
+   * controller to the LLC SE. However, that may be a overkill. For now I just
+   * add a specific queue for this.
+   */
+  struct IncomingElementDataMsg {
+    const Cycles readyCycle;
+    const DynamicStreamSliceId sliceId;
+    const DataBlock dataBlock;
+    const DataBlock storeValueBlock;
+    IncomingElementDataMsg(Cycles _readyCycle,
+                           const DynamicStreamSliceId &_sliceId,
+                           const DataBlock &_dataBlock,
+                           const DataBlock &_storeValueBlock)
+        : readyCycle(_readyCycle), sliceId(_sliceId), dataBlock(_dataBlock),
+          storeValueBlock(_storeValueBlock) {}
+  };
+  std::list<IncomingElementDataMsg> incomingElementDataQueue;
+  void enqueueIncomingElementDataMsg(Cycles readyCycle,
+                                     const DynamicStreamSliceId &sliceId,
+                                     const DataBlock &dataBlock,
+                                     const DataBlock &storeValueBlock);
+  void drainIncomingElementDataMsg();
+  void receiveStreamElementData(const DynamicStreamSliceId &sliceId,
+                                const DataBlock &dataBlock,
+                                const DataBlock &storeValueBlock);
 
   /**
    * Bidirectionaly map between streams that are identical but

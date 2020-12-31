@@ -36,6 +36,7 @@ public:
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
   bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
   bool isStreamIdeaAckEnabled() const { return this->enableStreamIdeaAck; }
+  bool isStreamIdeaSyncEnabled() const { return myParams->enable_stream_idea_sync; }
   bool isStreamIdeaFlowEnabled() const {
     return myParams->enable_stream_idea_flow;
   }

@@ -19,7 +19,7 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
                                    MessageBuffer *_responseMsgBuffer,
                                    MessageBuffer *_requestToLLCMsgBuffer)
     : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
-      isPointerChase(_configData->isPointerChase),
+      config(_configData), isPointerChase(_configData->isPointerChase),
       isPseudoOffload(_configData->isPseudoOffload), controller(_controller),
       responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer),
@@ -101,6 +101,37 @@ void MLCDynamicStream::receiveStreamRequestHit(
 
 void MLCDynamicStream::popStream() {
   /**
+   * So far we don't have a synchronization scheme between MLC and LLC if there
+   * is no CoreUser, and that causes performance drop due to running too ahead.
+   * Therefore, we try to have an ideal check that the LLCStream is ahead of me.
+   * We only do this for direct streams.
+   */
+  uint64_t llcProgressElementIdx = UINT64_MAX;
+  if (this->controller->isStreamIdeaSyncEnabled() &&
+      this->getStaticStream()->isDirectMemStream()) {
+    if (auto llcDynS =
+            LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
+      llcProgressElementIdx =
+          std::min(llcDynS->getNextSliceIdx(), llcProgressElementIdx);
+    } else {
+      // The LLC stream has not been created.
+      llcProgressElementIdx = 0;
+    }
+    for (const auto &depEdge : this->config->depEdges) {
+      if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
+        if (auto llcDynS =
+                LLCDynamicStream::getLLCStream(depEdge.data->dynamicId)) {
+          llcProgressElementIdx =
+              std::min(llcDynS->getNextSliceIdx(), llcProgressElementIdx);
+        } else {
+          // The LLC stream has not been created.
+          llcProgressElementIdx = 0;
+        }
+      }
+    }
+  }
+
+  /**
    * Maybe let's make release in order.
    * The slice is released once the core status is DONE or FAULTED.
    */
@@ -108,6 +139,17 @@ void MLCDynamicStream::popStream() {
     const auto &slice = this->slices.front();
     if (slice.coreStatus == MLCStreamSlice::CoreStatusE::DONE ||
         slice.coreStatus == MLCStreamSlice::CoreStatusE::FAULTED) {
+
+      auto mlcHeadSliceIdx = this->tailSliceIdx - this->slices.size();
+
+      if (mlcHeadSliceIdx > llcProgressElementIdx) {
+        MLC_SLICE_DPRINTF(
+            slice.sliceId,
+            "Delayed poping for IdealSync between MLC %llu and LLC %llu.\n",
+            mlcHeadSliceIdx, llcProgressElementIdx);
+        break;
+      }
+
       MLC_SLICE_DPRINTF(slice.sliceId, "Pop.\n");
 
       // Update the statistics.
@@ -161,8 +203,9 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
   if (Debug::DEBUG_TYPE) {
     std::stringstream ss;
     auto lineOffset = slice.sliceId.vaddr % RubySystem::getBlockSizeBytes();
-    auto dataStr = GemForgeUtils::dataToString(slice.dataBlock.getData(lineOffset,
-      slice.sliceId.getSize()), slice.sliceId.getSize());
+    auto dataStr = GemForgeUtils::dataToString(
+        slice.dataBlock.getData(lineOffset, slice.sliceId.getSize()),
+        slice.sliceId.getSize());
     MLC_SLICE_DPRINTF(slice.sliceId,
                       "Make response vaddr %#x size %d data 0x%s.\n",
                       slice.sliceId.vaddr, slice.sliceId.getSize(), dataStr);

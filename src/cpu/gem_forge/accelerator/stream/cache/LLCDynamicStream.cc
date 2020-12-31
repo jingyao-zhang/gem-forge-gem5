@@ -107,6 +107,11 @@ void LLCDynamicStream::updateIssueClearCycle() {
   if (!this->shouldUpdateIssueClearCycle()) {
     return;
   }
+  // ! Hack: enforce issue clear cycle to 10 if we have sendTo.
+  // if (!this->sendToConfigs.empty()) {
+  //   // this->issueClearCycle = Cycles(20);
+  //   return;
+  // }
   const auto *dynS =
       this->configData->stream->getDynamicStream(this->configData->dynamicId);
   if (dynS == nullptr) {
@@ -176,6 +181,11 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
         this->shouldUpdateIssueClearCycleMemorized = false;
       }
     }
+    // // ! Hack: enforce issue clear cycle to 10 if we have sendTo.
+    // if (!this->shouldUpdateIssueClearCycleMemorized &&
+    //     !this->sendToConfigs.empty()) {
+    //   this->shouldUpdateIssueClearCycleMemorized = true;
+    // }
   }
 
   this->shouldUpdateIssueClearCycleInitialized = true;
