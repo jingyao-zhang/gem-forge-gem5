@@ -1,6 +1,7 @@
 #include "LLCDynamicStream.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
+#include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
@@ -11,16 +12,17 @@
 
 std::unordered_map<DynamicStreamId, LLCDynamicStream *, DynamicStreamIdHasher>
     LLCDynamicStream::GlobalLLCDynamicStreamMap;
+std::unordered_map<NodeID, std::list<std::vector<LLCDynamicStream *>>>
+    LLCDynamicStream::GlobalMLCToLLCDynamicStreamGroupMap;
 
 // TODO: Support real flow control.
-LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
-                                   CacheStreamConfigureDataPtr _configData)
-    : configData(_configData),
+LLCDynamicStream::LLCDynamicStream(
+    AbstractStreamAwareController *_mlcController,
+    CacheStreamConfigureDataPtr _configData)
+    : mlcController(_mlcController), configData(_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      maxInflyRequests(_controller->getLLCStreamMaxInflyRequest()),
-      configureCycle(_controller->curCycle()), controller(_controller),
-      sliceIdx(0), allocatedSliceIdx(_configData->initAllocatedIdx),
-      inflyRequests(0) {
+      configureCycle(_mlcController->curCycle()), sliceIdx(0),
+      allocatedSliceIdx(_configData->initAllocatedIdx), inflyRequests(0) {
 
   // Remember the SendTo configs.
   for (auto &depEdge : this->configData->depEdges) {
@@ -38,7 +40,7 @@ LLCDynamicStream::LLCDynamicStream(AbstractStreamAwareController *_controller,
   if (this->configData->isPointerChase) {
     // Pointer chase stream can only have at most one base requests waiting for
     // data.
-    this->maxInflyRequests = 1;
+    assert(false && "PointerChase is not supported for now.");
   }
   if (this->getStaticStream()->isReduction()) {
     // Initialize the first element for ReductionStream with the initial value.
@@ -195,8 +197,9 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
 void LLCDynamicStream::traceEvent(
     const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type) {
   auto &floatTracer = this->getStaticStream()->floatTracer;
-  auto curCycle = this->controller->curCycle();
-  auto llcBank = this->controller->getMachineID().num;
+  auto curCycle = this->curCycle();
+  assert(this->llcController && "Missing LLCController when tracing event.");
+  auto llcBank = this->llcController->getMachineID().num;
   floatTracer.traceEvent(curCycle, llcBank, type);
   // Do this for all indirect streams.
   for (auto IS : this->indirectStreams) {
@@ -208,7 +211,7 @@ void LLCDynamicStream::sanityCheckStreamLife() {
   if (!Debug::LLCRubyStreamLife) {
     return;
   }
-  auto curCycle = this->controller->curCycle();
+  auto curCycle = this->curCycle();
   bool failed = false;
   if (GlobalLLCDynamicStreamMap.size() > 1024) {
     failed = true;
@@ -250,7 +253,7 @@ void LLCDynamicStream::sanityCheckStreamLife() {
                    S->configureCycle, S->prevIssuedCycle, S->prevMigrateCycle);
   }
   DPRINTF(LLCRubyStreamLife, "Failed StreamLifeCheck at %llu.\n",
-          this->controller->curCycle());
+          this->curCycle());
   assert(false);
 }
 
@@ -325,5 +328,155 @@ void LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
     auto usedByElementIdx =
         usedByS->isOneIterationBehind() ? (elementIdx + 1) : elementIdx;
     usedByS->allocateElement(usedByElementIdx, 0);
+  }
+}
+
+std::string LLCDynamicStream::stateToString(State state) {
+  switch (state) {
+  default:
+    panic("Invalid LLCDynamicStream::State %d.", state);
+#define Case(x)                                                                \
+  case x:                                                                      \
+    return #x
+    Case(INITIALIZED);
+    Case(RUNNING);
+    Case(MIGRATING);
+    Case(TERMINATED);
+#undef Case
+  }
+}
+
+void LLCDynamicStream::setState(State state) {
+  switch (state) {
+  default:
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Invalid LLCDynamicStream::State %d.", state);
+  case State::RUNNING:
+    assert(this->state == State::INITIALIZED ||
+           this->state == State::MIGRATING);
+    break;
+  case State::MIGRATING:
+    assert(this->state == State::RUNNING);
+    break;
+  case State::TERMINATED:
+    assert(this->state == State::RUNNING);
+    break;
+  }
+  this->state = state;
+}
+
+void LLCDynamicStream::migratingStart() {
+  this->setState(State::MIGRATING);
+  this->prevMigrateCycle = this->curCycle();
+  this->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
+  this->getStaticStream()->se->numLLCMigrated++;
+}
+
+void LLCDynamicStream::migratingDone(
+    AbstractStreamAwareController *llcController) {
+  this->llcController = llcController;
+  this->setState(State::RUNNING);
+
+  auto &stats = this->getStaticStream()->statistic;
+  stats.numLLCMigrate++;
+  stats.numLLCMigrateCycle += this->curCycle() - this->prevMigrateCycle;
+  this->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_IN);
+}
+
+void LLCDynamicStream::terminate() {
+  LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynamicStreamId(), "Ended.\n");
+  this->setState(State::TERMINATED);
+  this->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
+}
+
+void LLCDynamicStream::allocateLLCStreams(
+    AbstractStreamAwareController *mlcController,
+    CacheStreamConfigureVec &configs) {
+  for (auto &config : configs) {
+    LLCDynamicStream::allocateLLCStream(mlcController, config);
+  }
+
+  // Remember the allocated group.
+  auto mlcNum = mlcController->getMachineID().getNum();
+  auto &mlcGroups =
+      GlobalMLCToLLCDynamicStreamGroupMap
+          .emplace(std::piecewise_construct, std::forward_as_tuple(mlcNum),
+                   std::forward_as_tuple())
+          .first->second;
+
+  // Try to release old terminated groups.
+  assert(mlcGroups.size() < 100 &&
+         "Too many MLCGroups, streams are not released?");
+
+  for (auto iter = mlcGroups.begin(), end = mlcGroups.end(); iter != end;) {
+    auto &group = *iter;
+    bool allTerminated = true;
+    for (auto llcS : group) {
+      if (!llcS->isTerminated()) {
+        allTerminated = false;
+        break;
+      }
+    }
+    if (!allTerminated) {
+      ++iter;
+      continue;
+    }
+    for (auto &llcS : group) {
+      delete llcS;
+      llcS = nullptr;
+    }
+    iter = mlcGroups.erase(iter);
+  }
+
+  mlcGroups.emplace_back();
+  auto &newGroup = mlcGroups.back();
+  for (auto &config : configs) {
+    auto llcS = LLCDynamicStream::getLLCStreamPanic(config->dynamicId);
+    newGroup.push_back(llcS);
+  }
+}
+
+void LLCDynamicStream::allocateLLCStream(
+    AbstractStreamAwareController *mlcController,
+    CacheStreamConfigureDataPtr &config) {
+
+  // Create the stream.
+  auto S = new LLCDynamicStream(mlcController, config);
+
+  // Check if we have indirect streams.
+  for (const auto &edge : config->depEdges) {
+    if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+      auto &ISConfig = edge.data;
+      // Let's create an indirect stream.
+      ISConfig->initAllocatedIdx = config->initAllocatedIdx;
+      auto IS = new LLCDynamicStream(mlcController, ISConfig);
+      S->indirectStreams.push_back(IS);
+      IS->baseStream = S;
+    }
+  }
+
+  // Create predicated stream information.
+  assert(!config->isPredicated && "Base stream should never be predicated.");
+  for (auto IS : S->indirectStreams) {
+    if (IS->isPredicated()) {
+      const auto &predSId = IS->getPredicateStreamId();
+      auto predS = LLCDynamicStream::getLLCStream(predSId);
+      assert(predS && "Failed to find predicate stream.");
+      assert(predS != IS && "Self predication.");
+      predS->predicatedStreams.insert(IS);
+      IS->predicateStream = predS;
+    }
+  }
+}
+
+Cycles LLCDynamicStream::curCycle() const {
+  return this->mlcController->curCycle();
+}
+
+int LLCDynamicStream::curLLCBank() const {
+  if (this->llcController) {
+    return this->llcController->getMachineID().num;
+  } else {
+    return -1;
   }
 }

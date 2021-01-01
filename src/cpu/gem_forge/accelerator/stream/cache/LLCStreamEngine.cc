@@ -38,7 +38,9 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       streamResponseMsgBuffer(_streamResponseMsgBuffer),
       issueWidth(_controller->getLLCStreamEngineIssueWidth()),
       migrateWidth(_controller->getLLCStreamEngineMigrateWidth()),
-      maxInflyRequests(8), maxInqueueRequests(2), translationBuffer(nullptr) {
+      maxInflyRequests(8),
+      maxInflyRequestsPerStream(_controller->getLLCStreamMaxInflyRequest()),
+      maxInqueueRequests(2), translationBuffer(nullptr) {
   this->controller->registerLLCStreamEngine(this);
 }
 
@@ -48,6 +50,10 @@ LLCStreamEngine::~LLCStreamEngine() {
     s = nullptr;
   }
   this->streams.clear();
+}
+
+int LLCStreamEngine::curLLCBank() const {
+  return this->controller->getMachineID().num;
 }
 
 void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
@@ -61,44 +67,24 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                 "initPAddr %#x.\n",
                 pkt, streamConfigureData, streamConfigureData->initVAddr,
                 streamConfigureData->initPAddr);
-  std::unordered_map<DynamicStreamId, LLCDynamicStream *, DynamicStreamIdHasher>
-      configuredStreamMap;
 
   // Create the stream.
-  auto S = new LLCDynamicStream(this->controller, streamConfigureData);
+  auto S = LLCDynamicStream::getLLCStreamPanic(streamConfigureData->dynamicId);
   LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynamicStreamId(),
                  "Configure DirectStream InitAllocatedSlice %d.\n",
                  streamConfigureData->initAllocatedIdx);
-  configuredStreamMap.emplace(S->getDynamicStreamId(), S);
+  S->configuredLLC(this->controller);
 
   // Check if we have indirect streams.
   for (const auto &edge : streamConfigureData->depEdges) {
     if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
       auto &ISConfig = edge.data;
       // Let's create an indirect stream.
-      ISConfig->initAllocatedIdx = streamConfigureData->initAllocatedIdx;
-      auto IS = new LLCDynamicStream(this->controller, ISConfig);
-      configuredStreamMap.emplace(IS->getDynamicStreamId(), IS);
+      auto IS = LLCDynamicStream::getLLCStreamPanic(ISConfig->dynamicId);
       LLC_S_DPRINTF_(LLCRubyStreamLife, IS->getDynamicStreamId(),
                      "Configure IndirectStream size %d, config size %d.\n",
                      IS->getMemElementSize(), ISConfig->elementSize);
-      S->indirectStreams.push_back(IS);
-      IS->baseStream = S;
-    }
-  }
-
-  // Create predicated stream information.
-  assert(!streamConfigureData->isPredicated &&
-         "Base stream should never be predicated.");
-  for (auto IS : S->indirectStreams) {
-    if (IS->isPredicated()) {
-      const auto &predSId = IS->getPredicateStreamId();
-      assert(configuredStreamMap.count(predSId) != 0 &&
-             "Failed to find predicate stream.");
-      auto predS = configuredStreamMap.at(predSId);
-      assert(predS != IS && "Self predication.");
-      predS->predicatedStreams.insert(IS);
-      IS->predicateStream = predS;
+      IS->configuredLLC(this->controller);
     }
   }
 
@@ -109,8 +95,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   S->traceEvent(::LLVM::TDG::StreamFloatEvent::CONFIG);
   // Let's check if StreamEnd packet has arrived earlier.
   if (this->pendingStreamEndMsgs.count(S->getDynamicStreamId())) {
-    LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynamicStreamId(), "Ended.\n");
-    S->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
+    S->terminate();
     delete S;
   } else {
     this->streams.emplace_back(S);
@@ -127,15 +112,12 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   // Search for this stream.
   for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
        streamIter != streamEnd; ++streamIter) {
-    auto &stream = *streamIter;
-    if (stream->getDynamicStreamId() == (*endStreamDynamicId)) {
+    auto &S = *streamIter;
+    if (S->getDynamicStreamId() == (*endStreamDynamicId)) {
       // Found it.
       // ? Can we just sliently release it?
-      LLC_S_DPRINTF_(LLCRubyStreamLife, *endStreamDynamicId, "Ended.\n");
-      this->removeStreamFromMulticastTable(stream);
-      stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
-      delete stream;
-      stream = nullptr;
+      this->removeStreamFromMulticastTable(S);
+      S->terminate();
       this->streams.erase(streamIter);
       // Don't forgot to release the memory.
       delete endStreamDynamicId;
@@ -185,14 +167,8 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
   }
 
   LLC_S_DPRINTF(stream->getDynamicStreamId(), "Received migrate.\n");
-  // Set the controller and clear the per controller states.
-  stream->setController(this->controller);
 
-  auto &stats = stream->getStaticStream()->statistic;
-  stats.numLLCMigrate++;
-  stats.numLLCMigrateCycle +=
-      this->controller->curCycle() - stream->prevMigrateCycle;
-  stream->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_IN);
+  stream->migratingDone(this->controller);
 
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
@@ -950,10 +926,10 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
    */
 
   // Enforce the per stream maxInflyRequests constraint.
-  if (stream->inflyRequests == stream->maxInflyRequests) {
+  if (stream->inflyRequests == this->maxInflyRequestsPerStream) {
     LLC_S_DPRINTF_(LLCRubyStreamNotIssue, stream->getDynamicStreamId(),
                    "Not issue: MaxInflyRequests %d.\n",
-                   stream->maxInflyRequests);
+                   this->maxInflyRequestsPerStream);
     statistic.sampleLLCStreamEngineIssueReason(
         StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
     return false;
@@ -1076,10 +1052,10 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   const auto &baseElement = firstIndirectIter->second.second;
 
   // Enforce the per stream maxInflyRequests constraint.
-  if (dynIS->inflyRequests == dynIS->maxInflyRequests) {
+  if (dynIS->inflyRequests == this->maxInflyRequestsPerStream) {
     LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynIS->getDynamicStreamId(),
                    "Not issue: MaxInflyRequests %d.\n",
-                   dynIS->maxInflyRequests);
+                   this->maxInflyRequestsPerStream);
     dynIS->getStaticStream()->statistic.sampleLLCStreamEngineIssueReason(
         StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
     return false;
@@ -1624,9 +1600,8 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
       this->controller->cyclesToTicks(latency));
 
   this->removeStreamFromMulticastTable(stream);
-  stream->prevMigrateCycle = this->controller->curCycle();
-  stream->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
-  stream->getStaticStream()->se->numLLCMigrated++;
+
+  stream->migratingStart();
 }
 
 MachineID LLCStreamEngine::mapPaddrToLLCBank(Addr paddr) const {

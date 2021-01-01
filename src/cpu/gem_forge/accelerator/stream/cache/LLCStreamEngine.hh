@@ -58,6 +58,7 @@ private:
   const int migrateWidth;
   // Threshold to limit maximum number of infly requests.
   const int maxInflyRequests;
+  const int maxInflyRequestsPerStream;
   // Threshold to limit maximum number of requests in queue;
   const int maxInqueueRequests;
 
@@ -70,6 +71,8 @@ private:
    * Streams waiting to be migrated to other LLC bank.
    */
   StreamList migratingStreams;
+
+  int curLLCBank() const;
 
   /**
    * Since the LLC controller charge the latency when sending out the response,

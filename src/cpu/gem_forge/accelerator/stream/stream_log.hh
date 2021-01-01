@@ -72,14 +72,12 @@
   panic(MLC_SLICE_MSG(sliceId, format, ##args))
 
 #define LLC_S_MSG(streamId, format, args...)                                   \
-  "[LLC_SE%d][%d-%lu-%lu]: " format, this->controller->getMachineID().num,     \
-      (streamId).coreId, (streamId).staticId, (streamId).streamInstance,       \
-      ##args
+  "[LLC_SE%d][%d-%lu-%lu]: " format, this->curLLCBank(), (streamId).coreId,    \
+      (streamId).staticId, (streamId).streamInstance, ##args
 #define LLC_SLICE_MSG(sliceId, format, args...)                                \
-  "[LLC_SE%d][%d-%lu-%lu][%lu, +%d): " format,                                 \
-      this->controller->getMachineID().num, (sliceId).streamId.coreId,         \
-      (sliceId).streamId.staticId, (sliceId).streamId.streamInstance,          \
-      (sliceId).lhsElementIdx,                                                 \
+  "[LLC_SE%d][%d-%lu-%lu][%lu, +%d): " format, this->curLLCBank(),             \
+      (sliceId).streamId.coreId, (sliceId).streamId.staticId,                  \
+      (sliceId).streamId.streamInstance, (sliceId).lhsElementIdx,              \
       (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args
 
 #define LLC_S_DPRINTF_(X, streamId, format, args...)                           \

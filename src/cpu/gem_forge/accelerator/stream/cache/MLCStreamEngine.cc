@@ -53,6 +53,10 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   for (auto streamConfigureData : *streamConfigs) {
     this->configureStream(streamConfigureData, pkt->req->masterId());
   }
+
+  // We initalize all LLCDynamicStreams here (see LLCDynamicStream.hh)
+  LLCDynamicStream::allocateLLCStreams(this->controller, *streamConfigs);
+
   // Release the configure vec.
   delete streamConfigs;
   delete pkt;

@@ -43,8 +43,6 @@ struct LLCStreamRequest {
 
 class LLCDynamicStream {
 public:
-  LLCDynamicStream(AbstractStreamAwareController *_controller,
-                   CacheStreamConfigureDataPtr _configData);
   ~LLCDynamicStream();
 
   Stream *getStaticStream() const { return this->configData->stream; }
@@ -74,10 +72,6 @@ public:
     auto S = this->getStaticStream();
     return !this->indirectStreams.empty() || this->isPointerChase() ||
            (S->isLoadStream() && S->getEnabledStoreFunc());
-  }
-
-  void setController(AbstractStreamAwareController *controller) {
-    this->controller = controller;
   }
 
   void setMulticastGroupLeader(LLCDynamicStream *S) {
@@ -112,13 +106,44 @@ public:
   void
   traceEvent(const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type);
 
-  /**
-   * A hacky way to set up a global map for LLCDynamicStream.
-   * TODO: Improve this.
-   */
-  static std::unordered_map<DynamicStreamId, LLCDynamicStream *,
-                            DynamicStreamIdHasher>
-      GlobalLLCDynamicStreamMap;
+  /**************************************************************************
+   * To better managing the life cycle of LLCDynamicStream, instead of
+   * allocating them at when StreamConfig hits the LLC SE, we allocate them
+   * at once at the MLC SE. And they are released lazily at once when all
+   * floating streams are terminated. Therefore, they have states:
+   * INITIALIZED: Initialized by MLC SE but before LLC SE receives StreamConfig.
+   * RUNNING: The stream is running at one LLC SE.
+   * MIGRATING: The stream is migrating to the next LLC SE.
+   * TERMINATED: The LLC SE terminated the stream.
+   *
+   * To correctly handle these, we have a global map from DynamicStreamId to
+   * LLCDynamicStream *. We also remember the list of streams that are allocated
+   * together, so that we can deallocate them at the same time.
+   **************************************************************************/
+  enum State {
+    INITIALIZED,
+    RUNNING,
+    MIGRATING,
+    TERMINATED,
+  };
+  static std::string stateToString(State state);
+
+  State getState() const { return this->state; }
+  void setState(State state);
+
+  bool isTerminated() const { return this->state == State::TERMINATED; }
+  bool isLLCConfigured() const { return this->state != State::INITIALIZED; }
+
+  void configuredLLC(AbstractStreamAwareController *llcController) {
+    this->setState(State::RUNNING);
+    this->llcController = llcController;
+  }
+
+  void migratingStart();
+  void migratingDone(AbstractStreamAwareController *llcController);
+
+  void terminate();
+
   static LLCDynamicStream *getLLCStream(const DynamicStreamId &dynId) {
     if (GlobalLLCDynamicStreamMap.count(dynId)) {
       return GlobalLLCDynamicStreamMap.at(dynId);
@@ -126,7 +151,36 @@ public:
       return nullptr;
     }
   }
+  static LLCDynamicStream *getLLCStreamPanic(const DynamicStreamId &dynId) {
+    if (auto S = LLCDynamicStream::getLLCStream(dynId)) {
+      return S;
+    }
+    panic("Failed to get LLCDynamicStream %s.", dynId);
+  }
+  static void allocateLLCStreams(AbstractStreamAwareController *mlcController,
+                                 CacheStreamConfigureVec &configs);
 
+private:
+  State state = INITIALIZED;
+  AbstractStreamAwareController *mlcController;
+  AbstractStreamAwareController *llcController = nullptr;
+
+  // Private controller as user should use allocateLLCStreams().
+  LLCDynamicStream(AbstractStreamAwareController *_mlcController,
+                   CacheStreamConfigureDataPtr _configData);
+
+  static std::unordered_map<DynamicStreamId, LLCDynamicStream *,
+                            DynamicStreamIdHasher>
+      GlobalLLCDynamicStreamMap;
+  static std::unordered_map<NodeID, std::list<std::vector<LLCDynamicStream *>>>
+      GlobalMLCToLLCDynamicStreamGroupMap;
+  static void allocateLLCStream(AbstractStreamAwareController *mlcController,
+                                CacheStreamConfigureDataPtr &config);
+
+  Cycles curCycle() const;
+  int curLLCBank() const;
+
+public:
   const CacheStreamConfigureDataPtr configData;
   SlicedDynamicStream slicedStream;
 
@@ -158,12 +212,6 @@ public:
   // Base predicate stream.
   LLCDynamicStream *predicateStream = nullptr;
 
-  /**
-   * Maximum number of issued requests of the base stream that are waiting for
-   * the data.
-   */
-  int maxInflyRequests;
-
   Cycles issueClearCycle = Cycles(4);
   // Configure cycle.
   const Cycles configureCycle;
@@ -183,7 +231,6 @@ public:
    * Transient states that should be reset after migration.
    * ! Only valid for DirectStream.
    */
-  AbstractStreamAwareController *controller;
   LLCDynamicStream *multicastGroupLeader = nullptr;
 
   // Next slice index to be issued.
