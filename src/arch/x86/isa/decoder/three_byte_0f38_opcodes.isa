@@ -109,13 +109,14 @@
             format Inst {
                 0x30: SSP_STREAM_CONFIG(Ib);
                 0x31: SSP_STREAM_END(Ib);
-                0x32: SSP_STREAM_INPUT(Ev, Ib);
-                0x33: SSP_STREAM_READY();
-                0x34: SSP_STREAM_STEP(Ib);
-                0x35: SSP_STREAM_LOAD(Ev, Ib);
-                0x36: SSP_STREAM_LOAD(WSSPd, Ib);
-                0x37: SSP_STREAM_LOAD(WSSPq, Ib);
-                0x38: SSP_STREAM_LOAD(WSSPo, Ib);
+                0x32: SSP_STREAM_READY();
+                0x33: SSP_STREAM_STEP(Ib);
+                0x34: SSP_STREAM_INPUT(Ev, Ib);
+                0x38: SSP_STREAM_LOAD(Ev, Ib);
+                0x39: SSP_STREAM_LOAD(WSSPd, Ib);
+                0x3A: SSP_STREAM_LOAD(WSSPq, Ib);
+                0x3B: SSP_STREAM_LOAD(WSSPo, Ib);
+                0x3F: SSP_STREAM_STORE(Ib);
             }
             default: Inst::UD2();
         }

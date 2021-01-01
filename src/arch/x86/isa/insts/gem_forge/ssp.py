@@ -40,6 +40,11 @@ def macroop SSP_STREAM_STEP_I
     ssp_stream_step imm
 };
 
+def macroop SSP_STREAM_STORE_I
+{
+    ssp_stream_store imm
+};
+
 def macroop SSP_STREAM_LOAD_R_I
 {
     ssp_stream_load reg, imm
