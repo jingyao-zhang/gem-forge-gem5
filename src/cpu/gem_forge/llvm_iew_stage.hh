@@ -201,7 +201,7 @@ private:
     bool isValueLoaded() override;
     void RAWMisspeculate() override;
   };
-  struct GemForgeIEWSQCallback : public GemForgeSQCallback {
+  struct GemForgeIEWSQCallback : public GemForgeSQDeprecatedCallback {
   public:
     LLVMDynamicInst *inst;
     LLVMTraceCPU *cpu;

@@ -140,9 +140,9 @@ public:
   }
 
   // Get additional SQ callbacks, except the normal store inst.
-  virtual std::list<std::unique_ptr<GemForgeSQCallback>>
+  virtual std::list<std::unique_ptr<GemForgeSQDeprecatedCallback>>
   createAdditionalSQCallbacks(LLVMTraceCPU *cpu) {
-    return std::list<std::unique_ptr<GemForgeSQCallback>>();
+    return std::list<std::unique_ptr<GemForgeSQDeprecatedCallback>>();
   }
 
   int getNumOperands() const;

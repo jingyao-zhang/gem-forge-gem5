@@ -15,7 +15,7 @@ GemForgeLoadStoreQueue::LoadQueueEntry::LoadQueueEntry(
 
 GemForgeLoadStoreQueue::StoreQueueEntry::StoreQueueEntry(
     const LSQEntryIndex _lsqIndex,
-    std::unique_ptr<GemForgeSQCallback> _callback)
+    std::unique_ptr<GemForgeSQDeprecatedCallback> _callback)
     : lsqIndex(_lsqIndex), callback(std::move(_callback)),
       isAddressReady(false), committed(false), writebacking(false) {}
 
@@ -48,7 +48,7 @@ void GemForgeLoadStoreQueue::insertLoad(
 }
 
 void GemForgeLoadStoreQueue::insertStore(
-    std::unique_ptr<GemForgeSQCallback> callback) {
+    std::unique_ptr<GemForgeSQDeprecatedCallback> callback) {
   if (this->storeQueue.size() >= this->storeQueueSize) {
     panic("Store queue overflows.");
   }

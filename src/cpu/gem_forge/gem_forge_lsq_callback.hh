@@ -9,17 +9,28 @@
 #include <memory>
 
 /**
- * This LSQ is designed to be abstract as the entries may not be a simple
- * instruction. For example, the stream engine may use this to handle aliasing.
- * It only knows about the interface/callback.
+ * This is used as the interface to let the core LSQ query about
+ * information from the SE.
  */
 
-struct GemForgeLQCallback {
+struct GemForgeLSQCallback {
+public:
+  enum Type {
+    LOAD,
+    STORE,
+  };
+  virtual Type getType() const = 0;
+  std::string getTypeString() const;
   /**
    * Get the address and size of this lsq entry.
    * @return true if the address is ready.
    */
   virtual bool getAddrSize(Addr &addr, uint32_t &size) const = 0;
+  bool isAddrReady() const {
+    Addr addr;
+    uint32_t size;
+    return this->getAddrSize(addr, size);
+  }
   Addr getAddr() const {
     Addr addr;
     uint32_t size;
@@ -32,13 +43,15 @@ struct GemForgeLQCallback {
     assert(this->getAddrSize(addr, size));
     return size;
   }
+
   /**
-   * Check if the load request has non core user, i.e.
+   * Check if the request has non core user, i.e.
    * deps that is not tracked by normal register read/write.
+   * This basically means that if this is flushed, we have to notify the SE.
    */
   virtual bool hasNonCoreDependent() const = 0;
   /**
-   * Check if the load request has been issued to memory.
+   * Check if the request has been issued to memory by the SE.
    */
   virtual bool isIssued() const = 0;
   /**
@@ -57,24 +70,32 @@ struct GemForgeLQCallback {
   virtual std::ostream &format(std::ostream &os) const {
     Addr addr = 0;
     uint32_t size = 0;
-    bool ready = this->getAddrSize(addr, size);
-    return os << "[Ready " << ready << ", Issued " << this->isIssued() << ", 0x"
-              << std::hex << addr << ", +" << size << ']';
+    bool addrReady = this->isAddrReady();
+    return os << "[" << this->getTypeString() << " AddrReady " << addrReady
+              << ", Issued " << this->isIssued() << ", 0x" << std::hex << addr
+              << ", +" << size << ']';
   }
   friend std::ostream &operator<<(std::ostream &os,
-                                  const GemForgeLQCallback &cb) {
+                                  const GemForgeLSQCallback &cb) {
     return cb.format(os);
   }
 };
 
-using GemForgeLQCallbackPtr = std::unique_ptr<GemForgeLQCallback>;
+using GemForgeLSQCallbackPtr = std::unique_ptr<GemForgeLSQCallback>;
+using GemForgeLSQCallbackList = std::array<GemForgeLSQCallbackPtr, 4>;
 
-/**
- * TODO: Extend this.
- */
+struct GemForgeLQCallback : public GemForgeLSQCallback {
+  Type getType() const override { return Type::LOAD; }
+};
+
+using GemForgeLQCallbackPtr = std::unique_ptr<GemForgeLQCallback>;
 using GemForgeLQCallbackList = std::array<GemForgeLQCallbackPtr, 4>;
 
-struct GemForgeSQCallback {
+struct GemForgeSQCallback : public GemForgeLSQCallback {
+  Type getType() const override { return Type::STORE; }
+};
+
+struct GemForgeSQDeprecatedCallback {
   /**
    * * Get the address and size of this lsq entry.
    * @return true if the address is ready.

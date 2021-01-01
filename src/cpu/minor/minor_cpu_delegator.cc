@@ -155,21 +155,35 @@ bool MinorCPUDelegator::canDispatch(Minor::MinorDynInstPtr &dynInstPtr) {
 void MinorCPUDelegator::dispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   INST_DPRINTF(dynInstPtr, "Dispatch.\n");
-  GemForgeLQCallbackList extraLQCallbacks;
-  bool isGemForgeLoad = false;
-  isaHandler->dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
+  GemForgeLSQCallbackList extraLSQCallbacks;
+  isaHandler->dispatch(dynInfo, extraLSQCallbacks);
   pimpl->inflyInstQueue.push_back(dynInstPtr);
-  if (extraLQCallbacks.front()) {
+  if (extraLSQCallbacks.front()) {
+    // ! So far minor cpu has not supported StreamStore computation.
+    // ! We convert them back to LQCallback (dangerous casting).
+    GemForgeLQCallbackList lqCallbacks;
+    for (int i = 0; i < extraLSQCallbacks.size(); ++i) {
+      auto &lsqCallback = extraLSQCallbacks.at(i);
+      if (!lsqCallback) {
+        break;
+      }
+      assert(lsqCallback->getType() == GemForgeLSQCallback::Type::LOAD &&
+             "StreamStore is not implemented.");
+      lqCallbacks.at(i).reset(
+          static_cast<GemForgeLQCallback *>(lsqCallback.release()));
+    }
+
     // There are at least one extra LQ callbacks.
     pimpl->preLSQ.emplace(std::piecewise_construct,
                           std::forward_as_tuple(dynInstPtr->id.execSeqNum),
-                          std::forward_as_tuple(std::move(extraLQCallbacks)));
-  } else if (isGemForgeLoad) {
+                          std::forward_as_tuple(std::move(lqCallbacks)));
+  } else if (dynInstPtr->staticInst->isGemForge() &&
+             dynInstPtr->staticInst->isMemRef()) {
     /**
      * ! Pure Evil
      * GemForge allows different behaviors of the same static instruction at
      * runtime. Here, a GemForgeLoad without extraLQCallbacks is not considered
-     * to be a load anymore, i.e. it is treated as a load, but a normal load.
+     * to be a load anymore, i.e. it is treated as a "move" from SE to core.
      * An example of this is a dynamic StreamLoad and not the first user of
      * that StreamElement.
      *

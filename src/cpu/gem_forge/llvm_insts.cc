@@ -289,8 +289,21 @@ void LLVMDynamicInst::createAdditionalLQCallbacks(
     auto SE = cpu->getAcceleratorManager()->getStreamEngine();
     StreamEngine::StreamUserArgs args(this->getSeqNum(), this->getPC(),
                                       this->usedStreamIds);
+    GemForgeLSQCallbackList extraLSQCallbacks;
     this->numAdditionalLQCallbacks =
-        SE->createStreamUserLQCallbacks(args, callbacks);
+        SE->createStreamUserLSQCallbacks(args, extraLSQCallbacks);
+    // ! So far minor cpu has not supported StreamStore computation.
+    // ! We convert them back to LQCallback (dangerous casting).
+    for (int i = 0; i < extraLSQCallbacks.size(); ++i) {
+      auto &lsqCallback = extraLSQCallbacks.at(i);
+      if (!lsqCallback) {
+        break;
+      }
+      assert(lsqCallback->getType() == GemForgeLSQCallback::Type::LOAD &&
+             "StreamStore is not implemented.");
+      callbacks.at(i).reset(
+          static_cast<GemForgeLQCallback *>(lsqCallback.release()));
+    }
   } else {
     this->numAdditionalLQCallbacks = 0;
   }

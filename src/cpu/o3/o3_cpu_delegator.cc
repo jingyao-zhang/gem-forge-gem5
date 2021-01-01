@@ -40,7 +40,7 @@ public:
    * Store the LQ callbacks before they are really marked vaddr ready
    * and tracked by the LSQ.
    */
-  std::unordered_map<InstSeqNum, GemForgeLQCallbackList> preLSQ;
+  std::unordered_map<InstSeqNum, GemForgeLSQCallbackList> preLSQ;
 
   /**
    * Store the LQ requests that are tracked by the LSQ.
@@ -233,23 +233,22 @@ template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::dispatch(DynInstPtr &dynInstPtr) {
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
   INST_DPRINTF(dynInstPtr, "Dispatch.\n");
-  GemForgeLQCallbackList extraLQCallbacks;
-  bool isGemForgeLoad = false;
-  isaHandler->dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
+  GemForgeLSQCallbackList extraLSQCallbacks;
+  isaHandler->dispatch(dynInfo, extraLSQCallbacks);
   pimpl->inflyInstQueue.push_back(dynInstPtr);
   pimpl->inflyInstSquashedMap.emplace(dynInfo.seqNum, false);
-  if (isGemForgeLoad) {
-    assert(dynInstPtr->isMemRef() && "Should be MemRef for GemForgeLoad.");
-    assert(dynInstPtr->isLoad() && "Should be Load for GemForgeLoad.");
-    if (extraLQCallbacks.front()) {
-      // There is at least one extra LQ callback.
-      pimpl->preLSQ.emplace(std::piecewise_construct,
-                            std::forward_as_tuple(dynInfo.seqNum),
-                            std::forward_as_tuple(std::move(extraLQCallbacks)));
-    } else {
-      // This instruction is not considered as MemRef by GemForge.
-      dynInstPtr->forceNotMemRef = true;
-    }
+  if (extraLSQCallbacks.front()) {
+    assert(extraLSQCallbacks.front()->getType() ==
+               GemForgeLSQCallback::Type::LOAD &&
+           "StreamStore is not implemented.");
+    // There is at least one extra LQ callback.
+    pimpl->preLSQ.emplace(std::piecewise_construct,
+                          std::forward_as_tuple(dynInfo.seqNum),
+                          std::forward_as_tuple(std::move(extraLSQCallbacks)));
+  } else if (dynInstPtr->staticInst->isGemForge() &&
+             dynInstPtr->staticInst->isMemRef()) {
+    // This instruction is not considered as MemRef by GemForge.
+    dynInstPtr->forceNotMemRef = true;
   }
 }
 
@@ -399,7 +398,7 @@ void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
     isaHandler->rewind(dynInfo);
 
     /**
-     * Rewinding a instruction with GemForgeLQCallback involves 3 cases:
+     * Rewinding a instruction with GemForgeLSQCallback involves 3 cases:
      *
      * 1. If the instruction is still in PreLSQ, we can simply discard it.
      * 2. If the instruction is already in LSQ, we mark it squashed.
@@ -440,7 +439,7 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
   auto checkMisspeculated =
       [vaddr, size, &foundMisspeculated, &misspeculatedHasNonCoreDep,
        &oldestMisspeculatedSeqNum](InstSeqNum seqNum,
-                                   GemForgeLQCallbackPtr &callback) -> void {
+                                   GemForgeLSQCallbackPtr &callback) -> void {
     if (!callback->isIssued()) {
       // This load is not issued yet, ignore it.
       return;
@@ -448,14 +447,14 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
     Addr ldVaddr;
     uint32_t ldSize;
     assert(callback->getAddrSize(ldVaddr, ldSize) &&
-           "Issued LQCallback should have Addr/Size.");
+           "Issued LSQCallback should have Addr/Size.");
     if (vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr) {
       // No overlap.
       return;
     } else {
       // Aliased.
       if (callback->bypassAliasCheck()) {
-        panic("Bypassed LQCallback is aliased: %s.\n", callback.get());
+        panic("Bypassed LSQCallback is aliased: %s.\n", callback.get());
       }
       if (seqNum < oldestMisspeculatedSeqNum) {
         oldestMisspeculatedSeqNum = seqNum;
@@ -497,7 +496,7 @@ void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
           Addr ldVaddr;
           uint32_t ldSize;
           assert(callback->getAddrSize(ldVaddr, ldSize) &&
-                 "Issued LQCallback should have Addr/Size.");
+                 "Issued LSQCallback should have Addr/Size.");
           bool aliased =
               !(vaddr >= ldVaddr + ldSize || vaddr + size <= ldVaddr);
           if (!aliased && !misspeculatedHasNonCoreDep) {
@@ -584,14 +583,14 @@ Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeLoad(
   }
 
   auto &callbacks = iter->second;
-  assert(callbacks.front() && "At least one GemForgeLQCallback.");
-  // So far we only allow one LQCallback.
-  assert(!callbacks.at(1) && "At most one GemForgeLQCallback.");
+  assert(callbacks.front() && "At least one GemForgeLSQCallback.");
+  // So far we only allow one LSQCallback.
+  assert(!callbacks.at(1) && "At most one GemForgeLSQCallback.");
 
   Addr vaddr;
   uint32_t size;
   assert(callbacks.front()->getAddrSize(vaddr, size) &&
-         "GemForgeLQCallback should be addr/size ready.");
+         "GemForgeLSQCallback should be addr/size ready.");
   std::vector<bool> byteEnable;
 
   return pimpl->cpu->pushRequest(dynInstPtr, true /* isLoad */, nullptr, size,
@@ -601,20 +600,20 @@ Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeLoad(
 
 template <class CPUImpl>
 typename DefaultO3CPUDelegator<CPUImpl>::GFLoadReq *
-DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLoadRequest(
+DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLSQRequest(
     LSQUnit *lsq, const DynInstPtr &dynInstPtr) {
   auto &preLSQ = pimpl->preLSQ;
   auto &inLSQ = pimpl->inLSQ;
   auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
   auto iter = preLSQ.find(seqNum);
   if (iter == preLSQ.end()) {
-    // Not requiring GemForgeLoadRequest handling.
+    // Not requiring GemForgeLSQRequest handling.
     return nullptr;
   }
   auto &callbacks = iter->second;
-  assert(callbacks.front() && "At least one GemForgeLQCallback.");
-  // So far we only allow one LQCallback.
-  assert(!callbacks.at(1) && "At most one GemForgeLQCallback.");
+  assert(callbacks.front() && "At least one GemForgeLSQCallback.");
+  // So far we only allow one LSQCallback.
+  assert(!callbacks.at(1) && "At most one GemForgeLSQCallback.");
 
   // Simply allocate the request.
   auto req = new GFLoadReq(lsq, dynInstPtr, this, std::move(callbacks.front()));
@@ -632,7 +631,7 @@ DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLoadRequest(
 
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::discardGemForgeLoad(
-    const DynInstPtr &dynInstPtr, GemForgeLQCallbackPtr callback) {
+    const DynInstPtr &dynInstPtr, GemForgeLSQCallbackPtr callback) {
   assert(!dynInstPtr->isSquashed());
   INST_DPRINTF(dynInstPtr, "Back to PreLSQ.\n");
   auto &preLSQ = pimpl->preLSQ;

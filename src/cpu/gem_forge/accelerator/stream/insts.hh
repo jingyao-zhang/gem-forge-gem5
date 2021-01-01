@@ -44,7 +44,7 @@ public:
   bool canDispatch(LLVMTraceCPU *cpu) const override;
   
   int getNumSQEntries(LLVMTraceCPU *cpu) const override { return 1; }
-  std::list<std::unique_ptr<GemForgeSQCallback>>
+  std::list<std::unique_ptr<GemForgeSQDeprecatedCallback>>
   createAdditionalSQCallbacks(LLVMTraceCPU *cpu) override;
 
   void dispatch(LLVMTraceCPU *cpu) override;

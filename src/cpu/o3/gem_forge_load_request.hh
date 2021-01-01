@@ -7,9 +7,9 @@
 
 /**
  * ! GemForge
- * Used to implement special GemForgeLoadRequest.
+ * Used to implement special GemForgeLSQRequest.
  */
-template <class Impl> class GemForgeLoadRequest : public LSQ<Impl>::LSQRequest {
+template <class Impl> class GemForgeLSQRequest : public LSQ<Impl>::LSQRequest {
 public:
   /**
    * We have to explicit declare these names in template parent class.
@@ -21,9 +21,9 @@ public:
   using LSQSenderState = typename LSQ<Impl>::LSQSenderState;
   using O3CPUDelegator = typename Impl::CPUPol::O3CPUDelegator;
 
-  GemForgeLoadRequest(LSQUnit *port, const DynInstPtr &inst,
-                      O3CPUDelegator *_cpuDelegator,
-                      GemForgeLQCallbackPtr _callback)
+  GemForgeLSQRequest(LSQUnit *port, const DynInstPtr &inst,
+                     O3CPUDelegator *_cpuDelegator,
+                     GemForgeLSQCallbackPtr _callback)
       : LSQ<Impl>::LSQRequest(port, inst, true /* isLoad */,
                               _callback->getAddr(), _callback->getSize(),
                               0 /* Flags */),
@@ -31,12 +31,12 @@ public:
         checkValueReadyEvent([this]() -> void { this->checkValueReady(); },
                              port->name()) {}
 
-  ~GemForgeLoadRequest() override {}
-  bool isGemForgeLoadRequest() const override { return true; }
+  ~GemForgeLSQRequest() override {}
+  bool isGemForgeLSQRequest() const override { return true; }
   void initiateTranslation() override;
   void finish(const Fault &fault, const RequestPtr &req, ThreadContext *tc,
               BaseTLB::Mode mode) override {
-    panic("GemForgeLoadRequest::finish should never be called.");
+    panic("GemForgeLSQRequest::finish should never be called.");
   }
   void release(Flag reason) override;
   bool recvTimingResp(PacketPtr pkt) override;
@@ -58,8 +58,8 @@ public:
 
 protected:
   O3CPUDelegator *cpuDelegator;
-  // The GemForgeLQCallback.
-  GemForgeLQCallbackPtr callback;
+  // The GemForgeLSQCallback.
+  GemForgeLSQCallbackPtr callback;
 
   /**
    * O3 CPU is async, while GemForge requires me check for value ready.

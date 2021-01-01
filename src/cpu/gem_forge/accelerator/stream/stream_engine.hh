@@ -91,11 +91,11 @@ public:
 
   int getStreamUserLQEntries(const StreamUserArgs &args) const;
   /**
-   * Create LQ callbacks for first stream user.
-   * @return The number of LQ callbacks created.
+   * Create LSQ callbacks for first stream user.
+   * @return The number of LSQ callbacks created.
    */
-  int createStreamUserLQCallbacks(const StreamUserArgs &args,
-                                  GemForgeLQCallbackList &callbacks);
+  int createStreamUserLSQCallbacks(const StreamUserArgs &args,
+                                   GemForgeLSQCallbackList &callbacks);
 
   bool hasUnsteppedElement(const StreamUserArgs &args);
   bool hasIllegalUsedLastElement(const StreamUserArgs &args);
@@ -118,7 +118,7 @@ public:
   void rewindStreamEnd(const StreamEndArgs &args);
 
   bool canStreamStoreDispatch(const StreamStoreInst *inst) const;
-  std::list<std::unique_ptr<GemForgeSQCallback>>
+  std::list<std::unique_ptr<GemForgeSQDeprecatedCallback>>
   createStreamStoreSQCallbacks(StreamStoreInst *inst);
   void dispatchStreamStore(StreamStoreInst *inst);
   void executeStreamStore(StreamStoreInst *inst);
@@ -443,7 +443,6 @@ private:
     /**
      * We construct the args here so that we can later call
      * areUsedStreamsReady().
-     * ! args takes reference of usedStreamIds.
      */
     std::vector<uint64_t> usedStreamIds;
     StreamUserArgs args;
@@ -466,7 +465,7 @@ private:
     }
   };
 
-  struct GemForgeStreamEngineSQCallback : public GemForgeSQCallback {
+  struct GemForgeStreamEngineSQCallback : public GemForgeSQDeprecatedCallback {
   public:
     StreamElement *element;
     StreamStoreInst *storeInst;

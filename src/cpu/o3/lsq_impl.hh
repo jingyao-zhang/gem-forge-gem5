@@ -717,10 +717,10 @@ LSQ<Impl>::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     } else {
         /**
          * ! GemForge
-         * Try to get special GemForgeLoadRequest here.
+         * Try to get special GemForgeLSQRequest here.
          */
         if (cpu->cpuDelegator) {
-            req = cpu->cpuDelegator->allocateGemForgeLoadRequest(
+            req = cpu->cpuDelegator->allocateGemForgeLSQRequest(
                 &thread[tid], inst);
         }
         if (!req) {

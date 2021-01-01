@@ -124,7 +124,7 @@ bool StreamStoreInst::canDispatch(LLVMTraceCPU *cpu) const {
   return SE->canStreamStoreDispatch(this) && this->canDispatchStreamUser(cpu);
 }
 
-std::list<std::unique_ptr<GemForgeSQCallback>>
+std::list<std::unique_ptr<GemForgeSQDeprecatedCallback>>
 StreamStoreInst::createAdditionalSQCallbacks(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   return SE->createStreamStoreSQCallbacks(this);

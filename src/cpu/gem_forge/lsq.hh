@@ -20,7 +20,7 @@ public:
                          int _cacheStorePorts);
 
   void insertLoad(std::unique_ptr<GemForgeLQCallback> callback);
-  void insertStore(std::unique_ptr<GemForgeSQCallback> callback);
+  void insertStore(std::unique_ptr<GemForgeSQDeprecatedCallback> callback);
 
   void commitLoad();
   void commitStore();
@@ -64,7 +64,7 @@ private:
   struct StoreQueueEntry {
   public:
     const LSQEntryIndex lsqIndex;
-    std::unique_ptr<GemForgeSQCallback> callback;
+    std::unique_ptr<GemForgeSQDeprecatedCallback> callback;
     bool isAddressReady;
     bool committed;
     bool writebacking;
@@ -74,7 +74,7 @@ private:
      */
     std::vector<LSQEntryIndex> XAWEntryIndexes;
     StoreQueueEntry(const LSQEntryIndex _lsqIndex,
-                    std::unique_ptr<GemForgeSQCallback> _callback);
+                    std::unique_ptr<GemForgeSQDeprecatedCallback> _callback);
   };
 
   std::list<LoadQueueEntry> loadQueue;

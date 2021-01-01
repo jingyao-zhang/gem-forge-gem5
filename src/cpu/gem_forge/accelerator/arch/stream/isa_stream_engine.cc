@@ -10,11 +10,16 @@
 #include "arch/riscv/insts/standard.hh"
 #endif
 
+#define ISA_SE_PANIC(format, args...)                                          \
+  panic("%llu-[ISA_SE%d] " format, cpuDelegator->curCycle(),                   \
+        cpuDelegator->cpuId(), ##args)
 #define ISA_SE_DPRINTF(format, args...)                                        \
   DPRINTF(ISAStreamEngine, "%llu-[ISA_SE%d] " format,                          \
           cpuDelegator->curCycle(), cpuDelegator->cpuId(), ##args)
 #define DYN_INST_DPRINTF(format, args...)                                      \
   ISA_SE_DPRINTF("%llu %s " format, dynInfo.seqNum, dynInfo.pc, ##args)
+#define DYN_INST_PANIC(format, args...)                                        \
+  ISA_SE_PANIC("%llu %s " format, dynInfo.seqNum, dynInfo.pc, ##args)
 
 constexpr uint64_t ISAStreamEngine::InvalidStreamId;
 constexpr int ISAStreamEngine::DynStreamUserInstInfo::MaxUsedStreams;
@@ -30,7 +35,7 @@ bool ISAStreamEngine::canDispatchStreamConfig(
 
 void ISAStreamEngine::dispatchStreamConfig(
     const GemForgeDynInstInfo &dynInfo,
-    GemForgeLQCallbackList &extraLQCallbacks) {
+    GemForgeLSQCallbackList &extraLSQCallbacks) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   auto infoRelativePath = this->getRelativePath(configIdx);
 
@@ -188,7 +193,7 @@ bool ISAStreamEngine::canDispatchStreamInput(
 
 void ISAStreamEngine::dispatchStreamInput(
     const GemForgeDynInstInfo &dynInfo,
-    GemForgeLQCallbackList &extraLQCallbacks) {
+    GemForgeLSQCallbackList &extraLSQCallbacks) {
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
   this->curStreamRegionInfo->numDispatchedInsts++;
 
@@ -342,7 +347,7 @@ bool ISAStreamEngine::canDispatchStreamReady(
 
 void ISAStreamEngine::dispatchStreamReady(
     const GemForgeDynInstInfo &dynInfo,
-    GemForgeLQCallbackList &extraLQCallbacks) {
+    GemForgeLSQCallbackList &extraLSQCallbacks) {
   assert(this->curStreamRegionInfo && "Missing DynStreamRegionInfo.");
   auto &instInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
   // Remember the current DynStreamRegionInfo.
@@ -495,7 +500,7 @@ bool ISAStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
 void ISAStreamEngine::dispatchStreamEnd(
     const GemForgeDynInstInfo &dynInfo,
-    GemForgeLQCallbackList &extraLQCallbacks) {
+    GemForgeLSQCallbackList &extraLSQCallbacks) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   const auto &infoRelativePath = this->getRelativePath(configIdx);
 
@@ -628,7 +633,7 @@ bool ISAStreamEngine::canDispatchStreamStep(
 
 void ISAStreamEngine::dispatchStreamStep(
     const GemForgeDynInstInfo &dynInfo,
-    GemForgeLQCallbackList &extraLQCallbacks) {
+    GemForgeLSQCallbackList &extraLSQCallbacks) {
   auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
 
   auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
@@ -773,7 +778,7 @@ bool ISAStreamEngine::canDispatchStreamLoad(
 
 void ISAStreamEngine::dispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo,
-    GemForgeLQCallbackList &extraLQCallbacks) {
+    GemForgeLSQCallbackList &extraLSQCallbacks) {
 
   auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   auto &userInfo = instInfo.userInfo;
@@ -791,18 +796,17 @@ void ISAStreamEngine::dispatchStreamLoad(
   auto se = this->getStreamEngine();
   // It's possible that this is misspeculated and we don't have element.
   if (!se->hasUnsteppedElement(args)) {
-    panic("Should check hasUnsteppedElement before dispatching StreamLoad.");
-    DYN_INST_DPRINTF(
-        "[dicpatch] MustMisspeculated StreamLoad %llu Seq %llu: No element.\n",
-        usedStreamIds.at(0), dynInfo.seqNum);
+    DYN_INST_PANIC("[dicpatch] Should check hasUnsteppedElement before "
+                   "dispatching StreamLoad %llu Seq %llu.\n",
+                   usedStreamIds.at(0), dynInfo.seqNum);
     instInfo.mustBeMisspeculated = true;
   } else {
     se->dispatchStreamUser(args);
     // After dispatch, we get extra LQ callbacks.
-    se->createStreamUserLQCallbacks(args, extraLQCallbacks);
+    se->createStreamUserLSQCallbacks(args, extraLSQCallbacks);
     DYN_INST_DPRINTF("[dispatch] StreamLoad %llu Seq %llu: with callback %d.\n",
                      userInfo.translatedUsedStreamIds.at(0), dynInfo.seqNum,
-                     (bool)(extraLQCallbacks.front()));
+                     (bool)(extraLSQCallbacks.front()));
   }
 }
 

@@ -84,22 +84,16 @@ bool GemForgeISAHandler::canDispatch(const GemForgeDynInstInfo &dynInfo) {
 }
 
 void GemForgeISAHandler::dispatch(const GemForgeDynInstInfo &dynInfo,
-                                  GemForgeLQCallbackList &extraLQCallbacks,
-                                  bool &isGemForgeLoad) {
+                                  GemForgeLSQCallbackList &extraLSQCallbacks) {
   if (!dynInfo.staticInst->isGemForge()) {
     return;
   }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
-    StreamInstCase(dispatch, extraLQCallbacks);
+    StreamInstCase(dispatch, extraLSQCallbacks);
   default: {
     break;
   }
-  }
-  if (staticInstInfo.op == GemForgeStaticInstOpE::STREAM_LOAD) {
-    isGemForgeLoad = true;
-  } else {
-    isGemForgeLoad = false;
   }
 }
 

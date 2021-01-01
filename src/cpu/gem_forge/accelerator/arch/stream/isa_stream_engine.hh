@@ -15,8 +15,8 @@
 #error "Require protobuf to parse stream info."
 #endif
 
-#include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
 #include "cpu/gem_forge/accelerator/arch/exec_func.hh"
+#include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
 
 #include <array>
 #include <unordered_map>
@@ -34,7 +34,7 @@ public:
 #define DeclareStreamInstHandler(Inst)                                         \
   bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);            \
   void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,                \
-                            GemForgeLQCallbackList &extraLQCallbacks);         \
+                            GemForgeLSQCallbackList &extraLSQCallbacks);       \
   bool canExecuteStream##Inst(const GemForgeDynInstInfo &dynInfo);             \
   void executeStream##Inst(const GemForgeDynInstInfo &dynInfo,                 \
                            ExecContext &xc);                                   \

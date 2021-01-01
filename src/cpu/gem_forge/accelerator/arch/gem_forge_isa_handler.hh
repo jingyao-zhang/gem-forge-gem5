@@ -23,11 +23,10 @@ public:
 
   /**
    * Dispatch the instruction, and generate extra LQ callbacks.
-   * ! Note: So far canDispatch does not check the LSQ has enough
-   * ! space to hold it.
+   * ! Note: It is the core's responsibility to ensure its LSQ has enough space.
    */
   void dispatch(const GemForgeDynInstInfo &dynInfo,
-                GemForgeLQCallbackList &extraLQCallbacks, bool &isGemForgeLoad);
+                GemForgeLSQCallbackList &extraLSQCallbacks);
   bool canExecute(const GemForgeDynInstInfo &dynInfo);
   void execute(const GemForgeDynInstInfo &dynInfo, ExecContext &xc);
   bool canCommit(const GemForgeDynInstInfo &dynInfo);

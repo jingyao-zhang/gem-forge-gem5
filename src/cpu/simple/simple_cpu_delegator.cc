@@ -59,13 +59,17 @@ void SimpleCPUDelegator::dispatch(StaticInstPtr staticInst, ExecContext &xc) {
                               xc.tcBase());
   /**
    * SimpleTimingCPU never really all cause a RAW misspeculation in LSQ,
-   * so we ignore any extra LQCallbacks.
+   * so we ignore any extra LSQCallbacks.
    *
    * TODO: Correctly handle the StreamLoad, which is now a MemRef inst.
    */
-  GemForgeLQCallbackList extraLQCallbacks;
-  bool isGemForgeLoad;
-  isaHandler->dispatch(dynInfo, extraLQCallbacks, isGemForgeLoad);
+  GemForgeLSQCallbackList extraLSQCallbacks;
+  isaHandler->dispatch(dynInfo, extraLSQCallbacks);
+  if (extraLSQCallbacks.front()) {
+    assert(extraLSQCallbacks.front()->getType() ==
+               GemForgeLSQCallback::Type::LOAD &&
+           "StreamStore is not implemented.");
+  }
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
 

@@ -615,8 +615,8 @@ int StreamEngine::getStreamUserLQEntries(const StreamUserArgs &args) const {
   return firstUsedLoadStreamElement;
 }
 
-int StreamEngine::createStreamUserLQCallbacks(
-    const StreamUserArgs &args, GemForgeLQCallbackList &callbacks) {
+int StreamEngine::createStreamUserLSQCallbacks(
+    const StreamUserArgs &args, GemForgeLSQCallbackList &callbacks) {
   auto seqNum = args.seqNum;
   auto &elementSet = this->userElementMap.at(seqNum);
   auto numCallbacks = 0;
@@ -624,7 +624,7 @@ int StreamEngine::createStreamUserLQCallbacks(
     if (element == nullptr) {
       continue;
     }
-    if (element->stream->getStreamType() != ::LLVM::TDG::StreamInfo_Type_LD) {
+    if (!element->stream->isLoadStream()) {
       // Not a load stream.
       continue;
     }
@@ -1075,31 +1075,36 @@ bool StreamEngine::canStreamStoreDispatch(const StreamStoreInst *inst) const {
   return true;
 }
 
-std::list<std::unique_ptr<GemForgeSQCallback>>
+std::list<std::unique_ptr<GemForgeSQDeprecatedCallback>>
 StreamEngine::createStreamStoreSQCallbacks(StreamStoreInst *inst) {
-  std::list<std::unique_ptr<GemForgeSQCallback>> callbacks;
+  std::list<std::unique_ptr<GemForgeSQDeprecatedCallback>> callbacks;
   if (!this->enableLSQ) {
     return callbacks;
   }
-  // So far we only support LSQ for LLVMTraceCPU.
-  assert(cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE &&
-         "LSQ only works for LLVMTraceCPU.");
-  // Find the element to be stored.
-  StreamElement *storeElement = nullptr;
-  auto storeStream = this->getStream(inst->getTDG().stream_store().stream_id());
-  for (auto element : this->userElementMap.at(inst->getSeqNum())) {
-    if (element == nullptr) {
-      continue;
-    }
-    if (element->stream == storeStream) {
-      // Found it.
-      storeElement = element;
-      break;
-    }
-  }
-  assert(storeElement != nullptr && "Failed to found the store element.");
-  callbacks.emplace_back(
-      new GemForgeStreamEngineSQCallback(storeElement, inst));
+  // ! This is the old implementation of GemForgeSQDeprecatedCallbacks. Not used
+  // any more.
+  assert(false && "We are moving to a new implemenation of StreamStore.");
+  // // So far we only support LSQ for LLVMTraceCPU.
+  // assert(cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::LLVM_TRACE
+  // &&
+  //        "LSQ only works for LLVMTraceCPU.");
+  // // Find the element to be stored.
+  // StreamElement *storeElement = nullptr;
+  // auto storeStream =
+  // this->getStream(inst->getTDG().stream_store().stream_id()); for (auto
+  // element : this->userElementMap.at(inst->getSeqNum())) {
+  //   if (element == nullptr) {
+  //     continue;
+  //   }
+  //   if (element->stream == storeStream) {
+  //     // Found it.
+  //     storeElement = element;
+  //     break;
+  //   }
+  // }
+  // assert(storeElement != nullptr && "Failed to found the store element.");
+  // callbacks.emplace_back(
+  //     new GemForgeStreamEngineSQCallback(storeElement, inst));
   return callbacks;
 }
 

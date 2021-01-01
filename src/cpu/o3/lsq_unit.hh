@@ -754,7 +754,7 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
                  * ! GemForge
                  * We also disable forwarding for GemForge.
                  */
-                if (store_req->isMasked() || req->isGemForgeLoadRequest()) {
+                if (store_req->isMasked() || req->isGemForgeLSQRequest()) {
                   coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
                   block_on_store = true;
                 } else {

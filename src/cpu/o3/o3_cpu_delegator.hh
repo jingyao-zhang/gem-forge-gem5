@@ -32,7 +32,7 @@
  * 1. At dispatch, insert into PreLSQ.
  * 2. When the address is ready, mark canExecute.
  * 3. In LSQ::executeLoad, when the LSQ can track the address, we remove
- *    it from the PreLSQ and allocate GemForgeLoadRequest and insert
+ *    it from the PreLSQ and allocate GemForgeLSQRequest and insert
  *    into the LSQ.
  * 4. For each InLSQ GemForgeLoadReq, we have a special event to check if
  *    GemForge say the value is ready.
@@ -45,7 +45,7 @@ public:
   using O3CPU = typename CPUImpl::O3CPU;
   using LSQUnit = typename CPUImpl::CPUPol::LSQUnit;
   using DynInstPtr = typename CPUImpl::DynInstPtr;
-  using GFLoadReq = GemForgeLoadRequest<CPUImpl>;
+  using GFLoadReq = GemForgeLSQRequest<CPUImpl>;
 
   DefaultO3CPUDelegator(O3CPU *_cpu);
   ~DefaultO3CPUDelegator() override;
@@ -101,18 +101,18 @@ public:
 
   /**
    * When the core execute a GemForgeLoad, it calls this
-   * to get a special GemForgeLoadRequest.
+   * to get a special GemForgeLSQRequest.
    * @return nullptr if this is not a GemForgeLoad.
    */
-  GFLoadReq *allocateGemForgeLoadRequest(LSQUnit *lsq,
+  GFLoadReq *allocateGemForgeLSQRequest(LSQUnit *lsq,
                                          const DynInstPtr &dynInstPtr);
 
   /**
-   * The GemForgeLoadRequest is discarded by the LSQ, we
+   * The GemForgeLSQRequest is discarded by the LSQ, we
    * should add it back to PreLSQ.
    */
   void discardGemForgeLoad(const DynInstPtr &dynInstPtr,
-                           GemForgeLQCallbackPtr callback);
+                           GemForgeLSQCallbackPtr callback);
 
 private:
   class Impl;
