@@ -719,7 +719,7 @@ bool Stream::isDirectMemStream() const {
 }
 
 bool Stream::isDirectLoadStream() const {
-  if (!this->isMemStream()) {
+  if (!this->isLoadStream()) {
     return false;
   }
   return this->isDirectMemStream();
