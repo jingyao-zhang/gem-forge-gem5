@@ -7,13 +7,13 @@ namespace GemForge {
 /**
  * Handle the case when there is translation fault on a stream element.
  */
-class GemForgeLoadTranslationFault : public FaultBase {
+class GemForgeTranslationFault : public FaultBase {
 public:
-  FaultName name() const override { return "GemForgeLoadTranslationFault"; }
+  FaultName name() const override { return "GemForgeTranslationFault"; }
   void
   invoke(ThreadContext *tc,
          const StaticInstPtr &inst = StaticInst::nullStaticInstPtr) override {
-    panic("GemForgeLoadTranslationFault should never be invoked.");
+    panic("GemForgeTranslationFault should never be invoked.");
   }
 };
 } // namespace GemForge

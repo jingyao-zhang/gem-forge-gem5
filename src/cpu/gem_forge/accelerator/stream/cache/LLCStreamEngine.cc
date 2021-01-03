@@ -528,7 +528,7 @@ bool LLCStreamEngine::canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
       // One of the parameters rely on stream.
       return false;
     }
-    if (paramA.param.invariant != paramB.param.invariant) {
+    if (paramA.invariant != paramB.invariant) {
       return false;
     }
   }

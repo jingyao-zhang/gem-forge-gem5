@@ -198,7 +198,7 @@ private:
     }
     bool hasNonCoreDependent() const override { return false; }
     bool isIssued() const override;
-    bool isValueLoaded() override;
+    bool isValueReady() const override;
     void RAWMisspeculate() override;
   };
   struct GemForgeIEWSQCallback : public GemForgeSQDeprecatedCallback {

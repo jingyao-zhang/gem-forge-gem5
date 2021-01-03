@@ -28,6 +28,10 @@
   case GemForgeStaticInstOpE::STREAM_FLOAD: {                                  \
     se.stage##StreamLoad(dynInfo, ##xc);                                       \
     break;                                                                     \
+  }                                                                            \
+  case GemForgeStaticInstOpE::STREAM_STORE: {                                  \
+    se.stage##StreamStore(dynInfo, ##xc);                                      \
+    break;                                                                     \
   }
 
 #define StreamInstRetCase(stage, xc...)                                        \
@@ -49,6 +53,9 @@
   case GemForgeStaticInstOpE::STREAM_LOAD:                                     \
   case GemForgeStaticInstOpE::STREAM_FLOAD: {                                  \
     return se.stage##StreamLoad(dynInfo, ##xc);                                \
+  }                                                                            \
+  case GemForgeStaticInstOpE::STREAM_STORE: {                                  \
+    return se.stage##StreamStore(dynInfo, ##xc);                               \
   }
 
 bool GemForgeISAHandler::shouldCountInPipeline(
@@ -58,10 +65,11 @@ bool GemForgeISAHandler::shouldCountInPipeline(
   }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
-  // Only step and load are considered no overhead in pipeline.
+  // Only step and load/store are considered no overhead in pipeline.
   case GemForgeStaticInstOpE::STREAM_STEP:
   case GemForgeStaticInstOpE::STREAM_LOAD:
-  case GemForgeStaticInstOpE::STREAM_FLOAD: {
+  case GemForgeStaticInstOpE::STREAM_FLOAD:
+  case GemForgeStaticInstOpE::STREAM_STORE: {
     return false;
   }
   default: {
@@ -205,6 +213,8 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
     } else if (instName == "ssp_stream_flw") {
       // ? Do we have to distinguish fload and flw?
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
+    } else if (instName == "ssp_stream_store") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_STORE;
     }
   }
   return emplaceRet.first->second;

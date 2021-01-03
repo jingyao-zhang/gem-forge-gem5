@@ -298,6 +298,8 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
     // * We should not use block addr/size for atomic op.
     this->setValue(memAccess->vaddr, S->getCoreElementSize(),
                    loadedValue.uint8Ptr());
+  } else if (S->isStoreStream()) {
+    // StoreStream does not care about prefetch response.
   } else {
     this->setValue(vaddr, size, data);
   }
@@ -579,6 +581,21 @@ void StreamElement::getValueByStreamId(StaticId streamId, uint8_t *val,
   assert(size <= valLen && "ElementSize overflow.");
   vaddr += offset;
   this->getValue(vaddr, size, val);
+}
+
+const uint8_t *StreamElement::getValuePtrByStreamId(StaticId streamId) const {
+  auto vaddr = this->addr;
+  int size = this->size;
+  // Handle offset for coalesced stream.
+  int32_t offset;
+  this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
+  vaddr += offset;
+  auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
+  S_ELEMENT_DPRINTF(
+      this, "GetValue [%#x, +%d), initOffset %d, data 0x%s.\n", vaddr, size,
+      initOffset,
+      GemForgeUtils::dataToString(&this->value.at(initOffset), size));
+  return &this->value.at(initOffset);
 }
 
 bool StreamElement::isValueFaulted(Addr vaddr, int size) const {

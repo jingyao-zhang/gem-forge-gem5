@@ -13,7 +13,7 @@ void GemForgeLoadRequest::checkIsComplete() {
     return;
   }
   // Check the LQ callback.
-  bool completed = this->callback->isValueLoaded();
+  bool completed = this->callback->isValueReady();
   if (completed) {
     INST_DPRINTF(this->inst, "checkIsComplete() succeed.\n");
     this->setState(LSQRequest::Complete);

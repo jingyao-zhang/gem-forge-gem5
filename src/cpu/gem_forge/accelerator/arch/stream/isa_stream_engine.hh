@@ -48,6 +48,7 @@ public:
   DeclareStreamInstHandler(End);
   DeclareStreamInstHandler(Step);
   DeclareStreamInstHandler(Load);
+  DeclareStreamInstHandler(Store);
 
 #undef DeclareStreamInstHandler
 
@@ -61,6 +62,17 @@ private:
   ::StreamEngine *getStreamEngine();
 
   template <typename T> T extractImm(const StaticInst *staticInst) const;
+
+  /**
+   * Used to implement StreamLoad and StreamStore.
+   */
+  bool canDispatchStreamUser(const GemForgeDynInstInfo &dynInfo);
+  void dispatchStreamUser(const GemForgeDynInstInfo &dynInfo,
+                          GemForgeLSQCallbackList &extraLSQCallbacks);
+  bool canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo);
+  bool canCommitStreamUser(const GemForgeDynInstInfo &dynInfo);
+  void commitStreamUser(const GemForgeDynInstInfo &dynInfo);
+  void rewindStreamUser(const GemForgeDynInstInfo &dynInfo);
 
   /**
    * Memorize the AllStreamRegions.

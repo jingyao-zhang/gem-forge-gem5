@@ -13,6 +13,8 @@
 
 #define EXEC_FUNC_DPRINTF(format, args...)                                     \
   DPRINTF(ExecFunc, "[%s]: " format, this->func.name().c_str(), ##args)
+#define EXEC_FUNC_PANIC(format, args...)                                       \
+  panic("[%s]: " format, this->func.name().c_str(), ##args)
 
 namespace {
 
@@ -225,12 +227,19 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
   // Set up the virt proxy.
   execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
 
+  bool hasMemRef = false;
   for (auto idx = 0; idx < this->instructions.size(); ++idx) {
     auto &staticInst = this->instructions.at(idx);
     auto &pc = this->pcs.at(idx);
     EXEC_FUNC_DPRINTF("Set PCState %s.\n", pc);
     execFuncXC.pcState(pc);
     staticInst->execute(&execFuncXC, nullptr /* traceData. */);
+    if (staticInst->isMemRef()) {
+      hasMemRef = false;
+    }
+  }
+  if (hasMemRef) {
+    panic("what???");
   }
 
   auto retType = this->func.type();

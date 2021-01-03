@@ -1,5 +1,6 @@
 #include "stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
+#include "stream_lsq_callback.hh"
 #include "stream_throttler.hh"
 
 #include "base/trace.hh"
@@ -465,11 +466,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
     }
     auto stepElement = dynS.tail->next;
     /**
-     * For streams enabled StoreFunc:
-     * 1. If not offloaded, we have to make sure the address is ready so that
-     *    we can issue packet to memory when release.
-     *   a. If this is update stream, we have to further ensure value is ready.
-     * 2. If offloaded, we have to check for StreamAck.
+     * For floating streams enabled StoreFunc, we have to check for StreamAck.
      */
     if (S->getEnabledStoreFunc()) {
       if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue()) {
@@ -477,20 +474,6 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
           // S_DPRINTF(S, "Can not step as no Ack for %llu.\n",
           //           stepElement->FIFOIdx.entryIdx);
           return false;
-        }
-      } else {
-        if (!stepElement->isAddrReady) {
-          return false;
-        }
-        // Check for all value base elements.
-        if (!stepElement->areValueBaseElementsValueReady()) {
-          return false;
-        }
-        if (S->isLoadStream()) {
-          // LoadStream + StoreFunc = UpdateStream.
-          if (!stepElement->isValueReady) {
-            return false;
-          }
         }
       }
     }
@@ -537,13 +520,13 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
 
   const auto &stepStreams = this->getStepStreamList(stepStream);
 
-  for (auto S : stepStreams) {
-    /**
-     * We handle all possible value dependence for stream computation
-     * before actually release the elements.
-     */
-    S->handleStoreFuncAtRelease();
-  }
+  // for (auto S : stepStreams) {
+  //   /**
+  //    * We handle all possible value dependence for stream computation
+  //    * before actually release the elements.
+  //    */
+  //   S->handleStoreFuncAtRelease();
+  // }
 
   for (auto S : stepStreams) {
     /**
@@ -624,17 +607,29 @@ int StreamEngine::createStreamUserLSQCallbacks(
     if (element == nullptr) {
       continue;
     }
-    if (!element->stream->isLoadStream()) {
-      // Not a load stream.
-      continue;
-    }
-    if (element->firstUserSeqNum == seqNum) {
-      // Insert into the load queue if we model the lsq.
-      if (this->enableLSQ) {
-        assert(numCallbacks < callbacks.size() && "LQCallback overflows.");
-        callbacks.at(numCallbacks) =
-            m5::make_unique<GemForgeStreamEngineLQCallback>(
-                element, seqNum, args.pc, args.usedStreamIds);
+    auto S = element->stream;
+    auto dynS = element->dynS;
+    if (S->isLoadStream()) {
+      if (element->firstUserSeqNum == seqNum) {
+        // Insert into the load queue if we model the lsq.
+        if (this->enableLSQ) {
+          assert(numCallbacks < callbacks.size() && "LQCallback overflows.");
+          callbacks.at(numCallbacks) = m5::make_unique<StreamLQCallback>(
+              element, seqNum, args.pc, args.usedStreamIds);
+          numCallbacks++;
+        }
+      }
+    } else if (S->isStoreStream() && S->getEnabledStoreFunc() &&
+               !dynS->offloadedToCache) {
+      if (element->firstUserSeqNum == seqNum) {
+        // Insert into the store queue for StoreStream executed at the core.
+        if (!this->enableLSQ) {
+          S_ELEMENT_PANIC(element,
+                          "StoreStream executed at core requires LSQ.");
+        }
+        assert(numCallbacks < callbacks.size() && "SQCallback overflows.");
+        callbacks.at(numCallbacks) = m5 ::make_unique<StreamSQCallback>(
+            element, seqNum, args.pc, args.usedStreamIds);
         numCallbacks++;
       }
     }
@@ -692,10 +687,15 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
 
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    if (!S->isReduction()) {
-      // We only enforce this for NonReductionStream, as ReductionStream may use
-      // LastElement to convey back the final value.
-      assert(S->hasCoreUser() && "Try to use a stream with no core user.");
+    if (!S->hasCoreUser()) {
+      // There are two exception for this sanity check.
+      // 1. ReductionStream may use LastElement to convey back the final value.
+      // 2. StoreStream with StoreFunc enabled uses StreamStore inst to get the
+      // address and value from the SE so the core can finally write back.
+      if (!S->isReduction() &&
+          !(S->isStoreStream() && S->getEnabledStoreFunc())) {
+        S_PANIC(S, "Try to use a stream with no core user.");
+      }
     }
 
     /**
@@ -1104,7 +1104,7 @@ StreamEngine::createStreamStoreSQCallbacks(StreamStoreInst *inst) {
   // }
   // assert(storeElement != nullptr && "Failed to found the store element.");
   // callbacks.emplace_back(
-  //     new GemForgeStreamEngineSQCallback(storeElement, inst));
+  //     new StreamSQDeprecatedCallback(storeElement, inst));
   return callbacks;
 }
 
@@ -2100,7 +2100,14 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
            element = element->next) {
         assert(element->stream == S && "Sanity check that streams match.");
         if (element->isAddrReady) {
-          // Already ready.
+          // Address already ready. Check if we have to compute the value.
+          if (S->isStoreStream() && S->getEnabledStoreFunc() &&
+              !element->isValueReady) {
+            if (element->areValueBaseElementsValueReady()) {
+              S_ELEMENT_DPRINTF(element, "Found Value Ready.\n");
+              readyElements.emplace_back(element);
+            }
+          }
           continue;
         }
         /**
@@ -2131,42 +2138,17 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         }
         auto baseElementsValReady = areBaseElementsValReady(element);
         if (baseElementsValReady) {
-          S_ELEMENT_DPRINTF(element, "Found ready.\n");
+          S_ELEMENT_DPRINTF(element, "Found Addr Ready.\n");
           readyElements.emplace_back(element);
         } else {
           // We should not check the next one as we should issue inorder.
-          S_ELEMENT_DPRINTF(element, "Not ready, break out.\n");
+          S_ELEMENT_DPRINTF(element, "Not Addr Ready, break out.\n");
           break;
         }
       }
     }
   }
 
-  // /**
-  //  * Old implementation to search for ready elements.
-  //  */
-  // for (auto &element : this->FIFOArray) {
-  //   if (element.stream == nullptr) {
-  //     // Not allocated, ignore.
-  //     continue;
-  //   }
-  //   if (element.isAddrReady) {
-  //     // We already issued request for this element.
-  //     continue;
-  //   }
-  //   // Check if StreamConfig is already executed.
-  //   if (!element.stream->isStreamConfigureExecuted(
-  //           element.FIFOIdx.configSeqNum)) {
-  //     // This stream is not fully configured yet.
-  //     continue;
-  //   }
-  //   // Check if all the base element are value ready.
-  //   bool ready = areBaseElementsValReady(&element);
-  //   if (ready) {
-  //     S_ELEMENT_DPRINTF(&element, "Found ready.\n");
-  //     readyElements.emplace_back(&element);
-  //   }
-  // }
   return readyElements;
 }
 
@@ -2193,6 +2175,18 @@ void StreamEngine::issueElements() {
               return BIdx > AIdx;
             });
   for (auto &element : readyElements) {
+
+    if (element->isAddrReady) {
+      if (!(element->stream->isStoreStream() &&
+            element->stream->getEnabledStoreFunc())) {
+        S_ELEMENT_PANIC(
+            element,
+            "Only StoreStream with StoreFunc requires computing values.");
+      }
+      element->dynS->computeElementValue(element);
+      continue;
+    }
+
     element->markAddrReady(cpuDelegator);
 
     if (element->stream->isMemStream()) {
@@ -2559,104 +2553,6 @@ StreamEngine::getStreamRegion(const std::string &relativePath) const {
           fullPath.c_str());
   }
   return protobufRegion;
-}
-
-/***********************************************************
- * Callback structures for LSQ.
- ***********************************************************/
-
-bool StreamEngine::GemForgeStreamEngineLQCallback::getAddrSize(
-    Addr &addr, uint32_t &size) const {
-  assert(this->FIFOIdx == this->element->FIFOIdx &&
-         "Element already released.");
-  // Check if the address is ready.
-  if (!this->element->isAddrReady) {
-    return false;
-  }
-  addr = this->element->addr;
-  size = this->element->size;
-  return true;
-}
-
-bool StreamEngine::GemForgeStreamEngineLQCallback::hasNonCoreDependent() const {
-  assert(this->FIFOIdx == this->element->FIFOIdx &&
-         "Element already released.");
-  return this->element->stream->hasNonCoreDependent();
-}
-
-bool StreamEngine::GemForgeStreamEngineLQCallback::isIssued() const {
-  /**
-   * So far the element is considered issued when its address is ready.
-   */
-  assert(this->FIFOIdx == this->element->FIFOIdx &&
-         "Element already released.");
-  return this->element->isAddrReady;
-}
-
-bool StreamEngine::GemForgeStreamEngineLQCallback::isValueLoaded() {
-  assert(this->FIFOIdx == this->element->FIFOIdx &&
-         "Element already released.");
-
-  /**
-   * We can directly check for element->isValueReady, but instead we
-   * call areUsedStreamReady() so that StreamEngine can mark the
-   * firstCheckCycle for the element, hence it can throttle the stream.
-   */
-  return this->element->se->areUsedStreamsReady(this->args);
-}
-
-void StreamEngine::GemForgeStreamEngineLQCallback::RAWMisspeculate() {
-  assert(this->FIFOIdx == this->element->FIFOIdx &&
-         "Element already released.");
-  /**
-   * Disable this for now.
-   */
-  // cpu->getIEWStage().misspeculateInst(userInst);
-  this->element->se->RAWMisspeculate(this->element);
-}
-
-bool StreamEngine::GemForgeStreamEngineLQCallback::bypassAliasCheck() const {
-  assert(this->FIFOIdx == this->element->FIFOIdx &&
-         "Element already released.");
-  // Only bypass alias check if the stream is marked FloatManual.
-  return this->element->stream->getFloatManual();
-}
-
-bool StreamEngine::GemForgeStreamEngineSQCallback::getAddrSize(Addr &addr,
-                                                               uint32_t &size) {
-  // Check if the address is ready.
-  if (!this->element->isAddrReady) {
-    return false;
-  }
-  addr = this->element->addr;
-  size = this->element->size;
-  return true;
-}
-
-void StreamEngine::GemForgeStreamEngineSQCallback::writeback() {
-  // Start inform the stream engine to write back.
-  this->element->se->writebackElement(this->element, this->storeInst);
-}
-
-bool StreamEngine::GemForgeStreamEngineSQCallback::isWritebacked() {
-  assert(this->element->inflyWritebackMemAccess.count(this->storeInst) != 0 &&
-         "Missing writeback StreamMemAccess?");
-  // Check if all the writeback accesses are done.
-  return this->element->inflyWritebackMemAccess.at(this->storeInst).empty();
-}
-
-void StreamEngine::GemForgeStreamEngineSQCallback::writebacked() {
-  // Remember to clear the inflyWritebackStreamAccess.
-  assert(this->element->inflyWritebackMemAccess.count(this->storeInst) != 0 &&
-         "Missing writeback StreamMemAccess?");
-  this->element->inflyWritebackMemAccess.erase(this->storeInst);
-  // Remember to change the status of the stream store to committed.
-  auto cpu = this->element->se->cpu;
-  auto storeInstId = this->storeInst->getId();
-  auto status = cpu->getInflyInstStatus(storeInstId);
-  assert(status == LLVMTraceCPU::InstStatus::COMMITTING &&
-         "Writebacked instructions should be committing.");
-  cpu->updateInflyInstStatus(storeInstId, LLVMTraceCPU::InstStatus::COMMITTED);
 }
 
 void StreamEngine::coalesceContinuousDirectMemStreamElement(

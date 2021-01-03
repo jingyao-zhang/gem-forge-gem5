@@ -112,6 +112,13 @@ public:
     return this->preLSQ.count(seqNum);
   }
 
+  bool isLoadInPreLSQ(const DynInstPtr &dynInstPtr) {
+    auto seqNum = this->getInstSeqNum(dynInstPtr);
+    return this->preLSQ.count(seqNum) &&
+           this->preLSQ.at(seqNum).front()->getType() ==
+               GemForgeLSQCallback::Type::LOAD;
+  }
+
   /**
    * Check if an instruction is in PreLSQ and its addr/size is ready.
    */
@@ -125,9 +132,7 @@ public:
     auto &callbacks = iter->second;
     for (auto &callback : callbacks) {
       if (callback) {
-        Addr vaddr;
-        uint32_t size;
-        if (!callback->getAddrSize(vaddr, size)) {
+        if (!callback->isAddrReady()) {
           // This one is not ready yet.
           // INST_LOG(hack, dynInstPtr, "AddrSize not ready.\n");
           return false;
@@ -199,24 +204,6 @@ void DefaultO3CPUDelegator<CPUImpl>::sendRequest(PacketPtr pkt) {
   }
   auto &lsq = pimpl->cpu->getIEW()->ldstQueue;
   assert(lsq.getDataPortPtr()->sendTimingReqVirtual(pkt, false /* isCore */));
-
-  //   // If this is not a load request, we should send immediately.
-  //   // e.g. StreamConfig/End packet.
-  //   if (pkt->cmd != MemCmd::ReadReq) {
-  //     auto &lsq = pimpl->cpu->pipeline->execute.getLSQ();
-  //     assert(lsq.dcachePort->sendTimingReqVirtual(pkt, false /* isCore */));
-  //     return;
-  //   }
-  //   auto lineBytes = this->cacheLineSize();
-  //   if ((pkt->getAddr() % lineBytes) + pkt->getSize() > lineBytes) {
-  //     panic("Multi-line packet paddr %#x size %d.", pkt->getAddr(),
-  //           pkt->getSize());
-  //   }
-
-  //   pimpl->pendingPkts.push_back(pkt);
-  //   if (!pimpl->drainPendingPacketsEvent.scheduled()) {
-  //     this->drainPendingPackets();
-  //   }
 }
 
 template <class CPUImpl>
@@ -238,10 +225,8 @@ void DefaultO3CPUDelegator<CPUImpl>::dispatch(DynInstPtr &dynInstPtr) {
   pimpl->inflyInstQueue.push_back(dynInstPtr);
   pimpl->inflyInstSquashedMap.emplace(dynInfo.seqNum, false);
   if (extraLSQCallbacks.front()) {
-    assert(extraLSQCallbacks.front()->getType() ==
-               GemForgeLSQCallback::Type::LOAD &&
-           "StreamStore is not implemented.");
-    // There is at least one extra LQ callback.
+    // There is at least one extra LSQ callback.
+    INST_DPRINTF(dynInstPtr, "Dispatch with extra LSQCallback.\n");
     pimpl->preLSQ.emplace(std::piecewise_construct,
                           std::forward_as_tuple(dynInfo.seqNum),
                           std::forward_as_tuple(std::move(extraLSQCallbacks)));
@@ -263,7 +248,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canExecute(DynInstPtr &dynInstPtr) {
     // Already squashed, not exposed to GemForge.
     return true;
   }
-  if (pimpl->isInPreLSQ(dynInstPtr)) {
+  if (pimpl->isLoadInPreLSQ(dynInstPtr)) {
     return pimpl->isAddrSizeReady(dynInstPtr);
   }
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
@@ -281,7 +266,7 @@ void DefaultO3CPUDelegator<CPUImpl>::execute(DynInstPtr &dynInstPtr) {
     return;
   }
   INST_DPRINTF(dynInstPtr, "Execute.\n");
-  if (pimpl->isInPreLSQ(dynInstPtr)) {
+  if (pimpl->isLoadInPreLSQ(dynInstPtr)) {
     // GemForgeLoad really happens at writeback.
     return;
   }
@@ -352,9 +337,14 @@ void DefaultO3CPUDelegator<CPUImpl>::commit(const DynInstPtr &dynInstPtr) {
     INST_PANIC(dynInstPtr, "Commit mismatch with InflyInstQueue front %s.",
                *frontInst);
   }
-  // All PreLSQ entries should already be cleared.
+  // All PreLSQ entries should already be cleared, except for GemForgeStore.
   if (pimpl->isInPreLSQ(dynInstPtr)) {
-    INST_PANIC(dynInstPtr, "Still in PreLSQ when commit.");
+    auto iter = pimpl->preLSQ.find(dynInfo.seqNum);
+    if (iter->second.front()->getType() == GemForgeLSQCallback::Type::STORE) {
+      pimpl->preLSQ.erase(iter);
+    } else {
+      INST_PANIC(dynInstPtr, "Still in PreLSQ when commit.");
+    }
   }
 
   auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
@@ -583,31 +573,69 @@ Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeLoad(
   }
 
   auto &callbacks = iter->second;
-  assert(callbacks.front() && "At least one GemForgeLSQCallback.");
+  assert(callbacks.front() && "At least one GemForgeLQCallback.");
   // So far we only allow one LSQCallback.
-  assert(!callbacks.at(1) && "At most one GemForgeLSQCallback.");
+  assert(!callbacks.at(1) && "At most one GemForgeLQCallback.");
 
   Addr vaddr;
   uint32_t size;
   assert(callbacks.front()->getAddrSize(vaddr, size) &&
-         "GemForgeLSQCallback should be addr/size ready.");
+         "GemForgeLQCallback should be addr/size ready.");
   std::vector<bool> byteEnable;
 
-  return pimpl->cpu->pushRequest(dynInstPtr, true /* isLoad */, nullptr, size,
-                                 vaddr, 0 /* flags */, nullptr, nullptr,
-                                 byteEnable);
+  return pimpl->cpu->pushRequest(dynInstPtr, true /* isLoad */,
+                                 nullptr /* data */, size, vaddr, 0 /* flags */,
+                                 nullptr, nullptr, byteEnable);
+}
+
+template <class CPUImpl>
+Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeStore(
+    const DynInstPtr &dynInstPtr) {
+  assert(dynInstPtr->isGemForge() && dynInstPtr->isStore() &&
+         "Should be a GemForgeStore.");
+  auto &preLSQ = pimpl->preLSQ;
+  auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
+  auto iter = preLSQ.find(seqNum);
+  if (iter == preLSQ.end()) {
+    // This is not GemForgeLoad
+    INST_PANIC(dynInstPtr, "Missing PreLSQ for GemForgeStore.");
+  }
+
+  auto &callbacks = iter->second;
+  assert(callbacks.front() && "At least one GemForgeSQCallback.");
+  // So far we only allow one LSQCallback.
+  assert(!callbacks.at(1) && "At most one GemForgeSQCallback.");
+
+  Addr vaddr;
+  uint32_t size;
+  assert(callbacks.front()->getAddrSize(vaddr, size) &&
+         "GemForgeSQCallback should be addr/size ready.");
+  assert(callbacks.front()->isValueReady() &&
+         "GemForgeSQCallback should be value ready.");
+
+  const uint8_t *constValue = callbacks.front()->getValue();
+  /**
+   * ! GemForge provides const pointer, while O3 cpu wants original one.
+   */
+  uint8_t *storeValue = const_cast<uint8_t *>(constValue);
+
+  std::vector<bool> byteEnable;
+
+  return pimpl->cpu->pushRequest(dynInstPtr, false /* isLoad */,
+                                 storeValue /* data */, size, vaddr,
+                                 0 /* flags */, nullptr, nullptr, byteEnable);
 }
 
 template <class CPUImpl>
 typename DefaultO3CPUDelegator<CPUImpl>::GFLoadReq *
-DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLSQRequest(
+DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLoadRequest(
     LSQUnit *lsq, const DynInstPtr &dynInstPtr) {
   auto &preLSQ = pimpl->preLSQ;
   auto &inLSQ = pimpl->inLSQ;
   auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
   auto iter = preLSQ.find(seqNum);
   if (iter == preLSQ.end()) {
-    // Not requiring GemForgeLSQRequest handling.
+    // Not requiring GemForgeLoadRequest handling.
     return nullptr;
   }
   auto &callbacks = iter->second;
@@ -615,18 +643,26 @@ DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLSQRequest(
   // So far we only allow one LSQCallback.
   assert(!callbacks.at(1) && "At most one GemForgeLSQCallback.");
 
-  // Simply allocate the request.
-  auto req = new GFLoadReq(lsq, dynInstPtr, this, std::move(callbacks.front()));
+  INST_DPRINTF(dynInstPtr, "Release in PreLSQ.\n");
+  if (callbacks.front()->getType() == GemForgeLSQCallback::Type::LOAD) {
+    // Push load into inLSQ
+    auto req =
+        new GFLoadReq(lsq, dynInstPtr, this, std::move(callbacks.front()));
+    auto ret =
+        inLSQ.emplace(std::piecewise_construct, std::forward_as_tuple(seqNum),
+                      std::forward_as_tuple(req));
+    assert(ret.second && "Already inLSQ.");
 
-  // Push to inLSQ.
-  auto ret =
-      inLSQ.emplace(std::piecewise_construct, std::forward_as_tuple(seqNum),
-                    std::forward_as_tuple(req));
-  assert(ret.second && "Already inLSQ.");
-
-  // Release the preLSQ.
-  preLSQ.erase(iter);
-  return req;
+    // Release the preLSQ.
+    preLSQ.erase(iter);
+    return req;
+  } else {
+    // For GemForgeStore, we simply do not release the callback in case the
+    // core deferred the request and we would lose the callback.
+    // Now in the core, it is just a normal store request. If there is memory
+    // order misspeculation, the core should rewind it and restart again.
+    return nullptr;
+  }
 }
 
 template <class CPUImpl>

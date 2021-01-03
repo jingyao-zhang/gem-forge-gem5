@@ -656,6 +656,14 @@ LSQUnit<Impl>::executeStore(const DynInstPtr &store_inst)
 
     Fault store_fault = store_inst->initiateAcc();
 
+    /**
+     * ! GemForge
+     * GemForgeStore is initialized here, not in initiateAcc().
+     */
+    if (cpu->cpuDelegator && store_inst->isGemForge() && store_inst->isStore()) {
+        store_fault = cpu->cpuDelegator->initiateGemForgeStore(store_inst);
+    }
+
     if (store_inst->isTranslationDelayed() &&
         store_fault == NoFault)
         return store_fault;

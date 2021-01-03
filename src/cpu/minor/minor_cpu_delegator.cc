@@ -276,7 +276,7 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
                    vaddr, size);
       if (dynInstPtr->translationFault == NoFault) {
         dynInstPtr->translationFault =
-            std::make_shared<GemForge::GemForgeLoadTranslationFault>();
+            std::make_shared<GemForge::GemForgeTranslationFault>();
       }
       /**
        * Request the state of the request to Translated.

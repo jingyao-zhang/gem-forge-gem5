@@ -37,6 +37,14 @@ public:
       assert(offset < 64);
       return reinterpret_cast<const uint8_t *>(&this->front());
     }
+    const uint64_t &uint64(int offset = 0) const {
+      assert(offset < MaxRegisterValueSize);
+      return this->at(offset);
+    }
+    uint64_t &uint64(int offset = 0) {
+      assert(offset < MaxRegisterValueSize);
+      return this->at(offset);
+    }
   };
   static int translateToNumRegs(const DataType &type);
   static std::string printRegisterValue(const RegisterValue &value,

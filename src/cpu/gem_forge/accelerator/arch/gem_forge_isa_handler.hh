@@ -47,6 +47,7 @@ private:
     STREAM_LOAD,
     STREAM_FLOAD,
     STREAM_STEP,
+    STREAM_STORE,
   };
   struct GemForgeStaticInstInfo {
     GemForgeStaticInstOpE op;

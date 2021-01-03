@@ -8,19 +8,17 @@
 #include <memory>
 #include <vector>
 
-struct DynamicStreamFormalParam {
-  union {
-    uint64_t invariant;
-    uint64_t baseStreamId;
-  } param;
-  bool isInvariant;
-};
-
-using DynamicStreamFormalParamV = std::vector<DynamicStreamFormalParam>;
 using StreamValue = TheISA::ExecFunc::RegisterValue;
 using DynamicStreamParamV = std::vector<StreamValue>;
 using GetStreamValueFunc = std::function<StreamValue(uint64_t)>;
 using ExecFuncPtr = std::shared_ptr<TheISA::ExecFunc>;
+
+struct DynamicStreamFormalParam {
+  StreamValue invariant;
+  uint64_t baseStreamId;
+  bool isInvariant;
+};
+using DynamicStreamFormalParamV = std::vector<DynamicStreamFormalParam>;
 
 /**
  * Use if you expect no base stream.

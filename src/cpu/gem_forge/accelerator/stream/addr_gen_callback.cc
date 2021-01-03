@@ -19,12 +19,9 @@ convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
   DynamicStreamParamV params;
   for (const auto &formalParam : formalParams) {
     if (formalParam.isInvariant) {
-      // Promote to StreamValue.
-      StreamValue value;
-      value.front() = formalParam.param.invariant;
-      params.push_back(value);
+      params.push_back(formalParam.invariant);
     } else {
-      auto baseStreamId = formalParam.param.baseStreamId;
+      auto baseStreamId = formalParam.baseStreamId;
       auto baseStreamValue = getStreamValue(baseStreamId);
       params.push_back(baseStreamValue);
     }
@@ -103,13 +100,13 @@ bool LinearAddrGenCallback::isContinuous(
       return false;
     }
   }
-  auto stride0 = params[0].param.invariant;
+  auto stride0 = params[0].invariant.uint64();
   if (stride0 > elementSize) {
     return false;
   }
   for (auto paramIdx = 1; paramIdx + 2 < params.size(); paramIdx += 2) {
-    auto totalTripCount = params[paramIdx].param.invariant;
-    auto newStride = params[paramIdx + 1].param.invariant;
+    auto totalTripCount = params[paramIdx].invariant.uint64();
+    auto newStride = params[paramIdx + 1].invariant.uint64();
     DPRINTF(AddrGenCallback,
             "[LinearAddrGen]: newStride %llu, totalTripCount %llu, stride0 "
             "%llu.\n",
@@ -125,13 +122,13 @@ int64_t
 LinearAddrGenCallback::getInnerStride(const DynamicStreamFormalParamV &params) {
   auto idx = 0;
   assert(params.at(idx).isInvariant && "Variant inner stride.");
-  return params.at(idx).param.invariant;
+  return params.at(idx).invariant.uint64();
 }
 
 uint64_t
 LinearAddrGenCallback::getStartAddr(const DynamicStreamFormalParamV &params) {
   // The last one is start address.
-  return params.rbegin()->param.invariant;
+  return params.rbegin()->invariant.uint64();
 }
 
 uint64_t LinearAddrGenCallback::getFirstElementForAddr(
@@ -140,7 +137,7 @@ uint64_t LinearAddrGenCallback::getFirstElementForAddr(
   // Get the stride 0.
   auto startAddr = this->getStartAddr(params);
   assert(addr > startAddr + elementSize && "Addr too small.");
-  auto stride0 = params.front().param.invariant;
+  auto stride0 = params.front().invariant.uint64();
   return (addr - startAddr) / stride0 + 1;
 }
 
@@ -159,7 +156,7 @@ bool LinearAddrGenCallback::estimateReuse(
   // StartAddr.
   int reuseStrideIdx = -1;
   for (int strideIdx = 0; strideIdx < strideEnd; ++strideIdx) {
-    auto stride = params.at(strideIdx).param.invariant;
+    auto stride = params.at(strideIdx).invariant.uint64();
     if (stride == 0) {
       // We found 0 stride -- we are back to StartVAddr, so reuse happens.
       reuseStrideIdx = strideIdx;
@@ -183,13 +180,14 @@ bool LinearAddrGenCallback::estimateReuse(
                                       std::abs(this->getInnerStride(params))))
           : elementSize;
   uint64_t numElementBeforeReuse =
-      (reuseStrideIdx > 0) ? params.at(reuseStrideIdx - 1).param.invariant : 1;
+      (reuseStrideIdx > 0) ? params.at(reuseStrideIdx - 1).invariant.uint64()
+                           : 1;
   reuseFootprint = numElementBeforeReuse * adjustedElementSize;
   /**
    * Try to get minimal reuse count.
    */
   reuseCount = (reuseStrideIdx + 2 < params.size())
-                   ? (params.at(reuseStrideIdx + 1).param.invariant /
+                   ? (params.at(reuseStrideIdx + 1).invariant.uint64() /
                       numElementBeforeReuse)
                    : 1;
   return true;
@@ -201,6 +199,7 @@ LinearAddrGenCallback::getNestTripCount(const DynamicStreamFormalParamV &params,
   auto knownLevels = (params.size() - 1) / 2;
   assert(knownLevels >= nestLevel);
   assert(nestLevel > 0);
-  uint64_t nestTripCount = params.at((nestLevel - 1) * 2 + 1).param.invariant;
+  uint64_t nestTripCount =
+      params.at((nestLevel - 1) * 2 + 1).invariant.uint64();
   return nestTripCount;
 }

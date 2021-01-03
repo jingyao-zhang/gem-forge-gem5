@@ -57,7 +57,13 @@ public:
   /**
    * Check if the value is loaded.
    */
-  virtual bool isValueLoaded() = 0;
+  virtual bool isValueReady() const = 0;
+  /**
+   * Get a pointer to the value.
+   */
+  virtual const uint8_t *getValue() const {
+    assert(false && "GetValue not impelmented.");
+  }
 
   virtual void RAWMisspeculate() = 0;
 

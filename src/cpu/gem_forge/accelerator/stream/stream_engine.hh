@@ -19,6 +19,10 @@
 #include <unordered_map>
 
 class StreamThrottler;
+class StreamLQCallback;
+class StreamSQCallback;
+class StreamSQDeprecatedCallback;
+
 class StreamEngine : public GemForgeAccelerator {
 public:
   using Params = StreamEngineParams;
@@ -247,6 +251,9 @@ private:
   // Make the Stream a friend to simplify code.
   friend class Stream;
   friend class StreamThrottler;
+  friend class StreamLQCallback;
+  friend class StreamSQCallback;
+  friend class StreamSQDeprecatedCallback;
 
   LLVMTraceCPU *cpu;
 
@@ -432,51 +439,6 @@ private:
   void dumpUser() const;
 
   std::unique_ptr<StreamThrottler> throttler;
-
-  /**
-   * Callback structures for LSQ.
-   */
-  struct GemForgeStreamEngineLQCallback : public GemForgeLQCallback {
-  public:
-    StreamElement *element;
-    const FIFOEntryIdx FIFOIdx;
-    /**
-     * We construct the args here so that we can later call
-     * areUsedStreamsReady().
-     */
-    std::vector<uint64_t> usedStreamIds;
-    StreamUserArgs args;
-    GemForgeStreamEngineLQCallback(StreamElement *_element,
-                                   uint64_t _userSeqNum, Addr _userPC,
-                                   const std::vector<uint64_t> &_usedStreamIds)
-        : element(_element), FIFOIdx(_element->FIFOIdx),
-          usedStreamIds(_usedStreamIds),
-          args(_userSeqNum, _userPC, usedStreamIds) {}
-    bool getAddrSize(Addr &addr, uint32_t &size) const override;
-    bool hasNonCoreDependent() const override;
-    bool isIssued() const override;
-    bool isValueLoaded() override;
-    void RAWMisspeculate() override;
-    bool bypassAliasCheck() const override;
-    std::ostream &format(std::ostream &os) const override {
-      os << this->FIFOIdx;
-      GemForgeLQCallback::format(os);
-      return os;
-    }
-  };
-
-  struct GemForgeStreamEngineSQCallback : public GemForgeSQDeprecatedCallback {
-  public:
-    StreamElement *element;
-    StreamStoreInst *storeInst;
-    GemForgeStreamEngineSQCallback(StreamElement *_element,
-                                   StreamStoreInst *_storeInst)
-        : element(_element), storeInst(_storeInst) {}
-    bool getAddrSize(Addr &addr, uint32_t &size) override;
-    void writeback() override;
-    bool isWritebacked() override;
-    void writebacked() override;
-  };
 
   /**
    * Try to coalesce continuous element of direct mem stream if they

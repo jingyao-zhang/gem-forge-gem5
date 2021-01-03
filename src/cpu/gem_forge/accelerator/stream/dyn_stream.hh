@@ -185,6 +185,11 @@ struct DynamicStream {
    */
   StreamElement *releaseElementUnstepped();
 
+  /**
+   * Compute the value for this element. This is used for stream computing.
+   */
+  void computeElementValue(StreamElement *element);
+
   uint64_t getNumReleasedElements() const { return this->numReleaseElement; }
   uint64_t getStartVAddr() const { return this->startVAddr; }
   uint64_t getNumIssuedRequests() const { return this->numIssuedRequests; }

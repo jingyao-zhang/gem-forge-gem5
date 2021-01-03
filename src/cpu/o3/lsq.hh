@@ -606,7 +606,7 @@ class LSQ
         /**
          * Test if the request is a special GemForge request.
          */
-        virtual bool isGemForgeLSQRequest() const { return false; }
+        virtual bool isGemForgeLoadRequest() const { return false; }
 
         /** Update the status to reflect that a packet was sent. */
         void

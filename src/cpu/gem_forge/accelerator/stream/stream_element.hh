@@ -216,6 +216,7 @@ struct StreamElement {
   void setValue(Addr vaddr, int size, const uint8_t *val);
   void getValue(Addr vaddr, int size, uint8_t *val) const;
   void getValueByStreamId(StaticId streamId, uint8_t *val, int valLen) const;
+  const uint8_t *getValuePtrByStreamId(StaticId streamId) const;
   uint64_t mapVAddrToValueOffset(Addr vaddr, int size) const;
   uint64_t mapVAddrToBlockOffset(Addr vaddr, int size) const;
   // Some helper template.

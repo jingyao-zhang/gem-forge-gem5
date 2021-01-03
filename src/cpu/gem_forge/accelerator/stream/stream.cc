@@ -448,7 +448,7 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
       // This param comes from the Configuration.
       // hack("Find valid param #%d, val %llu.\n", formalParams.size(),
       //      param.param());
-      formalParam.param.invariant = param.value();
+      formalParam.invariant.uint64() = param.value();
     } else {
       // This should be an input.
       if (inputIdx >= inputVec->size()) {
@@ -457,7 +457,7 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
       }
       // hack("Find input param #%d, val %llu.\n", formalParams.size(),
       //      inputVec->at(inputIdx));
-      formalParam.param.invariant = inputVec->at(inputIdx).at(0);
+      formalParam.invariant = inputVec->at(inputIdx);
       inputIdx++;
     }
   }
@@ -478,26 +478,27 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
   DYN_S_DPRINTF(dynStream.dynamicStreamId,
                 "Setup LinearAddrGenCallback with params --------\n");
   for (auto param : formalParams) {
-    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%llu\n", param.param.invariant);
+    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%s\n", param.invariant);
   }
 
   for (auto idx = 1; idx < formalParams.size() - 1; idx += 2) {
     auto &formalParam = formalParams.at(idx);
     // BackEdgeCount.
-    auto backEdgeCount = formalParam.param.invariant;
+    auto backEdgeCount = formalParam.invariant.uint64();
     // TripCount.
     auto tripCount = backEdgeCount + 1;
     // TotalTripCount.
     auto totalTripCount =
-        (idx == 1) ? (tripCount)
-                   : (tripCount * formalParams.at(idx - 2).param.invariant);
-    formalParam.param.invariant = totalTripCount;
+        (idx == 1)
+            ? (tripCount)
+            : (tripCount * formalParams.at(idx - 2).invariant.uint64());
+    formalParam.invariant.uint64() = totalTripCount;
   }
 
   DYN_S_DPRINTF(dynStream.dynamicStreamId,
                 "Finalize LinearAddrGenCallback with params --------\n");
   for (auto param : formalParams) {
-    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%llu\n", param.param.invariant);
+    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%s\n", param.invariant);
   }
 
   // Set the callback.
@@ -509,7 +510,7 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
   // Update the totalTripCount to the dynamic stream if possible.
   if (formalParams.size() % 2 == 1) {
     dynStream.totalTripCount =
-        formalParams.at(formalParams.size() - 2).param.invariant;
+        formalParams.at(formalParams.size() - 2).invariant.uint64();
   }
 }
 
@@ -546,7 +547,7 @@ int Stream::setupFormalParams(const DynamicStreamParamV *inputVec,
       formalParams.emplace_back();
       auto &formalParam = formalParams.back();
       formalParam.isInvariant = false;
-      formalParam.param.baseStreamId = arg.stream_id();
+      formalParam.baseStreamId = arg.stream_id();
     } else {
       if (inputIdx >= inputVec->size()) {
         S_PANIC(this, "Missing input for %s: Given %llu, inputIdx %d.",
@@ -558,7 +559,7 @@ int Stream::setupFormalParams(const DynamicStreamParamV *inputVec,
       formalParams.emplace_back();
       auto &formalParam = formalParams.back();
       formalParam.isInvariant = true;
-      formalParam.param.invariant = inputVec->at(inputIdx).at(0);
+      formalParam.invariant = inputVec->at(inputIdx);
       inputIdx++;
     }
   }
@@ -1047,12 +1048,12 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
     assert(formalParam.isInvariant &&
            "Can only handle invariant params for AtomicOp.");
     params.emplace_back();
-    params.back().front() = formalParam.param.invariant;
+    params.back().front() = formalParam.invariant.uint64();
   }
   // Push the final atomic operand as a dummy 0.
   const auto &formalAtomicParam = formalParams.back();
   assert(!formalAtomicParam.isInvariant && "AtomicOperand should be a stream.");
-  assert(formalAtomicParam.param.baseStreamId == this->staticId &&
+  assert(formalAtomicParam.baseStreamId == this->staticId &&
          "AtomicOperand should be myself.");
   params.emplace_back();
   auto atomicOp =

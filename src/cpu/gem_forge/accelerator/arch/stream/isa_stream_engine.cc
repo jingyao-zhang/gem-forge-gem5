@@ -719,117 +719,17 @@ void ISAStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
 
 bool ISAStreamEngine::canDispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo) {
-
-  auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
-
-  // First create the memorized info.
-  auto emplaceRet = this->seqNumToDynInfoMap.emplace(
-      std::piecewise_construct, std::forward_as_tuple(dynInfo.seqNum),
-      std::forward_as_tuple());
-  auto &dynStreamInstInfo = emplaceRet.first->second;
-  auto &userInfo = dynStreamInstInfo.userInfo;
-  if (emplaceRet.second) {
-    // First time. Translate the regionStreamId.
-    if (this->isValidRegionStreamId(regionStreamId)) {
-      auto streamId = this->lookupRegionStreamId(regionStreamId);
-      userInfo.translatedUsedStreamIds.at(0) = streamId;
-    } else {
-      // This must be a misspeculated StreamLoad.
-      DYN_INST_DPRINTF(
-          "MustMisspeculated StreamLoad invalid regionStream %llu.\n",
-          regionStreamId);
-      dynStreamInstInfo.mustBeMisspeculated = true;
-    }
-  }
-
-  // Check if the stream engine has unstepped elements.
-  if (dynStreamInstInfo.mustBeMisspeculated) {
-    return true;
-  } else {
-    auto usedStreamId = userInfo.translatedUsedStreamIds.front();
-    std::vector<uint64_t> usedStreamIds{
-        usedStreamId,
-    };
-    StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                      usedStreamIds);
-    auto se = this->getStreamEngine();
-    // It's possible that we don't have element if we have reached the limit.
-    if (!se->hasUnsteppedElement(args)) {
-      // We must wait.
-      DYN_INST_DPRINTF(
-          "CanNotDispatch StreamLoad %llu: No Unstepped Element.\n",
-          usedStreamId);
-      return false;
-    } else {
-      if (se->hasIllegalUsedLastElement(args)) {
-        // This is a use beyond the last element. Must be misspeculated.
-        dynStreamInstInfo.mustBeMisspeculated = true;
-        DYN_INST_DPRINTF(
-            "MustMisspeculated StreamLoad %llu: Illegal Used Last Element.\n",
-            usedStreamId);
-        return true;
-      }
-      // TODO: Check LSQ entry if this is the first use of the element.
-      DYN_INST_DPRINTF("[canDispatch] StreamLoad %llu.\n", usedStreamId);
-      return true;
-    }
-  }
+  return this->canDispatchStreamUser(dynInfo);
 }
 
 void ISAStreamEngine::dispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLSQCallbackList &extraLSQCallbacks) {
-
-  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
-  auto &userInfo = instInfo.userInfo;
-
-  if (instInfo.mustBeMisspeculated) {
-    // This is a must be misspeculated instruction.
-    return;
-  }
-
-  std::vector<uint64_t> usedStreamIds{
-      userInfo.translatedUsedStreamIds.at(0),
-  };
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                    usedStreamIds);
-  auto se = this->getStreamEngine();
-  // It's possible that this is misspeculated and we don't have element.
-  if (!se->hasUnsteppedElement(args)) {
-    DYN_INST_PANIC("[dicpatch] Should check hasUnsteppedElement before "
-                   "dispatching StreamLoad %llu Seq %llu.\n",
-                   usedStreamIds.at(0), dynInfo.seqNum);
-    instInfo.mustBeMisspeculated = true;
-  } else {
-    se->dispatchStreamUser(args);
-    // After dispatch, we get extra LQ callbacks.
-    se->createStreamUserLSQCallbacks(args, extraLSQCallbacks);
-    DYN_INST_DPRINTF("[dispatch] StreamLoad %llu Seq %llu: with callback %d.\n",
-                     userInfo.translatedUsedStreamIds.at(0), dynInfo.seqNum,
-                     (bool)(extraLSQCallbacks.front()));
-  }
+  this->dispatchStreamUser(dynInfo, extraLSQCallbacks);
 }
 
 bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
-  const auto &userInfo = dynStreamInstInfo.userInfo;
-
-  if (dynStreamInstInfo.mustBeMisspeculated) {
-    // This must be a misspeculated instruction.
-    return true;
-  }
-
-  std::vector<uint64_t> usedStreamIds{
-      userInfo.translatedUsedStreamIds.at(0),
-  };
-  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                    usedStreamIds);
-  auto se = this->getStreamEngine();
-  bool canExecute = se->areUsedStreamsReady(args);
-  DYN_INST_DPRINTF("[canExecute] StreamLoad %llu %c.\n",
-                   userInfo.translatedUsedStreamIds.at(0),
-                   canExecute ? 'Y' : 'N');
-  return canExecute;
+  return this->canExecuteStreamUser(dynInfo);
 }
 
 void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
@@ -882,16 +782,235 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
 }
 
 bool ISAStreamEngine::canCommitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  return true;
+  return this->canCommitStreamUser(dynInfo);
 }
 
 void ISAStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
+  this->commitStreamUser(dynInfo);
+}
+
+void ISAStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
+  this->rewindStreamUser(dynInfo);
+}
+
+/********************************************************************************
+ * StreamStore Handlers.
+ *******************************************************************************/
+
+bool ISAStreamEngine::canDispatchStreamStore(
+    const GemForgeDynInstInfo &dynInfo) {
+  return this->canDispatchStreamUser(dynInfo);
+}
+
+void ISAStreamEngine::dispatchStreamStore(
+    const GemForgeDynInstInfo &dynInfo,
+    GemForgeLSQCallbackList &extraLSQCallbacks) {
+  this->dispatchStreamUser(dynInfo, extraLSQCallbacks);
+}
+
+bool ISAStreamEngine::canExecuteStreamStore(
+    const GemForgeDynInstInfo &dynInfo) {
+  return this->canExecuteStreamUser(dynInfo);
+}
+
+void ISAStreamEngine::executeStreamStore(const GemForgeDynInstInfo &dynInfo,
+                                         ExecContext &xc) {
+  panic("executeStreamStore not implemented yet.");
+  // auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
+  // const auto &userInfo = instInfo.userInfo;
+
+  // if (instInfo.mustBeMisspeculated) {
+  //   // This must be a misspeculated instruction.
+  //   return;
+  // }
+
+  // std::vector<uint64_t> usedStreamIds{
+  //     userInfo.translatedUsedStreamIds.at(0),
+  // };
+  // StreamEngine::StreamUserArgs::ValueVec values;
+  // values.reserve(usedStreamIds.size());
+  // StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+  //                                   usedStreamIds, &values);
+  // auto se = this->getStreamEngine();
+  // se->executeStreamUser(args);
+  // DYN_INST_DPRINTF("Execute StreamLoad RegionStream %llu destRegs %d.\n",
+  //                  userInfo.translatedUsedStreamIds.at(0),
+  //                  dynInfo.staticInst->numDestRegs());
+  // if (dynInfo.staticInst->numDestRegs() == 0) {
+  //   panic("No DestRegs for StreamLoad at PC %#x.\n", dynInfo.pc.pc());
+  // }
+
+  // /**
+  //  * We handle wider registers by checking the number of destination
+  //  * registers.
+  //  */
+  // RegVal *loadedPtr = reinterpret_cast<uint64_t *>(values.at(0).data());
+  // for (int destIdx = 0; destIdx < dynInfo.staticInst->numDestRegs();
+  //      ++destIdx, loadedPtr++) {
+  //   assert(destIdx <
+  //              StreamEngine::StreamUserArgs::MaxElementSize / sizeof(RegVal)
+  //              &&
+  //          "Too many destination registers.");
+  //   auto loadedValue = *loadedPtr;
+  //   DYN_INST_DPRINTF("[%llu] Got value %llu, reg %d %s.\n",
+  //                    userInfo.translatedUsedStreamIds.at(0), loadedValue,
+  //                    destIdx, dynInfo.staticInst->destRegIdx(destIdx));
+  //   if (dynInfo.staticInst->isFloating()) {
+  //     xc.setFloatRegOperandBits(dynInfo.staticInst, destIdx, loadedValue);
+  //   } else {
+  //     xc.setIntRegOperand(dynInfo.staticInst, destIdx, loadedValue);
+  //   }
+  // }
+  // instInfo.executed = true;
+}
+
+bool ISAStreamEngine::canCommitStreamStore(const GemForgeDynInstInfo &dynInfo) {
+  return this->canCommitStreamUser(dynInfo);
+}
+
+void ISAStreamEngine::commitStreamStore(const GemForgeDynInstInfo &dynInfo) {
+  this->commitStreamUser(dynInfo);
+}
+
+void ISAStreamEngine::rewindStreamStore(const GemForgeDynInstInfo &dynInfo) {
+  this->rewindStreamUser(dynInfo);
+}
+
+/********************************************************************************
+ * StreamUser Handlers.
+ *******************************************************************************/
+
+/********************************************************************************
+ * StreamUser Handlers.
+ *******************************************************************************/
+
+bool ISAStreamEngine::canDispatchStreamUser(
+    const GemForgeDynInstInfo &dynInfo) {
+
+  auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
+
+  // First create the memorized info.
+  auto emplaceRet = this->seqNumToDynInfoMap.emplace(
+      std::piecewise_construct, std::forward_as_tuple(dynInfo.seqNum),
+      std::forward_as_tuple());
+  auto &dynStreamInstInfo = emplaceRet.first->second;
+  auto &userInfo = dynStreamInstInfo.userInfo;
+  if (emplaceRet.second) {
+    // First time. Translate the regionStreamId.
+    if (this->isValidRegionStreamId(regionStreamId)) {
+      auto streamId = this->lookupRegionStreamId(regionStreamId);
+      userInfo.translatedUsedStreamIds.at(0) = streamId;
+    } else {
+      // This must be a misspeculated StreamStore.
+      DYN_INST_DPRINTF("MustMisspeculated %s invalid regionStream %llu.\n",
+                       dynInfo.staticInst->getName(), regionStreamId);
+      dynStreamInstInfo.mustBeMisspeculated = true;
+    }
+  }
+
+  // Check if the stream engine has unstepped elements.
+  if (dynStreamInstInfo.mustBeMisspeculated) {
+    return true;
+  } else {
+    auto usedStreamId = userInfo.translatedUsedStreamIds.front();
+    std::vector<uint64_t> usedStreamIds{
+        usedStreamId,
+    };
+    StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                      usedStreamIds);
+    auto se = this->getStreamEngine();
+    // It's possible that we don't have element if we have reached the limit.
+    if (!se->hasUnsteppedElement(args)) {
+      // We must wait.
+      DYN_INST_DPRINTF("CanNotDispatch %s %llu: No Unstepped Element.\n",
+                       dynInfo.staticInst->getName(), usedStreamId);
+      return false;
+    } else {
+      if (se->hasIllegalUsedLastElement(args)) {
+        // This is a use beyond the last element. Must be misspeculated.
+        dynStreamInstInfo.mustBeMisspeculated = true;
+        DYN_INST_DPRINTF(
+            "MustMisspeculated %s %llu: Illegal Used Last Element.\n",
+            dynInfo.staticInst->getName(), usedStreamId);
+        return true;
+      }
+      DYN_INST_DPRINTF("[canDispatch] %s %llu.\n",
+                       dynInfo.staticInst->getName(), usedStreamId);
+      return true;
+    }
+  }
+}
+
+void ISAStreamEngine::dispatchStreamUser(
+    const GemForgeDynInstInfo &dynInfo,
+    GemForgeLSQCallbackList &extraLSQCallbacks) {
+
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
+  auto &userInfo = instInfo.userInfo;
+
+  if (instInfo.mustBeMisspeculated) {
+    // This is a must be misspeculated instruction.
+    return;
+  }
+
+  std::vector<uint64_t> usedStreamIds{
+      userInfo.translatedUsedStreamIds.at(0),
+  };
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                    usedStreamIds);
+  auto se = this->getStreamEngine();
+  // It's possible that this is misspeculated and we don't have element.
+  if (!se->hasUnsteppedElement(args)) {
+    DYN_INST_PANIC("[dicpatch] Should check hasUnsteppedElement before "
+                   "dispatching %s %llu Seq %llu.\n",
+                   dynInfo.staticInst->getName(), usedStreamIds.at(0),
+                   dynInfo.seqNum);
+    instInfo.mustBeMisspeculated = true;
+  } else {
+    se->dispatchStreamUser(args);
+    // After dispatch, we get extra LQ callbacks.
+    se->createStreamUserLSQCallbacks(args, extraLSQCallbacks);
+    DYN_INST_DPRINTF("[dispatch] %s %llu Seq %llu: with callback %d.\n",
+                     dynInfo.staticInst->getName(),
+                     userInfo.translatedUsedStreamIds.at(0), dynInfo.seqNum,
+                     (bool)(extraLSQCallbacks.front()));
+  }
+}
+
+bool ISAStreamEngine::canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo) {
+  const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
+  const auto &userInfo = dynStreamInstInfo.userInfo;
+
+  if (dynStreamInstInfo.mustBeMisspeculated) {
+    // This must be a misspeculated instruction.
+    return true;
+  }
+
+  std::vector<uint64_t> usedStreamIds{
+      userInfo.translatedUsedStreamIds.at(0),
+  };
+  StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
+                                    usedStreamIds);
+  auto se = this->getStreamEngine();
+  bool canExecute = se->areUsedStreamsReady(args);
+  DYN_INST_DPRINTF("[canExecute] %s %llu %c.\n", dynInfo.staticInst->getName(),
+                   userInfo.translatedUsedStreamIds.at(0),
+                   canExecute ? 'Y' : 'N');
+  return canExecute;
+}
+
+bool ISAStreamEngine::canCommitStreamUser(const GemForgeDynInstInfo &dynInfo) {
+  return true;
+}
+
+void ISAStreamEngine::commitStreamUser(const GemForgeDynInstInfo &dynInfo) {
   const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   if (dynStreamInstInfo.mustBeMisspeculated) {
     // This must be a misspeculated instruction.
-    panic("MustMisspeculated StreamLoad %llu Seq %llu commit.\n",
-          userInfo.translatedUsedStreamIds.at(0), dynInfo.seqNum);
+    panic("MustMisspeculated %s %llu Seq %llu commit.\n",
+          dynInfo.staticInst->getName(), userInfo.translatedUsedStreamIds.at(0),
+          dynInfo.seqNum);
     return;
   }
   std::vector<uint64_t> usedStreamIds{
@@ -906,7 +1025,7 @@ void ISAStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
-void ISAStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::rewindStreamUser(const GemForgeDynInstInfo &dynInfo) {
   const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   if (dynStreamInstInfo.mustBeMisspeculated) {

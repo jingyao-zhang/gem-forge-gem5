@@ -7,9 +7,9 @@
 
 /**
  * ! GemForge
- * Used to implement special GemForgeLSQRequest.
+ * Used to implement special GemForgeLoadRequest.
  */
-template <class Impl> class GemForgeLSQRequest : public LSQ<Impl>::LSQRequest {
+template <class Impl> class GemForgeLoadRequest : public LSQ<Impl>::LSQRequest {
 public:
   /**
    * We have to explicit declare these names in template parent class.
@@ -21,7 +21,7 @@ public:
   using LSQSenderState = typename LSQ<Impl>::LSQSenderState;
   using O3CPUDelegator = typename Impl::CPUPol::O3CPUDelegator;
 
-  GemForgeLSQRequest(LSQUnit *port, const DynInstPtr &inst,
+  GemForgeLoadRequest(LSQUnit *port, const DynInstPtr &inst,
                      O3CPUDelegator *_cpuDelegator,
                      GemForgeLSQCallbackPtr _callback)
       : LSQ<Impl>::LSQRequest(port, inst, true /* isLoad */,
@@ -31,12 +31,12 @@ public:
         checkValueReadyEvent([this]() -> void { this->checkValueReady(); },
                              port->name()) {}
 
-  ~GemForgeLSQRequest() override {}
-  bool isGemForgeLSQRequest() const override { return true; }
+  ~GemForgeLoadRequest() override {}
+  bool isGemForgeLoadRequest() const override { return true; }
   void initiateTranslation() override;
   void finish(const Fault &fault, const RequestPtr &req, ThreadContext *tc,
               BaseTLB::Mode mode) override {
-    panic("GemForgeLSQRequest::finish should never be called.");
+    panic("GemForgeLoadRequest::finish should never be called.");
   }
   void release(Flag reason) override;
   bool recvTimingResp(PacketPtr pkt) override;

@@ -313,7 +313,9 @@ void LLVMIEWStage::issue() {
             this->FPUAccessesCycles += opLatency;
             break;
           }
-          default: { break; }
+          default: {
+            break;
+          }
           }
         }
 
@@ -685,7 +687,7 @@ bool LLVMIEWStage::GemForgeIEWLQCallback::isIssued() const {
   return cpu->inflyInstStatus.at(inst->getId()) == InstStatus::ISSUED;
 }
 
-bool LLVMIEWStage::GemForgeIEWLQCallback::isValueLoaded() {
+bool LLVMIEWStage::GemForgeIEWLQCallback::isValueReady() const {
   return inst->isCompleted();
 }
 

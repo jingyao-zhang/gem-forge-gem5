@@ -695,9 +695,6 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
         assert(store_it->valid());
         assert(store_it->instruction()->seqNum < load_inst->seqNum);
         int store_size = store_it->size();
-        // bool isMaintainance =
-        //     !(store_it->request()->mainRequest() &&
-        //       store_it->request()->mainRequest()->isCacheMaintenance());
         DPRINTF(LSQUnit, "Check Store-Load Forward size %d StrictlyOrdered %d %s.\n",
           store_size, store_it->instruction()->strictlyOrdered(), *store_it->instruction());
 
@@ -754,7 +751,7 @@ LSQUnit<Impl>::read(LSQRequest *req, int load_idx)
                  * ! GemForge
                  * We also disable forwarding for GemForge.
                  */
-                if (store_req->isMasked() || req->isGemForgeLSQRequest()) {
+                if (store_req->isMasked() || req->isGemForgeLoadRequest()) {
                   coverage = AddrRangeCoverage::PartialAddrRangeCoverage;
                   block_on_store = true;
                 } else {

@@ -373,6 +373,46 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
   return releaseElement;
 }
 
+void DynamicStream::computeElementValue(StreamElement *element) {
+
+  assert(this->stream->isStoreStream() && this->stream->getEnabledStoreFunc());
+  if (this->offloadedToCache) {
+    // This stream is offloaded to cache.
+    assert("This not handled yet.");
+    return;
+  }
+  if (!element->isAddrReady) {
+    S_ELEMENT_PANIC(element, "StoreFunc should have addr ready.");
+  }
+  // Check for value base element.
+  if (!element->areValueBaseElementsValueReady()) {
+    S_ELEMENT_PANIC(element,
+                    "StoreFunc with ValueBaseElement not value ready.");
+  }
+  // Get value for store func.
+  auto getStoreFuncInput = [this, element](StaticId id) -> StreamValue {
+    // Search the ValueBaseElements.
+    auto baseS = element->se->getStream(id);
+    for (const auto &baseE : element->valueBaseElements) {
+      if (baseE.element->stream == baseS) {
+        // Found it.
+        StreamValue elementValue;
+        baseE.element->getValueByStreamId(id, elementValue.uint8Ptr(),
+                                          sizeof(elementValue));
+        return elementValue;
+      }
+    }
+    assert(false && "Failed to find value base element.");
+  };
+  auto params =
+      convertFormalParamToParam(this->storeFormalParams, getStoreFuncInput);
+  auto storeValue = this->storeCallback->invoke(params);
+
+  S_ELEMENT_DPRINTF(element, "StoreValue %s.\n", storeValue);
+  // Set the element with the value.
+  element->setValue(element->addr, element->size, storeValue.uint8Ptr());
+}
+
 void DynamicStream::updateStatsOnReleaseStepElement(Cycles releaseCycle,
                                                     uint64_t vaddr, bool late) {
   this->numReleaseElement++;

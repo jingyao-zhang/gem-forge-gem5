@@ -9,7 +9,7 @@
 #define INST_PANIC(format, args...)                                            \
   panic("[%s]: " format, *(this->_inst), ##args)
 
-template <class Impl> void GemForgeLSQRequest<Impl>::release(Flag reason) {
+template <class Impl> void GemForgeLoadRequest<Impl>::release(Flag reason) {
   assert(reason == Flag::LSQEntryFreed || reason == Flag::Discarded);
   if (reason == Flag::LSQEntryFreed) {
     // Normal release.
@@ -49,7 +49,7 @@ template <class Impl> void GemForgeLSQRequest<Impl>::release(Flag reason) {
   }
 }
 
-template <class Impl> void GemForgeLSQRequest<Impl>::initiateTranslation() {
+template <class Impl> void GemForgeLoadRequest<Impl>::initiateTranslation() {
   assert(this->_requests.size() == 0);
   this->addRequest(this->_addr, this->_size, this->_byteEnable);
   assert(this->_requests.size() == 1 && "Should have request.");
@@ -81,7 +81,7 @@ template <class Impl> void GemForgeLSQRequest<Impl>::initiateTranslation() {
       INST_DPRINTF("GFLoadReq %s: Translation fault on vaddr %#x size %d.\n",
                    *this->callback, this->_addr, this->_size);
 
-      fault = std::make_shared<GemForge::GemForgeLoadTranslationFault>();
+      fault = std::make_shared<GemForge::GemForgeTranslationFault>();
       this->setState(State::Fault);
     } else {
       // No translation fault.
@@ -96,12 +96,12 @@ template <class Impl> void GemForgeLSQRequest<Impl>::initiateTranslation() {
 }
 
 template <class Impl>
-bool GemForgeLSQRequest<Impl>::recvTimingResp(PacketPtr pkt) {
+bool GemForgeLoadRequest<Impl>::recvTimingResp(PacketPtr pkt) {
   // Never happens.
   panic("Not implemented.");
 }
 
-template <class Impl> void GemForgeLSQRequest<Impl>::buildPackets() {
+template <class Impl> void GemForgeLoadRequest<Impl>::buildPackets() {
   assert(this->_senderState);
   /* Retries do not create new packets. */
   if (this->_packets.size() == 0) {
@@ -115,7 +115,7 @@ template <class Impl> void GemForgeLSQRequest<Impl>::buildPackets() {
   assert(this->_packets.size() == 1);
 }
 
-template <class Impl> void GemForgeLSQRequest<Impl>::sendPacketToCache() {
+template <class Impl> void GemForgeLoadRequest<Impl>::sendPacketToCache() {
   assert(this->_numOutstandingPackets == 0);
   /**
    * We don't really sent the packet, which is GemForge's job.
@@ -134,18 +134,17 @@ template <class Impl> void GemForgeLSQRequest<Impl>::sendPacketToCache() {
 }
 
 template <class Impl>
-Cycles GemForgeLSQRequest<Impl>::handleLocalAccess(ThreadContext *thread,
-                                                    PacketPtr pkt) {
+Cycles GemForgeLoadRequest<Impl>::handleLocalAccess(ThreadContext *thread,
+                                                   PacketPtr pkt) {
   return pkt->req->localAccessor(thread, pkt);
 }
 
 template <class Impl>
-bool GemForgeLSQRequest<Impl>::isCacheBlockHit(Addr blockAddr,
-                                                Addr blockMask) {
+bool GemForgeLoadRequest<Impl>::isCacheBlockHit(Addr blockAddr, Addr blockMask) {
   return ((this->_requests[0]->getPaddr() & blockMask) == blockAddr);
 }
 
-template <class Impl> void GemForgeLSQRequest<Impl>::checkValueReady() {
+template <class Impl> void GemForgeLoadRequest<Impl>::checkValueReady() {
   assert(this->_numOutstandingPackets == 1);
   assert(!this->squashedInGemForge && "CheckValueReady after squashed.");
   assert(!this->rawMisspeculated && "CheckValueReady after RAWMisspeculation.");
@@ -153,7 +152,7 @@ template <class Impl> void GemForgeLSQRequest<Impl>::checkValueReady() {
   // Not squashed, check if value is ready.
   assert(this->callback && "No callback to checkValueReady.");
   // Check the LQ callback.
-  bool completed = this->callback->isValueLoaded();
+  bool completed = this->callback->isValueReady();
   INST_DPRINTF("GFLoadReq: %s.\n", completed ? "Ready" : "NotReady");
   if (!completed) {
     // Recheck next cycle.
@@ -172,7 +171,7 @@ template <class Impl> void GemForgeLSQRequest<Impl>::checkValueReady() {
 }
 
 template <class Impl>
-bool GemForgeLSQRequest<Impl>::hasOverlap(Addr vaddr, int size) const {
+bool GemForgeLoadRequest<Impl>::hasOverlap(Addr vaddr, int size) const {
   Addr myVAddr;
   uint32_t mySize;
   if (!this->callback->getAddrSize(myVAddr, mySize)) {
@@ -185,7 +184,7 @@ bool GemForgeLSQRequest<Impl>::hasOverlap(Addr vaddr, int size) const {
   return true;
 }
 
-template <class Impl> void GemForgeLSQRequest<Impl>::squashInGemForge() {
+template <class Impl> void GemForgeLoadRequest<Impl>::squashInGemForge() {
   assert(!this->squashedInGemForge && "Already squashed in GemForge.");
   this->squashedInGemForge = true;
   if (this->isAnyOutstandingRequest()) {
@@ -200,7 +199,7 @@ template <class Impl> void GemForgeLSQRequest<Impl>::squashInGemForge() {
   }
 }
 
-template <class Impl> void GemForgeLSQRequest<Impl>::foundRAWMisspeculation() {
+template <class Impl> void GemForgeLoadRequest<Impl>::foundRAWMisspeculation() {
   if (this->rawMisspeculated) {
     INST_PANIC("GFLoadReq: Multiple RAWMisspeculation on LSQCallback: %s.\n",
                *this->callback);
@@ -223,4 +222,4 @@ template <class Impl> void GemForgeLSQRequest<Impl>::foundRAWMisspeculation() {
 #undef INST_DPRINTF
 
 // Force instantiate the class.
-template class GemForgeLSQRequest<O3CPUImpl>;
+template class GemForgeLoadRequest<O3CPUImpl>;

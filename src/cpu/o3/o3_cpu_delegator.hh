@@ -32,11 +32,24 @@
  * 1. At dispatch, insert into PreLSQ.
  * 2. When the address is ready, mark canExecute.
  * 3. In LSQ::executeLoad, when the LSQ can track the address, we remove
- *    it from the PreLSQ and allocate GemForgeLSQRequest and insert
+ *    it from the PreLSQ and allocate GemForgeLoadRequest and insert
  *    into the LSQ.
  * 4. For each InLSQ GemForgeLoadReq, we have a special event to check if
  *    GemForge say the value is ready.
  * 5. If found a misspeculation, we flush everything.
+ * 
+ * GemForgeStore is a little different: the request is still handled by
+ * the core, and we only get the address and value from GemForge. Therefore,
+ * it is very similar to normal stores.
+ * 1. At dispatch, insert into PreLSQ.
+ * 2. When the address AND value are ready, mark canExecute.
+ * 3. In LSQ::executeStore, we call pushRequest to inform the core about
+ *    the store address and value. BUT we do not remove it from PreLSQ, as
+ *    the core may defer the store request (e.g. due to TLB miss), and we
+ *    do not want to lose the callback in this case.
+ * 4. If found a misspeculation, the core will flush everything and restart
+ *    again. GemForge don't have to worry about it any more.
+ * 
  *******************************************************************/
 
 template <class CPUImpl>
@@ -45,7 +58,7 @@ public:
   using O3CPU = typename CPUImpl::O3CPU;
   using LSQUnit = typename CPUImpl::CPUPol::LSQUnit;
   using DynInstPtr = typename CPUImpl::DynInstPtr;
-  using GFLoadReq = GemForgeLSQRequest<CPUImpl>;
+  using GFLoadReq = GemForgeLoadRequest<CPUImpl>;
 
   DefaultO3CPUDelegator(O3CPU *_cpu);
   ~DefaultO3CPUDelegator() override;
@@ -95,20 +108,21 @@ public:
                                    int size);
 
   /**
-   * This is the real initiateAcc for GemForgeLoad.
+   * This is the real initiateAcc for GemForgeLoad and GemForgeStore.
    */
   Fault initiateGemForgeLoad(const DynInstPtr &dynInstPtr);
+  Fault initiateGemForgeStore(const DynInstPtr &dynInstPtr);
 
   /**
    * When the core execute a GemForgeLoad, it calls this
-   * to get a special GemForgeLSQRequest.
+   * to get a special GemForgeLoadRequest.
    * @return nullptr if this is not a GemForgeLoad.
    */
-  GFLoadReq *allocateGemForgeLSQRequest(LSQUnit *lsq,
+  GFLoadReq *allocateGemForgeLoadRequest(LSQUnit *lsq,
                                          const DynInstPtr &dynInstPtr);
 
   /**
-   * The GemForgeLSQRequest is discarded by the LSQ, we
+   * The GemForgeLoadRequest is discarded by the LSQ, we
    * should add it back to PreLSQ.
    */
   void discardGemForgeLoad(const DynInstPtr &dynInstPtr,
