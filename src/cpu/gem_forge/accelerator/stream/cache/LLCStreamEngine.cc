@@ -293,12 +293,14 @@ void LLCStreamEngine::receiveStreamElementData(
   }
 
   /**
-   * 1. Construct all the element data.
+   * 1. Construct all the element data, except for store stream.
    * 2. Process each ready element for indirect/update/atomic/store.
    * 3. Release ready element.
    */
-  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
-    this->extractElementDataFromSlice(stream, sliceId, idx, dataBlock);
+  if (!S->isStoreStream()) {
+    for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
+      this->extractElementDataFromSlice(stream, sliceId, idx, dataBlock);
+    }
   }
 
   DataBlock loadValueBlock;
@@ -921,10 +923,6 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
   }
 
-  /**
-   * After this point, try to issue base stream element.
-   */
-
   // Enforce the per stream maxInflyRequests constraint.
   if (stream->inflyRequests == this->maxInflyRequestsPerStream) {
     LLC_S_DPRINTF_(LLCRubyStreamNotIssue, stream->getDynamicStreamId(),
@@ -934,6 +932,49 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
         StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
     return false;
   }
+
+  /**
+   * Additional check on StoreStream, which should have StoreValue ready.
+   */
+  if (stream->getStaticStream()->isStoreStream()) {
+    const auto &nextSliceId = stream->peekSlice();
+    if (nextSliceId.getNumElements() != 1) {
+      LLC_SLICE_PANIC(nextSliceId, "Multi-Element slice for StoreStream.");
+    }
+    for (auto idx = nextSliceId.lhsElementIdx; idx < nextSliceId.rhsElementIdx;
+         ++idx) {
+      stream->allocateElement(idx, stream->slicedStream.getElementVAddr(idx));
+      const auto &element = stream->idxToElementMap.at(idx);
+      if (!element->isReady()) {
+        if (element->areBaseElementsReady()) {
+          // Generate the StoreValue.
+          auto getStoreFuncInput = [this, element](uint64_t id) -> StreamValue {
+            // Search the ValueBaseElements.
+            for (const auto &baseE : element->baseElements) {
+              if (baseE->dynStreamId.staticId == id) {
+                // Found it.
+                return baseE->getValue();
+              }
+            }
+            assert(false && "Failed to find value base element.");
+          };
+          auto params = convertFormalParamToParam(
+              stream->configData->storeFormalParams, getStoreFuncInput);
+          element->value = stream->configData->storeCallback->invoke(params);
+          element->readyBytes = element->size;
+          LLC_SLICE_DPRINTF(nextSliceId, "StoreValue %s.\n", element->value);
+        } else {
+          LLC_SLICE_DPRINTF(nextSliceId,
+                            "StoreValue not ready, delay issuing.\n");
+          return false;
+        }
+      }
+    }
+  }
+
+  /**
+   * After this point, try to issue base stream element.
+   */
 
   // Get the first element.
   Addr vaddr = stream->peekVAddr();
@@ -997,6 +1038,22 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
     auto requestIter = this->enqueueRequest(SS->getCPUDelegator(), sliceId,
                                             vaddrLine, paddrLine, reqType);
+
+    // Set the store data.
+    if (SS->isStoreStream()) {
+      assert(sliceId.getNumElements() == 1 &&
+             "Multi-Element slice for StoreStream.");
+      assert(stream->idxToElementMap.count(sliceId.lhsElementIdx) &&
+             "Missing element for StoreStream.");
+      const auto &element = stream->idxToElementMap.at(sliceId.lhsElementIdx);
+      assert(element->isReady() && "StoreElement is not ready.");
+
+      auto lineOffset = element->vaddr % RubySystem::getBlockSizeBytes();
+      requestIter->dataBlock.setData(element->getUInt8Ptr(), lineOffset,
+                                     element->size);
+      requestIter->storeSize = element->size;
+    }
+
     // Check if we track inflyRequests.
     bool hasIndirectDependent = stream->hasIndirectDependent();
     stream->inflyRequests++;
@@ -1950,8 +2007,10 @@ void LLCStreamEngine::processStreamDataForUpdate(
     this->performStore(elementPAddr, elementMemSize, storeValue);
     LLC_SLICE_DPRINTF_(
         LLCRubyStreamStore, sliceId,
-        "StreamStore done with value %llu, send back StreamAck.\n",
-        *reinterpret_cast<const uint64_t *>(storeValue));
+        "StreamStore done with vaddr %#x paddr %#x size %d offset %d value %s, "
+        "send back StreamAck.\n",
+        elementVAddr, elementPAddr, elementMemSize, lineOffset,
+        storeValueBlock);
   } else if (S->isAtomicStream()) {
     // Very limited AtomicRMW support.
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId, "Perform StreamAtomic.\n");
@@ -1983,7 +2042,7 @@ void LLCStreamEngine::extractElementDataFromSlice(
   // Get the LLCStreamElement.
   if (!stream->idxToElementMap.count(elementIdx)) {
     LLC_S_PANIC(stream->getDynamicStreamId(),
-                "Should already have allocated the element");
+                "Should already allocated the element");
   }
   auto &element = stream->idxToElementMap.at(elementIdx);
   this->extractElementDataFromSlice(
@@ -2091,7 +2150,6 @@ void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
   auto rubySystem = this->controller->params()->ruby_system;
   assert(rubySystem->getAccessBackingStore() &&
          "Do not support store stream without BackingStore.");
-  assert(size <= 8 && "At most 8 byte data.");
   assert((paddr % RubySystem::getBlockSizeBytes()) + size <=
              RubySystem::getBlockSizeBytes() &&
          "Can not store to multi-line elements.");

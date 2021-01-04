@@ -260,12 +260,8 @@ public:
                 Request::Flags flags,
                 const std::vector<bool> &byteEnable = std::vector<bool>()) {
     assert(this->virtProxy && "No virt port proxy.");
-    hack("Read mem %#x, size %u.\n", addr, size);
     if (!this->virtProxy->tryReadBlob(addr, data, size)) {
       panic("ExecContext::readMem() failed.\n");
-    }
-    for (int i = 0; i < size; ++i) {
-      hack("Read in %#x.\n", data[i]);
     }
     return NoFault;
   }

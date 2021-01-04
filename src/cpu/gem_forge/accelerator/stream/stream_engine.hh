@@ -103,6 +103,7 @@ public:
 
   bool hasUnsteppedElement(const StreamUserArgs &args);
   bool hasIllegalUsedLastElement(const StreamUserArgs &args);
+  bool canDispatchStreamUser(const StreamUserArgs &args);
   void dispatchStreamUser(const StreamUserArgs &args);
   bool areUsedStreamsReady(const StreamUserArgs &args);
   void executeStreamUser(const StreamUserArgs &args);

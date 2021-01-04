@@ -54,6 +54,8 @@
 
 using namespace std;
 
+// #define DEBUG_PADDR
+
 AbstractMemory::AbstractMemory(const Params *p) :
     ClockedObject(p), range(params()->range), pmemAddr(NULL),
     backdoor(params()->range, nullptr,
@@ -437,6 +439,14 @@ AbstractMemory::access(PacketPtr pkt)
         }
         if (pmemAddr) {
             pkt->setData(host_addr);
+            #ifdef DEBUG_PADDR
+            if (pkt->getAddr() == DEBUG_PADDR) {
+                auto data = pkt->getConstPtr<uint8_t>();
+                hack("Read from %#x host_addr %#x %#x %#x %#x %#x.\n",
+                    DEBUG_PADDR, host_addr,
+                    data[0], data[1], data[2], data[3]);
+            }
+            #endif
         }
         TRACE_PACKET(pkt->req->isInstFetch() ? "IFetch" : "Read");
         stats.numReads[pkt->req->masterId()]++;
@@ -453,6 +463,14 @@ AbstractMemory::access(PacketPtr pkt)
         if (writeOK(pkt)) {
             if (pmemAddr) {
                 pkt->writeData(host_addr);
+                #ifdef DEBUG_PADDR
+                if (pkt->getAddr() == DEBUG_PADDR) {
+                    auto data = pkt->getConstPtr<uint8_t>();
+                    hack("Write to %#x host_addr %#x %#x %#x %#x %#x.\n",
+                        DEBUG_PADDR, host_addr,
+                        data[0], data[1], data[2], data[3]);
+                }
+                #endif
                 DPRINTF(MemoryAccess, "%s write due to %s\n",
                         __func__, pkt->print());
             }
@@ -490,11 +508,27 @@ AbstractMemory::functionalAccess(PacketPtr pkt)
     } else if (pkt->isRead()) {
         if (pmemAddr) {
             pkt->setData(host_addr);
+            #ifdef DEBUG_PADDR
+            if (pkt->getAddr() == DEBUG_PADDR) {
+                auto data = pkt->getConstPtr<uint8_t>();
+                hack("Read from %#x host_addr %#x %#x %#x %#x %#x.\n",
+                    DEBUG_PADDR, host_addr,
+                    data[0], data[1], data[2], data[3]);
+            }
+            #endif
         }
         TRACE_PACKET("Read");
         pkt->makeResponse();
     } else if (pkt->isWrite()) {
         if (pmemAddr) {
+            #ifdef DEBUG_PADDR
+            if (pkt->getAddr() == DEBUG_PADDR) {
+                auto data = pkt->getConstPtr<uint8_t>();
+                hack("Write to %#x host_addr %#x %#x %#x %#x %#x.\n",
+                    DEBUG_PADDR, host_addr,
+                    data[0], data[1], data[2], data[3]);
+            }
+            #endif
             pkt->writeData(host_addr);
         }
         TRACE_PACKET("Write");

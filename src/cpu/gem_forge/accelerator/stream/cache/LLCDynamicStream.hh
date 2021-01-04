@@ -81,7 +81,8 @@ public:
     return this->multicastGroupLeader;
   }
 
-  Addr peekVAddr();
+  Addr peekVAddr() const;
+  const DynamicStreamSliceId &peekSlice() const;
   Addr getVAddr(uint64_t sliceIdx) const;
   bool translateToPAddr(Addr vaddr, Addr &paddr) const;
 

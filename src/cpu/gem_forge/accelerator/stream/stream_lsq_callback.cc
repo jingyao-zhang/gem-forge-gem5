@@ -3,6 +3,10 @@
 
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 
+#include "debug/StreamBase.hh"
+#define DEBUG_TYPE StreamBase
+#include "stream_log.hh"
+
 bool StreamLQCallback::getAddrSize(Addr &addr, uint32_t &size) const {
   assert(this->FIFOIdx == this->element->FIFOIdx &&
          "Element already released.");
@@ -57,6 +61,21 @@ bool StreamLQCallback::bypassAliasCheck() const {
          "Element already released.");
   // Only bypass alias check if the stream is marked FloatManual.
   return this->element->stream->getFloatManual();
+}
+
+StreamSQCallback::StreamSQCallback(StreamElement *_element,
+                                   uint64_t _userSeqNum, Addr _userPC,
+                                   const std::vector<uint64_t> &_usedStreamIds)
+    : element(_element), FIFOIdx(_element->FIFOIdx),
+      usedStreamIds(_usedStreamIds), args(_userSeqNum, _userPC, usedStreamIds) {
+  /**
+   * If the StoreStream is floated, it is possible that there are
+   * still some SQCallbacks for the first few elements.
+   */
+  if (this->element->dynS->offloadedToCache) {
+    S_ELEMENT_PANIC(this->element,
+                    "StoreStream floated with outstanding SQCallback.");
+  }
 }
 
 bool StreamSQCallback::getAddrSize(Addr &addr, uint32_t &size) const {

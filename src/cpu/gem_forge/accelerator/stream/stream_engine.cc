@@ -673,6 +673,25 @@ bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
   return false;
 }
 
+bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
+  if (!this->hasUnsteppedElement(args)) {
+    return false;
+  }
+  /**
+   * Additional condition for StoreStream with enabled StoreFunc, we
+   * wait for config to be executed to avoid creating SQCallback for
+   * floating store streams.
+   */
+  for (const auto &streamId : args.usedStreamIds) {
+    auto S = this->getStream(streamId);
+    auto &dynS = S->getLastDynamicStream();
+    if (!dynS.configExecuted) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
   auto seqNum = args.seqNum;
   SE_DPRINTF("Dispatch StreamUser %llu.\n", seqNum);
@@ -839,7 +858,13 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
     }
 
     if (!element->isValueReady) {
-      S_ELEMENT_PANIC(element, "Commit user, but value not ready.");
+      // The only exception is the StoreStream is floated.
+      if (element->stream->isStoreStream() &&
+          element->stream->getEnabledStoreFunc() &&
+          element->dynS->offloadedToCache) {
+      } else {
+        S_ELEMENT_PANIC(element, "Commit user, but value not ready.");
+      }
     }
 
     /**

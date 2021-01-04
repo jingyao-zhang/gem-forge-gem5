@@ -1290,7 +1290,7 @@ DefaultIEW<Impl>::executeInsts()
                 if (cpu->cpuDelegator) {
                     if (!cpu->cpuDelegator->canExecute(inst)) {
                         DPRINTF(IEW,
-                            "Execute: Reschedule GemForgeCompute: %s.\n",
+                            "Execute: Reschedule GemForgeLoad: %s.\n",
                             *inst);
                         instQueue.rescheduleGemForgeInst(inst);
                         continue;
@@ -1314,6 +1314,22 @@ DefaultIEW<Impl>::executeInsts()
                     inst->fault = NoFault;
                 }
             } else if (inst->isStore()) {
+                /**
+                 * ! GemForge
+                 * Due to the latency between scheduling and issuing, it is
+                 * possible that GemForge now regrets about canExecution, e.g
+                 * the data being flushed due to RAWMisspeculation.
+                 * In such case, we add the instruction back to IQ.
+                 */
+                if (cpu->cpuDelegator) {
+                    if (!cpu->cpuDelegator->canExecute(inst)) {
+                        DPRINTF(IEW,
+                            "Execute: Reschedule GemForgeStore: %s.\n",
+                            *inst);
+                        instQueue.rescheduleGemForgeInst(inst);
+                        continue;
+                    }
+                }
                 fault = ldstQueue.executeStore(inst);
 
                 if (inst->isTranslationDelayed() &&

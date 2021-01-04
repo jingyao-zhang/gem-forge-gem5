@@ -48,10 +48,7 @@ public:
   std::vector<uint64_t> usedStreamIds;
   StreamEngine::StreamUserArgs args;
   StreamSQCallback(StreamElement *_element, uint64_t _userSeqNum, Addr _userPC,
-                   const std::vector<uint64_t> &_usedStreamIds)
-      : element(_element), FIFOIdx(_element->FIFOIdx),
-        usedStreamIds(_usedStreamIds),
-        args(_userSeqNum, _userPC, usedStreamIds) {}
+                   const std::vector<uint64_t> &_usedStreamIds);
   bool getAddrSize(Addr &addr, uint32_t &size) const override;
   bool hasNonCoreDependent() const override;
   bool isIssued() const override;

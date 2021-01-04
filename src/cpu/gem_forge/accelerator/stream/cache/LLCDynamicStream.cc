@@ -83,8 +83,12 @@ uint64_t LLCDynamicStream::getTotalTripCount() const {
   return this->configData->totalTripCount;
 }
 
-Addr LLCDynamicStream::peekVAddr() {
+Addr LLCDynamicStream::peekVAddr() const {
   return this->slicedStream.peekNextSlice().vaddr;
+}
+
+const DynamicStreamSliceId &LLCDynamicStream::peekSlice() const {
+  return this->slicedStream.peekNextSlice();
 }
 
 Addr LLCDynamicStream::getVAddr(uint64_t sliceIdx) const {

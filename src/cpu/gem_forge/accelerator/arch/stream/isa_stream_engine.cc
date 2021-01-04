@@ -815,53 +815,8 @@ bool ISAStreamEngine::canExecuteStreamStore(
 
 void ISAStreamEngine::executeStreamStore(const GemForgeDynInstInfo &dynInfo,
                                          ExecContext &xc) {
-  panic("executeStreamStore not implemented yet.");
-  // auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
-  // const auto &userInfo = instInfo.userInfo;
-
-  // if (instInfo.mustBeMisspeculated) {
-  //   // This must be a misspeculated instruction.
-  //   return;
-  // }
-
-  // std::vector<uint64_t> usedStreamIds{
-  //     userInfo.translatedUsedStreamIds.at(0),
-  // };
-  // StreamEngine::StreamUserArgs::ValueVec values;
-  // values.reserve(usedStreamIds.size());
-  // StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-  //                                   usedStreamIds, &values);
-  // auto se = this->getStreamEngine();
-  // se->executeStreamUser(args);
-  // DYN_INST_DPRINTF("Execute StreamLoad RegionStream %llu destRegs %d.\n",
-  //                  userInfo.translatedUsedStreamIds.at(0),
-  //                  dynInfo.staticInst->numDestRegs());
-  // if (dynInfo.staticInst->numDestRegs() == 0) {
-  //   panic("No DestRegs for StreamLoad at PC %#x.\n", dynInfo.pc.pc());
-  // }
-
-  // /**
-  //  * We handle wider registers by checking the number of destination
-  //  * registers.
-  //  */
-  // RegVal *loadedPtr = reinterpret_cast<uint64_t *>(values.at(0).data());
-  // for (int destIdx = 0; destIdx < dynInfo.staticInst->numDestRegs();
-  //      ++destIdx, loadedPtr++) {
-  //   assert(destIdx <
-  //              StreamEngine::StreamUserArgs::MaxElementSize / sizeof(RegVal)
-  //              &&
-  //          "Too many destination registers.");
-  //   auto loadedValue = *loadedPtr;
-  //   DYN_INST_DPRINTF("[%llu] Got value %llu, reg %d %s.\n",
-  //                    userInfo.translatedUsedStreamIds.at(0), loadedValue,
-  //                    destIdx, dynInfo.staticInst->destRegIdx(destIdx));
-  //   if (dynInfo.staticInst->isFloating()) {
-  //     xc.setFloatRegOperandBits(dynInfo.staticInst, destIdx, loadedValue);
-  //   } else {
-  //     xc.setIntRegOperand(dynInfo.staticInst, destIdx, loadedValue);
-  //   }
-  // }
-  // instInfo.executed = true;
+  // Value for StreamStore is passed from the callback. Nothing to do here.
+  return;
 }
 
 bool ISAStreamEngine::canCommitStreamStore(const GemForgeDynInstInfo &dynInfo) {
@@ -920,7 +875,7 @@ bool ISAStreamEngine::canDispatchStreamUser(
                                       usedStreamIds);
     auto se = this->getStreamEngine();
     // It's possible that we don't have element if we have reached the limit.
-    if (!se->hasUnsteppedElement(args)) {
+    if (!se->canDispatchStreamUser(args)) {
       // We must wait.
       DYN_INST_DPRINTF("CanNotDispatch %s %llu: No Unstepped Element.\n",
                        dynInfo.staticInst->getName(), usedStreamId);
@@ -960,8 +915,8 @@ void ISAStreamEngine::dispatchStreamUser(
                                     usedStreamIds);
   auto se = this->getStreamEngine();
   // It's possible that this is misspeculated and we don't have element.
-  if (!se->hasUnsteppedElement(args)) {
-    DYN_INST_PANIC("[dicpatch] Should check hasUnsteppedElement before "
+  if (!se->canDispatchStreamUser(args)) {
+    DYN_INST_PANIC("[dicpatch] Should check canDispatchStreamUser before "
                    "dispatching %s %llu Seq %llu.\n",
                    dynInfo.staticInst->getName(), usedStreamIds.at(0),
                    dynInfo.seqNum);
