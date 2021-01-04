@@ -173,8 +173,7 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
         // TODO: The compiler currently failed to set noCoreUser correctly for
         // MergedStore stream, so we ignore it here manually.
         auto IS = dynIS->getStaticStream();
-        if (IS->isMerged() &&
-            IS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
+        if (IS->isMerged() && IS->isStoreStream()) {
           continue;
         }
         if (IS->hasCoreUser()) {

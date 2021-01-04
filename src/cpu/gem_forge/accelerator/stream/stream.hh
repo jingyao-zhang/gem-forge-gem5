@@ -91,8 +91,12 @@ public:
     return this->info.static_info().is_merged_predicated_stream();
   }
   bool isMergedLoadStoreDepStream() const {
-    return this->info.static_info().compute_info().value_base_streams_size() >
-           0;
+    /**
+     * TODO: Get rid of this unclean "merged" implementation.
+     */
+    return false;
+    // return this->info.static_info().compute_info().value_base_streams_size() >
+    //        0;
   }
   const StreamIdList &getMergedLoadStoreDepStreams() const {
     return this->info.static_info().compute_info().value_dep_streams();

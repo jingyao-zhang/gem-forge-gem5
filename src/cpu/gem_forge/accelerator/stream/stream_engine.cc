@@ -766,22 +766,15 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     }
     // Mark the first check cycle.
     if (element->firstCheckCycle == 0) {
-      S_ELEMENT_DPRINTF(element, "Mark FirstCheckCycle %lu.\n",
-                        cpuDelegator->curCycle());
+      S_ELEMENT_DPRINTF(
+          element, "Mark FirstCheckCycle %lu, AddrReady %d ValueReady %d.\n",
+          cpuDelegator->curCycle(), element->isAddrReady,
+          element->isValueReady);
       element->firstCheckCycle = cpuDelegator->curCycle();
     }
-    if (element->stream->isStoreStream()) {
-      /**
-       * Basically this is a stream store.
-       * Make sure the stored element is AddrReady.
-       */
-      if (!element->isAddrReady) {
-        ready = false;
-      }
-      continue;
-    }
-    if (!element->isValueReady) {
-      S_ELEMENT_DPRINTF(element, "Value not ready.\n");
+    if (!(element->isAddrReady && element->isValueReady)) {
+      S_ELEMENT_DPRINTF(element, "NotReady: AddrReady %d ValueReady %d.\n",
+                        element->isAddrReady, element->isValueReady);
       ready = false;
     }
   }
@@ -985,9 +978,9 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
       continue;
     }
     endedStreams.insert(S);
-    // Check for StreamAck. So far that's only merged store stream.
+    // Check for StreamAck. So far that's only floating store stream.
     const auto &dynS = S->getLastDynamicStream();
-    if (S->isMerged() && S->isStoreStream()) {
+    if (S->isStoreStream()) {
       if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
         return false;
       }

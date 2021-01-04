@@ -1920,8 +1920,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
         } else {
           // This element is predicated off.
           predS->statistic.numLLCPredNSlice++;
-          if (predS->isMerged() &&
-              predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
+          if (predS->isMerged() && predS->isStoreStream()) {
             /**
              * This is a predicated off merged store, we have to send
              * STREAM_ACK. We still have to set the vaddr as the MLC

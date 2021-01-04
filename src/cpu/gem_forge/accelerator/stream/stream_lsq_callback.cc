@@ -122,6 +122,9 @@ const uint8_t *StreamSQCallback::getValue() const {
          "Element already released.");
   assert(this->isValueReady() && "GetValue before it's ready.");
   assert(this->usedStreamIds.size() == 1 && "GetValue for multiple streams.");
+  S_ELEMENT_DPRINTF(this->element,
+                    "SQCallback get value, AddrReady %d ValueReady %d.\n",
+                    this->element->isAddrReady, this->element->isValueReady);
   return this->element->getValuePtrByStreamId(this->usedStreamIds.front());
 }
 
