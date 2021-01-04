@@ -22,6 +22,7 @@ class StreamThrottler;
 class StreamLQCallback;
 class StreamSQCallback;
 class StreamSQDeprecatedCallback;
+class StreamFloatController;
 
 class StreamEngine : public GemForgeAccelerator {
 public:
@@ -255,12 +256,12 @@ private:
   friend class StreamLQCallback;
   friend class StreamSQCallback;
   friend class StreamSQDeprecatedCallback;
+  friend class StreamFloatController;
 
   LLVMTraceCPU *cpu;
 
   std::unique_ptr<StreamTranslationBuffer<void *>> translationBuffer;
   StreamPlacementManager *streamPlacementManager;
-  std::unique_ptr<StreamFloatPolicy> streamFloatPolicy;
 
   std::vector<StreamElement> FIFOArray;
   StreamElement *FIFOFreeListHead;
@@ -379,19 +380,6 @@ private:
   std::list<Stream *>
   getConfigStreamsInRegion(const LLVM::TDG::StreamRegion &streamRegion);
 
-  /**
-   * Decide and float streams. Called in executeStreamConfig().
-   */
-  using StreamCacheConfigMap =
-      std::unordered_map<Stream *, CacheStreamConfigureDataPtr>;
-  void floatStreams(const StreamConfigArgs &args,
-                    const ::LLVM::TDG::StreamRegion &streamRegion,
-                    std::list<Stream *> &configStreams);
-  void floatReductionStreams(const StreamConfigArgs &args,
-                             const ::LLVM::TDG::StreamRegion &streamRegion,
-                             std::list<Stream *> &configStreams,
-                             StreamCacheConfigMap &floatedMap);
-
   // Called every cycle to allocate elements.
   void allocateElements();
   // Allocate one element to stream.
@@ -440,6 +428,7 @@ private:
   void dumpUser() const;
 
   std::unique_ptr<StreamThrottler> throttler;
+  std::unique_ptr<StreamFloatController> floatController;
 
   /**
    * Try to coalesce continuous element of direct mem stream if they

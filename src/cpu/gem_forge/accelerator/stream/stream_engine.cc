@@ -1,5 +1,6 @@
 #include "stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
+#include "stream_float_controller.hh"
 #include "stream_lsq_callback.hh"
 #include "stream_throttler.hh"
 
@@ -52,8 +53,10 @@ StreamEngine::StreamEngine(Params *params)
   this->enableStreamFloatIndirect = params->streamEngineEnableFloatIndirect;
   this->enableStreamFloatPseudo = params->streamEngineEnableFloatPseudo;
   this->enableStreamFloatCancel = params->streamEngineEnableFloatCancel;
-  this->streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
+  auto streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
       this->enableStreamFloat, params->streamEngineFloatPolicy);
+  this->floatController = m5::make_unique<StreamFloatController>(
+      this, std::move(streamFloatPolicy));
 
   this->initializeFIFO(this->totalRunAheadLength);
 }
@@ -348,7 +351,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   /**
    * Then we try to float streams.
    */
-  this->floatStreams(args, streamRegion, configStreams);
+  this->floatController->floatStreams(args, streamRegion, configStreams);
 }
 
 void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
@@ -1542,275 +1545,6 @@ std::list<Stream *> StreamEngine::getConfigStreamsInRegion(
     }
   }
   return configStreams;
-}
-
-void StreamEngine::floatStreams(const StreamConfigArgs &args,
-                                const ::LLVM::TDG::StreamRegion &streamRegion,
-                                std::list<Stream *> &configStreams) {
-
-  if (cpuDelegator->cpuType == GemForgeCPUDelegator::CPUTypeE::ATOMIC_SIMPLE) {
-    SE_DPRINTF("Skip StreamFloat in AtomicSimpleCPU for %s.\n",
-               streamRegion.region());
-    return;
-  }
-
-  auto *cacheStreamConfigVec = new CacheStreamConfigureVec();
-  StreamCacheConfigMap offloadedStreamConfigMap;
-  SE_DPRINTF("Consider StreamFloat for %s.\n", streamRegion.region());
-
-  /**
-   * Floating decisions are made in multiple phases, first affine, then others.
-   */
-  for (auto &S : configStreams) {
-    /**
-     * StreamAwareCache: Send a StreamConfigReq to the cache hierarchy.
-     * TODO: Rewrite this bunch of hack.
-     */
-    if (offloadedStreamConfigMap.count(S)) {
-      continue;
-    }
-    auto &dynStream = S->getDynamicStream(args.seqNum);
-    if (this->streamFloatPolicy->shouldFloatStream(S, dynStream)) {
-
-      // Get the CacheStreamConfigureData.
-      auto streamConfigureData = S->allocateCacheConfigureData(args.seqNum);
-
-      // Remember the offloaded decision.
-      dynStream.offloadedToCacheAsRoot = true;
-      dynStream.offloadedToCache = true;
-      this->numFloated++;
-      offloadedStreamConfigMap.emplace(S, streamConfigureData);
-
-      // Remember the pseudo offloaded decision.
-      if (this->enableStreamFloatPseudo &&
-          this->streamFloatPolicy->shouldPseudoFloatStream(S, dynStream)) {
-        dynStream.pseudoOffloadedToCache = true;
-        streamConfigureData->isPseudoOffload = true;
-      }
-
-      if (S->isPointerChaseLoadStream()) {
-        streamConfigureData->isPointerChase = true;
-      }
-
-      /**
-       * If we enable these indirect streams to float:
-       * 1. LoadStream.
-       * 2. Store/AtomicRMWStream with StoreFunc enabled, and has not been
-       * merged.
-       */
-      if (this->enableStreamFloatIndirect) {
-        for (auto depS : S->addrDepStreams) {
-          bool canFloatIndirect = false;
-          auto depSType = depS->getStreamType();
-          switch (depSType) {
-          case ::LLVM::TDG::StreamInfo_Type_LD:
-            canFloatIndirect = true;
-            break;
-          case ::LLVM::TDG::StreamInfo_Type_AT:
-          case ::LLVM::TDG::StreamInfo_Type_ST:
-            if (depS->getEnabledStoreFunc() &&
-                !depS->isMergedLoadStoreDepStream()) {
-              canFloatIndirect = true;
-            }
-            break;
-          default:
-            break;
-          }
-          if (canFloatIndirect && depS->addrBaseStreams.size() == 1) {
-            // Only dependent on this direct stream.
-            auto depConfig = depS->allocateCacheConfigureData(
-                args.seqNum, true /* isIndirect */);
-            streamConfigureData->addUsedBy(depConfig);
-            // Remember the decision.
-            auto &depDynS = depS->getDynamicStream(args.seqNum);
-            depDynS.offloadedToCache = true;
-            this->numFloated++;
-            S_DPRINTF(depS, "Offload as indirect.\n");
-            assert(offloadedStreamConfigMap.emplace(depS, depConfig).second &&
-                   "Already offloaded this indirect stream.");
-            // ! Pure hack here to indclude merged stream of this indirect
-            // ! stream.
-            for (auto mergedStreamId : depS->getMergedPredicatedStreams()) {
-              auto mergedS = this->getStream(mergedStreamId.id().id());
-              auto mergedConfig = mergedS->allocateCacheConfigureData(
-                  args.seqNum, true /* isIndirect */);
-              mergedConfig->isPredicated = true;
-              mergedConfig->isPredicatedTrue = mergedStreamId.pred_true();
-              mergedConfig->predicateStreamId = depDynS.dynamicStreamId;
-              /**
-               * Remember the decision.
-               */
-              mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
-              this->numFloated++;
-              assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig)
-                         .second &&
-                     "Merged stream already offloaded.");
-              streamConfigureData->addUsedBy(mergedConfig);
-            }
-          }
-        }
-        // ! Disable one iteration behind indirect streams so far.
-        // if (streamConfigureData->indirectStreams.empty()) {
-        //   // Not found a valid indirect stream, let's try to search for
-        //   // a indirect stream that is one iteration behind.
-        //   for (auto backDependentStream : S->backDepStreams) {
-        //     if (backDependentStream->getStreamType() != "phi") {
-        //       continue;
-        //     }
-        //     if (backDependentStream->backBaseStreams.size() != 1) {
-        //       continue;
-        //     }
-        //     for (auto indirectStream : backDependentStream->addrDepStreams)
-        //     {
-        //       if (indirectStream == S) {
-        //         continue;
-        //       }
-        //       if (indirectStream->getStreamType() != "load") {
-        //         continue;
-        //       }
-        //       if (indirectStream->addrBaseStreams.size() != 1) {
-        //         continue;
-        //       }
-        //       // We found one valid indirect stream that is one iteration
-        //       // behind S.
-        //       streamConfigureData->addUsedBy(
-        //           indirectStream->allocateCacheConfigureData(args.seqNum));
-        //       streamConfigureData->indirectStreams.back()
-        //           ->isOneIterationBehind = true;
-        //       break;
-        //     }
-        //     if (!streamConfigureData->indirectStreams.empty()) {
-        //       // We already found one.
-        //       break;
-        //     }
-        //   }
-        // }
-      }
-
-      /**
-       * Merged predicated streams are always offloaded.
-       */
-      for (auto mergedStreamId : S->getMergedPredicatedStreams()) {
-        auto mergedS = this->getStream(mergedStreamId.id().id());
-        auto mergedConfig = mergedS->allocateCacheConfigureData(
-            args.seqNum, true /* isIndirect */);
-        mergedConfig->isPredicated = true;
-        mergedConfig->isPredicatedTrue = mergedStreamId.pred_true();
-        mergedConfig->predicateStreamId = dynStream.dynamicStreamId;
-        /**
-         * Remember the decision.
-         */
-        mergedS->getDynamicStream(args.seqNum).offloadedToCache = true;
-        this->numFloated++;
-        assert(offloadedStreamConfigMap.emplace(mergedS, mergedConfig).second &&
-               "Merged stream already offloaded.");
-        streamConfigureData->addUsedBy(mergedConfig);
-      }
-      /**
-       * ValueDepStreams are always offloaded.
-       */
-      int numOffloadedValueDepStreams = 0;
-      for (auto valueDepS : S->valueDepStreams) {
-        auto valueDepConfig = valueDepS->allocateCacheConfigureData(
-            args.seqNum, true /* isIndirect */);
-        /**
-         * Remember the decision.
-         */
-        valueDepS->getDynamicStream(args.seqNum).offloadedToCache = true;
-        this->numFloated++;
-        assert(offloadedStreamConfigMap.emplace(valueDepS, valueDepConfig)
-                   .second &&
-               "ValueDepStream already offloaded.");
-        streamConfigureData->addUsedBy(valueDepConfig);
-        numOffloadedValueDepStreams++;
-      }
-
-      cacheStreamConfigVec->push_back(streamConfigureData);
-    }
-  }
-
-  this->floatReductionStreams(args, streamRegion, configStreams,
-                              offloadedStreamConfigMap);
-
-  // Sanity check for some offload decision.
-  for (auto &S : configStreams) {
-    auto &dynS = S->getDynamicStream(args.seqNum);
-    if (!dynS.offloadedToCache) {
-      if (S->getMergedPredicatedStreams().size() > 0) {
-        S_PANIC(S, "Should offload streams with merged streams.");
-      }
-      if (S->isMergedPredicated()) {
-        S_PANIC(S, "MergedStream not offloaded.");
-      }
-    }
-  }
-
-  // Send all the floating streams in one packet.
-  if (!cacheStreamConfigVec->empty()) {
-    // Dummy paddr to make ruby happy.
-    Addr initPAddr = 0;
-    auto pkt = GemForgePacketHandler::createStreamControlPacket(
-        initPAddr, cpuDelegator->dataMasterId(), 0,
-        MemCmd::Command::StreamConfigReq,
-        reinterpret_cast<uint64_t>(cacheStreamConfigVec));
-    for (const auto &config : *cacheStreamConfigVec) {
-      SE_DPRINTF_(CoreRubyStreamLife, "%s: Send FloatConfig.\n",
-                  config->dynamicId);
-    }
-    cpuDelegator->sendRequest(pkt);
-  } else {
-    delete cacheStreamConfigVec;
-  }
-}
-
-void StreamEngine::floatReductionStreams(
-    const StreamConfigArgs &args, const ::LLVM::TDG::StreamRegion &streamRegion,
-    std::list<Stream *> &configStreams, StreamCacheConfigMap &floatedMap) {
-  for (auto &S : configStreams) {
-    /**
-     * We only float a ReductionStream if it only uses floated affine stream.
-     */
-    if (floatedMap.count(S) || !S->isReduction() ||
-        !S->addrBaseStreams.empty()) {
-      continue;
-    }
-    bool allBackBaseStreamsAreAffineAndFloated = true;
-    std::vector<CacheStreamConfigureDataPtr> backBaseStreamConfigs;
-    for (auto backBaseS : S->backBaseStreams) {
-      if (backBaseS == S) {
-        continue;
-      }
-      if (!backBaseS->isDirectMemStream() || !floatedMap.count(backBaseS)) {
-        allBackBaseStreamsAreAffineAndFloated = false;
-        break;
-      }
-      backBaseStreamConfigs.emplace_back(floatedMap.at(backBaseS));
-    }
-    if (!allBackBaseStreamsAreAffineAndFloated) {
-      continue;
-    }
-    if (backBaseStreamConfigs.empty()) {
-      S_PANIC(S, "ReductionStream without BackBaseStream.");
-    }
-    /**
-     * Okay now we decided to float the ReductionStream. We randomly pick one
-     * affine BackBaseStream A and make all other BackBaseStreams send to that
-     * stream.
-     */
-    auto &dynStream = S->getDynamicStream(args.seqNum);
-    auto reductionConfig = S->allocateCacheConfigureData(args.seqNum, true);
-    // Reduction stream is always one iteration behind.
-    reductionConfig->isOneIterationBehind = true;
-    dynStream.offloadedToCache = true;
-    this->numFloated++;
-    floatedMap.emplace(S, reductionConfig);
-    backBaseStreamConfigs.front()->addUsedBy(reductionConfig);
-    for (int i = 1; i < backBaseStreamConfigs.size(); ++i) {
-      auto &backBaseConfig = backBaseStreamConfigs.at(i);
-      backBaseConfig->addSendTo(backBaseStreamConfigs.front());
-      reductionConfig->addBaseOn(backBaseConfig);
-    }
-  }
 }
 
 void StreamEngine::allocateElements() {
