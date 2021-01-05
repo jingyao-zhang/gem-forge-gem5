@@ -18,8 +18,10 @@ std::unordered_map<NodeID, std::list<std::vector<LLCDynamicStream *>>>
 // TODO: Support real flow control.
 LLCDynamicStream::LLCDynamicStream(
     AbstractStreamAwareController *_mlcController,
+    AbstractStreamAwareController *_llcController,
     CacheStreamConfigureDataPtr _configData)
-    : mlcController(_mlcController), configData(_configData),
+    : mlcController(_mlcController), llcController(_llcController),
+      configData(_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
       configureCycle(_mlcController->curCycle()), sliceIdx(0),
       allocatedSliceIdx(_configData->initAllocatedIdx), inflyRequests(0) {
@@ -518,8 +520,16 @@ void LLCDynamicStream::allocateLLCStream(
     AbstractStreamAwareController *mlcController,
     CacheStreamConfigureDataPtr &config) {
 
+  assert(config->initPAddrValid && "Initial paddr should be valid now.");
+  auto initPAddr = config->initPAddr;
+  auto mlcMachineId = mlcController->getMachineID();
+  auto llcMachineId = mlcController->mapAddressToLLC(
+      initPAddr, static_cast<MachineType>(mlcMachineId.type + 1));
+  auto llcController =
+      AbstractStreamAwareController::getController(llcMachineId);
+
   // Create the stream.
-  auto S = new LLCDynamicStream(mlcController, config);
+  auto S = new LLCDynamicStream(mlcController, llcController, config);
 
   // Check if we have indirect streams.
   for (const auto &edge : config->depEdges) {
@@ -527,7 +537,7 @@ void LLCDynamicStream::allocateLLCStream(
       auto &ISConfig = edge.data;
       // Let's create an indirect stream.
       ISConfig->initAllocatedIdx = config->initAllocatedIdx;
-      auto IS = new LLCDynamicStream(mlcController, ISConfig);
+      auto IS = new LLCDynamicStream(mlcController, llcController, ISConfig);
       S->indirectStreams.push_back(IS);
       IS->baseStream = S;
     }

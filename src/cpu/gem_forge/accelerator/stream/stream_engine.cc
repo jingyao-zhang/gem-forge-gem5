@@ -995,8 +995,8 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
       if (dynS.offloadedToCache &&
           dynS.cacheAcked + 1 < dynS.FIFOIdx.entryIdx) {
         // We are not ack the LastElement.
-        hack("not enough ack %llu %llu.\n", dynS.cacheAcked,
-             dynS.FIFOIdx.entryIdx);
+        S_DPRINTF(S, "Cannot execute StreamEnd. Cache acked %llu, need %llu.\n",
+                  dynS.cacheAcked, dynS.FIFOIdx.entryIdx);
         return false;
       }
     }
@@ -1860,7 +1860,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
           // Address already ready. Check if we have to compute the value.
           if (S->isStoreStream() && S->getEnabledStoreFunc() &&
               !element->isValueReady) {
-            if (element->areValueBaseElementsValueReady()) {
+            if (element->checkValueBaseElementsValueReady()) {
               S_ELEMENT_DPRINTF(element, "Found Value Ready.\n");
               readyElements.emplace_back(element);
             }

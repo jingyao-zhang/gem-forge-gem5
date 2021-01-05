@@ -385,7 +385,7 @@ void DynamicStream::computeElementValue(StreamElement *element) {
     S_ELEMENT_PANIC(element, "StoreFunc should have addr ready.");
   }
   // Check for value base element.
-  if (!element->areValueBaseElementsValueReady()) {
+  if (!element->checkValueBaseElementsValueReady()) {
     S_ELEMENT_PANIC(element,
                     "StoreFunc with ValueBaseElement not value ready.");
   }

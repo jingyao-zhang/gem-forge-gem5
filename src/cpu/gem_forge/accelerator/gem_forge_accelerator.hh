@@ -51,6 +51,8 @@ public:
 
   GemForgeCPUDelegator *getCPUDelegator() { return this->cpuDelegator; }
 
+  Cycles curCycle() const { return this->cpuDelegator->curCycle(); }
+
 protected:
   GemForgeCPUDelegator *cpuDelegator;
   GemForgeAcceleratorManager *manager;

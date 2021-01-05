@@ -190,7 +190,7 @@ struct StreamElement {
   Cycles addrReadyCycle;
   Cycles issueCycle;
   Cycles valueReadyCycle;
-  Cycles firstCheckCycle;
+  mutable Cycles firstCheckCycle;
 
   /**
    * Small vector stores the cache blocks this element touched.
@@ -232,7 +232,11 @@ struct StreamElement {
   }
   bool isValueFaulted(Addr vaddr, int size) const;
 
-  bool areValueBaseElementsValueReady() const;
+  /**
+   * Check if value is ready, will set FirstCheckCycle.
+   */
+  bool checkValueReady() const;
+  bool checkValueBaseElementsValueReady() const;
 
   // Store the infly writeback memory accesses.
   std::unordered_map<StreamStoreInst *, std::unordered_set<StreamMemAccess *>>

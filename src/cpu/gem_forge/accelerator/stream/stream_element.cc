@@ -611,12 +611,23 @@ bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
   return false;
 }
 
-bool StreamElement::areValueBaseElementsValueReady() const {
+bool StreamElement::checkValueReady() const {
+  if (this->firstCheckCycle == 0) {
+    auto curCycle = this->se->curCycle();
+    S_ELEMENT_DPRINTF(this,
+                      "Mark FirstCheckCycle %lu, AddrReady %d ValueReady %d.\n",
+                      curCycle, this->isAddrReady, this->isValueReady);
+    this->firstCheckCycle = curCycle;
+  }
+  return this->isValueReady;
+}
+
+bool StreamElement::checkValueBaseElementsValueReady() const {
   for (const auto &baseE : this->valueBaseElements) {
     if (!baseE.isValid()) {
       S_ELEMENT_PANIC(this, "ValueBaseElement released early: %s.", baseE.idx);
     }
-    if (!baseE.element->isValueReady) {
+    if (!baseE.element->checkValueReady()) {
       return false;
     }
   }

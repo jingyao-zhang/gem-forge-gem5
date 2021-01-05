@@ -169,10 +169,11 @@ public:
 private:
   State state = INITIALIZED;
   AbstractStreamAwareController *mlcController;
-  AbstractStreamAwareController *llcController = nullptr;
+  AbstractStreamAwareController *llcController;
 
   // Private controller as user should use allocateLLCStreams().
   LLCDynamicStream(AbstractStreamAwareController *_mlcController,
+                   AbstractStreamAwareController *_llcController,
                    CacheStreamConfigureDataPtr _configData);
 
   static std::unordered_map<DynamicStreamId, LLCDynamicStream *,
