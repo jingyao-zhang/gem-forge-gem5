@@ -161,6 +161,11 @@ public:
   static void allocateLLCStreams(AbstractStreamAwareController *mlcController,
                                  CacheStreamConfigureVec &configs);
 
+  bool isBasedOn(const DynamicStreamId &baseId) const;
+  void recvStreamForward(uint64_t baseElementIdx,
+                         const DynamicStreamSliceId &sliceId,
+                         const DataBlock &dataBlk);
+
 private:
   State state = INITIALIZED;
   AbstractStreamAwareController *mlcController;
@@ -180,6 +185,8 @@ private:
 
   Cycles curCycle() const;
   int curLLCBank() const;
+
+  uint64_t nextElementIdx = 0;
 
 public:
   const CacheStreamConfigureDataPtr configData;
@@ -279,8 +286,9 @@ public:
    * Allocate the element for myself and all UsedByStream.
    * There may already be an element if multiple slices
    * contain a part of that element.
+   * @return bool: whether allocation happened.
    */
-  void allocateElement(uint64_t elementIdx, Addr vaddr);
+  bool allocateElement(uint64_t elementIdx, Addr vaddr);
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

@@ -46,14 +46,7 @@ LLCDynamicStream::LLCDynamicStream(
     // Initialize the first element for ReductionStream with the initial value.
     assert(this->isOneIterationBehind() &&
            "ReductionStream must be OneIterationBehind.");
-
-    auto size = this->getMemElementSize();
-    this->lastReductionElement = std::make_shared<LLCStreamElement>(
-        this->getStaticStream(), this->getDynamicStreamId(), 0, 0, size);
-    this->lastReductionElement->getValue() =
-        this->configData->reductionInitValue;
-    this->lastReductionElement->readyBytes += size;
-    assert(this->lastReductionElement->isReady());
+    this->nextElementIdx = 1;
   }
   assert(GlobalLLCDynamicStreamMap.emplace(this->getDynamicStreamId(), this)
              .second);
@@ -260,21 +253,24 @@ void LLCDynamicStream::sanityCheckStreamLife() {
   assert(false);
 }
 
-void LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
+bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
   if (this->idxToElementMap.count(elementIdx)) {
     // The element is already allocated.
-    return;
+    return false;
   }
   LLC_S_DPRINTF(this->getDynamicStreamId(), "Allocate element %llu.\n",
                 elementIdx);
+  if (this->nextElementIdx != elementIdx) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Element not allocated in order, next (%llu) != alloc (%llu).",
+                this->nextElementIdx, elementIdx);
+  }
   auto size = this->getMemElementSize();
-  auto element = std::make_shared<LLCStreamElement>(this->getStaticStream(),
-                                                    this->getDynamicStreamId(),
-                                                    elementIdx, vaddr, size);
+  auto element = std::make_shared<LLCStreamElement>(
+      this->getStaticStream(), this->llcController, this->getDynamicStreamId(),
+      elementIdx, vaddr, size);
   this->idxToElementMap.emplace(elementIdx, element);
-
-  LLC_S_DPRINTF(this->getDynamicStreamId(), "Allocate element %llu: added.\n",
-                elementIdx);
+  this->nextElementIdx++;
 
   /**
    * We populate the baseElements. If we are one iteration behind, we are
@@ -290,8 +286,8 @@ void LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
                   baseConfig->dynamicId);
     const auto &baseDynStreamId = baseConfig->dynamicId;
     auto baseS = baseConfig->stream;
-    assert(this->baseStream && "Missing base stream.");
-    if (this->baseStream->getDynamicStreamId() == baseDynStreamId) {
+    if (this->baseStream &&
+        this->baseStream->getDynamicStreamId() == baseDynStreamId) {
       // This is from base stream.
       assert(this->baseStream->idxToElementMap.count(baseElementIdx) &&
              "Missing BaseElement");
@@ -310,12 +306,22 @@ void LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
               .front();
 
       element->baseElements.emplace_back(std::make_shared<LLCStreamElement>(
-          baseS, baseDynStreamId, baseElementIdx, baseElementVaddr,
-          baseS->getMemElementSize()));
+          baseS, this->llcController, baseDynStreamId, baseElementIdx,
+          baseElementVaddr, baseS->getMemElementSize()));
     }
   }
   // Remember to add previous element as base element for reduction.
   if (this->getStaticStream()->isReduction()) {
+    if (!this->lastReductionElement) {
+      // First time, just initialize the first element.
+      this->lastReductionElement = std::make_shared<LLCStreamElement>(
+          this->getStaticStream(), this->llcController,
+          this->getDynamicStreamId(), 0, 0, size);
+      this->lastReductionElement->getValue() =
+          this->configData->reductionInitValue;
+      this->lastReductionElement->readyBytes += size;
+      assert(this->lastReductionElement->isReady());
+    }
     if (this->lastReductionElement->idx != baseElementIdx) {
       LLC_S_PANIC(
           this->getDynamicStreamId(),
@@ -331,6 +337,75 @@ void LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
     auto usedByElementIdx =
         usedByS->isOneIterationBehind() ? (elementIdx + 1) : elementIdx;
     usedByS->allocateElement(usedByElementIdx, 0);
+  }
+  return true;
+}
+
+bool LLCDynamicStream::isBasedOn(const DynamicStreamId &baseId) const {
+  for (const auto &baseConfig : this->baseOnConfigs) {
+    if (baseConfig->dynamicId == baseId) {
+      // Found it.
+      return true;
+    }
+  }
+  return false;
+}
+
+void LLCDynamicStream::recvStreamForward(const uint64_t baseElementIdx,
+                                         const DynamicStreamSliceId &sliceId,
+                                         const DataBlock &dataBlk) {
+
+  auto recvElementIdx = baseElementIdx;
+  if (this->isOneIterationBehind()) {
+    recvElementIdx++;
+  }
+  auto S = this->getStaticStream();
+  if (!this->idxToElementMap.count(recvElementIdx)) {
+    LLC_SLICE_DPRINTF(
+        sliceId,
+        "Cannot find the receiver element %s %llu allocate from %llu.\n",
+        this->getDynamicStreamId(), recvElementIdx, this->nextElementIdx);
+    assert(this->nextElementIdx <= recvElementIdx &&
+           "StreamForward falls behind.");
+    assert(this->nextElementIdx + 34 > recvElementIdx &&
+           "StreamForward too far ahead.");
+    while (this->nextElementIdx <= recvElementIdx) {
+      // Should always allocate from base stream.
+      auto allocS = this->baseStream ? this->baseStream : this;
+      auto allocElementVAddr =
+          allocS->slicedStream.getElementVAddr(allocS->nextElementIdx);
+      assert(
+          allocS->allocateElement(allocS->nextElementIdx, allocElementVAddr) &&
+          "Allocation not happen.");
+    }
+    if (!this->idxToElementMap.count(recvElementIdx)) {
+      LLC_S_PANIC(this->getDynamicStreamId(),
+                  "Cannot find the receiver element idx %llu, slice %s.",
+                  recvElementIdx, sliceId);
+    }
+  }
+  LLCStreamElementPtr recvElement = this->idxToElementMap.at(recvElementIdx);
+  bool foundBaseElement = false;
+  for (auto &baseElement : recvElement->baseElements) {
+    if (baseElement->dynStreamId == sliceId.streamId) {
+      // Found the one.
+      baseElement->extractElementDataFromSlice(S->getCPUDelegator(), sliceId,
+                                               dataBlk);
+      foundBaseElement = true;
+      break;
+    }
+  }
+  assert(foundBaseElement && "Found base element");
+  if (recvElement->areBaseElementsReady()) {
+    /**
+     * If I am indirect stream, add to the ready list.
+     * Otherwise, the LLC SE should check me for ready elements.
+     */
+    if (this->baseStream) {
+      this->baseStream->readyIndirectElements.emplace(
+          std::piecewise_construct, std::forward_as_tuple(recvElementIdx),
+          std::forward_as_tuple(this, recvElement));
+    }
   }
 }
 

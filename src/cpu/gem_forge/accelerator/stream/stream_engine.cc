@@ -343,15 +343,17 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
    * Then we try to compute the reuse between streams.
    * This has to be done after initializing the addr gen function.
    */
+  std::list<DynamicStream *> configDynStreams;
   for (auto &S : configStreams) {
     auto &dynS = S->getLastDynamicStream();
     dynS.configureAddrBaseDynStreamReuse();
+    configDynStreams.push_back(&dynS);
   }
 
   /**
    * Then we try to float streams.
    */
-  this->floatController->floatStreams(args, streamRegion, configStreams);
+  this->floatController->floatStreams(streamRegion, configDynStreams);
 }
 
 void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
@@ -430,8 +432,6 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
 
   auto stepStream = this->getStream(stepStreamId);
 
-  // hack("Step stream %s.\n", stepStream->getStreamName().c_str());
-
   for (auto S : this->getStepStreamList(stepStream)) {
     assert(S->configured && "Stream should be configured to be stepped.");
     this->stepElement(S);
@@ -474,8 +474,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
     if (S->getEnabledStoreFunc()) {
       if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue()) {
         if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
-          // S_DPRINTF(S, "Can not step as no Ack for %llu.\n",
-          //           stepElement->FIFOIdx.entryIdx);
+          S_ELEMENT_DPRINTF(stepElement, "Can not step as no Ack for %llu.\n");
           return false;
         }
       }
@@ -765,6 +764,12 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
        * in such case we assume the element is copied to register and
        * is ready.
        */
+      continue;
+    }
+    // Floating StoreStream will only check for Ack when stepping.
+    auto S = element->stream;
+    if (S->isStoreStream() && S->getEnabledStoreFunc() &&
+        element->dynS->offloadedToCache) {
       continue;
     }
     // Mark the first check cycle.

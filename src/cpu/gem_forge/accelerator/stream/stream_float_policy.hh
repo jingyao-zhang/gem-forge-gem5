@@ -10,8 +10,8 @@ public:
   StreamFloatPolicy(bool _enabled, const std::string &_policy);
   ~StreamFloatPolicy();
 
-  bool shouldFloatStream(Stream *S, DynamicStream &dynS);
-  bool shouldPseudoFloatStream(Stream *S, DynamicStream &dynS);
+  bool shouldFloatStream(DynamicStream &dynS);
+  bool shouldPseudoFloatStream(DynamicStream &dynS);
 
 private:
   bool enabled;
@@ -22,10 +22,10 @@ private:
   } policy;
   std::vector<uint64_t> privateCacheCapacity;
 
-  bool shouldFloatStreamManual(Stream *S, DynamicStream &dynS);
-  bool shouldFloatStreamSmart(Stream *S, DynamicStream &dynS);
-  bool checkReuseWithinStream(Stream *S, DynamicStream &dynS);
-  bool checkAggregateHistory(Stream *S, DynamicStream &dynS);
+  bool shouldFloatStreamManual(DynamicStream &dynS);
+  bool shouldFloatStreamSmart(DynamicStream &dynS);
+  bool checkReuseWithinStream(DynamicStream &dynS);
+  bool checkAggregateHistory(DynamicStream &dynS);
 
   static std::ostream &getLog() {
     assert(log && "No log for StreamFloatPolicy.");

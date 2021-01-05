@@ -280,10 +280,6 @@ private:
                                    const DynamicStreamSliceId &sliceId,
                                    uint64_t elementIdx,
                                    const DataBlock &dataBlock);
-  void extractElementDataFromSlice(GemForgeCPUDelegator *cpuDelegator,
-                                   LLCStreamElementPtr &element,
-                                   const DynamicStreamSliceId &sliceId,
-                                   const DataBlock &dataBlock);
   void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,
                          uint64_t updateValue);
   /**

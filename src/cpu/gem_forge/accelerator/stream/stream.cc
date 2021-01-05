@@ -489,9 +489,8 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
     auto tripCount = backEdgeCount + 1;
     // TotalTripCount.
     auto totalTripCount =
-        (idx == 1)
-            ? (tripCount)
-            : (tripCount * formalParams.at(idx - 2).invariant.uint64());
+        (idx == 1) ? (tripCount)
+                   : (tripCount * formalParams.at(idx - 2).invariant.uint64());
     formalParam.invariant.uint64() = totalTripCount;
   }
 
@@ -720,10 +719,15 @@ bool Stream::isDirectMemStream() const {
 }
 
 bool Stream::isDirectLoadStream() const {
-  if (!this->isLoadStream()) {
-    return false;
-  }
-  return this->isDirectMemStream();
+  return this->isLoadStream() && this->isDirectMemStream();
+}
+
+bool Stream::isDirectStoreStream() const {
+  return this->isStoreStream() && this->isDirectMemStream();
+}
+
+bool Stream::isIndirectLoadStream() const {
+  return this->isLoadStream() && !this->isDirectMemStream();
 }
 
 DynamicStreamId Stream::allocateNewInstance() {

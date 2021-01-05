@@ -2,6 +2,8 @@
 #define __CPU_TDG_ACCELERATOR_LLC_STREAM_ELEMENT_H__
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
+#include "mem/ruby/common/DataBlock.hh"
+#include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
 #include <memory>
 
@@ -16,14 +18,18 @@ struct LLCStreamElement {
    * remote LLCDynamicStream sending here, we do not remember LLCDynamicStream
    * in the element, but just the DynamicStreamId and the StaticStream.
    */
-  LLCStreamElement(Stream *_S, const DynamicStreamId &_dynStreamId,
-                   uint64_t _idx, Addr _vaddr, int _size);
+  LLCStreamElement(Stream *_S, AbstractStreamAwareController *_controller,
+                   const DynamicStreamId &_dynStreamId, uint64_t _idx,
+                   Addr _vaddr, int _size);
 
   Stream *S;
+  AbstractStreamAwareController *controller;
   const DynamicStreamId &dynStreamId;
   const uint64_t idx;
   const int size;
   Addr vaddr = 0;
+
+  int curLLCBank() const;
 
   std::vector<LLCStreamElementPtr> baseElements;
   bool areBaseElementsReady() const {
@@ -62,6 +68,10 @@ struct LLCStreamElement {
     assert(offset < this->size);
     return this->value.uint8Ptr(offset);
   }
+
+  void extractElementDataFromSlice(GemForgeCPUDelegator *cpuDelegator,
+                                   const DynamicStreamSliceId &sliceId,
+                                   const DataBlock &dataBlock);
 };
 
 #endif

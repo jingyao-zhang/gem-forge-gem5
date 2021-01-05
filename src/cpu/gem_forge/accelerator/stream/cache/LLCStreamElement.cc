@@ -1,18 +1,29 @@
 #include "LLCStreamElement.hh"
 
+#include "mem/simple_mem.hh"
+
+#include "debug/LLCRubyStreamBase.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
 LLCStreamElement::LLCStreamElement(Stream *_S,
+                                   AbstractStreamAwareController *_controller,
                                    const DynamicStreamId &_dynStreamId,
                                    uint64_t _idx, Addr _vaddr, int _size)
-    : S(_S), dynStreamId(_dynStreamId), idx(_idx), size(_size), vaddr(_vaddr),
-      readyBytes(0) {
+    : S(_S), controller(_controller), dynStreamId(_dynStreamId), idx(_idx),
+      size(_size), vaddr(_vaddr), readyBytes(0) {
   if (this->size > sizeof(this->value)) {
     panic("LLCStreamElement size overflow %d, %s.\n", this->size,
           this->dynStreamId);
   }
+  if (!this->controller) {
+    panic("LLCStreamElement allocated without controller.\n");
+  }
   this->value.fill(0);
+}
+
+int LLCStreamElement::curLLCBank() const {
+  return this->controller->getMachineID().getNum();
 }
 
 uint64_t LLCStreamElement::getData(uint64_t streamId) const {
@@ -23,4 +34,71 @@ uint64_t LLCStreamElement::getData(uint64_t streamId) const {
   assert(size <= sizeof(uint64_t) && "ElementSize overflow.");
   assert(offset + size <= this->size && "Size overflow.");
   return GemForgeUtils::rebuildData(this->getUInt8Ptr(offset), size);
+}
+
+void LLCStreamElement::extractElementDataFromSlice(
+    GemForgeCPUDelegator *cpuDelegator, const DynamicStreamSliceId &sliceId,
+    const DataBlock &dataBlock) {
+  /**
+   * Extract the element data and update the LLCStreamElement.
+   */
+  auto elementIdx = this->idx;
+  auto elementSize = this->size;
+  Addr elementVAddr = this->vaddr;
+  if (this->vaddr == 0) {
+    // This is indirect stream, at most one element per slice.
+    // We recover the element vaddr here.
+    if (sliceId.getNumElements() > 1) {
+      LLC_SLICE_PANIC(sliceId, "LLCIndirectSlice should only have 1 element.");
+    }
+    if (sliceId.size != elementSize) {
+      LLC_SLICE_PANIC(sliceId,
+                      "Can not reconstruct multi-line indirect element");
+    }
+    elementVAddr = sliceId.vaddr;
+  }
+
+  // Compute the overlap between the element and the slice.
+  Addr overlapLHS = std::max(elementVAddr, sliceId.vaddr);
+  Addr overlapRHS = std::min(
+      elementVAddr + elementSize,
+      makeLineAddress(sliceId.vaddr + RubySystem::getBlockSizeBytes()));
+  // Check that the overlap is within the same line.
+  assert(overlapLHS < overlapRHS && "Empty overlap.");
+  assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
+         "Illegal overlap.");
+  auto overlapSize = overlapRHS - overlapLHS;
+  auto elementOffset = overlapLHS - elementVAddr;
+  assert(elementOffset + overlapSize <= elementSize && "Overlap overflow.");
+
+  LLC_SLICE_DPRINTF(sliceId, "Received element %lu Overlap [%lu, %lu).\n",
+                    elementIdx, elementOffset, elementOffset + overlapSize);
+
+  auto rubySystem = this->controller->params()->ruby_system;
+  if (rubySystem->getAccessBackingStore()) {
+    // Get the data from backing store.
+    Addr paddr;
+    assert(cpuDelegator->translateVAddrOracle(overlapLHS, paddr) &&
+           "Failed to translate address for accessing backing storage.");
+    RequestPtr req = std::make_shared<Request>(paddr, overlapSize,
+                                               0 /* Flags */, 0 /* MasterId */);
+    PacketPtr pkt = Packet::createRead(req);
+    pkt->dataStatic(this->getUInt8Ptr(elementOffset));
+    rubySystem->getPhysMem()->functionalAccess(pkt);
+    delete pkt;
+  } else {
+    // Get the data from the cache line.
+    auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),
+                                  overlapSize);
+    memcpy(this->getUInt8Ptr(elementOffset), data, overlapSize);
+  }
+  // Mark these bytes ready.
+  this->readyBytes += overlapSize;
+  if (this->readyBytes > this->size) {
+    LLC_SLICE_PANIC(
+        sliceId,
+        "Too many ready bytes %lu Overlap [%lu, %lu), ready %d > size %d.",
+        elementIdx, elementOffset, elementOffset + overlapSize,
+        this->readyBytes, this->size);
+  }
 }

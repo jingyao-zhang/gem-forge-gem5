@@ -173,6 +173,8 @@ public:
   bool isUpdateStream() const;
   bool isMemStream() const;
   bool isDirectLoadStream() const;
+  bool isDirectStoreStream() const;
+  bool isIndirectLoadStream() const;
   bool isDirectMemStream() const;
   bool isPointerChaseLoadStream() const { return false; }
 

@@ -12,21 +12,38 @@ public:
   StreamFloatController(StreamEngine *_se,
                         std::unique_ptr<StreamFloatPolicy> _policy);
 
+  using DynStreamList = std::list<DynamicStream *>;
+
   using StreamConfigArgs = StreamEngine::StreamConfigArgs;
-  void floatStreams(const StreamConfigArgs &args,
-                    const ::LLVM::TDG::StreamRegion &streamRegion,
-                    std::list<Stream *> &configStreams);
+  void floatStreams(const ::LLVM::TDG::StreamRegion &region,
+                    DynStreamList &dynStreams);
 
 private:
   StreamEngine *se;
   std::unique_ptr<StreamFloatPolicy> policy;
 
+  /**
+   * A internal structure to memorize the floating decision made so far.
+   */
   using StreamCacheConfigMap =
       std::unordered_map<Stream *, CacheStreamConfigureDataPtr>;
-  void floatReductionStreams(const StreamConfigArgs &args,
-                             const ::LLVM::TDG::StreamRegion &streamRegion,
-                             std::list<Stream *> &configStreams,
-                             StreamCacheConfigMap &floatedMap);
+
+  struct Args {
+    const ::LLVM::TDG::StreamRegion &region;
+    DynStreamList &dynStreams;
+    StreamCacheConfigMap &floatedMap;
+    CacheStreamConfigureVec &rootConfigVec;
+    Args(const ::LLVM::TDG::StreamRegion &_region, DynStreamList &_dynStreams,
+         StreamCacheConfigMap &_floatedMap,
+         CacheStreamConfigureVec &_rootConfigVec)
+        : region(_region), dynStreams(_dynStreams), floatedMap(_floatedMap),
+          rootConfigVec(_rootConfigVec) {}
+  };
+
+  void floatDirectLoadStreams(const Args &args);
+  void floatIndirectLoadStreams(const Args &args);
+  void floatDirectStoreStreams(const Args &args);
+  void floatReductionStreams(const Args &args);
 };
 
 #endif

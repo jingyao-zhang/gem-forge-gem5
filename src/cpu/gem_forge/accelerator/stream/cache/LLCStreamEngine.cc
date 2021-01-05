@@ -272,9 +272,9 @@ void LLCStreamEngine::receiveStreamElementData(
 
   LLC_SLICE_DPRINTF(sliceId,
                     "Received ElementData, InflyRequests %d, NeedIndirect %d, "
-                    "NeedUpdate %d NeedSendTo %d.\n",
-                    stream->inflyRequests, needIndirect, needUpdate,
-                    needSendTo);
+                    "NeedUpdate %d NeedSendTo %d StoreBlock %s.\n",
+                    stream->inflyRequests, needIndirect, needUpdate, needSendTo,
+                    storeValueBlock);
 
   if (needSendTo) {
     assert(!needUpdate && !needIndirect && "Cannot support this case for now.");
@@ -1737,79 +1737,25 @@ bool LLCStreamEngine::tryProcessStreamForwardRequest(const RequestMsg &req) {
                       recvDynId);
     return false;
   }
-  // Search for the real receiver in its indirect streams.
-  LLCDynamicStreamPtr indirectS = nullptr;
-  for (auto S : directS->indirectStreams) {
-    for (const auto &baseConfig : S->baseOnConfigs) {
-      if (baseConfig->dynamicId == sliceId.streamId) {
+  // Search for the real receiver.
+  LLCDynamicStreamPtr recvS = nullptr;
+  if (directS->isBasedOn(sliceId.streamId)) {
+    recvS = directS;
+  } else {
+    for (auto S : directS->indirectStreams) {
+      if (S->isBasedOn(sliceId.streamId)) {
         // Found it.
-        indirectS = S;
+        recvS = S;
         break;
       }
     }
-    if (indirectS) {
-      break;
-    }
   }
-  if (!indirectS) {
-    LLC_SLICE_PANIC(sliceId, "Cannot find the indirect receiver: %s.",
-                    recvDynId);
+  if (!recvS) {
+    LLC_SLICE_PANIC(sliceId, "Cannot find the receiver: %s.", recvDynId);
   }
   // Fill in the elements.
   for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
-    auto recvElementIdx = idx;
-    if (indirectS->isOneIterationBehind()) {
-      recvElementIdx = idx + 1;
-    }
-    if (!indirectS->idxToElementMap.count(recvElementIdx)) {
-      if (!indirectS->getStaticStream()->isReduction()) {
-        LLC_SLICE_PANIC(sliceId,
-                        "StreamForward can only support reduction: %s.",
-                        recvDynId);
-      }
-      auto lastIdx = indirectS->lastReductionElement->idx;
-      LLC_SLICE_DPRINTF(sliceId,
-                        "Cannot find the indirect receiver element %s %llu "
-                        "allocate from %llu.\n",
-                        indirectS->getDynamicStreamId(), recvElementIdx,
-                        lastIdx);
-      assert(lastIdx < recvElementIdx && "StreamForward falls behind.");
-      assert(lastIdx + 34 > recvElementIdx && "StreamForward too far ahead.");
-      for (auto allocIdx = lastIdx + 1; allocIdx <= recvElementIdx;
-           ++allocIdx) {
-        auto directElementIdx = allocIdx;
-        if (indirectS->isOneIterationBehind()) {
-          directElementIdx -= 1;
-        }
-        auto directElementVAddr =
-            directS->slicedStream.getElementVAddr(directElementIdx);
-        directS->allocateElement(directElementIdx, directElementVAddr);
-      }
-      if (!indirectS->idxToElementMap.count(recvElementIdx)) {
-        LLC_SLICE_PANIC(sliceId,
-                        "Cannot find the indirect receiver element %s %llu.\n",
-                        indirectS->getDynamicStreamId(), recvElementIdx);
-      }
-    }
-    LLCStreamElementPtr recvElement =
-        indirectS->idxToElementMap.at(recvElementIdx);
-    bool foundBaseElement = false;
-    for (auto &baseElement : recvElement->baseElements) {
-      if (baseElement->dynStreamId == sliceId.streamId) {
-        // Found the one.
-        this->extractElementDataFromSlice(
-            indirectS->getStaticStream()->getCPUDelegator(), baseElement,
-            sliceId, req.m_DataBlk);
-        foundBaseElement = true;
-        break;
-      }
-    }
-    assert(foundBaseElement && "Found base element");
-    if (recvElement->areBaseElementsReady()) {
-      directS->readyIndirectElements.emplace(
-          std::piecewise_construct, std::forward_as_tuple(recvElementIdx),
-          std::forward_as_tuple(indirectS, recvElement));
-    }
+    recvS->recvStreamForward(idx, sliceId, req.m_DataBlk);
   }
   return true;
 }
@@ -2001,8 +1947,8 @@ void LLCStreamEngine::processStreamDataForUpdate(
 
   // Whether we should send value back to core.
   if (S->isStoreStream()) {
-    // For StoreStream, the value is extracted from the request.
-    auto storeValue = storeValueBlock.getData(lineOffset, elementMemSize);
+    // For StoreStream, the value is already in the element.
+    auto storeValue = element->getUInt8Ptr(lineOffset);
     this->performStore(elementPAddr, elementMemSize, storeValue);
     LLC_SLICE_DPRINTF_(
         LLCRubyStreamStore, sliceId,
@@ -2044,76 +1990,8 @@ void LLCStreamEngine::extractElementDataFromSlice(
                 "Should already allocated the element");
   }
   auto &element = stream->idxToElementMap.at(elementIdx);
-  this->extractElementDataFromSlice(
-      stream->getStaticStream()->getCPUDelegator(), element, sliceId,
-      dataBlock);
-}
-
-void LLCStreamEngine::extractElementDataFromSlice(
-    GemForgeCPUDelegator *cpuDelegator, LLCStreamElementPtr &element,
-    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock) {
-  /**
-   * Extract the element data and update the LLCStreamElement.
-   */
-  auto elementIdx = element->idx;
-  auto elementSize = element->size;
-  Addr elementVAddr = element->vaddr;
-  if (element->vaddr == 0) {
-    // This is indirect stream, at most one element per slice.
-    // We recover the element vaddr here.
-    if (sliceId.getNumElements() > 1) {
-      LLC_SLICE_PANIC(sliceId, "LLCIndirectSlice should only have 1 element.");
-    }
-    if (sliceId.size != elementSize) {
-      LLC_SLICE_PANIC(sliceId,
-                      "Can not reconstruct multi-line indirect element");
-    }
-    elementVAddr = sliceId.vaddr;
-  }
-
-  // Compute the overlap between the element and the slice.
-  Addr overlapLHS = std::max(elementVAddr, sliceId.vaddr);
-  Addr overlapRHS = std::min(
-      elementVAddr + elementSize,
-      makeLineAddress(sliceId.vaddr + RubySystem::getBlockSizeBytes()));
-  // Check that the overlap is within the same line.
-  assert(overlapLHS < overlapRHS && "Empty overlap.");
-  assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
-         "Illegal overlap.");
-  auto overlapSize = overlapRHS - overlapLHS;
-  auto elementOffset = overlapLHS - elementVAddr;
-  assert(elementOffset + overlapSize <= elementSize && "Overlap overflow.");
-
-  LLC_SLICE_DPRINTF(sliceId, "Received element %lu Overlap [%lu, %lu).\n",
-                    elementIdx, elementOffset, elementOffset + overlapSize);
-
-  auto rubySystem = this->controller->params()->ruby_system;
-  if (rubySystem->getAccessBackingStore()) {
-    // Get the data from backing store.
-    Addr paddr;
-    assert(cpuDelegator->translateVAddrOracle(overlapLHS, paddr) &&
-           "Failed to translate address for accessing backing storage.");
-    RequestPtr req = std::make_shared<Request>(paddr, overlapSize,
-                                               0 /* Flags */, 0 /* MasterId */);
-    PacketPtr pkt = Packet::createRead(req);
-    pkt->dataStatic(element->getUInt8Ptr(elementOffset));
-    rubySystem->getPhysMem()->functionalAccess(pkt);
-    delete pkt;
-  } else {
-    // Get the data from the cache line.
-    auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),
-                                  overlapSize);
-    memcpy(element->getUInt8Ptr(elementOffset), data, overlapSize);
-  }
-  // Mark these bytes ready.
-  element->readyBytes += overlapSize;
-  if (element->readyBytes > element->size) {
-    LLC_SLICE_PANIC(
-        sliceId,
-        "Too many ready bytes %lu Overlap [%lu, %lu), ready %d > size %d.",
-        elementIdx, elementOffset, elementOffset + overlapSize,
-        element->readyBytes, element->size);
-  }
+  element->extractElementDataFromSlice(
+      stream->getStaticStream()->getCPUDelegator(), sliceId, dataBlock);
 }
 
 void LLCStreamEngine::updateElementData(LLCDynamicStreamPtr stream,

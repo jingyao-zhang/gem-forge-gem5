@@ -72,11 +72,12 @@ std::ostream &StreamFloatPolicy::logStream(Stream *S) {
   return getLog() << S->getCPUId() << '-' << S->getStreamName() << ": ";
 }
 
-bool StreamFloatPolicy::shouldFloatStream(Stream *S, DynamicStream &dynS) {
+bool StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
   if (!this->enabled) {
     return false;
   }
   // Initialize the private cache capacity.
+  auto S = dynS.stream;
   if (this->privateCacheCapacity.empty()) {
     this->privateCacheCapacity = getPrivateCacheCapacity(S->se);
   }
@@ -114,10 +115,10 @@ bool StreamFloatPolicy::shouldFloatStream(Stream *S, DynamicStream &dynS) {
   case PolicyE::STATIC:
     return true;
   case PolicyE::MANUAL: {
-    return this->shouldFloatStreamManual(S, dynS);
+    return this->shouldFloatStreamManual(dynS);
   }
   case PolicyE::SMART: {
-    return this->shouldFloatStreamSmart(S, dynS);
+    return this->shouldFloatStreamSmart(dynS);
   }
   default: {
     return false;
@@ -140,12 +141,12 @@ bool StreamFloatPolicy::shouldFloatStream(Stream *S, DynamicStream &dynS) {
   }
 }
 
-bool StreamFloatPolicy::shouldFloatStreamManual(Stream *S,
-                                                DynamicStream &dynS) {
+bool StreamFloatPolicy::shouldFloatStreamManual(DynamicStream &dynS) {
   /**
    * TODO: Really should be a hint in the stream configuration provided by the
    * compiler.
    */
+  auto S = dynS.stream;
   static std::unordered_map<Stream *, bool> memorizedDecision;
   auto iter = memorizedDecision.find(S);
   if (iter == memorizedDecision.end()) {
@@ -156,7 +157,8 @@ bool StreamFloatPolicy::shouldFloatStreamManual(Stream *S,
   return iter->second;
 }
 
-bool StreamFloatPolicy::checkReuseWithinStream(Stream *S, DynamicStream &dynS) {
+bool StreamFloatPolicy::checkReuseWithinStream(DynamicStream &dynS) {
+  auto S = dynS.stream;
   auto linearAddrGen =
       std::dynamic_pointer_cast<LinearAddrGenCallback>(S->getAddrGenCallback());
   if (!linearAddrGen) {
@@ -193,12 +195,13 @@ bool StreamFloatPolicy::checkReuseWithinStream(Stream *S, DynamicStream &dynS) {
   }
 }
 
-bool StreamFloatPolicy::checkAggregateHistory(Stream *S, DynamicStream &dynS) {
+bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
   /**
    * 2. Check if the start address is same as previous configuration, and the
    * previous trip count is short enough to fit in the private cache level.
    * If so, we should not float this stream.
    */
+  auto S = dynS.stream;
   if (S->aggregateHistory.empty()) {
     return true;
   }
@@ -299,10 +302,11 @@ bool StreamFloatPolicy::checkAggregateHistory(Stream *S, DynamicStream &dynS) {
   return true;
 }
 
-bool StreamFloatPolicy::shouldFloatStreamSmart(Stream *S, DynamicStream &dynS) {
+bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
   /**
    * 1. Check if there are aliased store stream.
    */
+  auto S = dynS.stream;
   if (S->aliasBaseStream->hasAliasedStoreStream) {
     // Unless the alias store is myself.
     if (S->aliasBaseStream->aliasedStreams.size() > 1) {
@@ -313,11 +317,11 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(Stream *S, DynamicStream &dynS) {
     }
   }
 
-  if (!this->checkReuseWithinStream(S, dynS)) {
+  if (!this->checkReuseWithinStream(dynS)) {
     return false;
   }
 
-  if (!this->checkAggregateHistory(S, dynS)) {
+  if (!this->checkAggregateHistory(dynS)) {
     return false;
   }
 
@@ -336,14 +340,14 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(Stream *S, DynamicStream &dynS) {
   return true;
 }
 
-bool StreamFloatPolicy::shouldPseudoFloatStream(Stream *S,
-                                                DynamicStream &dynS) {
+bool StreamFloatPolicy::shouldPseudoFloatStream(DynamicStream &dynS) {
   /**
    * So far we use simple heuristic:
    * 1. It has indirect streams.
    * 2. Its TotalTripCount is known and shorter than a threshold.
    * 3. TODO: Use history hit information.
    */
+  auto S = dynS.stream;
   if (S->addrDepStreams.empty()) {
     return false;
   }
