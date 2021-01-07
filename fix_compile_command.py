@@ -3,6 +3,7 @@ import sys
 import subprocess
 
 data = eval(''.join(open(sys.argv[1]).readlines()))
+extra_inc_path = sys.argv[2] if len(sys.argv) >= 3 else None
 
 print('[')
 
@@ -30,6 +31,11 @@ for entry in data:
             elem = elem.replace('"', chr(92) + chr(34))
         s = '\t\t"%s"' % elem
         res.append(s)
+    if extra_inc_path:
+        # Add extra include path here.
+        res.append(f'\t\t"-I{extra_inc_path}"')
+    # We always add the directory to the include path.
+    res.append(f'\t\t"-I{os.path.dirname(f)}"')
     print(',\n'.join(res))
     print('\t]')
     print('}', end='')
