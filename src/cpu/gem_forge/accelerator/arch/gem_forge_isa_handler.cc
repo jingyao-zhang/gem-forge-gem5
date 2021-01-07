@@ -65,11 +65,11 @@ bool GemForgeISAHandler::shouldCountInPipeline(
   }
   auto &staticInstInfo = this->getStaticInstInfo(dynInfo);
   switch (staticInstInfo.op) {
-  // Only step and load/store are considered no overhead in pipeline.
+  // Only step and load are considered no overhead in pipeline.
+  // Store should still be counted, as it serves as the placehoder.
   case GemForgeStaticInstOpE::STREAM_STEP:
   case GemForgeStaticInstOpE::STREAM_LOAD:
-  case GemForgeStaticInstOpE::STREAM_FLOAD:
-  case GemForgeStaticInstOpE::STREAM_STORE: {
+  case GemForgeStaticInstOpE::STREAM_FLOAD: {
     return false;
   }
   default: {

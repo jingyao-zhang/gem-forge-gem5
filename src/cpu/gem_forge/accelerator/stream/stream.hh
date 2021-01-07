@@ -95,7 +95,8 @@ public:
      * TODO: Get rid of this unclean "merged" implementation.
      */
     return false;
-    // return this->info.static_info().compute_info().value_base_streams_size() >
+    // return this->info.static_info().compute_info().value_base_streams_size()
+    // >
     //        0;
   }
   const StreamIdList &getMergedLoadStoreDepStreams() const {
@@ -585,6 +586,12 @@ public:
   uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const;
   void getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
                                  int32_t &size) const;
+  /**
+   * Try to get coalesced offset and size.
+   * @return: whether the streamId is coalesced here.
+   */
+  bool tryGetCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
+                                    int32_t &size) const;
 };
 
 #endif

@@ -380,6 +380,7 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
       dynS.offloadedToCache = false;
       S->statistic.numFloatRewinded++;
       if (dynS.offloadedToCacheAsRoot) {
+        DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
         floatedIds.push_back(dynS.dynamicStreamId);
         dynS.offloadedToCacheAsRoot = false;
       }
@@ -1048,9 +1049,12 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
 
   /**
    * Deduplicate the streams due to coalescing.
+   * Releasing is again in two phases:
+   * 1. Release all elements first.
+   * 2. Release all dynamic streams.
+   * This is to ensure that all dynamic streams are released at the same time.
    */
   std::unordered_set<Stream *> endedStreams;
-  std::vector<DynamicStreamId> endedFloatRootIds;
   for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
        iter != end; ++iter) {
     // Release in reverse order.
@@ -1074,10 +1078,15 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
      * Release the last element we stepped at dispatch.
      */
     this->releaseElementStepped(S, true /* isEnd */, false /* doThrottle */);
+  }
+  std::vector<DynamicStreamId> endedFloatRootIds;
+  for (auto S : endedStreams) {
     if (isDebugStream(S)) {
       S_DPRINTF(S, "Commit End");
     }
-
+    assert(!S->dynamicStreams.empty() &&
+           "Failed to find ended DynamicInstanceState.");
+    auto &endedDynS = S->dynamicStreams.front();
     /**
      * Check if this stream is offloaded and if so, send the StreamEnd
      * packet.
@@ -2371,27 +2380,51 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
       // Overflow.
       continue;
     }
-    // Found a match.
-    // Check if the previous block faulted.
+    /**
+     * We found a match in the previous element, which means a request for that
+     * line has already been sent out. There are two cases here.
+     * 1. If this is a LoadStream, we try to copy the line if ready, or register
+     * as a receiver if the request has not come back yet.
+     * 2. If this is a StoreStream, we simply mark this block as Issued, so that
+     * we won't issue duplicate requests. Note that for StoreStreams, when the
+     * request comes back, it won't set the data.
+     */
     const auto &prevBlock =
         prevElement->cacheBlockBreakdownAccesses[blockOffset];
-    if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
-      // Also mark this block faulted.
-      block.state = CacheBlockBreakdownAccess::StateE::Faulted;
-      element->tryMarkValueReady();
-    } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Ready) {
-      // We can copy the value.
-      auto offset = prevElement->mapVAddrToValueOffset(block.cacheBlockVAddr,
-                                                       element->cacheBlockSize);
-      element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
-                        &prevElement->value.at(offset));
-    } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Issued) {
-      // Register myself as a receiver.
-      assert(prevBlock.memAccess &&
-             "Missing memAccess for Issued cache block.");
-      block.memAccess = prevBlock.memAccess;
-      block.memAccess->registerReceiver(element);
-      block.state = CacheBlockBreakdownAccess::StateE::Issued;
+    if (S->isLoadStream()) {
+      if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
+        // Also mark this block faulted.
+        block.state = CacheBlockBreakdownAccess::StateE::Faulted;
+        element->tryMarkValueReady();
+      } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Ready) {
+        // We can copy the value.
+        auto offset = prevElement->mapVAddrToValueOffset(
+            block.cacheBlockVAddr, element->cacheBlockSize);
+        element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
+                          &prevElement->value.at(offset));
+      } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Issued) {
+        // Register myself as a receiver.
+        if (!prevBlock.memAccess) {
+          S_ELEMENT_PANIC(element,
+                          "Missing memAccess for issued previous cache block.");
+        }
+        block.memAccess = prevBlock.memAccess;
+        block.memAccess->registerReceiver(element);
+        block.state = CacheBlockBreakdownAccess::StateE::Issued;
+      }
+    } else {
+      // This is a StoreStream.
+      if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
+        // Also mark this block faulted.
+        block.state = CacheBlockBreakdownAccess::StateE::Faulted;
+        element->tryMarkValueReady();
+      } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Ready) {
+        // Simply mark issued.
+        block.state = CacheBlockBreakdownAccess::StateE::Issued;
+      } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Issued) {
+        // Simply mark issued.
+        block.state = CacheBlockBreakdownAccess::StateE::Issued;
+      }
     }
   }
 }

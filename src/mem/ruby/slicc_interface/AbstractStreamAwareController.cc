@@ -118,7 +118,6 @@ AbstractStreamAwareController::getController(MachineID machineId) {
   if (globalMap.empty()) {
     for (auto controller : globalList) {
       auto machineId = controller->getMachineID();
-      hack("Register %s.\n", machineId);
       auto &nodeMap = globalMap
                           .emplace(std::piecewise_construct,
                                    std::forward_as_tuple(machineId.getType()),

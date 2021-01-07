@@ -11,7 +11,8 @@ struct LLCStreamElement;
 using LLCStreamElementPtr = std::shared_ptr<LLCStreamElement>;
 using ConstLLCStreamElementPtr = std::shared_ptr<const LLCStreamElement>;
 
-struct LLCStreamElement {
+class LLCStreamElement {
+public:
   /**
    * This represents the basic unit of LLCStreamElement.
    * It remembers the base elements it depends on. Since this can be a
@@ -41,37 +42,38 @@ struct LLCStreamElement {
     return true;
   }
 
-  // This is the final value.
-  int readyBytes;
-  StreamValue value;
-
-  bool isReady() const { return this->readyBytes == this->size; }
-
   /*************************************************
    * Accessors to the data.
    *************************************************/
+  bool isReady() const { return this->readyBytes == this->size; }
+
+  StreamValue getValue(int offset = 0, int size = sizeof(StreamValue)) const;
+  uint8_t *getUInt8Ptr(int offset = 0);
+  const uint8_t *getUInt8Ptr(int offset = 0) const;
   uint64_t getUInt64() const {
     assert(this->isReady());
     assert(this->size <= sizeof(uint64_t));
     return this->value.front();
   }
-  uint64_t getData(uint64_t streamId) const;
+  uint64_t getUInt64ByStreamId(uint64_t streamId) const;
 
-  const StreamValue &getValue() const { return this->value; }
-  StreamValue &getValue() { return this->value; }
-
-  uint8_t *getUInt8Ptr(int offset = 0) {
-    assert(offset < this->size);
-    return this->value.uint8Ptr(offset);
-  }
-  const uint8_t *getUInt8Ptr(int offset = 0) const {
-    assert(offset < this->size);
-    return this->value.uint8Ptr(offset);
-  }
+  void setValue(const StreamValue &value);
 
   void extractElementDataFromSlice(GemForgeCPUDelegator *cpuDelegator,
                                    const DynamicStreamSliceId &sliceId,
                                    const DataBlock &dataBlock);
+
+  /**
+   * Helper function to compute the overlap between the a range and the element.
+   * @return: the size of the overlap.
+   */
+  int computeOverlap(Addr rangeVAddr, int rangeSize, int &rangeOffset,
+                     int &elementOffset) const;
+
+private:
+  int readyBytes;
+  static constexpr int MAX_SIZE = 128;
+  std::array<uint64_t, MAX_SIZE> value;
 };
 
 #endif

@@ -231,10 +231,31 @@ void MLCDynamicStream::makeAck(MLCStreamSlice &slice) {
                     this->slices.front().sliceId);
   // So far I just immediately notify the stream.
   auto dynS = this->stream->getDynamicStream(this->dynamicStreamId);
-  assert(dynS && "makeAck when dynS has already been released.");
+  if (!dynS) {
+    MLC_SLICE_PANIC(slice.sliceId, "MakeAck when dynS has been released.");
+  }
   dynS->cacheAcked++;
   for (auto elementIdx = slice.sliceId.lhsElementIdx;
        elementIdx < slice.sliceId.rhsElementIdx; ++elementIdx) {
+    if (std::dynamic_pointer_cast<LinearAddrGenCallback>(
+            this->config->addrGenCallback)) {
+      auto elementVAddr =
+          this->config->addrGenCallback
+              ->genAddr(elementIdx, this->config->addrGenFormalParams,
+                        getStreamValueFail)
+              .uint64();
+      if (elementVAddr + this->config->elementSize >
+          slice.sliceId.vaddr + slice.sliceId.getSize()) {
+        // This element spans to next slice, do not ack here.
+        MLC_SLICE_DPRINTF(slice.sliceId,
+                          "Skipping Ack for multi-slice element %llu [%#x, "
+                          "+%d) slice [%#x, +%d).\n",
+                          elementIdx, elementVAddr, this->config->elementSize,
+                          slice.sliceId.vaddr, slice.sliceId.getSize());
+        continue;
+      }
+    }
+    MLC_SLICE_DPRINTF(slice.sliceId, "Ack for element %llu.\n", elementIdx);
     dynS->cacheAckedElements.insert(elementIdx);
   }
   // auto element = dynS->getElementByIdx(slice.sliceId.lhsElementIdx);

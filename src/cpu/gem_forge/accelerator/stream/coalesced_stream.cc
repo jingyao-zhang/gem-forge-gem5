@@ -325,3 +325,15 @@ void Stream::getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
   }
   S_PANIC(this, "Failed to find logical stream %llu.\n", streamId);
 }
+
+bool Stream::tryGetCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
+                                       int32_t &size) const {
+  for (auto LS : this->logicals) {
+    if (LS->getStreamId() == streamId) {
+      offset = LS->getCoalesceOffset() - this->baseOffset;
+      size = LS->getMemElementSize();
+      return true;
+    }
+  }
+  return false;
+}

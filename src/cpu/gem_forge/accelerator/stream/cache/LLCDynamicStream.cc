@@ -211,8 +211,11 @@ void LLCDynamicStream::sanityCheckStreamLife() {
   }
   auto curCycle = this->curCycle();
   bool failed = false;
-  if (GlobalLLCDynamicStreamMap.size() > 1024) {
+  if (GlobalLLCDynamicStreamMap.size() > 4096) {
     failed = true;
+  }
+  if (!failed) {
+    return;
   }
   std::vector<LLCDynamicStreamPtr> sortedStreams;
   for (auto &S : GlobalLLCDynamicStreamMap) {
@@ -222,29 +225,6 @@ void LLCDynamicStream::sanityCheckStreamLife() {
             [](LLCDynamicStreamPtr sa, LLCDynamicStreamPtr sb) -> bool {
               return sa->getDynamicStreamId() < sb->getDynamicStreamId();
             });
-  const Cycles threshold = Cycles(10000);
-  for (int i = 0; i < sortedStreams.size(); ++i) {
-    auto S = sortedStreams[i];
-    auto configCycle = S->configureCycle;
-    auto prevIssuedCycle = S->prevIssuedCycle;
-    auto prevMigrateCycle = S->prevMigrateCycle;
-    if (curCycle - configCycle > threshold &&
-        curCycle - prevIssuedCycle > threshold &&
-        curCycle - prevMigrateCycle > threshold) {
-      if (i + 1 < sortedStreams.size()) {
-        // Check if we have new instance of the same static stream.
-        auto nextS = sortedStreams.at(i + 1);
-        if (nextS->getDynamicStreamId().isSameStaticStream(
-                S->getDynamicStreamId())) {
-          failed = true;
-          break;
-        }
-      }
-    }
-  }
-  if (!failed) {
-    return;
-  }
   for (auto S : sortedStreams) {
     LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynamicStreamId(),
                    "Configure %llu LastIssue %llu LastMigrate %llu.\n",
@@ -319,10 +299,8 @@ bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
       this->lastReductionElement = std::make_shared<LLCStreamElement>(
           this->getStaticStream(), this->llcController,
           this->getDynamicStreamId(), 0, 0, size);
-      this->lastReductionElement->getValue() =
-          this->configData->reductionInitValue;
-      this->lastReductionElement->readyBytes += size;
-      assert(this->lastReductionElement->isReady());
+      this->lastReductionElement->setValue(
+          this->configData->reductionInitValue);
     }
     if (this->lastReductionElement->idx != baseElementIdx) {
       LLC_S_PANIC(

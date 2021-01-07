@@ -31,11 +31,11 @@ public:
     std::string print() const;
     uint8_t *uint8Ptr(int offset = 0) {
       assert(offset < 64);
-      return reinterpret_cast<uint8_t *>(&this->front());
+      return reinterpret_cast<uint8_t *>(&this->front()) + offset;
     }
     const uint8_t *uint8Ptr(int offset = 0) const {
       assert(offset < 64);
-      return reinterpret_cast<const uint8_t *>(&this->front());
+      return reinterpret_cast<const uint8_t *>(&this->front()) + offset;
     }
     const uint64_t &uint64(int offset = 0) const {
       assert(offset < MaxRegisterValueSize);

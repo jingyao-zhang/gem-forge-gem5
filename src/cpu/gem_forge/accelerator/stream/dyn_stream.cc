@@ -291,6 +291,12 @@ bool DynamicStream::shouldCoreSEIssue() const {
         return true;
       }
     }
+    for (auto valDepS : this->stream->valueDepStreams) {
+      const auto &valDepDynS = valDepS->getDynamicStream(this->configSeqNum);
+      if (!valDepDynS.offloadedToCache) {
+        return true;
+      }
+    }
     return false;
   }
   return true;

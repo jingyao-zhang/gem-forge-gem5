@@ -26,7 +26,28 @@ int LLCStreamElement::curLLCBank() const {
   return this->controller->getMachineID().getNum();
 }
 
-uint64_t LLCStreamElement::getData(uint64_t streamId) const {
+StreamValue LLCStreamElement::getValue(int offset, int size) const {
+  if (this->size < offset + size) {
+    panic("Try to get StreamValue (offset %d size %d) for LLCStreamElement of "
+          "size %d.",
+          offset, size, this->size);
+  }
+  StreamValue v;
+  memcpy(v.uint8Ptr(), this->getUInt8Ptr(offset), size);
+  return v;
+}
+
+uint8_t *LLCStreamElement::getUInt8Ptr(int offset) {
+  assert(offset < this->size);
+  return reinterpret_cast<uint8_t *>(this->value.data()) + offset;
+}
+
+const uint8_t *LLCStreamElement::getUInt8Ptr(int offset) const {
+  assert(offset < this->size);
+  return reinterpret_cast<const uint8_t *>(this->value.data()) + offset;
+}
+
+uint64_t LLCStreamElement::getUInt64ByStreamId(uint64_t streamId) const {
   assert(this->isReady());
   int32_t offset = 0;
   int size = this->size;
@@ -34,6 +55,35 @@ uint64_t LLCStreamElement::getData(uint64_t streamId) const {
   assert(size <= sizeof(uint64_t) && "ElementSize overflow.");
   assert(offset + size <= this->size && "Size overflow.");
   return GemForgeUtils::rebuildData(this->getUInt8Ptr(offset), size);
+}
+
+void LLCStreamElement::setValue(const StreamValue &value) {
+  assert(this->readyBytes == 0 && "Already ready.");
+  if (this->size > sizeof(StreamValue)) {
+    panic("Try to set StreamValue for LLCStreamElement of size %d.",
+          this->size);
+  }
+  memcpy(this->getUInt8Ptr(), value.uint8Ptr(), this->size);
+  this->readyBytes += this->size;
+}
+
+int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,
+                                     int &rangeOffset,
+                                     int &elementOffset) const {
+  if (this->vaddr == 0) {
+    panic("Try to computeOverlap without elementVAddr.");
+  }
+  // Compute the overlap between the element and the slice.
+  Addr overlapLHS = std::max(this->vaddr, rangeVAddr);
+  Addr overlapRHS = std::min(this->vaddr + this->size, rangeVAddr + rangeSize);
+  // Check that the overlap is within the same line.
+  assert(overlapLHS < overlapRHS && "Empty overlap.");
+  assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
+         "Illegal overlap.");
+  auto overlapSize = overlapRHS - overlapLHS;
+  rangeOffset = overlapLHS - rangeVAddr;
+  elementOffset = overlapLHS - this->vaddr;
+  return overlapSize;
 }
 
 void LLCStreamElement::extractElementDataFromSlice(
@@ -51,25 +101,32 @@ void LLCStreamElement::extractElementDataFromSlice(
     if (sliceId.getNumElements() > 1) {
       LLC_SLICE_PANIC(sliceId, "LLCIndirectSlice should only have 1 element.");
     }
-    if (sliceId.size != elementSize) {
+    if (sliceId.getSize() != elementSize) {
       LLC_SLICE_PANIC(sliceId,
                       "Can not reconstruct multi-line indirect element");
     }
     elementVAddr = sliceId.vaddr;
   }
 
-  // Compute the overlap between the element and the slice.
-  Addr overlapLHS = std::max(elementVAddr, sliceId.vaddr);
-  Addr overlapRHS = std::min(
-      elementVAddr + elementSize,
-      makeLineAddress(sliceId.vaddr + RubySystem::getBlockSizeBytes()));
-  // Check that the overlap is within the same line.
-  assert(overlapLHS < overlapRHS && "Empty overlap.");
-  assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
-         "Illegal overlap.");
-  auto overlapSize = overlapRHS - overlapLHS;
-  auto elementOffset = overlapLHS - elementVAddr;
-  assert(elementOffset + overlapSize <= elementSize && "Overlap overflow.");
+  // // Compute the overlap between the element and the slice.
+  // Addr overlapLHS = std::max(elementVAddr, sliceId.vaddr);
+  // Addr overlapRHS = std::min(
+  //     elementVAddr + elementSize,
+  //     makeLineAddress(sliceId.vaddr + RubySystem::getBlockSizeBytes()));
+  // // Check that the overlap is within the same line.
+  // assert(overlapLHS < overlapRHS && "Empty overlap.");
+  // assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
+  //        "Illegal overlap.");
+  // auto overlapSize = overlapRHS - overlapLHS;
+  // auto elementOffset = overlapLHS - elementVAddr;
+  // assert(elementOffset + overlapSize <= elementSize && "Overlap overflow.");
+
+  int sliceOffset;
+  int elementOffset;
+  int overlapSize = this->computeOverlap(sliceId.vaddr, sliceId.getSize(),
+                                         sliceOffset, elementOffset);
+  assert(overlapSize > 0 && "Empty overlap.");
+  Addr overlapLHS = this->vaddr + elementOffset;
 
   LLC_SLICE_DPRINTF(sliceId, "Received element %lu Overlap [%lu, %lu).\n",
                     elementIdx, elementOffset, elementOffset + overlapSize);

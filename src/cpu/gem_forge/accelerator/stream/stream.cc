@@ -389,7 +389,7 @@ DynamicStream &Stream::getDynamicStreamByInstance(InstanceId instance) {
       return dynStream;
     }
   }
-  panic("Failed to find DynamicStream by Instance %llu.\n", instance);
+  S_PANIC(this, "Failed to find DynamicStream by Instance %llu.\n", instance);
 }
 
 DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
@@ -398,7 +398,7 @@ DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
       return dynStream;
     }
   }
-  panic("Failed to find DynamicStream %llu.\n", seqNum);
+  S_PANIC(this, "Failed to find DynamicStream by SeqNum %llu.\n", seqNum);
 }
 
 DynamicStream &Stream::getDynamicStreamBefore(uint64_t seqNum) {
@@ -409,7 +409,7 @@ DynamicStream &Stream::getDynamicStreamBefore(uint64_t seqNum) {
     }
   }
   if (!dynS) {
-    panic("Failed to find DynamicStream before SeqNum %llu.\n", seqNum);
+    S_PANIC(this, "Failed to find DynamicStream before SeqNum %llu.\n", seqNum);
   }
   return *dynS;
 }
