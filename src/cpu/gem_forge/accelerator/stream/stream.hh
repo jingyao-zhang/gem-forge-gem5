@@ -178,6 +178,7 @@ public:
   bool isIndirectLoadStream() const;
   bool isDirectMemStream() const;
   bool isPointerChaseLoadStream() const { return false; }
+  bool shouldComputeValue() const;
 
   /**
    * Simple bookkeeping information for the stream engine.

@@ -225,30 +225,14 @@ bool DynamicStream::areNextBackBaseElementsAllocated() const {
   return true;
 }
 
-void DynamicStream::addBaseElements(StreamElement *newElement) {
-  this->addAddrBaseElements(newElement);
-  this->addBackBaseElements(newElement);
-}
-
 void DynamicStream::addAddrBaseElements(StreamElement *newElement) {
   for (const auto &edge : this->addrBaseEdges) {
-    this->addAddrOrBackBaseElementEdge(newElement, edge);
+    this->addAddrBaseElementEdge(newElement, edge);
   }
 }
 
-void DynamicStream::addBackBaseElements(StreamElement *newElement) {
-  if (newElement->FIFOIdx.entryIdx == 0) {
-    // No back dependence for the first element.
-    return;
-  }
-  for (const auto &edge : this->backBaseEdges) {
-    this->addAddrOrBackBaseElementEdge(newElement, edge, true /* isBack */);
-  }
-}
-
-void DynamicStream::addAddrOrBackBaseElementEdge(StreamElement *newElement,
-                                                 const StreamDepEdge &edge,
-                                                 bool isBack) {
+void DynamicStream::addAddrBaseElementEdge(StreamElement *newElement,
+                                           const StreamDepEdge &edge) {
   auto S = this->stream;
   auto baseS = S->se->getStream(edge.baseStaticId);
   auto &baseDynS = baseS->getDynamicStreamByInstance(edge.baseInstanceId);
@@ -256,10 +240,6 @@ void DynamicStream::addAddrOrBackBaseElementEdge(StreamElement *newElement,
   uint64_t baseElementIdx = edge.alignBaseElement;
   if (edge.reuseBaseElement != 0) {
     baseElementIdx += newElement->FIFOIdx.entryIdx / edge.reuseBaseElement;
-  }
-  if (isBack) {
-    assert(baseElementIdx > 0 && "First element has no back dep.");
-    baseElementIdx--;
   }
   S_ELEMENT_DPRINTF(
       newElement,
@@ -377,46 +357,6 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
    */
   this->FIFOIdx.prev();
   return releaseElement;
-}
-
-void DynamicStream::computeElementValue(StreamElement *element) {
-
-  assert(this->stream->isStoreStream() && this->stream->getEnabledStoreFunc());
-  if (this->offloadedToCache) {
-    // This stream is offloaded to cache.
-    assert("This not handled yet.");
-    return;
-  }
-  if (!element->isAddrReady) {
-    S_ELEMENT_PANIC(element, "StoreFunc should have addr ready.");
-  }
-  // Check for value base element.
-  if (!element->checkValueBaseElementsValueReady()) {
-    S_ELEMENT_PANIC(element,
-                    "StoreFunc with ValueBaseElement not value ready.");
-  }
-  // Get value for store func.
-  auto getStoreFuncInput = [this, element](StaticId id) -> StreamValue {
-    // Search the ValueBaseElements.
-    auto baseS = element->se->getStream(id);
-    for (const auto &baseE : element->valueBaseElements) {
-      if (baseE.element->stream == baseS) {
-        // Found it.
-        StreamValue elementValue;
-        baseE.element->getValueByStreamId(id, elementValue.uint8Ptr(),
-                                          sizeof(elementValue));
-        return elementValue;
-      }
-    }
-    assert(false && "Failed to find value base element.");
-  };
-  auto params =
-      convertFormalParamToParam(this->storeFormalParams, getStoreFuncInput);
-  auto storeValue = this->storeCallback->invoke(params);
-
-  S_ELEMENT_DPRINTF(element, "StoreValue %s.\n", storeValue);
-  // Set the element with the value.
-  element->setValue(element->addr, element->size, storeValue.uint8Ptr());
 }
 
 void DynamicStream::updateStatsOnReleaseStepElement(Cycles releaseCycle,

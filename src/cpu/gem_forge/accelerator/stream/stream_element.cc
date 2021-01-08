@@ -317,10 +317,10 @@ bool StreamElement::isFirstUserDispatched() const {
   return this->firstUserSeqNum != ::LLVMDynamicInst::INVALID_SEQ_NUM;
 }
 
-void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
+void StreamElement::markAddrReady() {
   assert(!this->isAddrReady && "Addr is already ready.");
   this->isAddrReady = true;
-  this->addrReadyCycle = cpuDelegator->curCycle();
+  this->addrReadyCycle = this->stream->se->curCycle();
 
   /**
    * Compute the address.
@@ -376,33 +376,72 @@ void StreamElement::markAddrReady(GemForgeCPUDelegator *cpuDelegator) {
   S_ELEMENT_DPRINTF(this, "MarkAddrReady vaddr %#x size %d.\n", this->addr,
                     this->size);
 
-  this->splitIntoCacheBlocks(cpuDelegator);
+  this->splitIntoCacheBlocks();
+}
 
-  if (!this->stream->isMemStream()) {
+void StreamElement::computeValue() {
+
+  auto S = this->stream;
+  auto dynS = this->dynS;
+  if (!S->shouldComputeValue()) {
+    S_ELEMENT_PANIC(this, "Cannot compute value.");
+  }
+  if (!this->isAddrReady) {
+    S_ELEMENT_PANIC(this, "ComputeValue should have addr ready.");
+  }
+
+  auto getBaseValue = [this](StaticId id) -> StreamValue {
+    // Search the ValueBaseElements.
+    auto baseS = this->se->getStream(id);
+    for (const auto &baseE : this->valueBaseElements) {
+      if (baseE.element->stream == baseS) {
+        StreamValue elementValue;
+        baseE.element->getValueByStreamId(id, elementValue.uint8Ptr(),
+                                          sizeof(elementValue));
+        return elementValue;
+      }
+    }
+    assert(false && "Failed to find value base element.");
+  };
+
+  if (S->isStoreStream() && S->getEnabledStoreFunc()) {
+    assert(!dynS->offloadedToCache &&
+           "Should not compute for floating stream.");
+    // Check for value base element.
+    if (!this->checkValueBaseElementsValueReady()) {
+      S_ELEMENT_PANIC(this, "StoreFunc with ValueBaseElement not value ready.");
+    }
+    auto params =
+        convertFormalParamToParam(dynS->storeFormalParams, getBaseValue);
+    auto storeValue = dynS->storeCallback->invoke(params);
+
+    S_ELEMENT_DPRINTF(this, "StoreValue %s.\n", storeValue);
+    // Set the element with the value.
+    this->setValue(this->addr, this->size, storeValue.uint8Ptr());
+  } else {
     /**
-     * There are a few special cases for non-mem streams.
-     * 1. The first element of the reduction stream should take the initial
+     * This should be an IV/Reduction stream, which also uses AddrGenCallback
+     * for now. There are two special cases for ReductionStream.
+     * 1. The first element should take the initial value.
+     * 2. The last element of floating ReductionStream should take the final
      * value.
-     * 2. If offloaded, the last element of the reduction stream should take the
-     * final value.
      */
-    if (this->stream->isReduction()) {
+
+    if (S->isReduction()) {
       if (this->FIFOIdx.entryIdx == 0) {
-        this->setValue(this->addr, this->size,
-                       this->dynS->initialValue.uint8Ptr());
+        this->setValue(this->addr, this->size, dynS->initialValue.uint8Ptr());
         return;
-      } else if (this->isLastElement() && !this->stream->hasCoreUser() &&
-                 this->dynS->offloadedToCache) {
-        assert(this->dynS->finalReductionValueReady &&
+      } else if (this->isLastElement() && !S->hasCoreUser() &&
+                 dynS->offloadedToCache) {
+        assert(dynS->finalReductionValueReady &&
                "FinalReductionValue should be ready.");
         this->setValue(this->addr, this->size,
-                       this->dynS->finalReductionValue.uint8Ptr());
+                       dynS->finalReductionValue.uint8Ptr());
         return;
       }
     }
-    auto value = this->dynS->addrGenCallback->genAddr(
-        this->FIFOIdx.entryIdx, this->dynS->addrGenFormalParams,
-        getStreamValue);
+    auto value = dynS->addrGenCallback->genAddr(
+        this->FIFOIdx.entryIdx, dynS->addrGenFormalParams, getBaseValue);
     this->setValue(this->addr, this->size, value.uint8Ptr());
   }
 }
@@ -447,9 +486,9 @@ void StreamElement::markValueReady() {
   }
 }
 
-void StreamElement::splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator) {
+void StreamElement::splitIntoCacheBlocks() {
   // TODO: Initialize this only once.
-  this->cacheBlockSize = cpuDelegator->cacheLineSize();
+  this->cacheBlockSize = this->se->getCPUDelegator()->cacheLineSize();
 
   for (int currentSize, totalSize = 0; totalSize < this->size;
        totalSize += currentSize) {
@@ -623,6 +662,20 @@ bool StreamElement::checkValueReady() const {
 }
 
 bool StreamElement::checkValueBaseElementsValueReady() const {
+  /**
+   * Special case for LastElement of offloaded ReductionStream with no core
+   * user, which is marked ready by checking its
+   * dynS->finalReductionValueReady.
+   */
+  if (this->stream->isReduction() && !this->stream->hasCoreUser() &&
+      this->dynS->offloadedToCache) {
+    if (this->isLastElement()) {
+      return this->dynS->finalReductionValueReady;
+    } else {
+      // Should never be ready.
+      return false;
+    }
+  }
   for (const auto &baseE : this->valueBaseElements) {
     if (!baseE.isValid()) {
       S_ELEMENT_PANIC(this, "ValueBaseElement released early: %s.", baseE.idx);

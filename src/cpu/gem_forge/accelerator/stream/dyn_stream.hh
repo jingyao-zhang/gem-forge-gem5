@@ -143,12 +143,9 @@ struct DynamicStream {
   bool areNextBaseElementsAllocated() const;
   bool areNextAddrBaseElementsAllocated() const;
   bool areNextBackBaseElementsAllocated() const;
-  void addBaseElements(StreamElement *newElement);
   void addAddrBaseElements(StreamElement *newElement);
-  void addBackBaseElements(StreamElement *newElement);
-  void addAddrOrBackBaseElementEdge(StreamElement *newElement,
-                                    const StreamDepEdge &edge,
-                                    bool isBack = false);
+  void addAddrBaseElementEdge(StreamElement *newElement,
+                              const StreamDepEdge &edge);
   /**
    * Should the CoreSE try to issue for the data.
    */
@@ -184,11 +181,6 @@ struct DynamicStream {
    * Remove one unstepped element from the last dynamic stream.
    */
   StreamElement *releaseElementUnstepped();
-
-  /**
-   * Compute the value for this element. This is used for stream computing.
-   */
-  void computeElementValue(StreamElement *element);
 
   uint64_t getNumReleasedElements() const { return this->numReleaseElement; }
   uint64_t getStartVAddr() const { return this->startVAddr; }

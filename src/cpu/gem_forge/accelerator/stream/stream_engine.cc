@@ -475,7 +475,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
     if (S->getEnabledStoreFunc()) {
       if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue()) {
         if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
-          S_ELEMENT_DPRINTF(stepElement, "Can not step as no Ack for %llu.\n");
+          S_ELEMENT_DPRINTF(stepElement, "Can not step as no Ack.\n");
           return false;
         }
       }
@@ -1798,20 +1798,6 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElements;
 
   auto areBaseElementsValReady = [this](StreamElement *element) -> bool {
-    /**
-     * Special case for LastElement of offloaded ReductionStream with no core
-     * user, which is marked ready by checking its
-     * dynS->finalReductionValueReady.
-     */
-    if (element->stream->isReduction() && !element->stream->hasCoreUser() &&
-        element->dynS->offloadedToCache) {
-      if (element->isLastElement()) {
-        return element->dynS->finalReductionValueReady;
-      } else {
-        // Should never be ready.
-        return false;
-      }
-    }
     bool ready = true;
     S_ELEMENT_DPRINTF(element, "Check if base element is ready.\n");
     for (const auto &baseElement : element->addrBaseElements) {
@@ -1867,8 +1853,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         assert(element->stream == S && "Sanity check that streams match.");
         if (element->isAddrReady) {
           // Address already ready. Check if we have to compute the value.
-          if (S->isStoreStream() && S->getEnabledStoreFunc() &&
-              !element->isValueReady) {
+          if (S->shouldComputeValue() && !element->isValueReady) {
             if (element->checkValueBaseElementsValueReady()) {
               S_ELEMENT_DPRINTF(element, "Found Value Ready.\n");
               readyElements.emplace_back(element);
@@ -1943,17 +1928,15 @@ void StreamEngine::issueElements() {
   for (auto &element : readyElements) {
 
     if (element->isAddrReady) {
-      if (!(element->stream->isStoreStream() &&
-            element->stream->getEnabledStoreFunc())) {
-        S_ELEMENT_PANIC(
-            element,
-            "Only StoreStream with StoreFunc requires computing values.");
+      if (!element->stream->shouldComputeValue()) {
+        S_ELEMENT_PANIC(element,
+                        "This stream does not require computing values.");
       }
-      element->dynS->computeElementValue(element);
+      element->computeValue();
       continue;
     }
 
-    element->markAddrReady(cpuDelegator);
+    element->markAddrReady();
 
     if (element->stream->isMemStream()) {
       /**

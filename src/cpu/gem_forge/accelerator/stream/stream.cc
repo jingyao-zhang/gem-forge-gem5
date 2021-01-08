@@ -697,6 +697,18 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   return configData;
 }
 
+bool Stream::shouldComputeValue() const {
+  if (!this->isMemStream()) {
+    // IV/Reduction stream always compute value.
+    return true;
+  }
+  if (this->isStoreStream() && this->getEnabledStoreFunc()) {
+    // Store stream with StoreFunc can also compute.
+    return true;
+  }
+  return false;
+}
+
 bool Stream::isDirectMemStream() const {
   if (!this->isMemStream()) {
     return false;
@@ -768,7 +780,7 @@ void Stream::allocateElement(StreamElement *newElement) {
   }
 
   // Add addr/value base elements
-  dynS.addBaseElements(newElement);
+  dynS.addAddrBaseElements(newElement);
   this->addValueBaseElements(newElement);
 
   newElement->allocateCycle = this->getCPUDelegator()->curCycle();
@@ -779,15 +791,16 @@ void Stream::allocateElement(StreamElement *newElement) {
   dynS.allocSize++;
   this->allocSize++;
 
-  if (newElement->FIFOIdx.entryIdx == 1) {
-    if (newElement->FIFOIdx.streamId.coreId == 8 &&
-        newElement->FIFOIdx.streamId.streamInstance == 1 &&
-        newElement->FIFOIdx.streamId.staticId == 11704592) {
-      S_ELEMENT_HACK(newElement, "Allocated.\n");
-    }
-  }
-
   S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
+
+  /**
+   * If there is no AddrBaseElement, we mark AddrReady immediately.
+   * This is the case for most IV streams -- they will compute value
+   * later.
+   */
+  if (newElement->addrBaseElements.empty()) {
+    newElement->markAddrReady();
+  }
 }
 
 void Stream::addValueBaseElements(StreamElement *newElement) {
@@ -811,6 +824,26 @@ void Stream::addValueBaseElements(StreamElement *newElement) {
     auto baseElement = baseDynS.getElementByIdx(newElementIdx);
     if (!baseElement) {
       S_PANIC(this, "Failed to find value base element from %s.",
+              baseS->getStreamName());
+    }
+    newElement->valueBaseElements.emplace_back(baseElement);
+  }
+
+  if (newElementIdx == 0) {
+    return;
+  }
+
+  auto prevElementIdx = newElementIdx - 1;
+  for (auto baseS : this->backBaseStreams) {
+    assert(baseS->getLoopLevel() == this->getLoopLevel());
+
+    auto &baseDynS = baseS->getLastDynamicStream();
+    DYN_S_DPRINTF(baseDynS.dynamicStreamId, "BackBaseDynS.\n");
+
+    auto baseElement = baseDynS.getElementByIdx(prevElementIdx);
+    if (!baseElement) {
+      this->se->dumpFIFO();
+      S_PANIC(this, "Failed to find back base element from %s.",
               baseS->getStreamName());
     }
     newElement->valueBaseElements.emplace_back(baseElement);

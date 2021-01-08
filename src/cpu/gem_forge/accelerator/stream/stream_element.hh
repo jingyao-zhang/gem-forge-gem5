@@ -261,11 +261,12 @@ struct StreamElement {
   StreamMemAccess *
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
   void handlePacketResponse(StreamMemAccess *memAccess, PacketPtr pkt);
-  void markAddrReady(GemForgeCPUDelegator *cpuDelegator);
+  void markAddrReady();
+  void computeValue();
   void tryMarkValueReady();
   void markValueReady();
 
-  void splitIntoCacheBlocks(GemForgeCPUDelegator *cpuDelegator);
+  void splitIntoCacheBlocks();
 
   void dump() const;
 
