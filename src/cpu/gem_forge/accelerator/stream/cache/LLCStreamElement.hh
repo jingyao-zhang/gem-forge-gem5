@@ -41,11 +41,28 @@ public:
     }
     return true;
   }
+  StreamValue getBaseStreamValue(uint64_t baseStreamId) {
+    for (const auto &baseE : this->baseElements) {
+      int32_t offset;
+      int32_t size;
+      if (baseE->S->tryGetCoalescedOffsetAndSize(baseStreamId, offset, size)) {
+        // Found it.
+        return baseE->getValue(offset, size);
+      }
+    }
+    assert(false && "Invalid baseStreamId.");
+    return StreamValue();
+  };
 
   /*************************************************
    * Accessors to the data.
    *************************************************/
   bool isReady() const { return this->readyBytes == this->size; }
+  bool isComputationScheduled() const { return this->computationScheduled; }
+  void scheduledComputation() {
+    assert(!this->computationScheduled && "Computation already scheduled.");
+    this->computationScheduled = true;
+  }
 
   StreamValue getValue(int offset = 0, int size = sizeof(StreamValue)) const;
   uint8_t *getUInt8Ptr(int offset = 0);
@@ -72,6 +89,7 @@ public:
 
 private:
   int readyBytes;
+  bool computationScheduled = false;
   static constexpr int MAX_SIZE = 128;
   std::array<uint64_t, MAX_SIZE> value;
 };

@@ -330,6 +330,8 @@ void LLCStreamEngine::receiveStreamElementData(
      * We use extra loop here to ensure BaseElement is processed in order.
      */
     auto &element = elementIter->second;
+    LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
+                      element->idx, element->isReady());
     if (!element->isReady()) {
       // Not ready yet. Break.
       break;
@@ -352,9 +354,8 @@ void LLCStreamEngine::receiveStreamElementData(
 
   /**
    * Finally decide if we need to send back data or ack.
-   * 1. Store: always need Ack.
-   * 2. Update/Atomic: If core issuing, then need Data, otherwise Ack.
-   * 3. Load: Data is already sent by cache controller.
+   * 1. Update/Atomic: If core issuing, then need Data, otherwise Ack.
+   * 2. Load: Data is already sent by cache controller.
    * We perform this here to make sure traffic between MLC and LLC are correctly
    * sliced.
    */
@@ -420,6 +421,13 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
                     stream->readyIndirectElements.size());
       return false;
     }
+    if (stream->incompleteComputations != 0) {
+      // We are still waiting for some computation to be done.
+      LLC_S_DPRINTF(stream->getDynamicStreamId(),
+                    "Delayed migration for incomplete computation %llu.\n",
+                    stream->incompleteComputations);
+      return false;
+    }
     /**
      * ! A hack to delay migrate if there is waitingPredicatedElements for any
      * ! indirect stream.
@@ -435,14 +443,23 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
           /**
            * ! Due to the current hack implementation, an element may already be
            * ! allocated for the next bank. Our way to hack this is check if the
-           * ! base still holds this element. If not, then they are for next
+           * ! base is already ready. If not, then they are for next
            * ! bank.
            */
-          if (!element->isReady() &&
-              !stream->idxToElementMap.count(element->idx - 1)) {
-            // LLC_S_DPRINTF(IS->getDynamicStreamId(),
-            //               "Delayed migration for idx %llu.\n", element->idx);
-            return false;
+          if (!element->isReady()) {
+            for (const auto &baseE : element->baseElements) {
+              if (baseE->dynStreamId == stream->getDynamicStreamId()) {
+                if (baseE->isReady()) {
+                  // The base element is ready, which means this is from this
+                  // bank. If it's not ready, then we should have inflyRequest.
+                  LLC_S_DPRINTF(
+                      IS->getDynamicStreamId(),
+                      "Delayed migration for reduction for idx %llu.\n",
+                      element->idx);
+                  return false;
+                }
+              }
+            }
           }
         }
       }
@@ -464,6 +481,8 @@ void LLCStreamEngine::wakeup() {
   this->processStreamFlowControlMsg();
   this->issueStreams();
   this->migrateStreams();
+  this->startComputation();
+  this->completeComputation();
 
   // So we limit the issue rate in issueStreams.
   while (!this->requestQueue.empty()) {
@@ -958,33 +977,17 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     for (auto idx = nextSliceId.lhsElementIdx; idx < nextSliceId.rhsElementIdx;
          ++idx) {
       stream->allocateElement(idx, stream->slicedStream.getElementVAddr(idx));
-      const auto &element = stream->idxToElementMap.at(idx);
+      auto &element = stream->idxToElementMap.at(idx);
       if (!element->isReady()) {
-        if (element->areBaseElementsReady()) {
-          // Generate the StoreValue.
-          auto getStoreFuncInput = [this, element](uint64_t id) -> StreamValue {
-            // Search the ValueBaseElements.
-            for (const auto &baseE : element->baseElements) {
-              int32_t offset;
-              int32_t size;
-              if (baseE->S->tryGetCoalescedOffsetAndSize(id, offset, size)) {
-                // Found it.
-                return baseE->getValue(offset, size);
-              }
-            }
-            assert(false && "Failed to find value base element.");
-          };
-          auto params = convertFormalParamToParam(
-              stream->configData->storeFormalParams, getStoreFuncInput);
-          element->setValue(stream->configData->storeCallback->invoke(params));
-          LLC_SLICE_DPRINTF(nextSliceId, "Computed StoreValue %s.\n",
-                            element->getValue());
-        } else {
-          LLC_SLICE_DPRINTF(
-              nextSliceId,
-              "StoreValue from element %llu not ready, delay issuing.\n", idx);
-          return false;
+        // Simply schedule the computation.
+        if (element->areBaseElementsReady() &&
+            !element->isComputationScheduled()) {
+          this->pushReadyComputation(element);
         }
+        LLC_SLICE_DPRINTF(
+            nextSliceId,
+            "StoreValue from element %llu not ready, delay issuing.\n", idx);
+        return false;
       }
     }
   }
@@ -1146,8 +1149,7 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
   // Try to issue one with lowest element index.
   auto firstIndirectIter = stream->readyIndirectElements.begin();
   auto idx = firstIndirectIter->first;
-  auto dynIS = firstIndirectIter->second.first;
-  const auto &baseElement = firstIndirectIter->second.second;
+  auto dynIS = firstIndirectIter->second;
 
   // Enforce the per stream maxInflyRequests constraint.
   if (dynIS->inflyRequests == this->maxInflyRequestsPerStream) {
@@ -1159,16 +1161,15 @@ bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
     return false;
   }
 
-  this->generateIndirectStreamRequest(dynIS, idx, baseElement);
+  this->generateIndirectStreamRequest(dynIS, idx);
   // Don't forget to release the indirect element.
   stream->readyIndirectElements.erase(firstIndirectIter);
 
   return true;
 }
 
-void LLCStreamEngine::generateIndirectStreamRequest(
-    LLCDynamicStream *dynIS, uint64_t elementIdx,
-    const ConstLLCStreamElementPtr &baseElement) {
+void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
+                                                    uint64_t elementIdx) {
   auto dynBS = dynIS->baseStream;
   assert(dynBS &&
          "GenerateIndirectStreamRequest can only handle indirect stream.");
@@ -1188,74 +1189,14 @@ void LLCStreamEngine::generateIndirectStreamRequest(
   // Release the element now.
   dynIS->idxToElementMap.erase(elementIter);
   if (IS->isReduction()) {
-    // This is a reduction stream.
-    assert(elementIdx > 0 && "Reduction stream ElementIdx should start at 1.");
-
-    // Perform the reduction.
-    auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
-      for (const auto &baseElement : element->baseElements) {
-        if (baseStreamId == baseElement->dynStreamId.staticId) {
-          assert(baseElement->isReady());
-          return baseElement->getValue();
-        }
-      }
-      assert(false && "Invalid baseStreamId.");
-      return StreamValue();
-    };
-    auto newReductionValue = indirectConfig->addrGenCallback->genAddr(
-        elementIdx, indirectConfig->addrGenFormalParams, getBaseStreamValue);
-    if (Debug::LLCRubyStreamReduce) {
-      std::stringstream ss;
-      for (const auto &baseElement : element->baseElements) {
-        ss << "\n  " << baseElement->dynStreamId << '-' << baseElement->idx
-           << ": " << baseElement->getValue();
-      }
-      ss << "\n  -> " << element->dynStreamId << '-' << element->idx << ": "
-         << newReductionValue;
-      LLC_SLICE_DPRINTF_(LLCRubyStreamReduce, sliceId, "Do reduction %s.\n",
-                         ss.str());
-    }
-    element->setValue(newReductionValue);
-    /**
-     * Check for the next element.
-     */
-    if (dynIS->idxToElementMap.count(element->idx + 1)) {
-      const auto &nextElement = dynIS->idxToElementMap.at(element->idx + 1);
-      if (nextElement->areBaseElementsReady()) {
-        dynIS->baseStream->readyIndirectElements.emplace(
-            std::piecewise_construct, std::forward_as_tuple(nextElement->idx),
-            std::forward_as_tuple(dynIS, nextElement));
-      }
-    }
-
-    /**
-     * If this is the last reduction element, we send this back to the core.
-     * TODO: Really send a packet to the requesting core.
-     */
-    if (sliceId.lhsElementIdx == indirectConfig->totalTripCount) {
-      // This is the last reduction.
-      auto dynCoreIS = IS->getDynamicStream(dynIS->getDynamicStreamId());
-      assert(dynCoreIS && "Core has no dynamic stream.");
-      assert(!dynCoreIS->finalReductionValueReady &&
-             "FinalReductionValue is already ready.");
-      dynCoreIS->finalReductionValue = newReductionValue;
-      dynCoreIS->finalReductionValueReady = true;
-      LLC_SLICE_DPRINTF_(LLCRubyStreamReduce, sliceId,
-                         "Notifiy final reduction.\n");
-    }
-
-    // Do not issue any indirect request.
+    LLC_S_PANIC(dynIS->getDynamicStreamId(),
+                "Reduction is no longer handled here.");
     return;
   }
 
-  assert(baseElement->isReady() && "BaseElement should be ready.");
-
   // Compute the address.
-  auto getBaseStreamValue = [&baseElement,
-                             dynBS](uint64_t baseStreamId) -> StreamValue {
-    StreamValue v;
-    v.front() = baseElement->getUInt64ByStreamId(baseStreamId);
-    return v;
+  auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
+    return element->getBaseStreamValue(baseStreamId);
   };
   Addr elementVAddr =
       indirectConfig->addrGenCallback
@@ -1793,7 +1734,7 @@ bool LLCStreamEngine::tryProcessStreamForwardRequest(const RequestMsg &req) {
   }
   // Fill in the elements.
   for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
-    recvS->recvStreamForward(idx, sliceId, req.m_DataBlk);
+    recvS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
   }
   return true;
 }
@@ -1830,7 +1771,8 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
     if (!IS->idxToElementMap.count(indirectElementIdx)) {
       LLC_S_PANIC(IS->getDynamicStreamId(), "Missing IndirectElement.");
     }
-    const auto &indirectElement = IS->idxToElementMap.at(indirectElementIdx);
+
+    auto &indirectElement = IS->idxToElementMap.at(indirectElementIdx);
 
     /**
      * Check if the stream has predication.
@@ -1846,10 +1788,26 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
     } else {
       // Not predicated, add to readyElements.
       assert(stream->baseStream == nullptr);
+      LLC_S_DPRINTF(IS->getDynamicStreamId(),
+                    "Check if element %llu BaseElementsReady %d.\n",
+                    indirectElement->idx,
+                    indirectElement->areBaseElementsReady());
       if (indirectElement->areBaseElementsReady()) {
-        stream->readyIndirectElements.emplace(
-            std::piecewise_construct, std::forward_as_tuple(indirectElementIdx),
-            std::forward_as_tuple(IS, element));
+        if (IS->getStaticStream()->isReduction()) {
+          // Reduction now is handled as computation.
+          this->pushReadyComputation(indirectElement);
+        } else {
+          stream->readyIndirectElements.emplace(
+              std::piecewise_construct,
+              std::forward_as_tuple(indirectElementIdx),
+              std::forward_as_tuple(IS));
+        }
+      } else {
+        for (const auto &baseE : indirectElement->baseElements) {
+          LLC_S_DPRINTF(IS->getDynamicStreamId(),
+                        "BaseElements Ready %d %s %llu.\n", baseE->isReady(),
+                        baseE->dynStreamId, baseE->idx);
+        }
       }
     }
   }
@@ -1888,7 +1846,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
              * a[b[i]] is sitting. We would like to directly generate the
              * address and inject to the requestQueue here.
              */
-            this->generateIndirectStreamRequest(dynPredS, idx, predBaseElement);
+            this->generateIndirectStreamRequest(dynPredS, idx);
           } else {
             /**
              * The predication is from a direct stream, this is for pattern:
@@ -1899,7 +1857,7 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
              */
             stream->readyIndirectElements.emplace(
                 std::piecewise_construct, std::forward_as_tuple(idx),
-                std::forward_as_tuple(dynPredS, predBaseElement));
+                std::forward_as_tuple(dynPredS));
           }
         } else {
           // This element is predicated off.
@@ -2124,4 +2082,77 @@ LLCStreamEngine::performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
   delete pkt;
 
   return loadedValue;
+}
+
+void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
+  LLC_ELEMENT_DPRINTF(element, "Push computation.\n");
+  assert(element->areBaseElementsReady() && "Element is not ready yet.");
+  auto dynS = LLCDynamicStream::getLLCStreamPanic(element->dynStreamId);
+  dynS->incompleteComputations++;
+  this->readyComputations.emplace_back(element);
+  element->scheduledComputation();
+}
+
+void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
+                                           const StreamValue &result,
+                                           Cycles &latency) {
+  assert(this->inflyComputations.size() < 100 && "Too many infly results.");
+  assert(latency < 100 && "Latency too long.");
+  Cycles readyCycle = this->controller->curCycle() + latency;
+  for (auto iter = this->inflyComputations.rbegin(),
+            end = this->inflyComputations.rend();
+       iter != end; ++iter) {
+    if (iter->readyCycle <= readyCycle) {
+      this->inflyComputations.emplace(iter.base(), element, result, readyCycle);
+      return;
+    }
+  }
+  this->inflyComputations.emplace_front(element, result, readyCycle);
+}
+
+void LLCStreamEngine::startComputation() {
+  // So far just limit the computation width to 1 per cycle.
+  int startedComputation = 0;
+  const int computationWidth =
+      this->controller->getLLCStreamEngineComputeWidth();
+  while (startedComputation < computationWidth &&
+         !this->readyComputations.empty()) {
+    auto &element = this->readyComputations.front();
+    auto dynS = LLCDynamicStream::getLLCStreamPanic(element->dynStreamId);
+    Cycles latency(0);
+    auto result = dynS->computeStreamElementValue(element, latency);
+    auto forceZeroLat =
+        this->controller->isLLCStreamEngineZeroComputeLatencyEnabled();
+    if (forceZeroLat) {
+      latency = Cycles(0);
+    }
+    LLC_ELEMENT_DPRINTF(
+        element, "Start computation. Charge Latency %llu (ZeroLat %d).\n",
+        latency, forceZeroLat);
+    this->pushInflyComputation(element, result, latency);
+
+    this->readyComputations.pop_front();
+    startedComputation++;
+  }
+}
+
+void LLCStreamEngine::completeComputation() {
+  // We don't charge complete width.
+  auto curCycle = this->controller->curCycle();
+  while (!this->inflyComputations.empty()) {
+    auto &computation = this->inflyComputations.front();
+    auto &element = computation.element;
+    if (computation.readyCycle > curCycle) {
+      LLC_ELEMENT_DPRINTF(
+          element,
+          "Cannot complete computation, readyCycle %llu, curCycle %llu.\n",
+          computation.readyCycle, curCycle);
+      break;
+    }
+    LLC_S_DPRINTF(element->dynStreamId,
+                  "Complete computation for element %llu.\n", element->idx);
+    auto dynS = LLCDynamicStream::getLLCStreamPanic(element->dynStreamId);
+    dynS->completeComputation(this, element, computation.result);
+    this->inflyComputations.pop_front();
+  }
 }

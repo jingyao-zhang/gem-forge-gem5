@@ -332,6 +332,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_stream_engine_migrate_width,
                 llc_stream_max_infly_request=\
                     options.gem_forge_stream_engine_llc_stream_max_infly_request,
+                llc_stream_engine_compute_width=\
+                    options.gem_forge_llc_stream_engine_compute_width,
+                enable_llc_stream_zero_compute_latency=\
+                    options.gem_forge_enable_llc_stream_zero_compute_latency,
                 )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"

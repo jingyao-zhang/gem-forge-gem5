@@ -45,6 +45,8 @@ public:
   void print(std::ostream &out) const override;
 
 private:
+  friend class LLCDynamicStream;
+  friend class LLCStreamElement;
   AbstractStreamAwareController *controller;
   // Out going stream migrate buffer.
   MessageBuffer *streamMigrateMsgBuffer;
@@ -194,9 +196,8 @@ private:
   /**
    * Generate indirect stream request.
    */
-  void
-  generateIndirectStreamRequest(LLCDynamicStream *dynIS, uint64_t elementIdx,
-                                const ConstLLCStreamElementPtr &baseElement);
+  void generateIndirectStreamRequest(LLCDynamicStream *dynIS,
+                                     uint64_t elementIdx);
 
   /**
    * Helper function to enqueue a request and start address translation.
@@ -301,6 +302,28 @@ private:
    * @return: whether this message is processed.
    */
   bool tryProcessStreamForwardRequest(const RequestMsg &req);
+
+  /**
+   * We handle the computation and charge its latency here.
+   * The direct stream will also remember the number of incomplete computation
+   * from itself (e.g. StoreStream with StoreFunc) and its indirect streams
+   * (e.g. Reduction).
+   */
+  std::list<LLCStreamElementPtr> readyComputations;
+  struct InflyComputation {
+    LLCStreamElementPtr element;
+    StreamValue result;
+    Cycles readyCycle;
+    InflyComputation(const LLCStreamElementPtr &_element,
+                     const StreamValue &_result, Cycles _readyCycle)
+        : element(_element), result(_result), readyCycle(_readyCycle) {}
+  };
+  std::list<InflyComputation> inflyComputations;
+  void pushReadyComputation(LLCStreamElementPtr &element);
+  void pushInflyComputation(LLCStreamElementPtr &element,
+                            const StreamValue &result, Cycles &latency);
+  void startComputation();
+  void completeComputation();
 };
 
 #endif

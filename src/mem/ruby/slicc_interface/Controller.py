@@ -107,3 +107,6 @@ class RubyStreamAwareController(RubyController):
     llc_stream_max_infly_request = \
         Param.UInt32(8, "Max infly requests per LLC stream")
     enable_stream_llc_issue_clear = Param.Bool(True, "Whether to enable llc stream issue clear")
+    llc_stream_engine_compute_width = \
+        Param.UInt32(1, "Compute width of LLCStreamEngine")
+    enable_llc_stream_zero_compute_latency = Param.Bool(False, "Whether to enable zero compute latency.")

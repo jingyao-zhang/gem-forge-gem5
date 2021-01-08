@@ -27,6 +27,7 @@ public:
     const ::LLVM::TDG::StreamHistory &history;
     StreamHistoryAddrGenCallback(const ::LLVM::TDG::StreamHistory &_history)
         : history(_history) {}
+    Cycles getEstimatedLatency() const override { return Cycles(1); }
   };
 
   std::unique_ptr<StreamHistoryAddrGenCallback>

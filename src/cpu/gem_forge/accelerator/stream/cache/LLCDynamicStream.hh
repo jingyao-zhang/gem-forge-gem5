@@ -14,6 +14,7 @@
 #include <vector>
 
 class AbstractStreamAwareController;
+class LLCStreamEngine;
 
 /**
  * Represent generated request to LLC bank.
@@ -162,9 +163,15 @@ public:
                                  CacheStreamConfigureVec &configs);
 
   bool isBasedOn(const DynamicStreamId &baseId) const;
-  void recvStreamForward(uint64_t baseElementIdx,
+  void recvStreamForward(LLCStreamEngine *se, uint64_t baseElementIdx,
                          const DynamicStreamSliceId &sliceId,
                          const DataBlock &dataBlk);
+
+  StreamValue computeStreamElementValue(const LLCStreamElementPtr &element,
+                                        Cycles &latency);
+  void completeComputation(LLCStreamEngine *se,
+                           const LLCStreamElementPtr &element,
+                           const StreamValue &value);
 
 private:
   State state = INITIALIZED;
@@ -250,7 +257,11 @@ public:
    * Number of requests of this stream (not including indirect streams)
    * issued but data not ready.
    */
-  int inflyRequests;
+  int inflyRequests = 0;
+  /**
+   * Number of scheduled but incomplete computations.
+   */
+  int incompleteComputations = 0;
 
   /**
    * Map from ElementIdx to LLCStreamElement.
@@ -262,9 +273,7 @@ public:
    * and is waiting to be issued.
    * Indexed by element idx.
    */
-  std::multimap<uint64_t,
-                std::pair<LLCDynamicStream *, ConstLLCStreamElementPtr>>
-      readyIndirectElements;
+  std::multimap<uint64_t, LLCDynamicStream *> readyIndirectElements;
 
   /**
    * The elements that is predicated by this stream.

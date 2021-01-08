@@ -79,6 +79,12 @@
       (sliceId).streamId.coreId, (sliceId).streamId.staticId,                  \
       (sliceId).streamId.streamInstance, (sliceId).lhsElementIdx,              \
       (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args
+#define LLC_SE_MSG(format, args...)                                            \
+  "[LLC_SE%d]: " format, this->curLLCBank(), ##args
+#define LLC_ELEMENT_MSG(element, format, args...)                              \
+  "[LLC_SE%d][%d-%lu-%lu-%lu]: " format, (element)->curLLCBank(),              \
+      (element)->dynStreamId.coreId, (element)->dynStreamId.staticId,          \
+      (element)->dynStreamId.streamInstance, (element)->idx, ##args
 
 #define LLC_S_DPRINTF_(X, streamId, format, args...)                           \
   DPRINTF(X, LLC_S_MSG(streamId, format, ##args))
@@ -96,4 +102,15 @@
 #define LLC_SLICE_PANIC(sliceId, format, args...)                              \
   panic(LLC_SLICE_MSG(sliceId, format, ##args))
 
+#define LLC_SE_DPRINTF_(X, format, args...)                                    \
+  DPRINTF(X, LLC_SE_MSG(format, ##args))
+#define LLC_SE_DPRINTF(format, args...)                                        \
+  LLC_SE_DPRINTF_(DEBUG_TYPE, format, ##args)
+
+#define LLC_ELEMENT_DPRINTF_(X, element, format, args...)                      \
+  DPRINTF(X, LLC_ELEMENT_MSG(element, format, ##args))
+#define LLC_ELEMENT_DPRINTF(element, format, args...)                          \
+  LLC_ELEMENT_DPRINTF_(DEBUG_TYPE, element, format, ##args)
+#define LLC_ELEMENT_PANIC(element, format, args...)                            \
+  panic(LLC_ELEMENT_MSG(element, format, ##args))
 #endif

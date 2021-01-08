@@ -1,4 +1,5 @@
 #include "LLCDynamicStream.hh"
+#include "LLCStreamEngine.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
@@ -7,6 +8,8 @@
 
 #include "debug/LLCRubyStreamBase.hh"
 #include "debug/LLCRubyStreamLife.hh"
+#include "debug/LLCRubyStreamReduce.hh"
+#include "debug/LLCRubyStreamStore.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
@@ -24,7 +27,7 @@ LLCDynamicStream::LLCDynamicStream(
       configData(_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
       configureCycle(_mlcController->curCycle()), sliceIdx(0),
-      allocatedSliceIdx(_configData->initAllocatedIdx), inflyRequests(0) {
+      allocatedSliceIdx(_configData->initAllocatedIdx) {
 
   // Remember the SendTo configs.
   for (auto &depEdge : this->configData->depEdges) {
@@ -209,7 +212,6 @@ void LLCDynamicStream::sanityCheckStreamLife() {
   if (!Debug::LLCRubyStreamLife) {
     return;
   }
-  auto curCycle = this->curCycle();
   bool failed = false;
   if (GlobalLLCDynamicStreamMap.size() > 4096) {
     failed = true;
@@ -331,7 +333,8 @@ bool LLCDynamicStream::isBasedOn(const DynamicStreamId &baseId) const {
   return false;
 }
 
-void LLCDynamicStream::recvStreamForward(const uint64_t baseElementIdx,
+void LLCDynamicStream::recvStreamForward(LLCStreamEngine *se,
+                                         const uint64_t baseElementIdx,
                                          const DynamicStreamSliceId &sliceId,
                                          const DataBlock &dataBlk) {
 
@@ -340,6 +343,10 @@ void LLCDynamicStream::recvStreamForward(const uint64_t baseElementIdx,
     recvElementIdx++;
   }
   auto S = this->getStaticStream();
+  if (!S->isReduction() && !S->isStoreStream()) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Recv StreamForward only works for Reduction and StoreStream.");
+  }
   if (!this->idxToElementMap.count(recvElementIdx)) {
     LLC_SLICE_DPRINTF(
         sliceId,
@@ -378,13 +385,11 @@ void LLCDynamicStream::recvStreamForward(const uint64_t baseElementIdx,
   assert(foundBaseElement && "Found base element");
   if (recvElement->areBaseElementsReady()) {
     /**
-     * If I am indirect stream, add to the ready list.
+     * If I am indirect stream, push the computation.
      * Otherwise, the LLC SE should check me for ready elements.
      */
     if (this->baseStream) {
-      this->baseStream->readyIndirectElements.emplace(
-          std::piecewise_construct, std::forward_as_tuple(recvElementIdx),
-          std::forward_as_tuple(this, recvElement));
+      se->pushReadyComputation(recvElement);
     }
   }
 }
@@ -544,5 +549,109 @@ int LLCDynamicStream::curLLCBank() const {
     return this->llcController->getMachineID().num;
   } else {
     return -1;
+  }
+}
+
+StreamValue
+LLCDynamicStream::computeStreamElementValue(const LLCStreamElementPtr &element,
+                                            Cycles &latency) {
+
+  auto S = this->getStaticStream();
+  const auto &config = this->configData;
+
+  auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
+    return element->getBaseStreamValue(baseStreamId);
+  };
+
+  if (S->isReduction()) {
+    // This is a reduction stream.
+    assert(element->idx > 0 &&
+           "Reduction stream ElementIdx should start at 1.");
+
+    // Perform the reduction.
+    latency = config->addrGenCallback->getEstimatedLatency();
+    auto newReductionValue = config->addrGenCallback->genAddr(
+        element->idx, config->addrGenFormalParams, getBaseStreamValue);
+    if (Debug::LLCRubyStreamReduce) {
+      std::stringstream ss;
+      for (const auto &baseElement : element->baseElements) {
+        ss << "\n  " << baseElement->dynStreamId << '-' << baseElement->idx
+           << ": " << baseElement->getValue();
+      }
+      ss << "\n  -> " << element->dynStreamId << '-' << element->idx << ": "
+         << newReductionValue;
+      LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, element,
+                           "[Latency %llu] Do reduction %s.\n", latency,
+                           ss.str());
+    }
+
+    return newReductionValue;
+
+  } else if (S->isStoreStream() && S->getEnabledStoreFunc()) {
+    latency = config->storeCallback->getEstimatedLatency();
+    auto params = convertFormalParamToParam(config->storeFormalParams,
+                                            getBaseStreamValue);
+    auto storeValue = config->storeCallback->invoke(params);
+
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+                         "[Latency %llu] Compute StoreValue %s.\n", latency,
+                         storeValue);
+    return storeValue;
+
+  } else {
+    LLC_ELEMENT_PANIC(element, "No Computation for this stream.");
+  }
+}
+
+void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
+                                           const LLCStreamElementPtr &element,
+                                           const StreamValue &value) {
+  element->setValue(value);
+  this->incompleteComputations--;
+  assert(this->incompleteComputations >= 0 &&
+         "Negative incomplete computations.");
+  /**
+   * If this is ReductionStream, check for next element.
+   */
+  auto S = this->getStaticStream();
+  if (S->isReduction()) {
+    /**
+     * Check for the next element.
+     */
+    if (this->idxToElementMap.count(element->idx + 1)) {
+      auto &nextElement = this->idxToElementMap.at(element->idx + 1);
+      if (nextElement->areBaseElementsReady()) {
+        se->pushReadyComputation(nextElement);
+      }
+    }
+
+    /**
+     * If this is the last reduction element, we send this back to the core.
+     * TODO: Really send a packet to the requesting core.
+     */
+    if (element->idx == this->configData->totalTripCount) {
+      // This is the last reduction.
+      auto dynCoreS = S->getDynamicStream(this->getDynamicStreamId());
+      assert(dynCoreS && "Core has no dynamic stream.");
+      assert(!dynCoreS->finalReductionValueReady &&
+             "FinalReductionValue is already ready.");
+      dynCoreS->finalReductionValue = value;
+      dynCoreS->finalReductionValueReady = true;
+      LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, element,
+                           "Notifiy final reduction.\n");
+    }
+
+    /**
+     * As a hack here, we release any older elements.
+     */
+    while (!this->idxToElementMap.empty()) {
+      auto iter = this->idxToElementMap.begin();
+      if (iter->first > element->idx) {
+        break;
+      }
+      assert(iter->second->isReady() &&
+             "Older Reduction Element should be ready.");
+      this->idxToElementMap.erase(iter);
+    }
   }
 }

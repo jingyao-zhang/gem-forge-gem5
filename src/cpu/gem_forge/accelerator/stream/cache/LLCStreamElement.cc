@@ -94,7 +94,6 @@ void LLCStreamElement::extractElementDataFromSlice(
    */
   auto elementIdx = this->idx;
   auto elementSize = this->size;
-  Addr elementVAddr = this->vaddr;
   if (this->vaddr == 0) {
     // This is indirect stream, at most one element per slice.
     // We recover the element vaddr here.
@@ -105,21 +104,8 @@ void LLCStreamElement::extractElementDataFromSlice(
       LLC_SLICE_PANIC(sliceId,
                       "Can not reconstruct multi-line indirect element");
     }
-    elementVAddr = sliceId.vaddr;
+    this->vaddr = sliceId.vaddr;
   }
-
-  // // Compute the overlap between the element and the slice.
-  // Addr overlapLHS = std::max(elementVAddr, sliceId.vaddr);
-  // Addr overlapRHS = std::min(
-  //     elementVAddr + elementSize,
-  //     makeLineAddress(sliceId.vaddr + RubySystem::getBlockSizeBytes()));
-  // // Check that the overlap is within the same line.
-  // assert(overlapLHS < overlapRHS && "Empty overlap.");
-  // assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
-  //        "Illegal overlap.");
-  // auto overlapSize = overlapRHS - overlapLHS;
-  // auto elementOffset = overlapLHS - elementVAddr;
-  // assert(elementOffset + overlapSize <= elementSize && "Overlap overflow.");
 
   int sliceOffset;
   int elementOffset;
@@ -128,8 +114,9 @@ void LLCStreamElement::extractElementDataFromSlice(
   assert(overlapSize > 0 && "Empty overlap.");
   Addr overlapLHS = this->vaddr + elementOffset;
 
-  LLC_SLICE_DPRINTF(sliceId, "Received element %lu Overlap [%lu, %lu).\n",
-                    elementIdx, elementOffset, elementOffset + overlapSize);
+  LLC_SLICE_DPRINTF(
+      sliceId, "Received element %lu size %d Overlap [%lu, %lu).\n", elementIdx,
+      elementSize, elementOffset, elementOffset + overlapSize);
 
   auto rubySystem = this->controller->params()->ruby_system;
   if (rubySystem->getAccessBackingStore()) {

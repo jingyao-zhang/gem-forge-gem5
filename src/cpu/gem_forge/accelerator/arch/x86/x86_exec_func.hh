@@ -60,14 +60,19 @@ public:
    */
   Addr invoke(const std::vector<Addr> &params);
 
+  Cycles getEstimatedLatency() const { return this->estimatedLatency; }
+
 private:
   ThreadContext *tc;
   const ::LLVM::TDG::ExecFuncInfo &func;
   // All the types are integer.
   bool isPureInteger;
+  Cycles estimatedLatency;
 
   std::vector<StaticInstPtr> instructions;
   std::vector<PCState> pcs;
+
+  void estimateLatency();
 };
 } // namespace X86ISA
 

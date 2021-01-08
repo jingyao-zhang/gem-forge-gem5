@@ -36,7 +36,9 @@ public:
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
   bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
   bool isStreamIdeaAckEnabled() const { return this->enableStreamIdeaAck; }
-  bool isStreamIdeaSyncEnabled() const { return myParams->enable_stream_idea_sync; }
+  bool isStreamIdeaSyncEnabled() const {
+    return myParams->enable_stream_idea_sync;
+  }
   bool isStreamIdeaFlowEnabled() const {
     return myParams->enable_stream_idea_flow;
   }
@@ -56,6 +58,12 @@ public:
   }
   int getLLCStreamEngineIssueWidth() const {
     return this->myParams->llc_stream_engine_issue_width;
+  }
+  int getLLCStreamEngineComputeWidth() const {
+    return this->myParams->llc_stream_engine_compute_width;
+  }
+  bool isLLCStreamEngineZeroComputeLatencyEnabled() const {
+    return this->myParams->enable_llc_stream_zero_compute_latency;
   }
   int getLLCStreamEngineMigrateWidth() const {
     return this->myParams->llc_stream_engine_migrate_width;

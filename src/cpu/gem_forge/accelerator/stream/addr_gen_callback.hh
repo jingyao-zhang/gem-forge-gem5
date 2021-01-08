@@ -54,12 +54,18 @@ struct AddrGenCallback {
   StreamValue genAddr(uint64_t idx,
                       const DynamicStreamFormalParamV &formalParams,
                       GetStreamValueFunc getStreamValue);
+          
+  virtual Cycles getEstimatedLatency() const = 0;
 };
 
 using AddrGenCallbackPtr = std::shared_ptr<AddrGenCallback>;
 
 struct LinearAddrGenCallback : public AddrGenCallback {
   StreamValue genAddr(uint64_t idx, const DynamicStreamParamV &params) override;
+
+  Cycles getEstimatedLatency() const override {
+    return Cycles(1);
+  }
 
   bool isContinuous(const DynamicStreamFormalParamV &params,
                     int32_t elementSize);
@@ -99,6 +105,10 @@ public:
                       const DynamicStreamParamV &params) override {
     // We ignore the idx.
     return this->execFunc->invoke(params);
+  }
+
+  Cycles getEstimatedLatency() const override {
+    return this->execFunc->getEstimatedLatency();
   }
 
 private:
