@@ -87,6 +87,12 @@ class StreamEngine(GemForgeAccelerator):
     streamEngineEnableFloatCancel = Param.Bool(
         False, "Whether the stream float can be cancelled in the middle.")
 
+    # parameters for stream computing.
+    enableZeroComputeLatency = Param.Bool(
+        False, "Whether stream computation charge zero latency")
+    computeWidth = Param.Unsigned(
+        1, "How many computation can be started per cycle")
+
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'
     cxx_header = 'cpu/gem_forge/accelerator/gem_forge_accelerator.hh'

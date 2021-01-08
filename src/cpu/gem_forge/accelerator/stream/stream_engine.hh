@@ -23,6 +23,7 @@ class StreamLQCallback;
 class StreamSQCallback;
 class StreamSQDeprecatedCallback;
 class StreamFloatController;
+class StreamComputeEngine;
 
 class StreamEngine : public GemForgeAccelerator {
 public:
@@ -250,8 +251,8 @@ public:
   Stats::Scalar numMLCResponse;
 
 private:
-  // Make the Stream a friend to simplify code.
   friend class Stream;
+  friend class StreamElement;
   friend class StreamThrottler;
   friend class StreamLQCallback;
   friend class StreamSQCallback;
@@ -429,6 +430,7 @@ private:
 
   std::unique_ptr<StreamThrottler> throttler;
   std::unique_ptr<StreamFloatController> floatController;
+  std::unique_ptr<StreamComputeEngine> computeEngine;
 
   /**
    * Try to coalesce continuous element of direct mem stream if they

@@ -1,5 +1,6 @@
 #include "stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
+#include "stream_compute_engine.hh"
 #include "stream_float_controller.hh"
 #include "stream_lsq_callback.hh"
 #include "stream_throttler.hh"
@@ -57,6 +58,7 @@ StreamEngine::StreamEngine(Params *params)
       this->enableStreamFloat, params->streamEngineFloatPolicy);
   this->floatController = m5::make_unique<StreamFloatController>(
       this, std::move(streamFloatPolicy));
+  this->computeEngine = m5::make_unique<StreamComputeEngine>(this, params);
 
   this->initializeFIFO(this->totalRunAheadLength);
 }
@@ -1398,6 +1400,8 @@ Stream *StreamEngine::tryGetStream(uint64_t streamId) const {
 void StreamEngine::tick() {
   this->allocateElements();
   this->issueElements();
+  this->computeEngine->startComputation();
+  this->computeEngine->completeComputation();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
@@ -1853,7 +1857,8 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         assert(element->stream == S && "Sanity check that streams match.");
         if (element->isAddrReady) {
           // Address already ready. Check if we have to compute the value.
-          if (S->shouldComputeValue() && !element->isValueReady) {
+          if (S->shouldComputeValue() && !element->isValueReady &&
+              !element->scheduledComputation) {
             if (element->checkValueBaseElementsValueReady()) {
               S_ELEMENT_DPRINTF(element, "Found Value Ready.\n");
               readyElements.emplace_back(element);
@@ -2504,6 +2509,9 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
                         "Cannot flush offloaded non-load stream element.\n");
       }
     }
+    if (element->scheduledComputation) {
+      S_ELEMENT_PANIC(element, "Flush in PEB when scheduled computation.");
+    }
 
     // Clear the element to just allocate state.
     element->isAddrReady = false;
@@ -2522,6 +2530,7 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
     element->size = 0;
     element->clearInflyMemAccesses();
     element->clearCacheBlocks();
+    element->clearScheduledComputation();
     std::fill(element->value.begin(), element->value.end(), 0);
     elementIter = this->peb.elements.erase(elementIter);
   }

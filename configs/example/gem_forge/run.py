@@ -174,12 +174,14 @@ parser.add_option("--gem-forge-stream-engine-llc-stream-engine-migrate-width", a
 parser.add_option("--gem-forge-stream-engine-llc-stream-max-infly-request", action="store",
                   type="int", default="8",
                   help="LLCStream max infly request per stream.")
-parser.add_option("--gem-forge-llc-stream-engine-compute-width", action="store",
+
+# Stream Computing options.
+parser.add_option("--gem-forge-stream-engine-compute-width", action="store",
                   type="int", default="1",
-                  help="LLCStreamEngine compute width.")
-parser.add_option("--gem-forge-enable-llc-stream-zero-compute-latency", action="store",
-                  type="int", default="1",
-                  help="LLCStreamEngine compute width.")
+                  help="Core/LLC StreamEngine compute width.")
+parser.add_option("--gem-forge-enable-stream-zero-compute-latency", action="store_true",
+                  default="False",
+                  help="Core/LLC StreamEngine compute done in 0 cycle latency.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

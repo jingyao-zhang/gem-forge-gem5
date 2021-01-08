@@ -2111,7 +2111,6 @@ void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
 }
 
 void LLCStreamEngine::startComputation() {
-  // So far just limit the computation width to 1 per cycle.
   int startedComputation = 0;
   const int computationWidth =
       this->controller->getLLCStreamEngineComputeWidth();
@@ -2149,8 +2148,7 @@ void LLCStreamEngine::completeComputation() {
           computation.readyCycle, curCycle);
       break;
     }
-    LLC_S_DPRINTF(element->dynStreamId,
-                  "Complete computation for element %llu.\n", element->idx);
+    LLC_ELEMENT_DPRINTF(element, "Complete computation.\n");
     auto dynS = LLCDynamicStream::getLLCStreamPanic(element->dynStreamId);
     dynS->completeComputation(this, element, computation.result);
     this->inflyComputations.pop_front();

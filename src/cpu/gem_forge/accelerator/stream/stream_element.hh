@@ -237,6 +237,7 @@ struct StreamElement {
    */
   bool checkValueReady() const;
   bool checkValueBaseElementsValueReady() const;
+  bool scheduledComputation = false;
 
   // Store the infly writeback memory accesses.
   std::unordered_map<StreamStoreInst *, std::unordered_set<StreamMemAccess *>>
@@ -273,6 +274,7 @@ struct StreamElement {
   void clear();
   void clearCacheBlocks();
   void clearInflyMemAccesses();
+  void clearScheduledComputation();
 
   Stream *getStream() const {
     assert(this->stream != nullptr && "Null stream in the element.");

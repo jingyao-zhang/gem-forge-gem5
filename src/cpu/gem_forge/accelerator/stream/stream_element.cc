@@ -1,6 +1,6 @@
 #include "stream_element.hh"
 #include "stream.hh"
-#include "stream_engine.hh"
+#include "stream_compute_engine.hh"
 
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 
@@ -203,14 +203,6 @@ bool StreamElement::shouldIssue() const {
 
 void StreamElement::clear() {
 
-  if (this->FIFOIdx.entryIdx == 1) {
-    if (this->FIFOIdx.streamId.coreId == 8 &&
-        this->FIFOIdx.streamId.streamInstance == 1 &&
-        this->FIFOIdx.streamId.staticId == 11704592) {
-      S_ELEMENT_HACK(this, "Clear\n");
-    }
-  }
-
   this->addrBaseElements.clear();
   this->valueBaseElements.clear();
   this->next = nullptr;
@@ -236,6 +228,7 @@ void StreamElement::clear() {
   std::fill(this->value.begin(), this->value.end(), 0);
 
   this->stored = false;
+  this->clearScheduledComputation();
 }
 
 void StreamElement::clearCacheBlocks() {
@@ -258,6 +251,13 @@ void StreamElement::clearInflyMemAccesses() {
       block.memAccess = nullptr;
     }
   }
+}
+
+void StreamElement::clearScheduledComputation() {
+  if (this->scheduledComputation) {
+    this->se->computeEngine->discardComputation(this);
+  }
+  assert(!this->scheduledComputation && "Still has scheduled computation.");
 }
 
 StreamMemAccess *StreamElement::allocateStreamMemAccess(
@@ -404,6 +404,8 @@ void StreamElement::computeValue() {
     assert(false && "Failed to find value base element.");
   };
 
+  StreamValue result;
+  Cycles estimatedLatency;
   if (S->isStoreStream() && S->getEnabledStoreFunc()) {
     assert(!dynS->offloadedToCache &&
            "Should not compute for floating stream.");
@@ -413,11 +415,10 @@ void StreamElement::computeValue() {
     }
     auto params =
         convertFormalParamToParam(dynS->storeFormalParams, getBaseValue);
-    auto storeValue = dynS->storeCallback->invoke(params);
+    result = dynS->storeCallback->invoke(params);
+    estimatedLatency = dynS->storeCallback->getEstimatedLatency();
 
-    S_ELEMENT_DPRINTF(this, "StoreValue %s.\n", storeValue);
-    // Set the element with the value.
-    this->setValue(this->addr, this->size, storeValue.uint8Ptr());
+    S_ELEMENT_DPRINTF(this, "StoreValue %s.\n", result);
   } else {
     /**
      * This should be an IV/Reduction stream, which also uses AddrGenCallback
@@ -440,9 +441,20 @@ void StreamElement::computeValue() {
         return;
       }
     }
-    auto value = dynS->addrGenCallback->genAddr(
+    result = dynS->addrGenCallback->genAddr(
         this->FIFOIdx.entryIdx, dynS->addrGenFormalParams, getBaseValue);
-    this->setValue(this->addr, this->size, value.uint8Ptr());
+    estimatedLatency = dynS->addrGenCallback->getEstimatedLatency();
+  }
+  /**
+   * We try to model the computation overhead for StoreStream and
+   * ReductionStream. For simple IVStream we do not bother.
+   */
+  if (S->isStoreStream() || S->isReduction()) {
+    this->se->computeEngine->pushReadyComputation(this, std::move(result),
+                                                  estimatedLatency);
+  } else {
+    // Set the element with the value.
+    this->setValue(this->addr, this->size, result.uint8Ptr());
   }
 }
 

@@ -50,6 +50,11 @@ def initializeStreamEngine(options):
     if options.gem_forge_stream_engine_enable_float_pseudo:
         assert(options.gem_forge_stream_engine_enable_float_indirect)
 
+    se.computeWidth =\
+        options.gem_forge_stream_engine_compute_width
+    se.enableZeroComputeLatency =\
+        options.gem_forge_enable_stream_zero_compute_latency
+
     return se
 
 def initializeEmptyGemForgeAcceleratorManager(options):
