@@ -19,6 +19,7 @@ private:
     STATIC,
     MANUAL,
     SMART,
+    SMART_COMPUTATION,
   } policy;
   std::vector<uint64_t> privateCacheCapacity;
 

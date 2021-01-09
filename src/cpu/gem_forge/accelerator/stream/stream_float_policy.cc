@@ -48,6 +48,8 @@ StreamFloatPolicy::StreamFloatPolicy(bool _enabled, const std::string &_policy)
     this->policy = PolicyE::MANUAL;
   } else if (_policy == "smart") {
     this->policy = PolicyE::SMART;
+  } else if (_policy == "smart-computation") {
+    this->policy = PolicyE::SMART_COMPUTATION;
   } else {
     panic("Invalid StreamFloatPolicy.");
   }
@@ -117,6 +119,7 @@ bool StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
   case PolicyE::MANUAL: {
     return this->shouldFloatStreamManual(dynS);
   }
+  case PolicyE::SMART_COMPUTATION:
   case PolicyE::SMART: {
     return this->shouldFloatStreamSmart(dynS);
   }
@@ -314,6 +317,20 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
       logStream(S) << "[Not Float] due to aliased store stream.\n"
                    << std::flush;
       return false;
+    }
+  }
+
+  /**
+   * As an experimental feature, we always offload streams with value
+   * dependence, and store streams with store func, as these are targets for
+   * computation offloading.
+   */
+  if (this->policy == PolicyE::SMART_COMPUTATION) {
+    if (!S->valueDepStreams.empty() ||
+        (S->isStoreStream() && S->getEnabledStoreFunc())) {
+      S_DPRINTF(S, "[Float] always float computation.");
+      logStream(S) << "[Float] always float computation.\n" << std::flush;
+      return true;
     }
   }
 
