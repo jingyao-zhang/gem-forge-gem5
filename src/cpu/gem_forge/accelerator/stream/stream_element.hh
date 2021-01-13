@@ -40,6 +40,7 @@ struct CacheBlockBreakdownAccess {
     PrevElement,
     Ready
   } state = None;
+  static std::string stateToString(StateE state);
   void clear() {
     this->state = CacheBlockBreakdownAccess::StateE::None;
     this->cacheBlockVAddr = 0;
@@ -48,6 +49,8 @@ struct CacheBlockBreakdownAccess {
     this->memAccess = nullptr;
   }
 };
+std::ostream &operator<<(std::ostream &os,
+                         const CacheBlockBreakdownAccess::StateE &state);
 
 class StreamElement;
 /**

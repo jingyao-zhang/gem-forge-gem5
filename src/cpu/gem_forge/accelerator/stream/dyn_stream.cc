@@ -175,12 +175,13 @@ bool DynamicStream::areNextAddrBaseElementsAllocated() const {
     if (baseElement->isStepped) {
       DYN_S_DPRINTF(this->dynamicStreamId,
                     "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
-                    "Stepped? Align(%llu), Reuse(%llu), BaseStream %s\n",
+                    "(Misspeculatively) Stepped? Align(%llu), Reuse(%llu), "
+                    "BaseStream %s\n",
                     this->FIFOIdx.entryIdx, baseElementIdx,
                     edge.alignBaseElement, edge.reuseBaseElement,
                     baseS->getStreamName());
+      return false;
     }
-    assert(!baseElement->isStepped && "Base Element Already Stepped?");
   }
   return true;
 }

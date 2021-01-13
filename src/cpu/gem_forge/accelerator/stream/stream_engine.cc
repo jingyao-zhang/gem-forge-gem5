@@ -516,6 +516,20 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
         return false;
       }
     }
+    /**
+     * Since we coalesce for continuous DirectMemStream, we delay releasing
+     * stepped element here if the next element is not addr ready. This is
+     * to ensure that it is correctly coalesced.
+     */
+    if (S->isDirectMemStream() && dynS.shouldCoreSEIssue()) {
+      auto stepNextElement = stepElement->next;
+      if (!stepNextElement) {
+        return false;
+      }
+      if (!stepNextElement->isAddrReady) {
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -2085,9 +2099,7 @@ void StreamEngine::issueElement(StreamElement *element) {
         // Special case to handle computation for atomic stream at CoreSE.
         auto atomicOp = S->setupAtomicOp(element->FIFOIdx, element->size,
                                          dynS->storeFormalParams);
-        /**
-         * * We should use element address here, not line address.
-         */
+        // * We should use element address here, not line address.
         auto elementVAddr = cacheBlockBreakdown.virtualAddr;
         auto lineOffset = elementVAddr % cacheLineSize;
         auto elementPAddr = cacheLinePAddr + lineOffset;
@@ -2130,7 +2142,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     }
     pkt->req->getStatistic()->isStream = true;
     pkt->req->getStatistic()->streamName = S->streamName.c_str();
-    S_ELEMENT_DPRINTF(element, "Issued %d request to %#x %d.\n", i + 1,
+    S_ELEMENT_DPRINTF(element, "Issued %dth request to %#x %d.\n", i,
                       pkt->getAddr(), pkt->getSize());
 
     {
@@ -2321,10 +2333,6 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
   if (element->FIFOIdx.entryIdx == 0) {
     return;
   }
-  // Check if this element is flushed.
-  if (element->flushed) {
-    return;
-  }
   auto S = element->stream;
   // Never do this for atomic streams.
   if (S->isAtomicStream()) {
@@ -2333,10 +2341,16 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
   if (!S->isDirectMemStream()) {
     return;
   }
+  // Check if this element is flushed.
+  if (element->flushed) {
+    S_ELEMENT_DPRINTF(element, "[NoCoalesce] Flushed.\n");
+    return;
+  }
   // Get the previous element.
   auto prevElement = S->getPrevElement(element);
   // Bail out if we have no previous element (we are the first).
   if (!prevElement) {
+    S_ELEMENT_DPRINTF(element, "[NoCoalesce] No PrevElement.\n");
     return;
   }
   // We found the previous element. Check if completely overlap.
@@ -2348,6 +2362,7 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
 
   // Check if the previous element has the cache line.
   if (!prevElement->isCacheBlockedValue) {
+    S_ELEMENT_DPRINTF(element, "[NoCoalesce] PrevElement not CacheBlocked.\n");
     return;
   }
   assert(prevElement->cacheBlocks && "No block in prevElement.");
@@ -2360,12 +2375,21 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
     assert(block.state == CacheBlockBreakdownAccess::StateE::Initialized);
     if (block.cacheBlockVAddr < prevElementMinBlockVAddr) {
       // Underflow.
+      S_ELEMENT_DPRINTF(
+          element,
+          "[NoCoalece] %dth Block %#x, Underflow Prev MinBlockVAddr %#x.\n",
+          cacheBlockIdx, block.cacheBlockVAddr, prevElementMinBlockVAddr);
       continue;
     }
     auto blockOffset = (block.cacheBlockVAddr - prevElementMinBlockVAddr) /
                        element->cacheBlockSize;
     if (blockOffset >= prevElement->cacheBlocks) {
       // Overflow.
+      S_ELEMENT_DPRINTF(element,
+                        "[NoCoalesce] %dth Block %#x, Overflow Prev "
+                        "MinBlockVAddr %#x NumBlocks %d.\n",
+                        cacheBlockIdx, block.cacheBlockVAddr,
+                        prevElementMinBlockVAddr, prevElement->cacheBlocks);
       continue;
     }
     /**
@@ -2414,6 +2438,11 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
         block.state = CacheBlockBreakdownAccess::StateE::Issued;
       }
     }
+    S_ELEMENT_DPRINTF(
+        element,
+        "[Coalesce] %dth Block %#x %s, PrevElement %dth Block %#x %s.\n",
+        cacheBlockIdx, block.cacheBlockVAddr, block.state, blockOffset,
+        prevBlock.cacheBlockVAddr, prevBlock.state);
   }
 }
 

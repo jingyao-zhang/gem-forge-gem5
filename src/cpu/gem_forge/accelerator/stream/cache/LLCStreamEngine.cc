@@ -528,7 +528,7 @@ bool LLCStreamEngine::canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
    * 1. They are from cores within the same multicast group.
    * 2. They both have linear address generation function.
    * 3. They have same dynamic parameters for address generation.
-   * 4. They have the same static stream id.
+   * 4. They have the same request type.
    */
   const auto &dynSAId = dynSA->getDynamicStreamId();
   const auto &dynSBId = dynSB->getDynamicStreamId();
@@ -570,16 +570,25 @@ bool LLCStreamEngine::canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
       return false;
     }
   }
+  if (this->getDirectStreamReqType(dynSA) !=
+      this->getDirectStreamReqType(dynSB)) {
+    return false;
+  }
   return true;
 }
 
 void LLCStreamEngine::addStreamToMulticastTable(LLCDynamicStreamPtr dynS) {
   bool hasIndirectDependent = dynS->hasIndirectDependent();
-  LLC_S_DPRINTF_(LLCRubyStreamMulticast, dynS->getDynamicStreamId(),
-                 "Add to MulticastTable, HasIndirectDependent %d.\n",
-                 hasIndirectDependent);
+  LLC_S_DPRINTF_(
+      LLCRubyStreamMulticast, dynS->getDynamicStreamId(),
+      "Add to MulticastTable, HasIndirectDependent %d DepEdges %d.\n",
+      hasIndirectDependent, dynS->configData->depEdges.size());
+  /**
+   * Currently we do not try to multicast streams with indirect dependence.
+   * This includes streams with SendTo dependence.
+   */
   // We only try to merge into multicast if it has no indirect dependent.
-  if (!hasIndirectDependent) {
+  if (!hasIndirectDependent && dynS->configData->depEdges.empty()) {
     for (auto &entry : this->multicastStreamMap) {
       auto dynSRoot = entry.first;
       auto &group = entry.second;
@@ -791,13 +800,11 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
     }
 
     // Add this to the request.
-    auto reqType = (SS->hasCoreUser() && !dynS->isPseudoOffload())
-                       ? CoherenceRequestType_GETU
-                       : CoherenceRequestType_GETH;
+    auto reqType = this->getDirectStreamReqType(dynS);
     if (reqType != reqIter->requestType) {
       LLC_SLICE_PANIC(
           sliceId,
-          "Mismatch RequestType for Multicast Slice, Target %d, Ours %d.",
+          "Mismatch RequestType for Multicast Slice, Target %s, Ours %s.",
           reqIter->requestType, reqType);
     }
     if (reqType == CoherenceRequestType_GETU) {
@@ -1030,31 +1037,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     }
 
     // Push to the request queue.
-    auto reqType = CoherenceRequestType_GETH;
+    auto reqType = this->getDirectStreamReqType(stream);
     auto SS = stream->getStaticStream();
-    switch (SS->getStreamType()) {
-    case ::LLVM::TDG::StreamInfo_Type_AT:
-    case ::LLVM::TDG::StreamInfo_Type_ST:
-      reqType = CoherenceRequestType_STREAM_STORE;
-      break;
-    case ::LLVM::TDG::StreamInfo_Type_LD: {
-      if (SS->isUpdateStream()) {
-        reqType = CoherenceRequestType_STREAM_STORE;
-      } else {
-        if (auto dynS = SS->getDynamicStream(stream->getDynamicStreamId())) {
-          if (dynS->shouldCoreSEIssue()) {
-            // We have to send back the data.
-            reqType = CoherenceRequestType_GETU;
-          }
-        } else {
-          // The dynamic stream is already released, we don't really care.
-        }
-      }
-      break;
-    }
-    default:
-      panic("Invalid offloaded stream type.\n");
-    }
     if (reqType == CoherenceRequestType_GETU) {
       statistic.numLLCSentSlice++;
       SS->se->numLLCSentSlice++;
@@ -1138,6 +1122,36 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
         StreamStatistic::LLCStreamEngineIssueReason::Issued);
     return true;
   }
+}
+
+CoherenceRequestType
+LLCStreamEngine::getDirectStreamReqType(LLCDynamicStream *stream) const {
+  auto reqType = CoherenceRequestType_GETH;
+  auto SS = stream->getStaticStream();
+  switch (SS->getStreamType()) {
+  case ::LLVM::TDG::StreamInfo_Type_AT:
+  case ::LLVM::TDG::StreamInfo_Type_ST:
+    reqType = CoherenceRequestType_STREAM_STORE;
+    break;
+  case ::LLVM::TDG::StreamInfo_Type_LD: {
+    if (SS->isUpdateStream()) {
+      reqType = CoherenceRequestType_STREAM_STORE;
+    } else {
+      if (auto dynS = SS->getDynamicStream(stream->getDynamicStreamId())) {
+        if (dynS->shouldCoreSEIssue()) {
+          // We have to send back the data.
+          reqType = CoherenceRequestType_GETU;
+        }
+      } else {
+        // The dynamic stream is already released, we don't really care.
+      }
+    }
+    break;
+  }
+  default:
+    panic("Invalid offloaded stream type.\n");
+  }
+  return reqType;
 }
 
 bool LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *stream) {
@@ -1430,7 +1444,7 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
     msg->m_MessageSize = MessageSizeType_Response_Data;
   }
 
-  if (Debug::LLCRubyStreamMulticast) {
+  if (Debug::LLCRubyStreamMulticast && !req.multicastSliceIds.empty()) {
     std::stringstream ss;
     for (const auto &multicastSliceId : req.multicastSliceIds) {
       auto mlcMachineID =

@@ -189,6 +189,11 @@ private:
   bool issueStream(LLCDynamicStream *stream);
 
   /**
+   * Get the request type for this stream.
+   */
+  CoherenceRequestType getDirectStreamReqType(LLCDynamicStream *stream) const;
+
+  /**
    * Issue the indirect elements for a stream.
    */
   bool issueStreamIndirect(LLCDynamicStream *stream);

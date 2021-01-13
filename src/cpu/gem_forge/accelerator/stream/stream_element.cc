@@ -9,6 +9,27 @@
 #define DEBUG_TYPE StreamElement
 #include "stream_log.hh"
 
+std::string CacheBlockBreakdownAccess::stateToString(StateE state) {
+  switch (state) {
+  default:
+    panic("Unknown CacheBlockBreakdonwAccess state %d.", state);
+#define Case(x)                                                                \
+  case x:                                                                      \
+    return #x
+    Case(None);
+    Case(Initialized);
+    Case(Faulted);
+    Case(Issued);
+    Case(PrevElement);
+    Case(Ready);
+#undef Case
+  }
+}
+std::ostream &operator<<(std::ostream &os,
+                         const CacheBlockBreakdownAccess::StateE &state) {
+  return os << CacheBlockBreakdownAccess::stateToString(state);
+}
+
 StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
                                  Addr _cacheBlockVAddr, Addr _vaddr, int _size,
                                  int _additionalDelay)
