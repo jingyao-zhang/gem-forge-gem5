@@ -125,7 +125,6 @@ namespace X86ISA
             assert(size == 1 || size == 2 || size == 4 || size == 8 ||
                    size == 16 || size == 32 || size == 64);
         } else {
-            assert(size == 1 || size == 2 || size == 4 || size == 8);
         }
         static const char * abcdFormats[9] =
             {"", "%s",  "%sx",  "", "e%sx", "", "", "", "r%sx"};
@@ -147,6 +146,12 @@ namespace X86ISA
                 suffix = "h";
             else if (reg_idx < 8 && size == 1)
                 suffix = "l";
+
+            if (!(size == 1 || size == 2 || size == 4 || size == 8)) {
+                // Alert about the size.
+                ccprintf(os, "[!size=%d]", size);
+                size = 8;
+            }
 
             switch (reg_idx) {
               case INTREG_RAX:

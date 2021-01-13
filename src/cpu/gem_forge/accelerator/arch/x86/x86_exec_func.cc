@@ -8,8 +8,9 @@
 #include "base/loader/symtab.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/gem_forge/gem_forge_utils.hh"
-#include "debug/ExecFunc.hh"
 #include "sim/process.hh"
+
+#include "debug/ExecFunc.hh"
 
 #define EXEC_FUNC_DPRINTF(format, args...)                                     \
   DPRINTF(ExecFunc, "[%s]: " format, this->func.name().c_str(), ##args)
@@ -114,6 +115,12 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     // Advance to the next pc.
     pc.advance();
     EXEC_FUNC_DPRINTF("Next pc %#x.\n", pc.pc());
+    if (pc.pc() >= fetchPC + sizeof(machInst)) {
+      // Somehow we just happen to consumed all of machInst.
+      fetchPC += sizeof(machInst);
+      assert(prox.tryReadBlob(fetchPC, &machInst, sizeof(machInst)) &&
+             "Failed to read in next machine inst.");
+    }
   }
   EXEC_FUNC_DPRINTF("Decode done.\n", pc.pc());
 
@@ -178,7 +185,6 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
    * Registers are passed in as $rdi, $rsi, $rdx, $rcx, $r8, $r9.
    * The exec function should never use stack.
    */
-  assert(params.size() <= 6 && "Too many arguments for exec function.");
   if (params.size() != this->func.args_size()) {
     panic("Invoke %s: Mismatch in # args, given %d, expected.\n",
           this->func.name(), params.size(), this->func.args_size());
@@ -210,11 +216,14 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
     auto param = params.at(idx);
     auto type = this->func.args(idx).type();
     if (type == ::LLVM::TDG::DataType::INTEGER) {
+      assert(intParamIdx < 6 && "Too many int arguments for exec function.");
       const auto &reg = intRegParams[intParamIdx];
       intParamIdx++;
       execFuncXC.setIntRegOperand(reg, param.front());
       EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
     } else {
+      assert(floatParamIdx < 8 &&
+             "Too many float arguments for exec function.");
       auto numRegs = this->translateToNumRegs(type);
       const auto &baseReg = floatRegParams[floatParamIdx];
       floatParamIdx++;
