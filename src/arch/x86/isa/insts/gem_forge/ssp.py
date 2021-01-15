@@ -75,4 +75,26 @@ def macroop SSP_STREAM_LOAD_ZMM_I
     ssp_stream_fload xmm0, imm, dataSize=64, isFloat=True
 };
 
+def macroop SSP_STREAM_ATOMIC_R_I
+{
+    ssp_stream_load reg, imm
+    ssp_stream_store_unlock imm
+};
+
+def macroop SSP_STREAM_ATOMIC_M_I
+{
+    panic "SSP_STREAM_ATOMIC with memory operand in R/M."
+};
+
+def macroop SSP_STREAM_ATOMIC_P_I
+{
+    panic "SSP_STREAM_ATOMIC with P operand in R/M."
+};
+
+def macroop SSP_STREAM_ATOMIC_XMM_I
+{
+    ssp_stream_fload xmm0, imm, dataSize="env.dataSize", isFloat=True
+    ssp_stream_store_unlock imm
+};
+
 '''

@@ -52,9 +52,17 @@ private:
   struct GemForgeStaticInstInfo {
     GemForgeStaticInstOpE op;
   };
-  mutable std::unordered_map<Addr, GemForgeStaticInstInfo>
+  using PCKey = std::pair<Addr, MicroPC>;
+  struct PCKeyHasher {
+    size_t operator()(const PCKey &p) const {
+      auto hash1 = std::hash<Addr>{}(p.first);
+      auto hash2 = std::hash<MicroPC>{}(p.second);
+      return hash1 ^ hash2;
+    }
+  };
+  mutable std::unordered_map<PCKey, GemForgeStaticInstInfo, PCKeyHasher>
       cachedStaticMicroInstInfo;
-  mutable std::unordered_map<Addr, GemForgeStaticInstInfo>
+  mutable std::unordered_map<PCKey, GemForgeStaticInstInfo, PCKeyHasher>
       cachedStaticMacroInstInfo;
 
   GemForgeStaticInstInfo &getStaticInstInfo(const GemForgeDynInstInfo &dynInfo);

@@ -117,6 +117,9 @@
                 0x3A: SSP_STREAM_LOAD(WSSPq, Ib);
                 0x3B: SSP_STREAM_LOAD(WSSPo, Ib);
                 0x3F: SSP_STREAM_STORE(Ib);
+                0x40: SSP_STREAM_ATOMIC(Ev, Ib);
+                0x41: SSP_STREAM_ATOMIC(WSSPd, Ib);
+                0x42: SSP_STREAM_ATOMIC(WSSPq, Ib);
             }
             default: Inst::UD2();
         }

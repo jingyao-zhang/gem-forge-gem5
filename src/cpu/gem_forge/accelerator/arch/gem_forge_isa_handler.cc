@@ -177,17 +177,15 @@ void GemForgeISAHandler::storeTo(Addr vaddr, int size) {
 
 GemForgeISAHandler::GemForgeStaticInstInfo &
 GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
-  // TODO: Handle microop.
-  // TODO: So far this is fine as all our GemForge instructions are decoded to
-  // TODO: single microop.
-  auto pc = dynInfo.pc.pc();
+
+  auto pcKey = std::make_pair<Addr, MicroPC>(dynInfo.pc.pc(), dynInfo.pc.upc());
 
   auto &infoMap = dynInfo.staticInst->isMicroop()
                       ? this->cachedStaticMicroInstInfo
                       : this->cachedStaticMacroInstInfo;
 
   auto emplaceRet =
-      infoMap.emplace(std::piecewise_construct, std::forward_as_tuple(pc),
+      infoMap.emplace(std::piecewise_construct, std::forward_as_tuple(pcKey),
                       std::forward_as_tuple());
   if (emplaceRet.second) {
     // Newly created. Do basic analysis.
@@ -210,10 +208,9 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
     } else if (instName == "ssp_stream_fload") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
-    } else if (instName == "ssp_stream_flw") {
-      // ? Do we have to distinguish fload and flw?
-      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
     } else if (instName == "ssp_stream_store") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_STORE;
+    } else if (instName == "ssp_stream_store_unlock") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_STORE;
     }
   }

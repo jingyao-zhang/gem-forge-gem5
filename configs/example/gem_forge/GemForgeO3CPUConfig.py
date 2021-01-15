@@ -24,6 +24,8 @@ def initializeO3CPU(options, o3cpu):
 
     o3cpu.SQEntries = options.llvm_store_queue_size
     o3cpu.LQEntries = options.llvm_load_queue_size
+    # Check LSQ at 4 byte granularity.
+    o3cpu.LSQDepCheckShift = 2
     if options.llvm_issue_width == 2:
         o3cpu.numROBEntries = 64
         o3cpu.numIQEntries = 16

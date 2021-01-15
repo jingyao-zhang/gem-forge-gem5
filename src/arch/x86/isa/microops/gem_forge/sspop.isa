@@ -309,6 +309,36 @@ let {{
 
     microopClasses["ssp_stream_store"] = SSPStreamStoreOp
 
+    class SSPStreamStoreUnlockOp(X86Microop):
+        op_class = "No_OpClass"
+        def __init__(self, imm, dataSize="env.dataSize"):
+            self.className = "SSPStreamStoreUnlock"
+            self.mnemonic = "ssp.stream.store_unlock"
+            if isinstance(imm, (int, long)):
+                imm = "ULL(%d)" % imm
+            self.imm = imm
+            self.dataSize = dataSize
+
+        def getAllocator(self, microFlags):
+            allocString = '''
+                (StaticInstPtr)(new %(class_name)s(
+                    machInst,
+                    macrocodeBlock,
+                    %(flags)s,
+                    %(imm)s,
+                    %(dataSize)s)
+                )
+            '''
+            allocator = allocString % {
+                "class_name" : self.className,
+                "mnemonic" : self.mnemonic,
+                "flags" : self.microFlagsText(microFlags),
+                "imm" : self.imm,
+                "dataSize" : self.dataSize}
+            return allocator
+
+    microopClasses["ssp_stream_store_unlock"] = SSPStreamStoreUnlockOp
+
     class SSPStreamReadyOp(X86Microop):
         op_class = "No_OpClass"
         def __init__(self, dataSize="env.dataSize"):
@@ -379,6 +409,15 @@ let {{
                 'code' : '',
             },
             ['No_OpClass', 'IsStore', 'IsMemRef', 'IsGemForge']
+        ),
+        InstObjParams(
+            "ssp_stream_store_unlock",
+            "SSPStreamStoreUnlock",
+            'X86MicroopBase',
+            {
+                'code' : '',
+            },
+            ['No_OpClass', 'IsStore', 'IsMemRef', 'IsLockedRMW', 'IsGemForge']
         ),
     ]
     for iop in iops:
