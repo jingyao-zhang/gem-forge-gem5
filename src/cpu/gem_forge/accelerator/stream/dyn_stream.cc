@@ -343,9 +343,9 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
 
   S_ELEMENT_DPRINTF(releaseElement,
                     "ReleaseElementUnstepped, isAddrReady %d.\n",
-                    releaseElement->isAddrReady);
+                    releaseElement->isAddrReady());
   // Check if the element is faulted.
-  if (this->stream->isMemStream() && releaseElement->isAddrReady) {
+  if (this->stream->isMemStream() && releaseElement->isAddrReady()) {
     if (releaseElement->isValueFaulted(releaseElement->addr,
                                        releaseElement->size)) {
       this->stream->statistic.numFaulted++;
@@ -486,7 +486,7 @@ std::string DynamicStream::dumpString() const {
   while (element != this->head) {
     element = element->next;
     ss << element->FIFOIdx.entryIdx << '('
-       << static_cast<int>(element->isAddrReady)
+       << static_cast<int>(element->isAddrReady())
        << static_cast<int>(element->isValueReady) << ')';
     for (auto baseElement : element->addrBaseElements) {
       ss << '.' << baseElement->FIFOIdx.entryIdx;

@@ -77,8 +77,7 @@ def macroop SSP_STREAM_LOAD_ZMM_I
 
 def macroop SSP_STREAM_ATOMIC_R_I
 {
-    ssp_stream_load reg, imm
-    ssp_stream_store_unlock imm
+    ssp_stream_atomic reg, imm, isAtomic=True
 };
 
 def macroop SSP_STREAM_ATOMIC_M_I
@@ -93,8 +92,7 @@ def macroop SSP_STREAM_ATOMIC_P_I
 
 def macroop SSP_STREAM_ATOMIC_XMM_I
 {
-    ssp_stream_fload xmm0, imm, dataSize="env.dataSize", isFloat=True
-    ssp_stream_store_unlock imm
+    ssp_stream_atomic xmm0, imm, dataSize="env.dataSize", isFloat=True, isAtomic=True
 };
 
 '''

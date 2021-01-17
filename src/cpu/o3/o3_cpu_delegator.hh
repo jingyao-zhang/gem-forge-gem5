@@ -37,7 +37,7 @@
  * 4. For each InLSQ GemForgeLoadReq, we have a special event to check if
  *    GemForge say the value is ready.
  * 5. If found a misspeculation, we flush everything.
- * 
+ *
  * GemForgeStore is a little different: the request is still handled by
  * the core, and we only get the address and value from GemForge. Therefore,
  * it is very similar to normal stores.
@@ -49,7 +49,11 @@
  *    do not want to lose the callback in this case.
  * 4. If found a misspeculation, the core will flush everything and restart
  *    again. GemForge don't have to worry about it any more.
- * 
+ *
+ * GemForgeAtomic is a hybrid case: it is treated as a non-speculative
+ * store by the core, yet the request is sent out by the core SE (similar
+ * to GemForgeLoad).
+ *
  *******************************************************************/
 
 template <class CPUImpl>
@@ -108,9 +112,9 @@ public:
                                    int size);
 
   /**
-   * This is the real initiateAcc for GemForgeLoad and GemForgeStore.
+   * This is the real initiateAcc for GemForgeLoad/Atomic and GemForgeStore.
    */
-  Fault initiateGemForgeLoad(const DynInstPtr &dynInstPtr);
+  Fault initiateGemForgeLoadOrAtomic(const DynInstPtr &dynInstPtr);
   Fault initiateGemForgeStore(const DynInstPtr &dynInstPtr);
 
   /**

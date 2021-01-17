@@ -314,45 +314,6 @@ void LLCStreamEngine::receiveStreamElementData(
   }
 
   /**
-   * 1. Construct all the element data, except for store stream.
-   * 2. Process each ready element for indirect/update/atomic/store.
-   * 3. Release ready element.
-   */
-  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
-    this->extractElementDataFromSlice(stream, sliceId, idx, dataBlock);
-  }
-
-  DataBlock loadValueBlock;
-  for (auto elementIter = stream->idxToElementMap.begin(),
-            elementEnd = stream->idxToElementMap.end();
-       elementIter != elementEnd; ++elementIter) {
-    /**
-     * We use extra loop here to ensure BaseElement is processed in order.
-     */
-    auto &element = elementIter->second;
-    LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
-                      element->idx, element->isReady());
-    if (!element->isReady()) {
-      // Not ready yet. Break.
-      break;
-    }
-
-    this->processStreamDataForIndirectStreams(stream, element);
-    this->processStreamDataForUpdate(stream, element, storeValueBlock,
-                                     loadValueBlock);
-  }
-
-  // Now we can release any ready element, as they have already been processed
-  // for indirect streams.
-  while (!stream->idxToElementMap.empty()) {
-    auto elementIter = stream->idxToElementMap.begin();
-    if (!elementIter->second->isReady()) {
-      break;
-    }
-    stream->idxToElementMap.erase(elementIter);
-  }
-
-  /**
    * Finally decide if we need to send back data or ack.
    * 1. Update/Atomic: If core issuing, then need Data, otherwise Ack.
    * 2. Load: Data is already sent by cache controller.
@@ -369,6 +330,68 @@ void LLCStreamEngine::receiveStreamElementData(
       coreNeedAck = true;
     }
   }
+
+  /**
+   * 1. Construct all the element data, except for store stream.
+   * 2. Process each ready element for indirect/update/atomic/store.
+   * 3. Release ready element.
+   */
+  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
+    this->extractElementDataFromSlice(stream, sliceId, idx, dataBlock);
+  }
+
+  /**
+   * Normally we have to process the element in order, and send back data to MLC
+   * in slice granularity. However, since response may come back out of order,
+   * and we may lost SlicId. Ideally we should reassemble elements into slice,
+   * However as a hack for now, we simply process the element out-of-order and
+   * assert element is ready (no reduction, multi-line elements, etc.).
+   */
+  DataBlock loadValueBlock;
+  if (coreNeedValue) {
+    for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
+      if (!stream->idxToElementMap.at(idx)) {
+        LLC_SLICE_PANIC(sliceId, "Element %llu not allocated yet.", idx);
+      }
+      auto &element = stream->idxToElementMap.at(idx);
+      LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
+                        element->idx, element->isReady());
+      if (!element->isReady()) {
+        // Not ready yet. Break.
+        LLC_SLICE_PANIC(sliceId,
+                        "Element %llu not ready, but core need value.\n");
+      }
+
+      this->processStreamDataForIndirectStreams(stream, element);
+      this->processStreamDataForUpdate(stream, element, storeValueBlock,
+                                       loadValueBlock);
+    }
+  } else {
+    while (!stream->idxToElementMap.empty()) {
+      auto &element = stream->idxToElementMap.begin()->second;
+      LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
+                        element->idx, element->isReady());
+      if (!element->isReady()) {
+        // Not ready yet. Break.
+        break;
+      }
+
+      this->processStreamDataForIndirectStreams(stream, element);
+      this->processStreamDataForUpdate(stream, element, storeValueBlock,
+                                       loadValueBlock);
+    }
+  }
+
+  // Now we can release any ready element, as they have already been processed
+  // for indirect streams.
+  while (!stream->idxToElementMap.empty()) {
+    auto elementIter = stream->idxToElementMap.begin();
+    if (!elementIter->second->isReady()) {
+      break;
+    }
+    stream->idxToElementMap.erase(elementIter);
+  }
+
   if (coreNeedValue) {
     Addr paddr = 0;
     assert(stream->translateToPAddr(sliceId.vaddr, paddr));
@@ -377,6 +400,9 @@ void LLCStreamEngine::receiveStreamElementData(
         sliceId, paddrLine,
         loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
         RubySystem::getBlockSizeBytes(), 0 /* Line offset */);
+    LLC_SLICE_DPRINTF(sliceId,
+                      "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
+                      paddrLine, loadValueBlock);
   }
   if (coreNeedAck) {
     this->issueStreamAckToMLC(sliceId);
@@ -534,6 +560,11 @@ bool LLCStreamEngine::canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
   const auto &dynSBId = dynSB->getDynamicStreamId();
   if (dynSAId.coreId == dynSBId.coreId) {
     // Ignore streams from the same core.
+    return false;
+  }
+  if (dynSA->getStaticStream()->isAtomicComputeStream() ||
+      dynSB->getStaticStream()->isAtomicComputeStream()) {
+    // Should never multicast atomic streams.
     return false;
   }
   auto multicastGroupIdA =
@@ -916,7 +947,8 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   /**
    * Prioritize indirect elements.
    */
-  auto &statistic = stream->getStaticStream()->statistic;
+  auto S = stream->getStaticStream();
+  auto &statistic = S->statistic;
   bool issuedIndirect = this->issueStreamIndirect(stream);
   if (issuedIndirect) {
     // We successfully issued an indirect element of this stream.
@@ -977,15 +1009,16 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
   }
 
   /**
+   * Allocate the element on Atomic and StoreStream.
    * Additional check on StoreStream, which should have StoreValue ready.
    */
-  if (stream->getStaticStream()->isStoreStream()) {
+  if (S->isStoreComputeStream() || S->isAtomicComputeStream()) {
     const auto &nextSliceId = stream->peekSlice();
     for (auto idx = nextSliceId.lhsElementIdx; idx < nextSliceId.rhsElementIdx;
          ++idx) {
       stream->allocateElement(idx, stream->slicedStream.getElementVAddr(idx));
       auto &element = stream->idxToElementMap.at(idx);
-      if (!element->isReady()) {
+      if (S->isStoreComputeStream() && !element->isReady()) {
         // Simply schedule the computation.
         if (element->areBaseElementsReady() &&
             !element->isComputationScheduled()) {
@@ -1038,18 +1071,17 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
     // Push to the request queue.
     auto reqType = this->getDirectStreamReqType(stream);
-    auto SS = stream->getStaticStream();
     if (reqType == CoherenceRequestType_GETU) {
       statistic.numLLCSentSlice++;
-      SS->se->numLLCSentSlice++;
+      S->se->numLLCSentSlice++;
       if (this->hasMergedAsMulticast(stream)) {
         statistic.numLLCCanMulticastSlice++;
       }
     }
-    auto requestIter = this->enqueueRequest(SS->getCPUDelegator(), sliceId,
+    auto requestIter = this->enqueueRequest(S->getCPUDelegator(), sliceId,
                                             vaddrLine, paddrLine, reqType);
 
-    if (SS->isStoreStream()) {
+    if (S->isStoreStream()) {
       /**
        * For StoreStream, we build the stored data by extracting overlap
        * region from elements. Notice that we can release any older elements,
@@ -1953,9 +1985,10 @@ void LLCStreamEngine::processStreamDataForUpdate(
 
   if (S->isAtomicStream()) {
     // Very limited AtomicRMW support.
-    LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId, "Perform StreamAtomic.\n");
     auto loadedValue = this->performStreamAtomicOp(elementVAddr, elementPAddr,
                                                    stream, sliceId);
+    LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                       "Perform StreamAtomic, RetValue %llu.\n", loadedValue);
     loadValueBlock.setData(reinterpret_cast<uint8_t *>(&loadedValue),
                            lineOffset, elementCoreSize);
   } else {

@@ -216,8 +216,9 @@ void StreamFloatController::floatStreams(
   Args args(region, dynStreams, offloadedStreamConfigMap,
             *cacheStreamConfigVec);
   this->floatDirectLoadStreams(args);
-  this->floatIndirectLoadStreams(args);
-  this->floatDirectStoreStreams(args);
+  this->floatDirectAtomicComputeStreams(args);
+  this->floatIndirectStreams(args);
+  this->floatDirectStoreComputeStreams(args);
   this->floatReductionStreams(args);
 
   // Sanity check for some offload decision.
@@ -288,7 +289,44 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
   }
 }
 
-void StreamFloatController::floatIndirectLoadStreams(const Args &args) {
+void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
+  auto &floatedMap = args.floatedMap;
+  for (auto dynS : args.dynStreams) {
+    auto S = dynS->stream;
+    if (floatedMap.count(S)) {
+      continue;
+    }
+    if (!S->isAtomicComputeStream() || !S->isDirectMemStream()) {
+      continue;
+    }
+    if (!this->policy->shouldFloatStream(*dynS)) {
+      continue;
+    }
+
+    // Get the CacheStreamConfigureData.
+    auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
+
+    // Remember the offloaded decision.
+    dynS->offloadedToCacheAsRoot = true;
+    dynS->offloadedToCache = true;
+    this->se->numFloated++;
+    floatedMap.emplace(S, config);
+    args.rootConfigVec.push_back(config);
+
+    // Remember the pseudo offloaded decision.
+    if (this->se->enableStreamFloatPseudo &&
+        this->policy->shouldPseudoFloatStream(*dynS)) {
+      dynS->pseudoOffloadedToCache = true;
+      config->isPseudoOffload = true;
+    }
+
+    if (S->isPointerChaseLoadStream()) {
+      config->isPointerChase = true;
+    }
+  }
+}
+
+void StreamFloatController::floatIndirectStreams(const Args &args) {
   if (this->se->enableStreamFloatIndirect) {
     return;
   }
@@ -298,7 +336,10 @@ void StreamFloatController::floatIndirectLoadStreams(const Args &args) {
     if (floatedMap.count(S)) {
       continue;
     }
-    if (!S->isIndirectLoadStream()) {
+    if (S->isDirectMemStream()) {
+      continue;
+    }
+    if (!S->isLoadStream() && !S->isAtomicComputeStream()) {
       continue;
     }
     if (S->addrBaseStreams.size() != 1) {
@@ -322,14 +363,14 @@ void StreamFloatController::floatIndirectLoadStreams(const Args &args) {
   }
 }
 
-void StreamFloatController::floatDirectStoreStreams(const Args &args) {
+void StreamFloatController::floatDirectStoreComputeStreams(const Args &args) {
   auto &floatedMap = args.floatedMap;
   for (auto dynS : args.dynStreams) {
     auto S = dynS->stream;
     if (floatedMap.count(S)) {
       continue;
     }
-    if (!S->isDirectStoreStream() || !S->getEnabledStoreFunc()) {
+    if (!S->isStoreComputeStream() || !S->isDirectStoreStream()) {
       continue;
     }
     if (!this->policy->shouldFloatStream(*dynS)) {

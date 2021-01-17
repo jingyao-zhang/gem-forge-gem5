@@ -294,7 +294,7 @@ void MLCDynamicStream::scheduleAdvanceStream() {
 }
 
 void MLCDynamicStream::panicDump() const {
-  MLC_S_HACK("-------------------Panic Dump--------------------\n");
+  MLC_S_HACK(this->dynamicStreamId, "-------------------Panic Dump--------------------\n");
   for (const auto &slice : this->slices) {
     MLC_SLICE_HACK(slice.sliceId, "VAddr %#x Data %d Core %s.\n",
                    slice.sliceId.vaddr, slice.dataReady,

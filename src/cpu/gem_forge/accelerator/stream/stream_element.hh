@@ -183,7 +183,6 @@ struct StreamElement {
   uint64_t firstUserSeqNum;
   bool isFirstUserDispatched() const;
   bool isStepped = false;
-  bool isAddrReady = false;
   bool isAddrAliased = false;
   bool isValueReady = false;
   bool isCacheAcked = false;
@@ -193,7 +192,10 @@ struct StreamElement {
   Cycles addrReadyCycle;
   Cycles issueCycle;
   Cycles valueReadyCycle;
-  mutable Cycles firstCheckCycle;
+
+  // First time a user check if value is ready.
+  mutable Cycles firstValueCheckCycle;
+  mutable Cycles firstValueCheckByCoreCycle;
 
   /**
    * Small vector stores the cache blocks this element touched.
@@ -238,7 +240,7 @@ struct StreamElement {
   /**
    * Check if value is ready, will set FirstCheckCycle.
    */
-  bool checkValueReady() const;
+  bool checkValueReady(bool checkedByCore) const;
   bool checkValueBaseElementsValueReady() const;
   bool scheduledComputation = false;
 
@@ -275,6 +277,8 @@ struct StreamElement {
   void dump() const;
 
   void clear();
+  // This is to flush the element to just allocated state.
+  void flush(bool aliased);
   void clearCacheBlocks();
   void clearInflyMemAccesses();
   void clearScheduledComputation();
@@ -283,6 +287,14 @@ struct StreamElement {
     assert(this->stream != nullptr && "Null stream in the element.");
     return this->stream;
   }
+
+  bool isAddrReady() const { return this->addrReady; }
+  bool isReqIssued() const { return this->reqIssued; }
+  void setReqIssued();
+
+private:
+  bool addrReady = false;
+  bool reqIssued = false;
 };
 
 #endif

@@ -11,7 +11,7 @@ bool StreamLQCallback::getAddrSize(Addr &addr, uint32_t &size) const {
   assert(this->FIFOIdx == this->element->FIFOIdx &&
          "Element already released.");
   // Check if the address is ready.
-  if (!this->element->isAddrReady) {
+  if (!this->element->isAddrReady()) {
     return false;
   }
   addr = this->element->addr;
@@ -26,12 +26,9 @@ bool StreamLQCallback::hasNonCoreDependent() const {
 }
 
 bool StreamLQCallback::isIssued() const {
-  /**
-   * So far the element is considered issued when its address is ready.
-   */
   assert(this->FIFOIdx == this->element->FIFOIdx &&
          "Element already released.");
-  return this->element->isAddrReady;
+  return this->element->isReqIssued();
 }
 
 bool StreamLQCallback::isValueReady() const {
@@ -41,7 +38,7 @@ bool StreamLQCallback::isValueReady() const {
   /**
    * We can directly check for element->isValueReady, but instead we
    * call areUsedStreamReady() so that StreamEngine can mark the
-   * firstCheckCycle for the element, hence it can throttle the stream.
+   * firstValueCheckCycle for the element, hence it can throttle the stream.
    */
   return this->element->se->areUsedStreamsReady(this->args);
 }
@@ -82,7 +79,7 @@ bool StreamSQCallback::getAddrSize(Addr &addr, uint32_t &size) const {
   assert(this->FIFOIdx == this->element->FIFOIdx &&
          "Element already released.");
   // Check if the address is ready.
-  if (!this->element->isAddrReady) {
+  if (!this->element->isAddrReady()) {
     return false;
   }
   addr = this->element->addr;
@@ -112,7 +109,7 @@ bool StreamSQCallback::isValueReady() const {
   /**
    * We can directly check for element->isValueReady, but instead we
    * call areUsedStreamReady() so that StreamEngine can mark the
-   * firstCheckCycle for the element, hence it can throttle the stream.
+   * firstValueCheckCycle for the element, hence it can throttle the stream.
    */
   return this->element->se->areUsedStreamsReady(this->args);
 }
@@ -124,7 +121,7 @@ const uint8_t *StreamSQCallback::getValue() const {
   assert(this->usedStreamIds.size() == 1 && "GetValue for multiple streams.");
   S_ELEMENT_DPRINTF(this->element,
                     "SQCallback get value, AddrReady %d ValueReady %d.\n",
-                    this->element->isAddrReady, this->element->isValueReady);
+                    this->element->isAddrReady(), this->element->isValueReady);
   return this->element->getValuePtrByStreamId(this->usedStreamIds.front());
 }
 
@@ -146,7 +143,7 @@ bool StreamSQCallback::bypassAliasCheck() const {
 
 bool StreamSQDeprecatedCallback::getAddrSize(Addr &addr, uint32_t &size) {
   // Check if the address is ready.
-  if (!this->element->isAddrReady) {
+  if (!this->element->isAddrReady()) {
     return false;
   }
   addr = this->element->addr;

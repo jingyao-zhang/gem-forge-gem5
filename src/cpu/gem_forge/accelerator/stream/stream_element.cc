@@ -233,7 +233,8 @@ void StreamElement::clear() {
   this->isCacheBlockedValue = false;
   this->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
   this->isStepped = false;
-  this->isAddrReady = false;
+  this->addrReady = false;
+  this->reqIssued = false;
   this->isAddrAliased = false;
   this->isValueReady = false;
   this->isCacheAcked = false;
@@ -241,7 +242,8 @@ void StreamElement::clear() {
 
   this->allocateCycle = Cycles(0);
   this->valueReadyCycle = Cycles(0);
-  this->firstCheckCycle = Cycles(0);
+  this->firstValueCheckCycle = Cycles(0);
+  this->firstValueCheckByCoreCycle = Cycles(0);
 
   this->addr = 0;
   this->size = 0;
@@ -250,6 +252,35 @@ void StreamElement::clear() {
 
   this->stored = false;
   this->clearScheduledComputation();
+}
+
+void StreamElement::flush(bool aliased) {
+
+  if (!this->stream->trackedByPEB()) {
+    S_ELEMENT_PANIC(this, "Flushed Non-PEB element.");
+  }
+
+  // Clear the element to just allocate state.
+  this->addrReady = false;
+  this->reqIssued = false;
+  this->isValueReady = false;
+
+  // Raise the flush flag.
+  this->flushed = true;
+  if (aliased) {
+    this->isAddrAliased = true;
+  }
+
+  this->valueReadyCycle = Cycles(0);
+  this->firstValueCheckCycle = Cycles(0);
+  this->firstValueCheckByCoreCycle = Cycles(0);
+
+  this->addr = 0;
+  this->size = 0;
+  this->clearInflyMemAccesses();
+  this->clearCacheBlocks();
+  this->clearScheduledComputation();
+  std::fill(this->value.begin(), this->value.end(), 0);
 }
 
 void StreamElement::clearCacheBlocks() {
@@ -339,8 +370,8 @@ bool StreamElement::isFirstUserDispatched() const {
 }
 
 void StreamElement::markAddrReady() {
-  assert(!this->isAddrReady && "Addr is already ready.");
-  this->isAddrReady = true;
+  assert(!this->addrReady && "Addr is already ready.");
+  this->addrReady = true;
   this->addrReadyCycle = this->stream->se->curCycle();
 
   /**
@@ -407,7 +438,7 @@ void StreamElement::computeValue() {
   if (!S->shouldComputeValue()) {
     S_ELEMENT_PANIC(this, "Cannot compute value.");
   }
-  if (!this->isAddrReady) {
+  if (!this->isAddrReady()) {
     S_ELEMENT_PANIC(this, "ComputeValue should have addr ready.");
   }
 
@@ -683,13 +714,22 @@ bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
   return false;
 }
 
-bool StreamElement::checkValueReady() const {
-  if (this->firstCheckCycle == 0) {
+bool StreamElement::checkValueReady(bool checkedByCore) const {
+  if (this->firstValueCheckCycle == 0 ||
+      (this->firstValueCheckByCoreCycle == 0 && checkedByCore)) {
     auto curCycle = this->se->curCycle();
+    if (this->firstValueCheckCycle == 0) {
+      this->firstValueCheckCycle = curCycle;
+    }
+    if (this->firstValueCheckByCoreCycle == 0 && checkedByCore) {
+      this->firstValueCheckByCoreCycle = curCycle;
+    }
     S_ELEMENT_DPRINTF(this,
-                      "Mark FirstCheckCycle %lu, AddrReady %d ValueReady %d.\n",
-                      curCycle, this->isAddrReady, this->isValueReady);
-    this->firstCheckCycle = curCycle;
+                      "Mark FirstCheckCycle %lu, FirstCoreCheckCycle %llu, "
+                      "AddrReady %d ValueReady %d.\n",
+                      this->firstValueCheckCycle,
+                      this->firstValueCheckByCoreCycle, this->isAddrReady(),
+                      this->isValueReady);
   }
   return this->isValueReady;
 }
@@ -713,7 +753,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
     if (!baseE.isValid()) {
       S_ELEMENT_PANIC(this, "ValueBaseElement released early: %s.", baseE.idx);
     }
-    if (!baseE.element->checkValueReady()) {
+    if (!baseE.element->checkValueReady(false /* CheckedByCore */)) {
       return false;
     }
   }
@@ -737,9 +777,16 @@ uint64_t StreamElement::mapVAddrToBlockOffset(Addr vaddr, int size) const {
   return this->mapVAddrToValueOffset(vaddr, size) / this->cacheBlockSize;
 }
 
+void StreamElement::setReqIssued() {
+  if (this->reqIssued) {
+    S_ELEMENT_PANIC(this, "Request already issued.\n");
+  }
+  this->reqIssued = true;
+}
+
 void StreamElement::dump() const {
   inform("Stream %50s %d.%d (%d%d).\n", this->stream->getStreamName().c_str(),
          this->FIFOIdx.streamId.streamInstance, this->FIFOIdx.entryIdx,
-         static_cast<int>(this->isAddrReady),
+         static_cast<int>(this->isAddrReady()),
          static_cast<int>(this->isValueReady));
 }

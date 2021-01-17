@@ -5,7 +5,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-def template MicroSSPLoadOpExecute {{
+def template MicroSSPLoadAtomicOpExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
                 Trace::InstRecord *traceData) const
         {
@@ -31,7 +31,7 @@ def template MicroSSPLoadOpExecute {{
         }
 }};
 
-def template MicroSSPLoadOpDeclare {{
+def template MicroSSPLoadAtomicOpDeclare {{
     class %(class_name)s : public X86ISA::X86MicroopBase
     {
       protected:
@@ -56,7 +56,7 @@ def template MicroSSPLoadOpDeclare {{
     };
 }};
 
-def template MicroSSPLoadOpDisassembly {{
+def template MicroSSPLoadAtomicOpDisassembly {{
     std::string %(class_name)s::generateDisassembly(Addr pc,
             const ::Loader::SymbolTable *symtab) const
     {
@@ -70,7 +70,7 @@ def template MicroSSPLoadOpDisassembly {{
     }
 }};
 
-def template MicroSSPLoadOpConstructor {{
+def template MicroSSPLoadAtomicOpConstructor {{
     %(class_name)s::%(class_name)s(
             ExtMachInst machInst, const char * instMnem, uint64_t setFlags,
             InstRegIndex _dest, uint64_t _imm, uint8_t _dataSize) :
@@ -90,11 +90,15 @@ def template MicroSSPLoadOpConstructor {{
 }};
 
 let {{
-    class SSPStreamLoadOp(X86Microop):
+    class SSPStreamLoadAtomicOp(X86Microop):
         op_class = "MemReadOp"
-        def __init__(self, dest, imm, dataSize="env.dataSize", isFloat=False):
-            if isFloat:
+        def __init__(self, dest, imm, dataSize="env.dataSize", isFloat=False, isAtomic=False):
+            if isFloat and isAtomic:
+                self.className = "SSPStreamFAtomic"
+            elif isFloat:
                 self.className = "SSPStreamFLoad"
+            elif isAtomic:
+                self.className = "SSPStreamAtomic"
             else:
                 self.className = "SSPStreamLoad"
             self.dest = dest
@@ -118,17 +122,17 @@ let {{
             }
             return allocator
 
-    microopClasses["ssp_stream_load"] = SSPStreamLoadOp
-    microopClasses["ssp_stream_fload"] = SSPStreamLoadOp
+    microopClasses["ssp_stream_load"] = SSPStreamLoadAtomicOp
+    microopClasses["ssp_stream_fload"] = SSPStreamLoadAtomicOp
+    microopClasses["ssp_stream_atomic"] = SSPStreamLoadAtomicOp
+    microopClasses["ssp_stream_fatomic"] = SSPStreamLoadAtomicOp
 }};
 
 let {{
     iops = [
         InstObjParams(
-            # mnemonic
-            "ssp_stream_load",
-            # class name
-            "SSPStreamLoad",
+            "ssp_stream_load", # mnemonic
+            "SSPStreamLoad", # class name
             'X86MicroopBase',
             {
                 'code' : '',
@@ -162,10 +166,46 @@ let {{
             },
             ['FloatMemReadOp', 'IsLoad', 'IsMemRef', 'IsGemForge']
         ),
+        InstObjParams(
+            "ssp_stream_atomic",
+            "SSPStreamAtomic",
+            'X86MicroopBase',
+            {
+                'code' : '',
+                'user_constructor': """
+                    flags[IsInteger] = true;
+                    _destRegIdx[_numDestRegs++] = RegId(IntRegClass, INTREG_FOLDED(dest, foldOBit));
+                    _numIntDestRegs++;
+                """,
+            },
+            ['MemReadOp', 'IsAtomic', 'IsMemRef', 'IsGemForge']
+        ),
+        InstObjParams(
+            "ssp_stream_fatomic",
+            "SSPStreamFAtomic",
+            'X86MicroopBase',
+            {
+                'code' : '',
+                'user_constructor': """
+                    flags[IsFloating] = true;
+                    /**
+                     * ! GemForge
+                     * Hack to also mark higher bits as my destination.
+                     * Make sure we correctly handle case when dataSize < 64.
+                     */
+                    for (int i = 0; i < (dataSize + sizeof(uint64_t) - 1) / sizeof(uint64_t); i++) {
+                        assert(_numDestRegs < MaxInstDestRegs && "DestRegs overflow.");
+                        _destRegIdx[_numDestRegs++] = RegId(FloatRegClass, dest + i);
+                        _numFPDestRegs++;
+                    }
+                """,
+            },
+            ['FloatMemReadOp', 'IsAtomic', 'IsMemRef', 'IsGemForge']
+        ),
     ]
     for iop in iops:
-        header_output += MicroSSPLoadOpDeclare.subst(iop)
-        decoder_output += MicroSSPLoadOpConstructor.subst(iop)
-        decoder_output += MicroSSPLoadOpDisassembly.subst(iop)
-        exec_output += MicroSSPLoadOpExecute.subst(iop)
+        header_output += MicroSSPLoadAtomicOpDeclare.subst(iop)
+        decoder_output += MicroSSPLoadAtomicOpConstructor.subst(iop)
+        decoder_output += MicroSSPLoadAtomicOpDisassembly.subst(iop)
+        exec_output += MicroSSPLoadAtomicOpExecute.subst(iop)
 }};

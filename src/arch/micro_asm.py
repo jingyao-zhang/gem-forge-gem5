@@ -130,7 +130,7 @@ def handle_statement(parser, container, statement):
         try:
             microop = eval('__microopClassFromInsideTheAssembler(%s)' %
                     statement.params, {}, parser.symbols)
-        except:
+        except Exception as e:
             print_error("Error creating microop object with mnemonic %s." % \
                     statement.mnemonic)
             raise

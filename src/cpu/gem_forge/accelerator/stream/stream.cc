@@ -627,7 +627,6 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
     assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT);
     const auto &info = this->getLoadFuncInfo();
     if (!this->loadCallback) {
-      hack("setup loadcallback.");
       this->loadCallback = std::make_shared<TheISA::ExecFunc>(dynS.tc, info);
     }
     // No additional input. All inputs are the same as StoreFunc.
@@ -702,8 +701,9 @@ bool Stream::shouldComputeValue() const {
     // IV/Reduction stream always compute value.
     return true;
   }
-  if (this->isStoreStream() && this->getEnabledStoreFunc()) {
-    // Store stream with StoreFunc can also compute.
+  if (this->isStoreComputeStream()) {
+    // StoreCompute stream can also compute.
+    // AtomicCompute is handled by sending out the AMO request.
     return true;
   }
   return false;
@@ -874,16 +874,16 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
      * Since this element is used by the core, we update the statistic
      * of the latency of this element experienced by the core.
      */
-    if (releaseElement->valueReadyCycle < releaseElement->firstCheckCycle) {
+    if (releaseElement->valueReadyCycle < releaseElement->firstValueCheckCycle) {
       // The element is ready earlier than core's user.
       auto earlyCycles =
-          releaseElement->firstCheckCycle - releaseElement->valueReadyCycle;
+          releaseElement->firstValueCheckCycle - releaseElement->valueReadyCycle;
       this->statistic.numCoreEarlyElement++;
       this->statistic.numCoreEarlyCycle += earlyCycles;
     } else {
       // The element makes the core's user wait.
       auto lateCycles =
-          releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
+          releaseElement->valueReadyCycle - releaseElement->firstValueCheckCycle;
       this->statistic.numCoreLateElement++;
       this->statistic.numCoreLateCycle += lateCycles;
       late = true;
@@ -897,7 +897,7 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
             releaseElement->addrReadyCycle - releaseElement->allocateCycle,
             releaseElement->issueCycle - releaseElement->allocateCycle,
             releaseElement->valueReadyCycle - releaseElement->allocateCycle,
-            releaseElement->firstCheckCycle - releaseElement->allocateCycle);
+            releaseElement->firstValueCheckCycle - releaseElement->allocateCycle);
       }
     }
   }
@@ -910,7 +910,7 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
   }
 
   // Check if the element is faulted.
-  if (this->isMemStream() && releaseElement->isAddrReady) {
+  if (this->isMemStream() && releaseElement->isAddrReady()) {
     if (releaseElement->isValueFaulted(releaseElement->addr,
                                        releaseElement->size)) {
       this->statistic.numFaulted++;
@@ -1013,64 +1013,6 @@ StreamElement *Stream::getPrevElement(StreamElement *element) {
     return nullptr;
   }
   return prevElement;
-}
-
-void Stream::handleStoreFuncAtRelease() {
-  if (!this->getEnabledStoreFunc()) {
-    return;
-  }
-  assert(!this->dynamicStreams.empty() && "No dynamic stream.");
-  auto &dynS = this->dynamicStreams.front();
-
-  assert(dynS.stepSize > 0 && "No element to release.");
-  auto element = dynS.tail->next;
-  assert(element->isStepped && "Release unstepped element.");
-  if (dynS.offloadedToCache) {
-    // This stream is offloaded to cache.
-    return;
-  }
-  if (!element->isAddrReady) {
-    S_ELEMENT_PANIC(element, "StoreFunc should have addr ready.");
-  }
-  // Check for value base element.
-  if (!element->checkValueBaseElementsValueReady()) {
-    S_ELEMENT_PANIC(element,
-                    "StoreFunc with ValueBaseElement not value ready.");
-  }
-  if (this->isUpdateStream()) {
-    // For update stream, myself should also be value ready.
-    if (!element->isValueReady) {
-      S_ELEMENT_PANIC(element, "StoreFunc input is not ready.");
-    }
-  }
-  // Get value for store func.
-  auto getStoreFuncInput = [this, element](StaticId id) -> StreamValue {
-    StreamValue elementValue;
-    if (id == this->staticId) {
-      // Update stream using myself.
-      element->getValueByStreamId(id, elementValue.uint8Ptr(),
-                                  sizeof(elementValue));
-      return elementValue;
-    } else {
-      // Search the ValueBaseElements.
-      auto baseS = this->se->getStream(id);
-      for (const auto &baseE : element->valueBaseElements) {
-        if (baseE.element->stream == baseS) {
-          // Found it.
-          baseE.element->getValueByStreamId(id, elementValue.uint8Ptr(),
-                                            sizeof(elementValue));
-          return elementValue;
-        }
-      }
-      assert(false && "Failed to find value base element.");
-    }
-  };
-  auto params =
-      convertFormalParamToParam(dynS.storeFormalParams, getStoreFuncInput);
-  auto storeValue = dynS.storeCallback->invoke(params).front();
-
-  S_ELEMENT_DPRINTF(element, "StoreValue %llu.\n", storeValue);
-  this->performStore(dynS, element, storeValue);
 }
 
 std::unique_ptr<StreamAtomicOp>

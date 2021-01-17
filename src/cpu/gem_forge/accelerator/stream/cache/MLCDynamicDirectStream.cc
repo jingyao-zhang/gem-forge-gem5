@@ -54,8 +54,8 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
   // initial credit.
   _configData->initAllocatedIdx = this->llcTailSliceIdx;
 
-  MLC_S_DPRINTF("InitAllocatedSlice %d overflowed %d.\n", this->llcTailSliceIdx,
-                this->slicedStream.hasOverflowed());
+  MLC_S_DPRINTF(this->dynamicStreamId, "InitAllocatedSlice %d overflowed %d.\n",
+                this->llcTailSliceIdx, this->slicedStream.hasOverflowed());
 }
 
 void MLCDynamicDirectStream::advanceStream() {
@@ -77,8 +77,8 @@ void MLCDynamicDirectStream::advanceStream() {
       2 * this->maxNumSlices *
       std::max(static_cast<uint64_t>(1),
                static_cast<uint64_t>(this->slicedStream.getElementPerSlice()));
-  MLC_S_DPRINTF("IndirectSlices %llu Threshold %llu.\n", indirectSlices,
-                indirectSlicesThreshold);
+  MLC_S_DPRINTF(this->dynamicStreamId, "IndirectSlices %llu Threshold %llu.\n",
+                indirectSlices, indirectSlicesThreshold);
   // Of course we need to allocate more slices.
   if (indirectSlices < indirectSlicesThreshold) {
     while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
@@ -213,9 +213,9 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
          "Don't know where to send credit.");
 
   // Send the flow control.
-  MLC_S_DPRINTF("Extended %lu -> %lu, sent credit to LLC%d.\n",
-                this->llcTailSliceIdx, this->tailSliceIdx,
-                this->llcTailSliceLLCBank.num);
+  MLC_S_DPRINTF(
+      this->dynamicStreamId, "Extended %lu -> %lu, sent credit to LLC%d.\n",
+      this->llcTailSliceIdx, this->tailSliceIdx, this->llcTailSliceLLCBank.num);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = this->llcTailPAddr;
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;
@@ -302,7 +302,8 @@ void MLCDynamicDirectStream::receiveStreamData(
         // Also consider llc stream being cut.
         if (this->llcCutLineVAddr > 0 &&
             slice->sliceId.vaddr < this->llcCutLineVAddr) {
-          MLC_S_PANIC("Mismatch numElements, incoming %d, slice %d.\n",
+          MLC_S_PANIC(this->dynamicStreamId,
+                      "Mismatch numElements, incoming %d, slice %d.\n",
                       numElements, slice->sliceId.getNumElements());
         }
       }
@@ -465,12 +466,13 @@ MLCDynamicDirectStream::findSliceForCoreRequest(
     }
   }
 
-  MLC_S_PANIC("Failed to find slice for core %s.\n", sliceId);
+  MLC_S_PANIC(this->dynamicStreamId, "Failed to find slice for core %s.\n",
+              sliceId);
 }
 
 void MLCDynamicDirectStream::receiveReuseStreamData(
     Addr vaddr, const DataBlock &dataBlock) {
-  MLC_S_DPRINTF("Received reuse block %#x.\n", vaddr);
+  MLC_S_DPRINTF(this->dynamicStreamId, "Received reuse block %#x.\n", vaddr);
   /**
    * Somehow it's possible that the slice is already allocated.
    * Search for it.

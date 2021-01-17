@@ -208,9 +208,11 @@ GemForgeISAHandler::getStaticInstInfo(const GemForgeDynInstInfo &dynInfo) {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
     } else if (instName == "ssp_stream_fload") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
+    } else if (instName == "ssp_stream_atomic") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
+    } else if (instName == "ssp_stream_fatomic") {
+      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_LOAD;
     } else if (instName == "ssp_stream_store") {
-      staticInstInfo.op = GemForgeStaticInstOpE::STREAM_STORE;
-    } else if (instName == "ssp_stream_store_unlock") {
       staticInstInfo.op = GemForgeStaticInstOpE::STREAM_STORE;
     }
   }

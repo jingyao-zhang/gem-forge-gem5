@@ -8,6 +8,7 @@
 /**
  * ! GemForge
  * Used to implement special GemForgeLoadRequest.
+ * ! This is abused to implement GemForgeAtomic.
  */
 template <class Impl> class GemForgeLoadRequest : public LSQ<Impl>::LSQRequest {
 public:
@@ -22,11 +23,12 @@ public:
   using O3CPUDelegator = typename Impl::CPUPol::O3CPUDelegator;
 
   GemForgeLoadRequest(LSQUnit *port, const DynInstPtr &inst,
-                     O3CPUDelegator *_cpuDelegator,
-                     GemForgeLSQCallbackPtr _callback)
-      : LSQ<Impl>::LSQRequest(port, inst, true /* isLoad */,
+                      O3CPUDelegator *_cpuDelegator,
+                      GemForgeLSQCallbackPtr _callback)
+      : LSQ<Impl>::LSQRequest(port, inst, inst->isLoad() /* isLoad */,
                               _callback->getAddr(), _callback->getSize(),
-                              0 /* Flags */),
+                              inst->isAtomic() ? Request::ATOMIC_RETURN_OP
+                                               : Request::Flags(0) /* Flags */),
         cpuDelegator(_cpuDelegator), callback(std::move(_callback)),
         checkValueReadyEvent([this]() -> void { this->checkValueReady(); },
                              port->name()) {}

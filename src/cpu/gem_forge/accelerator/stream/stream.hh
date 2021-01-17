@@ -179,6 +179,15 @@ public:
   bool isDirectMemStream() const;
   bool isPointerChaseLoadStream() const { return false; }
   bool shouldComputeValue() const;
+  bool isAtomicComputeStream() const {
+    return this->isAtomicStream() && this->getEnabledStoreFunc();
+  }
+  bool isStoreComputeStream() const {
+    return this->isStoreStream() && this->getEnabledStoreFunc();
+  }
+  bool trackedByPEB() const {
+    return this->isLoadStream() && !this->getFloatManual();
+  }
 
   /**
    * Simple bookkeeping information for the stream engine.
@@ -330,10 +339,6 @@ public:
    * @param isEnd: This element is stepped by StreamEnd, not StreamStep.
    */
   StreamElement *releaseElementStepped(bool isEnd);
-  /**
-   * Handle store function for released element.
-   */
-  void handleStoreFuncAtRelease();
   /**
    * Remove one unstepped element from the dynamic stream.
    * CommitStreamEnd will release from the first dynamic stream.

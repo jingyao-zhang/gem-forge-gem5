@@ -37,11 +37,11 @@ void StreamThrottler::throttleStream(StreamElement *element) {
     // Do not throttle for the first elements.
     return;
   }
-  if (element->valueReadyCycle == 0 || element->firstCheckCycle == 0) {
+  if (element->valueReadyCycle == 0 || element->firstValueCheckCycle == 0) {
     // No valid cycle record, do nothing.
     return;
   }
-  if (element->valueReadyCycle < element->firstCheckCycle + Cycles(2)) {
+  if (element->valueReadyCycle < element->firstValueCheckCycle + Cycles(2)) {
     // The element is ready earlier than user, do nothing.
     // We add 2 cycles buffer here.
     return;

@@ -1267,6 +1267,22 @@ DefaultIEW<Impl>::executeInsts()
 
             // Tell the LDSTQ to execute this instruction (if it is a load).
             if (inst->isAtomic()) {
+                /**
+                 * ! GemForge
+                 * Due to the latency between scheduling and issuing, it is
+                 * possible that GemForge now regrets about canExecution, e.g
+                 * the data being flushed due to RAWMisspeculation.
+                 * In such case, we add the instruction back to IQ.
+                 */
+                if (cpu->cpuDelegator) {
+                    if (!cpu->cpuDelegator->canExecute(inst)) {
+                        DPRINTF(IEW,
+                            "Execute: Reschedule GemForgeAtomic: %s.\n",
+                            *inst);
+                        instQueue.rescheduleGemForgeInst(inst);
+                        continue;
+                    }
+                }
                 // AMOs are treated like store requests
                 fault = ldstQueue.executeStore(inst);
 

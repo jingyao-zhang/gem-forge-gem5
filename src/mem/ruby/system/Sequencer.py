@@ -68,7 +68,7 @@ class RubySequencer(RubyPort):
        "max data requests (incl. prefetches) outstanding")
    max_outstanding_inst_requests = Param.Int(16,
        "max inst requests (incl. prefetches) outstanding")
-   deadlock_threshold = Param.Cycles(500000,
+   deadlock_threshold = Param.Cycles(10000,
        "max outstanding cycles for a request before deadlock/livelock declared")
    garnet_standalone = Param.Bool(False, "")
    # id used by protocols that support multiple sequencers per controller

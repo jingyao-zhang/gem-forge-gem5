@@ -152,7 +152,8 @@ void MLCDynamicIndirectStream::receiveStreamData(
 void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
                                                      uint64_t baseData) {
 
-  MLC_S_DPRINTF("Receive BaseStreamData element %lu data %lu tailSliceIdx %lu "
+  MLC_S_DPRINTF(this->dynamicStreamId,
+                "Receive BaseStreamData element %lu data %lu tailSliceIdx %lu "
                 "tailElementIdx %lu.\n",
                 elementIdx, baseData, this->tailSliceIdx, this->tailElementIdx);
 
@@ -365,7 +366,7 @@ MLCDynamicStream::SliceIter MLCDynamicIndirectStream::findSliceForCoreRequest(
     const DynamicStreamSliceId &sliceId) {
 
   if (this->slices.empty()) {
-    MLC_S_PANIC("No slices for request, overflowed %d, totalTripCount %lu.\n",
+    MLC_S_PANIC(this->dynamicStreamId, "No slices for request, overflowed %d, totalTripCount %lu.\n",
                 this->hasOverflowed(), this->getTotalTripCount());
   }
 

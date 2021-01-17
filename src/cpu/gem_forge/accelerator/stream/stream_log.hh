@@ -38,28 +38,32 @@
   "%s: " format, (dynamicStreamId), ##args
 #define DYN_S_DPRINTF(dynamicStreamId, format, args...)                        \
   DPRINTF(DEBUG_TYPE, DYN_S_MSG((dynamicStreamId), format, ##args))
+#define DYN_S_PANIC(dynamicStreamId, format, args...)                        \
+  panic(DYN_S_MSG((dynamicStreamId), format, ##args))
 
 #define SLICE_MSG(sliceId, format, args...)                                    \
   DYN_S_MSG((sliceId).streamId, "[%lu, +%d) " format, (sliceId).lhsElementIdx, \
             (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args)
 
-#define MLC_S_MSG(format, args...)                                             \
-  "[MLC_SE%d][%lu-%lu]: " format, this->controller->getMachineID().num,        \
-      this->dynamicStreamId.staticId, this->dynamicStreamId.streamInstance,    \
-      ##args
+#define MLC_S_MSG(dynId, format, args...)                                      \
+  "[MLC_SE%d]%s: " format, this->controller->getMachineID().num, dynId, ##args
 #define MLC_SLICE_MSG(sliceId, format, args...)                                \
   "[MLC_SE%d][%lu-%lu][%lu, +%d): " format,                                    \
       this->controller->getMachineID().num, (sliceId).streamId.staticId,       \
       (sliceId).streamId.streamInstance, (sliceId).lhsElementIdx,              \
       (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args
 
-#define MLC_S_DPRINTF(format, args...)                                         \
-  DPRINTF(DEBUG_TYPE, MLC_S_MSG(format, ##args))
-#define MLC_S_WARN(format, args...) warn(MLC_S_MSG(format, ##args))
-#define MLC_S_HACK(format, args...) hack(MLC_S_MSG(format, ##args))
-#define MLC_S_PANIC(format, args...)                                           \
+#define MLC_S_DPRINTF_(X, dynId, format, args...)                              \
+  DPRINTF(X, MLC_S_MSG(dynId, format, ##args))
+#define MLC_S_DPRINTF(dynId, format, args...)                                  \
+  MLC_S_DPRINTF_(DEBUG_TYPE, dynId, format, ##args)
+#define MLC_S_WARN(dynId, format, args...)                                     \
+  warn(MLC_S_MSG(dynId, format, ##args))
+#define MLC_S_HACK(dynId, format, args...)                                     \
+  hack(MLC_S_MSG(dynId, format, ##args))
+#define MLC_S_PANIC(dynId, format, args...)                                    \
   this->panicDump();                                                           \
-  panic(MLC_S_MSG(format, ##args))
+  panic(MLC_S_MSG(dynId, format, ##args))
 
 #define MLC_SLICE_DPRINTF(sliceId, format, args...)                            \
   DPRINTF(DEBUG_TYPE, MLC_SLICE_MSG(sliceId, format, ##args))

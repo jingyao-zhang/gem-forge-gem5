@@ -129,7 +129,14 @@ template <class Impl> void GemForgeLoadRequest<Impl>::sendPacketToCache() {
   state->outstanding++;
   this->packetSent();
   this->_numOutstandingPackets = 1;
-  // Schedule value check.
+  /**
+   * We schedule the value check for next cycle. Also we perform an immediate
+   * value check to let the core know that I am waiting for the results.
+   * This is used to remove the one-cycle delay from first value check to
+   * issue the packet for non-floating AtomicCompute stream, which relies
+   * on value check to know StreamAtomic is non-speculative.
+   */
+  this->callback->isValueReady();
   this->cpuDelegator->schedule(&this->checkValueReadyEvent, Cycles(1));
 }
 

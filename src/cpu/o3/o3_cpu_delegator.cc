@@ -119,6 +119,11 @@ public:
                GemForgeLSQCallback::Type::LOAD;
   }
 
+  bool isGemForgeLoadOrAtomic(const DynInstPtr &dynInstPtr) {
+    return dynInstPtr->isGemForge() &&
+           (dynInstPtr->isLoad() || dynInstPtr->isAtomic());
+  }
+
   /**
    * Check if an instruction is in PreLSQ and its addr/size is ready.
    */
@@ -240,9 +245,10 @@ void DefaultO3CPUDelegator<CPUImpl>::dispatch(DynInstPtr &dynInstPtr) {
 template <class CPUImpl>
 bool DefaultO3CPUDelegator<CPUImpl>::canExecute(DynInstPtr &dynInstPtr) {
   /**
-   * Special case for GemForgeLoad (inPreLSQ): they can execute when
-   * addr/size is ready. Their GemForgeExecute hook is actually the
-   * writeback event.
+   * Special case for GemForgeLoad/Atomic (inPreLSQ):
+   * Can execute when addr/size is ready. Their GemForgeExecute hook is actually
+   * the writeback event.
+   * Notice that GemForgeAtomic also uses LoadCallback.
    */
   if (pimpl->isSquashedInGemForge(dynInstPtr)) {
     // Already squashed, not exposed to GemForge.
@@ -267,7 +273,7 @@ void DefaultO3CPUDelegator<CPUImpl>::execute(DynInstPtr &dynInstPtr) {
   }
   INST_DPRINTF(dynInstPtr, "Execute.\n");
   if (pimpl->isLoadInPreLSQ(dynInstPtr)) {
-    // GemForgeLoad really happens at writeback.
+    // GemForgeLoad/Atomic really happens at writeback.
     return;
   }
   auto dynInfo = pimpl->createDynInfo(dynInstPtr);
@@ -282,12 +288,7 @@ bool DefaultO3CPUDelegator<CPUImpl>::canWriteback(
     // Already squashed, not exposed to GemForge.
     return true;
   }
-  /**
-   * Special case for GemForgeLoad: they can execute when
-   * addr/size is ready. Their GemForgeExecute hook is actually the
-   * writeback event.
-   */
-  if (dynInstPtr->isGemForge() && dynInstPtr->isLoad()) {
+  if (pimpl->isGemForgeLoadOrAtomic(dynInstPtr)) {
     auto dynInfo = pimpl->createDynInfo(dynInstPtr);
     auto ret = isaHandler->canExecute(dynInfo);
     if (!ret) {
@@ -304,7 +305,7 @@ void DefaultO3CPUDelegator<CPUImpl>::writeback(const DynInstPtr &dynInstPtr) {
     // Already squashed, not exposed to GemForge.
     return;
   }
-  if (dynInstPtr->isGemForge() && dynInstPtr->isLoad()) {
+  if (pimpl->isGemForgeLoadOrAtomic(dynInstPtr)) {
     INST_DPRINTF(dynInstPtr, "Writeback.\n");
     auto dynInfo = pimpl->createDynInfo(dynInstPtr);
     isaHandler->execute(dynInfo, *dynInstPtr);
@@ -560,16 +561,16 @@ void DefaultO3CPUDelegator<CPUImpl>::foundRAWMisspeculationInLSQ(
 }
 
 template <class CPUImpl>
-Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeLoad(
+Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeLoadOrAtomic(
     const DynInstPtr &dynInstPtr) {
-  assert(dynInstPtr->isGemForge() && dynInstPtr->isLoad() &&
-         "Should be a GemForgeLoad.");
+  assert(pimpl->isGemForgeLoadOrAtomic(dynInstPtr) &&
+         "Should be a GemForgeLoad/Atomic.");
   auto &preLSQ = pimpl->preLSQ;
   auto seqNum = pimpl->getInstSeqNum(dynInstPtr);
   auto iter = preLSQ.find(seqNum);
   if (iter == preLSQ.end()) {
     // This is not GemForgeLoad
-    INST_PANIC(dynInstPtr, "Missing PreLSQ for GemForgeLoad.");
+    INST_PANIC(dynInstPtr, "Missing PreLSQ for GemForgeLoad/Atomic.");
   }
 
   auto &callbacks = iter->second;
@@ -583,7 +584,7 @@ Fault DefaultO3CPUDelegator<CPUImpl>::initiateGemForgeLoad(
          "GemForgeLQCallback should be addr/size ready.");
   std::vector<bool> byteEnable;
 
-  return pimpl->cpu->pushRequest(dynInstPtr, true /* isLoad */,
+  return pimpl->cpu->pushRequest(dynInstPtr, dynInstPtr->isLoad() /* isLoad */,
                                  nullptr /* data */, size, vaddr, 0 /* flags */,
                                  nullptr, nullptr, byteEnable);
 }

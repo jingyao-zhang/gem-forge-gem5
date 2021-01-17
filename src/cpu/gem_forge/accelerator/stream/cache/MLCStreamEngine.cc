@@ -19,15 +19,6 @@
   DPRINTF(MLCRubyStream, "[MLC_SE%d]: " format,                                \
           this->controller->getMachineID().num, ##args)
 
-#define MLC_STREAM_DPRINTF_(X, streamId, format, args...)                      \
-  DPRINTF(X, "[MLC_SE%d][%llu]: " format,                                      \
-          this->controller->getMachineID().num, streamId, ##args)
-#define MLC_STREAM_DPRINTF(streamId, format, args...)                          \
-  MLC_STREAM_DPRINTF_(MLCRubyStream, streamId, format, ##args)
-#define MLC_STREAM_HACK(streamId, format, args...)                             \
-  hack("[MLC_SE%d][%llu]: " format, this->controller->getMachineID().num,      \
-       streamId, ##args)
-
 MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_responseToUpperMsgBuffer,
                                  MessageBuffer *_requestToLLCMsgBuffer)
@@ -64,10 +55,9 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
 void MLCStreamEngine::configureStream(
     CacheStreamConfigureDataPtr streamConfigureData, MasterID masterId) {
-  MLC_STREAM_DPRINTF_(MLCRubyStreamLife,
-                      streamConfigureData->dynamicId.staticId,
-                      "Received StreamConfigure, totalTripCount %lu.\n",
-                      streamConfigureData->totalTripCount);
+  MLC_S_DPRINTF_(MLCRubyStreamLife, streamConfigureData->dynamicId,
+                 "Received StreamConfigure, TotalTripCount %lu.\n",
+                 streamConfigureData->totalTripCount);
   /**
    * Do not release the pkt and streamConfigureData as they should be forwarded
    * to the LLC bank and released there. However, we do need to fix up the
@@ -166,8 +156,7 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
                                 MasterID masterId) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
-  MLC_STREAM_DPRINTF_(MLCRubyStreamLife, endId.staticId,
-                      "Received StreamEnd.\n");
+  MLC_S_DPRINTF_(MLCRubyStreamLife, endId, "Received StreamEnd.\n");
 
   // The PAddr of the llc stream. The cache controller uses this to find which
   // LLC bank to forward this StreamEnd message.
@@ -357,32 +346,32 @@ void MLCStreamEngine::computeReuseInformation(
     auto S = config->stream;
     auto groupId = S->getCoalesceBaseStreamId();
     if (groupId == 0) {
-      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
-                          "[MLC NoReuse] No coalesce group.\n");
+      MLC_S_DPRINTF_(MLCRubyStreamReuse, config->dynamicId,
+                     "[MLC NoReuse] No coalesce group.\n");
       continue;
     }
     // Skip streams with any dependence.
     if (!config->depEdges.empty()) {
-      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
-                          "[MLC NoReuse] Have dependence.\n");
+      MLC_S_DPRINTF_(MLCRubyStreamReuse, config->dynamicId,
+                     "[MLC NoReuse] Have dependence.\n");
       continue;
     }
     // Check if continuous.
     auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
         config->addrGenCallback);
     if (!linearAddrGen) {
-      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
-                          "[MLC NotReuse] Not linear addr gen.\n");
+      MLC_S_DPRINTF_(MLCRubyStreamReuse, config->dynamicId,
+                     "[MLC NotReuse] Not linear addr gen.\n");
       continue;
     }
     if (!linearAddrGen->isContinuous(config->addrGenFormalParams,
                                      config->elementSize)) {
-      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
-                          "[MLC NoReuse] Address pattern not continuous.\n");
+      MLC_S_DPRINTF_(MLCRubyStreamReuse, config->dynamicId,
+                     "[MLC NoReuse] Address pattern not continuous.\n");
       continue;
     }
-    MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, config->dynamicId.staticId,
-                        "[MLC Reuse] Add to group %llu.\n", groupId);
+    MLC_S_DPRINTF_(MLCRubyStreamReuse, config->dynamicId,
+                   "[MLC Reuse] Add to group %llu.\n", groupId);
     groups
         .emplace(std::piecewise_construct, std::forward_as_tuple(groupId),
                  std::forward_as_tuple())
@@ -418,8 +407,8 @@ void MLCStreamEngine::computeReuseInformation(
       assert(rhsStartAddr > lhsStartAddr && "Illegal reversed startAddr.");
       auto startOffset = rhsStartAddr - lhsStartAddr;
       if (startOffset > ReuseThreshold) {
-        MLC_STREAM_DPRINTF_(
-            MLCRubyStreamReuse, lhsConfig->dynamicId.staticId,
+        MLC_S_DPRINTF_(
+            MLCRubyStreamReuse, lhsConfig->dynamicId,
             "[MLC NoReuse] Ingore large reuse distance to %lu offset %lu.\n",
             rhsConfig->dynamicId.staticId, startOffset);
         continue;
@@ -437,9 +426,9 @@ void MLCStreamEngine::computeReuseInformation(
           std::piecewise_construct, std::forward_as_tuple(lhsConfig->dynamicId),
           std::forward_as_tuple(rhsConfig->dynamicId, lhsCutElementIdx,
                                 rhsStartLindAddr));
-      MLC_STREAM_DPRINTF_(MLCRubyStreamReuse, lhsConfig->dynamicId.staticId,
-                          "[MLC Reuse] Add reuse chain -> %lu cut %lu.\n",
-                          rhsConfig->dynamicId.staticId, lhsCutElementIdx);
+      MLC_S_DPRINTF_(MLCRubyStreamReuse, lhsConfig->dynamicId,
+                     "[MLC Reuse] Add reuse chain -> %lu cut %lu.\n",
+                     rhsConfig->dynamicId.staticId, lhsCutElementIdx);
     }
   }
 }

@@ -481,7 +481,8 @@ LSQUnit<Impl>::checkViolations(typename LoadQueue::iterator& loadIt,
                      * InLSQ is not correctly handled.
                      */
                     if (cpu->cpuDelegator) {
-                        hack("Detected GemForge Consistency Misspec with inst [sn:%lli] and "
+                        DPRINTF(StreamAlias, 
+                             "Detected GemForge Consistency Misspec with inst [sn:%lli] and "
                              "[sn:%lli] at address %#x +%d, %#x +%d\n",
                              inst->seqNum, ld_inst->seqNum,
                              ld_inst->effAddr, ld_inst->effSize, 
@@ -575,7 +576,7 @@ LSQUnit<Impl>::executeLoad(const DynInstPtr &inst)
      * GemForgeLoad is initiated here, not in initiateAcc().
      */
     if (cpu->cpuDelegator && inst->isGemForge() && inst->isLoad()) {
-        load_fault = cpu->cpuDelegator->initiateGemForgeLoad(inst);
+        load_fault = cpu->cpuDelegator->initiateGemForgeLoadOrAtomic(inst);
     }
 
     if (load_fault == NoFault && !inst->readMemAccPredicate()) {
@@ -659,9 +660,14 @@ LSQUnit<Impl>::executeStore(const DynInstPtr &store_inst)
     /**
      * ! GemForge
      * GemForgeStore is initialized here, not in initiateAcc().
+     * GemForgeAtomic is treated like a GemForgeLoad, but in SQ.
      */
-    if (cpu->cpuDelegator && store_inst->isGemForge() && store_inst->isStore()) {
-        store_fault = cpu->cpuDelegator->initiateGemForgeStore(store_inst);
+    if (cpu->cpuDelegator && store_inst->isGemForge()) {
+        if (store_inst->isStore()) {
+            store_fault = cpu->cpuDelegator->initiateGemForgeStore(store_inst);
+        } else if (store_inst->isAtomic()) {
+            store_fault = cpu->cpuDelegator->initiateGemForgeLoadOrAtomic(store_inst);
+        }
     }
 
     if (store_inst->isTranslationDelayed() &&

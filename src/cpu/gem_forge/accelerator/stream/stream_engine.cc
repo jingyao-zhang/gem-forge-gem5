@@ -381,10 +381,17 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
     if (dynS.offloadedToCache) {
       dynS.offloadedToCache = false;
       S->statistic.numFloatRewinded++;
-      if (dynS.offloadedToCacheAsRoot) {
+      if (dynS.offloadedToCache) {
+        // Sanity check that we don't break semantics.
         DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
-        floatedIds.push_back(dynS.dynamicStreamId);
-        dynS.offloadedToCacheAsRoot = false;
+        if (S->isAtomicComputeStream() || S->isStoreComputeStream()) {
+          DYN_S_PANIC(dynS.dynamicStreamId,
+                      "Rewind a floated Atomic/StoreCompute stream.");
+        }
+        if (dynS.offloadedToCacheAsRoot) {
+          floatedIds.push_back(dynS.dynamicStreamId);
+          dynS.offloadedToCacheAsRoot = false;
+        }
       }
     }
   }
@@ -526,7 +533,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
       if (!stepNextElement) {
         return false;
       }
-      if (!stepNextElement->isAddrReady) {
+      if (!stepNextElement->isAddrReady()) {
         return false;
       }
     }
@@ -538,14 +545,6 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   auto stepStream = this->getStream(stepStreamId);
 
   const auto &stepStreams = this->getStepStreamList(stepStream);
-
-  // for (auto S : stepStreams) {
-  //   /**
-  //    * We handle all possible value dependence for stream computation
-  //    * before actually release the elements.
-  //    */
-  //   S->handleStoreFuncAtRelease();
-  // }
 
   for (auto S : stepStreams) {
     /**
@@ -628,7 +627,8 @@ int StreamEngine::createStreamUserLSQCallbacks(
     }
     auto S = element->stream;
     auto dynS = element->dynS;
-    if (S->isLoadStream()) {
+    if (S->isLoadStream() ||
+        (S->isAtomicComputeStream() && !dynS->offloadedToCache)) {
       if (element->firstUserSeqNum == seqNum) {
         // Insert into the load queue if we model the lsq.
         if (this->enableLSQ) {
@@ -638,8 +638,7 @@ int StreamEngine::createStreamUserLSQCallbacks(
           numCallbacks++;
         }
       }
-    } else if (S->isStoreStream() && S->getEnabledStoreFunc() &&
-               !dynS->offloadedToCache) {
+    } else if (S->isStoreComputeStream() && !dynS->offloadedToCache) {
       if (element->firstUserSeqNum == seqNum) {
         // Insert into the store queue for StoreStream executed at the core.
         if (!this->enableLSQ) {
@@ -728,10 +727,12 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
     if (!S->hasCoreUser()) {
       // There are two exception for this sanity check.
       // 1. ReductionStream may use LastElement to convey back the final value.
-      // 2. StoreStream with StoreFunc enabled uses StreamStore inst to get the
+      // 2. StoreComputeStream enabled uses StreamStore inst to get the
       // address and value from the SE so the core can finally write back.
-      if (!S->isReduction() &&
-          !(S->isStoreStream() && S->getEnabledStoreFunc())) {
+      // 3. AtomicComputeStream always have a StreamAtomic inst as a place
+      // holder.
+      if (!S->isReduction() && !S->isStoreComputeStream() &&
+          !S->isAtomicComputeStream()) {
         S_PANIC(S, "Try to use a stream with no core user.");
       }
     }
@@ -754,7 +755,7 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
         element->firstUserSeqNum = seqNum;
         // Remember the first core user pc.
         S->setFirstCoreUserPC(args.pc);
-        if (S->isLoadStream() && !S->getFloatManual() && element->isAddrReady) {
+        if (S->trackedByPEB() && element->isReqIssued()) {
           // The element should already be in peb, remove it.
           this->peb.removeElement(element);
         }
@@ -789,17 +790,10 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
         element->dynS->offloadedToCache) {
       continue;
     }
-    // Mark the first check cycle.
-    if (element->firstCheckCycle == 0) {
-      S_ELEMENT_DPRINTF(
-          element, "Mark FirstCheckCycle %lu, AddrReady %d ValueReady %d.\n",
-          cpuDelegator->curCycle(), element->isAddrReady,
-          element->isValueReady);
-      element->firstCheckCycle = cpuDelegator->curCycle();
-    }
-    if (!(element->isAddrReady && element->isValueReady)) {
+    if (!(element->isAddrReady() &&
+          element->checkValueReady(true /* CheckedByCore */))) {
       S_ELEMENT_DPRINTF(element, "NotReady: AddrReady %d ValueReady %d.\n",
-                        element->isAddrReady, element->isValueReady);
+                        element->isAddrReady(), element->isValueReady);
       ready = false;
     }
   }
@@ -850,13 +844,9 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
        */
       element->getValueByStreamId(streamId, args.values->back().data(),
                                   StreamUserArgs::MaxElementSize);
-      // if (S->getStreamName() == "(cal_learned_func.c::7(cal_learned_"
-      //                           "func) 29 bb27 bb52::tmp56(load))" &&
-      //     element->FIFOIdx.streamId.streamInstance > 21) {
-      //   S_ELEMENT_HACK(element, "Used Value %llu: %f.\n", streamId,
-      //                  *reinterpret_cast<float
-      //                  *>(args.values->back().data()));
-      // }
+      S_ELEMENT_DPRINTF(element, "Execute StreamUser, Value %s.\n",
+                        GemForgeUtils::dataToString(args.values->back().data(),
+                                                    element->size));
     }
   }
 }
@@ -923,8 +913,7 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
       // I am the first user.
       element->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
       // Check if the element should go back to PEB.
-      if (element->stream->isLoadStream() && element->isAddrReady &&
-          element->shouldIssue() && !element->stream->getFloatManual()) {
+      if (element->stream->trackedByPEB() && element->isReqIssued()) {
         this->peb.addElement(element);
       }
     }
@@ -1737,26 +1726,14 @@ void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
 
   if (S->isLoadStream()) {
     this->numLoadElementsStepped++;
-    /**
-     * For a stepped load element, it should be removed from the PEB
-     * if not used.
-     */
-    if (!S->getFloatManual() && releaseElement->isAddrReady &&
-        releaseElement->shouldIssue()) {
-      if (used) {
-        assert(!this->peb.contains(releaseElement) &&
-               "Used load element still in PEB when released.");
-      } else {
-        this->peb.removeElement(releaseElement);
-      }
-    }
     if (used) {
       this->numLoadElementsUsed++;
       // Update waited cycle information.
       auto waitedCycles = 0;
-      if (releaseElement->valueReadyCycle > releaseElement->firstCheckCycle) {
-        waitedCycles =
-            releaseElement->valueReadyCycle - releaseElement->firstCheckCycle;
+      if (releaseElement->valueReadyCycle >
+          releaseElement->firstValueCheckCycle) {
+        waitedCycles = releaseElement->valueReadyCycle -
+                       releaseElement->firstValueCheckCycle;
       }
       this->numLoadElementWaitCycles += waitedCycles;
     }
@@ -1764,6 +1741,20 @@ void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
     this->numStoreElementsStepped++;
     if (used) {
       this->numStoreElementsUsed++;
+    }
+  }
+
+  /**
+   * For a issued element, if unused, it should be removed from PEB.
+   */
+  if (S->trackedByPEB() && releaseElement->isReqIssued()) {
+    if (used) {
+      if (this->peb.contains(releaseElement)) {
+        S_ELEMENT_PANIC(releaseElement,
+                        "Used element still in PEB when released.");
+      }
+    } else {
+      this->peb.removeElement(releaseElement);
     }
   }
 
@@ -1797,11 +1788,9 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
   auto S = dynS.stream;
   auto releaseElement = S->releaseElementUnstepped(dynS);
   if (releaseElement) {
-    if (S->isLoadStream() && !S->getFloatManual()) {
-      if (releaseElement->isAddrReady && releaseElement->shouldIssue()) {
-        // This should be in PEB.
-        this->peb.removeElement(releaseElement);
-      }
+    if (S->trackedByPEB() && releaseElement->isReqIssued()) {
+      // This should be in PEB.
+      this->peb.removeElement(releaseElement);
     }
     this->addFreeElement(releaseElement);
   }
@@ -1820,33 +1809,19 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
     S_ELEMENT_DPRINTF(element, "Check if base element is ready.\n");
     for (const auto &baseElement : element->addrBaseElements) {
       if (baseElement->stream == nullptr) {
-        // ! Some bug here that the base element is already released.
-        S_ELEMENT_DPRINTF(element, "BaseElement has no stream.\n");
-        continue;
+        S_ELEMENT_PANIC(element, "BaseElement has no stream.\n");
       }
       if (element->stream->addrBaseStreams.count(baseElement->stream) == 0 &&
           element->stream->backBaseStreams.count(baseElement->stream) == 0) {
         // ! For reduction stream, myself is not in baseStreams.
         if (!element->stream->isReduction()) {
-          S_ELEMENT_DPRINTF(baseElement, "Different base streams.\n");
-          continue;
+          S_ELEMENT_PANIC(element, "Different base streams from %s.\n",
+                          baseElement->FIFOIdx);
         }
-      }
-      if (baseElement->FIFOIdx.entryIdx > element->FIFOIdx.entryIdx) {
-        // ! Some bug here that the base element is already used by others.
-        // TODO: Better handle all these.
-        S_ELEMENT_DPRINTF(baseElement, "Base FIFOIdx too large..\n");
-        continue;
       }
       S_ELEMENT_DPRINTF(baseElement, "BaseElement Ready %d.\n",
                         baseElement->isValueReady);
-      /**
-       * Stream usage is also considered as first check.
-       */
-      if (baseElement->firstCheckCycle == 0) {
-        baseElement->firstCheckCycle = this->cpuDelegator->curCycle();
-      }
-      if (!baseElement->isValueReady) {
+      if (!baseElement->checkValueReady(false /* CheckByCore */)) {
         ready = false;
         break;
       }
@@ -1869,12 +1844,36 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
       for (auto element = dynS.tail->next; element != nullptr;
            element = element->next) {
         assert(element->stream == S && "Sanity check that streams match.");
-        if (element->isAddrReady) {
-          // Address already ready. Check if we have to compute the value.
+
+        /**
+         * There three types of ready elements:
+         * 1. All the address base elements are ready -> compute address.
+         *  This represents all Mem streams.
+         * 2. Address is ready, value base elements are ready -> compute value.
+         *  This applies to IV/Reduction/StoreCompute streams.
+         * 3. Address is ready, request not issued, first user is
+         * non-speculative
+         *  -> Issue the atomic request.
+         *  This applies to AtomicCompute streams.
+         */
+
+        if (element->isAddrReady()) {
+          // Address already ready. Check if we have type 2 or 3 ready elements.
           if (S->shouldComputeValue() && !element->isValueReady &&
               !element->scheduledComputation) {
             if (element->checkValueBaseElementsValueReady()) {
               S_ELEMENT_DPRINTF(element, "Found Value Ready.\n");
+              readyElements.emplace_back(element);
+            }
+          }
+          if (S->isAtomicComputeStream() && !element->dynS->offloadedToCache &&
+              !element->isReqIssued()) {
+            // Check that StreamAtomic inst is non-speculative, i.e. it checks
+            // if my value is ready.
+            if (element->firstValueCheckByCoreCycle != 0) {
+              S_ELEMENT_DPRINTF(
+                  element,
+                  "StreamAtomic is non-speculative, ready to issue.\n");
               readyElements.emplace_back(element);
             }
           }
@@ -1946,18 +1945,19 @@ void StreamEngine::issueElements() {
             });
   for (auto &element : readyElements) {
 
-    if (element->isAddrReady) {
-      if (!element->stream->shouldComputeValue()) {
-        S_ELEMENT_PANIC(element,
-                        "This stream does not require computing values.");
-      }
+    if (element->isAddrReady() && element->stream->shouldComputeValue()) {
+      // Type 2 ready elements.
       element->computeValue();
       continue;
     }
 
-    element->markAddrReady();
+    if (!element->isAddrReady()) {
+      element->markAddrReady();
+    }
 
     if (element->stream->isMemStream()) {
+      assert(!element->isReqIssued() && "Element already issued request.");
+
       /**
        * * New Feature: If the stream is merged, then we do not issue.
        * * The stream should never be used by the core.
@@ -1965,9 +1965,26 @@ void StreamEngine::issueElements() {
       if (element->stream->isMerged()) {
         continue;
       }
+
       if (!element->shouldIssue()) {
         continue;
       }
+
+      /**
+       * AtomicComputeStream will mark the AddrReady, but delay issuing
+       * until the StreamAtomic instruction is non-speculative, which
+       * means it started to check if element value is ready for writeback.
+       * So we check the firstValueCheckByCoreCycle.
+       * If the stream is floated, then we can immediately issue.
+       */
+      if (element->stream->isAtomicComputeStream() &&
+          !element->dynS->offloadedToCache &&
+          element->firstValueCheckByCoreCycle == 0) {
+        S_ELEMENT_DPRINTF(
+            element, "Delay issue as waiting for FirstValueCheckByCore.\n");
+        continue;
+      }
+
       // Increase the reference of the cache block if we enable merging.
       if (this->enableMerge) {
         for (int i = 0; i < element->cacheBlocks; ++i) {
@@ -2007,16 +2024,17 @@ void StreamEngine::fetchedCacheBlock(Addr cacheBlockVAddr,
 }
 
 void StreamEngine::issueElement(StreamElement *element) {
-  assert(element->isAddrReady && "Address should be ready.");
+  assert(element->isAddrReady() && "Address should be ready.");
   assert(element->stream->isMemStream() &&
          "Should never issue element for IVStream.");
   assert(element->shouldIssue() && "Should not issue this element.");
+  assert(!element->isReqIssued() && "Element req already issued.");
 
   auto S = element->stream;
   auto dynS = element->dynS;
   if (element->flushed) {
-    if (!S->isLoadStream()) {
-      S_ELEMENT_PANIC(element, "Flushed non-load stream element.");
+    if (!S->trackedByPEB()) {
+      S_ELEMENT_PANIC(element, "Flushed Non-PEB stream element.");
     }
     S_ELEMENT_DPRINTF(element, "Issue - Reissue.\n");
   } else {
@@ -2024,11 +2042,12 @@ void StreamEngine::issueElement(StreamElement *element) {
   }
   if (S->isLoadStream()) {
     this->numLoadElementsFetched++;
-    S->statistic.numFetched++;
+  }
+  S->statistic.numFetched++;
+  element->setReqIssued();
+  if (S->trackedByPEB() && !element->isFirstUserDispatched()) {
     // Add to the PEB if the first user has not been dispatched.
-    if (!S->getFloatManual() && !element->isFirstUserDispatched()) {
-      this->peb.addElement(element);
-    }
+    this->peb.addElement(element);
   }
 
   /**
@@ -2179,7 +2198,7 @@ void StreamEngine::issueElement(StreamElement *element) {
 
 void StreamEngine::writebackElement(StreamElement *element,
                                     StreamStoreInst *inst) {
-  assert(element->isAddrReady && "Address should be ready.");
+  assert(element->isAddrReady() && "Address should be ready.");
   auto S = element->stream;
   assert(S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST &&
          "Should never writeback element for non store stream.");
@@ -2334,11 +2353,11 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
     return;
   }
   auto S = element->stream;
-  // Never do this for atomic streams.
-  if (S->isAtomicStream()) {
+  if (!S->isDirectMemStream()) {
     return;
   }
-  if (!S->isDirectMemStream()) {
+  // Never do this for not floated AtomicComputeStream.
+  if (S->isAtomicComputeStream() && !element->dynS->offloadedToCache) {
     return;
   }
   // Check if this element is flushed.
@@ -2403,18 +2422,29 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
      */
     const auto &prevBlock =
         prevElement->cacheBlockBreakdownAccesses[blockOffset];
+    bool shouldCopyFromPrev = false;
     if (S->isLoadStream()) {
-      if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
-        // Also mark this block faulted.
-        block.state = CacheBlockBreakdownAccess::StateE::Faulted;
-        element->tryMarkValueReady();
-      } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Ready) {
-        // We can copy the value.
+      shouldCopyFromPrev = true;
+    }
+    if (S->isAtomicComputeStream() && element->dynS->offloadedToCache) {
+      shouldCopyFromPrev = true;
+    }
+    if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
+      // Also mark this block faulted.
+      block.state = CacheBlockBreakdownAccess::StateE::Faulted;
+      element->tryMarkValueReady();
+    } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Ready) {
+      if (shouldCopyFromPrev) {
         auto offset = prevElement->mapVAddrToValueOffset(
             block.cacheBlockVAddr, element->cacheBlockSize);
         element->setValue(block.cacheBlockVAddr, element->cacheBlockSize,
                           &prevElement->value.at(offset));
-      } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Issued) {
+      } else {
+        // Simply mark issued.
+        block.state = CacheBlockBreakdownAccess::StateE::Issued;
+      }
+    } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Issued) {
+      if (shouldCopyFromPrev) {
         // Register myself as a receiver.
         if (!prevBlock.memAccess) {
           S_ELEMENT_PANIC(element,
@@ -2423,17 +2453,7 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
         block.memAccess = prevBlock.memAccess;
         block.memAccess->registerReceiver(element);
         block.state = CacheBlockBreakdownAccess::StateE::Issued;
-      }
-    } else {
-      // This is a StoreStream.
-      if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
-        // Also mark this block faulted.
-        block.state = CacheBlockBreakdownAccess::StateE::Faulted;
-        element->tryMarkValueReady();
-      } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Ready) {
-        // Simply mark issued.
-        block.state = CacheBlockBreakdownAccess::StateE::Issued;
-      } else if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Issued) {
+      } else {
         // Simply mark issued.
         block.state = CacheBlockBreakdownAccess::StateE::Issued;
       }
@@ -2467,7 +2487,7 @@ void StreamEngine::sendStreamFloatEndPacket(
 
 void StreamEngine::sendAtomicPacket(StreamElement *element,
                                     AtomicOpFunctorPtr atomicOp) {
-  if (!element->isAddrReady) {
+  if (!element->isAddrReady()) {
     S_ELEMENT_PANIC(element,
                     "Element should be address ready to send AtomicOp.");
   }
@@ -2502,7 +2522,7 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
   SE_DPRINTF_(StreamAlias, "====== Flush PEB %#x, +%d.\n", vaddr, size);
   bool foundAliasedIndirect = false;
   for (auto element : this->peb.elements) {
-    assert(element->isAddrReady);
+    assert(element->isAddrReady());
     assert(!element->isFirstUserDispatched());
     if (element->addr >= vaddr + size ||
         element->addr + element->size <= vaddr) {
@@ -2543,24 +2563,7 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
     }
 
     // Clear the element to just allocate state.
-    element->isAddrReady = false;
-    element->isValueReady = false;
-
-    // Raise the flush flag.
-    element->flushed = true;
-    if (aliased) {
-      element->isAddrAliased = true;
-    }
-
-    element->valueReadyCycle = Cycles(0);
-    element->firstCheckCycle = Cycles(0);
-
-    element->addr = 0;
-    element->size = 0;
-    element->clearInflyMemAccesses();
-    element->clearCacheBlocks();
-    element->clearScheduledComputation();
-    std::fill(element->value.begin(), element->value.end(), 0);
+    element->flush(aliased);
     elementIter = this->peb.elements.erase(elementIter);
   }
 }
@@ -2568,23 +2571,11 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
 void StreamEngine::RAWMisspeculate(StreamElement *element) {
   assert(!this->peb.contains(element) && "RAWMisspeculate on PEB element.");
   S_ELEMENT_DPRINTF_(StreamAlias, element, "RAWMisspeculated.\n");
-  // Remember that this element aliased and caused flush.
-  element->isAddrAliased = true;
   // Still, we flush the PEB when LQ misspeculate happens.
   this->flushPEB(element->addr, element->size);
 
   // Revert this element to just allocate state.
-  element->flushed = true;
-  element->isAddrReady = false;
-  element->isValueReady = false;
-  element->valueReadyCycle = Cycles(0);
-  element->firstCheckCycle = Cycles(0);
-
-  element->addr = 0;
-  element->size = 0;
-  element->clearInflyMemAccesses();
-  element->clearCacheBlocks();
-  std::fill(element->value.begin(), element->value.end(), 0);
+  element->flush(true /* aliased */);
 }
 
 void StreamEngine::resetStats() {

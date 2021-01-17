@@ -219,7 +219,8 @@ protected:
       return dynS->shouldCoreSEIssue();
     } else {
       // The dynamic stream is already released, we don't really care.
-      return false;
+      // Assume it waits for data in case the core issued a request.
+      return true;
     }
   }
 
