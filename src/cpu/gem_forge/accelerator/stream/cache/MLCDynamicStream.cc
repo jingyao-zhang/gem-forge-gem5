@@ -207,7 +207,7 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
         slice.dataBlock.getData(lineOffset, slice.sliceId.getSize()),
         slice.sliceId.getSize());
     MLC_SLICE_DPRINTF(slice.sliceId,
-                      "Make response vaddr %#x size %d data 0x%s.\n",
+                      "Make response vaddr %#x size %d data %s.\n",
                       slice.sliceId.vaddr, slice.sliceId.getSize(), dataStr);
   }
   // The latency should be consistency with the cache controller.

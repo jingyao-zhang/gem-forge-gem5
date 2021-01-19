@@ -381,17 +381,15 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
     if (dynS.offloadedToCache) {
       dynS.offloadedToCache = false;
       S->statistic.numFloatRewinded++;
-      if (dynS.offloadedToCache) {
-        // Sanity check that we don't break semantics.
-        DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
-        if (S->isAtomicComputeStream() || S->isStoreComputeStream()) {
-          DYN_S_PANIC(dynS.dynamicStreamId,
-                      "Rewind a floated Atomic/StoreCompute stream.");
-        }
-        if (dynS.offloadedToCacheAsRoot) {
-          floatedIds.push_back(dynS.dynamicStreamId);
-          dynS.offloadedToCacheAsRoot = false;
-        }
+      // Sanity check that we don't break semantics.
+      DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
+      if (S->isAtomicComputeStream() || S->isStoreComputeStream()) {
+        DYN_S_PANIC(dynS.dynamicStreamId,
+                    "Rewind a floated Atomic/StoreCompute stream.");
+      }
+      if (dynS.offloadedToCacheAsRoot) {
+        floatedIds.push_back(dynS.dynamicStreamId);
+        dynS.offloadedToCacheAsRoot = false;
       }
     }
   }

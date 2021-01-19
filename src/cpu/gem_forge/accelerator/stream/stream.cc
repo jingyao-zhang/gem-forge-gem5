@@ -483,10 +483,8 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
 
   for (auto idx = 1; idx < formalParams.size() - 1; idx += 2) {
     auto &formalParam = formalParams.at(idx);
-    // BackEdgeCount.
-    auto backEdgeCount = formalParam.invariant.uint64();
     // TripCount.
-    auto tripCount = backEdgeCount + 1;
+    auto tripCount = formalParam.invariant.uint64();
     // TotalTripCount.
     auto totalTripCount =
         (idx == 1) ? (tripCount)

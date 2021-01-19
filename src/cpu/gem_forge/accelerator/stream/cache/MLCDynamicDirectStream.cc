@@ -138,8 +138,6 @@ void MLCDynamicDirectStream::advanceStream() {
 
 void MLCDynamicDirectStream::allocateSlice() {
   auto sliceId = this->slicedStream.getNextSlice();
-  MLC_SLICE_DPRINTF(sliceId, "Allocated %#x.\n", sliceId.vaddr);
-
   this->slices.emplace_back(sliceId);
   this->stream->statistic.numMLCAllocatedSlice++;
 
@@ -187,6 +185,9 @@ void MLCDynamicDirectStream::allocateSlice() {
     // This address is invalid. Mark the slice faulted.
     this->slices.back().coreStatus = MLCStreamSlice::CoreStatusE::FAULTED;
   }
+  MLC_SLICE_DPRINTF(sliceId, "Allocated %#x, CoreStatus %s.\n", sliceId.vaddr,
+                    MLCStreamSlice::convertCoreStatusToString(
+                        this->slices.back().coreStatus));
 
   // Try to find where the LLC stream would be at this point.
   this->tailSliceIdx++;
@@ -313,9 +314,9 @@ void MLCDynamicDirectStream::receiveStreamData(
         slice->setData(dataBlock, this->controller->curCycle());
       }
 
-      // // Notify the indirect stream. Call this after setData().
-      // this->notifyIndirectStream(*slice);
-
+      MLC_SLICE_DPRINTF(
+          sliceId, "Found matched slice, core status %s.\n",
+          MLCStreamSlice::convertCoreStatusToString(slice->coreStatus));
       if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
         this->makeResponse(*slice);
       } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK) {

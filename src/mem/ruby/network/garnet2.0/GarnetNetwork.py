@@ -46,7 +46,7 @@ class GarnetNetwork(RubyNetwork):
         "0: Weight-based Table, 1: XY, 2: Custom");
     enable_fault_model = Param.Bool(False, "enable network fault model");
     fault_model = Param.FaultModel(NULL, "network fault model");
-    garnet_deadlock_threshold = Param.UInt32(10000,
+    garnet_deadlock_threshold = Param.UInt32(50000,
                               "network-level deadlock threshold")
     enable_multicast = Param.Bool(False, "enable multicast")
 
