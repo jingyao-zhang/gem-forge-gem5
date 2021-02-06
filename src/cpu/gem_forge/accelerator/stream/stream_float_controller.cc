@@ -265,6 +265,10 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
     if (!this->policy->shouldFloatStream(*dynS)) {
       continue;
     }
+    // Additional check TotalTripCount is not 0. This is only for NestStream.
+    if (dynS->hasTotalTripCount() && dynS->getTotalTripCount() == 0) {
+      continue;
+    }
 
     // Get the CacheStreamConfigureData.
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
@@ -327,7 +331,7 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
 }
 
 void StreamFloatController::floatIndirectStreams(const Args &args) {
-  if (this->se->enableStreamFloatIndirect) {
+  if (!this->se->enableStreamFloatIndirect) {
     return;
   }
   auto &floatedMap = args.floatedMap;

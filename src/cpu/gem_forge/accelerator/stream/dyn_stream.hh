@@ -63,6 +63,7 @@ struct DynamicStream {
   bool configExecuted = false;
 
   // Whether the StreamEnd has dispatched (waiting to be released).
+  InstSeqNum endSeqNum = 0;
   bool endDispatched = false;
 
   // Address generator.

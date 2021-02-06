@@ -33,11 +33,8 @@ public:
   size_t numSample = 0;
   size_t numInflyRequest = 0;
   size_t maxSize = 0;
-  void sampleStats(int numInflyRequest, int maxSize) {
-    this->numSample++;
-    this->numInflyRequest += numInflyRequest;
-    this->maxSize += maxSize;
-  }
+  size_t allocSize = 0;
+  size_t numDynStreams = 0;
 
   // Float statistics.
   size_t numMLCAllocatedSlice = 0;

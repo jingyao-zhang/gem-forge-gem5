@@ -159,6 +159,8 @@ class FuncCallExprAST(ExprAST):
         scheduleEvent(Cycles(1));
 
         // Cannot do anything with this transition, go check next doable transition (mostly likely of next port)
+        DPRINTF(RubyGenerated, "Resource stall on current in port %d, used_transitions %d.\\n",
+            m_cur_in_port, m_used_transitions);
     }
 }
 ''')

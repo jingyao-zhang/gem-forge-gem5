@@ -266,7 +266,8 @@ public:
   /**
    * Map from ElementIdx to LLCStreamElement.
    */
-  std::map<uint64_t, LLCStreamElementPtr> idxToElementMap;
+  using IdxToElementMapT = std::map<uint64_t, LLCStreamElementPtr>;
+  IdxToElementMapT idxToElementMap;
 
   /**
    * Indirect elements that has seen the direct stream element's data
@@ -299,6 +300,12 @@ public:
    * @return bool: whether allocation happened.
    */
   bool allocateElement(uint64_t elementIdx, Addr vaddr);
+
+  /**
+   * Erase the element for myself only.
+   */
+  void eraseElement(uint64_t elementIdx);
+  void eraseElement(IdxToElementMapT::iterator elementIter);
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

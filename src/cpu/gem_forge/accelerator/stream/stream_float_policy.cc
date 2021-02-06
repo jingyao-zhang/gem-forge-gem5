@@ -326,8 +326,17 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
    * computation offloading.
    */
   if (this->policy == PolicyE::SMART_COMPUTATION) {
+    bool floatCompute = false;
     if (!S->valueDepStreams.empty() ||
         (S->isStoreStream() && S->getEnabledStoreFunc())) {
+      floatCompute = true;
+    }
+    for (auto depS : S->addrDepStreams) {
+      if (depS->getEnabledStoreFunc()) {
+        floatCompute = true;
+      }
+    }
+    if (floatCompute) {
       S_DPRINTF(S, "[Float] always float computation.");
       logStream(S) << "[Float] always float computation.\n" << std::flush;
       return true;

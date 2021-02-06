@@ -31,6 +31,11 @@ public:
 
   void takeOverBy(GemForgeCPUDelegator *newDelegator);
 
+  /**
+   * Reset the stream state, e.g. RegionStreamIdTable.
+   */
+  void reset();
+
 #define DeclareStreamInstHandler(Inst)                                         \
   bool canDispatchStream##Inst(const GemForgeDynInstInfo &dynInfo);            \
   void dispatchStream##Inst(const GemForgeDynInstInfo &dynInfo,                \
@@ -83,9 +88,19 @@ private:
   /**
    * Memorize the StreamConfigureInfo.
    */
-  mutable std::unordered_map<uint64_t, ::LLVM::TDG::StreamRegion>
-      memorizedStreamRegionMap;
+  mutable std::unordered_map<uint64_t, const ::LLVM::TDG::StreamRegion *>
+      memorizedStreamRegionIdMap;
+  mutable std::unordered_map<std::string, ::LLVM::TDG::StreamRegion>
+      memorizedStreamRegionRelativePathMap;
   const ::LLVM::TDG::StreamRegion &getStreamRegion(uint64_t configIdx) const;
+  const ::LLVM::TDG::StreamRegion &
+  getStreamRegion(const std::string &relativePath) const;
+
+  /**
+   * Collect all StreamInfo in the region. This includes nest streams.
+   */
+  std::vector<const ::LLVM::TDG::StreamInfo *>
+  collectStreamInfoInRegion(const ::LLVM::TDG::StreamRegion &region) const;
 
   /**
    * Since the stream engine uses the full stream id,
@@ -127,6 +142,9 @@ private:
     CONFIG_RECURSIVE,
     CONFIG_CANNOT_SET_REGION_ID,
     STEP_INVALID_REGION_ID,
+    USER_INVALID_REGION_ID,
+    USER_USING_LAST_ELEMENT,
+    USER_SE_CANNOT_DISPATCH,
   };
 
   static std::string
@@ -158,6 +176,7 @@ private:
     int numExecutedInsts = 0;
     bool mustBeMisspeculated = false;
     std::unordered_map<uint64_t, std::vector<StreamInputValue>> inputMap;
+
     // Mainly used for misspeculation recover.
     std::shared_ptr<DynStreamRegionInfo> prevRegion = nullptr;
     DynStreamRegionInfo(const std::string &_infoRelativePath,

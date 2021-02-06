@@ -42,7 +42,9 @@ Consumer::scheduleEventAbsolute(Tick evt_time)
     if (!alreadyScheduled(evt_time)) {
         // This wakeup is not redundant
         auto *evt = new EventFunctionWrapper(
-            [this]{ wakeup(); }, "Consumer Event", true);
+            [this] {
+                wakeup();
+            }, "Wakeup Consumer " + this->em->name(), true);
 
         em->schedule(evt, evt_time);
         insertScheduledWakeupTime(evt_time);

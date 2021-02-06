@@ -190,9 +190,14 @@ public:
   }
 
   /**
-   * Simple bookkeeping information for the stream engine.
+   * Check if the stream is configured. Due to nest streams,
+   * now StreamConfig and StreamEnd are not properly interleaved.
+   * But StreamConfig and StreamEnd are still in-order within its
+   * own class. Thus we define that a stream is configured if it
+   * has some DynamicStreams, and the last one has not dispatched
+   * the StreamEnd.
    */
-  bool configured;
+  bool isConfigured() const;
   /**
    * Head is the newest element.
    * Tail is the dummy node before the oldest element.
@@ -329,7 +334,7 @@ public:
   /**
    * Add one element to the last dynamic stream.
    */
-  void allocateElement(StreamElement *newElement);
+  void allocateElement(DynamicStream &dynS, StreamElement *newElement);
   /**
    * Add value base elements for stream computation.
    */
@@ -362,6 +367,16 @@ public:
    */
   StreamElement *getFirstUnsteppedElement();
   /**
+   * Get the first alive dynamic stream (End not dispatched).
+   */
+  DynamicStream &getFirstAliveDynStream();
+  /**
+   * Get the current allocating dynamic stream (may be nullptr).
+   * 1. End not dispatched.
+   * 2. If has TotalTripCount, it has not reached that limit.
+   */
+  DynamicStream *getAllocatingDynStream();
+  /**
    * Get previous element in the chain of the stream.
    * Notice that it may return nullptr if this is
    * the first element for that stream.
@@ -388,6 +403,8 @@ public:
    * For debug.
    */
   void dump() const;
+  void sampleStatistic();
+
 
   /**
    * Allocate the CacheStreamConfigureData.
@@ -398,6 +415,7 @@ public:
   std::deque<DynamicStream> dynamicStreams;
   bool hasDynamicStream() const { return !this->dynamicStreams.empty(); }
   DynamicStream &getDynamicStream(uint64_t seqNum);
+  DynamicStream &getDynamicStreamByEndSeqNum(uint64_t seqNum);
   DynamicStream &getDynamicStreamByInstance(InstanceId instance);
   DynamicStream &getDynamicStreamBefore(uint64_t seqNum);
   DynamicStream *getDynamicStream(const DynamicStreamId &dynId);
@@ -434,6 +452,9 @@ public:
   setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
                 const DynamicStreamFormalParamV &formalParams);
 
+  bool hasDepNestRegion() const { return this->depNestRegion; }
+  void setDepNestRegion() { this->depNestRegion = true; }
+
 protected:
   StreamSet baseStepStreams;
   StreamSet baseStepRootStreams;
@@ -443,6 +464,16 @@ protected:
   ExecFuncPtr predCallback;
   ExecFuncPtr storeCallback;
   ExecFuncPtr loadCallback;
+
+  /**
+   * Remember if this is a nest stream.
+   */
+  bool nested = false;
+
+  /**
+   * Remember if this stream has dependent nest stream region.
+   */
+  bool depNestRegion = false;
 
   /**
    * Total allocated elements among all dynamic streams.
@@ -592,12 +623,20 @@ public:
   uint64_t getStreamLengthAtInstance(uint64_t streamInstance) const;
   void getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
                                  int32_t &size) const;
+
   /**
    * Try to get coalesced offset and size.
    * @return: whether the streamId is coalesced here.
    */
   bool tryGetCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
                                     int32_t &size) const;
+  bool isCoalescedHere(uint64_t streamId) const {
+    int32_t offset, size;
+    return this->tryGetCoalescedOffsetAndSize(streamId, offset, size);
+  }
+
+  void setNested() { this->nested = true; }
+  bool isNestStream() const { return this->nested; }
 };
 
 #endif

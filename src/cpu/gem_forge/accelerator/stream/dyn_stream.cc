@@ -278,6 +278,12 @@ bool DynamicStream::shouldCoreSEIssue() const {
         return true;
       }
     }
+    /**
+     * If we have some dependent nest stream region, we also have to issue.
+     */
+    if (this->stream->hasDepNestRegion()) {
+      return true;
+    }
     return false;
   }
   return true;

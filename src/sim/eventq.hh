@@ -1038,11 +1038,6 @@ class EventFunctionWrapper : public Event
                          const std::string &name,
                          bool del = false,
                          Priority p = Default_Pri);
-    //     : Event(p), callback(callback), _name(name)
-    // {
-    //     if (del)
-    //         setFlags(AutoDelete);
-    // }
 
    /**
     * @ingroup api_eventq

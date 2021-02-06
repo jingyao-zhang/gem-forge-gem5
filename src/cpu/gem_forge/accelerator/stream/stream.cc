@@ -37,7 +37,6 @@ Stream::Stream(const StreamArguments &args)
       dynInstance(DynamicStreamId::InvalidInstanceId), floatTracer(this),
       cpu(args.cpu), se(args.se) {
 
-  this->configured = false;
   this->allocSize = 0;
   this->stepSize = 0;
   this->maxSize = args.maxSize;
@@ -308,7 +307,6 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   assert(dynStream.allocSize == dynStream.stepSize &&
          "Unstepped elements when rewind StreamConfig.");
   this->statistic.numMisConfigured++;
-  this->configured = false;
 }
 
 bool Stream::isStreamConfigureExecuted(uint64_t seqNum) {
@@ -317,29 +315,42 @@ bool Stream::isStreamConfigureExecuted(uint64_t seqNum) {
 }
 
 void Stream::dispatchStreamEnd(uint64_t seqNum) {
-  assert(this->configured && "Stream should be configured.");
-  auto &dynS = this->getLastDynamicStream();
-  assert(!dynS.endDispatched && "Already ended.");
-  assert(dynS.configSeqNum < seqNum && "End before configure.");
-  dynS.endDispatched = true;
-  this->configured = false;
+  assert(this->isConfigured() && "Stream should be configured.");
+  for (auto &dynS : this->dynamicStreams) {
+    if (!dynS.endDispatched) {
+      dynS.endDispatched = true;
+      dynS.endSeqNum = seqNum;
+      return;
+    }
+  }
+  S_PANIC(this, "Failed to find ended DynStream.");
 }
 
 void Stream::rewindStreamEnd(uint64_t seqNum) {
-  assert(!this->configured && "Stream should not be configured.");
-  auto &dynS = this->getLastDynamicStream();
-  assert(dynS.endDispatched && "Not ended.");
-  assert(dynS.configSeqNum < seqNum && "End before configure.");
-  dynS.endDispatched = false;
-  this->configured = true;
+  // Searching backwards to rewind StreamEnd.
+  for (auto dynS = this->dynamicStreams.rbegin(),
+            end = this->dynamicStreams.rend();
+       dynS != end; ++dynS) {
+    if (dynS->endDispatched && dynS->endSeqNum == seqNum) {
+      dynS->endDispatched = false;
+      dynS->endSeqNum = 0;
+      return;
+    }
+  }
+  S_PANIC(this, "Failed to find ended DynStream to rewind.");
 }
 
 void Stream::commitStreamEnd(uint64_t seqNum) {
   assert(!this->dynamicStreams.empty() &&
          "Empty dynamicStreams for StreamEnd.");
   auto &dynS = this->dynamicStreams.front();
-  assert(dynS.configSeqNum < seqNum && "End before config.");
+  if (dynS.configSeqNum >= seqNum) {
+    DYN_S_PANIC(dynS.dynamicStreamId,
+                "Commit StreamEnd SeqNum %llu before ConfigSeqNum %llu.", seqNum,
+                dynS.configSeqNum);
+  }
   assert(dynS.configExecuted && "End before config executed.");
+  assert(dynS.endDispatched && "End before end dispatched.");
 
   /**
    * We need to release all unstepped elements.
@@ -363,11 +374,6 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   this->recordAggregateHistory(dynS);
 
   this->dynamicStreams.pop_front();
-  if (!this->dynamicStreams.empty()) {
-    // There is another config inst waiting.
-    assert(this->dynamicStreams.front().configSeqNum > seqNum &&
-           "Next StreamConfig not younger than previous StreamEnd.");
-  }
 }
 
 void Stream::recordAggregateHistory(const DynamicStream &dynS) {
@@ -398,7 +404,16 @@ DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
       return dynStream;
     }
   }
-  S_PANIC(this, "Failed to find DynamicStream by SeqNum %llu.\n", seqNum);
+  S_PANIC(this, "Failed to find DynamicStream by ConfigSeqNum %llu.\n", seqNum);
+}
+
+DynamicStream &Stream::getDynamicStreamByEndSeqNum(uint64_t seqNum) {
+  for (auto &dynStream : this->dynamicStreams) {
+    if (dynStream.endSeqNum == seqNum) {
+      return dynStream;
+    }
+  }
+  S_PANIC(this, "Failed to find DynamicStream by EndSeqNum %llu.\n", seqNum);
 }
 
 DynamicStream &Stream::getDynamicStreamBefore(uint64_t seqNum) {
@@ -740,15 +755,23 @@ bool Stream::isIndirectLoadStream() const {
   return this->isLoadStream() && !this->isDirectMemStream();
 }
 
+bool Stream::isConfigured() const {
+  if (this->dynamicStreams.empty() ||
+      this->dynamicStreams.back().endDispatched) {
+    return false;
+  }
+  return true;
+}
+
 DynamicStreamId Stream::allocateNewInstance() {
   this->dynInstance++;
   return DynamicStreamId(this->getCPUId(), this->staticId, this->dynInstance,
                          this->streamName.c_str());
 }
 
-void Stream::allocateElement(StreamElement *newElement) {
+void Stream::allocateElement(DynamicStream &dynS, StreamElement *newElement) {
 
-  assert(this->configured &&
+  assert(this->isConfigured() &&
          "Stream should be configured to allocate element.");
   this->statistic.numAllocated++;
   newElement->stream = this;
@@ -756,7 +779,6 @@ void Stream::allocateElement(StreamElement *newElement) {
   /**
    * Append this new element to the last dynamic stream.
    */
-  auto &dynS = this->getLastDynamicStream();
   DYN_S_DPRINTF(dynS.dynamicStreamId, "Try to allocate element.\n");
   newElement->dynS = &dynS;
 
@@ -768,12 +790,12 @@ void Stream::allocateElement(StreamElement *newElement) {
   newElement->isCacheBlockedValue = this->isMemStream();
   dynS.FIFOIdx.next();
 
-  if (dynS.totalTripCount > 0 &&
-      newElement->FIFOIdx.entryIdx >= dynS.totalTripCount + 1) {
+  if (dynS.hasTotalTripCount() &&
+      newElement->FIFOIdx.entryIdx >= dynS.getTotalTripCount() + 1) {
     S_PANIC(
         this,
         "Allocate beyond totalTripCount %lu, allocSize %lu, entryIdx %lu.\n",
-        dynS.totalTripCount, this->getAllocSize(),
+        dynS.getTotalTripCount(), this->getAllocSize(),
         newElement->FIFOIdx.entryIdx);
   }
 
@@ -872,16 +894,17 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
      * Since this element is used by the core, we update the statistic
      * of the latency of this element experienced by the core.
      */
-    if (releaseElement->valueReadyCycle < releaseElement->firstValueCheckCycle) {
+    if (releaseElement->valueReadyCycle <
+        releaseElement->firstValueCheckCycle) {
       // The element is ready earlier than core's user.
-      auto earlyCycles =
-          releaseElement->firstValueCheckCycle - releaseElement->valueReadyCycle;
+      auto earlyCycles = releaseElement->firstValueCheckCycle -
+                         releaseElement->valueReadyCycle;
       this->statistic.numCoreEarlyElement++;
       this->statistic.numCoreEarlyCycle += earlyCycles;
     } else {
       // The element makes the core's user wait.
-      auto lateCycles =
-          releaseElement->valueReadyCycle - releaseElement->firstValueCheckCycle;
+      auto lateCycles = releaseElement->valueReadyCycle -
+                        releaseElement->firstValueCheckCycle;
       this->statistic.numCoreLateElement++;
       this->statistic.numCoreLateCycle += lateCycles;
       late = true;
@@ -895,7 +918,8 @@ StreamElement *Stream::releaseElementStepped(bool isEnd) {
             releaseElement->addrReadyCycle - releaseElement->allocateCycle,
             releaseElement->issueCycle - releaseElement->allocateCycle,
             releaseElement->valueReadyCycle - releaseElement->allocateCycle,
-            releaseElement->firstValueCheckCycle - releaseElement->allocateCycle);
+            releaseElement->firstValueCheckCycle -
+                releaseElement->allocateCycle);
       }
     }
   }
@@ -949,11 +973,11 @@ StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {
 }
 
 bool Stream::hasUnsteppedElement() {
-  if (!this->configured) {
+  if (!this->isConfigured()) {
     // This must be wrong.
     return false;
   }
-  auto &dynS = this->getLastDynamicStream();
+  auto &dynS = this->getFirstAliveDynStream();
   auto element = dynS.getFirstUnsteppedElement();
   if (!element) {
     // We don't have element for this used stream.
@@ -968,9 +992,8 @@ bool Stream::hasUnsteppedElement() {
 }
 
 StreamElement *Stream::stepElement() {
-  auto &dynS = this->getLastDynamicStream();
-  auto element = dynS.stepped->next;
-  assert(!element->isStepped && "Element already stepped.");
+  auto &dynS = this->getFirstAliveDynStream();
+  auto element = dynS.getFirstUnsteppedElement();
   S_ELEMENT_DPRINTF(element, "Stepped.\n");
   element->isStepped = true;
   dynS.stepped = element;
@@ -979,7 +1002,7 @@ StreamElement *Stream::stepElement() {
 }
 
 StreamElement *Stream::unstepElement() {
-  auto &dynS = this->getLastDynamicStream();
+  auto &dynS = this->getFirstAliveDynStream();
   assert(dynS.stepSize > 0 && "No element to unstep.");
   auto element = dynS.stepped;
   assert(element->isStepped && "Element not stepped.");
@@ -990,8 +1013,38 @@ StreamElement *Stream::unstepElement() {
   return element;
 }
 
+DynamicStream &Stream::getFirstAliveDynStream() {
+  for (auto &dynS : this->dynamicStreams) {
+    if (!dynS.endDispatched) {
+      return dynS;
+    }
+  }
+  this->se->dumpFIFO();
+  S_PANIC(this, "No Alive DynStream.");
+}
+
+DynamicStream *Stream::getAllocatingDynStream() {
+  if (!this->isConfigured()) {
+    return nullptr;
+  }
+  for (auto &dynS : this->dynamicStreams) {
+    if (dynS.endDispatched) {
+      continue;
+    }
+    // Check if we have reached the allocation limit for this one.
+    if (dynS.hasTotalTripCount()) {
+      if (dynS.FIFOIdx.entryIdx == dynS.getTotalTripCount() + 1) {
+        // Notice the +1 for the Element consumed by StreamEnd.
+        continue;
+      }
+    }
+    return &dynS;
+  }
+  return nullptr;
+}
+
 StreamElement *Stream::getFirstUnsteppedElement() {
-  auto &dynS = this->getLastDynamicStream();
+  auto &dynS = this->getFirstAliveDynStream();
   auto element = dynS.getFirstUnsteppedElement();
   if (!element) {
     this->se->dumpFIFO();
@@ -1103,6 +1156,14 @@ void Stream::performStore(const DynamicStream &dynS, StreamElement *element,
   this->getCPUDelegator()->writeToMem(
       elementVAddr, elementSize,
       reinterpret_cast<const uint8_t *>(&storeValue));
+}
+
+void Stream::sampleStatistic() {
+  this->statistic.numSample++;
+  this->statistic.numInflyRequest += this->numInflyStreamRequests;
+  this->statistic.maxSize += this->maxSize;
+  this->statistic.allocSize += this->allocSize;
+  this->statistic.numDynStreams += this->dynamicStreams.size();
 }
 
 void Stream::dump() const {

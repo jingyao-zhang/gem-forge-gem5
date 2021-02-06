@@ -47,8 +47,8 @@ void ISAStreamEngine::dispatchStreamConfig(
 
   /**
    * Allocate the current DynStreamRegionInfo.
+   * Remember the inst info.
    */
-  // Remember the inst info.
   auto &instInfo = this->createDynStreamInstInfo(dynInfo.seqNum);
   auto &configInfo = instInfo.configInfo;
   configInfo.dynStreamRegionInfo = std::make_shared<DynStreamRegionInfo>(
@@ -99,6 +99,11 @@ void ISAStreamEngine::dispatchStreamConfig(
             .second;
     assert(inserted && "InputVector already initialized.");
   }
+  // Also Initialize an empty InputVector for nest configuration.
+  // ! This so far just reuse the InvalidStreamId.
+  this->curStreamRegionInfo->inputMap.emplace(
+      std::piecewise_construct, std::forward_as_tuple(InvalidStreamId),
+      std::forward_as_tuple());
 }
 
 bool ISAStreamEngine::canExecuteStreamConfig(
@@ -478,8 +483,6 @@ bool ISAStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
   const auto &infoRelativePath = this->getRelativePath(configIdx);
 
-  DYN_INST_DPRINTF("CanDispatch StreamEnd %llu, %s.\n", configIdx,
-                   infoRelativePath);
   /**
    * Sometimes it's possible to misspeculate StreamEnd before StreamConfig.
    * We check the RegionStreamIdTable to make sure this is the correct one.
@@ -490,12 +493,24 @@ bool ISAStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
   const auto &info = this->getStreamRegion(configIdx);
   if (!this->canRemoveRegionStreamIds(info)) {
     // We failed. This is must be misspeculation, we delay issue.
+    DYN_INST_DPRINTF("[CanNotDispatch] StreamEnd %llu, %s: Unable to "
+                     "RemoveRegionStreamIds.\n",
+                     configIdx, infoRelativePath);
     return false;
   }
 
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
-  return se->hasUnsteppedElement(args);
+  if (se->hasUnsteppedElement(args)) {
+    DYN_INST_DPRINTF("[CanDispatch] StreamEnd %llu, %s..\n", configIdx,
+                     infoRelativePath);
+    return true;
+  } else {
+    DYN_INST_DPRINTF(
+        "[CanNotDispatch] StreamEnd %llu, %s: No UnsteppedElement.\n",
+        configIdx, infoRelativePath);
+    return false;
+  }
 }
 
 void ISAStreamEngine::dispatchStreamEnd(
@@ -515,8 +530,12 @@ void ISAStreamEngine::dispatchStreamEnd(
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
   assert(se->hasUnsteppedElement(args) && "No UnsteppedElement for StreamEnd.");
-  // ! Make sure all effects happen as atomic.
-  this->removeRegionStreamIds(configIdx, info);
+  /**
+   * ! For nest stream region, we don't really remove the RegionStreamIds.
+   */
+  if (!info.is_nest()) {
+    this->removeRegionStreamIds(configIdx, info);
+  }
   se->dispatchStreamEnd(args);
 }
 
@@ -575,8 +594,11 @@ void ISAStreamEngine::rewindStreamEnd(const GemForgeDynInstInfo &dynInfo) {
     const auto &infoRelativePath = this->getRelativePath(configIdx);
 
     // Don't forget to add back the removed region stream ids.
+    // Unless this is a nest stream region.
     const auto &info = this->getStreamRegion(configIdx);
-    this->insertRegionStreamIds(configIdx, info);
+    if (!info.is_nest()) {
+      this->insertRegionStreamIds(configIdx, info);
+    }
 
     auto se = this->getStreamEngine();
     ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
@@ -690,9 +712,7 @@ void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
   se->commitStreamStep(streamId);
-  DYN_INST_DPRINTF("[commit] StreamStep RegionStream %llu.\n"
-                   "No unstepped elements.\n",
-                   regionStreamId);
+  DYN_INST_DPRINTF("[commit] StreamStep RegionStream %llu.\n", regionStreamId);
 
   // Release the info.
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
@@ -835,10 +855,6 @@ void ISAStreamEngine::rewindStreamStore(const GemForgeDynInstInfo &dynInfo) {
  * StreamUser Handlers.
  *******************************************************************************/
 
-/********************************************************************************
- * StreamUser Handlers.
- *******************************************************************************/
-
 bool ISAStreamEngine::canDispatchStreamUser(
     const GemForgeDynInstInfo &dynInfo) {
 
@@ -860,6 +876,8 @@ bool ISAStreamEngine::canDispatchStreamUser(
       DYN_INST_DPRINTF("MustMisspeculated %s invalid regionStream %llu.\n",
                        dynInfo.staticInst->getName(), regionStreamId);
       dynStreamInstInfo.mustBeMisspeculated = true;
+      dynStreamInstInfo.mustBeMisspeculatedReason =
+          MustBeMisspeculatedReason::USER_INVALID_REGION_ID;
     }
   }
 
@@ -884,6 +902,8 @@ bool ISAStreamEngine::canDispatchStreamUser(
       if (se->hasIllegalUsedLastElement(args)) {
         // This is a use beyond the last element. Must be misspeculated.
         dynStreamInstInfo.mustBeMisspeculated = true;
+        dynStreamInstInfo.mustBeMisspeculatedReason =
+            MustBeMisspeculatedReason::USER_USING_LAST_ELEMENT;
         DYN_INST_DPRINTF(
             "MustMisspeculated %s %llu: Illegal Used Last Element.\n",
             dynInfo.staticInst->getName(), usedStreamId);
@@ -921,6 +941,8 @@ void ISAStreamEngine::dispatchStreamUser(
                    dynInfo.staticInst->getName(), usedStreamIds.at(0),
                    dynInfo.seqNum);
     instInfo.mustBeMisspeculated = true;
+    instInfo.mustBeMisspeculatedReason =
+        MustBeMisspeculatedReason::USER_SE_CANNOT_DISPATCH;
   } else {
     se->dispatchStreamUser(args);
     // After dispatch, we get extra LQ callbacks.
@@ -963,9 +985,11 @@ void ISAStreamEngine::commitStreamUser(const GemForgeDynInstInfo &dynInfo) {
   const auto &userInfo = dynStreamInstInfo.userInfo;
   if (dynStreamInstInfo.mustBeMisspeculated) {
     // This must be a misspeculated instruction.
-    panic("MustMisspeculated %s %llu Seq %llu commit.\n",
-          dynInfo.staticInst->getName(), userInfo.translatedUsedStreamIds.at(0),
-          dynInfo.seqNum);
+    panic(
+        "MustMisspeculated %s %s StreamId %llu Seq %llu commit, reason %s.\n",
+        dynInfo.pc, dynInfo.staticInst->getName(),
+        userInfo.translatedUsedStreamIds.at(0), dynInfo.seqNum,
+        mustBeMisspeculatedString(dynStreamInstInfo.mustBeMisspeculatedReason));
     return;
   }
   std::vector<uint64_t> usedStreamIds{
@@ -1037,23 +1061,55 @@ T ISAStreamEngine::extractImm(const StaticInst *staticInst) const {
 }
 
 const ::LLVM::TDG::StreamRegion &
-ISAStreamEngine::getStreamRegion(uint64_t configIdx) const {
-  auto iter = this->memorizedStreamRegionMap.find(configIdx);
-  if (iter == this->memorizedStreamRegionMap.end()) {
-    auto relativePath = this->getRelativePath(configIdx);
+ISAStreamEngine::getStreamRegion(const std::string &relativePath) const {
+  auto iter = this->memorizedStreamRegionRelativePathMap.find(relativePath);
+  if (iter == this->memorizedStreamRegionRelativePathMap.end()) {
     auto path = cpuDelegator->getTraceExtraFolder() + "/" + relativePath;
-    iter =
-        this->memorizedStreamRegionMap
-            .emplace(std::piecewise_construct, std::forward_as_tuple(configIdx),
-                     std::forward_as_tuple())
-            .first;
     ProtoInputStream istream(path);
+    iter = this->memorizedStreamRegionRelativePathMap
+               .emplace(std::piecewise_construct,
+                        std::forward_as_tuple(relativePath),
+                        std::forward_as_tuple())
+               .first;
     if (!istream.read(iter->second)) {
       panic("Failed to read in the stream region from file %s.", path);
     }
   }
-
   return iter->second;
+}
+
+const ::LLVM::TDG::StreamRegion &
+ISAStreamEngine::getStreamRegion(uint64_t configIdx) const {
+  auto iter = this->memorizedStreamRegionIdMap.find(configIdx);
+  if (iter == this->memorizedStreamRegionIdMap.end()) {
+    auto relativePath = this->getRelativePath(configIdx);
+    const auto &streamRegion = this->getStreamRegion(relativePath);
+    iter = this->memorizedStreamRegionIdMap.emplace(configIdx, &streamRegion)
+               .first;
+  }
+  return *iter->second;
+}
+
+std::vector<const ::LLVM::TDG::StreamInfo *>
+ISAStreamEngine::collectStreamInfoInRegion(
+    const ::LLVM::TDG::StreamRegion &region) const {
+  std::vector<const ::LLVM::TDG::StreamInfo *> streams;
+  for (const auto &streamInfo : region.streams()) {
+    streams.push_back(&streamInfo);
+  }
+  // Check nest streams.
+  assert(region.nest_region_relative_paths_size() <= 1 &&
+         "Multiple nest regions is not supported.");
+  for (const auto &nestConfigRelativePath :
+       region.nest_region_relative_paths()) {
+    const auto &nestRegion = this->getStreamRegion(nestConfigRelativePath);
+    assert(nestRegion.nest_region_relative_paths_size() == 0 &&
+           "Recursive nest is not supported.");
+    for (const auto &streamInfo : nestRegion.streams()) {
+      streams.push_back(&streamInfo);
+    }
+  }
+  return streams;
 }
 
 void ISAStreamEngine::insertRegionStreamIds(
@@ -1061,9 +1117,10 @@ void ISAStreamEngine::insertRegionStreamIds(
   // Add one region table to the stack.
   this->regionStreamIdTableStack.emplace_back(configIdx);
   auto &regionStreamIdTable = this->regionStreamIdTableStack.back();
-  for (const auto &streamInfo : region.streams()) {
-    auto streamId = streamInfo.id();
-    auto regionStreamId = streamInfo.region_stream_id();
+  auto streamInfos = this->collectStreamInfoInRegion(region);
+  for (const auto &streamInfo : streamInfos) {
+    auto streamId = streamInfo->id();
+    auto regionStreamId = streamInfo->region_stream_id();
     assert(regionStreamId < MaxNumRegionStreams &&
            "More than 128 streams in a region.");
     regionStreamIdTable.at(regionStreamId) = streamId;
@@ -1098,9 +1155,10 @@ bool ISAStreamEngine::canSetRegionStreamIds(
   // Since we are now using a stack of RegionStreamTable, we allow
   // overriding previous RegionStreamId. This is for inter-procedure
   // streams.
-  for (const auto &streamInfo : region.streams()) {
+  auto streamInfos = this->collectStreamInfoInRegion(region);
+  for (const auto &streamInfo : streamInfos) {
     // Check if valid to be removed.
-    auto regionStreamId = streamInfo.region_stream_id();
+    auto regionStreamId = streamInfo->region_stream_id();
     if (regionStreamId >= MaxNumRegionStreams) {
       // Overflow RegionStreamId.
       return false;
@@ -1116,10 +1174,11 @@ bool ISAStreamEngine::canRemoveRegionStreamIds(
   }
   // Check that the last table matches with the region.
   const auto &regionStreamIdTable = this->regionStreamIdTableStack.back();
-  for (const auto &streamInfo : region.streams()) {
+  auto streamInfos = this->collectStreamInfoInRegion(region);
+  for (const auto &streamInfo : streamInfos) {
     // Check if valid to be removed.
-    auto streamId = streamInfo.id();
-    auto regionStreamId = streamInfo.region_stream_id();
+    auto streamId = streamInfo->id();
+    auto regionStreamId = streamInfo->region_stream_id();
     if (regionStreamId >= MaxNumRegionStreams) {
       // Overflow RegionStreamId.
       return false;
@@ -1178,6 +1237,18 @@ bool ISAStreamEngine::isValidRegionStreamId(int regionStreamId) const {
 }
 
 uint64_t ISAStreamEngine::lookupRegionStreamId(int regionStreamId) const {
+  /**
+   * Some ReservedStreamRegionId is mapped to InvalidStreamId for now.
+   * So far this is only for NestStreamConfig.
+   */
+  if (regionStreamId ==
+      ::LLVM::TDG::ReservedStreamRegionId::NestConfigureFuncInputRegionId) {
+    assert(::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId ==
+               1 &&
+           "Too many reserved RegionStreamIds.");
+    return InvalidStreamId;
+  }
+
   auto streamId = this->searchRegionStreamId(regionStreamId);
   if (streamId == InvalidStreamId) {
     panic("RegionStreamId %d translated to InvalidStreamId.", regionStreamId);
@@ -1252,6 +1323,9 @@ ISAStreamEngine::mustBeMisspeculatedString(MustBeMisspeculatedReason reason) {
     CASE_REASON(CONFIG_RECURSIVE);
     CASE_REASON(CONFIG_CANNOT_SET_REGION_ID);
     CASE_REASON(STEP_INVALID_REGION_ID);
+    CASE_REASON(USER_INVALID_REGION_ID);
+    CASE_REASON(USER_USING_LAST_ELEMENT);
+    CASE_REASON(USER_SE_CANNOT_DISPATCH);
   default:
     return "UNKNOWN_REASON";
   }
@@ -1264,4 +1338,10 @@ void ISAStreamEngine::takeOverBy(GemForgeCPUDelegator *newDelegator) {
   // change.
   this->SE = nullptr;
   this->SEMemorized = false;
+}
+
+void ISAStreamEngine::reset() {
+  this->regionStreamIdTableStack.clear();
+  this->seqNumToDynInfoMap.clear();
+  this->curStreamRegionInfo = nullptr;
 }

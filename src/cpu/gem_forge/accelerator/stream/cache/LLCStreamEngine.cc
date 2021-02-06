@@ -70,9 +70,10 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
   // Create the stream.
   auto S = LLCDynamicStream::getLLCStreamPanic(streamConfigureData->dynamicId);
-  LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynamicStreamId(),
-                 "Configure DirectStream InitAllocatedSlice %d.\n",
-                 streamConfigureData->initAllocatedIdx);
+  LLC_S_DPRINTF_(
+      LLCRubyStreamLife, S->getDynamicStreamId(),
+      "Configure DirectStream InitAllocatedSlice %d TotalTripCount %llu.\n",
+      streamConfigureData->initAllocatedIdx, S->getTotalTripCount());
   S->configuredLLC(this->controller);
 
   // Check if we have indirect streams.
@@ -81,9 +82,10 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
       auto &ISConfig = edge.data;
       // Let's create an indirect stream.
       auto IS = LLCDynamicStream::getLLCStreamPanic(ISConfig->dynamicId);
-      LLC_S_DPRINTF_(LLCRubyStreamLife, IS->getDynamicStreamId(),
-                     "Configure IndirectStream size %d, config size %d.\n",
-                     IS->getMemElementSize(), ISConfig->elementSize);
+      LLC_S_DPRINTF_(
+          LLCRubyStreamLife, IS->getDynamicStreamId(),
+          "Configure IndirectStream MemElementSize %d TotalTripCount %llu.\n",
+          IS->getMemElementSize(), IS->getTotalTripCount());
       IS->configuredLLC(this->controller);
     }
   }
@@ -367,8 +369,8 @@ void LLCStreamEngine::receiveStreamElementData(
                                        loadValueBlock);
     }
   } else {
-    while (!stream->idxToElementMap.empty()) {
-      auto &element = stream->idxToElementMap.begin()->second;
+    for (auto &idxElement : stream->idxToElementMap) {
+      auto &element = idxElement.second;
       LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
                         element->idx, element->isReady());
       if (!element->isReady()) {
@@ -389,7 +391,7 @@ void LLCStreamEngine::receiveStreamElementData(
     if (!elementIter->second->isReady()) {
       break;
     }
-    stream->idxToElementMap.erase(elementIter);
+    stream->eraseElement(elementIter);
   }
 
   if (coreNeedValue) {
@@ -1110,7 +1112,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
                            overlapSize, elementOffset);
       }
       while (stream->idxToElementMap.begin()->first < sliceId.lhsElementIdx) {
-        stream->idxToElementMap.erase(stream->idxToElementMap.begin());
+        stream->eraseElement(stream->idxToElementMap.begin());
       }
     }
 
@@ -1232,8 +1234,15 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
   assert(elementIter != dynIS->idxToElementMap.end() &&
          "Missing indirect element");
   auto element = elementIter->second;
-  // Release the element now.
-  dynIS->idxToElementMap.erase(elementIter);
+  /**
+   * In old implementation, we release indirect stream element here. However,
+   * our new implementation require that element is not released until we
+   * finished processing it. This is the case for UpdateStream and AtomicStream,
+   * whose element is released in receiveStreamElementData.
+   */
+  if (!IS->isUpdateStream() && !IS->isAtomicComputeStream()) {
+    dynIS->eraseElement(elementIter);
+  }
   if (IS->isReduction()) {
     LLC_S_PANIC(dynIS->getDynamicStreamId(),
                 "Reduction is no longer handled here.");

@@ -24,6 +24,7 @@ class StreamSQCallback;
 class StreamSQDeprecatedCallback;
 class StreamFloatController;
 class StreamComputeEngine;
+class NestStreamController;
 
 class StreamEngine : public GemForgeAccelerator {
 public:
@@ -258,6 +259,7 @@ private:
   friend class StreamSQCallback;
   friend class StreamSQDeprecatedCallback;
   friend class StreamFloatController;
+  friend class NestStreamController;
 
   LLVMTraceCPU *cpu;
 
@@ -384,7 +386,7 @@ private:
   // Called every cycle to allocate elements.
   void allocateElements();
   // Allocate one element to stream.
-  void allocateElement(Stream *S);
+  void allocateElement(DynamicStream &dynS);
   /**
    * Release an unstepped stream element.
    * Used to clear ended stream.
@@ -396,14 +398,6 @@ private:
    * @param toThrottle: perform stream throttling.
    */
   void releaseElementStepped(Stream *S, bool isEnd, bool doThrottle);
-  /**
-   * Step one element.
-   */
-  void stepElement(Stream *S);
-  /**
-   * Unstep one element.
-   */
-  void unstepElement(Stream *S);
   void issueElements();
   void issueElement(StreamElement *element);
   void writebackElement(StreamElement *element, StreamStoreInst *inst);
@@ -431,6 +425,7 @@ private:
   std::unique_ptr<StreamThrottler> throttler;
   std::unique_ptr<StreamFloatController> floatController;
   std::unique_ptr<StreamComputeEngine> computeEngine;
+  std::unique_ptr<NestStreamController> nestStreamController;
 
   /**
    * Try to coalesce continuous element of direct mem stream if they

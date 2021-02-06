@@ -157,7 +157,7 @@ void StreamThrottler::doThrottling(StreamElement *element) {
   auto assignedBytes = 0;
   for (const auto &IdStream : this->se->streamMap) {
     auto S = IdStream.second;
-    if (!S->configured) {
+    if (!S->isConfigured()) {
       continue;
     }
     currentAliveStreams++;

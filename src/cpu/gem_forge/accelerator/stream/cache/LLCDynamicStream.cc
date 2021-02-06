@@ -323,6 +323,21 @@ bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
   return true;
 }
 
+void LLCDynamicStream::eraseElement(uint64_t elementIdx) {
+  auto iter = this->idxToElementMap.find(elementIdx);
+  if (iter == this->idxToElementMap.end()) {
+    LLC_S_PANIC(this->getDynamicStreamId(), "Failed to erase element %llu.",
+                elementIdx);
+  }
+  LLC_ELEMENT_DPRINTF(iter->second, "Erased.\n");
+  this->idxToElementMap.erase(iter);
+}
+
+void LLCDynamicStream::eraseElement(IdxToElementMapT::iterator elementIter) {
+  LLC_ELEMENT_DPRINTF(elementIter->second, "Erased.\n");
+  this->idxToElementMap.erase(elementIter);
+}
+
 bool LLCDynamicStream::isBasedOn(const DynamicStreamId &baseId) const {
   for (const auto &baseConfig : this->baseOnConfigs) {
     if (baseConfig->dynamicId == baseId) {
@@ -651,7 +666,7 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
       }
       assert(iter->second->isReady() &&
              "Older Reduction Element should be ready.");
-      this->idxToElementMap.erase(iter);
+      this->eraseElement(iter);
     }
   }
 }

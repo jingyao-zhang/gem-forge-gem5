@@ -8,12 +8,14 @@
 #endif
 #include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
 
+#include "cpu/inst_seq.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 
 #include <array>
 #include <iostream>
 
+class GemForgeISAHandler;
 namespace X86ISA {
 class ExecFunc {
 public:
@@ -52,7 +54,9 @@ public:
 
   ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func);
 
-  RegisterValue invoke(const std::vector<RegisterValue> &params);
+  RegisterValue invoke(const std::vector<RegisterValue> &params,
+                       GemForgeISAHandler *isaHandler = nullptr,
+                       InstSeqNum startSeqNum = 0);
 
   /**
    * A special interface for address generation. Mostly used for indirect
@@ -61,6 +65,9 @@ public:
   Addr invoke(const std::vector<Addr> &params);
 
   Cycles getEstimatedLatency() const { return this->estimatedLatency; }
+  const ::LLVM::TDG::ExecFuncInfo &getFuncInfo() const { return this->func; }
+
+  int getNumInstructions() const { return this->instructions.size(); }
 
 private:
   ThreadContext *tc;

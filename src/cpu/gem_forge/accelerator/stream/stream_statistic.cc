@@ -31,6 +31,8 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numSample);
   dumpAvg(avgInflyRequest, numInflyRequest, numSample);
   dumpAvg(avgMaxSize, maxSize, numSample);
+  dumpAvg(avgAllocSize, allocSize, numSample);
+  dumpAvg(avgNumDynStreams, numDynStreams, numSample);
 
   dumpScalar(numMLCAllocatedSlice);
   dumpScalar(numLLCIssueSlice);
@@ -118,6 +120,8 @@ void StreamStatistic::clear() {
   this->numSample = 0;
   this->numInflyRequest = 0;
   this->maxSize = 0;
+  this->allocSize = 0;
+  this->numDynStreams = 0;
   this->numMLCAllocatedSlice = 0;
   this->numLLCIssueSlice = 0;
   this->numLLCSentSlice = 0;

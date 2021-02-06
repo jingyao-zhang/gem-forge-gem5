@@ -35,6 +35,13 @@ public:
 
   void storeTo(Addr vaddr, int size);
 
+  /**
+   * Reset the ISAStreamEngine to initial state.
+   */
+  void resetISAStreamEngine() {
+    this->se.reset();
+  }
+
 private:
   GemForgeCPUDelegator *cpuDelegator;
 

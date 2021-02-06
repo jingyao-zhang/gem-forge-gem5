@@ -7,8 +7,10 @@
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/exec_context.hh"
-#include "cpu/gem_forge/gem_forge_utils.hh"
 #include "sim/process.hh"
+
+#include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
+#include "cpu/gem_forge/gem_forge_utils.hh"
 
 #include "debug/ExecFunc.hh"
 
@@ -122,7 +124,7 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
              "Failed to read in next machine inst.");
     }
   }
-  EXEC_FUNC_DPRINTF("Decode done.\n", pc.pc());
+  EXEC_FUNC_DPRINTF("Decode done. Final PC %s.\n", pc);
 
   this->estimateLatency();
 
@@ -155,6 +157,9 @@ int ExecFunc::translateToNumRegs(const DataType &type) {
   case DataType::VECTOR_512:
     numRegs = 8;
     break;
+  case DataType::VOID:
+    numRegs = 0;
+    break;
   default:
     panic("Invalid data type.");
   }
@@ -179,7 +184,8 @@ std::string ExecFunc::RegisterValue::print() const {
 }
 
 ExecFunc::RegisterValue
-ExecFunc::invoke(const std::vector<RegisterValue> &params) {
+ExecFunc::invoke(const std::vector<RegisterValue> &params,
+                 GemForgeISAHandler *isaHandler, InstSeqNum startSeqNum) {
   /**
    * We are assuming C calling convention.
    * Registers are passed in as $rdi, $rsi, $rdx, $rcx, $r8, $r9.
@@ -238,19 +244,30 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
   // Set up the virt proxy.
   execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
 
-  bool hasMemRef = false;
   for (auto idx = 0; idx < this->instructions.size(); ++idx) {
     auto &staticInst = this->instructions.at(idx);
     auto &pc = this->pcs.at(idx);
-    EXEC_FUNC_DPRINTF("Set PCState %s.\n", pc);
+    EXEC_FUNC_DPRINTF("Set PCState %s: %s.\n", pc,
+                      staticInst->disassemble(pc.pc()));
     execFuncXC.pcState(pc);
     staticInst->execute(&execFuncXC, nullptr /* traceData. */);
-    if (staticInst->isMemRef()) {
-      hasMemRef = false;
+
+    /**
+     * Handle GemForge instructions. For now this is used for
+     * NestStreamConfigureFunc.
+     */
+    if (staticInst->isGemForge()) {
+      GemForgeDynInstInfo dynInfo(startSeqNum + idx, pc, staticInst.get(),
+                                  this->tc);
+      assert(isaHandler->canDispatch(dynInfo) && "Cannot dispatch.");
+      GemForgeLSQCallbackList lsqCallbacks;
+      isaHandler->dispatch(dynInfo, lsqCallbacks);
+      assert(!lsqCallbacks.front() && "Cannot handle extra LSQ callbacks.");
+      assert(isaHandler->canExecute(dynInfo) && "Cannot execute.");
+      isaHandler->execute(dynInfo, execFuncXC);
+      assert(isaHandler->canCommit(dynInfo) && "Cannot commit.");
+      isaHandler->commit(dynInfo);
     }
-  }
-  if (hasMemRef) {
-    panic("what???");
   }
 
   auto retType = this->func.type();
@@ -268,7 +285,8 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params) {
       retValue.at(i) = execFuncXC.readFloatRegOperand(reg);
     }
   }
-  EXEC_FUNC_DPRINTF("Ret %s.\n", retValue.print(retType));
+  EXEC_FUNC_DPRINTF("Ret Type %s.\n", ::LLVM::TDG::DataType_Name(retType),
+                    retValue.print(retType));
   return retValue;
 }
 

@@ -1,5 +1,6 @@
 #include "stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
+#include "nest_stream_controller.hh"
 #include "stream_compute_engine.hh"
 #include "stream_float_controller.hh"
 #include "stream_lsq_callback.hh"
@@ -59,6 +60,7 @@ StreamEngine::StreamEngine(Params *params)
   this->floatController = m5::make_unique<StreamFloatController>(
       this, std::move(streamFloatPolicy));
   this->computeEngine = m5::make_unique<StreamComputeEngine>(this, params);
+  this->nestStreamController = m5::make_unique<NestStreamController>(this);
 
   this->initializeFIFO(this->totalRunAheadLength);
 }
@@ -108,6 +110,7 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
 void StreamEngine::takeOverBy(GemForgeCPUDelegator *newCpuDelegator,
                               GemForgeAcceleratorManager *newManager) {
   GemForgeAccelerator::takeOverBy(newCpuDelegator, newManager);
+  this->nestStreamController->takeOverBy(newCpuDelegator);
 }
 
 void StreamEngine::regStats() {
@@ -289,11 +292,6 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
 
   auto configStreams = this->getConfigStreamsInRegion(streamRegion);
   for (auto &S : configStreams) {
-    if (S->configured) {
-      S_DPRINTF(S, "This stream has already been configured.\n");
-      assert(false && "The stream should not be configured.");
-    }
-    S->configured = true;
     S->statistic.numConfigured++;
 
     // Notify the stream.
@@ -316,8 +314,11 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     assert(S->getAllocSize() < S->maxSize);
     const auto &dynS = S->getLastDynamicStream();
     assert(dynS.areNextBaseElementsAllocated());
-    this->allocateElement(S);
+    this->allocateElement(S->getLastDynamicStream());
   }
+
+  // Notify NestStreamController.
+  this->nestStreamController->dispatchStreamConfig(args);
 }
 
 void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
@@ -352,6 +353,9 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
     configDynStreams.push_back(&dynS);
   }
 
+  // Notify NestStreamController.
+  this->nestStreamController->executeStreamConfig(args);
+
   /**
    * Then we try to float streams.
    */
@@ -369,6 +373,9 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
   const auto &streamRegion = this->getStreamRegion(infoRelativePath);
 
   SE_DPRINTF("Rewind StreamConfig %s.\n", infoRelativePath);
+
+  // Notify NestStreamController.
+  this->nestStreamController->rewindStreamConfig(args);
 
   auto configStreams = this->getConfigStreamsInRegion(streamRegion);
 
@@ -441,8 +448,8 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
   auto stepStream = this->getStream(stepStreamId);
 
   for (auto S : this->getStepStreamList(stepStream)) {
-    assert(S->configured && "Stream should be configured to be stepped.");
-    this->stepElement(S);
+    assert(S->isConfigured() && "Stream should be configured to be stepped.");
+    S->stepElement();
   }
   /**
    * * Enforce that stepSize is the same within the stepGroup.
@@ -571,8 +578,8 @@ void StreamEngine::rewindStreamStep(uint64_t stepStreamId) {
   this->numUnstepped++;
   auto stepStream = this->getStream(stepStreamId);
   for (auto S : this->getStepStreamList(stepStream)) {
-    assert(S->configured && "Stream should be configured to be stepped.");
-    this->unstepElement(S);
+    assert(S->isConfigured() && "Stream should be configured to be stepped.");
+    S->unstepElement();
   }
 }
 
@@ -586,7 +593,7 @@ int StreamEngine::getStreamUserLQEntries(const StreamUserArgs &args) const {
   std::unordered_set<StreamElement *> usedElementSet;
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    if (!S->configured) {
+    if (!S->isConfigured()) {
       // Ignore the out-of-loop use (see dispatchStreamUser).
       continue;
     }
@@ -666,7 +673,7 @@ bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
 bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    if (!S->configured) {
+    if (!S->isConfigured()) {
       continue;
     }
     if (S->isReduction()) {
@@ -674,7 +681,7 @@ bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
       // convey back the final value.
       continue;
     }
-    auto &dynS = S->getLastDynamicStream();
+    auto &dynS = S->getFirstAliveDynStream();
     if (!dynS.configExecuted) {
       continue;
     }
@@ -700,7 +707,7 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
    */
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    auto &dynS = S->getLastDynamicStream();
+    auto &dynS = S->getFirstAliveDynStream();
     if (!dynS.configExecuted) {
       return false;
     }
@@ -723,7 +730,7 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
     if (!S->hasCoreUser()) {
-      // There are two exception for this sanity check.
+      // There are exceptions for this sanity check.
       // 1. ReductionStream may use LastElement to convey back the final value.
       // 2. StoreComputeStream enabled uses StreamStore inst to get the
       // address and value from the SE so the core can finally write back.
@@ -740,7 +747,7 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
      * In such case we assume it's ready and use a nullptr as a special
      * element
      */
-    if (!S->configured) {
+    if (!S->isConfigured()) {
       elementSet.insert(nullptr);
     } else {
 
@@ -782,11 +789,15 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
        */
       continue;
     }
-    // Floating StoreStream will only check for Ack when stepping.
     auto S = element->stream;
-    if (S->isStoreStream() && S->getEnabledStoreFunc() &&
-        element->dynS->offloadedToCache) {
-      continue;
+    // Floating Store/AtomicComputeStream will only check for Ack when stepping.
+    if (element->dynS->offloadedToCache) {
+      if (S->isStoreComputeStream()) {
+        continue;
+      }
+      if (S->isAtomicComputeStream() && !S->hasCoreUser()) {
+        continue;
+      }
     }
     if (!(element->isAddrReady() &&
           element->checkValueReady(true /* CheckedByCore */))) {
@@ -831,21 +842,27 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * Make sure we zero out the data.
      */
     args.values->back().fill(0);
-    if (element->stream->isStoreStream()) {
+    if (element->dynS->offloadedToCache) {
       /**
-       * This should be a stream store. Just leave it there.
+       * There are certain cases we are not really return the value.
+       * 1. StreamStore does not really return any value.
+       * 2. Floating AtomicComputeStream.
        */
-      continue;
-    } else {
-      /**
-       * Read in the value.
-       */
-      element->getValueByStreamId(streamId, args.values->back().data(),
-                                  StreamUserArgs::MaxElementSize);
-      S_ELEMENT_DPRINTF(element, "Execute StreamUser, Value %s.\n",
-                        GemForgeUtils::dataToString(args.values->back().data(),
-                                                    element->size));
+      if (S->isStoreStream()) {
+        continue;
+      }
+      if (S->isAtomicComputeStream() && !S->hasCoreUser()) {
+        continue;
+      }
     }
+    /**
+     * Read in the value.
+     */
+    element->getValueByStreamId(streamId, args.values->back().data(),
+                                StreamUserArgs::MaxElementSize);
+    S_ELEMENT_DPRINTF(
+        element, "Execute StreamUser, Value %s.\n",
+        GemForgeUtils::dataToString(args.values->back().data(), element->size));
   }
 }
 
@@ -863,12 +880,19 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
       continue;
     }
 
+    auto S = element->getStream();
+    bool isActuallyUsed = true;
+    if (element->dynS->offloadedToCache) {
+      if (S->isStoreComputeStream()) {
+        isActuallyUsed = false;
+      }
+      if (S->isAtomicComputeStream() && !S->hasCoreUser()) {
+        isActuallyUsed = false;
+      }
+    }
     if (!element->isValueReady) {
-      // The only exception is the StoreStream is floated.
-      if (element->stream->isStoreStream() &&
-          element->stream->getEnabledStoreFunc() &&
-          element->dynS->offloadedToCache) {
-      } else {
+      // The only exception is the Store/AtomicComputeStream is floated.
+      if (isActuallyUsed) {
         S_ELEMENT_PANIC(element, "Commit user, but value not ready.");
       }
     }
@@ -876,21 +900,21 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
     /**
      * Sanity check that no faulted block is used.
      */
-    auto S = element->getStream();
-    // Dummy way to check the streamId.
-    for (auto streamId : args.usedStreamIds) {
-      // Check if this streamId corresponding to S.
-      if (this->getStream(streamId) != S) {
-        continue;
-      }
-      auto vaddr = element->addr;
-      int32_t size = element->size;
-      // Handle offset for coalesced stream.
-      int32_t offset;
-      S->getCoalescedOffsetAndSize(streamId, offset, size);
-      vaddr += offset;
-      if (element->isValueFaulted(vaddr, size)) {
-        S_ELEMENT_PANIC(element, "Commit user of faulted value.");
+    if (isActuallyUsed) {
+      for (auto streamId : args.usedStreamIds) {
+        // Check if this streamId corresponding to S.
+        if (this->getStream(streamId) != S) {
+          continue;
+        }
+        auto vaddr = element->addr;
+        int32_t size = element->size;
+        // Handle offset for coalesced stream.
+        int32_t offset;
+        S->getCoalescedOffsetAndSize(streamId, offset, size);
+        vaddr += offset;
+        if (element->isValueFaulted(vaddr, size)) {
+          S_ELEMENT_PANIC(element, "Commit user of faulted value.");
+        }
       }
     }
 
@@ -962,7 +986,7 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
     endedStreams.insert(S);
 
     // 1. Step one element.
-    this->stepElement(S);
+    S->stepElement();
 
     // 2. Mark the dynamicStream as ended.
     S->dispatchStreamEnd(args.seqNum);
@@ -991,7 +1015,7 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
     }
     endedStreams.insert(S);
     // Check for StreamAck. So far that's only floating store stream.
-    const auto &dynS = S->getLastDynamicStream();
+    const auto &dynS = S->getDynamicStreamByEndSeqNum(args.seqNum);
     if (S->isStoreStream()) {
       if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
         return false;
@@ -1032,7 +1056,7 @@ void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
     S->rewindStreamEnd(args.seqNum);
 
     // 2. Unstep one element.
-    this->unstepElement(S);
+    S->unstepElement();
     if (isDebugStream(S)) {
       S_DPRINTF(S, "Rewind End");
     }
@@ -1049,6 +1073,9 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
   const auto &endStreamInfos = streamRegion.streams();
 
   SE_DPRINTF("Commit StreamEnd for %s.\n", streamRegion.region().c_str());
+
+  // Notify NestStreamController.
+  this->nestStreamController->commitStreamEnd(args);
 
   /**
    * Deduplicate the streams due to coalescing.
@@ -1248,10 +1275,13 @@ void StreamEngine::initializeStreams(
   }
 
   /**
-   * Remember to finalize the streams.
+   * Remember to finalize the streams, and remember if it's a nest stream.
    */
   for (auto newStream : createdStreams) {
     newStream->finalize();
+    if (streamRegion.is_nest()) {
+      newStream->setNested();
+    }
   }
   /**
    * ! Hack: Some stream has crazy large element size, e.g. vectorized
@@ -1268,6 +1298,17 @@ void StreamEngine::initializeStreams(
       newStream->maxSize =
           std::min(newStream->maxSize, static_cast<size_t>(2ull));
     }
+  }
+
+  // Recursively initialize all nest streams.
+  if (streamRegion.is_nest()) {
+    this->nestStreamController->initializeNestConfig(streamRegion);
+  }
+  for (const auto nestRegionRelativePath :
+       streamRegion.nest_region_relative_paths()) {
+    const auto &nestStreamRegion =
+        this->getStreamRegion(nestRegionRelativePath);
+    this->initializeStreams(nestStreamRegion);
   }
 }
 
@@ -1403,6 +1444,7 @@ void StreamEngine::tick() {
   this->issueElements();
   this->computeEngine->startComputation();
   this->computeEngine->completeComputation();
+  this->nestStreamController->configureNestStreams();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
@@ -1423,14 +1465,13 @@ void StreamEngine::updateAliveStatistics() {
     if (stream->isMemStream()) {
       this->numRunAHeadLengthDist.sample(stream->getAllocSize());
     }
-    if (!stream->configured) {
+    if (!stream->isConfigured()) {
       continue;
     }
     if (stream->isMemStream()) {
       totalAliveMemStreams++;
     }
-    stream->statistic.sampleStats(stream->numInflyStreamRequests,
-                                  stream->maxSize);
+    stream->sampleStatistic();
   }
   this->numTotalAliveElements.sample(totalAliveElements);
   this->numTotalAliveCacheBlocks.sample(totalAliveCacheBlocks.size());
@@ -1575,9 +1616,8 @@ void StreamEngine::allocateElements() {
   std::vector<Stream *> configuredStepRootStreams;
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
-    if (S->stepRootStream == S && S->configured &&
-        S->getLastDynamicStream().configExecuted) {
-      // This is a StepRootStream, with StreamConfig executed.
+    if (S->stepRootStream == S && S->isConfigured()) {
+      // This is a configured StepRootStream.
       configuredStepRootStreams.push_back(S);
     }
   }
@@ -1616,6 +1656,56 @@ void StreamEngine::allocateElements() {
     }
 
     /**
+     * With the new NestStream, we have to search for the correct dynamic stream
+     * to allocate for. It is the first DynamicStream that:
+     * 1. StreamEnd not dispatched.
+     * 2. StreamConfig executed.
+     * 3. If has TotalTripCount, not all step streams has allocated all
+     * elements.
+     */
+    const auto &stepStreams = this->getStepStreamList(stepRootStream);
+    DynamicStream *allocatingStepRootDynS = nullptr;
+    for (auto &stepRootDynS : stepRootStream->dynamicStreams) {
+      if (stepRootDynS.endDispatched) {
+        continue;
+      }
+      if (!stepRootDynS.configExecuted) {
+        // Configure not executed, can not allocate.
+        break;
+      }
+      if (stepRootDynS.hasTotalTripCount()) {
+        auto totalTripCount = stepRootDynS.getTotalTripCount();
+        bool allStepStreamsAllocated = true;
+        for (auto stepS : stepStreams) {
+          auto &stepDynS = stepS->getDynamicStreamByInstance(
+              stepRootDynS.dynamicStreamId.streamInstance);
+          DYN_S_DPRINTF(stepDynS.dynamicStreamId,
+                        "TotalTripCount %d, Next FIFOIdx %s.\n", totalTripCount,
+                        stepDynS.FIFOIdx);
+          if (stepDynS.FIFOIdx.entryIdx < totalTripCount + 1) {
+            allStepStreamsAllocated = false;
+            break;
+          }
+        }
+        if (allStepStreamsAllocated) {
+          // All allocated, we can move to next one.
+          continue;
+        }
+      }
+      // Found it.
+      allocatingStepRootDynS = &stepRootDynS;
+      break;
+    }
+    if (!allocatingStepRootDynS) {
+      // Failed to find an allocating DynStream.
+      S_DPRINTF(stepRootStream, "No Allocating DynStream.\n");
+      continue;
+    }
+    DYN_S_DPRINTF(allocatingStepRootDynS->dynamicStreamId,
+                  "Allocating StepRootDynS AllocSize %d MaxSize %d.\n",
+                  stepRootStream->getAllocSize(), stepRootStream->maxSize);
+
+    /**
      * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
      * StreamEnd. Condition: maxAllocSize > allocSize: originally we are trying
      * to allocate more.
@@ -1624,10 +1714,10 @@ void StreamEngine::allocateElements() {
      */
     {
       auto allocSize = stepRootStream->getAllocSize();
-      auto &stepRootDynStream = stepRootStream->getLastDynamicStream();
-      if (stepRootDynStream.totalTripCount > 0 && maxAllocSize > allocSize) {
-        auto nextEntryIdx = stepRootDynStream.FIFOIdx.entryIdx;
-        auto maxTripCount = stepRootDynStream.totalTripCount + 1;
+      if (allocatingStepRootDynS->hasTotalTripCount() > 0 &&
+          maxAllocSize > allocSize) {
+        auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
+        auto maxTripCount = allocatingStepRootDynS->totalTripCount + 1;
         if (nextEntryIdx >= maxTripCount) {
           // We are already overflowed, set maxAllocSize to allocSize to stop
           // allocating. NOTE: This should not happen at all.
@@ -1639,16 +1729,12 @@ void StreamEngine::allocateElements() {
       }
     }
 
-    const auto &stepStreams = this->getStepStreamList(stepRootStream);
-    const auto &stepRootDynStream = stepRootStream->getLastDynamicStream();
     for (size_t targetSize = 1;
          targetSize <= maxAllocSize && this->hasFreeElement(); ++targetSize) {
       for (auto S : stepStreams) {
+        assert(S->isConfigured() && "Try to allocate for unconfigured stream.");
         if (!this->hasFreeElement()) {
           break;
-        }
-        if (!S->configured) {
-          continue;
         }
         if (S->getAllocSize() >= targetSize) {
           continue;
@@ -1656,7 +1742,8 @@ void StreamEngine::allocateElements() {
         if (S->getAllocSize() >= S->maxSize) {
           continue;
         }
-        const auto &dynS = S->getLastDynamicStream();
+        auto &dynS = S->getDynamicStreamByInstance(
+            allocatingStepRootDynS->dynamicStreamId.streamInstance);
         if (!dynS.areNextBaseElementsAllocated()) {
           continue;
         }
@@ -1665,28 +1752,29 @@ void StreamEngine::allocateElements() {
             // It doesn't make sense to allocate ahead than the step root.
             continue;
           }
-          if (dynS.allocSize >= stepRootDynStream.allocSize) {
+          if (dynS.allocSize >= allocatingStepRootDynS->allocSize) {
             // It also doesn't make sense to allocate ahead than root dynS.
             continue;
           }
         }
-        this->allocateElement(S);
+        this->allocateElement(dynS);
       }
     }
   }
 }
 
-void StreamEngine::allocateElement(Stream *S) {
+void StreamEngine::allocateElement(DynamicStream &dynS) {
   assert(this->hasFreeElement());
   auto newElement = this->removeFreeElement();
   this->numElementsAllocated++;
+  auto S = dynS.stream;
   if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_LD) {
     this->numLoadElementsAllocated++;
   } else if (S->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
     this->numStoreElementsAllocated++;
   }
 
-  S->allocateElement(newElement);
+  S->allocateElement(dynS, newElement);
 }
 
 void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
@@ -1794,10 +1882,6 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
   }
   return releaseElement != nullptr;
 }
-
-void StreamEngine::stepElement(Stream *S) { S->stepElement(); }
-
-void StreamEngine::unstepElement(Stream *S) { S->unstepElement(); }
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElements;
@@ -2310,7 +2394,7 @@ size_t StreamEngine::getTotalRunAheadLength() const {
   size_t totalRunAheadLength = 0;
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
-    if (!S->configured) {
+    if (!S->isConfigured()) {
       continue;
     }
     totalRunAheadLength += S->maxSize;
