@@ -3,6 +3,8 @@
 
 #include "stream_engine.hh"
 
+#include <map>
+
 /**
  * Helper class to manager the floating streams.
  * So far this is only in charge of floating streams at configuration.
@@ -12,11 +14,18 @@ public:
   StreamFloatController(StreamEngine *_se,
                         std::unique_ptr<StreamFloatPolicy> _policy);
 
+  using StreamList = std::list<Stream *>;
   using DynStreamList = std::list<DynamicStream *>;
 
   using StreamConfigArgs = StreamEngine::StreamConfigArgs;
-  void floatStreams(const ::LLVM::TDG::StreamRegion &region,
+  void floatStreams(const StreamConfigArgs &args,
+                    const ::LLVM::TDG::StreamRegion &region,
                     DynStreamList &dynStreams);
+
+  void commitFloatStreams(const StreamConfigArgs &args,
+                          const StreamList &streams);
+  void rewindFloatStreams(const StreamConfigArgs &args,
+                          const StreamList &streams);
 
 private:
   StreamEngine *se;
@@ -45,6 +54,14 @@ private:
   void floatIndirectStreams(const Args &args);
   void floatDirectStoreComputeStreams(const Args &args);
   void floatReductionStreams(const Args &args);
+
+  /**
+   * For now we can rewind a floated stream that write to memory (Store/Atomic
+   * Compute Stream). As a temporary fix, I delay sending out the floating
+   * packet until the StreamConfig is committed, and raise the "offloadDelayed"
+   * flag in the DynamicStream -- which will stop the StreamEngine issuing them.
+   */
+  std::map<InstSeqNum, PacketPtr> configSeqNumToDelayedFloatPktMap;
 };
 
 #endif

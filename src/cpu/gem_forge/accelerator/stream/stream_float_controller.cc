@@ -14,7 +14,7 @@ StreamFloatController::StreamFloatController(
     : se(_se), policy(std::move(_policy)) {}
 
 void StreamFloatController::floatStreams(
-    const ::LLVM::TDG::StreamRegion &region,
+    const StreamConfigArgs &args, const ::LLVM::TDG::StreamRegion &region,
     std::list<DynamicStream *> &dynStreams) {
 
   if (this->se->cpuDelegator->cpuType ==
@@ -213,18 +213,23 @@ void StreamFloatController::floatStreams(
    * - DirectStoreStream with StoreFunc.
    * - ReductionStreams.
    */
-  Args args(region, dynStreams, offloadedStreamConfigMap,
-            *cacheStreamConfigVec);
-  this->floatDirectLoadStreams(args);
-  this->floatDirectAtomicComputeStreams(args);
-  this->floatIndirectStreams(args);
-  this->floatDirectStoreComputeStreams(args);
-  this->floatReductionStreams(args);
+  Args floatArgs(region, dynStreams, offloadedStreamConfigMap,
+                 *cacheStreamConfigVec);
+  this->floatDirectLoadStreams(floatArgs);
+  this->floatDirectAtomicComputeStreams(floatArgs);
+  this->floatIndirectStreams(floatArgs);
+  this->floatDirectStoreComputeStreams(floatArgs);
+  this->floatReductionStreams(floatArgs);
 
   // Sanity check for some offload decision.
+  bool hasOffloadStoreFunc = false;
   for (auto &dynS : dynStreams) {
-    if (!dynS->offloadedToCache) {
-      auto S = dynS->stream;
+    auto S = dynS->stream;
+    if (dynS->offloadedToCache) {
+      if (S->getEnabledStoreFunc()) {
+        hasOffloadStoreFunc = true;
+      }
+    } else {
       if (S->getMergedPredicatedStreams().size() > 0) {
         S_PANIC(S, "Should offload streams with merged streams.");
       }
@@ -234,21 +239,95 @@ void StreamFloatController::floatStreams(
     }
   }
 
+  if (cacheStreamConfigVec->empty()) {
+    delete cacheStreamConfigVec;
+    return;
+  }
+
   // Send all the floating streams in one packet.
-  if (!cacheStreamConfigVec->empty()) {
-    // Dummy paddr to make ruby happy.
-    Addr initPAddr = 0;
-    auto pkt = GemForgePacketHandler::createStreamControlPacket(
-        initPAddr, this->se->cpuDelegator->dataMasterId(), 0,
-        MemCmd::Command::StreamConfigReq,
-        reinterpret_cast<uint64_t>(cacheStreamConfigVec));
-    for (const auto &config : *cacheStreamConfigVec) {
-      SE_DPRINTF_(CoreRubyStreamLife, "%s: Send FloatConfig.\n",
-                  config->dynamicId);
+  // Dummy paddr to make ruby happy.
+  Addr initPAddr = 0;
+  auto pkt = GemForgePacketHandler::createStreamControlPacket(
+      initPAddr, this->se->cpuDelegator->dataMasterId(), 0,
+      MemCmd::Command::StreamConfigReq,
+      reinterpret_cast<uint64_t>(cacheStreamConfigVec));
+  if (hasOffloadStoreFunc) {
+    // We have to delay this float config until StreamConfig is committed,
+    // as so far we have no way to rewind the offloaded writes.
+    this->configSeqNumToDelayedFloatPktMap.emplace(args.seqNum, pkt);
+    for (auto &dynS : dynStreams) {
+      if (dynS->offloadedToCache) {
+        DYN_S_DPRINTF(dynS->dynamicStreamId, "Delayed FloatConfig.\n");
+        dynS->offloadConfigDelayed = true;
+      }
+    }
+  } else {
+    for (auto &dynS : dynStreams) {
+      if (dynS->offloadedToCache) {
+        DYN_S_DPRINTF_(CoreRubyStreamLife, dynS->dynamicStreamId,
+                       "Send FloatConfig.\n");
+      }
     }
     this->se->cpuDelegator->sendRequest(pkt);
-  } else {
-    delete cacheStreamConfigVec;
+  }
+}
+
+void StreamFloatController::commitFloatStreams(const StreamConfigArgs &args,
+                                               const StreamList &streams) {
+  // We can issue the delayed float configuration now.
+  auto iter = this->configSeqNumToDelayedFloatPktMap.find(args.seqNum);
+  if (iter != this->configSeqNumToDelayedFloatPktMap.end()) {
+    auto pkt = iter->second;
+    for (auto S : streams) {
+      auto &dynS = S->getDynamicStream(args.seqNum);
+      if (dynS.offloadedToCache) {
+        assert(dynS.offloadConfigDelayed && "Offload is not delayed.");
+        dynS.offloadConfigDelayed = false;
+        DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynamicStreamId,
+                       "Send Delayed FloatConfig.\n");
+        DYN_S_DPRINTF(dynS.dynamicStreamId, "Send Delayed FloatConfig.\n");
+      }
+    }
+    this->se->cpuDelegator->sendRequest(pkt);
+    this->configSeqNumToDelayedFloatPktMap.erase(iter);
+  }
+}
+
+void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
+                                               const StreamList &streams) {
+
+  // Clear the delayed float packet.
+  bool floatDelayed = this->configSeqNumToDelayedFloatPktMap.count(args.seqNum);
+  if (floatDelayed) {
+    auto pkt = this->configSeqNumToDelayedFloatPktMap.at(args.seqNum);
+    auto streamConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+    delete streamConfigs;
+    delete pkt;
+    this->configSeqNumToDelayedFloatPktMap.erase(args.seqNum);
+  }
+
+  std::vector<DynamicStreamId> floatedIds;
+  for (auto &S : streams) {
+    auto &dynS = S->getLastDynamicStream();
+    if (dynS.offloadedToCache) {
+      // Sanity check that we don't break semantics.
+      DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
+      if ((S->isAtomicComputeStream() || S->isStoreComputeStream()) &&
+          !dynS.offloadConfigDelayed) {
+        DYN_S_PANIC(dynS.dynamicStreamId,
+                    "Rewind a floated Atomic/StoreCompute stream.");
+      }
+      if (dynS.offloadedToCacheAsRoot && !dynS.offloadConfigDelayed) {
+        floatedIds.push_back(dynS.dynamicStreamId);
+      }
+      S->statistic.numFloatRewinded++;
+      dynS.offloadedToCache = false;
+      dynS.offloadConfigDelayed = false;
+      dynS.offloadedToCacheAsRoot = false;
+    }
+  }
+  if (!floatedIds.empty()) {
+    this->se->sendStreamFloatEndPacket(floatedIds);
   }
 }
 

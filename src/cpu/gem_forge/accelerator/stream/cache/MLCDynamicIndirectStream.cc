@@ -145,6 +145,8 @@ void MLCDynamicIndirectStream::receiveStreamData(
     //      sliceId.lhsElementIdx, this->slices.size(),
     //      this->slices.front().sliceId.lhsElementIdx);
     this->makeAck(*sliceIter);
+  } else if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::ACK_READY) {
+    MLC_SLICE_PANIC(sliceId, "Received multiple acks.");
   }
   this->advanceStream();
 }
@@ -366,7 +368,8 @@ MLCDynamicStream::SliceIter MLCDynamicIndirectStream::findSliceForCoreRequest(
     const DynamicStreamSliceId &sliceId) {
 
   if (this->slices.empty()) {
-    MLC_S_PANIC(this->dynamicStreamId, "No slices for request, overflowed %d, totalTripCount %lu.\n",
+    MLC_S_PANIC(this->dynamicStreamId,
+                "No slices for request, overflowed %d, totalTripCount %lu.\n",
                 this->hasOverflowed(), this->getTotalTripCount());
   }
 

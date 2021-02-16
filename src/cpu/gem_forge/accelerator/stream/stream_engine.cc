@@ -348,7 +348,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
    */
   std::list<DynamicStream *> configDynStreams;
   for (auto &S : configStreams) {
-    auto &dynS = S->getLastDynamicStream();
+    auto &dynS = S->getDynamicStream(args.seqNum);
     dynS.configureAddrBaseDynStreamReuse();
     configDynStreams.push_back(&dynS);
   }
@@ -359,11 +359,29 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   /**
    * Then we try to float streams.
    */
-  this->floatController->floatStreams(streamRegion, configDynStreams);
+  this->floatController->floatStreams(args, streamRegion, configDynStreams);
 }
 
 void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
-  // So far we don't need to do anything.
+  const auto &infoRelativePath = args.infoRelativePath;
+  const auto &streamRegion = this->getStreamRegion(infoRelativePath);
+
+  SE_DPRINTF("Commit StreamConfig for %s.\n", streamRegion.region());
+
+  auto configStreams = this->getConfigStreamsInRegion(streamRegion);
+
+  /**
+   * First notify the stream. This will set up the addr gen function.
+   * This has to be done before trying to offload stream.
+   */
+  for (auto &S : configStreams) {
+    S->commitStreamConfig(args.seqNum);
+  }
+
+  /**
+   * We can now commit offload decision.
+   */
+  this->floatController->commitFloatStreams(args, configStreams);
 }
 
 void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
@@ -379,30 +397,8 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
 
   auto configStreams = this->getConfigStreamsInRegion(streamRegion);
 
-  /**
-   * First we need to rewind any floated streams.
-   */
-  std::vector<DynamicStreamId> floatedIds;
-  for (auto &S : configStreams) {
-    auto &dynS = S->getLastDynamicStream();
-    if (dynS.offloadedToCache) {
-      dynS.offloadedToCache = false;
-      S->statistic.numFloatRewinded++;
-      // Sanity check that we don't break semantics.
-      DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
-      if (S->isAtomicComputeStream() || S->isStoreComputeStream()) {
-        DYN_S_PANIC(dynS.dynamicStreamId,
-                    "Rewind a floated Atomic/StoreCompute stream.");
-      }
-      if (dynS.offloadedToCacheAsRoot) {
-        floatedIds.push_back(dynS.dynamicStreamId);
-        dynS.offloadedToCacheAsRoot = false;
-      }
-    }
-  }
-  if (!floatedIds.empty()) {
-    this->sendStreamFloatEndPacket(floatedIds);
-  }
+  // First we need to rewind any floated streams.
+  this->floatController->rewindFloatStreams(args, configStreams);
 
   for (auto &S : configStreams) {
     // This file is already too long, move this to stream.cc.
@@ -1023,8 +1019,10 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
       if (dynS.offloadedToCache &&
           dynS.cacheAcked + 1 < dynS.FIFOIdx.entryIdx) {
         // We are not ack the LastElement.
-        S_DPRINTF(S, "Cannot execute StreamEnd. Cache acked %llu, need %llu.\n",
-                  dynS.cacheAcked, dynS.FIFOIdx.entryIdx);
+        DYN_S_DPRINTF(
+            dynS.dynamicStreamId,
+            "Cannot execute StreamEnd. Cache acked %llu, need %llu.\n",
+            dynS.cacheAcked, dynS.FIFOIdx.entryIdx);
         return false;
       }
     }
@@ -1122,6 +1120,8 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
      * packet.
      */
     if (endedDynS.offloadedToCacheAsRoot) {
+      assert(!endedDynS.offloadConfigDelayed &&
+             "Offload still delayed when committing StreamEnd.");
       endedFloatRootIds.push_back(endedDynS.dynamicStreamId);
     }
     // Notify the stream.
@@ -1923,6 +1923,10 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         // The StreamConfig has not been executed, do not issue.
         continue;
       }
+      if (dynS.offloadConfigDelayed) {
+        // The float StreamConfig has been delayed, do not issue.
+        continue;
+      }
       for (auto element = dynS.tail->next; element != nullptr;
            element = element->next) {
         assert(element->stream == S && "Sanity check that streams match.");
@@ -2183,7 +2187,7 @@ void StreamEngine::issueElement(StreamElement *element) {
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     PacketPtr pkt = nullptr;
-    if (S->isAtomicStream() && S->getEnabledStoreFunc()) {
+    if (S->isAtomicComputeStream()) {
       if (element->cacheBlocks != 1) {
         S_ELEMENT_PANIC(element, "Illegal # of CacheBlocks %d for AtomicOp.",
                         element->cacheBlocks);

@@ -326,6 +326,8 @@ void MLCDynamicDirectStream::receiveStreamData(
         //      sliceId.lhsElementIdx, this->slices.size(),
         //      this->slices.front().sliceId.lhsElementIdx);
         this->makeAck(*slice);
+      } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::ACK_READY) {
+        MLC_SLICE_PANIC(sliceId, "Received multiple acks.");
       }
       this->advanceStream();
       return;

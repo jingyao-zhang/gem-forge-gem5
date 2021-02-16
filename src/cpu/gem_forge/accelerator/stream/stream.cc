@@ -281,6 +281,13 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   }
 }
 
+void Stream::commitStreamConfig(uint64_t seqNum) {
+  auto &dynStream = this->getDynamicStream(seqNum);
+  assert(dynStream.configExecuted && "StreamConfig committed before executed.");
+  assert(!dynStream.configCommitted && "StreamConfig already committed.");
+  dynStream.configCommitted = true;
+}
+
 void Stream::rewindStreamConfig(uint64_t seqNum) {
   // Rewind must happen in reverse order.
   assert(!this->dynamicStreams.empty() &&

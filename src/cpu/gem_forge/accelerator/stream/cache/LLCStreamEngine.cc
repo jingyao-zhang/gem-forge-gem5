@@ -45,10 +45,6 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
 }
 
 LLCStreamEngine::~LLCStreamEngine() {
-  for (auto &s : this->streams) {
-    delete s;
-    s = nullptr;
-  }
   this->streams.clear();
 }
 
@@ -72,7 +68,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   auto S = LLCDynamicStream::getLLCStreamPanic(streamConfigureData->dynamicId);
   LLC_S_DPRINTF_(
       LLCRubyStreamLife, S->getDynamicStreamId(),
-      "Configure DirectStream InitAllocatedSlice %d TotalTripCount %llu.\n",
+      "Configure DirectStream InitAllocatedSlice %d TotalTripCount %lld.\n",
       streamConfigureData->initAllocatedIdx, S->getTotalTripCount());
   S->configuredLLC(this->controller);
 
@@ -84,7 +80,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
       auto IS = LLCDynamicStream::getLLCStreamPanic(ISConfig->dynamicId);
       LLC_S_DPRINTF_(
           LLCRubyStreamLife, IS->getDynamicStreamId(),
-          "Configure IndirectStream MemElementSize %d TotalTripCount %llu.\n",
+          "Configure IndirectStream MemElementSize %d TotalTripCount %lld.\n",
           IS->getMemElementSize(), IS->getTotalTripCount());
       IS->configuredLLC(this->controller);
     }
@@ -98,7 +94,6 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   // Let's check if StreamEnd packet has arrived earlier.
   if (this->pendingStreamEndMsgs.count(S->getDynamicStreamId())) {
     S->terminate();
-    delete S;
   } else {
     this->streams.emplace_back(S);
     this->addStreamToMulticastTable(S);
@@ -174,9 +169,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 
   // Check for if the stream is already ended.
   if (this->pendingStreamEndMsgs.count(stream->getDynamicStreamId())) {
-    LLC_S_DPRINTF_(LLCRubyStreamLife, stream->getDynamicStreamId(), "Ended.\n");
-    stream->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
-    delete stream;
+    stream->terminate();
     return;
   }
 

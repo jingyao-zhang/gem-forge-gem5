@@ -36,8 +36,10 @@
 
 #define DYN_S_MSG(dynamicStreamId, format, args...)                            \
   "%s: " format, (dynamicStreamId), ##args
+#define DYN_S_DPRINTF_(X, dynamicStreamId, format, args...)                    \
+  DPRINTF(X, DYN_S_MSG((dynamicStreamId), format, ##args))
 #define DYN_S_DPRINTF(dynamicStreamId, format, args...)                        \
-  DPRINTF(DEBUG_TYPE, DYN_S_MSG((dynamicStreamId), format, ##args))
+  DYN_S_DPRINTF_(DEBUG_TYPE, (dynamicStreamId), format, ##args)
 #define DYN_S_PANIC(dynamicStreamId, format, args...)                          \
   panic(DYN_S_MSG((dynamicStreamId), format, ##args))
 

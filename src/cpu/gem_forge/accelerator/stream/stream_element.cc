@@ -458,7 +458,7 @@ void StreamElement::computeValue() {
 
   StreamValue result;
   Cycles estimatedLatency;
-  if (S->isStoreStream() && S->getEnabledStoreFunc()) {
+  if (S->isStoreComputeStream()) {
     assert(!dynS->offloadedToCache &&
            "Should not compute for floating stream.");
     // Check for value base element.

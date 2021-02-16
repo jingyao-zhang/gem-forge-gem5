@@ -53,18 +53,25 @@ LLCDynamicStream::LLCDynamicStream(
            "ReductionStream must be OneIterationBehind.");
     this->nextElementIdx = 1;
   }
+  LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynamicStreamId(), "Created.\n");
   assert(GlobalLLCDynamicStreamMap.emplace(this->getDynamicStreamId(), this)
              .second);
   this->sanityCheckStreamLife();
 }
 
 LLCDynamicStream::~LLCDynamicStream() {
+  LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynamicStreamId(), "Released.\n");
   for (auto &indirectStream : this->indirectStreams) {
     delete indirectStream;
     indirectStream = nullptr;
   }
   this->indirectStreams.clear();
-  assert(GlobalLLCDynamicStreamMap.erase(this->getDynamicStreamId()) == 1);
+  auto iter = GlobalLLCDynamicStreamMap.find(this->getDynamicStreamId());
+  if (iter == GlobalLLCDynamicStreamMap.end()) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Missed in GlobalLLCDynamicStreamMap when releaseing.");
+  }
+  GlobalLLCDynamicStreamMap.erase(iter);
 }
 
 bool LLCDynamicStream::hasTotalTripCount() const {
@@ -499,10 +506,18 @@ void LLCDynamicStream::allocateLLCStreams(
       ++iter;
       continue;
     }
+    DPRINTF(LLCRubyStreamLife, "Release MLCGroup %d.\n", mlcNum);
     for (auto &llcS : group) {
+      DPRINTF(LLCRubyStreamLife, "Release MLCGroup: %s.\n",
+              llcS->getDynamicStreamId());
+      if (mlcNum != llcS->getDynamicStreamId().coreId) {
+        panic("LLCStream %s released from wrong MLCGroup %d.",
+              llcS->getDynamicStreamId(), mlcNum);
+      }
       delete llcS;
       llcS = nullptr;
     }
+    DPRINTF(LLCRubyStreamLife, "Release MLCGroup %d done.\n", mlcNum);
     iter = mlcGroups.erase(iter);
   }
 
@@ -510,6 +525,12 @@ void LLCDynamicStream::allocateLLCStreams(
   auto &newGroup = mlcGroups.back();
   for (auto &config : configs) {
     auto llcS = LLCDynamicStream::getLLCStreamPanic(config->dynamicId);
+    DPRINTF(LLCRubyStreamLife, "Push into MLCGroup %d: %s.\n", mlcNum,
+            llcS->getDynamicStreamId());
+    if (mlcNum != llcS->getDynamicStreamId().coreId) {
+      panic("LLCStream %s pushed into wrong MLCGroup %d.",
+            llcS->getDynamicStreamId(), mlcNum);
+    }
     newGroup.push_back(llcS);
   }
 }

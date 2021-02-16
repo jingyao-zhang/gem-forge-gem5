@@ -311,6 +311,7 @@ public:
   void dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc);
   void executeStreamConfig(uint64_t seqNum,
                            const DynamicStreamParamV *inputVec);
+  void commitStreamConfig(uint64_t seqNum);
   void rewindStreamConfig(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t seqNum);
 

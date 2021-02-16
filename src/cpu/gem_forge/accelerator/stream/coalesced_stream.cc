@@ -83,6 +83,15 @@ void Stream::selectPrimeLogicalStream() {
         LS->getCoalesceOffset() - this->baseOffset + LS->getMemElementSize());
   }
 
+  /**
+   * Finalize the stream name and static id.
+   * ! This is important to get the correct StreamInput values.
+   * ! I feel like some day I will pay the price due to this hacky
+   * ! implementation.
+   */
+  this->streamName = this->primeLogical->info.name();
+  this->staticId = this->primeLogical->info.id();
+
   // Sanity check for consistency between logical streams.
   for (const auto &LS : this->logicals) {
     const auto &LSStaticInfo = LS->info.static_info();
@@ -125,14 +134,6 @@ void Stream::selectPrimeLogicalStream() {
       assert(matched && "Failed to match MergedLoadStoreBaseStream.");
     }
   }
-  /**
-   * Finalize the stream name and static id.
-   * ! This is important to get the correct StreamInput values.
-   * ! I feel like some day I will pay the price due to this hacky
-   * ! implementation.
-   */
-  this->streamName = this->primeLogical->info.name();
-  this->staticId = this->primeLogical->info.id();
 }
 
 void Stream::initializeBaseStreams() {
@@ -327,7 +328,7 @@ void Stream::getCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
 }
 
 bool Stream::tryGetCoalescedOffsetAndSize(uint64_t streamId, int32_t &offset,
-                                       int32_t &size) const {
+                                          int32_t &size) const {
   for (auto LS : this->logicals) {
     if (LS->getStreamId() == streamId) {
       offset = LS->getCoalesceOffset() - this->baseOffset;

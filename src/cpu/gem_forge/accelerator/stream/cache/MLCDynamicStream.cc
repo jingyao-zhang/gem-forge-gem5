@@ -227,42 +227,46 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
 void MLCDynamicStream::makeAck(MLCStreamSlice &slice) {
   assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK &&
          "Element core status should be WAIT_ACK to make ack.");
-  MLC_SLICE_DPRINTF(slice.sliceId, "Make Ack, header %s.\n",
+  MLC_SLICE_DPRINTF(slice.sliceId, "AckReady, header %s.\n",
                     this->slices.front().sliceId);
-  // So far I just immediately notify the stream.
+  slice.coreStatus = MLCStreamSlice::CoreStatusE::ACK_READY;
+  // Send back ack in order.
   auto dynS = this->stream->getDynamicStream(this->dynamicStreamId);
-  if (!dynS) {
-    MLC_SLICE_PANIC(slice.sliceId, "MakeAck when dynS has been released.");
-  }
-  dynS->cacheAcked++;
-  for (auto elementIdx = slice.sliceId.lhsElementIdx;
-       elementIdx < slice.sliceId.rhsElementIdx; ++elementIdx) {
-    if (std::dynamic_pointer_cast<LinearAddrGenCallback>(
-            this->config->addrGenCallback)) {
-      auto elementVAddr =
-          this->config->addrGenCallback
-              ->genAddr(elementIdx, this->config->addrGenFormalParams,
-                        getStreamValueFail)
-              .uint64();
-      if (elementVAddr + this->config->elementSize >
-          slice.sliceId.vaddr + slice.sliceId.getSize()) {
-        // This element spans to next slice, do not ack here.
-        MLC_SLICE_DPRINTF(slice.sliceId,
-                          "Skipping Ack for multi-slice element %llu [%#x, "
-                          "+%d) slice [%#x, +%d).\n",
-                          elementIdx, elementVAddr, this->config->elementSize,
-                          slice.sliceId.vaddr, slice.sliceId.getSize());
-        continue;
-      }
+  for (auto &ackSlice : this->slices) {
+    if (ackSlice.coreStatus != MLCStreamSlice::CoreStatusE::ACK_READY) {
+      break;
     }
-    MLC_SLICE_DPRINTF(slice.sliceId, "Ack for element %llu.\n", elementIdx);
-    dynS->cacheAckedElements.insert(elementIdx);
+    const auto &ackSliceId = ackSlice.sliceId;
+    if (!dynS) {
+      MLC_SLICE_PANIC(ackSliceId, "MakeAck when dynS has been released.");
+    }
+    dynS->cacheAcked++;
+    for (auto elementIdx = ackSliceId.lhsElementIdx;
+         elementIdx < ackSliceId.rhsElementIdx; ++elementIdx) {
+      if (std::dynamic_pointer_cast<LinearAddrGenCallback>(
+              this->config->addrGenCallback)) {
+        auto elementVAddr =
+            this->config->addrGenCallback
+                ->genAddr(elementIdx, this->config->addrGenFormalParams,
+                          getStreamValueFail)
+                .uint64();
+        if (elementVAddr + this->config->elementSize >
+            ackSliceId.vaddr + ackSliceId.getSize()) {
+          // This element spans to next slice, do not ack here.
+          MLC_SLICE_DPRINTF(ackSliceId,
+                            "Skipping Ack for multi-slice element %llu [%#x, "
+                            "+%d) slice [%#x, +%d).\n",
+                            elementIdx, elementVAddr, this->config->elementSize,
+                            ackSliceId.vaddr, ackSliceId.getSize());
+          continue;
+        }
+      }
+      MLC_SLICE_DPRINTF(slice.sliceId, "Ack for element %llu.\n", elementIdx);
+      dynS->cacheAckedElements.insert(elementIdx);
+    }
+    // Set the core status to DONE.
+    ackSlice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
   }
-  // auto element = dynS->getElementByIdx(slice.sliceId.lhsElementIdx);
-  // assert(!element->isCacheAcked && "Core element is already acked.");
-  // element->isCacheAcked = true;
-  // Set the core status to DONE.
-  slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
 }
 
 Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
@@ -294,7 +298,8 @@ void MLCDynamicStream::scheduleAdvanceStream() {
 }
 
 void MLCDynamicStream::panicDump() const {
-  MLC_S_HACK(this->dynamicStreamId, "-------------------Panic Dump--------------------\n");
+  MLC_S_HACK(this->dynamicStreamId,
+             "-------------------Panic Dump--------------------\n");
   for (const auto &slice : this->slices) {
     MLC_SLICE_HACK(slice.sliceId, "VAddr %#x Data %d Core %s.\n",
                    slice.sliceId.vaddr, slice.dataReady,

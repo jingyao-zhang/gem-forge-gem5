@@ -93,6 +93,7 @@ protected:
       NONE,
       WAIT_DATA, // The core is waiting the data.
       WAIT_ACK,  // The core is waiting the ack.
+      ACK_READY, // The ack is ready, waiting to be reported to core in order.
       DONE,
       FAULTED
     };
@@ -122,6 +123,8 @@ protected:
         return "WAIT_DATA";
       case CoreStatusE::WAIT_ACK:
         return "WAIT_ACK";
+      case CoreStatusE::ACK_READY:
+        return "ACK_READY";
       case CoreStatusE::DONE:
         return "DONE";
       case CoreStatusE::FAULTED:

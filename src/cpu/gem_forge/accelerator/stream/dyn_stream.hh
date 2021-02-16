@@ -53,6 +53,9 @@ struct DynamicStream {
   uint64_t cacheAcked = 0;
   std::set<uint64_t> cacheAckedElements;
 
+  // Whether the floating config is delayed until config committed.
+  bool offloadConfigDelayed = false;
+
   // Whether the dynamic stream is offloaded to cache.
   bool offloadedToCacheAsRoot = false;
   bool offloadedToCache = false;
@@ -61,6 +64,9 @@ struct DynamicStream {
 
   // Whether the StreamConfig has executed (ready to go).
   bool configExecuted = false;
+
+  // Whether the StreamConfig has committed (no rewind).
+  bool configCommitted = false;
 
   // Whether the StreamEnd has dispatched (waiting to be released).
   InstSeqNum endSeqNum = 0;
