@@ -117,7 +117,7 @@ void NestStreamController::rewindStreamConfig(const ConfigArgs &args) {
        streamRegion.nest_region_relative_paths()) {
     const auto &nestRegion = this->se->getStreamRegion(nestRelativePath);
     if (this->staticNestConfigMap.count(nestRegion.region())) {
-      // Initialize a DynNestConfig.
+      // Release the DynNestConfig.
       auto &staticNestConfig =
           this->staticNestConfigMap.at(nestRegion.region());
       assert(!staticNestConfig.dynConfigs.empty() && "Missing DynNestConfig.");
@@ -178,10 +178,9 @@ void NestStreamController::configureNestStream(DynNestConfig &dynNestConfig) {
   }
   for (auto S : dynNestConfig.staticNestConfig->configStreams) {
     if (S->getAllocSize() + 1 >= S->maxSize) {
-      S_DPRINTF(S,
-                "[Nest] No Free Element to allocate NestConfig, AllocSize %d, "
-                "MaxSize %d.\n",
-                S->getAllocSize(), S->maxSize);
+      // S_DPRINTF(S,
+      //           "[Nest] No Free Element to allocate NestConfig, AllocSize %d,
+      //           " "MaxSize %d.\n", S->getAllocSize(), S->maxSize);
       return;
     }
   }
@@ -207,8 +206,8 @@ void NestStreamController::configureNestStream(DynNestConfig &dynNestConfig) {
       }
     }
     if (!baseElement->isValueReady) {
-      S_ELEMENT_DPRINTF(baseElement,
-                        "[Nest] Value not ready for NestConfig.\n");
+      // S_ELEMENT_DPRINTF(baseElement,
+      //                   "[Nest] Value not ready for NestConfig.\n");
       return;
     }
     baseElements.insert(baseElement);
@@ -262,10 +261,16 @@ void NestStreamController::configureNestStream(DynNestConfig &dynNestConfig) {
    * If the TotalTripCount is zero, we have to manually rewind the StreamConfig
    * immediately, as the core will not execute the StreamEnd.
    */
-  SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, ElementIdx %llu, "
-             "TotalTripCount %d.\n",
+  SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, OuterElementIdx %llu, "
+             "TotalTripCount %d, Configured DynStreams:\n",
              dynNestConfig.staticNestConfig->region.region(),
              dynNestConfig.nextElementIdx, totalTripCount);
+  if (Debug::StreamNest) {
+    for (auto S : dynNestConfig.staticNestConfig->configStreams) {
+      auto &dynS = S->getLastDynamicStream();
+      SE_DPRINTF("[Nest]   %s.\n", dynS.dynamicStreamId);
+    }
+  }
   if (totalTripCount == 0) {
     // Technically, the StreamConfig is already committed. But here we just
     // rewind it.
