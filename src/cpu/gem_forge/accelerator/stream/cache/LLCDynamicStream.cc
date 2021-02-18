@@ -396,7 +396,7 @@ void LLCDynamicStream::recvStreamForward(LLCStreamEngine *se,
   LLCStreamElementPtr recvElement = this->idxToElementMap.at(recvElementIdx);
   bool foundBaseElement = false;
   for (auto &baseElement : recvElement->baseElements) {
-    if (baseElement->dynStreamId == sliceId.streamId) {
+    if (baseElement->dynStreamId == sliceId.getDynStreamId()) {
       // Found the one.
       baseElement->extractElementDataFromSlice(S->getCPUDelegator(), sliceId,
                                                dataBlk);

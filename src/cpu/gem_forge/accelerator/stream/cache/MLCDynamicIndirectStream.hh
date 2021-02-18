@@ -34,7 +34,7 @@ public:
     assert(sliceId.getNumElements() == 1 &&
            "Multiple elements for indirect stream.");
     if (this->isOneIterationBehind) {
-      if (sliceId.lhsElementIdx == 0) {
+      if (sliceId.getStartIdx() == 0) {
         return false;
       }
     }
@@ -90,7 +90,7 @@ private:
      * but not the reverse way. So we need to match both the lhsElementIdx
      * and the vaddr.
      */
-    return A.lhsElementIdx == B.lhsElementIdx &&
+    return A.getStartIdx() == B.getStartIdx() &&
            makeLineAddress(A.vaddr) == makeLineAddress(B.vaddr);
   }
   SliceIter

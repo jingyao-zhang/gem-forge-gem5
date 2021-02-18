@@ -25,6 +25,7 @@ CompoundFlag('RubyStreamLife',
 DebugFlag('SlicedDynamicStream')
 
 Source('DynamicStreamId.cc')
+Source('DynamicStreamElementRangeId.cc')
 Source('DynamicStreamSliceId.cc')
 Source('DynamicStreamSliceIdVec.cc')
 Source('L0StreamEngine.cc')

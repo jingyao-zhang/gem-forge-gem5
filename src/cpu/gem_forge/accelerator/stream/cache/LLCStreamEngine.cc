@@ -44,9 +44,7 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
   this->controller->registerLLCStreamEngine(this);
 }
 
-LLCStreamEngine::~LLCStreamEngine() {
-  this->streams.clear();
-}
+LLCStreamEngine::~LLCStreamEngine() { this->streams.clear(); }
 
 int LLCStreamEngine::curLLCBank() const {
   return this->controller->getMachineID().num;
@@ -181,7 +179,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
 void LLCStreamEngine::receiveStreamFlow(const DynamicStreamSliceId &sliceId) {
   // Simply append it to the list.
   LLC_SLICE_DPRINTF(sliceId, "Received stream flow [%lu, +%lu).\n",
-                    sliceId.lhsElementIdx, sliceId.getNumElements());
+                    sliceId.getStartIdx(), sliceId.getNumElements());
   this->pendingStreamFlowControlMsgs.push_back(sliceId);
   this->scheduleEvent(Cycles(1));
 }
@@ -234,7 +232,7 @@ void LLCStreamEngine::receiveStreamElementData(
   // Search through the direct streams.
   LLCDynamicStream *stream = nullptr;
   for (auto S : this->streams) {
-    if (S->getDynamicStreamId() == sliceId.streamId) {
+    if (S->getDynamicStreamId() == sliceId.getDynStreamId()) {
       stream = S;
       break;
     }
@@ -247,7 +245,7 @@ void LLCStreamEngine::receiveStreamElementData(
    */
   if (!stream) {
     // Try to look up the global map.
-    stream = LLCDynamicStream::getLLCStream(sliceId.streamId);
+    stream = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId());
   }
   if (!stream) {
     return;
@@ -331,7 +329,7 @@ void LLCStreamEngine::receiveStreamElementData(
    * 2. Process each ready element for indirect/update/atomic/store.
    * 3. Release ready element.
    */
-  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
+  for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     this->extractElementDataFromSlice(stream, sliceId, idx, dataBlock);
   }
 
@@ -344,7 +342,7 @@ void LLCStreamEngine::receiveStreamElementData(
    */
   DataBlock loadValueBlock;
   if (coreNeedValue) {
-    for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
+    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       if (!stream->idxToElementMap.at(idx)) {
         LLC_SLICE_PANIC(sliceId, "Element %llu not allocated yet.", idx);
       }
@@ -819,8 +817,7 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
 
     // Register the waiting indirect elements.
     if (!dynS->indirectStreams.empty()) {
-      for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx;
-           ++idx) {
+      for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
         dynS->allocateElement(idx, dynS->slicedStream.getElementVAddr(idx));
       }
     }
@@ -867,12 +864,12 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
     const auto &msg = *iter;
     bool processed = false;
     for (auto stream : this->streams) {
-      if (stream->getDynamicStreamId() == msg.streamId &&
-          msg.lhsElementIdx == stream->allocatedSliceIdx) {
+      if (stream->getDynamicStreamId() == msg.getDynStreamId() &&
+          msg.getStartIdx() == stream->allocatedSliceIdx) {
         // We found it.
         // Update the idx.
         LLC_S_DPRINTF(stream->getDynamicStreamId(), "Add credit %lu -> %lu.\n",
-                      msg.lhsElementIdx, msg.rhsElementIdx);
+                      msg.getStartIdx(), msg.getEndIdx());
         stream->addCredit(msg.getNumElements());
         // Maybe we want to resort the Multicast group.
         if (this->controller->isStreamMulticastEnabled() &&
@@ -887,8 +884,8 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
       iter = this->pendingStreamFlowControlMsgs.erase(iter);
     } else {
       // LLCSE_DPRINTF("Failed to process stream credit %s [%lu, %lu).\n",
-      //               msg.streamId.name.c_str(), msg.lhsElementIdx,
-      //               msg.rhsElementIdx);
+      //               msg.streamId.name.c_str(), msg.getStartIdx(),
+      //               msg.getEndIdx());
       ++iter;
     }
   }
@@ -1009,7 +1006,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
    */
   if (S->isStoreComputeStream() || S->isAtomicComputeStream()) {
     const auto &nextSliceId = stream->peekSlice();
-    for (auto idx = nextSliceId.lhsElementIdx; idx < nextSliceId.rhsElementIdx;
+    for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
          ++idx) {
       stream->allocateElement(idx, stream->slicedStream.getElementVAddr(idx));
       auto &element = stream->idxToElementMap.at(idx);
@@ -1058,8 +1055,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
 
     // Register the waiting indirect elements.
     if (!stream->indirectStreams.empty()) {
-      for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx;
-           ++idx) {
+      for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
         stream->allocateElement(idx, stream->slicedStream.getElementVAddr(idx));
       }
     }
@@ -1083,8 +1079,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
        * as later we perform the store in slice granularity, not element
        * granularity. Thus element is not used anymore.
        */
-      for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx;
-           ++idx) {
+      for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
         assert(stream->idxToElementMap.count(idx) &&
                "Missing element for StoreStream.");
         const auto &element = stream->idxToElementMap.at(idx);
@@ -1104,7 +1099,7 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
                            element->idx, sliceId.vaddr + sliceOffset,
                            overlapSize, elementOffset);
       }
-      while (stream->idxToElementMap.begin()->first < sliceId.lhsElementIdx) {
+      while (stream->idxToElementMap.begin()->first < sliceId.getStartIdx()) {
         stream->eraseElement(stream->idxToElementMap.begin());
       }
     }
@@ -1215,9 +1210,9 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
   assert(dynBS &&
          "GenerateIndirectStreamRequest can only handle indirect stream.");
   DynamicStreamSliceId sliceId;
-  sliceId.streamId = dynIS->getDynamicStreamId();
-  sliceId.lhsElementIdx = elementIdx;
-  sliceId.rhsElementIdx = elementIdx + 1;
+  sliceId.getDynStreamId() = dynIS->getDynamicStreamId();
+  sliceId.getStartIdx() = elementIdx;
+  sliceId.getEndIdx() = elementIdx + 1;
   auto elementSize = dynIS->getMemElementSize();
   LLC_SLICE_DPRINTF(sliceId, "Issue indirect.\n");
 
@@ -1459,7 +1454,7 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
   msg->m_Type = req.requestType;
   msg->m_XXNewRewquestor.add(
       MachineID(static_cast<MachineType>(selfMachineId.type - 1),
-                sliceId.streamId.coreId));
+                sliceId.getDynStreamId().coreId));
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
@@ -1483,7 +1478,7 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
     for (const auto &multicastSliceId : req.multicastSliceIds) {
       auto mlcMachineID =
           MachineID(static_cast<MachineType>(selfMachineId.type - 1),
-                    multicastSliceId.streamId.coreId);
+                    multicastSliceId.getDynStreamId().coreId);
       ss << ' ' << mlcMachineID;
     }
     LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast, sliceId, "Multicast to %s.\n",
@@ -1494,7 +1489,7 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
     // TODO: We should really also pass on the sliceId.
     auto mlcMachineID =
         MachineID(static_cast<MachineType>(selfMachineId.type - 1),
-                  multicastSliceId.streamId.coreId);
+                  multicastSliceId.getDynStreamId().coreId);
     msg->m_XXNewRewquestor.add(mlcMachineID);
     msg->m_sliceIds.add(multicastSliceId);
   }
@@ -1522,7 +1517,7 @@ LLCStreamEngine::ResponseMsgPtr LLCStreamEngine::createStreamMsgToMLC(
     Addr paddrLine, const uint8_t *data, int size, int lineOffset) {
   auto selfMachineId = this->controller->getMachineID();
   MachineID mlcMachineId(static_cast<MachineType>(selfMachineId.type - 1),
-                         sliceId.streamId.coreId);
+                         sliceId.getDynStreamId().coreId);
 
   auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
   // For StreamAck, we do not care about the address?
@@ -1597,7 +1592,7 @@ void LLCStreamEngine::issueStreamDataToLLC(
    * Also, we can only handle the simpliest case so far: no spliting, and no
    * multi-line receiver element.
    */
-  auto elementIdx = sliceId.lhsElementIdx;
+  auto elementIdx = sliceId.getStartIdx();
   auto recvElementVAddr =
       recvConfig->addrGenCallback
           ->genAddr(elementIdx, recvConfig->addrGenFormalParams,
@@ -1605,8 +1600,7 @@ void LLCStreamEngine::issueStreamDataToLLC(
           .front();
   auto recvElementVAddrEnd = recvElementVAddr + recvConfig->elementSize;
   // Check that receiver does not across lines.
-  for (auto idx = sliceId.lhsElementIdx + 1; idx < sliceId.rhsElementIdx;
-       ++idx) {
+  for (auto idx = sliceId.getStartIdx() + 1; idx < sliceId.getEndIdx(); ++idx) {
     auto vaddr =
         recvConfig->addrGenCallback
             ->genAddr(idx, recvConfig->addrGenFormalParams, getStreamValueFail)
@@ -1766,11 +1760,11 @@ bool LLCStreamEngine::tryProcessStreamForwardRequest(const RequestMsg &req) {
   }
   // Search for the real receiver.
   LLCDynamicStreamPtr recvS = nullptr;
-  if (directS->isBasedOn(sliceId.streamId)) {
+  if (directS->isBasedOn(sliceId.getDynStreamId())) {
     recvS = directS;
   } else {
     for (auto S : directS->indirectStreams) {
-      if (S->isBasedOn(sliceId.streamId)) {
+      if (S->isBasedOn(sliceId.getDynStreamId())) {
         // Found it.
         recvS = S;
         break;
@@ -1781,7 +1775,7 @@ bool LLCStreamEngine::tryProcessStreamForwardRequest(const RequestMsg &req) {
     LLC_SLICE_PANIC(sliceId, "Cannot find the receiver: %s.", recvDynId);
   }
   // Fill in the elements.
-  for (auto idx = sliceId.lhsElementIdx; idx < sliceId.rhsElementIdx; ++idx) {
+  for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     recvS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
   }
   return true;
@@ -1919,9 +1913,9 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
             auto dynBS = dynPredS->baseStream;
             assert(dynBS && "MergedStore stream should have base stream.");
             DynamicStreamSliceId sliceId;
-            sliceId.streamId = dynPredS->getDynamicStreamId();
-            sliceId.lhsElementIdx = idx;
-            sliceId.rhsElementIdx = idx + 1;
+            sliceId.getDynStreamId() = dynPredS->getDynamicStreamId();
+            sliceId.getStartIdx() = idx;
+            sliceId.getEndIdx() = idx + 1;
             auto getBaseStreamValue =
                 [&predBaseElement,
                  dynBS](uint64_t baseStreamId) -> StreamValue {
@@ -1976,9 +1970,9 @@ void LLCStreamEngine::processStreamDataForUpdate(
 
   // Create a single slice.
   DynamicStreamSliceId sliceId;
-  sliceId.streamId = stream->getDynamicStreamId();
-  sliceId.lhsElementIdx = element->idx;
-  sliceId.rhsElementIdx = element->idx + 1;
+  sliceId.getDynStreamId() = stream->getDynamicStreamId();
+  sliceId.getStartIdx() = element->idx;
+  sliceId.getEndIdx() = element->idx + 1;
 
   Addr elementPAddr;
   assert(stream->translateToPAddr(elementVAddr, elementPAddr) &&
@@ -2090,9 +2084,9 @@ LLCStreamEngine::performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
    */
   const auto &formalParams = stream->configData->storeFormalParams;
   FIFOEntryIdx entryIdx(
-      sliceId.streamId,
+      sliceId.getDynStreamId(),
       LLVMDynamicInst::INVALID_SEQ_NUM /* Fake ConfigSeqNum */);
-  entryIdx.entryIdx = sliceId.lhsElementIdx;
+  entryIdx.entryIdx = sliceId.getStartIdx();
   auto atomicOp = S->setupAtomicOp(entryIdx, elementSize, formalParams);
 
   /**

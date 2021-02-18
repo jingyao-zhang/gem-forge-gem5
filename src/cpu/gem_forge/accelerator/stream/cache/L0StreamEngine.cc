@@ -118,11 +118,11 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
     auto sliceId = this->getSliceId(pkt);
     assert(sliceId.getNumElements() == 1 &&
            "Never merge elements for indirect stream one iteration behind.");
-    if (sliceId.lhsElementIdx == 0) {
+    if (sliceId.getStartIdx() == 0) {
       // Ignore the first stream element.
       return false;
     }
-    L0_ELEMENT_DPRINTF(sliceId.streamId, sliceId.lhsElementIdx,
+    L0_ELEMENT_DPRINTF(sliceId.getDynStreamId(), sliceId.getStartIdx(),
                        sliceId.getNumElements(), "Is stream access.\n");
   }
   return true;
@@ -154,9 +154,8 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
     return false;
   }
   auto slice = this->getSliceId(pkt);
-  L0_ELEMENT_DPRINTF(slice.streamId, slice.lhsElementIdx,
-                     slice.rhsElementIdx - slice.lhsElementIdx,
-                     "Forward hit.\n");
+  L0_ELEMENT_DPRINTF(slice.getDynStreamId(), slice.getStartIdx(),
+                     slice.getNumElements(), "Forward hit.\n");
   return true;
 }
 

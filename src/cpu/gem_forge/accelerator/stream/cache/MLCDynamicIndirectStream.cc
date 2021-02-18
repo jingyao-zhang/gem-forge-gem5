@@ -34,9 +34,9 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     assert(!this->slices.empty() && "No initial slices.");
     // Let's do some sanity check.
     auto &firstSliceId = this->slices.front().sliceId;
-    assert(firstSliceId.lhsElementIdx == 0 &&
+    assert(firstSliceId.getStartIdx() == 0 &&
            "Start index should always be 0.");
-    assert(firstSliceId.rhsElementIdx - firstSliceId.lhsElementIdx == 1 &&
+    assert(firstSliceId.getNumElements() == 1 &&
            "Indirect stream should never merge slices.");
     MLC_SLICE_DPRINTF(firstSliceId, "Initial offset pop.\n");
     this->headSliceIdx++;
@@ -58,12 +58,12 @@ void MLCDynamicIndirectStream::receiveStreamData(
   MLC_SLICE_DPRINTF(sliceId, "Receive data vaddr %#x paddr %#x.\n",
                     sliceId.vaddr, paddrLine);
 
-  while (this->tailElementIdx <= sliceId.lhsElementIdx) {
+  while (this->tailElementIdx <= sliceId.getStartIdx()) {
     this->allocateSlice();
   }
 
   assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
-  assert(this->dynamicStreamId == sliceId.streamId &&
+  assert(this->dynamicStreamId == sliceId.getDynStreamId() &&
          "Unmatched dynamic stream id.");
 
   auto numElements = sliceId.getNumElements();
@@ -87,11 +87,11 @@ void MLCDynamicIndirectStream::receiveStreamData(
      * we may need to insert new slices here.
      */
     auto frontVAddr = this->slices.front().sliceId.vaddr;
-    auto frontElementIdx = this->slices.front().sliceId.lhsElementIdx;
-    if (sliceId.lhsElementIdx < frontElementIdx) {
+    auto frontElementIdx = this->slices.front().sliceId.getStartIdx();
+    if (sliceId.getStartIdx() < frontElementIdx) {
       // Definitely behind.
       return;
-    } else if (sliceId.lhsElementIdx == frontElementIdx) {
+    } else if (sliceId.getStartIdx() == frontElementIdx) {
       if (!this->isWaitingAck() && sliceId.vaddr < frontVAddr) {
         // Still behind.
         return;
@@ -105,7 +105,7 @@ void MLCDynamicIndirectStream::receiveStreamData(
   /**
    * Find the correct stream slice and insert the data there.
    */
-  auto elementSlices = this->findSliceByElementIdx(sliceId.lhsElementIdx);
+  auto elementSlices = this->findSliceByElementIdx(sliceId.getStartIdx());
   auto slicesBegin = elementSlices.first;
   auto slicesEnd = elementSlices.second;
 
@@ -114,7 +114,7 @@ void MLCDynamicIndirectStream::receiveStreamData(
   if (!this->isWaitingAck()) {
     auto targetLineAddr = makeLineAddress(sliceId.vaddr);
     while (sliceIter != slicesEnd) {
-      assert(sliceIter->sliceId.lhsElementIdx == sliceId.lhsElementIdx);
+      assert(sliceIter->sliceId.getStartIdx() == sliceId.getStartIdx());
       auto sliceLineAddr = makeLineAddress(sliceIter->sliceId.vaddr);
       if (sliceLineAddr == targetLineAddr) {
         break;
@@ -142,8 +142,8 @@ void MLCDynamicIndirectStream::receiveStreamData(
     // Ack the stream element.
     // TODO: Send the packet back via normal message buffer.
     // hack("Indirect slices acked element %llu size %llu header %llu.\n",
-    //      sliceId.lhsElementIdx, this->slices.size(),
-    //      this->slices.front().sliceId.lhsElementIdx);
+    //      sliceId.getStartIdx(), this->slices.size(),
+    //      this->slices.front().sliceId.getStartIdx());
     this->makeAck(*sliceIter);
   } else if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::ACK_READY) {
     MLC_SLICE_PANIC(sliceId, "Received multiple acks.");
@@ -171,7 +171,7 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
     }
     return;
   } else {
-    if (elementIdx < this->slices.front().sliceId.lhsElementIdx) {
+    if (elementIdx < this->slices.front().sliceId.getStartIdx()) {
       // The stream is lagging behind the core. The slice has already been
       // released.
       return;
@@ -182,9 +182,9 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
   auto elementSize = this->elementSize;
 
   DynamicStreamSliceId sliceId;
-  sliceId.streamId = this->dynamicStreamId;
-  sliceId.lhsElementIdx = elementIdx;
-  sliceId.rhsElementIdx = elementIdx + 1;
+  sliceId.getDynStreamId() = this->dynamicStreamId;
+  sliceId.getStartIdx() = elementIdx;
+  sliceId.getEndIdx() = elementIdx + 1;
 
   // Search for the slices with the elementIdx.
   auto elementSlices = this->findSliceByElementIdx(elementIdx);
@@ -257,9 +257,9 @@ void MLCDynamicIndirectStream::allocateSlice() {
   // For indirect stream, there is no merging, so it's pretty simple
   // to allocate new slice.
   DynamicStreamSliceId sliceId;
-  sliceId.streamId = this->dynamicStreamId;
-  sliceId.lhsElementIdx = this->tailElementIdx;
-  sliceId.rhsElementIdx = this->tailElementIdx + 1;
+  sliceId.getDynStreamId() = this->dynamicStreamId;
+  sliceId.getStartIdx() = this->tailElementIdx;
+  sliceId.getEndIdx() = this->tailElementIdx + 1;
 
   MLC_SLICE_DPRINTF(sliceId, "Allocated indirect slice.\n");
 
@@ -309,7 +309,7 @@ MLCDynamicIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
   // hack("findSliceByElementIdx when slices are %d.\n", this->slices.size());
   for (auto iter = this->slices.begin(), end = this->slices.end(); iter != end;
        ++iter) {
-    auto lhsElementIdx = iter->sliceId.lhsElementIdx;
+    auto lhsElementIdx = iter->sliceId.getStartIdx();
     if (lhsElementIdx == elementIdx && ret.first == end) {
       // Find lhs.
       ret.first = iter;
@@ -335,14 +335,14 @@ MLCDynamicIndirectStream::findOrInsertSliceBySliceId(
   auto ret = begin;
   if (ret->sliceId.vaddr == 0) {
     // This first slice has not been used. directly use it.
-    assert(ret->sliceId.lhsElementIdx == sliceId.lhsElementIdx &&
+    assert(ret->sliceId.getStartIdx() == sliceId.getStartIdx() &&
            "Invalid elementIdx.");
     ret->sliceId.vaddr = sliceId.vaddr;
     return ret;
   }
   auto targetLineAddr = makeLineAddress(sliceId.vaddr);
   while (ret != end) {
-    assert(ret->sliceId.lhsElementIdx == sliceId.lhsElementIdx &&
+    assert(ret->sliceId.getStartIdx() == sliceId.getStartIdx() &&
            "Invalid elementIdx.");
     auto lineAddr = makeLineAddress(ret->sliceId.vaddr);
     if (lineAddr == targetLineAddr) {
@@ -374,7 +374,7 @@ MLCDynamicStream::SliceIter MLCDynamicIndirectStream::findSliceForCoreRequest(
   }
 
   // We try to allocate slices.
-  auto elementSlices = this->findSliceByElementIdx(sliceId.lhsElementIdx);
+  auto elementSlices = this->findSliceByElementIdx(sliceId.getStartIdx());
   return this->findOrInsertSliceBySliceId(elementSlices.first,
                                           elementSlices.second, sliceId);
 }

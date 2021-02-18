@@ -37,9 +37,9 @@ StreamMemAccess::StreamMemAccess(Stream *_stream, StreamElement *_element,
       FIFOIdx(_element->FIFOIdx), cacheBlockVAddr(_cacheBlockVAddr),
       vaddr(_vaddr), size(_size), additionalDelay(_additionalDelay) {
   // Initialize it fairly simply.
-  this->sliceId.streamId = this->FIFOIdx.streamId;
-  this->sliceId.lhsElementIdx = this->FIFOIdx.entryIdx;
-  this->sliceId.rhsElementIdx = this->FIFOIdx.entryIdx + 1;
+  this->sliceId.getDynStreamId() = this->FIFOIdx.streamId;
+  this->sliceId.getStartIdx() = this->FIFOIdx.entryIdx;
+  this->sliceId.getEndIdx() = this->FIFOIdx.entryIdx + 1;
   // ! So far always do cache line level.
   this->sliceId.vaddr = this->cacheBlockVAddr;
   this->sliceId.size = this->size;

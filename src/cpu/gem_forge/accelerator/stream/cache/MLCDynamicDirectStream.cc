@@ -224,9 +224,9 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
   msg->m_Destination.add(this->llcTailSliceLLCBank);
   msg->m_MessageSize = MessageSizeType_Control;
   DynamicStreamSliceId sliceId;
-  sliceId.streamId = this->dynamicStreamId;
-  sliceId.lhsElementIdx = this->llcTailSliceIdx;
-  sliceId.rhsElementIdx = this->tailSliceIdx;
+  sliceId.getDynStreamId() = this->dynamicStreamId;
+  sliceId.getStartIdx() = this->llcTailSliceIdx;
+  sliceId.getEndIdx() = this->tailSliceIdx;
   msg->m_sliceIds.add(sliceId);
 
   Cycles latency(1); // Just use 1 cycle latency here.
@@ -254,7 +254,7 @@ void MLCDynamicDirectStream::receiveStreamData(
   assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
 
   auto numElements = sliceId.getNumElements();
-  assert(this->dynamicStreamId == sliceId.streamId &&
+  assert(this->dynamicStreamId == sliceId.getDynStreamId() &&
          "Unmatched dynamic stream id.");
   MLC_SLICE_DPRINTF(sliceId, "Receive data %#x.\n", sliceId.vaddr);
 
@@ -274,10 +274,10 @@ void MLCDynamicDirectStream::receiveStreamData(
     // TODO: Properly detect that the slice is lagging behind.
     const auto &firstSlice = this->slices.front();
     bool laggingBehind = false;
-    if (sliceId.lhsElementIdx < firstSlice.sliceId.lhsElementIdx) {
+    if (sliceId.getStartIdx() < firstSlice.sliceId.getStartIdx()) {
       laggingBehind = true;
     }
-    if (sliceId.lhsElementIdx == firstSlice.sliceId.lhsElementIdx &&
+    if (sliceId.getStartIdx() == firstSlice.sliceId.getStartIdx() &&
         sliceId.vaddr < firstSlice.sliceId.vaddr) {
       // Due to multi-line elements, we have to also check vaddr.
       laggingBehind = true;
@@ -323,8 +323,8 @@ void MLCDynamicDirectStream::receiveStreamData(
         // Ack the stream element.
         // TODO: Send the packet back via normal message buffer.
         // hack("Indirect slices acked element %llu size %llu header %llu.\n",
-        //      sliceId.lhsElementIdx, this->slices.size(),
-        //      this->slices.front().sliceId.lhsElementIdx);
+        //      sliceId.getStartIdx(), this->slices.size(),
+        //      this->slices.front().sliceId.getStartIdx());
         this->makeAck(*slice);
       } else if (slice->coreStatus == MLCStreamSlice::CoreStatusE::ACK_READY) {
         MLC_SLICE_PANIC(sliceId, "Received multiple acks.");
@@ -362,8 +362,8 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
 
   const auto &sliceId = slice.sliceId;
   MLC_SLICE_DPRINTF(sliceId, "Notify IndirectSream.\n");
-  for (auto elementIdx = sliceId.lhsElementIdx;
-       elementIdx < sliceId.rhsElementIdx; ++elementIdx) {
+  for (auto elementIdx = sliceId.getStartIdx();
+       elementIdx < sliceId.getEndIdx(); ++elementIdx) {
 
     // Try to extract the stream data.
     auto elementVAddr = this->slicedStream.getElementVAddr(elementIdx);
@@ -455,7 +455,7 @@ MLCDynamicDirectStream::findSliceForCoreRequest(
   }
   // Try to allocate more slices.
   while (!this->hasOverflowed() &&
-         this->slices.back().sliceId.lhsElementIdx <= sliceId.lhsElementIdx) {
+         this->slices.back().sliceId.getStartIdx() <= sliceId.getStartIdx()) {
     this->allocateSlice();
   }
   for (auto iter = this->slices.begin(), end = this->slices.end(); iter != end;

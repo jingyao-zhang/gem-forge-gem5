@@ -31,7 +31,7 @@ public:
    * with the core's StreamEngine.
    */
   bool hasOverflowed() const {
-    return this->hasOverflowed(this->peekNextSlice().lhsElementIdx);
+    return this->hasOverflowed(this->peekNextSlice().getStartIdx());
   }
 
   int64_t getTotalTripCount() const { return this->totalTripCount; }

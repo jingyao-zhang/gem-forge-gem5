@@ -42,7 +42,7 @@ SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureDataPtr _configData
 
 DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
   while (slices.empty() ||
-         slices.front().rhsElementIdx == this->tailElementIdx) {
+         slices.front().getEndIdx() == this->tailElementIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
     this->allocateOneElement();
@@ -54,7 +54,7 @@ DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
 
 const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
   while (slices.empty() ||
-         slices.front().rhsElementIdx == this->tailElementIdx) {
+         slices.front().getEndIdx() == this->tailElementIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
     this->allocateOneElement();
@@ -108,14 +108,14 @@ void SlicedDynamicStream::allocateOneElement() const {
       // Non-decreasing case, keep going.
       // Update existing slices to the new element if there is overlap.
       for (auto &slice : this->slices) {
-        if (slice.lhsElementIdx < this->sliceHeadElementIdx) {
+        if (slice.getStartIdx() < this->sliceHeadElementIdx) {
           // This slice is already "sealed" by a decreasing element.
           continue;
         }
         if (slice.vaddr == curBlock) {
-          assert(slice.rhsElementIdx == tailElementIdx &&
+          assert(slice.getEndIdx() == tailElementIdx &&
                  "Hole in overlapping elements.");
-          slice.rhsElementIdx++;
+          slice.getEndIdx()++;
           curBlock += RubySystem::getBlockSizeBytes();
           if (curBlock > rhsBlock) {
             // We are done.
@@ -134,9 +134,9 @@ void SlicedDynamicStream::allocateOneElement() const {
   while (curBlock <= rhsBlock) {
     this->slices.emplace_back();
     auto &slice = this->slices.back();
-    slice.streamId = this->streamId;
-    slice.lhsElementIdx = this->tailElementIdx;
-    slice.rhsElementIdx = this->tailElementIdx + 1;
+    slice.getDynStreamId() = this->streamId;
+    slice.getStartIdx() = this->tailElementIdx;
+    slice.getEndIdx() = this->tailElementIdx + 1;
     slice.vaddr = curBlock;
     slice.size = RubySystem::getBlockSizeBytes();
     curBlock += RubySystem::getBlockSizeBytes();

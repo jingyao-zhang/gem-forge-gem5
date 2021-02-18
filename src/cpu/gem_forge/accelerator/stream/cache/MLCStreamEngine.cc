@@ -229,7 +229,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
      * Due to multicast, it's possible we received sliceIds that
      * do not belong to this core. We simply ignore those.
      */
-    auto sliceCoreId = sliceId.streamId.coreId;
+    auto sliceCoreId = sliceId.getDynStreamId().coreId;
     auto myCoreId = this->controller->getMachineID().getNum();
     if (sliceCoreId != myCoreId) {
       continue;
@@ -244,7 +244,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
     Addr paddrLine) {
   MLC_SLICE_DPRINTF(sliceId, "SE received data vaddr %#x.\n", sliceId.vaddr);
   for (auto &iter : this->idToStreamMap) {
-    if (iter.second->getDynamicStreamId() == sliceId.streamId) {
+    if (iter.second->getDynamicStreamId() == sliceId.getDynStreamId()) {
       // Found the stream.
       iter.second->receiveStreamData(sliceId, dataBlock, paddrLine);
       this->reuseSlice(sliceId, dataBlock);
@@ -252,12 +252,12 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
     }
   }
   // This is possible if the stream is already ended.
-  if (this->endedStreamDynamicIds.count(sliceId.streamId) > 0) {
+  if (this->endedStreamDynamicIds.count(sliceId.getDynStreamId()) > 0) {
     // The stream is already ended.
     // Sliently ignore it.
     return;
   }
-  panic("Failed to find configured stream for %s.\n", sliceId.streamId);
+  panic("Failed to find configured stream for %s.\n", sliceId.getDynStreamId());
 }
 
 bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {
@@ -313,7 +313,7 @@ MLCDynamicStream *MLCStreamEngine::getMLCDynamicStreamFromSlice(
   if (!slice.isValid()) {
     return nullptr;
   }
-  auto iter = this->idToStreamMap.find(slice.streamId);
+  auto iter = this->idToStreamMap.find(slice.getDynStreamId());
   if (iter != this->idToStreamMap.end()) {
     // Ignore it if the slice is not considered valid by the stream.
     if (iter->second->isSliceValid(slice)) {
@@ -435,7 +435,7 @@ void MLCStreamEngine::computeReuseInformation(
 
 void MLCStreamEngine::reuseSlice(const DynamicStreamSliceId &sliceId,
                                  const DataBlock &dataBlock) {
-  auto streamId = sliceId.streamId;
+  auto streamId = sliceId.getDynStreamId();
   while (this->reuseInfoMap.count(streamId)) {
     const auto &reuseInfo = this->reuseInfoMap.at(streamId);
     const auto &targetStreamId = reuseInfo.targetStreamId;

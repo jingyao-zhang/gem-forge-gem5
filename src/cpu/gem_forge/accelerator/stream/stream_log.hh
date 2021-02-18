@@ -44,16 +44,12 @@
   panic(DYN_S_MSG((dynamicStreamId), format, ##args))
 
 #define SLICE_MSG(sliceId, format, args...)                                    \
-  DYN_S_MSG((sliceId).streamId, "[%lu, +%d) " format, (sliceId).lhsElementIdx, \
-            (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args)
+  DYN_S_MSG("%s: " format, sliceId, ##args)
 
 #define MLC_S_MSG(dynId, format, args...)                                      \
   "[MLC_SE%d]%s: " format, this->controller->getMachineID().num, dynId, ##args
-#define MLC_SLICE_MSG(sliceId, format, args...)                                \
-  "[MLC_SE%d][%lu-%lu][%lu, +%d): " format,                                    \
-      this->controller->getMachineID().num, (sliceId).streamId.staticId,       \
-      (sliceId).streamId.streamInstance, (sliceId).lhsElementIdx,              \
-      (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args
+#define MLC_SLICE_MSG(slice, format, args...)                                  \
+  "[MLC_SE%d]%s: " format, this->controller->getMachineID().num, slice, ##args
 
 #define MLC_S_DPRINTF_(X, dynId, format, args...)                              \
   DPRINTF(X, MLC_S_MSG(dynId, format, ##args))
@@ -78,19 +74,14 @@
   panic(MLC_SLICE_MSG(sliceId, format, ##args))
 
 #define LLC_S_MSG(streamId, format, args...)                                   \
-  "[LLC_SE%d][%d-%lu-%lu]: " format, this->curLLCBank(), (streamId).coreId,    \
-      (streamId).staticId, (streamId).streamInstance, ##args
+  "[LLC_SE%d]%s: " format, this->curLLCBank(), (streamId), ##args
 #define LLC_SLICE_MSG(sliceId, format, args...)                                \
-  "[LLC_SE%d][%d-%lu-%lu][%lu, +%d): " format, this->curLLCBank(),             \
-      (sliceId).streamId.coreId, (sliceId).streamId.staticId,                  \
-      (sliceId).streamId.streamInstance, (sliceId).lhsElementIdx,              \
-      (sliceId).rhsElementIdx - (sliceId).lhsElementIdx, ##args
+  "[LLC_SE%d]%s: " format, this->curLLCBank(), (sliceId), ##args
 #define LLC_SE_MSG(format, args...)                                            \
   "[LLC_SE%d]: " format, this->curLLCBank(), ##args
 #define LLC_ELEMENT_MSG(element, format, args...)                              \
-  "[LLC_SE%d][%d-%lu-%lu-%lu]: " format, (element)->curLLCBank(),              \
-      (element)->dynStreamId.coreId, (element)->dynStreamId.staticId,          \
-      (element)->dynStreamId.streamInstance, (element)->idx, ##args
+  "[LLC_SE%d]%s-%lu: " format, (element)->curLLCBank(),                        \
+      (element)->dynStreamId, (element)->idx, ##args
 
 #define LLC_S_DPRINTF_(X, streamId, format, args...)                           \
   DPRINTF(X, LLC_S_MSG(streamId, format, ##args))

@@ -1,9 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_DYNAMIC_STREAM_SLICE_ID_HH__
 #define __CPU_TDG_ACCELERATOR_DYNAMIC_STREAM_SLICE_ID_HH__
 
-#include "DynamicStreamId.hh"
-
-#include "base/types.hh"
+#include "DynamicStreamElementRangeId.hh"
 
 /**
  * The core stream engine manages stream at granularity of element.
@@ -21,9 +19,7 @@
  * thus the data in a slice may only be a portion of the whole element.
  */
 struct DynamicStreamSliceId {
-  DynamicStreamId streamId;
-  uint64_t lhsElementIdx;
-  uint64_t rhsElementIdx;
+  DynamicStreamElementRangeId elementRange;
   /**
    * Hack: This is element vaddr for indirect streams,
    * but line vaddr for direct sliced streams.
@@ -32,30 +28,35 @@ struct DynamicStreamSliceId {
   Addr vaddr;
   int size;
 
-  DynamicStreamSliceId()
-      : streamId(), lhsElementIdx(0), rhsElementIdx(0), vaddr(0), size(0) {}
+  DynamicStreamSliceId() : elementRange(), vaddr(0), size(0) {}
 
-  bool isValid() const {
-    return !(this->lhsElementIdx == 0 && this->rhsElementIdx == 0);
-  }
+  bool isValid() const { return this->elementRange.isValid(); }
   void clear() {
-    this->streamId = DynamicStreamId();
-    this->lhsElementIdx = 0;
-    this->rhsElementIdx = 0;
+    this->elementRange.clear();
     this->vaddr = 0;
     this->size = 0;
   }
 
-  uint64_t getStartIdx() const { return this->lhsElementIdx; }
+  DynamicStreamId &getDynStreamId() { return this->elementRange.streamId; }
+  const DynamicStreamId &getDynStreamId() const {
+    return this->elementRange.streamId;
+  }
+
+  const uint64_t &getStartIdx() const {
+    return this->elementRange.getLHSElementIdx();
+  }
+  uint64_t &getStartIdx() { return this->elementRange.getLHSElementIdx(); }
+
+  const uint64_t &getEndIdx() const { return this->elementRange.rhsElementIdx; }
+  uint64_t &getEndIdx() { return this->elementRange.rhsElementIdx; }
+
   uint64_t getNumElements() const {
-    return this->rhsElementIdx - this->lhsElementIdx;
+    return this->elementRange.getNumElements();
   }
   int getSize() const { return this->size; }
 
   bool operator==(const DynamicStreamSliceId &other) const {
-    return this->streamId == other.streamId &&
-           this->lhsElementIdx == other.lhsElementIdx &&
-           this->rhsElementIdx == other.rhsElementIdx;
+    return this->elementRange == other.elementRange;
   }
 
   bool operator!=(const DynamicStreamSliceId &other) const {
@@ -63,6 +64,6 @@ struct DynamicStreamSliceId {
   }
 };
 
-std::ostream &operator<<(std::ostream &os, const DynamicStreamSliceId &slice);
+std::ostream &operator<<(std::ostream &os, const DynamicStreamSliceId &id);
 
 #endif
