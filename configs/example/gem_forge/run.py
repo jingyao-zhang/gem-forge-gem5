@@ -182,6 +182,9 @@ parser.add_option("--gem-forge-stream-engine-compute-width", action="store",
 parser.add_option("--gem-forge-enable-stream-zero-compute-latency", action="store_true",
                   default="False",
                   help="Core/LLC StreamEngine compute done in 0 cycle latency.")
+parser.add_option("--gem-forge-enable-stream-range-sync", action="store_true",
+                  default="False",
+                  help="Range-based synchronization between Core/LLC StreamEngine.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

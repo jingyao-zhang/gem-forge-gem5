@@ -14,6 +14,7 @@
 #include <vector>
 
 class AbstractStreamAwareController;
+class LLCStreamRangeBuilder;
 class LLCStreamEngine;
 
 /**
@@ -44,6 +45,8 @@ struct LLCStreamRequest {
 
 class LLCDynamicStream {
 public:
+  friend class LLCStreamRangeBuilder;
+
   ~LLCDynamicStream();
 
   Stream *getStaticStream() const { return this->configData->stream; }
@@ -177,6 +180,8 @@ private:
   State state = INITIALIZED;
   AbstractStreamAwareController *mlcController;
   AbstractStreamAwareController *llcController;
+
+  std::unique_ptr<LLCStreamRangeBuilder> rangeBuilder;
 
   // Private controller as user should use allocateLLCStreams().
   LLCDynamicStream(AbstractStreamAwareController *_mlcController,

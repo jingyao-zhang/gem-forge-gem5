@@ -86,15 +86,15 @@ class RubyStreamAwareController(RubyController):
     llc_select_num_bits = Param.UInt32(0, "Num of bits used to select LLC bank")
     # So far we only support Mesh topology
     num_cores_per_row = Param.UInt32(0, "Num of cores per row for Mesh Topology")
-    enable_stream_float = Param.Bool(False, "Whether to enable stream float")
-    enable_stream_subline = Param.Bool(False, "Whether to enable stream float subline transmission")
+    enable_stream_float = Param.Bool(False, "Whether to enable stream float.")
+    enable_stream_subline = Param.Bool(False, "Whether to enable stream float subline transmission.")
     enable_stream_idea_ack = Param.Bool(False, "Whether to enable immediate stream ack.")
     enable_stream_idea_sync = Param.Bool(False, "Whether to enable immediate stream sync.")
     enable_stream_idea_flow = Param.Bool(False, "Whether to enable immediate stream flow control.")
     enable_stream_idea_store = Param.Bool(False, "Whether to enable immediate stream store.")
     enable_stream_compact_store = Param.Bool(False, "Whether to enable compact stream store.")
     enable_stream_advance_migrate = Param.Bool(False, "Whether to enable advance stream migrate.")
-    enable_stream_multicast = Param.Bool(False, "Whether to enable multicast stream")
+    enable_stream_multicast = Param.Bool(False, "Whether to enable multicast stream.")
     stream_multicast_group_size = Param.UInt32(0, "MulticastGroup is Size x Size, 0 means all")
     stream_multicast_issue_policy = \
         Param.String("any", "Multicast issue policy, default is the relaxed")
@@ -110,3 +110,4 @@ class RubyStreamAwareController(RubyController):
     llc_stream_engine_compute_width = \
         Param.UInt32(1, "Compute width of LLCStreamEngine")
     enable_llc_stream_zero_compute_latency = Param.Bool(False, "Whether to enable zero compute latency.")
+    enable_stream_range_sync = Param.Bool(False, "Whether to enable stream range synchronization.")

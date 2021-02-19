@@ -1,5 +1,6 @@
 #include "LLCDynamicStream.hh"
 #include "LLCStreamEngine.hh"
+#include "LLCStreamRangeBuilder.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
@@ -28,6 +29,10 @@ LLCDynamicStream::LLCDynamicStream(
       slicedStream(_configData, true /* coalesceContinuousElements */),
       configureCycle(_mlcController->curCycle()), sliceIdx(0),
       allocatedSliceIdx(_configData->initAllocatedIdx) {
+
+  // Allocate the range builder.
+  this->rangeBuilder = m5::make_unique<LLCStreamRangeBuilder>(
+      this, 8, this->configData->totalTripCount);
 
   // Remember the SendTo configs.
   for (auto &depEdge : this->configData->depEdges) {
@@ -326,6 +331,18 @@ bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
     auto usedByElementIdx =
         usedByS->isOneIterationBehind() ? (elementIdx + 1) : elementIdx;
     usedByS->allocateElement(usedByElementIdx, 0);
+  }
+
+  // Add the addr to the RangeBuilder if we have vaddr here.
+  if (this->mlcController->isStreamRangeSyncEnabled()) {
+    if (vaddr != 0) {
+      Addr paddr = 0;
+      if (!this->translateToPAddr(vaddr, paddr)) {
+        LLC_S_PANIC(this->getDynamicStreamId(),
+                    "Translation fault on element %llu.", elementIdx);
+      }
+      this->rangeBuilder->addElementAddress(elementIdx, vaddr, paddr, size);
+    }
   }
   return true;
 }

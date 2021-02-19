@@ -1,5 +1,6 @@
 Import('*')
 
+DebugFlag('StreamRangeSync')
 DebugFlag('L0RubyStreamBase')
 DebugFlag('L0RubyStreamLife')
 CompoundFlag('L0RubyStream',
@@ -26,6 +27,7 @@ DebugFlag('SlicedDynamicStream')
 
 Source('DynamicStreamId.cc')
 Source('DynamicStreamElementRangeId.cc')
+Source('DynamicStreamAddressRange.cc')
 Source('DynamicStreamSliceId.cc')
 Source('DynamicStreamSliceIdVec.cc')
 Source('L0StreamEngine.cc')
@@ -34,6 +36,7 @@ Source('MLCDynamicDirectStream.cc')
 Source('MLCDynamicIndirectStream.cc')
 Source('MLCStreamEngine.cc')
 Source('LLCStreamElement.cc')
+Source('LLCStreamRangeBuilder.cc')
 Source('LLCDynamicStream.cc')
 Source('LLCStreamEngine.cc')
 Source('CacheStreamConfigureData.cc')

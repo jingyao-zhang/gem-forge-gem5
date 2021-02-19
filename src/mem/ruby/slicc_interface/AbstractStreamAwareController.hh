@@ -71,6 +71,9 @@ public:
   int getLLCStreamMaxInflyRequest() const {
     return this->myParams->llc_stream_max_infly_request;
   }
+  bool isStreamRangeSyncEnabled() const {
+    return this->myParams->enable_stream_range_sync;
+  }
 
   /**
    * Issue policy, starting from the most relaxed to most conservative.

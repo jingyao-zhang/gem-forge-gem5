@@ -92,6 +92,8 @@ class StreamEngine(GemForgeAccelerator):
         False, "Whether stream computation charge zero latency")
     computeWidth = Param.Unsigned(
         1, "How many computation can be started per cycle")
+    enableRangeSync = Param.Bool(False,
+        "Whether enable range-based synchronization between core and LLC SE.")
 
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'

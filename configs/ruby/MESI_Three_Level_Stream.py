@@ -166,6 +166,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
                 mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                enable_stream_range_sync=\
+                    options.gem_forge_enable_stream_range_sync,
                 )
 
             cpu_seq = RubySequencer(version=i * num_cpus_per_cluster + j,
@@ -241,6 +243,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
                 mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                enable_stream_range_sync=\
+                    options.gem_forge_enable_stream_range_sync,
                 )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
@@ -336,6 +340,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_compute_width,
                 enable_llc_stream_zero_compute_latency=\
                     options.gem_forge_enable_stream_zero_compute_latency,
+                enable_stream_range_sync=\
+                    options.gem_forge_enable_stream_range_sync,
                 )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"

@@ -54,6 +54,8 @@ def initializeStreamEngine(options):
         options.gem_forge_stream_engine_compute_width
     se.enableZeroComputeLatency =\
         options.gem_forge_enable_stream_zero_compute_latency
+    se.enableRangeSync =\
+        options.gem_forge_enable_stream_range_sync
 
     return se
 
