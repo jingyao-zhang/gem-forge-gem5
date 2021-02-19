@@ -362,6 +362,15 @@ void LLCDynamicStream::eraseElement(IdxToElementMapT::iterator elementIter) {
   this->idxToElementMap.erase(elementIter);
 }
 
+void LLCDynamicStream::eraseElementOlderThan(uint64_t elementIdx) {
+  auto iter = this->idxToElementMap.begin();
+  auto end = this->idxToElementMap.end();
+  while (iter != end && iter->first < elementIdx) {
+    LLC_ELEMENT_DPRINTF(iter->second, "Erased.\n");
+    iter = this->idxToElementMap.erase(iter);
+  }
+}
+
 bool LLCDynamicStream::isBasedOn(const DynamicStreamId &baseId) const {
   for (const auto &baseConfig : this->baseOnConfigs) {
     if (baseConfig->dynamicId == baseId) {

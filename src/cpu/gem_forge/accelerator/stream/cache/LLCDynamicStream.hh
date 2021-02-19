@@ -311,6 +311,7 @@ public:
    */
   void eraseElement(uint64_t elementIdx);
   void eraseElement(IdxToElementMapT::iterator elementIter);
+  void eraseElementOlderThan(uint64_t elementIdx);
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

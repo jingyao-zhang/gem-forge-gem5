@@ -268,18 +268,13 @@ void LLCStreamEngine::receiveStreamElementData(
                     stream->inflyRequests, needIndirect, needUpdate, needSendTo,
                     storeValueBlock);
 
-  if (needSendTo) {
-    assert(!needUpdate && !needIndirect && "Cannot support this case for now.");
-    for (const auto &recvConfig : stream->sendToConfigs) {
-      this->issueStreamDataToLLC(stream, sliceId, dataBlock, recvConfig);
-    }
-    return;
-  }
-
   /**
    * If this is a StoreStream, just store the slice and send back ack.
+   * StoreStream elements are already released when issuing this request.
    */
   if (S->isStoreStream()) {
+    assert(!(needSendTo || needIndirect || needUpdate) &&
+           "StoreStream has no value to do anything.");
     Addr paddr;
     if (!stream->translateToPAddr(sliceId.vaddr, paddr)) {
       LLC_SLICE_PANIC(
@@ -297,14 +292,29 @@ void LLCStreamEngine::receiveStreamElementData(
     this->issueStreamAckToMLC(sliceId);
     return;
   }
+
   /**
+   * This is just a pure DirectLoadStream without IndirectStreams.
    * There is a bug when constructing MultiLine Indirect Stream Element,
    * as the slice.vaddr is no longer the element vaddr. I don't have a
-   * good solution. So avoid that case.
+   * good solution. So avoid that case by not extracting the element data
+   * from the slice and directly return.
    */
   if (!needIndirect && !needUpdate) {
+    if (needSendTo) {
+      for (const auto &recvConfig : stream->sendToConfigs) {
+        this->issueStreamDataToLLC(stream, sliceId, dataBlock, recvConfig);
+      }
+    }
+    /**
+     * Release any older elements.
+     * Notice that elements may not be released in order.
+     */
+    stream->eraseElementOlderThan(sliceId.getStartIdx());
     return;
   }
+
+  assert(!needSendTo && "Cannot support this case for now.");
 
   /**
    * Finally decide if we need to send back data or ack.
@@ -815,11 +825,9 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
     auto SS = dynS->getStaticStream();
     SS->statistic.numLLCIssueSlice++;
 
-    // Register the waiting indirect elements.
-    if (!dynS->indirectStreams.empty()) {
-      for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-        dynS->allocateElement(idx, dynS->slicedStream.getElementVAddr(idx));
-      }
+    // Register the elements.
+    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+      dynS->allocateElement(idx, dynS->slicedStream.getElementVAddr(idx));
     }
 
     // Add this to the request.
@@ -1053,11 +1061,9 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
     auto sliceId = stream->consumeNextSlice();
     statistic.numLLCIssueSlice++;
 
-    // Register the waiting indirect elements.
-    if (!stream->indirectStreams.empty()) {
-      for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-        stream->allocateElement(idx, stream->slicedStream.getElementVAddr(idx));
-      }
+    // Register the elements.
+    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+      stream->allocateElement(idx, stream->slicedStream.getElementVAddr(idx));
     }
 
     // Push to the request queue.
@@ -1099,9 +1105,11 @@ bool LLCStreamEngine::issueStream(LLCDynamicStream *stream) {
                            element->idx, sliceId.vaddr + sliceOffset,
                            overlapSize, elementOffset);
       }
-      while (stream->idxToElementMap.begin()->first < sliceId.getStartIdx()) {
-        stream->eraseElement(stream->idxToElementMap.begin());
-      }
+      /**
+       * StoreStream element is released here, as we don't really care about
+       * the element data.
+       */
+      stream->eraseElementOlderThan(sliceId.getStartIdx());
     }
 
     // Check if we track inflyRequests.
