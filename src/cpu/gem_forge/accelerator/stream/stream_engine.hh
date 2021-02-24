@@ -25,6 +25,7 @@ class StreamSQDeprecatedCallback;
 class StreamFloatController;
 class StreamComputeEngine;
 class NestStreamController;
+class StreamRangeSyncController;
 
 class StreamEngine : public GemForgeAccelerator {
 public:
@@ -182,6 +183,9 @@ public:
   bool isStreamFloatCancelEnabled() const {
     return this->enableStreamFloatCancel;
   }
+  bool isStreamRangeSyncEnabled() const {
+    return this->myParams->enableRangeSync;
+  }
   const std::string &getPlacementLat() const { return this->placementLat; }
   const std::string &getPlacement() const { return this->placement; }
 
@@ -260,6 +264,7 @@ private:
   friend class StreamSQDeprecatedCallback;
   friend class StreamFloatController;
   friend class NestStreamController;
+  friend class StreamRangeSyncController;
 
   LLVMTraceCPU *cpu;
 
@@ -314,6 +319,7 @@ private:
   /**
    * Flags.
    */
+  Params *myParams;
   bool isOracle;
   unsigned defaultRunAheadLength;
   bool enableLSQ;
@@ -426,6 +432,7 @@ private:
   std::unique_ptr<StreamFloatController> floatController;
   std::unique_ptr<StreamComputeEngine> computeEngine;
   std::unique_ptr<NestStreamController> nestStreamController;
+  std::unique_ptr<StreamRangeSyncController> rangeSyncController;
 
   /**
    * Try to coalesce continuous element of direct mem stream if they

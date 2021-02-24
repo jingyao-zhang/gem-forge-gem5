@@ -18,3 +18,7 @@ structure(DynamicStreamSliceIdVec, external="yes", desc="A vector of sliceIds.")
   void add(DynamicStreamSliceId);
   void clear();
 }
+
+structure(DynamicStreamAddressRangePtr, external="yes", desc="StreamRange for sync.") {
+  
+}

@@ -23,15 +23,16 @@ struct AddressRange {
     this->lhs = std::min(this->lhs, l);
     this->rhs = std::max(this->rhs, r);
   }
-  void add(const AddressRange &range) {
-    this->add(range.lhs, range.rhs);
-  }
+  void add(const AddressRange &range) { this->add(range.lhs, range.rhs); }
   void clear() {
     this->lhs = 0;
     this->rhs = 0;
   }
   bool hasOverlap(Addr l, Addr r) const {
     return !(r <= this->lhs || l >= this->rhs);
+  }
+  bool hasOverlap(const AddressRange &other) const {
+    return this->hasOverlap(other.lhs, other.rhs);
   }
 };
 

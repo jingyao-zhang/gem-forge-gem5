@@ -110,6 +110,8 @@ private:
       reverseReuseInfoMap;
   void reuseSlice(const DynamicStreamSliceId &sliceId,
                   const DataBlock &dataBlock);
+
+  MLCDynamicStream *getStreamFromDynamicId(const DynamicStreamId &id);
 };
 
 #endif

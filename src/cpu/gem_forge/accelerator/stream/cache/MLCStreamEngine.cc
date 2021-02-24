@@ -11,6 +11,7 @@
 #include "debug/MLCRubyStreamBase.hh"
 #include "debug/MLCRubyStreamLife.hh"
 #include "debug/MLCRubyStreamReuse.hh"
+#include "debug/StreamRangeSync.hh"
 
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
@@ -224,6 +225,20 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream data when stream float is disabled.\n");
+
+  if (msg.m_Type == CoherenceResponseType_STREAM_RANGE) {
+    auto sliceId = msg.m_sliceIds.singleSliceId();
+    auto stream = this->getStreamFromDynamicId(sliceId.getDynStreamId());
+    if (stream) {
+      MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
+                         "[Range] Receive range: %s.\n", *msg.m_range);
+      stream->receiveStreamRange(msg.m_range);
+    } else {
+      MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
+                         "[Range] Discard old range: %s.\n", *msg.m_range);
+    }
+    return;
+  }
   for (const auto &sliceId : msg.m_sliceIds.sliceIds) {
     /**
      * Due to multicast, it's possible we received sliceIds that
@@ -243,13 +258,12 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
     const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
     Addr paddrLine) {
   MLC_SLICE_DPRINTF(sliceId, "SE received data vaddr %#x.\n", sliceId.vaddr);
-  for (auto &iter : this->idToStreamMap) {
-    if (iter.second->getDynamicStreamId() == sliceId.getDynStreamId()) {
-      // Found the stream.
-      iter.second->receiveStreamData(sliceId, dataBlock, paddrLine);
-      this->reuseSlice(sliceId, dataBlock);
-      return;
-    }
+  auto stream = this->getStreamFromDynamicId(sliceId.getDynStreamId());
+  if (stream) {
+    // Found the stream.
+    stream->receiveStreamData(sliceId, dataBlock, paddrLine);
+    this->reuseSlice(sliceId, dataBlock);
+    return;
   }
   // This is possible if the stream is already ended.
   if (this->endedStreamDynamicIds.count(sliceId.getDynStreamId()) > 0) {
@@ -258,6 +272,15 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
     return;
   }
   panic("Failed to find configured stream for %s.\n", sliceId.getDynStreamId());
+}
+
+MLCDynamicStream *
+MLCStreamEngine::getStreamFromDynamicId(const DynamicStreamId &id) {
+  auto iter = this->idToStreamMap.find(id);
+  if (iter == this->idToStreamMap.end()) {
+    return nullptr;
+  }
+  return iter->second;
 }
 
 bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {

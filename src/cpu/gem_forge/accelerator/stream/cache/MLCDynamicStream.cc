@@ -290,6 +290,17 @@ MachineID MLCDynamicStream::mapPAddrToLLCBank(Addr paddr) const {
   return llcMachineId;
 }
 
+void MLCDynamicStream::receiveStreamRange(
+    const DynamicStreamAddressRangePtr &range) {
+  // We simply notify the dynamic streams in core for now.
+  auto *dynS =
+      this->getStaticStream()->getDynamicStream(this->getDynamicStreamId());
+  if (!dynS) {
+    return;
+  }
+  dynS->receiveStreamRange(range);
+}
+
 void MLCDynamicStream::scheduleAdvanceStream() {
   if (!this->advanceStreamEvent.scheduled()) {
     this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,

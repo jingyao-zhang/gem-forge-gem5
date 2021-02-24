@@ -2,6 +2,7 @@
 #define __GEM_FORGE_ACCELERATOR_DYN_STREAM_HH__
 
 #include "addr_gen_callback.hh"
+#include "cache/DynamicStreamAddressRange.hh"
 #include "fifo_entry_idx.hh"
 
 #include <array>
@@ -175,6 +176,10 @@ struct DynamicStream {
    */
   StreamElement *getElementByIdx(uint64_t elementIdx) const;
   /**
+   * Get the first element of the dynamic stream.
+   */
+  StreamElement *getFirstElement();
+  /**
    * Get the first unstepped element of the dynamic stream.
    */
   StreamElement *getFirstUnsteppedElement();
@@ -198,6 +203,19 @@ struct DynamicStream {
   int getTotalHitPrivateCache() const { return this->totalHitPrivateCache; }
   int getHitPrivateCacheHistoryWindowSize() const {
     return HitHistoryWindowSize;
+  }
+
+  /**
+   * API for range-based stream synchronization.
+   */
+  void receiveStreamRange(const DynamicStreamAddressRangePtr &range);
+  DynamicStreamAddressRangePtr getNextReceivedRange() const;
+  void popReceivedRange();
+  DynamicStreamAddressRangePtr getCurrentWorkingRange() const {
+    return this->currentWorkingRange;
+  }
+  void setCurrentWorkingRange(DynamicStreamAddressRangePtr ptr) {
+    this->currentWorkingRange = ptr;
   }
 
   void dump() const;
@@ -229,6 +247,14 @@ private:
   std::array<bool, HitHistoryWindowSize> hitPrivateCacheHistory;
   int currentHitPrivateCacheHistoryIdx = 0;
   int totalHitPrivateCache = 0;
+
+  /**
+   * This remember the received StreamRange for synchronization.
+   * We also remember the current working range, which is actually
+   * managed by StreamRangeSyncController.
+   */
+  std::list<DynamicStreamAddressRangePtr> receivedRanges;
+  DynamicStreamAddressRangePtr currentWorkingRange = nullptr;
 
   void tryCancelFloat();
   void cancelFloat();

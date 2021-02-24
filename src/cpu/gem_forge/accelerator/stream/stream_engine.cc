@@ -4,6 +4,7 @@
 #include "stream_compute_engine.hh"
 #include "stream_float_controller.hh"
 #include "stream_lsq_callback.hh"
+#include "stream_range_sync_controller.hh"
 #include "stream_throttler.hh"
 
 #include "base/trace.hh"
@@ -32,7 +33,7 @@ bool isDebugStream(Stream *S) {
 
 StreamEngine::StreamEngine(Params *params)
     : GemForgeAccelerator(params), streamPlacementManager(nullptr),
-      isOracle(false), writebackCacheLine(nullptr),
+      myParams(params), isOracle(false), writebackCacheLine(nullptr),
       throttler(new StreamThrottler(params->throttling, this)) {
 
   this->isOracle = params->streamEngineIsOracle;
@@ -61,6 +62,7 @@ StreamEngine::StreamEngine(Params *params)
       this, std::move(streamFloatPolicy));
   this->computeEngine = m5::make_unique<StreamComputeEngine>(this, params);
   this->nestStreamController = m5::make_unique<NestStreamController>(this);
+  this->rangeSyncController = m5::make_unique<StreamRangeSyncController>(this);
 
   this->initializeFIFO(this->totalRunAheadLength);
 }
@@ -538,6 +540,11 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
         return false;
       }
     }
+  }
+
+  // We have one more condition for range-based check.
+  if (!this->rangeSyncController->areRangesReady()) {
+    return false;
   }
   return true;
 }

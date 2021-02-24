@@ -311,6 +311,8 @@ StreamElement *DynamicStream::getPrevElement(StreamElement *element) {
   assert(false && "Failed to find the previous element.");
 }
 
+StreamElement *DynamicStream::getFirstElement() { return this->tail->next; }
+
 StreamElement *DynamicStream::getFirstUnsteppedElement() {
   if (this->allocSize <= this->stepSize) {
     return nullptr;
@@ -481,6 +483,32 @@ int32_t DynamicStream::getBytesPerMemElement() const {
   } else {
     return memElementSize;
   }
+}
+
+void DynamicStream::receiveStreamRange(
+    const DynamicStreamAddressRangePtr &range) {
+  auto iter = this->receivedRanges.begin();
+  auto end = this->receivedRanges.end();
+  while (iter != end) {
+    if ((*iter)->elementRange.getLHSElementIdx() >
+        range->elementRange.getLHSElementIdx()) {
+      break;
+    }
+    ++iter;
+  }
+  this->receivedRanges.insert(iter, range);
+}
+
+DynamicStreamAddressRangePtr DynamicStream::getNextReceivedRange() const {
+  if (this->receivedRanges.empty()) {
+    return nullptr;
+  }
+  return this->receivedRanges.front();
+}
+
+void DynamicStream::popReceivedRange() {
+  assert(!this->receivedRanges.empty() && "Pop when there is no range.");
+  this->receivedRanges.pop_front();
 }
 
 std::string DynamicStream::dumpString() const {

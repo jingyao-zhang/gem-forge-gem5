@@ -30,6 +30,10 @@ struct DynamicStreamElementRangeId {
   uint64_t getNumElements() const {
     return this->rhsElementIdx - this->lhsElementIdx;
   }
+  bool contains(uint64_t elementIdx) const {
+    return elementIdx >= this->lhsElementIdx &&
+           elementIdx < this->rhsElementIdx;
+  }
 
   bool operator==(const DynamicStreamElementRangeId &other) const {
     return this->streamId == other.streamId &&

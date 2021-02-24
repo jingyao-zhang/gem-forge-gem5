@@ -233,6 +233,13 @@ private:
                            bool forceIdea = false);
 
   /**
+   * Helper function to issue stream range back to MLC at request core.
+   */
+  void issueStreamRangesToMLC();
+  void issueStreamRangeToMLC(DynamicStreamAddressRangePtr &range,
+                             bool forceIdea = false);
+
+  /**
    * Helper function to issue stream data back to MLC at request core.
    * Mostly used for atomic streams.
    */

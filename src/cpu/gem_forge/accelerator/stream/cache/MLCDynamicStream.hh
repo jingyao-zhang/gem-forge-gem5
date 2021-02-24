@@ -1,6 +1,8 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
 
+#include "DynamicStreamAddressRange.hh"
+
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 
 #include "mem/ruby/common/DataBlock.hh"
@@ -65,6 +67,8 @@ public:
 
   uint64_t getHeadSliceIdx() const { return this->headSliceIdx; }
   uint64_t getTailSliceIdx() const { return this->tailSliceIdx; }
+
+  void receiveStreamRange(const DynamicStreamAddressRangePtr &range);
 
   void scheduleAdvanceStream();
 
@@ -230,6 +234,11 @@ protected:
   bool isWaitingNothing() const {
     return !this->isWaitingData() && !this->isWaitingAck();
   }
+
+  /**
+   * This remember the received StreamRange.
+   */
+  std::list<DynamicStreamAddressRangePtr> receivedRanges;
 
   /**
    * A helper function to dump some basic status of the stream when panic.

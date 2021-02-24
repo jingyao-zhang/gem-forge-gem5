@@ -1,5 +1,6 @@
 
 #include "LLCStreamEngine.hh"
+#include "LLCStreamRangeBuilder.hh"
 #include "MLCStreamEngine.hh"
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
@@ -19,6 +20,7 @@
 #include "debug/LLCRubyStreamNotIssue.hh"
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
+#include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
@@ -509,6 +511,7 @@ void LLCStreamEngine::wakeup() {
 
   this->processStreamFlowControlMsg();
   this->issueStreams();
+  this->issueStreamRangesToMLC();
   this->migrateStreams();
   this->startComputation();
   this->completeComputation();
@@ -1578,6 +1581,33 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
   auto paddrLine = 0;
   auto msg = this->createStreamMsgToMLC(
       sliceId, CoherenceResponseType_STREAM_ACK, paddrLine, nullptr, 0, 0);
+  this->issueStreamMsgToMLC(msg, forceIdea);
+}
+
+void LLCStreamEngine::issueStreamRangesToMLC() {
+  if (!this->controller->isStreamRangeSyncEnabled()) {
+    return;
+  }
+  for (auto stream : this->streams) {
+    auto &rangeBuilder = stream->getRangeBuilder();
+    if (!rangeBuilder->hasReadyRanges()) {
+      continue;
+    }
+    auto range = rangeBuilder->popReadyRange();
+    LLC_SE_DPRINTF_(StreamRangeSync, "Issue range to MLC: %s.\n", *range);
+    this->issueStreamRangeToMLC(range);
+  }
+}
+
+void LLCStreamEngine::issueStreamRangeToMLC(DynamicStreamAddressRangePtr &range,
+                                            bool forceIdea) {
+  // Create a fake paddr and slice id.
+  Addr paddrLine = 0;
+  DynamicStreamSliceId sliceId;
+  sliceId.elementRange = range->elementRange;
+  auto msg = this->createStreamMsgToMLC(
+      sliceId, CoherenceResponseType_STREAM_RANGE, paddrLine, nullptr, 0, 0);
+  msg->m_range = range;
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 

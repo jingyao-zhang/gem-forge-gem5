@@ -9,18 +9,22 @@ CompoundFlag('L0RubyStream',
 DebugFlag('MLCRubyStreamBase')
 DebugFlag('MLCRubyStreamLife')
 DebugFlag('MLCRubyStreamReuse')
-CompoundFlag('MLCRubyStream',
-             ['MLCRubyStreamBase', 'MLCRubyStreamLife', 'MLCRubyStreamReuse'])
+CompoundFlag('MLCRubyStream', [
+    'MLCRubyStreamBase', 'MLCRubyStreamLife', 'MLCRubyStreamReuse',
+    'StreamRangeSync',
+])
 DebugFlag('LLCRubyStreamBase')
 DebugFlag('LLCRubyStreamLife')
 DebugFlag('LLCRubyStreamReduce')
 DebugFlag('LLCRubyStreamMulticast')
 DebugFlag('LLCRubyStreamStore')
 DebugFlag('LLCRubyStreamNotIssue')
-CompoundFlag('LLCRubyStream',
-             ['LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
-              'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
-              'LLCRubyStreamNotIssue'])
+CompoundFlag('LLCRubyStream', [
+    'LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
+    'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
+    'LLCRubyStreamNotIssue',
+    'StreamRangeSync',
+])
 CompoundFlag('RubyStreamLife',
              ['CoreRubyStreamLife', 'L0RubyStreamLife', 'MLCRubyStreamLife', 'LLCRubyStreamLife'])
 DebugFlag('SlicedDynamicStream')

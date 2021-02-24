@@ -176,6 +176,10 @@ public:
                            const LLCStreamElementPtr &element,
                            const StreamValue &value);
 
+  std::unique_ptr<LLCStreamRangeBuilder> &getRangeBuilder() {
+    return this->rangeBuilder;
+  }
+
 private:
   State state = INITIALIZED;
   AbstractStreamAwareController *mlcController;

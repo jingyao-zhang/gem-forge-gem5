@@ -146,8 +146,10 @@ MakeInclude('structures/WireBuffer.hh')
 MakeInclude('system/DMASequencer.hh')
 MakeInclude('system/Sequencer.hh')
 
-# ! RequestStatistic
+# ! Sean: We only use the Ptr in Ruby. Rename it to make Ruby happy.
 MakeIncludeRename('../request_statistic.hh', 'RequestStatisticPtr.hh')
+MakeIncludeRename('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamAddressRange.hh',
+    'DynamicStreamAddressRangePtr.hh')
 
 # ! Sean: StreamAwareCache
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamId.hh')
