@@ -16,6 +16,7 @@
 class AbstractStreamAwareController;
 class LLCStreamRangeBuilder;
 class LLCStreamEngine;
+class LLCStreamCommitController;
 
 /**
  * Represent generated request to LLC bank.
@@ -46,6 +47,7 @@ struct LLCStreamRequest {
 class LLCDynamicStream {
 public:
   friend class LLCStreamRangeBuilder;
+  friend class LLCStreamCommitController;
 
   ~LLCDynamicStream();
 
@@ -61,6 +63,7 @@ public:
   bool isOneIterationBehind() const {
     return this->configData->isOneIterationBehind;
   }
+  bool shouldRangeSync() const { return this->configData->rangeSync; }
   bool isPredicated() const { return this->configData->isPredicated; }
   bool isPredicatedTrue() const {
     assert(this->isPredicated());
@@ -87,7 +90,7 @@ public:
 
   Addr peekVAddr() const;
   const DynamicStreamSliceId &peekSlice() const;
-  Addr getVAddr(uint64_t sliceIdx) const;
+  Addr getElementVAddr(uint64_t elementIdx) const;
   bool translateToPAddr(Addr vaddr, Addr &paddr) const;
 
   /**
@@ -262,6 +265,7 @@ public:
   uint64_t sliceIdx;
   // For flow control.
   uint64_t allocatedSliceIdx;
+
   /**
    * Number of requests of this stream (not including indirect streams)
    * issued but data not ready.
@@ -309,6 +313,7 @@ public:
    * @return bool: whether allocation happened.
    */
   bool allocateElement(uint64_t elementIdx, Addr vaddr);
+  bool isElementReleased(uint64_t elementIdx) const;
 
   /**
    * Erase the element for myself only.
@@ -316,6 +321,18 @@ public:
   void eraseElement(uint64_t elementIdx);
   void eraseElement(IdxToElementMapT::iterator elementIter);
   void eraseElementOlderThan(uint64_t elementIdx);
+
+  /************************************************************************
+   * State related to StreamCommit.
+   * Pending StreamCommit messages.
+   ************************************************************************/
+private:
+  std::list<DynamicStreamSliceId> commitMessages;
+  uint64_t nextCommitElementIdx = 0;
+  LLCStreamCommitController *commitController = nullptr;
+
+public:
+  void addCommitMessage(const DynamicStreamSliceId &sliceId);
 };
 
 using LLCDynamicStreamPtr = LLCDynamicStream *;

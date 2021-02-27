@@ -159,6 +159,11 @@ struct DynamicStream {
    */
   bool shouldCoreSEIssue() const;
 
+  /**
+   * Should we perform range-sync on this stream.
+   */
+  bool shouldRangeSync() const;
+
   Cycles getAvgTurnAroundCycle() const { return this->avgTurnAroundCycle; }
   int getNumLateElement() const { return this->numLateElement; }
 

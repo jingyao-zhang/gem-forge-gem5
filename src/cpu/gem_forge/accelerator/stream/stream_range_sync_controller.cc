@@ -28,9 +28,9 @@ bool StreamRangeSyncController::areRangesReady() {
           this->getCheckElementIdx(dynS) == dynS->getTotalTripCount()) {
         continue;
       }
-      DYN_S_DPRINTF(dynS->dynamicStreamId,
-                    "[CoreRange] Not ready for CheckElement %llu.\n",
-                    this->getCheckElementIdx(dynS));
+      // DYN_S_DPRINTF(dynS->dynamicStreamId,
+      //               "[CoreRange] Not ready for CheckElement %llu.\n",
+      //               this->getCheckElementIdx(dynS));
       return false;
     }
   }
@@ -47,7 +47,7 @@ StreamRangeSyncController::getCurrentDynStreams() {
       continue;
     }
     auto &dynS = S->getFirstDynamicStream();
-    if (dynS.offloadedToCacheAsRoot) {
+    if (dynS.offloadedToCacheAsRoot && dynS.shouldRangeSync()) {
       dynStreams.push_back(&S->getFirstDynamicStream());
     }
   }

@@ -21,6 +21,7 @@
 
 class AbstractStreamAwareController;
 class MessageBuffer;
+class LLCStreamCommitController;
 
 class LLCStreamEngine : public Consumer {
 public:
@@ -33,8 +34,9 @@ public:
 
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamEnd(PacketPtr pkt);
-  void receiveStreamMigrate(LLCDynamicStreamPtr stream);
+  void receiveStreamMigrate(LLCDynamicStreamPtr stream, bool isCommit);
   void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
+  void receiveStreamCommit(const DynamicStreamSliceId &sliceId);
   void receiveStreamElementDataVec(Cycles delayCycles,
                                    const DynamicStreamSliceIdVec &sliceIds,
                                    const DataBlock &dataBlock,
@@ -47,6 +49,7 @@ public:
 private:
   friend class LLCDynamicStream;
   friend class LLCStreamElement;
+  friend class LLCStreamCommitController;
   AbstractStreamAwareController *controller;
   // Out going stream migrate buffer.
   MessageBuffer *streamMigrateMsgBuffer;
@@ -56,6 +59,8 @@ private:
   MessageBuffer *streamIndirectIssueMsgBuffer;
   // Send response to MLC.
   MessageBuffer *streamResponseMsgBuffer;
+  // Stream commit controller.
+  std::unique_ptr<LLCStreamCommitController> commitController;
   const int issueWidth;
   const int migrateWidth;
   // Threshold to limit maximum number of infly requests.
@@ -233,6 +238,12 @@ private:
                            bool forceIdea = false);
 
   /**
+   * Helper function to issue StreamDone back to MLC at request core.
+   */
+  void issueStreamDoneToMLC(const DynamicStreamSliceId &sliceId,
+                            bool forceIdea = false);
+
+  /**
    * Helper function to issue stream range back to MLC at request core.
    */
   void issueStreamRangesToMLC();
@@ -263,6 +274,11 @@ private:
    * Migrate a single stream.
    */
   void migrateStream(LLCDynamicStream *stream);
+
+  /**
+   * Migrate a stream's commit head.
+   */
+  void migrateStreamCommit(LLCDynamicStream *stream, Addr paddr);
 
   /**
    * Helper function to map an address to a LLC bank.

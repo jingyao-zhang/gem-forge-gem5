@@ -12,6 +12,7 @@
 #include "MLCDynamicIndirectStream.hh"
 
 #include "mem/packet.hh"
+#include "mem/ruby/common/Consumer.hh"
 
 #include <unordered_map>
 
@@ -27,12 +28,15 @@ class MessageBuffer;
  *                                       ------> N, handled as uncached request.
  * isDataReady?     ------> Y, send response.
  */
-class MLCStreamEngine {
+class MLCStreamEngine : public Consumer {
 public:
   MLCStreamEngine(AbstractStreamAwareController *_controller,
                   MessageBuffer *_responseToUpperMsgBuffer,
                   MessageBuffer *_requestToLLCMsgBuffer);
   ~MLCStreamEngine();
+
+  void wakeup() override;
+  void print(std::ostream &out) const override;
 
   /**
    * Receive a StreamConfig message and configure all streams.
@@ -77,7 +81,6 @@ private:
   MessageBuffer *requestToLLCMsgBuffer;
   std::unordered_map<DynamicStreamId, MLCDynamicStream *, DynamicStreamIdHasher>
       idToStreamMap;
-  std::list<MLCDynamicStream *> streams;
 
   // For sanity check.
   // TODO: Limit the size of this set.

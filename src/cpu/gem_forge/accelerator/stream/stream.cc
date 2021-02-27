@@ -353,8 +353,8 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   auto &dynS = this->dynamicStreams.front();
   if (dynS.configSeqNum >= seqNum) {
     DYN_S_PANIC(dynS.dynamicStreamId,
-                "Commit StreamEnd SeqNum %llu before ConfigSeqNum %llu.", seqNum,
-                dynS.configSeqNum);
+                "Commit StreamEnd SeqNum %llu before ConfigSeqNum %llu.",
+                seqNum, dynS.configSeqNum);
   }
   assert(dynS.configExecuted && "End before config executed.");
   assert(dynS.endDispatched && "End before end dispatched.");

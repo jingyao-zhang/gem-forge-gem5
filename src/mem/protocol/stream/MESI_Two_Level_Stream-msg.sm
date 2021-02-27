@@ -49,6 +49,7 @@ enumeration(CoherenceRequestType, desc="...") {
   STREAM_STORE,   desc="Stream store";
   STREAM_MIGRATE, desc="Stream migrate";
   STREAM_FORWARD, desc="Stream data forwarded from L2 to L2";
+  STREAM_COMMIT,  desc="Stream commit message from L1 to L2";
 }
 
 // CoherenceResponseType
@@ -64,6 +65,7 @@ enumeration(CoherenceResponseType, desc="...") {
   INV,                desc="Invalidate from directory";
   STREAM_ACK,         desc="ack the core that the reqired operation is performed";
   STREAM_RANGE,       desc="range-sychronization message";
+  STREAM_DONE,        desc="Stream commit done message from L2 to L1";
 }
 
 // RequestMsg
@@ -162,6 +164,7 @@ structure(StreamMigrateRequestMsg, desc="request to migrate a stream", interface
   MachineID Requestor      ,    desc="What component request";
   NetDest Destination,          desc="What components receive the request, includes MachineType and num";
   MessageSizeType MessageSize,  desc="size category of the message";
+  bool IsCommit,                desc="If this is a CommitHead migration.";
   int Len;
   // ! Sean: StreamAwareCache
   LLCDynamicStreamPtr Stream,    desc="Hack to forward CacheDynamicStream";

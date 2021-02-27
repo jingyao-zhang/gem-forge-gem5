@@ -1,4 +1,5 @@
 #include "LLCDynamicStream.hh"
+#include "LLCStreamCommitController.hh"
 #include "LLCStreamEngine.hh"
 #include "LLCStreamRangeBuilder.hh"
 
@@ -101,9 +102,8 @@ const DynamicStreamSliceId &LLCDynamicStream::peekSlice() const {
   return this->slicedStream.peekNextSlice();
 }
 
-Addr LLCDynamicStream::getVAddr(uint64_t sliceIdx) const {
-  panic("getVAddr is deprecated.\n");
-  return 0;
+Addr LLCDynamicStream::getElementVAddr(uint64_t elementIdx) const {
+  return this->slicedStream.getElementVAddr(elementIdx);
 }
 
 bool LLCDynamicStream::translateToPAddr(Addr vaddr, Addr &paddr) const {
@@ -334,7 +334,7 @@ bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
   }
 
   // Add the addr to the RangeBuilder if we have vaddr here.
-  if (this->mlcController->isStreamRangeSyncEnabled()) {
+  if (this->shouldRangeSync()) {
     if (vaddr != 0) {
       Addr paddr = 0;
       if (!this->translateToPAddr(vaddr, paddr)) {
@@ -345,6 +345,13 @@ bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
     }
   }
   return true;
+}
+
+bool LLCDynamicStream::isElementReleased(uint64_t elementIdx) const {
+  if (this->idxToElementMap.empty()) {
+    return true;
+  }
+  return this->idxToElementMap.begin()->first > elementIdx;
 }
 
 void LLCDynamicStream::eraseElement(uint64_t elementIdx) {
@@ -498,6 +505,10 @@ void LLCDynamicStream::terminate() {
   LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynamicStreamId(), "Ended.\n");
   this->setState(State::TERMINATED);
   this->traceEvent(::LLVM::TDG::StreamFloatEvent::END);
+  if (this->commitController) {
+    // Don't forget to deregister myself from commit controller.
+    this->commitController->deregisterStream(this);
+  }
 }
 
 void LLCDynamicStream::allocateLLCStreams(
@@ -716,4 +727,16 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
       this->eraseElement(iter);
     }
   }
+}
+
+void LLCDynamicStream::addCommitMessage(const DynamicStreamSliceId &sliceId) {
+  auto iter = this->commitMessages.begin();
+  auto end = this->commitMessages.end();
+  while (iter != end) {
+    if (iter->getStartIdx() > sliceId.getStartIdx()) {
+      break;
+    }
+    ++iter;
+  }
+  this->commitMessages.insert(iter, sliceId);
 }

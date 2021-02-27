@@ -44,6 +44,11 @@ public:
    */
   bool isPseudoOffload = false;
 
+  /**
+   * We require range-sync on this stream.
+   */
+  bool rangeSync = false;
+
   DynamicStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;
   DynamicStreamFormalParamV predFormalParams;

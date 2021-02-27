@@ -34,6 +34,13 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
    * ! constructor/deconstructor.
    */
 
+  /**
+   * Remember if we require range-sync. The config will also be passed to
+   * LLCDynamicStream.
+   */
+  auto dynS = this->stream->getDynamicStream(this->getDynamicStreamId());
+  this->config->rangeSync = (dynS && dynS->shouldRangeSync());
+
   // Schedule the first advanceStreamEvent.
   this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
                                             Cycles(1));
@@ -108,7 +115,8 @@ void MLCDynamicStream::popStream() {
    */
   uint64_t llcProgressElementIdx = UINT64_MAX;
   if (this->controller->isStreamIdeaSyncEnabled() &&
-      this->getStaticStream()->isDirectMemStream()) {
+      this->getStaticStream()->isDirectMemStream() &&
+      !this->shouldRangeSync()) {
     if (auto llcDynS =
             LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
       llcProgressElementIdx =
@@ -293,12 +301,20 @@ MachineID MLCDynamicStream::mapPAddrToLLCBank(Addr paddr) const {
 void MLCDynamicStream::receiveStreamRange(
     const DynamicStreamAddressRangePtr &range) {
   // We simply notify the dynamic streams in core for now.
+  if (!this->shouldRangeSync()) {
+    MLC_S_PANIC(this->getDynamicStreamId(),
+                "Receive StreamRange when RangeSync not required.");
+  }
   auto *dynS =
       this->getStaticStream()->getDynamicStream(this->getDynamicStreamId());
   if (!dynS) {
     return;
   }
   dynS->receiveStreamRange(range);
+}
+
+void MLCDynamicStream::receiveStreamDone(const DynamicStreamSliceId &sliceId) {
+  MLC_S_PANIC(this->getDynamicStreamId(), "receiveStreamDone not implemented.");
 }
 
 void MLCDynamicStream::scheduleAdvanceStream() {

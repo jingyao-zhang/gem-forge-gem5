@@ -151,6 +151,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     STREAM_END,     desc="StreamEnd req";
     STREAM_STORE,   desc="StreamStore req";
     STREAM_FORWARD, desc="StreamForward req";
+    STREAM_COMMIT,  desc="StreamCommit req";
   }
 
   // TYPES
@@ -197,11 +198,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   structure(LLCStreamEngine, external="yes", desc="Stream Engine at LLC") {
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamEnd(PacketPtr);
-    void receiveStreamMigrate(LLCDynamicStreamPtr);
+    void receiveStreamMigrate(LLCDynamicStreamPtr, bool);
     void receiveStreamFlow(DynamicStreamSliceId);
     void receiveStreamElementDataVec(Cycles, DynamicStreamSliceIdVec, DataBlock, DataBlock);
     void receiveStreamIndirectRequest(RequestMsg);
     void receiveStreamForwardRequest(RequestMsg);
+    void receiveStreamCommit(DynamicStreamSliceId);
   }
 
   LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectToL2Cache_ptr, m_responseFromL2Cache_ptr";
@@ -476,6 +478,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         } else if (in_msg.Type == CoherenceRequestType:STREAM_FLOW) {
           trigger(Event:STREAM_FLOW,
                   in_msg.addr, cache_entry, tbe);
+        } else if (in_msg.Type == CoherenceRequestType:STREAM_COMMIT) {
+          trigger(Event:STREAM_COMMIT,
+                  in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Type == CoherenceRequestType:STREAM_END) {
           trigger(Event:STREAM_END,
                   in_msg.addr, cache_entry, tbe);
@@ -556,7 +561,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   in_port(streamMigrateFromL2Cache_in, StreamMigrateRequestMsg, streamMigrateFromL2Cache, rank = 0) {
     if(streamMigrateFromL2Cache_in.isReady(clockEdge())) {
       peek(streamMigrateFromL2Cache_in,  StreamMigrateRequestMsg) {
-        se.receiveStreamMigrate(in_msg.Stream);
+        se.receiveStreamMigrate(in_msg.Stream, in_msg.IsCommit);
         Tick delay := streamMigrateFromL2Cache_in.dequeue(clockEdge());
         profileMsgDelay(3, ticksToCycles(delay));
       }
@@ -1170,6 +1175,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       se.receiveStreamFlow(in_msg.sliceIds.singleSliceId());
     }
   }
+  action(rscmt_receiveStreamCommit, "rscmt", desc="Receive the stream commit message") {
+    peek(L1RequestL2Network_in, RequestMsg) {
+      se.receiveStreamCommit(in_msg.sliceIds.singleSliceId());
+    }
+  }
   action(rse_receiveStreamEnd, "rse", desc="Receive the StreamEnd") {
     peek(L1RequestL2Network_in, RequestMsg) {
       se.receiveStreamEnd(in_msg.pkt);
@@ -1727,6 +1737,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, STREAM_FLOW) {
     rsf_receiveStreamFlow;
+    jj_popL1RequestQueue;
+  }
+
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, STREAM_COMMIT) {
+    rscmt_receiveStreamCommit;
     jj_popL1RequestQueue;
   }
 

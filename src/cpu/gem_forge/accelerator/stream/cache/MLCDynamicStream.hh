@@ -49,7 +49,7 @@ public:
   /**
    * Get where is the LLC stream is at the end of current allocated credits.
    */
-  virtual Addr getLLCStreamTailPAddr() const {
+  virtual Addr getLLCTailPAddr() const {
     panic("Should only call this on direct stream.");
   }
 
@@ -69,8 +69,14 @@ public:
   uint64_t getTailSliceIdx() const { return this->tailSliceIdx; }
 
   void receiveStreamRange(const DynamicStreamAddressRangePtr &range);
+  virtual void receiveStreamDone(const DynamicStreamSliceId &sliceId);
 
   void scheduleAdvanceStream();
+
+  /**
+   * Whether this stream requires range-based syncrhonization.
+   */
+  bool shouldRangeSync() const { return this->config->rangeSync; }
 
 protected:
   Stream *stream;
@@ -83,6 +89,7 @@ protected:
   MessageBuffer *responseMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;
   const uint64_t maxNumSlices;
+
   /**
    * Represent an allocated stream slice at MLC.
    * Used as a meeting point for the request from core

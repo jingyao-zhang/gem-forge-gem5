@@ -1,5 +1,6 @@
 
 #include "LLCStreamEngine.hh"
+#include "LLCStreamCommitController.hh"
 #include "LLCStreamRangeBuilder.hh"
 #include "MLCStreamEngine.hh"
 
@@ -44,6 +45,7 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       maxInflyRequestsPerStream(_controller->getLLCStreamMaxInflyRequest()),
       maxInqueueRequests(2), translationBuffer(nullptr) {
   this->controller->registerLLCStreamEngine(this);
+  this->commitController = m5::make_unique<LLCStreamCommitController>(this);
 }
 
 LLCStreamEngine::~LLCStreamEngine() { this->streams.clear(); }
@@ -71,6 +73,11 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
       "Configure DirectStream InitAllocatedSlice %d TotalTripCount %lld.\n",
       streamConfigureData->initAllocatedIdx, S->getTotalTripCount());
   S->configuredLLC(this->controller);
+
+  // Remember the stream to the CommitController if we have that.
+  if (S->shouldRangeSync()) {
+    this->commitController->registerStream(S);
+  }
 
   // Check if we have indirect streams.
   for (const auto &edge : streamConfigureData->depEdges) {
@@ -140,9 +147,21 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   delete pkt;
 }
 
-void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream) {
+void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream,
+                                           bool isCommit) {
 
   this->initializeTranslationBuffer();
+
+  /**
+   * Handle the case for commit migration.
+   */
+  if (isCommit) {
+    LLC_S_DPRINTF_(StreamRangeSync, stream->getDynamicStreamId(),
+                   "[Commit] Received migrate.\n");
+    this->commitController->registerStream(stream);
+    this->scheduleEvent(Cycles(1));
+    return;
+  }
 
   // Sanity check.
   Addr vaddr = stream->peekVAddr();
@@ -184,6 +203,18 @@ void LLCStreamEngine::receiveStreamFlow(const DynamicStreamSliceId &sliceId) {
                     sliceId.getStartIdx(), sliceId.getNumElements());
   this->pendingStreamFlowControlMsgs.push_back(sliceId);
   this->scheduleEvent(Cycles(1));
+}
+
+void LLCStreamEngine::receiveStreamCommit(const DynamicStreamSliceId &sliceId) {
+  LLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
+                     "Received stream commit [%llu, %llu).\n",
+                     sliceId.getStartIdx(), sliceId.getEndIdx());
+  auto dynS = LLCDynamicStream::getLLCStream(sliceId.elementRange.streamId);
+  if (!dynS) {
+    // The stream is already released.
+    return;
+  }
+  dynS->addCommitMessage(sliceId);
 }
 
 void LLCStreamEngine::receiveStreamElementDataVec(
@@ -515,6 +546,7 @@ void LLCStreamEngine::wakeup() {
   this->migrateStreams();
   this->startComputation();
   this->completeComputation();
+  this->commitController->commit();
 
   // So we limit the issue rate in issueStreams.
   while (!this->requestQueue.empty()) {
@@ -536,7 +568,8 @@ void LLCStreamEngine::wakeup() {
 
   if (!this->streams.empty() || !this->migratingStreams.empty() ||
       !this->requestQueue.empty() || !this->pendingStreamForwardMsgs.empty() ||
-      !this->incomingElementDataQueue.empty()) {
+      !this->incomingElementDataQueue.empty() ||
+      this->commitController->hasStreamToCommit()) {
     this->scheduleEvent(Cycles(1));
   }
 }
@@ -1584,6 +1617,16 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 
+void LLCStreamEngine::issueStreamDoneToMLC(const DynamicStreamSliceId &sliceId,
+                                           bool forceIdea) {
+
+  // For StreamDone, we do not care about the address?
+  auto paddrLine = 0;
+  auto msg = this->createStreamMsgToMLC(
+      sliceId, CoherenceResponseType_STREAM_DONE, paddrLine, nullptr, 0, 0);
+  this->issueStreamMsgToMLC(msg, forceIdea);
+}
+
 void LLCStreamEngine::issueStreamRangesToMLC() {
   if (!this->controller->isStreamRangeSyncEnabled()) {
     return;
@@ -1718,6 +1761,35 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   this->removeStreamFromMulticastTable(stream);
 
   stream->migratingStart();
+}
+
+void LLCStreamEngine::migrateStreamCommit(LLCDynamicStream *stream,
+                                          Addr paddr) {
+  // Create the migrate request.
+  Addr paddrLine = makeLineAddress(paddr);
+  auto selfMachineId = this->controller->getMachineID();
+  auto addrMachineId =
+      this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
+
+  LLC_S_DPRINTF_(StreamRangeSync, stream->getDynamicStreamId(),
+                 "[Commit] Migrate to LLC%d.\n", addrMachineId.num);
+
+  auto msg =
+      std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());
+  msg->m_addr = paddrLine;
+  msg->m_Type = CoherenceRequestType_STREAM_MIGRATE;
+  msg->m_Requestor = selfMachineId;
+  msg->m_Destination.add(addrMachineId);
+  // Migrating CommitHead is just a control message.
+  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_IsCommit = true;
+  msg->m_Stream = stream;
+
+  Cycles latency(1); // Just use 1 cycle latency here.
+
+  this->streamMigrateMsgBuffer->enqueue(
+      msg, this->controller->clockEdge(),
+      this->controller->cyclesToTicks(latency));
 }
 
 MachineID LLCStreamEngine::mapPaddrToLLCBank(Addr paddr) const {

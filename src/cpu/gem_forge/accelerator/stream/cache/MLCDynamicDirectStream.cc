@@ -14,6 +14,7 @@
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStreamBase.hh"
+#include "debug/StreamRangeSync.hh"
 
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
@@ -26,12 +27,11 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      llcTailSliceIdx(0), indirectStreams(_indirectStreams) {
+      indirectStreams(_indirectStreams) {
 
   // Initialize the llc bank.
   assert(_configData->initPAddrValid && "InitPAddr should be valid.");
   this->tailPAddr = _configData->initPAddr;
-  this->tailSliceLLCBank = this->mapPAddrToLLCBank(_configData->initPAddr);
 
   // Set the base stream for indirect streams.
   for (auto dynIS : this->indirectStreams) {
@@ -41,21 +41,23 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
   // Initialize the buffer for some slices.
   // Since the LLC is bounded by the credit, it's sufficient to only check
   // hasOverflowed() at MLC level.
-  while (this->tailSliceIdx < this->maxNumSlices &&
+  while (this->tailSliceIdx < this->maxNumSlices / 2 &&
          !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();
   }
 
-  this->llcTailSliceIdx = this->tailSliceIdx;
-  this->llcTailPAddr = this->tailPAddr;
-  this->llcTailSliceLLCBank = this->tailSliceLLCBank;
+  // Intialize the possible two segments.
+  this->pushNewLLCSegment(_configData->initPAddr, this->headSliceIdx,
+                          this->slices.front().sliceId);
 
   // Set the CacheStreamConfigureData to inform the LLC stream engine
   // initial credit.
-  _configData->initAllocatedIdx = this->llcTailSliceIdx;
+  _configData->initAllocatedIdx = this->tailSliceIdx;
 
   MLC_S_DPRINTF(this->dynamicStreamId, "InitAllocatedSlice %d overflowed %d.\n",
-                this->llcTailSliceIdx, this->slicedStream.hasOverflowed());
+                this->tailSliceIdx, this->slicedStream.hasOverflowed());
+
+  this->scheduleAdvanceStream();
 }
 
 void MLCDynamicDirectStream::advanceStream() {
@@ -81,22 +83,30 @@ void MLCDynamicDirectStream::advanceStream() {
                 indirectSlices, indirectSlicesThreshold);
   // Of course we need to allocate more slices.
   if (indirectSlices < indirectSlicesThreshold) {
-    while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
+
+    /**
+     * If we require range-sync, we can only release the slice after the segment
+     * is committed.
+     */
+    auto currentHeadSliceIdx = this->headSliceIdx;
+    if (this->shouldRangeSync()) {
+      for (const auto &segment : this->llcSegments) {
+        if (segment.state == LLCSegmentPosition::State::COMMITTED) {
+          continue;
+        }
+        // This is the fisrt segement that has not been committed.
+        currentHeadSliceIdx = segment.startSliceIdx;
+        if (currentHeadSliceIdx > this->headSliceIdx) {
+          MLC_S_PANIC(this->getDynamicStreamId(),
+                      "CommitHeadSliceIdx %llu > HeadSliceIdx %llu.",
+                      currentHeadSliceIdx, this->headSliceIdx);
+        }
+        break;
+      }
+    }
+
+    while (this->tailSliceIdx - currentHeadSliceIdx < this->maxNumSlices &&
            !this->hasOverflowed()) {
-      // Although wierd, do not allocate more slices than indirect stream to
-      // avoid running too much ahead.
-      // TODO: Make this more robustic.
-      // bool waitForIndirectStream = false;
-      // for (auto dynIS : this->indirectStreams) {
-      //   if (dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx() >
-      //       this->maxNumSlices * 8) {
-      //     waitForIndirectStream = true;
-      //     break;
-      //   }
-      // }
-      // if (waitForIndirectStream) {
-      //   break;
-      // }
       this->allocateSlice();
     }
   }
@@ -119,18 +129,19 @@ void MLCDynamicDirectStream::advanceStream() {
    * 2. The stream has overflowed.
    * 3. The llc stream is cutted.
    */
+  auto llcTailSliceIdx = this->getLLCTailSliceIdx();
   if (!this->llcCutted) {
     if (!this->slicedStream.hasOverflowed()) {
-      if (this->tailSliceIdx - this->llcTailSliceIdx > this->maxNumSlices / 2) {
+      if (this->tailSliceIdx - llcTailSliceIdx >= this->maxNumSlices / 2) {
         this->sendCreditToLLC();
       }
     } else {
-      if (this->tailSliceIdx > this->llcTailSliceIdx) {
+      if (this->tailSliceIdx > llcTailSliceIdx) {
         this->sendCreditToLLC();
       }
     }
   } else {
-    if (this->llcCutSliceIdx > this->llcTailSliceIdx) {
+    if (this->llcCutSliceIdx > llcTailSliceIdx) {
       this->sendCreditToLLC();
     }
   }
@@ -191,49 +202,51 @@ void MLCDynamicDirectStream::allocateSlice() {
 
   // Try to find where the LLC stream would be at this point.
   this->tailSliceIdx++;
+  this->tailSliceId = this->slicedStream.peekNextSlice();
   if (cpuDelegator->translateVAddrOracle(
           this->slicedStream.peekNextSlice().vaddr, paddr)) {
     // The next slice would be valid.
     this->tailPAddr = paddr;
-    this->tailSliceLLCBank = this->mapPAddrToLLCBank(paddr);
-
   } else {
     // This address is invalid.
-    // Do not update tailSliceLLCBank as the LLC stream would not move.
+    // Do not update tailPAddr as the LLC stream would not move.
   }
 }
 
 void MLCDynamicDirectStream::sendCreditToLLC() {
   /**
-   * The LLC stream will be at llcTailSliceLLCBank, and we need to
-   * update its credit and the new location is tailSliceLLCBank.
+   * We look at the last llc segment to determine where the stream is.
+   * And we push a new llc segment.
    *
    * This will not work for pointer chasing stream.
    */
-  assert(this->tailSliceIdx > this->llcTailSliceIdx &&
+  const auto &lastLLCSegment = this->getLastLLCSegment();
+  auto llcTailSliceIdx = lastLLCSegment.endSliceIdx;
+  auto llcTailPAddr = lastLLCSegment.endPAddr;
+  auto llcTailBank = this->mapPAddrToLLCBank(llcTailPAddr);
+  assert(this->tailSliceIdx > llcTailSliceIdx &&
          "Don't know where to send credit.");
 
   // Send the flow control.
-  MLC_S_DPRINTF(
-      this->dynamicStreamId, "Extended %lu -> %lu, sent credit to LLC%d.\n",
-      this->llcTailSliceIdx, this->tailSliceIdx, this->llcTailSliceLLCBank.num);
+  MLC_S_DPRINTF(this->dynamicStreamId,
+                "Extended %lu -> %lu, sent credit to LLC%d.\n", llcTailSliceIdx,
+                this->tailSliceIdx, llcTailBank.num);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = this->llcTailPAddr;
+  msg->m_addr = llcTailPAddr;
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;
   msg->m_XXNewRewquestor.add(this->controller->getMachineID());
-  msg->m_Destination.add(this->llcTailSliceLLCBank);
+  msg->m_Destination.add(llcTailBank);
   msg->m_MessageSize = MessageSizeType_Control;
   DynamicStreamSliceId sliceId;
   sliceId.getDynStreamId() = this->dynamicStreamId;
-  sliceId.getStartIdx() = this->llcTailSliceIdx;
+  sliceId.getStartIdx() = llcTailSliceIdx;
   sliceId.getEndIdx() = this->tailSliceIdx;
   msg->m_sliceIds.add(sliceId);
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
   if (this->controller->isStreamIdeaFlowEnabled()) {
-    auto llcController =
-        this->controller->getController(this->llcTailSliceLLCBank);
+    auto llcController = this->controller->getController(llcTailBank);
     auto llcSE = llcController->getLLCStreamEngine();
     llcSE->receiveStreamFlow(sliceId);
   } else {
@@ -242,10 +255,10 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
         this->controller->cyclesToTicks(latency));
   }
 
-  // Update the record.
-  this->llcTailSliceIdx = this->tailSliceIdx;
-  this->llcTailPAddr = this->tailPAddr;
-  this->llcTailSliceLLCBank = this->tailSliceLLCBank;
+  // Push a new segment.
+  const auto &lastSegment = this->getLastLLCSegment();
+  this->pushNewLLCSegment(llcTailPAddr, lastSegment.endSliceIdx,
+                          lastSegment.endSliceId);
 }
 
 void MLCDynamicDirectStream::receiveStreamData(
@@ -501,4 +514,148 @@ void MLCDynamicDirectStream::receiveReuseStreamData(
    * TODO: The current implementation may have multiple reuses, in
    * TODO: the boundary cases when streams overlapped.
    */
+}
+
+std::string
+MLCDynamicDirectStream::LLCSegmentPosition::stateToString(const State state) {
+#define Case(x)                                                                \
+  case x:                                                                      \
+    return #x
+  switch (state) {
+  default:
+    panic("Unknown MLCDynamicDirectStream::LLCSegmentPosition::State %d.",
+          state);
+    Case(ALLOCATED);
+    Case(COMMITTING);
+    Case(COMMITTED);
+  }
+#undef Case
+}
+
+void MLCDynamicDirectStream::pushNewLLCSegment(
+    Addr startPAddr, uint64_t startSliceIdx,
+    const DynamicStreamSliceId &startSliceId) {
+  this->llcSegments.emplace_back();
+  auto &segment = this->llcSegments.back();
+  segment.startPAddr = startPAddr;
+  segment.startSliceIdx = startSliceIdx;
+  segment.startSliceId = startSliceId;
+  segment.endPAddr = this->tailPAddr;
+  segment.endSliceId = this->tailSliceId;
+  segment.endSliceIdx = this->tailSliceIdx;
+  segment.state = LLCSegmentPosition::State::ALLOCATED;
+  MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(),
+                 "[Commit] Push new LLC segment SliceIdx [%llu, %llu) "
+                 "ElementIdx [%llu, %llu).\n",
+                 segment.startSliceIdx, segment.endSliceIdx,
+                 segment.startSliceId.getStartIdx(),
+                 segment.endSliceId.getStartIdx());
+}
+
+MLCDynamicDirectStream::LLCSegmentPosition &
+MLCDynamicDirectStream::getLastLLCSegment() {
+  if (this->llcSegments.empty()) {
+    MLC_S_PANIC(this->getDynamicStreamId(), "Missing Last LLCSegment.");
+  }
+  return this->llcSegments.back();
+}
+
+const MLCDynamicDirectStream::LLCSegmentPosition &
+MLCDynamicDirectStream::getLastLLCSegment() const {
+  if (this->llcSegments.empty()) {
+    MLC_S_PANIC(this->getDynamicStreamId(), "Missing Last LLCSegment.");
+  }
+  return this->llcSegments.back();
+}
+
+void MLCDynamicDirectStream::checkCoreCommitProgress() {
+  auto dynS =
+      this->getStaticStream()->getDynamicStream(this->getDynamicStreamId());
+  if (!dynS) {
+    return;
+  }
+  auto firstCoreElement = dynS->getFirstElement();
+  if (!firstCoreElement) {
+    MLC_S_PANIC(this->getDynamicStreamId(),
+                "Failed to find first core element.");
+  }
+  auto firstCoreElementIdx = firstCoreElement->FIFOIdx.entryIdx;
+  for (auto &llcSegment : this->llcSegments) {
+    if (llcSegment.endSliceId.getStartIdx() > firstCoreElementIdx) {
+      // This segment contains an element that has not been committed yet.
+      break;
+    }
+    // This segment has been committed in core.
+    if (llcSegment.state == LLCSegmentPosition::State::ALLOCATED) {
+      // Send out StreamCommit message to LLC bank.
+      this->sendCommitToLLC(llcSegment);
+      llcSegment.state = LLCSegmentPosition::State::COMMITTING;
+    }
+  }
+  // As a final touch, we release segment if we are done.
+  while (this->llcSegments.size() > 1 &&
+         this->llcSegments.front().state ==
+             LLCSegmentPosition::State::COMMITTED) {
+    this->llcSegments.pop_front();
+  }
+}
+
+void MLCDynamicDirectStream::sendCommitToLLC(
+    const LLCSegmentPosition &segment) {
+
+  auto llcPAddr = segment.startPAddr;
+  auto llcBank = this->mapPAddrToLLCBank(llcPAddr);
+
+  // Send the commit control.
+  MLC_S_DPRINTF_(StreamRangeSync, this->dynamicStreamId,
+                 "[Range] Commit [%llu, %lu), to LLC%d.\n",
+                 segment.startSliceId.getStartIdx(),
+                 segment.endSliceId.getStartIdx(), llcBank.num);
+  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  msg->m_addr = llcPAddr;
+  msg->m_Type = CoherenceRequestType_STREAM_COMMIT;
+  msg->m_XXNewRewquestor.add(this->controller->getMachineID());
+  msg->m_Destination.add(llcBank);
+  msg->m_MessageSize = MessageSizeType_Control;
+  DynamicStreamSliceId sliceId;
+  sliceId.getDynStreamId() = this->dynamicStreamId;
+  sliceId.getStartIdx() = segment.startSliceId.getStartIdx();
+  sliceId.getEndIdx() = segment.endSliceId.getStartIdx();
+  msg->m_sliceIds.add(sliceId);
+
+  Cycles latency(1); // Just use 1 cycle latency here.
+
+  if (this->controller->isStreamIdeaFlowEnabled()) {
+    auto llcController = this->controller->getController(llcBank);
+    auto llcSE = llcController->getLLCStreamEngine();
+    llcSE->receiveStreamCommit(sliceId);
+  } else {
+    this->requestToLLCMsgBuffer->enqueue(
+        msg, this->controller->clockEdge(),
+        this->controller->cyclesToTicks(latency));
+  }
+}
+
+void MLCDynamicDirectStream::receiveStreamDone(
+    const DynamicStreamSliceId &sliceId) {
+  // Search for the segment.
+  for (auto &segment : this->llcSegments) {
+    if (segment.startSliceId.getStartIdx() == sliceId.getStartIdx() &&
+        segment.endSliceId.getStartIdx() == sliceId.getEndIdx()) {
+      // Found the segment.
+      if (segment.state != LLCSegmentPosition::State::COMMITTING) {
+        MLC_S_PANIC(this->getDynamicStreamId(),
+                    "Receive StreamDone when we are not committing.");
+      }
+      segment.state = LLCSegmentPosition::State::COMMITTED;
+      this->scheduleAdvanceStream();
+      for (auto dynIS : this->indirectStreams) {
+        dynIS->scheduleAdvanceStream();
+      }
+      return;
+    }
+  }
+  MLC_S_PANIC(this->getDynamicStreamId(),
+              "Failed to find the LLCSegment for StreamDone [%llu, %llu).",
+              sliceId.getStartIdx(), sliceId.getEndIdx());
 }

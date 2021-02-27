@@ -21,12 +21,22 @@ public:
   /**
    * Get where is the LLC stream is at the end of current allocated credits.
    */
-  Addr getLLCStreamTailPAddr() const override { return this->llcTailPAddr; }
+  Addr getLLCTailPAddr() const override {
+    return this->getLastLLCSegment().endPAddr;
+  }
 
   void receiveStreamData(const DynamicStreamSliceId &sliceId,
                          const DataBlock &dataBlock, Addr paddrLine) override;
   void receiveReuseStreamData(Addr vaddr, const DataBlock &dataBlock);
   void setLLCCutLineVAddr(Addr vaddr) { this->llcCutLineVAddr = vaddr; }
+
+  void receiveStreamDone(const DynamicStreamSliceId &sliceId) override;
+
+  /**
+   * Check the core's commit progress and send out StreamCommit message to
+   * LLC banks.
+   */
+  void checkCoreCommitProgress();
 
 protected:
   SlicedDynamicStream slicedStream;
@@ -40,13 +50,35 @@ protected:
 
   // Where the LLC stream would be at tailSliceIdx.
   Addr tailPAddr;
-  MachineID tailSliceLLCBank;
+  DynamicStreamSliceId tailSliceId;
 
-  // Where the LLC stream's tail index is.
-  uint64_t llcTailSliceIdx;
-  // Where the LLC stream currently would be, given the credit limit.
-  Addr llcTailPAddr;
-  MachineID llcTailSliceLLCBank;
+  struct LLCSegmentPosition {
+    /**
+     * Remember the start and end position in LLC banks.
+     */
+    Addr startPAddr = 0;
+    Addr endPAddr = 0;
+    uint64_t startSliceIdx = 0;
+    uint64_t endSliceIdx = 0;
+    DynamicStreamSliceId startSliceId;
+    DynamicStreamSliceId endSliceId;
+    enum State {
+      ALLOCATED = 0,
+      COMMITTING,
+      COMMITTED,
+    };
+    State state = State::ALLOCATED;
+    static std::string stateToString(const State state);
+  };
+  std::list<LLCSegmentPosition> llcSegments;
+
+  void pushNewLLCSegment(Addr startPAddr, uint64_t startSliceIdx,
+                         const DynamicStreamSliceId &startSliceId);
+  LLCSegmentPosition &getLastLLCSegment();
+  const LLCSegmentPosition &getLastLLCSegment() const;
+  uint64_t getLLCTailSliceIdx() const {
+    return this->getLastLLCSegment().endSliceIdx;
+  }
 
   std::unordered_map<Addr, DataBlock> reuseBlockMap;
 
@@ -69,9 +101,14 @@ protected:
   void allocateSlice();
 
   /**
-   * Send credit to the LLC stream. Update the llcTailSliceIdx.
+   * Send credit to the LLC stream. Enqueue a new segment.
    */
   void sendCreditToLLC();
+
+  /**
+   * Send commit message to the LLC stream.
+   */
+  void sendCommitToLLC(const LLCSegmentPosition &segment);
 
   /**
    * Notify the indirect stream that I have data.

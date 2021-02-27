@@ -289,6 +289,13 @@ bool DynamicStream::shouldCoreSEIssue() const {
   return true;
 }
 
+bool DynamicStream::shouldRangeSync() const {
+  if (!this->stream->se->isStreamRangeSyncEnabled()) {
+    return false;
+  }
+  return !this->shouldCoreSEIssue();
+}
+
 StreamElement *DynamicStream::getElementByIdx(uint64_t elementIdx) const {
   for (auto element = this->tail->next; element != nullptr;
        element = element->next) {
@@ -487,6 +494,10 @@ int32_t DynamicStream::getBytesPerMemElement() const {
 
 void DynamicStream::receiveStreamRange(
     const DynamicStreamAddressRangePtr &range) {
+  if (!this->shouldRangeSync()) {
+    DYN_S_PANIC(this->dynamicStreamId,
+                "Receive StreamRange but RangeSync is not required.");
+  }
   auto iter = this->receivedRanges.begin();
   auto end = this->receivedRanges.end();
   while (iter != end) {

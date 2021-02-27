@@ -23,18 +23,18 @@
 MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_responseToUpperMsgBuffer,
                                  MessageBuffer *_requestToLLCMsgBuffer)
-    : controller(_controller),
+    : Consumer(_controller), controller(_controller),
       responseToUpperMsgBuffer(_responseToUpperMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer) {
   this->controller->registerMLCStreamEngine(this);
 }
 
 MLCStreamEngine::~MLCStreamEngine() {
-  for (auto &stream : this->streams) {
-    delete stream;
-    stream = nullptr;
+  for (auto &idStream : this->idToStreamMap) {
+    delete idStream.second;
+    idStream.second = nullptr;
   }
-  this->streams.clear();
+  this->idToStreamMap.clear();
 }
 
 void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
@@ -52,6 +52,11 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   // Release the configure vec.
   delete streamConfigs;
   delete pkt;
+
+  if (this->controller->isStreamRangeSyncEnabled()) {
+    // Enable the range check.
+    this->scheduleEvent(Cycles(1));
+  }
 }
 
 void MLCStreamEngine::configureStream(
@@ -164,7 +169,7 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
   auto rootStreamIter = this->idToStreamMap.find(endId);
   assert(rootStreamIter != this->idToStreamMap.end() &&
          "Failed to find the ending root stream.");
-  Addr rootLLCStreamPAddr = rootStreamIter->second->getLLCStreamTailPAddr();
+  Addr rootLLCStreamPAddr = rootStreamIter->second->getLLCTailPAddr();
 
   // End all streams with the correct root stream id (indirect streams).
   for (auto streamIter = this->idToStreamMap.begin(),
@@ -236,6 +241,19 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
     } else {
       MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
                          "[Range] Discard old range: %s.\n", *msg.m_range);
+    }
+    return;
+  }
+  if (msg.m_Type == CoherenceResponseType_STREAM_DONE) {
+    auto sliceId = msg.m_sliceIds.singleSliceId();
+    auto stream = this->getStreamFromDynamicId(sliceId.getDynStreamId());
+    if (stream) {
+      MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
+                         "[Commit] Receive StreamDone.\n");
+      stream->receiveStreamDone(sliceId);
+    } else {
+      MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
+                         "[Commit] Receive StreamDone.\n");
     }
     return;
   }
@@ -477,3 +495,22 @@ void MLCStreamEngine::reuseSlice(const DynamicStreamSliceId &sliceId,
     streamId = targetStreamId;
   }
 }
+
+void MLCStreamEngine::wakeup() {
+  if (!this->controller->isStreamRangeSyncEnabled()) {
+    return;
+  }
+  for (auto &idStream : this->idToStreamMap) {
+    auto S = dynamic_cast<MLCDynamicDirectStream *>(idStream.second);
+    if (!S || !S->shouldRangeSync()) {
+      continue;
+    }
+    S->checkCoreCommitProgress();
+  }
+  if (!this->idToStreamMap.empty()) {
+    // Recheck next cycle.
+    this->scheduleEvent(Cycles(1));
+  }
+}
+
+void MLCStreamEngine::print(std::ostream &out) const {}
