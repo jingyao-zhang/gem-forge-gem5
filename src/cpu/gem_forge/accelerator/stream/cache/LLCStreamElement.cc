@@ -2,28 +2,33 @@
 
 #include "mem/simple_mem.hh"
 
+#include "LLCDynamicStream.hh"
+
 #include "debug/LLCRubyStreamBase.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
-LLCStreamElement::LLCStreamElement(Stream *_S,
-                                   AbstractStreamAwareController *_controller,
-                                   const DynamicStreamId &_dynStreamId,
-                                   uint64_t _idx, Addr _vaddr, int _size)
-    : S(_S), controller(_controller), dynStreamId(_dynStreamId), idx(_idx),
-      size(_size), vaddr(_vaddr), readyBytes(0) {
+LLCStreamElement::LLCStreamElement(
+    Stream *_S, AbstractStreamAwareController *_mlcController,
+    const DynamicStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr, int _size)
+    : S(_S), mlcController(_mlcController), dynStreamId(_dynStreamId),
+      idx(_idx), size(_size), vaddr(_vaddr), readyBytes(0) {
   if (this->size > sizeof(this->value)) {
     panic("LLCStreamElement size overflow %d, %s.\n", this->size,
           this->dynStreamId);
   }
-  if (!this->controller) {
-    panic("LLCStreamElement allocated without controller.\n");
+  if (!this->mlcController) {
+    panic("LLCStreamElement allocated without MLCController.\n");
   }
   this->value.fill(0);
 }
 
 int LLCStreamElement::curLLCBank() const {
-  return this->controller->getMachineID().getNum();
+  /**
+   * So far we don't have a good definition of the current LLC bank for an
+   * element.
+   */
+  return -1;
 }
 
 StreamValue LLCStreamElement::getValue(int offset, int size) const {
@@ -118,7 +123,7 @@ void LLCStreamElement::extractElementDataFromSlice(
       sliceId, "Received element %lu size %d Overlap [%lu, %lu).\n", elementIdx,
       elementSize, elementOffset, elementOffset + overlapSize);
 
-  auto rubySystem = this->controller->params()->ruby_system;
+  auto rubySystem = this->mlcController->params()->ruby_system;
   if (rubySystem->getAccessBackingStore()) {
     // Get the data from backing store.
     Addr paddr;
@@ -145,4 +150,13 @@ void LLCStreamElement::extractElementDataFromSlice(
         elementIdx, elementOffset, elementOffset + overlapSize,
         this->readyBytes, this->size);
   }
+}
+
+void LLCStreamElement::addSlice(LLCStreamSlicePtr &slice) {
+  if (this->numSlices >= MAX_SLICES_PER_ELEMENT) {
+    LLC_SLICE_PANIC(slice->getSliceId(), "Element -> Slices overflow.");
+  }
+  LLC_ELEMENT_DPRINTF(this, "Register slice %s.\n", slice->getSliceId());
+  this->slices[this->numSlices] = slice;
+  this->numSlices++;
 }

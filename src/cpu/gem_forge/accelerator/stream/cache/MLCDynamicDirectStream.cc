@@ -243,6 +243,13 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
   sliceId.getEndIdx() = this->tailSliceIdx;
   msg->m_sliceIds.add(sliceId);
 
+  /**
+   * Immediately initialize all the LLCStreamSlices and LLCStreamElements to
+   * simplify the implementation.
+   */
+  auto llcS = LLCDynamicStream::getLLCStreamPanic(this->getDynamicStreamId());
+  llcS->initDirectStreamSlicesUntil(this->tailSliceIdx);
+
   Cycles latency(1); // Just use 1 cycle latency here.
 
   if (this->controller->isStreamIdeaFlowEnabled()) {

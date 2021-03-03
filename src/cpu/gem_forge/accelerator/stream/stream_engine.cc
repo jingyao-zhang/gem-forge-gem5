@@ -494,9 +494,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
         }
       }
     }
-    // Check for unoffloaded ReductionStream. The next steped element should be
-    // ValueReady.
-    if (S->isReduction() && !dynS.offloadedToCache) {
+    if (S->isReduction()) {
       auto stepNextElement = stepElement->next;
       if (!stepNextElement) {
         if (stepElement->FIFOIdx.entryIdx == 0) {
@@ -513,8 +511,23 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
             "No StepNextElement for ReductionStream, TotalTripCount %llu.\n",
             dynS.getTotalTripCount());
       }
-      if (!stepNextElement->isValueReady) {
-        return false;
+      if (dynS.offloadedToCache) {
+        // // If offloaded, we avoid the core commit too fast, as that would
+        // // trigger our deadlock check.
+        // if (stepElement->FIFOIdx.entryIdx > 50) {
+        //   if (auto llcDynS =
+        //           LLCDynamicStream::getLLCStream(dynS.dynamicStreamId)) {
+        //     if (!llcDynS->isElementReleased(stepElement->FIFOIdx.entryIdx -
+        //                                     50)) {
+        //       return false;
+        //     }
+        //   }
+        // }
+      } else {
+        // If not offloaded, The next steped element should be ValueReady.
+        if (!stepNextElement->isValueReady) {
+          return false;
+        }
       }
     }
     if (S->isLoadStream() && !dynS.offloadedToCache && !S->hasCoreUser() &&

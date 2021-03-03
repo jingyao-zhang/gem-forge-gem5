@@ -8,6 +8,7 @@
 #include "mem/ruby/protocol/CoherenceRequestType.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
+#include <deque>
 #include <list>
 #include <map>
 #include <set>
@@ -91,10 +92,12 @@ public:
     return this->multicastGroupLeader;
   }
 
-  Addr peekVAddr() const;
-  const DynamicStreamSliceId &peekSlice() const;
   Addr getElementVAddr(uint64_t elementIdx) const;
   bool translateToPAddr(Addr vaddr, Addr &paddr) const;
+
+  void addCredit(uint64_t n);
+
+  DynamicStreamSliceId initNextSlice();
 
   /**
    * Check if the next element is allocated in the upper cache level's stream
@@ -102,17 +105,12 @@ public:
    * Used for flow control.
    */
   bool isNextSliceAllocated() const {
-    return this->sliceIdx < this->allocatedSliceIdx;
+    return this->nextAllocSliceIdx < this->allocatedSliceIdx;
   }
-  uint64_t getNextSliceIdx() const { return this->sliceIdx; }
-
-  void addCredit(uint64_t n);
-
-  DynamicStreamSliceId consumeNextSlice() {
-    assert(this->isNextSliceAllocated() && "Next slice is not allocated yet.");
-    this->sliceIdx++;
-    return this->slicedStream.getNextSlice();
-  }
+  uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
+  Addr peekNextAllocVAddr() const;
+  LLCStreamSlicePtr getNextAllocSlice() const;
+  DynamicStreamSliceId allocNextSlice();
 
   void
   traceEvent(const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type);
@@ -219,6 +217,9 @@ private:
   std::set<uint64_t> readyToIssueElements;
   uint64_t numIndirectElementsReadyToIssue = 0;
 
+  Addr peekNextInitVAddr() const;
+  const DynamicStreamSliceId &peekNextInitSliceId() const;
+
 public:
   const CacheStreamConfigureDataPtr configData;
   SlicedDynamicStream slicedStream;
@@ -276,10 +277,12 @@ public:
    */
   LLCDynamicStream *multicastGroupLeader = nullptr;
 
-  // Next slice index to be issued.
-  uint64_t sliceIdx;
   // For flow control.
   uint64_t allocatedSliceIdx;
+  // Next slice index to be issued.
+  uint64_t nextAllocSliceIdx = 0;
+  // For initialization control.
+  uint64_t nextInitSliceIdx = 0;
 
   /**
    * Number of requests of this stream (not including indirect streams)
@@ -315,12 +318,11 @@ public:
   void sanityCheckStreamLife();
 
   /**
-   * Allocate the element for myself and all UsedByStream.
-   * There may already be an element if multiple slices
-   * contain a part of that element.
-   * @return bool: whether allocation happened.
+   * When the MLCStreamEngine sends out credits, we initialize
+   * all slices immediately to simplify the implementation.
    */
-  bool allocateElement(uint64_t elementIdx, Addr vaddr);
+  void initDirectStreamSlicesUntil(uint64_t lastSliceIdx);
+
   bool isElementReleased(uint64_t elementIdx) const;
   LLCStreamElementPtr getElement(uint64_t elementIdx);
   LLCStreamElementPtr getElementPanic(uint64_t elementIdx,
@@ -334,14 +336,22 @@ public:
   void eraseElementOlderThan(uint64_t elementIdx);
 
 private:
+  std::deque<LLCStreamSlicePtr> slices;
+
   /************************************************************************
    * State related to StreamCommit.
    * Pending StreamCommit messages.
    ************************************************************************/
   std::list<DynamicStreamSliceId> commitMessages;
-  uint64_t nextAllocateElementIdx = 0;
+  uint64_t nextInitElementIdx = 0;
   uint64_t nextCommitElementIdx = 0;
   LLCStreamCommitController *commitController = nullptr;
+
+  /**
+   * Initialize the element for myself and all UsedByStream.
+   * @return bool: whether allocation happened.
+   */
+  bool initNextElement(Addr vaddr);
 
   /**
    * Commit one element for myself and all the indirect streams.

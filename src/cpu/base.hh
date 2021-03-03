@@ -91,7 +91,7 @@ class CPUProgressEvent : public Event
     Counter lastNumInst;
     BaseCPU *cpu;
     bool _repeatEvent;
-    bool _stucked;
+    int _stucked;
 
   public:
     CPUProgressEvent(BaseCPU *_cpu, Tick ival = 0);

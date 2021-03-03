@@ -1,6 +1,8 @@
 #ifndef __CPU_TDG_ACCELERATOR_LLC_STREAM_ELEMENT_H__
 #define __CPU_TDG_ACCELERATOR_LLC_STREAM_ELEMENT_H__
 
+#include "LLCStreamSlice.hh"
+
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "mem/ruby/common/DataBlock.hh"
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
@@ -19,12 +21,12 @@ public:
    * remote LLCDynamicStream sending here, we do not remember LLCDynamicStream
    * in the element, but just the DynamicStreamId and the StaticStream.
    */
-  LLCStreamElement(Stream *_S, AbstractStreamAwareController *_controller,
+  LLCStreamElement(Stream *_S, AbstractStreamAwareController *_mlcController,
                    const DynamicStreamId &_dynStreamId, uint64_t _idx,
                    Addr _vaddr, int _size);
 
   Stream *S;
-  AbstractStreamAwareController *controller;
+  AbstractStreamAwareController *mlcController;
   const DynamicStreamId &dynStreamId;
   const uint64_t idx;
   const int size;
@@ -87,11 +89,18 @@ public:
   int computeOverlap(Addr rangeVAddr, int rangeSize, int &rangeOffset,
                      int &elementOffset) const;
 
+  void addSlice(LLCStreamSlicePtr &slice);
+  int getNumSlices() const { return this->numSlices; }
+
 private:
   int readyBytes;
   bool computationScheduled = false;
   static constexpr int MAX_SIZE = 128;
   std::array<uint64_t, MAX_SIZE> value;
+
+  static constexpr int MAX_SLICES_PER_ELEMENT = 2;
+  std::array<LLCStreamSlicePtr, MAX_SLICES_PER_ELEMENT> slices;
+  int numSlices = 0;
 };
 
 #endif

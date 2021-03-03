@@ -120,7 +120,7 @@ void MLCDynamicStream::popStream() {
     if (auto llcDynS =
             LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
       llcProgressElementIdx =
-          std::min(llcDynS->getNextSliceIdx(), llcProgressElementIdx);
+          std::min(llcDynS->getNextAllocSliceIdx(), llcProgressElementIdx);
     } else {
       // The LLC stream has not been created.
       llcProgressElementIdx = 0;
@@ -130,7 +130,7 @@ void MLCDynamicStream::popStream() {
         if (auto llcDynS =
                 LLCDynamicStream::getLLCStream(depEdge.data->dynamicId)) {
           llcProgressElementIdx =
-              std::min(llcDynS->getNextSliceIdx(), llcProgressElementIdx);
+              std::min(llcDynS->getNextAllocSliceIdx(), llcProgressElementIdx);
         } else {
           // The LLC stream has not been created.
           llcProgressElementIdx = 0;

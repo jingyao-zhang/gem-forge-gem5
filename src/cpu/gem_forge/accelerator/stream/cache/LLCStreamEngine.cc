@@ -164,7 +164,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream,
   }
 
   // Sanity check.
-  Addr vaddr = stream->peekVAddr();
+  Addr vaddr = stream->peekNextAllocVAddr();
   Addr paddr;
   assert(stream->translateToPAddr(vaddr, paddr) &&
          "Paddr should always be valid to migrate a stream.");
@@ -455,7 +455,7 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
    * to the previous element. Therefore, we do not need to check if the next
    * element is allocated.
    */
-  auto nextVAddr = stream->peekVAddr();
+  auto nextVAddr = stream->peekNextAllocVAddr();
   Addr nextPAddr;
   if (!stream->translateToPAddr(nextVAddr, nextPAddr)) {
     // If the address is faulted, we stay here.
@@ -785,8 +785,8 @@ bool LLCStreamEngine::canIssueByMulticastPolicy(
 void LLCStreamEngine::sortMulticastGroup(StreamVec &group) const {
   auto comparator = [this](const LLCDynamicStreamPtr &SA,
                            const LLCDynamicStreamPtr &SB) -> bool {
-    auto sliceIdxA = SA->getNextSliceIdx();
-    auto sliceIdxB = SB->getNextSliceIdx();
+    auto sliceIdxA = SA->getNextAllocSliceIdx();
+    auto sliceIdxB = SB->getNextAllocSliceIdx();
     if (sliceIdxA != sliceIdxB) {
       return sliceIdxA < sliceIdxB;
     }
@@ -812,8 +812,9 @@ void LLCStreamEngine::sortMulticastGroup(StreamVec &group) const {
     DPRINTF(LLCRubyStreamMulticast, "Sorted MulticastGroup:---\n");
     for (auto &dynS : group) {
       LLC_S_DPRINTF_(LLCRubyStreamMulticast, dynS->getDynamicStreamId(),
-                     "NextSliceIdx %lu, Allocated %d.\n",
-                     dynS->getNextSliceIdx(), dynS->isNextSliceAllocated());
+                     "NextAllocSliceIdx %lu, Allocated %d.\n",
+                     dynS->getNextAllocSliceIdx(),
+                     dynS->isNextSliceAllocated());
     }
     DPRINTF(LLCRubyStreamMulticast, "---\n");
   }
@@ -825,7 +826,7 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
   auto &group = this->getMulticastGroup(targetDynS);
 
   const auto &targetSliceId = reqIter->sliceId;
-  auto targetSliceIdx = targetDynS->getNextSliceIdx();
+  auto targetSliceIdx = targetDynS->getNextAllocSliceIdx();
   assert(targetSliceIdx > 0 &&
          "DynS should have positive NextSliceIdx as it generated reqIter.");
   LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast, targetSliceId,
@@ -841,16 +842,16 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
       // Not allocated, skip this one.
       continue;
     }
-    if (dynS->getNextSliceIdx() + 1 < targetSliceIdx) {
+    if (dynS->getNextAllocSliceIdx() + 1 < targetSliceIdx) {
       // This is behind stream, skip it.
       continue;
     }
-    if (dynS->getNextSliceIdx() + 1 > targetSliceIdx) {
+    if (dynS->getNextAllocSliceIdx() + 1 > targetSliceIdx) {
       // This is future stream, we are done.
       break;
     }
     // Found a multicast stream candidate.
-    auto sliceId = dynS->consumeNextSlice();
+    auto sliceId = dynS->allocNextSlice();
     // Sanity check for multicast slices.
     if (sliceId.vaddr != targetSliceId.vaddr) {
       LLC_SLICE_PANIC(sliceId, "Mismatch VAddr %#x for Multicast Slice %#x.",
@@ -863,11 +864,6 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
 
     auto SS = dynS->getStaticStream();
     SS->statistic.numLLCIssueSlice++;
-
-    // Register the elements.
-    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-      dynS->allocateElement(idx, dynS->slicedStream.getElementVAddr(idx));
-    }
 
     // Add this to the request.
     auto reqType = this->getDirectStreamReqType(dynS);
@@ -1043,11 +1039,15 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
    * Additional check on StoreStream, which should have StoreValue ready.
    */
   if (S->isStoreComputeStream() || S->isAtomicComputeStream()) {
-    const auto &nextSliceId = dynS->peekSlice();
+    auto nextSlice = dynS->getNextAllocSlice();
+    if (!nextSlice) {
+      LLC_S_PANIC(dynS->getDynamicStreamId(),
+                  "Failed to get next alloc slice.");
+    }
+    const auto &nextSliceId = nextSlice->getSliceId();
     for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
          ++idx) {
-      dynS->allocateElement(idx, dynS->slicedStream.getElementVAddr(idx));
-      auto &element = dynS->idxToElementMap.at(idx);
+      auto element = dynS->getElementPanic(idx, "Check StoreValue Ready.");
       if (S->isStoreComputeStream() && !element->isReady()) {
         // Simply schedule the computation.
         if (element->areBaseElementsReady() &&
@@ -1070,7 +1070,7 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
    *
    * In case of faulting, the slice will be skipped (see issueDirectStream()).
    */
-  Addr vaddr = dynS->peekVAddr();
+  Addr vaddr = dynS->peekNextAllocVAddr();
   Addr paddr;
   if (dynS->translateToPAddr(vaddr, paddr)) {
     if (!this->isPAddrHandledByMe(paddr)) {
@@ -1130,7 +1130,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
   auto &statistic = S->statistic;
 
   // Get the next address.
-  Addr vaddr = dynS->peekVAddr();
+  Addr vaddr = dynS->peekNextAllocVAddr();
   Addr paddr;
   if (dynS->translateToPAddr(vaddr, paddr)) {
 
@@ -1143,13 +1143,8 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
                   "Next address is not handled here %#x.", paddr);
     }
 
-    auto sliceId = dynS->consumeNextSlice();
+    auto sliceId = dynS->allocNextSlice();
     statistic.numLLCIssueSlice++;
-
-    // Register the elements.
-    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-      dynS->allocateElement(idx, dynS->slicedStream.getElementVAddr(idx));
-    }
 
     // Push to the request queue.
     auto reqType = this->getDirectStreamReqType(dynS);
@@ -1216,7 +1211,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
     /**
      * ! The paddr is not valid. We ignore this slice.
      */
-    auto sliceId = dynS->consumeNextSlice();
+    auto sliceId = dynS->allocNextSlice();
     LLC_SLICE_DPRINTF(sliceId, "Discard due to fault.\n");
 
     assert(dynS->getIndStreams().empty() &&
@@ -1769,7 +1764,7 @@ void LLCStreamEngine::migrateStreams() {
 void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
 
   // Create the migrate request.
-  Addr vaddr = stream->peekVAddr();
+  Addr vaddr = stream->peekNextAllocVAddr();
   Addr paddr;
   assert(stream->translateToPAddr(vaddr, paddr) &&
          "Migrating streams should have valid paddr.");

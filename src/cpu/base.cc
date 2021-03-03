@@ -87,7 +87,7 @@ int maxThreadsPerCPU = 1;
 
 CPUProgressEvent::CPUProgressEvent(BaseCPU *_cpu, Tick ival)
     : Event(Event::Progress_Event_Pri), _interval(ival), lastNumInst(0),
-      cpu(_cpu), _repeatEvent(true), _stucked(false)
+      cpu(_cpu), _repeatEvent(true), _stucked(0)
 {
     if (_interval)
         cpu->schedule(this, curTick() + _interval);
@@ -108,16 +108,13 @@ CPUProgressEvent::process()
     // ! Hack some deadlock check here.
     if (cpu->shouldCheckDeadlock() && cpu->cpuId() == 0 &&
         temp == lastNumInst) {
-        if (!this->_stucked) {
-            // Enable the debug flag after we found deadlock.
-            // Debug::MinorExecute.enable();
-            this->_stucked = true;
-        } else {
+        if (this->_stucked == 2) {
             panic("Deadlock in CPU %d! LastCommit at %llu\n",
                 cpu->cpuId(), cpu->getLastCommitTick());
         }
+        this->_stucked++;
     } else {
-        this->_stucked = false;
+        this->_stucked = 0;
     }
 
 
