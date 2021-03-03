@@ -57,7 +57,7 @@ LLCDynamicStream::LLCDynamicStream(
     // Initialize the first element for ReductionStream with the initial value.
     assert(this->isOneIterationBehind() &&
            "ReductionStream must be OneIterationBehind.");
-    this->nextElementIdx = 1;
+    this->nextAllocateElementIdx = 1;
   }
   LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynamicStreamId(), "Created.\n");
   assert(GlobalLLCDynamicStreamMap.emplace(this->getDynamicStreamId(), this)
@@ -67,16 +67,25 @@ LLCDynamicStream::LLCDynamicStream(
 
 LLCDynamicStream::~LLCDynamicStream() {
   LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynamicStreamId(), "Released.\n");
-  for (auto &indirectStream : this->indirectStreams) {
-    delete indirectStream;
-    indirectStream = nullptr;
-  }
-  this->indirectStreams.clear();
   auto iter = GlobalLLCDynamicStreamMap.find(this->getDynamicStreamId());
   if (iter == GlobalLLCDynamicStreamMap.end()) {
     LLC_S_PANIC(this->getDynamicStreamId(),
                 "Missed in GlobalLLCDynamicStreamMap when releaseing.");
   }
+  if (!this->baseStream && this->state != LLCDynamicStream::State::TERMINATED) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Released DirectStream in %s state.",
+                stateToString(this->state));
+  }
+  if (this->commitController) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Released with registered CommitController.");
+  }
+  for (auto &indirectStream : this->indirectStreams) {
+    delete indirectStream;
+    indirectStream = nullptr;
+  }
+  this->indirectStreams.clear();
   GlobalLLCDynamicStreamMap.erase(iter);
 }
 
@@ -114,7 +123,7 @@ bool LLCDynamicStream::translateToPAddr(Addr vaddr, Addr &paddr) const {
 
 void LLCDynamicStream::addCredit(uint64_t n) {
   this->allocatedSliceIdx += n;
-  for (auto indirectStream : this->indirectStreams) {
+  for (auto indirectStream : this->getIndStreams()) {
     indirectStream->addCredit(n);
   }
 }
@@ -178,7 +187,7 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
     this->shouldUpdateIssueClearCycleMemorized = true;
     if (!this->getStaticStream()->hasCoreUser()) {
       bool hasCoreUser = false;
-      for (auto dynIS : this->indirectStreams) {
+      for (auto dynIS : this->getIndStreams()) {
         // Merged store stream should not be considered has core user.
         // TODO: The compiler currently failed to set noCoreUser correctly for
         // MergedStore stream, so we ignore it here manually.
@@ -215,7 +224,7 @@ void LLCDynamicStream::traceEvent(
   auto llcBank = this->llcController->getMachineID().num;
   floatTracer.traceEvent(curCycle, llcBank, type);
   // Do this for all indirect streams.
-  for (auto IS : this->indirectStreams) {
+  for (auto IS : this->getIndStreams()) {
     IS->traceEvent(type);
   }
 }
@@ -256,17 +265,17 @@ bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
   }
   LLC_S_DPRINTF(this->getDynamicStreamId(), "Allocate element %llu.\n",
                 elementIdx);
-  if (this->nextElementIdx != elementIdx) {
+  if (this->nextAllocateElementIdx != elementIdx) {
     LLC_S_PANIC(this->getDynamicStreamId(),
                 "Element not allocated in order, next (%llu) != alloc (%llu).",
-                this->nextElementIdx, elementIdx);
+                this->nextAllocateElementIdx, elementIdx);
   }
   auto size = this->getMemElementSize();
   auto element = std::make_shared<LLCStreamElement>(
       this->getStaticStream(), this->llcController, this->getDynamicStreamId(),
       elementIdx, vaddr, size);
   this->idxToElementMap.emplace(elementIdx, element);
-  this->nextElementIdx++;
+  this->nextAllocateElementIdx++;
 
   /**
    * We populate the baseElements. If we are one iteration behind, we are
@@ -327,7 +336,7 @@ bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
   }
 
   // We allocate all indirect streams' element here with vaddr 0.
-  for (auto &usedByS : this->indirectStreams) {
+  for (auto &usedByS : this->getIndStreams()) {
     auto usedByElementIdx =
         usedByS->isOneIterationBehind() ? (elementIdx + 1) : elementIdx;
     usedByS->allocateElement(usedByElementIdx, 0);
@@ -349,7 +358,7 @@ bool LLCDynamicStream::allocateElement(uint64_t elementIdx, Addr vaddr) {
 
 bool LLCDynamicStream::isElementReleased(uint64_t elementIdx) const {
   if (this->idxToElementMap.empty()) {
-    return true;
+    return elementIdx < this->nextAllocateElementIdx;
   }
   return this->idxToElementMap.begin()->first > elementIdx;
 }
@@ -360,12 +369,12 @@ void LLCDynamicStream::eraseElement(uint64_t elementIdx) {
     LLC_S_PANIC(this->getDynamicStreamId(), "Failed to erase element %llu.",
                 elementIdx);
   }
-  LLC_ELEMENT_DPRINTF(iter->second, "Erased.\n");
+  LLC_ELEMENT_DPRINTF(iter->second, "Erased element.\n");
   this->idxToElementMap.erase(iter);
 }
 
 void LLCDynamicStream::eraseElement(IdxToElementMapT::iterator elementIter) {
-  LLC_ELEMENT_DPRINTF(elementIter->second, "Erased.\n");
+  LLC_ELEMENT_DPRINTF(elementIter->second, "Erased element.\n");
   this->idxToElementMap.erase(elementIter);
 }
 
@@ -373,7 +382,7 @@ void LLCDynamicStream::eraseElementOlderThan(uint64_t elementIdx) {
   auto iter = this->idxToElementMap.begin();
   auto end = this->idxToElementMap.end();
   while (iter != end && iter->first < elementIdx) {
-    LLC_ELEMENT_DPRINTF(iter->second, "Erased.\n");
+    LLC_ELEMENT_DPRINTF(iter->second, "Erased element.\n");
     iter = this->idxToElementMap.erase(iter);
   }
 }
@@ -406,19 +415,20 @@ void LLCDynamicStream::recvStreamForward(LLCStreamEngine *se,
     LLC_SLICE_DPRINTF(
         sliceId,
         "Cannot find the receiver element %s %llu allocate from %llu.\n",
-        this->getDynamicStreamId(), recvElementIdx, this->nextElementIdx);
-    assert(this->nextElementIdx <= recvElementIdx &&
+        this->getDynamicStreamId(), recvElementIdx,
+        this->nextAllocateElementIdx);
+    assert(this->nextAllocateElementIdx <= recvElementIdx &&
            "StreamForward falls behind.");
-    assert(this->nextElementIdx + 34 > recvElementIdx &&
+    assert(this->nextAllocateElementIdx + 34 > recvElementIdx &&
            "StreamForward too far ahead.");
-    while (this->nextElementIdx <= recvElementIdx) {
+    while (this->nextAllocateElementIdx <= recvElementIdx) {
       // Should always allocate from base stream.
       auto allocS = this->baseStream ? this->baseStream : this;
       auto allocElementVAddr =
-          allocS->slicedStream.getElementVAddr(allocS->nextElementIdx);
-      assert(
-          allocS->allocateElement(allocS->nextElementIdx, allocElementVAddr) &&
-          "Allocation not happen.");
+          allocS->slicedStream.getElementVAddr(allocS->nextAllocateElementIdx);
+      assert(allocS->allocateElement(allocS->nextAllocateElementIdx,
+                                     allocElementVAddr) &&
+             "Allocation not happen.");
     }
     if (!this->idxToElementMap.count(recvElementIdx)) {
       LLC_S_PANIC(this->getDynamicStreamId(),
@@ -594,14 +604,17 @@ void LLCDynamicStream::allocateLLCStream(
       // Let's create an indirect stream.
       ISConfig->initAllocatedIdx = config->initAllocatedIdx;
       auto IS = new LLCDynamicStream(mlcController, llcController, ISConfig);
-      S->indirectStreams.push_back(IS);
-      IS->baseStream = S;
+      IS->setBaseStream(S);
+      if (!ISConfig->depEdges.empty()) {
+        panic("Two-Level Indirect LLCStream is not supported: %s.",
+              IS->getDynamicStreamId());
+      }
     }
   }
 
   // Create predicated stream information.
   assert(!config->isPredicated && "Base stream should never be predicated.");
-  for (auto IS : S->indirectStreams) {
+  for (auto IS : S->getIndStreams()) {
     if (IS->isPredicated()) {
       const auto &predSId = IS->getPredicateStreamId();
       auto predS = LLCDynamicStream::getLLCStream(predSId);
@@ -611,6 +624,15 @@ void LLCDynamicStream::allocateLLCStream(
       IS->predicateStream = predS;
     }
   }
+}
+
+void LLCDynamicStream::setBaseStream(LLCDynamicStreamPtr baseS) {
+  if (this->baseStream) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Set multiple base LLCDynamicStream.");
+  }
+  this->baseStream = baseS;
+  baseS->indirectStreams.push_back(this);
 }
 
 Cycles LLCDynamicStream::curCycle() const {
@@ -739,4 +761,114 @@ void LLCDynamicStream::addCommitMessage(const DynamicStreamSliceId &sliceId) {
     ++iter;
   }
   this->commitMessages.insert(iter, sliceId);
+}
+
+void LLCDynamicStream::commitOneElement() {
+  if (this->hasTotalTripCount() &&
+      this->nextCommitElementIdx >= this->getTotalTripCount()) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "[Commit] Commit element %llu beyond TotalTripCount %llu.\n",
+                this->nextCommitElementIdx, this->getTotalTripCount());
+  }
+  this->nextCommitElementIdx++;
+  for (auto dynIS : this->getIndStreams()) {
+    dynIS->commitOneElement();
+  }
+}
+
+void LLCDynamicStream::markIndirectElementReadyToIssue(uint64_t elementIdx) {
+  if (!this->isIndirect()) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "MarkIndirectElementReadyToIssue for DirectStream.");
+  }
+  if (!this->readyToIssueElements.emplace(elementIdx).second) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "IndirectElement %llu already marked ReadyToIssue.",
+                elementIdx);
+  }
+  // Increment the counter in the base stream.
+  this->baseStream->numIndirectElementsReadyToIssue++;
+}
+
+void LLCDynamicStream::markIndirectElementIssued(uint64_t elementIdx) {
+  if (!this->isIndirect()) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "MarkIndirectElementIssued for DirectStream.");
+  }
+  auto iter = this->readyToIssueElements.find(elementIdx);
+  if (iter == this->readyToIssueElements.end()) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Failed to find ReadyToIssue element.");
+  }
+  if (this->baseStream->numIndirectElementsReadyToIssue == 0) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "BaseStream not remember this as ready to issue.");
+  }
+  this->readyToIssueElements.erase(iter);
+  this->baseStream->numIndirectElementsReadyToIssue--;
+}
+
+bool LLCDynamicStream::shouldIssueBeforeCommit() const {
+  if (!this->shouldRangeSync()) {
+    return true;
+  }
+  /**
+   * The only case we don't have to issue BeforeCommit is:
+   * 1. I have no indirect streams dependent on myself.
+   * 2. I also have no SendTo dependence.
+   * 3. I am a StoreStream or AtomicStream and the core does
+   * not need the value.
+   */
+  if (this->hasIndirectDependent()) {
+    return true;
+  }
+  if (!this->sendToConfigs.empty()) {
+    return true;
+  }
+  auto S = this->getStaticStream();
+  if (S->isStoreComputeStream()) {
+    return false;
+  }
+  if (S->isAtomicComputeStream()) {
+    auto dynS = S->getDynamicStream(this->getDynamicStreamId());
+    if (S->staticId == 81) {
+      LLC_S_DPRINTF(this->getDynamicStreamId(),
+                    "[IssueBeforeCommitTest] dynS %d.\n", dynS != nullptr);
+    }
+    if (dynS && !dynS->shouldCoreSEIssue()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool LLCDynamicStream::shouldIssueAfterCommit() const {
+  if (!this->shouldRangeSync()) {
+    return false;
+  }
+  // We need to issue after commit if we are writing to memory.
+  auto S = this->getStaticStream();
+  if (S->isStoreComputeStream() || S->isAtomicComputeStream()) {
+    return true;
+  }
+  return false;
+}
+
+LLCStreamElementPtr LLCDynamicStream::getElement(uint64_t elementIdx) {
+  auto iter = this->idxToElementMap.find(elementIdx);
+  if (iter == this->idxToElementMap.end()) {
+    return nullptr;
+  }
+  return iter->second;
+}
+
+LLCStreamElementPtr LLCDynamicStream::getElementPanic(uint64_t elementIdx,
+                                                      const char *errMsg) {
+  auto element = this->getElement(elementIdx);
+  if (!element) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Failed to get LLCStreamElement %llu for %s.", elementIdx,
+                errMsg);
+  }
+  return element;
 }

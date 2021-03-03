@@ -22,6 +22,8 @@ class LLCStreamCommitController;
  * Represent generated request to LLC bank.
  */
 class LLCDynamicStream;
+using LLCDynamicStreamPtr = LLCDynamicStream *;
+
 struct LLCStreamRequest {
   LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
                    CoherenceRequestType _type)
@@ -63,6 +65,7 @@ public:
   bool isOneIterationBehind() const {
     return this->configData->isOneIterationBehind;
   }
+  bool isIndirect() const { return this->baseStream != nullptr; }
   bool shouldRangeSync() const { return this->configData->rangeSync; }
   bool isPredicated() const { return this->configData->isPredicated; }
   bool isPredicatedTrue() const {
@@ -77,7 +80,7 @@ public:
   uint64_t getTotalTripCount() const;
   bool hasIndirectDependent() const {
     auto S = this->getStaticStream();
-    return !this->indirectStreams.empty() || this->isPointerChase() ||
+    return !this->getIndStreams().empty() || this->isPointerChase() ||
            (S->isLoadStream() && S->getEnabledStoreFunc());
   }
 
@@ -190,6 +193,12 @@ private:
 
   std::unique_ptr<LLCStreamRangeBuilder> rangeBuilder;
 
+  /**
+   * Here we remember the dependent streams.
+   * IndirectStreams is just the "UsedBy" dependence.
+   */
+  std::vector<LLCDynamicStreamPtr> indirectStreams;
+
   // Private controller as user should use allocateLLCStreams().
   LLCDynamicStream(AbstractStreamAwareController *_mlcController,
                    AbstractStreamAwareController *_llcController,
@@ -206,7 +215,9 @@ private:
   Cycles curCycle() const;
   int curLLCBank() const;
 
-  uint64_t nextElementIdx = 0;
+  // This is really just used for memorizing in IndirectStream.
+  std::set<uint64_t> readyToIssueElements;
+  uint64_t numIndirectElementsReadyToIssue = 0;
 
 public:
   const CacheStreamConfigureDataPtr configData;
@@ -215,12 +226,16 @@ public:
   // Remember the last reduction element, avoid auto releasing.
   LLCStreamElementPtr lastReductionElement;
 
-  /**
-   * Here we remember the dependent streams.
-   * IndirectStreams is just the "UsedBy" dependence.
-   */
-  std::vector<LLCDynamicStream *> indirectStreams;
   std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
+
+  /**
+   * Remember the base stream.
+   */
+  void setBaseStream(LLCDynamicStreamPtr baseS);
+
+  const std::vector<LLCDynamicStreamPtr> &getIndStreams() const {
+    return this->indirectStreams;
+  }
 
   /**
    * Remember the basic information for BaseOn information.
@@ -283,13 +298,6 @@ public:
   IdxToElementMapT idxToElementMap;
 
   /**
-   * Indirect elements that has seen the direct stream element's data
-   * and is waiting to be issued.
-   * Indexed by element idx.
-   */
-  std::multimap<uint64_t, LLCDynamicStream *> readyIndirectElements;
-
-  /**
    * The elements that is predicated by this stream.
    */
   std::map<uint64_t,
@@ -314,6 +322,9 @@ public:
    */
   bool allocateElement(uint64_t elementIdx, Addr vaddr);
   bool isElementReleased(uint64_t elementIdx) const;
+  LLCStreamElementPtr getElement(uint64_t elementIdx);
+  LLCStreamElementPtr getElementPanic(uint64_t elementIdx,
+                                      const char *errMsg = nullptr);
 
   /**
    * Erase the element for myself only.
@@ -322,19 +333,51 @@ public:
   void eraseElement(IdxToElementMapT::iterator elementIter);
   void eraseElementOlderThan(uint64_t elementIdx);
 
+private:
   /************************************************************************
    * State related to StreamCommit.
    * Pending StreamCommit messages.
    ************************************************************************/
-private:
   std::list<DynamicStreamSliceId> commitMessages;
+  uint64_t nextAllocateElementIdx = 0;
   uint64_t nextCommitElementIdx = 0;
   LLCStreamCommitController *commitController = nullptr;
 
+  /**
+   * Commit one element for myself and all the indirect streams.
+   */
+  void commitOneElement();
+
 public:
   void addCommitMessage(const DynamicStreamSliceId &sliceId);
-};
+  uint64_t getNextCommitElementIdx() const {
+    return this->nextCommitElementIdx;
+  }
 
-using LLCDynamicStreamPtr = LLCDynamicStream *;
+  void markIndirectElementReadyToIssue(uint64_t elementIdx);
+  void markIndirectElementIssued(uint64_t elementIdx);
+  bool hasIndirectElementReadyToIssue() const {
+    return this->numIndirectElementsReadyToIssue > 0;
+  }
+  size_t getNumIndirectElementReadyToIssue() const {
+    return this->numIndirectElementsReadyToIssue;
+  }
+  bool hasElementReadyToIssue() const {
+    return !this->readyToIssueElements.empty();
+  }
+  uint64_t getFirstReadyToIssueElement() const {
+    return *this->readyToIssueElements.begin();
+  }
+  /**
+   * With range-sync, there are two issue point:
+   * BeforeCommit:
+   *  Streams without range-sync.
+   *  Streams with range-sync, but the core need the value.
+   * AfterCommit:
+   *  Store/AtomicComputeStreams with range-sync.
+   */
+  bool shouldIssueBeforeCommit() const;
+  bool shouldIssueAfterCommit() const;
+};
 
 #endif

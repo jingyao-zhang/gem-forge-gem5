@@ -483,9 +483,11 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
     auto stepElement = dynS.tail->next;
     /**
      * For floating streams enabled StoreFunc, we have to check for StreamAck.
+     * However, if we have Range-Sync enabled, we should commit it directly.
      */
     if (S->getEnabledStoreFunc()) {
-      if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue()) {
+      if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue() &&
+          !dynS.shouldRangeSync()) {
         if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
           S_ELEMENT_DPRINTF(stepElement, "Can not step as no Ack.\n");
           return false;
@@ -1066,6 +1068,55 @@ void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
       S_DPRINTF(S, "Rewind End");
     }
   }
+}
+
+bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
+  const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
+  const auto &endStreamInfos = streamRegion.streams();
+
+  for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
+       iter != end; ++iter) {
+    auto streamId = iter->id();
+    auto S = this->getStream(streamId);
+    // Since commit happens in-order, we know it's the FirstDynamicStream.
+    const auto &dynS = S->getFirstDynamicStream();
+    auto endElement = dynS.tail->next;
+    auto endElementIdx = endElement->FIFOIdx.entryIdx;
+    // There is always a dummy element for StreamEnd to step through.
+    if (S->getEnabledStoreFunc()) {
+      /**
+       * We need to check that all stream element has acked in range-sync.
+       * Normally this is enforced in canCommitStreamStep().
+       * However, with range-sync, we have to commit StreamStep first to allow
+       * remote streams commit.
+       * Therefore, we wait here to check that we collected the last StreamAck.
+       */
+      if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue() &&
+          dynS.shouldRangeSync() && endElementIdx > 0) {
+        if (dynS.cacheAckedElements.count(endElementIdx - 1) == 0) {
+          S_ELEMENT_DPRINTF(endElement,
+                            "[StreamEnd] Cannot commit as no Ack for %llu.\n",
+                            endElementIdx - 1);
+          return false;
+        }
+      }
+    }
+    /**
+     * Similarly to the above case, we also check that we collected the last
+     * StreamDone.
+     * TODO: These two cases should really be merged in the future.
+     */
+    if (dynS.offloadedToCacheAsRoot && dynS.shouldRangeSync()) {
+      if (dynS.nextCacheDoneElementIdx < endElementIdx) {
+        S_ELEMENT_DPRINTF(endElement,
+                          "[StreamEnd] Cannot commit as no Done for %llu, "
+                          "NextCacheDone %llu.\n",
+                          endElementIdx, dynS.nextCacheDoneElementIdx);
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {

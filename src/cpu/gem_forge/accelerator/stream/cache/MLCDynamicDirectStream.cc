@@ -639,6 +639,7 @@ void MLCDynamicDirectStream::sendCommitToLLC(
 void MLCDynamicDirectStream::receiveStreamDone(
     const DynamicStreamSliceId &sliceId) {
   // Search for the segment.
+  bool foundSegement = false;
   for (auto &segment : this->llcSegments) {
     if (segment.startSliceId.getStartIdx() == sliceId.getStartIdx() &&
         segment.endSliceId.getStartIdx() == sliceId.getEndIdx()) {
@@ -652,10 +653,29 @@ void MLCDynamicDirectStream::receiveStreamDone(
       for (auto dynIS : this->indirectStreams) {
         dynIS->scheduleAdvanceStream();
       }
-      return;
+      foundSegement = true;
+      break;
     }
   }
-  MLC_S_PANIC(this->getDynamicStreamId(),
-              "Failed to find the LLCSegment for StreamDone [%llu, %llu).",
-              sliceId.getStartIdx(), sliceId.getEndIdx());
+  if (!foundSegement) {
+    MLC_S_PANIC(this->getDynamicStreamId(),
+                "Failed to find the LLCSegment for StreamDone [%llu, %llu).",
+                sliceId.getStartIdx(), sliceId.getEndIdx());
+  }
+  // Notify the Core about the StreamDone.
+  // We use extra loop here to make sure the core is get notified in-order.
+  if (auto dynS = this->getStaticStream()->getDynamicStream(
+          this->getDynamicStreamId())) {
+    for (auto &segment : this->llcSegments) {
+      if (segment.state != LLCSegmentPosition::State::COMMITTED) {
+        break;
+      }
+      if (dynS->nextCacheDoneElementIdx < segment.endSliceId.getStartIdx()) {
+        MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(),
+                       "[Commit] Notify the Core StreamDone until %llu.\n",
+                       segment.endSliceId.getStartIdx());
+        dynS->nextCacheDoneElementIdx = segment.endSliceId.getStartIdx();
+      }
+    }
+  }
 }

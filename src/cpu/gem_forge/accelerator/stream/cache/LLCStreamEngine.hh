@@ -189,19 +189,26 @@ private:
   void issueStreams();
 
   /**
-   * Issue a single stream.
+   * Find a stream within this S and its indirect streams ready to issue.
+   * @return nullptr if not found.
    */
-  bool issueStream(LLCDynamicStream *stream);
+  LLCDynamicStreamPtr findStreamReadyToIssue(LLCDynamicStreamPtr dynS);
+  LLCDynamicStreamPtr findIndirectStreamReadyToIssue(LLCDynamicStreamPtr dynS);
+
+  /**
+   * Issue a DirectStream.
+   */
+  void issueStreamDirect(LLCDynamicStream *dynS);
+
+  /**
+   * Issue the indirect elements for a stream.
+   */
+  void issueStreamIndirect(LLCDynamicStream *dynIS);
 
   /**
    * Get the request type for this stream.
    */
   CoherenceRequestType getDirectStreamReqType(LLCDynamicStream *stream) const;
-
-  /**
-   * Issue the indirect elements for a stream.
-   */
-  bool issueStreamIndirect(LLCDynamicStream *stream);
 
   /**
    * Generate indirect stream request.
@@ -266,6 +273,11 @@ private:
                             const CacheStreamConfigureDataPtr &recvConfig);
 
   /**
+   * Find streams that should be migrated.
+   */
+  void findMigratingStreams();
+
+  /**
    * Migrate streams.
    */
   void migrateStreams();
@@ -305,10 +317,6 @@ private:
                                   LLCStreamElementPtr element,
                                   const DataBlock &storeValueBlock,
                                   DataBlock &loadValueBlock);
-  void extractElementDataFromSlice(LLCDynamicStreamPtr stream,
-                                   const DynamicStreamSliceId &sliceId,
-                                   uint64_t elementIdx,
-                                   const DataBlock &dataBlock);
   void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,
                          uint64_t updateValue);
   /**

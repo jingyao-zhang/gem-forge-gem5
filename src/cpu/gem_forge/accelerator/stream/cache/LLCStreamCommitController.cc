@@ -12,6 +12,10 @@ void LLCStreamCommitController::registerStream(LLCDynamicStreamPtr dynS) {
     LLC_S_PANIC(dynS->getDynamicStreamId(),
                 "Already has registered at CommitController.");
   }
+  if (dynS->isTerminated()) {
+    LLC_S_PANIC(dynS->getDynamicStreamId(),
+                "[Commit] Try to register a terminated stream.");
+  }
   dynS->commitController = this;
   this->streams.push_back(dynS);
   LLC_S_DPRINTF(dynS->getDynamicStreamId(), "[Commit] Registered.\n");
@@ -20,7 +24,7 @@ void LLCStreamCommitController::registerStream(LLCDynamicStreamPtr dynS) {
 void LLCStreamCommitController::deregisterStream(LLCDynamicStreamPtr dynS) {
   if (dynS->commitController != this) {
     LLC_S_PANIC(dynS->getDynamicStreamId(),
-                "Not registered at this LLCStreamCommitController.");
+                "Deregister when not registered at this LLCCommitController.");
   }
   dynS->commitController = nullptr;
   for (auto iter = this->streams.begin(), end = this->streams.end();
@@ -40,6 +44,10 @@ void LLCStreamCommitController::commit() {
   const int commitWidth = 1;
   std::vector<LLCDynamicStreamPtr> migratedStreams;
   for (auto dynS : this->streams) {
+    if (dynS->commitController != this) {
+      LLC_S_PANIC(dynS->getDynamicStreamId(),
+                  "Try commit a LLCDynStream not registered here.");
+    }
     if (numCommitted >= commitWidth) {
       break;
     }
@@ -99,7 +107,53 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
       // }
       return false;
     }
-    for (auto dynIS : dynS->indirectStreams) {
+  }
+  for (auto dynIS : dynS->getIndStreams()) {
+    /**
+     * If the dynIS issues AfterCommit, we check that the element is
+     * ready to be issued.
+     * Otherwise, we check that the element is released.
+     */
+    if (dynIS->shouldIssueAfterCommit()) {
+      auto nextCommitIndirectElementIdx = nextCommitElementIdx;
+      if (dynIS->isOneIterationBehind()) {
+        nextCommitIndirectElementIdx++;
+      }
+      auto nextCommitElement = dynIS->getElement(nextCommitIndirectElementIdx);
+      if (!nextCommitElement) {
+        if (dynIS->isElementReleased(nextCommitIndirectElementIdx)) {
+          LLC_S_PANIC(dynIS->getDynamicStreamId(),
+                      "[Commit] Failed to find IndElement %llu to commit.",
+                      nextCommitIndirectElementIdx);
+        }
+        /**
+         * Somehow this element is not yet allocated.
+         * In normal cases this should not really happen, as the core should
+         * wait for range messages (which happens after elements allocated).
+         * However, there is one special case: the total trip count is 1.
+         * This is because in the core we have not implement the range sync for
+         * the first iteration, and thus the core may commit the first element
+         * even before the LLCStreamElement is allocated. In such case, we
+         * simply wait.
+         */
+        if (dynS->hasTotalTripCount() && dynS->getTotalTripCount() == 1 &&
+            nextCommitElementIdx == 0) {
+          return false;
+        }
+        LLC_S_PANIC(dynIS->getDynamicStreamId(),
+                    "[Commit] Failed to find IndElement %llu to commit.",
+                    nextCommitIndirectElementIdx);
+      }
+      if (!nextCommitElement->areBaseElementsReady()) {
+        // We can not issue this yet.
+        return false;
+      }
+      // We directly issue this.
+      LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+                    "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
+                    dynIS->getDynamicStreamId(), nextCommitElementIdx);
+      this->se->generateIndirectStreamRequest(dynIS, nextCommitElementIdx);
+    } else {
       if (!dynIS->isElementReleased(nextCommitElementIdx)) {
         if (nextCommitElementIdx > 6267) {
           LLC_S_DPRINTF(dynS->getDynamicStreamId(), "IS not released %llu.\n",
@@ -117,7 +171,7 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
    */
   LLC_S_DPRINTF(dynS->getDynamicStreamId(), "[Commit] Commit element %llu.\n",
                 nextCommitElementIdx);
-  nextCommitElementIdx++;
+  dynS->commitOneElement();
   if (nextCommitElementIdx >= firstCommitMessage.getEndIdx()) {
     // We are done with the current commit message.
     LLC_S_DPRINTF(dynS->getDynamicStreamId(),

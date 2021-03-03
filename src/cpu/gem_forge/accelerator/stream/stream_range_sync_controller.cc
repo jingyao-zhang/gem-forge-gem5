@@ -47,7 +47,8 @@ StreamRangeSyncController::getCurrentDynStreams() {
       continue;
     }
     auto &dynS = S->getFirstDynamicStream();
-    if (dynS.offloadedToCacheAsRoot && dynS.shouldRangeSync()) {
+    if (dynS.offloadedToCacheAsRoot && !dynS.offloadConfigDelayed &&
+        dynS.shouldRangeSync()) {
       dynStreams.push_back(&S->getFirstDynamicStream());
     }
   }

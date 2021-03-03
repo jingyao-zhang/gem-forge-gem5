@@ -53,6 +53,13 @@ struct DynamicStream {
   // A hack to store how many elements has the cache acked.
   uint64_t cacheAcked = 0;
   std::set<uint64_t> cacheAckedElements;
+  /**
+   * Similar to StreamAck messages, this remembers the StreamDone messages
+   * from the cache. Since StreamDone messages are guaranteed in-order, we
+   * just remember the last done ElementIdx.
+   * TODO: This could eventually be merged with StreamAck messages.
+   */
+  uint64_t nextCacheDoneElementIdx = 0;
 
   // Whether the floating config is delayed until config committed.
   bool offloadConfigDelayed = false;

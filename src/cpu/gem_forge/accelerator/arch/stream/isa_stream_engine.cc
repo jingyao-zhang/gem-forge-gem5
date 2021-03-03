@@ -562,7 +562,22 @@ void ISAStreamEngine::executeStreamEnd(const GemForgeDynInstInfo &dynInfo,
 }
 
 bool ISAStreamEngine::canCommitStreamEnd(const GemForgeDynInstInfo &dynInfo) {
-  return true;
+  auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
+  if (instInfo.mustBeMisspeculated) {
+    return true;
+  }
+
+  auto configIdx = this->extractImm<uint64_t>(dynInfo.staticInst);
+  const auto &infoRelativePath = this->getRelativePath(configIdx);
+
+  auto se = this->getStreamEngine();
+  ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
+  auto canCommit = se->canCommitStreamEnd(args);
+  DYN_INST_DPRINTF("[canCommit] StreamEnd %llu, %s, CanCommit? %d.\n",
+                   configIdx, infoRelativePath, canCommit);
+
+  // Release the info.
+  return canCommit;
 }
 
 void ISAStreamEngine::commitStreamEnd(const GemForgeDynInstInfo &dynInfo) {

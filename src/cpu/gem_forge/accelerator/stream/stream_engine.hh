@@ -123,6 +123,7 @@ public:
   bool hasUnsteppedElement(const StreamEndArgs &args);
   void dispatchStreamEnd(const StreamEndArgs &args);
   bool canExecuteStreamEnd(const StreamEndArgs &args);
+  bool canCommitStreamEnd(const StreamEndArgs &args);
   void commitStreamEnd(const StreamEndArgs &args);
   void rewindStreamEnd(const StreamEndArgs &args);
 
