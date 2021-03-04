@@ -837,7 +837,29 @@ void LLCDynamicStream::markElementReadyToIssue(uint64_t elementIdx) {
     LLC_S_PANIC(this->getDynamicStreamId(),
                 "IndirectElement in wrong state to mark ready.");
   }
+
+  if (this->getStaticStream()->isReduction()) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Reduction is not handled as issue for now.");
+    return;
+  }
+  /**
+   * We directly compute the address here.
+   * So that we can notify our range builder.
+   */
+  auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
+    return element->getBaseStreamValue(baseStreamId);
+  };
+  Addr elementVAddr =
+      this->configData->addrGenCallback
+          ->genAddr(elementIdx, this->configData->addrGenFormalParams,
+                    getBaseStreamValue)
+          .front();
+  LLC_ELEMENT_DPRINTF(element, "Generate indirect vaddr %#x, size %d.\n",
+                      elementVAddr, this->getMemElementSize());
+  element->vaddr = elementVAddr;
   element->setState(LLCStreamElement::State::READY_TO_ISSUE);
+
   // Increment the counter in the base stream.
   this->numElementsReadyToIssue++;
   if (this->baseStream) {

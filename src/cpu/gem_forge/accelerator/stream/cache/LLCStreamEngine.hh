@@ -214,7 +214,7 @@ private:
    * Generate indirect stream request.
    */
   void generateIndirectStreamRequest(LLCDynamicStream *dynIS,
-                                     uint64_t elementIdx);
+                                     LLCStreamElementPtr element);
 
   /**
    * Helper function to enqueue a request and start address translation.

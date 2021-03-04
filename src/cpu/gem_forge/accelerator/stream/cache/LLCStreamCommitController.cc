@@ -143,16 +143,18 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
         LLC_S_PANIC(dynIS->getDynamicStreamId(),
                     "[Commit] Failed to find IndElement %llu to commit.",
                     nextCommitIndirectElementIdx);
+      } else {
+        if (!nextCommitElement->areBaseElementsReady()) {
+          // We can not issue this yet.
+          return false;
+        }
+        // We directly issue this.
+        LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+                      "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
+                      dynIS->getDynamicStreamId(),
+                      nextCommitIndirectElementIdx);
+        this->se->generateIndirectStreamRequest(dynIS, nextCommitElement);
       }
-      if (!nextCommitElement->areBaseElementsReady()) {
-        // We can not issue this yet.
-        return false;
-      }
-      // We directly issue this.
-      LLC_S_DPRINTF(dynS->getDynamicStreamId(),
-                    "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
-                    dynIS->getDynamicStreamId(), nextCommitElementIdx);
-      this->se->generateIndirectStreamRequest(dynIS, nextCommitElementIdx);
     } else {
       if (!dynIS->isElementReleased(nextCommitElementIdx)) {
         if (nextCommitElementIdx > 6267) {

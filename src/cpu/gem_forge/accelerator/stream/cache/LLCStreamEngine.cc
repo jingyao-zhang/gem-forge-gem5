@@ -1265,7 +1265,7 @@ void LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *dynIS) {
   auto elementIdx = element->idx;
   if (dynIS->shouldIssueBeforeCommit()) {
     // We delay issuing this after committed.
-    this->generateIndirectStreamRequest(dynIS, elementIdx);
+    this->generateIndirectStreamRequest(dynIS, element);
   } else {
     LLC_S_DPRINTF(dynIS->getDynamicStreamId(),
                   "Delay Issuing for AfterCommit element %llu\n.", elementIdx);
@@ -1274,21 +1274,22 @@ void LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *dynIS) {
   dynIS->markElementIssued(elementIdx);
 }
 
-void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
-                                                    uint64_t elementIdx) {
+void LLCStreamEngine::generateIndirectStreamRequest(
+    LLCDynamicStream *dynIS, LLCStreamElementPtr element) {
   auto dynBS = dynIS->baseStream;
   assert(dynBS &&
          "GenerateIndirectStreamRequest can only handle indirect stream.");
+  auto elementIdx = element->idx;
   DynamicStreamSliceId sliceId;
   sliceId.getDynStreamId() = dynIS->getDynamicStreamId();
   sliceId.getStartIdx() = elementIdx;
   sliceId.getEndIdx() = elementIdx + 1;
   auto elementSize = dynIS->getMemElementSize();
-  LLC_SLICE_DPRINTF(sliceId, "Issue indirect.\n");
+  Addr elementVAddr = element->vaddr;
+  LLC_SLICE_DPRINTF(sliceId, "Issue indirect VAddr %#x.\n", elementVAddr);
 
   auto IS = dynIS->getStaticStream();
   const auto &indirectConfig = dynIS->configData;
-  auto element = dynIS->getElementPanic(elementIdx);
   /**
    * In old implementation, we release indirect stream element here. However,
    * our new implementation require that element is not released until we
@@ -1303,18 +1304,6 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
                 "Reduction is no longer handled here.");
     return;
   }
-
-  // Compute the address.
-  auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
-    return element->getBaseStreamValue(baseStreamId);
-  };
-  Addr elementVAddr =
-      indirectConfig->addrGenCallback
-          ->genAddr(elementIdx, indirectConfig->addrGenFormalParams,
-                    getBaseStreamValue)
-          .front();
-  LLC_SLICE_DPRINTF(sliceId, "Generate indirect vaddr %#x, size %d.\n",
-                    elementVAddr, elementSize);
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
@@ -1353,6 +1342,10 @@ void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
         // storeValue = indirectConfig->constUpdateValue;
       } else if (IS->isMergedLoadStoreDepStream()) {
         // Compute the value.
+        auto getBaseStreamValue =
+            [&element](uint64_t baseStreamId) -> StreamValue {
+          return element->getBaseStreamValue(baseStreamId);
+        };
         auto params = convertFormalParamToParam(
             indirectConfig->storeFormalParams, getBaseStreamValue);
         storeValue = indirectConfig->storeCallback->invoke(params).front();
