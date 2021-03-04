@@ -92,6 +92,19 @@ public:
   void addSlice(LLCStreamSlicePtr &slice);
   int getNumSlices() const { return this->numSlices; }
 
+  /**
+   * Remember the state of the element. This is so far just used for
+   * IndirectStream.
+   */
+  enum State {
+    INITIALIZED,
+    READY_TO_ISSUE,
+    ISSUED,
+  };
+
+  State getState() const { return this->state; }
+  void setState(State state) { this->state = state; }
+
 private:
   int readyBytes;
   bool computationScheduled = false;
@@ -101,6 +114,8 @@ private:
   static constexpr int MAX_SLICES_PER_ELEMENT = 2;
   std::array<LLCStreamSlicePtr, MAX_SLICES_PER_ELEMENT> slices;
   int numSlices = 0;
+
+  State state = State::INITIALIZED;
 };
 
 #endif

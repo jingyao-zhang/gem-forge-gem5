@@ -214,8 +214,9 @@ private:
   int curLLCBank() const;
 
   // This is really just used for memorizing in IndirectStream.
-  std::set<uint64_t> readyToIssueElements;
+  uint64_t numElementsReadyToIssue = 0;
   uint64_t numIndirectElementsReadyToIssue = 0;
+  uint64_t nextIssueElementIdx = 0;
 
   Addr peekNextInitVAddr() const;
   const DynamicStreamSliceId &peekNextInitSliceId() const;
@@ -324,9 +325,9 @@ public:
   void initDirectStreamSlicesUntil(uint64_t lastSliceIdx);
 
   bool isElementReleased(uint64_t elementIdx) const;
-  LLCStreamElementPtr getElement(uint64_t elementIdx);
+  LLCStreamElementPtr getElement(uint64_t elementIdx) const;
   LLCStreamElementPtr getElementPanic(uint64_t elementIdx,
-                                      const char *errMsg = nullptr);
+                                      const char *errMsg = nullptr) const;
 
   /**
    * Erase the element for myself only.
@@ -349,9 +350,8 @@ private:
 
   /**
    * Initialize the element for myself and all UsedByStream.
-   * @return bool: whether allocation happened.
    */
-  bool initNextElement(Addr vaddr);
+  void initNextElement(Addr vaddr);
 
   /**
    * Commit one element for myself and all the indirect streams.
@@ -364,20 +364,23 @@ public:
     return this->nextCommitElementIdx;
   }
 
-  void markIndirectElementReadyToIssue(uint64_t elementIdx);
-  void markIndirectElementIssued(uint64_t elementIdx);
+  /**
+   * Only indirect stream is managed in element-grainularity.
+   */
+  void markElementReadyToIssue(uint64_t elementIdx);
+  void markElementIssued(uint64_t elementIdx);
   bool hasIndirectElementReadyToIssue() const {
     return this->numIndirectElementsReadyToIssue > 0;
   }
   size_t getNumIndirectElementReadyToIssue() const {
     return this->numIndirectElementsReadyToIssue;
   }
-  bool hasElementReadyToIssue() const {
-    return !this->readyToIssueElements.empty();
-  }
-  uint64_t getFirstReadyToIssueElement() const {
-    return *this->readyToIssueElements.begin();
-  }
+
+  /**
+   * @return nullptr if no such element.
+   */
+  LLCStreamElementPtr getFirstReadyToIssueElement() const;
+
   /**
    * With range-sync, there are two issue point:
    * BeforeCommit:

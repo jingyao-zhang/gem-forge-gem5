@@ -351,7 +351,7 @@ void LLCDynamicStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
   }
 }
 
-bool LLCDynamicStream::initNextElement(Addr vaddr) {
+void LLCDynamicStream::initNextElement(Addr vaddr) {
   auto elementIdx = this->nextInitElementIdx;
   LLC_S_DPRINTF(this->getDynamicStreamId(), "Initialize element %llu.\n",
                 elementIdx);
@@ -424,8 +424,6 @@ bool LLCDynamicStream::initNextElement(Addr vaddr) {
   for (auto &usedByS : this->getIndStreams()) {
     usedByS->initNextElement(0);
   }
-
-  return true;
 }
 
 bool LLCDynamicStream::isElementReleased(uint64_t elementIdx) const {
@@ -832,36 +830,63 @@ void LLCDynamicStream::commitOneElement() {
   }
 }
 
-void LLCDynamicStream::markIndirectElementReadyToIssue(uint64_t elementIdx) {
-  if (!this->isIndirect()) {
+void LLCDynamicStream::markElementReadyToIssue(uint64_t elementIdx) {
+  auto element =
+      this->getElementPanic(elementIdx, "Mark IndirectElement ready to issue.");
+  if (element->getState() != LLCStreamElement::State::INITIALIZED) {
     LLC_S_PANIC(this->getDynamicStreamId(),
-                "MarkIndirectElementReadyToIssue for DirectStream.");
+                "IndirectElement in wrong state to mark ready.");
   }
-  if (!this->readyToIssueElements.emplace(elementIdx).second) {
-    LLC_S_PANIC(this->getDynamicStreamId(),
-                "IndirectElement %llu already marked ReadyToIssue.",
-                elementIdx);
-  }
+  element->setState(LLCStreamElement::State::READY_TO_ISSUE);
   // Increment the counter in the base stream.
-  this->baseStream->numIndirectElementsReadyToIssue++;
+  this->numElementsReadyToIssue++;
+  if (this->baseStream) {
+    this->baseStream->numIndirectElementsReadyToIssue++;
+  }
 }
 
-void LLCDynamicStream::markIndirectElementIssued(uint64_t elementIdx) {
-  if (!this->isIndirect()) {
+void LLCDynamicStream::markElementIssued(uint64_t elementIdx) {
+  if (elementIdx != this->nextIssueElementIdx) {
     LLC_S_PANIC(this->getDynamicStreamId(),
-                "MarkIndirectElementIssued for DirectStream.");
+                "IndirectElement should be issued in order.");
   }
-  auto iter = this->readyToIssueElements.find(elementIdx);
-  if (iter == this->readyToIssueElements.end()) {
+  auto element =
+      this->getElementPanic(elementIdx, "Mark IndirectElement issued.");
+  if (element->getState() != LLCStreamElement::State::READY_TO_ISSUE) {
     LLC_S_PANIC(this->getDynamicStreamId(),
-                "Failed to find ReadyToIssue element.");
+                "IndirectElement %llu not in ready state.", elementIdx);
   }
-  if (this->baseStream->numIndirectElementsReadyToIssue == 0) {
+  element->setState(LLCStreamElement::State::ISSUED);
+  assert(this->numElementsReadyToIssue > 0 &&
+         "Underflow NumElementsReadyToIssue.");
+  this->numElementsReadyToIssue--;
+  this->nextIssueElementIdx++;
+  if (this->baseStream) {
+    assert(this->baseStream->numIndirectElementsReadyToIssue > 0 &&
+           "Underflow NumIndirectElementsReadyToIssue.");
+    this->baseStream->numIndirectElementsReadyToIssue--;
+  }
+}
+
+LLCStreamElementPtr LLCDynamicStream::getFirstReadyToIssueElement() const {
+  if (this->numElementsReadyToIssue == 0) {
+    return nullptr;
+  }
+  auto element = this->getElementPanic(this->nextIssueElementIdx, __func__);
+  switch (element->getState()) {
+  default:
     LLC_S_PANIC(this->getDynamicStreamId(),
-                "BaseStream not remember this as ready to issue.");
+                "Element %llu with Invalid state %d.", element->idx,
+                element->getState());
+  case LLCStreamElement::State::INITIALIZED:
+    // To guarantee in-order, return false here.
+    return nullptr;
+  case LLCStreamElement::State::READY_TO_ISSUE:
+    return element;
+  case LLCStreamElement::State::ISSUED:
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "NextIssueElement %llu already issued.", element->idx);
   }
-  this->readyToIssueElements.erase(iter);
-  this->baseStream->numIndirectElementsReadyToIssue--;
 }
 
 bool LLCDynamicStream::shouldIssueBeforeCommit() const {
@@ -910,7 +935,7 @@ bool LLCDynamicStream::shouldIssueAfterCommit() const {
   return false;
 }
 
-LLCStreamElementPtr LLCDynamicStream::getElement(uint64_t elementIdx) {
+LLCStreamElementPtr LLCDynamicStream::getElement(uint64_t elementIdx) const {
   auto iter = this->idxToElementMap.find(elementIdx);
   if (iter == this->idxToElementMap.end()) {
     return nullptr;
@@ -918,8 +943,9 @@ LLCStreamElementPtr LLCDynamicStream::getElement(uint64_t elementIdx) {
   return iter->second;
 }
 
-LLCStreamElementPtr LLCDynamicStream::getElementPanic(uint64_t elementIdx,
-                                                      const char *errMsg) {
+LLCStreamElementPtr
+LLCDynamicStream::getElementPanic(uint64_t elementIdx,
+                                  const char *errMsg) const {
   auto element = this->getElement(elementIdx);
   if (!element) {
     LLC_S_PANIC(this->getDynamicStreamId(),

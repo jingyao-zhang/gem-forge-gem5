@@ -1095,6 +1095,7 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
 
   // Find the indirect stream with lowest element index.
   LLCDynamicStreamPtr readyS = nullptr;
+  uint64_t readyElementIdx = 0;
   for (auto dynIS : dynS->getIndStreams()) {
     // Enforce the per stream maxInflyRequests constraint.
     if (dynIS->inflyRequests == this->maxInflyRequestsPerStream) {
@@ -1106,12 +1107,12 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
       continue;
     }
 
-    if (!dynIS->hasElementReadyToIssue()) {
-      continue;
-    }
-    auto elementIdx = dynIS->getFirstReadyToIssueElement();
-    if (!readyS || readyS->getFirstReadyToIssueElement() > elementIdx) {
-      readyS = dynIS;
+    if (auto element = dynIS->getFirstReadyToIssueElement()) {
+      auto elementIdx = element->idx;
+      if (!readyS || readyElementIdx > elementIdx) {
+        readyS = dynIS;
+        readyElementIdx = elementIdx;
+      }
     }
   }
 
@@ -1256,12 +1257,12 @@ LLCStreamEngine::getDirectStreamReqType(LLCDynamicStream *stream) const {
 
 void LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *dynIS) {
 
-  // Try to issue one with lowest element index.
-  if (!dynIS->hasElementReadyToIssue()) {
+  auto element = dynIS->getFirstReadyToIssueElement();
+  if (!element) {
     LLC_S_PANIC(dynIS->getDynamicStreamId(),
                 "Try to issue, but no ready element.");
   }
-  auto elementIdx = dynIS->getFirstReadyToIssueElement();
+  auto elementIdx = element->idx;
   if (dynIS->shouldIssueBeforeCommit()) {
     // We delay issuing this after committed.
     this->generateIndirectStreamRequest(dynIS, elementIdx);
@@ -1270,7 +1271,7 @@ void LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *dynIS) {
                   "Delay Issuing for AfterCommit element %llu\n.", elementIdx);
   }
   // Don't forget to release the indirect element.
-  dynIS->markIndirectElementIssued(elementIdx);
+  dynIS->markElementIssued(elementIdx);
 }
 
 void LLCStreamEngine::generateIndirectStreamRequest(LLCDynamicStream *dynIS,
@@ -1966,131 +1967,132 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
     /**
      * Check if the stream has predication.
      */
-    if (IS->isPredicated()) {
-      assert(!IS->isOneIterationBehind() && "How to handle this?");
-      // Push the element to the predicate list.
-      // We add the element to the predicateElements.
-      IS->predicateStream->waitingPredicatedElements
-          .emplace(std::piecewise_construct, std::forward_as_tuple(idx),
-                   std::forward_as_tuple())
-          .first->second.emplace_back(IS, element);
-    } else {
-      // Not predicated, add to readyElements.
-      assert(stream->baseStream == nullptr);
-      LLC_S_DPRINTF(IS->getDynamicStreamId(),
-                    "Check if element %llu BaseElementsReady %d.\n",
-                    indirectElement->idx,
-                    indirectElement->areBaseElementsReady());
-      if (indirectElement->areBaseElementsReady()) {
-        if (IS->getStaticStream()->isReduction()) {
-          // Reduction now is handled as computation.
-          this->pushReadyComputation(indirectElement);
-        } else {
-          IS->markIndirectElementReadyToIssue(indirectElementIdx);
-        }
+    assert(!IS->isPredicated() && "Disable predication for now.");
+    // if (IS->isPredicated()) {
+    //   assert(!IS->isOneIterationBehind() && "How to handle this?");
+    //   // Push the element to the predicate list.
+    //   // We add the element to the predicateElements.
+    //   IS->predicateStream->waitingPredicatedElements
+    //       .emplace(std::piecewise_construct, std::forward_as_tuple(idx),
+    //                std::forward_as_tuple())
+    //       .first->second.emplace_back(IS, element);
+    // }
+    // Not predicated, add to readyElements.
+    assert(stream->baseStream == nullptr);
+    LLC_S_DPRINTF(IS->getDynamicStreamId(),
+                  "Check if element %llu BaseElementsReady %d.\n",
+                  indirectElement->idx,
+                  indirectElement->areBaseElementsReady());
+    if (indirectElement->areBaseElementsReady()) {
+      if (IS->getStaticStream()->isReduction()) {
+        // Reduction now is handled as computation.
+        this->pushReadyComputation(indirectElement);
       } else {
-        for (const auto &baseE : indirectElement->baseElements) {
-          LLC_S_DPRINTF(IS->getDynamicStreamId(),
-                        "BaseElements Ready %d %s %llu.\n", baseE->isReady(),
-                        baseE->dynStreamId, baseE->idx);
-        }
+        IS->markElementReadyToIssue(indirectElementIdx);
+      }
+    } else {
+      for (const auto &baseE : indirectElement->baseElements) {
+        LLC_S_DPRINTF(IS->getDynamicStreamId(),
+                      "BaseElements Ready %d %s %llu.\n", baseE->isReady(),
+                      baseE->dynStreamId, baseE->idx);
       }
     }
   }
 
   // Now we handle any predication.
-  if (stream->configData->predCallback) {
-    GetStreamValueFunc getStreamValue =
-        [&element, stream](uint64_t streamId) -> StreamValue {
-      assert(streamId == stream->getStaticId() &&
-             "Mismatch stream id for predication.");
-      StreamValue v;
-      v.front() = element->getUInt64();
-      return v;
-    };
-    auto params = convertFormalParamToParam(
-        stream->configData->predFormalParams, getStreamValue);
-    bool predicatedTrue =
-        stream->configData->predCallback->invoke(params).front() & 0x1;
-    auto predicatedIter = stream->waitingPredicatedElements.find(idx);
-    if (predicatedIter != stream->waitingPredicatedElements.end()) {
-      for (auto &predEntry : predicatedIter->second) {
-        auto dynPredS = predEntry.first;
-        auto predS = dynPredS->getStaticStream();
-        auto &predBaseElement = predEntry.second;
-        LLC_S_DPRINTF(stream->getDynamicStreamId(), "Predicate %d %d: %s.\n",
-                      predicatedTrue, dynPredS->isPredicatedTrue(),
-                      dynPredS->getDynamicStreamId());
-        if (dynPredS->isPredicatedTrue() == predicatedTrue) {
-          predS->statistic.numLLCPredYSlice++;
-          // Predicated match, add to ready list.
-          if (stream->baseStream) {
-            /**
-             * The predication is from an indirect stream, this is for
-             * pattern: if (a[b[i]]) c[xx]; Since this is an indirect
-             * stream, it is likely that we are in a remote LLC bank where
-             * a[b[i]] is sitting. We would like to directly generate the
-             * address and inject to the requestQueue here.
-             */
-            this->generateIndirectStreamRequest(dynPredS, idx);
-          } else {
-            /**
-             * The predication is from a direct stream, this is for pattern:
-             * if (a[i]) b[i];
-             * There is no data dependence between these two streams.
-             * In such case we add to readyIndirectElements and waiting to
-             * be issued.
-             */
-            dynPredS->markIndirectElementReadyToIssue(idx);
-          }
-        } else {
-          // This element is predicated off.
-          predS->statistic.numLLCPredNSlice++;
-          if (predS->isMerged() && predS->isStoreStream()) {
-            /**
-             * This is a predicated off merged store, we have to send
-             * STREAM_ACK. We still have to set the vaddr as the MLC
-             * requires it to match.
-             */
-            auto dynBS = dynPredS->baseStream;
-            assert(dynBS && "MergedStore stream should have base stream.");
-            DynamicStreamSliceId sliceId;
-            sliceId.getDynStreamId() = dynPredS->getDynamicStreamId();
-            sliceId.getStartIdx() = idx;
-            sliceId.getEndIdx() = idx + 1;
-            auto getBaseStreamValue =
-                [&predBaseElement,
-                 dynBS](uint64_t baseStreamId) -> StreamValue {
-              assert(baseStreamId == dynBS->getStaticId() &&
-                     "Invalid baseStreamId.");
-              assert(predBaseElement->isReady());
-              assert(predBaseElement->size <= 8);
-              StreamValue v;
-              v.front() = predBaseElement->getUInt64();
-              return v;
-            };
-            auto &predConfig = dynPredS->configData;
-            Addr elementVAddr =
-                predConfig->addrGenCallback
-                    ->genAddr(idx, predConfig->addrGenFormalParams,
-                              getBaseStreamValue)
-                    .front();
-            sliceId.vaddr = elementVAddr;
-            sliceId.size = dynPredS->getMemElementSize();
-            LLC_SLICE_DPRINTF_(
-                LLCRubyStreamStore, sliceId,
-                "StreamStore predicated off, send back StreamAck.\n");
-            this->issueStreamAckToMLC(sliceId);
-          }
-        }
-      }
-      stream->waitingPredicatedElements.erase(predicatedIter);
-    }
+  assert(!stream->configData->predCallback && "Disable predication for now.");
+  // if (stream->configData->predCallback) {
+  //   GetStreamValueFunc getStreamValue =
+  //       [&element, stream](uint64_t streamId) -> StreamValue {
+  //     assert(streamId == stream->getStaticId() &&
+  //            "Mismatch stream id for predication.");
+  //     StreamValue v;
+  //     v.front() = element->getUInt64();
+  //     return v;
+  //   };
+  //   auto params = convertFormalParamToParam(
+  //       stream->configData->predFormalParams, getStreamValue);
+  //   bool predicatedTrue =
+  //       stream->configData->predCallback->invoke(params).front() & 0x1;
+  //   auto predicatedIter = stream->waitingPredicatedElements.find(idx);
+  //   if (predicatedIter != stream->waitingPredicatedElements.end()) {
+  //     for (auto &predEntry : predicatedIter->second) {
+  //       auto dynPredS = predEntry.first;
+  //       auto predS = dynPredS->getStaticStream();
+  //       auto &predBaseElement = predEntry.second;
+  //       LLC_S_DPRINTF(stream->getDynamicStreamId(), "Predicate %d %d: %s.\n",
+  //                     predicatedTrue, dynPredS->isPredicatedTrue(),
+  //                     dynPredS->getDynamicStreamId());
+  //       if (dynPredS->isPredicatedTrue() == predicatedTrue) {
+  //         predS->statistic.numLLCPredYSlice++;
+  //         // Predicated match, add to ready list.
+  //         if (stream->baseStream) {
+  //           /**
+  //            * The predication is from an indirect stream, this is for
+  //            * pattern: if (a[b[i]]) c[xx]; Since this is an indirect
+  //            * stream, it is likely that we are in a remote LLC bank where
+  //            * a[b[i]] is sitting. We would like to directly generate the
+  //            * address and inject to the requestQueue here.
+  //            */
+  //           this->generateIndirectStreamRequest(dynPredS, idx);
+  //         } else {
+  //           /**
+  //            * The predication is from a direct stream, this is for pattern:
+  //            * if (a[i]) b[i];
+  //            * There is no data dependence between these two streams.
+  //            * In such case we add to readyIndirectElements and waiting to
+  //            * be issued.
+  //            */
+  //           dynPredS->markElementReadyToIssue(idx);
+  //         }
+  //       } else {
+  //         // This element is predicated off.
+  //         predS->statistic.numLLCPredNSlice++;
+  //         if (predS->isMerged() && predS->isStoreStream()) {
+  //           /**
+  //            * This is a predicated off merged store, we have to send
+  //            * STREAM_ACK. We still have to set the vaddr as the MLC
+  //            * requires it to match.
+  //            */
+  //           auto dynBS = dynPredS->baseStream;
+  //           assert(dynBS && "MergedStore stream should have base stream.");
+  //           DynamicStreamSliceId sliceId;
+  //           sliceId.getDynStreamId() = dynPredS->getDynamicStreamId();
+  //           sliceId.getStartIdx() = idx;
+  //           sliceId.getEndIdx() = idx + 1;
+  //           auto getBaseStreamValue =
+  //               [&predBaseElement,
+  //                dynBS](uint64_t baseStreamId) -> StreamValue {
+  //             assert(baseStreamId == dynBS->getStaticId() &&
+  //                    "Invalid baseStreamId.");
+  //             assert(predBaseElement->isReady());
+  //             assert(predBaseElement->size <= 8);
+  //             StreamValue v;
+  //             v.front() = predBaseElement->getUInt64();
+  //             return v;
+  //           };
+  //           auto &predConfig = dynPredS->configData;
+  //           Addr elementVAddr =
+  //               predConfig->addrGenCallback
+  //                   ->genAddr(idx, predConfig->addrGenFormalParams,
+  //                             getBaseStreamValue)
+  //                   .front();
+  //           sliceId.vaddr = elementVAddr;
+  //           sliceId.size = dynPredS->getMemElementSize();
+  //           LLC_SLICE_DPRINTF_(
+  //               LLCRubyStreamStore, sliceId,
+  //               "StreamStore predicated off, send back StreamAck.\n");
+  //           this->issueStreamAckToMLC(sliceId);
+  //         }
+  //       }
+  //     }
+  //     stream->waitingPredicatedElements.erase(predicatedIter);
+  //   }
 
-  } else {
-    assert(stream->waitingPredicatedElements.empty() &&
-           "No predCallback for predicated elements.");
-  }
+  // } else {
+  assert(stream->waitingPredicatedElements.empty() &&
+         "No predCallback for predicated elements.");
+  // }
 }
 
 void LLCStreamEngine::processStreamDataForUpdate(
