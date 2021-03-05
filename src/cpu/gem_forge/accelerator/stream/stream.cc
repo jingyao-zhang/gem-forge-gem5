@@ -844,8 +844,8 @@ void Stream::addValueBaseElements(StreamElement *newElement) {
     if (baseDynS.allocSize - baseDynS.stepSize <=
         dynS.allocSize - dynS.stepSize) {
       this->se->dumpFIFO();
-      S_PANIC(this, "Base %s has not enough allocated element.",
-              baseS->getStreamName());
+      S_PANIC(this, "ValueBase %s has not allocated element %llu.",
+              baseS->getStreamName(), newElementIdx);
     }
 
     auto baseElement = baseDynS.getElementByIdx(newElementIdx);

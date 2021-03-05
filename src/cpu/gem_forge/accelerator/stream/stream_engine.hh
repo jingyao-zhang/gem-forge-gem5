@@ -387,7 +387,10 @@ private:
   const std::list<Stream *> &getStepStreamList(Stream *stepS) const;
 
   // Helper function to get streams configured in the region.
-  std::list<Stream *>
+  mutable std::unordered_map<const LLVM::TDG::StreamRegion *,
+                             std::list<Stream *>>
+      memorizedRegionConfiguredStreamsMap;
+  const std::list<Stream *> &
   getConfigStreamsInRegion(const LLVM::TDG::StreamRegion &streamRegion);
 
   // Called every cycle to allocate elements.

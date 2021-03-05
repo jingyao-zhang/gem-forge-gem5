@@ -292,7 +292,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     }
   }
 
-  auto configStreams = this->getConfigStreamsInRegion(streamRegion);
+  const auto &configStreams = this->getConfigStreamsInRegion(streamRegion);
   for (auto &S : configStreams) {
     S->statistic.numConfigured++;
 
@@ -330,7 +330,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
 
   SE_DPRINTF("Execute StreamConfig for %s.\n", streamRegion.region());
 
-  auto configStreams = this->getConfigStreamsInRegion(streamRegion);
+  const auto &configStreams = this->getConfigStreamsInRegion(streamRegion);
 
   /**
    * First notify the stream. This will set up the addr gen function.
@@ -370,7 +370,7 @@ void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
 
   SE_DPRINTF("Commit StreamConfig for %s.\n", streamRegion.region());
 
-  auto configStreams = this->getConfigStreamsInRegion(streamRegion);
+  const auto &configStreams = this->getConfigStreamsInRegion(streamRegion);
 
   /**
    * First notify the stream. This will set up the addr gen function.
@@ -397,7 +397,7 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
   // Notify NestStreamController.
   this->nestStreamController->rewindStreamConfig(args);
 
-  auto configStreams = this->getConfigStreamsInRegion(streamRegion);
+  const auto &configStreams = this->getConfigStreamsInRegion(streamRegion);
 
   // First we need to rewind any floated streams.
   this->floatController->rewindFloatStreams(args, configStreams);
@@ -1659,20 +1659,32 @@ StreamEngine::getStepStreamList(Stream *stepS) const {
       .first->second;
 }
 
-std::list<Stream *> StreamEngine::getConfigStreamsInRegion(
+const std::list<Stream *> &StreamEngine::getConfigStreamsInRegion(
     const LLVM::TDG::StreamRegion &streamRegion) {
+  if (this->memorizedRegionConfiguredStreamsMap.count(&streamRegion)) {
+    return this->memorizedRegionConfiguredStreamsMap.at(&streamRegion);
+  }
   /**
    * Get all the configured streams.
    */
-  std::list<Stream *> configStreams;
+  auto &configStreams = this->memorizedRegionConfiguredStreamsMap
+                            .emplace(std::piecewise_construct,
+                                     std::forward_as_tuple(&streamRegion),
+                                     std::forward_as_tuple())
+                            .first->second;
   std::unordered_set<Stream *> dedupSet;
   for (const auto &streamInfo : streamRegion.streams()) {
     // Deduplicate the streams due to coalescing.
     const auto &streamId = streamInfo.id();
     auto stream = this->getStream(streamId);
     if (dedupSet.count(stream) == 0) {
-      configStreams.push_back(stream);
-      dedupSet.insert(stream);
+      // We insert the whole StepStreams to reuse the topological sort result.
+      if (stream->stepRootStream == stream) {
+        const auto &stepStreams = this->getStepStreamList(stream);
+        configStreams.insert(configStreams.end(), stepStreams.begin(),
+                             stepStreams.end());
+        dedupSet.insert(stepStreams.begin(), stepStreams.end());
+      }
     }
   }
   return configStreams;
