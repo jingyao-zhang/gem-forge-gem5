@@ -42,6 +42,37 @@ void LLCStreamRangeBuilder::addElementAddress(uint64_t elementIdx, Addr vaddr,
   this->vaddrRange.add(vaddr, vaddr + size);
   this->paddrRange.add(paddr, paddr + size);
   this->nextElementIdx++;
+  this->tryBuildRange();
+}
+
+bool LLCStreamRangeBuilder::hasReadyRanges() const {
+  if (this->readyRanges.empty()) {
+    return false;
+  }
+  // Recursively check all indirect streams.
+  for (auto dynIS : this->stream->getIndStreams()) {
+    if (dynIS->shouldRangeSync() &&
+        !dynIS->getRangeBuilder()->hasReadyRanges()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+DynamicStreamAddressRangePtr LLCStreamRangeBuilder::popReadyRange() {
+  auto range = this->readyRanges.front();
+  this->readyRanges.pop_front();
+  // Recursively merge all indirect streams' range.
+  for (auto dynIS : this->stream->getIndStreams()) {
+    if (dynIS->shouldRangeSync()) {
+      auto indRange = dynIS->getRangeBuilder()->popReadyRange();
+      range->addRange(indRange);
+    }
+  }
+  return range;
+}
+
+void LLCStreamRangeBuilder::tryBuildRange() {
   if ((this->totalTripCount != -1 &&
        this->nextElementIdx == this->totalTripCount) ||
       ((this->nextElementIdx % this->elementsPerRange) == 0)) {

@@ -100,16 +100,7 @@ void LLCStreamElement::extractElementDataFromSlice(
   auto elementIdx = this->idx;
   auto elementSize = this->size;
   if (this->vaddr == 0) {
-    // This is indirect stream, at most one element per slice.
-    // We recover the element vaddr here.
-    if (sliceId.getNumElements() > 1) {
-      LLC_SLICE_PANIC(sliceId, "LLCIndirectSlice should only have 1 element.");
-    }
-    if (sliceId.getSize() != elementSize) {
-      LLC_SLICE_PANIC(sliceId,
-                      "Can not reconstruct multi-line indirect element");
-    }
-    this->vaddr = sliceId.vaddr;
+    LLC_ELEMENT_PANIC(this, "Cannot extract data without vaddr.");
   }
 
   int sliceOffset;

@@ -109,6 +109,9 @@ private:
   void receiveStreamElementData(const DynamicStreamSliceId &sliceId,
                                 const DataBlock &dataBlock,
                                 const DataBlock &storeValueBlock);
+  void receiveStoreStreamElementData(LLCDynamicStreamPtr dynS,
+                                     const DynamicStreamSliceId &sliceId,
+                                     const DataBlock &storeValueBlock);
 
   /**
    * Bidirectionaly map between streams that are identical but
@@ -311,12 +314,11 @@ private:
   /**
    * Helper function to process stream data for indirect/update.
    */
-  void processStreamDataForIndirectStreams(LLCDynamicStreamPtr stream,
-                                           LLCStreamElementPtr element);
-  void processStreamDataForUpdate(LLCDynamicStreamPtr stream,
-                                  LLCStreamElementPtr element,
-                                  const DataBlock &storeValueBlock,
-                                  DataBlock &loadValueBlock);
+  void triggerIndirectElement(LLCDynamicStreamPtr stream,
+                              LLCStreamElementPtr element);
+  void triggerUpdate(LLCDynamicStreamPtr stream, LLCStreamElementPtr element,
+                     const DataBlock &storeValueBlock,
+                     DataBlock &loadValueBlock);
   void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,
                          uint64_t updateValue);
   /**

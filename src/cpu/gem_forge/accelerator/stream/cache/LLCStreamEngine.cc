@@ -262,150 +262,59 @@ void LLCStreamEngine::drainIncomingElementDataMsg() {
 void LLCStreamEngine::receiveStreamElementData(
     const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
     const DataBlock &storeValueBlock) {
-  // Search through the direct streams.
-  LLCDynamicStream *stream = nullptr;
-  for (auto S : this->streams) {
-    if (S->getDynamicStreamId() == sliceId.getDynStreamId()) {
-      stream = S;
-      break;
-    }
-  }
   /**
    * Since we notify the stream engine for all stream data,
    * it is possible that we don't find the stream if it is not direct stream.
-   * In such case we look up the global map.
-   * TODO: Really encode this in the message.
+   * Thus we just look up the global map.
    */
-  if (!stream) {
-    // Try to look up the global map.
-    stream = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId());
-  }
-  if (!stream) {
+  auto dynS = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId());
+  if (!dynS) {
     return;
   }
   // Update inflyRequests.
-  stream->inflyRequests--;
-  if (stream->inflyRequests < 0) {
+  if (dynS->inflyRequests == 0) {
     LLC_SLICE_PANIC(sliceId, "Negative inflyRequests.\n");
   }
+  dynS->inflyRequests--;
 
-  auto S = stream->getStaticStream();
+  auto S = dynS->getStaticStream();
   bool needIndirect =
-      !(stream->getIndStreams().empty() && stream->predicatedStreams.empty());
+      !(dynS->getIndStreams().empty() && dynS->predicatedStreams.empty());
   bool needUpdate = S->isUpdateStream() || S->isAtomicStream();
-  bool needSendTo = !(stream->sendToConfigs.empty());
+  bool needSendTo = !(dynS->sendToConfigs.empty());
 
   LLC_SLICE_DPRINTF(sliceId,
                     "Received ElementData, InflyRequests %d, NeedIndirect %d, "
                     "NeedUpdate %d NeedSendTo %d StoreBlock %s.\n",
-                    stream->inflyRequests, needIndirect, needUpdate, needSendTo,
+                    dynS->inflyRequests, needIndirect, needUpdate, needSendTo,
                     storeValueBlock);
 
   /**
-   * If this is a StoreStream, just store the slice and send back ack.
-   * StoreStream elements are already released when issuing this request.
+   * There are many things to do here.
+   * 0. Construct all the element data.
+   * 1. Slice - For StoreStream, perform the store and send back Ack.
+   * 2. Slice - For SendTo dependence, send the slice to the receiver.
+   * 3. Element - Trigger indirect elements if the base is ready (in order).
+   * 4. Element - Trigger update operations (out-of-order).
+   * 5. Element - Release ready elements in order.
    */
-  if (S->isStoreStream()) {
-    assert(!(needSendTo || needIndirect || needUpdate) &&
-           "StoreStream has no value to do anything.");
-    Addr paddr;
-    if (!stream->translateToPAddr(sliceId.vaddr, paddr)) {
-      LLC_SLICE_PANIC(
-          sliceId, "Failed to translate StoreStream slice vaddr %#x to paddr.",
-          sliceId.vaddr);
-    }
-    auto lineOffset = paddr % RubySystem::getBlockSizeBytes();
-    LLC_SLICE_DPRINTF_(
-        LLCRubyStreamStore, sliceId,
-        "StreamStore done with vaddr %#x paddr %#x size %d offset %d value %s, "
-        "send back StreamAck.\n",
-        sliceId.vaddr, paddr, sliceId.getSize(), lineOffset, storeValueBlock);
-    this->performStore(paddr, sliceId.getSize(),
-                       storeValueBlock.getData(lineOffset, sliceId.getSize()));
-    this->issueStreamAckToMLC(sliceId);
-    return;
-  }
 
-  /**
-   * This is just a pure DirectLoadStream without IndirectStreams.
-   * There is a bug when constructing MultiLine Indirect Stream Element,
-   * as the slice.vaddr is no longer the element vaddr. I don't have a
-   * good solution. So avoid that case by not extracting the element data
-   * from the slice and directly return.
-   */
-  if (!needIndirect && !needUpdate) {
-    if (needSendTo) {
-      for (const auto &recvConfig : stream->sendToConfigs) {
-        this->issueStreamDataToLLC(stream, sliceId, dataBlock, recvConfig);
-      }
-    }
-    /**
-     * Release any older elements.
-     * Notice that elements may not be released in order.
-     */
-    stream->eraseElementOlderThan(sliceId.getStartIdx());
-    return;
-  }
-
-  assert(!needSendTo && "Cannot support this case for now.");
-
-  /**
-   * Finally decide if we need to send back data or ack.
-   * 1. Update/Atomic: If core issuing, then need Data, otherwise Ack.
-   * 2. Load: Data is already sent by cache controller.
-   * We perform this here to make sure traffic between MLC and LLC are correctly
-   * sliced.
-   */
-  bool coreNeedAck = false;
-  bool coreNeedValue = false;
-  auto dynS = S->getDynamicStream(stream->getDynamicStreamId());
-  if (S->isAtomicStream() || S->isUpdateStream()) {
-    if (dynS && dynS->shouldCoreSEIssue()) {
-      coreNeedValue = true;
-    } else {
-      coreNeedAck = true;
-    }
-  }
-
-  /**
-   * 1. Construct all the element data, except for store stream.
-   * 2. Process each ready element for indirect/update/atomic/store.
-   * 3. Release ready element.
-   */
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element = stream->getElementPanic(idx, "RecvElementData");
+    auto element = dynS->getElementPanic(idx, "RecvElementData");
     element->extractElementDataFromSlice(
-        stream->getStaticStream()->getCPUDelegator(), sliceId, dataBlock);
+        dynS->getStaticStream()->getCPUDelegator(), sliceId, dataBlock);
   }
 
-  /**
-   * Normally we have to process the element in order, and send back data to MLC
-   * in slice granularity. However, since response may come back out of order,
-   * and we may lost SliceId. Ideally we should reassemble elements into slice,
-   * However as a hack for now, we simply process the element out-of-order and
-   * assert element is ready (no reduction, multi-line elements, etc.).
-   */
-  DataBlock loadValueBlock;
-  if (coreNeedValue) {
-    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-      if (!stream->idxToElementMap.at(idx)) {
-        LLC_SLICE_PANIC(sliceId, "Element %llu not allocated yet.", idx);
-      }
-      auto &element = stream->idxToElementMap.at(idx);
-      LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
-                        element->idx, element->isReady());
-      if (!element->isReady()) {
-        // Not ready yet. Break.
-        LLC_SLICE_PANIC(sliceId,
-                        "Element %llu not ready, but core need value.\n");
-      }
+  if (S->isStoreStream()) {
+    this->receiveStoreStreamElementData(dynS, sliceId, storeValueBlock);
+  }
 
-      this->processStreamDataForIndirectStreams(stream, element);
-      this->processStreamDataForUpdate(stream, element, storeValueBlock,
-                                       loadValueBlock);
-    }
-  } else {
-    for (auto &idxElement : stream->idxToElementMap) {
+  for (const auto &recvConfig : dynS->sendToConfigs) {
+    this->issueStreamDataToLLC(dynS, sliceId, dataBlock, recvConfig);
+  }
+
+  if (!dynS->getIndStreams().empty()) {
+    for (auto &idxElement : dynS->idxToElementMap) {
       auto &element = idxElement.second;
       LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
                         element->idx, element->isReady());
@@ -413,39 +322,92 @@ void LLCStreamEngine::receiveStreamElementData(
         // Not ready yet. Break.
         break;
       }
-
-      this->processStreamDataForIndirectStreams(stream, element);
-      this->processStreamDataForUpdate(stream, element, storeValueBlock,
-                                       loadValueBlock);
+      this->triggerIndirectElement(dynS, element);
     }
   }
 
-  // Now we can release any ready element, as they have already been processed
-  // for indirect streams.
-  while (!stream->idxToElementMap.empty()) {
-    auto elementIter = stream->idxToElementMap.begin();
+  if (S->isAtomicComputeStream() || S->isUpdateStream()) {
+    /**
+     * First we check whether we should send back value or ack.
+     * Also we do not handle elements in-order, as we want the message
+     * sent back to MLC is correctly sliced.
+     */
+    bool coreNeedValue = false;
+    auto dynCoreS = S->getDynamicStream(dynS->getDynamicStreamId());
+    if (S->isAtomicStream() || S->isUpdateStream()) {
+      if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
+        coreNeedValue = true;
+      }
+    }
+    // The final value return to the core.
+    DataBlock loadValueBlock;
+    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+      auto element = dynS->getElementPanic(idx, "RecvUpdateData");
+      LLC_SLICE_DPRINTF(sliceId, "Process for element %llu, Ready %d.\n",
+                        element->idx, element->isReady());
+      if (!element->isReady()) {
+        // Not ready yet. Break.
+        LLC_SLICE_PANIC(sliceId,
+                        "Element %llu not ready, but core need value.\n");
+      }
+      this->triggerUpdate(dynS, element, storeValueBlock, loadValueBlock);
+    }
+
+    // This is to make sure traffic to MLC is correctly sliced.
+    if (coreNeedValue) {
+      Addr paddr = 0;
+      assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
+      auto paddrLine = makeLineAddress(paddr);
+      this->issueStreamDataToMLC(
+          sliceId, paddrLine,
+          loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
+          RubySystem::getBlockSizeBytes(), 0 /* Line offset */);
+      LLC_SLICE_DPRINTF(sliceId,
+                        "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
+                        paddrLine, loadValueBlock);
+    } else {
+      this->issueStreamAckToMLC(sliceId);
+    }
+  }
+
+
+  /**
+   * Now we should be able to release ready element in order, as they should
+   * already be processed.
+   */
+  while (!dynS->idxToElementMap.empty()) {
+    auto elementIter = dynS->idxToElementMap.begin();
     if (!elementIter->second->isReady()) {
       break;
     }
-    stream->eraseElement(elementIter);
+    dynS->eraseElement(elementIter);
   }
 
-  if (coreNeedValue) {
-    Addr paddr = 0;
-    assert(stream->translateToPAddr(sliceId.vaddr, paddr));
-    auto paddrLine = makeLineAddress(paddr);
-    this->issueStreamDataToMLC(
-        sliceId, paddrLine,
-        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-        RubySystem::getBlockSizeBytes(), 0 /* Line offset */);
-    LLC_SLICE_DPRINTF(sliceId,
-                      "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
-                      paddrLine, loadValueBlock);
-  }
-  if (coreNeedAck) {
-    this->issueStreamAckToMLC(sliceId);
-  }
   return;
+}
+
+void LLCStreamEngine::receiveStoreStreamElementData(
+    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId,
+    const DataBlock &storeValueBlock) {
+  /**
+   * If this is a StoreStream, just store the slice and send back ack.
+   * StoreStream elements are already released when issuing this request.
+   */
+  Addr paddr;
+  if (!dynS->translateToPAddr(sliceId.vaddr, paddr)) {
+    LLC_SLICE_PANIC(sliceId,
+                    "Failed to translate StoreStream slice vaddr %#x to paddr.",
+                    sliceId.vaddr);
+  }
+  auto lineOffset = paddr % RubySystem::getBlockSizeBytes();
+  LLC_SLICE_DPRINTF_(
+      LLCRubyStreamStore, sliceId,
+      "StreamStore done with vaddr %#x paddr %#x size %d offset %d value %s, "
+      "send back StreamAck.\n",
+      sliceId.vaddr, paddr, sliceId.getSize(), lineOffset, storeValueBlock);
+  this->performStore(paddr, sliceId.getSize(),
+                     storeValueBlock.getData(lineOffset, sliceId.getSize()));
+  this->issueStreamAckToMLC(sliceId);
 }
 
 bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
@@ -1186,11 +1148,6 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
                            element->idx, sliceId.vaddr + sliceOffset,
                            overlapSize, elementOffset);
       }
-      /**
-       * StoreStream element is released here, as we don't really care about
-       * the element data.
-       */
-      dynS->eraseElementOlderThan(sliceId.getStartIdx());
     }
 
     // Check if we track inflyRequests.
@@ -1290,15 +1247,6 @@ void LLCStreamEngine::generateIndirectStreamRequest(
 
   auto IS = dynIS->getStaticStream();
   const auto &indirectConfig = dynIS->configData;
-  /**
-   * In old implementation, we release indirect stream element here. However,
-   * our new implementation require that element is not released until we
-   * finished processing it. This is the case for UpdateStream and AtomicStream,
-   * whose element is released in receiveStreamElementData.
-   */
-  if (!IS->isUpdateStream() && !IS->isAtomicComputeStream()) {
-    dynIS->eraseElement(elementIdx);
-  }
   if (IS->isReduction()) {
     LLC_S_PANIC(dynIS->getDynamicStreamId(),
                 "Reduction is no longer handled here.");
@@ -1922,8 +1870,8 @@ bool LLCStreamEngine::tryProcessStreamForwardRequest(const RequestMsg &req) {
   return true;
 }
 
-void LLCStreamEngine::processStreamDataForIndirectStreams(
-    LLCDynamicStreamPtr stream, LLCStreamElementPtr element) {
+void LLCStreamEngine::triggerIndirectElement(LLCDynamicStreamPtr stream,
+                                             LLCStreamElementPtr element) {
   if (stream->getIndStreams().empty() && stream->predicatedStreams.empty()) {
     // There is no stream dependent on my data.
     return;
@@ -2088,9 +2036,10 @@ void LLCStreamEngine::processStreamDataForIndirectStreams(
   // }
 }
 
-void LLCStreamEngine::processStreamDataForUpdate(
-    LLCDynamicStreamPtr stream, LLCStreamElementPtr element,
-    const DataBlock &storeValueBlock, DataBlock &loadValueBlock) {
+void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr stream,
+                                    LLCStreamElementPtr element,
+                                    const DataBlock &storeValueBlock,
+                                    DataBlock &loadValueBlock) {
 
   auto S = stream->getStaticStream();
   if (!(S->isUpdateStream() || S->isAtomicStream())) {

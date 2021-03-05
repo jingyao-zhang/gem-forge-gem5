@@ -123,28 +123,7 @@ void MLCDynamicDirectStream::advanceStream() {
     }
   }
 
-  /**
-   * There are two cases we need to send the token:
-   * 1. We have allocated more half the buffer size.
-   * 2. The stream has overflowed.
-   * 3. The llc stream is cutted.
-   */
-  auto llcTailSliceIdx = this->getLLCTailSliceIdx();
-  if (!this->llcCutted) {
-    if (!this->slicedStream.hasOverflowed()) {
-      if (this->tailSliceIdx - llcTailSliceIdx >= this->maxNumSlices / 2) {
-        this->sendCreditToLLC();
-      }
-    } else {
-      if (this->tailSliceIdx > llcTailSliceIdx) {
-        this->sendCreditToLLC();
-      }
-    }
-  } else {
-    if (this->llcCutSliceIdx > llcTailSliceIdx) {
-      this->sendCreditToLLC();
-    }
-  }
+  this->trySendCreditToLLC();
 }
 
 void MLCDynamicDirectStream::allocateSlice() {
@@ -211,6 +190,57 @@ void MLCDynamicDirectStream::allocateSlice() {
     // This address is invalid.
     // Do not update tailPAddr as the LLC stream would not move.
   }
+}
+
+void MLCDynamicDirectStream::trySendCreditToLLC() {
+  /**
+   * There are three cases we need to send the token:
+   * 1. We have allocated more half the buffer size.
+   * 2. The stream has overflowed.
+   * 3. The llc stream is cutted.
+   */
+  auto llcTailSliceIdx = this->getLLCTailSliceIdx();
+  auto hasEnoughCredits = false;
+  if (!this->llcCutted) {
+    if (!this->slicedStream.hasOverflowed()) {
+      if (this->tailSliceIdx - llcTailSliceIdx >= this->maxNumSlices / 2) {
+        hasEnoughCredits = true;
+      }
+    } else {
+      if (this->tailSliceIdx > llcTailSliceIdx) {
+        hasEnoughCredits = true;
+      }
+    }
+  } else {
+    if (this->llcCutSliceIdx > llcTailSliceIdx) {
+      hasEnoughCredits = true;
+    }
+  }
+  if (!hasEnoughCredits) {
+    return;
+  }
+  /**
+   * Additional check for SendTo relationship:
+   * We want to make sure that the receiver has the element initialized.
+   * If not, we schedule an event to check next cycle.
+   */
+  assert(this->tailSliceId.getEndIdx() > 0 && "TailSliceId EndIdx == 0");
+  const auto tailElementIdx = this->tailSliceId.getStartIdx() - 1;
+  for (const auto &sendToConfig : this->sendToConfigs) {
+    auto llcReceiverS = LLCDynamicStream::getLLCStream(sendToConfig->dynamicId);
+    if (llcReceiverS) {
+      if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
+        // Recheck next cycle.
+        MLC_S_DPRINTF(this->getDynamicStreamId(),
+                      "Delayed sending credit to LLC as receiver %s has not "
+                      "initialized element %llu.\n",
+                      sendToConfig->dynamicId, tailElementIdx);
+        this->scheduleAdvanceStream();
+        return;
+      }
+    }
+  }
+  this->sendCreditToLLC();
 }
 
 void MLCDynamicDirectStream::sendCreditToLLC() {

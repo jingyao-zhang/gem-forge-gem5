@@ -324,6 +324,7 @@ public:
    */
   void initDirectStreamSlicesUntil(uint64_t lastSliceIdx);
 
+  bool isElementInitialized(uint64_t elementIdx) const;
   bool isElementReleased(uint64_t elementIdx) const;
   LLCStreamElementPtr getElement(uint64_t elementIdx) const;
   LLCStreamElementPtr getElementPanic(uint64_t elementIdx,

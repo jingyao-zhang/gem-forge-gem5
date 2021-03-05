@@ -13,12 +13,8 @@ public:
 
   void addElementAddress(uint64_t elementIdx, Addr vaddr, Addr paddr, int size);
 
-  bool hasReadyRanges() const { return !this->readyRanges.empty(); }
-  DynamicStreamAddressRangePtr popReadyRange() {
-    auto range = this->readyRanges.front();
-    this->readyRanges.pop_front();
-    return range;
-  }
+  bool hasReadyRanges() const;
+  DynamicStreamAddressRangePtr popReadyRange();
 
 private:
   LLCDynamicStream *stream;
@@ -30,6 +26,8 @@ private:
   AddressRange vaddrRange;
   AddressRange paddrRange;
   std::list<DynamicStreamAddressRangePtr> readyRanges;
+
+  void tryBuildRange();
 
   int curLLCBank() const { return this->stream->curLLCBank(); }
 };

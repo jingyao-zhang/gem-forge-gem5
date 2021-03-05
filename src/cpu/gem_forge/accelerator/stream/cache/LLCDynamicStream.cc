@@ -426,6 +426,10 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
   }
 }
 
+bool LLCDynamicStream::isElementInitialized(uint64_t elementIdx) const {
+  return elementIdx < this->nextInitElementIdx;
+}
+
 bool LLCDynamicStream::isElementReleased(uint64_t elementIdx) const {
   if (this->idxToElementMap.empty()) {
     return elementIdx < this->nextInitElementIdx;
@@ -877,6 +881,18 @@ void LLCDynamicStream::markElementIssued(uint64_t elementIdx) {
   if (element->getState() != LLCStreamElement::State::READY_TO_ISSUE) {
     LLC_S_PANIC(this->getDynamicStreamId(),
                 "IndirectElement %llu not in ready state.", elementIdx);
+  }
+  /**
+   * Notify the RangeBuilder.
+   */
+  if (this->shouldRangeSync()) {
+    Addr paddr;
+    if (!this->translateToPAddr(element->vaddr, paddr)) {
+      LLC_S_PANIC(this->getDynamicStreamId(), "Fault on Issued element %llu.",
+                  elementIdx);
+    }
+    this->rangeBuilder->addElementAddress(elementIdx, element->vaddr, paddr,
+                                          element->size);
   }
   element->setState(LLCStreamElement::State::ISSUED);
   assert(this->numElementsReadyToIssue > 0 &&

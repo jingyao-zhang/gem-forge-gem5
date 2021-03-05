@@ -293,6 +293,9 @@ bool DynamicStream::shouldRangeSync() const {
   if (!this->stream->se->isStreamRangeSyncEnabled()) {
     return false;
   }
+  if (!this->stream->isMemStream()) {
+    return false;
+  }
   return !this->shouldCoreSEIssue();
 }
 

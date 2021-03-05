@@ -85,6 +85,8 @@ protected:
   bool isPointerChase;
   bool isPseudoOffload;
 
+  std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
+
   AbstractStreamAwareController *controller;
   MessageBuffer *responseMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;

@@ -44,6 +44,13 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
   // Schedule the first advanceStreamEvent.
   this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
                                             Cycles(1));
+
+  // Remember the SendTo configs.
+  for (auto &depEdge : this->config->depEdges) {
+    if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
+      this->sendToConfigs.emplace_back(depEdge.data);
+    }
+  }
 }
 
 MLCDynamicStream::~MLCDynamicStream() {

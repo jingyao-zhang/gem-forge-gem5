@@ -101,8 +101,9 @@ protected:
   void allocateSlice();
 
   /**
-   * Send credit to the LLC stream. Enqueue a new segment.
+   * Check and send credit to the LLC stream. Enqueue a new segment.
    */
+  void trySendCreditToLLC();
   void sendCreditToLLC();
 
   /**
