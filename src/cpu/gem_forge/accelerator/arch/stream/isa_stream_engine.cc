@@ -754,17 +754,17 @@ void ISAStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
 
 bool ISAStreamEngine::canDispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo) {
-  return this->canDispatchStreamUser(dynInfo);
+  return this->canDispatchStreamUser(dynInfo, false);
 }
 
 void ISAStreamEngine::dispatchStreamLoad(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLSQCallbackList &extraLSQCallbacks) {
-  this->dispatchStreamUser(dynInfo, extraLSQCallbacks);
+  this->dispatchStreamUser(dynInfo, false, extraLSQCallbacks);
 }
 
 bool ISAStreamEngine::canExecuteStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  return this->canExecuteStreamUser(dynInfo);
+  return this->canExecuteStreamUser(dynInfo, false);
 }
 
 void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
@@ -783,7 +783,7 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
   StreamEngine::StreamUserArgs::ValueVec values;
   values.reserve(usedStreamIds.size());
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                    usedStreamIds, &values);
+                                    usedStreamIds, false, &values);
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
   DYN_INST_DPRINTF("Execute StreamLoad RegionStream %llu destRegs %d.\n",
@@ -817,15 +817,15 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
 }
 
 bool ISAStreamEngine::canCommitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  return this->canCommitStreamUser(dynInfo);
+  return this->canCommitStreamUser(dynInfo, false);
 }
 
 void ISAStreamEngine::commitStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  this->commitStreamUser(dynInfo);
+  this->commitStreamUser(dynInfo, false);
 }
 
 void ISAStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
-  this->rewindStreamUser(dynInfo);
+  this->rewindStreamUser(dynInfo, false);
 }
 
 /********************************************************************************
@@ -834,18 +834,18 @@ void ISAStreamEngine::rewindStreamLoad(const GemForgeDynInstInfo &dynInfo) {
 
 bool ISAStreamEngine::canDispatchStreamStore(
     const GemForgeDynInstInfo &dynInfo) {
-  return this->canDispatchStreamUser(dynInfo);
+  return this->canDispatchStreamUser(dynInfo, true);
 }
 
 void ISAStreamEngine::dispatchStreamStore(
     const GemForgeDynInstInfo &dynInfo,
     GemForgeLSQCallbackList &extraLSQCallbacks) {
-  this->dispatchStreamUser(dynInfo, extraLSQCallbacks);
+  this->dispatchStreamUser(dynInfo, true, extraLSQCallbacks);
 }
 
 bool ISAStreamEngine::canExecuteStreamStore(
     const GemForgeDynInstInfo &dynInfo) {
-  return this->canExecuteStreamUser(dynInfo);
+  return this->canExecuteStreamUser(dynInfo, true);
 }
 
 void ISAStreamEngine::executeStreamStore(const GemForgeDynInstInfo &dynInfo,
@@ -855,23 +855,23 @@ void ISAStreamEngine::executeStreamStore(const GemForgeDynInstInfo &dynInfo,
 }
 
 bool ISAStreamEngine::canCommitStreamStore(const GemForgeDynInstInfo &dynInfo) {
-  return this->canCommitStreamUser(dynInfo);
+  return this->canCommitStreamUser(dynInfo, true);
 }
 
 void ISAStreamEngine::commitStreamStore(const GemForgeDynInstInfo &dynInfo) {
-  this->commitStreamUser(dynInfo);
+  this->commitStreamUser(dynInfo, true);
 }
 
 void ISAStreamEngine::rewindStreamStore(const GemForgeDynInstInfo &dynInfo) {
-  this->rewindStreamUser(dynInfo);
+  this->rewindStreamUser(dynInfo, true);
 }
 
 /********************************************************************************
  * StreamUser Handlers.
  *******************************************************************************/
 
-bool ISAStreamEngine::canDispatchStreamUser(
-    const GemForgeDynInstInfo &dynInfo) {
+bool ISAStreamEngine::canDispatchStreamUser(const GemForgeDynInstInfo &dynInfo,
+                                            bool isStore) {
 
   auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
 
@@ -905,7 +905,7 @@ bool ISAStreamEngine::canDispatchStreamUser(
         usedStreamId,
     };
     StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                      usedStreamIds);
+                                      usedStreamIds, isStore);
     auto se = this->getStreamEngine();
     // It's possible that we don't have element if we have reached the limit.
     if (!se->canDispatchStreamUser(args)) {
@@ -932,7 +932,7 @@ bool ISAStreamEngine::canDispatchStreamUser(
 }
 
 void ISAStreamEngine::dispatchStreamUser(
-    const GemForgeDynInstInfo &dynInfo,
+    const GemForgeDynInstInfo &dynInfo, bool isStore,
     GemForgeLSQCallbackList &extraLSQCallbacks) {
 
   auto &instInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
@@ -947,7 +947,7 @@ void ISAStreamEngine::dispatchStreamUser(
       userInfo.translatedUsedStreamIds.at(0),
   };
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                    usedStreamIds);
+                                    usedStreamIds, isStore);
   auto se = this->getStreamEngine();
   // It's possible that this is misspeculated and we don't have element.
   if (!se->canDispatchStreamUser(args)) {
@@ -969,7 +969,8 @@ void ISAStreamEngine::dispatchStreamUser(
   }
 }
 
-bool ISAStreamEngine::canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo) {
+bool ISAStreamEngine::canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo,
+                                           bool isStore) {
   const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
 
@@ -982,7 +983,7 @@ bool ISAStreamEngine::canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo) {
       userInfo.translatedUsedStreamIds.at(0),
   };
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                    usedStreamIds);
+                                    usedStreamIds, isStore);
   auto se = this->getStreamEngine();
   bool canExecute = se->areUsedStreamsReady(args);
   DYN_INST_DPRINTF("[canExecute] %s %llu %c.\n", dynInfo.staticInst->getName(),
@@ -991,11 +992,13 @@ bool ISAStreamEngine::canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo) {
   return canExecute;
 }
 
-bool ISAStreamEngine::canCommitStreamUser(const GemForgeDynInstInfo &dynInfo) {
+bool ISAStreamEngine::canCommitStreamUser(const GemForgeDynInstInfo &dynInfo,
+                                          bool isStore) {
   return true;
 }
 
-void ISAStreamEngine::commitStreamUser(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::commitStreamUser(const GemForgeDynInstInfo &dynInfo,
+                                       bool isStore) {
   const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   if (dynStreamInstInfo.mustBeMisspeculated) {
@@ -1011,7 +1014,7 @@ void ISAStreamEngine::commitStreamUser(const GemForgeDynInstInfo &dynInfo) {
       userInfo.translatedUsedStreamIds.at(0),
   };
   StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                    usedStreamIds);
+                                    usedStreamIds, isStore);
   auto se = this->getStreamEngine();
   se->commitStreamUser(args);
 
@@ -1019,7 +1022,8 @@ void ISAStreamEngine::commitStreamUser(const GemForgeDynInstInfo &dynInfo) {
   this->seqNumToDynInfoMap.erase(dynInfo.seqNum);
 }
 
-void ISAStreamEngine::rewindStreamUser(const GemForgeDynInstInfo &dynInfo) {
+void ISAStreamEngine::rewindStreamUser(const GemForgeDynInstInfo &dynInfo,
+                                       bool isStore) {
   const auto &dynStreamInstInfo = this->getDynStreamInstInfo(dynInfo.seqNum);
   const auto &userInfo = dynStreamInstInfo.userInfo;
   if (dynStreamInstInfo.mustBeMisspeculated) {
@@ -1030,7 +1034,7 @@ void ISAStreamEngine::rewindStreamUser(const GemForgeDynInstInfo &dynInfo) {
         userInfo.translatedUsedStreamIds.at(0),
     };
     StreamEngine::StreamUserArgs args(dynInfo.seqNum, dynInfo.pc.pc(),
-                                      usedStreamIds);
+                                      usedStreamIds, isStore);
     auto se = this->getStreamEngine();
     se->rewindStreamUser(args);
   }

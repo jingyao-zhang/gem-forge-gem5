@@ -1,6 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_ELEMENT_HH__
 #define __CPU_TDG_ACCELERATOR_STREAM_ELEMENT_HH__
 
+#include "addr_gen_callback.hh"
 #include "base/types.hh"
 #include "cache/DynamicStreamSliceId.hh"
 #include "cpu/gem_forge/gem_forge_packet_handler.hh"
@@ -179,9 +180,12 @@ struct StreamElement {
    * Whether the first user of this stream element has been dispatched.
    * This is used to determine the first user the of the stream element
    * and allocate entry in the load queue.
+   * Note: UpdateStream has a StreamLoad and StreamStore. We track both.
    */
   uint64_t firstUserSeqNum;
+  uint64_t firstStoreSeqNum;
   bool isFirstUserDispatched() const;
+  bool isFirstStoreDispatched() const;
   bool isStepped = false;
   bool isAddrAliased = false;
   bool isValueReady = false;
@@ -292,9 +296,37 @@ struct StreamElement {
   bool isReqIssued() const { return this->reqIssued; }
   void setReqIssued();
 
+  /**
+   * Check if the computation value is ready.
+   * For UpdateStream, this is UpdateValue.
+   * Otherwise, this is just normal value.
+   */
+  bool isComputeValueReady() const;
+  /**
+   * API to access the UpdateValue for UpdateStream.
+   */
+  bool isUpdateValueReady() const { return this->updateValueReady; }
+  bool checkUpdateValueReady() const;
+  void receiveComputeResult(const StreamValue &result);
+  const uint8_t *getUpdateValuePtrByStreamId(StaticId streamId) const;
+
 private:
   bool addrReady = false;
   bool reqIssued = false;
+
+  /**
+   * Extra value for UpdateStream.
+   * Unlike other streams which have only one value,
+   * UpdateStream has two values: one loaded from cache and the other one
+   * computed for store.
+   */
+  bool updateValueReady = false;
+  StreamValue updateValue;
+
+  /**
+   * Helper func to udpate our stats about when first check on value happened.
+   */
+  void updateFirstValueCheckCycle(bool checkedByCore) const;
 };
 
 #endif

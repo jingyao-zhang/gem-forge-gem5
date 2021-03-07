@@ -22,7 +22,7 @@ public:
                    const std::vector<uint64_t> &_usedStreamIds)
       : element(_element), FIFOIdx(_element->FIFOIdx),
         usedStreamIds(_usedStreamIds),
-        args(_userSeqNum, _userPC, usedStreamIds) {}
+        args(_userSeqNum, _userPC, usedStreamIds, false /* isStore */) {}
   bool getAddrSize(Addr &addr, uint32_t &size) const override;
   bool hasNonCoreDependent() const override;
   bool isIssued() const override;

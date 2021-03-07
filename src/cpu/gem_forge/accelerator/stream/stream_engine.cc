@@ -650,24 +650,40 @@ int StreamEngine::createStreamUserLSQCallbacks(
     }
     auto S = element->stream;
     auto dynS = element->dynS;
-    if (S->isLoadStream() ||
-        (S->isAtomicComputeStream() && !dynS->offloadedToCache)) {
-      if (element->firstUserSeqNum == seqNum) {
-        // Insert into the load queue if we model the lsq.
-        if (this->enableLSQ) {
-          assert(numCallbacks < callbacks.size() && "LQCallback overflows.");
-          callbacks.at(numCallbacks) = m5::make_unique<StreamLQCallback>(
-              element, seqNum, args.pc, args.usedStreamIds);
-          numCallbacks++;
+    bool pushToLQ = false;
+    bool pushToSQ = false;
+    if (S->isLoadStream()) {
+      if (element->firstUserSeqNum == seqNum && !args.isStore) {
+        // Insert into the load queue if this is the first user.
+        pushToLQ = true;
+      }
+      if (S->isUpdateStream() && !dynS->offloadedToCache) {
+        // Insert into the store queue if this is the first StreamStore.
+        if (element->firstStoreSeqNum == seqNum) {
+          pushToSQ = true;
         }
+      }
+    } else if (S->isAtomicComputeStream() && !dynS->offloadedToCache) {
+      if (element->firstUserSeqNum == seqNum) {
+        pushToLQ = true;
       }
     } else if (S->isStoreComputeStream() && !dynS->offloadedToCache) {
       if (element->firstUserSeqNum == seqNum) {
-        // Insert into the store queue for StoreStream executed at the core.
         if (!this->enableLSQ) {
           S_ELEMENT_PANIC(element,
                           "StoreStream executed at core requires LSQ.");
         }
+        pushToSQ = true;
+      }
+    }
+    if (this->enableLSQ) {
+      if (pushToLQ) {
+        assert(numCallbacks < callbacks.size() && "LQCallback overflows.");
+        callbacks.at(numCallbacks) = m5::make_unique<StreamLQCallback>(
+            element, seqNum, args.pc, args.usedStreamIds);
+        numCallbacks++;
+      }
+      if (pushToSQ) {
         assert(numCallbacks < callbacks.size() && "SQCallback overflows.");
         callbacks.at(numCallbacks) = m5 ::make_unique<StreamSQCallback>(
             element, seqNum, args.pc, args.usedStreamIds);
@@ -750,12 +766,12 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
     if (!S->hasCoreUser()) {
       // There are exceptions for this sanity check.
       // 1. ReductionStream may use LastElement to convey back the final value.
-      // 2. StoreComputeStream enabled uses StreamStore inst to get the
+      // 2. StoreComputeStream/UpdateStream use StreamStore inst to get the
       // address and value from the SE so the core can finally write back.
       // 3. AtomicComputeStream always have a StreamAtomic inst as a place
       // holder.
       if (!S->isReduction() && !S->isStoreComputeStream() &&
-          !S->isAtomicComputeStream()) {
+          !S->isAtomicComputeStream() && !S->isUpdateStream()) {
         S_PANIC(S, "Try to use a stream with no core user.");
       }
     }
@@ -783,6 +799,10 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
           this->peb.removeElement(element);
         }
       }
+      if (!element->isFirstStoreDispatched() && args.isStore) {
+        // Remember the first StreamStore.
+        element->firstStoreSeqNum = seqNum;
+      }
       elementSet.insert(element);
       // Construct the elementUserMap.
       this->elementUserMap
@@ -809,19 +829,36 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     }
     auto S = element->stream;
     // Floating Store/AtomicComputeStream will only check for Ack when stepping.
+    // This also true for floating UpdateStream's SQCallback.
     if (element->dynS->offloadedToCache) {
       if (S->isStoreComputeStream()) {
+        continue;
+      }
+      if (S->isUpdateStream() && args.isStore) {
         continue;
       }
       if (S->isAtomicComputeStream() && !S->hasCoreUser()) {
         continue;
       }
     }
-    if (!(element->isAddrReady() &&
-          element->checkValueReady(true /* CheckedByCore */))) {
-      S_ELEMENT_DPRINTF(element, "NotReady: AddrReady %d ValueReady %d.\n",
-                        element->isAddrReady(), element->isValueReady);
-      ready = false;
+    /**
+     * Special case for UpdateStrea's SQCallback:
+     * We check the UpdateValue, not the normal value.
+     */
+    if (S->isUpdateStream() && args.isStore) {
+      if (!(element->isAddrReady() && element->checkUpdateValueReady())) {
+        S_ELEMENT_DPRINTF(
+            element, "NotReady: AddrReady %d UpdateValueReady %d.\n",
+            element->isAddrReady(), element->isUpdateValueReady());
+        ready = false;
+      }
+    } else {
+      if (!(element->isAddrReady() &&
+            element->checkValueReady(true /* CheckedByCore */))) {
+        S_ELEMENT_DPRINTF(element, "NotReady: AddrReady %d ValueReady %d.\n",
+                          element->isAddrReady(), element->isValueReady);
+        ready = false;
+      }
     }
   }
 
@@ -904,12 +941,24 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
       if (S->isStoreComputeStream()) {
         isActuallyUsed = false;
       }
-      if (S->isAtomicComputeStream() && !S->hasCoreUser()) {
+      if ((S->isUpdateStream() || S->isAtomicComputeStream()) &&
+          !S->hasCoreUser()) {
         isActuallyUsed = false;
       }
     }
+    if (S->isUpdateStream() && args.isStore) {
+      isActuallyUsed = false;
+      if (!element->dynS->offloadedToCache) {
+        if (!element->isUpdateValueReady()) {
+          S_ELEMENT_PANIC(
+              element,
+              "Commit StoreUser for UpdateStream, but UpdateValue not ready.");
+        }
+      }
+    }
     if (!element->isValueReady) {
-      // The only exception is the Store/AtomicComputeStream is floated.
+      // The only exception is the Store/AtomicComputeStream is floated,
+      // as well as the StreamStore to UpdateStream.
       if (isActuallyUsed) {
         S_ELEMENT_PANIC(element, "Commit user, but value not ready.");
       }
@@ -956,6 +1005,10 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
       if (element->stream->trackedByPEB() && element->isReqIssued()) {
         this->peb.addElement(element);
       }
+    }
+    if (element->firstStoreSeqNum == seqNum) {
+      // I am the first store.
+      element->firstStoreSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
     }
     // Remove the entry from the elementUserMap.
     auto &userSet = this->elementUserMap.at(element);
@@ -2019,7 +2072,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          * 1. All the address base elements are ready -> compute address.
          *  This represents all Mem streams.
          * 2. Address is ready, value base elements are ready -> compute value.
-         *  This applies to IV/Reduction/StoreCompute streams.
+         *  This applies to IV/Reduction/StoreCompute/Update streams.
          * 3. Address is ready, request not issued, first user is
          * non-speculative
          *  -> Issue the atomic request.
@@ -2028,8 +2081,8 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
 
         if (element->isAddrReady()) {
           // Address already ready. Check if we have type 2 or 3 ready elements.
-          if (S->shouldComputeValue() && !element->isValueReady &&
-              !element->scheduledComputation) {
+          if (S->shouldComputeValue() && !element->scheduledComputation &&
+              !element->isComputeValueReady()) {
             if (element->checkValueBaseElementsValueReady()) {
               S_ELEMENT_DPRINTF(element, "Found Value Ready.\n");
               readyElements.emplace_back(element);

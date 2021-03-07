@@ -55,8 +55,7 @@ void StreamComputeEngine::completeComputation() {
       break;
     }
     S_ELEMENT_DPRINTF(element, "Complete computation.\n");
-    element->setValue(element->addr, element->size,
-                      computation->result.uint8Ptr());
+    element->receiveComputeResult(computation->result);
     element->scheduledComputation = false;
     this->inflyComputations.pop_front();
   }

@@ -87,14 +87,16 @@ public:
     uint64_t seqNum;
     Addr pc;
     const std::vector<uint64_t> &usedStreamIds;
+    // Is this a StreamStore (to distinguish for UpdateStream).
+    bool isStore = false;
     // Used to return the stream values.
     // Only used in executeStreamUser().
     ValueVec *values;
     StreamUserArgs(uint64_t _seqNum, Addr _pc,
                    const std::vector<uint64_t> &_usedStreamIds,
-                   ValueVec *_values = nullptr)
+                   bool _isStore = false, ValueVec *_values = nullptr)
         : seqNum(_seqNum), pc(_pc), usedStreamIds(_usedStreamIds),
-          values(_values) {}
+          isStore(_isStore), values(_values) {}
   };
 
   int getStreamUserLQEntries(const StreamUserArgs &args) const;

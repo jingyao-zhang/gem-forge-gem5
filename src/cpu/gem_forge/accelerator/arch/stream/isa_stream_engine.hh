@@ -71,13 +71,13 @@ private:
   /**
    * Used to implement StreamLoad and StreamStore.
    */
-  bool canDispatchStreamUser(const GemForgeDynInstInfo &dynInfo);
-  void dispatchStreamUser(const GemForgeDynInstInfo &dynInfo,
+  bool canDispatchStreamUser(const GemForgeDynInstInfo &dynInfo, bool isStore);
+  void dispatchStreamUser(const GemForgeDynInstInfo &dynInfo, bool isStore,
                           GemForgeLSQCallbackList &extraLSQCallbacks);
-  bool canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo);
-  bool canCommitStreamUser(const GemForgeDynInstInfo &dynInfo);
-  void commitStreamUser(const GemForgeDynInstInfo &dynInfo);
-  void rewindStreamUser(const GemForgeDynInstInfo &dynInfo);
+  bool canExecuteStreamUser(const GemForgeDynInstInfo &dynInfo, bool isStore);
+  bool canCommitStreamUser(const GemForgeDynInstInfo &dynInfo, bool isStore);
+  void commitStreamUser(const GemForgeDynInstInfo &dynInfo, bool isStore);
+  void rewindStreamUser(const GemForgeDynInstInfo &dynInfo, bool isStore);
 
   /**
    * Memorize the AllStreamRegions.

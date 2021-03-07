@@ -64,7 +64,8 @@ StreamSQCallback::StreamSQCallback(StreamElement *_element,
                                    uint64_t _userSeqNum, Addr _userPC,
                                    const std::vector<uint64_t> &_usedStreamIds)
     : element(_element), FIFOIdx(_element->FIFOIdx),
-      usedStreamIds(_usedStreamIds), args(_userSeqNum, _userPC, usedStreamIds) {
+      usedStreamIds(_usedStreamIds),
+      args(_userSeqNum, _userPC, usedStreamIds, true /* isStore */) {
   /**
    * If the StoreStream is floated, it is possible that there are
    * still some SQCallbacks for the first few elements.
@@ -122,7 +123,15 @@ const uint8_t *StreamSQCallback::getValue() const {
   S_ELEMENT_DPRINTF(this->element,
                     "SQCallback get value, AddrReady %d ValueReady %d.\n",
                     this->element->isAddrReady(), this->element->isValueReady);
-  return this->element->getValuePtrByStreamId(this->usedStreamIds.front());
+  /**
+   * Handle the special case for UpdateStream, which takes the UpdateValue.
+   */
+  auto usedStreamId = this->usedStreamIds.front();
+  if (this->element->stream->isUpdateStream()) {
+    return this->element->getUpdateValuePtrByStreamId(usedStreamId);
+  } else {
+    return this->element->getValuePtrByStreamId(usedStreamId);
+  }
 }
 
 void StreamSQCallback::RAWMisspeculate() {

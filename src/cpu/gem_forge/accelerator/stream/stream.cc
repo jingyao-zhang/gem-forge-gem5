@@ -721,8 +721,8 @@ bool Stream::shouldComputeValue() const {
     // IV/Reduction stream always compute value.
     return true;
   }
-  if (this->isStoreComputeStream()) {
-    // StoreCompute stream can also compute.
+  if (this->isStoreComputeStream() || this->isUpdateStream()) {
+    // StoreCompute/Update stream can also compute.
     // AtomicCompute is handled by sending out the AMO request.
     return true;
   }

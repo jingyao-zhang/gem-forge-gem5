@@ -232,11 +232,13 @@ void StreamElement::clear() {
   this->FIFOIdx = FIFOEntryIdx();
   this->isCacheBlockedValue = false;
   this->firstUserSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
+  this->firstStoreSeqNum = LLVMDynamicInst::INVALID_SEQ_NUM;
   this->isStepped = false;
   this->addrReady = false;
   this->reqIssued = false;
   this->isAddrAliased = false;
   this->isValueReady = false;
+  this->updateValueReady = false;
   this->isCacheAcked = false;
   this->flushed = false;
 
@@ -264,6 +266,7 @@ void StreamElement::flush(bool aliased) {
   this->addrReady = false;
   this->reqIssued = false;
   this->isValueReady = false;
+  this->updateValueReady = false;
 
   // Raise the flush flag.
   this->flushed = true;
@@ -369,6 +372,10 @@ bool StreamElement::isFirstUserDispatched() const {
   return this->firstUserSeqNum != ::LLVMDynamicInst::INVALID_SEQ_NUM;
 }
 
+bool StreamElement::isFirstStoreDispatched() const {
+  return this->firstStoreSeqNum != ::LLVMDynamicInst::INVALID_SEQ_NUM;
+}
+
 void StreamElement::markAddrReady() {
   assert(!this->addrReady && "Addr is already ready.");
   this->addrReady = true;
@@ -458,7 +465,7 @@ void StreamElement::computeValue() {
 
   StreamValue result;
   Cycles estimatedLatency;
-  if (S->isStoreComputeStream()) {
+  if (S->isStoreComputeStream() || S->isUpdateStream()) {
     assert(!dynS->offloadedToCache &&
            "Should not compute for floating stream.");
     // Check for value base element.
@@ -498,10 +505,10 @@ void StreamElement::computeValue() {
     estimatedLatency = dynS->addrGenCallback->getEstimatedLatency();
   }
   /**
-   * We try to model the computation overhead for StoreStream and
-   * ReductionStream. For simple IVStream we do not bother.
+   * We try to model the computation overhead for StoreStream, UpdateStreawm
+   * and ReductionStream. For simple IVStream we do not bother.
    */
-  if (S->isStoreStream() || S->isReduction()) {
+  if (S->isStoreStream() || S->isUpdateStream() || S->isReduction()) {
     this->se->computeEngine->pushReadyComputation(this, std::move(result),
                                                   estimatedLatency);
   } else {
@@ -701,6 +708,37 @@ const uint8_t *StreamElement::getValuePtrByStreamId(StaticId streamId) const {
   return &this->value.at(initOffset);
 }
 
+const uint8_t *
+StreamElement::getUpdateValuePtrByStreamId(StaticId streamId) const {
+  auto vaddr = this->addr;
+  int size = this->size;
+  // Handle offset for coalesced stream.
+  int32_t offset;
+  this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
+  vaddr += offset;
+  auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
+  S_ELEMENT_DPRINTF(this,
+                    "GetUpdateValue [%#x, +%d), initOffset %d, data 0x%s.\n",
+                    vaddr, size, initOffset,
+                    GemForgeUtils::dataToString(
+                        this->updateValue.uint8Ptr(initOffset), size));
+  return this->updateValue.uint8Ptr(initOffset);
+}
+
+void StreamElement::receiveComputeResult(const StreamValue &result) {
+  if (this->stream->isUpdateStream()) {
+    // UpdateStream receive computation result in UpdateValue.
+    if (this->isUpdateValueReady()) {
+      S_ELEMENT_PANIC(this, "UpdateValue already ready.");
+    }
+    S_ELEMENT_DPRINTF(this, "Mark UpdateValue Ready.\n");
+    this->updateValue = result;
+    this->updateValueReady = true;
+  } else {
+    this->setValue(this->addr, this->size, result.uint8Ptr());
+  }
+}
+
 bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
   auto blockIdx = this->mapVAddrToBlockOffset(vaddr, size);
   auto blockEnd = this->mapVAddrToBlockOffset(vaddr + size - 1, 1);
@@ -714,7 +752,7 @@ bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
   return false;
 }
 
-bool StreamElement::checkValueReady(bool checkedByCore) const {
+void StreamElement::updateFirstValueCheckCycle(bool checkedByCore) const {
   if (this->firstValueCheckCycle == 0 ||
       (this->firstValueCheckByCoreCycle == 0 && checkedByCore)) {
     auto curCycle = this->se->curCycle();
@@ -726,12 +764,30 @@ bool StreamElement::checkValueReady(bool checkedByCore) const {
     }
     S_ELEMENT_DPRINTF(this,
                       "Mark FirstCheckCycle %lu, FirstCoreCheckCycle %llu, "
-                      "AddrReady %d ValueReady %d.\n",
+                      "AddrReady %d ValueReady %d UpdateValueReady %d.\n",
                       this->firstValueCheckCycle,
                       this->firstValueCheckByCoreCycle, this->isAddrReady(),
-                      this->isValueReady);
+                      this->isValueReady, this->updateValueReady);
   }
+}
+
+bool StreamElement::isComputeValueReady() const {
+  if (this->stream->isUpdateStream()) {
+    return this->isUpdateValueReady();
+  } else {
+    return this->isValueReady;
+  }
+}
+
+bool StreamElement::checkValueReady(bool checkedByCore) const {
+  this->updateFirstValueCheckCycle(checkedByCore);
   return this->isValueReady;
+}
+
+bool StreamElement::checkUpdateValueReady() const {
+  // UpdateValue should only be checked by Core.
+  this->updateFirstValueCheckCycle(true);
+  return this->updateValueReady;
 }
 
 bool StreamElement::checkValueBaseElementsValueReady() const {
