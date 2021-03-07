@@ -10,3 +10,13 @@ CacheStreamConfigureData::CacheStreamConfigureData(
       isOneIterationBehind(false), initAllocatedIdx(0) {
   assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
+
+void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data) {
+  for (const auto &edge : this->depEdges) {
+    if (edge.type == DepEdge::Type::SendTo && edge.data == data) {
+      // This is already here.
+      return;
+    }
+  }
+  this->depEdges.emplace_back(DepEdge::Type::SendTo, data);
+}

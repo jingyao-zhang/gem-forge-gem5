@@ -210,7 +210,7 @@ void StreamFloatController::floatStreams(
    * This is our new float decision scheme in the following order.
    * - DirectLoadStream.
    * - IndirectLoadStream.
-   * - DirectStoreStream with StoreFunc.
+   * - DirectStoreComputeStream/UpdateStream.
    * - ReductionStreams.
    */
   Args floatArgs(region, dynStreams, offloadedStreamConfigMap,
@@ -218,7 +218,7 @@ void StreamFloatController::floatStreams(
   this->floatDirectLoadStreams(floatArgs);
   this->floatDirectAtomicComputeStreams(floatArgs);
   this->floatIndirectStreams(floatArgs);
-  this->floatDirectStoreComputeStreams(floatArgs);
+  this->floatDirectStoreComputeOrUpdateStreams(floatArgs);
   this->floatReductionStreams(floatArgs);
 
   // Sanity check for some offload decision.
@@ -341,6 +341,10 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
     if (!S->isDirectLoadStream()) {
       continue;
     }
+    if (S->isUpdateStream()) {
+      // UpdateStream is treated more like StoreComputeStream.
+      continue;
+    }
     if (!this->policy->shouldFloatStream(*dynS)) {
       continue;
     }
@@ -446,14 +450,18 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
   }
 }
 
-void StreamFloatController::floatDirectStoreComputeStreams(const Args &args) {
+void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
+    const Args &args) {
   auto &floatedMap = args.floatedMap;
   for (auto dynS : args.dynStreams) {
     auto S = dynS->stream;
     if (floatedMap.count(S)) {
       continue;
     }
-    if (!S->isStoreComputeStream() || !S->isDirectStoreStream()) {
+    if (!S->isDirectMemStream()) {
+      continue;
+    }
+    if (!S->isStoreComputeStream() && !S->isUpdateStream()) {
       continue;
     }
     if (!this->policy->shouldFloatStream(*dynS)) {
@@ -519,9 +527,9 @@ void StreamFloatController::floatReductionStreams(const Args &args) {
       S_PANIC(S, "ReductionStream without BackBaseStream.");
     }
     /**
-     * Okay now we decided to float the ReductionStream. We randomly pick one
-     * affine BackBaseStream A and make all other BackBaseStreams send to that
-     * stream.
+     * Okay now we decided to float the ReductionStream. We pick the
+     * affine BackBaseStream A that has most SendTo edges and make
+     * all other BackBaseStreams send to that stream.
      */
     auto reductionConfig =
         S->allocateCacheConfigureData(dynS->configSeqNum, true);
@@ -530,10 +538,45 @@ void StreamFloatController::floatReductionStreams(const Args &args) {
     dynS->offloadedToCache = true;
     this->se->numFloated++;
     floatedMap.emplace(S, reductionConfig);
-    backBaseStreamConfigs.front()->addUsedBy(reductionConfig);
-    for (int i = 1; i < backBaseStreamConfigs.size(); ++i) {
+
+    // Search to count number of senders to each base config.
+    std::vector<int> senderCount(backBaseStreamConfigs.size(), 0);
+    for (const auto &config : backBaseStreamConfigs) {
+      for (const auto &edge : config->depEdges) {
+        if (edge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
+          const auto &receiver = edge.data;
+          for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
+            const auto &c = backBaseStreamConfigs[i];
+            if (c->dynamicId == receiver->dynamicId) {
+              senderCount[i]++;
+            }
+          }
+        }
+      }
+    }
+
+    // Select the one with the most senders.
+    int maxSenders = 0;
+    int baseConfigIdxWithMostSenders = 0;
+    for (int i = 0; i < senderCount.size(); i++) {
+      if (senderCount[i] > maxSenders) {
+        maxSenders = senderCount[i];
+        baseConfigIdxWithMostSenders = i;
+      }
+    }
+
+    // Make all others send to that one.
+    auto &baseConfigWithMostSenders =
+        backBaseStreamConfigs.at(baseConfigIdxWithMostSenders);
+    baseConfigWithMostSenders->addUsedBy(reductionConfig);
+    S_DPRINTF(S, "ReductionStream associated with %s, existing sender %d.\n",
+              baseConfigWithMostSenders->dynamicId, maxSenders);
+    for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
+      if (i == baseConfigIdxWithMostSenders) {
+        continue;
+      }
       auto &backBaseConfig = backBaseStreamConfigs.at(i);
-      backBaseConfig->addSendTo(backBaseStreamConfigs.front());
+      backBaseConfig->addSendTo(baseConfigWithMostSenders);
       reductionConfig->addBaseOn(backBaseConfig);
     }
   }

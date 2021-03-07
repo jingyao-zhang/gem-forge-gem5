@@ -23,9 +23,11 @@ public:
       const std::vector<DynamicStreamFormalParam> &_addrGenFormalParams,
       AddrGenCallbackPtr _addrGenCallback);
   CacheStreamConfigureData(const CacheStreamConfigureData &other) = delete;
-  CacheStreamConfigureData &operator=(const CacheStreamConfigureData &other) = delete;
+  CacheStreamConfigureData &
+  operator=(const CacheStreamConfigureData &other) = delete;
   CacheStreamConfigureData(CacheStreamConfigureData &&other) = delete;
-  CacheStreamConfigureData &operator=(CacheStreamConfigureData &&other) = delete;
+  CacheStreamConfigureData &
+  operator=(CacheStreamConfigureData &&other) = delete;
 
   Stream *stream;
   DynamicStreamId dynamicId;
@@ -109,9 +111,7 @@ public:
     data->baseEdges.emplace_back(BaseEdge::Type::BaseOn,
                                  this->shared_from_this());
   }
-  void addSendTo(CacheStreamConfigureDataPtr &data) {
-    this->depEdges.emplace_back(DepEdge::Type::SendTo, data);
-  }
+  void addSendTo(CacheStreamConfigureDataPtr &data);
   void addBaseOn(CacheStreamConfigureDataPtr &data) {
     this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data);
   }

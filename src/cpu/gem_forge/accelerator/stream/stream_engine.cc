@@ -2081,7 +2081,8 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
 
         if (element->isAddrReady()) {
           // Address already ready. Check if we have type 2 or 3 ready elements.
-          if (S->shouldComputeValue() && !element->scheduledComputation &&
+          if (S->shouldComputeValue() && !element->dynS->offloadedToCache &&
+              !element->scheduledComputation &&
               !element->isComputeValueReady()) {
             if (element->checkValueBaseElementsValueReady()) {
               S_ELEMENT_DPRINTF(element, "Found Value Ready.\n");

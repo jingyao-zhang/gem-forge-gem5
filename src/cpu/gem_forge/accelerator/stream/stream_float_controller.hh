@@ -52,7 +52,7 @@ private:
   void floatDirectLoadStreams(const Args &args);
   void floatDirectAtomicComputeStreams(const Args &args);
   void floatIndirectStreams(const Args &args);
-  void floatDirectStoreComputeStreams(const Args &args);
+  void floatDirectStoreComputeOrUpdateStreams(const Args &args);
   void floatReductionStreams(const Args &args);
 
   /**
