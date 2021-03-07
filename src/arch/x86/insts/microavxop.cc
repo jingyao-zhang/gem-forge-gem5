@@ -81,6 +81,10 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.si.i1 = src1.si.i1 & src2.si.i1;
       dest.si.i2 = src1.si.i2 & src2.si.i2;
       break;
+    case BinaryOp::IntCmpEq:
+      dest.si.i1 = (src1.si.i1 == src2.si.i1) ? 0xFFFF : 0x0;
+      dest.si.i2 = (src1.si.i2 == src2.si.i2) ? 0xFFFF : 0x0;
+      break;
     case BinaryOp::UIntMul:
       dest.ui.i1 = src1.ui.i1 * src2.ui.i1;
       dest.ui.i2 = src1.ui.i2 * src2.ui.i2;
@@ -115,6 +119,9 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       break;
     case BinaryOp::IntAnd:
       dest.sl = src1.sl & src2.sl;
+      break;
+    case BinaryOp::IntCmpEq:
+      dest.sl = (src1.sl == src2.sl) ? 0xFFFFFFFF : 0x0;
       break;
     case BinaryOp::UIntMul:
       dest.ul = src1.ul * src2.ul;

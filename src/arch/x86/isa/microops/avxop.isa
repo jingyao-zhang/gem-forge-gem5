@@ -274,6 +274,12 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::SIntMin);
         '''
 
+    class Vcmpeq(Varithp):
+        opClass = 'SimdCmpOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntCmpEq);
+        '''
+
     class Vfused(AVXOp):
         # Used in packed arithmetic ops with three operands, e.g. vfmaddps
         abstract = True

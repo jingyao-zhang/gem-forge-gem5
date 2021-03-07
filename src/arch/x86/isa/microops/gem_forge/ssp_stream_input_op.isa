@@ -69,6 +69,18 @@ def template MicroSSPInputOpConstructor {{
         case 8:
                 _srcRegIdx[_numSrcRegs++] = RegId(IntRegClass, INTREG_FOLDED(src1, foldOBit));
             break;
+        case 16:
+            // xmm
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 0);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 1);
+            break;
+        case 32:
+            // zmm
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 0);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 1);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 2);
+                _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 3);
+            break;
         case 64:
             // zmm
                 _srcRegIdx[_numSrcRegs++] = RegId(FloatRegClass, src1 + 0);

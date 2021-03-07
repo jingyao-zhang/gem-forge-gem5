@@ -85,8 +85,11 @@
         0: decode LEGACY_DECODEVAL {
             // no prefix.
             0x0: decode OPCODE_OP {
-                0x37: decode EVEX_L_EXTEND {
-                    0x2: SSP_STREAM_INPUT(WZqo, Ib);
+                0x35: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_INPUT(Wo, Ib);
+                }
+                0x36: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_INPUT(WYdo, Ib);
                 }
                 0x3D: decode EVEX_L_EXTEND {
                     0x2: SSP_STREAM_LOAD(WZqo, Ib);

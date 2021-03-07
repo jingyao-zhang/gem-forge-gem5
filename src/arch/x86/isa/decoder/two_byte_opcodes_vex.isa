@@ -243,10 +243,14 @@
             0x0: decode OPCODE_OP_BOTTOM3 {
                 0x7: VZEROUPPER();
             }
+            // 0x66 prefix.
             0x1: decode OPCODE_OP_BOTTOM3 {
                 0x0: decode EVEX_L {
                     0x1: VPSHUFD(VYdo, WYdo, Ib);
                     0x0: VPSHUFD(Vo, Wo, Ib);
+                }
+                0x6: decode EVEX_L {
+                    0x0: VPCMPEQD(Vo, Wo);
                 }
             }
         }

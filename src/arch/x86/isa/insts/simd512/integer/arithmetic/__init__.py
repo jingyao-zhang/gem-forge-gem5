@@ -2,6 +2,7 @@ categories = [
     "vpaddd",
     "vpaddq",
     "vpandd",
+    "vpcmpeqd",
     "vpsubq",
     "vpminsd",
     "vpminsq",
