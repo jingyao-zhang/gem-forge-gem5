@@ -91,6 +91,9 @@
                 0x36: decode EVEX_L_EXTEND {
                     0x2: SSP_STREAM_INPUT(WYdo, Ib);
                 }
+                0x37: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_INPUT(WZqo, Ib);
+                }
                 0x3D: decode EVEX_L_EXTEND {
                     0x2: SSP_STREAM_LOAD(WZqo, Ib);
                 }
