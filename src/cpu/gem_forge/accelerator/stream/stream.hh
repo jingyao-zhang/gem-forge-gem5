@@ -129,6 +129,7 @@ public:
  */
 class Stream {
 public:
+  friend class DynamicStream;
   using StaticId = DynamicStreamId::StaticId;
   using InstanceId = DynamicStreamId::InstanceId;
   struct StreamArguments {
@@ -332,10 +333,6 @@ public:
    */
   DynamicStreamId allocateNewInstance();
 
-  /**
-   * Add one element to the last dynamic stream.
-   */
-  void allocateElement(DynamicStream &dynS, StreamElement *newElement);
   /**
    * Add value base elements for stream computation.
    */

@@ -364,6 +364,61 @@ StreamElement *DynamicStream::getFirstUnsteppedElement() {
   return element;
 }
 
+void DynamicStream::allocateElement(StreamElement *newElement) {
+
+  auto S = this->stream;
+  assert(S->isConfigured() &&
+         "Stream should be configured to allocate element.");
+  S->statistic.numAllocated++;
+  newElement->stream = S;
+
+  /**
+   * Append this new element to the dynamic stream.
+   */
+  DYN_S_DPRINTF(this->dynamicStreamId, "Try to allocate element.\n");
+  newElement->dynS = this;
+
+  /**
+   * next() is called after assign to make sure
+   * entryIdx starts from 0.
+   */
+  newElement->FIFOIdx = this->FIFOIdx;
+  newElement->isCacheBlockedValue = S->isMemStream();
+  this->FIFOIdx.next();
+
+  if (this->hasTotalTripCount() &&
+      newElement->FIFOIdx.entryIdx >= this->getTotalTripCount() + 1) {
+    DYN_S_PANIC(
+        this->dynamicStreamId,
+        "Allocate beyond totalTripCount %lu, allocSize %lu, entryIdx %lu.\n",
+        this->getTotalTripCount(), S->getAllocSize(),
+        newElement->FIFOIdx.entryIdx);
+  }
+
+  // Add addr/value base elements
+  this->addAddrBaseElements(newElement);
+  S->addValueBaseElements(newElement);
+
+  newElement->allocateCycle = S->getCPUDelegator()->curCycle();
+
+  // Append to the list.
+  this->head->next = newElement;
+  this->head = newElement;
+  this->allocSize++;
+  S->allocSize++;
+
+  S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
+
+  /**
+   * If there is no AddrBaseElement, we mark AddrReady immediately.
+   * This is the case for most IV streams -- they will compute value
+   * later.
+   */
+  if (newElement->addrBaseElements.empty()) {
+    newElement->markAddrReady();
+  }
+}
+
 StreamElement *DynamicStream::releaseElementUnstepped() {
   if (this->allocSize == this->stepSize) {
     return nullptr;
@@ -393,13 +448,6 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
   S_ELEMENT_DPRINTF(releaseElement,
                     "ReleaseElementUnstepped, isAddrReady %d.\n",
                     releaseElement->isAddrReady());
-  // Check if the element is faulted.
-  if (this->stream->isMemStream() && releaseElement->isAddrReady()) {
-    if (releaseElement->isValueFaulted(releaseElement->addr,
-                                       releaseElement->size)) {
-      this->stream->statistic.numFaulted++;
-    }
-  }
   /**
    * Since this element is released as unstepped,
    * we need to reverse the FIFOIdx so that if we misspeculated,

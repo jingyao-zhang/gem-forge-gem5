@@ -23,6 +23,7 @@ public:
   size_t numFloatCancelled = 0;
   size_t numPseudoFloated = 0;
   size_t numAllocated = 0;
+  size_t numWithdrawn = 0;
   size_t numFetched = 0;
   size_t numStepped = 0;
   size_t numUsed = 0;

@@ -776,60 +776,6 @@ DynamicStreamId Stream::allocateNewInstance() {
                          this->streamName.c_str());
 }
 
-void Stream::allocateElement(DynamicStream &dynS, StreamElement *newElement) {
-
-  assert(this->isConfigured() &&
-         "Stream should be configured to allocate element.");
-  this->statistic.numAllocated++;
-  newElement->stream = this;
-
-  /**
-   * Append this new element to the last dynamic stream.
-   */
-  DYN_S_DPRINTF(dynS.dynamicStreamId, "Try to allocate element.\n");
-  newElement->dynS = &dynS;
-
-  /**
-   * next() is called after assign to make sure
-   * entryIdx starts from 0.
-   */
-  newElement->FIFOIdx = dynS.FIFOIdx;
-  newElement->isCacheBlockedValue = this->isMemStream();
-  dynS.FIFOIdx.next();
-
-  if (dynS.hasTotalTripCount() &&
-      newElement->FIFOIdx.entryIdx >= dynS.getTotalTripCount() + 1) {
-    S_PANIC(
-        this,
-        "Allocate beyond totalTripCount %lu, allocSize %lu, entryIdx %lu.\n",
-        dynS.getTotalTripCount(), this->getAllocSize(),
-        newElement->FIFOIdx.entryIdx);
-  }
-
-  // Add addr/value base elements
-  dynS.addAddrBaseElements(newElement);
-  this->addValueBaseElements(newElement);
-
-  newElement->allocateCycle = this->getCPUDelegator()->curCycle();
-
-  // Append to the list.
-  dynS.head->next = newElement;
-  dynS.head = newElement;
-  dynS.allocSize++;
-  this->allocSize++;
-
-  S_ELEMENT_DPRINTF(newElement, "Allocated.\n");
-
-  /**
-   * If there is no AddrBaseElement, we mark AddrReady immediately.
-   * This is the case for most IV streams -- they will compute value
-   * later.
-   */
-  if (newElement->addrBaseElements.empty()) {
-    newElement->markAddrReady();
-  }
-}
-
 void Stream::addValueBaseElements(StreamElement *newElement) {
 
   const auto &dynS = *newElement->dynS;

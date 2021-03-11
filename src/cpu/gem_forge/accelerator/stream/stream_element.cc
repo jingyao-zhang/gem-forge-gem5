@@ -736,6 +736,12 @@ void StreamElement::receiveComputeResult(const StreamValue &result) {
 }
 
 bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
+  if (vaddr + size < vaddr) {
+    // Wrap around.
+    S_ELEMENT_DPRINTF(this, "ValueFaulted as vaddr overflow [%#x, +%d).\n",
+                      vaddr, size);
+    return true;
+  }
   auto blockIdx = this->mapVAddrToBlockOffset(vaddr, size);
   auto blockEnd = this->mapVAddrToBlockOffset(vaddr + size - 1, 1);
   while (blockIdx <= blockEnd) {

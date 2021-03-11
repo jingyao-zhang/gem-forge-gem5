@@ -790,7 +790,7 @@ void ISAStreamEngine::executeStreamLoad(const GemForgeDynInstInfo &dynInfo,
                                     usedStreamIds, false, &values);
   auto se = this->getStreamEngine();
   se->executeStreamUser(args);
-  DYN_INST_DPRINTF("Execute StreamLoad RegionStream %llu destRegs %d.\n",
+  DYN_INST_DPRINTF("Execute StreamLoad StreamId %llu destRegs %d.\n",
                    userInfo.translatedUsedStreamIds.at(0),
                    dynInfo.staticInst->numDestRegs());
   if (dynInfo.staticInst->numDestRegs() == 0) {

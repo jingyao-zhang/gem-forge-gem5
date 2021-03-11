@@ -310,6 +310,10 @@ struct StreamElement {
   void receiveComputeResult(const StreamValue &result);
   const uint8_t *getUpdateValuePtrByStreamId(StaticId streamId) const;
 
+  /**
+   * Check if we can withdraw this element.
+   */
+
 private:
   bool addrReady = false;
   bool reqIssued = false;

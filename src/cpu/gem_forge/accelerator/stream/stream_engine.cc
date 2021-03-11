@@ -1900,7 +1900,6 @@ void StreamEngine::allocateElements() {
 }
 
 void StreamEngine::allocateElement(DynamicStream &dynS) {
-  assert(this->hasFreeElement());
   auto newElement = this->removeFreeElement();
   this->numElementsAllocated++;
   auto S = dynS.stream;
@@ -1910,7 +1909,7 @@ void StreamEngine::allocateElement(DynamicStream &dynS) {
     this->numStoreElementsAllocated++;
   }
 
-  S->allocateElement(dynS, newElement);
+  dynS.allocateElement(newElement);
 }
 
 void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,

@@ -202,6 +202,14 @@ struct DynamicStream {
    */
   StreamElement *getPrevElement(StreamElement *element);
   /**
+   * Add one element to this DynamicStream.
+   */
+  void allocateElement(StreamElement *newElement);
+  // /**
+  //  * Withdrawn one element from this DynamicStream.
+  //  */
+  // void withdrawElement(StreamElement *element);
+  /**
    * Remove one unstepped element from the last dynamic stream.
    */
   StreamElement *releaseElementUnstepped();
