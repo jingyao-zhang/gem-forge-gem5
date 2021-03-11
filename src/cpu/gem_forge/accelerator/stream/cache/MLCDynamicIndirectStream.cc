@@ -129,7 +129,15 @@ void MLCDynamicIndirectStream::receiveStreamData(
     MLC_SLICE_PANIC(sliceId, "Failed to find slice.\n");
   }
 
-  sliceIter->setData(dataBlock, this->controller->curCycle());
+  if (!sliceIter->dataReady) {
+    sliceIter->setData(dataBlock, this->controller->curCycle());
+  } else {
+    // The only exception is the second Ack for RangeSync.
+    if (!(this->shouldRangeSync() &&
+          this->getStaticStream()->isAtomicComputeStream())) {
+      MLC_SLICE_PANIC(sliceId, "Receive StreamData twice.");
+    }
+  }
   if (sliceIter->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
     // Sanity check that LLC and Core generated the same address.
     // ! Core is line address.

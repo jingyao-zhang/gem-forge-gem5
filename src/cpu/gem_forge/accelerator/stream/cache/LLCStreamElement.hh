@@ -43,18 +43,19 @@ public:
     }
     return true;
   }
-  StreamValue getBaseStreamValue(uint64_t baseStreamId) {
-    for (const auto &baseE : this->baseElements) {
-      int32_t offset;
-      int32_t size;
-      if (baseE->S->tryGetCoalescedOffsetAndSize(baseStreamId, offset, size)) {
-        // Found it.
-        return baseE->getValue(offset, size);
+
+  bool areSlicesReleased() const {
+    for (int i = 0; i < this->numSlices; ++i) {
+      const auto &slice = this->slices.at(i);
+      if (slice->getState() != LLCStreamSlice::State::RELEASED) {
+        return false;
       }
     }
-    assert(false && "Invalid baseStreamId.");
-    return StreamValue();
-  };
+    return true;
+  }
+
+  StreamValue getBaseStreamValue(uint64_t baseStreamId);
+  StreamValue getBaseOrMyStreamValue(uint64_t streamId);
 
   /*************************************************
    * Accessors to the data.
@@ -74,6 +75,7 @@ public:
     assert(this->size <= sizeof(uint64_t));
     return this->value.front();
   }
+  StreamValue getValueByStreamId(uint64_t streamId) const;
   uint64_t getUInt64ByStreamId(uint64_t streamId) const;
 
   void setValue(const StreamValue &value);
@@ -105,6 +107,22 @@ public:
   State getState() const { return this->state; }
   void setState(State state) { this->state = state; }
 
+  void setCoreCommitted() { this->coreCommitted = true; }
+  bool hasCoreCommitted() const { return this->coreCommitted; }
+
+  void setIndirectTriggered() { this->indirectTriggered = true; }
+  bool hasIndirectTriggered() const { return this->indirectTriggered; }
+
+  void setRangeBuilt() { this->rangeBuilt = true; }
+  bool hasRangeBuilt() const { return this->rangeBuilt; }
+
+  void setFirstIndirectAtomicReqSeen() {
+    this->firstIndirectAtomicReqSeen = true;
+  }
+  bool hasFirstIndirectAtomicReqSeen() const {
+    return this->firstIndirectAtomicReqSeen;
+  }
+
 private:
   int readyBytes;
   bool computationScheduled = false;
@@ -116,6 +134,25 @@ private:
   int numSlices = 0;
 
   State state = State::INITIALIZED;
+
+  /**
+   * We have received the StreamCommit from the core.
+   */
+  bool coreCommitted = false;
+  /**
+   * We have triggered the indirect elements.
+   */
+  bool indirectTriggered = false;
+  /**
+   * We have added this element to the RangeBuilder.
+   * This is used to prevent multi-line elements from being added multiple
+   * times.
+   */
+  bool rangeBuilt = false;
+  /**
+   * Whether we have seen the first request for this IndirectAtomicRequest.
+   */
+  bool firstIndirectAtomicReqSeen = false;
 };
 
 #endif

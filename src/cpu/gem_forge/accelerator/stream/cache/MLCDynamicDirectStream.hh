@@ -41,6 +41,9 @@ public:
 protected:
   SlicedDynamicStream slicedStream;
 
+  const uint64_t maxNumSlicesPerSegment;
+  static constexpr uint64_t bufferToSegmentRatio = 4;
+
   /**
    * For reuse pattern, store the cut information.
    */
@@ -64,6 +67,7 @@ protected:
     DynamicStreamSliceId endSliceId;
     enum State {
       ALLOCATED = 0,
+      CREDIT_SENT,
       COMMITTING,
       COMMITTED,
     };
@@ -72,6 +76,7 @@ protected:
   };
   std::list<LLCSegmentPosition> llcSegments;
 
+  void allocateLLCSegment();
   void pushNewLLCSegment(Addr startPAddr, uint64_t startSliceIdx,
                          const DynamicStreamSliceId &startSliceId);
   LLCSegmentPosition &getLastLLCSegment();
@@ -104,7 +109,7 @@ protected:
    * Check and send credit to the LLC stream. Enqueue a new segment.
    */
   void trySendCreditToLLC();
-  void sendCreditToLLC();
+  void sendCreditToLLC(const LLCSegmentPosition &segment);
 
   /**
    * Send commit message to the LLC stream.

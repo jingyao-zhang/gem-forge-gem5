@@ -27,6 +27,8 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer),
       slicedStream(_configData, true /* coalesceContinuousElements */),
+      maxNumSlicesPerSegment(_controller->getMLCStreamBufferInitNumEntries() /
+                             bufferToSegmentRatio),
       indirectStreams(_indirectStreams) {
 
   // Initialize the llc bank.
@@ -41,7 +43,7 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
   // Initialize the buffer for some slices.
   // Since the LLC is bounded by the credit, it's sufficient to only check
   // hasOverflowed() at MLC level.
-  while (this->tailSliceIdx < this->maxNumSlices / 2 &&
+  while (this->tailSliceIdx < this->maxNumSlicesPerSegment &&
          !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();
   }
@@ -49,10 +51,11 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
   // Intialize the possible two segments.
   this->pushNewLLCSegment(_configData->initPAddr, this->headSliceIdx,
                           this->slices.front().sliceId);
+  this->llcSegments.front().state = LLCSegmentPosition::State::CREDIT_SENT;
 
   // Set the CacheStreamConfigureData to inform the LLC stream engine
   // initial credit.
-  _configData->initAllocatedIdx = this->tailSliceIdx;
+  _configData->initCreditedIdx = this->tailSliceIdx;
 
   MLC_S_DPRINTF(this->dynamicStreamId, "InitAllocatedSlice %d overflowed %d.\n",
                 this->tailSliceIdx, this->slicedStream.hasOverflowed());
@@ -95,12 +98,8 @@ void MLCDynamicDirectStream::advanceStream() {
           continue;
         }
         // This is the fisrt segement that has not been committed.
-        currentHeadSliceIdx = segment.startSliceIdx;
-        if (currentHeadSliceIdx > this->headSliceIdx) {
-          MLC_S_PANIC(this->getDynamicStreamId(),
-                      "CommitHeadSliceIdx %llu > HeadSliceIdx %llu.",
-                      currentHeadSliceIdx, this->headSliceIdx);
-        }
+        currentHeadSliceIdx =
+            std::min(currentHeadSliceIdx, segment.startSliceIdx);
         break;
       }
     }
@@ -190,87 +189,69 @@ void MLCDynamicDirectStream::allocateSlice() {
     // This address is invalid.
     // Do not update tailPAddr as the LLC stream would not move.
   }
+
+  this->allocateLLCSegment();
 }
 
 void MLCDynamicDirectStream::trySendCreditToLLC() {
   /**
-   * There are three cases we need to send the token:
-   * 1. We have allocated more half the buffer size.
-   * 2. The stream has overflowed.
-   * 3. The llc stream is cutted.
+   * Find the first LLCSegment in ALLOCATED state and try issue credit.
    */
-  auto llcTailSliceIdx = this->getLLCTailSliceIdx();
-  auto hasEnoughCredits = false;
-  if (!this->llcCutted) {
-    if (!this->slicedStream.hasOverflowed()) {
-      if (this->tailSliceIdx - llcTailSliceIdx >= this->maxNumSlices / 2) {
-        hasEnoughCredits = true;
-      }
-    } else {
-      if (this->tailSliceIdx > llcTailSliceIdx) {
-        hasEnoughCredits = true;
-      }
+  for (auto &segment : this->llcSegments) {
+
+    if (segment.state != LLCSegmentPosition::State::ALLOCATED) {
+      continue;
     }
-  } else {
-    if (this->llcCutSliceIdx > llcTailSliceIdx) {
-      hasEnoughCredits = true;
-    }
-  }
-  if (!hasEnoughCredits) {
-    return;
-  }
-  /**
-   * Additional check for SendTo relationship:
-   * We want to make sure that the receiver has the element initialized.
-   * If not, we schedule an event to check next cycle.
-   */
-  assert(this->tailSliceId.getEndIdx() > 0 && "TailSliceId EndIdx == 0");
-  const auto tailElementIdx = this->tailSliceId.getStartIdx() - 1;
-  for (const auto &sendToConfig : this->sendToConfigs) {
-    auto llcReceiverS = LLCDynamicStream::getLLCStream(sendToConfig->dynamicId);
-    if (llcReceiverS) {
-      if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
-        // Recheck next cycle.
-        MLC_S_DPRINTF(this->getDynamicStreamId(),
-                      "Delayed sending credit to LLC as receiver %s has not "
-                      "initialized element %llu.\n",
-                      sendToConfig->dynamicId, tailElementIdx);
-        this->scheduleAdvanceStream();
-        return;
+
+    /**
+     * Additional check for SendTo relationship:
+     * We want to make sure that the receiver has the element initialized.
+     * If not, we schedule an event to check next cycle.
+     */
+    const auto tailElementIdx = segment.endSliceId.getStartIdx() - 1;
+    for (const auto &sendToConfig : this->sendToConfigs) {
+      auto llcReceiverS =
+          LLCDynamicStream::getLLCStream(sendToConfig->dynamicId);
+      if (llcReceiverS) {
+        if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
+          // Recheck next cycle.
+          MLC_S_DPRINTF(this->getDynamicStreamId(),
+                        "Delayed sending credit to LLC as receiver %s has not "
+                        "initialized element %llu.\n",
+                        sendToConfig->dynamicId, tailElementIdx);
+          this->scheduleAdvanceStream();
+          return;
+        }
       }
     }
+    this->sendCreditToLLC(segment);
+    segment.state = LLCSegmentPosition::State::CREDIT_SENT;
   }
-  this->sendCreditToLLC();
 }
 
-void MLCDynamicDirectStream::sendCreditToLLC() {
+void MLCDynamicDirectStream::sendCreditToLLC(
+    const LLCSegmentPosition &segment) {
   /**
    * We look at the last llc segment to determine where the stream is.
    * And we push a new llc segment.
    *
    * This will not work for pointer chasing stream.
    */
-  const auto &lastLLCSegment = this->getLastLLCSegment();
-  auto llcTailSliceIdx = lastLLCSegment.endSliceIdx;
-  auto llcTailPAddr = lastLLCSegment.endPAddr;
-  auto llcTailBank = this->mapPAddrToLLCBank(llcTailPAddr);
-  assert(this->tailSliceIdx > llcTailSliceIdx &&
-         "Don't know where to send credit.");
+  auto llcBank = this->mapPAddrToLLCBank(segment.startPAddr);
 
-  // Send the flow control.
   MLC_S_DPRINTF(this->dynamicStreamId,
-                "Extended %lu -> %lu, sent credit to LLC%d.\n", llcTailSliceIdx,
-                this->tailSliceIdx, llcTailBank.num);
+                "Extended %lu -> %lu, sent credit to LLC%d.\n",
+                segment.startSliceIdx, segment.endSliceIdx, llcBank);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = llcTailPAddr;
+  msg->m_addr = makeLineAddress(segment.startPAddr);
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;
   msg->m_XXNewRewquestor.add(this->controller->getMachineID());
-  msg->m_Destination.add(llcTailBank);
+  msg->m_Destination.add(llcBank);
   msg->m_MessageSize = MessageSizeType_Control;
   DynamicStreamSliceId sliceId;
   sliceId.getDynStreamId() = this->dynamicStreamId;
-  sliceId.getStartIdx() = llcTailSliceIdx;
-  sliceId.getEndIdx() = this->tailSliceIdx;
+  sliceId.getStartIdx() = segment.startSliceIdx;
+  sliceId.getEndIdx() = segment.endSliceIdx;
   msg->m_sliceIds.add(sliceId);
 
   /**
@@ -278,12 +259,12 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
    * simplify the implementation.
    */
   auto llcS = LLCDynamicStream::getLLCStreamPanic(this->getDynamicStreamId());
-  llcS->initDirectStreamSlicesUntil(this->tailSliceIdx);
+  llcS->initDirectStreamSlicesUntil(segment.endSliceIdx);
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
   if (this->controller->isStreamIdeaFlowEnabled()) {
-    auto llcController = this->controller->getController(llcTailBank);
+    auto llcController = this->controller->getController(llcBank);
     auto llcSE = llcController->getLLCStreamEngine();
     llcSE->receiveStreamFlow(sliceId);
   } else {
@@ -291,11 +272,6 @@ void MLCDynamicDirectStream::sendCreditToLLC() {
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
   }
-
-  // Push a new segment.
-  const auto &lastSegment = this->getLastLLCSegment();
-  this->pushNewLLCSegment(llcTailPAddr, lastSegment.endSliceIdx,
-                          lastSegment.endSliceId);
 }
 
 void MLCDynamicDirectStream::receiveStreamData(
@@ -569,6 +545,50 @@ MLCDynamicDirectStream::LLCSegmentPosition::stateToString(const State state) {
 #undef Case
 }
 
+void MLCDynamicDirectStream::allocateLLCSegment() {
+
+  /**
+   * Corner case when initializing the stream.
+   * The initial credits are directly sent out with the configuration,
+   * and thus there is no previous segment for us to built on.
+   * See the pushNewLLCSegment() in the constructor.
+   */
+  if (this->llcSegments.empty()) {
+    return;
+  }
+
+  /**
+   * There are three cases we need to create a new segment.
+   * 1. We have allocated more half the buffer size.
+   * 2. The stream has overflowed.
+   * 3. The llc stream is cutted.
+   */
+  const auto &lastSegment = this->getLastLLCSegment();
+  auto lastSegmentSliceIdx = lastSegment.endSliceIdx;
+  bool shouldAllocateSegment = false;
+  if (!this->llcCutted) {
+    if (!this->slicedStream.hasOverflowed()) {
+      if (this->tailSliceIdx - lastSegmentSliceIdx >=
+          this->maxNumSlicesPerSegment) {
+        shouldAllocateSegment = true;
+      }
+    } else {
+      if (this->tailSliceIdx > lastSegmentSliceIdx) {
+        shouldAllocateSegment = true;
+      }
+    }
+  } else {
+    if (this->llcCutSliceIdx > lastSegmentSliceIdx) {
+      shouldAllocateSegment = true;
+    }
+  }
+  if (!shouldAllocateSegment) {
+    return;
+  }
+  this->pushNewLLCSegment(lastSegment.endPAddr, lastSegment.endSliceIdx,
+                          lastSegment.endSliceId);
+}
+
 void MLCDynamicDirectStream::pushNewLLCSegment(
     Addr startPAddr, uint64_t startSliceIdx,
     const DynamicStreamSliceId &startSliceId) {
@@ -617,17 +637,24 @@ void MLCDynamicDirectStream::checkCoreCommitProgress() {
                 "Failed to find first core element.");
   }
   auto firstCoreElementIdx = firstCoreElement->FIFOIdx.entryIdx;
-  for (auto &llcSegment : this->llcSegments) {
-    if (llcSegment.endSliceId.getStartIdx() > firstCoreElementIdx) {
+  for (auto &seg : this->llcSegments) {
+    if (seg.state == LLCSegmentPosition::State::ALLOCATED) {
+      // We haven't even sent out the credit for this segment.
+      break;
+    }
+    if (seg.state == LLCSegmentPosition::State::COMMITTING ||
+        seg.state == LLCSegmentPosition::State::COMMITTED) {
+      // We already commit this segment.
+      continue;
+    }
+    if (seg.endSliceId.getStartIdx() > firstCoreElementIdx) {
       // This segment contains an element that has not been committed yet.
       break;
     }
     // This segment has been committed in core.
-    if (llcSegment.state == LLCSegmentPosition::State::ALLOCATED) {
-      // Send out StreamCommit message to LLC bank.
-      this->sendCommitToLLC(llcSegment);
-      llcSegment.state = LLCSegmentPosition::State::COMMITTING;
-    }
+    // Send out StreamCommit message to LLC bank.
+    this->sendCommitToLLC(seg);
+    seg.state = LLCSegmentPosition::State::COMMITTING;
   }
   // As a final touch, we release segment if we are done.
   while (this->llcSegments.size() > 1 &&

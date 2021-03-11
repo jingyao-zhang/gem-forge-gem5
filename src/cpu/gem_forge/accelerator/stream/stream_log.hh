@@ -112,4 +112,6 @@
   LLC_ELEMENT_DPRINTF_(DEBUG_TYPE, element, format, ##args)
 #define LLC_ELEMENT_PANIC(element, format, args...)                            \
   panic(LLC_ELEMENT_MSG(element, format, ##args))
+#define LLC_ELEMENT_HACK(element, format, args...)                             \
+  hack(LLC_ELEMENT_MSG(element, format, ##args))
 #endif

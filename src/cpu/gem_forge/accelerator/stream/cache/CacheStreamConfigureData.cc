@@ -7,7 +7,7 @@ CacheStreamConfigureData::CacheStreamConfigureData(
     : stream(_stream), dynamicId(_dynamicId), elementSize(_elementSize),
       initVAddr(0), initPAddr(0), addrGenFormalParams(_addrGenFormalParams),
       addrGenCallback(_addrGenCallback), isPointerChase(false),
-      isOneIterationBehind(false), initAllocatedIdx(0) {
+      isOneIterationBehind(false), initCreditedIdx(0) {
   assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
 

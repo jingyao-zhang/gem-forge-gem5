@@ -29,18 +29,34 @@ void LLCStreamRangeBuilder::addElementAddress(uint64_t elementIdx, Addr vaddr,
                 elementIdx, vaddr, paddr);
   }
   const Addr PageSize = 4096;
-  if (((vaddr + size - 1) / PageSize) != (vaddr / PageSize)) {
+  if (size >= PageSize) {
     LLC_S_PANIC(this->stream->getDynamicStreamId(),
                 "[RangeBuilder] Element across pages: vaddr %#x, size %d.",
                 vaddr, size);
   }
+  // We allow spanning at most two pages.
+  auto firstPageRemain = PageSize - (paddr % PageSize);
+  auto firstPageSize = size < firstPageRemain ? size : firstPageRemain;
+  auto secondPageSize = size - firstPageSize;
   if (this->totalTripCount != -1 && elementIdx >= this->totalTripCount) {
     LLC_S_PANIC(this->stream->getDynamicStreamId(),
                 "[RangeBuilder] ElementIdx overflow, total %llu.",
                 this->totalTripCount);
   }
   this->vaddrRange.add(vaddr, vaddr + size);
-  this->paddrRange.add(paddr, paddr + size);
+  this->paddrRange.add(paddr, paddr + firstPageSize);
+  if (secondPageSize > 0) {
+    // Hack to translate the second page here.
+    auto secondPageVAddr = vaddr + firstPageSize;
+    Addr secondPagePAddr;
+    if (!this->stream->translateToPAddr(secondPageVAddr, secondPagePAddr)) {
+      LLC_S_PANIC(
+          this->stream->getDynamicStreamId(),
+          "[RangeBuilder] Element %llu Failed to translate the second page.",
+          elementIdx);
+    }
+    this->paddrRange.add(secondPagePAddr, secondPageSize);
+  }
   this->nextElementIdx++;
   this->tryBuildRange();
 }

@@ -341,11 +341,8 @@ void StreamElement::handlePacketResponse(StreamMemAccess *memAccess,
    * ! So far all requests are in cache line size.
    */
   auto data = pkt->getPtr<uint8_t>();
-  /**
-   * For atomic stream, we have to use the StreamAtomicOp' s LoadedValue.
-   */
   auto S = this->stream;
-  if (S->isAtomicStream() && pkt->isAtomicOp()) {
+  if (S->isAtomicComputeStream() && pkt->isAtomicOp()) {
     auto atomicOp = pkt->getAtomicOp();
     auto streamAtomicOp = dynamic_cast<StreamAtomicOp *>(atomicOp);
     assert(streamAtomicOp && "Missing StreamAtomicOp.");
@@ -712,17 +709,16 @@ const uint8_t *
 StreamElement::getUpdateValuePtrByStreamId(StaticId streamId) const {
   auto vaddr = this->addr;
   int size = this->size;
-  // Handle offset for coalesced stream.
+  /**
+   * UpdateValue is not handled at line granularity.
+   */
   int32_t offset;
   this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
-  vaddr += offset;
-  auto initOffset = this->mapVAddrToValueOffset(vaddr, size);
-  S_ELEMENT_DPRINTF(this,
-                    "GetUpdateValue [%#x, +%d), initOffset %d, data 0x%s.\n",
-                    vaddr, size, initOffset,
-                    GemForgeUtils::dataToString(
-                        this->updateValue.uint8Ptr(initOffset), size));
-  return this->updateValue.uint8Ptr(initOffset);
+  S_ELEMENT_DPRINTF(
+      this, "GetUpdateValue [%#x, +%d), offset %d, data %s.\n", vaddr, size,
+      offset,
+      GemForgeUtils::dataToString(this->updateValue.uint8Ptr(offset), size));
+  return this->updateValue.uint8Ptr(offset);
 }
 
 void StreamElement::receiveComputeResult(const StreamValue &result) {

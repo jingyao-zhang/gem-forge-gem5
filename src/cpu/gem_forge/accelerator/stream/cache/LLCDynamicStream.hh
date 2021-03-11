@@ -100,17 +100,15 @@ public:
   DynamicStreamSliceId initNextSlice();
 
   /**
-   * Check if the next element is allocated in the upper cache level's stream
-   * buffer.
-   * Used for flow control.
+   * Check if we have received credit for the next slice.
    */
-  bool isNextSliceAllocated() const {
-    return this->nextAllocSliceIdx < this->allocatedSliceIdx;
+  bool isNextSliceCredited() const {
+    return this->nextAllocSliceIdx < this->creditedSliceIdx;
   }
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
   Addr peekNextAllocVAddr() const;
   LLCStreamSlicePtr getNextAllocSlice() const;
-  DynamicStreamSliceId allocNextSlice();
+  LLCStreamSlicePtr allocNextSlice(LLCStreamEngine *se);
 
   void
   traceEvent(const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type);
@@ -279,7 +277,7 @@ public:
   LLCDynamicStream *multicastGroupLeader = nullptr;
 
   // For flow control.
-  uint64_t allocatedSliceIdx;
+  uint64_t creditedSliceIdx;
   // Next slice index to be issued.
   uint64_t nextAllocSliceIdx = 0;
   // For initialization control.
@@ -335,7 +333,6 @@ public:
    */
   void eraseElement(uint64_t elementIdx);
   void eraseElement(IdxToElementMapT::iterator elementIter);
-  void eraseElementOlderThan(uint64_t elementIdx);
 
 private:
   std::deque<LLCStreamSlicePtr> slices;

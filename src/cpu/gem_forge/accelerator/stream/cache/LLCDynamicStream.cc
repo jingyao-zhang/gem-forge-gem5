@@ -29,7 +29,7 @@ LLCDynamicStream::LLCDynamicStream(
       configData(_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
       configureCycle(_mlcController->curCycle()),
-      allocatedSliceIdx(_configData->initAllocatedIdx) {
+      creditedSliceIdx(_configData->initCreditedIdx) {
 
   // Allocate the range builder.
   this->rangeBuilder = m5::make_unique<LLCStreamRangeBuilder>(
@@ -122,7 +122,7 @@ bool LLCDynamicStream::translateToPAddr(Addr vaddr, Addr &paddr) const {
 }
 
 void LLCDynamicStream::addCredit(uint64_t n) {
-  this->allocatedSliceIdx += n;
+  this->creditedSliceIdx += n;
   for (auto indirectStream : this->getIndStreams()) {
     indirectStream->addCredit(n);
   }
@@ -276,15 +276,10 @@ LLCStreamSlicePtr LLCDynamicStream::getNextAllocSlice() const {
   LLC_S_PANIC(this->getDynamicStreamId(), "Failed to get NextAllocSlice.");
 }
 
-DynamicStreamSliceId LLCDynamicStream::allocNextSlice() {
-  assert(this->isNextSliceAllocated() && "Next slice is not allocated yet.");
-  // ! Hack: We clear allocated slices here.
-  while (!this->slices.empty() && this->slices.front()->getState() !=
-                                      LLCStreamSlice::State::INITIALIZED) {
-    this->slices.pop_front();
-  }
+LLCStreamSlicePtr LLCDynamicStream::allocNextSlice(LLCStreamEngine *se) {
+  assert(this->isNextSliceCredited() && "Next slice is not allocated yet.");
   if (auto slice = this->getNextAllocSlice()) {
-    slice->setState(LLCStreamSlice::State::ALLOCATED);
+    slice->allocate(se);
     const auto &sliceId = slice->getSliceId();
     // Add the addr to the RangeBuilder if we have vaddr here.
     if (this->shouldRangeSync()) {
@@ -297,13 +292,20 @@ DynamicStreamSliceId LLCDynamicStream::allocNextSlice() {
             LLC_S_PANIC(this->getDynamicStreamId(),
                         "Translation fault on element %llu.", elementIdx);
           }
-          this->rangeBuilder->addElementAddress(elementIdx, element->vaddr,
-                                                paddr, element->size);
+          if (!element->hasRangeBuilt()) {
+            this->rangeBuilder->addElementAddress(elementIdx, element->vaddr,
+                                                  paddr, element->size);
+            element->setRangeBuilt();
+          }
         }
       }
     }
+    LLC_SLICE_DPRINTF(sliceId, "Allocated SliceIdx %llu.\n",
+                      this->nextAllocSliceIdx);
     this->nextAllocSliceIdx++;
-    return sliceId;
+    // Slices allocated are now handled by LLCStreamEngine.
+    this->slices.pop_front();
+    return slice;
   }
 
   LLC_S_PANIC(this->getDynamicStreamId(),
@@ -372,8 +374,8 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
     baseElementIdx = elementIdx - 1;
   }
   for (const auto &baseConfig : this->baseOnConfigs) {
-    LLC_S_DPRINTF(this->getDynamicStreamId(), "Add BaseElement from %s.\n",
-                  baseConfig->dynamicId);
+    LLC_S_DPRINTF(this->getDynamicStreamId(), "Add BaseElement %llu from %s.\n",
+                  baseElementIdx, baseConfig->dynamicId);
     const auto &baseDynStreamId = baseConfig->dynamicId;
     auto baseS = baseConfig->stream;
     if (this->baseStream &&
@@ -452,15 +454,6 @@ void LLCDynamicStream::eraseElement(IdxToElementMapT::iterator elementIter) {
   this->idxToElementMap.erase(elementIter);
 }
 
-void LLCDynamicStream::eraseElementOlderThan(uint64_t elementIdx) {
-  auto iter = this->idxToElementMap.begin();
-  auto end = this->idxToElementMap.end();
-  while (iter != end && iter->first < elementIdx) {
-    LLC_ELEMENT_DPRINTF(iter->second, "Erased element.\n");
-    iter = this->idxToElementMap.erase(iter);
-  }
-}
-
 bool LLCDynamicStream::isBasedOn(const DynamicStreamId &baseId) const {
   for (const auto &baseConfig : this->baseOnConfigs) {
     if (baseConfig->dynamicId == baseId) {
@@ -481,9 +474,10 @@ void LLCDynamicStream::recvStreamForward(LLCStreamEngine *se,
     recvElementIdx++;
   }
   auto S = this->getStaticStream();
-  if (!S->isReduction() && !S->isStoreStream()) {
-    LLC_S_PANIC(this->getDynamicStreamId(),
-                "Recv StreamForward only works for Reduction and StoreStream.");
+  if (!S->isReduction() && !S->isStoreStream() && !S->isUpdateStream()) {
+    LLC_S_PANIC(
+        this->getDynamicStreamId(),
+        "Recv StreamForward only works for Reduction/Store/UpdateStream.");
   }
   if (!this->idxToElementMap.count(recvElementIdx)) {
     LLC_SLICE_PANIC(
@@ -657,7 +651,7 @@ void LLCDynamicStream::allocateLLCStream(
     if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
       auto &ISConfig = edge.data;
       // Let's create an indirect stream.
-      ISConfig->initAllocatedIdx = config->initAllocatedIdx;
+      ISConfig->initCreditedIdx = config->initCreditedIdx;
       auto IS = new LLCDynamicStream(mlcController, llcController, ISConfig);
       IS->setBaseStream(S);
       if (!ISConfig->depEdges.empty()) {
@@ -681,7 +675,7 @@ void LLCDynamicStream::allocateLLCStream(
   }
 
   // Initialize the first slices.
-  S->initDirectStreamSlicesUntil(config->initAllocatedIdx);
+  S->initDirectStreamSlicesUntil(config->initCreditedIdx);
 }
 
 void LLCDynamicStream::setBaseStream(LLCDynamicStreamPtr baseS) {
@@ -729,7 +723,7 @@ LLCDynamicStream::computeStreamElementValue(const LLCStreamElementPtr &element,
       std::stringstream ss;
       for (const auto &baseElement : element->baseElements) {
         ss << "\n  " << baseElement->dynStreamId << '-' << baseElement->idx
-           << ": " << baseElement->getValue();
+           << ": " << baseElement->getValue(0, baseElement->size);
       }
       ss << "\n  -> " << element->dynStreamId << '-' << element->idx << ": "
          << newReductionValue;
@@ -791,7 +785,7 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
       dynCoreS->finalReductionValue = value;
       dynCoreS->finalReductionValueReady = true;
       LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, element,
-                           "Notifiy final reduction.\n");
+                           "Notify final reduction.\n");
     }
 
     /**
@@ -819,6 +813,13 @@ void LLCDynamicStream::addCommitMessage(const DynamicStreamSliceId &sliceId) {
     ++iter;
   }
   this->commitMessages.insert(iter, sliceId);
+  // Now we mark the elements committed.
+  for (auto elementIdx = sliceId.getStartIdx();
+       elementIdx < sliceId.getEndIdx(); ++elementIdx) {
+    auto element =
+        this->getElementPanic(elementIdx, "MarkCoreCommit for LLCElement");
+    element->setCoreCommitted();
+  }
 }
 
 void LLCDynamicStream::commitOneElement() {
@@ -839,7 +840,8 @@ void LLCDynamicStream::markElementReadyToIssue(uint64_t elementIdx) {
       this->getElementPanic(elementIdx, "Mark IndirectElement ready to issue.");
   if (element->getState() != LLCStreamElement::State::INITIALIZED) {
     LLC_S_PANIC(this->getDynamicStreamId(),
-                "IndirectElement in wrong state to mark ready.");
+                "IndirectElement in wrong state  %d to mark ready.",
+                element->getState());
   }
 
   if (this->getStaticStream()->isReduction()) {
@@ -893,6 +895,7 @@ void LLCDynamicStream::markElementIssued(uint64_t elementIdx) {
     }
     this->rangeBuilder->addElementAddress(elementIdx, element->vaddr, paddr,
                                           element->size);
+    element->setRangeBuilt();
   }
   element->setState(LLCStreamElement::State::ISSUED);
   assert(this->numElementsReadyToIssue > 0 &&
@@ -945,9 +948,6 @@ bool LLCDynamicStream::shouldIssueBeforeCommit() const {
     return true;
   }
   auto S = this->getStaticStream();
-  if (S->isStoreComputeStream()) {
-    return false;
-  }
   if (S->isAtomicComputeStream()) {
     auto dynS = S->getDynamicStream(this->getDynamicStreamId());
     if (S->staticId == 81) {
@@ -967,7 +967,7 @@ bool LLCDynamicStream::shouldIssueAfterCommit() const {
   }
   // We need to issue after commit if we are writing to memory.
   auto S = this->getStaticStream();
-  if (S->isStoreComputeStream() || S->isAtomicComputeStream()) {
+  if (S->isAtomicComputeStream()) {
     return true;
   }
   return false;

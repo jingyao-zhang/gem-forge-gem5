@@ -296,7 +296,38 @@ bool DynamicStream::shouldRangeSync() const {
   if (!this->stream->isMemStream()) {
     return false;
   }
-  return !this->shouldCoreSEIssue();
+  if (!this->offloadedToCache) {
+    return false;
+  }
+  if (this->stream->isAtomicComputeStream() || this->stream->isUpdateStream() ||
+      this->stream->isStoreComputeStream()) {
+    // Streams that writes to memory always require range-sync.
+    return true;
+  }
+  for (auto depS : this->stream->addrDepStreams) {
+    const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
+    if (depDynS.shouldRangeSync()) {
+      return true;
+    }
+  }
+  for (auto backDepS : this->stream->backDepStreams) {
+    const auto &backDepDynS = backDepS->getDynamicStream(this->configSeqNum);
+    if (backDepDynS.shouldRangeSync()) {
+      return true;
+    }
+  }
+  for (auto valDepS : this->stream->valueDepStreams) {
+    const auto &valDepDynS = valDepS->getDynamicStream(this->configSeqNum);
+    if (valDepDynS.shouldRangeSync()) {
+      return true;
+    }
+  }
+  // Finally for pure load stream, check if the core need the value.
+  if (!this->shouldCoreSEIssue()) {
+    // We are not issuing for this stream, should also do Range-Sync.
+    return true;
+  }
+  return false;
 }
 
 StreamElement *DynamicStream::getElementByIdx(uint64_t elementIdx) const {

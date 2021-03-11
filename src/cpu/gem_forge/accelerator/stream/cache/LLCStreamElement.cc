@@ -33,13 +33,38 @@ int LLCStreamElement::curLLCBank() const {
 
 StreamValue LLCStreamElement::getValue(int offset, int size) const {
   if (this->size < offset + size) {
-    panic("Try to get StreamValue (offset %d size %d) for LLCStreamElement of "
-          "size %d.",
-          offset, size, this->size);
+    LLC_ELEMENT_PANIC(
+        this,
+        "Try to get StreamValue (offset %d size %d) for LLCStreamElement of "
+        "size %d.",
+        offset, size, this->size);
   }
   StreamValue v;
   memcpy(v.uint8Ptr(), this->getUInt8Ptr(offset), size);
   return v;
+}
+
+StreamValue LLCStreamElement::getBaseStreamValue(uint64_t baseStreamId) {
+  for (const auto &baseE : this->baseElements) {
+    int32_t offset;
+    int32_t size;
+    if (baseE->S->tryGetCoalescedOffsetAndSize(baseStreamId, offset, size)) {
+      // Found it.
+      return baseE->getValue(offset, size);
+    }
+  }
+  assert(false && "Invalid baseStreamId.");
+  return StreamValue();
+}
+
+StreamValue LLCStreamElement::getBaseOrMyStreamValue(uint64_t streamId) {
+  if (this->S->isCoalescedHere(streamId)) {
+    // This is from myself.
+    return this->getValueByStreamId(streamId);
+  } else {
+    // This is from a value base stream.
+    return this->getBaseStreamValue(streamId);
+  }
 }
 
 uint8_t *LLCStreamElement::getUInt8Ptr(int offset) {
@@ -50,6 +75,14 @@ uint8_t *LLCStreamElement::getUInt8Ptr(int offset) {
 const uint8_t *LLCStreamElement::getUInt8Ptr(int offset) const {
   assert(offset < this->size);
   return reinterpret_cast<const uint8_t *>(this->value.data()) + offset;
+}
+
+StreamValue LLCStreamElement::getValueByStreamId(uint64_t streamId) const {
+  assert(this->isReady());
+  int32_t offset = 0;
+  int size = this->size;
+  this->S->getCoalescedOffsetAndSize(streamId, offset, size);
+  return this->getValue(offset, size);
 }
 
 uint64_t LLCStreamElement::getUInt64ByStreamId(uint64_t streamId) const {
@@ -114,24 +147,11 @@ void LLCStreamElement::extractElementDataFromSlice(
       sliceId, "Received element %lu size %d Overlap [%lu, %lu).\n", elementIdx,
       elementSize, elementOffset, elementOffset + overlapSize);
 
-  auto rubySystem = this->mlcController->params()->ruby_system;
-  if (rubySystem->getAccessBackingStore()) {
-    // Get the data from backing store.
-    Addr paddr;
-    assert(cpuDelegator->translateVAddrOracle(overlapLHS, paddr) &&
-           "Failed to translate address for accessing backing storage.");
-    RequestPtr req = std::make_shared<Request>(paddr, overlapSize,
-                                               0 /* Flags */, 0 /* MasterId */);
-    PacketPtr pkt = Packet::createRead(req);
-    pkt->dataStatic(this->getUInt8Ptr(elementOffset));
-    rubySystem->getPhysMem()->functionalAccess(pkt);
-    delete pkt;
-  } else {
-    // Get the data from the cache line.
-    auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),
-                                  overlapSize);
-    memcpy(this->getUInt8Ptr(elementOffset), data, overlapSize);
-  }
+  // Get the data from the cache line.
+  auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),
+                                overlapSize);
+  memcpy(this->getUInt8Ptr(elementOffset), data, overlapSize);
+
   // Mark these bytes ready.
   this->readyBytes += overlapSize;
   if (this->readyBytes > this->size) {

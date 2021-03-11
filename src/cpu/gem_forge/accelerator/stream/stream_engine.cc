@@ -1815,9 +1815,9 @@ void StreamEngine::allocateElements() {
         for (auto stepS : stepStreams) {
           auto &stepDynS = stepS->getDynamicStreamByInstance(
               stepRootDynS.dynamicStreamId.streamInstance);
-          DYN_S_DPRINTF(stepDynS.dynamicStreamId,
-                        "TotalTripCount %d, Next FIFOIdx %s.\n", totalTripCount,
-                        stepDynS.FIFOIdx);
+          // DYN_S_DPRINTF(stepDynS.dynamicStreamId,
+          //               "TotalTripCount %d, Next FIFOIdx %s.\n", totalTripCount,
+          //               stepDynS.FIFOIdx);
           if (stepDynS.FIFOIdx.entryIdx < totalTripCount + 1) {
             allStepStreamsAllocated = false;
             break;
@@ -1837,9 +1837,9 @@ void StreamEngine::allocateElements() {
       S_DPRINTF(stepRootStream, "No Allocating DynStream.\n");
       continue;
     }
-    DYN_S_DPRINTF(allocatingStepRootDynS->dynamicStreamId,
-                  "Allocating StepRootDynS AllocSize %d MaxSize %d.\n",
-                  stepRootStream->getAllocSize(), stepRootStream->maxSize);
+    // DYN_S_DPRINTF(allocatingStepRootDynS->dynamicStreamId,
+    //               "Allocating StepRootDynS AllocSize %d MaxSize %d.\n",
+    //               stepRootStream->getAllocSize(), stepRootStream->maxSize);
 
     /**
      * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
@@ -2081,11 +2081,16 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
 
         if (element->isAddrReady()) {
           // Address already ready. Check if we have type 2 or 3 ready elements.
-          if (S->shouldComputeValue() && !element->dynS->offloadedToCache &&
-              !element->scheduledComputation &&
-              !element->isComputeValueReady()) {
-            if (element->checkValueBaseElementsValueReady()) {
-              S_ELEMENT_DPRINTF(element, "Found Value Ready.\n");
+          if (S->shouldComputeValue() && !element->scheduledComputation &&
+              !element->isComputeValueReady() &&
+              element->checkValueBaseElementsValueReady()) {
+            if (!element->dynS->offloadedToCache) {
+              S_ELEMENT_DPRINTF(element, "Found Ready for Compute.\n");
+              readyElements.emplace_back(element);
+            } else if (S->isReduction() && element->isLastElement()) {
+              // Specialize for the last ReductionStream element. They need to
+              // be computed even when offloaded.
+              S_ELEMENT_DPRINTF(element, "Found Ready for Compute.\n");
               readyElements.emplace_back(element);
             }
           }

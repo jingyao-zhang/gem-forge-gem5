@@ -122,9 +122,10 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
       auto nextCommitElement = dynIS->getElement(nextCommitIndirectElementIdx);
       if (!nextCommitElement) {
         if (dynIS->isElementReleased(nextCommitIndirectElementIdx)) {
-          LLC_S_PANIC(dynIS->getDynamicStreamId(),
-                      "[Commit] Failed to find IndElement %llu to commit.",
-                      nextCommitIndirectElementIdx);
+          LLC_S_PANIC(
+              dynIS->getDynamicStreamId(),
+              "[Commit] IndElement %llu already released before commit.",
+              nextCommitIndirectElementIdx);
         }
         /**
          * Somehow this element is not yet allocated.
@@ -148,12 +149,6 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
           // We can not issue this yet.
           return false;
         }
-        // We directly issue this.
-        LLC_S_DPRINTF(dynS->getDynamicStreamId(),
-                      "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
-                      dynIS->getDynamicStreamId(),
-                      nextCommitIndirectElementIdx);
-        this->se->generateIndirectStreamRequest(dynIS, nextCommitElement);
       }
     } else {
       if (!dynIS->isElementReleased(nextCommitElementIdx)) {
@@ -167,12 +162,28 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
   }
 
   /**
-   * We can commit this element. So far we just directly commit.
+   * We can commit this element. So far we just directly commit, and
+   * send out the final request for certain streams, e.g. AtomicStream.
+   *
    * We also check if we have committed all elements in this message.
    * If so, we send back a done message.
    */
   LLC_S_DPRINTF(dynS->getDynamicStreamId(), "[Commit] Commit element %llu.\n",
                 nextCommitElementIdx);
+  for (auto dynIS : dynS->getIndStreams()) {
+    if (dynIS->shouldIssueAfterCommit()) {
+      auto nextCommitIndirectElementIdx = nextCommitElementIdx;
+      if (dynIS->isOneIterationBehind()) {
+        nextCommitIndirectElementIdx++;
+      }
+      auto nextCommitElement = dynIS->getElement(nextCommitIndirectElementIdx);
+      // We directly issue this.
+      LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+                    "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
+                    dynIS->getDynamicStreamId(), nextCommitIndirectElementIdx);
+      this->se->generateIndirectStreamRequest(dynIS, nextCommitElement);
+    }
+  }
   dynS->commitOneElement();
   if (nextCommitElementIdx >= firstCommitMessage.getEndIdx()) {
     // We are done with the current commit message.

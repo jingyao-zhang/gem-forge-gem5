@@ -117,7 +117,7 @@ public:
   }
 
   // Set by the MLC stream, for flow control.
-  int initAllocatedIdx;
+  int initCreditedIdx;
 };
 
 using CacheStreamConfigureVec = std::vector<CacheStreamConfigureDataPtr>;

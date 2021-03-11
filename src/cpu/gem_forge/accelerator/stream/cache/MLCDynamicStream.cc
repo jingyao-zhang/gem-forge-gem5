@@ -10,6 +10,7 @@
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStreamBase.hh"
+#include "debug/StreamRangeSync.hh"
 
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
@@ -40,6 +41,9 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
    */
   auto dynS = this->stream->getDynamicStream(this->getDynamicStreamId());
   this->config->rangeSync = (dynS && dynS->shouldRangeSync());
+
+  MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(), "%s RangeSync.\n",
+                 this->shouldRangeSync() ? "Enabled" : "Disabled");
 
   // Schedule the first advanceStreamEvent.
   this->stream->getCPUDelegator()->schedule(&this->advanceStreamEvent,
@@ -120,27 +124,35 @@ void MLCDynamicStream::popStream() {
    * Therefore, we try to have an ideal check that the LLCStream is ahead of me.
    * We only do this for direct streams.
    */
-  uint64_t llcProgressElementIdx = UINT64_MAX;
+  uint64_t llcProgressSliceIdx = UINT64_MAX;
   if (this->controller->isStreamIdeaSyncEnabled() &&
       this->getStaticStream()->isDirectMemStream() &&
       !this->shouldRangeSync()) {
     if (auto llcDynS =
             LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
-      llcProgressElementIdx =
-          std::min(llcDynS->getNextAllocSliceIdx(), llcProgressElementIdx);
+      if (llcDynS->getNextAllocSliceIdx() < llcProgressSliceIdx) {
+        llcProgressSliceIdx = llcDynS->getNextAllocSliceIdx();
+        MLC_S_DPRINTF(this->getDynamicStreamId(), "Smaller LLCProgress %llu.\n",
+                      llcProgressSliceIdx);
+      }
     } else {
       // The LLC stream has not been created.
-      llcProgressElementIdx = 0;
+      llcProgressSliceIdx = 0;
     }
     for (const auto &depEdge : this->config->depEdges) {
       if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
         if (auto llcDynS =
                 LLCDynamicStream::getLLCStream(depEdge.data->dynamicId)) {
-          llcProgressElementIdx =
-              std::min(llcDynS->getNextAllocSliceIdx(), llcProgressElementIdx);
+          if (llcDynS->getNextAllocSliceIdx() < llcProgressSliceIdx) {
+            llcProgressSliceIdx = llcDynS->getNextAllocSliceIdx();
+            MLC_S_DPRINTF(this->getDynamicStreamId(),
+                          "Smaller SendTo %s LLCProgress %llu.\n",
+                          depEdge.data->dynamicId.staticId,
+                          llcProgressSliceIdx);
+          }
         } else {
           // The LLC stream has not been created.
-          llcProgressElementIdx = 0;
+          llcProgressSliceIdx = 0;
         }
       }
     }
@@ -157,11 +169,13 @@ void MLCDynamicStream::popStream() {
 
       auto mlcHeadSliceIdx = this->tailSliceIdx - this->slices.size();
 
-      if (mlcHeadSliceIdx > llcProgressElementIdx) {
+      if (mlcHeadSliceIdx > llcProgressSliceIdx) {
         MLC_SLICE_DPRINTF(
             slice.sliceId,
             "Delayed poping for IdealSync between MLC %llu and LLC %llu.\n",
-            mlcHeadSliceIdx, llcProgressElementIdx);
+            mlcHeadSliceIdx, llcProgressSliceIdx);
+        // We need to schedule advanceStream to check later.
+        this->scheduleAdvanceStream();
         break;
       }
 
@@ -233,8 +247,19 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
   Cycles latency(2);
   this->responseMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                    this->controller->cyclesToTicks(latency));
-  // Set the core status to DONE.
-  slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+
+  /**
+   * Special case for AtomicStream with RangeSync:
+   * we should expect an Ack once committed.
+   * So here we transit to WAIT_ACK state.
+   */
+  if (this->getStaticStream()->isAtomicComputeStream() &&
+      this->shouldRangeSync()) {
+    slice.coreStatus = MLCStreamSlice::CoreStatusE::WAIT_ACK;
+  } else {
+    // Set the core status to DONE.
+    slice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
+  }
   // Update the stats in core SE.
   this->stream->se->numMLCResponse++;
 }
@@ -242,17 +267,28 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
 void MLCDynamicStream::makeAck(MLCStreamSlice &slice) {
   assert(slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_ACK &&
          "Element core status should be WAIT_ACK to make ack.");
-  MLC_SLICE_DPRINTF(slice.sliceId, "AckReady, header %s.\n",
-                    this->slices.front().sliceId);
   slice.coreStatus = MLCStreamSlice::CoreStatusE::ACK_READY;
+  MLC_SLICE_DPRINTF(slice.sliceId, "AckReady. Header %s HeaderCoreStatus %s.\n",
+                    this->slices.front().sliceId,
+                    MLCStreamSlice::convertCoreStatusToString(
+                        this->slices.front().coreStatus));
   // Send back ack in order.
   auto dynS = this->stream->getDynamicStream(this->dynamicStreamId);
   for (auto &ackSlice : this->slices) {
+    if (ackSlice.coreStatus == MLCStreamSlice::CoreStatusE::DONE) {
+      continue;
+    }
     if (ackSlice.coreStatus != MLCStreamSlice::CoreStatusE::ACK_READY) {
       break;
     }
     const auto &ackSliceId = ackSlice.sliceId;
+    // Set the core status to DONE.
+    ackSlice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
     if (!dynS) {
+      // The only exception is the second Ack for RangeSync AtomicStream.
+      if (this->shouldRangeSync() && this->stream->isAtomicComputeStream()) {
+        continue;
+      }
       MLC_SLICE_PANIC(ackSliceId, "MakeAck when dynS has been released.");
     }
     dynS->cacheAcked++;
@@ -279,8 +315,6 @@ void MLCDynamicStream::makeAck(MLCStreamSlice &slice) {
       MLC_SLICE_DPRINTF(slice.sliceId, "Ack for element %llu.\n", elementIdx);
       dynS->cacheAckedElements.insert(elementIdx);
     }
-    // Set the core status to DONE.
-    ackSlice.coreStatus = MLCStreamSlice::CoreStatusE::DONE;
   }
 }
 

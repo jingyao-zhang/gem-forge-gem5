@@ -128,7 +128,8 @@ const uint8_t *StreamSQCallback::getValue() const {
    */
   auto usedStreamId = this->usedStreamIds.front();
   if (this->element->stream->isUpdateStream()) {
-    return this->element->getUpdateValuePtrByStreamId(usedStreamId);
+    auto value = this->element->getUpdateValuePtrByStreamId(usedStreamId);
+    return value;
   } else {
     return this->element->getValuePtrByStreamId(usedStreamId);
   }

@@ -327,8 +327,7 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
    */
   if (this->policy == PolicyE::SMART_COMPUTATION) {
     bool floatCompute = false;
-    if (!S->valueDepStreams.empty() ||
-        (S->isStoreStream() && S->getEnabledStoreFunc())) {
+    if (!S->valueDepStreams.empty() || S->getEnabledStoreFunc()) {
       floatCompute = true;
     }
     for (auto depS : S->addrDepStreams) {

@@ -343,11 +343,15 @@ bool ISAStreamEngine::canDispatchStreamReady(
     return true;
   }
   const auto &infoRelativePath = this->curStreamRegionInfo->infoRelativePath;
-  DYN_INST_DPRINTF("[canDispatch] StreamReady %s.\n", infoRelativePath);
-
   ::StreamEngine::StreamConfigArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
-  return se->canStreamConfig(args);
+  if (se->canStreamConfig(args)) {
+    DYN_INST_DPRINTF("[canDispatch] StreamReady %s.\n", infoRelativePath);
+    return true;
+  } else {
+    DYN_INST_DPRINTF("[canNotDispatch] StreamReady %s.\n", infoRelativePath);
+    return false;
+  }
 }
 
 void ISAStreamEngine::dispatchStreamReady(

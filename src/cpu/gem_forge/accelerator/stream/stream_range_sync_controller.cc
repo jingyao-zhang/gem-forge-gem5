@@ -96,10 +96,17 @@ void StreamRangeSyncController::checkAliasBetweenRanges(
     if (!currentRange) {
       continue;
     }
-    if (currentRange->paddrRange.hasOverlap(newRange->paddrRange)) {
-      DYN_S_PANIC(dynS->dynamicStreamId,
-                  "[CoreRange] Alias between remote ranges \n %s \n and %s\n",
-                  *currentRange, *newRange);
+    /**
+     * Normally we should check overlap in physical addresses. However,
+     * for the current workloads, we never has two different virtual addresses
+     * mapped to the same physical address. Therefore, to avoid the case of
+     * false positive, I just check the vaddr range.
+     */
+    if (currentRange->vaddrRange.hasOverlap(newRange->vaddrRange)) {
+      DYN_S_PANIC(
+          dynS->dynamicStreamId,
+          "[CoreRange] Alias between remote vaddr ranges \n %s \n and %s\n",
+          *currentRange, *newRange);
     }
   }
 }

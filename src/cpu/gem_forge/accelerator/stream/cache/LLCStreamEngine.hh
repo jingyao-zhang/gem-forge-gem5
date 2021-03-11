@@ -37,14 +37,16 @@ public:
   void receiveStreamMigrate(LLCDynamicStreamPtr stream, bool isCommit);
   void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
   void receiveStreamCommit(const DynamicStreamSliceId &sliceId);
-  void receiveStreamElementDataVec(Cycles delayCycles,
-                                   const DynamicStreamSliceIdVec &sliceIds,
-                                   const DataBlock &dataBlock,
-                                   const DataBlock &storeValueBlock);
+  void receiveStreamDataVec(Cycles delayCycles, Addr paddrLine,
+                            const DynamicStreamSliceIdVec &sliceIds,
+                            const DataBlock &dataBlock,
+                            const DataBlock &storeValueBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
   void receiveStreamForwardRequest(const RequestMsg &req);
   void wakeup() override;
   void print(std::ostream &out) const override;
+
+  int curLLCBank() const;
 
 private:
   friend class LLCDynamicStream;
@@ -79,8 +81,6 @@ private:
    */
   StreamList migratingStreams;
 
-  int curLLCBank() const;
-
   /**
    * Since the LLC controller charge the latency when sending out the response,
    * we want to make sure that this latency is correctly charged for responses
@@ -100,18 +100,18 @@ private:
         : readyCycle(_readyCycle), sliceId(_sliceId), dataBlock(_dataBlock),
           storeValueBlock(_storeValueBlock) {}
   };
-  std::list<IncomingElementDataMsg> incomingElementDataQueue;
-  void enqueueIncomingElementDataMsg(Cycles readyCycle,
-                                     const DynamicStreamSliceId &sliceId,
-                                     const DataBlock &dataBlock,
-                                     const DataBlock &storeValueBlock);
-  void drainIncomingElementDataMsg();
-  void receiveStreamElementData(const DynamicStreamSliceId &sliceId,
-                                const DataBlock &dataBlock,
-                                const DataBlock &storeValueBlock);
-  void receiveStoreStreamElementData(LLCDynamicStreamPtr dynS,
-                                     const DynamicStreamSliceId &sliceId,
-                                     const DataBlock &storeValueBlock);
+  std::list<IncomingElementDataMsg> incomingStreamDataQueue;
+  void enqueueIncomingStreamDataMsg(Cycles readyCycle,
+                                    const DynamicStreamSliceId &sliceId,
+                                    const DataBlock &dataBlock,
+                                    const DataBlock &storeValueBlock);
+  void drainIncomingStreamDataMsg();
+  void receiveStreamData(const DynamicStreamSliceId &sliceId,
+                         const DataBlock &dataBlock,
+                         const DataBlock &storeValueBlock);
+  void receiveStoreStreamData(LLCDynamicStreamPtr dynS,
+                              const DynamicStreamSliceId &sliceId,
+                              const DataBlock &storeValueBlock);
 
   /**
    * Bidirectionaly map between streams that are identical but
@@ -129,11 +129,6 @@ private:
    */
   std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>
       pendingStreamEndMsgs;
-
-  /**
-   * Buffered stream forward message waiting for the stream to migrate here.
-   */
-  std::list<RequestMsg> pendingStreamForwardMsgs;
 
   /**
    * Hold the request queue.
@@ -319,8 +314,24 @@ private:
   void triggerUpdate(LLCDynamicStreamPtr stream, LLCStreamElementPtr element,
                      const DataBlock &storeValueBlock,
                      DataBlock &loadValueBlock);
-  void updateElementData(LLCDynamicStreamPtr stream, uint64_t elementIdx,
-                         uint64_t updateValue);
+
+  /**
+   * API to manages LLCStreamSlices.
+   * Slices are allocated from LLCDynamicStream and now managed by each
+   * LLCStreamEngine.
+   */
+  using SliceList = std::list<LLCStreamSlicePtr>;
+  LLCStreamSlicePtr allocateSlice(LLCDynamicStreamPtr dynS);
+  LLCStreamSlicePtr tryGetSlice(const DynamicStreamSliceId &sliceId);
+  SliceList::iterator releaseSlice(SliceList::iterator sliceIter);
+  void processSlices();
+  SliceList::iterator processSlice(SliceList::iterator sliceIter);
+  void processAtomicOrUpdateSlice(LLCDynamicStreamPtr dynS,
+                                  const DynamicStreamSliceId &sliceId,
+                                  const DataBlock &storeValueBlock);
+
+  SliceList allocatedSlices;
+
   /**
    * Perform store to the BackingStorage.
    */
@@ -335,11 +346,9 @@ private:
                                  const DynamicStreamSliceId &sliceId);
 
   /**
-   * Try to process the request. It may not be able to process it if
-   * the stream lags behind.
-   * @return: whether this message is processed.
+   * Process the StreamForward request.
    */
-  bool tryProcessStreamForwardRequest(const RequestMsg &req);
+  void processStreamForwardRequest(const RequestMsg &req);
 
   /**
    * We handle the computation and charge its latency here.
