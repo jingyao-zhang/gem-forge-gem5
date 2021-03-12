@@ -341,8 +341,8 @@ private:
    * Perform AtomicRMWStream to the BackingStorage.
    * Return the loaded value.
    */
-  uint64_t performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
-                                 LLCDynamicStreamPtr stream,
+  uint64_t performStreamAtomicOp(LLCDynamicStreamPtr dynS,
+                                 LLCStreamElementPtr element, Addr elementPAddr,
                                  const DynamicStreamSliceId &sliceId);
 
   /**

@@ -447,17 +447,7 @@ void StreamElement::computeValue() {
   }
 
   auto getBaseValue = [this](StaticId id) -> StreamValue {
-    // Search the ValueBaseElements.
-    auto baseS = this->se->getStream(id);
-    for (const auto &baseE : this->valueBaseElements) {
-      if (baseE.element->stream == baseS) {
-        StreamValue elementValue;
-        baseE.element->getValueByStreamId(id, elementValue.uint8Ptr(),
-                                          sizeof(elementValue));
-        return elementValue;
-      }
-    }
-    assert(false && "Failed to find value base element.");
+    return this->getValueBaseByStreamId(id);
   };
 
   StreamValue result;
@@ -733,6 +723,20 @@ void StreamElement::receiveComputeResult(const StreamValue &result) {
   } else {
     this->setValue(this->addr, this->size, result.uint8Ptr());
   }
+}
+
+StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
+  // Search the ValueBaseElements.
+  auto baseS = this->se->getStream(id);
+  for (const auto &baseE : this->valueBaseElements) {
+    if (baseE.element->stream == baseS) {
+      StreamValue elementValue;
+      baseE.element->getValueByStreamId(id, elementValue.uint8Ptr(),
+                                        sizeof(elementValue));
+      return elementValue;
+    }
+  }
+  assert(false && "Failed to find value base element.");
 }
 
 bool StreamElement::isValueFaulted(Addr vaddr, int size) const {

@@ -46,11 +46,9 @@ StreamValue LLCStreamElement::getValue(int offset, int size) const {
 
 StreamValue LLCStreamElement::getBaseStreamValue(uint64_t baseStreamId) {
   for (const auto &baseE : this->baseElements) {
-    int32_t offset;
-    int32_t size;
-    if (baseE->S->tryGetCoalescedOffsetAndSize(baseStreamId, offset, size)) {
+    if (baseE->S->isCoalescedHere(baseStreamId)) {
       // Found it.
-      return baseE->getValue(offset, size);
+      return baseE->getValueByStreamId(baseStreamId);
     }
   }
   assert(false && "Invalid baseStreamId.");

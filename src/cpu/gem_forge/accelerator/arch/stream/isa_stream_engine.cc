@@ -716,7 +716,14 @@ bool ISAStreamEngine::canCommitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
-  return se->canCommitStreamStep(streamId);
+  bool canCommit = se->canCommitStreamStep(streamId);
+  if (canCommit) {
+    DYN_INST_DPRINTF("[canCommit] StreamStep.\n");
+    return true;
+  } else {
+    DYN_INST_DPRINTF("[canNotCommit] StreamStep.\n");
+    return false;
+  }
 }
 
 void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {

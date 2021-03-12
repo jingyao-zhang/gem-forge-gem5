@@ -239,6 +239,7 @@ struct StreamElement {
     this->getValueByStreamId(streamId, reinterpret_cast<uint8_t *>(val),
                              sizeof(T));
   }
+  StreamValue getValueBaseByStreamId(StaticId id);
   bool isValueFaulted(Addr vaddr, int size) const;
 
   /**

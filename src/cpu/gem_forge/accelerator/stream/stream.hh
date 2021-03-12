@@ -403,7 +403,6 @@ public:
   void dump() const;
   void sampleStatistic();
 
-
   /**
    * Allocate the CacheStreamConfigureData.
    */
@@ -448,7 +447,8 @@ public:
 
   std::unique_ptr<StreamAtomicOp>
   setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
-                const DynamicStreamFormalParamV &formalParams);
+                const DynamicStreamFormalParamV &formalParams,
+                GetStreamValueFunc getStreamValue);
 
   bool hasDepNestRegion() const { return this->depNestRegion; }
   void setDepNestRegion() { this->depNestRegion = true; }

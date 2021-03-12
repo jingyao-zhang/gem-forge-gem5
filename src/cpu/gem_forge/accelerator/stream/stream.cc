@@ -1021,17 +1021,21 @@ StreamElement *Stream::getPrevElement(StreamElement *element) {
 
 std::unique_ptr<StreamAtomicOp>
 Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
-                      const DynamicStreamFormalParamV &formalParams) {
+                      const DynamicStreamFormalParamV &formalParams,
+                      GetStreamValueFunc getStreamValue) {
   // Turn the FormalParams to ActualParams, except the last atomic
   // operand.
   assert(!formalParams.empty() && "AtomicOp has at least one operand.");
   DynamicStreamParamV params;
   for (int i = 0; i + 1 < formalParams.size(); ++i) {
     const auto &formalParam = formalParams.at(i);
-    assert(formalParam.isInvariant &&
-           "Can only handle invariant params for AtomicOp.");
-    params.emplace_back();
-    params.back().front() = formalParam.invariant.uint64();
+    if (formalParam.isInvariant) {
+      params.push_back(formalParam.invariant);
+    } else {
+      auto baseStreamId = formalParam.baseStreamId;
+      auto baseStreamValue = getStreamValue(baseStreamId);
+      params.push_back(baseStreamValue);
+    }
   }
   // Push the final atomic operand as a dummy 0.
   const auto &formalAtomicParam = formalParams.back();

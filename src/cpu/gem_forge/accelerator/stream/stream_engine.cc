@@ -489,7 +489,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
       if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue() &&
           !dynS.shouldRangeSync()) {
         if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
-          S_ELEMENT_DPRINTF(stepElement, "Can not step as no Ack.\n");
+          S_ELEMENT_DPRINTF(stepElement, "[CanNotCommitStep] No Ack.\n");
           return false;
         }
       }
@@ -503,7 +503,8 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
            * is not allocated is at the first element, where we are waiting for
            * StreamConfig to be executed.
            */
-          S_ELEMENT_DPRINTF(stepElement, "Failed to find StepNextElement.\n");
+          S_ELEMENT_DPRINTF(stepElement,
+                            "[CanNotCommitStep] No Reduction NextElement.\n");
           return false;
         }
         S_ELEMENT_PANIC(
@@ -526,6 +527,9 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
       } else {
         // If not offloaded, The next steped element should be ValueReady.
         if (!stepNextElement->isValueReady) {
+          S_ELEMENT_DPRINTF(
+              stepElement,
+              "[CanNotCommitStep] Reduction NextElement not ValueReady.\n");
           return false;
         }
       }
@@ -538,6 +542,9 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
        * that the reduction is correctly performed.
        */
       if (!stepElement->isValueReady) {
+        S_ELEMENT_DPRINTF(
+            stepElement,
+            "[CanNotCommitStep] Value not Ready for BackDepReductionStream.\n");
         return false;
       }
     }
@@ -549,9 +556,15 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
     if (S->isDirectMemStream() && dynS.shouldCoreSEIssue()) {
       auto stepNextElement = stepElement->next;
       if (!stepNextElement) {
+        S_ELEMENT_DPRINTF(
+            stepElement,
+            "[CanNotCommitStep] No NextElement CoreIssue DirectMemStream.\n");
         return false;
       }
       if (!stepNextElement->isAddrReady()) {
+        S_ELEMENT_DPRINTF(stepElement,
+                          "[CanNotCommitStep] NextElement not AddrReady "
+                          "CoreIssue DirectMemStream.\n");
         return false;
       }
     }
@@ -559,6 +572,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
 
   // We have one more condition for range-based check.
   if (!this->rangeSyncController->areRangesReady()) {
+    SE_DPRINTF("[CanNotCommitStep] No Range\n");
     return false;
   }
   return true;
@@ -1816,8 +1830,8 @@ void StreamEngine::allocateElements() {
           auto &stepDynS = stepS->getDynamicStreamByInstance(
               stepRootDynS.dynamicStreamId.streamInstance);
           // DYN_S_DPRINTF(stepDynS.dynamicStreamId,
-          //               "TotalTripCount %d, Next FIFOIdx %s.\n", totalTripCount,
-          //               stepDynS.FIFOIdx);
+          //               "TotalTripCount %d, Next FIFOIdx %s.\n",
+          //               totalTripCount, stepDynS.FIFOIdx);
           if (stepDynS.FIFOIdx.entryIdx < totalTripCount + 1) {
             allStepStreamsAllocated = false;
             break;
@@ -2343,8 +2357,11 @@ void StreamEngine::issueElement(StreamElement *element) {
       }
       if (!dynS->offloadedToCache) {
         // Special case to handle computation for atomic stream at CoreSE.
+        auto getBaseValue = [element](Stream::StaticId id) -> StreamValue {
+          return element->getValueBaseByStreamId(id);
+        };
         auto atomicOp = S->setupAtomicOp(element->FIFOIdx, element->size,
-                                         dynS->storeFormalParams);
+                                         dynS->storeFormalParams, getBaseValue);
         // * We should use element address here, not line address.
         auto elementVAddr = cacheBlockBreakdown.virtualAddr;
         auto lineOffset = elementVAddr % cacheLineSize;

@@ -434,19 +434,41 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     }
     auto addrBaseS = *S->addrBaseStreams.begin();
     if (!floatedMap.count(addrBaseS)) {
-      // Base stream is not configured.
+      // AddrBaseStream is not floated.
       continue;
+    }
+    // Check if all ValueBaseStreams are floated.
+    for (auto valueBaseS : S->valueBaseStreams) {
+      if (!floatedMap.count(valueBaseS)) {
+        // ValueBaseStream is not floated.
+        continue;
+      }
     }
     auto baseConfig = floatedMap.at(addrBaseS);
     // Only dependent on this direct stream.
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum,
                                                 true /* isIndirect */);
     baseConfig->addUsedBy(config);
+    // Add SendTo edges if the ValueBaseStream is not my AddrBaseStream.
+    for (auto valueBaseS : S->valueBaseStreams) {
+      if (valueBaseS == addrBaseS) {
+        continue;
+      }
+      auto &valueBaseConfig = floatedMap.at(valueBaseS);
+      valueBaseConfig->addSendTo(config);
+      config->addBaseOn(valueBaseConfig);
+    }
     // Remember the decision.
     dynS->offloadedToCache = true;
     this->se->numFloated++;
-    S_DPRINTF(S, "Offload as indirect.\n");
+    DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as indirect.\n");
     floatedMap.emplace(S, config);
+    if (S->getEnabledStoreFunc()) {
+      if (!dynS->hasTotalTripCount()) {
+        DYN_S_PANIC(dynS->dynamicStreamId,
+                    "ComputeStream without TotalTripCount writes to memory.");
+      }
+    }
   }
 }
 

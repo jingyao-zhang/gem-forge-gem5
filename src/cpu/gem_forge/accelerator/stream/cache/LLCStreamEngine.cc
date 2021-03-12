@@ -2057,8 +2057,8 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr stream,
 
   if (S->isAtomicStream()) {
     // Very limited AtomicRMW support.
-    auto loadedValue = this->performStreamAtomicOp(elementVAddr, elementPAddr,
-                                                   stream, sliceId);
+    auto loadedValue =
+        this->performStreamAtomicOp(stream, element, elementPAddr, sliceId);
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                        "Perform StreamAtomic, RetValue %llu.\n", loadedValue);
     loadValueBlock.setData(reinterpret_cast<uint8_t *>(&loadedValue),
@@ -2305,13 +2305,12 @@ void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
   delete pkt;
 }
 
-uint64_t
-LLCStreamEngine::performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
-                                       LLCDynamicStreamPtr stream,
-                                       const DynamicStreamSliceId &sliceId) {
+uint64_t LLCStreamEngine::performStreamAtomicOp(
+    LLCDynamicStreamPtr dynS, LLCStreamElementPtr element, Addr elementPAddr,
+    const DynamicStreamSliceId &sliceId) {
   assert(sliceId.getNumElements() == 1 &&
          "Can not support multi-element atomic op.");
-  auto S = stream->getStaticStream();
+  auto S = dynS->getStaticStream();
   auto elementSize = S->getMemElementSize();
 
   auto rubySystem = this->controller->params()->ruby_system;
@@ -2325,12 +2324,16 @@ LLCStreamEngine::performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
   /**
    * Create the atomic op.
    */
-  const auto &formalParams = stream->configData->storeFormalParams;
+  const auto &formalParams = dynS->configData->storeFormalParams;
   FIFOEntryIdx entryIdx(
       sliceId.getDynStreamId(),
       LLVMDynamicInst::INVALID_SEQ_NUM /* Fake ConfigSeqNum */);
   entryIdx.entryIdx = sliceId.getStartIdx();
-  auto atomicOp = S->setupAtomicOp(entryIdx, elementSize, formalParams);
+  auto getBaseStreamValue = [element](uint64_t baseStreamId) -> StreamValue {
+    return element->getBaseStreamValue(baseStreamId);
+  };
+  auto atomicOp =
+      S->setupAtomicOp(entryIdx, elementSize, formalParams, getBaseStreamValue);
 
   /**
    * Create the packet.
@@ -2342,8 +2345,8 @@ LLCStreamEngine::performStreamAtomicOp(Addr elementVAddr, Addr elementPAddr,
   Request::Flags flags;
   flags.set(Request::ATOMIC_RETURN_OP);
   RequestPtr req =
-      std::make_shared<Request>(elementVAddr, elementSize, flags, masterId, pc,
-                                contextId, std::move(atomicOp));
+      std::make_shared<Request>(element->vaddr, elementSize, flags, masterId,
+                                pc, contextId, std::move(atomicOp));
   req->setPaddr(elementPAddr);
   PacketPtr pkt = Packet::createWrite(req);
   // Fake some data.

@@ -42,6 +42,8 @@
   DYN_S_DPRINTF_(DEBUG_TYPE, (dynamicStreamId), format, ##args)
 #define DYN_S_PANIC(dynamicStreamId, format, args...)                          \
   panic(DYN_S_MSG((dynamicStreamId), format, ##args))
+#define DYN_S_HACK(dynamicStreamId, format, args...)                           \
+  hack(DYN_S_MSG((dynamicStreamId), format, ##args))
 
 #define SLICE_MSG(sliceId, format, args...)                                    \
   DYN_S_MSG("%s: " format, sliceId, ##args)
