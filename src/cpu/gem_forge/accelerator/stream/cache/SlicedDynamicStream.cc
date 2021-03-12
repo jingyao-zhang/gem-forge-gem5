@@ -6,8 +6,8 @@
 #define DEBUG_TYPE SlicedDynamicStream
 #include "../stream_log.hh"
 
-SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureDataPtr _configData,
-                                         bool _coalesceContinuousElements)
+SlicedDynamicStream::SlicedDynamicStream(
+    CacheStreamConfigureDataPtr _configData, bool _coalesceContinuousElements)
     : streamId(_configData->dynamicId),
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
@@ -41,8 +41,7 @@ SlicedDynamicStream::SlicedDynamicStream(CacheStreamConfigureDataPtr _configData
 }
 
 DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
-  while (slices.empty() ||
-         slices.front().getEndIdx() == this->tailElementIdx) {
+  while (slices.empty() || slices.front().getEndIdx() == this->tailElementIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
     this->allocateOneElement();
@@ -53,8 +52,7 @@ DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
 }
 
 const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
-  while (slices.empty() ||
-         slices.front().getEndIdx() == this->tailElementIdx) {
+  while (slices.empty() || slices.front().getEndIdx() == this->tailElementIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
     this->allocateOneElement();
@@ -72,18 +70,63 @@ void SlicedDynamicStream::allocateOneElement() const {
 
   // Let's not worry about indirect streams here.
   auto lhs = this->getElementVAddr(this->tailElementIdx);
+
+  if (lhs + this->elementSize < lhs) {
+    /**
+     * This is a bug case when the vaddr wraps around. This is stream is
+     * ill-defined and this is likely caused by misspeculation on StreamConfig.
+     * This stream should soon be rewinded. Here I just make two new slices,
+     * and do not bother coalescing with previous slices.
+     */
+    auto wrappedSize = lhs + this->elementSize;
+    auto straightSize = this->elementSize - wrappedSize;
+    assert(wrappedSize <= RubySystem::getBlockSizeBytes() &&
+           "WrappedSize larger than a line.");
+    assert(straightSize <= RubySystem::getBlockSizeBytes() &&
+           "StraightSize larger than a line.");
+    {
+      // Straight slice.
+      this->slices.emplace_back();
+      auto &slice = this->slices.back();
+      slice.getDynStreamId() = this->streamId;
+      slice.getStartIdx() = this->tailElementIdx;
+      slice.getEndIdx() = this->tailElementIdx + 1;
+      slice.vaddr = makeLineAddress(lhs);
+      slice.size = RubySystem::getBlockSizeBytes();
+    }
+    {
+      // Wrapped slice.
+      this->slices.emplace_back();
+      auto &slice = this->slices.back();
+      slice.getDynStreamId() = this->streamId;
+      slice.getStartIdx() = this->tailElementIdx;
+      slice.getEndIdx() = this->tailElementIdx + 1;
+      slice.vaddr = makeLineAddress(0);
+      slice.size = RubySystem::getBlockSizeBytes();
+    }
+
+    // Reset the sliceHeadElementIdx.
+    this->sliceHeadElementIdx = this->tailElementIdx;
+    this->tailElementIdx++;
+    return;
+  }
+
   auto rhs = lhs + this->elementSize;
   auto prevLHS = this->tailElementIdx > 0
                      ? this->getElementVAddr(this->tailElementIdx - 1)
                      : lhs;
+  bool prevWrappedAround = (prevLHS + this->elementSize) < prevLHS;
 
   // Break to cache line granularity, [lhsBlock, rhsBlock]
   auto lhsBlock = makeLineAddress(lhs);
   auto rhsBlock = makeLineAddress(rhs - 1);
   auto prevLHSBlock = makeLineAddress(prevLHS);
+  assert(rhsBlock >= lhsBlock && "Wrapped around should be handled above.");
 
-  DYN_S_DPRINTF(this->streamId, "Allocate element %llu, block [%#x, %#x].\n",
-                this->tailElementIdx, lhsBlock, rhsBlock);
+  DYN_S_DPRINTF(this->streamId,
+                "Allocate element %llu, vaddr [%#x, +%d), block [%#x, %#x].\n",
+                this->tailElementIdx, lhs, this->elementSize, lhsBlock,
+                rhsBlock);
 
   /**
    * Check if we can try to coalesce continuous elements.
@@ -92,7 +135,7 @@ void SlicedDynamicStream::allocateOneElement() const {
   auto curBlock = lhsBlock;
   if (this->coalesceContinuousElements &&
       !this->hasOverflowed(this->tailElementIdx)) {
-    if (lhsBlock < prevLHSBlock) {
+    if (lhsBlock < prevLHSBlock && !prevWrappedAround) {
       /**
        * Special case to handle decreasing address.
        * If there is a bump back to lower address, we make sure that it has no
@@ -113,12 +156,12 @@ void SlicedDynamicStream::allocateOneElement() const {
           continue;
         }
         if (slice.vaddr == curBlock) {
-          assert(slice.getEndIdx() == tailElementIdx &&
+          assert(slice.getEndIdx() == this->tailElementIdx &&
                  "Hole in overlapping elements.");
           slice.getEndIdx()++;
           curBlock += RubySystem::getBlockSizeBytes();
-          if (curBlock > rhsBlock) {
-            // We are done.
+          if (curBlock > rhsBlock || curBlock < lhsBlock) {
+            // We are done. If we wrapped around, then curBlock < lhsBlock.
             break;
           }
         }
@@ -131,7 +174,7 @@ void SlicedDynamicStream::allocateOneElement() const {
   }
 
   // Insert new slices.
-  while (curBlock <= rhsBlock) {
+  while (curBlock <= rhsBlock && curBlock >= lhsBlock) {
     this->slices.emplace_back();
     auto &slice = this->slices.back();
     slice.getDynStreamId() = this->streamId;
