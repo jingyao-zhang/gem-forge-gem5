@@ -644,9 +644,10 @@ DefaultO3CPUDelegator<CPUImpl>::allocateGemForgeLoadRequest(
   // So far we only allow one LSQCallback.
   assert(!callbacks.at(1) && "At most one GemForgeLSQCallback.");
 
-  INST_DPRINTF(dynInstPtr, "Release in PreLSQ.\n");
   if (callbacks.front()->getType() == GemForgeLSQCallback::Type::LOAD) {
     // Push load into inLSQ
+    INST_DPRINTF(dynInstPtr, "GFLoadReq %s Release in PreLSQ.\n",
+                 *callbacks.front());
     auto req =
         new GFLoadReq(lsq, dynInstPtr, this, std::move(callbacks.front()));
     auto ret =
@@ -670,7 +671,7 @@ template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::discardGemForgeLoad(
     const DynInstPtr &dynInstPtr, GemForgeLSQCallbackPtr callback) {
   assert(!dynInstPtr->isSquashed());
-  INST_DPRINTF(dynInstPtr, "Back to PreLSQ.\n");
+  INST_DPRINTF(dynInstPtr, "GFReq %s Back to PreLSQ.\n", *callback);
   auto &preLSQ = pimpl->preLSQ;
   auto &inLSQ = pimpl->inLSQ;
   auto seqNum = pimpl->getInstSeqNum(dynInstPtr);

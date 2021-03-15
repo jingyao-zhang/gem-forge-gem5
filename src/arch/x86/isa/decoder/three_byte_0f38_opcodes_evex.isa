@@ -44,6 +44,13 @@
                         0x1: VBROADCASTSD(VYdo, Wq);
                     }
                 }
+                0x2B: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPACKUSDW(VZqo, WZqo);
+                        0x1: VPACKUSDW(VYdo, WYdo);
+                        0x0: VPACKUSDW(Vo, Wo);
+                    }
+                }
                 0x39: decode REX_W {
                     0x1: decode EVEX_L_EXTEND {
                         0x2: VPMINSQ(VZqo, WZqo);

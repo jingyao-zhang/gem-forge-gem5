@@ -280,6 +280,11 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::IntCmpEq);
         '''
 
+    class Vpackus(Varithp):
+        code = '''
+            this->doPackOp(xc, BinaryOp::SIntToUIntPack);
+        '''
+
     class Vfused(AVXOp):
         # Used in packed arithmetic ops with three operands, e.g. vfmaddps
         abstract = True
@@ -393,6 +398,70 @@ let {{
             }
         '''
 
+    class AVXRegImmOp(AVXOp):
+        # Operation on one src reg and one imm8
+        abstract = True
+        def __init__(self, dest, src, imm8, VL, size):
+            super(AVXRegImmOp, self).__init__(
+                dest=dest, src1=src, imm8=imm8,
+                srcVL=VL, destVL=VL, srcSize=size, destSize=size,
+            )
+        srcType = 'AVXOpBase::SrcType::RegImm'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = srcVL / sizeof(uint64_t);
+            _numSrcRegs = vRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+            }
+        '''
+
+    class Vshiftll(AVXRegImmOp):
+        # Logical shift left with zero extension.
+        code = '''
+            int shift = imm8;
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            FloatInt src;
+            if (srcSize == 8) {
+                for (int i = 0; i < vDestRegs; ++i) {
+                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ul = src.ul << shift;
+                    xc->setFloatRegOperandBits(this, i, src.ul);
+                }
+            } else if (srcSize == 4) {
+                for (int i = 0; i < vDestRegs; ++i) {
+                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ui.i1 = src.ui.i1 << shift;
+                    src.ui.i2 = src.ui.i2 << shift;
+                    xc->setFloatRegOperandBits(this, i, src.ul);
+                }
+            }
+        '''
+
+    class Vshiftrl(AVXRegImmOp):
+        # Logical shift right with zero extension.
+        code = '''
+            int shift = imm8;
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            FloatInt src;
+            // Unsigned shift = Logical shift (zero extension).
+            if (srcSize == 8) {
+                for (int i = 0; i < vDestRegs; ++i) {
+                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ul = src.ul >> shift;
+                    xc->setFloatRegOperandBits(this, i, src.ul);
+                }
+            } else if (srcSize == 4) {
+                for (int i = 0; i < vDestRegs; ++i) {
+                    src.ul = xc->readFloatRegOperandBits(this, i);
+                    src.ui.i1 = src.ui.i1 >> shift;
+                    src.ui.i2 = src.ui.i2 >> shift;
+                    xc->setFloatRegOperandBits(this, i, src.ul);
+                }
+            }
+        '''
+
     class Valign(AVXOp):
         def __init__(self, dest, src1, src2, imm8, VL, size):
             super(Valign, self).__init__(
@@ -479,5 +548,30 @@ let {{
                 }
                 xc->setFloatRegOperandBits(this, i, result);
             }
+        '''
+
+    class Vextract(AVXOp):
+        # Extra from the src.
+        def __init__(self, dest, src, imm8, srcVL, destVL, size):
+            super(Vextract, self).__init__(
+                dest=dest, src1=src, imm8=imm8,
+                srcVL=srcVL, destVL=destVL, srcSize=size, destSize=size,
+            )
+        srcType = 'AVXOpBase::SrcType::RegImm'
+        constructorCode = '''
+            assert(destVL == 8 && "Illegal destVL.");
+            assert(srcVL == 16 && "Illegal srcVL.");
+            assert(srcSize == 1 && "Unsupported vextract size.");
+            _numDestRegs = 1;
+            _destRegIdx[0] = RegId(IntRegClass, dest);
+            auto vRegs = srcVL / sizeof(uint64_t);
+            _numSrcRegs = vRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+            }
+        '''
+        code = '''
+            this->doExtract(xc);
         '''
 }};

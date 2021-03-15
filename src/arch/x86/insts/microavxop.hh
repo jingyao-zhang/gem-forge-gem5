@@ -61,6 +61,18 @@ protected:
       int32_t i2;
     } si;
     struct __attribute__((packed)) {
+      uint16_t i1;
+      uint16_t i2;
+      uint16_t i3;
+      uint16_t i4;
+    } us;
+    struct __attribute__((packed)) {
+      int16_t i1;
+      int16_t i2;
+      int16_t i3;
+      int16_t i4;
+    } ss;
+    struct __attribute__((packed)) {
       uint8_t i1;
       uint8_t i2;
       uint8_t i3;
@@ -70,6 +82,7 @@ protected:
       uint8_t i7;
       uint8_t i8;
     } uc;
+    uint8_t uc_array[8];
     struct __attribute__((packed)) {
       int8_t i1;
       int8_t i2;
@@ -96,6 +109,7 @@ protected:
     IntCmpEq,
     UIntMul,
     SIntMin,
+    SIntToUIntPack,
   };
 
   FloatInt calcPackedBinaryOp(FloatInt src1, FloatInt src2, BinaryOp op) const;
@@ -103,6 +117,10 @@ protected:
   void doPackedBinaryOp(ExecContext *xc, BinaryOp op) const;
   // A helper function to perform packed (src1 op1 src2) op2 src3
   void doFusedPackedBinaryOp(ExecContext *xc, BinaryOp op1, BinaryOp op2) const;
+  // A helper function to perform pack operation
+  void doPackOp(ExecContext *xc, BinaryOp op) const;
+  // A helper function to perform extract operation
+  void doExtract(ExecContext *xc) const;
 
   // A helper function to add dest regs.
   inline void addAVXDestRegs() {

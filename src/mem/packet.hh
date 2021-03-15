@@ -879,6 +879,8 @@ class Packet : public Printable
             return MemCmd::LoadLockedReq;
         else if (req->isPrefetchEx())
             return MemCmd::SoftPFExReq;
+        else if (req->isReadEx())
+            return MemCmd::ReadExReq;
         else if (req->isPrefetch())
             return MemCmd::SoftPFReq;
         else

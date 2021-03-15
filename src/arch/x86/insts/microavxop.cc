@@ -53,6 +53,8 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
   if (this->srcSize == 4) {
     // 2 float.
     switch (op) {
+    default:
+      assert(false && "Invalid op type.");
     case BinaryOp::FloatAdd:
       dest.f.f1 = src1.f.f1 + src2.f.f1;
       dest.f.f2 = src1.f.f2 + src2.f.f2;
@@ -93,12 +95,12 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.si.i1 = std::min(src1.si.i1, src2.si.i1);
       dest.si.i2 = std::min(src1.si.i2, src2.si.i2);
       break;
-    default:
-      assert(false && "Invalid op type.");
     }
   } else {
     // 1 double;
     switch (op) {
+    default:
+      assert(false && "Invalid op type.");
     case BinaryOp::FloatAdd:
       dest.d = src1.d + src2.d;
       break;
@@ -129,8 +131,6 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
     case BinaryOp::SIntMin:
       dest.sl = std::min(src1.sl, src2.sl);
       break;
-    default:
-      assert(false && "Invalid op type.");
     }
   }
   return dest;
@@ -162,6 +162,76 @@ void AVXOpBase::doFusedPackedBinaryOp(ExecContext *xc, BinaryOp op1,
     auto dest = this->calcPackedBinaryOp(tmp, src3, op2);
     xc->setFloatRegOperandBits(this, i, dest.ul);
   }
+}
+
+void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
+  auto vRegs = destVL / sizeof(uint64_t);
+  switch (op) {
+  default:
+    panic("Unsupported pack op %d.", op);
+  case BinaryOp::SIntToUIntPack: {
+    for (int i = 0; i < vRegs; ++i) {
+      FloatInt src1;
+      FloatInt src2;
+      int srcIdx = i - (i % 2);
+      if ((i % 2) == 0) {
+        // Take 128 bit from src1.
+        src1.ul = xc->readFloatRegOperandBits(this, (srcIdx + 0) * 2 + 0);
+        src2.ul = xc->readFloatRegOperandBits(this, (srcIdx + 1) * 2 + 0);
+      } else {
+        // Take 128 bit from src2.
+        src1.ul = xc->readFloatRegOperandBits(this, (srcIdx + 0) * 2 + 1);
+        src2.ul = xc->readFloatRegOperandBits(this, (srcIdx + 1) * 2 + 1);
+      }
+      FloatInt dest;
+      if (this->srcSize == 4) {
+        // Pack int32_t -> uint16_t.
+#define SignedToUnsignedSaturate(v)                                            \
+  v > 0xFFFF ? 0xFFFF : (v < 0 ? 0 : (v & 0xFFFF))
+        dest.us.i1 = SignedToUnsignedSaturate(src1.si.i1);
+        dest.us.i2 = SignedToUnsignedSaturate(src1.si.i2);
+        dest.us.i3 = SignedToUnsignedSaturate(src2.si.i1);
+        dest.us.i4 = SignedToUnsignedSaturate(src2.si.i2);
+#undef SignedToUnsignedSaturate
+      } else if (this->srcSize == 2) {
+        // Pack int16_t -> uint8_t.
+#define SignedToUnsignedSaturate(v) v > 0xFF ? 0xFF : (v < 0 ? 0 : (v & 0xFF))
+        dest.uc.i1 = SignedToUnsignedSaturate(src1.ss.i1);
+        dest.uc.i2 = SignedToUnsignedSaturate(src1.ss.i2);
+        dest.uc.i3 = SignedToUnsignedSaturate(src1.ss.i3);
+        dest.uc.i4 = SignedToUnsignedSaturate(src1.ss.i4);
+        dest.uc.i5 = SignedToUnsignedSaturate(src2.ss.i1);
+        dest.uc.i6 = SignedToUnsignedSaturate(src2.ss.i2);
+        dest.uc.i7 = SignedToUnsignedSaturate(src2.ss.i3);
+        dest.uc.i8 = SignedToUnsignedSaturate(src2.ss.i4);
+#undef SignedToUnsignedSaturate
+      } else {
+        panic("Unsupported size for pack %d.", this->srcSize);
+      }
+      xc->setFloatRegOperandBits(this, i, dest.ul);
+    }
+    break;
+  }
+  }
+}
+
+void AVXOpBase::doExtract(ExecContext *xc) const {
+  FloatInt result;
+  result.ul = 0;
+  auto select = imm8;
+  if (srcSize == 1) {
+    FloatInt src;
+    if ((select >> 3) & 1) {
+      src.ul = xc->readFloatRegOperandBits(this, 0);
+    } else {
+      src.ul = xc->readFloatRegOperandBits(this, 1);
+    }
+    // Extract the byte.
+    result.uc.i1 = src.uc_array[select & 0x7];
+  }
+  // hack("%s.\n", this->generateDisassembly(0x0, nullptr));
+  // hack("Extract %lu -> %s.\n", result.ul, this->destRegIdx(0));
+  xc->setIntRegOperand(this, 0, result.ul);
 }
 
 } // namespace X86ISA

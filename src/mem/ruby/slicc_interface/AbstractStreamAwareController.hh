@@ -4,6 +4,7 @@
 #include "AbstractController.hh"
 #include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
 #include "cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceIdVec.hh"
+#include "mem/ruby/common/PCRequestRecorder.hh"
 #include "mem/ruby/structures/CacheMemory.hh"
 #include "params/RubyStreamAwareController.hh"
 
@@ -135,6 +136,7 @@ public:
     }
   }
 
+  void recordPCReq(const RequestStatisticPtr &reqStat) const;
   void recordDeallocateNoReuseReqStats(const RequestStatisticPtr &reqStat,
                                        CacheMemory &cache) const;
   void recordLLCReqQueueStats(const RequestStatisticPtr &reqStat,
@@ -206,6 +208,9 @@ public:
 private:
   const Params *myParams;
   BaseCPU *cpu = nullptr;
+
+  mutable PCRequestRecorder pcReqRecorder;
+
   /**
    * Store the bits used in S-NUCA to find the LLC bank.
    */

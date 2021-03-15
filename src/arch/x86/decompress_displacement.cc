@@ -58,7 +58,9 @@ enum EVEXTupleType {
  * 66 5B vcvtdq2ps      FULL
  * 66 5C vsubpd         FULL
  * 66 5E vdivpd         FULL
+ * 66 67 vpackuswb      FULL_MEM
  * 66 6F vmovdqa(load)  FULL_MEM
+ * 66 72 vpslld/vpsrld  FULL
  * 66 7F vmovdqa(store) FULL_MEM
  * 66 D4 vpaddq         FULL
  * 66 D6 vmovq          TUPLE1_SCALAR
@@ -74,8 +76,8 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 /*  3 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , FU, FU, FU, FU, FU, O , FU, O ,
-/*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FM,
-/*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FM,
+/*  6 */ O , O , O , O , O , O , O , FM, O , O , O , O , O , O , O , FM,
+/*  7 */ O , O , FU, O , O , O , O , O , O , O , O , O , O , O , O , FM,
 /*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  9 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
@@ -187,6 +189,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte[256] =
  *   66 18 vbroadcastss           TUPLE1_SCALAR
  *   66 19 vbroadcastsd(W1)       TUPLE1_SCALAR
  * ! 66 19 vbroadcastf32x2(W0)    TUPLE2
+ *   66 2B vpackusdw              FULL
  *   66 39 vpminsd,vpminsq        FULL
  *   66 58 vbroadcastd            TUPLE1_SCALAR
  */
@@ -195,7 +198,7 @@ const EVEXTupleType EVEXTupleTypeThreeByte660F38[256] =
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  1 */ O , O , O , O , O , O , O , O , TS, TS, O , O , O , O , O , O ,
-/*  2 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  2 */ O , O , O , O , O , O , O , O , O , O , O , FU, O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , O , FU, O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , TS, O , O , O , O , O , O , O ,

@@ -8,7 +8,7 @@ std::list<AbstractStreamAwareController *>
     AbstractStreamAwareController::globalList;
 
 AbstractStreamAwareController::AbstractStreamAwareController(const Params *p)
-    : AbstractController(p), myParams(p),
+    : AbstractController(p), myParams(p), pcReqRecorder(p->name),
       llcSelectLowBit(p->llc_select_low_bit),
       llcSelectNumBits(p->llc_select_num_bits),
       numCoresPerRow(p->num_cores_per_row),
@@ -65,6 +65,14 @@ void AbstractStreamAwareController::regStats() {
   m_statLLCMulticastStreamReq.name(name() + ".llcMulticastStreamRequests")
       .desc("number of llc multicast stream requests seen")
       .flags(Stats::nozero);
+
+  // Register stats callback.
+  Stats::registerResetCallback(
+      new MakeCallback<PCRequestRecorder, &PCRequestRecorder::reset>(
+          &this->pcReqRecorder, true /* auto delete */));
+  Stats::registerDumpCallback(
+      new MakeCallback<PCRequestRecorder, &PCRequestRecorder::dump>(
+          &this->pcReqRecorder, true /* auto delete */));
 }
 
 MachineID
@@ -143,6 +151,23 @@ void AbstractStreamAwareController::registerController(
   globalList.emplace_back(controller);
 }
 
+void AbstractStreamAwareController::recordPCReq(
+    const RequestStatisticPtr &reqStat) const {
+  Addr pc = 0;
+  bool isStream = false;
+  const char *streamName = nullptr;
+  if (reqStat) {
+    pc = reqStat->pc;
+    isStream = reqStat->isStream;
+    streamName = reqStat->streamName;
+  }
+  // For now we have no latency information for AbstractController.
+  // And simply use LD request.
+  Cycles latency(1);
+  this->pcReqRecorder.recordReq(pc, RubyRequestType_LD, isStream, streamName,
+                                latency);
+}
+
 void AbstractStreamAwareController::recordDeallocateNoReuseReqStats(
     const RequestStatisticPtr &reqStat, CacheMemory &cache) const {
   // Record msg stats.
@@ -156,15 +181,16 @@ void AbstractStreamAwareController::recordDeallocateNoReuseReqStats(
     // Record this is from stream.
     cache.m_deallocated_no_reuse_stream++;
     cache.m_deallocated_no_reuse_stream_noc_control_message += nocCtrl;
-    cache.m_deallocated_no_reuse_stream_noc_control_evict_message += nocCtrlEvict;
+    cache.m_deallocated_no_reuse_stream_noc_control_evict_message +=
+        nocCtrlEvict;
     cache.m_deallocated_no_reuse_stream_noc_data_message += nocData;
   }
 }
 
 void AbstractStreamAwareController::recordLLCReqQueueStats(
-    const RequestStatisticPtr &reqStat,
-    const DynamicStreamSliceIdVec &sliceIds,
+    const RequestStatisticPtr &reqStat, const DynamicStreamSliceIdVec &sliceIds,
     bool isLoad) {
+  this->recordPCReq(reqStat);
   if (sliceIds.isValid()) {
     // An LLC stream request.
     ++m_statLLCStreamReq;

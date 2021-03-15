@@ -47,6 +47,11 @@
                     0x1: VBLENDPS(VYdo, WYdo, Ib);
                     0x0: VBLENDPS(Vo, Wo, Ib);
                 }
+                0x14: decode EVEX_L {
+                    0x0: decode REX_W {
+                        0x0: VPEXTRB(Eq, Vo, Ib);
+                    }
+                }
                 0x16: decode EVEX_L {
                     0x0: decode REX_W {
                         0x1: decode IMMEDIATE {

@@ -2120,10 +2120,23 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
               element->isReady(), element->areBaseElementsReady(),
               element->getNumSlices());
         }
-        dynS->eraseElement(elementIter);
-      } else {
-        break;
+        /**
+         * We avoid releasing the element if it is the only one left
+         * in idxToElementMap and it is known not the last one. This
+         * is to avoid a bug when there are multi-line elements, the
+         * next slice is not initialized yet, thus the element has not
+         * seen all the slices and may falsely return true for
+         * areSlicesReleased().
+         * TODO: Handle this multi-line elements more elegantly.
+         */
+        if (dynS->idxToElementMap.size() > 1 ||
+            (dynS->hasTotalTripCount() &&
+             element->idx + 1 >= dynS->getTotalTripCount())) {
+          dynS->eraseElement(elementIter);
+          continue;
+        }
       }
+      break;
     }
   }
   return this->allocatedSlices.erase(sliceIter);

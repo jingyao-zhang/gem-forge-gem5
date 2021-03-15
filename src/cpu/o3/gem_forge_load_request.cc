@@ -31,6 +31,9 @@ template <class Impl> void GemForgeLoadRequest<Impl>::release(Flag reason) {
     this->cpuDelegator->deschedule(&this->checkValueReadyEvent);
   }
   // 2. Consider this as misspeculation.
+  INST_DPRINTF(
+      "GFLoadReq %s: Discard causes RAWMisspeculation on vaddr %#x size %d.\n",
+      *this->callback, this->_addr, this->_size);
   this->callback->RAWMisspeculate();
   // 3. Push the callback back to PreLSQ.
   this->cpuDelegator->discardGemForgeLoad(this->instruction(),
@@ -142,12 +145,13 @@ template <class Impl> void GemForgeLoadRequest<Impl>::sendPacketToCache() {
 
 template <class Impl>
 Cycles GemForgeLoadRequest<Impl>::handleLocalAccess(ThreadContext *thread,
-                                                   PacketPtr pkt) {
+                                                    PacketPtr pkt) {
   return pkt->req->localAccessor(thread, pkt);
 }
 
 template <class Impl>
-bool GemForgeLoadRequest<Impl>::isCacheBlockHit(Addr blockAddr, Addr blockMask) {
+bool GemForgeLoadRequest<Impl>::isCacheBlockHit(Addr blockAddr,
+                                                Addr blockMask) {
   return ((this->_requests[0]->getPaddr() & blockMask) == blockAddr);
 }
 
@@ -211,6 +215,8 @@ template <class Impl> void GemForgeLoadRequest<Impl>::foundRAWMisspeculation() {
     INST_PANIC("GFLoadReq: Multiple RAWMisspeculation on LSQCallback: %s.\n",
                *this->callback);
   }
+  INST_DPRINTF("GFLoadReq %s: Found RAWMisspeculation on vaddr %#x size %d.\n",
+               *this->callback, this->_addr, this->_size);
   this->callback->RAWMisspeculate();
   this->rawMisspeculated = true;
   if (this->isAnyOutstandingRequest()) {

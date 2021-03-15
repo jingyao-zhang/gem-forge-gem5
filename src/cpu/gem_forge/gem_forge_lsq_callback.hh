@@ -77,6 +77,9 @@ public:
     Addr addr = 0;
     uint32_t size = 0;
     bool addrReady = this->isAddrReady();
+    if (addrReady) {
+      this->getAddrSize(addr, size);
+    }
     return os << "[" << this->getTypeString() << " AddrReady " << addrReady
               << ", Issued " << this->isIssued() << ", 0x" << std::hex << addr
               << ", +" << size << ']';

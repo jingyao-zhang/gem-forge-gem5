@@ -222,6 +222,15 @@
                 }
             }
         }
+        0x0C: decode LEGACY_DECODEVAL {
+            // operand size (0x66)
+            0x1: decode OPCODE_OP_BOTTOM3 {
+                0x7: decode EVEX_L {
+                    0x1: VPACKUSWB(VYdo, WYdo);
+                    0x0: VPACKUSWB(Vo, Wo);
+                }
+            }
+        }
         0x0D: decode LEGACY_DECODEVAL {
             0x1: decode OPCODE_OP_BOTTOM3 {
                 0x6: decode EVEX_L {
@@ -250,6 +259,7 @@
                     0x0: VPSHUFD(Vo, Wo, Ib);
                 }
                 0x6: decode EVEX_L {
+                    0x1: VPCMPEQD(VYdo, WYdo);
                     0x0: VPCMPEQD(Vo, Wo);
                 }
             }
@@ -335,6 +345,10 @@
         }
         0x1F: decode LEGACY_DECODEVAL {
             0x1: decode OPCODE_OP_BOTTOM3 {
+                0x3: decode EVEX_L_EXTEND {
+                    0x1: VPSUBQ(VYdo, WYdo);
+                    0x0: VPSUBQ(Vo, Wo);
+                }
                 0x6: decode EVEX_L {
                     0x1: VPADDD(VYdo, WYdo);
                     0x0: VPADDD(Vo, Wo);

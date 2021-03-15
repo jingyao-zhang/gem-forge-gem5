@@ -212,6 +212,13 @@ class Request
         IS_SPLIT_REQUEST            = 0x0400000000000000,
 
         /**
+         * ! GemForge
+         * This request is from a split request. This is used by prefetcher
+         * to decide whether it wants to prefetch on this request.
+         */
+        READ_EXCLUSIVE              = 0x0800000000000000,
+
+        /**
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
          */
@@ -859,6 +866,7 @@ class Request
     bool isPrefetch() const { return (_flags.isSet(PREFETCH) ||
                                       _flags.isSet(PF_EXCLUSIVE)); }
     bool isPrefetchEx() const { return _flags.isSet(PF_EXCLUSIVE); }
+    bool isReadEx() const { return _flags.isSet(READ_EXCLUSIVE); }
     bool isLLSC() const { return _flags.isSet(LLSC); }
     bool isPriv() const { return _flags.isSet(PRIVILEGED); }
     bool isLockedRMW() const { return _flags.isSet(LOCKED_RMW); }

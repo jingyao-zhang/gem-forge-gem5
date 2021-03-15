@@ -12,6 +12,7 @@ PacketPtr GemForgePacketHandler::createGemForgePacket(
   req->setContext(contextId);
   // For our request, we always track the request statistic.
   req->setStatistic(std::make_shared<RequestStatistic>());
+  req->getStatistic()->pc = pc;
   PacketPtr pkt;
   uint8_t *pkt_data = new uint8_t[req->getSize()];
   if (data == nullptr) {

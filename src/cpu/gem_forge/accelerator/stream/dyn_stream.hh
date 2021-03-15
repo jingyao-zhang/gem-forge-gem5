@@ -91,6 +91,8 @@ struct DynamicStream {
   // Store value compute.
   DynamicStreamFormalParamV storeFormalParams;
   ExecFuncPtr storeCallback;
+  DynamicStreamFormalParamV loadFormalParams;
+  ExecFuncPtr loadCallback;
 
   /**
    * Optional initial/final value for reduction stream.

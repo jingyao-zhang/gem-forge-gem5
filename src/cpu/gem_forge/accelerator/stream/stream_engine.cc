@@ -2389,13 +2389,24 @@ void StreamEngine::issueElement(StreamElement *element) {
       }
     } else {
       /**
-       * For offloaded streams, they rely on this request to advance in MLC.
+       * Some special case for ReqFlags:
+       * 1. For offloaded streams, they rely on this request to advance in MLC.
        * Disable RubySequencer coalescing for that.
        * Unless this is a reissue request, which should be treated normally.
+       * 2. For Store/Atomic stream without computation, issue this as ReadEx
+       * request to be prefetched in Exclusive state. These streams will never
+       * be offloaded to cache, but we check just to be sure.
        */
       Request::Flags flags;
       if (dynS->offloadedToCache && !element->flushed) {
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
+      }
+      if (S->isStoreStream() || S->isAtomicStream()) {
+        if (!S->isStoreComputeStream() && !S->isAtomicComputeStream()) {
+          if (!dynS->offloadedToCache) {
+            flags.set(Request::READ_EXCLUSIVE);
+          }
+        }
       }
       pkt = GemForgePacketHandler::createGemForgePacket(
           cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,

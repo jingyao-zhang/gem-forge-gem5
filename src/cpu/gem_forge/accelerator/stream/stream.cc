@@ -644,12 +644,23 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
    * LoadFunc shares the same input as StoreFunc, for now.
    */
   if (this->getEnabledLoadFunc()) {
-    assert(this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT);
     const auto &info = this->getLoadFuncInfo();
     if (!this->loadCallback) {
       this->loadCallback = std::make_shared<TheISA::ExecFunc>(dynS.tc, info);
     }
-    // No additional input. All inputs are the same as StoreFunc.
+    dynS.loadCallback = this->loadCallback;
+    auto &loadFormalParams = dynS.loadFormalParams;
+    if (this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT) {
+      /**
+       * For AtomicStreams, all inputs are the same as StoreFunc.
+       */
+      loadFormalParams = dynS.storeFormalParams;
+    } else {
+      auto usedInputs =
+          this->setupFormalParams(inputVec, info, loadFormalParams);
+      // Consume these inputs.
+      inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
+    }
   }
   /**
    * If this is a reduction stream, check for the initial value.
