@@ -12,7 +12,7 @@ def macroop VPACKUSDW_XMM_M {
 def macroop VPACKUSDW_XMM_P {
     rdip t7
     ldfp128 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=16
-    vpacku xmm0, xmm0v, ufp1, size=4, VL=16
+    vpackus xmm0, xmm0v, ufp1, size=4, VL=16
 };
 
 def macroop VPACKUSDW_YMM_YMM {
