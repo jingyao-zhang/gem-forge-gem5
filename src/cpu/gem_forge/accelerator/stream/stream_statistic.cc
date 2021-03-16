@@ -22,6 +22,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numAllocated);
   dumpScalar(numWithdrawn);
   dumpScalar(numFetched);
+  dumpScalar(numPrefetched);
   dumpScalar(numStepped);
   dumpScalar(numUsed);
   dumpScalar(numAliased);
@@ -67,6 +68,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpAvg(avgMLCLateCycle, numMLCLateCycle, numMLCLateSlice);
 
   dumpScalar(numIssuedRequest);
+  dumpScalar(numIssuedPrefetchRequest);
   dumpScalar(numCycleRequestLatency);
   dumpAvg(avgRequestLatency, numCycleRequestLatency, numIssuedRequest);
 

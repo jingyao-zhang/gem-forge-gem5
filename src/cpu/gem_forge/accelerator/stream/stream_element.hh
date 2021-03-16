@@ -80,8 +80,6 @@ public:
                             PacketPtr packet) override;
   void issueToMemoryCallback(GemForgeCPUDelegator *cpuDelegator) override;
   void handlePacketResponse(PacketPtr packet);
-  // This cache block is fetched in by some other StreamMemAccess.
-  void handleStreamEngineResponse();
 
   Stream *getStream() const { return this->stream; }
 
@@ -296,6 +294,8 @@ struct StreamElement {
   bool isAddrReady() const { return this->addrReady; }
   bool isReqIssued() const { return this->reqIssued; }
   void setReqIssued();
+  bool isPrefetchIssued() const { return this->prefetchIssued; }
+  void setPrefetchIssued();
 
   /**
    * Check if the computation value is ready.
@@ -318,6 +318,11 @@ struct StreamElement {
 private:
   bool addrReady = false;
   bool reqIssued = false;
+  /**
+   * We still issue prefetches for Store/AtomicStream in the core (not floated).
+   * These prefetches are not expecting responses.
+   */
+  bool prefetchIssued = false;
 
   /**
    * Extra value for UpdateStream.

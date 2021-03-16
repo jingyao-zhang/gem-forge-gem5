@@ -161,7 +161,7 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
   // Check if this is a read request.
   if (pkt->isRead()) {
     // We should notify the stream engine that this cache line is coming back.
-    this->element->se->fetchedCacheBlock(this->cacheBlockVAddr, this);
+    this->stream->se->fetchedCacheBlock(this->cacheBlockVAddr, this);
   }
 
   // Notify all receivers.
@@ -188,13 +188,6 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
 void StreamMemAccess::issueToMemoryCallback(
     GemForgeCPUDelegator *cpuDelegator) {
   this->element->issueCycle = cpuDelegator->curCycle();
-}
-
-void StreamMemAccess::handleStreamEngineResponse() {
-  // Merge at StreamEngine level is disabled as we have no easy method
-  // to propagate the data here.
-  assert(false && "No propagate data for merged request.");
-  this->element->handlePacketResponse(this, nullptr);
 }
 
 StreamElement::StreamElement(StreamEngine *_se) : se(_se) { this->clear(); }
@@ -236,6 +229,7 @@ void StreamElement::clear() {
   this->isStepped = false;
   this->addrReady = false;
   this->reqIssued = false;
+  this->prefetchIssued = false;
   this->isAddrAliased = false;
   this->isValueReady = false;
   this->updateValueReady = false;
@@ -265,6 +259,7 @@ void StreamElement::flush(bool aliased) {
   // Clear the element to just allocate state.
   this->addrReady = false;
   this->reqIssued = false;
+  this->prefetchIssued = false;
   this->isValueReady = false;
   this->updateValueReady = false;
 
@@ -844,6 +839,13 @@ void StreamElement::setReqIssued() {
     S_ELEMENT_PANIC(this, "Request already issued.\n");
   }
   this->reqIssued = true;
+}
+
+void StreamElement::setPrefetchIssued() {
+  if (this->prefetchIssued) {
+    S_ELEMENT_PANIC(this, "Prefetch already issued.\n");
+  }
+  this->prefetchIssued = true;
 }
 
 void StreamElement::dump() const {

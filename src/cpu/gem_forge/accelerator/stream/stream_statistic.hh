@@ -25,6 +25,7 @@ public:
   size_t numAllocated = 0;
   size_t numWithdrawn = 0;
   size_t numFetched = 0;
+  size_t numPrefetched = 0;
   size_t numStepped = 0;
   size_t numUsed = 0;
   size_t numAliased = 0;
@@ -62,6 +63,7 @@ public:
   size_t numMLCLateCycle = 0;
 
   size_t numIssuedRequest = 0;
+  size_t numIssuedPrefetchRequest = 0;
   size_t numCycleRequestLatency = 0;
   size_t numMissL0 = 0;
   size_t numMissL1 = 0;

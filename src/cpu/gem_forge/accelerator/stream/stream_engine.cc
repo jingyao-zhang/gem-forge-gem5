@@ -2006,7 +2006,7 @@ void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
       if (cacheBlockInfo.reference == 0) {
         // Remember to remove the pendingAccesses.
         for (auto &pendingAccess : cacheBlockInfo.pendingAccesses) {
-          pendingAccess->handleStreamEngineResponse();
+          assert(false && "Merge data for streams is removed.");
         }
         if (cacheBlockInfo.used && cacheBlockInfo.requestedByLoad) {
           this->numLoadCacheLineUsed++;
@@ -2107,7 +2107,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
               readyElements.emplace_back(element);
             }
           }
-          if (S->isAtomicComputeStream() && !element->dynS->offloadedToCache &&
+          if (S->isAtomicComputeStream() && !dynS.offloadedToCache &&
               !element->isReqIssued()) {
             // Check that StreamAtomic inst is non-speculative, i.e. it checks
             // if my value is ready.
@@ -2154,8 +2154,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          * NoC. Here I try to limit the prefetch distance for AtomicStream
          * without computation.
          */
-        if (S->isAtomicStream() && !S->isAtomicComputeStream() &&
-            !dynS.offloadedToCache) {
+        if (S->isAtomicStream() && !dynS.offloadedToCache) {
           if (element->FIFOIdx.entryIdx >
               dynS.getFirstElement()->FIFOIdx.entryIdx +
                   this->myParams->maxNumElementsPrefetchForAtomic) {
@@ -2202,7 +2201,10 @@ void StreamEngine::issueElements() {
             });
   for (auto &element : readyElements) {
 
-    if (element->isAddrReady() && element->stream->shouldComputeValue()) {
+    auto S = element->stream;
+    auto dynS = element->dynS;
+
+    if (element->isAddrReady() && S->shouldComputeValue()) {
       // Type 2 ready elements.
       element->computeValue();
       continue;
@@ -2212,14 +2214,14 @@ void StreamEngine::issueElements() {
       element->markAddrReady();
     }
 
-    if (element->stream->isMemStream()) {
+    if (S->isMemStream()) {
       assert(!element->isReqIssued() && "Element already issued request.");
 
       /**
        * * New Feature: If the stream is merged, then we do not issue.
        * * The stream should never be used by the core.
        */
-      if (element->stream->isMerged()) {
+      if (S->isMerged()) {
         continue;
       }
 
@@ -2234,12 +2236,18 @@ void StreamEngine::issueElements() {
        * So we check the firstValueCheckByCoreCycle.
        * If the stream is floated, then we can immediately issue.
        */
-      if (element->stream->isAtomicComputeStream() &&
-          !element->dynS->offloadedToCache &&
-          element->firstValueCheckByCoreCycle == 0) {
-        S_ELEMENT_DPRINTF(
-            element, "Delay issue as waiting for FirstValueCheckByCore.\n");
-        continue;
+      if (S->isAtomicStream() && !dynS->offloadedToCache) {
+        if (!element->isPrefetchIssued()) {
+          // We first issue prefetch request for AtomicStream.
+          this->prefetchElement(element);
+          continue;
+        }
+        if (S->isAtomicComputeStream() &&
+            element->firstValueCheckByCoreCycle == 0) {
+          S_ELEMENT_DPRINTF(
+              element, "Delay issue as waiting for FirstValueCheckByCore.\n");
+          continue;
+        }
       }
 
       // Increase the reference of the cache block if we enable merging.
@@ -2259,6 +2267,7 @@ void StreamEngine::issueElements() {
     }
   }
 }
+
 void StreamEngine::fetchedCacheBlock(Addr cacheBlockVAddr,
                                      StreamMemAccess *memAccess) {
   // Check if we still have the cache block.
@@ -2274,7 +2283,7 @@ void StreamEngine::fetchedCacheBlock(Addr cacheBlockVAddr,
   for (auto &pendingMemAccess : cacheBlockInfo.pendingAccesses) {
     assert(pendingMemAccess != memAccess &&
            "pendingMemAccess should not be fetching access.");
-    pendingMemAccess->handleStreamEngineResponse();
+    assert(false && "Merge data for streams is removed.");
   }
   // Remember to clear the pendingAccesses, as they are now released.
   cacheBlockInfo.pendingAccesses.clear();
@@ -2406,9 +2415,9 @@ void StreamEngine::issueElement(StreamElement *element) {
     } else {
       /**
        * Some special case for ReqFlags:
-       * 1. For offloaded streams, they rely on this request to advance in MLC.
-       * Disable RubySequencer coalescing for that.
-       * Unless this is a reissue request, which should be treated normally.
+       * 1. For offloaded streams, they rely on this request to advance in
+       * MLC. Disable RubySequencer coalescing for that. Unless this is a
+       * reissue request, which should be treated normally.
        * 2. For Store/Atomic stream without computation, issue this as ReadEx
        * request to be prefetched in Exclusive state. These streams will never
        * be offloaded to cache, but we check just to be sure.
@@ -2455,6 +2464,85 @@ void StreamEngine::issueElement(StreamElement *element) {
     cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
     cacheBlockBreakdown.memAccess = memAccess;
     memAccess->registerReceiver(element);
+
+    if (cpuDelegator->cpuType == GemForgeCPUDelegator::ATOMIC_SIMPLE) {
+      // Directly send to memory for atomic cpu.
+      this->cpuDelegator->sendRequest(pkt);
+    } else {
+      // Send the pkt to translation.
+      this->translationBuffer->addTranslation(
+          pkt, cpuDelegator->getSingleThreadContext(), nullptr);
+    }
+  }
+}
+
+void StreamEngine::prefetchElement(StreamElement *element) {
+  auto S = element->stream;
+  auto dynS = element->dynS;
+  S_ELEMENT_DPRINTF(element, "Prefetch.\n");
+
+  assert(element->isAddrReady() && "Address should be ready for prefetch.");
+  assert(S->isAtomicStream() && "So far we only prefetch for AtomicStream.");
+  assert(element->shouldIssue() && "Should not prefetch this element.");
+  assert(!element->isPrefetchIssued() && "Element prefetch already issued.");
+  assert(!dynS->offloadedToCache && "Should not prefetch for floating stream.");
+
+  S->statistic.numPrefetched++;
+  element->setPrefetchIssued();
+
+  /**
+   * So far we only prefetch for IndirectAtomicStream.
+   */
+  if (S->isDirectMemStream()) {
+    S_PANIC(S, "Only prefetch for IndirectAtomicStream.");
+  }
+
+  for (size_t i = 0; i < element->cacheBlocks; ++i) {
+    // Prefetch the whole cache line.
+    auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+    const auto cacheLineVAddr = cacheBlockBreakdown.cacheBlockVAddr;
+    const auto cacheLineSize = cpuDelegator->cacheLineSize();
+    if ((cacheLineVAddr % cacheLineSize) != 0) {
+      S_ELEMENT_PANIC(element,
+                      "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n", i,
+                      cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+    }
+    Addr cacheLinePAddr;
+    if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
+      // If faulted, we just give up on this block.
+      S_ELEMENT_DPRINTF(element, "Fault on prefetch vaddr %#x.\n",
+                        cacheLineVAddr);
+      continue;
+    }
+
+    PacketPtr pkt = nullptr;
+    /**
+     * Some special case for ReqFlags:
+     * 1. For Store/Atomic stream, issue this prefetch as ReadEx
+     * request to be prefetched in Exclusive state.
+     */
+    Request::Flags flags;
+    if (S->isStoreStream() || S->isAtomicStream()) {
+      flags.set(Request::READ_EXCLUSIVE);
+    }
+
+    /**
+     * Since we don't care about the response for prefetch request,
+     * here we use a dummy GemForgePacketReleaseHandler instead of normal
+     * StreamMemAccess.
+     */
+    auto packetHandler = GemForgePacketReleaseHandler::get();
+    pkt = GemForgePacketHandler::createGemForgePacket(
+        cacheLinePAddr, cacheLineSize, packetHandler, nullptr /* Data */,
+        cpuDelegator->dataMasterId(), 0 /* ContextId */,
+        S->getFirstCoreUserPC() /* PC */, flags);
+    pkt->req->setVirt(cacheLineVAddr);
+    pkt->req->getStatistic()->isStream = true;
+    pkt->req->getStatistic()->streamName = S->streamName.c_str();
+    S_ELEMENT_DPRINTF(element, "Prefetched %dth request to %#x %d.\n", i,
+                      pkt->getAddr(), pkt->getSize());
+
+    S->statistic.numIssuedPrefetchRequest++;
 
     if (cpuDelegator->cpuType == GemForgeCPUDelegator::ATOMIC_SIMPLE) {
       // Directly send to memory for atomic cpu.
@@ -2683,13 +2771,13 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
       continue;
     }
     /**
-     * We found a match in the previous element, which means a request for that
-     * line has already been sent out. There are two cases here.
-     * 1. If this is a LoadStream, we try to copy the line if ready, or register
-     * as a receiver if the request has not come back yet.
-     * 2. If this is a StoreStream, we simply mark this block as Issued, so that
-     * we won't issue duplicate requests. Note that for StoreStreams, when the
-     * request comes back, it won't set the data.
+     * We found a match in the previous element, which means a request for
+     * that line has already been sent out. There are two cases here.
+     * 1. If this is a LoadStream, we try to copy the line if ready, or
+     * register as a receiver if the request has not come back yet.
+     * 2. If this is a StoreStream, we simply mark this block as Issued, so
+     * that we won't issue duplicate requests. Note that for StoreStreams,
+     * when the request comes back, it won't set the data.
      */
     const auto &prevBlock =
         prevElement->cacheBlockBreakdownAccesses[blockOffset];
