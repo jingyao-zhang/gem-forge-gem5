@@ -52,6 +52,8 @@ class StreamEngine(GemForgeAccelerator):
         512, "How many bytes to run ahead (default 8 cache lines).")
     throttling = Param.String(
         "Static", "Which throttling technique to use.")
+    maxNumElementsPrefetchForAtomic = Param.Unsigned(
+        1024, "How many elements to prefetch for atomic stream (default 1024 = no limit).")
     streamEngineEnableLSQ = Param.Bool(
         False, "Whether the stream engine model inserting into the LSQ.")
     streamEngineEnableCoalesce = Param.Bool(

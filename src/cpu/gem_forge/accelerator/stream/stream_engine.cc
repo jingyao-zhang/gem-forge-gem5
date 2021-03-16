@@ -2146,6 +2146,22 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
             break;
           }
         }
+        /**
+         * I noticed that sometimes we have prefetched too early for
+         * AtomicStream, especially for gap.bfs_push. The line we prefetched may
+         * be evicted before the core issues the request and we still got
+         * coherence miss. This may cause some extra traffix overhead in the
+         * NoC. Here I try to limit the prefetch distance for AtomicStream
+         * without computation.
+         */
+        if (S->isAtomicStream() && !S->isAtomicComputeStream() &&
+            !dynS.offloadedToCache) {
+          if (element->FIFOIdx.entryIdx >
+              dynS.getFirstElement()->FIFOIdx.entryIdx +
+                  this->myParams->maxNumElementsPrefetchForAtomic) {
+            break;
+          }
+        }
         auto baseElementsValReady = areBaseElementsValReady(element);
         if (baseElementsValReady) {
           S_ELEMENT_DPRINTF(element, "Found Addr Ready.\n");

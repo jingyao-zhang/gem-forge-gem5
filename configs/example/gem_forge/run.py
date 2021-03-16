@@ -104,6 +104,9 @@ parser.add_option("--gem-forge-stream-engine-total-run-ahead-length",
 parser.add_option("--gem-forge-stream-engine-total-run-ahead-bytes",
                   action="store", type="int",
                   help="""How many bytes can the stream engine run ahead""", default="512")
+parser.add_option("--gem-forge-stream-engine-max-num-elements-prefetch-for-atomic", 
+                  action="store", type="int",
+                  help="""How many elements to prefech to AtomicStream""", default="1024")
 parser.add_option("--gem-forge-stream-engine-is-oracle", action="store", type="int",
                   help="""whether make the stream engine oracle""", default="0")
 parser.add_option("--gem-forge-stream-engine-throttling", action="store", type="string",

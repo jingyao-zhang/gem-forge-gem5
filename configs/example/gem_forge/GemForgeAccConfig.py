@@ -32,6 +32,8 @@ def initializeStreamEngine(options):
         options.gem_forge_stream_engine_total_run_ahead_length
     se.totalRunAheadBytes = \
         options.gem_forge_stream_engine_total_run_ahead_bytes
+    se.maxNumElementsPrefetchForAtomic = \
+        options.gem_forge_stream_engine_max_num_elements_prefetch_for_atomic
     se.throttling = options.gem_forge_stream_engine_throttling
     se.streamEngineEnableLSQ = options.gem_forge_stream_engine_enable_lsq
     se.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
