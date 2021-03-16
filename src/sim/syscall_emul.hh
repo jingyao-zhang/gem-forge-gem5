@@ -301,7 +301,7 @@ SyscallReturn pipe2Func(SyscallDesc *desc, ThreadContext *tc,
                         Addr tgt_addr, int flags);
 
 /// Target sched_yield() handler.
-SyscallReturn schedyieldFunc(SyscallDesc *desc, int num, ThreadContext *tc);
+SyscallReturn schedYieldFunc(SyscallDesc *desc, ThreadContext *tc);
 
 /// Target getpid() handler.
 SyscallReturn getpidFunc(SyscallDesc *desc, ThreadContext *tc);

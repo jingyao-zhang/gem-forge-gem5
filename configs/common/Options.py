@@ -246,6 +246,9 @@ def addCommonOptions(parser):
     parser.add_option("--cpu-clock", action="store", type="string",
                       default='2GHz',
                       help="Clock for blocks running at CPU speed")
+    parser.add_option("--cpu-yield-latency", action="store", type="string",
+                      default='0ns',
+                      help="Latency for sched_yield")
     parser.add_option("--smt", action="store_true", default=False,
                       help = """
                       Only used if multiple programs are specified. If true,

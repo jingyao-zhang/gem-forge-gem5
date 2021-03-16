@@ -957,6 +957,13 @@ pipe2Func(SyscallDesc *desc, ThreadContext *tc, Addr tgt_addr, int flags)
 }
 
 SyscallReturn
+schedYieldFunc(SyscallDesc *desc, ThreadContext *tc)
+{
+    tc->schedYield();
+    return 0;
+}
+
+SyscallReturn
 getpgrpFunc(SyscallDesc *desc, ThreadContext *tc)
 {
     auto process = tc->getProcessPtr();

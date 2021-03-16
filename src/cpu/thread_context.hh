@@ -183,6 +183,9 @@ class ThreadContext : public PCEventScope
     /// Quiesce, suspend, and schedule activate at resume
     void quiesceTick(Tick resume);
 
+    /// Used for sched_yield syscall.
+    void schedYield();
+
     virtual void dumpFuncProfile() = 0;
 
     virtual void takeOverFrom(ThreadContext *old_context) = 0;

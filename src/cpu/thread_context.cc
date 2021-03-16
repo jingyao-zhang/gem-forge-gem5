@@ -157,11 +157,25 @@ ThreadContext::quiesceTick(Tick resume)
 
     cpu->reschedule(quiesceEvent, resume, true);
 
-    DPRINTF(Quiesce, "%s: quiesceTick until %lu\n", cpu->name(), resume);
+    DPRINTF(Quiesce, "%s[tid-%d]: quiesce for %lu until %lu\n",
+        cpu->name(), this->threadId(), resume - curTick(), resume);
 
     suspend();
     if (getKernelStats())
         getKernelStats()->quiesce();
+}
+
+void
+ThreadContext::schedYield()
+{
+    auto cpu = this->getCpuPtr();
+    auto yieldLatency = cpu->params()->yield_latency;
+    if (yieldLatency == 0) {
+        warn("Ignore sched_yield(). "
+             "Set --cpu-yield-lat=Xns to enable yielding.\n");
+        return;
+    }
+    this->quiesceTick(curTick() + yieldLatency);
 }
 
 void

@@ -458,9 +458,7 @@ class LSQ
                  * Add RequestStatistic.
                  */
                 request->setStatistic(std::make_shared<RequestStatistic>());
-                if (!_inst->isSquashed()) {
-                    request->getStatistic()->pc = _inst->pcState().pc();
-                }
+                request->getStatistic()->pc = _inst->pcState().pc();
                 _requests.push_back(request);
             }
         }

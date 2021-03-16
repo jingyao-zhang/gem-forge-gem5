@@ -219,12 +219,14 @@ def initializeCPUs(options):
     for cpu in initial_cpus:
         cpu.accelManager = \
             GemForgeAccConfig.initializeGemForgeAcceleratorManager(options)
+        cpu.yield_latency = options.cpu_yield_latency
         if options.prog_interval:
             cpu.progress_interval = '100' # Hz
     # We initialize empty GemForge for future_cpus.
     for cpu in future_cpus:
         cpu.accelManager = \
             GemForgeAccConfig.initializeEmptyGemForgeAcceleratorManager(options)
+        cpu.yield_latency = options.cpu_yield_latency
         if options.prog_interval:
             cpu.progress_interval = options.prog_interval
 

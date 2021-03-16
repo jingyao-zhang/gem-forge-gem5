@@ -277,7 +277,7 @@ static SyscallDescTable<X86_64LinuxProcess::SyscallABI> syscallDescs64 = {
     {  21, "access", ignoreFunc },
     {  22, "pipe", pipeFunc },
     {  23, "select", selectFunc<X86Linux64> },
-    {  24, "sched_yield", ignoreFunc },
+    {  24, "sched_yield", schedYieldFunc },
     {  25, "mremap", mremapFunc<X86Linux64> },
     {  26, "msync" },
     {  27, "mincore" },
