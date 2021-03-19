@@ -170,6 +170,7 @@ void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
   default:
     panic("Unsupported pack op %d.", op);
   case BinaryOp::SIntToUIntPack: {
+    FloatInt dests[vRegs];
     for (int i = 0; i < vRegs; ++i) {
       FloatInt src1;
       FloatInt src2;
@@ -183,7 +184,8 @@ void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
         src1.ul = xc->readFloatRegOperandBits(this, (srcIdx + 0) * 2 + 1);
         src2.ul = xc->readFloatRegOperandBits(this, (srcIdx + 1) * 2 + 1);
       }
-      FloatInt dest;
+      FloatInt &dest = dests[i];
+      dest.ul = 0;
       if (this->srcSize == 4) {
         // Pack int32_t -> uint16_t.
 #define SignedToUnsignedSaturate(v)                                            \
@@ -193,6 +195,10 @@ void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
         dest.us.i3 = SignedToUnsignedSaturate(src2.si.i1);
         dest.us.i4 = SignedToUnsignedSaturate(src2.si.i2);
 #undef SignedToUnsignedSaturate
+        // hack("PackDW %d SRC1 %#x %#x SRC2 %#x %#x -> DEST %#x "
+        //      "%#x %#x %#x.\n",
+        //      i, src1.si.i1, src1.si.i2, src2.si.i1, src2.si.i2, dest.us.i1,
+        //      dest.us.i2, dest.us.i3, dest.us.i4);
       } else if (this->srcSize == 2) {
         // Pack int16_t -> uint8_t.
 #define SignedToUnsignedSaturate(v) v > 0xFF ? 0xFF : (v < 0 ? 0 : (v & 0xFF))
@@ -204,11 +210,19 @@ void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
         dest.uc.i6 = SignedToUnsignedSaturate(src2.ss.i2);
         dest.uc.i7 = SignedToUnsignedSaturate(src2.ss.i3);
         dest.uc.i8 = SignedToUnsignedSaturate(src2.ss.i4);
+        // hack("PackW %d SRC1 %#x %#x %#x %#x SRC2 %#x %#x %#x %#x -> DEST %#x "
+        //      "%#x %#x %#x %#x %#x %#x %#x.\n",
+        //      i, src1.ss.i1, src1.ss.i2, src1.ss.i3, src1.ss.i4, src2.ss.i1,
+        //      src2.ss.i2, src2.ss.i3, src2.ss.i4, dest.uc.i1, dest.uc.i2,
+        //      dest.uc.i3, dest.uc.i4, dest.uc.i5, dest.uc.i6, dest.uc.i7,
+        //      dest.uc.i8);
 #undef SignedToUnsignedSaturate
       } else {
         panic("Unsupported size for pack %d.", this->srcSize);
       }
-      xc->setFloatRegOperandBits(this, i, dest.ul);
+    }
+    for (int i = 0; i < vRegs; ++i) {
+      xc->setFloatRegOperandBits(this, i, dests[i].ul);
     }
     break;
   }
