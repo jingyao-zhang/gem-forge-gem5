@@ -304,12 +304,15 @@ struct StreamElement {
    */
   bool isComputeValueReady() const;
   /**
-   * API to access the UpdateValue for UpdateStream.
+   * API to access the UpdateValue/LoadComputeValue.
    */
   bool isUpdateValueReady() const { return this->updateValueReady; }
   bool checkUpdateValueReady() const;
-  void receiveComputeResult(const StreamValue &result);
   const uint8_t *getUpdateValuePtrByStreamId(StaticId streamId) const;
+  bool isLoadComputeValueReady() const { return this->loadComputeValueReady; }
+  bool checkLoadComputeValueReady() const;
+  void getLoadComputeValue(uint8_t *val, int valLen) const;
+  void receiveComputeResult(const StreamValue &result);
 
   /**
    * Check if we can withdraw this element.
@@ -332,6 +335,12 @@ private:
    */
   bool updateValueReady = false;
   StreamValue updateValue;
+
+  /**
+   * Extra value for LoadComputeStream.
+   */
+  bool loadComputeValueReady = false;
+  StreamValue loadComputeValue;
 
   /**
    * Helper func to udpate our stats about when first check on value happened.

@@ -186,6 +186,9 @@ public:
   bool isStoreComputeStream() const {
     return this->isStoreStream() && this->getEnabledStoreFunc();
   }
+  bool isLoadComputeStream() const {
+    return this->isLoadStream() && this->getEnabledLoadFunc();
+  }
   bool trackedByPEB() const {
     return this->isLoadStream() && !this->getFloatManual();
   }

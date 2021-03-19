@@ -855,14 +855,25 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
         continue;
       }
     }
-    /**
-     * Special case for UpdateStrea's SQCallback:
-     * We check the UpdateValue, not the normal value.
-     */
     if (S->isUpdateStream() && args.isStore) {
+      /**
+       * Special case for UpdateStream's SQCallback:
+       * We check the UpdateValue, not the normal value.
+       */
       if (!(element->isAddrReady() && element->checkUpdateValueReady())) {
         S_ELEMENT_DPRINTF(
             element, "NotReady: AddrReady %d UpdateValueReady %d.\n",
+            element->isAddrReady(), element->isUpdateValueReady());
+        ready = false;
+      }
+    } else if (S->isLoadComputeStream() && !element->dynS->offloadedToCache) {
+      /**
+       * Special case for not floated LoadComputeStream, where we should check
+       * for LoadComputeValue.
+       */
+      if (!(element->isAddrReady() && element->checkLoadComputeValueReady())) {
+        S_ELEMENT_DPRINTF(
+            element, "NotReady: AddrReady %d LoadComputeValueReady %d.\n",
             element->isAddrReady(), element->isUpdateValueReady());
         ready = false;
       }
@@ -926,12 +937,20 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
     }
     /**
      * Read in the value.
+     * If this is a unfloated LoadComputeStream, we should read the
+     * LoadComputeValue.
      */
-    element->getValueByStreamId(streamId, args.values->back().data(),
-                                StreamUserArgs::MaxElementSize);
+    auto size = S->getCoreElementSize();
+    if (S->isLoadComputeStream() && !element->dynS->offloadedToCache) {
+      element->getLoadComputeValue(args.values->back().data(),
+                                   StreamUserArgs::MaxElementSize);
+    } else {
+      element->getValueByStreamId(streamId, args.values->back().data(),
+                                  StreamUserArgs::MaxElementSize);
+    }
     S_ELEMENT_DPRINTF(
         element, "Execute StreamUser, Value %s.\n",
-        GemForgeUtils::dataToString(args.values->back().data(), element->size));
+        GemForgeUtils::dataToString(args.values->back().data(), size));
   }
 }
 
@@ -2005,9 +2024,8 @@ void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
       cacheBlockInfo.reference--;
       if (cacheBlockInfo.reference == 0) {
         // Remember to remove the pendingAccesses.
-        for (auto &pendingAccess : cacheBlockInfo.pendingAccesses) {
-          assert(false && "Merge data for streams is removed.");
-        }
+        assert(cacheBlockInfo.pendingAccesses.empty() &&
+               "Merge data for streams is removed.");
         if (cacheBlockInfo.used && cacheBlockInfo.requestedByLoad) {
           this->numLoadCacheLineUsed++;
         }
@@ -2085,7 +2103,8 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          * 1. All the address base elements are ready -> compute address.
          *  This represents all Mem streams.
          * 2. Address is ready, value base elements are ready -> compute value.
-         *  This applies to IV/Reduction/StoreCompute/Update streams.
+         *  This applies to IV/Reduction/StoreCompute/LoadCompute/Update
+         * streams.
          * 3. Address is ready, request not issued, first user is
          * non-speculative
          *  -> Issue the atomic request.
@@ -2490,13 +2509,6 @@ void StreamEngine::prefetchElement(StreamElement *element) {
   S->statistic.numPrefetched++;
   element->setPrefetchIssued();
 
-  /**
-   * So far we only prefetch for IndirectAtomicStream.
-   */
-  if (S->isDirectMemStream()) {
-    S_PANIC(S, "Only prefetch for IndirectAtomicStream.");
-  }
-
   for (size_t i = 0; i < element->cacheBlocks; ++i) {
     // Prefetch the whole cache line.
     auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
@@ -2507,6 +2519,28 @@ void StreamEngine::prefetchElement(StreamElement *element) {
                       "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n", i,
                       cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
     }
+
+    /**
+     * Skip prefetching if we found a previous element and it has the same
+     * block.
+     */
+    if (element != dynS->getFirstElement()) {
+      auto prevElement = dynS->getPrevElement(element);
+      bool prefetched = false;
+      for (auto j = 0; j < prevElement->cacheBlocks; ++j) {
+        const auto &prevCacheBlockBreakdown =
+            prevElement->cacheBlockBreakdownAccesses[j];
+        if (prevCacheBlockBreakdown.cacheBlockVAddr == cacheLineVAddr) {
+          prefetched = true;
+          break;
+        }
+      }
+      if (prefetched) {
+        // Already prefetched by previous element. Skip this block.
+        continue;
+      }
+    }
+
     Addr cacheLinePAddr;
     if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
       // If faulted, we just give up on this block.

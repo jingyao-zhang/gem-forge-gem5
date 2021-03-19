@@ -233,6 +233,9 @@ void StreamElement::clear() {
   this->isAddrAliased = false;
   this->isValueReady = false;
   this->updateValueReady = false;
+  this->updateValue.fill(0);
+  this->loadComputeValueReady = false;
+  this->loadComputeValue.fill(0);
   this->isCacheAcked = false;
   this->flushed = false;
 
@@ -262,6 +265,9 @@ void StreamElement::flush(bool aliased) {
   this->prefetchIssued = false;
   this->isValueReady = false;
   this->updateValueReady = false;
+  this->updateValue.fill(0);
+  this->loadComputeValueReady = false;
+  this->loadComputeValue.fill(0);
 
   // Raise the flush flag.
   this->flushed = true;
@@ -460,6 +466,21 @@ void StreamElement::computeValue() {
     estimatedLatency = dynS->storeCallback->getEstimatedLatency();
 
     S_ELEMENT_DPRINTF(this, "StoreValue %s.\n", result);
+
+  } else if (S->isLoadComputeStream()) {
+
+    assert(!dynS->offloadedToCache &&
+           "Should not compute for floating LoadComputeStream.");
+    if (!this->checkValueBaseElementsValueReady()) {
+      S_ELEMENT_PANIC(this, "LoadFunc with ValueBaseElement not value ready.");
+    }
+    auto params =
+        convertFormalParamToParam(dynS->loadFormalParams, getBaseValue);
+    result = dynS->loadCallback->invoke(params);
+    estimatedLatency = dynS->loadCallback->getEstimatedLatency();
+
+    S_ELEMENT_DPRINTF(this, "LoadComputeValue %s.\n", result);
+
   } else {
     /**
      * This should be an IV/Reduction stream, which also uses AddrGenCallback
@@ -490,7 +511,8 @@ void StreamElement::computeValue() {
    * We try to model the computation overhead for StoreStream, UpdateStreawm
    * and ReductionStream. For simple IVStream we do not bother.
    */
-  if (S->isStoreStream() || S->isUpdateStream() || S->isReduction()) {
+  if (S->isStoreComputeStream() || S->isLoadComputeStream() ||
+      S->isUpdateStream() || S->isReduction()) {
     this->se->computeEngine->pushReadyComputation(this, std::move(result),
                                                   estimatedLatency);
   } else {
@@ -715,6 +737,13 @@ void StreamElement::receiveComputeResult(const StreamValue &result) {
     S_ELEMENT_DPRINTF(this, "Mark UpdateValue Ready.\n");
     this->updateValue = result;
     this->updateValueReady = true;
+  } else if (this->stream->isLoadComputeStream()) {
+    if (this->isLoadComputeValueReady()) {
+      S_ELEMENT_PANIC(this, "LoadComputeValue already ready.");
+    }
+    S_ELEMENT_DPRINTF(this, "Mark LoadComputeValue Ready.\n");
+    this->loadComputeValue = result;
+    this->loadComputeValueReady = true;
   } else {
     this->setValue(this->addr, this->size, result.uint8Ptr());
   }
@@ -775,6 +804,8 @@ void StreamElement::updateFirstValueCheckCycle(bool checkedByCore) const {
 bool StreamElement::isComputeValueReady() const {
   if (this->stream->isUpdateStream()) {
     return this->isUpdateValueReady();
+  } else if (this->stream->isLoadComputeStream()) {
+    return this->isLoadComputeValueReady();
   } else {
     return this->isValueReady;
   }
@@ -789,6 +820,26 @@ bool StreamElement::checkUpdateValueReady() const {
   // UpdateValue should only be checked by Core.
   this->updateFirstValueCheckCycle(true);
   return this->updateValueReady;
+}
+
+bool StreamElement::checkLoadComputeValueReady() const {
+  // LoadComputeValue should only be checked by Core.
+  this->updateFirstValueCheckCycle(true);
+  return this->loadComputeValueReady;
+}
+
+void StreamElement::getLoadComputeValue(uint8_t *val, int valLen) const {
+  if (!this->isLoadComputeValueReady()) {
+    S_ELEMENT_PANIC(this, "LoadComputeValue is not ready yet.");
+  }
+  auto coreElementSize = this->stream->getCoreElementSize();
+  if (valLen < coreElementSize) {
+    S_ELEMENT_PANIC(this, "LoadComputeValue size %d > buffer size %d.",
+                    coreElementSize, valLen);
+  }
+  for (auto i = 0; i < coreElementSize; ++i) {
+    val[i] = this->loadComputeValue.uint8Ptr()[i];
+  }
 }
 
 bool StreamElement::checkValueBaseElementsValueReady() const {
@@ -810,8 +861,19 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
     if (!baseE.isValid()) {
       S_ELEMENT_PANIC(this, "ValueBaseElement released early: %s.", baseE.idx);
     }
-    if (!baseE.element->checkValueReady(false /* CheckedByCore */)) {
-      return false;
+    if (baseE.element == this) {
+      /**
+       * Some ComputeStream require myself as the ValueBase. We don't call
+       * checkValueReady to avoid recursive dependence information in the
+       * firstCheckCycle.
+       */
+      if (!this->isValueReady) {
+        return false;
+      }
+    } else {
+      if (!baseE.element->checkValueReady(false /* CheckedByCore */)) {
+        return false;
+      }
     }
   }
   return true;

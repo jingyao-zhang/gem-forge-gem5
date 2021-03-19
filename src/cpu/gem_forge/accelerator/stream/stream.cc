@@ -732,8 +732,9 @@ bool Stream::shouldComputeValue() const {
     // IV/Reduction stream always compute value.
     return true;
   }
-  if (this->isStoreComputeStream() || this->isUpdateStream()) {
-    // StoreCompute/Update stream can also compute.
+  if (this->isStoreComputeStream() || this->isLoadComputeStream() ||
+      this->isUpdateStream()) {
+    // StoreCompute/LoadCompute/Update stream can also compute.
     // AtomicCompute is handled by sending out the AMO request.
     return true;
   }
@@ -811,6 +812,13 @@ void Stream::addValueBaseElements(StreamElement *newElement) {
               baseS->getStreamName());
     }
     newElement->valueBaseElements.emplace_back(baseElement);
+  }
+
+  /**
+   * LoadComputeStream always has itself has the ValueBaseElement.
+   */
+  if (this->isLoadComputeStream()) {
+    newElement->valueBaseElements.emplace_back(newElement);
   }
 
   if (newElementIdx == 0) {
