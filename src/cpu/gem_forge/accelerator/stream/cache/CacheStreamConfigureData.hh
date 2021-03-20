@@ -60,9 +60,11 @@ public:
   bool isPredicatedTrue = false;
   DynamicStreamId predicateStreamId;
 
-  // For StoreFunc.
+  // For StoreFunc and LoadFunc.
   DynamicStreamFormalParamV storeFormalParams;
   ExecFuncPtr storeCallback;
+  DynamicStreamFormalParamV loadFormalParams;
+  ExecFuncPtr loadCallback;
 
   StreamValue reductionInitValue;
 

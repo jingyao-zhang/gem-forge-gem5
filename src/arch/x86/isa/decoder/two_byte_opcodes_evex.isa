@@ -232,7 +232,9 @@
                         0x2: VPSRLD(WZqo, Ib);
                     }
                     0x6: decode EVEX_L_EXTEND {
-                        0x2: VPSLLD(WZqo, Ib);
+                        0x2: VPSLLD64(WZqo, Ib);
+                        0x1: VPSLLD32(WYdo, Ib);
+                        0x0: VPSLLD16(Wo, Ib);
                     }
                 }
             }

@@ -400,7 +400,14 @@ void LLCStreamEngine::receiveStoreStreamData(
     LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId,
     const DataBlock &storeValueBlock) {
   /**
-   * If this is a StoreStream, just store the slice and send back ack.
+   * We received the response for the StoreStream, we now perform the store.
+   * And issue Ack back here if this is DirectStream and no range sync.
+   * 
+   * Although we really should perform the store after the core committed,
+   * here I store and only delay sending back the Ack in releaseSlice.
+   * So far this only works with DirectStream.
+   * 
+   * NOTE: We have to construct the overlap instead of storing the whole line.
    */
   Addr paddr;
   if (!dynS->translateToPAddr(sliceId.vaddr, paddr)) {
@@ -408,20 +415,29 @@ void LLCStreamEngine::receiveStoreStreamData(
                     "Failed to translate StoreStream slice vaddr %#x to paddr.",
                     sliceId.vaddr);
   }
-  auto lineOffset = paddr % RubySystem::getBlockSizeBytes();
+  for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+    assert(dynS->idxToElementMap.count(idx) &&
+           "Missing element for StoreStream.");
+    auto element = dynS->getElementPanic(idx, "ReceiveStoreStreamData");
+
+    // Compute the overlap and set the data.
+    int elementOffset;
+    int sliceOffset;
+    int overlapSize = element->computeOverlap(sliceId.vaddr, sliceId.getSize(),
+                                              sliceOffset, elementOffset);
+    auto storeValue = storeValueBlock.getData(sliceOffset, overlapSize);
+    LLC_SLICE_DPRINTF_(
+        LLCRubyStreamStore, sliceId,
+        "StreamStore done with Element %llu, Slice vaddr %#x paddr %#x, "
+        "SliceOffset %d OverlapSize %d Value %s.\n",
+        sliceId.vaddr, paddr, sliceOffset, overlapSize,
+        GemForgeUtils::dataToString(storeValue, overlapSize));
+    this->performStore(paddr + sliceOffset, overlapSize, storeValue);
+  }
+  if (!dynS->shouldRangeSync() && !dynS->isIndirect()) {
   LLC_SLICE_DPRINTF_(
       LLCRubyStreamStore, sliceId,
-      "StreamStore done with vaddr %#x paddr %#x size %d offset %d value %s, "
-      "send back StreamAck.\n",
-      sliceId.vaddr, paddr, sliceId.getSize(), lineOffset, storeValueBlock);
-  this->performStore(paddr, sliceId.getSize(),
-                     storeValueBlock.getData(lineOffset, sliceId.getSize()));
-  /**
-   * Although we really should perform the store after the core committed,
-   * here I store and only delay sending back the Ack in releaseSlice.
-   * So far this only works with DirectStream.
-   */
-  if (!dynS->shouldRangeSync() && !dynS->isIndirect()) {
+      "StreamStore send back StreamAck.\n");
     this->issueStreamAckToMLC(sliceId);
   }
 }
@@ -461,13 +477,6 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
       LLC_S_DPRINTF(stream->getDynamicStreamId(),
                     "Delayed migration for readyIndirectElements %llu.\n",
                     stream->getNumIndirectElementReadyToIssue());
-      return false;
-    }
-    if (stream->incompleteComputations != 0) {
-      // We are still waiting for some computation to be done.
-      LLC_S_DPRINTF(stream->getDynamicStreamId(),
-                    "Delayed migration for incomplete computation %llu.\n",
-                    stream->incompleteComputations);
       return false;
     }
     /**
@@ -1093,12 +1102,6 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
 
 void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
 
-  if (!dynS->shouldIssueBeforeCommit()) {
-    LLC_S_PANIC(
-        dynS->getDynamicStreamId(),
-        "Cannot handle issuing AfterCommit for direct streams for now.");
-  }
-
   auto S = dynS->getStaticStream();
   auto &statistic = S->statistic;
 
@@ -1208,6 +1211,9 @@ LLCStreamEngine::getDirectStreamReqType(LLCDynamicStream *stream) const {
   case ::LLVM::TDG::StreamInfo_Type_LD: {
     if (SS->isUpdateStream()) {
       reqType = CoherenceRequestType_STREAM_STORE;
+    } else if (SS->isLoadComputeStream()) {
+      // LoadComputeStream sends back the computed value.
+      reqType = CoherenceRequestType_GETH;
     } else {
       if (auto dynS = SS->getDynamicStream(stream->getDynamicStreamId())) {
         if (dynS->shouldCoreSEIssue()) {
@@ -2183,10 +2189,35 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
     break;
   }
   /**
+   * The slice is already responded, see if we can process it.
+   * So far we need to process the slice for these two cases:
+   * 1. AtomicComputeStream/UpdateStream.
+   * This is where the write request is generated, and is done after all
+   * elements are committed in the core (if RangeSync enabled).
+   * 2. LoadComputeStream.
+   * This is where we schedule the computation for LoadComputeStream, and
+   * send back the result to core if core needs the value. This does not
+   * need to wait for committment.
+   */
+
+  const auto &sliceId = slice->getSliceId();
+  auto S = dynS->getStaticStream();
+  /**
+   * For LoadComputeStream, we schedule computation if the element is value
+   * ready. If all element's LoadComputeValue is ready, we send back to core.
+   * Also, we have to wait until the LoadComputeValue sent back to core before
+   * releasing the slice.
+   */
+  if (S->isLoadComputeStream()) {
+    this->processLoadComputeSlice(dynS, slice);
+    if (!slice->isLoadComputeValueSent()) {
+      return ++sliceIter;
+    }
+  }
+  /**
    * If this stream require RangeSync, we have to check that all elements are
    * committed in the core.
    */
-  const auto &sliceId = slice->getSliceId();
   if (dynS->shouldRangeSync()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element =
@@ -2197,11 +2228,6 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
       }
     }
   }
-  // The slice is already responded, see if we can process it.
-  auto S = dynS->getStaticStream();
-  /**
-   * So far the only processing case is for Atomic/UpdateStream.
-   */
   if (S->isAtomicComputeStream() || S->isUpdateStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element =
@@ -2228,6 +2254,77 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
     this->issueStreamAckToMLC(sliceId);
   }
   return this->releaseSlice(sliceIter);
+}
+
+void LLCStreamEngine::processLoadComputeSlice(LLCDynamicStreamPtr dynS,
+                                              LLCStreamSlicePtr slice) {
+  const auto &sliceId = slice->getSliceId();
+  // Schedule the computation.
+  bool allLoadComputeValueReady = true;
+  for (auto elementIdx = sliceId.getStartIdx();
+       elementIdx < sliceId.getEndIdx(); ++elementIdx) {
+    auto element = dynS->getElementPanic(elementIdx, "ProcessLoadComputeSlice");
+    if (element->isReady() && !element->isComputationScheduled() &&
+        !element->isLoadComputeValueReady()) {
+      this->pushReadyComputation(element);
+    }
+    if (!element->isLoadComputeValueReady()) {
+      allLoadComputeValueReady = false;
+    }
+  }
+  if (!allLoadComputeValueReady) {
+    return;
+  }
+  // We can send back the LoadComputeValue back to core.
+  // It is actually quite tricky to slice for LoadComputeStream.
+  if (sliceId.getNumElements() > 1) {
+    LLC_SLICE_PANIC(sliceId, "Multi-Element Slice for LoadComputeStream.");
+  }
+
+  auto S = dynS->getStaticStream();
+  bool coreNeedValue = false;
+  auto dynCoreS = S->getDynamicStream(dynS->getDynamicStreamId());
+  if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
+    coreNeedValue = true;
+  }
+  if (!coreNeedValue) {
+    LLC_SLICE_PANIC(sliceId,
+                    "LoadComputeStream should always be needed in core.");
+  }
+
+  Addr paddr = 0;
+  assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
+  auto paddrLine = makeLineAddress(paddr);
+  DataBlock loadValueBlock;
+  for (auto elementIdx = sliceId.getStartIdx();
+       elementIdx < sliceId.getEndIdx(); ++elementIdx) {
+    auto element = dynS->getElementPanic(elementIdx, "ProcessLoadComputeSlice");
+    const auto &loadComputeValue = element->getLoadComputeValue();
+
+    int sliceOffset;
+    int elementOffset;
+    int overlapSize =
+        element->computeOverlap(sliceId.vaddr, RubySystem::getBlockSizeBytes(),
+                                sliceOffset, elementOffset);
+
+    /**
+     * Copy the value from LoadComputeValue to LoadValueBlock.
+     * For simplicity we just copy MemElementSize, but the real data size should
+     * be CoreElementSize. But this is OK as long as the user only uses the
+     * first CoreElementSize bytes' data.
+     */
+    auto valuePtr = loadComputeValue.uint8Ptr(elementOffset);
+    loadValueBlock.setData(valuePtr, sliceOffset, overlapSize);
+  }
+
+  this->issueStreamDataToMLC(
+      sliceId, paddrLine,
+      loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
+      RubySystem::getBlockSizeBytes(), 0 /* Line offset */);
+  LLC_SLICE_DPRINTF(sliceId,
+                    "Send LoadComputeValue to MLC: PAddrLine %#x Data %s.\n",
+                    paddrLine, loadValueBlock);
+  slice->setLoadComputeValueSent();
 }
 
 void LLCStreamEngine::processAtomicOrUpdateSlice(
@@ -2269,8 +2366,8 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element =
         dynS->getElementPanic(idx, "Process slice of Atomic/UpdateStream");
-    LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu.\n",
-                      element->idx);
+    LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+                      element->idx, element->vaddr);
     if (!element->isReady()) {
       // Not ready yet. Break.
       LLC_SLICE_PANIC(sliceId,
@@ -2370,8 +2467,10 @@ uint64_t LLCStreamEngine::performStreamAtomicOp(
    * Send to backing store to perform atomic op.
    */
   rubySystem->getPhysMem()->functionalAccess(pkt);
-  LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                     "Functional accessed pkt, isWrite %d.\n", pkt->isWrite());
+  LLC_SLICE_DPRINTF_(
+      LLCRubyStreamStore, sliceId,
+      "Functional accessed pkt, isWrite %d, vaddr %#x, paddr %#x, size %d.\n",
+      pkt->isWrite(), pkt->req->getVaddr(), pkt->getAddr(), pkt->getSize());
 
   // Get the loaded value.
   uint64_t loadedValue = 0;

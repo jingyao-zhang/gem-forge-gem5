@@ -686,9 +686,11 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   configData->predFormalParams = dynStream.predFormalParams;
   configData->predCallback = dynStream.predCallback;
 
-  // Set the store function.
+  // Set the store and load func.
   configData->storeFormalParams = dynStream.storeFormalParams;
   configData->storeCallback = dynStream.storeCallback;
+  configData->loadFormalParams = dynStream.loadFormalParams;
+  configData->loadCallback = dynStream.loadCallback;
 
   // Set the reduction information.
   if (this->isReduction()) {

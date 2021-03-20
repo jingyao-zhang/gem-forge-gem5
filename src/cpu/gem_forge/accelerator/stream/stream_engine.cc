@@ -2383,6 +2383,39 @@ void StreamEngine::issueElement(StreamElement *element) {
           cacheLinePAddr, cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
     }
 
+    /**
+     * Some special case for ReqFlags:
+     * 1. For offloaded streams, they rely on this request to advance in
+     * MLC. Disable RubySequencer coalescing for that. Unless this is a
+     * reissue request, which should be treated normally.
+     * 2. For Store/Atomic stream without computation, issue this as ReadEx
+     * request to be prefetched in Exclusive state. These streams will never
+     * be offloaded to cache, but we check just to be sure.
+     * 3. For offloaded AtomicComputeStream and LoadComputeStream, the value
+     * is computed in the LLC, and we set NO_RUBY_BACK_STORE to prevent the
+     * Sequencer overwrite the result.
+     */
+    Request::Flags flags;
+    if (dynS->offloadedToCache) {
+      if (!element->flushed) {
+        flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
+      }
+      if (S->isAtomicComputeStream() || S->isLoadComputeStream()) {
+        if (element->flushed) {
+          S_ELEMENT_PANIC(element,
+                          "Flused Floating Atomic/LoadComputeStream.\n");
+        }
+        flags.set(Request::NO_RUBY_BACK_STORE);
+      }
+    }
+    if (S->isStoreStream() || S->isAtomicStream()) {
+      if (!S->isStoreComputeStream() && !S->isAtomicComputeStream()) {
+        if (!dynS->offloadedToCache) {
+          flags.set(Request::READ_EXCLUSIVE);
+        }
+      }
+    }
+
     // Allocate the book-keeping StreamMemAccess.
     auto memAccess = element->allocateStreamMemAccess(cacheBlockBreakdown);
     PacketPtr pkt = nullptr;
@@ -2416,15 +2449,6 @@ void StreamEngine::issueElement(StreamElement *element) {
             cpuDelegator->dataMasterId(), 0 /* ContextId */,
             S->getFirstCoreUserPC() /* PC */, std::move(atomicOp));
       } else {
-        /**
-         * For offloaded atomic stream, we issue normal load requests,
-         * but marked NO_RUBY_BACK_STORE to avoid RubySequencer overwrite
-         * the result with backing storage, and NO_RUBY_SEQUENCER_COALESCE
-         * to avoid being load-to-load forwarded.
-         */
-        Request::Flags flags;
-        flags.set(Request::NO_RUBY_BACK_STORE);
-        flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
         pkt = GemForgePacketHandler::createGemForgePacket(
             cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
             cpuDelegator->dataMasterId(), 0 /* ContextId */,
@@ -2432,26 +2456,6 @@ void StreamEngine::issueElement(StreamElement *element) {
         pkt->req->setVirt(cacheLineVAddr);
       }
     } else {
-      /**
-       * Some special case for ReqFlags:
-       * 1. For offloaded streams, they rely on this request to advance in
-       * MLC. Disable RubySequencer coalescing for that. Unless this is a
-       * reissue request, which should be treated normally.
-       * 2. For Store/Atomic stream without computation, issue this as ReadEx
-       * request to be prefetched in Exclusive state. These streams will never
-       * be offloaded to cache, but we check just to be sure.
-       */
-      Request::Flags flags;
-      if (dynS->offloadedToCache && !element->flushed) {
-        flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
-      }
-      if (S->isStoreStream() || S->isAtomicStream()) {
-        if (!S->isStoreComputeStream() && !S->isAtomicComputeStream()) {
-          if (!dynS->offloadedToCache) {
-            flags.set(Request::READ_EXCLUSIVE);
-          }
-        }
-      }
       pkt = GemForgePacketHandler::createGemForgePacket(
           cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
           cpuDelegator->dataMasterId(), 0 /* ContextId */,

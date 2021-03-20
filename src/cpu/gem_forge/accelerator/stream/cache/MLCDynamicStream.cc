@@ -223,8 +223,13 @@ void MLCDynamicStream::makeResponse(MLCStreamSlice &slice) {
   msg->m_MessageSize = MessageSizeType_Response_Data;
   msg->m_DataBlk = slice.dataBlock;
 
-  // If this is atomic stream, we have to use STREAM_FROM_MLC type.
-  if (this->stream->isAtomicStream()) {
+  /**
+   * Floating AtomicComputeStream and LoadComputeStream must use
+   * STREAM_FROM_MLC type as they bypass private cache and must be served by MLC
+   * SE.
+   */
+  if (this->stream->isAtomicComputeStream() ||
+      this->stream->isLoadComputeStream()) {
     msg->m_Class = CoherenceClass_STREAM_FROM_MLC;
   }
 

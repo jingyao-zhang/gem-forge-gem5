@@ -123,6 +123,12 @@ public:
     return this->firstIndirectAtomicReqSeen;
   }
 
+  bool isLoadComputeValueReady() const { return this->loadComputeValueReady; }
+  const StreamValue &getLoadComputeValue() const {
+    return this->loadComputeValue;
+  }
+  void setLoadComputeValue(const StreamValue &value);
+
 private:
   int readyBytes;
   bool computationScheduled = false;
@@ -153,6 +159,12 @@ private:
    * Whether we have seen the first request for this IndirectAtomicRequest.
    */
   bool firstIndirectAtomicReqSeen = false;
+
+  /**
+   * Value for LoadComputeStream.
+   */
+  StreamValue loadComputeValue;
+  bool loadComputeValueReady = false;
 };
 
 #endif

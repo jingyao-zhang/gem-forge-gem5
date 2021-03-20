@@ -400,6 +400,21 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
 
+    for (auto valueBaseS : S->valueBaseStreams) {
+      if (!floatedMap.count(valueBaseS)) {
+        DYN_S_PANIC(dynS->dynamicStreamId, "ValueBaseS is not floated: %s.\n",
+                    valueBaseS->getStreamName());
+      }
+      if (!valueBaseS->isDirectLoadStream()) {
+        DYN_S_PANIC(dynS->dynamicStreamId,
+                    "ValueBaseS is not DirectLoadStream: %s.\n",
+                    valueBaseS->getStreamName());
+      }
+      auto &valueBaseConfig = floatedMap.at(valueBaseS);
+      valueBaseConfig->addSendTo(config);
+      config->addBaseOn(valueBaseConfig);
+    }
+
     // Remember the pseudo offloaded decision.
     if (this->se->enableStreamFloatPseudo &&
         this->policy->shouldPseudoFloatStream(*dynS)) {

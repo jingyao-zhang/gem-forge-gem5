@@ -75,12 +75,20 @@ public:
   const DataBlock &getLoadBlock() const { return this->loadBlock; }
   const DataBlock &getStoreBlock() const { return this->storeBlock; }
 
+  bool isLoadComputeValueSent() const { return this->loadComputeValueSent; }
+  void setLoadComputeValueSent();
+
 private:
   DynamicStreamSliceId sliceId;
   State state = State::INITIALIZED;
   LLCStreamEngine *llcSE = nullptr;
   DataBlock loadBlock;
   DataBlock storeBlock;
+
+  /**
+   * Whether the LoadComputeValue has been sent to the core.
+   */
+  bool loadComputeValueSent = false;
 };
 
 #endif

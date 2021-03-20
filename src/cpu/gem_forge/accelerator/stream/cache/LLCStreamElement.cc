@@ -103,6 +103,12 @@ void LLCStreamElement::setValue(const StreamValue &value) {
   this->readyBytes += this->size;
 }
 
+void LLCStreamElement::setLoadComputeValue(const StreamValue &value) {
+  assert(!this->loadComputeValueReady && "LoadComputeValue already ready.");
+  this->loadComputeValue = value;
+  this->loadComputeValueReady = true;
+}
+
 int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,
                                      int &rangeOffset,
                                      int &elementOffset) const {

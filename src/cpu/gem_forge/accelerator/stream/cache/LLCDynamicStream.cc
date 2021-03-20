@@ -474,11 +474,6 @@ void LLCDynamicStream::recvStreamForward(LLCStreamEngine *se,
     recvElementIdx++;
   }
   auto S = this->getStaticStream();
-  if (!S->isReduction() && !S->isStoreStream() && !S->isUpdateStream()) {
-    LLC_S_PANIC(
-        this->getDynamicStreamId(),
-        "Recv StreamForward only works for Reduction/Store/UpdateStream.");
-  }
   if (!this->idxToElementMap.count(recvElementIdx)) {
     LLC_SLICE_PANIC(
         sliceId,
@@ -709,6 +704,9 @@ LLCDynamicStream::computeStreamElementValue(const LLCStreamElementPtr &element,
   auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
     return element->getBaseStreamValue(baseStreamId);
   };
+  auto getStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
+    return element->getValueByStreamId(baseStreamId);
+  };
 
   if (S->isReduction()) {
     // This is a reduction stream.
@@ -745,6 +743,18 @@ LLCDynamicStream::computeStreamElementValue(const LLCStreamElementPtr &element,
                          storeValue);
     return storeValue;
 
+  } else if (S->isLoadComputeStream()) {
+    // So far LoadComputeStream only takes loaded value as input.
+    latency = config->loadCallback->getEstimatedLatency();
+    auto params =
+        convertFormalParamToParam(config->loadFormalParams, getStreamValue);
+    auto loadComputeValue = config->loadCallback->invoke(params);
+
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+                         "[Latency %llu] Compute LoadComputeValue %s.\n",
+                         latency, loadComputeValue);
+    return loadComputeValue;
+
   } else {
     LLC_ELEMENT_PANIC(element, "No Computation for this stream.");
   }
@@ -753,14 +763,21 @@ LLCDynamicStream::computeStreamElementValue(const LLCStreamElementPtr &element,
 void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
                                            const LLCStreamElementPtr &element,
                                            const StreamValue &value) {
-  element->setValue(value);
+  auto S = this->getStaticStream();
+  /**
+   * LoadComputeStream store computed value in LoadComputeValue.
+   */
+  if (S->isLoadComputeStream()) {
+    element->setLoadComputeValue(value);
+  } else {
+    element->setValue(value);
+  }
   this->incompleteComputations--;
   assert(this->incompleteComputations >= 0 &&
          "Negative incomplete computations.");
   /**
    * If this is ReductionStream, check for next element.
    */
-  auto S = this->getStaticStream();
   if (S->isReduction()) {
     /**
      * Check for the next element.

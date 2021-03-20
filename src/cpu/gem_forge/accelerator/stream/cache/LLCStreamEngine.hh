@@ -326,6 +326,8 @@ private:
   SliceList::iterator releaseSlice(SliceList::iterator sliceIter);
   void processSlices();
   SliceList::iterator processSlice(SliceList::iterator sliceIter);
+  void processLoadComputeSlice(LLCDynamicStreamPtr dynS,
+                               LLCStreamSlicePtr slice);
   void processAtomicOrUpdateSlice(LLCDynamicStreamPtr dynS,
                                   const DynamicStreamSliceId &sliceId,
                                   const DataBlock &storeValueBlock);

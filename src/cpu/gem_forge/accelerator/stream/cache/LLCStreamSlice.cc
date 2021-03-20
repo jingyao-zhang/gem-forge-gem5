@@ -38,3 +38,8 @@ void LLCStreamSlice::released() {
          "Fault from state other than RESPONDED or FAULTED.");
   this->state = State::RELEASED;
 }
+
+void LLCStreamSlice::setLoadComputeValueSent() {
+  assert(!this->loadComputeValueSent && "LoadComputeValue already sent.");
+  this->loadComputeValueSent = true;
+}
