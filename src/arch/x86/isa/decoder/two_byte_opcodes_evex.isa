@@ -290,6 +290,15 @@
                 }
             }
         }
+        0x1D: decode LEGACY_DECODEVAL {
+            0x1: decode OPCODE_OP_BOTTOM3 {
+                0x7: decode EVEX_L {
+                    0x2: VPXOR(VZqo, WZqo);
+                    0x1: VPXOR(VYdo, WYdo);
+                    0x0: VPXOR(Vo, Wo);
+                }
+            }
+        }
         0x1E: decode LEGACY_DECODEVAL {
             // operand size (0x66)
             0x1: decode OPCODE_OP_BOTTOM3 {

@@ -232,7 +232,11 @@
             }
         }
         0x0D: decode LEGACY_DECODEVAL {
+            // 0x66
             0x1: decode OPCODE_OP_BOTTOM3 {
+                0x4: decode EVEX_L {
+                    0x0: VPUNPCKLQDQ(Vo, Wo);
+                }
                 0x6: decode EVEX_L {
                     0x0: VMOVD(Vo, Edp);
                 }

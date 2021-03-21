@@ -60,19 +60,17 @@
                             0x0: VPEXTRQL(Eq, Vo, Ib);
                             0x1: VPEXTRQH(Eq, Vo, Ib);
                         }
+                        0x0: VPEXTRD(Ed, Vo, Ib);
                     }
+                }
+                0x17: decode EVEX_L {
+                    0x0: VEXTRACTPS(Ed, Vo, Ib);
                 }
                 0x18: decode EVEX_L_EXTEND {
-                    0x1: decode IMMEDIATE {
-                        0x0: VINSERT128L(VYdo, Wo, Ib);
-                        0x1: VINSERT128H(VYdo, Wo, Ib);
-                    }
+                    0x1: VINSERT128(VYdo, Wo, Ib);
                 }
                 0x1A: decode EVEX_L_EXTEND {
-                    0x2: decode IMMEDIATE {
-                        0x0: VINSERT256L(VZqo, WYdo, Ib);
-                        0x1: VINSERT256H(VZqo, WYdo, Ib);
-                    }
+                    0x2: VINSERT256(VZqo, WYdo, Ib);
                 }
                 0x1B: decode EVEX_L_EXTEND {
                     0x2: decode REX_W {
@@ -96,6 +94,9 @@
                         0x0: VPTERNLOGD(Vo, Wo, Ib);
                     }
                 }
+                0x38: decode EVEX_L_EXTEND {
+                    0x1: VINSERT128(VYdo, Wo, Ib);
+                }
                 0x39: decode EVEX_L_EXTEND {
                     0x2: decode REX_W {
                         0x1: decode IMMEDIATE {
@@ -113,10 +114,7 @@
                     }
                 }
                 0x3A: decode EVEX_L_EXTEND {
-                    0x2: decode IMMEDIATE {
-                        0x0: VINSERT256L(VZqo, WYdo, Ib);
-                        0x1: VINSERT256H(VZqo, WYdo, Ib);
-                    }
+                    0x2: VINSERT256(VZqo, WYdo, Ib);
                 }
                 0x3B: decode EVEX_L_EXTEND {
                     0x2: decode IMMEDIATE {

@@ -268,6 +268,12 @@ let {{
             this->doPackedBinaryOp(xc, BinaryOp::IntAnd);
         '''
 
+    class Vxor(Varithp):
+        opClass = 'SimdCmpOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::IntXor);
+        '''
+
     class Vminsi(Varithp):
         opClass = 'SimdCmpOp'
         code = '''
@@ -561,7 +567,7 @@ let {{
         constructorCode = '''
             assert(destVL == 8 && "Illegal destVL.");
             assert(srcVL == 16 && "Illegal srcVL.");
-            assert(srcSize == 1 && "Unsupported vextract size.");
+            assert((srcSize == 1 || srcSize == 4) && "Unsupported vextract size.");
             _numDestRegs = 1;
             _destRegIdx[0] = RegId(IntRegClass, dest);
             auto vRegs = srcVL / sizeof(uint64_t);
@@ -573,5 +579,34 @@ let {{
         '''
         code = '''
             this->doExtract(xc);
+        '''
+
+    class Vinsert(AVXOp):
+        def __init__(self, dest, src1, src2, imm8, srcVL, destVL, size):
+            super(Vinsert, self).__init__(
+                dest=dest, src1=src1, src2=src2, imm8=imm8,
+                srcVL=srcVL, destVL=destVL, srcSize=size, destSize=size,
+            )
+        srcType = 'AVXOpBase::SrcType::RegRegImm'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vSrcRegs = srcVL / sizeof(uint64_t);
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            _numSrcRegs = vSrcRegs + vDestRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            /**
+             * Insert src1 into dest, and copy rest from src2.
+             * Src2 has the same size as dest.
+             * First src1 and then src2.
+             */
+            for (int i = 0; i < vSrcRegs; i++) {
+                _srcRegIdx[i] = RegId(FloatRegClass, src1 + i);
+            }
+            for (int i = 0; i < vDestRegs; i++) {
+                _srcRegIdx[i + vSrcRegs] = RegId(FloatRegClass, src2 + i);
+            }
+        '''
+        code = '''
+            this->doInsert(xc);
         '''
 }};

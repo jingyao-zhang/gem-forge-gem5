@@ -1,59 +1,54 @@
 
 microcode = '''
 def macroop VPXOR_XMM_XMM {
-    mxor xmm0, xmm0v, xmm0m
-    mxor xmm1, xmm1v, xmm1m
+    vxor dest=xmm0, src1=xmm0v, src2=xmm0m, size=8, VL=16
     vclear dest=xmm2, destVL=16
 };
 
 def macroop VPXOR_XMM_M {
-    ldfp ufp1, seg, sib, disp, dataSize=8
-    ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
-    mxor xmm0, xmm0v, ufp1
-    mxor xmm1, xmm1v, ufp2
+    ldfp128 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=16
+    vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=16
     vclear dest=xmm2, destVL=16
 };
 
 def macroop VPXOR_XMM_P {
     rdip t7
-    ldfp ufp1, seg, riprel, disp, dataSize=8
-    ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
-    mxor xmm0, xmm0v, ufp1
-    mxor xmm1, xmm1v, ufp2
+    ldfp128 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=16
+    vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=16
     vclear dest=xmm2, destVL=16
 };
 
 def macroop VPXOR_YMM_YMM {
-    mxor xmm0, xmm0v, xmm0m
-    mxor xmm1, xmm1v, xmm1m
-    mxor xmm2, xmm2v, xmm2m
-    mxor xmm3, xmm3v, xmm3m
+    vxor dest=xmm0, src1=xmm0v, src2=xmm0m, size=8, VL=32
     vclear dest=xmm4, destVL=32
 };
 
 def macroop VPXOR_YMM_M {
-    ldfp ufp1, seg, sib, disp, dataSize=8
-    ldfp ufp2, seg, sib, "DISPLACEMENT + 8", dataSize=8
-    ldfp ufp3, seg, sib, "DISPLACEMENT + 16", dataSize=8
-    ldfp ufp4, seg, sib, "DISPLACEMENT + 24", dataSize=8
-    mxor xmm0, xmm0v, ufp1
-    mxor xmm1, xmm1v, ufp2
-    mxor xmm2, xmm2v, ufp3
-    mxor xmm3, xmm3v, ufp4
+    ldfp256 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=32
+    vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=32
     vclear dest=xmm4, destVL=32
 };
 
 def macroop VPXOR_YMM_P {
     rdip t7
-    ldfp ufp1, seg, riprel, disp, dataSize=8
-    ldfp ufp2, seg, riprel, "DISPLACEMENT + 8", dataSize=8
-    ldfp ufp3, seg, riprel, "DISPLACEMENT + 16", dataSize=8
-    ldfp ufp4, seg, riprel, "DISPLACEMENT + 24", dataSize=8
-    mxor xmm0, xmm0v, ufp1
-    mxor xmm1, xmm1v, ufp2
-    mxor xmm2, xmm2v, ufp3
-    mxor xmm3, xmm3v, ufp4
+    ldfp256 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=32
+    vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=32
     vclear dest=xmm4, destVL=32
+};
+
+def macroop VPXOR_ZMM_ZMM {
+    vxor dest=xmm0, src1=xmm0v, src2=xmm0m, size=8, VL=64
+};
+
+def macroop VPXOR_ZMM_M {
+    ldfp256 ufp1, seg, sib, "DISPLACEMENT + 0", dataSize=64
+    vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=64
+};
+
+def macroop VPXOR_ZMM_P {
+    rdip t7
+    ldfp256 ufp1, seg, riprel, "DISPLACEMENT + 0", dataSize=64
+    vxor dest=xmm0, src1=xmm0v, src2=ufp1, size=8, VL=64
 };
 
 '''

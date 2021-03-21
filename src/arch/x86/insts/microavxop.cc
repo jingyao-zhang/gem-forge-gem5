@@ -83,6 +83,10 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.si.i1 = src1.si.i1 & src2.si.i1;
       dest.si.i2 = src1.si.i2 & src2.si.i2;
       break;
+    case BinaryOp::IntXor:
+      dest.si.i1 = src1.si.i1 ^ src2.si.i1;
+      dest.si.i2 = src1.si.i2 ^ src2.si.i2;
+      break;
     case BinaryOp::IntCmpEq:
       dest.si.i1 = (src1.si.i1 == src2.si.i1) ? 0xFFFF : 0x0;
       dest.si.i2 = (src1.si.i2 == src2.si.i2) ? 0xFFFF : 0x0;
@@ -122,6 +126,9 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
     case BinaryOp::IntAnd:
       dest.sl = src1.sl & src2.sl;
       break;
+    case BinaryOp::IntXor:
+      dest.sl = src1.sl ^ src2.sl;
+      break;
     case BinaryOp::IntCmpEq:
       dest.sl = (src1.sl == src2.sl) ? 0xFFFFFFFF : 0x0;
       break;
@@ -144,6 +151,10 @@ void AVXOpBase::doPackedBinaryOp(ExecContext *xc, BinaryOp op) const {
     src1.ul = xc->readFloatRegOperandBits(this, i * 2 + 0);
     src2.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
     auto dest = this->calcPackedBinaryOp(src1, src2, op);
+    // if (vRegs == 8 && op == BinaryOp::IntAdd && srcSize == 8) {
+    //   hack("vpaddq %d %lu + %lu = %lu. pc = %#x.\n", i, src1.ul, src2.ul,
+    //        dest.ul, xc->pcState().pc());
+    // }
     xc->setFloatRegOperandBits(this, i, dest.ul);
   }
 }
@@ -210,7 +221,8 @@ void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
         dest.uc.i6 = SignedToUnsignedSaturate(src2.ss.i2);
         dest.uc.i7 = SignedToUnsignedSaturate(src2.ss.i3);
         dest.uc.i8 = SignedToUnsignedSaturate(src2.ss.i4);
-        // hack("PackW %d SRC1 %#x %#x %#x %#x SRC2 %#x %#x %#x %#x -> DEST %#x "
+        // hack("PackW %d SRC1 %#x %#x %#x %#x SRC2 %#x %#x %#x %#x -> DEST %#x
+        // "
         //      "%#x %#x %#x %#x %#x %#x %#x.\n",
         //      i, src1.ss.i1, src1.ss.i2, src1.ss.i3, src1.ss.i4, src2.ss.i1,
         //      src2.ss.i2, src2.ss.i3, src2.ss.i4, dest.uc.i1, dest.uc.i2,
@@ -242,10 +254,65 @@ void AVXOpBase::doExtract(ExecContext *xc) const {
     }
     // Extract the byte.
     result.uc.i1 = src.uc_array[select & 0x7];
+  } else if (srcSize == 4) {
+    FloatInt src;
+    if (select <= 1) {
+      src.ul = xc->readFloatRegOperandBits(this, 0);
+    } else {
+      src.ul = xc->readFloatRegOperandBits(this, 1);
+    }
+    // Extract the 32-bit value.
+    if (select & 0x1) {
+      result.ui.i1 = src.ui.i2;
+    } else {
+      result.ui.i1 = src.ui.i1;
+    }
   }
   // hack("%s.\n", this->generateDisassembly(0x0, nullptr));
   // hack("Extract %lu -> %s.\n", result.ul, this->destRegIdx(0));
   xc->setIntRegOperand(this, 0, result.ul);
+}
+
+void AVXOpBase::doInsert(ExecContext *xc) const {
+  /**
+   * We first copy from src2, and then insert src1.
+   */
+  auto select = imm8;
+  auto vSrcRegs = srcVL / sizeof(uint64_t);
+  auto vDestRegs = destVL / sizeof(uint64_t);
+  FloatInt src1[vSrcRegs];
+  FloatInt src2[vDestRegs];
+  FloatInt dest[vDestRegs];
+  for (int i = 0; i < vSrcRegs; ++i) {
+    src1[i].ul = xc->readFloatRegOperandBits(this, i);
+  }
+  for (int i = 0; i < vDestRegs; ++i) {
+    src2[i].ul = xc->readFloatRegOperandBits(this, i + vSrcRegs);
+    dest[i].ul = src2[i].ul;
+    // hack("Insert Dest %d %lu.\n", i, dest[i].ul);
+  }
+
+  if (srcVL == 32 && destVL == 64) {
+    // Insert 256bit into 512bit.
+    int destOffset = select == 1 ? 4 : 0;
+    for (int i = 0; i < vSrcRegs; ++i) {
+      dest[i + destOffset].ul = src1[i].ul;
+      // hack("Insert256 %d -> %d %lu.\n", i, i + destOffset, dest[i].ul);
+    }
+  } else if (srcVL == 16 && destVL == 32) {
+    // Insert 128bit into 256bit.
+    int destOffset = select == 1 ? 2 : 0;
+    for (int i = 0; i < vSrcRegs; ++i) {
+      dest[i + destOffset].ul = src1[i].ul;
+      // hack("Insert128 %d -> %d %lu.\n", i, i + destOffset, dest[i].ul);
+    }
+  } else {
+    // panic("Unsupported Insertion SrcVL %d DestVL %d.\n", srcVL, destVL);
+  }
+
+  for (int i = 0; i < vDestRegs; ++i) {
+    xc->setFloatRegOperandBits(this, i, dest[i].ul);
+  }
 }
 
 } // namespace X86ISA

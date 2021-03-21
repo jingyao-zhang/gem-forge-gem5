@@ -64,6 +64,7 @@ enum EVEXTupleType {
  * 66 7F vmovdqa(store) FULL_MEM
  * 66 D4 vpaddq         FULL
  * 66 D6 vmovq          TUPLE1_SCALAR
+ * 66 EF vpxord          FULL
  * 66 FB vpsubq         FULL
  * 66 FE vpaddd         FULL
  */
@@ -84,7 +85,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 /*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  D */ O , O , O , O , FU, O , TS, O , O , O , O , O , O , O , O , O ,
-/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , FU,
 /*  F */ O , O , O , O , FU, O , O , O , O , O , O , FU, O , O , FU, O
     };
 /****************************************************************
@@ -241,18 +242,20 @@ const EVEXTupleType EVEXTupleTypeThreeByteF30F38[256] =
  * Implemeted.
  *   66 03 valign                  FULL
  *   66 05 vpermilpd               FULL
- *   66 16 vpextrq                 TUPLE1_SCALAR
+ *   66 16 vpextrq/d               TUPLE1_SCALAR
+ *   66 17 vextractps              TUPLE1_SCALAR
  * ! 66 18 vinsertf128             TUPLE2/TUPLE4
  *   66 25 vpternlog               FULL
+ * ! 66 38 vinserti128             TUPLE2/TUPLE4
  * ! 66 39 vextracti128            TUPLE2/TUPLE4
  */
 const EVEXTupleType EVEXTupleTypeThreeByte660F3A[256] =
     {    //LSB
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , FU, O , FU, O , O , O , O , O , O , O , O , O , O ,
-/*  1 */ O , O , O , O , O , O , TS, O , T2, O , O , O , O , O , O , O ,
+/*  1 */ O , O , O , O , O , O , TS, TS, T2, O , O , O , O , O , O , O ,
 /*  2 */ O , O , O , O , O , FU, O , O , O , O , O , O , O , O , O , O ,
-/*  3 */ O , O , O , O , O , O , O , O , O , T2, O , O , O , O , O , O ,
+/*  3 */ O , O , O , O , O , O , O , O , T2, T2, O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,

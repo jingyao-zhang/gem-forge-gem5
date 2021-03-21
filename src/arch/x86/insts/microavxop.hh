@@ -106,6 +106,7 @@ protected:
     IntAdd,
     IntSub,
     IntAnd,
+    IntXor,
     IntCmpEq,
     UIntMul,
     SIntMin,
@@ -121,6 +122,8 @@ protected:
   void doPackOp(ExecContext *xc, BinaryOp op) const;
   // A helper function to perform extract operation
   void doExtract(ExecContext *xc) const;
+  // A helper function to perform insert operation
+  void doInsert(ExecContext *xc) const;
 
   // A helper function to add dest regs.
   inline void addAVXDestRegs() {
