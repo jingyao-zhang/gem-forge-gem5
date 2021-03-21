@@ -796,9 +796,13 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
     if (element->idx == this->configData->totalTripCount) {
       // This is the last reduction.
       auto dynCoreS = S->getDynamicStream(this->getDynamicStreamId());
-      assert(dynCoreS && "Core has no dynamic stream.");
-      assert(!dynCoreS->finalReductionValueReady &&
-             "FinalReductionValue is already ready.");
+      if (!dynCoreS) {
+        LLC_ELEMENT_PANIC(
+            element, "CoreDynS released before FinalReductionValue computed.");
+      }
+      if (dynCoreS->finalReductionValueReady) {
+        LLC_ELEMENT_PANIC(element, "FinalReductionValue already ready.");
+      }
       dynCoreS->finalReductionValue = value;
       dynCoreS->finalReductionValueReady = true;
       LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, element,
