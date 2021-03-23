@@ -276,6 +276,7 @@ enumeration(MessageSizeType, desc="...") {
   Response_Data_2B, desc="2 byte subline data response";
   Response_Data_4B, desc="4 byte subline data response";
   Response_Data_8B, desc="8 byte subline data response";
+  Response_Data_16B, desc="16 byte subline data response";
 }
 
 // AccessType

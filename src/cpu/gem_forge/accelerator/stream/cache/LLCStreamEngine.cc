@@ -402,11 +402,11 @@ void LLCStreamEngine::receiveStoreStreamData(
   /**
    * We received the response for the StoreStream, we now perform the store.
    * And issue Ack back here if this is DirectStream and no range sync.
-   * 
+   *
    * Although we really should perform the store after the core committed,
    * here I store and only delay sending back the Ack in releaseSlice.
    * So far this only works with DirectStream.
-   * 
+   *
    * NOTE: We have to construct the overlap instead of storing the whole line.
    */
   Addr paddr;
@@ -435,9 +435,8 @@ void LLCStreamEngine::receiveStoreStreamData(
     this->performStore(paddr + sliceOffset, overlapSize, storeValue);
   }
   if (!dynS->shouldRangeSync() && !dynS->isIndirect()) {
-  LLC_SLICE_DPRINTF_(
-      LLCRubyStreamStore, sliceId,
-      "StreamStore send back StreamAck.\n");
+    LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                       "StreamStore send back StreamAck.\n");
     this->issueStreamAckToMLC(sliceId);
   }
 }
@@ -1540,7 +1539,8 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
 
 LLCStreamEngine::ResponseMsgPtr LLCStreamEngine::createStreamMsgToMLC(
     const DynamicStreamSliceId &sliceId, CoherenceResponseType type,
-    Addr paddrLine, const uint8_t *data, int size, int lineOffset) {
+    Addr paddrLine, const uint8_t *data, int dataSize, int payloadSize,
+    int lineOffset) {
   auto selfMachineId = this->controller->getMachineID();
   MachineID mlcMachineId(static_cast<MachineType>(selfMachineId.type - 1),
                          sliceId.getDynStreamId().coreId);
@@ -1555,9 +1555,9 @@ LLCStreamEngine::ResponseMsgPtr LLCStreamEngine::createStreamMsgToMLC(
   msg->m_sliceIds.add(sliceId);
   // Try to copy data.
   if (data) {
-    assert(lineOffset + size <= RubySystem::getBlockSizeBytes());
-    msg->m_DataBlk.setData(data, lineOffset, size);
-    msg->m_MessageSize = this->controller->getMessageSizeType(size);
+    assert(lineOffset + dataSize <= RubySystem::getBlockSizeBytes());
+    msg->m_DataBlk.setData(data, lineOffset, dataSize);
+    msg->m_MessageSize = this->controller->getMessageSizeType(payloadSize);
   }
   return msg;
 }
@@ -1595,7 +1595,7 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
   // For StreamAck, we do not care about the address?
   auto paddrLine = 0;
   auto msg = this->createStreamMsgToMLC(
-      sliceId, CoherenceResponseType_STREAM_ACK, paddrLine, nullptr, 0, 0);
+      sliceId, CoherenceResponseType_STREAM_ACK, paddrLine, nullptr, 0, 0, 0);
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 
@@ -1605,7 +1605,7 @@ void LLCStreamEngine::issueStreamDoneToMLC(const DynamicStreamSliceId &sliceId,
   // For StreamDone, we do not care about the address?
   auto paddrLine = 0;
   auto msg = this->createStreamMsgToMLC(
-      sliceId, CoherenceResponseType_STREAM_DONE, paddrLine, nullptr, 0, 0);
+      sliceId, CoherenceResponseType_STREAM_DONE, paddrLine, nullptr, 0, 0, 0);
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 
@@ -1631,18 +1631,18 @@ void LLCStreamEngine::issueStreamRangeToMLC(DynamicStreamAddressRangePtr &range,
   DynamicStreamSliceId sliceId;
   sliceId.elementRange = range->elementRange;
   auto msg = this->createStreamMsgToMLC(
-      sliceId, CoherenceResponseType_STREAM_RANGE, paddrLine, nullptr, 0, 0);
+      sliceId, CoherenceResponseType_STREAM_RANGE, paddrLine, nullptr, 0, 0, 0);
   msg->m_range = range;
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 
 void LLCStreamEngine::issueStreamDataToMLC(const DynamicStreamSliceId &sliceId,
                                            Addr paddrLine, const uint8_t *data,
-                                           int size, int lineOffset,
-                                           bool forceIdea) {
-  auto msg =
-      this->createStreamMsgToMLC(sliceId, CoherenceResponseType_DATA_EXCLUSIVE,
-                                 paddrLine, data, size, lineOffset);
+                                           int dataSize, int payloadSize,
+                                           int lineOffset, bool forceIdea) {
+  auto msg = this->createStreamMsgToMLC(
+      sliceId, CoherenceResponseType_DATA_EXCLUSIVE, paddrLine, data, dataSize,
+      payloadSize, lineOffset);
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 
@@ -2296,6 +2296,7 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynamicStreamPtr dynS,
   assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
   auto paddrLine = makeLineAddress(paddr);
   DataBlock loadValueBlock;
+  int payloadSize = 0;
   for (auto elementIdx = sliceId.getStartIdx();
        elementIdx < sliceId.getEndIdx(); ++elementIdx) {
     auto element = dynS->getElementPanic(elementIdx, "ProcessLoadComputeSlice");
@@ -2306,6 +2307,7 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynamicStreamPtr dynS,
     int overlapSize =
         element->computeOverlap(sliceId.vaddr, RubySystem::getBlockSizeBytes(),
                                 sliceOffset, elementOffset);
+    payloadSize += S->getCoreElementSize();
 
     /**
      * Copy the value from LoadComputeValue to LoadValueBlock.
@@ -2317,13 +2319,22 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynamicStreamPtr dynS,
     loadValueBlock.setData(valuePtr, sliceOffset, overlapSize);
   }
 
+  // TotalOverlapSize should never exceed the line size.
+  if (payloadSize > RubySystem::getBlockSizeBytes()) {
+    payloadSize = RubySystem::getBlockSizeBytes();
+  }
+
   this->issueStreamDataToMLC(
       sliceId, paddrLine,
       loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-      RubySystem::getBlockSizeBytes(), 0 /* Line offset */);
-  LLC_SLICE_DPRINTF(sliceId,
-                    "Send LoadComputeValue to MLC: PAddrLine %#x Data %s.\n",
-                    paddrLine, loadValueBlock);
+      RubySystem::getBlockSizeBytes(), payloadSize /* payloadSize */,
+      0 /* Line offset */);
+  LLC_SLICE_DPRINTF(
+      sliceId,
+      "Send LoadComputeValue to MLC: PAddrLine %#x Data %s PayloadSize %d.\n",
+      paddrLine, loadValueBlock, payloadSize);
+  S->statistic.numLLCSentSlice++;
+  S->se->numLLCSentSlice++;
   slice->setLoadComputeValueSent();
 }
 
@@ -2391,7 +2402,9 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
     this->issueStreamDataToMLC(
         sliceId, paddrLine,
         loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-        RubySystem::getBlockSizeBytes(), 0 /* Line offset */);
+        RubySystem::getBlockSizeBytes(),
+        RubySystem::getBlockSizeBytes() /* payloadSizse */,
+        0 /* Line offset */);
     LLC_SLICE_DPRINTF(sliceId,
                       "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
                       paddrLine, loadValueBlock);

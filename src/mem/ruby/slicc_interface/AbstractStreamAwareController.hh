@@ -121,6 +121,8 @@ public:
       return MessageSizeType_Response_Data_4B;
     case 8:
       return MessageSizeType_Response_Data_8B;
+    case 16:
+      return MessageSizeType_Response_Data_16B;
     default:
       return MessageSizeType_Response_Data;
     }

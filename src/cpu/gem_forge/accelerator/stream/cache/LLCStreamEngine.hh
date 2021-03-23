@@ -230,10 +230,18 @@ private:
   void issueStreamRequestToLLCBank(const LLCStreamRequest &req);
 
   using ResponseMsgPtr = std::shared_ptr<ResponseMsg>;
+  /**
+   * Create the stream message to MLC SE.
+   * @param payloadSize: the network should model the payload of this size,
+   * instead of the dataSize. By default, it is the same as dataSize.
+   * This is used for LoadComputeStream, where the effective size is actually
+   * smaller.
+   */
   ResponseMsgPtr createStreamMsgToMLC(const DynamicStreamSliceId &sliceId,
                                       CoherenceResponseType type,
                                       Addr paddrLine, const uint8_t *data,
-                                      int size, int lineOffset);
+                                      int dataSize, int payloadSize,
+                                      int lineOffset);
   void issueStreamMsgToMLC(ResponseMsgPtr msg, bool forceIdea = false);
 
   /**
@@ -258,10 +266,14 @@ private:
   /**
    * Helper function to issue stream data back to MLC at request core.
    * Mostly used for atomic streams.
+   * @param payloadSize: the network should model the payload of this size,
+   * instead of the dataSize.
+   * This is used for LoadComputeStream, where the effective size is actually
+   * smaller.
    */
   void issueStreamDataToMLC(const DynamicStreamSliceId &sliceId, Addr paddrLine,
-                            const uint8_t *data, int size, int lineOffset,
-                            bool forceIdea = false);
+                            const uint8_t *data, int dataSize, int payloadSize,
+                            int lineOffset, bool forceIdea = false);
   /**
    * Send the stream data to streams another LLC bank. Used for SendTo edge.
    */
