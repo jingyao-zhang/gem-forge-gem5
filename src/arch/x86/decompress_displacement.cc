@@ -61,6 +61,7 @@ enum EVEXTupleType {
  * 66 67 vpackuswb      FULL_MEM
  * 66 6F vmovdqa(load)  FULL_MEM
  * 66 72 vpslld/vpsrld  FULL
+ * 66 73 vpsllq/vpsrlq  FULL
  * 66 7F vmovdqa(store) FULL_MEM
  * 66 D4 vpaddq         FULL
  * 66 D6 vmovq          TUPLE1_SCALAR
@@ -78,7 +79,7 @@ const EVEXTupleType EVEXTupleTypeTwoByte66[256] =
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  5 */ O , O , O , O , O , O , O , O , FU, FU, FU, FU, FU, O , FU, O ,
 /*  6 */ O , O , O , O , O , O , O , FM, O , O , O , O , O , O , O , FM,
-/*  7 */ O , O , FU, O , O , O , O , O , O , O , O , O , O , O , O , FM,
+/*  7 */ O , O , FU, FU, O , O , O , O , O , O , O , O , O , O , O , FM,
 /*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  9 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,

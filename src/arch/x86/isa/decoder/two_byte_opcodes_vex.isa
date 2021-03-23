@@ -115,6 +115,12 @@
                 0x2: decode EVEX_L {
                     0x0: VCVTSI2SD(Vo, Edp);
                 }
+                0x4: decode EVEX_L {
+                    0x0: VCVTTSD2SI(Gdp, Wdp);
+                }
+                0x5: decode EVEX_L {
+                    0x0: VCVTSD2SI(Gd, Wq);
+                }
             }
         }
         0x0A: decode LEGACY_DECODEVAL {

@@ -237,6 +237,11 @@
                         0x0: VPSLLD16(Wo, Ib);
                     }
                 }
+                0x3: decode MODRM_REG {
+                    0x2: decode EVEX_L_EXTEND {
+                        0x2: VPSRLQ(WZqo, Ib);
+                    }
+                }
             }
         }
         0x0F: decode LEGACY_DECODEVAL {
