@@ -300,12 +300,20 @@ int64_t MLCDynamicIndirectStream::getTotalTripCount() const {
 
 Addr MLCDynamicIndirectStream::genElementVAddr(uint64_t elementIdx,
                                                uint64_t baseData) {
+
   StreamValue baseValue;
   baseValue.front() = baseData;
+  auto getBaseStreamValue = [this,
+                             &baseValue](uint64_t streamId) -> StreamValue {
+    if (!this->baseStream->getStaticStream()->isCoalescedHere(streamId)) {
+      MLC_S_PANIC(this->getDynamicStreamId(), "Invalid BaseStreamId %llu.",
+                  streamId);
+    }
+    return baseValue;
+  };
+
   return this->addrGenCallback
-      ->genAddr(elementIdx, this->formalParams,
-                GetSingleStreamValue(
-                    this->baseStream->getDynamicStreamId().staticId, baseValue))
+      ->genAddr(elementIdx, this->formalParams, getBaseStreamValue)
       .front();
 }
 
