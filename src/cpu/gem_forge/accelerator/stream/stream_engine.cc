@@ -1521,14 +1521,22 @@ void StreamEngine::generateCoalescedStreamIdMap(
     auto baseS = groupIter->front();
     auto baseOffset = baseS->coalesce_info().offset();
     auto endOffset = baseOffset;
+    auto baseSEnabledStoreFunc =
+        baseS->static_info().compute_info().enabled_store_func();
     size_t nStream = 0;
     for (auto streamIter = groupIter->begin(), streamEnd = groupIter->end();
          streamIter != streamEnd; ++streamIter, ++nStream) {
       const auto *streamInfo = *streamIter;
       auto offset = streamInfo->coalesce_info().offset();
-      if ((!this->enableCoalesce && nStream == 1) || offset > endOffset) {
+      auto enabledStoreFunc =
+          streamInfo->static_info().compute_info().enabled_store_func();
+      if ((!this->enableCoalesce && nStream == 1) || offset > endOffset ||
+          enabledStoreFunc != baseSEnabledStoreFunc) {
         /**
-         * Split the group if disabled coalescing, or expansion broken.
+         * Split the group if one of the following happens:
+         * 1. We explicitly disabled coalescing.
+         * 2. The expansion is broken.
+         * 3. The new stream has different enabledStoreFunc than the baseS.
          */
         assert(nStream != 0 && "Emplty LHS group.");
         coalescedGroup.emplace_back(streamIter, streamEnd);
