@@ -13,6 +13,8 @@ public:
   bool shouldFloatStream(DynamicStream &dynS);
   bool shouldPseudoFloatStream(DynamicStream &dynS);
 
+  static std::ostream &logStream(Stream *S);
+
 private:
   bool enabled;
   enum PolicyE {
@@ -32,8 +34,6 @@ private:
     assert(log && "No log for StreamFloatPolicy.");
     return *log->stream();
   }
-
-  static std::ostream &logStream(Stream *S);
 
   static OutputStream *log;
 };

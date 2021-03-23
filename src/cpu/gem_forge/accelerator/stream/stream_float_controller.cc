@@ -450,14 +450,28 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     auto addrBaseS = *S->addrBaseStreams.begin();
     if (!floatedMap.count(addrBaseS)) {
       // AddrBaseStream is not floated.
+      StreamFloatPolicy::logStream(S)
+          << "[Not Float] due to unfloat addr base stream.\n"
+          << std::flush;
       continue;
     }
     // Check if all ValueBaseStreams are floated.
     for (auto valueBaseS : S->valueBaseStreams) {
       if (!floatedMap.count(valueBaseS)) {
         // ValueBaseStream is not floated.
+        StreamFloatPolicy::logStream(S)
+            << "[Not Float] due to unfloat value base stream.\n"
+            << std::flush;
         continue;
       }
+    }
+    // Check if there is aliased store stream.
+    if (S->aliasBaseStream->hasAliasedStoreStream &&
+        S->aliasBaseStream->aliasedStreams.size() > 1) {
+      StreamFloatPolicy::logStream(S)
+          << "[Not Float] due to aliased store stream.\n"
+          << std::flush;
+      continue;
     }
     auto baseConfig = floatedMap.at(addrBaseS);
     // Only dependent on this direct stream.
@@ -477,6 +491,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     dynS->offloadedToCache = true;
     this->se->numFloated++;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as indirect.\n");
+    StreamFloatPolicy::logStream(S) << "[Float] as indirect.\n" << std::flush;
     floatedMap.emplace(S, config);
     if (S->getEnabledStoreFunc()) {
       if (!dynS->hasTotalTripCount()) {
