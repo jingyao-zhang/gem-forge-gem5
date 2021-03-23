@@ -151,7 +151,9 @@ void Stream::initializeBaseStreams() {
     for (const auto &baseId :
          info.static_info().compute_info().value_base_streams()) {
       auto baseS = this->se->getStream(baseId.id());
-      assert(baseS != this && "Should never have circular value dependency.");
+      if (baseS == this) {
+        S_PANIC(this, "Circular value dependence found.");
+      }
       this->addValueBaseStream(baseId.id(), info.id(), baseS);
     }
 

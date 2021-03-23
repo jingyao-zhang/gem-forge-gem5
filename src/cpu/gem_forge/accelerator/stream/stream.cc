@@ -224,7 +224,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   dynStream.configExecuted = true;
 
   /**
-   * We intercept the constant update value here.
+   * We intercept the extra input value here.
    */
   if (inputVec) {
     assert(!se->isTraceSim());
@@ -640,9 +640,6 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
     // Consume these inputs.
     inputVec->erase(inputVec->begin(), inputVec->begin() + usedInputs);
   }
-  /**
-   * LoadFunc shares the same input as StoreFunc, for now.
-   */
   if (this->getEnabledLoadFunc()) {
     const auto &info = this->getLoadFuncInfo();
     if (!this->loadCallback) {
@@ -656,6 +653,9 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
        */
       loadFormalParams = dynS.storeFormalParams;
     } else {
+      /**
+       * Other type streams has their own load inputs.
+       */
       auto usedInputs =
           this->setupFormalParams(inputVec, info, loadFormalParams);
       // Consume these inputs.
@@ -817,9 +817,9 @@ void Stream::addValueBaseElements(StreamElement *newElement) {
   }
 
   /**
-   * LoadComputeStream always has itself has the ValueBaseElement.
+   * LoadComputeStream/UpdateStream always has itself has the ValueBaseElement.
    */
-  if (this->isLoadComputeStream()) {
+  if (this->isLoadComputeStream() || this->isUpdateStream()) {
     newElement->valueBaseElements.emplace_back(newElement);
   }
 
