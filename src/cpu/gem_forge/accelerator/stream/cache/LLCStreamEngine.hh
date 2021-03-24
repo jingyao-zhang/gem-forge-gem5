@@ -215,6 +215,18 @@ private:
                                      LLCStreamElementPtr element);
 
   /**
+   * Issue indirect load stream request.
+   */
+  void issueIndirectLoadRequest(LLCDynamicStream *dynIS,
+                                LLCStreamElementPtr element);
+
+  /**
+   * Issue indirect store/atomic request.
+   */
+  void issueIndirectStoreOrAtomicRequest(LLCDynamicStream *dynIS,
+                                         LLCStreamElementPtr element);
+
+  /**
    * Helper function to enqueue a request and start address translation.
    */
   RequestQueueIter enqueueRequest(GemForgeCPUDelegator *cpuDelegator,

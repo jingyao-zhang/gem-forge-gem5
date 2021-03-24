@@ -369,20 +369,48 @@ void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
     }
   }
 
+  /**
+   * The following logic is only for IndirectStream.
+   * For DirectStream, these cases are handled in processSlice().
+   */
+  if (!dynS->isIndirect()) {
+    return;
+  }
+
   if (S->isAtomicComputeStream() || S->isUpdateStream()) {
-    // We handle this in processSlice for DirectStream.
-    if (!dynS->isIndirect()) {
-      return;
-    }
     this->processAtomicOrUpdateSlice(dynS, sliceId, storeValueBlock);
   }
 
+  if (S->isLoadComputeStream()) {
+    /**
+     * We register a slice here, directly advance to RESPONDED state,
+     * and schedule the computation to merge the code path for DirectStream.
+     */
+    if (sliceId.getNumElements() != 1) {
+      LLC_SLICE_PANIC(
+          sliceId,
+          "IndirectLoadComputeStream with more than one element per slice.");
+    }
+    auto element = dynS->getElementPanic(
+        sliceId.getStartIdx(),
+        "ReceiveStreamData for IndirectLoadComputeStream");
+    auto slice = std::make_shared<LLCStreamSlice>(sliceId);
+    slice->allocate(this);
+    slice->issue();
+    slice->responded(dataBlock, storeValueBlock);
+    this->allocatedSlices.push_back(slice);
+    element->addSlice(slice);
+    this->processLoadComputeSlice(dynS, slice);
+  }
+
   /**
-   * DirectStream element released after all slices are released.
-   * IndirectStream that will issue after commit, e.g. AtomicStream,
+   * Here we release the indirect element, with a few exceptions:
+   * 1. DirectStream element released after all slices are released.
+   * 2. IndirectStream that will issue after commit, e.g. AtomicStream,
    * will be released when the final request is handled.
+   * 3. IndirectLoadComputeStream is released in releaseSlice().
    */
-  if (dynS->isIndirect() && !dynS->shouldIssueAfterCommit()) {
+  if (!dynS->shouldIssueAfterCommit() && !S->isLoadComputeStream()) {
     while (!dynS->idxToElementMap.empty()) {
       auto elementIter = dynS->idxToElementMap.begin();
       const auto &element = elementIter->second;
@@ -1252,9 +1280,31 @@ void LLCStreamEngine::issueStreamIndirect(LLCDynamicStream *dynIS) {
 
 void LLCStreamEngine::generateIndirectStreamRequest(
     LLCDynamicStream *dynIS, LLCStreamElementPtr element) {
-  auto dynBS = dynIS->baseStream;
-  assert(dynBS &&
-         "GenerateIndirectStreamRequest can only handle indirect stream.");
+
+  auto IS = dynIS->getStaticStream();
+  if (IS->isReduction()) {
+    LLC_S_PANIC(dynIS->getDynamicStreamId(),
+                "Reduction is no longer handled here.");
+    return;
+  }
+
+  if (IS->isStoreComputeStream() || IS->isAtomicComputeStream()) {
+    this->issueIndirectStoreOrAtomicRequest(dynIS, element);
+    return;
+  }
+
+  /**
+   * Finally normal indirect load stream.
+   */
+  this->issueIndirectLoadRequest(dynIS, element);
+  return;
+}
+
+void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
+                                               LLCStreamElementPtr element) {
+  /**
+   * This function handles the most basic case: IndirectLoadStream.
+   */
   auto elementIdx = element->idx;
   DynamicStreamSliceId sliceId;
   sliceId.getDynStreamId() = dynIS->getDynamicStreamId();
@@ -1264,127 +1314,22 @@ void LLCStreamEngine::generateIndirectStreamRequest(
   Addr elementVAddr = element->vaddr;
   LLC_SLICE_DPRINTF(sliceId, "Issue indirect VAddr %#x.\n", elementVAddr);
 
-  auto IS = dynIS->getStaticStream();
-  const auto &indirectConfig = dynIS->configData;
-  if (IS->isReduction()) {
-    LLC_S_PANIC(dynIS->getDynamicStreamId(),
-                "Reduction is no longer handled here.");
-    return;
-  }
-
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
-  if (IS->isStoreComputeStream() || IS->isAtomicComputeStream()) {
-    // This is a store/atomic, we need to issue STREAM_STORE request.
-    assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
-    if (dynIS->hasTotalTripCount()) {
-      assert(elementIdx < dynIS->getTotalTripCount() &&
-             "Try to store beyond TotalTripCount.");
-    }
+  auto IS = dynIS->getStaticStream();
 
-    int lineOffset = elementVAddr % blockBytes;
-    assert(lineOffset + elementSize <= blockBytes &&
-           "Multi-line merged store stream.");
-
-    sliceId.vaddr = elementVAddr;
-    sliceId.size = elementSize;
-    Addr elementPAddr;
-    if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
-      IS->statistic.numLLCIssueSlice++;
-      auto vaddrLine = makeLineAddress(elementVAddr);
-      auto paddrLine = makeLineAddress(elementPAddr);
-      /**
-       * Compute the store value.
-       * If this is a MergededPedicatedStream, it is a constant value.
-       * If this is a MergededLoadStoreDepStream, it is computed use the
-       * StoreCallback.
-       * TODO: These should be merged together.
-       */
-      uint64_t storeValue = 0;
-      if (IS->isMergedPredicated()) {
-        // TODO: This is no longer supported.
-        panic("MergedPredicated is not supported for now.");
-        // storeValue = indirectConfig->constUpdateValue;
-      } else if (IS->isMergedLoadStoreDepStream()) {
-        // Compute the value.
-        auto getBaseStreamValue =
-            [&element](uint64_t baseStreamId) -> StreamValue {
-          return element->getBaseStreamValue(baseStreamId);
-        };
-        auto params = convertFormalParamToParam(
-            indirectConfig->storeFormalParams, getBaseStreamValue);
-        storeValue = indirectConfig->storeCallback->invoke(params).front();
-      } else {
-        assert("Unknow merged stream type.");
-      }
-
-      // Push to the request queue.
-      LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
-                         "StreamStore -> RequestQueue, StoreValue %lu.\n",
-                         storeValue);
-      bool isIdeaStore = false;
-      int storeSize = sliceId.size;
-      if (this->controller->isStreamIdeaStoreEnabled()) {
-        isIdeaStore = true;
-      } else if (this->controller->isStreamCompactStoreEnabled()) {
-        /**
-         * Check if we can compact.
-         * This is just an approximation, as the request is sending
-         * out immediately.
-         * TODO: Implement a realistic compact scheme.
-         */
-        if (dynIS->prevStorePAddrLine == paddrLine) {
-          // We can compact.
-          isIdeaStore = true;
-        } else {
-          // As an overhead, we set StoreSize to 64 due to compaction.
-          if (IS->isDirectMemStream()) {
-            storeSize = RubySystem::getBlockSizeBytes();
-          }
-        }
-      }
-
-      dynIS->prevStorePAddrLine = paddrLine;
-      dynIS->prevStoreCycle = this->controller->curCycle();
-      if (isIdeaStore) {
-        this->performStore(elementPAddr, elementSize,
-                           reinterpret_cast<uint8_t *>(&storeValue));
-        LLC_SLICE_DPRINTF_(
-            LLCRubyStreamStore, sliceId,
-            "Ideal StreamStore done with value %llu, send back StreamAck.\n",
-            storeValue);
-
-        const bool forceIdeaAck = true;
-        this->issueStreamAckToMLC(sliceId, forceIdeaAck);
-        if (!this->requestQueue.empty()) {
-          this->scheduleEvent(Cycles(1));
-        }
-      } else {
-        auto reqIter =
-            this->enqueueRequest(IS->getCPUDelegator(), sliceId, vaddrLine,
-                                 paddrLine, CoherenceRequestType_STREAM_STORE);
-        dynIS->inflyRequests++;
-        auto lineOffset = sliceId.vaddr % RubySystem::getBlockSizeBytes();
-        reqIter->dataBlock.setData(reinterpret_cast<uint8_t *>(&storeValue),
-                                   lineOffset, sliceId.size);
-        reqIter->storeSize = storeSize;
-      }
-
-    } else {
-      panic("Faulted merged store stream.");
-    }
-    return;
+  auto reqType = CoherenceRequestType_GETU;
+  if (!IS->hasCoreUser()) {
+    reqType = CoherenceRequestType_GETH;
+  } else if (IS->isLoadComputeStream()) {
+    // For LoadComputeStream, we issue GETH and send back the compute result.
+    reqType = CoherenceRequestType_GETH;
   }
 
-  /**
-   * Finally normal indirect load stream.
-   * Handle coalesced multi-line element.
-   */
-  auto reqType =
-      IS->hasCoreUser() ? CoherenceRequestType_GETU : CoherenceRequestType_GETH;
   assert(!dynIS->isPseudoOffload() &&
          "Indirect stream should never be PseudoOffload.");
   auto totalSliceSize = 0;
+  auto totalSlices = 0;
   while (totalSliceSize < elementSize) {
     Addr curSliceVAddr = elementVAddr + totalSliceSize;
     // Make sure the slice is contained within one line.
@@ -1416,9 +1361,131 @@ void LLCStreamEngine::generateIndirectStreamRequest(
     }
 
     totalSliceSize += curSliceSize;
+    totalSlices++;
   }
 
-  return;
+  if (IS->isLoadComputeStream() && totalSlices != 1) {
+    LLC_S_PANIC(
+        dynIS->getDynamicStreamId(),
+        "IndirectLoadComputeStream with Multi-Line Element is not supported.");
+  }
+}
+
+void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
+    LLCDynamicStream *dynIS, LLCStreamElementPtr element) {
+
+  auto elementIdx = element->idx;
+  DynamicStreamSliceId sliceId;
+  sliceId.getDynStreamId() = dynIS->getDynamicStreamId();
+  sliceId.getStartIdx() = elementIdx;
+  sliceId.getEndIdx() = elementIdx + 1;
+  auto elementSize = dynIS->getMemElementSize();
+  Addr elementVAddr = element->vaddr;
+  LLC_SLICE_DPRINTF(sliceId, "Issue indirect VAddr %#x.\n", elementVAddr);
+
+  const auto blockBytes = RubySystem::getBlockSizeBytes();
+
+  auto IS = dynIS->getStaticStream();
+  const auto &indirectConfig = dynIS->configData;
+
+  // This is a store/atomic, we need to issue STREAM_STORE request.
+  assert(elementSize <= sizeof(uint64_t) && "Oversized merged store stream.");
+  if (dynIS->hasTotalTripCount()) {
+    assert(elementIdx < dynIS->getTotalTripCount() &&
+           "Try to store beyond TotalTripCount.");
+  }
+
+  int lineOffset = elementVAddr % blockBytes;
+  assert(lineOffset + elementSize <= blockBytes &&
+         "Multi-line merged store stream.");
+
+  sliceId.vaddr = elementVAddr;
+  sliceId.size = elementSize;
+  Addr elementPAddr;
+  if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
+    IS->statistic.numLLCIssueSlice++;
+    auto vaddrLine = makeLineAddress(elementVAddr);
+    auto paddrLine = makeLineAddress(elementPAddr);
+    /**
+     * Compute the store value.
+     * If this is a MergededPedicatedStream, it is a constant value.
+     * If this is a MergededLoadStoreDepStream, it is computed use the
+     * StoreCallback.
+     * TODO: These should be merged together.
+     */
+    uint64_t storeValue = 0;
+    if (IS->isMergedPredicated()) {
+      // TODO: This is no longer supported.
+      panic("MergedPredicated is not supported for now.");
+      // storeValue = indirectConfig->constUpdateValue;
+    } else if (IS->isMergedLoadStoreDepStream()) {
+      // Compute the value.
+      auto getBaseStreamValue =
+          [&element](uint64_t baseStreamId) -> StreamValue {
+        return element->getBaseStreamValue(baseStreamId);
+      };
+      auto params = convertFormalParamToParam(indirectConfig->storeFormalParams,
+                                              getBaseStreamValue);
+      storeValue = indirectConfig->storeCallback->invoke(params).front();
+    } else {
+      assert("Unknow merged stream type.");
+    }
+
+    // Push to the request queue.
+    LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
+                       "StreamStore -> RequestQueue, StoreValue %lu.\n",
+                       storeValue);
+    bool isIdeaStore = false;
+    int storeSize = sliceId.size;
+    if (this->controller->isStreamIdeaStoreEnabled()) {
+      isIdeaStore = true;
+    } else if (this->controller->isStreamCompactStoreEnabled()) {
+      /**
+       * Check if we can compact.
+       * This is just an approximation, as the request is sending
+       * out immediately.
+       * TODO: Implement a realistic compact scheme.
+       */
+      if (dynIS->prevStorePAddrLine == paddrLine) {
+        // We can compact.
+        isIdeaStore = true;
+      } else {
+        // As an overhead, we set StoreSize to 64 due to compaction.
+        if (IS->isDirectMemStream()) {
+          storeSize = RubySystem::getBlockSizeBytes();
+        }
+      }
+    }
+
+    dynIS->prevStorePAddrLine = paddrLine;
+    dynIS->prevStoreCycle = this->controller->curCycle();
+    if (isIdeaStore) {
+      this->performStore(elementPAddr, elementSize,
+                         reinterpret_cast<uint8_t *>(&storeValue));
+      LLC_SLICE_DPRINTF_(
+          LLCRubyStreamStore, sliceId,
+          "Ideal StreamStore done with value %llu, send back StreamAck.\n",
+          storeValue);
+
+      const bool forceIdeaAck = true;
+      this->issueStreamAckToMLC(sliceId, forceIdeaAck);
+      if (!this->requestQueue.empty()) {
+        this->scheduleEvent(Cycles(1));
+      }
+    } else {
+      auto reqIter =
+          this->enqueueRequest(IS->getCPUDelegator(), sliceId, vaddrLine,
+                               paddrLine, CoherenceRequestType_STREAM_STORE);
+      dynIS->inflyRequests++;
+      auto lineOffset = sliceId.vaddr % RubySystem::getBlockSizeBytes();
+      reqIter->dataBlock.setData(reinterpret_cast<uint8_t *>(&storeValue),
+                                 lineOffset, sliceId.size);
+      reqIter->storeSize = storeSize;
+    }
+
+  } else {
+    panic("Faulted merged store stream.");
+  }
 }
 
 LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
