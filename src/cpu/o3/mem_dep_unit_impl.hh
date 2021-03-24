@@ -575,6 +575,13 @@ MemDepUnit<MemDepPred, Impl>::moveToReady(MemDepEntryPtr &woken_inst_entry)
 
     assert(!woken_inst_entry->squashed);
 
+    /**
+     * NOTE: The instruction may not be readyToIssue() if it is
+     * blocked by the MemDepUnit before, which seems does not call
+     * setCanIssue() when move the instruction back to ready().
+     */
+    woken_inst_entry->inst->setCanIssue();
+
     iqPtr->addReadyMemInst(woken_inst_entry->inst);
 }
 

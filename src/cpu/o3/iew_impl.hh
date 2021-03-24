@@ -1263,7 +1263,7 @@ DefaultIEW<Impl>::executeInsts()
         // at the commit stage.
         if (inst->isMemRef()) {
             DPRINTF(IEW, "Execute: Calculating address for memory "
-                    "reference.\n");
+                    "reference, readyToIssue %d.\n", inst->readyToIssue());
 
             // Tell the LDSTQ to execute this instruction (if it is a load).
             if (inst->isAtomic()) {
