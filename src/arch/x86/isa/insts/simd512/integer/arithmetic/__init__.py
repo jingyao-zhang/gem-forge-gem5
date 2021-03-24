@@ -10,6 +10,7 @@ categories = [
     "vpslld",
     "vpsrld",
     "vpsrlq",
+    "vsqrtsd",
 ]
 
 microcode = '''

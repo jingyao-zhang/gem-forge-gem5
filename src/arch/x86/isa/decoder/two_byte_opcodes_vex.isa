@@ -140,6 +140,10 @@
                     0x0: VXORPD(Vo,Wo);
                 }
             }
+            // repne (0xF2)
+            0x8: decode OPCODE_OP_BOTTOM3 {
+                0x1: VSQRTSD(Vo,Wo);
+            }
         }
         0x0B: decode LEGACY_DECODEVAL {
             0x0: decode OPCODE_OP_BOTTOM3 {
@@ -222,6 +226,9 @@
                 }
                 0x4: decode EVEX_L {
                     0x0: VSUBSD(Vo, Wo);
+                }
+                0x5: decode EVEX_L {
+                    0x0: VMINSD(Vo, Wo);
                 }
                 0x6: decode EVEX_L {
                     0x0: VDIVSD(Vo, Wo);
