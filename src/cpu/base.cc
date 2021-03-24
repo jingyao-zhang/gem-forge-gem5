@@ -243,6 +243,11 @@ BaseCPU::~BaseCPU()
     delete profileEvent;
 }
 
+bool
+BaseCPU::shouldCheckDeadlock() const {
+    return this->params()->check_deadlock;
+}
+
 void
 BaseCPU::armMonitor(ThreadID tid, Addr address)
 {

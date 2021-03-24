@@ -236,7 +236,7 @@ class BaseCPU : public ClockedObject
     /**
      * Whether we should check deadlock for this cpu.
      */
-    virtual bool shouldCheckDeadlock() const { return true; }
+    virtual bool shouldCheckDeadlock() const;
 
     TheISA::MicrocodeRom microcodeRom;
 
