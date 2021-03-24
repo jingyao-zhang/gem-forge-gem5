@@ -579,8 +579,11 @@ MemDepUnit<MemDepPred, Impl>::moveToReady(MemDepEntryPtr &woken_inst_entry)
      * NOTE: The instruction may not be readyToIssue() if it is
      * blocked by the MemDepUnit before, which seems does not call
      * setCanIssue() when move the instruction back to ready().
+     * 
+     * NOTE: Same case for memDepReady field.
      */
     woken_inst_entry->inst->setCanIssue();
+    woken_inst_entry->memDepReady = true;
 
     iqPtr->addReadyMemInst(woken_inst_entry->inst);
 }
