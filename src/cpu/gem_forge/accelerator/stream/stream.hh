@@ -441,6 +441,7 @@ public:
     uint64_t numIssuedRequests = 0;
     uint64_t numPrivateCacheHits = 0;
     uint64_t startVAddr = 0;
+    bool floated = false;
   };
   static constexpr int AggregateHistorySize = 4;
   std::list<StreamAggregateHistory> aggregateHistory;

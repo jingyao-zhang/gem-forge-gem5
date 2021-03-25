@@ -394,6 +394,7 @@ void Stream::recordAggregateHistory(const DynamicStream &dynS) {
   history.numIssuedRequests = dynS.getNumIssuedRequests();
   history.numPrivateCacheHits = dynS.getTotalHitPrivateCache();
   history.startVAddr = dynS.getStartVAddr();
+  history.floated = dynS.offloadedToCache;
 }
 
 DynamicStream &Stream::getDynamicStreamByInstance(InstanceId instance) {

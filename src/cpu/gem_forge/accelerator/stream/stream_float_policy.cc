@@ -245,7 +245,8 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
                                    static_cast<float>(prevIssuedRequests);
     if (prevPrivateCacheHitRate > 0.5f) {
       // Hit rate too high.
-      S_DPRINTF(S, "[Not Float] Hist PrevIssed %llu, PrivateCacheHitRate %f.\n",
+      S_DPRINTF(S,
+                "[Not Float] Hist PrevIssued %llu, PrivateCacheHitRate %f.\n",
                 prevIssuedRequests, prevPrivateCacheHitRate);
       logStream(S) << "[Not Float] Hist PrevIssued " << prevIssuedRequests
                    << " PrivateCacheHitRate " << prevPrivateCacheHitRate << '\n'
@@ -271,15 +272,34 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
                    << std::dec << std::flush;
       continue;
     }
+    if (S->addrDepStreams.size() > 0) {
+      uint64_t maxIndSMemFootprint = 0;
+      for (auto indS : S->addrDepStreams) {
+        auto indSMemElementSize = indS->getMemElementSize();
+        auto indSMemFootprint =
+            indSMemElementSize * prevHistory.numReleasedElements;
+        maxIndSMemFootprint = std::max(maxIndSMemFootprint, indSMemFootprint);
+      }
+      if (maxIndSMemFootprint > privateCacheSize) {
+        // If we have indirect streams, then the half the threashold.
+        S_DPRINTF(S, "Hist %d MaxIndSMemFootPrint %#x > PrivateCache %#x.\n",
+                  historyOffset, maxIndSMemFootprint, privateCacheSize);
+        logStream(S) << "Hist " << historyOffset << " MaxMemFootPrint "
+                     << std::hex << maxIndSMemFootprint << " > PrivateCache "
+                     << privateCacheSize << ".\n"
+                     << std::dec << std::flush;
+        continue;
+      }
+    }
     S_DPRINTF(S,
               "[Not Float] Hist %d StartAddr %#x matched, MemFootPrint %lu <= "
               "PrivateCache %lu.\n",
               historyOffset, currStartAddr, memoryFootprint, privateCacheSize);
     logStream(S) << "[Not Float] Hist " << historyOffset << " StartAddr "
-                 << currStartAddr << " matched, MemFootPrint "
+                 << std::hex << currStartAddr << " matched, MemFootPrint "
                  << memoryFootprint << " <= PrivateCache " << privateCacheSize
                  << ".\n"
-                 << std::flush;
+                 << std::dec << std::flush;
     return false;
   }
 
@@ -327,11 +347,12 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
    */
   if (this->policy == PolicyE::SMART_COMPUTATION) {
     bool floatCompute = false;
-    if (!S->valueDepStreams.empty() || S->getEnabledStoreFunc()) {
+    if (!S->valueDepStreams.empty() || S->getEnabledStoreFunc() ||
+        S->getEnabledLoadFunc()) {
       floatCompute = true;
     }
     for (auto depS : S->addrDepStreams) {
-      if (depS->getEnabledStoreFunc()) {
+      if (depS->getEnabledStoreFunc() || depS->getEnabledLoadFunc()) {
         floatCompute = true;
       }
     }
