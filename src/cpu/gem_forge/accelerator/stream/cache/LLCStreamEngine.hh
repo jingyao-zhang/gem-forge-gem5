@@ -288,11 +288,15 @@ private:
                             int lineOffset, bool forceIdea = false);
   /**
    * Send the stream data to streams another LLC bank. Used for SendTo edge.
+   * @param payloadSize: the network should model the payload of this size.
+   * This is used for LoadComputeStream, where the effective sizes is actually
+   * smaller.
    */
   void issueStreamDataToLLC(LLCDynamicStreamPtr stream,
                             const DynamicStreamSliceId &sliceId,
                             const DataBlock &dataBlock,
-                            const CacheStreamConfigureDataPtr &recvConfig);
+                            const CacheStreamConfigureDataPtr &recvConfig,
+                            int payloadSize);
 
   /**
    * Find streams that should be migrated.

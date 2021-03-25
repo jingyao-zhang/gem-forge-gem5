@@ -78,6 +78,10 @@ public:
    */
   bool shouldRangeSync() const { return this->config->rangeSync; }
 
+  const std::vector<CacheStreamConfigureDataPtr> &getSendToConfigs() const {
+    return this->sendToConfigs;
+  }
+
 protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;

@@ -51,7 +51,6 @@ struct DynamicStream {
   int stepSize = 0;
   FIFOEntryIdx FIFOIdx;
   // A hack to store how many elements has the cache acked.
-  uint64_t cacheAcked = 0;
   std::set<uint64_t> cacheAckedElements;
   /**
    * Similar to StreamAck messages, this remembers the StreamDone messages

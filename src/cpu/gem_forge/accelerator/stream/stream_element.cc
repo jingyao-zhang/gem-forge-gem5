@@ -754,9 +754,20 @@ StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
   auto baseS = this->se->getStream(id);
   for (const auto &baseE : this->valueBaseElements) {
     if (baseE.element->stream == baseS) {
+      /**
+       * For unfloated LoadComputeStream, we should use the LoadComputeValue.
+       * Except when I am the LoadComputeStream of course.
+       */
+      auto baseElement = baseE.element;
       StreamValue elementValue;
-      baseE.element->getValueByStreamId(id, elementValue.uint8Ptr(),
+      if (baseElement != this && baseElement->stream->isLoadComputeStream() &&
+          !baseElement->dynS->offloadedToCache) {
+        baseElement->getLoadComputeValue(elementValue.uint8Ptr(),
+                                         sizeof(elementValue));
+      } else {
+        baseElement->getValueByStreamId(id, elementValue.uint8Ptr(),
                                         sizeof(elementValue));
+      }
       return elementValue;
     }
   }
@@ -822,9 +833,9 @@ bool StreamElement::checkUpdateValueReady() const {
   return this->updateValueReady;
 }
 
-bool StreamElement::checkLoadComputeValueReady() const {
+bool StreamElement::checkLoadComputeValueReady(bool checkedByCore) const {
   // LoadComputeValue should only be checked by Core.
-  this->updateFirstValueCheckCycle(true);
+  this->updateFirstValueCheckCycle(checkedByCore);
   return this->loadComputeValueReady;
 }
 
@@ -871,8 +882,21 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
         return false;
       }
     } else {
-      if (!baseE.element->checkValueReady(false /* CheckedByCore */)) {
-        return false;
+      auto baseElement = baseE.element;
+      /**
+       * Special case for unofloated LoadComputeStream, which we should check
+       * the LoadComputeValue.
+       */
+      if (baseElement->stream->isLoadComputeStream() &&
+          !baseElement->dynS->offloadedToCache) {
+        if (!baseElement->checkLoadComputeValueReady(
+                false /* CheckedByCore */)) {
+          return false;
+        }
+      } else {
+        if (!baseE.element->checkValueReady(false /* CheckedByCore */)) {
+          return false;
+        }
       }
     }
   }

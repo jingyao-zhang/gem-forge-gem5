@@ -40,6 +40,9 @@ struct LLCStreamRequest {
   // Optional for StreamStore request.
   int storeSize = 8;
 
+  // Optional for StreamForward request with smaller payload size.
+  int payloadSize = RubySystem::getBlockSizeBytes();
+
   // Optional for Multicast request, excluding the original stream
   std::vector<DynamicStreamSliceId> multicastSliceIds;
 

@@ -296,7 +296,6 @@ void MLCDynamicStream::makeAck(MLCStreamSlice &slice) {
       }
       MLC_SLICE_PANIC(ackSliceId, "MakeAck when dynS has been released.");
     }
-    dynS->cacheAcked++;
     for (auto elementIdx = ackSliceId.getStartIdx();
          elementIdx < ackSliceId.getEndIdx(); ++elementIdx) {
       if (std::dynamic_pointer_cast<LinearAddrGenCallback>(

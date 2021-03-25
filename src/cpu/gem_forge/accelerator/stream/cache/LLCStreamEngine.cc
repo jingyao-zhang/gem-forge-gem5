@@ -348,8 +348,16 @@ void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
     this->receiveStoreStreamData(dynS, sliceId, storeValueBlock);
   }
 
-  for (const auto &recvConfig : dynS->sendToConfigs) {
-    this->issueStreamDataToLLC(dynS, sliceId, dataBlock, recvConfig);
+  /**
+   * Normally we could just send the data to the receiver stream.
+   * However, for LoadComputeStream, we should send after the value is computed.
+   */
+  if (!dynS->sendToConfigs.empty() && !S->isLoadComputeStream()) {
+    for (const auto &recvConfig : dynS->sendToConfigs) {
+      this->issueStreamDataToLLC(
+          dynS, sliceId, dataBlock, recvConfig,
+          RubySystem::getBlockSizeBytes() /* PayloadSize */);
+    }
   }
 
   if (!dynS->getIndStreams().empty()) {
@@ -1561,8 +1569,10 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
   } else if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
     msg->m_DataBlk = req.dataBlock;
     msg->m_sendToStreamId = req.forwardToStreamId;
-    // So far we always model this as a whole cache put back.
-    msg->m_MessageSize = MessageSizeType_Response_Data;
+    /**
+     * We model special size for StreamForward request.
+     */
+    msg->m_MessageSize = this->controller->getMessageSizeType(req.payloadSize);
   }
 
   if (Debug::LLCRubyStreamMulticast && !req.multicastSliceIds.empty()) {
@@ -1715,7 +1725,8 @@ void LLCStreamEngine::issueStreamDataToMLC(const DynamicStreamSliceId &sliceId,
 
 void LLCStreamEngine::issueStreamDataToLLC(
     LLCDynamicStreamPtr stream, const DynamicStreamSliceId &sliceId,
-    const DataBlock &dataBlock, const CacheStreamConfigureDataPtr &recvConfig) {
+    const DataBlock &dataBlock, const CacheStreamConfigureDataPtr &recvConfig,
+    int payloadSize) {
   /**
    * Unlike sending data to MLC, we have to calculate the virtual address of the
    * receiving stream and translate that.
@@ -1754,6 +1765,7 @@ void LLCStreamEngine::issueStreamDataToLLC(
     // Remember the receiver dynamic id and forwarded data block.
     reqIter->forwardToStreamId = recvConfig->dynamicId;
     reqIter->dataBlock = dataBlock;
+    reqIter->payloadSize = payloadSize;
   } else {
     LLC_SLICE_PANIC(sliceId, "Translation fault on the ReceiverStream: %s.",
                     recvConfig->dynamicId);
@@ -2284,8 +2296,11 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
   /**
    * If this stream require RangeSync, we have to check that all elements are
    * committed in the core.
+   * One exception is for IndirectLoadComputeStream, which we should release
+   * immediately.
    */
-  if (dynS->shouldRangeSync()) {
+  if (dynS->shouldRangeSync() &&
+      !(S->isLoadComputeStream() && dynS->isIndirect())) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element =
           dynS->getElementPanic(idx, "Check element committed for update.");
@@ -2354,10 +2369,6 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynamicStreamPtr dynS,
   if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
     coreNeedValue = true;
   }
-  if (!coreNeedValue) {
-    LLC_SLICE_PANIC(sliceId,
-                    "LoadComputeStream should always be needed in core.");
-  }
 
   Addr paddr = 0;
   assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
@@ -2391,17 +2402,36 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynamicStreamPtr dynS,
     payloadSize = RubySystem::getBlockSizeBytes();
   }
 
-  this->issueStreamDataToMLC(
-      sliceId, paddrLine,
-      loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
-      RubySystem::getBlockSizeBytes(), payloadSize /* payloadSize */,
-      0 /* Line offset */);
-  LLC_SLICE_DPRINTF(
-      sliceId,
-      "Send LoadComputeValue to MLC: PAddrLine %#x Data %s PayloadSize %d.\n",
-      paddrLine, loadValueBlock, payloadSize);
-  S->statistic.numLLCSentSlice++;
-  S->se->numLLCSentSlice++;
+  if (coreNeedValue) {
+    this->issueStreamDataToMLC(
+        sliceId, paddrLine,
+        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
+        RubySystem::getBlockSizeBytes(), payloadSize /* payloadSize */,
+        0 /* Line offset */);
+    S->statistic.numLLCSentSlice++;
+    S->se->numLLCSentSlice++;
+    LLC_SLICE_DPRINTF(
+        sliceId,
+        "Send LoadComputeValue to MLC: PAddrLine %#x Data %s PayloadSize %d.\n",
+        paddrLine, loadValueBlock, payloadSize);
+  } else {
+    LLC_SLICE_DPRINTF(sliceId,
+                      "Not send LoadComputeValue to MLC: PAddrLine %#x Data %s "
+                      "PayloadSize %d.\n",
+                      paddrLine, loadValueBlock, payloadSize);
+  }
+
+  /**
+   * Send the data to receiver stream.
+   */
+  for (const auto &recvConfig : dynS->sendToConfigs) {
+    LLC_SLICE_DPRINTF(
+        sliceId,
+        "Send LoadComputeValue to ReceiverStream: %s Data %s PayloadSize %d.\n",
+        recvConfig->dynamicId, loadValueBlock, payloadSize);
+    this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, recvConfig,
+                               payloadSize);
+  }
   slice->setLoadComputeValueSent();
 }
 

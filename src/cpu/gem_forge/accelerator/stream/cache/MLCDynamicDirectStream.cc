@@ -40,15 +40,42 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
     dynIS->setBaseStream(this);
   }
 
-  // Initialize the buffer for some slices.
-  // Since the LLC is bounded by the credit, it's sufficient to only check
-  // hasOverflowed() at MLC level.
+  /**
+   * Initialize the buffer for some slices.
+   * Notice that we should enforce the constraint that receiver streams should
+   * at least initialize these elements, similar to what we did in
+   * sendCreditToLLC().
+   *
+   * However, so far the initialization happens out-of-order,
+   * This causes problem when the sender is very small, e.g. 1 byte.
+   * So we limit the maxNumSlicesPerSegment for these streams.
+   */
+  if (!this->sendToConfigs.empty()) {
+    auto S = this->getStaticStream();
+    auto memElementSize = S->getMemElementSize();
+    auto maxRatio = 1;
+    for (const auto &sendToConfig : this->sendToConfigs) {
+      auto sendToMemElementSize = sendToConfig->stream->getMemElementSize();
+      auto ratio = sendToMemElementSize / memElementSize;
+      maxRatio = std::max(maxRatio, ratio);
+    }
+    auto originalMaxNumSlicesPerSegment = this->maxNumSlicesPerSegment;
+    if (maxRatio * 2 >= this->maxNumSlicesPerSegment) {
+      this->maxNumSlicesPerSegment = 2;
+    } else {
+      this->maxNumSlicesPerSegment /= maxRatio;
+    }
+    MLC_S_DPRINTF(
+        this->getDynamicStreamId(),
+        "Adjust MaxNumSlicesPerSegment from %llu as MaxRatio %llu to %llu.\n",
+        originalMaxNumSlicesPerSegment, maxRatio, this->maxNumSlicesPerSegment);
+  }
   while (this->tailSliceIdx < this->maxNumSlicesPerSegment &&
          !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();
   }
 
-  // Intialize the possible two segments.
+  // Intialize the first segment.
   this->pushNewLLCSegment(_configData->initPAddr, this->headSliceIdx,
                           this->slices.front().sliceId);
   this->llcSegments.front().state = LLCSegmentPosition::State::CREDIT_SENT;
@@ -207,22 +234,45 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
      * Additional check for SendTo relationship:
      * We want to make sure that the receiver has the element initialized.
      * If not, we schedule an event to check next cycle.
+     * We should also check receiver from my indirect streams.
      */
     const auto tailElementIdx = segment.endSliceId.getStartIdx() - 1;
+    CacheStreamConfigureDataPtr waitForReceiver = nullptr;
     for (const auto &sendToConfig : this->sendToConfigs) {
       auto llcReceiverS =
           LLCDynamicStream::getLLCStream(sendToConfig->dynamicId);
       if (llcReceiverS) {
         if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
-          // Recheck next cycle.
-          MLC_S_DPRINTF(this->getDynamicStreamId(),
-                        "Delayed sending credit to LLC as receiver %s has not "
-                        "initialized element %llu.\n",
-                        sendToConfig->dynamicId, tailElementIdx);
-          this->scheduleAdvanceStream();
-          return;
+          waitForReceiver = sendToConfig;
+          break;
         }
       }
+    }
+    if (!waitForReceiver) {
+      for (auto dynIS : this->indirectStreams) {
+        for (const auto &sendToConfig : dynIS->getSendToConfigs()) {
+          auto llcReceiverS =
+              LLCDynamicStream::getLLCStream(sendToConfig->dynamicId);
+          if (llcReceiverS) {
+            if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
+              waitForReceiver = sendToConfig;
+              break;
+            }
+          }
+        }
+        if (waitForReceiver) {
+          break;
+        }
+      }
+    }
+    if (waitForReceiver) {
+      // Recheck next cycle.
+      MLC_S_DPRINTF(this->getDynamicStreamId(),
+                    "Delayed sending credit to LLC as receiver %s has not "
+                    "initialized element %llu.\n",
+                    waitForReceiver->dynamicId, tailElementIdx);
+      this->scheduleAdvanceStream();
+      return;
     }
     this->sendCreditToLLC(segment);
     segment.state = LLCSegmentPosition::State::CREDIT_SENT;

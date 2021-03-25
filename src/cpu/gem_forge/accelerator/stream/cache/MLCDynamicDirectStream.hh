@@ -41,7 +41,7 @@ public:
 protected:
   SlicedDynamicStream slicedStream;
 
-  const uint64_t maxNumSlicesPerSegment;
+  uint64_t maxNumSlicesPerSegment;
   static constexpr uint64_t bufferToSegmentRatio = 4;
 
   /**

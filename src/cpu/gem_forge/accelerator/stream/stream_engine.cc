@@ -871,7 +871,8 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
        * Special case for not floated LoadComputeStream, where we should check
        * for LoadComputeValue.
        */
-      if (!(element->isAddrReady() && element->checkLoadComputeValueReady())) {
+      if (!(element->isAddrReady() &&
+            element->checkLoadComputeValueReady(true /* CheckedByCore */))) {
         S_ELEMENT_DPRINTF(
             element, "NotReady: AddrReady %d LoadComputeValueReady %d.\n",
             element->isAddrReady(), element->isUpdateValueReady());
@@ -1125,12 +1126,12 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
         return false;
       }
       if (dynS.offloadedToCache &&
-          dynS.cacheAcked + 1 < dynS.FIFOIdx.entryIdx) {
+          dynS.cacheAckedElements.size() + 1 < dynS.FIFOIdx.entryIdx) {
         // We are not ack the LastElement.
         DYN_S_DPRINTF(
             dynS.dynamicStreamId,
             "Cannot execute StreamEnd. Cache acked %llu, need %llu.\n",
-            dynS.cacheAcked, dynS.FIFOIdx.entryIdx);
+            dynS.cacheAckedElements.size(), dynS.FIFOIdx.entryIdx);
         return false;
       }
     }

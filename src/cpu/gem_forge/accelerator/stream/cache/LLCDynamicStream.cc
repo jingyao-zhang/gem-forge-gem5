@@ -386,16 +386,22 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
       element->baseElements.emplace_back(
           this->baseStream->idxToElementMap.at(baseElementIdx));
     } else {
-      // This is from another bank, we just create the element here.
-      // So far we just support remote affine streams.
+      /**
+       * This is from another bank, we just create the element here.
+       * If this is a remote affine stream, we directly get the ElementVAddr.
+       * Otherwise, we set the vaddr to 0 and delay setting it in
+       * recvStreamForwawrd().
+       */
+      Addr baseElementVaddr = 0;
       auto linearBaseAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
           baseConfig->addrGenCallback);
-      assert(linearBaseAddrGen && "Only support remote affine streams.");
-      auto baseElementVaddr =
-          baseConfig->addrGenCallback
-              ->genAddr(baseElementIdx, baseConfig->addrGenFormalParams,
-                        getStreamValueFail)
-              .front();
+      if (linearBaseAddrGen) {
+        baseElementVaddr =
+            baseConfig->addrGenCallback
+                ->genAddr(baseElementIdx, baseConfig->addrGenFormalParams,
+                          getStreamValueFail)
+                .front();
+      }
 
       element->baseElements.emplace_back(std::make_shared<LLCStreamElement>(
           baseS, this->mlcController, baseDynStreamId, baseElementIdx,
@@ -484,7 +490,14 @@ void LLCDynamicStream::recvStreamForward(LLCStreamEngine *se,
   bool foundBaseElement = false;
   for (auto &baseElement : recvElement->baseElements) {
     if (baseElement->dynStreamId == sliceId.getDynStreamId()) {
-      // Found the one.
+      /**
+       * Found the base element to hold the data.
+       * If the BaseStream is IndirectStream, we copy the ElementVaddr from the
+       * slice.
+       */
+      if (baseElement->vaddr == 0) {
+        baseElement->vaddr = sliceId.vaddr;
+      }
       baseElement->extractElementDataFromSlice(S->getCPUDelegator(), sliceId,
                                                dataBlk);
       foundBaseElement = true;
@@ -649,9 +662,11 @@ void LLCDynamicStream::allocateLLCStream(
       ISConfig->initCreditedIdx = config->initCreditedIdx;
       auto IS = new LLCDynamicStream(mlcController, llcController, ISConfig);
       IS->setBaseStream(S);
-      if (!ISConfig->depEdges.empty()) {
-        panic("Two-Level Indirect LLCStream is not supported: %s.",
-              IS->getDynamicStreamId());
+      for (const auto &ISDepEdge : ISConfig->depEdges) {
+        if (ISDepEdge.type == CacheStreamConfigureData::DepEdge::UsedBy) {
+          panic("Two-Level Indirect LLCStream is not supported: %s.",
+                IS->getDynamicStreamId());
+        }
       }
     }
   }

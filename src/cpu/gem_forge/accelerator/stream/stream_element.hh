@@ -310,7 +310,7 @@ struct StreamElement {
   bool checkUpdateValueReady() const;
   const uint8_t *getUpdateValuePtrByStreamId(StaticId streamId) const;
   bool isLoadComputeValueReady() const { return this->loadComputeValueReady; }
-  bool checkLoadComputeValueReady() const;
+  bool checkLoadComputeValueReady(bool checkedByCore) const;
   void getLoadComputeValue(uint8_t *val, int valLen) const;
   void receiveComputeResult(const StreamValue &result);
 
