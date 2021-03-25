@@ -425,8 +425,10 @@ bool StreamEngine::canDispatchStreamStep(uint64_t stepStreamId) const {
       auto element = dynS.getFirstUnsteppedElement();
       assert(element && "We should have unstepped element.");
       if (!element->next) {
-        S_ELEMENT_DPRINTF(element, "Cannot dispatch Step for ReductionStream: "
-                                   "Missing next UnsteppedElement.\n");
+        S_ELEMENT_DPRINTF(element,
+                          "Cannot dispatch Step for ReductionStream: "
+                          "Missing next UnsteppedElement, TotalTripCount %d.\n",
+                          dynS.getTotalTripCount());
         return false;
       }
     }
@@ -1876,12 +1878,14 @@ void StreamEngine::allocateElements() {
     }
     if (!allocatingStepRootDynS) {
       // Failed to find an allocating DynStream.
-      S_DPRINTF(stepRootStream, "No Allocating DynStream.\n");
+      S_DPRINTF(stepRootStream,
+                "No Allocating DynStream, AllocSize %d MaxSize %d.\n",
+                stepRootStream->getAllocSize(), stepRootStream->maxSize);
       continue;
     }
-    // DYN_S_DPRINTF(allocatingStepRootDynS->dynamicStreamId,
-    //               "Allocating StepRootDynS AllocSize %d MaxSize %d.\n",
-    //               stepRootStream->getAllocSize(), stepRootStream->maxSize);
+    DYN_S_DPRINTF(allocatingStepRootDynS->dynamicStreamId,
+                  "Allocating StepRootDynS AllocSize %d MaxSize %d.\n",
+                  stepRootStream->getAllocSize(), stepRootStream->maxSize);
 
     /**
      * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
@@ -1907,8 +1911,15 @@ void StreamEngine::allocateElements() {
       }
     }
 
-    for (size_t targetSize = 1;
-         targetSize <= maxAllocSize && this->hasFreeElement(); ++targetSize) {
+    /**
+     * We should try to limit maximum allocation per cycle cause I still see
+     * some deadlock when one stream used all the FIFO entries orz.
+     */
+    const size_t MaxAllocationPerCycle = 4;
+    for (size_t targetSize = 1, allocated = 0;
+         targetSize <= maxAllocSize && this->hasFreeElement() &&
+         allocated < MaxAllocationPerCycle;
+         ++targetSize) {
       for (auto S : stepStreams) {
         assert(S->isConfigured() && "Try to allocate for unconfigured stream.");
         if (!this->hasFreeElement()) {
@@ -1936,6 +1947,7 @@ void StreamEngine::allocateElements() {
           }
         }
         this->allocateElement(dynS);
+        allocated++;
       }
     }
   }

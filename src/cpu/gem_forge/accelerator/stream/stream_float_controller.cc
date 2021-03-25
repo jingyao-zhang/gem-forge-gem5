@@ -573,6 +573,9 @@ void StreamFloatController::floatReductionStreams(const Args &args) {
       backBaseStreamConfigs.emplace_back(floatedMap.at(backBaseS));
     }
     if (!allBackBaseStreamsAreAffineAndFloated) {
+      StreamFloatPolicy::logStream(S)
+          << "[Not Float] as BackBaseStream is indirect or not floated.\n"
+          << std::flush;
       continue;
     }
     if (backBaseStreamConfigs.empty()) {
@@ -623,6 +626,10 @@ void StreamFloatController::floatReductionStreams(const Args &args) {
     baseConfigWithMostSenders->addUsedBy(reductionConfig);
     S_DPRINTF(S, "ReductionStream associated with %s, existing sender %d.\n",
               baseConfigWithMostSenders->dynamicId, maxSenders);
+    StreamFloatPolicy::logStream(S)
+        << "[Float] as Reduction with " << baseConfigWithMostSenders->dynamicId
+        << ", existing # sender " << maxSenders << ".\n"
+        << std::flush;
     for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
       if (i == baseConfigIdxWithMostSenders) {
         continue;

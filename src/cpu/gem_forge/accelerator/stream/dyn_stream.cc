@@ -262,7 +262,9 @@ bool DynamicStream::shouldCoreSEIssue() const {
     // Check that dependent dynS all offloaded to cache.
     for (auto depS : this->stream->addrDepStreams) {
       const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
-      if (!depDynS.offloadedToCache) {
+      // If the AddrDepStream issues, then we have to issue to compute the
+      // address.
+      if (depDynS.shouldCoreSEIssue()) {
         return true;
       }
     }
