@@ -67,6 +67,15 @@ message ExecFuncInfo {
   }
   repeated FuncArg args = 2;
   DataType type = 3;
+  /**
+   * Whether this function is just some simple computation.
+   * Mainly used for distributed reduction.
+   */
+  ComputeOp compute_op = 4;
+  enum ComputeOp {
+    UNKNOWN = 0;
+    FLOAT_ADD = 1;
+  }
 }
 
 message StaticStreamComputeInfo {
@@ -137,6 +146,7 @@ message StaticStreamInfo {
     IN_LOOP_REMAINDER_OR_EPILOGUE = 11;
     IV_NO_MEM_DEPENDENT = 12;
     USER_NOT_OUT_MOST = 13;
+    IN_LOOP_REDUCTION_USER = 14;
     // Not Qualified Reason.
     BASE_STREAM_NOT_QUALIFIED = 20;
     NO_STATIC_MAPPING = 21;
