@@ -103,10 +103,19 @@ void StreamRangeSyncController::checkAliasBetweenRanges(
      * false positive, I just check the vaddr range.
      */
     if (currentRange->vaddrRange.hasOverlap(newRange->vaddrRange)) {
-      DYN_S_PANIC(
-          dynS->dynamicStreamId,
-          "[CoreRange] Alias between remote vaddr ranges \n %s \n and %s\n",
-          *currentRange, *newRange);
+      /**
+       * We keep search in the each individual streams.
+       */
+      for (const auto &currentSubRange : currentRange->subRanges) {
+        for (const auto &newSubRange : newRange->subRanges) {
+          if (currentSubRange->vaddrRange.hasOverlap(newSubRange->vaddrRange)) {
+            DYN_S_PANIC(dynS->dynamicStreamId,
+                        "[CoreRange] Alias between remote vaddr ranges \n %s "
+                        "\nand %s\n",
+                        *currentRange, *newRange);
+          }
+        }
+      }
     }
   }
 }

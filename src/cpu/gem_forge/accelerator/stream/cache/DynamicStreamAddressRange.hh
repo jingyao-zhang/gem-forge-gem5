@@ -52,9 +52,7 @@ struct DynamicStreamAddressRange {
 
   DynamicStreamAddressRange(const DynamicStreamElementRangeId &_elementRange,
                             const AddressRange &_vaddrRange,
-                            const AddressRange &_paddrRange)
-      : elementRange(_elementRange), vaddrRange(_vaddrRange),
-        paddrRange(_paddrRange) {}
+                            const AddressRange &_paddrRange);
 
   void addRange(DynamicStreamAddressRangePtr &range);
 
