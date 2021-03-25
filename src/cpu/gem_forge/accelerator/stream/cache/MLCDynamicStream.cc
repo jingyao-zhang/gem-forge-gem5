@@ -125,6 +125,7 @@ void MLCDynamicStream::popStream() {
    * We only do this for direct streams.
    */
   uint64_t llcProgressSliceIdx = UINT64_MAX;
+  uint64_t llcProgressElementIdx = UINT64_MAX;
   if (this->controller->isStreamIdeaSyncEnabled() &&
       this->getStaticStream()->isDirectMemStream() &&
       !this->shouldRangeSync()) {
@@ -132,7 +133,8 @@ void MLCDynamicStream::popStream() {
             LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
       if (llcDynS->getNextAllocSliceIdx() < llcProgressSliceIdx) {
         llcProgressSliceIdx = llcDynS->getNextAllocSliceIdx();
-        MLC_S_DPRINTF(this->getDynamicStreamId(), "Smaller LLCProgress %llu.\n",
+        MLC_S_DPRINTF(this->getDynamicStreamId(),
+                      "Smaller LLCProgressSliceIdx %llu.\n",
                       llcProgressSliceIdx);
       }
     } else {
@@ -143,16 +145,15 @@ void MLCDynamicStream::popStream() {
       if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
         if (auto llcDynS =
                 LLCDynamicStream::getLLCStream(depEdge.data->dynamicId)) {
-          if (llcDynS->getNextAllocSliceIdx() < llcProgressSliceIdx) {
-            llcProgressSliceIdx = llcDynS->getNextAllocSliceIdx();
+          if (llcDynS->getNextInitElementIdx() < llcProgressElementIdx) {
+            llcProgressElementIdx = llcDynS->getNextInitElementIdx();
             MLC_S_DPRINTF(this->getDynamicStreamId(),
-                          "Smaller SendTo %s LLCProgress %llu.\n",
-                          depEdge.data->dynamicId.staticId,
-                          llcProgressSliceIdx);
+                          "Smaller SendTo %s LLCProgressElementIdx %llu.\n",
+                          depEdge.data->dynamicId, llcProgressElementIdx);
           }
         } else {
           // The LLC stream has not been created.
-          llcProgressSliceIdx = 0;
+          llcProgressElementIdx = 0;
         }
       }
     }
@@ -169,7 +170,8 @@ void MLCDynamicStream::popStream() {
 
       auto mlcHeadSliceIdx = this->tailSliceIdx - this->slices.size();
 
-      if (mlcHeadSliceIdx > llcProgressSliceIdx) {
+      if (mlcHeadSliceIdx > llcProgressSliceIdx ||
+          slice.sliceId.getEndIdx() > llcProgressElementIdx) {
         MLC_SLICE_DPRINTF(
             slice.sliceId,
             "Delayed poping for IdealSync between MLC %llu and LLC %llu.\n",

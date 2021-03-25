@@ -361,6 +361,7 @@ private:
 
 public:
   void addCommitMessage(const DynamicStreamSliceId &sliceId);
+  uint64_t getNextInitElementIdx() const { return this->nextInitElementIdx; }
   uint64_t getNextCommitElementIdx() const {
     return this->nextCommitElementIdx;
   }
