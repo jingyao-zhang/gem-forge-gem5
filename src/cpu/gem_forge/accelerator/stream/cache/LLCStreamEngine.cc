@@ -1320,18 +1320,19 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
   sliceId.getEndIdx() = elementIdx + 1;
   auto elementSize = dynIS->getMemElementSize();
   Addr elementVAddr = element->vaddr;
-  LLC_SLICE_DPRINTF(sliceId, "Issue indirect VAddr %#x.\n", elementVAddr);
+  LLC_SLICE_DPRINTF(sliceId, "Issue IndirectLoad VAddr %#x.\n", elementVAddr);
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
   auto IS = dynIS->getStaticStream();
+  auto dynCoreIS = IS->getDynamicStream(dynIS->getDynamicStreamId());
 
-  auto reqType = CoherenceRequestType_GETU;
-  if (!IS->hasCoreUser()) {
-    reqType = CoherenceRequestType_GETH;
-  } else if (IS->isLoadComputeStream()) {
+  auto reqType = CoherenceRequestType_GETH;
+  if (dynCoreIS && dynCoreIS->shouldCoreSEIssue()) {
     // For LoadComputeStream, we issue GETH and send back the compute result.
-    reqType = CoherenceRequestType_GETH;
+    if (!IS->isLoadComputeStream()) {
+      reqType = CoherenceRequestType_GETU;
+    }
   }
 
   assert(!dynIS->isPseudoOffload() &&
@@ -1389,7 +1390,8 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
   sliceId.getEndIdx() = elementIdx + 1;
   auto elementSize = dynIS->getMemElementSize();
   Addr elementVAddr = element->vaddr;
-  LLC_SLICE_DPRINTF(sliceId, "Issue indirect VAddr %#x.\n", elementVAddr);
+  LLC_SLICE_DPRINTF(sliceId, "Issue IndirectStore/Atomic VAddr %#x.\n",
+                    elementVAddr);
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
