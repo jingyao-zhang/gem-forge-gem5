@@ -682,11 +682,18 @@ void MLCDynamicDirectStream::checkCoreCommitProgress() {
     return;
   }
   auto firstCoreElement = dynS->getFirstElement();
-  if (!firstCoreElement) {
-    MLC_S_PANIC(this->getDynamicStreamId(),
-                "Failed to find first core element.");
+  uint64_t firstCoreElementIdx = 0;
+  if (firstCoreElement) {
+    firstCoreElementIdx = firstCoreElement->FIFOIdx.entryIdx;
+  } else {
+    // The core may not yet allocate new elements, we just take the next
+    // FIFOIdx.
+    firstCoreElementIdx = dynS->FIFOIdx.entryIdx;
+    MLC_S_DPRINTF_(
+        StreamRangeSync, this->getDynamicStreamId(),
+        "Failed to find first core element, use DynS->FIFOIdx.entryIdx = %llu.",
+        firstCoreElementIdx);
   }
-  auto firstCoreElementIdx = firstCoreElement->FIFOIdx.entryIdx;
   for (auto &seg : this->llcSegments) {
     if (seg.state == LLCSegmentPosition::State::ALLOCATED) {
       // We haven't even sent out the credit for this segment.
