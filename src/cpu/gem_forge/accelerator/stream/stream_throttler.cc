@@ -34,7 +34,7 @@ void StreamThrottler::throttleStream(StreamElement *element) {
     return;
   }
   if (element->FIFOIdx.entryIdx < S->maxSize) {
-    // Do not throttle for the first elements.
+    // Do not throttle for the first maxSize elements.
     return;
   }
   if (element->valueReadyCycle == 0 || element->firstValueCheckCycle == 0) {
@@ -151,6 +151,36 @@ void StreamThrottler::doThrottling(StreamElement *element) {
 
   S_ELEMENT_DPRINTF_(StreamThrottle, element, "[Throttle] Do throttling.\n");
 
+  /**
+   * There is no point throttling more than our BackBaseStream. This is the case
+   * for reduction streams. Also as a huristic, limit it to maximum 8 elements.
+   */
+  for (auto backBaseS : S->backBaseStreams) {
+    if (backBaseS->maxSize < S->maxSize) {
+      S_ELEMENT_DPRINTF_(StreamThrottle, element,
+                         "[Not Throttle] MyMaxSize %d >= %d of BackBaseS %s.\n",
+                         S->maxSize, backBaseS->maxSize,
+                         backBaseS->getStreamName());
+      return;
+    }
+  }
+  int MaxSizeForReductionStream = 8;
+  if (S->isReduction() && S->maxSize >= MaxSizeForReductionStream) {
+    S_ELEMENT_DPRINTF_(
+        StreamThrottle, element,
+        "[Not Throttle] MyMaxSize %d >= %d MaxSizeForReductionStream.\n",
+        S->maxSize, MaxSizeForReductionStream);
+    return;
+  }
+  int MaxSizeForOuterLoopStream = 4;
+  if (!S->getIsInnerMostLoop() && S->maxSize >= MaxSizeForReductionStream) {
+    S_ELEMENT_DPRINTF_(
+        StreamThrottle, element,
+        "[Not Throttle] MyMaxSize %d >= %d MaxSizeForOuterLoopStream.\n",
+        S->maxSize, MaxSizeForOuterLoopStream);
+    return;
+  }
+
   // * AssignedEntries.
   auto currentAliveStreams = 0;
   auto assignedEntries = 0;
@@ -199,7 +229,7 @@ void StreamThrottler::doThrottling(StreamElement *element) {
 
   S_ELEMENT_DPRINTF(
       element,
-      "[Throttle] +%d AssignedEntries %d AssignedBytes %d "
+      "[Throttle] MaxSize %d + %d AssignedEntries %d AssignedBytes %d "
       "UnassignedEntries %d "
       "UnassignedBytes %d "
       "BasicEntries %d "
@@ -207,26 +237,27 @@ void StreamThrottler::doThrottling(StreamElement *element) {
       "TotalIncrementEntries %d TotalIncrementBytes %d "
       "CurrentAliveStreams %d "
       "TotalAliveStreams %d.\n",
-      incrementStep, assignedEntries, assignedBytes, unassignedEntries,
-      unassignedBytes, basicEntries, assignedBasicEntries, availableEntries,
-      upperBoundEntries, totalIncrementEntries, totalIncrementBytes,
-      currentAliveStreams, totalAliveStreams);
+      S->maxSize, incrementStep, assignedEntries, assignedBytes,
+      unassignedEntries, unassignedBytes, basicEntries, assignedBasicEntries,
+      availableEntries, upperBoundEntries, totalIncrementEntries,
+      totalIncrementBytes, currentAliveStreams, totalAliveStreams);
 
   if (availableEntries < totalIncrementEntries) {
-    S_ELEMENT_DPRINTF(element, "Not Throttle: Not enough available entries.\n");
+    S_ELEMENT_DPRINTF(element,
+                      "[Not Throttle]: Not enough available entries.\n");
     return;
   } else if (totalAliveStreams * this->se->defaultRunAheadLength +
                  streamList.size() * (stepRootStream->maxSize + incrementStep -
                                       this->se->defaultRunAheadLength) >=
              this->se->totalRunAheadLength) {
-    S_ELEMENT_DPRINTF(element, "Not Throttle: Reserve for other streams.\n");
+    S_ELEMENT_DPRINTF(element, "[Not Throttle]: Reserve for other streams.\n");
     return;
   } else if (stepRootStream->maxSize + incrementStep > upperBoundEntries) {
-    S_ELEMENT_DPRINTF(element, "Not Throttle: Upperbound overflow.\n");
+    S_ELEMENT_DPRINTF(element, "[Not Throttle]: Upperbound overflow.\n");
     return;
   } else if (assignedBytes + totalIncrementBytes >
              this->se->totalRunAheadBytes) {
-    S_ELEMENT_DPRINTF(element, "Not Throttle: Total bytes overflow.\n");
+    S_ELEMENT_DPRINTF(element, "[Not Throttle]: Total bytes overflow.\n");
     return;
   }
 
