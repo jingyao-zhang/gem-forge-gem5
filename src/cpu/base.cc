@@ -121,9 +121,10 @@ CPUProgressEvent::process()
 #ifndef NDEBUG
     double ipc = double(temp - lastNumInst) / (_interval / cpu->clockPeriod());
 
-    DPRINTFN("%s progress event, total committed:%i, progress insts committed: "
-             "%lli, IPC: %0.8d\n", cpu->name(), temp, temp - lastNumInst,
-             ipc);
+    DPRINTFN("%s total committed:%i, progress insts committed: "
+             "%lli, IPC: %0.8d, work item: started %d completed %d\n", 
+             cpu->name(), temp, temp - lastNumInst, ipc,
+             cpu->numWorkItemsStarted.value(), cpu->numWorkItemsCompleted.value());
     ipc = 0.0;
 #else
     cprintf("%lli: %s progress event, total committed:%i, progress insts "
