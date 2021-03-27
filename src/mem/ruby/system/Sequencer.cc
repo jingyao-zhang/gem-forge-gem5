@@ -669,6 +669,20 @@ Sequencer::empty() const
 RequestStatus
 Sequencer::makeRequest(PacketPtr pkt)
 {
+    /**
+     * ! Sean: StreamAwareCache.
+     * Check if this is a StreamConfig/EndReq, which should send immediately.
+     */
+    if (pkt->cmd == MemCmd::Command::StreamConfigReq) {
+        issueRequest(pkt, RubyRequestType_StreamConfig);
+        // Simply return success now.
+        return RequestStatus_Issued;
+    } else if (pkt->cmd == MemCmd::Command::StreamEndReq) {
+        issueRequest(pkt, RubyRequestType_StreamEnd);
+        // Simply return success now.
+        return RequestStatus_Issued;
+    }
+
     bool isInstFetch = pkt->req->isInstFetch();
     if (isInstFetch &&
         m_outstanding_inst_count >= m_max_outstanding_inst_requests) {
@@ -680,20 +694,6 @@ Sequencer::makeRequest(PacketPtr pkt)
 
     RubyRequestType primary_type = RubyRequestType_NULL;
     RubyRequestType secondary_type = RubyRequestType_NULL;
-
-    /**
-     * ! Sean: StreamAwareCache.
-     * Check if this is a StreamConfigReq.
-     */
-    if (pkt->cmd == MemCmd::Command::StreamConfigReq) {
-        issueRequest(pkt, RubyRequestType_StreamConfig);
-        // Simply return success now.
-        return RequestStatus_Issued;
-    } else if (pkt->cmd == MemCmd::Command::StreamEndReq) {
-        issueRequest(pkt, RubyRequestType_StreamEnd);
-        // Simply return success now.
-        return RequestStatus_Issued;
-    }
 
     if (pkt->isLLSC()) {
         // LL/SC instructions need to be handled carefully by the cache

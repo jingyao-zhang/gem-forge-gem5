@@ -46,6 +46,25 @@ bool GemForgeDcachePortImpl::sendTimingReqVirtual(PacketPtr pkt, bool isCore) {
     // Insert.
     this->blockedQueue.emplace(iter, pkt, isCore);
   } else {
+    /**
+     * Normally we just insert the request at the end.
+     * But some requests need to bypass the queue to avoid deadlock.
+     * For example a floated stream is rewinded, and port is already blocked by
+     * inflying requests. However, now the LLC SE may not sending responses,
+     * and MLC SE has no idea this stream is ended.
+     * Therefore, we bypass the queue for StreamConfig/End request, to ensure
+     * that streams are configured before ended.
+     */
+    if (pkt->cmd == MemCmd::Command::StreamConfigReq ||
+        pkt->cmd == MemCmd::Command::StreamEndReq) {
+      DPRINTF(GemForgeDcachePort,
+              "Bypass the queue for StreamConfig/EndReq.\n");
+      bool succeed = this->port->sendTimingReq(pkt);
+      if (!succeed) {
+        panic("StreamConfig/EndReq should always succeed.\n");
+      }
+      return true;
+    }
     // Simply insert at the end.
     DPRINTF(GemForgeDcachePort, "Insert at the end.\n");
     this->blockedQueue.emplace_back(pkt, isCore);
