@@ -117,6 +117,9 @@ public:
   bool getEnabledLoadFunc() const {
     return this->getLoadFuncInfo().name() != "";
   }
+  LLVM::TDG::ExecFuncInfo_ComputeOp getAddrFuncComputeOp() const {
+    return this->info.addr_func_info().compute_op();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -554,6 +557,7 @@ public:
   Get(const ExecFuncInfo &, LoadFuncInfo);
   Get(bool, EnabledStoreFunc);
   Get(bool, EnabledLoadFunc);
+  Get(::LLVM::TDG::ExecFuncInfo_ComputeOp, AddrFuncComputeOp);
   Is(MergedPredicated);
   Is(MergedLoadStoreDepStream);
 

@@ -58,6 +58,8 @@ def initializeStreamEngine(options):
         options.gem_forge_enable_stream_zero_compute_latency
     se.enableRangeSync =\
         options.gem_forge_enable_stream_range_sync
+    se.enableFloatIndirectReduction =\
+        options.gem_forge_enable_stream_float_indirect_reduction
 
     return se
 

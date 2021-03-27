@@ -656,18 +656,31 @@ void LLCDynamicStream::allocateLLCStream(
 
   // Check if we have indirect streams.
   for (const auto &edge : config->depEdges) {
-    if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-      auto &ISConfig = edge.data;
-      // Let's create an indirect stream.
-      ISConfig->initCreditedIdx = config->initCreditedIdx;
-      auto IS = new LLCDynamicStream(mlcController, llcController, ISConfig);
-      IS->setBaseStream(S);
-      for (const auto &ISDepEdge : ISConfig->depEdges) {
-        if (ISDepEdge.type == CacheStreamConfigureData::DepEdge::UsedBy) {
-          panic("Two-Level Indirect LLCStream is not supported: %s.",
-                IS->getDynamicStreamId());
-        }
+    if (edge.type != CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+      continue;
+    }
+    auto &ISConfig = edge.data;
+    // Let's create an indirect stream.
+    ISConfig->initCreditedIdx = config->initCreditedIdx;
+    auto IS = new LLCDynamicStream(mlcController, llcController, ISConfig);
+    IS->setBaseStream(S);
+    for (const auto &ISDepEdge : ISConfig->depEdges) {
+      if (ISDepEdge.type != CacheStreamConfigureData::DepEdge::UsedBy) {
+        continue;
       }
+      /**
+       * We don't support Two-Level Indirect LLCStream. However, the only
+       * exception is for IndirectRedcutionStream.
+       */
+      auto ISDepS = ISDepEdge.data->stream;
+      if (ISDepS->isReduction()) {
+        auto IIS =
+            new LLCDynamicStream(mlcController, llcController, ISDepEdge.data);
+        IIS->setBaseStream(IS);
+        continue;
+      }
+      panic("Two-Level Indirect LLCStream is not supported: %s.",
+            IS->getDynamicStreamId());
     }
   }
 

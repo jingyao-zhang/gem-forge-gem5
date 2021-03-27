@@ -310,12 +310,13 @@ void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
   if (!S->isStoreComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element = dynS->getElementPanic(idx, "RecvElementData");
-      if (element->isReady()) {
-        if (!element->hasFirstIndirectAtomicReqSeen()) {
-          LLC_SLICE_PANIC(sliceId, "Elements already ready.");
-        }
-        // This is just the second request for Atomic, no need to extract data.
+      if (element->hasFirstIndirectAtomicReqSeen()) {
+        // This is just the second request for IndirectAtomic.
+        // No need to extract data.
         continue;
+      }
+      if (element->isReady()) {
+        LLC_SLICE_PANIC(sliceId, "Elements already ready.");
       }
       element->extractElementDataFromSlice(
           dynS->getStaticStream()->getCPUDelegator(), sliceId, dataBlock);
@@ -466,7 +467,7 @@ void LLCStreamEngine::receiveStoreStreamData(
         LLCRubyStreamStore, sliceId,
         "StreamStore done with Element %llu, Slice vaddr %#x paddr %#x, "
         "SliceOffset %d OverlapSize %d Value %s.\n",
-        sliceId.vaddr, paddr, sliceOffset, overlapSize,
+        idx, sliceId.vaddr, paddr, sliceOffset, overlapSize,
         GemForgeUtils::dataToString(storeValue, overlapSize));
     this->performStore(paddr + sliceOffset, overlapSize, storeValue);
   }
@@ -586,7 +587,8 @@ void LLCStreamEngine::wakeup() {
 
   if (!this->streams.empty() || !this->migratingStreams.empty() ||
       !this->requestQueue.empty() || !this->incomingStreamDataQueue.empty() ||
-      !this->allocatedSlices.empty() ||
+      !this->allocatedSlices.empty() || !this->readyComputations.empty() ||
+      !this->inflyComputations.empty() ||
       this->commitController->hasStreamToCommit()) {
     this->scheduleEvent(Cycles(1));
   }
@@ -1320,7 +1322,6 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
   sliceId.getEndIdx() = elementIdx + 1;
   auto elementSize = dynIS->getMemElementSize();
   Addr elementVAddr = element->vaddr;
-  LLC_SLICE_DPRINTF(sliceId, "Issue IndirectLoad VAddr %#x.\n", elementVAddr);
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
@@ -1334,6 +1335,13 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
       reqType = CoherenceRequestType_GETU;
     }
   }
+  LLC_SLICE_DPRINTF(sliceId,
+                    "Issue IndirectLoad %s VAddr %#x CoreDynS %d "
+                    "ShouldCoreSEIssue %d IsLoadCompute %d.\n",
+                    CoherenceRequestType_to_string(reqType), elementVAddr,
+                    dynCoreIS != nullptr,
+                    dynCoreIS ? dynCoreIS->shouldCoreSEIssue() : -1,
+                    IS->isLoadComputeStream());
 
   assert(!dynIS->isPseudoOffload() &&
          "Indirect stream should never be PseudoOffload.");
@@ -1928,20 +1936,48 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
                       recvDynId);
     return;
   }
-  // Search for receiver in myself and my indirect streams.
+  /**
+   * Normally we search for the receiver in myself and my indirect stream.
+   * However, there is a special case: I am the sender!
+   * This is used so far to implement IndirectReductionS that dependent both
+   * on the BackBaseIndirectS and BackBaseDirectS:
+   *
+   * BaseBaseDirectS -> BackBaseIndirectS -> IndirectReductionS.
+   *  |                                              |
+   *  ----------------------->>>---------------------
+   *
+   * In such case, we only search in my Two-Level IndirectS...
+   */
   bool foundReceiver = false;
-  if (dynS->isBasedOn(sliceId.getDynStreamId())) {
-    foundReceiver = true;
-    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-      dynS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
-    }
-  }
-
-  for (auto dynIS : dynS->getIndStreams()) {
-    if (dynIS->isBasedOn(sliceId.getDynStreamId())) {
+  if (sliceId.getDynStreamId() != dynS->getDynamicStreamId()) {
+    // Search for receiver in myself and my indirect streams.
+    if (dynS->isBasedOn(sliceId.getDynStreamId())) {
       foundReceiver = true;
       for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-        dynIS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
+        dynS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
+      }
+    }
+
+    for (auto dynIS : dynS->getIndStreams()) {
+      if (dynIS->isBasedOn(sliceId.getDynStreamId())) {
+        foundReceiver = true;
+        for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx();
+             ++idx) {
+          dynIS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
+        }
+      }
+    }
+  } else {
+    // Sender is myself. Search for Two-Level Indirection.
+    for (auto dynIS : dynS->getIndStreams()) {
+      for (auto dynIIS : dynIS->getIndStreams()) {
+        if (dynIIS->isBasedOn(sliceId.getDynStreamId())) {
+          foundReceiver = true;
+          for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx();
+               ++idx) {
+            dynIIS->recvStreamForward(this, idx, sliceId, req.m_DataBlk);
+          }
+        }
       }
     }
   }
@@ -2000,7 +2036,14 @@ void LLCStreamEngine::triggerIndirectElement(LLCDynamicStreamPtr stream,
     //       .first->second.emplace_back(IS, element);
     // }
     // Not predicated, add to readyElements.
-    assert(stream->baseStream == nullptr);
+    if (stream->baseStream) {
+      // The only type of two-level indirection is IndirectReduction.
+      if (!IS->getStaticStream()->isReduction()) {
+        LLC_S_PANIC(
+            IS->getDynamicStreamId(),
+            "Does not support Two-Level Indirection other than Reduction.");
+      }
+    }
     LLC_S_DPRINTF(IS->getDynamicStreamId(),
                   "Check if element %llu BaseElementsReady %d.\n",
                   indirectElement->idx,

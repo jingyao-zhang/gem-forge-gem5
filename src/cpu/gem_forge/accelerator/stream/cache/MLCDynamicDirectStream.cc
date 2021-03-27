@@ -235,10 +235,14 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
      * We want to make sure that the receiver has the element initialized.
      * If not, we schedule an event to check next cycle.
      * We should also check receiver from my indirect streams.
+     * Skip if the receiver is myself, which is used for Two-Level Indirection.
      */
     const auto tailElementIdx = segment.endSliceId.getStartIdx() - 1;
     CacheStreamConfigureDataPtr waitForReceiver = nullptr;
     for (const auto &sendToConfig : this->sendToConfigs) {
+      if (sendToConfig->dynamicId == this->getDynamicStreamId()) {
+        continue;
+      }
       auto llcReceiverS =
           LLCDynamicStream::getLLCStream(sendToConfig->dynamicId);
       if (llcReceiverS) {

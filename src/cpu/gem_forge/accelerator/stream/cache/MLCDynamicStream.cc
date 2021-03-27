@@ -65,7 +65,12 @@ MLCDynamicStream::~MLCDynamicStream() {
 }
 
 void MLCDynamicStream::endStream() {
+  MLC_S_DPRINTF(this->getDynamicStreamId(), "Ended with # slices %d.\n",
+                this->slices.size());
   for (auto &slice : this->slices) {
+    MLC_SLICE_DPRINTF(
+        slice.sliceId, "Ended with CoreStatus %s.\n",
+        MLCStreamSlice::convertCoreStatusToString(slice.coreStatus));
     if (slice.coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
       // Make a dummy response.
       // Ignore whether the data is ready.

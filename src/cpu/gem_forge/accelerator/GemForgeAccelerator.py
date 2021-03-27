@@ -96,6 +96,8 @@ class StreamEngine(GemForgeAccelerator):
         1, "How many computation can be started per cycle")
     enableRangeSync = Param.Bool(False,
         "Whether enable range-based synchronization between core and LLC SE.")
+    enableFloatIndirectReduction = Param.Bool(False,
+        "Whether the indirect reduction stream can be floated.")
 
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'
