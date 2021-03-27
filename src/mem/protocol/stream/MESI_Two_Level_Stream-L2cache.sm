@@ -1465,6 +1465,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     o_popIncomingResponseQueue;
   }
   transition(SS_M, Ack_all, M) {
+    ll_clearSharers;
     net_notifyStreamEngineFromTBE;
     s_deallocateTBE;
     o_popIncomingResponseQueue;
