@@ -667,9 +667,14 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
    * If this is a reduction stream, check for the initial value.
    */
   if (this->isReduction()) {
-    assert(!inputVec->empty() && "Missing initial value for reduction stream.");
-    dynS.initialValue = inputVec->front();
-    inputVec->erase(inputVec->begin());
+    if (this->getReduceFromZero()) {
+      dynS.initialValue.fill(0);
+    } else {
+      assert(!inputVec->empty() &&
+             "Missing initial value for reduction stream.");
+      dynS.initialValue = inputVec->front();
+      inputVec->erase(inputVec->begin());
+    }
   }
 }
 

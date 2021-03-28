@@ -120,6 +120,9 @@ public:
   LLVM::TDG::ExecFuncInfo_ComputeOp getAddrFuncComputeOp() const {
     return this->info.addr_func_info().compute_op();
   }
+  bool getReduceFromZero() const {
+    return this->info.static_info().compute_info().reduce_from_zero();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -557,6 +560,7 @@ public:
   Get(const ExecFuncInfo &, LoadFuncInfo);
   Get(bool, EnabledStoreFunc);
   Get(bool, EnabledLoadFunc);
+  Get(bool, ReduceFromZero);
   Get(::LLVM::TDG::ExecFuncInfo_ComputeOp, AddrFuncComputeOp);
   Is(MergedPredicated);
   Is(MergedLoadStoreDepStream);
