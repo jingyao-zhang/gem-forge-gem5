@@ -330,9 +330,9 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
    * 1. Check if there are aliased store stream.
    */
   auto S = dynS.stream;
-  if (S->aliasBaseStream->hasAliasedStoreStream) {
-    // Unless the alias store is myself.
-    if (S->aliasBaseStream->aliasedStreams.size() > 1) {
+  if (S->isLoadStream() && S->aliasBaseStream->hasAliasedStoreStream) {
+    // Unless I have been promoted as an UpdateStream.
+    if (!S->isUpdateStream()) {
       S_DPRINTF(S, "[Not Float] due to aliased store stream.\n");
       logStream(S) << "[Not Float] due to aliased store stream.\n"
                    << std::flush;

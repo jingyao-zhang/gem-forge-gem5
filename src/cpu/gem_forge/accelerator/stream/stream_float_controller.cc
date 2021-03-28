@@ -466,9 +466,17 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
         continue;
       }
     }
-    // Check if there is aliased store stream.
-    if (S->aliasBaseStream->hasAliasedStoreStream &&
-        S->aliasBaseStream->aliasedStreams.size() > 1) {
+    /**
+     * Check if there is an aliased StoreStream for this LoadStream, but
+     * is not promoted into an UpdateStream.
+     */
+    StreamFloatPolicy::logStream(S)
+        << "HasAliasedStore " << S->aliasBaseStream->hasAliasedStoreStream
+        << " IsLoad " << S->isLoadStream() << " IsUpdate "
+        << S->isUpdateStream() << ".\n"
+        << std::flush;
+    if (S->aliasBaseStream->hasAliasedStoreStream && S->isLoadStream() &&
+        !S->isUpdateStream()) {
       StreamFloatPolicy::logStream(S)
           << "[Not Float] due to aliased store stream.\n"
           << std::flush;
