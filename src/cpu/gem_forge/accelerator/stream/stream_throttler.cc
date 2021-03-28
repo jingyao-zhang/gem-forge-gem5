@@ -153,7 +153,7 @@ void StreamThrottler::doThrottling(StreamElement *element) {
 
   /**
    * There is no point throttling more than our BackBaseStream. This is the case
-   * for reduction streams. Also as a huristic, limit it to maximum 8 elements.
+   * for reduction streams.
    */
   for (auto backBaseS : S->backBaseStreams) {
     if (backBaseS->maxSize < S->maxSize) {
@@ -164,16 +164,8 @@ void StreamThrottler::doThrottling(StreamElement *element) {
       return;
     }
   }
-  int MaxSizeForReductionStream = 8;
-  if (S->isReduction() && S->maxSize >= MaxSizeForReductionStream) {
-    S_ELEMENT_DPRINTF_(
-        StreamThrottle, element,
-        "[Not Throttle] MyMaxSize %d >= %d MaxSizeForReductionStream.\n",
-        S->maxSize, MaxSizeForReductionStream);
-    return;
-  }
-  int MaxSizeForOuterLoopStream = 4;
-  if (!S->getIsInnerMostLoop() && S->maxSize >= MaxSizeForReductionStream) {
+  int MaxSizeForOuterLoopStream = 8;
+  if (!S->getIsInnerMostLoop() && S->maxSize >= MaxSizeForOuterLoopStream) {
     S_ELEMENT_DPRINTF_(
         StreamThrottle, element,
         "[Not Throttle] MyMaxSize %d >= %d MaxSizeForOuterLoopStream.\n",
