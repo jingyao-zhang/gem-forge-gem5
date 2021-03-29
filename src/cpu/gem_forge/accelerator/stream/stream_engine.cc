@@ -413,25 +413,25 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
 bool StreamEngine::canDispatchStreamStep(uint64_t stepStreamId) const {
   // We check two things:
   // 1. We have an unstepped element.
-  // 2. For reduction streams, we need two unstepped elements to ensure
-  //    that values are ready.
+  //// 2. For reduction streams, we need two unstepped elements to ensure
+  ////    that values are ready.
   auto stepStream = this->getStream(stepStreamId);
   for (auto S : this->getStepStreamList(stepStream)) {
     if (!S->hasUnsteppedElement()) {
       return false;
     }
-    if (S->isReduction()) {
-      auto &dynS = S->getLastDynamicStream();
-      auto element = dynS.getFirstUnsteppedElement();
-      assert(element && "We should have unstepped element.");
-      if (!element->next) {
-        S_ELEMENT_DPRINTF(element,
-                          "Cannot dispatch Step for ReductionStream: "
-                          "Missing next UnsteppedElement, TotalTripCount %d.\n",
-                          dynS.getTotalTripCount());
-        return false;
-      }
-    }
+    // if (S->isReduction()) {
+    //   auto &dynS = S->getLastDynamicStream();
+    //   auto element = dynS.getFirstUnsteppedElement();
+    //   assert(element && "We should have unstepped element.");
+    //   if (!element->next) {
+    //     S_ELEMENT_DPRINTF(element,
+    //                       "Cannot dispatch Step for ReductionStream: "
+    //                       "Missing next UnsteppedElement, TotalTripCount %d.\n",
+    //                       dynS.getTotalTripCount());
+    //     return false;
+    //   }
+    // }
   }
   return true;
 }
@@ -499,20 +499,14 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
     if (S->isReduction()) {
       auto stepNextElement = stepElement->next;
       if (!stepNextElement) {
-        if (stepElement->FIFOIdx.entryIdx == 0) {
-          /**
-           * Due to the allocation algorithm, the only case that StepNextElement
-           * is not allocated is at the first element, where we are waiting for
-           * StreamConfig to be executed.
-           */
-          S_ELEMENT_DPRINTF(stepElement,
-                            "[CanNotCommitStep] No Reduction NextElement.\n");
-          return false;
-        }
-        S_ELEMENT_PANIC(
-            stepElement,
-            "No StepNextElement for ReductionStream, TotalTripCount %llu.\n",
-            dynS.getTotalTripCount());
+        /**
+         * Due to the allocation algorithm, the only case that StepNextElement
+         * is not allocated is at the first element, where we are waiting for
+         * StreamConfig to be executed.
+         */
+        S_ELEMENT_DPRINTF(stepElement,
+                          "[CanNotCommitStep] No Reduction NextElement.\n");
+        return false;
       }
       if (dynS.offloadedToCache) {
         // // If offloaded, we avoid the core commit too fast, as that would
@@ -2415,6 +2409,8 @@ void StreamEngine::issueElement(StreamElement *element) {
      * 3. For offloaded AtomicComputeStream and LoadComputeStream, the value
      * is computed in the LLC, and we set NO_RUBY_BACK_STORE to prevent the
      * Sequencer overwrite the result.
+     * 4. For LoadStream with Update but not promoted into UpdateStreams, we
+     * issue this as ReadEx as the StoreStream is not configured.
      */
     Request::Flags flags;
     if (dynS->offloadedToCache) {
@@ -2435,6 +2431,10 @@ void StreamEngine::issueElement(StreamElement *element) {
           flags.set(Request::READ_EXCLUSIVE);
         }
       }
+    }
+    if (S->isLoadStream() && S->hasUpdate() && !S->isUpdateStream() &&
+        !dynS->offloadedToCache) {
+      flags.set(Request::READ_EXCLUSIVE);
     }
 
     // Allocate the book-keeping StreamMemAccess.
