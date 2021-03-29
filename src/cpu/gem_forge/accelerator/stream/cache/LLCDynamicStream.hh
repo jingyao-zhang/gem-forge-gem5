@@ -70,6 +70,10 @@ public:
     return this->configData->isOneIterationBehind;
   }
   bool isIndirect() const { return this->baseStream != nullptr; }
+  bool isIndirectReduction() const {
+    return this->isIndirect() && this->baseStream->isIndirect() &&
+           this->getStaticStream()->isReduction();
+  }
   bool shouldRangeSync() const { return this->configData->rangeSync; }
   bool isPredicated() const { return this->configData->isPredicated; }
   bool isPredicatedTrue() const {
@@ -175,8 +179,9 @@ public:
                          const DynamicStreamSliceId &sliceId,
                          const DataBlock &dataBlk);
 
-  StreamValue computeStreamElementValue(const LLCStreamElementPtr &element,
-                                        Cycles &latency);
+  bool hasComputation() const;
+  Cycles getEstimatedComputationLatency() const;
+  StreamValue computeStreamElementValue(const LLCStreamElementPtr &element);
   void completeComputation(LLCStreamEngine *se,
                            const LLCStreamElementPtr &element,
                            const StreamValue &value);
@@ -227,7 +232,9 @@ public:
   SlicedDynamicStream slicedStream;
 
   // Remember the last reduction element, avoid auto releasing.
-  LLCStreamElementPtr lastReductionElement;
+  LLCStreamElementPtr lastReductionElement = nullptr;
+  // Remember the last really computed indirect reduction element.
+  uint64_t lastComputedReductionElementIdx = 0;
 
   std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
 

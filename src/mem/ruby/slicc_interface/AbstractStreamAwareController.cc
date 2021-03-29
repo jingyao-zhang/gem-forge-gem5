@@ -65,6 +65,12 @@ void AbstractStreamAwareController::regStats() {
   m_statLLCMulticastStreamReq.name(name() + ".llcMulticastStreamRequests")
       .desc("number of llc multicast stream requests seen")
       .flags(Stats::nozero);
+  m_statScheduledComputation.name(name() + ".llcScheduledStreamComputation")
+      .desc("number of llc stream computation scheduled")
+      .flags(Stats::nozero);
+  m_statScheduledComputeMicroOps.name(name() + ".llcScheduledStreamComputeMicroOps")
+      .desc("number of llc stream computation microops scheduled")
+      .flags(Stats::nozero);
 
   // Register stats callback.
   Stats::registerResetCallback(

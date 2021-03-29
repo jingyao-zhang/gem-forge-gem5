@@ -66,6 +66,12 @@ public:
     assert(!this->computationScheduled && "Computation already scheduled.");
     this->computationScheduled = true;
   }
+  bool isComputationDone() const { return this->computationDone; }
+  void doneComputation() {
+    assert(this->isComputationScheduled() && "Computation done before scheduled.");
+    assert(!this->computationDone && "Computaion already done.");
+    this->computationDone = true;
+  }
 
   StreamValue getValue(int offset = 0, int size = sizeof(StreamValue)) const;
   uint8_t *getUInt8Ptr(int offset = 0);
@@ -129,9 +135,17 @@ public:
   }
   void setLoadComputeValue(const StreamValue &value);
 
+  const LLCStreamElementPtr &getPrevReductionElement() const {
+    return this->prevReductionElement;
+  }
+  void setPrevReductionElement(const LLCStreamElementPtr &element) {
+    this->prevReductionElement = element;
+  }
+
 private:
   int readyBytes;
   bool computationScheduled = false;
+  bool computationDone = false;
   static constexpr int MAX_SIZE = 128;
   std::array<uint64_t, MAX_SIZE> value;
 
@@ -165,6 +179,11 @@ private:
    */
   StreamValue loadComputeValue;
   bool loadComputeValueReady = false;
+
+  /**
+   * Explicitly remember the previous element for ReductionStream.
+   */
+  LLCStreamElementPtr prevReductionElement = nullptr;
 };
 
 #endif

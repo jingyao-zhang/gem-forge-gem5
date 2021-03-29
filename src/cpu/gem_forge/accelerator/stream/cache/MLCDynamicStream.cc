@@ -142,6 +142,28 @@ void MLCDynamicStream::popStream() {
                       "Smaller LLCProgressSliceIdx %llu.\n",
                       llcProgressSliceIdx);
       }
+      /**
+       * We are also going to limit llcProgressElementIdx to the unreleased
+       * IndirectElementIdx + 1024 / MemElementSize.
+       */
+      for (auto llcDynIS : llcDynS->getIndStreams()) {
+        auto llcDynISUnreleaseElementIdx =
+            llcDynIS->idxToElementMap.empty()
+                ? llcDynIS->getNextInitElementIdx()
+                : llcDynIS->idxToElementMap.begin()->first;
+        auto llcDynISUnreleaseElementIdxOffset =
+            1024 / llcDynIS->getMemElementSize();
+        if (llcDynISUnreleaseElementIdx + llcDynISUnreleaseElementIdxOffset <
+            llcProgressElementIdx) {
+          MLC_S_DPRINTF(
+              this->getDynamicStreamId(),
+              "Smaller LLCDynIS %s UnreleaseElement %llu + %llu < %llu.\n",
+              llcDynIS->getDynamicStreamId(), llcDynISUnreleaseElementIdx,
+              llcDynISUnreleaseElementIdxOffset, llcProgressElementIdx);
+          llcProgressElementIdx =
+              llcDynISUnreleaseElementIdx + llcDynISUnreleaseElementIdxOffset;
+        }
+      }
     } else {
       // The LLC stream has not been created.
       llcProgressSliceIdx = 0;

@@ -158,8 +158,14 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream,
   if (isCommit) {
     LLC_S_DPRINTF_(StreamRangeSync, stream->getDynamicStreamId(),
                    "[Commit] Received migrate.\n");
-    this->commitController->registerStream(stream);
-    this->scheduleEvent(Cycles(1));
+    if (stream->isTerminated()) {
+      LLC_S_DPRINTF_(StreamRangeSync, stream->getDynamicStreamId(),
+                     "[Commit] Already terminated.\n");
+
+    } else {
+      this->commitController->registerStream(stream);
+      this->scheduleEvent(Cycles(1));
+    }
     return;
   }
 
@@ -2643,7 +2649,14 @@ uint64_t LLCStreamEngine::performStreamAtomicOp(
 void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
   LLC_ELEMENT_DPRINTF(element, "Push computation.\n");
   assert(element->areBaseElementsReady() && "Element is not ready yet.");
-  auto dynS = LLCDynamicStream::getLLCStreamPanic(element->dynStreamId);
+  auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
+  if (!dynS) {
+    LLC_ELEMENT_DPRINTF(element, "Skip computation as Stream is released.\n");
+    return;
+  }
+  if (!dynS->hasComputation()) {
+    LLC_ELEMENT_PANIC(element, "Stream has no computation.");
+  }
   dynS->incompleteComputations++;
   this->readyComputations.emplace_back(element);
   element->scheduledComputation();
@@ -2673,17 +2686,39 @@ void LLCStreamEngine::startComputation() {
   while (startedComputation < computationWidth &&
          !this->readyComputations.empty()) {
     auto &element = this->readyComputations.front();
-    auto dynS = LLCDynamicStream::getLLCStreamPanic(element->dynStreamId);
-    Cycles latency(0);
-    auto result = dynS->computeStreamElementValue(element, latency);
+    auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
+    if (!dynS) {
+      LLC_ELEMENT_DPRINTF(element,
+                          "Discard computation as stream is released.\n");
+      this->readyComputations.pop_front();
+      continue;
+    }
+
+    Cycles latency = dynS->getEstimatedComputationLatency();
     auto forceZeroLat =
         this->controller->isLLCStreamEngineZeroComputeLatencyEnabled();
     if (forceZeroLat) {
       latency = Cycles(0);
     }
-    LLC_ELEMENT_DPRINTF(
-        element, "Start computation. Charge Latency %llu (ZeroLat %d).\n",
-        latency, forceZeroLat);
+    this->controller->m_statScheduledComputation++;
+    /**
+     * For IndirectReductionStream, we separate out charging the latency
+     * from the real computation. Here we charge the latency, but the
+     * real computation is left in completeComputation().
+     */
+    StreamValue result;
+    if (!dynS->isIndirectReduction()) {
+      LLC_ELEMENT_DPRINTF(element,
+                          "Start computation. Latency %llu (ZeroLat %d).\n",
+                          latency, forceZeroLat);
+      result = dynS->computeStreamElementValue(element);
+    } else {
+      LLC_ELEMENT_DPRINTF(element,
+                          "Start IndirectReduciton fake computation. Latency "
+                          "%llu (ZeroLat %d).\n",
+                          latency, forceZeroLat);
+      result.fill(0);
+    }
     this->pushInflyComputation(element, result, latency);
 
     this->readyComputations.pop_front();
@@ -2705,8 +2740,13 @@ void LLCStreamEngine::completeComputation() {
       break;
     }
     LLC_ELEMENT_DPRINTF(element, "Complete computation.\n");
-    auto dynS = LLCDynamicStream::getLLCStreamPanic(element->dynStreamId);
-    dynS->completeComputation(this, element, computation.result);
+    auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
+    if (dynS) {
+      dynS->completeComputation(this, element, computation.result);
+    } else {
+      LLC_ELEMENT_DPRINTF(
+          element, "Discard computation result as stream is released.\n");
+    }
     this->inflyComputations.pop_front();
   }
 }

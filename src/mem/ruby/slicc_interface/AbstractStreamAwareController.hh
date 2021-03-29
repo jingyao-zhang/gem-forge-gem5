@@ -251,6 +251,11 @@ protected:
   Stats::Scalar m_statLLCStreamReq;
   Stats::Scalar m_statLLCIndStreamReq;
   Stats::Scalar m_statLLCMulticastStreamReq;
+
+public:
+  // Stats for stream computing.
+  Stats::Scalar m_statScheduledComputation;
+  Stats::Scalar m_statScheduledComputeMicroOps;
 };
 
 #endif
