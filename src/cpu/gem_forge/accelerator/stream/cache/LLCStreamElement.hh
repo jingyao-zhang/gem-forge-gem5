@@ -27,7 +27,7 @@ public:
 
   Stream *S;
   AbstractStreamAwareController *mlcController;
-  const DynamicStreamId &dynStreamId;
+  const DynamicStreamId dynStreamId;
   const uint64_t idx;
   const int size;
   Addr vaddr = 0;
@@ -68,7 +68,8 @@ public:
   }
   bool isComputationDone() const { return this->computationDone; }
   void doneComputation() {
-    assert(this->isComputationScheduled() && "Computation done before scheduled.");
+    assert(this->isComputationScheduled() &&
+           "Computation done before scheduled.");
     assert(!this->computationDone && "Computaion already done.");
     this->computationDone = true;
   }

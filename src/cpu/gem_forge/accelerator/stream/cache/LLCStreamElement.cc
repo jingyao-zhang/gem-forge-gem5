@@ -5,6 +5,7 @@
 #include "LLCDynamicStream.hh"
 
 #include "debug/LLCRubyStreamBase.hh"
+#include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
