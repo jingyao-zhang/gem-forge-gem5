@@ -34,6 +34,7 @@ DynamicStream::~DynamicStream() {
 
 void DynamicStream::addBaseDynStreams() {
   this->addAddrBaseDynStreams();
+  this->addValueBaseDynStreams();
   this->addBackBaseDynStreams();
 }
 
@@ -58,6 +59,32 @@ void DynamicStream::addAddrBaseDynStreams() {
      */
     auto reuseBaseElement = 1;
     this->addrBaseEdges.emplace_back(
+        edge.toStaticId, baseDynS.dynamicStreamId.streamInstance,
+        edge.fromStaticId, alignBaseElementIdx, reuseBaseElement);
+  }
+}
+
+void DynamicStream::addValueBaseDynStreams() {
+  for (const auto &edge : this->stream->valueBaseEdges) {
+    auto baseS = this->stream->se->getStream(edge.toStaticId);
+    auto &baseDynS = baseS->getLastDynamicStream();
+    DYN_S_DPRINTF(this->dynamicStreamId, "ValueBaseDynS %s Me %s.\n",
+                  baseS->getStreamName(), this->dynamicStreamId.streamName);
+    /**
+     * If there are unstepped elements, we align to the first one.
+     * If not (i.e. just created), we align to the next one.
+     */
+    auto alignBaseElementIdx = baseDynS.FIFOIdx.entryIdx;
+    if (auto baseFirstUnsteppedElement = baseDynS.getFirstUnsteppedElement()) {
+      alignBaseElementIdx = baseFirstUnsteppedElement->FIFOIdx.entryIdx;
+    }
+    /**
+     * The reuse count is delayed as StreamConfig has not executed,
+     * and we don't know the trip count yet.
+     * Simply initialize it to 1, as the most general case.
+     */
+    auto reuseBaseElement = 1;
+    this->valueBaseEdges.emplace_back(
         edge.toStaticId, baseDynS.dynamicStreamId.streamInstance,
         edge.fromStaticId, alignBaseElementIdx, reuseBaseElement);
   }
@@ -137,7 +164,8 @@ void DynamicStream::configureAddrBaseDynStreamReuseOuterLoop(
 
 bool DynamicStream::areNextBaseElementsAllocated() const {
   return this->areNextAddrBaseElementsAllocated() &&
-         this->areNextBackBaseElementsAllocated();
+         this->areNextBackBaseElementsAllocated() &&
+         this->areNextValueBaseElementsAllocated();
 }
 
 bool DynamicStream::areNextAddrBaseElementsAllocated() const {
@@ -223,6 +251,63 @@ bool DynamicStream::areNextBackBaseElementsAllocated() const {
                     baseDynS.dumpString());
     }
     assert(baseElement && "Base Element Already Released?");
+  }
+  return true;
+}
+
+bool DynamicStream::areNextValueBaseElementsAllocated() const {
+  auto S = this->stream;
+  for (const auto &edge : this->valueBaseEdges) {
+    auto baseS = S->se->getStream(edge.baseStaticId);
+
+    if (baseS == S) {
+      /**
+       * We don't allow self value dependence in valueBaseEdges.
+       * Special cases like LoadComputeStream, UpdateStream are handled
+       * in addValueBaseElements().
+       */
+      DYN_S_PANIC(this->dynamicStreamId, "ValueDependence on myself.");
+    }
+
+    const auto &baseDynS =
+        baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+    // Let's compute the base element entryIdx.
+    uint64_t baseElementIdx = edge.alignBaseElement;
+    if (edge.reuseBaseElement != 0) {
+      baseElementIdx += this->FIFOIdx.entryIdx / edge.reuseBaseElement;
+    }
+    // Try to find this element.
+    if (baseDynS.FIFOIdx.entryIdx <= baseElementIdx) {
+      DYN_S_DPRINTF(this->dynamicStreamId,
+                    "NextElementIdx(%llu) BaseElementIdx(%llu) Not Ready, "
+                    "Align(%llu), Reuse(%llu), BaseStream %s.\n",
+                    this->FIFOIdx.entryIdx, baseElementIdx,
+                    edge.alignBaseElement, edge.reuseBaseElement,
+                    baseS->getStreamName());
+      return false;
+    }
+    auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+    if (!baseElement) {
+      DYN_S_DPRINTF(this->dynamicStreamId,
+                    "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
+                    "Released? Align(%llu), Reuse(%llu), BaseStream %s\n",
+                    this->FIFOIdx.entryIdx, baseElementIdx,
+                    edge.alignBaseElement, edge.reuseBaseElement,
+                    baseS->getStreamName());
+      DYN_S_DPRINTF(this->dynamicStreamId, "BaseDynS %s.\n",
+                    baseDynS.dumpString());
+    }
+    assert(baseElement && "Base Element Already Released?");
+    if (baseElement->isStepped) {
+      DYN_S_DPRINTF(this->dynamicStreamId,
+                    "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
+                    "(Misspeculatively) Stepped? Align(%llu), Reuse(%llu), "
+                    "BaseStream %s\n",
+                    this->FIFOIdx.entryIdx, baseElementIdx,
+                    edge.alignBaseElement, edge.reuseBaseElement,
+                    baseS->getStreamName());
+      return false;
+    }
   }
   return true;
 }

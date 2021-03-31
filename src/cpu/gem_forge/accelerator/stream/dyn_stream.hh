@@ -135,9 +135,11 @@ struct DynamicStream {
   };
   using StreamEdges = std::vector<StreamDepEdge>;
   StreamEdges addrBaseEdges;
+  StreamEdges valueBaseEdges;
   StreamEdges backBaseEdges;
   void addBaseDynStreams();
   void addAddrBaseDynStreams();
+  void addValueBaseDynStreams();
   void addBackBaseDynStreams();
   /**
    * Compute reuse of the base stream element.
@@ -159,6 +161,7 @@ struct DynamicStream {
   bool areNextBaseElementsAllocated() const;
   bool areNextAddrBaseElementsAllocated() const;
   bool areNextBackBaseElementsAllocated() const;
+  bool areNextValueBaseElementsAllocated() const;
   void addAddrBaseElements(StreamElement *newElement);
   void addAddrBaseElementEdge(StreamElement *newElement,
                               const StreamDepEdge &edge);
