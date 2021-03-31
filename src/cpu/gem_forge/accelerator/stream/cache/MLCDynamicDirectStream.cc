@@ -70,6 +70,33 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
         "Adjust MaxNumSlicesPerSegment from %llu as MaxRatio %llu to %llu.\n",
         originalMaxNumSlicesPerSegment, maxRatio, this->maxNumSlicesPerSegment);
   }
+
+  /**
+   * If this comes with IndirectAtomicComputeStream with RangeSync and
+   * CoreIssue, we limit the run ahead length.
+   */
+  for (auto dynIS : this->indirectStreams) {
+    auto IS = dynIS->getStaticStream();
+    auto dynCoreIS = IS->getDynamicStream(dynIS->getDynamicStreamId());
+    if (dynCoreIS) {
+      if (IS->isAtomicComputeStream() && dynIS->shouldRangeSync() &&
+          dynCoreIS->shouldCoreSEIssue()) {
+        auto elementsPerSlice = this->slicedStream.getElementPerSlice();
+        auto newMaxNumSlicesPerSegment =
+            std::max(1, static_cast<int>(16 / elementsPerSlice));
+        auto newMaxNumSlices =
+            std::max(1, static_cast<int>(16 / elementsPerSlice));
+        MLC_S_DPRINTF(this->getDynamicStreamId(),
+                      "Adjust MaxNumSlicesPerSegment %llu -> %llu, "
+                      "MaxNumSlices %llu -> %llu.\n",
+                      this->maxNumSlicesPerSegment, newMaxNumSlicesPerSegment,
+                      this->maxNumSlices, newMaxNumSlices);
+        this->maxNumSlicesPerSegment = newMaxNumSlicesPerSegment;
+        this->maxNumSlices = newMaxNumSlices;
+      }
+    }
+  }
+
   while (this->tailSliceIdx < this->maxNumSlicesPerSegment &&
          !this->slicedStream.hasOverflowed()) {
     this->allocateSlice();

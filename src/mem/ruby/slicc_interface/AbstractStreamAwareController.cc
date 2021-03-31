@@ -65,11 +65,35 @@ void AbstractStreamAwareController::regStats() {
   m_statLLCMulticastStreamReq.name(name() + ".llcMulticastStreamRequests")
       .desc("number of llc multicast stream requests seen")
       .flags(Stats::nozero);
-  m_statScheduledComputation.name(name() + ".llcScheduledStreamComputation")
+  m_statLLCScheduledComputation.name(name() + ".llcScheduledStreamComputation")
       .desc("number of llc stream computation scheduled")
       .flags(Stats::nozero);
-  m_statScheduledComputeMicroOps.name(name() + ".llcScheduledStreamComputeMicroOps")
+  m_statLLCScheduledComputeMicroOps.name(name() + ".llcScheduledStreamComputeMicroOps")
       .desc("number of llc stream computation microops scheduled")
+      .flags(Stats::nozero);
+  m_statLLCPerformedAtomics.name(name() + ".llcStreamAtomicsPerformed")
+      .desc("number of llc stream atomics performed")
+      .flags(Stats::nozero);
+  m_statLLCCommittedAtomics.name(name() + ".llcStreamAtomicsCommitted")
+      .desc("number of llc stream atomics committed")
+      .flags(Stats::nozero);
+  m_statLLCLockedAtomics.name(name() + ".llcStreamAtomicsLocked")
+      .desc("number of llc stream atomics locked")
+      .flags(Stats::nozero);
+  m_statLLCUnlockedAtomics.name(name() + ".llcStreamAtomicsUnlocked")
+      .desc("number of llc stream atomics unlocked")
+      .flags(Stats::nozero);
+  m_statLLCLineConflictAtomics.name(name() + ".llcStreamAtomicsLineConflict")
+      .desc("number of llc stream atomics that has line conflict")
+      .flags(Stats::nozero);
+  m_statLLCRealConflictAtomics.name(name() + ".llcStreamAtomicsRealConflict")
+      .desc("number of llc stream atomics that has real conflict")
+      .flags(Stats::nozero);
+  m_statLLCXAWConflictAtomics.name(name() + ".llcStreamAtomicsXAWConflict")
+      .desc("number of llc stream atomics that has X-after-write conflict")
+      .flags(Stats::nozero);
+  m_statLLCRealXAWConflictAtomics.name(name() + ".llcStreamAtomicsRealXAWConflict")
+      .desc("number of llc stream atomics that has real X-after-write conflict")
       .flags(Stats::nozero);
 
   // Register stats callback.

@@ -129,6 +129,16 @@ public:
   bool hasFirstIndirectAtomicReqSeen() const {
     return this->firstIndirectAtomicReqSeen;
   }
+  void setSecondIndirectAtomicReqSeen() {
+    assert(this->hasFirstIndirectAtomicReqSeen() &&
+           "Second before first IndirectAtomicRequest.");
+    assert(!this->hasSecondIndirectAtomicReqSeen() &&
+           "Second IndirectAtomicRequest already seen.");
+    this->secondIndirectAtomicReqSeen = true;
+  }
+  bool hasSecondIndirectAtomicReqSeen() const {
+    return this->secondIndirectAtomicReqSeen;
+  }
 
   bool isLoadComputeValueReady() const { return this->loadComputeValueReady; }
   const StreamValue &getLoadComputeValue() const {
@@ -171,9 +181,10 @@ private:
    */
   bool rangeBuilt = false;
   /**
-   * Whether we have seen the first request for this IndirectAtomicRequest.
+   * Whether we have seen the 1st/2nd request for this IndirectAtomicRequest.
    */
   bool firstIndirectAtomicReqSeen = false;
+  bool secondIndirectAtomicReqSeen = false;
 
   /**
    * Value for LoadComputeStream.

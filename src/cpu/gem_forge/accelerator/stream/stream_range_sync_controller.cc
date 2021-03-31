@@ -7,10 +7,10 @@
 StreamRangeSyncController::StreamRangeSyncController(StreamEngine *_se)
     : se(_se) {}
 
-bool StreamRangeSyncController::areRangesReady() {
+DynamicStream *StreamRangeSyncController::getNoRangeDynS() {
   if (!this->se->isStreamRangeSyncEnabled()) {
     // We do not do range check.
-    return true;
+    return nullptr;
   }
   /**
    * We first get all current active dynamic streams.
@@ -31,10 +31,10 @@ bool StreamRangeSyncController::areRangesReady() {
       // DYN_S_DPRINTF(dynS->dynamicStreamId,
       //               "[CoreRange] Not ready for CheckElement %llu.\n",
       //               this->getCheckElementIdx(dynS));
-      return false;
+      return dynS;
     }
   }
-  return true;
+  return nullptr;
 }
 
 StreamRangeSyncController::DynStreamVec
@@ -71,6 +71,19 @@ void StreamRangeSyncController::updateCurrentWorkingRange(
     }
     // Fill in next range if it's available.
     if (!dynS->getCurrentWorkingRange()) {
+      /**
+       * Since we do not check for the first element, it is possible that
+       * we checking for element 1, but the first range we got is [0, 1).
+       * We have to release old ranges here.
+       * ! This should really be fixed after we can check for the first element.
+       */
+      while (auto nextRange = dynS->getNextReceivedRange()) {
+        if (nextRange->elementRange.rhsElementIdx > elementIdx) {
+          break;
+        }
+        // This range is old.
+        dynS->popReceivedRange();
+      }
       auto nextRange = dynS->getNextReceivedRange();
       if (nextRange && nextRange->elementRange.contains(elementIdx)) {
 

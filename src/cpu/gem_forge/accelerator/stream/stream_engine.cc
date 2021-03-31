@@ -427,8 +427,8 @@ bool StreamEngine::canDispatchStreamStep(uint64_t stepStreamId) const {
     //   if (!element->next) {
     //     S_ELEMENT_DPRINTF(element,
     //                       "Cannot dispatch Step for ReductionStream: "
-    //                       "Missing next UnsteppedElement, TotalTripCount %d.\n",
-    //                       dynS.getTotalTripCount());
+    //                       "Missing next UnsteppedElement, TotalTripCount
+    //                       %d.\n", dynS.getTotalTripCount());
     //     return false;
     //   }
     // }
@@ -480,6 +480,8 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
     // Since commit happens in-order, we know it's the FirstDynamicStream.
     const auto &dynS = S->getFirstDynamicStream();
     if (!dynS.configExecuted) {
+      DYN_S_DPRINTF(dynS.dynamicStreamId,
+                    "[CanNotCommitStep] Config Not Executed.\n");
       return false;
     }
     auto stepElement = dynS.tail->next;
@@ -567,8 +569,10 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
   }
 
   // We have one more condition for range-based check.
-  if (!this->rangeSyncController->areRangesReady()) {
-    SE_DPRINTF("[CanNotCommitStep] No Range\n");
+  if (auto noRangeDynS = this->rangeSyncController->getNoRangeDynS()) {
+    SE_DPRINTF("[CanNotCommitStep] No Range for %s. CheckElementIdx %llu.\n",
+               noRangeDynS->dynamicStreamId,
+               this->rangeSyncController->getCheckElementIdx(noRangeDynS));
     return false;
   }
   return true;
@@ -1187,14 +1191,31 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
        * remote streams commit.
        * Therefore, we wait here to check that we collected the last StreamAck.
        */
+      bool shouldCheckAck = false;
       if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue() &&
           dynS.shouldRangeSync() && endElementIdx > 0) {
-        if (dynS.cacheAckedElements.count(endElementIdx - 1) == 0) {
-          S_ELEMENT_DPRINTF(endElement,
-                            "[StreamEnd] Cannot commit as no Ack for %llu.\n",
-                            endElementIdx - 1);
-          return false;
+        shouldCheckAck = true;
+      }
+      /**
+       * Floated AtomicComputeStream has to check Ack when:
+       *                    w/ RangeSync       w/o. RangeSync
+       * CoreIssue          Check              NoCheck
+       * CoreNotIssue       Check              NoCheck
+       */
+      if (S->isAtomicComputeStream() && dynS.offloadedToCache &&
+          endElementIdx > 0) {
+        if (dynS.shouldRangeSync()) {
+          shouldCheckAck = true;
+        } else if (!dynS.shouldCoreSEIssue()) {
+          shouldCheckAck = true;
         }
+      }
+      if (shouldCheckAck && dynS.cacheAckedElements.size() < endElementIdx) {
+        S_ELEMENT_DPRINTF(
+            endElement,
+            "[StreamEnd] Cannot commit as not enough Ack %llu < %llu.\n",
+            dynS.cacheAckedElements.size(), endElementIdx);
+        return false;
       }
     }
     /**

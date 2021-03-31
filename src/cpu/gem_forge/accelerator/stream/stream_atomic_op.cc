@@ -20,6 +20,14 @@ void StreamAtomicOp::operator()(uint8_t *p) {
     this->loadedValue = operand;
   }
 
+  // Check if we modified the memory.
+  for (int i = 0; i < this->size; ++i) {
+    if (operand[i] != result[i]) {
+      this->memoryModified = true;
+      break;
+    }
+  }
+
   S_DPRINTF(stream, "Entry (%lu, %lu): AtomicOp %lu -> %lu, Loaded? %d %lu.\n",
             entryIdx.streamId.streamInstance, entryIdx.entryIdx,
             operand.front(), result.front(), this->loadFunc != nullptr,

@@ -72,6 +72,18 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numCycleRequestLatency);
   dumpAvg(avgRequestLatency, numCycleRequestLatency, numIssuedRequest);
 
+  dumpScalar(numFloatAtomic);
+  if (numFloatAtomic > 0) {
+    dumpAvg(avgFloatAtomicRecvCommitCycle, numFloatAtomicRecvCommitCycle,
+            numFloatAtomic);
+    dumpAvg(avgFloatAtomicWaitForLockCycle, numFloatAtomicWaitForLockCycle,
+            numFloatAtomic);
+    dumpAvg(avgFloatAtomicWaitForCommitCycle, numFloatAtomicWaitForCommitCycle,
+            numFloatAtomic);
+    dumpAvg(avgFloatAtomicWaitForUnlockCycle, numFloatAtomicWaitForUnlockCycle,
+            numFloatAtomic);
+  }
+
   dumpScalar(numMissL0);
   dumpScalar(numMissL1);
   dumpScalar(numMissL2);

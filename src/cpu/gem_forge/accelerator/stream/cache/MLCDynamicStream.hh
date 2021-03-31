@@ -94,7 +94,7 @@ protected:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;
-  const uint64_t maxNumSlices;
+  uint64_t maxNumSlices;
 
   /**
    * Represent an allocated stream slice at MLC.

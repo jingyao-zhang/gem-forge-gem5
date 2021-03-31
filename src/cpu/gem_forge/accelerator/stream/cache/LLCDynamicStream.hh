@@ -103,6 +103,7 @@ public:
   bool translateToPAddr(Addr vaddr, Addr &paddr) const;
 
   void addCredit(uint64_t n);
+  void addNextRangeTailElementIdx(uint64_t rangeTailElementIdx);
 
   DynamicStreamSliceId initNextSlice();
 

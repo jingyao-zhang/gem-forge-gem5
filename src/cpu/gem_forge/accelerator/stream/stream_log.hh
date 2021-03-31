@@ -84,7 +84,7 @@
 #define LLC_SE_MSG(format, args...)                                            \
   "[LLC_SE%d]: " format, this->curLLCBank(), ##args
 #define LLC_ELEMENT_MSG(element, format, args...)                              \
-  "[LLC_SE%d]%s-%lu: " format, (element)->curLLCBank(),                        \
+  "[LLC_SE%d]%s%lu-: " format, (element)->curLLCBank(),                        \
       (element)->dynStreamId, (element)->idx, ##args
 
 #define LLC_S_DPRINTF_(X, streamId, format, args...)                           \
@@ -107,6 +107,7 @@
   DPRINTF(X, LLC_SE_MSG(format, ##args))
 #define LLC_SE_DPRINTF(format, args...)                                        \
   LLC_SE_DPRINTF_(DEBUG_TYPE, format, ##args)
+#define LLC_SE_PANIC(format, args...) panic(LLC_SE_MSG(format, ##args))
 
 #define LLC_ELEMENT_DPRINTF_(X, element, format, args...)                      \
   DPRINTF(X, LLC_ELEMENT_MSG(element, format, ##args))

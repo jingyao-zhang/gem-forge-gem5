@@ -8,20 +8,25 @@
 
 class LLCStreamRangeBuilder {
 public:
-  LLCStreamRangeBuilder(LLCDynamicStream *_stream, int _elementsPerRange,
-                        int64_t _totalTripCount);
+  LLCStreamRangeBuilder(LLCDynamicStream *_stream, int64_t _totalTripCount);
 
   void addElementAddress(uint64_t elementIdx, Addr vaddr, Addr paddr, int size);
 
   bool hasReadyRanges() const;
   DynamicStreamAddressRangePtr popReadyRange();
 
+  /**
+   * Push the next range tail element idx.
+   */
+  void pushNextRangeTailElementIdx(uint64_t nextRangeTailElementIdx);
+
 private:
   LLCDynamicStream *stream;
-  const int elementsPerRange;
+  std::list<uint64_t> nextRangeTailElementIdxQueue;
   const int64_t totalTripCount;
   uint64_t nextElementIdx = 0;
   uint64_t prevBuiltElementIdx = 0;
+  uint64_t prevNextRangeTailElementIdx = 0;
 
   AddressRange vaddrRange;
   AddressRange paddrRange;

@@ -1,5 +1,6 @@
 
 #include "LLCStreamEngine.hh"
+#include "LLCStreamAtomicLockManager.hh"
 #include "LLCStreamCommitController.hh"
 #include "LLCStreamRangeBuilder.hh"
 #include "MLCStreamEngine.hh"
@@ -46,6 +47,7 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       maxInqueueRequests(2), translationBuffer(nullptr) {
   this->controller->registerLLCStreamEngine(this);
   this->commitController = m5::make_unique<LLCStreamCommitController>(this);
+  this->atomicLockManager = m5::make_unique<LLCStreamAtomicLockManager>(this);
 }
 
 LLCStreamEngine::~LLCStreamEngine() { this->streams.clear(); }
@@ -73,6 +75,9 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
       "Configure DirectStream InitAllocatedSlice %d TotalTripCount %lld.\n",
       streamConfigureData->initCreditedIdx, S->getTotalTripCount());
   S->configuredLLC(this->controller);
+
+  // Add the initial credits.
+  S->addCredit(streamConfigureData->initCreditedIdx);
 
   // Remember the stream to the CommitController if we have that.
   if (S->shouldRangeSync()) {
@@ -1618,6 +1623,12 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
       this->receiveStreamForwardRequest(*msg);
       return;
     }
+    /**
+     * Quick path for the second request to release an indirect atomic.
+     */
+    if (this->tryToProcessIndirectAtomicUnlockReq(*msg)) {
+      return;
+    }
     Cycles latency(1);
     this->streamIssueMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
@@ -1915,8 +1926,13 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
           this->controller->ticksToCycles(req.getTime()));
 
   if (req.m_Type == CoherenceRequestType_STREAM_FORWARD) {
-    // Quick pass for stream forwarding.
+    // Quick path for stream forwarding.
     this->receiveStreamForwardRequest(req);
+    return;
+  }
+
+  if (this->tryToProcessIndirectAtomicUnlockReq(req)) {
+    // Quick path for the second request to release an indirect atomic.
     return;
   }
 
@@ -1990,6 +2006,81 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
   if (!foundReceiver) {
     LLC_SLICE_PANIC(sliceId, "Cannot find the receiver: %s.", recvDynId);
   }
+}
+
+bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
+    const RequestMsg &req) {
+  if (req.m_sliceIds.sliceIds.size() != 1 ||
+      req.m_Type != CoherenceRequestType_STREAM_STORE) {
+    // Not single slice id or store request.
+    return false;
+  }
+  const auto &sliceId = req.m_sliceIds.singleSliceId();
+  auto dynS = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId());
+  if (!dynS) {
+    // Failed to find the DynamicStream.
+    return false;
+  }
+  auto S = dynS->getStaticStream();
+  if (S->isAtomicComputeStream() && dynS->isIndirect() &&
+      dynS->shouldIssueBeforeCommit() && dynS->shouldIssueAfterCommit()) {
+    auto elementIdx = sliceId.getStartIdx();
+    assert(sliceId.getNumElements() == 1 &&
+           "Multi-Element slice for IndirectAtomicStream.");
+    auto element =
+        dynS->getElementPanic(elementIdx, "receiveStreamIndirectRequest");
+    if (element->hasFirstIndirectAtomicReqSeen()) {
+      /**
+       * This is the second request to unlock the line of indirect atomic.
+       * We just send back the Ack.
+       */
+      // Update inflyRequests.
+      if (dynS->inflyRequests == 0) {
+        LLC_SLICE_PANIC(sliceId, "Negative inflyRequests.\n");
+      }
+      dynS->inflyRequests--;
+
+      LLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
+                         "[Commit] Atomic released. Remaining Elements %llu.\n",
+                         dynS->idxToElementMap.size());
+      Addr elementPAddr;
+      assert(dynS->translateToPAddr(element->vaddr, elementPAddr) &&
+             "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
+      auto elementMemSize = dynS->getMemElementSize();
+      if (this->controller->isStreamAtomicLockEnabled()) {
+        /**
+         * For now we just delay the Ack until the line is unlocked.
+         */
+        this->atomicLockManager->commit(elementPAddr, elementMemSize, element,
+                                        true /* shouldAckAfterUnlock */,
+                                        sliceId);
+      } else {
+        /**
+         * Ideal case: Immediately send back Ack.
+         */
+        this->atomicLockManager->commit(elementPAddr, elementMemSize, element,
+                                        false /* shouldAckAfterUnlock */,
+                                        sliceId);
+        this->issueStreamAckToMLC(sliceId);
+      }
+
+      /**
+       * No matter what, we should release elements that are unlocked.
+       */
+      element->setSecondIndirectAtomicReqSeen();
+      while (!dynS->idxToElementMap.empty()) {
+        auto elementIter = dynS->idxToElementMap.begin();
+        const auto &element = elementIter->second;
+        if (!element->isReady() || !element->areBaseElementsReady() ||
+            !element->hasSecondIndirectAtomicReqSeen()) {
+          break;
+        }
+        dynS->eraseElement(elementIter);
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 void LLCStreamEngine::triggerIndirectElement(LLCDynamicStreamPtr stream,
@@ -2193,8 +2284,10 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr stream,
 
   if (S->isAtomicStream()) {
     // Very limited AtomicRMW support.
-    auto loadedValue =
+    auto atomicRet =
         this->performStreamAtomicOp(stream, element, elementPAddr, sliceId);
+    auto loadedValue = atomicRet.first;
+    bool memoryModified = atomicRet.second;
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                        "Perform StreamAtomic, RetValue %llu.\n", loadedValue);
     loadValueBlock.setData(reinterpret_cast<uint8_t *>(&loadedValue),
@@ -2203,6 +2296,13 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr stream,
       LLC_ELEMENT_PANIC(element, "Perform atomic operation more than once.");
     }
     element->setFirstIndirectAtomicReqSeen();
+    this->atomicLockManager->enqueue(elementPAddr, elementMemSize, element,
+                                     memoryModified);
+    if (!(stream->shouldIssueBeforeCommit() &&
+          stream->shouldIssueAfterCommit())) {
+      // This AtomicStream just takes one request, we can immediately commit it.
+      this->atomicLockManager->commit(elementPAddr, elementMemSize, element);
+    }
   } else {
     // This is an update stream.
     auto getStreamValue = [&element](uint64_t streamId) -> StreamValue {
@@ -2511,12 +2611,36 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
     auto element = dynS->getElementPanic(
         elementIdx, "Check IndirectAtomicElement second request.");
     if (element->hasFirstIndirectAtomicReqSeen()) {
-      // This is the second time, we just send back an Ack.
-      LLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
-                         "[Commit] Atomic released.\n");
-      this->issueStreamAckToMLC(sliceId);
-      // We should release the element now.
-      return;
+      // This is the second time, should already be handled in
+      // receiveStreamIndirectRequest().
+      LLC_SLICE_PANIC(sliceId, "[Commit] Atomic should be release when "
+                               "receiving the second request.");
+      // LLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
+      //                    "[Commit] Atomic released.\n");
+      // Addr elementPAddr;
+      // assert(dynS->translateToPAddr(element->vaddr, elementPAddr) &&
+      //        "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
+      // auto elementMemSize = dynS->getMemElementSize();
+      // if (this->controller->isStreamAtomicLockEnabled()) {
+      //   /**
+      //    * For now we just delay the Ack until the line is unlocked.
+      //    */
+      //   this->atomicLockManager->commit(elementPAddr, elementMemSize,
+      //   element,
+      //                                   true /* shouldAckAfterUnlock */,
+      //                                   sliceId);
+      // } else {
+      //   /**
+      //    * Ideal case: Immediately send back Ack.
+      //    */
+      //   this->atomicLockManager->commit(elementPAddr, elementMemSize,
+      //   element,
+      //                                   false /* shouldAckAfterUnlock */,
+      //                                   sliceId);
+      //   this->issueStreamAckToMLC(sliceId);
+      // }
+      // // We should release the element now.
+      // return;
     }
   }
 
@@ -2576,7 +2700,7 @@ void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
   delete pkt;
 }
 
-uint64_t LLCStreamEngine::performStreamAtomicOp(
+std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
     LLCDynamicStreamPtr dynS, LLCStreamElementPtr element, Addr elementPAddr,
     const DynamicStreamSliceId &sliceId) {
   assert(sliceId.getNumElements() == 1 &&
@@ -2635,15 +2759,17 @@ uint64_t LLCStreamEngine::performStreamAtomicOp(
 
   // Get the loaded value.
   uint64_t loadedValue = 0;
+  bool memoryModified = false;
   {
     auto atomicOp = dynamic_cast<StreamAtomicOp *>(pkt->getAtomicOp());
     loadedValue = atomicOp->getLoadedValue().front();
+    memoryModified = atomicOp->modifiedMemory();
   }
 
   // Don't forget to release the packet.
   delete pkt;
 
-  return loadedValue;
+  return std::make_pair(loadedValue, memoryModified);
 }
 
 void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
@@ -2700,7 +2826,7 @@ void LLCStreamEngine::startComputation() {
     if (forceZeroLat) {
       latency = Cycles(0);
     }
-    this->controller->m_statScheduledComputation++;
+    this->controller->m_statLLCScheduledComputation++;
     /**
      * For IndirectReductionStream, we separate out charging the latency
      * from the real computation. Here we charge the latency, but the

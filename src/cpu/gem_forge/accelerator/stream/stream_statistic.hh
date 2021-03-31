@@ -69,6 +69,13 @@ public:
   size_t numMissL1 = 0;
   size_t numMissL2 = 0;
 
+  // Compute statistics.
+  size_t numFloatAtomic = 0;
+  size_t numFloatAtomicRecvCommitCycle = 0;
+  size_t numFloatAtomicWaitForCommitCycle = 0;
+  size_t numFloatAtomicWaitForLockCycle = 0;
+  size_t numFloatAtomicWaitForUnlockCycle = 0;
+
   // LLCStreamEngine issue statistics.
   enum LLCStreamEngineIssueReason {
     Issued = 0,

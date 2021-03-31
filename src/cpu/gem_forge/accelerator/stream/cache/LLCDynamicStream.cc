@@ -28,12 +28,11 @@ LLCDynamicStream::LLCDynamicStream(
     : mlcController(_mlcController), llcController(_llcController),
       configData(_configData),
       slicedStream(_configData, true /* coalesceContinuousElements */),
-      configureCycle(_mlcController->curCycle()),
-      creditedSliceIdx(_configData->initCreditedIdx) {
+      configureCycle(_mlcController->curCycle()), creditedSliceIdx(0) {
 
   // Allocate the range builder.
   this->rangeBuilder = m5::make_unique<LLCStreamRangeBuilder>(
-      this, 8, this->configData->totalTripCount);
+      this, this->configData->totalTripCount);
 
   // Remember the SendTo configs.
   for (auto &depEdge : this->configData->depEdges) {
@@ -125,6 +124,37 @@ void LLCDynamicStream::addCredit(uint64_t n) {
   this->creditedSliceIdx += n;
   for (auto indirectStream : this->getIndStreams()) {
     indirectStream->addCredit(n);
+  }
+  /**
+   * If I am the direct stream, I should notify the RangeBuilder about the next
+   * range tail element.
+   */
+  if (!this->isIndirect()) {
+    auto sliceIdx = this->nextAllocSliceIdx;
+    auto sliceIter = this->slices.begin();
+    while (sliceIdx + 1 < this->creditedSliceIdx &&
+           sliceIter != this->slices.end()) {
+      ++sliceIter;
+      ++sliceIdx;
+    }
+    if (sliceIter == this->slices.end()) {
+      LLC_S_PANIC(this->getDynamicStreamId(),
+                  "Missing Slice for RangeBuilder. Credited %llu.",
+                  this->creditedSliceIdx);
+    }
+    auto &tailSlice = *sliceIter;
+    auto tailElementIdx = tailSlice->getSliceId().getEndIdx();
+    this->addNextRangeTailElementIdx(tailElementIdx);
+  }
+}
+
+void LLCDynamicStream::addNextRangeTailElementIdx(
+    uint64_t rangeTailElementIdx) {
+  if (this->shouldRangeSync()) {
+    this->rangeBuilder->pushNextRangeTailElementIdx(rangeTailElementIdx);
+  }
+  for (auto dynIS : this->getIndStreams()) {
+    dynIS->rangeBuilder->pushNextRangeTailElementIdx(rangeTailElementIdx);
   }
 }
 

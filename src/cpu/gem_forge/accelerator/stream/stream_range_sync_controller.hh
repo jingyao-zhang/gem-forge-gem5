@@ -10,8 +10,14 @@ public:
   /**
    * Check that ranges for all active dynamic streams are ready,
    * so the core can start to commit and check against the range.
+   * @return The first DynS that has no ready range.
    */
-  bool areRangesReady();
+  DynamicStream *getNoRangeDynS();
+
+  /**
+   * Helper function to get the element idx we should check range for.
+   */
+  uint64_t getCheckElementIdx(DynamicStream *dynS);
 
 private:
   StreamEngine *se;
@@ -22,11 +28,6 @@ private:
   void updateCurrentWorkingRange(DynStreamVec &dynStreams);
   void checkAliasBetweenRanges(DynStreamVec &dynStreams,
                                const DynamicStreamAddressRangePtr &newRange);
-
-  /**
-   * Helper function to get the element idx we should check range for.
-   */
-  uint64_t getCheckElementIdx(DynamicStream *dynS);
 };
 
 #endif

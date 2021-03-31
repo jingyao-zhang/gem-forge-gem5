@@ -26,6 +26,7 @@ public:
   }
 
   const StreamValue &getLoadedValue() const { return this->loadedValue; }
+  bool modifiedMemory() const { return this->memoryModified; }
 
 private:
   Stream *stream;
@@ -37,6 +38,8 @@ private:
   ExecFuncPtr loadFunc;
   // The final loaded value back to core.
   StreamValue loadedValue;
+  // Whether this atomic actually changes the content.
+  bool memoryModified = false;
 };
 
 #endif

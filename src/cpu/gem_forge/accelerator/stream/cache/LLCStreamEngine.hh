@@ -22,6 +22,7 @@
 class AbstractStreamAwareController;
 class MessageBuffer;
 class LLCStreamCommitController;
+class LLCStreamAtomicLockManager;
 
 class LLCStreamEngine : public Consumer {
 public:
@@ -52,6 +53,7 @@ private:
   friend class LLCDynamicStream;
   friend class LLCStreamElement;
   friend class LLCStreamCommitController;
+  friend class LLCStreamAtomicLockManager;
   AbstractStreamAwareController *controller;
   // Out going stream migrate buffer.
   MessageBuffer *streamMigrateMsgBuffer;
@@ -63,6 +65,7 @@ private:
   MessageBuffer *streamResponseMsgBuffer;
   // Stream commit controller.
   std::unique_ptr<LLCStreamCommitController> commitController;
+  std::unique_ptr<LLCStreamAtomicLockManager> atomicLockManager;
   const int issueWidth;
   const int migrateWidth;
   // Threshold to limit maximum number of infly requests.
@@ -369,16 +372,22 @@ private:
 
   /**
    * Perform AtomicRMWStream to the BackingStorage.
-   * Return the loaded value.
+   * @return <LoadedValue, MemoryModified>
    */
-  uint64_t performStreamAtomicOp(LLCDynamicStreamPtr dynS,
-                                 LLCStreamElementPtr element, Addr elementPAddr,
-                                 const DynamicStreamSliceId &sliceId);
+  std::pair<uint64_t, bool>
+  performStreamAtomicOp(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
+                        Addr elementPAddr, const DynamicStreamSliceId &sliceId);
 
   /**
    * Process the StreamForward request.
    */
   void processStreamForwardRequest(const RequestMsg &req);
+
+  /**
+   * Check if this is the second request to lock the indirect atomic, if so process it.
+   * @return whether this message is processed.
+   */
+  bool tryToProcessIndirectAtomicUnlockReq(const RequestMsg &req);
 
   /**
    * We handle the computation and charge its latency here.

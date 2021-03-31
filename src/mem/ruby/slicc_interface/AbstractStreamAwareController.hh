@@ -75,6 +75,12 @@ public:
   bool isStreamRangeSyncEnabled() const {
     return this->myParams->enable_stream_range_sync;
   }
+  bool isStreamAtomicLockEnabled() const {
+    return this->myParams->stream_atomic_lock_type != "none";
+  }
+  const std::string &getStreamAtomicLockType() const {
+    return this->myParams->stream_atomic_lock_type;
+  }
 
   /**
    * Issue policy, starting from the most relaxed to most conservative.
@@ -254,8 +260,16 @@ protected:
 
 public:
   // Stats for stream computing.
-  Stats::Scalar m_statScheduledComputation;
-  Stats::Scalar m_statScheduledComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledComputation;
+  Stats::Scalar m_statLLCScheduledComputeMicroOps;
+  Stats::Scalar m_statLLCPerformedAtomics;
+  Stats::Scalar m_statLLCCommittedAtomics;
+  Stats::Scalar m_statLLCLockedAtomics;
+  Stats::Scalar m_statLLCUnlockedAtomics;
+  Stats::Scalar m_statLLCLineConflictAtomics;
+  Stats::Scalar m_statLLCRealConflictAtomics;
+  Stats::Scalar m_statLLCXAWConflictAtomics;
+  Stats::Scalar m_statLLCRealXAWConflictAtomics;
 };
 
 #endif

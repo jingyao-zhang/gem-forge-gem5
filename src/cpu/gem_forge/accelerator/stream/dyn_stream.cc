@@ -4,6 +4,7 @@
 #include "stream_engine.hh"
 
 #include "debug/StreamBase.hh"
+#include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
 
@@ -591,6 +592,8 @@ void DynamicStream::receiveStreamRange(
     }
     ++iter;
   }
+  DYN_S_DPRINTF_(StreamRangeSync, this->dynamicStreamId,
+                 "[Range] Receive StreamRange in core: %s.", *range);
   this->receivedRanges.insert(iter, range);
 }
 

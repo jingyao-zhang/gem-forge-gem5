@@ -5,10 +5,8 @@
 #include "../stream_log.hh"
 
 LLCStreamRangeBuilder::LLCStreamRangeBuilder(LLCDynamicStream *_stream,
-                                             int _elementsPerRange,
                                              int64_t _totalTripCount)
-    : stream(_stream), elementsPerRange(_elementsPerRange),
-      totalTripCount(_totalTripCount) {}
+    : stream(_stream), totalTripCount(_totalTripCount) {}
 
 void LLCStreamRangeBuilder::addElementAddress(uint64_t elementIdx, Addr vaddr,
                                               Addr paddr, int size) {
@@ -89,9 +87,15 @@ DynamicStreamAddressRangePtr LLCStreamRangeBuilder::popReadyRange() {
 }
 
 void LLCStreamRangeBuilder::tryBuildRange() {
+  if (this->nextRangeTailElementIdxQueue.empty()) {
+    LLC_S_PANIC(this->stream->getDynamicStreamId(),
+                "[RangeBuilder] No NextRangeTailElementIdx to build range.");
+    return;
+  }
+  auto nextRangeTailElementIdx = this->nextRangeTailElementIdxQueue.front();
   if ((this->totalTripCount != -1 &&
        this->nextElementIdx == this->totalTripCount) ||
-      ((this->nextElementIdx % this->elementsPerRange) == 0)) {
+      this->nextElementIdx == nextRangeTailElementIdx) {
     // Time to build another range.
     DynamicStreamElementRangeId elementRange;
     elementRange.streamId = this->stream->getDynamicStreamId();
@@ -105,5 +109,36 @@ void LLCStreamRangeBuilder::tryBuildRange() {
     this->prevBuiltElementIdx = this->nextElementIdx;
     this->vaddrRange.clear();
     this->paddrRange.clear();
+    this->nextRangeTailElementIdxQueue.pop_front();
   }
+}
+
+void LLCStreamRangeBuilder::pushNextRangeTailElementIdx(
+    uint64_t nextRangeTailElementIdx) {
+  /**
+   * Due to multi-slice elements, it is possible that we have multiple same
+   * nextRangeTailElementIdx pushed. Handle this case by ensuring non-decreasing
+   * property.
+   */
+  if (nextRangeTailElementIdx == 0) {
+    LLC_S_PANIC(this->stream->getDynamicStreamId(),
+                "[RangeBuilder] Zero NextRangeTailElementIdx.\n");
+  }
+  if (this->prevNextRangeTailElementIdx > nextRangeTailElementIdx) {
+    LLC_S_PANIC(this->stream->getDynamicStreamId(),
+                "[RangeBuilder] NextRangeTailElementIdx out-of-order %llu < "
+                "back %llu.",
+                nextRangeTailElementIdx, this->prevNextRangeTailElementIdx);
+  } else if (this->prevNextRangeTailElementIdx == nextRangeTailElementIdx) {
+    LLC_S_DPRINTF(this->stream->getDynamicStreamId(),
+                  "[RangeBuilder] Ignore NextRangeTailElementIdx %llu == "
+                  "PrevTailElementIdx %llu.",
+                  nextRangeTailElementIdx, this->prevNextRangeTailElementIdx);
+    return;
+  }
+  LLC_S_DPRINTF(this->stream->getDynamicStreamId(),
+                "[RangeBuilder] NextRangeTailElementIdx %llu.\n",
+                nextRangeTailElementIdx);
+  this->nextRangeTailElementIdxQueue.push_back(nextRangeTailElementIdx);
+  this->prevNextRangeTailElementIdx = nextRangeTailElementIdx;
 }
