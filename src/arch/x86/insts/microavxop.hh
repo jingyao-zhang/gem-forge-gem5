@@ -66,6 +66,7 @@ protected:
       uint16_t i3;
       uint16_t i4;
     } us;
+    uint16_t us_array[4];
     struct __attribute__((packed)) {
       int16_t i1;
       int16_t i2;
@@ -109,6 +110,7 @@ protected:
     IntXor,
     IntCmpEq,
     UIntMul,
+    UIntMulLow,
     SIntMin,
     SIntToUIntPack,
   };

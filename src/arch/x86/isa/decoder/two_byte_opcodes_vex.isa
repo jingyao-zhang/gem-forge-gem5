@@ -323,6 +323,12 @@
                 0x1: VSHUFPS(VYdo, WYdo, Ib);
                 0x0: VSHUFPS(Vo, Wo, Ib);
             }
+            default: decode LEGACY_DECODEVAL {
+                // operand size (0x66)
+                0x1: decode OPCODE_OP_BOTTOM3 {
+                    0x5: VPEXTRW(Gd, Vo, Ib);
+                }
+            }
         }
         0x1A: decode LEGACY_DECODEVAL {
             0x0: decode OPCODE_OP_BOTTOM3 {

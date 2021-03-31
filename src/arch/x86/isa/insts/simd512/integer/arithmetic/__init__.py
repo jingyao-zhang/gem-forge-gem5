@@ -7,6 +7,7 @@ categories = [
     "vpminsd",
     "vpminsq",
     "vpmuludq",
+    "vpmulld",
     "vpslld",
     "vpsrld",
     "vpsrlq",

@@ -64,6 +64,7 @@ categories = [
     "vpackusdw",
     "vpackuswb",
     "vpextrb",
+    "vpextrw",
     "vpextrd",
     "vextractps",
     "vblendps",

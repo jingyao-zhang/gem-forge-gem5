@@ -92,6 +92,12 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.si.i2 = (src1.si.i2 == src2.si.i2) ? 0xFFFF : 0x0;
       break;
     case BinaryOp::UIntMul:
+      // Multiplication will double the size.
+      dest.ui.i1 = src1.us.i1 * src2.us.i1;
+      dest.ui.i2 = src1.us.i3 * src2.us.i3;
+      break;
+    case BinaryOp::UIntMulLow:
+      // Multiplication but take the lower bits.
       dest.ui.i1 = src1.ui.i1 * src2.ui.i1;
       dest.ui.i2 = src1.ui.i2 * src2.ui.i2;
       break;
@@ -133,6 +139,11 @@ AVXOpBase::FloatInt AVXOpBase::calcPackedBinaryOp(FloatInt src1, FloatInt src2,
       dest.sl = (src1.sl == src2.sl) ? 0xFFFFFFFF : 0x0;
       break;
     case BinaryOp::UIntMul:
+      // Multiplication will double the size.
+      dest.ul = src1.ui.i1 * src2.ui.i1;
+      break;
+    case BinaryOp::UIntMulLow:
+      // Multiplication but take the lower bits.
       dest.ul = src1.ul * src2.ul;
       break;
     case BinaryOp::SIntMin:
@@ -247,19 +258,28 @@ void AVXOpBase::doExtract(ExecContext *xc) const {
   auto select = imm8;
   if (srcSize == 1) {
     FloatInt src;
-    if ((select >> 3) & 1) {
-      src.ul = xc->readFloatRegOperandBits(this, 0);
-    } else {
+    if (select >= 8) {
       src.ul = xc->readFloatRegOperandBits(this, 1);
+    } else {
+      src.ul = xc->readFloatRegOperandBits(this, 0);
     }
     // Extract the byte.
     result.uc.i1 = src.uc_array[select & 0x7];
+  } else if (srcSize == 2) {
+    FloatInt src;
+    if (select >= 4) {
+      src.ul = xc->readFloatRegOperandBits(this, 1);
+    } else {
+      src.ul = xc->readFloatRegOperandBits(this, 0);
+    }
+    // Extract the 16-bit value.
+    result.us.i1 = src.us_array[select & 0x3];
   } else if (srcSize == 4) {
     FloatInt src;
-    if (select <= 1) {
-      src.ul = xc->readFloatRegOperandBits(this, 0);
-    } else {
+    if (select >= 2) {
       src.ul = xc->readFloatRegOperandBits(this, 1);
+    } else {
+      src.ul = xc->readFloatRegOperandBits(this, 0);
     }
     // Extract the 32-bit value.
     if (select & 0x1) {

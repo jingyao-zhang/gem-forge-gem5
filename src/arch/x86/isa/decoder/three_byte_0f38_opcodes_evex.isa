@@ -63,6 +63,13 @@
                         0x0: VPMINSD(Vo, Wo);
                     }
                 }
+                0x40: decode REX_W {
+                    0x0: decode EVEX_L_EXTEND {
+                        0x2: VPMULLD(VZqo, WZqo);
+                        0x1: VPMULLD(VYdo, WYdo);
+                        0x0: VPMULLD(Vo, Wo);
+                    }
+                }
                 0x58: decode REX_W {
                     0x0: decode EVEX_L_EXTEND {
                         0x2: VPBROADCASTD(VZqo, Wd);
@@ -100,6 +107,9 @@
                 }
                 0x37: decode EVEX_L_EXTEND {
                     0x2: SSP_STREAM_INPUT(WZqo, Ib);
+                }
+                0x3C: decode EVEX_L_EXTEND {
+                    0x2: SSP_STREAM_LOAD(WYdo, Ib);
                 }
                 0x3D: decode EVEX_L_EXTEND {
                     0x2: SSP_STREAM_LOAD(WZqo, Ib);

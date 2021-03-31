@@ -259,7 +259,13 @@ let {{
     class Vmului(Varithp):
         opClass = 'SimdMultOp'
         code = '''
-            this->doPackedBinaryOp(xc, BinaryOp::IntSub);
+            this->doPackedBinaryOp(xc, BinaryOp::UIntMul);
+        '''
+
+    class Vmuluilow(Varithp):
+        opClass = 'SimdMultOp'
+        code = '''
+            this->doPackedBinaryOp(xc, BinaryOp::UIntMulLow);
         '''
 
     class Vandi(Varithp):
@@ -567,7 +573,8 @@ let {{
         constructorCode = '''
             assert(destVL == 8 && "Illegal destVL.");
             assert(srcVL == 16 && "Illegal srcVL.");
-            assert((srcSize == 1 || srcSize == 4) && "Unsupported vextract size.");
+            assert((srcSize == 1 || srcSize == 2 || srcSize == 4)
+                   && "Unsupported vextract size.");
             _numDestRegs = 1;
             _destRegIdx[0] = RegId(IntRegClass, dest);
             auto vRegs = srcVL / sizeof(uint64_t);
