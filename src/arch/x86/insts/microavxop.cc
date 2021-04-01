@@ -244,7 +244,9 @@ void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
         panic("Unsupported size for pack %d.", this->srcSize);
       }
     }
+    // hack("%s.\n", this->generateDisassembly(0x0, nullptr));
     for (int i = 0; i < vRegs; ++i) {
+      // hack("Pack Set Dest %d %#x.\n", i, dests[i].ul);
       xc->setFloatRegOperandBits(this, i, dests[i].ul);
     }
     break;
@@ -269,8 +271,10 @@ void AVXOpBase::doExtract(ExecContext *xc) const {
     FloatInt src;
     if (select >= 4) {
       src.ul = xc->readFloatRegOperandBits(this, 1);
+      // hack("Extract read %d %#x.\n", 1, src.ul);
     } else {
       src.ul = xc->readFloatRegOperandBits(this, 0);
+      // hack("Extract read %d %#x.\n", 0, src.ul);
     }
     // Extract the 16-bit value.
     result.us.i1 = src.us_array[select & 0x3];

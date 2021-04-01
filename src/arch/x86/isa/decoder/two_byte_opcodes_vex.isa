@@ -326,7 +326,7 @@
             default: decode LEGACY_DECODEVAL {
                 // operand size (0x66)
                 0x1: decode OPCODE_OP_BOTTOM3 {
-                    0x5: VPEXTRW(Gd, Vo, Ib);
+                    0x5: VPEXTRW(Gd, Wo, Ib);
                 }
             }
         }
