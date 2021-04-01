@@ -1057,10 +1057,10 @@ void ISAStreamEngine::rewindStreamUser(const GemForgeDynInstInfo &dynInfo,
 /********************************************************************************
  * APIs related to misspeculation handling.
  *******************************************************************************/
-void ISAStreamEngine::storeTo(Addr vaddr, int size) {
+void ISAStreamEngine::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
   auto se = this->getStreamEngine();
   if (se) {
-    se->cpuStoreTo(vaddr, size);
+    se->cpuStoreTo(seqNum, vaddr, size);
   }
 }
 /********************************************************************************

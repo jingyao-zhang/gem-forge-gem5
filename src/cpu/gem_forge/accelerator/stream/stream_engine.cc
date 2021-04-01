@@ -765,7 +765,7 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
 
 void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
   auto seqNum = args.seqNum;
-  SE_DPRINTF("Dispatch StreamUser %llu.\n", seqNum);
+  SE_DPRINTF("Dispatch StreamUser sn:%llu.\n", seqNum);
   assert(this->userElementMap.count(seqNum) == 0);
   assert(this->hasUnsteppedElement(args) && "Don't have used elements.\n");
 
@@ -817,6 +817,7 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
         // Remember the first StreamStore.
         element->firstStoreSeqNum = seqNum;
       }
+      S_ELEMENT_DPRINTF(element, "Used by core inst sn:%llu.\n", seqNum);
       elementSet.insert(element);
       // Construct the elementUserMap.
       this->elementUserMap
@@ -1383,7 +1384,8 @@ void StreamEngine::commitStreamStore(StreamStoreInst *inst) {
          "LSQ only works for LLVMTraceCPU.");
 }
 
-void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
+void StreamEngine::cpuStoreTo(InstSeqNum seqNum, Addr vaddr, int size) {
+  this->removePendingWritebackElement(seqNum, vaddr, size);
   if (this->numInflyStreamConfigurations == 0) {
     return;
   }
@@ -1395,6 +1397,91 @@ void StreamEngine::cpuStoreTo(Addr vaddr, int size) {
     element->isAddrAliased = true;
     this->flushPEB(vaddr, size);
   }
+}
+
+void StreamEngine::addPendingWritebackElement(StreamElement *releaseElement) {
+  /**
+   * ! This is a hack implementation to avoid alias for IndirectUpdateStream.
+   * Ideally, we have to
+   * 1. Either correctly flush all dependent elements when such alias happened.
+   * 2. Or delay issuing when there is possible alias.
+   *
+   * This takes time to implement, and our current case is that alias only
+   * happens within the same stream. So we take a hack approach:
+   * 1. We delay issuing if there is any previous elements that alias.
+   * 2. We remember all pending writeback elements and also search for it.
+   *
+   * We only need to search pending writeback elements for O3 CPU, as so far
+   * our stream requests do not check O3 CPU's store buffer, and O3 CPU notifies
+   * us cpuStoreTo() when it is sent to cache.
+   *
+   * While MinorCPU notifies us cpuStoreTo() when committing and moving into
+   * StoreBuffer, and StreamRequests still check the store buffer, so we should
+   * be fine.
+   *
+   * SimpleCPU always writeback before commit, so we are also fine.
+   */
+  if (this->cpuDelegator->cpuType != GemForgeCPUDelegator::O3) {
+    S_ELEMENT_DPRINTF_(
+        StreamAlias, releaseElement,
+        "Skip PendingWritebackElements for Non-O3 CPU. sn:%llu.\n",
+        releaseElement->firstStoreSeqNum);
+  }
+  S_ELEMENT_DPRINTF_(StreamAlias, releaseElement,
+                     "Push into PendingWritebackElements. sn:%llu.\n",
+                     releaseElement->firstStoreSeqNum);
+  if (this->pendingWritebackElements.size() > 1000) {
+    S_ELEMENT_PANIC(releaseElement, "Too many pending writeback elements.");
+  }
+  this->pendingWritebackElements.emplace(
+      std::piecewise_construct,
+      std::forward_as_tuple(releaseElement->firstStoreSeqNum),
+      std::forward_as_tuple(releaseElement->FIFOIdx, releaseElement->addr,
+                            releaseElement->size));
+}
+
+void StreamEngine::removePendingWritebackElement(InstSeqNum seqNum, Addr vaddr,
+                                                 int size) {
+  /**
+   * We assume writeback happens in order, and thus release any old elements.
+   * This is because core may coalesce writes to the same address.
+   */
+  while (!this->pendingWritebackElements.empty()) {
+    auto iter = this->pendingWritebackElements.begin();
+    auto &element = iter->second;
+    if (iter->first > seqNum) {
+      break;
+    }
+    if (iter->first == seqNum) {
+      SE_DPRINTF_(StreamAlias, "%s: Written back.\n", iter->second.fifoIdx);
+      if (element.vaddr != vaddr || element.size != size) {
+        DYN_S_PANIC(element.fifoIdx.streamId,
+                    "Mismatch PendingWriteElement [%#x, +%d) vs [%#x, +%d).",
+                    element.vaddr, element.size, vaddr, size);
+      }
+    } else {
+      SE_DPRINTF_(StreamAlias, "%s: Assumed already written back.\n",
+                  iter->second.fifoIdx);
+    }
+    this->pendingWritebackElements.erase(iter);
+  }
+}
+
+bool StreamEngine::hasAliasWithPendingWritebackElements(
+    StreamElement *checkElement, Addr vaddr, int size) const {
+  for (const auto &pair : this->pendingWritebackElements) {
+    const auto &element = pair.second;
+    if (!(vaddr >= element.vaddr + element.size ||
+          element.vaddr >= vaddr + size)) {
+      S_ELEMENT_DPRINTF_(StreamAlias, checkElement,
+                         "Access [%#x, +%d) aliased with "
+                         "PendingWritebackElement %s [%#x, +%d).\n",
+                         vaddr, size, element.fifoIdx, element.vaddr,
+                         element.size);
+      return true;
+    }
+  }
+  return false;
 }
 
 void StreamEngine::initializeStreams(
@@ -2266,6 +2353,48 @@ void StreamEngine::issueElements() {
     }
 
     if (!element->isAddrReady()) {
+      /**
+       * For IndirectUpdateStream, we have possible aliasing, and for now
+       * we cannot correctly track all the dependence and flush/rewind.
+       * To avoid that, here I check if any previous element aliased with
+       * the issuing element. If found, we do not issue.
+       */
+      if (S->isUpdateStream() && S->isIndirectLoadStream() &&
+          !dynS->offloadedToCache) {
+        Addr addr = element->computeAddr();
+        int size = S->getMemElementSize();
+        if (this->hasAliasWithPendingWritebackElements(element, addr, size)) {
+          S_ELEMENT_DPRINTF_(
+              StreamAlias, element,
+              "Delayed issuing as aliased with PendingWritebackElement.\n");
+          element->flush(true);
+          continue;
+        }
+        auto prevE = dynS->getFirstElement();
+        assert(prevE && "Missing FirstElement.");
+        bool aliasedWithPrevElement = false;
+        while (prevE != element) {
+          if (!prevE->isAddrReady()) {
+            // If not ready, we consider it aliased.
+            aliasedWithPrevElement = true;
+            break;
+          }
+          if (prevE->addr >= addr + size || addr >= prevE->addr + size) {
+            prevE = prevE->next;
+            continue;
+          }
+          aliasedWithPrevElement = true;
+          break;
+        }
+        if (aliasedWithPrevElement) {
+          S_ELEMENT_DPRINTF_(StreamAlias, element,
+                             "Delayed issuing as aliased with previous element "
+                             "%llu. MyAddr %#x PrevAddr %#x Size %d.\n",
+                             prevE->FIFOIdx.entryIdx, addr, prevE->addr, size);
+          element->flush(true);
+          continue;
+        }
+      }
       element->markAddrReady();
     }
 
@@ -2438,10 +2567,11 @@ void StreamEngine::issueElement(StreamElement *element) {
       if (!element->flushed) {
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
       }
-      if (S->isAtomicComputeStream() || S->isLoadComputeStream()) {
+      if (S->isAtomicComputeStream() || S->isLoadComputeStream() ||
+          S->isUpdateStream()) {
         if (element->flushed) {
           S_ELEMENT_PANIC(element,
-                          "Flused Floating Atomic/LoadComputeStream.\n");
+                          "Flused Floating Atomic/LoadCompute/UpdateStream.\n");
         }
         flags.set(Request::NO_RUBY_BACK_STORE);
       }

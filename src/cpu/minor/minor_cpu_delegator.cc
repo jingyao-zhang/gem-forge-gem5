@@ -455,9 +455,9 @@ void MinorCPUDelegator::streamChange(InstSeqNum newStreamSeqNum) {
   pimpl->currentStreamSeqNum = newStreamSeqNum;
 }
 
-void MinorCPUDelegator::storeTo(Addr vaddr, int size) {
+void MinorCPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
   // First notify the IsaHandler.
-  isaHandler->storeTo(vaddr, size);
+  isaHandler->storeTo(seqNum, vaddr, size);
   // Find the oldest seqNum that aliased with this store.
   if (pimpl->inflyInstQueue.empty()) {
     // This should actually never happen.

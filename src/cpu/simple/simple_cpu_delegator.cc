@@ -105,7 +105,7 @@ void SimpleCPUDelegator::commit(StaticInstPtr staticInst, ExecContext &xc) {
 }
 
 void SimpleCPUDelegator::storeTo(Addr vaddr, int size) {
-  isaHandler->storeTo(vaddr, size);
+  isaHandler->storeTo(pimpl->curSeqNum, vaddr, size);
 }
 
 const std::string &SimpleCPUDelegator::getTraceExtraFolder() const {

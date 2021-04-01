@@ -9,7 +9,6 @@
 #include "proto/protoio.hh"
 
 #include "debug/StreamBase.hh"
-#include "debug/StreamCritical.hh"
 #define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
 
@@ -851,97 +850,13 @@ void Stream::addValueBaseElements(StreamElement *newElement) {
 }
 
 StreamElement *Stream::releaseElementStepped(bool isEnd) {
-
   /**
    * This function performs a normal release, i.e. release a stepped
    * element from the stream.
    */
-
   assert(!this->dynamicStreams.empty() && "No dynamic stream.");
   auto &dynS = this->dynamicStreams.front();
-
-  assert(dynS.stepSize > 0 && "No element to release.");
-  auto releaseElement = dynS.tail->next;
-  assert(releaseElement->isStepped && "Release unstepped element.");
-
-  const bool used = releaseElement->isFirstUserDispatched();
-  bool late = false;
-
-  this->statistic.numStepped++;
-  if (used) {
-    this->statistic.numUsed++;
-    /**
-     * Since this element is used by the core, we update the statistic
-     * of the latency of this element experienced by the core.
-     */
-    if (releaseElement->valueReadyCycle <
-        releaseElement->firstValueCheckCycle) {
-      // The element is ready earlier than core's user.
-      auto earlyCycles = releaseElement->firstValueCheckCycle -
-                         releaseElement->valueReadyCycle;
-      this->statistic.numCoreEarlyElement++;
-      this->statistic.numCoreEarlyCycle += earlyCycles;
-    } else {
-      // The element makes the core's user wait.
-      auto lateCycles = releaseElement->valueReadyCycle -
-                        releaseElement->firstValueCheckCycle;
-      this->statistic.numCoreLateElement++;
-      this->statistic.numCoreLateCycle += lateCycles;
-      late = true;
-      if (lateCycles > 1000) {
-        S_ELEMENT_DPRINTF_(
-            StreamCritical, releaseElement,
-            "Extreme Late %lu, Request Lat %lu, AddrReady %lu Issue %lu "
-            "ValReady %lu FirstCheck %lu.\n",
-            lateCycles,
-            releaseElement->valueReadyCycle - releaseElement->issueCycle,
-            releaseElement->addrReadyCycle - releaseElement->allocateCycle,
-            releaseElement->issueCycle - releaseElement->allocateCycle,
-            releaseElement->valueReadyCycle - releaseElement->allocateCycle,
-            releaseElement->firstValueCheckCycle -
-                releaseElement->allocateCycle);
-      }
-    }
-  }
-  dynS.updateStatsOnReleaseStepElement(this->getCPUDelegator()->curCycle(),
-                                       releaseElement->addr, late);
-
-  // Update the aliased statistic.
-  if (releaseElement->isAddrAliased) {
-    this->statistic.numAliased++;
-  }
-
-  // Check if the element is faulted.
-  if (this->isMemStream() && releaseElement->isAddrReady()) {
-    if (releaseElement->isValueFaulted(releaseElement->addr,
-                                       releaseElement->size)) {
-      this->statistic.numFaulted++;
-    }
-  }
-
-  /**
-   * Handle store func load stream.
-   * This is tricky because the is not used by the core, we want
-   * to distinguish the last element stepped by StreamEnd, which
-   * should not perform computation.
-   */
-  if (!isEnd) {
-    // this->handleMergedPredicate(dynS, releaseElement);
-  }
-
-  dynS.tail->next = releaseElement->next;
-  if (dynS.stepped == releaseElement) {
-    dynS.stepped = dynS.tail;
-  }
-  if (dynS.head == releaseElement) {
-    dynS.head = dynS.tail;
-  }
-  dynS.stepSize--;
-  dynS.allocSize--;
-  this->allocSize--;
-
-  S_ELEMENT_DPRINTF(releaseElement, "ReleaseElementStepped, used %d.\n", used);
-  return releaseElement;
+  return dynS.releaseElementStepped(isEnd);
 }
 
 StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {

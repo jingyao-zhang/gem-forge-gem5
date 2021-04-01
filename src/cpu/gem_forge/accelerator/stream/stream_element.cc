@@ -374,15 +374,13 @@ bool StreamElement::isFirstStoreDispatched() const {
   return this->firstStoreSeqNum != ::LLVMDynamicInst::INVALID_SEQ_NUM;
 }
 
-void StreamElement::markAddrReady() {
-  assert(!this->addrReady && "Addr is already ready.");
-  this->addrReady = true;
-  this->addrReadyCycle = this->stream->se->curCycle();
-
+Addr StreamElement::computeAddr() {
   /**
    * Compute the address.
    */
-
+  if (!this->stream->isMemStream()) {
+    S_ELEMENT_PANIC(this, "ComputeAddr for Non-Mem Stream.");
+  }
   GetStreamValueFunc getStreamValue =
       [this](uint64_t baseStreamId) -> StreamValue {
     auto baseStream = this->se->getStream(baseStreamId);
@@ -415,6 +413,18 @@ void StreamElement::markAddrReady() {
     S_ELEMENT_PANIC(this, "Failed to find the base stream value of %s.\n",
                     baseStream->getStreamName());
   };
+  Addr addr = this->dynS->addrGenCallback
+                  ->genAddr(this->FIFOIdx.entryIdx,
+                            this->dynS->addrGenFormalParams, getStreamValue)
+                  .front();
+  S_ELEMENT_DPRINTF(this, "ComputeAddr vaddr %#x.\n", addr);
+  return addr;
+}
+
+void StreamElement::markAddrReady() {
+  assert(!this->addrReady && "Addr is already ready.");
+  this->addrReady = true;
+  this->addrReadyCycle = this->stream->se->curCycle();
 
   /**
    * For non-mem streams, we set the address to 0 and directly set the value.
@@ -422,10 +432,7 @@ void StreamElement::markAddrReady() {
    */
   this->size = this->stream->getMemElementSize();
   if (this->stream->isMemStream()) {
-    this->addr = this->dynS->addrGenCallback
-                     ->genAddr(this->FIFOIdx.entryIdx,
-                               this->dynS->addrGenFormalParams, getStreamValue)
-                     .front();
+    this->addr = this->computeAddr();
   } else {
     this->addr = 0;
   }

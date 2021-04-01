@@ -171,8 +171,8 @@ void GemForgeISAHandler::rewind(const GemForgeDynInstInfo &dynInfo) {
   }
 }
 
-void GemForgeISAHandler::storeTo(Addr vaddr, int size) {
-  se.storeTo(vaddr, size);
+void GemForgeISAHandler::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
+  se.storeTo(seqNum, vaddr, size);
 }
 
 GemForgeISAHandler::GemForgeStaticInstInfo &

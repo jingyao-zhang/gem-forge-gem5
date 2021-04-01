@@ -270,6 +270,7 @@ struct StreamElement {
   StreamMemAccess *
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
   void handlePacketResponse(StreamMemAccess *memAccess, PacketPtr pkt);
+  Addr computeAddr();
   void markAddrReady();
   void computeValue();
   void tryMarkValueReady();

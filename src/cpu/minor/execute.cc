@@ -422,6 +422,7 @@ Execute::handleMemResponse(MinorDynInstPtr inst,
                  */
                 if (cpu.cpuDelegator) {
                     cpu.cpuDelegator->storeTo(
+                        response->inst->id.execSeqNum,
                         response->request->getVaddr(),
                         response->request->getSize()
                     );

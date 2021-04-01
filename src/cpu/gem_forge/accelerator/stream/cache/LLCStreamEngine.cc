@@ -1341,8 +1341,11 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
 
   auto reqType = CoherenceRequestType_GETH;
   if (dynCoreIS && dynCoreIS->shouldCoreSEIssue()) {
-    // For LoadComputeStream, we issue GETH and send back the compute result.
-    if (!IS->isLoadComputeStream()) {
+    /**
+     * For LoadComputeStream, we issue GETH and send back the compute result.
+     * For UpdateStream, we issue GETH and send back the old value.
+     */
+    if (!IS->isLoadComputeStream() && !IS->isUpdateStream()) {
       reqType = CoherenceRequestType_GETU;
     }
   }
@@ -2304,9 +2307,15 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr stream,
       this->atomicLockManager->commit(elementPAddr, elementMemSize, element);
     }
   } else {
-    // This is an update stream.
+    /**
+     * This is an update stream.
+     * We should send back the old value.
+     */
+    auto loadedValue = element->getValue(0 /* offset */, elementCoreSize);
+    loadValueBlock.setData(loadedValue.uint8Ptr(), lineOffset, elementCoreSize);
+
     auto getStreamValue = [&element](uint64_t streamId) -> StreamValue {
-      return element->getBaseStreamValue(streamId);
+      return element->getBaseOrMyStreamValue(streamId);
     };
     auto params = convertFormalParamToParam(
         stream->configData->storeFormalParams, getStreamValue);
@@ -2615,32 +2624,6 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
       // receiveStreamIndirectRequest().
       LLC_SLICE_PANIC(sliceId, "[Commit] Atomic should be release when "
                                "receiving the second request.");
-      // LLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
-      //                    "[Commit] Atomic released.\n");
-      // Addr elementPAddr;
-      // assert(dynS->translateToPAddr(element->vaddr, elementPAddr) &&
-      //        "Fault on vaddr of LLCStore/Atomic/UpdateStream.");
-      // auto elementMemSize = dynS->getMemElementSize();
-      // if (this->controller->isStreamAtomicLockEnabled()) {
-      //   /**
-      //    * For now we just delay the Ack until the line is unlocked.
-      //    */
-      //   this->atomicLockManager->commit(elementPAddr, elementMemSize,
-      //   element,
-      //                                   true /* shouldAckAfterUnlock */,
-      //                                   sliceId);
-      // } else {
-      //   /**
-      //    * Ideal case: Immediately send back Ack.
-      //    */
-      //   this->atomicLockManager->commit(elementPAddr, elementMemSize,
-      //   element,
-      //                                   false /* shouldAckAfterUnlock */,
-      //                                   sliceId);
-      //   this->issueStreamAckToMLC(sliceId);
-      // }
-      // // We should release the element now.
-      // return;
     }
   }
 

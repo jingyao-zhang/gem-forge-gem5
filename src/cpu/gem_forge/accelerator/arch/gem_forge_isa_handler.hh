@@ -33,14 +33,12 @@ public:
   void commit(const GemForgeDynInstInfo &dynInfo);
   void rewind(const GemForgeDynInstInfo &dynInfo);
 
-  void storeTo(Addr vaddr, int size);
+  void storeTo(InstSeqNum seqNum, Addr vaddr, int size);
 
   /**
    * Reset the ISAStreamEngine to initial state.
    */
-  void resetISAStreamEngine() {
-    this->se.reset();
-  }
+  void resetISAStreamEngine() { this->se.reset(); }
 
 private:
   GemForgeCPUDelegator *cpuDelegator;

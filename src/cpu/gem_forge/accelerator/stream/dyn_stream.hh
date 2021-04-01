@@ -217,6 +217,11 @@ struct DynamicStream {
    * Remove one unstepped element from the last dynamic stream.
    */
   StreamElement *releaseElementUnstepped();
+  /**
+   * Remove one stepped element from the first dynamic stream.
+   * @param isEnd: This element is stepped by StreamEnd, not StreamStep.
+   */
+  StreamElement *releaseElementStepped(bool isEnd);
 
   uint64_t getNumReleasedElements() const { return this->numReleaseElement; }
   uint64_t getStartVAddr() const { return this->startVAddr; }

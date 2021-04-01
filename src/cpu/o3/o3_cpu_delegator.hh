@@ -96,7 +96,7 @@ public:
    * 1. Notify GemForge.
    * 2. Invalid any aliased load in PreLSQ.
    */
-  void storeTo(Addr vaddr, int size);
+  void storeTo(InstSeqNum seqNum, Addr vaddr, int size);
 
   /**
    * CPU LSQ found a RAWMisspuclation at SeqNum. We need to:

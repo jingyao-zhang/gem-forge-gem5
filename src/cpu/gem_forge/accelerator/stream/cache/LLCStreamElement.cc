@@ -52,7 +52,7 @@ StreamValue LLCStreamElement::getBaseStreamValue(uint64_t baseStreamId) {
       return baseE->getValueByStreamId(baseStreamId);
     }
   }
-  assert(false && "Invalid baseStreamId.");
+  LLC_ELEMENT_PANIC(this, "Invalid baseStreamId %llu.", baseStreamId);
   return StreamValue();
 }
 

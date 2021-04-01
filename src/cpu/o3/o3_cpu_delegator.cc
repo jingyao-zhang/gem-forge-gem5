@@ -412,9 +412,10 @@ void DefaultO3CPUDelegator<CPUImpl>::squash(InstSeqNum squashSeqNum) {
 }
 
 template <class CPUImpl>
-void DefaultO3CPUDelegator<CPUImpl>::storeTo(Addr vaddr, int size) {
+void DefaultO3CPUDelegator<CPUImpl>::storeTo(InstSeqNum seqNum, Addr vaddr,
+                                             int size) {
   // 1. Notify GemForge.
-  isaHandler->storeTo(vaddr, size);
+  isaHandler->storeTo(seqNum, vaddr, size);
 
   // 2. Find the oldest seqNum that aliased with this store.
   if (pimpl->inflyInstQueue.empty()) {

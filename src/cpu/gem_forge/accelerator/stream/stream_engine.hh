@@ -139,7 +139,8 @@ public:
   /*************************************************************************
    * Tough part: handling misspeculation.
    ************************************************************************/
-  void cpuStoreTo(Addr vaddr, int size);
+  void cpuStoreTo(InstSeqNum seqNum, Addr vaddr, int size);
+  void addPendingWritebackElement(StreamElement *releaseElement);
 
   Stream *getStream(uint64_t streamId) const;
   Stream *tryGetStream(uint64_t streamId) const;
@@ -344,6 +345,26 @@ private:
    * A dummy cacheline of data for write back.
    */
   uint8_t *writebackCacheLine;
+
+  /**
+   * ! This is a hack to avoid having alias for IndirectUpdateStream.
+   * The DynStream tracks writes from this stream that has not been writen back.
+   * And delay issuing new elements if found aliased here.
+   */
+  struct PendingWritebackElement {
+    FIFOEntryIdx fifoIdx;
+    Addr vaddr;
+    int size;
+    PendingWritebackElement(FIFOEntryIdx _fifoIdx, Addr _vaddr, int _size)
+        : fifoIdx(_fifoIdx), vaddr(_vaddr), size(_size) {}
+  };
+  std::map<InstSeqNum, PendingWritebackElement> pendingWritebackElements;
+  /**
+   * Check if this access aliased with my pending writeback elements.
+   */
+  bool hasAliasWithPendingWritebackElements(StreamElement *checkElement,
+                                            Addr vaddr, int size) const;
+  void removePendingWritebackElement(InstSeqNum seqNum, Addr vaddr, int size);
 
   /**
    * Memorize the StreamConfigureInfo.

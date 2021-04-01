@@ -106,7 +106,7 @@ public:
   /**
    * CPU stores to a place. Notify GemForge to check any memory misspeculation.
    */
-  void storeTo(Addr vaddr, int size);
+  void storeTo(InstSeqNum seqNum, Addr vaddr, int size);
 
 private:
   class Impl;

@@ -3,7 +3,9 @@
 #include "stream_element.hh"
 #include "stream_engine.hh"
 
+#include "debug/StreamAlias.hh"
 #include "debug/StreamBase.hh"
+#include "debug/StreamCritical.hh"
 #include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
@@ -542,6 +544,113 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
    * new elements can be allocated with correct FIFOIdx.
    */
   this->FIFOIdx.prev();
+  return releaseElement;
+}
+
+StreamElement *DynamicStream::releaseElementStepped(bool isEnd) {
+
+  /**
+   * This function performs a normal release, i.e. release a stepped
+   * element from the stream.
+   */
+
+  assert(this->stepSize > 0 && "No element to release.");
+  auto releaseElement = this->tail->next;
+  assert(releaseElement->isStepped && "Release unstepped element.");
+
+  const bool used = releaseElement->isFirstUserDispatched();
+  bool late = false;
+
+  auto S = this->stream;
+  auto &statistic = S->statistic;
+
+  statistic.numStepped++;
+  if (used) {
+    statistic.numUsed++;
+    /**
+     * Since this element is used by the core, we update the statistic
+     * of the latency of this element experienced by the core.
+     */
+    if (releaseElement->valueReadyCycle <
+        releaseElement->firstValueCheckCycle) {
+      // The element is ready earlier than core's user.
+      auto earlyCycles = releaseElement->firstValueCheckCycle -
+                         releaseElement->valueReadyCycle;
+      statistic.numCoreEarlyElement++;
+      statistic.numCoreEarlyCycle += earlyCycles;
+    } else {
+      // The element makes the core's user wait.
+      auto lateCycles = releaseElement->valueReadyCycle -
+                        releaseElement->firstValueCheckCycle;
+      statistic.numCoreLateElement++;
+      statistic.numCoreLateCycle += lateCycles;
+      late = true;
+      if (lateCycles > 1000) {
+        S_ELEMENT_DPRINTF_(
+            StreamCritical, releaseElement,
+            "Extreme Late %lu, Request Lat %lu, AddrReady %lu Issue %lu "
+            "ValReady %lu FirstCheck %lu.\n",
+            lateCycles,
+            releaseElement->valueReadyCycle - releaseElement->issueCycle,
+            releaseElement->addrReadyCycle - releaseElement->allocateCycle,
+            releaseElement->issueCycle - releaseElement->allocateCycle,
+            releaseElement->valueReadyCycle - releaseElement->allocateCycle,
+            releaseElement->firstValueCheckCycle -
+                releaseElement->allocateCycle);
+      }
+    }
+  }
+  this->updateStatsOnReleaseStepElement(S->getCPUDelegator()->curCycle(),
+                                        releaseElement->addr, late);
+
+  // Update the aliased statistic.
+  if (releaseElement->isAddrAliased) {
+    statistic.numAliased++;
+  }
+
+  // Check if the element is faulted.
+  if (S->isMemStream() && releaseElement->isAddrReady()) {
+    if (releaseElement->isValueFaulted(releaseElement->addr,
+                                       releaseElement->size)) {
+      statistic.numFaulted++;
+    }
+  }
+
+  /**
+   * If this stream is not offloaded, and we have dispatched a StreamStore to
+   * this element, we push the element to PendingWritebackElements.
+   */
+  if (!this->offloadedToCache && releaseElement->isFirstStoreDispatched()) {
+    /**
+     * So far only enable this for IndirectUpdateStream.
+     */
+    if (S->isUpdateStream() && S->isIndirectLoadStream()) {
+      this->stream->se->addPendingWritebackElement(releaseElement);
+    }
+  }
+
+  /**
+   * Handle store func load stream.
+   * This is tricky because the is not used by the core, we want
+   * to distinguish the last element stepped by StreamEnd, which
+   * should not perform computation.
+   */
+  if (!isEnd) {
+    // this->handleMergedPredicate(dynS, releaseElement);
+  }
+
+  this->tail->next = releaseElement->next;
+  if (this->stepped == releaseElement) {
+    this->stepped = this->tail;
+  }
+  if (this->head == releaseElement) {
+    this->head = this->tail;
+  }
+  this->stepSize--;
+  this->allocSize--;
+  S->allocSize--;
+
+  S_ELEMENT_DPRINTF(releaseElement, "ReleaseElementStepped, used %d.\n", used);
   return releaseElement;
 }
 

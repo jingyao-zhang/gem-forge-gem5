@@ -966,9 +966,10 @@ LSQUnit<Impl>::storePostSend()
      * At this point, we know CPU stores to someplace.
      */
     if (cpu->cpuDelegator) {
+        InstSeqNum seqNum = storeWBIt->instruction()->seqNum;
         Addr vaddr = storeWBIt->request()->getVaddr();
         int size = storeWBIt->size();
-        cpu->cpuDelegator->storeTo(vaddr, size);
+        cpu->cpuDelegator->storeTo(seqNum, vaddr, size);
     }
     if (isStalled() &&
         storeWBIt->instruction()->seqNum == stallingStoreIsn) {

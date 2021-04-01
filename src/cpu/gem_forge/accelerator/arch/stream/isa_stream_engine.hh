@@ -57,7 +57,7 @@ public:
 
 #undef DeclareStreamInstHandler
 
-  void storeTo(Addr vaddr, int size);
+  void storeTo(InstSeqNum seqNum, Addr vaddr, int size);
 
 private:
   ::GemForgeCPUDelegator *cpuDelegator;
