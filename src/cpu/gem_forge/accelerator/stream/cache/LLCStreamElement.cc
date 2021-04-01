@@ -104,10 +104,10 @@ void LLCStreamElement::setValue(const StreamValue &value) {
   this->readyBytes += this->size;
 }
 
-void LLCStreamElement::setLoadComputeValue(const StreamValue &value) {
-  assert(!this->loadComputeValueReady && "LoadComputeValue already ready.");
-  this->loadComputeValue = value;
-  this->loadComputeValueReady = true;
+void LLCStreamElement::setComputedValue(const StreamValue &value) {
+  assert(!this->computedValueReady && "ComputedValue already ready.");
+  this->computedValue = value;
+  this->computedValueReady = true;
 }
 
 int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,

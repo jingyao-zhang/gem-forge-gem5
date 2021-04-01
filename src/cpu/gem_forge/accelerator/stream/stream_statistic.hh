@@ -85,6 +85,7 @@ public:
     IssueClearCycle,
     MaxInflyRequest,
     PendingMigrate,
+    AliasedIndirectUpdate,
     NumLLCStreamEngineIssueReason,
   };
   // Will be default initialized.

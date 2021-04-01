@@ -726,11 +726,12 @@ void LLCDynamicStream::allocateLLCStream(
         continue;
       }
       /**
-       * We don't support Two-Level Indirect LLCStream. However, the only
-       * exception is for IndirectRedcutionStream.
+       * So far we don't support Two-Level Indirect LLCStream, except:
+       * 1. IndirectRedcutionStream.
+       * 2. Two-Level IndirectStoreComputeStream.
        */
       auto ISDepS = ISDepEdge.data->stream;
-      if (ISDepS->isReduction()) {
+      if (ISDepS->isReduction() || ISDepS->isStoreComputeStream()) {
         auto IIS =
             new LLCDynamicStream(mlcController, llcController, ISDepEdge.data);
         IIS->setBaseStream(IS);
@@ -764,7 +765,9 @@ void LLCDynamicStream::setBaseStream(LLCDynamicStreamPtr baseS) {
                 "Set multiple base LLCDynamicStream.");
   }
   this->baseStream = baseS;
+  this->rootStream = baseS->rootStream ? baseS->rootStream : baseS;
   baseS->indirectStreams.push_back(this);
+  this->rootStream->allIndirectStreams.push_back(this);
 }
 
 Cycles LLCDynamicStream::curCycle() const {
@@ -889,7 +892,7 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
    * IndirectReductionStream separates compuation from charging the latency.
    */
   if (S->isLoadComputeStream()) {
-    element->setLoadComputeValue(value);
+    element->setComputedValue(value);
   } else if (!this->isIndirectReduction()) {
     element->setValue(value);
   }
@@ -1057,8 +1060,8 @@ void LLCDynamicStream::markElementReadyToIssue(uint64_t elementIdx) {
 
   // Increment the counter in the base stream.
   this->numElementsReadyToIssue++;
-  if (this->baseStream) {
-    this->baseStream->numIndirectElementsReadyToIssue++;
+  if (this->rootStream) {
+    this->rootStream->numIndirectElementsReadyToIssue++;
   }
 }
 
@@ -1091,10 +1094,10 @@ void LLCDynamicStream::markElementIssued(uint64_t elementIdx) {
          "Underflow NumElementsReadyToIssue.");
   this->numElementsReadyToIssue--;
   this->nextIssueElementIdx++;
-  if (this->baseStream) {
-    assert(this->baseStream->numIndirectElementsReadyToIssue > 0 &&
+  if (this->rootStream) {
+    assert(this->rootStream->numIndirectElementsReadyToIssue > 0 &&
            "Underflow NumIndirectElementsReadyToIssue.");
-    this->baseStream->numIndirectElementsReadyToIssue--;
+    this->rootStream->numIndirectElementsReadyToIssue--;
   }
 }
 

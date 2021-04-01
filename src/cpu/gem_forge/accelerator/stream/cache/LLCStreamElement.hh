@@ -140,11 +140,9 @@ public:
     return this->secondIndirectAtomicReqSeen;
   }
 
-  bool isLoadComputeValueReady() const { return this->loadComputeValueReady; }
-  const StreamValue &getLoadComputeValue() const {
-    return this->loadComputeValue;
-  }
-  void setLoadComputeValue(const StreamValue &value);
+  bool isComputedValueReady() const { return this->computedValueReady; }
+  const StreamValue &getComputedValue() const { return this->computedValue; }
+  void setComputedValue(const StreamValue &value);
 
   const LLCStreamElementPtr &getPrevReductionElement() const {
     return this->prevReductionElement;
@@ -187,10 +185,12 @@ private:
   bool secondIndirectAtomicReqSeen = false;
 
   /**
-   * Value for LoadComputeStream.
+   * Computation Result. Currently used for:
+   * 1. LoadComputeStream.
+   * 2. UpdateStream's StoreValue.
    */
-  StreamValue loadComputeValue;
-  bool loadComputeValueReady = false;
+  StreamValue computedValue;
+  bool computedValueReady = false;
 
   /**
    * Explicitly remember the previous element for ReductionStream.

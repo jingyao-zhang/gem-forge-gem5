@@ -56,6 +56,9 @@ private:
   void floatDirectReductionStreams(const Args &args);
   void floatIndirectReductionStreams(const Args &args);
   void floatIndirectReductionStream(const Args &args, DynamicStream *dynS);
+  void floatTwoLevelIndirectStoreComputeStreams(const Args &args);
+  void floatTwoLevelIndirectStoreComputeStream(const Args &args,
+                                               DynamicStream *dynS);
 
   /**
    * For now we can rewind a floated stream that write to memory (Store/Atomic

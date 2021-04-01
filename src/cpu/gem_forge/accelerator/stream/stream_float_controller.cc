@@ -221,6 +221,7 @@ void StreamFloatController::floatStreams(
   this->floatDirectStoreComputeOrUpdateStreams(floatArgs);
   this->floatDirectReductionStreams(floatArgs);
   this->floatIndirectReductionStreams(floatArgs);
+  this->floatTwoLevelIndirectStoreComputeStreams(floatArgs);
 
   // Sanity check for some offload decision.
   bool hasOffloadStoreFunc = false;
@@ -796,5 +797,88 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
 void StreamFloatController::floatIndirectReductionStreams(const Args &args) {
   for (auto dynS : args.dynStreams) {
     this->floatIndirectReductionStream(args, dynS);
+  }
+}
+
+void StreamFloatController::floatTwoLevelIndirectStoreComputeStreams(
+    const Args &args) {
+  if (!this->se->myParams->enableFloatTwoLevelIndirectStoreCompute) {
+    return;
+  }
+  for (auto dynS : args.dynStreams) {
+    this->floatTwoLevelIndirectStoreComputeStream(args, dynS);
+  }
+}
+
+void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
+    const Args &args, DynamicStream *dynS) {
+  auto &floatedMap = args.floatedMap;
+  auto S = dynS->stream;
+  if (!S->isStoreComputeStream()) {
+    return;
+  }
+  if (S->isDirectMemStream()) {
+    return;
+  }
+  if (S->addrBaseStreams.size() != 1) {
+    return;
+  }
+  auto addrBaseS = *S->addrBaseStreams.begin();
+  if (!addrBaseS->isIndirectLoadStream()) {
+    return;
+  }
+  if (addrBaseS->addrBaseStreams.size() != 1) {
+    return;
+  }
+  auto addrRootS = *addrBaseS->addrBaseStreams.begin();
+  if (!addrRootS->isDirectLoadStream()) {
+    return;
+  }
+  if (!floatedMap.count(addrBaseS) || !floatedMap.count(addrRootS)) {
+    StreamFloatPolicy::logStream(S)
+        << "[Not Float] AddrBase/RootS not floated.\n"
+        << std::flush;
+    return;
+  }
+  for (auto valueBaseS : S->valueBaseStreams) {
+    if (valueBaseS != addrBaseS && valueBaseS != addrRootS) {
+      StreamFloatPolicy::logStream(S)
+          << "[Not Float] ValueBaseS not one of AddrBase/RootS.\n"
+          << std::flush;
+      return;
+    }
+  }
+  if (this->se->myParams->enableRangeSync) {
+    StreamFloatPolicy::logStream(S)
+        << "[Not Float] Two-Level IndirectStoreCompute cannot RangeSync.\n"
+        << std::flush;
+    return;
+  }
+  auto &addrBaseConfig = floatedMap.at(addrBaseS);
+  auto &addrRootConfig = floatedMap.at(addrRootS);
+
+  auto myConfig =
+      S->allocateCacheConfigureData(dynS->configSeqNum, true /* isIndirect */);
+  dynS->offloadedToCache = true;
+  this->se->numFloated++;
+  floatedMap.emplace(S, myConfig);
+  addrBaseConfig->addUsedBy(myConfig);
+
+  StreamFloatPolicy::logStream(S)
+      << "[Float] as Two-Level IndirectStoreCompute associated with "
+      << addrBaseConfig->dynamicId << "\n"
+      << std::flush;
+
+  // Add special SendTo edge from AddrRootS to itself if needed.
+  for (auto valueBaseS : S->valueBaseStreams) {
+    if (valueBaseS == addrRootS) {
+      addrRootConfig->addSendTo(addrRootConfig);
+      myConfig->addBaseOn(addrRootConfig);
+      StreamFloatPolicy::logStream(S)
+          << "[Float] as Two-Level IndirectStoreCompute based on "
+          << addrRootConfig->dynamicId << "\n"
+          << std::flush;
+      break;
+    }
   }
 }

@@ -203,6 +203,7 @@ private:
    * IndirectStreams is just the "UsedBy" dependence.
    */
   std::vector<LLCDynamicStreamPtr> indirectStreams;
+  std::vector<LLCDynamicStreamPtr> allIndirectStreams;
 
   // Private controller as user should use allocateLLCStreams().
   LLCDynamicStream(AbstractStreamAwareController *_mlcController,
@@ -247,6 +248,9 @@ public:
   const std::vector<LLCDynamicStreamPtr> &getIndStreams() const {
     return this->indirectStreams;
   }
+  const std::vector<LLCDynamicStreamPtr> &getAllIndStreams() const {
+    return this->allIndirectStreams;
+  }
 
   /**
    * Remember the basic information for BaseOn information.
@@ -259,6 +263,9 @@ public:
 
   // Base stream.
   LLCDynamicStream *baseStream = nullptr;
+
+  // Root stream.
+  LLCDynamicStream *rootStream = nullptr;
 
   // Dependent predicated streams.
   std::unordered_set<LLCDynamicStream *> predicatedStreams;

@@ -342,7 +342,12 @@ private:
    */
   void triggerIndirectElement(LLCDynamicStreamPtr stream,
                               LLCStreamElementPtr element);
-  void triggerUpdate(LLCDynamicStreamPtr stream, LLCStreamElementPtr element,
+  void triggerUpdate(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
+                     const DynamicStreamSliceId &sliceId,
+                     const DataBlock &storeValueBlock,
+                     DataBlock &loadValueBlock);
+  void triggerAtomic(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
+                     const DynamicStreamSliceId &sliceId,
                      const DataBlock &storeValueBlock,
                      DataBlock &loadValueBlock);
 
@@ -384,7 +389,8 @@ private:
   void processStreamForwardRequest(const RequestMsg &req);
 
   /**
-   * Check if this is the second request to lock the indirect atomic, if so process it.
+   * Check if this is the second request to lock the indirect atomic, if so
+   * process it.
    * @return whether this message is processed.
    */
   bool tryToProcessIndirectAtomicUnlockReq(const RequestMsg &req);

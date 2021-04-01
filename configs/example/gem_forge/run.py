@@ -196,6 +196,9 @@ parser.add_option("--gem-forge-stream-atomic-lock-type", type="choice", default=
 parser.add_option("--gem-forge-enable-stream-float-indirect-reduction", action="store_true",
                   default="False",
                   help="Enable floating indirect reduction stream.")
+parser.add_option("--gem-forge-enable-stream-float-two-level-indirect-store-compute",
+                  action="store_true", default="False",
+                  help="Enable floating two-level indirect store compute stream.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

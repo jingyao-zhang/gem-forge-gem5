@@ -89,9 +89,11 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numMissL2);
 
   for (auto idx = 0; idx < this->llcIssueReasons.size(); ++idx) {
-    dumpNamedScalar(
-        llcSEIssueReasonToString(static_cast<LLCStreamEngineIssueReason>(idx)),
-        this->llcIssueReasons.at(idx));
+    if (this->llcIssueReasons.at(idx) > 0) {
+      dumpNamedScalar(llcSEIssueReasonToString(
+                          static_cast<LLCStreamEngineIssueReason>(idx)),
+                      this->llcIssueReasons.at(idx));
+    }
   }
 
 #undef dumpScalar
@@ -111,6 +113,7 @@ StreamStatistic::llcSEIssueReasonToString(LLCStreamEngineIssueReason reason) {
     Case(IssueClearCycle);
     Case(MaxInflyRequest);
     Case(PendingMigrate);
+    Case(AliasedIndirectUpdate);
     Case(NumLLCStreamEngineIssueReason);
 #undef Case
   default:
