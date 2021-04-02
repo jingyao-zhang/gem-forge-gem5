@@ -49,6 +49,8 @@ public:
   size_t numLLCPredNSlice = 0;
   size_t numLLCMigrate = 0;
   size_t numLLCMigrateCycle = 0;
+  size_t numLLCAliveElements = 0;
+  size_t numLLCAliveElementSamples = 0;
 
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;
@@ -95,6 +97,11 @@ public:
 
   void sampleLLCStreamEngineIssueReason(LLCStreamEngineIssueReason reason) {
     this->llcIssueReasons.at(reason)++;
+  }
+
+  void sampleLLCAliveElements(size_t numAliveElements) {
+    this->numLLCAliveElements += numAliveElements;
+    this->numLLCAliveElementSamples++;
   }
 
   StreamStatistic() = default;

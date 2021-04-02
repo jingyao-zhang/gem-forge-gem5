@@ -48,6 +48,12 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numLLCMigrateCycle);
   dumpAvg(avgMigrateCycle, numLLCMigrateCycle, numLLCMigrate);
 
+  dumpScalar(numLLCAliveElementSamples);
+  if (numLLCAliveElementSamples > 0) {
+    dumpAvg(avgLLCAliveElements, numLLCAliveElements,
+            numLLCAliveElementSamples);
+  }
+
   dumpAvg(avgLength, numStepped, numConfigured);
   dumpAvg(avgUsed, numUsed, numConfigured);
 
@@ -163,6 +169,16 @@ void StreamStatistic::clear() {
   this->numMissL0 = 0;
   this->numMissL1 = 0;
   this->numMissL2 = 0;
+
+  this->numFloatAtomic = 0;
+  this->numFloatAtomicRecvCommitCycle = 0;
+  this->numFloatAtomicWaitForCommitCycle = 0;
+  this->numFloatAtomicWaitForLockCycle = 0;
+  this->numFloatAtomicWaitForUnlockCycle = 0;
+
+  this->numLLCAliveElements = 0;
+  this->numLLCAliveElementSamples = 0;
+
   for (auto &reasons : this->llcIssueReasons) {
     reasons = 0;
   }

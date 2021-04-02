@@ -22,10 +22,26 @@ DynamicStream *StreamRangeSyncController::getNoRangeDynS() {
 
   for (auto *dynS : dynStreams) {
     if (!dynS->getCurrentWorkingRange()) {
-      // There is no range for the next element, with a special case if
-      // we have reached the total trip count, as there is no next iteration.
+      /**
+       * There is no range for the next element, with exception for element
+       * beyond the total trip count.
+       *
+       * Notice that our current implementation always check for the FIFOHead
+       * + 1. This implicitly assumes all streams will be stepped. However, this
+       * is not the case for two level of loop:
+       *
+       * config(s_i, s_j)
+       * for i
+       *   for j
+       *     step i
+       *   step j
+       * end(s_i, s_j)
+       *
+       * The outer loop step will check for TotalTripCount + 1. So far we fix
+       * this by ignore CheckElementIdx >= TotalTripCount.
+       */
       if (dynS->hasTotalTripCount() &&
-          this->getCheckElementIdx(dynS) == dynS->getTotalTripCount()) {
+          this->getCheckElementIdx(dynS) >= dynS->getTotalTripCount()) {
         continue;
       }
       // DYN_S_DPRINTF(dynS->dynamicStreamId,

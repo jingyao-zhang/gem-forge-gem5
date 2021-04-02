@@ -140,6 +140,12 @@ public:
     return this->secondIndirectAtomicReqSeen;
   }
 
+  bool isIndirectStoreAcked() const { return this->indirectStoreAcked; }
+  void setIndirectStoreAcked() {
+    assert(!this->indirectStoreAcked && "IndirectStore already acked.");
+    this->indirectStoreAcked = true;
+  }
+
   bool isComputedValueReady() const { return this->computedValueReady; }
   const StreamValue &getComputedValue() const { return this->computedValue; }
   void setComputedValue(const StreamValue &value);
@@ -183,6 +189,11 @@ private:
    */
   bool firstIndirectAtomicReqSeen = false;
   bool secondIndirectAtomicReqSeen = false;
+
+  /**
+   * IndirectStoreAcked.
+   */
+  bool indirectStoreAcked = false;
 
   /**
    * Computation Result. Currently used for:

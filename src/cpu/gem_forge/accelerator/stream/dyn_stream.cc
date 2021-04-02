@@ -346,9 +346,10 @@ bool DynamicStream::shouldCoreSEIssue() const {
    * If the stream has floated, and no core user/dependent streams here,
    * then we don't have to issue for the data.
    */
-  if (!this->stream->hasCoreUser() && this->offloadedToCache) {
+  auto S = this->stream;
+  if (!S->hasCoreUser() && this->offloadedToCache) {
     // Check that dependent dynS all offloaded to cache.
-    for (auto depS : this->stream->addrDepStreams) {
+    for (auto depS : S->addrDepStreams) {
       const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
       // If the AddrDepStream issues, then we have to issue to compute the
       // address.
@@ -356,13 +357,13 @@ bool DynamicStream::shouldCoreSEIssue() const {
         return true;
       }
     }
-    for (auto backDepS : this->stream->backDepStreams) {
+    for (auto backDepS : S->backDepStreams) {
       const auto &backDepDynS = backDepS->getDynamicStream(this->configSeqNum);
       if (!backDepDynS.offloadedToCache) {
         return true;
       }
     }
-    for (auto valDepS : this->stream->valueDepStreams) {
+    for (auto valDepS : S->valueDepStreams) {
       const auto &valDepDynS = valDepS->getDynamicStream(this->configSeqNum);
       if (!valDepDynS.offloadedToCache) {
         return true;
@@ -371,9 +372,18 @@ bool DynamicStream::shouldCoreSEIssue() const {
     /**
      * If we have some dependent nest stream region, we also have to issue.
      */
-    if (this->stream->hasDepNestRegion()) {
+    if (S->hasDepNestRegion()) {
       return true;
     }
+    return false;
+  }
+  /**
+   * A special rule for conditional AtomicStream that already alias with a load.
+   * This is common pattern to first load to check if we want to perform the
+   * atomic. For such pattern, we do not issue.
+   */
+  if (!S->hasCoreUser() && S->isAtomicStream() && !S->isAtomicComputeStream() &&
+      S->getIsConditional() && S->aliasBaseStream->aliasedStreams.size() > 1) {
     return false;
   }
   return true;

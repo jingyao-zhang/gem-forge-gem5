@@ -430,12 +430,32 @@ void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
    * will be released when the final request is handled.
    * 3. IndirectLoadComputeStream is released in releaseSlice().
    */
+  LLC_S_DPRINTF(
+      dynS->getDynamicStreamId(),
+      "[IndirectRelease] Check ShouldIssueAfterCommit %d IsLoadCompute %d.\n",
+      dynS->shouldIssueAfterCommit(), S->isLoadComputeStream());
   if (!dynS->shouldIssueAfterCommit() && !S->isLoadComputeStream()) {
     while (!dynS->idxToElementMap.empty()) {
       auto elementIter = dynS->idxToElementMap.begin();
       const auto &element = elementIter->second;
-      if (!element->isReady() || !element->areBaseElementsReady()) {
+      if (!element->areBaseElementsReady()) {
+        LLC_ELEMENT_DPRINTF(element,
+                            "Cannot release AreBaseElementsReady %d.\n",
+                            element->areBaseElementsReady());
         break;
+      }
+      if (S->isStoreComputeStream()) {
+        if (!element->isIndirectStoreAcked()) {
+          LLC_ELEMENT_DPRINTF(element,
+                              "Cannot release IndirectStore not acked.\n");
+          break;
+        }
+      } else {
+        if (!element->isReady()) {
+          LLC_ELEMENT_DPRINTF(element, "Cannot release IsReady %d.\n",
+                              element->isReady());
+          break;
+        }
       }
       dynS->eraseElement(elementIter);
     }
@@ -486,9 +506,14 @@ void LLCStreamEngine::receiveStoreStreamData(
         GemForgeUtils::dataToString(storeValue, overlapSize));
     this->performStore(paddr + sliceOffset, overlapSize, storeValue);
   }
-  if (!dynS->shouldRangeSync() || !dynS->isIndirect()) {
+  if (!dynS->shouldRangeSync() || dynS->isIndirect()) {
     LLC_SLICE_DPRINTF_(LLCRubyStreamStore, sliceId,
                        "StreamStore send back StreamAck.\n");
+    if (dynS->isIndirect()) {
+      auto element =
+          dynS->getElementPanic(sliceId.getStartIdx(), "AckIndirectStore");
+      element->setIndirectStoreAcked();
+    }
     this->issueStreamAckToMLC(sliceId);
   }
 }
@@ -1008,6 +1033,7 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
 
   auto S = dynS->getStaticStream();
   auto &statistic = S->statistic;
+  statistic.sampleLLCAliveElements(dynS->idxToElementMap.size());
   /**
    * Prioritize indirect streams.
    */
@@ -1131,6 +1157,7 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
   uint64_t readyElementIdx = 0;
   for (auto dynIS : dynS->getAllIndStreams()) {
     auto IS = dynIS->getStaticStream();
+    IS->statistic.sampleLLCAliveElements(dynIS->idxToElementMap.size());
     // Enforce the per stream maxInflyRequests constraint.
     if (dynIS->inflyRequests == this->maxInflyRequestsPerStream) {
       LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynIS->getDynamicStreamId(),
@@ -2448,7 +2475,10 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
     while (!dynS->idxToElementMap.empty()) {
       auto elementIter = dynS->idxToElementMap.begin();
       auto &element = elementIter->second;
-      if (element->isReady() && element->areSlicesReleased()) {
+      // StoreComputeStream is never ready.
+      if ((element->isReady() ||
+           dynS->getStaticStream()->isStoreComputeStream()) &&
+          element->areSlicesReleased()) {
         if (!element->areBaseElementsReady()) {
           LLC_ELEMENT_PANIC(
               element, "Released when Ready %d ValueBaseReady %d Slices %d.",

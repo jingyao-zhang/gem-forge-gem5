@@ -124,22 +124,40 @@ void MLCDynamicDirectStream::advanceStream() {
    * In order to synchronize the direct/indirect stream, we want to make sure
    * that the direct stream is only ahead of the indirect stream by a reasonable
    * distance.
+   *
+   * We also directly check the LLC streams.
    */
-  uint64_t indirectSlices = 0;
+  uint64_t maxISElements = 0;
   for (auto dynIS : this->indirectStreams) {
     assert(dynIS->getTailSliceIdx() >= dynIS->getHeadSliceIdx() &&
            "Illegal Head/TailSliceIdx.\n");
-    indirectSlices = std::max(
-        dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx(), indirectSlices);
+    auto ISElements = dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx();
+    if (ISElements > maxISElements) {
+      MLC_S_DPRINTF(dynIS->getDynamicStreamId(),
+                    "[MLCAdvance] New MaxISElements %llu.\n", ISElements);
+      maxISElements = ISElements;
+    }
   }
+  // if (auto dynLLCS =
+  //         LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
+  //   for (auto dynLLCIS : dynLLCS->getAllIndStreams()) {
+  //     auto llcISElements = dynLLCIS->idxToElementMap.size();
+  //     if (llcISElements > maxISElements) {
+  //       MLC_S_DPRINTF(dynLLCIS->getDynamicStreamId(),
+  //                     "[MLCAdvance] New LLC MaxISElements %llu.\n",
+  //                     llcISElements);
+  //       maxISElements = llcISElements;
+  //     }
+  //   }
+  // }
   uint64_t indirectSlicesThreshold =
       2 * this->maxNumSlices *
       std::max(static_cast<uint64_t>(1),
                static_cast<uint64_t>(this->slicedStream.getElementPerSlice()));
-  MLC_S_DPRINTF(this->dynamicStreamId, "IndirectSlices %llu Threshold %llu.\n",
-                indirectSlices, indirectSlicesThreshold);
+  MLC_S_DPRINTF(this->dynamicStreamId, "MaxISElements %llu Threshold %llu.\n",
+                maxISElements, indirectSlicesThreshold);
   // Of course we need to allocate more slices.
-  if (indirectSlices < indirectSlicesThreshold) {
+  if (maxISElements < indirectSlicesThreshold) {
 
     /**
      * If we require range-sync, we can only release the slice after the segment
@@ -162,6 +180,9 @@ void MLCDynamicDirectStream::advanceStream() {
            !this->hasOverflowed()) {
       this->allocateSlice();
     }
+  // } else {
+  //   // We schedule a recheck.
+  //   this->scheduleAdvanceStream();
   }
 
   // We may need to schedule advance stream if the first slice is FAULTED,

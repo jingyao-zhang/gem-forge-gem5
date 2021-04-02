@@ -66,6 +66,9 @@ public:
   bool getIsInnerMostLoop() const {
     return this->info.static_info().is_inner_most_loop();
   }
+  bool getIsConditional() const {
+    return this->info.static_info().is_cond_access();
+  }
   bool getFloatManual() const {
     return this->info.static_info().float_manual();
   }
@@ -551,6 +554,7 @@ public:
   Get(uint32_t, LoopLevel);
   Get(uint32_t, ConfigLoopLevel);
   Get(bool, IsInnerMostLoop);
+  Get(bool, IsConditional);
   Get(bool, FloatManual);
   Get(const PredicatedStreamIdList &, MergedPredicatedStreams);
   Get(const ExecFuncInfo &, PredicateFuncInfo);
