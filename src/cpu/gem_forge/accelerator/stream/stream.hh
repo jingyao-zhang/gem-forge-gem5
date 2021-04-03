@@ -458,6 +458,13 @@ public:
 
   AddrGenCallbackPtr &getAddrGenCallback() { return this->addrGenCallback; }
 
+  int getComputationNumMicroOps() const {
+    return this->getComputeCallback()->getNumInstructions();
+  }
+  Cycles getEstimatedComputationLatency() const {
+    return this->getComputeCallback()->getEstimatedLatency();
+  }
+
   std::unique_ptr<StreamAtomicOp>
   setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
                 const DynamicStreamFormalParamV &formalParams,
@@ -536,6 +543,8 @@ protected:
   void selectPrimeLogicalStream();
   void initializeBaseStreams();
   void initializeAliasStreams();
+
+  const ExecFuncPtr &getComputeCallback() const;
 
 public:
   /********************************************************************

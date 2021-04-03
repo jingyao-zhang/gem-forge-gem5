@@ -2938,6 +2938,7 @@ void LLCStreamEngine::startComputation() {
       continue;
     }
 
+    int numMicroOps = dynS->getComputationNumMicroOps();
     Cycles latency = dynS->getEstimatedComputationLatency();
     auto forceZeroLat =
         this->controller->isLLCStreamEngineZeroComputeLatencyEnabled();
@@ -2945,6 +2946,7 @@ void LLCStreamEngine::startComputation() {
       latency = Cycles(0);
     }
     this->controller->m_statLLCScheduledComputation++;
+    this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
     /**
      * For IndirectReductionStream, we separate out charging the latency
      * from the real computation. Here we charge the latency, but the
