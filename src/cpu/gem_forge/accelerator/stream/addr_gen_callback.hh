@@ -111,7 +111,7 @@ public:
     return this->execFunc->getEstimatedLatency();
   }
 
-  ExecFuncPtr getExecFunc() const {
+  const ExecFuncPtr &getExecFunc() const {
     return this->execFunc;
   }
 
