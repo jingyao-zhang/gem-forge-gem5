@@ -151,6 +151,9 @@ void StreamEngine::regStats() {
   scalar(numLLCSentSlice, "Number of LLC sent slices.");
   scalar(numLLCMigrated, "Number of LLC stream migration.");
   scalar(numMLCResponse, "Number of MLCStreamEngine response.");
+  scalar(numScheduledComputation, "Number of scheduled computation in CoreSE.");
+  scalar(numCompletedComputation, "Number of completed computation in CoreSE.");
+  scalar(numCompletedComputeMicroOps, "Number of completed microops in CoreSE.");
 #undef scalar
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -2615,6 +2618,12 @@ void StreamEngine::issueElement(StreamElement *element) {
         auto elementVAddr = cacheBlockBreakdown.virtualAddr;
         auto lineOffset = elementVAddr % cacheLineSize;
         auto elementPAddr = cacheLinePAddr + lineOffset;
+
+        // Atomic is also considered as computation stats.
+        auto microOps = S->getComputationNumMicroOps();
+        this->numScheduledComputation++;
+        this->numCompletedComputation++;
+        this->numCompletedComputeMicroOps += microOps;
 
         pkt = GemForgePacketHandler::createGemForgeAMOPacket(
             elementVAddr, elementPAddr, element->size, memAccess,

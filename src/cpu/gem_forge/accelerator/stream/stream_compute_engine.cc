@@ -21,6 +21,7 @@ void StreamComputeEngine::pushReadyComputation(StreamElement *element,
       m5::make_unique<Computation>(element, std::move(result), latency);
   this->readyComputations.emplace_back(std::move(computation));
   element->scheduledComputation = true;
+  this->se->numScheduledComputation++;
 }
 
 void StreamComputeEngine::startComputation() {
@@ -57,6 +58,11 @@ void StreamComputeEngine::completeComputation() {
     S_ELEMENT_DPRINTF(element, "Complete computation.\n");
     element->receiveComputeResult(computation->result);
     element->scheduledComputation = false;
+
+    auto microOps = element->stream->getComputationNumMicroOps();
+    this->se->numCompletedComputation++;
+    this->se->numCompletedComputeMicroOps += microOps;
+
     this->inflyComputations.pop_front();
   }
 }

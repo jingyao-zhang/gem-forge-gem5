@@ -259,6 +259,13 @@ public:
   Stats::Scalar numLLCMigrated;
   Stats::Scalar numMLCResponse;
 
+  /**
+   * Statistics for stream computing.
+   */
+  Stats::Scalar numScheduledComputation;
+  Stats::Scalar numCompletedComputation;
+  Stats::Scalar numCompletedComputeMicroOps;
+
 private:
   friend class Stream;
   friend class StreamElement;
