@@ -972,6 +972,8 @@ const ExecFuncPtr &Stream::getComputeCallback() const {
     return funcAddrGenCallback->getExecFunc();
   } else if (this->isStoreComputeStream()) {
     return this->storeCallback;
+  } else if (this->isUpdateStream()) {
+    return this->storeCallback;
   } else if (this->isLoadComputeStream()) {
     // So far LoadComputeStream only takes loaded value as input.
     return this->loadCallback;
