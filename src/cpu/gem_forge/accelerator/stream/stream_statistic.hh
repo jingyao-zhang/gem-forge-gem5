@@ -2,6 +2,7 @@
 #define __CPU_TDG_ACCELERATOR_STREAM_STATISTIC_HH__
 
 #include <array>
+#include <map>
 #include <ostream>
 
 /**
@@ -72,11 +73,21 @@ public:
   size_t numMissL2 = 0;
 
   // Compute statistics.
+  size_t numLLCComputation = 0;
+  size_t numLLCComputationComputeLatency = 0;
+  size_t numLLCComputationWaitLatency = 0;
   size_t numFloatAtomic = 0;
   size_t numFloatAtomicRecvCommitCycle = 0;
   size_t numFloatAtomicWaitForCommitCycle = 0;
   size_t numFloatAtomicWaitForLockCycle = 0;
   size_t numFloatAtomicWaitForUnlockCycle = 0;
+  std::map<std::pair<int, int>, size_t> numLLCSendTo;
+  void sampleLLCSendTo(int from, int to) {
+    this->numLLCSendTo
+        .emplace(std::piecewise_construct, std::forward_as_tuple(from, to),
+                 std::forward_as_tuple(0))
+        .first->second++;
+  }
 
   // LLCStreamEngine issue statistics.
   enum LLCStreamEngineIssueReason {

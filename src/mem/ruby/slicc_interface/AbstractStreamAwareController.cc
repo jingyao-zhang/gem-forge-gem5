@@ -95,6 +95,9 @@ void AbstractStreamAwareController::regStats() {
   m_statLLCRealXAWConflictAtomics.name(name() + ".llcStreamAtomicsRealXAWConflict")
       .desc("number of llc stream atomics that has real X-after-write conflict")
       .flags(Stats::nozero);
+  m_statLLCDeadlockAtomics.name(name() + ".llcStreamAtomicsDeadlock")
+      .desc("number of llc stream atomics that triggers deadlock")
+      .flags(Stats::nozero);
 
   // Register stats callback.
   Stats::registerResetCallback(

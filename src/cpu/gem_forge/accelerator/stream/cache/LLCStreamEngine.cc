@@ -1685,6 +1685,14 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
     msg->m_sliceIds.add(multicastSliceId);
   }
 
+  if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
+    auto dynS = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId());
+    if (dynS) {
+      dynS->getStaticStream()->statistic.sampleLLCSendTo(
+          selfMachineId.getNum(), destMachineId.getNum());
+    }
+  }
+
   if (handledHere) {
     // Quick path for StreamForward to myself.
     if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
@@ -2903,7 +2911,7 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
   }
   dynS->incompleteComputations++;
   this->readyComputations.emplace_back(element);
-  element->scheduledComputation();
+  element->scheduledComputation(this->controller->curCycle());
 }
 
 void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
@@ -2944,7 +2952,12 @@ void LLCStreamEngine::startComputation() {
     if (forceZeroLat) {
       latency = Cycles(0);
     }
+    auto &statistic = element->S->statistic;
     this->controller->m_statLLCScheduledComputation++;
+    statistic.numLLCComputation++;
+    statistic.numLLCComputationComputeLatency += latency;
+    statistic.numLLCComputationWaitLatency +=
+        this->controller->curCycle() - element->getComputationScheduledCycle();
     /**
      * For IndirectReductionStream, we separate out charging the latency
      * from the real computation. Here we charge the latency, but the

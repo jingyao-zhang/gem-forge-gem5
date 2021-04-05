@@ -270,6 +270,7 @@ public:
   Stats::Scalar m_statLLCRealConflictAtomics;
   Stats::Scalar m_statLLCXAWConflictAtomics;
   Stats::Scalar m_statLLCRealXAWConflictAtomics;
+  Stats::Scalar m_statLLCDeadlockAtomics;
 };
 
 #endif

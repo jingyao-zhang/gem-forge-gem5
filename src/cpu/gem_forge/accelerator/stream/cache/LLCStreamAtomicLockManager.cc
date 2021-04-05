@@ -2,6 +2,8 @@
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
+#include <stack>
+
 #include "debug/StreamRangeSync.hh"
 #define DEBUG_TYPE StreamRangeSync
 #include "../stream_log.hh"
@@ -12,6 +14,9 @@
 #define ALM_ELEMENT_PANIC(element, format, args...)                            \
   LLC_SE_PANIC("%s%llu-: " format, (element)->dynStreamId, (element)->idx,     \
                ##args)
+
+LLCStreamAtomicLockManager::ElementLockPositionMap
+    LLCStreamAtomicLockManager::elementQueuePositionMap;
 
 LLCStreamAtomicLockManager::LLCStreamAtomicLockManager(LLCStreamEngine *_se)
     : se(_se),
@@ -39,13 +44,13 @@ void LLCStreamAtomicLockManager::enqueue(Addr paddr, int size,
                    std::forward_as_tuple())
           .first;
   auto &lockQueue = addrQueueIter->second;
-  if (!lockQueue.queue.empty()) {
+  if (!lockQueue.empty()) {
     this->se->controller->m_statLLCLineConflictAtomics++;
   }
   bool foundRealConflict = false;
   bool foundRealXAWConflict = false;
   bool foundXAWConflict = false;
-  for (const auto &op : lockQueue.queue) {
+  for (const auto &op : lockQueue) {
     if (!(op.paddr >= paddr + size || paddr >= op.paddr + op.size)) {
       // This is real conflict.
       foundRealConflict = true;
@@ -76,8 +81,17 @@ void LLCStreamAtomicLockManager::enqueue(Addr paddr, int size,
   ALM_ELEMENT_DPRINTF(
       element,
       "[AtomicLock] Queue %#x Enqueue %#x. Modified %d. Existing Ops %d.\n",
-      paddrQueue, element.get(), memoryModified, lockQueue.queue.size());
-  lockQueue.queue.push_back(newOp);
+      paddrQueue, element.get(), memoryModified, lockQueue.size());
+  lockQueue.push_back(newOp);
+
+  // Push into the reverse map.
+  elementQueuePositionMap.emplace(
+      std::piecewise_construct, std::forward_as_tuple(element),
+      std::forward_as_tuple(this, lockQueue, std::prev(lockQueue.end())));
+
+  // Check for deadlock.
+  this->checkDeadlock(element);
+
   this->tryToLockOps(addrQueueIter);
 }
 
@@ -96,7 +110,7 @@ void LLCStreamAtomicLockManager::commit(
   }
   auto &lockQueue = addrQueueIter->second;
   bool foundAtomicOp = false;
-  for (auto &op : lockQueue.queue) {
+  for (auto &op : lockQueue) {
     if (op.element->dynStreamId.isSameStaticStream(element->dynStreamId)) {
       /**
        * Sanity check that previous dynamic stream'e elements are committed.
@@ -145,7 +159,7 @@ void LLCStreamAtomicLockManager::unlockCommittedOps(
     AddrQueueMapIter addrQueueIter) {
 
   auto paddrQueue = addrQueueIter->first;
-  auto &queue = addrQueueIter->second.queue;
+  auto &queue = addrQueueIter->second;
   while (!queue.empty()) {
     auto &op = queue.front();
     if (!op.committed) {
@@ -172,6 +186,9 @@ void LLCStreamAtomicLockManager::unlockCommittedOps(
     statistic.numFloatAtomicWaitForLockCycle += op.lockCycle - op.enqueueCycle;
     statistic.numFloatAtomicWaitForUnlockCycle +=
         this->se->controller->curCycle() - op.enqueueCycle;
+
+    // Erase from the reverse map.
+    elementQueuePositionMap.erase(op.element);
 
     queue.pop_front();
     // Lock for the next op.
@@ -211,7 +228,7 @@ void LLCStreamAtomicLockManager::lockForOp(AtomicStreamOp &op) {
 }
 
 void LLCStreamAtomicLockManager::tryToLockOps(AddrQueueMapIter addrQueueIter) {
-  auto &queue = addrQueueIter->second.queue;
+  auto &queue = addrQueueIter->second;
   if (queue.empty()) {
     return;
   }
@@ -339,5 +356,106 @@ void LLCStreamAtomicLockManager::commitPendingOps() {
     auto iter = this->addrQueueMap.find(paddrQueue);
     assert(iter != this->addrQueueMap.end());
     this->unlockCommittedOps(iter);
+  }
+}
+
+void LLCStreamAtomicLockManager::checkDeadlock(
+    LLCStreamElementPtr newElement) const {
+  if (!this->se->controller->isStreamAtomicLockEnabled()) {
+    // No lock, we do not bother checking for deadlock.
+    return;
+  }
+  std::stack<LLCStreamElementPtr> stack;
+  std::unordered_map<LLCStreamElementPtr, int> status;
+
+  bool foundDeadlock = false;
+
+  auto pushIntoStack = [this, &stack, &status,
+                        &foundDeadlock](LLCStreamElementPtr element) -> void {
+    auto state = status.emplace(element, 0).first->second;
+    if (state == 0) {
+      // Not visited, push.
+      stack.emplace(element);
+    } else if (state == 1) {
+      // We found a circle. Report and skip.
+      foundDeadlock = true;
+    } else if (state == 2) {
+      // Visited, skip.
+    }
+  };
+
+  auto expandForFutureElements =
+      [this, &pushIntoStack](LLCStreamElementPtr element) -> void {
+    // Try to get future iteration's element depending on this element.
+    auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
+    if (!dynS) {
+      // The DynStream is already released, no need to check for deadlock.
+      return;
+    }
+    if (!(dynS->shouldIssueBeforeCommit() && dynS->shouldIssueAfterCommit())) {
+      // This DynStream does not really require long time lock.
+      return;
+    }
+    auto posIter = elementQueuePositionMap.find(element);
+    assert(posIter != elementQueuePositionMap.end());
+    auto manager = posIter->second.manager;
+    for (auto futureIter = dynS->idxToElementMap.upper_bound(element->idx);
+         futureIter != dynS->idxToElementMap.end(); ++futureIter) {
+      auto futureElement = futureIter->second;
+      auto posIter = elementQueuePositionMap.find(futureElement);
+      if (posIter == elementQueuePositionMap.end()) {
+        // This element has not been enqueued.
+        continue;
+      }
+      if (posIter->second.manager == manager) {
+        // The element is handled here in the same bank.
+        continue;
+      }
+      pushIntoStack(futureElement);
+    }
+  };
+
+  auto expandForInqueueElements =
+      [this, &pushIntoStack](LLCStreamElementPtr element) -> void {
+    auto posIter = elementQueuePositionMap.find(element);
+    assert(posIter != elementQueuePositionMap.end());
+    const auto memoryModified = posIter->second.queueIter->memoryModified;
+    if (this->lockType == LockType::MultpleReadersSingleWriterLock &&
+        !memoryModified) {
+      // No dependence as I am not writer.
+      return;
+    }
+    // Skip element.
+    auto queueIter = std::next(posIter->second.queueIter);
+    auto queueEnd = posIter->second.queue.end();
+    while (queueIter != queueEnd) {
+      auto queueElement = queueIter->element;
+      pushIntoStack(queueElement);
+      ++queueIter;
+    }
+  };
+
+  // Push NewElement into the stack.
+  pushIntoStack(newElement);
+  while (!stack.empty()) {
+    auto element = stack.top();
+    auto &state = status.at(element);
+    if (state == 0) {
+      // First time. Search and push in dependent elements.
+      state = 1;
+      expandForFutureElements(element);
+      expandForInqueueElements(element);
+    } else if (state == 1) {
+      // Second time.
+      state = 2;
+      stack.pop();
+    } else if (state == 2) {
+      // Visited.
+      stack.pop();
+    }
+  }
+
+  if (foundDeadlock) {
+    this->se->controller->m_statLLCDeadlockAtomics++;
   }
 }

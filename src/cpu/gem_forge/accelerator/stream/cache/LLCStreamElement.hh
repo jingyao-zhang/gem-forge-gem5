@@ -62,9 +62,13 @@ public:
    *************************************************/
   bool isReady() const { return this->readyBytes == this->size; }
   bool isComputationScheduled() const { return this->computationScheduled; }
-  void scheduledComputation() {
+  Cycles getComputationScheduledCycle() const {
+    return this->computationScheduledCycle;
+  }
+  void scheduledComputation(Cycles curCycle) {
     assert(!this->computationScheduled && "Computation already scheduled.");
     this->computationScheduled = true;
+    this->computationScheduledCycle = curCycle;
   }
   bool isComputationDone() const { return this->computationDone; }
   void doneComputation() {
@@ -160,11 +164,12 @@ public:
 private:
   int readyBytes;
   bool computationScheduled = false;
+  Cycles computationScheduledCycle = Cycles(0);
   bool computationDone = false;
   static constexpr int MAX_SIZE = 128;
   std::array<uint64_t, MAX_SIZE> value;
 
-  static constexpr int MAX_SLICES_PER_ELEMENT = 2;
+  static constexpr int MAX_SLICES_PER_ELEMENT = 3;
   std::array<LLCStreamSlicePtr, MAX_SLICES_PER_ELEMENT> slices;
   int numSlices = 0;
 

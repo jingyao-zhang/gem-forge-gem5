@@ -43,14 +43,32 @@ private:
     DynamicStreamSliceId ackSliceId;
   };
 
-  struct LockQueue {
-    Addr paddrQueue;
-    std::list<AtomicStreamOp> queue;
-  };
+  using LockQueue = std::list<AtomicStreamOp>;
+  using LockQueueIter = LockQueue::iterator;
 
   using AddrQueueMapT = std::unordered_map<Addr, LockQueue>;
   using AddrQueueMapIter = AddrQueueMapT::iterator;
   AddrQueueMapT addrQueueMap;
+
+  /**
+   * Global reverse map from element to the position in the LockQueue.
+   * Used for deadlock detection oracle.
+   * NOTE: References to element of std::unordered_map is not invalidated after
+   * rehashing.
+   * NOTE: Iterators to element of std::list is not invalidated after insertion.
+   */
+  struct GlobalLockQueuePosition {
+    LLCStreamAtomicLockManager *manager;
+    LockQueue &queue;
+    LockQueueIter queueIter;
+    GlobalLockQueuePosition(LLCStreamAtomicLockManager *_manager,
+                            LockQueue &_queue, LockQueueIter _queueIter)
+        : manager(_manager), queue(_queue), queueIter(_queueIter) {}
+  };
+  using ElementLockPositionMap =
+      std::unordered_map<LLCStreamElementPtr, GlobalLockQueuePosition>;
+
+  static ElementLockPositionMap elementQueuePositionMap;
 
   /**
    * There life cycle of an atomic:
@@ -102,6 +120,13 @@ private:
    */
   void tryToLockOps(AddrQueueMapIter addrQueueIter);
   void lockForOp(AtomicStreamOp &op);
+
+  /**
+   * Detect deadlock.
+   * When pushing a new element, we perform DFS on all dependent elements, and
+   * report a deadlock if we found a cycle.
+   */
+  void checkDeadlock(LLCStreamElementPtr newElement) const;
 };
 
 #endif

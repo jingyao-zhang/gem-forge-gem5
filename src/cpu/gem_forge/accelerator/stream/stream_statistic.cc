@@ -78,6 +78,14 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numCycleRequestLatency);
   dumpAvg(avgRequestLatency, numCycleRequestLatency, numIssuedRequest);
 
+  dumpScalar(numLLCComputation);
+  if (numLLCComputation > 0) {
+    dumpAvg(avgLLCComputeLatency, numLLCComputationComputeLatency,
+            numLLCComputation);
+    dumpAvg(avgLLCWaitComputeLatency, numLLCComputationWaitLatency,
+            numLLCComputation);
+  }
+
   dumpScalar(numFloatAtomic);
   if (numFloatAtomic > 0) {
     dumpAvg(avgFloatAtomicRecvCommitCycle, numFloatAtomicRecvCommitCycle,
@@ -88,6 +96,20 @@ void StreamStatistic::dump(std::ostream &os) const {
             numFloatAtomic);
     dumpAvg(avgFloatAtomicWaitForUnlockCycle, numFloatAtomicWaitForUnlockCycle,
             numFloatAtomic);
+  }
+
+  if (!this->numLLCSendTo.empty()) {
+    size_t total = 0;
+    for (const auto &entry : this->numLLCSendTo) {
+      total += entry.second;
+    }
+    for (const auto &entry : this->numLLCSendTo) {
+      auto from = entry.first.first;
+      auto to = entry.first.second;
+      auto ratio = static_cast<float>(entry.second) / static_cast<float>(total);
+      os << std::setw(5) << from << " -> " << std::setw(5) << to << " "
+         << std::setw(10) << entry.second << " " << ratio << "\n";
+    }
   }
 
   dumpScalar(numMissL0);
@@ -170,11 +192,15 @@ void StreamStatistic::clear() {
   this->numMissL1 = 0;
   this->numMissL2 = 0;
 
+  this->numLLCComputation = 0;
+  this->numLLCComputationComputeLatency = 0;
+  this->numLLCComputationWaitLatency = 0;
   this->numFloatAtomic = 0;
   this->numFloatAtomicRecvCommitCycle = 0;
   this->numFloatAtomicWaitForCommitCycle = 0;
   this->numFloatAtomicWaitForLockCycle = 0;
   this->numFloatAtomicWaitForUnlockCycle = 0;
+  this->numLLCSendTo.clear();
 
   this->numLLCAliveElements = 0;
   this->numLLCAliveElementSamples = 0;
