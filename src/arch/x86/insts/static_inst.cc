@@ -122,8 +122,8 @@ namespace X86ISA
     {
         if (reg.isFloatReg()) {
           // We allow xmm registers to have 128, 256 and 512.
-            assert(size == 1 || size == 2 || size == 4 || size == 8 ||
-                   size == 16 || size == 32 || size == 64);
+            // assert(size == 1 || size == 2 || size == 4 || size == 8 ||
+            //        size == 16 || size == 32 || size == 48 || size == 64);
         } else {
         }
         static const char * abcdFormats[9] =

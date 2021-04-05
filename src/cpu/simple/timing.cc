@@ -75,6 +75,15 @@ TimingSimpleCPU::init()
 }
 
 void
+TimingSimpleCPU::regStats()
+{
+    BaseSimpleCPU::regStats();
+    if (this->cpuDelegator) {
+        this->cpuDelegator->regStats();
+    }
+}
+
+void
 TimingSimpleCPU::TimingCPUPort::TickEvent::schedule(PacketPtr _pkt, Tick t)
 {
     pkt = _pkt;
@@ -251,7 +260,17 @@ TimingSimpleCPU::suspendContext(ThreadID thread_num)
     if (_status == Idle)
         return;
 
-    assert(_status == BaseSimpleCPU::Running);
+    if (_status != BaseSimpleCPU::Running) {
+        warn("%s Suspended %d at state %d.\n", this->name(),
+            thread_num, _status);
+    }
+    /**
+     * For multi-thread, exitGroup may suspend me in
+     * the middle of waiting for something.
+     */
+    assert(_status == BaseSimpleCPU::Running ||
+           _status == BaseSimpleCPU::DcacheWaitResponse ||
+           _status == BaseSimpleCPU::IcacheWaitResponse);
 
     threadInfo[thread_num]->notIdleFraction = 0;
 
@@ -304,6 +323,10 @@ TimingSimpleCPU::sendData(const RequestPtr &req, uint8_t *data, uint64_t *res,
 
     PacketPtr pkt = buildPacket(req, read);
     pkt->dataDynamic<uint8_t>(data);
+
+    if (this->cpuDelegator) {
+        this->cpuDelegator->recordPAddr(req->getPaddr());
+    }
 
     if (req->getFlags().isSet(Request::NO_ACCESS)) {
         assert(!dcache_pkt);
@@ -802,6 +825,12 @@ TimingSimpleCPU::completeIfetch(PacketPtr pkt)
     DPRINTF(SimpleCPU, "Complete ICache Fetch for addr %#x\n", pkt ?
             pkt->getAddr() : 0);
 
+    if (_status == Idle && activeThreads.empty()) {
+        // We have already been suspended.
+        warn("%s: Ignore InstResponse after exit.\n", this->name());
+        return;
+    }
+
     // received a response from the icache: execute the received
     // instruction
     assert(!pkt || !pkt->isError());
@@ -992,6 +1021,11 @@ TimingSimpleCPU::completeDataAccess(PacketPtr pkt)
     // received a response from the dcache: complete the load or store
     // instruction
     assert(!pkt->isError());
+    if (_status == Idle && activeThreads.empty()) {
+        // We have already been suspended.
+        warn("%s: Ignore DataResponse after exit.\n", this->name());
+        return;
+    }
     assert(_status == DcacheWaitResponse || _status == DTBWaitResponse ||
            pkt->req->getFlags().isSet(Request::NO_ACCESS));
 

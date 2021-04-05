@@ -82,6 +82,15 @@ AtomicSimpleCPU::init()
     }
 }
 
+void
+AtomicSimpleCPU::regStats()
+{
+    BaseSimpleCPU::regStats();
+    if (this->cpuDelegator) {
+        this->cpuDelegator->regStats();
+    }
+}
+
 AtomicSimpleCPU::AtomicSimpleCPU(AtomicSimpleCPUParams *p)
     : BaseSimpleCPU(p),
       tickEvent([this]{ tick(); }, "AtomicSimpleCPU tick",

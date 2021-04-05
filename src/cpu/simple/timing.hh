@@ -64,6 +64,8 @@ class TimingSimpleCPU : public BaseSimpleCPU
     std::unique_ptr<TimingSimpleCPUDelegator> cpuDelegator;
     GemForgeCPUDelegator *getCPUDelegator() override;
 
+    void regStats() override;
+
   private:
 
     /*

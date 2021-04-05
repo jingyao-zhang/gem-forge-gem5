@@ -1,11 +1,15 @@
 #include "simple_cpu_delegator.hh"
 
 #include "exec_context.hh"
+#include "minimal_data_move_machine.hh"
 
 class SimpleCPUDelegator::Impl {
 public:
   Impl(BaseSimpleCPU *_cpu, SimpleCPUDelegator *_cpuDelegator)
-      : cpu(_cpu), state(StateE::BEFORE_DISPATCH), curSeqNum(1) {}
+      : cpu(_cpu), state(StateE::BEFORE_DISPATCH), curSeqNum(1),
+        minDataMachine(_cpu->name() + ".min_data", _cpu->cpuId(), false),
+        minDataMachineFix(_cpu->name() + ".min_data_fix", _cpu->cpuId(), true) {
+  }
 
   BaseSimpleCPU *cpu;
   /**
@@ -22,6 +26,22 @@ public:
    * This starts from 1, as 0 is reserved for invalid.
    */
   uint64_t curSeqNum;
+
+  /**
+   * Some extra runtime information for the current instruction.
+   */
+  struct InstRunTimeInfo {
+    Addr paddr = 0;
+    GemForgeLSQCallbackPtr callback = nullptr;
+    void clear() {
+      this->paddr = 0;
+      this->callback = nullptr;
+    }
+  };
+  InstRunTimeInfo curInstRunTimeInfo;
+
+  MinimalDataMoveMachine minDataMachine;
+  MinimalDataMoveMachine minDataMachineFix;
 
   std::string traceExtraFolder;
 
@@ -69,6 +89,7 @@ void SimpleCPUDelegator::dispatch(StaticInstPtr staticInst, ExecContext &xc) {
     assert(extraLSQCallbacks.front()->getType() ==
                GemForgeLSQCallback::Type::LOAD &&
            "StreamStore is not implemented.");
+    pimpl->curInstRunTimeInfo.callback = std::move(extraLSQCallbacks.front());
   }
   pimpl->state = Impl::StateE::BEFORE_EXECUTE;
 }
@@ -99,13 +120,36 @@ void SimpleCPUDelegator::commit(StaticInstPtr staticInst, ExecContext &xc) {
   assert(pimpl->state == Impl::StateE::BEFORE_COMMIT);
   GemForgeDynInstInfo dynInfo(pimpl->curSeqNum, xc.pcState(), staticInst.get(),
                               xc.tcBase());
+
+  /**
+   * Notify the MinimalDataMoveMachine.
+   */
+  bool isStream = pimpl->curInstRunTimeInfo.callback != nullptr;
+  Addr paddr = pimpl->curInstRunTimeInfo.paddr;
+  if (isStream) {
+    auto vaddr = pimpl->curInstRunTimeInfo.callback->getAddr();
+    assert(this->translateVAddrOracle(vaddr, paddr));
+  }
+  pimpl->minDataMachine.commit(staticInst, paddr, isStream);
+  pimpl->minDataMachineFix.commit(staticInst, paddr, isStream);
+
   isaHandler->commit(dynInfo);
   pimpl->state = Impl::StateE::BEFORE_DISPATCH;
   pimpl->curSeqNum++;
+  pimpl->curInstRunTimeInfo.clear();
 }
 
 void SimpleCPUDelegator::storeTo(Addr vaddr, int size) {
   isaHandler->storeTo(pimpl->curSeqNum, vaddr, size);
+}
+
+void SimpleCPUDelegator::regStats() {
+  pimpl->minDataMachine.regStats();
+  pimpl->minDataMachineFix.regStats();
+}
+
+void SimpleCPUDelegator::recordPAddr(Addr paddr) {
+  pimpl->curInstRunTimeInfo.paddr = paddr;
 }
 
 const std::string &SimpleCPUDelegator::getTraceExtraFolder() const {
