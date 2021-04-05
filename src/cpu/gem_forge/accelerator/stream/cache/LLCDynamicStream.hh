@@ -166,11 +166,12 @@ public:
       return nullptr;
     }
   }
-  static LLCDynamicStream *getLLCStreamPanic(const DynamicStreamId &dynId) {
+  static LLCDynamicStream *getLLCStreamPanic(const DynamicStreamId &dynId,
+                                             const char *msg = "") {
     if (auto S = LLCDynamicStream::getLLCStream(dynId)) {
       return S;
     }
-    panic("Failed to get LLCDynamicStream %s.", dynId);
+    panic("Failed to get LLCDynamicStream %s: %s.", dynId, msg);
   }
   static void allocateLLCStreams(AbstractStreamAwareController *mlcController,
                                  CacheStreamConfigureVec &configs);
@@ -181,6 +182,7 @@ public:
                          const DataBlock &dataBlk);
 
   bool hasComputation() const;
+  int getComputationNumMicroOps() const;
   Cycles getEstimatedComputationLatency() const;
   StreamValue computeStreamElementValue(const LLCStreamElementPtr &element);
   void completeComputation(LLCStreamEngine *se,

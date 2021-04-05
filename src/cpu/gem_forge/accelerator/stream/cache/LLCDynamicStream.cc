@@ -788,21 +788,14 @@ bool LLCDynamicStream::hasComputation() const {
          S->isStoreComputeStream();
 }
 
+int LLCDynamicStream::getComputationNumMicroOps() const {
+  auto S = this->getStaticStream();
+  return S->getComputationNumMicroOps();
+}
+
 Cycles LLCDynamicStream::getEstimatedComputationLatency() const {
   auto S = this->getStaticStream();
-  const auto &config = this->configData;
-  if (S->isReduction()) {
-    // This is a reduction stream.
-    return config->addrGenCallback->getEstimatedLatency();
-  } else if (S->isStoreComputeStream()) {
-    return config->storeCallback->getEstimatedLatency();
-  } else if (S->isLoadComputeStream()) {
-    // So far LoadComputeStream only takes loaded value as input.
-    return config->loadCallback->getEstimatedLatency();
-  } else {
-    LLC_S_PANIC(this->getDynamicStreamId(),
-                "No Computation to esitmate latency.");
-  }
+  return S->getEstimatedComputationLatency();
 }
 
 StreamValue LLCDynamicStream::computeStreamElementValue(

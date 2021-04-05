@@ -2946,6 +2946,7 @@ void LLCStreamEngine::startComputation() {
       continue;
     }
 
+    int numMicroOps = dynS->getComputationNumMicroOps();
     Cycles latency = dynS->getEstimatedComputationLatency();
     auto forceZeroLat =
         this->controller->isLLCStreamEngineZeroComputeLatencyEnabled();
@@ -2954,6 +2955,7 @@ void LLCStreamEngine::startComputation() {
     }
     auto &statistic = element->S->statistic;
     this->controller->m_statLLCScheduledComputation++;
+    this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
     statistic.numLLCComputation++;
     statistic.numLLCComputationComputeLatency += latency;
     statistic.numLLCComputationWaitLatency +=

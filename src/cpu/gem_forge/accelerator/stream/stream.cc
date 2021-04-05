@@ -961,6 +961,31 @@ StreamElement *Stream::getPrevElement(StreamElement *element) {
   return prevElement;
 }
 
+const ExecFuncPtr &Stream::getComputeCallback() const {
+  if (this->isReduction()) {
+    // This is a reduction stream.
+    auto funcAddrGenCallback =
+        std::dynamic_pointer_cast<FuncAddrGenCallback>(this->addrGenCallback);
+    if (!funcAddrGenCallback) {
+      S_PANIC(this, "ReductionS without FuncAddrGenCallback.");
+    }
+    return funcAddrGenCallback->getExecFunc();
+  } else if (this->isStoreComputeStream()) {
+    return this->storeCallback;
+  } else if (this->isLoadComputeStream()) {
+    // So far LoadComputeStream only takes loaded value as input.
+    return this->loadCallback;
+  } else if (this->isAtomicComputeStream()) {
+    /**
+     * AtomicOp has to callbacks, here I just return LoadCallback to estimate
+     * MicroOps and Latency.
+     */
+    return this->loadCallback;
+  } else {
+    S_PANIC(this, "No Computation Callback.");
+  }
+}
+
 std::unique_ptr<StreamAtomicOp>
 Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
                       const DynamicStreamFormalParamV &formalParams,

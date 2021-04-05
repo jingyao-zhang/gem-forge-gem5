@@ -26,7 +26,14 @@ private:
   Tick functionEntryTick = 0;
 
   // We also record ticks in every function.
-  std::unordered_map<Addr, Tick> funcAccumulateTicks;
+  struct FuncProfile {
+    Tick ticks = 0;
+    uint64_t microOps = 0;
+  };
+  std::unordered_map<Addr, FuncProfile> addrFuncProfileMap;
+
+  void accumulateTick(Addr funcStart, Tick ticks);
+  void accumulateMicroOps(Addr funcStart, uint64_t microOps);
 
   // Stats callback for funcAccumulateTicks.
   void resetFuncAccumulateTick();

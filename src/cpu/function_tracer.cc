@@ -60,16 +60,32 @@ void FunctionTracer::traceFunctions(Addr pc) {
     }
 
     if (this->functionAccumulateTickEnabled) {
-      this->funcAccumulateTicks.emplace(oldFunctionStart, 0).first->second +=
-          accumulateTick;
+      this->accumulateTick(oldFunctionStart, accumulateTick);
     }
 
     this->functionEntryTick = curTick();
   }
+  if (this->functionAccumulateTickEnabled) {
+    this->accumulateMicroOps(this->currentFunctionStart, 1);
+  }
+}
+
+void FunctionTracer::accumulateTick(Addr funcStart, Tick ticks) {
+  this->addrFuncProfileMap
+      .emplace(std::piecewise_construct, std::forward_as_tuple(funcStart),
+               std::forward_as_tuple())
+      .first->second.ticks += ticks;
+}
+
+void FunctionTracer::accumulateMicroOps(Addr funcStart, uint64_t microOps) {
+  this->addrFuncProfileMap
+      .emplace(std::piecewise_construct, std::forward_as_tuple(funcStart),
+               std::forward_as_tuple())
+      .first->second.microOps += microOps;
 }
 
 void FunctionTracer::resetFuncAccumulateTick() {
-  this->funcAccumulateTicks.clear();
+  this->addrFuncProfileMap.clear();
   // We also reset the function entry tick.
   this->functionEntryTick = curTick();
 }
@@ -85,12 +101,11 @@ void FunctionTracer::dumpFuncAccumulateTick() {
    */
   if (this->functionAccumulateTickEnabled && this->currentFunctionStart) {
     auto accumulateTick = curTick() - this->functionEntryTick;
-    this->funcAccumulateTicks.emplace(this->currentFunctionStart, 0)
-        .first->second += accumulateTick;
+    this->accumulateTick(this->currentFunctionStart, accumulateTick);
     this->functionEntryTick = curTick();
   }
 
-  if (this->funcAccumulateTicks.empty()) {
+  if (this->addrFuncProfileMap.empty()) {
     return;
   }
 
@@ -100,13 +115,13 @@ void FunctionTracer::dumpFuncAccumulateTick() {
   }
 
   // Sort by ticks.
-  std::vector<std::pair<Addr, Tick>> sorted(this->funcAccumulateTicks.begin(),
-                                            this->funcAccumulateTicks.end());
+  std::vector<std::pair<Addr, FuncProfile>> sorted(
+      this->addrFuncProfileMap.begin(), this->addrFuncProfileMap.end());
   std::sort(sorted.begin(), sorted.end(),
-            [](const std::pair<Addr, Tick> &a,
-               const std::pair<Addr, Tick> &b) -> bool {
-              if (a.second != b.second) {
-                return a.second > b.second;
+            [](const std::pair<Addr, FuncProfile> &a,
+               const std::pair<Addr, FuncProfile> &b) -> bool {
+              if (a.second.ticks != b.second.ticks) {
+                return a.second.ticks > b.second.ticks;
               } else {
                 // Break the tie with pc.
                 return a.first < b.first;
@@ -116,20 +131,21 @@ void FunctionTracer::dumpFuncAccumulateTick() {
   // Sum all ticks.
   Tick sumTicks = 0;
   for (const auto &pcTick : sorted) {
-    sumTicks += pcTick.second;
+    sumTicks += pcTick.second.ticks;
   }
 
   ccprintf(*this->functionAccumulateTickStream, "======================\n");
   for (const auto &pcTick : sorted) {
     auto pc = pcTick.first;
-    auto tick = pcTick.second;
+    auto tick = pcTick.second.ticks;
+    auto microOps = pcTick.second.microOps;
     std::string symbol;
     if (!Loader::debugSymbolTable->findSymbol(pc, symbol)) {
       symbol = csprintf("0x%x", pc);
     }
     float percentage =
         static_cast<float>(tick) / static_cast<float>(sumTicks) * 100.f;
-    ccprintf(*this->functionAccumulateTickStream, "%2.2f %20llu: %s\n",
-             percentage, tick, symbol);
+    ccprintf(*this->functionAccumulateTickStream, "%2.2f %20llu %15llu : %s\n",
+             percentage, tick, microOps, symbol);
   }
 }

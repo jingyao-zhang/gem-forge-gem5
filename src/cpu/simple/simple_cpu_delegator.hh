@@ -27,6 +27,10 @@ public:
   bool canCommit(StaticInstPtr staticInst, ExecContext &xc);
   void commit(StaticInstPtr staticInst, ExecContext &xc);
   void storeTo(Addr vaddr, int size);
+  
+  // Record the paddr of access.
+  void recordPAddr(Addr paddr);
+  void regStats();
 
 private:
   class Impl;

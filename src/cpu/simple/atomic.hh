@@ -58,6 +58,8 @@ class AtomicSimpleCPU : public BaseSimpleCPU
 
     void init() override;
 
+    void regStats() override;
+
     /**
      * GemForgeCPUDelegator.
      */
