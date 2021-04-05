@@ -16,6 +16,9 @@
 
 #include <map>
 #include <set>
+#include <unordered_map>
+#include <vector>
+#include <iostream>
 
 class MinimalDataMoveMachine {
 public:
@@ -26,23 +29,27 @@ public:
   /**
    * Record one instruction and update my stats.
    */
-  void commit(StaticInstPtr staticInst, Addr paddr, bool isStream);
+  void commit(StaticInstPtr staticInst, const TheISA::PCState &pc, Addr paddr,
+              bool isStream);
 
 private:
   /**
    * My bank id.
    */
-  const std::string name;
+  const std::string myName;
   const int bank;
   const bool fixedBank;
 
-  const int interleaveSize = 64;
+  const int interleaveSize = 1024;
   const int rowSize = 8;
   const int colSize = 8;
   const int flitSizeBytes = 32;
 
   Stats::Scalar totalHops;
+  Stats::Scalar totalIgnoredHops;
   Stats::Scalar totalStreamHops;
+
+  std::string name() const { return this->myName; }
 
   /**
    * This represents the dynamic information of the register.
@@ -76,6 +83,24 @@ private:
   int getNumFlits(int bytes) const {
     return (bytes + this->flitSizeBytes - 1) / this->flitSizeBytes;
   }
+
+  /**
+   * Add a little randomness to the middle point selection.
+   * This is to converge to optimal bank, e.g. for reduction.
+   */
+  int randomDivide(int A, int B) const;
+
+  /**
+   * Ignore certain functions, e.g. __kmp_hyper_barrier_release.
+   */
+  static std::vector<std::string> ignoredFuncs;
+  std::unordered_map<Addr, bool> pcIgnoredMap;
+  bool shouldIgnoreTraffic(Addr pc);
+
+  std::unordered_map<Addr, uint64_t> pcHopsMap;
+  void resetPCHopsMap();
+  void dumpPCHopsMap();
+  std::ostream *pcHopsStream = nullptr;
 };
 
 #endif
