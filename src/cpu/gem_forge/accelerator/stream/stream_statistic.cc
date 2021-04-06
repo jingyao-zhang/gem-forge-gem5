@@ -26,6 +26,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numStepped);
   dumpScalar(numUsed);
   dumpScalar(numAliased);
+  dumpScalar(numFlushed);
   dumpScalar(numFaulted);
   dumpScalar(numCycle);
   dumpAvg(avgTurnAroundCycle, numCycle, numStepped);
@@ -74,6 +75,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpAvg(avgMLCLateCycle, numMLCLateCycle, numMLCLateSlice);
 
   dumpScalar(numIssuedRequest);
+  dumpScalar(numIssuedReadExRequest);
   dumpScalar(numIssuedPrefetchRequest);
   dumpScalar(numCycleRequestLatency);
   dumpAvg(avgRequestLatency, numCycleRequestLatency, numIssuedRequest);
@@ -96,6 +98,11 @@ void StreamStatistic::dump(std::ostream &os) const {
             numFloatAtomic);
     dumpAvg(avgFloatAtomicWaitForUnlockCycle, numFloatAtomicWaitForUnlockCycle,
             numFloatAtomic);
+  }
+
+  if (numLLCInflyComputationSample > 0) {
+    dumpAvg(avgLLCInflyComputation, numLLCInflyComputation,
+            numLLCInflyComputationSample);
   }
 
   if (!this->numLLCSendTo.empty()) {
@@ -161,6 +168,7 @@ void StreamStatistic::clear() {
   this->numStepped = 0;
   this->numUsed = 0;
   this->numAliased = 0;
+  this->numFlushed = 0;
   this->numFaulted = 0;
   this->numCycle = 0;
   this->numSample = 0;
@@ -187,6 +195,8 @@ void StreamStatistic::clear() {
   this->numMLCLateSlice = 0;
   this->numMLCLateCycle = 0;
   this->numIssuedRequest = 0;
+  this->numIssuedReadExRequest = 0;
+  this->numIssuedPrefetchRequest = 0;
   this->numCycleRequestLatency = 0;
   this->numMissL0 = 0;
   this->numMissL1 = 0;
@@ -204,6 +214,8 @@ void StreamStatistic::clear() {
 
   this->numLLCAliveElements = 0;
   this->numLLCAliveElementSamples = 0;
+  this->numLLCInflyComputation = 0;
+  this->numLLCInflyComputationSample = 0;
 
   for (auto &reasons : this->llcIssueReasons) {
     reasons = 0;

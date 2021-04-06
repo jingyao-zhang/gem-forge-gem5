@@ -30,6 +30,7 @@ public:
   size_t numStepped = 0;
   size_t numUsed = 0;
   size_t numAliased = 0;
+  size_t numFlushed = 0;
   size_t numFaulted = 0;
   size_t numCycle = 0;
 
@@ -66,6 +67,7 @@ public:
   size_t numMLCLateCycle = 0;
 
   size_t numIssuedRequest = 0;
+  size_t numIssuedReadExRequest = 0;
   size_t numIssuedPrefetchRequest = 0;
   size_t numCycleRequestLatency = 0;
   size_t numMissL0 = 0;
@@ -87,6 +89,13 @@ public:
         .emplace(std::piecewise_construct, std::forward_as_tuple(from, to),
                  std::forward_as_tuple(0))
         .first->second++;
+  }
+
+  size_t numLLCInflyComputationSample = 0;
+  size_t numLLCInflyComputation = 0;
+  void sampleLLCInflyComputation(int inflyComputation) {
+    this->numLLCInflyComputationSample++;
+    this->numLLCInflyComputation += inflyComputation;
   }
 
   // LLCStreamEngine issue statistics.

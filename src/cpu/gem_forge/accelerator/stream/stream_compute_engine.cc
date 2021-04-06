@@ -70,7 +70,7 @@ void StreamComputeEngine::completeComputation() {
 void StreamComputeEngine::pushInflyComputation(ComputationPtr computation) {
 
   assert(this->inflyComputations.size() < 100 && "Too many infly results.");
-  assert(computation->latency < 100 && "Latency too long.");
+  assert(computation->latency < 1024 && "Latency too long.");
 
   computation->readyCycle = this->se->curCycle() + computation->latency;
   for (auto iter = this->inflyComputations.rbegin(),

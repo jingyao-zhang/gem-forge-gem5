@@ -602,6 +602,10 @@ void LLCStreamEngine::wakeup() {
     panic("Too many LLCStream.\n");
   }
 
+  if (this->streams.size() > 1) {
+    this->controller->m_statLLCNumDirectStreams.sample(this->streams.size());
+  }
+
   // Drain incoming element data.
   this->drainIncomingStreamDataMsg();
 
@@ -1034,6 +1038,7 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
   auto S = dynS->getStaticStream();
   auto &statistic = S->statistic;
   statistic.sampleLLCAliveElements(dynS->idxToElementMap.size());
+  statistic.sampleLLCInflyComputation(dynS->incompleteComputations);
   /**
    * Prioritize indirect streams.
    */
@@ -1104,21 +1109,59 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
                   "Failed to get next alloc slice.");
     }
     const auto &nextSliceId = nextSlice->getSliceId();
-    for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
-         ++idx) {
-      auto element = dynS->getElementPanic(idx, "Check StoreValue Ready.");
-      if (S->isStoreComputeStream() && !element->isReady()) {
-        // Simply schedule the computation.
-        if (element->areBaseElementsReady() &&
-            !element->isComputationScheduled()) {
-          this->pushReadyComputation(element);
+    if (S->isStoreComputeStream()) {
+      /**
+       * Schedule computation and check if StoreValue of this slice is ready.
+       */
+      bool nextSliceStoreValueNotReady = false;
+      uint64_t nextSliceStoreValueNotReadyElementIdx = 0;
+      for (auto iter = dynS->idxToElementMap.find(nextSliceId.getStartIdx()),
+                end = dynS->idxToElementMap.end();
+           iter != end; ++iter) {
+        auto &element = iter->second;
+        auto elementIdx = element->idx;
+        Addr paddr;
+        assert(dynS->translateToPAddr(element->vaddr, paddr) &&
+               "Failed to translate for DirectStoreComputeStream.");
+        if (!this->isPAddrHandledByMe(paddr)) {
+          // This element is not handled here.
+          break;
         }
+        if (!element->isReady()) {
+          if (nextSliceId.elementRange.contains(elementIdx) &&
+              !nextSliceStoreValueNotReady) {
+            nextSliceStoreValueNotReady = true;
+            nextSliceStoreValueNotReadyElementIdx = elementIdx;
+          }
+          if (element->areBaseElementsReady() &&
+              !element->isComputationScheduled()) {
+            this->pushReadyComputation(element);
+          }
+        }
+      }
+      if (nextSliceStoreValueNotReady) {
         LLC_SLICE_DPRINTF(
             nextSliceId,
-            "StoreValue from element %llu not ready, delay issuing.\n", idx);
+            "StoreValue from element %llu not ready, delay issuing.\n",
+            nextSliceStoreValueNotReadyElementIdx);
         return nullptr;
       }
     }
+    // for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
+    //      ++idx) {
+    //   auto element = dynS->getElementPanic(idx, "Check StoreValue Ready.");
+    //   if (S->isStoreComputeStream() && !element->isReady()) {
+    //     // Simply schedule the computation.
+    //     if (element->areBaseElementsReady() &&
+    //         !element->isComputationScheduled()) {
+    //       this->pushReadyComputation(element);
+    //     }
+    //     LLC_SLICE_DPRINTF(
+    //         nextSliceId,
+    //         "StoreValue from element %llu not ready, delay issuing.\n", idx);
+    //     return nullptr;
+    //   }
+    // }
   }
 
   /**
@@ -2918,7 +2961,7 @@ void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
                                            const StreamValue &result,
                                            Cycles &latency) {
   assert(this->inflyComputations.size() < 100 && "Too many infly results.");
-  assert(latency < 100 && "Latency too long.");
+  assert(latency < 1024 && "Latency too long.");
   Cycles readyCycle = this->controller->curCycle() + latency;
   for (auto iter = this->inflyComputations.rbegin(),
             end = this->inflyComputations.rend();

@@ -36,6 +36,7 @@ def initializeStreamEngine(options):
         options.gem_forge_stream_engine_max_num_elements_prefetch_for_atomic
     se.throttling = options.gem_forge_stream_engine_throttling
     se.streamEngineEnableLSQ = options.gem_forge_stream_engine_enable_lsq
+    se.streamEngineForceNoFlushPEB = options.gem_forge_stream_engine_force_no_flush_peb
     se.streamEngineEnableCoalesce = options.gem_forge_stream_engine_enable_coalesce
     se.streamEngineEnableMerge = options.gem_forge_stream_engine_enable_merge
 

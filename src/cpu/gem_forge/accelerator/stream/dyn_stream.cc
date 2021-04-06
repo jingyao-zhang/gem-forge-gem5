@@ -617,6 +617,9 @@ StreamElement *DynamicStream::releaseElementStepped(bool isEnd) {
   if (releaseElement->isAddrAliased) {
     statistic.numAliased++;
   }
+  if (releaseElement->flushed) {
+    statistic.numFlushed++;
+  }
 
   // Check if the element is faulted.
   if (S->isMemStream() && releaseElement->isAddrReady()) {
@@ -797,7 +800,7 @@ void DynamicStream::receiveStreamRange(
     ++iter;
   }
   DYN_S_DPRINTF_(StreamRangeSync, this->dynamicStreamId,
-                 "[Range] Receive StreamRange in core: %s.", *range);
+                 "[Range] Receive StreamRange in core: %s.\n", *range);
   this->receivedRanges.insert(iter, range);
 }
 

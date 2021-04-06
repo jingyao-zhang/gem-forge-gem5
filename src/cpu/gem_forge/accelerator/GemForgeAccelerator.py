@@ -56,6 +56,8 @@ class StreamEngine(GemForgeAccelerator):
         1024, "How many elements to prefetch for atomic stream (default 1024 = no limit).")
     streamEngineEnableLSQ = Param.Bool(
         False, "Whether the stream engine model inserting into the LSQ.")
+    streamEngineForceNoFlushPEB = Param.Bool(
+        False, "Whether force not flush PEB, only used for debugging.")
     streamEngineEnableCoalesce = Param.Bool(
         False, "Whether the steam engine enable coalesced streams.")
     streamEngineEnableMerge = Param.Bool(

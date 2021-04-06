@@ -153,7 +153,8 @@ void StreamEngine::regStats() {
   scalar(numMLCResponse, "Number of MLCStreamEngine response.");
   scalar(numScheduledComputation, "Number of scheduled computation in CoreSE.");
   scalar(numCompletedComputation, "Number of completed computation in CoreSE.");
-  scalar(numCompletedComputeMicroOps, "Number of completed microops in CoreSE.");
+  scalar(numCompletedComputeMicroOps,
+         "Number of completed microops in CoreSE.");
 #undef scalar
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -2361,43 +2362,46 @@ void StreamEngine::issueElements() {
        * we cannot correctly track all the dependence and flush/rewind.
        * To avoid that, here I check if any previous element aliased with
        * the issuing element. If found, we do not issue.
+       * 
+       * ! This may greatly limit the prefetch distance. For now we disable
+       * ! this check.
        */
-      if (S->isUpdateStream() && S->isIndirectLoadStream() &&
-          !dynS->offloadedToCache) {
-        Addr addr = element->computeAddr();
-        int size = S->getMemElementSize();
-        if (this->hasAliasWithPendingWritebackElements(element, addr, size)) {
-          S_ELEMENT_DPRINTF_(
-              StreamAlias, element,
-              "Delayed issuing as aliased with PendingWritebackElement.\n");
-          element->flush(true);
-          continue;
-        }
-        auto prevE = dynS->getFirstElement();
-        assert(prevE && "Missing FirstElement.");
-        bool aliasedWithPrevElement = false;
-        while (prevE != element) {
-          if (!prevE->isAddrReady()) {
-            // If not ready, we consider it aliased.
-            aliasedWithPrevElement = true;
-            break;
-          }
-          if (prevE->addr >= addr + size || addr >= prevE->addr + size) {
-            prevE = prevE->next;
-            continue;
-          }
-          aliasedWithPrevElement = true;
-          break;
-        }
-        if (aliasedWithPrevElement) {
-          S_ELEMENT_DPRINTF_(StreamAlias, element,
-                             "Delayed issuing as aliased with previous element "
-                             "%llu. MyAddr %#x PrevAddr %#x Size %d.\n",
-                             prevE->FIFOIdx.entryIdx, addr, prevE->addr, size);
-          element->flush(true);
-          continue;
-        }
-      }
+      // if (S->isUpdateStream() && S->isIndirectLoadStream() &&
+      //     !dynS->offloadedToCache) {
+      //   Addr addr = element->computeAddr();
+      //   int size = S->getMemElementSize();
+      //   if (this->hasAliasWithPendingWritebackElements(element, addr, size)) {
+      //     S_ELEMENT_DPRINTF_(
+      //         StreamAlias, element,
+      //         "Delayed issuing as aliased with PendingWritebackElement.\n");
+      //     element->flush(true);
+      //     continue;
+      //   }
+      //   auto prevE = dynS->getFirstElement();
+      //   assert(prevE && "Missing FirstElement.");
+      //   bool aliasedWithPrevElement = false;
+      //   while (prevE != element) {
+      //     if (!prevE->isAddrReady()) {
+      //       // If not ready, we consider it aliased.
+      //       aliasedWithPrevElement = true;
+      //       break;
+      //     }
+      //     if (prevE->addr >= addr + size || addr >= prevE->addr + size) {
+      //       prevE = prevE->next;
+      //       continue;
+      //     }
+      //     aliasedWithPrevElement = true;
+      //     break;
+      //   }
+      //   if (aliasedWithPrevElement) {
+      //     S_ELEMENT_DPRINTF_(StreamAlias, element,
+      //                        "Delayed issuing as aliased with previous element "
+      //                        "%llu. MyAddr %#x PrevAddr %#x Size %d.\n",
+      //                        prevE->FIFOIdx.entryIdx, addr, prevE->addr, size);
+      //     element->flush(true);
+      //     continue;
+      //   }
+      // }
       element->markAddrReady();
     }
 
@@ -2586,8 +2590,7 @@ void StreamEngine::issueElement(StreamElement *element) {
         }
       }
     }
-    if (S->isLoadStream() && S->hasUpdate() && !S->isUpdateStream() &&
-        !dynS->offloadedToCache) {
+    if (S->isLoadStream() && S->hasUpdate() && !dynS->offloadedToCache) {
       flags.set(Request::READ_EXCLUSIVE);
     }
 
@@ -2660,6 +2663,9 @@ void StreamEngine::issueElement(StreamElement *element) {
       }
     }
     S->statistic.numIssuedRequest++;
+    if (flags.isSet(Request::READ_EXCLUSIVE)) {
+      S->statistic.numIssuedReadExRequest++;
+    }
     element->dynS->incrementNumIssuedRequests();
     S->incrementInflyStreamRequest();
     this->incrementInflyStreamRequest();
@@ -3098,6 +3104,10 @@ void StreamEngine::sendAtomicPacket(StreamElement *element,
 
 void StreamEngine::flushPEB(Addr vaddr, int size) {
   SE_DPRINTF_(StreamAlias, "====== Flush PEB %#x, +%d.\n", vaddr, size);
+  if (this->myParams->streamEngineForceNoFlushPEB) {
+    warn("Forced to ignore flush PEB.");
+    return;
+  }
   bool foundAliasedIndirect = false;
   for (auto element : this->peb.elements) {
     assert(element->isAddrReady());
@@ -3137,7 +3147,13 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
       }
     }
     if (element->scheduledComputation) {
-      S_ELEMENT_PANIC(element, "Flush in PEB when scheduled computation.");
+      /**
+       * ! So far we ignore this to make sure we have prefetche distance.
+       * ! The current implementation to fix this greatly limit the prefetch
+       * ! distance.
+       * ! See issueElements().
+       */
+      // S_ELEMENT_PANIC(element, "Flush in PEB when scheduled computation.");
     }
 
     // Clear the element to just allocate state.

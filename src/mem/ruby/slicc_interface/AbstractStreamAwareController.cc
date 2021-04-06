@@ -99,6 +99,11 @@ void AbstractStreamAwareController::regStats() {
       .desc("number of llc stream atomics that triggers deadlock")
       .flags(Stats::nozero);
 
+  m_statLLCNumDirectStreams.init(1, 512, 16)
+      .name(name() + ".llcNumDirectStreams")
+      .desc("Sample of number of LLC direct streams.")
+      .flags(Stats::pdf);
+
   // Register stats callback.
   Stats::registerResetCallback(
       new MakeCallback<PCRequestRecorder, &PCRequestRecorder::reset>(
