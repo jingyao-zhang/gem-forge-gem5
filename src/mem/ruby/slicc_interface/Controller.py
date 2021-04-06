@@ -112,3 +112,4 @@ class RubyStreamAwareController(RubyController):
     enable_llc_stream_zero_compute_latency = Param.Bool(False, "Whether to enable zero compute latency.")
     enable_stream_range_sync = Param.Bool(False, "Whether to enable stream range synchronization.")
     stream_atomic_lock_type = Param.String("none", "StreamAtomicLockType of none, single, multi-reader.")
+    llc_access_core_simd_delay = Param.UInt32(4, "Latency to access core simd unit.")

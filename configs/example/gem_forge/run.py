@@ -186,6 +186,9 @@ parser.add_option("--gem-forge-stream-engine-llc-stream-max-infly-request", acti
 parser.add_option("--gem-forge-stream-engine-compute-width", action="store",
                   type="int", default="1",
                   help="Core/LLC StreamEngine compute width.")
+parser.add_option("--gem-forge-stream-engine-llc-access-core-simd-delay", action="store",
+                  type="int", default="0",
+                  help="Delay for LLC StreamEngine to access core SIMD unit.")
 parser.add_option("--gem-forge-enable-stream-zero-compute-latency", action="store_true",
                   default="False",
                   help="Core/LLC StreamEngine compute done in 0 cycle latency.")

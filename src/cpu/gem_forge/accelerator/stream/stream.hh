@@ -464,6 +464,9 @@ public:
   Cycles getEstimatedComputationLatency() const {
     return this->getComputeCallback()->getEstimatedLatency();
   }
+  bool isSIMDComputation() const {
+    return this->getComputeCallback()->hasSIMD();
+  }
 
   std::unique_ptr<StreamAtomicOp>
   setupAtomicOp(FIFOEntryIdx idx, int memElementsize,

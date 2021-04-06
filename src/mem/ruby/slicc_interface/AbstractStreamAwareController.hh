@@ -213,8 +213,8 @@ public:
     return this->llcSE;
   }
 
-private:
   const Params *myParams;
+private:
   BaseCPU *cpu = nullptr;
 
   mutable PCRequestRecorder pcReqRecorder;

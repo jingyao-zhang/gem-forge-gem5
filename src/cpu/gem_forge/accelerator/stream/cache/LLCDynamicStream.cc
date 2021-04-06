@@ -798,6 +798,11 @@ Cycles LLCDynamicStream::getEstimatedComputationLatency() const {
   return S->getEstimatedComputationLatency();
 }
 
+bool LLCDynamicStream::isSIMDComputation() const {
+  auto S = this->getStaticStream();
+  return S->isSIMDComputation();
+}
+
 StreamValue LLCDynamicStream::computeStreamElementValue(
     const LLCStreamElementPtr &element) {
 

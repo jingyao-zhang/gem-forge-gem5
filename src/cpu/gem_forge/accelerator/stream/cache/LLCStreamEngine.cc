@@ -2991,6 +2991,14 @@ void LLCStreamEngine::startComputation() {
 
     int numMicroOps = dynS->getComputationNumMicroOps();
     Cycles latency = dynS->getEstimatedComputationLatency();
+
+    if (dynS->isSIMDComputation()) {
+      /**
+       * Here we charge extra latency for SIMD computation.
+       */
+      latency += Cycles(this->controller->myParams->llc_access_core_simd_delay);
+    }
+
     auto forceZeroLat =
         this->controller->isLLCStreamEngineZeroComputeLatencyEnabled();
     if (forceZeroLat) {

@@ -133,11 +133,20 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
   for (const auto &arg : this->func.args()) {
     if (arg.type() != DataType::INTEGER) {
       this->isPureInteger = false;
-      return;
+    }
+    if (arg.type() == DataType::VECTOR_128 ||
+        arg.type() == DataType::VECTOR_256 ||
+        arg.type() == DataType::VECTOR_512) {
+      this->isSIMD = true;
     }
   }
   if (this->func.type() != DataType::INTEGER) {
     this->isPureInteger = false;
+  }
+  if (this->func.type() == DataType::VECTOR_128 ||
+      this->func.type() == DataType::VECTOR_256 ||
+      this->func.type() == DataType::VECTOR_512) {
+    this->isSIMD = true;
   }
 }
 

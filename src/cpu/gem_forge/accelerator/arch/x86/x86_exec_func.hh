@@ -66,6 +66,7 @@ public:
 
   Cycles getEstimatedLatency() const { return this->estimatedLatency; }
   const ::LLVM::TDG::ExecFuncInfo &getFuncInfo() const { return this->func; }
+  bool hasSIMD() const { return this->isSIMD; }
 
   int getNumInstructions() const { return this->instructions.size(); }
 
@@ -74,6 +75,7 @@ private:
   const ::LLVM::TDG::ExecFuncInfo &func;
   // All the types are integer.
   bool isPureInteger;
+  bool isSIMD = false;
   Cycles estimatedLatency;
 
   std::vector<StaticInstPtr> instructions;
