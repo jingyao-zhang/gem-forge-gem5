@@ -338,6 +338,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_stream_max_infly_request,
                 llc_stream_engine_compute_width=\
                     options.gem_forge_stream_engine_compute_width,
+                llc_stream_engine_max_infly_computation=\
+                    options.gem_forge_stream_engine_llc_max_infly_computation,
                 llc_access_core_simd_delay=\
                     options.gem_forge_stream_engine_llc_access_core_simd_delay,
                 enable_llc_stream_zero_compute_latency=\

@@ -48,6 +48,7 @@ void StreamComputeEngine::completeComputation() {
   while (!this->inflyComputations.empty()) {
     auto &computation = this->inflyComputations.front();
     auto element = computation->element;
+    auto S = element->stream;
     if (computation->readyCycle > curCycle) {
       S_ELEMENT_DPRINTF(
           element,
@@ -59,9 +60,16 @@ void StreamComputeEngine::completeComputation() {
     element->receiveComputeResult(computation->result);
     element->scheduledComputation = false;
 
-    auto microOps = element->stream->getComputationNumMicroOps();
+    auto microOps = S->getComputationNumMicroOps();
     this->se->numCompletedComputation++;
     this->se->numCompletedComputeMicroOps += microOps;
+    if (S->isLoadComputeStream()) {
+      this->se->numCompletedLoadComputeMicroOps += microOps;
+    } else if (S->isStoreComputeStream()) {
+      this->se->numCompletedStoreComputeMicroOps += microOps;
+    } else if (S->isReduction()) {
+      this->se->numCompletedReduceMicroOps += microOps;
+    }
 
     this->inflyComputations.pop_front();
   }

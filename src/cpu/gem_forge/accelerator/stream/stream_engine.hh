@@ -265,6 +265,10 @@ public:
   Stats::Scalar numScheduledComputation;
   Stats::Scalar numCompletedComputation;
   Stats::Scalar numCompletedComputeMicroOps;
+  Stats::Scalar numCompletedLoadComputeMicroOps;
+  Stats::Scalar numCompletedReduceMicroOps;
+  Stats::Scalar numCompletedStoreComputeMicroOps;
+  Stats::Scalar numCompletedAtomicComputeMicroOps;
 
 private:
   friend class Stream;

@@ -109,6 +109,8 @@ class RubyStreamAwareController(RubyController):
     enable_stream_llc_issue_clear = Param.Bool(True, "Whether to enable llc stream issue clear")
     llc_stream_engine_compute_width = \
         Param.UInt32(1, "Compute width of LLCStreamEngine")
+    llc_stream_engine_max_infly_computation = \
+        Param.UInt32(32, "Max num of infly computation in LLCStreamEngine")
     enable_llc_stream_zero_compute_latency = Param.Bool(False, "Whether to enable zero compute latency.")
     enable_stream_range_sync = Param.Bool(False, "Whether to enable stream range synchronization.")
     stream_atomic_lock_type = Param.String("none", "StreamAtomicLockType of none, single, multi-reader.")

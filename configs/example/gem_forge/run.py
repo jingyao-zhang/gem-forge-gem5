@@ -186,6 +186,9 @@ parser.add_option("--gem-forge-stream-engine-llc-stream-max-infly-request", acti
 parser.add_option("--gem-forge-stream-engine-compute-width", action="store",
                   type="int", default="1",
                   help="Core/LLC StreamEngine compute width.")
+parser.add_option("--gem-forge-stream-engine-llc-max-infly-computation", action="store",
+                  type="int", default="32",
+                  help="Max num of infly computation in LLC StreamEngine.")
 parser.add_option("--gem-forge-stream-engine-llc-access-core-simd-delay", action="store",
                   type="int", default="0",
                   help="Delay for LLC StreamEngine to access core SIMD unit.")

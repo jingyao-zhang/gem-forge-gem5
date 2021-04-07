@@ -68,7 +68,8 @@ void AbstractStreamAwareController::regStats() {
   m_statLLCScheduledComputation.name(name() + ".llcScheduledStreamComputation")
       .desc("number of llc stream computation scheduled")
       .flags(Stats::nozero);
-  m_statLLCScheduledComputeMicroOps.name(name() + ".llcScheduledStreamComputeMicroOps")
+  m_statLLCScheduledComputeMicroOps
+      .name(name() + ".llcScheduledStreamComputeMicroOps")
       .desc("number of llc stream computation microops scheduled")
       .flags(Stats::nozero);
   m_statLLCPerformedAtomics.name(name() + ".llcStreamAtomicsPerformed")
@@ -92,7 +93,8 @@ void AbstractStreamAwareController::regStats() {
   m_statLLCXAWConflictAtomics.name(name() + ".llcStreamAtomicsXAWConflict")
       .desc("number of llc stream atomics that has X-after-write conflict")
       .flags(Stats::nozero);
-  m_statLLCRealXAWConflictAtomics.name(name() + ".llcStreamAtomicsRealXAWConflict")
+  m_statLLCRealXAWConflictAtomics
+      .name(name() + ".llcStreamAtomicsRealXAWConflict")
       .desc("number of llc stream atomics that has real X-after-write conflict")
       .flags(Stats::nozero);
   m_statLLCDeadlockAtomics.name(name() + ".llcStreamAtomicsDeadlock")
@@ -103,6 +105,18 @@ void AbstractStreamAwareController::regStats() {
       .name(name() + ".llcNumDirectStreams")
       .desc("Sample of number of LLC direct streams.")
       .flags(Stats::pdf);
+
+  m_statLLCNumInflyComputations
+      .init(1, myParams->llc_stream_engine_max_infly_computation, 1)
+      .name(name() + ".llcNumInflyComputations")
+      .desc("Sample of number of LLC computation infly.")
+      .flags(Stats::pdf)
+      .flags(Stats::nozero);
+  m_statLLCNumReadyComputations.init(1, 32, 1)
+      .name(name() + ".llcNumReadyComputations")
+      .desc("Sample of number of LLC computation ready but not infly.")
+      .flags(Stats::pdf)
+      .flags(Stats::nozero);
 
   // Register stats callback.
   Stats::registerResetCallback(

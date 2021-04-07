@@ -272,6 +272,8 @@ public:
   Stats::Scalar m_statLLCXAWConflictAtomics;
   Stats::Scalar m_statLLCRealXAWConflictAtomics;
   Stats::Scalar m_statLLCDeadlockAtomics;
+  Stats::Distribution m_statLLCNumInflyComputations;
+  Stats::Distribution m_statLLCNumReadyComputations;
 };
 
 #endif

@@ -602,8 +602,16 @@ void LLCStreamEngine::wakeup() {
     panic("Too many LLCStream.\n");
   }
 
-  if (this->streams.size() > 1) {
+  if (this->streams.size() > 0) {
     this->controller->m_statLLCNumDirectStreams.sample(this->streams.size());
+  }
+  if (!this->readyComputations.empty()) {
+    this->controller->m_statLLCNumReadyComputations.sample(
+        this->readyComputations.size());
+  }
+  if (!this->inflyComputations.empty()) {
+    this->controller->m_statLLCNumInflyComputations.sample(
+        this->inflyComputations.size());
   }
 
   // Drain incoming element data.
@@ -1113,13 +1121,10 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
       /**
        * Schedule computation and check if StoreValue of this slice is ready.
        */
-      bool nextSliceStoreValueNotReady = false;
-      uint64_t nextSliceStoreValueNotReadyElementIdx = 0;
       for (auto iter = dynS->idxToElementMap.find(nextSliceId.getStartIdx()),
                 end = dynS->idxToElementMap.end();
            iter != end; ++iter) {
         auto &element = iter->second;
-        auto elementIdx = element->idx;
         Addr paddr;
         assert(dynS->translateToPAddr(element->vaddr, paddr) &&
                "Failed to translate for DirectStoreComputeStream.");
@@ -1128,40 +1133,28 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
           break;
         }
         if (!element->isReady()) {
-          if (nextSliceId.elementRange.contains(elementIdx) &&
-              !nextSliceStoreValueNotReady) {
-            nextSliceStoreValueNotReady = true;
-            nextSliceStoreValueNotReadyElementIdx = elementIdx;
-          }
           if (element->areBaseElementsReady() &&
               !element->isComputationScheduled()) {
             this->pushReadyComputation(element);
           }
         }
       }
-      if (nextSliceStoreValueNotReady) {
-        LLC_SLICE_DPRINTF(
-            nextSliceId,
-            "StoreValue from element %llu not ready, delay issuing.\n",
-            nextSliceStoreValueNotReadyElementIdx);
-        return nullptr;
+      for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
+           ++idx) {
+        auto element = dynS->getElementPanic(idx, "Check StoreValue Ready.");
+        // Simply schedule the computation.
+        if (!element->isReady()) {
+          if (element->areBaseElementsReady() &&
+              !element->isComputationScheduled()) {
+            this->pushReadyComputation(element);
+          }
+          LLC_SLICE_DPRINTF(
+              nextSliceId,
+              "StoreValue from element %llu not ready, delay issuing.\n", idx);
+          return nullptr;
+        }
       }
     }
-    // for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
-    //      ++idx) {
-    //   auto element = dynS->getElementPanic(idx, "Check StoreValue Ready.");
-    //   if (S->isStoreComputeStream() && !element->isReady()) {
-    //     // Simply schedule the computation.
-    //     if (element->areBaseElementsReady() &&
-    //         !element->isComputationScheduled()) {
-    //       this->pushReadyComputation(element);
-    //     }
-    //     LLC_SLICE_DPRINTF(
-    //         nextSliceId,
-    //         "StoreValue from element %llu not ready, delay issuing.\n", idx);
-    //     return nullptr;
-    //   }
-    // }
   }
 
   /**
@@ -2960,7 +2953,10 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
 void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
                                            const StreamValue &result,
                                            Cycles &latency) {
-  assert(this->inflyComputations.size() < 100 && "Too many infly results.");
+  const int maxInflyComputation =
+      this->controller->myParams->llc_stream_engine_max_infly_computation;
+  assert(this->inflyComputations.size() < maxInflyComputation &&
+         "Too many infly results.");
   assert(latency < 1024 && "Latency too long.");
   Cycles readyCycle = this->controller->curCycle() + latency;
   for (auto iter = this->inflyComputations.rbegin(),
@@ -2978,8 +2974,11 @@ void LLCStreamEngine::startComputation() {
   int startedComputation = 0;
   const int computationWidth =
       this->controller->getLLCStreamEngineComputeWidth();
+  const int maxInflyComputation =
+      this->controller->myParams->llc_stream_engine_max_infly_computation;
   while (startedComputation < computationWidth &&
-         !this->readyComputations.empty()) {
+         !this->readyComputations.empty() &&
+         this->inflyComputations.size() < maxInflyComputation) {
     auto &element = this->readyComputations.front();
     auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
     if (!dynS) {

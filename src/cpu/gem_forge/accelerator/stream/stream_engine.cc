@@ -155,6 +155,14 @@ void StreamEngine::regStats() {
   scalar(numCompletedComputation, "Number of completed computation in CoreSE.");
   scalar(numCompletedComputeMicroOps,
          "Number of completed microops in CoreSE.");
+  scalar(numCompletedLoadComputeMicroOps,
+         "Number of completed LoadComputeS microops in CoreSE.");
+  scalar(numCompletedStoreComputeMicroOps,
+         "Number of completed StoreComputeS microops in CoreSE.");
+  scalar(numCompletedAtomicComputeMicroOps,
+         "Number of completed AtoimcComputeS microops in CoreSE.");
+  scalar(numCompletedReduceMicroOps,
+         "Number of completed ReduceS microops in CoreSE.");
 #undef scalar
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -2627,6 +2635,7 @@ void StreamEngine::issueElement(StreamElement *element) {
         this->numScheduledComputation++;
         this->numCompletedComputation++;
         this->numCompletedComputeMicroOps += microOps;
+        this->numCompletedAtomicComputeMicroOps += microOps;
 
         pkt = GemForgePacketHandler::createGemForgeAMOPacket(
             elementVAddr, elementPAddr, element->size, memAccess,
