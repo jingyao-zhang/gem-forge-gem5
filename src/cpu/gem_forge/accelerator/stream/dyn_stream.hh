@@ -195,6 +195,7 @@ struct DynamicStream {
    * Get the first element of the dynamic stream.
    */
   StreamElement *getFirstElement();
+  const StreamElement *getFirstElement() const;
   /**
    * Get the first unstepped element of the dynamic stream.
    */

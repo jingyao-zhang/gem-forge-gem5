@@ -162,6 +162,14 @@ DefaultO3CPUDelegator<CPUImpl>::DefaultO3CPUDelegator(O3CPU *_cpu)
 template <class CPUImpl>
 DefaultO3CPUDelegator<CPUImpl>::~DefaultO3CPUDelegator() = default;
 
+template <class CPUImpl> void DefaultO3CPUDelegator<CPUImpl>::regStats() {
+#define scalar(stat, describe)                                                 \
+  this->stat.name(pimpl->cpu->name() + #stat).desc(describe).prereq(this->stat)
+
+  scalar(statCoreDataHops, "Accumulated core data hops.");
+  scalar(statCoreDataHopsIgnored, "Accumulated core data hops ignored.");
+}
+
 /*********************************************************************
  * Interface to GemForge.
  *********************************************************************/
@@ -697,6 +705,68 @@ InstSeqNum DefaultO3CPUDelegator<CPUImpl>::getInstSeqNum() const {
 template <class CPUImpl>
 void DefaultO3CPUDelegator<CPUImpl>::setInstSeqNum(InstSeqNum seqNum) {
   pimpl->cpu->setGlobalInstSeq(seqNum);
+}
+
+template <class CPUImpl>
+void DefaultO3CPUDelegator<CPUImpl>::recordCoreDataTraffic(
+    const DynInstPtr &dynInstPtr, Addr vaddr, int size) {
+  if (dynInstPtr->staticInst->isGemForge()) {
+    // Ignore GemForgeLoad/Store.
+    return;
+  }
+
+  Addr paddr;
+  if (!this->translateVAddrOracle(vaddr, paddr)) {
+    // Ignore fault.
+    return;
+  }
+
+  int myBank = this->cpuId();
+  int dataBank = CoreDataTrafficAccumulator::mapPAddrToBank(paddr);
+  int distance = CoreDataTrafficAccumulator::getDistance(myBank, dataBank);
+  int flits = CoreDataTrafficAccumulator::getNumFlits(size);
+  this->statCoreDataHops += distance * flits;
+  if (this->dataTrafficAcc.shouldIgnoreTraffic(dynInstPtr->pcState().pc())) {
+    this->statCoreDataHopsIgnored += distance * flits;
+  }
+}
+
+template <class CPUImpl>
+std::vector<std::string>
+    DefaultO3CPUDelegator<CPUImpl>::CoreDataTrafficAccumulator::ignoredFuncs{
+        // "__kmp_hyper_barrier_release",
+        // "__kmp_hardware_timestamp",
+        // "__kmp_join_barrier",
+        // "__kmp_barrier_template",
+        // "__kmp_fork_call",
+        "__kmp_",
+        "__kmpc_",
+    };
+
+template <class CPUImpl>
+bool DefaultO3CPUDelegator<
+    CPUImpl>::CoreDataTrafficAccumulator::shouldIgnoreTraffic(Addr pc) {
+  auto iter = this->pcIgnoredMap.find(pc);
+  if (iter == this->pcIgnoredMap.end()) {
+    bool ignore = false;
+    Addr funcStart = 0;
+    Addr funcEnd = 0;
+    std::string symbol;
+    bool found = Loader::debugSymbolTable->findNearestSymbol(
+        pc, symbol, funcStart, funcEnd);
+    if (!found) {
+      symbol = csprintf("0x%x", pc);
+    }
+    for (const auto &f : ignoredFuncs) {
+      auto pos = symbol.find(f);
+      if (pos != std::string::npos) {
+        ignore = true;
+        break;
+      }
+    }
+    iter = this->pcIgnoredMap.emplace(pc, ignore).first;
+  }
+  return iter->second;
 }
 
 #undef INST_PANIC

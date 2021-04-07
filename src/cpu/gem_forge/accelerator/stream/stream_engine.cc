@@ -2,6 +2,7 @@
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
 #include "nest_stream_controller.hh"
 #include "stream_compute_engine.hh"
+#include "stream_data_traffic_accumulator.hh"
 #include "stream_float_controller.hh"
 #include "stream_lsq_callback.hh"
 #include "stream_range_sync_controller.hh"
@@ -64,6 +65,13 @@ StreamEngine::StreamEngine(Params *params)
   this->nestStreamController = m5::make_unique<NestStreamController>(this);
   this->rangeSyncController = m5::make_unique<StreamRangeSyncController>(this);
 
+  this->dataTrafficAccFix =
+      m5::make_unique<StreamDataTrafficAccumulator>(this, false /* floated */
+      );
+  this->dataTrafficAccFloat =
+      m5::make_unique<StreamDataTrafficAccumulator>(this, true /* floated */
+      );
+
   this->initializeFIFO(this->totalRunAheadLength);
 }
 
@@ -107,6 +115,11 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
         this->cpuDelegator->sendRequest(pkt);
       },
       false /* AccessLastLevelTLBOnly */, true /* MustDoneInOrder */);
+
+  // Set the name of DataTrafficAcc.
+  this->dataTrafficAccFix->setName(this->manager->name() + ".se.dataAccFix");
+  this->dataTrafficAccFloat->setName(this->manager->name() +
+                                     ".se.dataAccFloat");
 }
 
 void StreamEngine::takeOverBy(GemForgeCPUDelegator *newCpuDelegator,
@@ -213,6 +226,9 @@ void StreamEngine::regStats() {
       .name(this->manager->name() + ".stream.numAccessFootprintL3")
       .desc("Number of accesses with footprint at L3.")
       .flags(Stats::pdf);
+
+  this->dataTrafficAccFix->regStats();
+  this->dataTrafficAccFloat->regStats();
 }
 
 bool StreamEngine::canStreamConfig(const StreamConfigArgs &args) const {
@@ -594,6 +610,12 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   auto stepStream = this->getStream(stepStreamId);
 
   const auto &stepStreams = this->getStepStreamList(stepStream);
+
+  /**
+   * Notify the StreamDataTrafficAccumulator to estimate for data traffic.
+   */
+  this->dataTrafficAccFix->commit(stepStreams);
+  this->dataTrafficAccFloat->commit(stepStreams);
 
   for (auto S : stepStreams) {
     /**
@@ -2370,7 +2392,7 @@ void StreamEngine::issueElements() {
        * we cannot correctly track all the dependence and flush/rewind.
        * To avoid that, here I check if any previous element aliased with
        * the issuing element. If found, we do not issue.
-       * 
+       *
        * ! This may greatly limit the prefetch distance. For now we disable
        * ! this check.
        */
@@ -2378,7 +2400,8 @@ void StreamEngine::issueElements() {
       //     !dynS->offloadedToCache) {
       //   Addr addr = element->computeAddr();
       //   int size = S->getMemElementSize();
-      //   if (this->hasAliasWithPendingWritebackElements(element, addr, size)) {
+      //   if (this->hasAliasWithPendingWritebackElements(element, addr, size))
+      //   {
       //     S_ELEMENT_DPRINTF_(
       //         StreamAlias, element,
       //         "Delayed issuing as aliased with PendingWritebackElement.\n");
@@ -2403,9 +2426,11 @@ void StreamEngine::issueElements() {
       //   }
       //   if (aliasedWithPrevElement) {
       //     S_ELEMENT_DPRINTF_(StreamAlias, element,
-      //                        "Delayed issuing as aliased with previous element "
+      //                        "Delayed issuing as aliased with previous
+      //                        element "
       //                        "%llu. MyAddr %#x PrevAddr %#x Size %d.\n",
-      //                        prevE->FIFOIdx.entryIdx, addr, prevE->addr, size);
+      //                        prevE->FIFOIdx.entryIdx, addr, prevE->addr,
+      //                        size);
       //     element->flush(true);
       //     continue;
       //   }

@@ -453,6 +453,9 @@ StreamElement *DynamicStream::getPrevElement(StreamElement *element) {
 }
 
 StreamElement *DynamicStream::getFirstElement() { return this->tail->next; }
+const StreamElement *DynamicStream::getFirstElement() const {
+  return this->tail->next;
+}
 
 StreamElement *DynamicStream::getFirstUnsteppedElement() {
   if (this->allocSize <= this->stepSize) {

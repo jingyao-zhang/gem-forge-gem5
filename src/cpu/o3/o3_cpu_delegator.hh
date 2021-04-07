@@ -67,6 +67,8 @@ public:
   DefaultO3CPUDelegator(O3CPU *_cpu);
   ~DefaultO3CPUDelegator() override;
 
+  void regStats();
+
   const std::string &getTraceExtraFolder() const override;
   bool translateVAddrOracle(Addr vaddr, Addr &paddr) override;
   void sendRequest(PacketPtr pkt) override;
@@ -97,6 +99,12 @@ public:
    * 2. Invalid any aliased load in PreLSQ.
    */
   void storeTo(InstSeqNum seqNum, Addr vaddr, int size);
+
+  /**
+   * Record core data traffic.
+   */
+  void recordCoreDataTraffic(const DynInstPtr &dynInstPtr, Addr vaddr,
+                             int size);
 
   /**
    * CPU LSQ found a RAWMisspuclation at SeqNum. We need to:
@@ -135,6 +143,36 @@ public:
 private:
   class Impl;
   std::unique_ptr<Impl> pimpl;
+
+  Stats::Scalar statCoreDataHops;
+  Stats::Scalar statCoreDataHopsIgnored;
+
+  struct CoreDataTrafficAccumulator {
+    static constexpr int interleaveSize = 1024;
+    static constexpr int rowSize = 8;
+    static constexpr int colSize = 8;
+    static constexpr int flitSizeBytes = 1;
+    static int getRow(int bank) { return bank / colSize; }
+    static int getCol(int bank) { return bank % colSize; }
+    static int getBank(int row, int col) { return row * colSize + col; }
+    static int mapPAddrToBank(Addr paddr) {
+      return (paddr / interleaveSize) % (rowSize * colSize);
+    }
+    static int getDistance(int bankA, int bankB) {
+      int rowA = getRow(bankA);
+      int rowB = getRow(bankB);
+      int colA = getCol(bankA);
+      int colB = getCol(bankB);
+      return std::abs(rowA - rowB) + std::abs(colA - colB);
+    }
+    static int getNumFlits(int bytes) {
+      return (bytes + flitSizeBytes - 1) / flitSizeBytes;
+    }
+    static std::vector<std::string> ignoredFuncs;
+    std::unordered_map<Addr, bool> pcIgnoredMap;
+    bool shouldIgnoreTraffic(Addr pc);
+  };
+  CoreDataTrafficAccumulator dataTrafficAcc;
 
 protected:
   InstSeqNum getInstSeqNum() const override;

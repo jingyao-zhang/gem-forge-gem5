@@ -515,6 +515,10 @@ FullO3CPU<Impl>::regStats()
         .name(name() + ".misc_regfile_writes")
         .desc("number of misc regfile writes")
         .prereq(miscRegfileWrites);
+
+    if (this->cpuDelegator) {
+        this->cpuDelegator->regStats();
+    }
 }
 
 template <class Impl>

@@ -709,6 +709,20 @@ LSQUnit<Impl>::commitLoad()
 
     DPRINTF(LSQUnit, "Committing head load %s\n", *loadQueue.front().instruction());
 
+    if (cpu->cpuDelegator) {
+        /**
+         * ! GemForge.
+         * Record core data traffic.
+         */
+        auto &front = loadQueue.front();
+        if (front.hasRequest()) {
+            DynInstPtr inst = front.instruction();
+            Addr vaddr = front.request()->_addr;
+            int size = front.request()->_size;
+            cpu->cpuDelegator->recordCoreDataTraffic(inst, vaddr, size);
+        }
+    }
+
     loadQueue.front().clear();
     loadQueue.pop_front();
 
@@ -1069,6 +1083,19 @@ LSQUnit<Impl>::completeStore(typename StoreQueue::iterator store_idx)
     DynInstPtr store_inst = store_idx->instruction();
     if (store_idx == storeQueue.begin()) {
         do {
+            if (cpu->cpuDelegator) {
+                /**
+                 * ! GemForge.
+                 * Record core data traffic.
+                 */
+                auto &front = storeQueue.front();
+                if (front.hasRequest() && front.completed() && front.valid()) {
+                    DynInstPtr inst = front.instruction();
+                    Addr vaddr = front.request()->_addr;
+                    int size = front.request()->_size;
+                    cpu->cpuDelegator->recordCoreDataTraffic(inst, vaddr, size);
+                }
+            }
             storeQueue.front().clear();
             storeQueue.pop_front();
             --stores;
