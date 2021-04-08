@@ -164,10 +164,17 @@ DefaultO3CPUDelegator<CPUImpl>::~DefaultO3CPUDelegator() = default;
 
 template <class CPUImpl> void DefaultO3CPUDelegator<CPUImpl>::regStats() {
 #define scalar(stat, describe)                                                 \
-  this->stat.name(pimpl->cpu->name() + #stat).desc(describe).prereq(this->stat)
+  this->stat.name(pimpl->cpu->name() + ("." #stat))                            \
+      .desc(describe)                                                          \
+      .prereq(this->stat)
 
   scalar(statCoreDataHops, "Accumulated core data hops.");
   scalar(statCoreDataHopsIgnored, "Accumulated core data hops ignored.");
+  scalar(statCoreCommitMicroOps, "Accumulated core committed micro ops.");
+  scalar(statCoreCommitMicroOpsIgnored,
+         "Accumulated core committed micro ops ignored.");
+  scalar(statCoreCommitMicroOpsGemForge,
+         "Accumulated core committed GemForge micro ops.");
 }
 
 /*********************************************************************
@@ -360,6 +367,15 @@ void DefaultO3CPUDelegator<CPUImpl>::commit(const DynInstPtr &dynInstPtr) {
   if (pimpl->isSquashedInGemForge(dynInstPtr)) {
     // Already squashed, not exposed to GemForge.
     INST_PANIC(dynInstPtr, "Commit SquashedInGemForge inst.");
+  }
+
+  // Record committed stats.
+  this->statCoreCommitMicroOps++;
+  if (this->dataTrafficAcc.shouldIgnoreTraffic(dynInstPtr->pcState().pc())) {
+    this->statCoreCommitMicroOpsIgnored++;
+  }
+  if (dynInstPtr->staticInst->isGemForge()) {
+    this->statCoreCommitMicroOpsGemForge++;
   }
 
   // Clear InLSQ.

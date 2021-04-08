@@ -146,6 +146,9 @@ private:
 
   Stats::Scalar statCoreDataHops;
   Stats::Scalar statCoreDataHopsIgnored;
+  Stats::Scalar statCoreCommitMicroOps;
+  Stats::Scalar statCoreCommitMicroOpsIgnored;
+  Stats::Scalar statCoreCommitMicroOpsGemForge;
 
   struct CoreDataTrafficAccumulator {
     static constexpr int interleaveSize = 1024;
