@@ -10,6 +10,7 @@
 
 #include "base/trace.hh"
 #include "debug/CoreRubyStreamLife.hh"
+#include "debug/CoreStreamAlloc.hh"
 #include "debug/RubyStream.hh"
 #include "debug/StreamAlias.hh"
 #include "debug/StreamEngine.hh"
@@ -2019,10 +2020,6 @@ void StreamEngine::allocateElements() {
                 stepRootStream->getAllocSize(), stepRootStream->maxSize);
       continue;
     }
-    DYN_S_DPRINTF(allocatingStepRootDynS->dynamicStreamId,
-                  "Allocating StepRootDynS AllocSize %d MaxSize %d.\n",
-                  stepRootStream->getAllocSize(), stepRootStream->maxSize);
-
     /**
      * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
      * StreamEnd. Condition: maxAllocSize > allocSize: originally we are trying
@@ -2032,7 +2029,7 @@ void StreamEngine::allocateElements() {
      */
     {
       auto allocSize = stepRootStream->getAllocSize();
-      if (allocatingStepRootDynS->hasTotalTripCount() > 0 &&
+      if (allocatingStepRootDynS->hasTotalTripCount() &&
           maxAllocSize > allocSize) {
         auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
         auto maxTripCount = allocatingStepRootDynS->totalTripCount + 1;
@@ -2046,6 +2043,10 @@ void StreamEngine::allocateElements() {
         }
       }
     }
+    DYN_S_DPRINTF_(
+        CoreStreamAlloc, allocatingStepRootDynS->dynamicStreamId,
+        "Allocating StepRootDynS AllocSize %d MaxSize %d MaxAllocSize %d.\n",
+        stepRootStream->getAllocSize(), stepRootStream->maxSize, maxAllocSize);
 
     /**
      * We should try to limit maximum allocation per cycle cause I still see
@@ -2059,29 +2060,44 @@ void StreamEngine::allocateElements() {
       for (auto S : stepStreams) {
         assert(S->isConfigured() && "Try to allocate for unconfigured stream.");
         if (!this->hasFreeElement()) {
+          S_DPRINTF_(CoreStreamAlloc, S, "No FreeElement.\n");
           break;
         }
         if (S->getAllocSize() >= targetSize) {
+          S_DPRINTF_(CoreStreamAlloc, S, "Reached TargetSize %d >= %d.\n",
+                     S->getAllocSize(), targetSize);
           continue;
         }
         if (S->getAllocSize() >= S->maxSize) {
+          S_DPRINTF_(CoreStreamAlloc, S, "Reached MaxAllocSize %d >= %d.\n",
+                     S->getAllocSize(), S->maxSize);
           continue;
         }
         auto &dynS = S->getDynamicStreamByInstance(
             allocatingStepRootDynS->dynamicStreamId.streamInstance);
         if (!dynS.areNextBaseElementsAllocated()) {
+          DYN_S_DPRINTF_(CoreStreamAlloc, dynS.dynamicStreamId,
+                         "NextBaseElements not allocated.\n");
           continue;
         }
         if (S != stepRootStream) {
           if (S->getAllocSize() >= stepRootStream->getAllocSize()) {
             // It doesn't make sense to allocate ahead than the step root.
+            DYN_S_DPRINTF_(CoreStreamAlloc, dynS.dynamicStreamId,
+                           "Do not allocate %d beyond StepRootS %d.\n",
+                           S->getAllocSize(), stepRootStream->getAllocSize());
             continue;
           }
           if (dynS.allocSize >= allocatingStepRootDynS->allocSize) {
             // It also doesn't make sense to allocate ahead than root dynS.
+            DYN_S_DPRINTF_(CoreStreamAlloc, dynS.dynamicStreamId,
+                           "Do not allocate %d beyond StepRootDynS %d.\n",
+                           dynS.allocSize, allocatingStepRootDynS->allocSize);
             continue;
           }
         }
+        DYN_S_DPRINTF_(CoreStreamAlloc, dynS.dynamicStreamId, "Allocate %d.\n",
+                       dynS.allocSize);
         this->allocateElement(dynS);
         allocated++;
       }

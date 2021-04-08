@@ -195,7 +195,7 @@ bool DynamicStream::areNextAddrBaseElementsAllocated() const {
     if (!baseElement) {
       DYN_S_DPRINTF(this->dynamicStreamId,
                     "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
-                    "Released? Align(%llu), Reuse(%llu), BaseStream %s\n",
+                    "Released? Align(%llu), Reuse(%llu), BaseS %s\n",
                     this->FIFOIdx.entryIdx, baseElementIdx,
                     edge.alignBaseElement, edge.reuseBaseElement,
                     baseS->getStreamName());
@@ -204,13 +204,30 @@ bool DynamicStream::areNextAddrBaseElementsAllocated() const {
     }
     assert(baseElement && "Base Element Already Released?");
     if (baseElement->isStepped) {
+      /**
+       * This must be a misspeculated StreamStep, likely on the outer loop IV.
+       * However, if I stop allocating here, the core may making progress
+       * and never correct the misspeculation. This is observed in MinorCPU.
+       * ! Hack: issue a warning for MinorCPU, but do not stop allocation.
+       */
+      if (this->stream->getCPUDelegator()->cpuType ==
+          GemForgeCPUDelegator::CPUTypeE::MINOR) {
+        DYN_S_WARN(this->dynamicStreamId,
+                   "Ignore Misspeculatively Stepped AddrBaseElement, "
+                   "NextElementIdx(%llu) BaseElementIdx(%llu)"
+                   " Align(%llu), Reuse(%llu), BaseE %s\n",
+                   this->FIFOIdx.entryIdx, baseElementIdx,
+                   edge.alignBaseElement, edge.reuseBaseElement,
+                   baseElement->FIFOIdx);
+        continue;
+      }
       DYN_S_DPRINTF(this->dynamicStreamId,
                     "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                     "(Misspeculatively) Stepped? Align(%llu), Reuse(%llu), "
-                    "BaseStream %s\n",
+                    "BaseE %s\n",
                     this->FIFOIdx.entryIdx, baseElementIdx,
                     edge.alignBaseElement, edge.reuseBaseElement,
-                    baseS->getStreamName());
+                    baseElement->FIFOIdx);
       return false;
     }
   }
