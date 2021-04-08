@@ -87,8 +87,12 @@ void StreamDataTrafficAccumulator::computeTrafficFloat(
   if (dataBank == -1) {
     return;
   }
+  std::unordered_set<StreamElement *> chargedBaseElements;
   int addrBaseHops = 0;
   for (auto baseE : element->addrBaseElements) {
+    if (chargedBaseElements.count(baseE)) {
+      continue;
+    }
     auto baseS = baseE->stream;
     if (!baseS->isMemStream()) {
       continue;
@@ -100,10 +104,14 @@ void StreamDataTrafficAccumulator::computeTrafficFloat(
     auto distance = this->getDistance(dataBank, baseDataBank);
     auto flits = this->getNumFlits(baseS->getMemElementSize());
     addrBaseHops += distance * flits;
+    chargedBaseElements.insert(baseE);
   }
   int valueBaseHops = 0;
   for (const auto &baseElement : element->valueBaseElements) {
     auto baseE = baseElement.element;
+    if (chargedBaseElements.count(baseE)) {
+      continue;
+    }
     auto baseS = baseE->stream;
     if (!baseS->isMemStream() || baseE == element) {
       continue;
@@ -115,6 +123,7 @@ void StreamDataTrafficAccumulator::computeTrafficFloat(
     auto distance = this->getDistance(dataBank, baseDataBank);
     auto flits = this->getNumFlits(baseS->getMemElementSize());
     valueBaseHops += distance * flits;
+    chargedBaseElements.insert(baseE);
   }
   /**
    * Finally, if I have core user, I charge the traffic to get the data here.
