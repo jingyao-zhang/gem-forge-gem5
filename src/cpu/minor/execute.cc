@@ -506,9 +506,9 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
         /* Not acting on instruction yet as the memory
          * queues are full */
         issued = false;
-    } else if (cpu.cpuDelegator && !cpu.cpuDelegator->isAddrSizeReady(inst)) {
+    } else if (cpu.cpuDelegator && !cpu.cpuDelegator->canInsertLSQ(inst)) {
         // ! GemForge
-        // Requires GemForgeLQCallback's addr/size to be ready, if any.
+        // Requires GemForgeLSQCallback's addr/size to be ready, if any.
         issued = false;
     } else {
         ThreadContext *thread = cpu.getContext(inst->id.threadId);

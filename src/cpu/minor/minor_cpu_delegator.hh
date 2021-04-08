@@ -58,14 +58,15 @@ public:
   void dispatch(Minor::MinorDynInstPtr &dynInstPtr);
 
   /**
-   * Check if the addr/size of this mem-ref instruction is ready,
-   * (if it has extra LQ callbacks).
-   * This is required to inform the cpu to block the insertion into LSQ, which
-   * requires the addr/size of the access.
-   * @return true if there is no LQCallback in PreLSQ, or the callbacks'
-   * addr/size are ready.
+   * Check if this mem-ref instruction is ready to be pushed into LSQ.
+   * For LQCallback, this requires the addr/size.
+   * For SQCallback, this requires the addr/size + value.
+   * This is required to inform the cpu to block the insertion into LSQ.
+   * @return true if there is no LSQCallback in PreLSQ, or the callbacks
+   * are ready to be pushed into the LSQ.
+   * 
    */
-  bool isAddrSizeReady(Minor::MinorDynInstPtr &dynInstPtr);
+  bool canInsertLSQ(Minor::MinorDynInstPtr &dynInstPtr);
 
   /**
    * Insert the GemForgeLQCallback into the LSQ.

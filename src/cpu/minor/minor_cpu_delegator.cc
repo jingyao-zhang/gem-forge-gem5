@@ -50,7 +50,7 @@ public:
    * Store the LQ callbacks before the they are really inserted into
    * the LSQ after FU. There is nor order between instructions in the PreLSQ.
    */
-  std::unordered_map<InstSeqNum, GemForgeLQCallbackList> preLSQ;
+  std::unordered_map<InstSeqNum, GemForgeLSQCallbackList> preLSQ;
 
   /**
    * Stores the GemForgeLoadRequest in the LSQ, after the callback from preLSQ
@@ -159,24 +159,10 @@ void MinorCPUDelegator::dispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   isaHandler->dispatch(dynInfo, extraLSQCallbacks);
   pimpl->inflyInstQueue.push_back(dynInstPtr);
   if (extraLSQCallbacks.front()) {
-    // ! So far minor cpu has not supported StreamStore computation.
-    // ! We convert them back to LQCallback (dangerous casting).
-    GemForgeLQCallbackList lqCallbacks;
-    for (int i = 0; i < extraLSQCallbacks.size(); ++i) {
-      auto &lsqCallback = extraLSQCallbacks.at(i);
-      if (!lsqCallback) {
-        break;
-      }
-      assert(lsqCallback->getType() == GemForgeLSQCallback::Type::LOAD &&
-             "StreamStore is not implemented.");
-      lqCallbacks.at(i).reset(
-          static_cast<GemForgeLQCallback *>(lsqCallback.release()));
-    }
-
     // There are at least one extra LQ callbacks.
     pimpl->preLSQ.emplace(std::piecewise_construct,
                           std::forward_as_tuple(dynInstPtr->id.execSeqNum),
-                          std::forward_as_tuple(std::move(lqCallbacks)));
+                          std::forward_as_tuple(std::move(extraLSQCallbacks)));
   } else if (dynInstPtr->staticInst->isGemForge() &&
              dynInstPtr->staticInst->isMemRef()) {
     /**
@@ -193,7 +179,7 @@ void MinorCPUDelegator::dispatch(Minor::MinorDynInstPtr &dynInstPtr) {
   }
 }
 
-bool MinorCPUDelegator::isAddrSizeReady(Minor::MinorDynInstPtr &dynInstPtr) {
+bool MinorCPUDelegator::canInsertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
   auto &preLSQ = pimpl->preLSQ;
   auto seqNum = dynInstPtr->id.execSeqNum;
   auto iter = preLSQ.find(seqNum);
@@ -210,6 +196,12 @@ bool MinorCPUDelegator::isAddrSizeReady(Minor::MinorDynInstPtr &dynInstPtr) {
         // This one is not ready yet.
         // INST_LOG(hack, dynInstPtr, "AddrSize not ready.\n");
         return false;
+      }
+      // Check ValueReady for StoreCallback.
+      if (callback->getType() == GemForgeLSQCallback::Type::STORE) {
+        if (!callback->isValueReady()) {
+          return false;
+        }
       }
     } else {
       // No more callbacks.
@@ -236,25 +228,33 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
   assert(callbacks.front() && "At least one LQ callback.");
   auto &pipeline = pimpl->cpu->pipeline;
   auto &lsq = pipeline->execute.getLSQ();
-  for (auto &callback : callbacks) {
-    if (!callback) {
-      // We reached the end of the callbacks.
-      break;
-    }
-    assert(lsq.canRequest() && "LSQ full for GemForge inst.");
-    // Get the address and size.
-    Addr vaddr;
-    uint32_t size;
-    // TODO: Delay inserting into the LSQ when the address is not ready.
-    assert(callback->getAddrSize(vaddr, size) &&
-           "The addr/size is not ready yet.");
 
+  assert(callbacks.front() && "At least one GemForgeLQCallback.");
+  // So far we only allow one LSQCallback.
+  assert(!callbacks.at(1) && "At most one GemForgeLQCallback.");
+
+  auto &callback = callbacks.front();
+  // Get the address and size.
+  Addr vaddr;
+  uint32_t size;
+  // TODO: Delay inserting into the LSQ when the address is not ready.
+  assert(callback->getAddrSize(vaddr, size) &&
+         "The addr/size is not ready yet.");
+
+  INST_DPRINTF(dynInstPtr, "Insert into LSQ (%#x, %u).\n", vaddr, size);
+
+  assert(!dynInstPtr->inLSQ && "Inst already in LSQ.");
+  assert(lsq.canRequest() && "LSQ full for GemForge inst.");
+  if (callback->getType() == GemForgeLSQCallback::Type::LOAD) {
     // This basically means that one Inst can generate only one LSQ entry.
-    assert(!dynInstPtr->inLSQ && "Inst already in LSQ.");
 
-    INST_DPRINTF(dynInstPtr, "Insert into LSQ (%#x, %u).\n", vaddr, size);
+    /**
+     * LQCallback is handled as special request.
+     */
+    GemForgeLQCallbackPtr lqCallback = nullptr;
+    lqCallback.reset(static_cast<GemForgeLQCallback *>(callback.release()));
     auto request =
-        new Minor::GemForgeLoadRequest(lsq, dynInstPtr, std::move(callback));
+        new Minor::GemForgeLoadRequest(lsq, dynInstPtr, std::move(lqCallback));
 
     // Have to setup the request.
     int cid = pimpl->getThreadContext(dynInstPtr)->contextId();
@@ -294,7 +294,6 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
     // No ByteEnable.
 
     // Insert the special GemForgeLoadRequest.
-    dynInstPtr->inLSQ = true;
 
     /**
      * Push takes Minor::LSQ::LSQRequestPtr&, which requires a lvalue so
@@ -311,12 +310,34 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
         .first->second.push_back(request);
 
     request->startAddrTranslation();
+
+    /**
+     * Clear the preLSQ as they are now in LSQ.
+     */
+    preLSQ.erase(seqNum);
+    dynInstPtr->inLSQ = true;
+
+    return dynInstPtr->translationFault;
+
+  } else {
+    /**
+     * SQCallback is handled as a normal store request.
+     * And it is not released from preLSQ until committed.
+     */
+    assert(callback->isValueReady() &&
+           "GemForgeSQCallback should be value ready.");
+    const uint8_t *constValue = callback->getValue();
+    /**
+     * ! GemForge provides const pointer, while Minor LSQ wants original one.
+     */
+    uint8_t *storeValue = const_cast<uint8_t *>(constValue);
+
+    auto fault =
+        lsq.pushRequest(dynInstPtr, false /* isLoad */, storeValue, size, vaddr,
+                        0 /* flags */, nullptr /* res */, nullptr /* amo_op */);
+    INST_DPRINTF(dynInstPtr, "Insert into LSQ. Fault %s.\n", fault);
+    return fault;
   }
-  /**
-   * Clear the preLSQ as they are now in LSQ.
-   */
-  preLSQ.erase(seqNum);
-  return dynInstPtr->translationFault;
 }
 
 InstSeqNum MinorCPUDelegator::getEarlyIssueMustWaitSeqNum(
@@ -374,9 +395,16 @@ void MinorCPUDelegator::commit(Minor::MinorDynInstPtr &dynInstPtr) {
     INST_LOG(panic, dynInstPtr, "Commit mismatch inflyInstQueue front %s.",
              *frontInst);
   }
-  // All PreLSQ entries should already be cleared.
-  assert(pimpl->preLSQ.count(dynInstPtr->id.execSeqNum) == 0 &&
-         "PreLSQ entries found when commit.");
+  // All PreLSQ entries should already be cleared, except for GemForgeStore.
+  if (pimpl->preLSQ.count(dynInstPtr->id.execSeqNum)) {
+    auto iter = pimpl->preLSQ.find(dynInfo.seqNum);
+    if (iter->second.front()->getType() == GemForgeLSQCallback::Type::STORE) {
+      pimpl->preLSQ.erase(iter);
+    } else {
+      INST_PANIC(pimpl, dynInstPtr, "Still in PreLSQ when commit.");
+    }
+  }
+
   /**
    * Release InLSQ entries, if any.
    * ! These request is already released in LSQ::popResponse().
@@ -471,7 +499,7 @@ void MinorCPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
 
   auto checkMisspeculated =
       [vaddr, size, &foundMisspeculated, &oldestMisspeculatedSeqNum](
-          InstSeqNum seqNum, GemForgeLQCallbackPtr &callback) -> void {
+          InstSeqNum seqNum, GemForgeLSQCallback *callback) -> void {
     if (!callback->isIssued()) {
       // This load is not issued yet, ignore it.
       return;
@@ -486,7 +514,7 @@ void MinorCPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
     } else {
       // Aliased.
       if (callback->bypassAliasCheck()) {
-        panic("Bypassed LQCallback is aliased: %s.\n", callback.get());
+        panic("Bypassed LQCallback is aliased: %s.\n", *callback);
       }
       if (seqNum < oldestMisspeculatedSeqNum) {
         oldestMisspeculatedSeqNum = seqNum;
@@ -499,7 +527,7 @@ void MinorCPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
   for (auto &inLSQSeqNumRequest : inLSQ) {
     auto &seqNum = inLSQSeqNumRequest.first;
     for (auto &request : inLSQSeqNumRequest.second) {
-      checkMisspeculated(seqNum, request->callback);
+      checkMisspeculated(seqNum, request->callback.get());
     }
   }
 
@@ -507,8 +535,8 @@ void MinorCPUDelegator::storeTo(InstSeqNum seqNum, Addr vaddr, int size) {
   for (auto &preLSQSeqNumRequest : preLSQ) {
     auto &seqNum = preLSQSeqNumRequest.first;
     for (auto &callback : preLSQSeqNumRequest.second) {
-      if (callback) {
-        checkMisspeculated(seqNum, callback);
+      if (callback && callback->getType() == GemForgeLSQCallback::Type::LOAD) {
+        checkMisspeculated(seqNum, callback.get());
       }
     }
   }
@@ -596,7 +624,8 @@ void MinorCPUDelegator::sendRequest(PacketPtr pkt) {
 
 namespace {
 /**
- * A fake LSQRequest, used to conform with StoreBuffer::canForwardDataToLoad().
+ * A fake LSQRequest, used to conform with
+ * StoreBuffer::canForwardDataToLoad().
  */
 class FakeLoadRequest : public Minor::LSQ::LSQRequest {
 protected:
