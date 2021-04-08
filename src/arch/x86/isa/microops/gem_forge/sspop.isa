@@ -378,7 +378,7 @@ let {{
             {
                 'code' : '',
             },
-            ['No_OpClass', 'IsStore', 'IsMemRef', 'IsGemForge']
+            ['MemWriteOp', 'IsStore', 'IsMemRef', 'IsGemForge']
         ),
     ]
     for iop in iops:
