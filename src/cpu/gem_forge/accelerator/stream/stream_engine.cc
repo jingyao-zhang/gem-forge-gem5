@@ -177,6 +177,8 @@ void StreamEngine::regStats() {
          "Number of completed AtoimcComputeS microops in CoreSE.");
   scalar(numCompletedReduceMicroOps,
          "Number of completed ReduceS microops in CoreSE.");
+  scalar(numCompletedUpdateMicroOps,
+         "Number of completed UpdateS microops in CoreSE.");
 #undef scalar
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -2673,6 +2675,7 @@ void StreamEngine::issueElement(StreamElement *element) {
 
         // Atomic is also considered as computation stats.
         auto microOps = S->getComputationNumMicroOps();
+        S->recordComputationInCoreStats();
         this->numScheduledComputation++;
         this->numCompletedComputation++;
         this->numCompletedComputeMicroOps += microOps;

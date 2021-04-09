@@ -37,10 +37,14 @@ void LLCStreamAtomicLockManager::enqueue(Addr paddr, int size,
   // Atomics is also considered as computation.
   auto dynS =
       LLCDynamicStream::getLLCStreamPanic(element->dynStreamId, "EnqueuAtomic");
-  auto numMicroOps = dynS->getComputationNumMicroOps();
+  auto S = dynS->getStaticStream();
+  auto numMicroOps = S->getComputationNumMicroOps();
+  // For now we don't bother add the stats to the core in my bank.
+  S->recordComputationInCoreStats();
   this->se->controller->m_statLLCPerformedAtomics++;
   this->se->controller->m_statLLCScheduledComputation++;
   this->se->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
+  this->se->controller->m_statLLCScheduledAtomicComputeMicroOps += numMicroOps;
 
   auto paddrQueue = this->getPAddrQueue(paddr);
   auto addrQueueIter =

@@ -64,7 +64,7 @@ public:
    * This is required to inform the cpu to block the insertion into LSQ.
    * @return true if there is no LSQCallback in PreLSQ, or the callbacks
    * are ready to be pushed into the LSQ.
-   * 
+   *
    */
   bool canInsertLSQ(Minor::MinorDynInstPtr &dynInstPtr);
 
@@ -108,6 +108,11 @@ public:
    * CPU stores to a place. Notify GemForge to check any memory misspeculation.
    */
   void storeTo(InstSeqNum seqNum, Addr vaddr, int size);
+
+  /**
+   * Record this instruction stats as if it has been executed by the core.
+   */
+  void recordStatsForFakeExecutedInst(const StaticInstPtr &inst) override;
 
 private:
   class Impl;

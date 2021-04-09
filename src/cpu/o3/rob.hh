@@ -60,11 +60,14 @@ class ROB
 {
   public:
     //Typedefs from the Impl.
+    typedef typename Impl::CPUPol CPUPol;
     typedef typename Impl::O3CPU O3CPU;
     typedef typename Impl::DynInstPtr DynInstPtr;
 
     typedef std::pair<RegIndex, PhysRegIndex> UnmapInfo;
     typedef typename std::list<DynInstPtr>::iterator InstIt;
+
+    friend class CPUPol::O3CPUDelegator;
 
     /** Possible ROB statuses. */
     enum Status {

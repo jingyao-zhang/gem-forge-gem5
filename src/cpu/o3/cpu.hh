@@ -112,6 +112,7 @@ class FullO3CPU : public BaseO3CPU
     typedef typename std::list<DynInstPtr>::iterator ListIt;
 
     friend class O3ThreadContext<Impl>;
+    friend class CPUPolicy::O3CPUDelegator;
 
   public:
     enum Status {

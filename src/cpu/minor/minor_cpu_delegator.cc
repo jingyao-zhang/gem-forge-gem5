@@ -734,3 +734,24 @@ void MinorCPUDelegator::setInstSeqNum(InstSeqNum seqNum) {
   assert(pimpl->cpu->numThreads == 1 && "GemForge doest not support SMT.");
   pimpl->cpu->pipeline->decode.setFirstThreadExecSeqNum(seqNum);
 }
+
+void MinorCPUDelegator::recordStatsForFakeExecutedInst(
+    const StaticInstPtr &inst) {
+  pimpl->cpu->stats.numDecodedOps++;
+  pimpl->cpu->stats.numOps++;
+
+  if (inst->isInteger()) {
+    pimpl->cpu->stats.numCommittedIntOps++;
+    pimpl->cpu->stats.numIQIntReads++;
+    pimpl->cpu->stats.numIQIntWrites++;
+    pimpl->cpu->stats.numIntRegReads += inst->numSrcRegs();
+    pimpl->cpu->stats.numIntRegWrites += inst->numDestRegs();
+  }
+  if (inst->isFloating() || inst->isVector()) {
+    pimpl->cpu->stats.numCommittedFpOps++;
+    pimpl->cpu->stats.numIQFpReads++;
+    pimpl->cpu->stats.numIQFpWrites++;
+    pimpl->cpu->stats.numFpRegReads += inst->numSrcRegs();
+    pimpl->cpu->stats.numFpRegWrites += inst->numDestRegs();
+  }
+}

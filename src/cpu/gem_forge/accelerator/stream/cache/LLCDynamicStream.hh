@@ -182,7 +182,6 @@ public:
                          const DataBlock &dataBlk);
 
   bool hasComputation() const;
-  int getComputationNumMicroOps() const;
   Cycles getEstimatedComputationLatency() const;
   bool isSIMDComputation() const;
   StreamValue computeStreamElementValue(const LLCStreamElementPtr &element);

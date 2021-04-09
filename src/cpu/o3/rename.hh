@@ -89,6 +89,8 @@ class DefaultRename
     // queue)
     typedef std::deque<DynInstPtr> InstQueue;
 
+    friend class CPUPol::O3CPUDelegator;
+
   public:
     /** Overall rename status. Used to determine if the CPU can
      * deschedule itself due to a lack of activity.

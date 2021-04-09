@@ -72,6 +72,27 @@ void AbstractStreamAwareController::regStats() {
       .name(name() + ".llcScheduledStreamComputeMicroOps")
       .desc("number of llc stream computation microops scheduled")
       .flags(Stats::nozero);
+  m_statLLCScheduledLoadComputeMicroOps
+      .name(name() + ".llcScheduledStreamLoadComputeMicroOps")
+      .desc("number of llc stream load computation microops scheduled")
+      .flags(Stats::nozero);
+  m_statLLCScheduledStoreComputeMicroOps
+      .name(name() + ".llcScheduledStreamStoreComputeMicroOps")
+      .desc("number of llc stream store computation microops scheduled")
+      .flags(Stats::nozero);
+  m_statLLCScheduledAtomicComputeMicroOps
+      .name(name() + ".llcScheduledStreamAtomicComputeMicroOps")
+      .desc("number of llc stream atomic computation microops scheduled")
+      .flags(Stats::nozero);
+  m_statLLCScheduledReduceMicroOps
+      .name(name() + ".llcScheduledStreamReduceMicroOps")
+      .desc("number of llc stream reduce computation microops scheduled")
+      .flags(Stats::nozero);
+  m_statLLCScheduledUpdateMicroOps
+      .name(name() + ".llcScheduledStreamUpdateMicroOps")
+      .desc("number of llc stream update computation microops scheduled")
+      .flags(Stats::nozero);
+
   m_statLLCPerformedAtomics.name(name() + ".llcStreamAtomicsPerformed")
       .desc("number of llc stream atomics performed")
       .flags(Stats::nozero);

@@ -788,11 +788,6 @@ bool LLCDynamicStream::hasComputation() const {
          S->isStoreComputeStream();
 }
 
-int LLCDynamicStream::getComputationNumMicroOps() const {
-  auto S = this->getStaticStream();
-  return S->getComputationNumMicroOps();
-}
-
 Cycles LLCDynamicStream::getEstimatedComputationLatency() const {
   auto S = this->getStaticStream();
   return S->getEstimatedComputationLatency();

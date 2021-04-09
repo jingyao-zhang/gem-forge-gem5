@@ -92,6 +92,8 @@ class DefaultIEW
     typedef typename CPUPol::RenameStruct RenameStruct;
     typedef typename CPUPol::IssueStruct IssueStruct;
 
+    friend class CPUPol::O3CPUDelegator;
+
   public:
     /** Overall IEW stage status. Used to determine if the CPU can
      * deschedule itself due to a lack of activity.

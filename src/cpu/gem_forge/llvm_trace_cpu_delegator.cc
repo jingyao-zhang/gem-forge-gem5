@@ -12,3 +12,8 @@ InstSeqNum LLVMTraceCPUDelegator::getInstSeqNum() const {
 void LLVMTraceCPUDelegator::setInstSeqNum(InstSeqNum seqNum) {
   LLVMDynamicInst::setGlobalSeqNum(seqNum);
 }
+
+void LLVMTraceCPUDelegator::recordStatsForFakeExecutedInst(
+    const StaticInstPtr &inst) {
+  // So far we do nothing.
+}

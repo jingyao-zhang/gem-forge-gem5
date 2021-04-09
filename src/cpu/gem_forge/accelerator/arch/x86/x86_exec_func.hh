@@ -69,6 +69,9 @@ public:
   bool hasSIMD() const { return this->isSIMD; }
 
   int getNumInstructions() const { return this->instructions.size(); }
+  const std::vector<StaticInstPtr> &getStaticInsts() const {
+    return this->instructions;
+  }
 
 private:
   ThreadContext *tc;

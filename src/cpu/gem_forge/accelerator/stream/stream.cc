@@ -988,6 +988,14 @@ const ExecFuncPtr &Stream::getComputeCallback() const {
   }
 }
 
+void Stream::recordComputationInCoreStats() const {
+  const auto &func = this->getComputeCallback();
+  const auto &insts = func->getStaticInsts();
+  for (const auto &inst : insts) {
+    this->getCPUDelegator()->recordStatsForFakeExecutedInst(inst);
+  }
+}
+
 std::unique_ptr<StreamAtomicOp>
 Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
                       const DynamicStreamFormalParamV &formalParams,

@@ -100,6 +100,8 @@ class DefaultCommit
 
     typedef O3ThreadState<Impl> Thread;
 
+    friend class CPUPol::O3CPUDelegator;
+
     /** Overall commit status. Used to determine if the CPU can deschedule
      * itself due to a lack of activity.
      */

@@ -268,6 +268,7 @@ public:
   Stats::Scalar numCompletedComputeMicroOps;
   Stats::Scalar numCompletedLoadComputeMicroOps;
   Stats::Scalar numCompletedReduceMicroOps;
+  Stats::Scalar numCompletedUpdateMicroOps;
   Stats::Scalar numCompletedStoreComputeMicroOps;
   Stats::Scalar numCompletedAtomicComputeMicroOps;
 

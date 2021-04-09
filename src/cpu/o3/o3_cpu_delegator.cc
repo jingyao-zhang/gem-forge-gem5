@@ -785,6 +785,35 @@ bool DefaultO3CPUDelegator<
   return iter->second;
 }
 
+template <class CPUImpl>
+void DefaultO3CPUDelegator<CPUImpl>::recordStatsForFakeExecutedInst(
+    const StaticInstPtr &inst) {
+  pimpl->cpu->decode.decodeDecodedInsts++;
+  pimpl->cpu->rename.renameRenamedOperands += inst->numDestRegs();
+  pimpl->cpu->rename.renameRenameLookups += inst->numSrcRegs();
+  pimpl->cpu->rob.robReads++;
+  pimpl->cpu->rob.robWrites++;
+  pimpl->cpu->commit.opsCommitted[0]++;
+  if (inst->isInteger()) {
+    pimpl->cpu->commit.statComInteger[0]++;
+    pimpl->cpu->iew.instQueue.intAluAccesses++;
+    pimpl->cpu->intRegfileReads += inst->numSrcRegs();
+    pimpl->cpu->intRegfileWrites += inst->numDestRegs();
+  }
+  if (inst->isFloating()) {
+    pimpl->cpu->commit.statComFloating[0]++;
+    pimpl->cpu->iew.instQueue.fpAluAccesses++;
+    pimpl->cpu->fpRegfileReads += inst->numSrcRegs();
+    pimpl->cpu->fpRegfileWrites += inst->numDestRegs();
+  }
+  if (inst->isVector()) {
+    pimpl->cpu->commit.statComVector[0]++;
+    pimpl->cpu->iew.instQueue.vecAluAccesses++;
+    pimpl->cpu->vecRegfileReads += inst->numSrcRegs();
+    pimpl->cpu->vecRegfileWrites += inst->numDestRegs();
+  }
+}
+
 #undef INST_PANIC
 #undef INST_DPRINTF
 

@@ -20,6 +20,8 @@ public:
   bool translateVAddrOracle(Addr vaddr, Addr &paddr) override;
   void sendRequest(PacketPtr pkt) override { this->cpu->sendRequest(pkt); }
 
+  void recordStatsForFakeExecutedInst(const StaticInstPtr &inst) override;
+
   LLVMTraceCPU *cpu;
 
 protected:

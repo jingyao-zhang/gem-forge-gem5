@@ -263,6 +263,12 @@ public:
   // Stats for stream computing.
   Stats::Scalar m_statLLCScheduledComputation;
   Stats::Scalar m_statLLCScheduledComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledLoadComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledStoreComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledAtomicComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledReduceMicroOps;
+  Stats::Scalar m_statLLCScheduledUpdateMicroOps;
+
   Stats::Scalar m_statLLCPerformedAtomics;
   Stats::Scalar m_statLLCCommittedAtomics;
   Stats::Scalar m_statLLCLockedAtomics;

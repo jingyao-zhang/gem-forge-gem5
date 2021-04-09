@@ -61,12 +61,15 @@ void StreamComputeEngine::completeComputation() {
     element->scheduledComputation = false;
 
     auto microOps = S->getComputationNumMicroOps();
+    S->recordComputationInCoreStats();
     this->se->numCompletedComputation++;
     this->se->numCompletedComputeMicroOps += microOps;
     if (S->isLoadComputeStream()) {
       this->se->numCompletedLoadComputeMicroOps += microOps;
     } else if (S->isStoreComputeStream()) {
       this->se->numCompletedStoreComputeMicroOps += microOps;
+    } else if (S->isUpdateStream()) {
+      this->se->numCompletedUpdateMicroOps += microOps;
     } else if (S->isReduction()) {
       this->se->numCompletedReduceMicroOps += microOps;
     }

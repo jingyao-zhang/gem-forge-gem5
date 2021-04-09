@@ -192,3 +192,8 @@ InstSeqNum SimpleCPUDelegator::getInstSeqNum() const {
 void SimpleCPUDelegator::setInstSeqNum(InstSeqNum seqNum) {
   pimpl->curSeqNum = seqNum;
 }
+
+void SimpleCPUDelegator::recordStatsForFakeExecutedInst(
+    const StaticInstPtr &inst) {
+  // So far we do nothing.
+}

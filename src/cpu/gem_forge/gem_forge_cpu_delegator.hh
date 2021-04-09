@@ -112,6 +112,11 @@ public:
    */
   virtual void sendRequest(PacketPtr pkt) = 0;
 
+  /**
+   * Record this instruction as if it has flown through the pipeline.
+   */
+  virtual void recordStatsForFakeExecutedInst(const StaticInstPtr &inst) = 0;
+
   BaseCPU *baseCPU;
 
   /**

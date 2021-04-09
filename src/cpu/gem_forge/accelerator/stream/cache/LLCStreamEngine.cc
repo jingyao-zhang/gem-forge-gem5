@@ -2406,6 +2406,17 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr dynS,
     auto params = convertFormalParamToParam(dynS->configData->storeFormalParams,
                                             getStreamValue);
     auto storeValue = dynS->configData->storeCallback->invoke(params);
+
+    /**
+     * ! For now just record the stats.
+     */
+    auto numMicroOps = S->getComputationNumMicroOps();
+    // For now we don't bother add the stats to the core in my bank.
+    S->recordComputationInCoreStats();
+    this->controller->m_statLLCScheduledComputation++;
+    this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
+    this->controller->m_statLLCScheduledUpdateMicroOps += numMicroOps;
+
     element->setComputedValue(storeValue);
     assert(elementMemSize <= sizeof(storeValue) &&
            "UpdateStream size overflow.");
@@ -2988,7 +2999,10 @@ void LLCStreamEngine::startComputation() {
       continue;
     }
 
-    int numMicroOps = dynS->getComputationNumMicroOps();
+    auto S = dynS->getStaticStream();
+    int numMicroOps = S->getComputationNumMicroOps();
+    // For now we don't bother add the stats to the core in my bank.
+    S->recordComputationInCoreStats();
     Cycles latency = dynS->getEstimatedComputationLatency();
 
     if (dynS->isSIMDComputation()) {
@@ -3006,6 +3020,15 @@ void LLCStreamEngine::startComputation() {
     auto &statistic = element->S->statistic;
     this->controller->m_statLLCScheduledComputation++;
     this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
+    if (S->isLoadComputeStream()) {
+      this->controller->m_statLLCScheduledLoadComputeMicroOps += numMicroOps;
+    } else if (S->isStoreComputeStream()) {
+      this->controller->m_statLLCScheduledStoreComputeMicroOps += numMicroOps;
+    } else if (S->isUpdateStream()) {
+      this->controller->m_statLLCScheduledUpdateMicroOps += numMicroOps;
+    } else if (S->isReduction()) {
+      this->controller->m_statLLCScheduledReduceMicroOps += numMicroOps;
+    }
     statistic.numLLCComputation++;
     statistic.numLLCComputationComputeLatency += latency;
     statistic.numLLCComputationWaitLatency +=

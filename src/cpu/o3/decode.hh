@@ -69,6 +69,8 @@ class DefaultDecode
     typedef typename CPUPol::DecodeStruct DecodeStruct;
     typedef typename CPUPol::TimeStruct TimeStruct;
 
+    friend class CPUPol::O3CPUDelegator;
+
   public:
     /** Overall decode stage status. Used to determine if the CPU can
      * deschedule itself due to a lack of activity.

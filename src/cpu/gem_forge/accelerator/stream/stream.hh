@@ -467,6 +467,10 @@ public:
   bool isSIMDComputation() const {
     return this->getComputeCallback()->hasSIMD();
   }
+  /**
+   * Add the computation to core statistic.
+   */
+  void recordComputationInCoreStats() const;
 
   std::unique_ptr<StreamAtomicOp>
   setupAtomicOp(FIFOEntryIdx idx, int memElementsize,

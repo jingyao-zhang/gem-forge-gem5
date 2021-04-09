@@ -32,6 +32,11 @@ public:
   void recordPAddr(Addr paddr);
   void regStats();
 
+  /**
+   * Record this instruction stats as if it has been executed by the core.
+   */
+  void recordStatsForFakeExecutedInst(const StaticInstPtr &inst) override;
+
 private:
   class Impl;
   std::unique_ptr<Impl> pimpl;
