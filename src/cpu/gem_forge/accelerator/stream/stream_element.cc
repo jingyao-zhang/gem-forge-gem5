@@ -520,6 +520,14 @@ void StreamElement::computeValue() {
    */
   if (S->isStoreComputeStream() || S->isLoadComputeStream() ||
       S->isUpdateStream() || S->isReduction()) {
+
+    /**
+     * Charge the initial latency to access the Core SIMD unit here.
+     */
+    if (S->isSIMDComputation()) {
+      estimatedLatency += Cycles(this->se->myParams->computeSIMDDelay);
+    }
+
     this->se->computeEngine->pushReadyComputation(this, std::move(result),
                                                   estimatedLatency);
   } else {

@@ -28,7 +28,9 @@ void StreamComputeEngine::startComputation() {
 
   int startedComputation = 0;
   while (startedComputation < this->computeWidth &&
-         !this->readyComputations.empty()) {
+         !this->readyComputations.empty() &&
+         this->inflyComputations.size() <
+             this->se->myParams->computeMaxInflyComputation) {
     auto computation = std::move(this->readyComputations.front());
 
     S_ELEMENT_DPRINTF(computation->element,
@@ -80,7 +82,9 @@ void StreamComputeEngine::completeComputation() {
 
 void StreamComputeEngine::pushInflyComputation(ComputationPtr computation) {
 
-  assert(this->inflyComputations.size() < 100 && "Too many infly results.");
+  assert(this->inflyComputations.size() <
+             this->se->myParams->computeMaxInflyComputation &&
+         "Too many infly results.");
   assert(computation->latency < 1024 && "Latency too long.");
 
   computation->readyCycle = this->se->curCycle() + computation->latency;

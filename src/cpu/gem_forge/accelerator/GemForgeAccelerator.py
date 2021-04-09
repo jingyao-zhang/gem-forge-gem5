@@ -96,6 +96,10 @@ class StreamEngine(GemForgeAccelerator):
         False, "Whether stream computation charge zero latency")
     computeWidth = Param.Unsigned(
         1, "How many computation can be started per cycle")
+    computeSIMDDelay = Param.Unsigned(
+        0, "How many cycles' delay to access Core SIMD unit")
+    computeMaxInflyComputation = Param.Unsigned(
+        32, "Maximum number of computations infly")
     enableRangeSync = Param.Bool(False,
         "Whether enable range-based synchronization between core and LLC SE.")
     enableFloatIndirectReduction = Param.Bool(False,

@@ -280,6 +280,7 @@ private:
   friend class StreamSQCallback;
   friend class StreamSQDeprecatedCallback;
   friend class StreamFloatController;
+  friend class StreamComputeEngine;
   friend class NestStreamController;
   friend class StreamRangeSyncController;
   friend class StreamDataTrafficAccumulator;
