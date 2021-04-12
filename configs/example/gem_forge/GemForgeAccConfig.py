@@ -56,8 +56,12 @@ def initializeStreamEngine(options):
     se.computeWidth =\
         options.gem_forge_stream_engine_compute_width
     # So far we reuse the LLC SIMD delay parameter.
-    se.computeSIMDDelay =\
+    simd_delay =\
         options.gem_forge_stream_engine_llc_access_core_simd_delay
+    if simd_delay >= 2:
+        # Half the latency for LLC SIMD Delay, as we are closer to core.
+        simd_delay = simd_delay // 2
+    se.computeSIMDDelay = simd_delay
     se.computeMaxInflyComputation =\
         options.gem_forge_stream_engine_llc_max_infly_computation
     se.enableZeroComputeLatency =\
