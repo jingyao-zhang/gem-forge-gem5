@@ -80,6 +80,11 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numCycleRequestLatency);
   dumpAvg(avgRequestLatency, numCycleRequestLatency, numIssuedRequest);
 
+  if (this->idealDataTrafficFix > 0) {
+    dumpScalar(idealDataTrafficFix);
+    dumpScalar(idealDataTrafficFloat);
+  }
+
   dumpScalar(numLLCComputation);
   if (numLLCComputation > 0) {
     dumpAvg(avgLLCComputeLatency, numLLCComputationComputeLatency,
@@ -216,6 +221,9 @@ void StreamStatistic::clear() {
   this->numLLCAliveElementSamples = 0;
   this->numLLCInflyComputation = 0;
   this->numLLCInflyComputationSample = 0;
+
+  this->idealDataTrafficFix = 0;
+  this->idealDataTrafficFloat = 0;
 
   for (auto &reasons : this->llcIssueReasons) {
     reasons = 0;

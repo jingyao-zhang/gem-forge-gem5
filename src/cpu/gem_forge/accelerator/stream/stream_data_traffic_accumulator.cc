@@ -55,11 +55,13 @@ void StreamDataTrafficAccumulator::computeTrafficFix(
   auto distance = this->getDistance(myBank, dataBank);
   auto flits = this->getNumFlits(size);
 
-  this->hops += flits * distance;
+  auto totalHops = flits * distance;
   if (S->isUpdateStream() || S->isAtomicComputeStream()) {
     // These have double traffic: load and store.
-    this->hops += flits * distance;
+    totalHops *= 2;
   }
+  this->hops += totalHops;;
+  S->statistic.idealDataTrafficFix += totalHops;
 }
 
 void StreamDataTrafficAccumulator::computeTrafficFloat(
@@ -121,7 +123,7 @@ void StreamDataTrafficAccumulator::computeTrafficFloat(
       continue;
     }
     auto distance = this->getDistance(dataBank, baseDataBank);
-    auto flits = this->getNumFlits(baseS->getMemElementSize());
+    auto flits = this->getNumFlits(baseS->getCoreElementSize());
     valueBaseHops += distance * flits;
     chargedBaseElements.insert(baseE);
   }
@@ -138,9 +140,9 @@ void StreamDataTrafficAccumulator::computeTrafficFloat(
     auto flits = this->getNumFlits(coreElementSize);
     toCoreHops += distance * flits;
   }
-  this->hops += addrBaseHops;
-  this->hops += valueBaseHops;
-  this->hops += toCoreHops;
+  auto totalHops = addrBaseHops + valueBaseHops + toCoreHops;
+  this->hops += totalHops;
+  S->statistic.idealDataTrafficFloat += totalHops;
 }
 
 int StreamDataTrafficAccumulator::getElementDataBank(

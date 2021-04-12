@@ -98,6 +98,10 @@ public:
     this->numLLCInflyComputation += inflyComputation;
   }
 
+  // Ideal stream data traffic.
+  size_t idealDataTrafficFix = 0;
+  size_t idealDataTrafficFloat = 0;
+
   // LLCStreamEngine issue statistics.
   enum LLCStreamEngineIssueReason {
     Issued = 0,
