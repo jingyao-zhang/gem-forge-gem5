@@ -195,11 +195,13 @@ bool MinorCPUDelegator::canInsertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
       if (!callback->getAddrSize(vaddr, size)) {
         // This one is not ready yet.
         // INST_LOG(hack, dynInstPtr, "AddrSize not ready.\n");
+        INST_DPRINTF(dynInstPtr, "[CanNotInsertLSQ] AddrSize not ready.\n");
         return false;
       }
       // Check ValueReady for StoreCallback.
       if (callback->getType() == GemForgeLSQCallback::Type::STORE) {
         if (!callback->isValueReady()) {
+          INST_DPRINTF(dynInstPtr, "[CanNotInsertLSQ] Value not ready.\n");
           return false;
         }
       }
@@ -342,6 +344,14 @@ Fault MinorCPUDelegator::insertLSQ(Minor::MinorDynInstPtr &dynInstPtr) {
 
 InstSeqNum MinorCPUDelegator::getEarlyIssueMustWaitSeqNum(
     Minor::MinorDynInstPtr &dynInstPtr) {
+  /**
+   * We disable early issue for StreamAtomic.
+   * TODO: Memorize this.
+   */
+  auto instName = dynInstPtr->staticInst->getName();
+  if (instName == "ssp_stream_atomic" || instName == "ssp_stream_fatomic") {
+    return dynInstPtr->id.execSeqNum - 1;
+  }
   // This should make this function no effect.
   return 0;
 }

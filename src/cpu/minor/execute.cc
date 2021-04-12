@@ -1439,8 +1439,8 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
                     head_exec_seq_num > fu_inst->instToWaitFor)
                 {
                     DPRINTF(MinorExecute, "Issuing mem ref early"
-                        " inst: %s instToWaitFor: %d\n",
-                        *(fu_inst), fu_inst->instToWaitFor);
+                        " inst: %s instToWaitFor: %llu, HeadExecSeqNum %llu.\n",
+                        *(fu_inst), fu_inst->instToWaitFor, head_exec_seq_num);
 
                     inst = fu_inst;
                     try_to_commit = true;
