@@ -137,7 +137,9 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     if (arg.type() == DataType::VECTOR_128 ||
         arg.type() == DataType::VECTOR_256 ||
         arg.type() == DataType::VECTOR_512) {
-      this->isSIMD = true;
+      if (this->getNumInstructions() > 0) {
+        this->isSIMD = true;
+      }
     }
   }
   if (this->func.type() != DataType::INTEGER) {
@@ -146,7 +148,9 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
   if (this->func.type() == DataType::VECTOR_128 ||
       this->func.type() == DataType::VECTOR_256 ||
       this->func.type() == DataType::VECTOR_512) {
-    this->isSIMD = true;
+    if (this->getNumInstructions() > 0) {
+      this->isSIMD = true;
+    }
   }
 }
 
