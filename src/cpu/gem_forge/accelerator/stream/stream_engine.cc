@@ -616,9 +616,12 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
 
   /**
    * Notify the StreamDataTrafficAccumulator to estimate for data traffic.
+   * Only do this if we have IdeaCache in GemForgeCPUDelegator.
    */
-  this->dataTrafficAccFix->commit(stepStreams);
-  this->dataTrafficAccFloat->commit(stepStreams);
+  if (this->cpuDelegator->ideaCache) {
+    this->dataTrafficAccFix->commit(stepStreams);
+    this->dataTrafficAccFloat->commit(stepStreams);
+  }
 
   for (auto S : stepStreams) {
     /**

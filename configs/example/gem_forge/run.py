@@ -183,6 +183,9 @@ parser.add_option("--gem-forge-stream-engine-llc-stream-max-infly-request", acti
                   help="LLCStream max infly request per stream.")
 
 # Stream Computing options.
+parser.add_option("--gem-forge-estimate-pure-data-traffic", action="store_true",
+                  default="False",
+                  help="Enable idea traffic and estimate pure data traffic.")
 parser.add_option("--gem-forge-stream-engine-compute-width", action="store",
                   type="int", default="1",
                   help="Core/LLC StreamEngine compute width.")

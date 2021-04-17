@@ -82,6 +82,7 @@ void StreamStatistic::dump(std::ostream &os) const {
 
   if (this->idealDataTrafficFix > 0) {
     dumpScalar(idealDataTrafficFix);
+    dumpScalar(idealDataTrafficCached);
     dumpScalar(idealDataTrafficFloat);
   }
 
@@ -223,6 +224,7 @@ void StreamStatistic::clear() {
   this->numLLCInflyComputationSample = 0;
 
   this->idealDataTrafficFix = 0;
+  this->idealDataTrafficCached = 0;
   this->idealDataTrafficFloat = 0;
 
   for (auto &reasons : this->llcIssueReasons) {

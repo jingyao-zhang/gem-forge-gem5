@@ -3,6 +3,7 @@
 #define __GEM_FORGE_CPU_DELEGATOR_HH__
 
 #include "cpu/gem_forge/accelerator/arch/gem_forge_isa_handler.hh"
+#include "gem_forge_idea_cache.hh"
 #include "gem_forge_idea_inorder_cpu.hh"
 #include "gem_forge_lsq_callback.hh"
 
@@ -125,6 +126,11 @@ public:
   std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPU;
   std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPUNoFUTiming;
   std::unique_ptr<GemForgeIdeaInorderCPU> ideaInorderCPUNoLDTiming;
+
+  /**
+   * We have one idea cache modeling.
+   */
+  std::unique_ptr<GemForgeIdeaCache> ideaCache;
 
 protected:
   std::shared_ptr<GemForgeISAHandler> isaHandler;

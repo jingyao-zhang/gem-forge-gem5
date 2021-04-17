@@ -9,6 +9,7 @@ void StreamDataTrafficAccumulator::regStats() {
   this->stat.name(this->name() + ("." #stat)).desc(describe).prereq(this->stat)
 
   scalar(hops, "Accumulated data hops.");
+  scalar(cachedHops, "Accumulated data hops with ideal cache.");
 }
 
 void StreamDataTrafficAccumulator::commit(
@@ -55,13 +56,24 @@ void StreamDataTrafficAccumulator::computeTrafficFix(
   auto distance = this->getDistance(myBank, dataBank);
   auto flits = this->getNumFlits(size);
 
+  auto &ideaCache = this->se->getCPUDelegator()->ideaCache;
+  assert(ideaCache && "Missing idea cache.");
+  auto vaddr = element->addr;
+  Addr paddr;
+  assert(this->se->getCPUDelegator()->translateVAddrOracle(vaddr, paddr));
+  auto missFlits = ideaCache->access(paddr, size);
+
   auto totalHops = flits * distance;
+  auto totalMissHops = missFlits * distance;
   if (S->isUpdateStream() || S->isAtomicComputeStream()) {
     // These have double traffic: load and store.
     totalHops *= 2;
+    totalMissHops *= 2;
   }
-  this->hops += totalHops;;
+  this->hops += totalHops;
+  this->cachedHops += totalMissHops;
   S->statistic.idealDataTrafficFix += totalHops;
+  S->statistic.idealDataTrafficCached += totalHops;
 }
 
 void StreamDataTrafficAccumulator::computeTrafficFloat(

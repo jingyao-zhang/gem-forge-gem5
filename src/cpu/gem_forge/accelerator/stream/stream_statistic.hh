@@ -100,6 +100,7 @@ public:
 
   // Ideal stream data traffic.
   size_t idealDataTrafficFix = 0;
+  size_t idealDataTrafficCached = 0;
   size_t idealDataTrafficFloat = 0;
 
   // LLCStreamEngine issue statistics.

@@ -170,6 +170,9 @@ template <class CPUImpl> void DefaultO3CPUDelegator<CPUImpl>::regStats() {
 
   scalar(statCoreDataHops, "Accumulated core data hops.");
   scalar(statCoreDataHopsIgnored, "Accumulated core data hops ignored.");
+  scalar(statCoreCachedDataHops, "Accumulated core data hops with cache.");
+  scalar(statCoreCachedDataHopsIgnored,
+         "Accumulated core data hops ignored wit cache.");
   scalar(statCoreCommitMicroOps, "Accumulated core committed micro ops.");
   scalar(statCoreCommitMicroOpsIgnored,
          "Accumulated core committed micro ops ignored.");
@@ -737,13 +740,22 @@ void DefaultO3CPUDelegator<CPUImpl>::recordCoreDataTraffic(
     return;
   }
 
+  if (!this->ideaCache) {
+    // No idea cache. Do not bother.
+    return;
+  }
+
   int myBank = this->cpuId();
   int dataBank = CoreDataTrafficAccumulator::mapPAddrToBank(paddr);
   int distance = CoreDataTrafficAccumulator::getDistance(myBank, dataBank);
   int flits = CoreDataTrafficAccumulator::getNumFlits(size);
+  int missSize = this->ideaCache->access(paddr, size);
+  int missFlits = CoreDataTrafficAccumulator::getNumFlits(missSize);
   this->statCoreDataHops += distance * flits;
+  this->statCoreCachedDataHops += distance * missFlits;
   if (this->dataTrafficAcc.shouldIgnoreTraffic(dynInstPtr->pcState().pc())) {
     this->statCoreDataHopsIgnored += distance * flits;
+    this->statCoreCachedDataHopsIgnored += distance * missFlits;
   }
 }
 

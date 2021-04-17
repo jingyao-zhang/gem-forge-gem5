@@ -231,6 +231,8 @@ def initializeCPUs(options):
         if options.prog_interval:
             cpu.progress_interval = options.prog_interval
         cpu.check_deadlock = not options.gem_forge_disable_cpu_check_deadlock
+        # Estimate pure data traffic for future cpu.
+        cpu.enableIdeaCache = options.gem_forge_estimate_pure_data_traffic
 
     for cpu in future_cpus if future_cpus else initial_cpus:
         if options.gem_forge_idea_inorder_cpu:

@@ -29,6 +29,7 @@ private:
   const int flitSizeBytes = 1;
 
   Stats::Scalar hops;
+  Stats::Scalar cachedHops;
 
   std::string name() const { return this->myName; }
 

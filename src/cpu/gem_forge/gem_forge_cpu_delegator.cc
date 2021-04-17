@@ -57,6 +57,11 @@ GemForgeCPUDelegator::GemForgeCPUDelegator(CPUTypeE _cpuType, BaseCPU *_baseCPU)
         baseCPU->cpuId(), 4, true, false);
   }
   this->isaHandler = std::make_shared<GemForgeISAHandler>(this);
+
+  if (baseCPUParams->enableIdeaCache) {
+    // 256kB idea cache.
+    this->ideaCache = m5::make_unique<GemForgeIdeaCache>(256 * 1024);
+  }
 }
 
 void GemForgeCPUDelegator::takeOverFrom(GemForgeCPUDelegator *oldDelegator) {

@@ -147,6 +147,8 @@ private:
 
   Stats::Scalar statCoreDataHops;
   Stats::Scalar statCoreDataHopsIgnored;
+  Stats::Scalar statCoreCachedDataHops;
+  Stats::Scalar statCoreCachedDataHopsIgnored;
   Stats::Scalar statCoreCommitMicroOps;
   Stats::Scalar statCoreCommitMicroOpsIgnored;
   Stats::Scalar statCoreCommitMicroOpsGemForge;
