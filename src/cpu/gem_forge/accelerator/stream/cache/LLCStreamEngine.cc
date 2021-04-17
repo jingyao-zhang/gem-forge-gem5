@@ -1137,6 +1137,11 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
               !element->isComputationScheduled()) {
             this->pushReadyComputation(element);
           }
+          if (!element->areBaseElementsReady() ||
+              dynS->incompleteComputations > 4) {
+            // In order issue.
+            break;
+          }
         }
       }
       for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
@@ -1835,8 +1840,16 @@ void LLCStreamEngine::issueStreamRangesToMLC() {
       continue;
     }
     auto range = rangeBuilder->popReadyRange();
-    LLC_SE_DPRINTF_(StreamRangeSync, "Issue range to MLC: %s.\n", *range);
-    this->issueStreamRangeToMLC(range);
+    /**
+     * For DirectStream without IndirectStreams, we issue immediately,
+     * as the MLC should really be the one creating this range.
+     */
+    bool isDirectRange = !stream->isIndirect() &&
+                         stream->getIndStreams().empty() &&
+                         !stream->isPointerChase();
+    LLC_SE_DPRINTF_(StreamRangeSync, "Issue %s range to MLC: %s.\n",
+                    isDirectRange ? "direct" : "mixed", *range);
+    this->issueStreamRangeToMLC(range, isDirectRange);
   }
 }
 
@@ -2947,6 +2960,10 @@ std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
 
 void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
   LLC_ELEMENT_DPRINTF(element, "Push computation.\n");
+  // LLC_S_HACK(element->dynStreamId,
+  //            "%llu: Push ready computation %llu. Ready %d Infly %d.\n",
+  //            this->controller->curCycle(), element->idx,
+  //            this->readyComputations.size(), this->inflyComputations.size());
   assert(element->areBaseElementsReady() && "Element is not ready yet.");
   auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
   if (!dynS) {
