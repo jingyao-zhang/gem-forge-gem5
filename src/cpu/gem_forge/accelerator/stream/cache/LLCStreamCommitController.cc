@@ -186,13 +186,23 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
   }
   dynS->commitOneElement();
   if (nextCommitElementIdx >= firstCommitMessage.getEndIdx()) {
-    // We are done with the current commit message.
+    /**
+     * We are done with the current commit message.
+     * DirectLoadStream without IndirectDependent does not require commit.
+     * So far we just issue the StreamDone ideally.
+     * TODO: Disable Range-Sync for such DirectLoadStream without IndDep.
+     */
+    bool ideaStreamDone = false;
+    if (dynS->getStaticStream()->isDirectLoadStream() &&
+        dynS->indirectStreams.empty()) {
+      ideaStreamDone = true;
+    }
     LLC_S_DPRINTF(dynS->getDynamicStreamId(),
                   "[Commit] Send back StreamDone for [%llu, %llu(+%d)).\n",
                   firstCommitMessage.getStartIdx(),
                   firstCommitMessage.getEndIdx(),
                   firstCommitMessage.getNumElements());
-    this->se->issueStreamDoneToMLC(firstCommitMessage);
+    this->se->issueStreamDoneToMLC(firstCommitMessage, ideaStreamDone);
     commitMessages.pop_front();
   }
   /**

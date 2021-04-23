@@ -48,8 +48,11 @@ public:
 
   /**
    * We require range-sync on this stream.
+   * Some range-sync stream does not need range-commit, e.g. DirectLoadStream
+   * without IndirectDependent.
    */
   bool rangeSync = false;
+  bool rangeCommit = false;
 
   DynamicStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;

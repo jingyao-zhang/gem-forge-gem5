@@ -66,6 +66,24 @@ public:
   size_t numMLCLateSlice = 0;
   size_t numMLCLateCycle = 0;
 
+  // Latency experienced at LLC.
+  size_t numLLCEarlyElement = 0;
+  size_t numLLCEarlyCycle = 0;
+  size_t numLLCLateElement = 0;
+  size_t numLLCLateCycle = 0;
+  void sampleLLCElement(size_t firstCheckCycle, size_t valueReadyCycle) {
+    if (firstCheckCycle == 0 || valueReadyCycle == 0) {
+      return;
+    }
+    if (firstCheckCycle > valueReadyCycle) {
+      numLLCEarlyCycle += firstCheckCycle - valueReadyCycle;
+      numLLCEarlyElement++;
+    } else {
+      numLLCLateCycle += valueReadyCycle - firstCheckCycle;
+      numLLCLateElement++;
+    }
+  }
+
   size_t numIssuedRequest = 0;
   size_t numIssuedReadExRequest = 0;
   size_t numIssuedPrefetchRequest = 0;
@@ -113,6 +131,8 @@ public:
     MaxInflyRequest,
     PendingMigrate,
     AliasedIndirectUpdate,
+    BaseValueNotReady,
+    ValueNotReady,
     NumLLCStreamEngineIssueReason,
   };
   // Will be default initialized.
@@ -132,6 +152,20 @@ public:
   StreamStatistic() = default;
   void dump(std::ostream &os) const;
   void clear();
+
+  struct SingleAvgSampler {
+    size_t samples = 0;
+    size_t value = 0;
+    void sample(size_t v) {
+      this->samples++;
+      this->value += v;
+    }
+    void clear() {
+      this->samples = 0;
+      this->value = 0;
+    }
+  };
+  SingleAvgSampler llcForwardLat;
 };
 
 #endif

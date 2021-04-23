@@ -25,6 +25,8 @@ public:
                    const DynamicStreamId &_dynStreamId, uint64_t _idx,
                    Addr _vaddr, int _size);
 
+  ~LLCStreamElement();
+
   Stream *S;
   AbstractStreamAwareController *mlcController;
   const DynamicStreamId dynStreamId;
@@ -36,13 +38,26 @@ public:
 
   std::vector<LLCStreamElementPtr> baseElements;
   bool areBaseElementsReady() const {
+    bool allReady = true;
     for (const auto &baseElement : this->baseElements) {
-      if (!baseElement->isReady()) {
-        return false;
+      if (!baseElement->checkIsValueReady()) {
+        allReady = false;
       }
     }
-    return true;
+    return allReady;
   }
+
+  const std::vector<LLCStreamElementPtr> &getBaseElements() const {
+    return this->baseElements;
+  }
+
+  bool checkIsValueReady() const {
+    if (this->firstCheckCycle == 0) {
+      this->firstCheckCycle = this->mlcController->curCycle();
+    }
+    return this->isReady();
+  }
+  const Cycles &getFirstCheckCycle() const { return this->firstCheckCycle; }
 
   bool areSlicesReleased() const {
     for (int i = 0; i < this->numSlices; ++i) {
@@ -168,6 +183,9 @@ private:
   bool computationDone = false;
   static constexpr int MAX_SIZE = 128;
   std::array<uint64_t, MAX_SIZE> value;
+
+  mutable Cycles firstCheckCycle = Cycles(0);
+  mutable Cycles valueReadyCycle = Cycles(0);
 
   static constexpr int MAX_SLICES_PER_ELEMENT = 3;
   std::array<LLCStreamSlicePtr, MAX_SLICES_PER_ELEMENT> slices;

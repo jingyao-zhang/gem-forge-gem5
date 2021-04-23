@@ -4,6 +4,7 @@
 #include "LLCStreamCommitController.hh"
 #include "LLCStreamRangeBuilder.hh"
 #include "MLCStreamEngine.hh"
+#include "StreamRequestBuffer.hh"
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
@@ -48,6 +49,8 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
   this->controller->registerLLCStreamEngine(this);
   this->commitController = m5::make_unique<LLCStreamCommitController>(this);
   this->atomicLockManager = m5::make_unique<LLCStreamAtomicLockManager>(this);
+  this->indReqBuffer = m5::make_unique<StreamRequestBuffer>(
+      this->controller, this->streamIndirectIssueMsgBuffer, Cycles(1), 4);
 }
 
 LLCStreamEngine::~LLCStreamEngine() { this->streams.clear(); }
@@ -1133,14 +1136,14 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
           break;
         }
         if (!element->isReady()) {
+          if (!element->areBaseElementsReady() ||
+              dynS->incompleteComputations >= 4) {
+            // In order issue with maximum 4 incomplete computations.
+            break;
+          }
           if (element->areBaseElementsReady() &&
               !element->isComputationScheduled()) {
             this->pushReadyComputation(element);
-          }
-          if (!element->areBaseElementsReady() ||
-              dynS->incompleteComputations > 4) {
-            // In order issue.
-            break;
           }
         }
       }
@@ -1156,6 +1159,13 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
           LLC_SLICE_DPRINTF(
               nextSliceId,
               "StoreValue from element %llu not ready, delay issuing.\n", idx);
+          if (!element->areBaseElementsReady()) {
+            statistic.sampleLLCStreamEngineIssueReason(
+                StreamStatistic::LLCStreamEngineIssueReason::BaseValueNotReady);
+          } else {
+            statistic.sampleLLCStreamEngineIssueReason(
+                StreamStatistic::LLCStreamEngineIssueReason::ValueNotReady);
+          }
           return nullptr;
         }
       }
@@ -1674,9 +1684,12 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
         paddrLine, req.dataBlock);
   } else {
     destMachineId = this->mapPaddrToLLCBank(paddrLine);
-    LLC_SLICE_DPRINTF(sliceId, "Issue [remote] %s request to LLC%d value %s.\n",
-                      CoherenceRequestType_to_string(req.requestType),
-                      destMachineId.num, req.dataBlock);
+    LLC_SLICE_DPRINTF(
+        sliceId,
+        "Issue [remote] %s request to LLC%d inqueue %d buffered %d value %s.\n",
+        CoherenceRequestType_to_string(req.requestType), destMachineId.num,
+        this->streamIndirectIssueMsgBuffer->getSize(curTick()),
+        this->indReqBuffer->getTotalBufferedRequests(), req.dataBlock);
   }
 
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
@@ -1751,10 +1764,14 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
   } else {
-    Cycles latency(1);
-    this->streamIndirectIssueMsgBuffer->enqueue(
-        msg, this->controller->clockEdge(),
-        this->controller->cyclesToTicks(latency));
+    /**
+     * Issue to StreamRequestBuffer to enforce MaxInqueueRequestPerStream.
+     */
+    this->indReqBuffer->pushRequest(msg);
+    // Cycles latency(1);
+    // this->streamIndirectIssueMsgBuffer->enqueue(
+    //     msg, this->controller->clockEdge(),
+    //     this->controller->cyclesToTicks(latency));
   }
 }
 
@@ -2083,6 +2100,16 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
                       recvDynId);
     return;
   }
+  /**
+   * Sample the LLC forward latency.
+   */
+  auto sendCycle = this->controller->ticksToCycles(req.getTime());
+  auto latency = this->controller->curCycle() - sendCycle;
+  LLC_SLICE_DPRINTF(sliceId, "[Forward] Received. Latency %llu.\n", latency);
+  if (auto sender = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId())) {
+    sender->getStaticStream()->statistic.llcForwardLat.sample(latency);
+  }
+
   /**
    * Normally we search for the receiver in myself and my indirect stream.
    * However, there is a special case: I am the sender!
@@ -2686,11 +2713,16 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
   /**
    * We are done with this slice.
    * If this is a StoreStream with RangeSync, we send back the Ack here.
-   * TODO: This duplicated the total traffic, as we really only need one
-   * TODO: StreamDone message.
+   * NOTE: For DirectStoreComputeStream with RangeSync, the StreamDone message
+   * really completes the whole workflow. For simplicity, here we send back Ack
+   * ideally.
    */
   if (dynS->shouldRangeSync() && S->isStoreComputeStream()) {
-    this->issueStreamAckToMLC(sliceId);
+    bool forceIdea = false;
+    if (!dynS->isIndirect()) {
+      forceIdea = true;
+    }
+    this->issueStreamAckToMLC(sliceId, forceIdea);
   }
   return this->releaseSlice(sliceIter);
 }
@@ -2959,11 +2991,10 @@ std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
 }
 
 void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
-  LLC_ELEMENT_DPRINTF(element, "Push computation.\n");
-  // LLC_S_HACK(element->dynStreamId,
-  //            "%llu: Push ready computation %llu. Ready %d Infly %d.\n",
-  //            this->controller->curCycle(), element->idx,
-  //            this->readyComputations.size(), this->inflyComputations.size());
+  LLC_S_DPRINTF(element->dynStreamId,
+                "%llu: Push ready computation %llu. Ready %d Infly %d.\n",
+                this->controller->curCycle(), element->idx,
+                this->readyComputations.size(), this->inflyComputations.size());
   assert(element->areBaseElementsReady() && "Element is not ready yet.");
   auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
   if (!dynS) {

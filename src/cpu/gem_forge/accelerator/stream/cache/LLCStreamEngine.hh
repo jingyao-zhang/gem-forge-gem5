@@ -23,6 +23,7 @@ class AbstractStreamAwareController;
 class MessageBuffer;
 class LLCStreamCommitController;
 class LLCStreamAtomicLockManager;
+class StreamRequestBuffer;
 
 class LLCStreamEngine : public Consumer {
 public:
@@ -66,6 +67,7 @@ private:
   // Stream commit controller.
   std::unique_ptr<LLCStreamCommitController> commitController;
   std::unique_ptr<LLCStreamAtomicLockManager> atomicLockManager;
+  std::unique_ptr<StreamRequestBuffer> indReqBuffer;
   const int issueWidth;
   const int migrateWidth;
   // Threshold to limit maximum number of infly requests.

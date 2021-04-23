@@ -180,9 +180,9 @@ void MLCDynamicDirectStream::advanceStream() {
            !this->hasOverflowed()) {
       this->allocateSlice();
     }
-  // } else {
-  //   // We schedule a recheck.
-  //   this->scheduleAdvanceStream();
+    // } else {
+    //   // We schedule a recheck.
+    //   this->scheduleAdvanceStream();
   }
 
   // We may need to schedule advance stream if the first slice is FAULTED,
@@ -798,7 +798,15 @@ void MLCDynamicDirectStream::sendCommitToLLC(
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
+  bool ideaStreamCommit = false;
   if (this->controller->isStreamIdeaFlowEnabled()) {
+    ideaStreamCommit = true;
+  } else if (this->stream->isDirectLoadStream() &&
+             this->indirectStreams.empty()) {
+    ideaStreamCommit = true;
+  }
+
+  if (ideaStreamCommit) {
     auto llcController = this->controller->getController(llcBank);
     auto llcSE = llcController->getLLCStreamEngine();
     llcSE->receiveStreamCommit(sliceId);

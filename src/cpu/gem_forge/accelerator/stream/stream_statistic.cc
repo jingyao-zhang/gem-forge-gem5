@@ -13,6 +13,13 @@ void StreamStatistic::dump(std::ostream &os) const {
     auto avg = (divisor > 0) ? dividend / divisor : 0;                         \
     os << std::setw(40) << "  " #name << ' ' << avg << '\n';                   \
   }
+#define dumpSingleAvgSample(name)                                              \
+  {                                                                            \
+    if (name.samples > 0) {                                                    \
+      dumpScalar(name.samples);                                                \
+      dumpAvg(name.avg, name.value, name.samples);                             \
+    }                                                                          \
+  }
   dumpScalar(numConfigured);
   dumpScalar(numMisConfigured);
   dumpScalar(numFloated);
@@ -66,13 +73,19 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numCoreLateCycle);
   dumpAvg(avgCoreLateCycle, numCoreLateCycle, numCoreLateElement);
 
-  dumpScalar(numMLCEarlySlice);
-  dumpScalar(numMLCEarlyCycle);
-  dumpAvg(avgMLCEarlyCycle, numMLCEarlyCycle, numMLCEarlySlice);
-
-  dumpScalar(numMLCLateSlice);
-  dumpScalar(numMLCLateCycle);
-  dumpAvg(avgMLCLateCycle, numMLCLateCycle, numMLCLateSlice);
+  if (numMLCEarlySlice > 0 || numMLCLateSlice > 0) {
+    dumpScalar(numMLCEarlySlice);
+    dumpAvg(avgMLCEarlyCycle, numMLCEarlyCycle, numMLCEarlySlice);
+    dumpScalar(numMLCLateSlice);
+    dumpAvg(avgMLCLateCycle, numMLCLateCycle, numMLCLateSlice);
+  }
+  if (numLLCEarlyElement > 0 || numLLCLateElement > 0) {
+    dumpScalar(numLLCEarlyElement);
+    dumpAvg(avgLLCEarlyCycle, numLLCEarlyCycle, numLLCEarlyElement);
+    dumpScalar(numLLCLateElement);
+    dumpAvg(avgLLCLateCycle, numLLCLateCycle, numLLCLateElement);
+  }
+  dumpSingleAvgSample(llcForwardLat);
 
   dumpScalar(numIssuedRequest);
   dumpScalar(numIssuedReadExRequest);
@@ -155,6 +168,8 @@ StreamStatistic::llcSEIssueReasonToString(LLCStreamEngineIssueReason reason) {
     Case(MaxInflyRequest);
     Case(PendingMigrate);
     Case(AliasedIndirectUpdate);
+    Case(BaseValueNotReady);
+    Case(ValueNotReady);
     Case(NumLLCStreamEngineIssueReason);
 #undef Case
   default:
@@ -200,6 +215,10 @@ void StreamStatistic::clear() {
   this->numMLCEarlyCycle = 0;
   this->numMLCLateSlice = 0;
   this->numMLCLateCycle = 0;
+  this->numLLCEarlyElement = 0;
+  this->numLLCEarlyCycle = 0;
+  this->numLLCLateElement = 0;
+  this->numLLCLateCycle = 0;
   this->numIssuedRequest = 0;
   this->numIssuedReadExRequest = 0;
   this->numIssuedPrefetchRequest = 0;
@@ -226,6 +245,8 @@ void StreamStatistic::clear() {
   this->idealDataTrafficFix = 0;
   this->idealDataTrafficCached = 0;
   this->idealDataTrafficFloat = 0;
+
+  this->llcForwardLat.clear();
 
   for (auto &reasons : this->llcIssueReasons) {
     reasons = 0;

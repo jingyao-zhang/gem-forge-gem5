@@ -24,6 +24,11 @@ LLCStreamElement::LLCStreamElement(
   this->value.fill(0);
 }
 
+LLCStreamElement::~LLCStreamElement() {
+  this->S->statistic.sampleLLCElement(this->firstCheckCycle,
+                                      this->valueReadyCycle);
+}
+
 int LLCStreamElement::curLLCBank() const {
   /**
    * So far we don't have a good definition of the current LLC bank for an
@@ -102,12 +107,16 @@ void LLCStreamElement::setValue(const StreamValue &value) {
   }
   memcpy(this->getUInt8Ptr(), value.uint8Ptr(), this->size);
   this->readyBytes += this->size;
+  if (this->isReady()) {
+    this->valueReadyCycle = this->mlcController->curCycle();
+  }
 }
 
 void LLCStreamElement::setComputedValue(const StreamValue &value) {
   assert(!this->computedValueReady && "ComputedValue already ready.");
   this->computedValue = value;
   this->computedValueReady = true;
+  this->valueReadyCycle = this->mlcController->curCycle();
 }
 
 int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,
@@ -165,6 +174,9 @@ void LLCStreamElement::extractElementDataFromSlice(
         "Too many ready bytes %lu Overlap [%lu, %lu), ready %d > size %d.",
         elementIdx, elementOffset, elementOffset + overlapSize,
         this->readyBytes, this->size);
+  }
+  if (this->isReady()) {
+    this->valueReadyCycle = this->mlcController->curCycle();
   }
 }
 

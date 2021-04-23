@@ -276,6 +276,10 @@ MessageBuffer::dequeue(Tick current_time, bool decrement_messages)
         m_dequeue_callback();
     }
 
+    if (m_dequeue_callback_on_msg) {
+        m_dequeue_callback_on_msg(message);
+    }
+
     return delay;
 }
 
@@ -289,6 +293,22 @@ void
 MessageBuffer::unregisterDequeueCallback()
 {
     m_dequeue_callback = nullptr;
+}
+
+
+void
+MessageBuffer::registerDequeueCallbackOnMsg(DequeueCallbackOnMsg callback)
+{
+    if (m_dequeue_callback_on_msg) {
+        panic("Multiple DequeueCallbackOnMsg.");
+    }
+    m_dequeue_callback_on_msg = callback;
+}
+
+void
+MessageBuffer::unregisterDequeueCallbackOnMsg()
+{
+    m_dequeue_callback_on_msg = nullptr;
 }
 
 void
