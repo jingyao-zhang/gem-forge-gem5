@@ -2,6 +2,7 @@
 #include "LLCStreamEngine.hh"
 #include "LLCStreamAtomicLockManager.hh"
 #include "LLCStreamCommitController.hh"
+#include "LLCStreamMigrationController.hh"
 #include "LLCStreamRangeBuilder.hh"
 #include "MLCStreamEngine.hh"
 #include "StreamRequestBuffer.hh"
@@ -51,9 +52,36 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
   this->atomicLockManager = m5::make_unique<LLCStreamAtomicLockManager>(this);
   this->indReqBuffer = m5::make_unique<StreamRequestBuffer>(
       this->controller, this->streamIndirectIssueMsgBuffer, Cycles(1), 4);
+  this->migrateController = m5::make_unique<LLCStreamMigrationController>(
+      this->controller,
+      this->controller->myParams
+          ->llc_neighbor_stream_threshold /* NeighborStreamsThreshold */,
+      Cycles(
+          this->controller->myParams->llc_neighbor_migration_delay) /* Delay */
+  );
 }
 
 LLCStreamEngine::~LLCStreamEngine() { this->streams.clear(); }
+
+int LLCStreamEngine::getNumDirectStreams() const {
+  return this->streams.size() + this->migratingStreams.size();
+}
+
+int LLCStreamEngine::getNumDirectStreamsWithStaticId(
+    const DynamicStreamId &dynStreamId) const {
+  int count = 0;
+  for (auto dynS : this->streams) {
+    if (dynS->getDynamicStreamId().staticId == dynStreamId.staticId) {
+      count++;
+    }
+  }
+  for (auto dynS : this->migratingStreams) {
+    if (dynS->getDynamicStreamId().staticId == dynStreamId.staticId) {
+      count++;
+    }
+  }
+  return count;
+}
 
 int LLCStreamEngine::curLLCBank() const {
   return this->controller->getMachineID().num;
@@ -196,7 +224,9 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream,
            "Stream migrated with readyIndirectElements.");
   }
 
-  LLC_S_DPRINTF(stream->getDynamicStreamId(), "Received migrate.\n");
+  LLC_S_DPRINTF(stream->getDynamicStreamId(),
+                "Received migrate. DirectStreams %llu.\n",
+                this->streams.size());
 
   stream->migratingDone(this->controller);
 
@@ -1137,8 +1167,11 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
         }
         if (!element->isReady()) {
           if (!element->areBaseElementsReady() ||
-              dynS->incompleteComputations >= 4) {
-            // In order issue with maximum 4 incomplete computations.
+              dynS->incompleteComputations >=
+                  this->controller->myParams
+                      ->llc_stream_engine_max_infly_computation) {
+            // In order issue with maximum number incomplete computations
+            // equals to the LLC SE throughput.
             break;
           }
           if (element->areBaseElementsReady() &&
@@ -1960,10 +1993,29 @@ void LLCStreamEngine::migrateStreams() {
   auto streamIter = this->migratingStreams.begin();
   auto streamEnd = this->migratingStreams.end();
   int migrated = 0;
-  while (streamIter != streamEnd && migrated < this->migrateWidth) {
+  /**
+   * We limit the number of inqueue migrating streams.
+   */
+  while (streamIter != streamEnd && migrated < this->migrateWidth &&
+         this->streamMigrateMsgBuffer->getSize(curTick()) < 2) {
     auto stream = *streamIter;
     assert(this->canMigrateStream(stream) && "Can't migrate stream.");
+    /**
+     * Check the migrate controller.
+     */
+    auto nextVAddr = stream->peekNextAllocVAddr();
+    Addr nextPAddr;
+    if (!stream->translateToPAddr(nextVAddr, nextPAddr)) {
+      LLC_S_PANIC(stream->getDynamicStreamId(), "Fault on migrating stream.");
+    }
+    auto nextMachineId = this->controller->mapAddressToLLC(
+        makeLineAddress(nextPAddr), this->controller->getMachineID().getType());
+    if (!this->migrateController->canMigrateTo(stream, nextMachineId)) {
+      ++streamIter;
+      continue;
+    }
     this->migrateStream(stream);
+    this->migrateController->startMigrateTo(stream, nextMachineId);
     streamIter = this->migratingStreams.erase(streamIter);
     migrated++;
   }
@@ -1981,12 +2033,12 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   auto addrMachineId =
       this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
 
-  LLC_S_DPRINTF(
-      stream->getDynamicStreamId(),
-      "Migrate to LLC%d, InflyReq %d AdvancedMigration %d IndirectS %d.\n",
-      addrMachineId.num, stream->inflyRequests,
-      this->controller->isStreamAdvanceMigrateEnabled(),
-      stream->getIndStreams().size());
+  LLC_S_DPRINTF(stream->getDynamicStreamId(),
+                "Migrate to LLC%d, InflyReq %d AdvancedMigration %d IndirectS "
+                "%d. Remain DirectStreams %llu.\n",
+                addrMachineId.num, stream->inflyRequests,
+                this->controller->isStreamAdvanceMigrateEnabled(),
+                stream->getIndStreams().size(), this->streams.size());
 
   auto msg =
       std::make_shared<StreamMigrateRequestMsg>(this->controller->clockEdge());

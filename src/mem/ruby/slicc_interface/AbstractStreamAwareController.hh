@@ -24,6 +24,14 @@ public:
   void regStats() override;
 
   /**
+   * Get number of rows/cols for Mesh topology.
+   * Only works for GarnetNetwork.
+   */
+  int getNumRows() const;
+  int getNumCols() const;
+  bool isMyNeighbor(MachineID machineId) const;
+
+  /**
    * Map an address to a LLC bank (or other type of controller).
    */
   MachineID mapAddressToLLC(Addr addr, MachineType mtype) const;

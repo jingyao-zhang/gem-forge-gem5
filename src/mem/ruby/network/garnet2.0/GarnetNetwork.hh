@@ -59,7 +59,7 @@ class GarnetNetwork : public Network
 
     // for 2D topology
     int getNumRows() const { return m_num_rows; }
-    int getNumCols() { return m_num_cols; }
+    int getNumCols() const { return m_num_cols; }
 
     // for network
     uint32_t getNiFlitSize() const { return m_ni_flit_size; }

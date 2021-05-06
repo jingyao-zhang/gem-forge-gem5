@@ -1,6 +1,7 @@
 #include "LLCDynamicStream.hh"
 #include "LLCStreamCommitController.hh"
 #include "LLCStreamEngine.hh"
+#include "LLCStreamMigrationController.hh"
 #include "LLCStreamRangeBuilder.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
@@ -220,32 +221,6 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
     if (dynCoreS && !dynCoreS->shouldCoreSEIssue()) {
       this->shouldUpdateIssueClearCycleMemorized = false;
     }
-    // if (!this->getStaticStream()->hasCoreUser()) {
-    //   bool hasCoreUser = false;
-    //   for (auto dynIS : this->getIndStreams()) {
-    //     // Merged store stream should not be considered has core user.
-    //     // TODO: The compiler currently failed to set noCoreUser correctly
-    //     for
-    //     // MergedStore stream, so we ignore it here manually.
-    //     auto IS = dynIS->getStaticStream();
-    //     if (IS->isMerged() && IS->isStoreStream()) {
-    //       continue;
-    //     }
-    //     if (IS->hasCoreUser()) {
-    //       hasCoreUser = true;
-    //       break;
-    //     }
-    //   }
-    //   if (!hasCoreUser) {
-    //     // No core user. Turn off the IssueClearCycle.
-    //     this->shouldUpdateIssueClearCycleMemorized = false;
-    //   }
-    // }
-    // // ! Hack: enforce issue clear cycle to 10 if we have sendTo.
-    // if (!this->shouldUpdateIssueClearCycleMemorized &&
-    //     !this->sendToConfigs.empty()) {
-    //   this->shouldUpdateIssueClearCycleMemorized = true;
-    // }
   }
 
   this->shouldUpdateIssueClearCycleInitialized = true;
@@ -616,6 +591,15 @@ void LLCDynamicStream::migratingStart() {
 
 void LLCDynamicStream::migratingDone(
     AbstractStreamAwareController *llcController) {
+
+  /**
+   * Notify the previous LLC SE that I have arrived.
+   */
+  assert(this->llcController && "Missing PrevLLCController after migration.");
+  auto prevSE = this->llcController->getLLCStreamEngine();
+  auto &prevMigrateController = prevSE->migrateController;
+  prevMigrateController->migratedTo(this, llcController->getMachineID());
+
   this->llcController = llcController;
   this->setState(State::RUNNING);
 

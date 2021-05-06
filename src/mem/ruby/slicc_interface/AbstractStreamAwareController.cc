@@ -1,5 +1,7 @@
 #include "AbstractStreamAwareController.hh"
 
+#include "mem/ruby/network/garnet2.0/GarnetNetwork.hh"
+
 #include "RubySlicc_ComponentMapping.hh"
 
 AbstractStreamAwareController::GlobalMap
@@ -122,7 +124,7 @@ void AbstractStreamAwareController::regStats() {
       .desc("number of llc stream atomics that triggers deadlock")
       .flags(Stats::nozero);
 
-  m_statLLCNumDirectStreams.init(1, 512, 16)
+  m_statLLCNumDirectStreams.init(1, 32, 2)
       .name(name() + ".llcNumDirectStreams")
       .desc("Sample of number of LLC direct streams.")
       .flags(Stats::pdf);
@@ -285,4 +287,32 @@ void AbstractStreamAwareController::recordLLCReqQueueStats(
       }
     }
   }
+}
+
+
+int AbstractStreamAwareController::getNumRows() const {
+  auto network = this->m_net_ptr;
+  auto garnet = dynamic_cast<GarnetNetwork *>(network);
+  if (!garnet) {
+    panic("Only works with Garnet to get NumRows/NumCols.");
+  }
+  return garnet->getNumRows();
+}
+int AbstractStreamAwareController::getNumCols() const {
+  auto network = this->m_net_ptr;
+  auto garnet = dynamic_cast<GarnetNetwork *>(network);
+  if (!garnet) {
+    panic("Only works with Garnet to get NumRows/NumCols.");
+  }
+  return garnet->getNumCols();
+}
+
+bool AbstractStreamAwareController::isMyNeighbor(MachineID machineId) const {
+  auto cols = this->getNumCols();
+  auto myId = this->getMachineID().getNum();
+  int myRow = myId / cols;
+  int myCol = myId % cols;
+  int row = machineId.getNum() / cols;
+  int col = machineId.getNum() % cols;
+  return std::abs(myRow - row) + std::abs(myCol - col) == 1;
 }

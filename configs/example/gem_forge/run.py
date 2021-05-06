@@ -210,6 +210,12 @@ parser.add_option("--gem-forge-enable-stream-float-indirect-reduction", action="
 parser.add_option("--gem-forge-enable-stream-float-two-level-indirect-store-compute",
                   action="store_true", default="False",
                   help="Enable floating two-level indirect store compute stream.")
+parser.add_option("--gem-forge-stream-engine-llc-neighbor-stream-threshold", action="store",
+                  type="int", default="0",
+                  help="# of streams threshold to delay migration to neighbor LLC SE. 0 to disable.")
+parser.add_option("--gem-forge-stream-engine-llc-neighbor-migration-delay", action="store",
+                  type="int", default="100",
+                  help="Delay to migrate to neighbor LLC SE.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

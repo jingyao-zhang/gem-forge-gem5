@@ -74,7 +74,10 @@ def fromSeconds(value):
     # convert the value from time to ticks
     value *= _m5.core.getClockFrequency()
 
-    int_value = int(ceil(value))
+    if value < 1.0:
+        int_value = int(ceil(value))
+    else:
+        int_value = int(round(value))
     err = (value - int_value) / value
     if err > frequency_tolerance:
         warn("rounding error > tolerance\n    %f rounded to %d", value,

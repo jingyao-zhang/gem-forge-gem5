@@ -348,6 +348,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_enable_stream_range_sync,
                 stream_atomic_lock_type=\
                     options.gem_forge_stream_atomic_lock_type,
+                llc_neighbor_stream_threshold=\
+                    options.gem_forge_stream_engine_llc_neighbor_stream_threshold,
+                llc_neighbor_migration_delay=\
+                    options.gem_forge_stream_engine_llc_neighbor_migration_delay,
                 )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"
