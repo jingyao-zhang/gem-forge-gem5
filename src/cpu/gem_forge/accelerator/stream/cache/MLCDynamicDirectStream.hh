@@ -75,6 +75,7 @@ protected:
     static std::string stateToString(const State state);
   };
   std::list<LLCSegmentPosition> llcSegments;
+  bool blockedOnReceiverElementInit = false;
 
   void allocateLLCSegment();
   void pushNewLLCSegment(Addr startPAddr, uint64_t startSliceIdx,

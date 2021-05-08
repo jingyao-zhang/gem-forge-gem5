@@ -271,7 +271,11 @@ void MLCDynamicDirectStream::allocateSlice() {
 void MLCDynamicDirectStream::trySendCreditToLLC() {
   /**
    * Find the first LLCSegment in ALLOCATED state and try issue credit.
+   * Unless we are currently blocked by Receiver's element initialization.
    */
+  if (this->blockedOnReceiverElementInit) {
+    return;
+  }
   for (auto &segment : this->llcSegments) {
 
     if (segment.state != LLCSegmentPosition::State::ALLOCATED) {
@@ -286,7 +290,7 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
      * Skip if the receiver is myself, which is used for Two-Level Indirection.
      */
     const auto tailElementIdx = segment.endSliceId.getStartIdx() - 1;
-    CacheStreamConfigureDataPtr waitForReceiver = nullptr;
+    LLCDynamicStreamPtr waitForReceiver = nullptr;
     for (const auto &sendToConfig : this->sendToConfigs) {
       if (sendToConfig->dynamicId == this->getDynamicStreamId()) {
         continue;
@@ -295,7 +299,7 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
           LLCDynamicStream::getLLCStream(sendToConfig->dynamicId);
       if (llcReceiverS) {
         if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
-          waitForReceiver = sendToConfig;
+          waitForReceiver = llcReceiverS;
           break;
         }
       }
@@ -307,7 +311,7 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
               LLCDynamicStream::getLLCStream(sendToConfig->dynamicId);
           if (llcReceiverS) {
             if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
-              waitForReceiver = sendToConfig;
+              waitForReceiver = llcReceiverS;
               break;
             }
           }
@@ -318,12 +322,20 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
       }
     }
     if (waitForReceiver) {
-      // Recheck next cycle.
+      // Register callbacks when the receiver elements are initialized.
       MLC_S_DPRINTF(this->getDynamicStreamId(),
                     "Delayed sending credit to LLC as receiver %s has not "
                     "initialized element %llu.\n",
-                    waitForReceiver->dynamicId, tailElementIdx);
-      this->scheduleAdvanceStream();
+                    waitForReceiver->getDynamicStreamId(), tailElementIdx);
+      auto elementInitCallback = [this](const DynamicStreamId &dynStreamId,
+                                        uint64_t elementIdx) -> void {
+        this->blockedOnReceiverElementInit = false;
+        this->trySendCreditToLLC();
+      };
+      this->blockedOnReceiverElementInit = true;
+      waitForReceiver->registerElementInitCallback(tailElementIdx,
+                                                   elementInitCallback);
+      // this->scheduleAdvanceStream();
       return;
     }
     this->sendCreditToLLC(segment);

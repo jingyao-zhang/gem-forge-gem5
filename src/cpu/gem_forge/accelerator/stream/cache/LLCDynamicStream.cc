@@ -365,7 +365,7 @@ void LLCDynamicStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
 }
 
 void LLCDynamicStream::initNextElement(Addr vaddr) {
-  auto elementIdx = this->nextInitElementIdx;
+  const auto elementIdx = this->nextInitElementIdx;
   LLC_S_DPRINTF(this->getDynamicStreamId(), "Initialize element %llu.\n",
                 elementIdx);
   auto size = this->getMemElementSize();
@@ -460,6 +460,17 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
     this->lastReductionElement = element;
   }
 
+  /**
+   * We call ElementInitCallback here.
+   */
+  auto elementInitCallbackIter = this->elementInitCallbacks.find(elementIdx);
+  if (elementInitCallbackIter != this->elementInitCallbacks.end()) {
+    for (auto &callback : elementInitCallbackIter->second) {
+      callback(this->getDynamicStreamId(), elementIdx);
+    }
+    this->elementInitCallbacks.erase(elementInitCallbackIter);
+  }
+
   // We allocate all indirect streams' element here with vaddr 0.
   for (auto &usedByS : this->getIndStreams()) {
     usedByS->initNextElement(0);
@@ -468,6 +479,19 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
 
 bool LLCDynamicStream::isElementInitialized(uint64_t elementIdx) const {
   return elementIdx < this->nextInitElementIdx;
+}
+
+void LLCDynamicStream::registerElementInitCallback(uint64_t elementIdx,
+                                                   ElementCallback callback) {
+  if (this->isElementInitialized(elementIdx)) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Register ElementInitCallback for InitializedElement %llu.",
+                elementIdx);
+  }
+  this->elementInitCallbacks
+      .emplace(std::piecewise_construct, std::forward_as_tuple(elementIdx),
+               std::forward_as_tuple())
+      .first->second.push_back(callback);
 }
 
 bool LLCDynamicStream::isElementReleased(uint64_t elementIdx) const {

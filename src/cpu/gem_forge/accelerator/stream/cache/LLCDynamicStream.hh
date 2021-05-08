@@ -342,7 +342,13 @@ public:
    */
   void initDirectStreamSlicesUntil(uint64_t lastSliceIdx);
 
+  using ElementCallback =
+      std::function<void(const DynamicStreamId &, uint64_t)>;
+
   bool isElementInitialized(uint64_t elementIdx) const;
+  void registerElementInitCallback(uint64_t elementIdx,
+                                   ElementCallback callback);
+
   bool isElementReleased(uint64_t elementIdx) const;
   LLCStreamElementPtr getElement(uint64_t elementIdx) const;
   LLCStreamElementPtr getElementPanic(uint64_t elementIdx,
@@ -362,7 +368,15 @@ private:
    * Pending StreamCommit messages.
    ************************************************************************/
   std::list<DynamicStreamSliceId> commitMessages;
+
+  using ElementCallbackList = std::list<ElementCallback>;
+
+  /**
+   * Callbacks when an element is initialized.
+   */
   uint64_t nextInitElementIdx = 0;
+  std::map<uint64_t, ElementCallbackList> elementInitCallbacks;
+
   uint64_t nextCommitElementIdx = 0;
   LLCStreamCommitController *commitController = nullptr;
 
