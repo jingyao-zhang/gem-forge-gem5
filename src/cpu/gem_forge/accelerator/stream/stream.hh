@@ -346,10 +346,6 @@ public:
   DynamicStreamId allocateNewInstance();
 
   /**
-   * Add value base elements for stream computation.
-   */
-  void addValueBaseElements(StreamElement *newElement);
-  /**
    * Remove one stepped element from the first dynamic stream.
    * @param isEnd: This element is stepped by StreamEnd, not StreamStep.
    */

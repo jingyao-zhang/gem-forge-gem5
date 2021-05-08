@@ -337,6 +337,67 @@ void DynamicStream::addAddrBaseElements(StreamElement *newElement) {
   }
 }
 
+void DynamicStream::addValueBaseElements(StreamElement *newElement) {
+
+  auto S = this->stream;
+  auto newElementIdx = newElement->FIFOIdx.entryIdx;
+  for (const auto &edge : this->valueBaseEdges) {
+    auto baseS = S->se->getStream(edge.baseStaticId);
+    const auto &baseDynS =
+        baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+    // Let's compute the base element entryIdx.
+    uint64_t baseElementIdx = edge.alignBaseElement;
+    if (edge.reuseBaseElement != 0) {
+      baseElementIdx += newElementIdx / edge.reuseBaseElement;
+    }
+    // Try to find this element.
+    auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+    if (!baseElement) {
+      S_ELEMENT_PANIC(newElement,
+                      "Failed to find value base element %llu from %s.",
+                      baseElementIdx, baseDynS.dynamicStreamId);
+    }
+    S_ELEMENT_DPRINTF(newElement, "Add ValueBaseElement: %s.\n",
+                      baseElement->FIFOIdx);
+    newElement->valueBaseElements.emplace_back(baseElement);
+  }
+
+  /**
+   * LoadComputeStream/UpdateStream always has itself has the ValueBaseElement.
+   */
+  if (S->isLoadComputeStream() || S->isUpdateStream()) {
+    S_ELEMENT_DPRINTF(newElement, "Add Self ValueBaseElement.\n");
+    newElement->valueBaseElements.emplace_back(newElement);
+  }
+
+  if (newElementIdx == 0) {
+    return;
+  }
+
+  /**
+   * Add BackValueBaseElement.
+   */
+  for (const auto &edge : this->backBaseEdges) {
+    auto baseS = S->se->getStream(edge.baseStaticId);
+    const auto &baseDynS =
+        baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+    // Let's compute the base element entryIdx.
+    uint64_t baseElementIdx = edge.alignBaseElement;
+    assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
+    baseElementIdx += newElementIdx - 1;
+    // Try to find this element.
+    auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+    if (!baseElement) {
+      S_ELEMENT_PANIC(newElement,
+                      "Failed to find back base element %llu from %s.",
+                      baseElementIdx, baseDynS.dynamicStreamId);
+    }
+    S_ELEMENT_DPRINTF(newElement, "Add Back ValueBaseElement: %s.\n",
+                      baseElement->FIFOIdx);
+    newElement->valueBaseElements.emplace_back(baseElement);
+  }
+}
+
 void DynamicStream::addAddrBaseElementEdge(StreamElement *newElement,
                                            const StreamDepEdge &edge) {
   auto S = this->stream;
@@ -517,7 +578,7 @@ void DynamicStream::allocateElement(StreamElement *newElement) {
 
   // Add addr/value base elements
   this->addAddrBaseElements(newElement);
-  S->addValueBaseElements(newElement);
+  this->addValueBaseElements(newElement);
 
   newElement->allocateCycle = S->getCPUDelegator()->curCycle();
 

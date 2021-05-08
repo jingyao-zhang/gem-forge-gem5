@@ -899,7 +899,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
     } else {
       auto baseElement = baseE.element;
       /**
-       * Special case for unofloated LoadComputeStream, which we should check
+       * Special case for unfloated LoadComputeStream, which we should check
        * the LoadComputeValue.
        */
       if (baseElement->stream->isLoadComputeStream() &&
@@ -910,6 +910,8 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
         }
       } else {
         if (!baseE.element->checkValueReady(false /* CheckedByCore */)) {
+          S_ELEMENT_DPRINTF(this, "ValueBaseElement not ValueReady: %s.\n",
+                            baseE.element->FIFOIdx);
           return false;
         }
       }

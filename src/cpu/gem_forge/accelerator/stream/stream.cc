@@ -795,60 +795,6 @@ DynamicStreamId Stream::allocateNewInstance() {
                          this->streamName.c_str());
 }
 
-void Stream::addValueBaseElements(StreamElement *newElement) {
-
-  const auto &dynS = *newElement->dynS;
-  auto newElementIdx = newElement->FIFOIdx.entryIdx;
-  for (auto baseS : this->valueBaseStreams) {
-    assert(baseS->getLoopLevel() == this->getLoopLevel());
-
-    auto &baseDynS = baseS->getLastDynamicStream();
-    DYN_S_DPRINTF(baseDynS.dynamicStreamId, "BaseDynS.\n");
-    assert(baseS->stepRootStream == this->stepRootStream &&
-           "ValueDep must have same StepRootStream.");
-    if (baseDynS.allocSize - baseDynS.stepSize <=
-        dynS.allocSize - dynS.stepSize) {
-      this->se->dumpFIFO();
-      S_PANIC(this, "ValueBase %s has not allocated element %llu.",
-              baseS->getStreamName(), newElementIdx);
-    }
-
-    auto baseElement = baseDynS.getElementByIdx(newElementIdx);
-    if (!baseElement) {
-      S_PANIC(this, "Failed to find value base element from %s.",
-              baseS->getStreamName());
-    }
-    newElement->valueBaseElements.emplace_back(baseElement);
-  }
-
-  /**
-   * LoadComputeStream/UpdateStream always has itself has the ValueBaseElement.
-   */
-  if (this->isLoadComputeStream() || this->isUpdateStream()) {
-    newElement->valueBaseElements.emplace_back(newElement);
-  }
-
-  if (newElementIdx == 0) {
-    return;
-  }
-
-  auto prevElementIdx = newElementIdx - 1;
-  for (auto baseS : this->backBaseStreams) {
-    assert(baseS->getLoopLevel() == this->getLoopLevel());
-
-    auto &baseDynS = baseS->getLastDynamicStream();
-    DYN_S_DPRINTF(baseDynS.dynamicStreamId, "BackBaseDynS.\n");
-
-    auto baseElement = baseDynS.getElementByIdx(prevElementIdx);
-    if (!baseElement) {
-      this->se->dumpFIFO();
-      S_PANIC(this, "Failed to find back base element from %s.",
-              baseS->getStreamName());
-    }
-    newElement->valueBaseElements.emplace_back(baseElement);
-  }
-}
-
 StreamElement *Stream::releaseElementStepped(bool isEnd) {
   /**
    * This function performs a normal release, i.e. release a stepped

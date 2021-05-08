@@ -1988,9 +1988,6 @@ void StreamEngine::allocateElements() {
     const auto &stepStreams = this->getStepStreamList(stepRootStream);
     DynamicStream *allocatingStepRootDynS = nullptr;
     for (auto &stepRootDynS : stepRootStream->dynamicStreams) {
-      if (stepRootDynS.endDispatched) {
-        continue;
-      }
       if (!stepRootDynS.configExecuted) {
         // Configure not executed, can not allocate.
         break;
@@ -2011,6 +2008,15 @@ void StreamEngine::allocateElements() {
         }
         if (allStepStreamsAllocated) {
           // All allocated, we can move to next one.
+          continue;
+        }
+      } else {
+        /**
+         * Only skip this if we have no TotalTripCount. This is
+         * because StreamEnd may be misspeculated. And we ended
+         * using all the FIFO for the next nested dynamic stream.
+         */
+        if (stepRootDynS.endDispatched) {
           continue;
         }
       }

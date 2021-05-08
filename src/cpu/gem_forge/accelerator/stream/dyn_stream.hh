@@ -166,6 +166,11 @@ struct DynamicStream {
   void addAddrBaseElementEdge(StreamElement *newElement,
                               const StreamDepEdge &edge);
   /**
+   * Add value base elements for stream computation.
+   */
+  void addValueBaseElements(StreamElement *newElement);
+
+  /**
    * Should the CoreSE try to issue for the data.
    */
   bool shouldCoreSEIssue() const;
