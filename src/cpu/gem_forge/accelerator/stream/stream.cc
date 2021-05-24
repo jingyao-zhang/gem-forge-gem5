@@ -832,10 +832,11 @@ bool Stream::hasUnsteppedElement() {
   return true;
 }
 
-StreamElement *Stream::stepElement() {
+StreamElement *Stream::stepElement(bool isEnd) {
   auto &dynS = this->getFirstAliveDynStream();
   auto element = dynS.getFirstUnsteppedElement();
-  S_ELEMENT_DPRINTF(element, "Stepped.\n");
+  S_ELEMENT_DPRINTF(element, "Stepped by Stream%s.\n",
+                    (isEnd ? "End" : "Step"));
   element->isStepped = true;
   dynS.stepped = element;
   dynS.stepSize++;

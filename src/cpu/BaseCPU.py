@@ -174,7 +174,8 @@ class BaseCPU(ClockedObject):
         "starting instruction counts of simpoints")
     progress_interval = Param.Frequency('0Hz',
         "frequency to print out the progress message")
-    check_deadlock = Param.Bool(False, "Check deadlock in CPU0")
+    deadlock_interval = Param.Latency('0ns',
+        "Raise deadlock in CPU0 if no progress. 0ns means never.")
 
     switched_out = Param.Bool(False,
         "Leave the CPU switched out after startup (used when switching " \

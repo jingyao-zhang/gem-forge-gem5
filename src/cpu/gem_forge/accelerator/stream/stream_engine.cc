@@ -471,7 +471,6 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
   /**
    * For all the streams get stepped, increase the stepped pointer.
    */
-
   assert(this->canDispatchStreamStep(stepStreamId) &&
          "canDispatchStreamStep assertion failed.");
   this->numStepped++;
@@ -480,24 +479,8 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
 
   for (auto S : this->getStepStreamList(stepStream)) {
     assert(S->isConfigured() && "Stream should be configured to be stepped.");
-    S->stepElement();
+    S->stepElement(false /* isEnd */);
   }
-  /**
-   * * Enforce that stepSize is the same within the stepGroup.
-   * ! This may be the case if they are configured in different loop level.
-   * TODO Fix this corner case.
-   */
-  // for (auto S : this->getStepStreamList(stepStream)) {
-  //   if (S->stepSize != stepStream->stepSize) {
-  //     this->dumpFIFO();
-  //     panic("Streams within the same stepGroup should have the same
-  //     stepSize:
-  //     "
-  //           "%s, %s.",
-  //           S->getStreamName().c_str(),
-  //           stepStream->getStreamName().c_str());
-  //   }
-  // }
   if (isDebugStream(stepStream)) {
   }
 }
@@ -516,6 +499,11 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
       return false;
     }
     auto stepElement = dynS.tail->next;
+    if (dynS.hasTotalTripCount()) {
+      if (stepElement->isLastElement()) {
+        S_ELEMENT_PANIC(stepElement, "StreamStep for LastElement.");
+      }
+    }
     /**
      * For floating streams enabled StoreFunc, we have to check for StreamAck.
      * However, if we have Range-Sync enabled, we should commit it directly.
@@ -1132,7 +1120,7 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
     endedStreams.insert(S);
 
     // 1. Step one element.
-    S->stepElement();
+    S->stepElement(true /* isEnd */);
 
     // 2. Mark the dynamicStream as ended.
     S->dispatchStreamEnd(args.seqNum);
@@ -1331,6 +1319,19 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
     auto &endedDynS = S->dynamicStreams.front();
+
+    /**
+     * Sanity check that we allocated the correct total number of elements.
+     */
+    if (endedDynS.hasTotalTripCount()) {
+      if (endedDynS.getTotalTripCount() + 1 != endedDynS.FIFOIdx.entryIdx) {
+        DYN_S_PANIC(
+            endedDynS.dynamicStreamId,
+            "Commit End with TotalTripCount %llu != NextElementIdx %llu.\n",
+            endedDynS.getTotalTripCount(), endedDynS.FIFOIdx.entryIdx);
+      }
+    }
+
     /**
      * Check if this stream is offloaded and if so, send the StreamEnd
      * packet.

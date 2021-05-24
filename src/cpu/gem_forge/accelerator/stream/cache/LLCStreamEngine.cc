@@ -3059,6 +3059,7 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
   dynS->incompleteComputations++;
   this->readyComputations.emplace_back(element);
   element->scheduledComputation(this->controller->curCycle());
+  this->scheduleEvent(Cycles(1));
 }
 
 void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,

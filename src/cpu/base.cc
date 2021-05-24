@@ -108,8 +108,11 @@ CPUProgressEvent::process()
     // ! Hack some deadlock check here.
     if (cpu->shouldCheckDeadlock() && cpu->cpuId() == 0 &&
         temp == lastNumInst) {
-        if (this->_stucked == 2) {
-            panic("Deadlock in CPU %d! LastCommit at %llu\n",
+        Tick no_progress_ticks = this->_stucked *
+            cpu->params()->progress_interval;
+        Tick deadlock_ticks = cpu->params()->deadlock_interval;
+        if (no_progress_ticks >= deadlock_ticks) {
+            panic("Deadlock in CPU %d! LastCommit at %llu.\n",
                 cpu->cpuId(), cpu->getLastCommitTick());
         }
         this->_stucked++;
@@ -246,7 +249,7 @@ BaseCPU::~BaseCPU()
 
 bool
 BaseCPU::shouldCheckDeadlock() const {
-    return this->params()->check_deadlock;
+    return this->params()->deadlock_interval > 0;
 }
 
 void

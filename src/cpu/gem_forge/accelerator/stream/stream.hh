@@ -363,7 +363,7 @@ public:
   /**
    * Step one element of the last dynamic stream.
    */
-  StreamElement *stepElement();
+  StreamElement *stepElement(bool isEnd);
   /**
    * Unstep one element.
    */

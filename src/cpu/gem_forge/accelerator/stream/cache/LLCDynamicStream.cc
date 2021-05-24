@@ -428,9 +428,7 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
           this->getDynamicStreamId(), 0, 0, size);
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
-      if (this->isIndirectReduction()) {
-        this->lastComputedReductionElementIdx = 0;
-      }
+      this->lastComputedReductionElementIdx = 0;
     }
     if (this->lastReductionElement->idx != baseElementIdx) {
       LLC_S_PANIC(
@@ -953,7 +951,29 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
       if (this->idxToElementMap.count(element->idx + 1)) {
         auto &nextElement = this->idxToElementMap.at(element->idx + 1);
         if (nextElement->areBaseElementsReady()) {
-          se->pushReadyComputation(nextElement);
+          /**
+           * We need to push the computation to the LLC SE at the correct bank.
+           */
+          LLCStreamEngine *nextComputeSE = se;
+          for (const auto &baseElement : nextElement->baseElements) {
+            if (baseElement->dynStreamId !=
+                this->baseStream->getDynamicStreamId()) {
+              continue;
+            }
+            auto vaddr = baseElement->vaddr;
+            if (vaddr != 0) {
+              Addr paddr;
+              assert(this->baseStream->translateToPAddr(vaddr, paddr) &&
+                     "Failed to translate for NextReductionBaseElement.");
+              auto llcMachineID = this->mlcController->mapAddressToLLC(
+                  paddr, se->controller->getMachineID().getType());
+              nextComputeSE =
+                  AbstractStreamAwareController::getController(llcMachineID)
+                      ->getLLCStreamEngine();
+            }
+          }
+
+          nextComputeSE->pushReadyComputation(nextElement);
         }
       }
     }

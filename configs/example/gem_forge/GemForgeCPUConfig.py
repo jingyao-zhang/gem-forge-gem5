@@ -222,7 +222,7 @@ def initializeCPUs(options):
         cpu.yield_latency = options.cpu_yield_latency
         if options.prog_interval:
             cpu.progress_interval = '100' # Hz
-        cpu.check_deadlock = not options.gem_forge_disable_cpu_check_deadlock
+        cpu.deadlock_interval = options.gem_forge_cpu_deadlock_interval
     # We initialize empty GemForge for future_cpus.
     for cpu in future_cpus:
         cpu.accelManager = \
@@ -230,7 +230,7 @@ def initializeCPUs(options):
         cpu.yield_latency = options.cpu_yield_latency
         if options.prog_interval:
             cpu.progress_interval = options.prog_interval
-        cpu.check_deadlock = not options.gem_forge_disable_cpu_check_deadlock
+        cpu.deadlock_interval = options.gem_forge_cpu_deadlock_interval
         # Estimate pure data traffic for future cpu.
         cpu.enableIdeaCache = options.gem_forge_estimate_pure_data_traffic
 
