@@ -106,6 +106,8 @@ class StreamEngine(GemForgeAccelerator):
         "Whether indirect reduction streams can be floated.")
     enableFloatTwoLevelIndirectStoreCompute = Param.Bool(False,
         "Whether two-level indirect store compute stream can be floated.")
+    enableFineGrainedNearDataComputing = Param.Bool(False,
+        "Whether we enable per element fine-grained near-data computing.")
 
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'

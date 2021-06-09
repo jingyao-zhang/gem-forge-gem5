@@ -216,6 +216,9 @@ parser.add_option("--gem-forge-stream-engine-llc-neighbor-stream-threshold", act
 parser.add_option("--gem-forge-stream-engine-llc-neighbor-migration-delay", action="store",
                   type="int", default="100",
                   help="Delay to migrate to neighbor LLC SE.")
+parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-computing",
+                  action="store_true", default="False",
+                  help="Enable per element computation offloading.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

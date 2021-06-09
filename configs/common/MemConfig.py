@@ -40,7 +40,7 @@ import m5.objects
 from common import ObjectList
 from common import HMC
 
-def create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits, intlv_size):
+def create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
     """
     Helper function for creating a single memoy controller from the given
     options.  This function is invoked multiple times in config_mem function
@@ -85,6 +85,15 @@ def create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits, intlv_size):
                                           xor_low_bit + intlv_bits - 1,
                                       intlvBits = intlv_bits,
                                       intlvMatch = i)
+                                
+    # Set options for DRAMSim2 controller.
+    if issubclass(cls, m5.objects.DRAMSim2):
+        ctrl.filePath = options.dramsim2_path
+        ctrl.deviceConfigFile = options.dramsim2_device_config_file
+        ctrl.systemConfigFile = options.dramsim2_system_config_file
+        ctrl.interleaveBitsLow = intlv_low_bit
+        ctrl.interleaveBitsHigh = intlv_low_bit + intlv_bits - 1
+
     return ctrl
 
 def config_mem(options, system):
@@ -163,7 +172,7 @@ def config_mem(options, system):
     for r in system.mem_ranges:
         for i in range(nbr_mem_ctrls):
             mem_ctrl = create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits,
-                                       intlv_size)
+                                       intlv_size, options)
             # Set the number of ranks based on the command-line
             # options if it was explicitly set
             if issubclass(cls, m5.objects.DRAMCtrl) and opt_mem_ranks:

@@ -205,7 +205,7 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
    * The exec function should never use stack.
    */
   if (params.size() != this->func.args_size()) {
-    panic("Invoke %s: Mismatch in # args, given %d, expected.\n",
+    panic("Invoke %s: Mismatch in # args, given %d, expected %d.\n",
           this->func.name(), params.size(), this->func.args_size());
   }
   execFuncXC.clear();

@@ -23,9 +23,18 @@ void NestStreamController::initializeNestConfig(
   auto nestConfigFunc = std::make_shared<TheISA::ExecFunc>(
       se->getCPUDelegator()->getSingleThreadContext(), nestConfigFuncInfo);
 
+  const auto &nestPredFuncInfo = region.nest_pred_func();
+  ExecFuncPtr nestPredFunc = nullptr;
+  bool nestPredRet = false;
+  if (nestPredFuncInfo.name() != "") {
+    nestPredFunc = std::make_shared<TheISA::ExecFunc>(
+        se->getCPUDelegator()->getSingleThreadContext(), nestPredFuncInfo);
+    nestPredRet = region.nest_pred_ret();
+  }
+
   this->staticNestConfigMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(region.region()),
-      std::forward_as_tuple(region, nestConfigFunc));
+      std::forward_as_tuple(region, nestConfigFunc, nestPredFunc, nestPredRet));
 
   auto &staticNestConfig = this->staticNestConfigMap.at(region.region());
   for (const auto &arg : region.nest_config_func().args()) {
@@ -34,6 +43,17 @@ void NestStreamController::initializeNestConfig(
       auto S = this->se->getStream(arg.stream_id());
       staticNestConfig.baseStreams.insert(S);
       S->setDepNestRegion();
+    }
+  }
+
+  if (nestPredFunc) {
+    for (const auto &arg : region.nest_pred_func().args()) {
+      if (arg.is_stream()) {
+        // This is a stream input. Remember this in the base stream.
+        auto S = this->se->getStream(arg.stream_id());
+        staticNestConfig.baseStreams.insert(S);
+        S->setDepNestRegion();
+      }
     }
   }
   for (const auto &streamInfo : region.streams()) {
@@ -56,7 +76,8 @@ void NestStreamController::dispatchStreamConfig(const ConfigArgs &args) {
       auto &staticNestConfig =
           this->staticNestConfigMap.at(nestRegion.region());
       staticNestConfig.dynConfigs.emplace_back(&staticNestConfig, args.seqNum,
-                                               staticNestConfig.configFunc);
+                                               staticNestConfig.configFunc,
+                                               staticNestConfig.predFunc);
       assert(this->activeDynNestConfigMap
                  .emplace(
                      std::piecewise_construct,
@@ -74,32 +95,62 @@ void NestStreamController::executeStreamConfig(const ConfigArgs &args) {
   if (this->activeDynNestConfigMap.count(args.seqNum)) {
     auto &dynNestConfig = *this->activeDynNestConfigMap.at(args.seqNum);
 
-    const auto &info = dynNestConfig.configFunc->getFuncInfo();
-    auto &formalParams = dynNestConfig.formalParams;
     assert(args.inputMap && "Missing InputMap.");
-    assert(args.inputMap->count(DynamicStreamId::InvalidStaticStreamId) &&
+    assert(args.inputMap->count(::LLVM::TDG::ReservedStreamRegionId::
+                                    NestConfigureFuncInputRegionId) &&
            "Missing InputVec for NestConfig.");
-    auto &inputVec = args.inputMap->at(DynamicStreamId::InvalidStaticStreamId);
+    auto &inputVec = args.inputMap->at(
+        ::LLVM::TDG::ReservedStreamRegionId::NestConfigureFuncInputRegionId);
+
+    int inputIdx = 0;
 
     // Construct the NestConfigFunc formal params.
-    int inputIdx = 0;
-    for (const auto &arg : info.args()) {
-      if (arg.is_stream()) {
-        // This is a stream input.
-        formalParams.emplace_back();
-        auto &formalParam = formalParams.back();
-        formalParam.isInvariant = false;
-        formalParam.baseStreamId = arg.stream_id();
-      } else {
-        if (inputIdx >= inputVec.size()) {
-          panic("Missing input for %s: Given %llu, inputIdx %d.", info.name(),
-                inputVec.size(), inputIdx);
+    {
+      auto &formalParams = dynNestConfig.formalParams;
+      const auto &configFuncInfo = dynNestConfig.configFunc->getFuncInfo();
+      for (const auto &arg : configFuncInfo.args()) {
+        if (arg.is_stream()) {
+          // This is a stream input.
+          formalParams.emplace_back();
+          auto &formalParam = formalParams.back();
+          formalParam.isInvariant = false;
+          formalParam.baseStreamId = arg.stream_id();
+        } else {
+          if (inputIdx >= inputVec.size()) {
+            panic("Missing input for %s: Given %llu, inputIdx %d.",
+                  configFuncInfo.name(), inputVec.size(), inputIdx);
+          }
+          formalParams.emplace_back();
+          auto &formalParam = formalParams.back();
+          formalParam.isInvariant = true;
+          formalParam.invariant = inputVec.at(inputIdx);
+          inputIdx++;
         }
-        formalParams.emplace_back();
-        auto &formalParam = formalParams.back();
-        formalParam.isInvariant = true;
-        formalParam.invariant = inputVec.at(inputIdx);
-        inputIdx++;
+      }
+    }
+
+    // Construct the NestPredFunc formal params.
+    if (dynNestConfig.predFunc) {
+      auto &formalParams = dynNestConfig.predFormalParams;
+      const auto &predFuncInfo = dynNestConfig.predFunc->getFuncInfo();
+      for (const auto &arg : predFuncInfo.args()) {
+        if (arg.is_stream()) {
+          // This is a stream input.
+          formalParams.emplace_back();
+          auto &formalParam = formalParams.back();
+          formalParam.isInvariant = false;
+          formalParam.baseStreamId = arg.stream_id();
+        } else {
+          if (inputIdx >= inputVec.size()) {
+            panic("Missing input for %s: Given %llu, inputIdx %d.",
+                  predFuncInfo.name(), inputVec.size(), inputIdx);
+          }
+          formalParams.emplace_back();
+          auto &formalParam = formalParams.back();
+          formalParam.isInvariant = true;
+          formalParam.invariant = inputVec.at(inputIdx);
+          inputIdx++;
+        }
       }
     }
 
@@ -227,6 +278,23 @@ void NestStreamController::configureNestStream(DynNestConfig &dynNestConfig) {
     panic("Failed to find base element.");
     return ret;
   };
+
+  /**
+   * If we have predication, evaluate the predication function first.
+   */
+  if (dynNestConfig.predFunc) {
+    auto predActualParams = convertFormalParamToParam(
+        dynNestConfig.predFormalParams, getStreamValue);
+    auto predRet = dynNestConfig.predFunc->invoke(predActualParams).front();
+    if (predRet != dynNestConfig.staticNestConfig->predRet) {
+      SE_DPRINTF("[Nest] Predicated Skip (%d != %d) NestRegion %s.\n", predRet,
+                 dynNestConfig.staticNestConfig->predRet,
+                 dynNestConfig.staticNestConfig->region.region());
+      dynNestConfig.nextElementIdx++;
+      return;
+    }
+  }
+
   auto actualParams =
       convertFormalParamToParam(dynNestConfig.formalParams, getStreamValue);
 
@@ -261,10 +329,11 @@ void NestStreamController::configureNestStream(DynNestConfig &dynNestConfig) {
    * If the TotalTripCount is zero, we have to manually rewind the StreamConfig
    * immediately, as the core will not execute the StreamEnd.
    */
-  SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, OuterElementIdx %llu, "
-             "TotalTripCount %d, Configured DynStreams:\n",
-             dynNestConfig.staticNestConfig->region.region(),
-             dynNestConfig.nextElementIdx, totalTripCount);
+  SE_DPRINTF(
+      "[Nest] Value ready. Configure NestRegion %s, OuterElementIdx %llu, "
+      "TotalTripCount %d, Configured DynStreams:\n",
+      dynNestConfig.staticNestConfig->region.region(),
+      dynNestConfig.nextElementIdx, totalTripCount);
   if (Debug::StreamNest) {
     for (auto S : dynNestConfig.staticNestConfig->configStreams) {
       auto &dynS = S->getLastDynamicStream();

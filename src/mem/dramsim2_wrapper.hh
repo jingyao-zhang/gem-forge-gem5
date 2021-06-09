@@ -99,6 +99,8 @@ class DRAMSim2Wrapper
                     const std::string& working_dir,
                     const std::string& trace_file,
                     unsigned int memory_size_mb,
+                    unsigned int interleave_bits_low,
+                    unsigned int interleave_bits_high,
                     bool enable_debug);
     ~DRAMSim2Wrapper();
 

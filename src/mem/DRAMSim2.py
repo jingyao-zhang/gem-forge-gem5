@@ -34,7 +34,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from m5.params import *
-from AbstractMemory import *
+from m5.objects.AbstractMemory import *
 
 # A wrapper for DRAMSim2 multi-channel memory controller
 class DRAMSim2(AbstractMemory):
@@ -52,3 +52,6 @@ class DRAMSim2(AbstractMemory):
                             "Directory to prepend to file names")
     traceFile = Param.String("", "Output file for trace generation")
     enableDebug = Param.Bool(False, "Enable DRAMSim2 debug output")
+
+    interleaveBitsLow = Param.Int(0, "Low bit masked out")
+    interleaveBitsHigh = Param.Int(0, "High bit masked out")

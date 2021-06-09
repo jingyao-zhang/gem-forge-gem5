@@ -31,14 +31,16 @@ private:
     const StaticNestConfig *staticNestConfig;
     const uint64_t seqNum;
     ExecFuncPtr configFunc;
+    ExecFuncPtr predFunc;
     bool configExecuted = false;
     DynamicStreamFormalParamV formalParams;
+    DynamicStreamFormalParamV predFormalParams;
     uint64_t nextElementIdx = 0;
     DynNestConfig(StaticNestConfig *_staticNestConfig, uint64_t _seqNum,
-                  ExecFuncPtr _configFunc)
+                  ExecFuncPtr _configFunc, ExecFuncPtr _predFunc)
         : staticNestConfig(_staticNestConfig), seqNum(_seqNum),
-          configFunc(_configFunc) {}
-      
+          configFunc(_configFunc), predFunc(_predFunc) {}
+
     InstSeqNum getConfigSeqNum(uint64_t elementIdx) const;
     InstSeqNum getEndSeqNum(uint64_t elementIdx) const;
   };
@@ -48,12 +50,16 @@ private:
   struct StaticNestConfig {
     const ::LLVM::TDG::StreamRegion &region;
     ExecFuncPtr configFunc;
+    ExecFuncPtr predFunc;
+    bool predRet;
     std::list<DynNestConfig> dynConfigs;
     std::unordered_set<Stream *> baseStreams;
     std::unordered_set<Stream *> configStreams;
     StaticNestConfig(const ::LLVM::TDG::StreamRegion &_region,
-                     ExecFuncPtr _configFunc)
-        : region(_region), configFunc(_configFunc) {}
+                     ExecFuncPtr _configFunc, ExecFuncPtr _predFunc,
+                     bool _predRet)
+        : region(_region), configFunc(_configFunc), predFunc(_predFunc),
+          predRet(_predRet) {}
   };
 
   /**

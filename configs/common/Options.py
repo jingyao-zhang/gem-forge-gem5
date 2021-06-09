@@ -113,6 +113,15 @@ def addNoISAOptions(parser):
     parser.add_option("--mem-channels-intlv", type="int", default=0,
                       help="Memory channels interleave")
 
+    parser.add_option("--dramsim2-device-config-file", type="string",
+                      default="ini/DDR3_micron_32M_8B_x8_sg15.ini",
+                      help="DRAMSim2 device configuration file")
+    parser.add_option("--dramsim2-system-config-file", type="string",
+                      default="system.ini.example",
+                      help="DRAMSim2 system configuration file")
+    parser.add_option("--dramsim2-path", type="string",
+                      default="ext/dramsim2",
+                      help="DRAMSim2 directory to find the config file")
 
     parser.add_option("--memchecker", action="store_true")
 
