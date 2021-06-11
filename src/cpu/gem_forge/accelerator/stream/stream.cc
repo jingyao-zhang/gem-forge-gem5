@@ -684,6 +684,16 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
       this, dynStream.dynamicStreamId, this->getMemElementSize(),
       dynStream.addrGenFormalParams, dynStream.addrGenCallback);
 
+  // Set the MLC stream buffer size.
+  configData->mlcBufferNumSlices =
+      this->se->myParams->mlc_stream_buffer_init_num_entries;
+  if (this->se->myParams->mlc_stream_buffer_init_num_entries == 0) {
+    configData->mlcBufferNumSlices = std::min(this->maxSize, 32ul);
+  }
+  if (configData->mlcBufferNumSlices < 4) {
+    configData->mlcBufferNumSlices = 4;
+  }
+
   // Set the totalTripCount.
   configData->totalTripCount = dynStream.totalTripCount;
 

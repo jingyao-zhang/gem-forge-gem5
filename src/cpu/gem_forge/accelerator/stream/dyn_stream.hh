@@ -69,6 +69,10 @@ struct DynamicStream {
   bool offloadedWithDependent = false;
   bool pseudoOffloadedToCache = false;
 
+  // Whether the dynamic stream is offloaded as fine-grained near-data
+  // computing.
+  bool offloadedAsNDC = false;
+
   // Whether the StreamConfig has executed (ready to go).
   bool configExecuted = false;
 

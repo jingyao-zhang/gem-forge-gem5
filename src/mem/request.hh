@@ -219,6 +219,12 @@ class Request
         READ_EXCLUSIVE              = 0x0800000000000000,
 
         /**
+         * ! GemForge
+         * This request should be offloaded to memory system.
+         */
+        OFFLOADED                   = 0x1000000000000000,
+
+        /**
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
          */

@@ -172,6 +172,9 @@ parser.add_option("--gem-forge-stream-engine-llc-multicast-issue-policy", type="
 parser.add_option("--gem-forge-stream-engine-mlc-stream-buffer-init-num-entries", action="store",
                   type="int", default="32",
                   help="Initial number of entries of MLC stream buffer per stream.")
+parser.add_option("--gem-forge-stream-engine-mlc-stream-buffer-to-segment-ratio", action="store",
+                  type="int", default="4",
+                  help="Ratio between MLC stream buffer size and sync segment.")
 parser.add_option("--gem-forge-stream-engine-llc-stream-engine-issue-width", action="store",
                   type="int", default="1",
                   help="LLCStreamEngine issue width.")

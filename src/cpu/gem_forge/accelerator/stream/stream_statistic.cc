@@ -6,6 +6,10 @@
 void StreamStatistic::dump(std::ostream &os) const {
 #define dumpScalar(stat)                                                       \
   os << std::setw(40) << "  " #stat << ' ' << stat << '\n'
+#define dumpScalarIfNonZero(stat)                                              \
+  if (stat != 0) {                                                             \
+    dumpScalar(stat);                                                          \
+  }
 #define dumpNamedScalar(name, stat)                                            \
   os << std::setw(40) << (name) << ' ' << (stat) << '\n'
 #define dumpAvg(name, dividend, divisor)                                       \
@@ -26,6 +30,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numFloatRewinded);
   dumpScalar(numFloatCancelled);
   dumpScalar(numPseudoFloated);
+  dumpScalarIfNonZero(numFineGrainedOffloaded);
   dumpScalar(numAllocated);
   dumpScalar(numWithdrawn);
   dumpScalar(numFetched);

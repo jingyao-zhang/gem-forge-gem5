@@ -2633,7 +2633,7 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
               element->getNumSlices());
         }
         /**
-         * We avoid releasing the element if it is the only one left
+         * We avoid releasing the element if it is the only two left
          * in idxToElementMap and it is known not the last one. This
          * is to avoid a bug when there are multi-line elements, the
          * next slice is not initialized yet, thus the element has not
@@ -2641,9 +2641,9 @@ LLCStreamEngine::releaseSlice(SliceList::iterator sliceIter) {
          * areSlicesReleased().
          * TODO: Handle this multi-line elements more elegantly.
          */
-        if (dynS->idxToElementMap.size() > 1 ||
+        if (dynS->idxToElementMap.size() > 2 ||
             (dynS->hasTotalTripCount() &&
-             element->idx + 1 >= dynS->getTotalTripCount())) {
+             element->idx + 2 >= dynS->getTotalTripCount())) {
           dynS->eraseElement(elementIter);
           continue;
         }

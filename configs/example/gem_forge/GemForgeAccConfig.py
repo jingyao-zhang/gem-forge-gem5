@@ -52,6 +52,8 @@ def initializeStreamEngine(options):
         assert(options.gem_forge_stream_engine_enable_float)
     if options.gem_forge_stream_engine_enable_float_pseudo:
         assert(options.gem_forge_stream_engine_enable_float_indirect)
+    se.mlc_stream_buffer_init_num_entries = \
+        options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
 
     se.computeWidth =\
         options.gem_forge_stream_engine_compute_width

@@ -22,6 +22,7 @@ class StreamThrottler;
 class StreamLQCallback;
 class StreamSQCallback;
 class StreamSQDeprecatedCallback;
+class StreamNDCController;
 class StreamFloatController;
 class StreamComputeEngine;
 class NestStreamController;
@@ -279,6 +280,7 @@ private:
   friend class StreamLQCallback;
   friend class StreamSQCallback;
   friend class StreamSQDeprecatedCallback;
+  friend class StreamNDCController;
   friend class StreamFloatController;
   friend class StreamComputeEngine;
   friend class NestStreamController;
@@ -472,6 +474,7 @@ private:
   void dumpUser() const;
 
   std::unique_ptr<StreamThrottler> throttler;
+  std::unique_ptr<StreamNDCController> ndcController;
   std::unique_ptr<StreamFloatController> floatController;
   std::unique_ptr<StreamComputeEngine> computeEngine;
   std::unique_ptr<NestStreamController> nestStreamController;

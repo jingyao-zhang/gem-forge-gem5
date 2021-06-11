@@ -5,6 +5,7 @@
 #include "stream_data_traffic_accumulator.hh"
 #include "stream_float_controller.hh"
 #include "stream_lsq_callback.hh"
+#include "stream_ndc_controller.hh"
 #include "stream_range_sync_controller.hh"
 #include "stream_throttler.hh"
 
@@ -62,6 +63,7 @@ StreamEngine::StreamEngine(Params *params)
       this->enableStreamFloat, params->streamEngineFloatPolicy);
   this->floatController = m5::make_unique<StreamFloatController>(
       this, std::move(streamFloatPolicy));
+  this->ndcController = m5::make_unique<StreamNDCController>(this);
   this->computeEngine = m5::make_unique<StreamComputeEngine>(this, params);
   this->nestStreamController = m5::make_unique<NestStreamController>(this);
   this->rangeSyncController = m5::make_unique<StreamRangeSyncController>(this);
@@ -393,6 +395,13 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
    * Then we try to float streams.
    */
   this->floatController->floatStreams(args, streamRegion, configDynStreams);
+
+  /**
+   * We also try to enable fine-grained near-data computing.
+   */
+  if (this->myParams->enableFineGrainedNearDataComputing) {
+    this->ndcController->offloadStreams(args, streamRegion, configDynStreams);
+  }
 }
 
 void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
@@ -2665,7 +2674,7 @@ void StreamEngine::issueElement(StreamElement *element) {
       }
       /**
        * It is the programmer/compiler's job to make sure no aliasing for
-       * computation (i.e. StoreFunc), so the element should be flushed.
+       * computation (i.e. StoreFunc), so the element should never be flushed.
        */
       if (element->flushed) {
         S_ELEMENT_PANIC(element,

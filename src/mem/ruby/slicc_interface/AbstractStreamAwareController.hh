@@ -105,6 +105,9 @@ public:
   int getMLCStreamBufferInitNumEntries() const {
     return this->mlcStreamBufferInitNumEntries;
   }
+  int getMLCStreamBufferToSegmentRatio() const {
+    return this->myParams->mlc_stream_buffer_to_segment_ratio;
+  }
 
   int getMulticastGroupId(int coreId) const {
     /**
@@ -222,6 +225,7 @@ public:
   }
 
   const Params *myParams;
+
 private:
   BaseCPU *cpu = nullptr;
 

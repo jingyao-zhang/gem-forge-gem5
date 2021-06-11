@@ -38,6 +38,9 @@ public:
   Addr initPAddr;
   bool initPAddrValid = false;
 
+  // Size of the MLC buffer.
+  int mlcBufferNumSlices = 32;
+
   /**
    * Used to only offload the indirect stream,
    * e.g. a[b[i]], when b[i] is marked as PseudoOffload,

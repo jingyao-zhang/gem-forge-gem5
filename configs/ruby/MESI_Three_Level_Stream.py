@@ -243,6 +243,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
                 mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
+                mlc_stream_buffer_to_segment_ratio=\
+                    options.gem_forge_stream_engine_mlc_stream_buffer_to_segment_ratio,
                 enable_stream_range_sync=\
                     options.gem_forge_enable_stream_range_sync,
                 )

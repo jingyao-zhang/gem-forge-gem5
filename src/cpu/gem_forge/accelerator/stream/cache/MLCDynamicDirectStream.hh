@@ -1,6 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_DIRECT_STREAM_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_DIRECT_STREAM_H__
 
+#include "DynamicStreamSliceIdVec.hh"
 #include "MLCDynamicStream.hh"
 #include "SlicedDynamicStream.hh"
 
@@ -42,7 +43,6 @@ protected:
   SlicedDynamicStream slicedStream;
 
   uint64_t maxNumSlicesPerSegment;
-  static constexpr uint64_t bufferToSegmentRatio = 4;
 
   /**
    * For reuse pattern, store the cut information.
@@ -52,6 +52,7 @@ protected:
   bool llcCutted = false;
 
   // Where the LLC stream would be at tailSliceIdx.
+  DynamicStreamSliceIdVec nextSegmentSliceIds;
   Addr tailPAddr;
   DynamicStreamSliceId tailSliceId;
 
@@ -63,7 +64,7 @@ protected:
     Addr endPAddr = 0;
     uint64_t startSliceIdx = 0;
     uint64_t endSliceIdx = 0;
-    DynamicStreamSliceId startSliceId;
+    DynamicStreamSliceIdVec sliceIds;
     DynamicStreamSliceId endSliceId;
     enum State {
       ALLOCATED = 0,
@@ -73,13 +74,15 @@ protected:
     };
     State state = State::ALLOCATED;
     static std::string stateToString(const State state);
+    const DynamicStreamSliceId &getStartSliceId() const {
+      return this->sliceIds.firstSliceId();
+    }
   };
   std::list<LLCSegmentPosition> llcSegments;
   bool blockedOnReceiverElementInit = false;
 
   void allocateLLCSegment();
-  void pushNewLLCSegment(Addr startPAddr, uint64_t startSliceIdx,
-                         const DynamicStreamSliceId &startSliceId);
+  void pushNewLLCSegment(Addr startPAddr, uint64_t startSliceIdx);
   LLCSegmentPosition &getLastLLCSegment();
   const LLCSegmentPosition &getLastLLCSegment() const;
   uint64_t getLLCTailSliceIdx() const {

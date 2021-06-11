@@ -100,6 +100,8 @@ class RubyStreamAwareController(RubyController):
         Param.String("any", "Multicast issue policy, default is the relaxed")
     mlc_stream_buffer_init_num_entries = \
         Param.UInt32(16, "Initial number of entries of MLC stream buffer")
+    mlc_stream_buffer_to_segment_ratio = \
+        Param.UInt32(4, "Ratio between MLC buffer and segment")
     llc_stream_engine_issue_width = \
         Param.UInt32(1, "Issue width of LLCStreamEngine")
     llc_stream_engine_migrate_width = \

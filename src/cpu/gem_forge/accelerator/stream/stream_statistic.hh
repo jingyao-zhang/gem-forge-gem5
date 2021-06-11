@@ -23,6 +23,7 @@ public:
   size_t numFloatRewinded = 0;
   size_t numFloatCancelled = 0;
   size_t numPseudoFloated = 0;
+  size_t numFineGrainedOffloaded = 0;
   size_t numAllocated = 0;
   size_t numWithdrawn = 0;
   size_t numFetched = 0;
