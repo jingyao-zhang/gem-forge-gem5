@@ -16,6 +16,7 @@
 
 #include <unordered_map>
 
+class MLCStreamNDCController;
 class StreamMemAccess;
 class MessageBuffer;
 
@@ -75,6 +76,13 @@ public:
   bool receiveOffloadStreamRequest(const DynamicStreamSliceId &sliceId);
   void receiveOffloadStreamRequestHit(const DynamicStreamSliceId &sliceId);
 
+  /**
+   * Receive a StreamNDC message.
+   * Basically handled by MLCStreamNDCController.
+   */
+  void receiveStreamNDCRequest(PacketPtr pkt);
+  void receiveStreamNDCResponse(const ResponseMsg &msg);
+
 private:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseToUpperMsgBuffer;
@@ -115,6 +123,12 @@ private:
                   const DataBlock &dataBlock);
 
   MLCDynamicStream *getStreamFromDynamicId(const DynamicStreamId &id);
+
+  /**
+   * StreamNDCController.
+   */
+  friend class MLCStreamNDCController;
+  std::unique_ptr<MLCStreamNDCController> ndcController;
 };
 
 #endif

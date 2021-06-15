@@ -548,7 +548,6 @@ Process::encounterWorkMark(uint64_t markId) {
     // Check if we want to switch cpu or exit.
     if (p->markSwitchcpu != -1) {
         // We allow warm up by one edge before.
-        bool shouldSwitch = false;
         if (p->markSwitchcpu > 0) {
             if (this->workMarkIndex + 1 == p->markSwitchcpu) {
                 exitSimLoop("markswitchcpu", static_cast<int>(markId));

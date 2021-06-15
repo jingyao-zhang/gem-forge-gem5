@@ -61,6 +61,7 @@ enumeration(CoherenceClass, desc="...") {
   STREAM_END,      desc="StreamEnd";
   STREAM_TO_MLC,   desc="StreamReq direct to MLC_SE";
   STREAM_FROM_MLC, desc="StreamResp from MLC_SE";
+  STREAM_NDC,      desc="StreamNDC";
 }
 
 // Class for messages sent between the L0 and the L1 controllers.

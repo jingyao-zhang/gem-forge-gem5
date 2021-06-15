@@ -54,9 +54,11 @@ bool GemForgeDcachePortImpl::sendTimingReqVirtual(PacketPtr pkt, bool isCore) {
      * and MLC SE has no idea this stream is ended.
      * Therefore, we bypass the queue for StreamConfig/End request, to ensure
      * that streams are configured before ended.
+     * We also do this for StreamNDC requests.
      */
     if (pkt->cmd == MemCmd::Command::StreamConfigReq ||
-        pkt->cmd == MemCmd::Command::StreamEndReq) {
+        pkt->cmd == MemCmd::Command::StreamEndReq ||
+        pkt->cmd == MemCmd::Command::StreamNDCReq) {
       DPRINTF(GemForgeDcachePort,
               "Bypass the queue for StreamConfig/EndReq.\n");
       bool succeed = this->port->sendTimingReq(pkt);

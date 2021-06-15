@@ -224,6 +224,7 @@ MemCmd::commandInfo[] =
      */
     { SET1(IsRequest), StreamConfigReq, "StreamConfigReq" },
     { SET1(IsRequest), StreamEndReq, "StreamEndReq" },
+    { SET1(IsRequest), StreamNDCReq, "StreamNDCReq" },
 };
 
 AddrRange

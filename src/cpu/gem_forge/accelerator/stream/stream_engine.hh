@@ -450,6 +450,7 @@ private:
   void releaseElementStepped(Stream *S, bool isEnd, bool doThrottle);
   void issueElements();
   void issueElement(StreamElement *element);
+  void issueNDCElement(StreamElement *element);
   void prefetchElement(StreamElement *element);
   void writebackElement(StreamElement *element, StreamStoreInst *inst);
 

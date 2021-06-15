@@ -2511,6 +2511,14 @@ void StreamEngine::issueElements() {
         }
       }
 
+      /**
+       * Intercept the NDC request.
+       */
+      if (dynS->offloadedAsNDC) {
+        this->issueNDCElement(element);
+        continue;
+      }
+
       // Increase the reference of the cache block if we enable merging.
       if (this->enableMerge) {
         for (int i = 0; i < element->cacheBlocks; ++i) {
@@ -2680,7 +2688,14 @@ void StreamEngine::issueElement(StreamElement *element) {
         S_ELEMENT_PANIC(element,
                         "AtomicStream with StoreFunc should not be flushed.");
       }
-      if (!dynS->offloadedToCache) {
+      if (dynS->offloadedToCache) {
+        // Offloaded the whole stream.
+        pkt = GemForgePacketHandler::createGemForgePacket(
+            cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
+            cpuDelegator->dataMasterId(), 0 /* ContextId */,
+            S->getFirstCoreUserPC() /* PC */, flags);
+        pkt->req->setVirt(cacheLineVAddr);
+      } else {
         // Special case to handle computation for atomic stream at CoreSE.
         auto getBaseValue = [element](Stream::StaticId id) -> StreamValue {
           return element->getValueBaseByStreamId(id);
@@ -2704,12 +2719,6 @@ void StreamEngine::issueElement(StreamElement *element) {
             elementVAddr, elementPAddr, element->size, memAccess,
             cpuDelegator->dataMasterId(), 0 /* ContextId */,
             S->getFirstCoreUserPC() /* PC */, std::move(atomicOp));
-      } else {
-        pkt = GemForgePacketHandler::createGemForgePacket(
-            cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
-            cpuDelegator->dataMasterId(), 0 /* ContextId */,
-            S->getFirstCoreUserPC() /* PC */, flags);
-        pkt->req->setVirt(cacheLineVAddr);
       }
     } else {
       pkt = GemForgePacketHandler::createGemForgePacket(
@@ -2755,6 +2764,52 @@ void StreamEngine::issueElement(StreamElement *element) {
       this->translationBuffer->addTranslation(
           pkt, cpuDelegator->getSingleThreadContext(), nullptr);
     }
+  }
+}
+
+void StreamEngine::issueNDCElement(StreamElement *element) {
+  assert(element->isAddrReady() && "Address should be ready.");
+  assert(element->stream->isMemStream() &&
+         "Should never issue element for IVStream.");
+  assert(element->shouldIssue() && "Should not issue this element.");
+  assert(!element->isReqIssued() && "Element req already issued.");
+  assert(!element->flushed && "Flushed NDC element.");
+
+  auto S = element->stream;
+  auto dynS = element->dynS;
+  S->statistic.numNDCed++;
+  element->setReqIssued();
+  if (S->trackedByPEB() && !element->isFirstUserDispatched()) {
+    // Add to the PEB if the first user has not been dispatched.
+    this->peb.addElement(element);
+  }
+
+  /**
+   * NDC is performed at element granularity, so no coalescing.
+   */
+  this->ndcController->issueNDCPacket(element);
+
+  for (size_t i = 0; i < element->cacheBlocks; ++i) {
+    auto &cacheBlockBreakdown = element->cacheBlockBreakdownAccesses[i];
+
+    // Check if this cache line is already done.
+    assert(cacheBlockBreakdown.state ==
+           CacheBlockBreakdownAccess::StateE::Initialized);
+
+    const auto cacheLineVAddr = cacheBlockBreakdown.cacheBlockVAddr;
+    const auto cacheLineSize = cpuDelegator->cacheLineSize();
+    if ((cacheLineVAddr % cacheLineSize) != 0) {
+      S_ELEMENT_PANIC(element,
+                      "CacheBlock %d LineVAddr %#x invalid, VAddr %#x.\n", i,
+                      cacheLineVAddr, cacheBlockBreakdown.virtualAddr);
+    }
+    Addr cacheLinePAddr;
+    if (!cpuDelegator->translateVAddrOracle(cacheLineVAddr, cacheLinePAddr)) {
+      S_ELEMENT_PANIC(element, "Fault on NDC vaddr %#x.\n", cacheLineVAddr);
+    }
+
+    // Mark the state.
+    cacheBlockBreakdown.state = CacheBlockBreakdownAccess::StateE::Issued;
   }
 }
 

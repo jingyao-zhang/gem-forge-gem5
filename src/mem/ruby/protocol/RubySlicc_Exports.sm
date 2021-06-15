@@ -191,6 +191,7 @@ enumeration(RubyRequestType, desc="...", default="RubyRequestType_NULL") {
   // ! Duplication of RubyRequestType.
   StreamConfig,      desc="Stream configuration";
   StreamEnd,         desc="Stream end";
+  StreamNDC,         desc="Stream NDC";
 }
 
 enumeration(SequencerRequestType, desc="...", default="SequencerRequestType_NULL") {

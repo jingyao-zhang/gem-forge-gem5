@@ -137,6 +137,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     StreamEnd,     desc="Stream End";
     StreamToMLC,   desc="This stream request must be served by MLC";
     StreamFromMLC, desc="Response of StreamToMLC event";
+    StreamNDC,     desc="Stream NDC Packet";
   }
 
   // TYPES
@@ -297,9 +298,6 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
       return Event:Ifetch;
     } else if ((type == RubyRequestType:ST) || (type == RubyRequestType:ATOMIC)) {
       return Event:Store;
-    // ! Sean: StreamAwareCache
-    } else if (type == RubyRequestType:StreamConfig) {
-      return Event:StreamConfig;
     } else {
       error("Invalid RubyRequestType");
     }
@@ -422,6 +420,10 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
           TBE tbe := TBEs[in_msg.LineAddress];
           se.receiveStreamEnd(in_msg.pkt);
           trigger(Event:StreamEnd, in_msg.LineAddress, Dcache_entry, tbe); 
+        } else if (in_msg.Type == RubyRequestType:StreamNDC) {
+          Entry Dcache_entry := getDCacheEntry(in_msg.LineAddress);
+          TBE tbe := TBEs[in_msg.LineAddress];
+          trigger(Event:StreamNDC, in_msg.LineAddress, Dcache_entry, tbe); 
         } else {
 
           // *** DATA ACCESS ***
@@ -1059,6 +1061,21 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     }
   }
 
+  action(fsn_forwardStreamNDC, "fsn", desc="Forward the StreamNDC") {
+    peek(mandatoryQueue_in, RubyRequest) {
+      enqueue(requestNetwork_out, CoherenceMsg, request_latency) {
+        out_msg.addr := address;
+        out_msg.Class := CoherenceClass:STREAM_NDC; 
+        out_msg.Sender := machineID;
+        out_msg.Dest := createMachineID(MachineType:L1Cache, version);
+        DPRINTF(RubyStream, "Forward StreamNDC: destination: %s.\n",
+                out_msg.Dest);
+        out_msg.MessageSize := MessageSizeType:Control;
+        out_msg.AccessMode := in_msg.AccessMode;
+        out_msg.pkt := in_msg.pkt;
+      }
+    }
+  }
   action(fsa_forwardStreamAccess, "fsa", desc="Forward a served request for offloaded stream") {
     peek(mandatoryQueue_in, RubyRequest) {
       enqueue(requestNetwork_out, CoherenceMsg, request_latency) {
@@ -1439,5 +1456,9 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   transition({I, S, E, M, Inst_IS, IS, IM, SM, IU}, StreamFromMLC) {
     fsh_forwardStreamHit;
     o_popIncomingResponseQueue;
+  }
+  transition({I, S, E, M, Inst_IS, IS, IM, SM, IU}, StreamNDC) {
+    fsn_forwardStreamNDC;
+    k_popMandatoryQueue;
   }
 }

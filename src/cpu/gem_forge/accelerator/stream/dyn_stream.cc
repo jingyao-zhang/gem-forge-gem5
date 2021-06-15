@@ -16,7 +16,7 @@ DynamicStream::DynamicStream(Stream *_stream,
                              ThreadContext *_tc, StreamEngine *_se)
     : stream(_stream), dynamicStreamId(_dynamicStreamId),
       configSeqNum(_configSeqNum), configCycle(_configCycle), tc(_tc),
-      FIFOIdx(_dynamicStreamId, _configSeqNum) {
+      FIFOIdx(_dynamicStreamId) {
   this->tail = new StreamElement(_se);
   this->head = this->tail;
   this->stepped = this->tail;

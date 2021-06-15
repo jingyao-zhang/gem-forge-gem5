@@ -50,6 +50,7 @@ enumeration(CoherenceRequestType, desc="...") {
   STREAM_MIGRATE, desc="Stream migrate";
   STREAM_FORWARD, desc="Stream data forwarded from L2 to L2";
   STREAM_COMMIT,  desc="Stream commit message from L1 to L2";
+  STREAM_NDC,     desc="Stream near-data computing request";
 }
 
 // CoherenceResponseType
@@ -66,6 +67,7 @@ enumeration(CoherenceResponseType, desc="...") {
   STREAM_ACK,         desc="ack the core that the reqired operation is performed";
   STREAM_RANGE,       desc="range-sychronization message";
   STREAM_DONE,        desc="Stream commit done message from L2 to L1";
+  STREAM_NDC,         desc="Stream near-data computing response";
 }
 
 // RequestMsg

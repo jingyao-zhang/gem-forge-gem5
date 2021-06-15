@@ -28,6 +28,7 @@ public:
   size_t numWithdrawn = 0;
   size_t numFetched = 0;
   size_t numPrefetched = 0;
+  size_t numNDCed = 0;
   size_t numStepped = 0;
   size_t numUsed = 0;
   size_t numAliased = 0;

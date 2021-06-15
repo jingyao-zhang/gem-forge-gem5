@@ -1,5 +1,6 @@
 
 #include "MLCStreamEngine.hh"
+#include "MLCStreamNDCController.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
 
@@ -12,6 +13,7 @@
 #include "debug/MLCRubyStreamBase.hh"
 #include "debug/MLCRubyStreamLife.hh"
 #include "debug/MLCRubyStreamReuse.hh"
+#include "debug/StreamNearDataComputing.hh"
 #include "debug/StreamRangeSync.hh"
 
 #define DEBUG_TYPE MLCRubyStreamBase
@@ -28,6 +30,8 @@ MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
       responseToUpperMsgBuffer(_responseToUpperMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer) {
   this->controller->registerMLCStreamEngine(this);
+
+  this->ndcController = m5::make_unique<MLCStreamNDCController>(this);
 }
 
 MLCStreamEngine::~MLCStreamEngine() {
@@ -229,6 +233,10 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
+  if (msg.m_Type == CoherenceResponseType_STREAM_NDC) {
+    this->receiveStreamNDCResponse(msg);
+    return;
+  }
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream data when stream float is disabled.\n");
 
@@ -515,6 +523,14 @@ void MLCStreamEngine::reuseSlice(const DynamicStreamSliceId &sliceId,
     S->receiveReuseStreamData(makeLineAddress(sliceId.vaddr), dataBlock);
     streamId = targetStreamId;
   }
+}
+
+void MLCStreamEngine::receiveStreamNDCRequest(PacketPtr pkt) {
+  this->ndcController->receiveStreamNDCRequest(pkt);
+}
+
+void MLCStreamEngine::receiveStreamNDCResponse(const ResponseMsg &msg) {
+  this->ndcController->receiveStreamNDCResponse(msg);
 }
 
 void MLCStreamEngine::wakeup() {

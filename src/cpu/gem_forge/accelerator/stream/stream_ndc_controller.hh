@@ -2,6 +2,7 @@
 #define __CPU_GEM_FORGE_ACCELERATOR_STREAM_NDC_CONTROLLER_HH__
 
 #include "stream_engine.hh"
+#include "stream_ndc_packet.hh"
 
 /**
  * Helper class to manager per element fine-grained near-data computing
@@ -20,6 +21,8 @@ public:
   void offloadStreams(const StreamConfigArgs &args,
                       const ::LLVM::TDG::StreamRegion &region,
                       DynStreamList &dynStreams);
+
+  void issueNDCPacket(StreamElement *element);
 
 private:
   StreamEngine *se;

@@ -101,9 +101,12 @@ bool GemForgePacketHandler::needResponse(PacketPtr pkt) {
   if (handler == nullptr) {
     // This is not a GemForgePacket. Check if its command is special command.
     // StreamConfig/End requests have no response.
+    // StreamNDC requests should have response, but not tracked here.
     if (pkt->cmd == MemCmd::Command::StreamConfigReq) {
       return false;
     } else if (pkt->cmd == MemCmd::Command::StreamEndReq) {
+      return false;
+    } else if (pkt->cmd == MemCmd::Command::StreamNDCReq) {
       return false;
     } else {
       // This is not a good idea maybe.

@@ -152,6 +152,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     STREAM_STORE,   desc="StreamStore req";
     STREAM_FORWARD, desc="StreamForward req";
     STREAM_COMMIT,  desc="StreamCommit req";
+    STREAM_NDC,     desc="StreamNDC req";
   }
 
   // TYPES
@@ -204,6 +205,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamIndirectRequest(RequestMsg);
     void receiveStreamForwardRequest(RequestMsg);
     void receiveStreamCommit(DynamicStreamSliceId);
+    void receiveStreamNDCRequest(PacketPtr);
   }
 
   LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectToL2Cache_ptr, m_responseFromL2Cache_ptr";
@@ -349,6 +351,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       return Event:STREAM_STORE;
     } else if (type == CoherenceRequestType:STREAM_FORWARD) {
       return Event:STREAM_FORWARD;
+    } else if (type == CoherenceRequestType:STREAM_NDC) {
+      return Event:STREAM_NDC;
     } else {
       DPRINTF(RubySlicc, "address: %#x, Request Type: %s\n", addr, type);
       error("Invalid L1 forwarded request type");
@@ -1190,6 +1194,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       se.receiveStreamForwardRequest(in_msg);
     }
   }
+  action(rsn_receiveStreamNDC, "rsn", desc="Receive the StreamNDC") {
+    peek(L1RequestL2Network_in, RequestMsg) {
+      se.receiveStreamNDCRequest(in_msg.pkt);
+    }
+  }
 
   //*****************************************************
   // TRANSITIONS
@@ -1753,6 +1762,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, STREAM_FORWARD) {
     rsfwd_receiveStreamForward;
+    jj_popL1RequestQueue;
+  }
+
+  transition({NP, SS, M, MT, M_I, MT_I, MCT_I, I_I, S_I, IVV, ISS, IS, IM, NP_M, SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, STREAM_NDC) {
+    rsn_receiveStreamNDC;
     jj_popL1RequestQueue;
   }
 }

@@ -13,6 +13,7 @@ DebugFlag('CoalescedStream')
 DebugFlag('SingleStream')
 DebugFlag('AddrGenCallback')
 DebugFlag('StreamAtomicOp')
+DebugFlag('StreamNearDataComputing')
 DebugFlag('PrefetchElementBuffer')
 DebugFlag('CoreRubyStreamLife')
 

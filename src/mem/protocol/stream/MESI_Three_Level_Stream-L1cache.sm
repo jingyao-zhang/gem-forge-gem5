@@ -155,6 +155,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     L2_StreamData,   desc="StreamData from L2";
     L1_StreamData,   desc="StreamData from L1, need to unblock L2";
     L0_FwdStreamReq, desc="Stream request served by L0 and forwarded to L1";
+    L0_StreamNDC,    desc="StreamNDC from L0";
   }
 
   // TYPES
@@ -201,6 +202,7 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     bool isStreamCached(DynamicStreamSliceId);
     bool receiveOffloadStreamRequest(DynamicStreamSliceId);
     void receiveOffloadStreamRequestHit(DynamicStreamSliceId);
+    void receiveStreamNDCRequest(PacketPtr);
   }
 
   MLCStreamEngine se, constructor="this, m_bufferToL0_ptr, m_requestToL2_ptr";
@@ -465,6 +467,9 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
         } else if (in_msg.Class == CoherenceClass:STREAM_END) {
           se.receiveStreamEnd(in_msg.pkt);
           trigger(Event:L0_StreamEnd, in_msg.addr, cache_entry, tbe);
+        } else if (in_msg.Class == CoherenceClass:STREAM_NDC) {
+          se.receiveStreamNDCRequest(in_msg.pkt);
+          trigger(Event:L0_StreamNDC, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:INV_ACK) {
           trigger(Event:L0_Ack, in_msg.addr, cache_entry, tbe);
         } else if (in_msg.Class == CoherenceClass:STREAM_L0) {
@@ -1818,11 +1823,8 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     kp_popPrefetchQueue;
   }
 
-  transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamConfig) {
-    k_popL0RequestQueue;
-  }
-
-  transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_StreamEnd) {
+  transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0},
+             {L0_StreamConfig, L0_StreamEnd, L0_FwdStreamReq, L0_StreamNDC}) {
     k_popL0RequestQueue;
   }
 
@@ -1837,9 +1839,5 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
 
   transition({I, M_I, SINK_WB_ACK}, OffloadStreamLoad) {
     k_popL0RequestQueue; 
-  }
-
-  transition({I, S, SS, E, EE, M, MM, IS, IU, IM, SM, IS_I, M_I, SINK_WB_ACK, S_IL0, E_IL0, M_IL0, MM_IL0, SM_IL0}, L0_FwdStreamReq) {
-    k_popL0RequestQueue;
   }
 }

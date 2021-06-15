@@ -133,6 +133,7 @@ class MemCmd
          */
         StreamConfigReq,
         StreamEndReq,
+        StreamNDCReq,
         NUM_MEM_CMDS
     };
 

@@ -681,6 +681,9 @@ Sequencer::makeRequest(PacketPtr pkt)
         issueRequest(pkt, RubyRequestType_StreamEnd);
         // Simply return success now.
         return RequestStatus_Issued;
+    } else if (pkt->cmd == MemCmd::Command::StreamNDCReq) {
+        issueRequest(pkt, RubyRequestType_StreamNDC);
+        return RequestStatus_Issued;
     }
 
     bool isInstFetch = pkt->req->isInstFetch();

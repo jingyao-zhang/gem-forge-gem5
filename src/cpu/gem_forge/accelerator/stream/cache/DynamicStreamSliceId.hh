@@ -66,4 +66,11 @@ struct DynamicStreamSliceId {
 
 std::ostream &operator<<(std::ostream &os, const DynamicStreamSliceId &id);
 
+struct DynamicStreamSliceIdHasher {
+  std::size_t operator()(const DynamicStreamSliceId &key) const {
+    return (DynamicStreamElementRangeIdHasher()(key.elementRange)) ^
+           std::hash<uint64_t>()(key.vaddr);
+  }
+};
+
 #endif

@@ -23,6 +23,7 @@ class AbstractStreamAwareController;
 class MessageBuffer;
 class LLCStreamCommitController;
 class LLCStreamMigrationController;
+class LLCStreamNDCController;
 class LLCStreamAtomicLockManager;
 class StreamRequestBuffer;
 
@@ -54,10 +55,16 @@ public:
 
   int curLLCBank() const;
 
+  /**
+   * StreamNDC support.
+   */
+  void receiveStreamNDCRequest(PacketPtr pkt);
+
 private:
   friend class LLCDynamicStream;
   friend class LLCStreamElement;
   friend class LLCStreamCommitController;
+  friend class LLCStreamNDCController;
   friend class LLCStreamAtomicLockManager;
   AbstractStreamAwareController *controller;
   // Out going stream migrate buffer.
@@ -71,6 +78,7 @@ private:
   // Stream commit controller.
   std::unique_ptr<LLCStreamCommitController> commitController;
   std::unique_ptr<LLCStreamMigrationController> migrateController;
+  std::unique_ptr<LLCStreamNDCController> ndcController;
   std::unique_ptr<LLCStreamAtomicLockManager> atomicLockManager;
   std::unique_ptr<StreamRequestBuffer> indReqBuffer;
   const int issueWidth;
@@ -296,6 +304,7 @@ private:
   void issueStreamDataToMLC(const DynamicStreamSliceId &sliceId, Addr paddrLine,
                             const uint8_t *data, int dataSize, int payloadSize,
                             int lineOffset, bool forceIdea = false);
+
   /**
    * Send the stream data to streams another LLC bank. Used for SendTo edge.
    * @param payloadSize: the network should model the payload of this size.
@@ -381,6 +390,12 @@ private:
    * Perform store to the BackingStorage.
    */
   void performStore(Addr paddr, int size, const uint8_t *value);
+
+  /**
+   * Create the atomic packet.
+   */
+  PacketPtr createAtomicPacket(Addr vaddr, Addr paddr, int size,
+                               std::unique_ptr<StreamAtomicOp> atomicOp);
 
   /**
    * Perform AtomicRMWStream to the BackingStorage.

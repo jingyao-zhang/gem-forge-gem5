@@ -3,6 +3,7 @@
 #include "LLCStreamAtomicLockManager.hh"
 #include "LLCStreamCommitController.hh"
 #include "LLCStreamMigrationController.hh"
+#include "LLCStreamNDCController.hh"
 #include "LLCStreamRangeBuilder.hh"
 #include "MLCStreamEngine.hh"
 #include "StreamRequestBuffer.hh"
@@ -50,6 +51,7 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
   this->controller->registerLLCStreamEngine(this);
   this->commitController = m5::make_unique<LLCStreamCommitController>(this);
   this->atomicLockManager = m5::make_unique<LLCStreamAtomicLockManager>(this);
+  this->ndcController = m5::make_unique<LLCStreamNDCController>(this);
   this->indReqBuffer = m5::make_unique<StreamRequestBuffer>(
       this->controller, this->streamIndirectIssueMsgBuffer, Cycles(1), 4);
   this->migrateController = m5::make_unique<LLCStreamMigrationController>(
@@ -290,6 +292,10 @@ void LLCStreamEngine::receiveStreamDataVec(
   this->scheduleEvent(Cycles(delayCycle));
 }
 
+void LLCStreamEngine::receiveStreamNDCRequest(PacketPtr pkt) {
+  this->ndcController->receiveStreamNDCRequest(pkt);
+}
+
 void LLCStreamEngine::enqueueIncomingStreamDataMsg(
     Cycles readyCycle, const DynamicStreamSliceId &sliceId,
     const DataBlock &dataBlock, const DataBlock &storeValueBlock) {
@@ -330,6 +336,8 @@ void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
    */
   auto dynS = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId());
   if (!dynS) {
+    // Try stream near-data computing.
+    this->ndcController->receiveStreamData(sliceId, dataBlock, storeValueBlock);
     return;
   }
   // Update inflyRequests.
@@ -2970,6 +2978,28 @@ void LLCStreamEngine::performStore(Addr paddr, int size, const uint8_t *value) {
   delete pkt;
 }
 
+PacketPtr
+LLCStreamEngine::createAtomicPacket(Addr vaddr, Addr paddr, int size,
+                                    std::unique_ptr<StreamAtomicOp> atomicOp) {
+  /**
+   * Create the packet.
+   */
+  MasterID masterId = 0;
+  Addr pc = 0;
+  int contextId = 0;
+
+  Request::Flags flags;
+  flags.set(Request::ATOMIC_RETURN_OP);
+  RequestPtr req = std::make_shared<Request>(vaddr, size, flags, masterId, pc,
+                                             contextId, std::move(atomicOp));
+  req->setPaddr(paddr);
+  PacketPtr pkt = Packet::createWrite(req);
+  // Fake some data.
+  uint8_t *pkt_data = new uint8_t[req->getSize()];
+  pkt->dataDynamic(pkt_data);
+  return pkt;
+}
+
 std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
     LLCDynamicStreamPtr dynS, LLCStreamElementPtr element, Addr elementPAddr,
     const DynamicStreamSliceId &sliceId) {
@@ -3003,21 +3033,8 @@ std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
   /**
    * Create the packet.
    */
-  MasterID masterId = 0;
-  Addr pc = 0;
-  int contextId = 0;
-
-  Request::Flags flags;
-  flags.set(Request::ATOMIC_RETURN_OP);
-  RequestPtr req =
-      std::make_shared<Request>(element->vaddr, elementSize, flags, masterId,
-                                pc, contextId, std::move(atomicOp));
-  req->setPaddr(elementPAddr);
-  PacketPtr pkt = Packet::createWrite(req);
-  // Fake some data.
-  uint8_t *pkt_data = new uint8_t[req->getSize()];
-  pkt->dataDynamic(pkt_data);
-
+  auto pkt = this->createAtomicPacket(element->vaddr, elementPAddr, elementSize,
+                                      std::move(atomicOp));
   /**
    * Send to backing store to perform atomic op.
    */

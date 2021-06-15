@@ -49,4 +49,12 @@ struct DynamicStreamElementRangeId {
 std::ostream &operator<<(std::ostream &os,
                          const DynamicStreamElementRangeId &id);
 
+struct DynamicStreamElementRangeIdHasher {
+  std::size_t operator()(const DynamicStreamElementRangeId &key) const {
+    return (DynamicStreamIdHasher()(key.streamId)) ^
+           std::hash<uint64_t>()(key.lhsElementIdx) ^
+           std::hash<uint64_t>()(key.rhsElementIdx);
+  }
+};
+
 #endif
