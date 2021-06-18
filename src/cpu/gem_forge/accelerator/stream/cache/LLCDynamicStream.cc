@@ -371,7 +371,7 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
   auto size = this->getMemElementSize();
   auto element = std::make_shared<LLCStreamElement>(
       this->getStaticStream(), this->mlcController, this->getDynamicStreamId(),
-      elementIdx, vaddr, size);
+      elementIdx, vaddr, size, false /* isNDCElement */);
   this->idxToElementMap.emplace(elementIdx, element);
   this->nextInitElementIdx++;
 
@@ -416,7 +416,8 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
 
       element->baseElements.emplace_back(std::make_shared<LLCStreamElement>(
           baseS, this->mlcController, baseDynStreamId, baseElementIdx,
-          baseElementVaddr, baseS->getMemElementSize()));
+          baseElementVaddr, baseS->getMemElementSize(),
+          false /* isNDCElement */));
     }
   }
   // Remember to add previous element as base element for reduction.
@@ -425,7 +426,7 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
       // First time, just initialize the first element.
       this->lastReductionElement = std::make_shared<LLCStreamElement>(
           this->getStaticStream(), this->mlcController,
-          this->getDynamicStreamId(), 0, 0, size);
+          this->getDynamicStreamId(), 0, 0, size, false /* isNDCElement */);
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
       this->lastComputedReductionElementIdx = 0;
@@ -794,20 +795,10 @@ bool LLCDynamicStream::hasComputation() const {
          S->isStoreComputeStream();
 }
 
-Cycles LLCDynamicStream::getEstimatedComputationLatency() const {
-  auto S = this->getStaticStream();
-  return S->getEstimatedComputationLatency();
-}
-
-bool LLCDynamicStream::isSIMDComputation() const {
-  auto S = this->getStaticStream();
-  return S->isSIMDComputation();
-}
-
 StreamValue LLCDynamicStream::computeStreamElementValue(
     const LLCStreamElementPtr &element) {
 
-  auto S = this->getStaticStream();
+  auto S = element->S;
   const auto &config = this->configData;
 
   auto getBaseStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {

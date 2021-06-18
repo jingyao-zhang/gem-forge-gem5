@@ -11,9 +11,11 @@
 
 LLCStreamElement::LLCStreamElement(
     Stream *_S, AbstractStreamAwareController *_mlcController,
-    const DynamicStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr, int _size)
+    const DynamicStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr, int _size,
+    bool _isNDCElement)
     : S(_S), mlcController(_mlcController), dynStreamId(_dynStreamId),
-      idx(_idx), size(_size), vaddr(_vaddr), readyBytes(0) {
+      idx(_idx), size(_size), isNDCElement(_isNDCElement), vaddr(_vaddr),
+      readyBytes(0) {
   if (this->size > sizeof(this->value)) {
     panic("LLCStreamElement size overflow %d, %s.\n", this->size,
           this->dynStreamId);

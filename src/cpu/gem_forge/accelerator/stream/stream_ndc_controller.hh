@@ -22,6 +22,7 @@ public:
                       const ::LLVM::TDG::StreamRegion &region,
                       DynStreamList &dynStreams);
 
+  bool canIssueNDCPacket(StreamElement *element);
   void issueNDCPacket(StreamElement *element);
 
 private:

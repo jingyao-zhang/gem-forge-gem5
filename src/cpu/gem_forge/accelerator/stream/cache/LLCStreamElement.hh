@@ -23,7 +23,7 @@ public:
    */
   LLCStreamElement(Stream *_S, AbstractStreamAwareController *_mlcController,
                    const DynamicStreamId &_dynStreamId, uint64_t _idx,
-                   Addr _vaddr, int _size);
+                   Addr _vaddr, int _size, bool _isNDCElement);
 
   ~LLCStreamElement();
 
@@ -32,6 +32,8 @@ public:
   const DynamicStreamId dynStreamId;
   const uint64_t idx;
   const int size;
+  const bool isNDCElement;
+
   Addr vaddr = 0;
 
   int curLLCBank() const;
@@ -76,6 +78,7 @@ public:
    * Accessors to the data.
    *************************************************/
   bool isReady() const { return this->readyBytes == this->size; }
+  void addReadyBytes(int bytes) { this->readyBytes += bytes; }
   bool isComputationScheduled() const { return this->computationScheduled; }
   Cycles getComputationScheduledCycle() const {
     return this->computationScheduledCycle;

@@ -182,8 +182,6 @@ public:
                          const DataBlock &dataBlk);
 
   bool hasComputation() const;
-  Cycles getEstimatedComputationLatency() const;
-  bool isSIMDComputation() const;
   StreamValue computeStreamElementValue(const LLCStreamElementPtr &element);
   void completeComputation(LLCStreamEngine *se,
                            const LLCStreamElementPtr &element,

@@ -921,7 +921,10 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
 }
 
 uint64_t StreamElement::mapVAddrToValueOffset(Addr vaddr, int size) const {
-  assert(this->cacheBlocks > 0 && "There is no cache blocks.");
+  if (this->cacheBlocks == 0) {
+    S_ELEMENT_PANIC(this, "There is no cache blocks. AddrReady %d.",
+                    this->isAddrReady());
+  }
   auto firstCacheBlockVAddr =
       this->cacheBlockBreakdownAccesses[0].cacheBlockVAddr;
   if (vaddr < firstCacheBlockVAddr) {

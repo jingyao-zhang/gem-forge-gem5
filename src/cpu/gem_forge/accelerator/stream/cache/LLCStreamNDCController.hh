@@ -14,21 +14,46 @@ public:
   void receiveStreamData(const DynamicStreamSliceId &sliceId,
                          const DataBlock &dataBlock,
                          const DataBlock &storeValueBlock);
+  void receiveStreamForwardRequest(const RequestMsg &msg);
+
+  /**
+   * Compute the element value.
+   * @return whether we created valid result.
+   */
+  bool computeStreamElementValue(const LLCStreamElementPtr &element,
+                                 StreamValue &result);
+
+  /**
+   * Complete the NDC computation.
+   */
+  void completeComputation(const LLCStreamElementPtr &element,
+                           const StreamValue &value);
+
+  static void allocateContext(AbstractStreamAwareController *mlcController,
+                              StreamNDCPacketPtr &streamNDC);
 
 private:
   LLCStreamEngine *llcSE;
 
   struct NDCContext {
     StreamNDCPacketPtr ndc;
-    NDCContext(const StreamNDCPacketPtr &_ndc) : ndc(_ndc) {}
+    LLCStreamElementPtr element;
+    NDCContext(const StreamNDCPacketPtr &_ndc, LLCStreamElementPtr &_element)
+        : ndc(_ndc), element(_element) {}
+    /**
+     * More runtime states.
+     */
+    bool cacheLineReady = false;
+    int receivedForward = 0;
   };
 
-  std::unordered_map<DynamicStreamId, std::list<NDCContext>,
-                     DynamicStreamIdHasher>
-      inflyNDCContextMap;
+  using NDCContextMapT =
+      std::unordered_map<DynamicStreamId, std::list<NDCContext>,
+                         DynamicStreamIdHasher>;
+  static NDCContextMapT inflyNDCContextMap;
 
-  NDCContext &getContextFromSliceId(const DynamicStreamSliceId &sliceId);
-  void eraseContextFromSliceId(const DynamicStreamSliceId &sliceId);
+  static NDCContext *getContextFromSliceId(const DynamicStreamSliceId &sliceId);
+  static void eraseContextFromSliceId(const DynamicStreamSliceId &sliceId);
 
   void processStreamNDCRequest(PacketPtr pkt);
 
@@ -39,6 +64,15 @@ private:
                                    Addr paddrLine, const uint8_t *data,
                                    int dataSize, int payloadSize,
                                    int lineOffset, bool forceIdea);
+
+  void handleNDC(NDCContext &context, const DynamicStreamSliceId &sliceId,
+                 const DataBlock &dataBlock);
+  void handleAtomicNDC(NDCContext &context,
+                       const DynamicStreamSliceId &sliceId);
+  void handleForwardNDC(NDCContext &context,
+                        const DynamicStreamSliceId &sliceId,
+                        const DataBlock &dataBlock);
+  void handleStoreNDC(NDCContext &context);
 };
 
 #endif

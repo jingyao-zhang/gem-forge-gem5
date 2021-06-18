@@ -277,7 +277,7 @@ public:
   StreamEdges backBaseEdges;
   StreamSet backDepStreams;
   StreamEdges backDepEdges;
-  bool hasBackDepReductionStream;
+  bool hasBackDepReductionStream = false;
 
   /**
    * Whether we have non-core dependents.

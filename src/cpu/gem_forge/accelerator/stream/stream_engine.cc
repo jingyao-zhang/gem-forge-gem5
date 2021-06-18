@@ -525,6 +525,13 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
           return false;
         }
       }
+      if (dynS.offloadedAsNDC) {
+        if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
+          S_ELEMENT_DPRINTF(stepElement,
+                            "[CanNotCommitStep] No Ack from NDC.\n");
+          return false;
+        }
+      }
     }
     if (S->isReduction()) {
       auto stepNextElement = stepElement->next;
@@ -579,7 +586,8 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
      * stepped element here if the next element is not addr ready. This is
      * to ensure that it is correctly coalesced.
      */
-    if (S->isDirectMemStream() && dynS.shouldCoreSEIssue()) {
+    if (S->isDirectMemStream() && dynS.shouldCoreSEIssue() &&
+        !dynS.offloadedAsNDC) {
       auto stepNextElement = stepElement->next;
       if (!stepNextElement) {
         S_ELEMENT_DPRINTF(
@@ -714,17 +722,22 @@ int StreamEngine::createStreamUserLSQCallbacks(
           pushToSQ = true;
         }
       }
-    } else if (S->isAtomicComputeStream() && !dynS->offloadedToCache) {
-      if (element->firstUserSeqNum == seqNum) {
-        pushToLQ = true;
-      }
-    } else if (S->isStoreComputeStream() && !dynS->offloadedToCache) {
-      if (element->firstUserSeqNum == seqNum) {
-        if (!this->enableLSQ) {
-          S_ELEMENT_PANIC(element,
-                          "StoreStream executed at core requires LSQ.");
+    } else if (S->isAtomicComputeStream()) {
+      if (!dynS->offloadedToCache && !dynS->offloadedAsNDC) {
+        // We skip LSQ for Offloaded AtomicComputeStream.
+        if (element->firstUserSeqNum == seqNum) {
+          pushToLQ = true;
         }
-        pushToSQ = true;
+      }
+    } else if (S->isStoreComputeStream()) {
+      if (!dynS->offloadedToCache && !dynS->offloadedAsNDC) {
+        if (element->firstUserSeqNum == seqNum) {
+          if (!this->enableLSQ) {
+            S_ELEMENT_PANIC(element,
+                            "StoreStream executed at core requires LSQ.");
+          }
+          pushToSQ = true;
+        }
       }
     }
     if (this->enableLSQ) {
@@ -882,7 +895,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     auto S = element->stream;
     // Floating Store/AtomicComputeStream will only check for Ack when stepping.
     // This also true for floating UpdateStream's SQCallback.
-    if (element->dynS->offloadedToCache) {
+    if (element->dynS->offloadedToCache || element->dynS->offloadedAsNDC) {
       if (S->isStoreComputeStream()) {
         continue;
       }
@@ -961,7 +974,7 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * Make sure we zero out the data.
      */
     args.values->back().fill(0);
-    if (element->dynS->offloadedToCache) {
+    if (element->dynS->offloadedToCache || element->dynS->offloadedAsNDC) {
       /**
        * There are certain cases we are not really return the value.
        * 1. StreamStore does not really return any value.
@@ -1009,7 +1022,7 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
 
     auto S = element->getStream();
     bool isActuallyUsed = true;
-    if (element->dynS->offloadedToCache) {
+    if (element->dynS->offloadedToCache || element->dynS->offloadedAsNDC) {
       if (S->isStoreComputeStream()) {
         isActuallyUsed = false;
       }
@@ -2288,6 +2301,10 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         // The float StreamConfig has been delayed, do not issue.
         continue;
       }
+      if (dynS.offloadedAsNDC && !dynS.configCommitted) {
+        // The NDC requires configuration to be committed.
+        continue;
+      }
       for (auto element = dynS.tail->next; element != nullptr;
            element = element->next) {
         assert(element->stream == S && "Sanity check that streams match.");
@@ -2375,12 +2392,17 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
           }
         }
         auto baseElementsValReady = areBaseElementsValReady(element);
-        if (baseElementsValReady) {
+        auto canNDCIssue = this->ndcController->canIssueNDCPacket(element);
+        if (baseElementsValReady && canNDCIssue) {
           S_ELEMENT_DPRINTF(element, "Found Addr Ready.\n");
           readyElements.emplace_back(element);
         } else {
           // We should not check the next one as we should issue inorder.
-          S_ELEMENT_DPRINTF(element, "Not Addr Ready, break out.\n");
+          if (!baseElementsValReady) {
+            S_ELEMENT_DPRINTF(element, "Not Addr Ready, break out.\n");
+          } else {
+            S_ELEMENT_DPRINTF(element, "Not NDC Ready, break out.\n");
+          }
           break;
         }
       }
@@ -2497,7 +2519,8 @@ void StreamEngine::issueElements() {
        * So we check the firstValueCheckByCoreCycle.
        * If the stream is floated, then we can immediately issue.
        */
-      if (S->isAtomicStream() && !dynS->offloadedToCache) {
+      if (S->isAtomicStream() && !dynS->offloadedToCache &&
+          !dynS->offloadedAsNDC) {
         if (!element->isPrefetchIssued()) {
           // We first issue prefetch request for AtomicStream.
           this->prefetchElement(element);
@@ -2776,7 +2799,6 @@ void StreamEngine::issueNDCElement(StreamElement *element) {
   assert(!element->flushed && "Flushed NDC element.");
 
   auto S = element->stream;
-  auto dynS = element->dynS;
   S->statistic.numNDCed++;
   element->setReqIssued();
   if (S->trackedByPEB() && !element->isFirstUserDispatched()) {

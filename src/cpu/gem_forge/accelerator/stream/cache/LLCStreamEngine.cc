@@ -2155,8 +2155,9 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
   // Search through the direct streams.
   auto dynS = LLCDynamicStream::getLLCStream(recvDynId);
   if (!dynS) {
-    // The stream must be terminated.
-    LLC_SLICE_DPRINTF(sliceId, "Cannot find the direct receiver: %s.",
+    // Failed to find the stream (may be terminated). Try NDC.
+    this->ndcController->receiveStreamForwardRequest(req);
+    LLC_SLICE_DPRINTF(sliceId, "Cannot find the direct receiver: %s.\n",
                       recvDynId);
     return;
   }
@@ -3065,15 +3066,17 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
                 this->controller->curCycle(), element->idx,
                 this->readyComputations.size(), this->inflyComputations.size());
   assert(element->areBaseElementsReady() && "Element is not ready yet.");
-  auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
-  if (!dynS) {
-    LLC_ELEMENT_DPRINTF(element, "Skip computation as Stream is released.\n");
-    return;
+  if (!element->isNDCElement) {
+    auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
+    if (!dynS) {
+      LLC_ELEMENT_DPRINTF(element, "Skip computation as Stream is released.\n");
+      return;
+    }
+    if (!dynS->hasComputation()) {
+      LLC_ELEMENT_PANIC(element, "Stream has no computation.");
+    }
+    dynS->incompleteComputations++;
   }
-  if (!dynS->hasComputation()) {
-    LLC_ELEMENT_PANIC(element, "Stream has no computation.");
-  }
-  dynS->incompleteComputations++;
   this->readyComputations.emplace_back(element);
   element->scheduledComputation(this->controller->curCycle());
   this->scheduleEvent(Cycles(1));
@@ -3087,6 +3090,29 @@ void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
   assert(this->inflyComputations.size() < maxInflyComputation &&
          "Too many infly results.");
   assert(latency < 1024 && "Latency too long.");
+
+  auto S = element->S;
+  // For now we don't bother add the stats to the core in my bank.
+  S->recordComputationInCoreStats();
+
+  int numMicroOps = S->getComputationNumMicroOps();
+  auto &statistic = S->statistic;
+  this->controller->m_statLLCScheduledComputation++;
+  this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
+  if (S->isLoadComputeStream()) {
+    this->controller->m_statLLCScheduledLoadComputeMicroOps += numMicroOps;
+  } else if (S->isStoreComputeStream()) {
+    this->controller->m_statLLCScheduledStoreComputeMicroOps += numMicroOps;
+  } else if (S->isUpdateStream()) {
+    this->controller->m_statLLCScheduledUpdateMicroOps += numMicroOps;
+  } else if (S->isReduction()) {
+    this->controller->m_statLLCScheduledReduceMicroOps += numMicroOps;
+  }
+  statistic.numLLCComputation++;
+  statistic.numLLCComputationComputeLatency += latency;
+  statistic.numLLCComputationWaitLatency +=
+      this->controller->curCycle() - element->getComputationScheduledCycle();
+
   Cycles readyCycle = this->controller->curCycle() + latency;
   for (auto iter = this->inflyComputations.rbegin(),
             end = this->inflyComputations.rend();
@@ -3109,21 +3135,10 @@ void LLCStreamEngine::startComputation() {
          !this->readyComputations.empty() &&
          this->inflyComputations.size() < maxInflyComputation) {
     auto &element = this->readyComputations.front();
-    auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
-    if (!dynS) {
-      LLC_ELEMENT_DPRINTF(element,
-                          "Discard computation as stream is released.\n");
-      this->readyComputations.pop_front();
-      continue;
-    }
+    auto S = element->S;
+    Cycles latency = S->getEstimatedComputationLatency();
 
-    auto S = dynS->getStaticStream();
-    int numMicroOps = S->getComputationNumMicroOps();
-    // For now we don't bother add the stats to the core in my bank.
-    S->recordComputationInCoreStats();
-    Cycles latency = dynS->getEstimatedComputationLatency();
-
-    if (dynS->isSIMDComputation()) {
+    if (S->isSIMDComputation()) {
       /**
        * Here we charge extra latency for SIMD computation.
        */
@@ -3135,39 +3150,47 @@ void LLCStreamEngine::startComputation() {
     if (forceZeroLat) {
       latency = Cycles(0);
     }
-    auto &statistic = element->S->statistic;
-    this->controller->m_statLLCScheduledComputation++;
-    this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
-    if (S->isLoadComputeStream()) {
-      this->controller->m_statLLCScheduledLoadComputeMicroOps += numMicroOps;
-    } else if (S->isStoreComputeStream()) {
-      this->controller->m_statLLCScheduledStoreComputeMicroOps += numMicroOps;
-    } else if (S->isUpdateStream()) {
-      this->controller->m_statLLCScheduledUpdateMicroOps += numMicroOps;
-    } else if (S->isReduction()) {
-      this->controller->m_statLLCScheduledReduceMicroOps += numMicroOps;
-    }
-    statistic.numLLCComputation++;
-    statistic.numLLCComputationComputeLatency += latency;
-    statistic.numLLCComputationWaitLatency +=
-        this->controller->curCycle() - element->getComputationScheduledCycle();
     /**
      * For IndirectReductionStream, we separate out charging the latency
      * from the real computation. Here we charge the latency, but the
      * real computation is left in completeComputation().
      */
     StreamValue result;
-    if (!dynS->isIndirectReduction()) {
-      LLC_ELEMENT_DPRINTF(element,
-                          "Start computation. Latency %llu (ZeroLat %d).\n",
-                          latency, forceZeroLat);
-      result = dynS->computeStreamElementValue(element);
+
+    if (element->isNDCElement) {
+      /**
+       * StreamNDC elements are handled by LLCStreamNDCController.
+       */
+      if (!this->ndcController->computeStreamElementValue(element, result)) {
+        LLC_ELEMENT_DPRINTF(element,
+                            "Discard NDC computation as stream is released.\n");
+        this->readyComputations.pop_front();
+        continue;
+      }
     } else {
-      LLC_ELEMENT_DPRINTF(element,
-                          "Start IndirectReduciton fake computation. Latency "
-                          "%llu (ZeroLat %d).\n",
-                          latency, forceZeroLat);
-      result.fill(0);
+      /**
+       * Normal Stream Computing.
+       */
+      auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
+      if (!dynS) {
+        LLC_ELEMENT_DPRINTF(element,
+                            "Discard computation as stream is released.\n");
+        this->readyComputations.pop_front();
+        continue;
+      }
+
+      if (!dynS->isIndirectReduction()) {
+        LLC_ELEMENT_DPRINTF(element,
+                            "Start computation. Latency %llu (ZeroLat %d).\n",
+                            latency, forceZeroLat);
+        result = dynS->computeStreamElementValue(element);
+      } else {
+        LLC_ELEMENT_DPRINTF(element,
+                            "Start IndirectReduciton fake computation. Latency "
+                            "%llu (ZeroLat %d).\n",
+                            latency, forceZeroLat);
+        result.fill(0);
+      }
     }
     this->pushInflyComputation(element, result, latency);
 
@@ -3190,12 +3213,16 @@ void LLCStreamEngine::completeComputation() {
       break;
     }
     LLC_ELEMENT_DPRINTF(element, "Complete computation.\n");
-    auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
-    if (dynS) {
-      dynS->completeComputation(this, element, computation.result);
+    if (element->isNDCElement) {
+      this->ndcController->completeComputation(element, computation.result);
     } else {
-      LLC_ELEMENT_DPRINTF(
-          element, "Discard computation result as stream is released.\n");
+      auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
+      if (dynS) {
+        dynS->completeComputation(this, element, computation.result);
+      } else {
+        LLC_ELEMENT_DPRINTF(
+            element, "Discard computation result as stream is released.\n");
+      }
     }
     this->inflyComputations.pop_front();
   }
