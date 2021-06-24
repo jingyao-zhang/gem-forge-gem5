@@ -3039,6 +3039,7 @@ void StreamEngine::exitDump() const {
   for (auto &S : allStreams) {
     S->dumpStreamStats(streamOS);
   }
+  streamOS.flush();
 }
 
 size_t StreamEngine::getTotalRunAheadLength() const {

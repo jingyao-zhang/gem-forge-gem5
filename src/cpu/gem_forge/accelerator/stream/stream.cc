@@ -54,7 +54,8 @@ Stream::~Stream() {
 
 void Stream::dumpStreamStats(std::ostream &os) const {
   if (this->statistic.numConfigured == 0 &&
-      this->statistic.numMisConfigured == 0) {
+      this->statistic.numMisConfigured == 0 &&
+      this->statistic.numAllocated == 0) {
     // I have not been configured at all -- maybe only used in fast forward.
     return;
   }
