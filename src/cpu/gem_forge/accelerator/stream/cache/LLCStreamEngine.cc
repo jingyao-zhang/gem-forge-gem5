@@ -555,7 +555,22 @@ void LLCStreamEngine::receiveStoreStreamData(
           dynS->getElementPanic(sliceId.getStartIdx(), "AckIndirectStore");
       element->setIndirectStoreAcked();
     }
-    this->issueStreamAckToMLC(sliceId);
+    /**
+     * Normally without RangeSync, we would send out one Ack per slice.
+     * However, we could just sent this out coarse grained.
+     * For simplicity, here I just hack by force some idea ack.
+     */
+    bool forceIdea = false;
+    if (!dynS->isIndirect() && !dynS->shouldRangeSync()) {
+      int slicesPerSegment =
+          std::max(1, dynS->configData->mlcBufferNumSlices /
+                          controller->getMLCStreamBufferToSegmentRatio());
+      if ((dynS->streamAckedSlices % slicesPerSegment) != 0) {
+        forceIdea = true;
+      }
+      dynS->streamAckedSlices++;
+    }
+    this->issueStreamAckToMLC(sliceId, forceIdea);
   }
 }
 
@@ -2475,7 +2490,8 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr dynS,
                                     LLCStreamElementPtr element,
                                     const DynamicStreamSliceId &sliceId,
                                     const DataBlock &storeValueBlock,
-                                    DataBlock &loadValueBlock) {
+                                    DataBlock &loadValueBlock,
+                                    uint32_t &payloadSize) {
 
   auto S = dynS->getStaticStream();
 
@@ -2549,13 +2565,15 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr dynS,
                                              loadBlockOffset, elementOffset);
   loadValueBlock.setData(element->getUInt8Ptr(elementOffset), loadBlockOffset,
                          overlapSize);
+  payloadSize = overlapSize;
 }
 
 void LLCStreamEngine::triggerAtomic(LLCDynamicStreamPtr dynS,
                                     LLCStreamElementPtr element,
                                     const DynamicStreamSliceId &sliceId,
                                     const DataBlock &storeValueBlock,
-                                    DataBlock &loadValueBlock) {
+                                    DataBlock &loadValueBlock,
+                                    uint32_t &payloadSize) {
 
   auto S = dynS->getStaticStream();
 
@@ -2589,6 +2607,7 @@ void LLCStreamEngine::triggerAtomic(LLCDynamicStreamPtr dynS,
                      "Perform StreamAtomic, RetValue %llu.\n", loadedValue);
   loadValueBlock.setData(reinterpret_cast<uint8_t *>(&loadedValue), lineOffset,
                          elementCoreSize);
+  payloadSize = elementCoreSize;
   if (element->hasFirstIndirectAtomicReqSeen()) {
     LLC_ELEMENT_PANIC(element, "Perform atomic operation more than once.");
   }
@@ -2919,6 +2938,7 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
 
   // The final value return to the core.
   DataBlock loadValueBlock;
+  uint32_t totalPayloadSize = 0;
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element =
         dynS->getElementPanic(idx, "Process slice of Atomic/UpdateStream");
@@ -2936,13 +2956,15 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
                       "Element %llu has base element not ready when updating.",
                       idx);
     }
+    uint32_t payloadSize = 0;
     if (S->isAtomicComputeStream()) {
       this->triggerAtomic(dynS, element, sliceId, storeValueBlock,
-                          loadValueBlock);
+                          loadValueBlock, payloadSize);
     } else {
       this->triggerUpdate(dynS, element, sliceId, storeValueBlock,
-                          loadValueBlock);
+                          loadValueBlock, payloadSize);
     }
+    totalPayloadSize += payloadSize;
   }
 
   // This is to make sure traffic to MLC is correctly sliced.
@@ -2954,7 +2976,7 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
         sliceId, paddrLine,
         loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
         RubySystem::getBlockSizeBytes(),
-        RubySystem::getBlockSizeBytes() /* payloadSizse */,
+        std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
         0 /* Line offset */);
     LLC_SLICE_DPRINTF(sliceId,
                       "Send StreamData to MLC: PAddrLine %#x Data %s.\n",

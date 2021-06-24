@@ -187,7 +187,6 @@ public:
   bool isDirectStoreStream() const;
   bool isIndirectLoadStream() const;
   bool isDirectMemStream() const;
-  bool isPointerChaseLoadStream() const { return false; }
   bool shouldComputeValue() const;
   bool isAtomicComputeStream() const {
     return this->isAtomicStream() && this->getEnabledStoreFunc();
@@ -634,6 +633,19 @@ public:
     }
     return false;
   }
+
+  bool isPointerChaseIndVar() const {
+    if (this->primeLogical->info.static_info().val_pattern() ==
+            ::LLVM::TDG::StreamValuePattern::POINTER_CHASE &&
+        !this->isMemStream()) {
+      assert(this->isSingle() &&
+             "CoalescedStream should never be PointerChaseIndVarStream.");
+      return true;
+    }
+    return false;
+  }
+
+  bool isPointerChaseLoadStream() const { return false; }
 
   bool hasCoreUser() const {
     return !this->primeLogical->info.static_info().no_core_user();

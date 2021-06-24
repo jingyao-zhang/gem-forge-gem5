@@ -542,7 +542,10 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
   auto &formalParams = dynStream.addrGenFormalParams;
   auto usedInputs =
       this->setupFormalParams(inputVec, addrFuncInfo, formalParams);
-  assert(usedInputs == inputVec->size() && "Underflow of inputVec.");
+  if (usedInputs < inputVec->size()) {
+    S_PANIC(this, "Underflow of InputVec. Used %d of %d.", usedInputs,
+            inputVec->size());
+  }
   // Set the callback.
   if (!this->addrGenCallback) {
     auto addrExecFunc =
@@ -663,9 +666,9 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
     }
   }
   /**
-   * If this is a reduction stream, check for the initial value.
+   * If this is a Reduce/PtrChase stream, check for the initial value.
    */
-  if (this->isReduction()) {
+  if (this->isReduction() || this->isPointerChaseIndVar()) {
     if (this->getReduceFromZero()) {
       dynS.initialValue.fill(0);
     } else {

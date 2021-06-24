@@ -431,6 +431,7 @@ bool DynamicStream::shouldCoreSEIssue() const {
       const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
       // If the AddrDepStream issues, then we have to issue to compute the
       // address.
+      // if (depDynS.coreSENeedAddress()) {
       if (depDynS.shouldCoreSEIssue()) {
         return true;
       }
@@ -463,6 +464,34 @@ bool DynamicStream::shouldCoreSEIssue() const {
   if (!S->hasCoreUser() && S->isAtomicStream() && !S->isAtomicComputeStream() &&
       S->getIsConditional() && S->aliasBaseStream->aliasedStreams.size() > 1) {
     return false;
+  }
+  return true;
+}
+
+bool DynamicStream::coreSENeedAddress() const {
+  if (!this->shouldCoreSEIssue()) {
+    return false;
+  }
+  // A special case for AtomicComputeStream.
+  if (this->offloadedToCache) {
+    if (this->stream->isAtomicComputeStream()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool DynamicStream::coreSEOracleValueReady() const {
+  if (this->shouldCoreSEIssue()) {
+    return false;
+  }
+  for (auto depS : this->stream->addrDepStreams) {
+    const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
+    // If the AddrDepStream issues, then we have to issue to compute the
+    // address.
+    if (depDynS.coreSENeedAddress()) {
+      return false;
+    }
   }
   return true;
 }

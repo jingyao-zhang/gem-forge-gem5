@@ -278,6 +278,8 @@ struct StreamElement {
 
   void splitIntoCacheBlocks();
 
+  void readOracleValueFromMem();
+
   void dump() const;
 
   void clear();

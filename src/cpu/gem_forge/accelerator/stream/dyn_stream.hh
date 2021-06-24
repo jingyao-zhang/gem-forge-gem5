@@ -181,6 +181,18 @@ struct DynamicStream {
   bool shouldCoreSEIssue() const;
 
   /**
+   * Does the CoreSE need the address.
+   * This is used to skip fetching A[i] for B[A[i]].
+   */
+  bool coreSENeedAddress() const;
+
+  /**
+   * Should this element get oracle value.
+   * Adhoc implement the feature to skip fetching A[i] for B[A[i]].
+   */
+  bool coreSEOracleValueReady() const;
+
+  /**
    * Should we perform range-sync on this stream.
    */
   bool shouldRangeSync() const;

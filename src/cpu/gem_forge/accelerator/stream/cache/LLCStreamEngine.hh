@@ -361,11 +361,13 @@ private:
   void triggerUpdate(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
                      const DynamicStreamSliceId &sliceId,
                      const DataBlock &storeValueBlock,
-                     DataBlock &loadValueBlock);
+                     DataBlock &loadValueBlock,
+                     uint32_t &payloadSize);
   void triggerAtomic(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
                      const DynamicStreamSliceId &sliceId,
                      const DataBlock &storeValueBlock,
-                     DataBlock &loadValueBlock);
+                     DataBlock &loadValueBlock,
+                     uint32_t &payloadSize);
 
   /**
    * API to manages LLCStreamSlices.

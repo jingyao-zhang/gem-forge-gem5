@@ -191,6 +191,11 @@ public:
     return this->rangeBuilder;
   }
 
+  /**
+   * Counter to approxiate coarse-grained StreamAck.
+   */
+  uint64_t streamAckedSlices = 0;
+
 private:
   State state = INITIALIZED;
   AbstractStreamAwareController *mlcController;

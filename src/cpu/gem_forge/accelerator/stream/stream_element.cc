@@ -441,6 +441,32 @@ void StreamElement::markAddrReady() {
                     this->size);
 
   this->splitIntoCacheBlocks();
+
+  /**
+   * ! AdHoc: Avoid getting the A[i] if B[A[i]] is offloaded.
+   * The current implementation assumes that we have to compute the address for
+   * B[A[i]], which requires we issue and get the data for A[i]. To avoid this,
+   * we direct make A[i] value ready here.
+   * So far this should only be used for Indirect AtomicComputeStream.
+   */
+  // if (this->dynS->coreSEOracleValueReady()) {
+  //   this->readOracleValueFromMem();
+  // }
+}
+
+void StreamElement::readOracleValueFromMem() {
+  const int MaxBufferSize = 64;
+  uint8_t buffer[MaxBufferSize];
+  assert(this->cacheBlockSize <= MaxBufferSize && "CacheLine too Large.");
+  for (int i = 0; i < this->cacheBlocks; ++i) {
+    auto &cacheBlock = this->cacheBlockBreakdownAccesses[i];
+    this->stream->getCPUDelegator()->readFromMem(cacheBlock.cacheBlockVAddr,
+                                                 this->cacheBlockSize, buffer);
+    this->setValue(cacheBlock.cacheBlockVAddr, this->cacheBlockSize, buffer);
+  }
+  if (!this->isValueReady) {
+    S_ELEMENT_PANIC(this, "Failed to ReadOracleValue.");
+  }
 }
 
 void StreamElement::computeValue() {
@@ -497,7 +523,7 @@ void StreamElement::computeValue() {
      * value.
      */
 
-    if (S->isReduction()) {
+    if (S->isReduction() || S->isPointerChaseIndVar()) {
       if (this->FIFOIdx.entryIdx == 0) {
         this->setValue(this->addr, this->size, dynS->initialValue.uint8Ptr());
         return;
@@ -786,7 +812,7 @@ StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
       return elementValue;
     }
   }
-  assert(false && "Failed to find value base element.");
+  S_ELEMENT_PANIC(this, "Failed to find ValueBaseElement for %lu.", id);
 }
 
 bool StreamElement::isValueFaulted(Addr vaddr, int size) const {
