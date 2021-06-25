@@ -83,16 +83,6 @@ private:
 
   bool hasOverflowed() const override;
   int64_t getTotalTripCount() const override;
-  bool matchSliceId(const DynamicStreamSliceId &A,
-                    const DynamicStreamSliceId &B) const override {
-    /**
-     * For indirect stream, one element may be mapped to multiple slices,
-     * but not the reverse way. So we need to match both the lhsElementIdx
-     * and the vaddr.
-     */
-    return A.getStartIdx() == B.getStartIdx() &&
-           makeLineAddress(A.vaddr) == makeLineAddress(B.vaddr);
-  }
   SliceIter
   findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
 
@@ -112,7 +102,6 @@ private:
   SliceIter findOrInsertSliceBySliceId(const SliceIter &begin,
                                        const SliceIter &end,
                                        const DynamicStreamSliceId &sliceId);
-
 };
 
 #endif

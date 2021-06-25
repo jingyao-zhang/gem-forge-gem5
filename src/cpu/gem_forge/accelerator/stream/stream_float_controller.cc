@@ -39,6 +39,7 @@ void StreamFloatController::floatStreams(
                  *cacheStreamConfigVec);
   this->floatDirectLoadStreams(floatArgs);
   this->floatDirectAtomicComputeStreams(floatArgs);
+  this->floatPointerChaseStreams(floatArgs);
   this->floatIndirectStreams(floatArgs);
   this->floatDirectStoreComputeOrUpdateStreams(floatArgs);
   this->floatDirectReductionStreams(floatArgs);
@@ -193,10 +194,6 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
       dynS->pseudoOffloadedToCache = true;
       config->isPseudoOffload = true;
     }
-
-    if (S->isPointerChaseLoadStream()) {
-      config->isPointerChase = true;
-    }
   }
 }
 
@@ -245,9 +242,71 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
       dynS->pseudoOffloadedToCache = true;
       config->isPseudoOffload = true;
     }
+  }
+}
 
-    if (S->isPointerChaseLoadStream()) {
-      config->isPointerChase = true;
+void StreamFloatController::floatPointerChaseStreams(const Args &args) {
+  auto &floatedMap = args.floatedMap;
+  for (auto dynS : args.dynStreams) {
+    auto S = dynS->stream;
+    if (floatedMap.count(S) || !S->isPointerChaseLoadStream()) {
+      continue;
+    }
+    if (S->addrBaseStreams.size() != 1) {
+      continue;
+    }
+    auto addrBaseS = *S->addrBaseStreams.begin();
+    auto &addrBaseDynS = addrBaseS->getDynamicStream(dynS->configSeqNum);
+    if (!addrBaseS->isPointerChaseIndVar()) {
+      // AddrBaseStream is not PointerChaseIndVarStream.
+      StreamFloatPolicy::logStream(S)
+          << "[Not Float] due to addr base stream not pointer chase IV.\n"
+          << std::flush;
+      continue;
+    }
+    // Check if all ValueBaseStreams are floated.
+    for (auto valueBaseS : S->valueBaseStreams) {
+      if (!floatedMap.count(valueBaseS)) {
+        // ValueBaseStream is not floated.
+        StreamFloatPolicy::logStream(S)
+            << "[Not Float] due to unfloat value base stream.\n"
+            << std::flush;
+        continue;
+      }
+    }
+    // Check aliased store.
+    if (this->checkAliasedUnpromotedStoreStream(S)) {
+      continue;
+    }
+    // Only dependent on this direct stream.
+    auto config = S->allocateCacheConfigureData(dynS->configSeqNum,
+                                                true /* isIndirect */);
+    auto baseConfig = addrBaseS->allocateCacheConfigureData(
+        dynS->configSeqNum, true /* isIndirect */
+    );
+    config->isPointerChase = true;
+    baseConfig->isOneIterationBehind = true;
+    // We revert the usage edge, because in cache MemStream serves as root.
+    config->addUsedBy(baseConfig);
+    if (!S->valueBaseStreams.empty()) {
+      S_PANIC(S, "PointerChaseStream with ValueBaseStreams is not supported.");
+    }
+    // Remember the decision.
+    dynS->offloadedToCache = true;
+    dynS->offloadedToCacheAsRoot = true;
+    this->se->numFloated++;
+    addrBaseDynS.offloadedToCache = true;
+    this->se->numFloated++;
+    DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as pointer chase.\n");
+    StreamFloatPolicy::logStream(S) << "[Float] as pointer chase.\n"
+                                    << std::flush;
+    StreamFloatPolicy::logStream(addrBaseS) << "[Float] as pointer chase IV.\n"
+                                            << std::flush;
+    floatedMap.emplace(S, config);
+    args.rootConfigVec.push_back(config);
+    if (S->getEnabledStoreFunc()) {
+      DYN_S_PANIC(dynS->dynamicStreamId,
+                  "Computation with PointerChaseStream.");
     }
   }
 }
@@ -262,7 +321,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     if (floatedMap.count(S)) {
       continue;
     }
-    if (S->isDirectMemStream()) {
+    if (S->isDirectMemStream() || S->isPointerChase()) {
       continue;
     }
     if (!S->isLoadStream() && !S->isAtomicComputeStream()) {
@@ -703,4 +762,20 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
       break;
     }
   }
+}
+
+bool StreamFloatController::checkAliasedUnpromotedStoreStream(Stream *S) {
+  StreamFloatPolicy::logStream(S)
+      << "HasAliasedStore " << S->aliasBaseStream->hasAliasedStoreStream
+      << " IsLoad " << S->isLoadStream() << " IsUpdate " << S->isUpdateStream()
+      << ".\n"
+      << std::flush;
+  if (S->aliasBaseStream->hasAliasedStoreStream && S->isLoadStream() &&
+      !S->isUpdateStream()) {
+    StreamFloatPolicy::logStream(S)
+        << "[Not Float] due to aliased store stream.\n"
+        << std::flush;
+    return true;
+  }
+  return false;
 }

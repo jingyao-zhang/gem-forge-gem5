@@ -51,6 +51,7 @@ private:
 
   void floatDirectLoadStreams(const Args &args);
   void floatDirectAtomicComputeStreams(const Args &args);
+  void floatPointerChaseStreams(const Args &args);
   void floatIndirectStreams(const Args &args);
   void floatDirectStoreComputeOrUpdateStreams(const Args &args);
   void floatDirectReductionStreams(const Args &args);
@@ -67,6 +68,12 @@ private:
    * flag in the DynamicStream -- which will stop the StreamEngine issuing them.
    */
   std::map<InstSeqNum, PacketPtr> configSeqNumToDelayedFloatPktMap;
+
+  /**
+   * Check if there is an aliased StoreStream for this LoadStream, but
+   * is not promoted into an UpdateStream.
+   */
+  bool checkAliasedUnpromotedStoreStream(Stream *S);
 };
 
 #endif

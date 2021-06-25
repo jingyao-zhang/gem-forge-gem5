@@ -27,8 +27,8 @@ LLCDynamicStream::LLCDynamicStream(
     AbstractStreamAwareController *_llcController,
     CacheStreamConfigureDataPtr _configData)
     : mlcController(_mlcController), llcController(_llcController),
-      configData(_configData),
-      slicedStream(_configData, true /* coalesceContinuousElements */),
+      maxInflyRequests(_llcController->getLLCStreamMaxInflyRequest()),
+      configData(_configData), slicedStream(_configData),
       configureCycle(_mlcController->curCycle()), creditedSliceIdx(0) {
 
   // Allocate the range builder.
@@ -48,17 +48,19 @@ LLCDynamicStream::LLCDynamicStream(
     assert(this->baseOnConfigs.back() && "BaseStreamConfig already released?");
   }
 
-  if (this->configData->isPointerChase) {
-    // Pointer chase stream can only have at most one base requests waiting for
-    // data.
-    assert(false && "PointerChase is not supported for now.");
-  }
-  if (this->getStaticStream()->isReduction()) {
+  if (this->getStaticStream()->isReduction() ||
+      this->getStaticStream()->isPointerChaseIndVar()) {
     // Initialize the first element for ReductionStream with the initial value.
     assert(this->isOneIterationBehind() &&
            "ReductionStream must be OneIterationBehind.");
     this->nextInitElementIdx = 1;
   }
+
+  if (this->isPointerChase()) {
+    // PointerChase allows at most one InflyRequest.
+    this->maxInflyRequests = 1;
+  }
+
   LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynamicStreamId(), "Created.\n");
   assert(GlobalLLCDynamicStreamMap.emplace(this->getDynamicStreamId(), this)
              .second);
@@ -421,7 +423,8 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
     }
   }
   // Remember to add previous element as base element for reduction.
-  if (this->getStaticStream()->isReduction()) {
+  if (this->getStaticStream()->isReduction() ||
+      this->getStaticStream()->isPointerChaseIndVar()) {
     if (!this->lastReductionElement) {
       // First time, just initialize the first element.
       this->lastReductionElement = std::make_shared<LLCStreamElement>(
@@ -791,8 +794,8 @@ int LLCDynamicStream::curLLCBank() const {
 
 bool LLCDynamicStream::hasComputation() const {
   auto S = this->getStaticStream();
-  return S->isReduction() || S->isLoadComputeStream() ||
-         S->isStoreComputeStream();
+  return S->isReduction() || S->isPointerChaseIndVar() ||
+         S->isLoadComputeStream() || S->isStoreComputeStream();
 }
 
 StreamValue LLCDynamicStream::computeStreamElementValue(
@@ -807,7 +810,7 @@ StreamValue LLCDynamicStream::computeStreamElementValue(
   auto getStreamValue = [&element](uint64_t baseStreamId) -> StreamValue {
     return element->getValueByStreamId(baseStreamId);
   };
-  if (S->isReduction()) {
+  if (S->isReduction() || S->isPointerChaseIndVar()) {
     // This is a reduction stream.
     assert(element->idx > 0 &&
            "Reduction stream ElementIdx should start at 1.");
@@ -890,7 +893,7 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
   assert(this->incompleteComputations >= 0 &&
          "Negative incomplete computations.");
 
-  if (S->isReduction()) {
+  if (S->isReduction() || S->isPointerChaseIndVar()) {
     if (this->isIndirectReduction()) {
       /**
        * If this is IndirectReductionStream, perform the real computation.
@@ -1048,7 +1051,8 @@ void LLCDynamicStream::markElementReadyToIssue(uint64_t elementIdx) {
                 element->getState());
   }
 
-  if (this->getStaticStream()->isReduction()) {
+  if (this->getStaticStream()->isReduction() ||
+      this->getStaticStream()->isPointerChaseIndVar()) {
     LLC_S_PANIC(this->getDynamicStreamId(),
                 "Reduction is not handled as issue for now.");
     return;

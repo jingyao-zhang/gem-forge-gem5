@@ -31,6 +31,16 @@
   STREAM_PANIC("Entry (%lu, %lu): " format, (entry).idx.streamInstance,        \
                (entry).idx.entryIdx, ##args)
 
+StreamValue GetCoalescedStreamValue::operator()(uint64_t streamId) const {
+  assert(this->stream->isCoalescedHere(streamId) &&
+         "Invalid CoalescedStreamId.");
+  int32_t offset, size;
+  this->stream->getCoalescedOffsetAndSize(streamId, offset, size);
+  StreamValue ret;
+  memcpy(ret.uint8Ptr(), this->streamValue.uint8Ptr(offset), size);
+  return ret;
+}
+
 Stream::Stream(const StreamArguments &args)
     : staticId(args.staticId), streamName(args.name),
       dynInstance(DynamicStreamId::InvalidInstanceId), floatTracer(this),
@@ -712,9 +722,9 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   configData->loadCallback = dynStream.loadCallback;
 
   // Set the reduction information.
-  if (this->isReduction()) {
+  if (this->isReduction() || this->isPointerChaseIndVar()) {
     assert(this->getMemElementSize() <= sizeof(StreamValue) &&
-           "Cannot offload reduction stream larger than 64 bytes.");
+           "Cannot offload reduction/ptr chase stream larger than 64 bytes.");
   }
   configData->reductionInitValue = dynStream.initialValue;
 
@@ -923,7 +933,7 @@ StreamElement *Stream::getPrevElement(StreamElement *element) {
 }
 
 const ExecFuncPtr &Stream::getComputeCallback() const {
-  if (this->isReduction()) {
+  if (this->isReduction() || this->isPointerChaseIndVar()) {
     // This is a reduction stream.
     auto funcAddrGenCallback =
         std::dynamic_pointer_cast<FuncAddrGenCallback>(this->addrGenCallback);

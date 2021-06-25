@@ -100,6 +100,32 @@ protected:
     return this->slicedStream.getTotalTripCount();
   }
 
+  bool matchLLCSliceId(const DynamicStreamSliceId &mlc,
+                       const DynamicStreamSliceId &llc) const {
+    if (this->config->isPointerChase) {
+      return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
+    } else {
+      // By default match the vaddr.
+      // TODO: This is really wrong.
+      return mlc.vaddr == llc.vaddr;
+    }
+  }
+
+  bool matchCoreSliceId(const DynamicStreamSliceId &mlc,
+                        const DynamicStreamSliceId &core) const {
+    /**
+     * Core request always has BlockVAddr.
+     */
+    if (this->config->isPointerChase) {
+      return mlc.getStartIdx() == core.getStartIdx() &&
+             makeLineAddress(mlc.vaddr) == makeLineAddress(core.vaddr);
+    } else {
+      // By default match the vaddr.
+      // TODO: This is really wrong.
+      return mlc.vaddr == core.vaddr;
+    }
+  }
+
   SliceIter
   findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
 

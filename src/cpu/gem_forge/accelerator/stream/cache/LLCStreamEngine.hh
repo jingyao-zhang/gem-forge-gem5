@@ -85,7 +85,6 @@ private:
   const int migrateWidth;
   // Threshold to limit maximum number of infly requests.
   const int maxInflyRequests;
-  const int maxInflyRequestsPerStream;
   // Threshold to limit maximum number of requests in queue;
   const int maxInqueueRequests;
 

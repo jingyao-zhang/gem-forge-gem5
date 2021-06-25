@@ -169,12 +169,6 @@ protected:
    */
   virtual bool hasOverflowed() const = 0;
   virtual int64_t getTotalTripCount() const = 0;
-  virtual bool matchSliceId(const DynamicStreamSliceId &A,
-                            const DynamicStreamSliceId &B) const {
-    // By default match the vaddr.
-    // TODO: This is really wrong.
-    return A.vaddr == B.vaddr;
-  }
   /**
    * Find the correct slice for a core request.
    * Used in receiveStreamRequest() and receiveStreamRequestHit().

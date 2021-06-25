@@ -26,7 +26,7 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
     const std::vector<MLCDynamicIndirectStream *> &_indirectStreams)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer),
-      slicedStream(_configData, true /* coalesceContinuousElements */),
+      slicedStream(_configData),
       maxNumSlicesPerSegment(
           std::max(1, _configData->mlcBufferNumSlices /
                           _controller->getMLCStreamBufferToSegmentRatio())),
@@ -260,10 +260,39 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
   if (this->blockedOnReceiverElementInit) {
     return;
   }
+
+  uint64_t firstDataUnreadyElementIdx = UINT64_MAX;
+  if (this->config->isPointerChase) {
+    for (const auto &slice : this->slices) {
+      firstDataUnreadyElementIdx = slice.sliceId.getStartIdx();
+      if (!slice.dataReady) {
+        break;
+      }
+    }
+  }
+
   for (auto &segment : this->llcSegments) {
 
     if (segment.state != LLCSegmentPosition::State::ALLOCATED) {
       continue;
+    }
+
+    /**
+     * For PointerChaseStreams, we cannot send out credits until
+     * all previous slices are data ready. This is to ensure that
+     * we model the timing correctly.
+     */
+    if (this->config->isPointerChase &&
+        firstDataUnreadyElementIdx != UINT64_MAX) {
+      if (segment.getStartSliceId().getStartIdx() >=
+          firstDataUnreadyElementIdx + 1) {
+        MLC_S_DPRINTF(this->getDynamicStreamId(),
+                      "Delayed sending PtrChase Credit since "
+                      "FirstUnreadyElement %llu + 1 <= CreditElement %llu.\n",
+                      firstDataUnreadyElementIdx,
+                      segment.getStartSliceId().getStartIdx());
+        return;
+      }
     }
 
     /**
@@ -320,7 +349,6 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
       this->blockedOnReceiverElementInit = true;
       waitForReceiver->registerElementInitCallback(tailElementIdx,
                                                    elementInitCallback);
-      // this->scheduleAdvanceStream();
       return;
     }
     this->sendCreditToLLC(segment);
@@ -422,7 +450,7 @@ void MLCDynamicDirectStream::receiveStreamData(
    */
   for (auto slice = this->slices.rbegin(), end = this->slices.rend();
        slice != end; ++slice) {
-    if (this->matchSliceId(slice->sliceId, sliceId)) {
+    if (this->matchLLCSliceId(slice->sliceId, sliceId)) {
       // Found the slice.
       if (slice->sliceId.getNumElements() != numElements) {
         // Also consider llc stream being cut.
@@ -440,7 +468,7 @@ void MLCDynamicDirectStream::receiveStreamData(
       }
 
       MLC_SLICE_DPRINTF(
-          sliceId, "Found matched slice, core status %s.\n",
+          sliceId, "Found matched slice %s, core status %s.\n", slice->sliceId,
           MLCStreamSlice::convertCoreStatusToString(slice->coreStatus));
       if (slice->coreStatus == MLCStreamSlice::CoreStatusE::WAIT_DATA) {
         this->makeResponse(*slice);
@@ -588,7 +616,7 @@ MLCDynamicDirectStream::findSliceForCoreRequest(
      * So far we match them on vaddr.
      * TODO: Really assign the sliceIdx and match that.
      */
-    if (iter->sliceId.vaddr == sliceId.vaddr) {
+    if (this->matchCoreSliceId(iter->sliceId, sliceId)) {
       return iter;
     }
   }

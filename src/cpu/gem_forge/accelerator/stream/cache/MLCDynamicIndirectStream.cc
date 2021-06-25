@@ -20,30 +20,7 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize),
       isOneIterationBehind(_configData->isOneIterationBehind),
-      totalTripCount(_configData->totalTripCount), tailElementIdx(0) {
-  if (this->isOneIterationBehind) {
-    // TODO: Clean this up, as we no longer allocate slices in the constructor.
-    // So far I just hack to ignore this case for reduction stream, which is the
-    // only case we will have OneIterationBehind stream.
-    if (this->stream->isReduction()) {
-      return;
-    }
-    // This indirect stream is behind one iteration, which means that the first
-    // element is not handled by LLC stream. The stream buffer should start at
-    // the second element. We simply release the first element here.
-    assert(!this->slices.empty() && "No initial slices.");
-    // Let's do some sanity check.
-    auto &firstSliceId = this->slices.front().sliceId;
-    assert(firstSliceId.getStartIdx() == 0 &&
-           "Start index should always be 0.");
-    assert(firstSliceId.getNumElements() == 1 &&
-           "Indirect stream should never merge slices.");
-    MLC_SLICE_DPRINTF(firstSliceId, "Initial offset pop.\n");
-    this->headSliceIdx++;
-    this->slices.pop_front();
-  }
-  assert(!isOneIterationBehind && "Temporarily disable this.");
-}
+      totalTripCount(_configData->totalTripCount), tailElementIdx(0) {}
 
 void MLCDynamicIndirectStream::receiveStreamData(
     const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,

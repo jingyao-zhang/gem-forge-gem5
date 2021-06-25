@@ -1,4 +1,7 @@
 #include "SlicedDynamicStream.hh"
+
+#include "cpu/gem_forge/accelerator/stream/stream.hh"
+
 #include "debug/SlicedDynamicStream.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/system/RubySystem.hh"
@@ -7,13 +10,13 @@
 #include "../stream_log.hh"
 
 SlicedDynamicStream::SlicedDynamicStream(
-    CacheStreamConfigureDataPtr _configData, bool _coalesceContinuousElements)
+    CacheStreamConfigureDataPtr _configData)
     : streamId(_configData->dynamicId),
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
-      elementSize(_configData->elementSize),
+      elementSize(_configData->elementSize), elementPerSlice(1),
       totalTripCount(_configData->totalTripCount),
-      coalesceContinuousElements(_coalesceContinuousElements),
+      isPointerChase(_configData->isPointerChase), ptrChaseState(_configData),
       tailElementIdx(0), sliceHeadElementIdx(0) {
 
   // Try to compute element per slice.
@@ -38,6 +41,77 @@ SlicedDynamicStream::SlicedDynamicStream(
       }
     }
   }
+
+  if (this->isPointerChase) {
+    this->coalesceContinuousElements = false;
+    assert(this->elementSize < 64 && "Huge PointerChaseStream.");
+  }
+}
+
+SlicedDynamicStream::PointerChaseState::PointerChaseState(
+    CacheStreamConfigureDataPtr &_configData) {
+  if (!_configData->isPointerChase) {
+    return;
+  }
+  this->memStream = _configData->stream;
+  for (const auto &depEdge : _configData->depEdges) {
+    const auto &depConfig = depEdge.data;
+    if (depConfig->stream->isPointerChaseIndVar()) {
+      this->ivStream = depConfig->stream;
+      this->currentIVValue = depConfig->reductionInitValue;
+      this->ivAddrFormalParams = depConfig->addrGenFormalParams;
+      this->ivAddrGenCallback = depConfig->addrGenCallback;
+      break;
+    }
+  }
+  if (!this->ivStream) {
+    DYN_S_PANIC(_configData->dynamicId, "Failed to get PtrChaseIV.");
+  }
+}
+
+Addr SlicedDynamicStream::getOrComputePointerChaseElementVAddr(
+    uint64_t elementIdx) const {
+  auto &state = this->ptrChaseState;
+  while (state.elementVAddrs.size() <= elementIdx &&
+         !state.currentIVValueFaulted) {
+    auto nextVAddr =
+        this->addrGenCallback
+            ->genAddr(elementIdx, this->formalParams,
+                      GetSingleStreamValue(state.ivStream->staticId,
+                                           state.currentIVValue))
+            .front();
+    if (makeLineAddress(nextVAddr + this->elementSize - 1) !=
+        makeLineAddress(nextVAddr)) {
+      DYN_S_PANIC(this->streamId,
+                  "[PtrChase] Multi-Line Element %llu VAddr %#x.",
+                  state.elementVAddrs.size(), nextVAddr);
+    }
+    state.elementVAddrs.push_back(nextVAddr);
+    // Translate and get next IVValue.
+    auto cpuDelegator = state.memStream->getCPUDelegator();
+    Addr nextPAddr;
+    if (cpuDelegator->translateVAddrOracle(nextVAddr, nextPAddr)) {
+      DYN_S_DPRINTF(this->streamId, "[PtrChase] Generate %lluth VAddr %#x.\n",
+                    state.elementVAddrs.size() - 1, nextVAddr);
+      StreamValue nextMemValue;
+      cpuDelegator->readFromMem(nextVAddr, this->elementSize,
+                                nextMemValue.uint8Ptr());
+      // Compute the NextIVValue.
+      state.currentIVValue = state.ivAddrGenCallback->genAddr(
+          elementIdx + 1, state.ivAddrFormalParams,
+          GetCoalescedStreamValue(state.memStream, nextMemValue));
+    } else {
+      DYN_S_DPRINTF(this->streamId,
+                    "[PtrChase] Generate %lluth Faulted VAddr %#x.\n",
+                    state.elementVAddrs.size() - 1, nextVAddr);
+      state.currentIVValueFaulted = true;
+    }
+  }
+  if (elementIdx < state.elementVAddrs.size()) {
+    return state.elementVAddrs.at(elementIdx);
+  } else {
+    return 0;
+  }
 }
 
 DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
@@ -61,6 +135,9 @@ const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
 }
 
 Addr SlicedDynamicStream::getElementVAddr(uint64_t elementIdx) const {
+  if (this->isPointerChase) {
+    return this->getOrComputePointerChaseElementVAddr(elementIdx);
+  }
   return this->addrGenCallback
       ->genAddr(elementIdx, this->formalParams, getStreamValueFail)
       .front();
@@ -69,7 +146,7 @@ Addr SlicedDynamicStream::getElementVAddr(uint64_t elementIdx) const {
 void SlicedDynamicStream::allocateOneElement() const {
 
   // Let's not worry about indirect streams here.
-  auto lhs = this->getElementVAddr(this->tailElementIdx);
+  const auto lhs = this->getElementVAddr(this->tailElementIdx);
 
   if (lhs + this->elementSize < lhs) {
     /**
@@ -173,16 +250,28 @@ void SlicedDynamicStream::allocateOneElement() const {
     this->sliceHeadElementIdx = this->tailElementIdx;
   }
 
-  // Insert new slices.
-  while (curBlock <= rhsBlock && curBlock >= lhsBlock) {
+  if (this->isPointerChase) {
+    /**
+     * PointerChaseStream would not be sliced.
+     */
     this->slices.emplace_back();
     auto &slice = this->slices.back();
     slice.getDynStreamId() = this->streamId;
     slice.getStartIdx() = this->tailElementIdx;
     slice.getEndIdx() = this->tailElementIdx + 1;
-    slice.vaddr = curBlock;
-    slice.size = RubySystem::getBlockSizeBytes();
-    curBlock += RubySystem::getBlockSizeBytes();
+    slice.vaddr = lhs;
+    slice.size = this->elementSize;
+  } else {
+    while (curBlock <= rhsBlock && curBlock >= lhsBlock) {
+      this->slices.emplace_back();
+      auto &slice = this->slices.back();
+      slice.getDynStreamId() = this->streamId;
+      slice.getStartIdx() = this->tailElementIdx;
+      slice.getEndIdx() = this->tailElementIdx + 1;
+      slice.vaddr = curBlock;
+      slice.size = RubySystem::getBlockSizeBytes();
+      curBlock += RubySystem::getBlockSizeBytes();
+    }
   }
 
   this->tailElementIdx++;

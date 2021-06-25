@@ -86,7 +86,6 @@ void MLCStreamEngine::configureStream(
    * ! the direct stream's constructor can start notify it about base stream
    * data.
    */
-  // Check if there is indirect stream.
   std::vector<MLCDynamicIndirectStream *> indirectStreams;
   for (const auto &edge : streamConfigureData->depEdges) {
     if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {

@@ -15,8 +15,7 @@
 
 class SlicedDynamicStream {
 public:
-  SlicedDynamicStream(CacheStreamConfigureDataPtr _configData,
-                      bool _coalesceContinuousElements);
+  SlicedDynamicStream(CacheStreamConfigureDataPtr _configData);
 
   DynamicStreamSliceId getNextSlice();
   const DynamicStreamSliceId &peekNextSlice() const;
@@ -57,7 +56,31 @@ private:
    */
   const int64_t totalTripCount;
 
-  const bool coalesceContinuousElements;
+  /**
+   * Whether we could coalesce continuous elements into slices.
+   * Only false for PointerChaseStream.
+   */
+  bool coalesceContinuousElements = true;
+
+  /**
+   * ! So far PointerChaseStream is handled by an oracle
+   * ! read to compute the address.
+   */
+  bool isPointerChase = false;
+
+  struct PointerChaseState {
+    Stream *memStream = nullptr;
+    Stream *ivStream = nullptr;
+    DynamicStreamFormalParamV ivAddrFormalParams;
+    AddrGenCallbackPtr ivAddrGenCallback;
+    StreamValue currentIVValue;
+    bool currentIVValueFaulted = false;
+    // Buffer all element virtual addresses.
+    std::vector<Addr> elementVAddrs;
+    PointerChaseState(CacheStreamConfigureDataPtr &_configData);
+  };
+  mutable PointerChaseState ptrChaseState;
+  Addr getOrComputePointerChaseElementVAddr(uint64_t elementIdx) const;
 
   /**
    * Internal states.

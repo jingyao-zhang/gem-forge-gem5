@@ -2330,11 +2330,23 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
             if (!element->dynS->offloadedToCache) {
               S_ELEMENT_DPRINTF(element, "Found Ready for Compute.\n");
               readyElements.emplace_back(element);
-            } else if (S->isReduction() && element->isLastElement()) {
-              // Specialize for the last ReductionStream element. They need to
-              // be computed even when offloaded.
-              S_ELEMENT_DPRINTF(element, "Found Ready for Compute.\n");
-              readyElements.emplace_back(element);
+            } else {
+              if (S->isReduction()) {
+                if (element->isLastElement()) {
+                  // Specialize for the last ReductionStream element. They need
+                  // to be computed even when offloaded.
+                  S_ELEMENT_DPRINTF(element,
+                                    "Found Reduce Ready for Compute.\n");
+                  readyElements.emplace_back(element);
+                }
+              } else if (S->isPointerChaseIndVar()) {
+                /**
+                 * Ideally if we don't need the value, we should not compute it.
+                 */
+                S_ELEMENT_DPRINTF(element,
+                                  "Found PtrChaseIV Ready for Compute.\n");
+                readyElements.emplace_back(element);
+              }
             }
           }
           if (S->isAtomicComputeStream() && !dynS.offloadedToCache &&

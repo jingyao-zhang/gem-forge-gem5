@@ -45,9 +45,7 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       streamResponseMsgBuffer(_streamResponseMsgBuffer),
       issueWidth(_controller->getLLCStreamEngineIssueWidth()),
       migrateWidth(_controller->getLLCStreamEngineMigrateWidth()),
-      maxInflyRequests(8),
-      maxInflyRequestsPerStream(_controller->getLLCStreamMaxInflyRequest()),
-      maxInqueueRequests(2), translationBuffer(nullptr) {
+      maxInflyRequests(8), maxInqueueRequests(2), translationBuffer(nullptr) {
   this->controller->registerLLCStreamEngine(this);
   this->commitController = m5::make_unique<LLCStreamCommitController>(this);
   this->atomicLockManager = m5::make_unique<LLCStreamAtomicLockManager>(this);
@@ -592,9 +590,14 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
     // Still here.
     return false;
   }
-  // Only migrate if we enabled advance migrate.
-  if (!this->controller->isStreamAdvanceMigrateEnabled()) {
-    if (stream->hasIndirectDependent() && stream->inflyRequests > 0) {
+  /**
+   * We can only enable AdvanceMigrate for DirectStreams.
+   * PointerChaseStream can never advance migrate.
+   */
+  if (!this->controller->isStreamAdvanceMigrateEnabled() ||
+      stream->isPointerChase()) {
+    if ((stream->hasIndirectDependent() || stream->isPointerChase()) &&
+        stream->inflyRequests > 0) {
       // We are still waiting data for indirect usages:
       // 1. Indirect streams.
       // 2. Update request.
@@ -619,7 +622,8 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
       if (!IS->waitingPredicatedElements.empty()) {
         return false;
       }
-      if (IS->getStaticStream()->isReduction()) {
+      if (IS->getStaticStream()->isReduction() ||
+          IS->getStaticStream()->isPointerChaseIndVar()) {
         // We wait for the reduction element to be done.
         if (!IS->idxToElementMap.empty()) {
           const auto &element = IS->idxToElementMap.begin()->second;
@@ -1152,11 +1156,14 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
     }
   }
 
-  // Enforce the per stream maxInflyRequests constraint.
-  if (dynS->inflyRequests == this->maxInflyRequestsPerStream) {
+  /**
+   * Enforce the per stream maxInflyRequests constraint.
+   * PointerChaseStream always has at most one infly request.
+   */
+  if (dynS->inflyRequests == dynS->getMaxInflyRequests()) {
     LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynamicStreamId(),
                    "Not issue: MaxInflyRequests %d.\n",
-                   this->maxInflyRequestsPerStream);
+                   dynS->getMaxInflyRequests());
     statistic.sampleLLCStreamEngineIssueReason(
         StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
     return nullptr;
@@ -1266,10 +1273,10 @@ LLCStreamEngine::findIndirectStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
     auto IS = dynIS->getStaticStream();
     IS->statistic.sampleLLCAliveElements(dynIS->idxToElementMap.size());
     // Enforce the per stream maxInflyRequests constraint.
-    if (dynIS->inflyRequests == this->maxInflyRequestsPerStream) {
+    if (dynIS->inflyRequests == dynIS->getMaxInflyRequests()) {
       LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynIS->getDynamicStreamId(),
                      "[NotIssue] MaxInflyRequests %d.\n",
-                     this->maxInflyRequestsPerStream);
+                     dynIS->getMaxInflyRequests());
       IS->statistic.sampleLLCStreamEngineIssueReason(
           StreamStatistic::LLCStreamEngineIssueReason::MaxInflyRequest);
       continue;
@@ -1409,8 +1416,13 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
     LLC_SLICE_DPRINTF(sliceId, "Discard due to fault.\n");
     slice->faulted();
 
-    assert(dynS->getIndStreams().empty() &&
-           "Faulted stream with indirect streams.");
+    if (!dynS->getIndStreams().empty()) {
+      // Unless this is PtrChaseIV stream.
+      if (dynS->getIndStreams().size() == 1 && dynS->isPointerChase()) {
+      } else {
+        LLC_SLICE_PANIC(sliceId, "Faulted with Indirect Streams.");
+      }
+    }
     statistic.numLLCFaultSlice++;
   }
 
@@ -1475,7 +1487,7 @@ void LLCStreamEngine::generateIndirectStreamRequest(
     LLCDynamicStream *dynIS, LLCStreamElementPtr element) {
 
   auto IS = dynIS->getStaticStream();
-  if (IS->isReduction()) {
+  if (IS->isReduction() || IS->isPointerChaseIndVar()) {
     LLC_S_PANIC(dynIS->getDynamicStreamId(),
                 "Reduction is no longer handled here.");
     return;
@@ -2375,7 +2387,8 @@ void LLCStreamEngine::triggerIndirectElement(LLCDynamicStreamPtr stream,
                   indirectElement->idx,
                   indirectElement->areBaseElementsReady());
     if (indirectElement->areBaseElementsReady()) {
-      if (IS->getStaticStream()->isReduction()) {
+      if (IS->getStaticStream()->isReduction() ||
+          IS->getStaticStream()->isPointerChaseIndVar()) {
         // Reduction now is handled as computation.
         this->pushReadyComputation(indirectElement);
       } else {

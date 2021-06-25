@@ -187,6 +187,8 @@ public:
                            const LLCStreamElementPtr &element,
                            const StreamValue &value);
 
+  int getMaxInflyRequests() const { return this->maxInflyRequests; }
+
   std::unique_ptr<LLCStreamRangeBuilder> &getRangeBuilder() {
     return this->rangeBuilder;
   }
@@ -200,6 +202,8 @@ private:
   State state = INITIALIZED;
   AbstractStreamAwareController *mlcController;
   AbstractStreamAwareController *llcController;
+
+  int maxInflyRequests;
 
   std::unique_ptr<LLCStreamRangeBuilder> rangeBuilder;
 

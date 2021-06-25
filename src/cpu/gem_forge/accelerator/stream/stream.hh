@@ -634,10 +634,13 @@ public:
     return false;
   }
 
+  bool isPointerChase() const {
+    return this->primeLogical->info.static_info().val_pattern() ==
+           ::LLVM::TDG::StreamValuePattern::POINTER_CHASE;
+  }
+
   bool isPointerChaseIndVar() const {
-    if (this->primeLogical->info.static_info().val_pattern() ==
-            ::LLVM::TDG::StreamValuePattern::POINTER_CHASE &&
-        !this->isMemStream()) {
+    if (this->isPointerChase() && !this->isMemStream()) {
       assert(this->isSingle() &&
              "CoalescedStream should never be PointerChaseIndVarStream.");
       return true;
@@ -645,7 +648,9 @@ public:
     return false;
   }
 
-  bool isPointerChaseLoadStream() const { return false; }
+  bool isPointerChaseLoadStream() const {
+    return this->isLoadStream() && this->isPointerChase();
+  }
 
   bool hasCoreUser() const {
     return !this->primeLogical->info.static_info().no_core_user();
@@ -675,6 +680,14 @@ public:
 
   void setNested() { this->nested = true; }
   bool isNestStream() const { return this->nested; }
+};
+
+struct GetCoalescedStreamValue {
+  const Stream *stream;
+  const StreamValue streamValue;
+  GetCoalescedStreamValue(Stream *_stream, const StreamValue &_streamValue)
+      : stream(_stream), streamValue(_streamValue) {}
+  StreamValue operator()(uint64_t streamId) const;
 };
 
 #endif
