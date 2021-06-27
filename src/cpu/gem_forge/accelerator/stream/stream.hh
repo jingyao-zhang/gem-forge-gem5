@@ -536,11 +536,15 @@ protected:
    * Managing coalesced LogicalStream within this one.
    * The first one is "prime stream", whose stream id is used to represent
    * this stream.
+   * 
+   * Most properties are directly stored in PrimeLogical, except:
+   * 1. NoCoreUsers: True iff. all have no core users.
    ***************************************************************/
   std::vector<LogicalStream *> logicals;
   LogicalStream *primeLogical = nullptr;
   int32_t coalescedElementSize = -1;
   int32_t baseOffset = -1;
+  bool coalescedNoCoreUser = true;
 
   void selectPrimeLogicalStream();
   void initializeBaseStreams();
@@ -653,7 +657,7 @@ public:
   }
 
   bool hasCoreUser() const {
-    return !this->primeLogical->info.static_info().no_core_user();
+    return !this->coalescedNoCoreUser;
   }
 
   /**

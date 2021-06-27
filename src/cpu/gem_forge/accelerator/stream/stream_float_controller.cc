@@ -17,6 +17,10 @@ void StreamFloatController::floatStreams(
     const StreamConfigArgs &args, const ::LLVM::TDG::StreamRegion &region,
     std::list<DynamicStream *> &dynStreams) {
 
+  if (!this->se->enableStreamFloat) {
+    return;
+  }
+
   if (this->se->cpuDelegator->cpuType ==
       GemForgeCPUDelegator::CPUTypeE::ATOMIC_SIMPLE) {
     SE_DPRINTF("Skip StreamFloat in AtomicSimpleCPU for %s.\n",

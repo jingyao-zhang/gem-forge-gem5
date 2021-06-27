@@ -1269,13 +1269,15 @@ bool ISAStreamEngine::isValidRegionStreamId(int regionStreamId) const {
 uint64_t ISAStreamEngine::lookupRegionStreamId(int regionStreamId) const {
   /**
    * Some ReservedStreamRegionId is mapped to InvalidStreamId for now.
-   * So far this is only for NestStreamConfig.
+   * So far this is only for NestStreamConfig and StreamLoopBound.
+   * TODO: Have a way to distinguish these two cases.
    */
-  if (regionStreamId ==
-      ::LLVM::TDG::ReservedStreamRegionId::NestConfigureFuncInputRegionId) {
-    assert(::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId ==
-               1 &&
-           "Too many reserved RegionStreamIds.");
+  if (regionStreamId <
+      ::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId) {
+    assert(
+        regionStreamId !=
+            ::LLVM::TDG::ReservedStreamRegionId::LoopBoundFuncInputRegionId &&
+        "StreamLoopBound not supported yet.");
     return InvalidStreamId;
   }
 

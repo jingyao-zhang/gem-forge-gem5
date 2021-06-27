@@ -96,23 +96,29 @@ void Stream::selectPrimeLogicalStream() {
   for (const auto &LS : this->logicals) {
     const auto &LSStaticInfo = LS->info.static_info();
     const auto &PSStaticInfo = this->primeLogical->info.static_info();
-#define CHECK_INFO(field)                                                      \
+#define CHECK_INFO(print, field)                                               \
   do {                                                                         \
     auto A = LSStaticInfo.field();                                             \
     auto B = PSStaticInfo.field();                                             \
     if (A != B) {                                                              \
-      panic("Mismatch in %s, %s, %s.", #field, LS->info.name(),                \
+      print("Mismatch in %s, %s, %s.", #field, LS->info.name(),                \
             primeLogical->info.name());                                        \
     }                                                                          \
   } while (false);
-    CHECK_INFO(is_merged_predicated_stream);
-    CHECK_INFO(no_core_user);
-    CHECK_INFO(loop_level);
-    CHECK_INFO(config_loop_level);
-    CHECK_INFO(is_inner_most_loop);
-    CHECK_INFO(compute_info().value_base_streams_size);
-    CHECK_INFO(compute_info().enabled_store_func);
+    CHECK_INFO(warn, no_core_user);
+    CHECK_INFO(panic, is_merged_predicated_stream);
+    CHECK_INFO(panic, loop_level);
+    CHECK_INFO(panic, config_loop_level);
+    CHECK_INFO(panic, is_inner_most_loop);
+    CHECK_INFO(panic, compute_info().value_base_streams_size);
+    CHECK_INFO(panic, compute_info().enabled_store_func);
 #undef CHECK_INFO
+    /**
+     * Check if any LogicalStream has core user.
+     */
+    if (!LSStaticInfo.no_core_user()) {
+      this->coalescedNoCoreUser = false;
+    }
     // If more than one coalesced stream, then CoreElementSize must be
     // the same as the MemElementSize.
     if (this->logicals.size() > 1) {
