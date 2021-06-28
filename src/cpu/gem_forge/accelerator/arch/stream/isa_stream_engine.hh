@@ -182,6 +182,8 @@ private:
     DynStreamRegionInfo(const std::string &_infoRelativePath,
                         std::shared_ptr<DynStreamRegionInfo> _prevRegion)
         : infoRelativePath(_infoRelativePath), prevRegion(_prevRegion) {}
+
+    std::vector<StreamInputValue> &getInputVec(uint64_t streamId);
   };
 
   /**

@@ -1,12 +1,13 @@
 #include "stream_engine.hh"
 #include "cpu/gem_forge/llvm_trace_cpu_delegator.hh"
-#include "nest_stream_controller.hh"
 #include "stream_compute_engine.hh"
 #include "stream_data_traffic_accumulator.hh"
 #include "stream_float_controller.hh"
+#include "stream_loop_bound_controller.hh"
 #include "stream_lsq_callback.hh"
 #include "stream_ndc_controller.hh"
 #include "stream_range_sync_controller.hh"
+#include "stream_region_controller.hh"
 #include "stream_throttler.hh"
 
 #include "base/trace.hh"
@@ -65,8 +66,9 @@ StreamEngine::StreamEngine(Params *params)
       this, std::move(streamFloatPolicy));
   this->ndcController = m5::make_unique<StreamNDCController>(this);
   this->computeEngine = m5::make_unique<StreamComputeEngine>(this, params);
-  this->nestStreamController = m5::make_unique<NestStreamController>(this);
+  this->regionController = m5::make_unique<StreamRegionController>(this);
   this->rangeSyncController = m5::make_unique<StreamRangeSyncController>(this);
+  this->loopBoundController = m5::make_unique<StreamLoopBoundController>(this);
 
   this->dataTrafficAccFix =
       m5::make_unique<StreamDataTrafficAccumulator>(this, false /* floated */
@@ -128,7 +130,7 @@ void StreamEngine::handshake(GemForgeCPUDelegator *_cpuDelegator,
 void StreamEngine::takeOverBy(GemForgeCPUDelegator *newCpuDelegator,
                               GemForgeAcceleratorManager *newManager) {
   GemForgeAccelerator::takeOverBy(newCpuDelegator, newManager);
-  this->nestStreamController->takeOverBy(newCpuDelegator);
+  this->regionController->takeOverBy(newCpuDelegator);
 }
 
 void StreamEngine::regStats() {
@@ -352,8 +354,8 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     this->allocateElement(S->getLastDynamicStream());
   }
 
-  // Notify NestStreamController.
-  this->nestStreamController->dispatchStreamConfig(args);
+  // Notify StreamRegionController.
+  this->regionController->dispatchStreamConfig(args);
 }
 
 void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
@@ -388,8 +390,8 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
     configDynStreams.push_back(&dynS);
   }
 
-  // Notify NestStreamController.
-  this->nestStreamController->executeStreamConfig(args);
+  // Notify StreamRegionController.
+  this->regionController->executeStreamConfig(args);
 
   /**
    * Then we try to float streams.
@@ -434,8 +436,8 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
 
   SE_DPRINTF("Rewind StreamConfig %s.\n", infoRelativePath);
 
-  // Notify NestStreamController.
-  this->nestStreamController->rewindStreamConfig(args);
+  // Notify StreamRegionController.
+  this->regionController->rewindStreamConfig(args);
 
   const auto &configStreams = this->getConfigStreamsInRegion(streamRegion);
 
@@ -1298,8 +1300,8 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
 
   SE_DPRINTF("Commit StreamEnd for %s.\n", streamRegion.region().c_str());
 
-  // Notify NestStreamController.
-  this->nestStreamController->commitStreamEnd(args);
+  // Notify StreamRegionController.
+  this->regionController->commitStreamEnd(args);
 
   /**
    * Deduplicate the streams due to coalescing.
@@ -1626,15 +1628,16 @@ void StreamEngine::initializeStreams(
   }
 
   // Recursively initialize all nest streams.
-  if (streamRegion.is_nest()) {
-    this->nestStreamController->initializeNestConfig(streamRegion);
-  }
+  this->regionController->initializeRegion(streamRegion);
   for (const auto nestRegionRelativePath :
        streamRegion.nest_region_relative_paths()) {
     const auto &nestStreamRegion =
         this->getStreamRegion(nestRegionRelativePath);
     this->initializeStreams(nestStreamRegion);
   }
+
+  // Initialize the LoopBound.
+  this->loopBoundController->initializeLoopBound(streamRegion);
 }
 
 void StreamEngine::generateCoalescedStreamIdMap(
@@ -1777,7 +1780,7 @@ void StreamEngine::tick() {
   this->issueElements();
   this->computeEngine->startComputation();
   this->computeEngine->completeComputation();
-  this->nestStreamController->configureNestStreams();
+  this->regionController->configureNestStreams();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }

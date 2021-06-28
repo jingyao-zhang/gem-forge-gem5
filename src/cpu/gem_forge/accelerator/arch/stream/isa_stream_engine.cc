@@ -99,10 +99,16 @@ void ISAStreamEngine::dispatchStreamConfig(
             .second;
     assert(inserted && "InputVector already initialized.");
   }
-  // Also Initialize an empty InputVector for nest configuration.
-  // ! This so far just reuse the InvalidStreamId.
+  // Also Initialize an empty InputVector for NestStream/LoopBound.
   this->curStreamRegionInfo->inputMap.emplace(
-      std::piecewise_construct, std::forward_as_tuple(InvalidStreamId),
+      std::piecewise_construct,
+      std::forward_as_tuple(
+          ::LLVM::TDG::ReservedStreamRegionId::NestConfigureFuncInputRegionId),
+      std::forward_as_tuple());
+  this->curStreamRegionInfo->inputMap.emplace(
+      std::piecewise_construct,
+      std::forward_as_tuple(
+          ::LLVM::TDG::ReservedStreamRegionId::LoopBoundFuncInputRegionId),
       std::forward_as_tuple());
 }
 
@@ -222,8 +228,7 @@ void ISAStreamEngine::dispatchStreamInput(
   inputInfo.translatedStreamId = streamId;
 
   // Allocate the entry in the InputMap.
-  auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
-  auto &inputVec = inputMap.at(streamId);
+  auto &inputVec = configInfo.dynStreamRegionInfo->getInputVec(streamId);
   inputInfo.inputIdx = inputVec.size();
   DYN_INST_DPRINTF(
       "[dispatch] StreamInput StreamId %llu #%d Dispatched %d Executed %d.\n",
@@ -251,8 +256,8 @@ void ISAStreamEngine::executeStreamInput(const GemForgeDynInstInfo &dynInfo,
 
   // Record the live input.
   auto &inputInfo = instInfo.inputInfo;
-  auto &inputMap = configInfo.dynStreamRegionInfo->inputMap;
-  auto &inputVec = inputMap.at(inputInfo.translatedStreamId);
+  auto &inputVec =
+      configInfo.dynStreamRegionInfo->getInputVec(inputInfo.translatedStreamId);
 
   auto &inputValue = inputVec.at(inputInfo.inputIdx);
   for (int srcIdx = 0; srcIdx < dynInfo.staticInst->numSrcRegs(); ++srcIdx) {
@@ -317,7 +322,7 @@ void ISAStreamEngine::rewindStreamInput(const GemForgeDynInstInfo &dynInfo) {
       "[rewind] StreamInput StreamId %llu %#d Dispatched %d Executed %d.\n",
       inputInfo.translatedStreamId, inputInfo.inputIdx,
       regionInfo->numDispatchedInsts, regionInfo->numExecutedInsts);
-  auto &inputVec = regionInfo->inputMap.at(inputInfo.translatedStreamId);
+  auto &inputVec = regionInfo->getInputVec(inputInfo.translatedStreamId);
   assert(inputVec.size() == inputInfo.inputIdx + 1 && "Mismatch input index.");
   inputVec.pop_back();
 
@@ -1268,17 +1273,16 @@ bool ISAStreamEngine::isValidRegionStreamId(int regionStreamId) const {
 
 uint64_t ISAStreamEngine::lookupRegionStreamId(int regionStreamId) const {
   /**
-   * Some ReservedStreamRegionId is mapped to InvalidStreamId for now.
+   * Some ReservedStreamRegionId is directly mapped for now.
    * So far this is only for NestStreamConfig and StreamLoopBound.
    * TODO: Have a way to distinguish these two cases.
    */
   if (regionStreamId <
       ::LLVM::TDG::ReservedStreamRegionId::NumReservedStreamRegionId) {
-    assert(
-        regionStreamId !=
-            ::LLVM::TDG::ReservedStreamRegionId::LoopBoundFuncInputRegionId &&
-        "StreamLoopBound not supported yet.");
-    return InvalidStreamId;
+    assert(regionStreamId !=
+               ::LLVM::TDG::ReservedStreamRegionId::InvalidRegionId &&
+           "InvalidRegionId.");
+    return regionStreamId;
   }
 
   auto streamId = this->searchRegionStreamId(regionStreamId);
@@ -1343,6 +1347,15 @@ const std::string &ISAStreamEngine::getRelativePath(int configIdx) const {
   assert(configIdx < this->allStreamRegions->relative_paths_size() &&
          "ConfigIdx overflow.");
   return this->allStreamRegions->relative_paths(configIdx);
+}
+
+std::vector<ISAStreamEngine::DynStreamRegionInfo::StreamInputValue> &
+ISAStreamEngine::DynStreamRegionInfo::getInputVec(uint64_t streamId) {
+  auto iter = this->inputMap.find(streamId);
+  if (iter == this->inputMap.end()) {
+    panic("Failed to find InputVec for StreamId %llu.\n", streamId);
+  }
+  return iter->second;
 }
 
 std::string

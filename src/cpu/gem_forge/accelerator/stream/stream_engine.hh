@@ -25,9 +25,10 @@ class StreamSQDeprecatedCallback;
 class StreamNDCController;
 class StreamFloatController;
 class StreamComputeEngine;
-class NestStreamController;
+class StreamRegionController;
 class StreamRangeSyncController;
 class StreamDataTrafficAccumulator;
+class StreamLoopBoundController;
 
 class StreamEngine : public GemForgeAccelerator {
 public:
@@ -283,9 +284,10 @@ private:
   friend class StreamNDCController;
   friend class StreamFloatController;
   friend class StreamComputeEngine;
-  friend class NestStreamController;
+  friend class StreamRegionController;
   friend class StreamRangeSyncController;
   friend class StreamDataTrafficAccumulator;
+  friend class StreamLoopBoundController;
 
   LLVMTraceCPU *cpu;
 
@@ -478,10 +480,11 @@ private:
   std::unique_ptr<StreamNDCController> ndcController;
   std::unique_ptr<StreamFloatController> floatController;
   std::unique_ptr<StreamComputeEngine> computeEngine;
-  std::unique_ptr<NestStreamController> nestStreamController;
+  std::unique_ptr<StreamRegionController> regionController;
   std::unique_ptr<StreamRangeSyncController> rangeSyncController;
   std::unique_ptr<StreamDataTrafficAccumulator> dataTrafficAccFix;
   std::unique_ptr<StreamDataTrafficAccumulator> dataTrafficAccFloat;
+  std::unique_ptr<StreamLoopBoundController> loopBoundController;
 
   /**
    * Try to coalesce continuous element of direct mem stream if they
