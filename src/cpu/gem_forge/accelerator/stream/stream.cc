@@ -259,10 +259,10 @@ void Stream::executeStreamConfig(uint64_t seqNum,
         assert(dynStream.getTotalTripCount() == rootDynS.getTotalTripCount() &&
                "Mismatch in TotalTripCount.");
       } else {
-        dynStream.totalTripCount = rootDynS.getTotalTripCount();
+        dynStream.setTotalTripCount(rootDynS.getTotalTripCount());
         DYN_S_DPRINTF(dynStream.dynamicStreamId,
                       "Set TotalTripCount %llu from StepRoot.\n",
-                      dynStream.totalTripCount);
+                      dynStream.getTotalTripCount());
       }
     } else {
       assert(!dynStream.hasTotalTripCount() &&
@@ -274,20 +274,20 @@ void Stream::executeStreamConfig(uint64_t seqNum,
     auto backBaseS = *(this->backBaseStreams.begin());
     const auto &backBaseDynS = backBaseS->getDynamicStream(seqNum);
     if (backBaseDynS.configExecuted) {
-      dynStream.totalTripCount = backBaseDynS.totalTripCount;
+      dynStream.setTotalTripCount(backBaseDynS.getTotalTripCount());
       DYN_S_DPRINTF(dynStream.dynamicStreamId,
                     "Set TotalTripCount %llu from BackBase.\n",
-                    dynStream.totalTripCount);
+                    dynStream.getTotalTripCount());
     }
   }
 
   // Try to set total trip count for back dependent streams.
   for (auto backDepS : this->backDepStreams) {
     auto &backDepDynS = backDepS->getDynamicStream(seqNum);
-    backDepDynS.totalTripCount = dynStream.totalTripCount;
+    backDepDynS.setTotalTripCount(dynStream.getTotalTripCount());
     DYN_S_DPRINTF(backDepDynS.dynamicStreamId,
                   "Set TotalTripCount %llu from BackBase.\n",
-                  backDepDynS.totalTripCount);
+                  backDepDynS.getTotalTripCount());
   }
 }
 
@@ -539,8 +539,8 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
 
   // Update the totalTripCount to the dynamic stream if possible.
   if (formalParams.size() % 2 == 1) {
-    dynStream.totalTripCount =
-        formalParams.at(formalParams.size() - 2).invariant.uint64();
+    dynStream.setTotalTripCount(
+        formalParams.at(formalParams.size() - 2).invariant.uint64());
   }
 }
 
@@ -709,7 +709,7 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
   }
 
   // Set the totalTripCount.
-  configData->totalTripCount = dynStream.totalTripCount;
+  configData->totalTripCount = dynStream.getTotalTripCount();
 
   // Set the predication function.
   configData->predFormalParams = dynStream.predFormalParams;
@@ -850,7 +850,7 @@ bool Stream::hasUnsteppedElement() {
                   "NoUnsteppedElement config executed %d alloc %d stepped %d "
                   "total %d next %s.\n",
                   dynS.configExecuted, dynS.allocSize, dynS.stepSize,
-                  dynS.totalTripCount, dynS.FIFOIdx);
+                  dynS.getTotalTripCount(), dynS.FIFOIdx);
     return false;
   }
   return true;
@@ -916,7 +916,7 @@ StreamElement *Stream::getFirstUnsteppedElement() {
     this->se->dumpFIFO();
     S_PANIC(this,
             "No allocated element to use, TotalTripCount %d, EndDispatched %d.",
-            dynS.totalTripCount, dynS.endDispatched);
+            dynS.getTotalTripCount(), dynS.endDispatched);
   }
   return element;
 }

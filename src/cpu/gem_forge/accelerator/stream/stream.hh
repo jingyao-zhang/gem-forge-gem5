@@ -126,6 +126,9 @@ public:
   bool getReduceFromZero() const {
     return this->info.static_info().compute_info().reduce_from_zero();
   }
+  bool isLoopEliminated() const {
+    return this->info.static_info().loop_eliminated();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -583,6 +586,7 @@ public:
   Get(::LLVM::TDG::ExecFuncInfo_ComputeOp, AddrFuncComputeOp);
   Is(MergedPredicated);
   Is(MergedLoadStoreDepStream);
+  Is(LoopEliminated);
 
   /**
    * Get the coalesce base stream and offset.

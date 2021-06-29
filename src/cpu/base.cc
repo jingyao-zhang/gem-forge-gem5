@@ -106,8 +106,12 @@ CPUProgressEvent::process()
     }
 
     // ! Hack some deadlock check here.
+    bool accelProgress = false;
+    if (auto accelManager = cpu->getAccelManager()) {
+        accelProgress = accelManager->checkProgress();
+    }
     if (cpu->shouldCheckDeadlock() && cpu->cpuId() == 0 &&
-        temp == lastNumInst) {
+        temp == lastNumInst && !accelProgress) {
         Tick no_progress_ticks = this->_stucked *
             cpu->params()->progress_interval;
         Tick deadlock_ticks = cpu->params()->deadlock_interval;
@@ -125,9 +129,10 @@ CPUProgressEvent::process()
     double ipc = double(temp - lastNumInst) / (_interval / cpu->clockPeriod());
 
     DPRINTFN("%s total committed:%i, progress insts committed: "
-             "%lli, IPC: %0.8d, work item: started %d completed %d\n", 
+             "%lli, IPC: %0.8d, work item: started %d completed %d, AccProg %d\n", 
              cpu->name(), temp, temp - lastNumInst, ipc,
-             cpu->numWorkItemsStarted.value(), cpu->numWorkItemsCompleted.value());
+             cpu->numWorkItemsStarted.value(), cpu->numWorkItemsCompleted.value(),
+             accelProgress);
     ipc = 0.0;
 #else
     cprintf("%lli: %s progress event, total committed:%i, progress insts "

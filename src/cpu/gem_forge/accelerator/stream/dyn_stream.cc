@@ -882,6 +882,16 @@ void DynamicStream::cancelFloat() {
   S->statistic.numFloatCancelled++;
 }
 
+void DynamicStream::setTotalTripCount(int64_t totalTripCount) {
+  if (this->hasTotalTripCount()) {
+    DYN_S_PANIC(this->dynamicStreamId, "Reset TotalTripCount %lld -> %lld.",
+                this->totalTripCount, totalTripCount);
+  }
+  DYN_S_DPRINTF(this->dynamicStreamId, "Set TotalTripCount %lld.\n",
+                totalTripCount);
+  this->totalTripCount = totalTripCount;
+}
+
 int32_t DynamicStream::getBytesPerMemElement() const {
   auto memElementSize = this->stream->getMemElementSize();
   if (auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(

@@ -38,6 +38,7 @@ public:
   virtual void tick() = 0;
 
   virtual void dump() {}
+  virtual bool checkProgress() { return false; }
 
   /**
    * Called by the manager to register stats.
@@ -82,6 +83,7 @@ public:
   // Allow the accelerator to schedule tick() in next event.
   void scheduleTickNextCycle();
   void dump();
+  bool checkProgress();
   void resetStats();
 
   void exitDump();

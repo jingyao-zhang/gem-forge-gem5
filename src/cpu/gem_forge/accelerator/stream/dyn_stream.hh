@@ -106,9 +106,12 @@ struct DynamicStream {
   bool finalReductionValueReady = false;
 
   // Optional total length of this dynamic stream. -1 as indefinite.
-  int64_t totalTripCount = -1;
-  bool hasTotalTripCount() const { return this->totalTripCount != -1; }
+  static constexpr int64_t InvalidTotalTripCount = -1;
+  bool hasTotalTripCount() const {
+    return this->totalTripCount != InvalidTotalTripCount;
+  }
   int64_t getTotalTripCount() const { return this->totalTripCount; }
+  void setTotalTripCount(int64_t totalTripCount);
 
   /**
    * Compute the number of bytes per element, also considering overlapping
@@ -274,6 +277,12 @@ struct DynamicStream {
   std::string dumpString() const;
 
 private:
+  /**
+   * Remember the total trip count.
+   * May be set by StreamLoopBound if has data-dependent loop bound.
+   */
+  int64_t totalTripCount = InvalidTotalTripCount;
+
   /**
    * Some statistics for this stream.
    * Notice that here numReleaseElements is measured in SteppedElements.

@@ -61,14 +61,33 @@ private:
       ExecFuncPtr boundFunc = nullptr;
       DynamicStreamFormalParamV formalParams;
       uint64_t nextElementIdx = 0;
+      // We have reached the end of the loop.
+      bool brokenOut = false;
     };
     DynLoopBound loopBound;
+
+    /**
+     * StreamStepper states for LoopEliminated region.
+     */
+    struct DynStep {
+      uint64_t nextElementIdx = 0;
+      int nextStepStreamIdx = 0;
+      enum StepState {
+        // There is no Execute stage for StreamStep.
+        BEFORE_DISPATCH,
+        BEFORE_COMMIT,
+      };
+      StepState state = StepState::BEFORE_DISPATCH;
+    };
+    DynStep step;
   };
 
   std::map<uint64_t, DynRegion *> activeDynRegionMap;
 
   struct StaticRegion {
+    using StreamSet = std::unordered_set<Stream *>;
     const ::LLVM::TDG::StreamRegion &region;
+    StreamSet streams;
     std::list<DynRegion> dynRegions;
     StaticRegion(const ::LLVM::TDG::StreamRegion &_region) : region(_region) {}
 
@@ -79,8 +98,7 @@ private:
       ExecFuncPtr configFunc = nullptr;
       ExecFuncPtr predFunc = nullptr;
       bool predRet;
-      std::unordered_set<Stream *> baseStreams;
-      std::unordered_set<Stream *> configStreams;
+      StreamSet baseStreams;
     };
     StaticNestConfig nestConfig;
 
@@ -90,9 +108,17 @@ private:
     struct StaticLoopBound {
       ExecFuncPtr boundFunc;
       bool boundRet;
-      std::unordered_set<Stream *> baseStreams;
+      StreamSet baseStreams;
     };
     StaticLoopBound loopBound;
+
+    /**
+     * StreamStepper states for LoopEliminated region.
+     */
+    struct StaticStep {
+      std::vector<Stream *> stepRootStreams;
+    };
+    StaticStep step;
   };
 
   /**
@@ -122,6 +148,15 @@ private:
   void executeStreamConfigForLoopBound(const ConfigArgs &args,
                                        DynRegion &dynRegion);
   void checkLoopBound(DynRegion &dynRegion);
+
+  /**
+   * For StreamStepper (LoopEliminatedRegion)
+   */
+  void initializeStep(const ::LLVM::TDG::StreamRegion &region,
+                      StaticRegion &staticRegion);
+  void dispatchStreamConfigForStep(const ConfigArgs &args,
+                                   DynRegion &dynRegion);
+  void stepStream(DynRegion &dynRegion);
 
   /**
    * Helper functions.

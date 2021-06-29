@@ -83,13 +83,16 @@ void StreamRegionController::executeStreamConfigForLoopBound(
 
 void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
   auto &staticRegion = *dynRegion.staticRegion;
-
   if (!staticRegion.region.is_loop_bound()) {
     return;
   }
 
   auto &staticBound = staticRegion.loopBound;
   auto &dynBound = dynRegion.loopBound;
+  if (dynBound.brokenOut) {
+    // We already reached the end of the loop.
+    return;
+  }
 
   auto nextElementIdx = dynBound.nextElementIdx;
   std::unordered_set<StreamElement *> baseElements;
@@ -124,9 +127,18 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
 
   auto ret = dynBound.boundFunc->invoke(actualParams).front();
   if (ret == staticBound.boundRet) {
-    // Should break out the loop.
+    /**
+     * Should break out the loop.
+     * So far we just set TotalTripCount for all DynStreams.
+     */
     SE_DPRINTF("[LoopBound] Break (%d == %d) Region %s.\n", ret,
                staticBound.boundRet, staticRegion.region.region());
+    dynBound.brokenOut = true;
+    for (auto S : staticRegion.streams) {
+      auto &dynS = S->getDynamicStream(dynRegion.seqNum);
+      dynS.setTotalTripCount(dynBound.nextElementIdx + 1);
+    }
+
   } else {
     // Keep going.
     SE_DPRINTF("[LoopBound] Continue (%d != %d) Region %s.\n", ret,

@@ -42,6 +42,7 @@ public:
 
   void tick() override;
   void dump() override;
+  bool checkProgress() override;
   void regStats() override;
   void resetStats() override;
 
@@ -124,7 +125,7 @@ public:
     StreamEndArgs(uint64_t _seqNum, const std::string &_infoRelativePath)
         : seqNum(_seqNum), infoRelativePath(_infoRelativePath) {}
   };
-  bool hasUnsteppedElement(const StreamEndArgs &args);
+  bool canDispatchStreamEnd(const StreamEndArgs &args);
   void dispatchStreamEnd(const StreamEndArgs &args);
   bool canExecuteStreamEnd(const StreamEndArgs &args);
   bool canCommitStreamEnd(const StreamEndArgs &args);
@@ -272,6 +273,12 @@ public:
   Stats::Scalar numCompletedUpdateMicroOps;
   Stats::Scalar numCompletedStoreComputeMicroOps;
   Stats::Scalar numCompletedAtomicComputeMicroOps;
+
+  /**
+   * Number of committed elements since last check.
+   * Used to check progress.
+   */
+  uint64_t numSteppedSinceLastCheck = 0;
 
 private:
   friend class Stream;

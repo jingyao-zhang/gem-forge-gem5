@@ -24,8 +24,17 @@ void StreamRegionController::initializeRegion(
 
   auto &staticRegion = this->staticRegionMap.at(region.region());
 
+  /**
+   * Collect streams within this region.
+   */
+  for (const auto &streamInfo : region.streams()) {
+    auto S = this->se->getStream(streamInfo.id());
+    staticRegion.streams.insert(S);
+  }
+
   this->initializeNestStreams(region, staticRegion);
   this->initializeStreamLoopBound(region, staticRegion);
+  this->initializeStep(region, staticRegion);
 }
 
 void StreamRegionController::dispatchStreamConfig(const ConfigArgs &args) {
@@ -36,6 +45,7 @@ void StreamRegionController::dispatchStreamConfig(const ConfigArgs &args) {
 
   this->dispatchStreamConfigForNestStreams(args, dynRegion);
   this->dispatchStreamConfigForLoopBound(args, dynRegion);
+  this->dispatchStreamConfigForStep(args, dynRegion);
 }
 
 void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
@@ -95,6 +105,15 @@ void StreamRegionController::tick() {
         this->configureNestStream(dynRegion, dynNestConfig);
       }
       this->checkLoopBound(dynRegion);
+
+      /**
+       * For now, StreamStep must happen in order.
+       * Check that this is the first DynamicStream.
+       */
+      if (dynRegion.seqNum ==
+          dynRegion.staticRegion->dynRegions.front().seqNum) {
+        this->stepStream(dynRegion);
+      }
     }
   }
 }

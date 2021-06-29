@@ -54,10 +54,6 @@ void StreamRegionController::initializeNestStreams(
       }
     }
   }
-  for (const auto &streamInfo : region.streams()) {
-    auto S = this->se->getStream(streamInfo.id());
-    staticNestConfig.configStreams.insert(S);
-  }
 
   SE_DPRINTF("[Nest] Initialized StaticNestConfig for region %s.\n",
              region.region());
@@ -132,14 +128,13 @@ void StreamRegionController::configureNestStream(
    * Since allocating a new stream will take one element, we check that
    * there are available free elements.
    */
-  if (this->se->numFreeFIFOEntries < staticNestConfig.configStreams.size()) {
+  if (this->se->numFreeFIFOEntries < staticNestRegion.streams.size()) {
     SE_DPRINTF("[Nest] No Total Free Element to allocate NestConfig, Has %d, "
                "Required %d.\n",
-               this->se->numFreeFIFOEntries,
-               staticNestConfig.configStreams.size());
+               this->se->numFreeFIFOEntries, staticNestRegion.streams.size());
     return;
   }
-  for (auto S : staticNestConfig.configStreams) {
+  for (auto S : staticNestRegion.streams) {
     if (S->getAllocSize() + 1 >= S->maxSize) {
       // S_DPRINTF(S,
       //           "[Nest] No Free Element to allocate NestConfig, AllocSize
@@ -207,7 +202,7 @@ void StreamRegionController::configureNestStream(
   bool isFirstDynS = true;
   int totalTripCount = 0;
   InstSeqNum configSeqNum = 0;
-  for (auto S : staticNestConfig.configStreams) {
+  for (auto S : staticNestRegion.streams) {
     auto &dynS = S->getLastDynamicStream();
     if (!dynS.hasTotalTripCount()) {
       S_PANIC(S, "NestStream must have TotalTripCount.");
@@ -234,7 +229,7 @@ void StreamRegionController::configureNestStream(
       staticNestRegion.region.region(), dynNestConfig.nextElementIdx,
       totalTripCount);
   if (Debug::StreamNest) {
-    for (auto S : staticNestConfig.configStreams) {
+    for (auto S : staticNestRegion.streams) {
       auto &dynS = S->getLastDynamicStream();
       SE_DPRINTF("[Nest]   %s.\n", dynS.dynamicStreamId);
     }

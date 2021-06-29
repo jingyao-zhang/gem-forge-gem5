@@ -69,6 +69,16 @@ void GemForgeAcceleratorManager::dump() {
   }
 }
 
+bool GemForgeAcceleratorManager::checkProgress() {
+  bool hasProgress = false;
+  for (auto accelerator : this->accelerators) {
+    if (accelerator->checkProgress()) {
+      hasProgress = true;
+    }
+  }
+  return hasProgress;
+}
+
 void GemForgeAcceleratorManager::regStats() { SimObject::regStats(); }
 
 StreamEngine *GemForgeAcceleratorManager::getStreamEngine() {

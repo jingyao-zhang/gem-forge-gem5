@@ -510,7 +510,7 @@ bool ISAStreamEngine::canDispatchStreamEnd(const GemForgeDynInstInfo &dynInfo) {
 
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
-  if (se->hasUnsteppedElement(args)) {
+  if (se->canDispatchStreamEnd(args)) {
     DYN_INST_DPRINTF("[CanDispatch] StreamEnd %llu, %s..\n", configIdx,
                      infoRelativePath);
     return true;
@@ -538,7 +538,7 @@ void ISAStreamEngine::dispatchStreamEnd(
          "Cannot remove RegionStreamIds for StreamEnd.");
   ::StreamEngine::StreamEndArgs args(dynInfo.seqNum, infoRelativePath);
   auto se = this->getStreamEngine();
-  assert(se->hasUnsteppedElement(args) && "No UnsteppedElement for StreamEnd.");
+  assert(se->canDispatchStreamEnd(args) && "CanNot Dispatch StreamEnd.");
   /**
    * ! For nest stream region, we don't really remove the RegionStreamIds.
    */

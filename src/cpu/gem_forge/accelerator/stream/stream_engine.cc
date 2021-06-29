@@ -483,6 +483,7 @@ void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
   assert(this->canDispatchStreamStep(stepStreamId) &&
          "canDispatchStreamStep assertion failed.");
   this->numStepped++;
+  this->numSteppedSinceLastCheck++;
 
   auto stepStream = this->getStream(stepStreamId);
 
@@ -787,7 +788,7 @@ bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
     assert(element && "Has no unstepped element.");
     if (element->isLastElement()) {
       S_ELEMENT_DPRINTF(element, "Used LastElement total %d next %s.\n",
-                        dynS.totalTripCount, dynS.FIFOIdx);
+                        dynS.getTotalTripCount(), dynS.FIFOIdx);
       return true;
     }
   }
@@ -798,16 +799,28 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
   if (!this->hasUnsteppedElement(args)) {
     return false;
   }
-  /**
-   * Additional condition for StoreStream with enabled StoreFunc, we
-   * wait for config to be executed to avoid creating SQCallback for
-   * floating store streams.
-   */
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
     auto &dynS = S->getFirstAliveDynStream();
+    /**
+     * Additional condition for StoreStream with enabled StoreFunc, we
+     * wait for config to be executed to avoid creating SQCallback for
+     * floating store streams.
+     */
     if (!dynS.configExecuted) {
       return false;
+    }
+    /**
+     * For LoopEliminatedStream, we have to wait until it's the last
+     * element.
+     */
+    if (S->isLoopEliminated()) {
+      // We already checked that we have UnsteppedElement in
+      // hasUnsteppedElement().
+      auto element = dynS.getFirstUnsteppedElement();
+      if (!element->isLastElement()) {
+        return false;
+      }
     }
   }
   return true;
@@ -1103,7 +1116,7 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
   this->userElementMap.erase(seqNum);
 }
 
-bool StreamEngine::hasUnsteppedElement(const StreamEndArgs &args) {
+bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
   const auto &endStreamInfos = streamRegion.streams();
   for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
@@ -1115,6 +1128,19 @@ bool StreamEngine::hasUnsteppedElement(const StreamEndArgs &args) {
       // We don't have element for this used stream.
       return false;
     }
+    auto &dynS = S->getFirstAliveDynStream();
+    /**
+     * For LoopEliminatedStream, we have to wait until it's the last
+     * element.
+     */
+    if (S->isLoopEliminated()) {
+      // We already checked that we have UnsteppedElement in
+      // hasUnsteppedElement().
+      auto element = dynS.getFirstUnsteppedElement();
+      if (!element->isLastElement()) {
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -1124,7 +1150,7 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
   const auto &endStreamInfos = streamRegion.streams();
 
   SE_DPRINTF("Dispatch StreamEnd for %s.\n", streamRegion.region().c_str());
-  assert(this->hasUnsteppedElement(args) &&
+  assert(this->canDispatchStreamEnd(args) &&
          "StreamEnd without unstepped elements.");
 
   /**
@@ -2064,7 +2090,7 @@ void StreamEngine::allocateElements() {
       if (allocatingStepRootDynS->hasTotalTripCount() &&
           maxAllocSize > allocSize) {
         auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
-        auto maxTripCount = allocatingStepRootDynS->totalTripCount + 1;
+        auto maxTripCount = allocatingStepRootDynS->getTotalTripCount() + 1;
         if (nextEntryIdx >= maxTripCount) {
           // We are already overflowed, set maxAllocSize to allocSize to stop
           // allocating. NOTE: This should not happen at all.
@@ -3050,6 +3076,12 @@ void StreamEngine::exitDump() const {
     S->dumpStreamStats(streamOS);
   }
   streamOS.flush();
+}
+
+bool StreamEngine::checkProgress() {
+  bool hasProgress = this->numSteppedSinceLastCheck > 0;
+  this->numSteppedSinceLastCheck = 0;
+  return hasProgress;
 }
 
 size_t StreamEngine::getTotalRunAheadLength() const {
