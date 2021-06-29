@@ -108,64 +108,18 @@ void StreamRegionController::executeStreamConfigForNestStreams(
   {
     auto &formalParams = dynNestConfig.formalParams;
     const auto &configFuncInfo = dynNestConfig.configFunc->getFuncInfo();
-    for (const auto &arg : configFuncInfo.args()) {
-      if (arg.is_stream()) {
-        // This is a stream input.
-        formalParams.emplace_back();
-        auto &formalParam = formalParams.back();
-        formalParam.isInvariant = false;
-        formalParam.baseStreamId = arg.stream_id();
-      } else {
-        if (inputIdx >= inputVec.size()) {
-          panic("Missing input for %s: Given %llu, inputIdx %d.",
-                configFuncInfo.name(), inputVec.size(), inputIdx);
-        }
-        formalParams.emplace_back();
-        auto &formalParam = formalParams.back();
-        formalParam.isInvariant = true;
-        formalParam.invariant = inputVec.at(inputIdx);
-        inputIdx++;
-      }
-    }
+    this->buildFormalParams(inputVec, inputIdx, configFuncInfo, formalParams);
   }
 
   // Construct the NestPredFunc formal params.
   if (dynNestConfig.predFunc) {
     auto &formalParams = dynNestConfig.predFormalParams;
     const auto &predFuncInfo = dynNestConfig.predFunc->getFuncInfo();
-    for (const auto &arg : predFuncInfo.args()) {
-      if (arg.is_stream()) {
-        // This is a stream input.
-        formalParams.emplace_back();
-        auto &formalParam = formalParams.back();
-        formalParam.isInvariant = false;
-        formalParam.baseStreamId = arg.stream_id();
-      } else {
-        if (inputIdx >= inputVec.size()) {
-          panic("Missing input for %s: Given %llu, inputIdx %d.",
-                predFuncInfo.name(), inputVec.size(), inputIdx);
-        }
-        formalParams.emplace_back();
-        auto &formalParam = formalParams.back();
-        formalParam.isInvariant = true;
-        formalParam.invariant = inputVec.at(inputIdx);
-        inputIdx++;
-      }
-    }
+    this->buildFormalParams(inputVec, inputIdx, predFuncInfo, formalParams);
   }
 
   SE_DPRINTF("[Nest] Executed DynNestConfig for region %s.\n",
              dynRegion.staticRegion->region.region());
-}
-
-void StreamRegionController::configureNestStreams() {
-  for (auto &entry : this->activeDynRegionMap) {
-    if (entry.second->configExecuted) {
-      for (auto &dynNestConfig : entry.second->nestConfigs) {
-        this->configureNestStream(*entry.second, dynNestConfig);
-      }
-    }
-  }
 }
 
 void StreamRegionController::configureNestStream(
@@ -223,19 +177,7 @@ void StreamRegionController::configureNestStream(
   }
 
   // All base elements are value ready.
-  auto getStreamValue = [&baseElements](uint64_t streamId) -> StreamValue {
-    StreamValue ret;
-    for (auto baseElement : baseElements) {
-      if (!baseElement->getStream()->isCoalescedHere(streamId)) {
-        continue;
-      }
-      baseElement->getValueByStreamId(streamId, ret.uint8Ptr(),
-                                      sizeof(StreamValue));
-      return ret;
-    }
-    panic("Failed to find base element.");
-    return ret;
-  };
+  auto getStreamValue = GetStreamValueFromElementSet(baseElements, "[Nest]");
 
   /**
    * If we have predication, evaluate the predication function first.

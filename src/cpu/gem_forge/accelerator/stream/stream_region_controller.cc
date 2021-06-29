@@ -25,6 +25,7 @@ void StreamRegionController::initializeRegion(
   auto &staticRegion = this->staticRegionMap.at(region.region());
 
   this->initializeNestStreams(region, staticRegion);
+  this->initializeStreamLoopBound(region, staticRegion);
 }
 
 void StreamRegionController::dispatchStreamConfig(const ConfigArgs &args) {
@@ -34,12 +35,14 @@ void StreamRegionController::dispatchStreamConfig(const ConfigArgs &args) {
   auto &dynRegion = this->pushDynRegion(staticRegion, args.seqNum);
 
   this->dispatchStreamConfigForNestStreams(args, dynRegion);
+  this->dispatchStreamConfigForLoopBound(args, dynRegion);
 }
 
 void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
   if (this->activeDynRegionMap.count(args.seqNum)) {
     auto &dynRegion = *this->activeDynRegionMap.at(args.seqNum);
     this->executeStreamConfigForNestStreams(args, dynRegion);
+    this->executeStreamConfigForLoopBound(args, dynRegion);
 
     SE_DPRINTF("[Region] Executed Config SeqNum %llu for region %s.\n",
                args.seqNum, dynRegion.staticRegion->region.region());
@@ -84,6 +87,18 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
   staticRegion.dynRegions.pop_front();
 }
 
+void StreamRegionController::tick() {
+  for (auto &entry : this->activeDynRegionMap) {
+    auto &dynRegion = *entry.second;
+    if (dynRegion.configExecuted) {
+      for (auto &dynNestConfig : dynRegion.nestConfigs) {
+        this->configureNestStream(dynRegion, dynNestConfig);
+      }
+      this->checkLoopBound(dynRegion);
+    }
+  }
+}
+
 void StreamRegionController::takeOverBy(GemForgeCPUDelegator *newCPUDelegator) {
   this->isaHandler.takeOverBy(newCPUDelegator);
 }
@@ -113,4 +128,44 @@ StreamRegionController::getStaticRegion(const std::string &regionName) {
     panic("Failed to find StaticRegion %s.\n", regionName);
   }
   return iter->second;
+}
+
+void StreamRegionController::buildFormalParams(
+    const ConfigArgs::InputVec &inputVec, int &inputIdx,
+    const ::LLVM::TDG::ExecFuncInfo &funcInfo,
+    DynamicStreamFormalParamV &formalParams) {
+  for (const auto &arg : funcInfo.args()) {
+    if (arg.is_stream()) {
+      // This is a stream input.
+      formalParams.emplace_back();
+      auto &formalParam = formalParams.back();
+      formalParam.isInvariant = false;
+      formalParam.baseStreamId = arg.stream_id();
+    } else {
+      if (inputIdx >= inputVec.size()) {
+        panic("Missing input for %s: Given %llu, inputIdx %d.", funcInfo.name(),
+              inputVec.size(), inputIdx);
+      }
+      formalParams.emplace_back();
+      auto &formalParam = formalParams.back();
+      formalParam.isInvariant = true;
+      formalParam.invariant = inputVec.at(inputIdx);
+      inputIdx++;
+    }
+  }
+}
+
+StreamValue StreamRegionController::GetStreamValueFromElementSet::operator()(
+    uint64_t streamId) const {
+  StreamValue ret;
+  for (auto baseElement : this->elements) {
+    if (!baseElement->getStream()->isCoalescedHere(streamId)) {
+      continue;
+    }
+    baseElement->getValueByStreamId(streamId, ret.uint8Ptr(),
+                                    sizeof(StreamValue));
+    return ret;
+  }
+  panic("%s Failed to find base element for stream %llu.", streamId);
+  return ret;
 }

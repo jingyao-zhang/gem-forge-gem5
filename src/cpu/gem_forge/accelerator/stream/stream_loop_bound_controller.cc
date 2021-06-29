@@ -1,4 +1,4 @@
-#include "stream_loop_bound_controller.hh"
+#include "stream_region_controller.hh"
 
 #include "base/trace.hh"
 #include "debug/StreamLoopBound.hh"
@@ -10,13 +10,8 @@
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamLoopBound, format, ##args)
 
-StreamLoopBoundController::StreamLoopBoundController(StreamEngine *_se)
-    : se(_se) {}
-
-StreamLoopBoundController::~StreamLoopBoundController() {}
-
-void StreamLoopBoundController::initializeLoopBound(
-    const ::LLVM::TDG::StreamRegion &region) {
+void StreamRegionController::initializeStreamLoopBound(
+    const ::LLVM::TDG::StreamRegion &region, StaticRegion &staticRegion) {
   if (!region.is_loop_bound()) {
     return;
   }
@@ -26,13 +21,12 @@ void StreamLoopBoundController::initializeLoopBound(
       se->getCPUDelegator()->getSingleThreadContext(), boundFuncInfo);
   const bool boundRet = region.loop_bound_ret();
 
-  this->staticBoundMap.emplace(
-      std::piecewise_construct, std::forward_as_tuple(region.region()),
-      std::forward_as_tuple(region, boundFunc, boundRet));
-
-  SE_DPRINTF("[LoopBound] Initialized StaticLoopBound for region %s.\n",
-             region.region());
-  auto &staticBound = this->staticBoundMap.at(region.region());
+  SE_DPRINTF(
+      "[LoopBound] Initialized StaticLoopBound for region %s. BoundRet %d.\n",
+      region.region(), boundRet);
+  auto &staticBound = staticRegion.loopBound;
+  staticBound.boundFunc = boundFunc;
+  staticBound.boundRet = boundRet;
 
   for (const auto &arg : region.loop_bound_func().args()) {
     if (arg.is_stream()) {
@@ -46,10 +40,97 @@ void StreamLoopBoundController::initializeLoopBound(
              region.region());
 }
 
-void StreamLoopBoundController::dispatchStreamConfig(const ConfigArgs &args) {}
+void StreamRegionController::dispatchStreamConfigForLoopBound(
+    const ConfigArgs &args, DynRegion &dynRegion) {
+  auto &staticRegion = *dynRegion.staticRegion;
+  if (!staticRegion.region.is_loop_bound()) {
+    return;
+  }
+  dynRegion.loopBound.boundFunc = staticRegion.loopBound.boundFunc;
+  SE_DPRINTF("[LoopBound] Dispatch DynLoopBound for region %s.\n",
+             staticRegion.region.region());
+}
 
-void StreamLoopBoundController::executeStreamConfig(const ConfigArgs &args) {}
+void StreamRegionController::executeStreamConfigForLoopBound(
+    const ConfigArgs &args, DynRegion &dynRegion) {
+  auto &staticRegion = *dynRegion.staticRegion;
+  if (!staticRegion.region.is_loop_bound()) {
+    return;
+  }
+  auto &dynBound = dynRegion.loopBound;
 
-void StreamLoopBoundController::rewindStreamConfig(const ConfigArgs &args) {}
+  assert(args.inputMap && "Missing InputMap.");
+  assert(args.inputMap->count(
+             ::LLVM::TDG::ReservedStreamRegionId::LoopBoundFuncInputRegionId) &&
+         "Missing InputVec for LoopBound.");
+  auto &inputVec = args.inputMap->at(
+      ::LLVM::TDG::ReservedStreamRegionId::LoopBoundFuncInputRegionId);
 
-void StreamLoopBoundController::commitStreamEnd(const EndArgs &args) {}
+  int inputIdx = 0;
+
+  // Construct the NestConfigFunc formal params.
+  SE_DPRINTF("[LoopBound] Executed DynLoopBound for region %s.\n",
+             staticRegion.region.region());
+  {
+    auto &formalParams = dynBound.formalParams;
+    const auto &funcInfo = dynBound.boundFunc->getFuncInfo();
+    SE_DPRINTF("[LoopBound] boundFunc %#x.\n", dynBound.boundFunc);
+    this->buildFormalParams(inputVec, inputIdx, funcInfo, formalParams);
+  }
+  SE_DPRINTF("[LoopBound] Executed DynLoopBound for region %s.\n",
+             staticRegion.region.region());
+}
+
+void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
+  auto &staticRegion = *dynRegion.staticRegion;
+
+  if (!staticRegion.region.is_loop_bound()) {
+    return;
+  }
+
+  auto &staticBound = staticRegion.loopBound;
+  auto &dynBound = dynRegion.loopBound;
+
+  auto nextElementIdx = dynBound.nextElementIdx;
+  std::unordered_set<StreamElement *> baseElements;
+  for (auto baseS : staticBound.baseStreams) {
+    auto &baseDynS = baseS->getDynamicStream(dynRegion.seqNum);
+    auto baseElement = baseDynS.getElementByIdx(nextElementIdx);
+    if (!baseElement) {
+      if (baseDynS.FIFOIdx.entryIdx > nextElementIdx) {
+        DYN_S_PANIC(baseDynS.dynamicStreamId,
+                    "[LoopBound] Miss Element %llu.\n", nextElementIdx);
+      } else {
+        // The base element is not allocated yet.
+        DYN_S_DPRINTF(baseDynS.dynamicStreamId,
+                      "[LoopBound] BaseElement %llu not Allocated.\n",
+                      nextElementIdx);
+        return;
+      }
+    }
+    if (!baseElement->isValueReady) {
+      S_ELEMENT_DPRINTF(baseElement, "[LoopBound] Not Ready.\n");
+      return;
+    }
+    baseElements.insert(baseElement);
+  }
+
+  // All base elements are value ready.
+  auto getStreamValue =
+      GetStreamValueFromElementSet(baseElements, "[LoopBound]");
+
+  auto actualParams =
+      convertFormalParamToParam(dynBound.formalParams, getStreamValue);
+
+  auto ret = dynBound.boundFunc->invoke(actualParams).front();
+  if (ret == staticBound.boundRet) {
+    // Should break out the loop.
+    SE_DPRINTF("[LoopBound] Break (%d == %d) Region %s.\n", ret,
+               staticBound.boundRet, staticRegion.region.region());
+  } else {
+    // Keep going.
+    SE_DPRINTF("[LoopBound] Continue (%d != %d) Region %s.\n", ret,
+               staticBound.boundRet, staticRegion.region.region());
+  }
+  dynBound.nextElementIdx++;
+}

@@ -18,7 +18,7 @@ public:
   void rewindStreamConfig(const ConfigArgs &args);
   void commitStreamEnd(const EndArgs &args);
 
-  void configureNestStreams();
+  void tick();
 
   void takeOverBy(GemForgeCPUDelegator *newCPUDelegator);
 
@@ -32,6 +32,12 @@ private:
     const uint64_t seqNum;
     bool configExecuted = false;
 
+    DynRegion(StaticRegion *_staticRegion, uint64_t _seqNum)
+        : staticRegion(_staticRegion), seqNum(_seqNum) {}
+
+    /**
+     * NestStream states.
+     */
     struct DynNestConfig {
       const StaticRegion *staticRegion;
       ExecFuncPtr configFunc = nullptr;
@@ -46,20 +52,29 @@ private:
       InstSeqNum getConfigSeqNum(uint64_t elementIdx, uint64_t outSeqNum) const;
       InstSeqNum getEndSeqNum(uint64_t elementIdx, uint64_t outSeqNum) const;
     };
-    /**
-     * ! NestConfig for nested regions.
-     * ! Must use list 
-     */
     std::vector<DynNestConfig> nestConfigs;
 
-    DynRegion(StaticRegion *_staticRegion, uint64_t _seqNum)
-        : staticRegion(_staticRegion), seqNum(_seqNum) {}
+    /**
+     * StreamLoopBound states.
+     */
+    struct DynLoopBound {
+      ExecFuncPtr boundFunc = nullptr;
+      DynamicStreamFormalParamV formalParams;
+      uint64_t nextElementIdx = 0;
+    };
+    DynLoopBound loopBound;
   };
 
   std::map<uint64_t, DynRegion *> activeDynRegionMap;
 
   struct StaticRegion {
     const ::LLVM::TDG::StreamRegion &region;
+    std::list<DynRegion> dynRegions;
+    StaticRegion(const ::LLVM::TDG::StreamRegion &_region) : region(_region) {}
+
+    /**
+     * NestStream config (for this nested region).
+     */
     struct StaticNestConfig {
       ExecFuncPtr configFunc = nullptr;
       ExecFuncPtr predFunc = nullptr;
@@ -67,17 +82,27 @@ private:
       std::unordered_set<Stream *> baseStreams;
       std::unordered_set<Stream *> configStreams;
     };
-    // NestConfig for this Region.
     StaticNestConfig nestConfig;
-    std::list<DynRegion> dynRegions;
-    StaticRegion(const ::LLVM::TDG::StreamRegion &_region) : region(_region) {}
+
+    /**
+     * StreamLoopBound config.
+     */
+    struct StaticLoopBound {
+      ExecFuncPtr boundFunc;
+      bool boundRet;
+      std::unordered_set<Stream *> baseStreams;
+    };
+    StaticLoopBound loopBound;
   };
 
   /**
-   * Remember all static nest config.
+   * Remember all static region config.
    */
   std::unordered_map<std::string, StaticRegion> staticRegionMap;
 
+  /**
+   * For NestStream.
+   */
   void initializeNestStreams(const ::LLVM::TDG::StreamRegion &region,
                              StaticRegion &staticRegion);
   void dispatchStreamConfigForNestStreams(const ConfigArgs &args,
@@ -88,10 +113,34 @@ private:
                            DynRegion::DynNestConfig &dynNestConfig);
 
   /**
+   * For StreamLoopBound.
+   */
+  void initializeStreamLoopBound(const ::LLVM::TDG::StreamRegion &region,
+                                 StaticRegion &staticRegion);
+  void dispatchStreamConfigForLoopBound(const ConfigArgs &args,
+                                        DynRegion &dynRegion);
+  void executeStreamConfigForLoopBound(const ConfigArgs &args,
+                                       DynRegion &dynRegion);
+  void checkLoopBound(DynRegion &dynRegion);
+
+  /**
    * Helper functions.
    */
   StaticRegion &getStaticRegion(const std::string &regionName);
   DynRegion &pushDynRegion(StaticRegion &staticRegion, uint64_t seqNum);
+
+  void buildFormalParams(const ConfigArgs::InputVec &inputVec, int &inputIdx,
+                         const ::LLVM::TDG::ExecFuncInfo &funcInfo,
+                         DynamicStreamFormalParamV &formalParams);
+
+  struct GetStreamValueFromElementSet {
+    using ElementSet = std::unordered_set<StreamElement *>;
+    ElementSet &elements;
+    const char *error;
+    GetStreamValueFromElementSet(ElementSet &_elements, const char *_error)
+        : elements(_elements), error(_error) {}
+    StreamValue operator()(uint64_t streamId) const;
+  };
 };
 
 #endif

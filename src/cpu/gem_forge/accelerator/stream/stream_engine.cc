@@ -3,7 +3,6 @@
 #include "stream_compute_engine.hh"
 #include "stream_data_traffic_accumulator.hh"
 #include "stream_float_controller.hh"
-#include "stream_loop_bound_controller.hh"
 #include "stream_lsq_callback.hh"
 #include "stream_ndc_controller.hh"
 #include "stream_range_sync_controller.hh"
@@ -68,7 +67,6 @@ StreamEngine::StreamEngine(Params *params)
   this->computeEngine = m5::make_unique<StreamComputeEngine>(this, params);
   this->regionController = m5::make_unique<StreamRegionController>(this);
   this->rangeSyncController = m5::make_unique<StreamRangeSyncController>(this);
-  this->loopBoundController = m5::make_unique<StreamLoopBoundController>(this);
 
   this->dataTrafficAccFix =
       m5::make_unique<StreamDataTrafficAccumulator>(this, false /* floated */
@@ -1635,9 +1633,6 @@ void StreamEngine::initializeStreams(
         this->getStreamRegion(nestRegionRelativePath);
     this->initializeStreams(nestStreamRegion);
   }
-
-  // Initialize the LoopBound.
-  this->loopBoundController->initializeLoopBound(streamRegion);
 }
 
 void StreamEngine::generateCoalescedStreamIdMap(
@@ -1780,7 +1775,7 @@ void StreamEngine::tick() {
   this->issueElements();
   this->computeEngine->startComputation();
   this->computeEngine->completeComputation();
-  this->regionController->configureNestStreams();
+  this->regionController->tick();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
