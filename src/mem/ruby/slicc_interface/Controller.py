@@ -89,7 +89,6 @@ class RubyStreamAwareController(RubyController):
     enable_stream_float = Param.Bool(False, "Whether to enable stream float.")
     enable_stream_subline = Param.Bool(False, "Whether to enable stream float subline transmission.")
     enable_stream_idea_ack = Param.Bool(False, "Whether to enable immediate stream ack.")
-    enable_stream_idea_sync = Param.Bool(False, "Whether to enable immediate stream sync.")
     enable_stream_idea_flow = Param.Bool(False, "Whether to enable immediate stream flow control.")
     enable_stream_idea_store = Param.Bool(False, "Whether to enable immediate stream store.")
     enable_stream_compact_store = Param.Bool(False, "Whether to enable compact stream store.")
@@ -102,6 +101,8 @@ class RubyStreamAwareController(RubyController):
         Param.UInt32(16, "Initial number of entries of MLC stream buffer")
     mlc_stream_buffer_to_segment_ratio = \
         Param.UInt32(4, "Ratio between MLC buffer and segment")
+    enable_mlc_stream_idea_pop_check_llc_progress = \
+        Param.Bool(True, "When MLCStream pop, ideally check LLCStream progress.")
     llc_stream_engine_issue_width = \
         Param.UInt32(1, "Issue width of LLCStreamEngine")
     llc_stream_engine_migrate_width = \

@@ -1,5 +1,9 @@
 #include "CacheStreamConfigureData.hh"
 
+#include "debug/StreamLoopBound.hh"
+#define DEBUG_TYPE StreamLoopBound
+#include "../stream_log.hh"
+
 CacheStreamConfigureData::CacheStreamConfigureData(
     Stream *_stream, const DynamicStreamId &_dynamicId, int _elementSize,
     const std::vector<DynamicStreamFormalParam> &_addrGenFormalParams,

@@ -45,8 +45,8 @@ public:
   bool isStreamFloatEnabled() const { return this->enableStreamFloat; }
   bool isStreamSublineEnabled() const { return this->enableStreamSubline; }
   bool isStreamIdeaAckEnabled() const { return this->enableStreamIdeaAck; }
-  bool isStreamIdeaSyncEnabled() const {
-    return myParams->enable_stream_idea_sync;
+  bool isStreamIdeaMLCPopCheckEnabled() const {
+    return myParams->enable_mlc_stream_idea_pop_check_llc_progress;
   }
   bool isStreamIdeaFlowEnabled() const {
     return myParams->enable_stream_idea_flow;

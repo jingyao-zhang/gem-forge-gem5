@@ -39,14 +39,15 @@ private:
 
   struct Args {
     const ::LLVM::TDG::StreamRegion &region;
+    InstSeqNum seqNum;
     DynStreamList &dynStreams;
     StreamCacheConfigMap &floatedMap;
     CacheStreamConfigureVec &rootConfigVec;
-    Args(const ::LLVM::TDG::StreamRegion &_region, DynStreamList &_dynStreams,
-         StreamCacheConfigMap &_floatedMap,
+    Args(const ::LLVM::TDG::StreamRegion &_region, InstSeqNum _seqNum,
+         DynStreamList &_dynStreams, StreamCacheConfigMap &_floatedMap,
          CacheStreamConfigureVec &_rootConfigVec)
-        : region(_region), dynStreams(_dynStreams), floatedMap(_floatedMap),
-          rootConfigVec(_rootConfigVec) {}
+        : region(_region), seqNum(_seqNum), dynStreams(_dynStreams),
+          floatedMap(_floatedMap), rootConfigVec(_rootConfigVec) {}
   };
 
   void floatDirectLoadStreams(const Args &args);
@@ -54,12 +55,18 @@ private:
   void floatPointerChaseStreams(const Args &args);
   void floatIndirectStreams(const Args &args);
   void floatDirectStoreComputeOrUpdateStreams(const Args &args);
-  void floatDirectReductionStreams(const Args &args);
+  void floatDirectOrPointerChaseReductionStreams(const Args &args);
   void floatIndirectReductionStreams(const Args &args);
   void floatIndirectReductionStream(const Args &args, DynamicStream *dynS);
   void floatTwoLevelIndirectStoreComputeStreams(const Args &args);
   void floatTwoLevelIndirectStoreComputeStream(const Args &args,
                                                DynamicStream *dynS);
+
+  /**
+   * If the loop is eliminated, we mark some addition fields in the
+   * configuration.
+   */
+  void floatEliminatedLoop(const Args &args);
 
   /**
    * For now we can rewind a floated stream that write to memory (Store/Atomic

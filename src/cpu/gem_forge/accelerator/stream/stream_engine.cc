@@ -27,6 +27,8 @@ bool isDebugStream(Stream *S) {
 
 } // namespace
 
+#define SE_WARN(format, args...)                                               \
+  warn("[SE%d]: " format, this->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamEngine, format, ##args)
@@ -3049,6 +3051,12 @@ void StreamEngine::dump() {
   this->dumpUser();
 }
 
+void StreamEngine::receiveOffloadedLoopBoundRet(
+    const DynamicStreamId &dynStreamId, int64_t totalTripCount) {
+  this->regionController->receiveOffloadedLoopBoundRet(dynStreamId,
+                                                       totalTripCount);
+}
+
 void StreamEngine::exitDump() const {
   if (streamPlacementManager != nullptr) {
     this->streamPlacementManager->dumpStreamCacheStats();
@@ -3079,8 +3087,16 @@ void StreamEngine::exitDump() const {
 }
 
 bool StreamEngine::checkProgress() {
-  bool hasProgress = this->numSteppedSinceLastCheck > 0;
+  bool hasProgress = this->numSteppedSinceLastCheck > 0 ||
+                     this->numOffloadedSteppedSinceLastCheck > 0;
+  // Print a warning if we are relying on offloaded streams' progress.
+  if (this->numSteppedSinceLastCheck == 0 &&
+      this->numOffloadedSteppedSinceLastCheck > 0) {
+    SE_WARN("[Progress] Only Offloaded Progress %llu.\n",
+            this->numOffloadedSteppedSinceLastCheck);
+  }
   this->numSteppedSinceLastCheck = 0;
+  this->numOffloadedSteppedSinceLastCheck = 0;
   return hasProgress;
 }
 

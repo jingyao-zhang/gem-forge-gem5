@@ -14,6 +14,7 @@
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStreamBase.hh"
+#include "debug/MLCStreamLoopBound.hh"
 #include "debug/StreamRangeSync.hh"
 
 #define DEBUG_TYPE MLCRubyStreamBase
@@ -25,7 +26,7 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
     const std::vector<MLCDynamicIndirectStream *> &_indirectStreams)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
-                       _requestToLLCMsgBuffer),
+                       _requestToLLCMsgBuffer, true /* isMLCDirect */),
       slicedStream(_configData),
       maxNumSlicesPerSegment(
           std::max(1, _configData->mlcBufferNumSlices /
@@ -882,4 +883,10 @@ void MLCDynamicDirectStream::receiveStreamDone(
       }
     }
   }
+}
+
+void MLCDynamicDirectStream::setTotalTripCount(int64_t totalTripCount) {
+  MLC_S_DPRINTF_(MLCStreamLoopBound, this->getDynamicStreamId(),
+                 "[LoopBound] Set TotalTripCount %lld.\n", totalTripCount);
+  this->slicedStream.setTotalTripCount(totalTripCount);
 }

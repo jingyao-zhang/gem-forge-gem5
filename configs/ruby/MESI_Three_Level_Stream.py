@@ -233,7 +233,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_stream_float=options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
-                enable_stream_idea_sync=options.gem_forge_stream_engine_enable_float_idea_sync,
+                enable_mlc_stream_idea_pop_check_llc_progress=\
+                    options.gem_forge_stream_engine_enable_float_idea_mlc_pop_check,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
                 enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,

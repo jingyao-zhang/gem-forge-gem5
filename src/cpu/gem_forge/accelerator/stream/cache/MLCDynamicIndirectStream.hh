@@ -58,6 +58,18 @@ public:
     this->baseStream = baseStream;
   }
 
+  bool hasOverflowed() const override;
+  /**
+   * We query the DirectStream for TotalTripCount.
+   */
+  int64_t getTotalTripCount() const override {
+    return this->baseStream->getTotalTripCount();
+  }
+  bool hasTotalTripCount() const override {
+    return this->baseStream->hasTotalTripCount();
+  }
+  void setTotalTripCount(int64_t totalTripCount) override;
+
 private:
   // Remember the root stream id.
   DynamicStreamId rootStreamId;
@@ -70,19 +82,12 @@ private:
   bool isOneIterationBehind;
 
   /**
-   * -1 means indefinite.
-   */
-  const int64_t totalTripCount;
-
-  /**
    * The tail ElementIdx (Not allocated yet).
    * This is not the same as tailSliceIdx due to coalesced indirect stream:
    * a[b[i] + 0]; a[b[i] + 1];
    */
   uint64_t tailElementIdx;
 
-  bool hasOverflowed() const override;
-  int64_t getTotalTripCount() const override;
   SliceIter
   findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
 
@@ -102,6 +107,13 @@ private:
   SliceIter findOrInsertSliceBySliceId(const SliceIter &begin,
                                        const SliceIter &end,
                                        const DynamicStreamSliceId &sliceId);
+
+  /**
+   * Intercept the final reduction value.
+   * @return whether this is handled as the FinalReductionValue.
+   */
+  bool receiveFinalReductionValue(const DynamicStreamSliceId &sliceId,
+                                  const DataBlock &dataBlock, Addr paddrLine);
 };
 
 #endif

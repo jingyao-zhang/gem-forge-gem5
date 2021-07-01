@@ -83,6 +83,12 @@ public:
   void receiveStreamNDCRequest(PacketPtr pkt);
   void receiveStreamNDCResponse(const ResponseMsg &msg);
 
+  /**
+   * Receive a StreamLoopBound TotalTripCount.
+   */
+  void receiveStreamTotalTripCount(const DynamicStreamId &streamId,
+                                   int64_t totalTripCount);
+
 private:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseToUpperMsgBuffer;

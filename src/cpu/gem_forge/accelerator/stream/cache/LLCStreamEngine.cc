@@ -390,9 +390,10 @@ void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
    * There are many things to do here.
    * 1. Slice - For StoreStream, perform the store and send back Ack.
    * 2. Slice - For SendTo dependence, send the slice to the receiver.
-   * 3. Element - Trigger indirect elements if the base is ready (in order).
-   * 4. Element - Trigger update operations (out-of-order).
-   * 5. Element - Release ready elements in order.
+   * 3. Element - Evaluate LoopBoundFunc.
+   * 4. Element - Trigger indirect elements if the base is ready (in order).
+   * 5. Element - Trigger update operations (out-of-order).
+   * 6. Element - Release ready elements in order.
    */
 
   if (S->isStoreStream()) {
@@ -410,6 +411,9 @@ void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
           RubySystem::getBlockSizeBytes() /* PayloadSize */);
     }
   }
+
+  // Evaluate LoopBound.
+  dynS->evaluateLoopBound(this);
 
   if (!dynS->getIndStreams().empty()) {
     for (auto &idxElement : dynS->idxToElementMap) {
@@ -1418,7 +1422,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
 
     if (!dynS->getIndStreams().empty()) {
       // Unless this is PtrChaseIV stream.
-      if (dynS->getIndStreams().size() == 1 && dynS->isPointerChase()) {
+      if (dynS->isPointerChase()) {
       } else {
         LLC_SLICE_PANIC(sliceId, "Faulted with Indirect Streams.");
       }
@@ -2007,6 +2011,14 @@ void LLCStreamEngine::issueStreamDataToLLC(
     LLC_SLICE_PANIC(sliceId, "Translation fault on the ReceiverStream: %s.",
                     recvConfig->dynamicId);
   }
+}
+
+void LLCStreamEngine::setMLCStreamTotalTripCount(LLCDynamicStreamPtr stream,
+                                                 uint64_t totalTripCount) {
+  auto mlcSE = stream->getMLCController()->getMLCStreamEngine();
+  assert(mlcSE && "Missing MLC SE.");
+  mlcSE->receiveStreamTotalTripCount(stream->getDynamicStreamId(),
+                                     totalTripCount);
 }
 
 void LLCStreamEngine::findMigratingStreams() {

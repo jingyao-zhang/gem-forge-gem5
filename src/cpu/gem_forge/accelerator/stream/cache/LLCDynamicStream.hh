@@ -57,6 +57,10 @@ public:
 
   ~LLCDynamicStream();
 
+  AbstractStreamAwareController *getMLCController() const {
+    return this->mlcController;
+  }
+
   Stream *getStaticStream() const { return this->configData->stream; }
   uint64_t getStaticId() const { return this->configData->dynamicId.staticId; }
   const DynamicStreamId &getDynamicStreamId() const {
@@ -84,8 +88,14 @@ public:
     assert(this->isPredicated());
     return this->configData->predicateStreamId;
   }
+
+  /**
+   * We must query the sliced stream for total trip count.
+   */
   bool hasTotalTripCount() const;
   uint64_t getTotalTripCount() const;
+  void setTotalTripCount(int64_t totalTripCount);
+
   bool hasIndirectDependent() const {
     auto S = this->getStaticStream();
     return !this->getIndStreams().empty() || this->isPointerChase() ||
@@ -431,6 +441,12 @@ public:
    */
   bool shouldIssueBeforeCommit() const;
   bool shouldIssueAfterCommit() const;
+
+  void evaluateLoopBound(LLCStreamEngine *se);
+
+private:
+  uint64_t nextLoopBoundElementIdx = 0;
+  bool loopBoundBrokenOut = false;
 };
 
 #endif

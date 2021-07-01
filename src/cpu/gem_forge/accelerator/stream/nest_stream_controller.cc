@@ -200,29 +200,26 @@ void StreamRegionController::configureNestStream(
 
   // Sanity check that nest streams have same TotalTripCount.
   bool isFirstDynS = true;
-  int totalTripCount = 0;
-  InstSeqNum configSeqNum = 0;
+  int totalTripCount = DynamicStream::InvalidTotalTripCount;
   for (auto S : staticNestRegion.streams) {
     auto &dynS = S->getLastDynamicStream();
-    if (!dynS.hasTotalTripCount()) {
-      S_PANIC(S, "NestStream must have TotalTripCount.");
+    auto dynSTotalTripCount = dynS.getTotalTripCount();
+    if (dynSTotalTripCount == 0) {
+      DYN_S_PANIC(dynS.dynamicStreamId, "NestStream has TotalTripCount %d.",
+                  totalTripCount);
     }
     if (isFirstDynS) {
-      totalTripCount = dynS.getTotalTripCount();
-      configSeqNum = dynS.configSeqNum;
+      totalTripCount = dynSTotalTripCount;
       isFirstDynS = false;
     } else {
-      if (totalTripCount != dynS.getTotalTripCount()) {
-        S_PANIC(S, "NestStream has TotalTripCount %d, while others have %d.",
-                dynS.getTotalTripCount(), totalTripCount);
+      if (totalTripCount != dynSTotalTripCount) {
+        DYN_S_PANIC(dynS.dynamicStreamId,
+                    "NestStream has TotalTripCount %d, while others have %d.",
+                    dynSTotalTripCount, totalTripCount);
       }
     }
   }
 
-  /**
-   * If the TotalTripCount is zero, we have to manually rewind the
-   * StreamConfig immediately, as the core will not execute the StreamEnd.
-   */
   SE_DPRINTF(
       "[Nest] Value ready. Configure NestRegion %s, OuterElementIdx %llu, "
       "TotalTripCount %d, Configured DynStreams:\n",
@@ -233,13 +230,6 @@ void StreamRegionController::configureNestStream(
       auto &dynS = S->getLastDynamicStream();
       SE_DPRINTF("[Nest]   %s.\n", dynS.dynamicStreamId);
     }
-  }
-  if (totalTripCount == 0) {
-    // Technically, the StreamConfig is already committed. But here we just
-    // rewind it.
-    StreamEngine::StreamConfigArgs args(
-        configSeqNum, staticNestRegion.region.relative_path());
-    this->se->rewindStreamConfig(args);
   }
 
   dynNestConfig.nextElementIdx++;

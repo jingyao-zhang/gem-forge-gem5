@@ -94,6 +94,11 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
     return;
   }
 
+  if (dynBound.offloaded) {
+    // We are just waiting for result from offloaded LoopBound.
+    return;
+  }
+
   auto nextElementIdx = dynBound.nextElementIdx;
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticBound.baseStreams) {
@@ -145,4 +150,26 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
                staticBound.boundRet, staticRegion.region.region());
   }
   dynBound.nextElementIdx++;
+}
+
+void StreamRegionController::receiveOffloadedLoopBoundRet(
+    const DynamicStreamId &dynStreamId, int64_t totalTripCount) {
+  auto S = se->getStream(dynStreamId.staticId);
+  auto dynS = S->getDynamicStream(dynStreamId);
+  if (!dynS) {
+    DYN_S_PANIC(dynStreamId, "[LoopBound] Failed to get DynS.");
+  }
+  auto seqNum = dynS->configSeqNum;
+  auto &dynRegion = this->getDynRegion(S->getStreamName(), seqNum);
+  auto &dynBound = dynRegion.loopBound;
+  auto &staticRegion = *dynRegion.staticRegion;
+
+  SE_DPRINTF("[LoopBound] Received TotalTripCount %llu Region %s.\n",
+             totalTripCount, staticRegion.region.region());
+  dynBound.brokenOut = true;
+  dynBound.nextElementIdx = totalTripCount;
+  for (auto S : staticRegion.streams) {
+    auto &dynS = S->getDynamicStream(dynRegion.seqNum);
+    dynS.setTotalTripCount(totalTripCount);
+  }
 }

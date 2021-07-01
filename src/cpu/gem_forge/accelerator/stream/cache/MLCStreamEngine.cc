@@ -549,4 +549,13 @@ void MLCStreamEngine::wakeup() {
   }
 }
 
+void MLCStreamEngine::receiveStreamTotalTripCount(
+    const DynamicStreamId &streamId, int64_t totalTripCount) {
+  auto dynS = this->getStreamFromDynamicId(streamId);
+  if (!dynS) {
+    MLC_S_PANIC_NO_DUMP(streamId, "Failed to get MLC S for StreamLoopBound.");
+  }
+  dynS->setTotalTripCount(totalTripCount);
+}
+
 void MLCStreamEngine::print(std::ostream &out) const {}

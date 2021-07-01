@@ -900,8 +900,8 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
    * user, which is marked ready by checking its
    * dynS->finalReductionValueReady.
    */
-  if (this->stream->isReduction() && !this->stream->hasCoreUser() &&
-      this->dynS->offloadedToCache) {
+  if ((this->stream->isReduction() || this->stream->isPointerChaseIndVar()) &&
+      !this->stream->hasCoreUser() && this->dynS->offloadedToCache) {
     if (this->isLastElement()) {
       return this->dynS->finalReductionValueReady;
     } else {

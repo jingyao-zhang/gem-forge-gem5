@@ -66,6 +66,8 @@
 #define MLC_S_PANIC(dynId, format, args...)                                    \
   this->panicDump();                                                           \
   panic(MLC_S_MSG(dynId, format, ##args))
+#define MLC_S_PANIC_NO_DUMP(dynId, format, args...)                            \
+  panic(MLC_S_MSG(dynId, format, ##args))
 
 #define MLC_SLICE_DPRINTF_(X, sliceId, format, args...)                        \
   DPRINTF(X, MLC_SLICE_MSG(sliceId, format, ##args))

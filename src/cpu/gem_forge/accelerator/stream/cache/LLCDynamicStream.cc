@@ -13,6 +13,7 @@
 #include "debug/LLCRubyStreamLife.hh"
 #include "debug/LLCRubyStreamReduce.hh"
 #include "debug/LLCRubyStreamStore.hh"
+#include "debug/LLCStreamLoopBound.hh"
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
@@ -95,14 +96,19 @@ bool LLCDynamicStream::hasTotalTripCount() const {
   if (this->baseStream) {
     return this->baseStream->hasTotalTripCount();
   }
-  return this->configData->totalTripCount != -1;
+  return this->slicedStream.hasTotalTripCount();
 }
 
 uint64_t LLCDynamicStream::getTotalTripCount() const {
   if (this->baseStream) {
     return this->baseStream->getTotalTripCount();
   }
-  return this->configData->totalTripCount;
+  return this->slicedStream.getTotalTripCount();
+}
+
+void LLCDynamicStream::setTotalTripCount(int64_t totalTripCount) {
+  assert(!this->baseStream && "SetTotalTripCount for IndirectS.");
+  this->slicedStream.setTotalTripCount(totalTripCount);
 }
 
 Addr LLCDynamicStream::peekNextInitVAddr() const {
@@ -510,11 +516,13 @@ void LLCDynamicStream::eraseElement(uint64_t elementIdx) {
                 elementIdx);
   }
   LLC_ELEMENT_DPRINTF(iter->second, "Erased element.\n");
+  this->getStaticStream()->incrementOffloadedStepped();
   this->idxToElementMap.erase(iter);
 }
 
 void LLCDynamicStream::eraseElement(IdxToElementMapT::iterator elementIter) {
   LLC_ELEMENT_DPRINTF(elementIter->second, "Erased element.\n");
+  this->getStaticStream()->incrementOffloadedStepped();
   this->idxToElementMap.erase(elementIter);
 }
 
@@ -974,27 +982,29 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
 
     /**
      * If the last reduction element is ready, we send this back to the core.
-     * TODO: Really send a packet to the requesting core.
      */
     if (this->lastComputedReductionElementIdx == this->getTotalTripCount()) {
       // This is the last reduction.
       auto finalReductionElement = this->getElementPanic(
           this->lastComputedReductionElementIdx, "Return FinalReductionValue.");
-      auto dynCoreS = S->getDynamicStream(this->getDynamicStreamId());
-      if (!dynCoreS) {
-        LLC_ELEMENT_PANIC(
-            finalReductionElement,
-            "CoreDynS released before FinalReductionValue computed.");
-      }
-      if (dynCoreS->finalReductionValueReady) {
-        LLC_ELEMENT_PANIC(finalReductionElement,
-                          "FinalReductionValue already ready.");
-      }
-      dynCoreS->finalReductionValue =
-          finalReductionElement->getValueByStreamId(this->getStaticId());
-      dynCoreS->finalReductionValueReady = true;
+
+      DynamicStreamSliceId sliceId;
+      sliceId.getDynStreamId() = this->getDynamicStreamId();
+      sliceId.getStartIdx() = this->lastComputedReductionElementIdx;
+      sliceId.getEndIdx() = this->lastComputedReductionElementIdx + 1;
+      auto finalReductionValue =
+          finalReductionElement->getValueByStreamId(S->staticId);
+
+      Addr paddrLine = 0;
+      int dataSize = sizeof(finalReductionValue);
+      int payloadSize = S->getCoreElementSize();
+      int lineOffset = 0;
+      bool forceIdea = false;
+      se->issueStreamDataToMLC(sliceId, paddrLine,
+                               finalReductionValue.uint8Ptr(), dataSize,
+                               payloadSize, lineOffset, forceIdea);
       LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElement,
-                           "Notify final reduction.\n");
+                           "Send back final reduction.\n");
     }
 
     /**
@@ -1179,6 +1189,74 @@ bool LLCDynamicStream::shouldIssueAfterCommit() const {
     return true;
   }
   return false;
+}
+
+void LLCDynamicStream::evaluateLoopBound(LLCStreamEngine *se) {
+  if (!this->configData->loopBoundCallback) {
+    return;
+  }
+  if (this->loopBoundBrokenOut) {
+    return;
+  }
+
+  auto element = this->getElement(this->nextLoopBoundElementIdx);
+  if (!element) {
+    if (this->isElementReleased(this->nextLoopBoundElementIdx)) {
+      LLC_S_PANIC(this->getDynamicStreamId(),
+                  "[LLCLoopBound] NextLoopBoundElement %llu released.",
+                  this->nextLoopBoundElementIdx);
+    } else {
+      // Not allocated yet.
+      return;
+    }
+  }
+  if (!element->isReady()) {
+    LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynamicStreamId(),
+                   "[LLCLoopBound] NextLoopBoundElement %llu not ready.\n",
+                   this->nextLoopBoundElementIdx);
+    return;
+  }
+
+  auto getStreamValue = [&element](uint64_t streamId) -> StreamValue {
+    return element->getValueByStreamId(streamId);
+  };
+  auto loopBoundActualParams = convertFormalParamToParam(
+      this->configData->loopBoundFormalParams, getStreamValue);
+  auto loopBoundRet =
+      this->configData->loopBoundCallback->invoke(loopBoundActualParams)
+          .front();
+  if (loopBoundRet == this->configData->loopBoundRet) {
+    /**
+     * We should break.
+     * So far we just magically set TotalTripCount for Core/MLC/LLC.
+     * TODO: Handle this in a more realistic way.
+     */
+    LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynamicStreamId(),
+                   "[LLCLoopBound] Break (%d == %d) Element %llu.\n",
+                   loopBoundRet, this->configData->loopBoundRet,
+                   this->nextLoopBoundElementIdx);
+    auto totalTripCount = this->nextLoopBoundElementIdx + 1;
+
+    this->setTotalTripCount(totalTripCount);
+
+    // Also set the MLCStream.
+    se->setMLCStreamTotalTripCount(this, totalTripCount);
+
+    // Also set the core.
+    this->getStaticStream()->getSE()->receiveOffloadedLoopBoundRet(
+        this->getDynamicStreamId(), totalTripCount);
+
+    this->loopBoundBrokenOut = true;
+
+  } else {
+    // We should continue.
+    LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynamicStreamId(),
+                   "[LLCLoopBound] Continue (%d != %d) Element %llu.\n",
+                   loopBoundRet, this->configData->loopBoundRet,
+                   this->nextLoopBoundElementIdx);
+  }
+
+  this->nextLoopBoundElementIdx++;
 }
 
 LLCStreamElementPtr LLCDynamicStream::getElement(uint64_t elementIdx) const {

@@ -15,7 +15,6 @@ SlicedDynamicStream::SlicedDynamicStream(
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize), elementPerSlice(1),
-      totalTripCount(_configData->totalTripCount),
       isPointerChase(_configData->isPointerChase), ptrChaseState(_configData),
       tailElementIdx(0), sliceHeadElementIdx(0) {
 
@@ -132,6 +131,16 @@ const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
     this->allocateOneElement();
   }
   return this->slices.front();
+}
+
+void SlicedDynamicStream::setTotalTripCount(int64_t totalTripCount) {
+  if (this->hasTotalTripCount()) {
+    DYN_S_PANIC(this->streamId, "[Sliced] Reset TotalTripCount %lld -> %lld.",
+                this->totalTripCount, totalTripCount);
+  }
+  DYN_S_DPRINTF(this->streamId, "[Sliced] Set TotalTripCount %lld.\n",
+                totalTripCount);
+  this->totalTripCount = totalTripCount;
 }
 
 Addr SlicedDynamicStream::getElementVAddr(uint64_t elementIdx) const {

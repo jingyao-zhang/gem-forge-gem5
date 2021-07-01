@@ -39,6 +39,20 @@ public:
    */
   void checkCoreCommitProgress();
 
+  /**
+   * We query the SlicedStream for TotalTripCount.
+   */
+  bool hasOverflowed() const override {
+    return this->slicedStream.hasOverflowed();
+  }
+  int64_t getTotalTripCount() const override {
+    return this->slicedStream.getTotalTripCount();
+  }
+  bool hasTotalTripCount() const override {
+    return this->slicedStream.hasTotalTripCount();
+  }
+  void setTotalTripCount(int64_t totalTripCount) override;
+
 protected:
   SlicedDynamicStream slicedStream;
 
@@ -92,13 +106,6 @@ protected:
   std::unordered_map<Addr, DataBlock> reuseBlockMap;
 
   std::vector<MLCDynamicIndirectStream *> indirectStreams;
-
-  bool hasOverflowed() const override {
-    return this->slicedStream.hasOverflowed();
-  }
-  int64_t getTotalTripCount() const override {
-    return this->slicedStream.getTotalTripCount();
-  }
 
   bool matchLLCSliceId(const DynamicStreamSliceId &mlc,
                        const DynamicStreamSliceId &llc) const {

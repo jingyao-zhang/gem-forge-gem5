@@ -78,6 +78,8 @@ GemForgeCPUDelegator *Stream::getCPUDelegator() const {
   return this->se->getCPUDelegator();
 }
 
+StreamEngine *Stream::getSE() const { return this->se; }
+
 bool Stream::isAtomicStream() const {
   return this->getStreamType() == ::LLVM::TDG::StreamInfo_Type_AT;
 }
@@ -1069,6 +1071,13 @@ void Stream::sampleStatistic() {
   this->statistic.maxSize += this->maxSize;
   this->statistic.allocSize += this->allocSize;
   this->statistic.numDynStreams += this->dynamicStreams.size();
+}
+
+void Stream::incrementOffloadedStepped() {
+  if (!this->isLoopEliminated()) {
+    return;
+  }
+  se->numOffloadedSteppedSinceLastCheck++;
 }
 
 void Stream::dump() const {

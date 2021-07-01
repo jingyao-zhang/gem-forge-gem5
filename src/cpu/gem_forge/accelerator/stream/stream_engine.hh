@@ -196,6 +196,12 @@ public:
   const std::string &getPlacementLat() const { return this->placementLat; }
   const std::string &getPlacement() const { return this->placement; }
 
+  /**************************************************************************
+   * Received StreamLoopBound TotalTripCount from Cache.
+   **************************************************************************/
+  void receiveOffloadedLoopBoundRet(const DynamicStreamId &dynStreamId,
+                                    int64_t totalTripCount);
+
   void exitDump() const;
 
   void fetchedCacheBlock(Addr cacheBlockVAddr, StreamMemAccess *memAccess);
@@ -275,10 +281,12 @@ public:
   Stats::Scalar numCompletedAtomicComputeMicroOps;
 
   /**
-   * Number of committed elements since last check.
+   * Number of committed elements since last check,
+   * including those committed offloaded elements.
    * Used to check progress.
    */
   uint64_t numSteppedSinceLastCheck = 0;
+  uint64_t numOffloadedSteppedSinceLastCheck = 0;
 
 private:
   friend class Stream;

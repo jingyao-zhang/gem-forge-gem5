@@ -61,7 +61,18 @@ public:
   AddrGenCallbackPtr addrGenCallback;
   DynamicStreamFormalParamV predFormalParams;
   ExecFuncPtr predCallback;
-  int64_t totalTripCount = -1;
+
+  /**
+   * TotalTripCount for offloaded streams.
+   * ! Support reuse at MLC, LLC streams may be cut.
+   */
+  static constexpr int64_t InvalidTotalTripCount = -1;
+  int64_t totalTripCount = InvalidTotalTripCount;
+  int64_t getTotalTripCount() const { return this->totalTripCount; }
+  bool hasTotalTripCount() const {
+    return this->totalTripCount != InvalidTotalTripCount;
+  }
+
   bool isPredicated = false;
   bool isPredicatedTrue = false;
   DynamicStreamId predicateStreamId;
@@ -71,6 +82,12 @@ public:
   ExecFuncPtr storeCallback;
   DynamicStreamFormalParamV loadFormalParams;
   ExecFuncPtr loadCallback;
+
+  // For LoopBoundFunc.
+  // Break when loopBoundCallback() == Ret.
+  DynamicStreamFormalParamV loopBoundFormalParams;
+  ExecFuncPtr loopBoundCallback;
+  bool loopBoundRet;
 
   StreamValue reductionInitValue;
 

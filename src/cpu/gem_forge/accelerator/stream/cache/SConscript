@@ -9,8 +9,11 @@ CompoundFlag('L0RubyStream',
 DebugFlag('MLCRubyStreamBase')
 DebugFlag('MLCRubyStreamLife')
 DebugFlag('MLCRubyStreamReuse')
+DebugFlag('MLCRubyStreamReduce')
+DebugFlag('MLCStreamLoopBound')
 CompoundFlag('MLCRubyStream', [
     'MLCRubyStreamBase', 'MLCRubyStreamLife', 'MLCRubyStreamReuse',
+    'MLCRubyStreamReduce', 'MLCStreamLoopBound',
     'StreamRangeSync',
 ])
 DebugFlag('LLCRubyStreamBase')
@@ -19,11 +22,12 @@ DebugFlag('LLCRubyStreamReduce')
 DebugFlag('LLCRubyStreamMulticast')
 DebugFlag('LLCRubyStreamStore')
 DebugFlag('LLCRubyStreamNotIssue')
+DebugFlag('LLCStreamLoopBound')
 CompoundFlag('LLCRubyStream', [
     'LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
     'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
-    'LLCRubyStreamNotIssue',
-    'StreamRangeSync',
+    'LLCRubyStreamNotIssue', 'LLCStreamLoopBound',
+    'StreamRangeSync', 
 ])
 CompoundFlag('RubyStreamLife',
              ['CoreRubyStreamLife', 'L0RubyStreamLife', 'MLCRubyStreamLife', 'LLCRubyStreamLife'])

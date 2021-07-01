@@ -20,7 +20,7 @@ public:
   MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
                    AbstractStreamAwareController *_controller,
                    MessageBuffer *_responseMsgBuffer,
-                   MessageBuffer *_requestToLLCMsgBuffer);
+                   MessageBuffer *_requestToLLCMsgBuffer, bool _isMLCDirect);
 
   virtual ~MLCDynamicStream();
 
@@ -82,12 +82,21 @@ public:
     return this->sendToConfigs;
   }
 
+  /**
+   * API for this to check if overflowed.
+   */
+  virtual bool hasOverflowed() const = 0;
+  virtual int64_t getTotalTripCount() const = 0;
+  virtual bool hasTotalTripCount() const = 0;
+  virtual void setTotalTripCount(int64_t totalTripCount) = 0;
+
 protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;
   CacheStreamConfigureDataPtr config;
   bool isPointerChase;
   bool isPseudoOffload;
+  const bool isMLCDirect;
 
   std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
 
@@ -164,11 +173,6 @@ protected:
   void makeResponse(MLCStreamSlice &slice);
   void makeAck(MLCStreamSlice &slice);
 
-  /**
-   * API for this to check if overflowed.
-   */
-  virtual bool hasOverflowed() const = 0;
-  virtual int64_t getTotalTripCount() const = 0;
   /**
    * Find the correct slice for a core request.
    * Used in receiveStreamRequest() and receiveStreamRequestHit().

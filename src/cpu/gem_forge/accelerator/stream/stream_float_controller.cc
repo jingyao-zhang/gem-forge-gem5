@@ -1,5 +1,7 @@
 #include "stream_float_controller.hh"
 
+#include "stream_region_controller.hh"
+
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamEngine, format, ##args)
@@ -39,14 +41,18 @@ void StreamFloatController::floatStreams(
    * - DirectStoreComputeStream/UpdateStream.
    * - ReductionStreams.
    */
-  Args floatArgs(region, dynStreams, offloadedStreamConfigMap,
+  Args floatArgs(region, args.seqNum, dynStreams, offloadedStreamConfigMap,
                  *cacheStreamConfigVec);
   this->floatDirectLoadStreams(floatArgs);
   this->floatDirectAtomicComputeStreams(floatArgs);
   this->floatPointerChaseStreams(floatArgs);
   this->floatIndirectStreams(floatArgs);
   this->floatDirectStoreComputeOrUpdateStreams(floatArgs);
-  this->floatDirectReductionStreams(floatArgs);
+
+  // EliminatedLoop requires additional handling.
+  this->floatEliminatedLoop(floatArgs);
+
+  this->floatDirectOrPointerChaseReductionStreams(floatArgs);
   this->floatIndirectReductionStreams(floatArgs);
   this->floatTwoLevelIndirectStoreComputeStreams(floatArgs);
 
@@ -444,7 +450,8 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
   }
 }
 
-void StreamFloatController::floatDirectReductionStreams(const Args &args) {
+void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
+    const Args &args) {
   auto &floatedMap = args.floatedMap;
   for (auto dynS : args.dynStreams) {
     auto S = dynS->stream;
@@ -455,16 +462,21 @@ void StreamFloatController::floatDirectReductionStreams(const Args &args) {
         !S->addrBaseStreams.empty()) {
       continue;
     }
-    bool allBackBaseStreamsAreAffine = true;
+    bool allBackBaseStreamsAreAffineOrPointerChase = true;
     bool allBackBaseStreamsAreFloated = true;
+    int numPointerChaseBackBaseStreams = 0;
     std::vector<CacheStreamConfigureDataPtr> backBaseStreamConfigs;
     for (auto backBaseS : S->backBaseStreams) {
       if (backBaseS == S) {
         continue;
       }
-      if (!backBaseS->isDirectMemStream()) {
-        allBackBaseStreamsAreAffine = false;
+      if (!backBaseS->isDirectMemStream() &&
+          !backBaseS->isPointerChaseLoadStream()) {
+        allBackBaseStreamsAreAffineOrPointerChase = false;
         break;
+      }
+      if (backBaseS->isPointerChaseLoadStream()) {
+        numPointerChaseBackBaseStreams++;
       }
       if (!floatedMap.count(backBaseS)) {
         allBackBaseStreamsAreFloated = false;
@@ -472,7 +484,14 @@ void StreamFloatController::floatDirectReductionStreams(const Args &args) {
       }
       backBaseStreamConfigs.emplace_back(floatedMap.at(backBaseS));
     }
-    if (!allBackBaseStreamsAreAffine) {
+    if (!allBackBaseStreamsAreAffineOrPointerChase) {
+      continue;
+    }
+    if (numPointerChaseBackBaseStreams > 1) {
+      StreamFloatPolicy::logStream(S)
+          << "[Not Float] as Multi PtrChase BackBaseStreams: "
+          << numPointerChaseBackBaseStreams << ".\n"
+          << std::flush;
       continue;
     }
     if (!allBackBaseStreamsAreFloated) {
@@ -483,6 +502,18 @@ void StreamFloatController::floatDirectReductionStreams(const Args &args) {
     }
     if (backBaseStreamConfigs.empty()) {
       S_PANIC(S, "ReductionStream without BackBaseStream.");
+    }
+    /**
+     * We require has TotalTripCount, or at Least the base
+     * stream has LoopBoundCallback.
+     */
+    if (!dynS->hasTotalTripCount() &&
+        !backBaseStreamConfigs.front()->loopBoundCallback) {
+      StreamFloatPolicy::logStream(S)
+          << "[Not Float] as no TotalTripCount: " << dynS->getTotalTripCount()
+          << ", nor LoopBoundFunc.\n"
+          << std::flush;
+      return;
     }
     /**
      * Okay now we decided to float the ReductionStream. We pick the
@@ -782,4 +813,48 @@ bool StreamFloatController::checkAliasedUnpromotedStoreStream(Stream *S) {
     return true;
   }
   return false;
+}
+
+void StreamFloatController::floatEliminatedLoop(const Args &args) {
+
+  if (!args.region.loop_eliminated()) {
+    return;
+  }
+
+  auto &dynRegion =
+      se->regionController->getDynRegion(args.region.region(), args.seqNum);
+
+  /**
+   * Check that LoopBound's streams all offloaded.
+   */
+  auto &dynBound = dynRegion.loopBound;
+  auto &staticBound = dynRegion.staticRegion->loopBound;
+  for (auto S : staticBound.baseStreams) {
+    if (!args.floatedMap.count(S)) {
+      StreamFloatPolicy::logStream(S)
+          << "[Not Float] LoopBound base stream not floated.\n"
+          << std::flush;
+      S_DPRINTF(S, "LoopBound base stream not floated.\n");
+      return;
+    }
+  }
+
+  // For now, let's just support single BaseStream.
+  if (staticBound.baseStreams.size() != 1) {
+    SE_DPRINTF("Multiple (%lu) LoopBound base streams.\n",
+               staticBound.baseStreams.size());
+    return;
+  }
+
+  auto baseS = *staticBound.baseStreams.begin();
+  auto &baseConfig = args.floatedMap.at(baseS);
+  baseConfig->loopBoundFormalParams = dynBound.formalParams;
+  baseConfig->loopBoundCallback = dynBound.boundFunc;
+  baseConfig->loopBoundRet = staticBound.boundRet;
+
+  // Remember that this bound is offloaded.
+  dynBound.offloaded = true;
+  StreamFloatPolicy::logStream(baseS) << "[LoopBound] Offloaded LoopBound.\n"
+                                      << std::flush;
+  SE_DPRINTF("[LoopBound] Offloaded LoopBound for %s.\n", args.region.region());
 }

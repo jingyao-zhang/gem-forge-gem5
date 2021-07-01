@@ -319,6 +319,7 @@ public:
 
   LLVMTraceCPU *getCPU() { return this->cpu; }
   GemForgeCPUDelegator *getCPUDelegator() const;
+  StreamEngine *getSE() const;
   int getCPUId() { return this->getCPUDelegator()->cpuId(); }
 
   void configure(uint64_t seqNum, ThreadContext *tc);
@@ -478,6 +479,12 @@ public:
   bool hasDepNestRegion() const { return this->depNestRegion; }
   void setDepNestRegion() { this->depNestRegion = true; }
 
+  /**
+   * This is used to record offloaded stream's progress.
+   * NOTE: We only do this for stream in EliminatedLoop.
+   */
+  void incrementOffloadedStepped();
+
 protected:
   StreamSet baseStepStreams;
   StreamSet baseStepRootStreams;
@@ -539,7 +546,7 @@ protected:
    * Managing coalesced LogicalStream within this one.
    * The first one is "prime stream", whose stream id is used to represent
    * this stream.
-   * 
+   *
    * Most properties are directly stored in PrimeLogical, except:
    * 1. NoCoreUsers: True iff. all have no core users.
    ***************************************************************/
@@ -660,9 +667,7 @@ public:
     return this->isLoadStream() && this->isPointerChase();
   }
 
-  bool hasCoreUser() const {
-    return !this->coalescedNoCoreUser;
-  }
+  bool hasCoreUser() const { return !this->coalescedNoCoreUser; }
 
   /**
    * Get the number of unique cache blocks the stream touches.

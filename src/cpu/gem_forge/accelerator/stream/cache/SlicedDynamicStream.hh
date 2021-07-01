@@ -33,7 +33,15 @@ public:
     return this->hasOverflowed(this->peekNextSlice().getStartIdx());
   }
 
+  /**
+   * To support StreamLoopBound, all offloaded streams should eventually
+   * query this for the latest TotalTripCount.
+   */
   int64_t getTotalTripCount() const { return this->totalTripCount; }
+  bool hasTotalTripCount() const {
+    return this->totalTripCount != InvalidTotalTripCount;
+  }
+  void setTotalTripCount(int64_t totalTripCount);
 
   /**
    * Helper function to get element vaddr and size.
@@ -43,8 +51,6 @@ public:
   float getElementPerSlice() const { return this->elementPerSlice; }
 
 private:
-  // TODO: Move this out of SlicedDynamicStream and make it only
-  // TODO: worry about slicing.
   DynamicStreamId streamId;
   DynamicStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
@@ -54,7 +60,9 @@ private:
   /**
    * -1 means indefinite.
    */
-  const int64_t totalTripCount;
+  static constexpr int64_t InvalidTotalTripCount =
+      CacheStreamConfigureData::InvalidTotalTripCount;
+  int64_t totalTripCount = InvalidTotalTripCount;
 
   /**
    * Whether we could coalesce continuous elements into slices.
@@ -95,7 +103,7 @@ private:
 
   void allocateOneElement() const;
   bool hasOverflowed(uint64_t elementIdx) const {
-    return this->totalTripCount > 0 && elementIdx >= (this->totalTripCount);
+    return this->hasTotalTripCount() && elementIdx >= (this->totalTripCount);
   }
 };
 

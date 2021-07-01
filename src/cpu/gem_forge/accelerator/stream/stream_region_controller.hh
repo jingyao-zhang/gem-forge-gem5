@@ -22,10 +22,6 @@ public:
 
   void takeOverBy(GemForgeCPUDelegator *newCPUDelegator);
 
-private:
-  StreamEngine *se;
-  GemForgeISAHandler isaHandler;
-
   struct StaticRegion;
   struct DynRegion {
     const StaticRegion *staticRegion;
@@ -63,6 +59,8 @@ private:
       uint64_t nextElementIdx = 0;
       // We have reached the end of the loop.
       bool brokenOut = false;
+      // We have offloaded the LoopBound.
+      bool offloaded = false;
     };
     DynLoopBound loopBound;
 
@@ -81,8 +79,6 @@ private:
     };
     DynStep step;
   };
-
-  std::map<uint64_t, DynRegion *> activeDynRegionMap;
 
   struct StaticRegion {
     using StreamSet = std::unordered_set<Stream *>;
@@ -120,6 +116,21 @@ private:
     };
     StaticStep step;
   };
+
+  /******************************************************************
+   * Util APIs.
+   ******************************************************************/
+  StaticRegion &getStaticRegion(const std::string &regionName);
+  DynRegion &getDynRegion(const std::string &regionName, InstSeqNum seqNum);
+
+  void receiveOffloadedLoopBoundRet(const DynamicStreamId &dynStreamId,
+                                    int64_t totalTripCount);
+
+private:
+  StreamEngine *se;
+  GemForgeISAHandler isaHandler;
+
+  std::map<uint64_t, DynRegion *> activeDynRegionMap;
 
   /**
    * Remember all static region config.
@@ -161,7 +172,6 @@ private:
   /**
    * Helper functions.
    */
-  StaticRegion &getStaticRegion(const std::string &regionName);
   DynRegion &pushDynRegion(StaticRegion &staticRegion, uint64_t seqNum);
 
   void buildFormalParams(const ConfigArgs::InputVec &inputVec, int &inputIdx,

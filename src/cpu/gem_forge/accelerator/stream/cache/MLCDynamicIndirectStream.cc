@@ -4,6 +4,7 @@
 
 #include "base/trace.hh"
 #include "debug/MLCRubyStreamBase.hh"
+#include "debug/MLCRubyStreamReduce.hh"
 
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
@@ -14,13 +15,13 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
     const DynamicStreamId &_rootStreamId)
     : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
-                       _requestToLLCMsgBuffer),
+                       _requestToLLCMsgBuffer, false /* isMLCDirect */),
       rootStreamId(_rootStreamId),
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize),
       isOneIterationBehind(_configData->isOneIterationBehind),
-      totalTripCount(_configData->totalTripCount), tailElementIdx(0) {}
+      tailElementIdx(0) {}
 
 void MLCDynamicIndirectStream::receiveStreamData(
     const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
@@ -34,6 +35,11 @@ void MLCDynamicIndirectStream::receiveStreamData(
 
   MLC_SLICE_DPRINTF(sliceId, "Receive data vaddr %#x paddr %#x.\n",
                     sliceId.vaddr, paddrLine);
+
+  // Intercept the reduction value.
+  if (this->receiveFinalReductionValue(sliceId, dataBlock, paddrLine)) {
+    return;
+  }
 
   while (this->tailElementIdx <= sliceId.getStartIdx()) {
     this->allocateSlice();
@@ -218,9 +224,28 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
 
 void MLCDynamicIndirectStream::advanceStream() {
   this->popStream();
+
+  /**
+   * Do not try to allocate if the LLCElement is not created yet.
+   * This is to avoid running ahead than the BaseS, which is in charge of
+   * allocating LLCElement.
+   */
+  auto maxAllocElementIdx = this->tailElementIdx + this->maxNumSlices;
+  if (auto llcDynS =
+          LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
+    maxAllocElementIdx =
+        std::min(maxAllocElementIdx, llcDynS->getNextInitElementIdx());
+  }
+
   // Of course we need to allocate more slices.
   while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
          !this->hasOverflowed()) {
+    if (this->tailElementIdx >= maxAllocElementIdx) {
+      MLC_S_DPRINTF(this->getDynamicStreamId(),
+                    "CanNot Allocate Element %llu, MaxAlloc %llu.\n",
+                    this->tailElementIdx, maxAllocElementIdx);
+      break;
+    }
     this->allocateSlice();
   }
 
@@ -267,12 +292,12 @@ void MLCDynamicIndirectStream::allocateSlice() {
 }
 
 bool MLCDynamicIndirectStream::hasOverflowed() const {
-  return this->totalTripCount > 0 &&
-         (this->tailElementIdx >= (this->totalTripCount + 1));
+  return this->hasTotalTripCount() &&
+         this->tailElementIdx > this->getTotalTripCount();
 }
 
-int64_t MLCDynamicIndirectStream::getTotalTripCount() const {
-  return this->totalTripCount;
+void MLCDynamicIndirectStream::setTotalTripCount(int64_t totalTripCount) {
+  MLC_S_PANIC(this->getDynamicStreamId(), "Set TotalTripCount for IndirectS.");
 }
 
 Addr MLCDynamicIndirectStream::genElementVAddr(uint64_t elementIdx,
@@ -370,4 +395,29 @@ MLCDynamicStream::SliceIter MLCDynamicIndirectStream::findSliceForCoreRequest(
   auto elementSlices = this->findSliceByElementIdx(sliceId.getStartIdx());
   return this->findOrInsertSliceBySliceId(elementSlices.first,
                                           elementSlices.second, sliceId);
+}
+
+bool MLCDynamicIndirectStream::receiveFinalReductionValue(
+    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+    Addr paddrLine) {
+  auto S = this->getStaticStream();
+  if (!S->isReduction() || !this->isWaitingNothing()) {
+    return false;
+  }
+
+  auto dynCoreS = S->getDynamicStream(this->getDynamicStreamId());
+  if (!dynCoreS) {
+    MLC_SLICE_PANIC(sliceId,
+                    "CoreDynS released before receiving FinalReductionValue.");
+  }
+  if (dynCoreS->finalReductionValueReady) {
+    MLC_SLICE_PANIC(sliceId, "FinalReductionValue already ready.");
+  }
+  auto size = sizeof(dynCoreS->finalReductionValue);
+  memcpy(dynCoreS->finalReductionValue.uint8Ptr(), dataBlock.getData(0, size),
+         size);
+  dynCoreS->finalReductionValueReady = true;
+  MLC_SLICE_DPRINTF_(MLCRubyStreamReduce, sliceId, "Notify final reduction.\n");
+
+  return true;
 }

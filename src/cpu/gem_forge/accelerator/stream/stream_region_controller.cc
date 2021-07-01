@@ -6,6 +6,8 @@
 #define DEBUG_TYPE StreamRegion
 #include "stream_log.hh"
 
+#define SE_PANIC(format, args...)                                              \
+  panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamRegion, format, ##args)
@@ -144,9 +146,19 @@ StreamRegionController::StaticRegion &
 StreamRegionController::getStaticRegion(const std::string &regionName) {
   auto iter = this->staticRegionMap.find(regionName);
   if (iter == this->staticRegionMap.end()) {
-    panic("Failed to find StaticRegion %s.\n", regionName);
+    SE_PANIC("Failed to find StaticRegion %s.\n", regionName);
   }
   return iter->second;
+}
+
+StreamRegionController::DynRegion &
+StreamRegionController::getDynRegion(const std::string &msg,
+                                     InstSeqNum seqNum) {
+  auto iter = this->activeDynRegionMap.find(seqNum);
+  if (iter == this->activeDynRegionMap.end()) {
+    SE_PANIC("Failed to find DynRegion SeqNum %llu: %s.\n", seqNum, msg);
+  }
+  return *iter->second;
 }
 
 void StreamRegionController::buildFormalParams(

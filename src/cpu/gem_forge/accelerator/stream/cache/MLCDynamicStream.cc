@@ -18,11 +18,12 @@
 MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
                                    AbstractStreamAwareController *_controller,
                                    MessageBuffer *_responseMsgBuffer,
-                                   MessageBuffer *_requestToLLCMsgBuffer)
+                                   MessageBuffer *_requestToLLCMsgBuffer,
+                                   bool _isMLCDirect)
     : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
       config(_configData), isPointerChase(_configData->isPointerChase),
-      isPseudoOffload(_configData->isPseudoOffload), controller(_controller),
-      responseMsgBuffer(_responseMsgBuffer),
+      isPseudoOffload(_configData->isPseudoOffload), isMLCDirect(_isMLCDirect),
+      controller(_controller), responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer),
       maxNumSlices(_configData->mlcBufferNumSlices), headSliceIdx(0),
       tailSliceIdx(0),
@@ -127,12 +128,11 @@ void MLCDynamicStream::popStream() {
    * So far we don't have a synchronization scheme between MLC and LLC if there
    * is no CoreUser, and that causes performance drop due to running too ahead.
    * Therefore, we try to have an ideal check that the LLCStream is ahead of me.
-   * We only do this for direct streams.
+   * We only do this for MLCDirectStream.
    */
   uint64_t llcProgressSliceIdx = UINT64_MAX;
   uint64_t llcProgressElementIdx = UINT64_MAX;
-  if (this->controller->isStreamIdeaSyncEnabled() &&
-      this->getStaticStream()->isDirectMemStream() &&
+  if (this->controller->isStreamIdeaMLCPopCheckEnabled() && this->isMLCDirect &&
       !this->shouldRangeSync()) {
     if (auto llcDynS =
             LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
