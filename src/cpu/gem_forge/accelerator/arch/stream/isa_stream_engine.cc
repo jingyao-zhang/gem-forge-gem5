@@ -926,7 +926,7 @@ bool ISAStreamEngine::canDispatchStreamUser(const GemForgeDynInstInfo &dynInfo,
     // It's possible that we don't have element if we have reached the limit.
     if (!se->canDispatchStreamUser(args)) {
       // We must wait.
-      DYN_INST_DPRINTF("CanNotDispatch %s %llu: No Unstepped Element.\n",
+      DYN_INST_DPRINTF("CanNotDispatch %s %llu.\n",
                        dynInfo.staticInst->getName(), usedStreamId);
       return false;
     } else {

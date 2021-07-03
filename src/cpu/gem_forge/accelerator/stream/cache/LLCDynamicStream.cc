@@ -319,11 +319,13 @@ LLCStreamSlicePtr LLCDynamicStream::allocNextSlice(LLCStreamEngine *se) {
         }
       }
     }
-    LLC_SLICE_DPRINTF(sliceId, "Allocated SliceIdx %llu.\n",
-                      this->nextAllocSliceIdx);
+    LLC_SLICE_DPRINTF(sliceId, "Allocated SliceIdx %llu VAddr %#x.\n",
+                      this->nextAllocSliceIdx, slice->getSliceId().vaddr);
+    this->invokeSliceAllocCallbacks(this->nextAllocSliceIdx);
     this->nextAllocSliceIdx++;
     // Slices allocated are now handled by LLCStreamEngine.
     this->slices.pop_front();
+
     return slice;
   }
 
@@ -502,11 +504,44 @@ void LLCDynamicStream::registerElementInitCallback(uint64_t elementIdx,
       .first->second.push_back(callback);
 }
 
+void LLCDynamicStream::registerSliceAllocCallback(uint64_t sliceIdx,
+                                                  SliceCallback callback) {
+  if (this->getNextAllocSliceIdx() >= sliceIdx) {
+    LLC_S_PANIC(this->getDynamicStreamId(),
+                "Register SliceAllocCallback for AllocatedSlice %llu.",
+                sliceIdx);
+  }
+  this->sliceAllocCallbacks
+      .emplace(std::piecewise_construct, std::forward_as_tuple(sliceIdx),
+               std::forward_as_tuple())
+      .first->second.push_back(callback);
+}
+
+void LLCDynamicStream::invokeSliceAllocCallbacks(uint64_t sliceIdx) {
+  /**
+   * We call ElementInitCallback here.
+   */
+  auto iter = this->sliceAllocCallbacks.find(sliceIdx);
+  if (iter != this->sliceAllocCallbacks.end()) {
+    for (auto &callback : iter->second) {
+      LLC_S_DPRINTF(this->getDynamicStreamId(),
+                    "[SliceAllocCallback] Invoke %llu.\n", sliceIdx);
+      callback(this->getDynamicStreamId(), sliceIdx);
+    }
+    this->sliceAllocCallbacks.erase(iter);
+  }
+}
+
 bool LLCDynamicStream::isElementReleased(uint64_t elementIdx) const {
   if (this->idxToElementMap.empty()) {
     return elementIdx < this->nextInitElementIdx;
   }
   return this->idxToElementMap.begin()->first > elementIdx;
+}
+
+uint64_t LLCDynamicStream::getNextUnreleasedElementIdx() const {
+  return this->idxToElementMap.empty() ? this->getNextInitElementIdx()
+                                       : this->idxToElementMap.begin()->first;
 }
 
 void LLCDynamicStream::eraseElement(uint64_t elementIdx) {
@@ -1225,6 +1260,8 @@ void LLCDynamicStream::evaluateLoopBound(LLCStreamEngine *se) {
   auto loopBoundRet =
       this->configData->loopBoundCallback->invoke(loopBoundActualParams)
           .front();
+
+  this->nextLoopBoundElementIdx++;
   if (loopBoundRet == this->configData->loopBoundRet) {
     /**
      * We should break.
@@ -1232,31 +1269,39 @@ void LLCDynamicStream::evaluateLoopBound(LLCStreamEngine *se) {
      * TODO: Handle this in a more realistic way.
      */
     LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynamicStreamId(),
-                   "[LLCLoopBound] Break (%d == %d) Element %llu.\n",
+                   "[LLCLoopBound] Break (%d == %d) TripCount %llu.\n",
                    loopBoundRet, this->configData->loopBoundRet,
                    this->nextLoopBoundElementIdx);
-    auto totalTripCount = this->nextLoopBoundElementIdx + 1;
 
-    this->setTotalTripCount(totalTripCount);
+    this->setTotalTripCount(this->nextLoopBoundElementIdx);
 
     // Also set the MLCStream.
-    se->setMLCStreamTotalTripCount(this, totalTripCount);
+    se->setMLCStreamTotalTripCount(this, this->nextLoopBoundElementIdx);
 
     // Also set the core.
     this->getStaticStream()->getSE()->receiveOffloadedLoopBoundRet(
-        this->getDynamicStreamId(), totalTripCount);
+        this->getDynamicStreamId(), this->nextLoopBoundElementIdx,
+        true /* BrokenOut */);
 
     this->loopBoundBrokenOut = true;
 
   } else {
-    // We should continue.
+    /**
+     * We should continue.
+     * Currently the core would just be blocking to wait wait for the
+     * the final results. However, the current implementation still
+     * steps through all the elements. To avoid a burst of stepping
+     * after we determine the TotalTripCount, here we also notify
+     * the core SE that you can step this "fake" element.
+     */
     LLC_S_DPRINTF_(LLCStreamLoopBound, this->getDynamicStreamId(),
                    "[LLCLoopBound] Continue (%d != %d) Element %llu.\n",
                    loopBoundRet, this->configData->loopBoundRet,
                    this->nextLoopBoundElementIdx);
+    this->getStaticStream()->getSE()->receiveOffloadedLoopBoundRet(
+        this->getDynamicStreamId(), this->nextLoopBoundElementIdx,
+        false /* BrokenOut */);
   }
-
-  this->nextLoopBoundElementIdx++;
 }
 
 LLCStreamElementPtr LLCDynamicStream::getElement(uint64_t elementIdx) const {

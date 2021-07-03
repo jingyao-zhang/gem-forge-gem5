@@ -24,7 +24,7 @@ public:
 
   struct StaticRegion;
   struct DynRegion {
-    const StaticRegion *staticRegion;
+    StaticRegion *staticRegion;
     const uint64_t seqNum;
     bool configExecuted = false;
 
@@ -82,8 +82,9 @@ public:
 
   struct StaticRegion {
     using StreamSet = std::unordered_set<Stream *>;
+    using StreamVec = std::vector<Stream *>;
     const ::LLVM::TDG::StreamRegion &region;
-    StreamSet streams;
+    StreamVec streams;
     std::list<DynRegion> dynRegions;
     StaticRegion(const ::LLVM::TDG::StreamRegion &_region) : region(_region) {}
 
@@ -112,7 +113,7 @@ public:
      * StreamStepper states for LoopEliminated region.
      */
     struct StaticStep {
-      std::vector<Stream *> stepRootStreams;
+      StreamVec stepRootStreams;
     };
     StaticStep step;
   };
@@ -124,7 +125,7 @@ public:
   DynRegion &getDynRegion(const std::string &regionName, InstSeqNum seqNum);
 
   void receiveOffloadedLoopBoundRet(const DynamicStreamId &dynStreamId,
-                                    int64_t totalTripCount);
+                                    int64_t tripCount, bool brokenOut);
 
 private:
   StreamEngine *se;
@@ -168,6 +169,11 @@ private:
   void dispatchStreamConfigForStep(const ConfigArgs &args,
                                    DynRegion &dynRegion);
   void stepStream(DynRegion &dynRegion);
+
+  /**
+   * Allocate stream elements.
+   */
+  void allocateElements(StaticRegion &staticRegion);
 
   /**
    * Helper functions.

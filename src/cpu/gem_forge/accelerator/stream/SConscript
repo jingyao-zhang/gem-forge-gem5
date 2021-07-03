@@ -3,7 +3,6 @@ Import('*')
 DebugFlag('StreamBase')
 DebugFlag('StreamAlias')
 DebugFlag('StreamCritical')
-DebugFlag('StreamEngine')
 DebugFlag('StreamElement')
 DebugFlag('StreamThrottle')
 DebugFlag('CoreStreamAlloc')
@@ -18,6 +17,14 @@ DebugFlag('StreamAtomicOp')
 DebugFlag('StreamNearDataComputing')
 DebugFlag('PrefetchElementBuffer')
 DebugFlag('CoreRubyStreamLife')
+
+DebugFlag('StreamEngineBase')
+CompoundFlag('StreamEngine', [
+    'StreamEngineBase',
+    'CoreStreamAlloc', 
+    'StreamLoopBound',
+    'StreamNest',
+])
 
 ProtoBuf('StreamMessage.proto')
 
@@ -44,6 +51,7 @@ Source('stream_atomic_op.cc')
 Source('stream_data_traffic_accumulator.cc')
 Source('stream_loop_bound_controller.cc')
 Source('stream_stepper.cc')
+Source('stream_allocator.cc')
 Source('stream_region_controller.cc')
 Source('nest_stream_controller.cc')
 Source('insts.cc')

@@ -4,11 +4,12 @@
 
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
-#define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamEngine, format, ##args)
+#define SE_DPRINTF(format, args...)                                            \
+  SE_DPRINTF_(StreamEngineBase, format, ##args)
 
 #include "debug/CoreRubyStreamLife.hh"
-#include "debug/StreamEngine.hh"
-#define DEBUG_TYPE StreamEngine
+#include "debug/StreamEngineBase.hh"
+#define DEBUG_TYPE StreamEngineBase
 #include "stream_log.hh"
 
 StreamFloatController::StreamFloatController(
@@ -58,11 +59,15 @@ void StreamFloatController::floatStreams(
 
   // Sanity check for some offload decision.
   bool hasOffloadStoreFunc = false;
+  bool hasOffloadPointerChase = false;
   for (auto &dynS : dynStreams) {
     auto S = dynS->stream;
     if (dynS->offloadedToCache) {
       if (S->getEnabledStoreFunc()) {
         hasOffloadStoreFunc = true;
+      }
+      if (S->isPointerChase()) {
+        hasOffloadPointerChase = true;
       }
     } else {
       if (S->getMergedPredicatedStreams().size() > 0) {
@@ -86,9 +91,11 @@ void StreamFloatController::floatStreams(
       initPAddr, this->se->cpuDelegator->dataMasterId(), 0,
       MemCmd::Command::StreamConfigReq,
       reinterpret_cast<uint64_t>(cacheStreamConfigVec));
-  if (hasOffloadStoreFunc) {
+  if (hasOffloadStoreFunc || hasOffloadPointerChase) {
     // We have to delay this float config until StreamConfig is committed,
     // as so far we have no way to rewind the offloaded writes.
+    // We also delay offloading pointer chasing streams, as they are more
+    // expensive and very likely causes faults if misspeculated.
     this->configSeqNumToDelayedFloatPktMap.emplace(args.seqNum, pkt);
     for (auto &dynS : dynStreams) {
       if (dynS->offloadedToCache) {

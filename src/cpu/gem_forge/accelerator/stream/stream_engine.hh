@@ -200,7 +200,7 @@ public:
    * Received StreamLoopBound TotalTripCount from Cache.
    **************************************************************************/
   void receiveOffloadedLoopBoundRet(const DynamicStreamId &dynStreamId,
-                                    int64_t totalTripCount);
+                                    int64_t tripCount, bool brokenOut);
 
   void exitDump() const;
 
@@ -448,8 +448,6 @@ private:
   const std::list<Stream *> &
   getConfigStreamsInRegion(const LLVM::TDG::StreamRegion &streamRegion);
 
-  // Called every cycle to allocate elements.
-  void allocateElements();
   // Allocate one element to stream.
   void allocateElement(DynamicStream &dynS);
   /**

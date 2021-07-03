@@ -8,7 +8,7 @@
 
 // #include "base/misc.hh""
 #include "base/trace.hh"
-#include "debug/StreamEngine.hh"
+#include "debug/StreamEngineBase.hh"
 #include "proto/protoio.hh"
 
 StreamHistory::StreamHistory(const std::string &_historyPath)

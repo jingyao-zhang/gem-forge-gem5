@@ -55,9 +55,9 @@
  * ! Sean: StreamAwareCache.
  */
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
-#include "debug/StreamEngine.hh"
+#include "debug/StreamEngineBase.hh"
 #define STREAM_DPRINTF(stream, format, args...)                                \
-  DPRINTF(StreamEngine, "[%s]: " format, stream->getStreamName().c_str(),      \
+  DPRINTF(StreamEngineBase, "[%s]: " format, stream->getStreamName().c_str(),  \
           ##args)
 
 #define STREAM_ELEMENT_DPRINTF(element, format, args...)                       \

@@ -210,15 +210,17 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
    */
   auto nextElementVAddr = dynS->getElementVAddr(nextCommitElementIdx);
   Addr nextElementPAddr;
-  if (!dynS->translateToPAddr(nextElementVAddr, nextElementPAddr)) {
-    LLC_S_PANIC(dynS->getDynamicStreamId(),
-                "Failed to translate NextCommitElement %llu VAddr %#x.",
-                nextCommitElementIdx, nextElementVAddr);
-  }
-  if (!this->se->isPAddrHandledByMe(nextElementPAddr)) {
-    // We have to migrate it.
-    this->se->migrateStreamCommit(dynS, nextElementPAddr);
-    migrated = true;
+  if (dynS->translateToPAddr(nextElementVAddr, nextElementPAddr)) {
+    if (!this->se->isPAddrHandledByMe(nextElementPAddr)) {
+      // We have to migrate it.
+      this->se->migrateStreamCommit(dynS, nextElementPAddr);
+      migrated = true;
+    }
+  } else {
+    // Stay here if we fault on the next element.
+    LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+                  "Failed to translate NextCommitElement %llu VAddr %#x.",
+                  nextCommitElementIdx, nextElementVAddr);
   }
   return true;
 }

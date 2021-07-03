@@ -15,10 +15,7 @@
 void StreamRegionController::initializeStep(
     const ::LLVM::TDG::StreamRegion &region, StaticRegion &staticRegion) {
 
-  if (!region.loop_eliminated()) {
-    return;
-  }
-
+  // Just remember the StepRootStreams.
   SE_DPRINTF("[Stepper] Initialized StaticStep for region %s.\n",
              region.region());
   auto &staticStep = staticRegion.step;

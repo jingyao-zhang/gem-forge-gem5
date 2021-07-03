@@ -14,8 +14,11 @@ void StreamStatistic::dump(std::ostream &os) const {
   os << std::setw(40) << (name) << ' ' << (stat) << '\n'
 #define dumpAvg(name, dividend, divisor)                                       \
   {                                                                            \
-    auto avg = (divisor > 0) ? dividend / divisor : 0;                         \
-    os << std::setw(40) << "  " #name << ' ' << avg << '\n';                   \
+    auto avg = (divisor > 0) ? static_cast<double>(dividend) /                 \
+                                   static_cast<double>(divisor)                \
+                             : 0;                                              \
+    os << std::setw(40) << "  " #name << ' ' << std::setprecision(4) << avg    \
+       << '\n';                                                                \
   }
 #define dumpSingleAvgSample(name)                                              \
   {                                                                            \

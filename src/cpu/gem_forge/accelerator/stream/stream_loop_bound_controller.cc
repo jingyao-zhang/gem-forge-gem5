@@ -6,6 +6,8 @@
 #define DEBUG_TYPE StreamLoopBound
 #include "stream_log.hh"
 
+#define SE_PANIC(format, args...)                                              \
+  panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamLoopBound, format, ##args)
@@ -95,7 +97,6 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
   }
 
   if (dynBound.offloaded) {
-    // We are just waiting for result from offloaded LoopBound.
     return;
   }
 
@@ -153,7 +154,7 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
 }
 
 void StreamRegionController::receiveOffloadedLoopBoundRet(
-    const DynamicStreamId &dynStreamId, int64_t totalTripCount) {
+    const DynamicStreamId &dynStreamId, int64_t tripCount, bool brokenOut) {
   auto S = se->getStream(dynStreamId.staticId);
   auto dynS = S->getDynamicStream(dynStreamId);
   if (!dynS) {
@@ -164,12 +165,21 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
   auto &dynBound = dynRegion.loopBound;
   auto &staticRegion = *dynRegion.staticRegion;
 
-  SE_DPRINTF("[LoopBound] Received TotalTripCount %llu Region %s.\n",
-             totalTripCount, staticRegion.region.region());
-  dynBound.brokenOut = true;
-  dynBound.nextElementIdx = totalTripCount;
-  for (auto S : staticRegion.streams) {
-    auto &dynS = S->getDynamicStream(dynRegion.seqNum);
-    dynS.setTotalTripCount(totalTripCount);
+  SE_DPRINTF("[LoopBound] Received TripCount %llu BrokenOut %d Region %s.\n",
+             tripCount, brokenOut, staticRegion.region.region());
+  if (tripCount != dynBound.nextElementIdx + 1) {
+    SE_PANIC("[LoopBound] Received TripCount %llu != NextElement %llu + 1, "
+             "BrokenOut %d Region %s.\n",
+             tripCount, dynBound.nextElementIdx + 1, brokenOut,
+             staticRegion.region.region());
+  }
+
+  dynBound.brokenOut = brokenOut;
+  dynBound.nextElementIdx = tripCount;
+  if (brokenOut) {
+    for (auto S : staticRegion.streams) {
+      auto &dynS = S->getDynamicStream(dynRegion.seqNum);
+      dynS.setTotalTripCount(tripCount);
+    }
   }
 }

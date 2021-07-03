@@ -22,8 +22,14 @@ public:
   void throttleStream(StreamElement *element);
   const std::string name() const;
 
+  /**
+   * Try to manually boost allocation for certain streams.
+   * Used for InnerMostLoop streams.
+   */
+  void boostStreams(const Stream::StreamVec &stepRootStreams);
+
 private:
-  void doThrottling(StreamElement *element);
+  bool tryGlobalThrottle(Stream *S);
 };
 
 #endif

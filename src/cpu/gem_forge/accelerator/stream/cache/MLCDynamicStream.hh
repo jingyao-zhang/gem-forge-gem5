@@ -196,9 +196,12 @@ protected:
   MachineID mapPAddrToLLCBank(Addr paddr) const;
 
   /**
-   * Pop slices.
+   * Pop slices. Flags to remember why we are blocked.
+   * @return whether popped at least one slice.
    */
-  void popStream();
+  bool tryPopStream();
+  void popOneSlice();
+  bool popBlocked = false;
 
   /**
    * These function checks if we are waiting for something.

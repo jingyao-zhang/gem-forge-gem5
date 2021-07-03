@@ -2,7 +2,8 @@
 
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
-#define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamEngine, format, ##args)
+#define SE_DPRINTF(format, args...)                                            \
+  SE_DPRINTF_(StreamEngineBase, format, ##args)
 
 #define SE_PANIC(X, format, args...)                                           \
   PANIC("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)

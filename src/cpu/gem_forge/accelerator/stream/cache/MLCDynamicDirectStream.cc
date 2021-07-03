@@ -118,7 +118,7 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
 }
 
 void MLCDynamicDirectStream::advanceStream() {
-  this->popStream();
+  this->tryPopStream();
   /**
    * In order to synchronize the direct/indirect stream, we want to make sure
    * that the direct stream is only ahead of the indirect stream by a reasonable
@@ -173,11 +173,14 @@ void MLCDynamicDirectStream::advanceStream() {
   // as no other event will cause it to be released.
   // Same for DONE elements because we may have no core user and not receive
   // data From LLC.
+  // Unless we are blocked in popStream.
   if (!this->slices.empty()) {
     auto frontCoreStatus = this->slices.front().coreStatus;
     if (frontCoreStatus == MLCStreamSlice::CoreStatusE::FAULTED ||
         frontCoreStatus == MLCStreamSlice::CoreStatusE::DONE) {
-      this->scheduleAdvanceStream();
+      if (!this->popBlocked) {
+        this->scheduleAdvanceStream();
+      }
     }
   }
 
@@ -800,8 +803,8 @@ void MLCDynamicDirectStream::checkCoreCommitProgress() {
 
 void MLCDynamicDirectStream::sendCommitToLLC(
     const LLCSegmentPosition &segment) {
-  auto llcPAddr = segment.startPAddr;
-  auto llcBank = this->mapPAddrToLLCBank(llcPAddr);
+  auto llcPAddrLine = makeLineAddress(segment.startPAddr);
+  auto llcBank = this->mapPAddrToLLCBank(llcPAddrLine);
 
   // Send the commit control.
   MLC_S_DPRINTF_(StreamRangeSync, this->dynamicStreamId,
@@ -809,7 +812,7 @@ void MLCDynamicDirectStream::sendCommitToLLC(
                  segment.getStartSliceId().getStartIdx(),
                  segment.endSliceId.getStartIdx(), llcBank.num);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = llcPAddr;
+  msg->m_addr = llcPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_COMMIT;
   msg->m_XXNewRewquestor.add(this->controller->getMachineID());
   msg->m_Destination.add(llcBank);

@@ -89,6 +89,11 @@ public:
   void receiveStreamTotalTripCount(const DynamicStreamId &streamId,
                                    int64_t totalTripCount);
 
+  /**
+   * API to get the MLCDynamicStream.
+   */
+  MLCDynamicStream *getStreamFromDynamicId(const DynamicStreamId &id);
+
 private:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseToUpperMsgBuffer;
@@ -127,8 +132,6 @@ private:
       reverseReuseInfoMap;
   void reuseSlice(const DynamicStreamSliceId &sliceId,
                   const DataBlock &dataBlock);
-
-  MLCDynamicStream *getStreamFromDynamicId(const DynamicStreamId &id);
 
   /**
    * StreamNDCController.

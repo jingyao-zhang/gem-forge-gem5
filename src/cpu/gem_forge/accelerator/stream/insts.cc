@@ -5,13 +5,13 @@
 #include "cpu/gem_forge/llvm_trace_cpu.hh"
 #include "stream_engine.hh"
 
-#include "debug/StreamEngine.hh"
+#include "debug/StreamEngineBase.hh"
 
 StreamInst::StreamInst(const LLVM::TDG::TDGInstruction &_TDG)
     : LLVMDynamicInst(_TDG, 1), finished(false) {}
 
 void StreamInst::markFinished() {
-  DPRINTF(StreamEngine, "Mark StreamInst completed.\n");
+  DPRINTF(StreamEngineBase, "Mark StreamInst completed.\n");
   this->finished = true;
 }
 
@@ -20,7 +20,7 @@ StreamConfigInst::StreamConfigInst(const LLVM::TDG::TDGInstruction &_TDG)
   if (!this->TDG.has_stream_config()) {
     panic("StreamConfigInst with missing protobuf field.");
   }
-  DPRINTF(StreamEngine, "Parsed StreamConfigInst to configure loop %s\n",
+  DPRINTF(StreamEngineBase, "Parsed StreamConfigInst to configure loop %s\n",
           this->TDG.stream_config().loop().c_str());
 }
 
@@ -52,7 +52,7 @@ void StreamConfigInst::execute(LLVMTraceCPU *cpu) {
 }
 
 void StreamConfigInst::commit(LLVMTraceCPU *cpu) {
-  DPRINTF(StreamEngine, "Commit stream configure %lu\n", this->getSeqNum());
+  DPRINTF(StreamEngineBase, "Commit stream configure %lu\n", this->getSeqNum());
   this->commitStreamUser(cpu);
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   StreamEngine::StreamConfigArgs args(this->getSeqNum(),
@@ -75,7 +75,7 @@ StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
   if (!this->TDG.has_stream_step()) {
     panic("StreamStepInst with missing protobuf field.");
   }
-  DPRINTF(StreamEngine, "Parsed StreamStepInst to step stream %lu.\n",
+  DPRINTF(StreamEngineBase, "Parsed StreamStepInst to step stream %lu.\n",
           this->TDG.stream_step().stream_id());
 }
 
@@ -114,7 +114,7 @@ StreamStoreInst::StreamStoreInst(const LLVM::TDG::TDGInstruction &_TDG)
   if (!this->TDG.has_stream_store()) {
     panic("StreamStoreInst with missing protobuf field.");
   }
-  DPRINTF(StreamEngine, "Parsed StreamStoreInst to store stream %lu.\n",
+  DPRINTF(StreamEngineBase, "Parsed StreamStoreInst to store stream %lu.\n",
           this->TDG.stream_store().stream_id());
 }
 

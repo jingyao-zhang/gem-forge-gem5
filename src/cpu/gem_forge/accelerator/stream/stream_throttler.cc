@@ -80,7 +80,7 @@ void StreamThrottler::throttleStream(StreamElement *element) {
                  "RunAheadLength is not increased.");
         }
       } else if (this->strategy == StrategyE::GLOBAL) {
-        this->doThrottling(element);
+        this->tryGlobalThrottle(element->stream);
       }
       // No matter what, just clear the lateFetchCount in the whole step
       // group.
@@ -142,14 +142,13 @@ void StreamThrottler::throttleStream(StreamElement *element) {
  * NOTE: The memory view (bytes) only applies to load streams.
  ********************************************************************/
 
-void StreamThrottler::doThrottling(StreamElement *element) {
-  auto S = element->stream;
+bool StreamThrottler::tryGlobalThrottle(Stream *S) {
   auto stepRootStream = S->stepRootStream;
   assert(stepRootStream != nullptr &&
          "Do not make sense to throttle for a constant stream.");
   const auto &streamList = this->se->getStepStreamList(stepRootStream);
 
-  S_ELEMENT_DPRINTF_(StreamThrottle, element, "[Throttle] Do throttling.\n");
+  S_DPRINTF(S, "[Throttle] Do throttling.\n");
 
   /**
    * There is no point throttling more than our BackBaseStream. This is the case
@@ -157,20 +156,17 @@ void StreamThrottler::doThrottling(StreamElement *element) {
    */
   for (auto backBaseS : S->backBaseStreams) {
     if (backBaseS->maxSize < S->maxSize) {
-      S_ELEMENT_DPRINTF_(StreamThrottle, element,
-                         "[Not Throttle] MyMaxSize %d >= %d of BackBaseS %s.\n",
-                         S->maxSize, backBaseS->maxSize,
-                         backBaseS->getStreamName());
-      return;
+      S_DPRINTF(S, "[Not Throttle] MyMaxSize %d >= %d of BackBaseS %s.\n",
+                S->maxSize, backBaseS->maxSize, backBaseS->getStreamName());
+      return false;
     }
   }
   int MaxSizeForOuterLoopStream = 8;
   if (!S->getIsInnerMostLoop() && S->maxSize >= MaxSizeForOuterLoopStream) {
-    S_ELEMENT_DPRINTF_(
-        StreamThrottle, element,
-        "[Not Throttle] MyMaxSize %d >= %d MaxSizeForOuterLoopStream.\n",
-        S->maxSize, MaxSizeForOuterLoopStream);
-    return;
+    S_DPRINTF(S,
+              "[Not Throttle] MyMaxSize %d >= %d MaxSizeForOuterLoopStream.\n",
+              S->maxSize, MaxSizeForOuterLoopStream);
+    return false;
   }
 
   // * AssignedEntries.
@@ -219,38 +215,37 @@ void StreamThrottler::doThrottling(StreamElement *element) {
     }
   }
 
-  S_ELEMENT_DPRINTF(
-      element,
-      "[Throttle] MaxSize %d + %d AssignedEntries %d AssignedBytes %d "
-      "UnassignedEntries %d "
-      "UnassignedBytes %d "
-      "BasicEntries %d "
-      "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries %d "
-      "TotalIncrementEntries %d TotalIncrementBytes %d "
-      "CurrentAliveStreams %d "
-      "TotalAliveStreams %d.\n",
-      S->maxSize, incrementStep, assignedEntries, assignedBytes,
-      unassignedEntries, unassignedBytes, basicEntries, assignedBasicEntries,
-      availableEntries, upperBoundEntries, totalIncrementEntries,
-      totalIncrementBytes, currentAliveStreams, totalAliveStreams);
+  S_DPRINTF(S,
+            "[Throttle] MaxSize %d + %d AssignedEntries %d AssignedBytes %d "
+            "UnassignedEntries %d "
+            "UnassignedBytes %d "
+            "BasicEntries %d "
+            "AssignedBasicEntries %d AvailableEntries %d UpperBoundEntries %d "
+            "TotalIncrementEntries %d TotalIncrementBytes %d "
+            "CurrentAliveStreams %d "
+            "TotalAliveStreams %d.\n",
+            S->maxSize, incrementStep, assignedEntries, assignedBytes,
+            unassignedEntries, unassignedBytes, basicEntries,
+            assignedBasicEntries, availableEntries, upperBoundEntries,
+            totalIncrementEntries, totalIncrementBytes, currentAliveStreams,
+            totalAliveStreams);
 
   if (availableEntries < totalIncrementEntries) {
-    S_ELEMENT_DPRINTF(element,
-                      "[Not Throttle]: Not enough available entries.\n");
-    return;
+    S_DPRINTF(S, "[Not Throttle]: Not enough available entries.\n");
+    return false;
   } else if (totalAliveStreams * this->se->defaultRunAheadLength +
                  streamList.size() * (stepRootStream->maxSize + incrementStep -
                                       this->se->defaultRunAheadLength) >=
              this->se->totalRunAheadLength) {
-    S_ELEMENT_DPRINTF(element, "[Not Throttle]: Reserve for other streams.\n");
-    return;
+    S_DPRINTF(S, "[Not Throttle]: Reserve for other streams.\n");
+    return false;
   } else if (stepRootStream->maxSize + incrementStep > upperBoundEntries) {
-    S_ELEMENT_DPRINTF(element, "[Not Throttle]: Upperbound overflow.\n");
-    return;
+    S_DPRINTF(S, "[Not Throttle]: Upperbound overflow.\n");
+    return false;
   } else if (assignedBytes + totalIncrementBytes >
              this->se->totalRunAheadBytes) {
-    S_ELEMENT_DPRINTF(element, "[Not Throttle]: Total bytes overflow.\n");
-    return;
+    S_DPRINTF(S, "[Not Throttle]: Total bytes overflow.\n");
+    return false;
   }
 
   auto oldMaxSize = S->maxSize;
@@ -260,4 +255,23 @@ void StreamThrottler::doThrottling(StreamElement *element) {
   }
   assert(S->maxSize == oldMaxSize + incrementStep &&
          "RunAheadLength is not increased.");
+  return true;
+}
+
+void StreamThrottler::boostStreams(const Stream::StreamVec &stepRootStreams) {
+  if (this->strategy != StrategyE::GLOBAL) {
+    // No boost unless we have GLOBAL throttling.
+    return;
+  }
+  while (true) {
+    bool boosted = false;
+    for (auto stepRootS : stepRootStreams) {
+      if (this->tryGlobalThrottle(stepRootS)) {
+        boosted = true;
+      }
+    }
+    if (!boosted) {
+      break;
+    }
+  }
 }

@@ -44,9 +44,6 @@ DynamicStream *StreamRangeSyncController::getNoRangeDynS() {
           this->getCheckElementIdx(dynS) >= dynS->getTotalTripCount()) {
         continue;
       }
-      // DYN_S_DPRINTF(dynS->dynamicStreamId,
-      //               "[CoreRange] Not ready for CheckElement %llu.\n",
-      //               this->getCheckElementIdx(dynS));
       return dynS;
     }
   }

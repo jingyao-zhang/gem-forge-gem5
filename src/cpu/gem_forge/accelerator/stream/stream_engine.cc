@@ -14,7 +14,7 @@
 #include "debug/CoreStreamAlloc.hh"
 #include "debug/RubyStream.hh"
 #include "debug/StreamAlias.hh"
-#include "debug/StreamEngine.hh"
+#include "debug/StreamEngineBase.hh"
 #include "debug/StreamThrottle.hh"
 
 namespace {
@@ -31,9 +31,10 @@ bool isDebugStream(Stream *S) {
   warn("[SE%d]: " format, this->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->cpuDelegator->cpuId(), ##args)
-#define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamEngine, format, ##args)
+#define SE_DPRINTF(format, args...)                                            \
+  SE_DPRINTF_(StreamEngineBase, format, ##args)
 
-#define DEBUG_TYPE StreamEngine
+#define DEBUG_TYPE StreamEngineBase
 #include "stream_log.hh"
 
 StreamEngine::StreamEngine(Params *params)
@@ -648,7 +649,7 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   }
 
   // ! Do not allocate here.
-  // ! allocateElements() will handle it.
+  // ! StreamRegionController::allocateElements() will handle it.
 
   if (isDebugStream(stepStream)) {
   }
@@ -882,7 +883,7 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
         // Remember the first StreamStore.
         element->firstStoreSeqNum = seqNum;
       }
-      S_ELEMENT_DPRINTF(element, "Used by core inst sn:%llu.\n", seqNum);
+      S_ELEMENT_DPRINTF(element, "Used by core inst sn: %llu.\n", seqNum);
       elementSet.insert(element);
       // Construct the elementUserMap.
       this->elementUserMap
@@ -1799,11 +1800,10 @@ Stream *StreamEngine::tryGetStream(uint64_t streamId) const {
 }
 
 void StreamEngine::tick() {
-  this->allocateElements();
+  this->regionController->tick();
   this->issueElements();
   this->computeEngine->startComputation();
   this->computeEngine->completeComputation();
-  this->regionController->tick();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
@@ -1976,193 +1976,6 @@ const std::list<Stream *> &StreamEngine::getConfigStreamsInRegion(
     }
   }
   return configStreams;
-}
-
-void StreamEngine::allocateElements() {
-  /**
-   * Try to allocate more elements for configured streams.
-   * Set a target, try to make sure all streams reach this target.
-   * Then increment the target.
-   */
-  std::vector<Stream *> configuredStepRootStreams;
-  for (const auto &IdStream : this->streamMap) {
-    auto S = IdStream.second;
-    if (S->stepRootStream == S && S->isConfigured()) {
-      // This is a configured StepRootStream.
-      configuredStepRootStreams.push_back(S);
-    }
-  }
-
-  // Sort by the allocated size.
-  std::sort(configuredStepRootStreams.begin(), configuredStepRootStreams.end(),
-            [](Stream *SA, Stream *SB) -> bool {
-              return SA->getAllocSize() < SB->getAllocSize();
-            });
-
-  for (auto stepRootStream : configuredStepRootStreams) {
-
-    /**
-     * ! A hack here to delay the allocation if the back base stream has
-     * ! not caught up.
-     */
-    auto maxAllocSize = stepRootStream->maxSize;
-    if (!stepRootStream->backBaseStreams.empty()) {
-      for (auto backBaseS : stepRootStream->backBaseStreams) {
-        if (backBaseS->stepRootStream == stepRootStream) {
-          // ! This is acutally a pointer chasing pattern.
-          // ! No constraint should be enforced here.
-          continue;
-        }
-        if (backBaseS->stepRootStream == nullptr) {
-          // ! THis is actually a constant load.
-          // ! So far ignore this dependence.
-          continue;
-        }
-        if (backBaseS->getAllocSize() < maxAllocSize) {
-          // The back base stream is lagging behind.
-          // Reduce the maxAllocSize.
-          maxAllocSize = backBaseS->getAllocSize();
-        }
-      }
-    }
-
-    /**
-     * With the new NestStream, we have to search for the correct dynamic stream
-     * to allocate for. It is the first DynamicStream that:
-     * 1. StreamEnd not dispatched.
-     * 2. StreamConfig executed.
-     * 3. If has TotalTripCount, not all step streams has allocated all
-     * elements.
-     */
-    const auto &stepStreams = this->getStepStreamList(stepRootStream);
-    DynamicStream *allocatingStepRootDynS = nullptr;
-    for (auto &stepRootDynS : stepRootStream->dynamicStreams) {
-      if (!stepRootDynS.configExecuted) {
-        // Configure not executed, can not allocate.
-        break;
-      }
-      if (stepRootDynS.hasTotalTripCount()) {
-        auto totalTripCount = stepRootDynS.getTotalTripCount();
-        bool allStepStreamsAllocated = true;
-        for (auto stepS : stepStreams) {
-          auto &stepDynS = stepS->getDynamicStreamByInstance(
-              stepRootDynS.dynamicStreamId.streamInstance);
-          // DYN_S_DPRINTF(stepDynS.dynamicStreamId,
-          //               "TotalTripCount %d, Next FIFOIdx %s.\n",
-          //               totalTripCount, stepDynS.FIFOIdx);
-          if (stepDynS.FIFOIdx.entryIdx < totalTripCount + 1) {
-            allStepStreamsAllocated = false;
-            break;
-          }
-        }
-        if (allStepStreamsAllocated) {
-          // All allocated, we can move to next one.
-          continue;
-        }
-      } else {
-        /**
-         * Only skip this if we have no TotalTripCount. This is
-         * because StreamEnd may be misspeculated. And we ended
-         * using all the FIFO for the next nested dynamic stream.
-         */
-        if (stepRootDynS.endDispatched) {
-          continue;
-        }
-      }
-      // Found it.
-      allocatingStepRootDynS = &stepRootDynS;
-      break;
-    }
-    if (!allocatingStepRootDynS) {
-      // Failed to find an allocating DynStream.
-      S_DPRINTF(stepRootStream,
-                "No Allocating DynStream, AllocSize %d MaxSize %d.\n",
-                stepRootStream->getAllocSize(), stepRootStream->maxSize);
-      continue;
-    }
-    /**
-     * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
-     * StreamEnd. Condition: maxAllocSize > allocSize: originally we are trying
-     * to allocate more.
-     * ! We allow (totalTripCount + 1) elements as StreamEnd would consume one
-     * ! element.
-     */
-    {
-      auto allocSize = stepRootStream->getAllocSize();
-      if (allocatingStepRootDynS->hasTotalTripCount() &&
-          maxAllocSize > allocSize) {
-        auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
-        auto maxTripCount = allocatingStepRootDynS->getTotalTripCount() + 1;
-        if (nextEntryIdx >= maxTripCount) {
-          // We are already overflowed, set maxAllocSize to allocSize to stop
-          // allocating. NOTE: This should not happen at all.
-          maxAllocSize = allocSize;
-        } else {
-          maxAllocSize =
-              std::min(maxAllocSize, (maxTripCount - nextEntryIdx) + allocSize);
-        }
-      }
-    }
-    DYN_S_DPRINTF_(
-        CoreStreamAlloc, allocatingStepRootDynS->dynamicStreamId,
-        "Allocating StepRootDynS AllocSize %d MaxSize %d MaxAllocSize %d.\n",
-        stepRootStream->getAllocSize(), stepRootStream->maxSize, maxAllocSize);
-
-    /**
-     * We should try to limit maximum allocation per cycle cause I still see
-     * some deadlock when one stream used all the FIFO entries orz.
-     */
-    const size_t MaxAllocationPerCycle = 4;
-    for (size_t targetSize = 1, allocated = 0;
-         targetSize <= maxAllocSize && this->hasFreeElement() &&
-         allocated < MaxAllocationPerCycle;
-         ++targetSize) {
-      for (auto S : stepStreams) {
-        assert(S->isConfigured() && "Try to allocate for unconfigured stream.");
-        if (!this->hasFreeElement()) {
-          S_DPRINTF_(CoreStreamAlloc, S, "No FreeElement.\n");
-          break;
-        }
-        if (S->getAllocSize() >= targetSize) {
-          S_DPRINTF_(CoreStreamAlloc, S, "Reached TargetSize %d >= %d.\n",
-                     S->getAllocSize(), targetSize);
-          continue;
-        }
-        if (S->getAllocSize() >= S->maxSize) {
-          S_DPRINTF_(CoreStreamAlloc, S, "Reached MaxAllocSize %d >= %d.\n",
-                     S->getAllocSize(), S->maxSize);
-          continue;
-        }
-        auto &dynS = S->getDynamicStreamByInstance(
-            allocatingStepRootDynS->dynamicStreamId.streamInstance);
-        if (!dynS.areNextBaseElementsAllocated()) {
-          DYN_S_DPRINTF_(CoreStreamAlloc, dynS.dynamicStreamId,
-                         "NextBaseElements not allocated.\n");
-          continue;
-        }
-        if (S != stepRootStream) {
-          if (S->getAllocSize() >= stepRootStream->getAllocSize()) {
-            // It doesn't make sense to allocate ahead than the step root.
-            DYN_S_DPRINTF_(CoreStreamAlloc, dynS.dynamicStreamId,
-                           "Do not allocate %d beyond StepRootS %d.\n",
-                           S->getAllocSize(), stepRootStream->getAllocSize());
-            continue;
-          }
-          if (dynS.allocSize >= allocatingStepRootDynS->allocSize) {
-            // It also doesn't make sense to allocate ahead than root dynS.
-            DYN_S_DPRINTF_(CoreStreamAlloc, dynS.dynamicStreamId,
-                           "Do not allocate %d beyond StepRootDynS %d.\n",
-                           dynS.allocSize, allocatingStepRootDynS->allocSize);
-            continue;
-          }
-        }
-        DYN_S_DPRINTF_(CoreStreamAlloc, dynS.dynamicStreamId, "Allocate %d.\n",
-                       dynS.allocSize);
-        this->allocateElement(dynS);
-        allocated++;
-      }
-    }
-  }
 }
 
 void StreamEngine::allocateElement(DynamicStream &dynS) {
@@ -2349,6 +2162,13 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          */
 
         if (element->isAddrReady()) {
+          S_ELEMENT_DPRINTF(
+              element,
+              "Address Ready. Check Compute: ShouldComputeValue %d Scheduled "
+              "%d ComputeValueReady %d BaseReady %d.\n",
+              S->shouldComputeValue(), element->scheduledComputation,
+              element->isComputeValueReady(),
+              element->checkValueBaseElementsValueReady());
           // Address already ready. Check if we have type 2 or 3 ready elements.
           if (S->shouldComputeValue() && !element->scheduledComputation &&
               !element->isComputeValueReady() &&
@@ -3052,9 +2872,9 @@ void StreamEngine::dump() {
 }
 
 void StreamEngine::receiveOffloadedLoopBoundRet(
-    const DynamicStreamId &dynStreamId, int64_t totalTripCount) {
-  this->regionController->receiveOffloadedLoopBoundRet(dynStreamId,
-                                                       totalTripCount);
+    const DynamicStreamId &dynStreamId, int64_t tripCount, bool brokenOut) {
+  this->regionController->receiveOffloadedLoopBoundRet(dynStreamId, tripCount,
+                                                       brokenOut);
 }
 
 void StreamEngine::exitDump() const {

@@ -367,6 +367,7 @@ public:
                                    ElementCallback callback);
 
   bool isElementReleased(uint64_t elementIdx) const;
+  uint64_t getNextUnreleasedElementIdx() const;
   LLCStreamElementPtr getElement(uint64_t elementIdx) const;
   LLCStreamElementPtr getElementPanic(uint64_t elementIdx,
                                       const char *errMsg = nullptr) const;
@@ -376,6 +377,12 @@ public:
    */
   void eraseElement(uint64_t elementIdx);
   void eraseElement(IdxToElementMapT::iterator elementIter);
+
+  /**
+   * Slice callback.
+   */
+  using SliceCallback = std::function<void(const DynamicStreamId &, uint64_t)>;
+  void registerSliceAllocCallback(uint64_t sliceIdx, SliceCallback callback);
 
 private:
   std::deque<LLCStreamSlicePtr> slices;
@@ -406,6 +413,10 @@ private:
    * Commit one element for myself and all the indirect streams.
    */
   void commitOneElement();
+
+  using SliceCallbackList = std::list<SliceCallback>;
+  std::map<uint64_t, SliceCallbackList> sliceAllocCallbacks;
+  void invokeSliceAllocCallbacks(uint64_t sliceIdx);
 
 public:
   void addCommitMessage(const DynamicStreamSliceId &sliceId);

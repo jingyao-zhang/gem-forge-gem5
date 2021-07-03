@@ -1,9 +1,9 @@
 #include "stream_compute_engine.hh"
 
 #include "base/trace.hh"
-#include "debug/StreamEngine.hh"
+#include "debug/StreamEngineBase.hh"
 
-#define DEBUG_TYPE StreamEngine
+#define DEBUG_TYPE StreamEngineBase
 #include "stream_log.hh"
 
 StreamComputeEngine::StreamComputeEngine(StreamEngine *_se,

@@ -842,6 +842,7 @@ StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {
 bool Stream::hasUnsteppedElement() {
   if (!this->isConfigured()) {
     // This must be wrong.
+    S_DPRINTF(this, "Not configured, so no unstepped element.\n");
     return false;
   }
   auto &dynS = this->getFirstAliveDynStream();

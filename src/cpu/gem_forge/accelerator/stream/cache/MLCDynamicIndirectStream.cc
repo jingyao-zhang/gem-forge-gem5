@@ -223,7 +223,7 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
 }
 
 void MLCDynamicIndirectStream::advanceStream() {
-  this->popStream();
+  this->tryPopStream();
 
   /**
    * Do not try to allocate if the LLCElement is not created yet.
@@ -401,7 +401,12 @@ bool MLCDynamicIndirectStream::receiveFinalReductionValue(
     const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
     Addr paddrLine) {
   auto S = this->getStaticStream();
-  if (!S->isReduction() || !this->isWaitingNothing()) {
+  if (!(S->isReduction() || S->isPointerChaseIndVar())) {
+    // Only Reduction/PtrChaseIV need final value.
+    return false;
+  }
+  if (!this->isWaitingNothing()) {
+    // We are expecting something.
     return false;
   }
 

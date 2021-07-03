@@ -136,9 +136,10 @@ void StreamRegionController::configureNestStream(
   }
   for (auto S : staticNestRegion.streams) {
     if (S->getAllocSize() + 1 >= S->maxSize) {
-      // S_DPRINTF(S,
-      //           "[Nest] No Free Element to allocate NestConfig, AllocSize
-      //           %d, " "MaxSize %d.\n", S->getAllocSize(), S->maxSize);
+      S_DPRINTF(S,
+                "[Nest] No Free Element to allocate NestConfig, AllocSize %d, "
+                "MaxSize %d.\n",
+                S->getAllocSize(), S->maxSize);
       return;
     }
   }
@@ -159,7 +160,9 @@ void StreamRegionController::configureNestStream(
       } else {
         // The base element is not allocated yet.
         S_DPRINTF(baseS,
-                  "[Nest] BaseElement not allocated yet for NestConfig.\n");
+                  "[Nest] BaseElement %llu not allocated yet for NestConfig. "
+                  "Current NestRegions %d.\n",
+                  nextElementIdx, staticNestRegion.dynRegions.size());
         return;
       }
     }

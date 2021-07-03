@@ -1,4 +1,5 @@
 #include "stream_region_controller.hh"
+#include "stream_throttler.hh"
 
 #include "base/trace.hh"
 #include "debug/StreamRegion.hh"
@@ -29,9 +30,15 @@ void StreamRegionController::initializeRegion(
   /**
    * Collect streams within this region.
    */
+  StaticRegion::StreamSet streams;
   for (const auto &streamInfo : region.streams()) {
     auto S = this->se->getStream(streamInfo.id());
-    staticRegion.streams.insert(S);
+    if (streams.count(S)) {
+      // Coalesced stream.
+      continue;
+    }
+    staticRegion.streams.push_back(S);
+    streams.insert(S);
   }
 
   this->initializeNestStreams(region, staticRegion);
@@ -51,15 +58,24 @@ void StreamRegionController::dispatchStreamConfig(const ConfigArgs &args) {
 }
 
 void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
-  if (this->activeDynRegionMap.count(args.seqNum)) {
-    auto &dynRegion = *this->activeDynRegionMap.at(args.seqNum);
-    this->executeStreamConfigForNestStreams(args, dynRegion);
-    this->executeStreamConfigForLoopBound(args, dynRegion);
+  assert(this->activeDynRegionMap.count(args.seqNum) && "Missing DynRegion.");
+  auto &dynRegion = *this->activeDynRegionMap.at(args.seqNum);
+  this->executeStreamConfigForNestStreams(args, dynRegion);
+  this->executeStreamConfigForLoopBound(args, dynRegion);
 
-    SE_DPRINTF("[Region] Executed Config SeqNum %llu for region %s.\n",
-               args.seqNum, dynRegion.staticRegion->region.region());
+  SE_DPRINTF("[Region] Executed Config SeqNum %llu for region %s.\n",
+             args.seqNum, dynRegion.staticRegion->region.region());
 
-    dynRegion.configExecuted = true;
+  dynRegion.configExecuted = true;
+
+  /**
+   * Try to boost the streams if this is a Eliminated InnerMost Loop.
+   * This enables simultaneous multiple inner loop dynamic streams.
+   */
+  auto &staticRegion = *dynRegion.staticRegion;
+  if (staticRegion.region.loop_eliminated() &&
+      staticRegion.streams.front()->getIsInnerMostLoop()) {
+    se->throttler->boostStreams(staticRegion.step.stepRootStreams);
   }
 }
 
@@ -111,10 +127,12 @@ void StreamRegionController::tick() {
       /**
        * For now, StreamStep must happen in order.
        * Check that this is the first DynamicStream.
+       * Similar for StreamAllocate.
        */
       if (dynRegion.seqNum ==
           dynRegion.staticRegion->dynRegions.front().seqNum) {
         this->stepStream(dynRegion);
+        this->allocateElements(*dynRegion.staticRegion);
       }
     }
   }
