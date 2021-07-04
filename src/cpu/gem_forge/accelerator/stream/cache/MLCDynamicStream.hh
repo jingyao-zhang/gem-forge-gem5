@@ -206,48 +206,41 @@ protected:
   /**
    * These function checks if we are waiting for something.
    */
-  bool isWaitingAck() const {
-    // This is stream is waiting for Ack, not Data.
-    // So far only for offloaded store and atomicrmw streams.
+  enum WaitType {
+    Nothing,
+    Ack,
+    Data,
+  };
+  WaitType isWaiting;
+  WaitType checkWaiting() const {
     if (this->isPseudoOffload) {
-      return false;
+      return WaitType::Nothing;
     }
     if (this->stream->isStoreStream()) {
-      return true;
-    } else if (this->stream->isAtomicStream() ||
-               this->stream->isUpdateStream()) {
-      // We need to check if there the core is issuing.
-      if (auto dynS = this->stream->getDynamicStream(this->dynamicStreamId)) {
-        return !dynS->shouldCoreSEIssue();
-      } else {
-        // The dynamic stream is already released, we don't really care.
-        return false;
-      }
-    } else {
-      // Load stream has no ack for now.
-      return false;
-    }
-  }
-
-  bool isWaitingData() const {
-    if (this->isPseudoOffload) {
-      return false;
-    }
-    if (this->stream->isStoreStream()) {
-      return false;
+      return WaitType::Ack;
     }
     if (auto dynS = this->stream->getDynamicStream(this->dynamicStreamId)) {
-      return dynS->shouldCoreSEIssue();
+      if (dynS->shouldCoreSEIssue()) {
+        return WaitType::Data;
+      } else {
+        if (this->stream->isAtomicComputeStream() ||
+            this->stream->isUpdateStream()) {
+          // These streams writes to memory. Need Ack.
+          return WaitType::Ack;
+        } else {
+          // Other streams does not write. Need nothing.
+          return WaitType::Nothing;
+        }
+      }
     } else {
       // The dynamic stream is already released, we don't really care.
-      // Assume it waits for data in case the core issued a request.
-      return true;
+      return WaitType::Nothing;
     }
   }
 
-  bool isWaitingNothing() const {
-    return !this->isWaitingData() && !this->isWaitingAck();
-  }
+  bool isWaitingAck() const { return this->isWaiting == WaitType::Ack; }
+  bool isWaitingData() const { return this->isWaiting == WaitType::Data; }
+  bool isWaitingNothing() const { return this->isWaiting == WaitType::Nothing; }
 
   /**
    * This remember the received StreamRange.

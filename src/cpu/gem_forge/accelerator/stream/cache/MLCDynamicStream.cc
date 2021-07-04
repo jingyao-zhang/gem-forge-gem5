@@ -39,6 +39,11 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
    */
 
   /**
+   * Remember our wait type.
+   */
+  this->isWaiting = this->checkWaiting();
+
+  /**
    * Remember if we require range-sync. The config will also be passed to
    * LLCDynamicStream.
    */

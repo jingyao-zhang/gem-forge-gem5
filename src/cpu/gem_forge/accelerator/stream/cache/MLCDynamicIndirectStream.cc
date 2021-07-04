@@ -339,10 +339,9 @@ MLCDynamicIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
   }
 
   if (ret.first == this->slices.end()) {
-    this->panicDump();
+    MLC_S_PANIC(this->getDynamicStreamId(),
+                "Failed to find slice for Element %llu.\n", elementIdx);
   }
-  assert(ret.first != this->slices.end() &&
-         "Failed to find slices by elementIdx.");
   return ret;
 }
 

@@ -90,6 +90,10 @@ public:
   bool loopBoundRet;
 
   StreamValue reductionInitValue;
+  /**
+   * Whether the core need the final value.
+   */
+  bool finalValueNeededByCore = false;
 
   /**
    * Whether this is a pointer chase stream.

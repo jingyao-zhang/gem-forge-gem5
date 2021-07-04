@@ -1018,7 +1018,8 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
     /**
      * If the last reduction element is ready, we send this back to the core.
      */
-    if (this->lastComputedReductionElementIdx == this->getTotalTripCount()) {
+    if (this->configData->finalValueNeededByCore &&
+        this->lastComputedReductionElementIdx == this->getTotalTripCount()) {
       // This is the last reduction.
       auto finalReductionElement = this->getElementPanic(
           this->lastComputedReductionElementIdx, "Return FinalReductionValue.");

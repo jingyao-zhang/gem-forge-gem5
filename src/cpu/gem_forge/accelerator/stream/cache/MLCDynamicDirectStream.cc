@@ -784,8 +784,31 @@ void MLCDynamicDirectStream::checkCoreCommitProgress() {
       // We already commit this segment.
       continue;
     }
+    bool isLastElement = firstCoreElementIdx == dynS->getTotalTripCount();
+    bool isLastSegment =
+        firstCoreElementIdx > seg.getStartSliceId().getStartIdx();
+    if (isLastElement && isLastSegment) {
+      /**
+       * This is the last Segement. We may allocated more elements,
+       * NOTE: Here I just override the EndSliceId.startIdx,
+       * and keeps going.
+       */
+      auto segStartElementIdx = seg.getStartSliceId().getStartIdx();
+      auto segEndElementIdx = seg.endSliceId.getStartIdx();
+      MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(),
+                     "[RangeCommit] Override the LastSegment ElementRange "
+                     "[%llu, %llu) -> [%llu, %llu).\n",
+                     segStartElementIdx, segEndElementIdx, segStartElementIdx,
+                     firstCoreElementIdx);
+      seg.endSliceId.getStartIdx() = firstCoreElementIdx;
+    }
     if (seg.endSliceId.getStartIdx() > firstCoreElementIdx) {
-      // This segment contains an element that has not been committed yet.
+      /**
+       * This segment contains an element that has not been committed yet.
+       * With one exception:
+       * If the first CoreElementIdx == TotalTripCount, and
+       * falls within this segment, then we have to commit.
+       */
       break;
     }
     // This segment has been committed in core.
@@ -807,10 +830,11 @@ void MLCDynamicDirectStream::sendCommitToLLC(
   auto llcBank = this->mapPAddrToLLCBank(llcPAddrLine);
 
   // Send the commit control.
+  auto startElementIdx = segment.sliceIds.firstSliceId().getStartIdx();
+  auto endElementIdx = segment.endSliceId.getStartIdx();
   MLC_S_DPRINTF_(StreamRangeSync, this->dynamicStreamId,
-                 "[Range] Commit [%llu, %lu), to LLC%d.\n",
-                 segment.getStartSliceId().getStartIdx(),
-                 segment.endSliceId.getStartIdx(), llcBank.num);
+                 "[Range] Commit [%llu, %lu), to LLC%d.\n", startElementIdx,
+                 endElementIdx, llcBank.num);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = llcPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_COMMIT;
@@ -819,8 +843,8 @@ void MLCDynamicDirectStream::sendCommitToLLC(
   msg->m_MessageSize = MessageSizeType_Control;
   DynamicStreamSliceId sliceId;
   sliceId.getDynStreamId() = this->dynamicStreamId;
-  sliceId.getStartIdx() = segment.sliceIds.firstSliceId().getStartIdx();
-  sliceId.getEndIdx() = segment.endSliceId.getStartIdx();
+  sliceId.getStartIdx() = startElementIdx;
+  sliceId.getEndIdx() = endElementIdx;
   msg->m_sliceIds.add(sliceId);
 
   Cycles latency(1); // Just use 1 cycle latency here.

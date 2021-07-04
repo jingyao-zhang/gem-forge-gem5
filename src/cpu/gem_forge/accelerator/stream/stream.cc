@@ -729,6 +729,7 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
            "Cannot offload reduction/ptr chase stream larger than 64 bytes.");
   }
   configData->reductionInitValue = dynStream.initialValue;
+  configData->finalValueNeededByCore = this->isFinalValueNeededByCore();
 
   // Set the initial vaddr if this is not indirect stream.
   if (!isIndirect) {

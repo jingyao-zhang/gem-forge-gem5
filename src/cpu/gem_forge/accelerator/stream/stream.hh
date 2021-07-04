@@ -129,6 +129,9 @@ public:
   bool isLoopEliminated() const {
     return this->info.static_info().loop_eliminated();
   }
+  bool isFinalValueNeededByCore() const {
+    return this->info.static_info().core_need_final_value();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -594,6 +597,7 @@ public:
   Is(MergedPredicated);
   Is(MergedLoadStoreDepStream);
   Is(LoopEliminated);
+  Is(FinalValueNeededByCore);
 
   /**
    * Get the coalesce base stream and offset.
