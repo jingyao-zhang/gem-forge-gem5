@@ -20,10 +20,17 @@ public:
    */
   void pushNextRangeTailElementIdx(uint64_t nextRangeTailElementIdx);
 
+  /**
+   * Cut total trip count due to StreamLoopBound.
+   */
+  void receiveLoopBoundRet(int64_t totalTripCount);
+
 private:
   LLCDynamicStream *stream;
   std::list<uint64_t> nextRangeTailElementIdxQueue;
-  const int64_t totalTripCount;
+  static constexpr int64_t InvalidTotalTripCount =
+      CacheStreamConfigureData::InvalidTotalTripCount;
+  int64_t totalTripCount;
   uint64_t nextElementIdx = 0;
   uint64_t prevBuiltElementIdx = 0;
   uint64_t prevNextRangeTailElementIdx = 0;

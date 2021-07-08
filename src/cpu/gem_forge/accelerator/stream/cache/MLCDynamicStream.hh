@@ -88,7 +88,7 @@ public:
   virtual bool hasOverflowed() const = 0;
   virtual int64_t getTotalTripCount() const = 0;
   virtual bool hasTotalTripCount() const = 0;
-  virtual void setTotalTripCount(int64_t totalTripCount) = 0;
+  virtual void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr) = 0;
 
 protected:
   Stream *stream;

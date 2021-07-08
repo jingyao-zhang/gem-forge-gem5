@@ -319,8 +319,9 @@ private:
   /**
    * Set the TotalTripCount in MLC. Used to implement StreamLoopBound.
    */
-  void setMLCStreamTotalTripCount(LLCDynamicStreamPtr stream,
-                                  uint64_t totalTripCount);
+  void sendOffloadedLoopBoundRetToMLC(LLCDynamicStreamPtr stream,
+                                      uint64_t totalTripCount,
+                                      Addr brokenPAddr);
 
   /**
    * Find streams that should be migrated.

@@ -22,9 +22,7 @@ public:
   /**
    * Get where is the LLC stream is at the end of current allocated credits.
    */
-  Addr getLLCTailPAddr() const override {
-    return this->getLastLLCSegment().endPAddr;
-  }
+  Addr getLLCTailPAddr() const override;
 
   void receiveStreamData(const DynamicStreamSliceId &sliceId,
                          const DataBlock &dataBlock, Addr paddrLine) override;
@@ -51,7 +49,7 @@ public:
   bool hasTotalTripCount() const override {
     return this->slicedStream.hasTotalTripCount();
   }
-  void setTotalTripCount(int64_t totalTripCount) override;
+  void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr) override;
 
 protected:
   SlicedDynamicStream slicedStream;
@@ -69,6 +67,10 @@ protected:
   DynamicStreamSliceIdVec nextSegmentSliceIds;
   Addr tailPAddr;
   DynamicStreamSliceId tailSliceId;
+
+  // This stream has been cut by LLCStreamBound.
+  bool llcStreamLoopBoundCutted = false;
+  Addr llcStreamLoopBoundBrokenPAddr = 0;
 
   struct LLCSegmentPosition {
     /**

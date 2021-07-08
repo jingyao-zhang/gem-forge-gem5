@@ -2162,13 +2162,6 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          */
 
         if (element->isAddrReady()) {
-          S_ELEMENT_DPRINTF(
-              element,
-              "Address Ready. Check Compute: ShouldComputeValue %d Scheduled "
-              "%d ComputeValueReady %d BaseReady %d.\n",
-              S->shouldComputeValue(), element->scheduledComputation,
-              element->isComputeValueReady(),
-              element->checkValueBaseElementsValueReady());
           // Address already ready. Check if we have type 2 or 3 ready elements.
           if (S->shouldComputeValue() && !element->scheduledComputation &&
               !element->isComputeValueReady() &&

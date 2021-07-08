@@ -594,13 +594,18 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
     // Still here.
     return false;
   }
+  if (stream->hasLoopBound() && stream->isLoopBoundBrokenOut()) {
+    return false;
+  }
   /**
    * We can only enable AdvanceMigrate for DirectStreams.
    * PointerChaseStream can never advance migrate.
+   * Streams with LoopBound function can not advance migrate.
    */
   if (!this->controller->isStreamAdvanceMigrateEnabled() ||
-      stream->isPointerChase()) {
-    if ((stream->hasIndirectDependent() || stream->isPointerChase()) &&
+      stream->isPointerChase() || stream->hasLoopBound()) {
+    if ((stream->hasIndirectDependent() || stream->isPointerChase() ||
+         stream->hasLoopBound()) &&
         stream->inflyRequests > 0) {
       // We are still waiting data for indirect usages:
       // 1. Indirect streams.
@@ -1057,6 +1062,17 @@ void LLCStreamEngine::processStreamFlowControlMsg() {
         break;
       }
     }
+    if (!processed) {
+      // Delete the credit message if the stream is already released due
+      // to StreamLoopBound.
+      if (!LLCDynamicStream::getLLCStream(msg.getDynStreamId())) {
+        LLC_S_DPRINTF(msg.getDynStreamId(),
+                      "[Credit] Discard credit %lu -> %lu as LLCDynStream "
+                      "already released.\n",
+                      msg.getStartIdx(), msg.getEndIdx());
+        processed = true;
+      }
+    }
     if (processed) {
       iter = this->pendingStreamFlowControlMsgs.erase(iter);
     } else {
@@ -1126,6 +1142,13 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
     //                "Not issue: NextSliceNotAllocated.\n");
     statistic.sampleLLCStreamEngineIssueReason(
         StreamStatistic::LLCStreamEngineIssueReason::NextSliceNotAllocated);
+    return nullptr;
+  }
+
+  if (dynS->isNextSliceOverflown()) {
+    // Do not try to issue this slice if it is overflown.
+    LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+                  "Not issue: NextSliceOverflown.\n");
     return nullptr;
   }
 
@@ -2013,12 +2036,13 @@ void LLCStreamEngine::issueStreamDataToLLC(
   }
 }
 
-void LLCStreamEngine::setMLCStreamTotalTripCount(LLCDynamicStreamPtr stream,
-                                                 uint64_t totalTripCount) {
+void LLCStreamEngine::sendOffloadedLoopBoundRetToMLC(LLCDynamicStreamPtr stream,
+                                                     uint64_t totalTripCount,
+                                                     Addr brokenPAddr) {
   auto mlcSE = stream->getMLCController()->getMLCStreamEngine();
   assert(mlcSE && "Missing MLC SE.");
   mlcSE->receiveStreamTotalTripCount(stream->getDynamicStreamId(),
-                                     totalTripCount);
+                                     totalTripCount, brokenPAddr);
 }
 
 void LLCStreamEngine::findMigratingStreams() {

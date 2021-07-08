@@ -912,8 +912,27 @@ void MLCDynamicDirectStream::receiveStreamDone(
   }
 }
 
-void MLCDynamicDirectStream::setTotalTripCount(int64_t totalTripCount) {
+void MLCDynamicDirectStream::setTotalTripCount(int64_t totalTripCount,
+                                               Addr brokenPAddr) {
   MLC_S_DPRINTF_(MLCStreamLoopBound, this->getDynamicStreamId(),
-                 "[LoopBound] Set TotalTripCount %lld.\n", totalTripCount);
+                 "[LoopBound] Set TotalTripCount %lld. BrokenPAddr %#x.\n",
+                 totalTripCount, brokenPAddr);
   this->slicedStream.setTotalTripCount(totalTripCount);
+  this->llcStreamLoopBoundCutted = true;
+  this->llcStreamLoopBoundBrokenPAddr = brokenPAddr;
+}
+
+Addr MLCDynamicDirectStream::getLLCTailPAddr() const {
+  /**
+   * Normally we just get LastLLCSegment.endPAddr, however things get
+   * complicated with StreamLoopBound, as we may have allocated more
+   * credits and the LLCStream may stop iterating before consuming all
+   * of our credits.
+   * For such cutted streams, we directly query the LLCStream's location.
+   */
+  if (this->llcStreamLoopBoundCutted) {
+    return this->llcStreamLoopBoundBrokenPAddr;
+  } else {
+    return this->getLastLLCSegment().endPAddr;
+  }
 }

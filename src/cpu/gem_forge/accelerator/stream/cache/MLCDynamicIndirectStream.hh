@@ -68,7 +68,7 @@ public:
   bool hasTotalTripCount() const override {
     return this->baseStream->hasTotalTripCount();
   }
-  void setTotalTripCount(int64_t totalTripCount) override;
+  void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr) override;
 
 private:
   // Remember the root stream id.

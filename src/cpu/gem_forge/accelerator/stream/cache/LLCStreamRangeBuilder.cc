@@ -36,7 +36,8 @@ void LLCStreamRangeBuilder::addElementAddress(uint64_t elementIdx, Addr vaddr,
   auto firstPageRemain = PageSize - (paddr % PageSize);
   auto firstPageSize = size < firstPageRemain ? size : firstPageRemain;
   auto secondPageSize = size - firstPageSize;
-  if (this->totalTripCount != -1 && elementIdx >= this->totalTripCount) {
+  if (this->totalTripCount != InvalidTotalTripCount &&
+      elementIdx >= this->totalTripCount) {
     LLC_S_PANIC(this->stream->getDynamicStreamId(),
                 "[RangeBuilder] ElementIdx overflow, total %llu.",
                 this->totalTripCount);
@@ -55,6 +56,10 @@ void LLCStreamRangeBuilder::addElementAddress(uint64_t elementIdx, Addr vaddr,
     }
     this->paddrRange.add(secondPagePAddr, secondPageSize);
   }
+  LLC_S_DPRINTF(
+      this->stream->getDynamicStreamId(),
+      "[RangeBuilder] Add Element %llu VAddr %#x PAddr %#x Size %d.\n",
+      elementIdx, vaddr, paddr, size);
   this->nextElementIdx++;
   this->tryBuildRange();
 }
@@ -93,7 +98,7 @@ void LLCStreamRangeBuilder::tryBuildRange() {
     return;
   }
   auto nextRangeTailElementIdx = this->nextRangeTailElementIdxQueue.front();
-  if ((this->totalTripCount != -1 &&
+  if ((this->totalTripCount != InvalidTotalTripCount &&
        this->nextElementIdx == this->totalTripCount) ||
       this->nextElementIdx == nextRangeTailElementIdx) {
     // Time to build another range.
@@ -141,4 +146,24 @@ void LLCStreamRangeBuilder::pushNextRangeTailElementIdx(
                 nextRangeTailElementIdx);
   this->nextRangeTailElementIdxQueue.push_back(nextRangeTailElementIdx);
   this->prevNextRangeTailElementIdx = nextRangeTailElementIdx;
+}
+
+void LLCStreamRangeBuilder::receiveLoopBoundRet(int64_t totalTripCount) {
+  if (this->totalTripCount != InvalidTotalTripCount) {
+    LLC_S_PANIC(
+        this->stream->getDynamicStreamId(),
+        "[RangeBuilder] LLCRangeBuilder reset TotalTripCount %lld to %lld.",
+        this->totalTripCount, totalTripCount);
+  }
+  LLC_S_DPRINTF(this->stream->getDynamicStreamId(),
+                "[RangeBuilder] LLCRangeBuilder cut TotalTripCount %lld to "
+                "%lld. PrevBuiltElementIdx %llu NextElementIdx %llu.\n",
+                this->totalTripCount, totalTripCount, this->prevBuiltElementIdx,
+                this->nextElementIdx);
+  this->totalTripCount = totalTripCount;
+  if (this->stream->shouldRangeSync()) {
+    if (this->prevBuiltElementIdx < totalTripCount) {
+      this->tryBuildRange();
+    }
+  }
 }

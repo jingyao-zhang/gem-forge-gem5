@@ -87,7 +87,7 @@ public:
    * Receive a StreamLoopBound TotalTripCount.
    */
   void receiveStreamTotalTripCount(const DynamicStreamId &streamId,
-                                   int64_t totalTripCount);
+                                   int64_t totalTripCount, Addr brokenPAddr);
 
   /**
    * API to get the MLCDynamicStream.

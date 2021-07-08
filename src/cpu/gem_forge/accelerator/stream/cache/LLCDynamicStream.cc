@@ -109,6 +109,10 @@ uint64_t LLCDynamicStream::getTotalTripCount() const {
 void LLCDynamicStream::setTotalTripCount(int64_t totalTripCount) {
   assert(!this->baseStream && "SetTotalTripCount for IndirectS.");
   this->slicedStream.setTotalTripCount(totalTripCount);
+  this->rangeBuilder->receiveLoopBoundRet(totalTripCount);
+  for (auto dynIS : this->indirectStreams) {
+    dynIS->rangeBuilder->receiveLoopBoundRet(totalTripCount);
+  }
 }
 
 Addr LLCDynamicStream::peekNextInitVAddr() const {
@@ -280,6 +284,19 @@ void LLCDynamicStream::sanityCheckStreamLife() {
 DynamicStreamSliceId LLCDynamicStream::initNextSlice() {
   this->nextInitSliceIdx++;
   return this->slicedStream.getNextSlice();
+}
+
+bool LLCDynamicStream::isNextSliceOverflown() const {
+  if (!this->hasTotalTripCount()) {
+    return false;
+  }
+  assert(this->isNextSliceCredited() && "Next slice is not allocated yet.");
+  if (auto slice = this->getNextAllocSlice()) {
+    return slice->getSliceId().getStartIdx() >= this->getTotalTripCount();
+  }
+
+  LLC_S_PANIC(this->getDynamicStreamId(),
+              "No Initialized Slice to check overflown.");
 }
 
 LLCStreamSlicePtr LLCDynamicStream::getNextAllocSlice() const {
@@ -1228,7 +1245,7 @@ bool LLCDynamicStream::shouldIssueAfterCommit() const {
 }
 
 void LLCDynamicStream::evaluateLoopBound(LLCStreamEngine *se) {
-  if (!this->configData->loopBoundCallback) {
+  if (!this->hasLoopBound()) {
     return;
   }
   if (this->loopBoundBrokenOut) {
@@ -1274,10 +1291,18 @@ void LLCDynamicStream::evaluateLoopBound(LLCStreamEngine *se) {
                    loopBoundRet, this->configData->loopBoundRet,
                    this->nextLoopBoundElementIdx);
 
+    Addr loopBoundBrokenPAddr;
+    if (!this->translateToPAddr(element->vaddr, loopBoundBrokenPAddr)) {
+      LLC_S_PANIC(this->getDynamicStreamId(),
+                  "[LLCLoopBound] BrokenOut Element VAddr %#x Faulted.",
+                  element->vaddr);
+    }
+
     this->setTotalTripCount(this->nextLoopBoundElementIdx);
 
     // Also set the MLCStream.
-    se->setMLCStreamTotalTripCount(this, this->nextLoopBoundElementIdx);
+    se->sendOffloadedLoopBoundRetToMLC(this, this->nextLoopBoundElementIdx,
+                                       loopBoundBrokenPAddr);
 
     // Also set the core.
     this->getStaticStream()->getSE()->receiveOffloadedLoopBoundRet(
@@ -1285,6 +1310,7 @@ void LLCDynamicStream::evaluateLoopBound(LLCStreamEngine *se) {
         true /* BrokenOut */);
 
     this->loopBoundBrokenOut = true;
+    this->loopBoundBrokenPAddr = loopBoundBrokenPAddr;
 
   } else {
     /**

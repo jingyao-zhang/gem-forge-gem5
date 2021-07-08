@@ -203,7 +203,7 @@ void StreamRegionController::configureNestStream(
 
   // Sanity check that nest streams have same TotalTripCount.
   bool isFirstDynS = true;
-  int totalTripCount = DynamicStream::InvalidTotalTripCount;
+  auto totalTripCount = DynamicStream::InvalidTotalTripCount;
   for (auto S : staticNestRegion.streams) {
     auto &dynS = S->getLastDynamicStream();
     auto dynSTotalTripCount = dynS.getTotalTripCount();

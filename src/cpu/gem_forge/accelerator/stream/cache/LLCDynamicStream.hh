@@ -123,6 +123,11 @@ public:
   bool isNextSliceCredited() const {
     return this->nextAllocSliceIdx < this->creditedSliceIdx;
   }
+  /**
+   * Check if the next allocated slice has overflown the TotalTripCount.
+   * With StreamLoopBound, we may allocated more slices beyond TotalTripCount.
+   */
+  bool isNextSliceOverflown() const;
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
   Addr peekNextAllocVAddr() const;
   LLCStreamSlicePtr getNextAllocSlice() const;
@@ -454,10 +459,15 @@ public:
   bool shouldIssueAfterCommit() const;
 
   void evaluateLoopBound(LLCStreamEngine *se);
+  bool hasLoopBound() const {
+    return this->configData->loopBoundCallback != nullptr;
+  }
+  bool isLoopBoundBrokenOut() const { return this->loopBoundBrokenOut; }
 
 private:
   uint64_t nextLoopBoundElementIdx = 0;
   bool loopBoundBrokenOut = false;
+  Addr loopBoundBrokenPAddr = 0;
 };
 
 #endif
