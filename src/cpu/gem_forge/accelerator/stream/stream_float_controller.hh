@@ -81,6 +81,12 @@ private:
    * is not promoted into an UpdateStream.
    */
   bool checkAliasedUnpromotedStoreStream(Stream *S);
+
+  /**
+   * Determine the FirstOffloadedElementIdx.
+   * Mainly used to optimize for pointer-chase stream.
+   */
+  void setFirstOffloadedElementIdx(const Args &args);
 };
 
 #endif

@@ -60,20 +60,46 @@ struct DynamicStream {
    */
   uint64_t nextCacheDoneElementIdx = 0;
 
+  /**
+   * Offload flags are now set to private.
+   */
+  bool isFloatConfigDelayed() const { return this->floatConfigDelayed; }
+  bool isFloatedToCacheAsRoot() const { return this->floatedToCacheAsRoot; }
+  bool isFloatedToCache() const { return this->floatedToCache; }
+  bool isFloatedWithDependent() const { return this->floatedWithDependent; }
+  bool isFloatedAsNDC() const { return this->floatedAsNDC; }
+  bool isFloatedAsNDCForward() const { return this->floatedAsNDCForward; }
+  bool isPseudoFloatedToCache() const { return this->pseudoFloatedToCache; }
+  uint64_t getFirstFloatElemIdx() const { return this->firstFloatedElemIdx; }
+
+  void setFloatConfigDelayed(bool val) { this->floatConfigDelayed = val; }
+  void setFloatedToCacheAsRoot(bool val) { this->floatedToCacheAsRoot = val; }
+  void setFloatedToCache(bool val) { this->floatedToCache = val; }
+  void setFloatedWithDependent(bool val) { this->floatedWithDependent = val; }
+  void setFloatedAsNDC(bool val) { this->floatedAsNDC = val; }
+  void setFloatedAsNDCForward(bool val) { this->floatedAsNDCForward = val; }
+  void setPseudoFloatedToCache(bool val) { this->pseudoFloatedToCache = val; }
+  void setFirstFloatElemIdx(uint64_t val) { this->firstFloatedElemIdx = val; }
+
+private:
   // Whether the floating config is delayed until config committed.
-  bool offloadConfigDelayed = false;
+  bool floatConfigDelayed = false;
 
-  // Whether the dynamic stream is offloaded to cache.
-  bool offloadedToCacheAsRoot = false;
-  bool offloadedToCache = false;
-  bool offloadedWithDependent = false;
-  bool pseudoOffloadedToCache = false;
+  // Whether the dynamic stream is floated to cache.
+  bool floatedToCacheAsRoot = false;
+  bool floatedToCache = false;
+  bool floatedWithDependent = false;
+  bool pseudoFloatedToCache = false;
 
-  // Whether the dynamic stream is offloaded as fine-grained near-data
+  // Whether the dynamic stream is floated as fine-grained near-data
   // computing.
-  bool offloadedAsNDC = false;
-  bool offloadedAsNDCForward = false;
+  bool floatedAsNDC = false;
+  bool floatedAsNDCForward = false;
 
+  // First float ElementIdx. This is to optimize for Tree.
+  uint64_t firstFloatedElemIdx = 0;
+
+public:
   // Whether the StreamConfig has executed (ready to go).
   bool configExecuted = false;
 

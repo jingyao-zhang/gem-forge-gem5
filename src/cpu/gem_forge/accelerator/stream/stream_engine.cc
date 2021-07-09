@@ -522,14 +522,14 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
      * However, if we have Range-Sync enabled, we should commit it directly.
      */
     if (S->getEnabledStoreFunc()) {
-      if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue() &&
+      if (dynS.isFloatedToCache() && !dynS.shouldCoreSEIssue() &&
           !dynS.shouldRangeSync()) {
         if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
           S_ELEMENT_DPRINTF(stepElement, "[CanNotCommitStep] No Ack.\n");
           return false;
         }
       }
-      if (dynS.offloadedAsNDC) {
+      if (dynS.isFloatedAsNDC()) {
         if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
           S_ELEMENT_DPRINTF(stepElement,
                             "[CanNotCommitStep] No Ack from NDC.\n");
@@ -549,7 +549,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
                           "[CanNotCommitStep] No Reduction NextElement.\n");
         return false;
       }
-      if (dynS.offloadedToCache) {
+      if (dynS.isFloatedToCache()) {
         // // If offloaded, we avoid the core commit too fast, as that would
         // // trigger our deadlock check.
         // if (stepElement->FIFOIdx.entryIdx > 50) {
@@ -571,7 +571,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
         }
       }
     }
-    if (S->isLoadStream() && !dynS.offloadedToCache && !S->hasCoreUser() &&
+    if (S->isLoadStream() && !dynS.isFloatedToCache() && !S->hasCoreUser() &&
         S->hasBackDepReductionStream) {
       /**
        * S is a load stream that is not offloaded, with no core user and
@@ -591,7 +591,7 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
      * to ensure that it is correctly coalesced.
      */
     if (S->isDirectMemStream() && dynS.shouldCoreSEIssue() &&
-        !dynS.offloadedAsNDC) {
+        !dynS.isFloatedAsNDC()) {
       auto stepNextElement = stepElement->next;
       if (!stepNextElement) {
         S_ELEMENT_DPRINTF(
@@ -720,21 +720,21 @@ int StreamEngine::createStreamUserLSQCallbacks(
         // Insert into the load queue if this is the first user.
         pushToLQ = true;
       }
-      if (S->isUpdateStream() && !dynS->offloadedToCache) {
+      if (S->isUpdateStream() && !dynS->isFloatedToCache()) {
         // Insert into the store queue if this is the first StreamStore.
         if (element->firstStoreSeqNum == seqNum) {
           pushToSQ = true;
         }
       }
     } else if (S->isAtomicComputeStream()) {
-      if (!dynS->offloadedToCache && !dynS->offloadedAsNDC) {
+      if (!dynS->isFloatedToCache() && !dynS->isFloatedAsNDC()) {
         // We skip LSQ for Offloaded AtomicComputeStream.
         if (element->firstUserSeqNum == seqNum) {
           pushToLQ = true;
         }
       }
     } else if (S->isStoreComputeStream()) {
-      if (!dynS->offloadedToCache && !dynS->offloadedAsNDC) {
+      if (!dynS->isFloatedToCache() && !dynS->isFloatedAsNDC()) {
         if (element->firstUserSeqNum == seqNum) {
           if (!this->enableLSQ) {
             S_ELEMENT_PANIC(element,
@@ -911,7 +911,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     auto S = element->stream;
     // Floating Store/AtomicComputeStream will only check for Ack when stepping.
     // This also true for floating UpdateStream's SQCallback.
-    if (element->dynS->offloadedToCache || element->dynS->offloadedAsNDC) {
+    if (element->dynS->isFloatedToCache() || element->dynS->isFloatedAsNDC()) {
       if (S->isStoreComputeStream()) {
         continue;
       }
@@ -933,7 +933,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
             element->isAddrReady(), element->isUpdateValueReady());
         ready = false;
       }
-    } else if (S->isLoadComputeStream() && !element->dynS->offloadedToCache) {
+    } else if (S->isLoadComputeStream() && !element->dynS->isFloatedToCache()) {
       /**
        * Special case for not floated LoadComputeStream, where we should check
        * for LoadComputeValue.
@@ -990,7 +990,7 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * Make sure we zero out the data.
      */
     args.values->back().fill(0);
-    if (element->dynS->offloadedToCache || element->dynS->offloadedAsNDC) {
+    if (element->dynS->isFloatedToCache() || element->dynS->isFloatedAsNDC()) {
       /**
        * There are certain cases we are not really return the value.
        * 1. StreamStore does not really return any value.
@@ -1009,7 +1009,7 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * LoadComputeValue.
      */
     auto size = S->getCoreElementSize();
-    if (S->isLoadComputeStream() && !element->dynS->offloadedToCache) {
+    if (S->isLoadComputeStream() && !element->dynS->isFloatedToCache()) {
       element->getLoadComputeValue(args.values->back().data(),
                                    StreamUserArgs::MaxElementSize);
     } else {
@@ -1038,7 +1038,7 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
 
     auto S = element->getStream();
     bool isActuallyUsed = true;
-    if (element->dynS->offloadedToCache || element->dynS->offloadedAsNDC) {
+    if (element->dynS->isFloatedToCache() || element->dynS->isFloatedAsNDC()) {
       if (S->isStoreComputeStream()) {
         isActuallyUsed = false;
       }
@@ -1049,7 +1049,7 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
     }
     if (S->isUpdateStream() && args.isStore) {
       isActuallyUsed = false;
-      if (!element->dynS->offloadedToCache) {
+      if (!element->dynS->isFloatedToCache()) {
         if (!element->isUpdateValueReady()) {
           S_ELEMENT_PANIC(
               element,
@@ -1205,7 +1205,7 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
       if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
         return false;
       }
-      if (dynS.offloadedToCache &&
+      if (dynS.isFloatedToCache() &&
           dynS.cacheAckedElements.size() + 1 < dynS.FIFOIdx.entryIdx) {
         // We are not ack the LastElement.
         DYN_S_DPRINTF(
@@ -1272,7 +1272,7 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
        * Therefore, we wait here to check that we collected the last StreamAck.
        */
       bool shouldCheckAck = false;
-      if (dynS.offloadedToCache && !dynS.shouldCoreSEIssue() &&
+      if (dynS.isFloatedToCache() && !dynS.shouldCoreSEIssue() &&
           dynS.shouldRangeSync() && endElementIdx > 0) {
         shouldCheckAck = true;
       }
@@ -1282,7 +1282,7 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
        * CoreIssue          Check              NoCheck
        * CoreNotIssue       Check              NoCheck
        */
-      if (S->isAtomicComputeStream() && dynS.offloadedToCache &&
+      if (S->isAtomicComputeStream() && dynS.isFloatedToCache() &&
           endElementIdx > 0) {
         if (dynS.shouldRangeSync()) {
           shouldCheckAck = true;
@@ -1303,7 +1303,7 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
      * StreamDone.
      * TODO: These two cases should really be merged in the future.
      */
-    if (dynS.offloadedToCacheAsRoot && dynS.shouldRangeSync()) {
+    if (dynS.isFloatedToCacheAsRoot() && dynS.shouldRangeSync()) {
       if (dynS.nextCacheDoneElementIdx < endElementIdx) {
         S_ELEMENT_DPRINTF(endElement,
                           "[StreamEnd] Cannot commit as no Done for %llu, "
@@ -1387,8 +1387,8 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
      * Check if this stream is offloaded and if so, send the StreamEnd
      * packet.
      */
-    if (endedDynS.offloadedToCacheAsRoot) {
-      assert(!endedDynS.offloadConfigDelayed &&
+    if (endedDynS.isFloatedToCacheAsRoot()) {
+      assert(!endedDynS.isFloatConfigDelayed() &&
              "Offload still delayed when committing StreamEnd.");
       endedFloatRootIds.push_back(endedDynS.dynamicStreamId);
     }
@@ -2136,11 +2136,11 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         // The StreamConfig has not been executed, do not issue.
         continue;
       }
-      if (dynS.offloadConfigDelayed) {
+      if (dynS.isFloatConfigDelayed()) {
         // The float StreamConfig has been delayed, do not issue.
         continue;
       }
-      if (dynS.offloadedAsNDC && !dynS.configCommitted) {
+      if (dynS.isFloatedAsNDC() && !dynS.configCommitted) {
         // The NDC requires configuration to be committed.
         continue;
       }
@@ -2166,7 +2166,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
           if (S->shouldComputeValue() && !element->scheduledComputation &&
               !element->isComputeValueReady() &&
               element->checkValueBaseElementsValueReady()) {
-            if (!element->dynS->offloadedToCache) {
+            if (!element->dynS->isFloatedToCache()) {
               S_ELEMENT_DPRINTF(element, "Found Ready for Compute.\n");
               readyElements.emplace_back(element);
             } else {
@@ -2188,7 +2188,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
               }
             }
           }
-          if (S->isAtomicComputeStream() && !dynS.offloadedToCache &&
+          if (S->isAtomicComputeStream() && !dynS.isFloatedToCache() &&
               !element->isReqIssued()) {
             // Check that StreamAtomic inst is non-speculative, i.e. it checks
             // if my value is ready.
@@ -2235,7 +2235,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          * NoC. Here I try to limit the prefetch distance for AtomicStream
          * without computation.
          */
-        if (S->isAtomicStream() && !dynS.offloadedToCache) {
+        if (S->isAtomicStream() && !dynS.isFloatedToCache()) {
           if (element->FIFOIdx.entryIdx >
               dynS.getFirstElement()->FIFOIdx.entryIdx +
                   this->myParams->maxNumElementsPrefetchForAtomic) {
@@ -2307,7 +2307,7 @@ void StreamEngine::issueElements() {
        * ! this check.
        */
       // if (S->isUpdateStream() && S->isIndirectLoadStream() &&
-      //     !dynS->offloadedToCache) {
+      //     !dynS->isFloatedToCache()) {
       //   Addr addr = element->computeAddr();
       //   int size = S->getMemElementSize();
       //   if (this->hasAliasWithPendingWritebackElements(element, addr, size))
@@ -2370,8 +2370,8 @@ void StreamEngine::issueElements() {
        * So we check the firstValueCheckByCoreCycle.
        * If the stream is floated, then we can immediately issue.
        */
-      if (S->isAtomicStream() && !dynS->offloadedToCache &&
-          !dynS->offloadedAsNDC) {
+      if (S->isAtomicStream() && !dynS->isFloatedToCache() &&
+          !dynS->isFloatedAsNDC()) {
         if (!element->isPrefetchIssued()) {
           // We first issue prefetch request for AtomicStream.
           this->prefetchElement(element);
@@ -2388,7 +2388,7 @@ void StreamEngine::issueElements() {
       /**
        * Intercept the NDC request.
        */
-      if (dynS->offloadedAsNDC) {
+      if (dynS->isFloatedAsNDC()) {
         this->issueNDCElement(element);
         continue;
       }
@@ -2522,7 +2522,7 @@ void StreamEngine::issueElement(StreamElement *element) {
      * issue this as ReadEx as the StoreStream is not configured.
      */
     Request::Flags flags;
-    if (dynS->offloadedToCache) {
+    if (dynS->isFloatedToCache()) {
       if (!element->flushed) {
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
       }
@@ -2537,12 +2537,12 @@ void StreamEngine::issueElement(StreamElement *element) {
     }
     if (S->isStoreStream() || S->isAtomicStream()) {
       if (!S->isStoreComputeStream() && !S->isAtomicComputeStream()) {
-        if (!dynS->offloadedToCache) {
+        if (!dynS->isFloatedToCache()) {
           flags.set(Request::READ_EXCLUSIVE);
         }
       }
     }
-    if (S->isLoadStream() && S->hasUpdate() && !dynS->offloadedToCache) {
+    if (S->isLoadStream() && S->hasUpdate() && !dynS->isFloatedToCache()) {
       flags.set(Request::READ_EXCLUSIVE);
     }
 
@@ -2562,7 +2562,7 @@ void StreamEngine::issueElement(StreamElement *element) {
         S_ELEMENT_PANIC(element,
                         "AtomicStream with StoreFunc should not be flushed.");
       }
-      if (dynS->offloadedToCache) {
+      if (dynS->isFloatedToCache()) {
         // Offloaded the whole stream.
         pkt = GemForgePacketHandler::createGemForgePacket(
             cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
@@ -2695,7 +2695,8 @@ void StreamEngine::prefetchElement(StreamElement *element) {
   assert(S->isAtomicStream() && "So far we only prefetch for AtomicStream.");
   assert(element->shouldIssue() && "Should not prefetch this element.");
   assert(!element->isPrefetchIssued() && "Element prefetch already issued.");
-  assert(!dynS->offloadedToCache && "Should not prefetch for floating stream.");
+  assert(!dynS->isFloatedToCache() &&
+         "Should not prefetch for floating stream.");
 
   S->statistic.numPrefetched++;
   element->setPrefetchIssued();
@@ -2962,7 +2963,7 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
     return;
   }
   // Never do this for not floated AtomicComputeStream.
-  if (S->isAtomicComputeStream() && !element->dynS->offloadedToCache) {
+  if (S->isAtomicComputeStream() && !element->dynS->isFloatedToCache()) {
     return;
   }
   // Check if this element is flushed.
@@ -3031,7 +3032,7 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
     if (S->isLoadStream()) {
       shouldCopyFromPrev = true;
     }
-    if (S->isAtomicComputeStream() && element->dynS->offloadedToCache) {
+    if (S->isAtomicComputeStream() && element->dynS->isFloatedToCache()) {
       shouldCopyFromPrev = true;
     }
     if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
@@ -3160,7 +3161,7 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
     }
     S_ELEMENT_DPRINTF_(StreamAlias, element, "Flushed in PEB %#x, +%d.\n",
                        element->addr, element->size);
-    if (element->dynS->offloadedToCache) {
+    if (element->dynS->isFloatedToCache()) {
       if (!element->getStream()->isLoadStream()) {
         // This must be computation offloading.
         S_ELEMENT_PANIC(element,

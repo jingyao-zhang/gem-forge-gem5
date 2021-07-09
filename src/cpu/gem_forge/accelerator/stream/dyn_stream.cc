@@ -425,7 +425,7 @@ bool DynamicStream::shouldCoreSEIssue() const {
    * then we don't have to issue for the data.
    */
   auto S = this->stream;
-  if (!S->hasCoreUser() && this->offloadedToCache) {
+  if (!S->hasCoreUser() && this->isFloatedToCache()) {
     // Check that dependent dynS all offloaded to cache.
     for (auto depS : S->addrDepStreams) {
       const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
@@ -438,13 +438,13 @@ bool DynamicStream::shouldCoreSEIssue() const {
     }
     for (auto backDepS : S->backDepStreams) {
       const auto &backDepDynS = backDepS->getDynamicStream(this->configSeqNum);
-      if (!backDepDynS.offloadedToCache) {
+      if (!backDepDynS.isFloatedToCache()) {
         return true;
       }
     }
     for (auto valDepS : S->valueDepStreams) {
       const auto &valDepDynS = valDepS->getDynamicStream(this->configSeqNum);
-      if (!valDepDynS.offloadedToCache) {
+      if (!valDepDynS.isFloatedToCache()) {
         return true;
       }
     }
@@ -473,7 +473,7 @@ bool DynamicStream::coreSENeedAddress() const {
     return false;
   }
   // A special case for AtomicComputeStream.
-  if (this->offloadedToCache) {
+  if (this->isFloatedToCache()) {
     if (this->stream->isAtomicComputeStream()) {
       return false;
     }
@@ -503,7 +503,7 @@ bool DynamicStream::shouldRangeSync() const {
   if (!this->stream->isMemStream()) {
     return false;
   }
-  if (!this->offloadedToCache) {
+  if (!this->isFloatedToCache()) {
     return false;
   }
   if (this->stream->isAtomicComputeStream() || this->stream->isUpdateStream() ||
@@ -743,7 +743,7 @@ StreamElement *DynamicStream::releaseElementStepped(bool isEnd) {
    * If this stream is not offloaded, and we have dispatched a StreamStore to
    * this element, we push the element to PendingWritebackElements.
    */
-  if (!this->offloadedToCache && releaseElement->isFirstStoreDispatched()) {
+  if (!this->isFloatedToCache() && releaseElement->isFirstStoreDispatched()) {
     /**
      * So far only enable this for IndirectUpdateStream.
      */
@@ -815,7 +815,7 @@ void DynamicStream::recordHitHistory(bool hitPrivateCache) {
       (this->currentHitPrivateCacheHistoryIdx + 1) %
       this->hitPrivateCacheHistory.size();
   // Let's check if we have hitInPrivateCache a lot.
-  if (this->offloadedToCacheAsRoot) {
+  if (this->isFloatedToCacheAsRoot()) {
     auto totalHitPrivateCache = this->getTotalHitPrivateCache();
     auto hitPrivateCacheHistoryWindowSize =
         this->getHitPrivateCacheHistoryWindowSize();
@@ -841,7 +841,7 @@ void DynamicStream::tryCancelFloat() {
   if (S->getEnabledStoreFunc()) {
     return;
   }
-  if (this->offloadedWithDependent) {
+  if (this->isFloatedWithDependent()) {
     return;
   }
   // Try cancel the whole coalesce group.
@@ -856,7 +856,7 @@ void DynamicStream::tryCancelFloat() {
     for (auto &coalescedS : coalesceGroupS) {
       auto &dynS = coalescedS->getDynamicStream(this->configSeqNum);
       // Simply check that it has been floated.
-      if (dynS.offloadedToCacheAsRoot && !dynS.offloadedWithDependent) {
+      if (dynS.isFloatedToCacheAsRoot() && !dynS.isFloatedWithDependent()) {
         endStreams.push_back(&dynS);
       }
     }
@@ -877,8 +877,8 @@ void DynamicStream::cancelFloat() {
   auto S = this->stream;
   S_DPRINTF(S, "Cancel FloatStream.\n");
   // We are no longer considered offloaded.
-  this->offloadedToCache = false;
-  this->offloadedToCacheAsRoot = false;
+  this->setFloatedToCache(false);
+  this->setFloatedToCacheAsRoot(false);
   S->statistic.numFloatCancelled++;
 }
 

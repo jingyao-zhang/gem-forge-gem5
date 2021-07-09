@@ -24,7 +24,7 @@ void StreamNDCController::offloadStreams(
   for (auto dynS : dynStreams) {
     auto S = dynS->stream;
     if (S->isAtomicComputeStream()) {
-      dynS->offloadedAsNDC = true;
+      dynS->setFloatedAsNDC(true);
       S->statistic.numFineGrainedOffloaded++;
     } else if (S->isStoreComputeStream()) {
       /**
@@ -51,12 +51,12 @@ void StreamNDCController::offloadStreams(
         valueBaseDynStreams.push_back(&valueBaseDynS);
       }
       if (canOffload) {
-        dynS->offloadedAsNDC = true;
+        dynS->setFloatedAsNDC(true);
         S->statistic.numFineGrainedOffloaded++;
         // All the load value base streams are offloaded as NDCForward.
         for (auto valueBaseDynS : valueBaseDynStreams) {
-          valueBaseDynS->offloadedAsNDC = true;
-          valueBaseDynS->offloadedAsNDCForward = true;
+          valueBaseDynS->setFloatedAsNDC(true);
+          valueBaseDynS->setFloatedAsNDCForward(true);
         }
       }
     }
@@ -66,7 +66,7 @@ void StreamNDCController::offloadStreams(
 bool StreamNDCController::canIssueNDCPacket(StreamElement *element) {
   auto S = element->stream;
   auto dynS = element->dynS;
-  if (!dynS->offloadedAsNDC || dynS->offloadedAsNDCForward) {
+  if (!dynS->isFloatedAsNDC() || dynS->isFloatedAsNDCForward()) {
     return true;
   }
   /**
@@ -111,7 +111,7 @@ void StreamNDCController::issueNDCPacket(StreamElement *element) {
   auto dynS = element->dynS;
   auto S = element->stream;
 
-  if (!dynS->offloadedAsNDC || dynS->offloadedAsNDCForward) {
+  if (!dynS->isFloatedAsNDC() || dynS->isFloatedAsNDCForward()) {
     return;
   }
 

@@ -62,7 +62,7 @@ void StreamFloatController::floatStreams(
   bool hasOffloadPointerChase = false;
   for (auto &dynS : dynStreams) {
     auto S = dynS->stream;
-    if (dynS->offloadedToCache) {
+    if (dynS->isFloatedToCache()) {
       if (S->getEnabledStoreFunc()) {
         hasOffloadStoreFunc = true;
       }
@@ -84,6 +84,8 @@ void StreamFloatController::floatStreams(
     return;
   }
 
+  this->setFirstOffloadedElementIdx(floatArgs);
+
   // Send all the floating streams in one packet.
   // Dummy paddr to make ruby happy.
   Addr initPAddr = 0;
@@ -98,14 +100,14 @@ void StreamFloatController::floatStreams(
     // expensive and very likely causes faults if misspeculated.
     this->configSeqNumToDelayedFloatPktMap.emplace(args.seqNum, pkt);
     for (auto &dynS : dynStreams) {
-      if (dynS->offloadedToCache) {
+      if (dynS->isFloatedToCache()) {
         DYN_S_DPRINTF(dynS->dynamicStreamId, "Delayed FloatConfig.\n");
-        dynS->offloadConfigDelayed = true;
+        dynS->setFloatConfigDelayed(true);
       }
     }
   } else {
     for (auto &dynS : dynStreams) {
-      if (dynS->offloadedToCache) {
+      if (dynS->isFloatedToCache()) {
         DYN_S_DPRINTF_(CoreRubyStreamLife, dynS->dynamicStreamId,
                        "Send FloatConfig.\n");
       }
@@ -122,9 +124,9 @@ void StreamFloatController::commitFloatStreams(const StreamConfigArgs &args,
     auto pkt = iter->second;
     for (auto S : streams) {
       auto &dynS = S->getDynamicStream(args.seqNum);
-      if (dynS.offloadedToCache) {
-        assert(dynS.offloadConfigDelayed && "Offload is not delayed.");
-        dynS.offloadConfigDelayed = false;
+      if (dynS.isFloatedToCache()) {
+        assert(dynS.isFloatConfigDelayed() && "Offload is not delayed.");
+        dynS.setFloatConfigDelayed(false);
         DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynamicStreamId,
                        "Send Delayed FloatConfig.\n");
         DYN_S_DPRINTF(dynS.dynamicStreamId, "Send Delayed FloatConfig.\n");
@@ -151,21 +153,21 @@ void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
   std::vector<DynamicStreamId> floatedIds;
   for (auto &S : streams) {
     auto &dynS = S->getLastDynamicStream();
-    if (dynS.offloadedToCache) {
+    if (dynS.isFloatedToCache()) {
       // Sanity check that we don't break semantics.
       DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
       if ((S->isAtomicComputeStream() || S->isStoreComputeStream()) &&
-          !dynS.offloadConfigDelayed) {
+          !dynS.isFloatConfigDelayed()) {
         DYN_S_PANIC(dynS.dynamicStreamId,
                     "Rewind a floated Atomic/StoreCompute stream.");
       }
-      if (dynS.offloadedToCacheAsRoot && !dynS.offloadConfigDelayed) {
+      if (dynS.isFloatedToCacheAsRoot() && !dynS.isFloatConfigDelayed()) {
         floatedIds.push_back(dynS.dynamicStreamId);
       }
       S->statistic.numFloatRewinded++;
-      dynS.offloadedToCache = false;
-      dynS.offloadConfigDelayed = false;
-      dynS.offloadedToCacheAsRoot = false;
+      dynS.setFloatedToCache(false);
+      dynS.setFloatConfigDelayed(false);
+      dynS.setFloatedToCacheAsRoot(false);
     }
   }
   if (!floatedIds.empty()) {
@@ -199,8 +201,8 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
 
     // Remember the offloaded decision.
-    dynS->offloadedToCacheAsRoot = true;
-    dynS->offloadedToCache = true;
+    dynS->setFloatedToCacheAsRoot(true);
+    dynS->setFloatedToCache(true);
     this->se->numFloated++;
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
@@ -208,7 +210,7 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
     // Remember the pseudo offloaded decision.
     if (this->se->enableStreamFloatPseudo &&
         this->policy->shouldPseudoFloatStream(*dynS)) {
-      dynS->pseudoOffloadedToCache = true;
+      dynS->setPseudoFloatedToCache(true);
       config->isPseudoOffload = true;
     }
   }
@@ -232,8 +234,8 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
 
     // Remember the offloaded decision.
-    dynS->offloadedToCacheAsRoot = true;
-    dynS->offloadedToCache = true;
+    dynS->setFloatedToCacheAsRoot(true);
+    dynS->setFloatedToCache(true);
     this->se->numFloated++;
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
@@ -256,7 +258,7 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
     // Remember the pseudo offloaded decision.
     if (this->se->enableStreamFloatPseudo &&
         this->policy->shouldPseudoFloatStream(*dynS)) {
-      dynS->pseudoOffloadedToCache = true;
+      dynS->setPseudoFloatedToCache(true);
       config->isPseudoOffload = true;
     }
   }
@@ -309,10 +311,10 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
       S_PANIC(S, "PointerChaseStream with ValueBaseStreams is not supported.");
     }
     // Remember the decision.
-    dynS->offloadedToCache = true;
-    dynS->offloadedToCacheAsRoot = true;
+    dynS->setFloatedToCache(true);
+    dynS->setFloatedToCacheAsRoot(true);
     this->se->numFloated++;
-    addrBaseDynS.offloadedToCache = true;
+    addrBaseDynS.setFloatedToCache(true);
     this->se->numFloated++;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as pointer chase.\n");
     StreamFloatPolicy::logStream(S) << "[Float] as pointer chase.\n"
@@ -396,7 +398,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
       config->addBaseOn(valueBaseConfig);
     }
     // Remember the decision.
-    dynS->offloadedToCache = true;
+    dynS->setFloatedToCache(true);
     this->se->numFloated++;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as indirect.\n");
     StreamFloatPolicy::logStream(S) << "[Float] as indirect.\n" << std::flush;
@@ -448,8 +450,8 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
       config->addBaseOn(valueBaseConfig);
     }
     // Remember the decision.
-    dynS->offloadedToCache = true;
-    dynS->offloadedToCacheAsRoot = true;
+    dynS->setFloatedToCache(true);
+    dynS->setFloatedToCacheAsRoot(true);
     this->se->numFloated++;
     S_DPRINTF(S, "Offload DirectStoreStream.\n");
     floatedMap.emplace(S, config);
@@ -531,7 +533,7 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
         S->allocateCacheConfigureData(dynS->configSeqNum, true);
     // Reduction stream is always one iteration behind.
     reductionConfig->isOneIterationBehind = true;
-    dynS->offloadedToCache = true;
+    dynS->setFloatedToCache(true);
     this->se->numFloated++;
     floatedMap.emplace(S, reductionConfig);
 
@@ -688,7 +690,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
       S->allocateCacheConfigureData(dynS->configSeqNum, true);
   // Reduction stream is always one iteration behind.
   reductionConfig->isOneIterationBehind = true;
-  dynS->offloadedToCache = true;
+  dynS->setFloatedToCache(true);
   this->se->numFloated++;
   floatedMap.emplace(S, reductionConfig);
 
@@ -782,7 +784,7 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
 
   auto myConfig =
       S->allocateCacheConfigureData(dynS->configSeqNum, true /* isIndirect */);
-  dynS->offloadedToCache = true;
+  dynS->setFloatedToCache(true);
   this->se->numFloated++;
   floatedMap.emplace(S, myConfig);
   addrBaseConfig->addUsedBy(myConfig);
@@ -864,4 +866,34 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   StreamFloatPolicy::logStream(baseS) << "[LoopBound] Offloaded LoopBound.\n"
                                       << std::flush;
   SE_DPRINTF("[LoopBound] Offloaded LoopBound for %s.\n", args.region.region());
+}
+
+void StreamFloatController::setFirstOffloadedElementIdx(const Args &args) {
+  /**
+   * Mainly work for PointerChase stream with constant first address.
+   */
+  uint64_t firstOffloadedElementIdx = 0;
+  for (const auto &entry : args.floatedMap) {
+    auto S = entry.first;
+    if (S->isPointerChaseLoadStream()) {
+      // For testing purpose, just set to 10.
+      firstOffloadedElementIdx = 10;
+    }
+  }
+  if (firstOffloadedElementIdx == 0) {
+    return;
+  }
+  for (auto dynS : args.dynStreams) {
+    auto S = dynS->stream;
+    auto iter = args.floatedMap.find(S);
+    if (iter == args.floatedMap.end()) {
+      continue;
+    }
+    StreamFloatPolicy::logStream(S)
+        << "[FirstOffloadElement] Set to " << firstOffloadedElementIdx << ".\n"
+        << std::flush;
+    DYN_S_DPRINTF(dynS->dynamicStreamId,
+                  "FirstOffloadElementIdx set to %llu.\n",
+                  firstOffloadedElementIdx);
+  }
 }

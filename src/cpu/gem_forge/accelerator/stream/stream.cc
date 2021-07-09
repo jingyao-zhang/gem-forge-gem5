@@ -308,7 +308,7 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
   assert(dynStream.configSeqNum == seqNum && "Mismatch configSeqNum.");
 
   // Check if we have offloaded this.
-  if (dynStream.offloadedToCache) {
+  if (dynStream.isFloatedToCache()) {
     // Sink streams should have already been taken care of.
     panic("Don't support rewind StreamConfig for offloaded stream.");
   }
@@ -382,9 +382,9 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   this->statistic.numCycle += endCycle - dynS.configCycle;
 
   // Update float stats.
-  if (dynS.offloadedToCache) {
+  if (dynS.isFloatedToCache()) {
     this->statistic.numFloated++;
-    if (dynS.pseudoOffloadedToCache) {
+    if (dynS.isPseudoFloatedToCache()) {
       this->statistic.numPseudoFloated++;
     }
   }
@@ -406,7 +406,7 @@ void Stream::recordAggregateHistory(const DynamicStream &dynS) {
   history.numIssuedRequests = dynS.getNumIssuedRequests();
   history.numPrivateCacheHits = dynS.getTotalHitPrivateCache();
   history.startVAddr = dynS.getStartVAddr();
-  history.floated = dynS.offloadedToCache;
+  history.floated = dynS.isFloatedToCache();
 }
 
 DynamicStream &Stream::getDynamicStreamByInstance(InstanceId instance) {
@@ -1004,7 +1004,7 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
 void Stream::handleMergedPredicate(const DynamicStream &dynS,
                                    StreamElement *element) {
   auto mergedPredicatedStreamIds = this->getMergedPredicatedStreams();
-  if (!(mergedPredicatedStreamIds.size() > 0 && dynS.offloadedToCache)) {
+  if (!(mergedPredicatedStreamIds.size() > 0 && dynS.isFloatedToCache())) {
     return;
   }
   panic("Deprecated, need refactor.");

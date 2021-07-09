@@ -487,7 +487,7 @@ void StreamElement::computeValue() {
   StreamValue result;
   Cycles estimatedLatency;
   if (S->isStoreComputeStream() || S->isUpdateStream()) {
-    assert(!dynS->offloadedToCache &&
+    assert(!dynS->isFloatedToCache() &&
            "Should not compute for floating stream.");
     // Check for value base element.
     if (!this->checkValueBaseElementsValueReady()) {
@@ -502,7 +502,7 @@ void StreamElement::computeValue() {
 
   } else if (S->isLoadComputeStream()) {
 
-    assert(!dynS->offloadedToCache &&
+    assert(!dynS->isFloatedToCache() &&
            "Should not compute for floating LoadComputeStream.");
     if (!this->checkValueBaseElementsValueReady()) {
       S_ELEMENT_PANIC(this, "LoadFunc with ValueBaseElement not value ready.");
@@ -528,7 +528,7 @@ void StreamElement::computeValue() {
         this->setValue(this->addr, this->size, dynS->initialValue.uint8Ptr());
         return;
       } else if (this->isLastElement() && !S->hasCoreUser() &&
-                 dynS->offloadedToCache) {
+                 dynS->isFloatedToCache()) {
         assert(dynS->finalReductionValueReady &&
                "FinalReductionValue should be ready.");
         this->setValue(this->addr, this->size,
@@ -802,7 +802,7 @@ StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
       auto baseElement = baseE.element;
       StreamValue elementValue;
       if (baseElement != this && baseElement->stream->isLoadComputeStream() &&
-          !baseElement->dynS->offloadedToCache) {
+          !baseElement->dynS->isFloatedToCache()) {
         baseElement->getLoadComputeValue(elementValue.uint8Ptr(),
                                          sizeof(elementValue));
       } else {
@@ -901,7 +901,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
    * dynS->finalReductionValueReady.
    */
   if ((this->stream->isReduction() || this->stream->isPointerChaseIndVar()) &&
-      !this->stream->hasCoreUser() && this->dynS->offloadedToCache) {
+      !this->stream->hasCoreUser() && this->dynS->isFloatedToCache()) {
     if (this->isLastElement()) {
       return this->dynS->finalReductionValueReady;
     } else {
@@ -929,7 +929,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
        * the LoadComputeValue.
        */
       if (baseElement->stream->isLoadComputeStream() &&
-          !baseElement->dynS->offloadedToCache) {
+          !baseElement->dynS->isFloatedToCache()) {
         if (!baseElement->checkLoadComputeValueReady(
                 false /* CheckedByCore */)) {
           return false;

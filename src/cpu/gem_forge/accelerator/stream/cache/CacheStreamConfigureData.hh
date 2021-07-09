@@ -33,6 +33,11 @@ public:
   DynamicStreamId dynamicId;
   int elementSize;
 
+  /**
+   * Offload starts from this elementIdx.
+   */
+  uint64_t firstOffloadedElementIdx = 0;
+
   // NOTE: Line address here.
   Addr initVAddr;
   Addr initPAddr;

@@ -60,7 +60,7 @@ StreamRangeSyncController::getCurrentDynStreams() {
       continue;
     }
     auto &dynS = S->getFirstDynamicStream();
-    if (dynS.offloadedToCacheAsRoot && !dynS.offloadConfigDelayed &&
+    if (dynS.isFloatedToCacheAsRoot() && !dynS.isFloatConfigDelayed() &&
         dynS.shouldRangeSync()) {
       dynStreams.push_back(&S->getFirstDynamicStream());
     }

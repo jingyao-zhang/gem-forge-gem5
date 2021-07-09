@@ -307,7 +307,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
     auto coreS = coreSE->getStream(sliceId.getDynStreamId().staticId);
     if (coreS->isStoreComputeStream() && !coreS->isDirectMemStream()) {
       if (auto dynCoreS = coreS->getDynamicStream(sliceId.getDynStreamId())) {
-        if (dynCoreS->offloadedToCache) {
+        if (dynCoreS->isFloatedToCache()) {
           MLC_SLICE_DPRINTF(
               sliceId,
               "HACK! Directly Ack for Two-Level Indirect StoreComputeStream.");
