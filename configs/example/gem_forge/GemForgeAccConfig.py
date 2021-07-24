@@ -55,6 +55,11 @@ def initializeStreamEngine(options):
     se.mlc_stream_buffer_init_num_entries = \
         options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
 
+    se.streamEngineEnableMidwayFloat = \
+        options.gem_forge_stream_engine_enable_midway_float
+    se.streamEngineMidwayFloatElementIdx = \
+        options.gem_forge_stream_engine_midway_float_element_idx
+
     se.computeWidth =\
         options.gem_forge_stream_engine_compute_width
     # So far we reuse the LLC SIMD delay parameter.

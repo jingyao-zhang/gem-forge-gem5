@@ -15,6 +15,7 @@ SlicedDynamicStream::SlicedDynamicStream(
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize), elementPerSlice(1),
+      totalTripCount(_configData->totalTripCount),
       isPointerChase(_configData->isPointerChase), ptrChaseState(_configData),
       tailElementIdx(0), sliceHeadElementIdx(0) {
 
@@ -44,6 +45,13 @@ SlicedDynamicStream::SlicedDynamicStream(
   if (this->isPointerChase) {
     this->coalesceContinuousElements = false;
     assert(this->elementSize < 64 && "Huge PointerChaseStream.");
+  }
+
+  if (_configData->firstFloatElementIdx > 0) {
+    DYN_S_DPRINTF(this->streamId, "[Sliced] Start from Element %llu.\n",
+                  _configData->firstFloatElementIdx);
+    this->tailElementIdx = _configData->firstFloatElementIdx;
+    this->sliceHeadElementIdx = _configData->firstFloatElementIdx;
   }
 }
 

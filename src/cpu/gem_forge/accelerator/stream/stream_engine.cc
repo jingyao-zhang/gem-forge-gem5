@@ -342,6 +342,9 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   for (auto &S : configStreams) {
     auto &dynS = S->getLastDynamicStream();
     dynS.addBaseDynStreams();
+    if (S->stepRootStream == S) {
+      dynS.addStepStreams();
+    }
   }
 
   // Allocate one new entries for all streams.
@@ -453,66 +456,65 @@ void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
   this->numInflyStreamConfigurations--;
 }
 
-bool StreamEngine::canDispatchStreamStep(uint64_t stepStreamId) const {
+bool StreamEngine::canDispatchStreamStep(const StreamStepArgs &args) const {
   // We check two things:
   // 1. We have an unstepped element.
-  //// 2. For reduction streams, we need two unstepped elements to ensure
-  ////    that values are ready.
-  auto stepStream = this->getStream(stepStreamId);
+  auto stepStream = this->getStream(args.stepStreamId);
   for (auto S : this->getStepStreamList(stepStream)) {
-    if (!S->hasUnsteppedElement()) {
+    if (!S->hasUnsteppedElement(args.dynInstanceId)) {
       return false;
     }
-    // if (S->isReduction()) {
-    //   auto &dynS = S->getLastDynamicStream();
-    //   auto element = dynS.getFirstUnsteppedElement();
-    //   assert(element && "We should have unstepped element.");
-    //   if (!element->next) {
-    //     S_ELEMENT_DPRINTF(element,
-    //                       "Cannot dispatch Step for ReductionStream: "
-    //                       "Missing next UnsteppedElement, TotalTripCount
-    //                       %d.\n", dynS.getTotalTripCount());
-    //     return false;
-    //   }
-    // }
   }
   return true;
 }
 
-void StreamEngine::dispatchStreamStep(uint64_t stepStreamId) {
+void StreamEngine::dispatchStreamStep(const StreamStepArgs &args) {
   /**
    * For all the streams get stepped, increase the stepped pointer.
    */
-  assert(this->canDispatchStreamStep(stepStreamId) &&
+  assert(this->canDispatchStreamStep(args) &&
          "canDispatchStreamStep assertion failed.");
   this->numStepped++;
   this->numSteppedSinceLastCheck++;
 
-  auto stepStream = this->getStream(stepStreamId);
+  auto stepStream = this->getStream(args.stepStreamId);
 
   for (auto S : this->getStepStreamList(stepStream)) {
     assert(S->isConfigured() && "Stream should be configured to be stepped.");
-    S->stepElement(false /* isEnd */);
+    DynamicStream *dynS = nullptr;
+    if (args.dynInstanceId == DynamicStreamId::InvalidInstanceId) {
+      dynS = &(S->getFirstAliveDynStream());
+    } else {
+      dynS = &(S->getDynamicStreamByInstance(args.dynInstanceId));
+    }
+    dynS->stepElement(false /* isEnd */);
   }
   if (isDebugStream(stepStream)) {
   }
 }
 
-bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
-  auto stepStream = this->getStream(stepStreamId);
+bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
+  auto stepStream = this->getStream(args.stepStreamId);
 
   const auto &stepStreams = this->getStepStreamList(stepStream);
 
   for (auto S : stepStreams) {
-    // Since commit happens in-order, we know it's the FirstDynamicStream.
-    const auto &dynS = S->getFirstDynamicStream();
-    if (!dynS.configExecuted) {
-      DYN_S_DPRINTF(dynS.dynamicStreamId,
+    /**
+     * Normally commit happens in-order, we know it's the FirstDynamicStream.
+     * Except for NestStream with EliminatedLoop, which may be independently
+     * stepped by each dynamic stream.
+     */
+    const DynamicStream *dynS = &S->getFirstDynamicStream();
+    if (args.dynInstanceId != DynamicStreamId::InvalidInstanceId) {
+      dynS = &S->getDynamicStreamByInstance(args.dynInstanceId);
+    }
+    if (!dynS->configExecuted) {
+      DYN_S_DPRINTF(dynS->dynamicStreamId,
                     "[CanNotCommitStep] Config Not Executed.\n");
       return false;
     }
-    auto stepElement = dynS.tail->next;
-    if (dynS.hasTotalTripCount()) {
+    auto stepElement = dynS->tail->next;
+    if (dynS->hasTotalTripCount()) {
       if (stepElement->isLastElement()) {
         S_ELEMENT_PANIC(stepElement, "StreamStep for LastElement.");
       }
@@ -522,22 +524,27 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
      * However, if we have Range-Sync enabled, we should commit it directly.
      */
     if (S->getEnabledStoreFunc()) {
-      if (dynS.isFloatedToCache() && !dynS.shouldCoreSEIssue() &&
-          !dynS.shouldRangeSync()) {
-        if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
+      if (stepElement->isElemFloatedToCache() && !dynS->shouldCoreSEIssue() &&
+          !dynS->shouldRangeSync()) {
+        if (!dynS->cacheAckedElements.count(stepElement->FIFOIdx.entryIdx)) {
           S_ELEMENT_DPRINTF(stepElement, "[CanNotCommitStep] No Ack.\n");
           return false;
         }
       }
-      if (dynS.isFloatedAsNDC()) {
-        if (dynS.cacheAckedElements.count(stepElement->FIFOIdx.entryIdx) == 0) {
+      if (dynS->isFloatedAsNDC()) {
+        if (!dynS->cacheAckedElements.count(stepElement->FIFOIdx.entryIdx)) {
           S_ELEMENT_DPRINTF(stepElement,
                             "[CanNotCommitStep] No Ack from NDC.\n");
           return false;
         }
       }
     }
-    if (S->isReduction()) {
+    if (!dynS->areNextBackDepElementsReady(stepElement)) {
+      S_ELEMENT_DPRINTF(stepElement,
+                        "[CanNotCommitStep] BackDepElement Unready.\n");
+      return false;
+    }
+    if (S->isReduction() || S->isPointerChaseIndVar()) {
       auto stepNextElement = stepElement->next;
       if (!stepNextElement) {
         /**
@@ -545,11 +552,12 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
          * is not allocated is at the first element, where we are waiting for
          * StreamConfig to be executed.
          */
-        S_ELEMENT_DPRINTF(stepElement,
-                          "[CanNotCommitStep] No Reduction NextElement.\n");
+        S_ELEMENT_DPRINTF(
+            stepElement,
+            "[CanNotCommitStep] No Reduction/PtrChaseIV NextElement.\n");
         return false;
       }
-      if (dynS.isFloatedToCache()) {
+      if (stepNextElement->isElemFloatedToCache()) {
         // // If offloaded, we avoid the core commit too fast, as that would
         // // trigger our deadlock check.
         // if (stepElement->FIFOIdx.entryIdx > 50) {
@@ -564,15 +572,16 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
       } else {
         // If not offloaded, The next steped element should be ValueReady.
         if (!stepNextElement->isValueReady) {
-          S_ELEMENT_DPRINTF(
-              stepElement,
-              "[CanNotCommitStep] Reduction NextElement not ValueReady.\n");
+          S_ELEMENT_DPRINTF(stepElement,
+                            "[CanNotCommitStep] Reduction/PtrChaseIV "
+                            "NextElement %llu not ValueReady.\n",
+                            stepNextElement->FIFOIdx.entryIdx);
           return false;
         }
       }
     }
-    if (S->isLoadStream() && !dynS.isFloatedToCache() && !S->hasCoreUser() &&
-        S->hasBackDepReductionStream) {
+    if (S->isLoadStream() && !stepElement->isElemFloatedToCache() &&
+        !S->hasCoreUser() && S->hasBackDepReductionStream) {
       /**
        * S is a load stream that is not offloaded, with no core user and
        * reduction stream. We have to make sure the element is value ready so
@@ -590,8 +599,8 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
      * stepped element here if the next element is not addr ready. This is
      * to ensure that it is correctly coalesced.
      */
-    if (S->isDirectMemStream() && dynS.shouldCoreSEIssue() &&
-        !dynS.isFloatedAsNDC()) {
+    if (S->isDirectMemStream() && dynS->shouldCoreSEIssue() &&
+        !dynS->isFloatedAsNDC()) {
       auto stepNextElement = stepElement->next;
       if (!stepNextElement) {
         S_ELEMENT_DPRINTF(
@@ -618,8 +627,8 @@ bool StreamEngine::canCommitStreamStep(uint64_t stepStreamId) {
   return true;
 }
 
-void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
-  auto stepStream = this->getStream(stepStreamId);
+void StreamEngine::commitStreamStep(const StreamStepArgs &args) {
+  auto stepStream = this->getStream(args.stepStreamId);
 
   const auto &stepStreams = this->getStepStreamList(stepStream);
 
@@ -645,7 +654,13 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
      *
      * To solve this, we only do throttling for streamStep.
      */
-    this->releaseElementStepped(S, false /* isEnd */, true /* doThrottle */);
+    DynamicStream *dynS = nullptr;
+    if (args.dynInstanceId == DynamicStreamId::InvalidInstanceId) {
+      dynS = &(S->getFirstDynamicStream());
+    } else {
+      dynS = &(S->getDynamicStreamByInstance(args.dynInstanceId));
+    }
+    this->releaseElementStepped(dynS, false /* isEnd */, true /* doThrottle */);
   }
 
   // ! Do not allocate here.
@@ -655,12 +670,18 @@ void StreamEngine::commitStreamStep(uint64_t stepStreamId) {
   }
 }
 
-void StreamEngine::rewindStreamStep(uint64_t stepStreamId) {
+void StreamEngine::rewindStreamStep(const StreamStepArgs &args) {
   this->numUnstepped++;
-  auto stepStream = this->getStream(stepStreamId);
+  auto stepStream = this->getStream(args.stepStreamId);
   for (auto S : this->getStepStreamList(stepStream)) {
     assert(S->isConfigured() && "Stream should be configured to be stepped.");
-    S->unstepElement();
+    DynamicStream *dynS = nullptr;
+    if (args.dynInstanceId == DynamicStreamId::InvalidInstanceId) {
+      dynS = &(S->getFirstAliveDynStream());
+    } else {
+      dynS = &(S->getDynamicStreamByInstance(args.dynInstanceId));
+    }
+    dynS->unstepElement();
   }
 }
 
@@ -712,7 +733,6 @@ int StreamEngine::createStreamUserLSQCallbacks(
       continue;
     }
     auto S = element->stream;
-    auto dynS = element->dynS;
     bool pushToLQ = false;
     bool pushToSQ = false;
     if (S->isLoadStream()) {
@@ -720,21 +740,21 @@ int StreamEngine::createStreamUserLSQCallbacks(
         // Insert into the load queue if this is the first user.
         pushToLQ = true;
       }
-      if (S->isUpdateStream() && !dynS->isFloatedToCache()) {
+      if (S->isUpdateStream() && !element->isElemFloatedToCache()) {
         // Insert into the store queue if this is the first StreamStore.
         if (element->firstStoreSeqNum == seqNum) {
           pushToSQ = true;
         }
       }
     } else if (S->isAtomicComputeStream()) {
-      if (!dynS->isFloatedToCache() && !dynS->isFloatedAsNDC()) {
+      if (!element->isElemFloatedToCache() && !element->isElemFloatedAsNDC()) {
         // We skip LSQ for Offloaded AtomicComputeStream.
         if (element->firstUserSeqNum == seqNum) {
           pushToLQ = true;
         }
       }
     } else if (S->isStoreComputeStream()) {
-      if (!dynS->isFloatedToCache() && !dynS->isFloatedAsNDC()) {
+      if (!element->isElemFloatedToCache() && !element->isElemFloatedAsNDC()) {
         if (element->firstUserSeqNum == seqNum) {
           if (!this->enableLSQ) {
             S_ELEMENT_PANIC(element,
@@ -765,7 +785,7 @@ int StreamEngine::createStreamUserLSQCallbacks(
 bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    if (!S->hasUnsteppedElement()) {
+    if (!S->hasUnsteppedElement(DynamicStreamId::InvalidInstanceId)) {
       return false;
     }
   }
@@ -818,8 +838,7 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
      * element.
      */
     if (S->isLoopEliminated()) {
-      // We already checked that we have UnsteppedElement in
-      // hasUnsteppedElement().
+      // We already checked that we have UnsteppedElement.
       auto element = dynS.getFirstUnsteppedElement();
       if (!element->isLastElement()) {
         return false;
@@ -911,7 +930,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
     auto S = element->stream;
     // Floating Store/AtomicComputeStream will only check for Ack when stepping.
     // This also true for floating UpdateStream's SQCallback.
-    if (element->dynS->isFloatedToCache() || element->dynS->isFloatedAsNDC()) {
+    if (element->isElemFloatedToCache() || element->isElemFloatedAsNDC()) {
       if (S->isStoreComputeStream()) {
         continue;
       }
@@ -933,7 +952,7 @@ bool StreamEngine::areUsedStreamsReady(const StreamUserArgs &args) {
             element->isAddrReady(), element->isUpdateValueReady());
         ready = false;
       }
-    } else if (S->isLoadComputeStream() && !element->dynS->isFloatedToCache()) {
+    } else if (S->isLoadComputeStream() && !element->isElemFloatedToCache()) {
       /**
        * Special case for not floated LoadComputeStream, where we should check
        * for LoadComputeValue.
@@ -990,7 +1009,7 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * Make sure we zero out the data.
      */
     args.values->back().fill(0);
-    if (element->dynS->isFloatedToCache() || element->dynS->isFloatedAsNDC()) {
+    if (element->isElemFloatedToCache() || element->isElemFloatedAsNDC()) {
       /**
        * There are certain cases we are not really return the value.
        * 1. StreamStore does not really return any value.
@@ -1009,7 +1028,7 @@ void StreamEngine::executeStreamUser(const StreamUserArgs &args) {
      * LoadComputeValue.
      */
     auto size = S->getCoreElementSize();
-    if (S->isLoadComputeStream() && !element->dynS->isFloatedToCache()) {
+    if (S->isLoadComputeStream() && !element->isElemFloatedToCache()) {
       element->getLoadComputeValue(args.values->back().data(),
                                    StreamUserArgs::MaxElementSize);
     } else {
@@ -1038,7 +1057,7 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
 
     auto S = element->getStream();
     bool isActuallyUsed = true;
-    if (element->dynS->isFloatedToCache() || element->dynS->isFloatedAsNDC()) {
+    if (element->isElemFloatedToCache() || element->isElemFloatedAsNDC()) {
       if (S->isStoreComputeStream()) {
         isActuallyUsed = false;
       }
@@ -1049,7 +1068,7 @@ void StreamEngine::commitStreamUser(const StreamUserArgs &args) {
     }
     if (S->isUpdateStream() && args.isStore) {
       isActuallyUsed = false;
-      if (!element->dynS->isFloatedToCache()) {
+      if (!element->isElemFloatedToCache()) {
         if (!element->isUpdateValueReady()) {
           S_ELEMENT_PANIC(
               element,
@@ -1127,7 +1146,7 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
     // Release in reverse order.
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
-    if (!S->hasUnsteppedElement()) {
+    if (!S->hasUnsteppedElement(DynamicStreamId::InvalidInstanceId)) {
       // We don't have element for this used stream.
       return false;
     }
@@ -1137,8 +1156,7 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
      * element.
      */
     if (S->isLoopEliminated()) {
-      // We already checked that we have UnsteppedElement in
-      // hasUnsteppedElement().
+      // We already checked that we have UnsteppedElement.
       auto element = dynS.getFirstUnsteppedElement();
       if (!element->isLastElement()) {
         return false;
@@ -1171,7 +1189,8 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
     endedStreams.insert(S);
 
     // 1. Step one element.
-    S->stepElement(true /* isEnd */);
+    auto &dynS = S->getFirstAliveDynStream();
+    dynS.stepElement(true /* isEnd */);
 
     // 2. Mark the dynamicStream as ended.
     S->dispatchStreamEnd(args.seqNum);
@@ -1206,7 +1225,8 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
         return false;
       }
       if (dynS.isFloatedToCache() &&
-          dynS.cacheAckedElements.size() + 1 < dynS.FIFOIdx.entryIdx) {
+          dynS.cacheAckedElements.size() + 1 <
+              dynS.getNumFloatedElemUntil(dynS.FIFOIdx.entryIdx)) {
         // We are not ack the LastElement.
         DYN_S_DPRINTF(
             dynS.dynamicStreamId,
@@ -1243,7 +1263,8 @@ void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
     S->rewindStreamEnd(args.seqNum);
 
     // 2. Unstep one element.
-    S->unstepElement();
+    auto &dynS = S->getFirstAliveDynStream();
+    dynS.unstepElement();
     if (isDebugStream(S)) {
       S_DPRINTF(S, "Rewind End");
     }
@@ -1290,7 +1311,8 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
           shouldCheckAck = true;
         }
       }
-      if (shouldCheckAck && dynS.cacheAckedElements.size() < endElementIdx) {
+      if (shouldCheckAck && dynS.cacheAckedElements.size() <
+                                dynS.getNumFloatedElemUntil(endElementIdx)) {
         S_ELEMENT_DPRINTF(
             endElement,
             "[StreamEnd] Cannot commit as not enough Ack %llu < %llu.\n",
@@ -1304,11 +1326,11 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
      * TODO: These two cases should really be merged in the future.
      */
     if (dynS.isFloatedToCacheAsRoot() && dynS.shouldRangeSync()) {
-      if (dynS.nextCacheDoneElementIdx < endElementIdx) {
+      if (dynS.getNextCacheDoneElemIdx() < endElementIdx) {
         S_ELEMENT_DPRINTF(endElement,
                           "[StreamEnd] Cannot commit as no Done for %llu, "
                           "NextCacheDone %llu.\n",
-                          endElementIdx, dynS.nextCacheDoneElementIdx);
+                          endElementIdx, dynS.getNextCacheDoneElemIdx());
         return false;
       }
     }
@@ -1360,9 +1382,10 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     /**
      * Release the last element we stepped at dispatch.
      */
-    this->releaseElementStepped(S, true /* isEnd */, false /* doThrottle */);
+    this->releaseElementStepped(&endedDynS, true /* isEnd */,
+                                false /* doThrottle */);
   }
-  std::vector<DynamicStreamId> endedFloatRootIds;
+  std::vector<DynamicStream *> endedDynStreams;
   for (auto S : endedStreams) {
     if (isDebugStream(S)) {
       S_DPRINTF(S, "Commit End");
@@ -1370,6 +1393,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
     auto &endedDynS = S->dynamicStreams.front();
+    endedDynStreams.push_back(&endedDynS);
 
     /**
      * Sanity check that we allocated the correct total number of elements.
@@ -1382,22 +1406,11 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
             endedDynS.getTotalTripCount(), endedDynS.FIFOIdx.entryIdx);
       }
     }
-
-    /**
-     * Check if this stream is offloaded and if so, send the StreamEnd
-     * packet.
-     */
-    if (endedDynS.isFloatedToCacheAsRoot()) {
-      assert(!endedDynS.isFloatConfigDelayed() &&
-             "Offload still delayed when committing StreamEnd.");
-      endedFloatRootIds.push_back(endedDynS.dynamicStreamId);
-    }
+  }
+  this->floatController->endFloatStreams(endedDynStreams);
+  for (auto S : endedStreams) {
     // Notify the stream.
     S->commitStreamEnd(args.seqNum);
-  }
-  // Finally send out the StreanEnd packet.
-  if (!endedFloatRootIds.empty()) {
-    this->sendStreamFloatEndPacket(endedFloatRootIds);
   }
 }
 
@@ -1804,6 +1817,7 @@ void StreamEngine::tick() {
   this->issueElements();
   this->computeEngine->startComputation();
   this->computeEngine->completeComputation();
+  this->floatController->processMidwayFloat();
   if (curTick() % 10000 == 0) {
     this->updateAliveStatistics();
   }
@@ -1991,15 +2005,16 @@ void StreamEngine::allocateElement(DynamicStream &dynS) {
   dynS.allocateElement(newElement);
 }
 
-void StreamEngine::releaseElementStepped(Stream *S, bool isEnd,
+void StreamEngine::releaseElementStepped(DynamicStream *dynS, bool isEnd,
                                          bool doThrottle) {
 
   /**
    * This function performs a normal release, i.e. release a stepped
    * element.
    */
+  auto S = dynS->stream;
 
-  auto releaseElement = S->releaseElementStepped(isEnd);
+  auto releaseElement = dynS->releaseElementStepped(isEnd);
   /**
    * How to handle short streams?
    * There is a pathological case when the streams are short, and
@@ -2136,10 +2151,6 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         // The StreamConfig has not been executed, do not issue.
         continue;
       }
-      if (dynS.isFloatConfigDelayed()) {
-        // The float StreamConfig has been delayed, do not issue.
-        continue;
-      }
       if (dynS.isFloatedAsNDC() && !dynS.configCommitted) {
         // The NDC requires configuration to be committed.
         continue;
@@ -2147,6 +2158,11 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
       for (auto element = dynS.tail->next; element != nullptr;
            element = element->next) {
         assert(element->stream == S && "Sanity check that streams match.");
+
+        if (element->isElemFloatedToCache() && dynS.isFloatConfigDelayed()) {
+          S_ELEMENT_DPRINTF(element, "NotReady as FloatConfigDelayed.\n");
+          break;
+        }
 
         /**
          * There three types of ready elements:
@@ -2166,7 +2182,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
           if (S->shouldComputeValue() && !element->scheduledComputation &&
               !element->isComputeValueReady() &&
               element->checkValueBaseElementsValueReady()) {
-            if (!element->dynS->isFloatedToCache()) {
+            if (!element->isElemFloatedToCache()) {
               S_ELEMENT_DPRINTF(element, "Found Ready for Compute.\n");
               readyElements.emplace_back(element);
             } else {
@@ -2188,7 +2204,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
               }
             }
           }
-          if (S->isAtomicComputeStream() && !dynS.isFloatedToCache() &&
+          if (S->isAtomicComputeStream() && !element->isElemFloatedToCache() &&
               !element->isReqIssued()) {
             // Check that StreamAtomic inst is non-speculative, i.e. it checks
             // if my value is ready.
@@ -2235,7 +2251,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
          * NoC. Here I try to limit the prefetch distance for AtomicStream
          * without computation.
          */
-        if (S->isAtomicStream() && !dynS.isFloatedToCache()) {
+        if (S->isAtomicStream() && !element->isElemFloatedToCache()) {
           if (element->FIFOIdx.entryIdx >
               dynS.getFirstElement()->FIFOIdx.entryIdx +
                   this->myParams->maxNumElementsPrefetchForAtomic) {
@@ -2288,7 +2304,6 @@ void StreamEngine::issueElements() {
   for (auto &element : readyElements) {
 
     auto S = element->stream;
-    auto dynS = element->dynS;
 
     if (element->isAddrReady() && S->shouldComputeValue()) {
       // Type 2 ready elements.
@@ -2307,7 +2322,7 @@ void StreamEngine::issueElements() {
        * ! this check.
        */
       // if (S->isUpdateStream() && S->isIndirectLoadStream() &&
-      //     !dynS->isFloatedToCache()) {
+      //     !element->isElemFloatedToCache()) {
       //   Addr addr = element->computeAddr();
       //   int size = S->getMemElementSize();
       //   if (this->hasAliasWithPendingWritebackElements(element, addr, size))
@@ -2370,8 +2385,8 @@ void StreamEngine::issueElements() {
        * So we check the firstValueCheckByCoreCycle.
        * If the stream is floated, then we can immediately issue.
        */
-      if (S->isAtomicStream() && !dynS->isFloatedToCache() &&
-          !dynS->isFloatedAsNDC()) {
+      if (S->isAtomicStream() && !element->isElemFloatedToCache() &&
+          !element->isElemFloatedAsNDC()) {
         if (!element->isPrefetchIssued()) {
           // We first issue prefetch request for AtomicStream.
           this->prefetchElement(element);
@@ -2388,7 +2403,7 @@ void StreamEngine::issueElements() {
       /**
        * Intercept the NDC request.
        */
-      if (dynS->isFloatedAsNDC()) {
+      if (element->isElemFloatedAsNDC()) {
         this->issueNDCElement(element);
         continue;
       }
@@ -2522,7 +2537,7 @@ void StreamEngine::issueElement(StreamElement *element) {
      * issue this as ReadEx as the StoreStream is not configured.
      */
     Request::Flags flags;
-    if (dynS->isFloatedToCache()) {
+    if (element->isElemFloatedToCache()) {
       if (!element->flushed) {
         flags.set(Request::NO_RUBY_SEQUENCER_COALESCE);
       }
@@ -2537,12 +2552,13 @@ void StreamEngine::issueElement(StreamElement *element) {
     }
     if (S->isStoreStream() || S->isAtomicStream()) {
       if (!S->isStoreComputeStream() && !S->isAtomicComputeStream()) {
-        if (!dynS->isFloatedToCache()) {
+        if (!element->isElemFloatedToCache()) {
           flags.set(Request::READ_EXCLUSIVE);
         }
       }
     }
-    if (S->isLoadStream() && S->hasUpdate() && !dynS->isFloatedToCache()) {
+    if (S->isLoadStream() && S->hasUpdate() &&
+        !element->isElemFloatedToCache()) {
       flags.set(Request::READ_EXCLUSIVE);
     }
 
@@ -2562,7 +2578,7 @@ void StreamEngine::issueElement(StreamElement *element) {
         S_ELEMENT_PANIC(element,
                         "AtomicStream with StoreFunc should not be flushed.");
       }
-      if (dynS->isFloatedToCache()) {
+      if (element->isElemFloatedToCache()) {
         // Offloaded the whole stream.
         pkt = GemForgePacketHandler::createGemForgePacket(
             cacheLinePAddr, cacheLineSize, memAccess, nullptr /* Data */,
@@ -2695,7 +2711,7 @@ void StreamEngine::prefetchElement(StreamElement *element) {
   assert(S->isAtomicStream() && "So far we only prefetch for AtomicStream.");
   assert(element->shouldIssue() && "Should not prefetch this element.");
   assert(!element->isPrefetchIssued() && "Element prefetch already issued.");
-  assert(!dynS->isFloatedToCache() &&
+  assert(!element->isElemFloatedToCache() &&
          "Should not prefetch for floating stream.");
 
   S->statistic.numPrefetched++;
@@ -2835,15 +2851,18 @@ void StreamEngine::writebackElement(StreamElement *element,
 }
 
 void StreamEngine::dumpFIFO() const {
-  inform("Total elements %d, free %d, totalRunAhead %d\n",
-         this->FIFOArray.size(), this->numFreeFIFOEntries,
-         this->getTotalRunAheadLength());
-
+  bool dumped = false;
   for (const auto &IdStream : this->streamMap) {
     auto S = IdStream.second;
     if (!S->dynamicStreams.empty()) {
       S->dump();
+      dumped = true;
     }
+  }
+  if (dumped) {
+    inform("Total elements %d, free %d, totalRunAhead %d\n",
+           this->FIFOArray.size(), this->numFreeFIFOEntries,
+           this->getTotalRunAheadLength());
   }
 }
 
@@ -2958,12 +2977,16 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
   if (element->FIFOIdx.entryIdx == 0) {
     return;
   }
+  // Check if this is the FirstFloatElement.
+  if (element->isElemFloatedToCache() && element->isFirstFloatElem()) {
+    return;
+  }
   auto S = element->stream;
   if (!S->isDirectMemStream()) {
     return;
   }
   // Never do this for not floated AtomicComputeStream.
-  if (S->isAtomicComputeStream() && !element->dynS->isFloatedToCache()) {
+  if (S->isAtomicComputeStream() && !element->isElemFloatedToCache()) {
     return;
   }
   // Check if this element is flushed.
@@ -3032,7 +3055,7 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
     if (S->isLoadStream()) {
       shouldCopyFromPrev = true;
     }
-    if (S->isAtomicComputeStream() && element->dynS->isFloatedToCache()) {
+    if (S->isAtomicComputeStream() && element->isElemFloatedToCache()) {
       shouldCopyFromPrev = true;
     }
     if (prevBlock.state == CacheBlockBreakdownAccess::StateE::Faulted) {
@@ -3161,7 +3184,7 @@ void StreamEngine::flushPEB(Addr vaddr, int size) {
     }
     S_ELEMENT_DPRINTF_(StreamAlias, element, "Flushed in PEB %#x, +%d.\n",
                        element->addr, element->size);
-    if (element->dynS->isFloatedToCache()) {
+    if (element->isElemFloatedToCache()) {
       if (!element->getStream()->isLoadStream()) {
         // This must be computation offloading.
         S_ELEMENT_PANIC(element,

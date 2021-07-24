@@ -205,7 +205,7 @@ bool StreamElement::shouldIssue() const {
    * 1. DynamicStream says so.
    * 2. LastElement that only uses to deal with StreamEnd.
    */
-  if (!this->dynS->shouldCoreSEIssue()) {
+  if (!this->dynS->shouldCoreSEIssue() && this->isFloatElem()) {
     return false;
   }
   if (this->isLastElement()) {
@@ -213,6 +213,31 @@ bool StreamElement::shouldIssue() const {
     return false;
   }
   return true;
+}
+
+bool StreamElement::isFirstFloatElem() const {
+  return this->dynS->getAdjustedFirstFloatElemIdx() == this->FIFOIdx.entryIdx;
+}
+bool StreamElement::isFloatElem() const {
+  return this->dynS->getAdjustedFirstFloatElemIdx() <= this->FIFOIdx.entryIdx;
+}
+bool StreamElement::isElemFloatedToCacheAsRoot() const {
+  return this->dynS->isFloatedToCacheAsRoot() && this->isFloatElem();
+}
+bool StreamElement::isElemFloatedToCache() const {
+  return this->dynS->isFloatedToCache() && this->isFloatElem();
+}
+bool StreamElement::isElemFloatedWithDependent() const {
+  return this->dynS->isFloatedWithDependent() && this->isFloatElem();
+}
+bool StreamElement::isElemFloatedAsNDC() const {
+  return this->dynS->isFloatedAsNDC() && this->isFloatElem();
+}
+bool StreamElement::isElemFloatedAsNDCForward() const {
+  return this->dynS->isFloatedAsNDCForward() && this->isFloatElem();
+}
+bool StreamElement::isElemPseudoFloatedToCache() const {
+  return this->dynS->isPseudoFloatedToCache() && this->isFloatElem();
 }
 
 void StreamElement::clear() {
@@ -487,7 +512,7 @@ void StreamElement::computeValue() {
   StreamValue result;
   Cycles estimatedLatency;
   if (S->isStoreComputeStream() || S->isUpdateStream()) {
-    assert(!dynS->isFloatedToCache() &&
+    assert(!this->isElemFloatedToCache() &&
            "Should not compute for floating stream.");
     // Check for value base element.
     if (!this->checkValueBaseElementsValueReady()) {
@@ -502,7 +527,7 @@ void StreamElement::computeValue() {
 
   } else if (S->isLoadComputeStream()) {
 
-    assert(!dynS->isFloatedToCache() &&
+    assert(!this->isElemFloatedToCache() &&
            "Should not compute for floating LoadComputeStream.");
     if (!this->checkValueBaseElementsValueReady()) {
       S_ELEMENT_PANIC(this, "LoadFunc with ValueBaseElement not value ready.");
@@ -528,7 +553,7 @@ void StreamElement::computeValue() {
         this->setValue(this->addr, this->size, dynS->initialValue.uint8Ptr());
         return;
       } else if (this->isLastElement() && !S->hasCoreUser() &&
-                 dynS->isFloatedToCache()) {
+                 this->isElemFloatedToCache()) {
         assert(dynS->finalReductionValueReady &&
                "FinalReductionValue should be ready.");
         this->setValue(this->addr, this->size,
@@ -802,7 +827,7 @@ StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
       auto baseElement = baseE.element;
       StreamValue elementValue;
       if (baseElement != this && baseElement->stream->isLoadComputeStream() &&
-          !baseElement->dynS->isFloatedToCache()) {
+          !baseElement->isElemFloatedToCache()) {
         baseElement->getLoadComputeValue(elementValue.uint8Ptr(),
                                          sizeof(elementValue));
       } else {
@@ -901,7 +926,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
    * dynS->finalReductionValueReady.
    */
   if ((this->stream->isReduction() || this->stream->isPointerChaseIndVar()) &&
-      !this->stream->hasCoreUser() && this->dynS->isFloatedToCache()) {
+      !this->stream->hasCoreUser() && this->isElemFloatedToCache()) {
     if (this->isLastElement()) {
       return this->dynS->finalReductionValueReady;
     } else {
@@ -929,7 +954,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
        * the LoadComputeValue.
        */
       if (baseElement->stream->isLoadComputeStream() &&
-          !baseElement->dynS->isFloatedToCache()) {
+          !baseElement->isElemFloatedToCache()) {
         if (!baseElement->checkLoadComputeValueReady(
                 false /* CheckedByCore */)) {
           return false;

@@ -32,8 +32,32 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
           std::max(1, _configData->mlcBufferNumSlices /
                           _controller->getMLCStreamBufferToSegmentRatio())),
       indirectStreams(_indirectStreams) {
-  // Initialize the llc bank.
-  assert(_configData->initPAddrValid && "InitPAddr should be valid.");
+
+  /**
+   * Initialize the LLC bank.
+   * Be careful that for MidwayFloat, we reset the InitPAddr.
+   */
+  if (!_configData->initPAddrValid) {
+    MLC_S_PANIC_NO_DUMP(this->getDynamicStreamId(), "Invalid InitPAddr.");
+  }
+  if (_configData->firstFloatElementIdx > 0) {
+    auto vaddr =
+        this->slicedStream.getElementVAddr(_configData->firstFloatElementIdx);
+    Addr paddr;
+    if (!this->getStaticStream()->getCPUDelegator()->translateVAddrOracle(
+            vaddr, paddr)) {
+      MLC_S_DPRINTF(this->getDynamicStreamId(),
+                    "[MidwayFloat] Fault on FirstFloatElem %llu.\n",
+                    _configData->firstFloatElementIdx);
+      paddr = this->controller->getAddressToOurLLC();
+    } else {
+      MLC_S_DPRINTF(this->getDynamicStreamId(),
+                    "[MidwayFloat] FirstFloatElem %llu VAddr %#x PAddr %#x.\n",
+                    _configData->firstFloatElementIdx, vaddr, paddr);
+    }
+    _configData->initPAddr = paddr;
+  }
+
   this->tailPAddr = _configData->initPAddr;
 
   // Set the base stream for indirect streams.
@@ -593,8 +617,7 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
       baseData =
           GemForgeUtils::rebuildData(elementData.data() + subOffset, subSize);
       MLC_SLICE_DPRINTF(sliceId,
-                        "Notify indirect base %lu offset "
-                        "%d size %d data %llu.\n",
+                        "Notify IndS base %lu offset %d size %d data %llu.\n",
                         elementIdx, subOffset, subSize, baseData);
       indirectStream->receiveBaseStreamData(elementIdx, baseData);
     }
@@ -785,22 +808,30 @@ void MLCDynamicDirectStream::checkCoreCommitProgress() {
       continue;
     }
     bool isLastElement = firstCoreElementIdx == dynS->getTotalTripCount();
-    bool isLastSegment =
-        firstCoreElementIdx > seg.getStartSliceId().getStartIdx();
-    if (isLastElement && isLastSegment) {
+    if (isLastElement) {
       /**
-       * This is the last Segement. We may allocated more elements,
-       * NOTE: Here I just override the EndSliceId.startIdx,
-       * and keeps going.
+       * Due to StreamLoopBound, we may not know the TotalTripCount and
+       * allocated more elements. This cause the LastSegement never committing
+       * as it keeps waiting for the core to commit those elements beyond the
+       * TotalTripCount.
+       *
+       * We check if this is the LastSegment and the LastElement, and override
+       * the EndSliceId.startIdx so that the LastSegment can correctly start to
+       * commit in the following logic.
+       * TODO: Handle this case in a more elegant and systematic way.
        */
       auto segStartElementIdx = seg.getStartSliceId().getStartIdx();
       auto segEndElementIdx = seg.endSliceId.getStartIdx();
-      MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(),
-                     "[RangeCommit] Override the LastSegment ElementRange "
-                     "[%llu, %llu) -> [%llu, %llu).\n",
-                     segStartElementIdx, segEndElementIdx, segStartElementIdx,
-                     firstCoreElementIdx);
-      seg.endSliceId.getStartIdx() = firstCoreElementIdx;
+      bool isLastSegment = firstCoreElementIdx > segStartElementIdx &&
+                           firstCoreElementIdx < segEndElementIdx;
+      if (isLastSegment) {
+        MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(),
+                       "[RangeCommit] Override the LastSegment ElementRange "
+                       "[%llu, %llu) -> [%llu, %llu).\n",
+                       segStartElementIdx, segEndElementIdx, segStartElementIdx,
+                       firstCoreElementIdx);
+        seg.endSliceId.getStartIdx() = firstCoreElementIdx;
+      }
     }
     if (seg.endSliceId.getStartIdx() > firstCoreElementIdx) {
       /**
@@ -902,11 +933,11 @@ void MLCDynamicDirectStream::receiveStreamDone(
       if (segment.state != LLCSegmentPosition::State::COMMITTED) {
         break;
       }
-      if (dynS->nextCacheDoneElementIdx < segment.endSliceId.getStartIdx()) {
+      if (dynS->getNextCacheDoneElemIdx() < segment.endSliceId.getStartIdx()) {
         MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(),
                        "[Commit] Notify the Core StreamDone until %llu.\n",
                        segment.endSliceId.getStartIdx());
-        dynS->nextCacheDoneElementIdx = segment.endSliceId.getStartIdx();
+        dynS->setNextCacheDoneElemIdx(segment.endSliceId.getStartIdx());
       }
     }
   }

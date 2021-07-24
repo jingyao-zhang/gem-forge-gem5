@@ -70,7 +70,7 @@ StreamSQCallback::StreamSQCallback(StreamElement *_element,
    * If the StoreStream is floated, it is possible that there are
    * still some SQCallbacks for the first few elements.
    */
-  if (this->element->dynS->isFloatedToCache()) {
+  if (this->element->isElemFloatedToCache()) {
     S_ELEMENT_PANIC(this->element,
                     "StoreStream floated with outstanding SQCallback.");
   }

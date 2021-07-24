@@ -12,6 +12,90 @@
 #define SE_PANIC(format, args...)                                              \
   panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
+bool StreamRegionController::canSkipAllocatingDynS(
+    StaticRegion &staticRegion, DynamicStream &stepRootDynS) {
+
+  auto &stepDynStreams = stepRootDynS.stepDynStreams;
+
+  int64_t maxTailElemIdx = -1;
+  if (stepRootDynS.hasTotalTripCount()) {
+    maxTailElemIdx = stepRootDynS.getTotalTripCount() + 1;
+  } else {
+
+    /**
+     * Pointer-chase stream can only have 4 elements per DynStream.
+     * If reached that limit, we try go to the next one.
+     */
+    auto stepRootS = stepRootDynS.stream;
+
+    bool boundedByPointerChase = false;
+    if (stepRootS->isPointerChase()) {
+      boundedByPointerChase = true;
+    } else {
+      for (const auto &backBaseS : stepRootS->backBaseStreams) {
+        if (backBaseS->stepRootStream->isPointerChase()) {
+          boundedByPointerChase = true;
+        }
+      }
+    }
+
+    if (boundedByPointerChase) {
+      if (stepRootDynS.allocSize >= 4) {
+        DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+                      "[StreamAlloc] BoundedPointerChase AllocSize %d "
+                      "TailElemIdx %llu.\n",
+                      stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
+        maxTailElemIdx = stepRootDynS.FIFOIdx.entryIdx;
+      }
+    }
+  }
+
+  // /**
+  //  * Streams in Eliminated Nested Loop also is limited to 4 elements per
+  //  * DynStream, so that we can work on multiple DynStreams at the same time.
+  //  */
+  // if (staticRegion.region.loop_eliminated() && staticRegion.region.is_nest()) {
+  //   if (stepRootDynS.allocSize >= 8) {
+  //     DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+  //                   "[StreamAlloc] BoundedEliminatedNested AllocSize %d "
+  //                   "TailElemIdx %llu.\n ",
+  //                   stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
+  //     maxTailElemIdx = stepRootDynS.FIFOIdx.entryIdx;
+  //   }
+  // }
+
+  if (maxTailElemIdx != -1) {
+    bool allStepStreamsAllocated = true;
+    for (auto stepDynS : stepDynStreams) {
+      // DYN_S_DPRINTF(stepDynS.dynamicStreamId,
+      //               "TotalTripCount %d, Next FIFOIdx %s.\n",
+      //               totalTripCount, stepDynS.FIFOIdx);
+      if (stepDynS->FIFOIdx.entryIdx < maxTailElemIdx) {
+        allStepStreamsAllocated = false;
+        break;
+      }
+    }
+    if (allStepStreamsAllocated) {
+      // All allocated, we can move to next one.
+      DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+                    "All StepStreamAllocated. CanSkip. AllocSize %d "
+                    "MaxTailElemIdx %llu.\n",
+                    stepRootDynS.allocSize, maxTailElemIdx);
+      return true;
+    }
+  } else {
+    /**
+     * Only skip this if we have no TotalTripCount. This is
+     * because StreamEnd may be misspeculated. And we ended
+     * using all the FIFO for the next nested dynamic stream.
+     */
+    if (stepRootDynS.endDispatched) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
 
   /**
@@ -78,33 +162,8 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
         // Configure not executed, can not allocate.
         break;
       }
-      if (stepRootDynS.hasTotalTripCount()) {
-        auto totalTripCount = stepRootDynS.getTotalTripCount();
-        bool allStepStreamsAllocated = true;
-        for (auto stepS : stepStreams) {
-          auto &stepDynS = stepS->getDynamicStreamByInstance(
-              stepRootDynS.dynamicStreamId.streamInstance);
-          // DYN_S_DPRINTF(stepDynS.dynamicStreamId,
-          //               "TotalTripCount %d, Next FIFOIdx %s.\n",
-          //               totalTripCount, stepDynS.FIFOIdx);
-          if (stepDynS.FIFOIdx.entryIdx < totalTripCount + 1) {
-            allStepStreamsAllocated = false;
-            break;
-          }
-        }
-        if (allStepStreamsAllocated) {
-          // All allocated, we can move to next one.
-          continue;
-        }
-      } else {
-        /**
-         * Only skip this if we have no TotalTripCount. This is
-         * because StreamEnd may be misspeculated. And we ended
-         * using all the FIFO for the next nested dynamic stream.
-         */
-        if (stepRootDynS.endDispatched) {
-          continue;
-        }
+      if (this->canSkipAllocatingDynS(staticRegion, stepRootDynS)) {
+        continue;
       }
       // Found it.
       allocatingStepRootDynS = &stepRootDynS;
@@ -144,10 +203,10 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
        */
       if (stepRootStream->isPointerChase()) {
         const int MaxElementPerPointerChaseDynStream = 4;
-        if (allocSize + maxAllocSize > MaxElementPerPointerChaseDynStream) {
+        if (maxAllocSize > MaxElementPerPointerChaseDynStream) {
           maxAllocSize = (allocSize > MaxElementPerPointerChaseDynStream)
                              ? allocSize
-                             : (MaxElementPerPointerChaseDynStream - allocSize);
+                             : MaxElementPerPointerChaseDynStream;
           DYN_S_DPRINTF(allocatingStepRootDynS->dynamicStreamId,
                         "Limit MaxElement/DynPointerChaseStream. AllocSize %d "
                         "MaxAllocSize %d.\n",
@@ -176,13 +235,14 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
           S_DPRINTF(S, "No FreeElement.\n");
           break;
         }
-        if (S->getAllocSize() >= S->maxSize) {
-          S_DPRINTF(S, "Reached MaxAllocSize %d >= %d.\n", S->getAllocSize(),
-                    S->maxSize);
-          continue;
-        }
         auto &dynS = S->getDynamicStreamByInstance(
             allocatingStepRootDynS->dynamicStreamId.streamInstance);
+        if (S->getAllocSize() >= S->maxSize) {
+          DYN_S_DPRINTF(dynS.dynamicStreamId,
+                        "Reached MaxAllocSize %d >= %d.\n", S->getAllocSize(),
+                        S->maxSize);
+          continue;
+        }
         if (dynS.allocSize >= targetSize) {
           DYN_S_DPRINTF(dynS.dynamicStreamId, "Reached TargetSize %d >= %d.\n",
                         dynS.allocSize, targetSize);

@@ -61,6 +61,7 @@ public:
       bool brokenOut = false;
       // We have offloaded the LoopBound.
       bool offloaded = false;
+      uint64_t offloadedFirstElementIdx = 0;
     };
     DynLoopBound loopBound;
 
@@ -122,7 +123,7 @@ public:
    * Util APIs.
    ******************************************************************/
   StaticRegion &getStaticRegion(const std::string &regionName);
-  DynRegion &getDynRegion(const std::string &regionName, InstSeqNum seqNum);
+  DynRegion &getDynRegion(const std::string &msg, InstSeqNum seqNum);
 
   void receiveOffloadedLoopBoundRet(const DynamicStreamId &dynStreamId,
                                     int64_t tripCount, bool brokenOut);
@@ -168,12 +169,17 @@ private:
                       StaticRegion &staticRegion);
   void dispatchStreamConfigForStep(const ConfigArgs &args,
                                    DynRegion &dynRegion);
+  void executeStreamConfigForStep(const ConfigArgs &args,
+                                   DynRegion &dynRegion);
   void stepStream(DynRegion &dynRegion);
 
   /**
    * Allocate stream elements.
    */
   void allocateElements(StaticRegion &staticRegion);
+  bool canSkipAllocatingDynS(
+    StaticRegion &staticRegion,
+    DynamicStream &stepRootDynS);
 
   /**
    * Helper functions.

@@ -32,7 +32,8 @@ public:
       : dynamicStreamId(_configData->dynamicId),
         rootDynamicStreamId(_rootDynamicStreamId),
         isOneIterationBehind(_configData->isOneIterationBehind),
-        isPseudoOffload(_configData->isPseudoOffload) {}
+        isPseudoOffload(_configData->isPseudoOffload),
+        firstFloatElemIdx(_configData->firstFloatElementIdx) {}
 
   const DynamicStreamId &getDynamicStreamId() const {
     return this->dynamicStreamId;
@@ -43,12 +44,14 @@ public:
 
   bool getIsOneIterationBehind() const { return this->isOneIterationBehind; }
   bool getIsPseudoOffload() const { return this->isPseudoOffload; }
+  uint64_t getFirstFloatElemIdx() const { return this->firstFloatElemIdx; }
 
 private:
   const DynamicStreamId dynamicStreamId;
   const DynamicStreamId rootDynamicStreamId;
   bool isOneIterationBehind;
   bool isPseudoOffload;
+  uint64_t firstFloatElemIdx;
 };
 
 class L0StreamEngine {

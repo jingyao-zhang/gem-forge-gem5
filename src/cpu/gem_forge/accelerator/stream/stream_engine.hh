@@ -77,11 +77,18 @@ public:
   void commitStreamConfig(const StreamConfigArgs &args);
   void rewindStreamConfig(const StreamConfigArgs &args);
 
-  bool canDispatchStreamStep(uint64_t stepStreamId) const;
-  void dispatchStreamStep(uint64_t stepStreamId);
-  bool canCommitStreamStep(uint64_t stepStreamId);
-  void commitStreamStep(uint64_t stepStreamId);
-  void rewindStreamStep(uint64_t stepStreamId);
+  struct StreamStepArgs {
+    const uint64_t stepStreamId;
+    DynamicStreamId::InstanceId dynInstanceId =
+        DynamicStreamId::InvalidInstanceId;
+    StreamStepArgs(uint64_t _stepStreamId) : stepStreamId(_stepStreamId) {}
+  };
+
+  bool canDispatchStreamStep(const StreamStepArgs &args) const;
+  void dispatchStreamStep(const StreamStepArgs &args);
+  bool canCommitStreamStep(const StreamStepArgs &args);
+  void commitStreamStep(const StreamStepArgs &args);
+  void rewindStreamStep(const StreamStepArgs &args);
 
   struct StreamUserArgs {
     static constexpr int MaxElementSize = 64;
@@ -289,6 +296,7 @@ public:
   uint64_t numOffloadedSteppedSinceLastCheck = 0;
 
 private:
+  friend class DynamicStream;
   friend class Stream;
   friend class StreamElement;
   friend class StreamThrottler;
@@ -460,7 +468,7 @@ private:
    * @param isEnd: this element is stepped by StreamEnd, not StreamStep.
    * @param toThrottle: perform stream throttling.
    */
-  void releaseElementStepped(Stream *S, bool isEnd, bool doThrottle);
+  void releaseElementStepped(DynamicStream *dynS, bool isEnd, bool doThrottle);
   void issueElements();
   void issueElement(StreamElement *element);
   void issueNDCElement(StreamElement *element);

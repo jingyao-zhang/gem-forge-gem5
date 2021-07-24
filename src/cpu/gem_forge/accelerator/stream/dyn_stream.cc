@@ -113,6 +113,20 @@ void DynamicStream::addBackBaseDynStreams() {
     this->backBaseEdges.emplace_back(
         edge.toStaticId, baseDynS.dynamicStreamId.streamInstance,
         edge.fromStaticId, alignBaseElementIdx, reuseBaseElement);
+    baseDynS.backDepEdges.emplace_back(
+        edge.toStaticId, baseDynS.dynamicStreamId.streamInstance,
+        edge.fromStaticId, alignBaseElementIdx, reuseBaseElement);
+  }
+}
+
+void DynamicStream::addStepStreams() {
+  if (this->stream->isStepRoot()) {
+    const auto &stepStreams = this->stream->se->getStepStreamList(this->stream);
+    for (auto &stepS : stepStreams) {
+      auto &stepDynS = stepS->getDynamicStreamByInstance(
+          this->dynamicStreamId.streamInstance);
+      this->stepDynStreams.push_back(&stepDynS);
+    }
   }
 }
 
@@ -260,16 +274,53 @@ bool DynamicStream::areNextBackBaseElementsAllocated() const {
     }
     auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
     if (!baseElement) {
-      DYN_S_DPRINTF(this->dynamicStreamId,
-                    "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
-                    "Released? Align(%llu), Reuse(%llu), BaseStream %s\n",
-                    this->FIFOIdx.entryIdx, baseElementIdx,
-                    edge.alignBaseElement, edge.reuseBaseElement,
-                    baseS->getStreamName());
-      DYN_S_DPRINTF(this->dynamicStreamId, "BaseDynS %s.\n",
-                    baseDynS.dumpString());
+      DYN_S_PANIC(this->dynamicStreamId,
+                  "NextElementIdx(%llu) BackBaseElementIdx(%llu) Already "
+                  "Released? Align(%llu), Reuse(%llu), BaseDynS %s.",
+                  this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
+                  edge.reuseBaseElement, baseDynS.dumpString());
     }
-    assert(baseElement && "Base Element Already Released?");
+  }
+  return true;
+}
+
+bool DynamicStream::areNextBackDepElementsReady(StreamElement *element) const {
+  auto S = this->stream;
+  for (const auto &edge : this->backDepEdges) {
+    auto depS = S->se->getStream(edge.depStaticId);
+    const auto &depDynS = depS->getDynamicStreamByInstance(edge.baseInstanceId);
+    // Let's compute the base element entryIdx.
+    uint64_t depElementIdx = edge.alignBaseElement;
+    assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
+    depElementIdx += element->FIFOIdx.entryIdx + 1;
+    // Try to find this element.
+    if (depDynS.FIFOIdx.entryIdx <= depElementIdx) {
+      S_ELEMENT_DPRINTF(element,
+                        "BackDepElementIdx(%llu) Not Allocated, Align(%llu), "
+                        "Reuse(%llu), DepDynS %s.\n",
+                        this->FIFOIdx.entryIdx, depElementIdx,
+                        edge.alignBaseElement, edge.reuseBaseElement,
+                        depDynS.dynamicStreamId);
+      return false;
+    }
+    auto depElement = depDynS.getElementByIdx(depElementIdx);
+    if (!depElement) {
+      S_ELEMENT_PANIC(element,
+                      "BackDepElementIdx(%llu) Already Released? Align(%llu), "
+                      "Reuse(%llu), DepDynS %s %s.",
+                      this->FIFOIdx.entryIdx, depElementIdx,
+                      edge.alignBaseElement, edge.reuseBaseElement,
+                      depDynS.dynamicStreamId, depDynS.dumpString());
+    }
+    if (depElement->isElemFloatedToCache()) {
+      // No need to enforce for floated elements.
+    } else {
+      if (!depElement->isValueReady) {
+        S_ELEMENT_DPRINTF(element, "UnReady BackDepElement %s.\n",
+                          depElement->FIFOIdx);
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -574,6 +625,27 @@ StreamElement *DynamicStream::getFirstUnsteppedElement() {
   return element;
 }
 
+StreamElement *DynamicStream::stepElement(bool isEnd) {
+  auto element = this->getFirstUnsteppedElement();
+  S_ELEMENT_DPRINTF(element, "Stepped by Stream%s.\n",
+                    (isEnd ? "End" : "Step"));
+  element->isStepped = true;
+  this->stepped = element;
+  this->stepSize++;
+  return element;
+}
+
+StreamElement *DynamicStream::unstepElement() {
+  assert(this->stepSize > 0 && "No element to unstep.");
+  auto element = this->stepped;
+  assert(element->isStepped && "Element not stepped.");
+  element->isStepped = false;
+  // Search to get previous element.
+  this->stepped = this->getPrevElement(element);
+  this->stepSize--;
+  return element;
+}
+
 void DynamicStream::allocateElement(StreamElement *newElement) {
 
   auto S = this->stream;
@@ -667,6 +739,20 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
   return releaseElement;
 }
 
+bool DynamicStream::hasUnsteppedElement() {
+  auto element = this->getFirstUnsteppedElement();
+  if (!element) {
+    // We don't have element for this used stream.
+    DYN_S_DPRINTF(this->dynamicStreamId,
+                  "NoUnsteppedElement config executed %d alloc %d stepped %d "
+                  "total %d next %s.\n",
+                  this->configExecuted, this->allocSize, this->stepSize,
+                  this->getTotalTripCount(), this->FIFOIdx);
+    return false;
+  }
+  return true;
+}
+
 StreamElement *DynamicStream::releaseElementStepped(bool isEnd) {
 
   /**
@@ -743,7 +829,8 @@ StreamElement *DynamicStream::releaseElementStepped(bool isEnd) {
    * If this stream is not offloaded, and we have dispatched a StreamStore to
    * this element, we push the element to PendingWritebackElements.
    */
-  if (!this->isFloatedToCache() && releaseElement->isFirstStoreDispatched()) {
+  if (!releaseElement->isElemFloatedToCache() &&
+      releaseElement->isFirstStoreDispatched()) {
     /**
      * So far only enable this for IndirectUpdateStream.
      */
@@ -883,7 +970,7 @@ void DynamicStream::cancelFloat() {
 }
 
 void DynamicStream::setTotalTripCount(int64_t totalTripCount) {
-  if (this->hasTotalTripCount()) {
+  if (this->hasTotalTripCount() && totalTripCount != this->totalTripCount) {
     DYN_S_PANIC(this->dynamicStreamId, "Reset TotalTripCount %lld -> %lld.",
                 this->totalTripCount, totalTripCount);
   }

@@ -62,6 +62,7 @@ void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
   auto &dynRegion = *this->activeDynRegionMap.at(args.seqNum);
   this->executeStreamConfigForNestStreams(args, dynRegion);
   this->executeStreamConfigForLoopBound(args, dynRegion);
+  this->executeStreamConfigForStep(args, dynRegion);
 
   SE_DPRINTF("[Region] Executed Config SeqNum %llu for region %s.\n",
              args.seqNum, dynRegion.staticRegion->region.region());
@@ -125,13 +126,13 @@ void StreamRegionController::tick() {
       this->checkLoopBound(dynRegion);
 
       /**
-       * For now, StreamStep must happen in order.
+       * For now, StreamAllocate must happen in order.
        * Check that this is the first DynamicStream.
-       * Similar for StreamAllocate.
+       * But StreamStep is relaxed to be only inorder within each DynamicStream.
        */
+      this->stepStream(dynRegion);
       if (dynRegion.seqNum ==
           dynRegion.staticRegion->dynRegions.front().seqNum) {
-        this->stepStream(dynRegion);
         this->allocateElements(*dynRegion.staticRegion);
       }
     }

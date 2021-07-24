@@ -184,6 +184,12 @@ parser.add_option("--gem-forge-stream-engine-llc-stream-engine-migrate-width", a
 parser.add_option("--gem-forge-stream-engine-llc-stream-max-infly-request", action="store",
                   type="int", default="8",
                   help="LLCStream max infly request per stream.")
+parser.add_option("--gem-forge-stream-engine-enable-midway-float", action="store_true",
+                  default=False,
+                  help="Enable midway stream float.")
+parser.add_option("--gem-forge-stream-engine-midway-float-element-idx", action="store",
+                  type="int", default="-1",
+                  help="Force midway stream float from this element.")
 
 # Stream Computing options.
 parser.add_option("--gem-forge-estimate-pure-data-traffic", action="store_true",

@@ -92,6 +92,10 @@ class StreamEngine(GemForgeAccelerator):
         False, "Whether the stream float can be cancelled in the middle.")
     mlc_stream_buffer_init_num_entries = \
         Param.UInt32(16, "Initial number of entries of MLC stream buffer")
+    streamEngineEnableMidwayFloat = Param.Bool(
+        False, "Whether to enable midway float.")
+    streamEngineMidwayFloatElementIdx= Param.Int32(
+        -1, "Whether to force midway float at this element.")
 
     # parameters for stream computing.
     enableZeroComputeLatency = Param.Bool(

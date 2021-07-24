@@ -669,7 +669,8 @@ bool ISAStreamEngine::canDispatchStreamStep(
   } else {
     auto streamId = stepInstInfo.translatedStreamId;
     auto se = this->getStreamEngine();
-    bool canStep = se->canDispatchStreamStep(streamId);
+    StreamEngine::StreamStepArgs args(streamId);
+    bool canStep = se->canDispatchStreamStep(args);
     DYN_INST_DPRINTF(
         "[canDispatch] StreamStep RegionStream %lu CanDispatch %c.\n",
         regionStreamId, canStep ? 'Y' : 'N');
@@ -689,7 +690,8 @@ void ISAStreamEngine::dispatchStreamStep(
   auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
-  if (!se->canDispatchStreamStep(streamId)) {
+  StreamEngine::StreamStepArgs args(streamId);
+  if (!se->canDispatchStreamStep(args)) {
     // This must be wrong.
     auto regionStreamId = this->extractImm<uint64_t>(dynInfo.staticInst);
     DYN_INST_DPRINTF("[dispatch] MustMisspeculated StreamStep RegionStreamId "
@@ -700,7 +702,7 @@ void ISAStreamEngine::dispatchStreamStep(
   }
   DYN_INST_DPRINTF("[dispatch] StreamStep RegionStream %llu.\n",
                    regionStreamId);
-  se->dispatchStreamStep(streamId);
+  se->dispatchStreamStep(args);
 }
 
 bool ISAStreamEngine::canExecuteStreamStep(const GemForgeDynInstInfo &dynInfo) {
@@ -721,7 +723,8 @@ bool ISAStreamEngine::canCommitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
-  bool canCommit = se->canCommitStreamStep(streamId);
+  StreamEngine::StreamStepArgs args(streamId);
+  bool canCommit = se->canCommitStreamStep(args);
   if (canCommit) {
     DYN_INST_DPRINTF("[canCommit] StreamStep.\n");
     return true;
@@ -742,7 +745,8 @@ void ISAStreamEngine::commitStreamStep(const GemForgeDynInstInfo &dynInfo) {
   const auto &stepInfo = instInfo.stepInfo;
   auto streamId = stepInfo.translatedStreamId;
   auto se = this->getStreamEngine();
-  se->commitStreamStep(streamId);
+  StreamEngine::StreamStepArgs args(streamId);
+  se->commitStreamStep(args);
   DYN_INST_DPRINTF("[commit] StreamStep RegionStream %llu.\n", regionStreamId);
 
   // Release the info.
@@ -757,7 +761,8 @@ void ISAStreamEngine::rewindStreamStep(const GemForgeDynInstInfo &dynInfo) {
     const auto &stepInfo = instInfo.stepInfo;
     auto streamId = stepInfo.translatedStreamId;
     auto se = this->getStreamEngine();
-    se->rewindStreamStep(streamId);
+    StreamEngine::StreamStepArgs args(streamId);
+    se->rewindStreamStep(args);
   }
 
   // Release the info.

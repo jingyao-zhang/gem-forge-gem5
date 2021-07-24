@@ -93,7 +93,7 @@ public:
    * We must query the sliced stream for total trip count.
    */
   bool hasTotalTripCount() const;
-  uint64_t getTotalTripCount() const;
+  int64_t getTotalTripCount() const;
   void setTotalTripCount(int64_t totalTripCount);
 
   bool hasIndirectDependent() const {

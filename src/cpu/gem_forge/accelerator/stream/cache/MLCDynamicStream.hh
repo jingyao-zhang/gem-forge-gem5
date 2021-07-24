@@ -31,6 +31,7 @@ public:
   }
 
   bool getIsPseudoOffload() const { return this->isPseudoOffload; }
+  uint64_t getFirstFloatElemIdx() const { return this->firstFloatElementIdx; }
 
   virtual const DynamicStreamId &getRootDynamicStreamId() const {
     // By default this we are the root stream.
@@ -90,12 +91,17 @@ public:
   virtual bool hasTotalTripCount() const = 0;
   virtual void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr) = 0;
 
+  bool isWaitingAck() const { return this->isWaiting == WaitType::Ack; }
+  bool isWaitingData() const { return this->isWaiting == WaitType::Data; }
+  bool isWaitingNothing() const { return this->isWaiting == WaitType::Nothing; }
+
 protected:
   Stream *stream;
   DynamicStreamId dynamicStreamId;
   CacheStreamConfigureDataPtr config;
   bool isPointerChase;
   bool isPseudoOffload;
+  uint64_t firstFloatElementIdx;
   const bool isMLCDirect;
 
   std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
@@ -211,36 +217,25 @@ protected:
     Ack,
     Data,
   };
-  WaitType isWaiting;
-  WaitType checkWaiting() const {
-    if (this->isPseudoOffload) {
-      return WaitType::Nothing;
-    }
-    if (this->stream->isStoreStream()) {
-      return WaitType::Ack;
-    }
-    if (auto dynS = this->stream->getDynamicStream(this->dynamicStreamId)) {
-      if (dynS->shouldCoreSEIssue()) {
-        return WaitType::Data;
-      } else {
-        if (this->stream->isAtomicComputeStream() ||
-            this->stream->isUpdateStream()) {
-          // These streams writes to memory. Need Ack.
-          return WaitType::Ack;
-        } else {
-          // Other streams does not write. Need nothing.
-          return WaitType::Nothing;
-        }
-      }
-    } else {
-      // The dynamic stream is already released, we don't really care.
-      return WaitType::Nothing;
+  std::string to_string(WaitType type) {
+    switch (type) {
+    case WaitType::Nothing:
+      return "Nothing";
+    case WaitType::Ack:
+      return "Ack";
+    case WaitType::Data:
+      return "Data";
+    default:
+      return "Unknown";
     }
   }
+  WaitType isWaiting;
+  WaitType checkWaiting() const;
 
-  bool isWaitingAck() const { return this->isWaiting == WaitType::Ack; }
-  bool isWaitingData() const { return this->isWaiting == WaitType::Data; }
-  bool isWaitingNothing() const { return this->isWaiting == WaitType::Nothing; }
+  bool isCoreDynSReleased() const {
+    return this->getStaticStream()->getDynamicStream(
+               this->getDynamicStreamId()) == nullptr;
+  }
 
   /**
    * This remember the received StreamRange.

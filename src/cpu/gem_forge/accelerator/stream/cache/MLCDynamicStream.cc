@@ -24,8 +24,10 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
                                    bool _isMLCDirect)
     : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
       config(_configData), isPointerChase(_configData->isPointerChase),
-      isPseudoOffload(_configData->isPseudoOffload), isMLCDirect(_isMLCDirect),
-      controller(_controller), responseMsgBuffer(_responseMsgBuffer),
+      isPseudoOffload(_configData->isPseudoOffload),
+      firstFloatElementIdx(_configData->firstFloatElementIdx),
+      isMLCDirect(_isMLCDirect), controller(_controller),
+      responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer),
       maxNumSlices(_configData->mlcBufferNumSlices), headSliceIdx(0),
       tailSliceIdx(0),
@@ -50,7 +52,8 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
   auto dynS = this->stream->getDynamicStream(this->getDynamicStreamId());
   this->config->rangeSync = (dynS && dynS->shouldRangeSync());
 
-  MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(), "%s RangeSync.\n",
+  MLC_S_DPRINTF_(StreamRangeSync, this->getDynamicStreamId(),
+                 "Wait %s. %s RangeSync.\n", this->to_string(this->isWaiting),
                  this->shouldRangeSync() ? "Enabled" : "Disabled");
 
   // Schedule the first advanceStreamEvent.
@@ -69,6 +72,46 @@ MLCDynamicStream::~MLCDynamicStream() {
   // We got to deschedule the advanceStreamEvent.
   if (this->advanceStreamEvent.scheduled()) {
     this->stream->getCPUDelegator()->deschedule(&this->advanceStreamEvent);
+  }
+}
+
+MLCDynamicStream::WaitType MLCDynamicStream::checkWaiting() const {
+  if (this->isPseudoOffload) {
+    MLC_S_DPRINTF(this->getDynamicStreamId(), "PseudoFloat. Wait Nothing.\n");
+    return WaitType::Nothing;
+  }
+  if (this->stream->isStoreStream()) {
+    MLC_S_DPRINTF(this->getDynamicStreamId(), "StoreStream. Wait Ack.\n");
+    return WaitType::Ack;
+  }
+  if (auto dynS = this->stream->getDynamicStream(this->dynamicStreamId)) {
+    if (dynS->shouldCoreSEIssue()) {
+      MLC_S_DPRINTF(this->getDynamicStreamId(), "CoreSE Issue. Wait Data.\n");
+      return WaitType::Data;
+    } else {
+      if (this->stream->isAtomicComputeStream() ||
+          this->stream->isUpdateStream()) {
+        // These streams writes to memory. Need Ack.
+        MLC_S_DPRINTF(this->getDynamicStreamId(),
+                      "CoreSE Not Issue. Atomic/UpdateS. Wait Ack.\n");
+        return WaitType::Ack;
+      } else {
+        // Other streams does not write. Need nothing.
+        MLC_S_DPRINTF(this->getDynamicStreamId(),
+                      "CoreSE Not Issue. Stream not Write. Wait Nothing.\n");
+        return WaitType::Nothing;
+      }
+    }
+  } else {
+    /**
+     * The dynamic stream is already released. We make an conservative
+     * assumption to wait for Data, so that any delayed requests can get the
+     * correct slice, and later received a dummy response when we received the
+     * StreamEnd.
+     */
+    MLC_S_DPRINTF(this->getDynamicStreamId(),
+                  "No CoreDynS. Assume Wait Data.\n");
+    return WaitType::Data;
   }
 }
 

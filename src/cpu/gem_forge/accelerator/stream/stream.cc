@@ -822,16 +822,6 @@ DynamicStreamId Stream::allocateNewInstance() {
                          this->streamName.c_str());
 }
 
-StreamElement *Stream::releaseElementStepped(bool isEnd) {
-  /**
-   * This function performs a normal release, i.e. release a stepped
-   * element from the stream.
-   */
-  assert(!this->dynamicStreams.empty() && "No dynamic stream.");
-  auto &dynS = this->dynamicStreams.front();
-  return dynS.releaseElementStepped(isEnd);
-}
-
 StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {
   auto element = dynS.releaseElementUnstepped();
   if (element) {
@@ -840,47 +830,19 @@ StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {
   return element;
 }
 
-bool Stream::hasUnsteppedElement() {
+bool Stream::hasUnsteppedElement(DynamicStreamId::InstanceId instanceId) {
   if (!this->isConfigured()) {
     // This must be wrong.
     S_DPRINTF(this, "Not configured, so no unstepped element.\n");
     return false;
   }
-  auto &dynS = this->getFirstAliveDynStream();
-  auto element = dynS.getFirstUnsteppedElement();
-  if (!element) {
-    // We don't have element for this used stream.
-    DYN_S_DPRINTF(dynS.dynamicStreamId,
-                  "NoUnsteppedElement config executed %d alloc %d stepped %d "
-                  "total %d next %s.\n",
-                  dynS.configExecuted, dynS.allocSize, dynS.stepSize,
-                  dynS.getTotalTripCount(), dynS.FIFOIdx);
-    return false;
+  if (instanceId == DynamicStreamId::InvalidInstanceId) {
+    auto &dynS = this->getFirstAliveDynStream();
+    return dynS.hasUnsteppedElement();
+  } else {
+    auto &dynS = this->getDynamicStreamByInstance(instanceId);
+    return dynS.hasUnsteppedElement();
   }
-  return true;
-}
-
-StreamElement *Stream::stepElement(bool isEnd) {
-  auto &dynS = this->getFirstAliveDynStream();
-  auto element = dynS.getFirstUnsteppedElement();
-  S_ELEMENT_DPRINTF(element, "Stepped by Stream%s.\n",
-                    (isEnd ? "End" : "Step"));
-  element->isStepped = true;
-  dynS.stepped = element;
-  dynS.stepSize++;
-  return element;
-}
-
-StreamElement *Stream::unstepElement() {
-  auto &dynS = this->getFirstAliveDynStream();
-  assert(dynS.stepSize > 0 && "No element to unstep.");
-  auto element = dynS.stepped;
-  assert(element->isStepped && "Element not stepped.");
-  element->isStepped = false;
-  // Search to get previous element.
-  dynS.stepped = dynS.getPrevElement(element);
-  dynS.stepSize--;
-  return element;
 }
 
 DynamicStream &Stream::getFirstAliveDynStream() {
@@ -1004,7 +966,8 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
 void Stream::handleMergedPredicate(const DynamicStream &dynS,
                                    StreamElement *element) {
   auto mergedPredicatedStreamIds = this->getMergedPredicatedStreams();
-  if (!(mergedPredicatedStreamIds.size() > 0 && dynS.isFloatedToCache())) {
+  if (!(mergedPredicatedStreamIds.size() > 0 &&
+        element->isElemFloatedToCache())) {
     return;
   }
   panic("Deprecated, need refactor.");

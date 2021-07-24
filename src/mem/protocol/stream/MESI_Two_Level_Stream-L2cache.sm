@@ -462,6 +462,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   in_port(L1RequestL2Network_in, RequestMsg, L1RequestToL2Cache, rank = 2) {
     if(L1RequestL2Network_in.isReady(clockEdge())) {
       peek(L1RequestL2Network_in,  RequestMsg) {
+        DPRINTF(RubySlicc, "Addr: %#x Req: %s Type: %s Slices: %s Dest: %s\n",
+                in_msg.addr, 
+                in_msg.XXNewRewquestor, in_msg.Type, in_msg.sliceIds, in_msg.Destination);
+
         Entry cache_entry := getCacheEntry(in_msg.addr);
         TBE tbe := TBEs[in_msg.addr];
 

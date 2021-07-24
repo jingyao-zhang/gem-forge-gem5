@@ -52,13 +52,6 @@ struct DynamicStream {
   FIFOEntryIdx FIFOIdx;
   // A hack to store how many elements has the cache acked.
   std::set<uint64_t> cacheAckedElements;
-  /**
-   * Similar to StreamAck messages, this remembers the StreamDone messages
-   * from the cache. Since StreamDone messages are guaranteed in-order, we
-   * just remember the last done ElementIdx.
-   * TODO: This could eventually be merged with StreamAck messages.
-   */
-  uint64_t nextCacheDoneElementIdx = 0;
 
   /**
    * Offload flags are now set to private.
@@ -71,6 +64,23 @@ struct DynamicStream {
   bool isFloatedAsNDCForward() const { return this->floatedAsNDCForward; }
   bool isPseudoFloatedToCache() const { return this->pseudoFloatedToCache; }
   uint64_t getFirstFloatElemIdx() const { return this->firstFloatedElemIdx; }
+  uint64_t getAdjustedFirstFloatElemIdx() const {
+    auto firstFloatElemIdx = this->getFirstFloatElemIdx();
+    return this->floatedOneIterBehind ? (firstFloatElemIdx + 1)
+                                      : (firstFloatElemIdx);
+  }
+  uint64_t getNextCacheDoneElemIdx() const {
+    return this->nextCacheDoneElementIdx;
+  }
+
+  // Compute the number of floated element until a given ElementIdx.
+  uint64_t getNumFloatedElemUntil(uint64_t untilElemIdx) const {
+    if (this->firstFloatedElemIdx > untilElemIdx) {
+      return 0;
+    } else {
+      return untilElemIdx - this->firstFloatedElemIdx;
+    }
+  }
 
   void setFloatConfigDelayed(bool val) { this->floatConfigDelayed = val; }
   void setFloatedToCacheAsRoot(bool val) { this->floatedToCacheAsRoot = val; }
@@ -79,7 +89,14 @@ struct DynamicStream {
   void setFloatedAsNDC(bool val) { this->floatedAsNDC = val; }
   void setFloatedAsNDCForward(bool val) { this->floatedAsNDCForward = val; }
   void setPseudoFloatedToCache(bool val) { this->pseudoFloatedToCache = val; }
-  void setFirstFloatElemIdx(uint64_t val) { this->firstFloatedElemIdx = val; }
+  void setFloatedOneIterBehind(bool val) { this->floatedOneIterBehind = val; }
+  void setFirstFloatElemIdx(uint64_t val) {
+    this->firstFloatedElemIdx = val;
+    this->nextCacheDoneElementIdx = val;
+  }
+  void setNextCacheDoneElemIdx(uint64_t val) {
+    this->nextCacheDoneElementIdx = val;
+  }
 
 private:
   // Whether the floating config is delayed until config committed.
@@ -96,8 +113,19 @@ private:
   bool floatedAsNDC = false;
   bool floatedAsNDCForward = false;
 
+  // Whether this stream is floated as one iteration behind.
+  bool floatedOneIterBehind = false;
+
   // First float ElementIdx. This is to optimize for Tree.
   uint64_t firstFloatedElemIdx = 0;
+  /**
+   * Similar to StreamAck messages, this remembers the StreamDone messages
+   * from the cache. Since StreamDone messages are guaranteed in-order, we
+   * just remember the last done ElementIdx.
+   * NOTE: This should start with FirstFloatedElemIdx.
+   * TODO: This could eventually be merged with StreamAck messages.
+   */
+  uint64_t nextCacheDoneElementIdx = 0;
 
 public:
   // Whether the StreamConfig has executed (ready to go).
@@ -171,10 +199,15 @@ public:
   StreamEdges addrBaseEdges;
   StreamEdges valueBaseEdges;
   StreamEdges backBaseEdges;
+  StreamEdges backDepEdges;
   void addBaseDynStreams();
   void addAddrBaseDynStreams();
   void addValueBaseDynStreams();
   void addBackBaseDynStreams();
+
+  std::list<DynamicStream *> stepDynStreams;
+  void addStepStreams();
+
   /**
    * Compute reuse of the base stream element.
    * This is further split into two cases:
@@ -195,6 +228,7 @@ public:
   bool areNextBaseElementsAllocated() const;
   bool areNextAddrBaseElementsAllocated() const;
   bool areNextBackBaseElementsAllocated() const;
+  bool areNextBackDepElementsReady(StreamElement *element) const;
   bool areNextValueBaseElementsAllocated() const;
   void addAddrBaseElements(StreamElement *newElement);
   void addAddrBaseElementEdge(StreamElement *newElement,
@@ -257,6 +291,19 @@ public:
    * the first element for that stream.
    */
   StreamElement *getPrevElement(StreamElement *element);
+  /**
+   * Check if the last dynamic stream has an unstepped element.
+   */
+  bool hasUnsteppedElement();
+  /**
+   * Step one element.
+   */
+  StreamElement *stepElement(bool isEnd);
+  /**
+   * Unstep one element.
+   */
+  StreamElement *unstepElement();
+
   /**
    * Add one element to this DynamicStream.
    */

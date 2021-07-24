@@ -82,13 +82,15 @@ StreamStepInst::StreamStepInst(const LLVM::TDG::TDGInstruction &_TDG)
 bool StreamStepInst::canDispatch(LLVMTraceCPU *cpu) const {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   auto stepStreamId = this->getTDG().stream_step().stream_id();
-  return SE->canDispatchStreamStep(stepStreamId);
+  StreamEngine::StreamStepArgs args(stepStreamId);
+  return SE->canDispatchStreamStep(args);
 }
 
 void StreamStepInst::dispatch(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   auto stepStreamId = this->getTDG().stream_step().stream_id();
-  SE->dispatchStreamStep(stepStreamId);
+  StreamEngine::StreamStepArgs args(stepStreamId);
+  SE->dispatchStreamStep(args);
 }
 
 void StreamStepInst::execute(LLVMTraceCPU *cpu) { this->markFinished(); }
@@ -96,7 +98,8 @@ void StreamStepInst::execute(LLVMTraceCPU *cpu) { this->markFinished(); }
 void StreamStepInst::commit(LLVMTraceCPU *cpu) {
   auto SE = cpu->getAcceleratorManager()->getStreamEngine();
   auto stepStreamId = this->getTDG().stream_step().stream_id();
-  SE->commitStreamStep(stepStreamId);
+  StreamEngine::StreamStepArgs args(stepStreamId);
+  SE->commitStreamStep(args);
 }
 
 uint64_t StreamStepInst::getStreamId() const {

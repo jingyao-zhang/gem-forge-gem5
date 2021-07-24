@@ -267,6 +267,18 @@ struct StreamElement {
    */
   bool shouldIssue() const;
 
+  /**
+   * Query for Floated flags.
+   */
+  bool isFirstFloatElem() const;
+  bool isFloatElem() const;
+  bool isElemFloatedToCacheAsRoot() const;
+  bool isElemFloatedToCache() const;
+  bool isElemFloatedWithDependent() const;
+  bool isElemFloatedAsNDC() const;
+  bool isElemFloatedAsNDCForward() const;
+  bool isElemPseudoFloatedToCache() const;
+
   StreamMemAccess *
   allocateStreamMemAccess(const CacheBlockBreakdownAccess &cacheBlockBreakDown);
   void handlePacketResponse(StreamMemAccess *memAccess, PacketPtr pkt);

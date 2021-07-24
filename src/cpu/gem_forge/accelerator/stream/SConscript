@@ -15,6 +15,7 @@ DebugFlag('SingleStream')
 DebugFlag('AddrGenCallback')
 DebugFlag('StreamAtomicOp')
 DebugFlag('StreamNearDataComputing')
+DebugFlag('StreamFloatController')
 DebugFlag('PrefetchElementBuffer')
 DebugFlag('CoreRubyStreamLife')
 
@@ -24,6 +25,7 @@ CompoundFlag('StreamEngine', [
     'CoreStreamAlloc', 
     'StreamLoopBound',
     'StreamNest',
+    'StreamFloatController',
 ])
 
 ProtoBuf('StreamMessage.proto')

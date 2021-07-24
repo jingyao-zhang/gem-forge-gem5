@@ -16,6 +16,7 @@ public:
 
   using StreamList = std::list<Stream *>;
   using DynStreamList = std::list<DynamicStream *>;
+  using DynStreamVec = std::vector<DynamicStream *>;
 
   using StreamConfigArgs = StreamEngine::StreamConfigArgs;
   void floatStreams(const StreamConfigArgs &args,
@@ -26,6 +27,12 @@ public:
                           const StreamList &streams);
   void rewindFloatStreams(const StreamConfigArgs &args,
                           const StreamList &streams);
+  void endFloatStreams(const DynStreamVec &dynStreams);
+
+  /**
+   * Handle midway florat.
+   */
+  void processMidwayFloat();
 
 private:
   StreamEngine *se;
@@ -74,7 +81,15 @@ private:
    * packet until the StreamConfig is committed, and raise the "offloadDelayed"
    * flag in the DynamicStream -- which will stop the StreamEngine issuing them.
    */
-  std::map<InstSeqNum, PacketPtr> configSeqNumToDelayedFloatPktMap;
+  using SeqNumToPktMapT = std::map<InstSeqNum, PacketPtr>;
+  using SeqNumToPktMapIter = SeqNumToPktMapT::iterator;
+  SeqNumToPktMapT configSeqNumToDelayedFloatPktMap;
+
+  /**
+   * These are ConfigPkts delayed to wait for FirstFloatedElemIdx.
+   * Their StreamConfigs are committed.
+   */
+  SeqNumToPktMapT configSeqNumToMidwayFloatPktMap;
 
   /**
    * Check if there is an aliased StoreStream for this LoadStream, but
@@ -87,6 +102,16 @@ private:
    * Mainly used to optimize for pointer-chase stream.
    */
   void setFirstOffloadedElementIdx(const Args &args);
+
+  /**
+   * Try send out a midway float pkt.
+   */
+  bool trySendMidwayFloat(SeqNumToPktMapIter iter);
+
+  /**
+   * Check if a MidwayFloat is ready to issue.
+   */
+  bool isMidwayFloatReady(CacheStreamConfigureDataPtr &config);
 };
 
 #endif

@@ -98,6 +98,30 @@ void MLCStreamEngine::configureStream(
       this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
                                   indirectStream);
       indirectStreams.push_back(indirectStream);
+
+      for (const auto &ISDepEdge : indirectStreamConfig->depEdges) {
+        if (ISDepEdge.type != CacheStreamConfigureData::DepEdge::UsedBy) {
+          continue;
+        }
+        /**
+         * So far we don't support Two-Level Indirect LLCStream, except:
+         * 1. IndirectRedcutionStream.
+         * 2. Two-Level IndirectStoreComputeStream.
+         */
+        auto ISDepS = ISDepEdge.data->stream;
+        if (ISDepS->isReduction() || ISDepS->isStoreComputeStream()) {
+          auto IIS = new MLCDynamicIndirectStream(
+              ISDepEdge.data, this->controller, this->responseToUpperMsgBuffer,
+              this->requestToLLCMsgBuffer,
+              streamConfigureData->dynamicId /* Root dynamic stream id. */);
+          this->idToStreamMap.emplace(IIS->getDynamicStreamId(), IIS);
+
+          indirectStreams.push_back(IIS);
+          continue;
+        }
+        panic("Two-Level Indirect LLCStream is not supported: %s.",
+              ISDepEdge.data->dynamicId);
+      }
     }
   }
   // Create the direct stream.
@@ -136,7 +160,7 @@ void MLCStreamEngine::configureStream(
   pkt->dataDynamic(pktData);
   // Enqueue a configure packet to the target LLC bank.
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = streamConfigureData->initPAddr;
+  msg->m_addr = makeLineAddress(streamConfigureData->initPAddr);
   msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
   msg->m_XXNewRewquestor.add(this->controller->getMachineID());
   msg->m_Destination.add(this->mapPAddrToLLCBank(msg->m_addr));
@@ -343,6 +367,9 @@ bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {
   }
   // If this is a PseudoOffload, we do not treate it as stream request.
   if (stream->getIsPseudoOffload()) {
+    return false;
+  }
+  if (slice.getStartIdx() < stream->getFirstFloatElemIdx()) {
     return false;
   }
   return true;

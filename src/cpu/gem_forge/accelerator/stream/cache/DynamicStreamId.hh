@@ -64,6 +64,8 @@ struct DynamicStreamId {
 
 std::ostream &operator<<(std::ostream &os, const DynamicStreamId &streamId);
 
+std::string to_string(const DynamicStreamId &streamId);
+
 struct DynamicStreamIdHasher {
   std::size_t operator()(const DynamicStreamId &key) const {
     return (std::hash<int>()(key.coreId)) ^

@@ -36,7 +36,7 @@ public:
   /**
    * Offload starts from this elementIdx.
    */
-  uint64_t firstOffloadedElementIdx = 0;
+  uint64_t firstFloatElementIdx = 0;
 
   // NOTE: Line address here.
   Addr initVAddr;

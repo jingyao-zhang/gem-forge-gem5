@@ -49,17 +49,25 @@ LLCDynamicStream::LLCDynamicStream(
     assert(this->baseOnConfigs.back() && "BaseStreamConfig already released?");
   }
 
+  if (this->isPointerChase()) {
+    // PointerChase allows at most one InflyRequest.
+    this->maxInflyRequests = 1;
+  }
+
+  if (_configData->firstFloatElementIdx > 0) {
+    auto firstFloatElemIdx = _configData->firstFloatElementIdx;
+    this->nextCommitElementIdx = firstFloatElemIdx;
+    this->nextInitElementIdx = firstFloatElemIdx;
+    this->nextIssueElementIdx = firstFloatElemIdx;
+    this->nextLoopBoundElementIdx = firstFloatElemIdx;
+  }
+
   if (this->getStaticStream()->isReduction() ||
       this->getStaticStream()->isPointerChaseIndVar()) {
     // Initialize the first element for ReductionStream with the initial value.
     assert(this->isOneIterationBehind() &&
            "ReductionStream must be OneIterationBehind.");
-    this->nextInitElementIdx = 1;
-  }
-
-  if (this->isPointerChase()) {
-    // PointerChase allows at most one InflyRequest.
-    this->maxInflyRequests = 1;
+    this->nextInitElementIdx++;
   }
 
   LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynamicStreamId(), "Created.\n");
@@ -99,7 +107,7 @@ bool LLCDynamicStream::hasTotalTripCount() const {
   return this->slicedStream.hasTotalTripCount();
 }
 
-uint64_t LLCDynamicStream::getTotalTripCount() const {
+int64_t LLCDynamicStream::getTotalTripCount() const {
   if (this->baseStream) {
     return this->baseStream->getTotalTripCount();
   }
@@ -419,8 +427,10 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
     if (this->baseStream &&
         this->baseStream->getDynamicStreamId() == baseDynStreamId) {
       // This is from base stream.
-      assert(this->baseStream->idxToElementMap.count(baseElementIdx) &&
-             "Missing BaseElement");
+      if (!this->baseStream->idxToElementMap.count(baseElementIdx)) {
+        LLC_ELEMENT_PANIC(element, "Missing base element from %s.",
+                          this->baseStream->getDynamicStreamId());
+      }
       element->baseElements.emplace_back(
           this->baseStream->idxToElementMap.at(baseElementIdx));
     } else {
@@ -451,13 +461,15 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
   if (this->getStaticStream()->isReduction() ||
       this->getStaticStream()->isPointerChaseIndVar()) {
     if (!this->lastReductionElement) {
+      uint64_t firstElemIdx = this->configData->firstFloatElementIdx;
       // First time, just initialize the first element.
       this->lastReductionElement = std::make_shared<LLCStreamElement>(
           this->getStaticStream(), this->mlcController,
-          this->getDynamicStreamId(), 0, 0, size, false /* isNDCElement */);
+          this->getDynamicStreamId(), firstElemIdx, 0, size,
+          false /* isNDCElement */);
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
-      this->lastComputedReductionElementIdx = 0;
+      this->lastComputedReductionElementIdx = firstElemIdx;
     }
     if (this->lastReductionElement->idx != baseElementIdx) {
       LLC_S_PANIC(

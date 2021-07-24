@@ -96,7 +96,9 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
     return;
   }
 
-  if (dynBound.offloaded) {
+  if (dynBound.offloaded &&
+      dynBound.nextElementIdx >= dynBound.offloadedFirstElementIdx) {
+    // Starting from this point, we have been offloaded.
     return;
   }
 
@@ -137,12 +139,16 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
      * Should break out the loop.
      * So far we just set TotalTripCount for all DynStreams.
      */
-    SE_DPRINTF("[LoopBound] Break (%d == %d) Region %s.\n", ret,
-               staticBound.boundRet, staticRegion.region.region());
+    SE_DPRINTF("[LoopBound] Break (%d == %d) Region %s TotalTripCount %llu.\n",
+               ret, staticBound.boundRet, staticRegion.region.region(),
+               dynBound.nextElementIdx + 1);
     dynBound.brokenOut = true;
     for (auto S : staticRegion.streams) {
       auto &dynS = S->getDynamicStream(dynRegion.seqNum);
       dynS.setTotalTripCount(dynBound.nextElementIdx + 1);
+      DYN_S_DPRINTF(dynS.dynamicStreamId,
+                    "[LoopBound] Break (%d == %d) TotalTripCount %llu.\n", ret,
+                    staticBound.boundRet, dynBound.nextElementIdx + 1);
     }
 
   } else {

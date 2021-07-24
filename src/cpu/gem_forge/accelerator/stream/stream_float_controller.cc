@@ -5,11 +5,11 @@
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...)                                            \
-  SE_DPRINTF_(StreamEngineBase, format, ##args)
+  SE_DPRINTF_(StreamFloatController, format, ##args)
 
 #include "debug/CoreRubyStreamLife.hh"
-#include "debug/StreamEngineBase.hh"
-#define DEBUG_TYPE StreamEngineBase
+#include "debug/StreamFloatController.hh"
+#define DEBUG_TYPE StreamFloatController
 #include "stream_log.hh"
 
 StreamFloatController::StreamFloatController(
@@ -118,23 +118,40 @@ void StreamFloatController::floatStreams(
 
 void StreamFloatController::commitFloatStreams(const StreamConfigArgs &args,
                                                const StreamList &streams) {
-  // We can issue the delayed float configuration now.
+  /**
+   * We can issue the delayed float configuration now.
+   * Unless this is an Midway Float, and we are waiting for the FirstFloatElem.
+   */
   auto iter = this->configSeqNumToDelayedFloatPktMap.find(args.seqNum);
-  if (iter != this->configSeqNumToDelayedFloatPktMap.end()) {
-    auto pkt = iter->second;
-    for (auto S : streams) {
-      auto &dynS = S->getDynamicStream(args.seqNum);
-      if (dynS.isFloatedToCache()) {
-        assert(dynS.isFloatConfigDelayed() && "Offload is not delayed.");
-        dynS.setFloatConfigDelayed(false);
-        DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynamicStreamId,
-                       "Send Delayed FloatConfig.\n");
-        DYN_S_DPRINTF(dynS.dynamicStreamId, "Send Delayed FloatConfig.\n");
-      }
-    }
-    this->se->cpuDelegator->sendRequest(pkt);
-    this->configSeqNumToDelayedFloatPktMap.erase(iter);
+  if (iter == this->configSeqNumToDelayedFloatPktMap.end()) {
+    return;
   }
+  bool isMidwayFloat = false;
+  auto pkt = iter->second;
+  for (auto S : streams) {
+    auto &dynS = S->getDynamicStream(args.seqNum);
+    if (!dynS.isFloatedToCache()) {
+      continue;
+    }
+    assert(dynS.isFloatConfigDelayed() && "Offload is not delayed.");
+    if (dynS.getFirstFloatElemIdx() > 0) {
+      isMidwayFloat = true;
+      DYN_S_DPRINTF(dynS.dynamicStreamId,
+                    "[MidwayFloat] CommitFloat but Wait FirstElem %llu.\n",
+                    dynS.getFirstFloatElemIdx());
+    } else {
+      dynS.setFloatConfigDelayed(false);
+      DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynamicStreamId,
+                     "Send Delayed FloatConfig.\n");
+      DYN_S_DPRINTF(dynS.dynamicStreamId, "Send Delayed FloatConfig.\n");
+    }
+  }
+  if (isMidwayFloat) {
+    this->configSeqNumToMidwayFloatPktMap.emplace(args.seqNum, pkt);
+  } else {
+    this->se->cpuDelegator->sendRequest(pkt);
+  }
+  this->configSeqNumToDelayedFloatPktMap.erase(iter);
 }
 
 void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
@@ -172,6 +189,56 @@ void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
   }
   if (!floatedIds.empty()) {
     this->se->sendStreamFloatEndPacket(floatedIds);
+  }
+}
+
+void StreamFloatController::endFloatStreams(const DynStreamVec &dynStreams) {
+  assert(!dynStreams.empty() && "No DynStream to End Float.");
+  auto configSeqNum = dynStreams.front()->configSeqNum;
+
+  auto iter = this->configSeqNumToMidwayFloatPktMap.find(configSeqNum);
+  if (iter == this->configSeqNumToMidwayFloatPktMap.end()) {
+    /**
+     * Streams are either floated or not floated at all.
+     */
+    std::vector<DynamicStreamId> endedFloatRootIds;
+    for (auto dynS : dynStreams) {
+      /**
+       * Check if this stream is offloaded and if so, send the StreamEnd
+       * packet.
+       */
+      if (dynS->isFloatedToCacheAsRoot()) {
+        assert(!dynS->isFloatConfigDelayed() &&
+               "Offload still delayed when committing StreamEnd.");
+        endedFloatRootIds.push_back(dynS->dynamicStreamId);
+      }
+    }
+    // Finally send out the StreanEnd packet.
+    if (!endedFloatRootIds.empty()) {
+      this->se->sendStreamFloatEndPacket(endedFloatRootIds);
+    }
+
+  } else {
+    /**
+     * Strreams are midway floated and terminated before reaching
+     * FirstFloatedElemIdx.
+     */
+    for (auto dynS : dynStreams) {
+      if (dynS->isFloatedToCache()) {
+        if (!dynS->isFloatConfigDelayed()) {
+          DYN_S_PANIC(dynS->dynamicStreamId,
+                      "[MidwayFloat] Not delayed anymore.");
+        }
+        StreamFloatPolicy::logStream(dynS->stream)
+            << "[MidwayFloat] Early terminated at Element "
+            << dynS->FIFOIdx.entryIdx << ".\n";
+      }
+    }
+    auto pkt = iter->second;
+    auto streamConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+    delete streamConfigs;
+    delete pkt;
+    this->configSeqNumToMidwayFloatPktMap.erase(iter);
   }
 }
 
@@ -305,6 +372,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
     );
     config->isPointerChase = true;
     baseConfig->isOneIterationBehind = true;
+    addrBaseDynS.setFloatedOneIterBehind(true);
     // We revert the usage edge, because in cache MemStream serves as root.
     config->addUsedBy(baseConfig);
     if (!S->valueBaseStreams.empty()) {
@@ -322,6 +390,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
     StreamFloatPolicy::logStream(addrBaseS) << "[Float] as pointer chase IV.\n"
                                             << std::flush;
     floatedMap.emplace(S, config);
+    floatedMap.emplace(addrBaseS, baseConfig);
     args.rootConfigVec.push_back(config);
     if (S->getEnabledStoreFunc()) {
       DYN_S_PANIC(dynS->dynamicStreamId,
@@ -533,6 +602,7 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
         S->allocateCacheConfigureData(dynS->configSeqNum, true);
     // Reduction stream is always one iteration behind.
     reductionConfig->isOneIterationBehind = true;
+    dynS->setFloatedOneIterBehind(true);
     dynS->setFloatedToCache(true);
     this->se->numFloated++;
     floatedMap.emplace(S, reductionConfig);
@@ -690,6 +760,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
       S->allocateCacheConfigureData(dynS->configSeqNum, true);
   // Reduction stream is always one iteration behind.
   reductionConfig->isOneIterationBehind = true;
+  dynS->setFloatedOneIterBehind(true);
   dynS->setFloatedToCache(true);
   this->se->numFloated++;
   floatedMap.emplace(S, reductionConfig);
@@ -869,18 +940,22 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
 }
 
 void StreamFloatController::setFirstOffloadedElementIdx(const Args &args) {
+  if (!this->se->myParams->streamEngineEnableMidwayFloat) {
+    return;
+  }
   /**
    * Mainly work for PointerChase stream with constant first address.
    */
-  uint64_t firstOffloadedElementIdx = 0;
+  uint64_t firstFloatElementIdx = 0;
   for (const auto &entry : args.floatedMap) {
     auto S = entry.first;
     if (S->isPointerChaseLoadStream()) {
       // For testing purpose, just set to 10.
-      firstOffloadedElementIdx = 10;
+      firstFloatElementIdx =
+          this->se->myParams->streamEngineMidwayFloatElementIdx;
     }
   }
-  if (firstOffloadedElementIdx == 0) {
+  if (firstFloatElementIdx == 0) {
     return;
   }
   for (auto dynS : args.dynStreams) {
@@ -890,10 +965,135 @@ void StreamFloatController::setFirstOffloadedElementIdx(const Args &args) {
       continue;
     }
     StreamFloatPolicy::logStream(S)
-        << "[FirstOffloadElement] Set to " << firstOffloadedElementIdx << ".\n"
+        << "[MidwayFloat] Set to " << firstFloatElementIdx << ".\n"
         << std::flush;
-    DYN_S_DPRINTF(dynS->dynamicStreamId,
-                  "FirstOffloadElementIdx set to %llu.\n",
-                  firstOffloadedElementIdx);
+    DYN_S_DPRINTF(dynS->dynamicStreamId, "FirstFloatElemIdx set to %llu.\n",
+                  firstFloatElementIdx);
+    dynS->setFirstFloatElemIdx(firstFloatElementIdx);
+    args.floatedMap.at(dynS->stream)->firstFloatElementIdx =
+        firstFloatElementIdx;
   }
+
+  // Check LoopBound.
+  auto &dynRegion = this->se->regionController->getDynRegion(
+      "SetFirstOffloadedElementIdx", args.seqNum);
+  auto &dynBound = dynRegion.loopBound;
+  if (dynBound.offloaded) {
+    SE_DPRINTF("[MidwayFloat][LoopBound] FirstFloatElemIdx set to %llu.\n",
+               firstFloatElementIdx);
+    dynBound.offloadedFirstElementIdx = firstFloatElementIdx;
+  }
+}
+
+void StreamFloatController::processMidwayFloat() {
+  for (auto iter = this->configSeqNumToMidwayFloatPktMap.begin(),
+            end = this->configSeqNumToMidwayFloatPktMap.end();
+       iter != end;) {
+    if (this->trySendMidwayFloat(iter)) {
+      iter = this->configSeqNumToMidwayFloatPktMap.erase(iter);
+    } else {
+      ++iter;
+    }
+  }
+}
+
+bool StreamFloatController::isMidwayFloatReady(
+    CacheStreamConfigureDataPtr &config) {
+  auto S = config->stream;
+  auto dynS = S->getDynamicStream(config->dynamicId);
+  if (!dynS) {
+    DYN_S_PANIC(config->dynamicId,
+                "[MidwayFloat] DynS released before MidwayFloat released.");
+  }
+  if (dynS->FIFOIdx.entryIdx <= config->firstFloatElementIdx) {
+    DYN_S_DPRINTF(dynS->dynamicStreamId,
+                  "[MidwayFloat] DynS TailElem %llu < FirstFloatElem %llu. "
+                  "Not Yet Float.\n",
+                  dynS->FIFOIdx.entryIdx, config->firstFloatElementIdx);
+    return false;
+  }
+  /**
+   * If there is StreamLoopBound, also check that LoopBound has evaluated.
+   */
+  auto &dynRegion = this->se->regionController->getDynRegion(
+      "[MidwayFloat] Check LoopBound before MidwayFloat", dynS->configSeqNum);
+  if (dynRegion.staticRegion->region.is_loop_bound()) {
+    auto &dynBound = dynRegion.loopBound;
+    if (dynBound.nextElementIdx > config->firstFloatElementIdx) {
+      DYN_S_PANIC(dynS->dynamicStreamId,
+                  "[MidwayFloat] Impossible! LoopBound NextElem %llu > "
+                  "FirstFloatElem %llu.",
+                  dynBound.nextElementIdx, config->firstFloatElementIdx);
+    }
+    if (dynBound.nextElementIdx < config->firstFloatElementIdx) {
+      DYN_S_DPRINTF(dynS->dynamicStreamId,
+                    "[MidwayFloat] LoopBound NextElem %llu < FirstFloatElem "
+                    "%llu. Not Yet Float.\n",
+                    dynBound.nextElementIdx, config->firstFloatElementIdx);
+      return false;
+    }
+    if (dynBound.brokenOut) {
+      DYN_S_DPRINTF(dynS->dynamicStreamId,
+                    "[MidwayFloat] LoopBound BrokenOut NextElem %llu <= "
+                    "FirstFloatElem %llu. Don't Float.\n",
+                    dynBound.nextElementIdx, config->firstFloatElementIdx);
+      return false;
+    }
+  }
+  if (S->isReduction() || S->isPointerChaseIndVar()) {
+    /**
+     * Since these streams are one iteration behind, we require them to be value
+     * ready.
+     */
+    auto firstFloatElement =
+        dynS->getElementByIdx(config->firstFloatElementIdx);
+    if (!firstFloatElement) {
+      DYN_S_PANIC(dynS->dynamicStreamId,
+                  "[MidwayFloat] FirstFloatElem already released.");
+    }
+    if (!firstFloatElement->isValueReady) {
+      S_ELEMENT_DPRINTF(
+          firstFloatElement,
+          "[MidwayFloat] FirstFloatElem of Reduce/PtrChase not ValueReady.\n");
+      return false;
+    }
+  }
+  for (auto &depEdge : config->depEdges) {
+    auto &depConfig = depEdge.data;
+    if (!this->isMidwayFloatReady(depConfig)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool StreamFloatController::trySendMidwayFloat(SeqNumToPktMapIter iter) {
+  auto configSeqNum = iter->first;
+  auto pkt = iter->second;
+  auto configVec = *(pkt->getPtr<CacheStreamConfigureVec *>());
+  bool readyToFloat = true;
+  for (auto &config : *configVec) {
+    if (!this->isMidwayFloatReady(config)) {
+      readyToFloat = false;
+      break;
+    }
+  }
+
+  if (readyToFloat) {
+    auto &dynRegion = this->se->regionController->getDynRegion(
+        to_string(configVec->front()->dynamicId), configSeqNum);
+    for (auto S : dynRegion.staticRegion->streams) {
+      auto &dynS = S->getDynamicStream(configSeqNum);
+      dynS.setFloatConfigDelayed(false);
+      DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynamicStreamId,
+                     "[MidwayFloat] Midway Floated at Elem %llu.\n",
+                     dynS.getFirstFloatElemIdx());
+      DYN_S_DPRINTF(dynS.dynamicStreamId,
+                    "[MidwayFloat] Midway Floated at Elem %llu.\n",
+                    dynS.getFirstFloatElemIdx());
+    }
+    this->se->cpuDelegator->sendRequest(pkt);
+  }
+
+  return readyToFloat;
 }

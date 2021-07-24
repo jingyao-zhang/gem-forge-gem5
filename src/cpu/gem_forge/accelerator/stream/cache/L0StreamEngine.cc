@@ -20,11 +20,9 @@
 #define L0_STREAM_DPRINTF(streamId, format, args...)                           \
   L0_STREAM_DPRINTF_(L0RubyStreamBase, (streamId), format, ##args)
 
-#define L0_ELEMENT_DPRINTF(streamId, lhsElementIdx, numElements, format,       \
-                           args...)                                            \
-  DPRINTF(L0RubyStreamBase, "[L0_SE%d][%lu-%d][%lu, +%d): " format,            \
-          this->controller->getMachineID().num, (streamId).staticId,           \
-          (streamId).streamInstance, lhsElementIdx, numElements, ##args)
+#define L0_SLICE_DPRINTF(sliceId, format, args...)                             \
+  DPRINTF(L0RubyStreamBase, "[L0_SE%d]%s: " format,                            \
+          this->controller->getMachineID().num, (sliceId), ##args)
 
 L0StreamEngine::L0StreamEngine(AbstractStreamAwareController *_controller)
     : controller(_controller) {}
@@ -114,18 +112,23 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
     return false;
   }
   // Check if this is an indirect stream one iteration behind.
+  auto sliceId = streamMemAccess->getSliceId();
+  auto firstFloatElemIdx = stream->getFirstFloatElemIdx();
   if (stream->getIsOneIterationBehind()) {
-    auto sliceId = this->getSliceId(pkt);
     assert(sliceId.getNumElements() == 1 &&
            "Never merge elements for indirect stream one iteration behind.");
-    if (sliceId.getStartIdx() == 0) {
-      // Ignore the first stream element.
-      return false;
-    }
-    L0_ELEMENT_DPRINTF(sliceId.getDynStreamId(), sliceId.getStartIdx(),
-                       sliceId.getNumElements(), "Is stream access.\n");
+    // Ignore the first stream element.
+    firstFloatElemIdx++;
   }
-  return true;
+  if (sliceId.getStartIdx() < firstFloatElemIdx) {
+    L0_SLICE_DPRINTF(
+        sliceId, "Not stream access. FirstElemIdx %llu. IsOneIterBehind %d.\n",
+        firstFloatElemIdx, stream->getIsOneIterationBehind());
+    return false;
+  } else {
+    L0_SLICE_DPRINTF(sliceId, "Is stream access.\n");
+    return true;
+  }
 }
 
 DynamicStreamSliceId L0StreamEngine::getSliceId(PacketPtr pkt) const {
@@ -153,9 +156,8 @@ bool L0StreamEngine::shouldForward(PacketPtr pkt) {
   if (!this->controller->isStreamFloatEnabled()) {
     return false;
   }
-  auto slice = this->getSliceId(pkt);
-  L0_ELEMENT_DPRINTF(slice.getDynStreamId(), slice.getStartIdx(),
-                     slice.getNumElements(), "Forward hit.\n");
+  auto sliceId = this->getSliceId(pkt);
+  L0_SLICE_DPRINTF(sliceId, "Forward hit.\n");
   return true;
 }
 

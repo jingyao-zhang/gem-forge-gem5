@@ -352,28 +352,16 @@ public:
   DynamicStreamId allocateNewInstance();
 
   /**
-   * Remove one stepped element from the first dynamic stream.
-   * @param isEnd: This element is stepped by StreamEnd, not StreamStep.
-   */
-  StreamElement *releaseElementStepped(bool isEnd);
-  /**
    * Remove one unstepped element from the dynamic stream.
    * CommitStreamEnd will release from the first dynamic stream.
    * RewindStreamConfig will release from the last one.
    */
   StreamElement *releaseElementUnstepped(DynamicStream &dynS);
   /**
-   * Check if the last dynamic stream has an unstepped element.
+   * Check if the dynamic stream has an unstepped element.
+   * @param instanceId: if Invalid, check FirstAliveDynStream.
    */
-  bool hasUnsteppedElement();
-  /**
-   * Step one element of the last dynamic stream.
-   */
-  StreamElement *stepElement(bool isEnd);
-  /**
-   * Unstep one element.
-   */
-  StreamElement *unstepElement();
+  bool hasUnsteppedElement(DynamicStreamId::InstanceId instanceId);
   /**
    * Get the first unstepped element of the last dynamic stream.
    */

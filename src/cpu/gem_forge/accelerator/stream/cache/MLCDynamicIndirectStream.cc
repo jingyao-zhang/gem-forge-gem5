@@ -61,8 +61,10 @@ void MLCDynamicIndirectStream::receiveStreamData(
    * TODO: Properly handle this with sliceIdx.
    */
   if (this->slices.empty()) {
-    // We better be overflowed.
-    assert(this->hasOverflowed() && "No slices when not overflowed.");
+    // The data arrived after the slices is released.
+    MLC_SLICE_DPRINTF(sliceId, "Received Data. No Slice and Overflowed? %d.",
+                      this->hasOverflowed());
+    return;
   } else {
     /**
      * Check if the data is lagging behind. Since we guarantee that
@@ -153,6 +155,13 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
   // It's possible that we are behind the base stream?
   while (this->tailElementIdx <= elementIdx) {
     this->allocateSlice();
+  }
+
+  if (this->isWaitingNothing()) {
+    // If we are waiting for nothing, this is the only place we advance.
+    MLC_S_DPRINTF(this->dynamicStreamId, "WaitNothing. Skip BaseElement.\n");
+    this->advanceStream();
+    return;
   }
 
   if (this->slices.empty()) {

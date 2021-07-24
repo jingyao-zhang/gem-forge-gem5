@@ -42,6 +42,36 @@ void StreamRegionController::dispatchStreamConfigForStep(const ConfigArgs &args,
   // DynStep is default initialized.
 }
 
+void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
+                                                        DynRegion &dynRegion) {
+  auto &staticRegion = *dynRegion.staticRegion;
+  if (!staticRegion.region.loop_eliminated()) {
+    return;
+  }
+  if (!staticRegion.region.is_loop_bound()) {
+    // Without StreamLoopBound, we must check for TotalTripCount.
+    int64_t totalTripCount = DynamicStream::InvalidTotalTripCount;
+    for (auto S : staticRegion.streams) {
+      auto &dynS = S->getDynamicStream(dynRegion.seqNum);
+      if (!dynS.hasTotalTripCount()) {
+        DYN_S_PANIC(
+            dynS.dynamicStreamId,
+            "[Stepper] EliminatedLoop w/o. LoopBound must has TotalTripCount.");
+      }
+      if (totalTripCount == DynamicStream::InvalidTotalTripCount) {
+        totalTripCount = dynS.getTotalTripCount();
+        DYN_S_DPRINTF(dynS.dynamicStreamId,
+                      "[Stepper] Get TotalTripCount %lld.\n", totalTripCount);
+      } else if (totalTripCount != dynS.getTotalTripCount()) {
+        DYN_S_PANIC(dynS.dynamicStreamId,
+                    "[Stepper] Mismatch TotalTripCount %lld != DynS %lld. Is "
+                    "This Multi-Level Stream?",
+                    totalTripCount, dynS.getTotalTripCount());
+      }
+    }
+  }
+}
+
 void StreamRegionController::stepStream(DynRegion &dynRegion) {
   auto &staticRegion = *dynRegion.staticRegion;
   if (!staticRegion.region.loop_eliminated()) {
@@ -59,10 +89,23 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
    * for the next stepped iteration.
    */
   const auto &dynBound = dynRegion.loopBound;
-  if (dynStep.nextElementIdx >= dynBound.nextElementIdx) {
-    SE_DPRINTF("[Stepper] Wait For LoopBound: %llu >= %llu.\n",
-               dynStep.nextElementIdx, dynBound.nextElementIdx);
-    return;
+  if (staticRegion.region.is_loop_bound()) {
+    if (dynStep.nextElementIdx >= dynBound.nextElementIdx) {
+      SE_DPRINTF("[Stepper] Wait For LoopBound: %llu >= %llu.\n",
+                 dynStep.nextElementIdx, dynBound.nextElementIdx);
+      return;
+    }
+  } else {
+    // We don't have StreamLoopBound.
+    auto firstStepRootS = staticStep.stepRootStreams.front();
+    auto &firstStepRootDynS =
+        firstStepRootS->getDynamicStream(dynRegion.seqNum);
+    auto totalTripCount = firstStepRootDynS.getTotalTripCount();
+    if (dynStep.nextElementIdx >= totalTripCount) {
+      SE_DPRINTF("[Stepper] Wait For TotalTripCount: %llu >= %llu.\n",
+                 dynStep.nextElementIdx, totalTripCount);
+      return;
+    }
   }
 
   for (const auto &dynNestConfig : dynRegion.nestConfigs) {
@@ -79,39 +122,51 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
    */
   auto stepRootS = staticStep.stepRootStreams.at(dynStep.nextStepStreamIdx);
   auto stepRootStreamId = stepRootS->staticId;
+  auto &stepRootDynS = stepRootS->getDynamicStream(dynRegion.seqNum);
+  if (dynStep.nextElementIdx >= stepRootDynS.getTotalTripCount()) {
+    DYN_S_PANIC(stepRootDynS.dynamicStreamId,
+                "[Stepper] Step Beyond TotalTripCount %lld >= %lld.",
+                dynStep.nextElementIdx, stepRootDynS.getTotalTripCount());
+  }
 
-  SE_DPRINTF("[Stepper] Try to Step RootS %s.\n", stepRootS->getStreamName());
+  StreamEngine::StreamStepArgs args(stepRootStreamId);
+  args.dynInstanceId = stepRootDynS.dynamicStreamId.streamInstance;
+
+  DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+                "[Stepper] Try to Step RootDynS.\n");
 
   switch (dynStep.state) {
   default:
     SE_PANIC("[Stepper] Invalid State %d.", dynStep.state);
   case DynRegion::DynStep::StepState::BEFORE_DISPATCH:
-    if (se->canDispatchStreamStep(stepRootStreamId)) {
-      SE_DPRINTF("[Stepper] Dispatch.\n");
-      se->dispatchStreamStep(stepRootStreamId);
+    if (se->canDispatchStreamStep(args)) {
+      DYN_S_DPRINTF(stepRootDynS.dynamicStreamId, "[Stepper] Dispatch.\n");
+      se->dispatchStreamStep(args);
 
       dynStep.state = DynRegion::DynStep::StepState::BEFORE_COMMIT;
 
     } else {
-      SE_DPRINTF("[Stepper] CanNot Dispatch.\n");
+      DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+                    "[Stepper] CanNot Dispatch.\n");
     }
     break;
   case DynRegion::DynStep::StepState::BEFORE_COMMIT:
-    if (se->canCommitStreamStep(stepRootStreamId)) {
-      SE_DPRINTF("[Stepper] Commit.\n");
-      se->commitStreamStep(stepRootStreamId);
+    if (se->canCommitStreamStep(args)) {
+      DYN_S_DPRINTF(stepRootDynS.dynamicStreamId, "[Stepper] Commit.\n");
+      se->commitStreamStep(args);
 
       dynStep.state = DynRegion::DynStep::StepState::BEFORE_DISPATCH;
       dynStep.nextStepStreamIdx++;
       if (dynStep.nextStepStreamIdx == staticStep.stepRootStreams.size()) {
         dynStep.nextStepStreamIdx = 0;
         dynStep.nextElementIdx++;
-        SE_DPRINTF("[Stepper] NextElementIdx++ -> %llu.\n",
-                   dynStep.nextElementIdx);
+        DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+                      "[Stepper] NextElementIdx++ -> %llu.\n",
+                      dynStep.nextElementIdx);
       }
 
     } else {
-      SE_DPRINTF("[Stepper] CanNot Commit.\n");
+      DYN_S_DPRINTF(stepRootDynS.dynamicStreamId, "[Stepper] CanNot Commit.\n");
     }
   }
 }
