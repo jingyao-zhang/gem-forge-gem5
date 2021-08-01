@@ -74,26 +74,34 @@ void AbstractStreamAwareController::regStats() {
       .name(name() + ".llcScheduledStreamComputeMicroOps")
       .desc("number of llc stream computation microops scheduled")
       .flags(Stats::nozero);
-  m_statLLCScheduledLoadComputeMicroOps
-      .name(name() + ".llcScheduledStreamLoadComputeMicroOps")
-      .desc("number of llc stream load computation microops scheduled")
-      .flags(Stats::nozero);
-  m_statLLCScheduledStoreComputeMicroOps
-      .name(name() + ".llcScheduledStreamStoreComputeMicroOps")
-      .desc("number of llc stream store computation microops scheduled")
-      .flags(Stats::nozero);
-  m_statLLCScheduledAtomicComputeMicroOps
-      .name(name() + ".llcScheduledStreamAtomicComputeMicroOps")
-      .desc("number of llc stream atomic computation microops scheduled")
-      .flags(Stats::nozero);
-  m_statLLCScheduledReduceMicroOps
-      .name(name() + ".llcScheduledStreamReduceMicroOps")
-      .desc("number of llc stream reduce computation microops scheduled")
-      .flags(Stats::nozero);
-  m_statLLCScheduledUpdateMicroOps
-      .name(name() + ".llcScheduledStreamUpdateMicroOps")
-      .desc("number of llc stream update computation microops scheduled")
-      .flags(Stats::nozero);
+
+#define complete_micro_op(Addr, Compute)                                       \
+  m_statLLCScheduled##Addr##Compute##MicroOps                                  \
+      .name(name() + ".llcScheduledStream" #Addr #Compute "MicroOps")          \
+      .desc("number of llc stream " #Addr #Compute "microops scheduled")       \
+      .flags(Stats::nozero)
+
+  complete_micro_op(Affine, LoadCompute);
+  complete_micro_op(Affine, StoreCompute);
+  complete_micro_op(Affine, AtomicCompute);
+  complete_micro_op(Affine, Reduce);
+  complete_micro_op(Affine, Update);
+  complete_micro_op(Indirect, LoadCompute);
+  complete_micro_op(Indirect, StoreCompute);
+  complete_micro_op(Indirect, AtomicCompute);
+  complete_micro_op(Indirect, Reduce);
+  complete_micro_op(Indirect, Update);
+  complete_micro_op(PointerChase, LoadCompute);
+  complete_micro_op(PointerChase, StoreCompute);
+  complete_micro_op(PointerChase, AtomicCompute);
+  complete_micro_op(PointerChase, Reduce);
+  complete_micro_op(PointerChase, Update);
+  complete_micro_op(MultiAffine, LoadCompute);
+  complete_micro_op(MultiAffine, StoreCompute);
+  complete_micro_op(MultiAffine, AtomicCompute);
+  complete_micro_op(MultiAffine, Reduce);
+  complete_micro_op(MultiAffine, Update);
+#undef complete_micro_op
 
   m_statLLCPerformedAtomics.name(name() + ".llcStreamAtomicsPerformed")
       .desc("number of llc stream atomics performed")
@@ -288,7 +296,6 @@ void AbstractStreamAwareController::recordLLCReqQueueStats(
     }
   }
 }
-
 
 int AbstractStreamAwareController::getNumRows() const {
   auto network = this->m_net_ptr;

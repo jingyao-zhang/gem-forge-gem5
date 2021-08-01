@@ -18,6 +18,8 @@ public:
   void completeComputation();
   void discardComputation(StreamElement *element);
 
+  void recordCompletedStats(Stream *S);
+
 private:
   struct Computation {
     StreamElement *element;

@@ -44,7 +44,7 @@ void LLCStreamAtomicLockManager::enqueue(Addr paddr, int size,
   this->se->controller->m_statLLCPerformedAtomics++;
   this->se->controller->m_statLLCScheduledComputation++;
   this->se->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
-  this->se->controller->m_statLLCScheduledAtomicComputeMicroOps += numMicroOps;
+  this->se->recordComputationMicroOps(S);
 
   auto paddrQueue = this->getPAddrQueue(paddr);
   auto addrQueueIter =

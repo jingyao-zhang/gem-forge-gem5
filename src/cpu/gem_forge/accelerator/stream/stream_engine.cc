@@ -170,20 +170,38 @@ void StreamEngine::regStats() {
   scalar(numLLCSentSlice, "Number of LLC sent slices.");
   scalar(numLLCMigrated, "Number of LLC stream migration.");
   scalar(numMLCResponse, "Number of MLCStreamEngine response.");
+
   scalar(numScheduledComputation, "Number of scheduled computation in CoreSE.");
   scalar(numCompletedComputation, "Number of completed computation in CoreSE.");
   scalar(numCompletedComputeMicroOps,
          "Number of completed microops in CoreSE.");
-  scalar(numCompletedLoadComputeMicroOps,
-         "Number of completed LoadComputeS microops in CoreSE.");
-  scalar(numCompletedStoreComputeMicroOps,
-         "Number of completed StoreComputeS microops in CoreSE.");
-  scalar(numCompletedAtomicComputeMicroOps,
-         "Number of completed AtoimcComputeS microops in CoreSE.");
-  scalar(numCompletedReduceMicroOps,
-         "Number of completed ReduceS microops in CoreSE.");
-  scalar(numCompletedUpdateMicroOps,
-         "Number of completed UpdateS microops in CoreSE.");
+
+#define complete_micro_op(Addr, Compute)                                       \
+  scalar(numCompleted##Addr##Compute##MicroOps,                                \
+         "Number of completed " #Addr " " #Compute " microops in CoreSE")
+
+  complete_micro_op(Affine, LoadCompute);
+  complete_micro_op(Affine, StoreCompute);
+  complete_micro_op(Affine, AtomicCompute);
+  complete_micro_op(Affine, Reduce);
+  complete_micro_op(Affine, Update);
+  complete_micro_op(Indirect, LoadCompute);
+  complete_micro_op(Indirect, StoreCompute);
+  complete_micro_op(Indirect, AtomicCompute);
+  complete_micro_op(Indirect, Reduce);
+  complete_micro_op(Indirect, Update);
+  complete_micro_op(PointerChase, LoadCompute);
+  complete_micro_op(PointerChase, StoreCompute);
+  complete_micro_op(PointerChase, AtomicCompute);
+  complete_micro_op(PointerChase, Reduce);
+  complete_micro_op(PointerChase, Update);
+  complete_micro_op(MultiAffine, LoadCompute);
+  complete_micro_op(MultiAffine, StoreCompute);
+  complete_micro_op(MultiAffine, AtomicCompute);
+  complete_micro_op(MultiAffine, Reduce);
+  complete_micro_op(MultiAffine, Update);
+#undef complete_micro_op
+
 #undef scalar
 
   this->numTotalAliveElements.init(0, 1000, 50)
@@ -2598,12 +2616,10 @@ void StreamEngine::issueElement(StreamElement *element) {
         auto elementPAddr = cacheLinePAddr + lineOffset;
 
         // Atomic is also considered as computation stats.
-        auto microOps = S->getComputationNumMicroOps();
         S->recordComputationInCoreStats();
         this->numScheduledComputation++;
-        this->numCompletedComputation++;
-        this->numCompletedComputeMicroOps += microOps;
-        this->numCompletedAtomicComputeMicroOps += microOps;
+
+        this->computeEngine->recordCompletedStats(S);
 
         pkt = GemForgePacketHandler::createGemForgeAMOPacket(
             elementVAddr, elementPAddr, element->size, memAccess,

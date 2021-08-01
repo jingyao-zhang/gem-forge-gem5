@@ -457,6 +457,27 @@ public:
   bool isSIMDComputation() const {
     return this->getComputeCallback()->hasSIMD();
   }
+  enum ComputationType {
+    UnknownComputationType = 0,
+    LoadCompute,
+    StoreCompute,
+    AtomicCompute,
+    Update,
+    Reduce,
+    Address,
+  };
+  enum ComputationAddressPattern {
+    Affine,
+    Indirect,
+    PointerChase,
+    MultiAffine,
+  };
+  using ComputationCategory =
+      std::pair<ComputationType, ComputationAddressPattern>;
+  ComputationCategory getComputationCategory() const;
+  mutable ComputationCategory memorizedComputationCategory;
+  mutable bool computationCategoryMemorized = false;
+
   /**
    * Add the computation to core statistic.
    */

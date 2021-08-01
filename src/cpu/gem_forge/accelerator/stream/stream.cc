@@ -925,6 +925,68 @@ const ExecFuncPtr &Stream::getComputeCallback() const {
   }
 }
 
+Stream::ComputationCategory Stream::getComputationCategory() const {
+  if (this->computationCategoryMemorized) {
+    return this->memorizedComputationCategory;
+  }
+  if (this->isLoadComputeStream()) {
+    this->memorizedComputationCategory.first = ComputationType::LoadCompute;
+  } else if (this->isStoreComputeStream()) {
+    this->memorizedComputationCategory.first = ComputationType::StoreCompute;
+  } else if (this->isUpdateStream()) {
+    this->memorizedComputationCategory.first = ComputationType::Update;
+  } else if (this->isReduction()) {
+    this->memorizedComputationCategory.first = ComputationType::Reduce;
+  } else if (this->isAtomicComputeStream()) {
+    this->memorizedComputationCategory.first = ComputationType::AtomicCompute;
+  } else if (this->isPointerChaseIndVar()) {
+    // This is pointer chase IV stream. It is address computation.
+    this->memorizedComputationCategory.first = ComputationType::Address;
+  } else {
+    this->memorizedComputationCategory.first =
+        ComputationType::UnknownComputationType;
+    S_PANIC(this, "Unkown Computation.");
+  }
+
+  int numAffineLoadS = 0;
+  int numPointerChaseS = 0;
+  for (auto valBaseS : this->valueBaseStreams) {
+    if (valBaseS->isDirectLoadStream()) {
+      numAffineLoadS++;
+    } else if (valBaseS->isPointerChase()) {
+      numPointerChaseS++;
+    }
+  }
+  for (auto backBaseS : this->backBaseStreams) {
+    if (backBaseS->isDirectLoadStream()) {
+      numAffineLoadS++;
+    } else if (backBaseS->isPointerChase()) {
+      numPointerChaseS++;
+    }
+  }
+  if (numAffineLoadS > 1) {
+    this->memorizedComputationCategory.second =
+        ComputationAddressPattern::MultiAffine;
+  } else if (numAffineLoadS == 1) {
+    this->memorizedComputationCategory.second =
+        ComputationAddressPattern::Affine;
+  } else if (numPointerChaseS > 0) {
+    this->memorizedComputationCategory.second =
+        ComputationAddressPattern::PointerChase;
+  } else {
+    if (this->isDirectMemStream()) {
+      this->memorizedComputationCategory.second =
+          ComputationAddressPattern::Affine;
+    } else {
+      this->memorizedComputationCategory.second =
+          ComputationAddressPattern::Indirect;
+    }
+  }
+
+  this->computationCategoryMemorized = true;
+  return this->memorizedComputationCategory;
+}
+
 void Stream::recordComputationInCoreStats() const {
   const auto &func = this->getComputeCallback();
   const auto &insts = func->getStaticInsts();

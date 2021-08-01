@@ -277,15 +277,33 @@ public:
 
   /**
    * Statistics for stream computing.
+   * Computation is classified as cross product of:
+   *      Affine Indirect PointerChase Multi-Affine
+   * x    Load   Store    Atomic       Update       Reduce
    */
   Stats::Scalar numScheduledComputation;
   Stats::Scalar numCompletedComputation;
   Stats::Scalar numCompletedComputeMicroOps;
-  Stats::Scalar numCompletedLoadComputeMicroOps;
-  Stats::Scalar numCompletedReduceMicroOps;
-  Stats::Scalar numCompletedUpdateMicroOps;
-  Stats::Scalar numCompletedStoreComputeMicroOps;
-  Stats::Scalar numCompletedAtomicComputeMicroOps;
+  Stats::Scalar numCompletedAffineLoadComputeMicroOps;
+  Stats::Scalar numCompletedAffineReduceMicroOps;
+  Stats::Scalar numCompletedAffineUpdateMicroOps;
+  Stats::Scalar numCompletedAffineStoreComputeMicroOps;
+  Stats::Scalar numCompletedAffineAtomicComputeMicroOps;
+  Stats::Scalar numCompletedIndirectLoadComputeMicroOps;
+  Stats::Scalar numCompletedIndirectReduceMicroOps;
+  Stats::Scalar numCompletedIndirectUpdateMicroOps;
+  Stats::Scalar numCompletedIndirectStoreComputeMicroOps;
+  Stats::Scalar numCompletedIndirectAtomicComputeMicroOps;
+  Stats::Scalar numCompletedPointerChaseLoadComputeMicroOps;
+  Stats::Scalar numCompletedPointerChaseReduceMicroOps;
+  Stats::Scalar numCompletedPointerChaseUpdateMicroOps;
+  Stats::Scalar numCompletedPointerChaseStoreComputeMicroOps;
+  Stats::Scalar numCompletedPointerChaseAtomicComputeMicroOps;
+  Stats::Scalar numCompletedMultiAffineLoadComputeMicroOps;
+  Stats::Scalar numCompletedMultiAffineReduceMicroOps;
+  Stats::Scalar numCompletedMultiAffineUpdateMicroOps;
+  Stats::Scalar numCompletedMultiAffineStoreComputeMicroOps;
+  Stats::Scalar numCompletedMultiAffineAtomicComputeMicroOps;
 
   /**
    * Number of committed elements since last check,

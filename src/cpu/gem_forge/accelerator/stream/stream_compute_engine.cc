@@ -62,22 +62,45 @@ void StreamComputeEngine::completeComputation() {
     element->receiveComputeResult(computation->result);
     element->scheduledComputation = false;
 
-    auto microOps = S->getComputationNumMicroOps();
-    S->recordComputationInCoreStats();
-    this->se->numCompletedComputation++;
-    this->se->numCompletedComputeMicroOps += microOps;
-    if (S->isLoadComputeStream()) {
-      this->se->numCompletedLoadComputeMicroOps += microOps;
-    } else if (S->isStoreComputeStream()) {
-      this->se->numCompletedStoreComputeMicroOps += microOps;
-    } else if (S->isUpdateStream()) {
-      this->se->numCompletedUpdateMicroOps += microOps;
-    } else if (S->isReduction()) {
-      this->se->numCompletedReduceMicroOps += microOps;
-    }
+    this->recordCompletedStats(S);
 
     this->inflyComputations.pop_front();
   }
+}
+
+void StreamComputeEngine::recordCompletedStats(Stream *S) {
+  auto microOps = S->getComputationNumMicroOps();
+  S->recordComputationInCoreStats();
+  this->se->numCompletedComputation++;
+  this->se->numCompletedComputeMicroOps += microOps;
+  auto category = S->getComputationCategory();
+
+#define record_micro_ops(Addr, Compute)                                        \
+  if (category.first == Stream::ComputationType::Compute &&                  \
+      category.second == Stream::ComputationAddressPattern::Addr) {          \
+    this->se->numCompleted##Addr##Compute##MicroOps += microOps;               \
+  }
+  record_micro_ops(Affine, LoadCompute);
+  record_micro_ops(Affine, StoreCompute);
+  record_micro_ops(Affine, AtomicCompute);
+  record_micro_ops(Affine, Update);
+  record_micro_ops(Affine, Reduce);
+  record_micro_ops(Indirect, LoadCompute);
+  record_micro_ops(Indirect, StoreCompute);
+  record_micro_ops(Indirect, AtomicCompute);
+  record_micro_ops(Indirect, Update);
+  record_micro_ops(Indirect, Reduce);
+  record_micro_ops(PointerChase, LoadCompute);
+  record_micro_ops(PointerChase, StoreCompute);
+  record_micro_ops(PointerChase, AtomicCompute);
+  record_micro_ops(PointerChase, Update);
+  record_micro_ops(PointerChase, Reduce);
+  record_micro_ops(MultiAffine, LoadCompute);
+  record_micro_ops(MultiAffine, StoreCompute);
+  record_micro_ops(MultiAffine, AtomicCompute);
+  record_micro_ops(MultiAffine, Update);
+  record_micro_ops(MultiAffine, Reduce);
+#undef record_micro_ops
 }
 
 void StreamComputeEngine::pushInflyComputation(ComputationPtr computation) {

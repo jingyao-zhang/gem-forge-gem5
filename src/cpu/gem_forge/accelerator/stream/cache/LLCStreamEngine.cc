@@ -2487,7 +2487,7 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr dynS,
     S->recordComputationInCoreStats();
     this->controller->m_statLLCScheduledComputation++;
     this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
-    this->controller->m_statLLCScheduledUpdateMicroOps += numMicroOps;
+    this->recordComputationMicroOps(S);
 
     element->setComputedValue(storeValue);
     assert(elementMemSize <= sizeof(storeValue) &&
@@ -3076,15 +3076,7 @@ void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
   auto &statistic = S->statistic;
   this->controller->m_statLLCScheduledComputation++;
   this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
-  if (S->isLoadComputeStream()) {
-    this->controller->m_statLLCScheduledLoadComputeMicroOps += numMicroOps;
-  } else if (S->isStoreComputeStream()) {
-    this->controller->m_statLLCScheduledStoreComputeMicroOps += numMicroOps;
-  } else if (S->isUpdateStream()) {
-    this->controller->m_statLLCScheduledUpdateMicroOps += numMicroOps;
-  } else if (S->isReduction()) {
-    this->controller->m_statLLCScheduledReduceMicroOps += numMicroOps;
-  }
+  this->recordComputationMicroOps(S);
   statistic.numLLCComputation++;
   statistic.numLLCComputationComputeLatency += latency;
   statistic.numLLCComputationWaitLatency +=
@@ -3100,6 +3092,38 @@ void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
     }
   }
   this->inflyComputations.emplace_front(element, result, readyCycle);
+}
+
+void LLCStreamEngine::recordComputationMicroOps(Stream *S) {
+  auto microOps = S->getComputationNumMicroOps();
+  auto category = S->getComputationCategory();
+
+#define record_micro_ops(Addr, Compute)                                        \
+  if (category.first == Stream::ComputationType::Compute &&                    \
+      category.second == Stream::ComputationAddressPattern::Addr) {            \
+    this->controller->m_statLLCScheduled##Addr##Compute##MicroOps += microOps; \
+  }
+  record_micro_ops(Affine, LoadCompute);
+  record_micro_ops(Affine, StoreCompute);
+  record_micro_ops(Affine, AtomicCompute);
+  record_micro_ops(Affine, Update);
+  record_micro_ops(Affine, Reduce);
+  record_micro_ops(Indirect, LoadCompute);
+  record_micro_ops(Indirect, StoreCompute);
+  record_micro_ops(Indirect, AtomicCompute);
+  record_micro_ops(Indirect, Update);
+  record_micro_ops(Indirect, Reduce);
+  record_micro_ops(PointerChase, LoadCompute);
+  record_micro_ops(PointerChase, StoreCompute);
+  record_micro_ops(PointerChase, AtomicCompute);
+  record_micro_ops(PointerChase, Update);
+  record_micro_ops(PointerChase, Reduce);
+  record_micro_ops(MultiAffine, LoadCompute);
+  record_micro_ops(MultiAffine, StoreCompute);
+  record_micro_ops(MultiAffine, AtomicCompute);
+  record_micro_ops(MultiAffine, Update);
+  record_micro_ops(MultiAffine, Reduce);
+#undef record_micro_ops
 }
 
 void LLCStreamEngine::startComputation() {

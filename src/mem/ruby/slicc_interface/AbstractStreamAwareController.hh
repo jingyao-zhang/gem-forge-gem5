@@ -275,11 +275,26 @@ public:
   // Stats for stream computing.
   Stats::Scalar m_statLLCScheduledComputation;
   Stats::Scalar m_statLLCScheduledComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledLoadComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledStoreComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledAtomicComputeMicroOps;
-  Stats::Scalar m_statLLCScheduledReduceMicroOps;
-  Stats::Scalar m_statLLCScheduledUpdateMicroOps;
+  Stats::Scalar m_statLLCScheduledAffineLoadComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledAffineReduceMicroOps;
+  Stats::Scalar m_statLLCScheduledAffineUpdateMicroOps;
+  Stats::Scalar m_statLLCScheduledAffineStoreComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledAffineAtomicComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledIndirectLoadComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledIndirectReduceMicroOps;
+  Stats::Scalar m_statLLCScheduledIndirectUpdateMicroOps;
+  Stats::Scalar m_statLLCScheduledIndirectStoreComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledIndirectAtomicComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledPointerChaseLoadComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledPointerChaseReduceMicroOps;
+  Stats::Scalar m_statLLCScheduledPointerChaseUpdateMicroOps;
+  Stats::Scalar m_statLLCScheduledPointerChaseStoreComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledPointerChaseAtomicComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledMultiAffineLoadComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledMultiAffineReduceMicroOps;
+  Stats::Scalar m_statLLCScheduledMultiAffineUpdateMicroOps;
+  Stats::Scalar m_statLLCScheduledMultiAffineStoreComputeMicroOps;
+  Stats::Scalar m_statLLCScheduledMultiAffineAtomicComputeMicroOps;
 
   Stats::Scalar m_statLLCPerformedAtomics;
   Stats::Scalar m_statLLCCommittedAtomics;

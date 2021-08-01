@@ -442,6 +442,7 @@ private:
   void pushReadyComputation(LLCStreamElementPtr &element);
   void pushInflyComputation(LLCStreamElementPtr &element,
                             const StreamValue &result, Cycles &latency);
+  void recordComputationMicroOps(Stream *S);
   void startComputation();
   void completeComputation();
 };
