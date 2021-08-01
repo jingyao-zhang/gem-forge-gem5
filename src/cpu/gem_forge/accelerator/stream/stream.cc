@@ -950,11 +950,14 @@ Stream::ComputationCategory Stream::getComputationCategory() const {
 
   int numAffineLoadS = 0;
   int numPointerChaseS = 0;
+  int numIndirectLoadS = 0;
   for (auto valBaseS : this->valueBaseStreams) {
     if (valBaseS->isDirectLoadStream()) {
       numAffineLoadS++;
     } else if (valBaseS->isPointerChase()) {
       numPointerChaseS++;
+    } else if (valBaseS->isLoadStream()) {
+      numIndirectLoadS++;
     }
   }
   for (auto backBaseS : this->backBaseStreams) {
@@ -962,24 +965,41 @@ Stream::ComputationCategory Stream::getComputationCategory() const {
       numAffineLoadS++;
     } else if (backBaseS->isPointerChase()) {
       numPointerChaseS++;
+    } else if (backBaseS->isLoadStream()) {
+      numIndirectLoadS++;
     }
   }
-  if (numAffineLoadS > 1) {
-    this->memorizedComputationCategory.second =
-        ComputationAddressPattern::MultiAffine;
-  } else if (numAffineLoadS == 1) {
-    this->memorizedComputationCategory.second =
-        ComputationAddressPattern::Affine;
-  } else if (numPointerChaseS > 0) {
-    this->memorizedComputationCategory.second =
-        ComputationAddressPattern::PointerChase;
-  } else {
-    if (this->isDirectMemStream()) {
+
+  if (this->isAtomicComputeStream() || this->isLoadComputeStream() ||
+      this->isStoreComputeStream() || this->isUpdateStream()) {
+    if (numAffineLoadS > 1) {
+      this->memorizedComputationCategory.second =
+          ComputationAddressPattern::MultiAffine;
+    } else if (this->isDirectMemStream()) {
       this->memorizedComputationCategory.second =
           ComputationAddressPattern::Affine;
+    } else if (this->isPointerChaseLoadStream()) {
+      this->memorizedComputationCategory.second =
+          ComputationAddressPattern::PointerChase;
     } else {
       this->memorizedComputationCategory.second =
           ComputationAddressPattern::Indirect;
+    }
+  } else {
+    if (numAffineLoadS > 1) {
+      this->memorizedComputationCategory.second =
+          ComputationAddressPattern::MultiAffine;
+    } else if (numIndirectLoadS > 0) {
+      this->memorizedComputationCategory.second =
+          ComputationAddressPattern::Indirect;
+    } else if (numAffineLoadS == 1) {
+      this->memorizedComputationCategory.second =
+          ComputationAddressPattern::Affine;
+    } else if (numPointerChaseS > 0) {
+      this->memorizedComputationCategory.second =
+          ComputationAddressPattern::PointerChase;
+    } else {
+      S_PANIC(this, "Unkown Address.");
     }
   }
 
