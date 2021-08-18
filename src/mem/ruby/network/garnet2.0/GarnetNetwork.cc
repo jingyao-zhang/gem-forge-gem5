@@ -42,6 +42,7 @@
 #include "mem/ruby/network/garnet2.0/NetworkLink.hh"
 #include "mem/ruby/network/garnet2.0/Router.hh"
 #include "mem/ruby/system/RubySystem.hh"
+#include "sim/stream_nuca/stream_nuca_map.hh"
 
 using namespace std;
 
@@ -116,6 +117,11 @@ GarnetNetwork::init()
         m_num_rows = getNumRows();
         m_num_cols = m_routers.size() / m_num_rows;
         assert(m_num_rows * m_num_cols == m_routers.size());
+
+        /**
+         * Notify the StreamNUCAMap about the topology information.
+         */
+        StreamNUCAMap::initializeTopology(this->getNumRows(), this->getNumCols());
     } else {
         m_num_rows = -1;
         m_num_cols = -1;

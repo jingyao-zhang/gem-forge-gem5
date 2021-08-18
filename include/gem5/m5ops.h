@@ -66,6 +66,9 @@ void m5_work_mark(uint64_t workid, uint64_t threadid);
 void m5_llvm_trace_map(const char *base, void *vaddr);
 void m5_llvm_trace_replay(const char *trace, void *vaddr);
 
+void m5_stream_nuca_region(void *buffer, uint64_t elementSize, uint64_t numElement);
+void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
+
 void m5_se_syscall();
 void m5_se_page_fault();
 

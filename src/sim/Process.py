@@ -73,6 +73,7 @@ class Process(SimObject):
         "switch cpu when encounter this mark")
     markEnd = Param.Int64(-1,
         "end when encounter this mark")
+    enableStreamNUCA = Param.Bool(False, "Enable Stream NUCA.")
 
     @classmethod
     def export_methods(cls, code):

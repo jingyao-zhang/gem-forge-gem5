@@ -87,7 +87,7 @@ def create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
                                       intlvMatch = i)
                                 
     # Set options for DRAMSim2 controller.
-    if issubclass(cls, m5.objects.DRAMSim2):
+    if hasattr(m5.objects, 'DRAMSim2') and issubclass(cls, m5.objects.DRAMSim2):
         ctrl.filePath = options.dramsim2_path
         ctrl.deviceConfigFile = options.dramsim2_device_config_file
         ctrl.systemConfigFile = options.dramsim2_system_config_file

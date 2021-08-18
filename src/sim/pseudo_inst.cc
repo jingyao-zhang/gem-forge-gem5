@@ -73,6 +73,7 @@
 #include "sim/stats.hh"
 #include "sim/system.hh"
 #include "sim/vptr.hh"
+#include "sim/stream_nuca/stream_nuca_manager.hh"
 
 using namespace std;
 using namespace Stats;
@@ -655,6 +656,27 @@ llvmtracereplay(ThreadContext *tc, uint64_t trace_ptr, uint64_t vaddr)
     }
     llvm_trace_cpu_driver->replay(p, tc, reinterpret_cast<Addr>(trace_ptr),
         reinterpret_cast<Addr>(vaddr));
+}
+
+void stream_nuca_region(ThreadContext *tc,
+    Addr start, uint64_t elementSize, uint64_t numElement) {
+    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_region(%p, %lu, %lu).\n",
+        start, elementSize, numElement);
+    tc->getProcessPtr()->streamNUCAManager->defineRegion(
+        start, elementSize, numElement);
+}
+
+void stream_nuca_align(ThreadContext *tc,
+    Addr A, Addr B, uint64_t elementOffset) {
+    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_align(%p, %p, %ld).\n",
+        A, B, elementOffset);
+    tc->getProcessPtr()->streamNUCAManager->defineAlign(
+        A, B, elementOffset);
+}
+
+void stream_nuca_remap(ThreadContext *tc) {
+    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_remap().\n");
+    tc->getProcessPtr()->streamNUCAManager->remap();
 }
 
 } // namespace PseudoInst

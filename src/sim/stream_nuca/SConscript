@@ -1,0 +1,12 @@
+Import('*')
+
+Source('stream_nuca_manager.cc')
+Source('stream_nuca_map.cc')
+
+DebugFlag('StreamNUCAManager')
+DebugFlag('StreamNUCAMap')
+
+CompoundFlag('StreamNUCA', [
+	'StreamNUCAManager',
+	'StreamNUCAMap',
+])

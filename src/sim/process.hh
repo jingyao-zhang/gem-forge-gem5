@@ -61,6 +61,7 @@ class SyscallDesc;
 class SyscallReturn;
 class System;
 class ThreadContext;
+class StreamNUCAManager;
 
 class Process : public SimObject
 {
@@ -295,6 +296,11 @@ class Process : public SimObject
 
     // Process was forked with SIGCHLD set.
     bool *sigchld;
+
+    /**
+     * Stream NUCA placement manager.
+     */
+    std::shared_ptr<StreamNUCAManager> streamNUCAManager;
 };
 
 #endif // __PROCESS_HH__

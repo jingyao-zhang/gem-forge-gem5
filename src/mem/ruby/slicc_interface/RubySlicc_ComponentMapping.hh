@@ -35,6 +35,8 @@
 #include "mem/ruby/protocol/MachineType.hh"
 #include "mem/ruby/structures/DirectoryMemory.hh"
 
+#include "sim/stream_nuca/stream_nuca_map.hh"
+
 inline NetDest
 broadcast(MachineType type)
 {
@@ -50,6 +52,17 @@ inline MachineID
 mapAddressToRange(Addr addr, MachineType type, int low_bit,
                   int num_bits, int cluster_id = 0)
 {
+    /**
+     * ! StreamNUCA
+     * Intercept the mapping for LLC bank to enable StreamNUCA.
+     */
+    if (type == MachineType::MachineType_L2Cache) {
+        auto bank = StreamNUCAMap::getBank(addr);
+        if (bank != -1) {
+            MachineID mach = {type, static_cast<NodeID>(bank)};
+            return mach;
+        }
+    }
     MachineID mach = {type, 0};
     if (num_bits == 0)
         mach.num = cluster_id;

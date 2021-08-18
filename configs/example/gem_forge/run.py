@@ -228,6 +228,9 @@ parser.add_option("--gem-forge-stream-engine-llc-neighbor-migration-delay", acti
 parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-computing",
                   action="store_true", default="False",
                   help="Enable per element computation offloading.")
+parser.add_option("--gem-forge-enable-stream-nuca",
+                  action="store_true", default="False",
+                  help="Enable stream nuca.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

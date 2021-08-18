@@ -67,6 +67,7 @@
 #include "sim/sim_exit.hh"
 #include "sim/syscall_desc.hh"
 #include "sim/system.hh"
+#include "sim/stream_nuca/stream_nuca_manager.hh"
 
 using namespace std;
 using namespace TheISA;
@@ -167,6 +168,9 @@ Process::Process(ProcessParams *params, EmulationPageTable *pTable,
             ::Loader::debugSymbolTable = nullptr;
         }
     }
+
+    this->streamNUCAManager = std::make_shared<StreamNUCAManager>(
+        this, params->enableStreamNUCA);
 }
 
 void
@@ -192,6 +196,7 @@ Process::clone(ThreadContext *otc, ThreadContext *ntc,
         np->pTable = pTable;
 
         np->memState = memState;
+        np->streamNUCAManager = this->streamNUCAManager;
     } else {
         /**
          * Duplicate the process memory address space. The state needs to be
@@ -208,6 +213,7 @@ Process::clone(ThreadContext *otc, ThreadContext *ntc,
         }
 
         *np->memState = *memState;
+        *np->streamNUCAManager = *streamNUCAManager;
     }
 
     if (CLONE_FILES & flags) {

@@ -40,10 +40,6 @@
 
 #include "mem/ruby/slicc_interface/AbstractController.hh"
 
-// ! Sean: StreamAwareCache
-// For the mapAddressToRange().
-#include "mem/ruby/slicc_interface/RubySlicc_ComponentMapping.hh"
-
 #include "debug/RubyQueue.hh"
 #include "mem/ruby/network/Network.hh"
 #include "mem/ruby/protocol/MemoryMsg.hh"

@@ -111,6 +111,7 @@ class EmulationPageTable : public Serializable
 
     // for DPRINTF compatibility
     const std::string name() const { return _name; }
+    Addr getPageSize() const { return pageSize; }
 
     Addr pageAlign(Addr a)  { return (a & ~offsetMask); }
     Addr pageOffset(Addr a) { return (a &  offsetMask); }
