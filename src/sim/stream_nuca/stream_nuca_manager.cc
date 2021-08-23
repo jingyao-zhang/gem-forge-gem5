@@ -24,7 +24,7 @@ void StreamNUCAManager::defineRegion(Addr start, uint64_t elementSize,
 }
 
 void StreamNUCAManager::defineAlign(Addr A, Addr B, uint64_t elementOffset) {
-  DPRINTF(StreamNUCAManager, "Define Align %#x %#x Offlset %lu.\n", A, B,
+  DPRINTF(StreamNUCAManager, "Define Align %#x %#x Offset %lu.\n", A, B,
           elementOffset);
   auto &regionA = this->getRegionFromStartVAddr(A);
   regionA.aligns.emplace_back(A, B, elementOffset);
@@ -49,7 +49,7 @@ void StreamNUCAManager::remap() {
 
     auto endPAddr = startPAddr + region.elementSize * region.numElement;
 
-    uint64_t interleave = 1024;
+    uint64_t interleave = this->determineInterleave(region);
     int startBank = 0;
     StreamNUCAMap::addRangeMap(startPAddr, endPAddr, interleave, startBank);
     DPRINTF(StreamNUCAManager,
@@ -99,4 +99,57 @@ Addr StreamNUCAManager::translate(Addr vaddr) {
     panic("StreamNUCAManager failed to translate VAddr %#x.", vaddr);
   }
   return paddr;
+}
+
+uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
+  const uint64_t defaultInterleave = 1024;
+  uint64_t interleave = defaultInterleave;
+
+  auto numRows = StreamNUCAMap::getNumRows();
+  auto numCols = StreamNUCAMap::getNumCols();
+  auto numBanks = numRows * numCols;
+
+  auto defaultWrapAroundBytes = defaultInterleave * numBanks;
+  auto defaultColWrapAroundBytes = defaultInterleave * numCols;
+
+  for (const auto &align : region.aligns) {
+    const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
+
+    auto elementOffset = align.elementOffset;
+    auto bytesOffset = elementOffset * alignToRegion.elementSize;
+    DPRINTF(StreamNUCAManager,
+            "Range %#x AlignTo %#x Offset Element %lu Bytes %lu.\n",
+            region.vaddr, alignToRegion.vaddr, elementOffset, bytesOffset);
+
+    if ((&alignToRegion) == (&region)) {
+      // Self alignment.
+      if ((bytesOffset % defaultWrapAroundBytes) == 0) {
+        // Already aligned.
+        DPRINTF(StreamNUCAManager, "Range %#x Self Aligned.\n", region.vaddr);
+      } else if ((bytesOffset % defaultColWrapAroundBytes) == 0) {
+        // Try to align with one row.
+        interleave =
+            bytesOffset / defaultColWrapAroundBytes * defaultInterleave;
+        DPRINTF(
+            StreamNUCAManager,
+            "Range %#x Self Aligned To Row Interleave %lu = %lu / %lu * %lu.\n",
+            interleave, bytesOffset, defaultColWrapAroundBytes,
+            defaultInterleave);
+      } else {
+        panic("Not Support Yet: Range %#x Self Align ElementOffset %lu "
+              "ByteOffset %lu.\n",
+              region.vaddr, align.elementOffset, bytesOffset);
+      }
+    } else {
+      // Other alignment.
+      auto otherInterleave = this->determineInterleave(alignToRegion);
+      DPRINTF(StreamNUCAManager,
+              "Range %#x Align to Range %#x Interleave = %lu / %lu * %lu.\n",
+              region.vaddr, alignToRegion.vaddr, otherInterleave,
+              alignToRegion.elementSize, region.elementSize);
+      interleave =
+          otherInterleave / alignToRegion.elementSize * region.elementSize;
+    }
+  }
+  return interleave;
 }

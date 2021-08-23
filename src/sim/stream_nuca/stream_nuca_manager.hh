@@ -50,6 +50,8 @@ private:
   bool isPAddrContinuous(const StreamRegion &region);
 
   Addr translate(Addr vaddr);
+
+  uint64_t determineInterleave(const StreamRegion &region);
 };
 
 #endif
