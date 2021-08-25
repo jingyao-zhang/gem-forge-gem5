@@ -62,14 +62,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
    * ! are actually the lowest priority.
    */
 
-  MessageBuffer * streamIndirectToL2Cache, network="To", virtual_network="3",
+  MessageBuffer * streamIndirectFromL2Cache, network="To", virtual_network="3",
     vnet_type="StreamIndirectRequest"; // this L2 bank -> other L2 bank
-  MessageBuffer * streamIndirectFromL2Cache, network="From", virtual_network="3",
+  MessageBuffer * streamIndirectToL2Cache, network="From", virtual_network="3",
     vnet_type="StreamIndirectRequest"; // other L2 bank -> this L2 bank
   
-  MessageBuffer * streamMigrateToL2Cache, network="To", virtual_network="4",
+  MessageBuffer * streamMigrateFromL2Cache, network="To", virtual_network="4",
     vnet_type="StreamMigrateRequest"; // this L2 bank -> other L2 bank
-  MessageBuffer * streamMigrateFromL2Cache, network="From", virtual_network="4",
+  MessageBuffer * streamMigrateToL2Cache, network="From", virtual_network="4",
     vnet_type="StreamMigrateRequest"; // other L2 bank -> this L2 bank
 
 {
@@ -208,7 +208,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamNDCRequest(PacketPtr);
   }
 
-  LLCStreamEngine se, constructor="this, m_streamMigrateToL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectToL2Cache_ptr, m_responseFromL2Cache_ptr";
+  LLCStreamEngine se, constructor="this, m_streamMigrateFromL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectFromL2Cache_ptr, m_responseFromL2Cache_ptr";
 
   Tick clockEdge();
   Tick cyclesToTicks(Cycles c);
@@ -375,9 +375,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   out_port(responseL2Network_out, ResponseMsg, responseFromL2Cache);
 
   // ! Sean: StreamAwareCache
-  // For the stream migrate request.
-  out_port(streamMigrateToL2Cache_out, StreamMigrateRequestMsg, streamMigrateFromL2Cache);
-  out_port(streamIndirectToL2Cache_out, RequestMsg, streamIndirectFromL2Cache);
+  // For the stream migrate and indirect request.
+  out_port(streamMigrateFromL2Cache_out, StreamMigrateRequestMsg, streamMigrateFromL2Cache);
+  out_port(streamIndirectFromL2Cache_out, RequestMsg, streamIndirectFromL2Cache);
 
   in_port(L1unblockNetwork_in, ResponseMsg, unblockToL2Cache, rank = 4) {
     if(L1unblockNetwork_in.isReady(clockEdge())) {
@@ -532,18 +532,15 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   // ! Sean: StreamAwareCache
   // Stream indirect request.
-  in_port(streamIndirectFromL2Cache_in, RequestMsg, streamIndirectFromL2Cache, rank = 1) {
-    if(streamIndirectFromL2Cache_in.isReady(clockEdge())) {
-      peek(streamIndirectFromL2Cache_in,  RequestMsg) {
-        // Entry cache_entry := getCacheEntry(in_msg.addr);
-        // TBE tbe := TBEs[in_msg.addr];
+  in_port(streamIndirectToL2Cache_in, RequestMsg, streamIndirectToL2Cache, rank = 1) {
+    if(streamIndirectToL2Cache_in.isReady(clockEdge())) {
+      peek(streamIndirectToL2Cache_in,  RequestMsg) {
 
         // This requestor is not the LLC bank generating this request,
         // but the host L1 controller to receive the data.
         // assert(machineIDToMachineType(in_msg.XXNewRewquestor.singleElement()) == MachineType:L1Cache);
         assert(in_msg.Destination.isElement(machineID));
 
-        // ! Sean: StreamAwareCache
         assert(in_msg.sliceIds.isValid());
 
         DPRINTF(RubyStream, "Received stream indirect request [%lu, +%lu) %#x.\n", 
@@ -558,7 +555,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
         // Dequeue from the indirect message buffer.
         incrementLLCIndReqQueueStats();
-        Tick delay := streamIndirectFromL2Cache_in.dequeue(clockEdge());
+        Tick delay := streamIndirectToL2Cache_in.dequeue(clockEdge());
         profileMsgDelay(3, ticksToCycles(delay));
       }
     }
@@ -566,11 +563,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   // ! Sean: StreamAwareCache
   // Stream migrate request.
-  in_port(streamMigrateFromL2Cache_in, StreamMigrateRequestMsg, streamMigrateFromL2Cache, rank = 0) {
-    if(streamMigrateFromL2Cache_in.isReady(clockEdge())) {
-      peek(streamMigrateFromL2Cache_in,  StreamMigrateRequestMsg) {
+  in_port(streamMigrateToL2Cache_in, StreamMigrateRequestMsg, streamMigrateToL2Cache, rank = 0) {
+    if(streamMigrateToL2Cache_in.isReady(clockEdge())) {
+      peek(streamMigrateToL2Cache_in, StreamMigrateRequestMsg) {
         se.receiveStreamMigrate(in_msg.Stream, in_msg.IsCommit);
-        Tick delay := streamMigrateFromL2Cache_in.dequeue(clockEdge());
+        Tick delay := streamMigrateToL2Cache_in.dequeue(clockEdge());
         profileMsgDelay(3, ticksToCycles(delay));
       }
     }

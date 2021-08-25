@@ -232,6 +232,10 @@ parser.add_option("--gem-forge-enable-stream-nuca",
                   action="store_true", default="False",
                   help="Enable stream nuca.")
 
+# Stream Floating in Mem Options.
+parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,
+                  help="Enable stream float in Mem Ctrl.")
+
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)
 parser.add_option("--gem-forge-adfa-core-issue-width", action="store", type="int", default="16")

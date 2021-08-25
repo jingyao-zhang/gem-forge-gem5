@@ -123,6 +123,14 @@ void LLCDynamicStream::setTotalTripCount(int64_t totalTripCount) {
   }
 }
 
+MachineType LLCDynamicStream::getOffloadedMachineType() const {
+  if (this->baseStream) {
+    return this->baseStream->getOffloadedMachineType();
+  } else {
+    return this->configData->offloadedMachineType;
+  }
+}
+
 Addr LLCDynamicStream::peekNextInitVAddr() const {
   return this->slicedStream.peekNextSlice().vaddr;
 }
@@ -395,6 +403,7 @@ void LLCDynamicStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
     }
 
     // Push into our queue.
+    LLC_SLICE_DPRINTF(sliceId, "DirectStreamSlice Initialized.\n");
     this->slices.push_back(slice);
   }
 }
@@ -784,9 +793,9 @@ void LLCDynamicStream::allocateLLCStream(
 
   assert(config->initPAddrValid && "Initial paddr should be valid now.");
   auto initPAddr = config->initPAddr;
-  auto mlcMachineId = mlcController->getMachineID();
-  auto llcMachineId = mlcController->mapAddressToLLC(
-      initPAddr, static_cast<MachineType>(mlcMachineId.type + 1));
+
+  auto llcMachineId = mlcController->mapAddressToLLCOrMem(
+      initPAddr, config->offloadedMachineType);
   auto llcController =
       AbstractStreamAwareController::getController(llcMachineId);
 
@@ -856,12 +865,24 @@ Cycles LLCDynamicStream::curCycle() const {
   return this->mlcController->curCycle();
 }
 
-int LLCDynamicStream::curLLCBank() const {
+int LLCDynamicStream::curRemoteBank() const {
   if (this->llcController) {
     return this->llcController->getMachineID().num;
   } else {
     return -1;
   }
+}
+
+const char *LLCDynamicStream::curRemoteMachineType() const {
+  if (this->llcController) {
+    auto type = this->llcController->getMachineID().type;
+    if (type == MachineType::MachineType_L2Cache) {
+      return "LLC";
+    } else if (type == MachineType::MachineType_Directory) {
+      return "MEM";
+    }
+  }
+  return "XXX";
 }
 
 bool LLCDynamicStream::hasComputation() const {
@@ -965,12 +986,19 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
   assert(this->incompleteComputations >= 0 &&
          "Negative incomplete computations.");
 
+  const auto seMachineID = se->controller->getMachineID();
+  if (seMachineID.getType() != this->getOffloadedMachineType()) {
+    LLC_ELEMENT_PANIC(element, "OffloadMachineType %s != SE MachineType %s.",
+                      MachineType_to_string(this->getOffloadedMachineType()),
+                      MachineIDToString(seMachineID));
+  }
+
   if (S->isReduction() || S->isPointerChaseIndVar()) {
     if (this->isIndirectReduction()) {
       /**
        * If this is IndirectReductionStream, perform the real computation.
-       * Notice that here we charge zero latency, as we already charged it when
-       * schedule the computation.
+       * Notice that here we charge zero latency, as we already charged it
+       * when schedule the computation.
        */
       LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynamicStreamId(),
                      "[IndirectReduction] Start real computation from "
@@ -997,17 +1025,18 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
           break;
         }
         // Really do the computation.
-        LLC_S_DPRINTF_(
-            LLCRubyStreamReduce, this->getDynamicStreamId(),
-            "[IndirectReduction] Really computed NextComputingElement %llu.\n",
-            nextComputingElementIdx);
+        LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynamicStreamId(),
+                       "[IndirectReduction] Really computed "
+                       "NextComputingElement %llu.\n",
+                       nextComputingElementIdx);
         auto result = this->computeStreamElementValue(nextComputingElement);
         nextComputingElement->setValue(result);
         this->lastComputedReductionElementIdx++;
       }
     } else {
       /**
-       * If this is DirectReductionStream, check and schedule the next element.
+       * If this is DirectReductionStream, check and schedule the next
+       * element.
        */
       if (this->lastComputedReductionElementIdx + 1 != element->idx) {
         LLC_S_PANIC(this->getDynamicStreamId(),
@@ -1018,7 +1047,8 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
         auto &nextElement = this->idxToElementMap.at(element->idx + 1);
         if (nextElement->areBaseElementsReady()) {
           /**
-           * We need to push the computation to the LLC SE at the correct bank.
+           * We need to push the computation to the LLC SE at the correct
+           * bank.
            */
           LLCStreamEngine *nextComputeSE = se;
           for (const auto &baseElement : nextElement->baseElements) {
@@ -1031,8 +1061,8 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
               Addr paddr;
               assert(this->baseStream->translateToPAddr(vaddr, paddr) &&
                      "Failed to translate for NextReductionBaseElement.");
-              auto llcMachineID = this->mlcController->mapAddressToLLC(
-                  paddr, se->controller->getMachineID().getType());
+              auto llcMachineID = this->mlcController->mapAddressToLLCOrMem(
+                  paddr, seMachineID.getType());
               nextComputeSE =
                   AbstractStreamAwareController::getController(llcMachineID)
                       ->getLLCStreamEngine();

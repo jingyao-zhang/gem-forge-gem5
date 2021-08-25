@@ -82,14 +82,18 @@
   panic(MLC_SLICE_MSG(sliceId, format, ##args))
 
 #define LLC_S_MSG(streamId, format, args...)                                   \
-  "[LLC_SE%d]%s: " format, this->curLLCBank(), (streamId), ##args
+  "[%s_SE%d]%s: " format, this->curRemoteMachineType(), this->curRemoteBank(), \
+      (streamId), ##args
 #define LLC_SLICE_MSG(sliceId, format, args...)                                \
-  "[LLC_SE%d]%s: " format, this->curLLCBank(), (sliceId), ##args
+  "[%s_SE%d]%s: " format, this->curRemoteMachineType(), this->curRemoteBank(), \
+      (sliceId), ##args
 #define LLC_SE_MSG(format, args...)                                            \
-  "[LLC_SE%d]: " format, this->curLLCBank(), ##args
+  "[%s_SE%d]: " format, this->curRemoteMachineType(), this->curRemoteBank(),   \
+      ##args
 #define LLC_ELEMENT_MSG(element, format, args...)                              \
-  "[LLC_SE%d]%s%lu-: " format, (element)->curLLCBank(),                        \
-      (element)->dynStreamId, (element)->idx, ##args
+  "[%s_SE%d]%s%lu-: " format, (element)->curRemoteMachineType(),               \
+      (element)->curRemoteBank(), (element)->dynStreamId, (element)->idx,      \
+      ##args
 
 #define LLC_S_DPRINTF_(X, streamId, format, args...)                           \
   DPRINTF(X, LLC_S_MSG(streamId, format, ##args))

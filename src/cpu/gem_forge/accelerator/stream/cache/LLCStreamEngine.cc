@@ -83,8 +83,12 @@ int LLCStreamEngine::getNumDirectStreamsWithStaticId(
   return count;
 }
 
-int LLCStreamEngine::curLLCBank() const {
+int LLCStreamEngine::curRemoteBank() const {
   return this->controller->getMachineID().num;
+}
+
+const char *LLCStreamEngine::curRemoteMachineType() const {
+  return this->controller->getMachineTypeString();
 }
 
 void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
@@ -578,7 +582,7 @@ void LLCStreamEngine::receiveStoreStreamData(
 
 bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
   /**
-   * In this implementation, the LLC stream will aggressively
+   * In this implementation, the stream will aggressively
    * migrate to the next element bank, even the credit has only been allocated
    * to the previous element. Therefore, we do not need to check if the next
    * element is allocated.
@@ -1779,11 +1783,12 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
         CoherenceRequestType_to_string(req.requestType), sliceId.vaddr,
         paddrLine, req.dataBlock);
   } else {
-    destMachineId = this->mapPaddrToLLCBank(paddrLine);
+    destMachineId = this->mapPaddrToSameLevelBank(paddrLine);
     LLC_SLICE_DPRINTF(
         sliceId,
-        "Issue [remote] %s request to LLC%d inqueue %d buffered %d value %s.\n",
-        CoherenceRequestType_to_string(req.requestType), destMachineId.num,
+        "Issue [remote] %s request to %s inqueue %d buffered %d value %s.\n",
+        CoherenceRequestType_to_string(req.requestType),
+        MachineIDToString(destMachineId),
         this->streamIndirectIssueMsgBuffer->getSize(curTick()),
         this->indReqBuffer->getTotalBufferedRequests(), req.dataBlock);
   }
@@ -1791,9 +1796,8 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = req.requestType;
-  msg->m_XXNewRewquestor.add(
-      MachineID(static_cast<MachineType>(selfMachineId.type - 1),
-                sliceId.getDynStreamId().coreId));
+  msg->m_XXNewRewquestor.add(MachineID(MachineType::MachineType_L1Cache,
+                                       sliceId.getDynStreamId().coreId));
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
@@ -1876,7 +1880,7 @@ LLCStreamEngine::ResponseMsgPtr LLCStreamEngine::createStreamMsgToMLC(
     Addr paddrLine, const uint8_t *data, int dataSize, int payloadSize,
     int lineOffset) {
   auto selfMachineId = this->controller->getMachineID();
-  MachineID mlcMachineId(static_cast<MachineType>(selfMachineId.type - 1),
+  MachineID mlcMachineId(MachineType::MachineType_L1Cache,
                          sliceId.getDynStreamId().coreId);
 
   auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
@@ -2080,7 +2084,7 @@ void LLCStreamEngine::migrateStreams() {
     if (!stream->translateToPAddr(nextVAddr, nextPAddr)) {
       LLC_S_PANIC(stream->getDynamicStreamId(), "Fault on migrating stream.");
     }
-    auto nextMachineId = this->controller->mapAddressToLLC(
+    auto nextMachineId = this->controller->mapAddressToMachine(
         makeLineAddress(nextPAddr), this->controller->getMachineID().getType());
     if (!this->migrateController->canMigrateTo(stream, nextMachineId)) {
       ++streamIter;
@@ -2103,7 +2107,7 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   Addr paddrLine = makeLineAddress(paddr);
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
-      this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
+      this->controller->mapAddressToLLCOrMem(paddrLine, selfMachineId.type);
 
   LLC_S_DPRINTF(stream->getDynamicStreamId(),
                 "Migrate to LLC%d, InflyReq %d AdvancedMigration %d IndirectS "
@@ -2138,7 +2142,7 @@ void LLCStreamEngine::migrateStreamCommit(LLCDynamicStream *stream,
   Addr paddrLine = makeLineAddress(paddr);
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
-      this->controller->mapAddressToLLC(paddrLine, selfMachineId.type);
+      this->controller->mapAddressToLLCOrMem(paddrLine, selfMachineId.type);
 
   LLC_S_DPRINTF_(StreamRangeSync, stream->getDynamicStreamId(),
                  "[Commit] Migrate to LLC%d.\n", addrMachineId.num);
@@ -2161,17 +2165,17 @@ void LLCStreamEngine::migrateStreamCommit(LLCDynamicStream *stream,
       this->controller->cyclesToTicks(latency));
 }
 
-MachineID LLCStreamEngine::mapPaddrToLLCBank(Addr paddr) const {
+MachineID LLCStreamEngine::mapPaddrToSameLevelBank(Addr paddr) const {
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
-      this->controller->mapAddressToLLC(paddr, selfMachineId.type);
+      this->controller->mapAddressToLLCOrMem(paddr, selfMachineId.type);
   return addrMachineId;
 }
 
 bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr) const {
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
-      this->controller->mapAddressToLLC(paddr, selfMachineId.type);
+      this->controller->mapAddressToLLCOrMem(paddr, selfMachineId.getType());
   return addrMachineId == selfMachineId;
 }
 

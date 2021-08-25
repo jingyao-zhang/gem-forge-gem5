@@ -168,6 +168,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
                 enable_stream_range_sync=\
                     options.gem_forge_enable_stream_range_sync,
+                enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
                 )
 
             cpu_seq = RubySequencer(version=i * num_cpus_per_cluster + j,
@@ -246,8 +247,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
                 mlc_stream_buffer_to_segment_ratio=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_to_segment_ratio,
-                enable_stream_range_sync=\
-                    options.gem_forge_enable_stream_range_sync,
+                enable_stream_range_sync=options.gem_forge_enable_stream_range_sync,
+                enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
                 )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"
@@ -355,6 +356,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_neighbor_stream_threshold,
                 llc_neighbor_migration_delay=\
                     options.gem_forge_stream_engine_llc_neighbor_migration_delay,
+                enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
                 )
 
             exec("ruby_system.l2_cntrl%d = l2_cntrl"
@@ -408,6 +410,43 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.responseFromDir.master = ruby_system.network.slave
         dir_cntrl.requestToMemory = MessageBuffer()
         dir_cntrl.responseFromMemory = MessageBuffer()
+
+        # ! Sean: StreamAwareCache
+        dir_cntrl.streamMigrateFromMem = MessageBuffer()
+        dir_cntrl.streamMigrateFromMem.master = ruby_system.network.slave
+        dir_cntrl.streamMigrateToMem = MessageBuffer()
+        dir_cntrl.streamMigrateToMem.slave = ruby_system.network.master
+
+        dir_cntrl.streamIndirectFromMem = MessageBuffer()
+        dir_cntrl.streamIndirectFromMem.master = ruby_system.network.slave
+        dir_cntrl.streamIndirectToMem = MessageBuffer()
+        dir_cntrl.streamIndirectToMem.slave = ruby_system.network.master
+
+
+        dir_cntrl.num_cores_per_row = num_cores_per_row
+        dir_cntrl.enable_stream_float = options.gem_forge_stream_engine_enable_float
+        dir_cntrl.enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline
+        dir_cntrl.enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack
+        dir_cntrl.enable_stream_idea_flow = options.gem_forge_stream_engine_enable_float_idea_flow
+        dir_cntrl.enable_stream_idea_store = options.gem_forge_stream_engine_enable_float_idea_store
+        dir_cntrl.enable_stream_compact_store = options.gem_forge_stream_engine_enable_float_compact_store
+        dir_cntrl.enable_stream_advance_migrate = options.gem_forge_stream_engine_enable_float_advance_migrate
+        dir_cntrl.enable_stream_multicast = options.gem_forge_stream_engine_enable_float_multicast
+        dir_cntrl.stream_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_group_size
+        dir_cntrl.stream_multicast_issue_policy = options.gem_forge_stream_engine_llc_multicast_issue_policy
+        dir_cntrl.mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
+        dir_cntrl.llc_stream_engine_issue_width = options.gem_forge_stream_engine_llc_stream_engine_issue_width
+        dir_cntrl.llc_stream_engine_migrate_width = options.gem_forge_stream_engine_llc_stream_engine_migrate_width
+        dir_cntrl.llc_stream_max_infly_request = options.gem_forge_stream_engine_llc_stream_max_infly_request
+        dir_cntrl.llc_stream_engine_compute_width = options.gem_forge_stream_engine_compute_width
+        dir_cntrl.llc_stream_engine_max_infly_computation = options.gem_forge_stream_engine_llc_max_infly_computation
+        dir_cntrl.llc_access_core_simd_delay = options.gem_forge_stream_engine_llc_access_core_simd_delay
+        dir_cntrl.enable_llc_stream_zero_compute_latency = options.gem_forge_enable_stream_zero_compute_latency
+        dir_cntrl.enable_stream_range_sync = options.gem_forge_enable_stream_range_sync
+        dir_cntrl.stream_atomic_lock_type = options.gem_forge_stream_atomic_lock_type
+        dir_cntrl.llc_neighbor_stream_threshold = options.gem_forge_stream_engine_llc_neighbor_stream_threshold
+        dir_cntrl.llc_neighbor_migration_delay = options.gem_forge_stream_engine_llc_neighbor_migration_delay
+        dir_cntrl.enable_stream_float_mem = options.gem_forge_stream_engine_enable_float_mem
 
     for i, dma_port in enumerate(dma_ports):
         #

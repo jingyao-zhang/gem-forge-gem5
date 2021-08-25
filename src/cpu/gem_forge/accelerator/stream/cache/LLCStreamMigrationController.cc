@@ -82,7 +82,7 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
 }
 
 int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
-  auto myBank = this->curLLCBank();
+  auto myBank = this->curRemoteBank();
   auto bank = machineId.getNum();
   if (this->controller->isMyNeighbor(machineId)) {
     if (bank + 1 < myBank) {

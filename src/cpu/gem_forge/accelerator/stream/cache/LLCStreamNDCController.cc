@@ -250,9 +250,9 @@ void LLCStreamNDCController::handleForwardNDC(
                     "NDC Forward [local] %#x paddrLine %#x value %s.\n",
                     context.ndc->receiverVAddr, paddrLine, dataBlock);
   } else {
-    destMachineId = llcSE->mapPaddrToLLCBank(paddrLine);
-    LLC_NDC_DPRINTF(context.ndc, "NDC Fwd [remote] to LLC%d value %s.\n",
-                    destMachineId.num, dataBlock);
+    destMachineId = llcSE->mapPaddrToSameLevelBank(paddrLine);
+    LLC_NDC_DPRINTF(context.ndc, "NDC Fwd [remote] to %s value %s.\n",
+                    MachineIDToString(destMachineId), dataBlock);
   }
 
   auto msg = std::make_shared<RequestMsg>(llcSE->controller->clockEdge());

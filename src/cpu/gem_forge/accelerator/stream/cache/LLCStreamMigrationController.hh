@@ -22,7 +22,12 @@ public:
   bool canMigrateTo(LLCDynamicStreamPtr dynS, MachineID machineId);
   void migratedTo(LLCDynamicStreamPtr dynS, MachineID machineId);
 
-  int curLLCBank() const { return this->controller->getMachineID().getNum(); }
+  int curRemoteBank() const {
+    return this->controller->getMachineID().getNum();
+  }
+  const char *curRemoteMachineType() const {
+    return this->controller->getMachineTypeString();
+  }
 
 private:
   AbstractStreamAwareController *controller;

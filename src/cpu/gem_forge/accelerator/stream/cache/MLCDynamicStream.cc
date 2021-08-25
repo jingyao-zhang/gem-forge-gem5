@@ -481,11 +481,10 @@ void MLCDynamicStream::readBlob(Addr vaddr, uint8_t *data, int size) const {
   cpuDelegator->readFromMem(vaddr, size, data);
 }
 
-MachineID MLCDynamicStream::mapPAddrToLLCBank(Addr paddr) const {
-  auto selfMachineId = this->controller->getMachineID();
-  auto llcMachineId = this->controller->mapAddressToLLC(
-      paddr, static_cast<MachineType>(selfMachineId.type + 1));
-  return llcMachineId;
+MachineID MLCDynamicStream::mapPAddrToOffloadedBank(Addr paddr) const {
+  auto offloadedMachineID = this->controller->mapAddressToLLCOrMem(
+      paddr, this->config->offloadedMachineType);
+  return offloadedMachineID;
 }
 
 void MLCDynamicStream::receiveStreamRange(

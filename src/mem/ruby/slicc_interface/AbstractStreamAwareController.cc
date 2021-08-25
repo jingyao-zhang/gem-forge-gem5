@@ -159,13 +159,20 @@ void AbstractStreamAwareController::regStats() {
 }
 
 MachineID
-AbstractStreamAwareController::mapAddressToLLC(Addr addr,
-                                               MachineType mtype) const {
+AbstractStreamAwareController::mapAddressToLLCOrMem(Addr addr,
+                                                    MachineType mtype) const {
   // Ideally we should check mtype to be LLC or directory, etc.
   // But here I ignore it.
-  return mapAddressToRange(addr, mtype, this->llcSelectLowBit,
-                           this->llcSelectNumBits, 0 /* cluster_id. */
-  );
+  if (mtype == MachineType::MachineType_L2Cache) {
+    return mapAddressToRange(addr, mtype, this->llcSelectLowBit,
+                             this->llcSelectNumBits, 0 /* cluster_id. */
+    );
+  } else if (mtype == MachineType::MachineType_Directory) {
+    return this->mapAddressToMachine(addr, mtype);
+  } else {
+    panic("MachineType should only be L2 or Dir, got %s.",
+          MachineType_to_string(mtype));
+  }
 }
 
 Addr AbstractStreamAwareController::getAddressToOurLLC() const {

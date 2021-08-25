@@ -24,6 +24,13 @@ public:
    */
   Addr getLLCTailPAddr() const override;
 
+  /**
+   * Get where the stream is offloaded (LLC or Mem Ctrl).
+   */
+  MachineType getOffloadedMachineType() const override {
+    return this->config->offloadedMachineType;
+  }
+
   void receiveStreamData(const DynamicStreamSliceId &sliceId,
                          const DataBlock &dataBlock, Addr paddrLine) override;
   void receiveReuseStreamData(Addr vaddr, const DataBlock &dataBlock);

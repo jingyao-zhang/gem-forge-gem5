@@ -493,7 +493,6 @@ public:
 
   /**
    * This is used to record offloaded stream's progress.
-   * NOTE: We only do this for stream in EliminatedLoop.
    */
   void incrementOffloadedStepped();
 

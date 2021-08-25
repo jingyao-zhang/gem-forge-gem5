@@ -100,7 +100,10 @@ private:
   void commitPendingOps();
   EventFunctionWrapper commitPendingOpsEvent;
 
-  int curLLCBank() const { return this->se->curLLCBank(); }
+  int curRemoteBank() const { return this->se->curRemoteBank(); }
+  const char *curRemoteMachineType() const {
+    return this->se->curRemoteMachineType();
+  }
 
   Addr getPAddrQueue(Addr paddr) const {
     /**

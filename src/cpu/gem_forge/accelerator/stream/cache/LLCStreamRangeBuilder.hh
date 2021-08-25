@@ -41,7 +41,10 @@ private:
 
   void tryBuildRange();
 
-  int curLLCBank() const { return this->stream->curLLCBank(); }
+  int curRemoteBank() const { return this->stream->curRemoteBank(); }
+  const char *curRemoteMachineType() const {
+    return this->stream->curRemoteMachineType();
+  }
 };
 
 #endif

@@ -1121,10 +1121,7 @@ void Stream::sampleStatistic() {
 }
 
 void Stream::incrementOffloadedStepped() {
-  if (!this->isLoopEliminated()) {
-    return;
-  }
-  se->numOffloadedSteppedSinceLastCheck++;
+  this->se->numOffloadedSteppedSinceLastCheck++;
 }
 
 void Stream::dump() const {

@@ -121,3 +121,5 @@ class RubyStreamAwareController(RubyController):
     llc_neighbor_stream_threshold = \
         Param.UInt32(0, "Number of streams to trigger migration control. 0 to disable.")
     llc_neighbor_migration_delay = Param.UInt32(100, "Number of cycles delay per migrating streams.")
+
+    enable_stream_float_mem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")

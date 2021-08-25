@@ -109,8 +109,6 @@ private:
   MLCDynamicStream *
   getMLCDynamicStreamFromSlice(const DynamicStreamSliceId &slice) const;
 
-  MachineID mapPAddrToLLCBank(Addr paddr) const;
-
   /**
    * An experimental new feature: handle reuse among streams.
    */
@@ -138,6 +136,12 @@ private:
    */
   friend class MLCStreamNDCController;
   std::unique_ptr<MLCStreamNDCController> ndcController;
+
+  /**
+   * Send configure/end message to remote SE.
+   */
+  void sendConfigToRemoteSE(CacheStreamConfigureDataPtr streamConfigureData,
+                            MasterID masterId);
 };
 
 #endif

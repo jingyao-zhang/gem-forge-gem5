@@ -53,6 +53,9 @@ public:
   virtual Addr getLLCTailPAddr() const {
     panic("Should only call this on direct stream.");
   }
+  virtual MachineType getOffloadedMachineType() const {
+    panic("Should only call getOffloadedMachineType() on direct stream.");
+  }
 
   virtual void receiveStreamData(const DynamicStreamSliceId &sliceId,
                                  const DataBlock &dataBlock,
@@ -197,9 +200,9 @@ protected:
   void readBlob(Addr vaddr, uint8_t *data, int size) const;
 
   /**
-   * Map paddr line to LLC bank.
+   * Map paddr line to offloaded bank (LLC or Mem Ctrl).
    */
-  MachineID mapPAddrToLLCBank(Addr paddr) const;
+  MachineID mapPAddrToOffloadedBank(Addr paddr) const;
 
   /**
    * Pop slices. Flags to remember why we are blocked.

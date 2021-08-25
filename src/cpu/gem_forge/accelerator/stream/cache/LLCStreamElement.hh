@@ -36,7 +36,8 @@ public:
 
   Addr vaddr = 0;
 
-  int curLLCBank() const;
+  int curRemoteBank() const;
+  const char *curRemoteMachineType() const;
 
   std::vector<LLCStreamElementPtr> baseElements;
   bool areBaseElementsReady() const {

@@ -96,6 +96,11 @@ public:
   int64_t getTotalTripCount() const;
   void setTotalTripCount(int64_t totalTripCount);
 
+  /**
+   * Query the offloaded machine type.
+   */
+  MachineType getOffloadedMachineType() const;
+
   bool hasIndirectDependent() const {
     auto S = this->getStaticStream();
     return !this->getIndStreams().empty() || this->isPointerChase() ||
@@ -243,7 +248,8 @@ private:
                                 CacheStreamConfigureDataPtr &config);
 
   Cycles curCycle() const;
-  int curLLCBank() const;
+  int curRemoteBank() const;
+  const char *curRemoteMachineType() const;
 
   // This is really just used for memorizing in IndirectStream.
   uint64_t numElementsReadyToIssue = 0;

@@ -31,12 +31,20 @@ LLCStreamElement::~LLCStreamElement() {
                                       this->valueReadyCycle);
 }
 
-int LLCStreamElement::curLLCBank() const {
+int LLCStreamElement::curRemoteBank() const {
   /**
    * So far we don't have a good definition of the current LLC bank for an
    * element.
    */
   return -1;
+}
+
+const char *LLCStreamElement::curRemoteMachineType() const {
+  /**
+   * So far we don't have a good definition of the current remote bank for an
+   * element.
+   */
+  return "XXX";
 }
 
 StreamValue LLCStreamElement::getValue(int offset, int size) const {

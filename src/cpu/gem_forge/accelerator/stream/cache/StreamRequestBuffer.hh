@@ -27,7 +27,10 @@ public:
                       int _maxInqueueRequestsPerStream);
   void pushRequest(RequestPtr request);
 
-  int curLLCBank() const { return this->controller->getMachineID().num; }
+  int curRemoteBank() const { return this->controller->getMachineID().num; }
+  const char *curRemoteMachineType() const {
+    return this->controller->getMachineTypeString();
+  }
 
   int getTotalBufferedRequests() const { return this->totalBufferedRequests; }
 

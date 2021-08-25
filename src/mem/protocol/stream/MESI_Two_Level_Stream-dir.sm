@@ -26,20 +26,39 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-machine(MachineType:Directory, "MESI Two Level directory protocol")
+machine(MachineType:Directory, "MESI Two Level directory protocol", interface="AbstractStreamAwareController")
  : DirectoryMemory * directory;
-   Cycles to_mem_ctrl_latency := 1;
-   Cycles directory_latency := 6;
+  Cycles to_mem_ctrl_latency := 1;
+  Cycles response_latency := 1;
+  Cycles directory_latency := 6;
 
-   MessageBuffer * requestToDir, network="From", virtual_network="0",
-        vnet_type="request";
-   MessageBuffer * responseToDir, network="From", virtual_network="1",
-        vnet_type="response";
-   MessageBuffer * responseFromDir, network="To", virtual_network="1",
-        vnet_type="response";
+  MessageBuffer * requestToDir, network="From", virtual_network="0",
+       vnet_type="request";
+  MessageBuffer * responseToDir, network="From", virtual_network="1",
+       vnet_type="response";
+  MessageBuffer * responseFromDir, network="To", virtual_network="1",
+       vnet_type="response";
 
-   MessageBuffer * requestToMemory;
-   MessageBuffer * responseFromMemory;
+  MessageBuffer * requestToMemory;
+  MessageBuffer * responseFromMemory;
+
+  /**
+   * ! Sean: StreamAwareCache
+   * ! Ruby requires one virtual network per To/From buffer.
+   * ! I use virtual_network 4 for stream migration request, but they
+   * ! are actually the lowest priority.
+   */
+
+  MessageBuffer * streamIndirectFromMem, network="To", virtual_network="3",
+    vnet_type="StreamIndirectRequest"; // this MC -> others
+  MessageBuffer * streamIndirectToMem, network="From", virtual_network="3",
+    vnet_type="StreamIndirectRequest"; // others -> this MC 
+  
+  MessageBuffer * streamMigrateFromMem, network="To", virtual_network="4",
+    vnet_type="StreamMigrateRequest"; // this MC -> others
+  MessageBuffer * streamMigrateToMem, network="From", virtual_network="4",
+    vnet_type="StreamMigrateRequest"; // others -> this MC 
+
 {
   // STATES
   state_declaration(State, desc="Directory states", default="Directory_State_I") {
@@ -55,6 +74,10 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     M_DRDI, AccessPermission:Busy, desc="Intermediate State when there is a dma read";
     M_DWR, AccessPermission:Busy, desc="Intermediate State when there is a dma write";
     M_DWRI, AccessPermission:Busy, desc="Intermediate State when there is a dma write";
+
+    // States to get data from Memory for StreamEngine. 
+    IH, AccessPermission:Busy, desc="Intermediate State after seen GetH";
+    IU, AccessPermission:Busy, desc="Intermediate State after seen GetU";
   }
 
   // Events
@@ -68,6 +91,12 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     DMA_WRITE, desc="A DMA Write memory request";
     CleanReplacement, desc="Clean Replacement in L2 cache";
 
+    GETH,           desc="Load data but not send to cache";
+    GETU,           desc="Load data and directly send to L1";
+    STREAM_CONFIG,  desc="StreamConfig req";
+    STREAM_FLOW,    desc="Flow control message for stream";
+    STREAM_END,     desc="StreamEnd req";
+    STREAM_COMMIT,  desc="StreamCommit req";
   }
 
   // TYPES
@@ -85,6 +114,9 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     DataBlock DataBlk,     desc="Data to be written (DMA write only)";
     int Len,               desc="...";
     MachineID Requestor,   desc="The DMA engine that sent the request";
+
+    DynamicStreamSliceIdVec sliceIds, desc="Stream slices meta-data";
+    DataBlock streamStoreBlk,         desc="Buffer for the update data";
   }
 
   structure(TBETable, external="yes") {
@@ -100,11 +132,32 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
   // ** OBJECTS **
   TBETable TBEs, template="<Directory_TBE>", constructor="m_number_of_TBEs";
 
+  /**
+   * ! Sean: StreamAwareCache
+   */
+  structure(LLCStreamEngine, external="yes", desc="Stream Engine at MC") {
+    void receiveStreamConfigure(PacketPtr);
+    void receiveStreamEnd(PacketPtr);
+    void receiveStreamMigrate(LLCDynamicStreamPtr, bool);
+    void receiveStreamFlow(DynamicStreamSliceId);
+    void receiveStreamDataVec(Cycles, Addr, DynamicStreamSliceIdVec, DataBlock, DataBlock);
+    void receiveStreamIndirectRequest(RequestMsg);
+    void receiveStreamForwardRequest(RequestMsg);
+    void receiveStreamCommit(DynamicStreamSliceId);
+    void receiveStreamNDCRequest(PacketPtr);
+  }
+
+  LLCStreamEngine se, constructor="this, m_streamMigrateFromMem_ptr, m_requestToDir_ptr, m_streamIndirectFromMem_ptr, m_responseFromDir_ptr";
+
   Tick clockEdge();
   Tick cyclesToTicks(Cycles c);
+  Cycles ticksToCycles(Tick t);
+
   void set_tbe(TBE tbe);
   void unset_tbe();
   void wakeUpBuffers(Addr a);
+  void profileMsgDelay(int virtualNetworkType, Cycles c);
+  void incrementLLCIndReqQueueStats();
 
   Entry getDirectoryEntry(Addr addr), return_by_pointer="yes" {
     Entry dir_entry := static_cast(Entry, "pointer", directory[addr]);
@@ -113,8 +166,8 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
       return dir_entry;
     }
 
-    dir_entry :=  static_cast(Entry, "pointer",
-                              directory.allocate(addr, new Entry));
+    dir_entry := static_cast(Entry, "pointer",
+                             directory.allocate(addr, new Entry));
     return dir_entry;
   }
 
@@ -192,12 +245,20 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
   out_port(responseNetwork_out, ResponseMsg, responseFromDir);
   out_port(memQueue_out, MemoryMsg, requestToMemory);
 
+  // ! Sean: StreamAwareCache
+  // For the stream migrate and indirect request.
+  out_port(streamMigrateFromMem_out, StreamMigrateRequestMsg, streamMigrateFromMem);
+  out_port(streamIndirectFromMem_out, RequestMsg, streamIndirectFromMem);
+
   // ** IN_PORTS **
 
   in_port(requestNetwork_in, RequestMsg, requestToDir, rank = 0) {
     if (requestNetwork_in.isReady(clockEdge())) {
       peek(requestNetwork_in, RequestMsg) {
+
         assert(in_msg.Destination.isElement(machineID));
+        Addr lineAddr := makeLineAddress(in_msg.addr);
+
         if (isGETRequest(in_msg.Type)) {
           trigger(Event:Fetch, in_msg.addr, TBEs[in_msg.addr]);
         } else if (in_msg.Type == CoherenceRequestType:DMA_READ) {
@@ -206,6 +267,17 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
         } else if (in_msg.Type == CoherenceRequestType:DMA_WRITE) {
           trigger(Event:DMA_WRITE, makeLineAddress(in_msg.addr),
                   TBEs[makeLineAddress(in_msg.addr)]);
+        // ! Sean: StreamAwareCache.
+        } else if (in_msg.Type == CoherenceRequestType:GETH) {
+          trigger(Event:GETH, lineAddr, TBEs[lineAddr]);
+        } else if (in_msg.Type == CoherenceRequestType:STREAM_CONFIG) {
+          trigger(Event:STREAM_CONFIG, lineAddr, TBEs[lineAddr]);
+        } else if (in_msg.Type == CoherenceRequestType:STREAM_FLOW) {
+          trigger(Event:STREAM_FLOW, lineAddr, TBEs[lineAddr]);
+        } else if (in_msg.Type == CoherenceRequestType:STREAM_COMMIT) {
+          trigger(Event:STREAM_COMMIT, lineAddr, TBEs[lineAddr]);
+        } else if (in_msg.Type == CoherenceRequestType:STREAM_END) {
+          trigger(Event:STREAM_END, lineAddr, TBEs[lineAddr]);
         } else {
           DPRINTF(RubySlicc, "%s\n", in_msg);
           error("Invalid message");
@@ -246,6 +318,48 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     }
   }
 
+  // ! Sean: StreamAwareCache
+  // Stream indirect request.
+  in_port(streamIndirectToMem_in, RequestMsg, streamIndirectToMem, rank = 1) {
+    if(streamIndirectToMem_in.isReady(clockEdge())) {
+      peek(streamIndirectToMem_in,  RequestMsg) {
+
+        // This requestor is not the LLC bank generating this request,
+        // but the host L1 controller to receive the data.
+        // assert(machineIDToMachineType(in_msg.XXNewRewquestor.singleElement()) == MachineType:L1Cache);
+        assert(in_msg.Destination.isElement(machineID));
+
+        assert(in_msg.sliceIds.isValid());
+
+        DPRINTF(RubyStream, "Received stream indirect request [%lu, +%lu) %#x.\n", 
+          in_msg.sliceIds.singleSliceId().getStartIdx(),
+          in_msg.sliceIds.singleSliceId().getNumElements(),
+          in_msg.addr);
+        // No matter the cache line status, 
+        // simply enqueue the request to L1Request message buffer.
+
+        // Can we do this?
+        se.receiveStreamIndirectRequest(in_msg);
+
+        // Dequeue from the indirect message buffer.
+        incrementLLCIndReqQueueStats();
+        Tick delay := streamIndirectToMem_in.dequeue(clockEdge());
+        profileMsgDelay(3, ticksToCycles(delay));
+      }
+    }
+  }
+
+  // ! Sean: StreamAwareCache
+  // Stream migrate request.
+  in_port(streamMigrateToMem_in, StreamMigrateRequestMsg, streamMigrateToMem, rank = 0) {
+    if(streamMigrateToMem_in.isReady(clockEdge())) {
+      peek(streamMigrateToMem_in, StreamMigrateRequestMsg) {
+        se.receiveStreamMigrate(in_msg.Stream, in_msg.IsCommit);
+        Tick delay := streamMigrateToMem_in.dequeue(clockEdge());
+        profileMsgDelay(3, ticksToCycles(delay));
+      }
+    }
+  }
 
   // Actions
   action(a_sendAck, "a", desc="Send ack to L2") {
@@ -427,6 +541,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
       tbe.PhysicalAddress := in_msg.addr;
       tbe.Len := in_msg.Len;
       tbe.Requestor := in_msg.XXNewRewquestor.singleElement();
+      tbe.sliceIds := in_msg.sliceIds;
     }
   }
 
@@ -447,6 +562,40 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
   action(w_deallocateTBE, "w", desc="Deallocate TBE") {
     TBEs.deallocate(address);
     unset_tbe();
+  }
+
+  action(dt_writeDataToTBE, "dt", desc="Store data block into TBE.") {
+    assert(is_valid(tbe));
+    peek(memQueue_in, MemoryMsg) {
+      tbe.DataBlk := in_msg.DataBlk;
+    }
+  }
+  action(net_notifyStreamEngineFromTBE, "net", desc="notify the stream engine from TBE") {
+    assert(is_valid(tbe));
+    if (tbe.sliceIds.isValid()) {
+      se.receiveStreamDataVec(response_latency, address, tbe.sliceIds, tbe.DataBlk, tbe.streamStoreBlk);
+    }
+  }
+  action(rsc_receiveStreamConfig, "rsc", desc="Receive the StreamConfig") {
+    peek(requestNetwork_in, RequestMsg) {
+      DPRINTF(RubyStream, "Receive StreamConfig: %#x\n", in_msg.pkt);
+      se.receiveStreamConfigure(in_msg.pkt);
+    }
+  }
+  action(rsf_receiveStreamFlow, "rsf", desc="Receive the stream flow message") {
+    peek(requestNetwork_in, RequestMsg) {
+      se.receiveStreamFlow(in_msg.sliceIds.singleSliceId());
+    }
+  }
+  action(rscmt_receiveStreamCommit, "rscmt", desc="Receive the stream commit message") {
+    peek(requestNetwork_in, RequestMsg) {
+      se.receiveStreamCommit(in_msg.sliceIds.singleSliceId());
+    }
+  }
+  action(rse_receiveStreamEnd, "rse", desc="Receive the StreamEnd") {
+    peek(requestNetwork_in, RequestMsg) {
+      se.receiveStreamEnd(in_msg.pkt);
+    }
   }
 
 
@@ -559,4 +708,39 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     l_popMemQueue;
     kd_wakeUpDependents;
   }
+
+  /**
+   * Sean: StreamAwareCache.
+   */
+
+  transition(I, GETH, IH) {
+    v_allocateTBE;
+    qf_queueMemoryFetchRequest;
+    j_popIncomingRequestQueue;
+  }
+  transition(IH, Memory_Data, I) {
+    dt_writeDataToTBE;
+    net_notifyStreamEngineFromTBE;
+    w_deallocateTBE;
+    l_popMemQueue;
+    kd_wakeUpDependents;
+  }
+
+  transition({I, ID, ID_W, M, IM, MI, M_DRD, M_DRDI, M_DWR, M_DWRI}, STREAM_CONFIG) {
+    rsc_receiveStreamConfig;
+    j_popIncomingRequestQueue;
+  }
+  transition({I, ID, ID_W, M, IM, MI, M_DRD, M_DRDI, M_DWR, M_DWRI}, STREAM_FLOW) {
+    rsf_receiveStreamFlow;
+    j_popIncomingRequestQueue;
+  }
+  transition({I, ID, ID_W, M, IM, MI, M_DRD, M_DRDI, M_DWR, M_DWRI}, STREAM_COMMIT) {
+    rscmt_receiveStreamCommit;
+    j_popIncomingRequestQueue;
+  }
+  transition({I, ID, ID_W, M, IM, MI, M_DRD, M_DRDI, M_DWR, M_DWRI}, STREAM_END) {
+    rse_receiveStreamEnd;
+    j_popIncomingRequestQueue;
+  }
+
 }

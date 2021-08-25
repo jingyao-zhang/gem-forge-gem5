@@ -53,7 +53,8 @@ public:
   int getNumDirectStreams() const;
   int getNumDirectStreamsWithStaticId(const DynamicStreamId &dynStreamId) const;
 
-  int curLLCBank() const;
+  int curRemoteBank() const;
+  const char *curRemoteMachineType() const;
 
   /**
    * StreamNDC support.
@@ -344,9 +345,9 @@ private:
   void migrateStreamCommit(LLCDynamicStream *stream, Addr paddr);
 
   /**
-   * Helper function to map an address to a LLC bank.
+   * Helper function to map an address to a same level bank.
    */
-  MachineID mapPaddrToLLCBank(Addr paddr) const;
+  MachineID mapPaddrToSameLevelBank(Addr paddr) const;
 
   /**
    * Check if this address is handled by myself.

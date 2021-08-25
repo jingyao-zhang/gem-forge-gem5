@@ -33,9 +33,10 @@ void MLCStreamNDCController::receiveStreamNDCRequest(PacketPtr pkt) {
     // Allocate the context in LLCStreamNDCController.
     LLCStreamNDCController::allocateContext(mlcSE->controller, streamNDC);
 
-    // Create a new packet and forward it.
+    // Create a new packet and forward it to LLC bank (L2 cache).
     auto paddrLine = makeLineAddress(streamNDC->paddr);
-    auto llcBank = mlcSE->mapPAddrToLLCBank(paddrLine);
+    auto llcBank = mlcSE->controller->mapAddressToLLCOrMem(
+        paddrLine, MachineType::MachineType_L2Cache);
     MLC_NDC_DPRINTF(streamNDC, "Receive NDC PAddr %#x LLC Bank %s.\n",
                     streamNDC->paddr, llcBank);
 

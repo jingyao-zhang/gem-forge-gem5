@@ -392,10 +392,10 @@ void MLCDynamicDirectStream::sendCreditToLLC(
    *
    * This will not work for pointer chasing stream.
    */
-  auto llcBank = this->mapPAddrToLLCBank(segment.startPAddr);
+  auto llcBank = this->mapPAddrToOffloadedBank(segment.startPAddr);
 
   MLC_S_DPRINTF(this->dynamicStreamId,
-                "Extended %lu -> %lu, sent credit to LLC%d.\n",
+                "Extended %lu -> %lu, sent credit to %s.\n",
                 segment.startSliceIdx, segment.endSliceIdx, llcBank);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = makeLineAddress(segment.startPAddr);
@@ -858,14 +858,14 @@ void MLCDynamicDirectStream::checkCoreCommitProgress() {
 void MLCDynamicDirectStream::sendCommitToLLC(
     const LLCSegmentPosition &segment) {
   auto llcPAddrLine = makeLineAddress(segment.startPAddr);
-  auto llcBank = this->mapPAddrToLLCBank(llcPAddrLine);
+  auto llcBank = this->mapPAddrToOffloadedBank(llcPAddrLine);
 
   // Send the commit control.
   auto startElementIdx = segment.sliceIds.firstSliceId().getStartIdx();
   auto endElementIdx = segment.endSliceId.getStartIdx();
   MLC_S_DPRINTF_(StreamRangeSync, this->dynamicStreamId,
-                 "[Range] Commit [%llu, %lu), to LLC%d.\n", startElementIdx,
-                 endElementIdx, llcBank.num);
+                 "[Range] Commit [%llu, %lu), to %s.\n", startElementIdx,
+                 endElementIdx, llcBank);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = llcPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_COMMIT;

@@ -45,6 +45,8 @@
 #include "mem/ruby/network/BasicLink.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
+#include "sim/stream_nuca/stream_nuca_map.hh"
+
 uint32_t Network::m_virtual_networks;
 uint32_t Network::m_control_msg_size;
 uint32_t Network::m_data_msg_size;

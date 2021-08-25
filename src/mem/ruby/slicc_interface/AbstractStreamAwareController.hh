@@ -32,9 +32,9 @@ public:
   bool isMyNeighbor(MachineID machineId) const;
 
   /**
-   * Map an address to a LLC bank (or other type of controller).
+   * Map an address to a LLC bank or Mem Channel.
    */
-  MachineID mapAddressToLLC(Addr addr, MachineType mtype) const;
+  MachineID mapAddressToLLCOrMem(Addr addr, MachineType mtype) const;
 
   /**
    * Get a physical line address that map to our LLC bank.
@@ -88,6 +88,21 @@ public:
   }
   const std::string &getStreamAtomicLockType() const {
     return this->myParams->stream_atomic_lock_type;
+  }
+  bool isStreamFloatMemEnabled() const {
+    return this->myParams->enable_stream_float_mem;
+  }
+
+  const char *getMachineTypeString() const {
+    auto type = this->getMachineID().type;
+    switch (type) {
+    case MachineType::MachineType_L2Cache:
+      return "LLC";
+    case MachineType::MachineType_Directory:
+      return "MEM";
+    default:
+      return "XXX";
+    }
   }
 
   /**

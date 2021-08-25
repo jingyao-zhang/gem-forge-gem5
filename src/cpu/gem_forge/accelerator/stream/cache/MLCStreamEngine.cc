@@ -82,6 +82,22 @@ void MLCStreamEngine::configureStream(
   }
 
   /**
+   * Which RemoteSE should we configure?
+   * So far we just configure the MemSE if the stream is too long.
+   * For now just always offload to memory.
+   */
+  streamConfigureData->offloadedMachineType = MachineType::MachineType_L2Cache;
+  // const uint64_t offloadToMemSESizeThreshold = 64 * 1024 * 1024;
+  if (this->controller->isStreamFloatMemEnabled()) {
+    // if (streamConfigureData->hasTotalTripCount() &&
+    //     streamConfigureData->getTotalTripCount() *
+    //             streamConfigureData->elementSize >=
+    //         offloadToMemSESizeThreshold) {
+    streamConfigureData->offloadedMachineType =
+        MachineType::MachineType_Directory;
+  }
+
+  /**
    * ! We initialize the indirect stream first so that
    * ! the direct stream's constructor can start notify it about base stream
    * data.
@@ -151,6 +167,21 @@ void MLCStreamEngine::configureStream(
     }
   }
 
+  // Configure Remote SE.
+  this->sendConfigToRemoteSE(streamConfigureData, masterId);
+}
+
+void MLCStreamEngine::sendConfigToRemoteSE(
+    CacheStreamConfigureDataPtr streamConfigureData, MasterID masterId) {
+
+  /**
+   * Set the RemoteSE to LLC SE or Mem SE.
+   * So far we just configure the MemSE if the stream is too long.
+   */
+  auto initPAddrLine = makeLineAddress(streamConfigureData->initPAddr);
+  auto remoteSEMachineID = this->controller->mapAddressToLLCOrMem(
+      initPAddrLine, streamConfigureData->offloadedMachineType);
+
   // Create a new packet.
   RequestPtr req = std::make_shared<Request>(
       streamConfigureData->initPAddr, sizeof(streamConfigureData), 0, masterId);
@@ -160,14 +191,19 @@ void MLCStreamEngine::configureStream(
   pkt->dataDynamic(pktData);
   // Enqueue a configure packet to the target LLC bank.
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = makeLineAddress(streamConfigureData->initPAddr);
+  msg->m_addr = initPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
   msg->m_XXNewRewquestor.add(this->controller->getMachineID());
-  msg->m_Destination.add(this->mapPAddrToLLCBank(msg->m_addr));
-  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_Destination.add(remoteSEMachineID);
+
+  // Configure message should be modelled as data size.
+  msg->m_MessageSize = MessageSizeType_Data;
   msg->m_pkt = pkt;
 
   Cycles latency(1); // Just use 1 cycle latency here.
+
+  MLC_S_DPRINTF(streamConfigureData->dynamicId,
+                "Send Config to RemoteSE at %s.\n", remoteSEMachineID);
 
   this->requestToLLCMsgBuffer->enqueue(
       msg, this->controller->clockEdge(),
@@ -198,6 +234,8 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
   assert(rootStreamIter != this->idToStreamMap.end() &&
          "Failed to find the ending root stream.");
   Addr rootLLCStreamPAddr = rootStreamIter->second->getLLCTailPAddr();
+  auto rootStreamOffloadedMachineType =
+      rootStreamIter->second->getOffloadedMachineType();
 
   // End all streams with the correct root stream id (indirect streams).
   for (auto streamIter = this->idToStreamMap.begin(),
@@ -231,6 +269,8 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
 
   // Create a new packet and send to LLC bank to terminate the stream.
   auto rootLLCStreamPAddrLine = makeLineAddress(rootLLCStreamPAddr);
+  auto rootStreamOffloadedBank = this->controller->mapAddressToLLCOrMem(
+      rootLLCStreamPAddrLine, rootStreamOffloadedMachineType);
   auto copyEndId = new DynamicStreamId(endId);
   RequestPtr req = std::make_shared<Request>(rootLLCStreamPAddrLine,
                                              sizeof(copyEndId), 0, masterId);
@@ -244,7 +284,7 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
   msg->m_addr = rootLLCStreamPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_END;
   msg->m_XXNewRewquestor.add(this->controller->getMachineID());
-  msg->m_Destination.add(this->mapPAddrToLLCBank(msg->m_addr));
+  msg->m_Destination.add(rootStreamOffloadedBank);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_pkt = pkt;
 
@@ -417,13 +457,6 @@ MLCDynamicStream *MLCStreamEngine::getMLCDynamicStreamFromSlice(
     }
   }
   return nullptr;
-}
-
-MachineID MLCStreamEngine::mapPAddrToLLCBank(Addr paddr) const {
-  auto selfMachineId = this->controller->getMachineID();
-  auto llcMachineId = this->controller->mapAddressToLLC(
-      paddr, static_cast<MachineType>(selfMachineId.type + 1));
-  return llcMachineId;
 }
 
 void MLCStreamEngine::computeReuseInformation(
