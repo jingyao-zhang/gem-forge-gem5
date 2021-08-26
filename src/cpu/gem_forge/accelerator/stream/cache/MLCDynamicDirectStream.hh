@@ -101,7 +101,13 @@ protected:
       return this->sliceIds.firstSliceId();
     }
   };
+
+  /**
+   * Split the segments into multiple lists to improve the performance.
+   */
+  std::list<LLCSegmentPosition> llcSegmentsAllocated;
   std::list<LLCSegmentPosition> llcSegments;
+
   bool blockedOnReceiverElementInit = false;
 
   void allocateLLCSegment();

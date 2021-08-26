@@ -129,7 +129,9 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
 
   // Intialize the first segment.
   this->pushNewLLCSegment(_configData->initPAddr, this->headSliceIdx);
-  this->llcSegments.front().state = LLCSegmentPosition::State::CREDIT_SENT;
+  this->llcSegments.push_back(this->llcSegmentsAllocated.front());
+  this->llcSegmentsAllocated.pop_front();
+  this->llcSegments.back().state = LLCSegmentPosition::State::CREDIT_SENT;
 
   // Set the CacheStreamConfigureData to inform the LLC stream engine
   // initial credit.
@@ -184,6 +186,12 @@ void MLCDynamicDirectStream::advanceStream() {
         currentHeadSliceIdx =
             std::min(currentHeadSliceIdx, segment.startSliceIdx);
         break;
+      }
+      if (!this->llcSegmentsAllocated.empty()) {
+        // The allocated segments are also not committed.
+        currentHeadSliceIdx =
+            std::min(currentHeadSliceIdx,
+                     this->llcSegmentsAllocated.front().startSliceIdx);
       }
     }
 
@@ -299,11 +307,11 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
     }
   }
 
-  for (auto &segment : this->llcSegments) {
+  while (!this->llcSegmentsAllocated.empty()) {
 
-    if (segment.state != LLCSegmentPosition::State::ALLOCATED) {
-      continue;
-    }
+    auto &segment = this->llcSegmentsAllocated.front();
+
+    assert(segment.state == LLCSegmentPosition::State::ALLOCATED);
 
     /**
      * For PointerChaseStreams, we cannot send out credits until
@@ -379,8 +387,11 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
                                                    elementInitCallback);
       return;
     }
+
     this->sendCreditToLLC(segment);
     segment.state = LLCSegmentPosition::State::CREDIT_SENT;
+    this->llcSegments.emplace_back(segment);
+    this->llcSegmentsAllocated.pop_front();
   }
 }
 
@@ -742,8 +753,8 @@ void MLCDynamicDirectStream::allocateLLCSegment() {
 
 void MLCDynamicDirectStream::pushNewLLCSegment(Addr startPAddr,
                                                uint64_t startSliceIdx) {
-  this->llcSegments.emplace_back();
-  auto &segment = this->llcSegments.back();
+  this->llcSegmentsAllocated.emplace_back();
+  auto &segment = this->llcSegmentsAllocated.back();
   segment.startPAddr = startPAddr;
   segment.startSliceIdx = startSliceIdx;
   segment.sliceIds = this->nextSegmentSliceIds;
@@ -764,18 +775,24 @@ void MLCDynamicDirectStream::pushNewLLCSegment(Addr startPAddr,
 
 MLCDynamicDirectStream::LLCSegmentPosition &
 MLCDynamicDirectStream::getLastLLCSegment() {
-  if (this->llcSegments.empty()) {
-    MLC_S_PANIC(this->getDynamicStreamId(), "Missing Last LLCSegment.");
+  if (!this->llcSegmentsAllocated.empty()) {
+    return this->llcSegmentsAllocated.back();
   }
-  return this->llcSegments.back();
+  if (!this->llcSegments.empty()) {
+    return this->llcSegments.back();
+  }
+  MLC_S_PANIC(this->getDynamicStreamId(), "Missing Last LLCSegment.");
 }
 
 const MLCDynamicDirectStream::LLCSegmentPosition &
 MLCDynamicDirectStream::getLastLLCSegment() const {
-  if (this->llcSegments.empty()) {
-    MLC_S_PANIC(this->getDynamicStreamId(), "Missing Last LLCSegment.");
+  if (!this->llcSegmentsAllocated.empty()) {
+    return this->llcSegmentsAllocated.back();
   }
-  return this->llcSegments.back();
+  if (!this->llcSegments.empty()) {
+    return this->llcSegments.back();
+  }
+  MLC_S_PANIC(this->getDynamicStreamId(), "Missing Last LLCSegment.");
 }
 
 void MLCDynamicDirectStream::checkCoreCommitProgress() {
@@ -798,10 +815,7 @@ void MLCDynamicDirectStream::checkCoreCommitProgress() {
         firstCoreElementIdx);
   }
   for (auto &seg : this->llcSegments) {
-    if (seg.state == LLCSegmentPosition::State::ALLOCATED) {
-      // We haven't even sent out the credit for this segment.
-      break;
-    }
+    assert(seg.state != LLCSegmentPosition::State::ALLOCATED);
     if (seg.state == LLCSegmentPosition::State::COMMITTING ||
         seg.state == LLCSegmentPosition::State::COMMITTED) {
       // We already commit this segment.
