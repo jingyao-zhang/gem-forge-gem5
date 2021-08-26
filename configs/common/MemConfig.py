@@ -37,8 +37,21 @@ from __future__ import print_function
 from __future__ import absolute_import
 
 import m5.objects
+
 from common import ObjectList
 from common import HMC
+import os
+
+def dramsim3_size_mb(ini_file):
+    """Parsing ini file for DRAMsim3 so that the system knows mem size"""
+    assert(os.path.exists(ini_file))
+    import ConfigParser
+    config = ConfigParser.ConfigParser()
+    config.read(ini_file)
+    channel_size = config.getint("system", "channel_size")
+    num_channels = config.getint("system", "channels")
+    size_mb = channel_size * num_channels
+    return size_mb
 
 def create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
     """
@@ -94,6 +107,11 @@ def create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
         ctrl.interleaveBitsLow = intlv_low_bit
         ctrl.interleaveBitsHigh = intlv_low_bit + intlv_bits - 1
 
+    # Set options for DRAMSim3 controller.
+    if hasattr(m5.objects, 'DRAMsim3') and issubclass(cls, m5.objects.DRAMsim3):
+        ctrl.config_file = options.dramsim3_ini
+        ctrl.file_path = m5.options.outdir
+
     return ctrl
 
 def config_mem(options, system):
@@ -119,6 +137,23 @@ def config_mem(options, system):
     opt_mem_ranks = getattr(options, "mem_ranks", None)
     opt_dram_powerdown = getattr(options, "enable_dram_powerdown", None)
     opt_mem_channels_intlv = getattr(options, "mem_channels_intlv", 128)
+    opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
+
+    print("sssssssssssssssssssssssssssss")
+    print(opt_mem_type)
+    if opt_mem_type == "DRAMsim3":
+        print("sssssssssssssssssssssssssssss")
+        ini_file = ''
+        if opt_dramsim3_ini:
+            ini_file = opt_dramsim3_ini
+        else:
+            ini_file = m5.objects.DRAMsim3.config_file
+        print("sssssssssssssssssssssssssssss")
+        print(ini_file)
+        mem_size = dramsim3_size_mb(ini_file)
+        mem_size_str =  str(mem_size) + "MB"
+        options.mem_size = mem_size_str
+        system.mem_ranges = [m5.objects.AddrRange(mem_size_str)]
 
     if opt_mem_type == "HMC_2500_1x32":
         HMChost = HMC.config_hmc_host_ctrl(options, system)
@@ -171,6 +206,16 @@ def config_mem(options, system):
     # address mapping in the case of a DRAM
     for r in system.mem_ranges:
         for i in range(nbr_mem_ctrls):
+            # ! This is moved into create_mem_ctrl.
+            # # We need to do a couple of things differently for DRAMsim3
+            # # use same outdir as gem5, and use its own address mapping
+            # if opt_mem_type == 'DRAMsim3':
+            #     mem_ctrl = cls()
+            #     if opt_dramsim3_ini:
+            #         mem_ctrl.config_file = opt_dramsim3_ini
+            #     mem_ctrl.file_path = m5.options.outdir
+            #     mem_ctrl.range=m5.objects.AddrRange(r.size())
+
             mem_ctrl = create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits,
                                        intlv_size, options)
             # Set the number of ranks based on the command-line

@@ -1083,6 +1083,87 @@ class GDDR5_4000_2x32(DRAMCtrl):
     # Assume 2 cycles
     tRTW = '2ns'
 
+# HBM2 matches DRAMsim3
+class HBM_2000_8H_1x128(DRAMCtrl):
+    # HBM gen1 supports up to 8 128-bit physical channels
+    # Configuration defines a single channel, with the capacity
+    # set to (full_ stack_capacity / 8) based on 2Gb dies
+    # To use all 8 channels, set 'channels' parameter to 8 in
+    # system configuration
+
+    # 128-bit interface legacy mode
+    device_bus_width = 128
+
+    # HBM supports BL4 and BL2 (legacy mode only)
+    burst_length = 2
+
+    device_size = '1024MB'
+
+    device_rowbuffer_size = '1kB'
+
+    # 1x128 configuration
+    devices_per_rank = 1
+
+    # HBM does not have a CS pin; set rank to 1
+    ranks_per_channel = 1
+
+    # HBM has 8 or 16 banks depending on capacity
+    # 2Gb dies have 8 banks
+    banks_per_rank = 16
+
+    # depending on frequency, bank groups may be required
+    # will always have 4 bank groups when enabled
+    # current specifications do not define the minimum frequency for
+    # bank group architecture
+    # setting bank_groups_per_rank to 0 to disable until range is defined
+    bank_groups_per_rank = 0
+
+    # 500 MHz for 1Gbps DDR data rate
+    tCK = '1ns'
+
+    # use values from IDD measurement in JEDEC spec
+    # use tRP value for tRCD and tCL similar to other classes
+    tRP = '14ns'
+    tRCD = '14ns'
+    tCL = '14ns'
+    tRAS = '34ns'
+
+    # BL2 and BL4 supported, default to BL4
+    # DDR @ 500 MHz means 4 * 2ns / 2 = 4ns
+    tBURST = '2ns'
+
+    # value for 2Gb device from JEDEC spec
+    tRFC = '260ns'
+
+    # value for 2Gb device from JEDEC spec
+    tREFI = '3.9us'
+
+    # extrapolate the following from LPDDR configs, using ns values
+    # to minimize burst length, prefetch differences
+    tWR = '16ns'
+    tRTP = '5ns'
+    tWTR = '7ns'
+
+    # start with 2 cycles turnaround, similar to other memory classes
+    # could be more with variations across the stack
+    tRTW = '4ns'
+
+    # single rank device, set to 0
+    tCS = '0ns'
+
+    # from MemCon example, tRRD is 4ns with 2ns tCK
+    tRRD = '5ns'
+
+    # from MemCon example, tFAW is 30ns with 2ns tCK
+    tXAW = '30ns'
+    activation_limit = 4
+
+    # 4tCK
+    tXP = '8ns'
+
+    # start with tRFC + tXP -> 160ns + 8ns = 168ns
+    tXS = '168ns'
+
 # A single HBM x128 interface (one command and address bus), with
 # default timings based on data publically released
 # ("HBM: Memory Solution for High Performance Processors", MemCon, 2014),
