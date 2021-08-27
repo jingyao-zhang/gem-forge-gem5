@@ -59,9 +59,14 @@
 DRAMsim3Wrapper::DRAMsim3Wrapper(const std::string& config_file,
                                  const std::string& working_dir,
                                  std::function<void(uint64_t)> read_cb,
-                                 std::function<void(uint64_t)> write_cb) :
+                                 std::function<void(uint64_t)> write_cb,
+                                 unsigned int interleave_bits_low,
+                                 unsigned int interleave_bits_high) :
     dramsim(new dramsim3::MemorySystem(config_file, working_dir,
-                                       read_cb, write_cb)),
+                                       read_cb, write_cb,
+                                       interleave_bits_low,
+                                       interleave_bits_high
+                                       )),
     _clockPeriod(0.0), _queueSize(0), _burstSize(0)
 {
     // there is no way of getting DRAMsim3 to tell us what frequency

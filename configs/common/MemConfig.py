@@ -111,6 +111,8 @@ def create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
     if hasattr(m5.objects, 'DRAMsim3') and issubclass(cls, m5.objects.DRAMsim3):
         ctrl.config_file = options.dramsim3_ini
         ctrl.file_path = m5.options.outdir
+        ctrl.interleaveBitsLow = intlv_low_bit
+        ctrl.interleaveBitsHigh = intlv_low_bit + intlv_bits - 1
 
     return ctrl
 
@@ -139,17 +141,12 @@ def config_mem(options, system):
     opt_mem_channels_intlv = getattr(options, "mem_channels_intlv", 128)
     opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
 
-    print("sssssssssssssssssssssssssssss")
-    print(opt_mem_type)
     if opt_mem_type == "DRAMsim3":
-        print("sssssssssssssssssssssssssssss")
         ini_file = ''
         if opt_dramsim3_ini:
             ini_file = opt_dramsim3_ini
         else:
             ini_file = m5.objects.DRAMsim3.config_file
-        print("sssssssssssssssssssssssssssss")
-        print(ini_file)
         mem_size = dramsim3_size_mb(ini_file)
         mem_size_str =  str(mem_size) + "MB"
         options.mem_size = mem_size_str

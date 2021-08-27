@@ -51,3 +51,11 @@ class DRAMsim3(AbstractMemory):
                               "One configuration file")
     file_path = Param.String("ext/dramsim3/DRAMsim3/",
                             "Directory to prepend to file names")
+
+    """
+    These bits of [high, low] of the physical address is masked out
+    in dramsim3::Config::AddressMapping(), as they are already used
+    by top level Ruby to select the channel (mem ctrl.).
+    """
+    interleaveBitsLow = Param.Int(0, "Low bit masked out")
+    interleaveBitsHigh = Param.Int(0, "High bit masked out")

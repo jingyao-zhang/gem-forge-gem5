@@ -53,5 +53,10 @@ class DRAMSim2(AbstractMemory):
     traceFile = Param.String("", "Output file for trace generation")
     enableDebug = Param.Bool(False, "Enable DRAMSim2 debug output")
 
+    """
+    These bits of [high, low] of the physical address is masked out
+    in dramsim3::Config::AddressMapping(), as they are already used
+    by top level Ruby to select the channel (mem ctrl.).
+    """
     interleaveBitsLow = Param.Int(0, "Low bit masked out")
     interleaveBitsHigh = Param.Int(0, "High bit masked out")

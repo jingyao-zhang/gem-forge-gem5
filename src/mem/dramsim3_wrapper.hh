@@ -94,7 +94,9 @@ class DRAMsim3Wrapper
     DRAMsim3Wrapper(const std::string& config_file,
                     const std::string& working_dir,
                     std::function<void(uint64_t)> read_cb,
-                    std::function<void(uint64_t)> write_cb);
+                    std::function<void(uint64_t)> write_cb,
+                    unsigned int interleave_bits_low,
+                    unsigned int interleave_bits_high);
     ~DRAMsim3Wrapper();
 
     /**
