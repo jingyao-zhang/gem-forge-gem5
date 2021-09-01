@@ -76,8 +76,10 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     M_DWRI, AccessPermission:Busy, desc="Intermediate State when there is a dma write";
 
     // States to get data from Memory for StreamEngine. 
-    IH, AccessPermission:Busy, desc="Intermediate State after seen GetH";
-    IU, AccessPermission:Busy, desc="Intermediate State after seen GetU";
+    I_GH, AccessPermission:Busy, desc="Intermediate State after seen GetH";
+    I_GU, AccessPermission:Busy, desc="Intermediate State after seen GetU";
+    I_GM, AccessPermission:Busy, desc="Intermediate State after seen STREAM_STORE";
+    M_GM, AccessPermission:Busy, desc="Intermediate State of M after seen GetH/STREAM_STORE";
   }
 
   // Events
@@ -93,10 +95,12 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
 
     GETH,           desc="Load data but not send to cache";
     GETU,           desc="Load data and directly send to L1";
+    GETM,           desc="Write to Mem";
     STREAM_CONFIG,  desc="StreamConfig req";
     STREAM_FLOW,    desc="Flow control message for stream";
     STREAM_END,     desc="StreamEnd req";
     STREAM_COMMIT,  desc="StreamCommit req";
+    STREAM_STORE,   desc="StreamStore req";
   }
 
   // TYPES
@@ -278,6 +282,8 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
           trigger(Event:STREAM_COMMIT, lineAddr, TBEs[lineAddr]);
         } else if (in_msg.Type == CoherenceRequestType:STREAM_END) {
           trigger(Event:STREAM_END, lineAddr, TBEs[lineAddr]);
+        } else if (in_msg.Type == CoherenceRequestType:STREAM_STORE) {
+          trigger(Event:STREAM_STORE, lineAddr, TBEs[lineAddr]);
         } else {
           DPRINTF(RubySlicc, "%s\n", in_msg);
           error("Invalid message");
@@ -542,6 +548,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       tbe.Len := in_msg.Len;
       tbe.Requestor := in_msg.XXNewRewquestor.singleElement();
       tbe.sliceIds := in_msg.sliceIds;
+      tbe.streamStoreBlk := in_msg.streamStoreBlk;
     }
   }
 
@@ -576,6 +583,15 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       se.receiveStreamDataVec(response_latency, address, tbe.sliceIds, tbe.DataBlk, tbe.streamStoreBlk);
     }
   }
+  action(nert_notifyStreamEngineFromL2RespAndTBE, "nert", desc="notify the stream engine from L2 response and TBE") {
+    peek(responseNetwork_in, ResponseMsg) {
+      assert(is_valid(tbe));
+      if (tbe.sliceIds.isValid()) {
+        se.receiveStreamDataVec(response_latency, address, tbe.sliceIds, in_msg.DataBlk, tbe.streamStoreBlk);
+      }
+    }
+  }
+
   action(rsc_receiveStreamConfig, "rsc", desc="Receive the StreamConfig") {
     peek(requestNetwork_in, RequestMsg) {
       DPRINTF(RubyStream, "Receive StreamConfig: %#x\n", in_msg.pkt);
@@ -713,17 +729,45 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
    * Sean: StreamAwareCache.
    */
 
-  transition(I, GETH, IH) {
+  transition(I, GETH, I_GH) {
     v_allocateTBE;
     qf_queueMemoryFetchRequest;
     j_popIncomingRequestQueue;
   }
-  transition(IH, Memory_Data, I) {
+  transition(I_GH, Memory_Data, I) {
     dt_writeDataToTBE;
     net_notifyStreamEngineFromTBE;
     w_deallocateTBE;
     l_popMemQueue;
     kd_wakeUpDependents;
+  }
+
+  // ! So far STREAM_STORE at I state is handled as a READ,
+  // ! as we haven't distinguish RMW from normal STORE.
+  // ! TODO: Really separate out RWM from normal STORE.
+  transition(I, STREAM_STORE, I_GM) {
+    v_allocateTBE;
+    qf_queueMemoryFetchRequest;
+    j_popIncomingRequestQueue;
+  }
+  transition(I_GM, Memory_Ack, I) {
+    dt_writeDataToTBE;
+    net_notifyStreamEngineFromTBE;
+    w_deallocateTBE;
+    l_popMemQueue;
+    kd_wakeUpDependents;
+  }
+
+  transition(M, {GETH, STREAM_STORE}, M_GM) {
+    v_allocateTBE;
+    inv_sendCacheInvalidate;
+    j_popIncomingRequestQueue;
+  }
+  transition(M_GM, Data, M_DRDI) {
+    nert_notifyStreamEngineFromL2RespAndTBE;
+    w_deallocateTBE;
+    qw_queueMemoryWBRequest;
+    k_popIncomingResponseQueue;
   }
 
   transition({I, ID, ID_W, M, IM, MI, M_DRD, M_DRDI, M_DWR, M_DWRI}, STREAM_CONFIG) {
