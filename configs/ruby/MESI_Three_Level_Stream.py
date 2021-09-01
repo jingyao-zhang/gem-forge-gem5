@@ -401,6 +401,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     if rom_dir_cntrl_node is not None:
         dir_cntrl_nodes.append(rom_dir_cntrl_node)
     for dir_cntrl in dir_cntrl_nodes:
+
+        # Increase the number of TBEs.
+        dir_cntrl.number_of_TBEs = 1024
+
         # Connect the directory controllers and the network
         dir_cntrl.requestToDir = MessageBuffer()
         dir_cntrl.requestToDir.slave = ruby_system.network.master
