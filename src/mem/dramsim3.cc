@@ -194,7 +194,8 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
 
     // if we cannot accept we need to send a retry once progress can
     // be made
-    bool can_accept = nbrOutstanding() < wrapper.queueSize();
+    bool can_accept = nbrOutstanding() < wrapper.queueSize() &&
+                      wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
 
     // keep track of the transaction
     if (pkt->isRead()) {
@@ -224,7 +225,10 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
     if (can_accept) {
         // we should never have a situation when we think there is space,
         // and there isn't
-        assert(wrapper.canAccept(pkt->getAddr(), pkt->isWrite()));
+        if (!wrapper.canAccept(pkt->getAddr(), pkt->isWrite())) {
+            panic("Cannot Accept Address %#x IsWrite %d. Outstanding %d WrapperQueueSize %d.\n",
+                pkt->getAddr(), pkt->isWrite(), nbrOutstanding(), wrapper.queueSize());
+        }
 
         DPRINTF(DRAMsim3, "Enqueueing address %lld\n", pkt->getAddr());
 
@@ -316,7 +320,8 @@ void DRAMsim3::readComplete(unsigned id, uint64_t addr)
 void DRAMsim3::writeComplete(unsigned id, uint64_t addr)
 {
 
-    DPRINTF(DRAMsim3, "Write to address %lld complete\n", addr);
+    DPRINTF(DRAMsim3, "Write to address %lld complete. Outstanding %d.\n",
+        addr, nbrOutstandingWrites);
 
     // get the outstanding reads for the address in question
     auto p = outstandingWrites.find(addr);
