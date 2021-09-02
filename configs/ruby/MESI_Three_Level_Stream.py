@@ -403,7 +403,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     for dir_cntrl in dir_cntrl_nodes:
 
         # Increase the number of TBEs.
-        dir_cntrl.number_of_TBEs = 1024
+        dir_cntrl.number_of_TBEs = 8192
 
         # Connect the directory controllers and the network
         dir_cntrl.requestToDir = MessageBuffer()
