@@ -52,7 +52,7 @@ DRAMsim3::DRAMsim3(const Params* p) :
                       this, 0, std::placeholders::_1)),
     write_cb(std::bind(&DRAMsim3::writeComplete,
                        this, 0, std::placeholders::_1)),
-    wrapper(p->config_file, p->file_path, read_cb, write_cb,
+    wrapper(p->config_file, p->file_path, name(), read_cb, write_cb,
             p->interleaveBitsLow, p->interleaveBitsHigh),
     retryReq(false), retryResp(false), startTick(0),
     nbrOutstandingReads(0), nbrOutstandingWrites(0),
@@ -68,6 +68,7 @@ DRAMsim3::DRAMsim3(const Params* p) :
     Callback* cb = new MakeCallback<DRAMsim3Wrapper,
         &DRAMsim3Wrapper::printStats>(wrapper);
     registerExitCallback(cb);
+    Stats::registerDumpCallback(cb);
 }
 
 void

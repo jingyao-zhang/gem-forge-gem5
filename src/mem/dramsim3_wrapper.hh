@@ -89,10 +89,12 @@ class DRAMsim3Wrapper
      * controller using a specific config and system description.
      *
      * @param config_file Memory config file
-     * @param working_dir Path pre-pended to config files
+     * @param output_dir Output directory.
+     * @param output_prefix  Prefix to output file name.
      */
     DRAMsim3Wrapper(const std::string& config_file,
-                    const std::string& working_dir,
+                    const std::string& output_dir,
+                    const std::string& output_prefix,
                     std::function<void(uint64_t)> read_cb,
                     std::function<void(uint64_t)> write_cb,
                     unsigned int interleave_bits_low,

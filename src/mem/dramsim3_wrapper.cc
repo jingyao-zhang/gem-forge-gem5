@@ -57,12 +57,13 @@
 #include "base/logging.hh"
 
 DRAMsim3Wrapper::DRAMsim3Wrapper(const std::string& config_file,
-                                 const std::string& working_dir,
+                                 const std::string& output_dir,
+                                 const std::string& output_prefix,
                                  std::function<void(uint64_t)> read_cb,
                                  std::function<void(uint64_t)> write_cb,
                                  unsigned int interleave_bits_low,
                                  unsigned int interleave_bits_high) :
-    dramsim(new dramsim3::MemorySystem(config_file, working_dir,
+    dramsim(new dramsim3::MemorySystem(config_file, output_dir, output_prefix,
                                        read_cb, write_cb,
                                        interleave_bits_low,
                                        interleave_bits_high
