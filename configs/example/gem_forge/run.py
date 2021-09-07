@@ -224,7 +224,7 @@ parser.add_option("--gem-forge-stream-engine-llc-neighbor-stream-threshold", act
                   help="# of streams threshold to delay migration to neighbor LLC SE. 0 to disable.")
 parser.add_option("--gem-forge-stream-engine-llc-neighbor-migration-delay", action="store",
                   type="int", default="100",
-                  help="Delay to migrate to neighbor LLC SE.")
+                  help="Delay to migrate to neighbor LLC SE if reached the threshold.")
 parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-computing",
                   action="store_true", default="False",
                   help="Enable per element computation offloading.")
@@ -235,6 +235,15 @@ parser.add_option("--gem-forge-enable-stream-nuca",
 # Stream Floating in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,
                   help="Enable stream float in Mem Ctrl.")
+parser.add_option("--gem-forge-stream-engine-mc-stream-max-infly-request", action="store",
+                  type="int", default="16",
+                  help="LLCStream max infly request per stream.")
+parser.add_option("--gem-forge-stream-engine-mc-neighbor-stream-threshold", action="store",
+                  type="int", default="0",
+                  help="# of streams threshold to delay migration to neighbor MCC SE. 0 to disable.")
+parser.add_option("--gem-forge-stream-engine-mc-neighbor-migration-delay", action="store",
+                  type="int", default="100",
+                  help="Delay to migrate to neighbor MC SE if reached the threshold.")
 
 parser.add_option("--gem-forge-adfa-enable",
                   action="store_true", default=False)

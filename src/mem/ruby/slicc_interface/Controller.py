@@ -118,8 +118,10 @@ class RubyStreamAwareController(RubyController):
     enable_stream_range_sync = Param.Bool(False, "Whether to enable stream range synchronization.")
     stream_atomic_lock_type = Param.String("none", "StreamAtomicLockType of none, single, multi-reader.")
     llc_access_core_simd_delay = Param.UInt32(4, "Latency to access core simd unit.")
-    llc_neighbor_stream_threshold = \
+
+    neighbor_stream_threshold = \
         Param.UInt32(0, "Number of streams to trigger migration control. 0 to disable.")
-    llc_neighbor_migration_delay = Param.UInt32(100, "Number of cycles delay per migrating streams.")
+    neighbor_migration_delay = \
+        Param.UInt32(100, "Number of cycles delay per migrating streams.")
 
     enable_stream_float_mem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")

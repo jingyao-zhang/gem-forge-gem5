@@ -168,6 +168,8 @@ def addNoISAOptions(parser):
     parser.add_option("--cacheline_size", type="int", default=64)
     parser.add_option("--llc-select-low-bit", type="int", default=8,
       help="Granularity how address is mapped among LLC, default 64B.")
+    parser.add_option("--mem-channel-xor-low-bit", type="int", default=20,
+      help="Low xor bit when selecting the channel (MemConfig.py). 0 to disable xor.")
 
     # TLB size.
     parser.add_option("--l1tlb-size", type="int", default=64)

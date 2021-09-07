@@ -34,15 +34,24 @@ private:
   const int neighborStreamsThreshold;
   const Cycles delay;
 
-  std::array<Cycles, 4> lastMigratedCycle;
+  static constexpr int MaxNeighbors = 6;
+  std::array<Cycles, MaxNeighbors> lastMigratedCycle;
 
-  std::array<std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>, 4>
+  std::array<std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>,
+             MaxNeighbors>
       migratingStreams;
 
   /**
    * @return -1 if not neighboring.
    */
   int getNeighborIndex(MachineID machineId) const;
+
+  /**
+   * Get LLC or MC NeighborIndex.
+   * @return -1 if not neighboring.
+   */
+  int getLLCNeighborIndex(MachineID machineId) const;
+  int getMCCNeighborIndex(MachineID machineId) const;
 
   /**
    * Count the number of migrating and migrated streams with the same StaticId

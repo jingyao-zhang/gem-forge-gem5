@@ -60,6 +60,7 @@ void StreamFloatController::floatStreams(
   // Sanity check for some offload decision.
   bool hasOffloadStoreFunc = false;
   bool hasOffloadPointerChase = false;
+  bool enableFloatMem = this->se->myParams->enableFloatMem;
   for (auto &dynS : dynStreams) {
     auto S = dynS->stream;
     if (dynS->isFloatedToCache()) {
@@ -93,11 +94,16 @@ void StreamFloatController::floatStreams(
       initPAddr, this->se->cpuDelegator->dataMasterId(), 0,
       MemCmd::Command::StreamConfigReq,
       reinterpret_cast<uint64_t>(cacheStreamConfigVec));
-  if (hasOffloadStoreFunc || hasOffloadPointerChase) {
-    // We have to delay this float config until StreamConfig is committed,
-    // as so far we have no way to rewind the offloaded writes.
-    // We also delay offloading pointer chasing streams, as they are more
-    // expensive and very likely causes faults if misspeculated.
+  if (hasOffloadStoreFunc || hasOffloadPointerChase || enableFloatMem) {
+    /**
+     * We have to delay this float config until StreamConfig is committed,
+     * as so far we have no way to rewind the offloaded writes.
+     * We also delay offloading pointer chasing streams, as they are more
+     * expensive and very likely causes faults if misspeculated.
+     * 
+     * We also delay if we have support to float to memory, as now we only
+     * have partial support to handle concurrent streams in memory controller.
+     */
     this->configSeqNumToDelayedFloatPktMap.emplace(args.seqNum, pkt);
     for (auto &dynS : dynStreams) {
       if (dynS->isFloatedToCache()) {

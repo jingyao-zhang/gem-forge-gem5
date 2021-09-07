@@ -115,6 +115,9 @@ class StreamEngine(GemForgeAccelerator):
     enableFineGrainedNearDataComputing = Param.Bool(False,
         "Whether we enable per element fine-grained near-data computing.")
 
+    # parameters for floating to memory.
+    enableFloatMem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")
+
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'
     cxx_header = 'cpu/gem_forge/accelerator/gem_forge_accelerator.hh'

@@ -2,9 +2,11 @@
 
 #include "LLCStreamEngine.hh"
 
-#include "debug/LLCRubyStreamBase.hh"
-#define DEBUG_TYPE LLCRubyStreamBase
+#include "debug/LLCStreamMigrationController.hh"
+#define DEBUG_TYPE LLCStreamMigrationController
 #include "../stream_log.hh"
+
+const int LLCStreamMigrationController::MaxNeighbors;
 
 LLCStreamMigrationController::LLCStreamMigrationController(
     AbstractStreamAwareController *_controller, int _neighborStreamsThreshold,
@@ -57,8 +59,10 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
     // Not my neighbor, we have no limitation to migrating there.
     return true;
   }
-  if (!dynS->getStaticStream()->isStoreComputeStream()) {
-    // Try only limit StoreComputeStream.
+  if (machineId.getType() == MachineType::MachineType_L2Cache &&
+      !dynS->getStaticStream()->isStoreComputeStream()) {
+    // Try only limit StoreComputeStream in LLC.
+    // For MC, always enable this feature.
     return true;
   }
   // Check if the neighboring SE has too many streams.
@@ -72,16 +76,17 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
     auto lastMigratedCycle = this->lastMigratedCycle.at(neighborIdx);
     if (curCycle - lastMigratedCycle < delay) {
       LLC_S_DPRINTF(dynS->getDynamicStreamId(),
-                    "[Migrate] Delayed migration to LLC_SE %d to avoid "
+                    "[Migrate] Delayed migration to %s to avoid "
                     "contention. NeighborStreams %d.\n",
-                    machineId.getNum(), neighborStreams);
+                    machineId, neighborStreams);
       return false;
     }
   }
   return true;
 }
 
-int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
+int LLCStreamMigrationController::getLLCNeighborIndex(
+    MachineID machineId) const {
   auto myBank = this->curRemoteBank();
   auto bank = machineId.getNum();
   if (this->controller->isMyNeighbor(machineId)) {
@@ -97,6 +102,59 @@ int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
   } else {
     return -1;
   }
+}
+
+int LLCStreamMigrationController::getMCCNeighborIndex(
+    MachineID machineId) const {
+  auto myBank = this->curRemoteBank();
+  auto bank = machineId.getNum();
+  /**
+   * This should really depend on the topology. But so far
+   * we assume the memory controller are all connected.
+   * And we just take left 3 controllers and right 3 controller.
+   */
+  auto halfNeighborDist = MaxNeighbors / 2;
+  if ((bank + halfNeighborDist < myBank) ||
+      (myBank + halfNeighborDist < bank)) {
+    return -1;
+  } else {
+    if (bank < myBank) {
+      return myBank - bank - 1;
+    } else if (bank > myBank) {
+      return bank - myBank - 1 + halfNeighborDist;
+    } else {
+      panic("MC Bank should not be the same %d != %d.", myBank, bank);
+    }
+  }
+}
+
+int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
+  auto myMachineId = this->controller->getMachineID();
+  if (myMachineId.getType() != machineId.getType()) {
+    panic("Inter-Level Stream Migration %s -> %s is not handled yet.",
+          myMachineId, machineId);
+  }
+  if (machineId == myMachineId) {
+    panic("Self Stream Migration %s -> %s is illegal.", myMachineId, machineId);
+  }
+  auto neighborIndex = -1;
+  switch (myMachineId.getType()) {
+  case MachineType::MachineType_L2Cache: {
+    neighborIndex = this->getLLCNeighborIndex(machineId);
+    break;
+  }
+  case MachineType::MachineType_Directory: {
+    neighborIndex = this->getMCCNeighborIndex(machineId);
+    break;
+  }
+  default: {
+    panic("Illegal Machine to Migrate Streams %s.", myMachineId);
+  }
+  }
+  if (neighborIndex >= MaxNeighbors) {
+    panic("NeighborIndex Overflow %d >= %d.", neighborIndex, MaxNeighbors);
+  }
+  return neighborIndex;
 }
 
 int LLCStreamMigrationController::countStreamsWithSameStaticId(

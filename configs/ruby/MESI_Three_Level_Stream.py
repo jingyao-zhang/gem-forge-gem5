@@ -83,7 +83,6 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     block_size_bits = int(math.log(options.cacheline_size, 2))
     l2_select_low_bit = options.llc_select_low_bit
     assert(l2_select_low_bit >= block_size_bits)
-    l2_index_start = l2_select_low_bit + l2_bits
 
     # ! Break the isolation. Assume MeshTopology and compute NumCoresPerRow.
     num_cores_per_row = options.num_cpus
@@ -352,9 +351,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_enable_stream_range_sync,
                 stream_atomic_lock_type=\
                     options.gem_forge_stream_atomic_lock_type,
-                llc_neighbor_stream_threshold=\
+                neighbor_stream_threshold=\
                     options.gem_forge_stream_engine_llc_neighbor_stream_threshold,
-                llc_neighbor_migration_delay=\
+                neighbor_migration_delay=\
                     options.gem_forge_stream_engine_llc_neighbor_migration_delay,
                 enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
                 )
@@ -441,15 +440,15 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
         dir_cntrl.llc_stream_engine_issue_width = options.gem_forge_stream_engine_llc_stream_engine_issue_width
         dir_cntrl.llc_stream_engine_migrate_width = options.gem_forge_stream_engine_llc_stream_engine_migrate_width
-        dir_cntrl.llc_stream_max_infly_request = options.gem_forge_stream_engine_llc_stream_max_infly_request
+        dir_cntrl.llc_stream_max_infly_request = options.gem_forge_stream_engine_mc_stream_max_infly_request
         dir_cntrl.llc_stream_engine_compute_width = options.gem_forge_stream_engine_compute_width
         dir_cntrl.llc_stream_engine_max_infly_computation = options.gem_forge_stream_engine_llc_max_infly_computation
         dir_cntrl.llc_access_core_simd_delay = options.gem_forge_stream_engine_llc_access_core_simd_delay
         dir_cntrl.enable_llc_stream_zero_compute_latency = options.gem_forge_enable_stream_zero_compute_latency
         dir_cntrl.enable_stream_range_sync = options.gem_forge_enable_stream_range_sync
         dir_cntrl.stream_atomic_lock_type = options.gem_forge_stream_atomic_lock_type
-        dir_cntrl.llc_neighbor_stream_threshold = options.gem_forge_stream_engine_llc_neighbor_stream_threshold
-        dir_cntrl.llc_neighbor_migration_delay = options.gem_forge_stream_engine_llc_neighbor_migration_delay
+        dir_cntrl.neighbor_stream_threshold = options.gem_forge_stream_engine_mc_neighbor_stream_threshold
+        dir_cntrl.neighbor_migration_delay = options.gem_forge_stream_engine_mc_neighbor_migration_delay
         dir_cntrl.enable_stream_float_mem = options.gem_forge_stream_engine_enable_float_mem
 
     for i, dma_port in enumerate(dma_ports):

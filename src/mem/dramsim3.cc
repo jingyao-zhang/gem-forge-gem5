@@ -67,7 +67,6 @@ DRAMsim3::DRAMsim3(const Params* p) :
     // being called. The callback prints the DRAMsim3 stats.
     Callback* cb = new MakeCallback<DRAMsim3Wrapper,
         &DRAMsim3Wrapper::printStats>(wrapper);
-    registerExitCallback(cb);
     Stats::registerDumpCallback(cb);
 }
 

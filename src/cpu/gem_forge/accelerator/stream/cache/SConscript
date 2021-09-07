@@ -22,12 +22,13 @@ DebugFlag('LLCRubyStreamReduce')
 DebugFlag('LLCRubyStreamMulticast')
 DebugFlag('LLCRubyStreamStore')
 DebugFlag('LLCRubyStreamNotIssue')
+DebugFlag('LLCStreamMigrationController')
 DebugFlag('LLCStreamLoopBound')
 CompoundFlag('LLCRubyStream', [
     'LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
     'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
     'LLCRubyStreamNotIssue', 'LLCStreamLoopBound',
-    'StreamRangeSync', 
+    'StreamRangeSync',  'LLCStreamMigrationController',
 ])
 CompoundFlag('RubyStreamLife',
              ['CoreRubyStreamLife', 'L0RubyStreamLife', 'MLCRubyStreamLife', 'LLCRubyStreamLife'])

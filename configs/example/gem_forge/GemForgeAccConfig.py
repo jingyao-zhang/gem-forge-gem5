@@ -82,6 +82,9 @@ def initializeStreamEngine(options):
     se.enableFineGrainedNearDataComputing =\
         options.gem_forge_stream_engine_enable_fine_grained_near_data_computing
 
+    se.enableFloatMem =\
+        options.gem_forge_stream_engine_enable_float_mem
+
     return se
 
 def initializeEmptyGemForgeAcceleratorManager(options):
