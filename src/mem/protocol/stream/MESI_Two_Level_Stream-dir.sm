@@ -556,7 +556,19 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     peek(requestNetwork_in, RequestMsg) {
       assert(is_valid(tbe));
       tbe.GetU_IDs.add(in_msg.XXNewRewquestor.singleElement());
-      tbe.sliceIds := in_msg.sliceIds;
+      tbe.sliceIds.merge(in_msg.sliceIds);
+    }
+  }
+  action(sh_recordGetHID, "sh", desc="Record GetH for load response") {
+    peek(requestNetwork_in, RequestMsg) {
+      assert(is_valid(tbe));
+      tbe.sliceIds.merge(in_msg.sliceIds);
+    }
+  }
+  action(sm_recordGetMID, "sm", desc="Record GetM for load response") {
+    peek(requestNetwork_in, RequestMsg) {
+      assert(is_valid(tbe));
+      tbe.sliceIds.merge(in_msg.sliceIds);
       tbe.streamStoreBlk := in_msg.streamStoreBlk;
     }
   }
@@ -569,10 +581,9 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       tbe.PhysicalAddress := in_msg.addr;
       tbe.Len := in_msg.Len;
       tbe.Requestor := in_msg.XXNewRewquestor.singleElement();
-      tbe.sliceIds := in_msg.sliceIds;
-      tbe.streamStoreBlk := in_msg.streamStoreBlk;
       tbe.Fetch_IDs.clear();
       tbe.GetU_IDs.clear();
+      tbe.sliceIds.clear();
     }
   }
 
@@ -785,7 +796,12 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
 
   transition(I, GETH, I_GH) {
     v_allocateTBE;
+    sh_recordGetHID;
     qf_queueMemoryFetchRequest;
+    j_popIncomingRequestQueue;
+  }
+  transition(I_GH, GETH, I_GH) {
+    sh_recordGetHID;
     j_popIncomingRequestQueue;
   }
   transition(I_GH, Memory_Data, I) {
@@ -822,6 +838,10 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     qf_queueMemoryFetchRequest;
     j_popIncomingRequestQueue;
   }
+  transition(I_GU, GETU, I_GU) {
+    su_recordGetUID;
+    j_popIncomingRequestQueue;
+  }
   transition(I_GU, Fetch, IM) {
     ss_recordFetchID;
     j_popIncomingRequestQueue;
@@ -845,6 +865,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   // ! TODO: Really separate out RWM from normal STORE.
   transition(I, STREAM_STORE, I_GM) {
     v_allocateTBE;
+    sm_recordGetMID;
     qf_queueMemoryFetchRequest;
     j_popIncomingRequestQueue;
   }
@@ -856,8 +877,15 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     kd_wakeUpDependents;
   }
 
-  transition(M, {GETH, STREAM_STORE}, M_GM) {
+  transition(M, GETH, M_GM) {
     v_allocateTBE;
+    sh_recordGetHID;
+    inv_sendCacheInvalidate;
+    j_popIncomingRequestQueue;
+  }
+  transition(M, STREAM_STORE, M_GM) {
+    v_allocateTBE;
+    sm_recordGetMID
     inv_sendCacheInvalidate;
     j_popIncomingRequestQueue;
   }

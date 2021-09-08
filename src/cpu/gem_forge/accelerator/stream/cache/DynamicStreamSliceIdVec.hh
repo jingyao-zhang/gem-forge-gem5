@@ -22,9 +22,12 @@ struct DynamicStreamSliceIdVec {
     assert(sliceId.isValid() && "Add Invalid SliceId to SliceIdVec.");
     this->sliceIds.push_back(sliceId);
   }
-  void clear() {
-    this->sliceIds.clear();
+  void merge(const DynamicStreamSliceIdVec &sliceIds) {
+    for (const auto &sliceId : sliceIds.sliceIds) {
+      this->add(sliceId);
+    }
   }
+  void clear() { this->sliceIds.clear(); }
   bool isValid() const { return !this->sliceIds.empty(); }
 };
 

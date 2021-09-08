@@ -16,6 +16,7 @@ structure(DynamicStreamSliceIdVec, external="yes", desc="A vector of sliceIds.")
   DynamicStreamSliceId singleSliceId();
   DynamicStreamSliceId firstSliceId();
   void add(DynamicStreamSliceId);
+  void merge(DynamicStreamSliceIdVec);
   void clear();
 }
 
