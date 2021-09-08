@@ -123,16 +123,20 @@ void SimpleCPUDelegator::commit(StaticInstPtr staticInst, ExecContext &xc) {
 
   /**
    * Notify the MinimalDataMoveMachine.
+   * ! So far we are not using this to model ideal data movement.
    */
-  const auto &pc = xc.pcState();
-  bool isStream = pimpl->curInstRunTimeInfo.callback != nullptr;
-  Addr paddr = pimpl->curInstRunTimeInfo.paddr;
-  if (isStream) {
-    auto vaddr = pimpl->curInstRunTimeInfo.callback->getAddr();
-    assert(this->translateVAddrOracle(vaddr, paddr));
+  const bool enableMinimalDataMoveMachien = false;
+  if (enableMinimalDataMoveMachien) {
+    const auto &pc = xc.pcState();
+    bool isStream = pimpl->curInstRunTimeInfo.callback != nullptr;
+    Addr paddr = pimpl->curInstRunTimeInfo.paddr;
+    if (isStream) {
+      auto vaddr = pimpl->curInstRunTimeInfo.callback->getAddr();
+      assert(this->translateVAddrOracle(vaddr, paddr));
+    }
+    pimpl->minDataMachine.commit(staticInst, pc, paddr, isStream);
+    pimpl->minDataMachineFix.commit(staticInst, pc, paddr, isStream);
   }
-  pimpl->minDataMachine.commit(staticInst, pc, paddr, isStream);
-  pimpl->minDataMachineFix.commit(staticInst, pc, paddr, isStream);
 
   isaHandler->commit(dynInfo);
   pimpl->state = Impl::StateE::BEFORE_DISPATCH;
