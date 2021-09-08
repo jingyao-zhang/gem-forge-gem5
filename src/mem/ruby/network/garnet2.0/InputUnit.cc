@@ -465,7 +465,22 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
     auto senderNI = m_router->get_net_ptr()->getNetworkInterface(f->get_route().src_ni);
     auto senderNodeId = senderNI->get_node_id();
     auto senderMachineId = MachineID::getMachineIDFromRawNodeID(senderNodeId);
-    auto localMachineId = MachineID(senderMachineId.getType(), m_router->get_id());
+    /**
+     * Try to get the LocalMachineId. Here I assume all routers are connected to the L2 cache.
+     */
+    auto localMachineType = MachineType::MachineType_NULL;
+    if (senderMachineId.getType() == MachineType::MachineType_Directory ||
+        senderMachineId.getType() == MachineType::MachineType_L2Cache) {
+        localMachineType = MachineType::MachineType_L2Cache;
+    }
+    if (localMachineType == MachineType::MachineType_NULL) {
+        panic("Multicast from Machine %s -> %s.", senderMachineId, msg->getDestination(), *msg);
+    }
+    auto localMachineId = MachineID(localMachineType, m_router->get_id());
+    if (localMachineId.getNum() >= MachineType_base_count(localMachineType)) {
+        panic("Local MachineId %s Overflow. Total %d.",
+              localMachineId, MachineType_base_count(localMachineType));
+    }
     auto localNodeId = localMachineId.getRawNodeID();
     auto localNI = m_router->get_net_ptr()->getNetworkInterface(localNodeId);
     // Inject the message.
