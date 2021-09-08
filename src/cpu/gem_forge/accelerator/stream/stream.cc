@@ -384,6 +384,9 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   // Update float stats.
   if (dynS.isFloatedToCache()) {
     this->statistic.numFloated++;
+    if (dynS.getFloatMachineType() == MachineType::MachineType_Directory) {
+      this->statistic.numFloatMem++;
+    }
     if (dynS.isPseudoFloatedToCache()) {
       this->statistic.numPseudoFloated++;
     }

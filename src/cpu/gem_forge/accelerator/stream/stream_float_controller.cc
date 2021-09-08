@@ -100,7 +100,7 @@ void StreamFloatController::floatStreams(
      * as so far we have no way to rewind the offloaded writes.
      * We also delay offloading pointer chasing streams, as they are more
      * expensive and very likely causes faults if misspeculated.
-     * 
+     *
      * We also delay if we have support to float to memory, as now we only
      * have partial support to handle concurrent streams in memory controller.
      */
@@ -188,7 +188,7 @@ void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
         floatedIds.push_back(dynS.dynamicStreamId);
       }
       S->statistic.numFloatRewinded++;
-      dynS.setFloatedToCache(false);
+      dynS.setFloatedToCache(false, MachineType::MachineType_NULL);
       dynS.setFloatConfigDelayed(false);
       dynS.setFloatedToCacheAsRoot(false);
     }
@@ -262,7 +262,8 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
       // UpdateStream is treated more like StoreComputeStream.
       continue;
     }
-    if (!this->policy->shouldFloatStream(*dynS)) {
+    auto floatDecision = this->policy->shouldFloatStream(*dynS);
+    if (!floatDecision.shouldFloat) {
       continue;
     }
     // Additional check TotalTripCount is not 0. This is only for NestStream.
@@ -275,7 +276,9 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
 
     // Remember the offloaded decision.
     dynS->setFloatedToCacheAsRoot(true);
-    dynS->setFloatedToCache(true);
+    dynS->setFloatedToCache(true, floatDecision.floatMachineType);
+    config->offloadedMachineType = floatDecision.floatMachineType;
+
     this->se->numFloated++;
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
@@ -299,7 +302,8 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
     if (!S->isAtomicComputeStream() || !S->isDirectMemStream()) {
       continue;
     }
-    if (!this->policy->shouldFloatStream(*dynS)) {
+    auto floatDecision = this->policy->shouldFloatStream(*dynS);
+    if (!floatDecision.shouldFloat) {
       continue;
     }
 
@@ -308,7 +312,8 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
 
     // Remember the offloaded decision.
     dynS->setFloatedToCacheAsRoot(true);
-    dynS->setFloatedToCache(true);
+    dynS->setFloatedToCache(true, floatDecision.floatMachineType);
+    config->offloadedMachineType = floatDecision.floatMachineType;
     this->se->numFloated++;
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
@@ -385,16 +390,20 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
       S_PANIC(S, "PointerChaseStream with ValueBaseStreams is not supported.");
     }
     // Remember the decision.
-    dynS->setFloatedToCache(true);
+    auto floatMachineType = this->policy->chooseFloatMachineType(*dynS);
+    dynS->setFloatedToCache(true, floatMachineType);
     dynS->setFloatedToCacheAsRoot(true);
+    config->offloadedMachineType = floatMachineType;
     this->se->numFloated++;
-    addrBaseDynS.setFloatedToCache(true);
+    addrBaseDynS.setFloatedToCache(true, floatMachineType);
     this->se->numFloated++;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as pointer chase.\n");
-    StreamFloatPolicy::logStream(S) << "[Float] as pointer chase.\n"
-                                    << std::flush;
-    StreamFloatPolicy::logStream(addrBaseS) << "[Float] as pointer chase IV.\n"
-                                            << std::flush;
+    StreamFloatPolicy::logStream(S)
+        << "[Float] " << floatMachineType << " as pointer chase.\n"
+        << std::flush;
+    StreamFloatPolicy::logStream(addrBaseS)
+        << "[Float] " << floatMachineType << " as pointer chase IV.\n"
+        << std::flush;
     floatedMap.emplace(S, config);
     floatedMap.emplace(addrBaseS, baseConfig);
     args.rootConfigVec.push_back(config);
@@ -473,10 +482,13 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
       config->addBaseOn(valueBaseConfig);
     }
     // Remember the decision.
-    dynS->setFloatedToCache(true);
+    dynS->setFloatedToCache(true, baseConfig->offloadedMachineType);
+    config->offloadedMachineType = baseConfig->offloadedMachineType;
     this->se->numFloated++;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as indirect.\n");
-    StreamFloatPolicy::logStream(S) << "[Float] as indirect.\n" << std::flush;
+    StreamFloatPolicy::logStream(S)
+        << "[Float] " << config->offloadedMachineType << " as indirect.\n"
+        << std::flush;
     floatedMap.emplace(S, config);
     if (S->getEnabledStoreFunc()) {
       if (!dynS->hasTotalTripCount()) {
@@ -501,7 +513,8 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
     if (!S->isStoreComputeStream() && !S->isUpdateStream()) {
       continue;
     }
-    if (!this->policy->shouldFloatStream(*dynS)) {
+    auto floatDecision = this->policy->shouldFloatStream(*dynS);
+    if (!floatDecision.shouldFloat) {
       continue;
     }
     /**
@@ -525,8 +538,9 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
       config->addBaseOn(valueBaseConfig);
     }
     // Remember the decision.
-    dynS->setFloatedToCache(true);
+    dynS->setFloatedToCache(true, floatDecision.floatMachineType);
     dynS->setFloatedToCacheAsRoot(true);
+    config->offloadedMachineType = floatDecision.floatMachineType;
     this->se->numFloated++;
     S_DPRINTF(S, "Offload DirectStoreStream.\n");
     floatedMap.emplace(S, config);
@@ -609,8 +623,6 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
     // Reduction stream is always one iteration behind.
     reductionConfig->isOneIterationBehind = true;
     dynS->setFloatedOneIterBehind(true);
-    dynS->setFloatedToCache(true);
-    this->se->numFloated++;
     floatedMap.emplace(S, reductionConfig);
 
     // Search to count number of senders to each base config.
@@ -645,8 +657,14 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
     baseConfigWithMostSenders->addUsedBy(reductionConfig);
     S_DPRINTF(S, "ReductionStream associated with %s, existing sender %d.\n",
               baseConfigWithMostSenders->dynamicId, maxSenders);
+    dynS->setFloatedToCache(true,
+                            baseConfigWithMostSenders->offloadedMachineType);
+    reductionConfig->offloadedMachineType =
+        baseConfigWithMostSenders->offloadedMachineType;
+    this->se->numFloated++;
     StreamFloatPolicy::logStream(S)
-        << "[Float] as Reduction with " << baseConfigWithMostSenders->dynamicId
+        << "[Float] " << reductionConfig->offloadedMachineType
+        << " as Reduction with " << baseConfigWithMostSenders->dynamicId
         << ", existing # sender " << maxSenders << ".\n"
         << std::flush;
     for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
@@ -767,7 +785,9 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   // Reduction stream is always one iteration behind.
   reductionConfig->isOneIterationBehind = true;
   dynS->setFloatedOneIterBehind(true);
-  dynS->setFloatedToCache(true);
+  dynS->setFloatedToCache(true, backBaseIndirectConfig->offloadedMachineType);
+  reductionConfig->offloadedMachineType =
+      backBaseIndirectConfig->offloadedMachineType;
   this->se->numFloated++;
   floatedMap.emplace(S, reductionConfig);
 
@@ -776,9 +796,9 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   S_DPRINTF(S, "Float IndirectReductionStream associated with %s.\n",
             backBaseIndirectConfig->dynamicId);
   StreamFloatPolicy::logStream(S)
-      << "[Float] as IndirectReduction with "
-      << backBaseIndirectConfig->dynamicId << " TotalTripCount "
-      << dynS->getTotalTripCount() << ".\n"
+      << "[Float] " << reductionConfig->offloadedMachineType
+      << " as IndirectReduction with " << backBaseIndirectConfig->dynamicId
+      << " TotalTripCount " << dynS->getTotalTripCount() << ".\n"
       << std::flush;
 
   if (backBaseDirectS) {
@@ -861,13 +881,15 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
 
   auto myConfig =
       S->allocateCacheConfigureData(dynS->configSeqNum, true /* isIndirect */);
-  dynS->setFloatedToCache(true);
+  dynS->setFloatedToCache(true, addrBaseConfig->offloadedMachineType);
+  myConfig->offloadedMachineType = addrBaseConfig->offloadedMachineType;
   this->se->numFloated++;
   floatedMap.emplace(S, myConfig);
   addrBaseConfig->addUsedBy(myConfig);
 
   StreamFloatPolicy::logStream(S)
-      << "[Float] as Two-Level IndirectStoreCompute associated with "
+      << "[Float] " << myConfig->offloadedMachineType
+      << " as Two-Level IndirectStoreCompute associated with "
       << addrBaseConfig->dynamicId << "\n"
       << std::flush;
 

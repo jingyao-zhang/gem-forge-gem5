@@ -7,16 +7,29 @@
 
 class StreamFloatPolicy {
 public:
-  StreamFloatPolicy(bool _enabled, const std::string &_policy);
+  StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
+                    const std::string &_policy);
   ~StreamFloatPolicy();
 
-  bool shouldFloatStream(DynamicStream &dynS);
+  struct FloatDecision {
+    bool shouldFloat;
+    MachineType floatMachineType;
+    FloatDecision(
+        bool _shouldFloat = false,
+        MachineType _floatMachineType = MachineType::MachineType_L2Cache)
+        : shouldFloat(_shouldFloat), floatMachineType(_floatMachineType) {}
+  };
+
+  FloatDecision shouldFloatStream(DynamicStream &dynS);
+  MachineType chooseFloatMachineType(DynamicStream &dynS);
+
   bool shouldPseudoFloatStream(DynamicStream &dynS);
 
   static std::ostream &logStream(Stream *S);
 
 private:
   bool enabled;
+  bool enabledFloatMem;
   enum PolicyE {
     STATIC,
     MANUAL,
@@ -25,8 +38,8 @@ private:
   } policy;
   std::vector<uint64_t> privateCacheCapacity;
 
-  bool shouldFloatStreamManual(DynamicStream &dynS);
-  bool shouldFloatStreamSmart(DynamicStream &dynS);
+  FloatDecision shouldFloatStreamManual(DynamicStream &dynS);
+  FloatDecision shouldFloatStreamSmart(DynamicStream &dynS);
   bool checkReuseWithinStream(DynamicStream &dynS);
   bool checkAggregateHistory(DynamicStream &dynS);
 

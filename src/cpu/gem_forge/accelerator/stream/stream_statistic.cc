@@ -30,6 +30,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numConfigured);
   dumpScalar(numMisConfigured);
   dumpScalar(numFloated);
+  dumpScalar(numFloatMem);
   dumpScalar(numFloatRewinded);
   dumpScalar(numFloatCancelled);
   dumpScalar(numPseudoFloated);
@@ -190,6 +191,7 @@ void StreamStatistic::clear() {
   this->numConfigured = 0;
   this->numMisConfigured = 0;
   this->numFloated = 0;
+  this->numFloatMem = 0;
   this->numFloatRewinded = 0;
   this->numFloatCancelled = 0;
   this->numPseudoFloated = 0;

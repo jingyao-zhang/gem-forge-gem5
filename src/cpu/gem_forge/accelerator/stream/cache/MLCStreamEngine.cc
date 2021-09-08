@@ -82,22 +82,6 @@ void MLCStreamEngine::configureStream(
   }
 
   /**
-   * Which RemoteSE should we configure?
-   * So far we just configure the MemSE if the stream is too long.
-   * For now just always offload to memory.
-   */
-  streamConfigureData->offloadedMachineType = MachineType::MachineType_L2Cache;
-  // const uint64_t offloadToMemSESizeThreshold = 64 * 1024 * 1024;
-  if (this->controller->isStreamFloatMemEnabled()) {
-    // if (streamConfigureData->hasTotalTripCount() &&
-    //     streamConfigureData->getTotalTripCount() *
-    //             streamConfigureData->elementSize >=
-    //         offloadToMemSESizeThreshold) {
-    streamConfigureData->offloadedMachineType =
-        MachineType::MachineType_Directory;
-  }
-
-  /**
    * ! We initialize the indirect stream first so that
    * ! the direct stream's constructor can start notify it about base stream
    * data.

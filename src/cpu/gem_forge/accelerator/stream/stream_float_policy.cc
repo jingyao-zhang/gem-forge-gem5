@@ -40,8 +40,9 @@ std::vector<uint64_t> getPrivateCacheCapacity(StreamEngine *se) {
 
 } // namespace
 
-StreamFloatPolicy::StreamFloatPolicy(bool _enabled, const std::string &_policy)
-    : enabled(_enabled) {
+StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
+                                     const std::string &_policy)
+    : enabled(_enabled), enabledFloatMem(_enabledFloatMem) {
   if (_policy == "static") {
     this->policy = PolicyE::STATIC;
   } else if (_policy == "manual") {
@@ -74,9 +75,10 @@ std::ostream &StreamFloatPolicy::logStream(Stream *S) {
   return getLog() << S->getCPUId() << '-' << S->getStreamName() << ": ";
 }
 
-bool StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
+StreamFloatPolicy::FloatDecision
+StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
   if (!this->enabled) {
-    return false;
+    return FloatDecision();
   }
   // Initialize the private cache capacity.
   auto S = dynS.stream;
@@ -95,7 +97,7 @@ bool StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
         (S->isAtomicComputeStream() || S->isStoreComputeStream());
     if (!S->isDirectLoadStream() && !S->isPointerChaseLoadStream() &&
         !isUnmergedDirectAtomicOrStore) {
-      return false;
+      return FloatDecision();
     }
   }
   /**
@@ -109,13 +111,13 @@ bool StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
   if (S->se->isTraceSim()) {
     if (S->getStreamLengthAtInstance(dynS.dynamicStreamId.streamInstance) ==
         0) {
-      return false;
+      return FloatDecision();
     }
   }
 
   switch (this->policy) {
   case PolicyE::STATIC:
-    return true;
+    return FloatDecision();
   case PolicyE::MANUAL: {
     return this->shouldFloatStreamManual(dynS);
   }
@@ -124,7 +126,7 @@ bool StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
     return this->shouldFloatStreamSmart(dynS);
   }
   default: {
-    return false;
+    return FloatDecision();
   }
   }
 
@@ -144,7 +146,8 @@ bool StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
   }
 }
 
-bool StreamFloatPolicy::shouldFloatStreamManual(DynamicStream &dynS) {
+StreamFloatPolicy::FloatDecision
+StreamFloatPolicy::shouldFloatStreamManual(DynamicStream &dynS) {
   /**
    * TODO: Really should be a hint in the stream configuration provided by the
    * compiler.
@@ -157,7 +160,10 @@ bool StreamFloatPolicy::shouldFloatStreamManual(DynamicStream &dynS) {
     iter = memorizedDecision.emplace(S, shouldFloat).first;
   }
 
-  return iter->second;
+  /**
+   * So far manually will always float to L2.
+   */
+  return FloatDecision(iter->second, MachineType::MachineType_L2Cache);
 }
 
 bool StreamFloatPolicy::checkReuseWithinStream(DynamicStream &dynS) {
@@ -325,7 +331,8 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
   return true;
 }
 
-bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
+StreamFloatPolicy::FloatDecision
+StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
   /**
    * 1. Check if there are aliased store stream.
    */
@@ -336,7 +343,7 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
       S_DPRINTF(S, "[Not Float] due to aliased store stream.\n");
       logStream(S) << "[Not Float] due to aliased store stream.\n"
                    << std::flush;
-      return false;
+      return FloatDecision();
     }
   }
 
@@ -357,18 +364,21 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
       }
     }
     if (floatCompute) {
-      S_DPRINTF(S, "[Float] always float computation.");
-      logStream(S) << "[Float] always float computation.\n" << std::flush;
-      return true;
+      auto machineType = this->chooseFloatMachineType(dynS);
+      S_DPRINTF(S, "[Float] %s always float computation.", machineType);
+      logStream(S) << "[Float] " << machineType
+                   << " always float computation.\n"
+                   << std::flush;
+      return FloatDecision(true, machineType);
     }
   }
 
   if (!this->checkReuseWithinStream(dynS)) {
-    return false;
+    return FloatDecision(false);
   }
 
   if (!this->checkAggregateHistory(dynS)) {
-    return false;
+    return FloatDecision(false);
   }
 
   if (S->getStreamName() ==
@@ -378,12 +388,13 @@ bool StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
       S->getStreamName() == "(kernel_range.c::28(.omp_outlined..37) 67 bb104 "
                             "bb118::tmp121(load))") {
     logStream(S) << "[NotFloated]: explicitly.\n" << std::flush;
-    return false;
+    return FloatDecision(false);
   }
 
-  S_DPRINTF(S, "[Float]\n");
-  logStream(S) << "[Float].\n" << std::flush;
-  return true;
+  auto machineType = this->chooseFloatMachineType(dynS);
+  S_DPRINTF(S, "[Float] %s.\n", machineType);
+  logStream(S) << "[Float] " << machineType << ".\n" << std::flush;
+  return FloatDecision(true, machineType);
 }
 
 bool StreamFloatPolicy::shouldPseudoFloatStream(DynamicStream &dynS) {
@@ -409,4 +420,14 @@ bool StreamFloatPolicy::shouldPseudoFloatStream(DynamicStream &dynS) {
   logStream(S) << "[PseudoFloat] TotalTripCount " << totalTripCount << '\n'
                << std::flush;
   return true;
+}
+
+MachineType StreamFloatPolicy::chooseFloatMachineType(DynamicStream &dynS) {
+  if (!this->enabledFloatMem) {
+    // By default we float to L2 cache (LLC in MESI_Three_Level).
+    return MachineType::MachineType_L2Cache;
+  }
+
+  // Otherwise, so far always offload to memory.
+  return MachineType::MachineType_Directory;
 }

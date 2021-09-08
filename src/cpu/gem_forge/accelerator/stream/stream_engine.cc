@@ -62,10 +62,13 @@ StreamEngine::StreamEngine(Params *params)
   this->enableStreamFloatIndirect = params->streamEngineEnableFloatIndirect;
   this->enableStreamFloatPseudo = params->streamEngineEnableFloatPseudo;
   this->enableStreamFloatCancel = params->streamEngineEnableFloatCancel;
+
   auto streamFloatPolicy = m5::make_unique<StreamFloatPolicy>(
-      this->enableStreamFloat, params->streamEngineFloatPolicy);
+      this->enableStreamFloat, params->enableFloatMem,
+      params->streamEngineFloatPolicy);
   this->floatController = m5::make_unique<StreamFloatController>(
       this, std::move(streamFloatPolicy));
+
   this->ndcController = m5::make_unique<StreamNDCController>(this);
   this->computeEngine = m5::make_unique<StreamComputeEngine>(this, params);
   this->regionController = m5::make_unique<StreamRegionController>(this);

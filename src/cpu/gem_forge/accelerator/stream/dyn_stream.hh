@@ -4,6 +4,7 @@
 #include "addr_gen_callback.hh"
 #include "cache/DynamicStreamAddressRange.hh"
 #include "fifo_entry_idx.hh"
+#include "mem/ruby/protocol/MachineType.hh"
 
 #include <array>
 #include <memory>
@@ -84,7 +85,10 @@ struct DynamicStream {
 
   void setFloatConfigDelayed(bool val) { this->floatConfigDelayed = val; }
   void setFloatedToCacheAsRoot(bool val) { this->floatedToCacheAsRoot = val; }
-  void setFloatedToCache(bool val) { this->floatedToCache = val; }
+  void setFloatedToCache(bool val, MachineType type) {
+    this->floatedToCache = val;
+    this->floatMachineType = type;
+  }
   void setFloatedWithDependent(bool val) { this->floatedWithDependent = val; }
   void setFloatedAsNDC(bool val) { this->floatedAsNDC = val; }
   void setFloatedAsNDCForward(bool val) { this->floatedAsNDCForward = val; }
@@ -98,6 +102,8 @@ struct DynamicStream {
     this->nextCacheDoneElementIdx = val;
   }
 
+  MachineType getFloatMachineType() const { return this->floatMachineType; }
+
 private:
   // Whether the floating config is delayed until config committed.
   bool floatConfigDelayed = false;
@@ -105,6 +111,7 @@ private:
   // Whether the dynamic stream is floated to cache.
   bool floatedToCacheAsRoot = false;
   bool floatedToCache = false;
+  MachineType floatMachineType = MachineType::MachineType_NULL;
   bool floatedWithDependent = false;
   bool pseudoFloatedToCache = false;
 
