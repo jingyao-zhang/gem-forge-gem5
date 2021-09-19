@@ -102,11 +102,12 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   // EVENTS
   enumeration(Event, desc="Cache events") {
     // L0 events
-    Load,               desc="Load request from the home processor";
-    LoadUncache,        desc="Load request that will not be cached";
-    LoadHitAndForward,  desc="Load request hit, but still forward to L1";
-    Ifetch,             desc="I-fetch request from the home processor";
-    Store,              desc="Store request from the home processor";
+    Load,                     desc="Load request from the home processor";
+    LoadUncache,              desc="Load request that will not be cached";
+    LoadHitAndForward,        desc="Load request hit, but still forward to L1";
+    LoadHitICacheAndForward,  desc="Load request hit in ICache, but still forward to L1";
+    Ifetch,                   desc="I-fetch request from the home processor";
+    Store,                    desc="Store request from the home processor";
 
     Inv,           desc="Invalidate request from L2 bank";
 
@@ -462,7 +463,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
               if (se.shouldForward(in_msg.pkt)) {
                 // We should forward the request to lower cache level
                 // while serving this request.
-                trigger(Event:LoadHitAndForward, in_msg.LineAddress, 
+                trigger(Event:LoadHitICacheAndForward, in_msg.LineAddress, 
                         Icache_entry, TBEs[in_msg.LineAddress]);
               } else {
                 // No need to forward it, simply serve the request.
@@ -1256,6 +1257,14 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   transition({S, E, M}, LoadHitAndForward) {
     ur_profileDataReq;
     h_load_hit;
+    fsa_forwardStreamAccess;
+    uu_profileDataHit;
+    k_popMandatoryQueue;
+  }
+
+  transition({S, E, M}, LoadHitICacheAndForward) {
+    ur_profileDataReq;
+    h_ifetch_hit;
     fsa_forwardStreamAccess;
     uu_profileDataHit;
     k_popMandatoryQueue;
