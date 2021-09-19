@@ -69,6 +69,18 @@
                 0x18: decode EVEX_L_EXTEND {
                     0x1: VINSERT128(VYdo, Wo, Ib);
                 }
+                0x19: decode EVEX_L_EXTEND {
+                    0x2: decode IMMEDIATE {
+                        0x0: VEXTRACT128L(Wo, VYdo, Ib);
+                        0x1: VEXTRACT128H(Wo, VYdo, Ib);
+                        0x2: VEXTRACT128HL(Wo, VZqo, Ib);
+                        0x3: VEXTRACT128HH(Wo, VZqo, Ib);
+                    }
+                    0x1: decode IMMEDIATE {
+                        0x0: VEXTRACT128L(Wo, VYdo, Ib);
+                        0x1: VEXTRACT128H(Wo, VYdo, Ib);
+                    }
+                }
                 0x1A: decode EVEX_L_EXTEND {
                     0x2: VINSERT256(VZqo, WYdo, Ib);
                 }

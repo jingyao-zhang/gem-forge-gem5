@@ -247,6 +247,7 @@ const EVEXTupleType EVEXTupleTypeThreeByteF30F38[256] =
  *   66 16 vpextrq/d               TUPLE1_SCALAR
  *   66 17 vextractps              TUPLE1_SCALAR
  * ! 66 18 vinsertf128             TUPLE2/TUPLE4
+ * ! 66 19 vextractf128            TUPLE2/TUPLE4
  *   66 25 vpternlog               FULL
  * ! 66 38 vinserti128             TUPLE2/TUPLE4
  * ! 66 39 vextracti128            TUPLE2/TUPLE4
@@ -255,7 +256,7 @@ const EVEXTupleType EVEXTupleTypeThreeByte660F3A[256] =
     {    //LSB
 // MSB   O | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D | E | F
 /*  O */ O , O , O , FU, O , FU, O , O , O , O , O , O , O , O , O , O ,
-/*  1 */ O , O , O , O , O , O , TS, TS, T2, O , O , O , O , O , O , O ,
+/*  1 */ O , O , O , O , O , O , TS, TS, T2, T2, O , O , O , O , O , O ,
 /*  2 */ O , O , O , O , O , FU, O , O , O , O , O , O , O , O , O , O ,
 /*  3 */ O , O , O , O , O , O , O , O , T2, T2, O , O , O , O , O , O ,
 /*  4 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
