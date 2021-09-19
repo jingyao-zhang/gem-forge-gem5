@@ -87,6 +87,13 @@ void StreamFloatController::floatStreams(
 
   this->setFirstOffloadedElementIdx(floatArgs);
 
+  bool hasOffloadFaultedInitPAddr = false;
+  for (const auto &config : *cacheStreamConfigVec) {
+    if (!config->initPAddrValid) {
+      hasOffloadFaultedInitPAddr = true;
+    }
+  }
+
   // Send all the floating streams in one packet.
   // Dummy paddr to make ruby happy.
   Addr initPAddr = 0;
@@ -94,12 +101,17 @@ void StreamFloatController::floatStreams(
       initPAddr, this->se->cpuDelegator->dataMasterId(), 0,
       MemCmd::Command::StreamConfigReq,
       reinterpret_cast<uint64_t>(cacheStreamConfigVec));
-  if (hasOffloadStoreFunc || hasOffloadPointerChase || enableFloatMem) {
+  if (hasOffloadStoreFunc || hasOffloadPointerChase ||
+      hasOffloadFaultedInitPAddr || enableFloatMem) {
     /**
-     * We have to delay this float config until StreamConfig is committed,
-     * as so far we have no way to rewind the offloaded writes.
-     * We also delay offloading pointer chasing streams, as they are more
+     * There are some scenarios we want to delay offloading until StreamConfig
+     * is committed.
+     *
+     * 1. There are writes offloaded, as far we have no way to rewind them.
+     * 2. We are offloading pointer chasing streams, as they are more
      * expensive and very likely causes faults if misspeculated.
+     * 3. Some stream has the initial address faulted, which is very likely
+     * caused by misspeculated StreamConfig.
      *
      * We also delay if we have support to float to memory, as now we only
      * have partial support to handle concurrent streams in memory controller.

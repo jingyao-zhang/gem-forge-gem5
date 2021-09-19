@@ -223,11 +223,11 @@ void StreamRegionController::configureNestStream(
     }
   }
 
-  SE_DPRINTF(
-      "[Nest] Value ready. Configure NestRegion %s, OuterElementIdx %llu, "
-      "TotalTripCount %d, Configured DynStreams:\n",
-      staticNestRegion.region.region(), dynNestConfig.nextElementIdx,
-      totalTripCount);
+  SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, OuterElementIdx "
+             "%lu, ConfigFuncStartSeqNum %lu, TotalTripCount %d, Configured "
+             "DynStreams:\n",
+             staticNestRegion.region.region(), dynNestConfig.nextElementIdx,
+             configFuncStartSeqNum, totalTripCount);
   if (Debug::StreamNest) {
     for (auto S : staticNestRegion.streams) {
       auto &dynS = S->getLastDynamicStream();
@@ -241,12 +241,14 @@ void StreamRegionController::configureNestStream(
 InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getConfigSeqNum(
     uint64_t elementIdx, uint64_t outSeqNum) const {
   // We add 1 to NumInsts because we have to count StreamEnd.
-  auto numInsts = this->configFunc->getNumInstructions();
-  return outSeqNum + 1 + elementIdx * (numInsts + 1);
+  // Here we actually break the monotonic increasing property, but it should be
+  // fine as they are never misspeculated.
+  const int instOffset = 1;
+  return outSeqNum + 1 + elementIdx * (instOffset + 1);
 }
 
 InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getEndSeqNum(
     uint64_t elementIdx, uint64_t outSeqNum) const {
-  auto numInsts = this->configFunc->getNumInstructions();
-  return outSeqNum + 1 + elementIdx * (numInsts + 1) + numInsts;
+  const int instOffset = 1;
+  return outSeqNum + 1 + elementIdx * (instOffset + 1) + instOffset;
 }

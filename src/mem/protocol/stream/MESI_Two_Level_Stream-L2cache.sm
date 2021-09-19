@@ -206,6 +206,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamForwardRequest(RequestMsg);
     void receiveStreamCommit(DynamicStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
+    void notifyStreamRequestMiss(DynamicStreamSliceIdVec);
   }
 
   LLCStreamEngine se, constructor="this, m_streamMigrateFromL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectFromL2Cache_ptr, m_responseFromL2Cache_ptr";
@@ -1042,7 +1043,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   action(uu_profileMiss, "\um", desc="Profile the demand miss") {
-      ++L2cache.demand_misses;
+    ++L2cache.demand_misses;
+    if (is_valid(tbe)) {
+      if (tbe.sliceIds.isValid()) {
+        se.notifyStreamRequestMiss(tbe.sliceIds);
+      }
+    }
   }
 
   action(uu_profileHit, "\uh", desc="Profile the demand hit") {

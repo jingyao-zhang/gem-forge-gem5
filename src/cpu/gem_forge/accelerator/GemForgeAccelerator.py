@@ -117,6 +117,7 @@ class StreamEngine(GemForgeAccelerator):
 
     # parameters for floating to memory.
     enableFloatMem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")
+    floatLevelPolicy = Param.String("static", "Policy to choose floating level.")
 
 class GemForgeAcceleratorManager(SimObject):
     type = 'GemForgeAcceleratorManager'

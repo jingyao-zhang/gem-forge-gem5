@@ -729,8 +729,30 @@ void LLCDynamicStream::terminate() {
 void LLCDynamicStream::allocateLLCStreams(
     AbstractStreamAwareController *mlcController,
     CacheStreamConfigureVec &configs) {
+
+  /**
+   * By default we set the LoadBalanceValve on StoreComputeStreams.
+   * If no such streams, we set on the first LLCDynStreams.
+   */
+  LLCDynamicStreamPtr uncuttedLLCDynSWithSmallestStatidId = nullptr;
+  bool loadBalanceValveSet = false;
   for (auto &config : configs) {
-    LLCDynamicStream::allocateLLCStream(mlcController, config);
+    auto S = LLCDynamicStream::allocateLLCStream(mlcController, config);
+    if (!config->hasBeenCuttedByMLC) {
+      if (!uncuttedLLCDynSWithSmallestStatidId ||
+          uncuttedLLCDynSWithSmallestStatidId->getStaticId() >
+              S->getStaticId()) {
+        uncuttedLLCDynSWithSmallestStatidId = S;
+      }
+    }
+    if (S->getStaticStream()->isStoreComputeStream()) {
+      S->setLoadBalanceValve();
+      loadBalanceValveSet = true;
+    }
+  }
+  if (!loadBalanceValveSet) {
+    assert(uncuttedLLCDynSWithSmallestStatidId && "Configured not LLCDynS.");
+    //   uncuttedLLCDynSWithSmallestStatidId->setLoadBalanceValve();
   }
 
   // Remember the allocated group.
@@ -787,7 +809,7 @@ void LLCDynamicStream::allocateLLCStreams(
   }
 }
 
-void LLCDynamicStream::allocateLLCStream(
+LLCDynamicStreamPtr LLCDynamicStream::allocateLLCStream(
     AbstractStreamAwareController *mlcController,
     CacheStreamConfigureDataPtr &config) {
 
@@ -848,6 +870,8 @@ void LLCDynamicStream::allocateLLCStream(
 
   // Initialize the first slices.
   S->initDirectStreamSlicesUntil(config->initCreditedIdx);
+
+  return S;
 }
 
 void LLCDynamicStream::setBaseStream(LLCDynamicStreamPtr baseS) {

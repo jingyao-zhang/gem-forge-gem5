@@ -86,6 +86,10 @@ int LLCStreamEngine::curRemoteBank() const {
   return this->controller->getMachineID().num;
 }
 
+MachineType LLCStreamEngine::myMachineType() const {
+  return this->controller->getMachineID().getType();
+}
+
 const char *LLCStreamEngine::curRemoteMachineType() const {
   return this->controller->getMachineTypeString();
 }
@@ -291,6 +295,19 @@ void LLCStreamEngine::receiveStreamDataVec(
                                        storeValueBlock);
   }
   this->scheduleEvent(Cycles(delayCycle));
+}
+
+void LLCStreamEngine::notifyStreamRequestMiss(
+    const DynamicStreamSliceIdVec &sliceIds) {
+  if (this->myMachineType() == MachineType::MachineType_L2Cache) {
+    for (const auto &sliceId : sliceIds.sliceIds) {
+      auto llcS = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId());
+      if (llcS) {
+        auto S = llcS->getStaticStream();
+        S->statistic.numMissL2++;
+      }
+    }
+  }
 }
 
 void LLCStreamEngine::receiveStreamNDCRequest(PacketPtr pkt) {
@@ -714,7 +731,7 @@ void LLCStreamEngine::wakeup() {
     if (!req.translationDone) {
       break;
     }
-    this->issueStreamRequestToLLCBank(req);
+    this->issueStreamRequestToRemoteBank(req);
     this->requestQueue.pop_front();
   }
 
@@ -1418,8 +1435,9 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
         statistic.numLLCCanMulticastSlice++;
       }
     }
-    auto requestIter = this->enqueueRequest(S->getCPUDelegator(), sliceId,
-                                            vaddrLine, paddrLine, reqType);
+    auto requestIter =
+        this->enqueueRequest(S->getCPUDelegator(), sliceId, vaddrLine,
+                             paddrLine, this->myMachineType(), reqType);
 
     if (S->isStoreStream()) {
       /**
@@ -1477,7 +1495,8 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
       // Unless this is PtrChaseIV stream.
       if (dynS->isPointerChase()) {
       } else {
-        LLC_SLICE_PANIC(sliceId, "Faulted with Indirect Streams.");
+        LLC_SLICE_PANIC(sliceId, "Faulted at %#x with Indirect Streams.",
+                        sliceId.vaddr);
       }
     }
     statistic.numLLCFaultSlice++;
@@ -1626,7 +1645,7 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
 
       // Push to the request queue.
       this->enqueueRequest(IS->getCPUDelegator(), sliceId, curSliceVAddrLine,
-                           curSlicePAddrLine, reqType);
+                           curSlicePAddrLine, this->myMachineType(), reqType);
       dynIS->inflyRequests++;
     } else {
       // For faulted slices, we simply ignore it.
@@ -1749,9 +1768,9 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
         this->scheduleEvent(Cycles(1));
       }
     } else {
-      auto reqIter =
-          this->enqueueRequest(IS->getCPUDelegator(), sliceId, vaddrLine,
-                               paddrLine, CoherenceRequestType_STREAM_STORE);
+      auto reqIter = this->enqueueRequest(
+          IS->getCPUDelegator(), sliceId, vaddrLine, paddrLine,
+          this->myMachineType(), CoherenceRequestType_STREAM_STORE);
       dynIS->inflyRequests++;
       auto lineOffset = sliceId.vaddr % RubySystem::getBlockSizeBytes();
       reqIter->dataBlock.setData(reinterpret_cast<uint8_t *>(&storeValue),
@@ -1766,8 +1785,9 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
 
 LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
     GemForgeCPUDelegator *cpuDelegator, const DynamicStreamSliceId &sliceId,
-    Addr vaddrLine, Addr paddrLine, CoherenceRequestType type) {
-  this->requestQueue.emplace_back(sliceId, paddrLine, type);
+    Addr vaddrLine, Addr paddrLine, MachineType destMachineType,
+    CoherenceRequestType type) {
+  this->requestQueue.emplace_back(sliceId, paddrLine, destMachineType, type);
   auto requestQueueIter = std::prev(this->requestQueue.end());
   // To match with TLB interface, we first create a fake packet.
   auto tc = cpuDelegator->getSingleThreadContext();
@@ -1799,28 +1819,37 @@ void LLCStreamEngine::translationCallback(PacketPtr pkt, ThreadContext *tc,
   delete pkt;
 }
 
-void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
+void LLCStreamEngine::issueStreamRequestToRemoteBank(
+    const LLCStreamRequest &req) {
   const auto &sliceId = req.sliceId;
   const auto paddrLine = req.paddrLine;
   auto selfMachineId = this->controller->getMachineID();
+
+  auto destMachineType = req.destMachineType;
+  if (destMachineType != MachineType::MachineType_L2Cache &&
+      destMachineType != MachineType::MachineType_Directory) {
+    LLC_SLICE_PANIC(sliceId, "Issue to Unsupported MachineType %s.\n",
+                    destMachineType);
+  }
+
   auto destMachineId = selfMachineId;
-  bool handledHere = this->isPAddrHandledByMe(req.paddrLine);
+  bool handledHere = (destMachineType == selfMachineId.getType()) &&
+                     this->isPAddrHandledByMe(req.paddrLine);
   if (handledHere) {
     LLC_SLICE_DPRINTF(sliceId,
                       "Issue [local] %s request vaddr %#x paddrLine %#x value "
                       "%s.\n",
-                      CoherenceRequestType_to_string(req.requestType),
-                      sliceId.vaddr, paddrLine, req.dataBlock);
+                      req.requestType, sliceId.vaddr, paddrLine, req.dataBlock);
   } else {
-    destMachineId = this->mapPaddrToSameLevelBank(paddrLine);
-    LLC_SLICE_DPRINTF(sliceId,
-                      "Issue [remote] %s request to %s inqueue %d buffered %d "
-                      "value %s.\n",
-                      CoherenceRequestType_to_string(req.requestType),
-                      MachineIDToString(destMachineId),
-                      this->streamIndirectIssueMsgBuffer->getSize(curTick()),
-                      this->indReqBuffer->getTotalBufferedRequests(),
-                      req.dataBlock);
+    destMachineId =
+        this->controller->mapAddressToLLCOrMem(paddrLine, destMachineType);
+    LLC_SLICE_DPRINTF(
+        sliceId,
+        "Issue [remote] %s request to %s paddr %#x inqueue %d buffered %d "
+        "value %s.\n",
+        req.requestType, destMachineId, paddrLine,
+        this->streamIndirectIssueMsgBuffer->getSize(curTick()),
+        this->indReqBuffer->getTotalBufferedRequests(), req.dataBlock);
   }
 
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
@@ -1872,8 +1901,11 @@ void LLCStreamEngine::issueStreamRequestToLLCBank(const LLCStreamRequest &req) {
   if (req.requestType == CoherenceRequestType_STREAM_FORWARD) {
     auto dynS = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId());
     if (dynS) {
+      auto totalNodesBeforeLLC =
+          MachineType_base_number(MachineType::MachineType_L2Cache);
       dynS->getStaticStream()->statistic.sampleLLCSendTo(
-          selfMachineId.getNum(), destMachineId.getNum());
+          selfMachineId.getRawNodeID() - totalNodesBeforeLLC,
+          destMachineId.getRawNodeID() - totalNodesBeforeLLC);
     }
   }
 
@@ -2063,7 +2095,8 @@ void LLCStreamEngine::issueStreamDataToLLC(
     // Now we enqueue the translation request.
     auto reqIter = this->enqueueRequest(
         recvConfig->stream->getCPUDelegator(), sliceId, recvElementVAddrLine,
-        recvElementPAddrLine, CoherenceRequestType_STREAM_FORWARD);
+        recvElementPAddrLine, recvConfig->offloadedMachineType,
+        CoherenceRequestType_STREAM_FORWARD);
     // Remember the receiver dynamic id and forwarded data block.
     reqIter->forwardToStreamId = recvConfig->dynamicId;
     reqIter->dataBlock = dataBlock;

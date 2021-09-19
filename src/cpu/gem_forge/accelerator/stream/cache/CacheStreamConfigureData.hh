@@ -84,6 +84,11 @@ public:
     return this->totalTripCount != InvalidTotalTripCount;
   }
 
+  /**
+   * Remember that this stream is short and has been cutted by MLC SE.
+   */
+  bool hasBeenCuttedByMLC = false;
+
   bool isPredicated = false;
   bool isPredicatedTrue = false;
   DynamicStreamId predicateStreamId;

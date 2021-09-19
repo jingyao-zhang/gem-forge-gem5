@@ -34,6 +34,13 @@ private:
   const int neighborStreamsThreshold;
   const Cycles delay;
 
+  enum MigrationValveTypeE {
+    NONE,
+    ALL,
+    HARD,
+  };
+  MigrationValveTypeE valveType;
+
   static constexpr int MaxNeighbors = 6;
   std::array<Cycles, MaxNeighbors> lastMigratedCycle;
 

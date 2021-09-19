@@ -19,6 +19,17 @@ LLCStreamMigrationController::LLCStreamMigrationController(
   for (auto &c : this->migratingStreams) {
     c = std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>();
   }
+  const auto &valveTypeStr =
+      _controller->myParams->neighbor_migration_valve_type;
+  if (valveTypeStr == "none") {
+    this->valveType = MigrationValveTypeE::NONE;
+  } else if (valveTypeStr == "all") {
+    this->valveType = MigrationValveTypeE::ALL;
+  } else if (valveTypeStr == "hard") {
+    this->valveType = MigrationValveTypeE::HARD;
+  } else {
+    panic("Unknown MigrationValveType %s.", valveTypeStr);
+  }
 }
 
 void LLCStreamMigrationController::startMigrateTo(LLCDynamicStreamPtr dynS,
@@ -59,15 +70,23 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
     // Not my neighbor, we have no limitation to migrating there.
     return true;
   }
-  if (machineId.getType() == MachineType::MachineType_L2Cache &&
-      !dynS->getStaticStream()->isStoreComputeStream()) {
-    // Try only limit StoreComputeStream in LLC.
-    // For MC, always enable this feature.
-    return true;
+  if (machineId.getType() == MachineType::MachineType_L2Cache) {
+    if (this->valveType != MigrationValveTypeE::ALL &&
+        !dynS->isLoadBalanceValve()) {
+      // For MC, always enable this feature.
+      return true;
+    }
   }
   // Check if the neighboring SE has too many streams.
   auto neighborStreams = this->countStreamsWithSameStaticId(dynS, machineId);
   if (neighborStreams > this->neighborStreamsThreshold) {
+    if (this->valveType == MigrationValveTypeE::HARD) {
+      LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+                    "[Migrate] Hard Delayed Migration to %s to avoid "
+                    "contention. NeighborStreams %d.\n",
+                    machineId, neighborStreams);
+      return false;
+    }
     auto ratio = static_cast<float>(neighborStreams) /
                  static_cast<float>(this->neighborStreamsThreshold);
     auto delay = Cycles(

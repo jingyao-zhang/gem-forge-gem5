@@ -10,12 +10,13 @@
 OutputStream *StreamFloatPolicy::log = nullptr;
 
 namespace {
-std::vector<uint64_t> getPrivateCacheCapacity(StreamEngine *se) {
+std::vector<uint64_t> getCacheCapacity(StreamEngine *se) {
   /**
    * TODO: Handle classical memory system.
    */
   uint64_t l1Size = 0;
   uint64_t l2Size = 0;
+  uint64_t l3Size = 0;
   for (auto so : se->getSimObjectList()) {
     auto cacheMemory = dynamic_cast<CacheMemory *>(so);
     if (!cacheMemory) {
@@ -27,13 +28,21 @@ std::vector<uint64_t> getPrivateCacheCapacity(StreamEngine *se) {
     } else if (so->name() == "system.ruby.l1_cntrl0.cache") {
       // L2 cache.
       l2Size = cacheMemory->getCacheSize();
+    } else if (so->name() == "system.ruby.l2_cntrl0.L2cache") {
+      // } else if (so->name().find("system.ruby.l2_cntrl") == 0) {
+      // This is the shared LLC.
+      l3Size = cacheMemory->getCacheSize();
     }
   }
   assert(l1Size != 0 && "Failed to find L1 size.");
   assert(l2Size != 0 && "Failed to find L2 size.");
+  if (l3Size <= l2Size) {
+    panic("L1Size %lu L2Size %lu >= L3Size %lu.", l1Size, l2Size, l3Size);
+  }
   std::vector<uint64_t> ret;
   ret.push_back(l1Size);
   ret.push_back(l2Size);
+  ret.push_back(l3Size);
   DPRINTF(StreamFloatPolicy, "Get L1Size %d, L2Size %d.\n", l1Size, l2Size);
   return ret;
 }
@@ -41,7 +50,8 @@ std::vector<uint64_t> getPrivateCacheCapacity(StreamEngine *se) {
 } // namespace
 
 StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
-                                     const std::string &_policy)
+                                     const std::string &_policy,
+                                     const std::string &_levelPolicy)
     : enabled(_enabled), enabledFloatMem(_enabledFloatMem) {
   if (_policy == "static") {
     this->policy = PolicyE::STATIC;
@@ -52,7 +62,15 @@ StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
   } else if (_policy == "smart-computation") {
     this->policy = PolicyE::SMART_COMPUTATION;
   } else {
-    panic("Invalid StreamFloatPolicy.");
+    panic("Invalid StreamFloatPolicy %s.", _policy);
+  }
+
+  if (_levelPolicy == "static") {
+    this->levelPolicy = LevelPolicyE::LEVEL_STATIC;
+  } else if (_levelPolicy == "smart") {
+    this->levelPolicy = LevelPolicyE::LEVEL_SMART;
+  } else {
+    panic("Invalid FloatLevelPolicy %s.", _levelPolicy);
   }
 
   // Initialize the output stream.
@@ -82,8 +100,8 @@ StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
   }
   // Initialize the private cache capacity.
   auto S = dynS.stream;
-  if (this->privateCacheCapacity.empty()) {
-    this->privateCacheCapacity = getPrivateCacheCapacity(S->se);
+  if (this->cacheCapacity.empty()) {
+    this->cacheCapacity = getCacheCapacity(S->se);
   }
   /**
    * This is the root of floating streams:
@@ -183,7 +201,7 @@ bool StreamFloatPolicy::checkReuseWithinStream(DynamicStream &dynS) {
     // No reuse found;
     return true;
   }
-  auto privateCacheSize = this->privateCacheCapacity.back();
+  auto privateCacheSize = this->getPrivateCacheCapacity();
   if (reuseFootprint >= privateCacheSize) {
     S_DPRINTF(S, "ReuseSize %lu ReuseCount %d >= PrivateCacheSize %lu.\n",
               reuseFootprint, reuseCount, privateCacheSize);
@@ -267,7 +285,7 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
     // Make sure that the stream is short.
     auto cacheLineSize = S->getCPUDelegator()->cacheLineSize();
     auto memoryFootprint = cacheLineSize * prevHistory.numIssuedRequests;
-    auto privateCacheSize = this->privateCacheCapacity.back();
+    auto privateCacheSize = this->getPrivateCacheCapacity();
     if (memoryFootprint > privateCacheSize) {
       // Still should be offloaded.
       S_DPRINTF(S, "Hist %d MemFootPrint %#x > PrivateCache %#x.\n",
@@ -320,7 +338,7 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
       NUM_ELEMENTS_THRESHOLD * S->aggregateHistory.size()) {
     auto historyStartVAddrRange = historyStartVAddrMax - historyStartVAddrMin;
     if (historyStartVAddrRange * START_ADDR_RANGE_MULTIPLIER <=
-        this->privateCacheCapacity.back()) {
+        this->getPrivateCacheCapacity()) {
       logStream(S) << "[Not Float] Hist TotalElements " << historyTotalElements
                    << " StartVAddr Range " << historyStartVAddrRange << ".\n"
                    << std::flush;
@@ -428,6 +446,76 @@ MachineType StreamFloatPolicy::chooseFloatMachineType(DynamicStream &dynS) {
     return MachineType::MachineType_L2Cache;
   }
 
-  // Otherwise, so far always offload to memory.
+  /**
+   * Static policy will always float to memory.
+   * Smart policy will try to analyze the reuse.
+   */
+  if (this->levelPolicy == LevelPolicyE::LEVEL_STATIC) {
+    return MachineType::MachineType_Directory;
+  }
+
+  auto S = dynS.stream;
+  if (S->aggregateHistory.size() < 2) {
+    return MachineType::MachineType_L2Cache;
+  }
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(S->getAddrGenCallback());
+  if (!linearAddrGen) {
+    // Non linear addr gen.
+    return MachineType::MachineType_Directory;
+  }
+  int historyOffset = -1;
+  uint64_t historyTotalElements = 0;
+  uint64_t historyStartVAddrMin = UINT64_MAX;
+  uint64_t historyStartVAddrMax = 0;
+  auto currStartAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
+  logStream(S) << "StartVAddr " << std::hex << currStartAddr << std::dec << '\n'
+               << std::flush;
+  for (auto historyIter = S->aggregateHistory.rbegin(),
+            historyEnd = S->aggregateHistory.rend();
+       historyIter != historyEnd; ++historyIter, --historyOffset) {
+    const auto &prevHistory = *historyIter;
+    auto prevStartAddr = prevHistory.startVAddr;
+    auto prevNumElements = prevHistory.numReleasedElements;
+
+    historyTotalElements += prevNumElements;
+    historyStartVAddrMax = std::max(historyStartVAddrMax, prevStartAddr);
+    historyStartVAddrMin = std::min(historyStartVAddrMin, prevStartAddr);
+    logStream(S) << "Hist " << historyOffset << " StartAddr " << std::hex
+                 << prevStartAddr << " Range " << historyStartVAddrMin << ", +"
+                 << historyStartVAddrMax - historyStartVAddrMin << std::dec
+                 << " NumElem " << prevNumElements << '\n'
+                 << std::flush;
+
+    if (currStartAddr != prevStartAddr) {
+      // Not match.
+      continue;
+    }
+    // Make sure that the stream is short.
+    auto memoryFootprint =
+        S->getMemElementSize() * prevHistory.numReleasedElements;
+    auto sharedCacheSize = this->getSharedLLCCapacity();
+    if (memoryFootprint >= sharedCacheSize) {
+      // Still should be offloaded to Memory.
+      S_DPRINTF(S, "Hist %d MemFootPrint %#x > SharedCache %#x.\n",
+                historyOffset, memoryFootprint, sharedCacheSize);
+      logStream(S) << "Hist " << historyOffset << " MemFootPrint" << std::hex
+                   << memoryFootprint << " > SharedCache " << sharedCacheSize
+                   << '\n'
+                   << std::dec << std::flush;
+      continue;
+    }
+    S_DPRINTF(S,
+              "[TryFitLLC] Hist %d StartAddr %#x matched, MemFootPrint %lu <= "
+              "SharedCache %lu.\n",
+              historyOffset, currStartAddr, memoryFootprint, sharedCacheSize);
+    logStream(S) << "[TryFitLLC] Hist " << historyOffset << " StartAddr "
+                 << std::hex << currStartAddr << " matched, MemFootPrint "
+                 << memoryFootprint << " <= SharedCache " << sharedCacheSize
+                 << ".\n"
+                 << std::dec << std::flush;
+    return MachineType::MachineType_L2Cache;
+  }
+
   return MachineType::MachineType_Directory;
 }

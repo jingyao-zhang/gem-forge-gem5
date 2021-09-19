@@ -65,7 +65,7 @@ void LLCStreamNDCController::processStreamNDCRequest(PacketPtr pkt) {
     requestType = CoherenceRequestType_GETH;
   }
   llcSE->enqueueRequest(S->getCPUDelegator(), sliceId, vaddrLine, paddrLine,
-                        requestType);
+                        llcSE->myMachineType(), requestType);
 }
 
 void LLCStreamNDCController::allocateContext(

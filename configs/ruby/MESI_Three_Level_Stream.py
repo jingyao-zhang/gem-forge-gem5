@@ -175,7 +175,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                     clk_domain=clk_domain,
                                     dcache=l0d_cache,
                                     ruby_system=ruby_system,
-                                    is_ideal=options.gem_forge_ideal_ruby)
+                                    is_ideal=options.gem_forge_ideal_ruby,
+                                    )
             if options.gem_forge_prefetcher == 'imp':
                 if not options.gem_forge_prefetch_on_access:
                     raise ValueError('IMP must be used with PrefetchOnAccess.')
@@ -355,6 +356,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_neighbor_stream_threshold,
                 neighbor_migration_delay=\
                     options.gem_forge_stream_engine_llc_neighbor_migration_delay,
+                neighbor_migration_valve_type=\
+                    options.gem_forge_stream_engine_llc_neighbor_migration_valve_type,
                 enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
                 )
 
@@ -426,6 +429,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.streamIndirectToMem.slave = ruby_system.network.master
 
 
+        dir_cntrl.llc_select_low_bit = l2_select_low_bit
+        dir_cntrl.llc_select_num_bits = l2_bits
         dir_cntrl.num_cores_per_row = num_cores_per_row
         dir_cntrl.enable_stream_float = options.gem_forge_stream_engine_enable_float
         dir_cntrl.enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline

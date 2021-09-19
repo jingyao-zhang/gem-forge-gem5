@@ -144,6 +144,7 @@ void MLCStreamEngine::configureStream(
       if (streamConfigureData->totalTripCount == -1 ||
           streamConfigureData->totalTripCount > cutElementIdx) {
         streamConfigureData->totalTripCount = cutElementIdx;
+        streamConfigureData->hasBeenCuttedByMLC = true;
         directStream->setLLCCutLineVAddr(cutLineVAddr);
         assert(streamConfigureData->depEdges.empty() &&
                "Reuse stream with indirect stream is not supported.");

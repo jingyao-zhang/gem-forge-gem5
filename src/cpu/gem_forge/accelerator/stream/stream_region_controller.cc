@@ -105,7 +105,10 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
   assert(!staticRegion.dynRegions.empty() && "Missing DynRegion.");
 
   const auto &dynRegion = staticRegion.dynRegions.front();
-  assert(dynRegion.seqNum < args.seqNum && "End before configured.");
+  if (dynRegion.seqNum >= args.seqNum) {
+    SE_PANIC("[Region] %s End (%lu) before Configure (%lu).\n",
+             streamRegion.region(), args.seqNum, dynRegion.seqNum);
+  }
 
   SE_DPRINTF(
       "[Region] Release DynRegion SeqNum %llu for region %s, remaining %llu.\n",

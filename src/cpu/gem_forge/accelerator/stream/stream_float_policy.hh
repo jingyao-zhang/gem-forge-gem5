@@ -8,7 +8,8 @@
 class StreamFloatPolicy {
 public:
   StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
-                    const std::string &_policy);
+                    const std::string &_policy,
+                    const std::string &_levelPolicy);
   ~StreamFloatPolicy();
 
   struct FloatDecision {
@@ -36,7 +37,19 @@ private:
     SMART,
     SMART_COMPUTATION,
   } policy;
-  std::vector<uint64_t> privateCacheCapacity;
+  enum LevelPolicyE {
+    LEVEL_STATIC,
+    LEVEL_MANUAL,
+    LEVEL_SMART,
+  } levelPolicy;
+  std::vector<uint64_t> cacheCapacity;
+
+  uint64_t getPrivateCacheCapacity() const {
+    return this->cacheCapacity.at(1);
+  }
+  uint64_t getSharedLLCCapacity() const {
+    return this->cacheCapacity.back();
+  }
 
   FloatDecision shouldFloatStreamManual(DynamicStream &dynS);
   FloatDecision shouldFloatStreamSmart(DynamicStream &dynS);

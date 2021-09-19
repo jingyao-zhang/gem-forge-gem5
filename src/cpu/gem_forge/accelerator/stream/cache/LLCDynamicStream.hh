@@ -27,10 +27,12 @@ using LLCDynamicStreamPtr = LLCDynamicStream *;
 
 struct LLCStreamRequest {
   LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
-                   CoherenceRequestType _type)
-      : sliceId(_sliceId), paddrLine(_paddrLine), requestType(_type) {}
+                   MachineType _destMachineType, CoherenceRequestType _type)
+      : sliceId(_sliceId), paddrLine(_paddrLine),
+        destMachineType(_destMachineType), requestType(_type) {}
   DynamicStreamSliceId sliceId;
   Addr paddrLine;
+  MachineType destMachineType;
   CoherenceRequestType requestType;
   bool translationDone = false;
 
@@ -244,8 +246,9 @@ private:
       GlobalLLCDynamicStreamMap;
   static std::unordered_map<NodeID, std::list<std::vector<LLCDynamicStream *>>>
       GlobalMLCToLLCDynamicStreamGroupMap;
-  static void allocateLLCStream(AbstractStreamAwareController *mlcController,
-                                CacheStreamConfigureDataPtr &config);
+  static LLCDynamicStreamPtr
+  allocateLLCStream(AbstractStreamAwareController *mlcController,
+                    CacheStreamConfigureDataPtr &config);
 
   Cycles curCycle() const;
   int curRemoteBank() const;
@@ -474,6 +477,18 @@ private:
   uint64_t nextLoopBoundElementIdx = 0;
   bool loopBoundBrokenOut = false;
   Addr loopBoundBrokenPAddr = 0;
+
+public:
+  /**
+   * Set by LLCStreamEngine::allocateLLCStreams() and used by
+   * LLCStreamMigrationController to limit stream migration and balance loads on
+   * different cores.
+   */
+  bool isLoadBalanceValve() const { return this->loadBalanceValve; }
+  void setLoadBalanceValve() { this->loadBalanceValve = true; }
+
+private:
+  bool loadBalanceValve = false;
 };
 
 #endif

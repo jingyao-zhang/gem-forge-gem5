@@ -47,6 +47,7 @@ public:
                             const DataBlock &storeValueBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
   void receiveStreamForwardRequest(const RequestMsg &req);
+  void notifyStreamRequestMiss(const DynamicStreamSliceIdVec &sliceIds);
   void wakeup() override;
   void print(std::ostream &out) const override;
 
@@ -54,6 +55,7 @@ public:
   int getNumDirectStreamsWithStaticId(const DynamicStreamId &dynStreamId) const;
 
   int curRemoteBank() const;
+  MachineType myMachineType() const;
   const char *curRemoteMachineType() const;
 
   /**
@@ -250,14 +252,15 @@ private:
   RequestQueueIter enqueueRequest(GemForgeCPUDelegator *cpuDelegator,
                                   const DynamicStreamSliceId &sliceId,
                                   Addr vaddrLine, Addr paddrLine,
+                                  MachineType destMachineType,
                                   CoherenceRequestType type);
   void translationCallback(PacketPtr pkt, ThreadContext *tc,
                            RequestQueueIter reqIter);
 
   /**
-   * Helper function to issue stream request to the LLC cache bank.
+   * Helper function to issue stream request to the remote bank.
    */
-  void issueStreamRequestToLLCBank(const LLCStreamRequest &req);
+  void issueStreamRequestToRemoteBank(const LLCStreamRequest &req);
 
   using ResponseMsgPtr = std::shared_ptr<ResponseMsg>;
   /**

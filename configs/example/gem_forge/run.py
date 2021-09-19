@@ -225,6 +225,9 @@ parser.add_option("--gem-forge-stream-engine-llc-neighbor-stream-threshold", act
 parser.add_option("--gem-forge-stream-engine-llc-neighbor-migration-delay", action="store",
                   type="int", default="100",
                   help="Delay to migrate to neighbor LLC SE if reached the threshold.")
+parser.add_option("--gem-forge-stream-engine-llc-neighbor-migration-valve-type", type="choice",
+                  choices=['none', 'all', 'hard'], default='none',
+                  help="Apply valve to all streams.")
 parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-computing",
                   action="store_true", default="False",
                   help="Enable per element computation offloading.")
@@ -235,6 +238,9 @@ parser.add_option("--gem-forge-enable-stream-nuca",
 # Stream Floating in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,
                   help="Enable stream float in Mem Ctrl.")
+parser.add_option("--gem-forge-stream-engine-float-level-policy", type="choice", default="static",
+                  choices=['static', 'manual', 'smart'],
+                  help="Policy to choose floating level for streams.")
 parser.add_option("--gem-forge-stream-engine-mc-stream-max-infly-request", action="store",
                   type="int", default="16",
                   help="LLCStream max infly request per stream.")

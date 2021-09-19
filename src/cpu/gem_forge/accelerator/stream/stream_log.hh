@@ -110,6 +110,8 @@
   LLC_SLICE_DPRINTF_(DEBUG_TYPE, sliceId, format, ##args)
 #define LLC_SLICE_PANIC(sliceId, format, args...)                              \
   panic(LLC_SLICE_MSG(sliceId, format, ##args))
+#define LLC_SLICE_HACK(sliceId, format, args...)                               \
+  hack(LLC_SLICE_MSG(sliceId, format, ##args))
 
 #define LLC_SE_DPRINTF_(X, format, args...)                                    \
   DPRINTF(X, LLC_SE_MSG(format, ##args))

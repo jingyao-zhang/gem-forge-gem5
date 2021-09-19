@@ -84,6 +84,7 @@ def initializeStreamEngine(options):
 
     se.enableFloatMem =\
         options.gem_forge_stream_engine_enable_float_mem
+    se.floatLevelPolicy = options.gem_forge_stream_engine_float_level_policy
 
     return se
 
