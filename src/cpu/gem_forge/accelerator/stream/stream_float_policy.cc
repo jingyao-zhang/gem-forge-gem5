@@ -70,7 +70,7 @@ StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
   } else if (_levelPolicy == "smart") {
     this->levelPolicy = LevelPolicyE::LEVEL_SMART;
   } else {
-    panic("Invalid FloatLevelPolicy %s.", _levelPolicy);
+    this->levelPolicy = LevelPolicyE::LEVEL_MANUAL;
   }
 
   // Initialize the output stream.
@@ -452,6 +452,8 @@ MachineType StreamFloatPolicy::chooseFloatMachineType(DynamicStream &dynS) {
    */
   if (this->levelPolicy == LevelPolicyE::LEVEL_STATIC) {
     return MachineType::MachineType_Directory;
+  } else if (this->levelPolicy == LevelPolicyE::LEVEL_MANUAL) {
+    return this->chooseFloatMachineTypeManual(dynS);
   }
 
   auto S = dynS.stream;
@@ -518,4 +520,34 @@ MachineType StreamFloatPolicy::chooseFloatMachineType(DynamicStream &dynS) {
   }
 
   return MachineType::MachineType_Directory;
+}
+
+MachineType
+StreamFloatPolicy::chooseFloatMachineTypeManual(DynamicStream &dynS) {
+
+  /**
+   * Manually check for the stream name.
+   * Default to L2 cache.
+   */
+  auto S = dynS.stream;
+  auto iter = this->memorizedManualFloatMachineType.find(S);
+  if (iter == this->memorizedManualFloatMachineType.end()) {
+
+    static const std::unordered_set<std::string> manualFloatToMemSet = {
+        "rodinia.pathfinder.wall.ld",
+    };
+
+    MachineType floatToMachine = MachineType::MachineType_L2Cache;
+    if (manualFloatToMemSet.count(S->getStreamName())) {
+      floatToMachine = MachineType::MachineType_Directory;
+    }
+
+    iter =
+        this->memorizedManualFloatMachineType.emplace(S, floatToMachine).first;
+  }
+
+  S_DPRINTF(S, "[Level] Manually Float to %s.\n", iter->second);
+  logStream(S) << "[Level] Manually Float to " << iter->second << "\n"
+               << std::dec << std::flush;
+  return iter->second;
 }

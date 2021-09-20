@@ -44,12 +44,8 @@ private:
   } levelPolicy;
   std::vector<uint64_t> cacheCapacity;
 
-  uint64_t getPrivateCacheCapacity() const {
-    return this->cacheCapacity.at(1);
-  }
-  uint64_t getSharedLLCCapacity() const {
-    return this->cacheCapacity.back();
-  }
+  uint64_t getPrivateCacheCapacity() const { return this->cacheCapacity.at(1); }
+  uint64_t getSharedLLCCapacity() const { return this->cacheCapacity.back(); }
 
   FloatDecision shouldFloatStreamManual(DynamicStream &dynS);
   FloatDecision shouldFloatStreamSmart(DynamicStream &dynS);
@@ -60,6 +56,10 @@ private:
     assert(log && "No log for StreamFloatPolicy.");
     return *log->stream();
   }
+
+  MachineType chooseFloatMachineTypeManual(DynamicStream &dynS);
+
+  std::unordered_map<Stream *, MachineType> memorizedManualFloatMachineType;
 
   static OutputStream *log;
 };
