@@ -535,6 +535,14 @@ StreamFloatPolicy::chooseFloatMachineTypeManual(DynamicStream &dynS) {
 
     static const std::unordered_set<std::string> manualFloatToMemSet = {
         "rodinia.pathfinder.wall.ld",
+        "rodinia.hotspot.power.ld",
+        "rodinia.hotspot3D.power.ld",
+        "rodinia.srad_v2.deltaN.ld",
+        "rodinia.srad_v2.deltaS.ld",
+        "rodinia.srad_v2.deltaW.ld",
+        "rodinia.srad_v2.deltaN.st",
+        "rodinia.srad_v2.deltaS.st",
+        "rodinia.srad_v2.deltaW.st",
     };
 
     MachineType floatToMachine = MachineType::MachineType_L2Cache;
