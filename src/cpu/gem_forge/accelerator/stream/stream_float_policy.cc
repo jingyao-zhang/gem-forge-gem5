@@ -543,6 +543,7 @@ StreamFloatPolicy::chooseFloatMachineTypeManual(DynamicStream &dynS) {
         "rodinia.srad_v2.deltaN.st",
         "rodinia.srad_v2.deltaS.st",
         "rodinia.srad_v2.deltaW.st",
+        "gap.pr_push.atomic.out_v.ld",
     };
 
     MachineType floatToMachine = MachineType::MachineType_L2Cache;
