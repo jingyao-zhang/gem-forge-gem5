@@ -801,6 +801,10 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     sh_recordGetHID;
     j_popIncomingRequestQueue;
   }
+  transition(I_GH, Fetch, IM) {
+    ss_recordFetchID;
+    j_popIncomingRequestQueue;
+  }
   transition(I_GH, Memory_Data, I) {
     dt_writeDataToTBE;
     net_notifyStreamEngineFromTBE;
