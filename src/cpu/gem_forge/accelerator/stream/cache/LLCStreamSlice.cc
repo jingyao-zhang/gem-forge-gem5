@@ -43,3 +43,8 @@ void LLCStreamSlice::setLoadComputeValueSent() {
   assert(!this->loadComputeValueSent && "LoadComputeValue already sent.");
   this->loadComputeValueSent = true;
 }
+
+void LLCStreamSlice::setProcessed() {
+  assert(!this->processed && "AtomicOrUpdateSlice already processed.");
+  this->processed = true;
+}

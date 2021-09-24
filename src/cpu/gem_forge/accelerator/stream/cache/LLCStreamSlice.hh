@@ -45,15 +45,19 @@ public:
   enum State {
     /**
      * The states are:
-     * 1. INITIALIZED: Initialized in the MLC SE. Can not be used yet in LLC.
-     * 2. ALLOCATED: The LLC SE received the credit and allocated it.
-     * 3. ISSUED: The LLC SE issued the request to the cache.
-     * 4. RESPONEDED: The LLC SE already received the response.
-     * 5. FAULTED: The slice has faulted virtual address.
-     * 6. RELEASED: The slice is released by LLC SE.
+     * - INITIALIZED: Initialized in the MLC SE. Can not be used yet in LLC.
+     * - ALLOCATED: The LLC SE received the credit and allocated it.
+     * - ISSUED: The LLC SE issued the request to the cache.
+     * - RESPONEDED: The LLC SE already received the response.
+     *
+     * - FAULTED: The slice has faulted virtual address.
+     * - RELEASED: The slice is released by LLC SE.
+     *
      * Some tricky points:
      * 1. For indirect requests, it is the remote LLC SE who received the
      * response.
+     * 2. For streams that has computation with loaded values, e.g.
+     * Atomic/Update streams, they will compute in RESPONDED state.
      */
     INITIALIZED,
     ALLOCATED,
@@ -89,6 +93,19 @@ private:
    * Whether the LoadComputeValue has been sent to the core.
    */
   bool loadComputeValueSent = false;
+
+  /**
+   * Two extra states for Update slices.
+   * Whether the Update slice has been processed.
+   * Whether the computation is done.
+   * Temporary results waiting for final computated.
+   */
+public:
+  void setProcessed();
+  bool isProcessed() const { return this->processed; }
+
+private:
+  bool processed = false;
 };
 
 #endif

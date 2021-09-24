@@ -2797,7 +2797,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
       }
     }
   }
-  if (S->isAtomicComputeStream() || S->isUpdateStream()) {
+  if (S->isAtomicComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element =
           dynS->getElementPanic(idx, "Check base elements ready for update.");
@@ -2821,6 +2821,23 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
     }
     // We can finally process it.
     this->processAtomicOrUpdateSlice(dynS, sliceId, slice->getStoreBlock());
+
+  } else if (S->isUpdateStream()) {
+    /**
+     * DirectUpdateStream requires special handling now.
+     * 1. If processed -- check if we can post-process it.
+     * 2. Otherwise, process it and then wait for the computation done.
+     */
+    if (slice->isProcessed()) {
+      if (!this->tryPostProcessDirectUpdateSlice(dynS, slice)) {
+        return ++sliceIter;
+      } else {
+        // Fall through to be finally released.
+      }
+    } else {
+      this->tryProcessDirectUpdateSlice(dynS, slice);
+      return ++sliceIter;
+    }
   }
 
   /**
@@ -3002,6 +3019,130 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
 
   // This is to make sure traffic to MLC is correctly sliced.
   if (coreNeedValue) {
+    Addr paddr = 0;
+    assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
+    auto paddrLine = makeLineAddress(paddr);
+    this->issueStreamDataToMLC(
+        sliceId, paddrLine,
+        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
+        RubySystem::getBlockSizeBytes(),
+        std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
+        0 /* Line offset */);
+    LLC_SLICE_DPRINTF(sliceId,
+                      "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
+                      paddrLine, loadValueBlock);
+  } else {
+    this->issueStreamAckToMLC(sliceId);
+  }
+}
+
+bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynamicStreamPtr dynS,
+                                                  LLCStreamSlicePtr slice) {
+  const auto &sliceId = slice->getSliceId();
+
+  for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+    auto element =
+        dynS->getElementPanic(idx, "Check base elements ready for update.");
+    // LLC_SLICE_DPRINTF(
+    //     sliceId, "Process for element %llu, Ready %d, BaseReady
+    //     %d.\n", element->idx, element->isReady(),
+    //     element->areBaseElementsReady());
+    if (!element->areBaseElementsReady()) {
+      // We are still waiting for base elements.
+      return false;
+    }
+    /**
+     * Update slice also require the element to be ready.
+     * Although this has responded, a multi-slice element may still
+     * not be ready.
+     */
+    if (!element->isReady()) {
+      LLC_ELEMENT_DPRINTF(element, "[Update] Slice blocked by me.\n");
+      return false;
+    }
+  }
+
+  for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+    auto element = dynS->getElementPanic(idx, "Process UpdateStream");
+    LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+                      element->idx, element->vaddr);
+    if (!element->isComputedValueReady() &&
+        !element->isComputationScheduled()) {
+      this->pushReadyComputation(element);
+    }
+  }
+
+  slice->setProcessed();
+  return true;
+}
+
+bool LLCStreamEngine::tryPostProcessDirectUpdateSlice(LLCDynamicStreamPtr dynS,
+                                                      LLCStreamSlicePtr slice) {
+  /**
+   * We hato to check that all elements are computed.
+   */
+  const auto &sliceId = slice->getSliceId();
+  for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+    auto element = dynS->getElementPanic(idx, "Process UpdateStream");
+    LLC_SLICE_DPRINTF(sliceId,
+                      "TryPostProcess for UpdateElement %llu vaddr %#x.\n",
+                      element->idx, element->vaddr);
+    if (!element->isComputationDone()) {
+      return false;
+    }
+  }
+  this->postProcessDirectUpdateSlice(dynS, sliceId);
+  return true;
+}
+
+void LLCStreamEngine::postProcessDirectUpdateSlice(
+    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId) {
+
+  /**
+   * First we check whether we should send back value or ack.
+   * Also we do not handle elements in-order, as we want the message
+   * sent back to MLC is correctly sliced.
+   */
+  auto S = dynS->getStaticStream();
+  bool coreNeedValue = false;
+  auto dynCoreS = S->getDynamicStream(dynS->getDynamicStreamId());
+  if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
+    coreNeedValue = true;
+  }
+
+  // This is to make sure traffic to MLC is correctly sliced.
+  if (coreNeedValue) {
+
+    /**
+     * Construct the returning value from elements.
+     */
+    DataBlock loadValueBlock;
+    uint32_t totalPayloadSize = 0;
+    for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+      auto element = dynS->getElementPanic(idx, "PostProcess UpdateStream");
+      LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+                        element->idx, element->vaddr);
+      if (!element->isReady()) {
+        // Not ready yet. Break.
+        LLC_SLICE_PANIC(
+            sliceId,
+            "Element %llu not ready while we are post-processing update.", idx);
+      }
+
+      /**
+       * Send back the overlap value within this line.
+       */
+      const auto lineSize = RubySystem::getBlockSizeBytes();
+      Addr loadBlockVAddrLine = makeLineAddress(sliceId.vaddr);
+      int elementOffset = 0;
+      int loadBlockOffset = 0;
+      auto overlapSize = element->computeOverlap(
+          loadBlockVAddrLine, lineSize, loadBlockOffset, elementOffset);
+      loadValueBlock.setData(element->getUInt8Ptr(elementOffset),
+                             loadBlockOffset, overlapSize);
+      totalPayloadSize += overlapSize;
+    }
+
     Addr paddr = 0;
     assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
     auto paddrLine = makeLineAddress(paddr);

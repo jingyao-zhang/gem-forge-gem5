@@ -912,7 +912,8 @@ const char *LLCDynamicStream::curRemoteMachineType() const {
 bool LLCDynamicStream::hasComputation() const {
   auto S = this->getStaticStream();
   return S->isReduction() || S->isPointerChaseIndVar() ||
-         S->isLoadComputeStream() || S->isStoreComputeStream();
+         S->isLoadComputeStream() || S->isStoreComputeStream() ||
+         S->isUpdateStream();
 }
 
 StreamValue LLCDynamicStream::computeStreamElementValue(
@@ -987,6 +988,21 @@ StreamValue LLCDynamicStream::computeStreamElementValue(
                          latency, loadComputeValue);
     return loadComputeValue;
 
+  } else if (S->isUpdateStream()) {
+
+    Cycles latency = config->storeCallback->getEstimatedLatency();
+    auto getStreamValue = [&element](uint64_t streamId) -> StreamValue {
+      return element->getBaseOrMyStreamValue(streamId);
+    };
+    auto params =
+        convertFormalParamToParam(config->storeFormalParams, getStreamValue);
+    auto storeValue = config->storeCallback->invoke(params);
+
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+                         "[Latency %llu] Compute LoadComputeValue %s.\n",
+                         latency, storeValue);
+    return storeValue;
+
   } else {
     LLC_ELEMENT_PANIC(element, "No Computation for this stream.");
   }
@@ -998,10 +1014,10 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
   auto S = this->getStaticStream();
   element->doneComputation();
   /**
-   * LoadComputeStream store computed value in LoadComputeValue.
+   * LoadCompute/Update store computed value in ComputedValue.
    * IndirectReductionStream separates compuation from charging the latency.
    */
-  if (S->isLoadComputeStream()) {
+  if (S->isLoadComputeStream() || S->isUpdateStream()) {
     element->setComputedValue(value);
   } else if (!this->isIndirectReduction()) {
     element->setValue(value);
@@ -1015,6 +1031,42 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
     LLC_ELEMENT_PANIC(element, "OffloadMachineType %s != SE MachineType %s.",
                       MachineType_to_string(this->getOffloadedMachineType()),
                       MachineIDToString(seMachineID));
+  }
+
+  /**
+   * For UpdateStream, we store here.
+   */
+  if (S->isUpdateStream()) {
+
+    // Perform the operation.
+    auto elementMemSize = S->getMemElementSize();
+    auto elementCoreSize = S->getCoreElementSize();
+    assert(elementCoreSize <= elementMemSize &&
+           "CoreElementSize should not exceed MemElementSize.");
+    auto elementVAddr = element->vaddr;
+
+    Addr elementPAddr;
+    assert(this->translateToPAddr(elementVAddr, elementPAddr) &&
+           "Fault on vaddr of UpdateStream.");
+    const auto lineSize = RubySystem::getBlockSizeBytes();
+
+    assert(elementMemSize <= sizeof(value) && "UpdateStream size overflow.");
+    for (int storedSize = 0; storedSize < elementMemSize;) {
+      Addr vaddr = elementVAddr + storedSize;
+      Addr paddr;
+      if (!this->translateToPAddr(vaddr, paddr)) {
+        LLC_ELEMENT_PANIC(element, "Fault on vaddr of UpdateStream.");
+      }
+      auto lineOffset = vaddr % lineSize;
+      auto size = elementMemSize - storedSize;
+      if (lineOffset + size > lineSize) {
+        size = lineSize - lineOffset;
+      }
+      se->performStore(paddr, size, value.uint8Ptr(storedSize));
+      storedSize += size;
+    }
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+                         "StreamUpdate done with value %s.\n", value);
   }
 
   if (S->isReduction() || S->isPointerChaseIndVar()) {

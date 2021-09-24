@@ -394,6 +394,16 @@ private:
                                   const DynamicStreamSliceId &sliceId,
                                   const DataBlock &storeValueBlock);
 
+  /**
+   * Handle DirectUpdateSlice with the computation latency modelled.
+   */
+  bool tryProcessDirectUpdateSlice(LLCDynamicStreamPtr dynS,
+                                   LLCStreamSlicePtr slice);
+  bool tryPostProcessDirectUpdateSlice(LLCDynamicStreamPtr dynS,
+                                       LLCStreamSlicePtr slice);
+  void postProcessDirectUpdateSlice(LLCDynamicStreamPtr dynS,
+                                    const DynamicStreamSliceId &sliceId);
+
   SliceList allocatedSlices;
 
   /**
