@@ -243,7 +243,8 @@ void LLCStreamNDCController::handleForwardNDC(
   auto paddrLine = makeLineAddress(context.ndc->receiverPAddr);
   auto selfMachineId = llcSE->controller->getMachineID();
   auto destMachineId = selfMachineId;
-  bool handledHere = llcSE->isPAddrHandledByMe(paddrLine);
+  bool handledHere =
+      llcSE->isPAddrHandledByMe(paddrLine, selfMachineId.getType());
   auto requestType = CoherenceRequestType_STREAM_FORWARD;
   if (handledHere) {
     LLC_NDC_DPRINTF(context.ndc,

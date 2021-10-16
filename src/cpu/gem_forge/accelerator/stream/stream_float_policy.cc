@@ -28,10 +28,9 @@ std::vector<uint64_t> getCacheCapacity(StreamEngine *se) {
     } else if (so->name() == "system.ruby.l1_cntrl0.cache") {
       // L2 cache.
       l2Size = cacheMemory->getCacheSize();
-    } else if (so->name() == "system.ruby.l2_cntrl0.L2cache") {
-      // } else if (so->name().find("system.ruby.l2_cntrl") == 0) {
+    } else if (so->name().find("system.ruby.l2_cntrl") == 0) {
       // This is the shared LLC.
-      l3Size = cacheMemory->getCacheSize();
+      l3Size += cacheMemory->getCacheSize();
     }
   }
   assert(l1Size != 0 && "Failed to find L1 size.");
@@ -43,7 +42,8 @@ std::vector<uint64_t> getCacheCapacity(StreamEngine *se) {
   ret.push_back(l1Size);
   ret.push_back(l2Size);
   ret.push_back(l3Size);
-  DPRINTF(StreamFloatPolicy, "Get L1Size %d, L2Size %d.\n", l1Size, l2Size);
+  DPRINTF(StreamFloatPolicy, "Get L1Size %dkB, L2Size %dkB L3Size %dkB.\n",
+          l1Size / 1024, l2Size / 1024, l3Size / 1024);
   return ret;
 }
 
@@ -178,10 +178,7 @@ StreamFloatPolicy::shouldFloatStreamManual(DynamicStream &dynS) {
     iter = memorizedDecision.emplace(S, shouldFloat).first;
   }
 
-  /**
-   * So far manually will always float to L2.
-   */
-  return FloatDecision(iter->second, MachineType::MachineType_L2Cache);
+  return FloatDecision(iter->second);
 }
 
 bool StreamFloatPolicy::checkReuseWithinStream(DynamicStream &dynS) {
@@ -382,12 +379,9 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
       }
     }
     if (floatCompute) {
-      auto machineType = this->chooseFloatMachineType(dynS);
-      S_DPRINTF(S, "[Float] %s always float computation.", machineType);
-      logStream(S) << "[Float] " << machineType
-                   << " always float computation.\n"
-                   << std::flush;
-      return FloatDecision(true, machineType);
+      S_DPRINTF(S, "[Float] always float computation.");
+      logStream(S) << "[Float] always float computation.\n" << std::flush;
+      return FloatDecision(true);
     }
   }
 
@@ -409,10 +403,9 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
     return FloatDecision(false);
   }
 
-  auto machineType = this->chooseFloatMachineType(dynS);
-  S_DPRINTF(S, "[Float] %s.\n", machineType);
-  logStream(S) << "[Float] " << machineType << ".\n" << std::flush;
-  return FloatDecision(true, machineType);
+  S_DPRINTF(S, "[Float].\n");
+  logStream(S) << "[Float].\n" << std::flush;
+  return FloatDecision(true);
 }
 
 bool StreamFloatPolicy::shouldPseudoFloatStream(DynamicStream &dynS) {
@@ -440,10 +433,49 @@ bool StreamFloatPolicy::shouldPseudoFloatStream(DynamicStream &dynS) {
   return true;
 }
 
-MachineType StreamFloatPolicy::chooseFloatMachineType(DynamicStream &dynS) {
+void StreamFloatPolicy::setFloatPlans(DynStreamList &dynStreams,
+                                      StreamCacheConfigMap &floatedMap,
+                                      CacheStreamConfigureVec &rootConfigVec) {
+
+  /**
+   * Set the offload machine type.
+   */
+  for (auto &rootConfig : rootConfigVec) {
+
+    std::queue<DynamicStream *> dynSQueue;
+    auto rootDynS = rootConfig->stream->getDynamicStream(rootConfig->dynamicId);
+    rootDynS->setFloatedToCacheAsRoot(true);
+    dynSQueue.push(rootDynS);
+
+    while (!dynSQueue.empty()) {
+
+      auto dynS = dynSQueue.front();
+      dynSQueue.pop();
+
+      auto configIter = floatedMap.find(dynS->stream);
+      assert(configIter != floatedMap.end() && "Not Floated.");
+      auto &config = configIter->second;
+
+      dynS->setFloatedToCache(true);
+      this->setFloatPlan(*dynS);
+      for (auto &edge : config->depEdges) {
+        if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+          auto &usedConfig = edge.data;
+          dynSQueue.push(
+              usedConfig->stream->getDynamicStream(usedConfig->dynamicId));
+        }
+      }
+    }
+  }
+}
+
+void StreamFloatPolicy::setFloatPlan(DynamicStream &dynS) {
+  auto &floatPlan = dynS.getFloatPlan();
+  uint64_t firstElementIdx = 0;
   if (!this->enabledFloatMem) {
     // By default we float to L2 cache (LLC in MESI_Three_Level).
-    return MachineType::MachineType_L2Cache;
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+    return;
   }
 
   /**
@@ -451,20 +483,24 @@ MachineType StreamFloatPolicy::chooseFloatMachineType(DynamicStream &dynS) {
    * Smart policy will try to analyze the reuse.
    */
   if (this->levelPolicy == LevelPolicyE::LEVEL_STATIC) {
-    return MachineType::MachineType_Directory;
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+    return;
   } else if (this->levelPolicy == LevelPolicyE::LEVEL_MANUAL) {
-    return this->chooseFloatMachineTypeManual(dynS);
+    this->setFloatPlanManual(dynS);
+    return;
   }
 
   auto S = dynS.stream;
   if (S->aggregateHistory.size() < 2) {
-    return MachineType::MachineType_L2Cache;
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+    return;
   }
   auto linearAddrGen =
       std::dynamic_pointer_cast<LinearAddrGenCallback>(S->getAddrGenCallback());
   if (!linearAddrGen) {
     // Non linear addr gen.
-    return MachineType::MachineType_Directory;
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+    return;
   }
   int historyOffset = -1;
   uint64_t historyTotalElements = 0;
@@ -496,7 +532,9 @@ MachineType StreamFloatPolicy::chooseFloatMachineType(DynamicStream &dynS) {
     // Make sure that the stream is short.
     auto memoryFootprint =
         S->getMemElementSize() * prevHistory.numReleasedElements;
-    auto sharedCacheSize = this->getSharedLLCCapacity();
+    auto totalThreads =
+        S->getCPUDelegator()->getSingleThreadContext()->getThreadGroupSize();
+    auto sharedCacheSize = this->getSharedLLCCapacity() / totalThreads;
     if (memoryFootprint >= sharedCacheSize) {
       // Still should be offloaded to Memory.
       S_DPRINTF(S, "Hist %d MemFootPrint %#x > SharedCache %#x.\n",
@@ -516,47 +554,75 @@ MachineType StreamFloatPolicy::chooseFloatMachineType(DynamicStream &dynS) {
                  << memoryFootprint << " <= SharedCache " << sharedCacheSize
                  << ".\n"
                  << std::dec << std::flush;
-    return MachineType::MachineType_L2Cache;
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+    return;
   }
 
-  return MachineType::MachineType_Directory;
+  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+  return;
 }
 
-MachineType
-StreamFloatPolicy::chooseFloatMachineTypeManual(DynamicStream &dynS) {
+void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
 
   /**
    * Manually check for the stream name.
    * Default to L2 cache.
    */
   auto S = dynS.stream;
-  auto iter = this->memorizedManualFloatMachineType.find(S);
-  if (iter == this->memorizedManualFloatMachineType.end()) {
+  const auto &streamName = S->getStreamName();
 
-    static const std::unordered_set<std::string> manualFloatToMemSet = {
-        "rodinia.pathfinder.wall.ld",
-        "rodinia.hotspot.power.ld",
-        "rodinia.hotspot3D.power.ld",
-        "rodinia.srad_v2.deltaN.ld",
-        "rodinia.srad_v2.deltaS.ld",
-        "rodinia.srad_v2.deltaW.ld",
-        "rodinia.srad_v2.deltaN.st",
-        "rodinia.srad_v2.deltaS.st",
-        "rodinia.srad_v2.deltaW.st",
-        "gap.pr_push.atomic.out_v.ld",
-    };
+  auto &floatPlan = dynS.getFloatPlan();
+  uint64_t firstElementIdx = 0;
 
-    MachineType floatToMachine = MachineType::MachineType_L2Cache;
-    if (manualFloatToMemSet.count(S->getStreamName())) {
-      floatToMachine = MachineType::MachineType_Directory;
-    }
+  static const std::unordered_set<std::string> manualFloatToMemSet = {
+      "rodinia.pathfinder.wall.ld",
+      "rodinia.hotspot.power.ld",
+      "rodinia.hotspot3D.power.ld",
+      "gap.pr_push.atomic.out_v.ld",
+  };
 
-    iter =
-        this->memorizedManualFloatMachineType.emplace(S, floatToMachine).first;
+  if (manualFloatToMemSet.count(streamName)) {
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+    return;
   }
 
-  S_DPRINTF(S, "[Level] Manually Float to %s.\n", iter->second);
-  logStream(S) << "[Level] Manually Float to " << iter->second << "\n"
-               << std::dec << std::flush;
-  return iter->second;
+  if (streamName.find("rodinia.srad_v2") == 0) {
+    /**
+     * For srad_v2, we want to split them at iterations.
+     */
+    if (!dynS.hasTotalTripCount()) {
+      DYN_S_PANIC(dynS.dynamicStreamId,
+                  "Missing TotalTripCount for rodinia.srad_v2.");
+    }
+    auto totalTripCount = dynS.getTotalTripCount();
+    // Take min to handle the coalesced stream.
+    auto elementSize = std::min(S->getMemElementSize(), 64);
+    auto totalThreads =
+        S->getCPUDelegator()->getSingleThreadContext()->getThreadGroupSize();
+    auto totalArrays = 6;
+
+    auto totalDataBytes =
+        totalTripCount * elementSize * totalArrays * totalThreads;
+    auto totalLLCBytes = this->getSharedLLCCapacity();
+    auto myLLCBytes = totalLLCBytes / totalThreads;
+    auto myDataBytes = totalDataBytes / totalThreads;
+
+    if (myDataBytes <= myLLCBytes) {
+      // I should be able to fit in LLC.
+      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+      return;
+    }
+
+    /**
+     * For now we start with LLC and then migrate to Mem.
+     */
+    auto llcTripCount = myLLCBytes / elementSize / totalArrays;
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+    floatPlan.addFloatChangePoint(llcTripCount, MachineType_Directory);
+    return;
+  }
+
+  // Default just offload to LLC.
+  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+  return;
 }

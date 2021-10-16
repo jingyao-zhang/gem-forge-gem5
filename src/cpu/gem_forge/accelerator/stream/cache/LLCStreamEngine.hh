@@ -345,7 +345,8 @@ private:
   /**
    * Migrate a stream's commit head.
    */
-  void migrateStreamCommit(LLCDynamicStream *stream, Addr paddr);
+  void migrateStreamCommit(LLCDynamicStream *stream, Addr paddr,
+                           MachineType machineType);
 
   /**
    * Helper function to map an address to a same level bank.
@@ -355,7 +356,7 @@ private:
   /**
    * Check if this address is handled by myself.
    */
-  bool isPAddrHandledByMe(Addr paddr) const;
+  bool isPAddrHandledByMe(Addr paddr, MachineType machineType) const;
 
   /**
    * Helper function to check if a stream should

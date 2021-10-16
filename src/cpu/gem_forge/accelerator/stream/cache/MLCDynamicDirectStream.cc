@@ -40,20 +40,20 @@ MLCDynamicDirectStream::MLCDynamicDirectStream(
   if (!_configData->initPAddrValid) {
     MLC_S_PANIC_NO_DUMP(this->getDynamicStreamId(), "Invalid InitPAddr.");
   }
-  if (_configData->firstFloatElementIdx > 0) {
-    auto vaddr =
-        this->slicedStream.getElementVAddr(_configData->firstFloatElementIdx);
+  if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {
+    auto firstFloatElemIdx = _configData->floatPlan.getFirstFloatElementIdx();
+    auto vaddr = this->slicedStream.getElementVAddr(firstFloatElemIdx);
     Addr paddr;
     if (!this->getStaticStream()->getCPUDelegator()->translateVAddrOracle(
             vaddr, paddr)) {
       MLC_S_DPRINTF(this->getDynamicStreamId(),
                     "[MidwayFloat] Fault on FirstFloatElem %llu.\n",
-                    _configData->firstFloatElementIdx);
+                    firstFloatElemIdx);
       paddr = this->controller->getAddressToOurLLC();
     } else {
       MLC_S_DPRINTF(this->getDynamicStreamId(),
                     "[MidwayFloat] FirstFloatElem %llu VAddr %#x PAddr %#x.\n",
-                    _configData->firstFloatElementIdx, vaddr, paddr);
+                    firstFloatElemIdx, vaddr, paddr);
     }
     _configData->initPAddr = paddr;
   }
@@ -399,20 +399,24 @@ void MLCDynamicDirectStream::sendCreditToLLC(
     const LLCSegmentPosition &segment) {
   /**
    * We look at the last llc segment to determine where the stream is.
-   * And we push a new llc segment.
-   *
-   * This will not work for pointer chasing stream.
+   * The location is determined by the first element of the slice.
    */
-  auto llcBank = this->mapPAddrToOffloadedBank(segment.startPAddr);
+
+  auto startElemIdx = segment.sliceIds.firstSliceId().getStartIdx();
+  auto startElemMachineType =
+      this->config->floatPlan.getMachineTypeAtElem(startElemIdx);
+  auto remoteBank = this->controller->mapAddressToLLCOrMem(
+      segment.startPAddr, startElemMachineType);
 
   MLC_S_DPRINTF(this->dynamicStreamId,
-                "Extended %lu -> %lu, sent credit to %s.\n",
-                segment.startSliceIdx, segment.endSliceIdx, llcBank);
+                "Extended %lu (Elem %lu) -> %lu, sent credit to %s.\n",
+                segment.startSliceIdx, startElemIdx, segment.endSliceIdx,
+                remoteBank);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = makeLineAddress(segment.startPAddr);
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;
   msg->m_XXNewRewquestor.add(this->controller->getMachineID());
-  msg->m_Destination.add(llcBank);
+  msg->m_Destination.add(remoteBank);
   msg->m_MessageSize = MessageSizeType_Control;
   DynamicStreamSliceId sliceId;
   sliceId.getDynStreamId() = this->dynamicStreamId;
@@ -430,9 +434,9 @@ void MLCDynamicDirectStream::sendCreditToLLC(
   Cycles latency(1); // Just use 1 cycle latency here.
 
   if (this->controller->isStreamIdeaFlowEnabled()) {
-    auto llcController = this->controller->getController(llcBank);
-    auto llcSE = llcController->getLLCStreamEngine();
-    llcSE->receiveStreamFlow(sliceId);
+    auto remoteController = this->controller->getController(remoteBank);
+    auto remoteSE = remoteController->getLLCStreamEngine();
+    remoteSE->receiveStreamFlow(sliceId);
   } else {
     this->requestToLLCMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
@@ -871,20 +875,25 @@ void MLCDynamicDirectStream::checkCoreCommitProgress() {
 
 void MLCDynamicDirectStream::sendCommitToLLC(
     const LLCSegmentPosition &segment) {
-  auto llcPAddrLine = makeLineAddress(segment.startPAddr);
-  auto llcBank = this->mapPAddrToOffloadedBank(llcPAddrLine);
 
-  // Send the commit control.
+  // Send the commit control to the correct remote bank.
   auto startElementIdx = segment.sliceIds.firstSliceId().getStartIdx();
   auto endElementIdx = segment.endSliceId.getStartIdx();
+
+  auto startElementMachineType =
+      this->config->floatPlan.getMachineTypeAtElem(startElementIdx);
+  auto startPAddrLine = makeLineAddress(segment.startPAddr);
+  auto remoteBank = this->controller->mapAddressToLLCOrMem(
+      startPAddrLine, startElementMachineType);
+
   MLC_S_DPRINTF_(StreamRangeSync, this->dynamicStreamId,
                  "[Range] Commit [%llu, %lu), to %s.\n", startElementIdx,
-                 endElementIdx, llcBank);
+                 endElementIdx, remoteBank);
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = llcPAddrLine;
+  msg->m_addr = startPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_COMMIT;
   msg->m_XXNewRewquestor.add(this->controller->getMachineID());
-  msg->m_Destination.add(llcBank);
+  msg->m_Destination.add(remoteBank);
   msg->m_MessageSize = MessageSizeType_Control;
   DynamicStreamSliceId sliceId;
   sliceId.getDynStreamId() = this->dynamicStreamId;
@@ -903,9 +912,9 @@ void MLCDynamicDirectStream::sendCommitToLLC(
   }
 
   if (ideaStreamCommit) {
-    auto llcController = this->controller->getController(llcBank);
-    auto llcSE = llcController->getLLCStreamEngine();
-    llcSE->receiveStreamCommit(sliceId);
+    auto remoteController = this->controller->getController(remoteBank);
+    auto remoteSE = remoteController->getLLCStreamEngine();
+    remoteSE->receiveStreamCommit(sliceId);
   } else {
     this->requestToLLCMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
@@ -965,9 +974,12 @@ void MLCDynamicDirectStream::setTotalTripCount(int64_t totalTripCount,
   this->slicedStream.setTotalTripCount(totalTripCount);
   this->llcStreamLoopBoundCutted = true;
   this->llcStreamLoopBoundBrokenPAddr = brokenPAddr;
+  this->llcStreamLoopBoundBrokenMachineType =
+      this->config->floatPlan.getMachineTypeAtElem(totalTripCount);
 }
 
-Addr MLCDynamicDirectStream::getLLCTailPAddr() const {
+std::pair<Addr, MachineType>
+MLCDynamicDirectStream::getRemoteTailPAddrAndMachineType() const {
   /**
    * Normally we just get LastLLCSegment.endPAddr, however things get
    * complicated with StreamLoopBound, as we may have allocated more
@@ -976,8 +988,13 @@ Addr MLCDynamicDirectStream::getLLCTailPAddr() const {
    * For such cutted streams, we directly query the LLCStream's location.
    */
   if (this->llcStreamLoopBoundCutted) {
-    return this->llcStreamLoopBoundBrokenPAddr;
+    return std::make_pair(this->llcStreamLoopBoundBrokenPAddr,
+                          this->llcStreamLoopBoundBrokenMachineType);
   } else {
-    return this->getLastLLCSegment().endPAddr;
+    const auto &lastSegment = this->getLastLLCSegment();
+    auto endElemIdx = lastSegment.endSliceId.getStartIdx();
+    auto endElemMachineType =
+        this->config->floatPlan.getMachineTypeAtElem(endElemIdx);
+    return std::make_pair(lastSegment.endPAddr, endElemMachineType);
   }
 }

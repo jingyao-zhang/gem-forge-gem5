@@ -14,19 +14,24 @@ public:
 
   struct FloatDecision {
     bool shouldFloat;
-    MachineType floatMachineType;
-    FloatDecision(
-        bool _shouldFloat = false,
-        MachineType _floatMachineType = MachineType::MachineType_L2Cache)
-        : shouldFloat(_shouldFloat), floatMachineType(_floatMachineType) {}
+    FloatDecision(bool _shouldFloat = false) : shouldFloat(_shouldFloat) {}
   };
 
   FloatDecision shouldFloatStream(DynamicStream &dynS);
-  MachineType chooseFloatMachineType(DynamicStream &dynS);
 
   bool shouldPseudoFloatStream(DynamicStream &dynS);
 
   static std::ostream &logStream(Stream *S);
+
+  /**
+   * Set the float level for all streams.
+   */
+  using DynStreamList = std::list<DynamicStream *>;
+  using StreamCacheConfigMap =
+      std::unordered_map<Stream *, CacheStreamConfigureDataPtr>;
+  void setFloatPlans(DynStreamList &dynStreams,
+                     StreamCacheConfigMap &floatedMap,
+                     CacheStreamConfigureVec &rootConfigVec);
 
 private:
   bool enabled;
@@ -57,11 +62,11 @@ private:
     return *log->stream();
   }
 
-  MachineType chooseFloatMachineTypeManual(DynamicStream &dynS);
-
-  std::unordered_map<Stream *, MachineType> memorizedManualFloatMachineType;
-
   static OutputStream *log;
+
+  void setFloatPlan(DynamicStream &dynS);
+  void setFloatPlanManual(DynamicStream &dynS);
+
 };
 
 #endif

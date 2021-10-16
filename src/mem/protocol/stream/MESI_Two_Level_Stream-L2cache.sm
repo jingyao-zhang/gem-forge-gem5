@@ -189,6 +189,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void allocate(Addr);
     void deallocate(Addr);
     bool isPresent(Addr);
+    int size();
   }
 
   TBETable TBEs, template="<L2Cache_TBE>", constructor="m_number_of_TBEs";
@@ -450,6 +451,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           } else if(in_msg.Type == CoherenceResponseType:MEMORY_ACK) {
               trigger(Event:Mem_Ack, in_msg.addr, cache_entry, tbe);
           } else if(in_msg.Type == CoherenceResponseType:INV) {
+              DPRINTF(RubySlicc, "Addr: %#x MemInv TBEs %d.\n",
+                in_msg.addr, TBEs.size());
               trigger(Event:MEM_Inv, in_msg.addr, cache_entry, tbe);
           } else {
             error("unknown message type");

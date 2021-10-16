@@ -384,7 +384,8 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   // Update float stats.
   if (dynS.isFloatedToCache()) {
     this->statistic.numFloated++;
-    if (dynS.getFloatMachineType() == MachineType::MachineType_Directory) {
+    this->se->numFloated++;
+    if (dynS.getFloatPlan().isFloatedToMem()) {
       this->statistic.numFloatMem++;
     }
     if (dynS.isPseudoFloatedToCache()) {
@@ -753,11 +754,11 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
       /**
        * In case of faulted initVAddr, we simply set the initPAddr to 0
        * and mark it invalid.
-       * 
+       *
        * This is very likely from a misspeculated StreamConfig, thus in
        * StreamFloatController will delay offloading until the StreamConfig
        * is committed.
-       * 
+       *
        * Later the MLC StreamEngine will pick up
        * a physical address that maps to the closes LLC bank and let the
        * stream spin there until we have a valid address.

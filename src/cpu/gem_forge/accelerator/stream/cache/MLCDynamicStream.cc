@@ -24,10 +24,8 @@ MLCDynamicStream::MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
                                    bool _isMLCDirect)
     : stream(_configData->stream), dynamicStreamId(_configData->dynamicId),
       config(_configData), isPointerChase(_configData->isPointerChase),
-      isPseudoOffload(_configData->isPseudoOffload),
-      firstFloatElementIdx(_configData->firstFloatElementIdx),
-      isMLCDirect(_isMLCDirect), controller(_controller),
-      responseMsgBuffer(_responseMsgBuffer),
+      isPseudoOffload(_configData->isPseudoOffload), isMLCDirect(_isMLCDirect),
+      controller(_controller), responseMsgBuffer(_responseMsgBuffer),
       requestToLLCMsgBuffer(_requestToLLCMsgBuffer),
       maxNumSlices(_configData->mlcBufferNumSlices), headSliceIdx(0),
       tailSliceIdx(0),
@@ -479,12 +477,6 @@ Addr MLCDynamicStream::translateVAddr(Addr vaddr) const {
 void MLCDynamicStream::readBlob(Addr vaddr, uint8_t *data, int size) const {
   auto cpuDelegator = this->getStaticStream()->getCPUDelegator();
   cpuDelegator->readFromMem(vaddr, size, data);
-}
-
-MachineID MLCDynamicStream::mapPAddrToOffloadedBank(Addr paddr) const {
-  auto offloadedMachineID = this->controller->mapAddressToLLCOrMem(
-      paddr, this->config->offloadedMachineType);
-  return offloadedMachineID;
 }
 
 void MLCDynamicStream::receiveStreamRange(

@@ -213,13 +213,15 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynamicStreamPtr stream,
   }
 
   // Sanity check.
-  Addr vaddr = stream->peekNextAllocVAddr();
+  auto vaddrAndMachineType = stream->peekNextAllocVAddrAndMachineType();
+  auto vaddr = vaddrAndMachineType.first;
+  auto machineType = vaddrAndMachineType.second;
   Addr paddr;
   assert(stream->translateToPAddr(vaddr, paddr) &&
          "Paddr should always be valid to migrate a stream.");
   Addr paddrLine = makeLineAddress(paddr);
-  assert(this->isPAddrHandledByMe(paddrLine) &&
-         "Stream migrated to wrong LLC bank.\n");
+  assert(this->isPAddrHandledByMe(paddrLine, machineType) &&
+         "Stream migrated to wrong remote bank.\n");
 
   if (!this->controller->isStreamAdvanceMigrateEnabled()) {
     if (stream->hasIndirectDependent()) {
@@ -611,14 +613,16 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
    * allocated to the previous element. Therefore, we do not need to
    * check if the next element is allocated.
    */
-  auto nextVAddr = stream->peekNextAllocVAddr();
+  auto nextVAddrAndMachineType = stream->peekNextAllocVAddrAndMachineType();
+  auto nextVAddr = nextVAddrAndMachineType.first;
+  auto nextMachineType = nextVAddrAndMachineType.second;
   Addr nextPAddr;
   if (!stream->translateToPAddr(nextVAddr, nextPAddr)) {
     // If the address is faulted, we stay here.
     return false;
   }
   // Check if it is still on this bank.
-  if (this->isPAddrHandledByMe(nextPAddr)) {
+  if (this->isPAddrHandledByMe(nextPAddr, nextMachineType)) {
     // Still here.
     return false;
   }
@@ -1259,7 +1263,8 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
         Addr paddr;
         assert(dynS->translateToPAddr(element->vaddr, paddr) &&
                "Failed to translate for DirectStoreComputeStream.");
-        if (!this->isPAddrHandledByMe(paddr)) {
+        auto elementMachineType = dynS->getFloatMachineTypeAtElem(element->idx);
+        if (!this->isPAddrHandledByMe(paddr, elementMachineType)) {
           // This element is not handled here.
           break;
         }
@@ -1314,10 +1319,12 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
    * In case of faulting, the slice will be skipped (see
    * issueDirectStream()).
    */
-  Addr vaddr = dynS->peekNextAllocVAddr();
+  auto vaddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
+  Addr vaddr = vaddrAndMachineType.first;
+  auto machineType = vaddrAndMachineType.second;
   Addr paddr;
   if (dynS->translateToPAddr(vaddr, paddr)) {
-    if (!this->isPAddrHandledByMe(paddr)) {
+    if (!this->isPAddrHandledByMe(paddr, machineType)) {
       statistic.sampleLLCStreamEngineIssueReason(
           StreamStatistic::LLCStreamEngineIssueReason::PendingMigrate);
       return nullptr;
@@ -1409,6 +1416,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
   auto slice = this->allocateSlice(dynS);
   const auto &sliceId = slice->getSliceId();
   Addr vaddr = sliceId.vaddr;
+  auto machineType = dynS->getFloatMachineTypeAtElem(sliceId.getStartIdx());
   Addr paddr;
   if (dynS->translateToPAddr(vaddr, paddr)) {
 
@@ -1419,7 +1427,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
     // Remember that the slice has issued.
     slice->issue();
 
-    if (!this->isPAddrHandledByMe(paddr)) {
+    if (!this->isPAddrHandledByMe(paddr, machineType)) {
       LLC_S_PANIC(dynS->getDynamicStreamId(),
                   "Next address is not handled here %#x.", paddr);
     }
@@ -1594,6 +1602,7 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
   sliceId.getEndIdx() = elementIdx + 1;
   auto elementSize = dynIS->getMemElementSize();
   Addr elementVAddr = element->vaddr;
+  auto elementMachineType = dynIS->getFloatMachineTypeAtElem(elementIdx);
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
@@ -1645,7 +1654,7 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
 
       // Push to the request queue.
       this->enqueueRequest(IS->getCPUDelegator(), sliceId, curSliceVAddrLine,
-                           curSlicePAddrLine, this->myMachineType(), reqType);
+                           curSlicePAddrLine, elementMachineType, reqType);
       dynIS->inflyRequests++;
     } else {
       // For faulted slices, we simply ignore it.
@@ -1675,8 +1684,9 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
   sliceId.getEndIdx() = elementIdx + 1;
   auto elementSize = dynIS->getMemElementSize();
   Addr elementVAddr = element->vaddr;
-  LLC_SLICE_DPRINTF(sliceId, "Issue IndirectStore/Atomic VAddr %#x.\n",
-                    elementVAddr);
+  auto elementMachineType = dynIS->getFloatMachineTypeAtElem(elementIdx);
+  LLC_SLICE_DPRINTF(sliceId, "Issue IndirectStore/Atomic VAddr %#x At %s.\n",
+                    elementVAddr, elementMachineType);
 
   const auto blockBytes = RubySystem::getBlockSizeBytes();
 
@@ -1770,7 +1780,7 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
     } else {
       auto reqIter = this->enqueueRequest(
           IS->getCPUDelegator(), sliceId, vaddrLine, paddrLine,
-          this->myMachineType(), CoherenceRequestType_STREAM_STORE);
+          elementMachineType, CoherenceRequestType_STREAM_STORE);
       dynIS->inflyRequests++;
       auto lineOffset = sliceId.vaddr % RubySystem::getBlockSizeBytes();
       reqIter->dataBlock.setData(reinterpret_cast<uint8_t *>(&storeValue),
@@ -1834,7 +1844,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
 
   auto destMachineId = selfMachineId;
   bool handledHere = (destMachineType == selfMachineId.getType()) &&
-                     this->isPAddrHandledByMe(req.paddrLine);
+                     this->isPAddrHandledByMe(req.paddrLine, destMachineType);
   if (handledHere) {
     LLC_SLICE_DPRINTF(sliceId,
                       "Issue [local] %s request vaddr %#x paddrLine %#x value "
@@ -2093,9 +2103,11 @@ void LLCStreamEngine::issueStreamDataToLLC(
   Addr recvElementPAddrLine;
   if (stream->translateToPAddr(recvElementVAddrLine, recvElementPAddrLine)) {
     // Now we enqueue the translation request.
+    auto recvElementMachineType =
+        recvConfig->floatPlan.getMachineTypeAtElem(elementIdx);
     auto reqIter = this->enqueueRequest(
         recvConfig->stream->getCPUDelegator(), sliceId, recvElementVAddrLine,
-        recvElementPAddrLine, recvConfig->offloadedMachineType,
+        recvElementPAddrLine, recvElementMachineType,
         CoherenceRequestType_STREAM_FORWARD);
     // Remember the receiver dynamic id and forwarded data block.
     reqIter->forwardToStreamId = recvConfig->dynamicId;
@@ -2145,13 +2157,15 @@ void LLCStreamEngine::migrateStreams() {
     /**
      * Check the migrate controller.
      */
-    auto nextVAddr = stream->peekNextAllocVAddr();
+    auto nextVAddrAndMachineType = stream->peekNextAllocVAddrAndMachineType();
+    auto nextVAddr = nextVAddrAndMachineType.first;
+    auto nextMachineType = nextVAddrAndMachineType.second;
     Addr nextPAddr;
     if (!stream->translateToPAddr(nextVAddr, nextPAddr)) {
       LLC_S_PANIC(stream->getDynamicStreamId(), "Fault on migrating stream.");
     }
     auto nextMachineId = this->controller->mapAddressToLLCOrMem(
-        makeLineAddress(nextPAddr), this->controller->getMachineID().getType());
+        makeLineAddress(nextPAddr), nextMachineType);
     if (!this->migrateController->canMigrateTo(stream, nextMachineId)) {
       ++streamIter;
       continue;
@@ -2166,14 +2180,16 @@ void LLCStreamEngine::migrateStreams() {
 void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
 
   // Create the migrate request.
-  Addr vaddr = stream->peekNextAllocVAddr();
+  auto vaddrAndMachineType = stream->peekNextAllocVAddrAndMachineType();
+  Addr vaddr = vaddrAndMachineType.first;
+  auto machineType = vaddrAndMachineType.second;
   Addr paddr;
   assert(stream->translateToPAddr(vaddr, paddr) &&
          "Migrating streams should have valid paddr.");
   Addr paddrLine = makeLineAddress(paddr);
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
-      this->controller->mapAddressToLLCOrMem(paddrLine, selfMachineId.type);
+      this->controller->mapAddressToLLCOrMem(paddrLine, machineType);
 
   LLC_S_DPRINTF(stream->getDynamicStreamId(),
                 "Migrate to LLC%d, InflyReq %d AdvancedMigration %d IndirectS "
@@ -2202,13 +2218,13 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
   stream->migratingStart();
 }
 
-void LLCStreamEngine::migrateStreamCommit(LLCDynamicStream *stream,
-                                          Addr paddr) {
+void LLCStreamEngine::migrateStreamCommit(LLCDynamicStream *stream, Addr paddr,
+                                          MachineType machineType) {
   // Create the migrate request.
   Addr paddrLine = makeLineAddress(paddr);
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
-      this->controller->mapAddressToLLCOrMem(paddrLine, selfMachineId.type);
+      this->controller->mapAddressToLLCOrMem(paddrLine, machineType);
 
   LLC_S_DPRINTF_(StreamRangeSync, stream->getDynamicStreamId(),
                  "[Commit] Migrate to LLC%d.\n", addrMachineId.num);
@@ -2238,10 +2254,11 @@ MachineID LLCStreamEngine::mapPaddrToSameLevelBank(Addr paddr) const {
   return addrMachineId;
 }
 
-bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr) const {
+bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr,
+                                         MachineType machineType) const {
   auto selfMachineId = this->controller->getMachineID();
   auto addrMachineId =
-      this->controller->mapAddressToLLCOrMem(paddr, selfMachineId.getType());
+      this->controller->mapAddressToLLCOrMem(paddr, machineType);
   return addrMachineId == selfMachineId;
 }
 

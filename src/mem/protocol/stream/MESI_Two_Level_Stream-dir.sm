@@ -897,6 +897,9 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     qw_queueMemoryWBRequest;
     k_popIncomingResponseQueue;
   }
+  transition(M_GM, STREAM_STORE) {
+    z_stallAndWaitRequest;
+  }
 
   transition(M, GETU, M_GU) {
     v_allocateTBE;

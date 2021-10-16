@@ -57,7 +57,22 @@ void StreamFloatController::floatStreams(
   this->floatIndirectReductionStreams(floatArgs);
   this->floatTwoLevelIndirectStoreComputeStreams(floatArgs);
 
-  // Sanity check for some offload decision.
+  if (cacheStreamConfigVec->empty()) {
+    delete cacheStreamConfigVec;
+    return;
+  }
+
+  this->policy->setFloatPlans(floatArgs.dynStreams, floatArgs.floatedMap,
+                              floatArgs.rootConfigVec);
+
+  this->setFirstOffloadedElementIdx(floatArgs);
+  this->propagateFloatPlan(floatArgs);
+
+  /**
+   * Sanity check for some offload decision.
+   * Since here we check isFloatedToCache(), which is set by setFloatPlans(),
+   * we have to perform this check after that.
+   */
   bool hasOffloadStoreFunc = false;
   bool hasOffloadPointerChase = false;
   bool enableFloatMem = this->se->myParams->enableFloatMem;
@@ -79,13 +94,6 @@ void StreamFloatController::floatStreams(
       }
     }
   }
-
-  if (cacheStreamConfigVec->empty()) {
-    delete cacheStreamConfigVec;
-    return;
-  }
-
-  this->setFirstOffloadedElementIdx(floatArgs);
 
   bool hasOffloadFaultedInitPAddr = false;
   for (const auto &config : *cacheStreamConfigVec) {
@@ -187,7 +195,7 @@ void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
 
   std::vector<DynamicStreamId> floatedIds;
   for (auto &S : streams) {
-    auto &dynS = S->getLastDynamicStream();
+    auto &dynS = S->getDynamicStream(args.seqNum);
     if (dynS.isFloatedToCache()) {
       // Sanity check that we don't break semantics.
       DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
@@ -200,9 +208,10 @@ void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
         floatedIds.push_back(dynS.dynamicStreamId);
       }
       S->statistic.numFloatRewinded++;
-      dynS.setFloatedToCache(false, MachineType::MachineType_NULL);
+      dynS.setFloatedToCache(false);
       dynS.setFloatConfigDelayed(false);
       dynS.setFloatedToCacheAsRoot(false);
+      dynS.getFloatPlan().clear();
     }
   }
   if (!floatedIds.empty()) {
@@ -286,12 +295,6 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
     // Get the CacheStreamConfigureData.
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
 
-    // Remember the offloaded decision.
-    dynS->setFloatedToCacheAsRoot(true);
-    dynS->setFloatedToCache(true, floatDecision.floatMachineType);
-    config->offloadedMachineType = floatDecision.floatMachineType;
-
-    this->se->numFloated++;
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
 
@@ -322,11 +325,6 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
     // Get the CacheStreamConfigureData.
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
 
-    // Remember the offloaded decision.
-    dynS->setFloatedToCacheAsRoot(true);
-    dynS->setFloatedToCache(true, floatDecision.floatMachineType);
-    config->offloadedMachineType = floatDecision.floatMachineType;
-    this->se->numFloated++;
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
 
@@ -402,20 +400,11 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
       S_PANIC(S, "PointerChaseStream with ValueBaseStreams is not supported.");
     }
     // Remember the decision.
-    auto floatMachineType = this->policy->chooseFloatMachineType(*dynS);
-    dynS->setFloatedToCache(true, floatMachineType);
-    dynS->setFloatedToCacheAsRoot(true);
-    config->offloadedMachineType = floatMachineType;
-    this->se->numFloated++;
-    addrBaseDynS.setFloatedToCache(true, floatMachineType);
-    this->se->numFloated++;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as pointer chase.\n");
-    StreamFloatPolicy::logStream(S)
-        << "[Float] " << floatMachineType << " as pointer chase.\n"
-        << std::flush;
-    StreamFloatPolicy::logStream(addrBaseS)
-        << "[Float] " << floatMachineType << " as pointer chase IV.\n"
-        << std::flush;
+    StreamFloatPolicy::logStream(S) << "[Float] as pointer chase.\n"
+                                    << std::flush;
+    StreamFloatPolicy::logStream(addrBaseS) << "[Float] as pointer chase IV.\n"
+                                            << std::flush;
     floatedMap.emplace(S, config);
     floatedMap.emplace(addrBaseS, baseConfig);
     args.rootConfigVec.push_back(config);
@@ -493,14 +482,8 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
       valueBaseConfig->addSendTo(config);
       config->addBaseOn(valueBaseConfig);
     }
-    // Remember the decision.
-    dynS->setFloatedToCache(true, baseConfig->offloadedMachineType);
-    config->offloadedMachineType = baseConfig->offloadedMachineType;
-    this->se->numFloated++;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as indirect.\n");
-    StreamFloatPolicy::logStream(S)
-        << "[Float] " << config->offloadedMachineType << " as indirect.\n"
-        << std::flush;
+    StreamFloatPolicy::logStream(S) << "[Float] as indirect.\n" << std::flush;
     floatedMap.emplace(S, config);
     if (S->getEnabledStoreFunc()) {
       if (!dynS->hasTotalTripCount()) {
@@ -549,11 +532,6 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
       valueBaseConfig->addSendTo(config);
       config->addBaseOn(valueBaseConfig);
     }
-    // Remember the decision.
-    dynS->setFloatedToCache(true, floatDecision.floatMachineType);
-    dynS->setFloatedToCacheAsRoot(true);
-    config->offloadedMachineType = floatDecision.floatMachineType;
-    this->se->numFloated++;
     S_DPRINTF(S, "Offload DirectStoreStream.\n");
     floatedMap.emplace(S, config);
     args.rootConfigVec.push_back(config);
@@ -669,14 +647,8 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
     baseConfigWithMostSenders->addUsedBy(reductionConfig);
     S_DPRINTF(S, "ReductionStream associated with %s, existing sender %d.\n",
               baseConfigWithMostSenders->dynamicId, maxSenders);
-    dynS->setFloatedToCache(true,
-                            baseConfigWithMostSenders->offloadedMachineType);
-    reductionConfig->offloadedMachineType =
-        baseConfigWithMostSenders->offloadedMachineType;
-    this->se->numFloated++;
     StreamFloatPolicy::logStream(S)
-        << "[Float] " << reductionConfig->offloadedMachineType
-        << " as Reduction with " << baseConfigWithMostSenders->dynamicId
+        << "[Float] as Reduction with " << baseConfigWithMostSenders->dynamicId
         << ", existing # sender " << maxSenders << ".\n"
         << std::flush;
     for (int i = 0; i < backBaseStreamConfigs.size(); ++i) {
@@ -797,10 +769,6 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   // Reduction stream is always one iteration behind.
   reductionConfig->isOneIterationBehind = true;
   dynS->setFloatedOneIterBehind(true);
-  dynS->setFloatedToCache(true, backBaseIndirectConfig->offloadedMachineType);
-  reductionConfig->offloadedMachineType =
-      backBaseIndirectConfig->offloadedMachineType;
-  this->se->numFloated++;
   floatedMap.emplace(S, reductionConfig);
 
   // Add UsedBy edge to the BackBaseIndirectS.
@@ -808,9 +776,9 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   S_DPRINTF(S, "Float IndirectReductionStream associated with %s.\n",
             backBaseIndirectConfig->dynamicId);
   StreamFloatPolicy::logStream(S)
-      << "[Float] " << reductionConfig->offloadedMachineType
-      << " as IndirectReduction with " << backBaseIndirectConfig->dynamicId
-      << " TotalTripCount " << dynS->getTotalTripCount() << ".\n"
+      << "[Float] as IndirectReduction with "
+      << backBaseIndirectConfig->dynamicId << " TotalTripCount "
+      << dynS->getTotalTripCount() << ".\n"
       << std::flush;
 
   if (backBaseDirectS) {
@@ -893,15 +861,11 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
 
   auto myConfig =
       S->allocateCacheConfigureData(dynS->configSeqNum, true /* isIndirect */);
-  dynS->setFloatedToCache(true, addrBaseConfig->offloadedMachineType);
-  myConfig->offloadedMachineType = addrBaseConfig->offloadedMachineType;
-  this->se->numFloated++;
   floatedMap.emplace(S, myConfig);
   addrBaseConfig->addUsedBy(myConfig);
 
   StreamFloatPolicy::logStream(S)
-      << "[Float] " << myConfig->offloadedMachineType
-      << " as Two-Level IndirectStoreCompute associated with "
+      << "[Float] as Two-Level IndirectStoreCompute associated with "
       << addrBaseConfig->dynamicId << "\n"
       << std::flush;
 
@@ -990,7 +954,6 @@ void StreamFloatController::setFirstOffloadedElementIdx(const Args &args) {
   for (const auto &entry : args.floatedMap) {
     auto S = entry.first;
     if (S->isPointerChaseLoadStream()) {
-      // For testing purpose, just set to 10.
       firstFloatElementIdx =
           this->se->myParams->streamEngineMidwayFloatElementIdx;
     }
@@ -1010,8 +973,6 @@ void StreamFloatController::setFirstOffloadedElementIdx(const Args &args) {
     DYN_S_DPRINTF(dynS->dynamicStreamId, "FirstFloatElemIdx set to %llu.\n",
                   firstFloatElementIdx);
     dynS->setFirstFloatElemIdx(firstFloatElementIdx);
-    args.floatedMap.at(dynS->stream)->firstFloatElementIdx =
-        firstFloatElementIdx;
   }
 
   // Check LoopBound.
@@ -1022,6 +983,23 @@ void StreamFloatController::setFirstOffloadedElementIdx(const Args &args) {
     SE_DPRINTF("[MidwayFloat][LoopBound] FirstFloatElemIdx set to %llu.\n",
                firstFloatElementIdx);
     dynBound.offloadedFirstElementIdx = firstFloatElementIdx;
+  }
+}
+
+void StreamFloatController::propagateFloatPlan(const Args &args) {
+  for (auto dynS : args.dynStreams) {
+    auto S = dynS->stream;
+    auto iter = args.floatedMap.find(S);
+    if (iter == args.floatedMap.end()) {
+      continue;
+    }
+    dynS->getFloatPlan().finalize();
+    StreamFloatPolicy::logStream(S)
+        << "[FloatPlan] Finalized as " << dynS->getFloatPlan() << ".\n"
+        << std::flush;
+    DYN_S_DPRINTF(dynS->dynamicStreamId, "Propagate FloatPlan %s.\n",
+                  dynS->getFloatPlan());
+    iter->second->floatPlan = dynS->getFloatPlan();
   }
 }
 
@@ -1045,11 +1023,12 @@ bool StreamFloatController::isMidwayFloatReady(
     DYN_S_PANIC(config->dynamicId,
                 "[MidwayFloat] DynS released before MidwayFloat released.");
   }
-  if (dynS->FIFOIdx.entryIdx <= config->firstFloatElementIdx) {
+  auto firstFloatElementIdx = config->floatPlan.getFirstFloatElementIdx();
+  if (dynS->FIFOIdx.entryIdx <= firstFloatElementIdx) {
     DYN_S_DPRINTF(dynS->dynamicStreamId,
                   "[MidwayFloat] DynS TailElem %llu < FirstFloatElem %llu. "
                   "Not Yet Float.\n",
-                  dynS->FIFOIdx.entryIdx, config->firstFloatElementIdx);
+                  dynS->FIFOIdx.entryIdx, firstFloatElementIdx);
     return false;
   }
   /**
@@ -1059,24 +1038,24 @@ bool StreamFloatController::isMidwayFloatReady(
       "[MidwayFloat] Check LoopBound before MidwayFloat", dynS->configSeqNum);
   if (dynRegion.staticRegion->region.is_loop_bound()) {
     auto &dynBound = dynRegion.loopBound;
-    if (dynBound.nextElementIdx > config->firstFloatElementIdx) {
+    if (dynBound.nextElementIdx > firstFloatElementIdx) {
       DYN_S_PANIC(dynS->dynamicStreamId,
                   "[MidwayFloat] Impossible! LoopBound NextElem %llu > "
                   "FirstFloatElem %llu.",
-                  dynBound.nextElementIdx, config->firstFloatElementIdx);
+                  dynBound.nextElementIdx, firstFloatElementIdx);
     }
-    if (dynBound.nextElementIdx < config->firstFloatElementIdx) {
+    if (dynBound.nextElementIdx < firstFloatElementIdx) {
       DYN_S_DPRINTF(dynS->dynamicStreamId,
                     "[MidwayFloat] LoopBound NextElem %llu < FirstFloatElem "
                     "%llu. Not Yet Float.\n",
-                    dynBound.nextElementIdx, config->firstFloatElementIdx);
+                    dynBound.nextElementIdx, firstFloatElementIdx);
       return false;
     }
     if (dynBound.brokenOut) {
       DYN_S_DPRINTF(dynS->dynamicStreamId,
                     "[MidwayFloat] LoopBound BrokenOut NextElem %llu <= "
                     "FirstFloatElem %llu. Don't Float.\n",
-                    dynBound.nextElementIdx, config->firstFloatElementIdx);
+                    dynBound.nextElementIdx, firstFloatElementIdx);
       return false;
     }
   }
@@ -1085,8 +1064,7 @@ bool StreamFloatController::isMidwayFloatReady(
      * Since these streams are one iteration behind, we require them to be value
      * ready.
      */
-    auto firstFloatElement =
-        dynS->getElementByIdx(config->firstFloatElementIdx);
+    auto firstFloatElement = dynS->getElementByIdx(firstFloatElementIdx);
     if (!firstFloatElement) {
       DYN_S_PANIC(dynS->dynamicStreamId,
                   "[MidwayFloat] FirstFloatElem already released.");

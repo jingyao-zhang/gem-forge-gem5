@@ -95,6 +95,7 @@ def create_mem_ctrl(cls, r, i, nbr_mem_ctrls, intlv_bits, intlv_size, options):
 
     # We got all we need to configure the appropriate address
     # range
+    print(f'IntlvLow {intlv_low_bit} IntlvBits {intlv_bits} {r.start} {r.size()} XORHighBit {xor_high_bit}')
     ctrl.range = m5.objects.AddrRange(r.start, size = r.size(),
                                       intlvHighBit = \
                                           intlv_low_bit + intlv_bits - 1,

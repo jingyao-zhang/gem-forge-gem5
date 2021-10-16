@@ -3,8 +3,8 @@
 
 #include "addr_gen_callback.hh"
 #include "cache/DynamicStreamAddressRange.hh"
+#include "cache/StreamFloatPlan.hh"
 #include "fifo_entry_idx.hh"
-#include "mem/ruby/protocol/MachineType.hh"
 
 #include <array>
 #include <memory>
@@ -64,7 +64,9 @@ struct DynamicStream {
   bool isFloatedAsNDC() const { return this->floatedAsNDC; }
   bool isFloatedAsNDCForward() const { return this->floatedAsNDCForward; }
   bool isPseudoFloatedToCache() const { return this->pseudoFloatedToCache; }
-  uint64_t getFirstFloatElemIdx() const { return this->firstFloatedElemIdx; }
+  uint64_t getFirstFloatElemIdx() const {
+    return this->floatPlan.getFirstFloatElementIdx();
+  }
   uint64_t getAdjustedFirstFloatElemIdx() const {
     auto firstFloatElemIdx = this->getFirstFloatElemIdx();
     return this->floatedOneIterBehind ? (firstFloatElemIdx + 1)
@@ -76,33 +78,32 @@ struct DynamicStream {
 
   // Compute the number of floated element until a given ElementIdx.
   uint64_t getNumFloatedElemUntil(uint64_t untilElemIdx) const {
-    if (this->firstFloatedElemIdx > untilElemIdx) {
+    auto firstFloatElemIdx = this->getFirstFloatElemIdx();
+    if (firstFloatElemIdx > untilElemIdx) {
       return 0;
     } else {
-      return untilElemIdx - this->firstFloatedElemIdx;
+      return untilElemIdx - firstFloatElemIdx;
     }
   }
 
   void setFloatConfigDelayed(bool val) { this->floatConfigDelayed = val; }
   void setFloatedToCacheAsRoot(bool val) { this->floatedToCacheAsRoot = val; }
-  void setFloatedToCache(bool val, MachineType type) {
-    this->floatedToCache = val;
-    this->floatMachineType = type;
-  }
+  void setFloatedToCache(bool val) { this->floatedToCache = val; }
   void setFloatedWithDependent(bool val) { this->floatedWithDependent = val; }
   void setFloatedAsNDC(bool val) { this->floatedAsNDC = val; }
   void setFloatedAsNDCForward(bool val) { this->floatedAsNDCForward = val; }
   void setPseudoFloatedToCache(bool val) { this->pseudoFloatedToCache = val; }
   void setFloatedOneIterBehind(bool val) { this->floatedOneIterBehind = val; }
   void setFirstFloatElemIdx(uint64_t val) {
-    this->firstFloatedElemIdx = val;
+    this->floatPlan.delayFloatUntil(val);
     this->nextCacheDoneElementIdx = val;
   }
   void setNextCacheDoneElemIdx(uint64_t val) {
     this->nextCacheDoneElementIdx = val;
   }
 
-  MachineType getFloatMachineType() const { return this->floatMachineType; }
+  StreamFloatPlan &getFloatPlan() { return this->floatPlan; }
+  const StreamFloatPlan &getFloatPlan() const { return this->floatPlan; }
 
 private:
   // Whether the floating config is delayed until config committed.
@@ -111,7 +112,7 @@ private:
   // Whether the dynamic stream is floated to cache.
   bool floatedToCacheAsRoot = false;
   bool floatedToCache = false;
-  MachineType floatMachineType = MachineType::MachineType_NULL;
+  StreamFloatPlan floatPlan;
   bool floatedWithDependent = false;
   bool pseudoFloatedToCache = false;
 
@@ -123,8 +124,6 @@ private:
   // Whether this stream is floated as one iteration behind.
   bool floatedOneIterBehind = false;
 
-  // First float ElementIdx. This is to optimize for Tree.
-  uint64_t firstFloatedElemIdx = 0;
   /**
    * Similar to StreamAck messages, this remembers the StreamDone messages
    * from the cache. Since StreamDone messages are guaranteed in-order, we

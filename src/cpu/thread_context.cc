@@ -312,3 +312,26 @@ takeOverFrom(ThreadContext &ntc, ThreadContext &otc)
 
     otc.setStatus(ThreadContext::Halted);
 }
+
+int ThreadContext::getThreadGroupSize() {
+    auto p = this->getProcessPtr();
+    assert(p && "ThreadContext is unassigned.");
+    System *sys = this->getSystemPtr();
+    int numThreads = 1;
+    for (int i = 0; i < sys->numContexts(); i++) {
+        Process *walk;
+        ThreadContext* walkThread = sys->threadContexts[i];
+        if (!(walk = walkThread->getProcessPtr())) {
+            // This ThreadContext is not assigned to any Process.
+            continue;
+        }
+        if (walk->pid() == walk->tgid()) {
+            // This is the main thread, we already counted it.
+            continue;
+        }
+        if (walk->tgid() == p->tgid()) {
+            numThreads++;
+        }
+    }
+    return numThreads;
+}

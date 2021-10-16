@@ -41,8 +41,7 @@ private:
   /**
    * A internal structure to memorize the floating decision made so far.
    */
-  using StreamCacheConfigMap =
-      std::unordered_map<Stream *, CacheStreamConfigureDataPtr>;
+  using StreamCacheConfigMap = StreamFloatPolicy::StreamCacheConfigMap;
 
   struct Args {
     const ::LLVM::TDG::StreamRegion &region;
@@ -102,6 +101,11 @@ private:
    * Mainly used to optimize for pointer-chase stream.
    */
   void setFirstOffloadedElementIdx(const Args &args);
+
+  /**
+   * Propagate FloatPlan to ConfigureData.
+   */
+  void propagateFloatPlan(const Args &args);
 
   /**
    * Try send out a midway float pkt.

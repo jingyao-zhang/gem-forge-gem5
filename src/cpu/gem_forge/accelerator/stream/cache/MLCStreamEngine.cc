@@ -160,12 +160,17 @@ void MLCStreamEngine::sendConfigToRemoteSE(
     CacheStreamConfigureDataPtr streamConfigureData, MasterID masterId) {
 
   /**
-   * Set the RemoteSE to LLC SE or Mem SE.
-   * So far we just configure the MemSE if the stream is too long.
+   * Set the RemoteSE to LLC SE or Mem SE, depending on the FloatPlan on the
+   * FirstFloatElemIdx.
    */
+  auto firstFloatElemIdx =
+      streamConfigureData->floatPlan.getFirstFloatElementIdx();
+  auto firstFloatElemMachineTypee =
+      streamConfigureData->floatPlan.getMachineTypeAtElem(firstFloatElemIdx);
+
   auto initPAddrLine = makeLineAddress(streamConfigureData->initPAddr);
   auto remoteSEMachineID = this->controller->mapAddressToLLCOrMem(
-      initPAddrLine, streamConfigureData->offloadedMachineType);
+      initPAddrLine, firstFloatElemMachineTypee);
 
   // Create a new packet.
   RequestPtr req = std::make_shared<Request>(
@@ -218,9 +223,14 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
   auto rootStreamIter = this->idToStreamMap.find(endId);
   assert(rootStreamIter != this->idToStreamMap.end() &&
          "Failed to find the ending root stream.");
-  Addr rootLLCStreamPAddr = rootStreamIter->second->getLLCTailPAddr();
-  auto rootStreamOffloadedMachineType =
-      rootStreamIter->second->getOffloadedMachineType();
+
+  Addr rootLLCStreamPAddr;
+  MachineType rootStreamOffloadedMachineType;
+  {
+    auto x = rootStreamIter->second->getRemoteTailPAddrAndMachineType();
+    rootLLCStreamPAddr = x.first;
+    rootStreamOffloadedMachineType = x.second;
+  }
 
   // End all streams with the correct root stream id (indirect streams).
   for (auto streamIter = this->idToStreamMap.begin(),

@@ -47,11 +47,13 @@ SlicedDynamicStream::SlicedDynamicStream(
     assert(this->elementSize < 64 && "Huge PointerChaseStream.");
   }
 
-  if (_configData->firstFloatElementIdx > 0) {
+  if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {
+    auto firstFloatElemIdx = _configData->floatPlan.getFirstFloatElementIdx();
     DYN_S_DPRINTF(this->streamId, "[Sliced] Start from Element %llu.\n",
-                  _configData->firstFloatElementIdx);
-    this->tailElementIdx = _configData->firstFloatElementIdx;
-    this->sliceHeadElementIdx = _configData->firstFloatElementIdx;
+                  firstFloatElemIdx);
+
+    this->tailElementIdx = firstFloatElemIdx;
+    this->sliceHeadElementIdx = firstFloatElemIdx;
   }
 }
 

@@ -20,16 +20,10 @@ public:
       const std::vector<MLCDynamicIndirectStream *> &_indirectStreams);
 
   /**
-   * Get where is the LLC stream is at the end of current allocated credits.
+   * Get where is the RemoteStream is at the end of current allocated credits.
    */
-  Addr getLLCTailPAddr() const override;
-
-  /**
-   * Get where the stream is offloaded (LLC or Mem Ctrl).
-   */
-  MachineType getOffloadedMachineType() const override {
-    return this->config->offloadedMachineType;
-  }
+  std::pair<Addr, MachineType>
+  getRemoteTailPAddrAndMachineType() const override;
 
   void receiveStreamData(const DynamicStreamSliceId &sliceId,
                          const DataBlock &dataBlock, Addr paddrLine) override;
@@ -78,6 +72,7 @@ protected:
   // This stream has been cut by LLCStreamBound.
   bool llcStreamLoopBoundCutted = false;
   Addr llcStreamLoopBoundBrokenPAddr = 0;
+  MachineType llcStreamLoopBoundBrokenMachineType = MachineType_NULL;
 
   struct LLCSegmentPosition {
     /**

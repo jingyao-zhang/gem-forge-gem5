@@ -31,7 +31,9 @@ public:
   }
 
   bool getIsPseudoOffload() const { return this->isPseudoOffload; }
-  uint64_t getFirstFloatElemIdx() const { return this->firstFloatElementIdx; }
+  uint64_t getFirstFloatElemIdx() const {
+    return this->config->floatPlan.getFirstFloatElementIdx();
+  }
 
   virtual const DynamicStreamId &getRootDynamicStreamId() const {
     // By default this we are the root stream.
@@ -48,13 +50,11 @@ public:
   }
 
   /**
-   * Get where is the LLC stream is at the end of current allocated credits.
+   * Get where is the RemoteStream is at the end of current allocated credits.
    */
-  virtual Addr getLLCTailPAddr() const {
+  virtual std::pair<Addr, MachineType>
+  getRemoteTailPAddrAndMachineType() const {
     panic("Should only call this on direct stream.");
-  }
-  virtual MachineType getOffloadedMachineType() const {
-    panic("Should only call getOffloadedMachineType() on direct stream.");
   }
 
   virtual void receiveStreamData(const DynamicStreamSliceId &sliceId,
@@ -104,7 +104,6 @@ protected:
   CacheStreamConfigureDataPtr config;
   bool isPointerChase;
   bool isPseudoOffload;
-  uint64_t firstFloatElementIdx;
   const bool isMLCDirect;
 
   std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
@@ -198,11 +197,6 @@ protected:
    * Helper function to direct read data from memory.
    */
   void readBlob(Addr vaddr, uint8_t *data, int size) const;
-
-  /**
-   * Map paddr line to offloaded bank (LLC or Mem Ctrl).
-   */
-  MachineID mapPAddrToOffloadedBank(Addr paddr) const;
 
   /**
    * Pop slices. Flags to remember why we are blocked.

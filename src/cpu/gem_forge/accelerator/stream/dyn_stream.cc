@@ -964,8 +964,9 @@ void DynamicStream::cancelFloat() {
   auto S = this->stream;
   S_DPRINTF(S, "Cancel FloatStream.\n");
   // We are no longer considered offloaded.
-  this->setFloatedToCache(false, MachineType::MachineType_NULL);
+  this->setFloatedToCache(false);
   this->setFloatedToCacheAsRoot(false);
+  this->floatPlan.clear();
   S->statistic.numFloatCancelled++;
 }
 

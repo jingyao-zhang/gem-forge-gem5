@@ -164,6 +164,11 @@ class ThreadContext : public PCEventScope
 
     virtual void setProcessPtr(Process *p) = 0;
 
+    /**
+     * Query System on all threads with same tgid.
+     */
+    int getThreadGroupSize();
+
     virtual Status status() const = 0;
 
     virtual void setStatus(Status new_status) = 0;

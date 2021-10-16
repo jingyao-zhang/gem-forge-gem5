@@ -2,7 +2,7 @@
 #define __CPU_TDG_ACCELERATOR_STREAM_CACHE_STREAM_CONFIGURE_DATA_H__
 
 #include "cpu/gem_forge/accelerator/stream/dyn_stream.hh"
-#include "mem/ruby/protocol/MachineType.hh"
+#include "StreamFloatPlan.hh"
 
 #include "DynamicStreamId.hh"
 
@@ -35,9 +35,9 @@ public:
   int elementSize;
 
   /**
-   * Offload starts from this elementIdx.
+   * FloatPlan.
    */
-  uint64_t firstFloatElementIdx = 0;
+  StreamFloatPlan floatPlan;
 
   // NOTE: Line address here.
   Addr initVAddr;
@@ -62,11 +62,6 @@ public:
    */
   bool rangeSync = false;
   bool rangeCommit = false;
-
-  /**
-   * Offloaded Level: L2Cache (LLC) or Directory (Mem Ctrl).
-   */
-  MachineType offloadedMachineType = MachineType::MachineType_L2Cache;
 
   DynamicStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;

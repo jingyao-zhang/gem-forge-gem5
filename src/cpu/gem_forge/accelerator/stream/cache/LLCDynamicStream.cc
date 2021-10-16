@@ -54,8 +54,8 @@ LLCDynamicStream::LLCDynamicStream(
     this->maxInflyRequests = 1;
   }
 
-  if (_configData->firstFloatElementIdx > 0) {
-    auto firstFloatElemIdx = _configData->firstFloatElementIdx;
+  if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {
+    auto firstFloatElemIdx = _configData->floatPlan.getFirstFloatElementIdx();
     this->nextCommitElementIdx = firstFloatElemIdx;
     this->nextInitElementIdx = firstFloatElemIdx;
     this->nextIssueElementIdx = firstFloatElemIdx;
@@ -123,16 +123,12 @@ void LLCDynamicStream::setTotalTripCount(int64_t totalTripCount) {
   }
 }
 
-MachineType LLCDynamicStream::getOffloadedMachineType() const {
-  if (this->baseStream) {
-    return this->baseStream->getOffloadedMachineType();
-  } else {
-    return this->configData->offloadedMachineType;
-  }
-}
-
-Addr LLCDynamicStream::peekNextInitVAddr() const {
-  return this->slicedStream.peekNextSlice().vaddr;
+std::pair<Addr, MachineType>
+LLCDynamicStream::peekNextInitVAddrAndMachineType() const {
+  const auto &sliceId = this->slicedStream.peekNextSlice();
+  auto startElemIdx = sliceId.getStartIdx();
+  auto startElemMachineType = this->getFloatMachineTypeAtElem(startElemIdx);
+  return std::make_pair(sliceId.vaddr, startElemMachineType);
 }
 
 const DynamicStreamSliceId &LLCDynamicStream::peekNextInitSliceId() const {
@@ -366,11 +362,15 @@ LLCStreamSlicePtr LLCDynamicStream::allocNextSlice(LLCStreamEngine *se) {
               "No Initialized Slice to allocate from.");
 }
 
-Addr LLCDynamicStream::peekNextAllocVAddr() const {
+std::pair<Addr, MachineType>
+LLCDynamicStream::peekNextAllocVAddrAndMachineType() const {
   if (auto slice = this->getNextAllocSlice()) {
-    return slice->getSliceId().vaddr;
+    const auto &sliceId = slice->getSliceId();
+    auto startElemIdx = sliceId.getStartIdx();
+    auto startElemMachineType = this->getFloatMachineTypeAtElem(startElemIdx);
+    return std::make_pair(sliceId.vaddr, startElemMachineType);
   } else {
-    return this->peekNextInitVAddr();
+    return this->peekNextInitVAddrAndMachineType();
   }
 }
 
@@ -412,6 +412,22 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
   const auto elementIdx = this->nextInitElementIdx;
   LLC_S_DPRINTF(this->getDynamicStreamId(), "Initialize element %llu.\n",
                 elementIdx);
+
+  /**
+   * Some sanity check for large AffineStream that we don't have too many
+   * elements.
+   */
+  if (this->getStaticStream()->isDirectMemStream() &&
+      this->getMemElementSize() >= 64) {
+    if (this->idxToElementMap.size() >= 100) {
+      for (auto &entry : this->idxToElementMap) {
+        LLC_ELEMENT_HACK(entry.second, "Element Overflow.\n");
+      }
+      LLC_S_PANIC(this->getDynamicStreamId(), "Infly Elements Overflow %d.",
+                  this->idxToElementMap.size());
+    }
+  }
+
   auto size = this->getMemElementSize();
   auto element = std::make_shared<LLCStreamElement>(
       this->getStaticStream(), this->mlcController, this->getDynamicStreamId(),
@@ -470,7 +486,8 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
   if (this->getStaticStream()->isReduction() ||
       this->getStaticStream()->isPointerChaseIndVar()) {
     if (!this->lastReductionElement) {
-      uint64_t firstElemIdx = this->configData->firstFloatElementIdx;
+      uint64_t firstElemIdx =
+          this->configData->floatPlan.getFirstFloatElementIdx();
       // First time, just initialize the first element.
       this->lastReductionElement = std::make_shared<LLCStreamElement>(
           this->getStaticStream(), this->mlcController,
@@ -816,8 +833,13 @@ LLCDynamicStreamPtr LLCDynamicStream::allocateLLCStream(
   assert(config->initPAddrValid && "Initial paddr should be valid now.");
   auto initPAddr = config->initPAddr;
 
-  auto llcMachineId = mlcController->mapAddressToLLCOrMem(
-      initPAddr, config->offloadedMachineType);
+  // Get the MachineType of FirstFloatElementIdx.
+  auto firstFloatElemIdx = config->floatPlan.getFirstFloatElementIdx();
+  auto firstFloatElemMachineType =
+      config->floatPlan.getMachineTypeAtElem(firstFloatElemIdx);
+
+  auto llcMachineId =
+      mlcController->mapAddressToLLCOrMem(initPAddr, firstFloatElemMachineType);
   auto llcController =
       AbstractStreamAwareController::getController(llcMachineId);
 
@@ -1027,10 +1049,10 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
          "Negative incomplete computations.");
 
   const auto seMachineID = se->controller->getMachineID();
-  if (seMachineID.getType() != this->getOffloadedMachineType()) {
+  auto floatMachineType = this->getFloatMachineTypeAtElem(element->idx);
+  if (seMachineID.getType() != floatMachineType) {
     LLC_ELEMENT_PANIC(element, "OffloadMachineType %s != SE MachineType %s.",
-                      MachineType_to_string(this->getOffloadedMachineType()),
-                      MachineIDToString(seMachineID));
+                      floatMachineType, seMachineID);
   }
 
   /**

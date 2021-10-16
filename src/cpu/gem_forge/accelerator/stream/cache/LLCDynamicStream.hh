@@ -101,7 +101,9 @@ public:
   /**
    * Query the offloaded machine type.
    */
-  MachineType getOffloadedMachineType() const;
+  MachineType getFloatMachineTypeAtElem(uint64_t elementIdx) const {
+    return this->configData->floatPlan.getMachineTypeAtElem(elementIdx);
+  }
 
   bool hasIndirectDependent() const {
     auto S = this->getStaticStream();
@@ -136,7 +138,7 @@ public:
    */
   bool isNextSliceOverflown() const;
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
-  Addr peekNextAllocVAddr() const;
+  std::pair<Addr, MachineType> peekNextAllocVAddrAndMachineType() const;
   LLCStreamSlicePtr getNextAllocSlice() const;
   LLCStreamSlicePtr allocNextSlice(LLCStreamEngine *se);
 
@@ -259,7 +261,7 @@ private:
   uint64_t numIndirectElementsReadyToIssue = 0;
   uint64_t nextIssueElementIdx = 0;
 
-  Addr peekNextInitVAddr() const;
+  std::pair<Addr, MachineType> peekNextInitVAddrAndMachineType() const;
   const DynamicStreamSliceId &peekNextInitSliceId() const;
 
 public:
