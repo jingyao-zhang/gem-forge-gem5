@@ -57,6 +57,9 @@ public:
   size_t numLLCAliveElements = 0;
   size_t numLLCAliveElementSamples = 0;
 
+  // Float statistics in Mem.
+  size_t numMemIssueSlice = 0;
+
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;
   size_t numCoreEarlyCycle = 0;

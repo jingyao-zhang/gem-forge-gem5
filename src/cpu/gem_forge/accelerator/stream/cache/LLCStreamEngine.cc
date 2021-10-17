@@ -1041,7 +1041,7 @@ void LLCStreamEngine::generateMulticastRequest(RequestQueueIter reqIter,
     }
 
     auto SS = dynS->getStaticStream();
-    SS->statistic.numLLCIssueSlice++;
+    this->incrementIssueSlice(SS->statistic);
 
     // Add this to the request.
     auto reqType = this->getDirectStreamReqType(dynS);
@@ -1432,7 +1432,7 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
                   "Next address is not handled here %#x.", paddr);
     }
 
-    statistic.numLLCIssueSlice++;
+    this->incrementIssueSlice(statistic);
 
     // Push to the request queue.
     auto reqType = this->getDirectStreamReqType(dynS);
@@ -1646,7 +1646,7 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
     if (dynIS->translateToPAddr(curSliceVAddr, curSlicePAddr)) {
       Addr curSliceVAddrLine = makeLineAddress(curSliceVAddr);
       Addr curSlicePAddrLine = makeLineAddress(curSlicePAddr);
-      IS->statistic.numLLCIssueSlice++;
+      this->incrementIssueSlice(IS->statistic);
       if (reqType == CoherenceRequestType_GETU) {
         IS->statistic.numLLCSentSlice++;
         IS->se->numLLCSentSlice++;
@@ -1708,7 +1708,7 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
   sliceId.size = elementSize;
   Addr elementPAddr;
   if (dynIS->translateToPAddr(elementVAddr, elementPAddr)) {
-    IS->statistic.numLLCIssueSlice++;
+    this->incrementIssueSlice(IS->statistic);
     auto vaddrLine = makeLineAddress(elementVAddr);
     auto paddrLine = makeLineAddress(elementPAddr);
     /**
@@ -3463,5 +3463,13 @@ void LLCStreamEngine::completeComputation() {
       }
     }
     this->inflyComputations.pop_front();
+  }
+}
+
+void LLCStreamEngine::incrementIssueSlice(StreamStatistic &statistic) {
+  if (this->myMachineType() == MachineType_Directory) {
+    statistic.numMemIssueSlice++;
+  } else {
+    statistic.numLLCIssueSlice++;
   }
 }

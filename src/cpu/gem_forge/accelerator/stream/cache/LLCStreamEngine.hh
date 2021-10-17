@@ -460,6 +460,8 @@ private:
   void recordComputationMicroOps(Stream *S);
   void startComputation();
   void completeComputation();
+
+  void incrementIssueSlice(StreamStatistic &statistic);
 };
 
 #endif
