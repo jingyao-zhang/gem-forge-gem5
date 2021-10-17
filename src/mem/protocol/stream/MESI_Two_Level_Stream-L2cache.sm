@@ -143,7 +143,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     Pre_Unblock, desc="(Not Final) Unblock from L1 requestors, used when we are expecting multiple unblocks.";
     Exclusive_Unblock, desc="Unblock from L1 requestor";
 
-    MEM_Inv, desc="Invalidation from directory";
+    MEM_Inv,  desc="Invalidation from directory";
+    MEM_InvR, desc="Invalidation from directory, but as a request.";
 
     STREAM_CONFIG,  desc="StreamConfig req";
     STREAM_FLOW,    desc="Flow control message for stream";
@@ -345,10 +346,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         return Event:L1_PUTX_old;
       }
     // ! Sean: StreamAwareCache.
-    } else if (type == CoherenceRequestType:STREAM_CONFIG) {
-      return Event:STREAM_CONFIG;
-    } else if (type == CoherenceRequestType:STREAM_END) {
-      return Event:STREAM_END;
     } else if (type == CoherenceRequestType:STREAM_STORE) {
       return Event:STREAM_STORE;
     } else if (type == CoherenceRequestType:STREAM_FORWARD) {
@@ -451,8 +448,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           } else if(in_msg.Type == CoherenceResponseType:MEMORY_ACK) {
               trigger(Event:Mem_Ack, in_msg.addr, cache_entry, tbe);
           } else if(in_msg.Type == CoherenceResponseType:INV) {
-              DPRINTF(RubySlicc, "Addr: %#x MemInv TBEs %d.\n",
-                in_msg.addr, TBEs.size());
+              DPRINTF(RubySlicc, "Addr: %#x MemInv TBEs %d.\n", in_msg.addr, TBEs.size());
               trigger(Event:MEM_Inv, in_msg.addr, cache_entry, tbe);
           } else {
             error("unknown message type");
@@ -473,61 +469,65 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
         Entry cache_entry := getCacheEntry(in_msg.addr);
         TBE tbe := TBEs[in_msg.addr];
 
-        DPRINTF(RubySlicc, "Addr: %#x State: %s Req: %s Type: %s Slices: %s Dest: %s\n",
-                in_msg.addr, getState(tbe, cache_entry, in_msg.addr),
-                in_msg.XXNewRewquestor, in_msg.Type, in_msg.sliceIds, in_msg.Destination);
-
-        // assert(machineIDToMachineType(in_msg.XXNewRewquestor.singleElement()) == MachineType:L1Cache);
         assert(in_msg.Destination.isElement(machineID));
 
-        /**
-         * ! Sean: StreamAwareCache
-         */
-        if (in_msg.Type == CoherenceRequestType:STREAM_CONFIG) {
-          trigger(L1Cache_request_type_to_event(
-                    in_msg.Type, in_msg.addr, in_msg.XXNewRewquestor, cache_entry),
-                  in_msg.addr, cache_entry, tbe);
-        } else if (in_msg.Type == CoherenceRequestType:STREAM_FLOW) {
-          trigger(Event:STREAM_FLOW,
-                  in_msg.addr, cache_entry, tbe);
-        } else if (in_msg.Type == CoherenceRequestType:STREAM_COMMIT) {
-          trigger(Event:STREAM_COMMIT,
-                  in_msg.addr, cache_entry, tbe);
-        } else if (in_msg.Type == CoherenceRequestType:STREAM_END) {
-          trigger(Event:STREAM_END,
-                  in_msg.addr, cache_entry, tbe);
-        }
+        if (in_msg.XXNewRewquestor.count() == 1 &&
+            machineIDToMachineType(in_msg.XXNewRewquestor.singleElement()) == MachineType:Directory) {
+          /**
+           * Handle INV request from Directory.
+           */
+          assert(in_msg.Type == CoherenceRequestType:INV);
+          DPRINTF(RubySlicc, "Addr: %#x MemInvAsRequest TBEs %d.\n", in_msg.addr, TBEs.size());
+          trigger(Event:MEM_InvR, in_msg.addr, cache_entry, tbe);
 
-        if (is_valid(cache_entry)) {
-          // The L2 contains the block, so proceeded with handling the request
-          // Hit.
-          setHitCacheLevel(in_msg.requestStatistic, 2);
-          trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
-                                                in_msg.XXNewRewquestor, cache_entry),
-                  in_msg.addr, cache_entry, tbe);
         } else {
-          if (in_msg.sliceIds.isValid()) {
-            DPRINTF(RubyStream, "Miss stream request [%lu, +%lu).\n", 
-              in_msg.sliceIds.singleSliceId().getStartIdx(),
-              in_msg.sliceIds.singleSliceId().getNumElements());
-          }
-          if (L2cache.cacheAvail(in_msg.addr)) {
-            // Miss.
-            setHitCacheLevel(in_msg.requestStatistic, 4);
-            // L2 does't have the line, but we have space for it in the L2
-            trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
-                                                  in_msg.XXNewRewquestor, cache_entry),
-                    in_msg.addr, cache_entry, tbe);
+
+          /**
+           * ! Sean: StreamAwareCache
+           */
+          if (in_msg.Type == CoherenceRequestType:STREAM_CONFIG) {
+            trigger(Event:STREAM_CONFIG, in_msg.addr, cache_entry, tbe);
+          } else if (in_msg.Type == CoherenceRequestType:STREAM_FLOW) {
+            trigger(Event:STREAM_FLOW, in_msg.addr, cache_entry, tbe);
+          } else if (in_msg.Type == CoherenceRequestType:STREAM_COMMIT) {
+            trigger(Event:STREAM_COMMIT, in_msg.addr, cache_entry, tbe);
+          } else if (in_msg.Type == CoherenceRequestType:STREAM_END) {
+            trigger(Event:STREAM_END, in_msg.addr, cache_entry, tbe);
           } else {
-            // No room in the L2, so we need to make room before handling the request
-            Entry L2cache_entry := getCacheEntry(L2cache.cacheProbe(in_msg.addr));
-            if (isDirty(L2cache_entry)) {
-              trigger(Event:L2_Replacement, L2cache.cacheProbe(in_msg.addr),
-                      L2cache_entry, TBEs[L2cache.cacheProbe(in_msg.addr)]);
+
+            if (is_valid(cache_entry)) {
+              // The L2 contains the block, so proceeded with handling the request
+              // Hit.
+              setHitCacheLevel(in_msg.requestStatistic, 2);
+              trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
+                                                    in_msg.XXNewRewquestor, cache_entry),
+                      in_msg.addr, cache_entry, tbe);
             } else {
-              trigger(Event:L2_Replacement_clean, L2cache.cacheProbe(in_msg.addr),
-                      L2cache_entry, TBEs[L2cache.cacheProbe(in_msg.addr)]);
+              if (in_msg.sliceIds.isValid()) {
+                DPRINTF(RubyStream, "Miss stream request [%lu, +%lu).\n", 
+                  in_msg.sliceIds.singleSliceId().getStartIdx(),
+                  in_msg.sliceIds.singleSliceId().getNumElements());
+              }
+              if (L2cache.cacheAvail(in_msg.addr)) {
+                // Miss.
+                setHitCacheLevel(in_msg.requestStatistic, 4);
+                // L2 does't have the line, but we have space for it in the L2
+                trigger(L1Cache_request_type_to_event(in_msg.Type, in_msg.addr,
+                                                      in_msg.XXNewRewquestor, cache_entry),
+                        in_msg.addr, cache_entry, tbe);
+              } else {
+                // No room in the L2, so we need to make room before handling the request
+                Entry L2cache_entry := getCacheEntry(L2cache.cacheProbe(in_msg.addr));
+                if (isDirty(L2cache_entry)) {
+                  trigger(Event:L2_Replacement, L2cache.cacheProbe(in_msg.addr),
+                          L2cache_entry, TBEs[L2cache.cacheProbe(in_msg.addr)]);
+                } else {
+                  trigger(Event:L2_Replacement_clean, L2cache.cacheProbe(in_msg.addr),
+                          L2cache_entry, TBEs[L2cache.cacheProbe(in_msg.addr)]);
+                }
+              }
             }
+
           }
         }
       }
@@ -1240,6 +1240,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   transition({I_I, S_I, M_I, MT_I, MCT_I, NP}, MEM_Inv) {
     o_popIncomingResponseQueue;
   }
+  transition({I_I, S_I, M_I, MT_I, MCT_I, NP}, MEM_InvR) {
+    jj_popL1RequestQueue;
+  }
 
 
   transition({SS_MB, SS_M, MT_MB, MT_M, MT_IIB, MT_VVB, MT_IB, MT_SB, MT_VB}, {L1_GETS, L1_GETV, L1_GETH, STREAM_STORE, L1_GET_INSTR, L1_GETX, L1_UPGRADE}) {
@@ -1431,7 +1434,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     rr_deallocateL2CacheBlock;
   }
 
-  transition(SS, {L2_Replacement, MEM_Inv}, S_I) {
+  transition(SS, {L2_Replacement, MEM_Inv, MEM_InvR}, S_I) {
     i_allocateTBE;
     f_sendInvToSharers;
     rr_deallocateL2CacheBlock;
@@ -1539,7 +1542,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ur_profileReq;
     jj_popL1RequestQueue;
   }
-  transition(M, {L2_Replacement, MEM_Inv}, M_I) {
+  transition(M, {L2_Replacement, MEM_Inv, MEM_InvR}, M_I) {
     i_allocateTBE;
     c_exclusiveReplacement;
     rr_deallocateL2CacheBlock;
@@ -1605,7 +1608,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ur_profileReq;
     jj_popL1RequestQueue;
   }
-  transition(MT, {L2_Replacement, MEM_Inv}, MT_I) {
+  transition(MT, {L2_Replacement, MEM_Inv, MEM_InvR}, MT_I) {
     i_allocateTBE;
     f_sendInvToSharers;
     rr_deallocateL2CacheBlock;

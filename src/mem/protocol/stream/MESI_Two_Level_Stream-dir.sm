@@ -38,6 +38,8 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
        vnet_type="response";
   MessageBuffer * responseFromDir, network="To", virtual_network="1",
        vnet_type="response";
+  MessageBuffer * requestFromDir, network="To", virtual_network="0",
+       vnet_type="request"; // Request from Dir to L2.
 
   MessageBuffer * requestToMemory;
   MessageBuffer * responseFromMemory;
@@ -253,6 +255,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
 
   // ** OUT_PORTS **
   out_port(responseNetwork_out, ResponseMsg, responseFromDir);
+  out_port(requestNetwork_out, RequestMsg, requestFromDir);
   out_port(memQueue_out, MemoryMsg, requestToMemory);
 
   // ! Sean: StreamAwareCache
@@ -532,6 +535,20 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       }
     }
   }
+
+  action(invr_sendCacheInvalidateAsRequest, "invr", desc="Invalidate a cache block but as Request") {
+    // Send out the INV request as a request to avoid deadlock.
+    peek(requestNetwork_in, RequestMsg) {
+      enqueue(requestNetwork_out, RequestMsg, directory_latency) {
+        out_msg.addr := address;
+        out_msg.Type := CoherenceRequestType:INV;
+        out_msg.XXNewRewquestor.add(machineID);
+        out_msg.Destination.add(getDirectoryEntry(address).Owner);
+        out_msg.MessageSize := MessageSizeType:Request_Control;
+      }
+    }
+  }
+
 
 
   action(drp_sendDMAData, "drp", desc="Send Data to DMA controller from incoming PUTX") {
@@ -881,13 +898,13 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   transition(M, GETH, M_GM) {
     v_allocateTBE;
     sh_recordGetHID;
-    inv_sendCacheInvalidate;
+    invr_sendCacheInvalidateAsRequest;
     j_popIncomingRequestQueue;
   }
   transition(M, STREAM_STORE, M_GM) {
     v_allocateTBE;
     sm_recordGetMID
-    inv_sendCacheInvalidate;
+    invr_sendCacheInvalidateAsRequest;
     j_popIncomingRequestQueue;
   }
   transition(M_GM, Data, M_DRDI) {
@@ -904,7 +921,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   transition(M, GETU, M_GU) {
     v_allocateTBE;
     su_recordGetUID;
-    inv_sendCacheInvalidate;
+    invr_sendCacheInvalidateAsRequest;
     j_popIncomingRequestQueue;
   }
   transition(M_GU, Data, M_DRDI) {
