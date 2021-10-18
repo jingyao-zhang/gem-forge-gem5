@@ -68,6 +68,7 @@ class EndQuiesceEvent;
 class PortProxy;
 class Process;
 class System;
+class StreamNUCAManager;
 namespace Kernel {
     class Statistics;
 }
@@ -168,6 +169,11 @@ class ThreadContext : public PCEventScope
      * Query System on all threads with same tgid.
      */
     int getThreadGroupSize();
+
+    /**
+     * Get the StreamNUCAManager.
+     */
+    std::shared_ptr<StreamNUCAManager> getStreamNUCAManager();
 
     virtual Status status() const = 0;
 

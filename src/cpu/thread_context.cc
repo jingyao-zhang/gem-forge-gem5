@@ -335,3 +335,9 @@ int ThreadContext::getThreadGroupSize() {
     }
     return numThreads;
 }
+
+std::shared_ptr<StreamNUCAManager> ThreadContext::getStreamNUCAManager() {
+    auto p = this->getProcessPtr();
+    assert(p && "Try getting StreamNUCAManager on Unassigned ThreadContext.");
+    return p->streamNUCAManager;
+}

@@ -45,6 +45,7 @@ private:
   enum LevelPolicyE {
     LEVEL_STATIC,
     LEVEL_MANUAL,
+    LEVEL_MANUAL2,
     LEVEL_SMART,
   } levelPolicy;
   std::vector<uint64_t> cacheCapacity;
@@ -66,6 +67,7 @@ private:
 
   void setFloatPlan(DynamicStream &dynS);
   void setFloatPlanManual(DynamicStream &dynS);
+  void setFloatPlanManual2(DynamicStream &dynS);
 
 };
 

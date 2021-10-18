@@ -30,6 +30,20 @@ void StreamNUCAManager::defineAlign(Addr A, Addr B, uint64_t elementOffset) {
   regionA.aligns.emplace_back(A, B, elementOffset);
 }
 
+const StreamNUCAManager::StreamRegion &
+StreamNUCAManager::getContainingStreamRegion(Addr vaddr) const {
+  auto iter = this->startVAddrRegionMap.upper_bound(vaddr);
+  if (iter == this->startVAddrRegionMap.begin()) {
+    panic("Failed to find ContainingStreamRegion for %#x.", vaddr);
+  }
+  iter--;
+  const auto &region = iter->second;
+  if (region.vaddr + region.elementSize * region.numElement <= vaddr) {
+    panic("Failed to find ContainingStreamRegion for %#x.", vaddr);
+  }
+  return region;
+}
+
 void StreamNUCAManager::remap() {
   DPRINTF(StreamNUCAManager, "Remap Regions Enabled %d.\n", this->enabled);
   if (!this->enabled) {

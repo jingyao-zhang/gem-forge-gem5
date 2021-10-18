@@ -21,10 +21,6 @@ public:
   void defineAlign(Addr A, Addr B, uint64_t elementOffset);
   void remap();
 
-private:
-  Process *process;
-  bool enabled;
-
   struct StreamAlign {
     Addr vaddrA;
     Addr vaddrB;
@@ -42,6 +38,12 @@ private:
 
     std::vector<StreamAlign> aligns;
   };
+
+  const StreamRegion &getContainingStreamRegion(Addr vaddr) const;
+
+private:
+  Process *process;
+  bool enabled;
 
   std::map<Addr, StreamRegion> startVAddrRegionMap;
 

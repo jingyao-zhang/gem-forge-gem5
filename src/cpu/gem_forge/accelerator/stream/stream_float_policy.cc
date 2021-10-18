@@ -69,8 +69,12 @@ StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
     this->levelPolicy = LevelPolicyE::LEVEL_STATIC;
   } else if (_levelPolicy == "smart") {
     this->levelPolicy = LevelPolicyE::LEVEL_SMART;
-  } else {
+  } else if (_levelPolicy == "manual") {
     this->levelPolicy = LevelPolicyE::LEVEL_MANUAL;
+  } else if (_levelPolicy == "manual2") {
+    this->levelPolicy = LevelPolicyE::LEVEL_MANUAL2;
+  } else {
+    panic("Invalid StreamFloat LevelPolicy %s.", _levelPolicy);
   }
 
   // Initialize the output stream.
@@ -488,6 +492,9 @@ void StreamFloatPolicy::setFloatPlan(DynamicStream &dynS) {
   } else if (this->levelPolicy == LevelPolicyE::LEVEL_MANUAL) {
     this->setFloatPlanManual(dynS);
     return;
+  } else if (this->levelPolicy == LevelPolicyE::LEVEL_MANUAL2) {
+    this->setFloatPlanManual2(dynS);
+    return;
   }
 
   auto S = dynS.stream;
@@ -558,71 +565,6 @@ void StreamFloatPolicy::setFloatPlan(DynamicStream &dynS) {
     return;
   }
 
-  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
-  return;
-}
-
-void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
-
-  /**
-   * Manually check for the stream name.
-   * Default to L2 cache.
-   */
-  auto S = dynS.stream;
-  const auto &streamName = S->getStreamName();
-
-  auto &floatPlan = dynS.getFloatPlan();
-  uint64_t firstElementIdx = 0;
-
-  static const std::unordered_set<std::string> manualFloatToMemSet = {
-      "rodinia.pathfinder.wall.ld",
-      "rodinia.hotspot.power.ld",
-      "rodinia.hotspot3D.power.ld",
-      "gap.pr_push.atomic.out_v.ld",
-  };
-
-  if (manualFloatToMemSet.count(streamName)) {
-    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
-    return;
-  }
-
-  if (streamName.find("rodinia.srad_v2") == 0) {
-    /**
-     * For srad_v2, we want to split them at iterations.
-     */
-    if (!dynS.hasTotalTripCount()) {
-      DYN_S_PANIC(dynS.dynamicStreamId,
-                  "Missing TotalTripCount for rodinia.srad_v2.");
-    }
-    auto totalTripCount = dynS.getTotalTripCount();
-    // Take min to handle the coalesced stream.
-    auto elementSize = std::min(S->getMemElementSize(), 64);
-    auto totalThreads =
-        S->getCPUDelegator()->getSingleThreadContext()->getThreadGroupSize();
-    auto totalArrays = 6;
-
-    auto totalDataBytes =
-        totalTripCount * elementSize * totalArrays * totalThreads;
-    auto totalLLCBytes = this->getSharedLLCCapacity();
-    auto myLLCBytes = totalLLCBytes / totalThreads;
-    auto myDataBytes = totalDataBytes / totalThreads;
-
-    if (myDataBytes <= myLLCBytes) {
-      // I should be able to fit in LLC.
-      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
-      return;
-    }
-
-    /**
-     * For now we start with LLC and then migrate to Mem.
-     */
-    auto llcTripCount = myLLCBytes / elementSize / totalArrays;
-    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
-    floatPlan.addFloatChangePoint(llcTripCount, MachineType_Directory);
-    return;
-  }
-
-  // Default just offload to LLC.
   floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
   return;
 }
