@@ -457,6 +457,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.neighbor_stream_threshold = options.gem_forge_stream_engine_mc_neighbor_stream_threshold
         dir_cntrl.neighbor_migration_delay = options.gem_forge_stream_engine_mc_neighbor_migration_delay
         dir_cntrl.enable_stream_float_mem = options.gem_forge_stream_engine_enable_float_mem
+        dir_cntrl.reuse_buffer_lines_per_core = options.gem_forge_stream_engine_mc_reuse_buffer_lines_per_core
 
     for i, dma_port in enumerate(dma_ports):
         #

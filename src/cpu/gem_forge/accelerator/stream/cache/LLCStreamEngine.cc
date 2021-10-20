@@ -58,6 +58,11 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
           ->neighbor_stream_threshold /* NeighborStreamsThreshold */,
       Cycles(this->controller->myParams->neighbor_migration_delay) /* Delay */
   );
+  this->reuseBuffer = m5::make_unique<StreamReuseBuffer>(
+      this->controller->getMachineID(),
+      this->controller->myParams->reuse_buffer_lines_per_core,
+      true /* PerCoreMode */
+  );
 }
 
 LLCStreamEngine::~LLCStreamEngine() { this->streams.clear(); }
@@ -293,8 +298,8 @@ void LLCStreamEngine::receiveStreamDataVec(
   }
 
   for (const auto &sliceId : sliceIds.sliceIds) {
-    this->enqueueIncomingStreamDataMsg(readyCycle, sliceId, loadValueBlock,
-                                       storeValueBlock);
+    this->enqueueIncomingStreamDataMsg(readyCycle, paddrLine, sliceId,
+                                       loadValueBlock, storeValueBlock);
   }
   this->scheduleEvent(Cycles(delayCycle));
 }
@@ -317,7 +322,7 @@ void LLCStreamEngine::receiveStreamNDCRequest(PacketPtr pkt) {
 }
 
 void LLCStreamEngine::enqueueIncomingStreamDataMsg(
-    Cycles readyCycle, const DynamicStreamSliceId &sliceId,
+    Cycles readyCycle, Addr paddrLine, const DynamicStreamSliceId &sliceId,
     const DataBlock &dataBlock, const DataBlock &storeValueBlock) {
   auto iter = this->incomingStreamDataQueue.rbegin();
   for (auto end = this->incomingStreamDataQueue.rend(); iter != end; ++iter) {
@@ -325,8 +330,8 @@ void LLCStreamEngine::enqueueIncomingStreamDataMsg(
       break;
     }
   }
-  this->incomingStreamDataQueue.emplace(iter.base(), readyCycle, sliceId,
-                                        dataBlock, storeValueBlock);
+  this->incomingStreamDataQueue.emplace(iter.base(), readyCycle, paddrLine,
+                                        sliceId, dataBlock, storeValueBlock);
   // Some sanity check.
   if (this->incomingStreamDataQueue.size() > 100) {
     LLC_SLICE_PANIC(sliceId, "IncomingElementDataQueue overflow.");
@@ -338,7 +343,8 @@ void LLCStreamEngine::drainIncomingStreamDataMsg() {
   while (!this->incomingStreamDataQueue.empty()) {
     auto &msg = this->incomingStreamDataQueue.front();
     if (msg.readyCycle <= curCycle) {
-      this->receiveStreamData(msg.sliceId, msg.dataBlock, msg.storeValueBlock);
+      this->receiveStreamData(msg.paddrLine, msg.sliceId, msg.dataBlock,
+                              msg.storeValueBlock);
       this->incomingStreamDataQueue.pop_front();
     } else {
       break;
@@ -346,7 +352,8 @@ void LLCStreamEngine::drainIncomingStreamDataMsg() {
   }
 }
 
-void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
+void LLCStreamEngine::receiveStreamData(Addr paddrLine,
+                                        const DynamicStreamSliceId &sliceId,
                                         const DataBlock &dataBlock,
                                         const DataBlock &storeValueBlock) {
   /**
@@ -367,6 +374,14 @@ void LLCStreamEngine::receiveStreamData(const DynamicStreamSliceId &sliceId,
   dynS->inflyRequests--;
 
   auto S = dynS->getStaticStream();
+
+  /**
+   * Check if we need to cache this stream for reuse.
+   */
+  if (this->reuseBuffer->shouldCacheStream(S, dynS->getDynamicStreamId())) {
+    this->reuseBuffer->addLine(sliceId, paddrLine, dataBlock);
+  }
+
   bool needIndirect =
       !(dynS->getIndStreams().empty() && dynS->predicatedStreams.empty());
   bool needUpdate = S->isUpdateStream() || S->isAtomicStream();
@@ -1443,9 +1458,8 @@ void LLCStreamEngine::issueStreamDirect(LLCDynamicStream *dynS) {
         statistic.numLLCCanMulticastSlice++;
       }
     }
-    auto requestIter =
-        this->enqueueRequest(S->getCPUDelegator(), sliceId, vaddrLine,
-                             paddrLine, this->myMachineType(), reqType);
+    auto requestIter = this->enqueueRequest(S, sliceId, vaddrLine, paddrLine,
+                                            this->myMachineType(), reqType);
 
     if (S->isStoreStream()) {
       /**
@@ -1653,8 +1667,8 @@ void LLCStreamEngine::issueIndirectLoadRequest(LLCDynamicStream *dynIS,
       }
 
       // Push to the request queue.
-      this->enqueueRequest(IS->getCPUDelegator(), sliceId, curSliceVAddrLine,
-                           curSlicePAddrLine, elementMachineType, reqType);
+      this->enqueueRequest(IS, sliceId, curSliceVAddrLine, curSlicePAddrLine,
+                           elementMachineType, reqType);
       dynIS->inflyRequests++;
     } else {
       // For faulted slices, we simply ignore it.
@@ -1778,9 +1792,9 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
         this->scheduleEvent(Cycles(1));
       }
     } else {
-      auto reqIter = this->enqueueRequest(
-          IS->getCPUDelegator(), sliceId, vaddrLine, paddrLine,
-          elementMachineType, CoherenceRequestType_STREAM_STORE);
+      auto reqIter = this->enqueueRequest(IS, sliceId, vaddrLine, paddrLine,
+                                          elementMachineType,
+                                          CoherenceRequestType_STREAM_STORE);
       dynIS->inflyRequests++;
       auto lineOffset = sliceId.vaddr % RubySystem::getBlockSizeBytes();
       reqIter->dataBlock.setData(reinterpret_cast<uint8_t *>(&storeValue),
@@ -1794,12 +1808,12 @@ void LLCStreamEngine::issueIndirectStoreOrAtomicRequest(
 }
 
 LLCStreamEngine::RequestQueueIter LLCStreamEngine::enqueueRequest(
-    GemForgeCPUDelegator *cpuDelegator, const DynamicStreamSliceId &sliceId,
-    Addr vaddrLine, Addr paddrLine, MachineType destMachineType,
-    CoherenceRequestType type) {
-  this->requestQueue.emplace_back(sliceId, paddrLine, destMachineType, type);
+    Stream *S, const DynamicStreamSliceId &sliceId, Addr vaddrLine,
+    Addr paddrLine, MachineType destMachineType, CoherenceRequestType type) {
+  this->requestQueue.emplace_back(S, sliceId, paddrLine, destMachineType, type);
   auto requestQueueIter = std::prev(this->requestQueue.end());
   // To match with TLB interface, we first create a fake packet.
+  auto cpuDelegator = S->getCPUDelegator();
   auto tc = cpuDelegator->getSingleThreadContext();
   RequestPtr req = std::make_shared<Request>(paddrLine, sliceId.getSize(), 0,
                                              cpuDelegator->dataMasterId());
@@ -1850,6 +1864,37 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
                       "Issue [local] %s request vaddr %#x paddrLine %#x value "
                       "%s.\n",
                       req.requestType, sliceId.vaddr, paddrLine, req.dataBlock);
+
+    /**
+     * Check if the data is cached in reuse buffer.
+     */
+    if (req.requestType == CoherenceRequestType_GETH) {
+      const auto &dynSId = sliceId.getDynStreamId();
+      if (this->reuseBuffer->shouldCheckReuse(req.S, dynSId) &&
+          this->reuseBuffer->contains(sliceId, paddrLine)) {
+        LLC_SLICE_DPRINTF(sliceId,
+                          "Reuse [local] %s request vaddr %#x paddrLine %#x.\n",
+                          req.requestType, sliceId.vaddr, paddrLine);
+
+        req.S->statistic.numRemoteReuseSlice++;
+
+        const auto &reuseDataBlock =
+            this->reuseBuffer->reuse(sliceId, paddrLine);
+
+        /**
+         * We charge 4 cycle delay.
+         */
+        Cycles reuseDelayCycles(4);
+        DynamicStreamSliceIdVec sliceIds;
+        sliceIds.add(sliceId);
+        DataBlock fakeStoreValueBlock;
+        this->receiveStreamDataVec(reuseDelayCycles, paddrLine, sliceIds,
+                                   reuseDataBlock, fakeStoreValueBlock);
+
+        return;
+      }
+    }
+
   } else {
     destMachineId =
         this->controller->mapAddressToLLCOrMem(paddrLine, destMachineType);
@@ -1942,10 +1987,6 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
      * MaxInqueueRequestPerStream.
      */
     this->indReqBuffer->pushRequest(msg);
-    // Cycles latency(1);
-    // this->streamIndirectIssueMsgBuffer->enqueue(
-    //     msg, this->controller->clockEdge(),
-    //     this->controller->cyclesToTicks(latency));
   }
 }
 
@@ -2106,7 +2147,7 @@ void LLCStreamEngine::issueStreamDataToLLC(
     auto recvElementMachineType =
         recvConfig->floatPlan.getMachineTypeAtElem(elementIdx);
     auto reqIter = this->enqueueRequest(
-        recvConfig->stream->getCPUDelegator(), sliceId, recvElementVAddrLine,
+        stream->getStaticStream(), sliceId, recvElementVAddrLine,
         recvElementPAddrLine, recvElementMachineType,
         CoherenceRequestType_STREAM_FORWARD);
     // Remember the receiver dynamic id and forwarded data block.

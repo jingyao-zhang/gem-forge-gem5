@@ -59,6 +59,7 @@ public:
 
   // Float statistics in Mem.
   size_t numMemIssueSlice = 0;
+  size_t numRemoteReuseSlice = 0;
 
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;

@@ -24,11 +24,13 @@ DebugFlag('LLCRubyStreamStore')
 DebugFlag('LLCRubyStreamNotIssue')
 DebugFlag('LLCStreamMigrationController')
 DebugFlag('LLCStreamLoopBound')
+DebugFlag('RemoteStreamReuse')
 CompoundFlag('LLCRubyStream', [
     'LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
     'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
     'LLCRubyStreamNotIssue', 'LLCStreamLoopBound',
     'StreamRangeSync',  'LLCStreamMigrationController',
+    'RemoteStreamReuse',
 ])
 CompoundFlag('RubyStreamLife',
              ['CoreRubyStreamLife', 'L0RubyStreamLife', 'MLCRubyStreamLife', 'LLCRubyStreamLife'])
@@ -58,3 +60,4 @@ Source('StreamRequestBuffer.cc')
 Source('CacheStreamConfigureData.cc')
 Source('SlicedDynamicStream.cc')
 Source('StreamFloatPlan.cc')
+Source('StreamReuseBuffer.cc')

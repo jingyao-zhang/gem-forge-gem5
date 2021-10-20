@@ -64,7 +64,7 @@ void LLCStreamNDCController::processStreamNDCRequest(PacketPtr pkt) {
   if (streamNDC->isForward) {
     requestType = CoherenceRequestType_GETH;
   }
-  llcSE->enqueueRequest(S->getCPUDelegator(), sliceId, vaddrLine, paddrLine,
+  llcSE->enqueueRequest(S, sliceId, vaddrLine, paddrLine,
                         llcSE->myMachineType(), requestType);
 }
 

@@ -26,10 +26,12 @@ class LLCDynamicStream;
 using LLCDynamicStreamPtr = LLCDynamicStream *;
 
 struct LLCStreamRequest {
-  LLCStreamRequest(const DynamicStreamSliceId &_sliceId, Addr _paddrLine,
-                   MachineType _destMachineType, CoherenceRequestType _type)
-      : sliceId(_sliceId), paddrLine(_paddrLine),
+  LLCStreamRequest(Stream *_S, const DynamicStreamSliceId &_sliceId,
+                   Addr _paddrLine, MachineType _destMachineType,
+                   CoherenceRequestType _type)
+      : S(_S), sliceId(_sliceId), paddrLine(_paddrLine),
         destMachineType(_destMachineType), requestType(_type) {}
+  Stream *S;
   DynamicStreamSliceId sliceId;
   Addr paddrLine;
   MachineType destMachineType;

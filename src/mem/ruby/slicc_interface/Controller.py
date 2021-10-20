@@ -127,3 +127,4 @@ class RubyStreamAwareController(RubyController):
         Param.String("none", "Migration valve type.")
 
     enable_stream_float_mem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")
+    reuse_buffer_lines_per_core = Param.UInt32(0, "Number of cache lines per core in the reuse buffer.")

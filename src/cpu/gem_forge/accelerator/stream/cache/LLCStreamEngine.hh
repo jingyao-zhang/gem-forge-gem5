@@ -2,6 +2,7 @@
 #define __CPU_TDG_ACCELERATOR_LLC_STREAM_ENGINE_H__
 
 #include "LLCDynamicStream.hh"
+#include "StreamReuseBuffer.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream_translation_buffer.hh"
 
@@ -84,6 +85,7 @@ private:
   std::unique_ptr<LLCStreamNDCController> ndcController;
   std::unique_ptr<LLCStreamAtomicLockManager> atomicLockManager;
   std::unique_ptr<StreamRequestBuffer> indReqBuffer;
+  std::unique_ptr<StreamReuseBuffer> reuseBuffer;
   const int issueWidth;
   const int migrateWidth;
   // Threshold to limit maximum number of infly requests.
@@ -110,23 +112,24 @@ private:
    */
   struct IncomingElementDataMsg {
     const Cycles readyCycle;
+    const Addr paddrLine;
     const DynamicStreamSliceId sliceId;
     const DataBlock dataBlock;
     const DataBlock storeValueBlock;
-    IncomingElementDataMsg(Cycles _readyCycle,
+    IncomingElementDataMsg(Cycles _readyCycle, Addr _paddrLine,
                            const DynamicStreamSliceId &_sliceId,
                            const DataBlock &_dataBlock,
                            const DataBlock &_storeValueBlock)
-        : readyCycle(_readyCycle), sliceId(_sliceId), dataBlock(_dataBlock),
-          storeValueBlock(_storeValueBlock) {}
+        : readyCycle(_readyCycle), paddrLine(_paddrLine), sliceId(_sliceId),
+          dataBlock(_dataBlock), storeValueBlock(_storeValueBlock) {}
   };
   std::list<IncomingElementDataMsg> incomingStreamDataQueue;
-  void enqueueIncomingStreamDataMsg(Cycles readyCycle,
+  void enqueueIncomingStreamDataMsg(Cycles readyCycle, Addr paddrLine,
                                     const DynamicStreamSliceId &sliceId,
                                     const DataBlock &dataBlock,
                                     const DataBlock &storeValueBlock);
   void drainIncomingStreamDataMsg();
-  void receiveStreamData(const DynamicStreamSliceId &sliceId,
+  void receiveStreamData(Addr paddrLine, const DynamicStreamSliceId &sliceId,
                          const DataBlock &dataBlock,
                          const DataBlock &storeValueBlock);
   void receiveStoreStreamData(LLCDynamicStreamPtr dynS,
@@ -249,7 +252,7 @@ private:
   /**
    * Helper function to enqueue a request and start address translation.
    */
-  RequestQueueIter enqueueRequest(GemForgeCPUDelegator *cpuDelegator,
+  RequestQueueIter enqueueRequest(Stream *S,
                                   const DynamicStreamSliceId &sliceId,
                                   Addr vaddrLine, Addr paddrLine,
                                   MachineType destMachineType,

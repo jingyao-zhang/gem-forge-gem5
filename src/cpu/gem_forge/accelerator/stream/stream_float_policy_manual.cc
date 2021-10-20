@@ -158,8 +158,6 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
     const auto &streamNUCARegion =
         streamNUCAManager->getContainingStreamRegion(myStartVAddr);
 
-    auto totalDataBytes = totalArrays * (streamNUCARegion.numElement *
-                                         streamNUCARegion.elementSize);
     auto totalLLCBytes = this->getSharedLLCCapacity();
     auto rowDataBytes = rowTripCount * elementSize * totalArrays;
     auto totalLLCRows = totalLLCBytes / rowDataBytes;

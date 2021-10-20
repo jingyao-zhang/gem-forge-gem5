@@ -67,6 +67,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpAvg(avgMigrateCycle, numLLCMigrateCycle, numLLCMigrate);
 
   dumpScalar(numMemIssueSlice);
+  dumpScalar(numRemoteReuseSlice);
 
   dumpScalar(numLLCAliveElementSamples);
   if (numLLCAliveElementSamples > 0) {
@@ -223,6 +224,7 @@ void StreamStatistic::clear() {
   this->numLLCMigrate = 0;
   this->numLLCMigrateCycle = 0;
   this->numMemIssueSlice = 0;
+  this->numRemoteReuseSlice = 0;
   this->numCoreEarlyElement = 0;
   this->numCoreEarlyCycle = 0;
   this->numCoreLateElement = 0;
