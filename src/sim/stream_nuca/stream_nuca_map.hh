@@ -3,8 +3,7 @@
 
 #include "base/types.hh"
 
-#include <unordered_map>
-#include <vector>
+#include <map>
 
 /**
  * This is in charge of mapping physical addresses to some banks.
@@ -18,6 +17,7 @@
 class StreamNUCAMap {
 public:
   static void initializeTopology(int numRows, int numCols);
+  static void initializeCache(int blockSize, int numSet, int assoc);
 
   static int getNumRows() {
     assert(topologyInitialized && "Topology has not initialized");
@@ -27,29 +27,50 @@ public:
     assert(topologyInitialized && "Topology has not initialized");
     return numCols;
   }
-
-  static void addRangeMap(Addr startPAddr, Addr endPAddr, uint64_t interleave,
-                          int startBank);
-
-  static int getBank(Addr paddr);
-
-private:
-  static bool topologyInitialized;
-  static int numRows;
-  static int numCols;
+  static int getCacheBlockSize() {
+    assert(cacheInitialized && "Cache has not initialized");
+    return cacheBlockSize;
+  }
+  static int getCacheNumSet() {
+    assert(cacheInitialized && "Cache has not initialized");
+    return cacheNumSet;
+  }
+  static int getCacheAssoc() {
+    assert(cacheInitialized && "Cache has not initialized");
+    return cacheAssoc;
+  }
 
   struct RangeMap {
     Addr startPAddr;
     Addr endPAddr;
     uint64_t interleave;
     int startBank;
+    int startSet;
     RangeMap(Addr _startPAddr, Addr _endPAddr, uint64_t _interleave,
-             int _startBank)
+             int _startBank, int _startSet)
         : startPAddr(_startPAddr), endPAddr(_endPAddr), interleave(_interleave),
-          startBank(_startBank) {}
+          startBank(_startBank), startSet(_startSet) {}
   };
 
-  static std::vector<RangeMap> rangeMaps;
+  static void addRangeMap(Addr startPAddr, Addr endPAddr, uint64_t interleave,
+                          int startBank, int startSet);
+
+  static RangeMap &getRangeMapByStartPAddr(Addr startPAddr);
+  static RangeMap *getRangeMapContaining(Addr paddr);
+  static int getBank(Addr paddr);
+  static int getSet(Addr paddr);
+
+
+private:
+  static bool topologyInitialized;
+  static int numRows;
+  static int numCols;
+  static bool cacheInitialized;
+  static int cacheBlockSize;
+  static int cacheNumSet;
+  static int cacheAssoc;
+
+  static std::map<Addr, RangeMap> rangeMaps;
 };
 
 #endif

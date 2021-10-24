@@ -54,6 +54,7 @@ private:
   Addr translate(Addr vaddr);
 
   uint64_t determineInterleave(const StreamRegion &region);
+  void computeCacheSet();
 };
 
 #endif

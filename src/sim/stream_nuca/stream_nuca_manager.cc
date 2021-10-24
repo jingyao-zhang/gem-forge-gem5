@@ -3,6 +3,8 @@
 
 #include "base/trace.hh"
 
+#include <unordered_set>
+
 #include "debug/StreamNUCAManager.hh"
 
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other) {
@@ -50,9 +52,6 @@ void StreamNUCAManager::remap() {
     return;
   }
 
-  /**
-   * For now we just interleave all array with 1kB.
-   */
   for (const auto &entry : this->startVAddrRegionMap) {
     const auto &region = entry.second;
     if (!this->isPAddrContinuous(region)) {
@@ -65,10 +64,116 @@ void StreamNUCAManager::remap() {
 
     uint64_t interleave = this->determineInterleave(region);
     int startBank = 0;
-    StreamNUCAMap::addRangeMap(startPAddr, endPAddr, interleave, startBank);
+    int startSet = 0;
+    StreamNUCAMap::addRangeMap(startPAddr, endPAddr, interleave, startBank,
+                               startSet);
     DPRINTF(StreamNUCAManager,
             "Map Region %#x PAddr %#x Interleave %lu Bank %d.\n", startVAddr,
             startPAddr, interleave, startBank);
+  }
+
+  this->computeCacheSet();
+}
+
+void StreamNUCAManager::computeCacheSet() {
+
+  /**
+   * Compute the StartSet for arrays.
+   * First group arrays by their alignment requirement.
+   */
+  std::vector<std::vector<Addr>> alignRangeVAddrs;
+  std::unordered_set<Addr> groupedVAddrs;
+  int totalGroupedRanges = 0;
+  while (true) {
+    int grouped = 0;
+    for (const auto &entry : this->startVAddrRegionMap) {
+      if (groupedVAddrs.count(entry.first)) {
+        continue;
+      }
+      const auto &region = entry.second;
+      bool found = false;
+      for (const auto &align : region.aligns) {
+        if (align.vaddrA == align.vaddrB) {
+          // Ignore self alignment.
+          continue;
+        }
+        for (auto &group : alignRangeVAddrs) {
+          for (auto &vaddr : group) {
+            if (vaddr == align.vaddrB) {
+              found = true;
+            }
+          }
+          if (found) {
+            grouped++;
+            totalGroupedRanges++;
+            group.push_back(region.vaddr);
+            groupedVAddrs.insert(region.vaddr);
+            break;
+          }
+        }
+        if (found) {
+          break;
+        }
+      }
+
+      if (!found) {
+        grouped++;
+        totalGroupedRanges++;
+        alignRangeVAddrs.emplace_back();
+        alignRangeVAddrs.back().push_back(region.vaddr);
+        groupedVAddrs.insert(region.vaddr);
+      }
+    }
+
+    if (grouped == 0) {
+      break;
+    }
+  }
+
+  if (totalGroupedRanges != this->startVAddrRegionMap.size()) {
+    panic("Some Ranges are not grouped.");
+  }
+
+  const auto totalBanks =
+      StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
+  const auto llcNumSets = StreamNUCAMap::getCacheNumSet();
+  const auto llcAssoc = StreamNUCAMap::getCacheAssoc();
+  const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
+  const auto llcBankSize = llcNumSets * llcAssoc * llcBlockSize;
+  const auto totalLLCSize = llcBankSize * totalBanks;
+
+  for (auto &group : alignRangeVAddrs) {
+    // Sort for simplicity.
+    std::sort(group.begin(), group.end());
+
+    /**
+     * First we estimate how many data can be cached.
+     */
+    auto totalElementSize = 0;
+    for (auto startVAddr : group) {
+      const auto &region = this->getRegionFromStartVAddr(startVAddr);
+      totalElementSize += region.elementSize;
+    }
+    auto cachedElements = totalLLCSize / totalElementSize;
+
+    auto startSet = 0;
+    for (auto startVAddr : group) {
+      const auto &region = this->getRegionFromStartVAddr(startVAddr);
+
+      auto startPAddr = this->translate(startVAddr);
+      auto &rangeMap = StreamNUCAMap::getRangeMapByStartPAddr(startPAddr);
+      rangeMap.startSet = startSet;
+
+      auto cachedBytes = cachedElements * region.elementSize;
+      auto usedSets = cachedBytes / (llcBlockSize * totalBanks);
+
+      DPRINTF(StreamNUCAManager,
+              "Range %#x ElementSize %d CachedElements %d StartSet %d UsedSet "
+              "%d.\n",
+              region.vaddr, region.elementSize, cachedElements, startSet,
+              usedSets);
+      startSet = (startSet + usedSets) % llcNumSets;
+    }
   }
 }
 
@@ -147,7 +252,7 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
         DPRINTF(
             StreamNUCAManager,
             "Range %#x Self Aligned To Row Interleave %lu = %lu / %lu * %lu.\n",
-            interleave, bytesOffset, defaultColWrapAroundBytes,
+            region.vaddr, interleave, bytesOffset, defaultColWrapAroundBytes,
             defaultInterleave);
       } else {
         panic("Not Support Yet: Range %#x Self Align ElementOffset %lu "

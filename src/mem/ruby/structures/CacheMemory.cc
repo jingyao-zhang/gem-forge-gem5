@@ -39,6 +39,8 @@
 #include "mem/ruby/protocol/AccessPermission.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
+#include "sim/stream_nuca/stream_nuca_map.hh"
+
 using namespace std;
 
 ostream&
@@ -73,6 +75,7 @@ CacheMemory::CacheMemory(const Params *p)
     m_block_size = p->block_size;  // may be 0 at this point. Updated in init()
     m_use_occupancy = dynamic_cast<WeightedLRUPolicy*>(
                                     m_replacementPolicy_ptr) ? true : false;
+    m_query_stream_nuca = p->query_stream_nuca;
 }
 
 void
@@ -97,6 +100,11 @@ CacheMemory::init()
                                 m_replacementPolicy_ptr->instantiateEntry();
         }
     }
+
+    if (m_query_stream_nuca) {
+        StreamNUCAMap::initializeCache(
+            m_block_size, m_cache_num_sets, m_cache_assoc);
+    }
 }
 
 CacheMemory::~CacheMemory()
@@ -115,6 +123,13 @@ int64_t
 CacheMemory::addressToCacheSet(Addr address) const
 {
     assert(address == makeLineAddress(address));
+
+    if (m_query_stream_nuca) {
+        auto set = StreamNUCAMap::getSet(address);
+        if (set != -1) {
+            return set;
+        }
+    }
 
     auto index_end_bit = m_start_index_bit + m_cache_num_set_bits;
     auto skip_index_end_bit = m_skip_index_start_bit + m_skip_index_num_bits;

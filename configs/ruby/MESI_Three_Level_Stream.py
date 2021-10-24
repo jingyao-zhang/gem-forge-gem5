@@ -301,6 +301,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                skip_index_start_bit=l2_select_low_bit,
                                skip_index_num_bits=l2_bits,
                                replacement_policy=BRRIPRP(),
+                               query_stream_nuca=True,
                                )
 
             l2_cntrl = L2Cache_Controller(
