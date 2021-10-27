@@ -40,6 +40,7 @@ public:
   };
 
   const StreamRegion &getContainingStreamRegion(Addr vaddr) const;
+  int getNumStreamRegions() const { return this->startVAddrRegionMap.size(); }
 
 private:
   Process *process;

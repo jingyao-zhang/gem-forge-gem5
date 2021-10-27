@@ -112,6 +112,7 @@ bool StreamReuseBuffer::shouldCacheStream(Stream *S,
                                           const DynamicStreamId &dynSId) const {
   /**
    * We cache if we are enabled and the Stream has more than one AliasedStream.
+   * And that alias offset is within our size.
    */
   if (this->maxNumLines == 0) {
     return false;
@@ -119,11 +120,39 @@ bool StreamReuseBuffer::shouldCacheStream(Stream *S,
   if (!S->aliasBaseStream) {
     return false;
   }
-  const auto &aliasedStreams = S->aliasBaseStream->aliasedStreams;
-  if (aliasedStreams.size() <= 1) {
-    return false;
+
+  auto iter =
+      this->memorizedAliasBaseToChosenCacheStreamMap.find(S->aliasBaseStream);
+  if (iter == this->memorizedAliasBaseToChosenCacheStreamMap.end()) {
+
+    Stream *chosenCachedStream = nullptr;
+
+    const auto &aliasedStreams = S->aliasBaseStream->aliasedStreams;
+    if (aliasedStreams.size() > 1) {
+      auto prevS = aliasedStreams.front();
+      auto prevAliasOffset = prevS->aliasOffset;
+      for (int i = 1; i < aliasedStreams.size(); ++i) {
+        auto S = aliasedStreams.at(i);
+        auto aliasOffset = S->aliasOffset;
+        // Choose 8kB as the threshold with some margin.
+        if (aliasOffset - prevAliasOffset <= 8196 + 128) {
+          chosenCachedStream = S;
+        }
+        prevAliasOffset = aliasOffset;
+      }
+    }
+
+    LLC_S_DPRINTF(dynSId, "AliasBaseStream %s ChosenCachedStream %s.\n",
+                  S->aliasBaseStream->getStreamName(),
+                  chosenCachedStream ? chosenCachedStream->getStreamName()
+                                     : "NULL");
+
+    iter = this->memorizedAliasBaseToChosenCacheStreamMap
+               .emplace(S->aliasBaseStream, chosenCachedStream)
+               .first;
   }
-  if (S != aliasedStreams.back()) {
+
+  if (S != iter->second) {
     return false;
   }
   return true;

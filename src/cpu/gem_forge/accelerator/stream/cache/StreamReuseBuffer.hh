@@ -57,6 +57,12 @@ private:
   const bool perCoreMode;
 
   /**
+   * Memorized CachedStream.
+   */
+  mutable std::unordered_map<Stream *, Stream *>
+      memorizedAliasBaseToChosenCacheStreamMap;
+
+  /**
    * For DPRINTF.
    */
   int curRemoteBank() const;

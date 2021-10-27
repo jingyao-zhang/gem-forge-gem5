@@ -153,6 +153,7 @@ public:
   void addPendingWritebackElement(StreamElement *releaseElement);
 
   Stream *getStream(uint64_t streamId) const;
+  Stream *getStream(const std::string &streamName) const;
   Stream *tryGetStream(uint64_t streamId) const;
 
   /**

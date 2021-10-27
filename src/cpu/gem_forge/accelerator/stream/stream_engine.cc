@@ -1822,6 +1822,16 @@ Stream *StreamEngine::getStream(uint64_t streamId) const {
   return iter->second;
 }
 
+Stream *StreamEngine::getStream(const std::string &streamName) const {
+  for (auto &entry : this->streamMap) {
+    auto S = entry.second;
+    if (S->getStreamName() == streamName) {
+      return S;
+    }
+  }
+  panic("Failed to find stream %s.\n", streamName);
+}
+
 Stream *StreamEngine::tryGetStream(uint64_t streamId) const {
   if (this->coalescedStreamIdMap.count(streamId)) {
     streamId = this->coalescedStreamIdMap.at(streamId);

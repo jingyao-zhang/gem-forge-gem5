@@ -95,7 +95,7 @@ void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
   }
 
   // Default just offload to LLC.
-  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
   return;
 }
 
@@ -113,8 +113,6 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
 
   static const std::unordered_set<std::string> manualFloatToMemSet = {
       "rodinia.pathfinder.wall.ld",
-      "rodinia.hotspot.power.ld",
-      "rodinia.hotspot3D.power.ld",
       "gap.pr_push.atomic.out_v.ld",
   };
 
@@ -123,13 +121,18 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
     return;
   }
 
-  if (streamName.find("rodinia.srad_v2") == 0) {
-    /**
-     * For srad_v2, we want to split them at iterations.
-     */
+  /**
+   * Split streams at iterations:
+   * rodinia.srad_v2
+   * rodinia.hotspot
+   * rodinia.hotspot3D
+   */
+  if (streamName.find("rodinia.srad_v2") == 0 ||
+      streamName.find("rodinia.hotspot") == 0 ||
+      streamName.find("rodinia.hotspot3D") == 0) {
     if (!dynS.hasTotalTripCount()) {
       DYN_S_PANIC(dynS.dynamicStreamId,
-                  "Missing TotalTripCount for rodinia.srad_v2.");
+                  "Missing TotalTripCount for iter-based floating plan..");
     }
 
     auto linearAddrGen =
@@ -137,7 +140,7 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
     if (!linearAddrGen) {
       // They should have linear address pattern.
       DYN_S_PANIC(dynS.dynamicStreamId,
-                  "Non-LinearAddrGen for rodinia.srad_v2.");
+                  "Non-LinearAddrGen for iter-based floating plan.");
     }
 
     auto totalTripCount = dynS.getTotalTripCount();
@@ -146,7 +149,6 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
 
     // Take min to handle the coalesced stream.
     auto elementSize = std::min(S->getMemElementSize(), 64);
-    auto totalArrays = 6;
 
     auto myStartVAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
     // ! This only considers the case when the address pattern is increasing.
@@ -155,22 +157,57 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
     auto threadContext = S->getCPUDelegator()->getSingleThreadContext();
     auto streamNUCAManager = threadContext->getStreamNUCAManager();
 
+    auto totalArrays = streamNUCAManager->getNumStreamRegions();
+
     const auto &streamNUCARegion =
         streamNUCAManager->getContainingStreamRegion(myStartVAddr);
 
     auto totalLLCBytes = this->getSharedLLCCapacity();
     auto rowDataBytes = rowTripCount * elementSize * totalArrays;
     auto totalLLCRows = totalLLCBytes / rowDataBytes;
+
+    if (streamName.find("rodinia.hotspot3D") == 0) {
+      /**
+       * For hotspot3D, since the first and last layer of Power is not used,
+       * we take that into account.
+       */
+      auto &tbDynS = S->getSE()
+                         ->getStream("rodinia.hotspot3D.tb.ld")
+                         ->getDynamicStream(dynS.configSeqNum);
+      auto &ttDynS = S->getSE()
+                         ->getStream("rodinia.hotspot3D.tt.ld")
+                         ->getDynamicStream(dynS.configSeqNum);
+      auto tbStartVAddr =
+          tbDynS.addrGenCallback
+              ->genAddr(0, tbDynS.addrGenFormalParams, getStreamValueFail)
+              .uint64();
+      auto ttStartVAddr =
+          ttDynS.addrGenCallback
+              ->genAddr(0, ttDynS.addrGenFormalParams, getStreamValueFail)
+              .uint64();
+
+      auto layerDataBytes = (tbStartVAddr - ttStartVAddr) / 2;
+      auto additionalRows = layerDataBytes / rowDataBytes;
+      DYN_S_DPRINTF(dynS.dynamicStreamId,
+                    "Rodinia.Hotspot3D Adjust Unused Power LayerBytes %dkB "
+                    "LLCRows %d = %d + %d.\n",
+                    layerDataBytes / 1024, totalLLCRows + additionalRows,
+                    totalLLCRows, additionalRows);
+      totalLLCRows += additionalRows;
+    }
+
     auto totalLLCRowDataBytes = totalLLCRows * rowDataBytes;
 
     auto llcEndVAddr =
         streamNUCARegion.vaddr + totalLLCRows * rowTripCount * elementSize;
 
-    hack("TotalTripCount %d RowTripCount %d TotalLLCRows %d LLCEndVAddr "
-         "%#x=%#x + %d MyEndVAddr %#x=%#x+%d.\n",
-         totalTripCount, rowTripCount, totalLLCRows, llcEndVAddr,
-         streamNUCARegion.vaddr, totalLLCRowDataBytes, myEndVAddr, myStartVAddr,
-         totalTripCount * elementSize);
+    DYN_S_DPRINTF(
+        dynS.dynamicStreamId,
+        "TotalTripCount %d RowTripCount %d TotalLLCRows %d LLCEndVAddr "
+        "%#x = %#x + %d MyEndVAddr %#x = %#x + %d MyEnd %s LLCEnd.\n",
+        totalTripCount, rowTripCount, totalLLCRows, llcEndVAddr,
+        streamNUCARegion.vaddr, totalLLCRowDataBytes, myEndVAddr, myStartVAddr,
+        totalTripCount * elementSize, myEndVAddr < llcEndVAddr ? "<" : ">=");
 
     if (myEndVAddr <= llcEndVAddr) {
       // We are accessing rows cached in LLC.
@@ -192,6 +229,6 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
   }
 
   // Default just offload to LLC.
-  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
   return;
 }

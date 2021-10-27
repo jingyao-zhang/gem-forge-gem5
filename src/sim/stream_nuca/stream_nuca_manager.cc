@@ -81,57 +81,50 @@ void StreamNUCAManager::computeCacheSet() {
    * Compute the StartSet for arrays.
    * First group arrays by their alignment requirement.
    */
-  std::vector<std::vector<Addr>> alignRangeVAddrs;
-  std::unordered_set<Addr> groupedVAddrs;
-  int totalGroupedRanges = 0;
-  while (true) {
-    int grouped = 0;
+  std::map<Addr, std::vector<Addr>> alignRangeVAddrs;
+  {
+    std::map<Addr, Addr> unionFindParent;
     for (const auto &entry : this->startVAddrRegionMap) {
-      if (groupedVAddrs.count(entry.first)) {
-        continue;
+      unionFindParent.emplace(entry.first, entry.first);
+    }
+
+    auto find = [&unionFindParent](Addr vaddr) -> Addr {
+      while (true) {
+        auto iter = unionFindParent.find(vaddr);
+        assert(iter != unionFindParent.end());
+        if (iter->second == vaddr) {
+          return vaddr;
+        }
+        vaddr = iter->second;
       }
+    };
+
+    auto merge = [&unionFindParent, &find](Addr vaddrA, Addr vaddrB) -> void {
+      auto rootA = find(vaddrA);
+      auto rootB = find(vaddrB);
+      unionFindParent[rootA] = rootB;
+    };
+
+    for (const auto &entry : this->startVAddrRegionMap) {
       const auto &region = entry.second;
-      bool found = false;
       for (const auto &align : region.aligns) {
         if (align.vaddrA == align.vaddrB) {
           // Ignore self alignment.
           continue;
         }
-        for (auto &group : alignRangeVAddrs) {
-          for (auto &vaddr : group) {
-            if (vaddr == align.vaddrB) {
-              found = true;
-            }
-          }
-          if (found) {
-            grouped++;
-            totalGroupedRanges++;
-            group.push_back(region.vaddr);
-            groupedVAddrs.insert(region.vaddr);
-            break;
-          }
-        }
-        if (found) {
-          break;
-        }
-      }
-
-      if (!found) {
-        grouped++;
-        totalGroupedRanges++;
-        alignRangeVAddrs.emplace_back();
-        alignRangeVAddrs.back().push_back(region.vaddr);
-        groupedVAddrs.insert(region.vaddr);
+        merge(align.vaddrA, align.vaddrB);
+        DPRINTF(StreamNUCAManager, "[AlignGroup] Union %#x %#x.\n",
+                align.vaddrA, align.vaddrB);
       }
     }
 
-    if (grouped == 0) {
-      break;
+    for (const auto &entry : unionFindParent) {
+      auto root = find(entry.first);
+      alignRangeVAddrs
+          .emplace(std::piecewise_construct, std::forward_as_tuple(root),
+                   std::forward_as_tuple())
+          .first->second.emplace_back(entry.first);
     }
-  }
-
-  if (totalGroupedRanges != this->startVAddrRegionMap.size()) {
-    panic("Some Ranges are not grouped.");
   }
 
   const auto totalBanks =
@@ -142,7 +135,8 @@ void StreamNUCAManager::computeCacheSet() {
   const auto llcBankSize = llcNumSets * llcAssoc * llcBlockSize;
   const auto totalLLCSize = llcBankSize * totalBanks;
 
-  for (auto &group : alignRangeVAddrs) {
+  for (auto &entry : alignRangeVAddrs) {
+    auto &group = entry.second;
     // Sort for simplicity.
     std::sort(group.begin(), group.end());
 
@@ -155,6 +149,17 @@ void StreamNUCAManager::computeCacheSet() {
       totalElementSize += region.elementSize;
     }
     auto cachedElements = totalLLCSize / totalElementSize;
+
+    if (Debug::StreamNUCAManager) {
+      DPRINTF(
+          StreamNUCAManager,
+          "[AlignGroup] Analyzing Group %#x NumRegions %d TotalElementSize %d "
+          "CachedElements %d.\n",
+          group.front(), group.size(), totalElementSize, cachedElements);
+      for (auto vaddr : group) {
+        DPRINTF(StreamNUCAManager, "[AlignGroup]   Region %#x.\n", vaddr);
+      }
+    }
 
     auto startSet = 0;
     for (auto startVAddr : group) {
