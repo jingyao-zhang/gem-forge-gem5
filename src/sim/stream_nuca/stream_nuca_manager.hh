@@ -17,7 +17,8 @@ public:
   StreamNUCAManager(const StreamNUCAManager &other);
   StreamNUCAManager &operator=(const StreamNUCAManager &other);
 
-  void defineRegion(Addr start, uint64_t elementSize, uint64_t numElement);
+  void defineRegion(const std::string &regionName, Addr start,
+                    uint64_t elementSize, uint64_t numElement);
   void defineAlign(Addr A, Addr B, uint64_t elementOffset);
   void remap();
 
@@ -30,11 +31,14 @@ public:
   };
 
   struct StreamRegion {
+    std::string name;
     Addr vaddr;
     uint64_t elementSize;
     uint64_t numElement;
-    StreamRegion(Addr _vaddr, uint64_t _elementSize, uint64_t _numElement)
-        : vaddr(_vaddr), elementSize(_elementSize), numElement(_numElement) {}
+    StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
+                 uint64_t _numElement)
+        : name(_name), vaddr(_vaddr), elementSize(_elementSize),
+          numElement(_numElement) {}
 
     std::vector<StreamAlign> aligns;
   };

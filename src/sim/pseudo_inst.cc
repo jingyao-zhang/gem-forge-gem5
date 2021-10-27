@@ -658,12 +658,16 @@ llvmtracereplay(ThreadContext *tc, uint64_t trace_ptr, uint64_t vaddr)
         reinterpret_cast<Addr>(vaddr));
 }
 
-void stream_nuca_region(ThreadContext *tc,
-    Addr start, uint64_t elementSize, uint64_t numElement) {
-    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_region(%p, %lu, %lu).\n",
-        start, elementSize, numElement);
+void stream_nuca_region(
+    ThreadContext *tc, Addr regionNameAddr, Addr start,
+    uint64_t elementSize, uint64_t numElement) {
+    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_region(%p, %p, %lu, %lu).\n",
+        regionNameAddr, start, elementSize, numElement);
+    // copy out region name 
+    std::string regionName;
+    tc->getVirtProxy().readString(regionName, regionNameAddr);
     tc->getProcessPtr()->streamNUCAManager->defineRegion(
-        start, elementSize, numElement);
+        regionName, start, elementSize, numElement);
 }
 
 void stream_nuca_align(ThreadContext *tc,

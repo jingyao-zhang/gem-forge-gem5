@@ -16,13 +16,14 @@ StreamNUCAManager::operator=(const StreamNUCAManager &other) {
   panic("StreamNUCAManager does not have copy constructor.");
 }
 
-void StreamNUCAManager::defineRegion(Addr start, uint64_t elementSize,
+void StreamNUCAManager::defineRegion(const std::string &regionName, Addr start,
+                                     uint64_t elementSize,
                                      uint64_t numElement) {
-  DPRINTF(StreamNUCAManager, "Define Region %#x %lu %lu.\n", start, elementSize,
-          numElement);
+  DPRINTF(StreamNUCAManager, "Define Region %s %#x %lu %lu.\n", regionName,
+          start, elementSize, numElement);
   this->startVAddrRegionMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(start),
-      std::forward_as_tuple(start, elementSize, numElement));
+      std::forward_as_tuple(regionName, start, elementSize, numElement));
 }
 
 void StreamNUCAManager::defineAlign(Addr A, Addr B, uint64_t elementOffset) {
@@ -55,7 +56,8 @@ void StreamNUCAManager::remap() {
   for (const auto &entry : this->startVAddrRegionMap) {
     const auto &region = entry.second;
     if (!this->isPAddrContinuous(region)) {
-      panic("Region %#x PAddr is not continuous.", region.vaddr);
+      panic("Region %s %#x PAddr is not continuous.", region.name,
+            region.vaddr);
     }
     auto startVAddr = region.vaddr;
     auto startPAddr = this->translate(startVAddr);
@@ -65,11 +67,19 @@ void StreamNUCAManager::remap() {
     uint64_t interleave = this->determineInterleave(region);
     int startBank = 0;
     int startSet = 0;
+
+    if (region.name.find("rodinia.pathfinder") == 0 ||
+        region.name.find("rodinia.hotspot3D") == 0) {
+      // Pathfinder need to start at the original bank.
+      startBank = (startPAddr / interleave) %
+                  (StreamNUCAMap::getNumCols() * StreamNUCAMap::getNumRows());
+    }
+
     StreamNUCAMap::addRangeMap(startPAddr, endPAddr, interleave, startBank,
                                startSet);
     DPRINTF(StreamNUCAManager,
-            "Map Region %#x PAddr %#x Interleave %lu Bank %d.\n", startVAddr,
-            startPAddr, interleave, startBank);
+            "Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
+            region.name, startVAddr, startPAddr, interleave, startBank);
   }
 
   this->computeCacheSet();
@@ -172,11 +182,12 @@ void StreamNUCAManager::computeCacheSet() {
       auto cachedBytes = cachedElements * region.elementSize;
       auto usedSets = cachedBytes / (llcBlockSize * totalBanks);
 
-      DPRINTF(StreamNUCAManager,
-              "Range %#x ElementSize %d CachedElements %d StartSet %d UsedSet "
-              "%d.\n",
-              region.vaddr, region.elementSize, cachedElements, startSet,
-              usedSets);
+      DPRINTF(
+          StreamNUCAManager,
+          "Range %s %#x ElementSize %d CachedElements %d StartSet %d UsedSet "
+          "%d.\n",
+          region.name, region.vaddr, region.elementSize, cachedElements,
+          startSet, usedSets);
       startSet = (startSet + usedSets) % llcNumSets;
     }
   }
@@ -209,8 +220,8 @@ bool StreamNUCAManager::isPAddrContinuous(const StreamRegion &region) {
     }
     if (paddr - startPagePAddr != vaddr - startPageVAddr) {
       DPRINTF(StreamNUCAManager,
-              "Range %#x not physically continuous at %#x paddr %#x.\n",
-              region.vaddr, vaddr, paddr);
+              "Range %s %#x not physically continuous at %#x paddr %#x.\n",
+              region.name, region.vaddr, vaddr, paddr);
       return false;
     }
   }
@@ -242,34 +253,36 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
     auto elementOffset = align.elementOffset;
     auto bytesOffset = elementOffset * alignToRegion.elementSize;
     DPRINTF(StreamNUCAManager,
-            "Range %#x AlignTo %#x Offset Element %lu Bytes %lu.\n",
-            region.vaddr, alignToRegion.vaddr, elementOffset, bytesOffset);
+            "Range %s %#x AlignTo %#x Offset Element %lu Bytes %lu.\n",
+            region.name, region.vaddr, alignToRegion.vaddr, elementOffset,
+            bytesOffset);
 
     if ((&alignToRegion) == (&region)) {
       // Self alignment.
       if ((bytesOffset % defaultWrapAroundBytes) == 0) {
         // Already aligned.
-        DPRINTF(StreamNUCAManager, "Range %#x Self Aligned.\n", region.vaddr);
+        DPRINTF(StreamNUCAManager, "Range %s %#x Self Aligned.\n", region.name,
+                region.vaddr);
       } else if ((bytesOffset % defaultColWrapAroundBytes) == 0) {
         // Try to align with one row.
         interleave =
             bytesOffset / defaultColWrapAroundBytes * defaultInterleave;
-        DPRINTF(
-            StreamNUCAManager,
-            "Range %#x Self Aligned To Row Interleave %lu = %lu / %lu * %lu.\n",
-            region.vaddr, interleave, bytesOffset, defaultColWrapAroundBytes,
-            defaultInterleave);
+        DPRINTF(StreamNUCAManager,
+                "Range %s %#x Self Aligned To Row Interleave %lu = %lu / %lu * "
+                "%lu.\n",
+                region.name, region.vaddr, interleave, bytesOffset,
+                defaultColWrapAroundBytes, defaultInterleave);
       } else {
-        panic("Not Support Yet: Range %#x Self Align ElementOffset %lu "
+        panic("Not Support Yet: Range %s %#x Self Align ElementOffset %lu "
               "ByteOffset %lu.\n",
-              region.vaddr, align.elementOffset, bytesOffset);
+              region.name, region.vaddr, align.elementOffset, bytesOffset);
       }
     } else {
       // Other alignment.
       auto otherInterleave = this->determineInterleave(alignToRegion);
       DPRINTF(StreamNUCAManager,
-              "Range %#x Align to Range %#x Interleave = %lu / %lu * %lu.\n",
-              region.vaddr, alignToRegion.vaddr, otherInterleave,
+              "Range %s %#x Align to Range %#x Interleave = %lu / %lu * %lu.\n",
+              region.name, region.vaddr, alignToRegion.vaddr, otherInterleave,
               alignToRegion.elementSize, region.elementSize);
       interleave =
           otherInterleave / alignToRegion.elementSize * region.elementSize;

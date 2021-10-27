@@ -239,7 +239,7 @@
                         PseudoInst::llvmtracereplay(xc->tcBase(), Rdi, Rsi);
                     }}, IsNonSpeculative);
                     0x66: m5stream_nuca_region({{
-                        PseudoInst::stream_nuca_region(xc->tcBase(), Rdi, Rsi, Rdx);
+                        PseudoInst::stream_nuca_region(xc->tcBase(), Rdi, Rsi, Rdx, Rcx);
                     }}, IsNonSpeculative);
                     0x67: m5stream_nuca_align({{
                         PseudoInst::stream_nuca_align(xc->tcBase(), Rdi, Rsi, Rdx);

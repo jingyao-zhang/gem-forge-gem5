@@ -113,6 +113,7 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
 
   static const std::unordered_set<std::string> manualFloatToMemSet = {
       "rodinia.pathfinder.wall.ld",
+      "rodinia.hotspot3D.power.ld",
       "gap.pr_push.atomic.out_v.ld",
   };
 
@@ -125,11 +126,9 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
    * Split streams at iterations:
    * rodinia.srad_v2
    * rodinia.hotspot
-   * rodinia.hotspot3D
    */
   if (streamName.find("rodinia.srad_v2") == 0 ||
-      streamName.find("rodinia.hotspot") == 0 ||
-      streamName.find("rodinia.hotspot3D") == 0) {
+      streamName.find("rodinia.hotspot") == 0) {
     if (!dynS.hasTotalTripCount()) {
       DYN_S_PANIC(dynS.dynamicStreamId,
                   "Missing TotalTripCount for iter-based floating plan..");
