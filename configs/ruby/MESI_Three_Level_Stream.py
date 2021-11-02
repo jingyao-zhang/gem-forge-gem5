@@ -87,7 +87,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     # ! Break the isolation. Assume MeshTopology and compute NumCoresPerRow.
     num_cores_per_row = options.num_cpus
     if options.gem_forge_stream_engine_enable_float_multicast:
-        if options.topology not in ['Mesh_XY', 'MeshDirCorners_XY', 'MeshDirMiddle_XY']:
+        if options.topology not in ['Mesh_XY', 'MeshDirCorners_XY', 'MeshDir_XY']:
             print('So far MESI_Three_Level_Stream can only support MeshTopology for Multicast')
             assert(False)
         num_cores_per_row = options.num_cpus / options.mesh_rows

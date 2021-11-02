@@ -80,6 +80,11 @@ def define_options(parser):
     parser.add_option("--recycle-latency", type="int", default=10,
                       help="Recycle latency for ruby controller input buffers")
 
+    # Options related to MeshDir_XY.py to control how dir is placed.
+    parser.add_option('--ruby-mesh-dir-location', type='choice', default='corner',
+                      choices=['corner', 'middle', 'tile'],
+                      help='How to place directories in the mesh network.')
+
     protocol = buildEnv['PROTOCOL']
     exec("from . import %s" % protocol)
     eval("%s.define_options(parser)" % protocol)
