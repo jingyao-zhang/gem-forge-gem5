@@ -59,6 +59,8 @@ public:
   MachineType myMachineType() const;
   const char *curRemoteMachineType() const;
 
+  Cycles curCycle() const { return this->controller->curCycle(); }
+
   /**
    * StreamNDC support.
    */

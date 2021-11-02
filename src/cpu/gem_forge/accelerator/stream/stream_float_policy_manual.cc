@@ -33,7 +33,7 @@ void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
     return;
   }
 
-  if (streamName.find("rodinia.srad_v2") == 0) {
+  if (streamName.find("rodinia.srad_v2.") == 0) {
     /**
      * For srad_v2, we want to split them at iterations.
      */
@@ -127,8 +127,8 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
    * rodinia.srad_v2
    * rodinia.hotspot
    */
-  if (streamName.find("rodinia.srad_v2") == 0 ||
-      streamName.find("rodinia.hotspot") == 0) {
+  if (streamName.find("rodinia.srad_v2.") == 0 ||
+      streamName.find("rodinia.hotspot.") == 0) {
     if (!dynS.hasTotalTripCount()) {
       DYN_S_PANIC(dynS.dynamicStreamId,
                   "Missing TotalTripCount for iter-based floating plan..");
@@ -165,7 +165,7 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
     auto rowDataBytes = rowTripCount * elementSize * totalArrays;
     auto totalLLCRows = totalLLCBytes / rowDataBytes;
 
-    if (streamName.find("rodinia.hotspot3D") == 0) {
+    if (streamName.find("rodinia.hotspot3D.") == 0) {
       /**
        * For hotspot3D, since the first and last layer of Power is not used,
        * we take that into account.

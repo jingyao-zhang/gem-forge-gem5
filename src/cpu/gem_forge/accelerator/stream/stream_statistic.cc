@@ -16,7 +16,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   {                                                                            \
     auto avg = (divisor > 0) ? static_cast<double>(dividend) /                 \
                                    static_cast<double>(divisor)                \
-                             : 0;                                              \
+                             : -1;                                             \
     os << std::setw(40) << "  " #name << ' ' << std::setprecision(4) << avg    \
        << '\n';                                                                \
   }
@@ -30,10 +30,10 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numConfigured);
   dumpScalar(numMisConfigured);
   dumpScalar(numFloated);
-  dumpScalar(numFloatMem);
-  dumpScalar(numFloatRewinded);
-  dumpScalar(numFloatCancelled);
-  dumpScalar(numPseudoFloated);
+  dumpScalarIfNonZero(numFloatMem);
+  dumpScalarIfNonZero(numFloatRewinded);
+  dumpScalarIfNonZero(numFloatCancelled);
+  dumpScalarIfNonZero(numPseudoFloated);
   dumpScalarIfNonZero(numFineGrainedOffloaded);
   dumpScalar(numAllocated);
   dumpScalar(numWithdrawn);
@@ -55,24 +55,38 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpAvg(avgNumDynStreams, numDynStreams, numSample);
 
   dumpScalar(numMLCAllocatedSlice);
-  dumpScalar(numLLCIssueSlice);
-  dumpScalar(numLLCSentSlice);
-  dumpScalar(numLLCMulticastSlice);
-  dumpScalar(numLLCCanMulticastSlice);
-  dumpScalar(numLLCFaultSlice);
-  dumpScalar(numLLCPredYSlice);
-  dumpScalar(numLLCPredNSlice);
-  dumpScalar(numLLCMigrate);
-  dumpScalar(numLLCMigrateCycle);
-  dumpAvg(avgMigrateCycle, numLLCMigrateCycle, numLLCMigrate);
 
-  dumpScalar(numMemIssueSlice);
-  dumpScalar(numRemoteReuseSlice);
+  if (numRemoteConfigure > 0) {
+    dumpScalar(numLLCIssueSlice);
+    dumpScalar(numLLCSentSlice);
+    dumpScalar(numLLCMulticastSlice);
+    dumpScalar(numLLCCanMulticastSlice);
+    dumpSingleAvgSample(llcReqLat);
+    dumpScalarIfNonZero(numLLCFaultSlice);
+    dumpScalarIfNonZero(numLLCPredYSlice);
+    dumpScalarIfNonZero(numLLCPredNSlice);
 
-  dumpScalar(numLLCAliveElementSamples);
-  if (numLLCAliveElementSamples > 0) {
-    dumpAvg(avgLLCAliveElements, numLLCAliveElements,
-            numLLCAliveElementSamples);
+    dumpScalar(numMemIssueSlice);
+    dumpSingleAvgSample(memReqLat);
+    dumpScalar(numRemoteReuseSlice);
+
+    dumpScalar(numRemoteConfigure);
+    dumpScalar(numRemoteConfigureCycle);
+    dumpAvg(avgConfigureCycle, numRemoteConfigureCycle, numRemoteConfigure);
+    dumpScalar(numRemoteMigrate);
+    dumpScalar(numRemoteMigrateCycle);
+    dumpAvg(avgMigrateCycle, numRemoteMigrateCycle, numRemoteMigrate);
+    dumpScalar(numRemoteRunCycle);
+    dumpAvg(avgRunCyclePerBank, numRemoteRunCycle, (numRemoteMigrate + 1));
+
+    dumpSingleAvgSample(remoteForwardNoCDelay);
+    dumpSingleAvgSample(remoteIndReqNoCDelay);
+
+    dumpScalar(numLLCAliveElementSamples);
+    if (numLLCAliveElementSamples > 0) {
+      dumpAvg(avgLLCAliveElements, numLLCAliveElements,
+              numLLCAliveElementSamples);
+    }
   }
 
   dumpAvg(avgLength, numStepped, numConfigured);
@@ -98,7 +112,6 @@ void StreamStatistic::dump(std::ostream &os) const {
     dumpScalar(numLLCLateElement);
     dumpAvg(avgLLCLateCycle, numLLCLateCycle, numLLCLateElement);
   }
-  dumpSingleAvgSample(llcForwardLat);
 
   dumpScalar(numIssuedRequest);
   dumpScalar(numIssuedReadExRequest);
@@ -176,9 +189,12 @@ StreamStatistic::llcSEIssueReasonToString(LLCStreamEngineIssueReason reason) {
     Case(Issued);
     Case(IndirectPriority);
     Case(NextSliceNotAllocated);
+    Case(NextSliceOverTripCount);
     Case(MulticastPolicy);
     Case(IssueClearCycle);
     Case(MaxInflyRequest);
+    Case(MaxEngineInflyRequest);
+    Case(MaxIssueWidth);
     Case(PendingMigrate);
     Case(AliasedIndirectUpdate);
     Case(BaseValueNotReady);
@@ -221,10 +237,13 @@ void StreamStatistic::clear() {
   this->numLLCFaultSlice = 0;
   this->numLLCPredYSlice = 0;
   this->numLLCPredNSlice = 0;
-  this->numLLCMigrate = 0;
-  this->numLLCMigrateCycle = 0;
   this->numMemIssueSlice = 0;
   this->numRemoteReuseSlice = 0;
+  this->numRemoteConfigure = 0;
+  this->numRemoteConfigureCycle = 0;
+  this->numRemoteMigrate = 0;
+  this->numRemoteMigrateCycle = 0;
+  this->numRemoteRunCycle = 0;
   this->numCoreEarlyElement = 0;
   this->numCoreEarlyCycle = 0;
   this->numCoreLateElement = 0;
@@ -264,7 +283,10 @@ void StreamStatistic::clear() {
   this->idealDataTrafficCached = 0;
   this->idealDataTrafficFloat = 0;
 
-  this->llcForwardLat.clear();
+  this->remoteForwardNoCDelay.clear();
+  this->remoteIndReqNoCDelay.clear();
+  this->llcReqLat.clear();
+  this->memReqLat.clear();
 
   for (auto &reasons : this->llcIssueReasons) {
     reasons = 0;

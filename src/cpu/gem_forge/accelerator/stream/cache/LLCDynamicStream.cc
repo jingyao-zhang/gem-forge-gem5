@@ -30,7 +30,7 @@ LLCDynamicStream::LLCDynamicStream(
     : mlcController(_mlcController), llcController(_llcController),
       maxInflyRequests(_llcController->getLLCStreamMaxInflyRequest()),
       configData(_configData), slicedStream(_configData),
-      configureCycle(_mlcController->curCycle()), creditedSliceIdx(0) {
+      initializedCycle(_mlcController->curCycle()), creditedSliceIdx(0) {
 
   // Allocate the range builder.
   this->rangeBuilder = m5::make_unique<LLCStreamRangeBuilder>(
@@ -284,9 +284,11 @@ void LLCDynamicStream::sanityCheckStreamLife() {
               return sa->getDynamicStreamId() < sb->getDynamicStreamId();
             });
   for (auto S : sortedStreams) {
-    LLC_S_DPRINTF_(LLCRubyStreamLife, S->getDynamicStreamId(),
-                   "Configure %llu LastIssue %llu LastMigrate %llu.\n",
-                   S->configureCycle, S->prevIssuedCycle, S->prevMigrateCycle);
+    LLC_S_DPRINTF_(
+        LLCRubyStreamLife, S->getDynamicStreamId(),
+        "Init %llu LastConfig %llu LastIssue %llu LastMigrate %llu.\n",
+        S->initializedCycle, S->prevConfiguredCycle, S->prevIssuedCycle,
+        S->prevMigratedCycle);
   }
   DPRINTF(LLCRubyStreamLife, "Failed StreamLifeCheck at %llu.\n",
           this->curCycle());
@@ -386,7 +388,8 @@ void LLCDynamicStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
   }
   while (this->nextInitSliceIdx < lastSliceIdx) {
     auto sliceId = this->initNextSlice();
-    auto slice = std::make_shared<LLCStreamSlice>(sliceId);
+    auto slice =
+        std::make_shared<LLCStreamSlice>(this->getStaticStream(), sliceId);
 
     // Register the elements.
     while (this->nextInitElementIdx < sliceId.getEndIdx()) {
@@ -706,11 +709,27 @@ void LLCDynamicStream::setState(State state) {
   this->state = state;
 }
 
+void LLCDynamicStream::remoteConfigured(
+    AbstractStreamAwareController *llcController) {
+  this->setState(State::RUNNING);
+  this->llcController = llcController;
+  assert(this->prevConfiguredCycle == Cycles(0) && "Already RemoteConfigured.");
+  this->prevConfiguredCycle = this->curCycle();
+  auto &stats = this->getStaticStream()->statistic;
+  stats.numRemoteConfigure++;
+  stats.numRemoteConfigureCycle +=
+      this->prevConfiguredCycle - this->initializedCycle;
+}
+
 void LLCDynamicStream::migratingStart() {
   this->setState(State::MIGRATING);
-  this->prevMigrateCycle = this->curCycle();
+  this->prevMigratedCycle = this->curCycle();
   this->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
   this->getStaticStream()->se->numLLCMigrated++;
+
+  auto &stats = this->getStaticStream()->statistic;
+  stats.numRemoteRunCycle +=
+      this->prevMigratedCycle - this->prevConfiguredCycle;
 }
 
 void LLCDynamicStream::migratingDone(
@@ -726,10 +745,12 @@ void LLCDynamicStream::migratingDone(
 
   this->llcController = llcController;
   this->setState(State::RUNNING);
+  this->prevConfiguredCycle = this->curCycle();
 
   auto &stats = this->getStaticStream()->statistic;
-  stats.numLLCMigrate++;
-  stats.numLLCMigrateCycle += this->curCycle() - this->prevMigrateCycle;
+  stats.numRemoteMigrate++;
+  stats.numRemoteMigrateCycle +=
+      this->prevConfiguredCycle - this->prevMigratedCycle;
   this->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_IN);
 }
 
@@ -741,6 +762,9 @@ void LLCDynamicStream::terminate() {
     // Don't forget to deregister myself from commit controller.
     this->commitController->deregisterStream(this);
   }
+  // Remember the last run cycles.
+  auto &stats = this->getStaticStream()->statistic;
+  stats.numRemoteRunCycle += this->curCycle() - this->prevConfiguredCycle;
 }
 
 void LLCDynamicStream::allocateLLCStreams(

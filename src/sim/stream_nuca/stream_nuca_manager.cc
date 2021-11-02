@@ -19,8 +19,9 @@ StreamNUCAManager::operator=(const StreamNUCAManager &other) {
 void StreamNUCAManager::defineRegion(const std::string &regionName, Addr start,
                                      uint64_t elementSize,
                                      uint64_t numElement) {
-  DPRINTF(StreamNUCAManager, "Define Region %s %#x %lu %lu.\n", regionName,
-          start, elementSize, numElement);
+  DPRINTF(StreamNUCAManager, "Define Region %s %#x %lu %lu %lukB.\n",
+          regionName, start, elementSize, numElement,
+          elementSize * numElement / 1024);
   this->startVAddrRegionMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(start),
       std::forward_as_tuple(regionName, start, elementSize, numElement));
@@ -51,6 +52,17 @@ void StreamNUCAManager::remap() {
   DPRINTF(StreamNUCAManager, "Remap Regions Enabled %d.\n", this->enabled);
   if (!this->enabled) {
     return;
+  }
+
+  bool hasAlign = false;
+  for (const auto &entry : this->startVAddrRegionMap) {
+    if (!entry.second.aligns.empty()) {
+      hasAlign = true;
+      break;
+    }
+  }
+  if (!hasAlign) {
+    DPRINTF(StreamNUCAManager, "Skip Remapping Region as No Alignments.\n");
   }
 
   for (const auto &entry : this->startVAddrRegionMap) {

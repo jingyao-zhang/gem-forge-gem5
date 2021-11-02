@@ -266,7 +266,7 @@ void
 takeOverFrom(ThreadContext &ntc, ThreadContext &otc)
 {
     if (ntc.getProcessPtr() != otc.getProcessPtr()) {
-        hack("New thread process ptr %#x, old %#x.\n", ntc.getProcessPtr(), otc.getProcessPtr());
+        // hack("New thread process ptr %#x, old %#x.\n", ntc.getProcessPtr(), otc.getProcessPtr());
         /**
          * ! GemForge
          * It seems that it's possible that we are taking over from

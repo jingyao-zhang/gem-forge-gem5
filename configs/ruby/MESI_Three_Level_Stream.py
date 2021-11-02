@@ -446,7 +446,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.stream_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_group_size
         dir_cntrl.stream_multicast_issue_policy = options.gem_forge_stream_engine_llc_multicast_issue_policy
         dir_cntrl.mlc_stream_buffer_init_num_entries = options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries
-        dir_cntrl.llc_stream_engine_issue_width = options.gem_forge_stream_engine_llc_stream_engine_issue_width
+        dir_cntrl.llc_stream_engine_issue_width = options.gem_forge_stream_engine_mc_issue_width
         dir_cntrl.llc_stream_engine_migrate_width = options.gem_forge_stream_engine_llc_stream_engine_migrate_width
         dir_cntrl.llc_stream_max_infly_request = options.gem_forge_stream_engine_mc_stream_max_infly_request
         dir_cntrl.llc_stream_engine_compute_width = options.gem_forge_stream_engine_compute_width

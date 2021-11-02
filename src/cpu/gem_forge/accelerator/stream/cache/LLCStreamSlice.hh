@@ -38,9 +38,10 @@ class LLCStreamEngine;
  * around to break circular dependence.
  */
 
+class Stream;
 class LLCStreamSlice {
 public:
-  LLCStreamSlice(const DynamicStreamSliceId &_sliceId);
+  LLCStreamSlice(Stream *_S, const DynamicStreamSliceId &_sliceId);
 
   enum State {
     /**
@@ -83,6 +84,7 @@ public:
   void setLoadComputeValueSent();
 
 private:
+  Stream *S;
   DynamicStreamSliceId sliceId;
   State state = State::INITIALIZED;
   LLCStreamEngine *llcSE = nullptr;
@@ -106,6 +108,13 @@ public:
 
 private:
   bool processed = false;
+
+private:
+  /**
+   * Cycles for statistics.
+   */
+  Cycles issuedCycle = Cycles(0);
+  Cycles respondedCycle = Cycles(0);
 };
 
 #endif

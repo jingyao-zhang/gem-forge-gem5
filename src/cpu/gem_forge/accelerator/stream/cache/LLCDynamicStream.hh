@@ -173,13 +173,9 @@ public:
   void setState(State state);
 
   bool isTerminated() const { return this->state == State::TERMINATED; }
-  bool isLLCConfigured() const { return this->state != State::INITIALIZED; }
+  bool isRemoteConfigured() const { return this->state != State::INITIALIZED; }
 
-  void configuredLLC(AbstractStreamAwareController *llcController) {
-    this->setState(State::RUNNING);
-    this->llcController = llcController;
-  }
-
+  void remoteConfigured(AbstractStreamAwareController *llcController);
   void migratingStart();
   void migratingDone(AbstractStreamAwareController *llcController);
 
@@ -311,12 +307,14 @@ public:
   LLCDynamicStream *predicateStream = nullptr;
 
   Cycles issueClearCycle = Cycles(4);
-  // Configure cycle.
-  const Cycles configureCycle;
+  // Initialize cycle at MLC SE.
+  const Cycles initializedCycle;
   // Last issued cycle.
   Cycles prevIssuedCycle = Cycles(0);
-  // Last migrate cycle.
-  Cycles prevMigrateCycle = Cycles(0);
+  // Last configure cycle at Remote SE.
+  Cycles prevConfiguredCycle = Cycles(0);
+  // Last migrate starting cycle.
+  Cycles prevMigratedCycle = Cycles(0);
 
   /**
    * Used to implement CompactStore.

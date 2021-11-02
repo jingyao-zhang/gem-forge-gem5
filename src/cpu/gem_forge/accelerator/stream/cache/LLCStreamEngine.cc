@@ -117,7 +117,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                  "Configure DirectStream InitAllocatedSlice %d "
                  "TotalTripCount %lld.\n",
                  streamConfigureData->initCreditedIdx, S->getTotalTripCount());
-  S->configuredLLC(this->controller);
+  S->remoteConfigured(this->controller);
 
   // Add the initial credits.
   S->addCredit(streamConfigureData->initCreditedIdx);
@@ -137,7 +137,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                      "Configure IndirectStream MemElementSize %d "
                      "TotalTripCount %lld.\n",
                      IS->getMemElementSize(), IS->getTotalTripCount());
-      IS->configuredLLC(this->controller);
+      IS->remoteConfigured(this->controller);
     }
   }
 
@@ -498,7 +498,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
     auto element = dynS->getElementPanic(
         sliceId.getStartIdx(),
         "ReceiveStreamData for IndirectLoadComputeStream");
-    auto slice = std::make_shared<LLCStreamSlice>(sliceId);
+    auto slice = std::make_shared<LLCStreamSlice>(S, sliceId);
     slice->allocate(this);
     slice->issue();
     slice->responded(dataBlock, storeValueBlock);
@@ -1151,6 +1151,14 @@ void LLCStreamEngine::issueStreams() {
 
   if (this->streamIssueMsgBuffer->getSize(this->controller->clockEdge()) >=
       this->maxInqueueRequests) {
+
+    // Record this in streams.
+    for (auto dynS : this->streams) {
+      auto &statistic = dynS->getStaticStream()->statistic;
+      statistic.sampleLLCStreamEngineIssueReason(
+          StreamStatistic::LLCStreamEngineIssueReason::MaxEngineInflyRequest);
+    }
+
     return;
   }
 
@@ -1158,8 +1166,11 @@ void LLCStreamEngine::issueStreams() {
   // than once.
   auto streamIter = this->streams.begin();
   auto streamEnd = this->streams.end();
-  for (int i = 0, issuedStreams = 0, nStreams = this->streams.size();
-       i < nStreams && issuedStreams < this->issueWidth; ++i) {
+  auto checkedStreams = 0;
+  auto issuedStreams = 0;
+  auto nStreams = this->streams.size();
+  for (; checkedStreams < nStreams && issuedStreams < this->issueWidth;
+       ++checkedStreams) {
     auto curStream = streamIter;
     // Move to the next one.
     ++streamIter;
@@ -1174,6 +1185,14 @@ void LLCStreamEngine::issueStreams() {
       // Push the stream back to the end.
       this->streams.splice(streamEnd, this->streams, curStream);
     }
+  }
+  for (; checkedStreams < nStreams; ++checkedStreams) {
+    // Record that they are not checked.
+    assert(streamIter != streamEnd && "Should never happen.");
+    auto dynS = *streamIter;
+    auto &statistic = dynS->getStaticStream()->statistic;
+    statistic.sampleLLCStreamEngineIssueReason(
+        StreamStatistic::LLCStreamEngineIssueReason::MaxIssueWidth);
   }
 }
 
@@ -1206,7 +1225,9 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
   if (dynS->isNextSliceOverflown()) {
     // Do not try to issue this slice if it is overflown.
     LLC_S_DPRINTF(dynS->getDynamicStreamId(),
-                  "Not issue: NextSliceOverflown.\n");
+                  "Not issue: NextSliceOverTripCount.\n");
+    statistic.sampleLLCStreamEngineIssueReason(
+        StreamStatistic::LLCStreamEngineIssueReason::NextSliceOverTripCount);
     return nullptr;
   }
 
@@ -2313,12 +2334,13 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
   const auto &sliceId = req.m_sliceIds.singleSliceId();
   assert(sliceId.isValid() && "Invalid stream slice for indirect request.");
 
+  auto networkLatency =
+      this->curCycle() - this->controller->ticksToCycles(req.getTime());
   LLC_SLICE_DPRINTF(sliceId,
                     "Receive [indirect] %s request paddrLine %#x delay cycle "
                     "%s.\n",
                     CoherenceRequestType_to_string(req.m_Type), req.m_addr,
-                    this->controller->curCycle() -
-                        this->controller->ticksToCycles(req.getTime()));
+                    networkLatency);
 
   if (req.m_Type == CoherenceRequestType_STREAM_FORWARD) {
     // Quick path for stream forwarding.
@@ -2330,6 +2352,13 @@ void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
     // Quick path for the second request to release an indirect
     // atomic.
     return;
+  }
+
+  // Record the NoC latency for the indirect request.
+  // Search through all streams.
+  if (auto dynS = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId())) {
+    auto &statistic = dynS->getStaticStream()->statistic;
+    statistic.remoteIndReqNoCDelay.sample(networkLatency);
   }
 
   auto msg = std::make_shared<RequestMsg>(req);
@@ -2359,10 +2388,10 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
    * Sample the LLC forward latency.
    */
   auto sendCycle = this->controller->ticksToCycles(req.getTime());
-  auto latency = this->controller->curCycle() - sendCycle;
+  auto latency = this->curCycle() - sendCycle;
   LLC_SLICE_DPRINTF(sliceId, "[Forward] Received. Latency %llu.\n", latency);
   if (auto sender = LLCDynamicStream::getLLCStream(sliceId.getDynStreamId())) {
-    sender->getStaticStream()->statistic.llcForwardLat.sample(latency);
+    sender->getStaticStream()->statistic.remoteForwardNoCDelay.sample(latency);
   }
 
   /**
@@ -3318,8 +3347,8 @@ std::pair<uint64_t, bool> LLCStreamEngine::performStreamAtomicOp(
 void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
   LLC_S_DPRINTF(element->dynStreamId,
                 "%llu: Push ready computation %llu. Ready %d Infly %d.\n",
-                this->controller->curCycle(), element->idx,
-                this->readyComputations.size(), this->inflyComputations.size());
+                this->curCycle(), element->idx, this->readyComputations.size(),
+                this->inflyComputations.size());
   assert(element->areBaseElementsReady() && "Element is not ready yet.");
   if (!element->isNDCElement) {
     auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
@@ -3333,7 +3362,7 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
     dynS->incompleteComputations++;
   }
   this->readyComputations.emplace_back(element);
-  element->scheduledComputation(this->controller->curCycle());
+  element->scheduledComputation(this->curCycle());
   this->scheduleEvent(Cycles(1));
 }
 
@@ -3358,9 +3387,9 @@ void LLCStreamEngine::pushInflyComputation(LLCStreamElementPtr &element,
   statistic.numLLCComputation++;
   statistic.numLLCComputationComputeLatency += latency;
   statistic.numLLCComputationWaitLatency +=
-      this->controller->curCycle() - element->getComputationScheduledCycle();
+      this->curCycle() - element->getComputationScheduledCycle();
 
-  Cycles readyCycle = this->controller->curCycle() + latency;
+  Cycles readyCycle = this->curCycle() + latency;
   for (auto iter = this->inflyComputations.rbegin(),
             end = this->inflyComputations.rend();
        iter != end; ++iter) {
@@ -3480,7 +3509,7 @@ void LLCStreamEngine::startComputation() {
 
 void LLCStreamEngine::completeComputation() {
   // We don't charge complete width.
-  auto curCycle = this->controller->curCycle();
+  auto curCycle = this->curCycle();
   while (!this->inflyComputations.empty()) {
     auto &computation = this->inflyComputations.front();
     auto &element = computation.element;

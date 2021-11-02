@@ -52,14 +52,17 @@ public:
   size_t numLLCFaultSlice = 0;
   size_t numLLCPredYSlice = 0;
   size_t numLLCPredNSlice = 0;
-  size_t numLLCMigrate = 0;
-  size_t numLLCMigrateCycle = 0;
   size_t numLLCAliveElements = 0;
   size_t numLLCAliveElementSamples = 0;
 
   // Float statistics in Mem.
   size_t numMemIssueSlice = 0;
   size_t numRemoteReuseSlice = 0;
+  size_t numRemoteConfigure = 0;
+  size_t numRemoteConfigureCycle = 0;
+  size_t numRemoteMigrate = 0;
+  size_t numRemoteMigrateCycle = 0;
+  size_t numRemoteRunCycle = 0;
 
   // Latency experienced by the core.
   size_t numCoreEarlyElement = 0;
@@ -133,9 +136,12 @@ public:
     Issued = 0,
     IndirectPriority,
     NextSliceNotAllocated,
+    NextSliceOverTripCount,
     MulticastPolicy,
     IssueClearCycle,
     MaxInflyRequest,
+    MaxEngineInflyRequest,
+    MaxIssueWidth,
     PendingMigrate,
     AliasedIndirectUpdate,
     BaseValueNotReady,
@@ -172,7 +178,10 @@ public:
       this->value = 0;
     }
   };
-  SingleAvgSampler llcForwardLat;
+  SingleAvgSampler remoteForwardNoCDelay;
+  SingleAvgSampler remoteIndReqNoCDelay;
+  SingleAvgSampler llcReqLat;
+  SingleAvgSampler memReqLat;
 };
 
 #endif

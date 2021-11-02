@@ -142,6 +142,13 @@ bool StreamReuseBuffer::shouldCacheStream(Stream *S,
       }
     }
 
+    if (!chosenCachedStream) {
+      // Manually cache some edge list streams.
+      if (S->getStreamName() == "gap.pr_push.atomic.out_v.ld") {
+        chosenCachedStream = S;
+      }
+    }
+
     LLC_S_DPRINTF(dynSId, "AliasBaseStream %s ChosenCachedStream %s.\n",
                   S->aliasBaseStream->getStreamName(),
                   chosenCachedStream ? chosenCachedStream->getStreamName()
@@ -168,6 +175,10 @@ bool StreamReuseBuffer::shouldCheckReuse(Stream *S,
   }
   if (!S->aliasBaseStream) {
     return false;
+  }
+  if (S->getStreamName() == "gap.pr_push.atomic.out_v.ld") {
+    // Manually cache some edge list streams.
+    return true;
   }
   const auto &aliasedStreams = S->aliasBaseStream->aliasedStreams;
   if (aliasedStreams.size() <= 1) {

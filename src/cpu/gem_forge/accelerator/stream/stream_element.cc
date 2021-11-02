@@ -205,7 +205,7 @@ bool StreamElement::shouldIssue() const {
    * 1. DynamicStream says so.
    * 2. LastElement that only uses to deal with StreamEnd.
    */
-  if (!this->dynS->shouldCoreSEIssue() && this->isFloatElem()) {
+  if (!this->dynS->shouldCoreSEIssue() && this->isElemFloatedToCache()) {
     return false;
   }
   if (this->isLastElement()) {

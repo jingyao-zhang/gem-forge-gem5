@@ -287,9 +287,9 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
     auto cacheLineSize = S->getCPUDelegator()->cacheLineSize();
     auto memoryFootprint = cacheLineSize * prevHistory.numIssuedRequests;
     auto privateCacheSize = this->getPrivateCacheCapacity();
-    if (memoryFootprint > privateCacheSize) {
+    if (memoryFootprint >= privateCacheSize) {
       // Still should be offloaded.
-      S_DPRINTF(S, "Hist %d MemFootPrint %#x > PrivateCache %#x.\n",
+      S_DPRINTF(S, "Hist %d MemFootPrint %#x >= PrivateCache %#x.\n",
                 historyOffset, memoryFootprint, privateCacheSize);
       logStream(S) << "Hist " << historyOffset << " MemFootPrint" << std::hex
                    << memoryFootprint << " > PrivateCache " << privateCacheSize
@@ -317,7 +317,7 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
       }
     }
     S_DPRINTF(S,
-              "[Not Float] Hist %d StartAddr %#x matched, MemFootPrint %lu <= "
+              "[Not Float] Hist %d StartAddr %#x matched, MemFootPrint %lu < "
               "PrivateCache %lu.\n",
               historyOffset, currStartAddr, memoryFootprint, privateCacheSize);
     logStream(S) << "[Not Float] Hist " << historyOffset << " StartAddr "
