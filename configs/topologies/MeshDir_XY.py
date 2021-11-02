@@ -172,6 +172,37 @@ class MeshDir_XY(SimpleTopology):
             if n:
                 self.num_numa_nodes += 1
 
+    def makeDirDiagTopology(self, ExtLink, dir_nodes, routers, ext_links):
+        num_dirs = len(dir_nodes)
+        assert(num_dirs == self.num_rows)
+        assert(num_dirs <= self.num_columns)
+
+        # Connect the dir nodes to the diagonal
+        for i in range(num_dirs):
+            dir_idx = i
+            router_idx = i * self.num_columns + i 
+            print(f'[MeshDirDiag] Dir {i} -> Router {i}x{i}.')
+            ext_links.append(
+                ExtLink(
+                    link_id=self.link_count,
+                    ext_node=dir_nodes[dir_idx],
+                    int_node=routers[router_idx],
+                    latency=self.link_latency))
+            self.link_count += 1
+
+        # NUMA Node for routers in the same column
+        self.numa_nodes = [[]] * len(dir_nodes)
+        for i in range(self.num_routers):
+            router_row, router_col = divmod(i, self.num_columns)
+            dir_idx = router_col
+            print(f'[MeshDirTile] NUMA Router {router_row}x{router_col} -> Dir {dir_idx}.')
+            self.numa_nodes[dir_idx].append(i)
+
+        self.num_numa_nodes = 0
+        for n in self.numa_nodes:
+            if n:
+                self.num_numa_nodes += 1
+
     def makeTopology(self, options, network, IntLink, ExtLink, Router):
         nodes = self.nodes
 
@@ -242,6 +273,8 @@ class MeshDir_XY(SimpleTopology):
             self.makeDirMiddleTopology(ExtLink, dir_nodes, routers, ext_links)
         elif options.ruby_mesh_dir_location == 'tile':
             self.makeDirTileTopology(ExtLink, dir_nodes, routers, ext_links)
+        elif options.ruby_mesh_dir_location == 'diag':
+            self.makeDirDiagTopology(ExtLink, dir_nodes, routers, ext_links)
         else:
             print('Unsupported Dir Location.')
             assert(False)

@@ -82,7 +82,7 @@ def define_options(parser):
 
     # Options related to MeshDir_XY.py to control how dir is placed.
     parser.add_option('--ruby-mesh-dir-location', type='choice', default='corner',
-                      choices=['corner', 'middle', 'tile'],
+                      choices=['corner', 'middle', 'tile', 'diag'],
                       help='How to place directories in the mesh network.')
 
     protocol = buildEnv['PROTOCOL']
