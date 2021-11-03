@@ -62,3 +62,20 @@ void LLCStreamSlice::setProcessed() {
   assert(!this->processed && "AtomicOrUpdateSlice already processed.");
   this->processed = true;
 }
+
+const char *LLCStreamSlice::stateToString(State state) {
+#define Case(x)                                                                \
+  case x:                                                                      \
+    return #x
+  switch (state) {
+    Case(INITIALIZED);
+    Case(ALLOCATED);
+    Case(ISSUED);
+    Case(RESPONDED);
+    Case(FAULTED);
+    Case(RELEASED);
+#undef Case
+  default:
+    assert(false && "Invalid LLCStreamSlice::State.");
+  }
+}

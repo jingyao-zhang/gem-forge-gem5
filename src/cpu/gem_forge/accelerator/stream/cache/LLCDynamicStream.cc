@@ -3,6 +3,7 @@
 #include "LLCStreamEngine.hh"
 #include "LLCStreamMigrationController.hh"
 #include "LLCStreamRangeBuilder.hh"
+#include "MLCStreamEngine.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
@@ -423,8 +424,24 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
   if (this->getStaticStream()->isDirectMemStream() &&
       this->getMemElementSize() >= 64) {
     if (this->idxToElementMap.size() >= 100) {
-      for (auto &entry : this->idxToElementMap) {
-        LLC_ELEMENT_HACK(entry.second, "Element Overflow.\n");
+      for (const auto &entry : this->idxToElementMap) {
+        const auto &element = entry.second;
+        LLC_ELEMENT_HACK(element,
+                         "Element Overflow. Ready %d. AllSlicedReleased %d.\n",
+                         element->isReady(), element->areSlicesReleased());
+        for (int i = 0, nSlices = element->getNumSlices(); i < nSlices; ++i) {
+          const auto &slice = element->getSliceAt(i);
+          LLC_ELEMENT_HACK(element, "  Slice %s %s.", slice->getSliceId(),
+                           LLCStreamSlice::stateToString(slice->getState()));
+        }
+      }
+      auto MLCSE = this->getMLCController()->getMLCStreamEngine();
+      auto MLCDynS = MLCSE->getStreamFromDynamicId(this->getDynamicStreamId());
+      if (MLCDynS) {
+        MLCDynS->panicDump();
+      } else {
+        LLC_S_HACK(this->getDynamicStreamId(),
+                   "LLCElement Overflow, but MLCDynS Released?");
       }
       LLC_S_PANIC(this->getDynamicStreamId(), "Infly Elements Overflow %d.",
                   this->idxToElementMap.size());

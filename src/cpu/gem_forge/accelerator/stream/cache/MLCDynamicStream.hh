@@ -149,24 +149,7 @@ protected:
       this->dataReadyCycle = currentCycle;
     }
 
-    static std::string convertCoreStatusToString(CoreStatusE status) {
-      switch (status) {
-      case CoreStatusE::NONE:
-        return "NONE";
-      case CoreStatusE::WAIT_DATA:
-        return "WAIT_DATA";
-      case CoreStatusE::WAIT_ACK:
-        return "WAIT_ACK";
-      case CoreStatusE::ACK_READY:
-        return "ACK_READY";
-      case CoreStatusE::DONE:
-        return "DONE";
-      case CoreStatusE::FAULTED:
-        return "FAULTED";
-      default:
-        return "ILLEGAL";
-      }
-    }
+    static std::string convertCoreStatusToString(CoreStatusE status);
   };
 
   std::list<MLCStreamSlice> slices;
@@ -239,6 +222,7 @@ protected:
    */
   std::list<DynamicStreamAddressRangePtr> receivedRanges;
 
+public:
   /**
    * A helper function to dump some basic status of the stream when panic.
    */

@@ -123,6 +123,10 @@ public:
 
   void addSlice(LLCStreamSlicePtr &slice);
   int getNumSlices() const { return this->numSlices; }
+  const LLCStreamSlicePtr &getSliceAt(int i) const {
+    assert(i >= 0 && i < this->numSlices && "GetSliceAt() Illegal Index.");
+    return this->slices.at(i);
+  }
 
   /**
    * Remember the state of the element. This is so far just used for

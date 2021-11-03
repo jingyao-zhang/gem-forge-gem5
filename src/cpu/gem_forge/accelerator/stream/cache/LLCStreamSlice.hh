@@ -67,6 +67,7 @@ public:
     FAULTED,
     RELEASED,
   };
+  static const char *stateToString(State state);
   State getState() const { return this->state; }
 
   void allocate(LLCStreamEngine *llcSE);

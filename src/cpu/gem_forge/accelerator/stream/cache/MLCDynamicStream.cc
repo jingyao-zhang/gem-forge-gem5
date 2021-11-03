@@ -505,6 +505,24 @@ void MLCDynamicStream::scheduleAdvanceStream() {
   }
 }
 
+std::string MLCDynamicStream::MLCStreamSlice::convertCoreStatusToString(
+    CoreStatusE status) {
+#define Case(x)                                                                \
+  case x:                                                                      \
+    return #x
+  switch (status) {
+    Case(NONE);
+    Case(WAIT_DATA);
+    Case(WAIT_ACK);
+    Case(ACK_READY);
+    Case(DONE);
+    Case(FAULTED);
+#undef Case
+  default:
+    assert(false && "Invalid MLCStreamSlice::CoreStatus.");
+  }
+}
+
 void MLCDynamicStream::panicDump() const {
   MLC_S_HACK(this->dynamicStreamId,
              "-------------------Panic Dump--------------------\n");

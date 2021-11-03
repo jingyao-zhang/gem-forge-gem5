@@ -50,6 +50,9 @@ void StreamRequestBuffer::dequeue(MsgPtr msg) {
     this->enqueue(newRequest, inqueueState.inqueueRequests);
     inqueueState.buffered.pop_front();
     this->totalBufferedRequests--;
+  } else if (inqueueState.inqueueRequests == 0) {
+    LLC_SLICE_DPRINTF(sliceId, "[ReqBuffer] Released.\n");
+    this->inqueueStreamMap.erase(inqueueIter);
   }
 }
 
