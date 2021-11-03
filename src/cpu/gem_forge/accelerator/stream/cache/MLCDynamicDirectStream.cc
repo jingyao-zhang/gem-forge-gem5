@@ -415,7 +415,7 @@ void MLCDynamicDirectStream::sendCreditToLLC(
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = makeLineAddress(segment.startPAddr);
   msg->m_Type = CoherenceRequestType_STREAM_FLOW;
-  msg->m_XXNewRewquestor.add(this->controller->getMachineID());
+  msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(remoteBank);
   msg->m_MessageSize = MessageSizeType_Control;
   DynamicStreamSliceId sliceId;
@@ -892,7 +892,7 @@ void MLCDynamicDirectStream::sendCommitToLLC(
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = startPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_COMMIT;
-  msg->m_XXNewRewquestor.add(this->controller->getMachineID());
+  msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(remoteBank);
   msg->m_MessageSize = MessageSizeType_Control;
   DynamicStreamSliceId sliceId;

@@ -343,7 +343,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
 
         // This requestor is not the LLC bank generating this request,
         // but the host L1 controller to receive the data.
-        // assert(machineIDToMachineType(in_msg.XXNewRewquestor.singleElement()) == MachineType:L1Cache);
+        // assert(machineIDToMachineType(in_msg.Requestors.singleElement()) == MachineType:L1Cache);
         assert(in_msg.Destination.isElement(machineID));
 
         assert(in_msg.sliceIds.isValid());
@@ -442,7 +442,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       enqueue(memQueue_out, MemoryMsg, to_mem_ctrl_latency) {
         out_msg.addr := address;
         out_msg.Type := MemoryRequestType:MEMORY_READ;
-        out_msg.Sender := in_msg.XXNewRewquestor.singleElement();
+        out_msg.Sender := in_msg.Requestors.singleElement();
         out_msg.MessageSize := MessageSizeType:Request_Control;
         out_msg.Len := 0;
       }
@@ -468,7 +468,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       enqueue(memQueue_out, MemoryMsg, to_mem_ctrl_latency) {
         out_msg.addr := address;
         out_msg.Type := MemoryRequestType:MEMORY_READ;
-        out_msg.Sender := in_msg.XXNewRewquestor.singleElement();
+        out_msg.Sender := in_msg.Requestors.singleElement();
         out_msg.MessageSize := MessageSizeType:Request_Control;
         out_msg.Len := 0;
       }
@@ -542,7 +542,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       enqueue(requestNetwork_out, RequestMsg, directory_latency) {
         out_msg.addr := address;
         out_msg.Type := CoherenceRequestType:INV;
-        out_msg.XXNewRewquestor.add(machineID);
+        out_msg.Requestors.add(machineID);
         out_msg.Destination.add(getDirectoryEntry(address).Owner);
         out_msg.MessageSize := MessageSizeType:Request_Control;
       }
@@ -567,13 +567,13 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   action(ss_recordFetchID, "\s\s", desc="Record Fetch for load response") {
     peek(requestNetwork_in, RequestMsg) {
       assert(is_valid(tbe));
-      tbe.Fetch_IDs.add(in_msg.XXNewRewquestor.singleElement());
+      tbe.Fetch_IDs.add(in_msg.Requestors.singleElement());
     }
   }
   action(su_recordGetUID, "su", desc="Record GetU for load response") {
     peek(requestNetwork_in, RequestMsg) {
       assert(is_valid(tbe));
-      tbe.GetU_IDs.add(in_msg.XXNewRewquestor.singleElement());
+      tbe.GetU_IDs.add(in_msg.Requestors.singleElement());
       tbe.sliceIds.merge(in_msg.sliceIds);
     }
   }
@@ -598,7 +598,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       tbe.DataBlk := in_msg.DataBlk;
       tbe.PhysicalAddress := in_msg.addr;
       tbe.Len := in_msg.Len;
-      tbe.Requestor := in_msg.XXNewRewquestor.singleElement();
+      tbe.Requestor := in_msg.Requestors.singleElement();
       tbe.Fetch_IDs.clear();
       tbe.GetU_IDs.clear();
       tbe.sliceIds.clear();

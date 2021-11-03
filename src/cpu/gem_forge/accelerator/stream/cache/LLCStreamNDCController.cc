@@ -259,7 +259,7 @@ void LLCStreamNDCController::handleForwardNDC(
   auto msg = std::make_shared<RequestMsg>(llcSE->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = requestType;
-  msg->m_XXNewRewquestor.add(
+  msg->m_Requestors.add(
       MachineID(static_cast<MachineType>(selfMachineId.type - 1),
                 sliceId.getDynStreamId().coreId));
   msg->m_Destination.add(destMachineId);

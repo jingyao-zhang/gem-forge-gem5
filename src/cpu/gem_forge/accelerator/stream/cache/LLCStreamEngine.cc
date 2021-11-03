@@ -1931,7 +1931,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = paddrLine;
   msg->m_Type = req.requestType;
-  msg->m_XXNewRewquestor.add(MachineID(MachineType::MachineType_L1Cache,
+  msg->m_Requestors.add(MachineID(MachineType::MachineType_L1Cache,
                                        sliceId.getDynStreamId().coreId));
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
@@ -1970,7 +1970,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
     auto mlcMachineID =
         MachineID(static_cast<MachineType>(selfMachineId.type - 1),
                   multicastSliceId.getDynStreamId().coreId);
-    msg->m_XXNewRewquestor.add(mlcMachineID);
+    msg->m_Requestors.add(mlcMachineID);
     msg->m_sliceIds.add(multicastSliceId);
   }
 

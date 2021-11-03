@@ -183,7 +183,7 @@ void MLCStreamEngine::sendConfigToRemoteSE(
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = initPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
-  msg->m_XXNewRewquestor.add(this->controller->getMachineID());
+  msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(remoteSEMachineID);
 
   // Configure message should be modelled as data size.
@@ -278,7 +278,7 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = rootLLCStreamPAddrLine;
   msg->m_Type = CoherenceRequestType_STREAM_END;
-  msg->m_XXNewRewquestor.add(this->controller->getMachineID());
+  msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(rootStreamOffloadedBank);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_pkt = pkt;

@@ -50,7 +50,7 @@ void MLCStreamNDCController::receiveStreamNDCRequest(PacketPtr pkt) {
     auto msg = std::make_shared<RequestMsg>(mlcSE->controller->clockEdge());
     msg->m_addr = paddrLine;
     msg->m_Type = CoherenceRequestType_STREAM_NDC;
-    msg->m_XXNewRewquestor.add(mlcSE->controller->getMachineID());
+    msg->m_Requestors.add(mlcSE->controller->getMachineID());
     msg->m_Destination.add(llcBank);
     msg->m_MessageSize = MessageSizeType_Control;
     msg->m_pkt = pkt;
