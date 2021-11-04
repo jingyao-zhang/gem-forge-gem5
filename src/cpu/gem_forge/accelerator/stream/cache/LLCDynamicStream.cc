@@ -420,31 +420,52 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
   /**
    * Some sanity check for large AffineStream that we don't have too many
    * elements.
+   * However, I have encountered a rare case: the data is presented in MLC,
+   * so MLCStream get advanced as request hit in private cache, but the LLC
+   * lags behind as the latency to get the copy at the LLC is too long,
+   * delaying element releasing.
+   * Therefore, I increased the threshold and also check for elements with
+   * slices not released.
    */
   if (this->getStaticStream()->isDirectMemStream() &&
       this->getMemElementSize() >= 64) {
-    if (this->idxToElementMap.size() >= 100) {
+    if (this->idxToElementMap.size() >= 512) {
+      int sliceNotReleasedElements = 0;
       for (const auto &entry : this->idxToElementMap) {
         const auto &element = entry.second;
-        LLC_ELEMENT_HACK(element,
-                         "Element Overflow. Ready %d. AllSlicedReleased %d.\n",
-                         element->isReady(), element->areSlicesReleased());
-        for (int i = 0, nSlices = element->getNumSlices(); i < nSlices; ++i) {
-          const auto &slice = element->getSliceAt(i);
-          LLC_ELEMENT_HACK(element, "  Slice %s %s.", slice->getSliceId(),
-                           LLCStreamSlice::stateToString(slice->getState()));
+        if (!element->areSlicesReleased()) {
+          sliceNotReleasedElements++;
         }
       }
-      auto MLCSE = this->getMLCController()->getMLCStreamEngine();
-      auto MLCDynS = MLCSE->getStreamFromDynamicId(this->getDynamicStreamId());
-      if (MLCDynS) {
-        MLCDynS->panicDump();
-      } else {
-        LLC_S_HACK(this->getDynamicStreamId(),
-                   "LLCElement Overflow, but MLCDynS Released?");
+      if (sliceNotReleasedElements > 128) {
+        for (const auto &entry : this->idxToElementMap) {
+          const auto &element = entry.second;
+          LLC_ELEMENT_HACK(
+              element, "Element Overflow. Ready %d. AllSlicedReleased %d.\n",
+              element->isReady(), element->areSlicesReleased());
+          for (int i = 0, nSlices = element->getNumSlices(); i < nSlices; ++i) {
+            const auto &slice = element->getSliceAt(i);
+            Addr sliceVAddr = slice->getSliceId().vaddr;
+            Addr slicePAddr = 0;
+            this->translateToPAddr(sliceVAddr, slicePAddr);
+            LLC_ELEMENT_HACK(element, "  Slice %s %s VAddr %#x PAddr %#x.",
+                             slice->getSliceId(),
+                             LLCStreamSlice::stateToString(slice->getState()),
+                             sliceVAddr, slicePAddr);
+          }
+        }
+        auto MLCSE = this->getMLCController()->getMLCStreamEngine();
+        auto MLCDynS =
+            MLCSE->getStreamFromDynamicId(this->getDynamicStreamId());
+        if (MLCDynS) {
+          MLCDynS->panicDump();
+        } else {
+          LLC_S_HACK(this->getDynamicStreamId(),
+                     "LLCElement Overflow, but MLCDynS Released?");
+        }
+        LLC_S_PANIC(this->getDynamicStreamId(), "Infly Elements Overflow %d.",
+                    this->idxToElementMap.size());
       }
-      LLC_S_PANIC(this->getDynamicStreamId(), "Infly Elements Overflow %d.",
-                  this->idxToElementMap.size());
     }
   }
 
