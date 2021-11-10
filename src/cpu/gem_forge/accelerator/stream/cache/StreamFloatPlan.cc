@@ -36,7 +36,8 @@ void StreamFloatPlan::delayFloatUntil(ElementIdx firstFloatElementIdx) {
   // Erase any old change point, and remember the latest one before
   // FirstFloatElementIdx.
   FloatChangePoint latestPoint = this->changePoints.begin()->second;
-  while (this->changePoints.begin()->first < firstFloatElementIdx) {
+  while (!this->changePoints.empty() &&
+         this->changePoints.begin()->first < firstFloatElementIdx) {
     latestPoint = this->changePoints.begin()->second;
     this->changePoints.erase(this->changePoints.begin());
   }
