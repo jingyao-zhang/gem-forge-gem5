@@ -54,6 +54,7 @@ public:
   size_t numLLCPredNSlice = 0;
   size_t numLLCAliveElements = 0;
   size_t numLLCAliveElementSamples = 0;
+  size_t numRemoteMulticastSlice = 0;
 
   // Float statistics in Mem.
   size_t numMemIssueSlice = 0;

@@ -47,6 +47,7 @@ public:
                             const DataBlock &dataBlock,
                             const DataBlock &storeValueBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
+  void receiveStreamIndirectRequestImpl(const RequestMsg &req);
   void receiveStreamForwardRequest(const RequestMsg &req);
   void notifyStreamRequestMiss(const DynamicStreamSliceIdVec &sliceIds);
   void wakeup() override;

@@ -234,7 +234,7 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
 
     // Handle chained message.
     MsgPtr chainMsg = message->getChainMsg();
-    if (chainMsg) {
+    if (chainMsg && message->shouldUnchainWhenEnqueue()) {
         message->clearChainMsg();
         this->enqueue(chainMsg, current_time, delta);
     }

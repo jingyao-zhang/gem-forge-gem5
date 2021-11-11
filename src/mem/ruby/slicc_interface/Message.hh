@@ -55,7 +55,8 @@ class Message
           m_LastEnqueueTime(other.m_LastEnqueueTime),
           m_DelayedTicks(other.m_DelayedTicks),
           m_msg_counter(other.m_msg_counter),
-          m_chainMsg(nullptr)
+          m_chainMsg(nullptr),
+          m_unchainWhenEnqueue(other.m_unchainWhenEnqueue)
     {
       if (other.m_chainMsg) {
         m_chainMsg = other.m_chainMsg->clone();
@@ -115,21 +116,19 @@ class Message
     int getVnet() const { return vnet; }
     void setVnet(int net) { vnet = net; }
 
-    void chainMsg(MsgPtr msg) {
-      assert(!msg->m_chainMsg && "Already chained.");
-      const auto &dest1 = this->getDestination();
-      const auto &dest2 = msg->getDestination();
-      assert(dest1.count() == 1 && dest1.isEqual(dest2) &&
-             "Can't chain multicast or different destination message.");
-      msg->m_chainMsg = this->m_chainMsg;
-      this->m_chainMsg = msg;
-    }
-    MsgPtr getChainMsg() {
+    void chainMsg(const MsgPtr &msg);
+    const MsgPtr &getChainMsg() const {
       return this->m_chainMsg;
     }
     void clearChainMsg() {
       assert(this->m_chainMsg);
       this->m_chainMsg = nullptr;
+    }
+    void setUnchainWhenEnqueue(bool unchainWhenEnqueue) {
+      this->m_unchainWhenEnqueue = unchainWhenEnqueue;
+    }
+    bool shouldUnchainWhenEnqueue() const {
+      return this->m_unchainWhenEnqueue;
     }
 
   private:
@@ -138,6 +137,14 @@ class Message
     Tick m_DelayedTicks; // my delayed cycles
     uint64_t m_msg_counter; // FIXME, should this be a 64-bit value?
     MsgPtr m_chainMsg; // Used to implement bulk prefetch.
+    /**
+     * Whether the message should be unchained when enqueued into the
+     * MessageBuffer.
+     * True: default behavior for bulk prefetch.
+     * False: used for indirect prefetching, where stream engine manually
+     *        unchains the message.
+     */
+    bool m_unchainWhenEnqueue = true;
 
     // Variables for required network traversal
     int incoming_link;

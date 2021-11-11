@@ -333,6 +333,10 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_multicast_group_size,
                 stream_multicast_issue_policy=\
                     options.gem_forge_stream_engine_llc_multicast_issue_policy,
+                ind_stream_req_max_per_multicast_msg=\
+                    options.gem_forge_stream_engine_llc_multicast_max_ind_req_per_message,
+                ind_stream_req_multicast_group_size=\
+                    options.gem_forge_stream_engine_llc_multicast_ind_req_bank_group_size,
                 mlc_stream_buffer_init_num_entries=\
                     options.gem_forge_stream_engine_mlc_stream_buffer_init_num_entries,
                 llc_stream_engine_issue_width=\
@@ -459,6 +463,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.neighbor_migration_delay = options.gem_forge_stream_engine_mc_neighbor_migration_delay
         dir_cntrl.enable_stream_float_mem = options.gem_forge_stream_engine_enable_float_mem
         dir_cntrl.reuse_buffer_lines_per_core = options.gem_forge_stream_engine_mc_reuse_buffer_lines_per_core
+        dir_cntrl.ind_stream_req_max_per_multicast_msg = options.gem_forge_stream_engine_llc_multicast_max_ind_req_per_message
+        dir_cntrl.ind_stream_req_multicast_group_size = options.gem_forge_stream_engine_llc_multicast_ind_req_bank_group_size
 
     for i, dma_port in enumerate(dma_ports):
         #

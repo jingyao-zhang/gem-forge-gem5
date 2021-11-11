@@ -190,6 +190,12 @@ parser.add_option("--gem-forge-stream-engine-enable-midway-float", action="store
 parser.add_option("--gem-forge-stream-engine-midway-float-element-idx", action="store",
                   type="int", default="-1",
                   help="Force midway stream float from this element.")
+parser.add_option("--gem-forge-stream-engine-llc-multicast-ind-req-bank-group-size", action="store",
+                  type="int", default="0",
+                  help="Indirect stream request multicast bank group size.")
+parser.add_option("--gem-forge-stream-engine-llc-multicast-max-ind-req-per-message", action="store",
+                  type="int", default="0",
+                  help="Max indirect stream request per multicast message.")
 
 # Stream Computing options.
 parser.add_option("--gem-forge-estimate-pure-data-traffic", action="store_true",

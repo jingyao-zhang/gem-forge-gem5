@@ -62,9 +62,6 @@ public:
   bool isStreamLLCIssueClearEnabled() const {
     return myParams->enable_stream_llc_issue_clear;
   }
-  int getStreamMulticastGroupSize() const {
-    return this->streamMulticastGroupSize;
-  }
   int getLLCStreamEngineIssueWidth() const {
     return this->myParams->llc_stream_engine_issue_width;
   }
@@ -124,22 +121,22 @@ public:
     return this->myParams->mlc_stream_buffer_to_segment_ratio;
   }
 
-  int getMulticastGroupId(int coreId) const {
+  int getMulticastGroupId(int coreId, int groupSize) const {
     /**
      * MulticastGroup is used for LLC to try to multicast streams from
      * cores within the same MulticastGroup. It's just a block in the
      * Mesh topology.
      */
-    if (this->streamMulticastGroupSize == 0) {
+    if (groupSize == 0) {
       // Just one large MulticastGroup.
       return 0;
     }
+    auto groupPerRow = (this->numCoresPerRow + groupSize - 1) / groupSize;
     auto rowId = coreId / this->numCoresPerRow;
     auto colId = coreId % this->numCoresPerRow;
-    auto multicastGroupRowId = rowId / this->streamMulticastGroupSize;
-    auto multicastGroupColId = colId / this->streamMulticastGroupSize;
-    auto multicastGroupPerRow = this->streamMulticastGroupPerRow;
-    return multicastGroupRowId * multicastGroupPerRow + multicastGroupColId;
+    auto multicastGroupRowId = rowId / groupSize;
+    auto multicastGroupColId = colId / groupSize;
+    return multicastGroupRowId * groupPerRow + multicastGroupColId;
   }
 
   MessageSizeType getMessageSizeType(int size) const {
@@ -258,8 +255,6 @@ private:
   const bool enableStreamIdeaStore;
   const bool enableStreamAdvanceMigrate;
   const bool enableStreamMulticast;
-  const int streamMulticastGroupSize;
-  int streamMulticastGroupPerRow;
   MulticastIssuePolicy streamMulticastIssuePolicy;
   const int mlcStreamBufferInitNumEntries;
 

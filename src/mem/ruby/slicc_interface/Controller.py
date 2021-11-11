@@ -94,26 +94,30 @@ class RubyStreamAwareController(RubyController):
     enable_stream_compact_store = Param.Bool(False, "Whether to enable compact stream store.")
     enable_stream_advance_migrate = Param.Bool(False, "Whether to enable advance stream migrate.")
     enable_stream_multicast = Param.Bool(False, "Whether to enable multicast stream.")
-    stream_multicast_group_size = Param.UInt32(0, "MulticastGroup is Size x Size, 0 means all")
+    stream_multicast_group_size = Param.UInt32(0, "MulticastGroup is Size x Size, 0 means all.")
     stream_multicast_issue_policy = \
-        Param.String("any", "Multicast issue policy, default is the relaxed")
+        Param.String("any", "Multicast issue policy, default is the relaxed.")
+    ind_stream_req_max_per_multicast_msg = \
+        Param.UInt32(0, "Max ind req per multicast msg, >= 2 to enable.")
+    ind_stream_req_multicast_group_size = \
+        Param.UInt32(0, "Ind req multicast group is Size x Size, 0 means all.")
     mlc_stream_buffer_init_num_entries = \
-        Param.UInt32(16, "Initial number of entries of MLC stream buffer")
+        Param.UInt32(16, "Initial number of entries of MLC stream buffer.")
     mlc_stream_buffer_to_segment_ratio = \
-        Param.UInt32(4, "Ratio between MLC buffer and segment")
+        Param.UInt32(4, "Ratio between MLC buffer and segment.")
     enable_mlc_stream_idea_pop_check_llc_progress = \
         Param.Bool(True, "When MLCStream pop, ideally check LLCStream progress.")
     llc_stream_engine_issue_width = \
-        Param.UInt32(1, "Issue width of LLCStreamEngine")
+        Param.UInt32(1, "Issue width of LLCStreamEngine.")
     llc_stream_engine_migrate_width = \
-        Param.UInt32(1, "Issue width of LLCStreamEngine")
+        Param.UInt32(1, "Issue width of LLCStreamEngine.")
     llc_stream_max_infly_request = \
-        Param.UInt32(8, "Max infly requests per LLC stream")
-    enable_stream_llc_issue_clear = Param.Bool(True, "Whether to enable llc stream issue clear")
+        Param.UInt32(8, "Max infly requests per LLC stream.")
+    enable_stream_llc_issue_clear = Param.Bool(True, "Whether to enable llc stream issue clear.")
     llc_stream_engine_compute_width = \
-        Param.UInt32(1, "Compute width of LLCStreamEngine")
+        Param.UInt32(1, "Compute width of LLCStreamEngine.")
     llc_stream_engine_max_infly_computation = \
-        Param.UInt32(32, "Max num of infly computation in LLCStreamEngine")
+        Param.UInt32(32, "Max num of infly computation in LLCStreamEngine.")
     enable_llc_stream_zero_compute_latency = Param.Bool(False, "Whether to enable zero compute latency.")
     enable_stream_range_sync = Param.Bool(False, "Whether to enable stream range synchronization.")
     stream_atomic_lock_type = Param.String("none", "StreamAtomicLockType of none, single, multi-reader.")

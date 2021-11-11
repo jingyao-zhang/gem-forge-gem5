@@ -51,7 +51,10 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
   this->atomicLockManager = m5::make_unique<LLCStreamAtomicLockManager>(this);
   this->ndcController = m5::make_unique<LLCStreamNDCController>(this);
   this->indReqBuffer = m5::make_unique<StreamRequestBuffer>(
-      this->controller, this->streamIndirectIssueMsgBuffer, Cycles(1), 4);
+      this->controller, this->streamIndirectIssueMsgBuffer, Cycles(1),
+      4 /* Max Inqueue Requests Per Stream */,
+      this->controller->myParams->ind_stream_req_max_per_multicast_msg,
+      this->controller->myParams->ind_stream_req_multicast_group_size);
   this->migrateController = m5::make_unique<LLCStreamMigrationController>(
       this->controller,
       this->controller->myParams
@@ -796,10 +799,10 @@ bool LLCStreamEngine::canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
     // Should never multicast atomic streams.
     return false;
   }
-  auto multicastGroupIdA =
-      this->controller->getMulticastGroupId(dynSAId.coreId);
-  auto multicastGroupIdB =
-      this->controller->getMulticastGroupId(dynSBId.coreId);
+  auto multicastGroupIdA = this->controller->getMulticastGroupId(
+      dynSAId.coreId, this->controller->myParams->stream_multicast_group_size);
+  auto multicastGroupIdB = this->controller->getMulticastGroupId(
+      dynSBId.coreId, this->controller->myParams->stream_multicast_group_size);
   if (multicastGroupIdA != multicastGroupIdB) {
     // They are not from the same multicast group.
     return false;
@@ -1932,7 +1935,7 @@ void LLCStreamEngine::issueStreamRequestToRemoteBank(
   msg->m_addr = paddrLine;
   msg->m_Type = req.requestType;
   msg->m_Requestors.add(MachineID(MachineType::MachineType_L1Cache,
-                                       sliceId.getDynStreamId().coreId));
+                                  sliceId.getDynStreamId().coreId));
   msg->m_Destination.add(destMachineId);
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
@@ -2327,6 +2330,57 @@ bool LLCStreamEngine::isPAddrHandledByMe(Addr paddr,
 void LLCStreamEngine::print(std::ostream &out) const {}
 
 void LLCStreamEngine::receiveStreamIndirectRequest(const RequestMsg &req) {
+
+  this->receiveStreamIndirectRequestImpl(req);
+
+  /**
+   * Unchain each indirect requests and call receiveStreamIndirectRequestImpl().
+   */
+  auto chainMsg = req.getChainMsg();
+  while (chainMsg) {
+
+    auto chainReq = std::dynamic_pointer_cast<RequestMsg>(chainMsg);
+    assert(chainReq && "Should be RequsetMsg.");
+
+    const auto &chainSliceId = chainReq->m_sliceIds.singleSliceId();
+    const auto &chainReqNetDest = chainReq->getDestination();
+    if (chainReqNetDest.count() != 1) {
+      LLC_SLICE_PANIC(chainSliceId, "[Multicast] ChainReq Invalid Dest %s.",
+                      chainReqNetDest);
+    }
+
+    auto chainReqDest = chainReqNetDest.singleElement();
+    if (chainReqDest == this->controller->getMachineID()) {
+      /**
+       * This is for us. We recursively call receiveStreamIndirectRequest.
+       */
+      LLC_SLICE_DPRINTF_(
+          LLCRubyStreamMulticast, chainSliceId,
+          "[Multicast] Unchain [indirect] %s to %s PaddrLine %#x.\n",
+          chainReq->m_Type, chainReqDest, chainReq->m_addr);
+
+      // Record the Mulitcast.
+      if (auto dynS =
+              LLCDynamicStream::getLLCStream(chainSliceId.getDynStreamId())) {
+        auto &statistic = dynS->getStaticStream()->statistic;
+        statistic.numRemoteMulticastSlice++;
+      }
+
+      this->receiveStreamIndirectRequestImpl(*chainReq);
+    } else {
+      /**
+       * Skip this ChainReq and go to the next one.
+       */
+      LLC_SLICE_DPRINTF_(
+          LLCRubyStreamMulticast, chainSliceId,
+          "[Multicast] Ignore [indirect] %s ChainReq to %s PaddrLine %#x.\n",
+          chainReq->m_Type, chainReqDest, chainReq->m_addr);
+    }
+    chainMsg = chainReq->getChainMsg();
+  }
+}
+
+void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
 
   this->initializeTranslationBuffer();
 

@@ -24,7 +24,8 @@ public:
 
   StreamRequestBuffer(AbstractStreamAwareController *_controller,
                       MessageBuffer *_outBuffer, Cycles _latency,
-                      int _maxInqueueRequestsPerStream);
+                      int _maxInqueueRequestsPerStream,
+                      int _maxMulticastReqPerMsg, int _multicastBankGroupSize);
   void pushRequest(RequestPtr request);
 
   int curRemoteBank() const { return this->controller->getMachineID().num; }
@@ -39,6 +40,16 @@ private:
   MessageBuffer *outBuffer;
   const Cycles latency;
   const int maxInqueueRequestsPerStream;
+  /**
+   * @maxMulticastRequests: The max number of messages chained in a multicast.
+   *                        Set to 0 or 1 to disable this.
+   * @multicastBankGroupSize: The bank group (size x size) to detect multicast,
+   *                          0 means all.
+   * So far only used to coalesce indirect requests.
+   */
+  const int maxMulticastReqPerMsg;
+  const int multicastBankGroupSize;
+
   int totalBufferedRequests = 0;
 
   struct InqueueStreamState {
@@ -62,6 +73,45 @@ private:
    * Enqueue the request into the OutBuffer.
    */
   void enqueue(const RequestPtr &request, int &inqueueRequests);
+
+  /**
+   * Get the multicast group id. This basically just look at the single
+   * destination of the message and is subjected to multicastBankGroupSize.
+   *
+   * MulticastGroupId may be invalid (-1) if the request has multiple
+   * destination.
+   */
+  using MulticastGroupId = int;
+  static constexpr MulticastGroupId InvalidMulticastGroupId = -1;
+  MulticastGroupId getMulticastGroupId(const RequestPtr &request) const;
+
+  /**
+   * Records the inqueue requests by their multicast group id.
+   */
+  using MulticastGroupInqueueReqMapT =
+      std::map<MulticastGroupId, std::set<RequestPtr>>;
+  using MulticastGroupInqueueReqMapIter =
+      MulticastGroupInqueueReqMapT::iterator;
+
+  MulticastGroupInqueueReqMapT multicastGroupToInqueueReqMap;
+
+  /**
+   * Get or initialize the multicast group map.
+   */
+  MulticastGroupInqueueReqMapIter
+  getOrInitMulticastGroupInqueueReq(MulticastGroupId groupId);
+
+  /**
+   * Check if the request should try multicast.
+   * So far this multicast only applies to GETU/GETH/STREAM_STORE.
+   */
+  bool shouldTryMulticast(const RequestPtr &req) const;
+
+  /**
+   * Check if request can be multicast.
+   * @return true if succeed.
+   */
+  bool tryMulticast(const RequestPtr &req);
 };
 
 #endif

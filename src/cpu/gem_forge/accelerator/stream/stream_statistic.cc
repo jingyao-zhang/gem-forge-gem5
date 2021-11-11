@@ -69,6 +69,7 @@ void StreamStatistic::dump(std::ostream &os) const {
     dumpScalar(numMemIssueSlice);
     dumpSingleAvgSample(memReqLat);
     dumpScalar(numRemoteReuseSlice);
+    dumpScalarIfNonZero(numRemoteMulticastSlice);
 
     dumpScalar(numRemoteConfigure);
     dumpScalar(numRemoteConfigureCycle);
@@ -273,6 +274,8 @@ void StreamStatistic::clear() {
   this->numFloatAtomicWaitForLockCycle = 0;
   this->numFloatAtomicWaitForUnlockCycle = 0;
   this->numLLCSendTo.clear();
+
+  this->numRemoteMulticastSlice = 0;
 
   this->numLLCAliveElements = 0;
   this->numLLCAliveElementSamples = 0;
