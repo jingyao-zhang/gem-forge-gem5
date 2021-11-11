@@ -231,10 +231,16 @@ bool StreamElement::isElemFloatedWithDependent() const {
   return this->dynS->isFloatedWithDependent() && this->isFloatElem();
 }
 bool StreamElement::isElemFloatedAsNDC() const {
-  return this->dynS->isFloatedAsNDC() && this->isFloatElem();
+  assert(
+      (!this->dynS->isFloatedAsNDC() || this->dynS->getFloatPlan().empty()) &&
+      "FloatPlan is not used for NDC.");
+  return this->dynS->isFloatedAsNDC();
 }
 bool StreamElement::isElemFloatedAsNDCForward() const {
-  return this->dynS->isFloatedAsNDCForward() && this->isFloatElem();
+  assert((!this->dynS->isFloatedAsNDCForward() ||
+          this->dynS->getFloatPlan().empty()) &&
+         "FloatPlan is not used for NDCForward.");
+  return this->dynS->isFloatedAsNDCForward();
 }
 bool StreamElement::isElemPseudoFloatedToCache() const {
   return this->dynS->isPseudoFloatedToCache() && this->isFloatElem();
