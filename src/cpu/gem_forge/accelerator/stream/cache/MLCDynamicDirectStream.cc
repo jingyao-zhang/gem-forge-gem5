@@ -332,6 +332,26 @@ void MLCDynamicDirectStream::trySendCreditToLLC() {
     }
 
     /**
+     * Additional sanity check that the RemoteStream does not have too many
+     * slices.
+     */
+    {
+      auto llcDynS = LLCDynamicStream::getLLCStreamPanic(
+          this->getDynamicStreamId(), "trySendCredit()");
+      auto inflyElementTotalSize = llcDynS->idxToElementMap.size() *
+                                   this->getStaticStream()->getMemElementSize();
+      auto inflyBytesThreshold = this->config->mlcBufferNumSlices * 64 * 2;
+      if (inflyElementTotalSize >= inflyBytesThreshold) {
+        MLC_S_DPRINTF(
+            this->getDynamicStreamId(),
+            "Delayed sending Credit since InflyElement %dx%d > %dB.\n",
+            llcDynS->idxToElementMap.size(),
+            this->getStaticStream()->getMemElementSize(), inflyBytesThreshold);
+        return;
+      }
+    }
+
+    /**
      * Additional check for SendTo relationship:
      * We want to make sure that the receiver has the element initialized.
      * If not, we schedule an event to check next cycle.
@@ -480,9 +500,11 @@ void MLCDynamicDirectStream::receiveStreamData(
     }
     if (laggingBehind) {
       // The stream data is lagging behind. The slice is already
-      // released.
+      // released. We still try to advance ourselves, as some credits
+      // may be delayed due to LLC lagging very behind.
       MLC_SLICE_DPRINTF(sliceId, "Discard as lagging behind %s.\n",
                         firstSlice.sliceId);
+      this->advanceStream();
       return;
     }
   }

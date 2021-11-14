@@ -27,6 +27,8 @@ public:
 
   std::map<ElementIdx, FloatChangePoint> changePoints;
 
+  bool empty() const { return this->changePoints.empty(); }
+
   void clear() { this->changePoints.clear(); }
   void addFloatChangePoint(ElementIdx startElementIdx,
                            MachineType floatMachineType);

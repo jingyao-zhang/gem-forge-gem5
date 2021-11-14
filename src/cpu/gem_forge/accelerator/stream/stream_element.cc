@@ -202,11 +202,18 @@ bool StreamElement::isLastElement() const {
 bool StreamElement::shouldIssue() const {
   /**
    * So far there are two cases when we do not issue requests:
-   * 1. DynamicStream says so.
+   * 1. DynamicStream says so, then we have two cases:
+   *   a. DynamicStream is not floated, then we just don't issue.
+   *   b. DynamicStream is floated, then we check if the element is floated, as
+   *      the first few elements still need to be issued for MidwayFloating.
    * 2. LastElement that only uses to deal with StreamEnd.
    */
-  if (!this->dynS->shouldCoreSEIssue() && this->isElemFloatedToCache()) {
-    return false;
+  if (!this->dynS->shouldCoreSEIssue()) {
+    if (this->dynS->isFloatedToCache()) {
+      return !this->isElemFloatedToCache();
+    } else {
+      return false;
+    }
   }
   if (this->isLastElement()) {
     // Last element should never be issued.
