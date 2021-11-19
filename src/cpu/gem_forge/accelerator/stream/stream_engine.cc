@@ -1300,10 +1300,23 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
        iter != end; ++iter) {
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
-    // Since commit happens in-order, we know it's the FirstDynamicStream.
-    const auto &dynS = S->getFirstDynamicStream();
+    const auto &dynS = S->getDynamicStreamByEndSeqNum(args.seqNum);
     auto endElement = dynS.tail->next;
     auto endElementIdx = endElement->FIFOIdx.entryIdx;
+
+    /**
+     * For eliminated loop, check for TotalTripCount.
+     */
+    if (S->isLoopEliminated() && dynS.hasTotalTripCount()) {
+      if (endElementIdx < dynS.getTotalTripCount()) {
+        S_ELEMENT_DPRINTF(
+            endElement,
+            "[StreamEnd] Cannot commit as not less TripCount %llu < %llu.\n",
+            endElementIdx, dynS.getTotalTripCount());
+        return false;
+      }
+    }
+
     // There is always a dummy element for StreamEnd to step through.
     if (S->getEnabledStoreFunc()) {
       /**
@@ -1322,7 +1335,7 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
        * Floated AtomicComputeStream has to check Ack when:
        *                    w/ RangeSync       w/o. RangeSync
        * CoreIssue          Check              NoCheck
-       * CoreNotIssue       Check              NoCheck
+       * CoreNotIssue       Check              Check
        */
       if (S->isAtomicComputeStream() && dynS.isFloatedToCache() &&
           endElementIdx > 0) {
@@ -1355,6 +1368,11 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
         return false;
       }
     }
+    S_ELEMENT_DPRINTF(endElement,
+                      "[StreamEnd] Can commit end element. FloatedToCache %d. "
+                      "ShouldCoreSEIssue %d. Acked %d.\n",
+                      dynS.isFloatedToCache(), dynS.shouldCoreSEIssue(),
+                      dynS.cacheAckedElements.size());
   }
   return true;
 }

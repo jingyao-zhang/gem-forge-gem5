@@ -370,12 +370,19 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   }
   assert(dynS.configExecuted && "End before config executed.");
   assert(dynS.endDispatched && "End before end dispatched.");
+  assert(dynS.endSeqNum == seqNum && "Mismatch EndSeqNum.");
 
   /**
    * We need to release all unstepped elements.
    */
-  assert(dynS.stepSize == 0 && "Stepped but unreleased element.");
-  assert(dynS.allocSize == 0 && "Unreleased element.");
+  if (dynS.stepSize != 0) {
+    DYN_S_PANIC(dynS.dynamicStreamId, "Commit StreamEnd with StepSize %d.",
+                dynS.stepSize);
+  }
+  if (dynS.allocSize != 0) {
+    DYN_S_PANIC(dynS.dynamicStreamId, "Commit StreamEnd with AllocSize %d.",
+                dynS.allocSize);
+  }
 
   // Update stats of cycles.
   auto endCycle = this->getCPUDelegator()->curCycle();
