@@ -2342,6 +2342,18 @@ void StreamEngine::issueElements() {
       continue;
     }
 
+    /**
+     * Sanity check: for loop eliminated AtomicCompute/StoreComputeStream,
+     * we have to offload.
+     */
+    if (S->isLoopEliminated() &&
+        (S->isAtomicComputeStream() || S->isStoreComputeStream())) {
+      if (!element->isElemFloatedToCache()) {
+        S_ELEMENT_PANIC(element, "LoopEliminated Store/AtomicCompute Stream "
+                                 "can not execute in core.");
+      }
+    }
+
     if (!element->isAddrReady()) {
       /**
        * For IndirectUpdateStream, we have possible aliasing, and for now
