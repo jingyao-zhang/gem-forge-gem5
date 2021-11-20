@@ -2044,7 +2044,7 @@ void LLCStreamEngine::issueStreamMsgToMLC(ResponseMsgPtr msg, bool forceIdea) {
   auto mlcMachineId = msg->m_Destination.singleElement();
   const auto &sliceId = msg->m_sliceIds.singleSliceId();
 
-  if (this->controller->isStreamIdeaAckEnabled() || forceIdea) {
+  if (forceIdea) {
     auto mlcController =
         AbstractStreamAwareController::getController(mlcMachineId);
     auto mlcSE = mlcController->getMLCStreamEngine();
@@ -2073,6 +2073,9 @@ void LLCStreamEngine::issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
   auto paddrLine = 0;
   auto msg = this->createStreamMsgToMLC(
       sliceId, CoherenceResponseType_STREAM_ACK, paddrLine, nullptr, 0, 0, 0);
+  if (this->controller->isStreamIdeaAckEnabled()) {
+    forceIdea = true;
+  }
   this->issueStreamMsgToMLC(msg, forceIdea);
 }
 

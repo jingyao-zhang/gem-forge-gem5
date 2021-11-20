@@ -142,8 +142,8 @@ parser.add_option("--gem-forge-stream-engine-enable-float-cancel", action="store
 parser.add_option("--gem-forge-stream-engine-enable-float-subline", action="store_true",
                   default=False,
                   help="Enable subline transimission in stream float.")
-parser.add_option("--gem-forge-stream-engine-enable-float-idea-ack", action="store_true",
-                  default=False,
+parser.add_option("--gem-forge-stream-engine-enable-float-idea-ack", action="store",
+                  default=0, type="int",
                   help="Enable idea (instant, no NoC) StreamAck in stream float.")
 parser.add_option("--gem-forge-stream-engine-enable-float-idea-mlc-pop-check", action="store_true",
                   default=True,
@@ -190,12 +190,12 @@ parser.add_option("--gem-forge-stream-engine-enable-midway-float", action="store
 parser.add_option("--gem-forge-stream-engine-midway-float-element-idx", action="store",
                   type="int", default="-1",
                   help="Force midway stream float from this element.")
+parser.add_option("--gem-forge-stream-engine-llc-multicast-max-ind-req-per-message", action="store",
+                  type="int", default="0",
+                  help="Max indirect stream request per multicast message, 0 to disable.")
 parser.add_option("--gem-forge-stream-engine-llc-multicast-ind-req-bank-group-size", action="store",
                   type="int", default="0",
                   help="Indirect stream request multicast bank group size.")
-parser.add_option("--gem-forge-stream-engine-llc-multicast-max-ind-req-per-message", action="store",
-                  type="int", default="0",
-                  help="Max indirect stream request per multicast message.")
 
 # Stream Computing options.
 parser.add_option("--gem-forge-estimate-pure-data-traffic", action="store_true",
@@ -237,11 +237,11 @@ parser.add_option("--gem-forge-stream-engine-llc-neighbor-migration-valve-type",
 parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-computing",
                   action="store_true", default="False",
                   help="Enable per element computation offloading.")
-parser.add_option("--gem-forge-enable-stream-nuca",
-                  action="store_true", default="False",
+parser.add_option("--gem-forge-enable-stream-nuca", type="int",
+                  action="store", default="0",
                   help="Enable stream nuca.")
 
-# Stream Floating in Mem Options.
+# Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,
                   help="Enable stream float in Mem Ctrl.")
 parser.add_option("--gem-forge-stream-engine-float-level-policy", type="choice", default="static",
