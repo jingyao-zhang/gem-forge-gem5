@@ -907,6 +907,10 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     invr_sendCacheInvalidateAsRequest;
     j_popIncomingRequestQueue;
   }
+  transition(M_GM, GETH, M_GM) {
+    sh_recordGetHID;
+    j_popIncomingRequestQueue;
+  }
   transition(M_GM, Data, M_DRDI) {
     drt_writeL2RespDataToTBE;
     net_notifyStreamEngineFromTBE;
