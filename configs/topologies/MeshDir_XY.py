@@ -65,18 +65,26 @@ class MeshDir_XY(SimpleTopology):
                 self.numa_nodes[3].append(i)
 
         # Connect the dir nodes to the corners.
+        print(f'[MeshDirCorner] Dir 0 -> Router 0.')
+        dir_nodes[0].router_id = 0
         ext_links.append(ExtLink(link_id=self.link_count, ext_node=dir_nodes[0],
                                 int_node=routers[0],
                                 latency=self.link_latency))
         self.link_count += 1
+        print(f'[MeshDirCorner] Dir 1 -> Router {self.num_columns - 1}.')
+        dir_nodes[1].router_id = self.num_columns - 1
         ext_links.append(ExtLink(link_id=self.link_count, ext_node=dir_nodes[1],
                                 int_node=routers[self.num_columns - 1],
                                 latency=self.link_latency))
         self.link_count += 1
+        print(f'[MeshDirCorner] Dir 2 -> Router {self.num_routers - self.num_columns}.')
+        dir_nodes[2].router_id = self.num_routers - self.num_columns
         ext_links.append(ExtLink(link_id=self.link_count, ext_node=dir_nodes[2],
                                 int_node=routers[self.num_routers - self.num_columns],
                                 latency=self.link_latency))
         self.link_count += 1
+        print(f'[MeshDirCorner] Dir 3 -> Router {self.num_routers - 1}.')
+        dir_nodes[3].router_id = self.num_routers - 1
         ext_links.append(ExtLink(link_id=self.link_count, ext_node=dir_nodes[3],
                                 int_node=routers[self.num_routers - 1],
                                 latency=self.link_latency))
@@ -103,6 +111,7 @@ class MeshDir_XY(SimpleTopology):
                 dir_idx = i * num_dir_columns + j
                 router_idx = (i + middle_start_row) * self.num_columns + j + middle_start_col
                 print(f'[MeshDirMiddle] Dir {i}x{j} -> Router {i + middle_start_row}x{j + middle_start_col}.')
+                dir_nodes[dir_idx].router_id = router_idx
                 ext_links.append(
                     ExtLink(
                         link_id=self.link_count,
@@ -143,12 +152,25 @@ class MeshDir_XY(SimpleTopology):
         num_tile_rows = self.num_rows // num_dir_rows
         num_tile_columns = self.num_columns // num_dir_columns
 
-        # Connect the dir nodes to the top-left tile corner.
+        """
+        Connect the dir nodes in tile (2x2 tile, 8x8 mesh):
+        [XX]  01   02   03  [XX]  05   06   07
+         08   09  [XX]  0B   0C   0D  [XX]  0F
+         10  [XX]  12   13   14  [XX]  16   17
+         18   19   1A  [XX]  1C   1D   1E  [XX]
+        [XX]  21   22   23  [XX]  25   26   27
+         28   29  [XX]  2B   2C   2D  [XX]  2F
+         30  [XX]  32   33   34  [XX]  36   37
+         38   39   3A  [XX]  3C   3D   3E  [XX]
+        """
         for i in range(num_dir_rows):
             for j in range(num_dir_columns):
                 dir_idx = i * num_dir_columns + j
-                router_idx = (i * num_tile_rows) * self.num_columns + (j * num_tile_columns) 
-                print(f'[MeshDirTile] Dir {i}x{j} -> Router {i * num_tile_rows}x{j * num_tile_columns}.')
+                tile_row = i * num_tile_rows + j % num_tile_rows
+                tile_col = j * num_tile_columns + i % num_tile_columns
+                router_idx = tile_row * self.num_columns + tile_col
+                print(f'[MeshDirTile] Dir {i}x{j} -> Router {tile_row}x{tile_col}.')
+                dir_nodes[dir_idx].router_id = router_idx
                 ext_links.append(
                     ExtLink(
                         link_id=self.link_count,
@@ -182,6 +204,7 @@ class MeshDir_XY(SimpleTopology):
             dir_idx = i
             router_idx = i * self.num_columns + i 
             print(f'[MeshDirDiag] Dir {i} -> Router {i}x{i}.')
+            dir_nodes[dir_idx].router_id = router_idx
             ext_links.append(
                 ExtLink(
                     link_id=self.link_count,
@@ -255,14 +278,17 @@ class MeshDir_XY(SimpleTopology):
         for (i, n) in enumerate(cache_nodes):
             cntrl_level, router_id = divmod(i, self.num_routers)
             assert(cntrl_level < caches_per_router)
+            n.router_id = router_id
             ext_links.append(ExtLink(link_id=self.link_count, ext_node=n,
                                     int_node=routers[router_id],
                                     latency=self.link_latency))
+            print(f'[Topology] Connect {n.type} {n.version} to Rounter {router_id}')
             self.link_count += 1
 
         # Connect the dma nodes to router 0.  These should only be DMA nodes.
         for (i, node) in enumerate(dma_nodes):
             assert(node.type == 'DMA_Controller')
+            node.router_id = 0
             ext_links.append(ExtLink(link_id=self.link_count, ext_node=node,
                                      int_node=routers[0],
                                      latency=self.link_latency))
