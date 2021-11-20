@@ -47,6 +47,7 @@ class RubyController(ClockedObject):
     cxx_header = "mem/ruby/slicc_interface/AbstractController.hh"
     abstract = True
     version = Param.Int("")
+    router_id = Param.Int(-1, "RounterId of this controller. -1 means Invalid.")
     addr_ranges = VectorParam.AddrRange([AllMemory], "Address range this "
                                         "controller responds to")
     cluster_id = Param.UInt32(0, "Id of this controller's cluster")

@@ -1,6 +1,7 @@
 #include "AbstractStreamAwareController.hh"
 
 #include "mem/ruby/network/garnet2.0/GarnetNetwork.hh"
+#include "sim/stream_nuca/stream_nuca_map.hh"
 
 #include "RubySlicc_ComponentMapping.hh"
 
@@ -35,6 +36,19 @@ AbstractStreamAwareController::AbstractStreamAwareController(const Params *p)
    * Register myself to the global map.
    */
   registerController(this);
+}
+
+void AbstractStreamAwareController::init() {
+
+  AbstractController::init();
+
+  /**
+   * Register myself to StreamNUCAMap. This can not be done in the constructor
+   * as the MachineId is initialized in the derived class constructor.
+   */
+  assert(myParams->addr_ranges.size() == 1 && "Multiple AddrRanges.");
+  StreamNUCAMap::addNonUniformNode(myParams->router_id, this->m_machineID,
+                                   myParams->addr_ranges.front());
 }
 
 void AbstractStreamAwareController::regStats() {

@@ -279,6 +279,8 @@ Process::regStats()
         .name(name() + ".numSyscalls")
         .desc("Number of system calls")
         ;
+    
+    this->streamNUCAManager->regStats();
 }
 
 void

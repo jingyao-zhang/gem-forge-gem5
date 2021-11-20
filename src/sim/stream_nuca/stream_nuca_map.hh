@@ -1,7 +1,9 @@
 #ifndef __GEM_FORGE_STREAM_NUCA_MAP_HH__
 #define __GEM_FORGE_STREAM_NUCA_MAP_HH__
 
+#include "base/addr_range.hh"
 #include "base/types.hh"
+#include "mem/ruby/common/MachineID.hh"
 
 #include <map>
 
@@ -18,6 +20,21 @@ class StreamNUCAMap {
 public:
   static void initializeTopology(int numRows, int numCols);
   static void initializeCache(int blockSize, int numSet, int assoc);
+
+  struct NonUniformNode {
+    int routerId;
+    MachineID machineId;
+    AddrRange addrRange;
+    NonUniformNode(int _routerId, MachineID _machineId,
+                   const AddrRange &_addrRange)
+        : routerId(_routerId), machineId(_machineId), addrRange(_addrRange) {}
+  };
+  using NonUniformNodeVec = std::vector<NonUniformNode>;
+  static void addNonUniformNode(int routerId, MachineID machineId,
+                                const AddrRange &addrRange);
+  static const NonUniformNodeVec &getNUMANodes() { return numaNodes; }
+  static int mapPAddrToNUMARouterId(Addr paddr);
+  static int64_t computeHops(int64_t bankA, int64_t bankB);
 
   static int getNumRows() {
     assert(topologyInitialized && "Topology has not initialized");
@@ -60,7 +77,6 @@ public:
   static int getBank(Addr paddr);
   static int getSet(Addr paddr);
 
-
 private:
   static bool topologyInitialized;
   static int numRows;
@@ -69,6 +85,8 @@ private:
   static int cacheBlockSize;
   static int cacheNumSet;
   static int cacheAssoc;
+
+  static NonUniformNodeVec numaNodes;
 
   static std::map<Addr, RangeMap> rangeMaps;
 };

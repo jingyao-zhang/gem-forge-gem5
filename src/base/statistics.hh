@@ -2520,6 +2520,24 @@ class Scalar : public ScalarBase<Scalar, StatStor>
 };
 
 /**
+ * This is a simple scalar statistic but never reset.
+ * @sa Stat, ScalarBase, StatStor
+ */
+class ScalarNoReset : public ScalarBase<ScalarNoReset, StatStor>
+{
+  public:
+    using ScalarBase<ScalarNoReset, StatStor>::operator=;
+
+    ScalarNoReset(Group *parent = nullptr, const char *name = nullptr,
+           const char *desc = nullptr)
+        : ScalarBase<ScalarNoReset, StatStor>(parent, name, desc)
+    {
+    }
+
+    void reset() {}
+};
+
+/**
  * A stat that calculates the per tick average of a value.
  * @sa Stat, ScalarBase, AvgStor
  */
@@ -2623,6 +2641,46 @@ class Distribution : public DistBase<Distribution, DistStor>
         return this->self();
     }
 };
+
+/**
+ * A simple distribution stat but never reset.
+ * @sa Stat, DistBase, DistStor
+ */
+class DistributionNoReset : public DistBase<DistributionNoReset, DistStor>
+{
+  public:
+    DistributionNoReset(Group *parent = nullptr, const char *name = nullptr,
+                        const char *desc = nullptr)
+        : DistBase<DistributionNoReset, DistStor>(parent, name, desc)
+    {
+    }
+
+    /**
+     * Set the parameters of this distribution. @sa DistStor::Params
+     * @param min The minimum value of the distribution.
+     * @param max The maximum value of the distribution.
+     * @param bkt The number of values in each bucket.
+     * @return A reference to this distribution.
+     */
+    DistributionNoReset &
+    init(Counter min, Counter max, Counter bkt)
+    {
+        DistStor::Params *params = new DistStor::Params;
+        params->min = min;
+        params->max = max;
+        params->bucket_size = bkt;
+        // Division by zero is especially serious in an Aarch64 host,
+        // where it gets rounded to allocate 32GiB RAM.
+        assert(bkt > 0);
+        params->buckets = (size_type)ceil((max - min + 1.0) / bkt);
+        this->setParams(params);
+        this->doInit();
+        return this->self();
+    }
+
+    void reset() {}
+};
+
 
 /**
  * A simple histogram stat.

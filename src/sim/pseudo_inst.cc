@@ -673,14 +673,14 @@ void stream_nuca_region(
 void stream_nuca_align(ThreadContext *tc,
     Addr A, Addr B, uint64_t elementOffset) {
     DPRINTF(PseudoInst, "PseudoInst::stream_nuca_align(%p, %p, %ld).\n",
-        A, B, elementOffset);
+        A, B, static_cast<int64_t>(elementOffset));
     tc->getProcessPtr()->streamNUCAManager->defineAlign(
-        A, B, elementOffset);
+        A, B, static_cast<int64_t>(elementOffset));
 }
 
 void stream_nuca_remap(ThreadContext *tc) {
     DPRINTF(PseudoInst, "PseudoInst::stream_nuca_remap().\n");
-    tc->getProcessPtr()->streamNUCAManager->remap();
+    tc->getProcessPtr()->streamNUCAManager->remap(tc);
 }
 
 } // namespace PseudoInst

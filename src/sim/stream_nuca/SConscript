@@ -1,8 +1,10 @@
 Import('*')
 
+Source('numa_page_allocator.cc')
 Source('stream_nuca_manager.cc')
 Source('stream_nuca_map.cc')
 
+DebugFlag('NUMAPageAllocator')
 DebugFlag('StreamNUCAManager')
 DebugFlag('StreamNUCAMap')
 

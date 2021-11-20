@@ -11,6 +11,7 @@ bool StreamNUCAMap::cacheInitialized = false;
 int StreamNUCAMap::cacheBlockSize = 0;
 int StreamNUCAMap::cacheNumSet = 0;
 int StreamNUCAMap::cacheAssoc = 0;
+StreamNUCAMap::NonUniformNodeVec StreamNUCAMap::numaNodes;
 std::map<Addr, StreamNUCAMap::RangeMap> StreamNUCAMap::rangeMaps;
 
 void StreamNUCAMap::initializeTopology(int numRows, int numCols) {
@@ -45,6 +46,41 @@ void StreamNUCAMap::initializeCache(int blockSize, int numSet, int assoc) {
     StreamNUCAMap::cacheAssoc = assoc;
     StreamNUCAMap::cacheInitialized = true;
   }
+}
+
+void StreamNUCAMap::addNonUniformNode(int routerId, MachineID machineId,
+                                      const AddrRange &addrRange) {
+  if (machineId.getType() != MachineType_Directory) {
+    return;
+  }
+  DPRINTF(StreamNUCAMap,
+          "[StreamNUCA] Add NonUniformNode %s RouterId %d AddrRange %s.\n",
+          machineId, routerId, addrRange.to_string());
+  numaNodes.emplace_back(routerId, machineId, addrRange);
+  std::sort(numaNodes.begin(), numaNodes.end(),
+            [](const NonUniformNode &A, const NonUniformNode &B) -> bool {
+              return A.machineId.getNum() < B.machineId.getNum();
+            });
+}
+
+int StreamNUCAMap::mapPAddrToNUMARouterId(Addr paddr) {
+  if (numaNodes.empty()) {
+    panic("No NUMA nodes found.");
+  }
+  for (const auto &numaNode : numaNodes) {
+    if (numaNode.addrRange.contains(paddr)) {
+      return numaNode.routerId;
+    }
+  }
+  panic("Failed to Find NUMA Node for PAddr %#x.", paddr);
+}
+
+int64_t StreamNUCAMap::computeHops(int64_t bankA, int64_t bankB) {
+  int64_t bankARow = bankA / getNumCols();
+  int64_t bankACol = bankA % getNumCols();
+  int64_t bankBRow = bankB / getNumCols();
+  int64_t bankBCol = bankB % getNumCols();
+  return std::abs(bankARow - bankBRow) + std::abs(bankACol - bankBCol);
 }
 
 void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,

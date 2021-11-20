@@ -68,17 +68,23 @@ void m5_llvm_trace_replay(const char *trace, void *vaddr);
 
 void m5_stream_nuca_region(const char *regionName, void *buffer,
                            uint64_t elementSize, uint64_t numElement);
+enum StreamNUCAIndirectAlignment {
+  STREAM_NUCA_IND_ALIGN_EVERY_ELEMENT = -1,
+};
+/**
+ * Specify the alignment requirement between two arrays.
+ * If this is a negative value in StreamNUCAIndirectAlignment, this is
+ * handled as indirect alignment.
+ */
 void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
 void m5_stream_nuca_remap();
 
 void m5_se_syscall();
 void m5_se_page_fault();
 
-#define m5_detail_sim_start()                                                  \
-  m5_switch_cpu();
+#define m5_detail_sim_start() m5_switch_cpu();
 
-#define m5_detail_sim_end()                                                    \
-  m5_dump_stats(0, 0);
+#define m5_detail_sim_end() m5_dump_stats(0, 0);
 
 #define m5_gem_forge_region_simpoint()                                         \
   m5_reset_stats(0, 0);                                                        \

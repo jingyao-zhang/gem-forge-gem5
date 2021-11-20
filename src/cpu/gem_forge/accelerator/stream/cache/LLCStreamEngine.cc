@@ -3463,6 +3463,7 @@ void LLCStreamEngine::recordComputationMicroOps(Stream *S) {
   if (category.first == Stream::ComputationType::Compute &&                    \
       category.second == Stream::ComputationAddressPattern::Addr) {            \
     this->controller->m_statLLCScheduled##Addr##Compute##MicroOps += microOps; \
+    return;                                                                    \
   }
   record_micro_ops(Affine, LoadCompute);
   record_micro_ops(Affine, StoreCompute);

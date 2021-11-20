@@ -21,6 +21,7 @@ public:
   typedef RubyStreamAwareControllerParams Params;
   AbstractStreamAwareController(const Params *p);
 
+  void init() override;
   void regStats() override;
 
   /**
