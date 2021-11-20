@@ -17,6 +17,7 @@ Stats::ScalarNoReset StreamNUCAManager::indRegionAllocPages;
 Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCDefaultHops;
 Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCOptimizedHops;
 Stats::DistributionNoReset StreamNUCAManager::indRegionMemOptimizedBanks;
+Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
 
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
     : process(other.process), enabled(other.enabled) {
