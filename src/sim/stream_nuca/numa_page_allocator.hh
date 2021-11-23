@@ -24,6 +24,7 @@ public:
    */
   static Addr allocatePageAt(System *system, int nodeId, int &totalAllocPages,
                              int &allocNodeId);
+  static void returnPage(Addr pagePAddr, int nodeId);
 
 private:
   static bool initialized;

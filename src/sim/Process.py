@@ -74,6 +74,8 @@ class Process(SimObject):
     markEnd = Param.Int64(-1,
         "end when encounter this mark")
     enableStreamNUCA = Param.Bool(False, "Enable Stream NUCA.")
+    streamNUCAIndPageRemapThreshold = Param.Float(0.0,
+        "Remap indirect page if achieve traffic reduction. 0 always remap")
 
     @classmethod
     def export_methods(cls, code):

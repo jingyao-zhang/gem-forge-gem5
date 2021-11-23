@@ -41,6 +41,20 @@ Addr NUMAPageAllocator::allocatePageAt(System *system, int nodeId,
   return pagePAddr;
 }
 
+void NUMAPageAllocator::returnPage(Addr pagePAddr, int nodeId) {
+
+  assert(NUMAPageAllocator::initialized &&
+         "Not intialized when returning a page.");
+
+  assert(nodeId < freePages.size() && "Invalid NodeId.");
+  auto queueId = getQueueId(nodeId);
+  auto &queue = freePages.at(queueId);
+  queue.push_front(pagePAddr);
+  DPRINTF(NUMAPageAllocator,
+          "[NUMAPageAlloc] Return Page %#x NodeId %d QueueId %d.\n", pagePAddr,
+          nodeId, queueId);
+}
+
 void NUMAPageAllocator::initialize(System *system) {
   if (NUMAPageAllocator::initialized) {
     assert(system == NUMAPageAllocator::system &&

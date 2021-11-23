@@ -63,16 +63,25 @@ void StreamNUCAMap::addNonUniformNode(int routerId, MachineID machineId,
             });
 }
 
-int StreamNUCAMap::mapPAddrToNUMARouterId(Addr paddr) {
+const StreamNUCAMap::NonUniformNode &
+StreamNUCAMap::mapPAddrToNUMANode(Addr paddr) {
   if (numaNodes.empty()) {
     panic("No NUMA nodes found.");
   }
   for (const auto &numaNode : numaNodes) {
     if (numaNode.addrRange.contains(paddr)) {
-      return numaNode.routerId;
+      return numaNode;
     }
   }
   panic("Failed to Find NUMA Node for PAddr %#x.", paddr);
+}
+
+int StreamNUCAMap::mapPAddrToNUMARouterId(Addr paddr) {
+  return mapPAddrToNUMANode(paddr).routerId;
+}
+
+int StreamNUCAMap::mapPAddrToNUMAId(Addr paddr) {
+  return mapPAddrToNUMANode(paddr).machineId.getNum();
 }
 
 int64_t StreamNUCAMap::computeHops(int64_t bankA, int64_t bankB) {

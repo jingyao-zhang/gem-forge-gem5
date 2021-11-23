@@ -8,8 +8,10 @@
 
 class StreamNUCAManager {
 public:
-  StreamNUCAManager(Process *_process, bool _enabled)
-      : process(_process), enabled(_enabled) {}
+  StreamNUCAManager(Process *_process, bool _enabled,
+                    float _indirectPageRemapThreshold)
+      : process(_process), enabled(_enabled),
+        indirectPageRemapThreshold(_indirectPageRemapThreshold) {}
 
   /**
    * We panic on copy. Required for process clone.
@@ -62,6 +64,7 @@ public:
 private:
   Process *process;
   const bool enabled;
+  const float indirectPageRemapThreshold;
 
   std::map<Addr, StreamRegion> startVAddrRegionMap;
 
@@ -93,10 +96,15 @@ private:
   static Stats::ScalarNoReset indRegionPages;
   static Stats::ScalarNoReset indRegionElements;
   static Stats::ScalarNoReset indRegionAllocPages;
+  static Stats::ScalarNoReset indRegionRemapPages;
   static Stats::ScalarNoReset indRegionMemToLLCDefaultHops;
-  static Stats::ScalarNoReset indRegionMemToLLCOptimizedHops;
   static Stats::DistributionNoReset indRegionMemOptimizedBanks;
+
+  static Stats::ScalarNoReset indRegionMemToLLCRemappedHops;
   static Stats::DistributionNoReset indRegionMemRemappedBanks;
+
+  static Stats::ScalarNoReset indRegionMemToLLCFinalHops;
+  static Stats::DistributionNoReset indRegionMemFinalBanks;
 };
 
 #endif

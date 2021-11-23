@@ -33,7 +33,9 @@ public:
   static void addNonUniformNode(int routerId, MachineID machineId,
                                 const AddrRange &addrRange);
   static const NonUniformNodeVec &getNUMANodes() { return numaNodes; }
+  static const NonUniformNode &mapPAddrToNUMANode(Addr paddr);
   static int mapPAddrToNUMARouterId(Addr paddr);
+  static int mapPAddrToNUMAId(Addr paddr);
   static int64_t computeHops(int64_t bankA, int64_t bankB);
 
   static int getNumRows() {

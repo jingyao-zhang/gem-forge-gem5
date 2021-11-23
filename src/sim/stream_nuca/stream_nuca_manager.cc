@@ -14,13 +14,17 @@ bool StreamNUCAManager::statsRegsiterd = false;
 Stats::ScalarNoReset StreamNUCAManager::indRegionPages;
 Stats::ScalarNoReset StreamNUCAManager::indRegionElements;
 Stats::ScalarNoReset StreamNUCAManager::indRegionAllocPages;
+Stats::ScalarNoReset StreamNUCAManager::indRegionRemapPages;
 Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCDefaultHops;
-Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCOptimizedHops;
 Stats::DistributionNoReset StreamNUCAManager::indRegionMemOptimizedBanks;
+Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCRemappedHops;
 Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
+Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCFinalHops;
+Stats::DistributionNoReset StreamNUCAManager::indRegionMemFinalBanks;
 
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
-    : process(other.process), enabled(other.enabled) {
+    : process(other.process), enabled(other.enabled),
+      indirectPageRemapThreshold(other.indirectPageRemapThreshold) {
   panic("StreamNUCAManager does not have copy constructor.");
 }
 
@@ -53,15 +57,20 @@ void StreamNUCAManager::regStats() {
   scalar(indRegionElements, "Elements in indirect region.");
   scalar(indRegionAllocPages,
          "Pages allocated (including fragments) to optimize indirect region.");
+  scalar(indRegionRemapPages, "Pages remapped to optimize indirect region.");
   scalar(indRegionMemToLLCDefaultHops,
          "Default hops from Mem to LLC in indirect region.");
-  scalar(indRegionMemToLLCOptimizedHops,
+  scalar(indRegionMemToLLCRemappedHops,
+         "Optimized hops from Mem to LLC in indirect retion.");
+  scalar(indRegionMemToLLCFinalHops,
          "Optimized hops from Mem to LLC in indirect retion.");
 
   auto numMemNodes = StreamNUCAMap::getNUMANodes().size();
-  distribution(indRegionMemOptimizedBanks, 0, numMemNodes, 1,
+  distribution(indRegionMemOptimizedBanks, 0, numMemNodes - 1, 1,
                "Distribution of optimized IndRegion banks.");
-  distribution(indRegionMemRemappedBanks, 0, numMemNodes, 1,
+  distribution(indRegionMemRemappedBanks, 0, numMemNodes - 1, 1,
+               "Distribution of remapped IndRegion banks.");
+  distribution(indRegionMemFinalBanks, 0, numMemNodes - 1, 1,
                "Distribution of remapped IndRegion banks.");
 
 #undef distribution
@@ -187,12 +196,15 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
 
   DPRINTF(StreamNUCAManager,
           "[StreamNUCA] Remap Done. IndRegion: Pages %lu Elements %lu "
-          "AllocPages %lu DefaultHops %lu OptHops %lu.\n",
+          "AllocPages %lu RemapPages DefaultHops %lu RemapHops %lu FinalHops "
+          "%lu.\n",
           static_cast<uint64_t>(indRegionPages.value()),
           static_cast<uint64_t>(indRegionElements.value()),
           static_cast<uint64_t>(indRegionAllocPages.value()),
+          static_cast<uint64_t>(indRegionRemapPages.value()),
           static_cast<uint64_t>(indRegionMemToLLCDefaultHops.value()),
-          static_cast<uint64_t>(indRegionMemToLLCOptimizedHops.value()));
+          static_cast<uint64_t>(indRegionMemToLLCRemappedHops.value()),
+          static_cast<uint64_t>(indRegionMemToLLCFinalHops.value()));
 }
 
 void StreamNUCAManager::remapRegion(ThreadContext *tc,
@@ -274,6 +286,8 @@ void StreamNUCAManager::remapIndirectPage(ThreadContext *tc,
   auto endVAddr = std::min(region.vaddr + totalSize, pageVAddr + pageSize);
   auto numBytes = endVAddr - pageVAddr;
   auto pageIndex = (pageVAddr - region.vaddr) / pageSize;
+  auto pagePAddr = this->translate(pageVAddr);
+  auto defaultNodeId = StreamNUCAMap::mapPAddrToNUMAId(pagePAddr);
 
   char *pageData = reinterpret_cast<char *>(malloc(pageSize));
   tc->getVirtProxy().readBlob(pageVAddr, pageData, pageSize);
@@ -355,16 +369,39 @@ void StreamNUCAManager::remapIndirectPage(ThreadContext *tc,
 
   // Compute the optimized hops. The frequence should not change.
   std::vector<int32_t> optimizedAlignToBankFrequency(numRows * numCols, 0);
-  auto optimizedHops =
+  auto remapHops =
       this->computeHopsAndFreq(region, alignToRegion, pageVAddr, numBytes,
                                pageData, optimizedAlignToBankFrequency);
-  indRegionMemToLLCOptimizedHops += optimizedHops;
+  indRegionMemToLLCRemappedHops += remapHops;
 
+  /**
+   * Check if the traffic reduction is above the threshold.
+   * If not, we revert the remap.
+   */
+  auto reducedHops = std::max(defaultHops - remapHops, 0l);
+  auto reducedHopsRatio =
+      static_cast<float>(reducedHops) / static_cast<float>(defaultHops);
   DPRINTF(StreamNUCAManager,
           "[StreamNUCA] IndirectAlign %s -> %s PageIndex %lu SelectedBank "
-          "%d SelectedNUMA %d DefaultHops %ld OptimizedHops %ld.\n",
+          "%d SelectedNUMA %d DefaultHops %ld RemapHops %ld ReduceRatio "
+          "%.2f.\n",
           region.name, alignToRegion.name, pageIndex, selectedBank,
-          selectedNUMANode, defaultHops, optimizedHops);
+          selectedNUMANode, defaultHops, remapHops, reducedHopsRatio);
+
+  if (reducedHopsRatio < this->indirectPageRemapThreshold) {
+    DPRINTF(StreamNUCAManager,
+            "[StreamNUCA] IndirectAlign %s -> %s Revert Remap PageIndex %lu.\n",
+            region.name, alignToRegion.name, pageIndex);
+    pTable->map(pageVAddr, pagePAddr, pageSize, clobber);
+    NUMAPageAllocator::returnPage(newPagePAddr, allocNodeId);
+
+    indRegionMemToLLCFinalHops += defaultHops;
+    indRegionMemFinalBanks.sample(defaultNodeId, 1);
+  } else {
+    indRegionRemapPages++;
+    indRegionMemToLLCFinalHops += remapHops;
+    indRegionMemFinalBanks.sample(allocNodeId, 1);
+  }
 
   free(pageData);
 }
