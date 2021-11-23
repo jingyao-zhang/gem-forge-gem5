@@ -155,7 +155,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 enable_prefetch=(options.gem_forge_prefetcher == 'stride'),
                 enable_stream_float=options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_partial_config=options.gem_forge_stream_engine_enable_float_partial_config,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_end=options.gem_forge_stream_engine_enable_float_idea_end,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
                 enable_stream_multicast=\
                     options.gem_forge_stream_engine_enable_float_multicast,
@@ -233,7 +235,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 llc_select_low_bit=l2_select_low_bit,
                 enable_stream_float=options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_partial_config=options.gem_forge_stream_engine_enable_float_partial_config,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_end=options.gem_forge_stream_engine_enable_float_idea_end,
                 enable_mlc_stream_idea_pop_check_llc_progress=\
                     options.gem_forge_stream_engine_enable_float_idea_mlc_pop_check,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
@@ -319,7 +323,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                 num_cores_per_row=num_cores_per_row,
                 enable_stream_float=options.gem_forge_stream_engine_enable_float,
                 enable_stream_subline=options.gem_forge_stream_engine_enable_float_subline,
+                enable_stream_partial_config=options.gem_forge_stream_engine_enable_float_partial_config,
                 enable_stream_idea_ack=options.gem_forge_stream_engine_enable_float_idea_ack,
+                enable_stream_idea_end=options.gem_forge_stream_engine_enable_float_idea_end,
                 enable_stream_idea_flow=options.gem_forge_stream_engine_enable_float_idea_flow,
                 enable_stream_idea_store=\
                     options.gem_forge_stream_engine_enable_float_idea_store,
@@ -441,7 +447,9 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.num_cores_per_row = num_cores_per_row
         dir_cntrl.enable_stream_float = options.gem_forge_stream_engine_enable_float
         dir_cntrl.enable_stream_subline = options.gem_forge_stream_engine_enable_float_subline
+        dir_cntrl.enable_stream_partial_config = options.gem_forge_stream_engine_enable_float_partial_config
         dir_cntrl.enable_stream_idea_ack = options.gem_forge_stream_engine_enable_float_idea_ack
+        dir_cntrl.enable_stream_idea_end = options.gem_forge_stream_engine_enable_float_idea_end
         dir_cntrl.enable_stream_idea_flow = options.gem_forge_stream_engine_enable_float_idea_flow
         dir_cntrl.enable_stream_idea_store = options.gem_forge_stream_engine_enable_float_idea_store
         dir_cntrl.enable_stream_compact_store = options.gem_forge_stream_engine_enable_float_compact_store

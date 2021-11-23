@@ -1,5 +1,6 @@
 
 #include "MLCStreamEngine.hh"
+#include "LLCStreamEngine.hh"
 #include "MLCStreamNDCController.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream_engine.hh"
@@ -185,10 +186,20 @@ void MLCStreamEngine::sendConfigToRemoteSE(
   msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
   msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_Destination.add(remoteSEMachineID);
-
-  // Configure message should be modelled as data size.
-  msg->m_MessageSize = MessageSizeType_Data;
   msg->m_pkt = pkt;
+
+  /**
+   * If we enable PartialConfig, we assume the static parameters are
+   * already configured at RemoteSE, and thus we only need to send out
+   * dynamic parameters. Here we assume it can be represented as a
+   * control message.
+   */
+
+  if (this->controller->myParams->enable_stream_partial_config) {
+    msg->m_MessageSize = MessageSizeType_Control;
+  } else {
+    msg->m_MessageSize = MessageSizeType_Data;
+  }
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
@@ -274,20 +285,32 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
   *(reinterpret_cast<uint64_t *>(pktData)) =
       reinterpret_cast<uint64_t>(copyEndId);
   pkt->dataDynamic(pktData);
-  // Enqueue a configure packet to the target LLC bank.
-  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-  msg->m_addr = rootLLCStreamPAddrLine;
-  msg->m_Type = CoherenceRequestType_STREAM_END;
-  msg->m_Requestors.add(this->controller->getMachineID());
-  msg->m_Destination.add(rootStreamOffloadedBank);
-  msg->m_MessageSize = MessageSizeType_Control;
-  msg->m_pkt = pkt;
 
-  Cycles latency(1); // Just use 1 cycle latency here.
+  if (this->controller->myParams->enable_stream_idea_end) {
+    auto remoteController =
+        AbstractStreamAwareController::getController(rootStreamOffloadedBank);
+    auto remoteSE = remoteController->getLLCStreamEngine();
+    // StreamAck is also disguised as StreamData.
+    remoteSE->receiveStreamEnd(pkt);
+    MLC_S_DPRINTF(endId, "Send ideal StreamEnd to %s.\n",
+                  rootStreamOffloadedBank);
 
-  this->requestToLLCMsgBuffer->enqueue(
-      msg, this->controller->clockEdge(),
-      this->controller->cyclesToTicks(latency));
+  } else {
+    // Enqueue a configure packet to the target LLC bank.
+    auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+    msg->m_addr = rootLLCStreamPAddrLine;
+    msg->m_Type = CoherenceRequestType_STREAM_END;
+    msg->m_Requestors.add(this->controller->getMachineID());
+    msg->m_Destination.add(rootStreamOffloadedBank);
+    msg->m_MessageSize = MessageSizeType_Control;
+    msg->m_pkt = pkt;
+
+    Cycles latency(1); // Just use 1 cycle latency here.
+
+    this->requestToLLCMsgBuffer->enqueue(
+        msg, this->controller->clockEdge(),
+        this->controller->cyclesToTicks(latency));
+  }
 }
 
 void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {

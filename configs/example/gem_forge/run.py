@@ -145,6 +145,12 @@ parser.add_option("--gem-forge-stream-engine-enable-float-subline", action="stor
 parser.add_option("--gem-forge-stream-engine-enable-float-idea-ack", action="store",
                   default=0, type="int",
                   help="Enable idea (instant, no NoC) StreamAck in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-idea-end", action="store",
+                  default=0, type="int",
+                  help="Enable idea (instant, no NoC) StreamEnd in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-partial-config", action="store",
+                  default=0, type="int",
+                  help="Enable partial StreamConfig (only dynamic params) in stream float.")
 parser.add_option("--gem-forge-stream-engine-enable-float-idea-mlc-pop-check", action="store_true",
                   default=True,
                   help="When MLCStream pops, check LLCStream progress ideally.")
@@ -240,6 +246,9 @@ parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-compu
 parser.add_option("--gem-forge-enable-stream-nuca", type="int",
                   action="store", default="0",
                   help="Enable stream nuca.")
+parser.add_option("--gem-forge-stream-nuca-ind-page-remap-threshold", type="float",
+                  action="store", default="0.0",
+                  help="Remap indirect page if we achieve traffic reduction threshold.")
 
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,
