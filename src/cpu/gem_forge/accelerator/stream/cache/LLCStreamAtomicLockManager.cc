@@ -28,6 +28,8 @@ LLCStreamAtomicLockManager::LLCStreamAtomicLockManager(LLCStreamEngine *_se)
     this->lockType = LockType::MultpleReadersSingleWriterLock;
   } else if (lockType == "single") {
     this->lockType = LockType::SingleLock;
+  } else {
+    panic("Unknown StreamAtomicLockType %s.", lockType);
   }
 }
 

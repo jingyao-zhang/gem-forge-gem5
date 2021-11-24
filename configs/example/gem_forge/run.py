@@ -222,8 +222,8 @@ parser.add_option("--gem-forge-enable-stream-zero-compute-latency", action="stor
 parser.add_option("--gem-forge-enable-stream-range-sync", action="store_true",
                   default="False",
                   help="Range-based synchronization between Core/LLC StreamEngine.")
-parser.add_option("--gem-forge-stream-atomic-lock-type", type="choice", default="none",
-                  choices=['none', 'single', 'multi-reader'],
+parser.add_option("--gem-forge-stream-atomic-lock-type", type="choice", default="multi-reader",
+                  choices=['single', 'multi-reader'],
                   help="Set StreamAtomicLockType in LLC StreamEngine.")
 parser.add_option("--gem-forge-enable-stream-float-indirect-reduction", action="store_true",
                   default="False",
