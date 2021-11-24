@@ -9,9 +9,8 @@
 class StreamNUCAManager {
 public:
   StreamNUCAManager(Process *_process, bool _enabled,
-                    float _indirectPageRemapThreshold)
-      : process(_process), enabled(_enabled),
-        indirectPageRemapThreshold(_indirectPageRemapThreshold) {}
+                    const std::string &_indirectPageRemapPolicy,
+                    float _indirectPageRemapThreshold);
 
   /**
    * We panic on copy. Required for process clone.
@@ -64,6 +63,11 @@ public:
 private:
   Process *process;
   const bool enabled;
+  enum IndirectPageRemapPolicy {
+    CLOESEST,
+    TILE,
+  };
+  IndirectPageRemapPolicy indirectPageRemapPolicy;
   const float indirectPageRemapThreshold;
 
   std::map<Addr, StreamRegion> startVAddrRegionMap;

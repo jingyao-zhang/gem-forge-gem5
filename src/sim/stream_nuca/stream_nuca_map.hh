@@ -25,13 +25,17 @@ public:
     int routerId;
     MachineID machineId;
     AddrRange addrRange;
+    std::vector<int> handleBanks;
     NonUniformNode(int _routerId, MachineID _machineId,
-                   const AddrRange &_addrRange)
-        : routerId(_routerId), machineId(_machineId), addrRange(_addrRange) {}
+                   const AddrRange &_addrRange,
+                   const std::vector<int> &_handleBanks)
+        : routerId(_routerId), machineId(_machineId), addrRange(_addrRange),
+          handleBanks(_handleBanks) {}
   };
   using NonUniformNodeVec = std::vector<NonUniformNode>;
   static void addNonUniformNode(int routerId, MachineID machineId,
-                                const AddrRange &addrRange);
+                                const AddrRange &addrRange,
+                                const std::vector<int> &handleBanks);
   static const NonUniformNodeVec &getNUMANodes() { return numaNodes; }
   static const NonUniformNode &mapPAddrToNUMANode(Addr paddr);
   static int mapPAddrToNUMARouterId(Addr paddr);

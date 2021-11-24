@@ -90,11 +90,6 @@ class MeshDir_XY(SimpleTopology):
                                 latency=self.link_latency))
         self.link_count += 1
 
-        self.num_numa_nodes = 0
-        for n in self.numa_nodes:
-            if n:
-                self.num_numa_nodes += 1
-
 
     def makeDirMiddleTopology(self, ExtLink, dir_nodes, routers, ext_links):
         num_dir_rows = int(math.sqrt(len(dir_nodes)))
@@ -121,7 +116,9 @@ class MeshDir_XY(SimpleTopology):
                 self.link_count += 1
 
         # NUMA Node for cloest routers.
-        self.numa_nodes = [[]] * len(dir_nodes)
+        self.numa_nodes = []
+        for i in range(len(dir_nodes)):
+            self.numa_nodes.append(list())
         for i in range(self.num_routers):
             router_row, router_col = divmod(i, self.num_columns)
             min_diff = -1
@@ -135,11 +132,6 @@ class MeshDir_XY(SimpleTopology):
                     min_dir = j
                     min_diff = diff
             self.numa_nodes[min_dir].append(i)
-
-        self.num_numa_nodes = 0
-        for n in self.numa_nodes:
-            if n:
-                self.num_numa_nodes += 1
 
     def makeDirTileTopology(self, ExtLink, dir_nodes, routers, ext_links):
         num_dir_rows = int(math.sqrt(len(dir_nodes)))
@@ -180,7 +172,9 @@ class MeshDir_XY(SimpleTopology):
                 self.link_count += 1
 
         # NUMA Node for routers in the tile.
-        self.numa_nodes = [[]] * len(dir_nodes)
+        self.numa_nodes = []
+        for i in range(len(dir_nodes)):
+            self.numa_nodes.append(list())
         for i in range(self.num_routers):
             router_row, router_col = divmod(i, self.num_columns)
             tile_row = router_row // num_tile_rows
@@ -188,11 +182,6 @@ class MeshDir_XY(SimpleTopology):
             dir_idx = tile_row * num_dir_columns + tile_col
             print(f'[MeshDirTile] NUMA Router {router_row}x{router_col} -> Dir {tile_row}x{tile_col}.')
             self.numa_nodes[dir_idx].append(i)
-
-        self.num_numa_nodes = 0
-        for n in self.numa_nodes:
-            if n:
-                self.num_numa_nodes += 1
 
     def makeDirDiagTopology(self, ExtLink, dir_nodes, routers, ext_links):
         num_dirs = len(dir_nodes)
@@ -214,17 +203,14 @@ class MeshDir_XY(SimpleTopology):
             self.link_count += 1
 
         # NUMA Node for routers in the same column
-        self.numa_nodes = [[]] * len(dir_nodes)
+        self.numa_nodes = []
+        for i in range(len(dir_nodes)):
+            self.numa_nodes.append(list())
         for i in range(self.num_routers):
             router_row, router_col = divmod(i, self.num_columns)
             dir_idx = router_col
             print(f'[MeshDirTile] NUMA Router {router_row}x{router_col} -> Dir {dir_idx}.')
             self.numa_nodes[dir_idx].append(i)
-
-        self.num_numa_nodes = 0
-        for n in self.numa_nodes:
-            if n:
-                self.num_numa_nodes += 1
 
     def makeTopology(self, options, network, IntLink, ExtLink, Router):
         nodes = self.nodes
@@ -304,6 +290,16 @@ class MeshDir_XY(SimpleTopology):
         else:
             print('Unsupported Dir Location.')
             assert(False)
+
+        self.num_numa_nodes = 0
+        for n in self.numa_nodes:
+            if n:
+                self.num_numa_nodes += 1
+        
+        # Expose numa banks to the controller.
+        for dir_idx in range(len(dir_nodes)):
+            numa_nodes = self.numa_nodes[dir_idx]
+            dir_nodes[dir_idx].numa_banks = numa_nodes
 
         network.ext_links = ext_links
 

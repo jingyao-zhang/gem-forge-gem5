@@ -49,14 +49,15 @@ void StreamNUCAMap::initializeCache(int blockSize, int numSet, int assoc) {
 }
 
 void StreamNUCAMap::addNonUniformNode(int routerId, MachineID machineId,
-                                      const AddrRange &addrRange) {
+                                      const AddrRange &addrRange,
+                                      const std::vector<int> &handleBanks) {
   if (machineId.getType() != MachineType_Directory) {
     return;
   }
   DPRINTF(StreamNUCAMap,
           "[StreamNUCA] Add NonUniformNode %s RouterId %d AddrRange %s.\n",
           machineId, routerId, addrRange.to_string());
-  numaNodes.emplace_back(routerId, machineId, addrRange);
+  numaNodes.emplace_back(routerId, machineId, addrRange, handleBanks);
   std::sort(numaNodes.begin(), numaNodes.end(),
             [](const NonUniformNode &A, const NonUniformNode &B) -> bool {
               return A.machineId.getNum() < B.machineId.getNum();

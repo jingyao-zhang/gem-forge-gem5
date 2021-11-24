@@ -1487,6 +1487,11 @@ cloneFunc(SyscallDesc *desc, ThreadContext *tc, RegVal flags, RegVal newStack,
     pp->euid = p->euid();
     pp->gid = p->gid();
     pp->egid = p->egid();
+    pp->enableStreamNUCA = p->myParams->enableStreamNUCA;
+    pp->streamNUCAIndPageRemapPolicy =
+        p->myParams->streamNUCAIndPageRemapPolicy;
+    pp->streamNUCAIndPageRemapThreshold =
+        p->myParams->streamNUCAIndPageRemapThreshold;
 
     /* Find the first free PID that's less than the maximum */
     std::set<int> const& pids = p->system->PIDs;

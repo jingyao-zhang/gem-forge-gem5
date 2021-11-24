@@ -123,6 +123,10 @@ class MeshDirCorners_XY(SimpleTopology):
             if n:
                 self.num_numa_nodes += 1
 
+        for dir_idx in range(len(dir_nodes)):
+            numa_nodes = self.numa_nodes[dir_idx]
+            dir_nodes[dir_idx].numa_banks = numa_nodes
+
         # Connect the dir nodes to the corners.
         ext_links.append(ExtLink(link_id=link_count, ext_node=dir_nodes[0],
                                 int_node=routers[0],

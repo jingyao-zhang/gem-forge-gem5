@@ -63,6 +63,8 @@ def get_processes(options):
         process.markSwitchcpu = options.gem_forge_work_mark_switch_cpu
         process.markEnd = options.gem_forge_work_mark_end
         process.enableStreamNUCA = options.gem_forge_enable_stream_nuca
+        process.streamNUCAIndPageRemapPolicy = \
+            options.gem_forge_stream_nuca_ind_page_remap_policy
         process.streamNUCAIndPageRemapThreshold = \
             options.gem_forge_stream_nuca_ind_page_remap_threshold
 

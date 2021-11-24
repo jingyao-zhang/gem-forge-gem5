@@ -22,8 +22,24 @@ Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
 Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCFinalHops;
 Stats::DistributionNoReset StreamNUCAManager::indRegionMemFinalBanks;
 
+StreamNUCAManager::StreamNUCAManager(
+    Process *_process, bool _enabled,
+    const std::string &_indirectPageRemapPolicy,
+    float _indirectPageRemapThreshold)
+    : process(_process), enabled(_enabled),
+      indirectPageRemapThreshold(_indirectPageRemapThreshold) {
+  if (_indirectPageRemapPolicy == "closest") {
+    this->indirectPageRemapPolicy = IndirectPageRemapPolicy::CLOESEST;
+  } else if (_indirectPageRemapPolicy == "tile") {
+    this->indirectPageRemapPolicy = IndirectPageRemapPolicy::TILE;
+  } else {
+    panic("Unknown IndirectPageRemapPolicy %s.", _indirectPageRemapPolicy);
+  }
+}
+
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
     : process(other.process), enabled(other.enabled),
+      indirectPageRemapPolicy(other.indirectPageRemapPolicy),
       indirectPageRemapThreshold(other.indirectPageRemapThreshold) {
   panic("StreamNUCAManager does not have copy constructor.");
 }
@@ -237,7 +253,8 @@ void StreamNUCAManager::remapDirectRegion(const StreamRegion &region) {
   int startSet = 0;
 
   if (region.name.find("rodinia.pathfinder") == 0 ||
-      region.name.find("rodinia.hotspot3D") == 0) {
+      region.name.find("rodinia.hotspot3D") == 0 ||
+      region.name.find("gap.pr_push.") == 0) {
     // Pathfinder need to start at the original bank.
     startBank = (startPAddr / interleave) %
                 (StreamNUCAMap::getNumCols() * StreamNUCAMap::getNumRows());
@@ -311,27 +328,71 @@ void StreamNUCAManager::remapIndirectPage(ThreadContext *tc,
                                pageData, alignToBankFrequency);
   indRegionMemToLLCDefaultHops += defaultHops;
 
-  /**
-   * For all valid NUMA nodes, select the one has lowest traffic.
-   */
   const auto &numaNodes = StreamNUCAMap::getNUMANodes();
   int selectedNUMANode = -1;
   int selectedBank = -1;
   int64_t selectedNUMANodeTraffic = 0;
-  for (int i = 0; i < numaNodes.size(); ++i) {
-    const auto &numaNode = numaNodes.at(i);
-    int64_t traffic = 0;
+  if (this->indirectPageRemapPolicy == IndirectPageRemapPolicy::CLOESEST) {
+    /**
+     * For all valid NUMA nodes, select the one has lowest traffic.
+     */
+    for (int i = 0; i < numaNodes.size(); ++i) {
+      const auto &numaNode = numaNodes.at(i);
+      int64_t traffic = 0;
+      for (int bank = 0; bank < alignToBankFrequency.size(); ++bank) {
+        traffic += StreamNUCAMap::computeHops(bank, numaNode.routerId) *
+                   alignToBankFrequency.at(bank);
+      }
+      DPRINTF(StreamNUCAManager, "  NUMA %d Router %d Traffic %ld.\n", i,
+              numaNode.routerId, traffic);
+      if (selectedNUMANode == -1 || traffic < selectedNUMANodeTraffic) {
+        selectedNUMANode = i;
+        selectedBank = numaNode.routerId;
+        selectedNUMANodeTraffic = traffic;
+      }
+    }
+  } else if (this->indirectPageRemapPolicy == IndirectPageRemapPolicy::TILE) {
+    /**
+     * First find the bank with highest frequency, then pick the memory
+     * controller in that tile.
+     * This is used to avoid heavy load imbalance.
+     */
+    int maxFreq = 0;
+    int maxFreqBank = 0;
     for (int bank = 0; bank < alignToBankFrequency.size(); ++bank) {
-      traffic += StreamNUCAMap::computeHops(bank, numaNode.routerId) *
-                 alignToBankFrequency.at(bank);
+      auto freq = alignToBankFrequency.at(bank);
+      if (freq > maxFreq) {
+        maxFreq = freq;
+        maxFreqBank = bank;
+      }
     }
-    DPRINTF(StreamNUCAManager, "  NUMA %d Router %d Traffic %ld.\n", i,
-            numaNode.routerId, traffic);
-    if (selectedNUMANode == -1 || traffic < selectedNUMANodeTraffic) {
-      selectedNUMANode = i;
-      selectedBank = numaNode.routerId;
-      selectedNUMANodeTraffic = traffic;
+    // Search for the NUCA node handling this bank.
+    for (int i = 0; i < numaNodes.size(); ++i) {
+      const auto &numaNode = numaNodes.at(i);
+      for (const auto &handleBank : numaNode.handleBanks) {
+        if (handleBank == maxFreqBank) {
+          // Compute the traffic.
+          int64_t traffic = 0;
+          for (int bank = 0; bank < alignToBankFrequency.size(); ++bank) {
+            traffic += StreamNUCAMap::computeHops(bank, numaNode.routerId) *
+                       alignToBankFrequency.at(bank);
+          }
+          selectedNUMANode = i;
+          selectedBank = numaNode.routerId;
+          selectedNUMANodeTraffic = traffic;
+          break;
+        }
+      }
+      if (selectedNUMANode != -1) {
+        break;
+      }
     }
+    if (selectedNUMANode == -1) {
+      panic("Failed to find NUMANode for MaxFreqBank %d.", maxFreqBank);
+    }
+
+  } else {
+    assert(false && "Unsupported IndirectPageRemapPolicy.");
   }
 
   if (Debug::StreamNUCAManager) {

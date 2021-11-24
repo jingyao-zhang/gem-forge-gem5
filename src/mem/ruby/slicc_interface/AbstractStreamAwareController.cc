@@ -48,7 +48,8 @@ void AbstractStreamAwareController::init() {
    */
   assert(myParams->addr_ranges.size() == 1 && "Multiple AddrRanges.");
   StreamNUCAMap::addNonUniformNode(myParams->router_id, this->m_machineID,
-                                   myParams->addr_ranges.front());
+                                   myParams->addr_ranges.front(),
+                                   myParams->numa_banks);
 }
 
 void AbstractStreamAwareController::regStats() {

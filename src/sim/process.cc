@@ -113,7 +113,7 @@ normalize(std::string& directory)
 
 Process::Process(ProcessParams *params, EmulationPageTable *pTable,
                  ::Loader::ObjectFile *obj_file)
-    : SimObject(params), system(params->system),
+    : SimObject(params), myParams(params), system(params->system),
       lazyAllocation(new bool(params->lazyAllocation)),
       yieldWakeupTick(new Tick(params->yieldWakeup)),
       useArchPT(params->useArchPT),
@@ -171,6 +171,7 @@ Process::Process(ProcessParams *params, EmulationPageTable *pTable,
 
     this->streamNUCAManager = std::make_shared<StreamNUCAManager>(
         this, params->enableStreamNUCA,
+        params->streamNUCAIndPageRemapPolicy,
         params->streamNUCAIndPageRemapThreshold);
 }
 

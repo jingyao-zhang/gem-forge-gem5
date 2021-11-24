@@ -159,6 +159,8 @@ class Process : public SimObject
 
     void encounterWorkMark(uint64_t markId);
 
+    ProcessParams *myParams;
+
     // thread contexts associated with this process
     std::vector<ContextID> contextIds;
 
