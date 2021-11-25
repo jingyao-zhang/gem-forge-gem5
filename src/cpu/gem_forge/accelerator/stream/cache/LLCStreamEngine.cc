@@ -484,8 +484,10 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
     return;
   }
 
-  if (S->isAtomicComputeStream() || S->isUpdateStream()) {
-    this->processAtomicOrUpdateSlice(dynS, sliceId, storeValueBlock);
+  if (S->isAtomicComputeStream()) {
+    this->processIndirectAtomicSlice(dynS, sliceId, storeValueBlock);
+  } else if (S->isUpdateStream()) {
+    this->processIndirectUpdateSlice(dynS, sliceId, storeValueBlock);
   }
 
   if (S->isLoadComputeStream()) {
@@ -2964,7 +2966,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
       }
     }
     // We can finally process it.
-    this->processAtomicOrUpdateSlice(dynS, sliceId, slice->getStoreBlock());
+    this->processDirectAtomicSlice(dynS, sliceId, slice->getStoreBlock());
 
   } else if (S->isUpdateStream()) {
     /**
@@ -3098,7 +3100,7 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynamicStreamPtr dynS,
   slice->setLoadComputeValueSent();
 }
 
-void LLCStreamEngine::processAtomicOrUpdateSlice(
+void LLCStreamEngine::processDirectAtomicSlice(
     LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId,
     const DataBlock &storeValueBlock) {
 
@@ -3108,26 +3110,12 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
    * sent back to MLC is correctly sliced.
    */
   auto S = dynS->getStaticStream();
+  assert(S->isAtomicComputeStream() && S->isDirectMemStream() &&
+         "Not DirectAtomicComputeStream.");
   bool coreNeedValue = false;
   auto dynCoreS = S->getDynamicStream(dynS->getDynamicStreamId());
   if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
     coreNeedValue = true;
-  }
-
-  /**
-   * Speical case for the second request for IndirectAtomicStream
-   * with core usage. We just need to send back an Ack.
-   */
-  if (dynS->isIndirect() && S->isAtomicComputeStream()) {
-    auto elementIdx = sliceId.getStartIdx();
-    auto element = dynS->getElementPanic(
-        elementIdx, "Check IndirectAtomicElement second request.");
-    if (element->hasFirstIndirectAtomicReqSeen()) {
-      // This is the second time, should already be handled in
-      // receiveStreamIndirectRequest().
-      LLC_SLICE_PANIC(sliceId, "[Commit] Atomic should be release when "
-                               "receiving the second request.");
-    }
   }
 
   // The final value return to the core.
@@ -3151,13 +3139,140 @@ void LLCStreamEngine::processAtomicOrUpdateSlice(
                       idx);
     }
     uint32_t payloadSize = 0;
-    if (S->isAtomicComputeStream()) {
-      this->triggerAtomic(dynS, element, sliceId, storeValueBlock,
-                          loadValueBlock, payloadSize);
-    } else {
-      this->triggerUpdate(dynS, element, sliceId, storeValueBlock,
-                          loadValueBlock, payloadSize);
+    this->triggerAtomic(dynS, element, sliceId, storeValueBlock, loadValueBlock,
+                        payloadSize);
+    totalPayloadSize += payloadSize;
+  }
+
+  // This is to make sure traffic to MLC is correctly sliced.
+  if (coreNeedValue) {
+    Addr paddr = 0;
+    assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
+    auto paddrLine = makeLineAddress(paddr);
+    this->issueStreamDataToMLC(
+        sliceId, paddrLine,
+        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
+        RubySystem::getBlockSizeBytes(),
+        std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
+        0 /* Line offset */);
+    LLC_SLICE_DPRINTF(sliceId,
+                      "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
+                      paddrLine, loadValueBlock);
+  } else {
+    this->issueStreamAckToMLC(sliceId);
+  }
+}
+
+void LLCStreamEngine::processIndirectAtomicSlice(
+    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId,
+    const DataBlock &storeValueBlock) {
+
+  /**
+   * First we check whether we should send back value or ack.
+   * Also we do not handle elements in-order, as we want the message
+   * sent back to MLC is correctly sliced.
+   */
+  auto S = dynS->getStaticStream();
+  assert(S->isAtomicComputeStream() && !S->isDirectMemStream() &&
+         "Not IndirectAtomicComputeStream.");
+  bool coreNeedValue = false;
+  auto dynCoreS = S->getDynamicStream(dynS->getDynamicStreamId());
+  if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
+    coreNeedValue = true;
+  }
+
+  /**
+   * Speical case for the second request for IndirectAtomicStream
+   * with core usage. We just need to send back an Ack.
+   */
+  auto elementIdx = sliceId.getStartIdx();
+  auto element = dynS->getElementPanic(
+      elementIdx, "Check IndirectAtomicElement second request.");
+  if (element->hasFirstIndirectAtomicReqSeen()) {
+    // This is the second time, should already be handled in
+    // receiveStreamIndirectRequest().
+    LLC_SLICE_PANIC(sliceId, "[Commit] Atomic should be release when "
+                             "receiving the second request.");
+  }
+
+  // The final value return to the core.
+  DataBlock loadValueBlock;
+  uint32_t totalPayloadSize = 0;
+  LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+                    element->idx, element->vaddr);
+  if (!element->isReady()) {
+    // Not ready yet. Break.
+    LLC_SLICE_PANIC(sliceId, "Element not ready while triggering atomic.");
+  }
+  if (!element->areBaseElementsReady()) {
+    // We are still waiting for base elements.
+    LLC_SLICE_PANIC(sliceId, "Base element not ready when process atomic.");
+  }
+  uint32_t payloadSize = 0;
+  this->triggerAtomic(dynS, element, sliceId, storeValueBlock, loadValueBlock,
+                      payloadSize);
+  totalPayloadSize += payloadSize;
+
+  // This is to make sure traffic to MLC is correctly sliced.
+  if (coreNeedValue) {
+    Addr paddr = 0;
+    assert(dynS->translateToPAddr(sliceId.vaddr, paddr));
+    auto paddrLine = makeLineAddress(paddr);
+    this->issueStreamDataToMLC(
+        sliceId, paddrLine,
+        loadValueBlock.getData(0, RubySystem::getBlockSizeBytes()),
+        RubySystem::getBlockSizeBytes(),
+        std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
+        0 /* Line offset */);
+    LLC_SLICE_DPRINTF(sliceId,
+                      "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
+                      paddrLine, loadValueBlock);
+  } else {
+    this->issueStreamAckToMLC(sliceId);
+  }
+}
+
+void LLCStreamEngine::processIndirectUpdateSlice(
+    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId,
+    const DataBlock &storeValueBlock) {
+
+  /**
+   * First we check whether we should send back value or ack.
+   * Also we do not handle elements in-order, as we want the message
+   * sent back to MLC is correctly sliced.
+   */
+  auto S = dynS->getStaticStream();
+  assert(S->isUpdateStream() && !S->isDirectMemStream() &&
+         "Not IndirectUpdateStream.");
+  bool coreNeedValue = false;
+  auto dynCoreS = S->getDynamicStream(dynS->getDynamicStreamId());
+  if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
+    coreNeedValue = true;
+  }
+
+  // The final value return to the core.
+  DataBlock loadValueBlock;
+  uint32_t totalPayloadSize = 0;
+  for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
+    auto element =
+        dynS->getElementPanic(idx, "Process slice of Atomic/UpdateStream");
+    LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
+                      element->idx, element->vaddr);
+    if (!element->isReady()) {
+      // Not ready yet. Break.
+      LLC_SLICE_PANIC(sliceId,
+                      "Element %llu not ready while we are triggering update.",
+                      idx);
     }
+    if (!element->areBaseElementsReady()) {
+      // We are still waiting for base elements.
+      LLC_SLICE_PANIC(sliceId,
+                      "Element %llu has base element not ready when updating.",
+                      idx);
+    }
+    uint32_t payloadSize = 0;
+    this->triggerUpdate(dynS, element, sliceId, storeValueBlock, loadValueBlock,
+                        payloadSize);
     totalPayloadSize += payloadSize;
   }
 
