@@ -997,7 +997,7 @@ bool LLCDynamicStream::hasComputation() const {
   auto S = this->getStaticStream();
   return S->isReduction() || S->isPointerChaseIndVar() ||
          S->isLoadComputeStream() || S->isStoreComputeStream() ||
-         S->isUpdateStream();
+         S->isUpdateStream() || S->isAtomicComputeStream();
 }
 
 StreamValue LLCDynamicStream::computeStreamElementValue(
@@ -1087,6 +1087,14 @@ StreamValue LLCDynamicStream::computeStreamElementValue(
                          latency, storeValue);
     return storeValue;
 
+  } else if (S->isAtomicComputeStream()) {
+
+    // So far Atomic are really computed at completeComputation.
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
+                         "[Latency %llu] Compute Dummy AtomicValue.\n",
+                         S->getEstimatedComputationLatency());
+    return StreamValue();
+
   } else {
     LLC_ELEMENT_PANIC(element, "No Computation for this stream.");
   }
@@ -1099,10 +1107,13 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
   element->doneComputation();
   /**
    * LoadCompute/Update store computed value in ComputedValue.
+   * AtomicComputeStream has no computed value.
    * IndirectReductionStream separates compuation from charging the latency.
    */
   if (S->isLoadComputeStream() || S->isUpdateStream()) {
     element->setComputedValue(value);
+  } else if (S->isAtomicComputeStream()) {
+
   } else if (!this->isIndirectReduction()) {
     element->setValue(value);
   }
@@ -1151,9 +1162,15 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
     }
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamStore, element,
                          "StreamUpdate done with value %s.\n", value);
-  }
 
-  if (S->isReduction() || S->isPointerChaseIndVar()) {
+  } else if (S->isAtomicComputeStream()) {
+
+    // Ask the SE for post processing.
+    assert(!S->isDirectMemStream() &&
+           "Only IndirectAtomic will complete computation.");
+    se->postProcessIndirectAtomicSlice(this, element);
+
+  } else if (S->isReduction() || S->isPointerChaseIndVar()) {
     if (this->isIndirectReduction()) {
       /**
        * If this is IndirectReductionStream, perform the real computation.

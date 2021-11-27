@@ -238,6 +238,14 @@ private:
    * Explicitly remember the previous element for ReductionStream.
    */
   LLCStreamElementPtr prevReductionElement = nullptr;
+
+public:
+  /**
+   * Used to remember the IndirectAtomicCompute slice id.
+   * TODO: This is a pure hack. We can easily reconstruct the slice id from the
+   * TODO: indirect element.
+   */
+  DynamicStreamSliceId indirectAtomicSliceId;
 };
 
 #endif

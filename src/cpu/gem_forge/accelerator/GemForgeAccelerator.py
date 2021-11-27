@@ -114,6 +114,8 @@ class StreamEngine(GemForgeAccelerator):
         "Whether two-level indirect store compute stream can be floated.")
     enableFineGrainedNearDataComputing = Param.Bool(False,
         "Whether we enable per element fine-grained near-data computing.")
+    hasScalarALU = Param.Bool(True,
+        "Whether SE has scalar ALU to avoid going to the core.")
 
     # parameters for floating to memory.
     enableFloatMem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")

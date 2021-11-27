@@ -69,6 +69,7 @@ def initializeStreamEngine(options):
         # Half the latency for LLC SIMD Delay, as we are closer to core.
         simd_delay = simd_delay // 2
     se.computeSIMDDelay = simd_delay
+    se.hasScalarALU = options.gem_forge_stream_engine_has_scalar_alu
     se.computeMaxInflyComputation =\
         options.gem_forge_stream_engine_llc_max_infly_computation
     se.enableZeroComputeLatency =\

@@ -587,8 +587,10 @@ void StreamElement::computeValue() {
 
     /**
      * Charge the initial latency to access the Core SIMD unit here.
+     * 1. If this is SIMD operation.
+     * 2. If the SE has not scalar ALU.
      */
-    if (S->isSIMDComputation()) {
+    if (!this->se->myParams->hasScalarALU || S->isSIMDComputation()) {
       estimatedLatency += Cycles(this->se->myParams->computeSIMDDelay);
     }
 

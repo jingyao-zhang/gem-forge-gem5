@@ -485,7 +485,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   }
 
   if (S->isAtomicComputeStream()) {
-    this->processIndirectAtomicSlice(dynS, sliceId, storeValueBlock);
+    this->processIndirectAtomicSlice(dynS, sliceId);
   } else if (S->isUpdateStream()) {
     this->processIndirectUpdateSlice(dynS, sliceId, storeValueBlock);
   }
@@ -515,16 +515,18 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   /**
    * Here we release the indirect element, with a few exceptions:
    * 1. DirectStream element released after all slices are released.
-   * 2. IndirectStream that will issue after commit, e.g.
-   * AtomicStream, will be released when the final request is
-   * handled.
+   * 2. For IndirectAtomicComputeStream:
+   *   a. If it issues after commit, will be released when the final request is
+   *      handled.
+   *   b. If not, will be released in postProcessIndirectAtomicSlice().
    * 3. IndirectLoadComputeStream is released in releaseSlice().
    */
   LLC_S_DPRINTF(dynS->getDynamicStreamId(),
                 "[IndirectRelease] Check ShouldIssueAfterCommit %d "
                 "IsLoadCompute %d.\n",
                 dynS->shouldIssueAfterCommit(), S->isLoadComputeStream());
-  if (!dynS->shouldIssueAfterCommit() && !S->isLoadComputeStream()) {
+  if (!dynS->shouldIssueAfterCommit() && !S->isLoadComputeStream() &&
+      !S->isAtomicComputeStream()) {
     while (!dynS->idxToElementMap.empty()) {
       auto elementIter = dynS->idxToElementMap.begin();
       const auto &element = elementIter->second;
@@ -2748,7 +2750,6 @@ void LLCStreamEngine::triggerUpdate(LLCDynamicStreamPtr dynS,
 void LLCStreamEngine::triggerAtomic(LLCDynamicStreamPtr dynS,
                                     LLCStreamElementPtr element,
                                     const DynamicStreamSliceId &sliceId,
-                                    const DataBlock &storeValueBlock,
                                     DataBlock &loadValueBlock,
                                     uint32_t &payloadSize) {
 
@@ -2966,7 +2967,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
       }
     }
     // We can finally process it.
-    this->processDirectAtomicSlice(dynS, sliceId, slice->getStoreBlock());
+    this->processDirectAtomicSlice(dynS, sliceId);
 
   } else if (S->isUpdateStream()) {
     /**
@@ -3101,8 +3102,7 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynamicStreamPtr dynS,
 }
 
 void LLCStreamEngine::processDirectAtomicSlice(
-    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId,
-    const DataBlock &storeValueBlock) {
+    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId) {
 
   /**
    * First we check whether we should send back value or ack.
@@ -3117,6 +3117,8 @@ void LLCStreamEngine::processDirectAtomicSlice(
   if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
     coreNeedValue = true;
   }
+
+  auto numMicroOps = S->getComputationNumMicroOps();
 
   // The final value return to the core.
   DataBlock loadValueBlock;
@@ -3139,9 +3141,19 @@ void LLCStreamEngine::processDirectAtomicSlice(
                       idx);
     }
     uint32_t payloadSize = 0;
-    this->triggerAtomic(dynS, element, sliceId, storeValueBlock, loadValueBlock,
-                        payloadSize);
+    this->triggerAtomic(dynS, element, sliceId, loadValueBlock, payloadSize);
     totalPayloadSize += payloadSize;
+
+    /**
+     * IndirectAtomics are modelled by ComputeEngine, thus we record
+     * DirectAtomicStats here.
+     * For now we don't bother add the stats to the core in my bank.
+     */
+    S->recordComputationInCoreStats();
+    this->controller->m_statLLCPerformedAtomics++;
+    this->controller->m_statLLCScheduledComputation++;
+    this->controller->m_statLLCScheduledComputeMicroOps += numMicroOps;
+    this->recordComputationMicroOps(S);
   }
 
   // This is to make sure traffic to MLC is correctly sliced.
@@ -3164,8 +3176,7 @@ void LLCStreamEngine::processDirectAtomicSlice(
 }
 
 void LLCStreamEngine::processIndirectAtomicSlice(
-    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId,
-    const DataBlock &storeValueBlock) {
+    LLCDynamicStreamPtr dynS, const DynamicStreamSliceId &sliceId) {
 
   /**
    * First we check whether we should send back value or ack.
@@ -3175,12 +3186,6 @@ void LLCStreamEngine::processIndirectAtomicSlice(
   auto S = dynS->getStaticStream();
   assert(S->isAtomicComputeStream() && !S->isDirectMemStream() &&
          "Not IndirectAtomicComputeStream.");
-  bool coreNeedValue = false;
-  auto dynCoreS = S->getDynamicStream(dynS->getDynamicStreamId());
-  if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
-    coreNeedValue = true;
-  }
-
   /**
    * Speical case for the second request for IndirectAtomicStream
    * with core usage. We just need to send back an Ack.
@@ -3195,11 +3200,9 @@ void LLCStreamEngine::processIndirectAtomicSlice(
                              "receiving the second request.");
   }
 
-  // The final value return to the core.
-  DataBlock loadValueBlock;
-  uint32_t totalPayloadSize = 0;
-  LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
-                    element->idx, element->vaddr);
+  LLC_SLICE_DPRINTF(sliceId,
+                    "[IndirectAtomic] Schedule computation for vaddr %#x.\n",
+                    element->vaddr);
   if (!element->isReady()) {
     // Not ready yet. Break.
     LLC_SLICE_PANIC(sliceId, "Element not ready while triggering atomic.");
@@ -3208,10 +3211,34 @@ void LLCStreamEngine::processIndirectAtomicSlice(
     // We are still waiting for base elements.
     LLC_SLICE_PANIC(sliceId, "Base element not ready when process atomic.");
   }
+
+  /**
+   * Push ready computation.
+   */
+  element->indirectAtomicSliceId = sliceId;
+  this->pushReadyComputation(element);
+}
+
+void LLCStreamEngine::postProcessIndirectAtomicSlice(
+    LLCDynamicStreamPtr dynS, const LLCStreamElementPtr &element) {
+
+  const auto &sliceId = element->indirectAtomicSliceId;
+  assert(sliceId.isValid() && "Invalid IndirectAtomic slice id.");
+
+  // The final value return to the core.
+  DataBlock loadValueBlock;
+  uint32_t totalPayloadSize = 0;
+
   uint32_t payloadSize = 0;
-  this->triggerAtomic(dynS, element, sliceId, storeValueBlock, loadValueBlock,
-                      payloadSize);
+  this->triggerAtomic(dynS, element, sliceId, loadValueBlock, payloadSize);
   totalPayloadSize += payloadSize;
+
+  auto S = dynS->getStaticStream();
+  bool coreNeedValue = false;
+  auto dynCoreS = S->getDynamicStream(dynS->getDynamicStreamId());
+  if (dynCoreS && dynCoreS->shouldCoreSEIssue()) {
+    coreNeedValue = true;
+  }
 
   // This is to make sure traffic to MLC is correctly sliced.
   if (coreNeedValue) {
@@ -3224,11 +3251,28 @@ void LLCStreamEngine::processIndirectAtomicSlice(
         RubySystem::getBlockSizeBytes(),
         std::min(totalPayloadSize, RubySystem::getBlockSizeBytes()),
         0 /* Line offset */);
-    LLC_SLICE_DPRINTF(sliceId,
-                      "Send StreamData to MLC: PAddrLine %#x Data %s.\n",
-                      paddrLine, loadValueBlock);
+    LLC_SLICE_DPRINTF(
+        sliceId, "[IndirectAtomic] Send Data to MLC: PAddrLine %#x Data %s.\n",
+        paddrLine, loadValueBlock);
   } else {
     this->issueStreamAckToMLC(sliceId);
+  }
+
+  /**
+   * Try to release element if we don't need to issue after commit.
+   */
+  if (!dynS->shouldIssueAfterCommit()) {
+    while (!dynS->idxToElementMap.empty()) {
+      auto elementIter = dynS->idxToElementMap.begin();
+      const auto &element = elementIter->second;
+      if (!element->isComputationDone()) {
+        LLC_ELEMENT_DPRINTF(
+            element, "[IndirectAtomic] Cannot release ComputationDone %d.\n",
+            element->isComputationDone());
+        break;
+      }
+      dynS->eraseElement(elementIter);
+    }
   }
 }
 
@@ -3619,9 +3663,11 @@ void LLCStreamEngine::startComputation() {
     auto S = element->S;
     Cycles latency = S->getEstimatedComputationLatency();
 
-    if (S->isSIMDComputation()) {
+    if (!this->controller->myParams->has_scalar_alu || S->isSIMDComputation()) {
       /**
-       * Here we charge extra latency for SIMD computation.
+       * Here we charge extra latency for accessing the core.
+       * 1. If this is SIMD operation.
+       * 2. If we disable scalar ALU in the stream engine.
        */
       latency += Cycles(this->controller->myParams->llc_access_core_simd_delay);
     }

@@ -381,7 +381,6 @@ private:
                      DataBlock &loadValueBlock, uint32_t &payloadSize);
   void triggerAtomic(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
                      const DynamicStreamSliceId &sliceId,
-                     const DataBlock &storeValueBlock,
                      DataBlock &loadValueBlock, uint32_t &payloadSize);
 
   /**
@@ -398,11 +397,11 @@ private:
   void processLoadComputeSlice(LLCDynamicStreamPtr dynS,
                                LLCStreamSlicePtr slice);
   void processDirectAtomicSlice(LLCDynamicStreamPtr dynS,
-                                const DynamicStreamSliceId &sliceId,
-                                const DataBlock &storeValueBlock);
+                                const DynamicStreamSliceId &sliceId);
   void processIndirectAtomicSlice(LLCDynamicStreamPtr dynS,
-                                  const DynamicStreamSliceId &sliceId,
-                                  const DataBlock &storeValueBlock);
+                                  const DynamicStreamSliceId &sliceId);
+  void postProcessIndirectAtomicSlice(LLCDynamicStreamPtr dynS,
+                                      const LLCStreamElementPtr &element);
   void processIndirectUpdateSlice(LLCDynamicStreamPtr dynS,
                                   const DynamicStreamSliceId &sliceId,
                                   const DataBlock &storeValueBlock);

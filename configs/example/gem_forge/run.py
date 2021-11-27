@@ -216,6 +216,9 @@ parser.add_option("--gem-forge-stream-engine-llc-max-infly-computation", action=
 parser.add_option("--gem-forge-stream-engine-llc-access-core-simd-delay", action="store",
                   type="int", default="0",
                   help="Delay for LLC StreamEngine to access core SIMD unit.")
+parser.add_option("--gem-forge-stream-engine-has-scalar-alu", action="store",
+                  type="int", default="1",
+                  help="Allow SE to handle scalar computation without accessing the core.")
 parser.add_option("--gem-forge-enable-stream-zero-compute-latency", action="store_true",
                   default="False",
                   help="Core/LLC StreamEngine compute done in 0 cycle latency.")

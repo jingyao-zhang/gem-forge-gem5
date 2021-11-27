@@ -933,10 +933,10 @@ const ExecFuncPtr &Stream::getComputeCallback() const {
     return this->loadCallback;
   } else if (this->isAtomicComputeStream()) {
     /**
-     * AtomicOp has to callbacks, here I just return LoadCallback to estimate
+     * AtomicOp has two callbacks, here I just return StoreCallback to estimate
      * MicroOps and Latency.
      */
-    return this->loadCallback;
+    return this->storeCallback;
   } else {
     S_PANIC(this, "No Computation Callback.");
   }
