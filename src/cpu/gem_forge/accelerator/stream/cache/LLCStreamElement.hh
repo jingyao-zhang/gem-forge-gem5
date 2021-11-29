@@ -27,6 +27,13 @@ public:
 
   ~LLCStreamElement();
 
+  /**
+   * To avoid stack overflow when destructing the recursive shared_ptr list,
+   * we implement deferred release.
+   */
+  static std::list<LLCStreamElementPtr> deferredReleaseElements;
+  static void releaseDeferredElements();
+
   Stream *S;
   AbstractStreamAwareController *mlcController;
   const DynamicStreamId dynStreamId;
@@ -246,6 +253,7 @@ public:
    * TODO: indirect element.
    */
   DynamicStreamSliceId indirectAtomicSliceId;
+
 };
 
 #endif

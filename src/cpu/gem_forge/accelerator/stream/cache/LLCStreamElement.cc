@@ -9,6 +9,8 @@
 #define DEBUG_TYPE LLCRubyStreamBase
 #include "../stream_log.hh"
 
+std::list<LLCStreamElementPtr> LLCStreamElement::deferredReleaseElements;
+
 LLCStreamElement::LLCStreamElement(
     Stream *_S, AbstractStreamAwareController *_mlcController,
     const DynamicStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr, int _size,
@@ -24,11 +26,29 @@ LLCStreamElement::LLCStreamElement(
     panic("LLCStreamElement allocated without MLCController.\n");
   }
   this->value.fill(0);
+  if (deferredReleaseElements.size() > 100) {
+    releaseDeferredElements();
+  }
 }
 
 LLCStreamElement::~LLCStreamElement() {
   this->S->statistic.sampleLLCElement(this->firstCheckCycle,
                                       this->valueReadyCycle);
+  if (this->prevReductionElement) {
+    deferredReleaseElements.emplace_back(std::move(this->prevReductionElement));
+  }
+  while (!this->baseElements.empty()) {
+    deferredReleaseElements.emplace_back(std::move(this->baseElements.back()));
+    this->baseElements.pop_back();
+  }
+}
+
+void LLCStreamElement::releaseDeferredElements() {
+  while (!deferredReleaseElements.empty()) {
+    std::list<LLCStreamElementPtr> tmp;
+    std::swap(tmp, deferredReleaseElements);
+    tmp.clear();
+  }
 }
 
 int LLCStreamElement::curRemoteBank() const {
