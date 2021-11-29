@@ -219,6 +219,9 @@ parser.add_option("--gem-forge-stream-engine-llc-access-core-simd-delay", action
 parser.add_option("--gem-forge-stream-engine-has-scalar-alu", action="store",
                   type="int", default="1",
                   help="Allow SE to handle scalar computation without accessing the core.")
+parser.add_option("--gem-forge-stream-engine-mlc-generate-direct-range", action="store",
+                  type="int", default="1",
+                  help="MLC SE will generate DirectRange so no need for Remote SE to send.")
 parser.add_option("--gem-forge-enable-stream-zero-compute-latency", action="store_true",
                   default="False",
                   help="Core/LLC StreamEngine compute done in 0 cycle latency.")

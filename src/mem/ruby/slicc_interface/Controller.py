@@ -127,6 +127,8 @@ class RubyStreamAwareController(RubyController):
     stream_atomic_lock_type = Param.String("none", "StreamAtomicLockType of none, single, multi-reader.")
     llc_access_core_simd_delay = Param.UInt32(4, "Latency to access core simd unit.")
     has_scalar_alu = Param.Bool(True, "Whether SE has scalar ALU to avoid going to the core.")
+    mlc_generate_direct_range = Param.Bool(True,
+        "Whether MLC SE generates DirectRanges so that Remote SE can issue Ranges ideally.")
 
     neighbor_stream_threshold = \
         Param.UInt32(0, "Number of streams to trigger migration control. 0 to disable.")

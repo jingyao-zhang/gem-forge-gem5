@@ -359,6 +359,8 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_llc_access_core_simd_delay,
                 has_scalar_alu=\
                     options.gem_forge_stream_engine_has_scalar_alu,
+                mlc_generate_direct_range=\
+                    options.gem_forge_stream_engine_mlc_generate_direct_range,
                 enable_llc_stream_zero_compute_latency=\
                     options.gem_forge_enable_stream_zero_compute_latency,
                 enable_stream_range_sync=\
@@ -466,6 +468,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.llc_stream_engine_compute_width = options.gem_forge_stream_engine_compute_width
         dir_cntrl.llc_stream_engine_max_infly_computation = options.gem_forge_stream_engine_llc_max_infly_computation
         dir_cntrl.llc_access_core_simd_delay = options.gem_forge_stream_engine_llc_access_core_simd_delay
+        dir_cntrl.mlc_generate_direct_range = options.gem_forge_stream_engine_mlc_generate_direct_range
         dir_cntrl.has_scalar_alu=options.gem_forge_stream_engine_has_scalar_alu
         dir_cntrl.enable_llc_stream_zero_compute_latency = options.gem_forge_enable_stream_zero_compute_latency
         dir_cntrl.enable_stream_range_sync = options.gem_forge_enable_stream_range_sync

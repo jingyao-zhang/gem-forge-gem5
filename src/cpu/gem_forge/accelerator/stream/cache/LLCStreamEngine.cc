@@ -2111,9 +2111,13 @@ void LLCStreamEngine::issueStreamRangesToMLC() {
     bool isDirectRange = !stream->isIndirect() &&
                          stream->getIndStreams().empty() &&
                          !stream->isPointerChase();
-    LLC_SE_DPRINTF_(StreamRangeSync, "Issue %s range to MLC: %s.\n",
-                    isDirectRange ? "direct" : "mixed", *range);
-    this->issueStreamRangeToMLC(range, isDirectRange);
+    bool isIdeal =
+        isDirectRange && this->controller->myParams->mlc_generate_direct_range;
+    LLC_SE_DPRINTF_(StreamRangeSync, "Issue %s %s range to MLC: %s.\n",
+                    isDirectRange ? "direct" : "mixed",
+                    isIdeal ? "idea" : "real", *range);
+
+    this->issueStreamRangeToMLC(range, isIdeal);
   }
 }
 
