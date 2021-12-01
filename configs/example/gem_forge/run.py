@@ -151,12 +151,12 @@ parser.add_option("--gem-forge-stream-engine-enable-float-idea-end", action="sto
 parser.add_option("--gem-forge-stream-engine-enable-float-partial-config", action="store",
                   default=0, type="int",
                   help="Enable partial StreamConfig (only dynamic params) in stream float.")
+parser.add_option("--gem-forge-stream-engine-enable-float-idea-flow", action="store",
+                  default=0, type="int",
+                  help="Enable idea (instant, no NoC) StreamFlow in stream float.")
 parser.add_option("--gem-forge-stream-engine-enable-float-idea-mlc-pop-check", action="store_true",
                   default=True,
                   help="When MLCStream pops, check LLCStream progress ideally.")
-parser.add_option("--gem-forge-stream-engine-enable-float-idea-flow", action="store_true",
-                  default=False,
-                  help="Enable idea (instant, no NoC) StreamFlow in stream float.")
 parser.add_option("--gem-forge-stream-engine-enable-float-idea-store", action="store_true",
                   default=False,
                   help="Enable idea (instant, no NoC) StreamStore in stream float.")
