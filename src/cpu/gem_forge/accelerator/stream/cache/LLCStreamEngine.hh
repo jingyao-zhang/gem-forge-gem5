@@ -253,6 +253,12 @@ private:
                                          LLCStreamElementPtr element);
 
   /**
+   * Issue indirect atomic unlock request.
+   */
+  void issueIndirectAtomicUnlockRequest(LLCDynamicStream *dynIS,
+                                        LLCStreamElementPtr element);
+
+  /**
    * Helper function to enqueue a request and start address translation.
    */
   RequestQueueIter enqueueRequest(Stream *S,

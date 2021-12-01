@@ -177,11 +177,23 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
         nextCommitIndirectElementIdx++;
       }
       auto nextCommitElement = dynIS->getElement(nextCommitIndirectElementIdx);
-      // We directly issue this.
-      LLC_S_DPRINTF(dynS->getDynamicStreamId(),
-                    "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
-                    dynIS->getDynamicStreamId(), nextCommitIndirectElementIdx);
-      this->se->generateIndirectStreamRequest(dynIS, nextCommitElement);
+
+      if (dynIS->shouldIssueBeforeCommit() &&
+          dynIS->getStaticStream()->isAtomicComputeStream()) {
+        // This should be the Indirect StreamUnlock request.
+        LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+                      "[Commit] Issue Unlock for DynIS %s %llu.\n",
+                      dynIS->getDynamicStreamId(),
+                      nextCommitIndirectElementIdx);
+        this->se->issueIndirectAtomicUnlockRequest(dynIS, nextCommitElement);
+      } else {
+        // We directly issue this.
+        LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+                      "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
+                      dynIS->getDynamicStreamId(),
+                      nextCommitIndirectElementIdx);
+        this->se->generateIndirectStreamRequest(dynIS, nextCommitElement);
+      }
     }
   }
   dynS->commitOneElement();

@@ -47,6 +47,7 @@ enumeration(CoherenceRequestType, desc="...") {
   STREAM_FLOW,    desc="Stream flow control message from L1";
   STREAM_END,     desc="StreamEnd from L1";
   STREAM_STORE,   desc="Stream store";
+  STREAM_UNLOCK,  desc="Stream unlock the line";
   STREAM_MIGRATE, desc="Stream migrate";
   STREAM_FORWARD, desc="Stream data forwarded from L2 to L2";
   STREAM_COMMIT,  desc="Stream commit message from L1 to L2";

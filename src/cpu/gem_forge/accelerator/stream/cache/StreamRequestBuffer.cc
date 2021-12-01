@@ -143,7 +143,8 @@ bool StreamRequestBuffer::shouldTryMulticast(const RequestPtr &req) const {
   }
   if (req->getType() != CoherenceRequestType_GETU &&
       req->getType() != CoherenceRequestType_GETH &&
-      req->getType() != CoherenceRequestType_STREAM_STORE) {
+      req->getType() != CoherenceRequestType_STREAM_STORE &&
+      req->getType() != CoherenceRequestType_STREAM_UNLOCK) {
     return false;
   }
   if (this->getMulticastGroupId(req) == InvalidMulticastGroupId) {
