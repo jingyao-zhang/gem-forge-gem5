@@ -257,8 +257,8 @@ void LLCDynamicStream::traceEvent(
   auto &floatTracer = this->getStaticStream()->floatTracer;
   auto curCycle = this->curCycle();
   assert(this->llcController && "Missing LLCController when tracing event.");
-  auto llcBank = this->llcController->getMachineID().num;
-  floatTracer.traceEvent(curCycle, llcBank, type);
+  auto machineId = this->llcController->getMachineID();
+  floatTracer.traceEvent(curCycle, machineId, type);
   // Do this for all indirect streams.
   for (auto IS : this->getIndStreams()) {
     IS->traceEvent(type);

@@ -7,7 +7,7 @@
 #include <sstream>
 
 void StreamFloatTracer::traceEvent(
-    uint64_t cycle, uint32_t llcBank,
+    uint64_t cycle, MachineID machineId,
     const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type) const {
   if (this->buffer.size() == 0) {
     // Initialize.
@@ -20,8 +20,21 @@ void StreamFloatTracer::traceEvent(
   auto &entry = this->buffer.at(this->used);
   entry.Clear();
   entry.set_cycle(cycle);
-  entry.set_llc_bank(llcBank);
+  entry.set_llc_bank(machineId.getNum());
   entry.set_type(type);
+  switch (machineId.getType()) {
+  default:
+    panic("Unsupported FloatTracer on %s.", machineId);
+    break;
+  case MachineType_L2Cache:
+    entry.set_se(LLVM::TDG::StreamFloatEvent::StreamEngineType::
+                     StreamFloatEvent_StreamEngineType_LLC);
+    break;
+  case MachineType_Directory:
+    entry.set_se(LLVM::TDG::StreamFloatEvent::StreamEngineType::
+                     StreamFloatEvent_StreamEngineType_MEM);
+    break;
+  }
   this->used++;
 }
 

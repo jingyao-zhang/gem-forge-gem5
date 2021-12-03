@@ -3,6 +3,7 @@
 
 #include "cpu/gem_forge/accelerator/stream/StreamMessage.pb.h"
 #include "proto/protoio.hh"
+#include "mem/ruby/common/MachineID.hh"
 
 #include <memory>
 #include <vector>
@@ -17,7 +18,7 @@ public:
   StreamFloatTracer(Stream *_S) : S(_S) {}
 
   void traceEvent(
-      uint64_t cycle, uint32_t llcBank,
+      uint64_t cycle, MachineID machineId,
       const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type) const;
 
   void dump() const {
