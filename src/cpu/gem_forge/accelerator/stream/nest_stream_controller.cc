@@ -125,6 +125,35 @@ void StreamRegionController::configureNestStream(
   auto &staticNestConfig = staticNestRegion.nestConfig;
 
   /**
+   * It does not really make sense to configure future nested streams
+   * if the nested loop is not eliminated. Here we check that the
+   * current NestDynamicStream has trip count and is close to end,
+   * before trying to configure next dynamic stream.
+   */
+  if (!staticNestRegion.region.loop_eliminated() &&
+      staticNestRegion.dynRegions.size() > 0) {
+    const auto &lastDynNestRegion = staticNestRegion.dynRegions.back();
+    auto firstNestStream = staticNestRegion.streams.front();
+    const auto &lastDynNestStream =
+        firstNestStream->getDynamicStream(lastDynNestRegion.seqNum);
+    if (lastDynNestStream.endDispatched ||
+        (lastDynNestStream.hasTotalTripCount() &&
+         lastDynNestStream.FIFOIdx.entryIdx + 2 >=
+             lastDynNestStream.getTotalTripCount())) {
+      // continue.
+    } else {
+      DYN_S_DPRINTF(lastDynNestStream.dynamicStreamId,
+                    "[Nest] NestedLoop not Eliminated. TotalTripCount %ld "
+                    "NextElementIdx %lu EndDispatched %d NumDynRegions %d.\n",
+                    lastDynNestStream.getTotalTripCount(),
+                    lastDynNestStream.FIFOIdx.entryIdx,
+                    lastDynNestStream.endDispatched,
+                    staticNestRegion.dynRegions.size());
+      return;
+    }
+  }
+
+  /**
    * Since allocating a new stream will take one element, we check that
    * there are available free elements.
    */
