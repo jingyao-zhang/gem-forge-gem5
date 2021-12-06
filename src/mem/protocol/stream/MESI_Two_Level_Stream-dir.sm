@@ -590,6 +590,10 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
       tbe.streamStoreBlk := in_msg.streamStoreBlk;
     }
   }
+  action(cts_clearTBESliceID, "cts", desc="Clear TBE SliceIds") {
+    assert(is_valid(tbe));
+    tbe.sliceIds.clear();
+  }
 
   action(v_allocateTBE, "v", desc="Allocate TBE") {
     peek(requestNetwork_in, RequestMsg) {
@@ -774,13 +778,13 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
 
   transition(M_DRD, Data, M_DRDI) {
     drp_sendDMAData;
-    w_deallocateTBE;
     qw_queueMemoryWBRequest;
     k_popIncomingResponseQueue;
   }
 
   transition(M_DRDI, Memory_Ack, I) {
     aa_sendAck;
+    w_deallocateTBE;
     l_popMemQueue;
     kd_wakeUpDependents;
   }
@@ -914,12 +918,18 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   transition(M_GM, Data, M_DRDI) {
     drt_writeL2RespDataToTBE;
     net_notifyStreamEngineFromTBE;
-    w_deallocateTBE;
+    cts_clearTBESliceID;
     qw_queueMemoryWBRequest;
     k_popIncomingResponseQueue;
   }
   transition(M_GM, STREAM_STORE) {
     z_stallAndWaitRequest;
+  }
+  transition(M_DRDI, GETH, M_DRDI) {
+    sh_recordGetHID;
+    net_notifyStreamEngineFromTBE;
+    cts_clearTBESliceID;
+    j_popIncomingRequestQueue;
   }
 
   transition(M, GETU, M_GU) {
@@ -932,12 +942,12 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     drt_writeL2RespDataToTBE;
     net_notifyStreamEngineFromTBE;
     du_sendGetUData;
-    w_deallocateTBE;
+    cts_clearTBESliceID;
     qw_queueMemoryWBRequest;
     k_popIncomingResponseQueue;
   }
 
-  transition({I, ID, ID_W, M, IM, MI, M_DRD, M_DRDI, M_DWR, M_DWRI, I_GH, I_GU, I_GM}, STREAM_CONFIG) {
+  transition({I, ID, ID_W, M, IM, MI, M_DRD, M_DRDI, M_DWR, M_DWRI, I_GH, I_GU, I_GM, M_GM}, STREAM_CONFIG) {
     rsc_receiveStreamConfig;
     j_popIncomingRequestQueue;
   }
