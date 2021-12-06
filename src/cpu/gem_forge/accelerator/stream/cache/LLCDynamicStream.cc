@@ -810,11 +810,12 @@ void LLCDynamicStream::allocateLLCStreams(
     CacheStreamConfigureVec &configs) {
 
   /**
-   * By default we set the LoadBalanceValve on StoreComputeStreams.
+   * By default we set the LoadBalanceValve on the StoreComputeStream with
+   * smallest StaticId.
    * If no such streams, we set on the first LLCDynStreams.
    */
   LLCDynamicStreamPtr uncuttedLLCDynSWithSmallestStatidId = nullptr;
-  bool loadBalanceValveSet = false;
+  std::vector<LLCDynamicStreamPtr> loadBalanceValueStreams;
   for (auto &config : configs) {
     auto S = LLCDynamicStream::allocateLLCStream(mlcController, config);
     if (!config->hasBeenCuttedByMLC) {
@@ -825,13 +826,19 @@ void LLCDynamicStream::allocateLLCStreams(
       }
     }
     if (S->getStaticStream()->isStoreComputeStream()) {
-      S->setLoadBalanceValve();
-      loadBalanceValveSet = true;
+      loadBalanceValueStreams.push_back(S);
     }
   }
-  if (!loadBalanceValveSet) {
+  if (loadBalanceValueStreams.empty()) {
     assert(uncuttedLLCDynSWithSmallestStatidId && "Configured not LLCDynS.");
     //   uncuttedLLCDynSWithSmallestStatidId->setLoadBalanceValve();
+  } else {
+    std::sort(
+        loadBalanceValueStreams.begin(), loadBalanceValueStreams.end(),
+        [](const LLCDynamicStreamPtr &A, const LLCDynamicStreamPtr &B) -> bool {
+          return A->getStaticId() < B->getStaticId();
+        });
+    loadBalanceValueStreams.front()->setLoadBalanceValve();
   }
 
   // Remember the allocated group.

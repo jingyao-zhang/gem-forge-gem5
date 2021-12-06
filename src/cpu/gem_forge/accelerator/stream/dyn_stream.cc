@@ -559,7 +559,9 @@ bool DynamicStream::shouldRangeSync() const {
   }
   if (this->stream->isAtomicComputeStream() || this->stream->isUpdateStream() ||
       this->stream->isStoreComputeStream()) {
-    // Streams that writes to memory always require range-sync.
+    /**
+     * Streams that writes to memory always require range-sync.
+     */
     return true;
   }
   for (auto depS : this->stream->addrDepStreams) {

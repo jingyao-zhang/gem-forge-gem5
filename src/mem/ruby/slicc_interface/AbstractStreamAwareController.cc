@@ -143,7 +143,8 @@ void AbstractStreamAwareController::regStats() {
   m_statLLCNumDirectStreams.init(1, 32, 2)
       .name(name() + ".llcNumDirectStreams")
       .desc("Sample of number of LLC direct streams.")
-      .flags(Stats::pdf);
+      .flags(Stats::pdf)
+      .flags(Stats::nozero);
 
   m_statLLCNumInflyComputations
       .init(1, myParams->llc_stream_engine_max_infly_computation, 1)
