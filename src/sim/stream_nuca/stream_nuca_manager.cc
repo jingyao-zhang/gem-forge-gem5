@@ -241,7 +241,8 @@ void StreamNUCAManager::remapRegion(ThreadContext *tc,
 
 void StreamNUCAManager::remapDirectRegion(const StreamRegion &region) {
   if (!this->isPAddrContinuous(region)) {
-    panic("Region %s %#x PAddr is not continuous.", region.name, region.vaddr);
+    panic("[StreamNUCA] Region %s %#x PAddr is not continuous.", region.name,
+          region.vaddr);
   }
   auto startVAddr = region.vaddr;
   auto startPAddr = this->translate(startVAddr);
@@ -249,22 +250,14 @@ void StreamNUCAManager::remapDirectRegion(const StreamRegion &region) {
   auto endPAddr = startPAddr + region.elementSize * region.numElement;
 
   uint64_t interleave = this->determineInterleave(region);
-  int startBank = 0;
+  int startBank = this->determineStartBank(region, interleave);
   int startSet = 0;
-
-  if (region.name.find("rodinia.pathfinder") == 0 ||
-      region.name.find("rodinia.hotspot3D") == 0 ||
-      region.name.find("gap.pr_push.") == 0) {
-    // Pathfinder need to start at the original bank.
-    startBank = (startPAddr / interleave) %
-                (StreamNUCAMap::getNumCols() * StreamNUCAMap::getNumRows());
-  }
 
   StreamNUCAMap::addRangeMap(startPAddr, endPAddr, interleave, startBank,
                              startSet);
   DPRINTF(StreamNUCAManager,
-          "Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n", region.name,
-          startVAddr, startPAddr, interleave, startBank);
+          "[StreamNUCA] Map Region %s %#x PAddr %#x Interleave %lu Bank %d.\n",
+          region.name, startVAddr, startPAddr, interleave, startBank);
 }
 
 void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
@@ -320,8 +313,8 @@ void StreamNUCAManager::remapIndirectPage(ThreadContext *tc,
   std::vector<int32_t> alignToBankFrequency(numRows * numCols, 0);
 
   DPRINTF(StreamNUCAManager,
-          "[StreamNUCA] IndirectAlign %s -> %s PageIndex %lu.\n", region.name,
-          alignToRegion.name, pageIndex);
+          "[StreamNUCA] IndirectAlign %s -> %s PageIndex %lu PageVAddr %#x.\n",
+          region.name, alignToRegion.name, pageIndex, pageVAddr);
 
   auto defaultHops =
       this->computeHopsAndFreq(region, alignToRegion, pageVAddr, numBytes,
@@ -443,11 +436,10 @@ void StreamNUCAManager::remapIndirectPage(ThreadContext *tc,
   auto reducedHopsRatio =
       static_cast<float>(reducedHops) / static_cast<float>(defaultHops);
   DPRINTF(StreamNUCAManager,
-          "[StreamNUCA] IndirectAlign %s -> %s PageIndex %lu SelectedBank "
-          "%d SelectedNUMA %d DefaultHops %ld RemapHops %ld ReduceRatio "
-          "%.2f.\n",
-          region.name, alignToRegion.name, pageIndex, selectedBank,
-          selectedNUMANode, defaultHops, remapHops, reducedHopsRatio);
+          "[StreamNUCA] PageVAddr %#x NewPagePAddr %#x SelectedBank %d "
+          "SelectedNUMA %d DefaultHops %ld RemapHops %ld ReduceRatio %.2f.\n",
+          pageVAddr, newPagePAddr, selectedBank, selectedNUMANode, defaultHops,
+          remapHops, reducedHopsRatio);
 
   if (reducedHopsRatio < this->indirectPageRemapThreshold) {
     DPRINTF(StreamNUCAManager,
@@ -659,9 +651,12 @@ bool StreamNUCAManager::isPAddrContinuous(const StreamRegion &region) {
             vaddr, startPageVAddr);
     }
     if (paddr - startPagePAddr != vaddr - startPageVAddr) {
-      DPRINTF(StreamNUCAManager,
-              "Range %s %#x not physically continuous at %#x paddr %#x.\n",
-              region.name, region.vaddr, vaddr, paddr);
+      DPRINTF(
+          StreamNUCAManager,
+          "Range %s StartVAddr %#x StartPageVAddr %#x StartPagePAddr %#x not "
+          "physically continuous at %#x paddr %#x.\n",
+          region.name, region.vaddr, startPageVAddr, startPagePAddr, vaddr,
+          paddr);
       return false;
     }
   }
@@ -734,4 +729,39 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
     }
   }
   return interleave;
+}
+
+int StreamNUCAManager::determineStartBank(const StreamRegion &region,
+                                          uint64_t interleave) {
+
+  auto startVAddr = region.vaddr;
+  auto startPAddr = this->translate(startVAddr);
+
+  int startBank = 0;
+  if (region.name.find("rodinia.pathfinder") == 0 ||
+      region.name.find("rodinia.hotspot3D") == 0 ||
+      region.name.find("gap.pr_push.") == 0) {
+    // Pathfinder need to start at the original bank.
+    startBank = (startPAddr / interleave) %
+                (StreamNUCAMap::getNumCols() * StreamNUCAMap::getNumRows());
+  }
+
+  for (const auto &align : region.aligns) {
+    if (align.vaddrB == align.vaddrA) {
+      continue;
+    }
+    /**
+     * Use alignToRegion startBank.
+     */
+    const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
+    auto alignToRegionStartPAddr = this->translate(align.vaddrB);
+    const auto &alignToRegionMap =
+        StreamNUCAMap::getRangeMapByStartPAddr(alignToRegionStartPAddr);
+    startBank = alignToRegionMap.startBank;
+    DPRINTF(StreamNUCAManager,
+            "[StreamNUCA] Region %s Align StartBank %d to %s.\n", region.name,
+            startBank, alignToRegion.name);
+  }
+
+  return startBank;
 }

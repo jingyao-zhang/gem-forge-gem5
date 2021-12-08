@@ -82,6 +82,7 @@ private:
 
   void remapDirectRegion(const StreamRegion &region);
   uint64_t determineInterleave(const StreamRegion &region);
+  int determineStartBank(const StreamRegion &region, uint64_t interleave);
 
   void remapIndirectRegion(ThreadContext *tc, const StreamRegion &region);
   void remapIndirectPage(ThreadContext *tc, const StreamRegion &region,
