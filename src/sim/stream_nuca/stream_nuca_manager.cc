@@ -430,6 +430,7 @@ void StreamNUCAManager::remapIndirectPage(ThreadContext *tc,
 
   /**
    * Check if the traffic reduction is above the threshold.
+   * If so, we remap the page, and return the old page to the allocator.
    * If not, we revert the remap.
    */
   auto reducedHops = std::max(defaultHops - remapHops, 0l);
@@ -451,6 +452,7 @@ void StreamNUCAManager::remapIndirectPage(ThreadContext *tc,
     indRegionMemToLLCFinalHops += defaultHops;
     indRegionMemFinalBanks.sample(defaultNodeId, 1);
   } else {
+    NUMAPageAllocator::returnPage(pagePAddr, defaultNodeId);
     indRegionRemapPages++;
     indRegionMemToLLCFinalHops += remapHops;
     indRegionMemFinalBanks.sample(allocNodeId, 1);
