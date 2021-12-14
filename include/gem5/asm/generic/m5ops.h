@@ -85,9 +85,10 @@
 #define M5OP_SE_LLVM_TRACE_REPLAY 0x65
 
 // Stream NUCA pseudo inst.
-#define M5OP_STREAM_NUCA_REGION 0x66
-#define M5OP_STREAM_NUCA_ALIGN  0x67
-#define M5OP_STREAM_NUCA_REMAP  0x68
+#define M5OP_STREAM_NUCA_REGION           0x66
+#define M5OP_STREAM_NUCA_ALIGN            0x67
+#define M5OP_STREAM_NUCA_REMAP            0x68
+#define M5OP_STREAM_NUCA_GET_CACHED_BYTES 0x69
 
 #define M5OP_FOREACH                                            \
     M5OP(m5_arm, M5OP_ARM)                                      \

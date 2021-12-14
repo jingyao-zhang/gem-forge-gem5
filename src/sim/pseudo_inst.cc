@@ -683,4 +683,10 @@ void stream_nuca_remap(ThreadContext *tc) {
     tc->getProcessPtr()->streamNUCAManager->remap(tc);
 }
 
+uint64_t stream_nuca_get_cached_bytes(ThreadContext *tc, Addr start) {
+    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_get_cached_bytes(%p).\n",
+        start);
+    return tc->getProcessPtr()->streamNUCAManager->getCachedBytes(start);
+}
+
 } // namespace PseudoInst

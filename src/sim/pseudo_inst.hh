@@ -128,6 +128,7 @@ void stream_nuca_region(ThreadContext *tc, Addr regionNameAddr, Addr start,
 void stream_nuca_align(ThreadContext *tc,
     Addr A, Addr B, uint64_t elementOffset);
 void stream_nuca_remap(ThreadContext *tc);
+uint64_t stream_nuca_get_cached_bytes(ThreadContext *tc, Addr start);
 
 /**
  * Execute a decoded M5 pseudo instruction
@@ -278,6 +279,10 @@ pseudoInst(ThreadContext *tc, uint8_t func, uint64_t &result)
 
       case M5OP_STREAM_NUCA_REMAP:
         invokeSimcall<ABI>(tc, stream_nuca_remap);
+        return true;
+
+      case M5OP_STREAM_NUCA_GET_CACHED_BYTES:
+        result = invokeSimcall<ABI>(tc, stream_nuca_get_cached_bytes);
         return true;
 
       default:

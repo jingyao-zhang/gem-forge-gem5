@@ -34,6 +34,7 @@ public:
   };
   void defineAlign(Addr A, Addr B, int64_t elementOffset);
   void remap(ThreadContext *tc);
+  uint64_t getCachedBytes(Addr start);
 
   struct StreamAlign {
     Addr vaddrA;
@@ -52,9 +53,16 @@ public:
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
                  uint64_t _numElement)
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
-          numElement(_numElement), isIndirect(false) {}
+          numElement(_numElement), isIndirect(false),
+          cachedElements(_numElement) {}
 
     std::vector<StreamAlign> aligns;
+    /**
+     * Results of remap.
+     * 1. cacheNumElements: number of elements gets cached on chip. Default will
+     * cache all elements.
+     */
+    uint64_t cachedElements;
   };
 
   const StreamRegion &getContainingStreamRegion(Addr vaddr) const;
@@ -78,13 +86,13 @@ private:
 
   Addr translate(Addr vaddr);
 
-  void remapRegion(ThreadContext *tc, const StreamRegion &region);
+  void remapRegion(ThreadContext *tc, StreamRegion &region);
 
   void remapDirectRegion(const StreamRegion &region);
   uint64_t determineInterleave(const StreamRegion &region);
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
 
-  void remapIndirectRegion(ThreadContext *tc, const StreamRegion &region);
+  void remapIndirectRegion(ThreadContext *tc, StreamRegion &region);
   void remapIndirectPage(ThreadContext *tc, const StreamRegion &region,
                          const StreamRegion &alignToRegion, Addr pageVAddr);
   int64_t computeHopsAndFreq(const StreamRegion &region,

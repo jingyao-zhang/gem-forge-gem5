@@ -78,6 +78,7 @@ enum StreamNUCAIndirectAlignment {
  */
 void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
 void m5_stream_nuca_remap();
+uint64_t m5_stream_nuca_get_cached_bytes(void *buffer);
 
 void m5_se_syscall();
 void m5_se_page_fault();

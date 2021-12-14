@@ -247,6 +247,9 @@
                     0x68: m5stream_nuca_remap({{
                         PseudoInst::stream_nuca_remap(xc->tcBase());
                     }}, IsNonSpeculative);
+                    0x69: m5stream_nuca_get_cached_bytes({{
+                        Rax = PseudoInst::stream_nuca_get_cached_bytes(xc->tcBase(), Rdi);
+                    }}, IsNonSpeculative);
                     default: Inst::UD2();
                 }
             }

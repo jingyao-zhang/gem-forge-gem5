@@ -220,8 +220,7 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
           static_cast<uint64_t>(indRegionMemToLLCRemappedHops.value()));
 }
 
-void StreamNUCAManager::remapRegion(ThreadContext *tc,
-                                    const StreamRegion &region) {
+void StreamNUCAManager::remapRegion(ThreadContext *tc, StreamRegion &region) {
   bool hasIndirectAlign = false;
   for (const auto &align : region.aligns) {
     if (align.elementOffset < 0) {
@@ -258,7 +257,7 @@ void StreamNUCAManager::remapDirectRegion(const StreamRegion &region) {
 }
 
 void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
-                                            const StreamRegion &region) {
+                                            StreamRegion &region) {
 
   /**
    * We divide this into multiple phases:
@@ -266,7 +265,11 @@ void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
    * 2. Greedily allocate pages to the NUMA Nodes with minimal traffic.
    * 3. If imbalanced, we try to remap.
    * 4. Relocate pages if necessary.
+   *
+   * NOTE: For now remapped indirect region is not cached.
    */
+  region.cachedElements = 0;
+
   auto regionHops = this->computeIndirectRegionHops(tc, region);
 
   this->greedyAssignIndirectPages(regionHops);
@@ -899,12 +902,13 @@ void StreamNUCAManager::computeCacheSet() {
           "CachedElements %d.\n",
           group.front(), group.size(), totalElementSize, cachedElements);
       for (auto vaddr : group) {
-        const auto &region = this->getRegionFromStartVAddr(vaddr);
+        auto &region = this->getRegionFromStartVAddr(vaddr);
         DPRINTF(StreamNUCAManager,
                 "[AlignGroup]   Region %#x Elements %lu Cached %.2f%%.\n",
                 vaddr, region.numElement,
                 static_cast<float>(cachedElements) /
                     static_cast<float>(region.numElement) * 100.f);
+        region.cachedElements = cachedElements;
       }
     }
 
@@ -1069,4 +1073,9 @@ int StreamNUCAManager::determineStartBank(const StreamRegion &region,
   }
 
   return startBank;
+}
+
+uint64_t StreamNUCAManager::getCachedBytes(Addr start) {
+  const auto &region = this->getRegionFromStartVAddr(start);
+  return region.cachedElements * region.elementSize;
 }
