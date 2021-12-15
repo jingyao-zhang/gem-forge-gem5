@@ -123,6 +123,28 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
   }
 
   /**
+   * Or if the stream's region is not cached at all.
+   */
+  static const std::unordered_map<std::string, std::string> streamToRegionMap =
+      {
+          {"gap.pr_push.atomic.out_begin.ld", "gap.pr_push.out_neigh_index"},
+          {"gap.pr_push.atomic.out_v.ld", "gap.pr_push.out_edge"},
+      };
+  if (streamToRegionMap.count(streamName)) {
+    const auto &regionName = streamToRegionMap.at(streamName);
+    auto tc = S->getCPUDelegator()->getSingleThreadContext();
+    auto process = tc->getProcessPtr();
+    auto streamNUCAManager = process->streamNUCAManager;
+    const auto &region = streamNUCAManager->getRegionFromName(regionName);
+    if (region.cachedElements == 0) {
+      DYN_S_DPRINTF(dynS.dynamicStreamId,
+                    "Directly float to Mem as zero cached elements.\n");
+      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+      return;
+    }
+  }
+
+  /**
    * Split streams at iterations:
    * rodinia.srad_v2
    * rodinia.hotspot

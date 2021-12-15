@@ -1488,8 +1488,8 @@ cloneFunc(SyscallDesc *desc, ThreadContext *tc, RegVal flags, RegVal newStack,
     pp->gid = p->gid();
     pp->egid = p->egid();
     pp->enableStreamNUCA = p->myParams->enableStreamNUCA;
-    pp->streamNUCAIndPageRemapPolicy =
-        p->myParams->streamNUCAIndPageRemapPolicy;
+    pp->streamNUCADirectRegionFitPolicy =
+        p->myParams->streamNUCADirectRegionFitPolicy;
     pp->streamNUCAIndPageRemapThreshold =
         p->myParams->streamNUCAIndPageRemapThreshold;
 

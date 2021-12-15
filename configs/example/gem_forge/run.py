@@ -252,9 +252,9 @@ parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-compu
 parser.add_option("--gem-forge-enable-stream-nuca", type="int",
                   action="store", default="0",
                   help="Enable stream nuca.")
-parser.add_option("--gem-forge-stream-nuca-ind-page-remap-policy", type="choice",
-                  choices=['closest', 'tile'], default='closest',
-                  help="Remap indirect page to which bank.")
+parser.add_option("--gem-forge-stream-nuca-direct-region-fit-policy", type="choice",
+                  choices=['crop', 'drop'], default='crop',
+                  help="What to do when direct regions overflow LLC.")
 parser.add_option("--gem-forge-stream-nuca-ind-page-remap-threshold", type="float",
                   action="store", default="0.0",
                   help="Remap indirect page if we achieve traffic reduction threshold.")

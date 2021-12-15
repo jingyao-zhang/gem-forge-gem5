@@ -74,8 +74,8 @@ class Process(SimObject):
     markEnd = Param.Int64(-1,
         "end when encounter this mark")
     enableStreamNUCA = Param.Bool(False, "Enable Stream NUCA.")
-    streamNUCAIndPageRemapPolicy = Param.String('closest',
-        "Remap indirect page to which bank.")
+    streamNUCADirectRegionFitPolicy = Param.String('crop',
+        "What to do when direct regions overflow LLC.")
     streamNUCAIndPageRemapThreshold = Param.Float(0.0,
         "Remap indirect page if achieve traffic reduction. 0 always remap")
 

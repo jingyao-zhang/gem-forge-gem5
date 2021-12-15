@@ -21,24 +21,23 @@ Stats::DistributionNoReset StreamNUCAManager::indRegionMemMinBanks;
 Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCRemappedHops;
 Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
 
-StreamNUCAManager::StreamNUCAManager(
-    Process *_process, bool _enabled,
-    const std::string &_indirectPageRemapPolicy,
-    float _indirectPageRemapThreshold)
+StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabled,
+                                     const std::string &_directRegionFitPolicy,
+                                     float _indirectPageRemapThreshold)
     : process(_process), enabled(_enabled),
       indirectPageRemapThreshold(_indirectPageRemapThreshold) {
-  if (_indirectPageRemapPolicy == "closest") {
-    this->indirectPageRemapPolicy = IndirectPageRemapPolicy::CLOESEST;
-  } else if (_indirectPageRemapPolicy == "tile") {
-    this->indirectPageRemapPolicy = IndirectPageRemapPolicy::TILE;
+  if (_directRegionFitPolicy == "crop") {
+    this->directRegionFitPolicy = DirectRegionFitPolicy::CROP;
+  } else if (_directRegionFitPolicy == "drop") {
+    this->directRegionFitPolicy = DirectRegionFitPolicy::DROP;
   } else {
-    panic("Unknown IndirectPageRemapPolicy %s.", _indirectPageRemapPolicy);
+    panic("Unknown DirectRegionFitPolicy %s.", _directRegionFitPolicy);
   }
 }
 
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
     : process(other.process), enabled(other.enabled),
-      indirectPageRemapPolicy(other.indirectPageRemapPolicy),
+      directRegionFitPolicy(other.directRegionFitPolicy),
       indirectPageRemapThreshold(other.indirectPageRemapThreshold) {
   panic("StreamNUCAManager does not have copy constructor.");
 }
@@ -588,180 +587,6 @@ void StreamNUCAManager::relocateIndirectPages(
   }
 }
 
-void StreamNUCAManager::remapIndirectPage(ThreadContext *tc,
-                                          const StreamRegion &region,
-                                          const StreamRegion &alignToRegion,
-                                          Addr pageVAddr) {
-  auto pTable = this->process->pTable;
-  auto pageSize = pTable->getPageSize();
-  auto totalSize = region.elementSize * region.numElement;
-  auto endVAddr = std::min(region.vaddr + totalSize, pageVAddr + pageSize);
-  auto numBytes = endVAddr - pageVAddr;
-  auto pageIndex = (pageVAddr - region.vaddr) / pageSize;
-  auto pagePAddr = this->translate(pageVAddr);
-  auto defaultNodeId = StreamNUCAMap::mapPAddrToNUMAId(pagePAddr);
-
-  char *pageData = reinterpret_cast<char *>(malloc(pageSize));
-  tc->getVirtProxy().readBlob(pageVAddr, pageData, pageSize);
-
-  indRegionPages++;
-  indRegionElements += numBytes / region.elementSize;
-
-  /**
-   * Read each element and count the frequency of AlignToBank.
-   */
-  auto numRows = StreamNUCAMap::getNumRows();
-  auto numCols = StreamNUCAMap::getNumCols();
-  std::vector<int32_t> alignToBankFrequency(numRows * numCols, 0);
-
-  DPRINTF(StreamNUCAManager,
-          "[StreamNUCA] IndirectAlign %s -> %s PageIndex %lu PageVAddr %#x.\n",
-          region.name, alignToRegion.name, pageIndex, pageVAddr);
-
-  auto defaultHops =
-      this->computeHopsAndFreq(region, alignToRegion, pageVAddr, numBytes,
-                               pageData, alignToBankFrequency);
-  indRegionMemToLLCDefaultHops += defaultHops;
-
-  const auto &numaNodes = StreamNUCAMap::getNUMANodes();
-  int selectedNUMANode = -1;
-  int selectedBank = -1;
-  int64_t selectedNUMANodeTraffic = 0;
-  if (this->indirectPageRemapPolicy == IndirectPageRemapPolicy::CLOESEST) {
-    /**
-     * For all valid NUMA nodes, select the one has lowest traffic.
-     */
-    for (int i = 0; i < numaNodes.size(); ++i) {
-      const auto &numaNode = numaNodes.at(i);
-      int64_t traffic = 0;
-      for (int bank = 0; bank < alignToBankFrequency.size(); ++bank) {
-        traffic += StreamNUCAMap::computeHops(bank, numaNode.routerId) *
-                   alignToBankFrequency.at(bank);
-      }
-      DPRINTF(StreamNUCAManager, "  NUMA %d Router %d Traffic %ld.\n", i,
-              numaNode.routerId, traffic);
-      if (selectedNUMANode == -1 || traffic < selectedNUMANodeTraffic) {
-        selectedNUMANode = i;
-        selectedBank = numaNode.routerId;
-        selectedNUMANodeTraffic = traffic;
-      }
-    }
-  } else if (this->indirectPageRemapPolicy == IndirectPageRemapPolicy::TILE) {
-    /**
-     * First find the bank with highest frequency, then pick the memory
-     * controller in that tile.
-     * This is used to avoid heavy load imbalance.
-     */
-    int maxFreq = 0;
-    int maxFreqBank = 0;
-    for (int bank = 0; bank < alignToBankFrequency.size(); ++bank) {
-      auto freq = alignToBankFrequency.at(bank);
-      if (freq > maxFreq) {
-        maxFreq = freq;
-        maxFreqBank = bank;
-      }
-    }
-    // Search for the NUCA node handling this bank.
-    for (int i = 0; i < numaNodes.size(); ++i) {
-      const auto &numaNode = numaNodes.at(i);
-      for (const auto &handleBank : numaNode.handleBanks) {
-        if (handleBank == maxFreqBank) {
-          // Compute the traffic.
-          int64_t traffic = 0;
-          for (int bank = 0; bank < alignToBankFrequency.size(); ++bank) {
-            traffic += StreamNUCAMap::computeHops(bank, numaNode.routerId) *
-                       alignToBankFrequency.at(bank);
-          }
-          selectedNUMANode = i;
-          selectedBank = numaNode.routerId;
-          selectedNUMANodeTraffic = traffic;
-          break;
-        }
-      }
-      if (selectedNUMANode != -1) {
-        break;
-      }
-    }
-    if (selectedNUMANode == -1) {
-      panic("Failed to find NUMANode for MaxFreqBank %d.", maxFreqBank);
-    }
-
-  } else {
-    assert(false && "Unsupported IndirectPageRemapPolicy.");
-  }
-
-  if (Debug::StreamNUCAManager) {
-    int32_t avgBankFreq =
-        (numBytes / region.elementSize) / alignToBankFrequency.size();
-    std::stringstream freqMatrixStr;
-    for (int row = 0; row < numRows; ++row) {
-      for (int col = 0; col < numCols; ++col) {
-        auto bank = row * numCols + col;
-        freqMatrixStr << std::setw(6)
-                      << (alignToBankFrequency[bank] - avgBankFreq);
-      }
-      freqMatrixStr << '\n';
-    }
-    DPRINTF(StreamNUCAManager, "[StreamNUCA] AvgBankFreq %d Diff:\n%s.",
-            avgBankFreq, freqMatrixStr.str());
-  }
-
-  /**
-   * Try to allocate a page at selected bank. Remap the vaddr to the new paddr
-   * by setting clobber flag (which will destroy the old mapping). Then copy the
-   * data.
-   */
-  int allocPages = 0;
-  int allocNodeId = 0;
-  auto newPagePAddr = NUMAPageAllocator::allocatePageAt(
-      process->system, selectedNUMANode, allocPages, allocNodeId);
-  indRegionAllocPages += allocPages;
-  indRegionMemMinBanks.sample(allocNodeId, 1);
-
-  bool clobber = true;
-  pTable->map(pageVAddr, newPagePAddr, pageSize, clobber);
-  tc->getVirtProxy().writeBlob(pageVAddr, pageData, pageSize);
-
-  // Compute the optimized hops. The frequence should not change.
-  std::vector<int32_t> optimizedAlignToBankFrequency(numRows * numCols, 0);
-  auto remapHops =
-      this->computeHopsAndFreq(region, alignToRegion, pageVAddr, numBytes,
-                               pageData, optimizedAlignToBankFrequency);
-  indRegionMemToLLCMinHops += remapHops;
-
-  /**
-   * Check if the traffic reduction is above the threshold.
-   * If so, we remap the page, and return the old page to the allocator.
-   * If not, we revert the remap.
-   */
-  auto reducedHops = std::max(defaultHops - remapHops, 0l);
-  auto reducedHopsRatio =
-      static_cast<float>(reducedHops) / static_cast<float>(defaultHops);
-  DPRINTF(StreamNUCAManager,
-          "[StreamNUCA] PageVAddr %#x NewPagePAddr %#x SelectedBank %d "
-          "SelectedNUMA %d DefaultHops %ld RemapHops %ld ReduceRatio %.2f.\n",
-          pageVAddr, newPagePAddr, selectedBank, selectedNUMANode, defaultHops,
-          remapHops, reducedHopsRatio);
-
-  if (reducedHopsRatio < this->indirectPageRemapThreshold) {
-    DPRINTF(StreamNUCAManager,
-            "[StreamNUCA] IndirectAlign %s -> %s Revert Remap PageIndex %lu.\n",
-            region.name, alignToRegion.name, pageIndex);
-    pTable->map(pageVAddr, pagePAddr, pageSize, clobber);
-    NUMAPageAllocator::returnPage(newPagePAddr, allocNodeId);
-
-    indRegionMemToLLCRemappedHops += defaultHops;
-    indRegionMemRemappedBanks.sample(defaultNodeId, 1);
-  } else {
-    NUMAPageAllocator::returnPage(pagePAddr, defaultNodeId);
-    indRegionRemapPages++;
-    indRegionMemToLLCRemappedHops += remapHops;
-    indRegionMemRemappedBanks.sample(allocNodeId, 1);
-  }
-
-  free(pageData);
-}
-
 int64_t StreamNUCAManager::computeHopsAndFreq(
     const StreamRegion &region, const StreamRegion &alignToRegion,
     Addr pageVAddr, int64_t numBytes, char *pageData,
@@ -887,19 +712,44 @@ void StreamNUCAManager::computeCacheSet() {
 
     /**
      * First we estimate how many data can be cached.
+     * NOTE: As a hack, we try the policy to avoid caching the out_neigh_index
+     * if we can't fit all in the LLC.
      */
     auto totalElementSize = 0;
+    auto totalSize = 0ul;
     for (auto startVAddr : group) {
       const auto &region = this->getRegionFromStartVAddr(startVAddr);
       totalElementSize += region.elementSize;
+      totalSize += region.elementSize * region.numElement;
     }
-    auto cachedElements = totalLLCSize / totalElementSize;
+
+    if (this->directRegionFitPolicy == DirectRegionFitPolicy::DROP &&
+        totalSize > totalLLCSize) {
+      for (auto iter = group.begin(), end = group.end(); iter != end; ++iter) {
+        auto startVAddr = *iter;
+        auto &region = this->getRegionFromStartVAddr(startVAddr);
+        if (region.name == "gap.pr_push.out_neigh_index") {
+          totalElementSize -= region.elementSize;
+          totalSize -= region.elementSize * region.numElement;
+          region.cachedElements = 0;
+          group.erase(iter);
+          // This is a vector, we have to break after erase something.
+          DPRINTF(StreamNUCAManager,
+                  "[AlignGroup] Avoid cache %s Bytes %lu ElementSize %lu.\n",
+                  region.name, region.elementSize * region.numElement,
+                  region.elementSize);
+          break;
+        }
+      }
+    }
+
+    uint64_t cachedElements = totalLLCSize / totalElementSize;
 
     if (Debug::StreamNUCAManager) {
       DPRINTF(
           StreamNUCAManager,
           "[AlignGroup] Analyzing Group %#x NumRegions %d TotalElementSize %d "
-          "CachedElements %d.\n",
+          "CachedElements %lu.\n",
           group.front(), group.size(), totalElementSize, cachedElements);
       for (auto vaddr : group) {
         auto &region = this->getRegionFromStartVAddr(vaddr);
@@ -908,7 +758,7 @@ void StreamNUCAManager::computeCacheSet() {
                 vaddr, region.numElement,
                 static_cast<float>(cachedElements) /
                     static_cast<float>(region.numElement) * 100.f);
-        region.cachedElements = cachedElements;
+        region.cachedElements = std::min(cachedElements, region.numElement);
       }
     }
 
@@ -925,7 +775,7 @@ void StreamNUCAManager::computeCacheSet() {
 
       DPRINTF(
           StreamNUCAManager,
-          "Range %s %#x ElementSize %d CachedElements %d StartSet %d UsedSet "
+          "Range %s %#x ElementSize %d CachedElements %lu StartSet %d UsedSet "
           "%d.\n",
           region.name, region.vaddr, region.elementSize, cachedElements,
           startSet, usedSets);
@@ -941,6 +791,17 @@ StreamNUCAManager::getRegionFromStartVAddr(Addr vaddr) {
     panic("Failed to find StreamRegion at %#x.", vaddr);
   }
   return iter->second;
+}
+
+StreamNUCAManager::StreamRegion &
+StreamNUCAManager::getRegionFromName(const std::string &name) {
+  for (auto &entry : this->startVAddrRegionMap) {
+    auto &region = entry.second;
+    if (region.name == name) {
+      return region;
+    }
+  }
+  panic("Failed to find StreamRegion %s.", name);
 }
 
 bool StreamNUCAManager::isPAddrContinuous(const StreamRegion &region) {

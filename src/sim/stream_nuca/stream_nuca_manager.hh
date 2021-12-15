@@ -9,7 +9,7 @@
 class StreamNUCAManager {
 public:
   StreamNUCAManager(Process *_process, bool _enabled,
-                    const std::string &_indirectPageRemapPolicy,
+                    const std::string &_directRegionFitPolicy,
                     float _indirectPageRemapThreshold);
 
   /**
@@ -65,22 +65,23 @@ public:
     uint64_t cachedElements;
   };
 
+
+  StreamRegion &getRegionFromStartVAddr(Addr vaddr);
+  StreamRegion &getRegionFromName(const std::string &name);
   const StreamRegion &getContainingStreamRegion(Addr vaddr) const;
   int getNumStreamRegions() const { return this->startVAddrRegionMap.size(); }
 
 private:
   Process *process;
   const bool enabled;
-  enum IndirectPageRemapPolicy {
-    CLOESEST,
-    TILE,
+  enum DirectRegionFitPolicy {
+    CROP,
+    DROP,
   };
-  IndirectPageRemapPolicy indirectPageRemapPolicy;
+  DirectRegionFitPolicy directRegionFitPolicy;
   const float indirectPageRemapThreshold;
 
   std::map<Addr, StreamRegion> startVAddrRegionMap;
-
-  StreamRegion &getRegionFromStartVAddr(Addr vaddr);
 
   bool isPAddrContinuous(const StreamRegion &region);
 
@@ -93,8 +94,6 @@ private:
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
 
   void remapIndirectRegion(ThreadContext *tc, StreamRegion &region);
-  void remapIndirectPage(ThreadContext *tc, const StreamRegion &region,
-                         const StreamRegion &alignToRegion, Addr pageVAddr);
   int64_t computeHopsAndFreq(const StreamRegion &region,
                              const StreamRegion &alignToRegion, Addr pageVAddr,
                              int64_t numBytes, char *pageData,
