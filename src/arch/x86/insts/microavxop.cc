@@ -339,4 +339,56 @@ void AVXOpBase::doInsert(ExecContext *xc) const {
   }
 }
 
+void AVXOpBase::doFloatCompare(ExecContext *xc) const {
+  uint64_t result = 0;
+  auto vSrcRegs = srcVL / sizeof(uint64_t);
+  FloatInt src1;
+  FloatInt src2;
+
+  auto compareFloat = [this](float a, float b) -> int {
+    switch (this->imm8) {
+    default:
+      panic("%s: Unknown FloatCompare Op %d.", this->disassemble(0x0),
+            this->imm8);
+    case 0:
+      return a == b;
+    case 1:
+      return a < b;
+    case 2:
+      return a <= b;
+    }
+  };
+
+  auto compareDouble = [this](double a, double b) -> int {
+    switch (this->imm8) {
+    default:
+      panic("%s: Unknown FloatCompare Op %d.", this->disassemble(0x0),
+            this->imm8);
+    case 0:
+      return a == b;
+    case 1:
+      return a < b;
+    case 2:
+      return a <= b;
+    }
+  };
+
+  for (int i = 0; i < vSrcRegs; ++i) {
+    src1.ul = xc->readFloatRegOperandBits(this, i * 2);
+    src2.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
+    if (this->srcSize == 4) {
+      int c1 = compareFloat(src1.f.f1, src2.f.f1);
+      int c2 = compareFloat(src1.f.f2, src2.f.f2);
+      result |= (c1 << (i * 2));
+      result |= (c2 << (i * 2 + 1));
+    } else if (this->srcSize == 8) {
+      int c = compareDouble(src1.d, src2.d);
+      result |= (c << i);
+    }
+  }
+
+  assert(destVL == 8 && "Invalid DestVL for FloatCompare.");
+  xc->setIntRegOperand(this, 0, result);
+}
+
 } // namespace X86ISA

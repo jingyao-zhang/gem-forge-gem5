@@ -143,6 +143,19 @@ namespace X86ISA
         INTREG_R15D = INTREG_R15,
         INTREG_R15W = INTREG_R15,
         INTREG_R15B = INTREG_R15,
+        
+        /**
+         * Implement the mask register as integer register.
+         */
+        MASKREG_BASE,
+        MASKREG_K0 = MASKREG_BASE,
+        MASKREG_K1,
+        MASKREG_K2,
+        MASKREG_K3,
+        MASKREG_K4,
+        MASKREG_K5,
+        MASKREG_K6,
+        MASKREG_K7,
 
         NUM_INTREGS
     };
@@ -168,6 +181,12 @@ namespace X86ISA
         if ((index & 0x1C) == 4 && foldBit)
             index = (index - 4) | foldBit;
         return (IntRegIndex)index;
+    }
+
+    static inline IntRegIndex
+    MASKREG_K(int index)
+    {
+        return (IntRegIndex)(MASKREG_BASE + index);
     }
 }
 

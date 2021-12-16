@@ -202,6 +202,30 @@ namespace X86ISA
               case INTREG_R15W:
                 ccprintf(os, longFormats[size], "15");
                 break;
+              case MASKREG_K0:
+                ccprintf(os, longFormats[size], "k0");
+                break;
+              case MASKREG_K1:
+                ccprintf(os, longFormats[size], "k1");
+                break;
+              case MASKREG_K2:
+                ccprintf(os, longFormats[size], "k2");
+                break;
+              case MASKREG_K3:
+                ccprintf(os, longFormats[size], "k3");
+                break;
+              case MASKREG_K4:
+                ccprintf(os, longFormats[size], "k4");
+                break;
+              case MASKREG_K5:
+                ccprintf(os, longFormats[size], "k5");
+                break;
+              case MASKREG_K6:
+                ccprintf(os, longFormats[size], "k6");
+                break;
+              case MASKREG_K7:
+                ccprintf(os, longFormats[size], "k7");
+                break;
               default:
                 ccprintf(os, microFormats[size], reg_idx - NUM_INTREGS);
             }

@@ -488,6 +488,36 @@ let {{
             }
         '''
 
+    class Vcmpf(AVXOp):
+        # Compare two floating point.
+        def __init__(self, dest, src1, src2, imm8, VL, size):
+            super(Vcmpf, self).__init__(
+                dest=dest, src1=src1, src2=src2, imm8=imm8,
+                srcVL=VL, destVL=8, srcSize=size, destSize=8,
+            )
+        srcType = 'AVXOpBase::SrcType::RegRegImm'
+        constructorCode = '''
+
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            assert(vDestRegs == 1 && "Invalid DestVL for Vcmpf.");
+            _numDestRegs = _numIntDestRegs = vDestRegs;
+            assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
+            _destRegIdx[0] = RegId(IntRegClass, dest);
+
+            auto vRegs = srcVL / sizeof(uint64_t);
+            _numSrcRegs = vRegs;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i * 2 + 0] = RegId(FloatRegClass, src1 + i);
+                _srcRegIdx[i * 2 + 1] = RegId(FloatRegClass, src2 + i);
+            }
+        '''
+
+        # Compare according to the immediate.
+        code = '''
+            this->doFloatCompare(xc);
+        '''
+
     class Valign(AVXOp):
         def __init__(self, dest, src1, src2, imm8, VL, size):
             super(Valign, self).__init__(

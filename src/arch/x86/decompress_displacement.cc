@@ -195,6 +195,8 @@ const EVEXTupleType EVEXTupleTypeTwoByte[256] =
  *   66 39 vpminsd,vpminsq        FULL
  *   66 40 vpmulld                FULL
  *   66 58 vbroadcastd            TUPLE1_SCALAR
+ *   66 98 vfmadd132ps            FULL
+ *   66 B8 vfmadd231ps            FULL
  */
 const EVEXTupleType EVEXTupleTypeThreeByte660F38[256] =
     {    //LSB
@@ -208,9 +210,9 @@ const EVEXTupleType EVEXTupleTypeThreeByte660F38[256] =
 /*  6 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  7 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  8 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  9 */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  9 */ O , O , O , O , O , O , O , O , FU, O , O , O , O , O , O , O ,
 /*  A */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
-/*  B */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
+/*  B */ O , O , O , O , O , O , O , O , FU, O , O , O , O , O , O , O ,
 /*  C */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  D */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,
 /*  E */ O , O , O , O , O , O , O , O , O , O , O , O , O , O , O , O ,

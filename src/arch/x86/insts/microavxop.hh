@@ -128,6 +128,8 @@ protected:
   void doExtract(ExecContext *xc) const;
   // A helper function to perform insert operation
   void doInsert(ExecContext *xc) const;
+  // A helper function to perform vcmpf operation.
+  void doFloatCompare(ExecContext *xc) const;
 
   // A helper function to add dest regs.
   inline void addAVXDestRegs() {

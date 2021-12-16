@@ -264,6 +264,14 @@
                 }
             }
         }
+        0x18: decode LEGACY_DECODEVAL {
+            // no prefix.
+            0x0: decode OPCODE_OP_BOTTOM3 {
+                0x2: decode EVEX_L_EXTEND {
+                    0x2: VCMPPS(VZqo, WZqo, Ib);
+                }
+            }
+        }
         0x1A: decode LEGACY_DECODEVAL {
             // operand size (0x66)
             0x1: decode OPCODE_OP_BOTTOM3 {
