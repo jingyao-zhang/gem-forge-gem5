@@ -479,7 +479,7 @@ Decoder::doEVex4Of4State(uint8_t nextByte)
       warn("Can not handle mask register in evex %#x.", origPC);
     }
     if (emi.evex.b != 0) {
-      warn("Can not handle embed broadcast in evex %#x.", origPC);
+      warn("May not handle embed broadcast in evex %#x.", origPC);
     }
     DPRINTF(Decoder, "EVEX-4: L'-%d L-%d a-%d.\n",
         emi.evex.l_prime,

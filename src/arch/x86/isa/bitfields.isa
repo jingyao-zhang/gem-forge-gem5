@@ -93,3 +93,4 @@ def bitfield EVEX_L           evex.l;
 def bitfield EVEX_L_PRIME     evex.l_prime;
 def bitfield EVEX_L_EXTEND    evex.l_extend;
 def bitfield EVEX_R_PRIME     evex.r_prime;
+def bitfield EVEX_B           evex.b;

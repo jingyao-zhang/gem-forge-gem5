@@ -24,8 +24,11 @@ def template AVXOpDeclare {{
       public:
         %(class_name)s(ExtMachInst _machInst, const char *_instMnem,
                   uint64_t _setFlags, SrcType _srcType,
-                  InstRegIndex _dest, InstRegIndex _src1,
-                  InstRegIndex _src2, uint8_t _destSize, uint8_t _destVL,
+                  InstRegIndex _dest,
+                  InstRegIndex _src1,
+                  InstRegIndex _src2,
+                  InstRegIndex _src3,
+                  uint8_t _destSize, uint8_t _destVL,
                   uint8_t _srcSize, uint8_t _srcVL,
                   uint8_t _imm8, uint8_t _ext);
 
@@ -37,13 +40,17 @@ def template AVXOpConstructor {{
     %(class_name)s::%(class_name)s(
         ExtMachInst _machInst, const char *_instMnem,
         uint64_t _setFlags, SrcType _srcType,
-        InstRegIndex _dest, InstRegIndex _src1,
-        InstRegIndex _src2, uint8_t _destSize, uint8_t _destVL,
+        InstRegIndex _dest,
+        InstRegIndex _src1,
+        InstRegIndex _src2,
+        InstRegIndex _src3,
+        uint8_t _destSize, uint8_t _destVL,
         uint8_t _srcSize, uint8_t _srcVL,
         uint8_t _imm8, uint8_t _ext)
         : %(base_class)s(_machInst, "%(mnemonic)s", _instMnem, _setFlags,
-        %(op_class)s, _srcType, _dest, _src1, _src2, _destSize, _destVL,
-        _srcSize, _srcVL, _imm8, _ext)
+        %(op_class)s, _srcType, _dest, _src1, _src2, _src3,
+        _destSize, _destVL, _srcSize, _srcVL,
+        _imm8, _ext)
     {
         %(constructor)s;
         %(constructorCode)s;
@@ -134,6 +141,7 @@ let {{
         def __init__(self, dest,
             src1='InstRegIndex(0)',
             src2='InstRegIndex(0)',
+            src3='InstRegIndex(0)',
             destSize=0,
             destVL=16,
             srcSize=0,
@@ -143,6 +151,7 @@ let {{
             self.dest = dest
             self.src1 = src1
             self.src2 = src2
+            self.src3 = src3
             self.destSize = destSize
             self.destVL = destVL
             self.srcSize = srcSize
@@ -153,12 +162,14 @@ let {{
         def getAllocator(self, microFlags):
             className = self.className
             allocator = '''new %(class_name)s(machInst, macrocodeBlock,
-                    %(flags)s, %(srcType)s, %(dest)s, %(src1)s, %(src2)s,
+                    %(flags)s, %(srcType)s, %(dest)s, %(src1)s, %(src2)s, %(src3)s,
                     %(destSize)s, %(destVL)s, %(srcSize)s, %(srcVL)s, %(imm8)s, %(ext)s)''' % {
                 "class_name" : className,
                 "flags" : self.microFlagsText(microFlags),
                 "srcType": self.srcType,
-                "src1" : self.src1, "src2" : self.src2,
+                "src1" : self.src1,
+                "src2" : self.src2,
+                "src3" : self.src3,
                 "dest" : self.dest,
                 "srcSize" : self.srcSize,
                 "srcVL": self.srcVL,
@@ -301,10 +312,11 @@ let {{
 
     class Vfused(AVXOp):
         # Used in packed arithmetic ops with three operands, e.g. vfmaddps
+        # dest = (src1 op1 src2) op2 src3
         abstract = True
-        def __init__(self, dest, src1, src2, size, VL):
+        def __init__(self, dest, src1, src2, src3, size, VL):
             super(Vfused, self).__init__(
-                dest=dest, src1=src1, src2=src2,
+                dest=dest, src1=src1, src2=src2, src3=src3,
                 destSize=size, destVL=VL, srcSize=size, srcVL=VL
             )
         srcType = 'AVXOpBase::SrcType::RegRegReg'
@@ -316,11 +328,11 @@ let {{
             for (int i = 0; i < vRegs; i++) {
                 _srcRegIdx[i * 3 + 0] = RegId(FloatRegClass, src1 + i);
                 _srcRegIdx[i * 3 + 1] = RegId(FloatRegClass, src2 + i);
-                _srcRegIdx[i * 3 + 2] = RegId(FloatRegClass, dest + i);
+                _srcRegIdx[i * 3 + 2] = RegId(FloatRegClass, src3 + i);
             }
         '''
     
-    class Vfmadd231f(Vfused):
+    class Vfmaddf(Vfused):
         opClass = 'SimdFloatMultOp'
         code = '''
             this->doFusedPackedBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);

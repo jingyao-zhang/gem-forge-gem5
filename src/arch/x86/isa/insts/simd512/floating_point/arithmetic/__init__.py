@@ -4,6 +4,7 @@ categories = [
     "vaddps",
     "vaddpd",
     "vandps",
+    "vfmadd132ps",
     "vfmadd231ps",
     "vsubss",
     "vsubsd",

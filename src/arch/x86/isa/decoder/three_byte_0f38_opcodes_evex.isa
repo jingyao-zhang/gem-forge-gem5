@@ -87,11 +87,28 @@
                         0x2: VPBROADCASTQ(VZqo, Eqo);
                     }
                 }
+                0x98: decode REX_W {
+                    0x0: decode EVEX_B {
+                        0x0: decode EVEX_L_EXTEND {
+                            0x2: VFMADD132PS(VZqo, WZqo);
+                            0x1: VFMADD132PS(VYdo, WYdo);
+                            0x0: VFMADD132PS(Vo, Wo);
+                        }
+                        0x1: decode EVEX_L_EXTEND {
+                            0x2: VFMADD132PSBROADCAST(VZqo, WZqo);
+                        }
+                    }
+                }
                 0xB8: decode REX_W {
-                    0x0: decode EVEX_L_EXTEND {
-                        0x2: VFMADD231PS(VZqo, WZqo);
-                        0x1: VFMADD231PS(VYdo, WYdo);
-                        0x0: VFMADD231PS(Vo, Wo);
+                    0x0: decode EVEX_B {
+                        0x0: decode EVEX_L_EXTEND {
+                            0x2: VFMADD231PS(VZqo, WZqo);
+                            0x1: VFMADD231PS(VYdo, WYdo);
+                            0x0: VFMADD231PS(Vo, Wo);
+                        }
+                        0x1: decode EVEX_L_EXTEND {
+                            0x2: VFMADD231PSBROADCAST(VZqo, WZqo);
+                        }
                     }
                 }
             }
