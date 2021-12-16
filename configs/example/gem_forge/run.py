@@ -255,9 +255,9 @@ parser.add_option("--gem-forge-enable-stream-nuca", type="int",
 parser.add_option("--gem-forge-stream-nuca-direct-region-fit-policy", type="choice",
                   choices=['crop', 'drop'], default='crop',
                   help="What to do when direct regions overflow LLC.")
-parser.add_option("--gem-forge-stream-nuca-ind-page-remap-threshold", type="float",
-                  action="store", default="0.0",
-                  help="Remap indirect page if we achieve traffic reduction threshold.")
+parser.add_option("--gem-forge-stream-nuca-enable-ind-page-remap", type="int",
+                  action="store", default="0",
+                  help="Enable remapping indirect page.")
 
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,

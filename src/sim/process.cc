@@ -172,7 +172,7 @@ Process::Process(ProcessParams *params, EmulationPageTable *pTable,
     this->streamNUCAManager = std::make_shared<StreamNUCAManager>(
         this, params->enableStreamNUCA,
         params->streamNUCADirectRegionFitPolicy,
-        params->streamNUCAIndPageRemapThreshold);
+        params->streamNUCAEnableIndPageRemap);
 }
 
 void

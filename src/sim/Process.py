@@ -76,8 +76,8 @@ class Process(SimObject):
     enableStreamNUCA = Param.Bool(False, "Enable Stream NUCA.")
     streamNUCADirectRegionFitPolicy = Param.String('crop',
         "What to do when direct regions overflow LLC.")
-    streamNUCAIndPageRemapThreshold = Param.Float(0.0,
-        "Remap indirect page if achieve traffic reduction. 0 always remap")
+    streamNUCAEnableIndPageRemap = Param.Bool(False,
+        "Enable remap indirect page.")
 
     @classmethod
     def export_methods(cls, code):

@@ -10,7 +10,7 @@ class StreamNUCAManager {
 public:
   StreamNUCAManager(Process *_process, bool _enabled,
                     const std::string &_directRegionFitPolicy,
-                    float _indirectPageRemapThreshold);
+                    bool _enableIndirectPageRemap);
 
   /**
    * We panic on copy. Required for process clone.
@@ -65,7 +65,6 @@ public:
     uint64_t cachedElements;
   };
 
-
   StreamRegion &getRegionFromStartVAddr(Addr vaddr);
   StreamRegion &getRegionFromName(const std::string &name);
   const StreamRegion &getContainingStreamRegion(Addr vaddr) const;
@@ -79,7 +78,7 @@ private:
     DROP,
   };
   DirectRegionFitPolicy directRegionFitPolicy;
-  const float indirectPageRemapThreshold;
+  const bool enableIndirectPageRemap;
 
   std::map<Addr, StreamRegion> startVAddrRegionMap;
 

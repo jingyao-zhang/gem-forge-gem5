@@ -23,9 +23,9 @@ Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
 
 StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabled,
                                      const std::string &_directRegionFitPolicy,
-                                     float _indirectPageRemapThreshold)
+                                     bool _enableIndirectPageRemap)
     : process(_process), enabled(_enabled),
-      indirectPageRemapThreshold(_indirectPageRemapThreshold) {
+      enableIndirectPageRemap(_enableIndirectPageRemap) {
   if (_directRegionFitPolicy == "crop") {
     this->directRegionFitPolicy = DirectRegionFitPolicy::CROP;
   } else if (_directRegionFitPolicy == "drop") {
@@ -38,7 +38,7 @@ StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabled,
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
     : process(other.process), enabled(other.enabled),
       directRegionFitPolicy(other.directRegionFitPolicy),
-      indirectPageRemapThreshold(other.indirectPageRemapThreshold) {
+      enableIndirectPageRemap(other.enableIndirectPageRemap) {
   panic("StreamNUCAManager does not have copy constructor.");
 }
 
@@ -551,6 +551,13 @@ void StreamNUCAManager::relocateIndirectPages(
     const auto &pageHops = regionHops.pageHops.at(pageIdx);
     auto remapNUMANodeId = pageHops.remapNUMANodeId;
     auto defaultNUMANodeId = pageHops.defaultNUMANodeId;
+
+    if (!this->enableIndirectPageRemap) {
+      /**
+       * IndirectRemap is disabled, we just set remapNUMA = defaultNUMA.
+       */
+      remapNUMANodeId = defaultNUMANodeId;
+    }
 
     this->indRegionMemToLLCDefaultHops += pageHops.hops.at(defaultNUMANodeId);
     this->indRegionMemToLLCRemappedHops += pageHops.hops.at(remapNUMANodeId);

@@ -65,8 +65,8 @@ def get_processes(options):
         process.enableStreamNUCA = options.gem_forge_enable_stream_nuca
         process.streamNUCADirectRegionFitPolicy = \
             options.gem_forge_stream_nuca_direct_region_fit_policy
-        process.streamNUCAIndPageRemapThreshold = \
-            options.gem_forge_stream_nuca_ind_page_remap_threshold
+        process.streamNUCAEnableIndPageRemap = \
+            options.gem_forge_stream_nuca_enable_ind_page_remap
 
         multiprocesses.append(process)
         idx += 1
