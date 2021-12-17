@@ -186,6 +186,31 @@ void AVXOpBase::doFusedPackedBinaryOp(ExecContext *xc, BinaryOp op1,
   }
 }
 
+void AVXOpBase::doFusedSingleBinaryOp(ExecContext *xc, BinaryOp op1,
+                                      BinaryOp op2) const {
+  auto vRegs = destVL / sizeof(uint64_t);
+  assert(vRegs == 1 && "Multi VRegs for Single Op.");
+  FloatInt src1;
+  FloatInt src2;
+  FloatInt src3;
+  FloatInt dest;
+  src1.ul = xc->readFloatRegOperandBits(this, 0);
+  src2.ul = xc->readFloatRegOperandBits(this, 1);
+  src3.ul = xc->readFloatRegOperandBits(this, 2);
+  dest.ul = xc->readFloatRegOperandBits(this, 3);
+  auto tmp = this->calcPackedBinaryOp(src1, src2, op1);
+  auto result = this->calcPackedBinaryOp(tmp, src3, op2);
+  // Partially set the result.
+  if (this->srcSize == 4) {
+    dest.ui.i1 = result.ui.i1;
+  } else if (this->srcSize == 8) {
+    dest.ul = result.ul;
+  } else {
+    panic("Invalid SrcSize %d for SingleBinaryOp.", this->srcSize);
+  }
+  xc->setFloatRegOperandBits(this, 0, dest.ul);
+}
+
 void AVXOpBase::doPackOp(ExecContext *xc, BinaryOp op) const {
   auto vRegs = destVL / sizeof(uint64_t);
   switch (op) {

@@ -7,6 +7,7 @@ categories = [
     "vcmpps",
     "vfmadd132ps",
     "vfmadd231ps",
+    "vfmadd213ss",
     "vsubss",
     "vsubsd",
     "vsubps",

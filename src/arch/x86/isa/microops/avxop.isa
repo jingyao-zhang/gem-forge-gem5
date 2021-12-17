@@ -338,6 +338,12 @@ let {{
             this->doFusedPackedBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
         '''
 
+    class Sfmaddf(Vfused):
+        opClass = 'SimdFloatMultOp'
+        code = '''
+            this->doFusedSingleBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
+        '''
+
     class Vbroadcast8(AVXOp):
         def __init__(self, dest, src, destVL):
             super(Vbroadcast8, self).__init__(

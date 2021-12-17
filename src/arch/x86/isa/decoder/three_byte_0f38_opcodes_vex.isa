@@ -50,11 +50,11 @@
                 0x78: decode EVEX_L {
                     0x1: VPBROADCASTB(VYdo, Wb);
                 }
-                // 0xA9: decode EVEX_B {
-                //     0x0: decode EVEX_L {
-                //         0x1: VFMADD213SS(VYdo, Wq)
-                //     }
-                // }
+                0xA9: decode EVEX_B {
+                    0x0: decode EVEX_L {
+                        0x0: VFMADD213SS(Vo, Wq);
+                    }
+                }
             }
         }
     }

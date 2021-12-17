@@ -122,6 +122,8 @@ protected:
   void doPackedBinaryOp(ExecContext *xc, BinaryOp op) const;
   // A helper function to perform packed (src1 op1 src2) op2 src3
   void doFusedPackedBinaryOp(ExecContext *xc, BinaryOp op1, BinaryOp op2) const;
+  // A helper function to perform single (src1 op1 src2) op2 src3
+  void doFusedSingleBinaryOp(ExecContext *xc, BinaryOp op1, BinaryOp op2) const;
   // A helper function to perform pack operation
   void doPackOp(ExecContext *xc, BinaryOp op) const;
   // A helper function to perform extract operation
