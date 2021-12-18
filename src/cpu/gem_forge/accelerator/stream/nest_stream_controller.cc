@@ -269,15 +269,18 @@ void StreamRegionController::configureNestStream(
 
 InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getConfigSeqNum(
     uint64_t elementIdx, uint64_t outSeqNum) const {
-  // We add 1 to NumInsts because we have to count StreamEnd.
-  // Here we actually break the monotonic increasing property, but it should be
-  // fine as they are never misspeculated.
+  /**
+   * This needs to be smaller than the StreamEnd SeqNum from core.
+   * We use outSeqNum + 1 + elementIdx * (instOffset + 1).
+   * Notice that we will subtract the Configuration function instructions
+   * so that there is no gap to the final executed StreamConfig.
+   */
+  const int numConfigInsts = this->configFunc->getNumInstructions();
   const int instOffset = 1;
-  return outSeqNum + 1 + elementIdx * (instOffset + 1);
-}
+  InstSeqNum ret = outSeqNum + 1 + elementIdx * (instOffset + 1);
 
-InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getEndSeqNum(
-    uint64_t elementIdx, uint64_t outSeqNum) const {
-  const int instOffset = 1;
-  return outSeqNum + 1 + elementIdx * (instOffset + 1) + instOffset;
+  assert(ret > numConfigInsts && "Cann't subtract NumConfigInsts.");
+  ret -= (numConfigInsts - 1);
+
+  return ret;
 }

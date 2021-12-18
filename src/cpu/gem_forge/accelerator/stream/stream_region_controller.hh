@@ -46,7 +46,6 @@ public:
           : staticRegion(_staticRegion) {}
 
       InstSeqNum getConfigSeqNum(uint64_t elementIdx, uint64_t outSeqNum) const;
-      InstSeqNum getEndSeqNum(uint64_t elementIdx, uint64_t outSeqNum) const;
     };
     std::vector<DynNestConfig> nestConfigs;
 
