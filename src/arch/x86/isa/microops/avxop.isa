@@ -331,6 +331,29 @@ let {{
                 _srcRegIdx[i * 3 + 2] = RegId(FloatRegClass, src3 + i);
             }
         '''
+
+    class Sfused(AVXOp):
+        # Used in single arithmetic ops with three operands, e.g. sfmaddps
+        # dest = (src1 op1 src2) op2 src3
+        abstract = True
+        def __init__(self, dest, src1, src2, src3, size, VL):
+            super(Sfused, self).__init__(
+                dest=dest, src1=src1, src2=src2, src3=src3,
+                destSize=size, destVL=VL, srcSize=size, srcVL=VL
+            )
+        srcType = 'AVXOpBase::SrcType::RegRegReg'
+        constructorCode = '''
+            this->addAVXDestRegs();
+            auto vRegs = destVL / sizeof(uint64_t);
+            assert(vRegs == 1 && "Multi SrcRegs for Sfused op.");
+            _numSrcRegs = 3 * vRegs + 1;
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            _srcRegIdx[0] = RegId(FloatRegClass, src1);
+            _srcRegIdx[1] = RegId(FloatRegClass, src2);
+            _srcRegIdx[2] = RegId(FloatRegClass, src3);
+            // The last one is the dest register.
+            _srcRegIdx[3] = RegId(FloatRegClass, dest);
+        '''
     
     class Vfmaddf(Vfused):
         opClass = 'SimdFloatMultOp'
@@ -338,7 +361,7 @@ let {{
             this->doFusedPackedBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
         '''
 
-    class Sfmaddf(Vfused):
+    class Sfmaddf(Sfused):
         opClass = 'SimdFloatMultOp'
         code = '''
             this->doFusedSingleBinaryOp(xc, BinaryOp::FloatMul, BinaryOp::FloatAdd);
@@ -495,7 +518,7 @@ let {{
         '''
 
     class Vcmpf(AVXOp):
-        # Compare two floating point.
+        # Compare two floating point vectors.
         def __init__(self, dest, src1, src2, imm8, VL, size):
             super(Vcmpf, self).__init__(
                 dest=dest, src1=src1, src2=src2, imm8=imm8,
@@ -511,7 +534,7 @@ let {{
             _destRegIdx[0] = RegId(IntRegClass, dest);
 
             auto vRegs = srcVL / sizeof(uint64_t);
-            _numSrcRegs = vRegs;
+            _numSrcRegs = vRegs * 2;
             assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
             for (int i = 0; i < vRegs; i++) {
                 _srcRegIdx[i * 2 + 0] = RegId(FloatRegClass, src1 + i);
@@ -522,6 +545,37 @@ let {{
         # Compare according to the immediate.
         code = '''
             this->doFloatCompare(xc);
+        '''
+
+    class Scmpf(AVXOp):
+        # Compare two floating point scalar.
+        def __init__(self, dest, src1, src2, imm8, VL, size):
+            super(Scmpf, self).__init__(
+                dest=dest, src1=src1, src2=src2, imm8=imm8,
+                srcVL=VL, destVL=8, srcSize=size, destSize=8,
+            )
+        srcType = 'AVXOpBase::SrcType::RegRegImm'
+        constructorCode = '''
+
+            auto vDestRegs = destVL / sizeof(uint64_t);
+            assert(vDestRegs == 1 && "Invalid DestVL for Vcmpf.");
+            _numDestRegs = _numIntDestRegs = vDestRegs;
+            assert(_numDestRegs <= MaxInstDestRegs && "DestRegs overflow.");
+            _destRegIdx[0] = RegId(IntRegClass, dest);
+
+            auto vRegs = srcVL / sizeof(uint64_t);
+            _numSrcRegs = vRegs * 2;
+            assert(_numSrcRegs == 2 && "SrcRegs more than 1.");
+            assert(_numSrcRegs <= MaxInstSrcRegs && "SrcRegs overflow.");
+            for (int i = 0; i < vRegs; i++) {
+                _srcRegIdx[i * 2 + 0] = RegId(FloatRegClass, src1 + i);
+                _srcRegIdx[i * 2 + 1] = RegId(FloatRegClass, src2 + i);
+            }
+        '''
+
+        # Compare according to the immediate.
+        code = '''
+            this->doFloatCompare(xc, true /* isSingle */);
         '''
 
     class Valign(AVXOp):

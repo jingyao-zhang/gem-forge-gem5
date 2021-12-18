@@ -364,7 +364,7 @@ void AVXOpBase::doInsert(ExecContext *xc) const {
   }
 }
 
-void AVXOpBase::doFloatCompare(ExecContext *xc) const {
+void AVXOpBase::doFloatCompare(ExecContext *xc, bool isSingle) const {
   uint64_t result = 0;
   auto vSrcRegs = srcVL / sizeof(uint64_t);
   FloatInt src1;
@@ -398,14 +398,20 @@ void AVXOpBase::doFloatCompare(ExecContext *xc) const {
     }
   };
 
+  if (isSingle) {
+    assert(vSrcRegs == 1 && "Multi Regs for Single Float Compare.");
+  }
+
   for (int i = 0; i < vSrcRegs; ++i) {
     src1.ul = xc->readFloatRegOperandBits(this, i * 2);
     src2.ul = xc->readFloatRegOperandBits(this, i * 2 + 1);
     if (this->srcSize == 4) {
       int c1 = compareFloat(src1.f.f1, src2.f.f1);
-      int c2 = compareFloat(src1.f.f2, src2.f.f2);
       result |= (c1 << (i * 2));
-      result |= (c2 << (i * 2 + 1));
+      if (!isSingle) {
+        int c2 = compareFloat(src1.f.f2, src2.f.f2);
+        result |= (c2 << (i * 2 + 1));
+      }
     } else if (this->srcSize == 8) {
       int c = compareDouble(src1.d, src2.d);
       result |= (c << i);

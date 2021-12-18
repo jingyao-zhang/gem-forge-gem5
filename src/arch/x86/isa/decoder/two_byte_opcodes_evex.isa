@@ -34,7 +34,7 @@
             // 0xF3, scalar single.
             0x4: decode OPCODE_OP_BOTTOM3 {
                 0x0: decode EVEX_L_EXTEND {
-                    0x0: VMOVSS(VZqo, WZqo);
+                    0x0: VMOVSS(Vo, Wo);
                 }
             }
             // 0xF2, scalar double.
@@ -269,6 +269,12 @@
             0x0: decode OPCODE_OP_BOTTOM3 {
                 0x2: decode EVEX_L_EXTEND {
                     0x2: VCMPPS(VZqo, WZqo, Ib);
+                }
+            }
+            // 0xF3
+            0x4: decode OPCODE_OP_BOTTOM3 {
+                0x2: decode EVEX_L_EXTEND {
+                    0x0: VCMPSS(Vo, Wq, Ib);
                 }
             }
         }
