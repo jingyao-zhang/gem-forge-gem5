@@ -26,6 +26,9 @@ void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
       "rodinia.hotspot.power.ld",
       "rodinia.hotspot3D.power.ld",
       "gap.pr_push.atomic.out_v.ld",
+      "gap.bfs_push.out_v.ld",
+      "gap.sssp.out_v.ld",
+      "gap.sssp.out_w.ld",
   };
 
   if (manualFloatToMemSet.count(streamName)) {
@@ -115,6 +118,9 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
       "rodinia.pathfinder.wall.ld",
       "rodinia.hotspot3D.power.ld",
       "gap.pr_push.atomic.out_v.ld",
+      "gap.bfs_push.out_v.ld",
+      "gap.sssp.out_v.ld",
+      "gap.sssp.out_w.ld",
   };
 
   if (manualFloatToMemSet.count(streamName)) {
@@ -129,6 +135,8 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
       {
           {"gap.pr_push.atomic.out_begin.ld", "gap.pr_push.out_neigh_index"},
           {"gap.pr_push.atomic.out_v.ld", "gap.pr_push.out_edge"},
+          {"gap.bfs_push.out_begin.ld", "gap.bfs_push.out_neigh_index"},
+          {"gap.bfs_push.out_v.ld", "gap.bfs_push.out_edge"},
       };
   if (streamToRegionMap.count(streamName)) {
     const auto &regionName = streamToRegionMap.at(streamName);

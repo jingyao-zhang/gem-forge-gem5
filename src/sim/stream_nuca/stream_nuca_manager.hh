@@ -28,10 +28,27 @@ public:
 
   /**
    * Negative element offset will specify some indirect alignment.
+   *
+   * To support arbitrary indirect field alignment, e.g. in weighted graph
+   * edge.v is used for indirect access while edge.w is only for compute.
+   * Suppose the indirect region has this data structure:
+   * IndElement {
+   *   int32_t out_v;
+   *   int32_t weight;
+   *   ...
+   * };
+   *
+   * Then the indirect field offset is 0, with size 4.
+   * We use eight bits for each, and the final alignment is:
+   * - ((offset << 8) | size).
    */
-  enum StreamNUCAIndirectAlignment {
-    STREAM_NUCA_IND_ALIGN_EVERY_ELEMENT = -1,
+  struct IndirectAlignField {
+    const int32_t offset;
+    const int32_t size;
+    IndirectAlignField(int32_t _offset, int32_t _size)
+        : offset(_offset), size(_size) {}
   };
+  static IndirectAlignField decodeIndirectAlign(int64_t indirectAlign);
   void defineAlign(Addr A, Addr B, int64_t elementOffset);
   void remap(ThreadContext *tc);
   uint64_t getCachedBytes(Addr start);
@@ -93,10 +110,6 @@ private:
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
 
   void remapIndirectRegion(ThreadContext *tc, StreamRegion &region);
-  int64_t computeHopsAndFreq(const StreamRegion &region,
-                             const StreamRegion &alignToRegion, Addr pageVAddr,
-                             int64_t numBytes, char *pageData,
-                             std::vector<int32_t> &alignToBankFrequency);
 
   void computeCacheSet();
 
@@ -150,6 +163,7 @@ private:
   IndirectPageHops computeIndirectPageHops(ThreadContext *tc,
                                            const StreamRegion &region,
                                            const StreamRegion &alignToRegion,
+                                           const IndirectAlignField &indField,
                                            Addr pageVAddr);
 
   /**

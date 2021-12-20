@@ -92,21 +92,24 @@ void StreamNUCAManager::regStats() {
 void StreamNUCAManager::defineRegion(const std::string &regionName, Addr start,
                                      uint64_t elementSize,
                                      uint64_t numElement) {
-  DPRINTF(StreamNUCAManager, "Define Region %s %#x %lu %lu %lukB.\n",
-          regionName, start, elementSize, numElement,
-          elementSize * numElement / 1024);
+  DPRINTF(StreamNUCAManager,
+          "[StreamNUCA] Define Region %s %#x %lu %lu %lukB.\n", regionName,
+          start, elementSize, numElement, elementSize * numElement / 1024);
   this->startVAddrRegionMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(start),
       std::forward_as_tuple(regionName, start, elementSize, numElement));
 }
 
 void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elementOffset) {
-  DPRINTF(StreamNUCAManager, "Define Align %#x %#x Offset %ld.\n", A, B,
-          elementOffset);
+  DPRINTF(StreamNUCAManager, "[StreamNUCA] Define Align %#x %#x Offset %ld.\n",
+          A, B, elementOffset);
   auto &regionA = this->getRegionFromStartVAddr(A);
   regionA.aligns.emplace_back(A, B, elementOffset);
   if (elementOffset < 0) {
     regionA.isIndirect = true;
+    IndirectAlignField indField = decodeIndirectAlign(elementOffset);
+    DPRINTF(StreamNUCAManager, "[StreamNUCA]     IndAlign Offset %d Size %d.\n",
+            indField.offset, indField.size);
   }
 }
 
@@ -301,11 +304,13 @@ StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
   auto numMemNodes = memNodes.size();
   IndirectRegionHops regionHops(region, numMemNodes);
 
+  IndirectAlignField indField = decodeIndirectAlign(align.elementOffset);
+
   const auto &alignToRegion = this->getRegionFromStartVAddr(align.vaddrB);
   for (Addr vaddr = region.vaddr; vaddr < endVAddr; vaddr += pageSize) {
     auto pageVAddr = pTable->pageAlign(vaddr);
-    auto pageHops =
-        this->computeIndirectPageHops(tc, region, alignToRegion, pageVAddr);
+    auto pageHops = this->computeIndirectPageHops(tc, region, alignToRegion,
+                                                  indField, pageVAddr);
     regionHops.pageHops.emplace_back(std::move(pageHops));
   }
 
@@ -314,7 +319,8 @@ StreamNUCAManager::computeIndirectRegionHops(ThreadContext *tc,
 
 StreamNUCAManager::IndirectPageHops StreamNUCAManager::computeIndirectPageHops(
     ThreadContext *tc, const StreamRegion &region,
-    const StreamRegion &alignToRegion, Addr pageVAddr) {
+    const StreamRegion &alignToRegion, const IndirectAlignField &indField,
+    Addr pageVAddr) {
 
   auto pTable = this->process->pTable;
   auto pageSize = pTable->getPageSize();
@@ -341,13 +347,14 @@ StreamNUCAManager::IndirectPageHops StreamNUCAManager::computeIndirectPageHops(
 
   for (int i = 0; i < numBytes; i += region.elementSize) {
     int64_t index = 0;
-    if (region.elementSize == 4) {
-      index = *reinterpret_cast<int32_t *>(pageData + i);
-    } else if (region.elementSize == 8) {
-      index = *reinterpret_cast<int64_t *>(pageData + i);
+    if (indField.size == 4) {
+      index = *reinterpret_cast<int32_t *>(pageData + i + indField.offset);
+    } else if (indField.size == 8) {
+      index = *reinterpret_cast<int64_t *>(pageData + i + indField.offset);
     } else {
-      panic("[StreamNUCA] Invalid IndrectRegion %s ElementSize %d.",
-            region.name, region.elementSize);
+      panic("[StreamNUCA] Invalid IndAlign %s ElementSize %d Field Offset %d "
+            "Size %d.",
+            region.name, region.elementSize, indField.offset, indField.size);
     }
     if (index < 0 || index >= alignToRegion.numElement) {
       panic("[StreamNUCA] %s InvalidIndex %d not in %s NumElement %d.",
@@ -592,55 +599,6 @@ void StreamNUCAManager::relocateIndirectPages(
     // Return the old page to the allocator.
     NUMAPageAllocator::returnPage(defaultPagePAddr, defaultNUMANodeId);
   }
-}
-
-int64_t StreamNUCAManager::computeHopsAndFreq(
-    const StreamRegion &region, const StreamRegion &alignToRegion,
-    Addr pageVAddr, int64_t numBytes, char *pageData,
-    std::vector<int32_t> &alignToBankFrequency) {
-
-  auto pageSize = this->process->pTable->getPageSize();
-  auto pageIndex = (pageVAddr - region.vaddr) / pageSize;
-
-  int64_t traffic = 0;
-
-  for (int i = 0; i < numBytes; i += region.elementSize) {
-    int64_t index = 0;
-    if (region.elementSize == 4) {
-      index = *reinterpret_cast<int32_t *>(pageData + i);
-    } else if (region.elementSize == 8) {
-      index = *reinterpret_cast<int64_t *>(pageData + i);
-    } else {
-      panic("[StreamNUCA] Invalid IndrectRegion %s ElementSize %d.",
-            region.name, region.elementSize);
-    }
-    if (index < 0 || index >= alignToRegion.numElement) {
-      panic("[StreamNUCA] %s InvalidIndex %d not in %s NumElement %d.",
-            region.name, index, alignToRegion.name, alignToRegion.numElement);
-    }
-    auto alignToVAddr = alignToRegion.vaddr + index * alignToRegion.elementSize;
-    auto alignToPAddr = this->translate(alignToVAddr);
-    auto alignToBank = StreamNUCAMap::getBank(alignToPAddr);
-
-    // DPRINTF(StreamNUCAManager,
-    //         "  Index %ld AlignToVAddr %#x AlignToPAddr %#x AlignToBank
-    //         %d.\n", index, alignToVAddr, alignToPAddr, alignToBank);
-
-    if (alignToBank < 0 || alignToBank >= alignToBankFrequency.size()) {
-      panic("[StreamNUCA] IndirectAlign %s -> %s Page %lu Index %ld Invalid "
-            "AlignToBank %d.",
-            region.name, alignToRegion.name, pageIndex, index, alignToBank);
-    }
-    alignToBankFrequency.at(alignToBank)++;
-
-    // Accumulate the default traffic hops.
-    auto elementVAddr = pageVAddr + i;
-    auto elementPAddr = this->translate(elementVAddr);
-    auto elementBank = StreamNUCAMap::mapPAddrToNUMARouterId(elementPAddr);
-    traffic += StreamNUCAMap::computeHops(alignToBank, elementBank);
-  }
-
-  return traffic;
 }
 
 void StreamNUCAManager::computeCacheSet() {
@@ -917,7 +875,8 @@ int StreamNUCAManager::determineStartBank(const StreamRegion &region,
   int startBank = 0;
   if (region.name.find("rodinia.pathfinder") == 0 ||
       region.name.find("rodinia.hotspot3D") == 0 ||
-      region.name.find("gap.pr_push.") == 0) {
+      region.name.find("gap.pr_push") == 0 ||
+      region.name.find("gap.bfs_push") == 0) {
     // Pathfinder need to start at the original bank.
     startBank = (startPAddr / interleave) %
                 (StreamNUCAMap::getNumCols() * StreamNUCAMap::getNumRows());
@@ -946,4 +905,18 @@ int StreamNUCAManager::determineStartBank(const StreamRegion &region,
 uint64_t StreamNUCAManager::getCachedBytes(Addr start) {
   const auto &region = this->getRegionFromStartVAddr(start);
   return region.cachedElements * region.elementSize;
+}
+
+StreamNUCAManager::IndirectAlignField
+StreamNUCAManager::decodeIndirectAlign(int64_t indirectAlign) {
+  assert(indirectAlign < 0 && "This is not IndirectAlign.");
+
+  const int SIZE_BITWIDTH = 8;
+  const int SIZE_MASK = (1 << SIZE_BITWIDTH) - 1;
+  const int OFFSET_BITWIDTH = 8;
+  const int OFFSET_MASK = (1 << OFFSET_BITWIDTH) - 1;
+
+  int32_t offset = ((-indirectAlign) >> SIZE_BITWIDTH) & OFFSET_MASK;
+  int32_t size = (-indirectAlign) & SIZE_MASK;
+  return IndirectAlignField(offset, size);
 }

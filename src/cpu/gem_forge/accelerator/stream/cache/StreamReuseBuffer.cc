@@ -144,7 +144,8 @@ bool StreamReuseBuffer::shouldCacheStream(Stream *S,
 
     if (!chosenCachedStream) {
       // Manually cache some edge list streams.
-      if (S->getStreamName() == "gap.pr_push.atomic.out_v.ld") {
+      if (S->getStreamName() == "gap.pr_push.atomic.out_v.ld" ||
+          S->getStreamName() == "gap.bfs_push.out_v.ld") {
         chosenCachedStream = S;
       }
     }
@@ -176,7 +177,8 @@ bool StreamReuseBuffer::shouldCheckReuse(Stream *S,
   if (!S->aliasBaseStream) {
     return false;
   }
-  if (S->getStreamName() == "gap.pr_push.atomic.out_v.ld") {
+  if (S->getStreamName() == "gap.pr_push.atomic.out_v.ld" ||
+      S->getStreamName() == "gap.bfs_push.out_v.ld") {
     // Manually cache some edge list streams.
     return true;
   }

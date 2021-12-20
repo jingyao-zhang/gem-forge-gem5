@@ -224,6 +224,15 @@ void StreamRegionController::configureNestStream(
   auto actualParams =
       convertFormalParamToParam(dynNestConfig.formalParams, getStreamValue);
 
+  if (Debug::StreamNest) {
+    SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, OuterElementIdx "
+               "%lu, ActualParams:\n",
+               staticNestRegion.region.region(), dynNestConfig.nextElementIdx);
+    for (const auto &actualParam : actualParams) {
+      SE_DPRINTF("[Nest]   Param %s.\n", actualParam.print());
+    }
+  }
+
   this->isaHandler.resetISAStreamEngine();
   auto configFuncStartSeqNum = dynNestConfig.getConfigSeqNum(
       dynNestConfig.nextElementIdx, dynRegion.seqNum);

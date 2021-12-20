@@ -68,14 +68,26 @@ void m5_llvm_trace_replay(const char *trace, void *vaddr);
 
 void m5_stream_nuca_region(const char *regionName, void *buffer,
                            uint64_t elementSize, uint64_t numElement);
-enum StreamNUCAIndirectAlignment {
-  STREAM_NUCA_IND_ALIGN_EVERY_ELEMENT = -1,
-};
 /**
  * Specify the alignment requirement between two arrays.
- * If this is a negative value in StreamNUCAIndirectAlignment, this is
- * handled as indirect alignment.
+ *
+ * Negative element offset will specify some indirect alignment.
+ *
+ * To support arbitrary indirect field alignment, e.g. in weighted graph
+ * edge.v is used for indirect access while edge.w is only for compute.
+ * Suppose the indirect region has this data structure:
+ * IndElement {
+ *   int32_t out_v;
+ *   int32_t weight;
+ *   ...
+ * };
+ *
+ * Then the indirect field offset is 0, with size 4.
+ * We use eight bits for each, and the final alignment is:
+ * - ((offset << 8) | size).
  */
+#define m5_stream_nuca_encode_ind_align(offset, size)                          \
+  (-(int64_t)((offset) << 8 | (size)))
 void m5_stream_nuca_align(void *A, void *B, int64_t elementOffset);
 void m5_stream_nuca_remap();
 uint64_t m5_stream_nuca_get_cached_bytes(void *buffer);
