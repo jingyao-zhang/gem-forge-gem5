@@ -306,8 +306,26 @@ takeOverFrom(ThreadContext &ntc, ThreadContext &otc)
         }
     } else {
         // ! GemForge
-        // Don't forgot to update the futexMap.
+        // Don't forgot to update the futexMap and quiesce event.
         otc.getSystemPtr()->futexMap.takeOverThread(&otc, &ntc);
+
+        auto *oqe = otc.getQuiesceEvent();
+        assert(oqe);
+        assert(oqe->tc == &otc);
+
+        auto *nqe = ntc.getQuiesceEvent();
+        assert(nqe);
+        assert(nqe->tc == &ntc);
+
+        if (oqe->scheduled()) {
+            auto *ocpu = otc.getCpuPtr();
+            assert(ocpu);
+            auto *ncpu = ntc.getCpuPtr();
+            assert(ncpu);
+
+            ncpu->schedule(nqe, oqe->when());
+            ocpu->deschedule(oqe);
+        }
     }
 
     otc.setStatus(ThreadContext::Halted);
