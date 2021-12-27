@@ -69,6 +69,9 @@ private:
   void setFloatPlanManual(DynamicStream &dynS);
   void setFloatPlanManual2(DynamicStream &dynS);
 
+  void setFloatPlanForRodiniaSrad(DynamicStream &dynS);
+
+  static const std::unordered_map<std::string, std::string> streamToRegionMap;
 };
 
 #endif

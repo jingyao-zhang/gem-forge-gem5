@@ -738,9 +738,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   if (reduceOp == ::LLVM::TDG::ExecFuncInfo_ComputeOp_FLOAT_ADD ||
       reduceOp == ::LLVM::TDG::ExecFuncInfo_ComputeOp_INT_ADD) {
     // Supported float addition.
-  } else if (S->getStreamName().find("bfs_pull.cc::") != std::string::npos ||
-             S->getStreamName().find("bfs_pull_shuffle.cc::") !=
-                 std::string::npos) {
+  } else if (S->getStreamName().find("bfs_pull") != std::string::npos) {
     /**
      * ! We manually enable this for bfs_pull.
      */

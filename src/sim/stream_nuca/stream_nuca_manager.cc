@@ -668,7 +668,11 @@ void StreamNUCAManager::computeCacheSet() {
   const auto llcAssoc = StreamNUCAMap::getCacheAssoc();
   const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
   const auto llcBankSize = llcNumSets * llcAssoc * llcBlockSize;
-  const auto totalLLCSize = llcBankSize * totalBanks;
+  /**
+   * Let's reserve 1MB of LLC size for other data.
+   */
+  const auto reservedLLCSize = 1024 * 1024;
+  const auto totalLLCSize = llcBankSize * totalBanks - reservedLLCSize;
 
   for (auto &entry : alignRangeVAddrs) {
     auto &group = entry.second;
@@ -710,21 +714,19 @@ void StreamNUCAManager::computeCacheSet() {
 
     uint64_t cachedElements = totalLLCSize / totalElementSize;
 
-    if (Debug::StreamNUCAManager) {
-      DPRINTF(
-          StreamNUCAManager,
-          "[AlignGroup] Analyzing Group %#x NumRegions %d TotalElementSize %d "
-          "CachedElements %lu.\n",
-          group.front(), group.size(), totalElementSize, cachedElements);
-      for (auto vaddr : group) {
-        auto &region = this->getRegionFromStartVAddr(vaddr);
-        DPRINTF(StreamNUCAManager,
-                "[AlignGroup]   Region %#x Elements %lu Cached %.2f%%.\n",
-                vaddr, region.numElement,
-                static_cast<float>(cachedElements) /
-                    static_cast<float>(region.numElement) * 100.f);
-        region.cachedElements = std::min(cachedElements, region.numElement);
-      }
+    DPRINTF(
+        StreamNUCAManager,
+        "[AlignGroup] Analyzing Group %#x NumRegions %d TotalElementSize %d "
+        "CachedElements %lu.\n",
+        group.front(), group.size(), totalElementSize, cachedElements);
+    for (auto vaddr : group) {
+      auto &region = this->getRegionFromStartVAddr(vaddr);
+      DPRINTF(StreamNUCAManager,
+              "[AlignGroup]   Region %#x Elements %lu Cached %.2f%%.\n", vaddr,
+              region.numElement,
+              static_cast<float>(cachedElements) /
+                  static_cast<float>(region.numElement) * 100.f);
+      region.cachedElements = std::min(cachedElements, region.numElement);
     }
 
     auto startSet = 0;
@@ -875,8 +877,12 @@ int StreamNUCAManager::determineStartBank(const StreamRegion &region,
   int startBank = 0;
   if (region.name.find("rodinia.pathfinder") == 0 ||
       region.name.find("rodinia.hotspot3D") == 0 ||
+      region.name.find("rodinia.srad_v2") == 0 ||
       region.name.find("gap.pr_push") == 0 ||
-      region.name.find("gap.bfs_push") == 0) {
+      region.name.find("gap.bfs_push") == 0 ||
+      region.name.find("gap.sssp") == 0 ||
+      region.name.find("gap.pr_pull") == 0 ||
+      region.name.find("gap.bfs_pull") == 0) {
     // Pathfinder need to start at the original bank.
     startBank = (startPAddr / interleave) %
                 (StreamNUCAMap::getNumCols() * StreamNUCAMap::getNumRows());

@@ -9,6 +9,33 @@
 #define DEBUG_TYPE StreamFloatPolicy
 #include "stream_log.hh"
 
+const std::unordered_map<std::string, std::string>
+    StreamFloatPolicy::streamToRegionMap = {
+        {"rodinia.srad_v2.Jc.ld", "rodinia.srad_v2.J"},
+        {"rodinia.srad_v2.Jw.ld", "rodinia.srad_v2.J"},
+        {"rodinia.srad_v2.Je.ld", "rodinia.srad_v2.J"},
+        {"rodinia.srad_v2.Jn.ld", "rodinia.srad_v2.J"},
+        {"rodinia.srad_v2.Js.ld", "rodinia.srad_v2.J"},
+        {"rodinia.srad_v2.c.st", "rodinia.srad_v2.c"},
+        {"rodinia.srad_v2.deltaN.st", "rodinia.srad_v2.deltaN"},
+        {"rodinia.srad_v2.deltaS.st", "rodinia.srad_v2.deltaS"},
+        {"rodinia.srad_v2.deltaE.st", "rodinia.srad_v2.deltaE"},
+        {"rodinia.srad_v2.deltaW.st", "rodinia.srad_v2.deltaW"},
+        {"rodinia.srad_v2.cN.ld", "rodinia.srad_v2.c"},
+        {"rodinia.srad_v2.cS.ld", "rodinia.srad_v2.c"},
+        {"rodinia.srad_v2.cE.ld", "rodinia.srad_v2.c"},
+        {"rodinia.srad_v2.deltaN.ld", "rodinia.srad_v2.deltaN"},
+        {"rodinia.srad_v2.deltaS.ld", "rodinia.srad_v2.deltaS"},
+        {"rodinia.srad_v2.deltaE.ld", "rodinia.srad_v2.deltaE"},
+        {"rodinia.srad_v2.deltaW.ld", "rodinia.srad_v2.deltaW"},
+        {"rodinia.srad_v2.Jc2.ld", "rodinia.srad_v2.J"},
+        {"rodinia.srad_v2.J.st", "rodinia.srad_v2.J"},
+        {"gap.pr_push.atomic.out_begin.ld", "gap.pr_push.out_neigh_index"},
+        {"gap.pr_push.atomic.out_v.ld", "gap.pr_push.out_edge"},
+        {"gap.bfs_push.out_begin.ld", "gap.bfs_push.out_neigh_index"},
+        {"gap.bfs_push.out_v.ld", "gap.bfs_push.out_edge"},
+};
+
 void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
 
   /**
@@ -22,13 +49,11 @@ void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
   uint64_t firstElementIdx = 0;
 
   static const std::unordered_set<std::string> manualFloatToMemSet = {
-      "rodinia.pathfinder.wall.ld",
-      "rodinia.hotspot.power.ld",
-      "rodinia.hotspot3D.power.ld",
-      "gap.pr_push.atomic.out_v.ld",
-      "gap.bfs_push.out_v.ld",
-      "gap.sssp.out_v.ld",
-      "gap.sssp.out_w.ld",
+      "rodinia.pathfinder.wall.ld", "rodinia.hotspot.power.ld",
+      "rodinia.hotspot3D.power.ld", "gap.pr_push.atomic.out_v.ld",
+      "gap.bfs_push.out_v.ld",      "gap.sssp.out_v.ld",
+      "gap.sssp.out_w.ld",          "gap.pr_pull.acc.in_v.ld",
+      "gap.bfs_pull.in_v.ld",
   };
 
   if (manualFloatToMemSet.count(streamName)) {
@@ -115,12 +140,10 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
   uint64_t firstElementIdx = 0;
 
   static const std::unordered_set<std::string> manualFloatToMemSet = {
-      "rodinia.pathfinder.wall.ld",
-      "rodinia.hotspot3D.power.ld",
-      "gap.pr_push.atomic.out_v.ld",
-      "gap.bfs_push.out_v.ld",
-      "gap.sssp.out_v.ld",
-      "gap.sssp.out_w.ld",
+      "rodinia.pathfinder.wall.ld",  "rodinia.hotspot3D.power.ld",
+      "gap.pr_push.atomic.out_v.ld", "gap.bfs_push.out_v.ld",
+      "gap.sssp.out_v.ld",           "gap.sssp.out_w.ld",
+      "gap.pr_pull.acc.in_v.ld",     "gap.bfs_pull.in_v.ld",
   };
 
   if (manualFloatToMemSet.count(streamName)) {
@@ -131,13 +154,6 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
   /**
    * Or if the stream's region is not cached at all.
    */
-  static const std::unordered_map<std::string, std::string> streamToRegionMap =
-      {
-          {"gap.pr_push.atomic.out_begin.ld", "gap.pr_push.out_neigh_index"},
-          {"gap.pr_push.atomic.out_v.ld", "gap.pr_push.out_edge"},
-          {"gap.bfs_push.out_begin.ld", "gap.bfs_push.out_neigh_index"},
-          {"gap.bfs_push.out_v.ld", "gap.bfs_push.out_edge"},
-      };
   if (streamToRegionMap.count(streamName)) {
     const auto &regionName = streamToRegionMap.at(streamName);
     auto tc = S->getCPUDelegator()->getSingleThreadContext();
@@ -154,11 +170,15 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
 
   /**
    * Split streams at iterations:
-   * rodinia.srad_v2
+   * rodinia.srad_v2/v3
    * rodinia.hotspot
    */
   if (streamName.find("rodinia.srad_v2.") == 0 ||
-      streamName.find("rodinia.hotspot.") == 0) {
+      streamName.find("rodinia.srad_v3.") == 0) {
+    this->setFloatPlanForRodiniaSrad(dynS);
+    return;
+  }
+  if (streamName.find("rodinia.hotspot.") == 0) {
     if (!dynS.hasTotalTripCount()) {
       DYN_S_PANIC(dynS.dynamicStreamId,
                   "Missing TotalTripCount for iter-based floating plan..");
@@ -259,5 +279,71 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
 
   // Default just offload to LLC.
   floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+  return;
+}
+
+void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynamicStream &dynS) {
+
+  if (!dynS.hasTotalTripCount()) {
+    DYN_S_PANIC(dynS.dynamicStreamId,
+                "Missing TotalTripCount for iter-based floating plan..");
+  }
+
+  auto S = dynS.stream;
+
+  auto &floatPlan = dynS.getFloatPlan();
+  uint64_t firstElementIdx = 0;
+
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(dynS.addrGenCallback);
+  if (!linearAddrGen) {
+    // They should have linear address pattern.
+    DYN_S_PANIC(dynS.dynamicStreamId,
+                "Non-LinearAddrGen for iter-based floating plan.");
+  }
+
+  auto totalTripCount = dynS.getTotalTripCount();
+
+  // Take min to handle the coalesced stream.
+  auto elementSize = std::min(S->getMemElementSize(), 64);
+
+  auto myStartVAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
+  // ! This only considers the case when the address pattern is increasing.
+  auto myEndVAddr = myStartVAddr + totalTripCount * elementSize;
+
+  auto threadContext = S->getCPUDelegator()->getSingleThreadContext();
+  auto streamNUCAManager = threadContext->getStreamNUCAManager();
+
+  const auto &streamNUCARegion =
+      streamNUCAManager->getContainingStreamRegion(myStartVAddr);
+
+  auto cachedBytes =
+      streamNUCARegion.cachedElements * streamNUCARegion.elementSize;
+  auto llcEndVAddr = streamNUCARegion.vaddr + cachedBytes;
+
+  DYN_S_DPRINTF(dynS.dynamicStreamId,
+                "TotalTripCount %d LLCEndVAddr %#x = %#x + %lu * %lu  "
+                "MyEndVAddr %#x = %#x + %d MyEnd %s LLCEnd.\n",
+                totalTripCount, llcEndVAddr, streamNUCARegion.vaddr,
+                streamNUCARegion.cachedElements, streamNUCARegion.elementSize,
+                myEndVAddr, myStartVAddr, totalTripCount * elementSize,
+                myEndVAddr < llcEndVAddr ? "<" : ">=");
+
+  if (myEndVAddr <= llcEndVAddr) {
+    // We are accessing rows cached in LLC.
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+    return;
+  }
+
+  if (myStartVAddr >= llcEndVAddr) {
+    // We accessing rows not cached in LLC.
+    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+    return;
+  }
+
+  // We are accessing mixing rows in LLC and Mem.
+  auto myLLCTripCount = (llcEndVAddr - myStartVAddr) / elementSize;
+  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+  floatPlan.addFloatChangePoint(myLLCTripCount, MachineType_Directory);
   return;
 }
