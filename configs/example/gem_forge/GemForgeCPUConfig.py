@@ -62,7 +62,10 @@ def get_processes(options):
             process.markHistory = history
         process.markSwitchcpu = options.gem_forge_work_mark_switch_cpu
         process.markEnd = options.gem_forge_work_mark_end
-        process.enableStreamNUCA = options.gem_forge_enable_stream_nuca
+        process.enableMemStream = \
+            options.gem_forge_stream_engine_enable_float_mem
+        process.enableStreamNUCA = \
+            options.gem_forge_enable_stream_nuca
         process.streamNUCADirectRegionFitPolicy = \
             options.gem_forge_stream_nuca_direct_region_fit_policy
         process.streamNUCAEnableIndPageRemap = \

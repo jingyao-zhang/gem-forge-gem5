@@ -166,7 +166,9 @@ def create_system(options, full_system, system, piobus = None, dma_ports = [],
     ruby = system.ruby
 
     # Generate pseudo filesystem
-    FileSystemConfig.config_filesystem(system, options)
+    print(f'No file system {options.no_file_system}')
+    if not options.no_file_system:
+        FileSystemConfig.config_filesystem(system, options)
 
     # Create the network object
     (network, IntLinkClass, ExtLinkClass, RouterClass, InterfaceClass) = \

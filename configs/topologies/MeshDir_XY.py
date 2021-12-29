@@ -379,6 +379,8 @@ class MeshDir_XY(SimpleTopology):
 
     # Register nodes with filesystem
     def registerTopology(self, options):
+        if options.no_file_system:
+            return
         i = 0
         for n in self.numa_nodes:
             if n:

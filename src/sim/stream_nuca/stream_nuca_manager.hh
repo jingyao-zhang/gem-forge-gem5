@@ -8,7 +8,8 @@
 
 class StreamNUCAManager {
 public:
-  StreamNUCAManager(Process *_process, bool _enabled,
+  StreamNUCAManager(Process *_process, bool _enabledMemStream,
+                    bool _enabledNUCA,
                     const std::string &_directRegionFitPolicy,
                     bool _enableIndirectPageRemap);
 
@@ -89,7 +90,8 @@ public:
 
 private:
   Process *process;
-  const bool enabled;
+  const bool enabledMemStream;
+  const bool enabledNUCA;
   enum DirectRegionFitPolicy {
     CROP,
     DROP,
@@ -111,6 +113,7 @@ private:
 
   void remapIndirectRegion(ThreadContext *tc, StreamRegion &region);
 
+  void computeCachedElements();
   void computeCacheSet();
 
   struct IndirectPageHops {
@@ -181,6 +184,13 @@ private:
    */
   void relocateIndirectPages(ThreadContext *tc,
                              const IndirectRegionHops &regionHops);
+
+  /**
+   * Group direct regions by their alignment requirement.
+   * Map from the root VAddr to a vector of VAddr.
+   */
+  std::map<Addr, std::vector<Addr>> directRegionAlignGroupVAddrMap;
+  void groupDirectRegionsByAlign();
 
   /**
    * Stats.

@@ -1132,7 +1132,7 @@ void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
   const auto seMachineID = se->controller->getMachineID();
   auto floatMachineType = this->getFloatMachineTypeAtElem(element->idx);
   if (seMachineID.getType() != floatMachineType) {
-    LLC_ELEMENT_PANIC(element, "OffloadMachineType %s != SE MachineType %s.",
+    LLC_ELEMENT_PANIC(element, "[CompleteCmp] Offload %s != SE MachineType %s.",
                       floatMachineType, seMachineID);
   }
 

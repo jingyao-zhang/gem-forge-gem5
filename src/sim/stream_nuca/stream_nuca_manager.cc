@@ -21,10 +21,12 @@ Stats::DistributionNoReset StreamNUCAManager::indRegionMemMinBanks;
 Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCRemappedHops;
 Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
 
-StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabled,
+StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabledMemStream,
+                                     bool _enabledNUCA,
                                      const std::string &_directRegionFitPolicy,
                                      bool _enableIndirectPageRemap)
-    : process(_process), enabled(_enabled),
+    : process(_process), enabledMemStream(_enabledMemStream),
+      enabledNUCA(_enabledNUCA),
       enableIndirectPageRemap(_enableIndirectPageRemap) {
   if (_directRegionFitPolicy == "crop") {
     this->directRegionFitPolicy = DirectRegionFitPolicy::CROP;
@@ -36,7 +38,8 @@ StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabled,
 }
 
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
-    : process(other.process), enabled(other.enabled),
+    : process(other.process), enabledMemStream(other.enabledMemStream),
+      enabledNUCA(other.enabledNUCA),
       directRegionFitPolicy(other.directRegionFitPolicy),
       enableIndirectPageRemap(other.enableIndirectPageRemap) {
   panic("StreamNUCAManager does not have copy constructor.");
@@ -128,8 +131,21 @@ StreamNUCAManager::getContainingStreamRegion(Addr vaddr) const {
 }
 
 void StreamNUCAManager::remap(ThreadContext *tc) {
-  DPRINTF(StreamNUCAManager, "Remap Regions Enabled %d.\n", this->enabled);
-  if (!this->enabled) {
+  DPRINTF(StreamNUCAManager,
+          "Remap Regions EnabledMemStream %d EnabledNUCA %d.\n",
+          this->enabledMemStream, this->enabledNUCA);
+
+  /**
+   * Event not enabled, we group direct regions by their alignement.
+   * Also, if we enabled memory stream, we try to compute cached elements.
+   */
+  this->groupDirectRegionsByAlign();
+
+  if (this->enabledMemStream) {
+    this->computeCachedElements();
+  }
+
+  if (!this->enabledNUCA) {
     return;
   }
 
@@ -601,66 +617,65 @@ void StreamNUCAManager::relocateIndirectPages(
   }
 }
 
-void StreamNUCAManager::computeCacheSet() {
+void StreamNUCAManager::groupDirectRegionsByAlign() {
+  std::map<Addr, Addr> unionFindParent;
+  for (const auto &entry : this->startVAddrRegionMap) {
+    unionFindParent.emplace(entry.first, entry.first);
+  }
 
-  /**
-   * Compute the StartSet for arrays.
-   * NOTE: We ignore indirect regions, as they will be remapped at page
-   * granularity.
-   * First group arrays by their alignment requirement.
-   */
-  std::map<Addr, std::vector<Addr>> alignRangeVAddrs;
-  {
-    std::map<Addr, Addr> unionFindParent;
-    for (const auto &entry : this->startVAddrRegionMap) {
-      unionFindParent.emplace(entry.first, entry.first);
-    }
-
-    auto find = [&unionFindParent](Addr vaddr) -> Addr {
-      while (true) {
-        auto iter = unionFindParent.find(vaddr);
-        assert(iter != unionFindParent.end());
-        if (iter->second == vaddr) {
-          return vaddr;
-        }
-        vaddr = iter->second;
+  auto find = [&unionFindParent](Addr vaddr) -> Addr {
+    while (true) {
+      auto iter = unionFindParent.find(vaddr);
+      assert(iter != unionFindParent.end());
+      if (iter->second == vaddr) {
+        return vaddr;
       }
-    };
-
-    auto merge = [&unionFindParent, &find](Addr vaddrA, Addr vaddrB) -> void {
-      auto rootA = find(vaddrA);
-      auto rootB = find(vaddrB);
-      unionFindParent[rootA] = rootB;
-    };
-
-    for (const auto &entry : this->startVAddrRegionMap) {
-      const auto &region = entry.second;
-      for (const auto &align : region.aligns) {
-        if (align.vaddrA == align.vaddrB) {
-          // Ignore self alignment.
-          continue;
-        }
-        merge(align.vaddrA, align.vaddrB);
-        DPRINTF(StreamNUCAManager, "[AlignGroup] Union %#x %#x.\n",
-                align.vaddrA, align.vaddrB);
-      }
+      vaddr = iter->second;
     }
+  };
 
-    for (const auto &entry : unionFindParent) {
-      /**
-       * Ignore all indirect regions when contructing groups.
-       */
-      const auto &region = this->getRegionFromStartVAddr(entry.first);
-      if (region.isIndirect) {
+  auto merge = [&unionFindParent, &find](Addr vaddrA, Addr vaddrB) -> void {
+    auto rootA = find(vaddrA);
+    auto rootB = find(vaddrB);
+    unionFindParent[rootA] = rootB;
+  };
+
+  for (const auto &entry : this->startVAddrRegionMap) {
+    const auto &region = entry.second;
+    for (const auto &align : region.aligns) {
+      if (align.vaddrA == align.vaddrB) {
+        // Ignore self alignment.
         continue;
       }
-      auto root = find(entry.first);
-      alignRangeVAddrs
-          .emplace(std::piecewise_construct, std::forward_as_tuple(root),
-                   std::forward_as_tuple())
-          .first->second.emplace_back(entry.first);
+      merge(align.vaddrA, align.vaddrB);
+      DPRINTF(StreamNUCAManager, "[AlignGroup] Union %#x %#x.\n", align.vaddrA,
+              align.vaddrB);
     }
   }
+
+  for (const auto &entry : unionFindParent) {
+    /**
+     * Ignore all indirect regions when contructing groups.
+     */
+    const auto &region = this->getRegionFromStartVAddr(entry.first);
+    if (region.isIndirect) {
+      continue;
+    }
+    auto root = find(entry.first);
+    this->directRegionAlignGroupVAddrMap
+        .emplace(std::piecewise_construct, std::forward_as_tuple(root),
+                 std::forward_as_tuple())
+        .first->second.emplace_back(entry.first);
+  }
+
+  for (auto &entry : this->directRegionAlignGroupVAddrMap) {
+    auto &group = entry.second;
+    // Sort for simplicity.
+    std::sort(group.begin(), group.end());
+  }
+}
+
+void StreamNUCAManager::computeCachedElements() {
 
   const auto totalBanks =
       StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
@@ -674,22 +689,50 @@ void StreamNUCAManager::computeCacheSet() {
   const auto reservedLLCSize = 1024 * 1024;
   const auto totalLLCSize = llcBankSize * totalBanks - reservedLLCSize;
 
-  for (auto &entry : alignRangeVAddrs) {
+  for (auto &entry : this->directRegionAlignGroupVAddrMap) {
     auto &group = entry.second;
-    // Sort for simplicity.
-    std::sort(group.begin(), group.end());
 
     /**
      * First we estimate how many data can be cached.
-     * NOTE: As a hack, we try the policy to avoid caching the out_neigh_index
-     * if we can't fit all in the LLC.
+     * NOTE: If a region has non-zero non-self alignment, we assume the
+     * offset is the unused data, e.g. first layer of hotspot3D.powerIn.
+     * This is different than homogeneous case:
+     * A [--- Cached --- | --- Uncached ---]
+     * B [--- Cached --- | --- Uncached ---]
+     * C [--- Cached --- | --- Uncached ---]
+     *
+     * Now we have some extra bytes:
+     * A [        --- Cached --- | --- Uncached ---]
+     * B [        --- Cached --- | --- Uncached ---]
+     * C - Extra [--- Cached --- | --- Uncached ---]
+     *
+     * For A and B
+     *  CachedElementsA = (TotalLLCSize + Extra) / TotalElementSize
+     * For C
+     *  CachedElementsC = CachedElementsA - Extra / ElementCSize
+     *
      */
     auto totalElementSize = 0;
     auto totalSize = 0ul;
+    auto extraSize = 0ul;
+    auto getExtraSize = [](const StreamRegion &region) -> uint64_t {
+      auto extraSize = 0ul;
+      for (const auto &align : region.aligns) {
+        if (align.vaddrA != align.vaddrB && align.elementOffset > 0) {
+          if (extraSize != 0 && align.elementOffset != extraSize) {
+            panic("Region %s Multi-ExtraSize %lu %lu.", region.name, extraSize,
+                  align.elementOffset);
+          }
+          extraSize = align.elementOffset;
+        }
+      }
+      return extraSize;
+    };
     for (auto startVAddr : group) {
       const auto &region = this->getRegionFromStartVAddr(startVAddr);
       totalElementSize += region.elementSize;
       totalSize += region.elementSize * region.numElement;
+      extraSize += getExtraSize(region);
     }
 
     if (this->directRegionFitPolicy == DirectRegionFitPolicy::DROP &&
@@ -697,9 +740,13 @@ void StreamNUCAManager::computeCacheSet() {
       for (auto iter = group.begin(), end = group.end(); iter != end; ++iter) {
         auto startVAddr = *iter;
         auto &region = this->getRegionFromStartVAddr(startVAddr);
-        if (region.name == "gap.pr_push.out_neigh_index") {
+        if (region.name == "gap.pr_push.out_neigh_index" ||
+            region.name == "rodinia.hotspot3D.powerIn" ||
+            region.name == "rodinia.hotspot.power" ||
+            region.name == "rodinia.pathfinder.wall") {
           totalElementSize -= region.elementSize;
           totalSize -= region.elementSize * region.numElement;
+          extraSize -= getExtraSize(region);
           region.cachedElements = 0;
           group.erase(iter);
           // This is a vector, we have to break after erase something.
@@ -712,22 +759,57 @@ void StreamNUCAManager::computeCacheSet() {
       }
     }
 
-    uint64_t cachedElements = totalLLCSize / totalElementSize;
+    uint64_t cachedElements = (totalLLCSize + extraSize) / totalElementSize;
+
+    DPRINTF(StreamNUCAManager,
+            "[AlignGroup] Analyzing Group %#x NumRegions %d ExtraSize %lu "
+            "TotalElementSize %d CachedElements %lu.\n",
+            group.front(), group.size(), extraSize, totalElementSize,
+            cachedElements);
+    for (auto vaddr : group) {
+      auto &region = this->getRegionFromStartVAddr(vaddr);
+      auto extraSize = getExtraSize(region);
+      auto regionCachedElements =
+          cachedElements - extraSize / region.elementSize;
+      DPRINTF(StreamNUCAManager,
+              "[AlignGroup]   Region %#x Elements %lu ExtraSize %lu Cached "
+              "%.2f%%.\n",
+              vaddr, region.numElement, extraSize,
+              static_cast<float>(regionCachedElements) /
+                  static_cast<float>(region.numElement) * 100.f);
+      region.cachedElements = std::min(regionCachedElements, region.numElement);
+    }
+  }
+}
+
+void StreamNUCAManager::computeCacheSet() {
+
+  /**
+   * Compute the StartSet for arrays.
+   * NOTE: We ignore indirect regions, as they will be remapped at page
+   * granularity.
+   */
+
+  const auto totalBanks =
+      StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
+  const auto llcNumSets = StreamNUCAMap::getCacheNumSet();
+  const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
+
+  for (auto &entry : this->directRegionAlignGroupVAddrMap) {
+    auto &group = entry.second;
+
+    auto totalElementSize = 0;
+    auto totalSize = 0ul;
+    for (auto startVAddr : group) {
+      const auto &region = this->getRegionFromStartVAddr(startVAddr);
+      totalElementSize += region.elementSize;
+      totalSize += region.elementSize * region.numElement;
+    }
 
     DPRINTF(
         StreamNUCAManager,
-        "[AlignGroup] Analyzing Group %#x NumRegions %d TotalElementSize %d "
-        "CachedElements %lu.\n",
-        group.front(), group.size(), totalElementSize, cachedElements);
-    for (auto vaddr : group) {
-      auto &region = this->getRegionFromStartVAddr(vaddr);
-      DPRINTF(StreamNUCAManager,
-              "[AlignGroup]   Region %#x Elements %lu Cached %.2f%%.\n", vaddr,
-              region.numElement,
-              static_cast<float>(cachedElements) /
-                  static_cast<float>(region.numElement) * 100.f);
-      region.cachedElements = std::min(cachedElements, region.numElement);
-    }
+        "[CacheSet] Analyzing Group %#x NumRegions %d TotalElementSize %d.\n",
+        group.front(), group.size(), totalElementSize);
 
     auto startSet = 0;
     for (auto startVAddr : group) {
@@ -737,15 +819,17 @@ void StreamNUCAManager::computeCacheSet() {
       auto &rangeMap = StreamNUCAMap::getRangeMapByStartPAddr(startPAddr);
       rangeMap.startSet = startSet;
 
+      auto cachedElements = region.cachedElements;
+
       auto cachedBytes = cachedElements * region.elementSize;
       auto usedSets = cachedBytes / (llcBlockSize * totalBanks);
 
-      DPRINTF(
-          StreamNUCAManager,
-          "Range %s %#x ElementSize %d CachedElements %lu StartSet %d UsedSet "
-          "%d.\n",
-          region.name, region.vaddr, region.elementSize, cachedElements,
-          startSet, usedSets);
+      DPRINTF(StreamNUCAManager,
+              "Range %s %#x ElementSize %d CachedElements %lu StartSet %d "
+              "UsedSet "
+              "%d.\n",
+              region.name, region.vaddr, region.elementSize, cachedElements,
+              startSet, usedSets);
       startSet = (startSet + usedSets) % llcNumSets;
     }
   }
@@ -875,9 +959,11 @@ int StreamNUCAManager::determineStartBank(const StreamRegion &region,
   auto startPAddr = this->translate(startVAddr);
 
   int startBank = 0;
-  if (region.name.find("rodinia.pathfinder") == 0 ||
-      region.name.find("rodinia.hotspot3D") == 0 ||
-      region.name.find("rodinia.srad_v2") == 0 ||
+  if (region.name.find("rodinia.pathfinder.") == 0 ||
+      region.name.find("rodinia.hotspot.") == 0 ||
+      region.name.find("rodinia.hotspot.") == 0 ||
+      region.name.find("rodinia.srad_v2.") == 0 ||
+      region.name.find("rodinia.srad_v3.") == 0 ||
       region.name.find("gap.pr_push") == 0 ||
       region.name.find("gap.bfs_push") == 0 ||
       region.name.find("gap.sssp") == 0 ||

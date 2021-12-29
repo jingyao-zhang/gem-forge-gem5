@@ -73,6 +73,7 @@ class Process(SimObject):
         "switch cpu when encounter this mark")
     markEnd = Param.Int64(-1,
         "end when encounter this mark")
+    enableMemStream = Param.Bool(False, "Enable Mem Stream.")
     enableStreamNUCA = Param.Bool(False, "Enable Stream NUCA.")
     streamNUCADirectRegionFitPolicy = Param.String('crop',
         "What to do when direct regions overflow LLC.")

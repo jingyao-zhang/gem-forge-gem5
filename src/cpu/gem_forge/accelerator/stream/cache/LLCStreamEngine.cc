@@ -1283,6 +1283,28 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
   }
 
   /**
+   * Check that the next address is still handled here.
+   * Due to the waiting indirect element, a stream may not be
+   * migrated immediately after the stream engine found the next
+   * element is not handled here. In such case, we simply give up and
+   * return false.
+   *
+   * In case of faulting, the slice will be skipped (see
+   * issueDirectStream()).
+   */
+  auto vaddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
+  Addr vaddr = vaddrAndMachineType.first;
+  auto machineType = vaddrAndMachineType.second;
+  Addr paddr;
+  if (dynS->translateToPAddr(vaddr, paddr)) {
+    if (!this->isPAddrHandledByMe(paddr, machineType)) {
+      statistic.sampleLLCStreamEngineIssueReason(
+          StreamStatistic::LLCStreamEngineIssueReason::PendingMigrate);
+      return nullptr;
+    }
+  }
+
+  /**
    * Allocate the element on Atomic and StoreStream.
    * Additional check on StoreStream, which should have StoreValue
    * ready.
@@ -1349,28 +1371,6 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
           return nullptr;
         }
       }
-    }
-  }
-
-  /**
-   * Check that the next address is still handled here.
-   * Due to the waiting indirect element, a stream may not be
-   * migrated immediately after the stream engine found the next
-   * element is not handled here. In such case, we simply give up and
-   * return false.
-   *
-   * In case of faulting, the slice will be skipped (see
-   * issueDirectStream()).
-   */
-  auto vaddrAndMachineType = dynS->peekNextAllocVAddrAndMachineType();
-  Addr vaddr = vaddrAndMachineType.first;
-  auto machineType = vaddrAndMachineType.second;
-  Addr paddr;
-  if (dynS->translateToPAddr(vaddr, paddr)) {
-    if (!this->isPAddrHandledByMe(paddr, machineType)) {
-      statistic.sampleLLCStreamEngineIssueReason(
-          StreamStatistic::LLCStreamEngineIssueReason::PendingMigrate);
-      return nullptr;
     }
   }
 
@@ -3643,6 +3643,14 @@ void LLCStreamEngine::pushReadyComputation(LLCStreamElementPtr &element) {
       LLC_ELEMENT_PANIC(element, "Stream has no computation.");
     }
     dynS->incompleteComputations++;
+
+    const auto seMachineID = this->controller->getMachineID();
+    auto floatMachineType = dynS->getFloatMachineTypeAtElem(element->idx);
+    if (seMachineID.getType() != floatMachineType) {
+      LLC_ELEMENT_PANIC(element,
+                        "[PushReadyCmp] Offload %s != SE MachineType %s.",
+                        floatMachineType, seMachineID);
+    }
   }
   this->readyComputations.emplace_back(element);
   element->scheduledComputation(this->curCycle());

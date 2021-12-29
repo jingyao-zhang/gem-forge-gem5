@@ -525,7 +525,7 @@ template <class Impl>
 void
 FullO3CPU<Impl>::tick()
 {
-    DPRINTF(O3CPU, "\n\nFullO3CPU: Ticking main, FullO3CPU.\n");
+    DPRINTF(O3CPU, "Ticking main, FullO3CPU.\n");
     assert(!switchedOut());
     assert(drainState() != DrainState::Drained);
 

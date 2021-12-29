@@ -212,6 +212,10 @@ def addCommonOptions(parser):
     # start by adding the base options that do not assume an ISA
     addNoISAOptions(parser)
 
+    # no file system in se mode, to save remove time.
+    parser.add_option("--no-file-system", action="store_true", default=False,
+                      help="Disable file system")
+
     # system options
     parser.add_option("--list-cpu-types",
                       action="callback", callback=_listCpuTypes,
