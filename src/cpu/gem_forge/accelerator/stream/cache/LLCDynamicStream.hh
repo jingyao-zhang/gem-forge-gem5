@@ -103,9 +103,7 @@ public:
   /**
    * Query the offloaded machine type.
    */
-  MachineType getFloatMachineTypeAtElem(uint64_t elementIdx) const {
-    return this->configData->floatPlan.getMachineTypeAtElem(elementIdx);
-  }
+  MachineType getFloatMachineTypeAtElem(uint64_t elementIdx) const;
 
   bool hasIndirectDependent() const {
     auto S = this->getStaticStream();

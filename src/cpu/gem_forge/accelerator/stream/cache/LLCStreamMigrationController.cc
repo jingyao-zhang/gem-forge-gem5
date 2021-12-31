@@ -150,8 +150,6 @@ int LLCStreamMigrationController::getMCCNeighborIndex(
 int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
   auto myMachineId = this->controller->getMachineID();
   if (myMachineId.getType() != machineId.getType()) {
-    warn("Inter-Level Stream Migration %s -> %s treated as non-neighbor.",
-         myMachineId, machineId);
     return -1;
   }
   if (machineId == myMachineId) {

@@ -124,6 +124,18 @@ void LLCDynamicStream::setTotalTripCount(int64_t totalTripCount) {
   }
 }
 
+MachineType
+LLCDynamicStream::getFloatMachineTypeAtElem(uint64_t elementIdx) const {
+  if (this->isOneIterationBehind()) {
+    if (elementIdx == 0) {
+      LLC_S_PANIC(this->getDynamicStreamId(),
+                  "Get FloatMachineType for Element 0 with OneIterBehind.");
+    }
+    elementIdx--;
+  }
+  return this->configData->floatPlan.getMachineTypeAtElem(elementIdx);
+}
+
 std::pair<Addr, MachineType>
 LLCDynamicStream::peekNextInitVAddrAndMachineType() const {
   const auto &sliceId = this->slicedStream.peekNextSlice();
