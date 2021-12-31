@@ -93,8 +93,8 @@ StreamFloatPolicy::~StreamFloatPolicy() {
   }
 }
 
-std::ostream &StreamFloatPolicy::logStream(Stream *S) {
-  return getLog() << S->getCPUId() << '-' << S->getStreamName() << ": ";
+std::ostream &StreamFloatPolicy::logS(const DynamicStream &dynS) {
+  return getLog() << dynS.dynamicStreamId << ": ";
 }
 
 StreamFloatPolicy::FloatDecision
@@ -206,19 +206,18 @@ bool StreamFloatPolicy::checkReuseWithinStream(DynamicStream &dynS) {
   if (reuseFootprint >= privateCacheSize) {
     S_DPRINTF(S, "ReuseSize %lu ReuseCount %d >= PrivateCacheSize %lu.\n",
               reuseFootprint, reuseCount, privateCacheSize);
-    logStream(S) << "ReuseSize " << reuseFootprint << " ReuseCount "
-                 << reuseCount << " >= PrivateCacheSize " << privateCacheSize
-                 << '\n'
-                 << std::flush;
+    logS(dynS) << "ReuseSize " << reuseFootprint << " ReuseCount " << reuseCount
+               << " >= PrivateCacheSize " << privateCacheSize << '\n'
+               << std::flush;
     return true;
   } else {
     S_DPRINTF(
         S, "[Not Float] ReuseSize %lu ReuseCount %d < PrivateCacheSize %lu.\n",
         reuseFootprint, reuseCount, privateCacheSize);
-    logStream(S) << "[Not Float] ReuseSize " << reuseFootprint << " ReuseCount "
-                 << reuseCount << " < PrivateCacheSize " << privateCacheSize
-                 << '\n'
-                 << std::flush;
+    logS(dynS) << "[Not Float] ReuseSize " << reuseFootprint << " ReuseCount "
+               << reuseCount << " < PrivateCacheSize " << privateCacheSize
+               << '\n'
+               << std::flush;
     return false;
   }
 }
@@ -244,8 +243,8 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
   uint64_t historyStartVAddrMin = UINT64_MAX;
   uint64_t historyStartVAddrMax = 0;
   auto currStartAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
-  logStream(S) << "StartVAddr " << std::hex << currStartAddr << std::dec << '\n'
-               << std::flush;
+  logS(dynS) << "StartVAddr " << std::hex << currStartAddr << std::dec << '\n'
+             << std::flush;
   for (auto historyIter = S->aggregateHistory.rbegin(),
             historyEnd = S->aggregateHistory.rend();
        historyIter != historyEnd; ++historyIter, --historyOffset) {
@@ -256,11 +255,11 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
     historyTotalElements += prevNumElements;
     historyStartVAddrMax = std::max(historyStartVAddrMax, prevStartAddr);
     historyStartVAddrMin = std::min(historyStartVAddrMin, prevStartAddr);
-    logStream(S) << "Hist " << historyOffset << " StartAddr " << std::hex
-                 << prevStartAddr << " Range " << historyStartVAddrMin << ", +"
-                 << historyStartVAddrMax - historyStartVAddrMin << std::dec
-                 << " NumElem " << prevNumElements << '\n'
-                 << std::flush;
+    logS(dynS) << "Hist " << historyOffset << " StartAddr " << std::hex
+               << prevStartAddr << " Range " << historyStartVAddrMin << ", +"
+               << historyStartVAddrMax - historyStartVAddrMin << std::dec
+               << " NumElem " << prevNumElements << '\n'
+               << std::flush;
 
     // Check if previous stream has more than 50% chance of hit in private
     // cache?
@@ -273,9 +272,9 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
       S_DPRINTF(S,
                 "[Not Float] Hist PrevIssued %llu, PrivateCacheHitRate %f.\n",
                 prevIssuedRequests, prevPrivateCacheHitRate);
-      logStream(S) << "[Not Float] Hist PrevIssued " << prevIssuedRequests
-                   << " PrivateCacheHitRate " << prevPrivateCacheHitRate << '\n'
-                   << std::flush;
+      logS(dynS) << "[Not Float] Hist PrevIssued " << prevIssuedRequests
+                 << " PrivateCacheHitRate " << prevPrivateCacheHitRate << '\n'
+                 << std::flush;
       return false;
     }
 
@@ -291,10 +290,10 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
       // Still should be offloaded.
       S_DPRINTF(S, "Hist %d MemFootPrint %#x >= PrivateCache %#x.\n",
                 historyOffset, memoryFootprint, privateCacheSize);
-      logStream(S) << "Hist " << historyOffset << " MemFootPrint" << std::hex
-                   << memoryFootprint << " > PrivateCache " << privateCacheSize
-                   << '\n'
-                   << std::dec << std::flush;
+      logS(dynS) << "Hist " << historyOffset << " MemFootPrint" << std::hex
+                 << memoryFootprint << " > PrivateCache " << privateCacheSize
+                 << '\n'
+                 << std::dec << std::flush;
       continue;
     }
     if (S->addrDepStreams.size() > 0) {
@@ -309,10 +308,10 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
         // If we have indirect streams, then the half the threashold.
         S_DPRINTF(S, "Hist %d MaxIndSMemFootPrint %#x > PrivateCache %#x.\n",
                   historyOffset, maxIndSMemFootprint, privateCacheSize);
-        logStream(S) << "Hist " << historyOffset << " MaxMemFootPrint "
-                     << std::hex << maxIndSMemFootprint << " > PrivateCache "
-                     << privateCacheSize << ".\n"
-                     << std::dec << std::flush;
+        logS(dynS) << "Hist " << historyOffset << " MaxMemFootPrint "
+                   << std::hex << maxIndSMemFootprint << " > PrivateCache "
+                   << privateCacheSize << ".\n"
+                   << std::dec << std::flush;
         continue;
       }
     }
@@ -320,11 +319,11 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
               "[Not Float] Hist %d StartAddr %#x matched, MemFootPrint %lu < "
               "PrivateCache %lu.\n",
               historyOffset, currStartAddr, memoryFootprint, privateCacheSize);
-    logStream(S) << "[Not Float] Hist " << historyOffset << " StartAddr "
-                 << std::hex << currStartAddr << " matched, MemFootPrint "
-                 << memoryFootprint << " <= PrivateCache " << privateCacheSize
-                 << ".\n"
-                 << std::dec << std::flush;
+    logS(dynS) << "[Not Float] Hist " << historyOffset << " StartAddr "
+               << std::hex << currStartAddr << " matched, MemFootPrint "
+               << memoryFootprint << " <= PrivateCache " << privateCacheSize
+               << ".\n"
+               << std::dec << std::flush;
     return false;
   }
 
@@ -340,9 +339,9 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
     auto historyStartVAddrRange = historyStartVAddrMax - historyStartVAddrMin;
     if (historyStartVAddrRange * START_ADDR_RANGE_MULTIPLIER <=
         this->getPrivateCacheCapacity()) {
-      logStream(S) << "[Not Float] Hist TotalElements " << historyTotalElements
-                   << " StartVAddr Range " << historyStartVAddrRange << ".\n"
-                   << std::flush;
+      logS(dynS) << "[Not Float] Hist TotalElements " << historyTotalElements
+                 << " StartVAddr Range " << historyStartVAddrRange << ".\n"
+                 << std::flush;
       return false;
     }
   }
@@ -360,8 +359,7 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
     // Unless I have been promoted as an UpdateStream.
     if (!S->isUpdateStream()) {
       S_DPRINTF(S, "[Not Float] due to aliased store stream.\n");
-      logStream(S) << "[Not Float] due to aliased store stream.\n"
-                   << std::flush;
+      logS(dynS) << "[Not Float] due to aliased store stream.\n" << std::flush;
       return FloatDecision();
     }
   }
@@ -384,7 +382,7 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
     }
     if (floatCompute) {
       S_DPRINTF(S, "[Float] always float computation.");
-      logStream(S) << "[Float] always float computation.\n" << std::flush;
+      logS(dynS) << "[Float] always float computation.\n" << std::flush;
       return FloatDecision(true);
     }
   }
@@ -403,12 +401,12 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
                             "bb104::tmp109(load))" ||
       S->getStreamName() == "(kernel_range.c::28(.omp_outlined..37) 67 bb104 "
                             "bb118::tmp121(load))") {
-    logStream(S) << "[NotFloated]: explicitly.\n" << std::flush;
+    logS(dynS) << "[NotFloated]: explicitly.\n" << std::flush;
     return FloatDecision(false);
   }
 
   S_DPRINTF(S, "[Float].\n");
-  logStream(S) << "[Float].\n" << std::flush;
+  logS(dynS) << "[Float].\n" << std::flush;
   return FloatDecision(true);
 }
 
@@ -432,8 +430,8 @@ bool StreamFloatPolicy::shouldPseudoFloatStream(DynamicStream &dynS) {
     return false;
   }
   S_DPRINTF(S, "[PseudoFloat] TotalTripCount %lu.\n", totalTripCount);
-  logStream(S) << "[PseudoFloat] TotalTripCount " << totalTripCount << '\n'
-               << std::flush;
+  logS(dynS) << "[PseudoFloat] TotalTripCount " << totalTripCount << '\n'
+             << std::flush;
   return true;
 }
 
@@ -514,8 +512,8 @@ void StreamFloatPolicy::setFloatPlan(DynamicStream &dynS) {
   uint64_t historyStartVAddrMin = UINT64_MAX;
   uint64_t historyStartVAddrMax = 0;
   auto currStartAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
-  logStream(S) << "StartVAddr " << std::hex << currStartAddr << std::dec << '\n'
-               << std::flush;
+  logS(dynS) << "StartVAddr " << std::hex << currStartAddr << std::dec << '\n'
+             << std::flush;
   for (auto historyIter = S->aggregateHistory.rbegin(),
             historyEnd = S->aggregateHistory.rend();
        historyIter != historyEnd; ++historyIter, --historyOffset) {
@@ -526,11 +524,11 @@ void StreamFloatPolicy::setFloatPlan(DynamicStream &dynS) {
     historyTotalElements += prevNumElements;
     historyStartVAddrMax = std::max(historyStartVAddrMax, prevStartAddr);
     historyStartVAddrMin = std::min(historyStartVAddrMin, prevStartAddr);
-    logStream(S) << "Hist " << historyOffset << " StartAddr " << std::hex
-                 << prevStartAddr << " Range " << historyStartVAddrMin << ", +"
-                 << historyStartVAddrMax - historyStartVAddrMin << std::dec
-                 << " NumElem " << prevNumElements << '\n'
-                 << std::flush;
+    logS(dynS) << "Hist " << historyOffset << " StartAddr " << std::hex
+               << prevStartAddr << " Range " << historyStartVAddrMin << ", +"
+               << historyStartVAddrMax - historyStartVAddrMin << std::dec
+               << " NumElem " << prevNumElements << '\n'
+               << std::flush;
 
     if (currStartAddr != prevStartAddr) {
       // Not match.
@@ -546,21 +544,21 @@ void StreamFloatPolicy::setFloatPlan(DynamicStream &dynS) {
       // Still should be offloaded to Memory.
       S_DPRINTF(S, "Hist %d MemFootPrint %#x > SharedCache %#x.\n",
                 historyOffset, memoryFootprint, sharedCacheSize);
-      logStream(S) << "Hist " << historyOffset << " MemFootPrint" << std::hex
-                   << memoryFootprint << " > SharedCache " << sharedCacheSize
-                   << '\n'
-                   << std::dec << std::flush;
+      logS(dynS) << "Hist " << historyOffset << " MemFootPrint" << std::hex
+                 << memoryFootprint << " > SharedCache " << sharedCacheSize
+                 << '\n'
+                 << std::dec << std::flush;
       continue;
     }
     S_DPRINTF(S,
               "[TryFitLLC] Hist %d StartAddr %#x matched, MemFootPrint %lu <= "
               "SharedCache %lu.\n",
               historyOffset, currStartAddr, memoryFootprint, sharedCacheSize);
-    logStream(S) << "[TryFitLLC] Hist " << historyOffset << " StartAddr "
-                 << std::hex << currStartAddr << " matched, MemFootPrint "
-                 << memoryFootprint << " <= SharedCache " << sharedCacheSize
-                 << ".\n"
-                 << std::dec << std::flush;
+    logS(dynS) << "[TryFitLLC] Hist " << historyOffset << " StartAddr "
+               << std::hex << currStartAddr << " matched, MemFootPrint "
+               << memoryFootprint << " <= SharedCache " << sharedCacheSize
+               << ".\n"
+               << std::dec << std::flush;
     floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
     return;
   }

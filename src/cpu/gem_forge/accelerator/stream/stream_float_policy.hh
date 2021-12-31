@@ -21,7 +21,7 @@ public:
 
   bool shouldPseudoFloatStream(DynamicStream &dynS);
 
-  static std::ostream &logStream(Stream *S);
+  static std::ostream &logS(const DynamicStream &dynS);
 
   /**
    * Set the float level for all streams.
@@ -70,6 +70,7 @@ private:
   void setFloatPlanManual2(DynamicStream &dynS);
 
   void setFloatPlanForRodiniaSrad(DynamicStream &dynS);
+  void setFloatPlanForBinTree(DynamicStream &dynS);
 
   static const std::unordered_map<std::string, std::string> streamToRegionMap;
 };

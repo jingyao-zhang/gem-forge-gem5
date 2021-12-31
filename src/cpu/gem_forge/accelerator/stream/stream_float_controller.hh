@@ -94,7 +94,7 @@ private:
    * Check if there is an aliased StoreStream for this LoadStream, but
    * is not promoted into an UpdateStream.
    */
-  bool checkAliasedUnpromotedStoreStream(Stream *S);
+  bool checkAliasedUnpromotedStoreStream(DynamicStream *dynS);
 
   /**
    * Determine the FirstOffloadedElementIdx.

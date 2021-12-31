@@ -181,6 +181,15 @@ void StreamFloatPolicy::setFloatPlanManual2(DynamicStream &dynS) {
     return;
   }
 
+  /**
+   * Take log for binary tree.
+   */
+  if (streamName.find("gfm.bin_tree.val.ld") == 0 ||
+      (streamName.find("(omp_binary_tree.c") == 0 && S->getLoopLevel() == 2)) {
+    this->setFloatPlanForBinTree(dynS);
+    return;
+  }
+
   // Default just offload to LLC.
   floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
   return;
@@ -253,5 +262,38 @@ void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynamicStream &dynS) {
       (llcEndVAddr - myStartVAddr + elementSize - 1) / elementSize;
   floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
   floatPlan.addFloatChangePoint(myLLCTripCount, MachineType_Directory);
+  return;
+}
+
+void StreamFloatPolicy::setFloatPlanForBinTree(DynamicStream &dynS) {
+
+  auto S = dynS.stream;
+
+  auto &floatPlan = dynS.getFloatPlan();
+  uint64_t firstElementIdx = 0;
+
+  auto threadContext = S->getCPUDelegator()->getSingleThreadContext();
+  auto streamNUCAManager = threadContext->getStreamNUCAManager();
+
+  const auto &streamNUCARegion =
+      streamNUCAManager->getRegionFromName("gfm.bin_tree.tree");
+
+  auto cachedElements = streamNUCARegion.cachedElements;
+  auto logCachedElements = static_cast<int>(log2(cachedElements));
+
+  DYN_S_DPRINTF(dynS.dynamicStreamId,
+                "ElemSize %d CachedElements %lu LogCachedElements %d.\n",
+                streamNUCARegion.elementSize, cachedElements,
+                logCachedElements);
+  logS(dynS) << "[BinTree] ElemSize " << streamNUCARegion.elementSize
+             << " CachedElements " << cachedElements << " LogCachedElements "
+             << logCachedElements << ".\n"
+             << std::flush;
+  /**
+   * We are accessing mixing rows in LLC and Mem.
+   * Here we add (elementSize - 1) to handle cross-line element.
+   */
+  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+  floatPlan.addFloatChangePoint(logCachedElements, MachineType_Directory);
   return;
 }

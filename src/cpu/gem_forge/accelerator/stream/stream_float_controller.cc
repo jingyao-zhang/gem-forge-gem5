@@ -256,7 +256,7 @@ void StreamFloatController::endFloatStreams(const DynStreamVec &dynStreams) {
           DYN_S_PANIC(dynS->dynamicStreamId,
                       "[MidwayFloat] Not delayed anymore.");
         }
-        StreamFloatPolicy::logStream(dynS->stream)
+        StreamFloatPolicy::logS(*dynS)
             << "[MidwayFloat] Early terminated at Element "
             << dynS->FIFOIdx.entryIdx << ".\n";
       }
@@ -366,7 +366,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
     auto &addrBaseDynS = addrBaseS->getDynamicStream(dynS->configSeqNum);
     if (!addrBaseS->isPointerChaseIndVar()) {
       // AddrBaseStream is not PointerChaseIndVarStream.
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(*dynS)
           << "[Not Float] due to addr base stream not pointer chase IV.\n"
           << std::flush;
       continue;
@@ -375,14 +375,14 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
     for (auto valueBaseS : S->valueBaseStreams) {
       if (!floatedMap.count(valueBaseS)) {
         // ValueBaseStream is not floated.
-        StreamFloatPolicy::logStream(S)
+        StreamFloatPolicy::logS(*dynS)
             << "[Not Float] due to unfloat value base stream.\n"
             << std::flush;
         continue;
       }
     }
     // Check aliased store.
-    if (this->checkAliasedUnpromotedStoreStream(S)) {
+    if (this->checkAliasedUnpromotedStoreStream(dynS)) {
       continue;
     }
     // Only dependent on this direct stream.
@@ -401,10 +401,10 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
     }
     // Remember the decision.
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as pointer chase.\n");
-    StreamFloatPolicy::logStream(S) << "[Float] as pointer chase.\n"
-                                    << std::flush;
-    StreamFloatPolicy::logStream(addrBaseS) << "[Float] as pointer chase IV.\n"
-                                            << std::flush;
+    StreamFloatPolicy::logS(*dynS) << "[Float] as pointer chase.\n"
+                                   << std::flush;
+    StreamFloatPolicy::logS(addrBaseDynS) << "[Float] as pointer chase IV.\n"
+                                          << std::flush;
     floatedMap.emplace(S, config);
     floatedMap.emplace(addrBaseS, baseConfig);
     args.rootConfigVec.push_back(config);
@@ -437,7 +437,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     auto addrBaseS = *S->addrBaseStreams.begin();
     if (!floatedMap.count(addrBaseS)) {
       // AddrBaseStream is not floated.
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(*dynS)
           << "[Not Float] due to unfloat addr base stream.\n"
           << std::flush;
       continue;
@@ -446,7 +446,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     for (auto valueBaseS : S->valueBaseStreams) {
       if (!floatedMap.count(valueBaseS)) {
         // ValueBaseStream is not floated.
-        StreamFloatPolicy::logStream(S)
+        StreamFloatPolicy::logS(*dynS)
             << "[Not Float] due to unfloat value base stream.\n"
             << std::flush;
         continue;
@@ -456,14 +456,14 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
      * Check if there is an aliased StoreStream for this LoadStream, but
      * is not promoted into an UpdateStream.
      */
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "HasAliasedStore " << S->aliasBaseStream->hasAliasedStoreStream
         << " IsLoad " << S->isLoadStream() << " IsUpdate "
         << S->isUpdateStream() << ".\n"
         << std::flush;
     if (S->aliasBaseStream->hasAliasedStoreStream && S->isLoadStream() &&
         !S->isUpdateStream()) {
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(*dynS)
           << "[Not Float] due to aliased store stream.\n"
           << std::flush;
       continue;
@@ -483,7 +483,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
       config->addBaseOn(valueBaseConfig);
     }
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as indirect.\n");
-    StreamFloatPolicy::logStream(S) << "[Float] as indirect.\n" << std::flush;
+    StreamFloatPolicy::logS(*dynS) << "[Float] as indirect.\n" << std::flush;
     floatedMap.emplace(S, config);
     if (S->getEnabledStoreFunc()) {
       if (!dynS->hasTotalTripCount()) {
@@ -576,14 +576,14 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
       continue;
     }
     if (numPointerChaseBackBaseStreams > 1) {
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(*dynS)
           << "[Not Float] as Multi PtrChase BackBaseStreams: "
           << numPointerChaseBackBaseStreams << ".\n"
           << std::flush;
       continue;
     }
     if (!allBackBaseStreamsAreFloated) {
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(*dynS)
           << "[Not Float] as BackBaseStream is not floated.\n"
           << std::flush;
       continue;
@@ -597,7 +597,7 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
      */
     if (!dynS->hasTotalTripCount() &&
         !backBaseStreamConfigs.front()->loopBoundCallback) {
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(*dynS)
           << "[Not Float] as no TotalTripCount: " << dynS->getTotalTripCount()
           << ", nor LoopBoundFunc.\n"
           << std::flush;
@@ -647,7 +647,7 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
     baseConfigWithMostSenders->addUsedBy(reductionConfig);
     S_DPRINTF(S, "ReductionStream associated with %s, existing sender %d.\n",
               baseConfigWithMostSenders->dynamicId, maxSenders);
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Float] as Reduction with " << baseConfigWithMostSenders->dynamicId
         << ", existing # sender " << maxSenders << ".\n"
         << std::flush;
@@ -685,7 +685,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
     }
     if (BS->isIndirectLoadStream()) {
       if (backBaseIndirectS) {
-        StreamFloatPolicy::logStream(S)
+        StreamFloatPolicy::logS(*dynS)
             << "[Not Float] as IndirectReduction with multiple "
                "BackBaseIndirectS.\n"
             << std::flush;
@@ -694,9 +694,9 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
       backBaseIndirectS = BS;
     } else if (BS->isDirectLoadStream()) {
       if (backBaseDirectS) {
-        StreamFloatPolicy::logStream(S) << "[Not Float] as IndirectReduction "
-                                           "with multiple BackBaseDirectS.\n"
-                                        << std::flush;
+        StreamFloatPolicy::logS(*dynS) << "[Not Float] as IndirectReduction "
+                                          "with multiple BackBaseDirectS.\n"
+                                       << std::flush;
         return;
       }
       backBaseDirectS = BS;
@@ -707,26 +707,26 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
     return;
   }
   if (!this->se->myParams->enableFloatIndirectReduction) {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] as IndirectReduction is disabled.\n"
         << std::flush;
     return;
   }
   if (!floatedMap.count(backBaseIndirectS)) {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] as BackBaseIndirectStream is not floated.\n"
         << std::flush;
     return;
   }
   if (backBaseDirectS && !floatedMap.count(backBaseDirectS)) {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] as BackBaseDirectStream is not floated.\n"
         << std::flush;
     return;
   }
   if (backBaseDirectS &&
       backBaseIndirectS->addrBaseStreams.count(backBaseDirectS) == 0) {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] as BackBaseIndirectStream is not AddrDependent on "
            "BackBaseDirectStream.\n"
         << std::flush;
@@ -743,7 +743,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
      * ! We manually enable this for bfs_pull.
      */
   } else {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] as ReduceOp is not distributable.\n"
         << std::flush;
     return;
@@ -753,7 +753,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   uint64_t floatIndirectReductionMinTripCount = 256;
   if (!dynS->hasTotalTripCount() ||
       dynS->getTotalTripCount() < floatIndirectReductionMinTripCount) {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] as unfavorable TotalTripCount "
         << dynS->getTotalTripCount() << ".\n"
         << std::flush;
@@ -773,7 +773,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   backBaseIndirectConfig->addUsedBy(reductionConfig);
   S_DPRINTF(S, "Float IndirectReductionStream associated with %s.\n",
             backBaseIndirectConfig->dynamicId);
-  StreamFloatPolicy::logStream(S)
+  StreamFloatPolicy::logS(*dynS)
       << "[Float] as IndirectReduction with "
       << backBaseIndirectConfig->dynamicId << " TotalTripCount "
       << dynS->getTotalTripCount() << ".\n"
@@ -787,7 +787,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
     auto &backBaseDirectConfig = floatedMap.at(backBaseDirectS);
     backBaseDirectConfig->addSendTo(backBaseDirectConfig);
     reductionConfig->addBaseOn(backBaseDirectConfig);
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Float] as IndirectReduction with BackBaseDirectS "
         << backBaseDirectConfig->dynamicId << ".\n"
         << std::flush;
@@ -835,21 +835,21 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
     return;
   }
   if (!floatedMap.count(addrBaseS) || !floatedMap.count(addrRootS)) {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] AddrBase/RootS not floated.\n"
         << std::flush;
     return;
   }
   for (auto valueBaseS : S->valueBaseStreams) {
     if (valueBaseS != addrBaseS && valueBaseS != addrRootS) {
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(*dynS)
           << "[Not Float] ValueBaseS not one of AddrBase/RootS.\n"
           << std::flush;
       return;
     }
   }
   if (this->se->myParams->enableRangeSync) {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] Two-Level IndirectStoreCompute cannot RangeSync.\n"
         << std::flush;
     return;
@@ -862,7 +862,7 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
   floatedMap.emplace(S, myConfig);
   addrBaseConfig->addUsedBy(myConfig);
 
-  StreamFloatPolicy::logStream(S)
+  StreamFloatPolicy::logS(*dynS)
       << "[Float] as Two-Level IndirectStoreCompute associated with "
       << addrBaseConfig->dynamicId << "\n"
       << std::flush;
@@ -872,7 +872,7 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
     if (valueBaseS == addrRootS) {
       addrRootConfig->addSendTo(addrRootConfig);
       myConfig->addBaseOn(addrRootConfig);
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(*dynS)
           << "[Float] as Two-Level IndirectStoreCompute based on "
           << addrRootConfig->dynamicId << "\n"
           << std::flush;
@@ -881,15 +881,17 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
   }
 }
 
-bool StreamFloatController::checkAliasedUnpromotedStoreStream(Stream *S) {
-  StreamFloatPolicy::logStream(S)
+bool StreamFloatController::checkAliasedUnpromotedStoreStream(
+    DynamicStream *dynS) {
+  auto S = dynS->stream;
+  StreamFloatPolicy::logS(*dynS)
       << "HasAliasedStore " << S->aliasBaseStream->hasAliasedStoreStream
       << " IsLoad " << S->isLoadStream() << " IsUpdate " << S->isUpdateStream()
       << ".\n"
       << std::flush;
   if (S->aliasBaseStream->hasAliasedStoreStream && S->isLoadStream() &&
       !S->isUpdateStream()) {
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[Not Float] due to aliased store stream.\n"
         << std::flush;
     return true;
@@ -913,7 +915,7 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   auto &staticBound = dynRegion.staticRegion->loopBound;
   for (auto S : staticBound.baseStreams) {
     if (!args.floatedMap.count(S)) {
-      StreamFloatPolicy::logStream(S)
+      StreamFloatPolicy::logS(S->getDynamicStream(args.seqNum))
           << "[Not Float] LoopBound base stream not floated.\n"
           << std::flush;
       S_DPRINTF(S, "LoopBound base stream not floated.\n");
@@ -929,6 +931,7 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   }
 
   auto baseS = *staticBound.baseStreams.begin();
+  auto &baseDynS = baseS->getDynamicStream(args.seqNum);
   auto &baseConfig = args.floatedMap.at(baseS);
   baseConfig->loopBoundFormalParams = dynBound.formalParams;
   baseConfig->loopBoundCallback = dynBound.boundFunc;
@@ -936,8 +939,8 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
 
   // Remember that this bound is offloaded.
   dynBound.offloaded = true;
-  StreamFloatPolicy::logStream(baseS) << "[LoopBound] Offloaded LoopBound.\n"
-                                      << std::flush;
+  StreamFloatPolicy::logS(baseDynS) << "[LoopBound] Offloaded LoopBound.\n"
+                                    << std::flush;
   SE_DPRINTF("[LoopBound] Offloaded LoopBound for %s.\n", args.region.region());
 }
 
@@ -965,7 +968,7 @@ void StreamFloatController::setFirstOffloadedElementIdx(const Args &args) {
     if (iter == args.floatedMap.end()) {
       continue;
     }
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[MidwayFloat] Set to " << firstFloatElementIdx << ".\n"
         << std::flush;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "FirstFloatElemIdx set to %llu.\n",
@@ -992,7 +995,7 @@ void StreamFloatController::propagateFloatPlan(const Args &args) {
       continue;
     }
     dynS->getFloatPlan().finalize();
-    StreamFloatPolicy::logStream(S)
+    StreamFloatPolicy::logS(*dynS)
         << "[FloatPlan] Finalized as " << dynS->getFloatPlan() << ".\n"
         << std::flush;
     DYN_S_DPRINTF(dynS->dynamicStreamId, "Propagate FloatPlan %s.\n",
