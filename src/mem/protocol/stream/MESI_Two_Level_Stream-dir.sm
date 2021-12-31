@@ -91,7 +91,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     Data, desc="writeback data arrives";
     Memory_Data, desc="Fetched data from memory arrives";
     Memory_Ack, desc="Writeback Ack from memory arrives";
-//added by SS for dma
+    //added by SS for dma
     DMA_READ, desc="A DMA Read memory request";
     DMA_WRITE, desc="A DMA Write memory request";
     CleanReplacement, desc="Clean Replacement in L2 cache";
@@ -842,6 +842,10 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   }
   transition(IM, GETU, IM) {
     su_recordGetUID;
+    j_popIncomingRequestQueue;
+  }
+  transition(IM, GETH, IM) {
+    sh_recordGetHID;
     j_popIncomingRequestQueue;
   }
   transition(IM, Memory_Data, M) {
