@@ -274,6 +274,9 @@ parser.add_option("--gem-forge-stream-engine-mc-neighbor-stream-threshold", acti
 parser.add_option("--gem-forge-stream-engine-mc-neighbor-migration-delay", action="store",
                   type="int", default="100",
                   help="Delay to migrate to neighbor MC SE if reached the threshold.")
+parser.add_option("--gem-forge-stream-engine-mc-neighbor-migration-valve-type", type="choice",
+                  choices=['none', 'all', 'hard'], default='none',
+                  help="Apply valve to all streams.")
 parser.add_option("--gem-forge-stream-engine-mc-reuse-buffer-lines-per-core", action="store",
                   type="int", default="0",
                   help="Number of cache lines buffered in MC SE to extract more possible reuse.")

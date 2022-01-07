@@ -475,6 +475,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.stream_atomic_lock_type = options.gem_forge_stream_atomic_lock_type
         dir_cntrl.neighbor_stream_threshold = options.gem_forge_stream_engine_mc_neighbor_stream_threshold
         dir_cntrl.neighbor_migration_delay = options.gem_forge_stream_engine_mc_neighbor_migration_delay
+        dir_cntrl.neighbor_migration_valve_type = options.gem_forge_stream_engine_mc_neighbor_migration_valve_type,
         dir_cntrl.enable_stream_float_mem = options.gem_forge_stream_engine_enable_float_mem
         dir_cntrl.reuse_buffer_lines_per_core = options.gem_forge_stream_engine_mc_reuse_buffer_lines_per_core
         dir_cntrl.ind_stream_req_max_per_multicast_msg = options.gem_forge_stream_engine_llc_multicast_max_ind_req_per_message
