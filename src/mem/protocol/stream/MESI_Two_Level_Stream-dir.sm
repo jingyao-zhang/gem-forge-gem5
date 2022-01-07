@@ -536,12 +536,12 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     }
   }
 
-  action(invr_sendCacheInvalidateAsRequest, "invr", desc="Invalidate a cache block but as Request") {
-    // Send out the INV request as a request to avoid deadlock.
+  action(invr_sendCacheInvGetAsRequest, "invr", desc="Invalicate and get a line as Request") {
+    // Send out the INV_GET request as a request to avoid deadlock.
     peek(requestNetwork_in, RequestMsg) {
       enqueue(requestNetwork_out, RequestMsg, directory_latency) {
         out_msg.addr := address;
-        out_msg.Type := CoherenceRequestType:INV;
+        out_msg.Type := CoherenceRequestType:INV_GET;
         out_msg.Requestors.add(machineID);
         out_msg.Destination.add(getDirectoryEntry(address).Owner);
         out_msg.MessageSize := MessageSizeType:Request_Control;
@@ -906,13 +906,13 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   transition(M, GETH, M_GM) {
     v_allocateTBE;
     sh_recordGetHID;
-    invr_sendCacheInvalidateAsRequest;
+    invr_sendCacheInvGetAsRequest;
     j_popIncomingRequestQueue;
   }
   transition(M, STREAM_STORE, M_GM) {
     v_allocateTBE;
     sm_recordGetMID
-    invr_sendCacheInvalidateAsRequest;
+    invr_sendCacheInvGetAsRequest;
     j_popIncomingRequestQueue;
   }
   transition(M_GM, GETH, M_GM) {
@@ -939,7 +939,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   transition(M, GETU, M_GU) {
     v_allocateTBE;
     su_recordGetUID;
-    invr_sendCacheInvalidateAsRequest;
+    invr_sendCacheInvGetAsRequest;
     j_popIncomingRequestQueue;
   }
   transition(M_GU, Data, M_DRDI) {

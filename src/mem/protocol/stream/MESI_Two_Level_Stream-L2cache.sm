@@ -143,8 +143,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     Pre_Unblock, desc="(Not Final) Unblock from L1 requestors, used when we are expecting multiple unblocks.";
     Exclusive_Unblock, desc="Unblock from L1 requestor";
 
-    MEM_Inv,  desc="Invalidation from directory";
-    MEM_InvR, desc="Invalidation from directory, but as a request.";
+    MEM_Inv,            desc="Invalidate from directory";
+    Mem_InvGetR,        desc="Invalidate and get from directory, as a request.";
+    Mem_InvGetRStale,   desc="Invalidate and get from directory, stale.";
 
     STREAM_CONFIG,  desc="StreamConfig req";
     STREAM_FLOW,    desc="Flow control message for stream";
@@ -171,11 +172,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
 
   // TBE fields
   structure(TBE, desc="...") {
-    Addr addr,                        desc="Physical address for this TBE";
-    State TBEState,                   desc="Transient state";
-    DataBlock DataBlk,                desc="Buffer for the data block";
-    bool Dirty, default="false",      desc="Data is Dirty";
-    bool cachedUpper, default="true", desc="Whether this block is cache by upper level";
+    Addr addr,                         desc="Physical address for this TBE";
+    State TBEState,                    desc="Transient state";
+    DataBlock DataBlk,                 desc="Buffer for the data block";
+    bool Dirty, default="false",       desc="Data is Dirty";
+    bool cachedUpper, default="true",  desc="Whether this block is cache by upper level";
+    bool writebacked, default="false", desc="Whether this line data is already written back";
 
     NetDest L1_GetS_IDs,              desc="Set of the internal processors that want the block in shared state";
     NetDest L1_GetV_IDs,              desc="Set of the internal processors that want the block via L1_GETV";
@@ -476,9 +478,13 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
           /**
            * Handle INV request from Directory.
            */
-          assert(in_msg.Type == CoherenceRequestType:INV);
+          assert(in_msg.Type == CoherenceRequestType:INV_GET);
           DPRINTF(RubySlicc, "Addr: %#x MemInvAsRequest TBEs %d.\n", in_msg.addr, TBEs.size());
-          trigger(Event:MEM_InvR, in_msg.addr, cache_entry, tbe);
+          if (is_valid(tbe) && tbe.writebacked) {
+            trigger(Event:Mem_InvGetRStale, in_msg.addr, cache_entry, tbe);
+          } else {
+            trigger(Event:Mem_InvGetR, in_msg.addr, cache_entry, tbe);
+          }
 
         } else {
 
@@ -607,21 +613,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     }
   }
 
-  action(c_exclusiveReplacement, "c", desc="Send data to memory") {
+  action(ct_exclusiveCleanReplacementFromTBE, "ctc", desc="Send clean replacement to memory") {
     enqueue(responseL2Network_out, ResponseMsg, l2_response_latency) {
-      assert(is_valid(cache_entry));
-      out_msg.addr := address;
-      out_msg.Type := CoherenceResponseType:MEMORY_DATA;
-      out_msg.Sender := machineID;
-      out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
-      out_msg.DataBlk := cache_entry.DataBlk;
-      out_msg.Dirty := cache_entry.Dirty;
-      out_msg.MessageSize := MessageSizeType:Response_Data;
-    }
-  }
-
-  action(c_exclusiveCleanReplacement, "cc", desc="Send ack to memory for clean replacement") {
-    enqueue(responseL2Network_out, ResponseMsg, l2_response_latency) {
+      assert(is_valid(tbe));
       out_msg.addr := address;
       out_msg.Type := CoherenceResponseType:ACK;
       out_msg.Sender := machineID;
@@ -640,6 +634,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
       out_msg.DataBlk := tbe.DataBlk;
       out_msg.Dirty := tbe.Dirty;
       out_msg.MessageSize := MessageSizeType:Response_Data;
+      tbe.writebacked := true;
     }
   }
 
@@ -908,6 +903,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     tbe.L1_GetS_IDs.clear();
     tbe.DataBlk := cache_entry.DataBlk;
     tbe.Dirty := cache_entry.Dirty;
+    tbe.writebacked := false;
     tbe.pendingAcks := cache_entry.Sharers.count();
   }
 
@@ -1240,7 +1236,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   transition({I_I, S_I, M_I, MT_I, MCT_I, NP}, MEM_Inv) {
     o_popIncomingResponseQueue;
   }
-  transition({I_I, S_I, M_I, MT_I, MCT_I, NP}, MEM_InvR) {
+  transition({I_I, S_I, MT_I, MCT_I, NP}, Mem_InvGetR) {
     jj_popL1RequestQueue;
   }
 
@@ -1434,7 +1430,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     rr_deallocateL2CacheBlock;
   }
 
-  transition(SS, {L2_Replacement, MEM_Inv, MEM_InvR}, S_I) {
+  transition(SS, {L2_Replacement, MEM_Inv, Mem_InvGetR}, S_I) {
     i_allocateTBE;
     f_sendInvToSharers;
     rr_deallocateL2CacheBlock;
@@ -1542,15 +1538,15 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ur_profileReq;
     jj_popL1RequestQueue;
   }
-  transition(M, {L2_Replacement, MEM_Inv, MEM_InvR}, M_I) {
+  transition(M, {L2_Replacement, MEM_Inv, Mem_InvGetR}, M_I) {
     i_allocateTBE;
-    c_exclusiveReplacement;
+    ct_exclusiveReplacementFromTBE;
     rr_deallocateL2CacheBlock;
   }
 
   transition(M, L2_Replacement_clean, M_I) {
     i_allocateTBE;
-    c_exclusiveCleanReplacement;
+    ct_exclusiveCleanReplacementFromTBE;
     rr_deallocateL2CacheBlock;
   }
 
@@ -1608,7 +1604,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     ur_profileReq;
     jj_popL1RequestQueue;
   }
-  transition(MT, {L2_Replacement, MEM_Inv, MEM_InvR}, MT_I) {
+  transition(MT, {L2_Replacement, MEM_Inv, Mem_InvGetR}, MT_I) {
     i_allocateTBE;
     f_sendInvToSharers;
     rr_deallocateL2CacheBlock;
@@ -1710,7 +1706,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   transition(I_I, Ack_all, M_I) {
-    c_exclusiveCleanReplacement;
+    ct_exclusiveCleanReplacementFromTBE;
     o_popIncomingResponseQueue;
   }
 
@@ -1721,7 +1717,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   }
 
   transition(MCT_I, {WB_Data_clean, Ack_all}, M_I) {
-    c_exclusiveCleanReplacement;
+    ct_exclusiveCleanReplacementFromTBE;
     o_popIncomingResponseQueue;
   }
 
@@ -1742,6 +1738,23 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   // possible race between unblock and immediate replacement
   transition({MT_MB, MT_M, SS_MB, SS_M}, {L1_PUTX, L1_PUTX_old}) {
     zz_stallAndWaitL1RequestQueue;
+  }
+
+  transition(M_I, Mem_InvGetR, M_I) {
+    /**
+     * Dir want to invalidate and get a copy, while we already
+     * started the replacement process.
+     * Here we make sure that TBE still holds the line, and
+     * remembers if we have sent back a clean or dirty replacement.
+     *   If dirty, then we already sent back the data, we are fine.
+     *   If clean, then we send back the line here.
+     * Either way, we keep waiting for the final ack message.
+     */
+    ct_exclusiveReplacementFromTBE;
+    jj_popL1RequestQueue;
+  }
+  transition(M_I, Mem_InvGetRStale, M_I) {
+    jj_popL1RequestQueue;
   }
 
   transition(M_I, Mem_Ack, NP) {

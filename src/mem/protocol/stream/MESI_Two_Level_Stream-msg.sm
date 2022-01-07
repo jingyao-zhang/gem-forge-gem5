@@ -37,6 +37,7 @@ enumeration(CoherenceRequestType, desc="...") {
   GETH,      desc="Get Here, no response";
   GET_INSTR, desc="Get Instruction";
   INV,       desc="INValidate";
+  INV_GET,   desc="Invalidate from dir and get data";
   PUTX,      desc="Replacement message";
 
   WB_ACK,    desc="Writeback ack";
@@ -64,7 +65,7 @@ enumeration(CoherenceResponseType, desc="...") {
   WB_ACK,             desc="writeback ack";
   UNBLOCK,            desc="unblock";
   EXCLUSIVE_UNBLOCK,  desc="exclusive unblock";
-  INV,                desc="Invalidate from directory";
+  INV,                desc="Invalidate from dir";
   STREAM_ACK,         desc="ack the core that the reqired operation is performed";
   STREAM_RANGE,       desc="range-sychronization message";
   STREAM_DONE,        desc="Stream commit done message from L2 to L1";
