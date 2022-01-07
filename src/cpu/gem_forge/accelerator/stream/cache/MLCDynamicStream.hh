@@ -92,7 +92,8 @@ public:
   virtual bool hasOverflowed() const = 0;
   virtual int64_t getTotalTripCount() const = 0;
   virtual bool hasTotalTripCount() const = 0;
-  virtual void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr) = 0;
+  virtual void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
+                                 MachineType brokenMachineType) = 0;
 
   bool isWaitingAck() const { return this->isWaiting == WaitType::Ack; }
   bool isWaitingData() const { return this->isWaiting == WaitType::Data; }

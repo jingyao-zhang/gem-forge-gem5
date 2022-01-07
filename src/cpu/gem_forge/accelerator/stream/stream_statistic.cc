@@ -76,6 +76,7 @@ void StreamStatistic::dump(std::ostream &os) const {
     dumpAvg(avgConfigureCycle, numRemoteConfigureCycle, numRemoteConfigure);
     dumpScalar(numRemoteMigrate);
     dumpScalar(numRemoteMigrateCycle);
+    dumpScalar(numRemoteMigrateDelayCycle);
     dumpAvg(avgMigrateCycle, numRemoteMigrateCycle, numRemoteMigrate);
     dumpScalar(numRemoteRunCycle);
     dumpAvg(avgRunCyclePerBank, numRemoteRunCycle, (numRemoteMigrate + 1));
@@ -244,6 +245,7 @@ void StreamStatistic::clear() {
   this->numRemoteConfigureCycle = 0;
   this->numRemoteMigrate = 0;
   this->numRemoteMigrateCycle = 0;
+  this->numRemoteMigrateDelayCycle = 0;
   this->numRemoteRunCycle = 0;
   this->numCoreEarlyElement = 0;
   this->numCoreEarlyCycle = 0;

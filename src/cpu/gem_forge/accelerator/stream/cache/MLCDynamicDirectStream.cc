@@ -989,15 +989,20 @@ void MLCDynamicDirectStream::receiveStreamDone(
 }
 
 void MLCDynamicDirectStream::setTotalTripCount(int64_t totalTripCount,
-                                               Addr brokenPAddr) {
-  MLC_S_DPRINTF_(MLCStreamLoopBound, this->getDynamicStreamId(),
-                 "[LoopBound] Set TotalTripCount %lld. BrokenPAddr %#x.\n",
-                 totalTripCount, brokenPAddr);
+                                               Addr brokenPAddr,
+                                               MachineType brokenMachineType) {
+  /**
+   * If broken out by LoopBound, it will not migrate to the next place, so we
+   * remember the broken machine type.
+   */
+  MLC_S_DPRINTF_(
+      MLCStreamLoopBound, this->getDynamicStreamId(),
+      "[LoopBound] Set TotalTripCount %lld. BrokenPAddr %#x at %s.\n",
+      totalTripCount, brokenPAddr, brokenMachineType);
   this->slicedStream.setTotalTripCount(totalTripCount);
   this->llcStreamLoopBoundCutted = true;
   this->llcStreamLoopBoundBrokenPAddr = brokenPAddr;
-  this->llcStreamLoopBoundBrokenMachineType =
-      this->config->floatPlan.getMachineTypeAtElem(totalTripCount);
+  this->llcStreamLoopBoundBrokenMachineType = brokenMachineType;
 }
 
 std::pair<Addr, MachineType>

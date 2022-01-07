@@ -65,7 +65,7 @@ void StreamFloatController::floatStreams(
   this->policy->setFloatPlans(floatArgs.dynStreams, floatArgs.floatedMap,
                               floatArgs.rootConfigVec);
 
-  this->setFirstOffloadedElementIdx(floatArgs);
+  this->setLoopBoundFirstOffloadedElementIdx(floatArgs);
   this->propagateFloatPlan(floatArgs);
 
   /**
@@ -944,36 +944,26 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   SE_DPRINTF("[LoopBound] Offloaded LoopBound for %s.\n", args.region.region());
 }
 
-void StreamFloatController::setFirstOffloadedElementIdx(const Args &args) {
-  if (!this->se->myParams->streamEngineEnableMidwayFloat) {
-    return;
-  }
+void StreamFloatController::setLoopBoundFirstOffloadedElementIdx(
+    const Args &args) {
   /**
-   * Mainly work for PointerChase stream with constant first address.
+   * Just take FirstFloatElemIdx from the FloatPlan of stream.
    */
   uint64_t firstFloatElementIdx = 0;
-  for (const auto &entry : args.floatedMap) {
-    auto S = entry.first;
-    if (S->isPointerChaseLoadStream()) {
-      firstFloatElementIdx =
-          this->se->myParams->streamEngineMidwayFloatElementIdx;
+  for (auto dynS : args.dynStreams) {
+    auto S = dynS->stream;
+    if (args.floatedMap.count(S)) {
+      firstFloatElementIdx = dynS->getFirstFloatElemIdx();
+      StreamFloatPolicy::logS(*dynS) << "[MidwayFloat] Get FirstFloatElemIdx "
+                                     << firstFloatElementIdx << ".\n"
+                                     << std::flush;
+      DYN_S_DPRINTF(dynS->dynamicStreamId, "Get FirstFloatElemIdx %llu.\n",
+                    firstFloatElementIdx);
+      break;
     }
   }
   if (firstFloatElementIdx == 0) {
     return;
-  }
-  for (auto dynS : args.dynStreams) {
-    auto S = dynS->stream;
-    auto iter = args.floatedMap.find(S);
-    if (iter == args.floatedMap.end()) {
-      continue;
-    }
-    StreamFloatPolicy::logS(*dynS)
-        << "[MidwayFloat] Set to " << firstFloatElementIdx << ".\n"
-        << std::flush;
-    DYN_S_DPRINTF(dynS->dynamicStreamId, "FirstFloatElemIdx set to %llu.\n",
-                  firstFloatElementIdx);
-    dynS->setFirstFloatElemIdx(firstFloatElementIdx);
   }
 
   // Check LoopBound.

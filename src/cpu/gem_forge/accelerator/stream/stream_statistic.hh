@@ -63,6 +63,7 @@ public:
   size_t numRemoteConfigureCycle = 0;
   size_t numRemoteMigrate = 0;
   size_t numRemoteMigrateCycle = 0;
+  size_t numRemoteMigrateDelayCycle = 0;
   size_t numRemoteRunCycle = 0;
 
   // Latency experienced by the core.

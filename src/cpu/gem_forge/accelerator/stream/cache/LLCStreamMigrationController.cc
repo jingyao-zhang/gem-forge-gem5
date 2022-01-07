@@ -70,12 +70,10 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
     // Not my neighbor, we have no limitation to migrating there.
     return true;
   }
-  if (machineId.getType() == MachineType::MachineType_L2Cache) {
-    if (this->valveType != MigrationValveTypeE::ALL &&
-        !dynS->isLoadBalanceValve()) {
-      // For MC, always enable this feature.
-      return true;
-    }
+  if (this->valveType != MigrationValveTypeE::ALL &&
+      !dynS->isLoadBalanceValve()) {
+    // For MC, always enable this feature.
+    return true;
   }
   // Check if the neighboring SE has too many streams.
   auto neighborStreams = this->countStreamsWithSameStaticId(dynS, machineId);
@@ -98,6 +96,7 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
                     "[Migrate] Delayed migration to %s to avoid "
                     "contention. NeighborStreams %d.\n",
                     machineId, neighborStreams);
+      dynS->getStaticStream()->statistic.numRemoteMigrateDelayCycle++;
       return false;
     }
   }

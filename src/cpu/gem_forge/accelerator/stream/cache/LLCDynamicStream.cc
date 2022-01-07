@@ -863,8 +863,20 @@ void LLCDynamicStream::allocateLLCStreams(
           .first->second;
 
   // Try to release old terminated groups.
-  assert(mlcGroups.size() < 100 &&
-         "Too many MLCGroups, streams are not released?");
+  if (mlcGroups.size() == 100) {
+    DPRINTF(LLCRubyStreamLife, "[MLCGroup] Overflow.\n");
+    int i = 0;
+    for (const auto &group : mlcGroups) {
+      DPRINTF(LLCRubyStreamLife, "[MLCGroup]   Group %d.\n", i);
+      for (auto llcS : group) {
+        DPRINTF(LLCRubyStreamLife, "[MLCGroup]      %s Terminated %d.\n",
+                llcS->getDynamicStreamId(), llcS->isTerminated());
+      }
+      ++i;
+    }
+    assert(mlcGroups.size() < 100 &&
+           "Too many MLCGroups, streams are not released?");
+  }
 
   for (auto iter = mlcGroups.begin(), end = mlcGroups.end(); iter != end;) {
     auto &group = *iter;

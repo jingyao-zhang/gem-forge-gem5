@@ -678,8 +678,8 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
       return false;
     }
     /**
-     * ! A hack to delay migrate if there is
-     * waitingPredicatedElements for any ! indirect stream.
+     * ! A hack to delay migrate if there is waitingPredicatedElements for any
+     * ! indirect stream.
      */
     for (auto IS : stream->getIndStreams()) {
       if (!IS->waitingPredicatedElements.empty()) {
@@ -692,9 +692,9 @@ bool LLCStreamEngine::canMigrateStream(LLCDynamicStream *stream) const {
           const auto &element = IS->idxToElementMap.begin()->second;
           /**
            * ! Due to the current hack implementation, an element may
-           * already be ! allocated for the next bank. Our way to
-           * hack this is check if the ! base is already ready. If
-           * not, then they are for next ! bank.
+           * already be allocated for the next bank. Our way to
+           * hack this is check if the base is already ready. If
+           * not, then they are for next bank.
            */
           if (!element->isReady()) {
             for (const auto &baseE : element->baseElements) {
@@ -2259,8 +2259,9 @@ void LLCStreamEngine::sendOffloadedLoopBoundRetToMLC(LLCDynamicStreamPtr stream,
                                                      Addr brokenPAddr) {
   auto mlcSE = stream->getMLCController()->getMLCStreamEngine();
   assert(mlcSE && "Missing MLC SE.");
-  mlcSE->receiveStreamTotalTripCount(stream->getDynamicStreamId(),
-                                     totalTripCount, brokenPAddr);
+  mlcSE->receiveStreamTotalTripCount(
+      stream->getDynamicStreamId(), totalTripCount, brokenPAddr,
+      this->controller->getMachineID().getType());
 }
 
 void LLCStreamEngine::findMigratingStreams() {
@@ -2327,9 +2328,9 @@ void LLCStreamEngine::migrateStream(LLCDynamicStream *stream) {
       this->controller->mapAddressToLLCOrMem(paddrLine, machineType);
 
   LLC_S_DPRINTF(stream->getDynamicStreamId(),
-                "Migrate to LLC%d, InflyReq %d AdvancedMigration %d IndirectS "
+                "Migrate to %s, InflyReq %d AdvancedMigration %d IndirectS "
                 "%d. Remain DirectStreams %llu.\n",
-                addrMachineId.num, stream->inflyRequests,
+                addrMachineId, stream->inflyRequests,
                 this->controller->isStreamAdvanceMigrateEnabled(),
                 stream->getIndStreams().size(), this->streams.size());
 

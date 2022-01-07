@@ -71,8 +71,8 @@ StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
     this->levelPolicy = LevelPolicyE::LEVEL_SMART;
   } else if (_levelPolicy == "manual") {
     this->levelPolicy = LevelPolicyE::LEVEL_MANUAL;
-  } else if (_levelPolicy == "manual2") {
-    this->levelPolicy = LevelPolicyE::LEVEL_MANUAL2;
+  // } else if (_levelPolicy == "manual2") {
+  //   this->levelPolicy = LevelPolicyE::LEVEL_MANUAL2;
   } else {
     panic("Invalid StreamFloat LevelPolicy %s.", _levelPolicy);
   }
@@ -474,95 +474,24 @@ void StreamFloatPolicy::setFloatPlans(DynStreamList &dynStreams,
 void StreamFloatPolicy::setFloatPlan(DynamicStream &dynS) {
   auto &floatPlan = dynS.getFloatPlan();
   uint64_t firstElementIdx = 0;
-  if (!this->enabledFloatMem) {
-    // By default we float to L2 cache (LLC in MESI_Three_Level).
-    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
-    return;
-  }
 
   /**
-   * Static policy will always float to memory.
+   * Static policy will always float to LLC/memory.
    * Smart policy will try to analyze the reuse.
    */
   if (this->levelPolicy == LevelPolicyE::LEVEL_STATIC) {
-    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+    if (this->enabledFloatMem) {
+      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+    } else {
+      // By default we float to L2 cache (LLC in MESI_Three_Level).
+      floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
+    }
     return;
   } else if (this->levelPolicy == LevelPolicyE::LEVEL_MANUAL) {
     this->setFloatPlanManual(dynS);
     return;
-  } else if (this->levelPolicy == LevelPolicyE::LEVEL_MANUAL2) {
-    this->setFloatPlanManual2(dynS);
-    return;
   }
 
-  auto S = dynS.stream;
-  if (S->aggregateHistory.size() < 2) {
-    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
-    return;
-  }
-  auto linearAddrGen =
-      std::dynamic_pointer_cast<LinearAddrGenCallback>(S->getAddrGenCallback());
-  if (!linearAddrGen) {
-    // Non linear addr gen.
-    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
-    return;
-  }
-  int historyOffset = -1;
-  uint64_t historyTotalElements = 0;
-  uint64_t historyStartVAddrMin = UINT64_MAX;
-  uint64_t historyStartVAddrMax = 0;
-  auto currStartAddr = linearAddrGen->getStartAddr(dynS.addrGenFormalParams);
-  logS(dynS) << "StartVAddr " << std::hex << currStartAddr << std::dec << '\n'
-             << std::flush;
-  for (auto historyIter = S->aggregateHistory.rbegin(),
-            historyEnd = S->aggregateHistory.rend();
-       historyIter != historyEnd; ++historyIter, --historyOffset) {
-    const auto &prevHistory = *historyIter;
-    auto prevStartAddr = prevHistory.startVAddr;
-    auto prevNumElements = prevHistory.numReleasedElements;
-
-    historyTotalElements += prevNumElements;
-    historyStartVAddrMax = std::max(historyStartVAddrMax, prevStartAddr);
-    historyStartVAddrMin = std::min(historyStartVAddrMin, prevStartAddr);
-    logS(dynS) << "Hist " << historyOffset << " StartAddr " << std::hex
-               << prevStartAddr << " Range " << historyStartVAddrMin << ", +"
-               << historyStartVAddrMax - historyStartVAddrMin << std::dec
-               << " NumElem " << prevNumElements << '\n'
-               << std::flush;
-
-    if (currStartAddr != prevStartAddr) {
-      // Not match.
-      continue;
-    }
-    // Make sure that the stream is short.
-    auto memoryFootprint =
-        S->getMemElementSize() * prevHistory.numReleasedElements;
-    auto totalThreads =
-        S->getCPUDelegator()->getSingleThreadContext()->getThreadGroupSize();
-    auto sharedCacheSize = this->getSharedLLCCapacity() / totalThreads;
-    if (memoryFootprint >= sharedCacheSize) {
-      // Still should be offloaded to Memory.
-      S_DPRINTF(S, "Hist %d MemFootPrint %#x > SharedCache %#x.\n",
-                historyOffset, memoryFootprint, sharedCacheSize);
-      logS(dynS) << "Hist " << historyOffset << " MemFootPrint" << std::hex
-                 << memoryFootprint << " > SharedCache " << sharedCacheSize
-                 << '\n'
-                 << std::dec << std::flush;
-      continue;
-    }
-    S_DPRINTF(S,
-              "[TryFitLLC] Hist %d StartAddr %#x matched, MemFootPrint %lu <= "
-              "SharedCache %lu.\n",
-              historyOffset, currStartAddr, memoryFootprint, sharedCacheSize);
-    logS(dynS) << "[TryFitLLC] Hist " << historyOffset << " StartAddr "
-               << std::hex << currStartAddr << " matched, MemFootPrint "
-               << memoryFootprint << " <= SharedCache " << sharedCacheSize
-               << ".\n"
-               << std::dec << std::flush;
-    floatPlan.addFloatChangePoint(firstElementIdx, MachineType_L2Cache);
-    return;
-  }
-
-  floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
+  panic("Smart FloatPlan not implemented.\n");
   return;
 }

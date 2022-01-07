@@ -97,10 +97,9 @@ private:
   bool checkAliasedUnpromotedStoreStream(DynamicStream *dynS);
 
   /**
-   * Determine the FirstOffloadedElementIdx.
-   * Mainly used to optimize for pointer-chase stream.
+   * Determine the FirstOffloadedElementIdx for LoopBound.
    */
-  void setFirstOffloadedElementIdx(const Args &args);
+  void setLoopBoundFirstOffloadedElementIdx(const Args &args);
 
   /**
    * Propagate FloatPlan to ConfigureData.

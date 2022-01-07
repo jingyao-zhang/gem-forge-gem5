@@ -305,8 +305,8 @@ bool MLCDynamicIndirectStream::hasOverflowed() const {
          this->tailElementIdx > this->getTotalTripCount();
 }
 
-void MLCDynamicIndirectStream::setTotalTripCount(int64_t totalTripCount,
-                                                 Addr brokenPAddr) {
+void MLCDynamicIndirectStream::setTotalTripCount(
+    int64_t totalTripCount, Addr brokenPAddr, MachineType brokenMachineType) {
   MLC_S_PANIC(this->getDynamicStreamId(), "Set TotalTripCount for IndirectS.");
 }
 

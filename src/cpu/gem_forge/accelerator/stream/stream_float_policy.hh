@@ -67,7 +67,6 @@ private:
 
   void setFloatPlan(DynamicStream &dynS);
   void setFloatPlanManual(DynamicStream &dynS);
-  void setFloatPlanManual2(DynamicStream &dynS);
 
   void setFloatPlanForRodiniaSrad(DynamicStream &dynS);
   void setFloatPlanForBinTree(DynamicStream &dynS);
