@@ -262,6 +262,12 @@ struct StreamElement {
   bool isLastElement() const;
 
   /**
+   * Return true if the DynamicStream has known total trip count and this is the
+   * second last element.
+   */
+  bool isSecondLastElement() const;
+
+  /**
    * Return whether if this stream element should issue request to cache.
    * This assumes that this is a memory stream.
    */

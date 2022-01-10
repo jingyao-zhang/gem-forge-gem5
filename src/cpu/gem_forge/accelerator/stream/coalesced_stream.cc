@@ -112,6 +112,7 @@ void Stream::selectPrimeLogicalStream() {
     CHECK_INFO(panic, is_inner_most_loop);
     CHECK_INFO(panic, loop_eliminated);
     CHECK_INFO(panic, core_need_final_value);
+    CHECK_INFO(panic, core_need_second_final_value);
     CHECK_INFO(panic, compute_info().value_base_streams_size);
     CHECK_INFO(panic, compute_info().enabled_store_func);
 #undef CHECK_INFO

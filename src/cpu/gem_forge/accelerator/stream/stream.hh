@@ -132,6 +132,9 @@ public:
   bool isFinalValueNeededByCore() const {
     return this->info.static_info().core_need_final_value();
   }
+  bool isSecondFinalValueNeededByCore() const {
+    return this->info.static_info().core_need_second_final_value();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -606,6 +609,7 @@ public:
   Is(MergedLoadStoreDepStream);
   Is(LoopEliminated);
   Is(FinalValueNeededByCore);
+  Is(SecondFinalValueNeededByCore);
 
   /**
    * Get the coalesce base stream and offset.

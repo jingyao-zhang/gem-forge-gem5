@@ -199,6 +199,13 @@ bool StreamElement::isLastElement() const {
          this->FIFOIdx.entryIdx == this->dynS->getTotalTripCount();
 }
 
+bool StreamElement::isSecondLastElement() const {
+  assert(this->dynS && "This element has not been allocated.");
+  assert(this->dynS->configExecuted && "The DynS has not be configured.");
+  return this->dynS->hasTotalTripCount() &&
+         (this->FIFOIdx.entryIdx + 1) == this->dynS->getTotalTripCount();
+}
+
 bool StreamElement::shouldIssue() const {
   /**
    * So far there are two cases when we do not issue requests:
@@ -852,7 +859,8 @@ StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
       return elementValue;
     }
   }
-  S_ELEMENT_PANIC(this, "Failed to find ValueBaseElement for %lu.", id);
+  S_ELEMENT_PANIC(this, "Failed to find ValueBaseElement for %s.",
+                  baseS->getStreamName());
 }
 
 bool StreamElement::isValueFaulted(Addr vaddr, int size) const {

@@ -19,15 +19,31 @@ void StreamRegionController::initializeStep(
   SE_DPRINTF("[Stepper] Initialized StaticStep for region %s.\n",
              region.region());
   auto &staticStep = staticRegion.step;
+  bool needFinalValue = false;
+  bool needSecondFinalValue = false;
   for (auto S : staticRegion.streams) {
     if (S->stepRootStream == S) {
       SE_DPRINTF("[Stepper] Add StepRootStream %s.\n", S->getStreamName());
       staticStep.stepRootStreams.push_back(S);
     }
+    if (S->isFinalValueNeededByCore()) {
+      SE_DPRINTF("[Stepper] NeedFinalValue %s.\n", S->getStreamName());
+      needFinalValue = true;
+    }
+    if (S->isSecondFinalValueNeededByCore()) {
+      SE_DPRINTF("[Stepper] NeedSecondFinalValue %s.\n", S->getStreamName());
+      needSecondFinalValue = true;
+    }
   }
+  if (needSecondFinalValue && needFinalValue) {
+    SE_PANIC(
+        "[Stepper] Can't step for both FinalValue and SecondFinalValue %s.",
+        region.region());
+  }
+  staticStep.needSecondFinalValue = needSecondFinalValue;
 
   if (staticStep.stepRootStreams.empty()) {
-    SE_PANIC("[Stepper] No StepRootStream for region %s.\n", region.region());
+    SE_PANIC("[Stepper] No StepRootStream for region %s.", region.region());
   }
 }
 
@@ -89,10 +105,11 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
    * for the next stepped iteration.
    */
   const auto &dynBound = dynRegion.loopBound;
+  uint64_t stepOffset = staticStep.needSecondFinalValue ? 1 : 0;
   if (staticRegion.region.is_loop_bound()) {
-    if (dynStep.nextElementIdx >= dynBound.nextElementIdx) {
-      SE_DPRINTF("[Stepper] Wait For LoopBound: %llu >= %llu.\n",
-                 dynStep.nextElementIdx, dynBound.nextElementIdx);
+    if (dynStep.nextElementIdx + stepOffset >= dynBound.nextElementIdx) {
+      SE_DPRINTF("[Stepper] Wait For LoopBound: %llu + %llu >= %llu.\n",
+                 dynStep.nextElementIdx, stepOffset, dynBound.nextElementIdx);
       return;
     }
   } else {
@@ -101,9 +118,9 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
     auto &firstStepRootDynS =
         firstStepRootS->getDynamicStream(dynRegion.seqNum);
     auto totalTripCount = firstStepRootDynS.getTotalTripCount();
-    if (dynStep.nextElementIdx >= totalTripCount) {
-      SE_DPRINTF("[Stepper] Wait For TotalTripCount: %llu >= %llu.\n",
-                 dynStep.nextElementIdx, totalTripCount);
+    if (dynStep.nextElementIdx + stepOffset >= totalTripCount) {
+      SE_DPRINTF("[Stepper] Wait For TotalTripCount: %llu + %llu >= %llu.\n",
+                 dynStep.nextElementIdx, stepOffset, totalTripCount);
       return;
     }
   }

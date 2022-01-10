@@ -139,9 +139,10 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
      * Should break out the loop.
      * So far we just set TotalTripCount for all DynStreams.
      */
-    SE_DPRINTF("[LoopBound] Break (%d == %d) Region %s TotalTripCount %llu.\n",
-               ret, staticBound.boundRet, staticRegion.region.region(),
-               dynBound.nextElementIdx + 1);
+    SE_DPRINTF(
+        "[LoopBound] Break Elem %lu (%d == %d) Region %s TripCount %llu.\n",
+        dynBound.nextElementIdx, ret, staticBound.boundRet,
+        staticRegion.region.region(), dynBound.nextElementIdx + 1);
     dynBound.brokenOut = true;
     for (auto S : staticRegion.streams) {
       auto &dynS = S->getDynamicStream(dynRegion.seqNum);
@@ -153,8 +154,9 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
 
   } else {
     // Keep going.
-    SE_DPRINTF("[LoopBound] Continue (%d != %d) Region %s.\n", ret,
-               staticBound.boundRet, staticRegion.region.region());
+    SE_DPRINTF("[LoopBound] Continue Elem %lu (%d != %d) Region %s.\n",
+               dynBound.nextElementIdx, ret, staticBound.boundRet,
+               staticRegion.region.region());
   }
   dynBound.nextElementIdx++;
 }

@@ -819,9 +819,9 @@ bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
     if (!S->isConfigured()) {
       continue;
     }
-    if (S->isReduction()) {
+    if (S->isFinalValueNeededByCore()) {
       // The only exception is for ReductionStream, whose LastElement is used to
-      // convey back the final value.
+      // convey back the final value. It should had CoreNeedFinalValue set.
       continue;
     }
     auto &dynS = S->getFirstAliveDynStream();
@@ -855,14 +855,26 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
       return false;
     }
     /**
-     * For LoopEliminatedStream, we have to wait until it's the last
-     * element.
+     * For LoopEliminatedStream, we have to wait until:
+     * 1. The second last element if we are using SecondFinalValue.
+     * 2. The last element otherwise.
      */
     if (S->isLoopEliminated()) {
       // We already checked that we have UnsteppedElement.
       auto element = dynS.getFirstUnsteppedElement();
-      if (!element->isLastElement()) {
-        return false;
+      if (S->isSecondFinalValueNeededByCore()) {
+        if (!element->isSecondLastElement()) {
+          return false;
+        }
+      } else {
+        if (!S->isFinalValueNeededByCore()) {
+          DYN_S_PANIC(dynS.dynamicStreamId,
+                      "LoopEliminated Stream with User should have FinalValue "
+                      "or SecondFinalValue needed.");
+        }
+        if (!element->isLastElement()) {
+          return false;
+        }
       }
     }
   }
@@ -885,12 +897,14 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
     auto S = this->getStream(streamId);
     if (!S->hasCoreUser()) {
       // There are exceptions for this sanity check.
-      // 1. ReductionStream may use LastElement to convey back the final value.
+      // 1. Some streams may use the LastValue (e.g. ReductionStream) or
+      // SecondLastValue.
       // 2. StoreComputeStream/UpdateStream use StreamStore inst to get the
       // address and value from the SE so the core can finally write back.
       // 3. AtomicComputeStream always have a StreamAtomic inst as a place
       // holder.
-      if (!S->isReduction() && !S->isStoreComputeStream() &&
+      if (!S->isFinalValueNeededByCore() &&
+          !S->isSecondFinalValueNeededByCore() && !S->isStoreComputeStream() &&
           !S->isAtomicComputeStream() && !S->isUpdateStream()) {
         S_PANIC(S, "Try to use a stream with no core user.");
       }
@@ -1161,6 +1175,8 @@ void StreamEngine::rewindStreamUser(const StreamUserArgs &args) {
 
 bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
+  const auto &staticStreamRegion =
+      this->regionController->getStaticRegion(streamRegion.region());
   const auto &endStreamInfos = streamRegion.streams();
   for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
        iter != end; ++iter) {
@@ -1173,14 +1189,21 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
     }
     auto &dynS = S->getFirstAliveDynStream();
     /**
-     * For LoopEliminatedStream, we have to wait until it's the last
-     * element.
+     * For LoopEliminatedStream, we have to wait until it's:
+     * 1. The second last element if we are using that value.
+     * 2. The last element otherwise.
      */
     if (S->isLoopEliminated()) {
       // We already checked that we have UnsteppedElement.
       auto element = dynS.getFirstUnsteppedElement();
-      if (!element->isLastElement()) {
-        return false;
+      if (staticStreamRegion.step.needSecondFinalValue) {
+        if (!element->isSecondLastElement()) {
+          return false;
+        }
+      } else {
+        if (!element->isLastElement()) {
+          return false;
+        }
       }
     }
   }
@@ -1295,6 +1318,8 @@ void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
 bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
   const auto &endStreamInfos = streamRegion.streams();
+  const auto &staticStreamRegion =
+      this->regionController->getStaticRegion(streamRegion.region());
 
   for (auto iter = endStreamInfos.rbegin(), end = endStreamInfos.rend();
        iter != end; ++iter) {
@@ -1308,11 +1333,13 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
      * For eliminated loop, check for TotalTripCount.
      */
     if (S->isLoopEliminated() && dynS.hasTotalTripCount()) {
-      if (endElementIdx < dynS.getTotalTripCount()) {
+      uint64_t endElemOffset =
+          staticStreamRegion.step.needSecondFinalValue ? 1 : 0;
+      if (endElementIdx + endElemOffset < dynS.getTotalTripCount()) {
         S_ELEMENT_DPRINTF(
             endElement,
-            "[StreamEnd] Cannot commit as not less TripCount %llu < %llu.\n",
-            endElementIdx, dynS.getTotalTripCount());
+            "[StreamEnd] Cannot commit as less TripCount %llu + %llu < %llu.\n",
+            endElementIdx, endElemOffset, dynS.getTotalTripCount());
         return false;
       }
     }
@@ -1385,6 +1412,8 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
 
   const auto &streamRegion = this->getStreamRegion(args.infoRelativePath);
   const auto &endStreamInfos = streamRegion.streams();
+  const auto &staticStreamRegion =
+      this->regionController->getStaticRegion(streamRegion.region());
 
   SE_DPRINTF("Commit StreamEnd for %s.\n", streamRegion.region().c_str());
 
@@ -1438,11 +1467,15 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
      * Sanity check that we allocated the correct total number of elements.
      */
     if (endedDynS.hasTotalTripCount()) {
-      if (endedDynS.getTotalTripCount() + 1 != endedDynS.FIFOIdx.entryIdx) {
+      uint64_t endElemOffset =
+          staticStreamRegion.step.needSecondFinalValue ? 1 : 0;
+      if (endedDynS.getTotalTripCount() + 1 !=
+          endedDynS.FIFOIdx.entryIdx + endElemOffset) {
         DYN_S_PANIC(
             endedDynS.dynamicStreamId,
-            "Commit End with TotalTripCount %llu != NextElementIdx %llu.\n",
-            endedDynS.getTotalTripCount(), endedDynS.FIFOIdx.entryIdx);
+            "Commit End with TripCount %llu != NextElementIdx %llu + %llu.\n",
+            endedDynS.getTotalTripCount(), endedDynS.FIFOIdx.entryIdx,
+            endElemOffset);
       }
     }
   }

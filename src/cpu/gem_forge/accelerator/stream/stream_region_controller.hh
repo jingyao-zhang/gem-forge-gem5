@@ -114,6 +114,7 @@ public:
      */
     struct StaticStep {
       StreamVec stepRootStreams;
+      bool needSecondFinalValue;
     };
     StaticStep step;
   };
