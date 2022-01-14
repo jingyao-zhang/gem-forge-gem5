@@ -3011,6 +3011,10 @@ void StreamEngine::exitDump() const {
   streamOS.flush();
 }
 
+bool StreamEngine::isAccelerating() {
+  return this->numInflyStreamConfigurations > 0;
+}
+
 bool StreamEngine::checkProgress() {
   bool hasProgress = this->numSteppedSinceLastCheck > 0 ||
                      this->numOffloadedSteppedSinceLastCheck > 0;

@@ -105,25 +105,12 @@ CPUProgressEvent::process()
       return;
     }
 
-    // ! Hack some deadlock check here.
+    bool isAccelerating = false;
     bool accelProgress = false;
     if (auto accelManager = cpu->getAccelManager()) {
+        isAccelerating = accelManager->isAccelerating();
         accelProgress = accelManager->checkProgress();
     }
-    if (cpu->shouldCheckDeadlock() && cpu->cpuId() == 0 &&
-        temp == lastNumInst && !accelProgress) {
-        Tick no_progress_ticks = this->_stucked *
-            cpu->params()->progress_interval;
-        Tick deadlock_ticks = cpu->params()->deadlock_interval;
-        if (no_progress_ticks >= deadlock_ticks) {
-            panic("Deadlock in CPU %d! LastCommit at %llu.\n",
-                cpu->cpuId(), cpu->getLastCommitTick());
-        }
-        this->_stucked++;
-    } else {
-        this->_stucked = 0;
-    }
-
 
 #ifndef NDEBUG
     double ipc = double(temp - lastNumInst) / (_interval / cpu->clockPeriod());
@@ -143,6 +130,23 @@ CPUProgressEvent::process()
     if (auto accelManager = cpu->getAccelManager()) {
         accelManager->dump();
     }
+
+    // ! Hack some deadlock check here.
+    if (cpu->shouldCheckDeadlock() &&
+        (cpu->cpuId() == 0 || isAccelerating) &&
+        temp == lastNumInst && !accelProgress) {
+        Tick no_progress_ticks = this->_stucked *
+            cpu->params()->progress_interval;
+        Tick deadlock_ticks = cpu->params()->deadlock_interval;
+        if (no_progress_ticks >= deadlock_ticks) {
+            panic("Deadlock in CPU %d! LastCommit at %llu.\n",
+                cpu->cpuId(), cpu->getLastCommitTick());
+        }
+        this->_stucked++;
+    } else {
+        this->_stucked = 0;
+    }
+
     lastNumInst = temp;
 }
 

@@ -38,6 +38,7 @@ public:
   virtual void tick() = 0;
 
   virtual void dump() {}
+  virtual bool isAccelerating() { return false; }
   virtual bool checkProgress() { return false; }
 
   /**
@@ -83,6 +84,7 @@ public:
   // Allow the accelerator to schedule tick() in next event.
   void scheduleTickNextCycle();
   void dump();
+  bool isAccelerating();
   bool checkProgress();
   void resetStats();
 

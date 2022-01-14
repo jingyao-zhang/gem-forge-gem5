@@ -42,6 +42,7 @@ public:
 
   void tick() override;
   void dump() override;
+  bool isAccelerating() override;
   bool checkProgress() override;
   void regStats() override;
   void resetStats() override;

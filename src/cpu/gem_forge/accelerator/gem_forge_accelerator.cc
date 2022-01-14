@@ -69,6 +69,16 @@ void GemForgeAcceleratorManager::dump() {
   }
 }
 
+bool GemForgeAcceleratorManager::isAccelerating() {
+  bool isAccelerating = false;
+  for (auto accelerator : this->accelerators) {
+    if (accelerator->isAccelerating()) {
+      isAccelerating = true;
+    }
+  }
+  return isAccelerating;
+}
+
 bool GemForgeAcceleratorManager::checkProgress() {
   bool hasProgress = false;
   for (auto accelerator : this->accelerators) {
