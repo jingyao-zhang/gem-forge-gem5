@@ -188,8 +188,9 @@ void LLCStreamElement::extractElementDataFromSlice(
   Addr overlapLHS = this->vaddr + elementOffset;
 
   LLC_SLICE_DPRINTF(
-      sliceId, "Received element %lu size %d Overlap [%lu, %lu).\n", elementIdx,
-      elementSize, elementOffset, elementOffset + overlapSize);
+      sliceId, "Received elem %lu size %d [%lu, %lu) slice [%lu, %lu).\n",
+      elementIdx, elementSize, elementOffset, elementOffset + overlapSize,
+      sliceOffset, sliceOffset + overlapSize);
 
   // Get the data from the cache line.
   auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),

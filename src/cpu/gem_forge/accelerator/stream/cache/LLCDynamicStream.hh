@@ -472,6 +472,9 @@ public:
     return this->configData->loopBoundCallback != nullptr;
   }
   bool isLoopBoundBrokenOut() const { return this->loopBoundBrokenOut; }
+  uint64_t getNextLoopBoundElemIdx() const {
+    return this->nextLoopBoundElementIdx;
+  }
 
 private:
   uint64_t nextLoopBoundElementIdx = 0;

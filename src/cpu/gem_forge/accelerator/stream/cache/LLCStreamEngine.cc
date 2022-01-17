@@ -1231,8 +1231,8 @@ LLCStreamEngine::findStreamReadyToIssue(LLCDynamicStreamPtr dynS) {
 
   if (dynS->isNextSliceOverflown()) {
     // Do not try to issue this slice if it is overflown.
-    LLC_S_DPRINTF(dynS->getDynamicStreamId(),
-                  "Not issue: NextSliceOverTripCount.\n");
+    // LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+    //               "Not issue: NextSliceOverTripCount.\n");
     statistic.sampleLLCStreamEngineIssueReason(
         StreamStatistic::LLCStreamEngineIssueReason::NextSliceOverTripCount);
     return nullptr;
@@ -2972,7 +2972,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
   }
   /**
    * The slice is already responded, see if we can process it.
-   * So far we need to process the slice for these two cases:
+   * So far we need to process the slice for these cases:
    * 1. AtomicComputeStream/UpdateStream.
    * This is where the write request is generated, and is done after
    * all elements are committed in the core (if RangeSync enabled).
@@ -2980,10 +2980,45 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
    * This is where we schedule the computation for LoadComputeStream,
    * and send back the result to core if core needs the value. This
    * does not need to wait for committment.
+   * 3. We also need to evaluate the LoopBound, specially when the slice
+   * contains multiple elements.
    */
 
   const auto &sliceId = slice->getSliceId();
   auto S = dynS->getStaticStream();
+  /**
+   * Check the LoopBound before we release the slice.
+   */
+  if (dynS->hasLoopBound() && !dynS->isLoopBoundBrokenOut()) {
+    auto nextLoopBoundElemIdx = dynS->getNextLoopBoundElemIdx();
+    if (nextLoopBoundElemIdx < sliceId.getStartIdx()) {
+      // We are still waiting for some previous slice, can't release.
+      return ++sliceIter;
+    }
+    if (nextLoopBoundElemIdx < sliceId.getEndIdx()) {
+      /**
+       * It is possible that we need to evaluate LoopBound for this slice.
+       * Due to multi-line elements, we check that this slice completes the
+       * element, i.e. it contains the last byte of this element.
+       * In such case, we evalute the LoopBound and not release the slice.
+       */
+      auto element = dynS->getElementPanic(nextLoopBoundElemIdx,
+                                           "Check element for LoopBound.");
+      int sliceOffset;
+      int elementOffset;
+      int overlapSize = element->computeOverlap(
+          sliceId.vaddr, sliceId.getSize(), sliceOffset, elementOffset);
+      assert(overlapSize > 0 && "Empty overlap.");
+      if (elementOffset + overlapSize == element->size) {
+        // This slice contains the last element byte.
+        assert(element->isReady() && "Element should be ready for LoopBound.");
+        dynS->evaluateLoopBound(this);
+        assert(dynS->getNextLoopBoundElemIdx() == nextLoopBoundElemIdx + 1 &&
+               "LoopBound should make progress.");
+        return ++sliceIter;
+      }
+    }
+  }
   /**
    * For LoadComputeStream, we schedule computation if the element is
    * value ready. If all element's LoadComputeValue is ready, we send
