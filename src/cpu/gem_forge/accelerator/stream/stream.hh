@@ -179,11 +179,7 @@ public:
   void addStreamInfo(const LLVM::TDG::StreamInfo &info);
   void finalize();
   void fixInnerLoopBaseStreams();
-  void addAddrBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
-  void addValueBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
   void addBaseStepStream(Stream *baseStepStream);
-  void addBackBaseStream(StaticId baseId, StaticId depId,
-                         Stream *backBaseStream);
   void registerStepDependentStreamToRoot(Stream *newDependentStream);
   void
   initializeAliasStreamsFromProtobuf(const ::LLVM::TDG::StaticStreamInfo &info);
@@ -263,31 +259,34 @@ public:
    * edges between two streams. e.g. b[i] = a[i] + a[i - 1].
    */
   struct StreamDepEdge {
+    enum TypeE { Addr, Value, Back };
+    const TypeE type;
     const StaticId fromStaticId = DynamicStreamId::InvalidStaticStreamId;
     const StaticId toStaticId = DynamicStreamId::InvalidStaticStreamId;
     Stream *const toStream = nullptr;
-    StreamDepEdge(StaticId _fromId, StaticId _toId, Stream *_toStream)
-        : fromStaticId(_fromId), toStaticId(_toId), toStream(_toStream) {}
+    StreamDepEdge(TypeE _type, StaticId _fromId, StaticId _toId,
+                  Stream *_toStream)
+        : type(_type), fromStaticId(_fromId), toStaticId(_toId),
+          toStream(_toStream) {}
   };
   using StreamEdges = std::vector<StreamDepEdge>;
+  void addBaseStream(StreamDepEdge::TypeE type, StaticId baseId, StaticId depId,
+                     Stream *baseS);
+
+  StreamEdges baseEdges;
+  StreamEdges depEdges;
 
   StreamSet addrBaseStreams;
-  StreamEdges addrBaseEdges;
   StreamSet addrDepStreams;
-  StreamEdges addrDepEdges;
 
   StreamSet valueBaseStreams;
-  StreamEdges valueBaseEdges;
   StreamSet valueDepStreams;
-  StreamEdges valueDepEdges;
 
   /**
    * Back edge dependence on previous iteration.
    */
   StreamSet backBaseStreams;
-  StreamEdges backBaseEdges;
   StreamSet backDepStreams;
-  StreamEdges backDepEdges;
   bool hasBackDepReductionStream = false;
 
   /**

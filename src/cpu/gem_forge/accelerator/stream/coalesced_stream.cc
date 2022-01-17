@@ -148,12 +148,14 @@ void Stream::selectPrimeLogicalStream() {
 void Stream::fixInnerLoopBaseStreams() {
   for (auto LS : this->logicals) {
     const auto &info = LS->info;
-    const auto &loopLevel = info.static_info().loop_level();
     // Update the address dependence information.
     for (const auto &baseStreamId : info.chosen_base_streams()) {
 
       bool alreadyAdded = false;
-      for (const auto &baseEdge : this->addrBaseEdges) {
+      for (const auto &baseEdge : this->baseEdges) {
+        if (baseEdge.type != StreamDepEdge::Addr) {
+          continue;
+        }
         if (baseEdge.toStaticId == baseStreamId.id()) {
           alreadyAdded = true;
           break;
@@ -181,7 +183,8 @@ void Stream::fixInnerLoopBaseStreams() {
       }
 
       assert(baseS != this && "Should never have circular address dependency.");
-      this->addAddrBaseStream(baseStreamId.id(), info.id(), baseS);
+      this->addBaseStream(StreamDepEdge::Addr, baseStreamId.id(), info.id(),
+                          baseS);
     }
   }
 }
@@ -191,11 +194,11 @@ void Stream::initializeBaseStreams() {
     const auto &info = LS->info;
     const auto &loopLevel = info.static_info().loop_level();
     // Update the address dependence information.
-    for (const auto &baseStreamId : info.chosen_base_streams()) {
-      if (auto baseS = this->se->tryGetStream(baseStreamId.id())) {
+    for (const auto &baseId : info.chosen_base_streams()) {
+      if (auto baseS = this->se->tryGetStream(baseId.id())) {
         assert(baseS != this &&
                "Should never have circular address dependency.");
-        this->addAddrBaseStream(baseStreamId.id(), info.id(), baseS);
+        this->addBaseStream(StreamDepEdge::Addr, baseId.id(), info.id(), baseS);
       }
     }
 
@@ -206,7 +209,7 @@ void Stream::initializeBaseStreams() {
       if (baseS == this) {
         S_PANIC(this, "Circular value dependence found.");
       }
-      this->addValueBaseStream(baseId.id(), info.id(), baseS);
+      this->addBaseStream(StreamDepEdge::Value, baseId.id(), info.id(), baseS);
     }
 
     // Update the back dependence information.
@@ -218,12 +221,12 @@ void Stream::initializeBaseStreams() {
                 "More than one logical stream has back edge dependence.\n");
       }
       auto baseS = this->se->getStream(baseId.id());
-      this->addBackBaseStream(baseId.id(), info.id(), baseS);
+      this->addBaseStream(StreamDepEdge::Back, baseId.id(), info.id(), baseS);
     }
 
     // Reduction stream always has myself as the back base stream.
     if (this->isReduction()) {
-      this->addBackBaseStream(info.id(), info.id(), this);
+      this->addBaseStream(StreamDepEdge::Back, info.id(), info.id(), this);
     }
 
     // Try to update the step root stream.

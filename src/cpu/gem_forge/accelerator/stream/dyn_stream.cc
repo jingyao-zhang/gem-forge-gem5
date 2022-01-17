@@ -41,7 +41,10 @@ void DynamicStream::addBaseDynStreams() {
 }
 
 void DynamicStream::addAddrBaseDynStreams() {
-  for (const auto &edge : this->stream->addrBaseEdges) {
+  for (const auto &edge : this->stream->baseEdges) {
+    if (edge.type != Stream::StreamDepEdge::Addr) {
+      continue;
+    }
     auto baseS = this->stream->se->getStream(edge.toStaticId);
     auto &baseDynS = baseS->getLastDynamicStream();
     DYN_S_DPRINTF(this->dynamicStreamId, "AddrBaseDynS %s Me %s.\n",
@@ -67,7 +70,10 @@ void DynamicStream::addAddrBaseDynStreams() {
 }
 
 void DynamicStream::addValueBaseDynStreams() {
-  for (const auto &edge : this->stream->valueBaseEdges) {
+  for (const auto &edge : this->stream->baseEdges) {
+    if (edge.type != Stream::StreamDepEdge::Value) {
+      continue;
+    }
     auto baseS = this->stream->se->getStream(edge.toStaticId);
     auto &baseDynS = baseS->getLastDynamicStream();
     DYN_S_DPRINTF(this->dynamicStreamId, "ValueBaseDynS %s Me %s.\n",
@@ -93,7 +99,10 @@ void DynamicStream::addValueBaseDynStreams() {
 }
 
 void DynamicStream::addBackBaseDynStreams() {
-  for (const auto &edge : this->stream->backBaseEdges) {
+  for (const auto &edge : this->stream->baseEdges) {
+    if (edge.type != Stream::StreamDepEdge::Back) {
+      continue;
+    }
     auto baseS = this->stream->se->getStream(edge.toStaticId);
     auto &baseDynS = baseS->getLastDynamicStream();
     DYN_S_DPRINTF(this->dynamicStreamId, "BackBaseDynS %s Me %s.\n",

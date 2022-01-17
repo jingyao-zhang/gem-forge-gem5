@@ -106,38 +106,31 @@ bool Stream::isMemStream() const {
   }
 }
 
-void Stream::addAddrBaseStream(StaticId baseId, StaticId depId,
-                               Stream *baseStream) {
-  if (baseStream == this) {
-    STREAM_PANIC("AddrBaseStream should not be self.");
-  }
-  this->addrBaseStreams.insert(baseStream);
-  this->addrBaseEdges.emplace_back(depId, baseId, baseStream);
+void Stream::addBaseStream(StreamDepEdge::TypeE type, StaticId baseId,
+                           StaticId depId, Stream *baseS) {
+  this->baseEdges.emplace_back(type, depId, baseId, baseS);
+  baseS->depEdges.emplace_back(type, baseId, depId, this);
 
-  baseStream->addrDepStreams.insert(this);
-  baseStream->addrDepEdges.emplace_back(baseId, depId, this);
-}
-
-void Stream::addValueBaseStream(StaticId baseId, StaticId depId,
-                                Stream *baseStream) {
-  if (baseStream == this) {
-    STREAM_PANIC("ValueBasetream should not be self.");
-  }
-  this->valueBaseStreams.insert(baseStream);
-  this->valueBaseEdges.emplace_back(depId, baseId, baseStream);
-
-  baseStream->valueDepStreams.insert(this);
-  baseStream->valueDepEdges.emplace_back(baseId, depId, this);
-}
-
-void Stream::addBackBaseStream(StaticId baseId, StaticId depId,
-                               Stream *backBaseStream) {
-  this->backBaseStreams.insert(backBaseStream);
-  this->backBaseEdges.emplace_back(depId, baseId, backBaseStream);
-  backBaseStream->backDepStreams.insert(this);
-  backBaseStream->backDepEdges.emplace_back(baseId, depId, this);
-  if (this->isReduction()) {
-    backBaseStream->hasBackDepReductionStream = true;
+  if (type == StreamDepEdge::Addr) {
+    if (baseS == this) {
+      STREAM_PANIC("AddrBaseStream should not be self.");
+    }
+    this->addrBaseStreams.insert(baseS);
+    baseS->addrDepStreams.insert(this);
+  } else if (type == StreamDepEdge::Value) {
+    if (baseS == this) {
+      STREAM_PANIC("ValueBasetream should not be self.");
+    }
+    this->valueBaseStreams.insert(baseS);
+    baseS->valueDepStreams.insert(this);
+  } else if (type == StreamDepEdge::Back) {
+    this->backBaseStreams.insert(baseS);
+    baseS->backDepStreams.insert(this);
+    if (this->isReduction()) {
+      baseS->hasBackDepReductionStream = true;
+    }
+  } else {
+    STREAM_PANIC("Unkown StreamEdgeType %d.", type);
   }
 }
 

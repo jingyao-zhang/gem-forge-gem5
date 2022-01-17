@@ -637,16 +637,23 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
        * In case the base stream is coalesced, we have to translate the offset
        * for the indirect streams.
        */
-      const auto &baseEdges = IS->addrBaseEdges;
-      if (baseEdges.empty()) {
-        MLC_SLICE_PANIC(sliceId, "IS has no base edges.", baseEdges.size());
-      }
-      auto baseId = baseEdges.front().toStaticId;
+      const auto &baseEdges = IS->baseEdges;
+      auto baseId = DynamicStreamId::InvalidStaticStreamId;
       for (const auto &baseEdge : baseEdges) {
-        if (baseEdge.toStaticId != baseId) {
-          MLC_SLICE_PANIC(sliceId, "IS has multiple base streams.",
-                          baseEdges.size());
+        if (baseEdge.type == Stream::StreamDepEdge::Addr) {
+          if (baseId == DynamicStreamId::InvalidStaticStreamId) {
+            baseId = baseEdge.toStaticId;
+          } else {
+            if (baseEdge.toStaticId != baseId) {
+              MLC_SLICE_PANIC(sliceId, "IS has multiple base streams.",
+                              baseEdges.size());
+            }
+          }
         }
+      }
+      if (baseId == DynamicStreamId::InvalidStaticStreamId) {
+        MLC_SLICE_PANIC(sliceId, "IS has no base addr edges.",
+                        baseEdges.size());
       }
       S->getCoalescedOffsetAndSize(baseId, subOffset, subSize);
       assert(subOffset + subSize <= elementSize &&
