@@ -164,7 +164,7 @@ public:
   virtual ~Stream();
 
   /**
-   * Stream initialization is divided into 2 phases:
+   * Stream initialization is divided into 3 phases:
    * 1. Create the basic unit -- as the place holder.
    * 2. Finalize it.
    *    a. For coalesced stream -- choose the prime logical stream.
@@ -173,9 +173,12 @@ public:
    *    d. Find AliasBaseStream and AliasedStreams.
    * Notice that some information are not valid until finalized, e.g.
    * StreamName, StaticId.
+   * 3. Fix dependence on inner-loop stream.
+   *    So far this only works when the inner-loop is nested.
    */
   void addStreamInfo(const LLVM::TDG::StreamInfo &info);
   void finalize();
+  void fixInnerLoopBaseStreams();
   void addAddrBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
   void addValueBaseStream(StaticId baseId, StaticId depId, Stream *baseStream);
   void addBaseStepStream(Stream *baseStepStream);

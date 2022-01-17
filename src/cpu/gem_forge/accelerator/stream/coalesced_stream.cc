@@ -145,15 +145,58 @@ void Stream::selectPrimeLogicalStream() {
   }
 }
 
+void Stream::fixInnerLoopBaseStreams() {
+  for (auto LS : this->logicals) {
+    const auto &info = LS->info;
+    const auto &loopLevel = info.static_info().loop_level();
+    // Update the address dependence information.
+    for (const auto &baseStreamId : info.chosen_base_streams()) {
+
+      bool alreadyAdded = false;
+      for (const auto &baseEdge : this->addrBaseEdges) {
+        if (baseEdge.toStaticId == baseStreamId.id()) {
+          alreadyAdded = true;
+          break;
+        }
+      }
+      if (alreadyAdded) {
+        continue;
+      }
+
+      auto baseS = this->se->tryGetStream(baseStreamId.id());
+      if (!baseS) {
+        S_PANIC(this, "Failed to find BaseStream %s.", baseStreamId.name());
+      }
+      /**
+       * As a sanity check: the BaseS should be a nested inner-loop stream.
+       */
+      if (baseS->getLoopLevel() != this->getLoopLevel() + 1 ||
+          baseS->getConfigLoopLevel() != this->getConfigLoopLevel() + 1) {
+        S_PANIC(this, "This is not InnerLoopBaseStream %s.",
+                baseS->getStreamName());
+      }
+      if (!baseS->isNestStream()) {
+        S_PANIC(this, "InnerLoopBaseStream should be nested %s.",
+                baseS->getStreamName());
+      }
+
+      assert(baseS != this && "Should never have circular address dependency.");
+      this->addAddrBaseStream(baseStreamId.id(), info.id(), baseS);
+    }
+  }
+}
+
 void Stream::initializeBaseStreams() {
   for (auto LS : this->logicals) {
     const auto &info = LS->info;
     const auto &loopLevel = info.static_info().loop_level();
     // Update the address dependence information.
     for (const auto &baseStreamId : info.chosen_base_streams()) {
-      auto baseS = this->se->getStream(baseStreamId.id());
-      assert(baseS != this && "Should never have circular address dependency.");
-      this->addAddrBaseStream(baseStreamId.id(), info.id(), baseS);
+      if (auto baseS = this->se->tryGetStream(baseStreamId.id())) {
+        assert(baseS != this &&
+               "Should never have circular address dependency.");
+        this->addAddrBaseStream(baseStreamId.id(), info.id(), baseS);
+      }
     }
 
     // Update the value dependence information.

@@ -368,16 +368,16 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     }
   }
 
-  // Allocate one new entries for all streams.
-  for (auto S : configStreams) {
-    // hack("Allocate element for stream %s.\n",
-    // S->getStreamName().c_str());
-    assert(this->hasFreeElement());
-    assert(S->getAllocSize() < S->maxSize);
-    const auto &dynS = S->getLastDynamicStream();
-    assert(dynS.areNextBaseElementsAllocated());
-    this->allocateElement(S->getLastDynamicStream());
-  }
+  // // Allocate one new entries for all streams.
+  // for (auto S : configStreams) {
+  //   // hack("Allocate element for stream %s.\n",
+  //   // S->getStreamName().c_str());
+  //   assert(this->hasFreeElement());
+  //   assert(S->getAllocSize() < S->maxSize);
+  //   const auto &dynS = S->getLastDynamicStream();
+  //   assert(dynS.areNextBaseElementsAllocated());
+  //   this->allocateElement(S->getLastDynamicStream());
+  // }
 
   // Notify StreamRegionController.
   this->regionController->dispatchStreamConfig(args);
@@ -1739,13 +1739,23 @@ void StreamEngine::initializeStreams(
     }
   }
 
-  // Recursively initialize all nest streams.
+  /**
+   * Recursively initialize all nest streams.
+   */
   this->regionController->initializeRegion(streamRegion);
   for (const auto nestRegionRelativePath :
        streamRegion.nest_region_relative_paths()) {
     const auto &nestStreamRegion =
         this->getStreamRegion(nestRegionRelativePath);
     this->initializeStreams(nestStreamRegion);
+  }
+
+  /**
+   * After all nest streams are initialized, we try to initialize any inner-loop
+   * dependence.
+   */
+  for (auto newStream : createdStreams) {
+    newStream->fixInnerLoopBaseStreams();
   }
 }
 
