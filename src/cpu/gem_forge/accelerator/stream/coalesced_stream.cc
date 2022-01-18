@@ -153,7 +153,7 @@ void Stream::fixInnerLoopBaseStreams() {
 
       bool alreadyAdded = false;
       for (const auto &baseEdge : this->baseEdges) {
-        if (baseEdge.type != StreamDepEdge::Addr) {
+        if (baseEdge.type != StreamDepEdge::TypeE::Addr) {
           continue;
         }
         if (baseEdge.toStaticId == baseStreamId.id()) {
@@ -183,8 +183,8 @@ void Stream::fixInnerLoopBaseStreams() {
       }
 
       assert(baseS != this && "Should never have circular address dependency.");
-      this->addBaseStream(StreamDepEdge::Addr, baseStreamId.id(), info.id(),
-                          baseS);
+      this->addBaseStream(StreamDepEdge::TypeE::Addr, baseStreamId.id(),
+                          info.id(), baseS);
     }
   }
 }
@@ -198,7 +198,8 @@ void Stream::initializeBaseStreams() {
       if (auto baseS = this->se->tryGetStream(baseId.id())) {
         assert(baseS != this &&
                "Should never have circular address dependency.");
-        this->addBaseStream(StreamDepEdge::Addr, baseId.id(), info.id(), baseS);
+        this->addBaseStream(StreamDepEdge::TypeE::Addr, baseId.id(), info.id(),
+                            baseS);
       }
     }
 
@@ -209,7 +210,8 @@ void Stream::initializeBaseStreams() {
       if (baseS == this) {
         S_PANIC(this, "Circular value dependence found.");
       }
-      this->addBaseStream(StreamDepEdge::Value, baseId.id(), info.id(), baseS);
+      this->addBaseStream(StreamDepEdge::TypeE::Value, baseId.id(), info.id(),
+                          baseS);
     }
 
     // Update the back dependence information.
@@ -221,12 +223,14 @@ void Stream::initializeBaseStreams() {
                 "More than one logical stream has back edge dependence.\n");
       }
       auto baseS = this->se->getStream(baseId.id());
-      this->addBaseStream(StreamDepEdge::Back, baseId.id(), info.id(), baseS);
+      this->addBaseStream(StreamDepEdge::TypeE::Back, baseId.id(), info.id(),
+                          baseS);
     }
 
     // Reduction stream always has myself as the back base stream.
     if (this->isReduction()) {
-      this->addBaseStream(StreamDepEdge::Back, info.id(), info.id(), this);
+      this->addBaseStream(StreamDepEdge::TypeE::Back, info.id(), info.id(),
+                          this);
     }
 
     // Try to update the step root stream.

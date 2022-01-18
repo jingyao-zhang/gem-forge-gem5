@@ -259,7 +259,7 @@ public:
    * edges between two streams. e.g. b[i] = a[i] + a[i - 1].
    */
   struct StreamDepEdge {
-    enum TypeE { Addr, Value, Back };
+    using TypeE = DynamicStream::StreamDepEdge::TypeE;
     const TypeE type;
     const StaticId fromStaticId = DynamicStreamId::InvalidStaticStreamId;
     const StaticId toStaticId = DynamicStreamId::InvalidStaticStreamId;

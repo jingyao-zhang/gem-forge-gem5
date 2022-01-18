@@ -189,27 +189,26 @@ public:
    * 3. Reuse count of the base element.
    */
   struct StreamDepEdge {
+    enum TypeE { Addr, Value, Back };
+    static const char *typeToString(const TypeE &type);
+    const TypeE type = Addr;
     const StaticId baseStaticId = DynamicStreamId::InvalidStaticStreamId;
     const InstanceId baseInstanceId = DynamicStreamId::InvalidInstanceId;
     const StaticId depStaticId = DynamicStreamId::InvalidStaticStreamId;
     const uint64_t alignBaseElement = 0;
     uint64_t reuseBaseElement = 0;
-    StreamDepEdge(StaticId _baseStaticId, InstanceId _baseInstanceId,
-                  StaticId _depStaticId, uint64_t _alignBaseElement,
-                  uint64_t _reuseBaseElement)
-        : baseStaticId(_baseStaticId), baseInstanceId(_baseInstanceId),
-          depStaticId(_depStaticId), alignBaseElement(_alignBaseElement),
+    StreamDepEdge(TypeE _type, StaticId _baseStaticId,
+                  InstanceId _baseInstanceId, StaticId _depStaticId,
+                  uint64_t _alignBaseElement, uint64_t _reuseBaseElement)
+        : type(_type), baseStaticId(_baseStaticId),
+          baseInstanceId(_baseInstanceId), depStaticId(_depStaticId),
+          alignBaseElement(_alignBaseElement),
           reuseBaseElement(_reuseBaseElement) {}
   };
   using StreamEdges = std::vector<StreamDepEdge>;
-  StreamEdges addrBaseEdges;
-  StreamEdges valueBaseEdges;
-  StreamEdges backBaseEdges;
+  StreamEdges baseEdges;
   StreamEdges backDepEdges;
   void addBaseDynStreams();
-  void addAddrBaseDynStreams();
-  void addValueBaseDynStreams();
-  void addBackBaseDynStreams();
 
   std::list<DynamicStream *> stepDynStreams;
   void addStepStreams();
@@ -232,17 +231,17 @@ public:
    * 2. Self dependence for reduction stream.
    */
   bool areNextBaseElementsAllocated() const;
-  bool areNextAddrBaseElementsAllocated() const;
-  bool areNextBackBaseElementsAllocated() const;
+  bool isNextAddrBaseElementAllocated(const StreamDepEdge &edge) const;
+  bool isNextValueBaseElementAllocated(const StreamDepEdge &edge) const;
+  bool isNextBackBaseElementAllocated(const StreamDepEdge &edge) const;
   bool areNextBackDepElementsReady(StreamElement *element) const;
-  bool areNextValueBaseElementsAllocated() const;
-  void addAddrBaseElements(StreamElement *newElement);
+  void addBaseElements(StreamElement *newElement);
   void addAddrBaseElementEdge(StreamElement *newElement,
                               const StreamDepEdge &edge);
-  /**
-   * Add value base elements for stream computation.
-   */
-  void addValueBaseElements(StreamElement *newElement);
+  void addValueBaseElementEdge(StreamElement *newElement,
+                               const StreamDepEdge &edge);
+  void addBackBaseElementEdge(StreamElement *newElement,
+                              const StreamDepEdge &edge);
 
   /**
    * Should the CoreSE try to issue for the data.
@@ -399,5 +398,9 @@ private:
   void tryCancelFloat();
   void cancelFloat();
 };
+
+std::ostream &operator<<(std::ostream &os,
+                         const DynamicStream::StreamDepEdge::TypeE &type);
+std::string to_string(const DynamicStream::StreamDepEdge::TypeE &type);
 
 #endif

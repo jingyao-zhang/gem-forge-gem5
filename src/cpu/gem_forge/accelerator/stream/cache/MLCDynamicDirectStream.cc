@@ -640,7 +640,7 @@ void MLCDynamicDirectStream::notifyIndirectStream(const MLCStreamSlice &slice) {
       const auto &baseEdges = IS->baseEdges;
       auto baseId = DynamicStreamId::InvalidStaticStreamId;
       for (const auto &baseEdge : baseEdges) {
-        if (baseEdge.type == Stream::StreamDepEdge::Addr) {
+        if (baseEdge.type == Stream::StreamDepEdge::TypeE::Addr) {
           if (baseId == DynamicStreamId::InvalidStaticStreamId) {
             baseId = baseEdge.toStaticId;
           } else {

@@ -111,19 +111,19 @@ void Stream::addBaseStream(StreamDepEdge::TypeE type, StaticId baseId,
   this->baseEdges.emplace_back(type, depId, baseId, baseS);
   baseS->depEdges.emplace_back(type, baseId, depId, this);
 
-  if (type == StreamDepEdge::Addr) {
+  if (type == StreamDepEdge::TypeE::Addr) {
     if (baseS == this) {
       STREAM_PANIC("AddrBaseStream should not be self.");
     }
     this->addrBaseStreams.insert(baseS);
     baseS->addrDepStreams.insert(this);
-  } else if (type == StreamDepEdge::Value) {
+  } else if (type == StreamDepEdge::TypeE::Value) {
     if (baseS == this) {
       STREAM_PANIC("ValueBasetream should not be self.");
     }
     this->valueBaseStreams.insert(baseS);
     baseS->valueDepStreams.insert(this);
-  } else if (type == StreamDepEdge::Back) {
+  } else if (type == StreamDepEdge::TypeE::Back) {
     this->backBaseStreams.insert(baseS);
     baseS->backDepStreams.insert(this);
     if (this->isReduction()) {
