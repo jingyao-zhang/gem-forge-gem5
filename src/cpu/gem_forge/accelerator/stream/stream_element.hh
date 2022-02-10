@@ -151,17 +151,41 @@ public:
 struct StreamElement {
   using StaticId = DynamicStreamId::StaticId;
   struct BaseElement {
+    /**
+     * A BaseElement can start with Uninitialized state,
+     * which means the element == nullptr. This is used to implement
+     * InnerLoop dependence.
+     * After initialized, we can check if the BaseElement is still valid,
+     * i.e. the FIFOIdx has not changed since initialization.
+     */
+  private:
     StreamElement *element;
     FIFOEntryIdx idx;
+    bool initialized() const { return this->element != nullptr; }
+
+  public:
     BaseElement(StreamElement *_element)
         : element(_element), idx(_element->FIFOIdx) {
       assert(this->element->stream && "This is element has not allocated.");
     }
-    bool isValid() const { return this->element->FIFOIdx == this->idx; }
+    bool isValid() const {
+      return this->initialized() && this->element->FIFOIdx == this->idx;
+    }
+    StreamElement *getElement() const {
+      assert(this->initialized() && "Missing BaseElement.");
+      return this->element;
+    }
+    FIFOEntryIdx getIdx() const {
+      assert(this->initialized() && "Missing BaseElement.");
+      return this->idx;
+    }
   };
-  // TODO: AddrBaseElement should also be tracked with BaseElement.
-  std::unordered_set<StreamElement *> addrBaseElements;
+  std::vector<BaseElement> addrBaseElements;
   std::vector<BaseElement> valueBaseElements;
+  bool hasUnInitInnerLoopAddrBaseElements = false;
+
+  bool checkAddrBaseElementsReady(bool checkByCore);
+
   StreamElement *next;
   Stream *stream;
   DynamicStream *dynS;

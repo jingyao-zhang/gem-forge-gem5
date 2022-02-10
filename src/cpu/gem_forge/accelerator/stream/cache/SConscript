@@ -27,8 +27,7 @@ DebugFlag('LLCStreamLoopBound')
 DebugFlag('RemoteStreamReuse')
 CompoundFlag('LLCRubyStream', [
     'LLCRubyStreamBase', 'LLCRubyStreamLife', 'LLCRubyStreamReduce',
-    'LLCRubyStreamMulticast', 'LLCRubyStreamStore',
-    'LLCRubyStreamNotIssue', 'LLCStreamLoopBound',
+    'LLCRubyStreamMulticast', 'LLCRubyStreamStore', 'LLCStreamLoopBound',
     'StreamRangeSync',  'LLCStreamMigrationController',
     'RemoteStreamReuse',
 ])

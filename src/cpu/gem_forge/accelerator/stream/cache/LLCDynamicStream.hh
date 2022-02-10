@@ -65,7 +65,10 @@ public:
     return this->mlcController;
   }
 
-  Stream *getStaticStream() const { return this->configData->stream; }
+  Stream *getStaticS() const { return this->configData->stream; }
+  DynamicStream *getCoreDynStream() const {
+    return this->getStaticS()->getDynamicStream(this->getDynamicStreamId());
+  }
   uint64_t getStaticId() const { return this->configData->dynamicId.staticId; }
   const DynamicStreamId &getDynamicStreamId() const {
     return this->configData->dynamicId;
@@ -80,7 +83,7 @@ public:
   bool isIndirect() const { return this->baseStream != nullptr; }
   bool isIndirectReduction() const {
     return this->isIndirect() && this->baseStream->isIndirect() &&
-           this->getStaticStream()->isReduction();
+           this->getStaticS()->isReduction();
   }
   bool shouldRangeSync() const { return this->configData->rangeSync; }
   bool isPredicated() const { return this->configData->isPredicated; }
@@ -106,7 +109,7 @@ public:
   MachineType getFloatMachineTypeAtElem(uint64_t elementIdx) const;
 
   bool hasIndirectDependent() const {
-    auto S = this->getStaticStream();
+    auto S = this->getStaticS();
     return !this->getIndStreams().empty() || this->isPointerChase() ||
            (S->isLoadStream() && S->getEnabledStoreFunc());
   }
@@ -138,6 +141,7 @@ public:
    */
   bool isNextSliceOverflown() const;
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
+  const DynamicStreamSliceId &peekNextAllocSliceId() const;
   std::pair<Addr, MachineType> peekNextAllocVAddrAndMachineType() const;
   LLCStreamSlicePtr getNextAllocSlice() const;
   LLCStreamSlicePtr allocNextSlice(LLCStreamEngine *se);
@@ -475,6 +479,11 @@ public:
   uint64_t getNextLoopBoundElemIdx() const {
     return this->nextLoopBoundElementIdx;
   }
+  /**
+   * Check that our LoopBound has been evaluted for this sliceId.
+   * @return true if the slice is no longer needed for LoopBound.
+   */
+  bool isSliceDoneForLoopBound(const DynamicStreamSliceId &sliceId) const;
 
 private:
   uint64_t nextLoopBoundElementIdx = 0;

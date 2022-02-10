@@ -214,6 +214,20 @@ public:
   void addStepStreams();
 
   /**
+   * Record and manage dynamic InnerLoopBaseStream.
+   * Unlike normal StreamDepEdge, here each OuterLoopStream element depends on
+   * one INSTANCE of InnerLoopStream.
+   */
+  using InnerLoopBaseDynStreamMapT = std::map<StaticId, StreamEdges>;
+  InnerLoopBaseDynStreamMapT innerLoopBaseEdges;
+  StreamEdges &getInnerLoopBaseEdges(StaticId baseStaticId);
+  const StreamEdges &getInnerLoopBaseEdges(StaticId baseStaticId) const;
+  void pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type,
+                                  StaticId baseStaticId,
+                                  InstanceId baseInstanceId,
+                                  StaticId depStaticId);
+
+  /**
    * Compute reuse of the base stream element.
    * This is further split into two cases:
    * 1. Base streams from the same loop.
@@ -224,17 +238,22 @@ public:
                                                DynamicStream &baseDynS);
   void configureAddrBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
                                                 DynamicStream &baseDynS);
+
   /**
-   * Add address base elements to new element.
-   * This is further split into two cases:
-   * 1. Base streams from edges.
-   * 2. Self dependence for reduction stream.
+   * Check if base elements of the next allocating element is ready.
    */
   bool areNextBaseElementsAllocated() const;
   bool isNextAddrBaseElementAllocated(const StreamDepEdge &edge) const;
   bool isNextValueBaseElementAllocated(const StreamDepEdge &edge) const;
   bool isNextBackBaseElementAllocated(const StreamDepEdge &edge) const;
   bool areNextBackDepElementsReady(StreamElement *element) const;
+
+  /**
+   * Add address base elements to new element.
+   * This is further split into two cases:
+   * 1. Base streams from edges.
+   * 2. Self dependence for reduction stream.
+   */
   void addBaseElements(StreamElement *newElement);
   void addAddrBaseElementEdge(StreamElement *newElement,
                               const StreamDepEdge &edge);
@@ -242,6 +261,10 @@ public:
                                const StreamDepEdge &edge);
   void addBackBaseElementEdge(StreamElement *newElement,
                               const StreamDepEdge &edge);
+
+  void tryAddInnerLoopBaseElements(StreamElement *elem);
+  bool areInnerLoopBaseElementsAllocated(StreamElement *elem) const;
+  void addInnerLoopBaseElements(StreamElement *elem);
 
   /**
    * Should the CoreSE try to issue for the data.

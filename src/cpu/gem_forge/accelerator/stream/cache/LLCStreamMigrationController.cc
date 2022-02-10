@@ -96,7 +96,7 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
                     "[Migrate] Delayed migration to %s to avoid "
                     "contention. NeighborStreams %d.\n",
                     machineId, neighborStreams);
-      dynS->getStaticStream()->statistic.numRemoteMigrateDelayCycle++;
+      dynS->getStaticS()->statistic.numRemoteMigrateDelayCycle++;
       return false;
     }
   }

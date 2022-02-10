@@ -106,10 +106,16 @@ bool Stream::isMemStream() const {
   }
 }
 
-void Stream::addBaseStream(StreamDepEdge::TypeE type, StaticId baseId,
-                           StaticId depId, Stream *baseS) {
-  this->baseEdges.emplace_back(type, depId, baseId, baseS);
-  baseS->depEdges.emplace_back(type, baseId, depId, this);
+void Stream::addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
+                           StaticId baseId, StaticId depId, Stream *baseS) {
+
+  if (isInnerLoop) {
+    this->innerLoopBaseEdges.emplace_back(type, depId, baseId, baseS);
+    baseS->innerLoopDepEdges.emplace_back(type, baseId, depId, this);
+  } else {
+    this->baseEdges.emplace_back(type, depId, baseId, baseS);
+    baseS->depEdges.emplace_back(type, baseId, depId, this);
+  }
 
   if (type == StreamDepEdge::TypeE::Addr) {
     if (baseS == this) {
@@ -625,7 +631,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
   }
 
   /**
-   * If this has is load stream with merged predicated stream, check for
+   * If this is load stream with merged predicated stream, check for
    * any inputs for the predication function.
    */
   assert(inputVec && "Missing InputVec.");
@@ -684,15 +690,33 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
   }
   /**
    * If this is a Reduce/PtrChase stream, check for the initial value.
+   * Also if the stream has FixedTripCount, check for the trip count.
    */
   if (this->isReduction() || this->isPointerChaseIndVar()) {
     if (this->getReduceFromZero()) {
       dynS.initialValue.fill(0);
     } else {
       assert(!inputVec->empty() &&
-             "Missing initial value for reduction stream.");
+             "Missing initial value for Reduce/PtrChase stream.");
       dynS.initialValue = inputVec->front();
       inputVec->erase(inputVec->begin());
+    }
+
+    if (this->isTripCountFixed()) {
+      uint64_t tripCount = 1;
+      for (int loopLevel = this->getLoopLevel();
+           loopLevel >= this->getConfigLoopLevel(); --loopLevel) {
+        assert(!inputVec->empty() && "Missing FixTripCount value.");
+        auto loopTripCount = inputVec->front().uint64();
+        inputVec->erase(inputVec->begin());
+        DYN_S_DPRINTF(dynS.dynamicStreamId,
+                      "[FixTripCount] LoopLevel %d TripCount %lu x "
+                      "TotalTripCount %lu = %lu.\n",
+                      loopLevel, loopTripCount, tripCount,
+                      loopTripCount * tripCount);
+        tripCount *= loopTripCount;
+      }
+      dynS.setTotalTripCount(tripCount);
     }
   }
 }

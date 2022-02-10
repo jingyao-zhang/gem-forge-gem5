@@ -107,6 +107,7 @@ void Stream::selectPrimeLogicalStream() {
   } while (false);
     CHECK_INFO(warn, no_core_user);
     CHECK_INFO(panic, is_merged_predicated_stream);
+    CHECK_INFO(panic, is_trip_count_fixed);
     CHECK_INFO(panic, loop_level);
     CHECK_INFO(panic, config_loop_level);
     CHECK_INFO(panic, is_inner_most_loop);
@@ -183,8 +184,8 @@ void Stream::fixInnerLoopBaseStreams() {
       }
 
       assert(baseS != this && "Should never have circular address dependency.");
-      this->addBaseStream(StreamDepEdge::TypeE::Addr, baseStreamId.id(),
-                          info.id(), baseS);
+      this->addBaseStream(StreamDepEdge::TypeE::Addr, true /* isInnerLoop */,
+                          baseStreamId.id(), info.id(), baseS);
     }
   }
 }
@@ -198,8 +199,8 @@ void Stream::initializeBaseStreams() {
       if (auto baseS = this->se->tryGetStream(baseId.id())) {
         assert(baseS != this &&
                "Should never have circular address dependency.");
-        this->addBaseStream(StreamDepEdge::TypeE::Addr, baseId.id(), info.id(),
-                            baseS);
+        this->addBaseStream(StreamDepEdge::TypeE::Addr, false /* isInnerLoop */,
+                            baseId.id(), info.id(), baseS);
       }
     }
 
@@ -210,8 +211,8 @@ void Stream::initializeBaseStreams() {
       if (baseS == this) {
         S_PANIC(this, "Circular value dependence found.");
       }
-      this->addBaseStream(StreamDepEdge::TypeE::Value, baseId.id(), info.id(),
-                          baseS);
+      this->addBaseStream(StreamDepEdge::TypeE::Value, false /* isInnerLoop */,
+                          baseId.id(), info.id(), baseS);
     }
 
     // Update the back dependence information.
@@ -223,14 +224,14 @@ void Stream::initializeBaseStreams() {
                 "More than one logical stream has back edge dependence.\n");
       }
       auto baseS = this->se->getStream(baseId.id());
-      this->addBaseStream(StreamDepEdge::TypeE::Back, baseId.id(), info.id(),
-                          baseS);
+      this->addBaseStream(StreamDepEdge::TypeE::Back, false /* isInnerLoop */,
+                          baseId.id(), info.id(), baseS);
     }
 
     // Reduction stream always has myself as the back base stream.
     if (this->isReduction()) {
-      this->addBaseStream(StreamDepEdge::TypeE::Back, info.id(), info.id(),
-                          this);
+      this->addBaseStream(StreamDepEdge::TypeE::Back, false /* isInnerLoop */,
+                          info.id(), info.id(), this);
     }
 
     // Try to update the step root stream.

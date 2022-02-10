@@ -19,30 +19,48 @@ void StreamRegionController::initializeStep(
   SE_DPRINTF("[Stepper] Initialized StaticStep for region %s.\n",
              region.region());
   auto &staticStep = staticRegion.step;
-  bool needFinalValue = false;
-  bool needSecondFinalValue = false;
   for (auto S : staticRegion.streams) {
     if (S->stepRootStream == S) {
       SE_DPRINTF("[Stepper] Add StepRootStream %s.\n", S->getStreamName());
+      staticStep.stepGroups.emplace_back(S);
       staticStep.stepRootStreams.push_back(S);
     }
+  }
+  for (auto S : staticRegion.streams) {
+    panic_if(!S->stepRootStream, "Missing StepRootS %s.", S->getStreamName());
+    StaticRegion::StaticStep::StepGroupInfo *stepGroup = nullptr;
+    for (auto &group : staticStep.stepGroups) {
+      if (group.stepRootS == S->stepRootStream) {
+        stepGroup = &group;
+        break;
+      }
+    }
+    panic_if(!stepGroup, "Missing StepGroup %s.", S->getStreamName());
     if (S->isFinalValueNeededByCore()) {
       SE_DPRINTF("[Stepper] NeedFinalValue %s.\n", S->getStreamName());
-      needFinalValue = true;
+      stepGroup->needFinalValue = true;
     }
     if (S->isSecondFinalValueNeededByCore()) {
       SE_DPRINTF("[Stepper] NeedSecondFinalValue %s.\n", S->getStreamName());
-      needSecondFinalValue = true;
+      stepGroup->needSecondFinalValue = true;
+      staticStep.skipStepSecondLastElemStreams.insert(S->stepRootStream);
+      staticStep.skipStepSecondLastElemStreams.insert(S);
+    }
+    if (stepGroup->needSecondFinalValue && stepGroup->needFinalValue) {
+      SE_PANIC("[Stepper] Need both FinalValue and SecondFinalValue %s.",
+               stepGroup->stepRootS->getStreamName());
     }
   }
-  if (needSecondFinalValue && needFinalValue) {
-    SE_PANIC(
-        "[Stepper] Can't step for both FinalValue and SecondFinalValue %s.",
-        region.region());
+  // Populate for all streams whether we skip step the second last elem.
+  for (auto S : staticRegion.streams) {
+    panic_if(!S->stepRootStream, "Missing StepRootS %s.", S->getStreamName());
+    if (staticStep.skipStepSecondLastElemStreams.count(S->stepRootStream)) {
+      SE_DPRINTF("[Stepper] SkipStepSecondLastElem %s.\n", S->getStreamName());
+      staticStep.skipStepSecondLastElemStreams.insert(S);
+    }
   }
-  staticStep.needSecondFinalValue = needSecondFinalValue;
 
-  if (staticStep.stepRootStreams.empty()) {
+  if (staticStep.stepGroups.empty()) {
     SE_PANIC("[Stepper] No StepRootStream for region %s.", region.region());
   }
 }
@@ -105,22 +123,22 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
    * for the next stepped iteration.
    */
   const auto &dynBound = dynRegion.loopBound;
-  uint64_t stepOffset = staticStep.needSecondFinalValue ? 1 : 0;
   if (staticRegion.region.is_loop_bound()) {
-    if (dynStep.nextElementIdx + stepOffset >= dynBound.nextElementIdx) {
-      SE_DPRINTF("[Stepper] Wait For LoopBound: %llu + %llu >= %llu.\n",
-                 dynStep.nextElementIdx, stepOffset, dynBound.nextElementIdx);
+    if (dynStep.nextElementIdx >= dynBound.nextElementIdx) {
+      SE_DPRINTF("[Stepper] Wait For LoopBound: %llu >= %llu.\n",
+                 dynStep.nextElementIdx, dynBound.nextElementIdx);
       return;
     }
   } else {
     // We don't have StreamLoopBound.
-    auto firstStepRootS = staticStep.stepRootStreams.front();
+    const auto &firstStepGroup = staticStep.stepGroups.front();
+    auto firstStepRootS = firstStepGroup.stepRootS;
     auto &firstStepRootDynS =
         firstStepRootS->getDynamicStream(dynRegion.seqNum);
     auto totalTripCount = firstStepRootDynS.getTotalTripCount();
-    if (dynStep.nextElementIdx + stepOffset >= totalTripCount) {
-      SE_DPRINTF("[Stepper] Wait For TotalTripCount: %llu + %llu >= %llu.\n",
-                 dynStep.nextElementIdx, stepOffset, totalTripCount);
+    if (dynStep.nextElementIdx >= totalTripCount) {
+      SE_DPRINTF("[Stepper] Wait For TotalTripCount: %llu >= %llu.\n",
+                 dynStep.nextElementIdx, totalTripCount);
       return;
     }
   }
@@ -137,7 +155,8 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
   /**
    * Actually start to step.
    */
-  auto stepRootS = staticStep.stepRootStreams.at(dynStep.nextStepStreamIdx);
+  const auto &stepGroup = staticStep.stepGroups.at(dynStep.nextStepStreamIdx);
+  auto stepRootS = stepGroup.stepRootS;
   auto stepRootStreamId = stepRootS->staticId;
   auto &stepRootDynS = stepRootS->getDynamicStream(dynRegion.seqNum);
   if (dynStep.nextElementIdx >= stepRootDynS.getTotalTripCount()) {
@@ -153,9 +172,33 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
                 "[Stepper] Try to Step RootDynS.\n");
 
   switch (dynStep.state) {
-  default:
+  default: {
     SE_PANIC("[Stepper] Invalid State %d.", dynStep.state);
-  case DynRegion::DynStep::StepState::BEFORE_DISPATCH:
+  }
+  case DynRegion::DynStep::StepState::BEFORE_DISPATCH: {
+
+    /**
+     * If streams within this StepGroup needs to return the SecondLast value to
+     * the core, we have to not step the SecondLast element. Therefore, here we
+     * just directly advance to the next StepGroup.
+     */
+    if (stepGroup.needSecondFinalValue && stepRootDynS.hasTotalTripCount() &&
+        dynStep.nextElementIdx + 1 == stepRootDynS.getTotalTripCount()) {
+      DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+                    "[Stepper] Skip Step SecondLast Element %lu.\n",
+                    dynStep.nextElementIdx);
+      dynStep.state = DynRegion::DynStep::StepState::BEFORE_DISPATCH;
+      dynStep.nextStepStreamIdx++;
+      if (dynStep.nextStepStreamIdx == staticStep.stepGroups.size()) {
+        dynStep.nextStepStreamIdx = 0;
+        dynStep.nextElementIdx++;
+        DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+                      "[Stepper] NextElementIdx++ -> %llu.\n",
+                      dynStep.nextElementIdx);
+      }
+      break;
+    }
+
     if (se->canDispatchStreamStep(args)) {
       DYN_S_DPRINTF(stepRootDynS.dynamicStreamId, "[Stepper] Dispatch.\n");
       se->dispatchStreamStep(args);
@@ -167,14 +210,15 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
                     "[Stepper] CanNot Dispatch.\n");
     }
     break;
-  case DynRegion::DynStep::StepState::BEFORE_COMMIT:
+  }
+  case DynRegion::DynStep::StepState::BEFORE_COMMIT: {
     if (se->canCommitStreamStep(args)) {
       DYN_S_DPRINTF(stepRootDynS.dynamicStreamId, "[Stepper] Commit.\n");
       se->commitStreamStep(args);
 
       dynStep.state = DynRegion::DynStep::StepState::BEFORE_DISPATCH;
       dynStep.nextStepStreamIdx++;
-      if (dynStep.nextStepStreamIdx == staticStep.stepRootStreams.size()) {
+      if (dynStep.nextStepStreamIdx == staticStep.stepGroups.size()) {
         dynStep.nextStepStreamIdx = 0;
         dynStep.nextElementIdx++;
         DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
@@ -185,5 +229,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
     } else {
       DYN_S_DPRINTF(stepRootDynS.dynamicStreamId, "[Stepper] CanNot Commit.\n");
     }
+    break;
+  }
   }
 }

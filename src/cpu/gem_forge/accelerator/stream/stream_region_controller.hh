@@ -15,6 +15,7 @@ public:
   using EndArgs = StreamEngine::StreamEndArgs;
   void dispatchStreamConfig(const ConfigArgs &args);
   void executeStreamConfig(const ConfigArgs &args);
+  void commitStreamConfig(const ConfigArgs &args);
   void rewindStreamConfig(const ConfigArgs &args);
   void commitStreamEnd(const EndArgs &args);
 
@@ -27,6 +28,7 @@ public:
     StaticRegion *staticRegion;
     const uint64_t seqNum;
     bool configExecuted = false;
+    bool configCommitted = false;
 
     DynRegion(StaticRegion *_staticRegion, uint64_t _seqNum)
         : staticRegion(_staticRegion), seqNum(_seqNum) {}
@@ -41,6 +43,11 @@ public:
       DynamicStreamFormalParamV formalParams;
       DynamicStreamFormalParamV predFormalParams;
       uint64_t nextElementIdx = 0;
+
+      /**
+       * ConfigSeqNum of configured NestRegion.
+       */
+      std::vector<InstSeqNum> configSeqNums;
 
       DynNestConfig(const StaticRegion *_staticRegion)
           : staticRegion(_staticRegion) {}
@@ -113,8 +120,15 @@ public:
      * StreamStepper states for LoopEliminated region.
      */
     struct StaticStep {
+      struct StepGroupInfo {
+        Stream *stepRootS;
+        bool needFinalValue = false;
+        bool needSecondFinalValue = false;
+        StepGroupInfo(Stream *_stepRootS) : stepRootS(_stepRootS) {}
+      };
       StreamVec stepRootStreams;
-      bool needSecondFinalValue;
+      std::vector<StepGroupInfo> stepGroups;
+      std::set<Stream *> skipStepSecondLastElemStreams;
     };
     StaticStep step;
   };
@@ -148,6 +162,7 @@ private:
                                           DynRegion &dynRegion);
   void executeStreamConfigForNestStreams(const ConfigArgs &args,
                                          DynRegion &dynRegion);
+  bool checkRemainingNestRegions(const DynRegion &dynRegion);
   void configureNestStream(DynRegion &dynRegion,
                            DynRegion::DynNestConfig &dynNestConfig);
 
@@ -169,17 +184,15 @@ private:
                       StaticRegion &staticRegion);
   void dispatchStreamConfigForStep(const ConfigArgs &args,
                                    DynRegion &dynRegion);
-  void executeStreamConfigForStep(const ConfigArgs &args,
-                                   DynRegion &dynRegion);
+  void executeStreamConfigForStep(const ConfigArgs &args, DynRegion &dynRegion);
   void stepStream(DynRegion &dynRegion);
 
   /**
    * Allocate stream elements.
    */
   void allocateElements(StaticRegion &staticRegion);
-  bool canSkipAllocatingDynS(
-    StaticRegion &staticRegion,
-    DynamicStream &stepRootDynS);
+  bool canSkipAllocatingDynS(StaticRegion &staticRegion,
+                             DynamicStream &stepRootDynS);
 
   /**
    * Helper functions.

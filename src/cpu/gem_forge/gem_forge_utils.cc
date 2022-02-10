@@ -7,17 +7,16 @@
 std::string GemForgeUtils::dataToString(const uint8_t *data, int size) {
   std::stringstream ss;
   ss << "size " << size;
-  bool allZero = true;
+  int highestNonZero = size;
   for (int i = 0; i < size; ++i) {
     if (data[i] != 0) {
-      allZero = false;
-      break;
+      highestNonZero = i;
     }
   }
-  if (allZero) {
+  if (highestNonZero == size) {
     ss << " AllZero";
   } else {
-    for (int i = 0; i < size; ++i) {
+    for (int i = 0; i <= highestNonZero; ++i) {
       ss << " 0x" << std::hex << static_cast<int>(data[i]);
     }
   }

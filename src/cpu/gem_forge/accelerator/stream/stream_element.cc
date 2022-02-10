@@ -264,6 +264,7 @@ void StreamElement::clear() {
 
   this->addrBaseElements.clear();
   this->valueBaseElements.clear();
+  this->hasUnInitInnerLoopAddrBaseElements = false;
   this->next = nullptr;
   this->stream = nullptr;
   this->dynS = nullptr;
@@ -419,6 +420,39 @@ bool StreamElement::isFirstStoreDispatched() const {
   return this->firstStoreSeqNum != ::LLVMDynamicInst::INVALID_SEQ_NUM;
 }
 
+bool StreamElement::checkAddrBaseElementsReady(bool checkByCore) {
+  if (this->hasUnInitInnerLoopAddrBaseElements) {
+    this->dynS->tryAddInnerLoopBaseElements(this);
+  }
+  S_ELEMENT_DPRINTF(this, "[AddrBaseReady] Check.\n");
+  if (this->hasUnInitInnerLoopAddrBaseElements) {
+    S_ELEMENT_DPRINTF(this, "[AddrBaseReady][InnerLoopDep] NotReady: "
+                            "HasUnInitInnerLoopBaseElem.\n");
+    return false;
+  }
+  bool ready = true;
+  for (const auto &baseElement : this->addrBaseElements) {
+    auto baseE = baseElement.getElement();
+    if (baseE->stream == nullptr) {
+      S_ELEMENT_PANIC(this, "BaseElement has no stream.\n");
+    }
+    if (this->stream->addrBaseStreams.count(baseE->stream) == 0 &&
+        this->stream->backBaseStreams.count(baseE->stream) == 0) {
+      // ! For reduction stream, myself is not in baseStreams.
+      if (!this->stream->isReduction()) {
+        S_ELEMENT_PANIC(this, "Different base streams from %s.\n",
+                        baseE->FIFOIdx);
+      }
+    }
+    S_ELEMENT_DPRINTF(baseE, "BaseElement Ready %d.\n", baseE->isValueReady);
+    if (!baseE->checkValueReady(checkByCore)) {
+      ready = false;
+      break;
+    }
+  }
+  return ready;
+}
+
 Addr StreamElement::computeAddr() {
   /**
    * Compute the address.
@@ -429,16 +463,17 @@ Addr StreamElement::computeAddr() {
   GetStreamValueFunc getStreamValue =
       [this](uint64_t baseStreamId) -> StreamValue {
     auto baseStream = this->se->getStream(baseStreamId);
-    for (auto baseElement : this->addrBaseElements) {
-      if (baseElement->stream == baseStream) {
+    for (const auto &baseElement : this->addrBaseElements) {
+      auto baseE = baseElement.getElement();
+      if (baseE->stream == baseStream) {
         // TODO: Check the FIFOIdx to make sure that the element is correct to
         // TODO: use.
-        if (!baseElement->isValueReady) {
+        if (!baseE->isValueReady) {
           S_ELEMENT_PANIC(this, "BaseElement %s is not value ready.",
-                          baseElement->FIFOIdx);
+                          baseE->FIFOIdx);
         }
-        auto vaddr = baseElement->addr;
-        int32_t size = baseElement->size;
+        auto vaddr = baseE->addr;
+        int32_t size = baseE->size;
         // Handle offset for coalesced stream.
         int32_t offset;
         baseStream->getCoalescedOffsetAndSize(baseStreamId, offset, size);
@@ -448,8 +483,8 @@ Addr StreamElement::computeAddr() {
                "Base element too large, maybe coalesced?");
         // ! This effectively does zero extension.
         StreamValue baseValue;
-        baseElement->getValue(vaddr, size, baseValue.uint8Ptr());
-        S_ELEMENT_DPRINTF(baseElement,
+        baseE->getValue(vaddr, size, baseValue.uint8Ptr());
+        S_ELEMENT_DPRINTF(baseE,
                           "GetStreamValue vaddr %#x size %d value %llu.\n",
                           vaddr, size, baseValue.front());
         return baseValue;
@@ -840,21 +875,21 @@ void StreamElement::receiveComputeResult(const StreamValue &result) {
 StreamValue StreamElement::getValueBaseByStreamId(StaticId id) {
   // Search the ValueBaseElements.
   auto baseS = this->se->getStream(id);
-  for (const auto &baseE : this->valueBaseElements) {
-    if (baseE.element->stream == baseS) {
+  for (const auto &baseElement : this->valueBaseElements) {
+    auto baseE = baseElement.getElement();
+    if (baseE->stream == baseS) {
       /**
        * For unfloated LoadComputeStream, we should use the LoadComputeValue.
        * Except when I am the LoadComputeStream of course.
        */
-      auto baseElement = baseE.element;
       StreamValue elementValue;
-      if (baseElement != this && baseElement->stream->isLoadComputeStream() &&
-          !baseElement->isElemFloatedToCache()) {
-        baseElement->getLoadComputeValue(elementValue.uint8Ptr(),
-                                         sizeof(elementValue));
+      if (baseE != this && baseE->stream->isLoadComputeStream() &&
+          !baseE->isElemFloatedToCache()) {
+        baseE->getLoadComputeValue(elementValue.uint8Ptr(),
+                                   sizeof(elementValue));
       } else {
-        baseElement->getValueByStreamId(id, elementValue.uint8Ptr(),
-                                        sizeof(elementValue));
+        baseE->getValueByStreamId(id, elementValue.uint8Ptr(),
+                                  sizeof(elementValue));
       }
       return elementValue;
     }
@@ -957,11 +992,13 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
       return false;
     }
   }
-  for (const auto &baseE : this->valueBaseElements) {
-    if (!baseE.isValid()) {
-      S_ELEMENT_PANIC(this, "ValueBaseElement released early: %s.", baseE.idx);
+  for (const auto &baseElement : this->valueBaseElements) {
+    if (!baseElement.isValid()) {
+      S_ELEMENT_PANIC(this, "ValueBaseElement released early: %s.",
+                      baseElement.getIdx());
     }
-    if (baseE.element == this) {
+    auto baseE = baseElement.getElement();
+    if (baseE == this) {
       /**
        * Some ComputeStream require myself as the ValueBase. We don't call
        * checkValueReady to avoid recursive dependence information in the
@@ -971,21 +1008,19 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
         return false;
       }
     } else {
-      auto baseElement = baseE.element;
       /**
        * Special case for unfloated LoadComputeStream, which we should check
        * the LoadComputeValue.
        */
-      if (baseElement->stream->isLoadComputeStream() &&
-          !baseElement->isElemFloatedToCache()) {
-        if (!baseElement->checkLoadComputeValueReady(
-                false /* CheckedByCore */)) {
+      if (baseE->stream->isLoadComputeStream() &&
+          !baseE->isElemFloatedToCache()) {
+        if (!baseE->checkLoadComputeValueReady(false /* CheckedByCore */)) {
           return false;
         }
       } else {
-        if (!baseE.element->checkValueReady(false /* CheckedByCore */)) {
+        if (!baseE->checkValueReady(false /* CheckedByCore */)) {
           S_ELEMENT_DPRINTF(this, "ValueBaseElement not ValueReady: %s.\n",
-                            baseE.element->FIFOIdx);
+                            baseE->FIFOIdx);
           return false;
         }
       }

@@ -451,6 +451,11 @@ void StreamEngine::commitStreamConfig(const StreamConfigArgs &args) {
    * We can now commit offload decision.
    */
   this->floatController->commitFloatStreams(args, configStreams);
+
+  /**
+   * Inform the RegionController.
+   */
+  this->regionController->commitStreamConfig(args);
 }
 
 void StreamEngine::rewindStreamConfig(const StreamConfigArgs &args) {
@@ -864,6 +869,8 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
       auto element = dynS.getFirstUnsteppedElement();
       if (S->isSecondFinalValueNeededByCore()) {
         if (!element->isSecondLastElement()) {
+          S_ELEMENT_DPRINTF(element, "Is Not SecondLastElem. TripCount %lu.\n",
+                            dynS.getTotalTripCount());
           return false;
         }
       } else {
@@ -1196,7 +1203,7 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
     if (S->isLoopEliminated()) {
       // We already checked that we have UnsteppedElement.
       auto element = dynS.getFirstUnsteppedElement();
-      if (staticStreamRegion.step.needSecondFinalValue) {
+      if (staticStreamRegion.step.skipStepSecondLastElemStreams.count(S)) {
         if (!element->isSecondLastElement()) {
           return false;
         }
@@ -1334,7 +1341,8 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
      */
     if (S->isLoopEliminated() && dynS.hasTotalTripCount()) {
       uint64_t endElemOffset =
-          staticStreamRegion.step.needSecondFinalValue ? 1 : 0;
+          staticStreamRegion.step.skipStepSecondLastElemStreams.count(S) ? 1
+                                                                         : 0;
       if (endElementIdx + endElemOffset < dynS.getTotalTripCount()) {
         S_ELEMENT_DPRINTF(
             endElement,
@@ -1468,7 +1476,8 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
      */
     if (endedDynS.hasTotalTripCount()) {
       uint64_t endElemOffset =
-          staticStreamRegion.step.needSecondFinalValue ? 1 : 0;
+          staticStreamRegion.step.skipStepSecondLastElemStreams.count(S) ? 1
+                                                                         : 0;
       if (endedDynS.getTotalTripCount() + 1 !=
           endedDynS.FIFOIdx.entryIdx + endElemOffset) {
         DYN_S_PANIC(
@@ -2119,7 +2128,7 @@ void StreamEngine::releaseElementStepped(DynamicStream *dynS, bool isEnd,
   }
 
   const bool used = releaseElement->isFirstUserDispatched();
-  if (releaseElement->isLastElement() && !S->isReduction()) {
+  if (releaseElement->isLastElement() && !S->isFinalValueNeededByCore()) {
     assert(!used && "LastElement of NonReductionStream released being used.");
   }
 
@@ -2205,31 +2214,6 @@ bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
 
 std::vector<StreamElement *> StreamEngine::findReadyElements() {
   std::vector<StreamElement *> readyElements;
-
-  auto areBaseElementsValReady = [this](StreamElement *element) -> bool {
-    bool ready = true;
-    S_ELEMENT_DPRINTF(element, "Check if base element is ready.\n");
-    for (const auto &baseElement : element->addrBaseElements) {
-      if (baseElement->stream == nullptr) {
-        S_ELEMENT_PANIC(element, "BaseElement has no stream.\n");
-      }
-      if (element->stream->addrBaseStreams.count(baseElement->stream) == 0 &&
-          element->stream->backBaseStreams.count(baseElement->stream) == 0) {
-        // ! For reduction stream, myself is not in baseStreams.
-        if (!element->stream->isReduction()) {
-          S_ELEMENT_PANIC(element, "Different base streams from %s.\n",
-                          baseElement->FIFOIdx);
-        }
-      }
-      S_ELEMENT_DPRINTF(baseElement, "BaseElement Ready %d.\n",
-                        baseElement->isValueReady);
-      if (!baseElement->checkValueReady(false /* CheckByCore */)) {
-        ready = false;
-        break;
-      }
-    }
-    return ready;
-  };
 
   /**
    * We iterate through all configured streams' elements.
@@ -2350,7 +2334,8 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
             break;
           }
         }
-        auto baseElementsValReady = areBaseElementsValReady(element);
+        auto baseElementsValReady =
+            element->checkAddrBaseElementsReady(false /* CheckByCore */);
         auto canNDCIssue = this->ndcController->canIssueNDCPacket(element);
         if (baseElementsValReady && canNDCIssue) {
           S_ELEMENT_DPRINTF(element, "Found Addr Ready.\n");

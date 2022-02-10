@@ -63,8 +63,8 @@ LLCDynamicStream::LLCDynamicStream(
     this->nextLoopBoundElementIdx = firstFloatElemIdx;
   }
 
-  if (this->getStaticStream()->isReduction() ||
-      this->getStaticStream()->isPointerChaseIndVar()) {
+  if (this->getStaticS()->isReduction() ||
+      this->getStaticS()->isPointerChaseIndVar()) {
     // Initialize the first element for ReductionStream with the initial value.
     assert(this->isOneIterationBehind() &&
            "ReductionStream must be OneIterationBehind.");
@@ -253,7 +253,7 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
     // We do not constrain ourselves from the core if there are no core users
     // for both myself and all the indirect streams.
     this->shouldUpdateIssueClearCycleMemorized = true;
-    auto S = this->getStaticStream();
+    auto S = this->getStaticS();
     auto dynCoreS = S->getDynamicStream(this->getDynamicStreamId());
     if (dynCoreS && !dynCoreS->shouldCoreSEIssue()) {
       this->shouldUpdateIssueClearCycleMemorized = false;
@@ -266,7 +266,7 @@ bool LLCDynamicStream::shouldUpdateIssueClearCycle() {
 
 void LLCDynamicStream::traceEvent(
     const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type) {
-  auto &floatTracer = this->getStaticStream()->floatTracer;
+  auto &floatTracer = this->getStaticS()->floatTracer;
   auto curCycle = this->curCycle();
   assert(this->llcController && "Missing LLCController when tracing event.");
   auto machineId = this->llcController->getMachineID();
@@ -377,6 +377,14 @@ LLCStreamSlicePtr LLCDynamicStream::allocNextSlice(LLCStreamEngine *se) {
               "No Initialized Slice to allocate from.");
 }
 
+const DynamicStreamSliceId &LLCDynamicStream::peekNextAllocSliceId() const {
+  if (auto slice = this->getNextAllocSlice()) {
+    return slice->getSliceId();
+  } else {
+    return this->peekNextInitSliceId();
+  }
+}
+
 std::pair<Addr, MachineType>
 LLCDynamicStream::peekNextAllocVAddrAndMachineType() const {
   if (auto slice = this->getNextAllocSlice()) {
@@ -401,8 +409,7 @@ void LLCDynamicStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
   }
   while (this->nextInitSliceIdx < lastSliceIdx) {
     auto sliceId = this->initNextSlice();
-    auto slice =
-        std::make_shared<LLCStreamSlice>(this->getStaticStream(), sliceId);
+    auto slice = std::make_shared<LLCStreamSlice>(this->getStaticS(), sliceId);
 
     // Register the elements.
     while (this->nextInitElementIdx < sliceId.getEndIdx()) {
@@ -439,7 +446,7 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
    * Therefore, I increased the threshold and also check for elements with
    * slices not released.
    */
-  if (this->getStaticStream()->isDirectMemStream() &&
+  if (this->getStaticS()->isDirectMemStream() &&
       this->getMemElementSize() >= 64) {
     if (this->idxToElementMap.size() >= 512) {
       int sliceNotReleasedElements = 0;
@@ -483,7 +490,7 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
 
   auto size = this->getMemElementSize();
   auto element = std::make_shared<LLCStreamElement>(
-      this->getStaticStream(), this->mlcController, this->getDynamicStreamId(),
+      this->getStaticS(), this->mlcController, this->getDynamicStreamId(),
       elementIdx, vaddr, size, false /* isNDCElement */);
   this->idxToElementMap.emplace(elementIdx, element);
   this->nextInitElementIdx++;
@@ -536,16 +543,15 @@ void LLCDynamicStream::initNextElement(Addr vaddr) {
     }
   }
   // Remember to add previous element as base element for reduction.
-  if (this->getStaticStream()->isReduction() ||
-      this->getStaticStream()->isPointerChaseIndVar()) {
+  if (this->getStaticS()->isReduction() ||
+      this->getStaticS()->isPointerChaseIndVar()) {
     if (!this->lastReductionElement) {
       uint64_t firstElemIdx =
           this->configData->floatPlan.getFirstFloatElementIdx();
       // First time, just initialize the first element.
       this->lastReductionElement = std::make_shared<LLCStreamElement>(
-          this->getStaticStream(), this->mlcController,
-          this->getDynamicStreamId(), firstElemIdx, 0, size,
-          false /* isNDCElement */);
+          this->getStaticS(), this->mlcController, this->getDynamicStreamId(),
+          firstElemIdx, 0, size, false /* isNDCElement */);
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
       this->lastComputedReductionElementIdx = firstElemIdx;
@@ -659,13 +665,13 @@ void LLCDynamicStream::eraseElement(uint64_t elementIdx) {
                 elementIdx);
   }
   LLC_ELEMENT_DPRINTF(iter->second, "Erased element.\n");
-  this->getStaticStream()->incrementOffloadedStepped();
+  this->getStaticS()->incrementOffloadedStepped();
   this->idxToElementMap.erase(iter);
 }
 
 void LLCDynamicStream::eraseElement(IdxToElementMapT::iterator elementIter) {
   LLC_ELEMENT_DPRINTF(elementIter->second, "Erased element.\n");
-  this->getStaticStream()->incrementOffloadedStepped();
+  this->getStaticS()->incrementOffloadedStepped();
   this->idxToElementMap.erase(elementIter);
 }
 
@@ -688,7 +694,7 @@ void LLCDynamicStream::recvStreamForward(LLCStreamEngine *se,
   if (this->isOneIterationBehind()) {
     recvElementIdx++;
   }
-  auto S = this->getStaticStream();
+  auto S = this->getStaticS();
   if (!this->idxToElementMap.count(recvElementIdx)) {
     LLC_SLICE_PANIC(
         sliceId,
@@ -765,7 +771,7 @@ void LLCDynamicStream::remoteConfigured(
   this->llcController = llcController;
   assert(this->prevConfiguredCycle == Cycles(0) && "Already RemoteConfigured.");
   this->prevConfiguredCycle = this->curCycle();
-  auto &stats = this->getStaticStream()->statistic;
+  auto &stats = this->getStaticS()->statistic;
   stats.numRemoteConfigure++;
   stats.numRemoteConfigureCycle +=
       this->prevConfiguredCycle - this->initializedCycle;
@@ -775,9 +781,9 @@ void LLCDynamicStream::migratingStart() {
   this->setState(State::MIGRATING);
   this->prevMigratedCycle = this->curCycle();
   this->traceEvent(::LLVM::TDG::StreamFloatEvent::MIGRATE_OUT);
-  this->getStaticStream()->se->numLLCMigrated++;
+  this->getStaticS()->se->numLLCMigrated++;
 
-  auto &stats = this->getStaticStream()->statistic;
+  auto &stats = this->getStaticS()->statistic;
   stats.numRemoteRunCycle +=
       this->prevMigratedCycle - this->prevConfiguredCycle;
 }
@@ -797,7 +803,7 @@ void LLCDynamicStream::migratingDone(
   this->setState(State::RUNNING);
   this->prevConfiguredCycle = this->curCycle();
 
-  auto &stats = this->getStaticStream()->statistic;
+  auto &stats = this->getStaticS()->statistic;
   stats.numRemoteMigrate++;
   stats.numRemoteMigrateCycle +=
       this->prevConfiguredCycle - this->prevMigratedCycle;
@@ -813,7 +819,7 @@ void LLCDynamicStream::terminate() {
     this->commitController->deregisterStream(this);
   }
   // Remember the last run cycles.
-  auto &stats = this->getStaticStream()->statistic;
+  auto &stats = this->getStaticS()->statistic;
   stats.numRemoteRunCycle += this->curCycle() - this->prevConfiguredCycle;
 }
 
@@ -837,8 +843,8 @@ void LLCDynamicStream::allocateLLCStreams(
         uncuttedLLCDynSWithSmallestStatidId = S;
       }
     }
-    if (S->getStaticStream()->isStoreComputeStream() ||
-        S->getStaticStream()->isUpdateStream()) {
+    if (S->getStaticS()->isStoreComputeStream() ||
+        S->getStaticS()->isUpdateStream()) {
       loadBalanceValueStreams.push_back(S);
     }
   }
@@ -1026,7 +1032,7 @@ const char *LLCDynamicStream::curRemoteMachineType() const {
 }
 
 bool LLCDynamicStream::hasComputation() const {
-  auto S = this->getStaticStream();
+  auto S = this->getStaticS();
   return S->isReduction() || S->isPointerChaseIndVar() ||
          S->isLoadComputeStream() || S->isStoreComputeStream() ||
          S->isUpdateStream() || S->isAtomicComputeStream();
@@ -1135,7 +1141,7 @@ StreamValue LLCDynamicStream::computeStreamElementValue(
 void LLCDynamicStream::completeComputation(LLCStreamEngine *se,
                                            const LLCStreamElementPtr &element,
                                            const StreamValue &value) {
-  auto S = this->getStaticStream();
+  auto S = this->getStaticS();
   element->doneComputation();
   /**
    * LoadCompute/Update store computed value in ComputedValue.
@@ -1365,8 +1371,8 @@ void LLCDynamicStream::markElementReadyToIssue(uint64_t elementIdx) {
                 element->getState());
   }
 
-  if (this->getStaticStream()->isReduction() ||
-      this->getStaticStream()->isPointerChaseIndVar()) {
+  if (this->getStaticS()->isReduction() ||
+      this->getStaticS()->isPointerChaseIndVar()) {
     LLC_S_PANIC(this->getDynamicStreamId(),
                 "Reduction is not handled as issue for now.");
     return;
@@ -1469,7 +1475,7 @@ bool LLCDynamicStream::shouldIssueBeforeCommit() const {
   if (!this->sendToConfigs.empty()) {
     return true;
   }
-  auto S = this->getStaticStream();
+  auto S = this->getStaticS();
   if (S->isAtomicComputeStream()) {
     auto dynS = S->getDynamicStream(this->getDynamicStreamId());
     if (S->staticId == 81) {
@@ -1488,7 +1494,7 @@ bool LLCDynamicStream::shouldIssueAfterCommit() const {
     return false;
   }
   // We need to issue after commit if we are writing to memory.
-  auto S = this->getStaticStream();
+  auto S = this->getStaticS();
   if (S->isAtomicComputeStream()) {
     return true;
   }
@@ -1556,7 +1562,7 @@ void LLCDynamicStream::evaluateLoopBound(LLCStreamEngine *se) {
                                        loopBoundBrokenPAddr);
 
     // Also set the core.
-    this->getStaticStream()->getSE()->receiveOffloadedLoopBoundRet(
+    this->getStaticS()->getSE()->receiveOffloadedLoopBoundRet(
         this->getDynamicStreamId(), this->nextLoopBoundElementIdx,
         true /* BrokenOut */);
 
@@ -1576,10 +1582,48 @@ void LLCDynamicStream::evaluateLoopBound(LLCStreamEngine *se) {
                    "[LLCLoopBound] Continue (%d != %d) Element %llu.\n",
                    loopBoundRet, this->configData->loopBoundRet,
                    this->nextLoopBoundElementIdx);
-    this->getStaticStream()->getSE()->receiveOffloadedLoopBoundRet(
+    this->getStaticS()->getSE()->receiveOffloadedLoopBoundRet(
         this->getDynamicStreamId(), this->nextLoopBoundElementIdx,
         false /* BrokenOut */);
   }
+}
+
+bool LLCDynamicStream::isSliceDoneForLoopBound(
+    const DynamicStreamSliceId &sliceId) const {
+
+  if (!this->hasLoopBound()) {
+    return true;
+  }
+
+  if (this->isLoopBoundBrokenOut()) {
+    return true;
+  }
+
+  auto nextLoopBoundElemIdx = this->getNextLoopBoundElemIdx();
+  if (nextLoopBoundElemIdx < sliceId.getStartIdx()) {
+    // We are still waiting for some previous slice, not done.
+    return false;
+  }
+  if (nextLoopBoundElemIdx < sliceId.getEndIdx()) {
+    /**
+     * It is possible that we need to evaluate LoopBound for this slice.
+     * Due to multi-line elements, we check that this slice completes the
+     * element, i.e. it contains the last byte of this element.
+     * In such case, we evalute the LoopBound and not release the slice.
+     */
+    auto element = this->getElementPanic(nextLoopBoundElemIdx,
+                                         "Check element for LoopBound.");
+    int sliceOffset;
+    int elementOffset;
+    int overlapSize = element->computeOverlap(sliceId.vaddr, sliceId.getSize(),
+                                              sliceOffset, elementOffset);
+    assert(overlapSize > 0 && "Empty overlap.");
+    if (elementOffset + overlapSize == element->size) {
+      // This slice contains the last element byte.
+      return false;
+    }
+  }
+  return true;
 }
 
 LLCStreamElementPtr LLCDynamicStream::getElement(uint64_t elementIdx) const {

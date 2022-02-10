@@ -78,7 +78,7 @@ bool StreamNDCController::canIssueNDCPacket(StreamElement *element) {
    */
   if (S->isStoreComputeStream()) {
     for (auto &valueBaseElement : element->valueBaseElements) {
-      auto sendingElement = valueBaseElement.element;
+      auto sendingElement = valueBaseElement.getElement();
       if (sendingElement == element) {
         // Avoid self dependence.
         continue;
@@ -93,7 +93,7 @@ bool StreamNDCController::canIssueNDCPacket(StreamElement *element) {
     }
   } else if (S->isAtomicComputeStream()) {
     for (auto &valueBaseElement : element->valueBaseElements) {
-      auto E = valueBaseElement.element;
+      auto E = valueBaseElement.getElement();
       if (E == element) {
         // Avoid self dependence.
         continue;
@@ -139,11 +139,11 @@ void StreamNDCController::issueNDCPacket(StreamElement *element) {
     // Create forward NDC packet.
     std::unordered_set<StreamElement *> sentElements;
     for (auto &valueBaseElement : element->valueBaseElements) {
-      if (valueBaseElement.element == element) {
+      if (valueBaseElement.getElement() == element) {
         // Avoid self dependence.
         continue;
       }
-      auto sendingElement = valueBaseElement.element;
+      auto sendingElement = valueBaseElement.getElement();
       if (sentElements.count(sendingElement)) {
         continue;
       }

@@ -179,7 +179,7 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
       auto nextCommitElement = dynIS->getElement(nextCommitIndirectElementIdx);
 
       if (dynIS->shouldIssueBeforeCommit() &&
-          dynIS->getStaticStream()->isAtomicComputeStream()) {
+          dynIS->getStaticS()->isAtomicComputeStream()) {
         // This should be the Indirect StreamUnlock request.
         LLC_S_DPRINTF(dynS->getDynamicStreamId(),
                       "[Commit] Issue Unlock for DynIS %s %llu.\n",
@@ -205,7 +205,7 @@ bool LLCStreamCommitController::commitStream(LLCDynamicStreamPtr dynS,
      * TODO: Disable Range-Sync for such DirectLoadStream without IndDep.
      */
     bool ideaStreamDone = false;
-    if (dynS->getStaticStream()->isDirectLoadStream() &&
+    if (dynS->getStaticS()->isDirectLoadStream() &&
         dynS->indirectStreams.empty()) {
       ideaStreamDone = true;
     }

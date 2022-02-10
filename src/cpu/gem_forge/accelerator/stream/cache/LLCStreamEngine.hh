@@ -374,7 +374,7 @@ private:
    * Helper function to check if a stream should
    * be migrated.
    */
-  bool canMigrateStream(LLCDynamicStream *stream) const;
+  bool canMigrateStream(LLCDynamicStream *dynS) const;
 
   /**
    * Helper function to process stream data for indirect/update.

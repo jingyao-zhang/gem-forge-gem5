@@ -9,6 +9,8 @@
 #define SE_DPRINTF_(X, format, args...)                                        \
   DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamNest, format, ##args)
+#define SE_PANIC(format, args...)                                              \
+  panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
 void StreamRegionController::initializeNestStreams(
     const ::LLVM::TDG::StreamRegion &region, StaticRegion &staticRegion) {
@@ -114,8 +116,35 @@ void StreamRegionController::executeStreamConfigForNestStreams(
     this->buildFormalParams(inputVec, inputIdx, predFuncInfo, formalParams);
   }
 
-  SE_DPRINTF("[Nest] Executed DynNestConfig for region %s.\n",
+  SE_DPRINTF("[Nest] Execute Config: %s.\n",
              dynRegion.staticRegion->region.region());
+}
+
+bool StreamRegionController::checkRemainingNestRegions(
+    const DynRegion &dynRegion) {
+
+  if (dynRegion.nestConfigs.empty()) {
+    return false;
+  }
+
+  for (const auto &dynNestConfig : dynRegion.nestConfigs) {
+    if (dynNestConfig.configSeqNums.empty()) {
+      continue;
+    }
+    auto &staticNestRegion = *(dynNestConfig.staticRegion);
+    if (staticNestRegion.dynRegions.empty()) {
+      continue;
+    }
+    auto lastNestConfigSeqNum = dynNestConfig.configSeqNums.back();
+    const auto &firstNestDynRegion = staticNestRegion.dynRegions.front();
+    if (firstNestDynRegion.seqNum <= lastNestConfigSeqNum) {
+      SE_PANIC("[Nest] Ended/Rewinded outer %s. Nested %s ConfigSeqNum %lu "
+               "still exists.",
+               dynRegion.staticRegion->region.region(),
+               staticNestRegion.region.region(), firstNestDynRegion.seqNum);
+    }
+  }
+  return false;
 }
 
 void StreamRegionController::configureNestStream(
@@ -202,6 +231,12 @@ void StreamRegionController::configureNestStream(
     }
     baseElements.insert(baseElement);
   }
+  for (auto baseE : baseElements) {
+    if (baseE->isLastElement()) {
+      S_ELEMENT_DPRINTF(baseE, "[Nest] Reached TripCount.\n");
+      return;
+    }
+  }
 
   // All base elements are value ready.
   auto getStreamValue = GetStreamValueFromElementSet(baseElements, "[Nest]");
@@ -242,6 +277,7 @@ void StreamRegionController::configureNestStream(
   // Sanity check that nest streams have same TotalTripCount.
   bool isFirstDynS = true;
   auto totalTripCount = DynamicStream::InvalidTotalTripCount;
+  InstSeqNum nestConfigSeqNum = configFuncStartSeqNum;
   for (auto S : staticNestRegion.streams) {
     auto &dynS = S->getLastDynamicStream();
     auto dynSTotalTripCount = dynS.getTotalTripCount();
@@ -251,6 +287,7 @@ void StreamRegionController::configureNestStream(
     }
     if (isFirstDynS) {
       totalTripCount = dynSTotalTripCount;
+      nestConfigSeqNum = dynS.configSeqNum;
       isFirstDynS = false;
     } else {
       if (totalTripCount != dynSTotalTripCount) {
@@ -260,12 +297,14 @@ void StreamRegionController::configureNestStream(
       }
     }
   }
+  // Remember the config seq num.
+  dynNestConfig.configSeqNums.push_back(nestConfigSeqNum);
 
-  SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, OuterElementIdx "
-             "%lu, ConfigFuncStartSeqNum %lu, TotalTripCount %d, Configured "
-             "DynStreams:\n",
+  SE_DPRINTF("[Nest] Value ready. Config NestRegion %s OuterElemIdx %lu "
+             "ConfigFuncStartSeqNum %lu ConfigSeqNum %lu TripCount %d "
+             "Configured:\n",
              staticNestRegion.region.region(), dynNestConfig.nextElementIdx,
-             configFuncStartSeqNum, totalTripCount);
+             configFuncStartSeqNum, nestConfigSeqNum, totalTripCount);
   if (Debug::StreamNest) {
     for (auto S : staticNestRegion.streams) {
       auto &dynS = S->getLastDynamicStream();

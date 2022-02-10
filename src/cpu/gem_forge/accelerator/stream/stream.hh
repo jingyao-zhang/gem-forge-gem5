@@ -135,6 +135,9 @@ public:
   bool isSecondFinalValueNeededByCore() const {
     return this->info.static_info().core_need_second_final_value();
   }
+  bool isTripCountFixed() const {
+    return this->info.static_info().is_trip_count_fixed();
+  }
 
   LLVM::TDG::StreamInfo info;
   std::unique_ptr<StreamHistory> history;
@@ -270,8 +273,8 @@ public:
           toStream(_toStream) {}
   };
   using StreamEdges = std::vector<StreamDepEdge>;
-  void addBaseStream(StreamDepEdge::TypeE type, StaticId baseId, StaticId depId,
-                     Stream *baseS);
+  void addBaseStream(StreamDepEdge::TypeE type, bool isInnerLoop,
+                     StaticId baseId, StaticId depId, Stream *baseS);
 
   StreamEdges baseEdges;
   StreamEdges depEdges;
@@ -288,6 +291,12 @@ public:
   StreamSet backBaseStreams;
   StreamSet backDepStreams;
   bool hasBackDepReductionStream = false;
+
+  /**
+   * Dependence on inner-loop streams.
+   */
+  StreamEdges innerLoopBaseEdges;
+  StreamEdges innerLoopDepEdges;
 
   /**
    * Whether we have non-core dependents.
@@ -612,6 +621,7 @@ public:
   Is(LoopEliminated);
   Is(FinalValueNeededByCore);
   Is(SecondFinalValueNeededByCore);
+  Is(TripCountFixed);
 
   /**
    * Get the coalesce base stream and offset.

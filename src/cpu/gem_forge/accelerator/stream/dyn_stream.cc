@@ -49,6 +49,13 @@ DynamicStream::DynamicStream(Stream *_stream,
     hitPrivate = false;
   }
   this->totalHitPrivateCache = 0;
+
+  // Initialize the InnerLoopBaseStreamMap.
+  for (const auto &edge : this->stream->innerLoopBaseEdges) {
+    this->innerLoopBaseEdges.emplace(std::piecewise_construct,
+                                     std::forward_as_tuple(edge.toStaticId),
+                                     std::forward_as_tuple());
+  }
 }
 
 DynamicStream::~DynamicStream() {
@@ -84,10 +91,9 @@ void DynamicStream::addBaseDynStreams() {
        * Simply initialize it to 1, as the most general case.
        */
       auto reuseBaseElement = 1;
-      this->baseEdges.emplace_back(StreamDepEdge::TypeE::Addr, edge.toStaticId,
-                                   baseDynS.dynamicStreamId.streamInstance,
-                                   edge.fromStaticId, alignBaseElementIdx,
-                                   reuseBaseElement);
+      this->baseEdges.emplace_back(
+          edge.type, edge.toStaticId, baseDynS.dynamicStreamId.streamInstance,
+          edge.fromStaticId, alignBaseElementIdx, reuseBaseElement);
       break;
     }
     case StreamDepEdge::TypeE::Back: {
@@ -110,6 +116,53 @@ void DynamicStream::addBaseDynStreams() {
     }
     }
   }
+
+  /**
+   * Register myself to OuterLoopDepStream.
+   * Since StreamConfigure is dispatched in order, the user should be the last
+   * DynStream at the moment.
+   */
+  for (const auto &edge : this->stream->innerLoopDepEdges) {
+    auto depS = edge.toStream;
+    auto &depDynS = depS->getLastDynamicStream();
+    DYN_S_DPRINTF(this->dynamicStreamId,
+                  "[InnerLoopDep] Push myself to OuterLoopDepDynS %s.\n",
+                  depDynS.dynamicStreamId);
+    depDynS.pushInnerLoopBaseDynStream(edge.type, edge.fromStaticId,
+                                       this->dynamicStreamId.streamInstance,
+                                       edge.toStaticId);
+  }
+}
+
+DynamicStream::StreamEdges &
+DynamicStream::getInnerLoopBaseEdges(StaticId baseStaticId) {
+  auto iter = this->innerLoopBaseEdges.find(baseStaticId);
+  if (iter == this->innerLoopBaseEdges.end()) {
+    DYN_S_PANIC(this->dynamicStreamId,
+                "Failed to find InnerLoopBaseEdges for StaticId %lu.",
+                baseStaticId);
+  }
+  return iter->second;
+}
+
+const DynamicStream::StreamEdges &
+DynamicStream::getInnerLoopBaseEdges(StaticId baseStaticId) const {
+  auto iter = this->innerLoopBaseEdges.find(baseStaticId);
+  if (iter == this->innerLoopBaseEdges.end()) {
+    DYN_S_PANIC(this->dynamicStreamId,
+                "Failed to find InnerLoopBaseEdges for StaticId %lu.",
+                baseStaticId);
+  }
+  return iter->second;
+}
+
+void DynamicStream::pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type,
+                                               StaticId baseStaticId,
+                                               InstanceId baseInstanceId,
+                                               StaticId depStaticId) {
+  auto &edges = this->getInnerLoopBaseEdges(baseStaticId);
+  edges.emplace_back(type, baseStaticId, baseInstanceId, depStaticId,
+                     0 /* AlignBaseElementIdx */, 1 /* ReuseBaseElement */);
 }
 
 void DynamicStream::addStepStreams() {
@@ -407,6 +460,13 @@ void DynamicStream::addBaseElements(StreamElement *newElement) {
     S_ELEMENT_DPRINTF(newElement, "Add Self ValueBaseElement.\n");
     newElement->valueBaseElements.emplace_back(newElement);
   }
+
+  /**
+   * Remember the InnerLoopBaseElement will be initialized later.
+   */
+  if (!this->stream->innerLoopBaseEdges.empty()) {
+    newElement->hasUnInitInnerLoopAddrBaseElements = true;
+  }
 }
 
 void DynamicStream::addAddrBaseElementEdge(StreamElement *newElement,
@@ -427,7 +487,7 @@ void DynamicStream::addAddrBaseElementEdge(StreamElement *newElement,
   // Try to find this element.
   auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
   assert(baseElement && "Failed to find base element.");
-  newElement->addrBaseElements.insert(baseElement);
+  newElement->addrBaseElements.emplace_back(baseElement);
 }
 
 void DynamicStream::addValueBaseElementEdge(StreamElement *newElement,
@@ -481,6 +541,120 @@ void DynamicStream::addBackBaseElementEdge(StreamElement *newElement,
   S_ELEMENT_DPRINTF(newElement, "Add Back ValueBaseElement: %s.\n",
                     baseElement->FIFOIdx);
   newElement->valueBaseElements.emplace_back(baseElement);
+}
+
+void DynamicStream::tryAddInnerLoopBaseElements(StreamElement *elem) {
+
+  if (this->stream->innerLoopBaseEdges.empty() ||
+      !elem->hasUnInitInnerLoopAddrBaseElements) {
+    return;
+  }
+
+  if (!this->areInnerLoopBaseElementsAllocated(elem)) {
+    return;
+  }
+
+  this->addInnerLoopBaseElements(elem);
+  elem->hasUnInitInnerLoopAddrBaseElements = false;
+}
+
+bool DynamicStream::areInnerLoopBaseElementsAllocated(
+    StreamElement *elem) const {
+
+  if (this->stream->innerLoopBaseEdges.empty()) {
+    return true;
+  }
+
+  auto elemIdx = elem->FIFOIdx.entryIdx;
+
+  DYN_S_DPRINTF(this->dynamicStreamId,
+                "[InnerLoopDep] Checking for NextElem %llu.\n", elemIdx);
+  for (const auto &edge : this->stream->innerLoopBaseEdges) {
+    auto baseS = edge.toStream;
+    const auto &dynEdges = this->getInnerLoopBaseEdges(edge.toStaticId);
+    if (elemIdx >= dynEdges.size()) {
+      // The inner-loop stream has not been allocated.
+      DYN_S_DPRINTF(this->dynamicStreamId,
+                    "[InnerLoopDep]   InnerLoopS %s Not Config.\n",
+                    baseS->getStreamName());
+      return false;
+    }
+    const auto &dynEdge = dynEdges.at(elemIdx);
+    auto &baseDynS = baseS->getDynamicStreamByInstance(dynEdge.baseInstanceId);
+    DYN_S_DPRINTF(this->dynamicStreamId, "[InnerLoopDep]   InnerLoopDynS %s.\n",
+                  baseDynS.dynamicStreamId);
+    if (!baseDynS.hasTotalTripCount()) {
+      DYN_S_DPRINTF(this->dynamicStreamId, "[InnerLoopDep]   NoTripCount.\n");
+      return false;
+    }
+    auto baseTripCount = baseDynS.getTotalTripCount();
+    if (baseDynS.FIFOIdx.entryIdx <= baseTripCount) {
+      DYN_S_DPRINTF(
+          this->dynamicStreamId,
+          "[InnerLoopDep]   TripCount %llu > BaseDynS NextElem %lu.\n",
+          baseTripCount, baseDynS.FIFOIdx.entryIdx);
+      return false;
+    }
+    auto baseElement = baseDynS.getElementByIdx(baseTripCount);
+    if (!baseElement) {
+      DYN_S_PANIC(
+          this->dynamicStreamId,
+          "[InnerLoopDep]   InnerLoopDynS %s TripCount %llu ElemReleased.",
+          baseDynS.dynamicStreamId, baseTripCount);
+    }
+  }
+
+  return true;
+}
+
+void DynamicStream::addInnerLoopBaseElements(StreamElement *elem) {
+
+  if (this->stream->innerLoopBaseEdges.empty()) {
+    return;
+  }
+
+  auto elemIdx = elem->FIFOIdx.entryIdx;
+  for (const auto &edge : this->stream->innerLoopBaseEdges) {
+    auto baseS = edge.toStream;
+    const auto &dynEdges = this->getInnerLoopBaseEdges(edge.toStaticId);
+    if (elemIdx >= dynEdges.size()) {
+      // The inner-loop stream has not been allocated.
+      S_ELEMENT_PANIC(elem, "[InnerLoopDep] InnerLoopS %s Not Config.\n",
+                      baseS->getStreamName());
+    }
+    const auto &dynEdge = dynEdges.at(elemIdx);
+    auto &baseDynS = baseS->getDynamicStreamByInstance(dynEdge.baseInstanceId);
+    if (!baseDynS.hasTotalTripCount()) {
+      S_ELEMENT_PANIC(elem, "[InnerLoopDep] NoTripCount.\n");
+    }
+    auto baseTripCount = baseDynS.getTotalTripCount();
+    if (baseDynS.FIFOIdx.entryIdx <= baseTripCount) {
+      S_ELEMENT_PANIC(
+          elem, "[InnerLoopDep] TripCount %llu > BaseDynS NextElem %lu.\n",
+          baseTripCount, baseDynS.FIFOIdx.entryIdx);
+    }
+    assert(baseTripCount > 0 && "0 TripCount.");
+    auto baseElemIdx = baseTripCount;
+    if (baseS->isSecondFinalValueNeededByCore()) {
+      baseElemIdx = baseTripCount - 1;
+    }
+    auto baseElement = baseDynS.getElementByIdx(baseElemIdx);
+    if (!baseElement) {
+      S_ELEMENT_PANIC(
+          elem, "[InnerLoopDep] %s TripCount %llu BaseElemIdx %llu Released.",
+          baseDynS.dynamicStreamId, baseTripCount, baseElemIdx);
+    }
+    S_ELEMENT_DPRINTF(elem, "[InnerLoopDep] Add Type %s BaseElem: %s.\n",
+                      edge.type, baseElement->FIFOIdx);
+    switch (edge.type) {
+    case StreamDepEdge::TypeE::Addr:
+      elem->addrBaseElements.emplace_back(baseElement);
+      break;
+    default: {
+      S_ELEMENT_DPRINTF(elem, "Unsupported InnerLoopDep %s.", edge.type);
+    }
+    }
+  }
 }
 
 bool DynamicStream::shouldCoreSEIssue() const {
@@ -1049,9 +1223,6 @@ std::string DynamicStream::dumpString() const {
     ss << element->FIFOIdx.entryIdx << '('
        << static_cast<int>(element->isAddrReady())
        << static_cast<int>(element->isValueReady) << ')';
-    for (auto baseElement : element->addrBaseElements) {
-      ss << '.' << baseElement->FIFOIdx.entryIdx;
-    }
     ss << ' ';
   }
   return ss.str();

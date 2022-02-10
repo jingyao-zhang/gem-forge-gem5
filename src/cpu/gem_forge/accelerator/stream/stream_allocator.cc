@@ -125,7 +125,10 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
    * Then increment the target.
    */
   // Make a copy of the StepRootStream.
-  auto stepRootStreams = staticRegion.step.stepRootStreams;
+  std::vector<Stream *> stepRootStreams;
+  for (const auto &stepGroup : staticRegion.step.stepGroups) {
+    stepRootStreams.push_back(stepGroup.stepRootS);
+  }
 
   // Sort by the allocated size.
   std::sort(stepRootStreams.begin(), stepRootStreams.end(),

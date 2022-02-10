@@ -80,6 +80,16 @@ void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
   }
 }
 
+void StreamRegionController::commitStreamConfig(const ConfigArgs &args) {
+  assert(this->activeDynRegionMap.count(args.seqNum) && "Missing DynRegion.");
+  auto &dynRegion = *this->activeDynRegionMap.at(args.seqNum);
+
+  SE_DPRINTF("[Region] Commit Config SeqNum %llu for region %s.\n", args.seqNum,
+             dynRegion.staticRegion->region.region());
+
+  dynRegion.configCommitted = true;
+}
+
 void StreamRegionController::rewindStreamConfig(const ConfigArgs &args) {
   const auto &infoRelativePath = args.infoRelativePath;
   const auto &streamRegion = this->se->getStreamRegion(infoRelativePath);
@@ -90,11 +100,12 @@ void StreamRegionController::rewindStreamConfig(const ConfigArgs &args) {
   const auto &dynRegion = staticRegion.dynRegions.back();
   assert(dynRegion.seqNum == args.seqNum && "Mismatch in rewind seqNum.");
 
-  this->activeDynRegionMap.erase(args.seqNum);
-  staticRegion.dynRegions.pop_back();
-
   SE_DPRINTF("[Region] Rewind DynRegion for region %s.\n",
              streamRegion.region());
+  this->checkRemainingNestRegions(dynRegion);
+
+  this->activeDynRegionMap.erase(args.seqNum);
+  staticRegion.dynRegions.pop_back();
 }
 
 void StreamRegionController::commitStreamEnd(const EndArgs &args) {
@@ -114,6 +125,7 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
       "[Region] Release DynRegion SeqNum %llu for region %s, remaining %llu.\n",
       dynRegion.seqNum, streamRegion.region(),
       staticRegion.dynRegions.size() - 1);
+  this->checkRemainingNestRegions(dynRegion);
 
   this->activeDynRegionMap.erase(dynRegion.seqNum);
   staticRegion.dynRegions.pop_front();
@@ -123,8 +135,11 @@ void StreamRegionController::tick() {
   for (auto &entry : this->activeDynRegionMap) {
     auto &dynRegion = *entry.second;
     if (dynRegion.configExecuted) {
-      for (auto &dynNestConfig : dynRegion.nestConfigs) {
-        this->configureNestStream(dynRegion, dynNestConfig);
+      if (dynRegion.configCommitted) {
+        // Do not config nest streams until committed.
+        for (auto &dynNestConfig : dynRegion.nestConfigs) {
+          this->configureNestStream(dynRegion, dynNestConfig);
+        }
       }
       this->checkLoopBound(dynRegion);
 

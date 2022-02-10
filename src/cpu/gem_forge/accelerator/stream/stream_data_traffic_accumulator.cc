@@ -103,7 +103,8 @@ void StreamDataTrafficAccumulator::computeTrafficFloat(
   }
   std::unordered_set<StreamElement *> chargedBaseElements;
   int addrBaseHops = 0;
-  for (auto baseE : element->addrBaseElements) {
+  for (const auto &baseElement : element->addrBaseElements) {
+    auto baseE = baseElement.getElement();
     if (chargedBaseElements.count(baseE)) {
       continue;
     }
@@ -122,7 +123,7 @@ void StreamDataTrafficAccumulator::computeTrafficFloat(
   }
   int valueBaseHops = 0;
   for (const auto &baseElement : element->valueBaseElements) {
-    auto baseE = baseElement.element;
+    auto baseE = baseElement.getElement();
     if (chargedBaseElements.count(baseE)) {
       continue;
     }
