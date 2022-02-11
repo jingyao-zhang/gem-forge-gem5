@@ -933,8 +933,24 @@ uint64_t StreamNUCAManager::determineInterleave(const StreamRegion &region) {
                 "%lu.\n",
                 region.name, region.vaddr, interleave, bytesOffset,
                 defaultColWrapAroundBytes, defaultInterleave);
+      } else if (bytesOffset < defaultColWrapAroundBytes &&
+                 (defaultColWrapAroundBytes % bytesOffset) == 0) {
+        // Try to align with one row.
+        interleave =
+            (bytesOffset * defaultInterleave) / defaultColWrapAroundBytes;
+        DPRINTF(StreamNUCAManager,
+                "Range %s %#x Self Aligned To Row Interleave %lu = %lu * %lu / "
+                "%lu.\n",
+                region.name, region.vaddr, interleave, bytesOffset,
+                defaultInterleave, defaultColWrapAroundBytes);
+        if (interleave != 128 && interleave != 256 && interleave != 512) {
+          panic("Weird Interleave Found: Range %s %#x SelfAlign ElemOffset %lu "
+                "BytesOffset %lu Intrlv %llu.\n",
+                region.name, region.vaddr, align.elementOffset, bytesOffset,
+                interleave);
+        }
       } else {
-        panic("Not Support Yet: Range %s %#x Self Align ElementOffset %lu "
+        panic("Not Support Yet: Range %s %#x Self Align ElemOffset %lu "
               "ByteOffset %lu.\n",
               region.name, region.vaddr, align.elementOffset, bytesOffset);
       }
