@@ -1,19 +1,19 @@
 #ifndef __CPU_GEM_FORGE_ACCELERATOR_LLC_STREAM_RANGE_BUILDER_HH__
 #define __CPU_GEM_FORGE_ACCELERATOR_LLC_STREAM_RANGE_BUILDER_HH__
 
-#include "DynamicStreamAddressRange.hh"
-#include "LLCDynamicStream.hh"
+#include "DynStreamAddressRange.hh"
+#include "LLCDynStream.hh"
 
 #include <list>
 
 class LLCStreamRangeBuilder {
 public:
-  LLCStreamRangeBuilder(LLCDynamicStream *_stream, int64_t _totalTripCount);
+  LLCStreamRangeBuilder(LLCDynStream *_stream, int64_t _totalTripCount);
 
   void addElementAddress(uint64_t elementIdx, Addr vaddr, Addr paddr, int size);
 
   bool hasReadyRanges() const;
-  DynamicStreamAddressRangePtr popReadyRange();
+  DynStreamAddressRangePtr popReadyRange();
 
   /**
    * Push the next range tail element idx.
@@ -26,7 +26,7 @@ public:
   void receiveLoopBoundRet(int64_t totalTripCount);
 
 private:
-  LLCDynamicStream *stream;
+  LLCDynStream *stream;
   std::list<uint64_t> nextRangeTailElementIdxQueue;
   static constexpr int64_t InvalidTotalTripCount =
       CacheStreamConfigureData::InvalidTotalTripCount;
@@ -37,7 +37,7 @@ private:
 
   AddressRange vaddrRange;
   AddressRange paddrRange;
-  std::list<DynamicStreamAddressRangePtr> readyRanges;
+  std::list<DynStreamAddressRangePtr> readyRanges;
 
   void tryBuildRange();
 

@@ -1,7 +1,7 @@
 #ifndef __GEM_FORGE_STREAM_REQUEST_BUFFER_HH__
 #define __GEM_FORGE_STREAM_REQUEST_BUFFER_HH__
 
-#include "DynamicStreamId.hh"
+#include "DynStreamId.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
@@ -57,8 +57,7 @@ private:
     std::list<RequestPtr> buffered;
   };
   using InqueueStreamMapT =
-      std::unordered_map<DynamicStreamId, InqueueStreamState,
-                         DynamicStreamIdHasher>;
+      std::unordered_map<DynStreamId, InqueueStreamState, DynStreamIdHasher>;
   using InqueueStreamMapIter = InqueueStreamMapT::iterator;
   InqueueStreamMapT inqueueStreamMap;
 

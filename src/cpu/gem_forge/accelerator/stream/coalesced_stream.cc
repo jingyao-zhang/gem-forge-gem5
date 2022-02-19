@@ -299,15 +299,15 @@ bool Stream::isContinuous() const {
   return this->getMemElementSize() == pattern.stride_i();
 }
 
-void Stream::setupAddrGen(DynamicStream &dynStream,
-                          const DynamicStreamParamV *inputVec) {
+void Stream::setupAddrGen(DynStream &dynStream,
+                          const DynStreamParamV *inputVec) {
 
   if (se->isTraceSim()) {
     if (this->getNumLogicalStreams() == 1) {
       // For simplicity.
       dynStream.addrGenCallback =
           this->primeLogical->history->allocateCallbackAtInstance(
-              dynStream.dynamicStreamId.streamInstance);
+              dynStream.dynStreamId.streamInstance);
     } else {
       S_PANIC(this, "Cannot setup addr gen for trace coalesced stream so far.");
     }

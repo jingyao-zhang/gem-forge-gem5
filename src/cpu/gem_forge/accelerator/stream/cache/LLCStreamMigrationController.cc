@@ -17,7 +17,7 @@ LLCStreamMigrationController::LLCStreamMigrationController(
     c = Cycles(0);
   }
   for (auto &c : this->migratingStreams) {
-    c = std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>();
+    c = std::unordered_set<DynStreamId, DynStreamIdHasher>();
   }
   const auto &valveTypeStr =
       _controller->myParams->neighbor_migration_valve_type;
@@ -32,7 +32,7 @@ LLCStreamMigrationController::LLCStreamMigrationController(
   }
 }
 
-void LLCStreamMigrationController::startMigrateTo(LLCDynamicStreamPtr dynS,
+void LLCStreamMigrationController::startMigrateTo(LLCDynStreamPtr dynS,
                                                   MachineID machineId) {
   if (this->neighborStreamsThreshold == 0) {
     // I am disabled.
@@ -43,10 +43,10 @@ void LLCStreamMigrationController::startMigrateTo(LLCDynamicStreamPtr dynS,
     return;
   }
   this->lastMigratedCycle.at(neighborIdx) = this->controller->curCycle();
-  this->migratingStreams.at(neighborIdx).insert(dynS->getDynamicStreamId());
+  this->migratingStreams.at(neighborIdx).insert(dynS->getDynStreamId());
 }
 
-void LLCStreamMigrationController::migratedTo(LLCDynamicStreamPtr dynS,
+void LLCStreamMigrationController::migratedTo(LLCDynStreamPtr dynS,
                                               MachineID machineId) {
   if (this->neighborStreamsThreshold == 0) {
     // I am disabled.
@@ -56,10 +56,10 @@ void LLCStreamMigrationController::migratedTo(LLCDynamicStreamPtr dynS,
   if (neighborIdx == -1) {
     return;
   }
-  this->migratingStreams.at(neighborIdx).erase(dynS->getDynamicStreamId());
+  this->migratingStreams.at(neighborIdx).erase(dynS->getDynStreamId());
 }
 
-bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
+bool LLCStreamMigrationController::canMigrateTo(LLCDynStreamPtr dynS,
                                                 MachineID machineId) {
   if (this->neighborStreamsThreshold == 0) {
     // I am disabled.
@@ -79,7 +79,7 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
   auto neighborStreams = this->countStreamsWithSameStaticId(dynS, machineId);
   if (neighborStreams > this->neighborStreamsThreshold) {
     if (this->valveType == MigrationValveTypeE::HARD) {
-      LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+      LLC_S_DPRINTF(dynS->getDynStreamId(),
                     "[Migrate] Hard Delayed Migration to %s to avoid "
                     "contention. NeighborStreams %d.\n",
                     machineId, neighborStreams);
@@ -92,7 +92,7 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynamicStreamPtr dynS,
     auto curCycle = this->controller->curCycle();
     auto lastMigratedCycle = this->lastMigratedCycle.at(neighborIdx);
     if (curCycle - lastMigratedCycle < delay) {
-      LLC_S_DPRINTF(dynS->getDynamicStreamId(),
+      LLC_S_DPRINTF(dynS->getDynStreamId(),
                     "[Migrate] Delayed migration to %s to avoid "
                     "contention. NeighborStreams %d.\n",
                     machineId, neighborStreams);
@@ -175,16 +175,16 @@ int LLCStreamMigrationController::getNeighborIndex(MachineID machineId) const {
 }
 
 int LLCStreamMigrationController::countStreamsWithSameStaticId(
-    LLCDynamicStreamPtr dynS, MachineID machineId) const {
+    LLCDynStreamPtr dynS, MachineID machineId) const {
   auto neighborSE = AbstractStreamAwareController::getController(machineId)
                         ->getLLCStreamEngine();
   auto neighborStreams =
-      neighborSE->getNumDirectStreamsWithStaticId(dynS->getDynamicStreamId());
+      neighborSE->getNumDirectStreamsWithStaticId(dynS->getDynStreamId());
 
   auto neighborIdx = this->getNeighborIndex(machineId);
   for (const auto &migratingDynStreamId :
        this->migratingStreams.at(neighborIdx)) {
-    if (migratingDynStreamId.staticId == dynS->getDynamicStreamId().staticId) {
+    if (migratingDynStreamId.staticId == dynS->getDynStreamId().staticId) {
       neighborStreams++;
     }
   }

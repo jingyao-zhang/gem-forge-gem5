@@ -58,7 +58,7 @@ public:
    */
 
   struct StreamConfigArgs {
-    using InputVec = DynamicStreamParamV;
+    using InputVec = DynStreamParamV;
     using InputMap = std::unordered_map<uint64_t, InputVec>;
     uint64_t seqNum; // Just the instruction sequence number.
     const std::string &infoRelativePath; // Where to find the info.
@@ -80,8 +80,7 @@ public:
 
   struct StreamStepArgs {
     const uint64_t stepStreamId;
-    DynamicStreamId::InstanceId dynInstanceId =
-        DynamicStreamId::InvalidInstanceId;
+    DynStreamId::InstanceId dynInstanceId = DynStreamId::InvalidInstanceId;
     StreamStepArgs(uint64_t _stepStreamId) : stepStreamId(_stepStreamId) {}
   };
 
@@ -160,7 +159,7 @@ public:
   /**
    * Send StreamEnd packet for all the ended dynamic stream ids.
    */
-  void sendStreamFloatEndPacket(const std::vector<DynamicStreamId> &endedIds);
+  void sendStreamFloatEndPacket(const std::vector<DynStreamId> &endedIds);
 
   /**
    * Send atomic operation packet.
@@ -208,7 +207,7 @@ public:
   /**************************************************************************
    * Received StreamLoopBound TotalTripCount from Cache.
    **************************************************************************/
-  void receiveOffloadedLoopBoundRet(const DynamicStreamId &dynStreamId,
+  void receiveOffloadedLoopBoundRet(const DynStreamId &dynStreamId,
                                     int64_t tripCount, bool brokenOut);
 
   void exitDump() const;
@@ -316,7 +315,7 @@ public:
   uint64_t numOffloadedSteppedSinceLastCheck = 0;
 
 private:
-  friend class DynamicStream;
+  friend class DynStream;
   friend class Stream;
   friend class StreamElement;
   friend class StreamThrottler;
@@ -477,18 +476,18 @@ private:
   getConfigStreamsInRegion(const LLVM::TDG::StreamRegion &streamRegion);
 
   // Allocate one element to stream.
-  void allocateElement(DynamicStream &dynS);
+  void allocateElement(DynStream &dynS);
   /**
    * Release an unstepped stream element.
    * Used to clear ended stream.
    */
-  bool releaseElementUnstepped(DynamicStream &dynS);
+  bool releaseElementUnstepped(DynStream &dynS);
   /**
    * Release a stepped stream element.
    * @param isEnd: this element is stepped by StreamEnd, not StreamStep.
    * @param toThrottle: perform stream throttling.
    */
-  void releaseElementStepped(DynamicStream *dynS, bool isEnd, bool doThrottle);
+  void releaseElementStepped(DynStream *dynS, bool isEnd, bool doThrottle);
   void issueElements();
   void issueElement(StreamElement *element);
   void issueNDCElement(StreamElement *element);

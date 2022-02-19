@@ -1,18 +1,18 @@
 #ifndef __GEM_FORGE_ACCELERATOR_STREAM_FIFO_ENTRY_IDX_HH__
 #define __GEM_FORGE_ACCELERATOR_STREAM_FIFO_ENTRY_IDX_HH__
 
-#include "cache/DynamicStreamSliceId.hh"
+#include "cache/DynStreamSliceId.hh"
 #include "cpu/gem_forge/llvm_insts.hh"
 
 #include <iostream>
 
 struct FIFOEntryIdx {
-  DynamicStreamId streamId;
+  DynStreamId streamId;
   uint64_t entryIdx;
   FIFOEntryIdx() : streamId(), entryIdx(0) {}
-  FIFOEntryIdx(const DynamicStreamId &_streamId)
+  FIFOEntryIdx(const DynStreamId &_streamId)
       : streamId(_streamId), entryIdx(0) {}
-  FIFOEntryIdx(const DynamicStreamId &_streamId, uint64_t _entryIdx)
+  FIFOEntryIdx(const DynStreamId &_streamId, uint64_t _entryIdx)
       : streamId(_streamId), entryIdx(_entryIdx) {}
   void next() { this->entryIdx++; }
   void prev() { this->entryIdx--; }
@@ -35,7 +35,7 @@ struct FIFOEntryIdx {
 
 struct FIFOEntryIdxHasher {
   std::size_t operator()(const FIFOEntryIdx &key) const {
-    return (DynamicStreamIdHasher()(key.streamId)) ^
+    return (DynStreamIdHasher()(key.streamId)) ^
            std::hash<uint64_t>()(key.entryIdx);
   }
 };

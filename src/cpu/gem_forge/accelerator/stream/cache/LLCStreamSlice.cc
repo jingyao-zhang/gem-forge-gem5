@@ -2,7 +2,7 @@
 
 #include "LLCStreamEngine.hh"
 
-LLCStreamSlice::LLCStreamSlice(Stream *_S, const DynamicStreamSliceId &_sliceId)
+LLCStreamSlice::LLCStreamSlice(Stream *_S, const DynStreamSliceId &_sliceId)
     : S(_S), sliceId(_sliceId) {}
 
 void LLCStreamSlice::allocate(LLCStreamEngine *llcSE) {

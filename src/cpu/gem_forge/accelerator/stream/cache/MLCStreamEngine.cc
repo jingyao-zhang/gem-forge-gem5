@@ -52,8 +52,8 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
     this->configureStream(streamConfigureData, pkt->req->masterId());
   }
 
-  // We initalize all LLCDynamicStreams here (see LLCDynamicStream.hh)
-  LLCDynamicStream::allocateLLCStreams(this->controller, *streamConfigs);
+  // We initalize all LLCDynStreams here (see LLCDynStream.hh)
+  LLCDynStream::allocateLLCStreams(this->controller, *streamConfigs);
 
   // Release the configure vec.
   delete streamConfigs;
@@ -74,7 +74,7 @@ void MLCStreamEngine::configureStream(
    * Do not release the pkt and streamConfigureData as they should be forwarded
    * to the LLC bank and released there. However, we do need to fix up the
    * initPAddr to our LLC bank if case it is not valid.
-   * ! This has to be done before initializing the MLCDynamicStream so that it
+   * ! This has to be done before initializing the MLCDynStream so that it
    * ! knows the initial llc bank.
    */
   if (!streamConfigureData->initPAddrValid) {
@@ -87,16 +87,16 @@ void MLCStreamEngine::configureStream(
    * ! the direct stream's constructor can start notify it about base stream
    * data.
    */
-  std::vector<MLCDynamicIndirectStream *> indirectStreams;
+  std::vector<MLCDynIndirectStream *> indirectStreams;
   for (const auto &edge : streamConfigureData->depEdges) {
     if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
       const auto &indirectStreamConfig = edge.data;
       // Let's create an indirect stream.
-      auto indirectStream = new MLCDynamicIndirectStream(
+      auto indirectStream = new MLCDynIndirectStream(
           indirectStreamConfig, this->controller,
           this->responseToUpperMsgBuffer, this->requestToLLCMsgBuffer,
           streamConfigureData->dynamicId /* Root dynamic stream id. */);
-      this->idToStreamMap.emplace(indirectStream->getDynamicStreamId(),
+      this->idToStreamMap.emplace(indirectStream->getDynStreamId(),
                                   indirectStream);
       indirectStreams.push_back(indirectStream);
 
@@ -111,11 +111,11 @@ void MLCStreamEngine::configureStream(
          */
         auto ISDepS = ISDepEdge.data->stream;
         if (ISDepS->isReduction() || ISDepS->isStoreComputeStream()) {
-          auto IIS = new MLCDynamicIndirectStream(
+          auto IIS = new MLCDynIndirectStream(
               ISDepEdge.data, this->controller, this->responseToUpperMsgBuffer,
               this->requestToLLCMsgBuffer,
               streamConfigureData->dynamicId /* Root dynamic stream id. */);
-          this->idToStreamMap.emplace(IIS->getDynamicStreamId(), IIS);
+          this->idToStreamMap.emplace(IIS->getDynStreamId(), IIS);
 
           indirectStreams.push_back(IIS);
           continue;
@@ -126,10 +126,10 @@ void MLCStreamEngine::configureStream(
     }
   }
   // Create the direct stream.
-  auto directStream = new MLCDynamicDirectStream(
+  auto directStream = new MLCDynDirectStream(
       streamConfigureData, this->controller, this->responseToUpperMsgBuffer,
       this->requestToLLCMsgBuffer, indirectStreams);
-  this->idToStreamMap.emplace(directStream->getDynamicStreamId(), directStream);
+  this->idToStreamMap.emplace(directStream->getDynStreamId(), directStream);
 
   /**
    * If there is reuse for this stream, we cut the stream's totalTripCount.
@@ -214,7 +214,7 @@ void MLCStreamEngine::sendConfigToRemoteSE(
 void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
-  auto endIds = *(pkt->getPtr<std::vector<DynamicStreamId> *>());
+  auto endIds = *(pkt->getPtr<std::vector<DynStreamId> *>());
   for (const auto &endId : *endIds) {
     this->endStream(endId, pkt->req->masterId());
   }
@@ -223,8 +223,7 @@ void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   delete pkt;
 }
 
-void MLCStreamEngine::endStream(const DynamicStreamId &endId,
-                                MasterID masterId) {
+void MLCStreamEngine::endStream(const DynStreamId &endId, MasterID masterId) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
   MLC_S_DPRINTF_(MLCRubyStreamLife, endId, "Received StreamEnd.\n");
@@ -248,7 +247,7 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
             streamEnd = this->idToStreamMap.end();
        streamIter != streamEnd;) {
     auto stream = streamIter->second;
-    if (stream->getRootDynamicStreamId() == endId) {
+    if (stream->getRootDynStreamId() == endId) {
       /**
        * ? Can we release right now?
        * We need to make sure all the seen request is responded (with dummy
@@ -256,7 +255,7 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
        * TODO: In the future, if the core doesn't require to send the request,
        * TODO: we are fine to simply release the stream.
        */
-      this->endedStreamDynamicIds.insert(stream->getDynamicStreamId());
+      this->endedStreamDynamicIds.insert(stream->getDynStreamId());
       stream->endStream();
       delete stream;
       streamIter->second = nullptr;
@@ -277,7 +276,7 @@ void MLCStreamEngine::endStream(const DynamicStreamId &endId,
   auto rootLLCStreamPAddrLine = makeLineAddress(rootLLCStreamPAddr);
   auto rootStreamOffloadedBank = this->controller->mapAddressToLLCOrMem(
       rootLLCStreamPAddrLine, rootStreamOffloadedMachineType);
-  auto copyEndId = new DynamicStreamId(endId);
+  auto copyEndId = new DynStreamId(endId);
   RequestPtr req = std::make_shared<Request>(rootLLCStreamPAddrLine,
                                              sizeof(copyEndId), 0, masterId);
   PacketPtr pkt = new Packet(req, MemCmd::StreamEndReq);
@@ -363,7 +362,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
 }
 
 void MLCStreamEngine::receiveStreamDataForSingleSlice(
-    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
     Addr paddrLine) {
   MLC_SLICE_DPRINTF(sliceId, "SE received data vaddr %#x.\n", sliceId.vaddr);
   auto stream = this->getStreamFromDynamicId(sliceId.getDynStreamId());
@@ -388,7 +387,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
     auto coreSE = this->idToStreamMap.begin()->second->getStaticStream()->se;
     auto coreS = coreSE->getStream(sliceId.getDynStreamId().staticId);
     if (coreS->isStoreComputeStream() && !coreS->isDirectMemStream()) {
-      if (auto dynCoreS = coreS->getDynamicStream(sliceId.getDynStreamId())) {
+      if (auto dynCoreS = coreS->getDynStream(sliceId.getDynStreamId())) {
         if (dynCoreS->isFloatedToCache()) {
           MLC_SLICE_DPRINTF(
               sliceId,
@@ -402,8 +401,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
   panic("Failed to find configured stream for %s.\n", sliceId.getDynStreamId());
 }
 
-MLCDynamicStream *
-MLCStreamEngine::getStreamFromDynamicId(const DynamicStreamId &id) {
+MLCDynStream *MLCStreamEngine::getStreamFromDynamicId(const DynStreamId &id) {
   auto iter = this->idToStreamMap.find(id);
   if (iter == this->idToStreamMap.end()) {
     return nullptr;
@@ -411,7 +409,7 @@ MLCStreamEngine::getStreamFromDynamicId(const DynamicStreamId &id) {
   return iter->second;
 }
 
-bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {
+bool MLCStreamEngine::isStreamRequest(const DynStreamSliceId &slice) {
   if (!this->controller->isStreamFloatEnabled()) {
     return false;
   }
@@ -419,7 +417,7 @@ bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {
     return false;
   }
   // So far just check if the target stream is configured here.
-  auto stream = this->getMLCDynamicStreamFromSlice(slice);
+  auto stream = this->getMLCDynStreamFromSlice(slice);
   if (!stream) {
     return false;
   }
@@ -433,37 +431,37 @@ bool MLCStreamEngine::isStreamRequest(const DynamicStreamSliceId &slice) {
   return true;
 }
 
-bool MLCStreamEngine::isStreamOffloaded(const DynamicStreamSliceId &slice) {
+bool MLCStreamEngine::isStreamOffloaded(const DynStreamSliceId &slice) {
   assert(this->isStreamRequest(slice) && "Should be a stream request.");
   return true;
 }
 
-bool MLCStreamEngine::isStreamCached(const DynamicStreamSliceId &slice) {
+bool MLCStreamEngine::isStreamCached(const DynStreamSliceId &slice) {
   assert(this->isStreamRequest(slice) && "Should be a stream request.");
   // So far no stream is cached.
   return false;
 }
 
 bool MLCStreamEngine::receiveOffloadStreamRequest(
-    const DynamicStreamSliceId &sliceId) {
+    const DynStreamSliceId &sliceId) {
   assert(this->isStreamOffloaded(sliceId) &&
          "Should be an offloaded stream request.");
-  auto stream = this->getMLCDynamicStreamFromSlice(sliceId);
+  auto stream = this->getMLCDynStreamFromSlice(sliceId);
   stream->receiveStreamRequest(sliceId);
   return true;
 }
 
 void MLCStreamEngine::receiveOffloadStreamRequestHit(
-    const DynamicStreamSliceId &sliceId) {
+    const DynStreamSliceId &sliceId) {
   if (!this->isStreamOffloaded(sliceId)) {
     panic(MLC_SLICE_MSG(sliceId, "Receive hit request, but not floated."));
   }
-  auto stream = this->getMLCDynamicStreamFromSlice(sliceId);
+  auto stream = this->getMLCDynStreamFromSlice(sliceId);
   stream->receiveStreamRequestHit(sliceId);
 }
 
-MLCDynamicStream *MLCStreamEngine::getMLCDynamicStreamFromSlice(
-    const DynamicStreamSliceId &slice) const {
+MLCDynStream *
+MLCStreamEngine::getMLCDynStreamFromSlice(const DynStreamSliceId &slice) const {
   if (!slice.isValid()) {
     return nullptr;
   }
@@ -580,7 +578,7 @@ void MLCStreamEngine::computeReuseInformation(
   }
 }
 
-void MLCStreamEngine::reuseSlice(const DynamicStreamSliceId &sliceId,
+void MLCStreamEngine::reuseSlice(const DynStreamSliceId &sliceId,
                                  const DataBlock &dataBlock) {
   auto streamId = sliceId.getDynStreamId();
   while (this->reuseInfoMap.count(streamId)) {
@@ -594,7 +592,7 @@ void MLCStreamEngine::reuseSlice(const DynamicStreamSliceId &sliceId,
       }
       panic("Failed to find target stream %s.\n", targetStreamId);
     }
-    auto S = dynamic_cast<MLCDynamicDirectStream *>(
+    auto S = dynamic_cast<MLCDynDirectStream *>(
         this->idToStreamMap.at(targetStreamId));
     assert(S && "Only direct stream can have reuse.");
     S->receiveReuseStreamData(makeLineAddress(sliceId.vaddr), dataBlock);
@@ -615,7 +613,7 @@ void MLCStreamEngine::wakeup() {
     return;
   }
   for (auto &idStream : this->idToStreamMap) {
-    auto S = dynamic_cast<MLCDynamicDirectStream *>(idStream.second);
+    auto S = dynamic_cast<MLCDynDirectStream *>(idStream.second);
     if (!S || !S->shouldRangeSync()) {
       continue;
     }
@@ -628,7 +626,7 @@ void MLCStreamEngine::wakeup() {
 }
 
 void MLCStreamEngine::receiveStreamTotalTripCount(
-    const DynamicStreamId &streamId, int64_t totalTripCount, Addr brokenPAddr,
+    const DynStreamId &streamId, int64_t totalTripCount, Addr brokenPAddr,
     MachineType brokenMachineType) {
   auto dynS = this->getStreamFromDynamicId(streamId);
   if (!dynS) {

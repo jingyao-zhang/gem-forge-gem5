@@ -182,7 +182,7 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
     assignedEntries += S->maxSize;
     if (S->isLoadStream()) {
       assignedBytes +=
-          S->maxSize * S->getLastDynamicStream().getBytesPerMemElement();
+          S->maxSize * S->getLastDynStream().getBytesPerMemElement();
     }
   }
   // * UnAssignedEntries.
@@ -211,7 +211,7 @@ bool StreamThrottler::tryGlobalThrottle(Stream *S) {
   for (auto S : streamList) {
     if (S->isLoadStream()) {
       totalIncrementBytes +=
-          incrementStep * S->getLastDynamicStream().getBytesPerMemElement();
+          incrementStep * S->getLastDynStream().getBytesPerMemElement();
     }
   }
 

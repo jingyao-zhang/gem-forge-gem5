@@ -122,7 +122,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
     int Len,               desc="...";
     MachineID Requestor,   desc="The DMA engine that sent the request";
 
-    DynamicStreamSliceIdVec sliceIds, desc="Stream slices meta-data";
+    DynStreamSliceIdVec sliceIds, desc="Stream slices meta-data";
     DataBlock streamStoreBlk,         desc="Buffer for the update data";
     NetDest Fetch_IDs,     desc="Set of Fetch Requestors";
     NetDest GetU_IDs,      desc="Set of GetU Requestors";
@@ -147,12 +147,12 @@ machine(MachineType:Directory, "MESI Two Level directory protocol", interface="A
   structure(LLCStreamEngine, external="yes", desc="Stream Engine at MC") {
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamEnd(PacketPtr);
-    void receiveStreamMigrate(LLCDynamicStreamPtr, bool);
-    void receiveStreamFlow(DynamicStreamSliceId);
-    void receiveStreamDataVec(Cycles, Addr, DynamicStreamSliceIdVec, DataBlock, DataBlock);
+    void receiveStreamMigrate(LLCDynStreamPtr, bool);
+    void receiveStreamFlow(DynStreamSliceId);
+    void receiveStreamDataVec(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
     void receiveStreamIndirectRequest(RequestMsg);
     void receiveStreamForwardRequest(RequestMsg);
-    void receiveStreamCommit(DynamicStreamSliceId);
+    void receiveStreamCommit(DynStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
   }
 

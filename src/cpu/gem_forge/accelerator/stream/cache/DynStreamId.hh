@@ -1,6 +1,6 @@
 
-#ifndef __CPU_TDG_ACCELERATOR_DYNAMIC_STREAM_ID_HH__
-#define __CPU_TDG_ACCELERATOR_DYNAMIC_STREAM_ID_HH__
+#ifndef __CPU_GEM_FORGE_DYN_STREAM_ID_HH__
+#define __CPU_GEM_FORGE_DYN_STREAM_ID_HH__
 
 #include <functional>
 #include <iostream>
@@ -9,7 +9,7 @@
  * Uniquely identifies a dynamic stream in the system.
  * I try to define it as independent as implementation of stream.
  */
-struct DynamicStreamId {
+struct DynStreamId {
   using StaticId = uint64_t;
   using InstanceId = uint64_t;
   static constexpr StaticId InvalidStaticStreamId = 0;
@@ -23,17 +23,17 @@ struct DynamicStreamId {
   // TODO: How to improve this?
   const char *streamName = "Unknown_Stream";
 
-  DynamicStreamId() = default;
-  DynamicStreamId(int _coreId, StaticId _staticId, InstanceId _streamInstance)
+  DynStreamId() = default;
+  DynStreamId(int _coreId, StaticId _staticId, InstanceId _streamInstance)
       : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance) {}
-  DynamicStreamId(int _coreId, StaticId _staticId, InstanceId _streamInstance,
-                  const char *_streamName)
+  DynStreamId(int _coreId, StaticId _staticId, InstanceId _streamInstance,
+              const char *_streamName)
       : coreId(_coreId), staticId(_staticId), streamInstance(_streamInstance),
         streamName(_streamName) {}
-  DynamicStreamId(const DynamicStreamId &other)
+  DynStreamId(const DynStreamId &other)
       : coreId(other.coreId), staticId(other.staticId),
         streamInstance(other.streamInstance), streamName(other.streamName) {}
-  DynamicStreamId &operator=(const DynamicStreamId &other) {
+  DynStreamId &operator=(const DynStreamId &other) {
     this->coreId = other.coreId;
     this->staticId = other.staticId;
     this->streamInstance = other.streamInstance;
@@ -41,17 +41,17 @@ struct DynamicStreamId {
     return *this;
   }
 
-  bool isSameStaticStream(const DynamicStreamId &other) const {
+  bool isSameStaticStream(const DynStreamId &other) const {
     return this->coreId == other.coreId && this->staticId == other.staticId;
   }
-  bool operator==(const DynamicStreamId &other) const {
+  bool operator==(const DynStreamId &other) const {
     return this->coreId == other.coreId && this->staticId == other.staticId &&
            this->streamInstance == other.streamInstance;
   }
-  bool operator!=(const DynamicStreamId &other) const {
+  bool operator!=(const DynStreamId &other) const {
     return !(this->operator==(other));
   }
-  bool operator<(const DynamicStreamId &other) const {
+  bool operator<(const DynStreamId &other) const {
     if (this->coreId != other.coreId) {
       return this->coreId < other.coreId;
     }
@@ -62,15 +62,15 @@ struct DynamicStreamId {
   }
 };
 
-std::ostream &operator<<(std::ostream &os, const DynamicStreamId &streamId);
+std::ostream &operator<<(std::ostream &os, const DynStreamId &streamId);
 
-std::string to_string(const DynamicStreamId &streamId);
+std::string to_string(const DynStreamId &streamId);
 
-struct DynamicStreamIdHasher {
-  std::size_t operator()(const DynamicStreamId &key) const {
+struct DynStreamIdHasher {
+  std::size_t operator()(const DynStreamId &key) const {
     return (std::hash<int>()(key.coreId)) ^
-           (std::hash<DynamicStreamId::StaticId>()(key.staticId)) ^
-           (std::hash<DynamicStreamId::InstanceId>()(key.streamInstance));
+           (std::hash<DynStreamId::StaticId>()(key.staticId)) ^
+           (std::hash<DynStreamId::InstanceId>()(key.streamInstance));
   }
 };
 

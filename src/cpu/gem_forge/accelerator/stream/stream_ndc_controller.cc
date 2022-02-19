@@ -33,12 +33,12 @@ void StreamNDCController::offloadStreams(
       bool canOffload = true;
       DynStreamList valueBaseDynStreams;
       for (auto baseEdge : dynS->baseEdges) {
-        if (baseEdge.type != DynamicStream::StreamDepEdge::TypeE::Value) {
+        if (baseEdge.type != DynStream::StreamDepEdge::TypeE::Value) {
           continue;
         }
         auto valueBaseS = se->getStream(baseEdge.baseStaticId);
         auto &valueBaseDynS =
-            valueBaseS->getDynamicStreamByInstance(baseEdge.baseInstanceId);
+            valueBaseS->getDynStreamByInstance(baseEdge.baseInstanceId);
         if (valueBaseS->hasCoreUser()) {
           canOffload = false;
           break;

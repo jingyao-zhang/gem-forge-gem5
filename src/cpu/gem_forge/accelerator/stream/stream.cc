@@ -43,7 +43,7 @@ StreamValue GetCoalescedStreamValue::operator()(uint64_t streamId) const {
 
 Stream::Stream(const StreamArguments &args)
     : staticId(args.staticId), streamName(args.name),
-      dynInstance(DynamicStreamId::InvalidInstanceId), floatTracer(this),
+      dynInstance(DynStreamId::InvalidInstanceId), floatTracer(this),
       cpu(args.cpu), se(args.se) {
 
   this->allocSize = 0;
@@ -222,15 +222,15 @@ void Stream::initializeCoalesceGroupStreams() {
 }
 
 void Stream::dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc) {
-  // Allocate the new DynamicStream.
+  // Allocate the new DynStream.
   this->dynamicStreams.emplace_back(this, this->allocateNewInstance(), seqNum,
                                     this->getCPUDelegator()->curCycle(), tc,
                                     this->se);
 }
 
 void Stream::executeStreamConfig(uint64_t seqNum,
-                                 const DynamicStreamParamV *inputVec) {
-  auto &dynStream = this->getDynamicStream(seqNum);
+                                 const DynStreamParamV *inputVec) {
+  auto &dynStream = this->getDynStream(seqNum);
   assert(!dynStream.configExecuted && "StreamConfig already executed.");
   dynStream.configExecuted = true;
 
@@ -239,7 +239,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
    */
   if (inputVec) {
     assert(!se->isTraceSim());
-    DynamicStreamParamV inputVecCopy(*inputVec);
+    DynStreamParamV inputVecCopy(*inputVec);
     this->extractExtraInputValues(dynStream, &inputVecCopy);
     this->setupAddrGen(dynStream, &inputVecCopy);
   } else {
@@ -252,7 +252,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
    * We are going to copy the total trip count from the step root stream.
    */
   if (this->stepRootStream) {
-    const auto &rootDynS = this->stepRootStream->getDynamicStream(seqNum);
+    const auto &rootDynS = this->stepRootStream->getDynStream(seqNum);
     assert(rootDynS.configExecuted &&
            "Root dynamic stream should be executed.");
     if (rootDynS.hasTotalTripCount()) {
@@ -261,7 +261,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
                "Mismatch in TotalTripCount.");
       } else {
         dynStream.setTotalTripCount(rootDynS.getTotalTripCount());
-        DYN_S_DPRINTF(dynStream.dynamicStreamId,
+        DYN_S_DPRINTF(dynStream.dynStreamId,
                       "Set TotalTripCount %llu from StepRoot.\n",
                       dynStream.getTotalTripCount());
       }
@@ -273,10 +273,10 @@ void Stream::executeStreamConfig(uint64_t seqNum,
     // Try to copy total trip count from back base stream.
     assert(this->backBaseStreams.size() == 1);
     auto backBaseS = *(this->backBaseStreams.begin());
-    const auto &backBaseDynS = backBaseS->getDynamicStream(seqNum);
+    const auto &backBaseDynS = backBaseS->getDynStream(seqNum);
     if (backBaseDynS.configExecuted) {
       dynStream.setTotalTripCount(backBaseDynS.getTotalTripCount());
-      DYN_S_DPRINTF(dynStream.dynamicStreamId,
+      DYN_S_DPRINTF(dynStream.dynStreamId,
                     "Set TotalTripCount %llu from BackBase.\n",
                     dynStream.getTotalTripCount());
     }
@@ -284,16 +284,16 @@ void Stream::executeStreamConfig(uint64_t seqNum,
 
   // Try to set total trip count for back dependent streams.
   for (auto backDepS : this->backDepStreams) {
-    auto &backDepDynS = backDepS->getDynamicStream(seqNum);
+    auto &backDepDynS = backDepS->getDynStream(seqNum);
     backDepDynS.setTotalTripCount(dynStream.getTotalTripCount());
-    DYN_S_DPRINTF(backDepDynS.dynamicStreamId,
+    DYN_S_DPRINTF(backDepDynS.dynStreamId,
                   "Set TotalTripCount %llu from BackBase.\n",
                   backDepDynS.getTotalTripCount());
   }
 }
 
 void Stream::commitStreamConfig(uint64_t seqNum) {
-  auto &dynStream = this->getDynamicStream(seqNum);
+  auto &dynStream = this->getDynStream(seqNum);
   assert(dynStream.configExecuted && "StreamConfig committed before executed.");
   assert(!dynStream.configCommitted && "StreamConfig already committed.");
   dynStream.configCommitted = true;
@@ -302,7 +302,7 @@ void Stream::commitStreamConfig(uint64_t seqNum) {
 void Stream::rewindStreamConfig(uint64_t seqNum) {
   // Rewind must happen in reverse order.
   assert(!this->dynamicStreams.empty() &&
-         "Missing DynamicStream when rewinding StreamConfig.");
+         "Missing DynStream when rewinding StreamConfig.");
   auto &dynStream = this->dynamicStreams.back();
   assert(dynStream.configSeqNum == seqNum && "Mismatch configSeqNum.");
 
@@ -328,7 +328,7 @@ void Stream::rewindStreamConfig(uint64_t seqNum) {
 }
 
 bool Stream::isStreamConfigureExecuted(uint64_t seqNum) {
-  auto &dynStream = this->getDynamicStream(seqNum);
+  auto &dynStream = this->getDynStream(seqNum);
   return dynStream.configExecuted;
 }
 
@@ -363,7 +363,7 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
          "Empty dynamicStreams for StreamEnd.");
   auto &dynS = this->dynamicStreams.front();
   if (dynS.configSeqNum >= seqNum) {
-    DYN_S_PANIC(dynS.dynamicStreamId,
+    DYN_S_PANIC(dynS.dynStreamId,
                 "Commit StreamEnd SeqNum %llu before ConfigSeqNum %llu.",
                 seqNum, dynS.configSeqNum);
   }
@@ -375,11 +375,11 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
    * We need to release all unstepped elements.
    */
   if (dynS.stepSize != 0) {
-    DYN_S_PANIC(dynS.dynamicStreamId, "Commit StreamEnd with StepSize %d.",
+    DYN_S_PANIC(dynS.dynStreamId, "Commit StreamEnd with StepSize %d.",
                 dynS.stepSize);
   }
   if (dynS.allocSize != 0) {
-    DYN_S_PANIC(dynS.dynamicStreamId, "Commit StreamEnd with AllocSize %d.",
+    DYN_S_PANIC(dynS.dynStreamId, "Commit StreamEnd with AllocSize %d.",
                 dynS.allocSize);
   }
 
@@ -405,7 +405,7 @@ void Stream::commitStreamEnd(uint64_t seqNum) {
   this->dynamicStreams.pop_front();
 }
 
-void Stream::recordAggregateHistory(const DynamicStream &dynS) {
+void Stream::recordAggregateHistory(const DynStream &dynS) {
   if (this->aggregateHistory.size() == AggregateHistorySize) {
     this->aggregateHistory.pop_front();
   }
@@ -419,57 +419,57 @@ void Stream::recordAggregateHistory(const DynamicStream &dynS) {
   history.floated = dynS.isFloatedToCache();
 }
 
-DynamicStream &Stream::getDynamicStreamByInstance(InstanceId instance) {
+DynStream &Stream::getDynStreamByInstance(InstanceId instance) {
   for (auto &dynStream : this->dynamicStreams) {
-    if (dynStream.dynamicStreamId.streamInstance == instance) {
+    if (dynStream.dynStreamId.streamInstance == instance) {
       return dynStream;
     }
   }
-  S_PANIC(this, "Failed to find DynamicStream by Instance %llu.\n", instance);
+  S_PANIC(this, "Failed to find DynStream by Instance %llu.\n", instance);
 }
 
-DynamicStream &Stream::getDynamicStream(uint64_t seqNum) {
+DynStream &Stream::getDynStream(uint64_t seqNum) {
   for (auto &dynStream : this->dynamicStreams) {
     if (dynStream.configSeqNum == seqNum) {
       return dynStream;
     }
   }
-  S_PANIC(this, "Failed to find DynamicStream by ConfigSeqNum %llu.\n", seqNum);
+  S_PANIC(this, "Failed to find DynStream by ConfigSeqNum %llu.\n", seqNum);
 }
 
-DynamicStream &Stream::getDynamicStreamByEndSeqNum(uint64_t seqNum) {
+DynStream &Stream::getDynStreamByEndSeqNum(uint64_t seqNum) {
   for (auto &dynStream : this->dynamicStreams) {
     if (dynStream.endSeqNum == seqNum) {
       return dynStream;
     }
   }
-  S_PANIC(this, "Failed to find DynamicStream by EndSeqNum %llu.\n", seqNum);
+  S_PANIC(this, "Failed to find DynStream by EndSeqNum %llu.\n", seqNum);
 }
 
-DynamicStream &Stream::getDynamicStreamBefore(uint64_t seqNum) {
-  DynamicStream *dynS = nullptr;
+DynStream &Stream::getDynStreamBefore(uint64_t seqNum) {
+  DynStream *dynS = nullptr;
   for (auto &dynStream : this->dynamicStreams) {
     if (dynStream.configSeqNum < seqNum) {
       dynS = &dynStream;
     }
   }
   if (!dynS) {
-    S_PANIC(this, "Failed to find DynamicStream before SeqNum %llu.\n", seqNum);
+    S_PANIC(this, "Failed to find DynStream before SeqNum %llu.\n", seqNum);
   }
   return *dynS;
 }
 
-DynamicStream *Stream::getDynamicStream(const DynamicStreamId &dynId) {
+DynStream *Stream::getDynStream(const DynStreamId &dynId) {
   for (auto &dynStream : this->dynamicStreams) {
-    if (dynStream.dynamicStreamId == dynId) {
+    if (dynStream.dynStreamId == dynId) {
       return &dynStream;
     }
   }
   return nullptr;
 }
 
-void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
-                                 const DynamicStreamParamV *inputVec,
+void Stream::setupLinearAddrFunc(DynStream &dynStream,
+                                 const DynStreamParamV *inputVec,
                                  const LLVM::TDG::StreamInfo &info) {
   assert(inputVec && "Missing InputVec.");
   const auto &staticInfo = info.static_info();
@@ -515,15 +515,15 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
    * TripCount[i] = BackEdgeCount[i] + 1;
    * TotalTripCount[i] = TotalTripCount[i - 1] * TripCount[i];
    */
-  DYN_S_DPRINTF(dynStream.dynamicStreamId,
+  DYN_S_DPRINTF(dynStream.dynStreamId,
                 "Setup LinearAddrGenCallback with Input params --------\n");
   for (auto param : *inputVec) {
-    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%llu\n", param.at(0));
+    DYN_S_DPRINTF(dynStream.dynStreamId, "%llu\n", param.at(0));
   }
-  DYN_S_DPRINTF(dynStream.dynamicStreamId,
+  DYN_S_DPRINTF(dynStream.dynStreamId,
                 "Setup LinearAddrGenCallback with params --------\n");
   for (auto param : formalParams) {
-    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%s\n", param.invariant);
+    DYN_S_DPRINTF(dynStream.dynStreamId, "%s\n", param.invariant);
   }
 
   for (auto idx = 1; idx < formalParams.size() - 1; idx += 2) {
@@ -537,10 +537,10 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
     formalParam.invariant.uint64() = totalTripCount;
   }
 
-  DYN_S_DPRINTF(dynStream.dynamicStreamId,
+  DYN_S_DPRINTF(dynStream.dynStreamId,
                 "Finalize LinearAddrGenCallback with params --------\n");
   for (auto param : formalParams) {
-    DYN_S_DPRINTF(dynStream.dynamicStreamId, "%s\n", param.invariant);
+    DYN_S_DPRINTF(dynStream.dynStreamId, "%s\n", param.invariant);
   }
 
   // Set the callback.
@@ -556,8 +556,8 @@ void Stream::setupLinearAddrFunc(DynamicStream &dynStream,
   }
 }
 
-void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
-                               const DynamicStreamParamV *inputVec,
+void Stream::setupFuncAddrFunc(DynStream &dynStream,
+                               const DynStreamParamV *inputVec,
                                const LLVM::TDG::StreamInfo &info) {
 
   const auto &addrFuncInfo = info.addr_func_info();
@@ -578,9 +578,9 @@ void Stream::setupFuncAddrFunc(DynamicStream &dynStream,
   dynStream.addrGenCallback = this->addrGenCallback;
 }
 
-int Stream::setupFormalParams(const DynamicStreamParamV *inputVec,
+int Stream::setupFormalParams(const DynStreamParamV *inputVec,
                               const LLVM::TDG::ExecFuncInfo &info,
-                              DynamicStreamFormalParamV &formalParams) {
+                              DynStreamFormalParamV &formalParams) {
   assert(info.name() != "" && "Missing AddrFuncInfo.");
   int inputIdx = 0;
   for (const auto &arg : info.args()) {
@@ -614,8 +614,8 @@ int Stream::setupFormalParams(const DynamicStreamParamV *inputVec,
 /**
  * Extract extra input values from the inputVec. May modify inputVec.
  */
-void Stream::extractExtraInputValues(DynamicStream &dynS,
-                                     DynamicStreamParamV *inputVec) {
+void Stream::extractExtraInputValues(DynStream &dynS,
+                                     DynStreamParamV *inputVec) {
 
   /**
    * For trace simulation, we have no input.
@@ -709,7 +709,7 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
         assert(!inputVec->empty() && "Missing FixTripCount value.");
         auto loopTripCount = inputVec->front().uint64();
         inputVec->erase(inputVec->begin());
-        DYN_S_DPRINTF(dynS.dynamicStreamId,
+        DYN_S_DPRINTF(dynS.dynStreamId,
                       "[FixTripCount] LoopLevel %d TripCount %lu x "
                       "TotalTripCount %lu = %lu.\n",
                       loopLevel, loopTripCount, tripCount,
@@ -723,9 +723,9 @@ void Stream::extractExtraInputValues(DynamicStream &dynS,
 
 CacheStreamConfigureDataPtr
 Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
-  auto &dynStream = this->getDynamicStream(configSeqNum);
+  auto &dynStream = this->getDynStream(configSeqNum);
   auto configData = std::make_shared<CacheStreamConfigureData>(
-      this, dynStream.dynamicStreamId, this->getMemElementSize(),
+      this, dynStream.dynStreamId, this->getMemElementSize(),
       dynStream.addrGenFormalParams, dynStream.addrGenCallback);
 
   // Set the MLC stream buffer size.
@@ -850,13 +850,13 @@ bool Stream::isConfigured() const {
   return true;
 }
 
-DynamicStreamId Stream::allocateNewInstance() {
+DynStreamId Stream::allocateNewInstance() {
   this->dynInstance++;
-  return DynamicStreamId(this->getCPUId(), this->staticId, this->dynInstance,
-                         this->streamName.c_str());
+  return DynStreamId(this->getCPUId(), this->staticId, this->dynInstance,
+                     this->streamName.c_str());
 }
 
-StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {
+StreamElement *Stream::releaseElementUnstepped(DynStream &dynS) {
   auto element = dynS.releaseElementUnstepped();
   if (element) {
     this->allocSize--;
@@ -864,22 +864,22 @@ StreamElement *Stream::releaseElementUnstepped(DynamicStream &dynS) {
   return element;
 }
 
-bool Stream::hasUnsteppedElement(DynamicStreamId::InstanceId instanceId) {
+bool Stream::hasUnsteppedElement(DynStreamId::InstanceId instanceId) {
   if (!this->isConfigured()) {
     // This must be wrong.
     S_DPRINTF(this, "Not configured, so no unstepped element.\n");
     return false;
   }
-  if (instanceId == DynamicStreamId::InvalidInstanceId) {
+  if (instanceId == DynStreamId::InvalidInstanceId) {
     auto &dynS = this->getFirstAliveDynStream();
     return dynS.hasUnsteppedElement();
   } else {
-    auto &dynS = this->getDynamicStreamByInstance(instanceId);
+    auto &dynS = this->getDynStreamByInstance(instanceId);
     return dynS.hasUnsteppedElement();
   }
 }
 
-DynamicStream &Stream::getFirstAliveDynStream() {
+DynStream &Stream::getFirstAliveDynStream() {
   for (auto &dynS : this->dynamicStreams) {
     if (!dynS.endDispatched) {
       return dynS;
@@ -889,7 +889,7 @@ DynamicStream &Stream::getFirstAliveDynStream() {
   S_PANIC(this, "No Alive DynStream.");
 }
 
-DynamicStream *Stream::getAllocatingDynStream() {
+DynStream *Stream::getAllocatingDynStream() {
   if (!this->isConfigured()) {
     return nullptr;
   }
@@ -1051,12 +1051,12 @@ void Stream::recordComputationInCoreStats() const {
 
 std::unique_ptr<StreamAtomicOp>
 Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
-                      const DynamicStreamFormalParamV &formalParams,
+                      const DynStreamFormalParamV &formalParams,
                       GetStreamValueFunc getStreamValue) {
   // Turn the FormalParams to ActualParams, except the last atomic
   // operand.
   assert(!formalParams.empty() && "AtomicOp has at least one operand.");
-  DynamicStreamParamV params;
+  DynStreamParamV params;
   for (int i = 0; i + 1 < formalParams.size(); ++i) {
     const auto &formalParam = formalParams.at(i);
     if (formalParam.isInvariant) {
@@ -1079,7 +1079,7 @@ Stream::setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
   return atomicOp;
 }
 
-void Stream::handleMergedPredicate(const DynamicStream &dynS,
+void Stream::handleMergedPredicate(const DynStream &dynS,
                                    StreamElement *element) {
   auto mergedPredicatedStreamIds = this->getMergedPredicatedStreams();
   if (!(mergedPredicatedStreamIds.size() > 0 &&
@@ -1109,7 +1109,7 @@ void Stream::handleMergedPredicate(const DynamicStream &dynS,
   //   }
   //   auto predS = this->se->getStream(predStreamId.id().id());
   //   // They should be configured by the same configure instruction.
-  //   const auto &predDynS = predS->getDynamicStream(dynS.configSeqNum);
+  //   const auto &predDynS = predS->getDynStream(dynS.configSeqNum);
   //   if (predS->getStreamType() == ::LLVM::TDG::StreamInfo_Type_ST) {
   //     auto predElement = predDynS.getElementByIdx(element->FIFOIdx.entryIdx);
   //     if (!predElement) {
@@ -1122,7 +1122,7 @@ void Stream::handleMergedPredicate(const DynamicStream &dynS,
   // }
 }
 
-void Stream::performStore(const DynamicStream &dynS, StreamElement *element,
+void Stream::performStore(const DynStream &dynS, StreamElement *element,
                           uint64_t storeValue) {
   /**
    * * Perform const store here.

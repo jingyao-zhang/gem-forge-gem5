@@ -148,13 +148,13 @@ MakeInclude('system/Sequencer.hh')
 
 # ! Sean: We only use the Ptr in Ruby. Rename it to make Ruby happy.
 MakeIncludeRename('../request_statistic.hh', 'RequestStatisticPtr.hh')
-MakeIncludeRename('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamAddressRange.hh',
-    'DynamicStreamAddressRangePtr.hh')
+MakeIncludeRename('../../cpu/gem_forge/accelerator/stream/cache/DynStreamAddressRange.hh',
+    'DynStreamAddressRangePtr.hh')
 
 # ! Sean: StreamAwareCache
-MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamId.hh')
-MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceId.hh')
-MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceIdVec.hh')
+MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynStreamId.hh')
+MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynStreamSliceId.hh')
+MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynStreamSliceIdVec.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/LLCStreamEngine.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/L0StreamEngine.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/MLCStreamEngine.hh')

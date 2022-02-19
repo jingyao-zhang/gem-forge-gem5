@@ -34,18 +34,18 @@
 #define S_ELEMENT_PANIC(E, format, args...)                                    \
   panic(S_ELEMENT_MSG(E, format, ##args))
 
-#define DYN_S_MSG(dynamicStreamId, format, args...)                            \
-  "%s: " format, (dynamicStreamId), ##args
-#define DYN_S_DPRINTF_(X, dynamicStreamId, format, args...)                    \
-  DPRINTF(X, DYN_S_MSG((dynamicStreamId), format, ##args))
-#define DYN_S_DPRINTF(dynamicStreamId, format, args...)                        \
-  DYN_S_DPRINTF_(DEBUG_TYPE, (dynamicStreamId), format, ##args)
-#define DYN_S_PANIC(dynamicStreamId, format, args...)                          \
-  panic(DYN_S_MSG((dynamicStreamId), format, ##args))
-#define DYN_S_HACK(dynamicStreamId, format, args...)                           \
-  hack(DYN_S_MSG((dynamicStreamId), format, ##args))
-#define DYN_S_WARN(dynamicStreamId, format, args...)                           \
-  warn(DYN_S_MSG((dynamicStreamId), format, ##args))
+#define DYN_S_MSG(dynStreamId, format, args...)                                \
+  "%s: " format, (dynStreamId), ##args
+#define DYN_S_DPRINTF_(X, dynStreamId, format, args...)                        \
+  DPRINTF(X, DYN_S_MSG((dynStreamId), format, ##args))
+#define DYN_S_DPRINTF(dynStreamId, format, args...)                            \
+  DYN_S_DPRINTF_(DEBUG_TYPE, (dynStreamId), format, ##args)
+#define DYN_S_PANIC(dynStreamId, format, args...)                              \
+  panic(DYN_S_MSG((dynStreamId), format, ##args))
+#define DYN_S_HACK(dynStreamId, format, args...)                               \
+  hack(DYN_S_MSG((dynStreamId), format, ##args))
+#define DYN_S_WARN(dynStreamId, format, args...)                               \
+  warn(DYN_S_MSG((dynStreamId), format, ##args))
 
 #define SLICE_MSG(sliceId, format, args...)                                    \
   DYN_S_MSG("%s: " format, sliceId, ##args)

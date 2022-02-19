@@ -1,7 +1,7 @@
-#ifndef __CPU_GEM_FORGE_ACCELERATOR_DYNAMIC_STREAM_ELEMENT_RANGE_ID_HH__
-#define __CPU_GEM_FORGE_ACCELERATOR_DYNAMIC_STREAM_ELEMENT_RANGE_ID_HH__
+#ifndef __CPU_GEM_FORGE_DYN_STREAM_ELEMENT_RANGE_ID_HH__
+#define __CPU_GEM_FORGE_DYN_STREAM_ELEMENT_RANGE_ID_HH__
 
-#include "DynamicStreamId.hh"
+#include "DynStreamId.hh"
 
 #include "base/types.hh"
 
@@ -10,18 +10,17 @@
  * from [lhsElementIdx, rhsElementIdx].
  */
 
-struct DynamicStreamElementRangeId {
-  DynamicStreamId streamId;
+struct DynStreamElementRangeId {
+  DynStreamId streamId;
   uint64_t lhsElementIdx;
   uint64_t rhsElementIdx;
-  DynamicStreamElementRangeId()
-      : streamId(), lhsElementIdx(0), rhsElementIdx(0) {}
+  DynStreamElementRangeId() : streamId(), lhsElementIdx(0), rhsElementIdx(0) {}
 
   bool isValid() const {
     return !(this->lhsElementIdx == 0 && this->rhsElementIdx == 0);
   }
   void clear() {
-    this->streamId = DynamicStreamId();
+    this->streamId = DynStreamId();
     this->lhsElementIdx = 0;
     this->rhsElementIdx = 0;
   }
@@ -35,23 +34,22 @@ struct DynamicStreamElementRangeId {
            elementIdx < this->rhsElementIdx;
   }
 
-  bool operator==(const DynamicStreamElementRangeId &other) const {
+  bool operator==(const DynStreamElementRangeId &other) const {
     return this->streamId == other.streamId &&
            this->lhsElementIdx == other.lhsElementIdx &&
            this->rhsElementIdx == other.rhsElementIdx;
   }
 
-  bool operator!=(const DynamicStreamElementRangeId &other) const {
+  bool operator!=(const DynStreamElementRangeId &other) const {
     return !(this->operator==(other));
   }
 };
 
-std::ostream &operator<<(std::ostream &os,
-                         const DynamicStreamElementRangeId &id);
+std::ostream &operator<<(std::ostream &os, const DynStreamElementRangeId &id);
 
-struct DynamicStreamElementRangeIdHasher {
-  std::size_t operator()(const DynamicStreamElementRangeId &key) const {
-    return (DynamicStreamIdHasher()(key.streamId)) ^
+struct DynStreamElementRangeIdHasher {
+  std::size_t operator()(const DynStreamElementRangeId &key) const {
+    return (DynStreamIdHasher()(key.streamId)) ^
            std::hash<uint64_t>()(key.lhsElementIdx) ^
            std::hash<uint64_t>()(key.rhsElementIdx);
   }

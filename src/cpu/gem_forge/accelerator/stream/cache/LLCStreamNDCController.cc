@@ -38,7 +38,7 @@ void LLCStreamNDCController::processStreamNDCRequest(PacketPtr pkt) {
   // Try get the dynamic stream.
   auto streamNDC = *(pkt->getPtr<StreamNDCPacketPtr>());
   auto S = streamNDC->stream;
-  auto dynS = S->getDynamicStream(streamNDC->entryIdx.streamId);
+  auto dynS = S->getDynStream(streamNDC->entryIdx.streamId);
   if (!dynS) {
     LLC_NDC_DPRINTF(streamNDC, "Discard NDC req as DynS released.\n");
     return;
@@ -52,7 +52,7 @@ void LLCStreamNDCController::processStreamNDCRequest(PacketPtr pkt) {
 
   LLC_NDC_DPRINTF(streamNDC, "Receive NDC req.\n");
   auto elementIdx = streamNDC->entryIdx.entryIdx;
-  DynamicStreamSliceId sliceId;
+  DynStreamSliceId sliceId;
   sliceId.getDynStreamId() = streamNDC->entryIdx.streamId;
   sliceId.getStartIdx() = elementIdx;
   sliceId.getEndIdx() = elementIdx + 1;
@@ -100,7 +100,7 @@ void LLCStreamNDCController::allocateContext(
 
 LLCStreamNDCController::NDCContext *
 LLCStreamNDCController::getContextFromSliceId(
-    const DynamicStreamSliceId &sliceId) {
+    const DynStreamSliceId &sliceId) {
   auto iter = inflyNDCContextMap.find(sliceId.getDynStreamId());
   if (iter == inflyNDCContextMap.end()) {
     return nullptr;
@@ -114,7 +114,7 @@ LLCStreamNDCController::getContextFromSliceId(
 }
 
 void LLCStreamNDCController::eraseContextFromSliceId(
-    const DynamicStreamSliceId &sliceId) {
+    const DynStreamSliceId &sliceId) {
   auto iter = inflyNDCContextMap.find(sliceId.getDynStreamId());
   if (iter == inflyNDCContextMap.end()) {
     panic("Failed to find context list for %s.", sliceId);
@@ -134,7 +134,7 @@ void LLCStreamNDCController::eraseContextFromSliceId(
 }
 
 void LLCStreamNDCController::receiveStreamData(
-    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
     const DataBlock &storeValueBlock) {
 
   auto *context = this->getContextFromSliceId(sliceId);
@@ -149,7 +149,7 @@ void LLCStreamNDCController::receiveStreamData(
 }
 
 void LLCStreamNDCController::handleNDC(NDCContext &context,
-                                       const DynamicStreamSliceId &sliceId,
+                                       const DynStreamSliceId &sliceId,
                                        const DataBlock &dataBlock) {
   LLC_NDC_DPRINTF(context.ndc,
                   "[NDC] CacheLineReady %d. Got %d of %d Forwards.\n",
@@ -172,10 +172,10 @@ void LLCStreamNDCController::handleNDC(NDCContext &context,
 }
 
 void LLCStreamNDCController::handleAtomicNDC(
-    NDCContext &context, const DynamicStreamSliceId &sliceId) {
+    NDCContext &context, const DynStreamSliceId &sliceId) {
 
   auto S = context.ndc->stream;
-  auto dynS = S->getDynamicStream(context.ndc->entryIdx.streamId);
+  auto dynS = S->getDynStream(context.ndc->entryIdx.streamId);
   if (!dynS) {
     LLC_NDC_PANIC(context.ndc, "Missing DynS for NDC response.");
   }
@@ -230,11 +230,11 @@ void LLCStreamNDCController::handleStoreNDC(NDCContext &context) {
 }
 
 void LLCStreamNDCController::handleForwardNDC(
-    NDCContext &context, const DynamicStreamSliceId &sliceId,
+    NDCContext &context, const DynStreamSliceId &sliceId,
     const DataBlock &dataBlock) {
 
   auto S = context.ndc->stream;
-  auto dynS = S->getDynamicStream(context.ndc->entryIdx.streamId);
+  auto dynS = S->getDynStream(context.ndc->entryIdx.streamId);
   if (!dynS) {
     LLC_NDC_PANIC(context.ndc, "Missing DynS for NDC response.");
   }
@@ -290,7 +290,7 @@ void LLCStreamNDCController::receiveStreamForwardRequest(
 
   LLCSE_DPRINTF("Received NDC Forward %s -> %s.\n", sliceId, recvDynId);
 
-  DynamicStreamSliceId recvSliceId;
+  DynStreamSliceId recvSliceId;
   recvSliceId.getDynStreamId() = recvDynId;
   recvSliceId.getStartIdx() = sliceId.getStartIdx();
   recvSliceId.getEndIdx() = sliceId.getEndIdx();
@@ -323,7 +323,7 @@ void LLCStreamNDCController::receiveStreamForwardRequest(
 }
 
 void LLCStreamNDCController::issueStreamNDCResponseToMLC(
-    const DynamicStreamSliceId &sliceId, Addr paddrLine, const uint8_t *data,
+    const DynStreamSliceId &sliceId, Addr paddrLine, const uint8_t *data,
     int dataSize, int payloadSize, int lineOffset, bool forceIdea) {
 
   auto msg = llcSE->createStreamMsgToMLC(
@@ -336,7 +336,7 @@ bool LLCStreamNDCController::computeStreamElementValue(
     const LLCStreamElementPtr &element, StreamValue &result) {
 
   auto S = element->S;
-  auto dynS = S->getDynamicStream(element->dynStreamId);
+  auto dynS = S->getDynStream(element->dynStreamId);
   if (!dynS) {
     LLC_ELEMENT_DPRINTF_(StreamNearDataComputing, element,
                          "Discard LLC NDC Element as no DynS.");
@@ -374,7 +374,7 @@ void LLCStreamNDCController::completeComputation(
    */
   element->setValue(value);
 
-  DynamicStreamSliceId sliceId;
+  DynStreamSliceId sliceId;
   sliceId.getDynStreamId() = element->dynStreamId;
   sliceId.getStartIdx() = element->idx;
   sliceId.getEndIdx() = element->idx + 1;

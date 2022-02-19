@@ -23,7 +23,7 @@ public:
 
   struct StreamHistoryAddrGenCallback : public AddrGenCallback {
     StreamValue genAddr(uint64_t idx,
-                        const DynamicStreamParamV &params) override;
+                        const DynStreamParamV &params) override;
     const ::LLVM::TDG::StreamHistory &history;
     StreamHistoryAddrGenCallback(const ::LLVM::TDG::StreamHistory &_history)
         : history(_history) {}

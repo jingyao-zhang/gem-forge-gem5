@@ -156,7 +156,7 @@ void StreamRegionController::configureNestStream(
   /**
    * It does not really make sense to configure future nested streams
    * if the nested loop is not eliminated. Here we check that the
-   * current NestDynamicStream has trip count and is close to end,
+   * current NestDynStream has trip count and is close to end,
    * before trying to configure next dynamic stream.
    */
   if (!staticNestRegion.region.loop_eliminated() &&
@@ -164,14 +164,14 @@ void StreamRegionController::configureNestStream(
     const auto &lastDynNestRegion = staticNestRegion.dynRegions.back();
     auto firstNestStream = staticNestRegion.streams.front();
     const auto &lastDynNestStream =
-        firstNestStream->getDynamicStream(lastDynNestRegion.seqNum);
+        firstNestStream->getDynStream(lastDynNestRegion.seqNum);
     if (lastDynNestStream.endDispatched ||
         (lastDynNestStream.hasTotalTripCount() &&
          lastDynNestStream.FIFOIdx.entryIdx + 2 >=
              lastDynNestStream.getTotalTripCount())) {
       // continue.
     } else {
-      DYN_S_DPRINTF(lastDynNestStream.dynamicStreamId,
+      DYN_S_DPRINTF(lastDynNestStream.dynStreamId,
                     "[Nest] NestedLoop not Eliminated. TotalTripCount %ld "
                     "NextElementIdx %lu EndDispatched %d NumDynRegions %d.\n",
                     lastDynNestStream.getTotalTripCount(),
@@ -205,11 +205,11 @@ void StreamRegionController::configureNestStream(
   auto nextElementIdx = dynNestConfig.nextElementIdx;
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticNestConfig.baseStreams) {
-    auto &baseDynS = baseS->getDynamicStream(dynRegion.seqNum);
+    auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
     auto baseElement = baseDynS.getElementByIdx(nextElementIdx);
     if (!baseElement) {
       if (baseDynS.FIFOIdx.entryIdx > nextElementIdx) {
-        DYN_S_DPRINTF(baseDynS.dynamicStreamId,
+        DYN_S_DPRINTF(baseDynS.dynStreamId,
                       "Failed to get element %llu for NestConfig. The "
                       "TotalTripCount must be 0. Skip.\n",
                       dynNestConfig.nextElementIdx);
@@ -276,13 +276,13 @@ void StreamRegionController::configureNestStream(
 
   // Sanity check that nest streams have same TotalTripCount.
   bool isFirstDynS = true;
-  auto totalTripCount = DynamicStream::InvalidTotalTripCount;
+  auto totalTripCount = DynStream::InvalidTotalTripCount;
   InstSeqNum nestConfigSeqNum = configFuncStartSeqNum;
   for (auto S : staticNestRegion.streams) {
-    auto &dynS = S->getLastDynamicStream();
+    auto &dynS = S->getLastDynStream();
     auto dynSTotalTripCount = dynS.getTotalTripCount();
     if (dynSTotalTripCount == 0) {
-      DYN_S_PANIC(dynS.dynamicStreamId, "NestStream has TotalTripCount %d.",
+      DYN_S_PANIC(dynS.dynStreamId, "NestStream has TotalTripCount %d.",
                   totalTripCount);
     }
     if (isFirstDynS) {
@@ -291,7 +291,7 @@ void StreamRegionController::configureNestStream(
       isFirstDynS = false;
     } else {
       if (totalTripCount != dynSTotalTripCount) {
-        DYN_S_PANIC(dynS.dynamicStreamId,
+        DYN_S_PANIC(dynS.dynStreamId,
                     "NestStream has TotalTripCount %d, while others have %d.",
                     dynSTotalTripCount, totalTripCount);
       }
@@ -307,8 +307,8 @@ void StreamRegionController::configureNestStream(
              configFuncStartSeqNum, nestConfigSeqNum, totalTripCount);
   if (Debug::StreamNest) {
     for (auto S : staticNestRegion.streams) {
-      auto &dynS = S->getLastDynamicStream();
-      SE_DPRINTF("[Nest]   %s.\n", dynS.dynamicStreamId);
+      auto &dynS = S->getLastDynStream();
+      SE_DPRINTF("[Nest]   %s.\n", dynS.dynStreamId);
     }
   }
 

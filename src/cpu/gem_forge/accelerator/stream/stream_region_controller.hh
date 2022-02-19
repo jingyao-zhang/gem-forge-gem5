@@ -40,8 +40,8 @@ public:
       const StaticRegion *staticRegion;
       ExecFuncPtr configFunc = nullptr;
       ExecFuncPtr predFunc = nullptr;
-      DynamicStreamFormalParamV formalParams;
-      DynamicStreamFormalParamV predFormalParams;
+      DynStreamFormalParamV formalParams;
+      DynStreamFormalParamV predFormalParams;
       uint64_t nextElementIdx = 0;
 
       /**
@@ -61,7 +61,7 @@ public:
      */
     struct DynLoopBound {
       ExecFuncPtr boundFunc = nullptr;
-      DynamicStreamFormalParamV formalParams;
+      DynStreamFormalParamV formalParams;
       uint64_t nextElementIdx = 0;
       // We have reached the end of the loop.
       bool brokenOut = false;
@@ -139,7 +139,7 @@ public:
   StaticRegion &getStaticRegion(const std::string &regionName);
   DynRegion &getDynRegion(const std::string &msg, InstSeqNum seqNum);
 
-  void receiveOffloadedLoopBoundRet(const DynamicStreamId &dynStreamId,
+  void receiveOffloadedLoopBoundRet(const DynStreamId &dynStreamId,
                                     int64_t tripCount, bool brokenOut);
 
 private:
@@ -192,7 +192,7 @@ private:
    */
   void allocateElements(StaticRegion &staticRegion);
   bool canSkipAllocatingDynS(StaticRegion &staticRegion,
-                             DynamicStream &stepRootDynS);
+                             DynStream &stepRootDynS);
 
   /**
    * Helper functions.
@@ -201,7 +201,7 @@ private:
 
   void buildFormalParams(const ConfigArgs::InputVec &inputVec, int &inputIdx,
                          const ::LLVM::TDG::ExecFuncInfo &funcInfo,
-                         DynamicStreamFormalParamV &formalParams);
+                         DynStreamFormalParamV &formalParams);
 
   struct GetStreamValueFromElementSet {
     using ElementSet = std::unordered_set<StreamElement *>;

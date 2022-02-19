@@ -1,9 +1,9 @@
 
-structure(DynamicStreamId, external="yes", desc="Dynamic identification for stream.") {
+structure(DynStreamId, external="yes", desc="Dynamic identification for stream.") {
 
 }
 
-structure(DynamicStreamSliceId, external="yes", desc="Dynamic identification for a slice of stream.") {
+structure(DynStreamSliceId, external="yes", desc="Dynamic identification for a slice of stream.") {
   bool isValid();
   uint64_t getStartIdx();
   uint64_t getNumElements();
@@ -11,15 +11,15 @@ structure(DynamicStreamSliceId, external="yes", desc="Dynamic identification for
   void clear();
 }
 
-structure(DynamicStreamSliceIdVec, external="yes", desc="A vector of sliceIds.") {
+structure(DynStreamSliceIdVec, external="yes", desc="A vector of sliceIds.") {
   bool isValid();
-  DynamicStreamSliceId singleSliceId();
-  DynamicStreamSliceId firstSliceId();
-  void add(DynamicStreamSliceId);
-  void merge(DynamicStreamSliceIdVec);
+  DynStreamSliceId singleSliceId();
+  DynStreamSliceId firstSliceId();
+  void add(DynStreamSliceId);
+  void merge(DynStreamSliceIdVec);
   void clear();
 }
 
-structure(DynamicStreamAddressRangePtr, external="yes", desc="StreamRange for sync.") {
+structure(DynStreamAddressRangePtr, external="yes", desc="StreamRange for sync.") {
   
 }

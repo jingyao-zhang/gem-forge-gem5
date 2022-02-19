@@ -17,16 +17,16 @@ public:
     FloatDecision(bool _shouldFloat = false) : shouldFloat(_shouldFloat) {}
   };
 
-  FloatDecision shouldFloatStream(DynamicStream &dynS);
+  FloatDecision shouldFloatStream(DynStream &dynS);
 
-  bool shouldPseudoFloatStream(DynamicStream &dynS);
+  bool shouldPseudoFloatStream(DynStream &dynS);
 
-  static std::ostream &logS(const DynamicStream &dynS);
+  static std::ostream &logS(const DynStream &dynS);
 
   /**
    * Set the float level for all streams.
    */
-  using DynStreamList = std::list<DynamicStream *>;
+  using DynStreamList = std::list<DynStream *>;
   using StreamCacheConfigMap =
       std::unordered_map<Stream *, CacheStreamConfigureDataPtr>;
   void setFloatPlans(DynStreamList &dynStreams,
@@ -53,10 +53,10 @@ private:
   uint64_t getPrivateCacheCapacity() const { return this->cacheCapacity.at(1); }
   uint64_t getSharedLLCCapacity() const { return this->cacheCapacity.back(); }
 
-  FloatDecision shouldFloatStreamManual(DynamicStream &dynS);
-  FloatDecision shouldFloatStreamSmart(DynamicStream &dynS);
-  bool checkReuseWithinStream(DynamicStream &dynS);
-  bool checkAggregateHistory(DynamicStream &dynS);
+  FloatDecision shouldFloatStreamManual(DynStream &dynS);
+  FloatDecision shouldFloatStreamSmart(DynStream &dynS);
+  bool checkReuseWithinStream(DynStream &dynS);
+  bool checkAggregateHistory(DynStream &dynS);
 
   static std::ostream &getLog() {
     assert(log && "No log for StreamFloatPolicy.");
@@ -65,11 +65,11 @@ private:
 
   static OutputStream *log;
 
-  void setFloatPlan(DynamicStream &dynS);
-  void setFloatPlanManual(DynamicStream &dynS);
+  void setFloatPlan(DynStream &dynS);
+  void setFloatPlanManual(DynStream &dynS);
 
-  void setFloatPlanForRodiniaSrad(DynamicStream &dynS);
-  void setFloatPlanForBinTree(DynamicStream &dynS);
+  void setFloatPlanForRodiniaSrad(DynStream &dynS);
+  void setFloatPlanForBinTree(DynStream &dynS);
 
   static const std::unordered_map<std::string, std::string> streamToRegionMap;
 };

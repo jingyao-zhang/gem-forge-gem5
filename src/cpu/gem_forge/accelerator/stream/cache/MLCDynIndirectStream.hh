@@ -1,10 +1,10 @@
-#ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_INDIRECT_STREAM_H__
-#define __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_INDIRECT_STREAM_H__
+#ifndef __CPU_GEM_FORGE_MLC_DYN_INDIRECT_STREAM_H__
+#define __CPU_GEM_FORGE_MLC_DYN_INDIRECT_STREAM_H__
 
-#include "MLCDynamicStream.hh"
+#include "MLCDynStream.hh"
 
 /**
- * MLCDynamicIndirectStream is a special stream.
+ * MLCDynIndirectStream is a special stream.
  * 1. It does not send credit to LLC. The direct stream should perform the flow
  * control for the indirect stream.
  * 2. It always allocates elements one by one. No merge elements even if they
@@ -16,21 +16,21 @@
  * Indirect streams are more complicated to manage, as the address is only know
  * when the base stream data is ready.
  */
-class MLCDynamicIndirectStream : public MLCDynamicStream {
+class MLCDynIndirectStream : public MLCDynStream {
 public:
-  MLCDynamicIndirectStream(CacheStreamConfigureDataPtr _configData,
-                           AbstractStreamAwareController *_controller,
-                           MessageBuffer *_responseMsgBuffer,
-                           MessageBuffer *_requestToLLCMsgBuffer,
-                           const DynamicStreamId &_rootStreamId);
+  MLCDynIndirectStream(CacheStreamConfigureDataPtr _configData,
+                       AbstractStreamAwareController *_controller,
+                       MessageBuffer *_responseMsgBuffer,
+                       MessageBuffer *_requestToLLCMsgBuffer,
+                       const DynStreamId &_rootStreamId);
 
-  virtual ~MLCDynamicIndirectStream() {}
+  virtual ~MLCDynIndirectStream() {}
 
-  const DynamicStreamId &getRootDynamicStreamId() const override {
+  const DynStreamId &getRootDynStreamId() const override {
     return this->rootStreamId;
   }
 
-  bool isSliceValid(const DynamicStreamSliceId &sliceId) const override {
+  bool isSliceValid(const DynStreamSliceId &sliceId) const override {
     assert(sliceId.getNumElements() == 1 &&
            "Multiple elements for indirect stream.");
     if (this->isOneIterationBehind) {
@@ -44,7 +44,7 @@ public:
   /**
    * Receive data from LLC.
    */
-  void receiveStreamData(const DynamicStreamSliceId &sliceId,
+  void receiveStreamData(const DynStreamSliceId &sliceId,
                          const DataBlock &dataBlock, Addr paddrLine) override;
 
   /**
@@ -53,7 +53,7 @@ public:
    */
   void receiveBaseStreamData(uint64_t elementIdx, uint64_t baseData);
 
-  void setBaseStream(MLCDynamicStream *baseStream) {
+  void setBaseStream(MLCDynStream *baseStream) {
     assert(!this->baseStream && "Already has base stream.");
     this->baseStream = baseStream;
   }
@@ -73,11 +73,11 @@ public:
 
 private:
   // Remember the root stream id.
-  DynamicStreamId rootStreamId;
-  DynamicStreamFormalParamV formalParams;
+  DynStreamId rootStreamId;
+  DynStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
   const int32_t elementSize;
-  MLCDynamicStream *baseStream = nullptr;
+  MLCDynStream *baseStream = nullptr;
 
   // Remember if this indirect stream is behind one iteration.
   bool isOneIterationBehind;
@@ -89,8 +89,7 @@ private:
    */
   uint64_t tailElementIdx;
 
-  SliceIter
-  findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
+  SliceIter findSliceForCoreRequest(const DynStreamSliceId &sliceId) override;
 
   void advanceStream() override;
   void allocateSlice();
@@ -107,13 +106,13 @@ private:
    */
   SliceIter findOrInsertSliceBySliceId(const SliceIter &begin,
                                        const SliceIter &end,
-                                       const DynamicStreamSliceId &sliceId);
+                                       const DynStreamSliceId &sliceId);
 
   /**
    * Intercept the final reduction value.
    * @return whether this is handled as the FinalReductionValue.
    */
-  bool receiveFinalReductionValue(const DynamicStreamSliceId &sliceId,
+  bool receiveFinalReductionValue(const DynStreamSliceId &sliceId,
                                   const DataBlock &dataBlock, Addr paddrLine);
 };
 

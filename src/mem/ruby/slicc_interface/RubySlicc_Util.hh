@@ -46,10 +46,10 @@
 
 /**
  * ! Sean: StreamAwareCache.
- * ! This is to expose LLCDynamicStreamPtr to slicc.
+ * ! This is to expose LLCDynStreamPtr to slicc.
  * TODO: Figure out a better way to include this.
  */
-#include "cpu/gem_forge/accelerator/stream/cache/LLCDynamicStream.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/LLCDynStream.hh"
 
 inline Cycles zero_time() { return Cycles(0); }
 

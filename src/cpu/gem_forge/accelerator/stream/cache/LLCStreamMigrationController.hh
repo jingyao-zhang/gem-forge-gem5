@@ -1,7 +1,7 @@
 #ifndef __GEM_FORGE_LLC_STREAM_MIGRATION_CONTROLLER_HH__
 #define __GEM_FORGE_LLC_STREAM_MIGRATION_CONTROLLER_HH__
 
-#include "LLCDynamicStream.hh"
+#include "LLCDynStream.hh"
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
@@ -18,9 +18,9 @@ public:
   LLCStreamMigrationController(AbstractStreamAwareController *_controller,
                                int _neighborStreamsThreshold, Cycles _delay);
 
-  void startMigrateTo(LLCDynamicStreamPtr dynS, MachineID machineId);
-  bool canMigrateTo(LLCDynamicStreamPtr dynS, MachineID machineId);
-  void migratedTo(LLCDynamicStreamPtr dynS, MachineID machineId);
+  void startMigrateTo(LLCDynStreamPtr dynS, MachineID machineId);
+  bool canMigrateTo(LLCDynStreamPtr dynS, MachineID machineId);
+  void migratedTo(LLCDynStreamPtr dynS, MachineID machineId);
 
   int curRemoteBank() const {
     return this->controller->getMachineID().getNum();
@@ -44,8 +44,7 @@ private:
   static constexpr int MaxNeighbors = 6;
   std::array<Cycles, MaxNeighbors> lastMigratedCycle;
 
-  std::array<std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>,
-             MaxNeighbors>
+  std::array<std::unordered_set<DynStreamId, DynStreamIdHasher>, MaxNeighbors>
       migratingStreams;
 
   /**
@@ -64,7 +63,7 @@ private:
    * Count the number of migrating and migrated streams with the same StaticId
    * at the destination.
    */
-  int countStreamsWithSameStaticId(LLCDynamicStreamPtr dynS,
+  int countStreamsWithSameStaticId(LLCDynStreamPtr dynS,
                                    MachineID machineId) const;
 };
 

@@ -3,7 +3,7 @@
 
 #include "AbstractController.hh"
 #include "cpu/gem_forge/accelerator/gem_forge_accelerator.hh"
-#include "cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceIdVec.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/DynStreamSliceIdVec.hh"
 #include "mem/ruby/common/PCRequestRecorder.hh"
 #include "mem/ruby/structures/CacheMemory.hh"
 #include "params/RubyStreamAwareController.hh"
@@ -172,7 +172,7 @@ public:
   void recordDeallocateNoReuseReqStats(const RequestStatisticPtr &reqStat,
                                        CacheMemory &cache) const;
   void recordLLCReqQueueStats(const RequestStatisticPtr &reqStat,
-                              const DynamicStreamSliceIdVec &sliceIds,
+                              const DynStreamSliceIdVec &sliceIds,
                               bool isLoad);
   void incrementLLCIndReqQueueStats() { this->m_statLLCIndStreamReq++; }
 

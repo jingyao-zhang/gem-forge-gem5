@@ -1,9 +1,9 @@
-#ifndef __CPU_TDG_ACCELERATOR_LLC_DYNAMIC_STREAM_H__
-#define __CPU_TDG_ACCELERATOR_LLC_DYNAMIC_STREAM_H__
+#ifndef __CPU_GEM_FORGE_LLC_DYN_STREAM_H__
+#define __CPU_GEM_FORGE_LLC_DYN_STREAM_H__
 
 #include "LLCStreamElement.hh"
 
-#include "SlicedDynamicStream.hh"
+#include "SlicedDynStream.hh"
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 #include "mem/ruby/protocol/CoherenceRequestType.hh"
 #include "mem/ruby/system/RubySystem.hh"
@@ -22,17 +22,17 @@ class LLCStreamCommitController;
 /**
  * Represent generated request to LLC bank.
  */
-class LLCDynamicStream;
-using LLCDynamicStreamPtr = LLCDynamicStream *;
+class LLCDynStream;
+using LLCDynStreamPtr = LLCDynStream *;
 
 struct LLCStreamRequest {
-  LLCStreamRequest(Stream *_S, const DynamicStreamSliceId &_sliceId,
+  LLCStreamRequest(Stream *_S, const DynStreamSliceId &_sliceId,
                    Addr _paddrLine, MachineType _destMachineType,
                    CoherenceRequestType _type)
       : S(_S), sliceId(_sliceId), paddrLine(_paddrLine),
         destMachineType(_destMachineType), requestType(_type) {}
   Stream *S;
-  DynamicStreamSliceId sliceId;
+  DynStreamSliceId sliceId;
   Addr paddrLine;
   MachineType destMachineType;
   CoherenceRequestType requestType;
@@ -48,29 +48,29 @@ struct LLCStreamRequest {
   int payloadSize = RubySystem::getBlockSizeBytes();
 
   // Optional for Multicast request, excluding the original stream
-  std::vector<DynamicStreamSliceId> multicastSliceIds;
+  std::vector<DynStreamSliceId> multicastSliceIds;
 
   // Optional for StreamForward request, the receiver stream id.
-  DynamicStreamId forwardToStreamId;
+  DynStreamId forwardToStreamId;
 };
 
-class LLCDynamicStream {
+class LLCDynStream {
 public:
   friend class LLCStreamRangeBuilder;
   friend class LLCStreamCommitController;
 
-  ~LLCDynamicStream();
+  ~LLCDynStream();
 
   AbstractStreamAwareController *getMLCController() const {
     return this->mlcController;
   }
 
   Stream *getStaticS() const { return this->configData->stream; }
-  DynamicStream *getCoreDynStream() const {
-    return this->getStaticS()->getDynamicStream(this->getDynamicStreamId());
+  DynStream *getCoreDynStream() const {
+    return this->getStaticS()->getDynStream(this->getDynStreamId());
   }
   uint64_t getStaticId() const { return this->configData->dynamicId.staticId; }
-  const DynamicStreamId &getDynamicStreamId() const {
+  const DynStreamId &getDynStreamId() const {
     return this->configData->dynamicId;
   }
 
@@ -91,7 +91,7 @@ public:
     assert(this->isPredicated());
     return this->configData->isPredicatedTrue;
   }
-  const DynamicStreamId &getPredicateStreamId() const {
+  const DynStreamId &getPredicateStreamId() const {
     assert(this->isPredicated());
     return this->configData->predicateStreamId;
   }
@@ -114,12 +114,10 @@ public:
            (S->isLoadStream() && S->getEnabledStoreFunc());
   }
 
-  void setMulticastGroupLeader(LLCDynamicStream *S) {
+  void setMulticastGroupLeader(LLCDynStream *S) {
     this->multicastGroupLeader = S;
   }
-  LLCDynamicStream *getMulticastGroupLeader() {
-    return this->multicastGroupLeader;
-  }
+  LLCDynStream *getMulticastGroupLeader() { return this->multicastGroupLeader; }
 
   Addr getElementVAddr(uint64_t elementIdx) const;
   bool translateToPAddr(Addr vaddr, Addr &paddr) const;
@@ -127,7 +125,7 @@ public:
   void addCredit(uint64_t n);
   void addNextRangeTailElementIdx(uint64_t rangeTailElementIdx);
 
-  DynamicStreamSliceId initNextSlice();
+  DynStreamSliceId initNextSlice();
 
   /**
    * Check if we have received credit for the next slice.
@@ -141,7 +139,7 @@ public:
    */
   bool isNextSliceOverflown() const;
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
-  const DynamicStreamSliceId &peekNextAllocSliceId() const;
+  const DynStreamSliceId &peekNextAllocSliceId() const;
   std::pair<Addr, MachineType> peekNextAllocVAddrAndMachineType() const;
   LLCStreamSlicePtr getNextAllocSlice() const;
   LLCStreamSlicePtr allocNextSlice(LLCStreamEngine *se);
@@ -150,7 +148,7 @@ public:
   traceEvent(const ::LLVM::TDG::StreamFloatEvent::StreamFloatEventType &type);
 
   /**************************************************************************
-   * To better managing the life cycle of LLCDynamicStream, instead of
+   * To better managing the life cycle of LLCDynStream, instead of
    * allocating them at when StreamConfig hits the LLC SE, we allocate them
    * at once at the MLC SE. And they are released lazily at once when all
    * floating streams are terminated. Therefore, they have states:
@@ -159,8 +157,8 @@ public:
    * MIGRATING: The stream is migrating to the next LLC SE.
    * TERMINATED: The LLC SE terminated the stream.
    *
-   * To correctly handle these, we have a global map from DynamicStreamId to
-   * LLCDynamicStream *. We also remember the list of streams that are allocated
+   * To correctly handle these, we have a global map from DynStreamId to
+   * LLCDynStream *. We also remember the list of streams that are allocated
    * together, so that we can deallocate them at the same time.
    **************************************************************************/
   enum State {
@@ -183,26 +181,26 @@ public:
 
   void terminate();
 
-  static LLCDynamicStream *getLLCStream(const DynamicStreamId &dynId) {
-    if (GlobalLLCDynamicStreamMap.count(dynId)) {
-      return GlobalLLCDynamicStreamMap.at(dynId);
+  static LLCDynStream *getLLCStream(const DynStreamId &dynId) {
+    if (GlobalLLCDynStreamMap.count(dynId)) {
+      return GlobalLLCDynStreamMap.at(dynId);
     } else {
       return nullptr;
     }
   }
-  static LLCDynamicStream *getLLCStreamPanic(const DynamicStreamId &dynId,
-                                             const char *msg = "") {
-    if (auto S = LLCDynamicStream::getLLCStream(dynId)) {
+  static LLCDynStream *getLLCStreamPanic(const DynStreamId &dynId,
+                                         const char *msg = "") {
+    if (auto S = LLCDynStream::getLLCStream(dynId)) {
       return S;
     }
-    panic("Failed to get LLCDynamicStream %s: %s.", dynId, msg);
+    panic("Failed to get LLCDynStream %s: %s.", dynId, msg);
   }
   static void allocateLLCStreams(AbstractStreamAwareController *mlcController,
                                  CacheStreamConfigureVec &configs);
 
-  bool isBasedOn(const DynamicStreamId &baseId) const;
+  bool isBasedOn(const DynStreamId &baseId) const;
   void recvStreamForward(LLCStreamEngine *se, uint64_t baseElementIdx,
-                         const DynamicStreamSliceId &sliceId,
+                         const DynStreamSliceId &sliceId,
                          const DataBlock &dataBlk);
 
   bool hasComputation() const;
@@ -235,20 +233,19 @@ private:
    * Here we remember the dependent streams.
    * IndirectStreams is just the "UsedBy" dependence.
    */
-  std::vector<LLCDynamicStreamPtr> indirectStreams;
-  std::vector<LLCDynamicStreamPtr> allIndirectStreams;
+  std::vector<LLCDynStreamPtr> indirectStreams;
+  std::vector<LLCDynStreamPtr> allIndirectStreams;
 
   // Private controller as user should use allocateLLCStreams().
-  LLCDynamicStream(AbstractStreamAwareController *_mlcController,
-                   AbstractStreamAwareController *_llcController,
-                   CacheStreamConfigureDataPtr _configData);
+  LLCDynStream(AbstractStreamAwareController *_mlcController,
+               AbstractStreamAwareController *_llcController,
+               CacheStreamConfigureDataPtr _configData);
 
-  static std::unordered_map<DynamicStreamId, LLCDynamicStream *,
-                            DynamicStreamIdHasher>
-      GlobalLLCDynamicStreamMap;
-  static std::unordered_map<NodeID, std::list<std::vector<LLCDynamicStream *>>>
-      GlobalMLCToLLCDynamicStreamGroupMap;
-  static LLCDynamicStreamPtr
+  static std::unordered_map<DynStreamId, LLCDynStream *, DynStreamIdHasher>
+      GlobalLLCDynStreamMap;
+  static std::unordered_map<NodeID, std::list<std::vector<LLCDynStream *>>>
+      GlobalMLCToLLCDynStreamGroupMap;
+  static LLCDynStreamPtr
   allocateLLCStream(AbstractStreamAwareController *mlcController,
                     CacheStreamConfigureDataPtr &config);
 
@@ -262,11 +259,11 @@ private:
   uint64_t nextIssueElementIdx = 0;
 
   std::pair<Addr, MachineType> peekNextInitVAddrAndMachineType() const;
-  const DynamicStreamSliceId &peekNextInitSliceId() const;
+  const DynStreamSliceId &peekNextInitSliceId() const;
 
 public:
   const CacheStreamConfigureDataPtr configData;
-  SlicedDynamicStream slicedStream;
+  SlicedDynStream slicedStream;
 
   // Remember the last reduction element, avoid auto releasing.
   LLCStreamElementPtr lastReductionElement = nullptr;
@@ -278,12 +275,12 @@ public:
   /**
    * Remember the base stream.
    */
-  void setBaseStream(LLCDynamicStreamPtr baseS);
+  void setBaseStream(LLCDynStreamPtr baseS);
 
-  const std::vector<LLCDynamicStreamPtr> &getIndStreams() const {
+  const std::vector<LLCDynStreamPtr> &getIndStreams() const {
     return this->indirectStreams;
   }
-  const std::vector<LLCDynamicStreamPtr> &getAllIndStreams() const {
+  const std::vector<LLCDynStreamPtr> &getAllIndStreams() const {
     return this->allIndirectStreams;
   }
 
@@ -297,16 +294,16 @@ public:
   std::vector<CacheStreamConfigureDataPtr> baseOnConfigs;
 
   // Base stream.
-  LLCDynamicStream *baseStream = nullptr;
+  LLCDynStream *baseStream = nullptr;
 
   // Root stream.
-  LLCDynamicStream *rootStream = nullptr;
+  LLCDynStream *rootStream = nullptr;
 
   // Dependent predicated streams.
-  std::unordered_set<LLCDynamicStream *> predicatedStreams;
+  std::unordered_set<LLCDynStream *> predicatedStreams;
 
   // Base predicate stream.
-  LLCDynamicStream *predicateStream = nullptr;
+  LLCDynStream *predicateStream = nullptr;
 
   Cycles issueClearCycle = Cycles(4);
   // Initialize cycle at MLC SE.
@@ -329,7 +326,7 @@ public:
    * Transient states that should be reset after migration.
    * ! Only valid for DirectStream.
    */
-  LLCDynamicStream *multicastGroupLeader = nullptr;
+  LLCDynStream *multicastGroupLeader = nullptr;
 
   // For flow control.
   uint64_t creditedSliceIdx;
@@ -358,7 +355,7 @@ public:
    * The elements that is predicated by this stream.
    */
   std::map<uint64_t,
-           std::list<std::pair<LLCDynamicStream *, ConstLLCStreamElementPtr>>>
+           std::list<std::pair<LLCDynStream *, ConstLLCStreamElementPtr>>>
       waitingPredicatedElements;
 
   void updateIssueClearCycle();
@@ -377,8 +374,7 @@ public:
    */
   void initDirectStreamSlicesUntil(uint64_t lastSliceIdx);
 
-  using ElementCallback =
-      std::function<void(const DynamicStreamId &, uint64_t)>;
+  using ElementCallback = std::function<void(const DynStreamId &, uint64_t)>;
 
   bool isElementInitialized(uint64_t elementIdx) const;
   void registerElementInitCallback(uint64_t elementIdx,
@@ -399,7 +395,7 @@ public:
   /**
    * Slice callback.
    */
-  using SliceCallback = std::function<void(const DynamicStreamId &, uint64_t)>;
+  using SliceCallback = std::function<void(const DynStreamId &, uint64_t)>;
   void registerSliceAllocCallback(uint64_t sliceIdx, SliceCallback callback);
 
 private:
@@ -409,7 +405,7 @@ private:
    * State related to StreamCommit.
    * Pending StreamCommit messages.
    ************************************************************************/
-  std::list<DynamicStreamSliceId> commitMessages;
+  std::list<DynStreamSliceId> commitMessages;
 
   using ElementCallbackList = std::list<ElementCallback>;
 
@@ -437,7 +433,7 @@ private:
   void invokeSliceAllocCallbacks(uint64_t sliceIdx);
 
 public:
-  void addCommitMessage(const DynamicStreamSliceId &sliceId);
+  void addCommitMessage(const DynStreamSliceId &sliceId);
   uint64_t getNextInitElementIdx() const { return this->nextInitElementIdx; }
   uint64_t getNextCommitElementIdx() const {
     return this->nextCommitElementIdx;
@@ -483,7 +479,7 @@ public:
    * Check that our LoopBound has been evaluted for this sliceId.
    * @return true if the slice is no longer needed for LoopBound.
    */
-  bool isSliceDoneForLoopBound(const DynamicStreamSliceId &sliceId) const;
+  bool isSliceDoneForLoopBound(const DynStreamSliceId &sliceId) const;
 
 private:
   uint64_t nextLoopBoundElementIdx = 0;

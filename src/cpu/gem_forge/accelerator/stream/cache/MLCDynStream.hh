@@ -1,7 +1,7 @@
-#ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
-#define __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_STREAM_H__
+#ifndef __CPU_GEM_FORGE_MLC_DYN_STREAM_H__
+#define __CPU_GEM_FORGE_MLC_DYN_STREAM_H__
 
-#include "DynamicStreamAddressRange.hh"
+#include "DynStreamAddressRange.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 
@@ -15,29 +15,27 @@
 class AbstractStreamAwareController;
 class MessageBuffer;
 
-class MLCDynamicStream {
+class MLCDynStream {
 public:
-  MLCDynamicStream(CacheStreamConfigureDataPtr _configData,
-                   AbstractStreamAwareController *_controller,
-                   MessageBuffer *_responseMsgBuffer,
-                   MessageBuffer *_requestToLLCMsgBuffer, bool _isMLCDirect);
+  MLCDynStream(CacheStreamConfigureDataPtr _configData,
+               AbstractStreamAwareController *_controller,
+               MessageBuffer *_responseMsgBuffer,
+               MessageBuffer *_requestToLLCMsgBuffer, bool _isMLCDirect);
 
-  virtual ~MLCDynamicStream();
+  virtual ~MLCDynStream();
 
   Stream *getStaticStream() const { return this->stream; }
 
-  const DynamicStreamId &getDynamicStreamId() const {
-    return this->dynamicStreamId;
-  }
+  const DynStreamId &getDynStreamId() const { return this->dynStreamId; }
 
   bool getIsPseudoOffload() const { return this->isPseudoOffload; }
   uint64_t getFirstFloatElemIdx() const {
     return this->config->floatPlan.getFirstFloatElementIdx();
   }
 
-  virtual const DynamicStreamId &getRootDynamicStreamId() const {
+  virtual const DynStreamId &getRootDynStreamId() const {
     // By default this we are the root stream.
-    return this->getDynamicStreamId();
+    return this->getDynStreamId();
   }
 
   /**
@@ -45,7 +43,7 @@ public:
    * So far always valid, except the first element of indirect stream that is
    * behind by one iteration.
    */
-  virtual bool isSliceValid(const DynamicStreamSliceId &sliceId) const {
+  virtual bool isSliceValid(const DynStreamSliceId &sliceId) const {
     return true;
   }
 
@@ -57,11 +55,11 @@ public:
     panic("Should only call this on direct stream.");
   }
 
-  virtual void receiveStreamData(const DynamicStreamSliceId &sliceId,
+  virtual void receiveStreamData(const DynStreamSliceId &sliceId,
                                  const DataBlock &dataBlock,
                                  Addr paddrLine) = 0;
-  void receiveStreamRequest(const DynamicStreamSliceId &sliceId);
-  void receiveStreamRequestHit(const DynamicStreamSliceId &sliceId);
+  void receiveStreamRequest(const DynStreamSliceId &sliceId);
+  void receiveStreamRequestHit(const DynStreamSliceId &sliceId);
 
   /**
    * Before end the stream, we have make dummy response to the request
@@ -72,8 +70,8 @@ public:
   uint64_t getHeadSliceIdx() const { return this->headSliceIdx; }
   uint64_t getTailSliceIdx() const { return this->tailSliceIdx; }
 
-  void receiveStreamRange(const DynamicStreamAddressRangePtr &range);
-  virtual void receiveStreamDone(const DynamicStreamSliceId &sliceId);
+  void receiveStreamRange(const DynStreamAddressRangePtr &range);
+  virtual void receiveStreamDone(const DynStreamSliceId &sliceId);
 
   void scheduleAdvanceStream();
 
@@ -101,7 +99,7 @@ public:
 
 protected:
   Stream *stream;
-  DynamicStreamId dynamicStreamId;
+  DynStreamId dynStreamId;
   CacheStreamConfigureDataPtr config;
   bool isPointerChase;
   bool isPseudoOffload;
@@ -120,7 +118,7 @@ protected:
    * and data from LLC stream engine.
    */
   struct MLCStreamSlice {
-    DynamicStreamSliceId sliceId;
+    DynStreamSliceId sliceId;
     DataBlock dataBlock;
     // Whether the core's request is already here.
     bool dataReady;
@@ -134,12 +132,12 @@ protected:
     };
     CoreStatusE coreStatus;
     // For debug purpose, we also remember core's request sliceId.
-    DynamicStreamSliceId coreSliceId;
+    DynStreamSliceId coreSliceId;
     // Statistics.
     Cycles dataReadyCycle;
     Cycles coreWaitCycle;
 
-    MLCStreamSlice(const DynamicStreamSliceId &_sliceId)
+    MLCStreamSlice(const DynStreamSliceId &_sliceId)
         : sliceId(_sliceId), dataBlock(), dataReady(false),
           coreStatus(CoreStatusE::NONE) {}
 
@@ -170,7 +168,7 @@ protected:
    * Used in receiveStreamRequest() and receiveStreamRequestHit().
    */
   virtual SliceIter
-  findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) = 0;
+  findSliceForCoreRequest(const DynStreamSliceId &sliceId) = 0;
 
   /**
    * Helper function to translate the vaddr to paddr.
@@ -214,14 +212,14 @@ protected:
   WaitType checkWaiting() const;
 
   bool isCoreDynSReleased() const {
-    return this->getStaticStream()->getDynamicStream(
-               this->getDynamicStreamId()) == nullptr;
+    return this->getStaticStream()->getDynStream(this->getDynStreamId()) ==
+           nullptr;
   }
 
   /**
    * This remember the received StreamRange.
    */
-  std::list<DynamicStreamAddressRangePtr> receivedRanges;
+  std::list<DynStreamAddressRangePtr> receivedRanges;
 
 public:
   /**

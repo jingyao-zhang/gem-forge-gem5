@@ -1,7 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_LLC_STREAM_ENGINE_H__
 #define __CPU_TDG_ACCELERATOR_LLC_STREAM_ENGINE_H__
 
-#include "LLCDynamicStream.hh"
+#include "LLCDynStream.hh"
 #include "StreamReuseBuffer.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream_translation_buffer.hh"
@@ -39,22 +39,22 @@ public:
 
   void receiveStreamConfigure(PacketPtr pkt);
   void receiveStreamEnd(PacketPtr pkt);
-  void receiveStreamMigrate(LLCDynamicStreamPtr stream, bool isCommit);
-  void receiveStreamFlow(const DynamicStreamSliceId &sliceId);
-  void receiveStreamCommit(const DynamicStreamSliceId &sliceId);
+  void receiveStreamMigrate(LLCDynStreamPtr stream, bool isCommit);
+  void receiveStreamFlow(const DynStreamSliceId &sliceId);
+  void receiveStreamCommit(const DynStreamSliceId &sliceId);
   void receiveStreamDataVec(Cycles delayCycles, Addr paddrLine,
-                            const DynamicStreamSliceIdVec &sliceIds,
+                            const DynStreamSliceIdVec &sliceIds,
                             const DataBlock &dataBlock,
                             const DataBlock &storeValueBlock);
   void receiveStreamIndirectRequest(const RequestMsg &req);
   void receiveStreamIndirectRequestImpl(const RequestMsg &req);
   void receiveStreamForwardRequest(const RequestMsg &req);
-  void notifyStreamRequestMiss(const DynamicStreamSliceIdVec &sliceIds);
+  void notifyStreamRequestMiss(const DynStreamSliceIdVec &sliceIds);
   void wakeup() override;
   void print(std::ostream &out) const override;
 
   int getNumDirectStreams() const;
-  int getNumDirectStreamsWithStaticId(const DynamicStreamId &dynStreamId) const;
+  int getNumDirectStreamsWithStaticId(const DynStreamId &dynStreamId) const;
 
   int curRemoteBank() const;
   MachineType myMachineType() const;
@@ -68,7 +68,7 @@ public:
   void receiveStreamNDCRequest(PacketPtr pkt);
 
 private:
-  friend class LLCDynamicStream;
+  friend class LLCDynStream;
   friend class LLCStreamElement;
   friend class LLCStreamCommitController;
   friend class LLCStreamNDCController;
@@ -96,9 +96,9 @@ private:
   // Threshold to limit maximum number of requests in queue;
   const int maxInqueueRequests;
 
-  using StreamSet = std::set<LLCDynamicStreamPtr>;
-  using StreamVec = std::vector<LLCDynamicStreamPtr>;
-  using StreamList = std::list<LLCDynamicStreamPtr>;
+  using StreamSet = std::set<LLCDynStreamPtr>;
+  using StreamVec = std::vector<LLCDynStreamPtr>;
+  using StreamList = std::list<LLCDynStreamPtr>;
   using StreamListIter = StreamList::iterator;
   StreamList streams;
   /**
@@ -116,11 +116,11 @@ private:
   struct IncomingElementDataMsg {
     const Cycles readyCycle;
     const Addr paddrLine;
-    const DynamicStreamSliceId sliceId;
+    const DynStreamSliceId sliceId;
     const DataBlock dataBlock;
     const DataBlock storeValueBlock;
     IncomingElementDataMsg(Cycles _readyCycle, Addr _paddrLine,
-                           const DynamicStreamSliceId &_sliceId,
+                           const DynStreamSliceId &_sliceId,
                            const DataBlock &_dataBlock,
                            const DataBlock &_storeValueBlock)
         : readyCycle(_readyCycle), paddrLine(_paddrLine), sliceId(_sliceId),
@@ -128,33 +128,32 @@ private:
   };
   std::list<IncomingElementDataMsg> incomingStreamDataQueue;
   void enqueueIncomingStreamDataMsg(Cycles readyCycle, Addr paddrLine,
-                                    const DynamicStreamSliceId &sliceId,
+                                    const DynStreamSliceId &sliceId,
                                     const DataBlock &dataBlock,
                                     const DataBlock &storeValueBlock);
   void drainIncomingStreamDataMsg();
-  void receiveStreamData(Addr paddrLine, const DynamicStreamSliceId &sliceId,
+  void receiveStreamData(Addr paddrLine, const DynStreamSliceId &sliceId,
                          const DataBlock &dataBlock,
                          const DataBlock &storeValueBlock);
-  void receiveStoreStreamData(LLCDynamicStreamPtr dynS,
-                              const DynamicStreamSliceId &sliceId,
+  void receiveStoreStreamData(LLCDynStreamPtr dynS,
+                              const DynStreamSliceId &sliceId,
                               const DataBlock &storeValueBlock);
 
   /**
    * Bidirectionaly map between streams that are identical but
    * to different cores.
    */
-  std::map<LLCDynamicStreamPtr, StreamVec> multicastStreamMap;
+  std::map<LLCDynStreamPtr, StreamVec> multicastStreamMap;
 
   /**
    * Buffered stream flow message waiting for the stream to migrate here.
    */
-  std::list<DynamicStreamSliceId> pendingStreamFlowControlMsgs;
+  std::list<DynStreamSliceId> pendingStreamFlowControlMsgs;
 
   /**
    * Buffered stream end message waiting for the stream to migrate here.
    */
-  std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>
-      pendingStreamEndMsgs;
+  std::unordered_set<DynStreamId, DynStreamIdHasher> pendingStreamEndMsgs;
 
   /**
    * Hold the request queue.
@@ -178,18 +177,17 @@ private:
   /**
    * Check if two streams can be merged into a multicast stream.
    */
-  bool canMergeAsMulticast(LLCDynamicStreamPtr dynSA,
-                           LLCDynamicStreamPtr dynSB) const;
-  void addStreamToMulticastTable(LLCDynamicStreamPtr dynS);
-  void removeStreamFromMulticastTable(LLCDynamicStreamPtr dynS);
-  bool hasMergedAsMulticast(LLCDynamicStreamPtr dynS) const;
-  StreamVec &getMulticastGroup(LLCDynamicStreamPtr dynS);
-  const StreamVec &getMulticastGroup(LLCDynamicStreamPtr dynS) const;
+  bool canMergeAsMulticast(LLCDynStreamPtr dynSA, LLCDynStreamPtr dynSB) const;
+  void addStreamToMulticastTable(LLCDynStreamPtr dynS);
+  void removeStreamFromMulticastTable(LLCDynStreamPtr dynS);
+  bool hasMergedAsMulticast(LLCDynStreamPtr dynS) const;
+  StreamVec &getMulticastGroup(LLCDynStreamPtr dynS);
+  const StreamVec &getMulticastGroup(LLCDynStreamPtr dynS) const;
 
   /**
    * Check if the stream can issue by MulticastPolicy.
    */
-  bool canIssueByMulticastPolicy(LLCDynamicStreamPtr dynS) const;
+  bool canIssueByMulticastPolicy(LLCDynStreamPtr dynS) const;
 
   /**
    * Sort the multicast group s.t. behind streams comes first.
@@ -198,8 +196,7 @@ private:
   /**
    * Given a request, we check if we can have multicast slice.
    */
-  void generateMulticastRequest(RequestQueueIter reqIter,
-                                LLCDynamicStreamPtr dynS);
+  void generateMulticastRequest(RequestQueueIter reqIter, LLCDynStreamPtr dynS);
 
   /**
    * Process stream flow control messages and distribute
@@ -216,53 +213,52 @@ private:
    * Find a stream within this S and its indirect streams ready to issue.
    * @return nullptr if not found.
    */
-  LLCDynamicStreamPtr findStreamReadyToIssue(LLCDynamicStreamPtr dynS);
-  LLCDynamicStreamPtr findIndirectStreamReadyToIssue(LLCDynamicStreamPtr dynS);
+  LLCDynStreamPtr findStreamReadyToIssue(LLCDynStreamPtr dynS);
+  LLCDynStreamPtr findIndirectStreamReadyToIssue(LLCDynStreamPtr dynS);
 
   /**
    * Issue a DirectStream.
    */
-  void issueStreamDirect(LLCDynamicStream *dynS);
+  void issueStreamDirect(LLCDynStream *dynS);
 
   /**
    * Issue the indirect elements for a stream.
    */
-  void issueStreamIndirect(LLCDynamicStream *dynIS);
+  void issueStreamIndirect(LLCDynStream *dynIS);
 
   /**
    * Get the request type for this stream.
    */
-  CoherenceRequestType getDirectStreamReqType(LLCDynamicStream *stream) const;
+  CoherenceRequestType getDirectStreamReqType(LLCDynStream *stream) const;
 
   /**
    * Generate indirect stream request.
    */
-  void generateIndirectStreamRequest(LLCDynamicStream *dynIS,
+  void generateIndirectStreamRequest(LLCDynStream *dynIS,
                                      LLCStreamElementPtr element);
 
   /**
    * Issue indirect load stream request.
    */
-  void issueIndirectLoadRequest(LLCDynamicStream *dynIS,
+  void issueIndirectLoadRequest(LLCDynStream *dynIS,
                                 LLCStreamElementPtr element);
 
   /**
    * Issue indirect store/atomic request.
    */
-  void issueIndirectStoreOrAtomicRequest(LLCDynamicStream *dynIS,
+  void issueIndirectStoreOrAtomicRequest(LLCDynStream *dynIS,
                                          LLCStreamElementPtr element);
 
   /**
    * Issue indirect atomic unlock request.
    */
-  void issueIndirectAtomicUnlockRequest(LLCDynamicStream *dynIS,
+  void issueIndirectAtomicUnlockRequest(LLCDynStream *dynIS,
                                         LLCStreamElementPtr element);
 
   /**
    * Helper function to enqueue a request and start address translation.
    */
-  RequestQueueIter enqueueRequest(Stream *S,
-                                  const DynamicStreamSliceId &sliceId,
+  RequestQueueIter enqueueRequest(Stream *S, const DynStreamSliceId &sliceId,
                                   Addr vaddrLine, Addr paddrLine,
                                   MachineType destMachineType,
                                   CoherenceRequestType type);
@@ -282,7 +278,7 @@ private:
    * This is used for LoadComputeStream, where the effective size is actually
    * smaller.
    */
-  ResponseMsgPtr createStreamMsgToMLC(const DynamicStreamSliceId &sliceId,
+  ResponseMsgPtr createStreamMsgToMLC(const DynStreamSliceId &sliceId,
                                       CoherenceResponseType type,
                                       Addr paddrLine, const uint8_t *data,
                                       int dataSize, int payloadSize,
@@ -292,20 +288,20 @@ private:
   /**
    * Helper function to issue stream ack back to MLC at request core.
    */
-  void issueStreamAckToMLC(const DynamicStreamSliceId &sliceId,
+  void issueStreamAckToMLC(const DynStreamSliceId &sliceId,
                            bool forceIdea = false);
 
   /**
    * Helper function to issue StreamDone back to MLC at request core.
    */
-  void issueStreamDoneToMLC(const DynamicStreamSliceId &sliceId,
+  void issueStreamDoneToMLC(const DynStreamSliceId &sliceId,
                             bool forceIdea = false);
 
   /**
    * Helper function to issue stream range back to MLC at request core.
    */
   void issueStreamRangesToMLC();
-  void issueStreamRangeToMLC(DynamicStreamAddressRangePtr &range,
+  void issueStreamRangeToMLC(DynStreamAddressRangePtr &range,
                              bool forceIdea = false);
 
   /**
@@ -316,7 +312,7 @@ private:
    * This is used for LoadComputeStream, where the effective size is actually
    * smaller.
    */
-  void issueStreamDataToMLC(const DynamicStreamSliceId &sliceId, Addr paddrLine,
+  void issueStreamDataToMLC(const DynStreamSliceId &sliceId, Addr paddrLine,
                             const uint8_t *data, int dataSize, int payloadSize,
                             int lineOffset, bool forceIdea = false);
 
@@ -326,8 +322,8 @@ private:
    * This is used for LoadComputeStream, where the effective sizes is actually
    * smaller.
    */
-  void issueStreamDataToLLC(LLCDynamicStreamPtr stream,
-                            const DynamicStreamSliceId &sliceId,
+  void issueStreamDataToLLC(LLCDynStreamPtr stream,
+                            const DynStreamSliceId &sliceId,
                             const DataBlock &dataBlock,
                             const CacheStreamConfigureDataPtr &recvConfig,
                             int payloadSize);
@@ -335,7 +331,7 @@ private:
   /**
    * Set the TotalTripCount in MLC. Used to implement StreamLoopBound.
    */
-  void sendOffloadedLoopBoundRetToMLC(LLCDynamicStreamPtr stream,
+  void sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,
                                       uint64_t totalTripCount,
                                       Addr brokenPAddr);
 
@@ -352,12 +348,12 @@ private:
   /**
    * Migrate a single stream.
    */
-  void migrateStream(LLCDynamicStream *stream);
+  void migrateStream(LLCDynStream *stream);
 
   /**
    * Migrate a stream's commit head.
    */
-  void migrateStreamCommit(LLCDynamicStream *stream, Addr paddr,
+  void migrateStreamCommit(LLCDynStream *stream, Addr paddr,
                            MachineType machineType);
 
   /**
@@ -374,53 +370,52 @@ private:
    * Helper function to check if a stream should
    * be migrated.
    */
-  bool canMigrateStream(LLCDynamicStream *dynS) const;
+  bool canMigrateStream(LLCDynStream *dynS) const;
 
   /**
    * Helper function to process stream data for indirect/update.
    */
-  void triggerIndirectElement(LLCDynamicStreamPtr stream,
+  void triggerIndirectElement(LLCDynStreamPtr stream,
                               LLCStreamElementPtr element);
-  void triggerUpdate(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
-                     const DynamicStreamSliceId &sliceId,
+  void triggerUpdate(LLCDynStreamPtr dynS, LLCStreamElementPtr element,
+                     const DynStreamSliceId &sliceId,
                      const DataBlock &storeValueBlock,
                      DataBlock &loadValueBlock, uint32_t &payloadSize);
-  void triggerAtomic(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
-                     const DynamicStreamSliceId &sliceId,
-                     DataBlock &loadValueBlock, uint32_t &payloadSize);
+  void triggerAtomic(LLCDynStreamPtr dynS, LLCStreamElementPtr element,
+                     const DynStreamSliceId &sliceId, DataBlock &loadValueBlock,
+                     uint32_t &payloadSize);
 
   /**
    * API to manages LLCStreamSlices.
-   * Slices are allocated from LLCDynamicStream and now managed by each
+   * Slices are allocated from LLCDynStream and now managed by each
    * LLCStreamEngine.
    */
   using SliceList = std::list<LLCStreamSlicePtr>;
-  LLCStreamSlicePtr allocateSlice(LLCDynamicStreamPtr dynS);
-  LLCStreamSlicePtr tryGetSlice(const DynamicStreamSliceId &sliceId);
+  LLCStreamSlicePtr allocateSlice(LLCDynStreamPtr dynS);
+  LLCStreamSlicePtr tryGetSlice(const DynStreamSliceId &sliceId);
   SliceList::iterator releaseSlice(SliceList::iterator sliceIter);
   void processSlices();
   SliceList::iterator processSlice(SliceList::iterator sliceIter);
-  void processLoadComputeSlice(LLCDynamicStreamPtr dynS,
-                               LLCStreamSlicePtr slice);
-  void processDirectAtomicSlice(LLCDynamicStreamPtr dynS,
-                                const DynamicStreamSliceId &sliceId);
-  void processIndirectAtomicSlice(LLCDynamicStreamPtr dynS,
-                                  const DynamicStreamSliceId &sliceId);
-  void postProcessIndirectAtomicSlice(LLCDynamicStreamPtr dynS,
+  void processLoadComputeSlice(LLCDynStreamPtr dynS, LLCStreamSlicePtr slice);
+  void processDirectAtomicSlice(LLCDynStreamPtr dynS,
+                                const DynStreamSliceId &sliceId);
+  void processIndirectAtomicSlice(LLCDynStreamPtr dynS,
+                                  const DynStreamSliceId &sliceId);
+  void postProcessIndirectAtomicSlice(LLCDynStreamPtr dynS,
                                       const LLCStreamElementPtr &element);
-  void processIndirectUpdateSlice(LLCDynamicStreamPtr dynS,
-                                  const DynamicStreamSliceId &sliceId,
+  void processIndirectUpdateSlice(LLCDynStreamPtr dynS,
+                                  const DynStreamSliceId &sliceId,
                                   const DataBlock &storeValueBlock);
 
   /**
    * Handle DirectUpdateSlice with the computation latency modelled.
    */
-  bool tryProcessDirectUpdateSlice(LLCDynamicStreamPtr dynS,
+  bool tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
                                    LLCStreamSlicePtr slice);
-  bool tryPostProcessDirectUpdateSlice(LLCDynamicStreamPtr dynS,
+  bool tryPostProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
                                        LLCStreamSlicePtr slice);
-  void postProcessDirectUpdateSlice(LLCDynamicStreamPtr dynS,
-                                    const DynamicStreamSliceId &sliceId);
+  void postProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
+                                    const DynStreamSliceId &sliceId);
 
   SliceList allocatedSlices;
 
@@ -440,8 +435,8 @@ private:
    * @return <LoadedValue, MemoryModified>
    */
   std::pair<uint64_t, bool>
-  performStreamAtomicOp(LLCDynamicStreamPtr dynS, LLCStreamElementPtr element,
-                        Addr elementPAddr, const DynamicStreamSliceId &sliceId);
+  performStreamAtomicOp(LLCDynStreamPtr dynS, LLCStreamElementPtr element,
+                        Addr elementPAddr, const DynStreamSliceId &sliceId);
 
   /**
    * Process the StreamForward request.

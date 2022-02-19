@@ -7,7 +7,7 @@
 StreamRangeSyncController::StreamRangeSyncController(StreamEngine *_se)
     : se(_se) {}
 
-DynamicStream *StreamRangeSyncController::getNoRangeDynS() {
+DynStream *StreamRangeSyncController::getNoRangeDynS() {
   if (!this->se->isStreamRangeSyncEnabled()) {
     // We do not do range check.
     return nullptr;
@@ -56,13 +56,13 @@ StreamRangeSyncController::getCurrentDynStreams() {
   DynStreamVec dynStreams;
   for (auto &idStream : this->se->streamMap) {
     auto S = idStream.second;
-    if (!S->hasDynamicStream()) {
+    if (!S->hasDynStream()) {
       continue;
     }
-    auto &dynS = S->getFirstDynamicStream();
+    auto &dynS = S->getFirstDynStream();
     if (dynS.isFloatedToCacheAsRoot() && !dynS.isFloatConfigDelayed() &&
         dynS.shouldRangeSync()) {
-      dynStreams.push_back(&S->getFirstDynamicStream());
+      dynStreams.push_back(&S->getFirstDynStream());
     }
   }
   return dynStreams;
@@ -75,7 +75,7 @@ void StreamRangeSyncController::updateCurrentWorkingRange(
     // Release possible old range.
     if (auto currentWorkingRange = dynS->getCurrentWorkingRange()) {
       if (currentWorkingRange->elementRange.rhsElementIdx <= elementIdx) {
-        DYN_S_DPRINTF(dynS->dynamicStreamId,
+        DYN_S_DPRINTF(dynS->dynStreamId,
                       "[CoreRange] Release range for element [%llu, +%d).\n",
                       currentWorkingRange->elementRange.getLHSElementIdx(),
                       currentWorkingRange->elementRange.getNumElements());
@@ -104,7 +104,7 @@ void StreamRangeSyncController::updateCurrentWorkingRange(
         // but before that we have to check aliasing
         this->checkAliasBetweenRanges(dynStreams, nextRange);
 
-        DYN_S_DPRINTF(dynS->dynamicStreamId,
+        DYN_S_DPRINTF(dynS->dynStreamId,
                       "[CoreRange] Advance WorkingRange [%llu, +%d).\n",
                       nextRange->elementRange.getLHSElementIdx(),
                       nextRange->elementRange.getNumElements());
@@ -116,7 +116,7 @@ void StreamRangeSyncController::updateCurrentWorkingRange(
 }
 
 void StreamRangeSyncController::checkAliasBetweenRanges(
-    DynStreamVec &dynStreams, const DynamicStreamAddressRangePtr &newRange) {
+    DynStreamVec &dynStreams, const DynStreamAddressRangePtr &newRange) {
   for (auto &dynS : dynStreams) {
     auto currentRange = dynS->getCurrentWorkingRange();
     if (!currentRange) {
@@ -135,7 +135,7 @@ void StreamRangeSyncController::checkAliasBetweenRanges(
       for (const auto &currentSubRange : currentRange->subRanges) {
         for (const auto &newSubRange : newRange->subRanges) {
           if (currentSubRange->vaddrRange.hasOverlap(newSubRange->vaddrRange)) {
-            DYN_S_PANIC(dynS->dynamicStreamId,
+            DYN_S_PANIC(dynS->dynStreamId,
                         "[CoreRange] Alias between remote vaddr ranges \n %s "
                         "\nand %s\n",
                         *currentRange, *newRange);
@@ -146,11 +146,11 @@ void StreamRangeSyncController::checkAliasBetweenRanges(
   }
 }
 
-uint64_t StreamRangeSyncController::getCheckElementIdx(DynamicStream *dynS) {
+uint64_t StreamRangeSyncController::getCheckElementIdx(DynStream *dynS) {
   // Get the first element.
   auto element = dynS->getFirstElement();
   if (!element) {
-    DYN_S_PANIC(dynS->dynamicStreamId,
+    DYN_S_PANIC(dynS->dynStreamId,
                 "Missing FirstElement to perform range check.");
   }
   // Since we are stepping the current one, we should check range for next

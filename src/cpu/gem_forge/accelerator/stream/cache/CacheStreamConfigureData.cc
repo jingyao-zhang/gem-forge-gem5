@@ -5,8 +5,8 @@
 #include "../stream_log.hh"
 
 CacheStreamConfigureData::CacheStreamConfigureData(
-    Stream *_stream, const DynamicStreamId &_dynamicId, int _elementSize,
-    const std::vector<DynamicStreamFormalParam> &_addrGenFormalParams,
+    Stream *_stream, const DynStreamId &_dynamicId, int _elementSize,
+    const std::vector<DynStreamFormalParam> &_addrGenFormalParams,
     std::shared_ptr<AddrGenCallback> _addrGenCallback)
     : stream(_stream), dynamicId(_dynamicId), elementSize(_elementSize),
       initVAddr(0), initPAddr(0), addrGenFormalParams(_addrGenFormalParams),

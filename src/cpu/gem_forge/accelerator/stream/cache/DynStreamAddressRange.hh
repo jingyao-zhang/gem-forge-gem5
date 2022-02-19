@@ -1,7 +1,7 @@
-#ifndef __CPU_GEM_FORGE_ACCELERATOR_DYNAMIC_STREAM_ADDRESS_RANGE_ID_HH__
-#define __CPU_GEM_FORGE_ACCELERATOR_DYNAMIC_STREAM_ADDRESS_RANGE_ID_HH__
+#ifndef __CPU_GEM_FORGE_DYN_STREAM_ADDRESS_RANGE_ID_HH__
+#define __CPU_GEM_FORGE_DYN_STREAM_ADDRESS_RANGE_ID_HH__
 
-#include "DynamicStreamElementRangeId.hh"
+#include "DynStreamElementRangeId.hh"
 
 #include <vector>
 
@@ -38,23 +38,23 @@ struct AddressRange {
 
 std::ostream &operator<<(std::ostream &os, const AddressRange &range);
 
-struct DynamicStreamAddressRange;
-using DynamicStreamAddressRangePtr = std::shared_ptr<DynamicStreamAddressRange>;
-using DynamicStreamAddressRangeVec = std::vector<DynamicStreamAddressRangePtr>;
+struct DynStreamAddressRange;
+using DynStreamAddressRangePtr = std::shared_ptr<DynStreamAddressRange>;
+using DynStreamAddressRangeVec = std::vector<DynStreamAddressRangePtr>;
 
-struct DynamicStreamAddressRange {
-  DynamicStreamElementRangeId elementRange;
+struct DynStreamAddressRange {
+  DynStreamElementRangeId elementRange;
   AddressRange vaddrRange;
   AddressRange paddrRange;
 
   // Store the unioned address range.
-  DynamicStreamAddressRangeVec subRanges;
+  DynStreamAddressRangeVec subRanges;
 
-  DynamicStreamAddressRange(const DynamicStreamElementRangeId &_elementRange,
-                            const AddressRange &_vaddrRange,
-                            const AddressRange &_paddrRange);
+  DynStreamAddressRange(const DynStreamElementRangeId &_elementRange,
+                        const AddressRange &_vaddrRange,
+                        const AddressRange &_paddrRange);
 
-  void addRange(DynamicStreamAddressRangePtr &range);
+  void addRange(DynStreamAddressRangePtr &range);
 
   bool isValid() const { return this->elementRange.isValid(); }
   bool isUnion() const { return this->subRanges.size() > 0; }
@@ -63,7 +63,6 @@ struct DynamicStreamAddressRange {
   }
 };
 
-std::ostream &operator<<(std::ostream &os,
-                         const DynamicStreamAddressRange &range);
+std::ostream &operator<<(std::ostream &os, const DynStreamAddressRange &range);
 
 #endif

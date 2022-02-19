@@ -36,7 +36,7 @@ const std::unordered_map<std::string, std::string>
         {"gap.bfs_push.out_v.ld", "gap.bfs_push.out_edge"},
 };
 
-void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
+void StreamFloatPolicy::setFloatPlanManual(DynStream &dynS) {
 
   /**
    * Manually check for the stream name.
@@ -74,7 +74,7 @@ void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
     auto streamNUCAManager = process->streamNUCAManager;
     const auto &region = streamNUCAManager->getRegionFromName(regionName);
     if (region.cachedElements == 0) {
-      DYN_S_DPRINTF(dynS.dynamicStreamId,
+      DYN_S_DPRINTF(dynS.dynStreamId,
                     "Directly float to Mem as zero cached elements.\n");
       floatPlan.addFloatChangePoint(firstElementIdx, MachineType_Directory);
       return;
@@ -109,10 +109,10 @@ void StreamFloatPolicy::setFloatPlanManual(DynamicStream &dynS) {
   return;
 }
 
-void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynamicStream &dynS) {
+void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynStream &dynS) {
 
   if (!dynS.hasTotalTripCount()) {
-    DYN_S_PANIC(dynS.dynamicStreamId,
+    DYN_S_PANIC(dynS.dynStreamId,
                 "Missing TotalTripCount for iter-based floating plan..");
   }
 
@@ -125,7 +125,7 @@ void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynamicStream &dynS) {
       std::dynamic_pointer_cast<LinearAddrGenCallback>(dynS.addrGenCallback);
   if (!linearAddrGen) {
     // They should have linear address pattern.
-    DYN_S_PANIC(dynS.dynamicStreamId,
+    DYN_S_PANIC(dynS.dynStreamId,
                 "Non-LinearAddrGen for iter-based floating plan.");
   }
 
@@ -148,7 +148,7 @@ void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynamicStream &dynS) {
       streamNUCARegion.cachedElements * streamNUCARegion.elementSize;
   auto llcEndVAddr = streamNUCARegion.vaddr + cachedBytes;
 
-  DYN_S_DPRINTF(dynS.dynamicStreamId,
+  DYN_S_DPRINTF(dynS.dynStreamId,
                 "TotalTripCount %d LLCEndVAddr %#x = %#x + %lu * %lu  "
                 "MyEndVAddr %#x = %#x + %d MyEnd %s LLCEnd.\n",
                 totalTripCount, llcEndVAddr, streamNUCARegion.vaddr,
@@ -185,7 +185,7 @@ void StreamFloatPolicy::setFloatPlanForRodiniaSrad(DynamicStream &dynS) {
   return;
 }
 
-void StreamFloatPolicy::setFloatPlanForBinTree(DynamicStream &dynS) {
+void StreamFloatPolicy::setFloatPlanForBinTree(DynStream &dynS) {
 
   auto S = dynS.stream;
 
@@ -207,7 +207,7 @@ void StreamFloatPolicy::setFloatPlanForBinTree(DynamicStream &dynS) {
   auto logPrivateCachedElements = static_cast<int>(log2(privateCachedElements));
 
   DYN_S_DPRINTF(
-      dynS.dynamicStreamId,
+      dynS.dynStreamId,
       "ElemSize %d PrivCached %lu LogPrivCached %d Cached %lu LogCached %d.\n",
       streamNUCARegion.elementSize, privateCachedElements,
       logPrivateCachedElements, cachedElements, logCachedElements);

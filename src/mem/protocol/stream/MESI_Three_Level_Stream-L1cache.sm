@@ -197,11 +197,11 @@ machine(MachineType:L1Cache, "MESI Directory L1 Cache CMP", interface="AbstractS
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamEnd(PacketPtr);
     void receiveStreamData(ResponseMsg);
-    bool isStreamRequest(DynamicStreamSliceId);
-    bool isStreamOffloaded(DynamicStreamSliceId);
-    bool isStreamCached(DynamicStreamSliceId);
-    bool receiveOffloadStreamRequest(DynamicStreamSliceId);
-    void receiveOffloadStreamRequestHit(DynamicStreamSliceId);
+    bool isStreamRequest(DynStreamSliceId);
+    bool isStreamOffloaded(DynStreamSliceId);
+    bool isStreamCached(DynStreamSliceId);
+    bool receiveOffloadStreamRequest(DynStreamSliceId);
+    void receiveOffloadStreamRequestHit(DynStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
   }
 

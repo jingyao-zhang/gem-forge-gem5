@@ -14,7 +14,7 @@ public:
                bool memoryModified);
   void commit(Addr paddr, int size, LLCStreamElementPtr element,
               bool shouldAckAfterUnlock = false,
-              const DynamicStreamSliceId &ackSliceId = DynamicStreamSliceId());
+              const DynStreamSliceId &ackSliceId = DynStreamSliceId());
 
 private:
   LLCStreamEngine *se;
@@ -40,7 +40,7 @@ private:
     Cycles lockCycle = Cycles(0);
     // Ack SliceId.
     bool shouldAckAfterUnlock = false;
-    DynamicStreamSliceId ackSliceId;
+    DynStreamSliceId ackSliceId;
   };
 
   using LockQueue = std::list<AtomicStreamOp>;

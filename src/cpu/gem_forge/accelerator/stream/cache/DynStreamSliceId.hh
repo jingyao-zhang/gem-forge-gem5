@@ -1,7 +1,7 @@
-#ifndef __CPU_TDG_ACCELERATOR_DYNAMIC_STREAM_SLICE_ID_HH__
-#define __CPU_TDG_ACCELERATOR_DYNAMIC_STREAM_SLICE_ID_HH__
+#ifndef __CPU_GEM_FORGE_DYN_STREAM_SLICE_ID_HH__
+#define __CPU_GEM_FORGE_DYN_STREAM_SLICE_ID_HH__
 
-#include "DynamicStreamElementRangeId.hh"
+#include "DynStreamElementRangeId.hh"
 
 /**
  * The core stream engine manages stream at granularity of element.
@@ -18,8 +18,8 @@
  * Notice that one element may span across multiple cache lines, and
  * thus the data in a slice may only be a portion of the whole element.
  */
-struct DynamicStreamSliceId {
-  DynamicStreamElementRangeId elementRange;
+struct DynStreamSliceId {
+  DynStreamElementRangeId elementRange;
   /**
    * Hack: This is element vaddr for indirect streams,
    * but line vaddr for direct sliced streams.
@@ -28,7 +28,7 @@ struct DynamicStreamSliceId {
   Addr vaddr;
   int size;
 
-  DynamicStreamSliceId() : elementRange(), vaddr(0), size(0) {}
+  DynStreamSliceId() : elementRange(), vaddr(0), size(0) {}
 
   bool isValid() const { return this->elementRange.isValid(); }
   void clear() {
@@ -37,8 +37,8 @@ struct DynamicStreamSliceId {
     this->size = 0;
   }
 
-  DynamicStreamId &getDynStreamId() { return this->elementRange.streamId; }
-  const DynamicStreamId &getDynStreamId() const {
+  DynStreamId &getDynStreamId() { return this->elementRange.streamId; }
+  const DynStreamId &getDynStreamId() const {
     return this->elementRange.streamId;
   }
 
@@ -55,20 +55,20 @@ struct DynamicStreamSliceId {
   }
   int getSize() const { return this->size; }
 
-  bool operator==(const DynamicStreamSliceId &other) const {
+  bool operator==(const DynStreamSliceId &other) const {
     return this->elementRange == other.elementRange;
   }
 
-  bool operator!=(const DynamicStreamSliceId &other) const {
+  bool operator!=(const DynStreamSliceId &other) const {
     return !(this->operator==(other));
   }
 };
 
-std::ostream &operator<<(std::ostream &os, const DynamicStreamSliceId &id);
+std::ostream &operator<<(std::ostream &os, const DynStreamSliceId &id);
 
-struct DynamicStreamSliceIdHasher {
-  std::size_t operator()(const DynamicStreamSliceId &key) const {
-    return (DynamicStreamElementRangeIdHasher()(key.elementRange)) ^
+struct DynStreamSliceIdHasher {
+  std::size_t operator()(const DynStreamSliceId &key) const {
+    return (DynStreamElementRangeIdHasher()(key.elementRange)) ^
            std::hash<uint64_t>()(key.vaddr);
   }
 };

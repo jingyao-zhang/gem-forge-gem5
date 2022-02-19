@@ -10,7 +10,7 @@
 #define DEBUG_TYPE StreamBase
 #include "stream_log.hh"
 
-const char *DynamicStream::StreamDepEdge::typeToString(const TypeE &type) {
+const char *DynStream::StreamDepEdge::typeToString(const TypeE &type) {
 #define Case(x)                                                                \
   case x:                                                                      \
     return #x
@@ -25,22 +25,22 @@ const char *DynamicStream::StreamDepEdge::typeToString(const TypeE &type) {
 }
 
 std::ostream &operator<<(std::ostream &os,
-                         const DynamicStream::StreamDepEdge::TypeE &type) {
-  os << DynamicStream::StreamDepEdge::typeToString(type);
+                         const DynStream::StreamDepEdge::TypeE &type) {
+  os << DynStream::StreamDepEdge::typeToString(type);
   return os;
 }
 
-std::string to_string(const DynamicStream::StreamDepEdge::TypeE &type) {
-  return std::string(DynamicStream::StreamDepEdge::typeToString(type));
+std::string to_string(const DynStream::StreamDepEdge::TypeE &type) {
+  return std::string(DynStream::StreamDepEdge::typeToString(type));
 }
 
-DynamicStream::DynamicStream(Stream *_stream,
-                             const DynamicStreamId &_dynamicStreamId,
+DynStream::DynStream(Stream *_stream,
+                             const DynStreamId &_dynStreamId,
                              uint64_t _configSeqNum, Cycles _configCycle,
                              ThreadContext *_tc, StreamEngine *_se)
-    : stream(_stream), dynamicStreamId(_dynamicStreamId),
+    : stream(_stream), dynStreamId(_dynStreamId),
       configSeqNum(_configSeqNum), configCycle(_configCycle), tc(_tc),
-      FIFOIdx(_dynamicStreamId) {
+      FIFOIdx(_dynStreamId) {
   this->tail = new StreamElement(_se);
   this->head = this->tail;
   this->stepped = this->tail;
@@ -58,21 +58,21 @@ DynamicStream::DynamicStream(Stream *_stream,
   }
 }
 
-DynamicStream::~DynamicStream() {
+DynStream::~DynStream() {
   delete this->tail;
   this->tail = nullptr;
   this->head = nullptr;
   this->stepped = nullptr;
 }
 
-void DynamicStream::addBaseDynStreams() {
+void DynStream::addBaseDynStreams() {
 
   for (const auto &edge : this->stream->baseEdges) {
 
     auto baseS = this->stream->se->getStream(edge.toStaticId);
-    auto &baseDynS = baseS->getLastDynamicStream();
-    DYN_S_DPRINTF(this->dynamicStreamId, "BaseEdge %s %s Me %s.\n", edge.type,
-                  baseS->getStreamName(), this->dynamicStreamId.streamName);
+    auto &baseDynS = baseS->getLastDynStream();
+    DYN_S_DPRINTF(this->dynStreamId, "BaseEdge %s %s Me %s.\n", edge.type,
+                  baseS->getStreamName(), this->dynStreamId.streamName);
     /**
      * If there are unstepped elements, we align to the first one.
      * If not (i.e. just created), we align to the next one.
@@ -92,7 +92,7 @@ void DynamicStream::addBaseDynStreams() {
        */
       auto reuseBaseElement = 1;
       this->baseEdges.emplace_back(
-          edge.type, edge.toStaticId, baseDynS.dynamicStreamId.streamInstance,
+          edge.type, edge.toStaticId, baseDynS.dynStreamId.streamInstance,
           edge.fromStaticId, alignBaseElementIdx, reuseBaseElement);
       break;
     }
@@ -102,17 +102,17 @@ void DynamicStream::addBaseDynStreams() {
        */
       auto reuseBaseElement = 1;
       this->baseEdges.emplace_back(StreamDepEdge::TypeE::Back, edge.toStaticId,
-                                   baseDynS.dynamicStreamId.streamInstance,
+                                   baseDynS.dynStreamId.streamInstance,
                                    edge.fromStaticId, alignBaseElementIdx,
                                    reuseBaseElement);
       baseDynS.backDepEdges.emplace_back(
           StreamDepEdge::TypeE::Back, edge.toStaticId,
-          baseDynS.dynamicStreamId.streamInstance, edge.fromStaticId,
+          baseDynS.dynStreamId.streamInstance, edge.fromStaticId,
           alignBaseElementIdx, reuseBaseElement);
       break;
     }
     default: {
-      DYN_S_PANIC(this->dynamicStreamId, "Illegal EdgeType %d.", edge.type);
+      DYN_S_PANIC(this->dynStreamId, "Illegal EdgeType %d.", edge.type);
     }
     }
   }
@@ -124,39 +124,39 @@ void DynamicStream::addBaseDynStreams() {
    */
   for (const auto &edge : this->stream->innerLoopDepEdges) {
     auto depS = edge.toStream;
-    auto &depDynS = depS->getLastDynamicStream();
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    auto &depDynS = depS->getLastDynStream();
+    DYN_S_DPRINTF(this->dynStreamId,
                   "[InnerLoopDep] Push myself to OuterLoopDepDynS %s.\n",
-                  depDynS.dynamicStreamId);
+                  depDynS.dynStreamId);
     depDynS.pushInnerLoopBaseDynStream(edge.type, edge.fromStaticId,
-                                       this->dynamicStreamId.streamInstance,
+                                       this->dynStreamId.streamInstance,
                                        edge.toStaticId);
   }
 }
 
-DynamicStream::StreamEdges &
-DynamicStream::getInnerLoopBaseEdges(StaticId baseStaticId) {
+DynStream::StreamEdges &
+DynStream::getInnerLoopBaseEdges(StaticId baseStaticId) {
   auto iter = this->innerLoopBaseEdges.find(baseStaticId);
   if (iter == this->innerLoopBaseEdges.end()) {
-    DYN_S_PANIC(this->dynamicStreamId,
+    DYN_S_PANIC(this->dynStreamId,
                 "Failed to find InnerLoopBaseEdges for StaticId %lu.",
                 baseStaticId);
   }
   return iter->second;
 }
 
-const DynamicStream::StreamEdges &
-DynamicStream::getInnerLoopBaseEdges(StaticId baseStaticId) const {
+const DynStream::StreamEdges &
+DynStream::getInnerLoopBaseEdges(StaticId baseStaticId) const {
   auto iter = this->innerLoopBaseEdges.find(baseStaticId);
   if (iter == this->innerLoopBaseEdges.end()) {
-    DYN_S_PANIC(this->dynamicStreamId,
+    DYN_S_PANIC(this->dynStreamId,
                 "Failed to find InnerLoopBaseEdges for StaticId %lu.",
                 baseStaticId);
   }
   return iter->second;
 }
 
-void DynamicStream::pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type,
+void DynStream::pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type,
                                                StaticId baseStaticId,
                                                InstanceId baseInstanceId,
                                                StaticId depStaticId) {
@@ -165,36 +165,36 @@ void DynamicStream::pushInnerLoopBaseDynStream(StreamDepEdge::TypeE type,
                      0 /* AlignBaseElementIdx */, 1 /* ReuseBaseElement */);
 }
 
-void DynamicStream::addStepStreams() {
+void DynStream::addStepStreams() {
   if (this->stream->isStepRoot()) {
     const auto &stepStreams = this->stream->se->getStepStreamList(this->stream);
     for (auto &stepS : stepStreams) {
-      auto &stepDynS = stepS->getDynamicStreamByInstance(
-          this->dynamicStreamId.streamInstance);
+      auto &stepDynS =
+          stepS->getDynStreamByInstance(this->dynStreamId.streamInstance);
       this->stepDynStreams.push_back(&stepDynS);
     }
   }
 }
 
-void DynamicStream::configureAddrBaseDynStreamReuse() {
+void DynStream::configureAddrBaseDynStreamReuse() {
   for (auto &edge : this->baseEdges) {
     if (edge.type != StreamDepEdge::TypeE::Addr) {
       continue;
     }
     auto baseS = this->stream->se->getStream(edge.baseStaticId);
-    auto &baseDynS = baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+    auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
     if (baseS->getLoopLevel() == this->stream->getLoopLevel()) {
       this->configureAddrBaseDynStreamReuseSameLoop(edge, baseDynS);
     } else {
       this->configureAddrBaseDynStreamReuseOuterLoop(edge, baseDynS);
     }
-    DYN_S_DPRINTF(this->dynamicStreamId, "Configure Reuse %llu to Base %s.\n",
+    DYN_S_DPRINTF(this->dynStreamId, "Configure Reuse %llu to Base %s.\n",
                   edge.reuseBaseElement, baseS->getStreamName());
   }
 }
 
-void DynamicStream::configureAddrBaseDynStreamReuseSameLoop(
-    StreamDepEdge &edge, DynamicStream &baseDynS) {
+void DynStream::configureAddrBaseDynStreamReuseSameLoop(
+    StreamDepEdge &edge, DynStream &baseDynS) {
   auto baseS = baseDynS.stream;
   auto S = this->stream;
   if (baseS->stepRootStream == S->stepRootStream) {
@@ -208,26 +208,26 @@ void DynamicStream::configureAddrBaseDynStreamReuseSameLoop(
   }
 }
 
-void DynamicStream::configureAddrBaseDynStreamReuseOuterLoop(
-    StreamDepEdge &edge, DynamicStream &baseDynS) {
+void DynStream::configureAddrBaseDynStreamReuseOuterLoop(
+    StreamDepEdge &edge, DynStream &baseDynS) {
   auto baseS = baseDynS.stream;
   auto S = this->stream;
   auto baseLoopLevel = baseS->getLoopLevel();
   auto loopLevel = S->getLoopLevel();
   assert(baseLoopLevel < loopLevel && "Base should be outer.");
   assert(S->stepRootStream && "Miss StepRoot for the DepS.");
-  auto &stepRootDynS = S->stepRootStream->getDynamicStream(this->configSeqNum);
+  auto &stepRootDynS = S->stepRootStream->getDynStream(this->configSeqNum);
 
   auto stepRootAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
       stepRootDynS.addrGenCallback);
   assert(stepRootAddrGen && "Should be linear addr gen.");
-  DYN_S_DPRINTF(this->dynamicStreamId, "loopLevel %d.\n", loopLevel);
+  DYN_S_DPRINTF(this->dynStreamId, "loopLevel %d.\n", loopLevel);
   auto reuse = stepRootAddrGen->getNestTripCount(
       stepRootDynS.addrGenFormalParams, loopLevel - baseLoopLevel);
   edge.reuseBaseElement = reuse;
 }
 
-bool DynamicStream::areNextBaseElementsAllocated() const {
+bool DynStream::areNextBaseElementsAllocated() const {
   for (const auto &edge : this->baseEdges) {
     switch (edge.type) {
     case StreamDepEdge::TypeE::Addr: {
@@ -249,7 +249,7 @@ bool DynamicStream::areNextBaseElementsAllocated() const {
       break;
     }
     default: {
-      DYN_S_PANIC(this->dynamicStreamId, "Illegal StreamDepEdge type %d.",
+      DYN_S_PANIC(this->dynStreamId, "Illegal StreamDepEdge type %d.",
                   edge.type);
     }
     }
@@ -257,11 +257,11 @@ bool DynamicStream::areNextBaseElementsAllocated() const {
   return true;
 }
 
-bool DynamicStream::isNextAddrBaseElementAllocated(
+bool DynStream::isNextAddrBaseElementAllocated(
     const StreamDepEdge &edge) const {
   auto S = this->stream;
   auto baseS = S->se->getStream(edge.baseStaticId);
-  const auto &baseDynS = baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+  const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   uint64_t baseElementIdx = edge.alignBaseElement;
   if (edge.reuseBaseElement != 0) {
@@ -269,7 +269,7 @@ bool DynamicStream::isNextAddrBaseElementAllocated(
   }
   // Try to find this element.
   if (baseDynS.FIFOIdx.entryIdx <= baseElementIdx) {
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Not Ready, "
                   "Align(%llu), Reuse(%llu), BaseStream %s.\n",
                   this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
@@ -278,13 +278,12 @@ bool DynamicStream::isNextAddrBaseElementAllocated(
   }
   auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
   if (!baseElement) {
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                   "Released? Align(%llu), Reuse(%llu), BaseS %s\n",
                   this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
                   edge.reuseBaseElement, baseS->getStreamName());
-    DYN_S_DPRINTF(this->dynamicStreamId, "BaseDynS %s.\n",
-                  baseDynS.dumpString());
+    DYN_S_DPRINTF(this->dynStreamId, "BaseDynS %s.\n", baseDynS.dumpString());
   }
   assert(baseElement && "Base Element Already Released?");
   if (baseElement->isStepped) {
@@ -296,7 +295,7 @@ bool DynamicStream::isNextAddrBaseElementAllocated(
      */
     if (this->stream->getCPUDelegator()->cpuType ==
         GemForgeCPUDelegator::CPUTypeE::MINOR) {
-      DYN_S_WARN(this->dynamicStreamId,
+      DYN_S_WARN(this->dynStreamId,
                  "Ignore Misspeculatively Stepped AddrBaseElement, "
                  "NextElementIdx(%llu) BaseElementIdx(%llu)"
                  " Align(%llu), Reuse(%llu), BaseE %s\n",
@@ -304,7 +303,7 @@ bool DynamicStream::isNextAddrBaseElementAllocated(
                  edge.reuseBaseElement, baseElement->FIFOIdx);
       return true;
     }
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                   "(Misspeculatively) Stepped? Align(%llu), Reuse(%llu), "
                   "BaseE %s\n",
@@ -315,7 +314,7 @@ bool DynamicStream::isNextAddrBaseElementAllocated(
   return true;
 }
 
-bool DynamicStream::isNextBackBaseElementAllocated(
+bool DynStream::isNextBackBaseElementAllocated(
     const StreamDepEdge &edge) const {
   auto S = this->stream;
   // No back dependence for the first element.
@@ -323,14 +322,14 @@ bool DynamicStream::isNextBackBaseElementAllocated(
     return true;
   }
   auto baseS = S->se->getStream(edge.baseStaticId);
-  const auto &baseDynS = baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+  const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   uint64_t baseElementIdx = edge.alignBaseElement;
   assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
   baseElementIdx += this->FIFOIdx.entryIdx - 1;
   // Try to find this element.
   if (baseDynS.FIFOIdx.entryIdx <= baseElementIdx) {
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BackBaseElementIdx(%llu) Not Ready, "
                   "Align(%llu), Reuse(%llu), BaseStream %s.\n",
                   this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
@@ -339,7 +338,7 @@ bool DynamicStream::isNextBackBaseElementAllocated(
   }
   auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
   if (!baseElement) {
-    DYN_S_PANIC(this->dynamicStreamId,
+    DYN_S_PANIC(this->dynStreamId,
                 "NextElementIdx(%llu) BackBaseElementIdx(%llu) Already "
                 "Released? Align(%llu), Reuse(%llu), BaseDynS %s.",
                 this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
@@ -348,11 +347,11 @@ bool DynamicStream::isNextBackBaseElementAllocated(
   return true;
 }
 
-bool DynamicStream::areNextBackDepElementsReady(StreamElement *element) const {
+bool DynStream::areNextBackDepElementsReady(StreamElement *element) const {
   auto S = this->stream;
   for (const auto &edge : this->backDepEdges) {
     auto depS = S->se->getStream(edge.depStaticId);
-    const auto &depDynS = depS->getDynamicStreamByInstance(edge.baseInstanceId);
+    const auto &depDynS = depS->getDynStreamByInstance(edge.baseInstanceId);
     // Let's compute the base element entryIdx.
     uint64_t depElementIdx = edge.alignBaseElement;
     assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
@@ -364,7 +363,7 @@ bool DynamicStream::areNextBackDepElementsReady(StreamElement *element) const {
                         "Reuse(%llu), DepDynS %s.\n",
                         this->FIFOIdx.entryIdx, depElementIdx,
                         edge.alignBaseElement, edge.reuseBaseElement,
-                        depDynS.dynamicStreamId);
+                        depDynS.dynStreamId);
       return false;
     }
     auto depElement = depDynS.getElementByIdx(depElementIdx);
@@ -374,7 +373,7 @@ bool DynamicStream::areNextBackDepElementsReady(StreamElement *element) const {
                       "Reuse(%llu), DepDynS %s %s.",
                       this->FIFOIdx.entryIdx, depElementIdx,
                       edge.alignBaseElement, edge.reuseBaseElement,
-                      depDynS.dynamicStreamId, depDynS.dumpString());
+                      depDynS.dynStreamId, depDynS.dumpString());
     }
     if (depElement->isElemFloatedToCache()) {
       // No need to enforce for floated elements.
@@ -389,7 +388,7 @@ bool DynamicStream::areNextBackDepElementsReady(StreamElement *element) const {
   return true;
 }
 
-bool DynamicStream::isNextValueBaseElementAllocated(
+bool DynStream::isNextValueBaseElementAllocated(
     const StreamDepEdge &edge) const {
   auto S = this->stream;
   auto baseS = S->se->getStream(edge.baseStaticId);
@@ -400,10 +399,10 @@ bool DynamicStream::isNextValueBaseElementAllocated(
      * Special cases like LoadComputeStream, UpdateStream are handled
      * in addBaseElements().
      */
-    DYN_S_PANIC(this->dynamicStreamId, "ValueDependence on myself.");
+    DYN_S_PANIC(this->dynStreamId, "ValueDependence on myself.");
   }
 
-  const auto &baseDynS = baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+  const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   uint64_t baseElementIdx = edge.alignBaseElement;
   if (edge.reuseBaseElement != 0) {
@@ -411,7 +410,7 @@ bool DynamicStream::isNextValueBaseElementAllocated(
   }
   // Try to find this element.
   if (baseDynS.FIFOIdx.entryIdx <= baseElementIdx) {
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Not Ready, "
                   "Align(%llu), Reuse(%llu), BaseStream %s.\n",
                   this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
@@ -420,17 +419,16 @@ bool DynamicStream::isNextValueBaseElementAllocated(
   }
   auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
   if (!baseElement) {
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                   "Released? Align(%llu), Reuse(%llu), BaseStream %s\n",
                   this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
                   edge.reuseBaseElement, baseS->getStreamName());
-    DYN_S_DPRINTF(this->dynamicStreamId, "BaseDynS %s.\n",
-                  baseDynS.dumpString());
+    DYN_S_DPRINTF(this->dynStreamId, "BaseDynS %s.\n", baseDynS.dumpString());
   }
   assert(baseElement && "Base Element Already Released?");
   if (baseElement->isStepped) {
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                   "(Misspeculatively) Stepped? Align(%llu), Reuse(%llu), "
                   "BaseStream %s\n",
@@ -441,7 +439,7 @@ bool DynamicStream::isNextValueBaseElementAllocated(
   return true;
 }
 
-void DynamicStream::addBaseElements(StreamElement *newElement) {
+void DynStream::addBaseElements(StreamElement *newElement) {
   for (const auto &edge : this->baseEdges) {
     if (edge.type == StreamDepEdge::TypeE::Addr) {
       this->addAddrBaseElementEdge(newElement, edge);
@@ -469,11 +467,11 @@ void DynamicStream::addBaseElements(StreamElement *newElement) {
   }
 }
 
-void DynamicStream::addAddrBaseElementEdge(StreamElement *newElement,
+void DynStream::addAddrBaseElementEdge(StreamElement *newElement,
                                            const StreamDepEdge &edge) {
   auto S = this->stream;
   auto baseS = S->se->getStream(edge.baseStaticId);
-  auto &baseDynS = baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+  auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   uint64_t baseElementIdx = edge.alignBaseElement;
   if (edge.reuseBaseElement != 0) {
@@ -490,14 +488,14 @@ void DynamicStream::addAddrBaseElementEdge(StreamElement *newElement,
   newElement->addrBaseElements.emplace_back(baseElement);
 }
 
-void DynamicStream::addValueBaseElementEdge(StreamElement *newElement,
+void DynStream::addValueBaseElementEdge(StreamElement *newElement,
                                             const StreamDepEdge &edge) {
 
   auto S = this->stream;
   auto newElementIdx = newElement->FIFOIdx.entryIdx;
 
   auto baseS = S->se->getStream(edge.baseStaticId);
-  const auto &baseDynS = baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+  const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   uint64_t baseElementIdx = edge.alignBaseElement;
   if (edge.reuseBaseElement != 0) {
@@ -508,14 +506,14 @@ void DynamicStream::addValueBaseElementEdge(StreamElement *newElement,
   if (!baseElement) {
     S_ELEMENT_PANIC(newElement,
                     "Failed to find value base element %llu from %s.",
-                    baseElementIdx, baseDynS.dynamicStreamId);
+                    baseElementIdx, baseDynS.dynStreamId);
   }
   S_ELEMENT_DPRINTF(newElement, "Add ValueBaseElement: %s.\n",
                     baseElement->FIFOIdx);
   newElement->valueBaseElements.emplace_back(baseElement);
 }
 
-void DynamicStream::addBackBaseElementEdge(StreamElement *newElement,
+void DynStream::addBackBaseElementEdge(StreamElement *newElement,
                                            const StreamDepEdge &edge) {
 
   auto S = this->stream;
@@ -526,7 +524,7 @@ void DynamicStream::addBackBaseElementEdge(StreamElement *newElement,
   }
 
   auto baseS = S->se->getStream(edge.baseStaticId);
-  const auto &baseDynS = baseS->getDynamicStreamByInstance(edge.baseInstanceId);
+  const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   uint64_t baseElementIdx = edge.alignBaseElement;
   assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
@@ -536,14 +534,14 @@ void DynamicStream::addBackBaseElementEdge(StreamElement *newElement,
   if (!baseElement) {
     S_ELEMENT_PANIC(newElement,
                     "Failed to find back base element %llu from %s.",
-                    baseElementIdx, baseDynS.dynamicStreamId);
+                    baseElementIdx, baseDynS.dynStreamId);
   }
   S_ELEMENT_DPRINTF(newElement, "Add Back ValueBaseElement: %s.\n",
                     baseElement->FIFOIdx);
   newElement->valueBaseElements.emplace_back(baseElement);
 }
 
-void DynamicStream::tryAddInnerLoopBaseElements(StreamElement *elem) {
+void DynStream::tryAddInnerLoopBaseElements(StreamElement *elem) {
 
   if (this->stream->innerLoopBaseEdges.empty() ||
       !elem->hasUnInitInnerLoopAddrBaseElements) {
@@ -558,7 +556,7 @@ void DynamicStream::tryAddInnerLoopBaseElements(StreamElement *elem) {
   elem->hasUnInitInnerLoopAddrBaseElements = false;
 }
 
-bool DynamicStream::areInnerLoopBaseElementsAllocated(
+bool DynStream::areInnerLoopBaseElementsAllocated(
     StreamElement *elem) const {
 
   if (this->stream->innerLoopBaseEdges.empty()) {
@@ -567,30 +565,30 @@ bool DynamicStream::areInnerLoopBaseElementsAllocated(
 
   auto elemIdx = elem->FIFOIdx.entryIdx;
 
-  DYN_S_DPRINTF(this->dynamicStreamId,
+  DYN_S_DPRINTF(this->dynStreamId,
                 "[InnerLoopDep] Checking for NextElem %llu.\n", elemIdx);
   for (const auto &edge : this->stream->innerLoopBaseEdges) {
     auto baseS = edge.toStream;
     const auto &dynEdges = this->getInnerLoopBaseEdges(edge.toStaticId);
     if (elemIdx >= dynEdges.size()) {
       // The inner-loop stream has not been allocated.
-      DYN_S_DPRINTF(this->dynamicStreamId,
+      DYN_S_DPRINTF(this->dynStreamId,
                     "[InnerLoopDep]   InnerLoopS %s Not Config.\n",
                     baseS->getStreamName());
       return false;
     }
     const auto &dynEdge = dynEdges.at(elemIdx);
-    auto &baseDynS = baseS->getDynamicStreamByInstance(dynEdge.baseInstanceId);
-    DYN_S_DPRINTF(this->dynamicStreamId, "[InnerLoopDep]   InnerLoopDynS %s.\n",
-                  baseDynS.dynamicStreamId);
+    auto &baseDynS = baseS->getDynStreamByInstance(dynEdge.baseInstanceId);
+    DYN_S_DPRINTF(this->dynStreamId, "[InnerLoopDep]   InnerLoopDynS %s.\n",
+                  baseDynS.dynStreamId);
     if (!baseDynS.hasTotalTripCount()) {
-      DYN_S_DPRINTF(this->dynamicStreamId, "[InnerLoopDep]   NoTripCount.\n");
+      DYN_S_DPRINTF(this->dynStreamId, "[InnerLoopDep]   NoTripCount.\n");
       return false;
     }
     auto baseTripCount = baseDynS.getTotalTripCount();
     if (baseDynS.FIFOIdx.entryIdx <= baseTripCount) {
       DYN_S_DPRINTF(
-          this->dynamicStreamId,
+          this->dynStreamId,
           "[InnerLoopDep]   TripCount %llu > BaseDynS NextElem %lu.\n",
           baseTripCount, baseDynS.FIFOIdx.entryIdx);
       return false;
@@ -598,16 +596,16 @@ bool DynamicStream::areInnerLoopBaseElementsAllocated(
     auto baseElement = baseDynS.getElementByIdx(baseTripCount);
     if (!baseElement) {
       DYN_S_PANIC(
-          this->dynamicStreamId,
+          this->dynStreamId,
           "[InnerLoopDep]   InnerLoopDynS %s TripCount %llu ElemReleased.",
-          baseDynS.dynamicStreamId, baseTripCount);
+          baseDynS.dynStreamId, baseTripCount);
     }
   }
 
   return true;
 }
 
-void DynamicStream::addInnerLoopBaseElements(StreamElement *elem) {
+void DynStream::addInnerLoopBaseElements(StreamElement *elem) {
 
   if (this->stream->innerLoopBaseEdges.empty()) {
     return;
@@ -623,7 +621,7 @@ void DynamicStream::addInnerLoopBaseElements(StreamElement *elem) {
                       baseS->getStreamName());
     }
     const auto &dynEdge = dynEdges.at(elemIdx);
-    auto &baseDynS = baseS->getDynamicStreamByInstance(dynEdge.baseInstanceId);
+    auto &baseDynS = baseS->getDynStreamByInstance(dynEdge.baseInstanceId);
     if (!baseDynS.hasTotalTripCount()) {
       S_ELEMENT_PANIC(elem, "[InnerLoopDep] NoTripCount.\n");
     }
@@ -642,7 +640,7 @@ void DynamicStream::addInnerLoopBaseElements(StreamElement *elem) {
     if (!baseElement) {
       S_ELEMENT_PANIC(
           elem, "[InnerLoopDep] %s TripCount %llu BaseElemIdx %llu Released.",
-          baseDynS.dynamicStreamId, baseTripCount, baseElemIdx);
+          baseDynS.dynStreamId, baseTripCount, baseElemIdx);
     }
     S_ELEMENT_DPRINTF(elem, "[InnerLoopDep] Add Type %s BaseElem: %s.\n",
                       edge.type, baseElement->FIFOIdx);
@@ -657,7 +655,7 @@ void DynamicStream::addInnerLoopBaseElements(StreamElement *elem) {
   }
 }
 
-bool DynamicStream::shouldCoreSEIssue() const {
+bool DynStream::shouldCoreSEIssue() const {
   /**
    * If the stream has floated, and no core user/dependent streams here,
    * then we don't have to issue for the data.
@@ -666,7 +664,7 @@ bool DynamicStream::shouldCoreSEIssue() const {
   if (!S->hasCoreUser() && this->isFloatedToCache()) {
     // Check that dependent dynS all offloaded to cache.
     for (auto depS : S->addrDepStreams) {
-      const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
+      const auto &depDynS = depS->getDynStream(this->configSeqNum);
       // If the AddrDepStream issues, then we have to issue to compute the
       // address.
       // if (depDynS.coreSENeedAddress()) {
@@ -675,13 +673,13 @@ bool DynamicStream::shouldCoreSEIssue() const {
       }
     }
     for (auto backDepS : S->backDepStreams) {
-      const auto &backDepDynS = backDepS->getDynamicStream(this->configSeqNum);
+      const auto &backDepDynS = backDepS->getDynStream(this->configSeqNum);
       if (!backDepDynS.isFloatedToCache()) {
         return true;
       }
     }
     for (auto valDepS : S->valueDepStreams) {
-      const auto &valDepDynS = valDepS->getDynamicStream(this->configSeqNum);
+      const auto &valDepDynS = valDepS->getDynStream(this->configSeqNum);
       if (!valDepDynS.isFloatedToCache()) {
         return true;
       }
@@ -706,7 +704,7 @@ bool DynamicStream::shouldCoreSEIssue() const {
   return true;
 }
 
-bool DynamicStream::coreSENeedAddress() const {
+bool DynStream::coreSENeedAddress() const {
   if (!this->shouldCoreSEIssue()) {
     return false;
   }
@@ -719,12 +717,12 @@ bool DynamicStream::coreSENeedAddress() const {
   return true;
 }
 
-bool DynamicStream::coreSEOracleValueReady() const {
+bool DynStream::coreSEOracleValueReady() const {
   if (this->shouldCoreSEIssue()) {
     return false;
   }
   for (auto depS : this->stream->addrDepStreams) {
-    const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
+    const auto &depDynS = depS->getDynStream(this->configSeqNum);
     // If the AddrDepStream issues, then we have to issue to compute the
     // address.
     if (depDynS.coreSENeedAddress()) {
@@ -734,7 +732,7 @@ bool DynamicStream::coreSEOracleValueReady() const {
   return true;
 }
 
-bool DynamicStream::shouldRangeSync() const {
+bool DynStream::shouldRangeSync() const {
   if (!this->stream->se->isStreamRangeSyncEnabled()) {
     return false;
   }
@@ -752,19 +750,19 @@ bool DynamicStream::shouldRangeSync() const {
     return true;
   }
   for (auto depS : this->stream->addrDepStreams) {
-    const auto &depDynS = depS->getDynamicStream(this->configSeqNum);
+    const auto &depDynS = depS->getDynStream(this->configSeqNum);
     if (depDynS.shouldRangeSync()) {
       return true;
     }
   }
   for (auto backDepS : this->stream->backDepStreams) {
-    const auto &backDepDynS = backDepS->getDynamicStream(this->configSeqNum);
+    const auto &backDepDynS = backDepS->getDynStream(this->configSeqNum);
     if (backDepDynS.shouldRangeSync()) {
       return true;
     }
   }
   for (auto valDepS : this->stream->valueDepStreams) {
-    const auto &valDepDynS = valDepS->getDynamicStream(this->configSeqNum);
+    const auto &valDepDynS = valDepS->getDynStream(this->configSeqNum);
     if (valDepDynS.shouldRangeSync()) {
       return true;
     }
@@ -777,7 +775,7 @@ bool DynamicStream::shouldRangeSync() const {
   return false;
 }
 
-StreamElement *DynamicStream::getElementByIdx(uint64_t elementIdx) const {
+StreamElement *DynStream::getElementByIdx(uint64_t elementIdx) const {
   for (auto element = this->tail->next; element != nullptr;
        element = element->next) {
     if (element->FIFOIdx.entryIdx == elementIdx) {
@@ -787,8 +785,8 @@ StreamElement *DynamicStream::getElementByIdx(uint64_t elementIdx) const {
   return nullptr;
 }
 
-StreamElement *DynamicStream::getPrevElement(StreamElement *element) {
-  assert(element->FIFOIdx.streamId == this->dynamicStreamId &&
+StreamElement *DynStream::getPrevElement(StreamElement *element) {
+  assert(element->FIFOIdx.streamId == this->dynStreamId &&
          "Element is not mine.");
   for (auto prevElement = this->tail; prevElement != nullptr;
        prevElement = prevElement->next) {
@@ -799,12 +797,12 @@ StreamElement *DynamicStream::getPrevElement(StreamElement *element) {
   assert(false && "Failed to find the previous element.");
 }
 
-StreamElement *DynamicStream::getFirstElement() { return this->tail->next; }
-const StreamElement *DynamicStream::getFirstElement() const {
+StreamElement *DynStream::getFirstElement() { return this->tail->next; }
+const StreamElement *DynStream::getFirstElement() const {
   return this->tail->next;
 }
 
-StreamElement *DynamicStream::getFirstUnsteppedElement() {
+StreamElement *DynStream::getFirstUnsteppedElement() {
   if (this->allocSize <= this->stepSize) {
     return nullptr;
   }
@@ -814,7 +812,7 @@ StreamElement *DynamicStream::getFirstUnsteppedElement() {
   return element;
 }
 
-StreamElement *DynamicStream::stepElement(bool isEnd) {
+StreamElement *DynStream::stepElement(bool isEnd) {
   auto element = this->getFirstUnsteppedElement();
   S_ELEMENT_DPRINTF(element, "Stepped by Stream%s.\n",
                     (isEnd ? "End" : "Step"));
@@ -824,7 +822,7 @@ StreamElement *DynamicStream::stepElement(bool isEnd) {
   return element;
 }
 
-StreamElement *DynamicStream::unstepElement() {
+StreamElement *DynStream::unstepElement() {
   assert(this->stepSize > 0 && "No element to unstep.");
   auto element = this->stepped;
   assert(element->isStepped && "Element not stepped.");
@@ -835,7 +833,7 @@ StreamElement *DynamicStream::unstepElement() {
   return element;
 }
 
-void DynamicStream::allocateElement(StreamElement *newElement) {
+void DynStream::allocateElement(StreamElement *newElement) {
 
   auto S = this->stream;
   assert(S->isConfigured() &&
@@ -846,7 +844,7 @@ void DynamicStream::allocateElement(StreamElement *newElement) {
   /**
    * Append this new element to the dynamic stream.
    */
-  DYN_S_DPRINTF(this->dynamicStreamId, "Try to allocate element.\n");
+  DYN_S_DPRINTF(this->dynStreamId, "Try to allocate element.\n");
   newElement->dynS = this;
 
   /**
@@ -860,7 +858,7 @@ void DynamicStream::allocateElement(StreamElement *newElement) {
   if (this->hasTotalTripCount() &&
       newElement->FIFOIdx.entryIdx >= this->getTotalTripCount() + 1) {
     DYN_S_PANIC(
-        this->dynamicStreamId,
+        this->dynStreamId,
         "Allocate beyond totalTripCount %lu, allocSize %lu, entryIdx %lu.\n",
         this->getTotalTripCount(), S->getAllocSize(),
         newElement->FIFOIdx.entryIdx);
@@ -889,7 +887,7 @@ void DynamicStream::allocateElement(StreamElement *newElement) {
   }
 }
 
-StreamElement *DynamicStream::releaseElementUnstepped() {
+StreamElement *DynStream::releaseElementUnstepped() {
   if (this->allocSize == this->stepSize) {
     return nullptr;
   }
@@ -927,11 +925,11 @@ StreamElement *DynamicStream::releaseElementUnstepped() {
   return releaseElement;
 }
 
-bool DynamicStream::hasUnsteppedElement() {
+bool DynStream::hasUnsteppedElement() {
   auto element = this->getFirstUnsteppedElement();
   if (!element) {
     // We don't have element for this used stream.
-    DYN_S_DPRINTF(this->dynamicStreamId,
+    DYN_S_DPRINTF(this->dynStreamId,
                   "NoUnsteppedElement config executed %d alloc %d stepped %d "
                   "total %d next %s.\n",
                   this->configExecuted, this->allocSize, this->stepSize,
@@ -941,7 +939,7 @@ bool DynamicStream::hasUnsteppedElement() {
   return true;
 }
 
-StreamElement *DynamicStream::releaseElementStepped(bool isEnd) {
+StreamElement *DynStream::releaseElementStepped(bool isEnd) {
 
   /**
    * This function performs a normal release, i.e. release a stepped
@@ -1052,7 +1050,7 @@ StreamElement *DynamicStream::releaseElementStepped(bool isEnd) {
   return releaseElement;
 }
 
-void DynamicStream::updateStatsOnReleaseStepElement(Cycles releaseCycle,
+void DynStream::updateStatsOnReleaseStepElement(Cycles releaseCycle,
                                                     uint64_t vaddr, bool late) {
   this->numReleaseElement++;
   if (this->numReleaseElement == 1) {
@@ -1061,12 +1059,12 @@ void DynamicStream::updateStatsOnReleaseStepElement(Cycles releaseCycle,
   if (late) {
     this->lateElementCount++;
   }
-  if (this->numReleaseElement % DynamicStream::HistoryWindowSize == 0) {
-    if (this->numReleaseElement >= 3 * DynamicStream::HistoryWindowSize) {
+  if (this->numReleaseElement % DynStream::HistoryWindowSize == 0) {
+    if (this->numReleaseElement >= 3 * DynStream::HistoryWindowSize) {
       // Time to update.
       this->avgTurnAroundCycle =
           Cycles((releaseCycle - this->lastReleaseCycle) /
-                 DynamicStream::HistoryWindowSize);
+                 DynStream::HistoryWindowSize);
       this->numLateElement = this->lateElementCount;
     }
     // Time to reset.
@@ -1075,7 +1073,7 @@ void DynamicStream::updateStatsOnReleaseStepElement(Cycles releaseCycle,
   }
 }
 
-void DynamicStream::recordHitHistory(bool hitPrivateCache) {
+void DynStream::recordHitHistory(bool hitPrivateCache) {
   auto &record =
       this->hitPrivateCacheHistory.at(this->currentHitPrivateCacheHistoryIdx);
   if (record) {
@@ -1103,7 +1101,7 @@ void DynamicStream::recordHitHistory(bool hitPrivateCache) {
   }
 }
 
-void DynamicStream::tryCancelFloat() {
+void DynStream::tryCancelFloat() {
   // So far we only have limited support cacelling stream floating.
   auto S = this->stream;
   if (!S->se->isStreamFloatCancelEnabled()) {
@@ -1121,7 +1119,7 @@ void DynamicStream::tryCancelFloat() {
   }
   // Try cancel the whole coalesce group.
   auto sid = S->getCoalesceBaseStreamId();
-  std::vector<DynamicStream *> endStreams;
+  std::vector<DynStream *> endStreams;
   if (sid == 0) {
     // No coalesce group, just cancel myself.
     endStreams.push_back(this);
@@ -1129,7 +1127,7 @@ void DynamicStream::tryCancelFloat() {
     auto coalesceBaseS = S->se->getStream(sid);
     const auto &coalesceGroupS = coalesceBaseS->coalesceGroupStreams;
     for (auto &coalescedS : coalesceGroupS) {
-      auto &dynS = coalescedS->getDynamicStream(this->configSeqNum);
+      auto &dynS = coalescedS->getDynStream(this->configSeqNum);
       // Simply check that it has been floated.
       if (dynS.isFloatedToCacheAsRoot() && !dynS.isFloatedWithDependent()) {
         endStreams.push_back(&dynS);
@@ -1140,15 +1138,15 @@ void DynamicStream::tryCancelFloat() {
   if (endStreams.empty()) {
     return;
   }
-  std::vector<DynamicStreamId> endIds;
+  std::vector<DynStreamId> endIds;
   for (auto endDynS : endStreams) {
-    endIds.push_back(endDynS->dynamicStreamId);
+    endIds.push_back(endDynS->dynStreamId);
     endDynS->cancelFloat();
   }
   S->se->sendStreamFloatEndPacket(endIds);
 }
 
-void DynamicStream::cancelFloat() {
+void DynStream::cancelFloat() {
   auto S = this->stream;
   S_DPRINTF(S, "Cancel FloatStream.\n");
   // We are no longer considered offloaded.
@@ -1158,17 +1156,17 @@ void DynamicStream::cancelFloat() {
   S->statistic.numFloatCancelled++;
 }
 
-void DynamicStream::setTotalTripCount(int64_t totalTripCount) {
+void DynStream::setTotalTripCount(int64_t totalTripCount) {
   if (this->hasTotalTripCount() && totalTripCount != this->totalTripCount) {
-    DYN_S_PANIC(this->dynamicStreamId, "Reset TotalTripCount %lld -> %lld.",
+    DYN_S_PANIC(this->dynStreamId, "Reset TotalTripCount %lld -> %lld.",
                 this->totalTripCount, totalTripCount);
   }
-  DYN_S_DPRINTF(this->dynamicStreamId, "Set TotalTripCount %lld.\n",
+  DYN_S_DPRINTF(this->dynStreamId, "Set TotalTripCount %lld.\n",
                 totalTripCount);
   this->totalTripCount = totalTripCount;
 }
 
-int32_t DynamicStream::getBytesPerMemElement() const {
+int32_t DynStream::getBytesPerMemElement() const {
   auto memElementSize = this->stream->getMemElementSize();
   if (auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
           this->addrGenCallback)) {
@@ -1180,10 +1178,10 @@ int32_t DynamicStream::getBytesPerMemElement() const {
   }
 }
 
-void DynamicStream::receiveStreamRange(
-    const DynamicStreamAddressRangePtr &range) {
+void DynStream::receiveStreamRange(
+    const DynStreamAddressRangePtr &range) {
   if (!this->shouldRangeSync()) {
-    DYN_S_PANIC(this->dynamicStreamId,
+    DYN_S_PANIC(this->dynStreamId,
                 "Receive StreamRange but RangeSync is not required.");
   }
   auto iter = this->receivedRanges.begin();
@@ -1195,26 +1193,26 @@ void DynamicStream::receiveStreamRange(
     }
     ++iter;
   }
-  DYN_S_DPRINTF_(StreamRangeSync, this->dynamicStreamId,
+  DYN_S_DPRINTF_(StreamRangeSync, this->dynStreamId,
                  "[Range] Receive StreamRange in core: %s.\n", *range);
   this->receivedRanges.insert(iter, range);
 }
 
-DynamicStreamAddressRangePtr DynamicStream::getNextReceivedRange() const {
+DynStreamAddressRangePtr DynStream::getNextReceivedRange() const {
   if (this->receivedRanges.empty()) {
     return nullptr;
   }
   return this->receivedRanges.front();
 }
 
-void DynamicStream::popReceivedRange() {
+void DynStream::popReceivedRange() {
   assert(!this->receivedRanges.empty() && "Pop when there is no range.");
   this->receivedRanges.pop_front();
 }
 
-std::string DynamicStream::dumpString() const {
+std::string DynStream::dumpString() const {
   std::stringstream ss;
-  ss << "===== " << this->dynamicStreamId << " total " << this->totalTripCount
+  ss << "===== " << this->dynStreamId << " total " << this->totalTripCount
      << " step " << this->stepSize << " alloc " << this->allocSize << " max "
      << this->stream->maxSize << " ========\n";
   auto element = this->tail;
@@ -1228,4 +1226,4 @@ std::string DynamicStream::dumpString() const {
   return ss.str();
 }
 
-void DynamicStream::dump() const { inform("%s\n", this->dumpString()); }
+void DynStream::dump() const { inform("%s\n", this->dumpString()); }

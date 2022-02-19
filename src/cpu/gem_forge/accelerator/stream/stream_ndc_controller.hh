@@ -15,7 +15,7 @@ public:
   StreamNDCController(StreamEngine *_se);
 
   using StreamList = std::list<Stream *>;
-  using DynStreamList = std::list<DynamicStream *>;
+  using DynStreamList = std::list<DynStream *>;
 
   using StreamConfigArgs = StreamEngine::StreamConfigArgs;
   void offloadStreams(const StreamConfigArgs &args,

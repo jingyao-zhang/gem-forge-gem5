@@ -40,7 +40,7 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
            "Only indirect stream can be one iteration behind.");
     this->offloadedStreams.emplace(
         streamConfigureData->dynamicId,
-        new L0DynamicStream(streamConfigureData->dynamicId,
+        new L0DynStream(streamConfigureData->dynamicId,
                             streamConfigureData));
     for (const auto &edge : streamConfigureData->depEdges) {
       if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
@@ -51,8 +51,8 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
                            indirectStreamConfig->dynamicId.streamName);
         this->offloadedStreams.emplace(
             indirectStreamConfig->dynamicId,
-            new L0DynamicStream(
-                streamConfigureData->dynamicId /* RootDynamicStreamId. */,
+            new L0DynStream(
+                streamConfigureData->dynamicId /* RootDynStreamId. */,
                 indirectStreamConfig));
       }
     }
@@ -60,7 +60,7 @@ void L0StreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 }
 
 void L0StreamEngine::receiveStreamEnd(PacketPtr pkt) {
-  auto endIds = *(pkt->getPtr<std::vector<DynamicStreamId> *>());
+  auto endIds = *(pkt->getPtr<std::vector<DynStreamId> *>());
   for (const auto &endId : *endIds) {
     L0_STREAM_DPRINTF_(L0RubyStreamLife, endId, "Received StreamEnd.\n");
 
@@ -73,12 +73,12 @@ void L0StreamEngine::receiveStreamEnd(PacketPtr pkt) {
               streamEnd = this->offloadedStreams.end();
          streamIter != streamEnd;) {
       auto stream = streamIter->second;
-      if (stream->getRootDynamicStreamId() == endId) {
+      if (stream->getRootDynStreamId() == endId) {
         /**
          * ? Can we release right now?
          * Let's keep the ended id for sanity check purpose.
          */
-        L0_STREAM_DPRINTF_(L0RubyStreamLife, stream->getDynamicStreamId(),
+        L0_STREAM_DPRINTF_(L0RubyStreamLife, stream->getDynStreamId(),
                            "End.\n");
         delete stream;
         streamIter->second = nullptr;
@@ -100,7 +100,7 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
     return false;
   }
   // So far let's only consider offloaded stream.
-  const auto &dynamicId = streamMemAccess->getDynamicStreamId();
+  const auto &dynamicId = streamMemAccess->getDynStreamId();
   auto streamIter = this->offloadedStreams.find(dynamicId);
   if (streamIter == this->offloadedStreams.end()) {
     // Failed to find the offloaded stream.
@@ -131,14 +131,14 @@ bool L0StreamEngine::isStreamAccess(PacketPtr pkt) const {
   }
 }
 
-DynamicStreamSliceId L0StreamEngine::getSliceId(PacketPtr pkt) const {
+DynStreamSliceId L0StreamEngine::getSliceId(PacketPtr pkt) const {
   if (!this->isStreamAccess(pkt)) {
     // Do not pass along the slice id if this is not offloaded stream.
-    return DynamicStreamSliceId();
+    return DynStreamSliceId();
   }
   auto streamMemAccess = this->getStreamMemAccessFromPacket(pkt);
   if (streamMemAccess == nullptr) {
-    return DynamicStreamSliceId();
+    return DynStreamSliceId();
   }
   return streamMemAccess->getSliceId();
 }

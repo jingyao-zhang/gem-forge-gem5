@@ -13,7 +13,7 @@
   panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
 bool StreamRegionController::canSkipAllocatingDynS(
-    StaticRegion &staticRegion, DynamicStream &stepRootDynS) {
+    StaticRegion &staticRegion, DynStream &stepRootDynS) {
 
   auto &stepDynStreams = stepRootDynS.stepDynStreams;
 
@@ -41,7 +41,7 @@ bool StreamRegionController::canSkipAllocatingDynS(
 
     if (boundedByPointerChase) {
       if (stepRootDynS.allocSize >= 4) {
-        DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+        DYN_S_DPRINTF(stepRootDynS.dynStreamId,
                       "[StreamAlloc] BoundedPointerChase AllocSize %d "
                       "TailElemIdx %llu.\n",
                       stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
@@ -68,7 +68,7 @@ bool StreamRegionController::canSkipAllocatingDynS(
         }
       }
       if (allStepMemStreamsOffloaded) {
-        DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+        DYN_S_DPRINTF(stepRootDynS.dynStreamId,
                       "[StreamAlloc] BoundedEliminatedNested Floated AllocSize "
                       "%d TailElemIdx %llu.\n ",
                       stepRootDynS.allocSize, stepRootDynS.FIFOIdx.entryIdx);
@@ -80,7 +80,7 @@ bool StreamRegionController::canSkipAllocatingDynS(
   if (maxTailElemIdx != -1) {
     bool allStepStreamsAllocated = true;
     for (auto stepDynS : stepDynStreams) {
-      // DYN_S_DPRINTF(stepDynS.dynamicStreamId,
+      // DYN_S_DPRINTF(stepDynS.dynStreamId,
       //               "TotalTripCount %d, Next FIFOIdx %s.\n",
       //               totalTripCount, stepDynS.FIFOIdx);
       if (stepDynS->FIFOIdx.entryIdx < maxTailElemIdx) {
@@ -90,7 +90,7 @@ bool StreamRegionController::canSkipAllocatingDynS(
     }
     if (allStepStreamsAllocated) {
       // All allocated, we can move to next one.
-      DYN_S_DPRINTF(stepRootDynS.dynamicStreamId,
+      DYN_S_DPRINTF(stepRootDynS.dynStreamId,
                     "All StepStreamAllocated. CanSkip. AllocSize %d "
                     "MaxTailElemIdx %llu.\n",
                     stepRootDynS.allocSize, maxTailElemIdx);
@@ -165,14 +165,14 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
 
     /**
      * With the new NestStream, we have to search for the correct dynamic stream
-     * to allocate for. It is the first DynamicStream that:
+     * to allocate for. It is the first DynStream that:
      * 1. StreamEnd not dispatched.
      * 2. StreamConfig executed.
      * 3. If has TotalTripCount, not all step streams has allocated all
      * elements.
      */
     const auto &stepStreams = se->getStepStreamList(stepRootStream);
-    DynamicStream *allocatingStepRootDynS = nullptr;
+    DynStream *allocatingStepRootDynS = nullptr;
     for (auto &stepRootDynS : stepRootStream->dynamicStreams) {
       if (!stepRootDynS.configExecuted) {
         // Configure not executed, can not allocate.
@@ -223,7 +223,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
           maxAllocSize = (allocSize > MaxElementPerPointerChaseDynStream)
                              ? allocSize
                              : MaxElementPerPointerChaseDynStream;
-          DYN_S_DPRINTF(allocatingStepRootDynS->dynamicStreamId,
+          DYN_S_DPRINTF(allocatingStepRootDynS->dynStreamId,
                         "Limit MaxElement/DynPointerChaseStream. AllocSize %d "
                         "MaxAllocSize %d.\n",
                         allocSize, maxAllocSize);
@@ -232,7 +232,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
     }
 
     DYN_S_DPRINTF(
-        allocatingStepRootDynS->dynamicStreamId,
+        allocatingStepRootDynS->dynStreamId,
         "Allocating StepRootDynS AllocSize %d MaxSize %d MaxAllocSize %d.\n",
         stepRootStream->getAllocSize(), stepRootStream->maxSize, maxAllocSize);
 
@@ -251,41 +251,39 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
           S_DPRINTF(S, "No FreeElement.\n");
           break;
         }
-        auto &dynS = S->getDynamicStreamByInstance(
-            allocatingStepRootDynS->dynamicStreamId.streamInstance);
+        auto &dynS = S->getDynStreamByInstance(
+            allocatingStepRootDynS->dynStreamId.streamInstance);
         if (S->getAllocSize() >= S->maxSize) {
-          DYN_S_DPRINTF(dynS.dynamicStreamId,
-                        "Reached MaxAllocSize %d >= %d.\n", S->getAllocSize(),
-                        S->maxSize);
+          DYN_S_DPRINTF(dynS.dynStreamId, "Reached MaxAllocSize %d >= %d.\n",
+                        S->getAllocSize(), S->maxSize);
           continue;
         }
         if (dynS.allocSize >= targetSize) {
-          DYN_S_DPRINTF(dynS.dynamicStreamId, "Reached TargetSize %d >= %d.\n",
+          DYN_S_DPRINTF(dynS.dynStreamId, "Reached TargetSize %d >= %d.\n",
                         dynS.allocSize, targetSize);
           continue;
         }
         if (!dynS.areNextBaseElementsAllocated()) {
-          DYN_S_DPRINTF(dynS.dynamicStreamId,
-                        "NextBaseElements not allocated.\n");
+          DYN_S_DPRINTF(dynS.dynStreamId, "NextBaseElements not allocated.\n");
           continue;
         }
         if (S != stepRootStream) {
           if (S->getAllocSize() >= stepRootStream->getAllocSize()) {
             // It doesn't make sense to allocate ahead than the step root.
-            DYN_S_DPRINTF(dynS.dynamicStreamId,
+            DYN_S_DPRINTF(dynS.dynStreamId,
                           "Do not allocate %d beyond StepRootS %d.\n",
                           S->getAllocSize(), stepRootStream->getAllocSize());
             continue;
           }
           if (dynS.allocSize >= allocatingStepRootDynS->allocSize) {
             // It also doesn't make sense to allocate ahead than root dynS.
-            DYN_S_DPRINTF(dynS.dynamicStreamId,
+            DYN_S_DPRINTF(dynS.dynStreamId,
                           "Do not allocate %d beyond StepRootDynS %d.\n",
                           dynS.allocSize, allocatingStepRootDynS->allocSize);
             continue;
           }
         }
-        DYN_S_DPRINTF(dynS.dynamicStreamId, "Allocate %d.\n", dynS.allocSize);
+        DYN_S_DPRINTF(dynS.dynStreamId, "Allocate %d.\n", dynS.allocSize);
         se->allocateElement(dynS);
         allocated++;
       }

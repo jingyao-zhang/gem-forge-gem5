@@ -361,7 +361,7 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   // This is split out from S->configure() to ensure all DynS are created
   // before we handle dynamic dependence.
   for (auto &S : configStreams) {
-    auto &dynS = S->getLastDynamicStream();
+    auto &dynS = S->getLastDynStream();
     dynS.addBaseDynStreams();
     if (S->stepRootStream == S) {
       dynS.addStepStreams();
@@ -374,9 +374,9 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
   //   // S->getStreamName().c_str());
   //   assert(this->hasFreeElement());
   //   assert(S->getAllocSize() < S->maxSize);
-  //   const auto &dynS = S->getLastDynamicStream();
+  //   const auto &dynS = S->getLastDynStream();
   //   assert(dynS.areNextBaseElementsAllocated());
-  //   this->allocateElement(S->getLastDynamicStream());
+  //   this->allocateElement(S->getLastDynStream());
   // }
 
   // Notify StreamRegionController.
@@ -408,9 +408,9 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
    * Then we try to compute the reuse between streams.
    * This has to be done after initializing the addr gen function.
    */
-  std::list<DynamicStream *> configDynStreams;
+  std::list<DynStream *> configDynStreams;
   for (auto &S : configStreams) {
-    auto &dynS = S->getDynamicStream(args.seqNum);
+    auto &dynS = S->getDynStream(args.seqNum);
     dynS.configureAddrBaseDynStreamReuse();
     configDynStreams.push_back(&dynS);
   }
@@ -507,11 +507,11 @@ void StreamEngine::dispatchStreamStep(const StreamStepArgs &args) {
 
   for (auto S : this->getStepStreamList(stepStream)) {
     assert(S->isConfigured() && "Stream should be configured to be stepped.");
-    DynamicStream *dynS = nullptr;
-    if (args.dynInstanceId == DynamicStreamId::InvalidInstanceId) {
+    DynStream *dynS = nullptr;
+    if (args.dynInstanceId == DynStreamId::InvalidInstanceId) {
       dynS = &(S->getFirstAliveDynStream());
     } else {
-      dynS = &(S->getDynamicStreamByInstance(args.dynInstanceId));
+      dynS = &(S->getDynStreamByInstance(args.dynInstanceId));
     }
     dynS->stepElement(false /* isEnd */);
   }
@@ -526,16 +526,16 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
 
   for (auto S : stepStreams) {
     /**
-     * Normally commit happens in-order, we know it's the FirstDynamicStream.
+     * Normally commit happens in-order, we know it's the FirstDynStream.
      * Except for NestStream with EliminatedLoop, which may be independently
      * stepped by each dynamic stream.
      */
-    const DynamicStream *dynS = &S->getFirstDynamicStream();
-    if (args.dynInstanceId != DynamicStreamId::InvalidInstanceId) {
-      dynS = &S->getDynamicStreamByInstance(args.dynInstanceId);
+    const DynStream *dynS = &S->getFirstDynStream();
+    if (args.dynInstanceId != DynStreamId::InvalidInstanceId) {
+      dynS = &S->getDynStreamByInstance(args.dynInstanceId);
     }
     if (!dynS->configExecuted) {
-      DYN_S_DPRINTF(dynS->dynamicStreamId,
+      DYN_S_DPRINTF(dynS->dynStreamId,
                     "[CanNotCommitStep] Config Not Executed.\n");
       return false;
     }
@@ -588,7 +588,7 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
         // // trigger our deadlock check.
         // if (stepElement->FIFOIdx.entryIdx > 50) {
         //   if (auto llcDynS =
-        //           LLCDynamicStream::getLLCStream(dynS.dynamicStreamId)) {
+        //           LLCDynStream::getLLCStream(dynS.dynStreamId)) {
         //     if (!llcDynS->isElementReleased(stepElement->FIFOIdx.entryIdx -
         //                                     50)) {
         //       return false;
@@ -646,7 +646,7 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
   // We have one more condition for range-based check.
   if (auto noRangeDynS = this->rangeSyncController->getNoRangeDynS()) {
     SE_DPRINTF("[CanNotCommitStep] No Range for %s. CheckElementIdx %llu.\n",
-               noRangeDynS->dynamicStreamId,
+               noRangeDynS->dynStreamId,
                this->rangeSyncController->getCheckElementIdx(noRangeDynS));
     return false;
   }
@@ -680,11 +680,11 @@ void StreamEngine::commitStreamStep(const StreamStepArgs &args) {
      *
      * To solve this, we only do throttling for streamStep.
      */
-    DynamicStream *dynS = nullptr;
-    if (args.dynInstanceId == DynamicStreamId::InvalidInstanceId) {
-      dynS = &(S->getFirstDynamicStream());
+    DynStream *dynS = nullptr;
+    if (args.dynInstanceId == DynStreamId::InvalidInstanceId) {
+      dynS = &(S->getFirstDynStream());
     } else {
-      dynS = &(S->getDynamicStreamByInstance(args.dynInstanceId));
+      dynS = &(S->getDynStreamByInstance(args.dynInstanceId));
     }
     this->releaseElementStepped(dynS, false /* isEnd */, true /* doThrottle */);
   }
@@ -701,11 +701,11 @@ void StreamEngine::rewindStreamStep(const StreamStepArgs &args) {
   auto stepStream = this->getStream(args.stepStreamId);
   for (auto S : this->getStepStreamList(stepStream)) {
     assert(S->isConfigured() && "Stream should be configured to be stepped.");
-    DynamicStream *dynS = nullptr;
-    if (args.dynInstanceId == DynamicStreamId::InvalidInstanceId) {
+    DynStream *dynS = nullptr;
+    if (args.dynInstanceId == DynStreamId::InvalidInstanceId) {
       dynS = &(S->getFirstAliveDynStream());
     } else {
-      dynS = &(S->getDynamicStreamByInstance(args.dynInstanceId));
+      dynS = &(S->getDynStreamByInstance(args.dynInstanceId));
     }
     dynS->unstepElement();
   }
@@ -811,7 +811,7 @@ int StreamEngine::createStreamUserLSQCallbacks(
 bool StreamEngine::hasUnsteppedElement(const StreamUserArgs &args) {
   for (const auto &streamId : args.usedStreamIds) {
     auto S = this->getStream(streamId);
-    if (!S->hasUnsteppedElement(DynamicStreamId::InvalidInstanceId)) {
+    if (!S->hasUnsteppedElement(DynStreamId::InvalidInstanceId)) {
       return false;
     }
   }
@@ -875,7 +875,7 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
         }
       } else {
         if (!S->isFinalValueNeededByCore()) {
-          DYN_S_PANIC(dynS.dynamicStreamId,
+          DYN_S_PANIC(dynS.dynStreamId,
                       "LoopEliminated Stream with User should have FinalValue "
                       "or SecondFinalValue needed.");
         }
@@ -1190,7 +1190,7 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
     // Release in reverse order.
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
-    if (!S->hasUnsteppedElement(DynamicStreamId::InvalidInstanceId)) {
+    if (!S->hasUnsteppedElement(DynStreamId::InvalidInstanceId)) {
       // We don't have element for this used stream.
       return false;
     }
@@ -1270,7 +1270,7 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
     }
     endedStreams.insert(S);
     // Check for StreamAck. So far that's only floating store stream.
-    const auto &dynS = S->getDynamicStreamByEndSeqNum(args.seqNum);
+    const auto &dynS = S->getDynStreamByEndSeqNum(args.seqNum);
     if (S->isStoreStream()) {
       if (!dynS.configExecuted || dynS.configSeqNum >= args.seqNum) {
         return false;
@@ -1280,7 +1280,7 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
               dynS.getNumFloatedElemUntil(dynS.FIFOIdx.entryIdx)) {
         // We are not ack the LastElement.
         DYN_S_DPRINTF(
-            dynS.dynamicStreamId,
+            dynS.dynStreamId,
             "Cannot execute StreamEnd. Cache acked %llu, need %llu.\n",
             dynS.cacheAckedElements.size(), dynS.FIFOIdx.entryIdx);
         return false;
@@ -1332,7 +1332,7 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
        iter != end; ++iter) {
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
-    const auto &dynS = S->getDynamicStreamByEndSeqNum(args.seqNum);
+    const auto &dynS = S->getDynStreamByEndSeqNum(args.seqNum);
     auto endElement = dynS.tail->next;
     auto endElementIdx = endElement->FIFOIdx.entryIdx;
 
@@ -1461,7 +1461,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     this->releaseElementStepped(&endedDynS, true /* isEnd */,
                                 false /* doThrottle */);
   }
-  std::vector<DynamicStream *> endedDynStreams;
+  std::vector<DynStream *> endedDynStreams;
   for (auto S : endedStreams) {
     if (isDebugStream(S)) {
       S_DPRINTF(S, "Commit End");
@@ -1481,7 +1481,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
       if (endedDynS.getTotalTripCount() + 1 !=
           endedDynS.FIFOIdx.entryIdx + endElemOffset) {
         DYN_S_PANIC(
-            endedDynS.dynamicStreamId,
+            endedDynS.dynStreamId,
             "Commit End with TripCount %llu != NextElementIdx %llu + %llu.\n",
             endedDynS.getTotalTripCount(), endedDynS.FIFOIdx.entryIdx,
             endElemOffset);
@@ -2093,7 +2093,7 @@ const std::list<Stream *> &StreamEngine::getConfigStreamsInRegion(
   return configStreams;
 }
 
-void StreamEngine::allocateElement(DynamicStream &dynS) {
+void StreamEngine::allocateElement(DynStream &dynS) {
   auto newElement = this->removeFreeElement();
   this->numElementsAllocated++;
   auto S = dynS.stream;
@@ -2106,7 +2106,7 @@ void StreamEngine::allocateElement(DynamicStream &dynS) {
   dynS.allocateElement(newElement);
 }
 
-void StreamEngine::releaseElementStepped(DynamicStream *dynS, bool isEnd,
+void StreamEngine::releaseElementStepped(DynStream *dynS, bool isEnd,
                                          bool doThrottle) {
 
   /**
@@ -2199,7 +2199,7 @@ void StreamEngine::releaseElementStepped(DynamicStream *dynS, bool isEnd,
   this->addFreeElement(releaseElement);
 }
 
-bool StreamEngine::releaseElementUnstepped(DynamicStream &dynS) {
+bool StreamEngine::releaseElementUnstepped(DynStream &dynS) {
   auto S = dynS.stream;
   auto releaseElement = S->releaseElementUnstepped(dynS);
   if (releaseElement) {
@@ -2308,7 +2308,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
         if (element->isAddrAliased && !element->isFirstUserDispatched()) {
           bool hasIndirectUserDispatched = false;
           for (auto depS : S->addrDepStreams) {
-            auto &dynDepS = depS->getDynamicStream(dynS.configSeqNum);
+            auto &dynDepS = depS->getDynStream(dynS.configSeqNum);
             auto depElement =
                 dynDepS.getElementByIdx(element->FIFOIdx.entryIdx);
             if (depElement && depElement->isFirstUserDispatched()) {
@@ -2971,8 +2971,9 @@ void StreamEngine::dump() {
   this->dumpUser();
 }
 
-void StreamEngine::receiveOffloadedLoopBoundRet(
-    const DynamicStreamId &dynStreamId, int64_t tripCount, bool brokenOut) {
+void StreamEngine::receiveOffloadedLoopBoundRet(const DynStreamId &dynStreamId,
+                                                int64_t tripCount,
+                                                bool brokenOut) {
   this->regionController->receiveOffloadedLoopBoundRet(dynStreamId, tripCount,
                                                        brokenOut);
 }
@@ -3187,9 +3188,9 @@ void StreamEngine::coalesceContinuousDirectMemStreamElement(
 }
 
 void StreamEngine::sendStreamFloatEndPacket(
-    const std::vector<DynamicStreamId> &endedIds) {
+    const std::vector<DynStreamId> &endedIds) {
   // We need to explicitly allocate and copy the all the ids in the packet.
-  auto endedIdsCopy = new std::vector<DynamicStreamId>(endedIds);
+  auto endedIdsCopy = new std::vector<DynStreamId>(endedIds);
   // The target address is just virtually 0 (should be set by MLC stream
   // engine).
   Addr initPAddr = 0;

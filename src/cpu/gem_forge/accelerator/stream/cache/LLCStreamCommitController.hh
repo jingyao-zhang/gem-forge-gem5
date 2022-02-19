@@ -9,8 +9,8 @@ class LLCStreamCommitController {
 public:
   LLCStreamCommitController(LLCStreamEngine *_se);
 
-  void registerStream(LLCDynamicStreamPtr dynS);
-  void deregisterStream(LLCDynamicStreamPtr dynS);
+  void registerStream(LLCDynStreamPtr dynS);
+  void deregisterStream(LLCDynStreamPtr dynS);
 
   bool hasStreamToCommit() const { return !this->streams.empty(); }
 
@@ -19,7 +19,7 @@ public:
 private:
   LLCStreamEngine *se;
 
-  std::list<LLCDynamicStreamPtr> streams;
+  std::list<LLCDynStreamPtr> streams;
 
   int curRemoteBank() const { return this->se->curRemoteBank(); }
   const char *curRemoteMachineType() const {
@@ -30,7 +30,7 @@ private:
    * Try to commit an element for the stream.
    * @return whether we have committed at least one element.
    */
-  bool commitStream(LLCDynamicStreamPtr dynS, bool &migrated);
+  bool commitStream(LLCDynStreamPtr dynS, bool &migrated);
 };
 
 #endif

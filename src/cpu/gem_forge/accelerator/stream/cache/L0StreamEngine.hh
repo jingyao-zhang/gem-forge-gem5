@@ -12,7 +12,7 @@
 
 #include "mem/packet.hh"
 
-#include "cpu/gem_forge/accelerator/stream/cache/DynamicStreamSliceId.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/DynStreamSliceId.hh"
 
 #include "CacheStreamConfigureData.hh"
 
@@ -25,21 +25,18 @@ class StreamMemAccess;
  * Hold the information of a configured L0 stream.
  * So far this is very simple, only the root dynamic stream id.
  */
-class L0DynamicStream {
+class L0DynStream {
 public:
-  L0DynamicStream(const DynamicStreamId &_rootDynamicStreamId,
+  L0DynStream(const DynStreamId &_rootDynStreamId,
                   CacheStreamConfigureDataPtr _configData)
-      : dynamicStreamId(_configData->dynamicId),
-        rootDynamicStreamId(_rootDynamicStreamId),
+      : dynStreamId(_configData->dynamicId), rootDynStreamId(_rootDynStreamId),
         isOneIterationBehind(_configData->isOneIterationBehind),
         isPseudoOffload(_configData->isPseudoOffload),
         floatPlan(_configData->floatPlan) {}
 
-  const DynamicStreamId &getDynamicStreamId() const {
-    return this->dynamicStreamId;
-  }
-  const DynamicStreamId &getRootDynamicStreamId() const {
-    return this->rootDynamicStreamId;
+  const DynStreamId &getDynStreamId() const { return this->dynStreamId; }
+  const DynStreamId &getRootDynStreamId() const {
+    return this->rootDynStreamId;
   }
 
   bool getIsOneIterationBehind() const { return this->isOneIterationBehind; }
@@ -49,8 +46,8 @@ public:
   }
 
 private:
-  const DynamicStreamId dynamicStreamId;
-  const DynamicStreamId rootDynamicStreamId;
+  const DynStreamId dynStreamId;
+  const DynStreamId rootDynStreamId;
   bool isOneIterationBehind;
   bool isPseudoOffload;
   StreamFloatPlan floatPlan;
@@ -68,7 +65,7 @@ public:
   bool shouldCache(PacketPtr pkt);
   bool mustServedByMLCSE(PacketPtr pkt);
 
-  DynamicStreamSliceId getSliceId(PacketPtr pkt) const;
+  DynStreamSliceId getSliceId(PacketPtr pkt) const;
 
 private:
   AbstractStreamAwareController *controller;
@@ -76,8 +73,7 @@ private:
   /**
    * Set of all offloaded streams, along with their root dynamic stream id.
    */
-  std::unordered_map<const DynamicStreamId, L0DynamicStream *,
-                     DynamicStreamIdHasher>
+  std::unordered_map<const DynStreamId, L0DynStream *, DynStreamIdHasher>
       offloadedStreams;
 
   StreamMemAccess *getStreamMemAccessFromPacket(PacketPtr pkt) const;

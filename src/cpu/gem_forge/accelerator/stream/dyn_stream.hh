@@ -2,7 +2,7 @@
 #define __GEM_FORGE_ACCELERATOR_DYN_STREAM_HH__
 
 #include "addr_gen_callback.hh"
-#include "cache/DynamicStreamAddressRange.hh"
+#include "cache/DynStreamAddressRange.hh"
 #include "cache/StreamFloatPlan.hh"
 #include "fifo_entry_idx.hh"
 
@@ -20,26 +20,26 @@ class Stream;
  * Holds some information of a dynamic instance of a stream,
  * e.g. callback to generate addresses.
  */
-struct DynamicStream {
+struct DynStream {
 
-  using StaticId = DynamicStreamId::StaticId;
-  using InstanceId = DynamicStreamId::InstanceId;
+  using StaticId = DynStreamId::StaticId;
+  using InstanceId = DynStreamId::InstanceId;
 
   Stream *stream;
-  const DynamicStreamId dynamicStreamId;
+  const DynStreamId dynStreamId;
   const uint64_t configSeqNum;
   const Cycles configCycle;
   ThreadContext *tc;
 
-  DynamicStream(Stream *_stream, const DynamicStreamId &_dynamicStreamId,
+  DynStream(Stream *_stream, const DynStreamId &_dynStreamId,
                 uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,
                 StreamEngine *_se);
-  DynamicStream(const DynamicStream &other) = delete;
-  DynamicStream(DynamicStream &&other) = delete;
-  DynamicStream &operator=(const DynamicStream &other) = delete;
-  DynamicStream &operator=(DynamicStream &&other) = delete;
+  DynStream(const DynStream &other) = delete;
+  DynStream(DynStream &&other) = delete;
+  DynStream &operator=(const DynStream &other) = delete;
+  DynStream &operator=(DynStream &&other) = delete;
 
-  ~DynamicStream();
+  ~DynStream();
 
   /**
    * Head is the newest element.
@@ -145,17 +145,17 @@ public:
   bool endDispatched = false;
 
   // Address generator.
-  DynamicStreamFormalParamV addrGenFormalParams;
+  DynStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;
 
   // Predication compute.
-  DynamicStreamFormalParamV predFormalParams;
+  DynStreamFormalParamV predFormalParams;
   ExecFuncPtr predCallback;
 
   // Store value compute.
-  DynamicStreamFormalParamV storeFormalParams;
+  DynStreamFormalParamV storeFormalParams;
   ExecFuncPtr storeCallback;
-  DynamicStreamFormalParamV loadFormalParams;
+  DynStreamFormalParamV loadFormalParams;
   ExecFuncPtr loadCallback;
 
   /**
@@ -192,9 +192,9 @@ public:
     enum TypeE { Addr, Value, Back };
     static const char *typeToString(const TypeE &type);
     const TypeE type = Addr;
-    const StaticId baseStaticId = DynamicStreamId::InvalidStaticStreamId;
-    const InstanceId baseInstanceId = DynamicStreamId::InvalidInstanceId;
-    const StaticId depStaticId = DynamicStreamId::InvalidStaticStreamId;
+    const StaticId baseStaticId = DynStreamId::InvalidStaticStreamId;
+    const InstanceId baseInstanceId = DynStreamId::InvalidInstanceId;
+    const StaticId depStaticId = DynStreamId::InvalidStaticStreamId;
     const uint64_t alignBaseElement = 0;
     uint64_t reuseBaseElement = 0;
     StreamDepEdge(TypeE _type, StaticId _baseStaticId,
@@ -210,7 +210,7 @@ public:
   StreamEdges backDepEdges;
   void addBaseDynStreams();
 
-  std::list<DynamicStream *> stepDynStreams;
+  std::list<DynStream *> stepDynStreams;
   void addStepStreams();
 
   /**
@@ -235,9 +235,9 @@ public:
    */
   void configureAddrBaseDynStreamReuse();
   void configureAddrBaseDynStreamReuseSameLoop(StreamDepEdge &edge,
-                                               DynamicStream &baseDynS);
+                                               DynStream &baseDynS);
   void configureAddrBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
-                                                DynamicStream &baseDynS);
+                                                DynStream &baseDynS);
 
   /**
    * Check if base elements of the next allocating element is ready.
@@ -333,11 +333,11 @@ public:
   StreamElement *unstepElement();
 
   /**
-   * Add one element to this DynamicStream.
+   * Add one element to this DynStream.
    */
   void allocateElement(StreamElement *newElement);
   // /**
-  //  * Withdrawn one element from this DynamicStream.
+  //  * Withdrawn one element from this DynStream.
   //  */
   // void withdrawElement(StreamElement *element);
   /**
@@ -364,13 +364,13 @@ public:
   /**
    * API for range-based stream synchronization.
    */
-  void receiveStreamRange(const DynamicStreamAddressRangePtr &range);
-  DynamicStreamAddressRangePtr getNextReceivedRange() const;
+  void receiveStreamRange(const DynStreamAddressRangePtr &range);
+  DynStreamAddressRangePtr getNextReceivedRange() const;
   void popReceivedRange();
-  DynamicStreamAddressRangePtr getCurrentWorkingRange() const {
+  DynStreamAddressRangePtr getCurrentWorkingRange() const {
     return this->currentWorkingRange;
   }
-  void setCurrentWorkingRange(DynamicStreamAddressRangePtr ptr) {
+  void setCurrentWorkingRange(DynStreamAddressRangePtr ptr) {
     this->currentWorkingRange = ptr;
   }
 
@@ -415,15 +415,15 @@ private:
    * We also remember the current working range, which is actually
    * managed by StreamRangeSyncController.
    */
-  std::list<DynamicStreamAddressRangePtr> receivedRanges;
-  DynamicStreamAddressRangePtr currentWorkingRange = nullptr;
+  std::list<DynStreamAddressRangePtr> receivedRanges;
+  DynStreamAddressRangePtr currentWorkingRange = nullptr;
 
   void tryCancelFloat();
   void cancelFloat();
 };
 
 std::ostream &operator<<(std::ostream &os,
-                         const DynamicStream::StreamDepEdge::TypeE &type);
-std::string to_string(const DynamicStream::StreamDepEdge::TypeE &type);
+                         const DynStream::StreamDepEdge::TypeE &type);
+std::string to_string(const DynStream::StreamDepEdge::TypeE &type);
 
 #endif

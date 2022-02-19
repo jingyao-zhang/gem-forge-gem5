@@ -18,12 +18,12 @@ public:
   /**
    * This represents the basic unit of LLCStreamElement.
    * It remembers the base elements it depends on. Since this can be a
-   * remote LLCDynamicStream sending here, we do not remember LLCDynamicStream
-   * in the element, but just the DynamicStreamId and the StaticStream.
+   * remote LLCDynStream sending here, we do not remember LLCDynStream
+   * in the element, but just the DynStreamId and the StaticStream.
    */
   LLCStreamElement(Stream *_S, AbstractStreamAwareController *_mlcController,
-                   const DynamicStreamId &_dynStreamId, uint64_t _idx,
-                   Addr _vaddr, int _size, bool _isNDCElement);
+                   const DynStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr,
+                   int _size, bool _isNDCElement);
 
   ~LLCStreamElement();
 
@@ -36,7 +36,7 @@ public:
 
   Stream *S;
   AbstractStreamAwareController *mlcController;
-  const DynamicStreamId dynStreamId;
+  const DynStreamId dynStreamId;
   const uint64_t idx;
   const int size;
   const bool isNDCElement;
@@ -118,7 +118,7 @@ public:
   void setValue(const StreamValue &value);
 
   void extractElementDataFromSlice(GemForgeCPUDelegator *cpuDelegator,
-                                   const DynamicStreamSliceId &sliceId,
+                                   const DynStreamSliceId &sliceId,
                                    const DataBlock &dataBlock);
 
   /**
@@ -252,8 +252,7 @@ public:
    * TODO: This is a pure hack. We can easily reconstruct the slice id from the
    * TODO: indirect element.
    */
-  DynamicStreamSliceId indirectAtomicSliceId;
-
+  DynStreamSliceId indirectAtomicSliceId;
 };
 
 #endif

@@ -3,7 +3,7 @@
 #define __CPU_GEM_FORGE_ACCELERATOR_STREAM_CACHE_STREAM_REUSE_BUFFER_HH__
 
 #include "../stream.hh"
-#include "DynamicStreamSliceId.hh"
+#include "DynStreamSliceId.hh"
 
 #include "base/types.hh"
 #include "mem/ruby/common/DataBlock.hh"
@@ -41,14 +41,14 @@ class StreamReuseBuffer {
 public:
   StreamReuseBuffer(MachineID _machineId, int _maxNumLines, bool _perCoreMode);
 
-  void addLine(const DynamicStreamSliceId &sliceId, Addr paddrLine,
+  void addLine(const DynStreamSliceId &sliceId, Addr paddrLine,
                const DataBlock &dataBlock);
-  bool contains(const DynamicStreamSliceId &reuseSliceId, Addr paddrLine);
-  const DataBlock &reuse(const DynamicStreamSliceId &reuseSliceId,
+  bool contains(const DynStreamSliceId &reuseSliceId, Addr paddrLine);
+  const DataBlock &reuse(const DynStreamSliceId &reuseSliceId,
                          Addr paddrLine);
 
-  bool shouldCacheStream(Stream *S, const DynamicStreamId &dynSId) const;
-  bool shouldCheckReuse(Stream *S, const DynamicStreamId &dynSId) const;
+  bool shouldCacheStream(Stream *S, const DynStreamId &dynSId) const;
+  bool shouldCheckReuse(Stream *S, const DynStreamId &dynSId) const;
 
 private:
   const MachineID machineId;
@@ -69,12 +69,12 @@ private:
   MachineType myMachineType() const;
   const char *curRemoteMachineType() const;
 
-  int getCoreId(const DynamicStreamId &dynSId) const;
+  int getCoreId(const DynStreamId &dynSId) const;
 
   using ReuseBufferPtr = std::shared_ptr<ReuseBuffer>;
   std::vector<ReuseBufferPtr> coreToReuseBuffers;
 
-  ReuseBufferPtr &getReuseBuffer(const DynamicStreamId &dynSId);
+  ReuseBufferPtr &getReuseBuffer(const DynStreamId &dynSId);
 };
 
 #endif

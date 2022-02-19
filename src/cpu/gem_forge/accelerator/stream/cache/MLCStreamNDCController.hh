@@ -23,7 +23,7 @@ private:
   NDCPacketMapT ndcPacketMap;
 
   void addNDCPacket(StreamNDCPacketPtr &ndc);
-  NDCPacketMapIter getNDCPacket(const DynamicStreamSliceId &sliceId);
+  NDCPacketMapIter getNDCPacket(const DynStreamSliceId &sliceId);
 };
 
 #endif

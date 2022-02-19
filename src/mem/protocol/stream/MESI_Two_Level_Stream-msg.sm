@@ -87,9 +87,9 @@ structure(RequestMsg, desc="...", interface="Message") {
   RequestStatisticPtr requestStatistic, default="nullptr", desc="Hook to update statistic of this core request";
   // ! Sean: StreamAwareCache
   PacketPtr pkt,                    desc="Hack to store packet";
-  DynamicStreamSliceIdVec sliceIds, desc="Stream slice ids";
+  DynStreamSliceIdVec sliceIds, desc="Stream slice ids";
   DataBlock streamStoreBlk,         desc="StreamStore value";
-  DynamicStreamId sendToStreamId,   desc="StreamForward receiver stream id";
+  DynStreamId sendToStreamId,   desc="StreamForward receiver stream id";
 
   int getStatsType() {
     return Type;
@@ -121,8 +121,8 @@ structure(ResponseMsg, desc="...", interface="Message") {
   bool Dirty, default="false",         desc="Dirty bit";
   int AckCount, default="0",           desc="number of acks in this message";
   MessageSizeType MessageSize,         desc="size category of the message";
-  DynamicStreamSliceIdVec sliceIds,    desc="Stream slice ids";
-  DynamicStreamAddressRangePtr range,  desc="StreamRange for synchronization";
+  DynStreamSliceIdVec sliceIds,    desc="Stream slice ids";
+  DynStreamAddressRangePtr range,  desc="StreamRange for synchronization";
   int getStatsType() {
     return Type;
   }
@@ -154,7 +154,7 @@ structure(ResponseMsg, desc="...", interface="Message") {
  * ! Sean: StreamAwareCache.
  * ! Declare the pointer to the dynamic stream in the LLC.
  */
-external_type(LLCDynamicStreamPtr, primitive="yes");
+external_type(LLCDynStreamPtr, primitive="yes");
 
 /**
  * ! Sean: StreamAwareCache.
@@ -170,7 +170,7 @@ structure(StreamMigrateRequestMsg, desc="request to migrate a stream", interface
   bool IsCommit,                desc="If this is a CommitHead migration.";
   int Len;
   // ! Sean: StreamAwareCache
-  LLCDynamicStreamPtr Stream,    desc="Hack to forward CacheDynamicStream";
+  LLCDynStreamPtr Stream,    desc="Hack to forward CacheDynStream";
   int getStatsType() {
     return Type;
   }

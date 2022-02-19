@@ -77,7 +77,7 @@ void MLCStreamNDCController::receiveStreamNDCResponse(const ResponseMsg &msg) {
 
   auto &ndc = ndcMapIter->second;
   auto S = ndc->stream;
-  auto dynS = S->getDynamicStream(sliceId.getDynStreamId());
+  auto dynS = S->getDynStream(sliceId.getDynStreamId());
   if (!dynS) {
     MLC_NDC_PANIC(ndc, "Failed to get DynS for NDC response.");
   }
@@ -124,7 +124,7 @@ void MLCStreamNDCController::addNDCPacket(StreamNDCPacketPtr &ndc) {
 }
 
 MLCStreamNDCController::NDCPacketMapIter
-MLCStreamNDCController::getNDCPacket(const DynamicStreamSliceId &sliceId) {
+MLCStreamNDCController::getNDCPacket(const DynStreamSliceId &sliceId) {
   FIFOEntryIdx entryIdx(sliceId.getDynStreamId(), sliceId.getStartIdx());
   return this->ndcPacketMap.find(entryIdx);
 }

@@ -96,7 +96,7 @@ void LLCStreamAtomicLockManager::enqueue(Addr paddr, int size,
 
 void LLCStreamAtomicLockManager::commit(
     Addr paddr, int size, LLCStreamElementPtr element,
-    bool shouldAckAfterUnlock, const DynamicStreamSliceId &ackSliceId) {
+    bool shouldAckAfterUnlock, const DynStreamSliceId &ackSliceId) {
 
   auto paddrQueue = this->getPAddrQueue(paddr);
   ALM_ELEMENT_DPRINTF(
@@ -386,7 +386,7 @@ void LLCStreamAtomicLockManager::checkDeadlock(
   auto expandForFutureElements =
       [this, &pushIntoStack](LLCStreamElementPtr element) -> void {
     // Try to get future iteration's element depending on this element.
-    auto dynS = LLCDynamicStream::getLLCStream(element->dynStreamId);
+    auto dynS = LLCDynStream::getLLCStream(element->dynStreamId);
     if (!dynS) {
       // The DynStream is already released, no need to check for deadlock.
       return;

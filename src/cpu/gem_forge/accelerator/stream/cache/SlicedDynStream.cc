@@ -1,16 +1,15 @@
-#include "SlicedDynamicStream.hh"
+#include "SlicedDynStream.hh"
 
 #include "cpu/gem_forge/accelerator/stream/stream.hh"
 
-#include "debug/SlicedDynamicStream.hh"
+#include "debug/SlicedDynStream.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
-#define DEBUG_TYPE SlicedDynamicStream
+#define DEBUG_TYPE SlicedDynStream
 #include "../stream_log.hh"
 
-SlicedDynamicStream::SlicedDynamicStream(
-    CacheStreamConfigureDataPtr _configData)
+SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
     : streamId(_configData->dynamicId),
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
@@ -57,7 +56,7 @@ SlicedDynamicStream::SlicedDynamicStream(
   }
 }
 
-SlicedDynamicStream::PointerChaseState::PointerChaseState(
+SlicedDynStream::PointerChaseState::PointerChaseState(
     CacheStreamConfigureDataPtr &_configData) {
   if (!_configData->isPointerChase) {
     return;
@@ -78,7 +77,7 @@ SlicedDynamicStream::PointerChaseState::PointerChaseState(
   }
 }
 
-Addr SlicedDynamicStream::getOrComputePointerChaseElementVAddr(
+Addr SlicedDynStream::getOrComputePointerChaseElementVAddr(
     uint64_t elementIdx) const {
   auto &state = this->ptrChaseState;
   while (state.elementVAddrs.size() <= elementIdx &&
@@ -123,7 +122,7 @@ Addr SlicedDynamicStream::getOrComputePointerChaseElementVAddr(
   }
 }
 
-DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
+DynStreamSliceId SlicedDynStream::getNextSlice() {
   while (slices.empty() || slices.front().getEndIdx() == this->tailElementIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
@@ -134,7 +133,7 @@ DynamicStreamSliceId SlicedDynamicStream::getNextSlice() {
   return slice;
 }
 
-const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
+const DynStreamSliceId &SlicedDynStream::peekNextSlice() const {
   while (slices.empty() || slices.front().getEndIdx() == this->tailElementIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
@@ -143,7 +142,7 @@ const DynamicStreamSliceId &SlicedDynamicStream::peekNextSlice() const {
   return this->slices.front();
 }
 
-void SlicedDynamicStream::setTotalTripCount(int64_t totalTripCount) {
+void SlicedDynStream::setTotalTripCount(int64_t totalTripCount) {
   if (this->hasTotalTripCount()) {
     DYN_S_PANIC(this->streamId, "[Sliced] Reset TotalTripCount %lld -> %lld.",
                 this->totalTripCount, totalTripCount);
@@ -153,7 +152,7 @@ void SlicedDynamicStream::setTotalTripCount(int64_t totalTripCount) {
   this->totalTripCount = totalTripCount;
 }
 
-Addr SlicedDynamicStream::getElementVAddr(uint64_t elementIdx) const {
+Addr SlicedDynStream::getElementVAddr(uint64_t elementIdx) const {
   if (this->isPointerChase) {
     return this->getOrComputePointerChaseElementVAddr(elementIdx);
   }
@@ -162,7 +161,7 @@ Addr SlicedDynamicStream::getElementVAddr(uint64_t elementIdx) const {
       .front();
 }
 
-void SlicedDynamicStream::allocateOneElement() const {
+void SlicedDynStream::allocateOneElement() const {
 
   // Let's not worry about indirect streams here.
   const auto lhs = this->getElementVAddr(this->tailElementIdx);

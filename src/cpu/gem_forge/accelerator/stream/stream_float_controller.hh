@@ -15,8 +15,8 @@ public:
                         std::unique_ptr<StreamFloatPolicy> _policy);
 
   using StreamList = std::list<Stream *>;
-  using DynStreamList = std::list<DynamicStream *>;
-  using DynStreamVec = std::vector<DynamicStream *>;
+  using DynStreamList = std::list<DynStream *>;
+  using DynStreamVec = std::vector<DynStream *>;
 
   using StreamConfigArgs = StreamEngine::StreamConfigArgs;
   void floatStreams(const StreamConfigArgs &args,
@@ -63,10 +63,10 @@ private:
   void floatDirectStoreComputeOrUpdateStreams(const Args &args);
   void floatDirectOrPointerChaseReductionStreams(const Args &args);
   void floatIndirectReductionStreams(const Args &args);
-  void floatIndirectReductionStream(const Args &args, DynamicStream *dynS);
+  void floatIndirectReductionStream(const Args &args, DynStream *dynS);
   void floatTwoLevelIndirectStoreComputeStreams(const Args &args);
   void floatTwoLevelIndirectStoreComputeStream(const Args &args,
-                                               DynamicStream *dynS);
+                                               DynStream *dynS);
 
   /**
    * If the loop is eliminated, we mark some addition fields in the
@@ -78,7 +78,7 @@ private:
    * For now we can rewind a floated stream that write to memory (Store/Atomic
    * Compute Stream). As a temporary fix, I delay sending out the floating
    * packet until the StreamConfig is committed, and raise the "offloadDelayed"
-   * flag in the DynamicStream -- which will stop the StreamEngine issuing them.
+   * flag in the DynStream -- which will stop the StreamEngine issuing them.
    */
   using SeqNumToPktMapT = std::map<InstSeqNum, PacketPtr>;
   using SeqNumToPktMapIter = SeqNumToPktMapT::iterator;
@@ -94,7 +94,7 @@ private:
    * Check if there is an aliased StoreStream for this LoadStream, but
    * is not promoted into an UpdateStream.
    */
-  bool checkAliasedUnpromotedStoreStream(DynamicStream *dynS);
+  bool checkAliasedUnpromotedStoreStream(DynStream *dynS);
 
   /**
    * Determine the FirstOffloadedElementIdx for LoopBound.

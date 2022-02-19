@@ -85,7 +85,7 @@ StreamHistory::allocateCallbackAtInstance(uint64_t streamInstance) {
 }
 
 StreamValue StreamHistory::StreamHistoryAddrGenCallback::genAddr(
-    uint64_t idx, const DynamicStreamParamV &params) {
+    uint64_t idx, const DynStreamParamV &params) {
   StreamValue ret;
   if (idx < this->history.history_size()) {
     ret.front() = this->history.history(idx).addr();

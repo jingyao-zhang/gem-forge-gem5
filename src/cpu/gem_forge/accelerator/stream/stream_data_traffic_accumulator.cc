@@ -16,7 +16,7 @@ void StreamDataTrafficAccumulator::commit(
     const std::list<Stream *> &commitStreams) {
 
   for (auto S : commitStreams) {
-    const auto &dynS = S->getFirstDynamicStream();
+    const auto &dynS = S->getFirstDynStream();
     auto element = dynS.getFirstElement();
     assert(element && "Missing FirstElement when commit.");
 

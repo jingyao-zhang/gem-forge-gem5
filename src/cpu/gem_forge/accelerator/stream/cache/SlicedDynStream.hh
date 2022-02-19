@@ -1,5 +1,5 @@
-#ifndef __GEM_FORGE_SLICED_DYNAMIC_STREAM_H__
-#define __GEM_FORGE_SLICED_DYNAMIC_STREAM_H__
+#ifndef __GEM_FORGE_SLICED_DYN_STREAM_H__
+#define __GEM_FORGE_SLICED_DYN_STREAM_H__
 
 /**
  * This will slice the stream into slices. A slice is a piece of the stream,
@@ -9,16 +9,16 @@
  */
 
 #include "CacheStreamConfigureData.hh"
-#include "DynamicStreamSliceId.hh"
+#include "DynStreamSliceId.hh"
 
 #include <deque>
 
-class SlicedDynamicStream {
+class SlicedDynStream {
 public:
-  SlicedDynamicStream(CacheStreamConfigureDataPtr _configData);
+  SlicedDynStream(CacheStreamConfigureDataPtr _configData);
 
-  DynamicStreamSliceId getNextSlice();
-  const DynamicStreamSliceId &peekNextSlice() const;
+  DynStreamSliceId getNextSlice();
+  const DynStreamSliceId &peekNextSlice() const;
 
   /**
    * Check if we have allocated beyond the end of the stream.
@@ -51,8 +51,8 @@ public:
   float getElementPerSlice() const { return this->elementPerSlice; }
 
 private:
-  DynamicStreamId streamId;
-  DynamicStreamFormalParamV formalParams;
+  DynStreamId streamId;
+  DynStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
   int32_t elementSize;
   // On average how many elements per slice.
@@ -79,7 +79,7 @@ private:
   struct PointerChaseState {
     Stream *memStream = nullptr;
     Stream *ivStream = nullptr;
-    DynamicStreamFormalParamV ivAddrFormalParams;
+    DynStreamFormalParamV ivAddrFormalParams;
     AddrGenCallbackPtr ivAddrGenCallback;
     StreamValue currentIVValue;
     bool currentIVValueFaulted = false;
@@ -99,7 +99,7 @@ private:
    * The headIdx that can be checked for slicing.
    */
   mutable uint64_t sliceHeadElementIdx;
-  mutable std::deque<DynamicStreamSliceId> slices;
+  mutable std::deque<DynStreamSliceId> slices;
 
   void allocateOneElement() const;
   bool hasOverflowed(uint64_t elementIdx) const {

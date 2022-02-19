@@ -71,8 +71,8 @@ StreamFloatPolicy::StreamFloatPolicy(bool _enabled, bool _enabledFloatMem,
     this->levelPolicy = LevelPolicyE::LEVEL_SMART;
   } else if (_levelPolicy == "manual") {
     this->levelPolicy = LevelPolicyE::LEVEL_MANUAL;
-  // } else if (_levelPolicy == "manual2") {
-  //   this->levelPolicy = LevelPolicyE::LEVEL_MANUAL2;
+    // } else if (_levelPolicy == "manual2") {
+    //   this->levelPolicy = LevelPolicyE::LEVEL_MANUAL2;
   } else {
     panic("Invalid StreamFloat LevelPolicy %s.", _levelPolicy);
   }
@@ -93,12 +93,12 @@ StreamFloatPolicy::~StreamFloatPolicy() {
   }
 }
 
-std::ostream &StreamFloatPolicy::logS(const DynamicStream &dynS) {
-  return getLog() << dynS.dynamicStreamId << ": ";
+std::ostream &StreamFloatPolicy::logS(const DynStream &dynS) {
+  return getLog() << dynS.dynStreamId << ": ";
 }
 
 StreamFloatPolicy::FloatDecision
-StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
+StreamFloatPolicy::shouldFloatStream(DynStream &dynS) {
   if (!this->enabled) {
     return FloatDecision();
   }
@@ -131,8 +131,7 @@ StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
    * TODO: Improve this.
    */
   if (S->se->isTraceSim()) {
-    if (S->getStreamLengthAtInstance(dynS.dynamicStreamId.streamInstance) ==
-        0) {
+    if (S->getStreamLengthAtInstance(dynS.dynStreamId.streamInstance) == 0) {
       return FloatDecision();
     }
   }
@@ -169,7 +168,7 @@ StreamFloatPolicy::shouldFloatStream(DynamicStream &dynS) {
 }
 
 StreamFloatPolicy::FloatDecision
-StreamFloatPolicy::shouldFloatStreamManual(DynamicStream &dynS) {
+StreamFloatPolicy::shouldFloatStreamManual(DynStream &dynS) {
   /**
    * TODO: Really should be a hint in the stream configuration provided by the
    * compiler.
@@ -185,7 +184,7 @@ StreamFloatPolicy::shouldFloatStreamManual(DynamicStream &dynS) {
   return FloatDecision(iter->second);
 }
 
-bool StreamFloatPolicy::checkReuseWithinStream(DynamicStream &dynS) {
+bool StreamFloatPolicy::checkReuseWithinStream(DynStream &dynS) {
   auto S = dynS.stream;
   auto linearAddrGen =
       std::dynamic_pointer_cast<LinearAddrGenCallback>(S->getAddrGenCallback());
@@ -222,7 +221,7 @@ bool StreamFloatPolicy::checkReuseWithinStream(DynamicStream &dynS) {
   }
 }
 
-bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
+bool StreamFloatPolicy::checkAggregateHistory(DynStream &dynS) {
   /**
    * 2. Check if the start address is same as previous configuration, and the
    * previous trip count is short enough to fit in the private cache level.
@@ -350,7 +349,7 @@ bool StreamFloatPolicy::checkAggregateHistory(DynamicStream &dynS) {
 }
 
 StreamFloatPolicy::FloatDecision
-StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
+StreamFloatPolicy::shouldFloatStreamSmart(DynStream &dynS) {
   /**
    * 1. Check if there are aliased store stream.
    */
@@ -410,7 +409,7 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynamicStream &dynS) {
   return FloatDecision(true);
 }
 
-bool StreamFloatPolicy::shouldPseudoFloatStream(DynamicStream &dynS) {
+bool StreamFloatPolicy::shouldPseudoFloatStream(DynStream &dynS) {
   /**
    * So far we use simple heuristic:
    * 1. It has indirect streams.
@@ -444,8 +443,8 @@ void StreamFloatPolicy::setFloatPlans(DynStreamList &dynStreams,
    */
   for (auto &rootConfig : rootConfigVec) {
 
-    std::queue<DynamicStream *> dynSQueue;
-    auto rootDynS = rootConfig->stream->getDynamicStream(rootConfig->dynamicId);
+    std::queue<DynStream *> dynSQueue;
+    auto rootDynS = rootConfig->stream->getDynStream(rootConfig->dynamicId);
     rootDynS->setFloatedToCacheAsRoot(true);
     dynSQueue.push(rootDynS);
 
@@ -464,14 +463,14 @@ void StreamFloatPolicy::setFloatPlans(DynStreamList &dynStreams,
         if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
           auto &usedConfig = edge.data;
           dynSQueue.push(
-              usedConfig->stream->getDynamicStream(usedConfig->dynamicId));
+              usedConfig->stream->getDynStream(usedConfig->dynamicId));
         }
       }
     }
   }
 }
 
-void StreamFloatPolicy::setFloatPlan(DynamicStream &dynS) {
+void StreamFloatPolicy::setFloatPlan(DynStream &dynS) {
   auto &floatPlan = dynS.getFloatPlan();
   uint64_t firstElementIdx = 0;
 

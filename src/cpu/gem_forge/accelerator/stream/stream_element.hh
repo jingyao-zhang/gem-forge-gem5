@@ -3,7 +3,7 @@
 
 #include "addr_gen_callback.hh"
 #include "base/types.hh"
-#include "cache/DynamicStreamSliceId.hh"
+#include "cache/DynStreamSliceId.hh"
 #include "cpu/gem_forge/gem_forge_packet_handler.hh"
 #include "fifo_entry_idx.hh"
 
@@ -11,7 +11,7 @@
 #include <unordered_set>
 
 class Stream;
-class DynamicStream;
+class DynStream;
 class StreamEngine;
 class StreamStoreInst;
 
@@ -83,13 +83,13 @@ public:
 
   Stream *getStream() const { return this->stream; }
 
-  const DynamicStreamId &getDynamicStreamId() const {
+  const DynStreamId &getDynStreamId() const {
     return this->FIFOIdx.streamId;
   }
   /**
    * TODO: Return a reference.
    */
-  DynamicStreamSliceId getSliceId() const { return this->sliceId; }
+  DynStreamSliceId getSliceId() const { return this->sliceId; }
 
   void setAdditionalDelay(int additionalDelay) {
     this->additionalDelay = additionalDelay;
@@ -131,7 +131,7 @@ public:
   int size;
 
   // The slice of the this memory request.
-  DynamicStreamSliceId sliceId;
+  DynStreamSliceId sliceId;
 
   /**
    * Stores the elements that expect the response from this access.
@@ -149,7 +149,7 @@ public:
 };
 
 struct StreamElement {
-  using StaticId = DynamicStreamId::StaticId;
+  using StaticId = DynStreamId::StaticId;
   struct BaseElement {
     /**
      * A BaseElement can start with Uninitialized state,
@@ -188,7 +188,7 @@ struct StreamElement {
 
   StreamElement *next;
   Stream *stream;
-  DynamicStream *dynS;
+  DynStream *dynS;
   StreamEngine *se;
   FIFOEntryIdx FIFOIdx;
   int cacheBlockSize;
@@ -280,13 +280,13 @@ struct StreamElement {
   StreamElement(StreamEngine *_se);
 
   /**
-   * Return true if the DynamicStream has known total trip count and this is the
+   * Return true if the DynStream has known total trip count and this is the
    * last element.
    */
   bool isLastElement() const;
 
   /**
-   * Return true if the DynamicStream has known total trip count and this is the
+   * Return true if the DynStream has known total trip count and this is the
    * second last element.
    */
   bool isSecondLastElement() const;

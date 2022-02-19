@@ -1,7 +1,7 @@
 #ifndef __CPU_GEM_FORGE_LLC_STREAM_SLICE_HH__
 #define __CPU_GEM_FORGE_LLC_STREAM_SLICE_HH__
 
-#include "DynamicStreamSliceId.hh"
+#include "DynStreamSliceId.hh"
 
 #include "mem/ruby/common/DataBlock.hh"
 
@@ -13,7 +13,7 @@ using LLCStreamSlicePtr = std::shared_ptr<LLCStreamSlice>;
 class LLCStreamEngine;
 
 /**
- * Each LLCDynamicStream is managed at two level of granularity:
+ * Each LLCDynStream is managed at two level of granularity:
  * LLCStreamElement:
  *  This is the basic unit to interact with the core (one iteration).
  *  Thus, this is used for computing and range-sync.
@@ -41,7 +41,7 @@ class LLCStreamEngine;
 class Stream;
 class LLCStreamSlice {
 public:
-  LLCStreamSlice(Stream *_S, const DynamicStreamSliceId &_sliceId);
+  LLCStreamSlice(Stream *_S, const DynStreamSliceId &_sliceId);
 
   enum State {
     /**
@@ -76,7 +76,7 @@ public:
   void faulted();
   void released();
 
-  const DynamicStreamSliceId &getSliceId() const { return this->sliceId; }
+  const DynStreamSliceId &getSliceId() const { return this->sliceId; }
 
   const DataBlock &getLoadBlock() const { return this->loadBlock; }
   const DataBlock &getStoreBlock() const { return this->storeBlock; }
@@ -86,7 +86,7 @@ public:
 
 private:
   Stream *S;
-  DynamicStreamSliceId sliceId;
+  DynStreamSliceId sliceId;
   State state = State::INITIALIZED;
   LLCStreamEngine *llcSE = nullptr;
   DataBlock loadBlock;

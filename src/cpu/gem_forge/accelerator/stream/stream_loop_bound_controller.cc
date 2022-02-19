@@ -105,15 +105,15 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
   auto nextElementIdx = dynBound.nextElementIdx;
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticBound.baseStreams) {
-    auto &baseDynS = baseS->getDynamicStream(dynRegion.seqNum);
+    auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
     auto baseElement = baseDynS.getElementByIdx(nextElementIdx);
     if (!baseElement) {
       if (baseDynS.FIFOIdx.entryIdx > nextElementIdx) {
-        DYN_S_PANIC(baseDynS.dynamicStreamId,
-                    "[LoopBound] Miss Element %llu.\n", nextElementIdx);
+        DYN_S_PANIC(baseDynS.dynStreamId, "[LoopBound] Miss Element %llu.\n",
+                    nextElementIdx);
       } else {
         // The base element is not allocated yet.
-        DYN_S_DPRINTF(baseDynS.dynamicStreamId,
+        DYN_S_DPRINTF(baseDynS.dynStreamId,
                       "[LoopBound] BaseElement %llu not Allocated.\n",
                       nextElementIdx);
         return;
@@ -145,9 +145,9 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
         staticRegion.region.region(), dynBound.nextElementIdx + 1);
     dynBound.brokenOut = true;
     for (auto S : staticRegion.streams) {
-      auto &dynS = S->getDynamicStream(dynRegion.seqNum);
+      auto &dynS = S->getDynStream(dynRegion.seqNum);
       dynS.setTotalTripCount(dynBound.nextElementIdx + 1);
-      DYN_S_DPRINTF(dynS.dynamicStreamId,
+      DYN_S_DPRINTF(dynS.dynStreamId,
                     "[LoopBound] Break (%d == %d) TotalTripCount %llu.\n", ret,
                     staticBound.boundRet, dynBound.nextElementIdx + 1);
     }
@@ -162,9 +162,9 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
 }
 
 void StreamRegionController::receiveOffloadedLoopBoundRet(
-    const DynamicStreamId &dynStreamId, int64_t tripCount, bool brokenOut) {
+    const DynStreamId &dynStreamId, int64_t tripCount, bool brokenOut) {
   auto S = se->getStream(dynStreamId.staticId);
-  auto dynS = S->getDynamicStream(dynStreamId);
+  auto dynS = S->getDynStream(dynStreamId);
   if (!dynS) {
     DYN_S_PANIC(dynStreamId, "[LoopBound] Failed to get DynS.");
   }
@@ -186,7 +186,7 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
   dynBound.nextElementIdx = tripCount;
   if (brokenOut) {
     for (auto S : staticRegion.streams) {
-      auto &dynS = S->getDynamicStream(dynRegion.seqNum);
+      auto &dynS = S->getDynStream(dynRegion.seqNum);
       dynS.setTotalTripCount(tripCount);
     }
   }

@@ -145,8 +145,8 @@ void StreamRegionController::tick() {
 
       /**
        * For now, StreamAllocate must happen in order.
-       * Check that this is the first DynamicStream.
-       * But StreamStep is relaxed to be only inorder within each DynamicStream.
+       * Check that this is the first DynStream.
+       * But StreamStep is relaxed to be only inorder within each DynStream.
        */
       this->stepStream(dynRegion);
       if (dynRegion.seqNum ==
@@ -201,7 +201,7 @@ StreamRegionController::getDynRegion(const std::string &msg,
 void StreamRegionController::buildFormalParams(
     const ConfigArgs::InputVec &inputVec, int &inputIdx,
     const ::LLVM::TDG::ExecFuncInfo &funcInfo,
-    DynamicStreamFormalParamV &formalParams) {
+    DynStreamFormalParamV &formalParams) {
   for (const auto &arg : funcInfo.args()) {
     if (arg.is_stream()) {
       // This is a stream input.

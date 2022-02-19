@@ -152,8 +152,8 @@ void StreamMemAccess::handlePacketResponse(GemForgeCPUDelegator *cpuDelegator,
     }
     // We just use the last dynamic stream.
     // Not 100% accurate but should be fine.
-    if (this->stream->hasDynamicStream()) {
-      auto &dynS = this->stream->getLastDynamicStream();
+    if (this->stream->hasDynStream()) {
+      auto &dynS = this->stream->getLastDynStream();
       dynS.recordHitHistory(hitInPrivateCache);
     }
   }
@@ -209,9 +209,9 @@ bool StreamElement::isSecondLastElement() const {
 bool StreamElement::shouldIssue() const {
   /**
    * So far there are two cases when we do not issue requests:
-   * 1. DynamicStream says so, then we have two cases:
-   *   a. DynamicStream is not floated, then we just don't issue.
-   *   b. DynamicStream is floated, then we check if the element is floated, as
+   * 1. DynStream says so, then we have two cases:
+   *   a. DynStream is not floated, then we just don't issue.
+   *   b. DynStream is floated, then we check if the element is floated, as
    *      the first few elements still need to be issued for MidwayFloating.
    * 2. LastElement that only uses to deal with StreamEnd.
    */

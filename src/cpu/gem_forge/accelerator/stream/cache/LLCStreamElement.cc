@@ -2,7 +2,7 @@
 
 #include "mem/simple_mem.hh"
 
-#include "LLCDynamicStream.hh"
+#include "LLCDynStream.hh"
 
 #include "debug/LLCRubyStreamBase.hh"
 #include "debug/StreamRangeSync.hh"
@@ -13,7 +13,7 @@ std::list<LLCStreamElementPtr> LLCStreamElement::deferredReleaseElements;
 
 LLCStreamElement::LLCStreamElement(
     Stream *_S, AbstractStreamAwareController *_mlcController,
-    const DynamicStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr, int _size,
+    const DynStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr, int _size,
     bool _isNDCElement)
     : S(_S), mlcController(_mlcController), dynStreamId(_dynStreamId),
       idx(_idx), size(_size), isNDCElement(_isNDCElement), vaddr(_vaddr),
@@ -169,7 +169,7 @@ int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,
 }
 
 void LLCStreamElement::extractElementDataFromSlice(
-    GemForgeCPUDelegator *cpuDelegator, const DynamicStreamSliceId &sliceId,
+    GemForgeCPUDelegator *cpuDelegator, const DynStreamSliceId &sliceId,
     const DataBlock &dataBlock) {
   /**
    * Extract the element data and update the LLCStreamElement.

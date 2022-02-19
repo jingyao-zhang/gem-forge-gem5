@@ -1,4 +1,4 @@
-#include "MLCDynamicIndirectStream.hh"
+#include "MLCDynIndirectStream.hh"
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
@@ -9,12 +9,12 @@
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
-MLCDynamicIndirectStream::MLCDynamicIndirectStream(
+MLCDynIndirectStream::MLCDynIndirectStream(
     CacheStreamConfigureDataPtr _configData,
     AbstractStreamAwareController *_controller,
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
-    const DynamicStreamId &_rootStreamId)
-    : MLCDynamicStream(_configData, _controller, _responseMsgBuffer,
+    const DynStreamId &_rootStreamId)
+    : MLCDynStream(_configData, _controller, _responseMsgBuffer,
                        _requestToLLCMsgBuffer, false /* isMLCDirect */),
       rootStreamId(_rootStreamId),
       formalParams(_configData->addrGenFormalParams),
@@ -23,8 +23,8 @@ MLCDynamicIndirectStream::MLCDynamicIndirectStream(
       isOneIterationBehind(_configData->isOneIterationBehind),
       tailElementIdx(0) {}
 
-void MLCDynamicIndirectStream::receiveStreamData(
-    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+void MLCDynIndirectStream::receiveStreamData(
+    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
     Addr paddrLine) {
 
   // It is indeed a problem to synchronize the flow control between
@@ -46,7 +46,7 @@ void MLCDynamicIndirectStream::receiveStreamData(
   }
 
   assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
-  assert(this->dynamicStreamId == sliceId.getDynStreamId() &&
+  assert(this->dynStreamId == sliceId.getDynStreamId() &&
          "Unmatched dynamic stream id.");
 
   auto numElements = sliceId.getNumElements();
@@ -144,10 +144,10 @@ void MLCDynamicIndirectStream::receiveStreamData(
   this->advanceStream();
 }
 
-void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
+void MLCDynIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
                                                      uint64_t baseData) {
 
-  MLC_S_DPRINTF(this->dynamicStreamId,
+  MLC_S_DPRINTF(this->dynStreamId,
                 "Receive BaseStreamData element %lu data %lu tailSliceIdx %lu "
                 "tailElementIdx %lu.\n",
                 elementIdx, baseData, this->tailSliceIdx, this->tailElementIdx);
@@ -159,7 +159,7 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
 
   if (this->isWaitingNothing()) {
     // If we are waiting for nothing, this is the only place we advance.
-    MLC_S_DPRINTF(this->dynamicStreamId, "WaitNothing. Skip BaseElement.\n");
+    MLC_S_DPRINTF(this->dynStreamId, "WaitNothing. Skip BaseElement.\n");
     this->advanceStream();
     return;
   }
@@ -181,8 +181,8 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
   auto elementVAddr = this->genElementVAddr(elementIdx, baseData);
   auto elementSize = this->elementSize;
 
-  DynamicStreamSliceId sliceId;
-  sliceId.getDynStreamId() = this->dynamicStreamId;
+  DynStreamSliceId sliceId;
+  sliceId.getDynStreamId() = this->dynStreamId;
   sliceId.getStartIdx() = elementIdx;
   sliceId.getEndIdx() = elementIdx + 1;
 
@@ -231,7 +231,7 @@ void MLCDynamicIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
   this->advanceStream();
 }
 
-void MLCDynamicIndirectStream::advanceStream() {
+void MLCDynIndirectStream::advanceStream() {
   this->tryPopStream();
 
   /**
@@ -241,7 +241,7 @@ void MLCDynamicIndirectStream::advanceStream() {
    */
   auto maxAllocElementIdx = this->tailElementIdx + this->maxNumSlices;
   if (auto llcDynS =
-          LLCDynamicStream::getLLCStream(this->getDynamicStreamId())) {
+          LLCDynStream::getLLCStream(this->getDynStreamId())) {
     maxAllocElementIdx =
         std::min(maxAllocElementIdx, llcDynS->getNextInitElementIdx());
   }
@@ -250,7 +250,7 @@ void MLCDynamicIndirectStream::advanceStream() {
   while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
          !this->hasOverflowed()) {
     if (this->tailElementIdx >= maxAllocElementIdx) {
-      MLC_S_DPRINTF(this->getDynamicStreamId(),
+      MLC_S_DPRINTF(this->getDynStreamId(),
                     "CanNot Allocate Element %llu, MaxAlloc %llu.\n",
                     this->tailElementIdx, maxAllocElementIdx);
       break;
@@ -272,11 +272,11 @@ void MLCDynamicIndirectStream::advanceStream() {
   this->baseStream->scheduleAdvanceStream();
 }
 
-void MLCDynamicIndirectStream::allocateSlice() {
+void MLCDynIndirectStream::allocateSlice() {
   // For indirect stream, there is no merging, so it's pretty simple
   // to allocate new slice.
-  DynamicStreamSliceId sliceId;
-  sliceId.getDynStreamId() = this->dynamicStreamId;
+  DynStreamSliceId sliceId;
+  sliceId.getDynStreamId() = this->dynStreamId;
   sliceId.getStartIdx() = this->tailElementIdx;
   sliceId.getEndIdx() = this->tailElementIdx + 1;
 
@@ -300,17 +300,17 @@ void MLCDynamicIndirectStream::allocateSlice() {
   this->tailElementIdx++;
 }
 
-bool MLCDynamicIndirectStream::hasOverflowed() const {
+bool MLCDynIndirectStream::hasOverflowed() const {
   return this->hasTotalTripCount() &&
          this->tailElementIdx > this->getTotalTripCount();
 }
 
-void MLCDynamicIndirectStream::setTotalTripCount(
+void MLCDynIndirectStream::setTotalTripCount(
     int64_t totalTripCount, Addr brokenPAddr, MachineType brokenMachineType) {
-  MLC_S_PANIC(this->getDynamicStreamId(), "Set TotalTripCount for IndirectS.");
+  MLC_S_PANIC(this->getDynStreamId(), "Set TotalTripCount for IndirectS.");
 }
 
-Addr MLCDynamicIndirectStream::genElementVAddr(uint64_t elementIdx,
+Addr MLCDynIndirectStream::genElementVAddr(uint64_t elementIdx,
                                                uint64_t baseData) {
 
   StreamValue baseValue;
@@ -318,7 +318,7 @@ Addr MLCDynamicIndirectStream::genElementVAddr(uint64_t elementIdx,
   auto getBaseStreamValue = [this,
                              &baseValue](uint64_t streamId) -> StreamValue {
     if (!this->baseStream->getStaticStream()->isCoalescedHere(streamId)) {
-      MLC_S_PANIC(this->getDynamicStreamId(), "Invalid BaseStreamId %llu.",
+      MLC_S_PANIC(this->getDynStreamId(), "Invalid BaseStreamId %llu.",
                   streamId);
     }
     return baseValue;
@@ -329,9 +329,9 @@ Addr MLCDynamicIndirectStream::genElementVAddr(uint64_t elementIdx,
       .front();
 }
 
-std::pair<MLCDynamicIndirectStream::SliceIter,
-          MLCDynamicIndirectStream::SliceIter>
-MLCDynamicIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
+std::pair<MLCDynIndirectStream::SliceIter,
+          MLCDynIndirectStream::SliceIter>
+MLCDynIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
   auto ret = std::make_pair<SliceIter, SliceIter>(this->slices.end(),
                                                   this->slices.end());
   // hack("findSliceByElementIdx when slices are %d.\n", this->slices.size());
@@ -349,16 +349,16 @@ MLCDynamicIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
   }
 
   if (ret.first == this->slices.end()) {
-    MLC_S_PANIC(this->getDynamicStreamId(),
+    MLC_S_PANIC(this->getDynStreamId(),
                 "Failed to find slice for Element %llu.\n", elementIdx);
   }
   return ret;
 }
 
-MLCDynamicIndirectStream::SliceIter
-MLCDynamicIndirectStream::findOrInsertSliceBySliceId(
+MLCDynIndirectStream::SliceIter
+MLCDynIndirectStream::findOrInsertSliceBySliceId(
     const SliceIter &begin, const SliceIter &end,
-    const DynamicStreamSliceId &sliceId) {
+    const DynStreamSliceId &sliceId) {
   auto ret = begin;
   if (ret->sliceId.vaddr == 0) {
     // This first slice has not been used. directly use it.
@@ -391,11 +391,11 @@ MLCDynamicIndirectStream::findOrInsertSliceBySliceId(
   return ret;
 }
 
-MLCDynamicStream::SliceIter MLCDynamicIndirectStream::findSliceForCoreRequest(
-    const DynamicStreamSliceId &sliceId) {
+MLCDynStream::SliceIter MLCDynIndirectStream::findSliceForCoreRequest(
+    const DynStreamSliceId &sliceId) {
 
   if (this->slices.empty()) {
-    MLC_S_PANIC(this->dynamicStreamId,
+    MLC_S_PANIC(this->dynStreamId,
                 "No slices for request, overflowed %d, totalTripCount %lu.\n",
                 this->hasOverflowed(), this->getTotalTripCount());
   }
@@ -406,8 +406,8 @@ MLCDynamicStream::SliceIter MLCDynamicIndirectStream::findSliceForCoreRequest(
                                           elementSlices.second, sliceId);
 }
 
-bool MLCDynamicIndirectStream::receiveFinalReductionValue(
-    const DynamicStreamSliceId &sliceId, const DataBlock &dataBlock,
+bool MLCDynIndirectStream::receiveFinalReductionValue(
+    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
     Addr paddrLine) {
   auto S = this->getStaticStream();
   if (!(S->isReduction() || S->isPointerChaseIndVar())) {
@@ -419,7 +419,7 @@ bool MLCDynamicIndirectStream::receiveFinalReductionValue(
     return false;
   }
 
-  auto dynCoreS = S->getDynamicStream(this->getDynamicStreamId());
+  auto dynCoreS = S->getDynStream(this->getDynStreamId());
   if (!dynCoreS) {
     MLC_SLICE_PANIC(sliceId,
                     "CoreDynS released before receiving FinalReductionValue.");

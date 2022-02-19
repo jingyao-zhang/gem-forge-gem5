@@ -1,23 +1,23 @@
-#ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_DIRECT_STREAM_H__
-#define __CPU_TDG_ACCELERATOR_STREAM_MLC_DYNAMIC_DIRECT_STREAM_H__
+#ifndef __CPU_GEM_FORGE_MLC_DYN_DIRECT_STREAM_H__
+#define __CPU_GEM_FORGE_MLC_DYN_DIRECT_STREAM_H__
 
-#include "DynamicStreamSliceIdVec.hh"
-#include "MLCDynamicStream.hh"
-#include "SlicedDynamicStream.hh"
+#include "DynStreamSliceIdVec.hh"
+#include "MLCDynStream.hh"
+#include "SlicedDynStream.hh"
 
-class MLCDynamicIndirectStream;
+class MLCDynIndirectStream;
 
 /**
  * Direct MLCStream should handle flow control.
  * Also will slice the stream into cache lines.
  */
-class MLCDynamicDirectStream : public MLCDynamicStream {
+class MLCDynDirectStream : public MLCDynStream {
 public:
-  MLCDynamicDirectStream(
+  MLCDynDirectStream(
       CacheStreamConfigureDataPtr _configData,
       AbstractStreamAwareController *_controller,
       MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
-      const std::vector<MLCDynamicIndirectStream *> &_indirectStreams);
+      const std::vector<MLCDynIndirectStream *> &_indirectStreams);
 
   /**
    * Get where is the RemoteStream is at the end of current allocated credits.
@@ -25,12 +25,12 @@ public:
   std::pair<Addr, MachineType>
   getRemoteTailPAddrAndMachineType() const override;
 
-  void receiveStreamData(const DynamicStreamSliceId &sliceId,
+  void receiveStreamData(const DynStreamSliceId &sliceId,
                          const DataBlock &dataBlock, Addr paddrLine) override;
   void receiveReuseStreamData(Addr vaddr, const DataBlock &dataBlock);
   void setLLCCutLineVAddr(Addr vaddr) { this->llcCutLineVAddr = vaddr; }
 
-  void receiveStreamDone(const DynamicStreamSliceId &sliceId) override;
+  void receiveStreamDone(const DynStreamSliceId &sliceId) override;
 
   /**
    * Check the core's commit progress and send out StreamCommit message to
@@ -54,7 +54,7 @@ public:
                          MachineType brokenMachineType) override;
 
 protected:
-  SlicedDynamicStream slicedStream;
+  SlicedDynStream slicedStream;
 
   uint64_t maxNumSlicesPerSegment;
 
@@ -66,9 +66,9 @@ protected:
   bool llcCutted = false;
 
   // Where the LLC stream would be at tailSliceIdx.
-  DynamicStreamSliceIdVec nextSegmentSliceIds;
+  DynStreamSliceIdVec nextSegmentSliceIds;
   Addr tailPAddr;
-  DynamicStreamSliceId tailSliceId;
+  DynStreamSliceId tailSliceId;
 
   // This stream has been cut by LLCStreamBound.
   bool llcStreamLoopBoundCutted = false;
@@ -83,8 +83,8 @@ protected:
     Addr endPAddr = 0;
     uint64_t startSliceIdx = 0;
     uint64_t endSliceIdx = 0;
-    DynamicStreamSliceIdVec sliceIds;
-    DynamicStreamSliceId endSliceId;
+    DynStreamSliceIdVec sliceIds;
+    DynStreamSliceId endSliceId;
     enum State {
       ALLOCATED = 0,
       CREDIT_SENT,
@@ -93,7 +93,7 @@ protected:
     };
     State state = State::ALLOCATED;
     static std::string stateToString(const State state);
-    const DynamicStreamSliceId &getStartSliceId() const {
+    const DynStreamSliceId &getStartSliceId() const {
       return this->sliceIds.firstSliceId();
     }
   };
@@ -116,10 +116,10 @@ protected:
 
   std::unordered_map<Addr, DataBlock> reuseBlockMap;
 
-  std::vector<MLCDynamicIndirectStream *> indirectStreams;
+  std::vector<MLCDynIndirectStream *> indirectStreams;
 
-  bool matchLLCSliceId(const DynamicStreamSliceId &mlc,
-                       const DynamicStreamSliceId &llc) const {
+  bool matchLLCSliceId(const DynStreamSliceId &mlc,
+                       const DynStreamSliceId &llc) const {
     if (this->config->isPointerChase) {
       return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
     } else {
@@ -129,8 +129,8 @@ protected:
     }
   }
 
-  bool matchCoreSliceId(const DynamicStreamSliceId &mlc,
-                        const DynamicStreamSliceId &core) const {
+  bool matchCoreSliceId(const DynStreamSliceId &mlc,
+                        const DynStreamSliceId &core) const {
     /**
      * Core request always has BlockVAddr.
      */
@@ -145,7 +145,7 @@ protected:
   }
 
   SliceIter
-  findSliceForCoreRequest(const DynamicStreamSliceId &sliceId) override;
+  findSliceForCoreRequest(const DynStreamSliceId &sliceId) override;
 
   /**
    * Override this as we need to send credit to llc.

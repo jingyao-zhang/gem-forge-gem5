@@ -180,7 +180,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
     bool shouldCache(PacketPtr);
     bool shouldForward(PacketPtr);
     bool mustServedByMLCSE(PacketPtr);
-    DynamicStreamSliceId getSliceId(PacketPtr);
+    DynStreamSliceId getSliceId(PacketPtr);
   }
 
   L0StreamEngine se, constructor="this";
@@ -196,7 +196,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
   void profileMsgDelay(int virtualNetworkType, Cycles c);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
-  void recordLLCReqQueueStats(RequestStatisticPtr, DynamicStreamSliceIdVec, bool);
+  void recordLLCReqQueueStats(RequestStatisticPtr, DynStreamSliceIdVec, bool);
   bool hasPC(PacketPtr);
   Addr getPC(PacketPtr);
 
@@ -856,7 +856,7 @@ machine(MachineType:L0Cache, "MESI Directory L0 Cache", interface="AbstractStrea
 
   action(ur_profileDataReq, "\ur", desc="Profile the data request") {
     peek(mandatoryQueue_in, RubyRequest) { 
-      DynamicStreamSliceIdVec sliceIdVec;
+      DynStreamSliceIdVec sliceIdVec;
       RequestStatisticPtr reqStats := getRequestStatistic(in_msg.pkt);
       bool isLoad := in_msg.Type == RubyRequestType:LD;
       recordLLCReqQueueStats(reqStats, sliceIdVec, isLoad);

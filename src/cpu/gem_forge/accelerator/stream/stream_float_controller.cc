@@ -18,7 +18,7 @@ StreamFloatController::StreamFloatController(
 
 void StreamFloatController::floatStreams(
     const StreamConfigArgs &args, const ::LLVM::TDG::StreamRegion &region,
-    std::list<DynamicStream *> &dynStreams) {
+    std::list<DynStream *> &dynStreams) {
 
   if (!this->se->enableStreamFloat) {
     return;
@@ -127,14 +127,14 @@ void StreamFloatController::floatStreams(
     this->configSeqNumToDelayedFloatPktMap.emplace(args.seqNum, pkt);
     for (auto &dynS : dynStreams) {
       if (dynS->isFloatedToCache()) {
-        DYN_S_DPRINTF(dynS->dynamicStreamId, "Delayed FloatConfig.\n");
+        DYN_S_DPRINTF(dynS->dynStreamId, "Delayed FloatConfig.\n");
         dynS->setFloatConfigDelayed(true);
       }
     }
   } else {
     for (auto &dynS : dynStreams) {
       if (dynS->isFloatedToCache()) {
-        DYN_S_DPRINTF_(CoreRubyStreamLife, dynS->dynamicStreamId,
+        DYN_S_DPRINTF_(CoreRubyStreamLife, dynS->dynStreamId,
                        "Send FloatConfig.\n");
       }
     }
@@ -155,21 +155,21 @@ void StreamFloatController::commitFloatStreams(const StreamConfigArgs &args,
   bool isMidwayFloat = false;
   auto pkt = iter->second;
   for (auto S : streams) {
-    auto &dynS = S->getDynamicStream(args.seqNum);
+    auto &dynS = S->getDynStream(args.seqNum);
     if (!dynS.isFloatedToCache()) {
       continue;
     }
     assert(dynS.isFloatConfigDelayed() && "Offload is not delayed.");
     if (dynS.getFirstFloatElemIdx() > 0) {
       isMidwayFloat = true;
-      DYN_S_DPRINTF(dynS.dynamicStreamId,
+      DYN_S_DPRINTF(dynS.dynStreamId,
                     "[MidwayFloat] CommitFloat but Wait FirstElem %llu.\n",
                     dynS.getFirstFloatElemIdx());
     } else {
       dynS.setFloatConfigDelayed(false);
-      DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynamicStreamId,
+      DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynStreamId,
                      "Send Delayed FloatConfig.\n");
-      DYN_S_DPRINTF(dynS.dynamicStreamId, "Send Delayed FloatConfig.\n");
+      DYN_S_DPRINTF(dynS.dynStreamId, "Send Delayed FloatConfig.\n");
     }
   }
   if (isMidwayFloat) {
@@ -193,19 +193,19 @@ void StreamFloatController::rewindFloatStreams(const StreamConfigArgs &args,
     this->configSeqNumToDelayedFloatPktMap.erase(args.seqNum);
   }
 
-  std::vector<DynamicStreamId> floatedIds;
+  std::vector<DynStreamId> floatedIds;
   for (auto &S : streams) {
-    auto &dynS = S->getDynamicStream(args.seqNum);
+    auto &dynS = S->getDynStream(args.seqNum);
     if (dynS.isFloatedToCache()) {
       // Sanity check that we don't break semantics.
-      DYN_S_DPRINTF(dynS.dynamicStreamId, "Rewind floated stream.\n");
+      DYN_S_DPRINTF(dynS.dynStreamId, "Rewind floated stream.\n");
       if ((S->isAtomicComputeStream() || S->isStoreComputeStream()) &&
           !dynS.isFloatConfigDelayed()) {
-        DYN_S_PANIC(dynS.dynamicStreamId,
+        DYN_S_PANIC(dynS.dynStreamId,
                     "Rewind a floated Atomic/StoreCompute stream.");
       }
       if (dynS.isFloatedToCacheAsRoot() && !dynS.isFloatConfigDelayed()) {
-        floatedIds.push_back(dynS.dynamicStreamId);
+        floatedIds.push_back(dynS.dynStreamId);
       }
       S->statistic.numFloatRewinded++;
       dynS.setFloatedToCache(false);
@@ -228,7 +228,7 @@ void StreamFloatController::endFloatStreams(const DynStreamVec &dynStreams) {
     /**
      * Streams are either floated or not floated at all.
      */
-    std::vector<DynamicStreamId> endedFloatRootIds;
+    std::vector<DynStreamId> endedFloatRootIds;
     for (auto dynS : dynStreams) {
       /**
        * Check if this stream is offloaded and if so, send the StreamEnd
@@ -237,7 +237,7 @@ void StreamFloatController::endFloatStreams(const DynStreamVec &dynStreams) {
       if (dynS->isFloatedToCacheAsRoot()) {
         assert(!dynS->isFloatConfigDelayed() &&
                "Offload still delayed when committing StreamEnd.");
-        endedFloatRootIds.push_back(dynS->dynamicStreamId);
+        endedFloatRootIds.push_back(dynS->dynStreamId);
       }
     }
     // Finally send out the StreanEnd packet.
@@ -253,8 +253,7 @@ void StreamFloatController::endFloatStreams(const DynStreamVec &dynStreams) {
     for (auto dynS : dynStreams) {
       if (dynS->isFloatedToCache()) {
         if (!dynS->isFloatConfigDelayed()) {
-          DYN_S_PANIC(dynS->dynamicStreamId,
-                      "[MidwayFloat] Not delayed anymore.");
+          DYN_S_PANIC(dynS->dynStreamId, "[MidwayFloat] Not delayed anymore.");
         }
         StreamFloatPolicy::logS(*dynS)
             << "[MidwayFloat] Early terminated at Element "
@@ -330,11 +329,11 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
 
     for (auto valueBaseS : S->valueBaseStreams) {
       if (!floatedMap.count(valueBaseS)) {
-        DYN_S_PANIC(dynS->dynamicStreamId, "ValueBaseS is not floated: %s.\n",
+        DYN_S_PANIC(dynS->dynStreamId, "ValueBaseS is not floated: %s.\n",
                     valueBaseS->getStreamName());
       }
       if (!valueBaseS->isDirectLoadStream()) {
-        DYN_S_PANIC(dynS->dynamicStreamId,
+        DYN_S_PANIC(dynS->dynStreamId,
                     "ValueBaseS is not DirectLoadStream: %s.\n",
                     valueBaseS->getStreamName());
       }
@@ -363,7 +362,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
       continue;
     }
     auto addrBaseS = *S->addrBaseStreams.begin();
-    auto &addrBaseDynS = addrBaseS->getDynamicStream(dynS->configSeqNum);
+    auto &addrBaseDynS = addrBaseS->getDynStream(dynS->configSeqNum);
     if (!addrBaseS->isPointerChaseIndVar()) {
       // AddrBaseStream is not PointerChaseIndVarStream.
       StreamFloatPolicy::logS(*dynS)
@@ -400,7 +399,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
       S_PANIC(S, "PointerChaseStream with ValueBaseStreams is not supported.");
     }
     // Remember the decision.
-    DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as pointer chase.\n");
+    DYN_S_DPRINTF(dynS->dynStreamId, "Offload as pointer chase.\n");
     StreamFloatPolicy::logS(*dynS) << "[Float] as pointer chase.\n"
                                    << std::flush;
     StreamFloatPolicy::logS(addrBaseDynS) << "[Float] as pointer chase IV.\n"
@@ -409,8 +408,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
     floatedMap.emplace(addrBaseS, baseConfig);
     args.rootConfigVec.push_back(config);
     if (S->getEnabledStoreFunc()) {
-      DYN_S_PANIC(dynS->dynamicStreamId,
-                  "Computation with PointerChaseStream.");
+      DYN_S_PANIC(dynS->dynStreamId, "Computation with PointerChaseStream.");
     }
   }
 }
@@ -482,12 +480,12 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
       valueBaseConfig->addSendTo(config);
       config->addBaseOn(valueBaseConfig);
     }
-    DYN_S_DPRINTF(dynS->dynamicStreamId, "Offload as indirect.\n");
+    DYN_S_DPRINTF(dynS->dynStreamId, "Offload as indirect.\n");
     StreamFloatPolicy::logS(*dynS) << "[Float] as indirect.\n" << std::flush;
     floatedMap.emplace(S, config);
     if (S->getEnabledStoreFunc()) {
       if (!dynS->hasTotalTripCount()) {
-        DYN_S_PANIC(dynS->dynamicStreamId,
+        DYN_S_PANIC(dynS->dynStreamId,
                     "ComputeStream without TotalTripCount writes to memory.");
       }
     }
@@ -663,7 +661,7 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
 }
 
 void StreamFloatController::floatIndirectReductionStream(const Args &args,
-                                                         DynamicStream *dynS) {
+                                                         DynStream *dynS) {
   auto &floatedMap = args.floatedMap;
   auto S = dynS->stream;
   /**
@@ -811,7 +809,7 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStreams(
 }
 
 void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
-    const Args &args, DynamicStream *dynS) {
+    const Args &args, DynStream *dynS) {
   auto &floatedMap = args.floatedMap;
   auto S = dynS->stream;
   if (!S->isStoreComputeStream()) {
@@ -882,7 +880,7 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
 }
 
 bool StreamFloatController::checkAliasedUnpromotedStoreStream(
-    DynamicStream *dynS) {
+    DynStream *dynS) {
   auto S = dynS->stream;
   StreamFloatPolicy::logS(*dynS)
       << "HasAliasedStore " << S->aliasBaseStream->hasAliasedStoreStream
@@ -915,7 +913,7 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   auto &staticBound = dynRegion.staticRegion->loopBound;
   for (auto S : staticBound.baseStreams) {
     if (!args.floatedMap.count(S)) {
-      StreamFloatPolicy::logS(S->getDynamicStream(args.seqNum))
+      StreamFloatPolicy::logS(S->getDynStream(args.seqNum))
           << "[Not Float] LoopBound base stream not floated.\n"
           << std::flush;
       S_DPRINTF(S, "LoopBound base stream not floated.\n");
@@ -931,7 +929,7 @@ void StreamFloatController::floatEliminatedLoop(const Args &args) {
   }
 
   auto baseS = *staticBound.baseStreams.begin();
-  auto &baseDynS = baseS->getDynamicStream(args.seqNum);
+  auto &baseDynS = baseS->getDynStream(args.seqNum);
   auto &baseConfig = args.floatedMap.at(baseS);
   baseConfig->loopBoundFormalParams = dynBound.formalParams;
   baseConfig->loopBoundCallback = dynBound.boundFunc;
@@ -957,7 +955,7 @@ void StreamFloatController::setLoopBoundFirstOffloadedElementIdx(
       StreamFloatPolicy::logS(*dynS) << "[MidwayFloat] Get FirstFloatElemIdx "
                                      << firstFloatElementIdx << ".\n"
                                      << std::flush;
-      DYN_S_DPRINTF(dynS->dynamicStreamId, "Get FirstFloatElemIdx %llu.\n",
+      DYN_S_DPRINTF(dynS->dynStreamId, "Get FirstFloatElemIdx %llu.\n",
                     firstFloatElementIdx);
       break;
     }
@@ -988,7 +986,7 @@ void StreamFloatController::propagateFloatPlan(const Args &args) {
     StreamFloatPolicy::logS(*dynS)
         << "[FloatPlan] Finalized as " << dynS->getFloatPlan() << ".\n"
         << std::flush;
-    DYN_S_DPRINTF(dynS->dynamicStreamId, "Propagate FloatPlan %s.\n",
+    DYN_S_DPRINTF(dynS->dynStreamId, "Propagate FloatPlan %s.\n",
                   dynS->getFloatPlan());
     iter->second->floatPlan = dynS->getFloatPlan();
   }
@@ -1009,14 +1007,14 @@ void StreamFloatController::processMidwayFloat() {
 bool StreamFloatController::isMidwayFloatReady(
     CacheStreamConfigureDataPtr &config) {
   auto S = config->stream;
-  auto dynS = S->getDynamicStream(config->dynamicId);
+  auto dynS = S->getDynStream(config->dynamicId);
   if (!dynS) {
     DYN_S_PANIC(config->dynamicId,
                 "[MidwayFloat] DynS released before MidwayFloat released.");
   }
   auto firstFloatElementIdx = config->floatPlan.getFirstFloatElementIdx();
   if (dynS->FIFOIdx.entryIdx <= firstFloatElementIdx) {
-    DYN_S_DPRINTF(dynS->dynamicStreamId,
+    DYN_S_DPRINTF(dynS->dynStreamId,
                   "[MidwayFloat] DynS TailElem %llu < FirstFloatElem %llu. "
                   "Not Yet Float.\n",
                   dynS->FIFOIdx.entryIdx, firstFloatElementIdx);
@@ -1030,20 +1028,20 @@ bool StreamFloatController::isMidwayFloatReady(
   if (dynRegion.staticRegion->region.is_loop_bound()) {
     auto &dynBound = dynRegion.loopBound;
     if (dynBound.nextElementIdx > firstFloatElementIdx) {
-      DYN_S_PANIC(dynS->dynamicStreamId,
+      DYN_S_PANIC(dynS->dynStreamId,
                   "[MidwayFloat] Impossible! LoopBound NextElem %llu > "
                   "FirstFloatElem %llu.",
                   dynBound.nextElementIdx, firstFloatElementIdx);
     }
     if (dynBound.nextElementIdx < firstFloatElementIdx) {
-      DYN_S_DPRINTF(dynS->dynamicStreamId,
+      DYN_S_DPRINTF(dynS->dynStreamId,
                     "[MidwayFloat] LoopBound NextElem %llu < FirstFloatElem "
                     "%llu. Not Yet Float.\n",
                     dynBound.nextElementIdx, firstFloatElementIdx);
       return false;
     }
     if (dynBound.brokenOut) {
-      DYN_S_DPRINTF(dynS->dynamicStreamId,
+      DYN_S_DPRINTF(dynS->dynStreamId,
                     "[MidwayFloat] LoopBound BrokenOut NextElem %llu <= "
                     "FirstFloatElem %llu. Don't Float.\n",
                     dynBound.nextElementIdx, firstFloatElementIdx);
@@ -1057,7 +1055,7 @@ bool StreamFloatController::isMidwayFloatReady(
      */
     auto firstFloatElement = dynS->getElementByIdx(firstFloatElementIdx);
     if (!firstFloatElement) {
-      DYN_S_PANIC(dynS->dynamicStreamId,
+      DYN_S_PANIC(dynS->dynStreamId,
                   "[MidwayFloat] FirstFloatElem already released.");
     }
     if (!firstFloatElement->isValueReady) {
@@ -1092,12 +1090,12 @@ bool StreamFloatController::trySendMidwayFloat(SeqNumToPktMapIter iter) {
     auto &dynRegion = this->se->regionController->getDynRegion(
         to_string(configVec->front()->dynamicId), configSeqNum);
     for (auto S : dynRegion.staticRegion->streams) {
-      auto &dynS = S->getDynamicStream(configSeqNum);
+      auto &dynS = S->getDynStream(configSeqNum);
       dynS.setFloatConfigDelayed(false);
-      DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynamicStreamId,
+      DYN_S_DPRINTF_(CoreRubyStreamLife, dynS.dynStreamId,
                      "[MidwayFloat] Midway Floated at Elem %llu.\n",
                      dynS.getFirstFloatElemIdx());
-      DYN_S_DPRINTF(dynS.dynamicStreamId,
+      DYN_S_DPRINTF(dynS.dynStreamId,
                     "[MidwayFloat] Midway Floated at Elem %llu.\n",
                     dynS.getFirstFloatElemIdx());
     }

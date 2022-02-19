@@ -11,7 +11,7 @@ public:
 
   void receiveStreamNDCRequest(PacketPtr pkt);
 
-  void receiveStreamData(const DynamicStreamSliceId &sliceId,
+  void receiveStreamData(const DynStreamSliceId &sliceId,
                          const DataBlock &dataBlock,
                          const DataBlock &storeValueBlock);
   void receiveStreamForwardRequest(const RequestMsg &msg);
@@ -48,29 +48,28 @@ private:
   };
 
   using NDCContextMapT =
-      std::unordered_map<DynamicStreamId, std::list<NDCContext>,
-                         DynamicStreamIdHasher>;
+      std::unordered_map<DynStreamId, std::list<NDCContext>, DynStreamIdHasher>;
   static NDCContextMapT inflyNDCContextMap;
 
-  static NDCContext *getContextFromSliceId(const DynamicStreamSliceId &sliceId);
-  static void eraseContextFromSliceId(const DynamicStreamSliceId &sliceId);
+  static NDCContext *getContextFromSliceId(const DynStreamSliceId &sliceId);
+  static void eraseContextFromSliceId(const DynStreamSliceId &sliceId);
 
   void processStreamNDCRequest(PacketPtr pkt);
 
   /**
    * Helper function to issue stream NDC response to MLC at request core.
    */
-  void issueStreamNDCResponseToMLC(const DynamicStreamSliceId &sliceId,
+  void issueStreamNDCResponseToMLC(const DynStreamSliceId &sliceId,
                                    Addr paddrLine, const uint8_t *data,
                                    int dataSize, int payloadSize,
                                    int lineOffset, bool forceIdea);
 
-  void handleNDC(NDCContext &context, const DynamicStreamSliceId &sliceId,
+  void handleNDC(NDCContext &context, const DynStreamSliceId &sliceId,
                  const DataBlock &dataBlock);
   void handleAtomicNDC(NDCContext &context,
-                       const DynamicStreamSliceId &sliceId);
+                       const DynStreamSliceId &sliceId);
   void handleForwardNDC(NDCContext &context,
-                        const DynamicStreamSliceId &sliceId,
+                        const DynStreamSliceId &sliceId,
                         const DataBlock &dataBlock);
   void handleStoreNDC(NDCContext &context);
 };

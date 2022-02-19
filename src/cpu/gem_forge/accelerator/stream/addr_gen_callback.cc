@@ -13,10 +13,10 @@ StreamValue GetSingleStreamValue::operator()(uint64_t streamId) const {
   return this->streamValue;
 }
 
-DynamicStreamParamV
-convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
+DynStreamParamV
+convertFormalParamToParam(const DynStreamFormalParamV &formalParams,
                           GetStreamValueFunc getStreamValue) {
-  DynamicStreamParamV params;
+  DynStreamParamV params;
   for (const auto &formalParam : formalParams) {
     if (formalParam.isInvariant) {
       params.push_back(formalParam.invariant);
@@ -29,10 +29,9 @@ convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
   return params;
 }
 
-StreamValue
-AddrGenCallback::genAddr(uint64_t idx,
-                         const DynamicStreamFormalParamV &formalParams,
-                         GetStreamValueFunc getStreamValue) {
+StreamValue AddrGenCallback::genAddr(uint64_t idx,
+                                     const DynStreamFormalParamV &formalParams,
+                                     GetStreamValueFunc getStreamValue) {
 
   // 1. Prepare the parameters.
   auto params = convertFormalParamToParam(formalParams, getStreamValue);
@@ -42,7 +41,7 @@ AddrGenCallback::genAddr(uint64_t idx,
 }
 
 StreamValue LinearAddrGenCallback::genAddr(uint64_t idx,
-                                           const DynamicStreamParamV &params) {
+                                           const DynStreamParamV &params) {
   /**
    * LINEAR pattern has 2n or (2n+1) parameters, where n is the difference of
    * loop level between ConfigureLoop and InnerMostLoop. It has the following
@@ -91,8 +90,8 @@ StreamValue LinearAddrGenCallback::genAddr(uint64_t idx,
   return retAddr;
 }
 
-bool LinearAddrGenCallback::isContinuous(
-    const DynamicStreamFormalParamV &params, int32_t elementSize) {
+bool LinearAddrGenCallback::isContinuous(const DynStreamFormalParamV &params,
+                                         int32_t elementSize) {
   assert(params.size() >= 2 && "Invalid number of inputs.");
   // Make sure it is all invariant.
   for (const auto &p : params) {
@@ -119,21 +118,20 @@ bool LinearAddrGenCallback::isContinuous(
 }
 
 int64_t
-LinearAddrGenCallback::getInnerStride(const DynamicStreamFormalParamV &params) {
+LinearAddrGenCallback::getInnerStride(const DynStreamFormalParamV &params) {
   auto idx = 0;
   assert(params.at(idx).isInvariant && "Variant inner stride.");
   return params.at(idx).invariant.uint64();
 }
 
 uint64_t
-LinearAddrGenCallback::getStartAddr(const DynamicStreamFormalParamV &params) {
+LinearAddrGenCallback::getStartAddr(const DynStreamFormalParamV &params) {
   // The last one is start address.
   return params.rbegin()->invariant.uint64();
 }
 
 uint64_t LinearAddrGenCallback::getFirstElementForAddr(
-    const DynamicStreamFormalParamV &params, int32_t elementSize,
-    uint64_t addr) {
+    const DynStreamFormalParamV &params, int32_t elementSize, uint64_t addr) {
   // Get the stride 0.
   auto startAddr = this->getStartAddr(params);
   assert(addr > startAddr + elementSize && "Addr too small.");
@@ -141,9 +139,10 @@ uint64_t LinearAddrGenCallback::getFirstElementForAddr(
   return (addr - startAddr) / stride0 + 1;
 }
 
-bool LinearAddrGenCallback::estimateReuse(
-    const DynamicStreamFormalParamV &params, uint64_t elementSize,
-    uint64_t &reuseFootprint, uint64_t &reuseCount) {
+bool LinearAddrGenCallback::estimateReuse(const DynStreamFormalParamV &params,
+                                          uint64_t elementSize,
+                                          uint64_t &reuseFootprint,
+                                          uint64_t &reuseCount) {
   assert(params.size() >= 2);
   for (const auto &param : params) {
     assert(param.isInvariant && "Variant param for LinearAddrGenCallback.");
@@ -194,7 +193,7 @@ bool LinearAddrGenCallback::estimateReuse(
 }
 
 uint64_t
-LinearAddrGenCallback::getNestTripCount(const DynamicStreamFormalParamV &params,
+LinearAddrGenCallback::getNestTripCount(const DynStreamFormalParamV &params,
                                         int nestLevel) {
   auto knownLevels = (params.size() - 1) / 2;
   assert(knownLevels >= nestLevel);

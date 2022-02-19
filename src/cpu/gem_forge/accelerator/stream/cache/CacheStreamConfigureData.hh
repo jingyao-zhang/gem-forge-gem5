@@ -1,10 +1,10 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_CACHE_STREAM_CONFIGURE_DATA_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_CACHE_STREAM_CONFIGURE_DATA_H__
 
-#include "cpu/gem_forge/accelerator/stream/dyn_stream.hh"
 #include "StreamFloatPlan.hh"
+#include "cpu/gem_forge/accelerator/stream/dyn_stream.hh"
 
-#include "DynamicStreamId.hh"
+#include "DynStreamId.hh"
 
 #include "base/types.hh"
 
@@ -20,8 +20,8 @@ struct CacheStreamConfigureData
     : public std::enable_shared_from_this<CacheStreamConfigureData> {
 public:
   CacheStreamConfigureData(
-      Stream *_stream, const DynamicStreamId &_dynamicId, int _elementSize,
-      const std::vector<DynamicStreamFormalParam> &_addrGenFormalParams,
+      Stream *_stream, const DynStreamId &_dynamicId, int _elementSize,
+      const std::vector<DynStreamFormalParam> &_addrGenFormalParams,
       AddrGenCallbackPtr _addrGenCallback);
   CacheStreamConfigureData(const CacheStreamConfigureData &other) = delete;
   CacheStreamConfigureData &
@@ -31,7 +31,7 @@ public:
   operator=(CacheStreamConfigureData &&other) = delete;
 
   Stream *stream;
-  DynamicStreamId dynamicId;
+  DynStreamId dynamicId;
   int elementSize;
 
   /**
@@ -63,9 +63,9 @@ public:
   bool rangeSync = false;
   bool rangeCommit = false;
 
-  DynamicStreamFormalParamV addrGenFormalParams;
+  DynStreamFormalParamV addrGenFormalParams;
   AddrGenCallbackPtr addrGenCallback;
-  DynamicStreamFormalParamV predFormalParams;
+  DynStreamFormalParamV predFormalParams;
   ExecFuncPtr predCallback;
 
   /**
@@ -86,17 +86,17 @@ public:
 
   bool isPredicated = false;
   bool isPredicatedTrue = false;
-  DynamicStreamId predicateStreamId;
+  DynStreamId predicateStreamId;
 
   // For StoreFunc and LoadFunc.
-  DynamicStreamFormalParamV storeFormalParams;
+  DynStreamFormalParamV storeFormalParams;
   ExecFuncPtr storeCallback;
-  DynamicStreamFormalParamV loadFormalParams;
+  DynStreamFormalParamV loadFormalParams;
   ExecFuncPtr loadCallback;
 
   // For LoopBoundFunc.
   // Break when loopBoundCallback() == Ret.
-  DynamicStreamFormalParamV loopBoundFormalParams;
+  DynStreamFormalParamV loopBoundFormalParams;
   ExecFuncPtr loopBoundCallback;
   bool loopBoundRet;
 

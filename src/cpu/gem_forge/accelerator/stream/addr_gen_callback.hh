@@ -9,16 +9,16 @@
 #include <vector>
 
 using StreamValue = TheISA::ExecFunc::RegisterValue;
-using DynamicStreamParamV = std::vector<StreamValue>;
+using DynStreamParamV = std::vector<StreamValue>;
 using GetStreamValueFunc = std::function<StreamValue(uint64_t)>;
 using ExecFuncPtr = std::shared_ptr<TheISA::ExecFunc>;
 
-struct DynamicStreamFormalParam {
+struct DynStreamFormalParam {
   StreamValue invariant;
   uint64_t baseStreamId;
   bool isInvariant;
 };
-using DynamicStreamFormalParamV = std::vector<DynamicStreamFormalParam>;
+using DynStreamFormalParamV = std::vector<DynStreamFormalParam>;
 
 /**
  * Use if you expect no base stream.
@@ -36,8 +36,8 @@ struct GetSingleStreamValue {
   StreamValue operator()(uint64_t streamId) const;
 };
 
-DynamicStreamParamV
-convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
+DynStreamParamV
+convertFormalParamToParam(const DynStreamFormalParamV &formalParams,
                           GetStreamValueFunc getStreamValue);
 
 /**
@@ -45,14 +45,14 @@ convertFormalParamToParam(const DynamicStreamFormalParamV &formalParams,
  */
 struct AddrGenCallback {
   virtual StreamValue genAddr(uint64_t idx,
-                              const DynamicStreamParamV &params) = 0;
+                              const DynStreamParamV &params) = 0;
 
   /**
    * This is a helper function to actually call the address callback.
    * Given a callback to collect base stream value.
    */
   StreamValue genAddr(uint64_t idx,
-                      const DynamicStreamFormalParamV &formalParams,
+                      const DynStreamFormalParamV &formalParams,
                       GetStreamValueFunc getStreamValue);
           
   virtual Cycles getEstimatedLatency() const = 0;
@@ -61,39 +61,39 @@ struct AddrGenCallback {
 using AddrGenCallbackPtr = std::shared_ptr<AddrGenCallback>;
 
 struct LinearAddrGenCallback : public AddrGenCallback {
-  StreamValue genAddr(uint64_t idx, const DynamicStreamParamV &params) override;
+  StreamValue genAddr(uint64_t idx, const DynStreamParamV &params) override;
 
   Cycles getEstimatedLatency() const override {
     return Cycles(1);
   }
 
-  bool isContinuous(const DynamicStreamFormalParamV &params,
+  bool isContinuous(const DynStreamFormalParamV &params,
                     int32_t elementSize);
   /**
    * Get the inner most stride.
    */
-  int64_t getInnerStride(const DynamicStreamFormalParamV &params);
+  int64_t getInnerStride(const DynStreamFormalParamV &params);
   /**
    * Only valid when continuous.
    */
-  uint64_t getStartAddr(const DynamicStreamFormalParamV &params);
+  uint64_t getStartAddr(const DynStreamFormalParamV &params);
   /**
    * Compute the first elementIdx that will touch the address.
    */
-  uint64_t getFirstElementForAddr(const DynamicStreamFormalParamV &params,
+  uint64_t getFirstElementForAddr(const DynStreamFormalParamV &params,
                                   int32_t elementSize, uint64_t addr);
   /**
    * Estimate memory footprint and reuse count.
    * @return success, reuse footprint, reuse count.
    */
-  bool estimateReuse(const DynamicStreamFormalParamV &params,
+  bool estimateReuse(const DynStreamFormalParamV &params,
                      uint64_t elementSize, uint64_t &reuseFootprint,
                      uint64_t &reuseCount);
 
   /**
    * Get nested trip count.
    */
-  uint64_t getNestTripCount(const DynamicStreamFormalParamV &params,
+  uint64_t getNestTripCount(const DynStreamFormalParamV &params,
                             int nestLevel);
 };
 
@@ -102,7 +102,7 @@ public:
   FuncAddrGenCallback(ExecFuncPtr _execFunc) : execFunc(_execFunc) {}
 
   StreamValue genAddr(uint64_t idx,
-                      const DynamicStreamParamV &params) override {
+                      const DynStreamParamV &params) override {
     // We ignore the idx.
     return this->execFunc->invoke(params);
   }

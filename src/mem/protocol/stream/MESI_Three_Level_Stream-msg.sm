@@ -78,7 +78,7 @@ structure(CoherenceMsg, desc="...", interface="Message") {
   /**
    * Passed the stream information.
    */
-  DynamicStreamSliceId slice,   desc="Optional field for stream info";
+  DynStreamSliceId slice,   desc="Optional field for stream info";
   PacketPtr pkt,                desc="Optional field for stream configure";
 
   bool functionalRead(Packet *packet) {

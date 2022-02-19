@@ -166,7 +166,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     MachineID Exclusive,              desc="Exclusive holder of block";
     DataBlock DataBlk,                desc="data for the block";
     bool Dirty, default="false",      desc="data is dirty";
-    DynamicStreamSliceIdVec sliceIds, desc="tempoary slices for this entry";
+    DynStreamSliceIdVec sliceIds, desc="tempoary slices for this entry";
     int pendingUnblocks,              desc="Number of pending unblocks from multicast requestors";
   }
 
@@ -183,7 +183,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     NetDest L1_GetV_IDs,              desc="Set of the internal processors that want the block via L1_GETV";
     MachineID L1_GetX_ID,             desc="ID of the L1 cache to forward the block to once we get a response";
     int pendingAcks,                  desc="number of pending acks for invalidates during writeback";
-    DynamicStreamSliceIdVec sliceIds, desc="Stream slices meta-data";
+    DynStreamSliceIdVec sliceIds, desc="Stream slices meta-data";
     DataBlock streamStoreBlk,         desc="Buffer for the update data";
   }
 
@@ -203,14 +203,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   structure(LLCStreamEngine, external="yes", desc="Stream Engine at LLC") {
     void receiveStreamConfigure(PacketPtr);
     void receiveStreamEnd(PacketPtr);
-    void receiveStreamMigrate(LLCDynamicStreamPtr, bool);
-    void receiveStreamFlow(DynamicStreamSliceId);
-    void receiveStreamDataVec(Cycles, Addr, DynamicStreamSliceIdVec, DataBlock, DataBlock);
+    void receiveStreamMigrate(LLCDynStreamPtr, bool);
+    void receiveStreamFlow(DynStreamSliceId);
+    void receiveStreamDataVec(Cycles, Addr, DynStreamSliceIdVec, DataBlock, DataBlock);
     void receiveStreamIndirectRequest(RequestMsg);
     void receiveStreamForwardRequest(RequestMsg);
-    void receiveStreamCommit(DynamicStreamSliceId);
+    void receiveStreamCommit(DynStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
-    void notifyStreamRequestMiss(DynamicStreamSliceIdVec);
+    void notifyStreamRequestMiss(DynStreamSliceIdVec);
   }
 
   LLCStreamEngine se, constructor="this, m_streamMigrateFromL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectFromL2Cache_ptr, m_responseFromL2Cache_ptr";
@@ -228,7 +228,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   MachineID mapAddressToMachine(Addr addr, MachineType mtype);
   void setHitCacheLevel(RequestStatisticPtr, int);
   RequestStatisticPtr getRequestStatistic(PacketPtr);
-  void recordLLCReqQueueStats(RequestStatisticPtr, DynamicStreamSliceIdVec, bool);
+  void recordLLCReqQueueStats(RequestStatisticPtr, DynStreamSliceIdVec, bool);
   void incrementLLCIndReqQueueStats();
 
   bool isStreamSublineEnabled();

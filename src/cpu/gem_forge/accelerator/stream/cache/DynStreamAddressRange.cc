@@ -1,12 +1,12 @@
-#include "DynamicStreamAddressRange.hh"
+#include "DynStreamAddressRange.hh"
 
-DynamicStreamAddressRange::DynamicStreamAddressRange(
-    const DynamicStreamElementRangeId &_elementRange,
+DynStreamAddressRange::DynStreamAddressRange(
+    const DynStreamElementRangeId &_elementRange,
     const AddressRange &_vaddrRange, const AddressRange &_paddrRange)
     : elementRange(_elementRange), vaddrRange(_vaddrRange),
       paddrRange(_paddrRange) {}
 
-void DynamicStreamAddressRange::addRange(DynamicStreamAddressRangePtr &range) {
+void DynStreamAddressRange::addRange(DynStreamAddressRangePtr &range) {
   // Use the first one as my element range.
   if (!this->isValid()) {
     this->elementRange = range->elementRange;
@@ -14,7 +14,7 @@ void DynamicStreamAddressRange::addRange(DynamicStreamAddressRangePtr &range) {
 
   // If this is the first union, we also allocate a subrange for myself.
   if (this->subRanges.empty()) {
-    auto self = std::make_shared<DynamicStreamAddressRange>(
+    auto self = std::make_shared<DynStreamAddressRange>(
         this->elementRange, this->vaddrRange, this->paddrRange);
     this->subRanges.push_back(self);
   }
@@ -35,8 +35,7 @@ std::ostream &operator<<(std::ostream &os, const AddressRange &range) {
   return os;
 }
 
-std::ostream &operator<<(std::ostream &os,
-                         const DynamicStreamAddressRange &range) {
+std::ostream &operator<<(std::ostream &os, const DynStreamAddressRange &range) {
   if (range.isUnion()) {
     os << "\n  Union Range Vaddr " << range.vaddrRange << " Paddr "
        << range.paddrRange << "\n";

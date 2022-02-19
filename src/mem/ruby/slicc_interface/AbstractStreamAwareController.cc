@@ -287,7 +287,7 @@ void AbstractStreamAwareController::recordDeallocateNoReuseReqStats(
 }
 
 void AbstractStreamAwareController::recordLLCReqQueueStats(
-    const RequestStatisticPtr &reqStat, const DynamicStreamSliceIdVec &sliceIds,
+    const RequestStatisticPtr &reqStat, const DynStreamSliceIdVec &sliceIds,
     bool isLoad) {
   this->recordPCReq(reqStat);
   if (sliceIds.isValid()) {

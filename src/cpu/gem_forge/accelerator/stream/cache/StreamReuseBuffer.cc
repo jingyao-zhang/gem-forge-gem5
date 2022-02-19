@@ -57,7 +57,7 @@ const char *StreamReuseBuffer::curRemoteMachineType() const {
   return this->machineTypeStr;
 }
 
-void StreamReuseBuffer::addLine(const DynamicStreamSliceId &sliceId,
+void StreamReuseBuffer::addLine(const DynStreamSliceId &sliceId,
                                 Addr paddrLine, const DataBlock &dataBlock) {
   if (this->maxNumLines == 0) {
     return;
@@ -66,7 +66,7 @@ void StreamReuseBuffer::addLine(const DynamicStreamSliceId &sliceId,
   this->getReuseBuffer(sliceId.getDynStreamId())->addLine(paddrLine, dataBlock);
 }
 
-bool StreamReuseBuffer::contains(const DynamicStreamSliceId &reuseSliceId,
+bool StreamReuseBuffer::contains(const DynStreamSliceId &reuseSliceId,
                                  Addr paddrLine) {
   if (this->maxNumLines == 0) {
     return false;
@@ -79,14 +79,14 @@ bool StreamReuseBuffer::contains(const DynamicStreamSliceId &reuseSliceId,
 }
 
 const DataBlock &
-StreamReuseBuffer::reuse(const DynamicStreamSliceId &reuseSliceId,
+StreamReuseBuffer::reuse(const DynStreamSliceId &reuseSliceId,
                          Addr paddrLine) {
   assert(this->maxNumLines > 0 && "StreamReuseBuffer is disabled.");
   LLC_SLICE_DPRINTF(reuseSliceId, "Reused %#x.\n", paddrLine);
   return this->getReuseBuffer(reuseSliceId.getDynStreamId())->reuse(paddrLine);
 }
 
-int StreamReuseBuffer::getCoreId(const DynamicStreamId &dynSId) const {
+int StreamReuseBuffer::getCoreId(const DynStreamId &dynSId) const {
   if (this->perCoreMode) {
     return dynSId.coreId;
   } else {
@@ -96,7 +96,7 @@ int StreamReuseBuffer::getCoreId(const DynamicStreamId &dynSId) const {
 }
 
 StreamReuseBuffer::ReuseBufferPtr &
-StreamReuseBuffer::getReuseBuffer(const DynamicStreamId &dynSId) {
+StreamReuseBuffer::getReuseBuffer(const DynStreamId &dynSId) {
   auto coreId = this->getCoreId(dynSId);
   if (!(coreId >= 0 && coreId < 64)) {
     DYN_S_PANIC(dynSId, "Invalid CoreId %d.");
@@ -109,7 +109,7 @@ StreamReuseBuffer::getReuseBuffer(const DynamicStreamId &dynSId) {
 }
 
 bool StreamReuseBuffer::shouldCacheStream(Stream *S,
-                                          const DynamicStreamId &dynSId) const {
+                                          const DynStreamId &dynSId) const {
   /**
    * We cache if we are enabled and the Stream has more than one AliasedStream.
    * And that alias offset is within our size.
@@ -167,7 +167,7 @@ bool StreamReuseBuffer::shouldCacheStream(Stream *S,
 }
 
 bool StreamReuseBuffer::shouldCheckReuse(Stream *S,
-                                         const DynamicStreamId &dynSId) const {
+                                         const DynStreamId &dynSId) const {
   /**
    * We cache if we are enabled and the Stream has more than one AliasedStream.
    */

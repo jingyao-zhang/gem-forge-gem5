@@ -8,8 +8,8 @@
  * This is where it receives the offloaded streams' data.
  */
 
-#include "MLCDynamicDirectStream.hh"
-#include "MLCDynamicIndirectStream.hh"
+#include "MLCDynDirectStream.hh"
+#include "MLCDynIndirectStream.hh"
 
 #include "mem/packet.hh"
 #include "mem/ruby/common/Consumer.hh"
@@ -64,17 +64,17 @@ public:
    * has the flow control information and knows where the stream is.
    * It will terminate the stream and send a EndPacket to the LLC bank.
    */
-  void endStream(const DynamicStreamId &endId, MasterID masterId);
+  void endStream(const DynStreamId &endId, MasterID masterId);
   void receiveStreamData(const ResponseMsg &msg);
-  void receiveStreamDataForSingleSlice(const DynamicStreamSliceId &sliceId,
+  void receiveStreamDataForSingleSlice(const DynStreamSliceId &sliceId,
                                        const DataBlock &dataBlock,
                                        Addr paddrLine);
 
-  bool isStreamRequest(const DynamicStreamSliceId &slice);
-  bool isStreamOffloaded(const DynamicStreamSliceId &slice);
-  bool isStreamCached(const DynamicStreamSliceId &slice);
-  bool receiveOffloadStreamRequest(const DynamicStreamSliceId &sliceId);
-  void receiveOffloadStreamRequestHit(const DynamicStreamSliceId &sliceId);
+  bool isStreamRequest(const DynStreamSliceId &slice);
+  bool isStreamOffloaded(const DynStreamSliceId &slice);
+  bool isStreamCached(const DynStreamSliceId &slice);
+  bool receiveOffloadStreamRequest(const DynStreamSliceId &sliceId);
+  void receiveOffloadStreamRequestHit(const DynStreamSliceId &sliceId);
 
   /**
    * Receive a StreamNDC message.
@@ -86,29 +86,27 @@ public:
   /**
    * Receive a StreamLoopBound TotalTripCount.
    */
-  void receiveStreamTotalTripCount(const DynamicStreamId &streamId,
+  void receiveStreamTotalTripCount(const DynStreamId &streamId,
                                    int64_t totalTripCount, Addr brokenPAddr,
                                    MachineType brokenMachineType);
 
   /**
-   * API to get the MLCDynamicStream.
+   * API to get the MLCDynStream.
    */
-  MLCDynamicStream *getStreamFromDynamicId(const DynamicStreamId &id);
+  MLCDynStream *getStreamFromDynamicId(const DynStreamId &id);
 
 private:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseToUpperMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;
-  std::unordered_map<DynamicStreamId, MLCDynamicStream *, DynamicStreamIdHasher>
+  std::unordered_map<DynStreamId, MLCDynStream *, DynStreamIdHasher>
       idToStreamMap;
 
   // For sanity check.
   // TODO: Limit the size of this set.
-  std::unordered_set<DynamicStreamId, DynamicStreamIdHasher>
-      endedStreamDynamicIds;
+  std::unordered_set<DynStreamId, DynStreamIdHasher> endedStreamDynamicIds;
 
-  MLCDynamicStream *
-  getMLCDynamicStreamFromSlice(const DynamicStreamSliceId &slice) const;
+  MLCDynStream *getMLCDynStreamFromSlice(const DynStreamSliceId &slice) const;
 
   /**
    * An experimental new feature: handle reuse among streams.
@@ -116,21 +114,19 @@ private:
   void computeReuseInformation(CacheStreamConfigureVec &streamConfigs);
 
   struct ReuseInfo {
-    DynamicStreamId targetStreamId;
+    DynStreamId targetStreamId;
     uint64_t targetCutElementIdx;
     uint64_t targetCutLineVAddr;
-    ReuseInfo(const DynamicStreamId &_targetStreamId,
-              uint64_t _targetCutElementIdx, uint64_t _targetCutLineVAddr)
+    ReuseInfo(const DynStreamId &_targetStreamId, uint64_t _targetCutElementIdx,
+              uint64_t _targetCutLineVAddr)
         : targetStreamId(_targetStreamId),
           targetCutElementIdx(_targetCutElementIdx),
           targetCutLineVAddr(_targetCutLineVAddr) {}
   };
-  std::unordered_map<DynamicStreamId, ReuseInfo, DynamicStreamIdHasher>
-      reuseInfoMap;
-  std::unordered_map<DynamicStreamId, ReuseInfo, DynamicStreamIdHasher>
+  std::unordered_map<DynStreamId, ReuseInfo, DynStreamIdHasher> reuseInfoMap;
+  std::unordered_map<DynStreamId, ReuseInfo, DynStreamIdHasher>
       reverseReuseInfoMap;
-  void reuseSlice(const DynamicStreamSliceId &sliceId,
-                  const DataBlock &dataBlock);
+  void reuseSlice(const DynStreamSliceId &sliceId, const DataBlock &dataBlock);
 
   /**
    * StreamNDCController.

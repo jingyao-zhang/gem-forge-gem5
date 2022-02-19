@@ -150,9 +150,9 @@ public:
  */
 class Stream {
 public:
-  friend class DynamicStream;
-  using StaticId = DynamicStreamId::StaticId;
-  using InstanceId = DynamicStreamId::InstanceId;
+  friend class DynStream;
+  using StaticId = DynStreamId::StaticId;
+  using InstanceId = DynStreamId::InstanceId;
   struct StreamArguments {
     LLVMTraceCPU *cpu;
     GemForgeCPUDelegator *cpuDelegator;
@@ -217,7 +217,7 @@ public:
    * now StreamConfig and StreamEnd are not properly interleaved.
    * But StreamConfig and StreamEnd are still in-order within its
    * own class. Thus we define that a stream is configured if it
-   * has some DynamicStreams, and the last one has not dispatched
+   * has some DynStreams, and the last one has not dispatched
    * the StreamEnd.
    */
   bool isConfigured() const;
@@ -262,10 +262,10 @@ public:
    * edges between two streams. e.g. b[i] = a[i] + a[i - 1].
    */
   struct StreamDepEdge {
-    using TypeE = DynamicStream::StreamDepEdge::TypeE;
+    using TypeE = DynStream::StreamDepEdge::TypeE;
     const TypeE type;
-    const StaticId fromStaticId = DynamicStreamId::InvalidStaticStreamId;
-    const StaticId toStaticId = DynamicStreamId::InvalidStaticStreamId;
+    const StaticId fromStaticId = DynStreamId::InvalidStaticStreamId;
+    const StaticId toStaticId = DynStreamId::InvalidStaticStreamId;
     Stream *const toStream = nullptr;
     StreamDepEdge(TypeE _type, StaticId _fromId, StaticId _toId,
                   Stream *_toStream)
@@ -342,8 +342,7 @@ public:
   void configure(uint64_t seqNum, ThreadContext *tc);
 
   void dispatchStreamConfig(uint64_t seqNum, ThreadContext *tc);
-  void executeStreamConfig(uint64_t seqNum,
-                           const DynamicStreamParamV *inputVec);
+  void executeStreamConfig(uint64_t seqNum, const DynStreamParamV *inputVec);
   void commitStreamConfig(uint64_t seqNum);
   void rewindStreamConfig(uint64_t seqNum);
   bool isStreamConfigureExecuted(uint64_t seqNum);
@@ -363,19 +362,19 @@ public:
   /**
    * Allocate a new dynamic instance with FIFOIdx.
    */
-  DynamicStreamId allocateNewInstance();
+  DynStreamId allocateNewInstance();
 
   /**
    * Remove one unstepped element from the dynamic stream.
    * CommitStreamEnd will release from the first dynamic stream.
    * RewindStreamConfig will release from the last one.
    */
-  StreamElement *releaseElementUnstepped(DynamicStream &dynS);
+  StreamElement *releaseElementUnstepped(DynStream &dynS);
   /**
    * Check if the dynamic stream has an unstepped element.
    * @param instanceId: if Invalid, check FirstAliveDynStream.
    */
-  bool hasUnsteppedElement(DynamicStreamId::InstanceId instanceId);
+  bool hasUnsteppedElement(DynStreamId::InstanceId instanceId);
   /**
    * Get the first unstepped element of the last dynamic stream.
    */
@@ -383,35 +382,33 @@ public:
   /**
    * Get the first alive dynamic stream (End not dispatched).
    */
-  DynamicStream &getFirstAliveDynStream();
+  DynStream &getFirstAliveDynStream();
   /**
    * Get the current allocating dynamic stream (may be nullptr).
    * 1. End not dispatched.
    * 2. If has TotalTripCount, it has not reached that limit.
    */
-  DynamicStream *getAllocatingDynStream();
+  DynStream *getAllocatingDynStream();
   /**
    * Get previous element in the chain of the stream.
    * Notice that it may return nullptr if this is
    * the first element for that stream.
    */
   StreamElement *getPrevElement(StreamElement *element);
-  void handleMergedPredicate(const DynamicStream &dynS, StreamElement *element);
-  void performStore(const DynamicStream &dynS, StreamElement *element,
+  void handleMergedPredicate(const DynStream &dynS, StreamElement *element);
+  void performStore(const DynStream &dynS, StreamElement *element,
                     uint64_t storeValue);
 
   /**
    * Called by executeStreamConfig() to allow derived class to set up the
-   * AddrGenCallback in DynamicStream.
+   * AddrGenCallback in DynStream.
    */
-  void setupAddrGen(DynamicStream &dynStream,
-                    const DynamicStreamParamV *inputVec);
+  void setupAddrGen(DynStream &dynStream, const DynStreamParamV *inputVec);
 
   /**
    * Extract extra input values from the inputVec. May modify inputVec.
    */
-  void extractExtraInputValues(DynamicStream &dynS,
-                               DynamicStreamParamV *inputVec);
+  void extractExtraInputValues(DynStream &dynS, DynStreamParamV *inputVec);
 
   /**
    * For debug.
@@ -425,18 +422,18 @@ public:
   CacheStreamConfigureDataPtr
   allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect = false);
 
-  std::deque<DynamicStream> dynamicStreams;
-  bool hasDynamicStream() const { return !this->dynamicStreams.empty(); }
-  DynamicStream &getDynamicStream(uint64_t seqNum);
-  DynamicStream &getDynamicStreamByEndSeqNum(uint64_t seqNum);
-  DynamicStream &getDynamicStreamByInstance(InstanceId instance);
-  DynamicStream &getDynamicStreamBefore(uint64_t seqNum);
-  DynamicStream *getDynamicStream(const DynamicStreamId &dynId);
-  DynamicStream &getLastDynamicStream() {
+  std::deque<DynStream> dynamicStreams;
+  bool hasDynStream() const { return !this->dynamicStreams.empty(); }
+  DynStream &getDynStream(uint64_t seqNum);
+  DynStream &getDynStreamByEndSeqNum(uint64_t seqNum);
+  DynStream &getDynStreamByInstance(InstanceId instance);
+  DynStream &getDynStreamBefore(uint64_t seqNum);
+  DynStream *getDynStream(const DynStreamId &dynId);
+  DynStream &getLastDynStream() {
     assert(!this->dynamicStreams.empty() && "No dynamic stream.");
     return this->dynamicStreams.back();
   }
-  DynamicStream &getFirstDynamicStream() {
+  DynStream &getFirstDynStream() {
     assert(!this->dynamicStreams.empty() && "No dynamic stream.");
     return this->dynamicStreams.front();
   }
@@ -449,7 +446,7 @@ public:
    * across stream configuration.
    */
   struct StreamAggregateHistory {
-    DynamicStreamFormalParamV addrGenFormalParams;
+    DynStreamFormalParamV addrGenFormalParams;
     uint64_t numReleasedElements = 0;
     uint64_t numIssuedRequests = 0;
     uint64_t numPrivateCacheHits = 0;
@@ -458,7 +455,7 @@ public:
   };
   static constexpr int AggregateHistorySize = 4;
   std::list<StreamAggregateHistory> aggregateHistory;
-  void recordAggregateHistory(const DynamicStream &dynS);
+  void recordAggregateHistory(const DynStream &dynS);
 
   AddrGenCallbackPtr &getAddrGenCallback() { return this->addrGenCallback; }
 
@@ -499,7 +496,7 @@ public:
 
   std::unique_ptr<StreamAtomicOp>
   setupAtomicOp(FIFOEntryIdx idx, int memElementsize,
-                const DynamicStreamFormalParamV &formalParams,
+                const DynStreamFormalParamV &formalParams,
                 GetStreamValueFunc getStreamValue);
 
   bool hasDepNestRegion() const { return this->depNestRegion; }
@@ -550,22 +547,21 @@ protected:
   /**
    * Helper function to setup a linear addr func.
    */
-  void setupLinearAddrFunc(DynamicStream &dynStream,
-                           const DynamicStreamParamV *inputVec,
+  void setupLinearAddrFunc(DynStream &dynStream,
+                           const DynStreamParamV *inputVec,
                            const LLVM::TDG::StreamInfo &info);
   /**
    * Helper function to setup an func addr gen.
    */
-  void setupFuncAddrFunc(DynamicStream &dynStream,
-                         const DynamicStreamParamV *inputVec,
+  void setupFuncAddrFunc(DynStream &dynStream, const DynStreamParamV *inputVec,
                          const LLVM::TDG::StreamInfo &info);
   /**
    * Helper function to setup formal params for an ExecFunc.
    * @return Number of input value consumed.
    */
-  int setupFormalParams(const DynamicStreamParamV *inputVec,
+  int setupFormalParams(const DynStreamParamV *inputVec,
                         const LLVM::TDG::ExecFuncInfo &info,
-                        DynamicStreamFormalParamV &formalParams);
+                        DynStreamFormalParamV &formalParams);
 
   /***************************************************************
    * Managing coalesced LogicalStream within this one.
@@ -657,7 +653,7 @@ public:
     return this->primeLogical->info.static_info()
                .compute_info()
                .update_stream()
-               .id() != DynamicStreamId::InvalidStaticStreamId;
+               .id() != DynStreamId::InvalidStaticStreamId;
   }
 
   const ::LLVM::TDG::StreamParam &getConstUpdateParam() const {
