@@ -275,10 +275,10 @@ bool MLCDynStream::tryPopStream() {
                         "[DelayPop] SelfSliceIdx MLC %llu > LLC %llu.\n",
                         mlcHeadSliceIdx, llcDynSProgressSliceIdx);
       auto se = this->controller->getMLCStreamEngine();
-      auto dynId = this->getDynStreamId();
+      auto dynId = this->getDynStrandId();
       auto sliceAllocCallback = [se, dynId](const DynStreamId &dynStreamId,
                                             uint64_t sliceIdx) -> void {
-        if (auto dynS = se->getStreamFromDynamicId(dynId)) {
+        if (auto dynS = se->getStreamFromStrandId(dynId)) {
           dynS->popBlocked = false;
           dynS->scheduleAdvanceStream();
         } else {
@@ -304,10 +304,10 @@ bool MLCDynStream::tryPopStream() {
                         "[DelayPop] RecvElementIdx MLC %llu > LLC %llu.\n",
                         mlcHeadSliceEndElementIdx, llcRecvProgressElementIdx);
       auto se = this->controller->getMLCStreamEngine();
-      auto dynId = this->getDynStreamId();
+      auto dynId = this->getDynStrandId();
       auto elementInitCallback = [se, dynId](const DynStreamId &dynStreamId,
                                              uint64_t elementIdx) -> void {
-        if (auto dynS = se->getStreamFromDynamicId(dynId)) {
+        if (auto dynS = se->getStreamFromStrandId(dynId)) {
           dynS->popBlocked = false;
           dynS->scheduleAdvanceStream();
         } else {

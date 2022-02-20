@@ -153,7 +153,7 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 
   S->traceEvent(::LLVM::TDG::StreamFloatEvent::CONFIG);
   // Let's check if StreamEnd packet has arrived earlier.
-  if (this->pendingStreamEndMsgs.count(S->getDynStreamId())) {
+  if (this->pendingEndStrandIds.count(S->getDynStrandId())) {
     S->terminate();
   } else {
     this->streams.emplace_back(S);
@@ -164,21 +164,20 @@ void LLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 }
 
 void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
-  auto endStreamDynamicId = *(pkt->getPtr<DynStreamId *>());
-  LLC_S_DPRINTF_(LLCRubyStreamLife, *endStreamDynamicId,
-                 "Received StreamEnd.\n");
+  auto endStrandId = *(pkt->getPtr<DynStrandId *>());
+  LLC_S_DPRINTF_(LLCRubyStreamLife, *endStrandId, "Received StreamEnd.\n");
   // Search for this stream.
   for (auto streamIter = this->streams.begin(), streamEnd = this->streams.end();
        streamIter != streamEnd; ++streamIter) {
     auto &S = *streamIter;
-    if (S->getDynStreamId() == (*endStreamDynamicId)) {
+    if (S->getDynStrandId() == (*endStrandId)) {
       // Found it.
       // ? Can we just sliently release it?
       this->removeStreamFromMulticastTable(S);
       S->terminate();
       this->streams.erase(streamIter);
       // Don't forgot to release the memory.
-      delete endStreamDynamicId;
+      delete endStrandId;
       delete pkt;
       return;
     }
@@ -194,10 +193,10 @@ void LLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
    * We are waiting for the stream to migrate here.
    * Add the message to the pending
    */
-  this->pendingStreamEndMsgs.insert(*endStreamDynamicId);
+  this->pendingEndStrandIds.insert(*endStrandId);
 
   // Don't forgot to release the memory.
-  delete endStreamDynamicId;
+  delete endStrandId;
   delete pkt;
 }
 
@@ -251,7 +250,7 @@ void LLCStreamEngine::receiveStreamMigrate(LLCDynStreamPtr stream,
   stream->migratingDone(this->controller);
 
   // Check for if the stream is already ended.
-  if (this->pendingStreamEndMsgs.count(stream->getDynStreamId())) {
+  if (this->pendingEndStrandIds.count(stream->getDynStrandId())) {
     stream->terminate();
     return;
   }
@@ -2277,7 +2276,7 @@ void LLCStreamEngine::sendOffloadedLoopBoundRetToMLC(LLCDynStreamPtr stream,
   auto mlcSE = stream->getMLCController()->getMLCStreamEngine();
   assert(mlcSE && "Missing MLC SE.");
   mlcSE->receiveStreamTotalTripCount(
-      stream->getDynStreamId(), totalTripCount, brokenPAddr,
+      stream->getDynStrandId(), totalTripCount, brokenPAddr,
       this->controller->getMachineID().getType());
 }
 

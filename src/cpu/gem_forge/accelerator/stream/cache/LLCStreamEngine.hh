@@ -153,7 +153,7 @@ private:
   /**
    * Buffered stream end message waiting for the stream to migrate here.
    */
-  std::unordered_set<DynStreamId, DynStreamIdHasher> pendingStreamEndMsgs;
+  std::unordered_set<DynStrandId, DynStrandIdHasher> pendingEndStrandIds;
 
   /**
    * Hold the request queue.

@@ -469,7 +469,7 @@ void LLCDynStream::initNextElement(Addr vaddr) {
           }
         }
         auto MLCSE = this->getMLCController()->getMLCStreamEngine();
-        auto MLCDynS = MLCSE->getStreamFromDynamicId(this->getDynStreamId());
+        auto MLCDynS = MLCSE->getStreamFromStrandId(this->getDynStrandId());
         if (MLCDynS) {
           MLCDynS->panicDump();
         } else {

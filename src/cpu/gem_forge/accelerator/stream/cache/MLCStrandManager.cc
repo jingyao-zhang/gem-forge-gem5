@@ -76,7 +76,7 @@ void MLCStrandManager::configureStream(
           indirectStreamConfig, this->controller,
           mlcSE->responseToUpperMsgBuffer, mlcSE->requestToLLCMsgBuffer,
           streamConfigureData->dynamicId /* Root dynamic stream id. */);
-      this->strandMap.emplace(indirectStream->getDynStreamId(), indirectStream);
+      this->strandMap.emplace(indirectStream->getDynStrandId(), indirectStream);
       indirectStreams.push_back(indirectStream);
 
       for (const auto &ISDepEdge : indirectStreamConfig->depEdges) {
@@ -94,7 +94,7 @@ void MLCStrandManager::configureStream(
               ISDepEdge.data, this->controller, mlcSE->responseToUpperMsgBuffer,
               mlcSE->requestToLLCMsgBuffer,
               streamConfigureData->dynamicId /* Root dynamic stream id. */);
-          this->strandMap.emplace(IIS->getDynStreamId(), IIS);
+          this->strandMap.emplace(IIS->getDynStrandId(), IIS);
 
           indirectStreams.push_back(IIS);
           continue;
@@ -108,7 +108,7 @@ void MLCStrandManager::configureStream(
   auto directStream = new MLCDynDirectStream(
       streamConfigureData, this->controller, mlcSE->responseToUpperMsgBuffer,
       mlcSE->requestToLLCMsgBuffer, indirectStreams);
-  this->strandMap.emplace(directStream->getDynStreamId(), directStream);
+  this->strandMap.emplace(directStream->getDynStrandId(), directStream);
 
   /**
    * If there is reuse for this stream, we cut the stream's totalTripCount.
@@ -203,19 +203,22 @@ void MLCStrandManager::receiveStreamEnd(PacketPtr pkt) {
 void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
   MLC_S_DPRINTF_(MLCRubyStreamLife, endId, "Received StreamEnd.\n");
 
-  // The PAddr of the llc stream. The cache controller uses this to find which
-  // LLC bank to forward this StreamEnd message.
-  auto rootStreamIter = this->strandMap.find(endId);
-  assert(rootStreamIter != this->strandMap.end() &&
-         "Failed to find the ending root stream.");
-
-  Addr rootLLCStreamPAddr;
-  MachineType rootStreamOffloadedMachineType;
-  {
-    auto x = rootStreamIter->second->getRemoteTailPAddrAndMachineType();
-    rootLLCStreamPAddr = x.first;
-    rootStreamOffloadedMachineType = x.second;
+  /**
+   * Find all root strands and record the PAddr and MachineType to multicast the
+   * StreamEnd message.
+   */
+  std::vector<std::pair<DynStrandId, std::pair<Addr, MachineType>>>
+      rootStrandTailPAddrMachineTypeVec;
+  for (const auto &entry : this->strandMap) {
+    const auto &strandId = entry.first;
+    if (strandId.dynStreamId == endId) {
+      auto dynS = entry.second;
+      rootStrandTailPAddrMachineTypeVec.emplace_back(
+          strandId, dynS->getRemoteTailPAddrAndMachineType());
+    }
   }
+  assert(!rootStrandTailPAddrMachineTypeVec.empty() &&
+         "Failed to find the ending root stream.");
 
   // End all streams with the correct root stream id (indirect streams).
   for (auto streamIter = this->strandMap.begin(),
@@ -247,43 +250,50 @@ void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
     mlcSE->reuseInfoMap.erase(endId);
   }
 
-  // Create a new packet and send to LLC bank to terminate the stream.
-  auto rootLLCStreamPAddrLine = makeLineAddress(rootLLCStreamPAddr);
-  auto rootStreamOffloadedBank = this->controller->mapAddressToLLCOrMem(
-      rootLLCStreamPAddrLine, rootStreamOffloadedMachineType);
-  auto copyEndId = new DynStreamId(endId);
-  RequestPtr req = std::make_shared<Request>(rootLLCStreamPAddrLine,
-                                             sizeof(copyEndId), 0, masterId);
-  PacketPtr pkt = new Packet(req, MemCmd::StreamEndReq);
-  uint8_t *pktData = new uint8_t[req->getSize()];
-  *(reinterpret_cast<uint64_t *>(pktData)) =
-      reinterpret_cast<uint64_t>(copyEndId);
-  pkt->dataDynamic(pktData);
+  // For each remote root strand, send out a StreamEnd packet.
+  for (const auto &entry : rootStrandTailPAddrMachineTypeVec) {
 
-  if (this->controller->myParams->enable_stream_idea_end) {
-    auto remoteController =
-        AbstractStreamAwareController::getController(rootStreamOffloadedBank);
-    auto remoteSE = remoteController->getLLCStreamEngine();
-    // StreamAck is also disguised as StreamData.
-    remoteSE->receiveStreamEnd(pkt);
-    MLC_S_DPRINTF(endId, "Send ideal StreamEnd to %s.\n",
-                  rootStreamOffloadedBank);
+    const auto &strandId = entry.first;
+    auto rootLLCStreamPAddr = entry.second.first;
+    auto rootStreamOffloadedMachineType = entry.second.second;
 
-  } else {
-    // Enqueue a configure packet to the target LLC bank.
-    auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
-    msg->m_addr = rootLLCStreamPAddrLine;
-    msg->m_Type = CoherenceRequestType_STREAM_END;
-    msg->m_Requestors.add(this->controller->getMachineID());
-    msg->m_Destination.add(rootStreamOffloadedBank);
-    msg->m_MessageSize = MessageSizeType_Control;
-    msg->m_pkt = pkt;
+    auto rootLLCStreamPAddrLine = makeLineAddress(rootLLCStreamPAddr);
+    auto rootStreamOffloadedBank = this->controller->mapAddressToLLCOrMem(
+        rootLLCStreamPAddrLine, rootStreamOffloadedMachineType);
+    auto copyStrandId = new DynStrandId(strandId);
+    RequestPtr req = std::make_shared<Request>(
+        rootLLCStreamPAddrLine, sizeof(copyStrandId), 0, masterId);
+    PacketPtr pkt = new Packet(req, MemCmd::StreamEndReq);
+    uint8_t *pktData = new uint8_t[req->getSize()];
+    *(reinterpret_cast<uint64_t *>(pktData)) =
+        reinterpret_cast<uint64_t>(copyStrandId);
+    pkt->dataDynamic(pktData);
 
-    Cycles latency(1); // Just use 1 cycle latency here.
+    if (this->controller->myParams->enable_stream_idea_end) {
+      auto remoteController =
+          AbstractStreamAwareController::getController(rootStreamOffloadedBank);
+      auto remoteSE = remoteController->getLLCStreamEngine();
+      // StreamAck is also disguised as StreamData.
+      remoteSE->receiveStreamEnd(pkt);
+      MLC_S_DPRINTF(strandId, "Send ideal StreamEnd to %s.\n",
+                    rootStreamOffloadedBank);
 
-    mlcSE->requestToLLCMsgBuffer->enqueue(
-        msg, this->controller->clockEdge(),
-        this->controller->cyclesToTicks(latency));
+    } else {
+      // Enqueue a end packet to the target LLC bank.
+      auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+      msg->m_addr = rootLLCStreamPAddrLine;
+      msg->m_Type = CoherenceRequestType_STREAM_END;
+      msg->m_Requestors.add(this->controller->getMachineID());
+      msg->m_Destination.add(rootStreamOffloadedBank);
+      msg->m_MessageSize = MessageSizeType_Control;
+      msg->m_pkt = pkt;
+
+      Cycles latency(1); // Just use 1 cycle latency here.
+
+      mlcSE->requestToLLCMsgBuffer->enqueue(
+          msg, this->controller->clockEdge(),
+          this->controller->cyclesToTicks(latency));
+    }
   }
 }
 
@@ -295,12 +305,27 @@ StreamEngine *MLCStrandManager::getCoreSE() const {
   }
 }
 
-MLCDynStream *MLCStrandManager::getStreamFromDynamicId(const DynStreamId &id) {
+MLCDynStream *MLCStrandManager::getStreamFromStrandId(const DynStrandId &id) {
   auto iter = this->strandMap.find(id);
   if (iter == this->strandMap.end()) {
     return nullptr;
   }
   return iter->second;
+}
+
+MLCDynStream *
+MLCStrandManager::getStreamFromCoreSliceId(const DynStreamSliceId &sliceId) {
+  if (!sliceId.isValid()) {
+    return nullptr;
+  }
+  // TODO: Support the translation.
+  auto dynS = this->getStreamFromStrandId(sliceId.getDynStrandId());
+  if (dynS) {
+    assert(
+        dynS->getDynStrandId().totalStrands == 1 &&
+        "Translation between CoreSlice and StrandSlice not implemented yet.");
+  }
+  return dynS;
 }
 
 void MLCStrandManager::checkCoreCommitProgress() {

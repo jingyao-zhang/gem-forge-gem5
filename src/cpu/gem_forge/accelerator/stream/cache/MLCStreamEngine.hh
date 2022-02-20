@@ -69,14 +69,14 @@ public:
   /**
    * Receive a StreamLoopBound TotalTripCount.
    */
-  void receiveStreamTotalTripCount(const DynStreamId &streamId,
+  void receiveStreamTotalTripCount(const DynStrandId &strandId,
                                    int64_t totalTripCount, Addr brokenPAddr,
                                    MachineType brokenMachineType);
 
   /**
    * API to get the MLCDynStream.
    */
-  MLCDynStream *getStreamFromDynamicId(const DynStreamId &id);
+  MLCDynStream *getStreamFromStrandId(const DynStrandId &id);
 
 private:
   AbstractStreamAwareController *controller;
@@ -86,8 +86,6 @@ private:
   // For sanity check.
   // TODO: Limit the size of this set.
   std::unordered_set<DynStreamId, DynStreamIdHasher> endedStreamDynamicIds;
-
-  MLCDynStream *getMLCDynStreamFromSlice(const DynStreamSliceId &slice) const;
 
   /**
    * An experimental new feature: handle reuse among streams.

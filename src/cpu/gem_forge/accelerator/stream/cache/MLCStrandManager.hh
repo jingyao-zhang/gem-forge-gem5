@@ -31,14 +31,20 @@ public:
   /**
    * API to get the MLCDynStream.
    */
-  MLCDynStream *getStreamFromDynamicId(const DynStreamId &id);
+  MLCDynStream *getStreamFromStrandId(const DynStrandId &id);
+
+  /**
+   * API to get the strand from core slice id.
+   */
+  MLCDynStream *getStreamFromCoreSliceId(const DynStreamSliceId &sliceId);
+
   bool hasConfiguredStreams() const { return !this->strandMap.empty(); }
 
 private:
   MLCStreamEngine *mlcSE;
   AbstractStreamAwareController *controller;
 
-  std::unordered_map<DynStreamId, MLCDynStream *, DynStreamIdHasher> strandMap;
+  std::unordered_map<DynStrandId, MLCDynStream *, DynStrandIdHasher> strandMap;
 
   /**
    * Configure a single stream.

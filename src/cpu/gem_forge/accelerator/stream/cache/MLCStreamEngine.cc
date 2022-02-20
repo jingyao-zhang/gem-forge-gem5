@@ -65,7 +65,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
 
   if (msg.m_Type == CoherenceResponseType_STREAM_RANGE) {
     auto sliceId = msg.m_sliceIds.singleSliceId();
-    auto stream = this->getStreamFromDynamicId(sliceId.getDynStreamId());
+    auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
     if (stream) {
       MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
                          "[Range] Receive range: %s.\n", *msg.m_range);
@@ -78,7 +78,7 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
   }
   if (msg.m_Type == CoherenceResponseType_STREAM_DONE) {
     auto sliceId = msg.m_sliceIds.singleSliceId();
-    auto stream = this->getStreamFromDynamicId(sliceId.getDynStreamId());
+    auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
     if (stream) {
       MLC_SLICE_DPRINTF_(StreamRangeSync, sliceId,
                          "[Commit] Receive StreamDone.\n");
@@ -108,7 +108,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
     const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
     Addr paddrLine) {
   MLC_SLICE_DPRINTF(sliceId, "SE received data vaddr %#x.\n", sliceId.vaddr);
-  auto stream = this->getStreamFromDynamicId(sliceId.getDynStreamId());
+  auto stream = this->getStreamFromStrandId(sliceId.getDynStrandId());
   if (stream) {
     // Found the stream.
     stream->receiveStreamData(sliceId, dataBlock, paddrLine);
@@ -143,8 +143,8 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
   panic("Failed to find configured stream for %s.\n", sliceId.getDynStreamId());
 }
 
-MLCDynStream *MLCStreamEngine::getStreamFromDynamicId(const DynStreamId &id) {
-  return this->strandManager->getStreamFromDynamicId(id);
+MLCDynStream *MLCStreamEngine::getStreamFromStrandId(const DynStrandId &id) {
+  return this->strandManager->getStreamFromStrandId(id);
 }
 
 bool MLCStreamEngine::isStreamRequest(const DynStreamSliceId &slice) {
@@ -155,7 +155,7 @@ bool MLCStreamEngine::isStreamRequest(const DynStreamSliceId &slice) {
     return false;
   }
   // So far just check if the target stream is configured here.
-  auto stream = this->getMLCDynStreamFromSlice(slice);
+  auto stream = this->strandManager->getStreamFromCoreSliceId(slice);
   if (!stream) {
     return false;
   }
@@ -184,7 +184,7 @@ bool MLCStreamEngine::receiveOffloadStreamRequest(
     const DynStreamSliceId &sliceId) {
   assert(this->isStreamOffloaded(sliceId) &&
          "Should be an offloaded stream request.");
-  auto stream = this->getMLCDynStreamFromSlice(sliceId);
+  auto stream = this->strandManager->getStreamFromCoreSliceId(sliceId);
   stream->receiveStreamRequest(sliceId);
   return true;
 }
@@ -194,17 +194,8 @@ void MLCStreamEngine::receiveOffloadStreamRequestHit(
   if (!this->isStreamOffloaded(sliceId)) {
     panic(MLC_SLICE_MSG(sliceId, "Receive hit request, but not floated."));
   }
-  auto stream = this->getMLCDynStreamFromSlice(sliceId);
+  auto stream = this->strandManager->getStreamFromCoreSliceId(sliceId);
   stream->receiveStreamRequestHit(sliceId);
-}
-
-MLCDynStream *
-MLCStreamEngine::getMLCDynStreamFromSlice(const DynStreamSliceId &slice) const {
-  if (!slice.isValid()) {
-    return nullptr;
-  }
-  return this->strandManager->getStreamFromDynamicId(slice.getDynStreamId());
-  return nullptr;
 }
 
 void MLCStreamEngine::computeReuseInformation(
@@ -316,8 +307,12 @@ void MLCStreamEngine::reuseSlice(const DynStreamSliceId &sliceId,
   while (this->reuseInfoMap.count(streamId)) {
     const auto &reuseInfo = this->reuseInfoMap.at(streamId);
     const auto &targetStreamId = reuseInfo.targetStreamId;
-    // Simply notify the target stream.
-    auto mlcDynS = this->strandManager->getStreamFromDynamicId(targetStreamId);
+    /**
+     * Simply notify the target stream.
+     * TODO: Properly handle strand and reuse.
+     */
+    auto mlcDynS =
+        this->strandManager->getStreamFromStrandId(DynStrandId(targetStreamId));
     if (!mlcDynS) {
       if (this->endedStreamDynamicIds.count(targetStreamId) != 0) {
         // This stream has already ended.
@@ -352,11 +347,12 @@ void MLCStreamEngine::wakeup() {
 }
 
 void MLCStreamEngine::receiveStreamTotalTripCount(
-    const DynStreamId &streamId, int64_t totalTripCount, Addr brokenPAddr,
+    const DynStrandId &strandId, int64_t totalTripCount, Addr brokenPAddr,
     MachineType brokenMachineType) {
-  auto dynS = this->getStreamFromDynamicId(streamId);
+  assert(strandId.totalStrands == 1 && "StreamLoopBound with Strand?");
+  auto dynS = this->getStreamFromStrandId(strandId);
   if (!dynS) {
-    MLC_S_PANIC_NO_DUMP(streamId, "Failed to get MLC S for StreamLoopBound.");
+    MLC_S_PANIC_NO_DUMP(strandId, "Failed to get MLC S for StreamLoopBound.");
   }
   dynS->setTotalTripCount(totalTripCount, brokenPAddr, brokenMachineType);
 }
