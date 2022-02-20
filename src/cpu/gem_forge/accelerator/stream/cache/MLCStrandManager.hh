@@ -6,6 +6,7 @@
 class MLCStrandManager {
 public:
   MLCStrandManager(MLCStreamEngine *_mlcSE);
+  ~MLCStrandManager();
 
   /**
    * Receive a StreamConfig message and configure all streams.
@@ -17,9 +18,27 @@ public:
    */
   void receiveStreamEnd(PacketPtr pkt);
 
+  /**
+   * Function called to check CoreCommitProgress for RangeSync.
+   */
+  void checkCoreCommitProgress();
+
+  /**
+   * Get CoreSE. Only valid when there are streams configured.
+   */
+  StreamEngine *getCoreSE() const;
+
+  /**
+   * API to get the MLCDynStream.
+   */
+  MLCDynStream *getStreamFromDynamicId(const DynStreamId &id);
+  bool hasConfiguredStreams() const { return !this->strandMap.empty(); }
+
 private:
   MLCStreamEngine *mlcSE;
   AbstractStreamAwareController *controller;
+
+  std::unordered_map<DynStreamId, MLCDynStream *, DynStreamIdHasher> strandMap;
 
   /**
    * Configure a single stream.

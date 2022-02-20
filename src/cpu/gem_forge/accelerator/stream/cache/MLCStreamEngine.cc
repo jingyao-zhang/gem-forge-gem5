@@ -35,13 +35,7 @@ MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
   this->strandManager = m5::make_unique<MLCStrandManager>(this);
 }
 
-MLCStreamEngine::~MLCStreamEngine() {
-  for (auto &idStream : this->idToStreamMap) {
-    delete idStream.second;
-    idStream.second = nullptr;
-  }
-  this->idToStreamMap.clear();
-}
+MLCStreamEngine::~MLCStreamEngine() {}
 
 void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
@@ -132,8 +126,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
    * We haven't really support Two-Level Indorect StoreCompute, so their acks
    * will not be correctly handled. Here I just directly ack it.
    */
-  if (!this->idToStreamMap.empty()) {
-    auto coreSE = this->idToStreamMap.begin()->second->getStaticStream()->se;
+  if (auto coreSE = this->strandManager->getCoreSE()) {
     auto coreS = coreSE->getStream(sliceId.getDynStreamId().staticId);
     if (coreS->isStoreComputeStream() && !coreS->isDirectMemStream()) {
       if (auto dynCoreS = coreS->getDynStream(sliceId.getDynStreamId())) {
@@ -151,11 +144,7 @@ void MLCStreamEngine::receiveStreamDataForSingleSlice(
 }
 
 MLCDynStream *MLCStreamEngine::getStreamFromDynamicId(const DynStreamId &id) {
-  auto iter = this->idToStreamMap.find(id);
-  if (iter == this->idToStreamMap.end()) {
-    return nullptr;
-  }
-  return iter->second;
+  return this->strandManager->getStreamFromDynamicId(id);
 }
 
 bool MLCStreamEngine::isStreamRequest(const DynStreamSliceId &slice) {
@@ -214,13 +203,7 @@ MLCStreamEngine::getMLCDynStreamFromSlice(const DynStreamSliceId &slice) const {
   if (!slice.isValid()) {
     return nullptr;
   }
-  auto iter = this->idToStreamMap.find(slice.getDynStreamId());
-  if (iter != this->idToStreamMap.end()) {
-    // Ignore it if the slice is not considered valid by the stream.
-    if (iter->second->isSliceValid(slice)) {
-      return iter->second;
-    }
-  }
+  return this->strandManager->getStreamFromDynamicId(slice.getDynStreamId());
   return nullptr;
 }
 
@@ -334,15 +317,15 @@ void MLCStreamEngine::reuseSlice(const DynStreamSliceId &sliceId,
     const auto &reuseInfo = this->reuseInfoMap.at(streamId);
     const auto &targetStreamId = reuseInfo.targetStreamId;
     // Simply notify the target stream.
-    if (this->idToStreamMap.count(targetStreamId) == 0) {
+    auto mlcDynS = this->strandManager->getStreamFromDynamicId(targetStreamId);
+    if (!mlcDynS) {
       if (this->endedStreamDynamicIds.count(targetStreamId) != 0) {
         // This stream has already ended.
         continue;
       }
       panic("Failed to find target stream %s.\n", targetStreamId);
     }
-    auto S = dynamic_cast<MLCDynDirectStream *>(
-        this->idToStreamMap.at(targetStreamId));
+    auto S = dynamic_cast<MLCDynDirectStream *>(mlcDynS);
     assert(S && "Only direct stream can have reuse.");
     S->receiveReuseStreamData(makeLineAddress(sliceId.vaddr), dataBlock);
     streamId = targetStreamId;
@@ -361,14 +344,8 @@ void MLCStreamEngine::wakeup() {
   if (!this->controller->isStreamRangeSyncEnabled()) {
     return;
   }
-  for (auto &idStream : this->idToStreamMap) {
-    auto S = dynamic_cast<MLCDynDirectStream *>(idStream.second);
-    if (!S || !S->shouldRangeSync()) {
-      continue;
-    }
-    S->checkCoreCommitProgress();
-  }
-  if (!this->idToStreamMap.empty()) {
+  this->strandManager->checkCoreCommitProgress();
+  if (this->strandManager->hasConfiguredStreams()) {
     // Recheck next cycle.
     this->scheduleEvent(Cycles(1));
   }

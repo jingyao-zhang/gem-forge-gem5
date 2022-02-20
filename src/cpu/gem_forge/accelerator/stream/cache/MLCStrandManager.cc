@@ -17,6 +17,14 @@
 MLCStrandManager::MLCStrandManager(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE), controller(_mlcSE->controller) {}
 
+MLCStrandManager::~MLCStrandManager() {
+  for (auto &idStream : this->strandMap) {
+    delete idStream.second;
+    idStream.second = nullptr;
+  }
+  this->strandMap.clear();
+}
+
 void MLCStrandManager::receiveStreamConfigure(PacketPtr pkt) {
 
   if (this->controller->myParams->enable_stream_strand) {
@@ -68,8 +76,7 @@ void MLCStrandManager::configureStream(
           indirectStreamConfig, this->controller,
           mlcSE->responseToUpperMsgBuffer, mlcSE->requestToLLCMsgBuffer,
           streamConfigureData->dynamicId /* Root dynamic stream id. */);
-      mlcSE->idToStreamMap.emplace(indirectStream->getDynStreamId(),
-                                   indirectStream);
+      this->strandMap.emplace(indirectStream->getDynStreamId(), indirectStream);
       indirectStreams.push_back(indirectStream);
 
       for (const auto &ISDepEdge : indirectStreamConfig->depEdges) {
@@ -87,7 +94,7 @@ void MLCStrandManager::configureStream(
               ISDepEdge.data, this->controller, mlcSE->responseToUpperMsgBuffer,
               mlcSE->requestToLLCMsgBuffer,
               streamConfigureData->dynamicId /* Root dynamic stream id. */);
-          mlcSE->idToStreamMap.emplace(IIS->getDynStreamId(), IIS);
+          this->strandMap.emplace(IIS->getDynStreamId(), IIS);
 
           indirectStreams.push_back(IIS);
           continue;
@@ -101,7 +108,7 @@ void MLCStrandManager::configureStream(
   auto directStream = new MLCDynDirectStream(
       streamConfigureData, this->controller, mlcSE->responseToUpperMsgBuffer,
       mlcSE->requestToLLCMsgBuffer, indirectStreams);
-  mlcSE->idToStreamMap.emplace(directStream->getDynStreamId(), directStream);
+  this->strandMap.emplace(directStream->getDynStreamId(), directStream);
 
   /**
    * If there is reuse for this stream, we cut the stream's totalTripCount.
@@ -198,8 +205,8 @@ void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
 
   // The PAddr of the llc stream. The cache controller uses this to find which
   // LLC bank to forward this StreamEnd message.
-  auto rootStreamIter = mlcSE->idToStreamMap.find(endId);
-  assert(rootStreamIter != mlcSE->idToStreamMap.end() &&
+  auto rootStreamIter = this->strandMap.find(endId);
+  assert(rootStreamIter != this->strandMap.end() &&
          "Failed to find the ending root stream.");
 
   Addr rootLLCStreamPAddr;
@@ -211,8 +218,8 @@ void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
   }
 
   // End all streams with the correct root stream id (indirect streams).
-  for (auto streamIter = mlcSE->idToStreamMap.begin(),
-            streamEnd = mlcSE->idToStreamMap.end();
+  for (auto streamIter = this->strandMap.begin(),
+            streamEnd = this->strandMap.end();
        streamIter != streamEnd;) {
     auto stream = streamIter->second;
     if (stream->getRootDynStreamId() == endId) {
@@ -227,7 +234,7 @@ void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
       stream->endStream();
       delete stream;
       streamIter->second = nullptr;
-      streamIter = mlcSE->idToStreamMap.erase(streamIter);
+      streamIter = this->strandMap.erase(streamIter);
     } else {
       ++streamIter;
     }
@@ -277,5 +284,31 @@ void MLCStrandManager::endStream(const DynStreamId &endId, MasterID masterId) {
     mlcSE->requestToLLCMsgBuffer->enqueue(
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
+  }
+}
+
+StreamEngine *MLCStrandManager::getCoreSE() const {
+  if (!this->strandMap.empty()) {
+    return this->strandMap.begin()->second->getStaticStream()->se;
+  } else {
+    return nullptr;
+  }
+}
+
+MLCDynStream *MLCStrandManager::getStreamFromDynamicId(const DynStreamId &id) {
+  auto iter = this->strandMap.find(id);
+  if (iter == this->strandMap.end()) {
+    return nullptr;
+  }
+  return iter->second;
+}
+
+void MLCStrandManager::checkCoreCommitProgress() {
+  for (auto &idStream : this->strandMap) {
+    auto S = dynamic_cast<MLCDynDirectStream *>(idStream.second);
+    if (!S || !S->shouldRangeSync()) {
+      continue;
+    }
+    S->checkCoreCommitProgress();
   }
 }

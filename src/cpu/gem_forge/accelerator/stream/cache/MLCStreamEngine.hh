@@ -82,8 +82,6 @@ private:
   AbstractStreamAwareController *controller;
   MessageBuffer *responseToUpperMsgBuffer;
   MessageBuffer *requestToLLCMsgBuffer;
-  std::unordered_map<DynStreamId, MLCDynStream *, DynStreamIdHasher>
-      idToStreamMap;
 
   // For sanity check.
   // TODO: Limit the size of this set.
