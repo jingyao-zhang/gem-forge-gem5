@@ -87,9 +87,9 @@ structure(RequestMsg, desc="...", interface="Message") {
   RequestStatisticPtr requestStatistic, default="nullptr", desc="Hook to update statistic of this core request";
   // ! Sean: StreamAwareCache
   PacketPtr pkt,                    desc="Hack to store packet";
-  DynStreamSliceIdVec sliceIds, desc="Stream slice ids";
+  DynStreamSliceIdVec sliceIds,     desc="Stream slice ids";
   DataBlock streamStoreBlk,         desc="StreamStore value";
-  DynStreamId sendToStreamId,   desc="StreamForward receiver stream id";
+  DynStrandId sendToStrandId,       desc="StreamForward receiver strand id";
 
   int getStatsType() {
     return Type;

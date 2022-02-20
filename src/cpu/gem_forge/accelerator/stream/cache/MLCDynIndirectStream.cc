@@ -15,7 +15,7 @@ MLCDynIndirectStream::MLCDynIndirectStream(
     MessageBuffer *_responseMsgBuffer, MessageBuffer *_requestToLLCMsgBuffer,
     const DynStreamId &_rootStreamId)
     : MLCDynStream(_configData, _controller, _responseMsgBuffer,
-                       _requestToLLCMsgBuffer, false /* isMLCDirect */),
+                   _requestToLLCMsgBuffer, false /* isMLCDirect */),
       rootStreamId(_rootStreamId),
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
@@ -23,9 +23,9 @@ MLCDynIndirectStream::MLCDynIndirectStream(
       isOneIterationBehind(_configData->isOneIterationBehind),
       tailElementIdx(0) {}
 
-void MLCDynIndirectStream::receiveStreamData(
-    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
-    Addr paddrLine) {
+void MLCDynIndirectStream::receiveStreamData(const DynStreamSliceId &sliceId,
+                                             const DataBlock &dataBlock,
+                                             Addr paddrLine) {
 
   // It is indeed a problem to synchronize the flow control between
   // base stream and indirect stream.
@@ -46,7 +46,7 @@ void MLCDynIndirectStream::receiveStreamData(
   }
 
   assert(sliceId.isValid() && "Invalid stream slice id for stream data.");
-  assert(this->dynStreamId == sliceId.getDynStreamId() &&
+  assert(this->strandId == sliceId.getDynStrandId() &&
          "Unmatched dynamic stream id.");
 
   auto numElements = sliceId.getNumElements();
@@ -145,9 +145,9 @@ void MLCDynIndirectStream::receiveStreamData(
 }
 
 void MLCDynIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
-                                                     uint64_t baseData) {
+                                                 uint64_t baseData) {
 
-  MLC_S_DPRINTF(this->dynStreamId,
+  MLC_S_DPRINTF(this->strandId,
                 "Receive BaseStreamData element %lu data %lu tailSliceIdx %lu "
                 "tailElementIdx %lu.\n",
                 elementIdx, baseData, this->tailSliceIdx, this->tailElementIdx);
@@ -159,7 +159,7 @@ void MLCDynIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
 
   if (this->isWaitingNothing()) {
     // If we are waiting for nothing, this is the only place we advance.
-    MLC_S_DPRINTF(this->dynStreamId, "WaitNothing. Skip BaseElement.\n");
+    MLC_S_DPRINTF(this->strandId, "WaitNothing. Skip BaseElement.\n");
     this->advanceStream();
     return;
   }
@@ -182,7 +182,7 @@ void MLCDynIndirectStream::receiveBaseStreamData(uint64_t elementIdx,
   auto elementSize = this->elementSize;
 
   DynStreamSliceId sliceId;
-  sliceId.getDynStreamId() = this->dynStreamId;
+  sliceId.getDynStrandId() = this->strandId;
   sliceId.getStartIdx() = elementIdx;
   sliceId.getEndIdx() = elementIdx + 1;
 
@@ -240,8 +240,7 @@ void MLCDynIndirectStream::advanceStream() {
    * allocating LLCElement.
    */
   auto maxAllocElementIdx = this->tailElementIdx + this->maxNumSlices;
-  if (auto llcDynS =
-          LLCDynStream::getLLCStream(this->getDynStreamId())) {
+  if (auto llcDynS = LLCDynStream::getLLCStream(this->getDynStrandId())) {
     maxAllocElementIdx =
         std::min(maxAllocElementIdx, llcDynS->getNextInitElementIdx());
   }
@@ -250,7 +249,7 @@ void MLCDynIndirectStream::advanceStream() {
   while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
          !this->hasOverflowed()) {
     if (this->tailElementIdx >= maxAllocElementIdx) {
-      MLC_S_DPRINTF(this->getDynStreamId(),
+      MLC_S_DPRINTF(this->getDynStrandId(),
                     "CanNot Allocate Element %llu, MaxAlloc %llu.\n",
                     this->tailElementIdx, maxAllocElementIdx);
       break;
@@ -276,7 +275,7 @@ void MLCDynIndirectStream::allocateSlice() {
   // For indirect stream, there is no merging, so it's pretty simple
   // to allocate new slice.
   DynStreamSliceId sliceId;
-  sliceId.getDynStreamId() = this->dynStreamId;
+  sliceId.getDynStrandId() = this->strandId;
   sliceId.getStartIdx() = this->tailElementIdx;
   sliceId.getEndIdx() = this->tailElementIdx + 1;
 
@@ -305,20 +304,21 @@ bool MLCDynIndirectStream::hasOverflowed() const {
          this->tailElementIdx > this->getTotalTripCount();
 }
 
-void MLCDynIndirectStream::setTotalTripCount(
-    int64_t totalTripCount, Addr brokenPAddr, MachineType brokenMachineType) {
-  MLC_S_PANIC(this->getDynStreamId(), "Set TotalTripCount for IndirectS.");
+void MLCDynIndirectStream::setTotalTripCount(int64_t totalTripCount,
+                                             Addr brokenPAddr,
+                                             MachineType brokenMachineType) {
+  MLC_S_PANIC(this->getDynStrandId(), "Set TotalTripCount for IndirectS.");
 }
 
 Addr MLCDynIndirectStream::genElementVAddr(uint64_t elementIdx,
-                                               uint64_t baseData) {
+                                           uint64_t baseData) {
 
   StreamValue baseValue;
   baseValue.front() = baseData;
   auto getBaseStreamValue = [this,
                              &baseValue](uint64_t streamId) -> StreamValue {
     if (!this->baseStream->getStaticStream()->isCoalescedHere(streamId)) {
-      MLC_S_PANIC(this->getDynStreamId(), "Invalid BaseStreamId %llu.",
+      MLC_S_PANIC(this->getDynStrandId(), "Invalid BaseStreamId %llu.",
                   streamId);
     }
     return baseValue;
@@ -329,8 +329,7 @@ Addr MLCDynIndirectStream::genElementVAddr(uint64_t elementIdx,
       .front();
 }
 
-std::pair<MLCDynIndirectStream::SliceIter,
-          MLCDynIndirectStream::SliceIter>
+std::pair<MLCDynIndirectStream::SliceIter, MLCDynIndirectStream::SliceIter>
 MLCDynIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
   auto ret = std::make_pair<SliceIter, SliceIter>(this->slices.end(),
                                                   this->slices.end());
@@ -349,7 +348,7 @@ MLCDynIndirectStream::findSliceByElementIdx(uint64_t elementIdx) {
   }
 
   if (ret.first == this->slices.end()) {
-    MLC_S_PANIC(this->getDynStreamId(),
+    MLC_S_PANIC(this->getDynStrandId(),
                 "Failed to find slice for Element %llu.\n", elementIdx);
   }
   return ret;
@@ -391,11 +390,11 @@ MLCDynIndirectStream::findOrInsertSliceBySliceId(
   return ret;
 }
 
-MLCDynStream::SliceIter MLCDynIndirectStream::findSliceForCoreRequest(
-    const DynStreamSliceId &sliceId) {
+MLCDynStream::SliceIter
+MLCDynIndirectStream::findSliceForCoreRequest(const DynStreamSliceId &sliceId) {
 
   if (this->slices.empty()) {
-    MLC_S_PANIC(this->dynStreamId,
+    MLC_S_PANIC(this->strandId,
                 "No slices for request, overflowed %d, totalTripCount %lu.\n",
                 this->hasOverflowed(), this->getTotalTripCount());
   }
@@ -419,7 +418,7 @@ bool MLCDynIndirectStream::receiveFinalReductionValue(
     return false;
   }
 
-  auto dynCoreS = S->getDynStream(this->getDynStreamId());
+  auto dynCoreS = this->getCoreDynS();
   if (!dynCoreS) {
     MLC_SLICE_PANIC(sliceId,
                     "CoreDynS released before receiving FinalReductionValue.");

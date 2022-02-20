@@ -1,7 +1,7 @@
 #include "DynStreamAddressRange.hh"
 
 DynStreamAddressRange::DynStreamAddressRange(
-    const DynStreamElementRangeId &_elementRange,
+    const DynStrandElementRangeId &_elementRange,
     const AddressRange &_vaddrRange, const AddressRange &_paddrRange)
     : elementRange(_elementRange), vaddrRange(_vaddrRange),
       paddrRange(_paddrRange) {}

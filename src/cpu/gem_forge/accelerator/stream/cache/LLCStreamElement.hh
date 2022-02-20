@@ -22,7 +22,7 @@ public:
    * in the element, but just the DynStreamId and the StaticStream.
    */
   LLCStreamElement(Stream *_S, AbstractStreamAwareController *_mlcController,
-                   const DynStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr,
+                   const DynStrandId &_strandId, uint64_t _idx, Addr _vaddr,
                    int _size, bool _isNDCElement);
 
   ~LLCStreamElement();
@@ -36,7 +36,7 @@ public:
 
   Stream *S;
   AbstractStreamAwareController *mlcController;
-  const DynStreamId dynStreamId;
+  const DynStrandId strandId;
   const uint64_t idx;
   const int size;
   const bool isNDCElement;

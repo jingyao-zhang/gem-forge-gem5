@@ -46,6 +46,11 @@ MLCStreamEngine::~MLCStreamEngine() {
 void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream configure when stream float is disabled.\n");
+
+  if (this->controller->myParams->enable_stream_strand) {
+    // panic("Strand is not supported yet.");
+  }
+
   auto streamConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
   this->computeReuseInformation(*streamConfigs);
   for (auto streamConfigureData : *streamConfigs) {

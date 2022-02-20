@@ -22,7 +22,9 @@ MLCDynStream::MLCDynStream(CacheStreamConfigureDataPtr _configData,
                            MessageBuffer *_responseMsgBuffer,
                            MessageBuffer *_requestToLLCMsgBuffer,
                            bool _isMLCDirect)
-    : stream(_configData->stream), dynStreamId(_configData->dynamicId),
+    : stream(_configData->stream),
+      strandId(_configData->dynamicId, _configData->strandIdx,
+               _configData->totalStrands),
       config(_configData), isPointerChase(_configData->isPointerChase),
       isPseudoOffload(_configData->isPseudoOffload), isMLCDirect(_isMLCDirect),
       controller(_controller), responseMsgBuffer(_responseMsgBuffer),
@@ -47,10 +49,10 @@ MLCDynStream::MLCDynStream(CacheStreamConfigureDataPtr _configData,
    * Remember if we require range-sync. The config will also be passed to
    * LLCDynStream.
    */
-  auto dynS = this->stream->getDynStream(this->getDynStreamId());
+  auto dynS = this->getCoreDynS();
   this->config->rangeSync = (dynS && dynS->shouldRangeSync());
 
-  MLC_S_DPRINTF_(StreamRangeSync, this->getDynStreamId(),
+  MLC_S_DPRINTF_(StreamRangeSync, this->getDynStrandId(),
                  "Wait %s. %s RangeSync.\n", this->to_string(this->isWaiting),
                  this->shouldRangeSync() ? "Enabled" : "Disabled");
 
@@ -75,27 +77,27 @@ MLCDynStream::~MLCDynStream() {
 
 MLCDynStream::WaitType MLCDynStream::checkWaiting() const {
   if (this->isPseudoOffload) {
-    MLC_S_DPRINTF(this->getDynStreamId(), "PseudoFloat. Wait Nothing.\n");
+    MLC_S_DPRINTF(this->getDynStrandId(), "PseudoFloat. Wait Nothing.\n");
     return WaitType::Nothing;
   }
   if (this->stream->isStoreStream()) {
-    MLC_S_DPRINTF(this->getDynStreamId(), "StoreStream. Wait Ack.\n");
+    MLC_S_DPRINTF(this->getDynStrandId(), "StoreStream. Wait Ack.\n");
     return WaitType::Ack;
   }
-  if (auto dynS = this->stream->getDynStream(this->dynStreamId)) {
+  if (auto dynS = this->getCoreDynS()) {
     if (dynS->shouldCoreSEIssue()) {
-      MLC_S_DPRINTF(this->getDynStreamId(), "CoreSE Issue. Wait Data.\n");
+      MLC_S_DPRINTF(this->getDynStrandId(), "CoreSE Issue. Wait Data.\n");
       return WaitType::Data;
     } else {
       if (this->stream->isAtomicComputeStream() ||
           this->stream->isUpdateStream()) {
         // These streams writes to memory. Need Ack.
-        MLC_S_DPRINTF(this->getDynStreamId(),
+        MLC_S_DPRINTF(this->getDynStrandId(),
                       "CoreSE Not Issue. Atomic/UpdateS. Wait Ack.\n");
         return WaitType::Ack;
       } else {
         // Other streams does not write. Need nothing.
-        MLC_S_DPRINTF(this->getDynStreamId(),
+        MLC_S_DPRINTF(this->getDynStrandId(),
                       "CoreSE Not Issue. Stream not Write. Wait Nothing.\n");
         return WaitType::Nothing;
       }
@@ -107,13 +109,13 @@ MLCDynStream::WaitType MLCDynStream::checkWaiting() const {
      * correct slice, and later received a dummy response when we received the
      * StreamEnd.
      */
-    MLC_S_DPRINTF(this->getDynStreamId(), "No CoreDynS. Assume Wait Data.\n");
+    MLC_S_DPRINTF(this->getDynStrandId(), "No CoreDynS. Assume Wait Data.\n");
     return WaitType::Data;
   }
 }
 
 void MLCDynStream::endStream() {
-  MLC_S_DPRINTF(this->getDynStreamId(), "Ended with # slices %d.\n",
+  MLC_S_DPRINTF(this->getDynStrandId(), "Ended with # slices %d.\n",
                 this->slices.size());
   for (auto &slice : this->slices) {
     MLC_SLICE_DPRINTF(
@@ -191,9 +193,9 @@ bool MLCDynStream::tryPopStream() {
   if (this->isMLCDirect && !this->shouldRangeSync() &&
       this->controller->isStreamIdeaMLCPopCheckEnabled()) {
 
-    auto llcDynS = LLCDynStream::getLLCStream(this->getDynStreamId());
+    auto llcDynS = LLCDynStream::getLLCStream(this->getDynStrandId());
     if (!llcDynS) {
-      MLC_S_PANIC(this->getDynStreamId(), "LLCDynS already released.");
+      MLC_S_PANIC(this->getDynStrandId(), "LLCDynS already released.");
     }
 
     llcDynSProgressSliceIdx = llcDynS->getNextAllocSliceIdx();
@@ -226,9 +228,10 @@ bool MLCDynStream::tryPopStream() {
     for (const auto &depEdge : this->config->depEdges) {
       if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
 
-        auto llcDynS = LLCDynStream::getLLCStream(depEdge.data->dynamicId);
+        auto llcDynS =
+            LLCDynStream::getLLCStream(DynStrandId(depEdge.data->dynamicId));
         if (!llcDynS) {
-          MLC_S_PANIC(this->getDynStreamId(),
+          MLC_S_PANIC(this->getDynStrandId(),
                       "LLCReceiver already released: %s.",
                       depEdge.data->dynamicId);
         }
@@ -237,7 +240,7 @@ bool MLCDynStream::tryPopStream() {
 
         if (receiverInitElementIdx < llcRecvProgressElementIdx) {
 
-          MLC_S_DPRINTF(this->getDynStreamId(),
+          MLC_S_DPRINTF(this->getDynStrandId(),
                         "Smaller SendTo %s InitElementIdx %llu.\n",
                         depEdge.data->dynamicId, receiverInitElementIdx);
 
@@ -418,7 +421,7 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
                     MLCStreamSlice::convertCoreStatusToString(
                         this->slices.front().coreStatus));
   // Send back ack in order.
-  auto dynS = this->stream->getDynStream(this->dynStreamId);
+  auto dynS = this->getCoreDynS();
   for (auto &ackSlice : this->slices) {
     if (ackSlice.coreStatus == MLCStreamSlice::CoreStatusE::DONE) {
       continue;
@@ -479,19 +482,16 @@ void MLCDynStream::readBlob(Addr vaddr, uint8_t *data, int size) const {
 void MLCDynStream::receiveStreamRange(const DynStreamAddressRangePtr &range) {
   // We simply notify the dynamic streams in core for now.
   if (!this->shouldRangeSync()) {
-    MLC_S_PANIC(this->getDynStreamId(),
+    MLC_S_PANIC(this->getDynStrandId(),
                 "Receive StreamRange when RangeSync not required.");
   }
-  auto *dynS =
-      this->getStaticStream()->getDynStream(this->getDynStreamId());
-  if (!dynS) {
-    return;
+  if (auto dynS = this->getCoreDynS()) {
+    dynS->receiveStreamRange(range);
   }
-  dynS->receiveStreamRange(range);
 }
 
 void MLCDynStream::receiveStreamDone(const DynStreamSliceId &sliceId) {
-  MLC_S_PANIC(this->getDynStreamId(), "receiveStreamDone not implemented.");
+  MLC_S_PANIC(this->getDynStrandId(), "receiveStreamDone not implemented.");
 }
 
 void MLCDynStream::scheduleAdvanceStream() {
@@ -520,7 +520,7 @@ MLCDynStream::MLCStreamSlice::convertCoreStatusToString(CoreStatusE status) {
 }
 
 void MLCDynStream::panicDump() const {
-  MLC_S_HACK(this->dynStreamId,
+  MLC_S_HACK(this->strandId,
              "-------------------Panic Dump--------------------\n");
   for (const auto &slice : this->slices) {
     MLC_SLICE_HACK(slice.sliceId, "VAddr %#x Data %d Core %s.\n",

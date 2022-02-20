@@ -79,7 +79,7 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynStreamPtr dynS,
   auto neighborStreams = this->countStreamsWithSameStaticId(dynS, machineId);
   if (neighborStreams > this->neighborStreamsThreshold) {
     if (this->valveType == MigrationValveTypeE::HARD) {
-      LLC_S_DPRINTF(dynS->getDynStreamId(),
+      LLC_S_DPRINTF(dynS->getDynStrandId(),
                     "[Migrate] Hard Delayed Migration to %s to avoid "
                     "contention. NeighborStreams %d.\n",
                     machineId, neighborStreams);
@@ -92,7 +92,7 @@ bool LLCStreamMigrationController::canMigrateTo(LLCDynStreamPtr dynS,
     auto curCycle = this->controller->curCycle();
     auto lastMigratedCycle = this->lastMigratedCycle.at(neighborIdx);
     if (curCycle - lastMigratedCycle < delay) {
-      LLC_S_DPRINTF(dynS->getDynStreamId(),
+      LLC_S_DPRINTF(dynS->getDynStrandId(),
                     "[Migrate] Delayed migration to %s to avoid "
                     "contention. NeighborStreams %d.\n",
                     machineId, neighborStreams);

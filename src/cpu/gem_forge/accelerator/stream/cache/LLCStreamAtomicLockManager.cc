@@ -9,11 +9,10 @@
 #include "../stream_log.hh"
 
 #define ALM_ELEMENT_DPRINTF(element, format, args...)                          \
-  LLC_SE_DPRINTF("%s%llu-: " format, (element)->dynStreamId, (element)->idx,   \
+  LLC_SE_DPRINTF("%s%llu-: " format, (element)->strandId, (element)->idx,      \
                  ##args)
 #define ALM_ELEMENT_PANIC(element, format, args...)                            \
-  LLC_SE_PANIC("%s%llu-: " format, (element)->dynStreamId, (element)->idx,     \
-               ##args)
+  LLC_SE_PANIC("%s%llu-: " format, (element)->strandId, (element)->idx, ##args)
 
 LLCStreamAtomicLockManager::ElementLockPositionMap
     LLCStreamAtomicLockManager::elementQueuePositionMap;
@@ -94,9 +93,10 @@ void LLCStreamAtomicLockManager::enqueue(Addr paddr, int size,
   this->tryToLockOps(addrQueueIter);
 }
 
-void LLCStreamAtomicLockManager::commit(
-    Addr paddr, int size, LLCStreamElementPtr element,
-    bool shouldAckAfterUnlock, const DynStreamSliceId &ackSliceId) {
+void LLCStreamAtomicLockManager::commit(Addr paddr, int size,
+                                        LLCStreamElementPtr element,
+                                        bool shouldAckAfterUnlock,
+                                        const DynStreamSliceId &ackSliceId) {
 
   auto paddrQueue = this->getPAddrQueue(paddr);
   ALM_ELEMENT_DPRINTF(
@@ -110,12 +110,12 @@ void LLCStreamAtomicLockManager::commit(
   auto &lockQueue = addrQueueIter->second;
   bool foundAtomicOp = false;
   for (auto &op : lockQueue) {
-    if (op.element->dynStreamId.isSameStaticStream(element->dynStreamId)) {
+    if (op.element->strandId.isSameStaticStream(element->strandId)) {
       /**
        * Sanity check that previous dynamic stream'e elements are committed.
        */
-      if (op.element->dynStreamId.streamInstance <
-          element->dynStreamId.streamInstance) {
+      if (op.element->strandId.dynStreamId.streamInstance <
+          element->strandId.dynStreamId.streamInstance) {
         if (!op.committed) {
           ALM_ELEMENT_PANIC(op.element,
                             "[AtomicLock] Queue %#x Elements from previous "
@@ -386,7 +386,7 @@ void LLCStreamAtomicLockManager::checkDeadlock(
   auto expandForFutureElements =
       [this, &pushIntoStack](LLCStreamElementPtr element) -> void {
     // Try to get future iteration's element depending on this element.
-    auto dynS = LLCDynStream::getLLCStream(element->dynStreamId);
+    auto dynS = LLCDynStream::getLLCStream(element->strandId);
     if (!dynS) {
       // The DynStream is already released, no need to check for deadlock.
       return;

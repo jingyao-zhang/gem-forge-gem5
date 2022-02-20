@@ -10,7 +10,8 @@
 #include "../stream_log.hh"
 
 SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
-    : streamId(_configData->dynamicId),
+    : strandId(_configData->dynamicId, _configData->strandIdx,
+               _configData->totalStrands),
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize), elementPerSlice(1),
@@ -34,7 +35,7 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
             static_cast<float>(
                 std::min(static_cast<int64_t>(this->elementSize), innerStride));
         DYN_S_DPRINTF(
-            this->streamId,
+            this->strandId,
             "innerStride %lu elementSize %lu block %lu elementPerSlice %f.\n",
             innerStride, elementSize, blockBytes, this->elementPerSlice);
       }
@@ -48,7 +49,7 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
 
   if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {
     auto firstFloatElemIdx = _configData->floatPlan.getFirstFloatElementIdx();
-    DYN_S_DPRINTF(this->streamId, "[Sliced] Start from Element %llu.\n",
+    DYN_S_DPRINTF(this->strandId, "[Sliced] Start from Element %llu.\n",
                   firstFloatElemIdx);
 
     this->tailElementIdx = firstFloatElemIdx;
@@ -90,7 +91,7 @@ Addr SlicedDynStream::getOrComputePointerChaseElementVAddr(
             .front();
     if (makeLineAddress(nextVAddr + this->elementSize - 1) !=
         makeLineAddress(nextVAddr)) {
-      DYN_S_PANIC(this->streamId,
+      DYN_S_PANIC(this->strandId,
                   "[PtrChase] Multi-Line Element %llu VAddr %#x.",
                   state.elementVAddrs.size(), nextVAddr);
     }
@@ -99,7 +100,7 @@ Addr SlicedDynStream::getOrComputePointerChaseElementVAddr(
     auto cpuDelegator = state.memStream->getCPUDelegator();
     Addr nextPAddr;
     if (cpuDelegator->translateVAddrOracle(nextVAddr, nextPAddr)) {
-      DYN_S_DPRINTF(this->streamId, "[PtrChase] Generate %lluth VAddr %#x.\n",
+      DYN_S_DPRINTF(this->strandId, "[PtrChase] Generate %lluth VAddr %#x.\n",
                     state.elementVAddrs.size() - 1, nextVAddr);
       StreamValue nextMemValue;
       cpuDelegator->readFromMem(nextVAddr, this->elementSize,
@@ -109,7 +110,7 @@ Addr SlicedDynStream::getOrComputePointerChaseElementVAddr(
           elementIdx + 1, state.ivAddrFormalParams,
           GetCoalescedStreamValue(state.memStream, nextMemValue));
     } else {
-      DYN_S_DPRINTF(this->streamId,
+      DYN_S_DPRINTF(this->strandId,
                     "[PtrChase] Generate %lluth Faulted VAddr %#x.\n",
                     state.elementVAddrs.size() - 1, nextVAddr);
       state.currentIVValueFaulted = true;
@@ -144,10 +145,10 @@ const DynStreamSliceId &SlicedDynStream::peekNextSlice() const {
 
 void SlicedDynStream::setTotalTripCount(int64_t totalTripCount) {
   if (this->hasTotalTripCount()) {
-    DYN_S_PANIC(this->streamId, "[Sliced] Reset TotalTripCount %lld -> %lld.",
+    DYN_S_PANIC(this->strandId, "[Sliced] Reset TotalTripCount %lld -> %lld.",
                 this->totalTripCount, totalTripCount);
   }
-  DYN_S_DPRINTF(this->streamId, "[Sliced] Set TotalTripCount %lld.\n",
+  DYN_S_DPRINTF(this->strandId, "[Sliced] Set TotalTripCount %lld.\n",
                 totalTripCount);
   this->totalTripCount = totalTripCount;
 }
@@ -183,7 +184,7 @@ void SlicedDynStream::allocateOneElement() const {
       // Straight slice.
       this->slices.emplace_back();
       auto &slice = this->slices.back();
-      slice.getDynStreamId() = this->streamId;
+      slice.getDynStrandId() = this->strandId;
       slice.getStartIdx() = this->tailElementIdx;
       slice.getEndIdx() = this->tailElementIdx + 1;
       slice.vaddr = makeLineAddress(lhs);
@@ -193,7 +194,7 @@ void SlicedDynStream::allocateOneElement() const {
       // Wrapped slice.
       this->slices.emplace_back();
       auto &slice = this->slices.back();
-      slice.getDynStreamId() = this->streamId;
+      slice.getDynStrandId() = this->strandId;
       slice.getStartIdx() = this->tailElementIdx;
       slice.getEndIdx() = this->tailElementIdx + 1;
       slice.vaddr = makeLineAddress(0);
@@ -218,7 +219,7 @@ void SlicedDynStream::allocateOneElement() const {
   auto prevLHSBlock = makeLineAddress(prevLHS);
   assert(rhsBlock >= lhsBlock && "Wrapped around should be handled above.");
 
-  DYN_S_DPRINTF(this->streamId,
+  DYN_S_DPRINTF(this->strandId,
                 "Allocate element %llu, vaddr [%#x, +%d), block [%#x, %#x].\n",
                 this->tailElementIdx, lhs, this->elementSize, lhsBlock,
                 rhsBlock);
@@ -274,7 +275,7 @@ void SlicedDynStream::allocateOneElement() const {
      */
     this->slices.emplace_back();
     auto &slice = this->slices.back();
-    slice.getDynStreamId() = this->streamId;
+    slice.getDynStrandId() = this->strandId;
     slice.getStartIdx() = this->tailElementIdx;
     slice.getEndIdx() = this->tailElementIdx + 1;
     slice.vaddr = lhs;
@@ -283,7 +284,7 @@ void SlicedDynStream::allocateOneElement() const {
     while (curBlock <= rhsBlock && curBlock >= lhsBlock) {
       this->slices.emplace_back();
       auto &slice = this->slices.back();
-      slice.getDynStreamId() = this->streamId;
+      slice.getDynStrandId() = this->strandId;
       slice.getStartIdx() = this->tailElementIdx;
       slice.getEndIdx() = this->tailElementIdx + 1;
       slice.vaddr = curBlock;

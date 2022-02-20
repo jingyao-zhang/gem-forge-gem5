@@ -51,7 +51,7 @@ public:
   float getElementPerSlice() const { return this->elementPerSlice; }
 
 private:
-  DynStreamId streamId;
+  DynStrandId strandId;
   DynStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
   int32_t elementSize;

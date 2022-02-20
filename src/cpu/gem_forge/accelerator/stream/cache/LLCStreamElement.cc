@@ -13,14 +13,13 @@ std::list<LLCStreamElementPtr> LLCStreamElement::deferredReleaseElements;
 
 LLCStreamElement::LLCStreamElement(
     Stream *_S, AbstractStreamAwareController *_mlcController,
-    const DynStreamId &_dynStreamId, uint64_t _idx, Addr _vaddr, int _size,
+    const DynStrandId &_strandId, uint64_t _idx, Addr _vaddr, int _size,
     bool _isNDCElement)
-    : S(_S), mlcController(_mlcController), dynStreamId(_dynStreamId),
-      idx(_idx), size(_size), isNDCElement(_isNDCElement), vaddr(_vaddr),
-      readyBytes(0) {
+    : S(_S), mlcController(_mlcController), strandId(_strandId), idx(_idx),
+      size(_size), isNDCElement(_isNDCElement), vaddr(_vaddr), readyBytes(0) {
   if (this->size > sizeof(this->value)) {
     panic("LLCStreamElement size overflow %d, %s.\n", this->size,
-          this->dynStreamId);
+          this->strandId);
   }
   if (!this->mlcController) {
     panic("LLCStreamElement allocated without MLCController.\n");

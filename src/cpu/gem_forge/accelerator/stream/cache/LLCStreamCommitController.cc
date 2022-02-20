@@ -9,21 +9,21 @@ LLCStreamCommitController::LLCStreamCommitController(LLCStreamEngine *_se)
 
 void LLCStreamCommitController::registerStream(LLCDynStreamPtr dynS) {
   if (dynS->commitController) {
-    LLC_S_PANIC(dynS->getDynStreamId(),
+    LLC_S_PANIC(dynS->getDynStrandId(),
                 "Already has registered at CommitController.");
   }
   if (dynS->isTerminated()) {
-    LLC_S_PANIC(dynS->getDynStreamId(),
+    LLC_S_PANIC(dynS->getDynStrandId(),
                 "[Commit] Try to register a terminated stream.");
   }
   dynS->commitController = this;
   this->streams.push_back(dynS);
-  LLC_S_DPRINTF(dynS->getDynStreamId(), "[Commit] Registered.\n");
+  LLC_S_DPRINTF(dynS->getDynStrandId(), "[Commit] Registered.\n");
 }
 
 void LLCStreamCommitController::deregisterStream(LLCDynStreamPtr dynS) {
   if (dynS->commitController != this) {
-    LLC_S_PANIC(dynS->getDynStreamId(),
+    LLC_S_PANIC(dynS->getDynStrandId(),
                 "Deregister when not registered at this LLCCommitController.");
   }
   dynS->commitController = nullptr;
@@ -31,12 +31,12 @@ void LLCStreamCommitController::deregisterStream(LLCDynStreamPtr dynS) {
        iter != end; ++iter) {
     auto S = *iter;
     if (S == dynS) {
-      LLC_S_DPRINTF(dynS->getDynStreamId(), "[Commit] Deregistered.\n");
+      LLC_S_DPRINTF(dynS->getDynStrandId(), "[Commit] Deregistered.\n");
       this->streams.erase(iter);
       return;
     }
   }
-  LLC_S_PANIC(dynS->getDynStreamId(), "Failed to find registered stream.");
+  LLC_S_PANIC(dynS->getDynStrandId(), "Failed to find registered stream.");
 }
 
 void LLCStreamCommitController::commit() {
@@ -45,7 +45,7 @@ void LLCStreamCommitController::commit() {
   std::vector<LLCDynStreamPtr> migratedStreams;
   for (auto dynS : this->streams) {
     if (dynS->commitController != this) {
-      LLC_S_PANIC(dynS->getDynStreamId(),
+      LLC_S_PANIC(dynS->getDynStrandId(),
                   "Try commit a LLCDynStream not registered here.");
     }
     if (numCommitted >= commitWidth) {
@@ -70,7 +70,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
   auto &nextCommitElementIdx = dynS->nextCommitElementIdx;
   if (commitMessages.empty()) {
     // if (nextCommitElementIdx > 6267) {
-    //   LLC_S_DPRINTF(dynS->getDynStreamId(),
+    //   LLC_S_DPRINTF(dynS->getDynStrandId(),
     //                 "S not no commit message %llu, numElements %d.\n",
     //                 nextCommitElementIdx, dynS->idxToElementMap.size());
     // }
@@ -80,14 +80,14 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
   if (nextCommitElementIdx < firstCommitMessage.getStartIdx()) {
     // Some how we are still waiting for the commit messages.
     // if (nextCommitElementIdx > 6267) {
-    //   LLC_S_DPRINTF(dynS->getDynStreamId(),
+    //   LLC_S_DPRINTF(dynS->getDynStrandId(),
     //                 "S not future commit message %llu, numElements %d.\n",
     //                 nextCommitElementIdx, dynS->idxToElementMap.size());
     // }
     return false;
   }
   if (!firstCommitMessage.elementRange.contains(nextCommitElementIdx)) {
-    LLC_S_PANIC(dynS->getDynStreamId(),
+    LLC_S_PANIC(dynS->getDynStrandId(),
                 "[Commit] Stale CommitMessages [%llu, %llu), Next %llu.",
                 firstCommitMessage.getStartIdx(),
                 firstCommitMessage.getEndIdx(), nextCommitElementIdx);
@@ -101,7 +101,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
       nextCommitElementIdx + 1 < dynS->getTotalTripCount()) {
     if (!dynS->isElementReleased(nextCommitElementIdx)) {
       // if (nextCommitElementIdx > 6267) {
-      //   LLC_S_DPRINTF(dynS->getDynStreamId(),
+      //   LLC_S_DPRINTF(dynS->getDynStrandId(),
       //                 "S not released %llu, numElements %d.\n",
       //                 nextCommitElementIdx, dynS->idxToElementMap.size());
       // }
@@ -123,7 +123,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
       if (!nextCommitElement) {
         if (dynIS->isElementReleased(nextCommitIndirectElementIdx)) {
           LLC_S_PANIC(
-              dynIS->getDynStreamId(),
+              dynIS->getDynStrandId(),
               "[Commit] IndElement %llu already released before commit.",
               nextCommitIndirectElementIdx);
         }
@@ -141,7 +141,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
             nextCommitElementIdx == 0) {
           return false;
         }
-        LLC_S_PANIC(dynIS->getDynStreamId(),
+        LLC_S_PANIC(dynIS->getDynStrandId(),
                     "[Commit] Failed to find IndElement %llu to commit.",
                     nextCommitIndirectElementIdx);
       } else {
@@ -153,7 +153,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
     } else {
       if (!dynIS->isElementReleased(nextCommitElementIdx)) {
         if (nextCommitElementIdx > 6267) {
-          LLC_S_DPRINTF(dynS->getDynStreamId(), "IS not released %llu.\n",
+          LLC_S_DPRINTF(dynS->getDynStrandId(), "IS not released %llu.\n",
                         nextCommitElementIdx);
         }
         return false;
@@ -168,7 +168,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
    * We also check if we have committed all elements in this message.
    * If so, we send back a done message.
    */
-  LLC_S_DPRINTF(dynS->getDynStreamId(), "[Commit] Commit element %llu.\n",
+  LLC_S_DPRINTF(dynS->getDynStrandId(), "[Commit] Commit element %llu.\n",
                 nextCommitElementIdx);
   for (auto dynIS : dynS->getIndStreams()) {
     if (dynIS->shouldIssueAfterCommit()) {
@@ -181,15 +181,15 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
       if (dynIS->shouldIssueBeforeCommit() &&
           dynIS->getStaticS()->isAtomicComputeStream()) {
         // This should be the Indirect StreamUnlock request.
-        LLC_S_DPRINTF(dynS->getDynStreamId(),
+        LLC_S_DPRINTF(dynS->getDynStrandId(),
                       "[Commit] Issue Unlock for DynIS %s %llu.\n",
-                      dynIS->getDynStreamId(), nextCommitIndirectElementIdx);
+                      dynIS->getDynStrandId(), nextCommitIndirectElementIdx);
         this->se->issueIndirectAtomicUnlockRequest(dynIS, nextCommitElement);
       } else {
         // We directly issue this.
-        LLC_S_DPRINTF(dynS->getDynStreamId(),
+        LLC_S_DPRINTF(dynS->getDynStrandId(),
                       "[Commit] Issue AfterCommit for DynIS %s %llu.\n",
-                      dynIS->getDynStreamId(), nextCommitIndirectElementIdx);
+                      dynIS->getDynStrandId(), nextCommitIndirectElementIdx);
         this->se->generateIndirectStreamRequest(dynIS, nextCommitElement);
       }
     }
@@ -207,7 +207,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
         dynS->indirectStreams.empty()) {
       ideaStreamDone = true;
     }
-    LLC_S_DPRINTF(dynS->getDynStreamId(),
+    LLC_S_DPRINTF(dynS->getDynStrandId(),
                   "[Commit] Send back StreamDone for [%llu, %llu(+%d)).\n",
                   firstCommitMessage.getStartIdx(),
                   firstCommitMessage.getEndIdx(),
@@ -230,7 +230,7 @@ bool LLCStreamCommitController::commitStream(LLCDynStreamPtr dynS,
     }
   } else {
     // Stay here if we fault on the next element.
-    LLC_S_DPRINTF(dynS->getDynStreamId(),
+    LLC_S_DPRINTF(dynS->getDynStrandId(),
                   "Failed to translate NextCommitElement %llu VAddr %#x.",
                   nextCommitElementIdx, nextElemVAddr);
   }

@@ -1,7 +1,7 @@
-#ifndef __CPU_GEM_FORGE_DYN_STREAM_ELEMENT_RANGE_ID_HH__
-#define __CPU_GEM_FORGE_DYN_STREAM_ELEMENT_RANGE_ID_HH__
+#ifndef __CPU_GEM_FORGE_DYN_STRAND_ELEMENT_RANGE_ID_HH__
+#define __CPU_GEM_FORGE_DYN_STRAND_ELEMENT_RANGE_ID_HH__
 
-#include "DynStreamId.hh"
+#include "DynStrandId.hh"
 
 #include "base/types.hh"
 
@@ -10,17 +10,17 @@
  * from [lhsElementIdx, rhsElementIdx].
  */
 
-struct DynStreamElementRangeId {
-  DynStreamId streamId;
+struct DynStrandElementRangeId {
+  DynStrandId strandId;
   uint64_t lhsElementIdx;
   uint64_t rhsElementIdx;
-  DynStreamElementRangeId() : streamId(), lhsElementIdx(0), rhsElementIdx(0) {}
+  DynStrandElementRangeId() : strandId(), lhsElementIdx(0), rhsElementIdx(0) {}
 
   bool isValid() const {
     return !(this->lhsElementIdx == 0 && this->rhsElementIdx == 0);
   }
   void clear() {
-    this->streamId = DynStreamId();
+    this->strandId = DynStrandId();
     this->lhsElementIdx = 0;
     this->rhsElementIdx = 0;
   }
@@ -34,22 +34,22 @@ struct DynStreamElementRangeId {
            elementIdx < this->rhsElementIdx;
   }
 
-  bool operator==(const DynStreamElementRangeId &other) const {
-    return this->streamId == other.streamId &&
+  bool operator==(const DynStrandElementRangeId &other) const {
+    return this->strandId == other.strandId &&
            this->lhsElementIdx == other.lhsElementIdx &&
            this->rhsElementIdx == other.rhsElementIdx;
   }
 
-  bool operator!=(const DynStreamElementRangeId &other) const {
+  bool operator!=(const DynStrandElementRangeId &other) const {
     return !(this->operator==(other));
   }
 };
 
-std::ostream &operator<<(std::ostream &os, const DynStreamElementRangeId &id);
+std::ostream &operator<<(std::ostream &os, const DynStrandElementRangeId &id);
 
-struct DynStreamElementRangeIdHasher {
-  std::size_t operator()(const DynStreamElementRangeId &key) const {
-    return (DynStreamIdHasher()(key.streamId)) ^
+struct DynStrandElementRangeIdHasher {
+  std::size_t operator()(const DynStrandElementRangeId &key) const {
+    return (DynStrandIdHasher()(key.strandId)) ^
            std::hash<uint64_t>()(key.lhsElementIdx) ^
            std::hash<uint64_t>()(key.rhsElementIdx);
   }

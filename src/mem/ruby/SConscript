@@ -153,6 +153,7 @@ MakeIncludeRename('../../cpu/gem_forge/accelerator/stream/cache/DynStreamAddress
 
 # ! Sean: StreamAwareCache
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynStreamId.hh')
+MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynStrandId.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynStreamSliceId.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/DynStreamSliceIdVec.hh')
 MakeInclude('../../cpu/gem_forge/accelerator/stream/cache/LLCStreamEngine.hh')

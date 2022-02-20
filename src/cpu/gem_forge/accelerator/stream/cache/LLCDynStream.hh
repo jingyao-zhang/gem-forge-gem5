@@ -51,7 +51,7 @@ struct LLCStreamRequest {
   std::vector<DynStreamSliceId> multicastSliceIds;
 
   // Optional for StreamForward request, the receiver stream id.
-  DynStreamId forwardToStreamId;
+  DynStrandId forwardToStrandId;
 };
 
 class LLCDynStream {
@@ -66,13 +66,14 @@ public:
   }
 
   Stream *getStaticS() const { return this->configData->stream; }
-  DynStream *getCoreDynStream() const {
+  DynStream *getCoreDynS() const {
     return this->getStaticS()->getDynStream(this->getDynStreamId());
   }
   uint64_t getStaticId() const { return this->configData->dynamicId.staticId; }
   const DynStreamId &getDynStreamId() const {
-    return this->configData->dynamicId;
+    return this->getDynStrandId().dynStreamId;
   }
+  const DynStrandId &getDynStrandId() const { return this->strandId; }
 
   int32_t getMemElementSize() const { return this->configData->elementSize; }
   bool isPointerChase() const { return this->configData->isPointerChase; }
@@ -181,19 +182,19 @@ public:
 
   void terminate();
 
-  static LLCDynStream *getLLCStream(const DynStreamId &dynId) {
-    if (GlobalLLCDynStreamMap.count(dynId)) {
-      return GlobalLLCDynStreamMap.at(dynId);
+  static LLCDynStream *getLLCStream(const DynStrandId &strandId) {
+    if (GlobalLLCDynStreamMap.count(strandId)) {
+      return GlobalLLCDynStreamMap.at(strandId);
     } else {
       return nullptr;
     }
   }
-  static LLCDynStream *getLLCStreamPanic(const DynStreamId &dynId,
+  static LLCDynStream *getLLCStreamPanic(const DynStrandId &strandId,
                                          const char *msg = "") {
-    if (auto S = LLCDynStream::getLLCStream(dynId)) {
+    if (auto S = LLCDynStream::getLLCStream(strandId)) {
       return S;
     }
-    panic("Failed to get LLCDynStream %s: %s.", dynId, msg);
+    panic("Failed to get LLCDynStream %s: %s.", strandId, msg);
   }
   static void allocateLLCStreams(AbstractStreamAwareController *mlcController,
                                  CacheStreamConfigureVec &configs);
@@ -241,7 +242,7 @@ private:
                AbstractStreamAwareController *_llcController,
                CacheStreamConfigureDataPtr _configData);
 
-  static std::unordered_map<DynStreamId, LLCDynStream *, DynStreamIdHasher>
+  static std::unordered_map<DynStrandId, LLCDynStream *, DynStrandIdHasher>
       GlobalLLCDynStreamMap;
   static std::unordered_map<NodeID, std::list<std::vector<LLCDynStream *>>>
       GlobalMLCToLLCDynStreamGroupMap;
@@ -264,6 +265,7 @@ private:
 public:
   const CacheStreamConfigureDataPtr configData;
   SlicedDynStream slicedStream;
+  DynStrandId strandId;
 
   // Remember the last reduction element, avoid auto releasing.
   LLCStreamElementPtr lastReductionElement = nullptr;

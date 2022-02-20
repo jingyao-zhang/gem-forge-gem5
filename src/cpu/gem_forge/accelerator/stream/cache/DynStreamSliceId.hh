@@ -1,7 +1,7 @@
 #ifndef __CPU_GEM_FORGE_DYN_STREAM_SLICE_ID_HH__
 #define __CPU_GEM_FORGE_DYN_STREAM_SLICE_ID_HH__
 
-#include "DynStreamElementRangeId.hh"
+#include "DynStrandElementRangeId.hh"
 
 /**
  * The core stream engine manages stream at granularity of element.
@@ -19,7 +19,7 @@
  * thus the data in a slice may only be a portion of the whole element.
  */
 struct DynStreamSliceId {
-  DynStreamElementRangeId elementRange;
+  DynStrandElementRangeId elementRange;
   /**
    * Hack: This is element vaddr for indirect streams,
    * but line vaddr for direct sliced streams.
@@ -37,9 +37,14 @@ struct DynStreamSliceId {
     this->size = 0;
   }
 
-  DynStreamId &getDynStreamId() { return this->elementRange.streamId; }
+  DynStreamId &getDynStreamId() { return this->getDynStrandId().dynStreamId; }
   const DynStreamId &getDynStreamId() const {
-    return this->elementRange.streamId;
+    return this->getDynStrandId().dynStreamId;
+  }
+
+  DynStrandId &getDynStrandId() { return this->elementRange.strandId; }
+  const DynStrandId &getDynStrandId() const {
+    return this->elementRange.strandId;
   }
 
   const uint64_t &getStartIdx() const {
@@ -68,7 +73,7 @@ std::ostream &operator<<(std::ostream &os, const DynStreamSliceId &id);
 
 struct DynStreamSliceIdHasher {
   std::size_t operator()(const DynStreamSliceId &key) const {
-    return (DynStreamElementRangeIdHasher()(key.elementRange)) ^
+    return (DynStrandElementRangeIdHasher()(key.elementRange)) ^
            std::hash<uint64_t>()(key.vaddr);
   }
 };

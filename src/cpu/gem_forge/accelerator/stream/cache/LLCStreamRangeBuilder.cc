@@ -17,18 +17,18 @@ void LLCStreamRangeBuilder::addElementAddress(uint64_t elementIdx, Addr vaddr,
    */
   if (elementIdx != this->nextElementIdx) {
     LLC_S_PANIC(
-        this->stream->getDynStreamId(),
+        this->stream->getDynStrandId(),
         "[RangeBuilder] Element not added in order: expect %llu got %llu.",
         this->nextElementIdx, elementIdx);
   }
   if (vaddr == 0 || paddr == 0) {
-    LLC_S_PANIC(this->stream->getDynStreamId(),
+    LLC_S_PANIC(this->stream->getDynStrandId(),
                 "[RangeBuilder] Invalid element %llu vaddr %#x paddr %#x.",
                 elementIdx, vaddr, paddr);
   }
   const Addr PageSize = 4096;
   if (size >= PageSize) {
-    LLC_S_PANIC(this->stream->getDynStreamId(),
+    LLC_S_PANIC(this->stream->getDynStrandId(),
                 "[RangeBuilder] Element across pages: vaddr %#x, size %d.",
                 vaddr, size);
   }
@@ -38,7 +38,7 @@ void LLCStreamRangeBuilder::addElementAddress(uint64_t elementIdx, Addr vaddr,
   auto secondPageSize = size - firstPageSize;
   if (this->totalTripCount != InvalidTotalTripCount &&
       elementIdx >= this->totalTripCount) {
-    LLC_S_PANIC(this->stream->getDynStreamId(),
+    LLC_S_PANIC(this->stream->getDynStrandId(),
                 "[RangeBuilder] ElementIdx overflow, total %llu.",
                 this->totalTripCount);
   }
@@ -50,14 +50,14 @@ void LLCStreamRangeBuilder::addElementAddress(uint64_t elementIdx, Addr vaddr,
     Addr secondPagePAddr;
     if (!this->stream->translateToPAddr(secondPageVAddr, secondPagePAddr)) {
       LLC_S_PANIC(
-          this->stream->getDynStreamId(),
+          this->stream->getDynStrandId(),
           "[RangeBuilder] Element %llu Failed to translate the second page.",
           elementIdx);
     }
     this->paddrRange.add(secondPagePAddr, secondPageSize);
   }
   LLC_S_DPRINTF(
-      this->stream->getDynStreamId(),
+      this->stream->getDynStrandId(),
       "[RangeBuilder] Add Element %llu VAddr %#x PAddr %#x Size %d.\n",
       elementIdx, vaddr, paddr, size);
   this->nextElementIdx++;
@@ -93,7 +93,7 @@ DynStreamAddressRangePtr LLCStreamRangeBuilder::popReadyRange() {
 
 void LLCStreamRangeBuilder::tryBuildRange() {
   if (this->nextRangeTailElementIdxQueue.empty()) {
-    LLC_S_PANIC(this->stream->getDynStreamId(),
+    LLC_S_PANIC(this->stream->getDynStrandId(),
                 "[RangeBuilder] No NextRangeTailElementIdx to build range.");
     return;
   }
@@ -102,13 +102,13 @@ void LLCStreamRangeBuilder::tryBuildRange() {
        this->nextElementIdx == this->totalTripCount) ||
       this->nextElementIdx == nextRangeTailElementIdx) {
     // Time to build another range.
-    DynStreamElementRangeId elementRange;
-    elementRange.streamId = this->stream->getDynStreamId();
+    DynStrandElementRangeId elementRange;
+    elementRange.strandId = this->stream->getDynStrandId();
     elementRange.lhsElementIdx = this->prevBuiltElementIdx;
     elementRange.rhsElementIdx = this->nextElementIdx;
     auto range = std::make_shared<DynStreamAddressRange>(
         elementRange, this->vaddrRange, this->paddrRange);
-    LLC_S_DPRINTF(this->stream->getDynStreamId(), "[RangeBuilder] Built %s.\n",
+    LLC_S_DPRINTF(this->stream->getDynStrandId(), "[RangeBuilder] Built %s.\n",
                   *range);
     this->readyRanges.push_back(range);
     this->prevBuiltElementIdx = this->nextElementIdx;
@@ -126,22 +126,22 @@ void LLCStreamRangeBuilder::pushNextRangeTailElementIdx(
    * property.
    */
   if (nextRangeTailElementIdx == 0) {
-    LLC_S_PANIC(this->stream->getDynStreamId(),
+    LLC_S_PANIC(this->stream->getDynStrandId(),
                 "[RangeBuilder] Zero NextRangeTailElementIdx.\n");
   }
   if (this->prevNextRangeTailElementIdx > nextRangeTailElementIdx) {
-    LLC_S_PANIC(this->stream->getDynStreamId(),
+    LLC_S_PANIC(this->stream->getDynStrandId(),
                 "[RangeBuilder] NextRangeTailElementIdx out-of-order %llu < "
                 "back %llu.",
                 nextRangeTailElementIdx, this->prevNextRangeTailElementIdx);
   } else if (this->prevNextRangeTailElementIdx == nextRangeTailElementIdx) {
-    LLC_S_DPRINTF(this->stream->getDynStreamId(),
+    LLC_S_DPRINTF(this->stream->getDynStrandId(),
                   "[RangeBuilder] Ignore NextRangeTailElementIdx %llu == "
                   "PrevTailElementIdx %llu.",
                   nextRangeTailElementIdx, this->prevNextRangeTailElementIdx);
     return;
   }
-  LLC_S_DPRINTF(this->stream->getDynStreamId(),
+  LLC_S_DPRINTF(this->stream->getDynStrandId(),
                 "[RangeBuilder] NextRangeTailElementIdx %llu.\n",
                 nextRangeTailElementIdx);
   this->nextRangeTailElementIdxQueue.push_back(nextRangeTailElementIdx);
@@ -151,11 +151,11 @@ void LLCStreamRangeBuilder::pushNextRangeTailElementIdx(
 void LLCStreamRangeBuilder::receiveLoopBoundRet(int64_t totalTripCount) {
   if (this->totalTripCount != InvalidTotalTripCount) {
     LLC_S_PANIC(
-        this->stream->getDynStreamId(),
+        this->stream->getDynStrandId(),
         "[RangeBuilder] LLCRangeBuilder reset TotalTripCount %lld to %lld.",
         this->totalTripCount, totalTripCount);
   }
-  LLC_S_DPRINTF(this->stream->getDynStreamId(),
+  LLC_S_DPRINTF(this->stream->getDynStrandId(),
                 "[RangeBuilder] LLCRangeBuilder cut TotalTripCount %lld to "
                 "%lld. PrevBuiltElementIdx %llu NextElementIdx %llu.\n",
                 this->totalTripCount, totalTripCount, this->prevBuiltElementIdx,

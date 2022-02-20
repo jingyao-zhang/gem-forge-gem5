@@ -26,7 +26,13 @@ public:
 
   Stream *getStaticStream() const { return this->stream; }
 
-  const DynStreamId &getDynStreamId() const { return this->dynStreamId; }
+  const DynStrandId &getDynStrandId() const { return this->strandId; }
+  const DynStreamId &getDynStreamId() const {
+    return this->strandId.dynStreamId;
+  }
+  DynStream *getCoreDynS() const {
+    return this->getStaticStream()->getDynStream(this->getDynStreamId());
+  }
 
   bool getIsPseudoOffload() const { return this->isPseudoOffload; }
   uint64_t getFirstFloatElemIdx() const {
@@ -99,7 +105,7 @@ public:
 
 protected:
   Stream *stream;
-  DynStreamId dynStreamId;
+  DynStrandId strandId;
   CacheStreamConfigureDataPtr config;
   bool isPointerChase;
   bool isPseudoOffload;
@@ -211,10 +217,7 @@ protected:
   WaitType isWaiting;
   WaitType checkWaiting() const;
 
-  bool isCoreDynSReleased() const {
-    return this->getStaticStream()->getDynStream(this->getDynStreamId()) ==
-           nullptr;
-  }
+  bool isCoreDynSReleased() const { return !this->getCoreDynS(); }
 
   /**
    * This remember the received StreamRange.

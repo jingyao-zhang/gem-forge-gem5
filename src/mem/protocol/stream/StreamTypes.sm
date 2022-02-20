@@ -1,7 +1,6 @@
 
-structure(DynStreamId, external="yes", desc="Dynamic identification for stream.") {
-
-}
+structure(DynStreamId, external="yes", desc="Id for DynStream.") {}
+structure(DynStrandId, external="yes", desc="Id for DynStrand.") {}
 
 structure(DynStreamSliceId, external="yes", desc="Dynamic identification for a slice of stream.") {
   bool isValid();

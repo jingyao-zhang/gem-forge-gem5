@@ -36,7 +36,8 @@ CompoundFlag('RubyStreamLife',
 DebugFlag('SlicedDynStream')
 
 Source('DynStreamId.cc')
-Source('DynStreamElementRangeId.cc')
+Source('DynStrandId.cc')
+Source('DynStrandElementRangeId.cc')
 Source('DynStreamAddressRange.cc')
 Source('DynStreamSliceId.cc')
 Source('DynStreamSliceIdVec.cc')

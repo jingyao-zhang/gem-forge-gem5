@@ -34,6 +34,9 @@
 #define S_ELEMENT_PANIC(E, format, args...)                                    \
   panic(S_ELEMENT_MSG(E, format, ##args))
 
+/**
+ * This can be used both for DynStreamId and DynStrandId.
+ */
 #define DYN_S_MSG(dynStreamId, format, args...)                                \
   "%s: " format, (dynStreamId), ##args
 #define DYN_S_DPRINTF_(X, dynStreamId, format, args...)                        \
@@ -92,8 +95,7 @@
       ##args
 #define LLC_ELEMENT_MSG(element, format, args...)                              \
   "[%s_SE%d]%s%lu-: " format, (element)->curRemoteMachineType(),               \
-      (element)->curRemoteBank(), (element)->dynStreamId, (element)->idx,      \
-      ##args
+      (element)->curRemoteBank(), (element)->strandId, (element)->idx, ##args
 
 #define LLC_S_DPRINTF_(X, streamId, format, args...)                           \
   DPRINTF(X, LLC_S_MSG(streamId, format, ##args))

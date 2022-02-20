@@ -139,3 +139,5 @@ class RubyStreamAwareController(RubyController):
 
     enable_stream_float_mem = Param.Bool(False, "Whether to enable stream float to mem ctrl.")
     reuse_buffer_lines_per_core = Param.UInt32(0, "Number of cache lines per core in the reuse buffer.")
+
+    enable_stream_strand = Param.Bool(False, "Whether to enable stream strand auto parallelization.")

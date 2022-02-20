@@ -1,7 +1,7 @@
 #ifndef __CPU_GEM_FORGE_DYN_STREAM_ADDRESS_RANGE_ID_HH__
 #define __CPU_GEM_FORGE_DYN_STREAM_ADDRESS_RANGE_ID_HH__
 
-#include "DynStreamElementRangeId.hh"
+#include "DynStrandElementRangeId.hh"
 
 #include <vector>
 
@@ -43,14 +43,14 @@ using DynStreamAddressRangePtr = std::shared_ptr<DynStreamAddressRange>;
 using DynStreamAddressRangeVec = std::vector<DynStreamAddressRangePtr>;
 
 struct DynStreamAddressRange {
-  DynStreamElementRangeId elementRange;
+  DynStrandElementRangeId elementRange;
   AddressRange vaddrRange;
   AddressRange paddrRange;
 
   // Store the unioned address range.
   DynStreamAddressRangeVec subRanges;
 
-  DynStreamAddressRange(const DynStreamElementRangeId &_elementRange,
+  DynStreamAddressRange(const DynStrandElementRangeId &_elementRange,
                         const AddressRange &_vaddrRange,
                         const AddressRange &_paddrRange);
 

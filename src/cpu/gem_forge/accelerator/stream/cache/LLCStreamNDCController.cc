@@ -53,7 +53,7 @@ void LLCStreamNDCController::processStreamNDCRequest(PacketPtr pkt) {
   LLC_NDC_DPRINTF(streamNDC, "Receive NDC req.\n");
   auto elementIdx = streamNDC->entryIdx.entryIdx;
   DynStreamSliceId sliceId;
-  sliceId.getDynStreamId() = streamNDC->entryIdx.streamId;
+  sliceId.getDynStrandId() = DynStrandId(streamNDC->entryIdx.streamId);
   sliceId.getStartIdx() = elementIdx;
   sliceId.getEndIdx() = elementIdx + 1;
   sliceId.vaddr = streamNDC->vaddr;
@@ -81,14 +81,14 @@ void LLCStreamNDCController::allocateContext(
   auto S = streamNDC->stream;
   auto size = S->getMemElementSize();
   auto element = std::make_shared<LLCStreamElement>(
-      S, mlcController, streamNDC->entryIdx.streamId,
+      S, mlcController, DynStrandId(streamNDC->entryIdx.streamId),
       streamNDC->entryIdx.entryIdx, streamNDC->vaddr, size,
       true /* isNDCElement */);
 
   // Add all the base elements.
   for (const auto &forward : streamNDC->expectedForwardPackets) {
     auto forwardElement = std::make_shared<LLCStreamElement>(
-        forward->stream, mlcController, forward->entryIdx.streamId,
+        forward->stream, mlcController, DynStrandId(forward->entryIdx.streamId),
         forward->entryIdx.entryIdx, forward->vaddr,
         forward->stream->getMemElementSize(), true /* isNDCElement */
     );
@@ -99,8 +99,7 @@ void LLCStreamNDCController::allocateContext(
 }
 
 LLCStreamNDCController::NDCContext *
-LLCStreamNDCController::getContextFromSliceId(
-    const DynStreamSliceId &sliceId) {
+LLCStreamNDCController::getContextFromSliceId(const DynStreamSliceId &sliceId) {
   auto iter = inflyNDCContextMap.find(sliceId.getDynStreamId());
   if (iter == inflyNDCContextMap.end()) {
     return nullptr;
@@ -171,8 +170,8 @@ void LLCStreamNDCController::handleNDC(NDCContext &context,
   }
 }
 
-void LLCStreamNDCController::handleAtomicNDC(
-    NDCContext &context, const DynStreamSliceId &sliceId) {
+void LLCStreamNDCController::handleAtomicNDC(NDCContext &context,
+                                             const DynStreamSliceId &sliceId) {
 
   auto S = context.ndc->stream;
   auto dynS = S->getDynStream(context.ndc->entryIdx.streamId);
@@ -229,9 +228,9 @@ void LLCStreamNDCController::handleStoreNDC(NDCContext &context) {
   llcSE->pushReadyComputation(context.element);
 }
 
-void LLCStreamNDCController::handleForwardNDC(
-    NDCContext &context, const DynStreamSliceId &sliceId,
-    const DataBlock &dataBlock) {
+void LLCStreamNDCController::handleForwardNDC(NDCContext &context,
+                                              const DynStreamSliceId &sliceId,
+                                              const DataBlock &dataBlock) {
 
   auto S = context.ndc->stream;
   auto dynS = S->getDynStream(context.ndc->entryIdx.streamId);
@@ -266,7 +265,7 @@ void LLCStreamNDCController::handleForwardNDC(
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_sliceIds.add(sliceId);
   msg->m_DataBlk = dataBlock;
-  msg->m_sendToStreamId = context.ndc->receiverEntryIdx.streamId;
+  msg->m_sendToStrandId = DynStrandId(context.ndc->receiverEntryIdx.streamId);
   /**
    * We model special size for StreamForward request.
    */
@@ -286,12 +285,12 @@ void LLCStreamNDCController::handleForwardNDC(
 void LLCStreamNDCController::receiveStreamForwardRequest(
     const RequestMsg &msg) {
   const auto &sliceId = msg.m_sliceIds.singleSliceId();
-  const auto &recvDynId = msg.m_sendToStreamId;
+  const auto &recvDynId = msg.m_sendToStrandId;
 
   LLCSE_DPRINTF("Received NDC Forward %s -> %s.\n", sliceId, recvDynId);
 
   DynStreamSliceId recvSliceId;
-  recvSliceId.getDynStreamId() = recvDynId;
+  recvSliceId.getDynStrandId() = recvDynId;
   recvSliceId.getStartIdx() = sliceId.getStartIdx();
   recvSliceId.getEndIdx() = sliceId.getEndIdx();
 
@@ -304,7 +303,7 @@ void LLCStreamNDCController::receiveStreamForwardRequest(
   auto S = context->ndc->stream;
   bool setBaseElementValue = false;
   for (auto &baseElement : context->element->baseElements) {
-    if (baseElement->dynStreamId == sliceId.getDynStreamId()) {
+    if (baseElement->strandId == sliceId.getDynStrandId()) {
       S->getCPUDelegator()->readFromMem(baseElement->vaddr, baseElement->size,
                                         baseElement->getUInt8Ptr());
       baseElement->addReadyBytes(baseElement->size);
@@ -336,7 +335,7 @@ bool LLCStreamNDCController::computeStreamElementValue(
     const LLCStreamElementPtr &element, StreamValue &result) {
 
   auto S = element->S;
-  auto dynS = S->getDynStream(element->dynStreamId);
+  auto dynS = S->getDynStream(element->strandId.dynStreamId);
   if (!dynS) {
     LLC_ELEMENT_DPRINTF_(StreamNearDataComputing, element,
                          "Discard LLC NDC Element as no DynS.");
@@ -375,7 +374,7 @@ void LLCStreamNDCController::completeComputation(
   element->setValue(value);
 
   DynStreamSliceId sliceId;
-  sliceId.getDynStreamId() = element->dynStreamId;
+  sliceId.getDynStrandId() = element->strandId;
   sliceId.getStartIdx() = element->idx;
   sliceId.getEndIdx() = element->idx + 1;
 

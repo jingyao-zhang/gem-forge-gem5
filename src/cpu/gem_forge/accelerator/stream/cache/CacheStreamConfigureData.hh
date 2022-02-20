@@ -32,6 +32,14 @@ public:
 
   Stream *stream;
   DynStreamId dynamicId;
+
+  /**
+   * StrandId and TotalStrands. Set by MLC if enabled.
+   * Default to one strand.
+   */
+  int strandIdx = 0;
+  int totalStrands = 1;
+
   int elementSize;
 
   /**
