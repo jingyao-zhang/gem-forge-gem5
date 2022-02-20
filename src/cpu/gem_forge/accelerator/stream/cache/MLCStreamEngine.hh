@@ -1,5 +1,5 @@
-#ifndef __CPU_TDG_ACCELERATOR_STREAM_MLC_STREAM_ENGINE_H__
-#define __CPU_TDG_ACCELERATOR_STREAM_MLC_STREAM_ENGINE_H__
+#ifndef __CPU_GEM_FORGE_MLC_STREAM_ENGINE_H__
+#define __CPU_GEM_FORGE_MLC_STREAM_ENGINE_H__
 
 /**
  * Stream engine at MLC cache level, which is private and
@@ -17,6 +17,7 @@
 #include <unordered_map>
 
 class MLCStreamNDCController;
+class MLCStrandManager;
 class StreamMemAccess;
 class MessageBuffer;
 
@@ -44,27 +45,9 @@ public:
    */
   void receiveStreamConfigure(PacketPtr pkt);
   /**
-   * Configure a single stream.
-   * It will insert an configure message into the message buffer to configure
-   * the correct LLC bank.
-   * In case the first element's virtual address faulted, the MLC StreamEngine
-   * will return physical address that maps to the LLC bank of this tile.
-   */
-  void configureStream(CacheStreamConfigureDataPtr streamConfigureData,
-                       MasterID masterId);
-  /**
    * Receive a StreamEnd message and end all streams.
    */
   void receiveStreamEnd(PacketPtr pkt);
-  /**
-   * Receive a StreamEnd message.
-   * The difference between StreamConfigure and StreamEnd message
-   * is that the first one already knows the destination LLC bank from the core
-   * StreamEngine, while the later one has to rely on the MLC StreamEngine as it
-   * has the flow control information and knows where the stream is.
-   * It will terminate the stream and send a EndPacket to the LLC bank.
-   */
-  void endStream(const DynStreamId &endId, MasterID masterId);
   void receiveStreamData(const ResponseMsg &msg);
   void receiveStreamDataForSingleSlice(const DynStreamSliceId &sliceId,
                                        const DataBlock &dataBlock,
@@ -128,17 +111,10 @@ private:
       reverseReuseInfoMap;
   void reuseSlice(const DynStreamSliceId &sliceId, const DataBlock &dataBlock);
 
-  /**
-   * StreamNDCController.
-   */
   friend class MLCStreamNDCController;
+  friend class MLCStrandManager;
   std::unique_ptr<MLCStreamNDCController> ndcController;
-
-  /**
-   * Send configure/end message to remote SE.
-   */
-  void sendConfigToRemoteSE(CacheStreamConfigureDataPtr streamConfigureData,
-                            MasterID masterId);
+  std::unique_ptr<MLCStrandManager> strandManager;
 };
 
 #endif
