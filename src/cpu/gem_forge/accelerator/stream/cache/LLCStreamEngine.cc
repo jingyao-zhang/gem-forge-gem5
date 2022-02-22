@@ -2219,7 +2219,7 @@ void LLCStreamEngine::issueStreamDataToMLC(const DynStreamSliceId &sliceId,
 }
 
 void LLCStreamEngine::issueStreamDataToLLC(
-    LLCDynStreamPtr stream, const DynStreamSliceId &sliceId,
+    LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
     const DataBlock &dataBlock, const CacheStreamConfigureDataPtr &recvConfig,
     int payloadSize) {
   /**
@@ -2227,41 +2227,54 @@ void LLCStreamEngine::issueStreamDataToLLC(
    * address of the receiving stream and translate that. Also, we can
    * only handle the simpliest case so far: no spliting, and no
    * multi-line receiver element.
+   *
+   * Now that we have strands, we have to be careful translating between
+   * StreamElemIdx and StrandElemIdx.
    */
-  auto elementIdx = sliceId.getStartIdx();
-  auto recvElementVAddr =
+  auto strandElemIdx = sliceId.getStartIdx();
+  auto streamElemIdx =
+      dynS->configData->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+
+  auto recvElemVAddr =
       recvConfig->addrGenCallback
-          ->genAddr(elementIdx, recvConfig->addrGenFormalParams,
+          ->genAddr(streamElemIdx, recvConfig->addrGenFormalParams,
                     getStreamValueFail)
           .front();
-  auto recvElementVAddrEnd = recvElementVAddr + recvConfig->elementSize;
+  auto recvElemVAddrEnd = recvElemVAddr + recvConfig->elementSize;
+
   // Check that receiver does not across lines.
-  for (auto idx = sliceId.getStartIdx() + 1; idx < sliceId.getEndIdx(); ++idx) {
-    auto vaddr =
-        recvConfig->addrGenCallback
-            ->genAddr(idx, recvConfig->addrGenFormalParams, getStreamValueFail)
-            .front();
+  for (auto strandElemIdx = sliceId.getStartIdx() + 1;
+       strandElemIdx < sliceId.getEndIdx(); ++strandElemIdx) {
+    auto streamElemIdx =
+        dynS->configData->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+    auto vaddr = recvConfig->addrGenCallback
+                     ->genAddr(streamElemIdx, recvConfig->addrGenFormalParams,
+                               getStreamValueFail)
+                     .front();
     auto vaddrEnd = vaddr + recvConfig->elementSize;
-    recvElementVAddr = std::min(recvElementVAddr, vaddr);
-    recvElementVAddrEnd = std::max(recvElementVAddrEnd, vaddrEnd);
+    recvElemVAddr = std::min(recvElemVAddr, vaddr);
+    recvElemVAddrEnd = std::max(recvElemVAddrEnd, vaddrEnd);
   }
-  auto recvElementVAddrLine = makeLineAddress(recvElementVAddr);
-  auto recvElementVAddrEndLine = makeLineAddress(recvElementVAddr);
-  if (recvElementVAddrLine != recvElementVAddrEndLine) {
+
+  auto recvElemVAddrLine = makeLineAddress(recvElemVAddr);
+  auto recvElemVAddrEndLine = makeLineAddress(recvElemVAddr);
+  if (recvElemVAddrLine != recvElemVAddrEndLine) {
     LLC_SLICE_PANIC(sliceId, "Multiline StreamForward Receiver: %s.",
                     recvConfig->dynamicId);
   }
-  Addr recvElementPAddrLine;
-  if (stream->translateToPAddr(recvElementVAddrLine, recvElementPAddrLine)) {
+
+  Addr recvElemPAddrLine;
+  if (dynS->translateToPAddr(recvElemVAddrLine, recvElemPAddrLine)) {
     // Now we enqueue the translation request.
     auto recvElementMachineType =
-        recvConfig->floatPlan.getMachineTypeAtElem(elementIdx);
+        recvConfig->floatPlan.getMachineTypeAtElem(streamElemIdx);
     auto reqIter = this->enqueueRequest(
-        stream->getStaticS(), sliceId, recvElementVAddrLine,
-        recvElementPAddrLine, recvElementMachineType,
-        CoherenceRequestType_STREAM_FORWARD);
-    // Remember the receiver dynamic id and forwarded data block.
-    reqIter->forwardToStrandId = DynStrandId(recvConfig->dynamicId);
+        dynS->getStaticS(), sliceId, recvElemVAddrLine, recvElemPAddrLine,
+        recvElementMachineType, CoherenceRequestType_STREAM_FORWARD);
+
+    // Remember the receiver StrandId and forwarded data block.
+    reqIter->forwardToStrandId =
+        recvConfig->getStrandIdFromStreamElemIdx(streamElemIdx);
     reqIter->dataBlock = dataBlock;
     reqIter->payloadSize = payloadSize;
   } else {
@@ -2530,7 +2543,8 @@ void LLCStreamEngine::processStreamForwardRequest(const RequestMsg &req) {
    */
   auto sendCycle = this->controller->ticksToCycles(req.getTime());
   auto latency = this->curCycle() - sendCycle;
-  LLC_SLICE_DPRINTF(sliceId, "[Forward] Received. Latency %llu.\n", latency);
+  LLC_SLICE_DPRINTF(sliceId, "[Forward] Received by %s. Latency %llu.\n",
+                    recvDynId, latency);
   if (auto sender = LLCDynStream::getLLCStream(sliceId.getDynStrandId())) {
     sender->getStaticS()->statistic.remoteForwardNoCDelay.sample(latency);
   }

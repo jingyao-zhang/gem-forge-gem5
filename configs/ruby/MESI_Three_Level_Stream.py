@@ -253,6 +253,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                     options.gem_forge_stream_engine_mlc_stream_buffer_to_segment_ratio,
                 enable_stream_range_sync=options.gem_forge_enable_stream_range_sync,
                 enable_stream_float_mem=options.gem_forge_stream_engine_enable_float_mem,
+                enable_stream_strand=options.gem_forge_enable_stream_strand,
                 )
 
             exec("ruby_system.l0_cntrl%d = l0_cntrl"

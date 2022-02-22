@@ -252,6 +252,9 @@ parser.add_option("--gem-forge-stream-engine-enable-fine-grained-near-data-compu
 parser.add_option("--gem-forge-enable-stream-nuca", type="int",
                   action="store", default="0",
                   help="Enable stream nuca.")
+parser.add_option("--gem-forge-enable-stream-strand", type="int",
+                  action="store", default="0",
+                  help="Enable stream strand auto parallelization.")
 parser.add_option("--gem-forge-stream-nuca-direct-region-fit-policy", type="choice",
                   choices=['crop', 'drop'], default='crop',
                   help="What to do when direct regions overflow LLC.")

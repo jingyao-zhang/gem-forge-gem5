@@ -10,11 +10,12 @@ DebugFlag('MLCRubyStreamBase')
 DebugFlag('MLCRubyStreamLife')
 DebugFlag('MLCRubyStreamReuse')
 DebugFlag('MLCRubyStreamReduce')
+DebugFlag('MLCRubyStrandSplit')
 DebugFlag('MLCStreamLoopBound')
 CompoundFlag('MLCRubyStream', [
     'MLCRubyStreamBase', 'MLCRubyStreamLife', 'MLCRubyStreamReuse',
     'MLCRubyStreamReduce', 'MLCStreamLoopBound',
-    'StreamRangeSync',
+    'StreamRangeSync', 'MLCRubyStrandSplit',
 ])
 DebugFlag('LLCRubyStreamBase')
 DebugFlag('LLCRubyStreamLife')
@@ -57,6 +58,7 @@ Source('LLCStreamNDCController.cc')
 Source('LLCStreamMigrationController.cc')
 Source('LLCDynStream.cc')
 Source('LLCStreamEngine.cc')
+Source('StrandSplitInfo.cc')
 Source('StreamRequestBuffer.cc')
 Source('CacheStreamConfigureData.cc')
 Source('SlicedDynStream.cc')

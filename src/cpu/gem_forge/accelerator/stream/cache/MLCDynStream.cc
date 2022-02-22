@@ -181,71 +181,79 @@ bool MLCDynStream::tryPopStream() {
     return false;
   }
 
-  uint64_t llcDynSProgressSliceIdx = UINT64_MAX;
-  LLCDynStreamPtr llcDynSLeastProgress = nullptr;
+  uint64_t remoteProgressSliceIdx = UINT64_MAX;
+  LLCDynStreamPtr remoteDynSLeastProgress = nullptr;
 
-  uint64_t llcDynISProgressElementIdx = UINT64_MAX;
+  uint64_t remoteDynISProgressElemIdx = UINT64_MAX;
   // LLCDynStreamPtr llcDynISLeastProgress = nullptr;
 
-  uint64_t llcRecvProgressElementIdx = UINT64_MAX;
-  LLCDynStreamPtr llcRecvLeastProgress = nullptr;
+  uint64_t remoteRecvProgressElemIdx = UINT64_MAX;
+  LLCDynStreamPtr remoteRecvLeastProgress = nullptr;
 
   if (this->isMLCDirect && !this->shouldRangeSync() &&
       this->controller->isStreamIdeaMLCPopCheckEnabled()) {
 
-    auto llcDynS = LLCDynStream::getLLCStream(this->getDynStrandId());
-    if (!llcDynS) {
-      MLC_S_PANIC(this->getDynStrandId(), "LLCDynS already released.");
+    auto remoteDynS = LLCDynStream::getLLCStream(this->getDynStrandId());
+    if (!remoteDynS) {
+      MLC_S_PANIC(this->getDynStrandId(), "RemoteDynS already released.");
     }
 
-    llcDynSProgressSliceIdx = llcDynS->getNextAllocSliceIdx();
-    llcDynSLeastProgress = llcDynS;
+    remoteProgressSliceIdx = remoteDynS->getNextAllocSliceIdx();
+    remoteDynSLeastProgress = remoteDynS;
 
     /**
      * We are also going to limit llcProgressElementIdx to the unreleased
      * IndirectElementIdx + 1024 / MemElementSize.
      */
-    for (auto llcDynIS : llcDynS->getIndStreams()) {
+    for (auto remoteDynIS : remoteDynS->getIndStreams()) {
 
-      auto unreleasedElementIdx = llcDynIS->getNextUnreleasedElementIdx();
+      auto unreleasedElementIdx = remoteDynIS->getNextUnreleasedElementIdx();
 
-      auto dynISElementOffset = 1024 / llcDynIS->getMemElementSize();
+      auto dynISElementOffset = 1024 / remoteDynIS->getMemElementSize();
 
       if (unreleasedElementIdx + dynISElementOffset <
-          llcDynISProgressElementIdx) {
+          remoteDynISProgressElemIdx) {
 
         MLC_S_DPRINTF(
             this->getDynStreamId(),
-            "Smaller LLCDynIS %s UnreleaseElement %llu + %llu < %llu.\n",
-            llcDynIS->getDynStreamId(), unreleasedElementIdx,
-            dynISElementOffset, llcDynISProgressElementIdx);
+            "Smaller RemoteDynIS %s UnreleaseElement %llu + %llu < %llu.\n",
+            remoteDynIS->getDynStrandId(), unreleasedElementIdx,
+            dynISElementOffset, remoteDynISProgressElemIdx);
 
-        llcDynISProgressElementIdx = unreleasedElementIdx + dynISElementOffset;
+        remoteDynISProgressElemIdx = unreleasedElementIdx + dynISElementOffset;
         // llcDynISLeastProgress = llcDynIS;
       }
     }
 
-    for (const auto &depEdge : this->config->depEdges) {
-      if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
+    for (const auto &dep : this->config->depEdges) {
+      if (dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
 
-        auto llcDynS =
-            LLCDynStream::getLLCStream(DynStrandId(depEdge.data->dynamicId));
-        if (!llcDynS) {
+        /**
+         * TODO: [Strand] Here we assume SendTo relationship between strands has
+         * the same StrandIdx. This may not be the case and need to be fixed.
+         */
+        assert(this->getDynStrandId().totalStrands == dep.data->totalStrands &&
+               "SendTo between different TotalStrands.");
+        DynStrandId recvStrandId(dep.data->dynamicId,
+                                 this->getDynStrandId().strandIdx,
+                                 this->getDynStrandId().totalStrands);
+
+        auto remoteRecvS = LLCDynStream::getLLCStream(recvStrandId);
+        if (!remoteRecvS) {
           MLC_S_PANIC(this->getDynStrandId(),
-                      "LLCReceiver already released: %s.",
-                      depEdge.data->dynamicId);
+                      "LLCReceiver already released: %s.", recvStrandId);
         }
 
-        auto receiverInitElementIdx = llcDynS->getNextInitElementIdx();
+        auto recvInitElemIdx = remoteRecvS->getNextInitElementIdx();
 
-        if (receiverInitElementIdx < llcRecvProgressElementIdx) {
+        if (recvInitElemIdx < remoteRecvProgressElemIdx) {
 
           MLC_S_DPRINTF(this->getDynStrandId(),
                         "Smaller SendTo %s InitElementIdx %llu.\n",
-                        depEdge.data->dynamicId, receiverInitElementIdx);
+                        recvStrandId, recvInitElemIdx);
 
-          llcRecvProgressElementIdx = receiverInitElementIdx;
-          llcRecvLeastProgress = llcDynS;
+          remoteRecvProgressElemIdx = recvInitElemIdx;
+          remoteRecvLeastProgress = remoteRecvS;
         }
       }
     }
@@ -265,15 +273,15 @@ bool MLCDynStream::tryPopStream() {
     }
 
     auto mlcHeadSliceIdx = this->tailSliceIdx - this->slices.size();
-    auto mlcHeadSliceEndElementIdx = slice.sliceId.getEndIdx();
+    auto mlcHeadSliceEndElemIdx = slice.sliceId.getEndIdx();
 
     /**
      * Check all the requirements.
      */
-    if (mlcHeadSliceIdx > llcDynSProgressSliceIdx) {
+    if (mlcHeadSliceIdx > remoteProgressSliceIdx) {
       MLC_SLICE_DPRINTF(slice.sliceId,
                         "[DelayPop] SelfSliceIdx MLC %llu > LLC %llu.\n",
-                        mlcHeadSliceIdx, llcDynSProgressSliceIdx);
+                        mlcHeadSliceIdx, remoteProgressSliceIdx);
       auto se = this->controller->getMLCStreamEngine();
       auto dynId = this->getDynStrandId();
       auto sliceAllocCallback = [se, dynId](const DynStreamId &dynStreamId,
@@ -286,27 +294,27 @@ bool MLCDynStream::tryPopStream() {
         }
       };
       this->popBlocked = true;
-      llcDynSLeastProgress->registerSliceAllocCallback(mlcHeadSliceIdx,
-                                                       sliceAllocCallback);
+      remoteDynSLeastProgress->registerSliceAllocCallback(mlcHeadSliceIdx,
+                                                          sliceAllocCallback);
       break;
     }
 
-    if (mlcHeadSliceEndElementIdx > llcDynISProgressElementIdx) {
+    if (mlcHeadSliceEndElemIdx > remoteDynISProgressElemIdx) {
       MLC_SLICE_DPRINTF(slice.sliceId,
                         "[DelayPop] ISElementIdx MLC %llu > LLC %llu.\n",
-                        mlcHeadSliceEndElementIdx, llcDynISProgressElementIdx);
+                        mlcHeadSliceEndElemIdx, remoteDynISProgressElemIdx);
       this->scheduleAdvanceStream();
       break;
     }
 
-    if (mlcHeadSliceEndElementIdx > llcRecvProgressElementIdx) {
+    if (mlcHeadSliceEndElemIdx > remoteRecvProgressElemIdx) {
       MLC_SLICE_DPRINTF(slice.sliceId,
-                        "[DelayPop] RecvElementIdx MLC %llu > LLC %llu.\n",
-                        mlcHeadSliceEndElementIdx, llcRecvProgressElementIdx);
+                        "[DelayPop] RecvElemIdx MLC %llu > LLC %llu.\n",
+                        mlcHeadSliceEndElemIdx, remoteRecvProgressElemIdx);
       auto se = this->controller->getMLCStreamEngine();
       auto dynId = this->getDynStrandId();
-      auto elementInitCallback = [se, dynId](const DynStreamId &dynStreamId,
-                                             uint64_t elementIdx) -> void {
+      auto elemInitCallback = [se, dynId](const DynStreamId &dynStreamId,
+                                          uint64_t elementIdx) -> void {
         if (auto dynS = se->getStreamFromStrandId(dynId)) {
           dynS->popBlocked = false;
           dynS->scheduleAdvanceStream();
@@ -315,8 +323,8 @@ bool MLCDynStream::tryPopStream() {
         }
       };
       this->popBlocked = true;
-      llcRecvLeastProgress->registerElementInitCallback(
-          mlcHeadSliceEndElementIdx, elementInitCallback);
+      remoteRecvLeastProgress->registerElementInitCallback(
+          mlcHeadSliceEndElemIdx, elemInitCallback);
       break;
     }
 
@@ -439,13 +447,13 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
       }
       MLC_SLICE_PANIC(ackSliceId, "MakeAck when dynS has been released.");
     }
-    for (auto elementIdx = ackSliceId.getStartIdx();
-         elementIdx < ackSliceId.getEndIdx(); ++elementIdx) {
+    for (auto strandElemIdx = ackSliceId.getStartIdx();
+         strandElemIdx < ackSliceId.getEndIdx(); ++strandElemIdx) {
       if (std::dynamic_pointer_cast<LinearAddrGenCallback>(
               this->config->addrGenCallback)) {
         auto elementVAddr =
             this->config->addrGenCallback
-                ->genAddr(elementIdx, this->config->addrGenFormalParams,
+                ->genAddr(strandElemIdx, this->config->addrGenFormalParams,
                           getStreamValueFail)
                 .uint64();
         if (elementVAddr + this->config->elementSize >
@@ -454,13 +462,18 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
           MLC_SLICE_DPRINTF(ackSliceId,
                             "Skipping Ack for multi-slice element %llu [%#x, "
                             "+%d) slice [%#x, +%d).\n",
-                            elementIdx, elementVAddr, this->config->elementSize,
-                            ackSliceId.vaddr, ackSliceId.getSize());
+                            strandElemIdx, elementVAddr,
+                            this->config->elementSize, ackSliceId.vaddr,
+                            ackSliceId.getSize());
           continue;
         }
       }
-      MLC_SLICE_DPRINTF(slice.sliceId, "Ack for element %llu.\n", elementIdx);
-      dynS->cacheAckedElements.insert(elementIdx);
+      auto streamElemIdx =
+          this->config->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+      MLC_SLICE_DPRINTF(slice.sliceId,
+                        "Ack for StrandElem %llu StreamElem %llu.\n",
+                        strandElemIdx, streamElemIdx);
+      dynS->cacheAckedElements.insert(streamElemIdx);
     }
   }
 }

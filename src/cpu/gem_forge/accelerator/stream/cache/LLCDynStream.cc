@@ -59,7 +59,7 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
   if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {
     auto firstFloatElemIdx = _configData->floatPlan.getFirstFloatElementIdx();
     this->nextCommitElementIdx = firstFloatElemIdx;
-    this->nextInitElementIdx = firstFloatElemIdx;
+    this->nextInitStrandElemIdx = firstFloatElemIdx;
     this->nextIssueElementIdx = firstFloatElemIdx;
     this->nextLoopBoundElementIdx = firstFloatElemIdx;
   }
@@ -69,7 +69,7 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
     // Initialize the first element for ReductionStream with the initial value.
     assert(this->isOneIterationBehind() &&
            "ReductionStream must be OneIterationBehind.");
-    this->nextInitElementIdx++;
+    this->nextInitStrandElemIdx++;
   }
 
   LLC_S_DPRINTF_(LLCRubyStreamLife, this->getDynStrandId(), "Created.\n");
@@ -407,9 +407,9 @@ void LLCDynStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
     auto slice = std::make_shared<LLCStreamSlice>(this->getStaticS(), sliceId);
 
     // Register the elements.
-    while (this->nextInitElementIdx < sliceId.getEndIdx()) {
+    while (this->nextInitStrandElemIdx < sliceId.getEndIdx()) {
       this->initNextElement(
-          this->slicedStream.getElementVAddr(this->nextInitElementIdx));
+          this->slicedStream.getElementVAddr(this->nextInitStrandElemIdx));
     }
 
     // Remember the mapping from elements to slices.
@@ -427,9 +427,12 @@ void LLCDynStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
 }
 
 void LLCDynStream::initNextElement(Addr vaddr) {
-  const auto elementIdx = this->nextInitElementIdx;
-  LLC_S_DPRINTF(this->getDynStrandId(), "Initialize element %llu.\n",
-                elementIdx);
+  const auto strandElemIdx = this->nextInitStrandElemIdx;
+  const auto streamElemIdx =
+      this->configData->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+  LLC_S_DPRINTF(this->getDynStrandId(),
+                "Initialize StrandElem %llu StreamElem %llu.\n", strandElemIdx,
+                streamElemIdx);
 
   /**
    * Some sanity check for large AffineStream that we don't have too many
@@ -485,33 +488,42 @@ void LLCDynStream::initNextElement(Addr vaddr) {
   auto size = this->getMemElementSize();
   auto element = std::make_shared<LLCStreamElement>(
       this->getStaticS(), this->mlcController, this->getDynStrandId(),
-      elementIdx, vaddr, size, false /* isNDCElement */);
-  this->idxToElementMap.emplace(elementIdx, element);
-  this->nextInitElementIdx++;
+      strandElemIdx, vaddr, size, false /* isNDCElement */);
+  this->idxToElementMap.emplace(strandElemIdx, element);
+  this->nextInitStrandElemIdx++;
 
   /**
    * We populate the baseElements. If we are one iteration behind, we are
    * depending on the previous baseElements.
+   * NOTE: Be careful with StreamElemIdx and StrandElemIdx.
    */
-  auto baseElementIdx = elementIdx;
+  auto baseStreamElemIdx = streamElemIdx;
   if (this->isOneIterationBehind()) {
-    assert(elementIdx > 0 && "OneIterationBehind StreamElement begins at 1.");
-    baseElementIdx = elementIdx - 1;
+    assert(streamElemIdx > 0 &&
+           "OneIterationBehind StreamElement begins at 1.");
+    baseStreamElemIdx = streamElemIdx - 1;
   }
   for (const auto &baseConfig : this->baseOnConfigs) {
-    LLC_S_DPRINTF(this->getDynStrandId(), "Add BaseElement %llu from %s.\n",
-                  baseElementIdx, baseConfig->dynamicId);
+    auto baseStrandId =
+        baseConfig->getStrandIdFromStreamElemIdx(baseStreamElemIdx);
+    auto baseStrandElemIdx =
+        baseConfig->getStrandElemIdxFromStreamElemIdx(baseStreamElemIdx);
+    LLC_S_DPRINTF(
+        this->getDynStrandId(),
+        "Add BaseElem from %s StreamElemIdx %llu StrandElemIdx %llu.\n",
+        baseStrandId, baseStreamElemIdx, baseStrandElemIdx);
     const auto &baseDynStreamId = baseConfig->dynamicId;
     auto baseS = baseConfig->stream;
     if (this->baseStream &&
         this->baseStream->getDynStreamId() == baseDynStreamId) {
-      // This is from base stream.
-      if (!this->baseStream->idxToElementMap.count(baseElementIdx)) {
+      // This is from base stream. Should not have strands.
+      assert(!this->configData->isSplitIntoStrands() && "Indirect Strand.");
+      if (!this->baseStream->idxToElementMap.count(baseStreamElemIdx)) {
         LLC_ELEMENT_PANIC(element, "Missing base element from %s.",
                           this->baseStream->getDynStreamId());
       }
       element->baseElements.emplace_back(
-          this->baseStream->idxToElementMap.at(baseElementIdx));
+          this->baseStream->idxToElementMap.at(baseStreamElemIdx));
     } else {
       /**
        * This is from another bank, we just create the element here.
@@ -525,15 +537,15 @@ void LLCDynStream::initNextElement(Addr vaddr) {
       if (linearBaseAddrGen) {
         baseElementVaddr =
             baseConfig->addrGenCallback
-                ->genAddr(baseElementIdx, baseConfig->addrGenFormalParams,
+                ->genAddr(baseStreamElemIdx, baseConfig->addrGenFormalParams,
                           getStreamValueFail)
                 .front();
       }
 
       // TODO: Need to translate between StrandElemIdx and StreamElemIdx.
       element->baseElements.emplace_back(std::make_shared<LLCStreamElement>(
-          baseS, this->mlcController, DynStrandId(baseDynStreamId),
-          baseElementIdx, baseElementVaddr, baseS->getMemElementSize(),
+          baseS, this->mlcController, baseStrandId, baseStrandElemIdx,
+          baseElementVaddr, baseS->getMemElementSize(),
           false /* isNDCElement */));
     }
   }
@@ -551,11 +563,11 @@ void LLCDynStream::initNextElement(Addr vaddr) {
           this->configData->reductionInitValue);
       this->lastComputedReductionElementIdx = firstElemIdx;
     }
-    if (this->lastReductionElement->idx != baseElementIdx) {
+    if (this->lastReductionElement->idx != baseStreamElemIdx) {
       LLC_S_PANIC(
           this->getDynStrandId(),
           "Missing previous Reduction LLCStreamElement %llu, Current %llu.",
-          baseElementIdx, this->lastReductionElement->idx);
+          baseStreamElemIdx, this->lastReductionElement->idx);
     }
     /**
      * IndirectReductionStream is handled differently, as their computation
@@ -582,10 +594,10 @@ void LLCDynStream::initNextElement(Addr vaddr) {
   /**
    * We call ElementInitCallback here.
    */
-  auto elementInitCallbackIter = this->elementInitCallbacks.find(elementIdx);
+  auto elementInitCallbackIter = this->elementInitCallbacks.find(strandElemIdx);
   if (elementInitCallbackIter != this->elementInitCallbacks.end()) {
     for (auto &callback : elementInitCallbackIter->second) {
-      callback(this->getDynStreamId(), elementIdx);
+      callback(this->getDynStreamId(), strandElemIdx);
     }
     this->elementInitCallbacks.erase(elementInitCallbackIter);
   }
@@ -597,7 +609,7 @@ void LLCDynStream::initNextElement(Addr vaddr) {
 }
 
 bool LLCDynStream::isElementInitialized(uint64_t elementIdx) const {
-  return elementIdx < this->nextInitElementIdx;
+  return elementIdx < this->nextInitStrandElemIdx;
 }
 
 void LLCDynStream::registerElementInitCallback(uint64_t elementIdx,
@@ -643,7 +655,7 @@ void LLCDynStream::invokeSliceAllocCallbacks(uint64_t sliceIdx) {
 
 bool LLCDynStream::isElementReleased(uint64_t elementIdx) const {
   if (this->idxToElementMap.empty()) {
-    return elementIdx < this->nextInitElementIdx;
+    return elementIdx < this->nextInitStrandElemIdx;
   }
   return this->idxToElementMap.begin()->first > elementIdx;
 }
@@ -694,7 +706,7 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
     LLC_SLICE_PANIC(
         sliceId,
         "Cannot find the receiver element %s %llu allocate from %llu.\n",
-        this->getDynStreamId(), recvElementIdx, this->nextInitElementIdx);
+        this->getDynStreamId(), recvElementIdx, this->nextInitStrandElemIdx);
   }
   LLCStreamElementPtr recvElement = this->idxToElementMap.at(recvElementIdx);
   bool foundBaseElement = false;

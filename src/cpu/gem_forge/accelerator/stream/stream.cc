@@ -297,6 +297,17 @@ void Stream::commitStreamConfig(uint64_t seqNum) {
   assert(dynStream.configExecuted && "StreamConfig committed before executed.");
   assert(!dynStream.configCommitted && "StreamConfig already committed.");
   dynStream.configCommitted = true;
+
+  /**
+   * Sanity check that StoreComputeStream with LoopEliminated is floated, as the
+   * core SE does not issue store request right now.
+   */
+  if (this->isStoreComputeStream() && this->isLoopEliminated()) {
+    if (!dynStream.isFloatedToCache()) {
+      DYN_S_PANIC(dynStream.dynStreamId,
+                  "LoopEliminated StoreComputeStream should be offloaded.");
+    }
+  }
 }
 
 void Stream::rewindStreamConfig(uint64_t seqNum) {

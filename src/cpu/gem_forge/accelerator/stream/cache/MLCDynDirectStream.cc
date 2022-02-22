@@ -336,16 +336,16 @@ void MLCDynDirectStream::trySendCreditToLLC() {
      * slices.
      */
     {
-      auto llcDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
-                                                     "trySendCredit()");
-      auto inflyElementTotalSize = llcDynS->idxToElementMap.size() *
+      auto remoteDynS = LLCDynStream::getLLCStreamPanic(this->getDynStrandId(),
+                                                        "trySendCredit()");
+      auto inflyElementTotalSize = remoteDynS->idxToElementMap.size() *
                                    this->getStaticStream()->getMemElementSize();
       auto inflyBytesThreshold = this->config->mlcBufferNumSlices * 64 * 2;
       if (inflyElementTotalSize >= inflyBytesThreshold) {
         MLC_S_DPRINTF(
-            this->getDynStreamId(),
+            this->getDynStrandId(),
             "Delayed sending Credit since InflyElement %dx%d > %dB.\n",
-            llcDynS->idxToElementMap.size(),
+            remoteDynS->idxToElementMap.size(),
             this->getStaticStream()->getMemElementSize(), inflyBytesThreshold);
         return;
       }
@@ -357,54 +357,76 @@ void MLCDynDirectStream::trySendCreditToLLC() {
      * If not, we schedule an event to check next cycle.
      * We should also check receiver from my indirect streams.
      * Skip if the receiver is myself, which is used for Two-Level Indirection.
+     *
+     * Be careful to handle strand and stream.
+     * TODO: So far we are just checking that TailStreamElemIdx is allocated
+     * TODO: at TailStrand. This implicitly assumes that we are forwarding to
+     * TODO: a single strand. However, the general case is to have multiple
+     * TODO: receiving strands, and we need to check for all slices.
      */
-    const auto tailElementIdx =
+    const auto tailStrandElemIdx =
         segment.sliceIds.sliceIds.back().getEndIdx() - 1;
-    LLCDynStreamPtr waitForReceiver = nullptr;
+    const auto tailStreamElemIdx =
+        this->config->getStreamElemIdxFromStrandElemIdx(tailStrandElemIdx);
+    LLCDynStreamPtr waitForRecvS = nullptr;
+    uint64_t waitForRecvStrandElemIdx = 0;
+
     for (const auto &sendToConfig : this->sendToConfigs) {
       if (sendToConfig->dynamicId == this->getDynStreamId()) {
         continue;
       }
-      auto llcReceiverS =
-          LLCDynStream::getLLCStream(DynStrandId(sendToConfig->dynamicId));
-      if (llcReceiverS) {
-        if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
-          waitForReceiver = llcReceiverS;
+      auto recvStrandId =
+          sendToConfig->getStrandIdFromStreamElemIdx(tailStreamElemIdx);
+      auto recvStrandElemIdx =
+          sendToConfig->getStrandElemIdxFromStreamElemIdx(tailStreamElemIdx);
+
+      if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
+        if (!recvRemoteS->isElementInitialized(recvStrandElemIdx)) {
+          waitForRecvS = recvRemoteS;
+          waitForRecvStrandElemIdx = recvStrandElemIdx;
           break;
         }
       }
     }
-    if (!waitForReceiver) {
+
+    if (!waitForRecvS) {
       for (auto dynIS : this->indirectStreams) {
         for (const auto &sendToConfig : dynIS->getSendToConfigs()) {
-          auto llcReceiverS =
-              LLCDynStream::getLLCStream(DynStrandId(sendToConfig->dynamicId));
-          if (llcReceiverS) {
-            if (!llcReceiverS->isElementInitialized(tailElementIdx)) {
-              waitForReceiver = llcReceiverS;
+
+          auto recvStrandId =
+              sendToConfig->getStrandIdFromStreamElemIdx(tailStreamElemIdx);
+          auto recvStrandElemIdx =
+              sendToConfig->getStrandElemIdxFromStreamElemIdx(
+                  tailStreamElemIdx);
+
+          if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
+            if (!recvRemoteS->isElementInitialized(recvStrandElemIdx)) {
+              waitForRecvS = recvRemoteS;
+              waitForRecvStrandElemIdx = recvStrandElemIdx;
               break;
             }
           }
         }
-        if (waitForReceiver) {
+        if (waitForRecvS) {
           break;
         }
       }
     }
-    if (waitForReceiver) {
+    if (waitForRecvS) {
       // Register callbacks when the receiver elements are initialized.
-      MLC_S_DPRINTF(this->getDynStreamId(),
-                    "Delayed sending credit to LLC as receiver %s has not "
-                    "initialized element %llu.\n",
-                    waitForReceiver->getDynStreamId(), tailElementIdx);
+      MLC_S_DPRINTF(this->getDynStrandId(),
+                    "Delayed sending credit as Recv %s has not initialized "
+                    "StrandElem %llu StreamElem %llu.\n",
+                    waitForRecvS->getDynStrandId(), waitForRecvStrandElemIdx,
+                    tailStreamElemIdx);
       auto elementInitCallback = [this](const DynStreamId &dynStreamId,
                                         uint64_t elementIdx) -> void {
         this->blockedOnReceiverElementInit = false;
         this->trySendCreditToLLC();
       };
       this->blockedOnReceiverElementInit = true;
-      waitForReceiver->registerElementInitCallback(tailElementIdx,
-                                                   elementInitCallback);
+      waitForRecvS->registerElementInitCallback(waitForRecvStrandElemIdx,
+                                                elementInitCallback);
       return;
     }
 

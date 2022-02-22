@@ -47,14 +47,19 @@ private:
   std::unordered_map<DynStrandId, MLCDynStream *, DynStrandIdHasher> strandMap;
 
   /**
+   * Split stream into strands.
+   */
+  bool canSplitIntoStrands(const CacheStreamConfigureVec &configs) const;
+  void splitIntoStrands(CacheStreamConfigureVec &configs);
+
+  /**
    * Configure a single stream.
    * It will insert an configure message into the message buffer to configure
    * the correct LLC bank.
    * In case the first element's virtual address faulted, the MLC StreamEngine
    * will return physical address that maps to the LLC bank of this tile.
    */
-  void configureStream(CacheStreamConfigureDataPtr streamConfigureData,
-                       MasterID masterId);
+  void configureStream(CacheStreamConfigureDataPtr configs, MasterID masterId);
 
   /**
    * Send configure message to remote SE.

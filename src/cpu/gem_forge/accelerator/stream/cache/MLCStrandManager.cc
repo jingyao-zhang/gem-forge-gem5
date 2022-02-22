@@ -4,6 +4,7 @@
 #include "mem/ruby/protocol/RequestMsg.hh"
 
 #include "base/trace.hh"
+#include "debug/MLCRubyStrandSplit.hh"
 #include "debug/MLCRubyStreamBase.hh"
 #include "debug/MLCRubyStreamLife.hh"
 
@@ -27,29 +28,102 @@ MLCStrandManager::~MLCStrandManager() {
 
 void MLCStrandManager::receiveStreamConfigure(PacketPtr pkt) {
 
-  if (this->controller->myParams->enable_stream_strand) {
-    // panic("Strand is not supported yet.");
+  auto configs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+
+  if (this->canSplitIntoStrands(*configs)) {
+    this->splitIntoStrands(*configs);
   }
 
-  auto streamConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
-  mlcSE->computeReuseInformation(*streamConfigs);
-  for (auto streamConfigureData : *streamConfigs) {
-    this->configureStream(streamConfigureData, pkt->req->masterId());
+  mlcSE->computeReuseInformation(*configs);
+  for (auto config : *configs) {
+    this->configureStream(config, pkt->req->masterId());
   }
 
   // We initalize all LLCDynStreams here (see LLCDynStream.hh)
-  LLCDynStream::allocateLLCStreams(this->controller, *streamConfigs);
+  LLCDynStream::allocateLLCStreams(this->controller, *configs);
 
   // Release the configure vec.
-  delete streamConfigs;
+  delete configs;
   delete pkt;
 }
 
-void MLCStrandManager::configureStream(
-    CacheStreamConfigureDataPtr streamConfigureData, MasterID masterId) {
-  MLC_S_DPRINTF_(MLCRubyStreamLife, streamConfigureData->dynamicId,
+bool MLCStrandManager::canSplitIntoStrands(
+    const CacheStreamConfigureVec &configs) const {
+  if (!this->controller->myParams->enable_stream_strand) {
+    return false;
+  }
+
+  /**
+   * We can split streams into strands iff.
+   * 1. With known trip count (no StreamLoopBound).
+   * 2. There is no indirect streams.
+   * 3. Simple linear continuous streams.
+   * 4. Float plan is just the LLC.
+   * TODO: Handle reduction and tiled patterns.
+   */
+  for (const auto &config : configs) {
+    if (!config->hasTotalTripCount()) {
+      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                     "[Strand] No TripCount.\n");
+      return false;
+    }
+    for (const auto &dep : config->depEdges) {
+      if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+        MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                       "[Strand] Has IndirectS %s.\n", dep.data->dynamicId);
+        return false;
+      }
+    }
+    auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+        config->addrGenCallback);
+    if (!linearAddrGen) {
+      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                     "[Strand] Not LinearAddrGen.\n");
+      return false;
+    }
+    if (!linearAddrGen->isContinuous(config->addrGenFormalParams,
+                                     config->elementSize)) {
+      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                     "[Strand] Not Continuous.\n");
+      return false;
+    }
+    if (config->floatPlan.isFloatedToMem()) {
+      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                     "[Strand] Float to Mem.\n");
+      return false;
+    }
+    if (config->floatPlan.getFirstFloatElementIdx() != 0) {
+      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
+                     "[Strand] Delayed Float.\n");
+      return false;
+    }
+  }
+  return true;
+}
+
+void MLCStrandManager::splitIntoStrands(CacheStreamConfigureVec &configs) {
+  // Make a copy of the orginal stream configs.
+  auto streamConfigs = configs;
+  configs.clear();
+
+  // For now just split by interleave = 1kB / 64B = 16, totalStrands = 64.
+  auto initOffset = 0;
+  auto interleave = 16;
+  auto totalStrands = 64;
+  StrandSplitInfo splitInfo(initOffset, interleave, totalStrands);
+
+  // Split and insert into configs.
+  for (auto &config : streamConfigs) {
+    auto strandConfigs = config->splitIntoStrands(splitInfo);
+    configs.insert(configs.end(), strandConfigs.begin(), strandConfigs.end());
+  }
+}
+
+void MLCStrandManager::configureStream(CacheStreamConfigureDataPtr configs,
+                                       MasterID masterId) {
+  MLC_S_DPRINTF_(MLCRubyStreamLife, configs->dynamicId,
                  "Received StreamConfigure, TotalTripCount %lu.\n",
-                 streamConfigureData->totalTripCount);
+                 configs->totalTripCount);
   /**
    * Do not release the pkt and streamConfigureData as they should be forwarded
    * to the LLC bank and released there. However, we do need to fix up the
@@ -57,9 +131,9 @@ void MLCStrandManager::configureStream(
    * ! This has to be done before initializing the MLCDynStream so that it
    * ! knows the initial llc bank.
    */
-  if (!streamConfigureData->initPAddrValid) {
-    streamConfigureData->initPAddr = this->controller->getAddressToOurLLC();
-    streamConfigureData->initPAddrValid = true;
+  if (!configs->initPAddrValid) {
+    configs->initPAddr = this->controller->getAddressToOurLLC();
+    configs->initPAddrValid = true;
   }
 
   /**
@@ -68,14 +142,14 @@ void MLCStrandManager::configureStream(
    * data.
    */
   std::vector<MLCDynIndirectStream *> indirectStreams;
-  for (const auto &edge : streamConfigureData->depEdges) {
+  for (const auto &edge : configs->depEdges) {
     if (edge.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
       const auto &indirectStreamConfig = edge.data;
       // Let's create an indirect stream.
       auto indirectStream = new MLCDynIndirectStream(
           indirectStreamConfig, this->controller,
           mlcSE->responseToUpperMsgBuffer, mlcSE->requestToLLCMsgBuffer,
-          streamConfigureData->dynamicId /* Root dynamic stream id. */);
+          configs->dynamicId /* Root dynamic stream id. */);
       this->strandMap.emplace(indirectStream->getDynStrandId(), indirectStream);
       indirectStreams.push_back(indirectStream);
 
@@ -93,7 +167,7 @@ void MLCStrandManager::configureStream(
           auto IIS = new MLCDynIndirectStream(
               ISDepEdge.data, this->controller, mlcSE->responseToUpperMsgBuffer,
               mlcSE->requestToLLCMsgBuffer,
-              streamConfigureData->dynamicId /* Root dynamic stream id. */);
+              configs->dynamicId /* Root dynamic stream id. */);
           this->strandMap.emplace(IIS->getDynStrandId(), IIS);
 
           indirectStreams.push_back(IIS);
@@ -106,7 +180,7 @@ void MLCStrandManager::configureStream(
   }
   // Create the direct stream.
   auto directStream = new MLCDynDirectStream(
-      streamConfigureData, this->controller, mlcSE->responseToUpperMsgBuffer,
+      configs, this->controller, mlcSE->responseToUpperMsgBuffer,
       mlcSE->requestToLLCMsgBuffer, indirectStreams);
   this->strandMap.emplace(directStream->getDynStrandId(), directStream);
 
@@ -116,24 +190,23 @@ void MLCStrandManager::configureStream(
    * ! should be cut.
    */
   {
-    auto reuseIter =
-        mlcSE->reverseReuseInfoMap.find(streamConfigureData->dynamicId);
+    auto reuseIter = mlcSE->reverseReuseInfoMap.find(configs->dynamicId);
     if (reuseIter != mlcSE->reverseReuseInfoMap.end()) {
       auto cutElementIdx = reuseIter->second.targetCutElementIdx;
       auto cutLineVAddr = reuseIter->second.targetCutLineVAddr;
-      if (streamConfigureData->totalTripCount == -1 ||
-          streamConfigureData->totalTripCount > cutElementIdx) {
-        streamConfigureData->totalTripCount = cutElementIdx;
-        streamConfigureData->hasBeenCuttedByMLC = true;
+      if (configs->totalTripCount == -1 ||
+          configs->totalTripCount > cutElementIdx) {
+        configs->totalTripCount = cutElementIdx;
+        configs->hasBeenCuttedByMLC = true;
         directStream->setLLCCutLineVAddr(cutLineVAddr);
-        assert(streamConfigureData->depEdges.empty() &&
+        assert(configs->depEdges.empty() &&
                "Reuse stream with indirect stream is not supported.");
       }
     }
   }
 
   // Configure Remote SE.
-  this->sendConfigToRemoteSE(streamConfigureData, masterId);
+  this->sendConfigToRemoteSE(configs, masterId);
 }
 
 void MLCStrandManager::sendConfigToRemoteSE(

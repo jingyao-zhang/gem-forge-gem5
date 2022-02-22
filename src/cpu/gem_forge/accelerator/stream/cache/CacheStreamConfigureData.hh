@@ -1,6 +1,7 @@
 #ifndef __CPU_TDG_ACCELERATOR_STREAM_CACHE_STREAM_CONFIGURE_DATA_H__
 #define __CPU_TDG_ACCELERATOR_STREAM_CACHE_STREAM_CONFIGURE_DATA_H__
 
+#include "StrandSplitInfo.hh"
 #include "StreamFloatPlan.hh"
 #include "cpu/gem_forge/accelerator/stream/dyn_stream.hh"
 
@@ -16,13 +17,15 @@ struct CacheStreamConfigureData;
 using CacheStreamConfigureDataPtr = std::shared_ptr<CacheStreamConfigureData>;
 using CacheStreamConfigureDataWeakPtr = std::weak_ptr<CacheStreamConfigureData>;
 
+using CacheStreamConfigureVec = std::vector<CacheStreamConfigureDataPtr>;
+
 struct CacheStreamConfigureData
     : public std::enable_shared_from_this<CacheStreamConfigureData> {
 public:
-  CacheStreamConfigureData(
-      Stream *_stream, const DynStreamId &_dynamicId, int _elementSize,
-      const std::vector<DynStreamFormalParam> &_addrGenFormalParams,
-      AddrGenCallbackPtr _addrGenCallback);
+  CacheStreamConfigureData(Stream *_stream, const DynStreamId &_dynamicId,
+                           int _elementSize,
+                           const DynStreamFormalParamV &_addrGenFormalParams,
+                           AddrGenCallbackPtr _addrGenCallback);
   CacheStreamConfigureData(const CacheStreamConfigureData &other) = delete;
   CacheStreamConfigureData &
   operator=(const CacheStreamConfigureData &other) = delete;
@@ -32,13 +35,6 @@ public:
 
   Stream *stream;
   DynStreamId dynamicId;
-
-  /**
-   * StrandId and TotalStrands. Set by MLC if enabled.
-   * Default to one strand.
-   */
-  int strandIdx = 0;
-  int totalStrands = 1;
 
   int elementSize;
 
@@ -164,10 +160,36 @@ public:
     this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data);
   }
 
+  /**
+   * StrandId and TotalStrands. Set by MLC if enabled.
+   * Default to one strand.
+   */
+  int strandIdx = 0;
+  int totalStrands = 1;
+  StrandSplitInfo strandSplit;
+  // The original StreamConfig before split into strands.
+  CacheStreamConfigureDataPtr streamConfig = nullptr;
+  bool isSplitIntoStrands() const { return this->totalStrands > 1; }
+  CacheStreamConfigureVec splitIntoStrands(const StrandSplitInfo &strandSplit);
+  DynStreamFormalParamV splitLinearParam(const StrandSplitInfo &strandSplit,
+                                         int strandIdx,
+                                         const DynStreamFormalParamV &params,
+                                         AddrGenCallbackPtr callback);
+
+  /**
+   * Get the StrandId from StreamElemIdx.
+   * Must be called on the original StreamConfig.
+   * Used to find out the receiving strand for sending strand.
+   */
+  DynStrandId getStrandIdFromStreamElemIdx(uint64_t streamElemIdx) const;
+  uint64_t getStrandElemIdxFromStreamElemIdx(uint64_t streamElemIdx) const;
+
+  /**
+   * Exchange between the StreamElemIdx and StrandElemIdx.
+   */
+  uint64_t getStreamElemIdxFromStrandElemIdx(uint64_t strandElemIdx) const;
+
   // Set by the MLC stream, for flow control.
   int initCreditedIdx;
 };
-
-using CacheStreamConfigureVec = std::vector<CacheStreamConfigureDataPtr>;
-
 #endif

@@ -414,7 +414,7 @@ private:
   /**
    * Callbacks when an element is initialized.
    */
-  uint64_t nextInitElementIdx = 0;
+  uint64_t nextInitStrandElemIdx = 0;
   std::map<uint64_t, ElementCallbackList> elementInitCallbacks;
 
   uint64_t nextCommitElementIdx = 0;
@@ -436,7 +436,7 @@ private:
 
 public:
   void addCommitMessage(const DynStreamSliceId &sliceId);
-  uint64_t getNextInitElementIdx() const { return this->nextInitElementIdx; }
+  uint64_t getNextInitElementIdx() const { return this->nextInitStrandElemIdx; }
   uint64_t getNextCommitElementIdx() const {
     return this->nextCommitElementIdx;
   }
