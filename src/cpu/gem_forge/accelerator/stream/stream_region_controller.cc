@@ -285,13 +285,14 @@ void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
     }
   }
 
-  int64_t tripCount = DynStream::InvalidTotalTripCount;
   for (auto S : staticRegion->streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
-    tripCount = dynS.getTotalTripCount();
-    DYN_S_DPRINTF(dynS.dynStreamId, "[Region] Skip to End %llu.\n", tripCount);
-    dynS.FIFOIdx.entryIdx = tripCount;
+    DYN_S_DPRINTF(dynS.dynStreamId, "[Region] Skip to End %llu.\n",
+                  dynS.getTotalTripCount());
+    dynS.FIFOIdx.entryIdx = dynS.getTotalTripCount();
   }
   // Don't forget to update the Stepper.
-  dynRegion.step.nextElementIdx = tripCount;
+  for (auto &group : dynRegion.step.stepGroups) {
+    group.nextElemIdx = group.totalTripCount;
+  }
 }

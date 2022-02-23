@@ -97,12 +97,12 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
   }
 
   if (dynBound.offloaded &&
-      dynBound.nextElementIdx >= dynBound.offloadedFirstElementIdx) {
+      dynBound.nextElemIdx >= dynBound.offloadedFirstElementIdx) {
     // Starting from this point, we have been offloaded.
     return;
   }
 
-  auto nextElementIdx = dynBound.nextElementIdx;
+  auto nextElementIdx = dynBound.nextElemIdx;
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticBound.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
@@ -141,24 +141,24 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
      */
     SE_DPRINTF(
         "[LoopBound] Break Elem %lu (%d == %d) Region %s TripCount %llu.\n",
-        dynBound.nextElementIdx, ret, staticBound.boundRet,
-        staticRegion.region.region(), dynBound.nextElementIdx + 1);
+        dynBound.nextElemIdx, ret, staticBound.boundRet,
+        staticRegion.region.region(), dynBound.nextElemIdx + 1);
     dynBound.brokenOut = true;
     for (auto S : staticRegion.streams) {
       auto &dynS = S->getDynStream(dynRegion.seqNum);
-      dynS.setTotalTripCount(dynBound.nextElementIdx + 1);
+      dynS.setTotalTripCount(dynBound.nextElemIdx + 1);
       DYN_S_DPRINTF(dynS.dynStreamId,
                     "[LoopBound] Break (%d == %d) TotalTripCount %llu.\n", ret,
-                    staticBound.boundRet, dynBound.nextElementIdx + 1);
+                    staticBound.boundRet, dynBound.nextElemIdx + 1);
     }
 
   } else {
     // Keep going.
     SE_DPRINTF("[LoopBound] Continue Elem %lu (%d != %d) Region %s.\n",
-               dynBound.nextElementIdx, ret, staticBound.boundRet,
+               dynBound.nextElemIdx, ret, staticBound.boundRet,
                staticRegion.region.region());
   }
-  dynBound.nextElementIdx++;
+  dynBound.nextElemIdx++;
 }
 
 void StreamRegionController::receiveOffloadedLoopBoundRet(
@@ -175,15 +175,15 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
 
   SE_DPRINTF("[LoopBound] Received TripCount %llu BrokenOut %d Region %s.\n",
              tripCount, brokenOut, staticRegion.region.region());
-  if (tripCount != dynBound.nextElementIdx + 1) {
+  if (tripCount != dynBound.nextElemIdx + 1) {
     SE_PANIC("[LoopBound] Received TripCount %llu != NextElement %llu + 1, "
              "BrokenOut %d Region %s.\n",
-             tripCount, dynBound.nextElementIdx + 1, brokenOut,
+             tripCount, dynBound.nextElemIdx + 1, brokenOut,
              staticRegion.region.region());
   }
 
   dynBound.brokenOut = brokenOut;
-  dynBound.nextElementIdx = tripCount;
+  dynBound.nextElemIdx = tripCount;
   if (brokenOut) {
     for (auto S : staticRegion.streams) {
       auto &dynS = S->getDynStream(dynRegion.seqNum);

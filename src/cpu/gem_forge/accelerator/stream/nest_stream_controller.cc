@@ -202,7 +202,7 @@ void StreamRegionController::configureNestStream(
     }
   }
 
-  auto nextElementIdx = dynNestConfig.nextElementIdx;
+  auto nextElementIdx = dynNestConfig.nextElemIdx;
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticNestConfig.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
@@ -212,8 +212,8 @@ void StreamRegionController::configureNestStream(
         DYN_S_DPRINTF(baseDynS.dynStreamId,
                       "Failed to get element %llu for NestConfig. The "
                       "TotalTripCount must be 0. Skip.\n",
-                      dynNestConfig.nextElementIdx);
-        dynNestConfig.nextElementIdx++;
+                      dynNestConfig.nextElemIdx);
+        dynNestConfig.nextElemIdx++;
         return;
       } else {
         // The base element is not allocated yet.
@@ -251,7 +251,7 @@ void StreamRegionController::configureNestStream(
     if (predRet != staticNestConfig.predRet) {
       SE_DPRINTF("[Nest] Predicated Skip (%d != %d) NestRegion %s.\n", predRet,
                  staticNestConfig.predRet, staticNestRegion.region.region());
-      dynNestConfig.nextElementIdx++;
+      dynNestConfig.nextElemIdx++;
       return;
     }
   }
@@ -262,7 +262,7 @@ void StreamRegionController::configureNestStream(
   if (Debug::StreamNest) {
     SE_DPRINTF("[Nest] Value ready. Configure NestRegion %s, OuterElementIdx "
                "%lu, ActualParams:\n",
-               staticNestRegion.region.region(), dynNestConfig.nextElementIdx);
+               staticNestRegion.region.region(), dynNestConfig.nextElemIdx);
     for (const auto &actualParam : actualParams) {
       SE_DPRINTF("[Nest]   Param %s.\n", actualParam.print());
     }
@@ -270,7 +270,7 @@ void StreamRegionController::configureNestStream(
 
   this->isaHandler.resetISAStreamEngine();
   auto configFuncStartSeqNum = dynNestConfig.getConfigSeqNum(
-      dynNestConfig.nextElementIdx, dynRegion.seqNum);
+      dynNestConfig.nextElemIdx, dynRegion.seqNum);
   dynNestConfig.configFunc->invoke(actualParams, &this->isaHandler,
                                    configFuncStartSeqNum);
 
@@ -303,7 +303,7 @@ void StreamRegionController::configureNestStream(
   SE_DPRINTF("[Nest] Value ready. Config NestRegion %s OuterElemIdx %lu "
              "ConfigFuncStartSeqNum %lu ConfigSeqNum %lu TripCount %d "
              "Configured:\n",
-             staticNestRegion.region.region(), dynNestConfig.nextElementIdx,
+             staticNestRegion.region.region(), dynNestConfig.nextElemIdx,
              configFuncStartSeqNum, nestConfigSeqNum, totalTripCount);
   if (Debug::StreamNest) {
     for (auto S : staticNestRegion.streams) {
@@ -312,7 +312,7 @@ void StreamRegionController::configureNestStream(
     }
   }
 
-  dynNestConfig.nextElementIdx++;
+  dynNestConfig.nextElemIdx++;
 }
 
 InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getConfigSeqNum(

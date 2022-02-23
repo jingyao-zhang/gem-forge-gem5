@@ -12,8 +12,8 @@
 #define SE_PANIC(format, args...)                                              \
   panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
-bool StreamRegionController::canSkipAllocatingDynS(
-    StaticRegion &staticRegion, DynStream &stepRootDynS) {
+bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
+                                                   DynStream &stepRootDynS) {
 
   auto &stepDynStreams = stepRootDynS.stepDynStreams;
 
@@ -125,10 +125,7 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
    * Then increment the target.
    */
   // Make a copy of the StepRootStream.
-  std::vector<Stream *> stepRootStreams;
-  for (const auto &stepGroup : staticRegion.step.stepGroups) {
-    stepRootStreams.push_back(stepGroup.stepRootS);
-  }
+  auto stepRootStreams = staticRegion.step.stepRootStreams;
 
   // Sort by the allocated size.
   std::sort(stepRootStreams.begin(), stepRootStreams.end(),

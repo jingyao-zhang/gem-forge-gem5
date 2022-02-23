@@ -42,7 +42,7 @@ public:
       ExecFuncPtr predFunc = nullptr;
       DynStreamFormalParamV formalParams;
       DynStreamFormalParamV predFormalParams;
-      uint64_t nextElementIdx = 0;
+      uint64_t nextElemIdx = 0;
 
       /**
        * ConfigSeqNum of configured NestRegion.
@@ -62,7 +62,7 @@ public:
     struct DynLoopBound {
       ExecFuncPtr boundFunc = nullptr;
       DynStreamFormalParamV formalParams;
-      uint64_t nextElementIdx = 0;
+      uint64_t nextElemIdx = 0;
       // We have reached the end of the loop.
       bool brokenOut = false;
       // We have offloaded the LoopBound.
@@ -75,8 +75,16 @@ public:
      * StreamStepper states for LoopEliminated region.
      */
     struct DynStep {
-      uint64_t nextElementIdx = 0;
-      int nextStepStreamIdx = 0;
+      struct DynStepGroupInfo {
+        uint64_t nextElemIdx = 0;
+        int64_t totalTripCount = 0;
+        int64_t levelTripCount = INT64_MAX;
+        // Remember this info for simplicity.
+        const int loopLevel;
+        DynStepGroupInfo(int _loopLevel) : loopLevel(_loopLevel) {}
+      };
+      std::vector<DynStepGroupInfo> stepGroups;
+      int nextGroupIdx = 0;
       enum StepState {
         // There is no Execute stage for StreamStep.
         BEFORE_DISPATCH,
@@ -118,6 +126,9 @@ public:
 
     /**
      * StreamStepper states for LoopEliminated region.
+     * To support stepping for multi-level loop streams, we
+     * sort StepGroups by InnerMostLoopLevel (inner -> outer), and
+     * remember the TripCount for each level in DynStep.
      */
     struct StaticStep {
       struct StepGroupInfo {
@@ -126,6 +137,7 @@ public:
         bool needSecondFinalValue = false;
         StepGroupInfo(Stream *_stepRootS) : stepRootS(_stepRootS) {}
       };
+      // Just used for StreamAllocator and StreamThrottler.
       StreamVec stepRootStreams;
       std::vector<StepGroupInfo> stepGroups;
       std::set<Stream *> skipStepSecondLastElemStreams;

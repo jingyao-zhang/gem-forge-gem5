@@ -879,8 +879,7 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
   }
 }
 
-bool StreamFloatController::checkAliasedUnpromotedStoreStream(
-    DynStream *dynS) {
+bool StreamFloatController::checkAliasedUnpromotedStoreStream(DynStream *dynS) {
   auto S = dynS->stream;
   StreamFloatPolicy::logS(*dynS)
       << "HasAliasedStore " << S->aliasBaseStream->hasAliasedStoreStream
@@ -1027,24 +1026,24 @@ bool StreamFloatController::isMidwayFloatReady(
       "[MidwayFloat] Check LoopBound before MidwayFloat", dynS->configSeqNum);
   if (dynRegion.staticRegion->region.is_loop_bound()) {
     auto &dynBound = dynRegion.loopBound;
-    if (dynBound.nextElementIdx > firstFloatElementIdx) {
+    if (dynBound.nextElemIdx > firstFloatElementIdx) {
       DYN_S_PANIC(dynS->dynStreamId,
                   "[MidwayFloat] Impossible! LoopBound NextElem %llu > "
                   "FirstFloatElem %llu.",
-                  dynBound.nextElementIdx, firstFloatElementIdx);
+                  dynBound.nextElemIdx, firstFloatElementIdx);
     }
-    if (dynBound.nextElementIdx < firstFloatElementIdx) {
+    if (dynBound.nextElemIdx < firstFloatElementIdx) {
       DYN_S_DPRINTF(dynS->dynStreamId,
                     "[MidwayFloat] LoopBound NextElem %llu < FirstFloatElem "
                     "%llu. Not Yet Float.\n",
-                    dynBound.nextElementIdx, firstFloatElementIdx);
+                    dynBound.nextElemIdx, firstFloatElementIdx);
       return false;
     }
     if (dynBound.brokenOut) {
       DYN_S_DPRINTF(dynS->dynStreamId,
                     "[MidwayFloat] LoopBound BrokenOut NextElem %llu <= "
                     "FirstFloatElem %llu. Don't Float.\n",
-                    dynBound.nextElementIdx, firstFloatElementIdx);
+                    dynBound.nextElemIdx, firstFloatElementIdx);
       return false;
     }
   }
