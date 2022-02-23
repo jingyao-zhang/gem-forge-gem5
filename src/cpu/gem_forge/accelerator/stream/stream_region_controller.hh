@@ -199,6 +199,13 @@ private:
    */
   DynRegion &pushDynRegion(StaticRegion &staticRegion, uint64_t seqNum);
 
+  /**
+   * For LoopEliminated region, we can skip allocation and stepping to the last
+   * element. This is mainly used to avoid bottleneck at the core for Strands
+   * and PUM.
+   */
+  void trySkipToStreamEnd(DynRegion &dynRegion);
+
   void buildFormalParams(const ConfigArgs::InputVec &inputVec, int &inputIdx,
                          const ::LLVM::TDG::ExecFuncInfo &funcInfo,
                          DynStreamFormalParamV &formalParams);

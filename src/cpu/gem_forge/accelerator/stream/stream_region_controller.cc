@@ -63,6 +63,7 @@ void StreamRegionController::executeStreamConfig(const ConfigArgs &args) {
   this->executeStreamConfigForNestStreams(args, dynRegion);
   this->executeStreamConfigForLoopBound(args, dynRegion);
   this->executeStreamConfigForStep(args, dynRegion);
+  this->trySkipToStreamEnd(dynRegion);
 
   SE_DPRINTF("[Region] Executed Config SeqNum %llu for region %s.\n",
              args.seqNum, dynRegion.staticRegion->region.region());
@@ -236,4 +237,61 @@ StreamValue StreamRegionController::GetStreamValueFromElementSet::operator()(
   }
   panic("%s Failed to find base element for stream %llu.", streamId);
   return ret;
+}
+
+void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
+  /**
+   * Check that:
+   * 1. Loop is eliminated.
+   * 2. RangeSync disabled.
+   * 3. Float enabled.
+   * 4. No NestRegion.
+   * For all streams:
+   * 1. Only has affine streams (no reduction/pointer-chase/indirect).
+   * 2. No last/second-last element user.
+   * 3. Has known TripCount.
+   */
+  auto staticRegion = dynRegion.staticRegion;
+  if (!staticRegion->region.loop_eliminated()) {
+    return;
+  }
+  if (se->myParams->enableRangeSync) {
+    return;
+  }
+  if (!se->myParams->streamEngineEnableFloat) {
+    return;
+  }
+  if (!dynRegion.nestConfigs.empty()) {
+    return;
+  }
+  for (auto S : staticRegion->streams) {
+    if (S->isMemStream()) {
+      // Mem stream.
+      if (!S->isDirectMemStream()) {
+        return;
+      }
+    } else {
+      // IV stream. Check for any BackDep.
+      if (!S->backBaseStreams.empty()) {
+        return;
+      }
+    }
+    if (S->isFinalValueNeededByCore() || S->isSecondFinalValueNeededByCore()) {
+      return;
+    }
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    if (!dynS.hasTotalTripCount()) {
+      return;
+    }
+  }
+
+  int64_t tripCount = DynStream::InvalidTotalTripCount;
+  for (auto S : staticRegion->streams) {
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    tripCount = dynS.getTotalTripCount();
+    DYN_S_DPRINTF(dynS.dynStreamId, "[Region] Skip to End %llu.\n", tripCount);
+    dynS.FIFOIdx.entryIdx = tripCount;
+  }
+  // Don't forget to update the Stepper.
+  dynRegion.step.nextElementIdx = tripCount;
 }
