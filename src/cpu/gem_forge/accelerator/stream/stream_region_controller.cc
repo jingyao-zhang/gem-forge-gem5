@@ -293,6 +293,7 @@ void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
   }
   // Don't forget to update the Stepper.
   for (auto &group : dynRegion.step.stepGroups) {
+    SE_DPRINTF("[Region] Skip Group to End %llu.\n", group.totalTripCount);
     group.nextElemIdx = group.totalTripCount;
   }
 }
