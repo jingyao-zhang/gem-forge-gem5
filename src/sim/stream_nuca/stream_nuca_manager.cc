@@ -22,11 +22,11 @@ Stats::ScalarNoReset StreamNUCAManager::indRegionMemToLLCRemappedHops;
 Stats::DistributionNoReset StreamNUCAManager::indRegionMemRemappedBanks;
 
 StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabledMemStream,
-                                     bool _enabledNUCA,
+                                     bool _enabledNUCA, bool _enablePUM,
                                      const std::string &_directRegionFitPolicy,
                                      bool _enableIndirectPageRemap)
     : process(_process), enabledMemStream(_enabledMemStream),
-      enabledNUCA(_enabledNUCA),
+      enabledNUCA(_enabledNUCA), enablePUM(_enablePUM),
       enableIndirectPageRemap(_enableIndirectPageRemap) {
   if (_directRegionFitPolicy == "crop") {
     this->directRegionFitPolicy = DirectRegionFitPolicy::CROP;
@@ -39,7 +39,7 @@ StreamNUCAManager::StreamNUCAManager(Process *_process, bool _enabledMemStream,
 
 StreamNUCAManager::StreamNUCAManager(const StreamNUCAManager &other)
     : process(other.process), enabledMemStream(other.enabledMemStream),
-      enabledNUCA(other.enabledNUCA),
+      enabledNUCA(other.enabledNUCA), enablePUM(other.enablePUM),
       directRegionFitPolicy(other.directRegionFitPolicy),
       enableIndirectPageRemap(other.enableIndirectPageRemap) {
   panic("StreamNUCAManager does not have copy constructor.");

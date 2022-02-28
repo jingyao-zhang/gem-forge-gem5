@@ -1,0 +1,8 @@
+
+Import('*')
+
+DebugFlag('StreamPUM')
+
+Source('AffinePattern.cc')
+Source('PUMCommand.cc')
+Source('DataMoveCompiler.cc')

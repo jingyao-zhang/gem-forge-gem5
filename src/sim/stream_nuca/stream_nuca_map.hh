@@ -19,7 +19,33 @@
 class StreamNUCAMap {
 public:
   static void initializeTopology(int numRows, int numCols);
-  static void initializeCache(int blockSize, int numSet, int assoc);
+
+  struct CacheParams {
+    int blockSize = 0;
+    int numSet = 0;
+    int assoc = 0;
+    /**
+     * These are SRAM PUM parameters.
+     */
+    int wordlines = 0;
+    int bitlines = 0;
+    int arrayTreeDegree = 0;
+    int arrayTreeLeafBandwidth = 0;
+    int arrayPerWay = 0;
+    bool operator==(const CacheParams &other) const {
+      return blockSize == other.blockSize && numSet == other.numSet &&
+             assoc == other.assoc && wordlines == other.wordlines &&
+             bitlines == other.bitlines &&
+             arrayTreeDegree == other.arrayTreeDegree &&
+             arrayTreeLeafBandwidth == other.arrayTreeLeafBandwidth &&
+             arrayPerWay == other.arrayPerWay;
+    }
+    bool operator!=(const CacheParams &other) const {
+      return !this->operator==(other);
+    }
+  };
+
+  static void initializeCache(const CacheParams &cacheParams);
 
   struct NonUniformNode {
     int routerId;
@@ -50,18 +76,13 @@ public:
     assert(topologyInitialized && "Topology has not initialized");
     return numCols;
   }
-  static int getCacheBlockSize() {
+  static const CacheParams &getCacheParams() {
     assert(cacheInitialized && "Cache has not initialized");
-    return cacheBlockSize;
+    return cacheParams;
   }
-  static int getCacheNumSet() {
-    assert(cacheInitialized && "Cache has not initialized");
-    return cacheNumSet;
-  }
-  static int getCacheAssoc() {
-    assert(cacheInitialized && "Cache has not initialized");
-    return cacheAssoc;
-  }
+  static int getCacheBlockSize() { return getCacheParams().blockSize; }
+  static int getCacheNumSet() { return getCacheParams().numSet; }
+  static int getCacheAssoc() { return getCacheParams().assoc; }
 
   struct RangeMap {
     Addr startPAddr;
@@ -88,9 +109,7 @@ private:
   static int numRows;
   static int numCols;
   static bool cacheInitialized;
-  static int cacheBlockSize;
-  static int cacheNumSet;
-  static int cacheAssoc;
+  static CacheParams cacheParams;
 
   static NonUniformNodeVec numaNodes;
 

@@ -102,8 +102,19 @@ CacheMemory::init()
     }
 
     if (m_query_stream_nuca) {
-        StreamNUCAMap::initializeCache(
-            m_block_size, m_cache_num_sets, m_cache_assoc);
+        StreamNUCAMap::CacheParams cacheParams;
+        cacheParams.blockSize = m_block_size;
+        cacheParams.numSet = m_cache_num_sets;
+        cacheParams.assoc = m_cache_assoc;
+        cacheParams.wordlines = 512;
+        cacheParams.bitlines = 512;
+        cacheParams.arrayTreeDegree = 2;
+        cacheParams.arrayTreeLeafBandwidth = 4;
+        cacheParams.arrayPerWay = 
+            (cacheParams.blockSize * cacheParams.numSet) /
+            (cacheParams.wordlines * cacheParams.bitlines / 8);
+
+        StreamNUCAMap::initializeCache(cacheParams);
     }
 }
 

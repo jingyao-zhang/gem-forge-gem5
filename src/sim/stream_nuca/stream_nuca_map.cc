@@ -8,9 +8,7 @@ bool StreamNUCAMap::topologyInitialized = false;
 int StreamNUCAMap::numRows = 0;
 int StreamNUCAMap::numCols = 0;
 bool StreamNUCAMap::cacheInitialized = false;
-int StreamNUCAMap::cacheBlockSize = 0;
-int StreamNUCAMap::cacheNumSet = 0;
-int StreamNUCAMap::cacheAssoc = 0;
+StreamNUCAMap::CacheParams StreamNUCAMap::cacheParams;
 StreamNUCAMap::NonUniformNodeVec StreamNUCAMap::numaNodes;
 std::map<Addr, StreamNUCAMap::RangeMap> StreamNUCAMap::rangeMaps;
 
@@ -29,22 +27,14 @@ void StreamNUCAMap::initializeTopology(int numRows, int numCols) {
   }
 }
 
-void StreamNUCAMap::initializeCache(int blockSize, int numSet, int assoc) {
+void StreamNUCAMap::initializeCache(const CacheParams &cacheParams) {
   if (cacheInitialized) {
-    if (blockSize != StreamNUCAMap::cacheBlockSize ||
-        numSet != StreamNUCAMap::cacheNumSet ||
-        assoc != StreamNUCAMap::cacheAssoc) {
-      panic("Mismatch in BlockSize %d != %d or NumSet %d != %d or Assoc %d != "
-            "%d.",
-            blockSize, StreamNUCAMap::cacheBlockSize, numSet,
-            StreamNUCAMap::cacheNumSet, assoc, StreamNUCAMap::cacheAssoc);
+    if (StreamNUCAMap::cacheParams != cacheParams) {
+      panic("Mismatch in CacheParams.\n");
     }
     return;
   } else {
-    StreamNUCAMap::cacheBlockSize = blockSize;
-    StreamNUCAMap::cacheNumSet = numSet;
-    StreamNUCAMap::cacheAssoc = assoc;
-    StreamNUCAMap::cacheInitialized = true;
+    StreamNUCAMap::cacheParams = cacheParams;
   }
 }
 
