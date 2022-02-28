@@ -43,6 +43,8 @@ public:
   const int64_t mesh_rows;
   const int64_t mesh_cols;
 
+  static PUMHWConfiguration getPUMHWConfig();
+
   PUMHWConfiguration(int64_t _array_rows, int64_t _array_cols,
                      int64_t _array_per_way, int64_t _tree_degree,
                      int64_t _tree_leaf_bw_bytes, int64_t _way_per_bank,

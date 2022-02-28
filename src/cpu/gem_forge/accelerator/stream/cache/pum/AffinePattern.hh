@@ -134,6 +134,15 @@ public:
                                             std::move(array_sizes));
   }
 
+  int64_t getCanonicalTotalTileSize() const {
+    auto dimension = params.size() / 2;
+    auto totalTileSize = 1;
+    for (auto i = 0; i < dimension; ++i) {
+      totalTileSize *= params[i].trip;
+    }
+    return totalTileSize;
+  }
+
   static AffinePattern construct_canonical_tile(IntVecT tile_sizes,
                                                 IntVecT array_sizes) {
     assert(tile_sizes.size() == array_sizes.size());

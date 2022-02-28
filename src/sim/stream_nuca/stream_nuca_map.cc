@@ -35,6 +35,7 @@ void StreamNUCAMap::initializeCache(const CacheParams &cacheParams) {
     return;
   } else {
     StreamNUCAMap::cacheParams = cacheParams;
+    StreamNUCAMap::cacheInitialized = true;
   }
 }
 
@@ -83,9 +84,7 @@ int64_t StreamNUCAMap::computeHops(int64_t bankA, int64_t bankB) {
   return std::abs(bankARow - bankBRow) + std::abs(bankACol - bankBCol);
 }
 
-void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
-                                uint64_t interleave, int startBank,
-                                int startSet) {
+void StreamNUCAMap::checkOverlapRange(Addr startPAddr, Addr endPAddr) {
   // Simple sanity check that not overlap with existing ranges.
   for (const auto &entry : rangeMaps) {
     const auto &range = entry.second;
@@ -95,11 +94,30 @@ void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
     panic("Overlap in StreamNUCA RangeMap [%#x, %#x) [%#x, %#x).", startPAddr,
           endPAddr, range.startPAddr, range.endPAddr);
   }
+}
+
+void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
+                                uint64_t interleave, int startBank,
+                                int startSet) {
+  checkOverlapRange(startPAddr, endPAddr);
   DPRINTF(StreamNUCAMap, "Add PAddrRangeMap [%#x, %#x) %% %lu + %d.\n",
           startPAddr, endPAddr, interleave, startBank);
   rangeMaps.emplace(std::piecewise_construct, std::forward_as_tuple(startPAddr),
                     std::forward_as_tuple(startPAddr, endPAddr, interleave,
                                           startBank, startSet));
+}
+
+void StreamNUCAMap::addRangeMap(Addr startPAddr, Addr endPAddr,
+                                const AffinePattern &pumTile, int elementBits,
+                                int startWordline) {
+  checkOverlapRange(startPAddr, endPAddr);
+  DPRINTF(
+      StreamNUCAMap,
+      "Add PUM PAddrRangeMap [%#x, %#x) ElemBits %d StartWdLine %d Tile %s.\n",
+      startPAddr, endPAddr, elementBits, startWordline, pumTile);
+  rangeMaps.emplace(std::piecewise_construct, std::forward_as_tuple(startPAddr),
+                    std::forward_as_tuple(startPAddr, endPAddr, pumTile,
+                                          elementBits, startWordline));
 }
 
 StreamNUCAMap::RangeMap &
@@ -124,51 +142,99 @@ StreamNUCAMap::RangeMap *StreamNUCAMap::getRangeMapContaining(Addr paddr) {
   return &range;
 }
 
+int StreamNUCAMap::getNUCABank(Addr paddr, const RangeMap &range) {
+  assert(!range.isStreamPUM);
+  auto interleave = range.interleave;
+  auto startPAddr = range.startPAddr;
+  auto endPAddr = range.endPAddr;
+  auto startBank = range.startBank;
+  auto diffPAddr = paddr - startPAddr;
+  auto bank = startBank + diffPAddr / interleave;
+  bank = bank % (getNumRows() * getNumCols());
+  DPRINTF(StreamNUCAMap,
+          "Map PAddr %#x in [%#x, %#x) %% %lu + StartBank(%d) to Bank %d of "
+          "%dx%d.\n",
+          paddr, startPAddr, endPAddr, interleave, startBank, bank,
+          getNumRows(), getNumCols());
+  return bank;
+}
+
+int StreamNUCAMap::getPUMBank(Addr paddr, const RangeMap &range) {
+  assert(range.isStreamPUM);
+
+  auto elemIdx = (paddr - range.startPAddr) / (range.elementBits / 8);
+  auto vBitlineIdx = range.pumTileRev(elemIdx);
+
+  auto tileSize = range.pumTile.getCanonicalTotalTileSize();
+  auto bitlines = getCacheParams().bitlines;
+  auto pBitlineIdx =
+      (vBitlineIdx / tileSize) * bitlines + vBitlineIdx % tileSize;
+
+  auto arrayIdx = pBitlineIdx / bitlines;
+  auto wayIdx = arrayIdx / getCacheParams().arrayPerWay;
+  auto bankIdx = wayIdx / getCacheParams().assoc;
+
+  auto bank = bankIdx % (getNumRows() * getNumCols());
+
+  DPRINTF(StreamNUCAMap,
+          "[PUM] Map PAddr %#x in [%#x, %#x) Tile %s to Bank %d.\n", paddr,
+          range.startPAddr, range.endPAddr, range.pumTile, bank);
+  return bank;
+}
+
 int StreamNUCAMap::getBank(Addr paddr) {
   if (auto *range = getRangeMapContaining(paddr)) {
-    auto interleave = range->interleave;
-    auto startPAddr = range->startPAddr;
-    auto endPAddr = range->endPAddr;
-    auto startBank = range->startBank;
-    auto diffPAddr = paddr - startPAddr;
-    auto bank = startBank + diffPAddr / interleave;
-    bank = bank % (getNumRows() * getNumCols());
-    DPRINTF(StreamNUCAMap,
-            "Map PAddr %#x in [%#x, %#x) %% %lu + StartBank(%d) to Bank %d of "
-            "%dx%d.\n",
-            paddr, startPAddr, endPAddr, interleave, startBank, bank,
-            getNumRows(), getNumCols());
-    return bank;
+    if (range->isStreamPUM) {
+      return getPUMBank(paddr, *range);
+    } else {
+      return getNUCABank(paddr, *range);
+    }
   }
+  return -1;
+}
+
+int StreamNUCAMap::getNUCASet(Addr paddr, const RangeMap &range) {
+  assert(!range.isStreamPUM);
+
+  auto interleave = range.interleave;
+  auto startPAddr = range.startPAddr;
+  auto endPAddr = range.endPAddr;
+  auto startSet = range.startSet;
+  auto diffPAddr = paddr - startPAddr;
+  auto globalBankInterleave = interleave * getNumCols() * getNumRows();
+  /**
+   * Skip the line bits and bank bits.
+   */
+  auto localBankOffset = diffPAddr % interleave;
+  auto globalBankOffset = diffPAddr / globalBankInterleave;
+
+  auto setNum = (globalBankOffset * (interleave / getCacheBlockSize())) +
+                localBankOffset / getCacheBlockSize();
+
+  auto finalSetNum = (setNum + startSet) % getCacheNumSet();
+
+  DPRINTF(StreamNUCAMap,
+          "Map PAddr %#x in [%#x, %#x) %% %lu + StartSet(%d) "
+          "to Set %d of %d.\n",
+          paddr, startPAddr, endPAddr, interleave, startSet, finalSetNum,
+          getCacheNumSet());
+
+  return finalSetNum;
+}
+
+int StreamNUCAMap::getPUMSet(Addr paddr, const RangeMap &range) {
+  assert(range.isStreamPUM);
+  // For now just return -1 for default set.
   return -1;
 }
 
 int StreamNUCAMap::getSet(Addr paddr) {
   if (auto *range = getRangeMapContaining(paddr)) {
-    auto interleave = range->interleave;
-    auto startPAddr = range->startPAddr;
-    auto endPAddr = range->endPAddr;
-    auto startSet = range->startSet;
-    auto diffPAddr = paddr - startPAddr;
-    auto globalBankInterleave = interleave * getNumCols() * getNumRows();
-    /**
-     * Skip the line bits and bank bits.
-     */
-    auto localBankOffset = diffPAddr % interleave;
-    auto globalBankOffset = diffPAddr / globalBankInterleave;
-
-    auto setNum = (globalBankOffset * (interleave / getCacheBlockSize())) +
-                  localBankOffset / getCacheBlockSize();
-
-    auto finalSetNum = (setNum + startSet) % getCacheNumSet();
-
-    DPRINTF(StreamNUCAMap,
-            "Map PAddr %#x in [%#x, %#x) %% %lu + StartSet(%d) "
-            "to Set %d of %d.\n",
-            paddr, startPAddr, endPAddr, interleave, startSet, finalSetNum,
-            getCacheNumSet());
-
-    return finalSetNum;
+    if (range->isStreamPUM) {
+      return getPUMSet(paddr, *range);
+    } else {
+      return getNUCASet(paddr, *range);
+    }
   }
   return -1;
 }

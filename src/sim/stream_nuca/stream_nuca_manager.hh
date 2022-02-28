@@ -108,7 +108,8 @@ private:
 
   void remapRegion(ThreadContext *tc, StreamRegion &region);
 
-  void remapDirectRegion(const StreamRegion &region);
+  void remapDirectRegionPUM(const StreamRegion &region);
+  void remapDirectRegionNUCA(const StreamRegion &region);
   uint64_t determineInterleave(const StreamRegion &region);
   int determineStartBank(const StreamRegion &region, uint64_t interleave);
 

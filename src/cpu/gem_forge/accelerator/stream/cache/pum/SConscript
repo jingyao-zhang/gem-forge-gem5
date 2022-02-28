@@ -5,4 +5,5 @@ DebugFlag('StreamPUM')
 
 Source('AffinePattern.cc')
 Source('PUMCommand.cc')
+Source('PUMHWConfiguration.cc')
 Source('DataMoveCompiler.cc')

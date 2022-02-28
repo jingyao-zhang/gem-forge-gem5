@@ -5,6 +5,8 @@
 #include "base/types.hh"
 #include "mem/ruby/common/MachineID.hh"
 
+#include "cpu/gem_forge/accelerator/stream/cache/pum/AffinePattern.hh"
+
 #include <map>
 
 /**
@@ -85,19 +87,64 @@ public:
   static int getCacheAssoc() { return getCacheParams().assoc; }
 
   struct RangeMap {
+    /**
+     * This is the key data structure to record a custom mapping from physical
+     * addresses to LLC banks. There are two cases:
+     *
+     * 1. For normal StreamNUCA, we only care about the interleave between LLC
+     * banks, and the formula is:
+     *  bank = (startBank + (paddr - startPAddr) / interleave) % numBanks;
+     * And we may also change the startSet to avoid set conflict.
+     *
+     * 2. For transposed StreamPUM, we need to know exactly bitline/wordline
+     * location of the data. Specifically:
+     *  a. We records the CanonicalTile pattern and its reverse.
+     *    The CanonicalTile maps VirtualBitlineIdx to ElementIdx.
+     *  b. Since we assume each tile is mapped to one SRAM array, we have to
+     *    translate VirtualBitlineIdx to PhyscialBitlineIdx:
+     *    TileSize <= BitlinePerArray
+     *    PhysicalBitlineIdx = (VirtualBitlineIdx / TileSize) * BitlinePerArray
+     *                       + (VirtualBitlineIdx % TileSize)
+     *  c. Then we get the wordline and handles wrapping around.
+     *    TotalBitlines = BitlinePerArray * TotalArrays
+     *    Wraps = PhysicalBitlineIdx / TotalBitlines
+     *    PhyscialWordlineIdx = StartWordline + Wraps * ElementSizeInBits
+     *    PhysicalBitlineIdx = PhyscialBitlineIdx % TotalBitlines
+     */
     Addr startPAddr;
     Addr endPAddr;
+    bool isStreamPUM = false;
+    /**
+     * StreamNUCA mapping.
+     */
     uint64_t interleave;
     int startBank;
     int startSet;
+    /**
+     * StreamPUM mapping.
+     */
+    AffinePattern pumTile;
+    AffinePattern pumTileRev;
+    int elementBits;
+    int startWordline;
+
     RangeMap(Addr _startPAddr, Addr _endPAddr, uint64_t _interleave,
              int _startBank, int _startSet)
-        : startPAddr(_startPAddr), endPAddr(_endPAddr), interleave(_interleave),
-          startBank(_startBank), startSet(_startSet) {}
+        : startPAddr(_startPAddr), endPAddr(_endPAddr), isStreamPUM(false),
+          interleave(_interleave), startBank(_startBank), startSet(_startSet) {}
+
+    RangeMap(Addr _startPAddr, Addr _endPAddr, const AffinePattern &_pumTile,
+             int _elementBits, int _startWordline)
+        : startPAddr(_startPAddr), endPAddr(_endPAddr), isStreamPUM(true),
+          pumTile(_pumTile), pumTileRev(_pumTile.revert_canonical_tile()),
+          elementBits(_elementBits), startWordline(_startWordline) {}
   };
 
   static void addRangeMap(Addr startPAddr, Addr endPAddr, uint64_t interleave,
                           int startBank, int startSet);
+  static void addRangeMap(Addr startPAddr, Addr endPAddr,
+                          const AffinePattern &pumTile, int elementBits,
+                          int startWordline);
 
   static RangeMap &getRangeMapByStartPAddr(Addr startPAddr);
   static RangeMap *getRangeMapContaining(Addr paddr);
@@ -114,6 +161,14 @@ private:
   static NonUniformNodeVec numaNodes;
 
   static std::map<Addr, RangeMap> rangeMaps;
+
+  static void checkOverlapRange(Addr startPAddr, Addr endPAddr);
+
+  static int getNUCABank(Addr paddr, const RangeMap &range);
+  static int getNUCASet(Addr paddr, const RangeMap &range);
+
+  static int getPUMBank(Addr paddr, const RangeMap &range);
+  static int getPUMSet(Addr paddr, const RangeMap &range);
 };
 
 #endif

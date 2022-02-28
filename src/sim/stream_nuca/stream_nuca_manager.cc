@@ -3,6 +3,7 @@
 #include "stream_nuca_map.hh"
 
 #include "base/trace.hh"
+#include "cpu/gem_forge/accelerator/stream/cache/pum/PUMHWConfiguration.hh"
 #include "cpu/thread_context.hh"
 
 #include <iomanip>
@@ -136,7 +137,7 @@ void StreamNUCAManager::remap(ThreadContext *tc) {
           this->enabledMemStream, this->enabledNUCA);
 
   /**
-   * Event not enabled, we group direct regions by their alignement.
+   * Even not enabled, we group direct regions by their alignement.
    * Also, if we enabled memory stream, we try to compute cached elements.
    */
   this->groupDirectRegionsByAlign();
@@ -249,11 +250,15 @@ void StreamNUCAManager::remapRegion(ThreadContext *tc, StreamRegion &region) {
   if (hasIndirectAlign) {
     this->remapIndirectRegion(tc, region);
   } else {
-    this->remapDirectRegion(region);
+    if (this->enablePUM) {
+      this->remapDirectRegionPUM(region);
+    } else {
+      this->remapDirectRegionNUCA(region);
+    }
   }
 }
 
-void StreamNUCAManager::remapDirectRegion(const StreamRegion &region) {
+void StreamNUCAManager::remapDirectRegionNUCA(const StreamRegion &region) {
   if (!this->isPAddrContinuous(region)) {
     panic("[StreamNUCA] Region %s %#x PAddr is not continuous.", region.name,
           region.vaddr);
@@ -284,8 +289,12 @@ void StreamNUCAManager::remapIndirectRegion(ThreadContext *tc,
    * 3. If imbalanced, we try to remap.
    * 4. Relocate pages if necessary.
    *
+   * NOTE: This does not work with PUM.
    * NOTE: For now remapped indirect region is not cached.
    */
+  if (this->enablePUM) {
+    panic("[StreamNUCA] IndirectRegion with PUM.");
+  }
   region.cachedElements = 0;
 
   auto regionHops = this->computeIndirectRegionHops(tc, region);
@@ -1027,4 +1036,38 @@ StreamNUCAManager::decodeIndirectAlign(int64_t indirectAlign) {
   int32_t offset = ((-indirectAlign) >> SIZE_BITWIDTH) & OFFSET_MASK;
   int32_t size = (-indirectAlign) & SIZE_MASK;
   return IndirectAlignField(offset, size);
+}
+
+void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
+  if (!this->isPAddrContinuous(region)) {
+    panic("[StreamPUM] Region %s %#x PAddr is not continuous.", region.name,
+          region.vaddr);
+  }
+  auto startVAddr = region.vaddr;
+  auto startPAddr = this->translate(startVAddr);
+
+  auto endPAddr = startPAddr + region.elementSize * region.numElement;
+
+  auto pumHWConfig = PUMHWConfiguration::getPUMHWConfig();
+  /**
+   * For now just generate 1D tiling of bitlines.
+   */
+  auto bitlines = pumHWConfig.array_cols;
+  if (region.numElement < bitlines || region.numElement % bitlines != 0) {
+    panic(
+        "[StreamPUM] Region %s NumElem %llu not compatible with Bitlines %ld.",
+        region.name, region.numElement, bitlines);
+  }
+
+  AffinePattern::IntVecT tileSizes(1, bitlines);
+  AffinePattern::IntVecT arraySizes(1, region.numElement);
+  auto pumTile = AffinePattern::construct_canonical_tile(tileSizes, arraySizes);
+  auto elemBits = region.elementSize * 8;
+  auto startWordline = 0;
+
+  StreamNUCAMap::addRangeMap(startPAddr, endPAddr, pumTile, elemBits,
+                             startWordline);
+  DPRINTF(StreamNUCAManager,
+          "[StreamPUM] Map %s PAddr %#x ElemBit %d StartWdLine %d Tile %s.\n",
+          region.name, startPAddr, elemBits, startWordline, pumTile);
 }
