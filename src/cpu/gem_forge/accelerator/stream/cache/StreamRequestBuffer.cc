@@ -52,6 +52,11 @@ void StreamRequestBuffer::dequeue(MsgPtr msg) {
     LLC_SE_PANIC("Message should be RequestMsg.");
   }
 
+  if (request->m_Type == CoherenceRequestType_STREAM_PUM_DATA) {
+    // This not handled by us.
+    return;
+  }
+
   if (this->shouldTryMulticast(request)) {
     auto groupId = this->getMulticastGroupId(request);
     auto groupIter = this->getOrInitMulticastGroupInqueueReq(groupId);
@@ -211,7 +216,6 @@ bool StreamRequestBuffer::tryMulticast(const RequestPtr &req) {
    */
   req->setUnchainWhenEnqueue(false);
   prevChainMsg->setUnchainWhenEnqueue(false);
-
 
   LLC_SLICE_DPRINTF_(LLCRubyStreamMulticast,
                      multicastReq->m_sliceIds.firstSliceId(),

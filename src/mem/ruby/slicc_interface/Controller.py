@@ -141,3 +141,4 @@ class RubyStreamAwareController(RubyController):
     reuse_buffer_lines_per_core = Param.UInt32(0, "Number of cache lines per core in the reuse buffer.")
 
     enable_stream_strand = Param.Bool(False, "Whether to enable stream strand auto parallelization.")
+    enable_stream_pum = Param.Bool(False, "Whether to eanble stream PUM.")

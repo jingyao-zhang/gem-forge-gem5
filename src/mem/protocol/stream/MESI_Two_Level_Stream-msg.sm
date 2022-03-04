@@ -42,17 +42,18 @@ enumeration(CoherenceRequestType, desc="...") {
 
   WB_ACK,    desc="Writeback ack";
 
-  DMA_READ,       desc="DMA Read";
-  DMA_WRITE,      desc="DMA Write";
-  STREAM_CONFIG,  desc="StreamConfig from L1";
-  STREAM_FLOW,    desc="Stream flow control message from L1";
-  STREAM_END,     desc="StreamEnd from L1";
-  STREAM_STORE,   desc="Stream store";
-  STREAM_UNLOCK,  desc="Stream unlock the line";
-  STREAM_MIGRATE, desc="Stream migrate";
-  STREAM_FORWARD, desc="Stream data forwarded from L2 to L2";
-  STREAM_COMMIT,  desc="Stream commit message from L1 to L2";
-  STREAM_NDC,     desc="Stream near-data computing request";
+  DMA_READ,         desc="DMA Read";
+  DMA_WRITE,        desc="DMA Write";
+  STREAM_CONFIG,    desc="StreamConfig from L1";
+  STREAM_FLOW,      desc="Stream flow control message from L1";
+  STREAM_END,       desc="StreamEnd from L1";
+  STREAM_STORE,     desc="Stream store";
+  STREAM_UNLOCK,    desc="Stream unlock the line";
+  STREAM_MIGRATE,   desc="Stream migrate";
+  STREAM_FORWARD,   desc="Stream data forwarded from L2 to L2";
+  STREAM_COMMIT,    desc="Stream commit message from L1 to L2";
+  STREAM_NDC,       desc="Stream near-data computing request";
+  STREAM_PUM_DATA,  desc="Stream PUM data.";
 }
 
 // CoherenceResponseType

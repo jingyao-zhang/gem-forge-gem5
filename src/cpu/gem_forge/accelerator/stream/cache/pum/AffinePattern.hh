@@ -32,6 +32,7 @@ public:
   int64_t start;
   ParamVecT params;
 
+  // Default create an empty pattern.
   AffinePattern() : start(0), params(1, Param(1, 0)) {}
   AffinePattern(int64_t _start, ParamVecT _params)
       : start(_start), params(std::move(_params)) {}
@@ -44,6 +45,28 @@ public:
       accTrip *= p.trip;
     }
     return result;
+  }
+
+  bool operator==(const AffinePattern &other) const {
+    if (start != other.start) {
+      return false;
+    }
+    if (params.size() != other.params.size()) {
+      return false;
+    }
+    for (auto i = 0; i < params.size(); ++i) {
+      if (params[i].stride != other.params[i].stride) {
+        return false;
+      }
+      if (params[i].trip != other.params[i].trip) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool operator!=(const AffinePattern &other) const {
+    return !this->operator==(other);
   }
 
   static int64_t reduce_mul(IntVecT::const_iterator s,
@@ -222,6 +245,8 @@ public:
     }
     return ret;
   }
+
+  bool is_empty() const { return get_total_trip() == 0; }
 
   bool check_is_reverse(const AffinePattern &reverse) const {
     for (int64_t i = 0; i < get_total_trip(); ++i) {

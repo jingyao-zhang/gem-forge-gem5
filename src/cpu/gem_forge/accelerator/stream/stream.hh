@@ -646,6 +646,13 @@ public:
     return this->isMergedPredicated() || this->isMergedLoadStoreDepStream();
   }
 
+  std::vector<uint64_t> getLogicalStreamIds() const {
+    std::vector<uint64_t> ret;
+    for (const auto &logicS : this->logicals) {
+      ret.push_back(logicS->getStreamId());
+    }
+    return ret;
+  }
   size_t getNumLogicalStreams() const { return this->logicals.size(); }
   bool isSingle() const { return this->getNumLogicalStreams() == 1; }
 

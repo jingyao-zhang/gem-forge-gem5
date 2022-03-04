@@ -211,6 +211,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamCommit(DynStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
     void notifyStreamRequestMiss(DynStreamSliceIdVec);
+    void receivePUMData(RequestMsg);
   }
 
   LLCStreamEngine se, constructor="this, m_streamMigrateFromL2Cache_ptr, m_L1RequestToL2Cache_ptr, m_streamIndirectFromL2Cache_ptr, m_responseFromL2Cache_ptr";
@@ -546,22 +547,26 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     if(streamIndirectToL2Cache_in.isReady(clockEdge())) {
       peek(streamIndirectToL2Cache_in,  RequestMsg) {
 
-        // This requestor is not the LLC bank generating this request,
-        // but the host L1 controller to receive the data.
-        // assert(machineIDToMachineType(in_msg.Requestors.singleElement()) == MachineType:L1Cache);
         assert(in_msg.Destination.isElement(machineID));
 
-        assert(in_msg.sliceIds.isValid());
+        // Check if this is StreamPUM data message.
+        if (in_msg.Type == CoherenceRequestType:STREAM_PUM_DATA) {
+          // Simply notify the SE.
+          se.receivePUMData(in_msg);
 
-        DPRINTF(RubyStream, "Received stream indirect request [%lu, +%lu) %#x.\n", 
-          in_msg.sliceIds.singleSliceId().getStartIdx(),
-          in_msg.sliceIds.singleSliceId().getNumElements(),
-          in_msg.addr);
-        // No matter the cache line status, 
-        // simply enqueue the request to L1Request message buffer.
+        } else {
 
-        // Can we do this?
-        se.receiveStreamIndirectRequest(in_msg);
+          assert(in_msg.sliceIds.isValid());
+
+          DPRINTF(RubyStream, "Received stream indirect request [%lu, +%lu) %#x.\n", 
+            in_msg.sliceIds.singleSliceId().getStartIdx(),
+            in_msg.sliceIds.singleSliceId().getNumElements(),
+            in_msg.addr);
+
+          // No matter the cache line status, 
+          // simply enqueue the request to L1Request message buffer.
+          se.receiveStreamIndirectRequest(in_msg);
+        }
 
         // Dequeue from the indirect message buffer.
         incrementLLCIndReqQueueStats();

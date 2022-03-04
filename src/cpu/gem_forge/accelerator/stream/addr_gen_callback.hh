@@ -44,17 +44,15 @@ convertFormalParamToParam(const DynStreamFormalParamV &formalParams,
  * This represent a stateless addr_gen function.
  */
 struct AddrGenCallback {
-  virtual StreamValue genAddr(uint64_t idx,
-                              const DynStreamParamV &params) = 0;
+  virtual StreamValue genAddr(uint64_t idx, const DynStreamParamV &params) = 0;
 
   /**
    * This is a helper function to actually call the address callback.
    * Given a callback to collect base stream value.
    */
-  StreamValue genAddr(uint64_t idx,
-                      const DynStreamFormalParamV &formalParams,
+  StreamValue genAddr(uint64_t idx, const DynStreamFormalParamV &formalParams,
                       GetStreamValueFunc getStreamValue);
-          
+
   virtual Cycles getEstimatedLatency() const = 0;
 };
 
@@ -63,12 +61,9 @@ using AddrGenCallbackPtr = std::shared_ptr<AddrGenCallback>;
 struct LinearAddrGenCallback : public AddrGenCallback {
   StreamValue genAddr(uint64_t idx, const DynStreamParamV &params) override;
 
-  Cycles getEstimatedLatency() const override {
-    return Cycles(1);
-  }
+  Cycles getEstimatedLatency() const override { return Cycles(1); }
 
-  bool isContinuous(const DynStreamFormalParamV &params,
-                    int32_t elementSize);
+  bool isContinuous(const DynStreamFormalParamV &params, int32_t elementSize);
   /**
    * Get the inner most stride.
    */
@@ -86,23 +81,20 @@ struct LinearAddrGenCallback : public AddrGenCallback {
    * Estimate memory footprint and reuse count.
    * @return success, reuse footprint, reuse count.
    */
-  bool estimateReuse(const DynStreamFormalParamV &params,
-                     uint64_t elementSize, uint64_t &reuseFootprint,
-                     uint64_t &reuseCount);
+  bool estimateReuse(const DynStreamFormalParamV &params, uint64_t elementSize,
+                     uint64_t &reuseFootprint, uint64_t &reuseCount);
 
   /**
    * Get nested trip count.
    */
-  uint64_t getNestTripCount(const DynStreamFormalParamV &params,
-                            int nestLevel);
+  uint64_t getNestTripCount(const DynStreamFormalParamV &params, int nestLevel);
 };
 
 class FuncAddrGenCallback : public AddrGenCallback {
 public:
   FuncAddrGenCallback(ExecFuncPtr _execFunc) : execFunc(_execFunc) {}
 
-  StreamValue genAddr(uint64_t idx,
-                      const DynStreamParamV &params) override {
+  StreamValue genAddr(uint64_t idx, const DynStreamParamV &params) override {
     // We ignore the idx.
     return this->execFunc->invoke(params);
   }
@@ -111,9 +103,7 @@ public:
     return this->execFunc->getEstimatedLatency();
   }
 
-  const ExecFuncPtr &getExecFunc() const {
-    return this->execFunc;
-  }
+  const ExecFuncPtr &getExecFunc() const { return this->execFunc; }
 
 private:
   ExecFuncPtr execFunc;

@@ -7,6 +7,7 @@
 #include "LLCStreamRangeBuilder.hh"
 #include "MLCStreamEngine.hh"
 #include "StreamRequestBuffer.hh"
+#include "pum/PUMEngine.hh"
 
 #include "mem/ruby/slicc_interface/AbstractStreamAwareController.hh"
 
@@ -66,6 +67,7 @@ LLCStreamEngine::LLCStreamEngine(AbstractStreamAwareController *_controller,
       this->controller->myParams->reuse_buffer_lines_per_core,
       true /* PerCoreMode */
   );
+  this->pumEngine = m5::make_unique<PUMEngine>(this);
 }
 
 LLCStreamEngine::~LLCStreamEngine() { this->streams.clear(); }
@@ -777,6 +779,8 @@ void LLCStreamEngine::wakeup() {
     this->issueStreamRequestToRemoteBank(req);
     this->requestQueue.pop_front();
   }
+
+  this->pumEngine->tick();
 
   if (!this->streams.empty() || !this->migratingStreams.empty() ||
       !this->requestQueue.empty() || !this->incomingStreamDataQueue.empty() ||
@@ -2519,6 +2523,10 @@ void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
   Cycles latency(1);
   this->streamIssueMsgBuffer->enqueue(msg, this->controller->clockEdge(),
                                       this->controller->cyclesToTicks(latency));
+}
+
+void LLCStreamEngine::receivePUMData(const RequestMsg &req) {
+  this->pumEngine->receiveData(req);
 }
 
 void LLCStreamEngine::receiveStreamForwardRequest(const RequestMsg &req) {

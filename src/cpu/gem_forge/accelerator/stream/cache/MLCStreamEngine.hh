@@ -18,6 +18,7 @@
 
 class MLCStreamNDCController;
 class MLCStrandManager;
+class MLCPUMManager;
 class StreamMemAccess;
 class MessageBuffer;
 
@@ -109,8 +110,10 @@ private:
 
   friend class MLCStreamNDCController;
   friend class MLCStrandManager;
+  friend class MLCPUMManager;
   std::unique_ptr<MLCStreamNDCController> ndcController;
   std::unique_ptr<MLCStrandManager> strandManager;
+  std::unique_ptr<MLCPUMManager> pumManager;
 };
 
 #endif

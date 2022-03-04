@@ -3,6 +3,8 @@
 
 #include "AffinePattern.hh"
 
+#include "../DynStreamId.hh"
+
 class PUMCommand {
 public:
   std::string type = "none";
@@ -15,6 +17,21 @@ public:
 
   std::vector<AffinePatternVecT> inter_array_splits;
   std::vector<AffinePatternVecT> llc_commands;
+
+  int wordline_bits;
+
+  /**
+   * These are meta info used for logging and debugging.
+   */
+
+  DynStreamId dynStreamId;
+
+  std::string srcRegion = "none";
+  AffinePattern srcAccessPattern;
+  AffinePattern srcMapPattern;
+  std::string dstRegion = "none";
+  AffinePattern dstAccessPattern;
+  AffinePattern dstMapPattern;
 
   std::string to_string() const;
 };

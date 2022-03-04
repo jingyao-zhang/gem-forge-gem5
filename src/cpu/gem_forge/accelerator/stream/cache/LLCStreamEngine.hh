@@ -27,6 +27,7 @@ class LLCStreamMigrationController;
 class LLCStreamNDCController;
 class LLCStreamAtomicLockManager;
 class StreamRequestBuffer;
+class PUMEngine;
 
 class LLCStreamEngine : public Consumer {
 public:
@@ -67,12 +68,23 @@ public:
    */
   void receiveStreamNDCRequest(PacketPtr pkt);
 
+  /**
+   * API wrapper for PUMEngine.
+   */
+  std::unique_ptr<PUMEngine> &getPUMEngine() { return this->pumEngine; }
+
+  /**
+   * Receive the PUM data.
+   */
+  void receivePUMData(const RequestMsg &req);
+
 private:
   friend class LLCDynStream;
   friend class LLCStreamElement;
   friend class LLCStreamCommitController;
   friend class LLCStreamNDCController;
   friend class LLCStreamAtomicLockManager;
+  friend class PUMEngine;
   AbstractStreamAwareController *controller;
   // Out going stream migrate buffer.
   MessageBuffer *streamMigrateMsgBuffer;
@@ -89,6 +101,7 @@ private:
   std::unique_ptr<LLCStreamAtomicLockManager> atomicLockManager;
   std::unique_ptr<StreamRequestBuffer> indReqBuffer;
   std::unique_ptr<StreamReuseBuffer> reuseBuffer;
+  std::unique_ptr<PUMEngine> pumEngine;
   const int issueWidth;
   const int migrateWidth;
   // Threshold to limit maximum number of infly requests.
