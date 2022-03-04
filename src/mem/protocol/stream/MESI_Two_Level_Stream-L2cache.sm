@@ -211,6 +211,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
     void receiveStreamCommit(DynStreamSliceId);
     void receiveStreamNDCRequest(PacketPtr);
     void notifyStreamRequestMiss(DynStreamSliceIdVec);
+    void receivePUMConfigure(RequestMsg);
     void receivePUMData(RequestMsg);
   }
 
@@ -1182,7 +1183,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP", interface="AbstractS
   action(rsc_receiveStreamConfig, "rsc", desc="Receive the StreamConfig") {
     peek(L1RequestL2Network_in, RequestMsg) {
       DPRINTF(RubyStream, "Receive StreamConfig: %#x\n", in_msg.pkt);
-      se.receiveStreamConfigure(in_msg.pkt);
+      if (in_msg.isPUM) {
+        se.receivePUMConfigure(in_msg);
+      } else {
+        se.receiveStreamConfigure(in_msg.pkt);
+      }
     }
   }
   action(rsf_receiveStreamFlow, "rsf", desc="Receive the stream flow message") {

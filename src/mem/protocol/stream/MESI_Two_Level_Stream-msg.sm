@@ -91,6 +91,7 @@ structure(RequestMsg, desc="...", interface="Message") {
   DynStreamSliceIdVec sliceIds,     desc="Stream slice ids";
   DataBlock streamStoreBlk,         desc="StreamStore value";
   DynStrandId sendToStrandId,       desc="StreamForward receiver strand id";
+  bool isPUM, default="false",      desc="Mark this as StreamPUM msg";
 
   int getStatsType() {
     return Type;

@@ -12,13 +12,26 @@
 #include "../../stream_log.hh"
 
 #define MLCSE_DPRINTF(format, args...)                                         \
-  DPRINTF(StreamPUM, "[MLC_SE%d-PUM]: " format,                                \
+  DPRINTF(StreamPUM, "[MLC_SE%d]: [PUM] " format,                              \
           this->controller->getMachineID().num, ##args)
 
 MLCPUMManager::MLCPUMManager(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE), controller(_mlcSE->controller) {}
 
 MLCPUMManager::~MLCPUMManager() {}
+
+void MLCPUMManager::PUMContext::clear() {
+  this->configuredBanks = 0;
+  this->totalSentPackets = 0;
+  this->totalRecvPackets = 0;
+  this->totalAckBanks = 0;
+  this->done = false;
+  /**
+   * Don't forget to release the ConfigVec.
+   */
+  delete this->configs;
+  this->configs = nullptr;
+}
 
 bool MLCPUMManager::canApplyPUM(Args &args) {
 
@@ -175,6 +188,9 @@ bool MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   }
 
   this->applyPUM(args);
+
+  // Do not release the configure vec as it's remembered in Context.
+  delete pkt;
   return true;
 }
 
@@ -183,20 +199,52 @@ void MLCPUMManager::applyPUM(Args &args) {
     this->compileDataMove(args, config);
   }
 
-  this->configuredBanks = 0;
-  this->totalSentPackets = 0;
-  this->totalRecvPackets = 0;
-  this->totalAckBanks = 0;
+  assert(!this->context.isActive() && "PUM Already Active.");
+  // Remember the configured streams.
+  this->context.configs = args.configs;
+  this->context.commands = args.commands;
+
+  this->configurePUMEngine(args);
+}
+
+void MLCPUMManager::configurePUMEngine(Args &args) {
+
+  /**
+   * Broadcast the configure packet.
+   */
+  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  msg->m_addr = 0;
+  msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
+  msg->m_Requestors.add(this->controller->getMachineID());
+  msg->m_MessageSize = MessageSizeType_Data;
+  msg->m_isPUM = true;
+
   for (int row = 0; row < this->controller->getNumRows(); ++row) {
     for (int col = 0; col < this->controller->getNumCols(); ++col) {
       int nodeId = row * this->controller->getNumCols() + col;
-      MachineID machineId(MachineType_L2Cache, nodeId);
-      auto llcCntrl = AbstractStreamAwareController::getController(machineId);
+      MachineID dstMachineId(MachineType_L2Cache, nodeId);
+
+      msg->m_Destination.add(dstMachineId);
+      this->context.configuredBanks++;
+
+      /**
+       * We still configure here. But PUMEngine will not start until received
+       * the configuration message.
+       */
+      auto llcCntrl =
+          AbstractStreamAwareController::getController(dstMachineId);
       auto llcSE = llcCntrl->getLLCStreamEngine();
       llcSE->getPUMEngine()->configure(this, args.commands);
-      this->configuredBanks++;
     }
   }
+
+  Cycles latency(1); // Just use 1 cycle latency here.
+
+  MLCSE_DPRINTF("Broadcast PUMConfig.\n");
+
+  mlcSE->requestToLLCMsgBuffer->enqueue(
+      msg, this->controller->clockEdge(),
+      this->controller->cyclesToTicks(latency));
 }
 
 void MLCPUMManager::compileDataMove(Args &args,
@@ -296,19 +344,62 @@ AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
 }
 
 void MLCPUMManager::reachSync(int sentPackets) {
-  this->totalAckBanks++;
-  this->totalSentPackets += sentPackets;
+  assert(this->context.isActive() && "No Active PUM.");
+  this->context.totalAckBanks++;
+  this->context.totalSentPackets += sentPackets;
   this->checkDone();
 }
 
 void MLCPUMManager::receivePacket() {
-  this->totalRecvPackets++;
+  assert(this->context.isActive() && "No Active PUM.");
+  this->context.totalRecvPackets++;
   this->checkDone();
 }
 
 void MLCPUMManager::checkDone() {
-  if (this->totalAckBanks == this->configuredBanks &&
-      this->totalSentPackets == this->totalRecvPackets) {
-    MLCSE_DPRINTF("Done!\n");
+
+  assert(this->context.isActive() && "No Active PUM.");
+
+  if (this->context.done) {
+    return;
   }
+
+  if (this->context.totalAckBanks == this->context.configuredBanks &&
+      this->context.totalSentPackets == this->context.totalRecvPackets) {
+    MLCSE_DPRINTF("Done! Ack all elements at core.\n");
+    for (const auto &config : *context.configs) {
+      auto S = config->stream;
+      auto dynS = S->getDynStream(config->dynamicId);
+      if (!dynS) {
+        MLC_S_PANIC_NO_DUMP(config->dynamicId, "No CoreDynS.");
+      }
+      if (dynS->shouldCoreSEIssue()) {
+        MLC_S_PANIC_NO_DUMP(config->dynamicId,
+                            "CoreSE should not issue for PUM.");
+      }
+      if (S->isStoreComputeStream() || S->isAtomicComputeStream() ||
+          S->isUpdateStream()) {
+        // These are streams waiting for Ack.
+        assert(config->hasTotalTripCount());
+        auto tripCount = config->getTotalTripCount();
+        for (int64_t elemIdx = 0; elemIdx < tripCount; ++elemIdx) {
+          dynS->cacheAckedElements.insert(elemIdx);
+        }
+      }
+    }
+
+    // We are done.
+    this->context.done = true;
+  }
+}
+
+bool MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
+  if (!this->context.isActive()) {
+    return false;
+  }
+
+  assert(this->context.done && "PUM end before done.");
+  MLCSE_DPRINTF("Release PUM context.\n");
+  this->context.clear();
+  return true;
 }

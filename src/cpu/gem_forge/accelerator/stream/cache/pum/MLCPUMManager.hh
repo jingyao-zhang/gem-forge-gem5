@@ -18,6 +18,12 @@ public:
   bool receiveStreamConfigure(PacketPtr pkt);
 
   /**
+   * Receive a StreamEnd message and release the PUM context.
+   * @return true if this is handled as PUM.
+   */
+  bool receiveStreamEnd(PacketPtr pkt);
+
+  /**
    * APIs for PUMEngine.
    */
   void reachSync(int sentPackets);
@@ -46,10 +52,18 @@ private:
   /**
    * States during the PUM.
    */
-  int configuredBanks;
-  int totalSentPackets;
-  int totalRecvPackets;
-  int totalAckBanks;
+  struct PUMContext {
+    int configuredBanks = 0;
+    int totalSentPackets = 0;
+    int totalRecvPackets = 0;
+    int totalAckBanks = 0;
+    CacheStreamConfigureVec *configs = nullptr;
+    PUMCommandVecT commands;
+    bool done = false;
+    void clear();
+    bool isActive() const { return configs != nullptr; }
+  };
+  PUMContext context;
 
   /**
    * Convert the LinearAddressPattern to AffinePattern.
@@ -76,6 +90,8 @@ private:
    */
   void applyPUM(Args &args);
   void compileDataMove(Args &args, const CacheStreamConfigureDataPtr &config);
+
+  void configurePUMEngine(Args &args);
 
   void checkDone();
 };

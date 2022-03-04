@@ -465,16 +465,20 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
     auto senderNI = m_router->get_net_ptr()->getNetworkInterface(f->get_route().src_ni);
     auto senderNodeId = senderNI->get_node_id();
     auto senderMachineId = MachineID::getMachineIDFromRawNodeID(senderNodeId);
+    auto senderMachineType = senderMachineId.getType();
     /**
      * Try to get the LocalMachineId. Here I assume all routers are connected to the L2 cache.
      */
-    auto localMachineType = MachineType::MachineType_NULL;
-    if (senderMachineId.getType() == MachineType::MachineType_Directory ||
-        senderMachineId.getType() == MachineType::MachineType_L2Cache) {
-        localMachineType = MachineType::MachineType_L2Cache;
+    auto localMachineType = MachineType_NULL;
+    if (senderMachineType == MachineType_Directory ||
+        senderMachineType == MachineType_L2Cache) {
+        localMachineType = MachineType_L2Cache;
+    } else if (senderMachineType == MachineType_L1Cache) {
+        localMachineType = MachineType_L1Cache;
     }
     if (localMachineType == MachineType::MachineType_NULL) {
-        panic("Multicast from Machine %s -> %s.", senderMachineId, msg->getDestination(), *msg);
+        panic("Multicast from Machine %s -> %s: %s.",
+            senderMachineId, msg->getDestination(), *msg);
     }
     auto localMachineId = MachineID(localMachineType, m_router->get_id());
     if (localMachineId.getNum() >= MachineType_base_count(localMachineType)) {
@@ -488,7 +492,7 @@ void InputUnit::duplicateMulticastMsgToNetworkInterface(
 
     if (Debug::RubyMulticast) {
         std::stringstream ss;
-        for (const auto &destNodeId : msg->getDestination().getAllDest()){
+        for (const auto &destNodeId : msg->getDestination().getAllDest()) {
             auto destMachineId = MachineID::getMachineIDFromRawNodeID(destNodeId);
             ss << ' ' << destMachineId;
         }

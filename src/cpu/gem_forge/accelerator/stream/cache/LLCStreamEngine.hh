@@ -74,6 +74,11 @@ public:
   std::unique_ptr<PUMEngine> &getPUMEngine() { return this->pumEngine; }
 
   /**
+   * Receive the PUM configure.
+   */
+  void receivePUMConfigure(const RequestMsg &req);
+
+  /**
    * Receive the PUM data.
    */
   void receivePUMData(const RequestMsg &req);

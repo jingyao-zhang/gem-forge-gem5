@@ -16,9 +16,9 @@ class PUMEngine {
 public:
   PUMEngine(LLCStreamEngine *_se);
 
-  void configure(MLCPUMManager *pumManager, const PUMCommandVecT &commands);
-
+  void receiveConfigure(const RequestMsg &msg);
   void receiveData(const RequestMsg &msg);
+  void configure(MLCPUMManager *pumManager, const PUMCommandVecT &commands);
 
   void tick();
 

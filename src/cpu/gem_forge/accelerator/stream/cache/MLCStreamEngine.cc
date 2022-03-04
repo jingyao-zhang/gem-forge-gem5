@@ -56,6 +56,12 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
 void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
+
+  if (this->pumManager->receiveStreamEnd(pkt)) {
+    // This is actually handled by PUM.
+    return;
+  }
+
   this->strandManager->receiveStreamEnd(pkt);
 }
 

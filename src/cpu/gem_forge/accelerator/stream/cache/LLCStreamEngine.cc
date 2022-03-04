@@ -2525,6 +2525,10 @@ void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
                                       this->controller->cyclesToTicks(latency));
 }
 
+void LLCStreamEngine::receivePUMConfigure(const RequestMsg &req) {
+  this->pumEngine->receiveConfigure(req);
+}
+
 void LLCStreamEngine::receivePUMData(const RequestMsg &req) {
   this->pumEngine->receiveData(req);
 }

@@ -13,6 +13,12 @@
 PUMEngine::PUMEngine(LLCStreamEngine *_se)
     : se(_se), controller(_se->controller) {}
 
+void PUMEngine::receiveConfigure(const RequestMsg &msg) {
+  assert(this->pumManager && "Not configured yet.");
+  assert(this->nextCmdIdx == 0 && "Not configured.");
+  this->kickNextCommand();
+}
+
 void PUMEngine::configure(MLCPUMManager *pumManager,
                           const PUMCommandVecT &commands) {
 
@@ -31,8 +37,6 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
   this->commands = commands;
   this->sentInterBankPackets = 0;
   this->acked = false;
-
-  this->kickNextCommand();
 }
 
 void PUMEngine::kickNextCommand() {
