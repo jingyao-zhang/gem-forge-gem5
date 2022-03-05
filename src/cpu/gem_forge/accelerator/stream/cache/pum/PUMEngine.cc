@@ -42,7 +42,13 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
    */
   auto myBankIdx = this->getBankIdx();
   for (int i = 0; i < commands.size(); ++i) {
-    const auto &llcCmd = commands[i].llc_commands.at(myBankIdx);
+    const auto &command = commands[i];
+    if (command.type == "sync") {
+      // Sync command is always related.
+      this->commands.push_back(command);
+      continue;
+    }
+    const auto &llcCmd = command.llc_commands.at(myBankIdx);
     if (llcCmd.empty()) {
       continue;
     }
@@ -69,6 +75,11 @@ void PUMEngine::kickNextCommand() {
   auto firstSchedCmdIdx = this->nextCmdIdx;
   while (this->nextCmdIdx < this->commands.size()) {
     const auto &command = this->commands.at(this->nextCmdIdx);
+
+    if (command.type == "sync") {
+      // Sync command is handled in wakeup.
+      break;
+    }
 
     if (this->nextCmdIdx > firstSchedCmdIdx) {
       const auto &firstSchedCmd = this->commands.at(firstSchedCmdIdx);
@@ -260,14 +271,28 @@ void PUMEngine::tick() {
     return;
   }
 
-  if (this->nextCmdIdx == this->commands.size()) {
+  if (this->nextCmdIdx == this->commands.size() ||
+      this->commands[this->nextCmdIdx].type == "sync") {
     if (!this->acked) {
-      this->pumManager->reachSync(this->sentInterBankPackets);
+      LLC_SE_DPRINTF("[Sync] SentPackets %d.\n", this->sentInterBankPackets);
+      auto sentPackets = this->sentInterBankPackets;
       this->acked = true;
+      this->sentInterBankPackets = 0;
+      this->pumManager->reachSync(sentPackets);
     }
     return;
   }
 
+  this->kickNextCommand();
+}
+
+void PUMEngine::synced() {
+  assert(this->nextCmdIdx < this->commands.size());
+  const auto &c = this->commands[this->nextCmdIdx];
+  assert(c.type == "sync");
+  assert(this->acked);
+  this->acked = false;
+  this->nextCmdIdx++;
   this->kickNextCommand();
 }
 

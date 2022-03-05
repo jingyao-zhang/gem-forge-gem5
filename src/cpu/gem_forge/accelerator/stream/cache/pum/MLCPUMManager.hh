@@ -59,7 +59,7 @@ private:
     int totalAckBanks = 0;
     CacheStreamConfigureVec *configs = nullptr;
     PUMCommandVecT commands;
-    bool done = false;
+    int numSync = 0;
     void clear();
     bool isActive() const { return configs != nullptr; }
   };
@@ -94,7 +94,7 @@ private:
 
   void configurePUMEngine(Args &args);
 
-  void checkDone();
+  void checkSync();
 };
 
 #endif

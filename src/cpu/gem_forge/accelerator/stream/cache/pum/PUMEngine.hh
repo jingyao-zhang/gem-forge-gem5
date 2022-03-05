@@ -19,6 +19,7 @@ public:
   void receiveConfigure(const RequestMsg &msg);
   void receiveData(const RequestMsg &msg);
   void configure(MLCPUMManager *pumManager, const PUMCommandVecT &commands);
+  void synced();
 
   void tick();
 
