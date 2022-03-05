@@ -48,7 +48,7 @@ public:
   void resetStats() override;
 
   // Override the name as we don't want the default long name().
-  const std::string name() const override { return "global"; }
+  const std::string name() const override { return ""; }
 
   /**
    * To prepare for execution-driven simulation,

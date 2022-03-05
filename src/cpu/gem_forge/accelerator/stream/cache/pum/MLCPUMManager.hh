@@ -90,6 +90,7 @@ private:
    */
   void applyPUM(Args &args);
   void compileDataMove(Args &args, const CacheStreamConfigureDataPtr &config);
+  void compileCompute(Args &args, const CacheStreamConfigureDataPtr &config);
 
   void configurePUMEngine(Args &args);
 

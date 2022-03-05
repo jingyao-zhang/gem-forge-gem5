@@ -34,29 +34,84 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
          "Not done with previous commands.");
   this->pumManager = pumManager;
   this->nextCmdIdx = 0;
-  this->commands = commands;
   this->sentInterBankPackets = 0;
   this->acked = false;
+
+  /**
+   * Filter out unrelated commands and merge continuous one.
+   */
+  auto myBankIdx = this->getBankIdx();
+  for (int i = 0; i < commands.size(); ++i) {
+    const auto &llcCmd = commands[i].llc_commands.at(myBankIdx);
+    if (llcCmd.empty()) {
+      continue;
+    }
+    auto c = commands[i];
+    for (auto j = 0; j < c.llc_commands.size(); ++j) {
+      if (j != myBankIdx) {
+        c.llc_commands[j].clear();
+      }
+    }
+    this->commands.push_back(c);
+  }
 }
 
 void PUMEngine::kickNextCommand() {
 
   auto myBankIdx = this->getBankIdx();
-  const auto &command = this->commands.at(this->nextCmdIdx);
-  this->nextCmdIdx++;
   Cycles latency(1);
 
-  LLC_SE_DPRINTF("Kick NextCmd %s", command);
-  const auto &llcCmd = command.llc_commands.at(myBankIdx);
-  if (llcCmd.empty()) {
-    LLC_SE_DPRINTF("Skip Cmd.\n");
-  } else {
+  /**
+   * As an optimization, we schedule future commands if they are using different
+   * arrays. NOTE: This may assume too much schedule flexibility.
+   */
+  std::unordered_set<int64_t> scheduledArrays;
+  auto firstSchedCmdIdx = this->nextCmdIdx;
+  while (this->nextCmdIdx < this->commands.size()) {
+    const auto &command = this->commands.at(this->nextCmdIdx);
+
+    if (this->nextCmdIdx > firstSchedCmdIdx) {
+      const auto &firstSchedCmd = this->commands.at(firstSchedCmdIdx);
+      if (firstSchedCmd.type != command.type ||
+          firstSchedCmd.opClass != command.opClass) {
+        // Cannot schedule different type commands.
+        break;
+      }
+    }
+
+    const auto &llcCmds = command.llc_commands.at(myBankIdx);
+    assert(!llcCmds.empty() && "Empty LLC command.\n");
+
+    std::unordered_set<int64_t> usedArrays;
+    for (const auto &mask : llcCmds) {
+      for (auto arrayIdx : mask.generate_all_values()) {
+        usedArrays.insert(arrayIdx);
+      }
+    }
+    bool conflicted = false;
+    for (auto arrayIdx : usedArrays) {
+      if (scheduledArrays.count(arrayIdx)) {
+        LLC_SE_DPRINTF("  Conflict Array %lld NextCmd %s", arrayIdx, command);
+        conflicted = true;
+        break;
+      }
+    }
+    if (conflicted) {
+      break;
+    }
+
+    LLC_SE_DPRINTF("[Kick] NextCmd %s", command.to_string(myBankIdx));
 
     /**
      * Estimate the latency of each command.
      */
-    latency = this->estimateCommandLatency(command);
-    LLC_SE_DPRINTF("Latency %lld.\n", latency);
+    scheduledArrays.insert(usedArrays.begin(), usedArrays.end());
+    auto cmdLat = this->estimateCommandLatency(command);
+    this->nextCmdIdx++;
+    LLC_SE_DPRINTF("  CMD Latency %lld.\n", cmdLat);
+    if (cmdLat > latency) {
+      latency = cmdLat;
+    }
   }
 
   this->nextCmdReadyCycle = this->controller->curCycle() + latency;
@@ -138,8 +193,9 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
         }
       }
       accumulatedLatency += levelArrays * latencyPerArray;
-      LLC_SE_DPRINTF("InterArray Level %d Arrays %d AccLat -> %d.\n", level,
-                     levelArrays, accumulatedLatency);
+      LLC_SE_DPRINTF("InterArray Level %d Arrays %d AccLat +%d -> %d.\n", level,
+                     levelArrays, levelArrays * latencyPerArray,
+                     accumulatedLatency);
     }
 
     // Packetize the last inter-bank level (assume 64B data packet).
@@ -174,6 +230,26 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
     }
 
     return Cycles(accumulatedLatency);
+  }
+
+  if (command.type == "cmp") {
+    auto wordlineBits = command.wordline_bits;
+    int computeLatency = wordlineBits;
+    switch (command.opClass) {
+    default:
+      panic("Unkown PUM OpClass %s.", Enums::OpClassStrings[command.opClass]);
+      break;
+    case IntAluOp:
+      computeLatency = wordlineBits;
+      break;
+    case IntMultOp:
+      computeLatency = wordlineBits * wordlineBits / 2;
+      break;
+    case SimdFloatAddOp:
+      computeLatency = wordlineBits * wordlineBits;
+      break;
+    }
+    return Cycles(computeLatency);
   }
 
   panic("Unknown PUMCommand %s.", command.type);

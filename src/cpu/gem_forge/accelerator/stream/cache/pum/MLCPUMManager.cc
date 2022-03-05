@@ -199,6 +199,10 @@ void MLCPUMManager::applyPUM(Args &args) {
     this->compileDataMove(args, config);
   }
 
+  for (const auto &config : *args.configs) {
+    this->compileCompute(args, config);
+  }
+
   assert(!this->context.isActive() && "PUM Already Active.");
   // Remember the configured streams.
   this->context.configs = args.configs;
@@ -284,7 +288,7 @@ void MLCPUMManager::compileDataMove(Args &args,
       auto commands = compiler.compile(myPattern, recvPattern);
       // Generate the meta information.
       for (auto &cmd : commands) {
-        cmd.wordline_bits = patternInfo.scalarElemSize;
+        cmd.wordline_bits = patternInfo.scalarElemSize * 8;
         cmd.dynStreamId = config->dynamicId;
         cmd.srcRegion = patternInfo.regionName;
         cmd.srcAccessPattern = myPattern;
@@ -402,4 +406,76 @@ bool MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
   MLCSE_DPRINTF("Release PUM context.\n");
   this->context.clear();
   return true;
+}
+
+void MLCPUMManager::compileCompute(Args &args,
+                                   const CacheStreamConfigureDataPtr &config) {
+  if (!config->storeCallback) {
+    return;
+  }
+
+  auto &patternInfo = args.patternInfo.at(config->stream);
+  auto scalarElemBits = patternInfo.scalarElemSize * 8;
+
+  DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
+                            patternInfo.pumTile);
+
+  auto totalTileSize = AffinePattern::reduce_mul(compiler.tile_sizes.begin(),
+                                                 compiler.tile_sizes.end(), 1);
+
+  PUMCommandVecT commands;
+
+  assert(patternInfo.atomicPatterns.size() == 1);
+  const auto &pattern = patternInfo.atomicPatterns.front();
+
+  MLC_S_DPRINTF(config->dynamicId,
+                "Compile Compute Tile %s AtomicPattern %s.\n",
+                patternInfo.pumTile, pattern);
+
+  for (const auto &inst : config->storeCallback->getStaticInsts()) {
+
+    commands.emplace_back();
+    auto &command = commands.back();
+    command.type = "cmp";
+    command.opClass = inst->opClass();
+    // Default bitline_mask is for the entire tile.
+    command.bitline_mask = AffinePattern(
+        0, AffinePattern::ParamVecT(1, AffinePattern::Param(1, totalTileSize)));
+  }
+
+  if (Debug::StreamPUM) {
+    for (const auto &command : commands) {
+      MLC_S_DPRINTF(config->dynamicId, "%s", command);
+    }
+  }
+  MLC_S_DPRINTF(config->dynamicId, "Before masked.\n");
+
+  // Mask the commands by the Stream.
+  commands = compiler.mask_commands_by_sub_region(commands, pattern);
+
+  if (Debug::StreamPUM) {
+    for (const auto &command : commands) {
+      MLC_S_DPRINTF(config->dynamicId, "%s", command);
+    }
+  }
+  MLC_S_DPRINTF(config->dynamicId, "Before mapped to LLC.\n");
+
+  // Generate mask for each LLC bank.
+  commands = compiler.map_commands_to_llc(commands);
+
+  // Generate the meta information.
+  for (auto &cmd : commands) {
+    cmd.wordline_bits = scalarElemBits;
+    cmd.dynStreamId = config->dynamicId;
+    cmd.srcRegion = patternInfo.regionName;
+    cmd.srcAccessPattern = patternInfo.pattern;
+    cmd.srcMapPattern = patternInfo.pumTile;
+  }
+  if (Debug::StreamPUM) {
+    for (const auto &command : commands) {
+      MLC_S_DPRINTF(config->dynamicId, "%s", command);
+    }
+  }
+
+  args.commands.insert(args.commands.end(), commands.begin(), commands.end());
 }

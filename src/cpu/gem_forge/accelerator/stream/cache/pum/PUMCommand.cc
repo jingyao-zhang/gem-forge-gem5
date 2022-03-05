@@ -3,33 +3,44 @@
 #include <iomanip>
 
 std::ostream &operator<<(std::ostream &os, const PUMCommand &command) {
-  os << "[PUMCmd " << command.type << " WD-" << command.wordline_bits << "]\n";
-  if (command.srcRegion != "none") {
-    os << "  Src " << command.srcRegion << " Acc " << command.srcAccessPattern
-       << " Map " << command.srcMapPattern << '\n';
+  os << command.to_string();
+  return os;
+}
+
+std::string PUMCommand::to_string(int llcBankIdx) const {
+  std::stringstream os;
+  os << "[PUMCmd " << type << " WD-" << wordline_bits << "]\n";
+  if (srcRegion != "none") {
+    os << "  Src " << srcRegion << " Acc " << srcAccessPattern << " Map "
+       << srcMapPattern << '\n';
   }
-  if (command.dstRegion != "none") {
-    os << "  Dst " << command.dstRegion << " Acc " << command.dstAccessPattern
-       << " Map " << command.dstMapPattern << '\n';
+  if (dstRegion != "none") {
+    os << "  Dst " << dstRegion << " Acc " << dstAccessPattern << " Map "
+       << dstMapPattern << '\n';
   }
-  os << "  BitlineMask    " << command.bitline_mask << '\n';
-  os << "  TileMask       " << command.tile_mask << '\n';
-  if (command.type == "intra-array") {
-    os << "  BitlineDist    " << command.bitline_dist << '\n';
-  } else {
-    os << "  TileDist       " << command.tile_dist << '\n';
-    os << "  SrcBitlineMask " << command.src_bitline_mask << '\n';
-    os << "  DstBitlineMask " << command.dst_bitline_mask << '\n';
-    for (auto i = 0; i < command.inter_array_splits.size(); ++i) {
+  os << "  BitlineMask    " << bitline_mask << '\n';
+  os << "  TileMask       " << tile_mask << '\n';
+  if (type == "intra-array") {
+    os << "  BitlineDist    " << bitline_dist << '\n';
+  } else if (type == "inter-array") {
+    os << "  TileDist       " << tile_dist << '\n';
+    os << "  DstBitlineMask " << dst_bitline_mask << '\n';
+    for (auto i = 0; i < inter_array_splits.size(); ++i) {
       os << "    InterArraySplit " << std::setw(2) << i << '\n';
-      const auto &patterns = command.inter_array_splits[i];
+      const auto &patterns = inter_array_splits[i];
       for (auto j = 0; j < patterns.size(); ++j) {
         os << "      " << patterns[j] << '\n';
       }
     }
+  } else {
+    // Compute command.
+    os << "  Op " << Enums::OpClassStrings[opClass] << '\n';
   }
-  for (auto i = 0; i < command.llc_commands.size(); ++i) {
-    const auto &patterns = command.llc_commands[i];
+  for (auto i = 0; i < llc_commands.size(); ++i) {
+    if (llcBankIdx != -1 && i != llcBankIdx) {
+      continue;
+    }
+    const auto &patterns = llc_commands[i];
     if (!patterns.empty()) {
       os << "    LLCCmd " << std::setw(2) << i;
       for (auto j = 0; j < patterns.size(); ++j) {
@@ -38,11 +49,5 @@ std::ostream &operator<<(std::ostream &os, const PUMCommand &command) {
       os << '\n';
     }
   }
-  return os;
-}
-
-std::string PUMCommand::to_string() const {
-  std::stringstream os;
-  os << *this;
   return os.str();
 }

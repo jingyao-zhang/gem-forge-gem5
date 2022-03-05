@@ -49,7 +49,7 @@
 
 const std::string &name()
 {
-    static const std::string default_name("global");
+    static const std::string default_name("");
 
     return default_name;
 }
