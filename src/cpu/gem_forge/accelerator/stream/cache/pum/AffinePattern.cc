@@ -1,5 +1,7 @@
 #include "AffinePattern.hh"
 
+#include "base/trace.hh"
+
 std::ostream &operator<<(std::ostream &os, const AffinePattern &pattern) {
   os << pattern.start;
   for (const auto &p : pattern.params) {
@@ -37,4 +39,53 @@ AffinePattern AffinePattern::parse(const std::string &s) {
     params.emplace_back(p[i], p[i + 1]);
   }
   return AffinePattern(start, params);
+}
+
+std::ostream &operator<<(std::ostream &os,
+                         const AffinePattern::IntVecT &intVec) {
+  for (const auto &v : intVec) {
+    os << 'x' << v;
+  }
+  return os;
+}
+
+AffinePattern
+AffinePattern::intersect_sub_regions(const IntVecT &array_sizes,
+                                     const AffinePattern &region1,
+                                     const AffinePattern &region2) {
+
+  if (!region1.is_canonical_sub_region_to_array_size(array_sizes)) {
+    panic("Region1 %s Not SubRegion in Array %s.", region1, array_sizes);
+  }
+
+  if (!region2.is_canonical_sub_region_to_array_size(array_sizes)) {
+    panic("Region2 %s Not SubRegion in Array %s.", region2, array_sizes);
+  }
+
+  auto starts1 = region1.get_sub_region_start_to_array_size(array_sizes);
+  auto trips1 = region1.get_trips();
+  auto starts2 = region2.get_sub_region_start_to_array_size(array_sizes);
+  auto trips2 = region2.get_trips();
+  IntVecT intersect_starts;
+  IntVecT intersect_trips;
+  auto dimension = array_sizes.size();
+  for (auto i = 0; i < dimension; ++i) {
+    auto s1 = starts1[i];
+    auto t1 = trips1[i];
+    auto s2 = starts2[i];
+    auto t2 = trips2[i];
+    if (s1 >= s2 + t2 || s2 >= s1 + t1) {
+      // None means empty intersection.
+      int64_t start = 0;
+      ParamVecT params;
+      params.emplace_back(1, 0);
+      return AffinePattern(start, params);
+    }
+    auto ss = std::max(s1, s2);
+    auto tt = std::min(s1 + t1, s2 + t2) - ss;
+    intersect_starts.push_back(ss);
+    intersect_trips.push_back(tt);
+  }
+  return construct_canonical_sub_region(array_sizes, intersect_starts,
+                                        intersect_trips);
 }

@@ -103,8 +103,8 @@ void StreamNUCAManager::defineRegion(const std::string &regionName, Addr start,
   }
   DPRINTF(StreamNUCAManager,
           "[StreamNUCA] Define Region %s %#x %ld %ld=%ldx%ldx%ld %lukB.\n",
-          regionName, start, elementSize, numElement,
-          arraySizes[0], arraySizes.size() > 1 ? arraySizes[1] : 1,
+          regionName, start, elementSize, numElement, arraySizes[0],
+          arraySizes.size() > 1 ? arraySizes[1] : 1,
           arraySizes.size() > 2 ? arraySizes[2] : 1,
           elementSize * numElement / 1024);
   this->startVAddrRegionMap.emplace(
@@ -1058,8 +1058,11 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
   auto endPAddr = startPAddr + region.elementSize * region.numElement;
 
   auto pumHWConfig = PUMHWConfiguration::getPUMHWConfig();
+
+  auto dimensions = region.arraySizes.size();
+
   /**
-   * For now just generate 1D tiling of bitlines.
+   * For now just generate tiling of bitlines.
    */
   auto bitlines = pumHWConfig.array_cols;
   if (region.numElement < bitlines || region.numElement % bitlines != 0) {
@@ -1068,8 +1071,31 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
         region.name, region.numElement, bitlines);
   }
 
-  AffinePattern::IntVecT tileSizes(1, bitlines);
-  AffinePattern::IntVecT arraySizes(1, region.numElement);
+  AffinePattern::IntVecT arraySizes = region.arraySizes;
+  AffinePattern::IntVecT tileSizes;
+
+  if (dimensions == 1) {
+    tileSizes = {bitlines};
+  } else if (dimensions == 2) {
+    // Just try to get square root of bitlines?
+    int64_t x = 1;
+    int64_t y = bitlines;
+    while (x * 2 < y) {
+      x *= 2;
+      y /= 2;
+    }
+    tileSizes = {y, x};
+  } else {
+    panic("[StreamPUM] Region %s too many dimensions.", region.name);
+  }
+
+  for (auto dim = 0; dim < dimensions; ++dim) {
+    if (arraySizes[dim] % tileSizes[dim] != 0) {
+      panic("[StreamPUM] Region %s Dim %d %ld %% %ld != 0.", region.name, dim,
+            arraySizes[dim], tileSizes[dim]);
+    }
+  }
+
   auto pumTile = AffinePattern::construct_canonical_tile(tileSizes, arraySizes);
   auto elemBits = region.elementSize * 8;
   auto startWordline = 0;

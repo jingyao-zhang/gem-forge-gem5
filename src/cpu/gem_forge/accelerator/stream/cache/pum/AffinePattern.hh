@@ -468,36 +468,7 @@ public:
 
   static AffinePattern intersect_sub_regions(const IntVecT &array_sizes,
                                              const AffinePattern &region1,
-                                             const AffinePattern &region2) {
-    assert(region1.is_canonical_sub_region_to_array_size(array_sizes));
-    assert(region2.is_canonical_sub_region_to_array_size(array_sizes));
-    auto starts1 = region1.get_sub_region_start_to_array_size(array_sizes);
-    auto trips1 = region1.get_trips();
-    auto starts2 = region2.get_sub_region_start_to_array_size(array_sizes);
-    auto trips2 = region2.get_trips();
-    IntVecT intersect_starts;
-    IntVecT intersect_trips;
-    auto dimension = array_sizes.size();
-    for (auto i = 0; i < dimension; ++i) {
-      auto s1 = starts1[i];
-      auto t1 = trips1[i];
-      auto s2 = starts2[i];
-      auto t2 = trips2[i];
-      if (s1 >= s2 + t2 || s2 >= s1 + t1) {
-        // None means empty intersection.
-        int64_t start = 0;
-        ParamVecT params;
-        params.emplace_back(1, 0);
-        return AffinePattern(start, params);
-      }
-      auto ss = std::max(s1, s2);
-      auto tt = std::min(s1 + t1, s2 + t2) - ss;
-      intersect_starts.push_back(ss);
-      intersect_trips.push_back(tt);
-    }
-    return construct_canonical_sub_region(array_sizes, intersect_starts,
-                                          intersect_trips);
-  }
+                                             const AffinePattern &region2);
 
   IntVecT generate_all_values() const {
     IntVecT values(get_total_trip(), 0);
@@ -509,6 +480,7 @@ public:
 };
 
 std::ostream &operator<<(std::ostream &os, const AffinePattern &pattern);
+std::ostream &operator<<(std::ostream &os, const AffinePattern::IntVecT &intVec);
 
 using AffinePatternVecT = std::vector<AffinePattern>;
 

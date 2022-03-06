@@ -70,11 +70,9 @@ DataMoveCompiler::handle_align_smaller_than_tile_size(int64_t dim,
   commands.emplace_back();
   commands.back().type = "intra-array";
   commands.back().bitline_dist = bitlines;
-  // Generate all active bitline-mask.
-  auto totalTileSize =
-      AffinePattern::reduce_mul(tile_sizes.begin(), tile_sizes.end(), 1);
-  commands.back().bitline_mask =
-      AffinePattern(0, ParamVecT(1, AffinePattern::Param(1, totalTileSize)));
+  // Generate all active bitline-mask according to tile_sizes.
+  commands.back().bitline_mask = AffinePattern::construct_canonical_sub_region(
+      tile_sizes, AffinePattern::IntVecT(tile_sizes.size(), 0), tile_sizes);
 
   // Boundary case.
   auto move_tile_dist = 1;
@@ -196,10 +194,26 @@ PUMCommandVecT DataMoveCompiler::mask_commands_by_sub_region(
   return masked_commands;
 }
 
+AffinePattern
+DataMoveCompiler::mergeBitlineMasks(const MaskVecT &bitlineMasks) const {
+  assert(bitlineMasks.size() == dimension);
+  IntVecT innerTileSizes;
+  for (auto i = 0; i < dimension; ++i) {
+    auto s = AffinePattern::reduce_mul(tile_sizes.cbegin(),
+                                       tile_sizes.cbegin() + i, 1);
+    innerTileSizes.push_back(s);
+    auto trip = std::get<2>(bitlineMasks[i]);
+    if (trip > tile_sizes[i]) {
+      panic("BitlineMask Trip %ld Overflow Tile %ld.", trip, tile_sizes[i]);
+    }
+  }
+  return merge_masks(bitlineMasks, innerTileSizes);
+}
+
 void DataMoveCompiler::recursive_mask_sub_region_at_dim(
-    const AffinePattern &sub_region, int64_t dim, MaskVecT &bitline_maskes,
-    MaskVecT &tile_masks, AffinePatternVecT &final_bitline_maskes,
-    AffinePatternVecT &final_tile_masks) const {
+    const AffinePattern &sub_region, int64_t dim, MaskVecT &revBitlineMasks,
+    MaskVecT &revTileMasks, AffinePatternVecT &finalBitlineMaskes,
+    AffinePatternVecT &finalTileMasks) const {
   /**
     This implements the above mask algorithm, and accumulate mask pattern
     along each dimension. At the end, we construct the overall mask pattern
@@ -213,10 +227,17 @@ void DataMoveCompiler::recursive_mask_sub_region_at_dim(
     sub-region within that tile, and take their interection.
    */
   if (dim == -1) {
-    auto merged_bitline_masks = merge_bitline_masks(bitline_maskes);
-    auto merged_tile_masks = merge_tile_masks(tile_masks);
-    final_bitline_maskes.push_back(merged_bitline_masks);
-    final_tile_masks.push_back(merged_tile_masks);
+    /**
+     * ! Don't forget to reverse the masks first.
+     */
+    MaskVecT bitlineMasks = revBitlineMasks;
+    std::reverse(bitlineMasks.begin(), bitlineMasks.end());
+    MaskVecT tileMasks = revTileMasks;
+    std::reverse(tileMasks.begin(), tileMasks.end());
+    auto merged_bitline_masks = mergeBitlineMasks(bitlineMasks);
+    auto merged_tile_masks = merge_tile_masks(tileMasks);
+    finalBitlineMaskes.push_back(merged_bitline_masks);
+    finalTileMasks.push_back(merged_tile_masks);
     return;
   }
 
@@ -235,43 +256,52 @@ void DataMoveCompiler::recursive_mask_sub_region_at_dim(
   if (b <= c) {
     // [P, BxTi)
     if (a < b) {
-      bitline_maskes.emplace_back(tile_p, 1, t - tile_p);
-      tile_masks.emplace_back(a, 1, 1);
-      recursive_mask_sub_region_at_dim(sub_region, dim - 1, bitline_maskes,
-                                       tile_masks, final_bitline_maskes,
-                                       final_tile_masks);
-      bitline_maskes.pop_back();
-      tile_masks.pop_back();
+      revBitlineMasks.emplace_back(tile_p, 1, t - tile_p);
+      revTileMasks.emplace_back(a, 1, 1);
+      if (t - tile_p > t) {
+        panic("BitlineMask Trip %ld Overflow Tile %ld.", t - tile_p, t);
+      }
+      recursive_mask_sub_region_at_dim(sub_region, dim - 1, revBitlineMasks,
+                                       revTileMasks, finalBitlineMaskes,
+                                       finalTileMasks);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
     }
     // [CxTi, P+Q)
     if (c < d) {
-      bitline_maskes.emplace_back(0, 1, tile_pq);
-      tile_masks.emplace_back(c, 1, 1);
-      recursive_mask_sub_region_at_dim(sub_region, dim - 1, bitline_maskes,
-                                       tile_masks, final_bitline_maskes,
-                                       final_tile_masks);
-      bitline_maskes.pop_back();
-      tile_masks.pop_back();
+      revBitlineMasks.emplace_back(0, 1, tile_pq);
+      revTileMasks.emplace_back(c, 1, 1);
+      if (tile_pq > t) {
+        panic("BitlineMask Trip %ld Overflow Tile %ld.", tile_pq, t);
+      }
+      recursive_mask_sub_region_at_dim(sub_region, dim - 1, revBitlineMasks,
+                                       revTileMasks, finalBitlineMaskes,
+                                       finalTileMasks);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
     }
     if (b < c) {
       // [BxTi, CxTi)
-      bitline_maskes.emplace_back(0, 1, t);
-      tile_masks.emplace_back(b, 1, c - b);
-      recursive_mask_sub_region_at_dim(sub_region, dim - 1, bitline_maskes,
-                                       tile_masks, final_bitline_maskes,
-                                       final_tile_masks);
-      bitline_maskes.pop_back();
-      tile_masks.pop_back();
+      revBitlineMasks.emplace_back(0, 1, t);
+      revTileMasks.emplace_back(b, 1, c - b);
+      recursive_mask_sub_region_at_dim(sub_region, dim - 1, revBitlineMasks,
+                                       revTileMasks, finalBitlineMaskes,
+                                       finalTileMasks);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
     }
   } else {
     // [P, P+Q)
-    bitline_maskes.emplace_back(tile_p, 1, tile_pq);
-    tile_masks.emplace_back(a, 1, 1);
-    recursive_mask_sub_region_at_dim(sub_region, dim - 1, bitline_maskes,
-                                     tile_masks, final_bitline_maskes,
-                                     final_tile_masks);
-    bitline_maskes.pop_back();
-    tile_masks.pop_back();
+    revBitlineMasks.emplace_back(tile_p, 1, tile_pq - tile_p);
+    revTileMasks.emplace_back(a, 1, 1);
+    if (tile_pq > t) {
+      panic("BitlineMask %ld Overflow Tile %ld.", tile_pq, t);
+    }
+    recursive_mask_sub_region_at_dim(sub_region, dim - 1, revBitlineMasks,
+                                     revTileMasks, finalBitlineMaskes,
+                                     finalTileMasks);
+    revBitlineMasks.pop_back();
+    revTileMasks.pop_back();
   }
 }
 

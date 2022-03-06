@@ -178,16 +178,7 @@ public:
     return AffinePattern(start, params);
   }
 
-  AffinePattern merge_bitline_masks(const MaskVecT &bitline_masks) const {
-    assert(bitline_masks.size() == dimension);
-    IntVecT inner_tile_sizes;
-    for (auto i = 0; i < dimension; ++i) {
-      auto s = AffinePattern::reduce_mul(tile_sizes.cbegin(),
-                                         tile_sizes.cbegin() + i, 1);
-      inner_tile_sizes.push_back(s);
-    }
-    return merge_masks(bitline_masks, inner_tile_sizes);
-  }
+  AffinePattern mergeBitlineMasks(const MaskVecT &bitline_masks) const;
 
   AffinePattern merge_tile_masks(const MaskVecT &tile_masks) const {
     assert(tile_masks.size() == dimension);

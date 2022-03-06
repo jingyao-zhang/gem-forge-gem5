@@ -459,9 +459,6 @@ void MLCPUMManager::compileCompute(Args &args,
   DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
                             patternInfo.pumTile);
 
-  auto totalTileSize = AffinePattern::reduce_mul(compiler.tile_sizes.begin(),
-                                                 compiler.tile_sizes.end(), 1);
-
   PUMCommandVecT commands;
 
   assert(patternInfo.atomicPatterns.size() == 1);
@@ -478,8 +475,10 @@ void MLCPUMManager::compileCompute(Args &args,
     command.type = "cmp";
     command.opClass = inst->opClass();
     // Default bitline_mask is for the entire tile.
-    command.bitline_mask = AffinePattern(
-        0, AffinePattern::ParamVecT(1, AffinePattern::Param(1, totalTileSize)));
+    command.bitline_mask = AffinePattern::construct_canonical_sub_region(
+        compiler.tile_sizes,
+        AffinePattern::IntVecT(compiler.tile_sizes.size(), 0) /* starts */,
+        compiler.tile_sizes);
   }
 
   if (Debug::StreamPUM) {
