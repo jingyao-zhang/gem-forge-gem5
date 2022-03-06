@@ -267,6 +267,11 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 }
 
 void PUMEngine::tick() {
+
+  if (this->commands.empty()) {
+    return;
+  }
+
   if (this->controller->curCycle() < this->nextCmdReadyCycle) {
     return;
   }
