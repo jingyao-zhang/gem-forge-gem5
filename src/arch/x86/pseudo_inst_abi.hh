@@ -81,4 +81,27 @@ struct Argument<X86PseudoInstABI, uint64_t>
     }
 };
 
+template <>
+struct Argument<X86PseudoInstABI, int64_t>
+{
+    static int64_t
+    get(ThreadContext *tc, X86PseudoInstABI::State &state)
+    {
+        // The first 6 integer arguments are passed in registers, the rest
+        // are passed on the stack.
+
+        panic_if(state >= 6, "Too many psuedo inst arguments.");
+
+        using namespace X86ISA;
+
+        const int int_reg_map[] = {
+            INTREG_RDI, INTREG_RSI, INTREG_RDX,
+            INTREG_RCX, INTREG_R8, INTREG_R9
+        };
+
+        return tc->readIntReg(int_reg_map[state++]);
+    }
+};
+
+
 } // namespace GuestABI

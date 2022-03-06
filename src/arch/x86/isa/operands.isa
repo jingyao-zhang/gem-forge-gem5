@@ -243,4 +243,7 @@ def operands {{
         'FpDestReg5':     floatReg('dest + 5', 345),
         'FpDestReg6':     floatReg('dest + 6', 346),
         'FpDestReg7':     floatReg('dest + 7', 347),
+
+        'R8':             intReg('(INTREG_R8)', 400),
+        'R9':             intReg('(INTREG_R9)', 401),
 }};

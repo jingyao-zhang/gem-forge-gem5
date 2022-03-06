@@ -124,7 +124,7 @@ void togglesync(ThreadContext *tc);
 void llvmtracemap(ThreadContext *tc, uint64_t base_ptr, uint64_t vaddr);
 void llvmtracereplay(ThreadContext *tc, uint64_t trace_ptr, uint64_t vaddr);
 void stream_nuca_region(ThreadContext *tc, Addr regionNameAddr, Addr start,
-    uint64_t elementSize, uint64_t numElement);
+    uint64_t elementSize, int64_t dim1, int64_t dim2, int64_t dim3);
 void stream_nuca_align(ThreadContext *tc,
     Addr A, Addr B, uint64_t elementOffset);
 void stream_nuca_remap(ThreadContext *tc);

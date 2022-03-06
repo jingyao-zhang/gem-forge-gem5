@@ -25,7 +25,8 @@ public:
   void regStats();
 
   void defineRegion(const std::string &regionName, Addr start,
-                    uint64_t elementSize, uint64_t numElement);
+                    uint64_t elementSize,
+                    const std::vector<int64_t> &arraySizes);
 
   /**
    * Negative element offset will specify some indirect alignment.
@@ -67,11 +68,12 @@ public:
     Addr vaddr;
     uint64_t elementSize;
     uint64_t numElement;
+    std::vector<int64_t> arraySizes;
     bool isIndirect;
     StreamRegion(const std::string &_name, Addr _vaddr, uint64_t _elementSize,
-                 uint64_t _numElement)
+                 int64_t _numElement, const std::vector<int64_t> &_arraySizes)
         : name(_name), vaddr(_vaddr), elementSize(_elementSize),
-          numElement(_numElement), isIndirect(false),
+          numElement(_numElement), arraySizes(_arraySizes), isIndirect(false),
           cachedElements(_numElement) {}
 
     std::vector<StreamAlign> aligns;

@@ -67,7 +67,8 @@ void m5_llvm_trace_map(const char *base, void *vaddr);
 void m5_llvm_trace_replay(const char *trace, void *vaddr);
 
 void m5_stream_nuca_region(const char *regionName, void *buffer,
-                           uint64_t elementSize, uint64_t numElement);
+                           uint64_t elementSize, uint64_t dim1, uint64_t dim2,
+                           uint64_t dim3);
 /**
  * Specify the alignment requirement between two arrays.
  *

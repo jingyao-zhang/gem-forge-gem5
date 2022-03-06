@@ -95,13 +95,22 @@ void StreamNUCAManager::regStats() {
 
 void StreamNUCAManager::defineRegion(const std::string &regionName, Addr start,
                                      uint64_t elementSize,
-                                     uint64_t numElement) {
+                                     const std::vector<int64_t> &arraySizes) {
+
+  int64_t numElement = 1;
+  for (const auto &s : arraySizes) {
+    numElement *= s;
+  }
   DPRINTF(StreamNUCAManager,
-          "[StreamNUCA] Define Region %s %#x %lu %lu %lukB.\n", regionName,
-          start, elementSize, numElement, elementSize * numElement / 1024);
+          "[StreamNUCA] Define Region %s %#x %ld %ld=%ldx%ldx%ld %lukB.\n",
+          regionName, start, elementSize, numElement,
+          arraySizes[0], arraySizes.size() > 1 ? arraySizes[1] : 1,
+          arraySizes.size() > 2 ? arraySizes[2] : 1,
+          elementSize * numElement / 1024);
   this->startVAddrRegionMap.emplace(
       std::piecewise_construct, std::forward_as_tuple(start),
-      std::forward_as_tuple(regionName, start, elementSize, numElement));
+      std::forward_as_tuple(regionName, start, elementSize, numElement,
+                            arraySizes));
 }
 
 void StreamNUCAManager::defineAlign(Addr A, Addr B, int64_t elementOffset) {

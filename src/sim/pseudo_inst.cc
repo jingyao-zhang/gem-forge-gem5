@@ -660,14 +660,26 @@ llvmtracereplay(ThreadContext *tc, uint64_t trace_ptr, uint64_t vaddr)
 
 void stream_nuca_region(
     ThreadContext *tc, Addr regionNameAddr, Addr start,
-    uint64_t elementSize, uint64_t numElement) {
-    DPRINTF(PseudoInst, "PseudoInst::stream_nuca_region(%p, %p, %lu, %lu).\n",
-        regionNameAddr, start, elementSize, numElement);
+    uint64_t elementSize, int64_t dim1, int64_t dim2, int64_t dim3) {
+    DPRINTF(PseudoInst,
+        "PseudoInst::stream_nuca_region(%p, %p, %lu, %ldx%ldx%ld).\n",
+        regionNameAddr, start, elementSize, dim1, dim2, dim3);
+
+    std::vector<int64_t> arraySizes;
+    if (dim3 > 0) {
+        arraySizes = {dim1, dim2, dim3};
+    } else if (dim2 > 0) {
+        arraySizes = {dim1, dim2};
+    } else {
+        assert(dim1 > 0);
+        arraySizes = {dim1};
+    }
+
     // copy out region name 
     std::string regionName;
     tc->getVirtProxy().readString(regionName, regionNameAddr);
     tc->getProcessPtr()->streamNUCAManager->defineRegion(
-        regionName, start, elementSize, numElement);
+        regionName, start, elementSize, arraySizes);
 }
 
 void stream_nuca_align(ThreadContext *tc,
