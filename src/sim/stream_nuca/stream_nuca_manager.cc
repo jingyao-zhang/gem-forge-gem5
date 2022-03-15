@@ -1085,6 +1085,16 @@ void StreamNUCAManager::remapDirectRegionPUM(const StreamRegion &region) {
       y /= 2;
     }
     tileSizes = {y, x};
+  } else if (dimensions == 3) {
+    int64_t x = 1;
+    int64_t y = 1;
+    int64_t z = bitlines;
+    while (x * 4 < z) {
+      x *= 2;
+      y *= 2;
+      z /= 4;
+    }
+    tileSizes = {x, y, z};
   } else {
     panic("[StreamPUM] Region %s too many dimensions.", region.name);
   }

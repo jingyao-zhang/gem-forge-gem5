@@ -117,7 +117,12 @@ void StreamRegionController::commitStreamEnd(const EndArgs &args) {
   assert(!staticRegion.dynRegions.empty() && "Missing DynRegion.");
 
   const auto &dynRegion = staticRegion.dynRegions.front();
-  if (dynRegion.seqNum >= args.seqNum) {
+  if (dynRegion.seqNum > args.seqNum) {
+    /**
+     * We allow the == case because in nested stream, it is still
+     * possible that InnerStreamEnd comes right after OuterStreamConfig,
+     * leaving there no space to insert the InnerStreamConfig.
+     */
     SE_PANIC("[Region] %s End (%lu) before Configure (%lu).\n",
              streamRegion.region(), args.seqNum, dynRegion.seqNum);
   }

@@ -32,8 +32,8 @@ struct DynStream {
   ThreadContext *tc;
 
   DynStream(Stream *_stream, const DynStreamId &_dynStreamId,
-                uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,
-                StreamEngine *_se);
+            uint64_t _configSeqNum, Cycles _configCycle, ThreadContext *_tc,
+            StreamEngine *_se);
   DynStream(const DynStream &other) = delete;
   DynStream(DynStream &&other) = delete;
   DynStream &operator=(const DynStream &other) = delete;
@@ -233,11 +233,11 @@ public:
    * 1. Base streams from the same loop.
    * 2. Base streams from outer loops.
    */
-  void configureAddrBaseDynStreamReuse();
-  void configureAddrBaseDynStreamReuseSameLoop(StreamDepEdge &edge,
-                                               DynStream &baseDynS);
-  void configureAddrBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
-                                                DynStream &baseDynS);
+  void configureBaseDynStreamReuse();
+  void configureBaseDynStreamReuseSameLoop(StreamDepEdge &edge,
+                                           DynStream &baseDynS);
+  void configureBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
+                                            DynStream &baseDynS);
 
   /**
    * Check if base elements of the next allocating element is ready.

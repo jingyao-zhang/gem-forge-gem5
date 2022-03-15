@@ -235,14 +235,17 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
     auto param = params.at(idx);
     auto type = this->func.args(idx).type();
     if (type == ::LLVM::TDG::DataType::INTEGER) {
-      assert(intParamIdx < 6 && "Too many int arguments for exec function.");
+      if (intParamIdx == 6) {
+        panic("Too many IntArgs on ExecFunc %s.", this->func.name());
+      }
       const auto &reg = intRegParams[intParamIdx];
       intParamIdx++;
       execFuncXC.setIntRegOperand(reg, param.front());
       EXEC_FUNC_DPRINTF("Arg %d Reg %s %s.\n", idx, reg, param.print(type));
     } else {
-      assert(floatParamIdx < 8 &&
-             "Too many float arguments for exec function.");
+      if (floatParamIdx == 8) {
+        panic("Too many FloatArgs on ExecFunc %s.", this->func.name());
+      }
       auto numRegs = this->translateToNumRegs(type);
       const auto &baseReg = floatRegParams[floatParamIdx];
       floatParamIdx++;

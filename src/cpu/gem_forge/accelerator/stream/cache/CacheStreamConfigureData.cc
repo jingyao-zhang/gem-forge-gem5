@@ -28,7 +28,48 @@ void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data) {
   this->depEdges.emplace_back(DepEdge::Type::SendTo, data);
 }
 
-DynStreamFormalParamV CacheStreamConfigureData::splitLinearParam(
+bool CacheStreamConfigureData::canSplitIntoStrands() const {
+  /**
+   * We can split streams into strands iff.
+   * 1. With known trip count (no StreamLoopBound).
+   * 2. There is no indirect streams.
+   * 3. Float plan is just the LLC.
+   * 4. Simple linear continuous streams.
+   * TODO: Handle reduction and tiled patterns.
+   */
+  if (!this->hasTotalTripCount()) {
+    DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
+                   "[Strand] No TripCount.\n");
+    return false;
+  }
+  for (const auto &dep : this->depEdges) {
+    if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+      DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
+                     "[Strand] Has IndirectS %s.\n", dep.data->dynamicId);
+      return false;
+    }
+  }
+  if (this->floatPlan.isFloatedToMem()) {
+    DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
+                   "[Strand] Float to Mem.\n");
+    return false;
+  }
+  if (this->floatPlan.getFirstFloatElementIdx() != 0) {
+    DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
+                   "[Strand] Delayed Float.\n");
+    return false;
+  }
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(this->addrGenCallback);
+  if (!linearAddrGen) {
+    DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
+                   "[Strand] Not LinearAddrGen.\n");
+    return false;
+  }
+  return true;
+}
+
+DynStreamFormalParamV CacheStreamConfigureData::splitLinearParam1D(
     const StrandSplitInfo &strandSplit, int strandIdx,
     const DynStreamFormalParamV &params, AddrGenCallbackPtr callback) {
   auto linearAddrGen =
@@ -103,7 +144,7 @@ CacheStreamConfigureData::splitIntoStrands(const StrandSplitInfo &strandSplit) {
     /**********************************************************************
      * Split the address generation.
      **********************************************************************/
-    auto strandAddrGenFormalParams = this->splitLinearParam(
+    auto strandAddrGenFormalParams = this->splitLinearParam1D(
         strandSplit, strandIdx, this->addrGenFormalParams,
         this->addrGenCallback);
 
@@ -136,6 +177,7 @@ CacheStreamConfigureData::splitIntoStrands(const StrandSplitInfo &strandSplit) {
     copyToStrand(finalValueNeededByCore);
     copyToStrand(isPointerChase);
     copyToStrand(isOneIterationBehind);
+#undef copyToStrand
 
     // Strand specific field.
     strand->strandIdx = strandIdx;

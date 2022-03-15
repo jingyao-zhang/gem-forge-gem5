@@ -53,48 +53,8 @@ bool MLCStrandManager::canSplitIntoStrands(
     return false;
   }
 
-  /**
-   * We can split streams into strands iff.
-   * 1. With known trip count (no StreamLoopBound).
-   * 2. There is no indirect streams.
-   * 3. Simple linear continuous streams.
-   * 4. Float plan is just the LLC.
-   * TODO: Handle reduction and tiled patterns.
-   */
   for (const auto &config : configs) {
-    if (!config->hasTotalTripCount()) {
-      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                     "[Strand] No TripCount.\n");
-      return false;
-    }
-    for (const auto &dep : config->depEdges) {
-      if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-        MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                       "[Strand] Has IndirectS %s.\n", dep.data->dynamicId);
-        return false;
-      }
-    }
-    auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
-        config->addrGenCallback);
-    if (!linearAddrGen) {
-      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                     "[Strand] Not LinearAddrGen.\n");
-      return false;
-    }
-    if (!linearAddrGen->isContinuous(config->addrGenFormalParams,
-                                     config->elementSize)) {
-      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                     "[Strand] Not Continuous.\n");
-      return false;
-    }
-    if (config->floatPlan.isFloatedToMem()) {
-      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                     "[Strand] Float to Mem.\n");
-      return false;
-    }
-    if (config->floatPlan.getFirstFloatElementIdx() != 0) {
-      MLC_S_DPRINTF_(MLCRubyStrandSplit, config->dynamicId,
-                     "[Strand] Delayed Float.\n");
+    if (!config->canSplitIntoStrands()) {
       return false;
     }
   }

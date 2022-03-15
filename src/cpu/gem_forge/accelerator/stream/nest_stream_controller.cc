@@ -274,41 +274,31 @@ void StreamRegionController::configureNestStream(
   dynNestConfig.configFunc->invoke(actualParams, &this->isaHandler,
                                    configFuncStartSeqNum);
 
-  // Sanity check that nest streams have same TotalTripCount.
-  bool isFirstDynS = true;
-  auto totalTripCount = DynStream::InvalidTotalTripCount;
+  // Remember the NestConfigSeqNum.
   InstSeqNum nestConfigSeqNum = configFuncStartSeqNum;
-  for (auto S : staticNestRegion.streams) {
+  {
+    auto S = staticNestRegion.streams.front();
     auto &dynS = S->getLastDynStream();
-    auto dynSTotalTripCount = dynS.getTotalTripCount();
-    if (dynSTotalTripCount == 0) {
-      DYN_S_PANIC(dynS.dynStreamId, "NestStream has TotalTripCount %d.",
-                  totalTripCount);
+    auto dynSTripCount = dynS.getTotalTripCount();
+    if (dynSTripCount == 0) {
+      DYN_S_PANIC(dynS.dynStreamId, "NestStream has TripCount %d.",
+                  dynSTripCount);
     }
-    if (isFirstDynS) {
-      totalTripCount = dynSTotalTripCount;
-      nestConfigSeqNum = dynS.configSeqNum;
-      isFirstDynS = false;
-    } else {
-      if (totalTripCount != dynSTotalTripCount) {
-        DYN_S_PANIC(dynS.dynStreamId,
-                    "NestStream has TotalTripCount %d, while others have %d.",
-                    dynSTotalTripCount, totalTripCount);
-      }
-    }
+    nestConfigSeqNum = dynS.configSeqNum;
   }
-  // Remember the config seq num.
   dynNestConfig.configSeqNums.push_back(nestConfigSeqNum);
 
-  SE_DPRINTF("[Nest] Value ready. Config NestRegion %s OuterElemIdx %lu "
-             "ConfigFuncStartSeqNum %lu ConfigSeqNum %lu TripCount %d "
+  SE_DPRINTF("[Nest] Value ready. Config NestRegion %s OuterConfigSeqNum %lu "
+             "OuterElemIdx %lu ConfigFuncStartSeqNum %lu ConfigSeqNum %lu "
              "Configured:\n",
-             staticNestRegion.region.region(), dynNestConfig.nextElemIdx,
-             configFuncStartSeqNum, nestConfigSeqNum, totalTripCount);
+             staticNestRegion.region.region(), dynRegion.seqNum,
+             dynNestConfig.nextElemIdx, configFuncStartSeqNum,
+             nestConfigSeqNum);
   if (Debug::StreamNest) {
     for (auto S : staticNestRegion.streams) {
       auto &dynS = S->getLastDynStream();
-      SE_DPRINTF("[Nest]   %s.\n", dynS.dynStreamId);
+      SE_DPRINTF("[Nest] TripCount %8lld  %s.\n", dynS.getTotalTripCount(),
+                 dynS.dynStreamId);
     }
   }
 

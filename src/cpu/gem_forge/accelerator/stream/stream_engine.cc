@@ -411,7 +411,7 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
   std::list<DynStream *> configDynStreams;
   for (auto &S : configStreams) {
     auto &dynS = S->getDynStream(args.seqNum);
-    dynS.configureAddrBaseDynStreamReuse();
+    dynS.configureBaseDynStreamReuse();
     configDynStreams.push_back(&dynS);
   }
 

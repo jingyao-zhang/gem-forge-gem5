@@ -169,12 +169,13 @@ public:
   StrandSplitInfo strandSplit;
   // The original StreamConfig before split into strands.
   CacheStreamConfigureDataPtr streamConfig = nullptr;
+  bool canSplitIntoStrands() const;
   bool isSplitIntoStrands() const { return this->totalStrands > 1; }
   CacheStreamConfigureVec splitIntoStrands(const StrandSplitInfo &strandSplit);
-  DynStreamFormalParamV splitLinearParam(const StrandSplitInfo &strandSplit,
-                                         int strandIdx,
-                                         const DynStreamFormalParamV &params,
-                                         AddrGenCallbackPtr callback);
+  DynStreamFormalParamV splitLinearParam1D(const StrandSplitInfo &strandSplit,
+                                           int strandIdx,
+                                           const DynStreamFormalParamV &params,
+                                           AddrGenCallbackPtr callback);
 
   /**
    * Get the StrandId from StreamElemIdx.
