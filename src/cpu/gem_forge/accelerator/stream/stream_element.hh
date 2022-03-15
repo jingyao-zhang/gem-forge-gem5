@@ -83,9 +83,7 @@ public:
 
   Stream *getStream() const { return this->stream; }
 
-  const DynStreamId &getDynStreamId() const {
-    return this->FIFOIdx.streamId;
-  }
+  const DynStreamId &getDynStreamId() const { return this->FIFOIdx.streamId; }
   /**
    * TODO: Return a reference.
    */

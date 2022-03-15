@@ -624,9 +624,10 @@ bool StreamEngine::canCommitStreamStep(const StreamStepArgs &args) {
      * Since we coalesce for continuous DirectMemStream, we delay releasing
      * stepped element here if the next element is not addr ready. This is
      * to ensure that it is correctly coalesced.
+     * This is disabled if the stream delays issue until reaches the FIFO head.
      */
-    if (S->isDirectMemStream() && dynS->shouldCoreSEIssue() &&
-        !dynS->isFloatedAsNDC()) {
+    if (S->isDirectMemStream() && !S->isDelayIssueUntilFIFOHead() &&
+        dynS->shouldCoreSEIssue() && !dynS->isFloatedAsNDC()) {
       auto stepNextElement = stepElement->next;
       if (!stepNextElement) {
         S_ELEMENT_DPRINTF(
@@ -2319,6 +2320,14 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
             break;
           }
         }
+
+        if (S->isDelayIssueUntilFIFOHead()) {
+          if (element != dynS.tail->next) {
+            S_ELEMENT_DPRINTF(element, "[NotReady] Not FIFO Head.\n");
+            break;
+          }
+        }
+
         /**
          * I noticed that sometimes we have prefetched too early for
          * AtomicStream, especially for gap.bfs_push. The line we prefetched may

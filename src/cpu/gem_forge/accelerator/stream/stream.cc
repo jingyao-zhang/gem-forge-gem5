@@ -52,6 +52,19 @@ Stream::Stream(const StreamArguments &args)
   this->stepRootStream = nullptr;
   this->lateFetchCount = 0;
   this->streamRegion = args.streamRegion;
+
+  /**
+   * ! This is a pure evil hack.
+   * In GaussianElim, the outer-most stream is aliased with the inner
+   * streams, and thus must runs non-speculatively.
+   * The correct way is to detect the alias, flush any speculative states
+   * and then restart. However, here I do not issue unless the element
+   * reached the head of the queue.
+   */
+  if (this->getStreamName() == "gfm.gaussian_elim.diag.ld" ||
+      this->getStreamName() == "gfm.gaussian_elim.bk.ld") {
+    this->setDelayIssueUntilFIFOHead();
+  }
 }
 
 Stream::~Stream() {

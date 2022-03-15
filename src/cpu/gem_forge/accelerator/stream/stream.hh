@@ -724,6 +724,12 @@ public:
 
   void setNested() { this->nested = true; }
   bool isNestStream() const { return this->nested; }
+
+  bool delayIssueUntilFIFOHead = false;
+  void setDelayIssueUntilFIFOHead() { this->delayIssueUntilFIFOHead = true; }
+  bool isDelayIssueUntilFIFOHead() const {
+    return this->delayIssueUntilFIFOHead;
+  }
 };
 
 struct GetCoalescedStreamValue {
