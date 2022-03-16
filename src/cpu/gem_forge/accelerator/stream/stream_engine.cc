@@ -1368,13 +1368,13 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
         shouldCheckAck = true;
       }
       /**
-       * Floated AtomicComputeStream has to check Ack when:
+       * Floated AtomicCompute/UpdateStream has to check Ack when:
        *                    w/ RangeSync       w/o. RangeSync
        * CoreIssue          Check              NoCheck
        * CoreNotIssue       Check              Check
        */
-      if (S->isAtomicComputeStream() && dynS.isFloatedToCache() &&
-          endElementIdx > 0) {
+      if ((S->isAtomicComputeStream() || S->isUpdateStream()) &&
+          dynS.isFloatedToCache() && endElementIdx > 0) {
         if (dynS.shouldRangeSync()) {
           shouldCheckAck = true;
         } else if (!dynS.shouldCoreSEIssue()) {
