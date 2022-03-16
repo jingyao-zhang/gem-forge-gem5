@@ -136,29 +136,27 @@ public:
     };
     Type type;
     CacheStreamConfigureDataPtr data;
-    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data)
-        : type(_type), data(_data) {}
+    int reuse;
+    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse)
+        : type(_type), data(_data), reuse(_reuse) {}
   };
   struct BaseEdge {
     enum Type {
       BaseOn,
     };
     Type type;
+    DynStreamId dynStreamId;
     CacheStreamConfigureDataWeakPtr data;
-    BaseEdge(Type _type, const CacheStreamConfigureDataWeakPtr &_data)
-        : type(_type), data(_data) {}
+    int reuse;
+    BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse)
+        : type(_type), dynStreamId(_data->dynamicId), data(_data),
+          reuse(_reuse) {}
   };
   std::vector<DepEdge> depEdges;
   std::vector<BaseEdge> baseEdges;
-  void addUsedBy(CacheStreamConfigureDataPtr &data) {
-    this->depEdges.emplace_back(DepEdge::Type::UsedBy, data);
-    data->baseEdges.emplace_back(BaseEdge::Type::BaseOn,
-                                 this->shared_from_this());
-  }
-  void addSendTo(CacheStreamConfigureDataPtr &data);
-  void addBaseOn(CacheStreamConfigureDataPtr &data) {
-    this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data);
-  }
+  void addUsedBy(CacheStreamConfigureDataPtr &data, int reuse);
+  void addSendTo(CacheStreamConfigureDataPtr &data, int reuse);
+  void addBaseOn(CacheStreamConfigureDataPtr &data, int reuse);
 
   /**
    * StrandId and TotalStrands. Set by MLC if enabled.

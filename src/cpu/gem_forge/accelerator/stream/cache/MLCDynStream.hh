@@ -86,8 +86,8 @@ public:
    */
   bool shouldRangeSync() const { return this->config->rangeSync; }
 
-  const std::vector<CacheStreamConfigureDataPtr> &getSendToConfigs() const {
-    return this->sendToConfigs;
+  const std::vector<CacheStreamConfigureData::DepEdge> &getSendToEdges() const {
+    return this->sendToEdges;
   }
 
   /**
@@ -111,7 +111,7 @@ protected:
   bool isPseudoOffload;
   const bool isMLCDirect;
 
-  std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
+  std::vector<CacheStreamConfigureData::DepEdge> sendToEdges;
 
   AbstractStreamAwareController *controller;
   MessageBuffer *responseMsgBuffer;

@@ -26,6 +26,7 @@ struct DynStream {
   using InstanceId = DynStreamId::InstanceId;
 
   Stream *stream;
+  StreamEngine *se;
   const DynStreamId dynStreamId;
   const uint64_t configSeqNum;
   const Cycles configCycle;
@@ -204,11 +205,19 @@ public:
           baseInstanceId(_baseInstanceId), depStaticId(_depStaticId),
           alignBaseElement(_alignBaseElement),
           reuseBaseElement(_reuseBaseElement) {}
+    bool isAddrEdge() const { return this->type == TypeE::Addr; }
+    bool isValueEdge() const { return this->type == TypeE::Value; }
+    bool isBackEdge() const { return this->type == TypeE::Back; }
   };
   using StreamEdges = std::vector<StreamDepEdge>;
   StreamEdges baseEdges;
   StreamEdges backDepEdges;
   void addBaseDynStreams();
+
+  /**
+   * Get the reuse count on a BaseS.
+   */
+  int getBaseElemReuseCount(Stream *baseS) const;
 
   std::list<DynStream *> stepDynStreams;
   void addStepStreams();

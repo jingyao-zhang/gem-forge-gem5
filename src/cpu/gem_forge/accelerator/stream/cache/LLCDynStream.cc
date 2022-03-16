@@ -48,6 +48,7 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
   // Remember the BaseOn configs.
   for (auto &baseEdge : this->configData->baseEdges) {
     this->baseOnConfigs.emplace_back(baseEdge.data.lock());
+    this->reusedBaseElements.emplace_back(baseEdge.reuse);
     assert(this->baseOnConfigs.back() && "BaseStreamConfig already released?");
   }
 
@@ -197,11 +198,6 @@ void LLCDynStream::updateIssueClearCycle() {
   if (!this->shouldUpdateIssueClearCycle()) {
     return;
   }
-  // ! Hack: enforce issue clear cycle to 10 if we have sendTo.
-  // if (!this->sendToConfigs.empty()) {
-  //   // this->issueClearCycle = Cycles(20);
-  //   return;
-  // }
   const auto *dynS =
       this->configData->stream->getDynStream(this->configData->dynamicId);
   if (dynS == nullptr) {
@@ -492,26 +488,36 @@ void LLCDynStream::initNextElement(Addr vaddr) {
   this->idxToElementMap.emplace(strandElemIdx, element);
   this->nextInitStrandElemIdx++;
 
-  /**
-   * We populate the baseElements. If we are one iteration behind, we are
-   * depending on the previous baseElements.
-   * NOTE: Be careful with StreamElemIdx and StrandElemIdx.
-   */
-  auto baseStreamElemIdx = streamElemIdx;
-  if (this->isOneIterationBehind()) {
-    assert(streamElemIdx > 0 &&
-           "OneIterationBehind StreamElement begins at 1.");
-    baseStreamElemIdx = streamElemIdx - 1;
-  }
-  for (const auto &baseConfig : this->baseOnConfigs) {
+  for (auto i = 0; i < this->baseOnConfigs.size(); ++i) {
+
+    /**
+     * We populate the baseElements. If we are one iteration behind, we are
+     * depending on the previous baseElements.
+     * Adjust the BaseElemIdx to ReuseCount.
+     * NOTE: Here we need to adjust BaseStreamElemIdx with ReuseCount.
+     * NOTE: Be careful with StreamElemIdx and StrandElemIdx.
+     */
+    auto baseStreamElemIdx = streamElemIdx;
+    if (this->isOneIterationBehind()) {
+      assert(streamElemIdx > 0 &&
+             "OneIterationBehind StreamElement begins at 1.");
+      baseStreamElemIdx = streamElemIdx - 1;
+    }
+
+    auto &reusedBaseElem = this->reusedBaseElements.at(i);
+    const auto reuseCount = reusedBaseElem.reuse;
+    baseStreamElemIdx /= reuseCount;
+
+    const auto &baseConfig = this->baseOnConfigs.at(i);
     auto baseStrandId =
         baseConfig->getStrandIdFromStreamElemIdx(baseStreamElemIdx);
     auto baseStrandElemIdx =
         baseConfig->getStrandElemIdxFromStreamElemIdx(baseStreamElemIdx);
-    LLC_S_DPRINTF(
-        this->getDynStrandId(),
-        "Add BaseElem from %s StreamElemIdx %llu StrandElemIdx %llu.\n",
-        baseStrandId, baseStreamElemIdx, baseStrandElemIdx);
+    LLC_S_DPRINTF(this->getDynStrandId(),
+                  "Add BaseElem (Reuse %d) from %s StreamElemIdx %llu "
+                  "StrandElemIdx %llu.\n",
+                  reuseCount, baseStrandId, baseStreamElemIdx,
+                  baseStrandElemIdx);
     const auto &baseDynStreamId = baseConfig->dynamicId;
     auto baseS = baseConfig->stream;
     if (this->baseStream &&
@@ -530,23 +536,40 @@ void LLCDynStream::initNextElement(Addr vaddr) {
        * If this is a remote affine stream, we directly get the ElementVAddr.
        * Otherwise, we set the vaddr to 0 and delay setting it in
        * recvStreamForwawrd().
+       *
+       * If the ReuseCount > 1 we check if we can borrow from allocated element.
+       * If the ReuseCount is 1, we allocate the element.
+       * Otherwise, and we have the same
        */
-      Addr baseElementVaddr = 0;
-      auto linearBaseAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
-          baseConfig->addrGenCallback);
-      if (linearBaseAddrGen) {
-        baseElementVaddr =
-            baseConfig->addrGenCallback
-                ->genAddr(baseStreamElemIdx, baseConfig->addrGenFormalParams,
-                          getStreamValueFail)
-                .front();
-      }
+      LLCStreamElementPtr baseElem = nullptr;
+      if (reusedBaseElem.reuse > 1 && reusedBaseElem.elem &&
+          reusedBaseElem.streamElemIdx == baseStreamElemIdx) {
+        // We can reuse.
+        baseElem = reusedBaseElem.elem;
+      } else {
 
-      // TODO: Need to translate between StrandElemIdx and StreamElemIdx.
-      element->baseElements.emplace_back(std::make_shared<LLCStreamElement>(
-          baseS, this->mlcController, baseStrandId, baseStrandElemIdx,
-          baseElementVaddr, baseS->getMemElementSize(),
-          false /* isNDCElement */));
+        Addr baseElementVaddr = 0;
+        auto linearBaseAddrGen =
+            std::dynamic_pointer_cast<LinearAddrGenCallback>(
+                baseConfig->addrGenCallback);
+        if (linearBaseAddrGen) {
+          baseElementVaddr =
+              baseConfig->addrGenCallback
+                  ->genAddr(baseStreamElemIdx, baseConfig->addrGenFormalParams,
+                            getStreamValueFail)
+                  .front();
+        }
+
+        // TODO: Need to translate between StrandElemIdx and StreamElemIdx.
+        baseElem = std::make_shared<LLCStreamElement>(
+            baseS, this->mlcController, baseStrandId, baseStrandElemIdx,
+            baseElementVaddr, baseS->getMemElementSize(),
+            false /* isNDCElement */);
+      }
+      element->baseElements.emplace_back(baseElem);
+      // Update the ReusedStreamElem.
+      reusedBaseElem.elem = baseElem;
+      reusedBaseElem.streamElemIdx = baseStreamElemIdx;
     }
   }
   // Remember to add previous element as base element for reduction.
@@ -563,6 +586,14 @@ void LLCDynStream::initNextElement(Addr vaddr) {
           this->configData->reductionInitValue);
       this->lastComputedReductionElementIdx = firstElemIdx;
     }
+
+    auto baseStreamElemIdx = streamElemIdx;
+    if (this->isOneIterationBehind()) {
+      assert(streamElemIdx > 0 &&
+             "OneIterationBehind StreamElement begins at 1.");
+      baseStreamElemIdx = streamElemIdx - 1;
+    }
+
     if (this->lastReductionElement->idx != baseStreamElemIdx) {
       LLC_S_PANIC(
           this->getDynStrandId(),
@@ -701,6 +732,18 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
   if (this->isOneIterationBehind()) {
     recvElementIdx++;
   }
+
+  for (const auto &baseEdge : this->configData->baseEdges) {
+    if (baseEdge.dynStreamId == sliceId.getDynStreamId() &&
+        baseEdge.reuse != 1) {
+      LLC_SLICE_DPRINTF(
+          sliceId, "[Forward] Adjust RecvElementIdx %lu by Reuse %d = %lu.\n",
+          recvElementIdx, baseEdge.reuse, recvElementIdx * baseEdge.reuse);
+      recvElementIdx *= baseEdge.reuse;
+      break;
+    }
+  }
+
   auto S = this->getStaticS();
   if (!this->idxToElementMap.count(recvElementIdx)) {
     LLC_SLICE_PANIC(

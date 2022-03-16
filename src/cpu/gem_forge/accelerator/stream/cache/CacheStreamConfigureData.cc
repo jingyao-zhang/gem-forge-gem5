@@ -18,14 +18,29 @@ CacheStreamConfigureData::CacheStreamConfigureData(
   assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
 
-void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data) {
+void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data,
+                                         int reuse) {
+  assert(reuse == 1 && "UsedBy always has reuse 1.");
+  this->depEdges.emplace_back(DepEdge::Type::UsedBy, data, reuse);
+  data->baseEdges.emplace_back(BaseEdge::Type::BaseOn, this->shared_from_this(),
+                               reuse);
+}
+
+void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data,
+                                         int reuse) {
   for (const auto &edge : this->depEdges) {
     if (edge.type == DepEdge::Type::SendTo && edge.data == data) {
       // This is already here.
+      assert(edge.reuse == reuse && "Mismatch Reuse in SendTo.");
       return;
     }
   }
-  this->depEdges.emplace_back(DepEdge::Type::SendTo, data);
+  this->depEdges.emplace_back(DepEdge::Type::SendTo, data, reuse);
+}
+
+void CacheStreamConfigureData::addBaseOn(CacheStreamConfigureDataPtr &data,
+                                         int reuse) {
+  this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data, reuse);
 }
 
 bool CacheStreamConfigureData::canSplitIntoStrands() const {
@@ -201,12 +216,12 @@ CacheStreamConfigureData::splitIntoStrands(const StrandSplitInfo &strandSplit) {
 
     for (auto &dep : depEdges) {
       assert(dep.type == DepEdge::Type::SendTo && "Split Indirect.");
-      strand->addSendTo(dep.data);
+      strand->addSendTo(dep.data, dep.reuse);
     }
     for (auto &base : baseEdges) {
       auto baseConfig = base.data.lock();
       assert(baseConfig && "BaseConfig already released?");
-      strand->addBaseOn(baseConfig);
+      strand->addBaseOn(baseConfig, base.reuse);
     }
   }
 

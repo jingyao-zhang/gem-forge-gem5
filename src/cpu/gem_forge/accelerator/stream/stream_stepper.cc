@@ -108,6 +108,8 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
 
       auto &dynGroup = dynGroups[groupIdx];
       dynGroup.totalTripCount = dynS.getTotalTripCount();
+      DYN_S_DPRINTF(dynS.dynStreamId, "[Stepper] Get TotalTripCount %ld.\n",
+                    dynGroup.totalTripCount);
 
       if (groupIdx > 0) {
         auto &prevDynGroup = dynGroups[groupIdx - 1];
@@ -121,7 +123,11 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
           }
         } else {
           // Generate LevelTripCount for previous level.
-          assert(prevDynGroup.totalTripCount > dynGroup.totalTripCount);
+          if (prevDynGroup.totalTripCount < dynGroup.totalTripCount) {
+            panic("[Stepper] PrevGroup Loop %d Trip %ld <= Group %d Trip %ld.",
+                  prevDynGroup.loopLevel, prevDynGroup.totalTripCount,
+                  dynGroup.loopLevel, dynGroup.totalTripCount);
+          }
           assert(prevDynGroup.totalTripCount % dynGroup.totalTripCount == 0);
           auto levelTripCount =
               prevDynGroup.totalTripCount / dynGroup.totalTripCount;

@@ -295,6 +295,17 @@ public:
    */
   std::vector<CacheStreamConfigureDataPtr> baseOnConfigs;
 
+  /**
+   * Remember the currently reused BaseElement.
+   */
+  struct ReusedBaseElement {
+    const int reuse = 1;
+    uint64_t streamElemIdx = 0;
+    LLCStreamElementPtr elem = nullptr;
+    ReusedBaseElement(int _reuse) : reuse(_reuse) {}
+  };
+  std::vector<ReusedBaseElement> reusedBaseElements;
+
   // Base stream.
   LLCDynStream *baseStream = nullptr;
 

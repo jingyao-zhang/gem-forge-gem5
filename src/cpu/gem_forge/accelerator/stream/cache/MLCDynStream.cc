@@ -63,7 +63,7 @@ MLCDynStream::MLCDynStream(CacheStreamConfigureDataPtr _configData,
   // Remember the SendTo configs.
   for (auto &depEdge : this->config->depEdges) {
     if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
-      this->sendToConfigs.emplace_back(depEdge.data);
+      this->sendToEdges.push_back(depEdge);
     }
   }
 }

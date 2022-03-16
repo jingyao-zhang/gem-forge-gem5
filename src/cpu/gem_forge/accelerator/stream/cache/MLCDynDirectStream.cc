@@ -75,17 +75,25 @@ MLCDynDirectStream::MLCDynDirectStream(
    * This causes problem when the sender is very small, e.g. 1 byte.
    * So we limit the maxNumSlicesPerSegment for these streams.
    */
-  if (!this->sendToConfigs.empty()) {
+  if (!this->sendToEdges.empty()) {
     auto S = this->getStaticStream();
     auto memElementSize = S->getMemElementSize();
     auto maxRatio = 1;
-    for (const auto &sendToConfig : this->sendToConfigs) {
+    for (const auto &sendToEdge : this->sendToEdges) {
+      const auto &sendToConfig = sendToEdge.data;
       auto sendToMemElementSize = sendToConfig->stream->getMemElementSize();
+
+      // Adjust for the reuse.
+      sendToMemElementSize *= sendToEdge.reuse;
+
       auto ratio = sendToMemElementSize / memElementSize;
       maxRatio = std::max(maxRatio, ratio);
     }
     auto originalMaxNumSlicesPerSegment = this->maxNumSlicesPerSegment;
-    if (maxRatio * 2 >= this->maxNumSlicesPerSegment) {
+    if (maxRatio > this->maxNumSlicesPerSegment) {
+      this->maxNumSlicesPerSegment = 1;
+      this->maxNumSlices = 1;
+    } else if (maxRatio * 2 >= this->maxNumSlicesPerSegment) {
       this->maxNumSlicesPerSegment = 2;
     } else {
       this->maxNumSlicesPerSegment /= maxRatio;
@@ -358,27 +366,33 @@ void MLCDynDirectStream::trySendCreditToLLC() {
      * We should also check receiver from my indirect streams.
      * Skip if the receiver is myself, which is used for Two-Level Indirection.
      *
+     * NOTE: Here we need to adjust for ReuseCount for StreamElemIdx.
+     *
      * Be careful to handle strand and stream.
      * TODO: So far we are just checking that TailStreamElemIdx is allocated
      * TODO: at TailStrand. This implicitly assumes that we are forwarding to
      * TODO: a single strand. However, the general case is to have multiple
      * TODO: receiving strands, and we need to check for all slices.
      */
-    const auto tailStrandElemIdx =
-        segment.sliceIds.sliceIds.back().getEndIdx() - 1;
-    const auto tailStreamElemIdx =
+    auto tailStrandElemIdx = segment.sliceIds.sliceIds.back().getEndIdx() - 1;
+    auto tailStreamElemIdx =
         this->config->getStreamElemIdxFromStrandElemIdx(tailStrandElemIdx);
+
     LLCDynStreamPtr waitForRecvS = nullptr;
     uint64_t waitForRecvStrandElemIdx = 0;
 
-    for (const auto &sendToConfig : this->sendToConfigs) {
+    for (const auto &sendToEdge : this->sendToEdges) {
+      const auto &sendToConfig = sendToEdge.data;
       if (sendToConfig->dynamicId == this->getDynStreamId()) {
         continue;
       }
+
+      auto recvStreamElemIdx = tailStreamElemIdx * sendToEdge.reuse;
+
       auto recvStrandId =
-          sendToConfig->getStrandIdFromStreamElemIdx(tailStreamElemIdx);
+          sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
       auto recvStrandElemIdx =
-          sendToConfig->getStrandElemIdxFromStreamElemIdx(tailStreamElemIdx);
+          sendToConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
 
       if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
         if (!recvRemoteS->isElementInitialized(recvStrandElemIdx)) {
@@ -391,13 +405,16 @@ void MLCDynDirectStream::trySendCreditToLLC() {
 
     if (!waitForRecvS) {
       for (auto dynIS : this->indirectStreams) {
-        for (const auto &sendToConfig : dynIS->getSendToConfigs()) {
+        for (const auto &sendToEdge : dynIS->getSendToEdges()) {
+
+          const auto &sendToConfig = sendToEdge.data;
+          auto recvStreamElemIdx = tailStreamElemIdx / sendToEdge.reuse;
 
           auto recvStrandId =
-              sendToConfig->getStrandIdFromStreamElemIdx(tailStreamElemIdx);
+              sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
           auto recvStrandElemIdx =
               sendToConfig->getStrandElemIdxFromStreamElemIdx(
-                  tailStreamElemIdx);
+                  recvStreamElemIdx);
 
           if (auto recvRemoteS = LLCDynStream::getLLCStream(recvStrandId)) {
             if (!recvRemoteS->isElementInitialized(recvStrandElemIdx)) {

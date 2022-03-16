@@ -37,8 +37,9 @@ std::string to_string(const DynStream::StreamDepEdge::TypeE &type) {
 DynStream::DynStream(Stream *_stream, const DynStreamId &_dynStreamId,
                      uint64_t _configSeqNum, Cycles _configCycle,
                      ThreadContext *_tc, StreamEngine *_se)
-    : stream(_stream), dynStreamId(_dynStreamId), configSeqNum(_configSeqNum),
-      configCycle(_configCycle), tc(_tc), FIFOIdx(_dynStreamId) {
+    : stream(_stream), se(_se), dynStreamId(_dynStreamId),
+      configSeqNum(_configSeqNum), configCycle(_configCycle), tc(_tc),
+      FIFOIdx(_dynStreamId) {
   this->tail = new StreamElement(_se);
   this->head = this->tail;
   this->stepped = this->tail;
@@ -130,6 +131,16 @@ void DynStream::addBaseDynStreams() {
                                        this->dynStreamId.streamInstance,
                                        edge.toStaticId);
   }
+}
+
+int DynStream::getBaseElemReuseCount(Stream *baseS) const {
+  for (const auto &edge : this->baseEdges) {
+    if (this->se->getStream(edge.baseStaticId) == baseS) {
+      return edge.reuseBaseElement;
+    }
+  }
+  DYN_S_PANIC(this->dynStreamId, "Failed to find BaseStream %s.",
+              baseS->getStreamName());
 }
 
 DynStream::StreamEdges &

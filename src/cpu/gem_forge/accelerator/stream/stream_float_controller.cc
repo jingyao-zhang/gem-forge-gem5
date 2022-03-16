@@ -275,6 +275,10 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
     if (floatedMap.count(S)) {
       continue;
     }
+    if (S->isDelayIssueUntilFIFOHead()) {
+      // Delayed streams usually has alias problem. Do not offload.
+      continue;
+    }
     if (!S->isDirectLoadStream()) {
       continue;
     }
@@ -338,8 +342,9 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
                     valueBaseS->getStreamName());
       }
       auto &valueBaseConfig = floatedMap.at(valueBaseS);
-      valueBaseConfig->addSendTo(config);
-      config->addBaseOn(valueBaseConfig);
+      auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
+      valueBaseConfig->addSendTo(config, reuse);
+      config->addBaseOn(valueBaseConfig, reuse);
     }
 
     // Remember the pseudo offloaded decision.
@@ -394,7 +399,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
     baseConfig->isOneIterationBehind = true;
     addrBaseDynS.setFloatedOneIterBehind(true);
     // We revert the usage edge, because in cache MemStream serves as root.
-    config->addUsedBy(baseConfig);
+    config->addUsedBy(baseConfig, 1 /* reuse */);
     if (!S->valueBaseStreams.empty()) {
       S_PANIC(S, "PointerChaseStream with ValueBaseStreams is not supported.");
     }
@@ -470,15 +475,16 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     // Only dependent on this direct stream.
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum,
                                                 true /* isIndirect */);
-    baseConfig->addUsedBy(config);
+    baseConfig->addUsedBy(config, 1 /* reuse */);
     // Add SendTo edges if the ValueBaseStream is not my AddrBaseStream.
     for (auto valueBaseS : S->valueBaseStreams) {
       if (valueBaseS == addrBaseS) {
         continue;
       }
       auto &valueBaseConfig = floatedMap.at(valueBaseS);
-      valueBaseConfig->addSendTo(config);
-      config->addBaseOn(valueBaseConfig);
+      auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
+      valueBaseConfig->addSendTo(config, reuse);
+      config->addBaseOn(valueBaseConfig, reuse);
     }
     DYN_S_DPRINTF(dynS->dynStreamId, "Offload as indirect.\n");
     StreamFloatPolicy::logS(*dynS) << "[Float] as indirect.\n" << std::flush;
@@ -527,8 +533,9 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
     for (auto valueBaseS : S->valueBaseStreams) {
       auto &valueBaseConfig = floatedMap.at(valueBaseS);
-      valueBaseConfig->addSendTo(config);
-      config->addBaseOn(valueBaseConfig);
+      auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
+      valueBaseConfig->addSendTo(config, reuse);
+      config->addBaseOn(valueBaseConfig, reuse);
     }
     S_DPRINTF(S, "Offload DirectStoreStream.\n");
     floatedMap.emplace(S, config);
@@ -642,7 +649,7 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
     // Make all others send to that one.
     auto &baseConfigWithMostSenders =
         backBaseStreamConfigs.at(baseConfigIdxWithMostSenders);
-    baseConfigWithMostSenders->addUsedBy(reductionConfig);
+    baseConfigWithMostSenders->addUsedBy(reductionConfig, 1 /* reuse */);
     S_DPRINTF(S, "ReductionStream associated with %s, existing sender %d.\n",
               baseConfigWithMostSenders->dynamicId, maxSenders);
     StreamFloatPolicy::logS(*dynS)
@@ -654,8 +661,9 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
         continue;
       }
       auto &backBaseConfig = backBaseStreamConfigs.at(i);
-      backBaseConfig->addSendTo(baseConfigWithMostSenders);
-      reductionConfig->addBaseOn(backBaseConfig);
+      auto reuse = dynS->getBaseElemReuseCount(backBaseConfig->stream);
+      backBaseConfig->addSendTo(baseConfigWithMostSenders, reuse);
+      reductionConfig->addBaseOn(backBaseConfig, reuse);
     }
   }
 }
@@ -768,7 +776,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   floatedMap.emplace(S, reductionConfig);
 
   // Add UsedBy edge to the BackBaseIndirectS.
-  backBaseIndirectConfig->addUsedBy(reductionConfig);
+  backBaseIndirectConfig->addUsedBy(reductionConfig, 1 /* reuse */);
   S_DPRINTF(S, "Float IndirectReductionStream associated with %s.\n",
             backBaseIndirectConfig->dynamicId);
   StreamFloatPolicy::logS(*dynS)
@@ -783,8 +791,9 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
      * with the IndirectReductionS as the receiver.
      */
     auto &backBaseDirectConfig = floatedMap.at(backBaseDirectS);
-    backBaseDirectConfig->addSendTo(backBaseDirectConfig);
-    reductionConfig->addBaseOn(backBaseDirectConfig);
+    auto reuse = dynS->getBaseElemReuseCount(backBaseDirectConfig->stream);
+    backBaseDirectConfig->addSendTo(backBaseDirectConfig, reuse);
+    reductionConfig->addBaseOn(backBaseDirectConfig, reuse);
     StreamFloatPolicy::logS(*dynS)
         << "[Float] as IndirectReduction with BackBaseDirectS "
         << backBaseDirectConfig->dynamicId << ".\n"
@@ -858,7 +867,7 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
   auto myConfig =
       S->allocateCacheConfigureData(dynS->configSeqNum, true /* isIndirect */);
   floatedMap.emplace(S, myConfig);
-  addrBaseConfig->addUsedBy(myConfig);
+  addrBaseConfig->addUsedBy(myConfig, 1 /* Reuse */);
 
   StreamFloatPolicy::logS(*dynS)
       << "[Float] as Two-Level IndirectStoreCompute associated with "
@@ -868,8 +877,9 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
   // Add special SendTo edge from AddrRootS to itself if needed.
   for (auto valueBaseS : S->valueBaseStreams) {
     if (valueBaseS == addrRootS) {
-      addrRootConfig->addSendTo(addrRootConfig);
-      myConfig->addBaseOn(addrRootConfig);
+      auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
+      addrRootConfig->addSendTo(addrRootConfig, reuse);
+      myConfig->addBaseOn(addrRootConfig, reuse);
       StreamFloatPolicy::logS(*dynS)
           << "[Float] as Two-Level IndirectStoreCompute based on "
           << addrRootConfig->dynamicId << "\n"
