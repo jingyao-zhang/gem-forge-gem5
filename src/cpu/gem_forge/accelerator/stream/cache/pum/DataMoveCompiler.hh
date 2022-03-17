@@ -84,10 +84,10 @@ public:
 
   PUMCommandVecT compile(const AffinePattern &src_stream,
                          const AffinePattern &dst_stream) const {
-    return analyze_stream_pair(src_stream, dst_stream);
+    return compileStreamPair(src_stream, dst_stream);
   }
 
-  IntVecT get_sub_region_start(const AffinePattern &sub_region) const {
+  IntVecT getSubRegionStart(const AffinePattern &sub_region) const {
     // This is S1x...xSi
     return sub_region.get_sub_region_start_to_array_size(array_sizes);
   }
@@ -98,20 +98,8 @@ public:
                                                          allow_reuse);
   }
 
-  AffinePattern
-  fix_reuse_in_canonical_sub_region(const AffinePattern &pattern) const {
-    assert(is_canonical_sub_region(pattern, true));
-    ParamVecT fixed_params;
-    for (const auto &p : pattern.params) {
-      auto stride = (p.stride == 0) ? 1 : p.stride;
-      auto trip = (p.stride == 0) ? 1 : p.trip;
-      fixed_params.emplace_back(stride, trip);
-    }
-    return AffinePattern(pattern.start, fixed_params);
-  }
-
-  void can_handle_stream_pair(const AffinePattern &src_stream,
-                              const AffinePattern &dst_stream) const {
+  void canCompileStreamPair(const AffinePattern &src_stream,
+                            const AffinePattern &dst_stream) const {
     assert(is_canonical_sub_region(dst_stream));
     assert(is_canonical_sub_region(src_stream, true));
     assert(src_stream.params.size() == dst_stream.params.size());
@@ -122,106 +110,51 @@ public:
     }
   }
 
-  PUMCommandVecT analyze_stream_pair(const AffinePattern &src_stream,
-                                     const AffinePattern &dst_stream) const;
+  PUMCommandVecT compileStreamPair(const AffinePattern &srcStream,
+                                   const AffinePattern &dstStream) const;
 
-  PUMCommandVecT compile_align_and_reuse(
-      const std::vector<std::pair<int64_t, int64_t>> &base_aligns,
-      const std::vector<std::pair<int64_t, int64_t>> &reuses) const {
-    assert(reuses.empty());
-    assert(base_aligns.size() == 1);
-    auto dim = base_aligns[0].first;
-    auto distance = base_aligns[0].second;
-    return compile_one_align(dim, distance);
-  }
+  AffinePattern removeReuseInSubRegion(const AffinePattern &pattern) const;
 
-  PUMCommandVecT compile_one_align(int64_t dim, int64_t distance) const {
-    /**
-      Generate hierarchical data move commands:
-      1. Within each tile (SRAM array).
-      2. Boundary case:
-          For dimensions between [0, dim), data is continous layout.
-          For dimensions between (dim, D), data is incontinuous.
-      Thus, we need one command to move [0, dim) to the correct location.
-      Finally, we need to split traffic across tiles with different level
-      of LLC configuration.
-     */
-    assert(dim < dimension);
-    auto abs_dist = std::abs(distance);
-    if (abs_dist < tile_sizes[dim]) {
-      return handle_align_smaller_than_tile_size(dim, distance);
-    } else {
-      assert(abs_dist % tile_sizes[dim] == 0);
-      assert(false);
-    }
-  }
+  /**
+   * Compile data move instruction to align at certain dimension.
+   */
+  PUMCommandVecT
+  compileAligns(const std::vector<std::pair<int64_t, int64_t>> &aligns) const;
+  PUMCommandVecT compileAlign(int64_t dim, int64_t distance) const;
+  PUMCommandVecT compileAlignLessThanTileSize(int64_t dim,
+                                              int64_t distance) const;
 
-  PUMCommandVecT handle_align_smaller_than_tile_size(int64_t dim,
-                                                     int64_t distance) const;
-
+  /**
+   * Mask commands by sub-region.
+   */
   using MaskT = std::tuple<int64_t, int64_t, int64_t>;
   using MaskVecT = std::vector<MaskT>;
 
-  AffinePattern merge_masks(const MaskVecT &masks,
-                            const IntVecT &inner_sizes) const {
-    int64_t start = 0;
-    ParamVecT params;
-    for (auto i = 0; i < dimension; ++i) {
-      auto dim_start = std::get<0>(masks[i]);
-      auto dim_stride = std::get<1>(masks[i]);
-      auto dim_trip = std::get<2>(masks[i]);
-      start += dim_start * inner_sizes[i];
-      auto stride = dim_stride * inner_sizes[i];
-      auto trip = dim_trip;
-      params.emplace_back(stride, trip);
-    }
-    return AffinePattern(start, params);
-  }
-
+  AffinePattern mergeMasks(const MaskVecT &masks,
+                           const IntVecT &inner_sizes) const;
   AffinePattern mergeBitlineMasks(const MaskVecT &bitline_masks) const;
+  AffinePattern mergeTileMasks(const MaskVecT &tile_masks) const;
+  AffinePattern intersectBitlineMasks(const AffinePattern &bitline_mask1,
+                                      const AffinePattern &bitline_mask2) const;
+  PUMCommandVecT maskCmdsBySubRegion(const PUMCommandVecT &commands,
+                                     const AffinePattern &sub_region) const;
 
-  AffinePattern merge_tile_masks(const MaskVecT &tile_masks) const {
-    assert(tile_masks.size() == dimension);
-    IntVecT tile_nums;
-    for (auto i = 0; i < dimension; ++i) {
-      auto a = array_sizes[i];
-      auto t = tile_sizes[i];
-      auto s = (a + t - 1) / t;
-      tile_nums.push_back(s);
-    }
-    IntVecT inner_tile_nums;
-    for (auto i = 0; i < dimension; ++i) {
-      auto s = AffinePattern::reduce_mul(tile_nums.cbegin(),
-                                         tile_nums.cbegin() + i, 1);
-      inner_tile_nums.push_back(s);
-    }
-    return merge_masks(tile_masks, inner_tile_nums);
-  }
+  void recursiveMaskSubRegionAtDim(const AffinePattern &sub_region, int64_t dim,
+                                   MaskVecT &bitline_maskes,
+                                   MaskVecT &tile_masks,
+                                   AffinePatternVecT &final_bitline_masks,
+                                   AffinePatternVecT &final_tile_masks) const;
 
-  AffinePattern
-  intersect_bitline_masks(const AffinePattern &bitline_mask1,
-                          const AffinePattern &bitline_mask2) const {
-    return AffinePattern::intersect_sub_regions(tile_sizes, bitline_mask1,
-                                                bitline_mask2);
-  }
+  /**
+   * Map commands to LLC.
+   */
+  PUMCommandVecT mapCmdsToLLC(const PUMCommandVecT &commands) const;
 
-  PUMCommandVecT
-  mask_commands_by_sub_region(const PUMCommandVecT &commands,
-                              const AffinePattern &sub_region) const;
+  void
+  mapCmdToLLC(PUMCommand &command,
+              const std::vector<AffinePatternVecT> &llcBankSubRegions) const;
 
-  PUMCommandVecT map_commands_to_llc(const PUMCommandVecT &commands) const;
-
-private:
-  void recursive_mask_sub_region_at_dim(
-      const AffinePattern &sub_region, int64_t dim, MaskVecT &bitline_maskes,
-      MaskVecT &tile_masks, AffinePatternVecT &final_bitline_masks,
-      AffinePatternVecT &final_tile_masks) const;
-
-  void map_command_to_llc(
-      PUMCommand &command,
-      const std::vector<AffinePatternVecT> &llc_bank_sub_regions) const;
-
-  void split_inter_array_command_to_llc(PUMCommand &command) const;
+  void splitInterArrayCmdToLLC(PUMCommand &command) const;
 };
 
 #endif

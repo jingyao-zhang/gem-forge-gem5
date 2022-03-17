@@ -78,12 +78,21 @@ private:
   bool canApplyPUM(Args &args);
 
   /**
-   * Decoalesce stream pattern.
+   * Decoalesce and devectorize stream pattern.
    */
   AffinePatternVecT
   decoalesceAndDevectorizePattern(const CacheStreamConfigureDataPtr &config,
                                   const AffinePattern &pattern,
                                   int scalarElemSize);
+
+  /**
+   * Translate outer-loop stream into inner-loop stream pattern, with the reuse
+   * explicitly represented in the pattern.
+   */
+  AffinePattern
+  addReuseToOuterPattern(const CacheStreamConfigureDataPtr &outerConfig,
+                         const CacheStreamConfigureDataPtr &innerConfig,
+                         const AffinePattern &pattern) const;
 
   /**
    * Generate the commands.

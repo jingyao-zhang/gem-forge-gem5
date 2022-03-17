@@ -466,9 +466,9 @@ public:
     return sub_regions;
   }
 
-  static AffinePattern intersect_sub_regions(const IntVecT &array_sizes,
-                                             const AffinePattern &region1,
-                                             const AffinePattern &region2);
+  static AffinePattern intersectSubRegions(const IntVecT &array_sizes,
+                                           const AffinePattern &region1,
+                                           const AffinePattern &region2);
 
   IntVecT generate_all_values() const {
     IntVecT values(get_total_trip(), 0);
@@ -480,7 +480,8 @@ public:
 };
 
 std::ostream &operator<<(std::ostream &os, const AffinePattern &pattern);
-std::ostream &operator<<(std::ostream &os, const AffinePattern::IntVecT &intVec);
+std::ostream &operator<<(std::ostream &os,
+                         const AffinePattern::IntVecT &intVec);
 
 using AffinePatternVecT = std::vector<AffinePattern>;
 

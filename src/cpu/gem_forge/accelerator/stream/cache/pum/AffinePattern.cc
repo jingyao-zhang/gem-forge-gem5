@@ -49,10 +49,9 @@ std::ostream &operator<<(std::ostream &os,
   return os;
 }
 
-AffinePattern
-AffinePattern::intersect_sub_regions(const IntVecT &array_sizes,
-                                     const AffinePattern &region1,
-                                     const AffinePattern &region2) {
+AffinePattern AffinePattern::intersectSubRegions(const IntVecT &array_sizes,
+                                                 const AffinePattern &region1,
+                                                 const AffinePattern &region2) {
 
   if (!region1.is_canonical_sub_region_to_array_size(array_sizes)) {
     panic("Region1 %s Not SubRegion in Array %s.", region1, array_sizes);

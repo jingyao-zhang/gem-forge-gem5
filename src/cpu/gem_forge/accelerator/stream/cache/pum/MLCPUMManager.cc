@@ -68,13 +68,8 @@ bool MLCPUMManager::canApplyPUM(Args &args,
     MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] Not Eliminated.\n");
     return false;
   }
-  if (config->stream->isStoreComputeStream()) {
+  if (config->stream->getEnabledStoreFunc()) {
     args.numStoreStreams++;
-    if (args.numStoreStreams > 1) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
-                     "[PUM] Multi StoreStream.\n");
-      return false;
-    }
   }
   for (const auto &dep : config->depEdges) {
     if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
@@ -273,7 +268,8 @@ void MLCPUMManager::compileDataMove(Args &args,
   const auto &patternInfo = args.patternInfo.at(S);
   auto myTile = patternInfo.pumTile;
 
-  MLC_S_DPRINTF(config->dynamicId, "[PUM] DataMove Tile %s.\n", myTile);
+  MLC_S_DPRINTF(config->dynamicId, "[PUM] --- Compile DataMove. MyTile %s.\n",
+                myTile);
   DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
 
   for (const auto &dep : config->depEdges) {
@@ -297,16 +293,18 @@ void MLCPUMManager::compileDataMove(Args &args,
                   recvPattern);
 
     for (const auto &myPattern : patternInfo.atomicPatterns) {
-      MLC_S_DPRINTF(config->dynamicId, "[PUM] DataMove Pattern %s ->.\n",
-                    myPattern);
+      MLC_S_DPRINTF(config->dynamicId, "[PUM] SendPattern %s.\n", myPattern);
 
-      auto commands = compiler.compile(myPattern, recvPattern);
+      auto reusedMyPattern =
+          this->addReuseToOuterPattern(config, recvConfig, myPattern);
+
+      auto commands = compiler.compile(reusedMyPattern, recvPattern);
       // Generate the meta information.
       for (auto &cmd : commands) {
         cmd.wordline_bits = patternInfo.scalarElemSize * 8;
         cmd.dynStreamId = config->dynamicId;
         cmd.srcRegion = patternInfo.regionName;
-        cmd.srcAccessPattern = myPattern;
+        cmd.srcAccessPattern = reusedMyPattern;
         cmd.srcMapPattern = myTile;
         cmd.dstRegion = recvPatternInfo.regionName;
         cmd.dstAccessPattern = recvPattern;
@@ -360,6 +358,39 @@ AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
   }
 
   return ret;
+}
+
+AffinePattern MLCPUMManager::addReuseToOuterPattern(
+    const CacheStreamConfigureDataPtr &outerConfig,
+    const CacheStreamConfigureDataPtr &innerConfig,
+    const AffinePattern &pattern) const {
+
+  auto outerS = outerConfig->stream;
+  auto innerS = innerConfig->stream;
+  assert(outerS->getLoopLevel() <= innerS->getLoopLevel() &&
+         "Outer should be outside.");
+  if (outerS->getLoopLevel() == innerS->getLoopLevel()) {
+    // Nothing to do.
+    return pattern;
+  }
+
+  assert(outerConfig->hasTotalTripCount());
+  assert(innerConfig->hasTotalTripCount());
+  auto outerTripCount = outerConfig->getTotalTripCount();
+  auto innerTripCount = innerConfig->getTotalTripCount();
+  assert(innerTripCount % outerTripCount == 0);
+  auto reuseCount = innerTripCount / outerTripCount;
+
+  /**
+   * TODO: Handle when LoopLevel difference is greater than 1.
+   */
+  auto start = pattern.start;
+  auto params = pattern.params;
+  params.insert(params.begin(), AffinePattern::Param(0, reuseCount));
+  auto reusedPattern = AffinePattern(start, params);
+  MLC_S_DPRINTF(outerConfig->dynamicId, "[PUM] AddReuse %ld -> %s.\n",
+                reuseCount, reusedPattern);
+  return reusedPattern;
 }
 
 void MLCPUMManager::reachSync(int sentPackets) {
@@ -489,7 +520,7 @@ void MLCPUMManager::compileCompute(Args &args,
   MLC_S_DPRINTF(config->dynamicId, "Before masked.\n");
 
   // Mask the commands by the Stream.
-  commands = compiler.mask_commands_by_sub_region(commands, pattern);
+  commands = compiler.maskCmdsBySubRegion(commands, pattern);
 
   if (Debug::StreamPUM) {
     for (const auto &command : commands) {
@@ -499,7 +530,7 @@ void MLCPUMManager::compileCompute(Args &args,
   MLC_S_DPRINTF(config->dynamicId, "Before mapped to LLC.\n");
 
   // Generate mask for each LLC bank.
-  commands = compiler.map_commands_to_llc(commands);
+  commands = compiler.mapCmdsToLLC(commands);
 
   // Generate the meta information.
   for (auto &cmd : commands) {

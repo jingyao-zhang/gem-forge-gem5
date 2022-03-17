@@ -61,7 +61,7 @@ Stream::Stream(const StreamArguments &args)
    * and then restart. However, here I do not issue unless the element
    * reached the head of the queue.
    */
-  if (this->getStreamName() == "gfm.gaussian_elim.diag.ld" ||
+  if (this->getStreamName() == "gfm.gaussian_elim.akk.ld" ||
       this->getStreamName() == "gfm.gaussian_elim.bk.ld") {
     this->setDelayIssueUntilFIFOHead();
   }

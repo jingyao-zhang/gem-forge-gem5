@@ -4,24 +4,26 @@
 #include "debug/StreamPUM.hh"
 
 PUMCommandVecT
-DataMoveCompiler::analyze_stream_pair(const AffinePattern &src_stream,
-                                      const AffinePattern &dst_stream) const {
-  can_handle_stream_pair(src_stream, dst_stream);
+DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
+                                    const AffinePattern &dstStream) const {
+  canCompileStreamPair(srcStream, dstStream);
 
-  auto src_starts = get_sub_region_start(src_stream);
-  auto dst_starts = get_sub_region_start(dst_stream);
+  // Generate the start alignments.
+  auto srcStarts = getSubRegionStart(srcStream);
+  auto dstStarts = getSubRegionStart(dstStream);
 
-  std::vector<std::pair<int64_t, int64_t>> base_aligns;
+  std::vector<std::pair<int64_t, int64_t>> aligns;
   for (auto i = 0; i < dimension; ++i) {
-    if (src_starts[i] != dst_starts[i]) {
-      base_aligns.emplace_back(i, dst_starts[i] - src_starts[i]);
+    if (srcStarts[i] != dstStarts[i]) {
+      aligns.emplace_back(i, dstStarts[i] - srcStarts[i]);
     }
   }
-  assert(base_aligns.size() <= 1);
+  assert(aligns.size() <= 1);
 
+  // Record the reused dimension and reused count.
   std::vector<std::pair<int64_t, int64_t>> reuses;
   for (auto i = 0; i < dimension; ++i) {
-    const auto &p = src_stream.params[i];
+    const auto &p = srcStream.params[i];
     if (p.stride == 0) {
       // This is reuse dimension.
       reuses.emplace_back(i, p.trip);
@@ -29,34 +31,87 @@ DataMoveCompiler::analyze_stream_pair(const AffinePattern &src_stream,
   }
   assert(reuses.size() <= 1);
 
-  if (!reuses.empty() && !base_aligns.empty()) {
-    assert(reuses.size() == base_aligns.size());
+  if (!reuses.empty() && !aligns.empty()) {
+    assert(reuses.size() == aligns.size());
     for (auto i = 0; i < reuses.size(); ++i) {
       // Assert that reuse and base align are along the same dimension
-      assert(reuses[i].first == base_aligns[i].first);
+      assert(reuses[i].first == aligns[i].first);
     }
   }
 
-  if (base_aligns.size() == 0) {
+  if (aligns.size() == 0) {
     // Nothing to align.
+    assert(reuses.empty() && "Reuse when no align is not supported.");
     return PUMCommandVecT();
   }
 
-  auto commands = compile_align_and_reuse(base_aligns, reuses);
+  assert(reuses.empty() && "Reuse not supported yet.");
 
-  auto no_reuse_src_sub_region = fix_reuse_in_canonical_sub_region(src_stream);
+  /**
+   * The overall compile flow:
+   * 1. Compile for general data move insts to align along certain dimension.
+   * 2. Mask commands the src sub-region without reuse.
+   * 3. Mask commands with reuses (at the dst).
+   * 4. Map commands to LLC banks.
+   */
 
-  commands = mask_commands_by_sub_region(commands, no_reuse_src_sub_region);
+  auto commands = compileAligns(aligns);
+
+  auto no_reuse_src_sub_region = removeReuseInSubRegion(srcStream);
+
+  commands = maskCmdsBySubRegion(commands, no_reuse_src_sub_region);
 
   // Map commands to LLC configuration.
-  commands = map_commands_to_llc(commands);
+  commands = mapCmdsToLLC(commands);
 
   return commands;
 }
 
+AffinePattern
+DataMoveCompiler::removeReuseInSubRegion(const AffinePattern &pattern) const {
+  assert(is_canonical_sub_region(pattern, true));
+  ParamVecT fixed_params;
+  for (const auto &p : pattern.params) {
+    auto stride = (p.stride == 0) ? 1 : p.stride;
+    auto trip = (p.stride == 0) ? 1 : p.trip;
+    fixed_params.emplace_back(stride, trip);
+  }
+  return AffinePattern(pattern.start, fixed_params);
+}
+
+PUMCommandVecT DataMoveCompiler::compileAligns(
+    const std::vector<std::pair<int64_t, int64_t>> &aligns) const {
+  assert(aligns.size() == 1);
+  auto dim = aligns[0].first;
+  auto distance = aligns[0].second;
+  return compileAlign(dim, distance);
+}
+
+PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
+                                              int64_t distance) const {
+  /**
+    Generate hierarchical data move commands:
+    1. Within each tile (SRAM array).
+    2. Boundary case:
+        For dimensions between [0, dim), data is continous layout.
+        For dimensions between (dim, D), data is incontinuous.
+    Thus, we need one command to move [0, dim) to the correct location.
+    Finally, we need to split traffic across tiles with different level
+    of LLC configuration.
+   */
+  assert(dim < dimension);
+  auto abs_dist = std::abs(distance);
+  if (abs_dist < tile_sizes[dim]) {
+    return compileAlignLessThanTileSize(dim, distance);
+  } else {
+    assert(abs_dist % tile_sizes[dim] == 0);
+    assert(false);
+  }
+}
+
 PUMCommandVecT
-DataMoveCompiler::handle_align_smaller_than_tile_size(int64_t dim,
-                                                      int64_t distance) const {
+DataMoveCompiler::compileAlignLessThanTileSize(int64_t dim,
+                                               int64_t distance) const {
   PUMCommandVecT commands;
 
   auto abs_dist = std::abs(distance);
@@ -133,8 +188,166 @@ DataMoveCompiler::handle_align_smaller_than_tile_size(int64_t dim,
   return commands;
 }
 
-PUMCommandVecT DataMoveCompiler::mask_commands_by_sub_region(
-    const PUMCommandVecT &commands, const AffinePattern &sub_region) const {
+/******************************************************************************
+ * Mask commands by SubRegion.
+ ******************************************************************************/
+
+AffinePattern DataMoveCompiler::mergeMasks(const MaskVecT &masks,
+                                           const IntVecT &inner_sizes) const {
+  int64_t start = 0;
+  ParamVecT params;
+  for (auto i = 0; i < dimension; ++i) {
+    auto dim_start = std::get<0>(masks[i]);
+    auto dim_stride = std::get<1>(masks[i]);
+    auto dim_trip = std::get<2>(masks[i]);
+    start += dim_start * inner_sizes[i];
+    auto stride = dim_stride * inner_sizes[i];
+    auto trip = dim_trip;
+    params.emplace_back(stride, trip);
+  }
+  return AffinePattern(start, params);
+}
+
+AffinePattern
+DataMoveCompiler::mergeBitlineMasks(const MaskVecT &bitlineMasks) const {
+  assert(bitlineMasks.size() == dimension);
+  IntVecT innerTileSizes;
+  for (auto i = 0; i < dimension; ++i) {
+    auto s = AffinePattern::reduce_mul(tile_sizes.cbegin(),
+                                       tile_sizes.cbegin() + i, 1);
+    innerTileSizes.push_back(s);
+    auto trip = std::get<2>(bitlineMasks[i]);
+    if (trip > tile_sizes[i]) {
+      panic("BitlineMask Trip %ld Overflow Tile %ld.", trip, tile_sizes[i]);
+    }
+  }
+  return mergeMasks(bitlineMasks, innerTileSizes);
+}
+
+AffinePattern
+DataMoveCompiler::mergeTileMasks(const MaskVecT &tile_masks) const {
+  assert(tile_masks.size() == dimension);
+  IntVecT tile_nums;
+  for (auto i = 0; i < dimension; ++i) {
+    auto a = array_sizes[i];
+    auto t = tile_sizes[i];
+    auto s = (a + t - 1) / t;
+    tile_nums.push_back(s);
+  }
+  IntVecT inner_tile_nums;
+  for (auto i = 0; i < dimension; ++i) {
+    auto s = AffinePattern::reduce_mul(tile_nums.cbegin(),
+                                       tile_nums.cbegin() + i, 1);
+    inner_tile_nums.push_back(s);
+  }
+  return mergeMasks(tile_masks, inner_tile_nums);
+}
+
+AffinePattern DataMoveCompiler::intersectBitlineMasks(
+    const AffinePattern &bitlineMask1,
+    const AffinePattern &bitlineMask2) const {
+  return AffinePattern::intersectSubRegions(tile_sizes, bitlineMask1,
+                                            bitlineMask2);
+}
+
+void DataMoveCompiler::recursiveMaskSubRegionAtDim(
+    const AffinePattern &subRegion, int64_t dim, MaskVecT &revBitlineMasks,
+    MaskVecT &revTileMasks, AffinePatternVecT &finalBitlineMaskes,
+    AffinePatternVecT &finalTileMasks) const {
+  /**
+    This implements the mask algorithm, and accumulate mask pattern
+    along each dimension. At the end, we construct the overall mask pattern
+    by merging bitline_masks and tile_masks.
+
+    An key optimization is to check the merged bitline mask against
+    inter-array commands' source bitline mask. If they have no intersection,
+    we can ignore the command.
+
+    This is done by leveraging the fact that both bitline masks are canonical
+    sub-region within that tile, and take their interection.
+   */
+  if (dim == -1) {
+    /**
+     * ! Don't forget to reverse the masks first.
+     */
+    MaskVecT bitlineMasks = revBitlineMasks;
+    std::reverse(bitlineMasks.begin(), bitlineMasks.end());
+    MaskVecT tileMasks = revTileMasks;
+    std::reverse(tileMasks.begin(), tileMasks.end());
+    auto merged_bitline_masks = mergeBitlineMasks(bitlineMasks);
+    auto merged_tile_masks = mergeTileMasks(tileMasks);
+    finalBitlineMaskes.push_back(merged_bitline_masks);
+    finalTileMasks.push_back(merged_tile_masks);
+    return;
+  }
+
+  auto ps = getSubRegionStart(subRegion);
+  auto qs = subRegion.get_trips();
+  auto p = ps[dim];
+  auto q = qs[dim];
+  auto t = tile_sizes[dim];
+  auto a = p / t;
+  auto b = (p + t - 1) / t;
+  auto c = (p + q) / t;
+  auto d = (p + q + t - 1) / t;
+
+  auto tile_p = p - a * t;
+  auto tile_pq = p + q - c * t;
+  if (b <= c) {
+    // [P, BxTi)
+    if (a < b) {
+      revBitlineMasks.emplace_back(tile_p, 1, t - tile_p);
+      revTileMasks.emplace_back(a, 1, 1);
+      if (t - tile_p > t) {
+        panic("BitlineMask Trip %ld Overflow Tile %ld.", t - tile_p, t);
+      }
+      recursiveMaskSubRegionAtDim(subRegion, dim - 1, revBitlineMasks,
+                                  revTileMasks, finalBitlineMaskes,
+                                  finalTileMasks);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
+    }
+    // [CxTi, P+Q)
+    if (c < d) {
+      revBitlineMasks.emplace_back(0, 1, tile_pq);
+      revTileMasks.emplace_back(c, 1, 1);
+      if (tile_pq > t) {
+        panic("BitlineMask Trip %ld Overflow Tile %ld.", tile_pq, t);
+      }
+      recursiveMaskSubRegionAtDim(subRegion, dim - 1, revBitlineMasks,
+                                  revTileMasks, finalBitlineMaskes,
+                                  finalTileMasks);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
+    }
+    if (b < c) {
+      // [BxTi, CxTi)
+      revBitlineMasks.emplace_back(0, 1, t);
+      revTileMasks.emplace_back(b, 1, c - b);
+      recursiveMaskSubRegionAtDim(subRegion, dim - 1, revBitlineMasks,
+                                  revTileMasks, finalBitlineMaskes,
+                                  finalTileMasks);
+      revBitlineMasks.pop_back();
+      revTileMasks.pop_back();
+    }
+  } else {
+    // [P, P+Q)
+    revBitlineMasks.emplace_back(tile_p, 1, tile_pq - tile_p);
+    revTileMasks.emplace_back(a, 1, 1);
+    if (tile_pq > t) {
+      panic("BitlineMask %ld Overflow Tile %ld.", tile_pq, t);
+    }
+    recursiveMaskSubRegionAtDim(subRegion, dim - 1, revBitlineMasks,
+                                revTileMasks, finalBitlineMaskes,
+                                finalTileMasks);
+    revBitlineMasks.pop_back();
+    revTileMasks.pop_back();
+  }
+}
+
+PUMCommandVecT
+DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
+                                      const AffinePattern &sub_region) const {
 
   /**
     Recursively mask commands by sub_region dimensions.
@@ -171,16 +384,16 @@ PUMCommandVecT DataMoveCompiler::mask_commands_by_sub_region(
   MaskVecT tile_masks;
   AffinePatternVecT final_bitline_masks;
   AffinePatternVecT final_tile_masks;
-  recursive_mask_sub_region_at_dim(sub_region, dimension - 1, bitline_masks,
-                                   tile_masks, final_bitline_masks,
-                                   final_tile_masks);
+  recursiveMaskSubRegionAtDim(sub_region, dimension - 1, bitline_masks,
+                              tile_masks, final_bitline_masks,
+                              final_tile_masks);
 
   for (const auto &command : commands) {
     for (int i = 0; i < final_bitline_masks.size(); ++i) {
       const auto &bitline_mask = final_bitline_masks.at(i);
       const auto &tile_mask = final_tile_masks.at(i);
       auto c = command;
-      auto intersect = intersect_bitline_masks(c.bitline_mask, bitline_mask);
+      auto intersect = intersectBitlineMasks(c.bitline_mask, bitline_mask);
       if (intersect.get_total_trip() == 0) {
         // Empty intersection.
         continue;
@@ -194,119 +407,8 @@ PUMCommandVecT DataMoveCompiler::mask_commands_by_sub_region(
   return masked_commands;
 }
 
-AffinePattern
-DataMoveCompiler::mergeBitlineMasks(const MaskVecT &bitlineMasks) const {
-  assert(bitlineMasks.size() == dimension);
-  IntVecT innerTileSizes;
-  for (auto i = 0; i < dimension; ++i) {
-    auto s = AffinePattern::reduce_mul(tile_sizes.cbegin(),
-                                       tile_sizes.cbegin() + i, 1);
-    innerTileSizes.push_back(s);
-    auto trip = std::get<2>(bitlineMasks[i]);
-    if (trip > tile_sizes[i]) {
-      panic("BitlineMask Trip %ld Overflow Tile %ld.", trip, tile_sizes[i]);
-    }
-  }
-  return merge_masks(bitlineMasks, innerTileSizes);
-}
-
-void DataMoveCompiler::recursive_mask_sub_region_at_dim(
-    const AffinePattern &sub_region, int64_t dim, MaskVecT &revBitlineMasks,
-    MaskVecT &revTileMasks, AffinePatternVecT &finalBitlineMaskes,
-    AffinePatternVecT &finalTileMasks) const {
-  /**
-    This implements the above mask algorithm, and accumulate mask pattern
-    along each dimension. At the end, we construct the overall mask pattern
-    by merging bitline_masks and tile_masks.
-
-    An key optimization is to check the merged bitline mask against
-    inter-array commands' source bitline mask. If they have no intersection,
-    we can ignore the command.
-
-    This is done by leveraging the fact that both bitline masks are canonical
-    sub-region within that tile, and take their interection.
-   */
-  if (dim == -1) {
-    /**
-     * ! Don't forget to reverse the masks first.
-     */
-    MaskVecT bitlineMasks = revBitlineMasks;
-    std::reverse(bitlineMasks.begin(), bitlineMasks.end());
-    MaskVecT tileMasks = revTileMasks;
-    std::reverse(tileMasks.begin(), tileMasks.end());
-    auto merged_bitline_masks = mergeBitlineMasks(bitlineMasks);
-    auto merged_tile_masks = merge_tile_masks(tileMasks);
-    finalBitlineMaskes.push_back(merged_bitline_masks);
-    finalTileMasks.push_back(merged_tile_masks);
-    return;
-  }
-
-  auto ps = get_sub_region_start(sub_region);
-  auto qs = sub_region.get_trips();
-  auto p = ps[dim];
-  auto q = qs[dim];
-  auto t = tile_sizes[dim];
-  auto a = p / t;
-  auto b = (p + t - 1) / t;
-  auto c = (p + q) / t;
-  auto d = (p + q + t - 1) / t;
-
-  auto tile_p = p - a * t;
-  auto tile_pq = p + q - c * t;
-  if (b <= c) {
-    // [P, BxTi)
-    if (a < b) {
-      revBitlineMasks.emplace_back(tile_p, 1, t - tile_p);
-      revTileMasks.emplace_back(a, 1, 1);
-      if (t - tile_p > t) {
-        panic("BitlineMask Trip %ld Overflow Tile %ld.", t - tile_p, t);
-      }
-      recursive_mask_sub_region_at_dim(sub_region, dim - 1, revBitlineMasks,
-                                       revTileMasks, finalBitlineMaskes,
-                                       finalTileMasks);
-      revBitlineMasks.pop_back();
-      revTileMasks.pop_back();
-    }
-    // [CxTi, P+Q)
-    if (c < d) {
-      revBitlineMasks.emplace_back(0, 1, tile_pq);
-      revTileMasks.emplace_back(c, 1, 1);
-      if (tile_pq > t) {
-        panic("BitlineMask Trip %ld Overflow Tile %ld.", tile_pq, t);
-      }
-      recursive_mask_sub_region_at_dim(sub_region, dim - 1, revBitlineMasks,
-                                       revTileMasks, finalBitlineMaskes,
-                                       finalTileMasks);
-      revBitlineMasks.pop_back();
-      revTileMasks.pop_back();
-    }
-    if (b < c) {
-      // [BxTi, CxTi)
-      revBitlineMasks.emplace_back(0, 1, t);
-      revTileMasks.emplace_back(b, 1, c - b);
-      recursive_mask_sub_region_at_dim(sub_region, dim - 1, revBitlineMasks,
-                                       revTileMasks, finalBitlineMaskes,
-                                       finalTileMasks);
-      revBitlineMasks.pop_back();
-      revTileMasks.pop_back();
-    }
-  } else {
-    // [P, P+Q)
-    revBitlineMasks.emplace_back(tile_p, 1, tile_pq - tile_p);
-    revTileMasks.emplace_back(a, 1, 1);
-    if (tile_pq > t) {
-      panic("BitlineMask %ld Overflow Tile %ld.", tile_pq, t);
-    }
-    recursive_mask_sub_region_at_dim(sub_region, dim - 1, revBitlineMasks,
-                                     revTileMasks, finalBitlineMaskes,
-                                     finalTileMasks);
-    revBitlineMasks.pop_back();
-    revTileMasks.pop_back();
-  }
-}
-
 PUMCommandVecT
-DataMoveCompiler::map_commands_to_llc(const PUMCommandVecT &commands) const {
+DataMoveCompiler::mapCmdsToLLC(const PUMCommandVecT &commands) const {
   /**
     Here we map commands to LLC.
 
@@ -325,8 +427,8 @@ DataMoveCompiler::map_commands_to_llc(const PUMCommandVecT &commands) const {
     3. With in each slice, we then split commands according to the tree
     structure.
    */
-  auto tile_per_llc_bank = llc_config.get_array_per_bank();
-  auto total_llc_banks = llc_config.get_total_banks();
+  auto tilePerLLCBank = llc_config.get_array_per_bank();
+  auto numLLCBanks = llc_config.get_total_banks();
 
   IntVecT tile_nums;
   for (auto i = 0; i < dimension; ++i) {
@@ -337,26 +439,26 @@ DataMoveCompiler::map_commands_to_llc(const PUMCommandVecT &commands) const {
   }
 
   // Construct the sub-region for each LLC bank.
-  std::vector<AffinePatternVecT> llc_bank_sub_regions;
-  for (auto i = 0; i < total_llc_banks; ++i) {
-    llc_bank_sub_regions.push_back(
+  std::vector<AffinePatternVecT> llcBankSubRegions;
+  for (auto i = 0; i < numLLCBanks; ++i) {
+    llcBankSubRegions.push_back(
         AffinePattern::break_continuous_range_into_canonical_sub_regions(
-            tile_nums, i * tile_per_llc_bank, tile_per_llc_bank));
+            tile_nums, i * tilePerLLCBank, tilePerLLCBank));
   }
 
   // Process all commands.
   PUMCommandVecT ret;
   for (const auto &command : commands) {
     auto c(command);
-    map_command_to_llc(c, llc_bank_sub_regions);
+    mapCmdToLLC(c, llcBankSubRegions);
     ret.push_back(c);
   }
   return ret;
 }
 
-void DataMoveCompiler::map_command_to_llc(
+void DataMoveCompiler::mapCmdToLLC(
     PUMCommand &command,
-    const std::vector<AffinePatternVecT> &llc_bank_sub_regions) const {
+    const std::vector<AffinePatternVecT> &llcBankSubRegions) const {
 
   auto total_llc_banks = llc_config.get_total_banks();
 
@@ -370,8 +472,8 @@ void DataMoveCompiler::map_command_to_llc(
 
   for (auto i = 0; i < total_llc_banks; ++i) {
     AffinePatternVecT llc_tiles;
-    for (const auto &llc_sub_region : llc_bank_sub_regions[i]) {
-      auto intersect = AffinePattern::intersect_sub_regions(
+    for (const auto &llc_sub_region : llcBankSubRegions[i]) {
+      auto intersect = AffinePattern::intersectSubRegions(
           tile_nums, command.tile_mask, llc_sub_region);
       if (intersect.get_total_trip() == 0) {
         // Empty intersection.
@@ -383,12 +485,11 @@ void DataMoveCompiler::map_command_to_llc(
   }
 
   if (command.type == "inter-array") {
-    split_inter_array_command_to_llc(command);
+    splitInterArrayCmdToLLC(command);
   }
 }
 
-void DataMoveCompiler::split_inter_array_command_to_llc(
-    PUMCommand &command) const {
+void DataMoveCompiler::splitInterArrayCmdToLLC(PUMCommand &command) const {
   /**
     First start to scan each level of the tree in the way.
     Then handle inter-ways.
