@@ -79,7 +79,7 @@ class Process(SimObject):
         "What to do when direct regions overflow LLC.")
     streamNUCAEnableIndPageRemap = Param.Bool(False,
         "Enable remap indirect page.")
-    enableStreamPUM = Param.Bool(False, "Enable StreamPUM.")
+    enableStreamPUMMapping = Param.Bool(False, "Enable StreamPUM Mapping.")
 
     @classmethod
     def export_methods(cls, code):

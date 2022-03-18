@@ -6,10 +6,6 @@
 #define DEBUG_TYPE StreamPUM
 #include "../../stream_log.hh"
 
-#define LLCSE_DPRINTF(format, args...)                                         \
-  DPRINTF(StreamPUM, "[LLC_SE%d]: [PUM] " format,                              \
-          this->controller->getMachineID().num, ##args)
-
 PUMEngine::PUMEngine(LLCStreamEngine *_se)
     : se(_se), controller(_se->controller) {}
 
@@ -28,14 +24,18 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
         PUMHWConfiguration::getPUMHWConfig());
   }
 
-  LLCSE_DPRINTF("Configured.\n");
+  LLC_SE_DPRINTF("[PUMEngine] Configured.\n");
 
-  assert(this->nextCmdIdx == this->commands.size() &&
-         "Not done with previous commands.");
+  if (this->nextCmdIdx != this->commands.size()) {
+    LLC_SE_PANIC("Not done with previous commands. NextCmdIdx %d Commands %d.",
+                 this->nextCmdIdx, this->commands.size());
+  }
+
   this->pumManager = pumManager;
   this->nextCmdIdx = 0;
   this->sentInterBankPackets = 0;
   this->acked = false;
+  this->commands.clear();
 
   /**
    * Filter out unrelated commands and merge continuous one.
@@ -48,14 +48,14 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
       this->commands.push_back(command);
       continue;
     }
-    const auto &llcCmd = command.llc_commands.at(myBankIdx);
+    const auto &llcCmd = command.llcSplitTileCmds.at(myBankIdx);
     if (llcCmd.empty()) {
       continue;
     }
     auto c = commands[i];
-    for (auto j = 0; j < c.llc_commands.size(); ++j) {
+    for (auto j = 0; j < c.llcSplitTileCmds.size(); ++j) {
       if (j != myBankIdx) {
-        c.llc_commands[j].clear();
+        c.llcSplitTileCmds[j].clear();
       }
     }
     this->commands.push_back(c);
@@ -90,12 +90,12 @@ void PUMEngine::kickNextCommand() {
       }
     }
 
-    const auto &llcCmds = command.llc_commands.at(myBankIdx);
+    const auto &llcCmds = command.llcSplitTileCmds.at(myBankIdx);
     assert(!llcCmds.empty() && "Empty LLC command.\n");
 
     std::unordered_set<int64_t> usedArrays;
     for (const auto &mask : llcCmds) {
-      for (auto arrayIdx : mask.generate_all_values()) {
+      for (auto arrayIdx : mask.srcTilePattern.generate_all_values()) {
         usedArrays.insert(arrayIdx);
       }
     }
@@ -217,8 +217,30 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
       auto totalBits = bitlines * command.wordline_bits;
       auto totalPackets = 0;
 
-      MachineID dstMachineId(MachineType_L2Cache, dstBankIdx);
-      for (auto i = 0; i < totalBits; i += packetDataBits, totalPackets += 1) {
+      NetDest dstBanks;
+      if (command.hasReuse()) {
+        /**
+         * Hack: when there is reuse, just send to all the DstBank.
+         * TODO: Properly handle this.
+         */
+        const auto &dstSplitBanks =
+            command.llcSplitTileCmds[myBankIdx][0].dstSplitTilePatterns;
+        for (auto dstBankIdx = 0; dstBankIdx < dstSplitBanks.size();
+             ++dstBankIdx) {
+          if (dstSplitBanks[dstBankIdx].empty()) {
+            continue;
+          }
+          MachineID dstMachineId(MachineType_L2Cache, dstBankIdx);
+          dstBanks.add(dstMachineId);
+        }
+
+      } else {
+        MachineID dstMachineId(MachineType_L2Cache, dstBankIdx);
+        dstBanks.add(dstMachineId);
+      }
+
+      for (auto i = 0; i < totalBits;
+           i += packetDataBits, totalPackets += dstBanks.count()) {
 
         auto bits = packetDataBits;
         if (i + bits > totalBits) {
@@ -229,9 +251,11 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
         msg->m_addr = 0;
         msg->m_Type = CoherenceRequestType_STREAM_PUM_DATA;
         msg->m_Requestors.add(this->controller->getMachineID());
-        msg->m_Destination.add(dstMachineId);
+        msg->m_Destination = dstBanks;
         msg->m_MessageSize =
             this->controller->getMessageSizeType((bits + 7) / 8);
+
+        LLC_SE_DPRINTF("[PUMEngine] Send Inter-Bank Data -> %s.\n", dstBanks);
 
         this->se->streamIndirectIssueMsgBuffer->enqueue(
             msg, this->controller->clockEdge(),
@@ -257,6 +281,8 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
       computeLatency = wordlineBits * wordlineBits / 2;
       break;
     case SimdFloatAddOp:
+    case SimdFloatMultOp:
+    case SimdFloatDivOp:
       computeLatency = wordlineBits * wordlineBits;
       break;
     }

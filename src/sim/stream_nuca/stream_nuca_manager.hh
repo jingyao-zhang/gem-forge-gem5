@@ -119,6 +119,8 @@ private:
 
   void computeCachedElements();
   void computeCacheSet();
+  void computeCacheSetNUCA();
+  void computeCacheSetPUM();
 
   struct IndirectPageHops {
     const Addr pageVAddr;

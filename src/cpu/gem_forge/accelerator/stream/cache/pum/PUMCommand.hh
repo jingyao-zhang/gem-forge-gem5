@@ -15,8 +15,27 @@ public:
   int64_t tile_dist = 0;
   int64_t bitline_dist = 0;
 
+  /**
+   * Extra reuse information.
+   */
+  struct ReuseInfoT {
+    int64_t dim = 0;
+    int64_t count = 1;
+    ReuseInfoT(int64_t _dim, int64_t _count) : dim(_dim), count(_count) {}
+    ReuseInfoT() : dim(0), count(1) {}
+  };
+  ReuseInfoT reuse;
+  bool hasReuse() const { return reuse.count > 1; }
+
   std::vector<AffinePatternVecT> inter_array_splits;
-  std::vector<AffinePatternVecT> llc_commands;
+
+  struct LLCTileMask {
+    AffinePattern srcTilePattern;
+    AffinePattern dstTilePattern;
+    std::vector<AffinePatternVecT> dstSplitTilePatterns;
+  };
+
+  std::vector<std::vector<LLCTileMask>> llcSplitTileCmds;
 
   int wordline_bits;
   // Only valid for compute command.

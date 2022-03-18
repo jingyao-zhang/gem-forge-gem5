@@ -800,7 +800,7 @@ void StreamNUCAManager::computeCachedElements() {
   }
 }
 
-void StreamNUCAManager::computeCacheSet() {
+void StreamNUCAManager::computeCacheSetNUCA() {
 
   /**
    * Compute the StartSet for arrays.
@@ -843,13 +843,52 @@ void StreamNUCAManager::computeCacheSet() {
       auto usedSets = cachedBytes / (llcBlockSize * totalBanks);
 
       DPRINTF(StreamNUCAManager,
-              "Range %s %#x ElementSize %d CachedElements %lu StartSet %d "
-              "UsedSet "
-              "%d.\n",
+              "[CacheSet] Range %s %#x ElementSize %d CachedElements %lu "
+              "StartSet %d UsedSet %d.\n",
               region.name, region.vaddr, region.elementSize, cachedElements,
               startSet, usedSets);
       startSet = (startSet + usedSets) % llcNumSets;
     }
+  }
+}
+
+void StreamNUCAManager::computeCacheSetPUM() {
+
+  const auto totalBanks =
+      StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
+  const auto llcNumSets = StreamNUCAMap::getCacheNumSet();
+  const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
+  const auto llcArraysPerWay = StreamNUCAMap::getCacheParams().arrayPerWay;
+  const auto llcBitlinesPerArray = StreamNUCAMap::getCacheParams().bitlines;
+
+  auto startSet = 0;
+  for (const auto &entry : this->startVAddrRegionMap) {
+    const auto &startVAddr = entry.first;
+    const auto &region = entry.second;
+
+    auto startPAddr = this->translate(startVAddr);
+    auto &rangeMap = StreamNUCAMap::getRangeMapByStartPAddr(startPAddr);
+    rangeMap.startSet = startSet;
+
+    auto elemSize = region.elementSize;
+    auto usedBytesPerWay = elemSize * llcArraysPerWay * llcBitlinesPerArray;
+    auto usedSets = usedBytesPerWay / llcBlockSize;
+    assert(startSet + usedSets <= llcNumSets && "LLC Sets overflow.");
+
+    DPRINTF(StreamNUCAManager,
+            "[CacheSet] Range %s %#x ElementSize %d UsedBytesPerWay %lu "
+            "StartSet %d UsedSet %d.\n",
+            region.name, region.vaddr, region.elementSize, usedBytesPerWay,
+            startSet, usedSets);
+    startSet = (startSet + usedSets) % llcNumSets;
+  }
+}
+
+void StreamNUCAManager::computeCacheSet() {
+  if (this->enablePUM) {
+    this->computeCacheSetPUM();
+  } else {
+    this->computeCacheSetNUCA();
   }
 }
 

@@ -61,9 +61,9 @@ AffinePattern AffinePattern::intersectSubRegions(const IntVecT &array_sizes,
     panic("Region2 %s Not SubRegion in Array %s.", region2, array_sizes);
   }
 
-  auto starts1 = region1.get_sub_region_start_to_array_size(array_sizes);
+  auto starts1 = region1.getSubRegionStartToArraySize(array_sizes);
   auto trips1 = region1.get_trips();
-  auto starts2 = region2.get_sub_region_start_to_array_size(array_sizes);
+  auto starts2 = region2.getSubRegionStartToArraySize(array_sizes);
   auto trips2 = region2.get_trips();
   IntVecT intersect_starts;
   IntVecT intersect_trips;

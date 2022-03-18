@@ -263,9 +263,9 @@ parser.add_option("--gem-forge-stream-nuca-enable-ind-page-remap", type="int",
                   help="Enable remapping indirect page.")
 
 # Stream PUM Options.
-parser.add_option("--gem-forge-enable-stream-pum", type="int",
+parser.add_option("--gem-forge-stream-pum-mode", type="int",
                   action="store", default="0",
-                  help="Enable stream PUM.")
+                  help="0: Disable; 1: Enable stream PUM; 2: Enable stream PUM mapping only.")
 
 # Stream in Mem Options.
 parser.add_option("--gem-forge-stream-engine-enable-float-mem", action="store_true", default=False,

@@ -263,31 +263,36 @@ public:
 
   static AffinePattern parse(const std::string &s);
 
-  static IntVecT get_array_position(const IntVecT &array_sizes,
-                                    int64_t linear_pos) {
+  static IntVecT getArrayPosition(const IntVecT &arraySizes,
+                                  int64_t linearPos) {
     /**
       Given a linear position, return the position according to the array
       dimension.
      */
-    auto dimension = array_sizes.size();
+    auto dimension = arraySizes.size();
     // This is S1x... xSi
     IntVecT inner_array_sizes;
     for (auto i = 0; i < dimension; ++i) {
-      auto s = reduce_mul(array_sizes.cbegin(), array_sizes.cbegin() + i, 1);
+      auto s = reduce_mul(arraySizes.cbegin(), arraySizes.cbegin() + i, 1);
       inner_array_sizes.push_back(s);
     }
     IntVecT pos;
-    int64_t cur_pos = linear_pos;
+    int64_t cur_pos = std::abs(linearPos);
     for (int i = dimension - 1; i >= 0; --i) {
       auto p = cur_pos / inner_array_sizes[i];
-      pos.insert(pos.begin(), p);
+
+      if (linearPos > 0) {
+        pos.insert(pos.begin(), p);
+      } else {
+        pos.insert(pos.begin(), -p);
+      }
       cur_pos = cur_pos % inner_array_sizes[i];
     }
     return pos;
   }
 
-  IntVecT get_sub_region_start_to_array_size(const IntVecT &array_sizes) const {
-    return get_array_position(array_sizes, start);
+  IntVecT getSubRegionStartToArraySize(const IntVecT &arraySizes) const {
+    return getArrayPosition(arraySizes, start);
   }
 
   bool is_canonical_sub_region_to_array_size(const IntVecT &array_sizes,
@@ -316,7 +321,7 @@ public:
       }
       return false;
     }
-    auto starts = get_sub_region_start_to_array_size(array_sizes);
+    auto starts = getSubRegionStartToArraySize(array_sizes);
     for (auto i = 0; i < dimension; ++i) {
       auto p = starts[i];
       auto q = trips[i];
@@ -356,8 +361,8 @@ public:
   break_continuous_range_into_canonical_sub_regions(const IntVecT &array_sizes,
                                                     int64_t start,
                                                     int64_t trip) {
-    auto ps = get_array_position(array_sizes, start);
-    auto qs = get_array_position(array_sizes, start + trip);
+    auto ps = getArrayPosition(array_sizes, start);
+    auto qs = getArrayPosition(array_sizes, start + trip);
     return recursive_break_continuous_range_into_canonical_sub_regions(
         array_sizes, ps, qs, 0 /* dim */);
   }

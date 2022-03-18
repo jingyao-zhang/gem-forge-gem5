@@ -172,7 +172,7 @@ bool MLCPUMManager::canApplyPUM(Args &args,
  */
 bool MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
 
-  if (!this->controller->myParams->enable_stream_pum) {
+  if (this->controller->myParams->stream_pum_mode != "enable") {
     return false;
   }
 

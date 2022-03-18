@@ -3,6 +3,24 @@
 #include "base/trace.hh"
 #include "debug/StreamPUM.hh"
 
+DataMoveCompiler::DataMoveCompiler(const PUMHWConfiguration &_llc_config,
+                                   const AffinePattern &_tile_pattern)
+    : llc_config(_llc_config), tile_pattern(_tile_pattern) {
+
+  assert(tile_pattern.is_canonical_tile());
+  dimension = tile_pattern.params.size() / 2;
+  auto ret = tile_pattern.get_canonical_tile_and_array_sizes();
+  tile_sizes = std::move(ret.first);
+  array_sizes = std::move(ret.second);
+
+  for (auto i = 0; i < dimension; ++i) {
+    auto a = array_sizes[i];
+    auto t = tile_sizes[i];
+    auto s = (a + t - 1) / t;
+    tile_nums.push_back(s);
+  }
+}
+
 PUMCommandVecT
 DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
                                     const AffinePattern &dstStream) const {
@@ -21,7 +39,7 @@ DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
   assert(aligns.size() <= 1);
 
   // Record the reused dimension and reused count.
-  std::vector<std::pair<int64_t, int64_t>> reuses;
+  std::vector<ReuseInfoT> reuses;
   for (auto i = 0; i < dimension; ++i) {
     const auto &p = srcStream.params[i];
     if (p.stride == 0) {
@@ -35,7 +53,7 @@ DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
     assert(reuses.size() == aligns.size());
     for (auto i = 0; i < reuses.size(); ++i) {
       // Assert that reuse and base align are along the same dimension
-      assert(reuses[i].first == aligns[i].first);
+      assert(reuses[i].dim == aligns[i].first);
     }
   }
 
@@ -45,8 +63,6 @@ DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
     return PUMCommandVecT();
   }
 
-  assert(reuses.empty() && "Reuse not supported yet.");
-
   /**
    * The overall compile flow:
    * 1. Compile for general data move insts to align along certain dimension.
@@ -55,14 +71,50 @@ DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
    * 4. Map commands to LLC banks.
    */
 
+  // 1.
+  DPRINTF(StreamPUM, "---------------- Compile Aligns ------------\n");
   auto commands = compileAligns(aligns);
 
-  auto no_reuse_src_sub_region = removeReuseInSubRegion(srcStream);
+  // 2.
+  DPRINTF(StreamPUM, "---------------- Mask SubRegion ------------\n");
+  auto reducedSrcSubRegion = removeReuseInSubRegion(srcStream);
+  commands = maskCmdsBySubRegion(commands, reducedSrcSubRegion);
+  if (Debug::StreamPUM) {
+    DPRINTF(StreamPUM, "-------- After Mask SubRegion\n");
+    for (const auto &c : commands) {
+      DPRINTF(StreamPUM, "%s", c);
+    }
+  }
 
-  commands = maskCmdsBySubRegion(commands, no_reuse_src_sub_region);
+  // 3.
+  DPRINTF(StreamPUM, "---------------- Mask Reuses ---------------\n");
+  commands = maskCmdsByReuses(commands, reducedSrcSubRegion, reuses);
+  if (Debug::StreamPUM) {
+    DPRINTF(StreamPUM, "-------- After Mask Reuses\n");
+    for (const auto &c : commands) {
+      DPRINTF(StreamPUM, "%s", c);
+    }
+  }
 
-  // Map commands to LLC configuration.
+  // 4. Map commands to LLC configuration.
+  DPRINTF(StreamPUM, "---------------- Map to LLC ----------------\n");
   commands = mapCmdsToLLC(commands);
+  if (Debug::StreamPUM) {
+    DPRINTF(StreamPUM, "-------- After Map to LLC\n");
+    for (const auto &c : commands) {
+      DPRINTF(StreamPUM, "%s", c);
+    }
+  }
+
+  // // 5. Filter out empty commands.
+  // DPRINTF(StreamPUM, "---------------- Filter Empty Cmd ----------\n");
+  // commands = filterEmptyCmds(commands);
+  // if (Debug::StreamPUM) {
+  //   DPRINTF(StreamPUM, "-------- After Filter Empty Cmd\n");
+  //   for (const auto &c : commands) {
+  //     DPRINTF(StreamPUM, "%s", c);
+  //   }
+  // }
 
   return commands;
 }
@@ -99,10 +151,11 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
     Finally, we need to split traffic across tiles with different level
     of LLC configuration.
    */
+  DPRINTF(StreamPUM, "Compile Align Dim %ld Distance %ld.\n", dim, distance);
   assert(dim < dimension);
   auto abs_dist = std::abs(distance);
-  if (abs_dist < tile_sizes[dim]) {
-    return compileAlignLessThanTileSize(dim, distance);
+  if (abs_dist <= tile_sizes[dim]) {
+    return compileAlignLessEqualTileSize(dim, distance);
   } else {
     assert(abs_dist % tile_sizes[dim] == 0);
     assert(false);
@@ -110,24 +163,30 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
 }
 
 PUMCommandVecT
-DataMoveCompiler::compileAlignLessThanTileSize(int64_t dim,
-                                               int64_t distance) const {
+DataMoveCompiler::compileAlignLessEqualTileSize(int64_t dim,
+                                                int64_t distance) const {
   PUMCommandVecT commands;
 
   auto abs_dist = std::abs(distance);
-  assert(abs_dist < tile_sizes[dim]);
+  assert(abs_dist <= tile_sizes[dim]);
 
   // Traffic within this tile.
-  auto bitlines = distance;
-  for (auto i = 0; i < dim; ++i) {
-    bitlines *= tile_sizes[i];
+  if (abs_dist < tile_sizes[dim]) {
+    auto bitlines = distance;
+    for (auto i = 0; i < dim; ++i) {
+      bitlines *= tile_sizes[i];
+    }
+    commands.emplace_back();
+    commands.back().type = "intra-array";
+    commands.back().bitline_dist = bitlines;
+    // Generate all active bitline-mask according to tile_sizes.
+    commands.back().bitline_mask =
+        AffinePattern::construct_canonical_sub_region(
+            tile_sizes, AffinePattern::IntVecT(tile_sizes.size(), 0),
+            tile_sizes);
+
+    DPRINTF(StreamPUM, "Intra-Array Cmd %s", commands.back());
   }
-  commands.emplace_back();
-  commands.back().type = "intra-array";
-  commands.back().bitline_dist = bitlines;
-  // Generate all active bitline-mask according to tile_sizes.
-  commands.back().bitline_mask = AffinePattern::construct_canonical_sub_region(
-      tile_sizes, AffinePattern::IntVecT(tile_sizes.size(), 0), tile_sizes);
 
   // Boundary case.
   auto move_tile_dist = 1;
@@ -183,7 +242,7 @@ DataMoveCompiler::compileAlignLessThanTileSize(int64_t dim,
     commands.back().dst_bitline_mask = back_pattern;
   }
 
-  DPRINTF(StreamPUM, "Inter-Array command %s", commands.back());
+  DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
 
   return commands;
 }
@@ -398,6 +457,33 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
         // Empty intersection.
         continue;
       }
+      if (c.type == "intra-array") {
+        // Check if we shift beyond bitlines.
+        auto start = intersect.getSubRegionStartToArraySize(this->tile_sizes);
+        auto trips = intersect.get_trips();
+        auto dist =
+            AffinePattern::getArrayPosition(this->tile_sizes, c.bitline_dist);
+        IntVecT movedStart;
+        for (int dim = 0; dim < start.size(); ++dim) {
+          movedStart.push_back(start[dim] + dist[dim]);
+        }
+        bool isEmpty = false;
+        for (int dim = 0; dim < start.size(); ++dim) {
+          if (movedStart[dim] + trips[dim] <= 0 ||
+              movedStart[dim] >= this->tile_sizes[dim]) {
+            DPRINTF(StreamPUM,
+                    "Skipped Empty Intra-Array Cmd at Dim %d Start %ld Dist "
+                    "%ld MovedStart %ld Trip %d TileSize %ld.\n",
+                    dim, start[dim], dist[dim], movedStart[dim], trips[dim],
+                    this->tile_sizes[dim]);
+            isEmpty = true;
+            break;
+          }
+        }
+        if (isEmpty) {
+          continue;
+        }
+      }
       c.bitline_mask = intersect;
       c.tile_mask = tile_mask;
       masked_commands.push_back(c);
@@ -405,6 +491,93 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
   }
 
   return masked_commands;
+}
+
+/**************************************************************************
+ * Mask commands by reuse.
+ **************************************************************************/
+
+PUMCommandVecT DataMoveCompiler::maskCmdsByReuses(
+    const PUMCommandVecT &commands, const AffinePattern &subRegion,
+    const std::vector<ReuseInfoT> &reuses) const {
+
+  if (reuses.empty()) {
+    return commands;
+  }
+
+  assert(reuses.size() == 1 && "Cannot handle multi-dim reuse.");
+
+  PUMCommandVecT ret;
+  /**
+   * NOTE: We assume that the source sub-region at the reuse dim has size 1,
+   * therefore, the input should only has one type of command.
+   */
+  for (const auto &c : commands) {
+    assert(c.type == commands.front().type &&
+           "PUM] Mixed Inter/Intra-Array command with reuse.");
+  }
+
+  /**
+   * 1. For inter-array command, this is trivial -- just record the reuse
+   * information.
+   * 2. For intra-array command, we have to check if the reuse is beyond tile
+   * size, and generate extra inter-array command.
+   */
+  auto reuseDim = reuses.front().dim;
+  auto reuseCount = reuses.front().count;
+  for (const auto &cmd : commands) {
+    auto c = cmd;
+    c.reuse = reuses.front();
+    ret.push_back(c);
+  }
+
+  if (commands.front().type == "inter-array") {
+    return ret;
+  }
+
+  // This is intra-array. Check if we need to extra inter-array command.
+  const auto &cmd = commands.front();
+  auto srcBitlineSubRegionStart =
+      cmd.bitline_mask.getSubRegionStartToArraySize(this->tile_sizes);
+
+  auto bitlineDist =
+      AffinePattern::getArrayPosition(this->tile_sizes, cmd.bitline_dist);
+  auto reuseDimTileSize = this->tile_sizes.at(reuseDim);
+
+  DPRINTF(StreamPUM, "[PUMReuse] Handle Cmd %s", cmd);
+  DPRINTF(StreamPUM,
+          "[PUMReuse] Dim %ld Count %ld BitlineStart %ld BitlineDist %ld "
+          "TileSize %ld.\n",
+          reuseDim, reuseCount, srcBitlineSubRegionStart.at(reuseDim),
+          bitlineDist.at(reuseDim), reuseDimTileSize);
+  auto dstBitlineStart =
+      srcBitlineSubRegionStart.at(reuseDim) + bitlineDist.at(reuseDim);
+  auto reuseDstBitline = dstBitlineStart + reuseCount;
+
+  if (dstBitlineStart / reuseDimTileSize ==
+      ((reuseDstBitline - 1) / reuseDimTileSize)) {
+    // Reuse can be handled in the same tile.
+    DPRINTF(StreamPUM, "[PUMReuse] Reuse within the same tile.\n");
+    return ret;
+  }
+
+  // Reuse across boundary of tile, we need extra inter-array command.
+  auto bitlineReuseCount =
+      reuseDimTileSize - (dstBitlineStart % reuseDimTileSize);
+  auto extraAlignDist = bitlineReuseCount + bitlineDist.at(reuseDim);
+  DPRINTF(StreamPUM, "[PUMReuse] Extra Inter-Array Cmd Align %ld.\n",
+          extraAlignDist);
+
+  auto extraCmds = this->compileAlign(reuseDim, extraAlignDist);
+
+  extraCmds = this->maskCmdsBySubRegion(extraCmds, subRegion);
+  for (auto &c : extraCmds) {
+    c.reuse = reuses.front();
+    c.reuse.count -= bitlineReuseCount;
+    ret.push_back(c);
+  }
+
+  return ret;
 }
 
 PUMCommandVecT
@@ -460,18 +633,10 @@ void DataMoveCompiler::mapCmdToLLC(
     PUMCommand &command,
     const std::vector<AffinePatternVecT> &llcBankSubRegions) const {
 
-  auto total_llc_banks = llc_config.get_total_banks();
+  auto numLLCBanks = llc_config.get_total_banks();
 
-  IntVecT tile_nums;
-  for (auto i = 0; i < dimension; ++i) {
-    auto a = array_sizes[i];
-    auto t = tile_sizes[i];
-    auto s = (a + t - 1) / t;
-    tile_nums.push_back(s);
-  }
-
-  for (auto i = 0; i < total_llc_banks; ++i) {
-    AffinePatternVecT llc_tiles;
+  for (auto i = 0; i < numLLCBanks; ++i) {
+    std::vector<PUMCommand::LLCTileMask> llcTiles;
     for (const auto &llc_sub_region : llcBankSubRegions[i]) {
       auto intersect = AffinePattern::intersectSubRegions(
           tile_nums, command.tile_mask, llc_sub_region);
@@ -479,9 +644,61 @@ void DataMoveCompiler::mapCmdToLLC(
         // Empty intersection.
         continue;
       }
-      llc_tiles.push_back(intersect);
+      llcTiles.emplace_back();
+      llcTiles.back().srcTilePattern = intersect;
+
+      if (command.type == "inter-array") {
+
+        auto srcStartPos =
+            intersect.getSubRegionStartToArraySize(this->tile_nums);
+        auto trips = intersect.get_trips();
+        auto tileDist =
+            AffinePattern::getArrayPosition(this->tile_nums, command.tile_dist);
+        IntVecT dstStartPos;
+        for (int i = 0; i < srcStartPos.size(); ++i) {
+          dstStartPos.push_back(srcStartPos[i] + tileDist[i]);
+        }
+
+        /**
+         * Expand the dest tile pattern with reuse.
+         */
+        if (command.hasReuse()) {
+          auto reuseDim = command.reuse.dim;
+          auto reuseCount = command.reuse.count;
+          assert(trips[reuseDim] == 1 && "ReuseDim should have trip count 1.");
+          auto reuseDimTileSize = this->tile_sizes[reuseDim];
+          auto reuseTileCount =
+              (reuseCount + reuseDimTileSize - 1) / reuseDimTileSize;
+          trips[reuseDim] = reuseTileCount;
+          // Reuse should stay within the boundary.
+          assert(dstStartPos[reuseDim] + reuseTileCount <=
+                 this->tile_nums[reuseDim]);
+        }
+
+        llcTiles.back().dstTilePattern =
+            AffinePattern::construct_canonical_sub_region(this->tile_nums,
+                                                          dstStartPos, trips);
+
+        /**
+         * Split the dest sub region to LLC banks.
+         */
+        for (int dstBankIdx = 0; dstBankIdx < numLLCBanks; ++dstBankIdx) {
+          AffinePatternVecT dstPatterns;
+          for (const auto &dstLLCBankSubRegion :
+               llcBankSubRegions[dstBankIdx]) {
+            auto dstIntersect = AffinePattern::intersectSubRegions(
+                this->tile_nums, llcTiles.back().dstTilePattern,
+                dstLLCBankSubRegion);
+            if (dstIntersect.get_total_trip() == 0) {
+              continue;
+            }
+            dstPatterns.push_back(dstIntersect);
+          }
+          llcTiles.back().dstSplitTilePatterns.push_back(dstPatterns);
+        }
+      }
     }
-    command.llc_commands.push_back(llc_tiles);
+    command.llcSplitTileCmds.push_back(llcTiles);
   }
 
   if (command.type == "inter-array") {
@@ -614,4 +831,16 @@ void DataMoveCompiler::splitInterArrayCmdToLLC(PUMCommand &command) const {
                         llc_config.get_total_banks(), tile_dist);
     inter_array_splits.push_back(splits);
   }
+}
+
+PUMCommandVecT
+DataMoveCompiler::filterEmptyCmds(const PUMCommandVecT &commands) const {
+  PUMCommandVecT ret;
+  for (const auto &c : commands) {
+    if (c.bitline_mask.get_total_trip() == 0) {
+      continue;
+    }
+    ret.push_back(c);
+  }
+  return ret;
 }

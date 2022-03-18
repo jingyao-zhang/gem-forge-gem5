@@ -224,8 +224,57 @@ int StreamNUCAMap::getNUCASet(Addr paddr, const RangeMap &range) {
 
 int StreamNUCAMap::getPUMSet(Addr paddr, const RangeMap &range) {
   assert(range.isStreamPUM);
-  // For now just return -1 for default set.
-  return -1;
+
+  /**
+   * I found it not eazy to specify the set of the cache line in PUM mapping.
+   *
+   * In normal cache setting, one line is splitted among the arrays within
+   * that way, to better utitlize the internal bandwidth.
+   *
+   * For example, with 8 SRAM arrays per way, and 64B cache line size, each
+   * array is holding 64/8 = 8B data of each cache line.
+   * If the array size is 256x256, each row is 32B. There are 256*32/8=1k sets.
+   * And they can be indexed as:
+   *
+   * SRAM Array:
+   * ---------------------------------
+   * | Set 0 | Set 1 | Set 2 | Set 3 |
+   * | Set 4 | Set 5 | Set 6 | Set 7 |
+   * |  ...  |  ...  |  ...  |  ...  |
+   * ---------------------------------
+   *
+   * In PUM, data is tranposed and tiled. We try to get an approximate set
+   * number by looking at the specific bitline index within that way, divided by
+   * the number of elements per cache line, and multiple by the starting
+   * wordline.
+   *
+   */
+
+  auto elemIdx = (paddr - range.startPAddr) / (range.elementBits / 8);
+  auto vBitlineIdx = range.pumTileRev(elemIdx);
+
+  const auto &cacheParams = getCacheParams();
+  const auto cacheBlockSize = getCacheBlockSize();
+  assert(paddr % cacheBlockSize == 0 && "Not Align to Line.");
+  const auto elementsPerLine = cacheBlockSize / (range.elementBits / 8);
+
+  auto tileSize = range.pumTile.getCanonicalTotalTileSize();
+  auto bitlines = cacheParams.bitlines;
+  assert(tileSize <= bitlines && "TileSize > BitlinesPerArray");
+  auto pBitlineIdx =
+      (vBitlineIdx / tileSize) * bitlines + vBitlineIdx % tileSize;
+
+  auto pBitlineIdxInWay = pBitlineIdx % (bitlines * cacheParams.arrayPerWay);
+  auto cacheSetIdx = pBitlineIdxInWay / elementsPerLine;
+  auto finalCacheSetIdx = cacheSetIdx + range.startSet;
+
+  assert(finalCacheSetIdx < getCacheNumSet() && "CacheSet Overflow.");
+
+  DPRINTF(StreamNUCAMap,
+          "[PUM] Map PAddr %#x in [%#x, %#x) Tile %s to Set %d+%d=%d.\n", paddr,
+          range.startPAddr, range.endPAddr, range.pumTile, cacheSetIdx,
+          range.startSet, finalCacheSetIdx);
+  return finalCacheSetIdx;
 }
 
 int StreamNUCAMap::getSet(Addr paddr) {

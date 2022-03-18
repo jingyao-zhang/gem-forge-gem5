@@ -69,18 +69,11 @@ public:
   AffinePattern tile_pattern;
   int64_t dimension;
   IntVecT tile_sizes;
+  IntVecT tile_nums;
   IntVecT array_sizes;
 
   DataMoveCompiler(const PUMHWConfiguration &_llc_config,
-                   const AffinePattern &_tile_pattern)
-      : llc_config(_llc_config), tile_pattern(_tile_pattern) {
-
-    assert(tile_pattern.is_canonical_tile());
-    dimension = tile_pattern.params.size() / 2;
-    auto ret = tile_pattern.get_canonical_tile_and_array_sizes();
-    tile_sizes = std::move(ret.first);
-    array_sizes = std::move(ret.second);
-  }
+                   const AffinePattern &_tile_pattern);
 
   PUMCommandVecT compile(const AffinePattern &src_stream,
                          const AffinePattern &dst_stream) const {
@@ -89,7 +82,7 @@ public:
 
   IntVecT getSubRegionStart(const AffinePattern &sub_region) const {
     // This is S1x...xSi
-    return sub_region.get_sub_region_start_to_array_size(array_sizes);
+    return sub_region.getSubRegionStartToArraySize(array_sizes);
   }
 
   bool is_canonical_sub_region(const AffinePattern &pattern,
@@ -121,8 +114,8 @@ public:
   PUMCommandVecT
   compileAligns(const std::vector<std::pair<int64_t, int64_t>> &aligns) const;
   PUMCommandVecT compileAlign(int64_t dim, int64_t distance) const;
-  PUMCommandVecT compileAlignLessThanTileSize(int64_t dim,
-                                              int64_t distance) const;
+  PUMCommandVecT compileAlignLessEqualTileSize(int64_t dim,
+                                               int64_t distance) const;
 
   /**
    * Mask commands by sub-region.
@@ -146,6 +139,14 @@ public:
                                    AffinePatternVecT &final_tile_masks) const;
 
   /**
+   * Mask commands by reuses.
+   */
+  using ReuseInfoT = PUMCommand::ReuseInfoT;
+  PUMCommandVecT maskCmdsByReuses(const PUMCommandVecT &commands,
+                                  const AffinePattern &subRegion,
+                                  const std::vector<ReuseInfoT> &reuses) const;
+
+  /**
    * Map commands to LLC.
    */
   PUMCommandVecT mapCmdsToLLC(const PUMCommandVecT &commands) const;
@@ -155,6 +156,11 @@ public:
               const std::vector<AffinePatternVecT> &llcBankSubRegions) const;
 
   void splitInterArrayCmdToLLC(PUMCommand &command) const;
+
+  /**
+   * Filter out empty commands at the end..
+   */
+  PUMCommandVecT filterEmptyCmds(const PUMCommandVecT &commands) const;
 };
 
 #endif

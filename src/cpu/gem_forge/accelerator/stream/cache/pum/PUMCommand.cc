@@ -10,6 +10,9 @@ std::ostream &operator<<(std::ostream &os, const PUMCommand &command) {
 std::string PUMCommand::to_string(int llcBankIdx) const {
   std::stringstream os;
   os << "[PUMCmd " << type << " WD-" << wordline_bits << "]\n";
+  if (hasReuse()) {
+    os << "  Reuse          " << reuse.dim << " x" << reuse.count << "\n";
+  }
   if (srcRegion != "none") {
     os << "  Src " << srcRegion << " Acc " << srcAccessPattern << " Map "
        << srcMapPattern << '\n';
@@ -36,17 +39,33 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
     // Compute command.
     os << "  Op " << Enums::OpClassStrings[opClass] << '\n';
   }
-  for (auto i = 0; i < llc_commands.size(); ++i) {
+  for (auto i = 0; i < llcSplitTileCmds.size(); ++i) {
     if (llcBankIdx != -1 && i != llcBankIdx) {
       continue;
     }
-    const auto &patterns = llc_commands[i];
+    const auto &patterns = llcSplitTileCmds[i];
     if (!patterns.empty()) {
       os << "    LLCCmd " << std::setw(2) << i;
       for (auto j = 0; j < patterns.size(); ++j) {
-        os << "  " << patterns[j];
+        os << "  " << patterns[j].srcTilePattern;
+        if (type == "inter-array") {
+          os << " -> " << patterns[j].dstTilePattern << "\n";
+          const auto dstSplitPats = patterns[j].dstSplitTilePatterns;
+          for (auto dstBankIdx = 0; dstBankIdx < dstSplitPats.size();
+               ++dstBankIdx) {
+            if (dstSplitPats[dstBankIdx].empty()) {
+              continue;
+            }
+            os << "        DstBank " << dstBankIdx << " ";
+            for (const auto &dstPat : dstSplitPats[dstBankIdx]) {
+              os << dstPat << " ";
+            }
+            os << "\n";
+          }
+        } else {
+          os << "\n";
+        }
       }
-      os << '\n';
     }
   }
   return os.str();
