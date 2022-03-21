@@ -87,6 +87,8 @@ namespace X86ISA
     //set necessary flags appropriately.
     class X86MicroopBase : public X86StaticInst
     {
+      public:
+        std::string getInstMnem() const { return instMnem; }
       protected:
         const char * instMnem;
         uint8_t opSize;

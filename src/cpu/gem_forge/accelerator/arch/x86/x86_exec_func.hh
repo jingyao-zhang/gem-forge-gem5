@@ -69,6 +69,9 @@ public:
   bool hasSIMD() const { return this->isSIMD; }
 
   int getNumInstructions() const { return this->instructions.size(); }
+  int getNumInstsBeforeStreamConfig() const {
+    return this->numInstsBeforeStreamConfig;
+  }
   const std::vector<StaticInstPtr> &getStaticInsts() const {
     return this->instructions;
   }
@@ -81,6 +84,7 @@ private:
   bool isSIMD = false;
   Cycles estimatedLatency;
 
+  int numInstsBeforeStreamConfig = 0;
   std::vector<StaticInstPtr> instructions;
   std::vector<PCState> pcs;
 
