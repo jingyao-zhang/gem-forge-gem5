@@ -3,6 +3,7 @@
 #include "../exec_func_context.hh"
 #include "arch/x86/decoder.hh"
 #include "arch/x86/insts/macroop.hh"
+#include "arch/x86/insts/microop.hh"
 #include "arch/x86/regs/float.hh"
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
@@ -125,6 +126,13 @@ ExecFunc::ExecFunc(ThreadContext *_tc, const ::LLVM::TDG::ExecFuncInfo &_func)
     }
   }
   EXEC_FUNC_DPRINTF("Decode done. Final PC %s.\n", pc);
+
+  for (const auto inst : this->instructions) {
+    if (inst->getName() == "ssp_stream_ready") {
+      break;
+    }
+    this->numInstsBeforeStreamConfig++;
+  }
 
   this->estimateLatency();
 
@@ -260,12 +268,47 @@ ExecFunc::invoke(const std::vector<RegisterValue> &params,
   // Set up the virt proxy.
   execFuncXC.setVirtProxy(&this->tc->getVirtProxy());
 
+  // Support a simple stack. This is used for complex NestStreamConfigureFunc.
+  std::vector<RegVal> stack;
+
   for (auto idx = 0; idx < this->instructions.size(); ++idx) {
     auto &staticInst = this->instructions.at(idx);
     auto &pc = this->pcs.at(idx);
     EXEC_FUNC_DPRINTF("Set PCState %s: %s.\n", pc,
                       staticInst->disassemble(pc.pc()));
     execFuncXC.pcState(pc);
+
+    auto x86uop = dynamic_cast<X86ISA::X86MicroopBase *>(staticInst.get());
+    auto instMnem = x86uop->getInstMnem();
+    auto uopMnem = x86uop->getName();
+
+    if (instMnem == "PUSH_R") {
+      if (uopMnem == "stis") {
+        // Push into our small stack.
+        // The 3rd argument is the data register.
+        assert(staticInst->numSrcRegs() == 4);
+        auto data = execFuncXC.readIntRegOperand(staticInst->srcRegIdx(2));
+        stack.push_back(data);
+        EXEC_FUNC_DPRINTF("Push %lu.\n", data);
+      }
+      // Ignore other microops.
+      continue;
+    }
+
+    if (instMnem == "POP_R") {
+      if (uopMnem == "mov") {
+        // Pop from our small stack.
+        // The 3rd argument is the data register.
+        assert(staticInst->numDestRegs() == 1);
+        auto data = stack.back();
+        stack.pop_back();
+        execFuncXC.setIntRegOperand(staticInst->destRegIdx(0), data);
+        EXEC_FUNC_DPRINTF("Pop %lu.\n", data);
+      }
+      // Ignore other microops.
+      continue;
+    }
+
     staticInst->execute(&execFuncXC, nullptr /* traceData. */);
 
     /**
