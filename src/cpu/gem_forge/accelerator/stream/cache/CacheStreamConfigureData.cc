@@ -40,6 +40,10 @@ void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data,
 
 void CacheStreamConfigureData::addBaseOn(CacheStreamConfigureDataPtr &data,
                                          int reuse) {
+  if (reuse <= 0) {
+    panic("Illegal BaseOn Reuse %d This %s -> Base %s.", reuse, this->dynamicId,
+          data->dynamicId);
+  }
   this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data, reuse);
 }
 

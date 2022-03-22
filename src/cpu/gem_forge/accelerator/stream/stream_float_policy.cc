@@ -102,6 +102,10 @@ StreamFloatPolicy::shouldFloatStream(DynStream &dynS) {
   if (!this->enabled) {
     return FloatDecision();
   }
+  if (dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0) {
+    // Do not float streams with zero trip count.
+    return FloatDecision();
+  }
   // Initialize the private cache capacity.
   auto S = dynS.stream;
   if (this->cacheCapacity.empty()) {

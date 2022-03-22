@@ -70,12 +70,21 @@ StreamValue LinearAddrGenCallback::genAddr(uint64_t idx,
   // ! Be careful to avoid underflow.
   for (auto paramIdx = strideStartIdx; paramIdx > 1; paramIdx -= 2) {
     auto totalTripCount = getParam(paramIdx - 1);
-    auto newStart = start + stride * (nestedIdx / totalTripCount);
-    auto newStride = getParam(paramIdx - 2);
-    auto newIdx = nestedIdx % totalTripCount;
-    start = newStart;
-    stride = newStride;
-    nestedIdx = newIdx;
+    if (totalTripCount == 0) {
+      auto newStart = start;
+      auto newStride = getParam(paramIdx - 2);
+      auto newIdx = nestedIdx;
+      start = newStart;
+      stride = newStride;
+      nestedIdx = newIdx;
+    } else {
+      auto newStart = start + stride * (nestedIdx / totalTripCount);
+      auto newStride = getParam(paramIdx - 2);
+      auto newIdx = nestedIdx % totalTripCount;
+      start = newStart;
+      stride = newStride;
+      nestedIdx = newIdx;
+    }
     DPRINTF(AddrGenCallback,
             "[LinearAddrGen]: totalTripCount %llu, nestedIdx %llu, start %#x, "
             "stride %#x.\n",

@@ -52,7 +52,8 @@ public:
       DynNestConfig(const StaticRegion *_staticRegion)
           : staticRegion(_staticRegion) {}
 
-      InstSeqNum getConfigSeqNum(uint64_t elementIdx, uint64_t outSeqNum) const;
+      InstSeqNum getConfigSeqNum(StreamEngine *se, uint64_t elementIdx,
+                                 uint64_t outSeqNum) const;
     };
     std::vector<DynNestConfig> nestConfigs;
 

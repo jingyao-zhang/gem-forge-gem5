@@ -6,9 +6,13 @@
 #define DEBUG_TYPE StreamNest
 #include "stream_log.hh"
 
+#define SE_DPRINTF_RAW(se, X, format, args...)                                 \
+  DPRINTF(X, "[SE%d]: " format, se->cpuDelegator->cpuId(), ##args)
 #define SE_DPRINTF_(X, format, args...)                                        \
-  DPRINTF(X, "[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
+  SE_DPRINTF_RAW(this->se, X, format, ##args)
 #define SE_DPRINTF(format, args...) SE_DPRINTF_(StreamNest, format, ##args)
+#define WITH_SE_DPRINTF(se, format, args...)                                   \
+  SE_DPRINTF_RAW(se, StreamNest, format, ##args)
 #define SE_PANIC(format, args...)                                              \
   panic("[SE%d]: " format, this->se->cpuDelegator->cpuId(), ##args)
 
@@ -270,7 +274,7 @@ void StreamRegionController::configureNestStream(
 
   this->isaHandler.resetISAStreamEngine();
   auto configFuncStartSeqNum = dynNestConfig.getConfigSeqNum(
-      dynNestConfig.nextElemIdx, dynRegion.seqNum);
+      this->se, dynNestConfig.nextElemIdx, dynRegion.seqNum);
   dynNestConfig.configFunc->invoke(actualParams, &this->isaHandler,
                                    configFuncStartSeqNum);
 
@@ -306,19 +310,23 @@ void StreamRegionController::configureNestStream(
 }
 
 InstSeqNum StreamRegionController::DynRegion::DynNestConfig::getConfigSeqNum(
-    uint64_t elementIdx, uint64_t outSeqNum) const {
+    StreamEngine *se, uint64_t elementIdx, uint64_t outSeqNum) const {
   /**
    * This needs to be smaller than the StreamEnd SeqNum from core.
    * We use outSeqNum + 1 + elementIdx * (instOffset + 1).
    * Notice that we will subtract the Configuration function instructions
    * so that there is no gap to the final executed StreamConfig.
    */
-  const int numConfigInsts = this->configFunc->getNumInstructions();
+  const int numConfigInsts = this->configFunc->getNumInstsBeforeStreamConfig();
   const int instOffset = 1;
   InstSeqNum ret = outSeqNum + 1 + elementIdx * (instOffset + 1);
 
   assert(ret > numConfigInsts && "Cann't subtract NumConfigInsts.");
-  ret -= (numConfigInsts - 1);
+  ret -= (numConfigInsts);
+
+  WITH_SE_DPRINTF(se,
+                  "[Nest] ConfigSeqNum OutSN %lu NumInst %lu ElemIdx %lu.\n",
+                  outSeqNum, numConfigInsts, elementIdx);
 
   return ret;
 }

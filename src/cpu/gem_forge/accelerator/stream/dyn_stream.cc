@@ -231,9 +231,24 @@ void DynStream::configureBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
   auto stepRootAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
       stepRootDynS.addrGenCallback);
   assert(stepRootAddrGen && "Should be linear addr gen.");
-  DYN_S_DPRINTF(this->dynStreamId, "loopLevel %d.\n", loopLevel);
   auto reuse = stepRootAddrGen->getNestTripCount(
       stepRootDynS.addrGenFormalParams, loopLevel - baseLoopLevel);
+  DYN_S_DPRINTF(this->dynStreamId,
+                "OuterBaseS %s Reuse %ld Between LoopLevel %d-%d.\n",
+                baseDynS.dynStreamId, reuse, baseLoopLevel, loopLevel);
+  if (reuse == 0) {
+    /**
+     * This is possible when the inner loop is from some vectorized loop,
+     * and the number of iterations are smaller than vectorized width --
+     * all handled by the loop epilogure.
+     * Sanity check that my TripCount is zero.
+     */
+    if (!this->hasTotalTripCount() || this->getTotalTripCount() != 0) {
+      DYN_S_PANIC(this->dynStreamId,
+                  "OuterBaseS %s ZeroReuse but NonZero TripCount %ld.",
+                  baseDynS.dynStreamId, this->getTotalTripCount());
+    }
+  }
   edge.reuseBaseElement = reuse;
 }
 

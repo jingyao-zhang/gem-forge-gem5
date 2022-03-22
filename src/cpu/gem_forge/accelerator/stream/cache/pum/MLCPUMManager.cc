@@ -29,16 +29,31 @@ void MLCPUMManager::PUMContext::clear() {
   /**
    * Don't forget to release the ConfigVec.
    */
-  delete this->configs;
-  this->configs = nullptr;
+  this->configs.clear();
 }
 
-bool MLCPUMManager::canApplyPUM(Args &args) {
+void MLCPUMManager::findPUMComputeStreamGroups(CompileStates &states) {
+  for (const auto &config : states.configs) {
+    if (config->stream->getEnabledStoreFunc()) {
+      states.pumGroups.emplace_back();
 
+      auto &group = states.pumGroups.back();
+      group.computeConfig = config;
+      for (const auto &edge : config->baseEdges) {
+        auto baseConfig = edge.data.lock();
+        assert(baseConfig && "BaseConfig already released.");
+        group.usedConfigs.push_back(baseConfig);
+      }
+    }
+  }
+}
+
+bool MLCPUMManager::canApplyPUMToGroup(CompileStates &states,
+                                       const PUMComputeStreamGroup &group) {
   /**
    * We can only apply PUM iff:
-   * 1. Only affine streams (no reduction or pointer-chasing).
-   * 2. One StoreComputeStream and Some forwarding streams.
+   * 1. ComputeS has no DepEdge.
+   * 2. All UsedByS has no BaseEdge (hence affine).
    * 3. Loop is eliminated.
    * 4. Known trip count.
    * 5. For stream patterns:
@@ -47,170 +62,209 @@ bool MLCPUMManager::canApplyPUM(Args &args) {
    *    with matched dimension with the StoreComputeStream.
    * 6. TODO: Enough wordlines to hold inputs and intermediate data.
    */
-
-  for (const auto &config : *args.configs) {
-    if (!this->canApplyPUM(args, config)) {
+  auto checkCommonConstraint = [&](const ConfigPtr &config) -> bool {
+    if (!config->stream->isLoopEliminated()) {
+      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] Not Eliminated.\n");
       return false;
     }
-  }
-
-  if (args.numStoreStreams == 0) {
-    MLCSE_DPRINTF("[PUM] No StoreStream.\n");
-    return false;
-  }
-  return true;
-}
-
-bool MLCPUMManager::canApplyPUM(Args &args,
-                                const CacheStreamConfigureDataPtr &config) {
-
-  if (!config->stream->isLoopEliminated()) {
-    MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] Not Eliminated.\n");
-    return false;
-  }
-  if (config->stream->getEnabledStoreFunc()) {
-    args.numStoreStreams++;
-  }
-  for (const auto &dep : config->depEdges) {
-    if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] Has IndirectS %s.\n",
-                     dep.data->dynamicId);
+    for (const auto &dep : config->depEdges) {
+      if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
+        MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
+                       "[NoPUM] Has IndirectS %s.\n", dep.data->dynamicId);
+        return false;
+      }
+    }
+    if (config->floatPlan.isFloatedToMem()) {
+      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] Float to Mem.\n");
       return false;
     }
-  }
-  if (config->floatPlan.isFloatedToMem()) {
-    MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] Float to Mem.\n");
-    return false;
-  }
-  if (config->floatPlan.getFirstFloatElementIdx() != 0) {
-    MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] Delayed Float.\n");
-    return false;
-  }
+    if (config->floatPlan.getFirstFloatElementIdx() != 0) {
+      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] Delayed Float.\n");
+      return false;
+    }
 
-  if (!config->hasTotalTripCount()) {
-    MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] No TripCount.\n");
-    return false;
-  }
-  auto linearAddrGen =
-      std::dynamic_pointer_cast<LinearAddrGenCallback>(config->addrGenCallback);
-  if (!linearAddrGen) {
-    MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] Not LinearAddrGen.\n");
-    return false;
-  }
+    if (!config->hasTotalTripCount()) {
+      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] No TripCount.\n");
+      return false;
+    }
+    auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
+        config->addrGenCallback);
+    if (!linearAddrGen) {
+      MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
+                     "[NoPUM] Not LinearAddrGen.\n");
+      return false;
+    }
 
-  /**
-   * We first get the StreamNUCA region, to get the ScalarElemSize.
-   */
-  auto S = config->stream;
-  auto cpuDelegator = S->getCPUDelegator();
-  auto threadContext = cpuDelegator->getSingleThreadContext();
-  auto streamNUCAManager = threadContext->getStreamNUCAManager();
+    /**
+     * We first get the StreamNUCA region, to get the ScalarElemSize.
+     */
+    auto S = config->stream;
+    auto cpuDelegator = S->getCPUDelegator();
+    auto threadContext = cpuDelegator->getSingleThreadContext();
+    auto streamNUCAManager = threadContext->getStreamNUCAManager();
 
-  const auto &addrParams = config->addrGenFormalParams;
-  auto startVAddr = linearAddrGen->getStartAddr(addrParams);
-  const auto &streamNUCARegion =
-      streamNUCAManager->getContainingStreamRegion(startVAddr);
-  auto scalarElemSize = streamNUCARegion.elementSize;
-  auto regionVAddr = streamNUCARegion.vaddr;
+    const auto &addrParams = config->addrGenFormalParams;
+    auto startVAddr = linearAddrGen->getStartAddr(addrParams);
+    const auto &streamNUCARegion =
+        streamNUCAManager->getContainingStreamRegion(startVAddr);
+    auto scalarElemSize = streamNUCARegion.elementSize;
+    auto regionVAddr = streamNUCARegion.vaddr;
 
-  Addr startPAddr;
-  if (!cpuDelegator->translateVAddrOracle(startVAddr, startPAddr)) {
-    MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] Fault StartVAddr.\n");
-    return false;
-  }
-  auto rangeMap = StreamNUCAMap::getRangeMapContaining(startPAddr);
-  if (!rangeMap) {
-    MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] No RangeMap.\n");
-    return false;
-  }
-  if (!rangeMap->isStreamPUM) {
-    MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[PUM] RangeMap not PUM.\n");
-    return false;
-  }
+    Addr startPAddr;
+    if (!cpuDelegator->translateVAddrOracle(startVAddr, startPAddr)) {
+      MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
+                     "[NoPUM] Fault StartVAddr.\n");
+      return false;
+    }
+    auto rangeMap = StreamNUCAMap::getRangeMapContaining(startPAddr);
+    if (!rangeMap) {
+      MLC_S_DPRINTF_(StreamPUM, config->dynamicId, "[NoPUM] No RangeMap.\n");
+      return false;
+    }
+    if (!rangeMap->isStreamPUM) {
+      MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
+                     "[NoPUM] RangeMap not PUM.\n");
+      return false;
+    }
 
 #define AssertScalarAlign(v) assert((v) % scalarElemSize == 0)
 #define AlignToScalarElem(v) ((v) / scalarElemSize)
 
-  AssertScalarAlign(startVAddr - regionVAddr);
-  auto scalarStart = AlignToScalarElem(startVAddr - regionVAddr);
+    AssertScalarAlign(startVAddr - regionVAddr);
+    auto scalarStart = AlignToScalarElem(startVAddr - regionVAddr);
 
-  AffinePattern::ParamVecT params;
-  assert(addrParams.size() % 2 == 1);
-  int64_t prevTotalTrip = 1;
-  for (auto i = 0; i + 1 < addrParams.size(); i += 2) {
-    auto stride = addrParams[i].invariant.uint64();
-    auto totalTrip = addrParams[i + 1].invariant.uint64();
-    AssertScalarAlign(stride);
-    auto scalarStride = AlignToScalarElem(stride);
-    auto scalarTrip = totalTrip / prevTotalTrip;
-    params.emplace_back(scalarStride, scalarTrip);
+    AffinePattern::ParamVecT params;
+    assert(addrParams.size() % 2 == 1);
+    int64_t prevTotalTrip = 1;
+    for (auto i = 0; i + 1 < addrParams.size(); i += 2) {
+      auto stride = addrParams[i].invariant.uint64();
+      auto totalTrip = addrParams[i + 1].invariant.uint64();
+      AssertScalarAlign(stride);
+      auto scalarStride = AlignToScalarElem(stride);
+      auto scalarTrip = totalTrip / prevTotalTrip;
+      params.emplace_back(scalarStride, scalarTrip);
 
-    prevTotalTrip = totalTrip;
-  }
+      prevTotalTrip = totalTrip;
+    }
 
-  AffinePattern pattern(scalarStart, params);
-  auto &patternInfo =
-      args.patternInfo
-          .emplace(std::piecewise_construct, std::forward_as_tuple(S),
-                   std::forward_as_tuple())
-          .first->second;
-  patternInfo.regionName = streamNUCARegion.name;
-  patternInfo.pumTile = rangeMap->pumTile;
-  patternInfo.pattern = pattern;
-  patternInfo.scalarElemSize = scalarElemSize;
-  patternInfo.atomicPatterns =
-      this->decoalesceAndDevectorizePattern(config, pattern, scalarElemSize);
+    AffinePattern pattern(scalarStart, params);
+    auto &patternInfo =
+        states.patternInfo
+            .emplace(std::piecewise_construct, std::forward_as_tuple(S),
+                     std::forward_as_tuple())
+            .first->second;
+    patternInfo.regionName = streamNUCARegion.name;
+    patternInfo.pumTile = rangeMap->pumTile;
+    patternInfo.pattern = pattern;
+    patternInfo.scalarElemSize = scalarElemSize;
+    patternInfo.atomicPatterns =
+        this->decoalesceAndDevectorizePattern(config, pattern, scalarElemSize);
 
-  /**
-   * TODO: Additional check that pattern is sub-region.
-   */
-  return true;
-}
+    /**
+     * TODO: Additional check that pattern is sub-region.
+     */
+    return true;
+  };
 
-/**
- * Receive a StreamConfig message and generate PUM commands.
- */
-bool MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
-
-  if (this->controller->myParams->stream_pum_mode != "enable") {
+  const auto &computeConfig = group.computeConfig;
+  const auto &groupDynId = computeConfig->dynamicId;
+  if (!computeConfig->depEdges.empty()) {
+    MLC_S_DPRINTF_(StreamPUM, groupDynId, "[NoPUM] Has IndirectS %s.\n",
+                   computeConfig->depEdges.front().data->dynamicId);
     return false;
   }
 
-  Args args;
-  args.configs = *(pkt->getPtr<CacheStreamConfigureVec *>());
-  if (!this->canApplyPUM(args)) {
+  if (!checkCommonConstraint(computeConfig)) {
     return false;
   }
 
-  this->applyPUM(args);
+  for (const auto &baseConfig : group.usedConfigs) {
+    if (!baseConfig->baseEdges.empty()) {
+      MLC_S_DPRINTF_(StreamPUM, groupDynId, "[NoPUM] UsedS with BaseEdge %s.\n",
+                     baseConfig->dynamicId);
+      return false;
+    }
+    if (!checkCommonConstraint(baseConfig)) {
+      return false;
+    }
+  }
 
-  // Do not release the configure vec as it's remembered in Context.
-  delete pkt;
+  // Final check: all regions should have the same tile mapping.
+  const auto &computeTile =
+      states.patternInfo.at(computeConfig->stream).pumTile;
+  for (const auto &baseConfig : group.usedConfigs) {
+    const auto &tile = states.patternInfo.at(baseConfig->stream).pumTile;
+    if (tile != computeTile) {
+      MLC_S_DPRINTF_(StreamPUM, groupDynId,
+                     "[NoPUM] Mismatch Tile %s and %s from %s.\n", computeTile,
+                     tile, baseConfig->dynamicId);
+      return false;
+    }
+  }
+
   return true;
 }
 
-void MLCPUMManager::applyPUM(Args &args) {
-  for (const auto &config : *args.configs) {
-    this->compileDataMove(args, config);
+void MLCPUMManager::applyPUMToGroup(CompileStates &states,
+                                    PUMComputeStreamGroup &group) {
+
+  assert(group.canApplyPUM);
+  group.appliedPUM = true;
+  for (const auto &sendConfig : group.usedConfigs) {
+    for (const auto &dep : sendConfig->depEdges) {
+      if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
+        continue;
+      }
+      if (dep.data != group.computeConfig) {
+        // Not to us.
+        continue;
+      }
+      this->compileDataMove(states, sendConfig, dep);
+    }
   }
 
   /**
    * Insert sync command after all data movement.
    * This is default enabled for every LLC bank.
    */
-  args.commands.emplace_back();
-  auto &sync = args.commands.back();
+  states.commands.emplace_back();
+  auto &sync = states.commands.back();
   sync.type = "sync";
 
-  for (const auto &config : *args.configs) {
-    this->compileCompute(args, config);
+  this->compileCompute(states, group.computeConfig);
+}
+
+void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
+
+  if (this->controller->myParams->stream_pum_mode != 1) {
+    return;
+  }
+
+  CompileStates states;
+  // Take a copy of the configure vector.
+  states.configs = **(pkt->getPtr<CacheStreamConfigureVec *>());
+  this->findPUMComputeStreamGroups(states);
+  for (auto &group : states.pumGroups) {
+    group.canApplyPUM = this->canApplyPUMToGroup(states, group);
+  }
+  bool appliedPUM = false;
+  for (auto &group : states.pumGroups) {
+    if (group.canApplyPUM) {
+      this->applyPUMToGroup(states, group);
+      appliedPUM = true;
+    }
+  }
+
+  if (!appliedPUM) {
+    return;
   }
 
   assert(!this->context.isActive() && "PUM Already Active.");
   // Remember the configured streams.
-  this->context.configs = args.configs;
-  this->context.commands = args.commands;
-  for (const auto &command : args.commands) {
+  this->context.configs = states.configs;
+  this->context.pumGroups = states.pumGroups;
+  this->context.commands = states.commands;
+  for (const auto &command : states.commands) {
     if (command.type == "sync") {
       this->context.numSync++;
     }
@@ -218,10 +272,73 @@ void MLCPUMManager::applyPUM(Args &args) {
   // Implicit last sync.
   this->context.numSync++;
 
-  this->configurePUMEngine(args);
+  this->configurePUMEngine(states);
+
+  /**
+   * Clear the PUMConfigs from the original ConfigVec so that MLCStreamEngine
+   * can continue to handle normal streams.
+   */
+  auto normalConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+  auto eraseFromNormalConfigs = [&](const ConfigPtr &target) -> void {
+    bool erased = false;
+    for (auto iter = normalConfigs->begin(); iter != normalConfigs->end();
+         ++iter) {
+      const auto &config = *iter;
+      if (config == target) {
+        this->context.purePUMStreamIds.push_back(target->dynamicId);
+        normalConfigs->erase(iter);
+        erased = true;
+        break;
+      }
+    }
+    assert(erased);
+  };
+  auto findConfig = [&](Stream *S) -> ConfigPtr {
+    for (auto iter = normalConfigs->begin(); iter != normalConfigs->end();
+         ++iter) {
+      const auto &config = *iter;
+      if (config->stream == S) {
+        return config;
+      }
+    }
+    assert(false && "Failed to find Config for Stream.");
+  };
+  for (const auto &group : states.pumGroups) {
+    if (!group.appliedPUM) {
+      continue;
+    }
+    MLC_S_DPRINTF(group.computeConfig->dynamicId,
+                  "[PUMErased] Erase ComputeConfig.\n");
+    eraseFromNormalConfigs(group.computeConfig);
+  }
+  for (const auto &compiledDataMove : states.compiledDataMove) {
+    auto sendS = compiledDataMove.first;
+    auto recvS = compiledDataMove.second;
+    auto sendConfig = findConfig(sendS);
+    auto &deps = sendConfig->depEdges;
+    bool erased = false;
+    for (auto iter = deps.begin(); iter != deps.end(); ++iter) {
+      if (iter->data->stream == recvS) {
+        MLC_S_DPRINTF(sendConfig->dynamicId,
+                      "[PUMErased] Erase ForwardEdge -> %s.\n",
+                      iter->data->dynamicId);
+        deps.erase(iter);
+        erased = true;
+        break;
+      }
+    }
+    assert(erased && "Failed to remove FowardEdge.");
+    if (deps.empty()) {
+      MLC_S_DPRINTF(sendConfig->dynamicId,
+                    "[PUMErased] Erase Empty ForwardStream.\n");
+      eraseFromNormalConfigs(sendConfig);
+    }
+  }
+
+  return;
 }
 
-void MLCPUMManager::configurePUMEngine(Args &args) {
+void MLCPUMManager::configurePUMEngine(CompileStates &states) {
 
   /**
    * Broadcast the configure packet.
@@ -248,7 +365,7 @@ void MLCPUMManager::configurePUMEngine(Args &args) {
       auto llcCntrl =
           AbstractStreamAwareController::getController(dstMachineId);
       auto llcSE = llcCntrl->getLLCStreamEngine();
-      llcSE->getPUMEngine()->configure(this, args.commands);
+      llcSE->getPUMEngine()->configure(this, states.commands);
     }
   }
 
@@ -261,69 +378,69 @@ void MLCPUMManager::configurePUMEngine(Args &args) {
       this->controller->cyclesToTicks(latency));
 }
 
-void MLCPUMManager::compileDataMove(Args &args,
-                                    const CacheStreamConfigureDataPtr &config) {
+void MLCPUMManager::compileDataMove(
+    CompileStates &states, const ConfigPtr &sendConfig,
+    const CacheStreamConfigureData::DepEdge &dep) {
 
-  auto S = config->stream;
-  const auto &patternInfo = args.patternInfo.at(S);
+  const auto &sendDynId = sendConfig->dynamicId;
+  auto S = sendConfig->stream;
+  const auto &patternInfo = states.patternInfo.at(S);
   auto myTile = patternInfo.pumTile;
 
-  MLC_S_DPRINTF(config->dynamicId, "[PUM] --- Compile DataMove. MyTile %s.\n",
-                myTile);
+  MLC_S_DPRINTF(sendDynId, "[PUM] --- Compile DataMove. MyTile %s.\n", myTile);
   DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
 
-  for (const auto &dep : config->depEdges) {
-    assert(dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo);
+  assert(dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo);
 
-    auto recvConfig = dep.data;
-    auto recvS = recvConfig->stream;
-    const auto &recvPatternInfo = args.patternInfo.at(recvS);
-    auto recvTile = recvPatternInfo.pumTile;
+  auto recvConfig = dep.data;
+  auto recvS = recvConfig->stream;
+  const auto &recvPatternInfo = states.patternInfo.at(recvS);
+  auto recvTile = recvPatternInfo.pumTile;
 
-    if (recvTile != myTile) {
-      // TODO: Handle different mapping of source and dest stream.
-      MLC_S_PANIC_NO_DUMP(config->dynamicId, "[PUM] Different Tile.");
+  assert(states.compiledDataMove.emplace(S, recvS).second &&
+         "CompiledDataMove Twice.");
+
+  if (recvTile != myTile) {
+    // TODO: Handle different mapping of source and dest stream.
+    MLC_S_PANIC_NO_DUMP(sendDynId, "[PUM] Different Tile.");
+  }
+
+  if (recvPatternInfo.atomicPatterns.size() != 1) {
+    MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
+  }
+  const auto &recvPattern = recvPatternInfo.atomicPatterns.front();
+  MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] RecvPattern %s.\n", recvPattern);
+
+  for (const auto &myPattern : patternInfo.atomicPatterns) {
+    MLC_S_DPRINTF(sendDynId, "[PUM] SendPattern %s.\n", myPattern);
+
+    auto reusedMyPattern =
+        this->addReuseToOuterPattern(sendConfig, recvConfig, myPattern);
+
+    auto commands = compiler.compile(reusedMyPattern, recvPattern);
+    // Generate the meta information.
+    for (auto &cmd : commands) {
+      cmd.wordline_bits = patternInfo.scalarElemSize * 8;
+      cmd.dynStreamId = sendConfig->dynamicId;
+      cmd.srcRegion = patternInfo.regionName;
+      cmd.srcAccessPattern = reusedMyPattern;
+      cmd.srcMapPattern = myTile;
+      cmd.dstRegion = recvPatternInfo.regionName;
+      cmd.dstAccessPattern = recvPattern;
+      cmd.dstMapPattern = myTile;
     }
-
-    if (recvPatternInfo.atomicPatterns.size() != 1) {
-      MLC_S_PANIC_NO_DUMP(recvConfig->dynamicId, "[PUM] Multi Recv.");
+    if (Debug::StreamPUM) {
+      for (const auto &command : commands) {
+        MLC_S_DPRINTF(sendDynId, "%s", command);
+      }
     }
-    const auto &recvPattern = recvPatternInfo.atomicPatterns.front();
-    MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] RecvPattern %s.\n",
-                  recvPattern);
-
-    for (const auto &myPattern : patternInfo.atomicPatterns) {
-      MLC_S_DPRINTF(config->dynamicId, "[PUM] SendPattern %s.\n", myPattern);
-
-      auto reusedMyPattern =
-          this->addReuseToOuterPattern(config, recvConfig, myPattern);
-
-      auto commands = compiler.compile(reusedMyPattern, recvPattern);
-      // Generate the meta information.
-      for (auto &cmd : commands) {
-        cmd.wordline_bits = patternInfo.scalarElemSize * 8;
-        cmd.dynStreamId = config->dynamicId;
-        cmd.srcRegion = patternInfo.regionName;
-        cmd.srcAccessPattern = reusedMyPattern;
-        cmd.srcMapPattern = myTile;
-        cmd.dstRegion = recvPatternInfo.regionName;
-        cmd.dstAccessPattern = recvPattern;
-        cmd.dstMapPattern = myTile;
-      }
-      if (Debug::StreamPUM) {
-        for (const auto &command : commands) {
-          MLC_S_DPRINTF(config->dynamicId, "%s", command);
-        }
-      }
-      args.commands.insert(args.commands.end(), commands.begin(),
+    states.commands.insert(states.commands.end(), commands.begin(),
                            commands.end());
-    }
   }
 }
 
 AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
-    const CacheStreamConfigureDataPtr &config, const AffinePattern &pattern,
-    int scalarElemSize) {
+    const ConfigPtr &config, const AffinePattern &pattern, int scalarElemSize) {
   AffinePatternVecT ret;
 
   for (const auto &id : config->stream->getLogicalStreamIds()) {
@@ -360,10 +477,10 @@ AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
   return ret;
 }
 
-AffinePattern MLCPUMManager::addReuseToOuterPattern(
-    const CacheStreamConfigureDataPtr &outerConfig,
-    const CacheStreamConfigureDataPtr &innerConfig,
-    const AffinePattern &pattern) const {
+AffinePattern
+MLCPUMManager::addReuseToOuterPattern(const ConfigPtr &outerConfig,
+                                      const ConfigPtr &innerConfig,
+                                      const AffinePattern &pattern) const {
 
   auto outerS = outerConfig->stream;
   auto innerS = innerConfig->stream;
@@ -426,7 +543,11 @@ void MLCPUMManager::checkSync() {
     if (this->context.numSync == 0) {
       // This is the last Sync.
       MLCSE_DPRINTF("Ack all elements at core.\n");
-      for (const auto &config : *context.configs) {
+      for (const auto &group : context.pumGroups) {
+        if (!group.appliedPUM) {
+          continue;
+        }
+        const auto &config = group.computeConfig;
         auto S = config->stream;
         auto dynS = S->getDynStream(config->dynamicId);
         if (!dynS) {
@@ -467,24 +588,33 @@ void MLCPUMManager::checkSync() {
   }
 }
 
-bool MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
+void MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
   if (!this->context.isActive()) {
-    return false;
+    return;
+  }
+
+  auto endIds = *(pkt->getPtr<std::vector<DynStreamId> *>());
+  for (auto &dynId : this->context.purePUMStreamIds) {
+    for (auto iter = endIds->begin(); iter != endIds->end(); ++iter) {
+      if (dynId == (*iter)) {
+        endIds->erase(iter);
+        break;
+      }
+    }
   }
 
   assert(this->context.numSync == 0 && "PUM end before done.");
   MLCSE_DPRINTF("Release PUM context.\n");
   this->context.clear();
-  return true;
 }
 
-void MLCPUMManager::compileCompute(Args &args,
-                                   const CacheStreamConfigureDataPtr &config) {
+void MLCPUMManager::compileCompute(CompileStates &states,
+                                   const ConfigPtr &config) {
   if (!config->storeCallback) {
     return;
   }
 
-  auto &patternInfo = args.patternInfo.at(config->stream);
+  auto &patternInfo = states.patternInfo.at(config->stream);
   auto scalarElemBits = patternInfo.scalarElemSize * 8;
 
   DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(),
@@ -546,5 +676,6 @@ void MLCPUMManager::compileCompute(Args &args,
     }
   }
 
-  args.commands.insert(args.commands.end(), commands.begin(), commands.end());
+  states.commands.insert(states.commands.end(), commands.begin(),
+                         commands.end());
 }

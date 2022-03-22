@@ -11,7 +11,10 @@ PUMEngine::PUMEngine(LLCStreamEngine *_se)
 
 void PUMEngine::receiveConfigure(const RequestMsg &msg) {
   assert(this->pumManager && "Not configured yet.");
-  assert(this->nextCmdIdx == 0 && "Not configured.");
+  if (this->nextCmdIdx != 0) {
+    LLC_SE_PANIC("[PUM] RecvConfig with NextCmdIdx %d != 0.", nextCmdIdx);
+  }
+  this->receivedConfig = true;
   this->kickNextCommand();
 }
 
@@ -36,6 +39,7 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
   this->sentInterBankPackets = 0;
   this->acked = false;
   this->commands.clear();
+  this->receivedConfig = false;
 
   /**
    * Filter out unrelated commands and merge continuous one.
@@ -294,7 +298,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
 void PUMEngine::tick() {
 
-  if (this->commands.empty()) {
+  if (this->commands.empty() || !this->receivedConfig) {
     return;
   }
 

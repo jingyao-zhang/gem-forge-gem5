@@ -603,14 +603,6 @@ DataMoveCompiler::mapCmdsToLLC(const PUMCommandVecT &commands) const {
   auto tilePerLLCBank = llc_config.get_array_per_bank();
   auto numLLCBanks = llc_config.get_total_banks();
 
-  IntVecT tile_nums;
-  for (auto i = 0; i < dimension; ++i) {
-    auto a = array_sizes[i];
-    auto t = tile_sizes[i];
-    auto s = (a + t - 1) / t;
-    tile_nums.push_back(s);
-  }
-
   // Construct the sub-region for each LLC bank.
   std::vector<AffinePatternVecT> llcBankSubRegions;
   for (auto i = 0; i < numLLCBanks; ++i) {

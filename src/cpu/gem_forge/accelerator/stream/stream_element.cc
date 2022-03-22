@@ -430,6 +430,15 @@ bool StreamElement::checkAddrBaseElementsReady(bool checkByCore) {
                             "HasUnInitInnerLoopBaseElem.\n");
     return false;
   }
+  /**
+   * If this is the LastElement of stream with TripCount 0, it should never to
+   * AddrReady.
+   */
+  if (this->dynS->hasTotalTripCount() && this->dynS->getTotalTripCount() == 0 &&
+      this->isLastElement()) {
+    S_ELEMENT_DPRINTF(this, "[AddrBaseReady] NotReady: ZeroTripCount.\n");
+    return false;
+  }
   bool ready = true;
   for (const auto &baseElement : this->addrBaseElements) {
     auto baseE = baseElement.getElement();
@@ -991,6 +1000,14 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
       // Should never be ready.
       return false;
     }
+  }
+  /**
+   * Special case for the last element of stream with TripCount 0, we should
+   * never be ready.
+   */
+  if (this->dynS->hasTotalTripCount() && this->dynS->getTotalTripCount() == 0 &&
+      this->isLastElement()) {
+    return false;
   }
   for (const auto &baseElement : this->valueBaseElements) {
     if (!baseElement.isValid()) {

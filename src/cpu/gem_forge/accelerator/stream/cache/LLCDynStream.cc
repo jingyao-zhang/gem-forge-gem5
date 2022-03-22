@@ -49,6 +49,10 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
   for (auto &baseEdge : this->configData->baseEdges) {
     this->baseOnConfigs.emplace_back(baseEdge.data.lock());
     this->reusedBaseElements.emplace_back(baseEdge.reuse);
+    if (baseEdge.reuse <= 0) {
+      LLC_S_PANIC(this->strandId, "Illegal Reuse Count %d on %s.",
+                  baseEdge.reuse, baseEdge.data.lock()->dynamicId);
+    }
     assert(this->baseOnConfigs.back() && "BaseStreamConfig already released?");
   }
 

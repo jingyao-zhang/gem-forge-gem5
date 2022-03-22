@@ -361,6 +361,13 @@ public:
   break_continuous_range_into_canonical_sub_regions(const IntVecT &array_sizes,
                                                     int64_t start,
                                                     int64_t trip) {
+    // Handle possible cases when start/trip overflow array_sizes.
+    auto totalSize = reduce_mul(array_sizes.begin(), array_sizes.end(), 1);
+    if (start >= totalSize || start + trip <= 0) {
+      // No overlap at all.
+      return std::vector<AffinePattern>();
+    }
+    trip = std::min(trip, totalSize - start);
     auto ps = getArrayPosition(array_sizes, start);
     auto qs = getArrayPosition(array_sizes, start + trip);
     return recursive_break_continuous_range_into_canonical_sub_regions(

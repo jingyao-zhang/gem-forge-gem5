@@ -16,14 +16,16 @@
 #include "debug/MLCRubyStreamLife.hh"
 #include "debug/MLCRubyStreamReuse.hh"
 #include "debug/StreamNearDataComputing.hh"
+#include "debug/StreamPUM.hh"
 #include "debug/StreamRangeSync.hh"
 
 #define DEBUG_TYPE MLCRubyStreamBase
 #include "../stream_log.hh"
 
-#define MLCSE_DPRINTF(format, args...)                                         \
-  DPRINTF(MLCRubyStream, "[MLC_SE%d]: " format,                                \
-          this->controller->getMachineID().num, ##args)
+#define MLCSE_DPRINTF_(X, format, args...)                                     \
+  DPRINTF(X, "[MLC_SE%d]: " format, this->controller->getMachineID().num,      \
+          ##args)
+#define MLCSE_DPRINTF(format, args...) MLCSE_DPRINTF_(MLCRubyStream, ##args)
 
 MLCStreamEngine::MLCStreamEngine(AbstractStreamAwareController *_controller,
                                  MessageBuffer *_responseToUpperMsgBuffer,
@@ -44,12 +46,22 @@ void MLCStreamEngine::receiveStreamConfigure(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream configure when stream float is disabled.\n");
 
-  if (!this->pumManager->receiveStreamConfigure(pkt)) {
-    this->strandManager->receiveStreamConfigure(pkt);
-    if (this->controller->isStreamRangeSyncEnabled()) {
-      // Enable the range check.
-      this->scheduleEvent(Cycles(1));
-    }
+  this->pumManager->receiveStreamConfigure(pkt);
+
+  auto configs = *(pkt->getPtr<CacheStreamConfigureVec *>());
+  if (configs->empty()) {
+    // Everything is now handled as PUM.
+    MLCSE_DPRINTF_(StreamPUM,
+                   "Everything handled by PUM. No Normal Streams.\n");
+    delete configs;
+    delete pkt;
+    return;
+  }
+
+  this->strandManager->receiveStreamConfigure(pkt);
+  if (this->controller->isStreamRangeSyncEnabled()) {
+    // Enable the range check.
+    this->scheduleEvent(Cycles(1));
   }
 }
 
@@ -57,11 +69,7 @@ void MLCStreamEngine::receiveStreamEnd(PacketPtr pkt) {
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream end when stream float is disabled.\n");
 
-  if (this->pumManager->receiveStreamEnd(pkt)) {
-    // This is actually handled by PUM.
-    return;
-  }
-
+  this->pumManager->receiveStreamEnd(pkt);
   this->strandManager->receiveStreamEnd(pkt);
 }
 

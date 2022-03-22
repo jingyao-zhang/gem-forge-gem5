@@ -47,6 +47,10 @@ public:
       assert(offset < MaxRegisterValueSize);
       return this->at(offset);
     }
+    int64_t int64(int offset = 0) const {
+      assert(offset < MaxRegisterValueSize);
+      return this->at(offset);
+    }
   };
   static int translateToNumRegs(const DataType &type);
   static std::string printRegisterValue(const RegisterValue &value,

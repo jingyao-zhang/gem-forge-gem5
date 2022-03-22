@@ -34,6 +34,7 @@ private:
    */
   MLCPUMManager *pumManager = nullptr;
   PUMCommandVecT commands;
+  bool receivedConfig = false;
   int nextCmdIdx = 0;
   Cycles nextCmdReadyCycle;
   int sentInterBankPackets = 0;

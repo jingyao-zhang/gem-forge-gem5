@@ -545,14 +545,26 @@ void Stream::setupLinearAddrFunc(DynStream &dynStream,
     DYN_S_DPRINTF(dynStream.dynStreamId, "%s\n", param.invariant);
   }
 
+  int64_t totalTripCount = 1;
   for (auto idx = 1; idx < formalParams.size() - 1; idx += 2) {
     auto &formalParam = formalParams.at(idx);
     // TripCount.
-    auto tripCount = formalParam.invariant.uint64();
+    auto curTripCount = formalParam.invariant.uint64();
+    if ((curTripCount >> 56) & 0xFF) {
+      /**
+       * ! Hack: LLVM may generate crazy trip count expression that does not
+       * ! consider the case when TripCount could be negative or zero, as it
+       * ! assumes such case is covered by some branch checking.
+       * ! As a hack here, we check the most significant 8 bits, and if they
+       * ! are set, we set the TripCount to 0.
+       */
+      DYN_S_WARN(dynStream.dynStreamId,
+                 "Adjust Suspicious TripCount %d %lu To %lu.\n", idx,
+                 curTripCount, 0);
+      curTripCount = 0;
+    }
     // TotalTripCount.
-    auto totalTripCount =
-        (idx == 1) ? (tripCount)
-                   : (tripCount * formalParams.at(idx - 2).invariant.uint64());
+    totalTripCount *= curTripCount;
     formalParam.invariant.uint64() = totalTripCount;
   }
 

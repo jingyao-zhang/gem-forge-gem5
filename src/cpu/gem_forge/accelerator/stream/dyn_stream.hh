@@ -197,7 +197,7 @@ public:
     const InstanceId baseInstanceId = DynStreamId::InvalidInstanceId;
     const StaticId depStaticId = DynStreamId::InvalidStaticStreamId;
     const uint64_t alignBaseElement = 0;
-    uint64_t reuseBaseElement = 0;
+    uint64_t reuseBaseElement = 1;
     StreamDepEdge(TypeE _type, StaticId _baseStaticId,
                   InstanceId _baseInstanceId, StaticId _depStaticId,
                   uint64_t _alignBaseElement, uint64_t _reuseBaseElement)
