@@ -43,6 +43,9 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
   this->pumManager = pumManager;
   this->nextCmdIdx = 0;
   this->sentInterBankPackets = 0;
+  this->recvInterBankPackets = 0;
+  this->sentInterBankPacketMap.clear();
+  this->recvInterBankPacketMap.clear();
   this->acked = false;
   this->commands.clear();
   this->receivedConfig = false;
@@ -267,6 +270,10 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
 
         LLC_SE_DPRINTF("[PUMEngine] Send Inter-Bank Data -> %s.\n", dstBanks);
 
+        for (const auto &dstNodeId : dstBanks.getAllDest()) {
+          this->sentInterBankPacketMap.emplace(dstNodeId, 0).first->second++;
+        }
+
         this->se->streamIndirectIssueMsgBuffer->enqueue(
             msg, this->controller->clockEdge(),
             this->controller->cyclesToTicks(Cycles(1)));
@@ -324,9 +331,11 @@ void PUMEngine::tick() {
     // We are done or waiting for the sync.
     if (!this->acked) {
       LLC_SE_DPRINTF("[Sync] SentPackets %d.\n", this->sentInterBankPackets);
+      this->sendSyncToLLCs();
       auto sentPackets = this->sentInterBankPackets;
       this->acked = true;
       this->sentInterBankPackets = 0;
+      this->sentInterBankPacketMap.clear();
       this->sendSyncToMLC(sentPackets);
     }
     return;
@@ -347,7 +356,39 @@ void PUMEngine::synced() {
 
 void PUMEngine::receiveData(const RequestMsg &msg) {
   assert(this->pumManager);
-  this->pumManager->receivePacket();
+
+  auto sender = msg.m_Requestors.singleElement();
+  auto senderNodeId = sender.getRawNodeID();
+  if (msg.m_isPUM) {
+    // This is the sync message.
+    auto iter = this->recvInterBankPacketMap.find(senderNodeId);
+    if (iter == this->recvInterBankPacketMap.end()) {
+      LLC_SE_PANIC("[PUM] Haven't received any packets from %s.", sender);
+    }
+    auto recvPackets = iter->second;
+    auto sentPackets = msg.m_Len;
+    if (recvPackets != sentPackets) {
+      LLC_SE_PANIC("[PUM] Sync and Data Packets arrives out-of-order (Recv %d "
+                   "!= Sent %d).",
+                   recvPackets, sentPackets);
+    }
+    // Clear the entry.
+    this->recvInterBankPacketMap.erase(iter);
+    /**
+     * At this point, we know we have received all messages from this sender.
+     * However, we don't know if we will still receive more data from other
+     * banks. So here I can only report Done for packets from this sender.
+     */
+    this->sendDoneToMLC(recvPackets);
+  } else {
+    // This is normal data message.
+    this->recvInterBankPacketMap.emplace(senderNodeId, 0).first->second++;
+    this->recvInterBankPackets++;
+  }
+}
+
+void PUMEngine::sendDoneToMLC(int recvPackets) {
+  this->sendAckToMLC(CoherenceResponseType_STREAM_DONE, recvPackets);
 }
 
 void PUMEngine::sendSyncToMLC(int sentPackets) {
@@ -355,14 +396,18 @@ void PUMEngine::sendSyncToMLC(int sentPackets) {
   /**
    * This is represented as a StreamAck message.
    */
+  this->sendAckToMLC(CoherenceResponseType_STREAM_ACK, sentPackets);
+}
+
+void PUMEngine::sendAckToMLC(CoherenceResponseType type, int ackCount) {
   assert(this->pumManager);
   auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
   msg->m_addr = 0;
-  msg->m_Type = CoherenceResponseType_STREAM_ACK;
+  msg->m_Type = type;
   msg->m_Sender = this->controller->getMachineID();
   msg->m_MessageSize = MessageSizeType_Control;
   msg->m_isPUM = true;
-  msg->m_AckCount = sentPackets;
+  msg->m_AckCount = ackCount;
   msg->m_Destination.add(this->pumManager->getMachineID());
 
   auto mlcMachineId = msg->m_Destination.singleElement();
@@ -380,4 +425,38 @@ void PUMEngine::sendSyncToMLC(int sentPackets) {
         msg, this->controller->clockEdge(),
         this->controller->cyclesToTicks(latency));
   }
+}
+
+void PUMEngine::sendSyncToLLCs() {
+
+  for (const auto &entry : this->sentInterBankPacketMap) {
+    auto nodeId = entry.first;
+    auto packets = entry.second;
+    auto machineId = MachineID::getMachineIDFromRawNodeID(nodeId);
+    LLC_SE_DPRINTF("[Sync] Sent Packets %d to %s.\n", packets, machineId);
+    // Send a done msg to the destination bank.
+    this->sendSyncToLLC(machineId, packets);
+  }
+}
+
+void PUMEngine::sendSyncToLLC(MachineID recvBank, int sentPackets) {
+
+  /**
+   * This is represented as a StreamAck message.
+   */
+  assert(this->pumManager);
+  auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+  msg->m_addr = 0;
+  msg->m_Type = CoherenceRequestType_STREAM_PUM_DATA;
+  msg->m_Requestors.add(this->controller->getMachineID());
+  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_isPUM = true;
+  msg->m_Len = sentPackets; // Reuse the Len field.
+  msg->m_Destination.add(recvBank);
+
+  // Charge some latency.
+  Cycles latency(1);
+  this->se->streamIndirectIssueMsgBuffer->enqueue(
+      msg, this->controller->clockEdge(),
+      this->controller->cyclesToTicks(Cycles(1)));
 }

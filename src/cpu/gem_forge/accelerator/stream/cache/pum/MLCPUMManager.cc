@@ -551,9 +551,9 @@ void MLCPUMManager::reachSync(int sentPackets) {
   this->checkSync();
 }
 
-void MLCPUMManager::receivePacket() {
+void MLCPUMManager::receivePacket(int recvPackets) {
   assert(this->context.isActive() && "No Active PUM.");
-  this->context.totalRecvPackets++;
+  this->context.totalRecvPackets += recvPackets;
   this->checkSync();
 }
 

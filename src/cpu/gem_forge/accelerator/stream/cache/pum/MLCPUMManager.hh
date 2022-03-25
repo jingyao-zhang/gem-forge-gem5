@@ -54,7 +54,7 @@ public:
    * APIs for PUMEngine.
    */
   void reachSync(int sentPackets);
-  void receivePacket();
+  void receivePacket(int recvPackets);
 
   MachineID getMachineID() const { return this->controller->getMachineID(); }
 

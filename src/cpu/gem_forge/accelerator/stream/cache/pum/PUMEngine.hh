@@ -36,6 +36,9 @@ private:
   int nextCmdIdx = 0;
   Cycles nextCmdReadyCycle;
   int sentInterBankPackets = 0;
+  int recvInterBankPackets = 0;
+  std::map<NodeID, int> sentInterBankPacketMap;
+  std::map<NodeID, int> recvInterBankPacketMap;
   bool acked = false;
 
   int getBankIdx() const { return this->controller->getMachineID().num; }
@@ -51,7 +54,11 @@ private:
 
   void synced();
 
+  void sendDoneToMLC(int recvPackets);
   void sendSyncToMLC(int sentPackets);
+  void sendAckToMLC(CoherenceResponseType type, int ackCount);
+  void sendSyncToLLCs();
+  void sendSyncToLLC(MachineID recvBank, int sentPackets);
 };
 
 #endif

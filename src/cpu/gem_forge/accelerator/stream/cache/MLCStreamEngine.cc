@@ -86,6 +86,11 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
       this->pumManager->reachSync(msg.m_AckCount);
       return;
     }
+    if (msg.m_Type == CoherenceResponseType_STREAM_DONE) {
+      // This is a PUM done message.
+      this->pumManager->receivePacket(msg.m_AckCount);
+      return;
+    }
   }
 
   if (msg.m_Type == CoherenceResponseType_STREAM_RANGE) {
