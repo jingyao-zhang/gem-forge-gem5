@@ -9,13 +9,19 @@
 PUMEngine::PUMEngine(LLCStreamEngine *_se)
     : se(_se), controller(_se->controller) {}
 
-void PUMEngine::receiveConfigure(const RequestMsg &msg) {
+void PUMEngine::receiveKick(const RequestMsg &msg) {
   assert(this->pumManager && "Not configured yet.");
-  if (this->nextCmdIdx != 0) {
-    LLC_SE_PANIC("[PUM] RecvConfig with NextCmdIdx %d != 0.", nextCmdIdx);
+  if (this->acked) {
+    // We are waiting for the kick after sync.
+    this->synced();
+  } else {
+    // We just recieved the first kick after configuration.
+    if (this->nextCmdIdx != 0) {
+      LLC_SE_PANIC("[PUM] RecvConfig with NextCmdIdx %d != 0.", nextCmdIdx);
+    }
+    this->receivedConfig = true;
+    this->kickNextCommand();
   }
-  this->receivedConfig = true;
-  this->kickNextCommand();
 }
 
 void PUMEngine::configure(MLCPUMManager *pumManager,
@@ -315,6 +321,7 @@ void PUMEngine::tick() {
 
   if (this->nextCmdIdx == this->commands.size() ||
       this->commands[this->nextCmdIdx].type == "sync") {
+    // We are done or waiting for the sync.
     if (!this->acked) {
       LLC_SE_DPRINTF("[Sync] SentPackets %d.\n", this->sentInterBankPackets);
       auto sentPackets = this->sentInterBankPackets;

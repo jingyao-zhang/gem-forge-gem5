@@ -157,7 +157,7 @@ private:
   /**
    * Send out an kick message to PUMEngine to continue execution.
    */
-  void kickPUMEngine(MessageSizeType sizeType);
+  void kickPUMEngine(MessageSizeType sizeType, bool isIdea);
 
   void checkSync();
 };

@@ -2526,7 +2526,7 @@ void LLCStreamEngine::receiveStreamIndirectRequestImpl(const RequestMsg &req) {
 }
 
 void LLCStreamEngine::receivePUMConfigure(const RequestMsg &req) {
-  this->pumEngine->receiveConfigure(req);
+  this->pumEngine->receiveKick(req);
 }
 
 void LLCStreamEngine::receivePUMData(const RequestMsg &req) {

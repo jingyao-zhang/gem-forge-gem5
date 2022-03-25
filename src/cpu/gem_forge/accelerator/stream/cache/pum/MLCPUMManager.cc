@@ -356,10 +356,10 @@ void MLCPUMManager::configurePUMEngine(CompileStates &states) {
       llcSE->getPUMEngine()->configure(this, states.commands);
     }
   }
-  this->kickPUMEngine(MessageSizeType_Data);
+  this->kickPUMEngine(MessageSizeType_Data, false /* isIdea */);
 }
 
-void MLCPUMManager::kickPUMEngine(MessageSizeType sizeType) {
+void MLCPUMManager::kickPUMEngine(MessageSizeType sizeType, bool isIdea) {
 
   /**
    * Broadcast the kick packet.
@@ -371,6 +371,28 @@ void MLCPUMManager::kickPUMEngine(MessageSizeType sizeType) {
   msg->m_Requestors.add(this->controller->getMachineID());
   msg->m_MessageSize = sizeType;
   msg->m_isPUM = true;
+
+  if (isIdea) {
+    for (int row = 0; row < this->controller->getNumRows(); ++row) {
+      for (int col = 0; col < this->controller->getNumCols(); ++col) {
+        int nodeId = row * this->controller->getNumCols() + col;
+        MachineID dstMachineId(MachineType_L2Cache, nodeId);
+        msg->m_Destination.add(dstMachineId);
+
+        /**
+         * We still configure here. But PUMEngine will not start until
+         * received the configuration message.
+         */
+        auto llcCntrl =
+            AbstractStreamAwareController::getController(dstMachineId);
+        auto llcSE = llcCntrl->getLLCStreamEngine();
+        llcSE->getPUMEngine()->receiveKick(*msg);
+
+        msg->m_Destination.clear();
+      }
+    }
+    return;
+  }
 
   for (int row = 0; row < this->controller->getNumRows(); ++row) {
     for (int col = 0; col < this->controller->getNumCols(); ++col) {
@@ -581,21 +603,9 @@ void MLCPUMManager::checkSync() {
       }
     } else {
       // Notify the PUMEngine to continue.
-      for (int row = 0; row < this->controller->getNumRows(); ++row) {
-        for (int col = 0; col < this->controller->getNumCols(); ++col) {
-          int nodeId = row * this->controller->getNumCols() + col;
-          MachineID dstMachineId(MachineType_L2Cache, nodeId);
-
-          /**
-           * We still configure here. But PUMEngine will not start until
-           * received the configuration message.
-           */
-          auto llcCntrl =
-              AbstractStreamAwareController::getController(dstMachineId);
-          auto llcSE = llcCntrl->getLLCStreamEngine();
-          llcSE->getPUMEngine()->synced();
-        }
-      }
+      this->kickPUMEngine(
+          MessageSizeType_Control,
+          this->controller->myParams->enable_stream_idea_ack /* isIdea */);
     }
   }
 }
