@@ -368,17 +368,6 @@ void StreamEngine::dispatchStreamConfig(const StreamConfigArgs &args) {
     }
   }
 
-  // // Allocate one new entries for all streams.
-  // for (auto S : configStreams) {
-  //   // hack("Allocate element for stream %s.\n",
-  //   // S->getStreamName().c_str());
-  //   assert(this->hasFreeElement());
-  //   assert(S->getAllocSize() < S->maxSize);
-  //   const auto &dynS = S->getLastDynStream();
-  //   assert(dynS.areNextBaseElementsAllocated());
-  //   this->allocateElement(S->getLastDynStream());
-  // }
-
   // Notify StreamRegionController.
   this->regionController->dispatchStreamConfig(args);
 }
@@ -1191,11 +1180,15 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
     // Release in reverse order.
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
-    if (!S->hasUnsteppedElement(DynStreamId::InvalidInstanceId)) {
+    auto &dynS = S->getFirstAliveDynStream();
+    if (dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0) {
+      // Streams with 0 TripCount will not allocate the last element.
+      continue;
+    }
+    if (!dynS.hasUnsteppedElement()) {
       // We don't have element for this used stream.
       return false;
     }
-    auto &dynS = S->getFirstAliveDynStream();
     /**
      * For LoopEliminatedStream, we have to wait until it's:
      * 1. The second last element if we are using that value.
@@ -1242,7 +1235,10 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
 
     // 1. Step one element.
     auto &dynS = S->getFirstAliveDynStream();
-    dynS.stepElement(true /* isEnd */);
+    if (!(dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0)) {
+      // Streams with 0 TripCount will not allocate the last element.
+      dynS.stepElement(true /* isEnd */);
+    }
 
     // 2. Mark the dynamicStream as ended.
     S->dispatchStreamEnd(args.seqNum);
@@ -1316,7 +1312,9 @@ void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
 
     // 2. Unstep one element.
     auto &dynS = S->getFirstAliveDynStream();
-    dynS.unstepElement();
+    if (!(dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0)) {
+      dynS.unstepElement();
+    }
     if (isDebugStream(S)) {
       S_DPRINTF(S, "Rewind End");
     }
@@ -1334,6 +1332,11 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
     const auto &dynS = S->getDynStreamByEndSeqNum(args.seqNum);
+
+    if (dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0) {
+      // Streams with 0 TripCount does not have last element.
+      continue;
+    }
     auto endElement = dynS.tail->next;
     auto endElementIdx = endElement->FIFOIdx.entryIdx;
 
@@ -1450,6 +1453,10 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
     auto &endedDynS = S->dynamicStreams.front();
+    if (endedDynS.hasTotalTripCount() && endedDynS.getTotalTripCount() == 0) {
+      // Streams with 0 TripCount does not have last element.
+      continue;
+    }
     /**
      * Release all unstepped element until there is none.
      */
@@ -1479,13 +1486,22 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
       uint64_t endElemOffset =
           staticStreamRegion.step.skipStepSecondLastElemStreams.count(S) ? 1
                                                                          : 0;
-      if (endedDynS.getTotalTripCount() + 1 !=
-          endedDynS.FIFOIdx.entryIdx + endElemOffset) {
-        DYN_S_PANIC(
-            endedDynS.dynStreamId,
-            "Commit End with TripCount %llu != NextElementIdx %llu + %llu.\n",
-            endedDynS.getTotalTripCount(), endedDynS.FIFOIdx.entryIdx,
-            endElemOffset);
+      if (endedDynS.getTotalTripCount() == 0) {
+        if (endedDynS.FIFOIdx.entryIdx + endElemOffset != 0) {
+          DYN_S_PANIC(
+              endedDynS.dynStreamId,
+              "ZeroTripCount should never allocate. NextElemIdx %llu + %llu.\n",
+              endedDynS.FIFOIdx.entryIdx, endElemOffset);
+        }
+      } else {
+        if (endedDynS.getTotalTripCount() + 1 !=
+            endedDynS.FIFOIdx.entryIdx + endElemOffset) {
+          DYN_S_PANIC(
+              endedDynS.dynStreamId,
+              "Commit End with TripCount %llu != NextElementIdx %llu + %llu.\n",
+              endedDynS.getTotalTripCount(), endedDynS.FIFOIdx.entryIdx,
+              endElemOffset);
+        }
       }
     }
   }

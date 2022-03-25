@@ -278,6 +278,13 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
     default:
       panic("Unkown PUM OpClass %s.", Enums::OpClassStrings[command.opClass]);
       break;
+    case No_OpClass:
+      computeLatency = 1;
+      break;
+    case FloatMemReadOp:
+      // Assume one cycle to read 1 bit of constant value.
+      computeLatency = wordlineBits;
+      break;
     case IntAluOp:
       computeLatency = wordlineBits;
       break;

@@ -167,7 +167,7 @@ message StaticStreamInfo {
   }
 }
 
-message DynStreamInfo {
+message DynamicStreamInfo {
   bool is_candidate = 1;
   bool is_qualified = 2;
   bool is_chosen = 3;
@@ -185,7 +185,7 @@ message StreamInfo {
   string history_path = 8;
   StaticCoalesceInfo coalesce_info = 9;
 
-  DynStreamInfo dynamic_info = 10;
+  DynamicStreamInfo dynamic_info = 10;
   int32 region_stream_id = 11;
   ExecFuncInfo addr_func_info = 12;
 

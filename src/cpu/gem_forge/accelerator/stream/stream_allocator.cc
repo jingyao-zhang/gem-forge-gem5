@@ -193,15 +193,17 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
      * Limit the maxAllocSize with totalTripCount to avoid allocation beyond
      * StreamEnd. Condition: maxAllocSize > allocSize: originally we are trying
      * to allocate more.
-     * ! We allow (totalTripCount + 1) elements as StreamEnd would consume one
-     * ! element.
+     * ! We allow (TripCount + 1) elements as StreamEnd would consume one
+     * ! element. The only exception is when TripCount is 0 -- In such case
+     * ! we won't allocate any element and SteamEnd would consume no one.
      */
     {
       auto allocSize = allocatingStepRootDynS->allocSize;
       if (allocatingStepRootDynS->hasTotalTripCount() &&
           maxAllocSize > allocSize) {
         auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
-        auto maxTripCount = allocatingStepRootDynS->getTotalTripCount() + 1;
+        auto tripCount = allocatingStepRootDynS->getTotalTripCount();
+        auto maxTripCount = tripCount == 0 ? 0 : (tripCount + 1);
         if (nextEntryIdx >= maxTripCount) {
           // We are already overflowed, set maxAllocSize to allocSize to stop
           // allocating. NOTE: This should not happen at all.

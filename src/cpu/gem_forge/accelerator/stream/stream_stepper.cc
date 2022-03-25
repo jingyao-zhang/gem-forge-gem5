@@ -79,9 +79,11 @@ void StreamRegionController::dispatchStreamConfigForStep(const ConfigArgs &args,
   }
   SE_DPRINTF("[Stepper] Initialized DynStep for region %s.\n",
              staticRegion.region.region());
-  for (const auto &staticGroup : staticRegion.step.stepGroups) {
+  for (auto staticGroupIdx = 0;
+       staticGroupIdx < staticRegion.step.stepGroups.size(); ++staticGroupIdx) {
+    const auto &staticGroup = staticRegion.step.stepGroups[staticGroupIdx];
     dynRegion.step.stepGroups.emplace_back(
-        staticGroup.stepRootS->getLoopLevel());
+        staticGroup.stepRootS->getLoopLevel(), staticGroupIdx);
   }
 }
 
@@ -94,11 +96,19 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
   if (!staticRegion.region.is_loop_bound()) {
     /**
      * Without StreamLoopBound, we check for TotalTripCount.
+     *
+     * An interesting case is some StepGroup may have Zero TripCount.
+     * This is possible when the compiler can not perfectly vectorize a loop and
+     * leaves some Loop Epilogue. At run time, if the parameters are right, we
+     * may not execute the epilogue loop (with TripCount zero).
+     *
+     * In such case we remove the Group and never step them
      */
     const auto &staticGroups = staticRegion.step.stepGroups;
     auto &dynGroups = dynRegion.step.stepGroups;
-    for (int groupIdx = 0; groupIdx < dynGroups.size(); ++groupIdx) {
-      auto S = staticGroups[groupIdx].stepRootS;
+    // First collect trip counts.
+    for (auto &dynGroup : dynGroups) {
+      auto S = staticGroups[dynGroup.staticGroupIdx].stepRootS;
       auto &dynS = S->getDynStream(dynRegion.seqNum);
       if (!dynS.hasTotalTripCount()) {
         DYN_S_PANIC(
@@ -106,27 +116,56 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
             "[Stepper] EliminatedLoop w/o. LoopBound must has TotalTripCount.");
       }
 
-      auto &dynGroup = dynGroups[groupIdx];
       dynGroup.totalTripCount = dynS.getTotalTripCount();
       DYN_S_DPRINTF(dynS.dynStreamId, "[Stepper] Get TotalTripCount %ld.\n",
                     dynGroup.totalTripCount);
+    }
 
+    // Remove DynGroup with 0 trip count.
+    for (auto iter = dynGroups.begin(); iter != dynGroups.end();) {
+      if (iter->totalTripCount > 0) {
+        ++iter;
+        continue;
+      } else {
+        auto S = staticGroups[iter->staticGroupIdx].stepRootS;
+        auto &dynS = S->getDynStream(dynRegion.seqNum);
+        DYN_S_DPRINTF(dynS.dynStreamId,
+                      "[Stepper] Removed due to Zero TotalTripCount.\n");
+        iter = dynGroups.erase(iter);
+      }
+    }
+
+    // Compute and sanity check for LevelTripCount.
+    for (int groupIdx = 0; groupIdx < dynGroups.size(); ++groupIdx) {
+      auto &dynGroup = dynGroups[groupIdx];
+      auto S = staticGroups[dynGroup.staticGroupIdx].stepRootS;
+      auto &dynS = S->getDynStream(dynRegion.seqNum);
       if (groupIdx > 0) {
         auto &prevDynGroup = dynGroups[groupIdx - 1];
         if (prevDynGroup.loopLevel == dynGroup.loopLevel) {
-          // Check that Groups with the same LoopLevel has the same TripCount.
           if (prevDynGroup.totalTripCount != dynGroup.totalTripCount) {
-            DYN_S_PANIC(
-                dynS.dynStreamId,
-                "[Stepper] Mismatch TripCount in same LoopLevel %lld != %lld.",
-                prevDynGroup.totalTripCount, dynGroup.totalTripCount);
+            /**
+             * Check that Groups with the same LoopLevel has the same TripCount.
+             * There are possible exceptions when we have multiple sibling loops
+             * with different trip count.
+             * We don't support such cases, but when we are skipping to the
+             * StreamEnd, we can ignore it.
+             */
+            if (!this->canSkipToStreamEnd(dynRegion)) {
+              DYN_S_PANIC(dynS.dynStreamId,
+                          "[Stepper] Mismatch TripCount in same LoopLevel %lld "
+                          "!= %lld.",
+                          prevDynGroup.totalTripCount, dynGroup.totalTripCount);
+            }
           }
         } else {
           // Generate LevelTripCount for previous level.
           if (prevDynGroup.totalTripCount < dynGroup.totalTripCount) {
-            panic("[Stepper] PrevGroup Loop %d Trip %ld <= Group %d Trip %ld.",
-                  prevDynGroup.loopLevel, prevDynGroup.totalTripCount,
-                  dynGroup.loopLevel, dynGroup.totalTripCount);
+            DYN_S_PANIC(
+                dynS.dynStreamId,
+                "[Stepper] PrevGroup Loop %d Trip %ld <= Group %d Trip %ld.",
+                prevDynGroup.loopLevel, prevDynGroup.totalTripCount,
+                dynGroup.loopLevel, dynGroup.totalTripCount);
           }
           assert(prevDynGroup.totalTripCount % dynGroup.totalTripCount == 0);
           auto levelTripCount =
@@ -142,10 +181,11 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
       }
     }
 
+    // Print the TripCount.
     for (int groupIdx = 0; groupIdx < dynGroups.size(); ++groupIdx) {
-      auto S = staticGroups[groupIdx].stepRootS;
-      auto &dynS = S->getDynStream(dynRegion.seqNum);
       auto &dynGroup = dynGroups[groupIdx];
+      auto S = staticGroups[dynGroup.staticGroupIdx].stepRootS;
+      auto &dynS = S->getDynStream(dynRegion.seqNum);
       DYN_S_DPRINTF(
           dynS.dynStreamId,
           "[Stepper] LoopLevel %d TotalTripCount %lld LevelTripCount %lld.\n",
@@ -168,10 +208,10 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
     return;
   }
 
-  auto &staticStep = staticRegion.step;
   auto &dynStep = dynRegion.step;
-  auto &staticGroup = staticStep.stepGroups[dynStep.nextGroupIdx];
-  auto &dynGroup = dynStep.stepGroups[dynStep.nextGroupIdx];
+  auto &dynGroup = dynStep.stepGroups[dynStep.nextDynGroupIdx];
+  auto &staticStep = staticRegion.step;
+  auto &staticGroup = staticStep.stepGroups[dynGroup.staticGroupIdx];
 
   SE_DPRINTF("[Stepper] Try to Step Region %s.\n",
              staticRegion.region.region());
@@ -233,7 +273,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
      *        Otherwise -> round.
      */
     dynGroup.nextElemIdx++;
-    auto nextGroupIdx = dynStep.nextGroupIdx + 1;
+    auto nextGroupIdx = dynStep.nextDynGroupIdx + 1;
     if (nextGroupIdx == dynStep.stepGroups.size()) {
       nextGroupIdx = 0;
     } else {
@@ -246,10 +286,10 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
     }
     DYN_S_DPRINTF(stepRootDynS.dynStreamId,
                   "[Stepper] CurrentGroup %d Elem %llu -> %llu NextGroup %d.\n",
-                  dynStep.nextGroupIdx, dynGroup.nextElemIdx - 1,
+                  dynStep.nextDynGroupIdx, dynGroup.nextElemIdx - 1,
                   dynGroup.nextElemIdx, nextGroupIdx);
     dynStep.state = DynRegion::DynStep::StepState::BEFORE_DISPATCH;
-    dynStep.nextGroupIdx = nextGroupIdx;
+    dynStep.nextDynGroupIdx = nextGroupIdx;
   };
 
   switch (dynStep.state) {

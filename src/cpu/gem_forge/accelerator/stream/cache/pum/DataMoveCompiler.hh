@@ -85,26 +85,48 @@ public:
     return sub_region.getSubRegionStartToArraySize(array_sizes);
   }
 
-  bool is_canonical_sub_region(const AffinePattern &pattern,
-                               bool allow_reuse = false) const {
+  bool isSubRegion(const AffinePattern &pattern,
+                   bool allowReuse = false) const {
     return pattern.is_canonical_sub_region_to_array_size(array_sizes,
-                                                         allow_reuse);
+                                                         allowReuse);
   }
 
-  void canCompileStreamPair(const AffinePattern &src_stream,
-                            const AffinePattern &dst_stream) const {
-    assert(is_canonical_sub_region(dst_stream));
-    assert(is_canonical_sub_region(src_stream, true));
-    assert(src_stream.params.size() == dst_stream.params.size());
-    auto src_trips = src_stream.get_trips();
-    auto dst_trips = dst_stream.get_trips();
-    for (auto i = 0; i < src_trips.size(); ++i) {
-      assert(src_trips[i] == dst_trips[i]);
+  /**
+   * Handle strided access as mask.
+   */
+  struct StrideMaskInfoT {
+    const int dim;
+    const int dimStride;    // Stride in this dimension.
+    const int elemStride;   // Stride in number of elements.
+    const int dimStrideMod; // Mod the dimension stride.
+    StrideMaskInfoT(int _dim = 0, int _dimStride = 1, int _elemStride = 1,
+                    int _dimStrideMod = 0)
+        : dim(_dim), dimStride(_dimStride), elemStride(_elemStride),
+          dimStrideMod(_dimStrideMod) {
+      assert(elemStride >= dimStride);
+      assert(elemStride % dimStride == 0);
+      assert(dimStrideMod < dimStride);
+    }
+    bool hasMask() const { return this->dimStride > 1; }
+  };
+  using StrideMaskInfoVecT = std::vector<StrideMaskInfoT>;
+
+  StrideMaskInfoVecT turnStrideIntoMask(AffinePattern &pattern) const;
+
+  void canCompileStreamPair(const AffinePattern &srcStream,
+                            const AffinePattern &dstStream) const {
+    assert(isSubRegion(dstStream));
+    assert(isSubRegion(srcStream, true));
+    assert(srcStream.params.size() == dstStream.params.size());
+    auto srcTrips = srcStream.get_trips();
+    auto dstTrips = dstStream.get_trips();
+    for (auto i = 0; i < srcTrips.size(); ++i) {
+      assert(srcTrips[i] == dstTrips[i]);
     }
   }
 
-  PUMCommandVecT compileStreamPair(const AffinePattern &srcStream,
-                                   const AffinePattern &dstStream) const;
+  PUMCommandVecT compileStreamPair(AffinePattern srcStream,
+                                   AffinePattern dstStream) const;
 
   AffinePattern removeReuseInSubRegion(const AffinePattern &pattern) const;
 
@@ -142,6 +164,8 @@ public:
    * Mask commands by reuses.
    */
   using ReuseInfoT = PUMCommand::ReuseInfoT;
+  using ReuseInfoVecT = std::vector<ReuseInfoT>;
+  ReuseInfoVecT collectReuses(const AffinePattern &pattern) const;
   PUMCommandVecT maskCmdsByReuses(const PUMCommandVecT &commands,
                                   const AffinePattern &subRegion,
                                   const std::vector<ReuseInfoT> &reuses) const;

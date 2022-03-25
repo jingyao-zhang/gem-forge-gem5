@@ -52,6 +52,11 @@ void Stream::finalize() {
   this->initializeBaseStreams();
   this->initializeAliasStreams();
   this->initializeCoalesceGroupStreams();
+  for (auto LS : this->logicals) {
+    if (LS->getIsNonSpec()) {
+      this->isNonSpec = true;
+    }
+  }
   STREAM_DPRINTF("Finalized, ElementSize %d, LStreams: =========.\n",
                  this->coalescedElementSize);
   for (auto LS : this->logicals) {

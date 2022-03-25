@@ -303,14 +303,13 @@ bool DynStream::isNextAddrBaseElementAllocated(
   }
   auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
   if (!baseElement) {
-    DYN_S_DPRINTF(this->dynStreamId,
-                  "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
-                  "Released? Align(%llu), Reuse(%llu), BaseS %s\n",
-                  this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                  edge.reuseBaseElement, baseS->getStreamName());
-    DYN_S_DPRINTF(this->dynStreamId, "BaseDynS %s.\n", baseDynS.dumpString());
+    DYN_S_PANIC(this->dynStreamId,
+                "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
+                "Released? Align(%llu), Reuse(%llu), BaseS %s\n BaseDynS %s",
+                this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
+                edge.reuseBaseElement, baseS->getStreamName(),
+                baseDynS.dumpString());
   }
-  assert(baseElement && "Base Element Already Released?");
   if (baseElement->isStepped) {
     /**
      * This must be a misspeculated StreamStep, likely on the outer loop IV.

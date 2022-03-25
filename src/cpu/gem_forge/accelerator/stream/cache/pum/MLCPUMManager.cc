@@ -640,6 +640,9 @@ void MLCPUMManager::compileCompute(CompileStates &states,
         compiler.tile_sizes,
         AffinePattern::IntVecT(compiler.tile_sizes.size(), 0) /* starts */,
         compiler.tile_sizes);
+
+    DPRINTF(StreamPUM, "[PUM] Compile Inst %s to OpClass %s.\n",
+            inst->disassemble(0x0), Enums::OpClassStrings[inst->opClass()]);
   }
 
   if (Debug::StreamPUM) {

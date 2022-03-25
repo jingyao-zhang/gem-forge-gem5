@@ -120,7 +120,8 @@ protected:
 
   bool matchLLCSliceId(const DynStreamSliceId &mlc,
                        const DynStreamSliceId &llc) const {
-    if (this->config->isPointerChase) {
+    if (this->config->isPointerChase ||
+        !this->config->shouldBeSlicedToCacheLines) {
       return mlc.getStartIdx() == llc.getStartIdx() && mlc.vaddr == llc.vaddr;
     } else {
       // By default match the vaddr.
@@ -144,8 +145,7 @@ protected:
     }
   }
 
-  SliceIter
-  findSliceForCoreRequest(const DynStreamSliceId &sliceId) override;
+  SliceIter findSliceForCoreRequest(const DynStreamSliceId &sliceId) override;
 
   /**
    * Override this as we need to send credit to llc.

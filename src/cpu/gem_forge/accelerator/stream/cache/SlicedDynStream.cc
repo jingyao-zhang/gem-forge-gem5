@@ -42,9 +42,11 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
     }
   }
 
-  if (this->isPointerChase) {
+  if (this->isPointerChase || !_configData->shouldBeSlicedToCacheLines) {
+    DYN_S_DPRINTF(this->strandId, "[Sliced] Disabled slicing.\n");
     this->coalesceContinuousElements = false;
-    assert(this->elementSize < 64 && "Huge PointerChaseStream.");
+    this->elementPerSlice = 1.0f;
+    assert(this->elementSize < 64 && "Huge Non-Sliced StreamElem.");
   }
 
   if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {

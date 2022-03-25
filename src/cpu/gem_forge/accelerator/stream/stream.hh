@@ -69,6 +69,14 @@ public:
   bool getIsConditional() const {
     return this->info.static_info().is_cond_access();
   }
+  bool getIsNonSpec() const {
+    for (const auto &p : this->info.static_info().user_param()) {
+      if (p == "non-spec") {
+        return true;
+      }
+    }
+    return false;
+  }
   bool getFloatManual() const {
     return this->info.static_info().float_manual();
   }
@@ -576,6 +584,7 @@ protected:
   int32_t coalescedElementSize = -1;
   int32_t baseOffset = -1;
   bool coalescedNoCoreUser = true;
+  bool isNonSpec = false;
 
   void selectPrimeLogicalStream();
   void initializeBaseStreams();
@@ -730,6 +739,8 @@ public:
   bool isDelayIssueUntilFIFOHead() const {
     return this->delayIssueUntilFIFOHead;
   }
+
+  bool isNonSpeculative() const { return this->isNonSpec; }
 };
 
 struct GetCoalescedStreamValue {

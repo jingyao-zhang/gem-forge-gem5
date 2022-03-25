@@ -74,6 +74,9 @@ public:
 
     /**
      * StreamStepper states for LoopEliminated region.
+     * NOTE: There is no one-to-one mapping from DynGroup to StaticGroup, due to
+     * some loop with 0 trip count. Instead, DynStepGroupInfo::staticGroupIdx
+     * should be used to find the StepGroup.
      */
     struct DynStep {
       struct DynStepGroupInfo {
@@ -81,11 +84,14 @@ public:
         int64_t totalTripCount = 0;
         int64_t levelTripCount = INT64_MAX;
         // Remember this info for simplicity.
-        const int loopLevel;
-        DynStepGroupInfo(int _loopLevel) : loopLevel(_loopLevel) {}
+        int loopLevel;
+        // Remember the index to StaticGroup.
+        int staticGroupIdx;
+        DynStepGroupInfo(int _loopLevel, int _staticGroupIdx)
+            : loopLevel(_loopLevel), staticGroupIdx(_staticGroupIdx) {}
       };
       std::vector<DynStepGroupInfo> stepGroups;
-      int nextGroupIdx = 0;
+      int nextDynGroupIdx = 0;
       enum StepState {
         // There is no Execute stage for StreamStep.
         BEFORE_DISPATCH,
@@ -102,6 +108,9 @@ public:
     const ::LLVM::TDG::StreamRegion &region;
     StreamVec streams;
     std::list<DynRegion> dynRegions;
+    // Remember if all loops or some loops is eliminated.
+    bool allStreamLoopEliminated = false;
+    bool someStreamLoopEliminated = false;
     StaticRegion(const ::LLVM::TDG::StreamRegion &_region) : region(_region) {}
 
     /**
@@ -217,6 +226,7 @@ private:
    * element. This is mainly used to avoid bottleneck at the core for Strands
    * and PUM.
    */
+  bool canSkipToStreamEnd(const DynRegion &dynRegion) const;
   void trySkipToStreamEnd(DynRegion &dynRegion);
 
   void buildFormalParams(const ConfigArgs::InputVec &inputVec, int &inputIdx,

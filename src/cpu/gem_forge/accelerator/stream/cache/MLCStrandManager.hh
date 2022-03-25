@@ -47,6 +47,11 @@ private:
   std::unordered_map<DynStrandId, MLCDynStream *, DynStrandIdHasher> strandMap;
 
   /**
+   * Check if streams can be sliced.
+   */
+  void checkShouldBeSliced(CacheStreamConfigureVec &configs) const;
+
+  /**
    * Split stream into strands.
    */
   bool canSplitIntoStrands(const CacheStreamConfigureVec &configs) const;

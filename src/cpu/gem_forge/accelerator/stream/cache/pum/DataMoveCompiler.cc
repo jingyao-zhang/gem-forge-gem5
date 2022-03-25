@@ -21,9 +21,72 @@ DataMoveCompiler::DataMoveCompiler(const PUMHWConfiguration &_llc_config,
   }
 }
 
+DataMoveCompiler::StrideMaskInfoVecT
+DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
+
+  StrideMaskInfoVecT masks;
+  if (pattern.params.size() != this->dimension) {
+    return masks;
+  }
+
+  auto starts = pattern.getSubRegionStartToArraySize(this->array_sizes);
+
+  auto curDimStride = 1;
+  for (int dim = 0; dim < this->dimension; ++dim) {
+    auto elemStride = pattern.params[dim].stride;
+
+    if (elemStride % curDimStride != 0) {
+      panic("[PUM] Illegal Stride %ld Pattern %s TilePat %s.", elemStride,
+            pattern, this->tile_pattern);
+    }
+
+    if (elemStride != curDimStride) {
+      auto dimStride = elemStride / curDimStride;
+      auto mod = starts[dim] % dimStride;
+      DPRINTF(StreamPUM, "[PUM] Pattern %s Dim %d Strided by %ld Mod %ld.\n",
+              pattern, dim, dimStride, mod);
+
+      auto tile = this->tile_sizes[dim];
+      if (dimStride > tile || tile % dimStride != 0) {
+        panic("[PUM] Pattern %s Dim %d Stride %ld Not Align to Tile %ld.",
+              pattern, dim, dimStride, tile);
+      }
+
+      masks.emplace_back(dim, dimStride, elemStride, mod);
+    }
+
+    curDimStride *= this->array_sizes[dim];
+  }
+
+  if (masks.empty()) {
+    return masks;
+  }
+
+  // Rewrite the pattern to get rid of stride.
+  DPRINTF(StreamPUM, "[PUM] Rewrite Pattern %s to Remove Stride.\n", pattern);
+  for (const auto &mask : masks) {
+    auto dim = mask.dim;
+    auto &p = pattern.params[dim];
+    p.stride /= mask.dimStride;
+    p.trip = (p.trip - 1) * mask.dimStride + 1;
+    if (starts[dim] + p.trip > this->array_sizes[dim]) {
+      panic("[PUM] Overflow after rewritten Dim %d NewTrip %ld.", dim, p.trip);
+    }
+  }
+  DPRINTF(StreamPUM, "[PUM] Rewritten -> %s.\n", pattern);
+  return masks;
+}
+
 PUMCommandVecT
-DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
-                                    const AffinePattern &dstStream) const {
+DataMoveCompiler::compileStreamPair(AffinePattern srcStream,
+                                    AffinePattern dstStream) const {
+
+  auto srcMasks = this->turnStrideIntoMask(srcStream);
+  auto dstMasks = this->turnStrideIntoMask(dstStream);
+
+  assert(srcMasks.size() <= 1);
+  assert(dstMasks.size() <= 1);
+
   canCompileStreamPair(srcStream, dstStream);
 
   // Generate the start alignments.
@@ -39,14 +102,7 @@ DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
   assert(aligns.size() <= 1);
 
   // Record the reused dimension and reused count.
-  std::vector<ReuseInfoT> reuses;
-  for (auto i = 0; i < dimension; ++i) {
-    const auto &p = srcStream.params[i];
-    if (p.stride == 0) {
-      // This is reuse dimension.
-      reuses.emplace_back(i, p.trip);
-    }
-  }
+  auto reuses = this->collectReuses(srcStream);
   assert(reuses.size() <= 1);
 
   if (!reuses.empty() && !aligns.empty()) {
@@ -121,7 +177,7 @@ DataMoveCompiler::compileStreamPair(const AffinePattern &srcStream,
 
 AffinePattern
 DataMoveCompiler::removeReuseInSubRegion(const AffinePattern &pattern) const {
-  assert(is_canonical_sub_region(pattern, true));
+  assert(isSubRegion(pattern, true));
   ParamVecT fixed_params;
   for (const auto &p : pattern.params) {
     auto stride = (p.stride == 0) ? 1 : p.stride;
@@ -496,6 +552,19 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
 /**************************************************************************
  * Mask commands by reuse.
  **************************************************************************/
+
+DataMoveCompiler::ReuseInfoVecT
+DataMoveCompiler::collectReuses(const AffinePattern &pattern) const {
+  std::vector<ReuseInfoT> reuses;
+  for (auto i = 0; i < dimension; ++i) {
+    const auto &p = pattern.params[i];
+    if (p.stride == 0) {
+      // This is reuse dimension.
+      reuses.emplace_back(i, p.trip);
+    }
+  }
+  return reuses;
+}
 
 PUMCommandVecT DataMoveCompiler::maskCmdsByReuses(
     const PUMCommandVecT &commands, const AffinePattern &subRegion,

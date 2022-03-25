@@ -31,6 +31,8 @@ void StreamRegionController::initializeRegion(
    * Collect streams within this region.
    */
   StaticRegion::StreamSet streams;
+  staticRegion.allStreamLoopEliminated = true;
+  staticRegion.someStreamLoopEliminated = false;
   for (const auto &streamInfo : region.streams()) {
     auto S = this->se->getStream(streamInfo.id());
     if (streams.count(S)) {
@@ -39,6 +41,17 @@ void StreamRegionController::initializeRegion(
     }
     staticRegion.streams.push_back(S);
     streams.insert(S);
+    // Record LoopLiminated information.
+    if (S->isLoopEliminated()) {
+      staticRegion.someStreamLoopEliminated = true;
+    } else {
+      staticRegion.allStreamLoopEliminated = false;
+    }
+  }
+  if (staticRegion.region.loop_eliminated() !=
+      staticRegion.allStreamLoopEliminated) {
+    SE_PANIC("[Region] Can not handle partial eliminated %s.",
+             staticRegion.region.region());
   }
 
   this->initializeNestStreams(region, staticRegion);
@@ -244,7 +257,8 @@ StreamValue StreamRegionController::GetStreamValueFromElementSet::operator()(
   return ret;
 }
 
-void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
+bool StreamRegionController::canSkipToStreamEnd(
+    const DynRegion &dynRegion) const {
   /**
    * Check that:
    * 1. Loop is eliminated.
@@ -258,38 +272,45 @@ void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
    */
   auto staticRegion = dynRegion.staticRegion;
   if (!staticRegion->region.loop_eliminated()) {
-    return;
+    return false;
   }
   if (se->myParams->enableRangeSync) {
-    return;
+    return false;
   }
   if (!se->myParams->streamEngineEnableFloat) {
-    return;
+    return false;
   }
   if (!dynRegion.nestConfigs.empty()) {
-    return;
+    return false;
   }
   for (auto S : staticRegion->streams) {
     if (S->isMemStream()) {
       // Mem stream.
       if (!S->isDirectMemStream()) {
-        return;
+        return false;
       }
     } else {
       // IV stream. Check for any BackDep.
       if (!S->backBaseStreams.empty()) {
-        return;
+        return false;
       }
     }
     if (S->isFinalValueNeededByCore() || S->isSecondFinalValueNeededByCore()) {
-      return;
+      return false;
     }
     auto &dynS = S->getDynStream(dynRegion.seqNum);
     if (!dynS.hasTotalTripCount()) {
-      return;
+      return false;
     }
   }
+  return true;
+}
 
+void StreamRegionController::trySkipToStreamEnd(DynRegion &dynRegion) {
+  if (!this->canSkipToStreamEnd(dynRegion)) {
+    return;
+  }
+  auto staticRegion = dynRegion.staticRegion;
   for (auto S : staticRegion->streams) {
     auto &dynS = S->getDynStream(dynRegion.seqNum);
     DYN_S_DPRINTF(dynS.dynStreamId, "[Region] Skip to End %llu.\n",

@@ -118,6 +118,26 @@ public:
   bool isPointerChase;
 
   /**
+   * Whether this stream should be sliced according to cache lines.
+   * This is used by SlicedDynStream to determine if it should merge continous
+   * stream elements in the same cache line.
+   * 
+   * By default this is enabled, and used for slicing affine streams. However,
+   * it is also used to explicitly disable slicing for streams in outer loop.
+   * Otherwise, we may have deadlock as the OuterLoopStream slice contains
+   * future elements.
+   * 
+   * A typical example is Gaussian elmination:
+   * for i = 0 : M
+   *   B[i] ...
+   *   for j = 0 : N
+   *     A[i][j] ...
+   * 
+   * Here if B[i] is sliced, we have deadlocks.
+   */
+  bool shouldBeSlicedToCacheLines = true;
+
+  /**
    * NOTE: Only valid for indirect streams.
    * Sometimes the dependence between the indirect stream and the base stream
    * has a difference of one iteration, e.g. pointer chase base stream + an

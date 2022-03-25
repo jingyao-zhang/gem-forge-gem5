@@ -30,6 +30,8 @@ void MLCStrandManager::receiveStreamConfigure(PacketPtr pkt) {
 
   auto configs = *(pkt->getPtr<CacheStreamConfigureVec *>());
 
+  this->checkShouldBeSliced(*configs);
+
   if (this->canSplitIntoStrands(*configs)) {
     this->splitIntoStrands(*configs);
   }
@@ -45,6 +47,27 @@ void MLCStrandManager::receiveStreamConfigure(PacketPtr pkt) {
   // Release the configure vec.
   delete configs;
   delete pkt;
+}
+
+void MLCStrandManager::checkShouldBeSliced(
+    CacheStreamConfigureVec &configs) const {
+
+  auto innerMostLoopLevel = 0u;
+  for (const auto &config : configs) {
+    innerMostLoopLevel =
+        std::max(config->stream->getLoopLevel(), innerMostLoopLevel);
+  }
+
+  for (auto &config : configs) {
+    if (config->storeCallback &&
+        config->stream->getLoopLevel() < innerMostLoopLevel) {
+      MLC_S_DPRINTF(config->dynamicId,
+                    "Disabled Slicing as StoreCallback in LoopLevel %u < "
+                    "InnerMostLoopLevel %u.\n",
+                    config->stream->getLoopLevel(), innerMostLoopLevel);
+      config->shouldBeSlicedToCacheLines = false;
+    }
+  }
 }
 
 bool MLCStrandManager::canSplitIntoStrands(
