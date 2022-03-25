@@ -19,8 +19,6 @@ public:
   void receiveKick(const RequestMsg &msg);
   void receiveData(const RequestMsg &msg);
   void configure(MLCPUMManager *pumManager, const PUMCommandVecT &commands);
-  void synced();
-
   void tick();
 
 private:
@@ -50,6 +48,10 @@ private:
 
   void kickNextCommand();
   Cycles estimateCommandLatency(const PUMCommand &command);
+
+  void synced();
+
+  void sendSyncToMLC(int sentPackets);
 };
 
 #endif

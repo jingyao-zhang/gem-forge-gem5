@@ -327,7 +327,7 @@ void PUMEngine::tick() {
       auto sentPackets = this->sentInterBankPackets;
       this->acked = true;
       this->sentInterBankPackets = 0;
-      this->pumManager->reachSync(sentPackets);
+      this->sendSyncToMLC(sentPackets);
     }
     return;
   }
@@ -348,4 +348,36 @@ void PUMEngine::synced() {
 void PUMEngine::receiveData(const RequestMsg &msg) {
   assert(this->pumManager);
   this->pumManager->receivePacket();
+}
+
+void PUMEngine::sendSyncToMLC(int sentPackets) {
+
+  /**
+   * This is represented as a StreamAck message.
+   */
+  assert(this->pumManager);
+  auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
+  msg->m_addr = 0;
+  msg->m_Type = CoherenceResponseType_STREAM_ACK;
+  msg->m_Sender = this->controller->getMachineID();
+  msg->m_MessageSize = MessageSizeType_Control;
+  msg->m_isPUM = true;
+  msg->m_AckCount = sentPackets;
+  msg->m_Destination.add(this->pumManager->getMachineID());
+
+  auto mlcMachineId = msg->m_Destination.singleElement();
+
+  if (this->controller->isStreamIdeaAckEnabled()) {
+    auto mlcController =
+        AbstractStreamAwareController::getController(mlcMachineId);
+    auto mlcSE = mlcController->getMLCStreamEngine();
+    // StreamAck is also disguised as StreamData.
+    mlcSE->receiveStreamData(*msg);
+  } else {
+    // Charge some latency.
+    Cycles latency(1);
+    this->se->streamResponseMsgBuffer->enqueue(
+        msg, this->controller->clockEdge(),
+        this->controller->cyclesToTicks(latency));
+  }
 }

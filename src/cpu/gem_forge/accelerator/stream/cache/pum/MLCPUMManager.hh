@@ -56,6 +56,8 @@ public:
   void reachSync(int sentPackets);
   void receivePacket();
 
+  MachineID getMachineID() const { return this->controller->getMachineID(); }
+
 private:
   using ConfigPtr = CacheStreamConfigureDataPtr;
   MLCStreamEngine *mlcSE;

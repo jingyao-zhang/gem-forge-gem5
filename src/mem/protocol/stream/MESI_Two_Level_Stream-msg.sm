@@ -123,8 +123,9 @@ structure(ResponseMsg, desc="...", interface="Message") {
   bool Dirty, default="false",         desc="Dirty bit";
   int AckCount, default="0",           desc="number of acks in this message";
   MessageSizeType MessageSize,         desc="size category of the message";
-  DynStreamSliceIdVec sliceIds,    desc="Stream slice ids";
-  DynStreamAddressRangePtr range,  desc="StreamRange for synchronization";
+  DynStreamSliceIdVec sliceIds,        desc="Stream slice ids";
+  DynStreamAddressRangePtr range,      desc="StreamRange for synchronization";
+  bool isPUM, default="false",         desc="Mark this as StreamPUM msg";
   int getStatsType() {
     return Type;
   }

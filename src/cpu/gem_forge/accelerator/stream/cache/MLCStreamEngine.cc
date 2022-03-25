@@ -80,6 +80,13 @@ void MLCStreamEngine::receiveStreamData(const ResponseMsg &msg) {
   }
   assert(this->controller->isStreamFloatEnabled() &&
          "Receive stream data when stream float is disabled.\n");
+  if (msg.m_isPUM) {
+    if (msg.m_Type == CoherenceResponseType_STREAM_ACK) {
+      // This is a PUM sync message.
+      this->pumManager->reachSync(msg.m_AckCount);
+      return;
+    }
+  }
 
   if (msg.m_Type == CoherenceResponseType_STREAM_RANGE) {
     auto sliceId = msg.m_sliceIds.singleSliceId();
