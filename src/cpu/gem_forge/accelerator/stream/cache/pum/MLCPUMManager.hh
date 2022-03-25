@@ -154,6 +154,11 @@ private:
 
   void configurePUMEngine(CompileStates &args);
 
+  /**
+   * Send out an kick message to PUMEngine to continue execution.
+   */
+  void kickPUMEngine(MessageSizeType sizeType);
+
   void checkSync();
 };
 

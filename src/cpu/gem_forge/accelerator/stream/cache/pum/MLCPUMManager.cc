@@ -339,15 +339,37 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
 }
 
 void MLCPUMManager::configurePUMEngine(CompileStates &states) {
+  for (int row = 0; row < this->controller->getNumRows(); ++row) {
+    for (int col = 0; col < this->controller->getNumCols(); ++col) {
+      int nodeId = row * this->controller->getNumCols() + col;
+      MachineID dstMachineId(MachineType_L2Cache, nodeId);
+
+      this->context.configuredBanks++;
+
+      /**
+       * We still configure here. But PUMEngine will not start until received
+       * the Kick.
+       */
+      auto llcCntrl =
+          AbstractStreamAwareController::getController(dstMachineId);
+      auto llcSE = llcCntrl->getLLCStreamEngine();
+      llcSE->getPUMEngine()->configure(this, states.commands);
+    }
+  }
+  this->kickPUMEngine(MessageSizeType_Data);
+}
+
+void MLCPUMManager::kickPUMEngine(MessageSizeType sizeType) {
 
   /**
-   * Broadcast the configure packet.
+   * Broadcast the kick packet.
+   * So far this is implemented as a PUMConfig packet.
    */
   auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
   msg->m_addr = 0;
   msg->m_Type = CoherenceRequestType_STREAM_CONFIG;
   msg->m_Requestors.add(this->controller->getMachineID());
-  msg->m_MessageSize = MessageSizeType_Data;
+  msg->m_MessageSize = sizeType;
   msg->m_isPUM = true;
 
   for (int row = 0; row < this->controller->getNumRows(); ++row) {
@@ -356,22 +378,12 @@ void MLCPUMManager::configurePUMEngine(CompileStates &states) {
       MachineID dstMachineId(MachineType_L2Cache, nodeId);
 
       msg->m_Destination.add(dstMachineId);
-      this->context.configuredBanks++;
-
-      /**
-       * We still configure here. But PUMEngine will not start until received
-       * the configuration message.
-       */
-      auto llcCntrl =
-          AbstractStreamAwareController::getController(dstMachineId);
-      auto llcSE = llcCntrl->getLLCStreamEngine();
-      llcSE->getPUMEngine()->configure(this, states.commands);
     }
   }
 
   Cycles latency(1); // Just use 1 cycle latency here.
 
-  MLCSE_DPRINTF("Broadcast PUMConfig.\n");
+  MLCSE_DPRINTF("Broadcast PUMKick.\n");
 
   mlcSE->requestToLLCMsgBuffer->enqueue(
       msg, this->controller->clockEdge(),
