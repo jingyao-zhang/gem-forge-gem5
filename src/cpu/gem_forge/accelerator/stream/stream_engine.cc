@@ -1181,7 +1181,7 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
     auto streamId = iter->id();
     auto S = this->getStream(streamId);
     auto &dynS = S->getFirstAliveDynStream();
-    if (dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0) {
+    if (dynS.hasZeroTripCount()) {
       // Streams with 0 TripCount will not allocate the last element.
       continue;
     }
@@ -1235,7 +1235,7 @@ void StreamEngine::dispatchStreamEnd(const StreamEndArgs &args) {
 
     // 1. Step one element.
     auto &dynS = S->getFirstAliveDynStream();
-    if (!(dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0)) {
+    if (!dynS.hasZeroTripCount()) {
       // Streams with 0 TripCount will not allocate the last element.
       dynS.stepElement(true /* isEnd */);
     }
@@ -1312,7 +1312,7 @@ void StreamEngine::rewindStreamEnd(const StreamEndArgs &args) {
 
     // 2. Unstep one element.
     auto &dynS = S->getFirstAliveDynStream();
-    if (!(dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0)) {
+    if (!dynS.hasZeroTripCount()) {
       dynS.unstepElement();
     }
     if (isDebugStream(S)) {
@@ -1333,7 +1333,7 @@ bool StreamEngine::canCommitStreamEnd(const StreamEndArgs &args) {
     auto S = this->getStream(streamId);
     const auto &dynS = S->getDynStreamByEndSeqNum(args.seqNum);
 
-    if (dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0) {
+    if (dynS.hasZeroTripCount()) {
       // Streams with 0 TripCount does not have last element.
       continue;
     }
@@ -1453,7 +1453,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
     assert(!S->dynamicStreams.empty() &&
            "Failed to find ended DynamicInstanceState.");
     auto &endedDynS = S->dynamicStreams.front();
-    if (endedDynS.hasTotalTripCount() && endedDynS.getTotalTripCount() == 0) {
+    if (endedDynS.hasZeroTripCount()) {
       // Streams with 0 TripCount does not have last element.
       continue;
     }
@@ -1486,7 +1486,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
       uint64_t endElemOffset =
           staticStreamRegion.step.skipStepSecondLastElemStreams.count(S) ? 1
                                                                          : 0;
-      if (endedDynS.getTotalTripCount() == 0) {
+      if (endedDynS.hasZeroTripCount()) {
         if (endedDynS.FIFOIdx.entryIdx + endElemOffset != 0) {
           DYN_S_PANIC(
               endedDynS.dynStreamId,

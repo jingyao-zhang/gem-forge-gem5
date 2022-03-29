@@ -854,8 +854,6 @@ void StreamNUCAManager::computeCacheSetNUCA() {
 
 void StreamNUCAManager::computeCacheSetPUM() {
 
-  const auto totalBanks =
-      StreamNUCAMap::getNumRows() * StreamNUCAMap::getNumCols();
   const auto llcNumSets = StreamNUCAMap::getCacheNumSet();
   const auto llcBlockSize = StreamNUCAMap::getCacheBlockSize();
   const auto llcArraysPerWay = StreamNUCAMap::getCacheParams().arrayPerWay;

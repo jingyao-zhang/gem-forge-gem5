@@ -173,6 +173,9 @@ public:
   }
   int64_t getTotalTripCount() const { return this->totalTripCount; }
   void setTotalTripCount(int64_t totalTripCount);
+  bool hasZeroTripCount() const {
+    return this->hasTotalTripCount() && this->getTotalTripCount() == 0;
+  }
 
   /**
    * Compute the number of bytes per element, also considering overlapping

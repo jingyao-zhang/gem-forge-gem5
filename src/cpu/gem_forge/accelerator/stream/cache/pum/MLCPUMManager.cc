@@ -160,9 +160,6 @@ bool MLCPUMManager::canApplyPUMToGroup(CompileStates &states,
     patternInfo.atomicPatterns =
         this->decoalesceAndDevectorizePattern(config, pattern, scalarElemSize);
 
-    /**
-     * TODO: Additional check that pattern is sub-region.
-     */
     return true;
   };
 
@@ -195,10 +192,65 @@ bool MLCPUMManager::canApplyPUMToGroup(CompileStates &states,
   for (const auto &baseConfig : group.usedConfigs) {
     const auto &tile = states.patternInfo.at(baseConfig->stream).pumTile;
     if (tile != computeTile) {
-      MLC_S_DPRINTF_(StreamPUM, groupDynId,
-                     "[NoPUM] Mismatch Tile %s and %s from %s.\n", computeTile,
-                     tile, baseConfig->dynamicId);
+      MLC_S_DPRINTF(groupDynId, "[NoPUM] Mismatch Tile %s and %s from %s.\n",
+                    computeTile, tile, baseConfig->dynamicId);
       return false;
+    }
+  }
+
+  // Check for DataMoveCompiler.
+  for (const auto &sendConfig : group.usedConfigs) {
+    for (const auto &dep : sendConfig->depEdges) {
+      if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
+        continue;
+      }
+      if (dep.data != group.computeConfig) {
+        // Not to us.
+        continue;
+      }
+
+      const auto &sendDynId = sendConfig->dynamicId;
+      auto S = sendConfig->stream;
+      const auto &patternInfo = states.patternInfo.at(S);
+      auto myTile = patternInfo.pumTile;
+
+      MLC_S_DPRINTF(sendDynId, "[PUM] --- Can Compile DataMove. MyTile %s.\n",
+                    myTile);
+      DataMoveCompiler compiler(PUMHWConfiguration::getPUMHWConfig(), myTile);
+
+      auto recvConfig = dep.data;
+      auto recvS = recvConfig->stream;
+      const auto &recvPatternInfo = states.patternInfo.at(recvS);
+      auto recvTile = recvPatternInfo.pumTile;
+
+      if (recvTile != myTile) {
+        // TODO: Handle different mapping of source and dest stream.
+        MLC_S_DPRINTF(groupDynId,
+                      "[NoPUM] Mismatch RecvTile %s and SendTile %s.\n",
+                      recvTile, myTile);
+        return false;
+      }
+
+      if (recvPatternInfo.atomicPatterns.size() != 1) {
+        MLC_S_DPRINTF(groupDynId, "[NoPUM] Multi RecvPatterns.\n", recvTile,
+                      myTile);
+        return false;
+      }
+      const auto &recvPattern = recvPatternInfo.atomicPatterns.front();
+      MLC_S_DPRINTF(recvConfig->dynamicId, "[PUM] RecvPattern %s.\n",
+                    recvPattern);
+
+      for (const auto &myPattern : patternInfo.atomicPatterns) {
+        MLC_S_DPRINTF(sendDynId, "[PUM] SendPattern %s.\n", myPattern);
+
+        auto reusedMyPattern =
+            this->addReuseToOuterPattern(sendConfig, recvConfig, myPattern);
+
+        if (!compiler.canCompileStreamPair(reusedMyPattern, recvPattern)) {
+          MLC_S_DPRINTF(groupDynId, "[NoPUM] Rejected by DataMoveCompiler.\n");
+          return false;
+        }
+      }
     }
   }
 

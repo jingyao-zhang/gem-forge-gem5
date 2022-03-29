@@ -111,19 +111,11 @@ public:
   };
   using StrideMaskInfoVecT = std::vector<StrideMaskInfoT>;
 
+  bool canTurnStrideIntoMask(const AffinePattern &pattern) const;
   StrideMaskInfoVecT turnStrideIntoMask(AffinePattern &pattern) const;
 
-  void canCompileStreamPair(const AffinePattern &srcStream,
-                            const AffinePattern &dstStream) const {
-    assert(isSubRegion(dstStream));
-    assert(isSubRegion(srcStream, true));
-    assert(srcStream.params.size() == dstStream.params.size());
-    auto srcTrips = srcStream.get_trips();
-    auto dstTrips = dstStream.get_trips();
-    for (auto i = 0; i < srcTrips.size(); ++i) {
-      assert(srcTrips[i] == dstTrips[i]);
-    }
-  }
+  bool canCompileStreamPair(AffinePattern srcStream,
+                            AffinePattern dstStream) const;
 
   PUMCommandVecT compileStreamPair(AffinePattern srcStream,
                                    AffinePattern dstStream) const;
@@ -136,8 +128,6 @@ public:
   PUMCommandVecT
   compileAligns(const std::vector<std::pair<int64_t, int64_t>> &aligns) const;
   PUMCommandVecT compileAlign(int64_t dim, int64_t distance) const;
-  PUMCommandVecT compileAlignLessEqualTileSize(int64_t dim,
-                                               int64_t distance) const;
 
   /**
    * Mask commands by sub-region.

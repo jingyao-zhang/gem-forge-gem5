@@ -21,6 +21,45 @@ DataMoveCompiler::DataMoveCompiler(const PUMHWConfiguration &_llc_config,
   }
 }
 
+bool DataMoveCompiler::canTurnStrideIntoMask(
+    const AffinePattern &pattern) const {
+  if (pattern.params.size() != this->dimension) {
+    return false;
+  }
+
+  auto starts = pattern.getSubRegionStartToArraySize(this->array_sizes);
+
+  auto curDimStride = 1;
+  for (int dim = 0; dim < this->dimension; ++dim) {
+    auto elemStride = pattern.params[dim].stride;
+
+    if (elemStride % curDimStride != 0) {
+      DPRINTF(StreamPUM, "[NoMask] Illegal Stride %ld Pattern %s TilePat %s.\n",
+              elemStride, pattern, this->tile_pattern);
+      return false;
+    }
+
+    if (elemStride != 0 && elemStride != curDimStride) {
+      auto dimStride = elemStride / curDimStride;
+      auto mod = starts[dim] % dimStride;
+      DPRINTF(StreamPUM, "[PUM] Pattern %s Dim %d Strided by %ld Mod %ld.\n",
+              pattern, dim, dimStride, mod);
+
+      auto tile = this->tile_sizes[dim];
+      if (dimStride > tile || tile % dimStride != 0) {
+        DPRINTF(StreamPUM,
+                "[PUM] Pattern %s Dim %d Stride %ld Not Align to Tile %ld.\n",
+                pattern, dim, dimStride, tile);
+        return false;
+      }
+    }
+
+    curDimStride *= this->array_sizes[dim];
+  }
+
+  return true;
+}
+
 DataMoveCompiler::StrideMaskInfoVecT
 DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
 
@@ -40,7 +79,7 @@ DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
             pattern, this->tile_pattern);
     }
 
-    if (elemStride != curDimStride) {
+    if (elemStride != 0 && elemStride != curDimStride) {
       auto dimStride = elemStride / curDimStride;
       auto mod = starts[dim] % dimStride;
       DPRINTF(StreamPUM, "[PUM] Pattern %s Dim %d Strided by %ld Mod %ld.\n",
@@ -77,17 +116,68 @@ DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
   return masks;
 }
 
-PUMCommandVecT
-DataMoveCompiler::compileStreamPair(AffinePattern srcStream,
-                                    AffinePattern dstStream) const {
+bool DataMoveCompiler::canCompileStreamPair(AffinePattern srcStream,
+                                            AffinePattern dstStream) const {
+
+  DPRINTF(StreamPUM, "[CanPUM] Src %s -> Dst %s.\n", srcStream, dstStream);
+
+  if (!this->canTurnStrideIntoMask(srcStream)) {
+    DPRINTF(StreamPUM, "[NoPUM] Can not Mask Src.\n");
+    return false;
+  }
+  if (!this->canTurnStrideIntoMask(dstStream)) {
+    DPRINTF(StreamPUM, "[NoPUM] Can not Mask Dst.\n");
+    return false;
+  }
 
   auto srcMasks = this->turnStrideIntoMask(srcStream);
   auto dstMasks = this->turnStrideIntoMask(dstStream);
 
-  assert(srcMasks.size() <= 1);
-  assert(dstMasks.size() <= 1);
+  if (srcMasks.size() > 1) {
+    DPRINTF(StreamPUM, "[NoPUM] Multi SrcMasks.\n");
+    return false;
+  }
 
-  canCompileStreamPair(srcStream, dstStream);
+  if (dstMasks.size() > 1) {
+    DPRINTF(StreamPUM, "[NoPUM] Multi DstMasks.\n");
+    return false;
+  }
+
+  if (!isSubRegion(dstStream)) {
+    DPRINTF(StreamPUM, "[NoPUM] Dst Not SubRegion.\n");
+    return false;
+  }
+
+  if (!isSubRegion(srcStream, true)) {
+    DPRINTF(StreamPUM, "[NoPUM] Src Not SubRegion with reuse.\n");
+    return false;
+  }
+
+  if (srcStream.params.size() != dstStream.params.size()) {
+    DPRINTF(StreamPUM, "[NoPUM] Mismatch in Params Num.\n");
+    return false;
+  }
+
+  auto srcTrips = srcStream.get_trips();
+  auto dstTrips = dstStream.get_trips();
+  for (auto i = 0; i < srcTrips.size(); ++i) {
+    if (srcTrips[i] != dstTrips[i]) {
+      DPRINTF(StreamPUM, "[NoPUM] Mismatch in Trips.\n");
+      return false;
+    }
+  }
+
+  return true;
+}
+
+PUMCommandVecT
+DataMoveCompiler::compileStreamPair(AffinePattern srcStream,
+                                    AffinePattern dstStream) const {
+
+  assert(this->canCompileStreamPair(srcStream, dstStream));
+
+  auto srcMasks = this->turnStrideIntoMask(srcStream);
+  auto dstMasks = this->turnStrideIntoMask(dstStream);
 
   // Generate the start alignments.
   auto srcStarts = getSubRegionStart(srcStream);
@@ -115,8 +205,15 @@ DataMoveCompiler::compileStreamPair(AffinePattern srcStream,
 
   if (aligns.size() == 0) {
     // Nothing to align.
-    assert(reuses.empty() && "Reuse when no align is not supported.");
-    return PUMCommandVecT();
+    assert(reuses.size() <= 1 && "Multi-Reuse when no align.");
+    if (reuses.empty()) {
+      // No need to align.
+      return PUMCommandVecT();
+    } else {
+      // Add a fake 0 align in the reuse dimension.
+      const auto &reuse = reuses.front();
+      aligns.emplace_back(reuse.dim, 0 /* align distance */);
+    }
   }
 
   /**
@@ -209,25 +306,12 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
    */
   DPRINTF(StreamPUM, "Compile Align Dim %ld Distance %ld.\n", dim, distance);
   assert(dim < dimension);
-  auto abs_dist = std::abs(distance);
-  if (abs_dist <= tile_sizes[dim]) {
-    return compileAlignLessEqualTileSize(dim, distance);
-  } else {
-    assert(abs_dist % tile_sizes[dim] == 0);
-    assert(false);
-  }
-}
-
-PUMCommandVecT
-DataMoveCompiler::compileAlignLessEqualTileSize(int64_t dim,
-                                                int64_t distance) const {
   PUMCommandVecT commands;
 
-  auto abs_dist = std::abs(distance);
-  assert(abs_dist <= tile_sizes[dim]);
+  auto absDist = std::abs(distance);
 
   // Traffic within this tile.
-  if (abs_dist < tile_sizes[dim]) {
+  if (absDist < tile_sizes[dim]) {
     auto bitlines = distance;
     for (auto i = 0; i < dim; ++i) {
       bitlines *= tile_sizes[i];
@@ -244,61 +328,120 @@ DataMoveCompiler::compileAlignLessEqualTileSize(int64_t dim,
     DPRINTF(StreamPUM, "Intra-Array Cmd %s", commands.back());
   }
 
+  /**
+   * Define:
+   * moveTileDist = absDist / tileSize
+   * bitlineSep = absDist % tileSize
+   *
+   * There are basically two chuncks:
+   * distance > 0:
+   *   [0, tileSize-bitlineSep) -> [bitlineSep, tileSize) (+moveTileDist)
+   *   [tileSize-bitlineSep, tileSize) -> [0, bitlineSep) (+moveTileDist + 1)
+   *
+   * distance < 0:
+   *   [0, bitlineSep) -> [tileSize-bitlineSep, tileSize)  (-moveTileDist - 1)
+   *   [bitlineSep, tileSize) -> [0, tileSize-bitlineSep)  (-moveTileDist)
+   *
+   * distance == 0:
+   *   [0, tileSize)           -> 0
+   *
+   * And there are special cases:
+   * 1. If bitlineSep == 0, we can omit one command.
+   * 2. If moveTileDist == 0, we generate intra-array command.
+   * 3. NOTE: When distance == 0, we still generate one intra-array command.
+   */
+
   // Boundary case.
-  auto move_tile_dist = 1;
+  auto moveTileDistNear = absDist / tile_sizes[dim];
+  auto moveTileDistFar = moveTileDistNear + 1;
+  auto bitlineSep = absDist % tile_sizes[dim];
+
+  auto constructBitlineSubRegion = [&](int64_t start,
+                                       int64_t end) -> AffinePattern {
+    IntVecT starts;
+    IntVecT trips;
+    for (auto i = 0; i < dim; ++i) {
+      starts.push_back(0);
+      trips.push_back(tile_sizes[i]);
+    }
+    starts.push_back(start);
+    trips.push_back(end - start);
+    for (auto i = dim + 1; i < dimension; ++i) {
+      starts.push_back(0);
+      trips.push_back(tile_sizes[i]);
+    }
+    return AffinePattern::construct_canonical_sub_region(tile_sizes, starts,
+                                                         trips);
+  };
+
+  auto front_pattern = constructBitlineSubRegion(0, bitlineSep);
+  auto back_pattern = constructBitlineSubRegion(bitlineSep, tile_sizes[dim]);
+
+  auto front2_pattern =
+      constructBitlineSubRegion(0, tile_sizes[dim] - bitlineSep);
+  auto back2_pattern =
+      constructBitlineSubRegion(tile_sizes[dim] - bitlineSep, tile_sizes[dim]);
+
+  auto flatTileDistNear = moveTileDistNear;
+  auto flatTileDistFar = moveTileDistFar;
   for (auto i = 0; i < dim; ++i) {
-    move_tile_dist *= array_sizes[i] / tile_sizes[i];
+    flatTileDistNear *= tile_nums[i];
+    flatTileDistFar *= tile_nums[i];
   }
   if (distance < 0) {
-    move_tile_dist *= -1;
+    flatTileDistNear *= -1;
+    flatTileDistFar *= -1;
   }
 
-  // Construct the sub-region of front and back.
-  IntVecT front_starts;
-  IntVecT front_trips;
-  for (auto i = 0; i < dim; ++i) {
-    front_starts.push_back(0);
-    front_trips.push_back(tile_sizes[i]);
-  }
-  front_starts.push_back(0);
-  front_trips.push_back(abs_dist);
-  for (auto i = dim + 1; i < dimension; ++i) {
-    front_starts.push_back(0);
-    front_trips.push_back(tile_sizes[i]);
-  }
-
-  IntVecT back_starts;
-  IntVecT back_trips;
-  for (auto i = 0; i < dim; ++i) {
-    back_starts.push_back(0);
-    back_trips.push_back(tile_sizes[i]);
-  }
-  back_starts.push_back(tile_sizes[dim] - abs_dist);
-  back_trips.push_back(abs_dist);
-  for (auto i = dim + 1; i < dimension; ++i) {
-    back_starts.push_back(0);
-    back_trips.push_back(tile_sizes[i]);
-  }
-
-  auto front_pattern = AffinePattern::construct_canonical_sub_region(
-      tile_sizes, front_starts, front_trips);
-  auto back_pattern = AffinePattern::construct_canonical_sub_region(
-      tile_sizes, back_starts, back_trips);
-
-  commands.emplace_back();
-  commands.back().type = "inter-array";
-  commands.back().tile_dist = move_tile_dist;
   if (distance > 0) {
-    // Move forward.
-    commands.back().bitline_mask = back_pattern;
-    commands.back().dst_bitline_mask = front_pattern;
-  } else {
-    // Move backward.
-    commands.back().bitline_mask = front_pattern;
-    commands.back().dst_bitline_mask = back_pattern;
+
+    // First chunk -> forward (May be already handled as Intra-Array.)
+    if (moveTileDistNear > 0) {
+      commands.emplace_back();
+      commands.back().type = "inter-array";
+      commands.back().tile_dist = flatTileDistNear;
+      commands.back().bitline_mask = front2_pattern;
+      commands.back().dst_bitline_mask = back_pattern;
+      DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+    }
+
+    // Second chunk -> forward (May be empty if bitlineSep == 0)
+    if (bitlineSep > 0) {
+      commands.emplace_back();
+      commands.back().type = "inter-array";
+      commands.back().tile_dist = flatTileDistFar;
+      commands.back().bitline_mask = back2_pattern;
+      commands.back().dst_bitline_mask = front_pattern;
+      DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+    }
   }
 
-  DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+  else if (distance < 0) {
+
+    // First chunk -> backward (May be empty if bitlineSep == 0)
+    if (bitlineSep > 0) {
+      commands.emplace_back();
+      commands.back().type = "inter-array";
+      commands.back().tile_dist = flatTileDistFar;
+      commands.back().bitline_mask = front_pattern;
+      commands.back().dst_bitline_mask = back2_pattern;
+      DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+    }
+
+    // Second chunk -> backward (May be already handled as Intra-Array)
+    if (moveTileDistNear > 0) {
+      commands.emplace_back();
+      commands.back().type = "inter-array";
+      commands.back().tile_dist = flatTileDistNear;
+      commands.back().bitline_mask = back_pattern;
+      commands.back().dst_bitline_mask = front2_pattern;
+      DPRINTF(StreamPUM, "Inter-Array Cmd %s", commands.back());
+    }
+  }
+
+  else {
+    // distance == 0. Nothing to do.
+  }
 
   return commands;
 }
@@ -504,11 +647,15 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
                               final_tile_masks);
 
   for (const auto &command : commands) {
+    DPRINTF(StreamPUM, "[MaskSubRegion] Masking CMD %s", command);
     for (int i = 0; i < final_bitline_masks.size(); ++i) {
       const auto &bitline_mask = final_bitline_masks.at(i);
       const auto &tile_mask = final_tile_masks.at(i);
       auto c = command;
       auto intersect = intersectBitlineMasks(c.bitline_mask, bitline_mask);
+      DPRINTF(StreamPUM,
+              "[MaskSubRegion] Intersect CMD Bitline %s Mask %s = %s.\n",
+              c.bitline_mask, bitline_mask, intersect);
       if (intersect.get_total_trip() == 0) {
         // Empty intersection.
         continue;

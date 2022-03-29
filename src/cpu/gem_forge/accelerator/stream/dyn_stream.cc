@@ -682,15 +682,20 @@ bool DynStream::shouldCoreSEIssue() const {
   /**
    * If the stream has floated, and no core user/dependent streams here,
    * then we don't have to issue for the data.
+   * ZeroTripCount stream will never issue. This is common for EpilogueLoop when
+   * the loop is perfectly vectorized.
    */
   auto S = this->stream;
+  if (this->hasZeroTripCount()) {
+    return false;
+  }
+
   if (!S->hasCoreUser() && this->isFloatedToCache()) {
-    // Check that dependent dynS all offloaded to cache.
+    // Check that dependent dynS all offloaded to cache (except ZeroTripCount).
     for (auto depS : S->addrDepStreams) {
       const auto &depDynS = depS->getDynStream(this->configSeqNum);
       // If the AddrDepStream issues, then we have to issue to compute the
       // address.
-      // if (depDynS.coreSENeedAddress()) {
       if (depDynS.shouldCoreSEIssue()) {
         return true;
       }
@@ -703,7 +708,7 @@ bool DynStream::shouldCoreSEIssue() const {
     }
     for (auto valDepS : S->valueDepStreams) {
       const auto &valDepDynS = valDepS->getDynStream(this->configSeqNum);
-      if (!valDepDynS.isFloatedToCache()) {
+      if (valDepDynS.shouldCoreSEIssue()) {
         return true;
       }
     }

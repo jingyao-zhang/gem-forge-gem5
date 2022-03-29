@@ -434,8 +434,7 @@ bool StreamElement::checkAddrBaseElementsReady(bool checkByCore) {
    * If this is the LastElement of stream with TripCount 0, it should never to
    * AddrReady.
    */
-  if (this->dynS->hasTotalTripCount() && this->dynS->getTotalTripCount() == 0 &&
-      this->isLastElement()) {
+  if (this->dynS->hasZeroTripCount() && this->isLastElement()) {
     S_ELEMENT_DPRINTF(this, "[AddrBaseReady] NotReady: ZeroTripCount.\n");
     return false;
   }
@@ -1005,8 +1004,7 @@ bool StreamElement::checkValueBaseElementsValueReady() const {
    * Special case for the last element of stream with TripCount 0, we should
    * never be ready.
    */
-  if (this->dynS->hasTotalTripCount() && this->dynS->getTotalTripCount() == 0 &&
-      this->isLastElement()) {
+  if (this->dynS->hasZeroTripCount() && this->isLastElement()) {
     return false;
   }
   for (const auto &baseElement : this->valueBaseElements) {

@@ -291,7 +291,7 @@ void StreamFloatController::floatDirectLoadStreams(const Args &args) {
       continue;
     }
     // Additional check TotalTripCount is not 0. This is only for NestStream.
-    if (dynS->hasTotalTripCount() && dynS->getTotalTripCount() == 0) {
+    if (dynS->hasZeroTripCount()) {
       continue;
     }
 

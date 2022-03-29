@@ -296,42 +296,7 @@ public:
   }
 
   bool is_canonical_sub_region_to_array_size(const IntVecT &array_sizes,
-                                             bool allow_reuse = false) const {
-    auto dimension = array_sizes.size();
-    if (params.size() != dimension) {
-      return false;
-    }
-    // This is S1x... xSi
-    IntVecT inner_array_sizes;
-    for (auto i = 0; i < dimension; ++i) {
-      auto s = reduce_mul(array_sizes.cbegin(), array_sizes.cbegin() + i, 1);
-      inner_array_sizes.push_back(s);
-    }
-
-    auto strides = get_strides();
-    auto trips = get_trips();
-    for (auto i = 0; i < dimension; ++i) {
-      auto s = strides[i];
-      auto t = inner_array_sizes[i];
-      if (s == t) {
-        continue;
-      }
-      if (allow_reuse && s == 0) {
-        continue;
-      }
-      return false;
-    }
-    auto starts = getSubRegionStartToArraySize(array_sizes);
-    for (auto i = 0; i < dimension; ++i) {
-      auto p = starts[i];
-      auto q = trips[i];
-      auto s = array_sizes[i];
-      if (p + q > s) {
-        return false;
-      }
-    }
-    return true;
-  }
+                                             bool allow_reuse = false) const;
 
   static AffinePattern
   construct_canonical_sub_region(const IntVecT &array_sizes,

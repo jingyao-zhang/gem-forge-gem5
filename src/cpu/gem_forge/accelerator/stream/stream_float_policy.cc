@@ -102,7 +102,7 @@ StreamFloatPolicy::shouldFloatStream(DynStream &dynS) {
   if (!this->enabled) {
     return FloatDecision();
   }
-  if (dynS.hasTotalTripCount() && dynS.getTotalTripCount() == 0) {
+  if (dynS.hasZeroTripCount()) {
     // Do not float streams with zero trip count.
     return FloatDecision();
   }
