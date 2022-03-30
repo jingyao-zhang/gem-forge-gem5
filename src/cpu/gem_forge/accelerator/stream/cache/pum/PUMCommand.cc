@@ -37,7 +37,8 @@ std::string PUMCommand::to_string(int llcBankIdx) const {
     }
   } else {
     // Compute command.
-    os << "  Op " << Enums::OpClassStrings[opClass] << '\n';
+    os << "  Op " << Enums::OpClassStrings[opClass]
+       << (isReduction ? " [Reduce] " : "") << '\n';
   }
   for (auto i = 0; i < llcSplitTileCmds.size(); ++i) {
     if (llcBankIdx != -1 && i != llcBankIdx) {

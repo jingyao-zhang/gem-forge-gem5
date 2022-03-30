@@ -383,6 +383,9 @@ StreamFloatPolicy::shouldFloatStreamSmart(DynStream &dynS) {
         floatCompute = true;
       }
     }
+    if (S->hasBackDepReductionStream) {
+      floatCompute = true;
+    }
     if (floatCompute) {
       S_DPRINTF(S, "[Float] always float computation.");
       logS(dynS) << "[Float] always float computation.\n" << std::flush;

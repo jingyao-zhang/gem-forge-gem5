@@ -336,6 +336,27 @@ void Stream::setupAddrGen(DynStream &dynStream,
   }
 }
 
+bool Stream::isReductionDistributable() const {
+  if (!this->isReduction()) {
+    return false;
+  }
+  auto reduceOp = this->getAddrFuncComputeOp();
+  if (reduceOp == ::LLVM::TDG::ExecFuncInfo_ComputeOp_FLOAT_ADD ||
+      reduceOp == ::LLVM::TDG::ExecFuncInfo_ComputeOp_INT_ADD) {
+    // Supported float addition.
+    return true;
+  } else if (this->getStreamName().find("bfs_pull") != std::string::npos ||
+             this->getStreamName().find("mm_inner") != std::string::npos) {
+    /**
+     * ! We manually enable this for bfs_pull and mm_inner.
+     */
+    return true;
+  } else {
+    return false;
+    ;
+  }
+}
+
 uint64_t Stream::getFootprint(unsigned cacheBlockSize) const {
   /**
    * Estimate the memory footprint for this stream in number of unqiue cache

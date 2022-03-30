@@ -15,6 +15,8 @@ public:
   int64_t tile_dist = 0;
   int64_t bitline_dist = 0;
 
+  bool isReduction = false; // This command is reduction operation.
+
   /**
    * Extra reuse information.
    */

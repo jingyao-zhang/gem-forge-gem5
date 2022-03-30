@@ -639,6 +639,8 @@ public:
 #undef Get
 #undef Is
 
+  bool isReductionDistributable() const;
+
   int32_t getMemElementSize() const {
     assert(this->coalescedElementSize > 0 && "Invalid element size.");
     return this->coalescedElementSize;

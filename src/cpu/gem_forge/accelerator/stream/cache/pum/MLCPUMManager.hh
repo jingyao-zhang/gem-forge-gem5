@@ -76,6 +76,7 @@ private:
   struct PUMComputeStreamGroup {
     ConfigPtr computeConfig;
     CacheStreamConfigureVec usedConfigs;
+    bool hasReduction = false;
     bool canApplyPUM = false;
     bool appliedPUM = false;
   };
@@ -110,9 +111,16 @@ private:
     PUMCommandVecT commands;
     int numSync = 0;
     void clear();
+    enum StateE {
+      Initialized, // Initialized.
+      Kicked,      // LLC PUMEngine started.
+      Done,        // LLC PUMEngine done.
+    };
+    StateE state = StateE::Initialized;
     bool isActive() const { return !configs.empty(); }
   };
-  PUMContext context;
+  using PUMContextListT = std::list<PUMContext>;
+  PUMContextListT contexts;
 
   /**
    * Find all PUMComputeStreamGroups.
@@ -136,7 +144,7 @@ private:
   void compileDataMove(CompileStates &states, const ConfigPtr &sendConfig,
                        const CacheStreamConfigureData::DepEdge &dep);
 
-  void compileCompute(CompileStates &states, const ConfigPtr &config);
+  void compileCompute(CompileStates &states, PUMComputeStreamGroup &group);
 
   /**
    * Decoalesce and devectorize stream pattern.
@@ -154,14 +162,19 @@ private:
                                        const ConfigPtr &innerConfig,
                                        const AffinePattern &pattern) const;
 
-  void configurePUMEngine(CompileStates &args);
+  void configurePUMEngine(PUMContext &context);
 
   /**
    * Send out an kick message to PUMEngine to continue execution.
    */
   void kickPUMEngine(MessageSizeType sizeType, bool isIdea);
 
-  void checkSync();
+  void checkSync(PUMContext &context);
+
+  PUMContext &getFirstKickedContext();
+  PUMContext *getFirstInitializedContext();
+
+  void sendBackFinalReductionValue(const CacheStreamConfigureDataPtr &config);
 };
 
 #endif

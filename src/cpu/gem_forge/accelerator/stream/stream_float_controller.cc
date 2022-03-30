@@ -740,17 +740,10 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   }
 
   // Check if my reduction is simple operation.
-  auto reduceOp = S->getAddrFuncComputeOp();
-  if (reduceOp == ::LLVM::TDG::ExecFuncInfo_ComputeOp_FLOAT_ADD ||
-      reduceOp == ::LLVM::TDG::ExecFuncInfo_ComputeOp_INT_ADD) {
-    // Supported float addition.
-  } else if (S->getStreamName().find("bfs_pull") != std::string::npos) {
-    /**
-     * ! We manually enable this for bfs_pull.
-     */
-  } else {
+  if (!S->isReductionDistributable()) {
     StreamFloatPolicy::logS(*dynS)
-        << "[Not Float] as ReduceOp is not distributable.\n"
+        << "[Not Float] as unfavorable TotalTripCount "
+        << dynS->getTotalTripCount() << ".\n"
         << std::flush;
     return;
   }
@@ -759,11 +752,6 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   uint64_t floatIndirectReductionMinTripCount = 256;
   if (!dynS->hasTotalTripCount() ||
       dynS->getTotalTripCount() < floatIndirectReductionMinTripCount) {
-    StreamFloatPolicy::logS(*dynS)
-        << "[Not Float] as unfavorable TotalTripCount "
-        << dynS->getTotalTripCount() << ".\n"
-        << std::flush;
-    return;
   }
   /**
    * Okay now we decided to float the IndirectReductionStream.

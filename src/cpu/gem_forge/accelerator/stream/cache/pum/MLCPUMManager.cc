@@ -14,6 +14,9 @@
 #define MLCSE_DPRINTF(format, args...)                                         \
   DPRINTF(StreamPUM, "[MLC_SE%d]: [PUM] " format,                              \
           this->controller->getMachineID().num, ##args)
+#define MLCSE_PANIC(format, args...)                                           \
+  panic("[MLC_SE%d]: [PUM] " format, this->controller->getMachineID().num,     \
+        ##args)
 
 MLCPUMManager::MLCPUMManager(MLCStreamEngine *_mlcSE)
     : mlcSE(_mlcSE), controller(_mlcSE->controller) {}
@@ -34,16 +37,38 @@ void MLCPUMManager::PUMContext::clear() {
 
 void MLCPUMManager::findPUMComputeStreamGroups(CompileStates &states) {
   for (const auto &config : states.configs) {
+    bool shouldFormGroup = false;
+    bool hasReduction = false;
+    CacheStreamConfigureDataPtr realComputeConfig = config;
     if (config->stream->getEnabledStoreFunc()) {
-      states.pumGroups.emplace_back();
-
-      auto &group = states.pumGroups.back();
-      group.computeConfig = config;
-      for (const auto &edge : config->baseEdges) {
-        auto baseConfig = edge.data.lock();
-        assert(baseConfig && "BaseConfig already released.");
-        group.usedConfigs.push_back(baseConfig);
+      shouldFormGroup = true;
+    } else {
+      /**
+       * We try to support reduction here.
+       */
+      for (const auto &dep : config->depEdges) {
+        if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy &&
+            dep.data->stream->isReduction()) {
+          shouldFormGroup = true;
+          hasReduction = true;
+          realComputeConfig = dep.data;
+          break;
+        }
       }
+    }
+
+    if (!shouldFormGroup) {
+      continue;
+    }
+
+    states.pumGroups.emplace_back();
+    auto &group = states.pumGroups.back();
+    group.computeConfig = config;
+    group.hasReduction = hasReduction;
+    for (const auto &edge : realComputeConfig->baseEdges) {
+      auto baseConfig = edge.data.lock();
+      assert(baseConfig && "BaseConfig already released.");
+      group.usedConfigs.push_back(baseConfig);
     }
   }
 }
@@ -69,9 +94,22 @@ bool MLCPUMManager::canApplyPUMToGroup(CompileStates &states,
     }
     for (const auto &dep : config->depEdges) {
       if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-        MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
-                       "[NoPUM] Has IndirectS %s.\n", dep.data->dynamicId);
-        return false;
+
+        /**
+         * We try to support distributable reduction here.
+         */
+        if (dep.data->stream->isReduction()) {
+          if (!dep.data->stream->isReductionDistributable()) {
+            MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
+                           "[NoPUM] Reduce Not Distributable %s.\n",
+                           dep.data->dynamicId);
+            return false;
+          }
+        } else {
+          MLC_S_DPRINTF_(StreamPUM, config->dynamicId,
+                         "[NoPUM] Has IndirectS %s.\n", dep.data->dynamicId);
+          return false;
+        }
       }
     }
     if (config->floatPlan.isFloatedToMem()) {
@@ -165,12 +203,6 @@ bool MLCPUMManager::canApplyPUMToGroup(CompileStates &states,
 
   const auto &computeConfig = group.computeConfig;
   const auto &groupDynId = computeConfig->dynamicId;
-  if (!computeConfig->depEdges.empty()) {
-    MLC_S_DPRINTF_(StreamPUM, groupDynId, "[NoPUM] Has IndirectS %s.\n",
-                   computeConfig->depEdges.front().data->dynamicId);
-    return false;
-  }
-
   if (!checkCommonConstraint(computeConfig)) {
     return false;
   }
@@ -283,7 +315,7 @@ void MLCPUMManager::applyPUMToGroup(CompileStates &states,
   auto &sync = states.commands.back();
   sync.type = "sync";
 
-  this->compileCompute(states, group.computeConfig);
+  this->compileCompute(states, group);
 }
 
 void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
@@ -311,20 +343,21 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
     return;
   }
 
-  assert(!this->context.isActive() && "PUM Already Active.");
+  this->contexts.emplace_back();
+  auto &context = this->contexts.back();
+
+  assert(!context.isActive() && "PUM Already Active.");
   // Remember the configured streams.
-  this->context.configs = states.configs;
-  this->context.pumGroups = states.pumGroups;
-  this->context.commands = states.commands;
+  context.configs = states.configs;
+  context.pumGroups = states.pumGroups;
+  context.commands = states.commands;
   for (const auto &command : states.commands) {
     if (command.type == "sync") {
-      this->context.numSync++;
+      context.numSync++;
     }
   }
   // Implicit last sync.
-  this->context.numSync++;
-
-  this->configurePUMEngine(states);
+  context.numSync++;
 
   /**
    * Clear the PUMConfigs from the original ConfigVec so that MLCStreamEngine
@@ -337,7 +370,7 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
          ++iter) {
       const auto &config = *iter;
       if (config == target) {
-        this->context.purePUMStreamIds.push_back(target->dynamicId);
+        context.purePUMStreamIds.push_back(target->dynamicId);
         normalConfigs->erase(iter);
         erased = true;
         break;
@@ -387,16 +420,21 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
     }
   }
 
+  if (this->contexts.size() == 1) {
+    // Start PUM only if we reached the front of the queue.
+    this->configurePUMEngine(context);
+  }
+
   return;
 }
 
-void MLCPUMManager::configurePUMEngine(CompileStates &states) {
+void MLCPUMManager::configurePUMEngine(PUMContext &context) {
   for (int row = 0; row < this->controller->getNumRows(); ++row) {
     for (int col = 0; col < this->controller->getNumCols(); ++col) {
       int nodeId = row * this->controller->getNumCols() + col;
       MachineID dstMachineId(MachineType_L2Cache, nodeId);
 
-      this->context.configuredBanks++;
+      context.configuredBanks++;
 
       /**
        * We still configure here. But PUMEngine will not start until received
@@ -405,9 +443,11 @@ void MLCPUMManager::configurePUMEngine(CompileStates &states) {
       auto llcCntrl =
           AbstractStreamAwareController::getController(dstMachineId);
       auto llcSE = llcCntrl->getLLCStreamEngine();
-      llcSE->getPUMEngine()->configure(this, states.commands);
+      llcSE->getPUMEngine()->configure(this, context.commands);
     }
   }
+  assert(context.state == PUMContext::StateE::Initialized);
+  context.state = PUMContext::StateE::Kicked;
   this->kickPUMEngine(MessageSizeType_Data, false /* isIdea */);
 }
 
@@ -596,39 +636,64 @@ MLCPUMManager::addReuseToOuterPattern(const ConfigPtr &outerConfig,
   return reusedPattern;
 }
 
+MLCPUMManager::PUMContext &MLCPUMManager::getFirstKickedContext() {
+  assert(!this->contexts.empty() && "No PUMContext.");
+  for (auto &context : this->contexts) {
+    if (context.state == PUMContext::StateE::Kicked) {
+      return context;
+    }
+  }
+  panic("No KickedContext.");
+}
+
+MLCPUMManager::PUMContext *MLCPUMManager::getFirstInitializedContext() {
+  if (this->contexts.empty()) {
+    return nullptr;
+  }
+  for (auto &context : this->contexts) {
+    if (context.state == PUMContext::StateE::Initialized) {
+      return &context;
+    }
+  }
+  return nullptr;
+}
+
 void MLCPUMManager::reachSync(int sentPackets) {
-  assert(this->context.isActive() && "No Active PUM.");
-  this->context.totalAckBanks++;
-  this->context.totalSentPackets += sentPackets;
-  this->checkSync();
+
+  auto &context = this->getFirstKickedContext();
+  assert(context.isActive() && "No Active PUM.");
+  context.totalAckBanks++;
+  context.totalSentPackets += sentPackets;
+  this->checkSync(context);
 }
 
 void MLCPUMManager::receivePacket(int recvPackets) {
-  assert(this->context.isActive() && "No Active PUM.");
-  this->context.totalRecvPackets += recvPackets;
-  this->checkSync();
+  auto &context = this->getFirstKickedContext();
+  assert(context.isActive() && "No Active PUM.");
+  context.totalRecvPackets += recvPackets;
+  this->checkSync(context);
 }
 
-void MLCPUMManager::checkSync() {
+void MLCPUMManager::checkSync(PUMContext &context) {
 
-  assert(this->context.isActive() && "No Active PUM.");
+  assert(context.isActive() && "No Active PUM.");
 
-  if (this->context.numSync == 0) {
+  if (context.numSync == 0) {
     return;
   }
 
-  if (this->context.totalAckBanks == this->context.configuredBanks &&
-      this->context.totalSentPackets == this->context.totalRecvPackets) {
+  if (context.totalAckBanks == context.configuredBanks &&
+      context.totalSentPackets == context.totalRecvPackets) {
 
-    MLCSE_DPRINTF("Synced %d -= 1.\n", this->context.numSync);
-    this->context.numSync--;
-    this->context.totalAckBanks = 0;
-    this->context.totalSentPackets = 0;
-    this->context.totalRecvPackets = 0;
+    MLCSE_DPRINTF("Synced %d -= 1.\n", context.numSync);
+    context.numSync--;
+    context.totalAckBanks = 0;
+    context.totalSentPackets = 0;
+    context.totalRecvPackets = 0;
 
-    if (this->context.numSync == 0) {
+    if (context.numSync == 0) {
       // This is the last Sync.
-      MLCSE_DPRINTF("Ack all elements at core.\n");
+      MLCSE_DPRINTF("[PUM] Ack all elements at core.\n");
       for (const auto &group : context.pumGroups) {
         if (!group.appliedPUM) {
           continue;
@@ -652,7 +717,16 @@ void MLCPUMManager::checkSync() {
             dynS->cacheAckedElements.insert(elemIdx);
           }
         }
+        if (group.hasReduction) {
+          for (const auto &dep : config->depEdges) {
+            if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy &&
+                dep.data->stream->isReduction()) {
+              this->sendBackFinalReductionValue(dep.data);
+            }
+          }
+        }
       }
+      context.state = PUMContext::StateE::Done;
     } else {
       // Notify the PUMEngine to continue.
       this->kickPUMEngine(
@@ -663,30 +737,95 @@ void MLCPUMManager::checkSync() {
 }
 
 void MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
-  if (!this->context.isActive()) {
-    return;
-  }
 
-  auto endIds = *(pkt->getPtr<std::vector<DynStreamId> *>());
-  for (auto &dynId : this->context.purePUMStreamIds) {
-    for (auto iter = endIds->begin(); iter != endIds->end(); ++iter) {
-      if (dynId == (*iter)) {
-        endIds->erase(iter);
+  auto &endIds = **(pkt->getPtr<std::vector<DynStreamId> *>());
+
+  /**
+   * Search in contexts to find the matching one.
+   * If not found, this means this configure is not handled as PUM.
+   * Also, we only support releasing contexts in Done or Initialized state.
+   *
+   * TODO: Support releasing context in Kicked state.
+   */
+
+  auto iter = this->contexts.begin();
+  while (iter != this->contexts.end()) {
+    if (iter->configs.size() != endIds.size()) {
+      continue;
+    }
+    bool matched = true;
+    for (int i = 0; i < endIds.size(); ++i) {
+      bool found = false;
+      const auto &endId = endIds.at(i);
+      for (int j = 0; j < iter->configs.size(); ++j) {
+        if (iter->configs.at(j)->dynamicId == endId) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        matched = false;
         break;
       }
     }
+
+    if (matched) {
+      break;
+    }
+
+    ++iter;
   }
 
-  assert(this->context.numSync == 0 && "PUM end before done.");
+  if (iter == this->contexts.end()) {
+    return;
+  }
+
+  auto &context = *iter;
+  if (context.state != PUMContext::StateE::Done &&
+      context.state != PUMContext::StateE::Initialized) {
+    for (const auto &endId : endIds) {
+      MLC_S_DPRINTF(endId, "[PUM]   Received StreamEnd.\n");
+    }
+    for (const auto &config : context.configs) {
+      MLC_S_DPRINTF(config->dynamicId, "[PUM]   Current First PUMContext.\n");
+    }
+    MLC_S_PANIC_NO_DUMP(context.configs.front()->dynamicId,
+                        "[PUM] Releasing but Not Done or Initialized.");
+  }
+
+  for (auto &dynId : context.purePUMStreamIds) {
+    bool erased = false;
+    for (auto iter = endIds.begin(); iter != endIds.end(); ++iter) {
+      if (dynId == (*iter)) {
+        endIds.erase(iter);
+        erased = true;
+        break;
+      }
+    }
+    if (!erased) {
+      MLC_S_PANIC_NO_DUMP(
+          dynId, "[PUM] PurePUMStream not in EndIds. Are StreamEnds in order?");
+    }
+  }
+
   MLCSE_DPRINTF("Release PUM context.\n");
-  this->context.clear();
+  bool isDone = (context.state == PUMContext::StateE::Done);
+  context.clear();
+
+  this->contexts.erase(iter);
+
+  // Kick next one if found.
+  if (isDone) {
+    if (auto nextContext = this->getFirstInitializedContext()) {
+      this->configurePUMEngine(*nextContext);
+    }
+  }
 }
 
 void MLCPUMManager::compileCompute(CompileStates &states,
-                                   const ConfigPtr &config) {
-  if (!config->storeCallback) {
-    return;
-  }
+                                   PUMComputeStreamGroup &group) {
+
+  const auto &config = group.computeConfig;
 
   auto &patternInfo = states.patternInfo.at(config->stream);
   auto scalarElemBits = patternInfo.scalarElemSize * 8;
@@ -703,7 +842,29 @@ void MLCPUMManager::compileCompute(CompileStates &states,
                 "Compile Compute Tile %s AtomicPattern %s.\n",
                 patternInfo.pumTile, pattern);
 
-  for (const auto &inst : config->storeCallback->getStaticInsts()) {
+  ExecFuncPtr func = nullptr;
+  if (group.hasReduction) {
+    for (const auto &dep : config->depEdges) {
+      if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy &&
+          dep.data->stream->isReduction()) {
+        auto funcAddrGenCb = std::dynamic_pointer_cast<FuncAddrGenCallback>(
+            dep.data->addrGenCallback);
+        if (!funcAddrGenCb) {
+          MLC_S_PANIC_NO_DUMP(
+              dep.data->dynamicId,
+              "[PUM] Reduction should have FuncAddrGenCallback.");
+        }
+        func = funcAddrGenCb->getExecFunc();
+      }
+    }
+  } else {
+    func = config->storeCallback;
+  }
+  if (!func) {
+    MLC_S_PANIC_NO_DUMP(config->dynamicId, "[PUM] Failed to find ComputeFunc.");
+  }
+
+  for (const auto &inst : func->getStaticInsts()) {
 
     commands.emplace_back();
     auto &command = commands.back();
@@ -717,6 +878,15 @@ void MLCPUMManager::compileCompute(CompileStates &states,
 
     DPRINTF(StreamPUM, "[PUM] Compile Inst %s to OpClass %s.\n",
             inst->disassemble(0x0), Enums::OpClassStrings[inst->opClass()]);
+  }
+
+  /**
+   * As a hack for now, mark the last command reduction.
+   * TODO: Truly slice the function and find real reduction instructions.
+   */
+  if (group.hasReduction) {
+    assert(!commands.empty() && "No Commands for Reduction.");
+    commands.back().isReduction = true;
   }
 
   if (Debug::StreamPUM) {
@@ -755,4 +925,27 @@ void MLCPUMManager::compileCompute(CompileStates &states,
 
   states.commands.insert(states.commands.end(), commands.begin(),
                          commands.end());
+}
+
+void MLCPUMManager::sendBackFinalReductionValue(
+    const CacheStreamConfigureDataPtr &config) {
+
+  /**
+   * Notify the final reduction value.
+   * For now just set some fake value.
+   */
+  const auto &dynId = config->dynamicId;
+  auto S = config->stream;
+  auto dynCoreS = S->getDynStream(dynId);
+  if (!dynCoreS) {
+    MLC_S_PANIC_NO_DUMP(
+        dynId, "[PUM] CoreDynS released before receiving FinalReductionValue.");
+  }
+  if (dynCoreS->finalReductionValueReady) {
+    MLC_S_PANIC_NO_DUMP(dynId, "FinalReductionValue already ready.");
+  }
+  auto size = sizeof(dynCoreS->finalReductionValue);
+  memset(dynCoreS->finalReductionValue.uint8Ptr(), 0, size);
+  dynCoreS->finalReductionValueReady = true;
+  MLC_S_DPRINTF(dynId, "[PUM] Notify final reduction.\n");
 }

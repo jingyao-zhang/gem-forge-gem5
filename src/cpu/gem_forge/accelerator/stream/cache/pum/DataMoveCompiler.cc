@@ -23,14 +23,16 @@ DataMoveCompiler::DataMoveCompiler(const PUMHWConfiguration &_llc_config,
 
 bool DataMoveCompiler::canTurnStrideIntoMask(
     const AffinePattern &pattern) const {
-  if (pattern.params.size() != this->dimension) {
-    return false;
-  }
-
   auto starts = pattern.getSubRegionStartToArraySize(this->array_sizes);
 
   auto curDimStride = 1;
-  for (int dim = 0; dim < this->dimension; ++dim) {
+  auto dims = pattern.params.size();
+  if (dims > this->dimension) {
+    DPRINTF(StreamPUM, "[NoMask] Too many Dim %d ArrayDim %d.\n", dims,
+            this->dimension);
+    return false;
+  }
+  for (int dim = 0; dim < dims; ++dim) {
     auto elemStride = pattern.params[dim].stride;
 
     if (elemStride % curDimStride != 0) {
@@ -63,15 +65,15 @@ bool DataMoveCompiler::canTurnStrideIntoMask(
 DataMoveCompiler::StrideMaskInfoVecT
 DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
 
+  assert(this->canTurnStrideIntoMask(pattern));
+
   StrideMaskInfoVecT masks;
-  if (pattern.params.size() != this->dimension) {
-    return masks;
-  }
 
   auto starts = pattern.getSubRegionStartToArraySize(this->array_sizes);
 
   auto curDimStride = 1;
-  for (int dim = 0; dim < this->dimension; ++dim) {
+  auto dims = pattern.params.size();
+  for (int dim = 0; dim < dims; ++dim) {
     auto elemStride = pattern.params[dim].stride;
 
     if (elemStride % curDimStride != 0) {
@@ -94,6 +96,17 @@ DataMoveCompiler::turnStrideIntoMask(AffinePattern &pattern) const {
       masks.emplace_back(dim, dimStride, elemStride, mod);
     }
 
+    curDimStride *= this->array_sizes[dim];
+  }
+
+  /**
+   * For the remaining missing dimension, add trip count 1.
+   * This only works when we missing outer dimension.
+   */
+  for (int dim = dims; dim < this->dimension; ++dim) {
+    DPRINTF(StreamPUM, "[PUM] Add OuterDim to Pattern %s Dim %d Stride %ld.\n",
+            pattern, dim, curDimStride);
+    pattern.params.emplace_back(curDimStride, 1 /* trip */);
     curDimStride *= this->array_sizes[dim];
   }
 
