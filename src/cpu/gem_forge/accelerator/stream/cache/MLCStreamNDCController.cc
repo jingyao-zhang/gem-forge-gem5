@@ -81,7 +81,7 @@ void MLCStreamNDCController::receiveStreamNDCResponse(const ResponseMsg &msg) {
   if (!dynS) {
     MLC_NDC_PANIC(ndc, "Failed to get DynS for NDC response.");
   }
-  auto element = dynS->getElementByIdx(ndc->entryIdx.entryIdx);
+  auto element = dynS->getElemByIdx(ndc->entryIdx.entryIdx);
   if (!element) {
     MLC_NDC_PANIC(ndc, "Failed to get Element for NDC response.");
   }

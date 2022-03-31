@@ -44,7 +44,7 @@ void LLCStreamNDCController::processStreamNDCRequest(PacketPtr pkt) {
     return;
   }
 
-  auto element = dynS->getElementByIdx(streamNDC->entryIdx.entryIdx);
+  auto element = dynS->getElemByIdx(streamNDC->entryIdx.entryIdx);
   if (!element) {
     LLC_NDC_DPRINTF(streamNDC, "Discard NDC req as Element released.\n");
     return;

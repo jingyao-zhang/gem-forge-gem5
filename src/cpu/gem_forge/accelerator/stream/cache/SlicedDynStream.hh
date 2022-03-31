@@ -39,9 +39,13 @@ public:
    */
   int64_t getTotalTripCount() const { return this->totalTripCount; }
   bool hasTotalTripCount() const {
-    return this->totalTripCount != InvalidTotalTripCount;
+    return this->totalTripCount != InvalidTripCount;
   }
-  void setTotalTripCount(int64_t totalTripCount);
+  int64_t getInnerTripCount() const { return this->innerTripCount; }
+  bool hasInnerTripCount() const {
+    return this->innerTripCount != InvalidTripCount;
+  }
+  void setTotalAndInnerTripCount(int64_t tripCount);
 
   /**
    * Helper function to get element vaddr and size.
@@ -60,9 +64,10 @@ private:
   /**
    * -1 means indefinite.
    */
-  static constexpr int64_t InvalidTotalTripCount =
-      CacheStreamConfigureData::InvalidTotalTripCount;
-  int64_t totalTripCount = InvalidTotalTripCount;
+  static constexpr int64_t InvalidTripCount =
+      CacheStreamConfigureData::InvalidTripCount;
+  int64_t totalTripCount = InvalidTripCount;
+  int64_t innerTripCount = InvalidTripCount;
 
   /**
    * Whether we could coalesce continuous elements into slices.

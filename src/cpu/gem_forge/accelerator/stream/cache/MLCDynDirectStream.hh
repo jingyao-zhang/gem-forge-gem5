@@ -50,6 +50,12 @@ public:
   bool hasTotalTripCount() const override {
     return this->slicedStream.hasTotalTripCount();
   }
+  int64_t getInnerTripCount() const override {
+    return this->slicedStream.getInnerTripCount();
+  }
+  bool hasInnerTripCount() const override {
+    return this->slicedStream.hasInnerTripCount();
+  }
   void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
                          MachineType brokenMachineType) override;
 

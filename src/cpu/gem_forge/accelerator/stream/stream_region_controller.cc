@@ -31,8 +31,8 @@ void StreamRegionController::initializeRegion(
    * Collect streams within this region.
    */
   StaticRegion::StreamSet streams;
-  staticRegion.allStreamLoopEliminated = true;
-  staticRegion.someStreamLoopEliminated = false;
+  staticRegion.allStreamsLoopEliminated = true;
+  staticRegion.someStreamsLoopEliminated = false;
   for (const auto &streamInfo : region.streams()) {
     auto S = this->se->getStream(streamInfo.id());
     if (streams.count(S)) {
@@ -43,15 +43,22 @@ void StreamRegionController::initializeRegion(
     streams.insert(S);
     // Record LoopLiminated information.
     if (S->isLoopEliminated()) {
-      staticRegion.someStreamLoopEliminated = true;
+      staticRegion.someStreamsLoopEliminated = true;
     } else {
-      staticRegion.allStreamLoopEliminated = false;
+      staticRegion.allStreamsLoopEliminated = false;
     }
   }
-  if (staticRegion.region.loop_eliminated() !=
-      staticRegion.allStreamLoopEliminated) {
-    SE_PANIC("[Region] Can not handle partial eliminated %s.",
+  if (staticRegion.region.loop_eliminated() &&
+      !staticRegion.allStreamsLoopEliminated) {
+    SE_PANIC("[Region] All Streams should be LoopEliminated %s.",
              staticRegion.region.region());
+  }
+  if (!staticRegion.allStreamsLoopEliminated &&
+      staticRegion.someStreamsLoopEliminated) {
+    if (staticRegion.region.is_loop_bound()) {
+      SE_PANIC("[Region] LoopBound not work with PartialElimnation %s.",
+               staticRegion.region.region());
+    }
   }
 
   this->initializeNestStreams(region, staticRegion);
@@ -295,7 +302,7 @@ bool StreamRegionController::canSkipToStreamEnd(
         return false;
       }
     }
-    if (S->isFinalValueNeededByCore() || S->isSecondFinalValueNeededByCore()) {
+    if (S->isInnerFinalValueUsedByCore() || S->isInnerSecondFinalValueUsedByCore()) {
       return false;
     }
     auto &dynS = S->getDynStream(dynRegion.seqNum);

@@ -404,7 +404,10 @@ void StreamEngine::executeStreamConfig(const StreamConfigArgs &args) {
     configDynStreams.push_back(&dynS);
   }
 
-  // Notify StreamRegionController.
+  /**
+   * Notify StreamRegionController.
+   * This must happen before FloatStreams, as it will set InnerTripCount.
+   */
   this->regionController->executeStreamConfig(args);
 
   /**
@@ -814,7 +817,7 @@ bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
     if (!S->isConfigured()) {
       continue;
     }
-    if (S->isFinalValueNeededByCore()) {
+    if (S->isInnerFinalValueUsedByCore()) {
       // The only exception is for ReductionStream, whose LastElement is used to
       // convey back the final value. It should had CoreNeedFinalValue set.
       continue;
@@ -823,7 +826,7 @@ bool StreamEngine::hasIllegalUsedLastElement(const StreamUserArgs &args) {
     if (!dynS.configExecuted) {
       continue;
     }
-    auto element = dynS.getFirstUnsteppedElement();
+    auto element = dynS.getFirstUnsteppedElem();
     assert(element && "Has no unstepped element.");
     if (element->isLastElement()) {
       S_ELEMENT_DPRINTF(element, "Used LastElement total %d next %s.\n",
@@ -853,23 +856,46 @@ bool StreamEngine::canDispatchStreamUser(const StreamUserArgs &args) {
      * For LoopEliminatedStream, we have to wait until:
      * 1. The second last element if we are using SecondFinalValue.
      * 2. The last element otherwise.
+     *
+     * In PartialElim:
+     * for i = 0 : N
+     *   for j = 0 : M
+     *     s += x;
+     *   s_load(s);
+     *
+     * After eliminate the InnerLoop, we have to make sure s_load()
+     * uses the correct element (multiple of M). We leverage the fact
+     * that there will only be one FinalUser, and block dispatch if
+     * the Element already has a User.
      */
     if (S->isLoopEliminated()) {
       // We already checked that we have UnsteppedElement.
-      auto element = dynS.getFirstUnsteppedElement();
-      if (S->isSecondFinalValueNeededByCore()) {
-        if (!element->isSecondLastElement()) {
-          S_ELEMENT_DPRINTF(element, "Is Not SecondLastElem. TripCount %lu.\n",
-                            dynS.getTotalTripCount());
+      auto element = dynS.getFirstUnsteppedElem();
+      if (S->isInnerSecondFinalValueUsedByCore()) {
+        if (!element->isInnerSecondLastElem()) {
+          S_ELEMENT_DPRINTF(element,
+                            "Is Not InnerSecondLastElem. InnerTripCount %lu.\n",
+                            dynS.getInnerTripCount());
+          return false;
+        }
+        if (element->isFirstUserDispatched()) {
+          S_ELEMENT_DPRINTF(element, "InnerSecondLastElem already has User.\n");
           return false;
         }
       } else {
-        if (!S->isFinalValueNeededByCore()) {
+        if (!S->isInnerFinalValueUsedByCore()) {
           DYN_S_PANIC(dynS.dynStreamId,
                       "LoopEliminated Stream with User should have FinalValue "
                       "or SecondFinalValue needed.");
         }
-        if (!element->isLastElement()) {
+        if (!element->isInnerLastElem()) {
+          S_ELEMENT_DPRINTF(element,
+                            "Is Not InnerLastElem. InnerTripCount %lu.\n",
+                            dynS.getInnerTripCount());
+          return false;
+        }
+        if (element->isFirstUserDispatched()) {
+          S_ELEMENT_DPRINTF(element, "InnerLastElem already has User.\n");
           return false;
         }
       }
@@ -900,9 +926,10 @@ void StreamEngine::dispatchStreamUser(const StreamUserArgs &args) {
       // address and value from the SE so the core can finally write back.
       // 3. AtomicComputeStream always have a StreamAtomic inst as a place
       // holder.
-      if (!S->isFinalValueNeededByCore() &&
-          !S->isSecondFinalValueNeededByCore() && !S->isStoreComputeStream() &&
-          !S->isAtomicComputeStream() && !S->isUpdateStream()) {
+      if (!S->isInnerFinalValueUsedByCore() &&
+          !S->isInnerSecondFinalValueUsedByCore() &&
+          !S->isStoreComputeStream() && !S->isAtomicComputeStream() &&
+          !S->isUpdateStream()) {
         S_PANIC(S, "Try to use a stream with no core user.");
       }
     }
@@ -1185,7 +1212,7 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
       // Streams with 0 TripCount will not allocate the last element.
       continue;
     }
-    if (!dynS.hasUnsteppedElement()) {
+    if (!dynS.hasUnsteppedElem()) {
       // We don't have element for this used stream.
       return false;
     }
@@ -1196,9 +1223,9 @@ bool StreamEngine::canDispatchStreamEnd(const StreamEndArgs &args) {
      */
     if (S->isLoopEliminated()) {
       // We already checked that we have UnsteppedElement.
-      auto element = dynS.getFirstUnsteppedElement();
+      auto element = dynS.getFirstUnsteppedElem();
       if (staticStreamRegion.step.skipStepSecondLastElemStreams.count(S)) {
-        if (!element->isSecondLastElement()) {
+        if (!element->isInnerSecondLastElem()) {
           return false;
         }
       } else {
@@ -2145,7 +2172,7 @@ void StreamEngine::releaseElementStepped(DynStream *dynS, bool isEnd,
   }
 
   const bool used = releaseElement->isFirstUserDispatched();
-  if (releaseElement->isLastElement() && !S->isFinalValueNeededByCore()) {
+  if (releaseElement->isLastElement() && !S->isInnerFinalValueUsedByCore()) {
     assert(!used && "LastElement of NonReductionStream released being used.");
   }
 
@@ -2280,9 +2307,10 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
               readyElements.emplace_back(element);
             } else {
               if (S->isReduction()) {
-                if (element->isLastElement()) {
-                  // Specialize for the last ReductionStream element. They need
-                  // to be computed even when offloaded.
+                if (element->isInnerLastElem()) {
+                  // Specialize for the InnerLast ReductionStream element. They
+                  // need to be computed even when offloaded (actually just copy
+                  // from DynStream::innerFinalValueMap).
                   S_ELEMENT_DPRINTF(element,
                                     "Found Reduce Ready for Compute.\n");
                   readyElements.emplace_back(element);
@@ -2326,8 +2354,7 @@ std::vector<StreamElement *> StreamEngine::findReadyElements() {
           bool hasIndirectUserDispatched = false;
           for (auto depS : S->addrDepStreams) {
             auto &dynDepS = depS->getDynStream(dynS.configSeqNum);
-            auto depElement =
-                dynDepS.getElementByIdx(element->FIFOIdx.entryIdx);
+            auto depElement = dynDepS.getElemByIdx(element->FIFOIdx.entryIdx);
             if (depElement && depElement->isFirstUserDispatched()) {
               hasIndirectUserDispatched = true;
             }

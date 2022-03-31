@@ -1036,7 +1036,7 @@ void MLCDynDirectStream::setTotalTripCount(int64_t totalTripCount,
       MLCStreamLoopBound, this->getDynStreamId(),
       "[LoopBound] Set TotalTripCount %lld. BrokenPAddr %#x at %s.\n",
       totalTripCount, brokenPAddr, brokenMachineType);
-  this->slicedStream.setTotalTripCount(totalTripCount);
+  this->slicedStream.setTotalAndInnerTripCount(totalTripCount);
   this->llcStreamLoopBoundCutted = true;
   this->llcStreamLoopBoundBrokenPAddr = brokenPAddr;
   this->llcStreamLoopBoundBrokenMachineType = brokenMachineType;

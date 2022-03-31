@@ -1050,7 +1050,7 @@ bool StreamFloatController::isMidwayFloatReady(
      * Since these streams are one iteration behind, we require them to be value
      * ready.
      */
-    auto firstFloatElement = dynS->getElementByIdx(firstFloatElementIdx);
+    auto firstFloatElement = dynS->getElemByIdx(firstFloatElementIdx);
     if (!firstFloatElement) {
       DYN_S_PANIC(dynS->dynStreamId,
                   "[MidwayFloat] FirstFloatElem already released.");

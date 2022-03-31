@@ -284,10 +284,22 @@ struct StreamElement {
   bool isLastElement() const;
 
   /**
-   * Return true if the DynStream has known total trip count and this is the
-   * second last element.
+   * Return true if the DynStream has known trip count and this is the second
+   * element of the InnerMostLoop, e.g., Elem N + 1.
    */
-  bool isSecondLastElement() const;
+  bool isInnerSecondElem() const;
+
+  /**
+   * Return true if the DynStream has known trip count and this is the last
+   * element of the InnerMostLoop.
+   */
+  bool isInnerLastElem() const;
+
+  /**
+   * Return true if the DynStream has known total trip count and this is the
+   * second last element of the InnerMostLoop.
+   */
+  bool isInnerSecondLastElem() const;
 
   /**
    * Return whether if this stream element should issue request to cache.

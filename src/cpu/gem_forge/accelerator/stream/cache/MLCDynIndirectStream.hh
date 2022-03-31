@@ -68,6 +68,12 @@ public:
   bool hasTotalTripCount() const override {
     return this->baseStream->hasTotalTripCount();
   }
+  int64_t getInnerTripCount() const override {
+    return this->baseStream->getInnerTripCount();
+  }
+  bool hasInnerTripCount() const override {
+    return this->baseStream->hasInnerTripCount();
+  }
   void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
                          MachineType brokenMachineType) override;
 

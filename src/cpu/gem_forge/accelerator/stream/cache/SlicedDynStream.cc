@@ -16,6 +16,7 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
       addrGenCallback(_configData->addrGenCallback),
       elementSize(_configData->elementSize), elementPerSlice(1),
       totalTripCount(_configData->totalTripCount),
+      innerTripCount(_configData->innerTripCount),
       isPointerChase(_configData->isPointerChase), ptrChaseState(_configData),
       tailElementIdx(0), sliceHeadElementIdx(0) {
 
@@ -145,14 +146,16 @@ const DynStreamSliceId &SlicedDynStream::peekNextSlice() const {
   return this->slices.front();
 }
 
-void SlicedDynStream::setTotalTripCount(int64_t totalTripCount) {
-  if (this->hasTotalTripCount()) {
-    DYN_S_PANIC(this->strandId, "[Sliced] Reset TotalTripCount %lld -> %lld.",
-                this->totalTripCount, totalTripCount);
+void SlicedDynStream::setTotalAndInnerTripCount(int64_t tripCount) {
+  if (this->hasTotalTripCount() || this->hasInnerTripCount()) {
+    DYN_S_PANIC(this->strandId,
+                "[Sliced] Reset TotalTripCount %ld InnerTripCount %ld -> %ld.",
+                this->totalTripCount, this->innerTripCount, tripCount);
   }
-  DYN_S_DPRINTF(this->strandId, "[Sliced] Set TotalTripCount %lld.\n",
-                totalTripCount);
-  this->totalTripCount = totalTripCount;
+  DYN_S_DPRINTF(this->strandId, "[Sliced] Set Total/InnerTripCount %lld.\n",
+                tripCount);
+  this->totalTripCount = tripCount;
+  this->innerTripCount = tripCount;
 }
 
 Addr SlicedDynStream::getElementVAddr(uint64_t elementIdx) const {

@@ -96,6 +96,8 @@ public:
   virtual bool hasOverflowed() const = 0;
   virtual int64_t getTotalTripCount() const = 0;
   virtual bool hasTotalTripCount() const = 0;
+  virtual int64_t getInnerTripCount() const = 0;
+  virtual bool hasInnerTripCount() const = 0;
   virtual void setTotalTripCount(int64_t totalTripCount, Addr brokenPAddr,
                                  MachineType brokenMachineType) = 0;
 

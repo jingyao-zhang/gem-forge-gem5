@@ -29,7 +29,7 @@ private:
   LLCDynStream *stream;
   std::list<uint64_t> nextRangeTailElementIdxQueue;
   static constexpr int64_t InvalidTotalTripCount =
-      CacheStreamConfigureData::InvalidTotalTripCount;
+      CacheStreamConfigureData::InvalidTripCount;
   int64_t totalTripCount;
   uint64_t nextElementIdx = 0;
   uint64_t prevBuiltElementIdx = 0;

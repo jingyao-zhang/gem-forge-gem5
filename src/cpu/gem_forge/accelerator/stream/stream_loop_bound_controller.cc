@@ -106,7 +106,7 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticBound.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
-    auto baseElement = baseDynS.getElementByIdx(nextElementIdx);
+    auto baseElement = baseDynS.getElemByIdx(nextElementIdx);
     if (!baseElement) {
       if (baseDynS.FIFOIdx.entryIdx > nextElementIdx) {
         DYN_S_PANIC(baseDynS.dynStreamId, "[LoopBound] Miss Element %llu.\n",
@@ -146,7 +146,7 @@ void StreamRegionController::checkLoopBound(DynRegion &dynRegion) {
     dynBound.brokenOut = true;
     for (auto S : staticRegion.streams) {
       auto &dynS = S->getDynStream(dynRegion.seqNum);
-      dynS.setTotalTripCount(dynBound.nextElemIdx + 1);
+      dynS.setTotalAndInnerTripCount(dynBound.nextElemIdx + 1);
       DYN_S_DPRINTF(dynS.dynStreamId,
                     "[LoopBound] Break (%d == %d) TotalTripCount %llu.\n", ret,
                     staticBound.boundRet, dynBound.nextElemIdx + 1);
@@ -187,7 +187,7 @@ void StreamRegionController::receiveOffloadedLoopBoundRet(
   if (brokenOut) {
     for (auto S : staticRegion.streams) {
       auto &dynS = S->getDynStream(dynRegion.seqNum);
-      dynS.setTotalTripCount(tripCount);
+      dynS.setTotalAndInnerTripCount(tripCount);
     }
   }
 }

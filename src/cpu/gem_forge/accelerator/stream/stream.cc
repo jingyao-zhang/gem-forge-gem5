@@ -273,7 +273,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
         assert(dynStream.getTotalTripCount() == rootDynS.getTotalTripCount() &&
                "Mismatch in TotalTripCount.");
       } else {
-        dynStream.setTotalTripCount(rootDynS.getTotalTripCount());
+        dynStream.setTotalAndInnerTripCount(rootDynS.getTotalTripCount());
         DYN_S_DPRINTF(dynStream.dynStreamId,
                       "Set TotalTripCount %llu from StepRoot.\n",
                       dynStream.getTotalTripCount());
@@ -288,7 +288,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
     auto backBaseS = *(this->backBaseStreams.begin());
     const auto &backBaseDynS = backBaseS->getDynStream(seqNum);
     if (backBaseDynS.configExecuted) {
-      dynStream.setTotalTripCount(backBaseDynS.getTotalTripCount());
+      dynStream.setTotalAndInnerTripCount(backBaseDynS.getTotalTripCount());
       DYN_S_DPRINTF(dynStream.dynStreamId,
                     "Set TotalTripCount %llu from BackBase.\n",
                     dynStream.getTotalTripCount());
@@ -298,7 +298,7 @@ void Stream::executeStreamConfig(uint64_t seqNum,
   // Try to set total trip count for back dependent streams.
   for (auto backDepS : this->backDepStreams) {
     auto &backDepDynS = backDepS->getDynStream(seqNum);
-    backDepDynS.setTotalTripCount(dynStream.getTotalTripCount());
+    backDepDynS.setTotalAndInnerTripCount(dynStream.getTotalTripCount());
     DYN_S_DPRINTF(backDepDynS.dynStreamId,
                   "Set TotalTripCount %llu from BackBase.\n",
                   backDepDynS.getTotalTripCount());
@@ -582,7 +582,7 @@ void Stream::setupLinearAddrFunc(DynStream &dynStream,
 
   // Update the totalTripCount to the dynamic stream if possible.
   if (formalParams.size() % 2 == 1) {
-    dynStream.setTotalTripCount(
+    dynStream.setTotalAndInnerTripCount(
         formalParams.at(formalParams.size() - 2).invariant.uint64());
   }
 }
@@ -747,7 +747,7 @@ void Stream::extractExtraInputValues(DynStream &dynS,
                       loopTripCount * tripCount);
         tripCount *= loopTripCount;
       }
-      dynS.setTotalTripCount(tripCount);
+      dynS.setTotalAndInnerTripCount(tripCount);
     }
   }
 }
@@ -771,6 +771,7 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
 
   // Set the totalTripCount.
   configData->totalTripCount = dynStream.getTotalTripCount();
+  configData->innerTripCount = dynStream.getInnerTripCount();
 
   // Set the predication function.
   configData->predFormalParams = dynStream.predFormalParams;
@@ -788,7 +789,7 @@ Stream::allocateCacheConfigureData(uint64_t configSeqNum, bool isIndirect) {
            "Cannot offload reduction/ptr chase stream larger than 64 bytes.");
   }
   configData->reductionInitValue = dynStream.initialValue;
-  configData->finalValueNeededByCore = this->isFinalValueNeededByCore();
+  configData->finalValueNeededByCore = this->isInnerFinalValueUsedByCore();
 
   // Set the initial vaddr if this is not indirect stream.
   if (!isIndirect) {
@@ -903,10 +904,10 @@ bool Stream::hasUnsteppedElement(DynStreamId::InstanceId instanceId) {
   }
   if (instanceId == DynStreamId::InvalidInstanceId) {
     auto &dynS = this->getFirstAliveDynStream();
-    return dynS.hasUnsteppedElement();
+    return dynS.hasUnsteppedElem();
   } else {
     auto &dynS = this->getDynStreamByInstance(instanceId);
-    return dynS.hasUnsteppedElement();
+    return dynS.hasUnsteppedElem();
   }
 }
 
@@ -942,7 +943,7 @@ DynStream *Stream::getAllocatingDynStream() {
 
 StreamElement *Stream::getFirstUnsteppedElement() {
   auto &dynS = this->getFirstAliveDynStream();
-  auto element = dynS.getFirstUnsteppedElement();
+  auto element = dynS.getFirstUnsteppedElem();
   if (!element) {
     this->se->dumpFIFO();
     S_PANIC(this,

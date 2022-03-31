@@ -119,9 +119,33 @@ int64_t LLCDynStream::getTotalTripCount() const {
   return this->slicedStream.getTotalTripCount();
 }
 
+bool LLCDynStream::hasInnerTripCount() const {
+  if (this->baseStream) {
+    return this->baseStream->hasInnerTripCount();
+  }
+  return this->slicedStream.hasInnerTripCount();
+}
+
+int64_t LLCDynStream::getInnerTripCount() const {
+  if (this->baseStream) {
+    return this->baseStream->getInnerTripCount();
+  }
+  return this->slicedStream.getInnerTripCount();
+}
+
+bool LLCDynStream::isInnerLastElem(uint64_t elemIdx) const {
+  if (!this->hasInnerTripCount()) {
+    return false;
+  }
+  if (elemIdx == 0) {
+    return 0;
+  }
+  return (elemIdx % this->getInnerTripCount()) == 0;
+}
+
 void LLCDynStream::setTotalTripCount(int64_t totalTripCount) {
   assert(!this->baseStream && "SetTotalTripCount for IndirectS.");
-  this->slicedStream.setTotalTripCount(totalTripCount);
+  this->slicedStream.setTotalAndInnerTripCount(totalTripCount);
   this->rangeBuilder->receiveLoopBoundRet(totalTripCount);
   for (auto dynIS : this->indirectStreams) {
     dynIS->rangeBuilder->receiveLoopBoundRet(totalTripCount);
@@ -588,7 +612,7 @@ void LLCDynStream::initNextElement(Addr vaddr) {
           firstElemIdx, 0, size, false /* isNDCElement */);
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
-      this->lastComputedReductionElementIdx = firstElemIdx;
+      this->lastComputedReductionElemIdx = firstElemIdx;
     }
 
     auto baseStreamElemIdx = streamElemIdx;
@@ -1110,12 +1134,23 @@ LLCDynStream::computeStreamElementValue(const LLCStreamElementPtr &element) {
 
     // Perform the reduction.
     auto getBaseOrPrevReductionStreamValue =
-        [&element](uint64_t baseStreamId) -> StreamValue {
+        [&element, this](uint64_t baseStreamId) -> StreamValue {
       if (element->S->isCoalescedHere(baseStreamId)) {
         auto prevReductionElement = element->getPrevReductionElement();
         assert(prevReductionElement && "Missing prev reduction element.");
         assert(prevReductionElement->isReady() &&
                "Prev reduction element is not ready.");
+
+        /**
+         * Special case for computing Reduction: If the PrevReductionElem is
+         * InnerLastElem, we will use the InitialValue.
+         * This is the case when the ReductionStream is configured at OuterLoop.
+         */
+        if (element->S->isReduction() &&
+            this->isInnerLastElem(prevReductionElement->idx)) {
+          return this->configData->reductionInitValue;
+        }
+
         return prevReductionElement->getValueByStreamId(baseStreamId);
       }
       return element->getBaseStreamValue(baseStreamId);
@@ -1271,11 +1306,9 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       LLC_S_DPRINTF_(LLCRubyStreamReduce, this->getDynStrandId(),
                      "[IndirectReduction] Start real computation from "
                      "LastComputedElement %llu.\n",
-                     this->lastComputedReductionElementIdx);
-      while (this->lastComputedReductionElementIdx <
-             this->getTotalTripCount()) {
-        auto nextComputingElementIdx =
-            this->lastComputedReductionElementIdx + 1;
+                     this->lastComputedReductionElemIdx);
+      while (this->lastComputedReductionElemIdx < this->getTotalTripCount()) {
+        auto nextComputingElementIdx = this->lastComputedReductionElemIdx + 1;
         auto nextComputingElement = this->getElement(nextComputingElementIdx);
         if (!nextComputingElement) {
           LLC_S_DPRINTF_(
@@ -1299,18 +1332,18 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
                        nextComputingElementIdx);
         auto result = this->computeStreamElementValue(nextComputingElement);
         nextComputingElement->setValue(result);
-        this->lastComputedReductionElementIdx++;
+        this->lastComputedReductionElemIdx++;
       }
     } else {
       /**
        * If this is DirectReductionStream, check and schedule the next
        * element.
        */
-      if (this->lastComputedReductionElementIdx + 1 != element->idx) {
+      if (this->lastComputedReductionElemIdx + 1 != element->idx) {
         LLC_S_PANIC(this->getDynStrandId(),
                     "[DirectReduction] Reduction not in order.\n");
       }
-      this->lastComputedReductionElementIdx++;
+      this->lastComputedReductionElemIdx++;
       if (this->idxToElementMap.count(element->idx + 1)) {
         auto &nextElement = this->idxToElementMap.at(element->idx + 1);
         if (nextElement->areBaseElementsReady()) {
@@ -1345,17 +1378,17 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
      * If the last reduction element is ready, we send this back to the core.
      */
     if (this->configData->finalValueNeededByCore &&
-        this->lastComputedReductionElementIdx == this->getTotalTripCount()) {
-      // This is the last reduction.
-      auto finalReductionElement = this->getElementPanic(
-          this->lastComputedReductionElementIdx, "Return FinalReductionValue.");
+        this->isInnerLastElem(this->lastComputedReductionElemIdx)) {
+      // This is the last reduction of one inner loop.
+      auto finalReductionElem = this->getElementPanic(
+          this->lastComputedReductionElemIdx, "Return FinalReductionValue.");
 
       DynStreamSliceId sliceId;
       sliceId.getDynStrandId() = this->getDynStrandId();
-      sliceId.getStartIdx() = this->lastComputedReductionElementIdx;
-      sliceId.getEndIdx() = this->lastComputedReductionElementIdx + 1;
+      sliceId.getStartIdx() = this->lastComputedReductionElemIdx;
+      sliceId.getEndIdx() = this->lastComputedReductionElemIdx + 1;
       auto finalReductionValue =
-          finalReductionElement->getValueByStreamId(S->staticId);
+          finalReductionElem->getValueByStreamId(S->staticId);
 
       Addr paddrLine = 0;
       int dataSize = sizeof(finalReductionValue);
@@ -1365,7 +1398,7 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       se->issueStreamDataToMLC(sliceId, paddrLine,
                                finalReductionValue.uint8Ptr(), dataSize,
                                payloadSize, lineOffset, forceIdea);
-      LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElement,
+      LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElem,
                            "Send back final reduction.\n");
     }
 

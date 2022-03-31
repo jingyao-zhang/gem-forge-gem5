@@ -941,11 +941,12 @@ void MLCPUMManager::sendBackFinalReductionValue(
     MLC_S_PANIC_NO_DUMP(
         dynId, "[PUM] CoreDynS released before receiving FinalReductionValue.");
   }
-  if (dynCoreS->finalReductionValueReady) {
-    MLC_S_PANIC_NO_DUMP(dynId, "FinalReductionValue already ready.");
-  }
-  auto size = sizeof(dynCoreS->finalReductionValue);
-  memset(dynCoreS->finalReductionValue.uint8Ptr(), 0, size);
-  dynCoreS->finalReductionValueReady = true;
-  MLC_S_DPRINTF(dynId, "[PUM] Notify final reduction.\n");
+  panic("Need to extend to support InnerRedution.");
+  // if (dynCoreS->finalReductionValueReady) {
+  //   MLC_S_PANIC_NO_DUMP(dynId, "FinalReductionValue already ready.");
+  // }
+  // auto size = sizeof(dynCoreS->finalReductionValue);
+  // memset(dynCoreS->finalReductionValue.uint8Ptr(), 0, size);
+  // dynCoreS->finalReductionValueReady = true;
+  // MLC_S_DPRINTF(dynId, "[PUM] Notify final reduction.\n");
 }

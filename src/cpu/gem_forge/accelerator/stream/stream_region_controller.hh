@@ -109,8 +109,8 @@ public:
     StreamVec streams;
     std::list<DynRegion> dynRegions;
     // Remember if all loops or some loops is eliminated.
-    bool allStreamLoopEliminated = false;
-    bool someStreamLoopEliminated = false;
+    bool allStreamsLoopEliminated = false;
+    bool someStreamsLoopEliminated = false;
     StaticRegion(const ::LLVM::TDG::StreamRegion &_region) : region(_region) {}
 
     /**

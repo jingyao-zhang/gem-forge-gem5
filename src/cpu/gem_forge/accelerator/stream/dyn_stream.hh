@@ -163,19 +163,44 @@ public:
    * Optional initial/final value for reduction stream.
    */
   StreamValue initialValue;
-  StreamValue finalReductionValue;
-  bool finalReductionValueReady = false;
+  std::map<uint64_t, StreamValue> innerFinalValueMap;
+  void setInnerFinalValue(uint64_t elemIdx, const StreamValue &value);
+  bool isInnerFinalValueReady(uint64_t elemIdx) const;
+  const StreamValue &getInnerFinalValue(uint64_t elemIdx) const;
 
   // Optional total length of this dynamic stream. -1 as indefinite.
-  static constexpr int64_t InvalidTotalTripCount = -1;
+  static constexpr int64_t InvalidTripCount = -1;
   bool hasTotalTripCount() const {
-    return this->totalTripCount != InvalidTotalTripCount;
+    return this->totalTripCount != InvalidTripCount;
   }
   int64_t getTotalTripCount() const { return this->totalTripCount; }
-  void setTotalTripCount(int64_t totalTripCount);
+  void setTotalAndInnerTripCount(int64_t tripCount);
   bool hasZeroTripCount() const {
     return this->hasTotalTripCount() && this->getTotalTripCount() == 0;
   }
+  bool hasInnerTripCount() const {
+    return this->innerTripCount != InvalidTripCount;
+  }
+  int64_t getInnerTripCount() const { return this->innerTripCount; }
+  void setInnerTripCount(int64_t innerTripCount);
+
+  /**
+   * Return true if the DynStream has known trip count and this is the second
+   * element of the InnerMostLoop, e.g., Elem N + 1.
+   */
+  bool isInnerSecondElem(uint64_t elemIdx) const;
+
+  /**
+   * Return true if the DynStream has known trip count and this is the last
+   * element of the InnerMostLoop.
+   */
+  bool isInnerLastElem(uint64_t elemIdx) const;
+
+  /**
+   * Return true if the DynStream has known total trip count and this is the
+   * second last element of the InnerMostLoop.
+   */
+  bool isInnerSecondLastElem(uint64_t elemIdx) const;
 
   /**
    * Compute the number of bytes per element, also considering overlapping
@@ -315,7 +340,7 @@ public:
   /**
    * Get element with the elementIdx.
    */
-  StreamElement *getElementByIdx(uint64_t elementIdx) const;
+  StreamElement *getElemByIdx(uint64_t elementIdx) const;
   /**
    * Get the first element of the dynamic stream.
    */
@@ -324,7 +349,7 @@ public:
   /**
    * Get the first unstepped element of the dynamic stream.
    */
-  StreamElement *getFirstUnsteppedElement();
+  StreamElement *getFirstUnsteppedElem() const;
   /**
    * Get previous element in the chain of the stream.
    * Notice that it may return the (dummy) element->dynS->tail if this is
@@ -334,7 +359,16 @@ public:
   /**
    * Check if the last dynamic stream has an unstepped element.
    */
-  bool hasUnsteppedElement();
+  bool hasUnsteppedElem() const;
+  /**
+   * Check if an element is already stepped.
+   * NOTE: The element may even already be released.
+   */
+  bool isElemStepped(uint64_t elemIdx) const;
+  /**
+   * Check if an element is released.
+   */
+  bool isElemReleased(uint64_t elemIdx) const;
   /**
    * Step one element.
    */
@@ -394,7 +428,14 @@ private:
    * Remember the total trip count.
    * May be set by StreamLoopBound if has data-dependent loop bound.
    */
-  int64_t totalTripCount = InvalidTotalTripCount;
+  int64_t totalTripCount = InvalidTripCount;
+  /**
+   * Remember the InnerMost trip count.
+   * By default this is the same as TotalTripCount, but is different when the
+   * stream configured at some outer loop.
+   * Set by Stepper.
+   */
+  int64_t innerTripCount = InvalidTripCount;
 
   /**
    * Some statistics for this stream.

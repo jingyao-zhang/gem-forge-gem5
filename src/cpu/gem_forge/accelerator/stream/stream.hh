@@ -137,10 +137,10 @@ public:
   bool isLoopEliminated() const {
     return this->info.static_info().loop_eliminated();
   }
-  bool isFinalValueNeededByCore() const {
+  bool isInnerFinalValueUsedByCore() const {
     return this->info.static_info().core_need_final_value();
   }
-  bool isSecondFinalValueNeededByCore() const {
+  bool isInnerSecondFinalValueUsedByCore() const {
     return this->info.static_info().core_need_second_final_value();
   }
   bool isTripCountFixed() const {
@@ -624,8 +624,8 @@ public:
   Is(MergedPredicated);
   Is(MergedLoadStoreDepStream);
   Is(LoopEliminated);
-  Is(FinalValueNeededByCore);
-  Is(SecondFinalValueNeededByCore);
+  Is(InnerFinalValueUsedByCore);
+  Is(InnerSecondFinalValueUsedByCore);
   Is(TripCountFixed);
 
   /**

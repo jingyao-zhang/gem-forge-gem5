@@ -210,7 +210,7 @@ void StreamRegionController::configureNestStream(
   std::unordered_set<StreamElement *> baseElements;
   for (auto baseS : staticNestConfig.baseStreams) {
     auto &baseDynS = baseS->getDynStream(dynRegion.seqNum);
-    auto baseElement = baseDynS.getElementByIdx(nextElementIdx);
+    auto baseElement = baseDynS.getElemByIdx(nextElementIdx);
     if (!baseElement) {
       if (baseDynS.FIFOIdx.entryIdx > nextElementIdx) {
         DYN_S_DPRINTF(baseDynS.dynStreamId,

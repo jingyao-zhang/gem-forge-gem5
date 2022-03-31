@@ -102,6 +102,9 @@ public:
    */
   bool hasTotalTripCount() const;
   int64_t getTotalTripCount() const;
+  bool hasInnerTripCount() const;
+  int64_t getInnerTripCount() const;
+  bool isInnerLastElem(uint64_t elemIdx) const;
   void setTotalTripCount(int64_t totalTripCount);
 
   /**
@@ -270,7 +273,7 @@ public:
   // Remember the last reduction element, avoid auto releasing.
   LLCStreamElementPtr lastReductionElement = nullptr;
   // Remember the last really computed indirect reduction element.
-  uint64_t lastComputedReductionElementIdx = 0;
+  uint64_t lastComputedReductionElemIdx = 0;
 
   std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
 

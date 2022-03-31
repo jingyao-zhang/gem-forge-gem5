@@ -199,11 +199,19 @@ bool StreamElement::isLastElement() const {
          this->FIFOIdx.entryIdx == this->dynS->getTotalTripCount();
 }
 
-bool StreamElement::isSecondLastElement() const {
+bool StreamElement::isInnerSecondElem() const {
   assert(this->dynS && "This element has not been allocated.");
-  assert(this->dynS->configExecuted && "The DynS has not be configured.");
-  return this->dynS->hasTotalTripCount() &&
-         (this->FIFOIdx.entryIdx + 1) == this->dynS->getTotalTripCount();
+  return this->dynS->isInnerSecondElem(this->FIFOIdx.entryIdx);
+}
+
+bool StreamElement::isInnerLastElem() const {
+  assert(this->dynS && "This element has not been allocated.");
+  return this->dynS->isInnerLastElem(this->FIFOIdx.entryIdx);
+}
+
+bool StreamElement::isInnerSecondLastElem() const {
+  assert(this->dynS && "This element has not been allocated.");
+  return this->dynS->isInnerSecondLastElem(this->FIFOIdx.entryIdx);
 }
 
 bool StreamElement::shouldIssue() const {
@@ -602,28 +610,61 @@ void StreamElement::computeValue() {
 
     S_ELEMENT_DPRINTF(this, "LoadComputeValue %s.\n", result);
 
-  } else {
+  } else if (S->isPointerChaseIndVar()) {
+
+    if (this->FIFOIdx.entryIdx == 0) {
+      this->setValue(this->addr, this->size, dynS->initialValue.uint8Ptr());
+      return;
+    }
+
+    result = dynS->addrGenCallback->genAddr(
+        this->FIFOIdx.entryIdx, dynS->addrGenFormalParams, getBaseValue);
+    estimatedLatency = dynS->addrGenCallback->getEstimatedLatency();
+
+  } else if (S->isReduction()) {
+
     /**
-     * This should be an IV/Reduction stream, which also uses AddrGenCallback
-     * for now. There are two special cases for ReductionStream.
+     * There are three special cases for ReductionStream.
      * 1. The first element should take the initial value.
-     * 2. The last element of floating ReductionStream should take the final
+     * 2. The InnerLastElem of floating ReductionStream should take the final
      * value.
+     * 3. When computing NextElemValue, if InnerLastElem shoud be replaced with
+     * initialValue.
      */
 
-    if (S->isReduction() || S->isPointerChaseIndVar()) {
-      if (this->FIFOIdx.entryIdx == 0) {
-        this->setValue(this->addr, this->size, dynS->initialValue.uint8Ptr());
-        return;
-      } else if (this->isLastElement() && !S->hasCoreUser() &&
-                 this->isElemFloatedToCache()) {
-        assert(dynS->finalReductionValueReady &&
-               "FinalReductionValue should be ready.");
-        this->setValue(this->addr, this->size,
-                       dynS->finalReductionValue.uint8Ptr());
-        return;
-      }
+    if (this->FIFOIdx.entryIdx == 0) {
+      // Case 1.
+      this->setValue(this->addr, this->size, dynS->initialValue.uint8Ptr());
+      return;
+    } else if (this->isInnerLastElem() && !S->hasCoreUser() &&
+               this->isElemFloatedToCache()) {
+      assert(dynS->isInnerFinalValueReady(this->FIFOIdx.entryIdx) &&
+             "FinalReductionValue should be ready.");
+      this->setValue(
+          this->addr, this->size,
+          dynS->getInnerFinalValue(this->FIFOIdx.entryIdx).uint8Ptr());
+      return;
     }
+
+    // We need a special getBaseValue to handle case 3.
+    auto getReduceBaseValue = [this](StaticId id) -> StreamValue {
+      if (id == this->stream->staticId && this->isInnerSecondElem()) {
+        // Special handling on the PrevReductionElem.
+        return this->dynS->initialValue;
+      } else {
+        // Normal ValueBaseStream.
+        return this->getValueBaseByStreamId(id);
+      }
+    };
+
+    result = dynS->addrGenCallback->genAddr(
+        this->FIFOIdx.entryIdx, dynS->addrGenFormalParams, getReduceBaseValue);
+    estimatedLatency = dynS->addrGenCallback->getEstimatedLatency();
+
+  } else {
+    /**
+     * This should be an normal IV.
+     */
     result = dynS->addrGenCallback->genAddr(
         this->FIFOIdx.entryIdx, dynS->addrGenFormalParams, getBaseValue);
     estimatedLatency = dynS->addrGenCallback->getEstimatedLatency();
@@ -988,13 +1029,12 @@ void StreamElement::getLoadComputeValue(uint8_t *val, int valLen) const {
 bool StreamElement::checkValueBaseElementsValueReady() const {
   /**
    * Special case for LastElement of offloaded ReductionStream with no core
-   * user, which is marked ready by checking its
-   * dynS->finalReductionValueReady.
+   * user, which is marked ready by checking the DynStream.
    */
   if ((this->stream->isReduction() || this->stream->isPointerChaseIndVar()) &&
       !this->stream->hasCoreUser() && this->isElemFloatedToCache()) {
-    if (this->isLastElement()) {
-      return this->dynS->finalReductionValueReady;
+    if (this->isInnerLastElem()) {
+      return this->dynS->isInnerFinalValueReady(this->FIFOIdx.entryIdx);
     } else {
       // Should never be ready.
       return false;

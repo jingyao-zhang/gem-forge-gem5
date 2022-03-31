@@ -76,11 +76,16 @@ public:
    * TotalTripCount for offloaded streams.
    * ! Support reuse at MLC, LLC streams may be cut.
    */
-  static constexpr int64_t InvalidTotalTripCount = -1;
-  int64_t totalTripCount = InvalidTotalTripCount;
+  static constexpr int64_t InvalidTripCount = DynStream::InvalidTripCount;
+  int64_t totalTripCount = InvalidTripCount;
   int64_t getTotalTripCount() const { return this->totalTripCount; }
   bool hasTotalTripCount() const {
-    return this->totalTripCount != InvalidTotalTripCount;
+    return this->totalTripCount != InvalidTripCount;
+  }
+  int64_t innerTripCount = InvalidTripCount;
+  int64_t getInnerTripCount() const { return this->innerTripCount; }
+  bool hasInnerTripCount() const {
+    return this->innerTripCount != InvalidTripCount;
   }
 
   /**
@@ -121,18 +126,18 @@ public:
    * Whether this stream should be sliced according to cache lines.
    * This is used by SlicedDynStream to determine if it should merge continous
    * stream elements in the same cache line.
-   * 
+   *
    * By default this is enabled, and used for slicing affine streams. However,
    * it is also used to explicitly disable slicing for streams in outer loop.
    * Otherwise, we may have deadlock as the OuterLoopStream slice contains
    * future elements.
-   * 
+   *
    * A typical example is Gaussian elmination:
    * for i = 0 : M
    *   B[i] ...
    *   for j = 0 : N
    *     A[i][j] ...
-   * 
+   *
    * Here if B[i] is sliced, we have deadlocks.
    */
   bool shouldBeSlicedToCacheLines = true;

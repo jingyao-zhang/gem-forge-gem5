@@ -77,7 +77,7 @@ void DynStream::addBaseDynStreams() {
      * If not (i.e. just created), we align to the next one.
      */
     auto alignBaseElementIdx = baseDynS.FIFOIdx.entryIdx;
-    if (auto baseFirstUnsteppedElement = baseDynS.getFirstUnsteppedElement()) {
+    if (auto baseFirstUnsteppedElement = baseDynS.getFirstUnsteppedElem()) {
       alignBaseElementIdx = baseFirstUnsteppedElement->FIFOIdx.entryIdx;
     }
 
@@ -301,7 +301,7 @@ bool DynStream::isNextAddrBaseElementAllocated(
                   edge.reuseBaseElement, baseS->getStreamName());
     return false;
   }
-  auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
   if (!baseElement) {
     DYN_S_PANIC(this->dynStreamId,
                 "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
@@ -360,7 +360,7 @@ bool DynStream::isNextBackBaseElementAllocated(
                   edge.reuseBaseElement, baseS->getStreamName());
     return false;
   }
-  auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
   if (!baseElement) {
     DYN_S_PANIC(this->dynStreamId,
                 "NextElementIdx(%llu) BackBaseElementIdx(%llu) Already "
@@ -390,7 +390,7 @@ bool DynStream::areNextBackDepElementsReady(StreamElement *element) const {
                         depDynS.dynStreamId);
       return false;
     }
-    auto depElement = depDynS.getElementByIdx(depElementIdx);
+    auto depElement = depDynS.getElemByIdx(depElementIdx);
     if (!depElement) {
       S_ELEMENT_PANIC(element,
                       "BackDepElementIdx(%llu) Already Released? Align(%llu), "
@@ -441,7 +441,7 @@ bool DynStream::isNextValueBaseElementAllocated(
                   edge.reuseBaseElement, baseS->getStreamName());
     return false;
   }
-  auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
   if (!baseElement) {
     DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
@@ -507,7 +507,7 @@ void DynStream::addAddrBaseElementEdge(StreamElement *newElement,
       baseElementIdx, edge.alignBaseElement, edge.reuseBaseElement,
       baseS->getStreamName());
   // Try to find this element.
-  auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
   assert(baseElement && "Failed to find base element.");
   newElement->addrBaseElements.emplace_back(baseElement);
 }
@@ -526,7 +526,7 @@ void DynStream::addValueBaseElementEdge(StreamElement *newElement,
     baseElementIdx += newElementIdx / edge.reuseBaseElement;
   }
   // Try to find this element.
-  auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
   if (!baseElement) {
     S_ELEMENT_PANIC(newElement,
                     "Failed to find value base element %llu from %s.",
@@ -554,7 +554,7 @@ void DynStream::addBackBaseElementEdge(StreamElement *newElement,
   assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
   baseElementIdx += newElementIdx - 1;
   // Try to find this element.
-  auto baseElement = baseDynS.getElementByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
   if (!baseElement) {
     S_ELEMENT_PANIC(newElement,
                     "Failed to find back base element %llu from %s.",
@@ -616,7 +616,7 @@ bool DynStream::areInnerLoopBaseElementsAllocated(StreamElement *elem) const {
           baseTripCount, baseDynS.FIFOIdx.entryIdx);
       return false;
     }
-    auto baseElement = baseDynS.getElementByIdx(baseTripCount);
+    auto baseElement = baseDynS.getElemByIdx(baseTripCount);
     if (!baseElement) {
       DYN_S_PANIC(
           this->dynStreamId,
@@ -656,10 +656,10 @@ void DynStream::addInnerLoopBaseElements(StreamElement *elem) {
     }
     assert(baseTripCount > 0 && "0 TripCount.");
     auto baseElemIdx = baseTripCount;
-    if (baseS->isSecondFinalValueNeededByCore()) {
+    if (baseS->isInnerSecondFinalValueUsedByCore()) {
       baseElemIdx = baseTripCount - 1;
     }
-    auto baseElement = baseDynS.getElementByIdx(baseElemIdx);
+    auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
     if (!baseElement) {
       S_ELEMENT_PANIC(
           elem, "[InnerLoopDep] %s TripCount %llu BaseElemIdx %llu Released.",
@@ -803,7 +803,7 @@ bool DynStream::shouldRangeSync() const {
   return false;
 }
 
-StreamElement *DynStream::getElementByIdx(uint64_t elementIdx) const {
+StreamElement *DynStream::getElemByIdx(uint64_t elementIdx) const {
   for (auto element = this->tail->next; element != nullptr;
        element = element->next) {
     if (element->FIFOIdx.entryIdx == elementIdx) {
@@ -830,7 +830,7 @@ const StreamElement *DynStream::getFirstElement() const {
   return this->tail->next;
 }
 
-StreamElement *DynStream::getFirstUnsteppedElement() {
+StreamElement *DynStream::getFirstUnsteppedElem() const {
   if (this->allocSize <= this->stepSize) {
     return nullptr;
   }
@@ -841,7 +841,7 @@ StreamElement *DynStream::getFirstUnsteppedElement() {
 }
 
 StreamElement *DynStream::stepElement(bool isEnd) {
-  auto element = this->getFirstUnsteppedElement();
+  auto element = this->getFirstUnsteppedElem();
   S_ELEMENT_DPRINTF(element, "Stepped by Stream%s.\n",
                     (isEnd ? "End" : "Step"));
   element->isStepped = true;
@@ -953,8 +953,8 @@ StreamElement *DynStream::releaseElementUnstepped() {
   return releaseElement;
 }
 
-bool DynStream::hasUnsteppedElement() {
-  auto element = this->getFirstUnsteppedElement();
+bool DynStream::hasUnsteppedElem() const {
+  auto element = this->getFirstUnsteppedElem();
   if (!element) {
     // We don't have element for this used stream.
     DYN_S_DPRINTF(this->dynStreamId,
@@ -965,6 +965,22 @@ bool DynStream::hasUnsteppedElement() {
     return false;
   }
   return true;
+}
+
+bool DynStream::isElemStepped(uint64_t elemIdx) const {
+  if (auto elem = this->getFirstUnsteppedElem()) {
+    return elemIdx < elem->FIFOIdx.entryIdx;
+  } else {
+    return elemIdx < this->FIFOIdx.entryIdx;
+  }
+}
+
+bool DynStream::isElemReleased(uint64_t elemIdx) const {
+  if (auto elem = this->getFirstElement()) {
+    return elemIdx < elem->FIFOIdx.entryIdx;
+  } else {
+    return elemIdx < this->FIFOIdx.entryIdx;
+  }
 }
 
 StreamElement *DynStream::releaseElementStepped(bool isEnd) {
@@ -1184,14 +1200,75 @@ void DynStream::cancelFloat() {
   S->statistic.numFloatCancelled++;
 }
 
-void DynStream::setTotalTripCount(int64_t totalTripCount) {
-  if (this->hasTotalTripCount() && totalTripCount != this->totalTripCount) {
-    DYN_S_PANIC(this->dynStreamId, "Reset TotalTripCount %lld -> %lld.",
-                this->totalTripCount, totalTripCount);
+bool DynStream::isInnerSecondElem(uint64_t elemIdx) const {
+  assert(this->configExecuted && "The DynS has not be configured.");
+  if (!this->hasInnerTripCount()) {
+    return false;
   }
-  DYN_S_DPRINTF(this->dynStreamId, "Set TotalTripCount %lld.\n",
-                totalTripCount);
-  this->totalTripCount = totalTripCount;
+  if (elemIdx == 0) {
+    return false;
+  }
+  return ((elemIdx - 1) % this->getInnerTripCount()) == 0;
+}
+
+bool DynStream::isInnerLastElem(uint64_t elemIdx) const {
+  assert(this->configExecuted && "The DynS has not be configured.");
+  if (!this->hasInnerTripCount()) {
+    return false;
+  }
+  if (elemIdx == 0) {
+    return false;
+  }
+  return (elemIdx % this->getInnerTripCount()) == 0;
+}
+
+bool DynStream::isInnerSecondLastElem(uint64_t elemIdx) const {
+  assert(this->configExecuted && "The DynS has not be configured.");
+  if (!this->hasInnerTripCount()) {
+    return false;
+  }
+  return ((elemIdx + 1) % this->getInnerTripCount()) == 0;
+}
+
+void DynStream::setInnerFinalValue(uint64_t elemIdx, const StreamValue &value) {
+  assert(this->isInnerLastElem(elemIdx) &&
+         "SetFinalValue for Non-InnerLastElem.");
+  if (this->innerFinalValueMap.count(elemIdx)) {
+    DYN_S_PANIC(this->dynStreamId, "Reset InnerFinalValue at %lu.", elemIdx);
+  }
+  this->innerFinalValueMap.emplace(elemIdx, value);
+}
+
+bool DynStream::isInnerFinalValueReady(uint64_t elemIdx) const {
+  assert(this->isInnerLastElem(elemIdx) &&
+         "SetFinalValue for Non-InnerLastElem.");
+  return this->innerFinalValueMap.count(elemIdx);
+}
+
+const StreamValue &DynStream::getInnerFinalValue(uint64_t elemIdx) const {
+  assert(this->isInnerFinalValueReady(elemIdx));
+  return this->innerFinalValueMap.at(elemIdx);
+}
+
+void DynStream::setTotalAndInnerTripCount(int64_t tripCount) {
+  if (this->hasTotalTripCount() && tripCount != this->totalTripCount) {
+    DYN_S_PANIC(this->dynStreamId, "Reset TotalTripCount %lld -> %lld.",
+                this->totalTripCount, tripCount);
+  }
+  DYN_S_DPRINTF(this->dynStreamId, "Set Total/InnerTripCount %lld.\n",
+                tripCount);
+  this->totalTripCount = tripCount;
+  this->innerTripCount = tripCount;
+}
+
+void DynStream::setInnerTripCount(int64_t innerTripCount) {
+  if (this->innerTripCount != this->totalTripCount) {
+    DYN_S_PANIC(this->dynStreamId, "Reset InnerTripCount %lld -> %lld.",
+                this->innerTripCount, innerTripCount);
+  }
+  DYN_S_DPRINTF(this->dynStreamId, "Set InnerTripCount %lld.\n",
+                innerTripCount);
+  this->innerTripCount = innerTripCount;
 }
 
 int32_t DynStream::getBytesPerMemElement() const {

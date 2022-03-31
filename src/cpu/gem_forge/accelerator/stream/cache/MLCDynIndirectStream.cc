@@ -423,13 +423,11 @@ bool MLCDynIndirectStream::receiveFinalReductionValue(
     MLC_SLICE_PANIC(sliceId,
                     "CoreDynS released before receiving FinalReductionValue.");
   }
-  if (dynCoreS->finalReductionValueReady) {
-    MLC_SLICE_PANIC(sliceId, "FinalReductionValue already ready.");
-  }
-  auto size = sizeof(dynCoreS->finalReductionValue);
-  memcpy(dynCoreS->finalReductionValue.uint8Ptr(), dataBlock.getData(0, size),
-         size);
-  dynCoreS->finalReductionValueReady = true;
+  auto size = S->getCoreElementSize();
+  StreamValue value;
+  memcpy(value.uint8Ptr(), dataBlock.getData(0, size), size);
+  dynCoreS->setInnerFinalValue(sliceId.getStartIdx(), value);
+
   MLC_SLICE_DPRINTF_(MLCRubyStreamReduce, sliceId, "Notify final reduction.\n");
 
   return true;
