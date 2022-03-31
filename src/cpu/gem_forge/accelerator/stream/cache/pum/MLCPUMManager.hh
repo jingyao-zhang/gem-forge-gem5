@@ -68,49 +68,61 @@ private:
     AffinePattern pumTile;
     int scalarElemSize = 0;
     AffinePatternVecT atomicPatterns;
+    AffinePatternVecT splitOuterDims;
     std::string regionName;
+
+    AffinePattern getPatternAdjustedByOuterIter(int64_t patternIdx,
+                                                int64_t outerIter) const;
   };
 
   using StreamPatternInfoMapT = std::unordered_map<Stream *, PatternInfo>;
 
   struct PUMComputeStreamGroup {
+    /**
+     * Information gathered when compiling PUM.
+     */
     ConfigPtr computeConfig;
     CacheStreamConfigureVec usedConfigs;
     bool hasReduction = false;
+    bool outerDimSplitted = false;
     bool canApplyPUM = false;
     bool appliedPUM = false;
+
+    /**
+     * States during PUM execution.
+     */
+
+    // Track the next OuterIter when splitting OuterDim.
+    int64_t nextOuterIter = 0;
   };
 
   /**
-   * States during compiling PUM.
-   */
-  struct CompileStates {
-    // Records all the configs.
-    CacheStreamConfigureVec configs;
-    // Records all the PUMComputeStreamGroups.
-    std::vector<PUMComputeStreamGroup> pumGroups;
-    // Records all the compiled data move.
-    std::set<std::pair<Stream *, Stream *>> compiledDataMove;
-    // Records all the PatternInfo per stream.
-    StreamPatternInfoMapT patternInfo;
-    PUMCommandVecT commands;
-  };
-
-  /**
-   * States during the PUM.
+   * Track states of PUM.
    */
   struct PUMContext {
+    /**
+     * Information collected during analysis whether we can apply PUM or not.
+     */
+    // Records all the configs.
+    CacheStreamConfigureVec configs;
+    // DynamicStreamId that are now completely handled as PUM.
+    std::vector<DynStreamId> purePUMStreamIds;
+    // Records all the PUMComputeStreamGroups.
+    std::vector<PUMComputeStreamGroup> pumGroups;
+    // Records all the PatternInfo per stream.
+    StreamPatternInfoMapT patternInfo;
+
+    /**
+     * States during compiling and executing PUM.
+     */
+    PUMCommandVecT commands;
     int configuredBanks = 0;
     int totalSentPackets = 0;
     int totalRecvPackets = 0;
     int totalAckBanks = 0;
-    CacheStreamConfigureVec configs;
-    // DynamicStreamId that are now completely handled as PUM.
-    std::vector<DynStreamId> purePUMStreamIds;
-    std::vector<PUMComputeStreamGroup> pumGroups;
-    PUMCommandVecT commands;
     int numSync = 0;
     void clear();
+
     enum StateE {
       Initialized, // Initialized.
       Kicked,      // LLC PUMEngine started.
@@ -125,26 +137,37 @@ private:
   /**
    * Find all PUMComputeStreamGroups.
    */
-  void findPUMComputeStreamGroups(CompileStates &states);
+  void findPUMComputeStreamGroups(PUMContext &context);
+
+  /**
+   * Clear PUMConfigs from normal configs handled by MLCStreamEngine.
+   */
+  void erasePUMConfigs(PUMContext &context, CacheStreamConfigureVec *configs,
+                       const PUMComputeStreamGroup &group);
 
   /**
    * Check if PUM can be applied to a PUMComputeStreamGroup.
    */
-  bool canApplyPUMToGroup(CompileStates &states,
-                          const PUMComputeStreamGroup &group);
+  bool canApplyPUMToGroup(PUMContext &context, PUMComputeStreamGroup &group);
 
   /**
-   * Apply PUM to the Group.
+   * Compile the context once. It may require multiple compilation if we
+   * splitted the outer dimension.
    */
-  void applyPUMToGroup(CompileStates &states, PUMComputeStreamGroup &group);
+  void compileContext(PUMContext &context);
+
+  /**
+   * Compute the Group to PUM.
+   */
+  void compileGroup(PUMContext &context, PUMComputeStreamGroup &group);
 
   /**
    * Compile data move for one forward edge.
    */
-  void compileDataMove(CompileStates &states, const ConfigPtr &sendConfig,
-                       const CacheStreamConfigureData::DepEdge &dep);
+  void compileDataMove(PUMContext &context, PUMComputeStreamGroup &group,
+                       const ConfigPtr &sendConfig);
 
-  void compileCompute(CompileStates &states, PUMComputeStreamGroup &group);
+  void compileCompute(PUMContext &context, PUMComputeStreamGroup &group);
 
   /**
    * Decoalesce and devectorize stream pattern.
@@ -153,6 +176,12 @@ private:
   decoalesceAndDevectorizePattern(const ConfigPtr &config,
                                   const AffinePattern &pattern,
                                   int scalarElemSize);
+
+  /**
+   * Preprocess stream patterns to make them suitable for PUM.
+   */
+  void preprocessPatternsInGroup(PUMContext &context,
+                                 PUMComputeStreamGroup &group);
 
   /**
    * Translate outer-loop stream into inner-loop stream pattern, with the reuse
@@ -171,10 +200,16 @@ private:
 
   void checkSync(PUMContext &context);
 
+  /**
+   * Finish one round of computation. May start next round if needed.
+   */
+  void completeOneComputeRound(PUMContext &context);
+
   PUMContext &getFirstKickedContext();
   PUMContext *getFirstInitializedContext();
 
-  void sendBackFinalReductionValue(const CacheStreamConfigureDataPtr &config);
+  void sendBackFinalReductionValue(const PUMContext &context,
+                                   const PUMComputeStreamGroup &group);
 };
 
 #endif

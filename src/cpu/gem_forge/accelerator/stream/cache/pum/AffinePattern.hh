@@ -454,6 +454,8 @@ public:
     }
     return values;
   }
+
+  AffinePattern splitFromDim(int64_t dim);
 };
 
 std::ostream &operator<<(std::ostream &os, const AffinePattern &pattern);

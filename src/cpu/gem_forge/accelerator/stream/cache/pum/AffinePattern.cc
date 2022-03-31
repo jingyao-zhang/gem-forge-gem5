@@ -138,3 +138,18 @@ bool AffinePattern::is_canonical_sub_region_to_array_size(
   }
   return true;
 }
+
+AffinePattern AffinePattern::splitFromDim(int64_t dim) {
+
+  assert(dim < this->params.size());
+
+  AffinePattern::ParamVecT outerDims;
+  for (int i = dim; i < this->params.size(); ++i) {
+    outerDims.push_back(this->params.at(i));
+  }
+  for (int i = dim; i < this->params.size(); ++i) {
+    this->params.pop_back();
+  }
+  AffinePattern splitPat(0, outerDims);
+  return splitPat;
+}
