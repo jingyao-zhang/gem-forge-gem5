@@ -253,6 +253,15 @@ void DynStream::configureBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
 }
 
 bool DynStream::areNextBaseElementsAllocated() const {
+
+  /**
+   * If we are not going to issue, i.e. floated and no core usage,
+   * we don't check for BaseElement dep.
+   */
+  if (!this->shouldCoreSEIssue()) {
+    return true;
+  }
+
   for (const auto &edge : this->baseEdges) {
     switch (edge.type) {
     case StreamDepEdge::TypeE::Addr: {
@@ -354,7 +363,7 @@ bool DynStream::isNextBackBaseElementAllocated(
   // Try to find this element.
   if (baseDynS.FIFOIdx.entryIdx <= baseElementIdx) {
     DYN_S_DPRINTF(this->dynStreamId,
-                  "NextElementIdx(%llu) BackBaseElementIdx(%llu) Not Ready, "
+                  "NextElemIdx(%llu) BackBaseElemIdx(%llu) Not Ready, "
                   "Align(%llu), Reuse(%llu), BaseStream %s.\n",
                   this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
                   edge.reuseBaseElement, baseS->getStreamName());
@@ -363,7 +372,7 @@ bool DynStream::isNextBackBaseElementAllocated(
   auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
   if (!baseElement) {
     DYN_S_PANIC(this->dynStreamId,
-                "NextElementIdx(%llu) BackBaseElementIdx(%llu) Already "
+                "NextElemIdx(%llu) BackBaseElemIdx(%llu) Already "
                 "Released? Align(%llu), Reuse(%llu), BaseDynS %s.",
                 this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
                 edge.reuseBaseElement, baseDynS.dumpString());
@@ -376,6 +385,12 @@ bool DynStream::areNextBackDepElementsReady(StreamElement *element) const {
   for (const auto &edge : this->backDepEdges) {
     auto depS = S->se->getStream(edge.depStaticId);
     const auto &depDynS = depS->getDynStreamByInstance(edge.baseInstanceId);
+
+    if (!depDynS.shouldCoreSEIssue()) {
+      // If the DepDynS won't issue, we don't bother checking this.
+      continue;
+    }
+
     // Let's compute the base element entryIdx.
     uint64_t depElementIdx = edge.alignBaseElement;
     assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
@@ -383,7 +398,7 @@ bool DynStream::areNextBackDepElementsReady(StreamElement *element) const {
     // Try to find this element.
     if (depDynS.FIFOIdx.entryIdx <= depElementIdx) {
       S_ELEMENT_DPRINTF(element,
-                        "BackDepElementIdx(%llu) Not Allocated, Align(%llu), "
+                        "BackDepElemIdx(%llu) Not Allocated, Align(%llu), "
                         "Reuse(%llu), DepDynS %s.\n",
                         this->FIFOIdx.entryIdx, depElementIdx,
                         edge.alignBaseElement, edge.reuseBaseElement,
@@ -393,7 +408,7 @@ bool DynStream::areNextBackDepElementsReady(StreamElement *element) const {
     auto depElement = depDynS.getElemByIdx(depElementIdx);
     if (!depElement) {
       S_ELEMENT_PANIC(element,
-                      "BackDepElementIdx(%llu) Already Released? Align(%llu), "
+                      "BackDepElemIdx(%llu) Already Released? Align(%llu), "
                       "Reuse(%llu), DepDynS %s %s.",
                       this->FIFOIdx.entryIdx, depElementIdx,
                       edge.alignBaseElement, edge.reuseBaseElement,
@@ -464,6 +479,11 @@ bool DynStream::isNextValueBaseElementAllocated(
 }
 
 void DynStream::addBaseElements(StreamElement *newElement) {
+
+  if (!this->shouldCoreSEIssue()) {
+    return;
+  }
+
   for (const auto &edge : this->baseEdges) {
     if (edge.type == StreamDepEdge::TypeE::Addr) {
       this->addAddrBaseElementEdge(newElement, edge);
@@ -881,7 +901,7 @@ void DynStream::allocateElement(StreamElement *newElement) {
    */
   newElement->FIFOIdx = this->FIFOIdx;
   newElement->isCacheBlockedValue = S->isMemStream();
-  this->FIFOIdx.next();
+  this->FIFOIdx.next(this->stepElemCount);
 
   if (this->hasTotalTripCount() &&
       newElement->FIFOIdx.entryIdx >= this->getTotalTripCount() + 1) {
@@ -949,7 +969,7 @@ StreamElement *DynStream::releaseElementUnstepped() {
    * we need to reverse the FIFOIdx so that if we misspeculated,
    * new elements can be allocated with correct FIFOIdx.
    */
-  this->FIFOIdx.prev();
+  this->FIFOIdx.prev(this->stepElemCount);
   return releaseElement;
 }
 

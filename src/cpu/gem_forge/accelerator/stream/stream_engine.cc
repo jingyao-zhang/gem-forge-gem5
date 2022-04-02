@@ -1521,7 +1521,7 @@ void StreamEngine::commitStreamEnd(const StreamEndArgs &args) {
               endedDynS.FIFOIdx.entryIdx, endElemOffset);
         }
       } else {
-        if (endedDynS.getTotalTripCount() + 1 !=
+        if (endedDynS.getTotalTripCount() + endedDynS.stepElemCount !=
             endedDynS.FIFOIdx.entryIdx + endElemOffset) {
           DYN_S_PANIC(
               endedDynS.dynStreamId,

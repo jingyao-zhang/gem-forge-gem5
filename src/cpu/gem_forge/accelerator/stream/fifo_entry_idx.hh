@@ -14,8 +14,8 @@ struct FIFOEntryIdx {
       : streamId(_streamId), entryIdx(0) {}
   FIFOEntryIdx(const DynStreamId &_streamId, uint64_t _entryIdx)
       : streamId(_streamId), entryIdx(_entryIdx) {}
-  void next() { this->entryIdx++; }
-  void prev() { this->entryIdx--; }
+  void next(int64_t step = 1) { this->entryIdx += step; }
+  void prev(int64_t step = 1) { this->entryIdx -= step; }
 
   bool operator==(const FIFOEntryIdx &other) const {
     return this->streamId == other.streamId && this->entryIdx == other.entryIdx;

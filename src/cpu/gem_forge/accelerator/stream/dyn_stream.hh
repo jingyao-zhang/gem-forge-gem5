@@ -52,6 +52,14 @@ struct DynStream {
   int allocSize = 0;
   int stepSize = 0;
   FIFOEntryIdx FIFOIdx;
+
+  /**
+   * How many elements to step each time. By default this is just 1.
+   * Used to optimize for LoopElminated InnerReduction, where we only need
+   * the LastElement of each InnerMostLoop.
+   */
+  int64_t stepElemCount = 1;
+
   // A hack to store how many elements has the cache acked.
   std::set<uint64_t> cacheAckedElements;
 

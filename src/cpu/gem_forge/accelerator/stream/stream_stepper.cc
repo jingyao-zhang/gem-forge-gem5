@@ -215,6 +215,8 @@ void StreamRegionController::executeStreamConfigForStep(const ConfigArgs &args,
       }
     }
   }
+
+  this->determineStepElemCount(dynRegion);
 }
 
 void StreamRegionController::stepStream(DynRegion &dynRegion) {
@@ -283,7 +285,7 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
      *        If reached LevelTripCount -> advance.
      *        Otherwise -> round.
      */
-    dynGroup.nextElemIdx++;
+    dynGroup.nextElemIdx += dynGroup.stepElemCount;
     auto nextGroupIdx = dynStep.nextDynGroupIdx + 1;
     if (nextGroupIdx == dynStep.stepGroups.size()) {
       nextGroupIdx = 0;
@@ -389,5 +391,66 @@ void StreamRegionController::stepStream(DynRegion &dynRegion) {
       }
     }
   }
+  }
+}
+
+void StreamRegionController::determineStepElemCount(DynRegion &dynRegion) {
+
+  /**
+   * By default we step the element one by one. But this may change when we want
+   * to optimize for:
+   * 1. InnerReduction stream with LoopEliminated, and
+   * 2. The computation is offloaded.
+   */
+
+  if (se->myParams->enableRangeSync) {
+    return;
+  }
+  if (!se->myParams->streamEngineEnableFloat) {
+    return;
+  }
+
+  auto &staticRegion = *dynRegion.staticRegion;
+  if (!staticRegion.someStreamsLoopEliminated) {
+    return;
+  }
+  if (staticRegion.region.is_loop_bound()) {
+    return;
+  }
+
+  const auto &staticGroups = staticRegion.step.stepGroups;
+  auto &dynGroups = dynRegion.step.stepGroups;
+  for (auto &dynGroup : dynGroups) {
+
+    auto S = staticGroups[dynGroup.staticGroupIdx].stepRootS;
+    if (!S->isLoopEliminated()) {
+      continue;
+    }
+    if (S->hasCoreUser()) {
+      continue;
+    }
+
+    auto &dynS = S->getDynStream(dynRegion.seqNum);
+    if (!dynS.hasTotalTripCount()) {
+      continue;
+    }
+    if (!dynS.hasInnerTripCount()) {
+      continue;
+    }
+
+    const auto &staticGroup = staticGroups.at(dynGroup.staticGroupIdx);
+    if (staticGroup.needSecondFinalValue) {
+      continue;
+    }
+
+    dynGroup.stepElemCount = dynS.getInnerTripCount();
+    DYN_S_DPRINTF(dynS.dynStreamId, "[Stepper] Change StepElemCount to %ld.\n",
+                  dynS.getInnerTripCount());
+
+    for (auto stepS : this->se->getStepStreamList(S)) {
+      auto &stepDynS =
+          stepS->getDynStreamByInstance(dynS.dynStreamId.streamInstance);
+      stepDynS.stepElemCount = stepDynS.getInnerTripCount();
+    }
   }
 }

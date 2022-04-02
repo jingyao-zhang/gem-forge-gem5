@@ -87,6 +87,8 @@ public:
         int loopLevel;
         // Remember the index to StaticGroup.
         int staticGroupIdx;
+        // How many elements we want step at each time.
+        uint64_t stepElemCount = 1;
         DynStepGroupInfo(int _loopLevel, int _staticGroupIdx)
             : loopLevel(_loopLevel), staticGroupIdx(_staticGroupIdx) {}
       };
@@ -207,6 +209,7 @@ private:
   void dispatchStreamConfigForStep(const ConfigArgs &args,
                                    DynRegion &dynRegion);
   void executeStreamConfigForStep(const ConfigArgs &args, DynRegion &dynRegion);
+  void determineStepElemCount(DynRegion &dynRegion);
   void stepStream(DynRegion &dynRegion);
 
   /**
