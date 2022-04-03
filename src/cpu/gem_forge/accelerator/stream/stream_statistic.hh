@@ -2,6 +2,7 @@
 #define __CPU_TDG_ACCELERATOR_STREAM_STATISTIC_HH__
 
 #include <array>
+#include <cassert>
 #include <map>
 #include <ostream>
 
@@ -21,6 +22,7 @@ public:
   size_t numMisConfigured = 0;
   size_t numFloated = 0;
   size_t numFloatMem = 0;
+  size_t numFloatPUM = 0;
   size_t numFloatRewinded = 0;
   size_t numFloatCancelled = 0;
   size_t numPseudoFloated = 0;
@@ -184,6 +186,17 @@ public:
   SingleAvgSampler remoteIndReqNoCDelay;
   SingleAvgSampler llcReqLat;
   SingleAvgSampler memReqLat;
+
+  /**
+   * Collect the cycles between PUM sync.
+   * So far we assume we have at most 4 sync per compuation.
+   */
+  static constexpr int MAX_SYNCS = 4;
+  std::array<SingleAvgSampler, MAX_SYNCS> pumCyclesBetweenSync;
+  void samplePUMCyclesBetweenSync(size_t cycles, int syncIdx) {
+    assert(syncIdx < MAX_SYNCS);
+    this->pumCyclesBetweenSync.at(syncIdx).sample(cycles);
+  }
 };
 
 #endif

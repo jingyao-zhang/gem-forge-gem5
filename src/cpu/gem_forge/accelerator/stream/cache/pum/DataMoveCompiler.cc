@@ -9,7 +9,7 @@ DataMoveCompiler::DataMoveCompiler(const PUMHWConfiguration &_llc_config,
 
   assert(tile_pattern.is_canonical_tile());
   dimension = tile_pattern.params.size() / 2;
-  auto ret = tile_pattern.get_canonical_tile_and_array_sizes();
+  auto ret = tile_pattern.getTileAndArraySize();
   tile_sizes = std::move(ret.first);
   array_sizes = std::move(ret.second);
 

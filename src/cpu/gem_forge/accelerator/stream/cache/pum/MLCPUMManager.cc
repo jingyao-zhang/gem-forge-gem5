@@ -42,7 +42,8 @@ void MLCPUMManager::PUMContext::clear() {
   this->totalSentPackets = 0;
   this->totalRecvPackets = 0;
   this->totalAckBanks = 0;
-  this->numSync = 0;
+  this->reachedSync = 0;
+  this->totalSyncs = 0;
   /**
    * Don't forget to release the commands.
    */
@@ -52,7 +53,7 @@ void MLCPUMManager::PUMContext::clear() {
 void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
   for (const auto &config : context.configs) {
     bool shouldFormGroup = false;
-    bool hasReduction = false;
+    CacheStreamConfigureDataPtr reduceConfig = nullptr;
     CacheStreamConfigureDataPtr realComputeConfig = config;
     if (config->stream->getEnabledStoreFunc()) {
       shouldFormGroup = true;
@@ -64,7 +65,7 @@ void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
         if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy &&
             dep.data->stream->isReduction()) {
           shouldFormGroup = true;
-          hasReduction = true;
+          reduceConfig = dep.data;
           realComputeConfig = dep.data;
           break;
         }
@@ -78,7 +79,7 @@ void MLCPUMManager::findPUMComputeStreamGroups(PUMContext &context) {
     context.pumGroups.emplace_back();
     auto &group = context.pumGroups.back();
     group.computeConfig = config;
-    group.hasReduction = hasReduction;
+    group.reduceConfig = reduceConfig;
     for (const auto &edge : realComputeConfig->baseEdges) {
       auto baseConfig = edge.data.lock();
       assert(baseConfig && "BaseConfig already released.");
@@ -322,17 +323,18 @@ void MLCPUMManager::compileContext(PUMContext &context) {
   // Remember number of syncs.
   for (const auto &command : context.commands) {
     if (command.type == "sync") {
-      context.numSync++;
+      context.totalSyncs++;
     }
   }
   // Implicit last sync.
-  context.numSync++;
+  context.totalSyncs++;
 }
 
 void MLCPUMManager::compileGroup(PUMContext &context,
                                  PUMComputeStreamGroup &group) {
 
   assert(group.canApplyPUM);
+
   for (const auto &sendConfig : group.usedConfigs) {
     for (const auto &dep : sendConfig->depEdges) {
       if (dep.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
@@ -428,9 +430,13 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
   bool appliedPUM = false;
   for (auto &group : context.pumGroups) {
     if (group.canApplyPUM) {
-      // For now we always apply PUM if we can.
+      /**
+       * For now we always apply PUM if we can.
+       * Increment the numFloatPUM stats.
+       */
       group.appliedPUM = true;
       appliedPUM = true;
+      group.computeConfig->stream->statistic.numFloatPUM++;
     }
   }
 
@@ -438,6 +444,9 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
     this->contexts.pop_back();
     return;
   }
+
+  // Record the initialize cycle.
+  context.initCycle = this->controller->curCycle();
 
   /**
    * Clear the PUMConfigs from the original ConfigVec so that MLCStreamEngine
@@ -479,10 +488,14 @@ void MLCPUMManager::configurePUMEngine(PUMContext &context) {
   }
   assert(context.state == PUMContext::StateE::Initialized);
   context.state = PUMContext::StateE::Kicked;
-  this->kickPUMEngine(MessageSizeType_Data, false /* isIdea */);
+  context.lastKickCycle = this->controller->curCycle();
+  this->kickPUMEngine(context, MessageSizeType_Data, false /* isIdea */);
 }
 
-void MLCPUMManager::kickPUMEngine(MessageSizeType sizeType, bool isIdea) {
+void MLCPUMManager::kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
+                                  bool isIdea) {
+
+  context.lastSyncCycle = this->controller->curCycle();
 
   /**
    * Broadcast the kick packet.
@@ -602,6 +615,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
                                    PUMComputeStreamGroup &group) {
 
   const auto &config = group.computeConfig;
+  const auto &dynId = config->dynamicId;
 
   auto &patInfo = context.patternInfo.at(config->stream);
   auto scalarElemBits = patInfo.scalarElemSize * 8;
@@ -614,30 +628,24 @@ void MLCPUMManager::compileCompute(PUMContext &context,
   assert(patInfo.atomicPatterns.size() == 1);
   auto pattern = patInfo.getPatternAdjustedByOuterIter(0, group.nextOuterIter);
 
-  MLC_S_DPRINTF(config->dynamicId,
+  MLC_S_DPRINTF(dynId,
                 "Compile Compute Tile %s OuterIter %ld AdjustedPattern %s.\n",
                 patInfo.pumTile, group.nextOuterIter, pattern);
 
   ExecFuncPtr func = nullptr;
-  if (group.hasReduction) {
-    for (const auto &dep : config->depEdges) {
-      if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy &&
-          dep.data->stream->isReduction()) {
-        auto funcAddrGenCb = std::dynamic_pointer_cast<FuncAddrGenCallback>(
-            dep.data->addrGenCallback);
-        if (!funcAddrGenCb) {
-          MLC_S_PANIC_NO_DUMP(
-              dep.data->dynamicId,
-              "[PUM] Reduction should have FuncAddrGenCallback.");
-        }
-        func = funcAddrGenCb->getExecFunc();
-      }
+  if (group.reduceConfig) {
+    auto funcAddrGenCb = std::dynamic_pointer_cast<FuncAddrGenCallback>(
+        group.reduceConfig->addrGenCallback);
+    if (!funcAddrGenCb) {
+      MLC_S_PANIC_NO_DUMP(group.reduceConfig->dynamicId,
+                          "[PUM] Reduction should have FuncAddrGenCallback.");
     }
+    func = funcAddrGenCb->getExecFunc();
   } else {
     func = config->storeCallback;
   }
   if (!func) {
-    MLC_S_PANIC_NO_DUMP(config->dynamicId, "[PUM] Failed to find ComputeFunc.");
+    MLC_S_PANIC_NO_DUMP(dynId, "[PUM] Failed to find ComputeFunc.");
   }
 
   for (const auto &inst : func->getStaticInsts()) {
@@ -652,18 +660,13 @@ void MLCPUMManager::compileCompute(PUMContext &context,
         AffinePattern::IntVecT(compiler.tile_sizes.size(), 0) /* starts */,
         compiler.tile_sizes);
 
-    DPRINTF(StreamPUM, "[PUM] Compile Inst %s to OpClass %s.\n",
-            inst->disassemble(0x0), Enums::OpClassStrings[inst->opClass()]);
+    MLC_S_DPRINTF(dynId, "[PUM] Compile Inst %s to OpClass %s.\n",
+                  inst->disassemble(0x0),
+                  Enums::OpClassStrings[inst->opClass()]);
   }
 
-  /**
-   * As a hack for now, mark the last command reduction.
-   * TODO: Truly slice the function and find real reduction instructions.
-   */
-  if (group.hasReduction) {
-    assert(!commands.empty() && "No Commands for Reduction.");
-    commands.back().isReduction = true;
-  }
+  // Compile the final reduction instruction.
+  this->compileReduction(context, group, commands);
 
   if (Debug::StreamPUM) {
     for (const auto &command : commands) {
@@ -701,6 +704,113 @@ void MLCPUMManager::compileCompute(PUMContext &context,
 
   context.commands.insert(context.commands.end(), commands.begin(),
                           commands.end());
+}
+
+void MLCPUMManager::compileReduction(PUMContext &context,
+                                     PUMComputeStreamGroup &group,
+                                     PUMCommandVecT &commands) {
+
+  if (!group.reduceConfig) {
+    return;
+  }
+
+  /**
+   * We compile reduction into these steps:
+   * 1. Check which dimension we are trying to reduce by looking at the inner
+   * dimension stride of the assicated AffineStream. So far we only support
+   * reduction over one dimension.
+   *
+   * 2. We define the following variables:
+   *   InitElems: Initial # of elements in each tile waiting to be reduced.
+   *   FinalElems: Final # of elements in each tile to be collected.
+   * Notice that both InitElems and FinalElems will be power of 2, as we pick
+   * the tiling factor to be power of 2.
+   *
+   * 3. We will generate these command sequence:
+   *   Shift -> Reduce -> Shift -> Reduce -> ... -> Shift -> Reduce
+   *
+   * 4. Finally, the LLC PUMEngine will ready out FinalElems out and reduce
+   * across its SRAM arrays. It then send back the results to the MLCPUMManager
+   * for final reduction.
+   */
+
+  // 1. We assume reduction in the inner-most dimension.
+  const auto &reduceDynId = group.reduceConfig->dynamicId;
+
+  const auto &patInfo = context.patternInfo.at(group.computeConfig->stream);
+  assert(!patInfo.atomicPatterns.empty() && "No AtomicPattern.");
+  const auto &reducePat = patInfo.atomicPatterns.front();
+
+  int reduceStride = reducePat.params.front().stride;
+  auto ret = patInfo.pumTile.getTileAndArraySize();
+  auto tileSizes = std::move(ret.first);
+  auto arraySizes = std::move(ret.second);
+  const auto &dimensions = arraySizes.size();
+  int reduceDim = -1;
+  int64_t curDimStride = 1;
+  for (int dim = 0; dim < dimensions; ++dim) {
+    if (curDimStride == reduceStride) {
+      reduceDim = dim;
+      break;
+    }
+  }
+  if (reduceDim == -1) {
+    MLC_S_PANIC_NO_DUMP(reduceDynId, "[PUMReduce] Failed to find ReduceDim.");
+  }
+
+  /**
+   * As a hack for now, mark the last command reduction.
+   * TODO: Truly slice the function and find real reduction instructions.
+   */
+  assert(!commands.empty() && "No Commands for Reduction.");
+
+  // Let's take a copy of the final computation command.
+  auto reduceCmd = commands.back();
+  commands.pop_back();
+
+  int64_t finalElems = 1;
+  int64_t initElems = 1;
+  for (int dim = 0; dim < dimensions; ++dim) {
+    initElems *= tileSizes[dim];
+    if (dim == reduceDim) {
+      continue;
+    }
+    finalElems *= tileSizes[dim];
+  }
+  int64_t reduceRatio = tileSizes[reduceDim];
+  assert(reduceRatio > 1 && "Nothing to reduce.");
+  if (reduceRatio & (reduceRatio - 1)) {
+    MLC_S_PANIC_NO_DUMP(reduceDynId,
+                        "[PUMReduce] ReduceRatio %ld Not Power of 2.",
+                        reduceRatio);
+  }
+
+  int64_t curRatio = 2;
+  int64_t baseDist = AffinePattern::reduce_mul(
+      tileSizes.begin(), tileSizes.begin() + reduceDim + 1, 1);
+  MLC_S_DPRINTF(reduceDynId,
+                "[PUMReduce] Dim %d BaseDist %ld ReduceRatio %ld Tile %s.\n",
+                reduceDim, baseDist, reduceRatio, patInfo.pumTile);
+  while (curRatio <= reduceRatio) {
+    int64_t curDist = baseDist / curRatio;
+    MLC_S_DPRINTF(reduceDynId, "[PUMReduce] CurRatio %ld ShiftDist %ld.\n",
+                  curRatio, curDist);
+
+    commands.emplace_back();
+    commands.back().type = "intra-array";
+    commands.back().bitline_dist = -curDist;
+    // Generate all active bitline-mask according to tile_sizes.
+    commands.back().bitline_mask =
+        AffinePattern::construct_canonical_sub_region(
+            tileSizes, AffinePattern::IntVecT(tileSizes.size(), 0), tileSizes);
+
+    MLC_S_DPRINTF(reduceDynId, "Intra-Array Reduce Cmd %s", commands.back());
+
+    // We then insert the reduce compute command.
+    commands.push_back(reduceCmd);
+
+    curRatio *= 2;
+  }
 }
 
 AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
@@ -920,26 +1030,36 @@ void MLCPUMManager::checkSync(PUMContext &context) {
 
   assert(context.isActive() && "No Active PUM.");
 
-  if (context.numSync == 0) {
+  if (context.reachedSync == context.totalSyncs) {
     return;
   }
 
   if (context.totalAckBanks == context.configuredBanks &&
       context.totalSentPackets == context.totalRecvPackets) {
 
-    MLCSE_DPRINTF("Synced %d -= 1.\n", context.numSync);
-    context.numSync--;
+    MLCSE_DPRINTF("Synced %d Total %d.\n", context.reachedSync,
+                  context.totalSyncs);
+    context.reachedSync++;
     context.totalAckBanks = 0;
     context.totalSentPackets = 0;
     context.totalRecvPackets = 0;
 
-    if (context.numSync == 0) {
+    auto cyclesBetweenSync =
+        this->controller->curCycle() - context.lastSyncCycle;
+    for (const auto &group : context.pumGroups) {
+      if (group.appliedPUM) {
+        group.computeConfig->stream->statistic.samplePUMCyclesBetweenSync(
+            cyclesBetweenSync, context.reachedSync - 1);
+      }
+    }
+
+    if (context.reachedSync == context.totalSyncs) {
       // This is the last Sync.
       this->completeOneComputeRound(context);
     } else {
       // Notify the PUMEngine to continue.
       this->kickPUMEngine(
-          MessageSizeType_Control,
+          context, MessageSizeType_Control,
           this->controller->myParams->enable_stream_idea_ack /* isIdea */);
     }
   }
@@ -976,7 +1096,7 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
         dynS->cacheAckedElements.insert(elemIdx);
       }
     }
-    if (group.hasReduction) {
+    if (group.reduceConfig) {
       this->sendBackFinalReductionValue(context, group);
     }
 

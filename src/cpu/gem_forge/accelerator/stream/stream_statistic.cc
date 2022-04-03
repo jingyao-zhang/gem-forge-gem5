@@ -30,6 +30,7 @@ void StreamStatistic::dump(std::ostream &os) const {
   dumpScalar(numConfigured);
   dumpScalar(numMisConfigured);
   dumpScalar(numFloated);
+  dumpScalarIfNonZero(numFloatPUM);
   dumpScalarIfNonZero(numFloatMem);
   dumpScalarIfNonZero(numFloatRewinded);
   dumpScalarIfNonZero(numFloatCancelled);
@@ -178,6 +179,12 @@ void StreamStatistic::dump(std::ostream &os) const {
     }
   }
 
+  if (this->numFloatPUM > 0) {
+    for (int i = 0; i < MAX_SYNCS; ++i) {
+      dumpSingleAvgSample(pumCyclesBetweenSync[i]);
+    }
+  }
+
 #undef dumpScalar
 #undef dumpAvg
 }
@@ -212,6 +219,7 @@ void StreamStatistic::clear() {
   this->numConfigured = 0;
   this->numMisConfigured = 0;
   this->numFloated = 0;
+  this->numFloatPUM = 0;
   this->numFloatMem = 0;
   this->numFloatRewinded = 0;
   this->numFloatCancelled = 0;
@@ -295,5 +303,9 @@ void StreamStatistic::clear() {
 
   for (auto &reasons : this->llcIssueReasons) {
     reasons = 0;
+  }
+
+  for (auto &pumCycles : this->pumCyclesBetweenSync) {
+    pumCycles.clear();
   }
 }

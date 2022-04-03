@@ -82,8 +82,8 @@ private:
      * Information gathered when compiling PUM.
      */
     ConfigPtr computeConfig;
+    ConfigPtr reduceConfig;
     CacheStreamConfigureVec usedConfigs;
-    bool hasReduction = false;
     bool outerDimSplitted = false;
     bool canApplyPUM = false;
     bool appliedPUM = false;
@@ -120,7 +120,8 @@ private:
     int totalSentPackets = 0;
     int totalRecvPackets = 0;
     int totalAckBanks = 0;
-    int numSync = 0;
+    int totalSyncs = 0;
+    int reachedSync = 0;
     void clear();
 
     enum StateE {
@@ -130,6 +131,13 @@ private:
     };
     StateE state = StateE::Initialized;
     bool isActive() const { return !configs.empty(); }
+
+    /**
+     * Stats for PUM computation.
+     */
+    Cycles initCycle = Cycles(0);     // When I was intialized.
+    Cycles lastKickCycle = Cycles(0); // Last time I was kicked.
+    Cycles lastSyncCycle = Cycles(0); // Last time I was synced.
   };
   using PUMContextListT = std::list<PUMContext>;
   PUMContextListT contexts;
@@ -167,7 +175,16 @@ private:
   void compileDataMove(PUMContext &context, PUMComputeStreamGroup &group,
                        const ConfigPtr &sendConfig);
 
+  /**
+   * Compile the computation instruction.
+   */
   void compileCompute(PUMContext &context, PUMComputeStreamGroup &group);
+
+  /**
+   * Compile the final reduction instruction.
+   */
+  void compileReduction(PUMContext &context, PUMComputeStreamGroup &group,
+                        PUMCommandVecT &commands);
 
   /**
    * Decoalesce and devectorize stream pattern.
@@ -196,7 +213,8 @@ private:
   /**
    * Send out an kick message to PUMEngine to continue execution.
    */
-  void kickPUMEngine(MessageSizeType sizeType, bool isIdea);
+  void kickPUMEngine(PUMContext &context, MessageSizeType sizeType,
+                     bool isIdea);
 
   void checkSync(PUMContext &context);
 

@@ -123,7 +123,7 @@ public:
       return false;
     }
     auto dimension = params.size() / 2;
-    auto ret = get_canonical_tile_and_array_sizes();
+    auto ret = getTileAndArraySize();
     const auto &tile_sizes = ret.first;
     const auto &array_sizes = ret.second;
     for (auto i = 0; i < dimension; ++i) {
@@ -145,7 +145,7 @@ public:
     return true;
   }
 
-  std::pair<IntVecT, IntVecT> get_canonical_tile_and_array_sizes() const {
+  std::pair<IntVecT, IntVecT> getTileAndArraySize() const {
     auto dimension = params.size() / 2;
     IntVecT tile_sizes;
     IntVecT array_sizes;
@@ -196,7 +196,7 @@ public:
     assert(is_canonical_tile());
     auto dimension = params.size() / 2;
 
-    auto ret = get_canonical_tile_and_array_sizes();
+    auto ret = getTileAndArraySize();
     const auto &tile_sizes = ret.first;
     const auto &array_sizes = ret.second;
 
