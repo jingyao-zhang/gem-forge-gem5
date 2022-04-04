@@ -162,8 +162,9 @@ public:
     Type type;
     CacheStreamConfigureDataPtr data;
     int reuse;
-    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse)
-        : type(_type), data(_data), reuse(_reuse) {}
+    int skip;
+    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip)
+        : type(_type), data(_data), reuse(_reuse), skip(_skip) {}
   };
   struct BaseEdge {
     enum Type {
@@ -173,15 +174,18 @@ public:
     DynStreamId dynStreamId;
     CacheStreamConfigureDataWeakPtr data;
     int reuse;
-    BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse)
+    int skip;
+    BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip)
         : type(_type), dynStreamId(_data->dynamicId), data(_data),
-          reuse(_reuse) {}
+          reuse(_reuse), skip(_skip) {}
   };
   std::vector<DepEdge> depEdges;
   std::vector<BaseEdge> baseEdges;
-  void addUsedBy(CacheStreamConfigureDataPtr &data, int reuse);
-  void addSendTo(CacheStreamConfigureDataPtr &data, int reuse);
-  void addBaseOn(CacheStreamConfigureDataPtr &data, int reuse);
+  void addUsedBy(CacheStreamConfigureDataPtr &data);
+  void addSendTo(CacheStreamConfigureDataPtr &data, int reuse, int skip);
+  void addBaseOn(CacheStreamConfigureDataPtr &data, int reuse, int skip);
+  static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx, int reuse, int skip);
+  static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse, int skip);
 
   /**
    * StrandId and TotalStrands. Set by MLC if enabled.

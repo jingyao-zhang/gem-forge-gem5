@@ -18,33 +18,64 @@ CacheStreamConfigureData::CacheStreamConfigureData(
   assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
 
-void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data,
-                                         int reuse) {
-  assert(reuse == 1 && "UsedBy always has reuse 1.");
-  this->depEdges.emplace_back(DepEdge::Type::UsedBy, data, reuse);
+void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data) {
+  int reuse = 1;
+  int skip = 0;
+  this->depEdges.emplace_back(DepEdge::Type::UsedBy, data, reuse, skip);
   data->baseEdges.emplace_back(BaseEdge::Type::BaseOn, this->shared_from_this(),
-                               reuse);
+                               reuse, skip);
 }
 
 void CacheStreamConfigureData::addSendTo(CacheStreamConfigureDataPtr &data,
-                                         int reuse) {
+                                         int reuse, int skip) {
   for (const auto &edge : this->depEdges) {
     if (edge.type == DepEdge::Type::SendTo && edge.data == data) {
       // This is already here.
       assert(edge.reuse == reuse && "Mismatch Reuse in SendTo.");
+      assert(edge.skip == skip && "Mismatch Skip in SendTo.");
       return;
     }
   }
-  this->depEdges.emplace_back(DepEdge::Type::SendTo, data, reuse);
+  this->depEdges.emplace_back(DepEdge::Type::SendTo, data, reuse, skip);
 }
 
 void CacheStreamConfigureData::addBaseOn(CacheStreamConfigureDataPtr &data,
-                                         int reuse) {
-  if (reuse <= 0) {
-    panic("Illegal BaseOn Reuse %d This %s -> Base %s.", reuse, this->dynamicId,
-          data->dynamicId);
+                                         int reuse, int skip) {
+  if (reuse <= 0 || skip < 0) {
+    panic("Illegal BaseOn Reuse %d Skip %d This %s -> Base %s.", reuse, skip,
+          this->dynamicId, data->dynamicId);
   }
-  this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data, reuse);
+  this->baseEdges.emplace_back(BaseEdge::Type::BaseOn, data, reuse, skip);
+}
+
+uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(uint64_t baseElemIdx,
+                                                           int reuse,
+                                                           int skip) {
+  auto depElemIdx = baseElemIdx;
+  if (reuse != 1) {
+    assert(skip == 0);
+    depElemIdx = baseElemIdx * reuse;
+  }
+  if (skip != 0) {
+    assert(reuse == 1);
+    depElemIdx = baseElemIdx / skip - 1;
+  }
+  return depElemIdx;
+}
+
+uint64_t CacheStreamConfigureData::convertDepToBaseElemIdx(uint64_t depElemIdx,
+                                                           int reuse,
+                                                           int skip) {
+  auto baseElemIdx = depElemIdx;
+  if (reuse != 1) {
+    assert(skip == 0);
+    baseElemIdx = depElemIdx / reuse;
+  }
+  if (skip != 0) {
+    assert(reuse == 1);
+    baseElemIdx = (depElemIdx + 1) * skip;
+  }
+  return baseElemIdx;
 }
 
 bool CacheStreamConfigureData::canSplitIntoStrands() const {
@@ -220,12 +251,12 @@ CacheStreamConfigureData::splitIntoStrands(const StrandSplitInfo &strandSplit) {
 
     for (auto &dep : depEdges) {
       assert(dep.type == DepEdge::Type::SendTo && "Split Indirect.");
-      strand->addSendTo(dep.data, dep.reuse);
+      strand->addSendTo(dep.data, dep.reuse, dep.skip);
     }
     for (auto &base : baseEdges) {
       auto baseConfig = base.data.lock();
       assert(baseConfig && "BaseConfig already released?");
-      strand->addBaseOn(baseConfig, base.reuse);
+      strand->addBaseOn(baseConfig, base.reuse, base.skip);
     }
   }
 

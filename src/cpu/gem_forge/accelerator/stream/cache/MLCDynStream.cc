@@ -187,7 +187,9 @@ bool MLCDynStream::tryPopStream() {
   uint64_t remoteDynISProgressElemIdx = UINT64_MAX;
   // LLCDynStreamPtr llcDynISLeastProgress = nullptr;
 
-  uint64_t remoteRecvProgressElemIdx = UINT64_MAX;
+  uint64_t remoteRecvProgressAdjustedElemIdx = UINT64_MAX;
+  int remoteRecvReuse = 1;
+  int remoteRecvSkip = 0;
   LLCDynStreamPtr remoteRecvLeastProgress = nullptr;
 
   if (this->isMLCDirect && !this->shouldRangeSync() &&
@@ -245,15 +247,26 @@ bool MLCDynStream::tryPopStream() {
         }
 
         auto recvInitElemIdx = remoteRecvS->getNextInitElementIdx();
+        auto adjustedRecvInitElemIdx =
+            CacheStreamConfigureData::convertDepToBaseElemIdx(
+                recvInitElemIdx, dep.reuse, dep.skip);
+        if (dep.reuse != 1 || dep.skip != 0) {
+          MLC_S_DPRINTF(
+              this->getDynStrandId(),
+              "[Forward] Adjust RecvElemIdx %lu by Reuse %d Skip %d = %lu.\n",
+              recvInitElemIdx, dep.reuse, dep.skip, adjustedRecvInitElemIdx);
+        }
 
-        if (recvInitElemIdx < remoteRecvProgressElemIdx) {
+        if (adjustedRecvInitElemIdx < remoteRecvProgressAdjustedElemIdx) {
 
           MLC_S_DPRINTF(this->getDynStrandId(),
-                        "Smaller SendTo %s InitElementIdx %llu.\n",
-                        recvStrandId, recvInitElemIdx);
+                        "Smaller SendTo %s InitElemIdx %lu Adjusted %lu.\n",
+                        recvStrandId, recvInitElemIdx, adjustedRecvInitElemIdx);
 
-          remoteRecvProgressElemIdx = recvInitElemIdx;
+          remoteRecvProgressAdjustedElemIdx = adjustedRecvInitElemIdx;
           remoteRecvLeastProgress = remoteRecvS;
+          remoteRecvReuse = dep.reuse;
+          remoteRecvSkip = dep.skip;
         }
       }
     }
@@ -307,10 +320,7 @@ bool MLCDynStream::tryPopStream() {
       break;
     }
 
-    if (mlcHeadSliceEndElemIdx > remoteRecvProgressElemIdx) {
-      MLC_SLICE_DPRINTF(slice.sliceId,
-                        "[DelayPop] RecvElemIdx MLC %llu > LLC %llu.\n",
-                        mlcHeadSliceEndElemIdx, remoteRecvProgressElemIdx);
+    if (mlcHeadSliceEndElemIdx > remoteRecvProgressAdjustedElemIdx) {
       auto se = this->controller->getMLCStreamEngine();
       auto dynId = this->getDynStrandId();
       auto elemInitCallback = [se, dynId](const DynStreamId &dynStreamId,
@@ -323,8 +333,16 @@ bool MLCDynStream::tryPopStream() {
         }
       };
       this->popBlocked = true;
+      auto mlcHeadSliceEndElemIdxAtRecv =
+          CacheStreamConfigureData::convertBaseToDepElemIdx(
+              mlcHeadSliceEndElemIdx, remoteRecvReuse, remoteRecvSkip);
+      MLC_SLICE_DPRINTF(
+          slice.sliceId,
+          "[DelayPop] RecvElemIdx MLC %lu > LLC %lu. RegisterCB at %lu\n",
+          mlcHeadSliceEndElemIdx, remoteRecvProgressAdjustedElemIdx,
+          mlcHeadSliceEndElemIdxAtRecv);
       remoteRecvLeastProgress->registerElementInitCallback(
-          mlcHeadSliceEndElemIdx, elemInitCallback);
+          mlcHeadSliceEndElemIdxAtRecv, elemInitCallback);
       break;
     }
 

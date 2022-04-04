@@ -273,7 +273,8 @@ bool StreamRegionController::canSkipToStreamEnd(
    * 3. Float enabled.
    * 4. No NestRegion.
    * For all streams:
-   * 1. Only has affine streams (no reduction/pointer-chase/indirect).
+   * 1. Only has affine streams (no reduction/pointer-chase/indirect), or all
+   * indirect streams has no core user and no final value needed.
    * 2. No last/second-last element user.
    * 3. Has known TripCount.
    */
@@ -297,12 +298,10 @@ bool StreamRegionController::canSkipToStreamEnd(
         return false;
       }
     } else {
-      // IV stream. Check for any BackDep.
-      if (!S->backBaseStreams.empty()) {
-        return false;
-      }
+      // IV stream.
     }
-    if (S->isInnerFinalValueUsedByCore() || S->isInnerSecondFinalValueUsedByCore()) {
+    if (S->isInnerFinalValueUsedByCore() ||
+        S->isInnerSecondFinalValueUsedByCore() || S->hasCoreUser()) {
       return false;
     }
     auto &dynS = S->getDynStream(dynRegion.seqNum);

@@ -41,7 +41,7 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
   // Remember the SendTo configs.
   for (auto &depEdge : this->configData->depEdges) {
     if (depEdge.type == CacheStreamConfigureData::DepEdge::Type::SendTo) {
-      this->sendToConfigs.emplace_back(depEdge.data);
+      this->sendToEdges.emplace_back(depEdge);
     }
   }
 
@@ -756,30 +756,32 @@ void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
                                      const DynStreamSliceId &sliceId,
                                      const DataBlock &dataBlk) {
 
-  auto recvElementIdx = baseElementIdx;
+  auto recvElemIdx = baseElementIdx;
   if (this->isOneIterationBehind()) {
-    recvElementIdx++;
+    recvElemIdx++;
   }
 
   for (const auto &baseEdge : this->configData->baseEdges) {
-    if (baseEdge.dynStreamId == sliceId.getDynStreamId() &&
-        baseEdge.reuse != 1) {
+    if (baseEdge.dynStreamId == sliceId.getDynStreamId()) {
+      auto newRecvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+          recvElemIdx, baseEdge.reuse, baseEdge.skip);
       LLC_SLICE_DPRINTF(
-          sliceId, "[Forward] Adjust RecvElementIdx %lu by Reuse %d = %lu.\n",
-          recvElementIdx, baseEdge.reuse, recvElementIdx * baseEdge.reuse);
-      recvElementIdx *= baseEdge.reuse;
+          sliceId,
+          "[Forward] Adjust RecvElemIdx %lu by Reuse %d Skip %d = %lu.\n",
+          recvElemIdx, baseEdge.reuse, baseEdge.skip, newRecvElemIdx);
+      recvElemIdx = newRecvElemIdx;
       break;
     }
   }
 
   auto S = this->getStaticS();
-  if (!this->idxToElementMap.count(recvElementIdx)) {
+  if (!this->idxToElementMap.count(recvElemIdx)) {
     LLC_SLICE_PANIC(
         sliceId,
         "Cannot find the receiver element %s %llu allocate from %llu.\n",
-        this->getDynStreamId(), recvElementIdx, this->nextInitStrandElemIdx);
+        this->getDynStreamId(), recvElemIdx, this->nextInitStrandElemIdx);
   }
-  LLCStreamElementPtr recvElement = this->idxToElementMap.at(recvElementIdx);
+  LLCStreamElementPtr recvElement = this->idxToElementMap.at(recvElemIdx);
   bool foundBaseElement = false;
   for (auto &baseElement : recvElement->baseElements) {
     if (baseElement->strandId == sliceId.getDynStrandId()) {
@@ -1377,29 +1379,8 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
     /**
      * If the last reduction element is ready, we send this back to the core.
      */
-    if (this->configData->finalValueNeededByCore &&
-        this->isInnerLastElem(this->lastComputedReductionElemIdx)) {
-      // This is the last reduction of one inner loop.
-      auto finalReductionElem = this->getElementPanic(
-          this->lastComputedReductionElemIdx, "Return FinalReductionValue.");
-
-      DynStreamSliceId sliceId;
-      sliceId.getDynStrandId() = this->getDynStrandId();
-      sliceId.getStartIdx() = this->lastComputedReductionElemIdx;
-      sliceId.getEndIdx() = this->lastComputedReductionElemIdx + 1;
-      auto finalReductionValue =
-          finalReductionElem->getValueByStreamId(S->staticId);
-
-      Addr paddrLine = 0;
-      int dataSize = sizeof(finalReductionValue);
-      int payloadSize = S->getCoreElementSize();
-      int lineOffset = 0;
-      bool forceIdea = false;
-      se->issueStreamDataToMLC(sliceId, paddrLine,
-                               finalReductionValue.uint8Ptr(), dataSize,
-                               payloadSize, lineOffset, forceIdea);
-      LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElem,
-                           "Send back final reduction.\n");
+    if (this->isInnerLastElem(this->lastComputedReductionElemIdx)) {
+      this->completeFinalReduction(se);
     }
 
     /**
@@ -1412,6 +1393,48 @@ void LLCDynStream::completeComputation(LLCStreamEngine *se,
       }
       this->eraseElement(iter);
     }
+  }
+}
+
+void LLCDynStream::completeFinalReduction(LLCStreamEngine *se) {
+
+  // This is the last reduction of one inner loop.
+  auto S = this->getStaticS();
+  auto finalReductionElem = this->getElementPanic(
+      this->lastComputedReductionElemIdx, "Return FinalReductionValue.");
+
+  DynStreamSliceId sliceId;
+  sliceId.vaddr = 0;
+  sliceId.size = finalReductionElem->size;
+  sliceId.getDynStrandId() = this->getDynStrandId();
+  sliceId.getStartIdx() = this->lastComputedReductionElemIdx;
+  sliceId.getEndIdx() = this->lastComputedReductionElemIdx + 1;
+  auto finalReductionValue =
+      finalReductionElem->getValueByStreamId(S->staticId);
+
+  Addr paddrLine = 0;
+  int dataSize = sizeof(finalReductionValue);
+  int payloadSize = finalReductionElem->size;
+  int lineOffset = 0;
+  bool forceIdea = false;
+
+  if (this->configData->finalValueNeededByCore) {
+    se->issueStreamDataToMLC(sliceId, paddrLine, finalReductionValue.uint8Ptr(),
+                             dataSize, payloadSize, lineOffset, forceIdea);
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElem,
+                         "[Reduce] Send result back to core.\n");
+  }
+
+  // We also want to forward to any consuming streams.
+  DataBlock dataBlock;
+  dataBlock.setData(finalReductionValue.uint8Ptr(), lineOffset, payloadSize);
+  for (const auto &edge : this->sendToEdges) {
+    auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+        this->lastComputedReductionElemIdx, edge.reuse, edge.skip);
+    se->issueStreamDataToLLC(this, sliceId, dataBlock, edge.data, recvElemIdx,
+                             RubySystem::getBlockSizeBytes() /* PayloadSize */);
+    LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElem,
+                         "[Reduce] Send result to %s.\n", edge.data->dynamicId);
   }
 }
 
@@ -1556,7 +1579,7 @@ bool LLCDynStream::shouldIssueBeforeCommit() const {
   if (this->hasIndirectDependent()) {
     return true;
   }
-  if (!this->sendToConfigs.empty()) {
+  if (!this->sendToEdges.empty()) {
     return true;
   }
   auto S = this->getStaticS();

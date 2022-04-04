@@ -34,6 +34,17 @@ std::string to_string(const DynStream::StreamDepEdge::TypeE &type) {
   return std::string(DynStream::StreamDepEdge::typeToString(type));
 }
 
+uint64_t DynStream::StreamDepEdge::getBaseElemIdx(uint64_t elemIdx) const {
+  uint64_t ret = this->alignBaseElement;
+  if (this->baseElemReuseCnt != 0) {
+    ret += elemIdx / this->baseElemReuseCnt;
+  }
+  if (this->baseElemSkipCnt != 0) {
+    ret += (elemIdx + 1) * this->baseElemSkipCnt;
+  }
+  return ret;
+}
+
 DynStream::DynStream(Stream *_stream, const DynStreamId &_dynStreamId,
                      uint64_t _configSeqNum, Cycles _configCycle,
                      ThreadContext *_tc, StreamEngine *_se)
@@ -136,7 +147,17 @@ void DynStream::addBaseDynStreams() {
 int DynStream::getBaseElemReuseCount(Stream *baseS) const {
   for (const auto &edge : this->baseEdges) {
     if (this->se->getStream(edge.baseStaticId) == baseS) {
-      return edge.reuseBaseElement;
+      return edge.baseElemReuseCnt;
+    }
+  }
+  DYN_S_PANIC(this->dynStreamId, "Failed to find BaseStream %s.",
+              baseS->getStreamName());
+}
+
+int DynStream::getBaseElemSkipCount(Stream *baseS) const {
+  for (const auto &edge : this->baseEdges) {
+    if (this->se->getStream(edge.baseStaticId) == baseS) {
+      return edge.baseElemSkipCnt;
     }
   }
   DYN_S_PANIC(this->dynStreamId, "Failed to find BaseStream %s.",
@@ -195,11 +216,13 @@ void DynStream::configureBaseDynStreamReuse() {
     auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
     if (baseS->getLoopLevel() == this->stream->getLoopLevel()) {
       this->configureBaseDynStreamReuseSameLoop(edge, baseDynS);
-    } else {
+    } else if (baseS->getLoopLevel() < this->stream->getLoopLevel()) {
       this->configureBaseDynStreamReuseOuterLoop(edge, baseDynS);
+    } else {
+      this->configureBaseDynStreamSkipInnerLoop(edge, baseDynS);
     }
     DYN_S_DPRINTF(this->dynStreamId, "Configure Reuse %llu to Base %s.\n",
-                  edge.reuseBaseElement, baseS->getStreamName());
+                  edge.baseElemReuseCnt, baseS->getStreamName());
   }
 }
 
@@ -209,12 +232,12 @@ void DynStream::configureBaseDynStreamReuseSameLoop(StreamDepEdge &edge,
   auto S = this->stream;
   if (baseS->stepRootStream == S->stepRootStream) {
     // We are synchronized by the same step root.
-    edge.reuseBaseElement = 1;
+    edge.baseElemReuseCnt = 1;
   } else {
     // The other one must be a constant stream.
     // Reuse 0 means always reuse.
     assert(baseS->stepRootStream == nullptr && "Should be a constant stream.");
-    edge.reuseBaseElement = 0;
+    edge.baseElemReuseCnt = 0;
   }
 }
 
@@ -249,7 +272,43 @@ void DynStream::configureBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
                   baseDynS.dynStreamId, this->getTotalTripCount());
     }
   }
-  edge.reuseBaseElement = reuse;
+  edge.baseElemReuseCnt = reuse;
+}
+
+void DynStream::configureBaseDynStreamSkipInnerLoop(StreamDepEdge &edge,
+                                                    DynStream &baseDynS) {
+  auto baseS = baseDynS.stream;
+  auto S = this->stream;
+  auto baseLoopLevel = baseS->getLoopLevel();
+  auto loopLevel = S->getLoopLevel();
+  assert(baseLoopLevel > loopLevel && "Base should be inner.");
+
+  assert(this->hasTotalTripCount());
+  assert(baseDynS.hasTotalTripCount());
+  auto depTripCount = this->getTotalTripCount();
+  auto baseTripCount = baseDynS.getTotalTripCount();
+  assert(depTripCount < baseTripCount);
+  assert(baseTripCount % depTripCount == 0);
+
+  auto skip = baseTripCount / depTripCount;
+
+  DYN_S_DPRINTF(this->dynStreamId,
+                "InnerBaseS %s Skip %ld Between LoopLevel %d-%d.\n",
+                baseDynS.dynStreamId, skip, loopLevel, baseLoopLevel);
+  if (skip == 0) {
+    /**
+     * This is possible when the inner loop is from some vectorized loop,
+     * and the number of iterations are smaller than vectorized width --
+     * all handled by the loop epilogure.
+     * Sanity check that my TripCount is zero.
+     */
+    if (depTripCount != 0) {
+      DYN_S_PANIC(this->dynStreamId,
+                  "InnerBaseS %s ZeroSkip but NonZero TripCount %ld.",
+                  baseDynS.dynStreamId, this->getTotalTripCount());
+    }
+  }
+  edge.baseElemSkipCnt = skip;
 }
 
 bool DynStream::areNextBaseElementsAllocated() const {
@@ -297,26 +356,24 @@ bool DynStream::isNextAddrBaseElementAllocated(
   auto baseS = S->se->getStream(edge.baseStaticId);
   const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
-  uint64_t baseElementIdx = edge.alignBaseElement;
-  if (edge.reuseBaseElement != 0) {
-    baseElementIdx += this->FIFOIdx.entryIdx / edge.reuseBaseElement;
-  }
+  assert(edge.baseElemSkipCnt == 0 && "AddrEdge should have skip 0.");
+  auto baseElemIdx = edge.getBaseElemIdx(this->FIFOIdx.entryIdx);
   // Try to find this element.
-  if (baseDynS.FIFOIdx.entryIdx <= baseElementIdx) {
+  if (baseDynS.FIFOIdx.entryIdx <= baseElemIdx) {
     DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Not Ready, "
                   "Align(%llu), Reuse(%llu), BaseStream %s.\n",
-                  this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                  edge.reuseBaseElement, baseS->getStreamName());
+                  this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                  edge.baseElemReuseCnt, baseS->getStreamName());
     return false;
   }
-  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
   if (!baseElement) {
     DYN_S_PANIC(this->dynStreamId,
                 "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                 "Released? Align(%llu), Reuse(%llu), BaseS %s\n BaseDynS %s",
-                this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                edge.reuseBaseElement, baseS->getStreamName(),
+                this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                edge.baseElemReuseCnt, baseS->getStreamName(),
                 baseDynS.dumpString());
   }
   if (baseElement->isStepped) {
@@ -332,16 +389,16 @@ bool DynStream::isNextAddrBaseElementAllocated(
                  "Ignore Misspeculatively Stepped AddrBaseElement, "
                  "NextElementIdx(%llu) BaseElementIdx(%llu)"
                  " Align(%llu), Reuse(%llu), BaseE %s\n",
-                 this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                 edge.reuseBaseElement, baseElement->FIFOIdx);
+                 this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                 edge.baseElemReuseCnt, baseElement->FIFOIdx);
       return true;
     }
     DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                   "(Misspeculatively) Stepped? Align(%llu), Reuse(%llu), "
                   "BaseE %s\n",
-                  this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                  edge.reuseBaseElement, baseElement->FIFOIdx);
+                  this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                  edge.baseElemReuseCnt, baseElement->FIFOIdx);
     return false;
   }
   return true;
@@ -357,25 +414,25 @@ bool DynStream::isNextBackBaseElementAllocated(
   auto baseS = S->se->getStream(edge.baseStaticId);
   const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
-  uint64_t baseElementIdx = edge.alignBaseElement;
-  assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
-  baseElementIdx += this->FIFOIdx.entryIdx - 1;
+  assert(edge.baseElemReuseCnt == 1 && "BackEdge should have reuse 1.");
+  assert(edge.baseElemSkipCnt == 0 && "BackEdge should have skip 0.");
+  auto baseElemIdx = edge.getBaseElemIdx(this->FIFOIdx.entryIdx) - 1;
   // Try to find this element.
-  if (baseDynS.FIFOIdx.entryIdx <= baseElementIdx) {
+  if (baseDynS.FIFOIdx.entryIdx <= baseElemIdx) {
     DYN_S_DPRINTF(this->dynStreamId,
-                  "NextElemIdx(%llu) BackBaseElemIdx(%llu) Not Ready, "
-                  "Align(%llu), Reuse(%llu), BaseStream %s.\n",
-                  this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                  edge.reuseBaseElement, baseS->getStreamName());
+                  "NextElemIdx %llu BackBaseElemIdx %llu Not Ready, "
+                  "Align %llu Reuse %llu BaseStream %s.\n",
+                  this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                  edge.baseElemReuseCnt, baseS->getStreamName());
     return false;
   }
-  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
   if (!baseElement) {
     DYN_S_PANIC(this->dynStreamId,
-                "NextElemIdx(%llu) BackBaseElemIdx(%llu) Already "
-                "Released? Align(%llu), Reuse(%llu), BaseDynS %s.",
-                this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                edge.reuseBaseElement, baseDynS.dumpString());
+                "NextElemIdx %llu BackBaseElemIdx %llu Already "
+                "Released? Align %llu Reuse %llu BaseDynS %s.",
+                this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                edge.baseElemReuseCnt, baseDynS.dumpString());
   }
   return true;
 }
@@ -393,7 +450,8 @@ bool DynStream::areNextBackDepElementsReady(StreamElement *element) const {
 
     // Let's compute the base element entryIdx.
     uint64_t depElementIdx = edge.alignBaseElement;
-    assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
+    assert(edge.baseElemReuseCnt == 1 && "BackEdge should have reuse 1.");
+    assert(edge.baseElemSkipCnt == 0 && "BackEdge should have skip 0.");
     depElementIdx += element->FIFOIdx.entryIdx + 1;
     // Try to find this element.
     if (depDynS.FIFOIdx.entryIdx <= depElementIdx) {
@@ -401,7 +459,7 @@ bool DynStream::areNextBackDepElementsReady(StreamElement *element) const {
                         "BackDepElemIdx(%llu) Not Allocated, Align(%llu), "
                         "Reuse(%llu), DepDynS %s.\n",
                         this->FIFOIdx.entryIdx, depElementIdx,
-                        edge.alignBaseElement, edge.reuseBaseElement,
+                        edge.alignBaseElement, edge.baseElemReuseCnt,
                         depDynS.dynStreamId);
       return false;
     }
@@ -411,7 +469,7 @@ bool DynStream::areNextBackDepElementsReady(StreamElement *element) const {
                       "BackDepElemIdx(%llu) Already Released? Align(%llu), "
                       "Reuse(%llu), DepDynS %s %s.",
                       this->FIFOIdx.entryIdx, depElementIdx,
-                      edge.alignBaseElement, edge.reuseBaseElement,
+                      edge.alignBaseElement, edge.baseElemReuseCnt,
                       depDynS.dynStreamId, depDynS.dumpString());
     }
     if (depElement->isElemFloatedToCache()) {
@@ -443,26 +501,24 @@ bool DynStream::isNextValueBaseElementAllocated(
 
   const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
-  uint64_t baseElementIdx = edge.alignBaseElement;
-  if (edge.reuseBaseElement != 0) {
-    baseElementIdx += this->FIFOIdx.entryIdx / edge.reuseBaseElement;
-  }
+  auto baseElemIdx = edge.getBaseElemIdx(this->FIFOIdx.entryIdx);
   // Try to find this element.
-  if (baseDynS.FIFOIdx.entryIdx <= baseElementIdx) {
+  if (baseDynS.FIFOIdx.entryIdx <= baseElemIdx) {
     DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Not Ready, "
-                  "Align(%llu), Reuse(%llu), BaseStream %s.\n",
-                  this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                  edge.reuseBaseElement, baseS->getStreamName());
+                  "Align %llu, Reuse %llu, Skip %llu BaseStream %s.\n",
+                  this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                  edge.baseElemReuseCnt, edge.baseElemSkipCnt,
+                  baseS->getStreamName());
     return false;
   }
-  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
   if (!baseElement) {
     DYN_S_DPRINTF(this->dynStreamId,
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                   "Released? Align(%llu), Reuse(%llu), BaseStream %s\n",
-                  this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                  edge.reuseBaseElement, baseS->getStreamName());
+                  this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                  edge.baseElemReuseCnt, baseS->getStreamName());
     DYN_S_DPRINTF(this->dynStreamId, "BaseDynS %s.\n", baseDynS.dumpString());
   }
   assert(baseElement && "Base Element Already Released?");
@@ -471,8 +527,8 @@ bool DynStream::isNextValueBaseElementAllocated(
                   "NextElementIdx(%llu) BaseElementIdx(%llu) Already "
                   "(Misspeculatively) Stepped? Align(%llu), Reuse(%llu), "
                   "BaseStream %s\n",
-                  this->FIFOIdx.entryIdx, baseElementIdx, edge.alignBaseElement,
-                  edge.reuseBaseElement, baseS->getStreamName());
+                  this->FIFOIdx.entryIdx, baseElemIdx, edge.alignBaseElement,
+                  edge.baseElemReuseCnt, baseS->getStreamName());
     return false;
   }
   return true;
@@ -517,17 +573,14 @@ void DynStream::addAddrBaseElementEdge(StreamElement *newElement,
   auto baseS = S->se->getStream(edge.baseStaticId);
   auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
-  uint64_t baseElementIdx = edge.alignBaseElement;
-  if (edge.reuseBaseElement != 0) {
-    baseElementIdx += newElement->FIFOIdx.entryIdx / edge.reuseBaseElement;
-  }
+  auto baseElemIdx = edge.getBaseElemIdx(newElement->FIFOIdx.entryIdx);
   S_ELEMENT_DPRINTF(
       newElement,
       "BaseElementIdx(%llu), Align(%llu), Reuse (%llu), BaseStream %s.\n",
-      baseElementIdx, edge.alignBaseElement, edge.reuseBaseElement,
+      baseElemIdx, edge.alignBaseElement, edge.baseElemReuseCnt,
       baseS->getStreamName());
   // Try to find this element.
-  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
   assert(baseElement && "Failed to find base element.");
   newElement->addrBaseElements.emplace_back(baseElement);
 }
@@ -536,21 +589,18 @@ void DynStream::addValueBaseElementEdge(StreamElement *newElement,
                                         const StreamDepEdge &edge) {
 
   auto S = this->stream;
-  auto newElementIdx = newElement->FIFOIdx.entryIdx;
+  auto newElemIdx = newElement->FIFOIdx.entryIdx;
 
   auto baseS = S->se->getStream(edge.baseStaticId);
   const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
-  uint64_t baseElementIdx = edge.alignBaseElement;
-  if (edge.reuseBaseElement != 0) {
-    baseElementIdx += newElementIdx / edge.reuseBaseElement;
-  }
+  auto baseElemIdx = edge.getBaseElemIdx(newElemIdx);
   // Try to find this element.
-  auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
+  auto baseElement = baseDynS.getElemByIdx(baseElemIdx);
   if (!baseElement) {
     S_ELEMENT_PANIC(newElement,
                     "Failed to find value base element %llu from %s.",
-                    baseElementIdx, baseDynS.dynStreamId);
+                    baseElemIdx, baseDynS.dynStreamId);
   }
   S_ELEMENT_DPRINTF(newElement, "Add ValueBaseElement: %s.\n",
                     baseElement->FIFOIdx);
@@ -571,7 +621,8 @@ void DynStream::addBackBaseElementEdge(StreamElement *newElement,
   const auto &baseDynS = baseS->getDynStreamByInstance(edge.baseInstanceId);
   // Let's compute the base element entryIdx.
   uint64_t baseElementIdx = edge.alignBaseElement;
-  assert(edge.reuseBaseElement == 1 && "BackEdge should have reuse 1.");
+  assert(edge.baseElemReuseCnt == 1 && "BackEdge should have reuse 1.");
+  assert(edge.baseElemSkipCnt == 0 && "BackEdge should have skip 0.");
   baseElementIdx += newElementIdx - 1;
   // Try to find this element.
   auto baseElement = baseDynS.getElemByIdx(baseElementIdx);
@@ -717,18 +768,21 @@ bool DynStream::shouldCoreSEIssue() const {
       // If the AddrDepStream issues, then we have to issue to compute the
       // address.
       if (depDynS.shouldCoreSEIssue()) {
+        DYN_S_DPRINTF(this->dynStreamId, "Should CoreSe Issue Due to AddrDepS %s.\n", depDynS.dynStreamId);
         return true;
       }
     }
     for (auto backDepS : S->backDepStreams) {
       const auto &backDepDynS = backDepS->getDynStream(this->configSeqNum);
       if (!backDepDynS.isFloatedToCache()) {
+        DYN_S_DPRINTF(this->dynStreamId, "Should CoreSe Issue Due to BackDepS %s.\n", backDepDynS.dynStreamId);
         return true;
       }
     }
     for (auto valDepS : S->valueDepStreams) {
       const auto &valDepDynS = valDepS->getDynStream(this->configSeqNum);
       if (valDepDynS.shouldCoreSEIssue()) {
+        DYN_S_DPRINTF(this->dynStreamId, "Should CoreSe Issue Due to ValDepS %s.\n", valDepDynS.dynStreamId);
         return true;
       }
     }
@@ -749,6 +803,7 @@ bool DynStream::shouldCoreSEIssue() const {
       S->getIsConditional() && S->aliasBaseStream->aliasedStreams.size() > 1) {
     return false;
   }
+  DYN_S_DPRINTF(this->dynStreamId, "Should CoreSE Issue isFloated %d.\n", this->isFloatedToCache());
   return true;
 }
 
@@ -904,12 +959,13 @@ void DynStream::allocateElement(StreamElement *newElement) {
   this->FIFOIdx.next(this->stepElemCount);
 
   if (this->hasTotalTripCount() &&
-      newElement->FIFOIdx.entryIdx >= this->getTotalTripCount() + 1) {
-    DYN_S_PANIC(
-        this->dynStreamId,
-        "Allocate beyond totalTripCount %lu, allocSize %lu, entryIdx %lu.\n",
-        this->getTotalTripCount(), S->getAllocSize(),
-        newElement->FIFOIdx.entryIdx);
+      newElement->FIFOIdx.entryIdx >=
+          this->getTotalTripCount() + this->stepElemCount) {
+    DYN_S_PANIC(this->dynStreamId,
+                "Allocate beyond tripCnt %lu stepCnt %ld, allocSize %lu, "
+                "entryIdx %lu.\n",
+                this->getTotalTripCount(), this->stepElemCount,
+                S->getAllocSize(), newElement->FIFOIdx.entryIdx);
   }
 
   // Add base elements

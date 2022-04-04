@@ -344,7 +344,7 @@ private:
                             const DynStreamSliceId &sliceId,
                             const DataBlock &dataBlock,
                             const CacheStreamConfigureDataPtr &recvConfig,
-                            int payloadSize);
+                            uint64_t recvStrandElemIdx, int payloadSize);
 
   /**
    * Set the TotalTripCount in MLC. Used to implement StreamLoopBound.

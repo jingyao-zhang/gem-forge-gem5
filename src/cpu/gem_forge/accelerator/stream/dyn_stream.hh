@@ -233,17 +233,19 @@ public:
     const InstanceId baseInstanceId = DynStreamId::InvalidInstanceId;
     const StaticId depStaticId = DynStreamId::InvalidStaticStreamId;
     const uint64_t alignBaseElement = 0;
-    uint64_t reuseBaseElement = 1;
+    uint64_t baseElemReuseCnt = 1; // When the BaseS is from OuterLoop.
+    uint64_t baseElemSkipCnt = 0;  // When the BaseS is from InnerLoop.
     StreamDepEdge(TypeE _type, StaticId _baseStaticId,
                   InstanceId _baseInstanceId, StaticId _depStaticId,
                   uint64_t _alignBaseElement, uint64_t _reuseBaseElement)
         : type(_type), baseStaticId(_baseStaticId),
           baseInstanceId(_baseInstanceId), depStaticId(_depStaticId),
           alignBaseElement(_alignBaseElement),
-          reuseBaseElement(_reuseBaseElement) {}
+          baseElemReuseCnt(_reuseBaseElement) {}
     bool isAddrEdge() const { return this->type == TypeE::Addr; }
     bool isValueEdge() const { return this->type == TypeE::Value; }
     bool isBackEdge() const { return this->type == TypeE::Back; }
+    uint64_t getBaseElemIdx(uint64_t elemIdx) const;
   };
   using StreamEdges = std::vector<StreamDepEdge>;
   StreamEdges baseEdges;
@@ -251,9 +253,10 @@ public:
   void addBaseDynStreams();
 
   /**
-   * Get the reuse count on a BaseS.
+   * Get the reuse/skip count on a BaseS.
    */
   int getBaseElemReuseCount(Stream *baseS) const;
+  int getBaseElemSkipCount(Stream *baseS) const;
 
   std::list<DynStream *> stepDynStreams;
   void addStepStreams();
@@ -283,6 +286,8 @@ public:
                                            DynStream &baseDynS);
   void configureBaseDynStreamReuseOuterLoop(StreamDepEdge &edge,
                                             DynStream &baseDynS);
+  void configureBaseDynStreamSkipInnerLoop(StreamDepEdge &edge,
+                                           DynStream &baseDynS);
 
   /**
    * Check if base elements of the next allocating element is ready.

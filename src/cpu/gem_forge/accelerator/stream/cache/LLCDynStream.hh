@@ -212,6 +212,7 @@ public:
   void completeComputation(LLCStreamEngine *se,
                            const LLCStreamElementPtr &element,
                            const StreamValue &value);
+  void completeFinalReduction(LLCStreamEngine *se);
 
   int getMaxInflyRequests() const { return this->maxInflyRequests; }
 
@@ -275,7 +276,7 @@ public:
   // Remember the last really computed indirect reduction element.
   uint64_t lastComputedReductionElemIdx = 0;
 
-  std::vector<CacheStreamConfigureDataPtr> sendToConfigs;
+  std::vector<CacheStreamConfigureData::DepEdge> sendToEdges;
 
   /**
    * Remember the base stream.

@@ -393,7 +393,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   bool needIndirect =
       !(dynS->getIndStreams().empty() && dynS->predicatedStreams.empty());
   bool needUpdate = S->isUpdateStream() || S->isAtomicStream();
-  bool needSendTo = !(dynS->sendToConfigs.empty());
+  bool needSendTo = !(dynS->sendToEdges.empty());
 
   LLC_SLICE_DPRINTF(sliceId,
                     "Received StreamData, InflyRequests %d, NeedIndirect %d, "
@@ -453,10 +453,12 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
    * However, for LoadComputeStream, we should send after the value
    * is computed.
    */
-  if (!dynS->sendToConfigs.empty() && !S->isLoadComputeStream()) {
-    for (const auto &recvConfig : dynS->sendToConfigs) {
+  if (!dynS->sendToEdges.empty() && !S->isLoadComputeStream()) {
+    for (const auto &edge : dynS->sendToEdges) {
+      auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+          sliceId.getStartIdx(), edge.reuse, edge.skip);
       this->issueStreamDataToLLC(
-          dynS, sliceId, dataBlock, recvConfig,
+          dynS, sliceId, dataBlock, edge.data, recvElemIdx,
           RubySystem::getBlockSizeBytes() /* PayloadSize */);
     }
   }
@@ -2225,7 +2227,7 @@ void LLCStreamEngine::issueStreamDataToMLC(const DynStreamSliceId &sliceId,
 void LLCStreamEngine::issueStreamDataToLLC(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
     const DataBlock &dataBlock, const CacheStreamConfigureDataPtr &recvConfig,
-    int payloadSize) {
+    uint64_t recvStrandElemIdx, int payloadSize) {
   /**
    * Unlike sending data to MLC, we have to calculate the virtual
    * address of the receiving stream and translate that. Also, we can
@@ -2235,7 +2237,7 @@ void LLCStreamEngine::issueStreamDataToLLC(
    * Now that we have strands, we have to be careful translating between
    * StreamElemIdx and StrandElemIdx.
    */
-  auto strandElemIdx = sliceId.getStartIdx();
+  auto strandElemIdx = recvStrandElemIdx;
   auto streamElemIdx =
       dynS->configData->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
 
@@ -3216,13 +3218,15 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
   /**
    * Send the data to receiver stream.
    */
-  for (const auto &recvConfig : dynS->sendToConfigs) {
+  for (const auto &edge : dynS->sendToEdges) {
+    auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+        sliceId.getStartIdx(), edge.reuse, edge.skip);
     LLC_SLICE_DPRINTF(sliceId,
                       "Send LoadComputeValue to ReceiverStream: %s "
                       "Data %s PayloadSize %d.\n",
-                      recvConfig->dynamicId, loadValueBlock, payloadSize);
-    this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, recvConfig,
-                               payloadSize);
+                      edge.data->dynamicId, loadValueBlock, payloadSize);
+    this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, edge.data,
+                               recvElemIdx, payloadSize);
   }
   slice->setLoadComputeValueSent();
 }

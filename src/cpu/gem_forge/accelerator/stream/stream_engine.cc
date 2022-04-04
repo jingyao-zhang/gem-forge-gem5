@@ -1300,7 +1300,7 @@ bool StreamEngine::canExecuteStreamEnd(const StreamEndArgs &args) {
         return false;
       }
       if (dynS.isFloatedToCache() &&
-          dynS.cacheAckedElements.size() + 1 <
+          dynS.cacheAckedElements.size() + dynS.stepElemCount <
               dynS.getNumFloatedElemUntil(dynS.FIFOIdx.entryIdx)) {
         // We are not ack the LastElement.
         DYN_S_DPRINTF(

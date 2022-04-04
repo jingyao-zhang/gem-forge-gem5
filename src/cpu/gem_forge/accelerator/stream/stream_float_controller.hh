@@ -60,7 +60,9 @@ private:
   void floatDirectAtomicComputeStreams(const Args &args);
   void floatPointerChaseStreams(const Args &args);
   void floatIndirectStreams(const Args &args);
-  void floatDirectStoreComputeOrUpdateStreams(const Args &args);
+  void floatDirectUpdateStreams(const Args &args);
+  void floatDirectStoreComputeStreams(const Args &args);
+  void floatDirectStoreComputeOrUpdateStream(const Args &args, DynStream *dynS);
   void floatDirectOrPointerChaseReductionStreams(const Args &args);
   void floatIndirectReductionStreams(const Args &args);
   void floatIndirectReductionStream(const Args &args, DynStream *dynS);

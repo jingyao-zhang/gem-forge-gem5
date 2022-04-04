@@ -387,7 +387,9 @@ void MLCDynDirectStream::trySendCreditToLLC() {
         continue;
       }
 
-      auto recvStreamElemIdx = tailStreamElemIdx * sendToEdge.reuse;
+      auto recvStreamElemIdx =
+          CacheStreamConfigureData::convertBaseToDepElemIdx(
+              tailStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
 
       auto recvStrandId =
           sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
@@ -408,7 +410,9 @@ void MLCDynDirectStream::trySendCreditToLLC() {
         for (const auto &sendToEdge : dynIS->getSendToEdges()) {
 
           const auto &sendToConfig = sendToEdge.data;
-          auto recvStreamElemIdx = tailStreamElemIdx / sendToEdge.reuse;
+          auto recvStreamElemIdx =
+              CacheStreamConfigureData::convertBaseToDepElemIdx(
+                  tailStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
 
           auto recvStrandId =
               sendToConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);

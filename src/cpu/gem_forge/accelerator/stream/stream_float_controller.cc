@@ -48,12 +48,13 @@ void StreamFloatController::floatStreams(
   this->floatDirectAtomicComputeStreams(floatArgs);
   this->floatPointerChaseStreams(floatArgs);
   this->floatIndirectStreams(floatArgs);
-  this->floatDirectStoreComputeOrUpdateStreams(floatArgs);
+  this->floatDirectUpdateStreams(floatArgs);
 
   // EliminatedLoop requires additional handling.
   this->floatEliminatedLoop(floatArgs);
 
   this->floatDirectOrPointerChaseReductionStreams(floatArgs);
+  this->floatDirectStoreComputeStreams(floatArgs);
   this->floatIndirectReductionStreams(floatArgs);
   this->floatTwoLevelIndirectStoreComputeStreams(floatArgs);
 
@@ -343,8 +344,9 @@ void StreamFloatController::floatDirectAtomicComputeStreams(const Args &args) {
       }
       auto &valueBaseConfig = floatedMap.at(valueBaseS);
       auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
-      valueBaseConfig->addSendTo(config, reuse);
-      config->addBaseOn(valueBaseConfig, reuse);
+      auto skip = dynS->getBaseElemSkipCount(valueBaseS);
+      valueBaseConfig->addSendTo(config, reuse, skip);
+      config->addBaseOn(valueBaseConfig, reuse, skip);
     }
 
     // Remember the pseudo offloaded decision.
@@ -399,7 +401,7 @@ void StreamFloatController::floatPointerChaseStreams(const Args &args) {
     baseConfig->isOneIterationBehind = true;
     addrBaseDynS.setFloatedOneIterBehind(true);
     // We revert the usage edge, because in cache MemStream serves as root.
-    config->addUsedBy(baseConfig, 1 /* reuse */);
+    config->addUsedBy(baseConfig);
     if (!S->valueBaseStreams.empty()) {
       S_PANIC(S, "PointerChaseStream with ValueBaseStreams is not supported.");
     }
@@ -475,7 +477,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
     // Only dependent on this direct stream.
     auto config = S->allocateCacheConfigureData(dynS->configSeqNum,
                                                 true /* isIndirect */);
-    baseConfig->addUsedBy(config, 1 /* reuse */);
+    baseConfig->addUsedBy(config);
     // Add SendTo edges if the ValueBaseStream is not my AddrBaseStream.
     for (auto valueBaseS : S->valueBaseStreams) {
       if (valueBaseS == addrBaseS) {
@@ -483,8 +485,9 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
       }
       auto &valueBaseConfig = floatedMap.at(valueBaseS);
       auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
-      valueBaseConfig->addSendTo(config, reuse);
-      config->addBaseOn(valueBaseConfig, reuse);
+      auto skip = dynS->getBaseElemSkipCount(valueBaseS);
+      valueBaseConfig->addSendTo(config, reuse, skip);
+      config->addBaseOn(valueBaseConfig, reuse, skip);
     }
     DYN_S_DPRINTF(dynS->dynStreamId, "Offload as indirect.\n");
     StreamFloatPolicy::logS(*dynS) << "[Float] as indirect.\n" << std::flush;
@@ -498,7 +501,7 @@ void StreamFloatController::floatIndirectStreams(const Args &args) {
   }
 }
 
-void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
+void StreamFloatController::floatDirectStoreComputeStreams(
     const Args &args) {
   auto &floatedMap = args.floatedMap;
   for (auto dynS : args.dynStreams) {
@@ -509,38 +512,64 @@ void StreamFloatController::floatDirectStoreComputeOrUpdateStreams(
     if (!S->isDirectMemStream()) {
       continue;
     }
-    if (!S->isStoreComputeStream() && !S->isUpdateStream()) {
+    if (!S->isStoreComputeStream()) {
       continue;
     }
-    auto floatDecision = this->policy->shouldFloatStream(*dynS);
-    if (!floatDecision.shouldFloat) {
-      continue;
-    }
-    /**
-     * Check for all the value base streams.
-     */
-    bool allValueBaseSFloated = true;
-    for (auto valueBaseS : S->valueBaseStreams) {
-      if (!floatedMap.count(valueBaseS)) {
-        allValueBaseSFloated = false;
-        break;
-      }
-    }
-    if (!allValueBaseSFloated) {
-      continue;
-    }
-    // Add SendTo edge from value base streams to myself.
-    auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
-    for (auto valueBaseS : S->valueBaseStreams) {
-      auto &valueBaseConfig = floatedMap.at(valueBaseS);
-      auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
-      valueBaseConfig->addSendTo(config, reuse);
-      config->addBaseOn(valueBaseConfig, reuse);
-    }
-    S_DPRINTF(S, "Offload DirectStoreStream.\n");
-    floatedMap.emplace(S, config);
-    args.rootConfigVec.push_back(config);
+    this->floatDirectStoreComputeOrUpdateStream(args, dynS);
   }
+}
+
+void StreamFloatController::floatDirectUpdateStreams(
+    const Args &args) {
+  auto &floatedMap = args.floatedMap;
+  for (auto dynS : args.dynStreams) {
+    auto S = dynS->stream;
+    if (floatedMap.count(S)) {
+      continue;
+    }
+    if (!S->isDirectMemStream()) {
+      continue;
+    }
+    if (!S->isUpdateStream()) {
+      continue;
+    }
+    this->floatDirectStoreComputeOrUpdateStream(args, dynS);
+  }
+}
+
+void StreamFloatController::floatDirectStoreComputeOrUpdateStream(
+    const Args &args, DynStream *dynS) {
+  auto &floatedMap = args.floatedMap;
+  auto S = dynS->stream;
+  auto floatDecision = this->policy->shouldFloatStream(*dynS);
+  if (!floatDecision.shouldFloat) {
+    return;
+  }
+  /**
+   * Check for all the value base streams.
+   */
+  bool allValueBaseSFloated = true;
+  for (auto valueBaseS : S->valueBaseStreams) {
+    if (!floatedMap.count(valueBaseS)) {
+      allValueBaseSFloated = false;
+      break;
+    }
+  }
+  if (!allValueBaseSFloated) {
+    return;
+  }
+  // Add SendTo edge from value base streams to myself.
+  auto config = S->allocateCacheConfigureData(dynS->configSeqNum);
+  for (auto valueBaseS : S->valueBaseStreams) {
+    auto &valueBaseConfig = floatedMap.at(valueBaseS);
+    auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
+    auto skip = dynS->getBaseElemSkipCount(valueBaseS);
+    valueBaseConfig->addSendTo(config, reuse, skip);
+    config->addBaseOn(valueBaseConfig, reuse, skip);
+  }
+  S_DPRINTF(S, "Offload DirectStoreStream.\n");
+  floatedMap.emplace(S, config);
+  args.rootConfigVec.push_back(config);
 }
 
 void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
@@ -649,7 +678,7 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
     // Make all others send to that one.
     auto &baseConfigWithMostSenders =
         backBaseStreamConfigs.at(baseConfigIdxWithMostSenders);
-    baseConfigWithMostSenders->addUsedBy(reductionConfig, 1 /* reuse */);
+    baseConfigWithMostSenders->addUsedBy(reductionConfig);
     S_DPRINTF(S, "ReductionStream associated with %s, existing sender %d.\n",
               baseConfigWithMostSenders->dynamicId, maxSenders);
     StreamFloatPolicy::logS(*dynS)
@@ -662,8 +691,9 @@ void StreamFloatController::floatDirectOrPointerChaseReductionStreams(
       }
       auto &backBaseConfig = backBaseStreamConfigs.at(i);
       auto reuse = dynS->getBaseElemReuseCount(backBaseConfig->stream);
-      backBaseConfig->addSendTo(baseConfigWithMostSenders, reuse);
-      reductionConfig->addBaseOn(backBaseConfig, reuse);
+      auto skip = dynS->getBaseElemSkipCount(backBaseConfig->stream);
+      backBaseConfig->addSendTo(baseConfigWithMostSenders, reuse, skip);
+      reductionConfig->addBaseOn(backBaseConfig, reuse, skip);
     }
   }
 }
@@ -764,7 +794,7 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
   floatedMap.emplace(S, reductionConfig);
 
   // Add UsedBy edge to the BackBaseIndirectS.
-  backBaseIndirectConfig->addUsedBy(reductionConfig, 1 /* reuse */);
+  backBaseIndirectConfig->addUsedBy(reductionConfig);
   S_DPRINTF(S, "Float IndirectReductionStream associated with %s.\n",
             backBaseIndirectConfig->dynamicId);
   StreamFloatPolicy::logS(*dynS)
@@ -780,8 +810,9 @@ void StreamFloatController::floatIndirectReductionStream(const Args &args,
      */
     auto &backBaseDirectConfig = floatedMap.at(backBaseDirectS);
     auto reuse = dynS->getBaseElemReuseCount(backBaseDirectConfig->stream);
-    backBaseDirectConfig->addSendTo(backBaseDirectConfig, reuse);
-    reductionConfig->addBaseOn(backBaseDirectConfig, reuse);
+    auto skip = dynS->getBaseElemSkipCount(backBaseDirectConfig->stream);
+    backBaseDirectConfig->addSendTo(backBaseDirectConfig, reuse, skip);
+    reductionConfig->addBaseOn(backBaseDirectConfig, reuse, skip);
     StreamFloatPolicy::logS(*dynS)
         << "[Float] as IndirectReduction with BackBaseDirectS "
         << backBaseDirectConfig->dynamicId << ".\n"
@@ -855,7 +886,7 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
   auto myConfig =
       S->allocateCacheConfigureData(dynS->configSeqNum, true /* isIndirect */);
   floatedMap.emplace(S, myConfig);
-  addrBaseConfig->addUsedBy(myConfig, 1 /* Reuse */);
+  addrBaseConfig->addUsedBy(myConfig);
 
   StreamFloatPolicy::logS(*dynS)
       << "[Float] as Two-Level IndirectStoreCompute associated with "
@@ -866,8 +897,9 @@ void StreamFloatController::floatTwoLevelIndirectStoreComputeStream(
   for (auto valueBaseS : S->valueBaseStreams) {
     if (valueBaseS == addrRootS) {
       auto reuse = dynS->getBaseElemReuseCount(valueBaseS);
-      addrRootConfig->addSendTo(addrRootConfig, reuse);
-      myConfig->addBaseOn(addrRootConfig, reuse);
+      auto skip = dynS->getBaseElemSkipCount(valueBaseS);
+      addrRootConfig->addSendTo(addrRootConfig, reuse, skip);
+      myConfig->addBaseOn(addrRootConfig, reuse, skip);
       StreamFloatPolicy::logS(*dynS)
           << "[Float] as Two-Level IndirectStoreCompute based on "
           << addrRootConfig->dynamicId << "\n"

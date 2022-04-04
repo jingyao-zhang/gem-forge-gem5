@@ -19,7 +19,8 @@ bool StreamRegionController::canSkipAllocatingDynS(StaticRegion &staticRegion,
 
   int64_t maxTailElemIdx = -1;
   if (stepRootDynS.hasTotalTripCount()) {
-    maxTailElemIdx = stepRootDynS.getTotalTripCount() + 1;
+    maxTailElemIdx =
+        stepRootDynS.getTotalTripCount() + stepRootDynS.stepElemCount;
   } else {
 
     /**
@@ -203,14 +204,17 @@ void StreamRegionController::allocateElements(StaticRegion &staticRegion) {
           maxAllocSize > allocSize) {
         auto nextEntryIdx = allocatingStepRootDynS->FIFOIdx.entryIdx;
         auto tripCount = allocatingStepRootDynS->getTotalTripCount();
-        auto maxTripCount = tripCount == 0 ? 0 : (tripCount + 1);
+        auto stepElemCount = allocatingStepRootDynS->stepElemCount;
+        auto maxTripCount = tripCount == 0 ? 0 : (tripCount + stepElemCount);
         if (nextEntryIdx >= maxTripCount) {
           // We are already overflowed, set maxAllocSize to allocSize to stop
           // allocating. NOTE: This should not happen at all.
           maxAllocSize = allocSize;
         } else {
-          maxAllocSize =
-              std::min(maxAllocSize, (maxTripCount - nextEntryIdx) + allocSize);
+          auto elemUntilTripCount = maxTripCount - nextEntryIdx;
+          assert(elemUntilTripCount % stepElemCount == 0);
+          maxAllocSize = std::min(
+              maxAllocSize, elemUntilTripCount / stepElemCount + allocSize);
         }
       }
       /**

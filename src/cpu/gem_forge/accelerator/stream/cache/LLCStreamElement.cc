@@ -151,8 +151,10 @@ void LLCStreamElement::setComputedValue(const StreamValue &value) {
 int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,
                                      int &rangeOffset,
                                      int &elementOffset) const {
-  if (this->vaddr == 0) {
-    panic("Try to computeOverlap without elementVAddr.");
+  if (this->S->isMemStream()) {
+    if (this->vaddr == 0) {
+      panic("Try to computeOverlap without elementVAddr.");
+    }
   }
   // Compute the overlap between the element and the slice.
   Addr overlapLHS = std::max(this->vaddr, rangeVAddr);
@@ -173,28 +175,36 @@ void LLCStreamElement::extractElementDataFromSlice(
   /**
    * Extract the element data and update the LLCStreamElement.
    */
-  auto elementIdx = this->idx;
-  auto elementSize = this->size;
-  if (this->vaddr == 0) {
-    LLC_ELEMENT_PANIC(this, "Cannot extract data without vaddr.");
+  auto elemIdx = this->idx;
+  auto elemSize = this->size;
+  if (this->S->isMemStream()) {
+    if (this->vaddr == 0) {
+      LLC_ELEMENT_PANIC(this, "Cannot extract data without vaddr.");
+    }
+  } else {
+    assert(this->vaddr == 0 && "Non-Mem Stream with Non-Zero VAddr.");
+    assert(sliceId.vaddr == 0 && "Non-Mem Stream with Slice VAddr.");
   }
 
   int sliceOffset;
-  int elementOffset;
+  int elemOffset;
   int overlapSize = this->computeOverlap(sliceId.vaddr, sliceId.getSize(),
-                                         sliceOffset, elementOffset);
+                                         sliceOffset, elemOffset);
   assert(overlapSize > 0 && "Empty overlap.");
-  Addr overlapLHS = this->vaddr + elementOffset;
+  if (!this->S->isMemStream()) {
+    assert(overlapSize == elemSize && "Non-Mem Stream with Multi-Slice Elem.");
+  }
+  Addr overlapLHS = this->vaddr + elemOffset;
 
-  LLC_SLICE_DPRINTF(
-      sliceId, "Received elem %lu size %d [%lu, %lu) slice [%lu, %lu).\n",
-      elementIdx, elementSize, elementOffset, elementOffset + overlapSize,
-      sliceOffset, sliceOffset + overlapSize);
+  LLC_SLICE_DPRINTF(sliceId,
+                    "Received elem %lu size %d [%lu, %lu) slice [%lu, %lu).\n",
+                    elemIdx, elemSize, elemOffset, elemOffset + overlapSize,
+                    sliceOffset, sliceOffset + overlapSize);
 
   // Get the data from the cache line.
   auto data = dataBlock.getData(overlapLHS % RubySystem::getBlockSizeBytes(),
                                 overlapSize);
-  memcpy(this->getUInt8Ptr(elementOffset), data, overlapSize);
+  memcpy(this->getUInt8Ptr(elemOffset), data, overlapSize);
 
   // Mark these bytes ready.
   this->readyBytes += overlapSize;
@@ -202,8 +212,8 @@ void LLCStreamElement::extractElementDataFromSlice(
     LLC_SLICE_PANIC(
         sliceId,
         "Too many ready bytes %lu Overlap [%lu, %lu), ready %d > size %d.",
-        elementIdx, elementOffset, elementOffset + overlapSize,
-        this->readyBytes, this->size);
+        elemIdx, elemOffset, elemOffset + overlapSize, this->readyBytes,
+        this->size);
   }
   if (this->isReady()) {
     this->valueReadyCycle = this->mlcController->curCycle();
