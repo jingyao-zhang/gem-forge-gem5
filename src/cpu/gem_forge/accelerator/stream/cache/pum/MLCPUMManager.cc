@@ -1072,7 +1072,7 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
   bool allGroupsDone = true;
   bool someGroupsDone = false;
 
-  for (const auto &group : context.pumGroups) {
+  for (auto &group : context.pumGroups) {
     if (!group.appliedPUM) {
       continue;
     }
@@ -1097,7 +1097,7 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
       }
     }
     if (group.reduceConfig) {
-      this->sendBackFinalReductionValue(context, group);
+      this->completeFinalReduction(context, group);
     }
 
     auto outerTripCount = 1;
@@ -1217,17 +1217,10 @@ void MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
   }
 }
 
-void MLCPUMManager::sendBackFinalReductionValue(
-    const PUMContext &context, const PUMComputeStreamGroup &group) {
+void MLCPUMManager::completeFinalReduction(PUMContext &context,
+                                           PUMComputeStreamGroup &group) {
 
-  CacheStreamConfigureDataPtr reduceConfig = nullptr;
-  for (const auto &dep : group.computeConfig->depEdges) {
-    if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy &&
-        dep.data->stream->isReduction()) {
-      reduceConfig = dep.data;
-    }
-  }
-
+  auto reduceConfig = group.reduceConfig;
   assert(reduceConfig && "No ReduceConfig.");
 
   /**
@@ -1262,14 +1255,82 @@ void MLCPUMManager::sendBackFinalReductionValue(
 
     auto realElemIdx = elemIdx + outerElemOffset;
 
-    StreamValue fakeValue;
-    auto size = sizeof(fakeValue);
-    memset(fakeValue.uint8Ptr(), 0, size);
-    dynCoreS->setInnerFinalValue(realElemIdx, fakeValue);
+    // So far just some fake value.
+    group.reductionResults.emplace_back(realElemIdx);
+
     MLC_S_DPRINTF(dynId,
-                  "[PUM] Notify final reduction OuterElemOffset %ld "
+                  "[PUM] Set ReductionResult OuterElemOffset %ld "
                   "InnerTripCount %ld ReducedTripCount %ld ElemIdx %ld.\n",
                   outerElemOffset, innerTripCount, reducedTripCount,
                   realElemIdx);
   }
+
+  while (!group.reductionResults.empty()) {
+    this->sendOneReductionResult(context, group);
+  }
+}
+
+void MLCPUMManager::sendOneReductionResult(PUMContext &context,
+                                           PUMComputeStreamGroup &group) {
+  if (group.reductionResults.empty()) {
+    return;
+  }
+
+  const auto &result = group.reductionResults.front();
+
+  const auto &reduceConfig = group.reduceConfig;
+  assert(reduceConfig && "No ReduceConfig.");
+  const auto &dynId = reduceConfig->dynamicId;
+
+  /**
+   * Notify the final reduction value.
+   * For now just set some fake value.
+   */
+
+  if (reduceConfig->finalValueNeededByCore) {
+    auto S = reduceConfig->stream;
+    auto dynCoreS = S->getDynStream(dynId);
+    if (!dynCoreS) {
+      MLC_S_PANIC_NO_DUMP(
+          dynId,
+          "[PUM] CoreDynS released before receiving FinalReductionValue.");
+    }
+
+    dynCoreS->setInnerFinalValue(result.elemIdx, result.value);
+    MLC_S_DPRINTF(dynId,
+                  "[PUM] SendBack ReductionResult ElemIdx %ld Value %s.\n",
+                  result.elemIdx, result.value);
+  }
+
+  DynStreamSliceId sliceId;
+  sliceId.vaddr = 0;
+  sliceId.size = reduceConfig->elementSize;
+  sliceId.getDynStrandId() =
+      DynStrandId(reduceConfig->dynamicId, reduceConfig->strandIdx,
+                  reduceConfig->totalStrands);
+  sliceId.getStartIdx() = result.elemIdx;
+  sliceId.getEndIdx() = result.elemIdx + 1;
+
+  DataBlock dataBlock;
+  dataBlock.setData(result.value.uint8Ptr(), 0, reduceConfig->elementSize);
+  for (const auto &edge : reduceConfig->depEdges) {
+
+    if (edge.type != CacheStreamConfigureData::DepEdge::Type::SendTo) {
+      continue;
+    }
+
+    const auto &recvConfig = edge.data;
+    auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+        result.elemIdx, edge.reuse, edge.skip);
+
+    MLC_S_DPRINTF(dynId,
+                  "[PUM] Send ReductionResult ElemIdx %ld Value %s To %s "
+                  "RecvElem %lu.\n",
+                  result.elemIdx, result.value, recvConfig->dynamicId,
+                  recvElemIdx);
+    this->mlcSE->issueStreamDataToLLC(sliceId, dataBlock, recvConfig,
+                                      recvElemIdx, reduceConfig->elementSize);
+  }
+
+  group.reductionResults.pop_front();
 }

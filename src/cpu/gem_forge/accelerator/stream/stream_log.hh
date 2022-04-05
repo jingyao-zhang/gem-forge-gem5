@@ -83,6 +83,8 @@
 #define MLC_SLICE_PANIC(sliceId, format, args...)                              \
   this->panicDump();                                                           \
   panic(MLC_SLICE_MSG(sliceId, format, ##args))
+#define MLC_SLICE_PANIC_NO_DUMP(sliceId, format, args...)                      \
+  panic(MLC_SLICE_MSG(sliceId, format, ##args))
 
 #define LLC_S_MSG(streamId, format, args...)                                   \
   "[%s_SE%d]%s: " format, this->curRemoteMachineType(), this->curRemoteBank(), \

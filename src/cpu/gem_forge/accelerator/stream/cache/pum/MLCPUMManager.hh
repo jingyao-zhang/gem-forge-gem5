@@ -94,6 +94,16 @@ private:
 
     // Track the next OuterIter when splitting OuterDim.
     int64_t nextOuterIter = 0;
+
+    /**
+     * States for reduction results.
+     */
+    struct ReductionResult {
+      uint64_t elemIdx;
+      StreamValue value;
+      ReductionResult(uint64_t _elemIdx) : elemIdx(_elemIdx) { value.fill(0); }
+    };
+    std::list<ReductionResult> reductionResults;
   };
 
   /**
@@ -226,8 +236,17 @@ private:
   PUMContext &getFirstKickedContext();
   PUMContext *getFirstInitializedContext();
 
-  void sendBackFinalReductionValue(const PUMContext &context,
-                                   const PUMComputeStreamGroup &group);
+  /**
+   * @brief Complete one round of reduction.
+   *
+   * @param context PUMContext.
+   * @param group PUMComputeStreamGroup with the reduction
+   */
+  void completeFinalReduction(PUMContext &context,
+                              PUMComputeStreamGroup &group);
+
+  void sendOneReductionResult(PUMContext &context,
+                              PUMComputeStreamGroup &group);
 };
 
 #endif

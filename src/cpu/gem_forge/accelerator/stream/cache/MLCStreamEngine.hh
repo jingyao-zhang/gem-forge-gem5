@@ -75,6 +75,16 @@ public:
                                    MachineType brokenMachineType);
 
   /**
+   * Issue a StreamData to LLC. Used to forwarding some reduction results from
+   * MLCPUMManager to LLCStreams, e.g. inner-product based
+   * matrix-multiplication.
+   */
+  void issueStreamDataToLLC(const DynStreamSliceId &sliceId,
+                            const DataBlock &dataBlock,
+                            const CacheStreamConfigureDataPtr &recvConfig,
+                            uint64_t recvStreamElemIdx, int payloadSize);
+
+  /**
    * API to get the MLCDynStream.
    */
   MLCDynStream *getStreamFromStrandId(const DynStrandId &id);

@@ -387,4 +387,52 @@ void MLCStreamEngine::receiveStreamTotalTripCount(
   dynS->setTotalTripCount(totalTripCount, brokenPAddr, brokenMachineType);
 }
 
+void MLCStreamEngine::issueStreamDataToLLC(
+    const DynStreamSliceId &sliceId, const DataBlock &dataBlock,
+    const CacheStreamConfigureDataPtr &recvConfig, uint64_t recvStreamElemIdx,
+    int payloadSize) {
+
+  auto recvElemVAddr =
+      recvConfig->addrGenCallback
+          ->genAddr(recvStreamElemIdx, recvConfig->addrGenFormalParams,
+                    getStreamValueFail)
+          .front();
+
+  // Check that receiver does not across lines.
+  auto recvElemVAddrLine = makeLineAddress(recvElemVAddr);
+
+  Addr recvElemPAddrLine;
+
+  if (recvConfig->stream->getCPUDelegator()->translateVAddrOracle(
+          recvElemVAddrLine, recvElemPAddrLine)) {
+    // Now we enqueue the translation request.
+    auto recvElemMachineType =
+        recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
+
+    auto dstMachineId = this->controller->mapAddressToLLCOrMem(
+        recvElemPAddrLine, recvElemMachineType);
+
+    auto msg = std::make_shared<RequestMsg>(this->controller->clockEdge());
+    msg->m_addr = recvElemPAddrLine;
+    msg->m_Type = CoherenceRequestType_STREAM_FORWARD;
+    msg->m_Requestors.add(MachineID(MachineType::MachineType_L1Cache,
+                                    sliceId.getDynStreamId().coreId));
+    msg->m_Destination.add(dstMachineId);
+    msg->m_MessageSize = this->controller->getMessageSizeType(payloadSize);
+    msg->m_sliceIds.add(sliceId);
+    msg->m_DataBlk = dataBlock;
+    msg->m_sendToStrandId =
+        recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+
+    Cycles latency(1);
+    this->requestToLLCMsgBuffer->enqueue(
+        msg, this->controller->clockEdge(),
+        this->controller->cyclesToTicks(latency));
+
+  } else {
+    MLC_SLICE_PANIC_NO_DUMP(sliceId, "Translation fault on the RecvStream: %s.",
+                            recvConfig->dynamicId);
+  }
+}
+
 void MLCStreamEngine::print(std::ostream &out) const {}
