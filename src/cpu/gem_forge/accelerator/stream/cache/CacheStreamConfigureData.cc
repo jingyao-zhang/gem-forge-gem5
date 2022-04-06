@@ -18,6 +18,60 @@ CacheStreamConfigureData::CacheStreamConfigureData(
   assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
 
+CacheStreamConfigureData::CacheStreamConfigureData(
+    const CacheStreamConfigureData &other) {
+  this->operator=(other);
+}
+
+CacheStreamConfigureData::~CacheStreamConfigureData() {}
+
+CacheStreamConfigureData &
+CacheStreamConfigureData::operator=(const CacheStreamConfigureData &other) {
+#define copyToSelf(X) this->X = other.X
+  copyToSelf(stream);
+  copyToSelf(dynamicId);
+  copyToSelf(elementSize);
+  copyToSelf(floatPlan);
+  copyToSelf(initVAddr);
+  copyToSelf(initPAddr);
+  copyToSelf(initPAddrValid);
+  copyToSelf(mlcBufferNumSlices);
+  copyToSelf(isPUMPrefetch);
+  copyToSelf(isPseudoOffload);
+  copyToSelf(rangeSync);
+  copyToSelf(rangeCommit);
+  copyToSelf(addrGenFormalParams);
+  copyToSelf(addrGenCallback);
+  copyToSelf(predFormalParams);
+  copyToSelf(predCallback);
+  copyToSelf(totalTripCount);
+  copyToSelf(hasBeenCuttedByMLC);
+  copyToSelf(isPredicated);
+  copyToSelf(isPredicatedTrue);
+  copyToSelf(predicateStreamId);
+  copyToSelf(loadFormalParams);
+  copyToSelf(storeCallback);
+  copyToSelf(loadFormalParams);
+  copyToSelf(loadCallback);
+  copyToSelf(loopBoundFormalParams);
+  copyToSelf(loopBoundCallback);
+  copyToSelf(loopBoundRet);
+  copyToSelf(reductionInitValue);
+  copyToSelf(finalValueNeededByCore);
+  copyToSelf(isPointerChase);
+  copyToSelf(shouldBeSlicedToCacheLines);
+  copyToSelf(isOneIterationBehind);
+  copyToSelf(depEdges);
+  copyToSelf(baseEdges);
+  copyToSelf(strandIdx);
+  copyToSelf(totalStrands);
+  copyToSelf(strandSplit);
+  copyToSelf(streamConfig);
+  copyToSelf(initCreditedIdx);
+#undef copyToSelf
+  return *this;
+}
+
 void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data) {
   int reuse = 1;
   int skip = 0;

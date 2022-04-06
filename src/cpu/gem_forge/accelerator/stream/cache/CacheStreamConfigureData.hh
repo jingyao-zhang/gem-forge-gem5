@@ -26,9 +26,11 @@ public:
                            int _elementSize,
                            const DynStreamFormalParamV &_addrGenFormalParams,
                            AddrGenCallbackPtr _addrGenCallback);
-  CacheStreamConfigureData(const CacheStreamConfigureData &other) = delete;
-  CacheStreamConfigureData &
-  operator=(const CacheStreamConfigureData &other) = delete;
+
+  CacheStreamConfigureData(const CacheStreamConfigureData &other);
+  ~CacheStreamConfigureData();
+  CacheStreamConfigureData &operator=(const CacheStreamConfigureData &other);
+
   CacheStreamConfigureData(CacheStreamConfigureData &&other) = delete;
   CacheStreamConfigureData &
   operator=(CacheStreamConfigureData &&other) = delete;
@@ -50,6 +52,12 @@ public:
 
   // Size of the MLC buffer.
   int mlcBufferNumSlices = 32;
+
+  /**
+   * Uside to indicate a stream that only needs to be prefeteched into the LLC
+   * and NOT written back to MLC.
+   */
+  bool isPUMPrefetch = false;
 
   /**
    * Used to only offload the indirect stream,
