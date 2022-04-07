@@ -167,7 +167,9 @@ void MLCDynDirectStream::advanceStream() {
     auto ISElements = dynIS->getTailSliceIdx() - dynIS->getHeadSliceIdx();
     if (ISElements > maxISElements) {
       MLC_S_DPRINTF(dynIS->getDynStrandId(),
-                    "[MLCAdvance] New MaxISElements %llu.\n", ISElements);
+                    "[MLCAdvance] New MaxISElements %lu %lu - %lu.\n",
+                    ISElements, dynIS->getHeadSliceIdx(),
+                    dynIS->getTailSliceIdx());
       maxISElements = ISElements;
     }
   }

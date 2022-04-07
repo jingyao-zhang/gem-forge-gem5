@@ -66,6 +66,7 @@ private:
   struct PatternInfo {
     AffinePattern pattern;
     AffinePattern pumTile;
+    Addr regionVAddr = 0;
     int scalarElemSize = 0;
     AffinePatternVecT atomicPatterns;
     AffinePatternVecT splitOuterDims;
@@ -73,6 +74,10 @@ private:
 
     AffinePattern getPatternAdjustedByOuterIter(int64_t patternIdx,
                                                 int64_t outerIter) const;
+    const AffinePattern &getSingleAtomicPat() const {
+      assert(this->atomicPatterns.size() == 1);
+      return this->atomicPatterns.front();
+    }
   };
 
   using StreamPatternInfoMapT = std::unordered_map<Stream *, PatternInfo>;
@@ -87,6 +92,12 @@ private:
     bool outerDimSplitted = false;
     bool canApplyPUM = false;
     bool appliedPUM = false;
+
+    /**
+     * Information about offloaded PUMReducetion stream.
+     */
+    ConfigPtr pumDirectConfig;
+    ConfigPtr pumReduceConfig;
 
     /**
      * States during PUM execution.
@@ -109,10 +120,21 @@ private:
   /**
    * Track states of PUM.
    */
+  static constexpr int64_t InvalidPUMContextId =
+      CacheStreamConfigureData::InvalidPUMContextId;
+
   struct PUMContext {
+
+  private:
+    static int64_t nextContextId;
+    static int64_t allocateContextId() { return nextContextId++; }
+
+  public:
     /**
      * Information collected during analysis whether we can apply PUM or not.
      */
+    // Unique context Id.
+    const int64_t contextId = allocateContextId();
     // Records all the configs.
     CacheStreamConfigureVec configs;
     // DynamicStreamId that are now completely handled as PUM.
@@ -164,6 +186,14 @@ private:
                        const PUMComputeStreamGroup &group);
 
   /**
+   * Add the special reduction stream if the PUMComputeStreamGroup contains
+   * reduction. This is a normal offloaded stream with special step pattern that
+   * skips already reduced elements.
+   */
+  void addPUMReduceStream(PUMContext &context, CacheStreamConfigureVec *configs,
+                          PUMComputeStreamGroup &group);
+
+  /**
    * Check if PUM can be applied to a PUMComputeStreamGroup.
    */
   bool canApplyPUMToGroup(PUMContext &context, PUMComputeStreamGroup &group);
@@ -205,6 +235,13 @@ private:
                                   int scalarElemSize);
 
   /**
+   * @brief Convert an AffinePattern back to LinearAddrGen params.
+   * This needs the starting VAddr of the array and the data type size.
+   */
+  DynStreamFormalParamV convertAffinePatternToStreamFormalParams(
+      const AffinePattern &pattern, Addr arrayVAddr, int64_t memElemSize) const;
+
+  /**
    * Preprocess stream patterns to make them suitable for PUM.
    */
   void preprocessPatternsInGroup(PUMContext &context,
@@ -233,8 +270,25 @@ private:
    */
   void completeOneComputeRound(PUMContext &context);
 
+  /**
+   * @brief Try to start another round of computation. Check that all consuming
+   * streams have caught up. So far this is only used for PUMReduction.
+   */
+  void tryKickNextComputeRound(PUMContext &context);
+
+  struct TryKickContextCallback {
+    MLCPUMManager *manager;
+    int64_t contextId;
+    TryKickContextCallback(MLCPUMManager *_manager, int64_t _contextId)
+        : manager(_manager), contextId(_contextId) {}
+    void operator()(const DynStreamId &dynId, uint64_t elemIdx) {
+      manager->tryKickNextComputeRound(manager->getContextById(contextId));
+    }
+  };
+
   PUMContext &getFirstKickedContext();
   PUMContext *getFirstInitializedContext();
+  PUMContext &getContextById(int64_t contextId);
 
   /**
    * @brief Complete one round of reduction.

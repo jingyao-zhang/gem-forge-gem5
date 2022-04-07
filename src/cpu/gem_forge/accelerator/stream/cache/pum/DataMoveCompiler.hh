@@ -87,8 +87,7 @@ public:
 
   bool isSubRegion(const AffinePattern &pattern,
                    bool allowReuse = false) const {
-    return pattern.is_canonical_sub_region_to_array_size(array_sizes,
-                                                         allowReuse);
+    return pattern.isSubRegionToArraySize(array_sizes, allowReuse);
   }
 
   /**

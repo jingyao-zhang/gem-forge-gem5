@@ -18,6 +18,8 @@
   panic("[MLC_SE%d]: [PUM] " format, this->controller->getMachineID().num,     \
         ##args)
 
+int64_t MLCPUMManager::PUMContext::nextContextId = 0;
+
 AffinePattern MLCPUMManager::PatternInfo::getPatternAdjustedByOuterIter(
     int64_t patternIdx, int64_t outerIter) const {
   assert(patternIdx < this->atomicPatterns.size());
@@ -213,6 +215,7 @@ bool MLCPUMManager::canApplyPUMToGroup(PUMContext &context,
     patternInfo.regionName = streamNUCARegion.name;
     patternInfo.pumTile = rangeMap->pumTile;
     patternInfo.pattern = pattern;
+    patternInfo.regionVAddr = regionVAddr;
     patternInfo.scalarElemSize = scalarElemSize;
     patternInfo.atomicPatterns =
         this->decoalesceAndDevectorizePattern(config, pattern, scalarElemSize);
@@ -412,6 +415,217 @@ void MLCPUMManager::erasePUMConfigs(PUMContext &context,
   }
 }
 
+void MLCPUMManager::addPUMReduceStream(PUMContext &context,
+                                       CacheStreamConfigureVec *configs,
+                                       PUMComputeStreamGroup &group) {
+  if (!group.appliedPUM) {
+    return;
+  }
+  if (!group.reduceConfig) {
+    return;
+  }
+
+  /**
+   * We will use a special ReduceStream to collect partial result from PUM
+   * reduction. Specifically, we will copy the DirectStream and ReductionStream
+   * configuration, with the following changes:
+   *
+   * 1. The pattern is expanded to align with tile boundaries, and try to reduce
+   * M elements with in that tile in that dimension. For example, if we have:
+   *  - a 2D array of size MxN
+   *  - tile size TmxTn
+   *  - reduce dimension 0 (column)
+   *  - reduce the sub-region [R1, R2) x [C1, C2)
+   *  - PUM will produce P partial results in each tile.
+   *
+   * First we align the sub-region to tile boundary:
+   *   TR1 = (R1 / Tm) * Tm, TR2 = ((R2 + Tm - 1) / Tm) * Tm
+   *   TC1 = (C1 / Tn) * Tn, TC2 = ((C2 + Tn - 1) / Tn) * Tn
+   *
+   * Then we try to reduce P results from each tile:
+   *   TR1*N+TC1 : 1 : P : Tn : (TC2-TC1)/Tn : N : TR2-TR1
+   *
+   * The second dimension is when we get the final reduction
+   *
+   * 2. We will have to properly change the edges between streams.
+   *  - The NewReduceConfig and NewDirectConfig should point to each other,
+   *  - NewReduceConfig should only use NewDirectConfig.
+   *  - Any user of NewReduceConfig is kept the same.
+   *
+   * 3. We should really split the compuation into Reduce and Non-Reduce part,
+   * and let PUM handle all Non-Reduce part while partial Reduce. Then here we
+   * should change the computation of NewReduceConfig to only do Reduce part.
+   *
+   * However, right now we don;t have support to split the computation in the
+   * compiler, thus here we replace it with an empty function.
+   */
+
+  const auto &directConfig = group.computeConfig;
+  const auto &reduceConfig = group.reduceConfig;
+
+  /**
+   * @brief Make a copy of both configurations, and clear the edges.
+   */
+  auto newDirectConfig =
+      std::make_shared<CacheStreamConfigureData>(*directConfig);
+  auto newReduceConfig =
+      std::make_shared<CacheStreamConfigureData>(*reduceConfig);
+  newDirectConfig->clearEdges();
+  newReduceConfig->clearEdges();
+
+  const auto &patInfo = context.patternInfo.at(directConfig->stream);
+
+  auto tileAndArraySize = patInfo.pumTile.getTileAndArraySize();
+  auto tileSizes = tileAndArraySize.first;
+  auto arraySizes = tileAndArraySize.second;
+
+  const auto &atomicPat = patInfo.getSingleAtomicPat();
+  assert(atomicPat.isSubRegionToArraySize(arraySizes));
+
+  auto startPos = atomicPat.getSubRegionStartToArraySize(arraySizes);
+  auto trips = atomicPat.getTrips();
+
+  /**
+   * @brief Align ONLY the reduced dimension to the tile boundary.
+   */
+  AffinePattern::IntVecT tileAlignedStartPos = startPos;
+  AffinePattern::IntVecT tileAlignedTrips = trips;
+  const int reducedDim = 0;
+  {
+    auto p = startPos.at(reducedDim);
+    auto t = tileSizes.at(reducedDim);
+    auto s = trips.at(reducedDim);
+    auto q = p + s;
+
+    auto pTile = (p / t) * t;
+    auto qTile = ((q + t - 1) / t) * t;
+
+    tileAlignedStartPos.at(reducedDim) = pTile;
+    tileAlignedTrips.at(reducedDim) = qTile - pTile;
+  }
+
+  // Construct the pattern.
+  auto tileAlignedAtomicPat = AffinePattern::constructSubRegion(
+      arraySizes, tileAlignedStartPos, tileAlignedTrips);
+
+  // Split the pattern at the first dimension to accumuate P partial results
+  // from each tile. So far we assume we have (P = 1) partial result per tile.
+  const int64_t partialResultsPerTile = 1;
+  {
+
+    auto paramSplitDimIter = tileAlignedAtomicPat.params.begin() + reducedDim;
+    paramSplitDimIter->stride = tileSizes.at(reducedDim);
+    paramSplitDimIter->trip /= tileSizes.at(reducedDim);
+
+    tileAlignedAtomicPat.params.insert(
+        paramSplitDimIter, AffinePattern::Param(1, partialResultsPerTile));
+  }
+
+  MLC_S_DPRINTF(directConfig->dynamicId,
+                "[PUMReduce] TilePat %s ReducePat %s AlignedToTile %s.\n",
+                patInfo.pumTile, atomicPat, tileAlignedAtomicPat);
+
+  /**
+   * @brief We needed to add back splitted outer dimension.
+   * Also, we need to set the information to coordinate PUMReduceStream and
+   * PUMEngine.
+   */
+  newDirectConfig->pumContextId = context.contextId;
+  newDirectConfig->pumElemPerSync = tileAlignedAtomicPat.get_total_trip();
+  if (!patInfo.splitOuterDims.empty()) {
+    const auto &splitDims = patInfo.splitOuterDims.front();
+    tileAlignedAtomicPat.params.insert(tileAlignedAtomicPat.params.end(),
+                                       splitDims.params.begin(),
+                                       splitDims.params.end());
+    MLC_S_DPRINTF(directConfig->dynamicId,
+                  "[PUMReduce] TileAlignedPat Added SplitOuterDim %s -> %s.\n",
+                  splitDims, tileAlignedAtomicPat);
+  }
+
+  auto addrGenFormalParams = this->convertAffinePatternToStreamFormalParams(
+      tileAlignedAtomicPat, patInfo.regionVAddr, patInfo.scalarElemSize);
+
+  newDirectConfig->addrGenFormalParams = addrGenFormalParams;
+
+  /**
+   * Do not forget to adjust the TripCount.
+   */
+  auto newInnerTripCount = tileAlignedTrips.at(reducedDim) /
+                           tileSizes.at(reducedDim) * partialResultsPerTile;
+  newDirectConfig->totalTripCount = tileAlignedAtomicPat.get_total_trip();
+  newDirectConfig->innerTripCount = newInnerTripCount;
+  newReduceConfig->totalTripCount = tileAlignedAtomicPat.get_total_trip();
+  newReduceConfig->innerTripCount = newInnerTripCount;
+
+  MLC_S_DPRINTF(directConfig->dynamicId,
+                "[PUMReduce]   NewTotalTrip %ld NewInnerTrip %ld.\n",
+                newDirectConfig->totalTripCount,
+                newDirectConfig->innerTripCount);
+
+  /**
+   * 2. Adjust the edges of our new configurations.
+   */
+  newDirectConfig->addUsedBy(newReduceConfig);
+
+  /**
+   * Copy any dependence on the ReduceConfig. Be careful, here we will check
+   * that reuse is 1 and skip is the original InnerTripCount. And we will change
+   * the skip to our new InnerTripCount.
+   */
+  for (const auto &dep : reduceConfig->depEdges) {
+    assert(dep.type == CacheStreamConfigureData::DepEdge::Type::SendTo);
+    auto recvConfig = dep.data;
+    assert(recvConfig);
+    assert(dep.reuse == 1);
+    assert(dep.skip == directConfig->innerTripCount);
+
+    auto newSkip = newReduceConfig->innerTripCount;
+    newReduceConfig->addSendTo(recvConfig, dep.reuse, newSkip);
+
+    // Also replace the edge in RecvConfig.
+    bool replacedBaseEdge = false;
+    for (auto &base : recvConfig->baseEdges) {
+      if (base.dynStreamId == reduceConfig->dynamicId) {
+        base.data = newReduceConfig;
+        base.skip = newSkip;
+        replacedBaseEdge = true;
+        break;
+      }
+    }
+    assert(replacedBaseEdge && "Failed to replace BaseEdge.");
+  }
+
+  // Copy the new ReduceStream.
+  group.pumDirectConfig = newDirectConfig;
+  group.pumReduceConfig = newReduceConfig;
+
+  // ! Hack: Also make the ReduceFormalParams all invariant with value 1.
+  for (auto &reduceFormalParam : newReduceConfig->addrGenFormalParams) {
+    if (reduceFormalParam.isInvariant) {
+      continue;
+    }
+    reduceFormalParam.isInvariant = true;
+    reduceFormalParam.invariant.uint64() = 1;
+  }
+
+  /**
+   * Insert back the new reduce configurations. Also remove it from
+   * PurePUMConfigs.
+   */
+  configs->push_back(newDirectConfig);
+
+  bool erasedPurePUMId = false;
+  for (auto iter = context.purePUMStreamIds.begin();
+       iter != context.purePUMStreamIds.end(); ++iter) {
+    if ((*iter) == directConfig->dynamicId) {
+      context.purePUMStreamIds.erase(iter);
+      erasedPurePUMId = true;
+      break;
+    }
+  }
+  assert(erasedPurePUMId);
+}
+
 void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
 
   if (this->controller->myParams->stream_pum_mode != 1) {
@@ -453,8 +667,11 @@ void MLCPUMManager::receiveStreamConfigure(PacketPtr pkt) {
    * can continue to handle normal streams.
    */
   auto normalConfigs = *(pkt->getPtr<CacheStreamConfigureVec *>());
-  for (const auto &group : context.pumGroups) {
+  for (auto &group : context.pumGroups) {
     this->erasePUMConfigs(context, normalConfigs, group);
+  }
+  for (auto &group : context.pumGroups) {
+    this->addPUMReduceStream(context, normalConfigs, group);
   }
 
   // Really compile for the first time.
@@ -483,7 +700,8 @@ void MLCPUMManager::configurePUMEngine(PUMContext &context) {
       auto llcCntrl =
           AbstractStreamAwareController::getController(dstMachineId);
       auto llcSE = llcCntrl->getLLCStreamEngine();
-      llcSE->getPUMEngine()->configure(this, context.commands);
+      llcSE->getPUMEngine()->configure(this, context.contextId,
+                                       context.commands);
     }
   }
   assert(context.state == PUMContext::StateE::Initialized);
@@ -655,7 +873,7 @@ void MLCPUMManager::compileCompute(PUMContext &context,
     command.type = "cmp";
     command.opClass = inst->opClass();
     // Default bitline_mask is for the entire tile.
-    command.bitline_mask = AffinePattern::construct_canonical_sub_region(
+    command.bitline_mask = AffinePattern::constructSubRegion(
         compiler.tile_sizes,
         AffinePattern::IntVecT(compiler.tile_sizes.size(), 0) /* starts */,
         compiler.tile_sizes);
@@ -800,9 +1018,8 @@ void MLCPUMManager::compileReduction(PUMContext &context,
     commands.back().type = "intra-array";
     commands.back().bitline_dist = -curDist;
     // Generate all active bitline-mask according to tile_sizes.
-    commands.back().bitline_mask =
-        AffinePattern::construct_canonical_sub_region(
-            tileSizes, AffinePattern::IntVecT(tileSizes.size(), 0), tileSizes);
+    commands.back().bitline_mask = AffinePattern::constructSubRegion(
+        tileSizes, AffinePattern::IntVecT(tileSizes.size(), 0), tileSizes);
 
     MLC_S_DPRINTF(reduceDynId, "Intra-Array Reduce Cmd %s", commands.back());
 
@@ -849,6 +1066,32 @@ AffinePatternVecT MLCPUMManager::decoalesceAndDevectorizePattern(
   }
 
   return ret;
+}
+
+DynStreamFormalParamV MLCPUMManager::convertAffinePatternToStreamFormalParams(
+    const AffinePattern &pattern, Addr arrayVAddr, int64_t memElemSize) const {
+
+  DynStreamFormalParamV params;
+
+  for (const auto &param : pattern.params) {
+    auto stride = param.stride;
+    auto trip = param.trip;
+    auto memStride = stride * memElemSize;
+    params.emplace_back();
+    params.back().isInvariant = true;
+    params.back().invariant.uint64() = memStride;
+
+    params.emplace_back();
+    params.back().isInvariant = true;
+    params.back().invariant.uint64() = trip;
+  }
+
+  auto startVAddr = pattern.start * memElemSize + arrayVAddr;
+  params.emplace_back();
+  params.back().isInvariant = true;
+  params.back().invariant.uint64() = startVAddr;
+
+  return params;
 }
 
 void MLCPUMManager::preprocessPatternsInGroup(PUMContext &context,
@@ -1010,6 +1253,15 @@ MLCPUMManager::PUMContext *MLCPUMManager::getFirstInitializedContext() {
   return nullptr;
 }
 
+MLCPUMManager::PUMContext &MLCPUMManager::getContextById(int64_t contextId) {
+  for (auto &context : this->contexts) {
+    if (context.contextId == contextId) {
+      return context;
+    }
+  }
+  panic("No context with id %ld.", contextId);
+}
+
 void MLCPUMManager::reachSync(int sentPackets) {
 
   auto &context = this->getFirstKickedContext();
@@ -1097,7 +1349,7 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
       }
     }
     if (group.reduceConfig) {
-      this->completeFinalReduction(context, group);
+      // this->completeFinalReduction(context, group);
     }
 
     auto outerTripCount = 1;
@@ -1125,7 +1377,54 @@ void MLCPUMManager::completeOneComputeRound(PUMContext &context) {
 
   assert(!someGroupsDone && "Cannot support partially PUM done ><.");
 
-  // Compile another round.
+  this->tryKickNextComputeRound(context);
+}
+
+void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
+
+  for (auto &group : context.pumGroups) {
+    if (!group.appliedPUM || !group.reduceConfig || group.nextOuterIter == 0) {
+      // This is not PUMReduction, or this is the first round.
+      continue;
+    }
+    const auto &pumReduceConfig = group.pumReduceConfig;
+
+    auto reducedElemsPerRound = group.pumDirectConfig->pumElemPerSync /
+                                group.pumDirectConfig->innerTripCount;
+
+    auto reducedElems = reducedElemsPerRound * group.nextOuterIter;
+    // auto prevReducedElems = reducedElemsPerRound * (group.nextOuterIter - 1);
+    assert(reducedElems > 0);
+    auto ackedElemIdx = reducedElems - 1;
+
+    for (const auto &dep : pumReduceConfig->depEdges) {
+      const auto &depId = dep.data->dynamicId;
+      assert(dep.data->stream->isStoreComputeStream());
+
+      // TODO: Handle Strand here.
+      auto mlcDepS = this->mlcSE->getStreamFromStrandId(DynStrandId(depId));
+      assert(mlcDepS && "MLCDepS already released?");
+      // Here I just check that the core has received all the Acks?
+      // If not -- Register a callback?
+      if (!mlcDepS->isElementAcked(reducedElems - 1)) {
+
+        MLC_S_DPRINTF(
+            group.computeConfig->dynamicId,
+            "[PUMReduce] The CoreDynS %s No Ack for Round %ld Elem %lu.\n",
+            depId, group.nextOuterIter, ackedElemIdx);
+        auto contextId = context.contextId;
+        auto callback = [this, contextId](const DynStreamId &dynStreamId,
+                                          uint64_t elemIdx) -> void {
+          this->tryKickNextComputeRound(this->getContextById(contextId));
+        };
+        mlcDepS->registerElementAckCallback(ackedElemIdx, callback);
+
+        return;
+      }
+    }
+  }
+
+  // We can start next round.
   context.clear();
   context.state = PUMContext::StateE::Initialized;
   this->compileContext(context);
@@ -1182,8 +1481,10 @@ void MLCPUMManager::receiveStreamEnd(PacketPtr pkt) {
     for (const auto &endId : endIds) {
       MLC_S_DPRINTF(endId, "[PUM]   Received StreamEnd.\n");
     }
-    for (const auto &config : context.configs) {
-      MLC_S_DPRINTF(config->dynamicId, "[PUM]   Current First PUMContext.\n");
+    for (const auto &group : context.pumGroups) {
+      MLC_S_DPRINTF(group.computeConfig->dynamicId,
+                    "[PUM]   Current in PUMContext. NextOutIter %ld.\n",
+                    group.nextOuterIter);
     }
     MLC_S_PANIC_NO_DUMP(context.configs.front()->dynamicId,
                         "[PUM] Releasing but Not Done or Initialized.");

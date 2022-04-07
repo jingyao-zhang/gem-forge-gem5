@@ -239,19 +239,22 @@ void MLCDynIndirectStream::advanceStream() {
    * This is to avoid running ahead than the BaseS, which is in charge of
    * allocating LLCElement.
    */
-  auto maxAllocElementIdx = this->tailElementIdx + this->maxNumSlices;
+  auto maxAllocElemIdx = this->tailElementIdx + this->maxNumSlices;
   if (auto llcDynS = LLCDynStream::getLLCStream(this->getDynStrandId())) {
-    maxAllocElementIdx =
-        std::min(maxAllocElementIdx, llcDynS->getNextInitElementIdx());
+    MLC_S_DPRINTF(this->getDynStrandId(),
+                  "Adjust MaxAllocElemIdx = Min(%lu, LLC %lu).\n",
+                  maxAllocElemIdx, llcDynS->getNextInitElementIdx());
+    maxAllocElemIdx =
+        std::min(maxAllocElemIdx, llcDynS->getNextInitElementIdx());
   }
 
   // Of course we need to allocate more slices.
   while (this->tailSliceIdx - this->headSliceIdx < this->maxNumSlices &&
          !this->hasOverflowed()) {
-    if (this->tailElementIdx >= maxAllocElementIdx) {
+    if (this->tailElementIdx >= maxAllocElemIdx) {
       MLC_S_DPRINTF(this->getDynStrandId(),
                     "CanNot Allocate Element %llu, MaxAlloc %llu.\n",
-                    this->tailElementIdx, maxAllocElementIdx);
+                    this->tailElementIdx, maxAllocElemIdx);
       break;
     }
     this->allocateSlice();

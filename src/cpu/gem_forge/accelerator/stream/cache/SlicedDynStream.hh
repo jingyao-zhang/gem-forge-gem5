@@ -51,16 +51,17 @@ public:
    * Helper function to get element vaddr and size.
    */
   Addr getElementVAddr(uint64_t elementIdx) const;
-  int32_t getMemElementSize() const { return this->elementSize; }
-  float getElementPerSlice() const { return this->elementPerSlice; }
+  int32_t getMemElementSize() const { return this->elemSize; }
+  float getElementPerSlice() const { return this->elemPerSlice; }
 
 private:
   DynStrandId strandId;
   DynStreamFormalParamV formalParams;
   AddrGenCallbackPtr addrGenCallback;
-  int32_t elementSize;
+  const int64_t stepElemCount;
+  const int32_t elemSize;
   // On average how many elements per slice.
-  float elementPerSlice = 1.0f;
+  float elemPerSlice = 1.0f;
   /**
    * -1 means indefinite.
    */
@@ -76,12 +77,12 @@ private:
   bool coalesceContinuousElements = true;
 
   /**
-   * ! So far PointerChaseStream is handled by an oracle
+   * ! So far PtrChaseStream is handled by an oracle
    * ! read to compute the address.
    */
-  bool isPointerChase = false;
+  bool isPtChase = false;
 
-  struct PointerChaseState {
+  struct PtrChaseState {
     Stream *memStream = nullptr;
     Stream *ivStream = nullptr;
     DynStreamFormalParamV ivAddrFormalParams;
@@ -90,25 +91,28 @@ private:
     bool currentIVValueFaulted = false;
     // Buffer all element virtual addresses.
     std::vector<Addr> elementVAddrs;
-    PointerChaseState(CacheStreamConfigureDataPtr &_configData);
+    PtrChaseState(CacheStreamConfigureDataPtr &_configData);
   };
-  mutable PointerChaseState ptrChaseState;
-  Addr getOrComputePointerChaseElementVAddr(uint64_t elementIdx) const;
+  mutable PtrChaseState ptrChaseState;
+  Addr getOrComputePtrChaseElemVAddr(uint64_t elemIdx) const;
 
   /**
    * Internal states.
    * ! Evil trick to make peekNextSlice constant.
    */
-  mutable uint64_t tailElementIdx;
+  mutable uint64_t prevTailElemIdx;
+  mutable uint64_t tailElemIdx;
+  void stepTailElemIdx() const;
+
   /**
    * The headIdx that can be checked for slicing.
    */
-  mutable uint64_t sliceHeadElementIdx;
+  mutable uint64_t sliceHeadElemIdx;
   mutable std::deque<DynStreamSliceId> slices;
 
   void allocateOneElement() const;
-  bool hasOverflowed(uint64_t elementIdx) const {
-    return this->hasTotalTripCount() && elementIdx >= (this->totalTripCount);
+  bool hasOverflowed(uint64_t elemIdx) const {
+    return this->hasTotalTripCount() && elemIdx >= (this->totalTripCount);
   }
 };
 

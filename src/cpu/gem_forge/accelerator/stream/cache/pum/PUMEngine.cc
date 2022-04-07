@@ -24,7 +24,12 @@ void PUMEngine::receiveKick(const RequestMsg &msg) {
   }
 }
 
-void PUMEngine::configure(MLCPUMManager *pumManager,
+bool PUMEngine::hasCompletedRound(int64_t pumContextId, int rounds) const {
+  assert(this->pumContextId == pumContextId);
+  return this->currentRound >= rounds;
+}
+
+void PUMEngine::configure(MLCPUMManager *pumManager, int64_t pumContextId,
                           const PUMCommandVecT &commands) {
 
   // Initialize HWConfig.
@@ -33,7 +38,12 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
         PUMHWConfiguration::getPUMHWConfig());
   }
 
-  LLC_SE_DPRINTF("[PUMEngine] Configured.\n");
+  if (pumContextId != this->pumContextId) {
+    // Only clear this when we are haveing a new context.
+    this->currentRound = 0;
+  }
+  LLC_SE_DPRINTF("[PUMEngine] Configured CompletedRound %ld.\n",
+                 this->currentRound);
 
   if (this->nextCmdIdx != this->commands.size()) {
     LLC_SE_PANIC("Not done with previous commands. NextCmdIdx %d Commands %d.",
@@ -41,6 +51,7 @@ void PUMEngine::configure(MLCPUMManager *pumManager,
   }
 
   this->pumManager = pumManager;
+  this->pumContextId = pumContextId;
   this->nextCmdIdx = 0;
   this->sentInterBankPackets = 0;
   this->recvInterBankPackets = 0;
@@ -187,7 +198,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
            * Notice that PUMEngine is placed at bank level, here we only
            * care about the first trip.
            */
-          levelArrays += splitPattern.get_trips().front();
+          levelArrays += splitPattern.getTrips().front();
 
           auto srcArrayIdx = this->hwConfig->get_array_per_bank() * myBankIdx +
                              splitPattern.start;
@@ -201,7 +212,7 @@ Cycles PUMEngine::estimateCommandLatency(const PUMCommand &command) {
               this->hwConfig->get_bank_idx_from_array_idx(dstArrayIdx);
 
           auto numInterBankBitlines =
-              splitPattern.get_trips().front() * bitlinesPerArray;
+              splitPattern.getTrips().front() * bitlinesPerArray;
           interBankBitlineTraffic.emplace_back(dstBankIdx,
                                                numInterBankBitlines);
 
@@ -330,6 +341,10 @@ void PUMEngine::tick() {
       this->commands[this->nextCmdIdx].type == "sync") {
     // We are done or waiting for the sync.
     if (!this->acked) {
+      if (this->nextCmdIdx == this->commands.size()) {
+        LLC_SE_DPRINTF("[Sync] Completed Round %d.\n", this->currentRound);
+        this->currentRound++;
+      }
       LLC_SE_DPRINTF("[Sync] SentPackets %d.\n", this->sentInterBankPackets);
       this->sendSyncToLLCs();
       auto sentPackets = this->sentInterBankPackets;
@@ -400,6 +415,7 @@ void PUMEngine::sendSyncToMLC(int sentPackets) {
 }
 
 void PUMEngine::sendAckToMLC(CoherenceResponseType type, int ackCount) {
+
   assert(this->pumManager);
   auto msg = std::make_shared<ResponseMsg>(this->controller->clockEdge());
   msg->m_addr = 0;

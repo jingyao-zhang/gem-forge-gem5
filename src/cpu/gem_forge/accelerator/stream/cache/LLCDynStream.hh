@@ -145,6 +145,7 @@ public:
   uint64_t getNextAllocSliceIdx() const { return this->nextAllocSliceIdx; }
   const DynStreamSliceId &peekNextAllocSliceId() const;
   std::pair<Addr, MachineType> peekNextAllocVAddrAndMachineType() const;
+  uint64_t peekNextAllocElemIdx() const;
   LLCStreamSlicePtr getNextAllocSlice() const;
   LLCStreamSlicePtr allocNextSlice(LLCStreamEngine *se);
 
@@ -265,6 +266,7 @@ private:
 
   std::pair<Addr, MachineType> peekNextInitVAddrAndMachineType() const;
   const DynStreamSliceId &peekNextInitSliceId() const;
+  uint64_t peekNextInitElemIdx() const;
 
 public:
   const CacheStreamConfigureDataPtr configData;

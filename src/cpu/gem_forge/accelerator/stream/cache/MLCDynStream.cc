@@ -492,6 +492,18 @@ void MLCDynStream::makeAck(MLCStreamSlice &slice) {
                         "Ack for StrandElem %llu StreamElem %llu.\n",
                         strandElemIdx, streamElemIdx);
       dynS->cacheAckedElements.insert(streamElemIdx);
+
+      /**
+       * We call ElementInitCallback here.
+       */
+      auto elementInitCallbackIter =
+          this->elementAckCallbacks.find(strandElemIdx);
+      if (elementInitCallbackIter != this->elementAckCallbacks.end()) {
+        for (auto &callback : elementInitCallbackIter->second) {
+          callback(this->getDynStreamId(), strandElemIdx);
+        }
+        this->elementAckCallbacks.erase(elementInitCallbackIter);
+      }
     }
   }
 }
@@ -548,6 +560,28 @@ MLCDynStream::MLCStreamSlice::convertCoreStatusToString(CoreStatusE status) {
   default:
     assert(false && "Invalid MLCStreamSlice::CoreStatus.");
   }
+}
+
+bool MLCDynStream::isElementAcked(uint64_t elementIdx) const {
+
+  // We should really check the Slice status. However, here I just check the
+  // CoreDynS.
+  auto coreDynS = this->getStaticStream()->getDynStream(this->getDynStreamId());
+  assert(coreDynS && "CoreDynS already released when checking ElemAcked.");
+  return coreDynS->cacheAckedElements.count(elementIdx);
+}
+
+void MLCDynStream::registerElementAckCallback(uint64_t elementIdx,
+                                              ElementCallback callback) {
+  if (this->isElementAcked(elementIdx)) {
+    MLC_S_PANIC(this->getDynStrandId(),
+                "Register ElementAckCallback for Acked Element %llu.",
+                elementIdx);
+  }
+  this->elementAckCallbacks
+      .emplace(std::piecewise_construct, std::forward_as_tuple(elementIdx),
+               std::forward_as_tuple())
+      .first->second.push_back(callback);
 }
 
 void MLCDynStream::panicDump() const {

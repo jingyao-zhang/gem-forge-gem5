@@ -14,11 +14,12 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
                _configData->totalStrands),
       formalParams(_configData->addrGenFormalParams),
       addrGenCallback(_configData->addrGenCallback),
-      elementSize(_configData->elementSize), elementPerSlice(1),
+      stepElemCount(_configData->stepElemCount),
+      elemSize(_configData->elementSize), elemPerSlice(1),
       totalTripCount(_configData->totalTripCount),
       innerTripCount(_configData->innerTripCount),
-      isPointerChase(_configData->isPointerChase), ptrChaseState(_configData),
-      tailElementIdx(0), sliceHeadElementIdx(0) {
+      isPtChase(_configData->isPointerChase), ptrChaseState(_configData),
+      tailElemIdx(0), sliceHeadElemIdx(0) {
 
   // Try to compute element per slice.
   if (auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
@@ -26,28 +27,28 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
     auto innerStride = linearAddrGen->getInnerStride(this->formalParams);
     auto blockBytes = RubySystem::getBlockSizeBytes();
     if (innerStride <= blockBytes) {
-      this->elementPerSlice = blockBytes / innerStride;
+      this->elemPerSlice = blockBytes / innerStride;
     } else {
-      if (this->elementSize <= blockBytes) {
-        this->elementPerSlice = 1.0f;
+      if (this->elemSize <= blockBytes) {
+        this->elemPerSlice = 1.0f;
       } else {
-        this->elementPerSlice =
+        this->elemPerSlice =
             static_cast<float>(blockBytes) /
             static_cast<float>(
-                std::min(static_cast<int64_t>(this->elementSize), innerStride));
+                std::min(static_cast<int64_t>(this->elemSize), innerStride));
         DYN_S_DPRINTF(
             this->strandId,
             "innerStride %lu elementSize %lu block %lu elementPerSlice %f.\n",
-            innerStride, elementSize, blockBytes, this->elementPerSlice);
+            innerStride, elemSize, blockBytes, this->elemPerSlice);
       }
     }
   }
 
-  if (this->isPointerChase || !_configData->shouldBeSlicedToCacheLines) {
+  if (this->isPtChase || !_configData->shouldBeSlicedToCacheLines) {
     DYN_S_DPRINTF(this->strandId, "[Sliced] Disabled slicing.\n");
     this->coalesceContinuousElements = false;
-    this->elementPerSlice = 1.0f;
-    assert(this->elementSize < 64 && "Huge Non-Sliced StreamElem.");
+    this->elemPerSlice = 1.0f;
+    assert(this->elemSize < 64 && "Huge Non-Sliced StreamElem.");
   }
 
   if (_configData->floatPlan.getFirstFloatElementIdx() > 0) {
@@ -55,12 +56,12 @@ SlicedDynStream::SlicedDynStream(CacheStreamConfigureDataPtr _configData)
     DYN_S_DPRINTF(this->strandId, "[Sliced] Start from Element %llu.\n",
                   firstFloatElemIdx);
 
-    this->tailElementIdx = firstFloatElemIdx;
-    this->sliceHeadElementIdx = firstFloatElemIdx;
+    this->tailElemIdx = firstFloatElemIdx;
+    this->sliceHeadElemIdx = firstFloatElemIdx;
   }
 }
 
-SlicedDynStream::PointerChaseState::PointerChaseState(
+SlicedDynStream::PtrChaseState::PtrChaseState(
     CacheStreamConfigureDataPtr &_configData) {
   if (!_configData->isPointerChase) {
     return;
@@ -81,18 +82,17 @@ SlicedDynStream::PointerChaseState::PointerChaseState(
   }
 }
 
-Addr SlicedDynStream::getOrComputePointerChaseElementVAddr(
-    uint64_t elementIdx) const {
+Addr SlicedDynStream::getOrComputePtrChaseElemVAddr(uint64_t elemIdx) const {
   auto &state = this->ptrChaseState;
-  while (state.elementVAddrs.size() <= elementIdx &&
+  while (state.elementVAddrs.size() <= elemIdx &&
          !state.currentIVValueFaulted) {
     auto nextVAddr =
         this->addrGenCallback
-            ->genAddr(elementIdx, this->formalParams,
+            ->genAddr(elemIdx, this->formalParams,
                       GetSingleStreamValue(state.ivStream->staticId,
                                            state.currentIVValue))
             .front();
-    if (makeLineAddress(nextVAddr + this->elementSize - 1) !=
+    if (makeLineAddress(nextVAddr + this->elemSize - 1) !=
         makeLineAddress(nextVAddr)) {
       DYN_S_PANIC(this->strandId,
                   "[PtrChase] Multi-Line Element %llu VAddr %#x.",
@@ -106,11 +106,11 @@ Addr SlicedDynStream::getOrComputePointerChaseElementVAddr(
       DYN_S_DPRINTF(this->strandId, "[PtrChase] Generate %lluth VAddr %#x.\n",
                     state.elementVAddrs.size() - 1, nextVAddr);
       StreamValue nextMemValue;
-      cpuDelegator->readFromMem(nextVAddr, this->elementSize,
+      cpuDelegator->readFromMem(nextVAddr, this->elemSize,
                                 nextMemValue.uint8Ptr());
       // Compute the NextIVValue.
       state.currentIVValue = state.ivAddrGenCallback->genAddr(
-          elementIdx + 1, state.ivAddrFormalParams,
+          elemIdx + 1, state.ivAddrFormalParams,
           GetCoalescedStreamValue(state.memStream, nextMemValue));
     } else {
       DYN_S_DPRINTF(this->strandId,
@@ -119,15 +119,20 @@ Addr SlicedDynStream::getOrComputePointerChaseElementVAddr(
       state.currentIVValueFaulted = true;
     }
   }
-  if (elementIdx < state.elementVAddrs.size()) {
-    return state.elementVAddrs.at(elementIdx);
+  if (elemIdx < state.elementVAddrs.size()) {
+    return state.elementVAddrs.at(elemIdx);
   } else {
     return 0;
   }
 }
 
+void SlicedDynStream::stepTailElemIdx() const {
+  this->prevTailElemIdx = this->tailElemIdx;
+  this->tailElemIdx += this->stepElemCount;
+}
+
 DynStreamSliceId SlicedDynStream::getNextSlice() {
-  while (slices.empty() || slices.front().getEndIdx() == this->tailElementIdx) {
+  while (slices.empty() || slices.front().getEndIdx() == this->tailElemIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
     this->allocateOneElement();
@@ -138,7 +143,7 @@ DynStreamSliceId SlicedDynStream::getNextSlice() {
 }
 
 const DynStreamSliceId &SlicedDynStream::peekNextSlice() const {
-  while (slices.empty() || slices.front().getEndIdx() == this->tailElementIdx) {
+  while (slices.empty() || slices.front().getEndIdx() == this->tailElemIdx) {
     // Allocate until it's guaranteed that the first slice has no more
     // overlaps.
     this->allocateOneElement();
@@ -159,8 +164,8 @@ void SlicedDynStream::setTotalAndInnerTripCount(int64_t tripCount) {
 }
 
 Addr SlicedDynStream::getElementVAddr(uint64_t elementIdx) const {
-  if (this->isPointerChase) {
-    return this->getOrComputePointerChaseElementVAddr(elementIdx);
+  if (this->isPtChase) {
+    return this->getOrComputePtrChaseElemVAddr(elementIdx);
   }
   return this->addrGenCallback
       ->genAddr(elementIdx, this->formalParams, getStreamValueFail)
@@ -170,17 +175,17 @@ Addr SlicedDynStream::getElementVAddr(uint64_t elementIdx) const {
 void SlicedDynStream::allocateOneElement() const {
 
   // Let's not worry about indirect streams here.
-  const auto lhs = this->getElementVAddr(this->tailElementIdx);
+  const auto lhs = this->getElementVAddr(this->tailElemIdx);
 
-  if (lhs + this->elementSize < lhs) {
+  if (lhs + this->elemSize < lhs) {
     /**
      * This is a bug case when the vaddr wraps around. This is stream is
      * ill-defined and this is likely caused by misspeculation on StreamConfig.
      * This stream should soon be rewinded. Here I just make two new slices,
      * and do not bother coalescing with previous slices.
      */
-    auto wrappedSize = lhs + this->elementSize;
-    auto straightSize = this->elementSize - wrappedSize;
+    auto wrappedSize = lhs + this->elemSize;
+    auto straightSize = this->elemSize - wrappedSize;
     assert(wrappedSize <= RubySystem::getBlockSizeBytes() &&
            "WrappedSize larger than a line.");
     assert(straightSize <= RubySystem::getBlockSizeBytes() &&
@@ -190,8 +195,8 @@ void SlicedDynStream::allocateOneElement() const {
       this->slices.emplace_back();
       auto &slice = this->slices.back();
       slice.getDynStrandId() = this->strandId;
-      slice.getStartIdx() = this->tailElementIdx;
-      slice.getEndIdx() = this->tailElementIdx + 1;
+      slice.getStartIdx() = this->tailElemIdx;
+      slice.getEndIdx() = this->tailElemIdx + 1;
       slice.vaddr = makeLineAddress(lhs);
       slice.size = RubySystem::getBlockSizeBytes();
     }
@@ -200,23 +205,23 @@ void SlicedDynStream::allocateOneElement() const {
       this->slices.emplace_back();
       auto &slice = this->slices.back();
       slice.getDynStrandId() = this->strandId;
-      slice.getStartIdx() = this->tailElementIdx;
-      slice.getEndIdx() = this->tailElementIdx + 1;
+      slice.getStartIdx() = this->tailElemIdx;
+      slice.getEndIdx() = this->tailElemIdx + 1;
       slice.vaddr = makeLineAddress(0);
       slice.size = RubySystem::getBlockSizeBytes();
     }
 
     // Reset the sliceHeadElementIdx.
-    this->sliceHeadElementIdx = this->tailElementIdx;
-    this->tailElementIdx++;
+    this->sliceHeadElemIdx = this->tailElemIdx;
+    this->stepTailElemIdx();
     return;
   }
 
-  auto rhs = lhs + this->elementSize;
-  auto prevLHS = this->tailElementIdx > 0
-                     ? this->getElementVAddr(this->tailElementIdx - 1)
+  auto rhs = lhs + this->elemSize;
+  auto prevLHS = this->tailElemIdx > 0
+                     ? this->getElementVAddr(this->tailElemIdx - 1)
                      : lhs;
-  bool prevWrappedAround = (prevLHS + this->elementSize) < prevLHS;
+  bool prevWrappedAround = (prevLHS + this->elemSize) < prevLHS;
 
   // Break to cache line granularity, [lhsBlock, rhsBlock]
   auto lhsBlock = makeLineAddress(lhs);
@@ -225,17 +230,17 @@ void SlicedDynStream::allocateOneElement() const {
   assert(rhsBlock >= lhsBlock && "Wrapped around should be handled above.");
 
   DYN_S_DPRINTF(this->strandId,
-                "Allocate element %llu, vaddr [%#x, +%d), block [%#x, %#x].\n",
-                this->tailElementIdx, lhs, this->elementSize, lhsBlock,
-                rhsBlock);
+                "Allocate elem %llu, vaddr [%#x, +%d), block [%#x, %#x].\n",
+                this->tailElemIdx, lhs, this->elemSize, lhsBlock, rhsBlock);
 
   /**
    * Check if we can try to coalesce continuous elements.
-   * Set the flag && not overflow.
+   * Set the flag && not overflow && elements are continuous.
    */
   auto curBlock = lhsBlock;
   if (this->coalesceContinuousElements &&
-      !this->hasOverflowed(this->tailElementIdx)) {
+      this->tailElemIdx == this->prevTailElemIdx + 1 &&
+      !this->hasOverflowed(this->tailElemIdx)) {
     if (lhsBlock < prevLHSBlock && !prevWrappedAround) {
       /**
        * Special case to handle decreasing address.
@@ -247,17 +252,17 @@ void SlicedDynStream::allocateOneElement() const {
       }
       // Set sliceHeadElementIdx so that slicing branch below will ignore
       // previous slices and restart.
-      this->sliceHeadElementIdx = this->tailElementIdx;
+      this->sliceHeadElemIdx = this->tailElemIdx;
     } else {
       // Non-decreasing case, keep going.
       // Update existing slices to the new element if there is overlap.
       for (auto &slice : this->slices) {
-        if (slice.getStartIdx() < this->sliceHeadElementIdx) {
+        if (slice.getStartIdx() < this->sliceHeadElemIdx) {
           // This slice is already "sealed" by a decreasing element.
           continue;
         }
         if (slice.vaddr == curBlock) {
-          assert(slice.getEndIdx() == this->tailElementIdx &&
+          assert(slice.getEndIdx() == this->tailElemIdx &&
                  "Hole in overlapping elements.");
           slice.getEndIdx()++;
           curBlock += RubySystem::getBlockSizeBytes();
@@ -271,32 +276,32 @@ void SlicedDynStream::allocateOneElement() const {
   } else {
     // Simple case: no coalescing.
     // For sanity check: we update the sliceHeadElementIdx.
-    this->sliceHeadElementIdx = this->tailElementIdx;
+    this->sliceHeadElemIdx = this->tailElemIdx;
   }
 
-  if (this->isPointerChase) {
+  if (this->isPtChase) {
     /**
      * PointerChaseStream would not be sliced.
      */
     this->slices.emplace_back();
     auto &slice = this->slices.back();
     slice.getDynStrandId() = this->strandId;
-    slice.getStartIdx() = this->tailElementIdx;
-    slice.getEndIdx() = this->tailElementIdx + 1;
+    slice.getStartIdx() = this->tailElemIdx;
+    slice.getEndIdx() = this->tailElemIdx + 1;
     slice.vaddr = lhs;
-    slice.size = this->elementSize;
+    slice.size = this->elemSize;
   } else {
     while (curBlock <= rhsBlock && curBlock >= lhsBlock) {
       this->slices.emplace_back();
       auto &slice = this->slices.back();
       slice.getDynStrandId() = this->strandId;
-      slice.getStartIdx() = this->tailElementIdx;
-      slice.getEndIdx() = this->tailElementIdx + 1;
+      slice.getStartIdx() = this->tailElemIdx;
+      slice.getEndIdx() = this->tailElemIdx + 1;
       slice.vaddr = curBlock;
       slice.size = RubySystem::getBlockSizeBytes();
       curBlock += RubySystem::getBlockSizeBytes();
     }
   }
 
-  this->tailElementIdx++;
+  this->stepTailElemIdx();
 }

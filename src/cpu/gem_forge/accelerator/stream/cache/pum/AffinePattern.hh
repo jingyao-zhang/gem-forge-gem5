@@ -230,7 +230,7 @@ public:
     return ret;
   }
 
-  IntVecT get_trips() const {
+  IntVecT getTrips() const {
     IntVecT ret;
     for (const auto &p : params) {
       ret.push_back(p.trip);
@@ -295,27 +295,27 @@ public:
     return getArrayPosition(arraySizes, start);
   }
 
-  bool is_canonical_sub_region_to_array_size(const IntVecT &array_sizes,
-                                             bool allow_reuse = false) const;
+  bool isSubRegionToArraySize(const IntVecT &array_sizes,
+                              bool allow_reuse = false) const;
 
-  static AffinePattern
-  construct_canonical_sub_region(const IntVecT &array_sizes,
-                                 const IntVecT &starts, const IntVecT &trips) {
-    auto dimension = array_sizes.size();
+  static AffinePattern constructSubRegion(const IntVecT &arraySizes,
+                                          const IntVecT &starts,
+                                          const IntVecT &trips) {
+    auto dimension = arraySizes.size();
     assert(starts.size() == dimension);
     assert(trips.size() == dimension);
     // This is S1x... xSi
-    IntVecT inner_array_sizes;
+    IntVecT innerArraySizes;
     for (auto i = 0; i < dimension; ++i) {
-      auto s = reduce_mul(array_sizes.cbegin(), array_sizes.cbegin() + i, 1);
-      inner_array_sizes.push_back(s);
+      auto s = reduce_mul(arraySizes.cbegin(), arraySizes.cbegin() + i, 1);
+      innerArraySizes.push_back(s);
     }
 
     int64_t start = 0;
     ParamVecT params;
     for (auto i = 0; i < dimension; ++i) {
-      start += starts[i] * inner_array_sizes[i];
-      auto stride = inner_array_sizes[i];
+      start += starts[i] * innerArraySizes[i];
+      auto stride = innerArraySizes[i];
       auto trip = trips[i];
       params.emplace_back(stride, trip);
     }
@@ -377,8 +377,7 @@ public:
         trips[i] = 1;
       }
       trips[dim] = q - p;
-      sub_regions.push_back(
-          construct_canonical_sub_region(array_sizes, starts, trips));
+      sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
     } else {
       if (p != 0) {
         // One sub region [P, B)
@@ -388,8 +387,7 @@ public:
           trips[i] = 1;
         }
         trips[dim] = t - p;
-        sub_regions.push_back(
-            construct_canonical_sub_region(array_sizes, starts, trips));
+        sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
       }
 
       if (q != 0) {
@@ -400,8 +398,7 @@ public:
           trips[i] = 1;
         }
         trips[dim] = q;
-        sub_regions.push_back(
-            construct_canonical_sub_region(array_sizes, starts, trips));
+        sub_regions.push_back(constructSubRegion(array_sizes, starts, trips));
       }
 
       if (!high_dim_match) {

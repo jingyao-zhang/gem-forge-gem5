@@ -208,6 +208,7 @@ StreamStatistic::llcSEIssueReasonToString(LLCStreamEngineIssueReason reason) {
     Case(AliasedIndirectUpdate);
     Case(BaseValueNotReady);
     Case(ValueNotReady);
+    Case(WaitingPUM);
     Case(NumLLCStreamEngineIssueReason);
 #undef Case
   default:

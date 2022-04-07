@@ -18,8 +18,11 @@ public:
 
   void receiveKick(const RequestMsg &msg);
   void receiveData(const RequestMsg &msg);
-  void configure(MLCPUMManager *pumManager, const PUMCommandVecT &commands);
+  void configure(MLCPUMManager *pumManager, int64_t pumContextId,
+                 const PUMCommandVecT &commands);
   void tick();
+
+  bool hasCompletedRound(int64_t pumContextId, int rounds) const;
 
 private:
   LLCStreamEngine *se;
@@ -31,8 +34,12 @@ private:
    * States during each run.
    */
   MLCPUMManager *pumManager = nullptr;
+  static constexpr int64_t InvalidPUMContextId =
+      CacheStreamConfigureData::InvalidPUMContextId;
+  int64_t pumContextId = InvalidPUMContextId;
   PUMCommandVecT commands;
   bool receivedConfig = false;
+  int currentRound = 0;
   int nextCmdIdx = 0;
   Cycles nextCmdReadyCycle;
   int sentInterBankPackets = 0;

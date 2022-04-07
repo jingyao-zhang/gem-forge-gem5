@@ -175,6 +175,10 @@ const DynStreamSliceId &LLCDynStream::peekNextInitSliceId() const {
   return this->slicedStream.peekNextSlice();
 }
 
+uint64_t LLCDynStream::peekNextInitElemIdx() const {
+  return this->peekNextInitSliceId().getStartIdx();
+}
+
 Addr LLCDynStream::getElementVAddr(uint64_t elementIdx) const {
   return this->slicedStream.getElementVAddr(elementIdx);
 }
@@ -413,6 +417,14 @@ LLCDynStream::peekNextAllocVAddrAndMachineType() const {
     return std::make_pair(sliceId.vaddr, startElemMachineType);
   } else {
     return this->peekNextInitVAddrAndMachineType();
+  }
+}
+
+uint64_t LLCDynStream::peekNextAllocElemIdx() const {
+  if (auto slice = this->getNextAllocSlice()) {
+    return slice->getSliceId().getStartIdx();
+  } else {
+    return this->peekNextInitElemIdx();
   }
 }
 

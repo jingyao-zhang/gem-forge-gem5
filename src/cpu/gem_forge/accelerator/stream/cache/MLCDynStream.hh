@@ -105,6 +105,11 @@ public:
   bool isWaitingData() const { return this->isWaiting == WaitType::Data; }
   bool isWaitingNothing() const { return this->isWaiting == WaitType::Nothing; }
 
+  using ElementCallback = std::function<void(const DynStreamId &, uint64_t)>;
+  bool isElementAcked(uint64_t elementIdx) const;
+  void registerElementAckCallback(uint64_t elementIdx,
+                                  ElementCallback callback);
+
 protected:
   Stream *stream;
   DynStrandId strandId;
@@ -225,6 +230,12 @@ protected:
    * This remember the received StreamRange.
    */
   std::list<DynStreamAddressRangePtr> receivedRanges;
+
+  /**
+   * @brief Remember the callbacks.
+   */
+  using ElementCallbackList = std::list<ElementCallback>;
+  std::map<uint64_t, ElementCallbackList> elementAckCallbacks;
 
 public:
   /**

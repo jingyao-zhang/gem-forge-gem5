@@ -1330,6 +1330,27 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
   }
 
   /**
+   * If this stream needs to be coordinated with the PUMEngine, check that the
+   * PUMEngine is done.
+   */
+  if (dynS->configData->needSyncWithPUMEngine()) {
+    auto nextElemIdx = dynS->peekNextAllocElemIdx();
+    auto waitForPUMRounds = dynS->configData->waitForPUMRounds(nextElemIdx);
+    LLC_S_DPRINTF(dynS->getDynStrandId(),
+                  "[Not Issue] Elem %lu Waiting for PUM Round %ld.\n",
+                  nextElemIdx, waitForPUMRounds);
+    if (!this->pumEngine->hasCompletedRound(dynS->configData->pumContextId,
+                                            waitForPUMRounds)) {
+      LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
+                     "[Not Issue] Elem %lu Waiting for PUM Round %ld.\n",
+                     nextElemIdx, waitForPUMRounds);
+      statistic.sampleLLCStreamEngineIssueReason(
+          StreamStatistic::LLCStreamEngineIssueReason::WaitingPUM);
+      return nullptr;
+    }
+  }
+
+  /**
    * Allocate the element on Atomic and StoreStream.
    * Additional check on StoreStream, which should have StoreValue
    * ready.
@@ -1381,10 +1402,9 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
               !element->isComputationScheduled()) {
             this->pushReadyComputation(element);
           }
-          LLC_SLICE_DPRINTF(nextSliceId,
-                            "StoreValue from element %llu not "
-                            "ready, delay issuing.\n",
-                            idx);
+          LLC_SLICE_DPRINTF_(
+              LLCRubyStreamNotIssue, nextSliceId,
+              "StoreValue from Elem %llu not ready, delay issuing.\n", idx);
           if (!element->areBaseElementsReady()) {
             statistic.sampleLLCStreamEngineIssueReason(
                 StreamStatistic::LLCStreamEngineIssueReason::BaseValueNotReady);

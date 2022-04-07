@@ -27,9 +27,10 @@ public:
                            const DynStreamFormalParamV &_addrGenFormalParams,
                            AddrGenCallbackPtr _addrGenCallback);
 
-  CacheStreamConfigureData(const CacheStreamConfigureData &other);
   ~CacheStreamConfigureData();
-  CacheStreamConfigureData &operator=(const CacheStreamConfigureData &other);
+  CacheStreamConfigureData(const CacheStreamConfigureData &other) = default;
+  CacheStreamConfigureData &
+  operator=(const CacheStreamConfigureData &other) = default;
 
   CacheStreamConfigureData(CacheStreamConfigureData &&other) = delete;
   CacheStreamConfigureData &
@@ -37,6 +38,13 @@ public:
 
   Stream *stream;
   DynStreamId dynamicId;
+
+  /**
+   * Step element count of offloaded stream.
+   * So far only used to implement ReductionStream for PUM.
+   * By default should always be one.
+   */
+  int64_t stepElemCount = 1;
 
   int elementSize;
 
@@ -171,7 +179,8 @@ public:
     CacheStreamConfigureDataPtr data;
     int reuse;
     int skip;
-    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip)
+    DepEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
+            int _skip)
         : type(_type), data(_data), reuse(_reuse), skip(_skip) {}
   };
   struct BaseEdge {
@@ -183,17 +192,24 @@ public:
     CacheStreamConfigureDataWeakPtr data;
     int reuse;
     int skip;
-    BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse, int _skip)
+    BaseEdge(Type _type, const CacheStreamConfigureDataPtr &_data, int _reuse,
+             int _skip)
         : type(_type), dynStreamId(_data->dynamicId), data(_data),
           reuse(_reuse), skip(_skip) {}
   };
   std::vector<DepEdge> depEdges;
   std::vector<BaseEdge> baseEdges;
+  void clearEdges() {
+    this->baseEdges.clear();
+    this->depEdges.clear();
+  }
   void addUsedBy(CacheStreamConfigureDataPtr &data);
   void addSendTo(CacheStreamConfigureDataPtr &data, int reuse, int skip);
   void addBaseOn(CacheStreamConfigureDataPtr &data, int reuse, int skip);
-  static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx, int reuse, int skip);
-  static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse, int skip);
+  static uint64_t convertBaseToDepElemIdx(uint64_t baseElemIdx, int reuse,
+                                          int skip);
+  static uint64_t convertDepToBaseElemIdx(uint64_t depElemIdx, int reuse,
+                                          int skip);
 
   /**
    * StrandId and TotalStrands. Set by MLC if enabled.
@@ -227,5 +243,22 @@ public:
 
   // Set by the MLC stream, for flow control.
   int initCreditedIdx;
+
+  /**
+   * Information to coordinate streams with PUMEngine.
+   * The stream need to wait for the PUMEngine whenever it reachs PUMElemPerSync
+   * elements, and each time the PUMEngine need to finish one round of
+   * computation befores the stream could continue.
+   */
+  static constexpr int64_t InvalidPUMContextId = -1;
+  int64_t pumContextId = InvalidPUMContextId;
+  int64_t pumElemPerSync = 0; // 0 Means never need to sync.
+  bool needSyncWithPUMEngine() const {
+    return this->pumContextId != InvalidContextID && pumElemPerSync > 0;
+  }
+  int64_t waitForPUMRounds(int64_t elemIdx) const {
+    // We always wait for at least one round.
+    return 1 + elemIdx / pumElemPerSync;
+  }
 };
 #endif

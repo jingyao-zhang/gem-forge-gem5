@@ -171,8 +171,8 @@ bool DataMoveCompiler::canCompileStreamPair(AffinePattern srcStream,
     return false;
   }
 
-  auto srcTrips = srcStream.get_trips();
-  auto dstTrips = dstStream.get_trips();
+  auto srcTrips = srcStream.getTrips();
+  auto dstTrips = dstStream.getTrips();
   for (auto i = 0; i < srcTrips.size(); ++i) {
     if (srcTrips[i] != dstTrips[i]) {
       DPRINTF(StreamPUM, "[NoPUM] Mismatch in Trips.\n");
@@ -333,10 +333,8 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
     commands.back().type = "intra-array";
     commands.back().bitline_dist = bitlines;
     // Generate all active bitline-mask according to tile_sizes.
-    commands.back().bitline_mask =
-        AffinePattern::construct_canonical_sub_region(
-            tile_sizes, AffinePattern::IntVecT(tile_sizes.size(), 0),
-            tile_sizes);
+    commands.back().bitline_mask = AffinePattern::constructSubRegion(
+        tile_sizes, AffinePattern::IntVecT(tile_sizes.size(), 0), tile_sizes);
 
     DPRINTF(StreamPUM, "Intra-Array Cmd %s", commands.back());
   }
@@ -383,8 +381,7 @@ PUMCommandVecT DataMoveCompiler::compileAlign(int64_t dim,
       starts.push_back(0);
       trips.push_back(tile_sizes[i]);
     }
-    return AffinePattern::construct_canonical_sub_region(tile_sizes, starts,
-                                                         trips);
+    return AffinePattern::constructSubRegion(tile_sizes, starts, trips);
   };
 
   auto front_pattern = constructBitlineSubRegion(0, bitlineSep);
@@ -553,7 +550,7 @@ void DataMoveCompiler::recursiveMaskSubRegionAtDim(
   }
 
   auto ps = getSubRegionStart(subRegion);
-  auto qs = subRegion.get_trips();
+  auto qs = subRegion.getTrips();
   auto p = ps[dim];
   auto q = qs[dim];
   auto t = tile_sizes[dim];
@@ -676,7 +673,7 @@ DataMoveCompiler::maskCmdsBySubRegion(const PUMCommandVecT &commands,
       if (c.type == "intra-array") {
         // Check if we shift beyond bitlines.
         auto start = intersect.getSubRegionStartToArraySize(this->tile_sizes);
-        auto trips = intersect.get_trips();
+        auto trips = intersect.getTrips();
         auto dist =
             AffinePattern::getArrayPosition(this->tile_sizes, c.bitline_dist);
         IntVecT movedStart;
@@ -872,7 +869,7 @@ void DataMoveCompiler::mapCmdToLLC(
 
         auto srcStartPos =
             intersect.getSubRegionStartToArraySize(this->tile_nums);
-        auto trips = intersect.get_trips();
+        auto trips = intersect.getTrips();
         auto tileDist =
             AffinePattern::getArrayPosition(this->tile_nums, command.tile_dist);
         IntVecT dstStartPos;
@@ -896,9 +893,8 @@ void DataMoveCompiler::mapCmdToLLC(
                  this->tile_nums[reuseDim]);
         }
 
-        llcTiles.back().dstTilePattern =
-            AffinePattern::construct_canonical_sub_region(this->tile_nums,
-                                                          dstStartPos, trips);
+        llcTiles.back().dstTilePattern = AffinePattern::constructSubRegion(
+            this->tile_nums, dstStartPos, trips);
 
         /**
          * Split the dest sub region to LLC banks.

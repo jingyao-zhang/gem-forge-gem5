@@ -18,59 +18,7 @@ CacheStreamConfigureData::CacheStreamConfigureData(
   assert(this->addrGenCallback && "Invalid addrGenCallback.");
 }
 
-CacheStreamConfigureData::CacheStreamConfigureData(
-    const CacheStreamConfigureData &other) {
-  this->operator=(other);
-}
-
 CacheStreamConfigureData::~CacheStreamConfigureData() {}
-
-CacheStreamConfigureData &
-CacheStreamConfigureData::operator=(const CacheStreamConfigureData &other) {
-#define copyToSelf(X) this->X = other.X
-  copyToSelf(stream);
-  copyToSelf(dynamicId);
-  copyToSelf(elementSize);
-  copyToSelf(floatPlan);
-  copyToSelf(initVAddr);
-  copyToSelf(initPAddr);
-  copyToSelf(initPAddrValid);
-  copyToSelf(mlcBufferNumSlices);
-  copyToSelf(isPUMPrefetch);
-  copyToSelf(isPseudoOffload);
-  copyToSelf(rangeSync);
-  copyToSelf(rangeCommit);
-  copyToSelf(addrGenFormalParams);
-  copyToSelf(addrGenCallback);
-  copyToSelf(predFormalParams);
-  copyToSelf(predCallback);
-  copyToSelf(totalTripCount);
-  copyToSelf(hasBeenCuttedByMLC);
-  copyToSelf(isPredicated);
-  copyToSelf(isPredicatedTrue);
-  copyToSelf(predicateStreamId);
-  copyToSelf(loadFormalParams);
-  copyToSelf(storeCallback);
-  copyToSelf(loadFormalParams);
-  copyToSelf(loadCallback);
-  copyToSelf(loopBoundFormalParams);
-  copyToSelf(loopBoundCallback);
-  copyToSelf(loopBoundRet);
-  copyToSelf(reductionInitValue);
-  copyToSelf(finalValueNeededByCore);
-  copyToSelf(isPointerChase);
-  copyToSelf(shouldBeSlicedToCacheLines);
-  copyToSelf(isOneIterationBehind);
-  copyToSelf(depEdges);
-  copyToSelf(baseEdges);
-  copyToSelf(strandIdx);
-  copyToSelf(totalStrands);
-  copyToSelf(strandSplit);
-  copyToSelf(streamConfig);
-  copyToSelf(initCreditedIdx);
-#undef copyToSelf
-  return *this;
-}
 
 void CacheStreamConfigureData::addUsedBy(CacheStreamConfigureDataPtr &data) {
   int reuse = 1;
@@ -111,8 +59,19 @@ uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(uint64_t baseElemIdx,
     depElemIdx = baseElemIdx * reuse;
   }
   if (skip != 0) {
+    /**
+     * Be careful here for the BaseElemIdx in [0, skip).
+     * By definition -- Only BaseElemIdx = m * skip has a corresponding DepElemIdx.
+     * However, here we define it as:
+     *   if   BaseElemIdx == 0 -> DepElemIdx = 0.
+     *   else DepElemIdx = (BaseElemIdx - 1) / skip;
+     */
     assert(reuse == 1);
-    depElemIdx = baseElemIdx / skip - 1;
+    if (baseElemIdx == 0) {
+      depElemIdx = 0;
+    } else {
+      depElemIdx = (baseElemIdx - 1) / skip;
+    }
   }
   return depElemIdx;
 }
@@ -252,36 +211,13 @@ CacheStreamConfigureData::splitIntoStrands(const StrandSplitInfo &strandSplit) {
         strandSplit, strandIdx, this->addrGenFormalParams,
         this->addrGenCallback);
 
-    auto strand = std::make_shared<CacheStreamConfigureData>(
-        this->stream, this->dynamicId, this->elementSize,
-        strandAddrGenFormalParams, this->addrGenCallback);
+    // Shallow copy every thing.
+    auto strand = std::make_shared<CacheStreamConfigureData>(*this);
     strands.emplace_back(strand);
 
     /***************************************************************************
      * Properly set the splited fields.
      ***************************************************************************/
-
-#define copyToStrand(X) strand->X = this->X
-    copyToStrand(floatPlan);
-    copyToStrand(mlcBufferNumSlices);
-    copyToStrand(isPseudoOffload);
-    copyToStrand(rangeSync);
-    copyToStrand(rangeCommit);
-    copyToStrand(hasBeenCuttedByMLC);
-    copyToStrand(isPredicated);
-    copyToStrand(isPredicatedTrue);
-    copyToStrand(predicateStreamId);
-    copyToStrand(storeFormalParams);
-    copyToStrand(storeCallback);
-    copyToStrand(loadFormalParams);
-    copyToStrand(loopBoundFormalParams);
-    copyToStrand(loopBoundCallback);
-    copyToStrand(loopBoundRet);
-    copyToStrand(reductionInitValue);
-    copyToStrand(finalValueNeededByCore);
-    copyToStrand(isPointerChase);
-    copyToStrand(isOneIterationBehind);
-#undef copyToStrand
 
     // Strand specific field.
     strand->strandIdx = strandIdx;
@@ -303,10 +239,12 @@ CacheStreamConfigureData::splitIntoStrands(const StrandSplitInfo &strandSplit) {
       panic("%s: Strand InitVAddr %#x faulted.", strandId, strand->initVAddr);
     }
 
+    strand->depEdges.clear();
     for (auto &dep : depEdges) {
       assert(dep.type == DepEdge::Type::SendTo && "Split Indirect.");
       strand->addSendTo(dep.data, dep.reuse, dep.skip);
     }
+    strand->baseEdges.clear();
     for (auto &base : baseEdges) {
       auto baseConfig = base.data.lock();
       assert(baseConfig && "BaseConfig already released?");

@@ -150,6 +150,7 @@ public:
     AliasedIndirectUpdate,
     BaseValueNotReady,
     ValueNotReady,
+    WaitingPUM,
     NumLLCStreamEngineIssueReason,
   };
   // Will be default initialized.

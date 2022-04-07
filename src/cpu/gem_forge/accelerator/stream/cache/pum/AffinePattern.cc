@@ -55,18 +55,18 @@ AffinePattern AffinePattern::intersectSubRegions(const IntVecT &array_sizes,
                                                  const AffinePattern &region1,
                                                  const AffinePattern &region2) {
 
-  if (!region1.is_canonical_sub_region_to_array_size(array_sizes)) {
+  if (!region1.isSubRegionToArraySize(array_sizes)) {
     panic("Region1 %s Not SubRegion in Array %s.", region1, array_sizes);
   }
 
-  if (!region2.is_canonical_sub_region_to_array_size(array_sizes)) {
+  if (!region2.isSubRegionToArraySize(array_sizes)) {
     panic("Region2 %s Not SubRegion in Array %s.", region2, array_sizes);
   }
 
   auto starts1 = region1.getSubRegionStartToArraySize(array_sizes);
-  auto trips1 = region1.get_trips();
+  auto trips1 = region1.getTrips();
   auto starts2 = region2.getSubRegionStartToArraySize(array_sizes);
-  auto trips2 = region2.get_trips();
+  auto trips2 = region2.getTrips();
   IntVecT intersect_starts;
   IntVecT intersect_trips;
   auto dimension = array_sizes.size();
@@ -87,12 +87,11 @@ AffinePattern AffinePattern::intersectSubRegions(const IntVecT &array_sizes,
     intersect_starts.push_back(ss);
     intersect_trips.push_back(tt);
   }
-  return construct_canonical_sub_region(array_sizes, intersect_starts,
-                                        intersect_trips);
+  return constructSubRegion(array_sizes, intersect_starts, intersect_trips);
 }
 
-bool AffinePattern::is_canonical_sub_region_to_array_size(
-    const IntVecT &array_sizes, bool allow_reuse) const {
+bool AffinePattern::isSubRegionToArraySize(const IntVecT &array_sizes,
+                                           bool allow_reuse) const {
   auto dimension = array_sizes.size();
   if (params.size() != dimension) {
     return false;
@@ -105,7 +104,7 @@ bool AffinePattern::is_canonical_sub_region_to_array_size(
   }
 
   auto strides = get_strides();
-  auto trips = get_trips();
+  auto trips = getTrips();
   for (auto i = 0; i < dimension; ++i) {
     auto s = strides[i];
     auto t = inner_array_sizes[i];
