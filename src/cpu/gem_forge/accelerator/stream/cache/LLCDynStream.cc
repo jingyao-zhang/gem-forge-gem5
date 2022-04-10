@@ -48,12 +48,16 @@ LLCDynStream::LLCDynStream(AbstractStreamAwareController *_mlcController,
   // Remember the BaseOn configs.
   for (auto &baseEdge : this->configData->baseEdges) {
     this->baseOnConfigs.emplace_back(baseEdge.data.lock());
+    this->baseOnReuses.push_back(baseEdge.reuse);
+    this->baseOnSkips.push_back(baseEdge.skip);
     this->reusedBaseElements.emplace_back(baseEdge.reuse);
     if (baseEdge.reuse <= 0) {
       LLC_S_PANIC(this->strandId, "Illegal Reuse Count %d on %s.",
                   baseEdge.reuse, baseEdge.data.lock()->dynamicId);
     }
     assert(this->baseOnConfigs.back() && "BaseStreamConfig already released?");
+    LLC_S_DPRINTF(this->getDynStrandId(), "Add BaseOnConfig %s.\n",
+                  this->baseOnConfigs.back()->dynamicId);
   }
 
   if (this->isPointerChase()) {
@@ -536,40 +540,63 @@ void LLCDynStream::initNextElement(Addr vaddr) {
      * Adjust the BaseElemIdx to ReuseCount.
      * NOTE: Here we need to adjust BaseStreamElemIdx with ReuseCount.
      * NOTE: Be careful with StreamElemIdx and StrandElemIdx.
+     * NOTE: After splitted into strands, IsOneIterBehind actually means one
+     * StrandElem behind. This changed the dependence chain, and should only be
+     * applied to Reduction (Not PtrChase).
      */
-    auto baseStreamElemIdx = streamElemIdx;
+    auto depStreamElemIdx = streamElemIdx;
     if (this->isOneIterationBehind()) {
-      assert(streamElemIdx > 0 &&
+      assert(strandElemIdx > 0 &&
              "OneIterationBehind StreamElement begins at 1.");
-      baseStreamElemIdx = streamElemIdx - 1;
+      depStreamElemIdx = this->configData->getStreamElemIdxFromStrandElemIdx(
+          strandElemIdx - 1);
     }
 
+    auto baseStreamElemIdx = CacheStreamConfigureData::convertDepToBaseElemIdx(
+        depStreamElemIdx, baseOnReuses.at(i), baseOnSkips.at(i));
+
     auto &reusedBaseElem = this->reusedBaseElements.at(i);
-    const auto reuseCount = reusedBaseElem.reuse;
-    baseStreamElemIdx /= reuseCount;
 
     const auto &baseConfig = this->baseOnConfigs.at(i);
     auto baseStrandId =
         baseConfig->getStrandIdFromStreamElemIdx(baseStreamElemIdx);
     auto baseStrandElemIdx =
         baseConfig->getStrandElemIdxFromStreamElemIdx(baseStreamElemIdx);
+
     LLC_S_DPRINTF(this->getDynStrandId(),
-                  "Add BaseElem (Reuse %d) from %s StreamElemIdx %llu "
-                  "StrandElemIdx %llu.\n",
-                  reuseCount, baseStrandId, baseStreamElemIdx,
-                  baseStrandElemIdx);
+                  "Add BaseStrandElem %s%llu Reuse %ld Skip %ld "
+                  "BaseStreamElemIdx %lu.\n",
+                  baseStrandId, baseStrandElemIdx, this->baseOnReuses.at(i),
+                  this->baseOnSkips.at(i), baseStreamElemIdx);
     const auto &baseDynStreamId = baseConfig->dynamicId;
     auto baseS = baseConfig->stream;
     if (this->baseStream &&
         this->baseStream->getDynStreamId() == baseDynStreamId) {
-      // This is from base stream. Should not have strands.
-      assert(!this->configData->isSplitIntoStrands() && "Indirect Strand.");
-      if (!this->baseStream->idxToElementMap.count(baseStreamElemIdx)) {
+      /**
+       * This is from base stream. Check that the mapping is homogeneous if
+       * splitted.
+       */
+      if (this->configData->isSplitIntoStrands()) {
+        if (baseStrandId.strandIdx != this->getDynStrandId().strandIdx) {
+          LLC_ELEMENT_PANIC(element,
+                            "Mismatch IndirectStrandIdx with BaseStrandId %s.",
+                            baseStrandId);
+        }
+        auto baseStrandElemIdxOffset = this->isOneIterationBehind() ? 1 : 0;
+        if (baseStrandElemIdx + baseStrandElemIdxOffset != strandElemIdx) {
+          LLC_ELEMENT_PANIC(element,
+                            "Mismatch IndirectStrandElemIdx with BaseStrandId "
+                            "%s BaseStrandElemIdx %lu Offset %lu.",
+                            baseStrandId, baseStrandElemIdx,
+                            baseStrandElemIdxOffset);
+        }
+      }
+      if (!this->baseStream->idxToElementMap.count(baseStrandElemIdx)) {
         LLC_ELEMENT_PANIC(element, "Missing base element from %s.",
-                          this->baseStream->getDynStreamId());
+                          this->baseStream->getDynStrandId());
       }
       element->baseElements.emplace_back(
-          this->baseStream->idxToElementMap.at(baseStreamElemIdx));
+          this->baseStream->idxToElementMap.at(baseStrandElemIdx));
     } else {
       /**
        * This is from another bank, we just create the element here.
@@ -588,22 +615,21 @@ void LLCDynStream::initNextElement(Addr vaddr) {
         baseElem = reusedBaseElem.elem;
       } else {
 
-        Addr baseElementVaddr = 0;
+        Addr baseElemVAddr = 0;
         auto linearBaseAddrGen =
             std::dynamic_pointer_cast<LinearAddrGenCallback>(
                 baseConfig->addrGenCallback);
         if (linearBaseAddrGen) {
-          baseElementVaddr =
+          baseElemVAddr =
               baseConfig->addrGenCallback
                   ->genAddr(baseStreamElemIdx, baseConfig->addrGenFormalParams,
                             getStreamValueFail)
                   .front();
         }
 
-        // TODO: Need to translate between StrandElemIdx and StreamElemIdx.
         baseElem = std::make_shared<LLCStreamElement>(
             baseS, this->mlcController, baseStrandId, baseStrandElemIdx,
-            baseElementVaddr, baseS->getMemElementSize(),
+            baseElemVAddr, baseS->getMemElementSize(),
             false /* isNDCElement */);
       }
       element->baseElements.emplace_back(baseElem);
@@ -616,29 +642,33 @@ void LLCDynStream::initNextElement(Addr vaddr) {
   if (this->getStaticS()->isReduction() ||
       this->getStaticS()->isPointerChaseIndVar()) {
     if (!this->lastReductionElement) {
-      uint64_t firstElemIdx =
+      uint64_t firstStreamElemIdx =
           this->configData->floatPlan.getFirstFloatElementIdx();
+
+      if (firstStreamElemIdx > 0 && this->configData->isSplitIntoStrands()) {
+        LLC_S_PANIC(this->getDynStreamId(),
+                    "Strand with FirstStreamElemIdx %lu > 0 is not working.",
+                    firstStreamElemIdx);
+      }
+
       // First time, just initialize the first element.
       this->lastReductionElement = std::make_shared<LLCStreamElement>(
           this->getStaticS(), this->mlcController, this->getDynStrandId(),
-          firstElemIdx, 0, size, false /* isNDCElement */);
+          firstStreamElemIdx, 0, size, false /* isNDCElement */);
       this->lastReductionElement->setValue(
           this->configData->reductionInitValue);
-      this->lastComputedReductionElemIdx = firstElemIdx;
+      this->lastComputedReductionElemIdx = firstStreamElemIdx;
     }
 
-    auto baseStreamElemIdx = streamElemIdx;
-    if (this->isOneIterationBehind()) {
-      assert(streamElemIdx > 0 &&
-             "OneIterationBehind StreamElement begins at 1.");
-      baseStreamElemIdx = streamElemIdx - 1;
-    }
+    assert(this->isOneIterationBehind());
+    assert(strandElemIdx > 0);
+    auto baseStrandElemIdx = strandElemIdx - 1;
 
-    if (this->lastReductionElement->idx != baseStreamElemIdx) {
+    if (this->lastReductionElement->idx != baseStrandElemIdx) {
       LLC_S_PANIC(
           this->getDynStrandId(),
-          "Missing previous Reduction LLCStreamElement %llu, Current %llu.",
-          baseStreamElemIdx, this->lastReductionElement->idx);
+          "Missing previous Reduction StrandElemIdx %llu, Current %llu.",
+          baseStrandElemIdx, this->lastReductionElement->idx);
     }
     /**
      * IndirectReductionStream is handled differently, as their computation
@@ -764,61 +794,99 @@ bool LLCDynStream::isBasedOn(const DynStreamId &baseId) const {
 }
 
 void LLCDynStream::recvStreamForward(LLCStreamEngine *se,
-                                     const uint64_t baseElementIdx,
+                                     const uint64_t sendStrandElemIdx,
                                      const DynStreamSliceId &sliceId,
                                      const DataBlock &dataBlk) {
-
-  auto recvElemIdx = baseElementIdx;
-  if (this->isOneIterationBehind()) {
-    recvElemIdx++;
-  }
-
+  auto recvStrandElemIdx = sendStrandElemIdx;
+  bool found = false;
   for (const auto &baseEdge : this->configData->baseEdges) {
     if (baseEdge.dynStreamId == sliceId.getDynStreamId()) {
-      auto newRecvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-          recvElemIdx, baseEdge.reuse, baseEdge.skip);
-      LLC_SLICE_DPRINTF(
-          sliceId,
-          "[Forward] Adjust RecvElemIdx %lu by Reuse %d Skip %d = %lu.\n",
-          recvElemIdx, baseEdge.reuse, baseEdge.skip, newRecvElemIdx);
-      recvElemIdx = newRecvElemIdx;
+
+      /**
+       * Carefully adjust:
+       * SendStrandElemIdx -> SendStreamElemIdx ->
+       * RecvStreamElemIdx -> RecvStrandElemIdx.
+       *
+       * So far the first step requires that BaseConfig is not released yet.
+       * TODO: Send SendStreamElemIdx along with the message.
+       */
+      auto sendConfig = baseEdge.data.lock();
+      assert(sendConfig && "SendConfig already released.");
+
+      auto adjustedSendStrandElemIdx = sendStrandElemIdx;
+      if (sendConfig->isOneIterationBehind) {
+        adjustedSendStrandElemIdx--;
+      }
+      auto sendStreamElemIdx = sendConfig->getStreamElemIdxFromStrandElemIdx(
+          sliceId.getDynStrandId(), adjustedSendStrandElemIdx);
+      auto recvStreamElemIdx =
+          CacheStreamConfigureData::convertBaseToDepElemIdx(
+              sendStreamElemIdx, baseEdge.reuse, baseEdge.skip);
+      auto recvStrandId =
+          this->configData->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+      recvStrandElemIdx = this->configData->getStrandElemIdxFromStreamElemIdx(
+          recvStreamElemIdx);
+
+      assert(recvStrandId == this->getDynStrandId());
+
+      // OneIterBehind is defined on Strand.
+      if (this->isOneIterationBehind()) {
+        recvStrandElemIdx++;
+      }
+
+      LLC_S_DPRINTF(
+          this->getDynStrandId(),
+          "[Forward] Received SendStrand %s-%lu SendStreamElemIdx %lu by Reuse "
+          "%d Skip %d = RecvStreamElemIdx %lu RecvStrandElemIdx %lu.\n",
+          sliceId.getDynStrandId(), sendStrandElemIdx, sendStreamElemIdx,
+          baseEdge.reuse, baseEdge.skip, recvStreamElemIdx, recvStrandElemIdx);
+
+      found = true;
       break;
     }
   }
 
+  assert(found && "Failed to Find SendConfig");
+
   auto S = this->getStaticS();
-  if (!this->idxToElementMap.count(recvElemIdx)) {
+  if (!this->idxToElementMap.count(recvStrandElemIdx)) {
     LLC_SLICE_PANIC(
-        sliceId,
-        "Cannot find the receiver element %s %llu allocate from %llu.\n",
-        this->getDynStreamId(), recvElemIdx, this->nextInitStrandElemIdx);
+        sliceId, "Cannot find the RecvStrandElem %s %lu allocate from %lu.\n",
+        this->getDynStrandId(), recvStrandElemIdx, this->nextInitStrandElemIdx);
   }
-  LLCStreamElementPtr recvElement = this->idxToElementMap.at(recvElemIdx);
-  bool foundBaseElement = false;
-  for (auto &baseElement : recvElement->baseElements) {
-    if (baseElement->strandId == sliceId.getDynStrandId()) {
+  LLCStreamElementPtr recvElem = this->idxToElementMap.at(recvStrandElemIdx);
+  bool foundBaseElem = false;
+  for (auto &baseElem : recvElem->baseElements) {
+    if (baseElem->strandId == sliceId.getDynStrandId()) {
       /**
        * Found the base element to hold the data.
        * If the BaseStream is IndirectStream, we copy the ElementVaddr from the
        * slice.
        */
-      if (baseElement->vaddr == 0) {
-        baseElement->vaddr = sliceId.vaddr;
+      if (baseElem->vaddr == 0) {
+        baseElem->vaddr = sliceId.vaddr;
       }
-      baseElement->extractElementDataFromSlice(S->getCPUDelegator(), sliceId,
-                                               dataBlk);
-      foundBaseElement = true;
+      baseElem->extractElementDataFromSlice(S->getCPUDelegator(), sliceId,
+                                            dataBlk);
+      foundBaseElem = true;
       break;
     }
   }
-  assert(foundBaseElement && "Found base element");
-  if (recvElement->areBaseElementsReady()) {
+  if (!foundBaseElem) {
+    for (auto &baseElem : recvElem->baseElements) {
+      LLC_ELEMENT_DPRINTF(recvElem, "BaseElem %s %lu.\n", baseElem->strandId,
+                          baseElem->idx);
+    }
+    LLC_ELEMENT_PANIC(recvElem, "Failed to find BaseElem %s %lu.",
+                      sliceId.getDynStrandId(), recvStrandElemIdx);
+  }
+  if (recvElem->areBaseElementsReady()) {
     /**
      * If I am indirect stream, push the computation.
      * Otherwise, the LLC SE should check me for ready elements.
      */
     if (this->baseStream) {
-      se->pushReadyComputation(recvElement);
+      se->pushReadyComputation(recvElem);
     }
   }
 }
@@ -1440,13 +1508,12 @@ void LLCDynStream::completeFinalReduction(LLCStreamEngine *se) {
   // We also want to forward to any consuming streams.
   DataBlock dataBlock;
   dataBlock.setData(finalReductionValue.uint8Ptr(), lineOffset, payloadSize);
+
   for (const auto &edge : this->sendToEdges) {
-    auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        this->lastComputedReductionElemIdx, edge.reuse, edge.skip);
-    se->issueStreamDataToLLC(this, sliceId, dataBlock, edge.data, recvElemIdx,
-                             RubySystem::getBlockSizeBytes() /* PayloadSize */);
     LLC_ELEMENT_DPRINTF_(LLCRubyStreamReduce, finalReductionElem,
                          "[Reduce] Send result to %s.\n", edge.data->dynamicId);
+    se->issueStreamDataToLLC(this, sliceId, dataBlock, edge,
+                             RubySystem::getBlockSizeBytes() /* PayloadSize */);
   }
 }
 

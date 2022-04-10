@@ -254,6 +254,11 @@ void MLCStreamEngine::computeReuseInformation(
                      "[MLC NoReuse] Have dependence.\n");
       continue;
     }
+    if (S->isStoreComputeStream()) {
+      MLC_S_DPRINTF_(MLCRubyStreamReuse, config->dynamicId,
+                     "[MLC NoReuse] StoreComputeS is not reused.\n");
+      continue;
+    }
     // Check if continuous.
     auto linearAddrGen = std::dynamic_pointer_cast<LinearAddrGenCallback>(
         config->addrGenCallback);

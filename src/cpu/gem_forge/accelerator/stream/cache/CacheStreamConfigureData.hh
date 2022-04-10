@@ -212,6 +212,31 @@ public:
                                           int skip);
 
   /**
+   * @brief Hint to MLCStrandManager to avoid split outer dimension.
+   * When set to positive value, the MLCStrandManager avoids split outer loops.
+   * For example: a stream with pattern:
+   *   0 : 1 : 512 : 512 : 512
+   * With hintNoStrandSplitOuterTripCount set to 512, the MLCStrandManager will
+   * split the stream with:
+   *  initOffset = 0,
+   *  interleave = TotalTrip/HintNoSplit/Cores = 512 * 512 / 512 / 64 = 8
+   *  strands = Cores = 64
+   * Essentially, each strand will process 8 columnes of the array.
+   *
+   * Default value is 0, so that MLCStrandManager can choose how to split the
+   * stream freely.
+   */
+  int64_t hintNoStrandSplitOuterTripCount = 0;
+
+  /**
+   * @brief Override the default latency. This is only an AdHoc solution to
+   * split out Reduction, and is only correct for latency. The stats of number
+   * of instructions executed is still the same.
+   * TODO: Really split the reduction part in the compiler.
+   */
+  int overrideComputeLatency = -1;
+
+  /**
    * StrandId and TotalStrands. Set by MLC if enabled.
    * Default to one strand.
    */
@@ -220,13 +245,12 @@ public:
   StrandSplitInfo strandSplit;
   // The original StreamConfig before split into strands.
   CacheStreamConfigureDataPtr streamConfig = nullptr;
-  bool canSplitIntoStrands() const;
+  bool isStrandConfig() const { return streamConfig != nullptr; }
   bool isSplitIntoStrands() const { return this->totalStrands > 1; }
-  CacheStreamConfigureVec splitIntoStrands(const StrandSplitInfo &strandSplit);
   DynStreamFormalParamV splitLinearParam1D(const StrandSplitInfo &strandSplit,
-                                           int strandIdx,
-                                           const DynStreamFormalParamV &params,
-                                           AddrGenCallbackPtr callback);
+                                           int strandIdx);
+  DynStreamFormalParamV splitAffinePatternAtDim(int splitDim, int strandIdx,
+                                                int totalStrands);
 
   /**
    * Get the StrandId from StreamElemIdx.
@@ -240,6 +264,8 @@ public:
    * Exchange between the StreamElemIdx and StrandElemIdx.
    */
   uint64_t getStreamElemIdxFromStrandElemIdx(uint64_t strandElemIdx) const;
+  uint64_t getStreamElemIdxFromStrandElemIdx(const DynStrandId &strandId,
+                                             uint64_t strandElemIdx) const;
 
   // Set by the MLC stream, for flow control.
   int initCreditedIdx;

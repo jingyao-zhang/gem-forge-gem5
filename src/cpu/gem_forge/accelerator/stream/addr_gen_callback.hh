@@ -109,4 +109,8 @@ private:
   ExecFuncPtr execFunc;
 };
 
+std::ostream &operator<<(std::ostream &os, const DynStreamFormalParamV &params);
+std::string to_string(const DynStreamFormalParamV &params);
+std::string printAffinePatternParams(const DynStreamFormalParamV &params);
+
 #endif

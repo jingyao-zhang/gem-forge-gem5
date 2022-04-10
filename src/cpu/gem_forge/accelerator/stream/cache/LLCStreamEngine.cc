@@ -455,10 +455,8 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
    */
   if (!dynS->sendToEdges.empty() && !S->isLoadComputeStream()) {
     for (const auto &edge : dynS->sendToEdges) {
-      auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-          sliceId.getStartIdx(), edge.reuse, edge.skip);
       this->issueStreamDataToLLC(
-          dynS, sliceId, dataBlock, edge.data, recvElemIdx,
+          dynS, sliceId, dataBlock, edge,
           RubySystem::getBlockSizeBytes() /* PayloadSize */);
     }
   }
@@ -1336,9 +1334,6 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
   if (dynS->configData->needSyncWithPUMEngine()) {
     auto nextElemIdx = dynS->peekNextAllocElemIdx();
     auto waitForPUMRounds = dynS->configData->waitForPUMRounds(nextElemIdx);
-    LLC_S_DPRINTF(dynS->getDynStrandId(),
-                  "[Not Issue] Elem %lu Waiting for PUM Round %ld.\n",
-                  nextElemIdx, waitForPUMRounds);
     if (!this->pumEngine->hasCompletedRound(dynS->configData->pumContextId,
                                             waitForPUMRounds)) {
       LLC_S_DPRINTF_(LLCRubyStreamNotIssue, dynS->getDynStrandId(),
@@ -2246,8 +2241,8 @@ void LLCStreamEngine::issueStreamDataToMLC(const DynStreamSliceId &sliceId,
 
 void LLCStreamEngine::issueStreamDataToLLC(
     LLCDynStreamPtr dynS, const DynStreamSliceId &sliceId,
-    const DataBlock &dataBlock, const CacheStreamConfigureDataPtr &recvConfig,
-    uint64_t recvStrandElemIdx, int payloadSize) {
+    const DataBlock &dataBlock,
+    const CacheStreamConfigureData::DepEdge &sendToEdge, int payloadSize) {
   /**
    * Unlike sending data to MLC, we have to calculate the virtual
    * address of the receiving stream and translate that. Also, we can
@@ -2256,28 +2251,74 @@ void LLCStreamEngine::issueStreamDataToLLC(
    *
    * Now that we have strands, we have to be careful translating between
    * StreamElemIdx and StrandElemIdx.
+   *
+   * SendStrandElemIdx -> SendStreamElemIdx -> RecvStreamElemIdx
    */
-  auto strandElemIdx = recvStrandElemIdx;
-  auto streamElemIdx =
-      dynS->configData->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
+  auto recvConfig = sendToEdge.data;
 
-  auto recvElemVAddr =
-      recvConfig->addrGenCallback
-          ->genAddr(streamElemIdx, recvConfig->addrGenFormalParams,
-                    getStreamValueFail)
-          .front();
+  auto convertSendStrandElemIdxToRecvStreamElemIdx =
+      [dynS, &sendToEdge](uint64_t sendStrandElemIdx) -> uint64_t {
+    auto sendStreamElemIdx =
+        dynS->configData->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
+    auto recvStreamElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
+        sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip);
+    return recvStreamElemIdx;
+  };
+
+  auto getRecvElemVAddr = [&recvConfig](uint64_t recvStreamElemIdx) -> Addr {
+    assert(!recvConfig->isStrandConfig() &&
+           "RecvConfig should be StreamConfig");
+    auto recvElemVAddr =
+        recvConfig->addrGenCallback
+            ->genAddr(recvStreamElemIdx, recvConfig->addrGenFormalParams,
+                      getStreamValueFail)
+            .front();
+    return recvElemVAddr;
+  };
+
+  auto sendStrandElemIdx = sliceId.getStartIdx();
+  if (dynS->isOneIterationBehind()) {
+    assert(sendStrandElemIdx > 0);
+    sendStrandElemIdx--;
+  }
+  auto recvStreamElemIdx =
+      convertSendStrandElemIdxToRecvStreamElemIdx(sendStrandElemIdx);
+  auto recvStrandId =
+      recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+
+  auto recvElemVAddr = getRecvElemVAddr(recvStreamElemIdx);
   auto recvElemVAddrEnd = recvElemVAddr + recvConfig->elementSize;
 
+  if (Debug::LLCRubyStreamBase) {
+    auto sendStreamElemIdx =
+        dynS->configData->getStreamElemIdxFromStrandElemIdx(sendStrandElemIdx);
+    auto recvStrandId =
+        recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+    auto recvStrandElemIdx =
+        recvConfig->getStrandElemIdxFromStreamElemIdx(recvStreamElemIdx);
+    LLC_SLICE_DPRINTF(
+        sliceId,
+        "[LLCForward] SendStrandElemIdx %lu SendStreamElemIdx %lu Reuse %ld "
+        "Skip %ld -> RecvStreamElemIdx %lu RecvStrand %s RecvStrandElemIdx "
+        "%lu.\n",
+        sendStrandElemIdx, sendStreamElemIdx, sendToEdge.reuse, sendToEdge.skip,
+        recvStreamElemIdx, recvStrandId, recvStrandElemIdx);
+  }
+
   // Check that receiver does not across lines.
-  for (auto strandElemIdx = sliceId.getStartIdx() + 1;
-       strandElemIdx < sliceId.getEndIdx(); ++strandElemIdx) {
-    auto streamElemIdx =
-        dynS->configData->getStreamElemIdxFromStrandElemIdx(strandElemIdx);
-    auto vaddr = recvConfig->addrGenCallback
-                     ->genAddr(streamElemIdx, recvConfig->addrGenFormalParams,
-                               getStreamValueFail)
-                     .front();
+  for (auto sendStrandElemIdx = sliceId.getStartIdx() + 1;
+       sendStrandElemIdx < sliceId.getEndIdx(); ++sendStrandElemIdx) {
+
+    auto recvStreamElemIdx =
+        convertSendStrandElemIdxToRecvStreamElemIdx(sendStrandElemIdx);
+
+    auto newRecvStrandId =
+        recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
+    assert(newRecvStrandId == recvStrandId && "Forward to MultiStrand.");
+
+    auto vaddr = getRecvElemVAddr(recvStreamElemIdx);
     auto vaddrEnd = vaddr + recvConfig->elementSize;
+
     recvElemVAddr = std::min(recvElemVAddr, vaddr);
     recvElemVAddrEnd = std::max(recvElemVAddrEnd, vaddrEnd);
   }
@@ -2293,14 +2334,14 @@ void LLCStreamEngine::issueStreamDataToLLC(
   if (dynS->translateToPAddr(recvElemVAddrLine, recvElemPAddrLine)) {
     // Now we enqueue the translation request.
     auto recvElementMachineType =
-        recvConfig->floatPlan.getMachineTypeAtElem(streamElemIdx);
+        recvConfig->floatPlan.getMachineTypeAtElem(recvStreamElemIdx);
     auto reqIter = this->enqueueRequest(
         dynS->getStaticS(), sliceId, recvElemVAddrLine, recvElemPAddrLine,
         recvElementMachineType, CoherenceRequestType_STREAM_FORWARD);
 
     // Remember the receiver StrandId and forwarded data block.
     reqIter->forwardToStrandId =
-        recvConfig->getStrandIdFromStreamElemIdx(streamElemIdx);
+        recvConfig->getStrandIdFromStreamElemIdx(recvStreamElemIdx);
     reqIter->dataBlock = dataBlock;
     reqIter->payloadSize = payloadSize;
   } else {
@@ -3239,14 +3280,12 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
    * Send the data to receiver stream.
    */
   for (const auto &edge : dynS->sendToEdges) {
-    auto recvElemIdx = CacheStreamConfigureData::convertBaseToDepElemIdx(
-        sliceId.getStartIdx(), edge.reuse, edge.skip);
     LLC_SLICE_DPRINTF(sliceId,
                       "Send LoadComputeValue to ReceiverStream: %s "
                       "Data %s PayloadSize %d.\n",
                       edge.data->dynamicId, loadValueBlock, payloadSize);
-    this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, edge.data,
-                               recvElemIdx, payloadSize);
+    this->issueStreamDataToLLC(dynS, sliceId, loadValueBlock, edge,
+                               payloadSize);
   }
   slice->setLoadComputeValueSent();
 }
@@ -3817,7 +3856,13 @@ void LLCStreamEngine::startComputation() {
          this->inflyComputations.size() < maxInflyComputation) {
     auto &element = this->readyComputations.front();
     auto S = element->S;
+
     Cycles latency = S->getEstimatedComputationLatency();
+    if (auto llcDynS = LLCDynStream::getLLCStream(element->strandId)) {
+      if (llcDynS->configData->overrideComputeLatency > 0) {
+        latency = Cycles(llcDynS->configData->overrideComputeLatency);
+      }
+    }
 
     if (!this->controller->myParams->has_scalar_alu || S->isSIMDComputation()) {
       /**

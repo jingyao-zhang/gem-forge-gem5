@@ -343,8 +343,8 @@ private:
   void issueStreamDataToLLC(LLCDynStreamPtr stream,
                             const DynStreamSliceId &sliceId,
                             const DataBlock &dataBlock,
-                            const CacheStreamConfigureDataPtr &recvConfig,
-                            uint64_t recvStrandElemIdx, int payloadSize);
+                            const CacheStreamConfigureData::DepEdge &sendToEdge,
+                            int payloadSize);
 
   /**
    * Set the TotalTripCount in MLC. Used to implement StreamLoopBound.

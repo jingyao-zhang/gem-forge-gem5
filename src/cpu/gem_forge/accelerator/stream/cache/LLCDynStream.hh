@@ -204,7 +204,7 @@ public:
                                  CacheStreamConfigureVec &configs);
 
   bool isBasedOn(const DynStreamId &baseId) const;
-  void recvStreamForward(LLCStreamEngine *se, uint64_t baseElementIdx,
+  void recvStreamForward(LLCStreamEngine *se, uint64_t sendStrandElemIdx,
                          const DynStreamSliceId &sliceId,
                          const DataBlock &dataBlk);
 
@@ -300,6 +300,8 @@ public:
    * config.
    */
   std::vector<CacheStreamConfigureDataPtr> baseOnConfigs;
+  std::vector<int64_t> baseOnReuses;
+  std::vector<int64_t> baseOnSkips;
 
   /**
    * Remember the currently reused BaseElement.

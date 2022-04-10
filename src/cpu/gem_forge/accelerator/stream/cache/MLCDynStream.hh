@@ -106,9 +106,11 @@ public:
   bool isWaitingNothing() const { return this->isWaiting == WaitType::Nothing; }
 
   using ElementCallback = std::function<void(const DynStreamId &, uint64_t)>;
-  bool isElementAcked(uint64_t elementIdx) const;
+  bool isElementAcked(uint64_t strandElemIdx) const;
   void registerElementAckCallback(uint64_t elementIdx,
                                   ElementCallback callback);
+
+  CacheStreamConfigureDataPtr getConfig() { return this->config; }
 
 protected:
   Stream *stream;

@@ -40,22 +40,54 @@ public:
 
   bool hasConfiguredStreams() const { return !this->strandMap.empty(); }
 
+  /**
+   * Check the progress of certain stream element is acked.
+   */
+  bool isStreamElemAcked(const DynStreamId &streamId, uint64_t streamElemIdx,
+                         MLCDynStream::ElementCallback callback);
+
 private:
   MLCStreamEngine *mlcSE;
   AbstractStreamAwareController *controller;
+
+  using ConfigPtr = CacheStreamConfigureDataPtr;
+  using ConfigVec = CacheStreamConfigureVec;
 
   std::unordered_map<DynStrandId, MLCDynStream *, DynStrandIdHasher> strandMap;
 
   /**
    * Check if streams can be sliced.
    */
-  void checkShouldBeSliced(CacheStreamConfigureVec &configs) const;
+  void checkShouldBeSliced(ConfigVec &configs) const;
+
+  /**
+   * @brief States during splitting streams into strands.
+   */
+  struct StrandSplitContext {
+    int64_t noSplitOuterTripCount = 0;
+    int totalStrands = 1;
+    // We allow each stream to have specific interleaving.
+    struct ContextPerStream {
+      int splitDim = 0;
+      int splitInterleave = 0;
+    };
+    std::map<DynStreamId, ContextPerStream> perStreamContext;
+  };
 
   /**
    * Split stream into strands.
    */
-  bool canSplitIntoStrands(const CacheStreamConfigureVec &configs) const;
-  void splitIntoStrands(CacheStreamConfigureVec &configs);
+  bool canSplitIntoStrands(StrandSplitContext &context,
+                           const ConfigVec &configs) const;
+  bool canSplitIntoStrands(StrandSplitContext &context, ConfigPtr config) const;
+  void splitIntoStrands(StrandSplitContext &context, ConfigVec &configs);
+  ConfigVec splitIntoStrands(StrandSplitContext &context, ConfigPtr config);
+  ConfigVec splitIntoStrandsImpl(StrandSplitContext &context, ConfigPtr config,
+                                 StrandSplitInfo &strandSplit, bool isDirect);
+  DynStreamFormalParamV splitAffinePattern(StrandSplitContext &context,
+                                           ConfigPtr config,
+                                           const StrandSplitInfo &strandSplit,
+                                           int strandIdx);
 
   /**
    * Configure a single stream.
@@ -64,13 +96,12 @@ private:
    * In case the first element's virtual address faulted, the MLC StreamEngine
    * will return physical address that maps to the LLC bank of this tile.
    */
-  void configureStream(CacheStreamConfigureDataPtr configs, MasterID masterId);
+  void configureStream(ConfigPtr configs, MasterID masterId);
 
   /**
    * Send configure message to remote SE.
    */
-  void sendConfigToRemoteSE(CacheStreamConfigureDataPtr streamConfigureData,
-                            MasterID masterId);
+  void sendConfigToRemoteSE(ConfigPtr streamConfigureData, MasterID masterId);
   /**
    * Receive a StreamEnd message.
    * The difference between StreamConfigure and StreamEnd message

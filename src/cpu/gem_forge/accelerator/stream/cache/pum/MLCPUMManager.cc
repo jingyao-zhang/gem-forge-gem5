@@ -2,6 +2,7 @@
 #include "PUMEngine.hh"
 
 #include "../LLCStreamEngine.hh"
+#include "../MLCStrandManager.hh"
 
 #include "sim/stream_nuca/stream_nuca_manager.hh"
 #include "sim/stream_nuca/stream_nuca_map.hh"
@@ -528,22 +529,34 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
   /**
    * @brief We needed to add back splitted outer dimension.
    * Also, we need to set the information to coordinate PUMReduceStream and
-   * PUMEngine.
+   * PUMEngine, and notify MLCStrandManager that streams should never be split
+   * at these outer dimensions.
    */
   newDirectConfig->pumContextId = context.contextId;
   newDirectConfig->pumElemPerSync = tileAlignedAtomicPat.get_total_trip();
+  newDirectConfig->hintNoStrandSplitOuterTripCount = 1;
   if (!patInfo.splitOuterDims.empty()) {
     const auto &splitDims = patInfo.splitOuterDims.front();
     tileAlignedAtomicPat.params.insert(tileAlignedAtomicPat.params.end(),
                                        splitDims.params.begin(),
                                        splitDims.params.end());
+    newDirectConfig->hintNoStrandSplitOuterTripCount =
+        splitDims.get_total_trip();
     MLC_S_DPRINTF(directConfig->dynamicId,
-                  "[PUMReduce] TileAlignedPat Added SplitOuterDim %s -> %s.\n",
-                  splitDims, tileAlignedAtomicPat);
+                  "[PUMReduce] TileAlignedPat Added SplitOuterDim %s -> %s "
+                  "NoStrandSplitOuterTripCount %ld.\n",
+                  splitDims, tileAlignedAtomicPat,
+                  newDirectConfig->hintNoStrandSplitOuterTripCount);
   }
 
   auto addrGenFormalParams = this->convertAffinePatternToStreamFormalParams(
       tileAlignedAtomicPat, patInfo.regionVAddr, patInfo.scalarElemSize);
+
+  MLC_S_DPRINTF(directConfig->dynamicId,
+                "[PUMReduce] Convert to AddrPattern RegionVAddr %#x "
+                "ScalarElemSize %d %s.\n",
+                patInfo.regionVAddr, patInfo.scalarElemSize,
+                printAffinePatternParams(addrGenFormalParams));
 
   newDirectConfig->addrGenFormalParams = addrGenFormalParams;
 
@@ -561,6 +574,14 @@ void MLCPUMManager::addPUMReduceStream(PUMContext &context,
                 "[PUMReduce]   NewTotalTrip %ld NewInnerTrip %ld.\n",
                 newDirectConfig->totalTripCount,
                 newDirectConfig->innerTripCount);
+
+  /**
+   * Normally we should split the reduction computation in the compiler.
+   * For now as an approximation for the performance, we override the default
+   * compute latency based on the last instruction.
+   */
+  newReduceConfig->overrideComputeLatency =
+      newReduceConfig->stream->getComputeCallback()->getLastInstLat();
 
   /**
    * 2. Adjust the edges of our new configurations.
@@ -1073,6 +1094,7 @@ DynStreamFormalParamV MLCPUMManager::convertAffinePatternToStreamFormalParams(
 
   DynStreamFormalParamV params;
 
+  uint64_t prevTrip = 1;
   for (const auto &param : pattern.params) {
     auto stride = param.stride;
     auto trip = param.trip;
@@ -1083,7 +1105,8 @@ DynStreamFormalParamV MLCPUMManager::convertAffinePatternToStreamFormalParams(
 
     params.emplace_back();
     params.back().isInvariant = true;
-    params.back().invariant.uint64() = trip;
+    params.back().invariant.uint64() = trip * prevTrip;
+    prevTrip = trip * prevTrip;
   }
 
   auto startVAddr = pattern.start * memElemSize + arrayVAddr;
@@ -1401,23 +1424,17 @@ void MLCPUMManager::tryKickNextComputeRound(PUMContext &context) {
       const auto &depId = dep.data->dynamicId;
       assert(dep.data->stream->isStoreComputeStream());
 
-      // TODO: Handle Strand here.
-      auto mlcDepS = this->mlcSE->getStreamFromStrandId(DynStrandId(depId));
-      assert(mlcDepS && "MLCDepS already released?");
-      // Here I just check that the core has received all the Acks?
-      // If not -- Register a callback?
-      if (!mlcDepS->isElementAcked(reducedElems - 1)) {
-
+      auto contextId = context.contextId;
+      auto callback = [this, contextId](const DynStreamId &dynStreamId,
+                                        uint64_t elemIdx) -> void {
+        this->tryKickNextComputeRound(this->getContextById(contextId));
+      };
+      if (!this->mlcSE->strandManager->isStreamElemAcked(depId, ackedElemIdx,
+                                                         callback)) {
         MLC_S_DPRINTF(
             group.computeConfig->dynamicId,
             "[PUMReduce] The CoreDynS %s No Ack for Round %ld Elem %lu.\n",
             depId, group.nextOuterIter, ackedElemIdx);
-        auto contextId = context.contextId;
-        auto callback = [this, contextId](const DynStreamId &dynStreamId,
-                                          uint64_t elemIdx) -> void {
-          this->tryKickNextComputeRound(this->getContextById(contextId));
-        };
-        mlcDepS->registerElementAckCallback(ackedElemIdx, callback);
 
         return;
       }

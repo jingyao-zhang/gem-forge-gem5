@@ -399,123 +399,128 @@ Addr ExecFunc::invoke(const std::vector<Addr> &params) {
   return retValue;
 }
 
+Cycles ExecFunc::estimateOneInstLat(const StaticInstPtr &staticInst) const {
+
+  int lat = 0;
+  switch (staticInst->opClass()) {
+  default:
+    lat = 0;
+    break;
+  case Enums::OpClass::No_OpClass:
+    lat = 0;
+    break;
+  case Enums::OpClass::IntAlu:
+    lat = 1;
+    break;
+  case Enums::OpClass::IntMult:
+    lat = 3;
+    break;
+  case Enums::OpClass::IntDiv:
+    lat = 12;
+    break;
+  case Enums::OpClass::FloatAdd:
+  case Enums::OpClass::FloatCmp:
+  case Enums::OpClass::FloatCvt:
+  case Enums::OpClass::FloatMisc:
+    lat = 2;
+    break;
+  case Enums::OpClass::FloatMult:
+    lat = 1;
+    break;
+  case Enums::OpClass::FloatMultAcc:
+    lat = 3;
+    break;
+  case Enums::OpClass::FloatDiv:
+    lat = 12;
+    break;
+  case Enums::OpClass::FloatSqrt:
+    lat = 20;
+    break;
+  case Enums::OpClass::SimdAdd:
+  case Enums::OpClass::SimdAddAcc:
+  case Enums::OpClass::SimdAlu:
+  case Enums::OpClass::SimdCmp:
+  case Enums::OpClass::SimdCvt:
+  case Enums::OpClass::SimdMisc:
+  case Enums::OpClass::SimdShift:
+    lat = 1;
+    break;
+  case Enums::OpClass::SimdMult:
+    lat = 3;
+    break;
+  case Enums::OpClass::SimdMultAcc:
+    lat = 4;
+    break;
+  case Enums::OpClass::SimdShiftAcc:
+    lat = 2;
+    break;
+  case Enums::OpClass::SimdDiv:
+    lat = 12;
+    break;
+  case Enums::OpClass::SimdSqrt:
+    lat = 20;
+    break;
+  case Enums::OpClass::SimdFloatAdd:
+  case Enums::OpClass::SimdFloatAlu:
+  case Enums::OpClass::SimdFloatCmp:
+  case Enums::OpClass::SimdFloatCvt:
+  case Enums::OpClass::SimdFloatMisc:
+    lat = 2;
+    break;
+  case Enums::OpClass::SimdFloatDiv:
+    lat = 12;
+    break;
+  case Enums::OpClass::SimdFloatMult:
+    lat = 3;
+    break;
+  case Enums::OpClass::SimdFloatMultAcc:
+    lat = 4;
+    break;
+  case Enums::OpClass::SimdFloatSqrt:
+    lat = 20;
+    break;
+  case Enums::OpClass::SimdReduceAdd:
+    lat = 1;
+    break;
+  case Enums::OpClass::SimdReduceAlu:
+  case Enums::OpClass::SimdReduceCmp:
+  case Enums::OpClass::SimdFloatReduceAdd:
+  case Enums::OpClass::SimdFloatReduceCmp:
+    lat = 2;
+    break;
+  case Enums::OpClass::SimdAes:
+  case Enums::OpClass::SimdAesMix:
+  case Enums::OpClass::SimdSha1Hash:
+  case Enums::OpClass::SimdSha1Hash2:
+  case Enums::OpClass::SimdSha256Hash:
+  case Enums::OpClass::SimdSha256Hash2:
+  case Enums::OpClass::SimdShaSigma2:
+  case Enums::OpClass::SimdShaSigma3:
+    lat = 20;
+    break;
+  case Enums::OpClass::SimdPredAlu:
+    lat = 1;
+    break;
+  case Enums::OpClass::MemRead:
+  case Enums::OpClass::MemWrite:
+  case Enums::OpClass::FloatMemRead:
+  case Enums::OpClass::FloatMemWrite:
+    // MemRead is only used to read the immediate number.
+    lat = 0;
+    break;
+  case Enums::OpClass::IprAccess:
+  case Enums::OpClass::InstPrefetch:
+  case Enums::OpClass::Accelerator:
+    lat = 1;
+    break;
+  }
+  return Cycles(lat);
+}
+
 void ExecFunc::estimateLatency() {
   this->estimatedLatency = Cycles(0);
   for (auto &staticInst : this->instructions) {
-    int lat = 0;
-    switch (staticInst->opClass()) {
-    default:
-      lat = 0;
-      break;
-    case Enums::OpClass::No_OpClass:
-      lat = 0;
-      break;
-    case Enums::OpClass::IntAlu:
-      lat = 1;
-      break;
-    case Enums::OpClass::IntMult:
-      lat = 3;
-      break;
-    case Enums::OpClass::IntDiv:
-      lat = 12;
-      break;
-    case Enums::OpClass::FloatAdd:
-    case Enums::OpClass::FloatCmp:
-    case Enums::OpClass::FloatCvt:
-    case Enums::OpClass::FloatMisc:
-      lat = 2;
-      break;
-    case Enums::OpClass::FloatMult:
-      lat = 1;
-      break;
-    case Enums::OpClass::FloatMultAcc:
-      lat = 3;
-      break;
-    case Enums::OpClass::FloatDiv:
-      lat = 12;
-      break;
-    case Enums::OpClass::FloatSqrt:
-      lat = 20;
-      break;
-    case Enums::OpClass::SimdAdd:
-    case Enums::OpClass::SimdAddAcc:
-    case Enums::OpClass::SimdAlu:
-    case Enums::OpClass::SimdCmp:
-    case Enums::OpClass::SimdCvt:
-    case Enums::OpClass::SimdMisc:
-    case Enums::OpClass::SimdShift:
-      lat = 1;
-      break;
-    case Enums::OpClass::SimdMult:
-      lat = 3;
-      break;
-    case Enums::OpClass::SimdMultAcc:
-      lat = 4;
-      break;
-    case Enums::OpClass::SimdShiftAcc:
-      lat = 2;
-      break;
-    case Enums::OpClass::SimdDiv:
-      lat = 12;
-      break;
-    case Enums::OpClass::SimdSqrt:
-      lat = 20;
-      break;
-    case Enums::OpClass::SimdFloatAdd:
-    case Enums::OpClass::SimdFloatAlu:
-    case Enums::OpClass::SimdFloatCmp:
-    case Enums::OpClass::SimdFloatCvt:
-    case Enums::OpClass::SimdFloatMisc:
-      lat = 2;
-      break;
-    case Enums::OpClass::SimdFloatDiv:
-      lat = 12;
-      break;
-    case Enums::OpClass::SimdFloatMult:
-      lat = 3;
-      break;
-    case Enums::OpClass::SimdFloatMultAcc:
-      lat = 4;
-      break;
-    case Enums::OpClass::SimdFloatSqrt:
-      lat = 20;
-      break;
-    case Enums::OpClass::SimdReduceAdd:
-      lat = 1;
-      break;
-    case Enums::OpClass::SimdReduceAlu:
-    case Enums::OpClass::SimdReduceCmp:
-    case Enums::OpClass::SimdFloatReduceAdd:
-    case Enums::OpClass::SimdFloatReduceCmp:
-      lat = 2;
-      break;
-    case Enums::OpClass::SimdAes:
-    case Enums::OpClass::SimdAesMix:
-    case Enums::OpClass::SimdSha1Hash:
-    case Enums::OpClass::SimdSha1Hash2:
-    case Enums::OpClass::SimdSha256Hash:
-    case Enums::OpClass::SimdSha256Hash2:
-    case Enums::OpClass::SimdShaSigma2:
-    case Enums::OpClass::SimdShaSigma3:
-      lat = 20;
-      break;
-    case Enums::OpClass::SimdPredAlu:
-      lat = 1;
-      break;
-    case Enums::OpClass::MemRead:
-    case Enums::OpClass::MemWrite:
-    case Enums::OpClass::FloatMemRead:
-    case Enums::OpClass::FloatMemWrite:
-      // MemRead is only used to read the immediate number.
-      lat = 0;
-      break;
-    case Enums::OpClass::IprAccess:
-    case Enums::OpClass::InstPrefetch:
-    case Enums::OpClass::Accelerator:
-      lat = 1;
-      break;
-    }
-    this->estimatedLatency += Cycles(lat);
+    this->estimatedLatency += this->estimateOneInstLat(staticInst);
   }
 }
 } // namespace X86ISA

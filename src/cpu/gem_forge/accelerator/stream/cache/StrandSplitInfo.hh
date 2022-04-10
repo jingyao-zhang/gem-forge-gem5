@@ -22,34 +22,34 @@ public:
    * This InitOffset is for case when StreamStartAddr is not aligned to the
    * bank.
    *
-   * * Assume initOffset < interleave.
+   * Assume initOffset < interleave.
    *
-   * * The formula f(Stream) -> Strand:
-   * * AdjustedStreamElemIdx = StreamElemIdx + initOffset
-   * * StrandIdx = (AdjustedStreamElemIdx / interleave) % totalStrands
-   * * StrandElemIdx =
-   * *   (AdjustedStreamElemIdx / (totalStrands * interleave)) * interleave
-   * *   + AdjustedStreamElemIdx % interleave
-   * * If StrandIdx = 0:
-   * *   StrandElemIdx -= initOffset
+   * The formula f(Stream) -> Strand:
+   * AdjustedStreamElemIdx = StreamElemIdx + initOffset
+   * StrandIdx = (AdjustedStreamElemIdx / interleave) % totalStrands
+   * StrandElemIdx =
+   *   (AdjustedStreamElemIdx / (totalStrands * interleave)) * interleave
+   *   + AdjustedStreamElemIdx % interleave
+   * If StrandIdx = 0:
+   *   StrandElemIdx -= initOffset
    *
-   * * Reverse: g(Strand) -> Stream
-   * * If StrandIdx == 0:
-   * *   StrandElemIdx += initOffset
-   * * StreamElemIdx =
-   * *   (StrandElemIdx / interleave) * (totalStrands * interleave)
-   * *   + StrandIdx * interleave + StrandElemIdx % interleave - initOffset.
+   * Reverse: g(Strand) -> Stream
+   * If StrandIdx == 0:
+   *   StrandElemIdx += initOffset
+   * StreamElemIdx =
+   *   (StrandElemIdx / interleave) * (totalStrands * interleave)
+   *   + StrandIdx * interleave + StrandElemIdx % interleave - initOffset.
    *
-   * * TripCount of Strand:
-   * * Let FinalStrandIdx, FinalStrandElemIdx = f(TotalTripCount)
-   * * If StrandIdx < FinalStrandIdx:
-   * *   TripCount = (FinalStrandElemIdx / interleave + 1) * interleave
-   * *   If StrandIdx = 0:
-   * *     TripCount -= initOffset.
-   * * If StrandIdx = FinalStrandIdx:
-   * *   TripCount = FinalStrandElemIdx
-   * * If StrandIdx > FinalStrandIdx:
-   * *   TripCount = (FinalStrandElemIdx / interleave) * interleave
+   * TripCount of Strand:
+   * Let FinalStrandIdx, FinalStrandElemIdx = f(TotalTripCount)
+   * If StrandIdx < FinalStrandIdx:
+   *   TripCount = (FinalStrandElemIdx / interleave + 1) * interleave
+   *   If StrandIdx = 0:
+   *     TripCount -= initOffset.
+   * If StrandIdx = FinalStrandIdx:
+   *   TripCount = FinalStrandElemIdx
+   * If StrandIdx > FinalStrandIdx:
+   *   TripCount = (FinalStrandElemIdx / interleave) * interleave
    */
   uint64_t initOffset = 0;
   uint64_t interleave = 1;

@@ -79,6 +79,10 @@ public:
   const std::vector<StaticInstPtr> &getStaticInsts() const {
     return this->instructions;
   }
+  Cycles getLastInstLat() const {
+    assert(!this->instructions.empty());
+    return this->estimateOneInstLat(this->instructions.back());
+  }
 
 private:
   ThreadContext *tc;
@@ -93,6 +97,7 @@ private:
   std::vector<PCState> pcs;
 
   void estimateLatency();
+  Cycles estimateOneInstLat(const StaticInstPtr &staticInst) const;
 };
 } // namespace X86ISA
 

@@ -8,6 +8,43 @@ StreamValue getStreamValueFail(uint64_t streamId) {
   assert(false && "Failed to get stream value.");
 }
 
+std::ostream &operator<<(std::ostream &os,
+                         const DynStreamFormalParamV &params) {
+  for (const auto &p : params) {
+    if (p.isInvariant) {
+      os << "Const-" << p.invariant.print() << " ";
+    } else {
+      os << "Strm-" << p.baseStreamId << " ";
+    }
+  }
+  return os;
+}
+
+std::string to_string(const DynStreamFormalParamV &params) {
+  std::stringstream ss;
+  ss << params;
+  return ss.str();
+}
+
+std::string printAffinePatternParams(const DynStreamFormalParamV &params) {
+  assert(!params.empty());
+  std::stringstream ss;
+  uint64_t prevTrip = 1;
+  // Start.
+  ss << std::hex << params.back().invariant.uint64() << std::dec;
+  for (int i = 0; i + 1 < params.size(); i += 2) {
+    // Stride.
+    ss << ":" << params.at(i).invariant.int64();
+    if (i + 2 < params.size()) {
+      // Trip.
+      auto trip = params.at(i + 1).invariant.uint64();
+      ss << ":" << trip / prevTrip;
+      prevTrip = trip;
+    }
+  }
+  return ss.str();
+}
+
 StreamValue GetSingleStreamValue::operator()(uint64_t streamId) const {
   assert(this->streamId == streamId && "Invalid base stream.");
   return this->streamValue;

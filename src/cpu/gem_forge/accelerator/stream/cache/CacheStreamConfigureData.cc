@@ -59,19 +59,8 @@ uint64_t CacheStreamConfigureData::convertBaseToDepElemIdx(uint64_t baseElemIdx,
     depElemIdx = baseElemIdx * reuse;
   }
   if (skip != 0) {
-    /**
-     * Be careful here for the BaseElemIdx in [0, skip).
-     * By definition -- Only BaseElemIdx = m * skip has a corresponding DepElemIdx.
-     * However, here we define it as:
-     *   if   BaseElemIdx == 0 -> DepElemIdx = 0.
-     *   else DepElemIdx = (BaseElemIdx - 1) / skip;
-     */
     assert(reuse == 1);
-    if (baseElemIdx == 0) {
-      depElemIdx = 0;
-    } else {
-      depElemIdx = (baseElemIdx - 1) / skip;
-    }
+    depElemIdx = baseElemIdx / skip;
   }
   return depElemIdx;
 }
@@ -86,55 +75,18 @@ uint64_t CacheStreamConfigureData::convertDepToBaseElemIdx(uint64_t depElemIdx,
   }
   if (skip != 0) {
     assert(reuse == 1);
-    baseElemIdx = (depElemIdx + 1) * skip;
+    baseElemIdx = depElemIdx * skip;
   }
   return baseElemIdx;
 }
 
-bool CacheStreamConfigureData::canSplitIntoStrands() const {
-  /**
-   * We can split streams into strands iff.
-   * 1. With known trip count (no StreamLoopBound).
-   * 2. There is no indirect streams.
-   * 3. Float plan is just the LLC.
-   * 4. Simple linear continuous streams.
-   * TODO: Handle reduction and tiled patterns.
-   */
-  if (!this->hasTotalTripCount()) {
-    DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
-                   "[Strand] No TripCount.\n");
-    return false;
-  }
-  for (const auto &dep : this->depEdges) {
-    if (dep.type == CacheStreamConfigureData::DepEdge::Type::UsedBy) {
-      DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
-                     "[Strand] Has IndirectS %s.\n", dep.data->dynamicId);
-      return false;
-    }
-  }
-  if (this->floatPlan.isFloatedToMem()) {
-    DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
-                   "[Strand] Float to Mem.\n");
-    return false;
-  }
-  if (this->floatPlan.getFirstFloatElementIdx() != 0) {
-    DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
-                   "[Strand] Delayed Float.\n");
-    return false;
-  }
-  auto linearAddrGen =
-      std::dynamic_pointer_cast<LinearAddrGenCallback>(this->addrGenCallback);
-  if (!linearAddrGen) {
-    DYN_S_DPRINTF_(MLCRubyStrandSplit, this->dynamicId,
-                   "[Strand] Not LinearAddrGen.\n");
-    return false;
-  }
-  return true;
-}
+DynStreamFormalParamV
+CacheStreamConfigureData::splitLinearParam1D(const StrandSplitInfo &strandSplit,
+                                             int strandIdx) {
 
-DynStreamFormalParamV CacheStreamConfigureData::splitLinearParam1D(
-    const StrandSplitInfo &strandSplit, int strandIdx,
-    const DynStreamFormalParamV &params, AddrGenCallbackPtr callback) {
+  const auto &params = this->addrGenFormalParams;
+  auto callback = this->addrGenCallback;
+
   auto linearAddrGen =
       std::dynamic_pointer_cast<LinearAddrGenCallback>(callback);
   assert(linearAddrGen && "Callback is not linear.");
@@ -183,82 +135,82 @@ DynStreamFormalParamV CacheStreamConfigureData::splitLinearParam1D(
   return strandParams;
 }
 
-CacheStreamConfigureVec
-CacheStreamConfigureData::splitIntoStrands(const StrandSplitInfo &strandSplit) {
-  assert(this->totalStrands == 1 && "Already splited.");
-  assert(this->strandIdx == 0 && "Already splited.");
-  assert(this->strandSplit.totalStrands == 1 && "Already splited.");
-  assert(this->streamConfig == nullptr && "This is a strand.");
-  assert(this->isPseudoOffload == false && "Split PseudoOffload.");
-  assert(this->rangeSync == false && "Split RangeSync.");
-  assert(this->rangeCommit == false && "Split RangeCommit.");
-  assert(this->hasBeenCuttedByMLC == false && "Split MLC cut.");
-  assert(this->isPointerChase == false && "Split pointer chase.");
-  assert(this->isOneIterationBehind == false && "Split pointer chase.");
-  assert(strandSplit.totalStrands > 1 && "Only 1 strand.");
+DynStreamFormalParamV
+CacheStreamConfigureData::splitAffinePatternAtDim(int splitDim, int strandIdx,
+                                                  int totalStrands) {
+  const auto &params = this->addrGenFormalParams;
+  auto callback = this->addrGenCallback;
 
-  this->strandSplit = strandSplit;
-  this->totalStrands = strandSplit.totalStrands;
+  auto linearAddrGen =
+      std::dynamic_pointer_cast<LinearAddrGenCallback>(callback);
+  assert(linearAddrGen && "Callback is not linear.");
 
-  CacheStreamConfigureVec strands;
+  /**
+   * * Split an AffineStream at SplitDim. This is similar to OpenMP static
+   * * scheduling.
+   * *   start : S1 : T1 : ... : Ss : Ts : ... : Sn : Tn
+   * * ->
+   * *   start + strandIdx * Ss * Ts / totalStrands
+   * * : S1 : T1 : ...
+   * * : Ss : Ts / totalStrands : ...
+   * * : Sn : Tn
+   */
 
-  for (auto strandIdx = 0; strandIdx < strandSplit.totalStrands; ++strandIdx) {
+  std::vector<uint64_t> trips;
+  std::vector<int64_t> strides;
+  uint64_t prevTrip = 1;
+  assert((this->addrGenFormalParams.size() % 2) == 1);
+  for (int i = 0; i + 1 < this->addrGenFormalParams.size(); i += 2) {
+    const auto &s = this->addrGenFormalParams.at(i);
+    assert(s.isInvariant);
+    strides.push_back(s.invariant.int64());
 
-    /**********************************************************************
-     * Split the address generation.
-     **********************************************************************/
-    auto strandAddrGenFormalParams = this->splitLinearParam1D(
-        strandSplit, strandIdx, this->addrGenFormalParams,
-        this->addrGenCallback);
+    const auto &t = this->addrGenFormalParams.at(i + 1);
+    assert(t.isInvariant);
+    auto trip = t.invariant.uint64();
+    trips.push_back(trip / prevTrip);
+    prevTrip = trip;
+  }
+  assert(!trips.empty());
+  assert(splitDim < trips.size());
 
-    // Shallow copy every thing.
-    auto strand = std::make_shared<CacheStreamConfigureData>(*this);
-    strands.emplace_back(strand);
+  auto splitDimTrip = trips.at(splitDim);
+  auto splitDimStride = strides.at(splitDim);
+  auto splitDimTripPerStrand = (splitDimTrip + totalStrands - 1) / totalStrands;
 
-    /***************************************************************************
-     * Properly set the splited fields.
-     ***************************************************************************/
+  auto start = params.back().invariant.uint64();
 
-    // Strand specific field.
-    strand->strandIdx = strandIdx;
-    strand->totalStrands = strandSplit.totalStrands;
-    strand->strandSplit = strandSplit;
-    strand->streamConfig = shared_from_this();
-    strand->totalTripCount =
-        strandSplit.getStrandTripCount(this->getTotalTripCount(), strandIdx);
-    strand->initVAddr = makeLineAddress(
-        this->addrGenCallback
-            ->genAddr(0, strandAddrGenFormalParams, getStreamValueFail)
-            .front());
-    if (this->stream->getCPUDelegator()->translateVAddrOracle(
-            strand->initVAddr, strand->initPAddr)) {
-      strand->initPAddrValid = true;
-    } else {
-      DynStrandId strandId(this->dynamicId, strandIdx,
-                           strandSplit.totalStrands);
-      panic("%s: Strand InitVAddr %#x faulted.", strandId, strand->initVAddr);
-    }
+  auto strandStart = start + strandIdx * splitDimStride * splitDimTripPerStrand;
 
-    strand->depEdges.clear();
-    for (auto &dep : depEdges) {
-      assert(dep.type == DepEdge::Type::SendTo && "Split Indirect.");
-      strand->addSendTo(dep.data, dep.reuse, dep.skip);
-    }
-    strand->baseEdges.clear();
-    for (auto &base : baseEdges) {
-      auto baseConfig = base.data.lock();
-      assert(baseConfig && "BaseConfig already released?");
-      strand->addBaseOn(baseConfig, base.reuse, base.skip);
-    }
+  // Copy the original params.
+  DynStreamFormalParamV strandParams = this->addrGenFormalParams;
+
+  // Adjust the trip count at the SplitDim. Be careful with the last strand.
+  auto splitDimStrandTrip = splitDimTripPerStrand;
+  if (strandIdx == totalStrands - 1) {
+    // Adjust the last strand.
+    splitDimStrandTrip = splitDimTrip - (strandIdx * splitDimTripPerStrand);
+  }
+  strandParams.at(splitDim * 2 + 1).invariant.uint64() = splitDimStrandTrip;
+  // We need to fix all upper dimension's trip count.
+  for (int dim = splitDim + 1; dim < trips.size(); ++dim) {
+    auto fixedOuterTrip =
+        strandParams.at(dim * 2 - 1).invariant.uint64() * trips.at(dim);
+    strandParams.at(dim * 2 + 1).invariant.uint64() = fixedOuterTrip;
   }
 
-  return strands;
+  // Adjust the strand start.
+  strandParams.back().invariant.uint64() = strandStart;
+
+  return strandParams;
 }
 
 DynStrandId CacheStreamConfigureData::getStrandIdFromStreamElemIdx(
     uint64_t streamElemIdx) const {
-  assert(this->streamConfig == nullptr &&
-         "This is not StreamConfig but a StrandConfig.");
+  if (this->streamConfig) {
+    // This is a StrandConfig.
+    return this->streamConfig->getStrandIdFromStreamElemIdx(streamElemIdx);
+  }
   if (this->totalStrands == 1) {
     // There is no strand.
     return DynStrandId(this->dynamicId);
@@ -271,8 +223,10 @@ DynStrandId CacheStreamConfigureData::getStrandIdFromStreamElemIdx(
 
 uint64_t CacheStreamConfigureData::getStrandElemIdxFromStreamElemIdx(
     uint64_t streamElemIdx) const {
-  assert(this->streamConfig == nullptr &&
-         "This is not StreamConfig but a StrandConfig.");
+  if (this->streamConfig) {
+    // This is a StrandConfig.
+    return this->streamConfig->getStrandElemIdxFromStreamElemIdx(streamElemIdx);
+  }
   if (this->totalStrands == 1) {
     // There is no strand.
     return streamElemIdx;
@@ -284,12 +238,14 @@ uint64_t CacheStreamConfigureData::getStrandElemIdxFromStreamElemIdx(
 
 uint64_t CacheStreamConfigureData::getStreamElemIdxFromStrandElemIdx(
     uint64_t strandElemIdx) const {
-  if (this->streamConfig) {
-    // This is a strand.
-    StrandElemSplitIdx elemSplit(this->strandIdx, strandElemIdx);
-    return this->strandSplit.mapStrandToStream(elemSplit);
-  } else {
-    // This is not a strand.
-    return strandElemIdx;
-  }
+  assert(this->streamConfig && "We need StrandConfig");
+  // This is a strand.
+  StrandElemSplitIdx elemSplit(this->strandIdx, strandElemIdx);
+  return this->strandSplit.mapStrandToStream(elemSplit);
+}
+
+uint64_t CacheStreamConfigureData::getStreamElemIdxFromStrandElemIdx(
+    const DynStrandId &strandId, uint64_t strandElemIdx) const {
+  StrandElemSplitIdx elemSplit(strandId.strandIdx, strandElemIdx);
+  return this->strandSplit.mapStrandToStream(elemSplit);
 }

@@ -467,6 +467,8 @@ public:
 
   AddrGenCallbackPtr &getAddrGenCallback() { return this->addrGenCallback; }
 
+  const ExecFuncPtr &getComputeCallback() const;
+
   int getComputationNumMicroOps() const {
     return this->getComputeCallback()->getNumInstructions();
   }
@@ -589,8 +591,6 @@ protected:
   void selectPrimeLogicalStream();
   void initializeBaseStreams();
   void initializeAliasStreams();
-
-  const ExecFuncPtr &getComputeCallback() const;
 
 public:
   /********************************************************************
