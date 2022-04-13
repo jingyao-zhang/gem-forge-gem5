@@ -58,7 +58,7 @@ void Stream::finalize() {
     }
   }
   STREAM_DPRINTF("Finalized, ElementSize %d, LStreams: =========.\n",
-                 this->coalescedElementSize);
+                 this->coalescedMemElemSize);
   for (auto LS : this->logicals) {
     LS_DPRINTF(LS, "Offset %d, MemElementSize %d.\n", LS->getCoalesceOffset(),
                LS->getMemElementSize());
@@ -76,16 +76,23 @@ void Stream::selectPrimeLogicalStream() {
             });
   this->primeLogical = this->logicals.front();
   this->baseOffset = this->primeLogical->getCoalesceOffset();
-  this->coalescedElementSize = this->primeLogical->getMemElementSize();
+  this->coalescedMemElemSize = this->primeLogical->getMemElementSize();
   assert(this->baseOffset >= 0 && "Illegal BaseOffset.");
-  // Make sure we have the currect base_stream.
+  // Make sure we have the correct MemElemSize.
   for (const auto &LS : this->logicals) {
     assert(LS->getCoalesceBaseStreamId() ==
            this->primeLogical->getCoalesceBaseStreamId());
     // Compute the element size.
-    this->coalescedElementSize = std::max(
-        this->coalescedElementSize,
+    this->coalescedMemElemSize = std::max(
+        this->coalescedMemElemSize,
         LS->getCoalesceOffset() - this->baseOffset + LS->getMemElementSize());
+  }
+
+  // By default the CoreElemSize is the same as MemElemSize if we coalesced.
+  if (this->logicals.size() == 1) {
+    this->coalescedCoreElemSize = this->primeLogical->getCoreElementSize();
+  } else {
+    this->coalescedCoreElemSize = this->coalescedMemElemSize;
   }
 
   /**
@@ -96,6 +103,34 @@ void Stream::selectPrimeLogicalStream() {
    */
   this->streamName = this->primeLogical->info.name();
   this->staticId = this->primeLogical->info.id();
+
+  /**
+   * Now the LoadComputeStream may have other LoadBaseStreams. So far we enforce
+   * that there is only one LogicalStream has LoadFunc enabled with
+   * LoadBaseStreams, and move that information to the PrimeLogicalStream.
+   */
+  for (const auto &LS : this->logicals) {
+    if (LS == this->primeLogical) {
+      continue;
+    }
+    if (LS->getEnabledLoadFunc()) {
+      if (this->primeLogical->getEnabledLoadFunc()) {
+        panic("Multi LoadFunc in %s %s.", primeLogical->info.name(),
+              LS->info.name());
+      }
+      const auto &computeInfo = LS->info.static_info().compute_info();
+      auto primeComputeInfo = this->primeLogical->info.mutable_static_info()
+                                  ->mutable_compute_info();
+      // No need to copy ValueBaseStreams, as we search all LogicalStreams to
+      // find the BaseStreams.
+      primeComputeInfo->set_enabled_load_func(true);
+      (*primeComputeInfo->mutable_load_func_info()) =
+          computeInfo.load_func_info();
+
+      // If we have LoadCompute, we reset the CoreElemSize.
+      this->coalescedCoreElemSize = LS->getCoreElementSize();
+    }
+  }
 
   // Sanity check for consistency between logical streams.
   for (const auto &LS : this->logicals) {
@@ -119,7 +154,6 @@ void Stream::selectPrimeLogicalStream() {
     CHECK_INFO(panic, loop_eliminated);
     CHECK_INFO(panic, core_need_final_value);
     CHECK_INFO(panic, core_need_second_final_value);
-    CHECK_INFO(panic, compute_info().value_base_streams_size);
     CHECK_INFO(panic, compute_info().enabled_store_func);
 #undef CHECK_INFO
     /**
@@ -136,17 +170,6 @@ void Stream::selectPrimeLogicalStream() {
               LS->info.name(), LS->getCoreElementSize(),
               LS->getMemElementSize());
       }
-    }
-    for (const auto &sid : LS->getMergedLoadStoreBaseStreams()) {
-      bool matched = false;
-      for (const auto &tid :
-           this->primeLogical->getMergedLoadStoreBaseStreams()) {
-        if (tid.id() == sid.id()) {
-          matched = true;
-          break;
-        }
-      }
-      assert(matched && "Failed to match MergedLoadStoreBaseStream.");
     }
   }
 }
@@ -214,10 +237,15 @@ void Stream::initializeBaseStreams() {
          info.static_info().compute_info().value_base_streams()) {
       auto baseS = this->se->getStream(baseId.id());
       if (baseS == this) {
-        S_PANIC(this, "Circular value dependence found.");
+        if (!this->getEnabledLoadFunc()) {
+          // LoadCompute may depend on other LogicalStreams.
+          S_PANIC(this, "Circular value dependence found.");
+        }
+      } else {
+        this->addBaseStream(StreamDepEdge::TypeE::Value,
+                            false /* isInnerLoop */, baseId.id(), info.id(),
+                            baseS);
       }
-      this->addBaseStream(StreamDepEdge::TypeE::Value, false /* isInnerLoop */,
-                          baseId.id(), info.id(), baseS);
     }
 
     // Update the back dependence information.

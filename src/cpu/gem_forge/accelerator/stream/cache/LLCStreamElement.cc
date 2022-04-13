@@ -151,6 +151,25 @@ void LLCStreamElement::setComputedValue(const StreamValue &value) {
 int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,
                                      int &rangeOffset,
                                      int &elementOffset) const {
+  auto overlapSize = this->computeOverlapImpl(this->size, rangeVAddr, rangeSize,
+                                              rangeOffset, elementOffset);
+  assert(overlapSize > 0 && "Empty overlap.");
+  return overlapSize;
+}
+
+int LLCStreamElement::computeLoadComputeOverlap(Addr rangeVAddr, int rangeSize,
+                                                int &rangeOffset,
+                                                int &elementOffset) const {
+  /**
+   * LoadCompute may have empty overlap due to shrinked CoreElemSize.
+   */
+  return this->computeOverlapImpl(this->S->getCoreElementSize(), rangeVAddr,
+                                  rangeSize, rangeOffset, elementOffset);
+}
+
+int LLCStreamElement::computeOverlapImpl(int elemSize, Addr rangeVAddr,
+                                         int rangeSize, int &rangeOffset,
+                                         int &elemOffset) const {
   if (this->S->isMemStream()) {
     if (this->vaddr == 0) {
       panic("Try to computeOverlap without elementVAddr.");
@@ -158,14 +177,19 @@ int LLCStreamElement::computeOverlap(Addr rangeVAddr, int rangeSize,
   }
   // Compute the overlap between the element and the slice.
   Addr overlapLHS = std::max(this->vaddr, rangeVAddr);
-  Addr overlapRHS = std::min(this->vaddr + this->size, rangeVAddr + rangeSize);
+  Addr overlapRHS = std::min(this->vaddr + elemSize, rangeVAddr + rangeSize);
   // Check that the overlap is within the same line.
-  assert(overlapLHS < overlapRHS && "Empty overlap.");
+  if (overlapRHS <= overlapLHS) {
+    // There is no overlap.
+    elemOffset = elemSize;
+    rangeOffset = rangeSize;
+    return 0;
+  }
   assert(makeLineAddress(overlapLHS) == makeLineAddress(overlapRHS - 1) &&
          "Illegal overlap.");
   auto overlapSize = overlapRHS - overlapLHS;
   rangeOffset = overlapLHS - rangeVAddr;
-  elementOffset = overlapLHS - this->vaddr;
+  elemOffset = overlapLHS - this->vaddr;
   return overlapSize;
 }
 

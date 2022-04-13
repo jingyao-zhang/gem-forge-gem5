@@ -127,6 +127,19 @@ public:
    */
   int computeOverlap(Addr rangeVAddr, int rangeSize, int &rangeOffset,
                      int &elementOffset) const;
+  /**
+   * @brief Compute the overlap for LoadComputeValue.
+   *
+   * @param rangeVAddr
+   * @param rangeSize
+   * @param rangeOffset
+   * @param elementOffset
+   * @return int The size of the overlap.
+   */
+  int computeLoadComputeOverlap(Addr rangeVAddr, int rangeSize,
+                                int &rangeOffset, int &elementOffset) const;
+  int computeOverlapImpl(int elemSize, Addr rangeVAddr, int rangeSize,
+                         int &rangeOffset, int &elementOffset) const;
 
   void addSlice(LLCStreamSlicePtr &slice);
   int getNumSlices() const { return this->numSlices; }

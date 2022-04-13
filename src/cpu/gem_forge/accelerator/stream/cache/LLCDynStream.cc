@@ -376,7 +376,7 @@ LLCStreamSlicePtr LLCDynStream::allocNextSlice(LLCStreamEngine *se) {
     if (this->shouldRangeSync()) {
       for (auto elementIdx = sliceId.getStartIdx();
            elementIdx < sliceId.getEndIdx(); ++elementIdx) {
-        auto element = this->getElementPanic(elementIdx, "AllocNextSlice.");
+        auto element = this->getElemPanic(elementIdx, "AllocNextSlice.");
         if (element->vaddr != 0) {
           Addr paddr = 0;
           if (!this->translateToPAddr(element->vaddr, paddr)) {
@@ -456,7 +456,7 @@ void LLCDynStream::initDirectStreamSlicesUntil(uint64_t lastSliceIdx) {
     for (auto elementIdx = sliceId.getStartIdx(),
               endElementIdx = sliceId.getEndIdx();
          elementIdx < endElementIdx; ++elementIdx) {
-      auto element = this->getElementPanic(elementIdx, "InitDirectSlice");
+      auto element = this->getElemPanic(elementIdx, "InitDirectSlice");
       element->addSlice(slice);
     }
 
@@ -1480,7 +1480,7 @@ void LLCDynStream::completeFinalReduction(LLCStreamEngine *se) {
 
   // This is the last reduction of one inner loop.
   auto S = this->getStaticS();
-  auto finalReductionElem = this->getElementPanic(
+  auto finalReductionElem = this->getElemPanic(
       this->lastComputedReductionElemIdx, "Return FinalReductionValue.");
 
   DynStreamSliceId sliceId;
@@ -1531,7 +1531,7 @@ void LLCDynStream::addCommitMessage(const DynStreamSliceId &sliceId) {
   for (auto elementIdx = sliceId.getStartIdx();
        elementIdx < sliceId.getEndIdx(); ++elementIdx) {
     auto element =
-        this->getElementPanic(elementIdx, "MarkCoreCommit for LLCElement");
+        this->getElemPanic(elementIdx, "MarkCoreCommit for LLCElement");
     element->setCoreCommitted();
   }
 }
@@ -1551,7 +1551,7 @@ void LLCDynStream::commitOneElement() {
 
 void LLCDynStream::markElementReadyToIssue(uint64_t elementIdx) {
   auto element =
-      this->getElementPanic(elementIdx, "Mark IndirectElement ready to issue.");
+      this->getElemPanic(elementIdx, "Mark IndirectElement ready to issue.");
   if (element->getState() != LLCStreamElement::State::INITIALIZED) {
     LLC_S_PANIC(this->getDynStrandId(),
                 "IndirectElement in wrong state  %d to mark ready.",
@@ -1593,8 +1593,7 @@ void LLCDynStream::markElementIssued(uint64_t elementIdx) {
     LLC_S_PANIC(this->getDynStrandId(),
                 "IndirectElement should be issued in order.");
   }
-  auto element =
-      this->getElementPanic(elementIdx, "Mark IndirectElement issued.");
+  auto element = this->getElemPanic(elementIdx, "Mark IndirectElement issued.");
   if (element->getState() != LLCStreamElement::State::READY_TO_ISSUE) {
     LLC_S_PANIC(this->getDynStrandId(),
                 "IndirectElement %llu not in ready state.", elementIdx);
@@ -1628,7 +1627,7 @@ LLCStreamElementPtr LLCDynStream::getFirstReadyToIssueElement() const {
   if (this->numElementsReadyToIssue == 0) {
     return nullptr;
   }
-  auto element = this->getElementPanic(this->nextIssueElementIdx, __func__);
+  auto element = this->getElemPanic(this->nextIssueElementIdx, __func__);
   switch (element->getState()) {
   default:
     LLC_S_PANIC(this->getDynStrandId(), "Element %llu with Invalid state %d.",
@@ -1797,8 +1796,8 @@ bool LLCDynStream::isSliceDoneForLoopBound(
      * element, i.e. it contains the last byte of this element.
      * In such case, we evalute the LoopBound and not release the slice.
      */
-    auto element = this->getElementPanic(nextLoopBoundElemIdx,
-                                         "Check element for LoopBound.");
+    auto element = this->getElemPanic(nextLoopBoundElemIdx,
+                                      "Check element for LoopBound.");
     int sliceOffset;
     int elementOffset;
     int overlapSize = element->computeOverlap(sliceId.vaddr, sliceId.getSize(),
@@ -1820,8 +1819,8 @@ LLCStreamElementPtr LLCDynStream::getElement(uint64_t elementIdx) const {
   return iter->second;
 }
 
-LLCStreamElementPtr LLCDynStream::getElementPanic(uint64_t elementIdx,
-                                                  const char *errMsg) const {
+LLCStreamElementPtr LLCDynStream::getElemPanic(uint64_t elementIdx,
+                                               const char *errMsg) const {
   auto element = this->getElement(elementIdx);
   if (!element) {
     LLC_S_PANIC(this->getDynStrandId(),

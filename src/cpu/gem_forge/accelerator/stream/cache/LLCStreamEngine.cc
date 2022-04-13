@@ -404,7 +404,7 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
   // Construct all the element data (except for StoreStream).
   if (!S->isStoreComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-      auto element = dynS->getElementPanic(idx, "RecvElementData");
+      auto element = dynS->getElemPanic(idx, "RecvElementData");
       if (element->hasFirstIndirectAtomicReqSeen()) {
         // This is just the second request for IndirectAtomic.
         // No need to extract data.
@@ -505,9 +505,9 @@ void LLCStreamEngine::receiveStreamData(Addr paddrLine,
       LLC_SLICE_PANIC(sliceId, "IndirectLoadComputeStream with more "
                                "than one element per slice.");
     }
-    auto element = dynS->getElementPanic(
-        sliceId.getStartIdx(),
-        "ReceiveStreamData for IndirectLoadComputeStream");
+    auto element =
+        dynS->getElemPanic(sliceId.getStartIdx(),
+                           "ReceiveStreamData for IndirectLoadComputeStream");
     auto slice = std::make_shared<LLCStreamSlice>(S, sliceId);
     slice->allocate(this);
     slice->issue();
@@ -589,7 +589,7 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     assert(dynS->idxToElementMap.count(idx) &&
            "Missing element for StoreStream.");
-    auto element = dynS->getElementPanic(idx, "ReceiveStoreStreamData");
+    auto element = dynS->getElemPanic(idx, "ReceiveStoreStreamData");
 
     // Compute the overlap and set the data.
     int elementOffset;
@@ -611,7 +611,7 @@ void LLCStreamEngine::receiveStoreStreamData(LLCDynStreamPtr dynS,
                        "StreamStore send back StreamAck.\n");
     if (dynS->isIndirect()) {
       auto element =
-          dynS->getElementPanic(sliceId.getStartIdx(), "AckIndirectStore");
+          dynS->getElemPanic(sliceId.getStartIdx(), "AckIndirectStore");
       element->setIndirectStoreAcked();
     }
     /**
@@ -1390,7 +1390,7 @@ LLCDynStreamPtr LLCStreamEngine::findStreamReadyToIssue(LLCDynStreamPtr dynS) {
       }
       for (auto idx = nextSliceId.getStartIdx(); idx < nextSliceId.getEndIdx();
            ++idx) {
-        auto element = dynS->getElementPanic(idx, "Check StoreValue Ready.");
+        auto element = dynS->getElemPanic(idx, "Check StoreValue Ready.");
         // Simply schedule the computation.
         if (!element->isReady()) {
           if (element->areBaseElementsReady() &&
@@ -2705,7 +2705,7 @@ bool LLCStreamEngine::tryToProcessIndirectAtomicUnlockReq(
   auto elementIdx = sliceId.getStartIdx();
   assert(sliceId.getNumElements() == 1 &&
          "Multi-Element slice for IndirectAtomicStream.");
-  auto element = dynS->getElementPanic(elementIdx, "IndirectAtomicUnlock");
+  auto element = dynS->getElemPanic(elementIdx, "IndirectAtomicUnlock");
   if (!element->hasFirstIndirectAtomicReqSeen()) {
     LLC_SLICE_PANIC(sliceId, "[Commit] Has not seen FirstIndirectAtomicReq.");
   }
@@ -3095,8 +3095,8 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
     auto nextLoopBoundElemIdx = dynS->getNextLoopBoundElemIdx();
     if (nextLoopBoundElemIdx >= sliceId.getStartIdx() &&
         nextLoopBoundElemIdx < sliceId.getEndIdx()) {
-      auto element = dynS->getElementPanic(nextLoopBoundElemIdx,
-                                           "Check element for LoopBound.");
+      auto element = dynS->getElemPanic(nextLoopBoundElemIdx,
+                                        "Check element for LoopBound.");
       // This slice contains the last element byte.
       assert(element->isReady() && "Element should be ready for LoopBound.");
       dynS->evaluateLoopBound(this);
@@ -3126,7 +3126,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
       !(S->isLoadComputeStream() && dynS->isIndirect())) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element =
-          dynS->getElementPanic(idx, "Check element committed for update.");
+          dynS->getElemPanic(idx, "Check element committed for update.");
       if (!element->hasCoreCommitted()) {
         // We are still waiting for the core to commit.
         return ++sliceIter;
@@ -3136,7 +3136,7 @@ LLCStreamEngine::processSlice(SliceList::iterator sliceIter) {
   if (S->isAtomicComputeStream()) {
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
       auto element =
-          dynS->getElementPanic(idx, "Check base elements ready for update.");
+          dynS->getElemPanic(idx, "Check base elements ready for update.");
       // LLC_SLICE_DPRINTF(
       //     sliceId, "Process for element %llu, Ready %d, BaseReady
       //     %d.\n", element->idx, element->isReady(),
@@ -3200,7 +3200,7 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
   bool allLoadComputeValueReady = true;
   for (auto elementIdx = sliceId.getStartIdx();
        elementIdx < sliceId.getEndIdx(); ++elementIdx) {
-    auto element = dynS->getElementPanic(elementIdx, "ProcessLoadComputeSlice");
+    auto element = dynS->getElemPanic(elementIdx, "ProcessLoadComputeSlice");
     if (element->isReady() && !element->isComputationScheduled() &&
         !element->isComputedValueReady()) {
       this->pushReadyComputation(element);
@@ -3212,12 +3212,8 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
   if (!allLoadComputeValueReady) {
     return;
   }
-  // We can send back the LoadComputeValue back to core.
-  // It is actually quite tricky to slice for LoadComputeStream.
-  if (sliceId.getNumElements() > 1) {
-    LLC_SLICE_PANIC(sliceId, "Multi-Element Slice for LoadComputeStream.");
-  }
 
+  // Check if need to send back the LoadComputeValue back to core.
   auto S = dynS->getStaticS();
   bool coreNeedValue = false;
   auto dynCoreS = dynS->getCoreDynS();
@@ -3232,14 +3228,17 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
   int payloadSize = 0;
   for (auto elementIdx = sliceId.getStartIdx();
        elementIdx < sliceId.getEndIdx(); ++elementIdx) {
-    auto element = dynS->getElementPanic(elementIdx, "ProcessLoadComputeSlice");
+    auto element = dynS->getElemPanic(elementIdx, "ProcessLoadComputeSlice");
     const auto &loadComputeValue = element->getComputedValue();
 
     int sliceOffset;
-    int elementOffset;
-    int overlapSize =
-        element->computeOverlap(sliceId.vaddr, RubySystem::getBlockSizeBytes(),
-                                sliceOffset, elementOffset);
+    int elemOffset;
+    int overlapSize = element->computeLoadComputeOverlap(
+        sliceId.vaddr, RubySystem::getBlockSizeBytes(), sliceOffset,
+        elemOffset);
+    if (overlapSize == 0) {
+      continue;
+    }
     payloadSize += S->getCoreElementSize();
 
     /**
@@ -3248,7 +3247,8 @@ void LLCStreamEngine::processLoadComputeSlice(LLCDynStreamPtr dynS,
      * size should be CoreElementSize. But this is OK as long as the
      * user only uses the first CoreElementSize bytes' data.
      */
-    auto valuePtr = loadComputeValue.uint8Ptr(elementOffset);
+    assert(elemOffset < 64 && "What");
+    auto valuePtr = loadComputeValue.uint8Ptr(elemOffset);
     loadValueBlock.setData(valuePtr, sliceOffset, overlapSize);
   }
 
@@ -3314,7 +3314,7 @@ void LLCStreamEngine::processDirectAtomicSlice(
   uint32_t totalPayloadSize = 0;
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element =
-        dynS->getElementPanic(idx, "Process slice of Atomic/UpdateStream");
+        dynS->getElemPanic(idx, "Process slice of Atomic/UpdateStream");
     LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
                       element->idx, element->vaddr);
     if (!element->isReady()) {
@@ -3380,7 +3380,7 @@ void LLCStreamEngine::processIndirectAtomicSlice(
    * with core usage. We just need to send back an Ack.
    */
   auto elementIdx = sliceId.getStartIdx();
-  auto element = dynS->getElementPanic(
+  auto element = dynS->getElemPanic(
       elementIdx, "Check IndirectAtomicElement second request.");
   if (element->hasFirstIndirectAtomicReqSeen()) {
     // This is the second time, should already be handled in
@@ -3487,7 +3487,7 @@ void LLCStreamEngine::processIndirectUpdateSlice(
   uint32_t totalPayloadSize = 0;
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element =
-        dynS->getElementPanic(idx, "Process slice of Atomic/UpdateStream");
+        dynS->getElemPanic(idx, "Process slice of Atomic/UpdateStream");
     LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
                       element->idx, element->vaddr);
     if (!element->isReady()) {
@@ -3533,7 +3533,7 @@ bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
 
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
     auto element =
-        dynS->getElementPanic(idx, "Check base elements ready for update.");
+        dynS->getElemPanic(idx, "Check base elements ready for update.");
     // LLC_SLICE_DPRINTF(
     //     sliceId, "Process for element %llu, Ready %d, BaseReady
     //     %d.\n", element->idx, element->isReady(),
@@ -3554,7 +3554,7 @@ bool LLCStreamEngine::tryProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
   }
 
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element = dynS->getElementPanic(idx, "Process UpdateStream");
+    auto element = dynS->getElemPanic(idx, "Process UpdateStream");
     LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
                       element->idx, element->vaddr);
     if (!element->isComputedValueReady() &&
@@ -3574,7 +3574,7 @@ bool LLCStreamEngine::tryPostProcessDirectUpdateSlice(LLCDynStreamPtr dynS,
    */
   const auto &sliceId = slice->getSliceId();
   for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-    auto element = dynS->getElementPanic(idx, "Process UpdateStream");
+    auto element = dynS->getElemPanic(idx, "Process UpdateStream");
     LLC_SLICE_DPRINTF(sliceId,
                       "TryPostProcess for UpdateElement %llu vaddr %#x.\n",
                       element->idx, element->vaddr);
@@ -3609,7 +3609,7 @@ void LLCStreamEngine::postProcessDirectUpdateSlice(
     DataBlock loadValueBlock;
     uint32_t totalPayloadSize = 0;
     for (auto idx = sliceId.getStartIdx(); idx < sliceId.getEndIdx(); ++idx) {
-      auto element = dynS->getElementPanic(idx, "PostProcess UpdateStream");
+      auto element = dynS->getElemPanic(idx, "PostProcess UpdateStream");
       LLC_SLICE_DPRINTF(sliceId, "TriggerUpdate for element %llu vaddr %#x.\n",
                         element->idx, element->vaddr);
       if (!element->isReady()) {

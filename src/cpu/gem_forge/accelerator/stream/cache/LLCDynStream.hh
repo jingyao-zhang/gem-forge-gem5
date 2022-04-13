@@ -404,8 +404,8 @@ public:
   bool isElementReleased(uint64_t elementIdx) const;
   uint64_t getNextUnreleasedElementIdx() const;
   LLCStreamElementPtr getElement(uint64_t elementIdx) const;
-  LLCStreamElementPtr getElementPanic(uint64_t elementIdx,
-                                      const char *errMsg = nullptr) const;
+  LLCStreamElementPtr getElemPanic(uint64_t elementIdx,
+                                   const char *errMsg = nullptr) const;
 
   /**
    * Erase the element for myself only.

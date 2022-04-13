@@ -587,7 +587,8 @@ protected:
    ***************************************************************/
   std::vector<LogicalStream *> logicals;
   LogicalStream *primeLogical = nullptr;
-  int32_t coalescedElementSize = -1;
+  int32_t coalescedMemElemSize = -1;
+  int32_t coalescedCoreElemSize = -1;
   int32_t baseOffset = -1;
   bool coalescedNoCoreUser = true;
   bool isNonSpec = false;
@@ -646,15 +647,12 @@ public:
   bool isReductionDistributable() const;
 
   int32_t getMemElementSize() const {
-    assert(this->coalescedElementSize > 0 && "Invalid element size.");
-    return this->coalescedElementSize;
+    assert(this->coalescedMemElemSize > 0 && "Invalid MemElem size.");
+    return this->coalescedMemElemSize;
   }
   int32_t getCoreElementSize() const {
-    if (this->logicals.size() == 1) {
-      return this->primeLogical->getCoreElementSize();
-    }
-    // For coalesced stream CoreElementSize is the same as MemElementSize.
-    return this->getMemElementSize();
+    assert(this->coalescedCoreElemSize > 0 && "Invalid CoreElem size.");
+    return this->coalescedCoreElemSize;
   }
 
   bool isMerged() const {
